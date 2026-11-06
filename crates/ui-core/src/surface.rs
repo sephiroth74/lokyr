@@ -7,7 +7,7 @@
 
 use std::time::Instant;
 
-use lokyr_plugin_sdk::view::{Kind, Node};
+use lokyr_plugin_sdk::view::{Key, Kind, Node, UiEventKind};
 use lokyr_render_core::Item;
 use lokyr_text_core::FontBackend;
 use lokyr_vt_core::input::KeyEvent;
@@ -104,9 +104,11 @@ impl Surface {
     /// press changed, unless the system reduces motion, `reduced`.
     pub fn animate(&mut self, now: Instant, reduced: bool) {
         self.animations
+            .reorder
+            .scroll(&self.tree, &mut self.layout, now);
+        self.animations
             .laid_out(&self.tree, &self.layout, now, reduced);
-        self.animations.hovered(self.pointer.hovered_keys(), now);
-        self.animations.pressed(self.pointer.pressing_key(), now);
+        self.show_pointer(now);
     }
 
     /// Whether a transition runs at `now`, for which the host draws a frame
@@ -140,12 +142,55 @@ impl Surface {
             self.fields.drag((&self.tree, &self.layout), at, carets);
         }
         let events = self.pointer.moved(&self.tree, &self.layout, at);
-        self.animations.hovered(self.pointer.hovered_keys(), now);
-        self.animations.pressed(self.pointer.pressing_key(), now);
+        for event in &events {
+            match event.kind {
+                UiEventKind::DragStart => {
+                    self.animations
+                        .reorder
+                        .lift(&self.tree, &self.layout, event.node, now);
+                }
+                UiEventKind::DragMove { x, y } => {
+                    self.animations.reorder.drag(&self.layout, (x, y), now);
+                }
+                _ => {}
+            }
+        }
+        self.show_pointer(now);
         let deadline = self
             .tooltip
             .hover(&self.tree, self.pointer.hovered(), at, now);
         (events, deadline)
+    }
+
+    /// The hovers and the press that show, at `now`: the pointer's; or,
+    /// as a node is dragged among its siblings, that node's alone, which
+    /// the pointer shows over wherever the layout put the others, hovered
+    /// and pressed as its press left it until the button goes up, then
+    /// hovered until its plugin's render puts it at its place.
+    fn show_pointer(&mut self, now: Instant) {
+        let reorder = &self.animations.reorder;
+        if let Some(key) = reorder.lifted().cloned() {
+            let pressed = reorder.dragging();
+            let path: Vec<Key> =
+                std::iter::successors(self.tree.by_key(&key), |&node| self.tree.parent(node))
+                    .filter_map(|node| self.tree.key(node).cloned())
+                    .collect();
+            self.animations.hovered(path.iter().rev(), now);
+            self.animations.pressed(pressed.then_some(&key), now);
+            return;
+        }
+        self.animations.hovered(self.pointer.hovered_keys(), now);
+        self.animations.pressed(self.pointer.pressing_key(), now);
+    }
+
+    /// The key of the node dragged among its siblings, while the drag is
+    /// under way.
+    fn lifted(&self) -> Option<Key> {
+        let reorder = &self.animations.reorder;
+        reorder
+            .dragging()
+            .then(|| reorder.raised().cloned())
+            .flatten()
     }
 
     /// The pointer left the surface, at `now`, over another or out of the
@@ -153,7 +198,7 @@ impl Surface {
     pub fn left(&mut self, now: Instant) -> Vec<NodeEvent> {
         self.tooltip.left(now);
         let events = self.pointer.left(&self.tree);
-        self.animations.hovered(self.pointer.hovered_keys(), now);
+        self.show_pointer(now);
         events
     }
 
@@ -201,23 +246,62 @@ impl Surface {
         pressed
     }
 
-    /// The app took the pointer back, as the window lost the keyboard's
-    /// focus or a key moved the focus: a drag under way is cancelled, and a
+    /// The app took the pointer back, at `now`, as the window lost the
+    /// keyboard's focus or a key moved the focus: a drag under way is
+    /// cancelled, a node dragged among its siblings sliding back, and a
     /// field's selection that a drag makes ends, as no button that is down
     /// clicks as it goes up.
-    pub fn cancel(&mut self) -> Vec<NodeEvent> {
+    pub fn cancel(&mut self, now: Instant) -> Vec<NodeEvent> {
         self.fields.release();
-        self.pointer.cancel(&self.tree)
+        self.animations.reorder.cancel(now);
+        let events = self.pointer.cancel(&self.tree);
+        self.show_pointer(now);
+        events
     }
 
-    /// `button` went up at `at`, of `clicks` in a row: a field's selection
-    /// ends; the pointer's events, a click's or a drag's end.
-    pub fn released(&mut self, at: (f32, f32), (button, clicks): (Button, u32)) -> Vec<NodeEvent> {
+    /// Escape, at `now`: the drag of a node among its siblings under way
+    /// ends, the node sliding back to its place, which takes the key, the
+    /// drag's cancel its event; `None` without one.
+    pub fn escape(&mut self, now: Instant) -> Option<Vec<NodeEvent>> {
+        self.lifted()?;
+        Some(self.cancel(now))
+    }
+
+    /// `button` went up at `at`, of `clicks` in a row, at `now`: a field's
+    /// selection ends; the pointer's events, a click's or a drag's end,
+    /// which a reorder of the node dragged among its siblings comes before,
+    /// if it dropped at another place.
+    pub fn released(
+        &mut self,
+        at: (f32, f32),
+        (button, clicks): (Button, u32),
+        now: Instant,
+    ) -> Vec<NodeEvent> {
         if button == Button::Primary {
             self.fields.release();
         }
-        self.pointer
-            .released(&self.tree, &self.layout, at, button, clicks)
+        let dropped = match button {
+            Button::Primary if self.lifted().is_some() => {
+                self.animations.reorder.drop(self.tree.revision(), now)
+            }
+            _ => None,
+        };
+        let mut events = self
+            .pointer
+            .released(&self.tree, &self.layout, at, button, clicks);
+        if let Some(index) = dropped
+            && let Some(end) = events
+                .iter()
+                .position(|event| matches!(event.kind, UiEventKind::DragEnd { .. }))
+        {
+            let reorder = NodeEvent {
+                kind: UiEventKind::Reorder { index },
+                ..events[end].clone()
+            };
+            events.insert(end, reorder);
+        }
+        self.show_pointer(now);
+        events
     }
 
     /// A wheel or a trackpad scrolled at `at`, `delta` points across and
@@ -299,8 +383,14 @@ impl Surface {
                 dark,
                 focused,
                 fields: &self.fields,
-                hovered: self.pointer.hovered().next_back(),
-                pressed: self.pointer.pressing(),
+                // A drag among the siblings hovers and presses none of
+                // them, wherever the layout put them under the pointer.
+                hovered: self
+                    .pointer
+                    .hovered()
+                    .next_back()
+                    .filter(|_| self.lifted().is_none()),
+                pressed: self.pointer.pressing().filter(|_| self.lifted().is_none()),
                 lists: &self.lists,
                 motion: Some((&self.animations, now)),
             },
@@ -497,18 +587,18 @@ mod tests {
         let start = (frame.x + 8.0, frame.y + 5.0);
         surface.pressed(start, (Button::Primary, 1, false), &mut Fixed);
         assert!(surface.fields.selecting());
-        surface.released(start, (Button::Primary, 1));
+        surface.released(start, (Button::Primary, 1), Instant::now());
         assert!(!surface.fields.selecting());
         // And until the app takes the pointer back, as Tab moves the focus.
         surface.pressed(start, (Button::Primary, 1, false), &mut Fixed);
-        surface.cancel();
+        surface.cancel(Instant::now());
         assert!(!surface.fields.selecting());
         // Nothing to keep the next time; a click of the button.
         let at = middle(&surface, "go");
         let pressed = surface.pressed(at, (Button::Primary, 1, false), &mut Fixed);
         assert!(!pressed.composition_kept);
         assert_eq!(
-            kinds(&surface.released(at, (Button::Primary, 1))),
+            kinds(&surface.released(at, (Button::Primary, 1), Instant::now())),
             [("go".to_owned(), UiEventKind::Click)]
         );
     }
@@ -623,7 +713,7 @@ mod tests {
         surface.moved(over, &mut Fixed, start);
         assert_eq!(press(&surface), 1.0);
         // Up, none.
-        surface.released(over, (Button::Primary, 1));
+        surface.released(over, (Button::Primary, 1), start);
         surface.animate(start, false);
         assert_eq!(press(&surface), 0.0);
         // Nor of another button.

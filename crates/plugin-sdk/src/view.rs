@@ -62,6 +62,16 @@ pub struct Node {
     /// a key alone, as the host keeps the focus by it.
     #[serde(default)]
     pub focusable: bool,
+    /// Whether the user drags it among its siblings that are reorderable
+    /// too, along its parent's direction, as a tab bar's tabs: the host
+    /// moves it under the pointer within their room, slides the others out
+    /// of its way, and scrolls a scroll area around them at its ends;
+    /// Escape puts it back. A drop at another place gives it a `reorder`,
+    /// of its index among them, which its plugin's next render shows, the
+    /// siblings sliding back where a render keeps their order. A node of a
+    /// key alone, as the host follows the drag by it.
+    #[serde(default)]
+    pub reorderable: bool,
     /// What a tooltip tells of it, as the pointer rests over it: a node of
     /// a key alone, as the host follows the pointer by it.
     #[serde(default)]
@@ -138,8 +148,8 @@ pub enum Kind {
     /// by `select` and `activate`. It takes the room that its layout gives
     /// it, a height or a grow.
     List(List),
-    /// A container that scrolls its children up and down, as a wheel or a
-    /// trackpad moves them, whose scroll the host keeps by the node's key.
+    /// A container that scrolls its children along its direction, down a
+    /// column or across a row, as a wheel or a trackpad moves them, whose scroll the host keeps by the node's key.
     /// It takes the room that its layout gives it.
     Scroll,
     /// A progress, a bar or a ring, of a state and how far it is, of the
@@ -609,8 +619,17 @@ pub enum UiEventKind {
         y: f32,
     },
     /// The drag ended without its end: the window lost the keyboard's
-    /// focus, Tab moved it, or the app took the pointer back.
+    /// focus, Tab moved it, Escape put a reorderable node back, or the app
+    /// took the pointer back.
     DragCancel,
+    /// A reorderable node was dragged and dropped at another place among
+    /// its siblings that are reorderable too, before its drag's end: its
+    /// index among them, from 0, which its plugin's next render puts it
+    /// at.
+    Reorder {
+        /// Its index among its reorderable siblings, itself among them.
+        index: usize,
+    },
     /// A wheel or a trackpad scrolled over it, `x` and `y` in points, a
     /// positive `y` towards the content above, as the system's natural
     /// scrolling has it.
@@ -828,6 +847,7 @@ impl Node {
             layout: Layout::default(),
             style: Style::default(),
             focusable: false,
+            reorderable: false,
             tooltip: None,
             label: None,
             role: None,
@@ -968,6 +988,13 @@ impl Node {
     #[must_use]
     pub fn focusable(mut self) -> Self {
         self.focusable = true;
+        self
+    }
+
+    /// The node, dragged among its siblings that are reorderable too.
+    #[must_use]
+    pub fn reorderable(mut self) -> Self {
+        self.reorderable = true;
         self
     }
 
@@ -1210,6 +1237,7 @@ mod tests {
         let events = [
             UiEventKind::DoubleClick,
             UiEventKind::DragMove { x: 12.0, y: -1.5 },
+            UiEventKind::Reorder { index: 2 },
             UiEventKind::SetValue {
                 value: "main".to_owned(),
             },
@@ -1233,6 +1261,7 @@ mod tests {
             json,
             concat!(
                 r#"[{"kind":"double-click"},{"kind":"drag-move","x":12.0,"y":-1.5},"#,
+                r#"{"kind":"reorder","index":2},"#,
                 r#"{"kind":"set-value","value":"main"},{"kind":"input-changed","text":"ma","revision":2},"#,
                 r#"{"kind":"submit","text":"main"},{"kind":"toggle","on":true},"#,
                 r#"{"kind":"select","item":3},{"kind":"activate","item":3},"#,

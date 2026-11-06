@@ -475,6 +475,56 @@ fn a_tab_shown_is_the_one_that_its_bar_scrolls_to() {
 }
 
 #[test]
+fn a_tab_dropped_at_another_place_of_its_bar_moves_there() {
+    let (mut host, mut plugin) = host(&[1, 1, 1], 1);
+    let view = ViewId::TabBar(WINDOW);
+    for style in ["standard", "unified", "seamless"] {
+        for position in ["top", "left"] {
+            host.set_config(Data::Map(BTreeMap::from([
+                ("style".to_owned(), Data::Text(style.to_owned())),
+                ("position".to_owned(), Data::Text(position.to_owned())),
+            ])));
+            host.deliver(&mut plugin).unwrap();
+            let node = host
+                .render(&mut plugin, &view)
+                .expect("a bar of three tabs");
+            // The tabs move among each other, the button of a new tab not.
+            let mut reorderable = Vec::new();
+            let mut walk = vec![&node];
+            while let Some(node) = walk.pop() {
+                if node.reorderable {
+                    reorderable.extend(node.key.as_ref().map(|key| key.0.clone()));
+                }
+                walk.extend(node.children.iter().rev());
+            }
+            assert_eq!(
+                reorderable,
+                ["tab-1", "tab-2", "tab-3"],
+                "{style} at the {position}"
+            );
+        }
+    }
+    host.take_done();
+    host.ui_event(
+        &mut plugin,
+        &UiEvent {
+            view,
+            key: "tab-3".into(),
+            kind: UiEventKind::Reorder { index: 0 },
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        host.take_done(),
+        [Request::MoveTab {
+            tab: TabId(3),
+            window: WINDOW,
+            index: 0
+        }]
+    );
+}
+
+#[test]
 fn the_bar_s_own_texts_are_its_catalogs_in_the_language_shown() {
     let (mut host, mut plugin) = host(&[1, 1], 1);
     host.set_message(NEW_TAB, &[], Some("Nuovo tab"))

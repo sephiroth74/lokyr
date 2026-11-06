@@ -16,6 +16,7 @@ use std::time::{Duration, Instant};
 use lokyr_plugin_sdk::view::{Easing, Key, Transition};
 
 use crate::layout::Layout;
+use crate::reorder::Reorder;
 use crate::tree::{NodeId, Tree};
 
 /// The transitions of a tree's nodes, by their keys.
@@ -38,6 +39,8 @@ pub struct Animations {
     presses: HashMap<Key, Hovering>,
     /// Whether the system reduces motion, as the last layout found it.
     reduced: bool,
+    /// The drag of a reorderable node, and its slides.
+    pub(crate) reorder: Reorder,
 }
 
 impl Default for Animations {
@@ -51,6 +54,7 @@ impl Default for Animations {
             pressable: HashMap::new(),
             presses: HashMap::new(),
             reduced: false,
+            reorder: Reorder::new(),
         }
     }
 }
@@ -215,6 +219,13 @@ impl Animations {
             kept.insert(key.clone(), animated);
         }
         self.nodes = kept;
+        // A drop's nodes slide of the drag's slides alone, from where they
+        // showed.
+        for key in self.reorder.laid_out(tree, layout, now, reduced) {
+            if let Some(animated) = self.nodes.get_mut(&key) {
+                animated.moving = None;
+            }
+        }
     }
 
     /// Whether a transition runs at `now`, for which the host draws a frame
@@ -228,6 +239,7 @@ impl Animations {
             .values()
             .chain(self.presses.values())
             .any(|hovering| hovering.fading.is_some_and(|run| !run.ended(now)))
+            || self.reorder.running(now)
     }
 
     /// The pointer is over the nodes of `hovered`'s keys, at `now`: the
@@ -276,12 +288,20 @@ impl Animations {
 
     /// How far the node of `key` shows from its place at `now`, in pixels
     /// of the last layout, as it slides to it, past the slides of the
-    /// nodes around it.
+    /// nodes around it, and as a drag moves it among its siblings.
     pub fn offset(&self, key: &Key, now: Instant) -> (f32, f32) {
-        self.nodes.get(key).map_or((0.0, 0.0), |animated| {
-            let (x, y) = animated.offset(now);
-            (x * self.scale, y * self.scale)
-        })
+        let (x, y) = self
+            .nodes
+            .get(key)
+            .map_or((0.0, 0.0), |animated| animated.offset(now));
+        let (across, down) = self.reorder.offset(key, now);
+        ((x + across) * self.scale, (y + down) * self.scale)
+    }
+
+    /// The key of the node dragged among its siblings, or on its way to its
+    /// place, which shows over them.
+    pub fn raised(&self) -> Option<&Key> {
+        self.reorder.raised()
     }
 
     /// The opacity that the node of `key` shows at `now`, as it fades; its

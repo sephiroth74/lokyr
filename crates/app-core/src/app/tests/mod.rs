@@ -30,6 +30,8 @@ mod panels;
 mod panes;
 mod parts;
 mod surfaces;
+#[cfg(feature = "plugin-tabs")]
+mod tabs;
 mod workers;
 
 /// The app of the tests, which draws with the tests' drawing, if at all.

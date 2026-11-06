@@ -7,7 +7,8 @@
 //! is not key too; the title's titlebar again is as before. The parts of the
 //! content where the moves come are tracking areas at their places from
 //! the view's top, as its height changes too, and the pointer's leaving
-//! them comes.
+//! them comes. The view lets AppKit drag the window from no press over
+//! it, translucent too, as it drags the window itself.
 
 #[cfg(target_os = "macos")]
 mod common;
@@ -18,8 +19,8 @@ mod probe {
     use std::rc::Rc;
 
     use lokyr_platform_core::{
-        AppEvent, ContentRect, Handler, Platform, Point, Size, Titlebar, WindowAttributes,
-        WindowEvent, WindowId, WindowSize,
+        AppEvent, Backdrop, ContentRect, Handler, Platform, Point, Size, Titlebar,
+        WindowAttributes, WindowEvent, WindowId, WindowSize,
     };
     use objc2::rc::Retained;
     use objc2::{MainThreadMarker, msg_send};
@@ -57,6 +58,9 @@ mod probe {
         /// pointer's leavings.
         tracked: Vec<(f64, Vec<[f64; 4]>)>,
         exits: usize,
+        /// Whether the view is opaque, and lets AppKit drag the window from
+        /// a press over it, of an opaque window and of a translucent one.
+        moves_window: Vec<(bool, bool)>,
     }
 
     /// The rectangles of `view`'s tracking areas, and its height.
@@ -192,6 +196,24 @@ mod probe {
                         seen.first_mouse.push(takes);
                     }
                     press(&content, (250.0, top), 1);
+                    // The view drags the window itself, from the bar's parts
+                    // that are not the content's, translucent too, as a
+                    // tab's drag would move it otherwise.
+                    for backdrop in [
+                        None,
+                        Some(Backdrop {
+                            color: [0.2, 0.4, 0.6, 0.8],
+                            blur: 20.0,
+                        }),
+                    ] {
+                        platform.set_translucent(id, backdrop);
+                        // SAFETY: the view's answer, of this signature.
+                        let opaque: bool = unsafe { msg_send![&*content, isOpaque] };
+                        // SAFETY: the view's answer, of this signature.
+                        let moves: bool = unsafe { msg_send![&*content, mouseDownCanMoveWindow] };
+                        seen.moves_window.push((opaque, moves));
+                    }
+                    platform.set_translucent(id, None);
                     platform.track_mouse_moves(id, true);
                     send(&content, NSEventType::MouseMoved, (120.0, top), 0);
                     platform.set_titlebar(id, Titlebar::Titled);
@@ -269,6 +291,11 @@ mod probe {
         }
         assert_ne!(seen.tracked[1].0, seen.tracked[0].0, "{seen:?}");
         assert_eq!(seen.exits, 1, "{seen:?}");
+        assert_eq!(
+            seen.moves_window,
+            [(true, false), (false, false)],
+            "{seen:?}"
+        );
         println!("titlebar: ok");
     }
 }

@@ -100,6 +100,7 @@ struct Entry {
     layout: Layout,
     style: Style,
     focusable: bool,
+    reorderable: bool,
     tooltip: Option<String>,
     label: Option<String>,
     role: Option<Role>,
@@ -194,6 +195,12 @@ impl Tree {
             .is_some_and(|entry| entry.focusable || entry.kind.takes_focus())
     }
 
+    /// Whether the user drags `id` among its reorderable siblings: `false`
+    /// if the tree lacks it.
+    pub fn reorderable(&self, id: NodeId) -> bool {
+        self.entry(id).is_some_and(|entry| entry.reorderable)
+    }
+
     /// The tooltip of `id`, if it has one.
     pub fn tooltip(&self, id: NodeId) -> Option<&str> {
         self.entry(id).and_then(|entry| entry.tooltip.as_deref())
@@ -274,12 +281,14 @@ impl Tree {
         }
         if entry.style != new.style
             || entry.focusable != new.focusable
+            || entry.reorderable != new.reorderable
             || entry.tooltip != new.tooltip
             || entry.label != new.label
             || entry.role != new.role
         {
             entry.style = new.style.clone();
             entry.focusable = new.focusable;
+            entry.reorderable = new.reorderable;
             entry.tooltip.clone_from(&new.tooltip);
             entry.label.clone_from(&new.label);
             entry.role = new.role;
@@ -345,6 +354,7 @@ impl Tree {
             layout: node.layout,
             style: node.style.clone(),
             focusable: node.focusable,
+            reorderable: node.reorderable,
             tooltip: node.tooltip.clone(),
             label: node.label.clone(),
             role: node.role,
@@ -478,6 +488,7 @@ fn valid_at<'a>(node: &'a Node, depth: usize, seen: &mut HashSet<&'a Key>) -> Re
     // do.
     if (node.kind.holds_state()
         || node.focusable
+        || node.reorderable
         || node.tooltip.is_some()
         || node.style.hover.is_some()
         || node.style.pressed.is_some())
@@ -512,7 +523,7 @@ fn template(row: &Node, depth: usize) -> Result<(), Invalid> {
         row.kind,
         Kind::Container | Kind::Text(_) | Kind::Icon(_) | Kind::Spacer | Kind::Separator
     );
-    if !plain || row.key.is_some() || row.focusable || row.tooltip.is_some() {
+    if !plain || row.key.is_some() || row.focusable || row.reorderable || row.tooltip.is_some() {
         return Err(Invalid::Template);
     }
     if !row.kind.has_children() && !row.children.is_empty() {

@@ -421,6 +421,7 @@ fn pill(tab: &Shown<'_>, (settings, texts): BarOf<'_>) -> Node {
     };
     Node::container(children)
         .key(tab_key(tab.tab.id.0).as_str())
+        .reorderable()
         .layout(Layout {
             gap: 4.0,
             align: Align::Center,
@@ -587,6 +588,7 @@ fn cell(tab: &Shown<'_>, top: bool, (settings, texts): BarOf<'_>) -> Node {
         },
     )
     .key(tab_key(tab.tab.id.0).as_str())
+    .reorderable()
     .style(tab_style(
         Style {
             background,
@@ -773,6 +775,7 @@ fn row(tab: &Shown<'_>, (settings, texts): BarOf<'_>) -> Node {
     };
     Node::container(children)
         .key(tab_key(tab.tab.id.0).as_str())
+        .reorderable()
         .layout(Layout {
             gap: 6.0,
             align: Align::Center,

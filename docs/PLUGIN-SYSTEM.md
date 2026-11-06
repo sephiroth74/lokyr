@@ -311,6 +311,12 @@ type Node = {
     distribution: ("fit" | "fill" | "fill-equally" | "fill-proportionally")?, -- for tabs nodes, as macOS's segmented controls: each tab of its content's width, the control in the middle, by default; or the control of the view's width, each tab of its content's and an equal share of the room left, of equal widths, or of its content's share
     style: Style?,
     focusable: boolean?, -- takes the keyboard's focus, by its key
+    -- Dragged among its siblings that are reorderable too, along its parent's direction, by its key, as a
+    -- bar's tabs: the host moves it under the pointer within their room, over them, slides the others out of
+    -- its way and scrolls a scroll area around them past its ends; Escape puts it back. A drop at another
+    -- place gives it a "reorder" of its index among them, which the next render shows; a render that keeps
+    -- the order, or none within half a second, slides them back.
+    reorderable: boolean?,
     tooltip: string?, -- shown as the pointer rests over the node, by its key
     children: { Node }?,
     -- What accessibility, as VoiceOver, takes the node for, in place of its kind's: a container a group, a
@@ -405,13 +411,14 @@ type UiEvent = {
     key: string,
     kind: "click" | "double-click" | "middle-click" | "hover-enter" | "hover-leave" | "context-menu"
         | "input-changed" | "submit" | "focus" | "blur" | "scroll"
-        | "drag-start" | "drag-move" | "drag-end" | "drag-cancel" | "set-value" | "toggle"
+        | "drag-start" | "drag-move" | "drag-end" | "drag-cancel" | "reorder" | "set-value" | "toggle"
         | "select" | "activate" | "list-range",
     text: string?, -- a field's text, as the host holds it: at each change, "input-changed", and as Return goes to it, "submit"
     revision: number?, -- an "input-changed" text's, one more at each edit, which `set_text` gives back
     item: number?, -- a list's item, selected or activated
     first: number?, count: number?, -- the items of a list that the host asks for, which the next render gives
     x: number?, y: number?, -- a drag's, from its start, or a scroll's, in points
+    index: number?, -- a "reorder"'s, the node's new index among its reorderable siblings, before its "drag-end"
     value: string?, -- set by accessibility, as VoiceOver's; its press comes as a click, its focus as a focus
     on: boolean?, -- a toggle's state asked, the other than its render's, which the next render gives
 }

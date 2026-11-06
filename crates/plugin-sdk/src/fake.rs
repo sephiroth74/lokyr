@@ -2117,6 +2117,9 @@ fn write_node(out: &mut String, node: &Node, depth: usize) {
     if node.focusable {
         out.push_str(" focusable");
     }
+    if node.reorderable {
+        out.push_str(" reorderable");
+    }
     out.push('\n');
     if let Kind::List(list) = &node.kind {
         let _ = writeln!(out, "{}row:", "  ".repeat(depth + 1));

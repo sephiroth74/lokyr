@@ -236,6 +236,9 @@ impl Plugin for Tabs {
             (UiEventKind::Click, _) if let Some(id) = id("close-") => cx.close_tab(TabId(id), true),
             (UiEventKind::Click, Some(tab)) => cx.activate_tab(tab),
             (UiEventKind::MiddleClick, Some(tab)) => cx.close_tab(tab, true),
+            // A tab dragged to another place in its bar, which the bar's
+            // next render shows.
+            (UiEventKind::Reorder { index }, Some(tab)) => cx.move_tab(tab, window, *index),
             (UiEventKind::DoubleClick, Some(tab)) => {
                 match cx.tabs(window)?.into_iter().find(|shown| shown.id == tab) {
                     Some(shown) => self.rename(cx, window, &shown, &Args::new()),

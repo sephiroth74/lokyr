@@ -885,6 +885,16 @@ define_class!(
         fn is_opaque(&self) -> bool {
             self.ivars().opaque.get()
         }
+
+        // SAFETY: AppKit's signature. AppKit would drag the window from
+        // anywhere over the titlebar where a view that is not opaque lies,
+        // as a translucent window's, a tab's drag too: the view drags it
+        // itself, from the titlebar's parts that are not the content's, as
+        // an opaque one's does.
+        #[unsafe(method(mouseDownCanMoveWindow))]
+        fn mouse_down_can_move_window(&self) -> bool {
+            false
+        }
     }
 
     unsafe impl NSObjectProtocol for ContentView {}

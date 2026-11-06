@@ -224,7 +224,9 @@ impl<B: Backend> App<B> {
             let Some(view) = view_mut(&mut state.chrome, id) else {
                 return true;
             };
-            let released = view.surface.released(local(view, at), (button, clicks));
+            let released = view
+                .surface
+                .released(local(view, at), (button, clicks), Instant::now());
             events.extend(told(view, released));
         }
         self.ui_events.extend(events);
@@ -296,6 +298,24 @@ impl<B: Backend> App<B> {
             let Some(state) = self.windows.get_mut(&window) else {
                 break;
             };
+            // Escape puts back a node that the pointer drags among its
+            // siblings, wherever the focus is.
+            if event.key == vt::Key::Escape && event.action == KeyAction::Press {
+                let now = Instant::now();
+                let mut cancelled = None;
+                for view in &mut state.chrome {
+                    if let Some(events) = view.surface.escape(now) {
+                        cancelled
+                            .get_or_insert_with(Vec::new)
+                            .extend(told(view, events));
+                    }
+                }
+                if let Some(events) = cancelled {
+                    self.ui_events.extend(events);
+                    platform.request_frame(window);
+                    continue;
+                }
+            }
             let before = state.focus.target();
             state.focus.set_every_control(every_control);
             let routed = {
@@ -331,7 +351,7 @@ impl<B: Backend> App<B> {
                     // of a drag.
                     let mut events = Vec::new();
                     for view in &mut state.chrome {
-                        let cancelled = view.surface.cancel();
+                        let cancelled = view.surface.cancel(Instant::now());
                         events.extend(told(view, cancelled));
                     }
                     state.captured = None;
@@ -487,11 +507,15 @@ impl<B: Backend> App<B> {
         };
         let mut events = Vec::new();
         for view in &mut state.chrome {
-            let cancelled = view.surface.cancel();
+            let cancelled = view.surface.cancel(Instant::now());
             events.extend(told(view, cancelled));
             view.surface.tooltip.dismiss();
         }
         state.captured = None;
+        // A node dragged among its siblings slides back.
+        if !events.is_empty() {
+            platform.request_frame(window);
+        }
         self.ui_events.extend(events);
         self.wake_for_tooltips(platform);
     }

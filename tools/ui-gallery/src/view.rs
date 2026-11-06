@@ -757,7 +757,7 @@ impl View {
         self.captured = None;
         let events = self
             .surface_mut(panel)
-            .map(|surface| surface.released(local, (button, clicks)))
+            .map(|surface| surface.released(local, (button, clicks), Instant::now()))
             .unwrap_or_default();
         self.apply(events);
     }
@@ -827,7 +827,7 @@ impl View {
                 // a drag.
                 let mut events = Vec::new();
                 for surface in self.all_mut() {
-                    events.extend(surface.cancel());
+                    events.extend(surface.cancel(Instant::now()));
                 }
                 self.captured = None;
                 self.apply(events);
@@ -915,7 +915,7 @@ impl View {
     pub fn cancel(&mut self) {
         let mut events = Vec::new();
         for surface in self.all_mut() {
-            events.extend(surface.cancel());
+            events.extend(surface.cancel(Instant::now()));
         }
         self.captured = None;
         self.dismiss_tooltips();

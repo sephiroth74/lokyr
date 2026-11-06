@@ -346,6 +346,16 @@ impl Gallery {
                 self.panel_click(key);
             }
             UiEventKind::Click if key == "anim.shuffle" => self.order.rotate_right(1),
+            // A tab dragged to another place among the others.
+            UiEventKind::Reorder { index } if key.starts_with("anim.tab-") => {
+                let moved = key["anim.tab-".len()..].parse::<usize>().ok();
+                if let Some(from) =
+                    moved.and_then(|tab| self.order.iter().position(|&at| at == tab))
+                {
+                    let tab = self.order.remove(from);
+                    self.order.insert(index.min(self.order.len()), tab);
+                }
+            }
             UiEventKind::Toggle { on } if key == "anim.boxed" => self.boxed = on,
             UiEventKind::Toggle { on } if key == "anim.slow" => self.slow = on,
             UiEventKind::Click if key == "bar.new" && self.tabs < TABS => {
@@ -401,6 +411,7 @@ impl Gallery {
                 self.drag = format!("dropped `{key}` at {x:.0}, {y:.0}");
             }
             UiEventKind::DragCancel => self.drag = format!("drag of `{key}` cancelled"),
+            UiEventKind::Reorder { index } => self.drag = format!("`{key}` moved to {index}"),
             UiEventKind::Scroll { x, y } => {
                 let (_, across, down) = self.scrolled;
                 self.scrolled = (format!("`{key}` by {x:.0}, {y:.0}"), across + x, down + y);
@@ -625,6 +636,7 @@ impl Gallery {
                     transition: Some(moving),
                     ..Style::default()
                 })
+                .reorderable()
             })
             .collect();
         let faded = Node::container(vec![Node::text("A box that fades")])
@@ -669,6 +681,7 @@ impl Gallery {
                 }),
                 controls,
                 faded,
+                secondary("Drag a tab among the others; Escape puts it back"),
                 secondary("Reduce motion in the system's settings makes them instant"),
             ],
         )

@@ -385,8 +385,17 @@ impl<'a, B: FontBackend> Painter<'a, B> {
         if let (Some(key), Some((animations, now))) = (tree.key(id), self.motion) {
             self.group = animations.hover(key, now);
         }
-        for &child in children {
+        // A node dragged among its siblings shows over them.
+        let raised = self
+            .motion
+            .and_then(|(animations, _)| animations.raised())
+            .and_then(|key| tree.by_key(key))
+            .filter(|raised| children.contains(raised));
+        for &child in children.iter().filter(|&&child| Some(child) != raised) {
             self.node(child, color);
+        }
+        if let Some(raised) = raised {
+            self.node(raised, color);
         }
         self.group = outer_group;
         if matches!(kind, Kind::Scroll) && !style.hides_indicator {
@@ -2757,6 +2766,71 @@ mod tests {
                 }
             ]
         );
+    }
+
+    #[test]
+    fn a_node_dragged_among_its_siblings_shows_over_them_where_the_pointer_is() {
+        use std::time::Instant;
+
+        use crate::animation::Animations;
+        // Three boxes of 100 points side by side, of their backgrounds.
+        let boxes = ["a", "b", "c"]
+            .iter()
+            .map(|key| {
+                Node::container(vec![])
+                    .key(*key)
+                    .reorderable()
+                    .layout(view::Layout {
+                        width: view::Length::Points(100.0),
+                        height: view::Length::Points(20.0),
+                        ..view::Layout::default()
+                    })
+                    .style(view::Style {
+                        background: Some(Token::from("accent")),
+                        ..view::Style::default()
+                    })
+            })
+            .collect();
+        let mut font = Font::new(Blocks, FontConfig::default(), 1.0).unwrap();
+        let mut tree = Tree::new();
+        let mut layout = Layout::new(1.0);
+        let changes = tree.update(&Node::container(boxes)).unwrap();
+        layout.update(&tree, &changes);
+        layout.compute(&tree, Some(400.0), None, &mut font);
+        let mut animations = Animations::new();
+        let now = Instant::now();
+        animations.laid_out(&tree, &layout, now, false);
+        let first = tree.children(tree.root().unwrap())[0];
+        assert!(animations.reorder.lift(&tree, &layout, first, now));
+        animations.reorder.drag(&layout, (60.0, 5.0), now);
+        let fields = Fields::new();
+        let items = paint(
+            &tree,
+            &layout,
+            &mut font,
+            &Theme::builtin().dark.tokens,
+            (0.0, 0.0),
+            Shown {
+                dark: true,
+                focused: None,
+                fields: &fields,
+                hovered: None,
+                pressed: None,
+                lists: &Lists::new(),
+                motion: Some((&animations, now)),
+            },
+        );
+        let xs: Vec<i32> = items
+            .iter()
+            .filter_map(|item| match item {
+                Item::Shapes(shapes) => Some(shapes.iter().map(|shape| shape.rect.x)),
+                _ => None,
+            })
+            .flatten()
+            .collect();
+        // The others at their places, the first after them, 60 points
+        // across, along the row alone.
+        assert_eq!(xs, [100, 200, 60]);
     }
 
     #[test]
