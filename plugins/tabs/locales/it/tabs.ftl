@@ -16,3 +16,4 @@ rename-detail = Lascialo vuoto per quello del tab: il titolo del suo programma, 
 bar-new-tab = Nuovo tab
 bar-close-tab = Chiudi tab
 bar-untitled = Tab { $index }
+bar-close-others = Chiudi gli altri tab

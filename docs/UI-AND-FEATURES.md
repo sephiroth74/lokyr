@@ -145,8 +145,8 @@ The `tabs` plugin. Each window's tab list lives in the kernel. The plugin handle
   - on a window's panes, its own or another's, it becomes a split of the pane under the pointer, in its half nearest the pointer, left, right, top or bottom, which lights up as the pointer passes; a tab of splits goes in whole, its layout in that half;
   - outside every window of Lokyr, it becomes a new window, of its window's size, the tab under the point where it was dropped.
 - With a single tab, the bar hides, by default: the window shows its title, and the tab moves by Move Tab to New Window, in the Window menu and the palette, which no key takes by default.
-- Double-click to rename.
-- Context menu: rename, color, close others, move to a new window.
+- Double-click to rename, in the question of its title, as Rename Tab… asks it; the title that it asked with, unchanged, leaves the tab's folder and program its own.
+- Context menu, the platform's: rename, move to a new window, close, close others; a tab's color, of a picker that the host lacks, later.
 - When there are too many tabs, each shrinks to a minimum width, and then the bar scrolls.
 
 ### Commands and shortcuts

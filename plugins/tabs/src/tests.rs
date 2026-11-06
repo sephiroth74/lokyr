@@ -223,6 +223,10 @@ fn a_rename_takes_its_title_or_asks_for_it() {
         answer(&mut host, &mut plugin, id, Some("logs")),
         [titled(Some("logs"))]
     );
+    // The title that it asked with, unchanged, leaves the tab as it was.
+    run(&mut host, &mut plugin, RENAME, Args::new());
+    let id = *plugin.renaming.keys().next().unwrap();
+    assert_eq!(answer(&mut host, &mut plugin, id, Some("logs ")), []);
     // An empty title gives the program's back; a cancel, nothing.
     run(&mut host, &mut plugin, RENAME, Args::new());
     let id = *plugin.renaming.keys().next().unwrap();
@@ -281,6 +285,117 @@ fn click(key: &str) -> UiEvent {
         key: key.into(),
         kind: UiEventKind::Click,
     }
+}
+
+#[test]
+fn a_tab_s_middle_click_double_click_and_context_menu_act_on_it() {
+    use lokyr_plugin_sdk::ui::{PanelId, Role};
+    let (mut host, mut plugin) = host(&[1, 1, 1], 1);
+    let on = |host: &mut FakeHost, plugin: &mut Tabs, view: ViewId, key: &str, kind| {
+        host.take_done();
+        host.ui_event(
+            plugin,
+            &UiEvent {
+                view,
+                key: key.into(),
+                kind,
+            },
+        )
+        .unwrap();
+        host.take_done()
+            .into_iter()
+            .filter(|request| !matches!(request, Request::Tabs(_) | Request::Message { .. }))
+            .collect::<Vec<_>>()
+    };
+    let bar = ViewId::TabBar(WINDOW);
+    // A middle click closes it, asking first.
+    assert_eq!(
+        on(
+            &mut host,
+            &mut plugin,
+            bar.clone(),
+            "tab-3",
+            UiEventKind::MiddleClick
+        ),
+        [Request::CloseTab {
+            tab: TabId(3),
+            ask: true
+        }]
+    );
+    // A double click asks for its title.
+    let asked = on(
+        &mut host,
+        &mut plugin,
+        bar.clone(),
+        "tab-2",
+        UiEventKind::DoubleClick,
+    );
+    assert!(matches!(asked[..], [Request::AskText { .. }]), "{asked:?}");
+    assert_eq!(
+        plugin.renaming.values().next().map(|(tab, _)| *tab),
+        Some(TabId(2))
+    );
+    // The context's button opens its menu at the pointer, of its items.
+    let opened = on(
+        &mut host,
+        &mut plugin,
+        bar,
+        "tab-2",
+        UiEventKind::ContextMenu,
+    );
+    let Some(Request::OpenPanel { options, .. }) = opened
+        .iter()
+        .find(|request| matches!(request, Request::OpenPanel { .. }))
+    else {
+        panic!("{opened:?}");
+    };
+    assert_eq!(options.role, Role::Menu);
+    let menu = ViewId::Panel(PanelId::from("tab-menu"));
+    let tree = host.render(&mut plugin, &menu).expect("the menu's items");
+    let keys: Vec<String> = tree
+        .children
+        .iter()
+        .filter_map(|item| item.key.as_ref().map(|key| key.0.clone()))
+        .collect();
+    assert_eq!(
+        keys,
+        [
+            "menu-rename",
+            "menu-detach",
+            "menu-close",
+            "menu-close-others"
+        ]
+    );
+    // Its items act on the tab that it opened over.
+    let chosen = on(
+        &mut host,
+        &mut plugin,
+        menu.clone(),
+        "menu-close-others",
+        UiEventKind::Click,
+    );
+    let closed: Vec<&Request> = chosen
+        .iter()
+        .filter(|request| matches!(request, Request::CloseTab { .. }))
+        .collect();
+    assert_eq!(
+        closed,
+        [&Request::CloseTab {
+            tab: TabId(1),
+            ask: true
+        }]
+    );
+    // Of no menu open, an item does nothing.
+    assert!(
+        on(
+            &mut host,
+            &mut plugin,
+            menu,
+            "menu-close",
+            UiEventKind::Click
+        )
+        .is_empty()
+    );
 }
 
 #[test]

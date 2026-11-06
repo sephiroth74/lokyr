@@ -21,3 +21,4 @@ rename-detail = Leave it empty for the tab's own: its program's title, or its fo
 bar-new-tab = New Tab
 bar-close-tab = Close Tab
 bar-untitled = Tab { $index }
+bar-close-others = Close Other Tabs

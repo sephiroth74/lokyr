@@ -20,7 +20,7 @@ use lokyr_plugin_sdk::event::WorkspaceEvent;
 use lokyr_plugin_sdk::host::{BarPlace, Color, TabId, TabInfo, WindowId};
 use lokyr_plugin_sdk::message::{Data, Event, KEYS_CHANGED};
 use lokyr_plugin_sdk::plugin::{Cx, Plugin};
-use lokyr_plugin_sdk::ui::{UiEvent, ViewId};
+use lokyr_plugin_sdk::ui::{Anchor, PanelId, PanelOptions, Role, UiEvent, ViewId};
 use lokyr_plugin_sdk::view::{Node, UiEventKind};
 
 use crate::bar::Settings;
@@ -57,6 +57,15 @@ const DETACH: &str = "tabs.detach";
 
 /// The plugin's catalogs, of its commands' titles and its question's
 /// texts.
+/// A tab's context menu, a panel, and its items' keys; and the message of
+/// its close of the other tabs.
+const MENU: &str = "tab-menu";
+const MENU_RENAME: &str = "menu-rename";
+const MENU_DETACH: &str = "menu-detach";
+const MENU_CLOSE: &str = "menu-close";
+const MENU_CLOSE_OTHERS: &str = "menu-close-others";
+const CLOSE_OTHERS: &str = "bar-close-others";
+
 /// The messages of the bar's own texts: the button of a new tab's, a
 /// tab's close button's, and the title of a tab of none, of its number.
 const NEW_TAB: &str = "bar-new-tab";
@@ -128,7 +137,9 @@ pub fn tab_bar(
 /// again as their trees change.
 #[derive(Debug, Default)]
 pub struct Tabs {
-    renaming: BTreeMap<u64, TabId>,
+    renaming: BTreeMap<u64, (TabId, String)>,
+    /// The tab whose context menu is open, of its window.
+    menu: Option<(WindowId, TabId)>,
     settings: Settings,
     width: Option<f32>,
     dragged_over: Option<f32>,
@@ -185,8 +196,12 @@ impl Plugin for Tabs {
         Some(include_str!("../tabs.schema.json"))
     }
 
-    /// A window's tab bar, of its tabs, each of the keys that select it.
+    /// A window's tab bar, of its tabs, each of the keys that select it;
+    /// and a tab's context menu.
     fn render(&mut self, cx: &mut Cx<'_>, view: &ViewId) -> Option<Node> {
+        if *view == ViewId::Panel(PanelId::from(MENU)) {
+            return Some(self.menu_tree(cx));
+        }
         let node = self.tree(cx, view);
         match self.views.iter_mut().find(|(known, _)| known == view) {
             Some((_, last)) => last.clone_from(&node),
@@ -198,26 +213,51 @@ impl Plugin for Tabs {
     /// A click on a tab selects it; on its close button, closes it, asking
     /// first while a program other than a shell runs there; on the button
     /// of a new tab, opens one.
+    /// A click selects a tab, closes it on its close button, and opens one
+    /// on the button of a new tab; a middle click closes a tab, a double
+    /// click renames it, and the context's button opens its menu, whose
+    /// items act on it.
     fn on_ui_event(&mut self, cx: &mut Cx<'_>, event: &UiEvent) -> Result<(), Error> {
+        let key = event.key.0.as_str();
+        if event.view == ViewId::Panel(PanelId::from(MENU)) {
+            return self.chosen(cx, key);
+        }
         let ViewId::TabBar(window) = &event.view else {
             return Ok(());
         };
-        if event.kind != UiEventKind::Click {
-            return Ok(());
-        }
-        let key = event.key.0.as_str();
+        let window = *window;
         let id = |prefix: &str| key.strip_prefix(prefix)?.parse::<u64>().ok();
-        if key == bar::NEW_KEY {
-            let (tab, _) = cx.new_tab(*window, None)?;
-            return cx.activate_tab(tab);
+        let tab = id("tab-").map(TabId);
+        match (&event.kind, tab) {
+            (UiEventKind::Click, _) if key == bar::NEW_KEY => {
+                let (tab, _) = cx.new_tab(window, None)?;
+                cx.activate_tab(tab)
+            }
+            (UiEventKind::Click, _) if let Some(id) = id("close-") => cx.close_tab(TabId(id), true),
+            (UiEventKind::Click, Some(tab)) => cx.activate_tab(tab),
+            (UiEventKind::MiddleClick, Some(tab)) => cx.close_tab(tab, true),
+            (UiEventKind::DoubleClick, Some(tab)) => {
+                match cx.tabs(window)?.into_iter().find(|shown| shown.id == tab) {
+                    Some(shown) => self.rename(cx, window, &shown, &Args::new()),
+                    None => Ok(()),
+                }
+            }
+            (UiEventKind::ContextMenu, Some(tab)) => {
+                self.menu = Some((window, tab));
+                // A menu of another tab's, open still, gives way.
+                let _ = cx.close_panel(MENU);
+                cx.open_panel(
+                    MENU,
+                    PanelOptions {
+                        anchor: Anchor::Pointer(window),
+                        role: Role::Menu,
+                        close_outside: true,
+                        close_escape: true,
+                    },
+                )
+            }
+            _ => Ok(()),
         }
-        if let Some(id) = id("close-") {
-            return cx.close_tab(TabId(id), true);
-        }
-        if let Some(id) = id("tab-") {
-            return cx.activate_tab(TabId(id));
-        }
-        Ok(())
     }
 
     fn on_command(&mut self, cx: &mut Cx<'_>, name: &str, args: Args) -> Result<(), Error> {
@@ -286,10 +326,15 @@ impl Plugin for Tabs {
         for event in events {
             match event {
                 Event::Answered { id, text } => {
-                    let (Some(tab), Some(text)) = (self.renaming.remove(id), text) else {
+                    let (Some((tab, asked)), Some(text)) = (self.renaming.remove(id), text) else {
                         continue;
                     };
                     let title = text.trim();
+                    // The text that it asked with, unchanged, leaves the
+                    // tab as it was, its folder and program its own.
+                    if title == asked.trim() {
+                        continue;
+                    }
                     // A tab that closed meanwhile takes nothing.
                     let _ = cx.set_tab_title(tab, (!title.is_empty()).then_some(title));
                 }
@@ -395,6 +440,52 @@ impl Tabs {
         bar::bar_with(&tabs, &keys, shortcut.as_deref(), (&self.settings, &texts))
     }
 
+    /// The context menu of a tab: its rename, its move to a window of its
+    /// own, its close and the others', of their titles in the language
+    /// shown.
+    fn menu_tree(&self, cx: &mut Cx<'_>) -> Node {
+        let mut title = |id: &str, english: &str| {
+            cx.message(id, &[])
+                .ok()
+                .filter(|text| text != id)
+                .unwrap_or_else(|| english.to_owned())
+        };
+        Node::container(vec![
+            Node::button(title("command-tabs-rename", "Rename Tab…")).key(MENU_RENAME),
+            Node::button(title("command-tabs-detach", "Move Tab to New Window")).key(MENU_DETACH),
+            Node::separator(),
+            Node::button(title("command-tabs-close", "Close Tab")).key(MENU_CLOSE),
+            Node::button(title(CLOSE_OTHERS, "Close Other Tabs")).key(MENU_CLOSE_OTHERS),
+        ])
+    }
+
+    /// The item `key` of a tab's context menu, chosen: of the tab that the
+    /// menu opened over, if it is open still.
+    fn chosen(&mut self, cx: &mut Cx<'_>, key: &str) -> Result<(), Error> {
+        let Some((window, tab)) = self.menu.take() else {
+            return Ok(());
+        };
+        let _ = cx.close_panel(MENU);
+        let Ok(tabs) = cx.tabs(window) else {
+            return Ok(());
+        };
+        let Some(shown) = tabs.iter().find(|shown| shown.id == tab) else {
+            return Ok(());
+        };
+        match key {
+            MENU_RENAME => self.rename(cx, window, shown, &Args::new()),
+            MENU_DETACH if tabs.len() > 1 => cx.tab_to_new_window(tab),
+            MENU_CLOSE => cx.close_tab(tab, true),
+            MENU_CLOSE_OTHERS => {
+                for other in tabs.iter().filter(|other| other.id != tab) {
+                    cx.close_tab(other.id, true)?;
+                }
+                Ok(())
+            }
+            _ => Ok(()),
+        }
+    }
+
     /// Renders again its views whose trees changed, so that the host draws
     /// no frame of the same; those of windows that closed go.
     fn render_again(&mut self, cx: &mut Cx<'_>) {
@@ -444,7 +535,7 @@ impl Tabs {
             return cx.set_tab_title(tab.id, Some(title));
         }
         let id = cx.ask_text(Some(window), "rename-message", "rename-detail", &tab.title)?;
-        self.renaming.insert(id, tab.id);
+        self.renaming.insert(id, (tab.id, tab.title.clone()));
         Ok(())
     }
 }
