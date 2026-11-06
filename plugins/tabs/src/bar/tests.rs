@@ -56,8 +56,8 @@ fn the_config_gives_the_bar_its_place_and_its_look() {
     let text = |value: &str| Data::Text(value.to_owned());
     assert_eq!(Settings::of(&Data::Nil), Settings::default());
     assert_eq!(Settings::default().place(None), BarPlace::Titlebar);
-    let regular = Settings::of(&config(&[("style", text("regular"))]));
-    assert_eq!(regular.place(None), BarPlace::BelowTitlebar);
+    let standard = Settings::of(&config(&[("style", text("standard"))]));
+    assert_eq!(standard.place(None), BarPlace::BelowTitlebar);
     let bottom = Settings::of(&config(&[("position", text("bottom"))]));
     assert_eq!(bottom.place(None), BarPlace::Bottom);
     let left = Settings::of(&config(&[
@@ -148,13 +148,14 @@ fn a_bar_shows_its_tabs_their_keys_and_their_close_buttons() {
 }
 
 #[test]
-fn a_column_lays_its_tabs_down_and_a_minimal_bar_takes_the_terminal_s_colors() {
+fn a_column_lays_its_tabs_down_and_a_seamless_bar_shows_the_window_s_background() {
     let column = Settings {
         position: Position::Left,
         ..Settings::default()
     };
     let tabs = [tab(1, "a", true), tab(2, "b", false)];
     let node = bar(&tabs, &[], Some("⌥⌘1"), &column).unwrap();
+    assert_eq!(node.style.background, Some(Token::from("tab.bar.bg")));
     // The rows down the column, and a line along its edge by the panes.
     let [list, edge] = &node.children[..] else {
         panic!("{node:#?}");
@@ -162,6 +163,21 @@ fn a_column_lays_its_tabs_down_and_a_minimal_bar_takes_the_terminal_s_colors() {
     assert_eq!(list.layout.direction, Direction::Column);
     assert!(matches!(edge.kind, Kind::Separator));
     assert_eq!(keyed(&node, "tab-1").unwrap().layout.grow, 0.0);
+    // The button of a new tab, its sign in its middle.
+    assert_eq!(
+        keyed(&node, NEW_KEY).unwrap().layout.justify,
+        Justify::Center
+    );
+    // The rows of rounded corners, a stadium's in the unified look, raised
+    // of its shadow too.
+    let radius = |look: Look| {
+        let settings = Settings { look, ..column };
+        let node = bar(&tabs, &[], None, &settings).unwrap();
+        let active = keyed(&node, "tab-1").unwrap();
+        (active.style.radius, active.style.shadow.is_some())
+    };
+    assert_eq!(radius(Look::Standard), (6.0, false));
+    assert_eq!(radius(Look::Unified), (ROW / 2.0, true));
     // The window's keys in the titlebar alone.
     assert!(!texts(&node).contains(&"⌥⌘1".to_owned()));
     let right = Settings {
@@ -170,20 +186,25 @@ fn a_column_lays_its_tabs_down_and_a_minimal_bar_takes_the_terminal_s_colors() {
     };
     let node = bar(&tabs, &[], None, &right).unwrap();
     assert!(matches!(node.children[0].kind, Kind::Separator));
-    let minimal = Settings {
-        look: Look::Minimal,
+    let seamless = Settings {
+        look: Look::Seamless,
         ..Settings::default()
     };
-    let node = bar(&tabs, &[], None, &minimal).unwrap();
-    assert_eq!(node.style.background, Some(Token::from("terminal.bg")));
+    let node = bar(&tabs, &[], None, &seamless).unwrap();
+    // The window's background through the bar and its active tab, and the
+    // others under the veil.
+    let veil = Some(Token::from("tab.seamless.veil"));
+    assert_eq!(node.style.background, None);
     let active = keyed(&node, "tab-1").unwrap();
+    assert_eq!(active.style.background, None);
     assert_eq!(active.style.color, Some(Token::from("terminal.fg")));
+    assert_eq!(keyed(&node, "tab-2").unwrap().style.background, veil);
     // The active cell open to the terminal, the other over a line.
     let line = |cell: &Node| cell.children.last().unwrap().style.background.clone();
     assert_eq!(line(active), None);
     assert_eq!(
         line(keyed(&node, "tab-2").unwrap()),
-        Some(Token::from("tab.minimal.line"))
+        Some(Token::from("tab.seamless.line"))
     );
     // A line between two cells.
     assert!(
@@ -194,20 +215,36 @@ fn a_column_lays_its_tabs_down_and_a_minimal_bar_takes_the_terminal_s_colors() {
     // At the bottom, the line above.
     let bottom = Settings {
         position: Position::Bottom,
-        ..minimal
+        ..seamless
     };
     let node = bar(&tabs, &[], None, &bottom).unwrap();
     let other = keyed(&node, "tab-2").unwrap();
     assert_eq!(
         other.children[0].style.background,
-        Some(Token::from("tab.minimal.line"))
+        Some(Token::from("tab.seamless.line"))
+    );
+    // Down a seamless column, the active row of the window's background,
+    // the others and the rest of the column under the veil.
+    let column = Settings {
+        position: Position::Left,
+        ..seamless
+    };
+    let node = bar(&tabs, &[], None, &column).unwrap();
+    assert_eq!(node.style.background, None);
+    assert_eq!(keyed(&node, "tab-1").unwrap().style.background, None);
+    assert_eq!(keyed(&node, "tab-2").unwrap().style.background, veil);
+    let list = &node.children[0];
+    let rest = list.children.last().unwrap();
+    assert_eq!(
+        (rest.style.background.clone(), rest.layout.grow),
+        (veil, 1.0)
     );
 }
 
 #[test]
 fn a_bar_in_the_titlebar_shows_the_window_s_keys_first() {
     let tabs = [tab(1, "a", true), tab(2, "b", false)];
-    for look in [Look::Compact, Look::Minimal] {
+    for look in [Look::Unified, Look::Seamless] {
         let settings = Settings {
             look,
             ..Settings::default()
@@ -219,11 +256,11 @@ fn a_bar_in_the_titlebar_shows_the_window_s_keys_first() {
         assert_eq!(texts(&node), ["a", "b"], "{look:?}");
     }
     // Below the titlebar, the titlebar's.
-    let regular = Settings {
-        look: Look::Regular,
+    let standard = Settings {
+        look: Look::Standard,
         ..Settings::default()
     };
-    let node = bar(&tabs, &[], Some("⌥⌘1"), &regular).unwrap();
+    let node = bar(&tabs, &[], Some("⌥⌘1"), &standard).unwrap();
     assert_eq!(texts(&node), ["a", "b"]);
 }
 
@@ -232,7 +269,7 @@ fn a_tab_of_a_color_shows_it() {
     let mut colored = tab(1, "a", true);
     colored.color = Some(Color::Rgb(200, 30, 4));
     let tabs = [colored, tab(2, "b", false)];
-    for look in [Look::Compact, Look::Minimal] {
+    for look in [Look::Unified, Look::Seamless] {
         for position in [Position::Top, Position::Left] {
             let settings = Settings {
                 look,

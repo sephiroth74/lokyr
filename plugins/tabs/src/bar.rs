@@ -5,20 +5,24 @@
 //!
 //! Its looks, after macOS's tabs and the terminal's own colors:
 //!
-//! - `regular` and `compact`: the tabs side by side in a rounded track, of
+//! - `standard` and `unified`: the tabs side by side in a rounded track, of
 //!   equal widths, each its title and its keys in its middle, the active
 //!   one a pill raised over the track, of a border and a shadow; the button
-//!   of a new tab a circle past the track. `regular` puts them in a strip
-//!   below the titlebar, or at the window's bottom; `compact`, in the
+//!   of a new tab a circle past the track. `standard` puts them in a strip
+//!   below the titlebar, or at the window's bottom; `unified`, in the
 //!   titlebar, after the window's shortcut.
-//! - `minimal`: the tabs as cells of the bar's whole height, of the
-//!   terminal's colors, a line between two, the active one open to the
-//!   terminal below it and the others over a line; its title in its
-//!   middle, its color and its keys at its end, and the button of a new
-//!   tab a cell of its own.
+//! - `seamless`: the tabs as cells of the bar's whole height, a line
+//!   between two, the active one of no background, the window's showing
+//!   through it as it does through the terminal, translucent and blurred
+//!   as the config makes it, open to the terminal below it, and the others
+//!   darker, of a veil, over a line; its title in its middle, its color and
+//!   its keys at its end, and the button of a new tab a cell of its own.
 //! - Down a column: a row each, its title at its start and its keys at its
-//!   end, the active one raised, or of the terminal's color in `minimal`,
-//!   and a line along the column's edge by the panes.
+//!   end, the active one raised, of rounded corners in `standard` and a
+//!   stadium's round ends in `unified`, or of the window's background in
+//!   `seamless`, the rest of the column under the veil; the button of a new
+//!   tab a row of its sign in its middle, and a line along the column's
+//!   edge by the panes.
 //!
 //! A tab's background lightens under the pointer and darkens as it is
 //! pressed, which the host draws and fades, with no render; its close
@@ -42,15 +46,15 @@ pub(crate) enum Position {
     Right,
 }
 
-/// The bar's look, of the config's `style`: `Regular`, below a titlebar of
-/// the window's title; `Compact` and `Minimal`, in the titlebar at the top,
-/// `Minimal` of the terminal's colors.
+/// The bar's look, of the config's `style`: `Standard`, below a titlebar of
+/// the window's title; `Unified` and `Seamless`, in the titlebar at the top,
+/// `Seamless` of the terminal's colors.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) enum Look {
-    Regular,
+    Standard,
     #[default]
-    Compact,
-    Minimal,
+    Unified,
+    Seamless,
 }
 
 /// When a tab shows its close button, of the config's `close-button`.
@@ -78,7 +82,7 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             position: Position::Top,
-            look: Look::Compact,
+            look: Look::Unified,
             hide_when_single: true,
             show_index: true,
             close_button: CloseButton::Hover,
@@ -110,9 +114,9 @@ impl Settings {
             _ => Position::Top,
         };
         settings.look = match text("style") {
-            Some("regular") => Look::Regular,
-            Some("minimal") => Look::Minimal,
-            _ => Look::Compact,
+            Some("standard") => Look::Standard,
+            Some("seamless") => Look::Seamless,
+            _ => Look::Unified,
         };
         settings.close_button = match text("close-button") {
             Some("always") => CloseButton::Always,
@@ -129,14 +133,14 @@ impl Settings {
         settings
     }
 
-    /// The bar's place: at the top in the titlebar, of a compact or a
-    /// minimal look, or below it, of a regular one; at the bottom; or down a
+    /// The bar's place: at the top in the titlebar, of a unified or a
+    /// seamless look, or below it, of a standard one; at the bottom; or down a
     /// column of `width` points, the user's drag's, or the config's.
     pub(crate) fn place(&self, width: Option<f32>) -> BarPlace {
         let (narrowest, widest) = COLUMN_WIDTHS;
         let width = width.unwrap_or(self.column_width).clamp(narrowest, widest);
         match (self.position, self.look) {
-            (Position::Top, Look::Regular) => BarPlace::BelowTitlebar,
+            (Position::Top, Look::Standard) => BarPlace::BelowTitlebar,
             (Position::Top, _) => BarPlace::Titlebar,
             (Position::Bottom, _) => BarPlace::Bottom,
             (Position::Left, _) => BarPlace::Left { width },
@@ -166,8 +170,8 @@ pub(crate) const NEW_KEY: &str = "new";
 /// How long a tab's hover and press fade, in seconds.
 const FADE: f32 = 0.15;
 
-/// A pill's height, in points: a tab's, across a bar of the regular or the
-/// compact look.
+/// A pill's height, in points: a tab's, across a bar of the standard or the
+/// unified look.
 const PILL: f32 = 24.0;
 
 /// The room between the track's edge and its pills, and between two, in
@@ -182,15 +186,19 @@ const MARGIN: f32 = 6.0;
 /// smaller than a text's line.
 const BUTTON: f32 = 14.0;
 
-/// A minimal bar's height across the bottom, in points; in the titlebar,
+/// A seamless bar's height across the bottom, in points; in the titlebar,
 /// the titlebar's.
 const CELL: f32 = 30.0;
 
-/// The width of a minimal bar's cell of a new tab, in points.
+/// The width of a seamless bar's cell of a new tab, in points.
 const NEW_CELL: f32 = 32.0;
 
 /// A row's height down a column, in points.
 const ROW: f32 = 28.0;
+
+/// The token of the veil that darkens the window's background in the
+/// seamless look, under its tabs but the active one.
+const VEIL: &str = "tab.seamless.veil";
 
 /// A tab as the bar shows it: its own, its title, or `Tab N` of none, and
 /// the keys that select it, as the config shows them.
@@ -233,12 +241,12 @@ pub(crate) fn bar(
     let window = window.filter(|_| settings.place(None) == BarPlace::Titlebar);
     Some(match settings.look {
         _ if settings.column() => column(&shown, settings),
-        Look::Minimal => cells(&shown, window, settings),
-        Look::Regular | Look::Compact => pills(&shown, window, settings),
+        Look::Seamless => cells(&shown, window, settings),
+        Look::Standard | Look::Unified => pills(&shown, window, settings),
     })
 }
 
-/// A bar of the regular or the compact look: its pills in their track,
+/// A bar of the standard or the unified look: its pills in their track,
 /// and the button of a new tab; in a strip of a line by the panes, or in
 /// the titlebar, after the window's keys.
 fn pills(tabs: &[Shown<'_>], window: Option<&str>, settings: &Settings) -> Node {
@@ -316,21 +324,7 @@ fn pill(tab: &Shown<'_>, settings: &Settings) -> Node {
         });
     let active = tab.tab.active;
     let style = if active {
-        Style {
-            background: Some(Token::from("tab.active.bg")),
-            border: Some(Border {
-                color: Token::from("tab.active.border"),
-                width: 1.0,
-            }),
-            shadow: Some(Shadow {
-                color: Token::from("tab.active.shadow"),
-                x: 0.0,
-                y: 1.0,
-                blur: 2.0,
-            }),
-            color: Some(Token::from("tab.active.fg")),
-            ..Style::default()
-        }
+        raised()
     } else {
         Style {
             color: Some(Token::from("tab.inactive.fg")),
@@ -366,10 +360,11 @@ fn pill(tab: &Shown<'_>, settings: &Settings) -> Node {
         .style(tab_style(style, PILL / 2.0, active))
 }
 
-/// A bar of the minimal look: its cells of the bar's height, a line
-/// between two, the active one open to the terminal, the others over a
-/// line, at the bar's bottom at the top and at its top at the bottom; after
-/// the window's keys in the titlebar.
+/// A bar of the seamless look: its cells of the bar's height, a line
+/// between two, the active one of the window's background and open to the
+/// terminal, the others under the veil and over a line, at the bar's bottom
+/// at the top and at its top at the bottom; after the window's keys in the
+/// titlebar, of the veil too. The bar draws no background of its own.
 fn cells(tabs: &[Shown<'_>], window: Option<&str>, settings: &Settings) -> Node {
     let top = settings.position != Position::Bottom;
     let mut children = Vec::new();
@@ -385,7 +380,7 @@ fn cells(tabs: &[Shown<'_>], window: Option<&str>, settings: &Settings) -> Node 
             grow: 1.0,
             ..Layout::default()
         });
-        children.push(lined(content, top, true, Layout::default()));
+        children.push(lined(content, top, true, Layout::default()).style(veiled()));
     }
     for tab in tabs {
         if !children.is_empty() {
@@ -410,33 +405,40 @@ fn cells(tabs: &[Shown<'_>], window: Option<&str>, settings: &Settings) -> Node 
             0.0,
             false,
         ));
-    children.push(lined(
-        plus,
-        top,
-        true,
-        Layout {
-            width: Length::Points(NEW_CELL),
-            ..Layout::default()
-        },
-    ));
-    Node::container(children)
-        .layout(Layout {
-            align: Align::Stretch,
-            height: if top {
-                Length::Auto
-            } else {
-                Length::Points(CELL)
+    children.push(
+        lined(
+            plus,
+            top,
+            true,
+            Layout {
+                width: Length::Points(NEW_CELL),
+                ..Layout::default()
             },
-            grow: 1.0,
-            ..Layout::default()
-        })
-        .style(Style {
-            background: Some(Token::from("terminal.bg")),
-            ..Style::default()
-        })
+        )
+        .style(veiled()),
+    );
+    Node::container(children).layout(Layout {
+        align: Align::Stretch,
+        height: if top {
+            Length::Auto
+        } else {
+            Length::Points(CELL)
+        },
+        grow: 1.0,
+        ..Layout::default()
+    })
 }
 
-/// The cell of `tab` in a minimal bar, at its top or not: its close button
+/// The style of a seamless bar's room that no active tab takes: under the
+/// veil, which darkens the window's background.
+fn veiled() -> Style {
+    Style {
+        background: Some(Token::from(VEIL)),
+        ..Style::default()
+    }
+}
+
+/// The cell of `tab` in a seamless bar, at its top or not: its close button
 /// at its start, its title in its middle, its color and its keys at its
 /// end.
 fn cell(tab: &Shown<'_>, top: bool, settings: &Settings) -> Node {
@@ -472,10 +474,10 @@ fn cell(tab: &Shown<'_>, top: bool, settings: &Settings) -> Node {
         grow: 1.0,
         ..Layout::default()
     });
-    let color = if active {
-        "terminal.fg"
+    let (background, color) = if active {
+        (None, "terminal.fg")
     } else {
-        "tab.inactive.fg"
+        (Some(Token::from(VEIL)), "tab.inactive.fg")
     };
     lined(
         content,
@@ -490,6 +492,7 @@ fn cell(tab: &Shown<'_>, top: bool, settings: &Settings) -> Node {
     .key(tab_key(tab.tab.id.0).as_str())
     .style(tab_style(
         Style {
+            background,
             color: Some(Token::from(color)),
             ..Style::default()
         },
@@ -508,7 +511,7 @@ fn lined(content: Node, top: bool, lined: bool, layout: Layout) -> Node {
             ..Layout::default()
         })
         .style(Style {
-            background: lined.then(|| Token::from("tab.minimal.line")),
+            background: lined.then(|| Token::from("tab.seamless.line")),
             ..Style::default()
         });
     let children = if top {
@@ -523,10 +526,12 @@ fn lined(content: Node, top: bool, lined: bool, layout: Layout) -> Node {
     })
 }
 
-/// A bar down a column: a row of each tab, and one of a new tab, and a
-/// line along the column's edge by the panes.
+/// A bar down a column: a row of each tab, and one of a new tab, its
+/// sign in its middle, and a line along the column's edge by the panes; in
+/// the seamless look, of no background of its own, the room that no active
+/// tab takes under the veil, down to the column's bottom.
 fn column(tabs: &[Shown<'_>], settings: &Settings) -> Node {
-    let minimal = settings.look == Look::Minimal;
+    let seamless = settings.look == Look::Seamless;
     let mut rows: Vec<Node> = tabs.iter().map(|tab| row(tab, settings)).collect();
     rows.push(
         Node::container(vec![Node::icon("add")])
@@ -535,30 +540,36 @@ fn column(tabs: &[Shown<'_>], settings: &Settings) -> Node {
             .tooltip("New Tab")
             .layout(Layout {
                 align: Align::Center,
-                padding: Edges {
-                    top: 0.0,
-                    right: 8.0,
-                    bottom: 0.0,
-                    left: 8.0,
-                },
+                justify: Justify::Center,
                 height: Length::Points(ROW),
                 ..Layout::default()
             })
             .style(tab_style(
                 Style {
+                    background: seamless.then(|| Token::from(VEIL)),
                     color: Some(Token::from("tab.inactive.fg")),
                     ..Style::default()
                 },
-                if minimal { 0.0 } else { 6.0 },
+                row_radius(settings.look),
                 false,
             )),
     );
+    if seamless {
+        rows.push(
+            Node::container(Vec::new())
+                .layout(Layout {
+                    grow: 1.0,
+                    ..Layout::default()
+                })
+                .style(veiled()),
+        );
+    }
     // Of the column's width, whatever its titles' widths.
     let list = Node::container(rows).layout(Layout {
         direction: Direction::Column,
         width: Length::Points(0.0),
-        gap: if minimal { 0.0 } else { 2.0 },
-        padding: if minimal {
+        gap: if seamless { 0.0 } else { 2.0 },
+        padding: if seamless {
             Edges::default()
         } else {
             Edges::all(6.0)
@@ -578,20 +589,18 @@ fn column(tabs: &[Shown<'_>], settings: &Settings) -> Node {
             ..Layout::default()
         })
         .style(Style {
-            background: Some(Token::from(if minimal {
-                "tab.minimal.bar.bg"
-            } else {
-                "tab.bar.bg"
-            })),
+            background: (!seamless).then(|| Token::from("tab.bar.bg")),
             ..Style::default()
         })
 }
 
 /// The row of `tab` down a column: its close button at its start, its
-/// title, its color and its keys at its end; the active one raised, or of
-/// the terminal's color in a minimal column.
+/// title, its color and its keys at its end; the active one raised, of a
+/// border in the standard look, a pill's in the unified one, or of the
+/// window's background in a seamless column, and the others under its
+/// veil.
 fn row(tab: &Shown<'_>, settings: &Settings) -> Node {
-    let minimal = settings.look == Look::Minimal;
+    let seamless = settings.look == Look::Seamless;
     let active = tab.tab.active;
     let mut children = Vec::new();
     if settings.close_button != CloseButton::Never {
@@ -602,25 +611,27 @@ fn row(tab: &Shown<'_>, settings: &Settings) -> Node {
     children.push(title);
     children.extend(dot(tab.tab.color));
     children.extend(tab.keys.map(keys));
-    let style = match (active, minimal) {
-        (true, true) => Style {
-            background: Some(Token::from("terminal.bg")),
+    let style = match (active, settings.look) {
+        (true, Look::Seamless) => Style {
             color: Some(Token::from("terminal.fg")),
             ..Style::default()
         },
-        (true, false) => Style {
-            background: Some(Token::from("tab.active.bg")),
-            border: Some(Border {
-                color: Token::from("tab.active.border"),
-                width: 1.0,
-            }),
-            color: Some(Token::from("tab.active.fg")),
-            ..Style::default()
+        (true, Look::Unified) => raised(),
+        (true, Look::Standard) => Style {
+            shadow: None,
+            ..raised()
         },
         (false, _) => Style {
+            background: seamless.then(|| Token::from(VEIL)),
             color: Some(Token::from("tab.inactive.fg")),
             ..Style::default()
         },
+    };
+    // A stadium's ends round further in.
+    let inset = if settings.look == Look::Unified {
+        4.0
+    } else {
+        0.0
     };
     Node::container(children)
         .key(tab_key(tab.tab.id.0).as_str())
@@ -629,14 +640,45 @@ fn row(tab: &Shown<'_>, settings: &Settings) -> Node {
             align: Align::Center,
             padding: Edges {
                 top: 0.0,
-                right: 10.0,
+                right: 10.0 + inset,
                 bottom: 0.0,
-                left: 6.0,
+                left: 6.0 + inset,
             },
             height: Length::Points(ROW),
             ..Layout::default()
         })
-        .style(tab_style(style, if minimal { 0.0 } else { 6.0 }, active))
+        .style(tab_style(style, row_radius(settings.look), active))
+}
+
+/// The radius of a row's corners down a column of `look`: none in the
+/// seamless look, a stadium's, of round ends, in the unified one, as its
+/// pills are.
+fn row_radius(look: Look) -> f32 {
+    match look {
+        Look::Standard => 6.0,
+        Look::Unified => ROW / 2.0,
+        Look::Seamless => 0.0,
+    }
+}
+
+/// The style of the active tab raised over the others: its background, its
+/// border and its shadow, and its text's color.
+fn raised() -> Style {
+    Style {
+        background: Some(Token::from("tab.active.bg")),
+        border: Some(Border {
+            color: Token::from("tab.active.border"),
+            width: 1.0,
+        }),
+        shadow: Some(Shadow {
+            color: Token::from("tab.active.shadow"),
+            x: 0.0,
+            y: 1.0,
+            blur: 2.0,
+        }),
+        color: Some(Token::from("tab.active.fg")),
+        ..Style::default()
+    }
 }
 
 /// `style` of a tab, of corners of `radius`: its hover, the active tab's

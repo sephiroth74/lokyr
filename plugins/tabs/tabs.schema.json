@@ -9,9 +9,9 @@
       "default": "top"
     },
     "style": {
-      "description": "The bar's look: regular, below a titlebar of the window's title; compact and minimal, in the titlebar at the top, minimal of the terminal's colors.",
-      "enum": ["regular", "compact", "minimal"],
-      "default": "compact"
+      "description": "The bar's look: standard, below a titlebar of the window's title; unified and seamless, in the titlebar at the top, seamless of the window's background.",
+      "enum": ["standard", "unified", "seamless"],
+      "default": "unified"
     },
     "hide-when-single": {
       "description": "Whether the bar hides while the window has one tab.",

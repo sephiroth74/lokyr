@@ -93,7 +93,7 @@ The `tabs` plugin. Each window's tab list lives in the kernel. The plugin handle
 ### Window integration
 
 **macOS**
-- **Tab bar in the titlebar**: `NSWindow` with `fullSizeContentView`, a transparent titlebar and a hidden title. Our engine draws the tab bar where the titlebar would be, past the window's buttons, in the compact and minimal styles; the regular style keeps a titlebar of the window's title and draws the bar below it, of its view's height ([Appearance](#appearance)).
+- **Tab bar in the titlebar**: `NSWindow` with `fullSizeContentView`, a transparent titlebar and a hidden title. Our engine draws the tab bar where the titlebar would be, past the window's buttons, in the unified and seamless styles; the standard style keeps a titlebar of the window's title and draws the bar below it, of its view's height ([Appearance](#appearance)).
 - **The window's number**: as the user asked on 4 November 2026, after iTerm2's, each window has a number, the lowest that no other open window has as it opens, and ⌥⌘1 to ⌥⌘9 bring the windows of the first nine forward, `window.goto { index }`; the titlebar shows its shortcut, as the keymap binds it, ⌥⌘1: at its right in a titlebar of the window's title, and after the window's buttons in a titlebar of tabs, where the bar's plugin draws it, as `WindowInfo` gives the plugins the window's number and keys; the config's [`title-shortcut`](CONFIGURATION.md#title-shortcut) can hide it; the quick terminal has none.
 - **Native tabs disabled**: `tabbingMode = .disallowed` and `NSWindow.allowsAutomaticWindowTabbing = false`.
 - **Traffic lights**: an empty compact unified `NSToolbar` (`unifiedCompact`) vertically centers them on the bar, which is 40 points high on macOS 26 and later, against 32 for the titlebar alone. Moving them by hand means fighting AppKit's relayout. The platform tells the room that they take at the bar's left, with a margin after them as wide as the one before them.
@@ -114,8 +114,8 @@ The `tabs` plugin. Each window's tab list lives in the kernel. The plugin handle
 
 ### Appearance
 
-- **Styles**: `regular`, `compact` and `minimal`, like iTerm2's themes: `regular`, the bar below a titlebar of the window's title; `compact`, the tabs in the titlebar, of the theme's colors of the chrome; `minimal`, the tabs in the titlebar too, of the colors of the terminal's theme.
-- **Position**: as the user asked on 4 November 2026, after iTerm2's, the bar at the window's top, bottom, left or right. At the top, as the styles put it; at the bottom, across the window's bottom, below the status bar, under a titlebar of the window's title; on the left or the right, a column from below a titlebar of the window's title to the window's bottom, its tabs one below another, each of its title and its shortcut, which scrolls past the window's height, of a width that the config gives and a drag of its edge changes. `compact` and `minimal` put the tabs in the titlebar at the top alone, and elsewhere give the tabs' look alone. The host lays the panes out in the room that the bar leaves, the bar's place told by its plugin, and with a single tab the bar, a column too, takes no room.
+- **Styles**: `standard`, `unified` and `seamless`, after iTerm2's themes, whose names they leave to it, as the user chose on 6 November 2026: `standard`, the bar below a titlebar of the window's title; `unified`, the tabs in the titlebar, of the theme's colors of the chrome; `seamless`, the tabs in the titlebar too, the active one of the window's own background, translucent as the window is, and the others under a veil that darkens it.
+- **Position**: as the user asked on 4 November 2026, after iTerm2's, the bar at the window's top, bottom, left or right. At the top, as the styles put it; at the bottom, across the window's bottom, below the status bar, under a titlebar of the window's title; on the left or the right, a column from below a titlebar of the window's title to the window's bottom, its tabs one below another, each of its title and its shortcut, which scrolls past the window's height, of a width that the config gives and a drag of its edge changes. `unified` and `seamless` put the tabs in the titlebar at the top alone, and elsewhere give the tabs' look alone. The host lays the panes out in the room that the bar leaves, the bar's place told by its plugin, and with a single tab the bar, a column too, takes no room.
 - **Colors**: the theme's tokens alone, `tab.bar.bg`, `tab.active.bg`, `tab.inactive.bg`, `tab.hover.bg` and their texts', so that the themes, still to define, restyle the bar; the window draws nothing of its own in it, and shows the terminal's background where the bar's view leaves room; derived from the terminal theme when not specified (see [iTerm2 themes](#iterm2-themes)).
 - **Per-tab colors**: from the config, from a menu, or from iTerm2's `OSC 6;1;bg;red|green|blue;brightness;N` sequence.
 - **States**: active, inactive and hover, with configurable separators and corner radius. Under the pointer, as the user asked on 4 November 2026, a tab's hover background fades in, and out as the pointer leaves, of about 0.15 s, which the host draws of the node's hover style, as the pointer moves, without a render of the plugin's; Reduce motion makes it instant.
@@ -163,7 +163,7 @@ The `tabs` plugin. Each window's tab list lives in the kernel. The plugin handle
 ```toml
 [plugins.tabs]
 position = "top"          # top | bottom | left | right
-style = "compact"         # regular | compact | minimal
+style = "unified"         # standard | unified | seamless
 hide-when-single = true
 show-index = true
 close-button = "hover"    # always | hover | never

@@ -167,7 +167,7 @@ performance-corner = "bottom-right"  # top-right | top-left | bottom-right | bot
 
 [plugins.tabs]
 position = "top"                     # top | bottom | left | right: where the tab bar goes
-style = "compact"                    # regular | compact | minimal: the bar's look
+style = "unified"                    # standard | unified | seamless: the bar's look
 hide-when-single = true              # true | false: no bar for a single tab
 show-index = true                    # true | false: ⌘1 to ⌘9 on the first nine tabs
 close-button = "hover"               # always | hover | never: a tab's close button
@@ -1370,12 +1370,12 @@ The bar's look.
 
 | Values | Default |
 |---|---|
-| `"regular"`, `"compact"`, `"minimal"` | `"compact"` |
+| `"standard"`, `"unified"`, `"seamless"` | `"unified"` |
 
-- `"regular"` puts the bar in a strip below a titlebar of the window's title: the tabs side by side in a rounded track, of equal widths, each its title and its keys in its middle, the one shown raised over the track; the button of a new tab a circle after the track.
-- `"compact"` puts the same tabs in the titlebar, past the window's buttons and the keys that bring the window forward, as [`title-shortcut`](#title-shortcut) shows them.
-- `"minimal"` puts the tabs in the titlebar too, of the terminal's colors: each a cell of the titlebar's height, a line between two, the one shown open to the terminal below it and the others over a line; its title in its middle, its color and its keys at its end, and the button of a new tab a cell of its own.
-- At the bottom, each look keeps its tabs, under a titlebar of the window's title; down a column, the tabs are rows, the one shown raised, or of the terminal's colors in `"minimal"`.
+- `"standard"` puts the bar in a strip below a titlebar of the window's title: the tabs side by side in a rounded track, of equal widths, each its title and its keys in its middle, the one shown raised over the track; the button of a new tab a circle after the track.
+- `"unified"` puts the same tabs in the titlebar, past the window's buttons and the keys that bring the window forward, as [`title-shortcut`](#title-shortcut) shows them.
+- `"seamless"` puts the tabs in the titlebar too, as cells of the titlebar's height, a line between two. The one shown has the window's own background, translucent and blurred as [`background-opacity`](#background-opacity) and [`background-blur`](#background-blur) make it, and opens onto the terminal below it; the others are a little darker, over a line. Each has its title in its middle, its color and its keys at its end, and the button of a new tab is a cell of its own.
+- At the bottom, each look keeps its tabs, under a titlebar of the window's title; down a column, the tabs are rows, the one shown raised, with rounded corners in `"standard"` and round ends in `"unified"`, or of the window's background in `"seamless"`, with the rest of the column a little darker; the button of a new tab is a row of its own, its sign in its middle.
 - A title too long for its tab ends in an ellipsis. A tab's background lightens under the pointer and darkens as you press it, fading in and out, at once where the system reduces motion; its close button shows at its start.
 - It applies at once, as you save the file.
 

@@ -999,14 +999,15 @@ type Bar = (&'static str, &'static str, &'static str, (f32, Option<f32>));
 /// `[plugins.tabs]` asks for them, of their width and, in the titlebar and
 /// down a column, of their height, in points, the pointer over the third
 /// tab.
-const BARS: [Bar; 7] = [
-    ("regular-top", "regular", "top", (640.0, None)),
-    ("regular-bottom", "regular", "bottom", (640.0, None)),
-    ("compact", "compact", "top", (640.0, Some(40.0))),
-    ("minimal-top", "minimal", "top", (640.0, Some(40.0))),
-    ("minimal-bottom", "minimal", "bottom", (640.0, None)),
-    ("regular-left", "regular", "left", (200.0, Some(180.0))),
-    ("minimal-left", "minimal", "left", (200.0, Some(180.0))),
+const BARS: [Bar; 8] = [
+    ("standard-top", "standard", "top", (640.0, None)),
+    ("standard-bottom", "standard", "bottom", (640.0, None)),
+    ("unified", "unified", "top", (640.0, Some(40.0))),
+    ("seamless-top", "seamless", "top", (640.0, Some(40.0))),
+    ("seamless-bottom", "seamless", "bottom", (640.0, None)),
+    ("standard-left", "standard", "left", (200.0, Some(180.0))),
+    ("unified-left", "unified", "left", (200.0, Some(180.0))),
+    ("seamless-left", "seamless", "left", (200.0, Some(180.0))),
 ];
 
 /// Draws the tab bar of `style` at `position`, laid out as a window lays

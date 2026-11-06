@@ -110,8 +110,8 @@ const LIGHT_TOKENS: &[TokenColor] = &[
     ("tab.inactive.bg", 0x000000, 0.0),
     ("tab.inactive.fg", 0x5e5e64, 1.0),
     ("tab.hover.bg", 0x000000, 0.05),
-    ("tab.minimal.line", 0x000000, 0.12),
-    ("tab.minimal.bar.bg", 0xececee, 1.0),
+    ("tab.seamless.line", 0x000000, 0.12),
+    ("tab.seamless.veil", 0x000000, 0.06),
     ("tabs.bg", 0x000000, 0.06),
     ("tabs.chosen.bg", 0x0a64d8, 1.0),
     ("tabs.chosen.fg", 0xffffff, 1.0),
@@ -161,8 +161,8 @@ const DARK_TOKENS: &[TokenColor] = &[
     ("tab.inactive.bg", 0x000000, 0.0),
     ("tab.inactive.fg", 0x9a9aa0, 1.0),
     ("tab.hover.bg", 0xffffff, 0.06),
-    ("tab.minimal.line", 0xffffff, 0.12),
-    ("tab.minimal.bar.bg", 0x161618, 1.0),
+    ("tab.seamless.line", 0xffffff, 0.12),
+    ("tab.seamless.veil", 0x000000, 0.27),
     ("tabs.bg", 0xffffff, 0.08),
     ("tabs.chosen.bg", 0x2462c4, 1.0),
     ("tabs.chosen.fg", 0xffffff, 1.0),
@@ -405,7 +405,6 @@ mod tests {
                 ("text.secondary", "panel.bg"),
                 ("tab.active.fg", "tab.active.bg"),
                 ("tab.inactive.fg", "tab.bar.bg"),
-                ("tab.inactive.fg", "tab.minimal.bar.bg"),
                 ("tab.inactive.fg", "terminal.bg"),
                 ("accent", "panel.bg"),
                 ("tooltip.fg", "tooltip.bg"),
@@ -417,13 +416,17 @@ mod tests {
                 // WCAG's AA for text.
                 assert!(ratio >= 4.5, "{name}: {text} on {background}: {ratio:.2}");
             }
-            // A tab's text on the track, over the bar.
+            // A tab's text on the track, over the bar, and on the veil,
+            // over the terminal's background.
             let track = over(token("tab.track.bg"), opaque(token("tab.bar.bg")));
-            let ratio = contrast(opaque(token("tab.inactive.fg")), track);
-            assert!(
-                ratio >= 4.5,
-                "{name}: tab.inactive.fg on the track: {ratio:.2}"
-            );
+            let veiled = over(token("tab.seamless.veil"), opaque(token("terminal.bg")));
+            for (under, shown) in [(track, "the track"), (veiled, "the veil")] {
+                let ratio = contrast(opaque(token("tab.inactive.fg")), under);
+                assert!(
+                    ratio >= 4.5,
+                    "{name}: tab.inactive.fg on {shown}: {ratio:.2}"
+                );
+            }
             // A match shows on the terminal's background, of its hue as
             // much as of its lightness, the current one apart from the
             // others, and the text reads on both.
