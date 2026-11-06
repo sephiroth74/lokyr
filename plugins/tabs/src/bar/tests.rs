@@ -251,6 +251,16 @@ fn a_bar_in_the_titlebar_shows_the_window_s_keys_first() {
         };
         let node = bar(&tabs, &[], Some("⌥⌘1"), &settings).unwrap();
         assert_eq!(texts(&node)[0], "⌥⌘1", "{look:?}");
+        // Of the titlebar's background, as the window's buttons are.
+        if look == Look::Seamless {
+            let keys = &node.children[0];
+            assert_eq!(keys.style.background, None);
+            assert!(
+                keys.children
+                    .iter()
+                    .all(|child| child.style.background.is_none())
+            );
+        }
         // None while the config hides them, which the host gives none.
         let node = bar(&tabs, &[], None, &settings).unwrap();
         assert_eq!(texts(&node), ["a", "b"], "{look:?}");

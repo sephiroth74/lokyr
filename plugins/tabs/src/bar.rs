@@ -364,7 +364,8 @@ fn pill(tab: &Shown<'_>, settings: &Settings) -> Node {
 /// between two, the active one of the window's background and open to the
 /// terminal, the others under the veil and over a line, at the bar's bottom
 /// at the top and at its top at the bottom; after the window's keys in the
-/// titlebar, of the veil too. The bar draws no background of its own.
+/// titlebar, of the titlebar's background and of no line, as the room of
+/// the window's buttons is. The bar draws no background of its own.
 fn cells(tabs: &[Shown<'_>], window: Option<&str>, settings: &Settings) -> Node {
     let top = settings.position != Position::Bottom;
     let mut children = Vec::new();
@@ -380,7 +381,7 @@ fn cells(tabs: &[Shown<'_>], window: Option<&str>, settings: &Settings) -> Node 
             grow: 1.0,
             ..Layout::default()
         });
-        children.push(lined(content, top, true, Layout::default()).style(veiled()));
+        children.push(lined(content, top, false, Layout::default()));
     }
     for tab in tabs {
         if !children.is_empty() {
