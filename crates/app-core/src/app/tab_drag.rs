@@ -1,13 +1,15 @@
-//! A tab dragged out of its bar, into another window's bar or out of every
-//! window: its image under the pointer, a card of the tab over its panes as
-//! they showed as it left, which the platform shows over every window; its
-//! window showing the tab next to it meanwhile; the bar of another window
-//! opening a room for it under the pointer; and its drop, of which its
-//! plugin makes the tab's move, or its way back, as Escape puts it.
+//! A tab dragged out of its bar, into another window's bar, into a pane of
+//! another tab, or out of every window: its image under the pointer, a card
+//! of the tab over its panes as they showed as it left, which the platform
+//! shows over every window; its window showing the tab next to it
+//! meanwhile; the bar of another window opening a room for it under the
+//! pointer, or the half of a pane under it lighting up, nearest the
+//! pointer; and its drop, of which its plugin makes the tab's move, or its
+//! way back, as Escape puts it.
 
 use std::time::Instant;
 
-use lokyr_kernel::plugins::host::BarPlace;
+use lokyr_kernel::plugins::host::{BarPlace, Edge};
 use lokyr_kernel::plugins::ui::Slot;
 use lokyr_kernel::plugins::view::{Key as NodeKey, UiEventKind};
 use lokyr_kernel::workspace;
@@ -66,6 +68,8 @@ pub(crate) struct TabDrag<B: Backend> {
     /// The bar of another window that opened a room for it, and that bar's
     /// view.
     room: Option<(WindowId, u32)>,
+    /// The half of a pane of another tab that it lit up, under the pointer.
+    lit: Option<Lit>,
     /// The image's list, of the picture of the tab's panes, which the
     /// renderer holds during the drag, and the surface that shows it, at
     /// its window's scale.
@@ -86,6 +90,18 @@ impl<B: Backend> std::fmt::Debug for TabDrag<B> {
             .field("room", &self.room)
             .finish_non_exhaustive()
     }
+}
+
+/// The half of a pane of another tab than a dragged one, under the
+/// pointer, which lights up for the tab's drop there: its window, the pane,
+/// its edge nearest the pointer, and that half, in pixels from the window's
+/// content's corner.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct Lit {
+    window: WindowId,
+    pane: workspace::PaneId,
+    edge: Edge,
+    half: Rect,
 }
 
 /// What a tab's drop does.
@@ -343,6 +359,7 @@ impl<B: Backend> App<B> {
             alone,
             content,
             room: None,
+            lit: None,
             list,
             picture,
             surface: None,
@@ -452,9 +469,20 @@ impl<B: Backend> App<B> {
             }
         }
         let room = self.bar_under(platform, window, at);
+        // Past every bar, the half of a pane under the pointer lights up.
+        let lit = room
+            .is_none()
+            .then(|| self.pane_half_under(platform, at))
+            .flatten();
         let Some(drag) = self.tab_drag.as_mut() else {
             return;
         };
+        if drag.lit != lit {
+            let before = std::mem::replace(&mut drag.lit, lit);
+            for shown in [before, lit].into_iter().flatten() {
+                platform.request_frame(shown.window);
+            }
+        }
         let left = drag.room.filter(|&before| Some(before) != room);
         drag.room = room;
         self.close_tab_room(platform, left);
@@ -519,6 +547,76 @@ impl<B: Backend> App<B> {
         over.then_some((dest, view.id))
     }
 
+    /// The half of a pane of another tab than the one dragged, at `at` on
+    /// the screens, of a window of the app, the drag's own too, as it lays
+    /// its panes out: the half of the pane's edge nearest the pointer.
+    fn pane_half_under(&self, platform: &dyn Platform, at: ScreenPoint) -> Option<Lit> {
+        let drag = self.tab_drag.as_ref()?;
+        let dest = platform.window_at(at)?;
+        let size = platform.window_size(dest)?;
+        let position = local_of(platform, dest, at)?;
+        let (x, y) = (position.x * size.scale, position.y * size.scale);
+        let view = self.windows.get(&dest)?.views.iter().find(|view| {
+            let rect = view.rect;
+            x >= f64::from(rect.x)
+                && y >= f64::from(rect.y)
+                && x < f64::from(rect.x) + f64::from(rect.width)
+                && y < f64::from(rect.y) + f64::from(rect.height)
+        })?;
+        if self.workspace.tab_of(view.pane) == Some(drag.tab) {
+            return None;
+        }
+        let rect = view.rect;
+        let across = (x - f64::from(rect.x)) / f64::from(rect.width.max(1));
+        let down = (y - f64::from(rect.y)) / f64::from(rect.height.max(1));
+        let edge = [
+            (across, Edge::Left),
+            (1.0 - across, Edge::Right),
+            (down, Edge::Top),
+            (1.0 - down, Edge::Bottom),
+        ]
+        .into_iter()
+        .min_by(|a, b| a.0.total_cmp(&b.0))
+        .map(|(_, edge)| edge)?;
+        let (wide, high) = (rect.width / 2, rect.height / 2);
+        let half = match edge {
+            Edge::Left => Rect {
+                width: wide,
+                ..rect
+            },
+            Edge::Right => Rect {
+                x: rect.x.saturating_add_unsigned(rect.width - wide),
+                width: wide,
+                ..rect
+            },
+            Edge::Top => Rect {
+                height: high,
+                ..rect
+            },
+            Edge::Bottom => Rect {
+                y: rect.y.saturating_add_unsigned(rect.height - high),
+                height: high,
+                ..rect
+            },
+        };
+        Some(Lit {
+            window: dest,
+            pane: view.pane,
+            edge,
+            half,
+        })
+    }
+
+    /// The half of a pane of `window` that the tab dragged lights up, if
+    /// it lights one there.
+    pub(super) fn lit_half(&self, window: WindowId) -> Option<Rect> {
+        self.tab_drag
+            .as_ref()
+            .and_then(|drag| drag.lit)
+            .filter(|lit| lit.window == window)
+            .map(|lit| lit.half)
+    }
+
     /// Closes the room that the bar of `room`, a window's view, opened.
     fn close_tab_room(&mut self, platform: &mut dyn Platform, room: Option<(WindowId, u32)>) {
         let Some((dest, id)) = room else {
@@ -537,6 +635,7 @@ impl<B: Backend> App<B> {
     /// What the drop of the tab dragged out of `window`'s bar at `position`
     /// does: in the room of another window's bar, or at the end of the tabs
     /// of a window whose bar hides, over its titlebar, the tab goes there;
+    /// on a pane of another tab, beside it, in its half that lit up;
     /// out of every window, to a window of its own, under the pointer; over
     /// a window elsewhere, back. `None` of no tab out of its bar.
     pub(super) fn tab_drop(
@@ -561,6 +660,17 @@ impl<B: Backend> App<B> {
             };
             return Some(Dropping::Event(place, None));
         };
+        // On a pane of another tab, of its own window too, outside the room
+        // of a bar, it goes in there, at the half that lit up.
+        if room.is_none_or(|(over, _)| over != dest)
+            && let Some(lit) = self.pane_half_under(platform, at)
+        {
+            let there = UiEventKind::DropOnPane {
+                pane: lit.pane.into(),
+                edge: lit.edge,
+            };
+            return Some(Dropping::Event(there, Some(lit.window)));
+        }
         if dest == window {
             return Some(Dropping::Back);
         }
@@ -607,6 +717,9 @@ impl<B: Backend> App<B> {
         let Some(mut drag) = self.tab_drag.take() else {
             return;
         };
+        if let Some(lit) = drag.lit.take() {
+            platform.request_frame(lit.window);
+        }
         if !dropped {
             self.close_tab_room(platform, drag.room.take());
         }

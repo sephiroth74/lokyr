@@ -608,6 +608,34 @@ fn a_tab_dropped_out_of_its_bar_moves_to_another_window_or_to_one_of_its_own() {
             at: Some(at)
         }]
     );
+    // Into a pane of another tab, beside it, at its edge.
+    use lokyr_plugin_sdk::host::Edge;
+    let into = host
+        .tab_layout(TabId(1))
+        .and_then(|layout| match layout {
+            lokyr_plugin_sdk::host::Layout::Pane(pane) => Some(pane),
+            lokyr_plugin_sdk::host::Layout::Split { .. } => None,
+        })
+        .expect("the first tab's pane");
+    assert_eq!(
+        drop(
+            &mut host,
+            &mut plugin,
+            UiEventKind::DropOnPane {
+                pane: into,
+                edge: Edge::Right
+            }
+        ),
+        [Request::TabIntoPane {
+            tab: TabId(2),
+            pane: into,
+            edge: Edge::Right
+        }]
+    );
+    assert!(matches!(
+        host.tab_layout(TabId(1)),
+        Some(lokyr_plugin_sdk::host::Layout::Split { .. })
+    ));
 }
 
 #[test]

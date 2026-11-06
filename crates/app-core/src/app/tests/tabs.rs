@@ -538,3 +538,189 @@ fn the_pointer_keeps_its_shape_while_a_tab_is_dragged() {
     assert_eq!(held(&fake), None);
     fake.send(&mut app, window, click(false, along, none, 1));
 }
+
+/// The layout of `window`'s active tab.
+fn shown_layout(app: &App, window: WindowId) -> lokyr_kernel::workspace::Layout {
+    let shown = app.workspace.window(app.windows[&window].window).unwrap();
+    app.workspace
+        .tab(shown.active_tab())
+        .unwrap()
+        .layout()
+        .clone()
+}
+
+/// The pane of the tab of `id`, of one pane.
+fn pane_of(app: &App, id: u64) -> lokyr_kernel::workspace::PaneId {
+    app.workspace
+        .tab(lokyr_kernel::workspace::TabId::of(id))
+        .unwrap()
+        .active_pane()
+}
+
+/// A point of `window`'s pane `at` its share across and down, in points
+/// from the window's corner, and that pane's room in pixels.
+fn in_pane(fake: &Fake, app: &App, window: WindowId, at: (f64, f64)) -> (Point, Rect) {
+    let scale = fake.window(window).unwrap().size.scale;
+    let rect = app.windows[&window].views[0].rect;
+    let point = Point {
+        x: (f64::from(rect.x) + f64::from(rect.width) * at.0) / scale,
+        y: (f64::from(rect.y) + f64::from(rect.height) * at.1) / scale,
+    };
+    (point, rect)
+}
+
+#[test]
+fn a_tab_dropped_on_another_window_s_pane_goes_in_beside_it_at_the_half_that_lit_up() {
+    use lokyr_kernel::workspace::{Direction, Layout, Ratio};
+    let none = Modifiers::NONE;
+    let (mut fake, mut app, window) = three_tabs("unified", "top");
+    let ids = order(&app, window);
+    let moving = pane_of(&app, ids[0]);
+    // Another window, of one tab, below and to the right, in front.
+    app.run(&mut fake, "window.new", Args::new());
+    run_until(&mut fake, &mut app, |fake, _| fake.windows().count() == 2);
+    let other = fake.windows().find(|&open| open != window).unwrap();
+    fake.set_window_origin(
+        other,
+        ScreenPoint {
+            x: 1000.0,
+            y: 400.0,
+        },
+    );
+    fake.raise(other);
+    run_until(&mut fake, &mut app, |_, app| {
+        app.windows
+            .get(&other)
+            .is_some_and(|state| !state.views.is_empty())
+    });
+    let target = app.windows[&other].views[0].pane;
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    // The first tab out of its bar, over the other window's pane near each
+    // of its edges: that half lights up.
+    let first = middle_of(&fake, &app, window, &tab_key(ids[0]));
+    fake.send(&mut app, window, click(true, first, none, 1));
+    fake.send(&mut app, window, moved(Point { y: 300.0, ..first }, none));
+    let over = |fake: &Fake, at: Point| {
+        let target = on_screen(fake, other, at);
+        let corner = fake.window_frame(window).unwrap();
+        Point {
+            x: target.x - corner.x,
+            y: target.y - corner.y,
+        }
+    };
+    let (_, rect) = in_pane(&fake, &app, other, (0.5, 0.5));
+    let (wide, high) = (rect.width / 2, rect.height / 2);
+    let halves = [
+        (
+            (0.1, 0.5),
+            Rect {
+                width: wide,
+                ..rect
+            },
+        ),
+        (
+            (0.9, 0.5),
+            Rect {
+                x: rect.x + (rect.width - wide) as i32,
+                width: wide,
+                ..rect
+            },
+        ),
+        (
+            (0.5, 0.1),
+            Rect {
+                height: high,
+                ..rect
+            },
+        ),
+        (
+            (0.5, 0.9),
+            Rect {
+                y: rect.y + (rect.height - high) as i32,
+                height: high,
+                ..rect
+            },
+        ),
+    ];
+    for (at, half) in halves {
+        let (point, _) = in_pane(&fake, &app, other, at);
+        fake.send(&mut app, window, moved(over(&fake, point), none));
+        assert_eq!(app.lit_half(other), Some(half), "{at:?}");
+        assert_eq!(app.lit_half(window), None);
+    }
+    // Dropped near its right edge: in there, half and half, the window
+    // that took it in front, its own of the other two.
+    let (point, _) = in_pane(&fake, &app, other, (0.9, 0.5));
+    let at = over(&fake, point);
+    fake.send(&mut app, window, moved(at, none));
+    fake.send(&mut app, window, click(false, at, none, 1));
+    let wanted = Layout::Split {
+        direction: Direction::Horizontal,
+        ratio: Some(Ratio::HALF),
+        first: Box::new(Layout::Leaf(target)),
+        second: Box::new(Layout::Leaf(moving)),
+    };
+    run_until(&mut fake, &mut app, |_, app| {
+        shown_layout(app, other) == wanted && order(app, window).len() == 2
+    });
+    assert_eq!(order(&app, window), [ids[1], ids[2]]);
+    assert_eq!(app.lit_half(other), None);
+    assert_eq!(fake.focus_requests().last(), Some(&other));
+}
+
+#[test]
+fn a_tab_of_splits_dropped_on_its_own_window_s_pane_goes_in_whole() {
+    use lokyr_kernel::workspace::{Direction, Layout, Ratio};
+    let none = Modifiers::NONE;
+    let (mut fake, mut app, window) = three_tabs("unified", "top");
+    let ids = order(&app, window);
+    // The first tab split, side by side.
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    app.run(&mut fake, "tabs.goto", {
+        let mut args = Args::new();
+        args.insert(
+            "index".to_owned(),
+            lokyr_kernel::commands::Value::Integer(1),
+        );
+        args
+    });
+    let mut right = Args::new();
+    right.insert(
+        "direction".to_owned(),
+        lokyr_kernel::commands::Value::String("right".to_owned()),
+    );
+    app.run(&mut fake, "splits.split", right);
+    run_until(&mut fake, &mut app, |_, app| {
+        matches!(shown_layout(app, window), Layout::Split { .. })
+    });
+    let split = shown_layout(&app, window);
+    let theirs = pane_of(&app, ids[1]);
+    // Out of its bar, the window shows the next tab, whose pane lights up
+    // near its top; the tab's own panes, which no longer show, never do.
+    let first = middle_of(&fake, &app, window, &tab_key(ids[0]));
+    fake.send(&mut app, window, click(true, first, none, 1));
+    fake.send(&mut app, window, moved(Point { y: 300.0, ..first }, none));
+    settle(&mut fake, &mut app);
+    assert_eq!(active(&app, window), ids[1]);
+    let (point, rect) = in_pane(&fake, &app, window, (0.5, 0.1));
+    fake.send(&mut app, window, moved(point, none));
+    assert_eq!(
+        app.lit_half(window),
+        Some(Rect {
+            height: rect.height / 2,
+            ..rect
+        })
+    );
+    fake.send(&mut app, window, click(false, point, none, 1));
+    let wanted = Layout::Split {
+        direction: Direction::Vertical,
+        ratio: Some(Ratio::HALF),
+        first: Box::new(split),
+        second: Box::new(Layout::Leaf(theirs)),
+    };
+    run_until(&mut fake, &mut app, |_, app| {
+        shown_layout(app, window) == wanted
+    });
+    assert_eq!(order(&app, window), [ids[1], ids[2]]);
+    assert_eq!(app.lit_half(window), None);
+}

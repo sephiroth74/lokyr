@@ -238,7 +238,8 @@ impl Plugin for Tabs {
     /// A click selects a tab, closes it on its close button, and opens one
     /// on the button of a new tab; a middle click closes a tab, a double
     /// click renames it, and the context's button opens its menu, whose
-    /// items act on it.
+    /// items act on it; a tab dropped goes to the bar, into the pane or to
+    /// the place where it fell.
     fn on_ui_event(&mut self, cx: &mut Cx<'_>, event: &UiEvent) -> Result<(), Error> {
         let key = event.key.0.as_str();
         if event.view == ViewId::Panel(PanelId::from(MENU)) {
@@ -267,6 +268,10 @@ impl Plugin for Tabs {
             (UiEventKind::DropOnBar { window, index }, Some(tab)) => {
                 cx.move_tab(tab, *window, *index)?;
                 cx.activate_tab(tab)
+            }
+            // Into a pane of another tab, beside it, at its edge.
+            (UiEventKind::DropOnPane { pane, edge }, Some(tab)) => {
+                cx.tab_into_pane(tab, *pane, *edge)
             }
             (UiEventKind::DropOutside { x, y }, Some(tab)) => {
                 cx.tab_to_new_window_at(tab, ScreenPoint { x: *x, y: *y })

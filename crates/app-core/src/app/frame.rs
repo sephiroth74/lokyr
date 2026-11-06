@@ -522,6 +522,8 @@ impl<B: Backend> App<B> {
         // The pointer's moves while Command is held, for the plugins that
         // follow it, as `links` does.
         let pointer_moves = self.command_held && self.plugins.subscribes(plugins::POINTER);
+        // The half of a pane that a tab's drag lights up.
+        let lit = self.lit_half(window);
         let Some(state) = self.windows.get_mut(&window) else {
             return;
         };
@@ -908,6 +910,10 @@ impl<B: Backend> App<B> {
                 rect: divider.line,
                 color: line,
             }));
+        }
+        // The half of a pane that a tab dragged over it lights up.
+        if let (Some(half), Some(color)) = (lit, tokens.get("pane.drop")) {
+            items.push(Item::Rect { rect: half, color });
         }
         // The progresses' fills, which the window server draws where it
         // can, so that a value's change slides with no frame of the app's.
