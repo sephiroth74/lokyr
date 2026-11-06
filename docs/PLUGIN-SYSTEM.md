@@ -732,6 +732,7 @@ Plugins that we write as a third party would, in Luau, in a repository of their 
 | Plugin | Role | Phase |
 |---|---|---|
 | `snap` | An image of a terminal's text, as VS Code's CodeSnap makes of code | F4 |
+| `awake` | The Mac kept awake, always or while programs run | F4 |
 
 ### `snap`
 
@@ -757,6 +758,14 @@ As the user asked on 31 October 2026, after VS Code's [CodeSnap](https://marketp
 
 - **Capabilities**: `terminal-read`, for the cells; `clipboard-write`, for `copy`; `fs-write` of its folder, for `save`. Sleip shows them at install, and the app asks for each on first use.
 - **What the API needs for it**: the cells of the selection, of the screen and of a command, with their styles, not only their text; the `image` service; an image on the clipboard, not only text; a file's write of bytes; and a config of the plugin's own, its section of the config file ([ADR 0032](adr/0032-plugins-config-and-state.md)).
+
+### `awake`
+
+As the user asked on 6 November 2026, after Nyx's menu beside the window's buttons:
+
+- **A button** beside the window's buttons, of the state's symbol, which opens a menu of three states, the current one ticked: **Default**, the system's rules of sleep; **Stay awake**, the system and the display kept awake; **Sleep after jobs**, kept awake while a tab runs a program, as its marks tell, and let sleep once the last one ends. Commands set each state, for the palette and the keys.
+- **Capabilities**: `keep-awake`, new, of a low risk, a battery's cost: a request that keeps the system, or the system and the display, from idle sleep, which the host holds as a power assertion of the platform's, IOKit's on macOS, and releases as the plugin asks, ends, is turned off or fails, so that no plugin leaves the Mac awake past its life.
+- **What the API needs for it**: the request and its capability, of an ADR; a slot of small buttons in the titlebar, beside the window's buttons, which no slot has yet; the tabs' marks of a running program, which `TabInfo` gives, and their changes as events, of no polling.
 
 ## Distribution
 
