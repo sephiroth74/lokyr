@@ -249,3 +249,7 @@ harness = false
 
 [lints]
 workspace = true
+
+[[test]]
+name = "alert_dismiss"
+harness = false

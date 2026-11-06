@@ -680,6 +680,17 @@ impl Platform for Backend {
         id
     }
 
+    fn dismiss_alert(&mut self, alert: AlertId) {
+        // Forgotten first, so that its sheet's end answers nothing; one on
+        // its own whose loop has not run finds itself gone.
+        let Some(open) = self.alerts.remove(&alert) else {
+            return;
+        };
+        if let Some(window) = open.window.and_then(|window| self.windows.get(&window)) {
+            window.ns_window().endSheet(&open.alert.window());
+        }
+    }
+
     fn start_timer(&mut self, at: Instant) -> TimerId {
         let id = TimerId::new(self.next_id());
         let ns_timer = timer::start(self.shared.clone(), id, at);

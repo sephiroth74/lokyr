@@ -981,6 +981,10 @@ impl Platform for Fake {
         id
     }
 
+    fn dismiss_alert(&mut self, alert: AlertId) {
+        self.alerts.retain(|open| open.id != alert);
+    }
+
     fn start_timer(&mut self, at: Instant) -> TimerId {
         let id = TimerId::new(self.next_id());
         self.timers.insert(id, at);

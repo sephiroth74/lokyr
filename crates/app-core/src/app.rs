@@ -2521,6 +2521,9 @@ impl<B: Backend> App<B> {
                 Event::Ended(_) | Event::Terminal { .. } => {}
             }
         }
+        if !self.part_asks.is_empty() {
+            self.drop_gone_part_asks(platform);
+        }
     }
 
     /// Follows `change`, of the workspace, as a plugin's write made it,

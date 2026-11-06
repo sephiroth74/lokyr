@@ -38,6 +38,7 @@ impl<B: Backend> App<B> {
         }
         if let Some((window, closing)) = self.part_asks.remove(&alert)
             && button == 0
+            && self.part_in(window, closing)
         {
             self.close_part(platform, window, closing);
         }
@@ -459,6 +460,35 @@ impl<B: Backend> App<B> {
         };
         let alert = platform.show_alert(Some(window), &alert);
         self.part_asks.insert(alert, (window, closing));
+    }
+
+    /// Whether `closing`, a tab or a pane, is still open in `window`, as
+    /// its question asked of it: a program that ends by itself closes its
+    /// own, and a plugin moves one to another window.
+    fn part_in(&self, window: WindowId, closing: Closing) -> bool {
+        let pane = match closing {
+            Closing::Pane(pane) => Some(pane),
+            Closing::Tab(tab) => self
+                .workspace
+                .tab(tab)
+                .and_then(|tab| tab.layout().panes().first().copied()),
+        };
+        pane.and_then(|pane| self.window_of(pane)) == Some(window)
+    }
+
+    /// Withdraws the questions of the close of a tab or a pane that is no
+    /// longer in its window, which its answer would close nothing of.
+    pub(super) fn drop_gone_part_asks(&mut self, platform: &mut dyn Platform) {
+        let gone: Vec<AlertId> = self
+            .part_asks
+            .iter()
+            .filter(|(_, (window, closing))| !self.part_in(*window, *closing))
+            .map(|(&alert, _)| alert)
+            .collect();
+        for alert in gone {
+            self.part_asks.remove(&alert);
+            platform.dismiss_alert(alert);
+        }
     }
 
     /// Closes `closing`, of `window`'s: a tab, the window with its last; a

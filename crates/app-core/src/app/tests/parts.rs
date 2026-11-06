@@ -177,6 +177,39 @@ fn a_plugin_s_close_of_a_running_tab_asks_first_as_a_window_s_does() {
 }
 
 #[test]
+fn a_close_s_question_whose_tab_closed_by_itself_closes_nothing_and_goes() {
+    let (mut fake, mut app, window, ..) = with_parts(shell("echo ready; exec sleep 30"));
+    run(&mut fake, &mut app, "parts.tab");
+    let pane = app.focused(window).unwrap();
+    run_until(&mut fake, &mut app, |_, app| {
+        app.workspace.pane(pane).and_then(Pane::running).as_deref() == Some("sleep")
+    });
+    let tab = app.workspace.tab_of(pane).unwrap();
+    // Asked, then the tab closes before the answer, as its program's end
+    // closes it: the answer closes neither the window nor its other tab.
+    run(&mut fake, &mut app, "parts.close-tab");
+    let id = fake.alerts()[0].id;
+    app.workspace.close_tab(tab);
+    fake.answer_alert(&mut app, id, 0);
+    assert_eq!(fake.windows().count(), 1);
+    assert_eq!(tabs(&app, window), 1);
+    // Asked of a pane that goes as the app takes the workspace's events:
+    // the question goes with it, and asks nothing more.
+    run(&mut fake, &mut app, "parts.tab");
+    let pane = app.focused(window).unwrap();
+    run_until(&mut fake, &mut app, |_, app| {
+        app.workspace.pane(pane).and_then(Pane::running).as_deref() == Some("sleep")
+    });
+    run(&mut fake, &mut app, "parts.close-pane");
+    assert_eq!(fake.alerts().len(), 1);
+    let tab = app.workspace.tab_of(pane).unwrap();
+    app.workspace.close_tab(tab);
+    fake.send(&mut app, window, WindowEvent::Frame);
+    assert!(fake.alerts().is_empty(), "{:?}", fake.alerts());
+    assert_eq!((fake.windows().count(), tabs(&app, window)), (1, 1));
+}
+
+#[test]
 fn a_shell_at_its_prompt_closes_at_once_and_a_tab_takes_a_title_of_its_own() {
     let (mut fake, mut app, window, ..) = with_parts(idle());
     run(&mut fake, &mut app, "parts.tab");

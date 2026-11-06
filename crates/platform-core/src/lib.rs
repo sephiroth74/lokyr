@@ -469,6 +469,12 @@ pub trait Platform {
     /// at once: [`AppEvent::AlertClosed`] tells which button closed it.
     fn show_alert(&mut self, window: Option<WindowId>, alert: &Alert) -> AlertId;
 
+    /// Withdraws the open alert `alert`, a window's sheet, or one on its
+    /// own before its loop runs, as what it asks about is gone: no
+    /// [`AppEvent::AlertClosed`] comes of it. One on its own that runs
+    /// already stays until it is answered, of no answer then either.
+    fn dismiss_alert(&mut self, alert: AlertId);
+
     /// Starts a timer that fires once, at `at` or a little after, as the
     /// system groups its wakeups, with an [`AppEvent::Timer`]; a time
     /// already past fires once the current call returns. It fires during a
