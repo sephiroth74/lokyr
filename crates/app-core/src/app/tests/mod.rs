@@ -1293,11 +1293,21 @@ fn secure_keyboard_entry_follows_a_password_s_prompt_and_the_menu() {
     });
     assert!(on(&fake));
     assert!(title(&fake).starts_with(SECURE_MARK), "{}", title(&fake));
+    // Its tab is marked of it, for a tab bar to show.
+    let tab = app
+        .workspace
+        .window(app.windows[&window].window)
+        .unwrap()
+        .active_tab();
+    let marked = |app: &App| app.workspace.tab(tab).unwrap().marks().secure;
+    assert!(marked(&app));
     // Without the focus, off, and the lock goes; back, on again.
     fake.send(&mut app, window, WindowEvent::Focused(false));
     assert!(!on(&fake) && !title(&fake).starts_with(SECURE_MARK));
+    assert!(!marked(&app));
     fake.send(&mut app, window, WindowEvent::Focused(true));
     assert!(on(&fake) && title(&fake).starts_with(SECURE_MARK));
+    assert!(marked(&app));
     // After it, as its output tells, off.
     fake.send(&mut app, window, typed(KeyCode::Enter, "\r", false));
     run_until(&mut fake, &mut app, |fake, app| {

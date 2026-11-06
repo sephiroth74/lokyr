@@ -143,6 +143,25 @@ struct FakeTab {
     zoomed: Option<PaneId>,
     title: Option<String>,
     color: Option<Color>,
+    marks: TabMarks,
+}
+
+/// What a tab bar marks a tab of, as a read of the tabs tells it, which a
+/// test gives a tab of the fake host.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct TabMarks {
+    /// Output came while it did not show.
+    pub activity: bool,
+    /// Its bell rang while it did not show.
+    pub bell: bool,
+    /// The progress that a program of its panes tells.
+    pub progress: Option<host::TabProgress>,
+    /// A program other than a shell runs in its foreground.
+    pub running: bool,
+    /// The keyboard's protected input is on for it.
+    pub secure: bool,
+    /// The state of an AI agent that runs in it.
+    pub agent: Option<host::AgentState>,
 }
 
 /// What a tab's leaving did to its window, which is told after the tab's
@@ -324,6 +343,19 @@ impl FakeHost {
             .retain(|(known, known_args, _)| !(known == id && *known_args == args));
         if let Some(text) = text {
             self.messages.push((id.to_owned(), args, text.to_owned()));
+        }
+        self
+    }
+
+    /// Gives `tab` the `marks` that a read of the tabs tells, as the host
+    /// finds them, which `tab-changed` tells as they change.
+    pub fn set_tab_marks(&mut self, tab: TabId, marks: TabMarks) -> &mut Self {
+        let changed = self
+            .tabs
+            .get_mut(&tab)
+            .is_some_and(|found| std::mem::replace(&mut found.marks, marks) != marks);
+        if changed {
+            self.changed(WorkspaceEvent::TabChanged { tab });
         }
         self
     }
@@ -647,6 +679,7 @@ impl FakeHost {
                 zoomed: None,
                 title: None,
                 color: None,
+                marks: TabMarks::default(),
             });
             if first.insert(tab) {
                 entry.window = window;
@@ -808,6 +841,7 @@ impl FakeHost {
                 zoomed: None,
                 title: None,
                 color: None,
+                marks: TabMarks::default(),
             },
         );
         self.panes.insert(
@@ -1085,6 +1119,7 @@ impl FakeHost {
                 zoomed: None,
                 title: None,
                 color: None,
+                marks: TabMarks::default(),
             },
         );
         if let Some(moved) = self.panes.get_mut(&pane) {
@@ -1587,6 +1622,7 @@ impl Calling<'_> {
                         .iter()
                         .filter_map(|&id| {
                             let tab = host.tabs.get(&id)?;
+                            let marks = tab.marks;
                             Some(TabInfo {
                                 id,
                                 window: *window,
@@ -1596,6 +1632,12 @@ impl Calling<'_> {
                                 focused: tab.active,
                                 panes: leaves(&tab.layout),
                                 zoomed: tab.zoomed,
+                                activity: marks.activity,
+                                bell: marks.bell,
+                                progress: marks.progress,
+                                running: marks.running,
+                                secure: marks.secure,
+                                agent: marks.agent,
                             })
                         })
                         .collect(),

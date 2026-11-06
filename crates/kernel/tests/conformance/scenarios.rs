@@ -152,6 +152,12 @@ fn tabs(world: &World) -> Scenario {
         focused: p,
         panes: vec![p],
         zoomed: None,
+        activity: false,
+        bell: false,
+        progress: None,
+        running: false,
+        secure: false,
+        agent: None,
     };
     let red = Color::Rgb(200, 30, 40);
     let answer = Event::Answered {
@@ -965,6 +971,12 @@ fn workspace(world: &World) -> Scenario {
         focused,
         panes,
         zoomed,
+        activity: false,
+        bell: false,
+        progress: None,
+        running: false,
+        secure: false,
+        agent: None,
     };
     let split = |ratio| Layout::Split {
         direction: Direction::Vertical,

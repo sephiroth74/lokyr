@@ -977,6 +977,12 @@ fn bar_tabs() -> Vec<TabInfo> {
         panes: vec![PaneId(id)],
         focused: PaneId(id),
         zoomed: None,
+        activity: false,
+        bell: false,
+        progress: None,
+        running: false,
+        secure: false,
+        agent: None,
     };
     let mut colored = tab(1, "lokyr — vim", false);
     colored.color = Some(Color::Rgb(0x3a, 0x7b, 0xe6));
@@ -1054,6 +1060,12 @@ impl BarTabs {
                             panes: vec![PaneId(id)],
                             focused: PaneId(id),
                             zoomed: None,
+                            activity: false,
+                            bell: false,
+                            progress: None,
+                            running: false,
+                            secure: false,
+                            agent: None,
                         }
                     })
                     .collect();

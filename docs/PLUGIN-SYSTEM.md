@@ -238,6 +238,12 @@ type TabInfo = {
     panes: { PaneId }, -- in its layout's order
     focused: PaneId, -- the pane that has its keyboard
     zoomed: PaneId?,
+    activity: boolean, -- output came while it did not show, until its window shows it
+    bell: boolean, -- its bell rang while it did not show, until its window shows it
+    progress: { state: "normal" | "error" | "paused" | "indeterminate", value: number? }?, -- OSC 9;4's, of its active pane or another, the value from 0 to 1 if told
+    running: boolean, -- of `process-read`: a program other than a shell runs in its foreground
+    secure: boolean, -- the keyboard's protected input is on for it, as its window has the focus and shows it
+    agent: ("working" | "waiting" | "done")?, -- the state of an AI agent that runs in it
 }
 
 -- A tab's layout: a pane, or a split of two layouts, whose ratio is the

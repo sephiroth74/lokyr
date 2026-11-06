@@ -18,6 +18,12 @@ fn tab(id: u64, title: &str, active: bool) -> TabInfo {
         panes: vec![PaneId(id)],
         focused: PaneId(id),
         zoomed: None,
+        activity: false,
+        bell: false,
+        progress: None,
+        running: false,
+        secure: false,
+        agent: None,
     }
 }
 

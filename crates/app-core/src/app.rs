@@ -2700,7 +2700,9 @@ impl<B: Backend> App<B> {
         let Some(state) = self.windows.get_mut(&window) else {
             return;
         };
-        let lock = if secure && state.focused {
+        // Its tab bar marks the protected input of its tab, where one
+        // shows.
+        let lock = if secure && state.focused && !chrome::has_tab_bar(&state.chrome) {
             SECURE_MARK
         } else {
             ""
@@ -2729,14 +2731,27 @@ impl<B: Backend> App<B> {
             .and_then(|(_, shown)| self.workspace.focused(shown))
             .is_some_and(Pane::hides_input);
         let on = focused.is_some() && (self.secure_chosen || hides);
-        if on == self.secure_on {
-            return;
+        if on != self.secure_on {
+            platform.set_secure_input(on);
+            self.secure_on = on;
+            let windows: Vec<WindowId> = self.windows.keys().copied().collect();
+            for window in windows {
+                self.show_title(platform, window);
+            }
         }
-        platform.set_secure_input(on);
-        self.secure_on = on;
-        let windows: Vec<WindowId> = self.windows.keys().copied().collect();
-        for window in windows {
-            self.show_title(platform, window);
+        // The tab that shows in the window with the focus is marked of it.
+        let marked = focused
+            .filter(|_| on)
+            .and_then(|(_, shown)| self.workspace.window(shown))
+            .map(workspace::Window::active_tab);
+        let tabs: Vec<workspace::TabId> = self
+            .windows
+            .values()
+            .filter_map(|state| self.workspace.window(state.window))
+            .flat_map(|shown| shown.tabs().to_vec())
+            .collect();
+        for tab in tabs {
+            self.workspace.set_tab_secure(tab, Some(tab) == marked);
         }
     }
 
@@ -2848,6 +2863,7 @@ impl<B: Backend> App<B> {
         }
         state.place.1 = pane.foreground_program().unwrap_or_default();
         let (id, place) = (pane.id(), place_label(&state.place.0, &state.place.1));
+        let running = runs_other_than_shell(&state.place.1);
         if let Some(tab) = self.workspace.tab_of(id)
             && self
                 .workspace
@@ -2855,6 +2871,7 @@ impl<B: Backend> App<B> {
                 .is_some_and(|tab| tab.active_pane() == id)
         {
             self.workspace.set_tab_place(tab, Some(place));
+            self.workspace.set_tab_running(tab, running);
         }
         true
     }
@@ -2886,6 +2903,8 @@ impl<B: Backend> App<B> {
         let program = shown.foreground_program().unwrap_or_default();
         self.workspace
             .set_tab_place(tab, Some(place_label(&name, &program)));
+        self.workspace
+            .set_tab_running(tab, runs_other_than_shell(&program));
     }
 
     /// The titles' timer fired: the windows whose last frame of output came
@@ -3592,4 +3611,10 @@ fn commands(texts: &Texts, plugins: &Plugins) -> Registry {
         }
     }
     registry
+}
+
+/// Whether `program`, by its name, as the terminal's foreground tells it,
+/// is one other than a shell at its prompt: none of no name.
+fn runs_other_than_shell(program: &str) -> bool {
+    !program.is_empty() && !workspace::is_shell(program)
 }

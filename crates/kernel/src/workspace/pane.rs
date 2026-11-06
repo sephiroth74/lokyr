@@ -192,6 +192,12 @@ pub struct Pane {
     pub(super) title: String,
     /// The tab's color that its program set last, if it set one.
     pub(super) tab_color: Option<Rgb>,
+    /// The progress that its program tells last, OSC 9;4's, if it tells
+    /// one.
+    pub(super) progress: Option<terminal::Progress>,
+    /// How many slices of output the session had parsed when the
+    /// workspace last looked.
+    slices: u64,
 }
 
 impl std::fmt::Debug for Pane {
@@ -236,6 +242,8 @@ pub(super) struct Happened {
     pub(super) bell: bool,
     /// Whether the program's output ended, told once.
     pub(super) ended: bool,
+    /// Whether output came.
+    pub(super) output: bool,
 }
 
 impl Pane {
@@ -298,6 +306,8 @@ impl Pane {
             selection_touched: AtomicBool::new(false),
             title: String::new(),
             tab_color: None,
+            progress: None,
+            slices: 0,
         };
         let mut options = Options::new(pty);
         // The wheel scrolls programs of the alternate screen, as `less`, by
@@ -365,6 +375,9 @@ impl Pane {
         };
         let bell = bells != self.bells;
         self.bells = bells;
+        let slices = session.slices();
+        let output = slices != self.slices;
+        self.slices = slices;
         let ended = !self.ended_told && session.has_ended();
         self.ended_told |= ended;
         Some(Happened {
@@ -372,6 +385,7 @@ impl Pane {
             title,
             bell,
             ended,
+            output,
         })
     }
 
@@ -969,6 +983,12 @@ impl Pane {
         self.kept
     }
 
+    /// The progress that its program tells last, OSC 9;4's, if it tells
+    /// one.
+    pub fn progress(&self) -> Option<terminal::Progress> {
+        self.progress
+    }
+
     /// What closing the pane would end, by its name, as `vim`, or empty
     /// when its name cannot be read: the first process of its terminal, the
     /// foreground's first, that is no shell, nor tmux or screen, whose
@@ -981,7 +1001,6 @@ impl Pane {
         if session.has_ended() {
             return None;
         }
-        let is_shell = |name: &str| SHELLS.contains(&name.trim_start_matches('-'));
         let programs = session.programs();
         if programs.is_empty() {
             // Without a list of the processes, the foreground tells.
@@ -993,6 +1012,13 @@ impl Pane {
         }
         programs.into_iter().find(|name| !is_shell(name))
     }
+}
+
+/// Whether `program`, by its name, is a shell at its prompt, or tmux or
+/// screen, whose sessions go on without the pane, as a login shell's `-`
+/// leaves it.
+pub fn is_shell(program: &str) -> bool {
+    SHELLS.contains(&program.trim_start_matches('-'))
 }
 
 /// The programs that closing a pane does not ask about: shells at their

@@ -312,6 +312,8 @@ fn a_tab_s_title_is_its_folder_and_its_program_and_a_plugin_reads_its_keys() {
         "{}",
         app.workspace.tab(tab).unwrap().label()
     );
+    // A program other than a shell runs there, which its tab is marked of.
+    assert!(app.workspace.tab(tab).unwrap().marks().running);
     read.borrow_mut().clear();
     run(&mut fake, &mut app, "parts.read");
     let shown = read.borrow().clone();

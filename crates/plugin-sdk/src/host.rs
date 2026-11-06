@@ -57,7 +57,7 @@ pub struct WindowInfo {
 }
 
 /// A tab, as a read of a window's tabs gives it.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct TabInfo {
     /// The tab.
     pub id: TabId,
@@ -81,6 +81,52 @@ pub struct TabInfo {
     pub focused: PaneId,
     /// The pane that takes its whole room, if one does.
     pub zoomed: Option<PaneId>,
+    /// Whether output came in it since its window last showed it, while it
+    /// did not show.
+    #[serde(default)]
+    pub activity: bool,
+    /// Whether its bell rang since its window last showed it, while it did
+    /// not show.
+    #[serde(default)]
+    pub bell: bool,
+    /// The progress that a program of its panes tells, OSC 9;4's: its
+    /// active pane's, or another's.
+    #[serde(default)]
+    pub progress: Option<TabProgress>,
+    /// Whether a program other than a shell runs in its active pane's
+    /// foreground, to a plugin of `process-read`; `false` to the others.
+    #[serde(default)]
+    pub running: bool,
+    /// Whether the keyboard's protected input is on for it, as Secure
+    /// Keyboard Entry: while its window has the focus and shows it.
+    #[serde(default)]
+    pub secure: bool,
+    /// The state of an AI agent that runs in it, if one does.
+    #[serde(default)]
+    pub agent: Option<AgentState>,
+}
+
+/// The progress of a task that a program tells, as OSC 9;4 does.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct TabProgress {
+    /// Its state.
+    pub state: crate::view::ProgressState,
+    /// How far along, from 0 to 1, if it tells: none of an indeterminate
+    /// one, nor of a failed or a paused one that tells no value.
+    #[serde(default)]
+    pub value: Option<f32>,
+}
+
+/// The state of an AI agent that runs in a tab, as its notifications tell.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum AgentState {
+    /// At work.
+    Working,
+    /// Waiting for the user.
+    Waiting,
+    /// Done with what it was asked.
+    Done,
 }
 
 /// How a split lays its two parts out.

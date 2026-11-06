@@ -33,7 +33,9 @@ use lokyr_vt_core::page::Rgb;
 use lokyr_vt_core::terminal::{self, ClipboardTarget};
 
 pub use layout::{Direction, Edge, Layout, Ratio, Side};
-pub use pane::{ANSWER_WAIT, Environment, Exited, Grid, Pane, RESIZE_PACE, Settings, TOLD_PACE};
+pub use pane::{
+    ANSWER_WAIT, Environment, Exited, Grid, Pane, RESIZE_PACE, Settings, TOLD_PACE, is_shell,
+};
 
 /// The last id that the process gave, to a window, a tab or a pane.
 static LAST_ID: AtomicU64 = AtomicU64::new(0);
@@ -178,6 +180,30 @@ pub struct Tab {
     layout: Layout,
     active: PaneId,
     zoomed: Option<PaneId>,
+    /// What a tab bar marks it of.
+    marks: Marks,
+}
+
+/// What a tab bar marks a tab of: what came in it while it did not show,
+/// what its programs tell, and the keyboard's protected input.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Marks {
+    /// Output came in it since its window last showed it, while it did not
+    /// show.
+    pub activity: bool,
+    /// Its bell rang since its window last showed it, while it did not
+    /// show.
+    pub bell: bool,
+    /// The progress that a program of its panes tells, OSC 9;4's: its
+    /// active pane's, or another's.
+    pub progress: Option<terminal::Progress>,
+    /// A program other than a shell runs in its active pane's foreground,
+    /// as the app finds it.
+    pub running: bool,
+    /// The keyboard's protected input is on for it, as the app has it.
+    pub secure: bool,
+    /// The state of an AI agent that runs in it.
+    pub agent: Option<sdk::AgentState>,
 }
 
 impl Tab {
@@ -217,8 +243,13 @@ impl Tab {
 
     /// What a read of the tabs tells of it that a `tab-changed` tells the
     /// change of: its label and its color.
-    fn look(&self) -> (String, Option<Rgb>) {
-        (self.label().to_owned(), self.color())
+    fn look(&self) -> Look {
+        (self.label().to_owned(), self.color(), self.marks)
+    }
+
+    /// What a tab bar marks it of.
+    pub fn marks(&self) -> Marks {
+        self.marks
     }
 
     /// The layout of its panes.
@@ -236,6 +267,9 @@ impl Tab {
         self.zoomed
     }
 }
+
+/// What a tab bar shows of a tab: its label, its color and its marks.
+type Look = (String, Option<Rgb>, Marks);
 
 /// What a tab's leaving its window did to the window.
 #[derive(Clone, Copy, Debug)]
@@ -475,6 +509,16 @@ impl Workspace {
             }) {
                 pane.tab_color = color;
             }
+            // The pane keeps its program's progress, which its tab shows.
+            if let Some(progress) = happened.events.iter().rev().find_map(|event| match event {
+                terminal::Event::Progress(progress) => Some(*progress),
+                _ => None,
+            }) {
+                pane.progress = match progress {
+                    terminal::Progress::Remove => None,
+                    progress => Some(progress),
+                };
+            }
             // The tab that takes the pane's title and color, as its active
             // pane.
             let active = self
@@ -512,6 +556,19 @@ impl Workspace {
             }
             if let (Some(tab), Some(before)) = (active, before) {
                 self.tab_looked(tab, &before);
+            }
+            // Its tab's marks: its progress, and the output and the bell
+            // that came while it did not show.
+            if let Some(owner) = self.tab_of.get(&id).copied() {
+                let shown = self.is_shown(owner);
+                let progress = self.tab_progress(owner);
+                self.mark(owner, |marks| {
+                    marks.progress = progress;
+                    if !shown {
+                        marks.activity |= happened.output;
+                        marks.bell |= happened.bell;
+                    }
+                });
             }
             if happened.bell {
                 self.events.push(Event::Bell(id));
@@ -609,6 +666,7 @@ impl Workspace {
                 layout: Layout::Leaf(pane),
                 active: pane,
                 zoomed: None,
+                marks: Marks::default(),
             },
         );
         self.take_active_look(tab);
@@ -651,6 +709,7 @@ impl Workspace {
         self.changed(WorkspaceEvent::WindowOpened {
             window: window.into(),
         });
+        self.tab_shown(tab);
         window
     }
 
@@ -698,10 +757,13 @@ impl Workspace {
     fn tell_left(&mut self, left: Left) {
         match left {
             Left::Kept => {}
-            Left::Shows(window, tab) => self.changed(WorkspaceEvent::TabActivated {
-                tab: tab.into(),
-                window: window.into(),
-            }),
+            Left::Shows(window, tab) => {
+                self.changed(WorkspaceEvent::TabActivated {
+                    tab: tab.into(),
+                    window: window.into(),
+                });
+                self.tab_shown(tab);
+            }
             Left::Closed(window) => self.changed(WorkspaceEvent::WindowClosed {
                 window: window.into(),
             }),
@@ -758,7 +820,7 @@ impl Workspace {
 
     /// Tells `tab-changed` of `tab` if its look, of [`Tab::look`], is
     /// another than `before`.
-    fn tab_looked(&mut self, tab: TabId, before: &(String, Option<Rgb>)) {
+    fn tab_looked(&mut self, tab: TabId, before: &Look) {
         if self
             .tabs
             .get(&tab)
@@ -794,8 +856,65 @@ impl Workspace {
                 tab: tab.into(),
                 window: window.into(),
             });
+            self.tab_shown(tab);
         }
         true
+    }
+
+    /// Whether `tab`'s window shows it.
+    fn is_shown(&self, tab: TabId) -> bool {
+        self.tabs
+            .get(&tab)
+            .and_then(|shown| self.windows.get(&shown.window))
+            .is_some_and(|window| window.active == tab)
+    }
+
+    /// The progress that `tab`'s panes tell: its active pane's, or the
+    /// first of the others' in its layout's order.
+    fn tab_progress(&self, tab: TabId) -> Option<terminal::Progress> {
+        let tab = self.tabs.get(&tab)?;
+        let of = |pane: PaneId| self.panes.get(&pane).and_then(Pane::progress);
+        of(tab.active).or_else(|| tab.layout.panes().into_iter().find_map(of))
+    }
+
+    /// Changes `tab`'s marks as `change` does, which `tab-changed` tells if
+    /// they changed; whether it is open.
+    fn mark(&mut self, tab: TabId, change: impl FnOnce(&mut Marks)) -> bool {
+        let Some(shown) = self.tabs.get_mut(&tab) else {
+            return false;
+        };
+        let before = shown.look();
+        change(&mut shown.marks);
+        self.tab_looked(tab, &before);
+        true
+    }
+
+    /// `tab` shows in its window: the output and the bell that came while
+    /// it did not show are seen.
+    fn tab_shown(&mut self, tab: TabId) {
+        self.mark(tab, |marks| {
+            marks.activity = false;
+            marks.bell = false;
+        });
+    }
+
+    /// Marks `tab` of a program other than a shell running in its active
+    /// pane's foreground, or of none, as the app finds it; whether it is
+    /// open.
+    pub fn set_tab_running(&mut self, tab: TabId, running: bool) -> bool {
+        self.mark(tab, |marks| marks.running = running)
+    }
+
+    /// Marks `tab` of the keyboard's protected input, or of none, as the
+    /// app has it; whether it is open.
+    pub fn set_tab_secure(&mut self, tab: TabId, secure: bool) -> bool {
+        self.mark(tab, |marks| marks.secure = secure)
+    }
+
+    /// Marks `tab` of the state of an AI agent that runs in it, or of
+    /// none; whether it is open.
+    pub fn set_tab_agent(&mut self, tab: TabId, agent: Option<sdk::AgentState>) -> bool {
+        self.mark(tab, |marks| marks.agent = agent)
     }
 
     /// Moves `tab` to `window`, its own or another, at `index` of that

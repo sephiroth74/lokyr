@@ -241,6 +241,7 @@ impl Symbols {
                         focused: self.pane(info.focused),
                         panes: info.panes.into_iter().map(|id| self.pane(id)).collect(),
                         zoomed: info.zoomed.map(|id| self.pane(id)),
+                        ..info
                     })
                     .collect(),
             ),

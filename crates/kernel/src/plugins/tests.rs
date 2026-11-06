@@ -2185,6 +2185,12 @@ fn a_plugin_opens_a_tab_and_a_split_of_the_ids_that_its_call_gets() {
                 panes: vec![first.into(), split],
                 focused: first.into(),
                 zoomed: None,
+                activity: false,
+                bell: false,
+                progress: None,
+                running: false,
+                secure: false,
+                agent: None,
             },
             host::TabInfo {
                 id: tab,
@@ -2195,6 +2201,12 @@ fn a_plugin_opens_a_tab_and_a_split_of_the_ids_that_its_call_gets() {
                 panes: vec![tab_pane, early],
                 focused: tab_pane,
                 zoomed: None,
+                activity: false,
+                bell: false,
+                progress: None,
+                running: false,
+                secure: false,
+                agent: None,
             },
         ]
     );
@@ -2939,4 +2951,80 @@ fn a_tab_moved_to_a_window_of_its_own_at_a_place_asks_the_app_to_put_the_window_
         "{requests:?}"
     );
     assert_eq!(app.workspace.tab(first).unwrap().window(), window);
+}
+
+#[test]
+fn a_tab_s_marks_are_read_and_what_runs_of_process_read_alone() {
+    let mut app = App::default();
+    window(&mut app, "sleep 10");
+    let shown = app.focused.unwrap();
+    let tab = app.workspace.window(shown).unwrap().active_tab();
+    assert!(app.workspace.set_tab_running(tab, true));
+    assert!(app.workspace.set_tab_secure(tab, true));
+    assert!(
+        app.workspace
+            .set_tab_agent(tab, Some(lokyr_plugin_sdk::host::AgentState::Done))
+    );
+    let mut plugins = Plugins::new();
+    let read = Rc::new(RefCell::new(Vec::new()));
+    for (name, capabilities) in [("acme/blind", ""), ("acme/seeing", "process-read = true\n")] {
+        let manifest = Manifest::parse(&format!(
+            "[plugin]\nname = \"{name}\"\nversion = \"1.0.0\"\nkind = \"luau\"\napi = \"^0.1\"\nlicense = \"MIT\"\n[capabilities]\n{capabilities}"
+        ))
+        .unwrap();
+        let namespace = name.rsplit('/').next().unwrap().to_owned();
+        let seen = Rc::clone(&read);
+        let command_name = format!("{namespace}.read");
+        plugins
+            .add_declared(
+                manifest,
+                scripted(
+                    move |cx| cx.register_command(command(&command_name)),
+                    move |cx, _, _| {
+                        let window = cx.focused_window().unwrap();
+                        let info = cx.tabs(window)?.remove(0);
+                        seen.borrow_mut().push((
+                            info.running,
+                            info.secure,
+                            info.agent,
+                            info.activity,
+                        ));
+                        Ok(())
+                    },
+                ),
+            )
+            .unwrap();
+    }
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    for command in ["blind.read", "seeing.read"] {
+        plugins
+            .run(command, Args::new(), &mut app.context())
+            .unwrap();
+    }
+    let done = Some(lokyr_plugin_sdk::host::AgentState::Done);
+    assert_eq!(
+        *read.borrow(),
+        [(false, true, done, false), (true, true, done, false)]
+    );
+}
+
+#[test]
+fn a_program_s_progress_reads_as_a_state_and_a_share() {
+    use lokyr_plugin_sdk::host::TabProgress;
+    use lokyr_plugin_sdk::view::ProgressState;
+    use lokyr_vt_core::terminal::Progress;
+
+    let read = |progress, state, value| {
+        assert_eq!(
+            super::tab_progress(progress),
+            Some(TabProgress { state, value }),
+            "{progress:?}"
+        );
+    };
+    read(Progress::Set(40), ProgressState::Normal, Some(0.4));
+    read(Progress::Set(250), ProgressState::Normal, Some(1.0));
+    read(Progress::Error(None), ProgressState::Error, None);
+    read(Progress::Paused(Some(10)), ProgressState::Paused, Some(0.1));
+    read(Progress::Indeterminate, ProgressState::Indeterminate, None);
+    assert_eq!(super::tab_progress(Progress::Remove), None);
 }

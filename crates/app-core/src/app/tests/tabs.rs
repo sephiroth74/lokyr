@@ -437,3 +437,23 @@ fn a_window_of_a_tab_alone_dropped_out_of_every_window_moves_there() {
         "{frame:?} {tab:?} {dropped:?}"
     );
 }
+
+#[test]
+fn the_protected_input_leaves_the_title_for_its_tab_where_a_tab_bar_shows() {
+    let (mut fake, mut app, window) = three_tabs("unified", "top");
+    fake.send_app(
+        &mut app,
+        AppEvent::Command("app.secure-keyboard-entry".to_owned()),
+    );
+    settle(&mut fake, &mut app);
+    assert!(fake.secure_input().0);
+    let title = fake.window(window).unwrap().title.clone();
+    assert!(!title.starts_with(SECURE_MARK), "{title}");
+    let shown = app.workspace.window(app.windows[&window].window).unwrap();
+    let marked: Vec<bool> = shown
+        .tabs()
+        .iter()
+        .map(|&tab| app.workspace.tab(tab).unwrap().marks().secure)
+        .collect();
+    assert_eq!(marked, [false, false, true]);
+}

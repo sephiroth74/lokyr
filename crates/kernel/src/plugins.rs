@@ -2698,6 +2698,7 @@ impl Host<'_, '_> {
         } else {
             tab.title()
         };
+        let marks = tab.marks();
         host::TabInfo {
             id: tab.id().into(),
             window: tab.window().into(),
@@ -2707,6 +2708,13 @@ impl Host<'_, '_> {
             panes: tab.layout().panes().into_iter().map(Into::into).collect(),
             focused: tab.active_pane().into(),
             zoomed: tab.zoomed().map(Into::into),
+            activity: marks.activity,
+            bell: marks.bell,
+            progress: marks.progress.and_then(tab_progress),
+            // What runs, to a plugin that reads the processes' alone.
+            running: marks.running && self.state.reads_processes(),
+            secure: marks.secure,
+            agent: marks.agent,
         }
     }
 
@@ -3360,3 +3368,20 @@ pub(super) fn tree_within_depth(tree: Option<Node>) -> Result<Option<Node>, Erro
 
 #[cfg(test)]
 mod tests;
+
+/// The progress of a tab of `progress`, OSC 9;4's, as the plugins read it:
+/// its state and its value, from 0 to 1, if it tells one; none of none.
+fn tab_progress(progress: lokyr_vt_core::terminal::Progress) -> Option<host::TabProgress> {
+    use lokyr_plugin_sdk::view::ProgressState;
+    use lokyr_vt_core::terminal::Progress;
+
+    let share = |percent: u8| f32::from(percent.min(100)) / 100.0;
+    let (state, value) = match progress {
+        Progress::Remove => return None,
+        Progress::Set(percent) => (ProgressState::Normal, Some(share(percent))),
+        Progress::Error(percent) => (ProgressState::Error, percent.map(share)),
+        Progress::Paused(percent) => (ProgressState::Paused, percent.map(share)),
+        Progress::Indeterminate => (ProgressState::Indeterminate, None),
+    };
+    Some(host::TabProgress { state, value })
+}

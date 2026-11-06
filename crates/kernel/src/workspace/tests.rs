@@ -1214,3 +1214,102 @@ mod told {
         }
     }
 }
+
+/// Collects until the marks of `tab` of `workspace` hold `done`, for ten
+/// seconds at most, and returns the events collected.
+fn collect_marks(
+    workspace: &mut Workspace,
+    tab: TabId,
+    done: impl Fn(Marks) -> bool,
+) -> Vec<Event> {
+    let start = Instant::now();
+    let mut events = Vec::new();
+    loop {
+        let ids = workspace.pane_ids();
+        workspace.collect(&ids, Instant::now());
+        events.extend(workspace.take_events());
+        let marks = workspace.tab(tab).unwrap().marks();
+        if done(marks) {
+            return events;
+        }
+        assert!(start.elapsed() < Duration::from_secs(10), "{marks:?}");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+#[test]
+fn a_hidden_tab_s_output_and_bell_mark_it_until_it_shows() {
+    let mut workspace = Workspace::new();
+    let window = workspace.open_window(pane("read line"));
+    let shown = workspace.window(window).unwrap().active_tab();
+    // A tab behind the first, which prints, then rings.
+    let hidden = workspace
+        .open_tab(
+            window,
+            pane("sleep 0.2; echo out; read line; printf '\\a'; read line"),
+            1,
+        )
+        .unwrap();
+    let hidden_pane = workspace.tab(hidden).unwrap().active_pane();
+    let events = collect_marks(&mut workspace, hidden, |marks| marks.activity);
+    assert!(!workspace.tab(hidden).unwrap().marks().bell);
+    let told = |events: &[Event], tab: TabId| {
+        events
+            .iter()
+            .any(|event| *event == Event::Changed(Change::TabChanged { tab: tab.into() }))
+    };
+    assert!(told(&events, hidden), "{events:?}");
+    workspace.pane(hidden_pane).unwrap().text("\n");
+    collect_marks(&mut workspace, hidden, |marks| marks.bell);
+    // Shown, they are seen; the tab that showed marks nothing of its own.
+    assert!(workspace.activate_tab(hidden));
+    let marks = workspace.tab(hidden).unwrap().marks();
+    assert!(!marks.activity && !marks.bell, "{marks:?}");
+    assert!(told(&workspace.take_events(), hidden));
+    assert_eq!(workspace.tab(shown).unwrap().marks(), Marks::default());
+}
+
+#[test]
+fn a_shown_tab_s_output_marks_nothing_and_its_progress_marks_it() {
+    let mut workspace = Workspace::new();
+    let window = workspace.open_window(pane(
+        "printf 'out\\033]9;4;1;40\\a'; read line; printf '\\033]9;4;2\\a'; read line; printf '\\033]9;4;0\\a'; read line",
+    ));
+    let tab = workspace.window(window).unwrap().active_tab();
+    let id = workspace.tab(tab).unwrap().active_pane();
+    collect_marks(&mut workspace, tab, |marks| {
+        marks.progress == Some(terminal::Progress::Set(40))
+    });
+    assert!(!workspace.tab(tab).unwrap().marks().activity);
+    workspace.pane(id).unwrap().text("\n");
+    collect_marks(&mut workspace, tab, |marks| {
+        marks.progress == Some(terminal::Progress::Error(None))
+    });
+    workspace.pane(id).unwrap().text("\n");
+    collect_marks(&mut workspace, tab, |marks| marks.progress.is_none());
+}
+
+#[test]
+fn a_tab_is_marked_of_what_runs_its_protected_input_and_its_agent_each_told_once() {
+    let mut workspace = Workspace::new();
+    let window = workspace.open_window(pane("read line"));
+    let tab = workspace.window(window).unwrap().active_tab();
+    workspace.take_events();
+    let told = |workspace: &mut Workspace| {
+        changes(workspace)
+            .iter()
+            .filter(|change| **change == Change::TabChanged { tab: tab.into() })
+            .count()
+    };
+    assert!(workspace.set_tab_running(tab, true));
+    assert!(workspace.set_tab_running(tab, true));
+    assert_eq!(told(&mut workspace), 1);
+    assert!(workspace.set_tab_secure(tab, true));
+    assert!(workspace.set_tab_agent(tab, Some(sdk::AgentState::Waiting)));
+    assert_eq!(told(&mut workspace), 2);
+    let marks = workspace.tab(tab).unwrap().marks();
+    assert!(marks.running && marks.secure);
+    assert_eq!(marks.agent, Some(sdk::AgentState::Waiting));
+    assert!(!workspace.set_tab_secure(TabId::of(u64::MAX), true));
+    assert!(is_shell("-zsh") && is_shell("tmux") && !is_shell("vim"));
+}
