@@ -43,11 +43,11 @@ use std::fmt::Write as _;
 use crate::command::{Args, Capability, Code, Command, Error, Uses, is_name};
 use crate::event::WorkspaceEvent;
 use crate::host::{
-    self, BarPlace, Binding, Color, DecorationLook, Direction, Layout, LineText, MOST_STATE,
+    self, BarPlace, Binding, Color, DecorationLook, Direction, Edge, Layout, LineText, MOST_STATE,
     PaneId, ScreenPoint, Side, StyleRun, TabId, TabInfo, WindowId, WindowInfo,
 };
 use crate::keys::{When, parse_keys};
-use crate::message::{Call, Data, Effect, Event, Request, Response};
+use crate::message::{Call, Data, Effect, Event, OWN_PANE, Request, Response};
 use crate::plugin::{Cx, Plugin};
 use crate::ui::{Anchor, PanelId, PanelOptions, Slot, UiEvent, ViewId};
 use crate::view::{Key, Kind, Node};
@@ -835,6 +835,7 @@ impl FakeHost {
             Request::ActivateTab(tab) => self.activate_tab(*tab),
             Request::FocusPane(pane) => self.focus_pane(*pane),
             Request::MoveTab { tab, window, index } => self.move_tab(*tab, *window, *index),
+            Request::TabIntoPane { tab, pane, edge } => self.tab_into_pane(*tab, *pane, *edge),
             Request::TabToNewWindow { tab, at } => self.tab_to_new_window(*tab, *at),
             Request::PaneToNewTab {
                 pane,
@@ -1029,6 +1030,62 @@ impl FakeHost {
             }
             self.tell_left(left);
         }
+    }
+
+    /// Moves the panes of `tab` beside `pane`, of another tab, at its
+    /// `edge`, as the workspace does: `tab`'s layout whole in that half,
+    /// half and half, the tab gone, its window closing if it has none left,
+    /// `pane`'s tab shown, its keyboard at the moved tab's pane that had it.
+    fn tab_into_pane(&mut self, tab: TabId, pane: PaneId, edge: Edge) {
+        let Some(into) = self.panes.get(&pane).map(|pane| pane.tab) else {
+            return;
+        };
+        if into == tab {
+            return;
+        }
+        let (Some(moving), Some(target)) = (self.tabs.get(&tab), self.tabs.get(&into)) else {
+            return;
+        };
+        let mut grafted = target.layout.clone();
+        if !graft(&mut grafted, pane, edge, moving.layout.clone()) {
+            return;
+        }
+        let left = self.detach_tab(tab);
+        let Some(moved) = self.tabs.remove(&tab) else {
+            return;
+        };
+        let Some(target) = self.tabs.get_mut(&into) else {
+            return;
+        };
+        target.layout = grafted;
+        target.zoomed = None;
+        target.active = moved.active;
+        let window = target.window;
+        let panes = leaves(&moved.layout);
+        for moved_pane in &panes {
+            if let Some(shown) = self.panes.get_mut(moved_pane) {
+                shown.tab = into;
+                shown.window = window;
+            }
+        }
+        for moved_pane in panes {
+            self.changed(WorkspaceEvent::PaneMoved {
+                pane: moved_pane,
+                from: tab,
+                tab: into,
+            });
+        }
+        self.changed(WorkspaceEvent::TabClosed {
+            tab,
+            window: moved.window,
+        });
+        self.changed(WorkspaceEvent::LayoutChanged { tab: into });
+        self.changed(WorkspaceEvent::PaneFocused {
+            pane: moved.active,
+            tab: into,
+        });
+        self.tell_left(left);
+        self.activate_tab(into);
     }
 
     /// Has `tab`'s window show it.
@@ -1401,6 +1458,38 @@ fn leaves(layout: &Layout) -> Vec<PaneId> {
             let mut panes = leaves(first);
             panes.extend(leaves(second));
             panes
+        }
+    }
+}
+
+/// Puts `grafted` beside the leaf of `pane` in `layout`, at its `edge`,
+/// half and half, `grafted` the edge's half; whether `pane` is a leaf of
+/// it.
+fn graft(layout: &mut Layout, pane: PaneId, edge: Edge, grafted: Layout) -> bool {
+    match layout {
+        Layout::Pane(leaf) if *leaf == pane => {
+            let (direction, first) = match edge {
+                Edge::Left => (Direction::Horizontal, true),
+                Edge::Right => (Direction::Horizontal, false),
+                Edge::Top => (Direction::Vertical, true),
+                Edge::Bottom => (Direction::Vertical, false),
+            };
+            let (first, second) = if first {
+                (grafted, Layout::Pane(pane))
+            } else {
+                (Layout::Pane(pane), grafted)
+            };
+            *layout = Layout::Split {
+                direction,
+                ratio: Some(0.5),
+                first: Box::new(first),
+                second: Box::new(second),
+            };
+            true
+        }
+        Layout::Pane(_) => false,
+        Layout::Split { first, second, .. } => {
+            graft(first, pane, edge, grafted.clone()) || graft(second, pane, edge, grafted)
         }
     }
 }
@@ -1881,6 +1970,14 @@ impl Calling<'_> {
             Request::MoveTab { tab, window, .. } => {
                 self.known_tab(*tab)?;
                 self.known_window(*window)?;
+                Response::Done
+            }
+            Request::TabIntoPane { tab, pane, .. } => {
+                self.known_tab(*tab)?;
+                self.known_pane(*pane)?;
+                if self.host.panes.get(pane).map(|shown| shown.tab) == Some(*tab) {
+                    return Err(Error::new(Code::Failed, OWN_PANE));
+                }
                 Response::Done
             }
             Request::CloseWindow(window) => {

@@ -661,6 +661,12 @@ impl<'a> Cx<'a> {
         self.done(Request::MoveTab { tab, window, index })
     }
 
+    /// Moves the panes of `tab` beside `pane`, of another tab, at its
+    /// `edge`, the tab's layout whole in that half, as this call returns.
+    pub fn tab_into_pane(&mut self, tab: TabId, pane: PaneId, edge: Edge) -> Result<(), Error> {
+        self.done(Request::TabIntoPane { tab, pane, edge })
+    }
+
     /// Moves `tab` into a window of its own, as this call returns.
     pub fn tab_to_new_window(&mut self, tab: TabId) -> Result<(), Error> {
         self.done(Request::TabToNewWindow { tab, at: None })

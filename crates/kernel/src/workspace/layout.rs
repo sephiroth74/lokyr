@@ -31,7 +31,7 @@ pub enum Edge {
 
 impl Edge {
     /// The direction of the splits whose divider is this edge.
-    fn direction(self) -> Direction {
+    pub fn direction(self) -> Direction {
         match self {
             Self::Left | Self::Right => Direction::Horizontal,
             Self::Top | Self::Bottom => Direction::Vertical,
@@ -257,6 +257,33 @@ impl Layout {
             ratio: None,
             first: Box::new(Self::Leaf(first)),
             second: Box::new(Self::Leaf(second)),
+        };
+        true
+    }
+
+    /// Puts `layout` beside the leaf of `pane`, at its `edge`, in a split of
+    /// `ratio` in its place, `layout`'s part the edge's half: left or top,
+    /// the first; whether `pane` is a leaf of it, and none of `layout`'s
+    /// panes is.
+    pub fn graft(&mut self, pane: PaneId, edge: Edge, layout: Self, ratio: Option<Ratio>) -> bool {
+        if layout.panes().iter().any(|&grafted| self.contains(grafted)) {
+            return false;
+        }
+        let Some(path) = self.path_of(pane) else {
+            return false;
+        };
+        let Some(leaf) = self.at_mut(&path) else {
+            return false;
+        };
+        let (first, second) = match edge {
+            Edge::Left | Edge::Top => (layout, Self::Leaf(pane)),
+            Edge::Right | Edge::Bottom => (Self::Leaf(pane), layout),
+        };
+        *leaf = Self::Split {
+            direction: edge.direction(),
+            ratio,
+            first: Box::new(first),
+            second: Box::new(second),
         };
         true
     }

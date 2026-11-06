@@ -25,7 +25,7 @@ use lokyr_plugin_sdk::host::{
     BarPlace, Binding, Color, DecorationLook, Direction, Edge, Layout, Line, LineText, MOST_STATE,
     PaneId, ScreenPoint, Scroll, Side, TabId, TabInfo, Underline, WindowId, WindowInfo,
 };
-use lokyr_plugin_sdk::message::{Data, Event, Mods, Request, Response};
+use lokyr_plugin_sdk::message::{Data, Event, Mods, OWN_PANE, Request, Response};
 use lokyr_plugin_sdk::ui::{Anchor, PanelId, PanelOptions, Role, ViewId};
 use serde::{Deserialize, Serialize};
 
@@ -1319,6 +1319,93 @@ fn workspace(world: &World) -> Scenario {
                         tab: tab(0),
                         window: w,
                     }),
+                ],
+            },
+            // A new tab into the first's pane, below it, whole, half and
+            // half: the tab goes, the first showing still; and none into a
+            // pane of its own.
+            Step {
+                asks: vec![
+                    (
+                        Request::NewTab {
+                            window: w,
+                            index: None,
+                        },
+                        Response::Tab {
+                            tab: tab(2),
+                            pane: pane(2),
+                        },
+                    ),
+                    (
+                        Request::TabIntoPane {
+                            tab: tab(2),
+                            pane: p,
+                            edge: Edge::Bottom,
+                        },
+                        Response::Done,
+                    ),
+                    (
+                        Request::TabIntoPane {
+                            tab: t,
+                            pane: p,
+                            edge: Edge::Left,
+                        },
+                        failed(Code::Failed, OWN_PANE),
+                    ),
+                ],
+                posts: Vec::new(),
+                heard: vec![
+                    ws(WorkspaceEvent::TabCreated {
+                        tab: tab(2),
+                        window: w,
+                        index: 1,
+                    }),
+                    ws(WorkspaceEvent::PaneCreated {
+                        pane: pane(2),
+                        tab: tab(2),
+                    }),
+                    ws(WorkspaceEvent::PaneMoved {
+                        pane: pane(2),
+                        from: tab(2),
+                        tab: t,
+                    }),
+                    ws(WorkspaceEvent::TabClosed {
+                        tab: tab(2),
+                        window: w,
+                    }),
+                    ws(WorkspaceEvent::LayoutChanged { tab: t }),
+                    ws(WorkspaceEvent::PaneFocused {
+                        pane: pane(2),
+                        tab: t,
+                    }),
+                ],
+            },
+            ask(vec![(
+                Request::Layout(t),
+                Response::Layout(Layout::Split {
+                    direction: Direction::Vertical,
+                    ratio: Some(0.5),
+                    first: Box::new(Layout::Pane(p)),
+                    second: Box::new(Layout::Pane(pane(2))),
+                }),
+            )]),
+            // Its pane closed, the first as it was, for the next scenarios.
+            Step {
+                asks: vec![(
+                    Request::ClosePane {
+                        pane: pane(2),
+                        ask: false,
+                    },
+                    Response::Done,
+                )],
+                posts: Vec::new(),
+                heard: vec![
+                    ws(WorkspaceEvent::PaneClosed {
+                        pane: pane(2),
+                        tab: t,
+                    }),
+                    ws(WorkspaceEvent::LayoutChanged { tab: t }),
+                    ws(WorkspaceEvent::PaneFocused { pane: p, tab: t }),
                 ],
             },
             ask(vec![(

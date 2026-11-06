@@ -2266,6 +2266,15 @@ fn apply(writes: Vec<Write>, context: &mut Context<'_>, out: &mut Outbox, state:
                     .workspace
                     .resize_pane(PaneId::of(pane.0), edge(moved), by);
             }
+            Asked::TabIntoPane {
+                tab,
+                pane,
+                edge: at,
+            } => {
+                context
+                    .workspace
+                    .tab_into_pane(TabId::of(tab.0), PaneId::of(pane.0), edge(at));
+            }
             Asked::SetRatio { tab, path, ratio } => {
                 let path: Vec<Side> = path.into_iter().map(side).collect();
                 context
@@ -3086,6 +3095,16 @@ impl Host<'_, '_> {
             Asked::PaneToNewTab { pane, window, .. } => {
                 self.known_pane(*pane)?;
                 self.window(*window)?;
+            }
+            Asked::TabIntoPane { tab, pane, .. } => {
+                self.known_tab(*tab)?;
+                self.known_pane(*pane)?;
+                if self.context.workspace.tab_of(PaneId::of(pane.0)) == Some(TabId::of(tab.0)) {
+                    return Err(Error::new(
+                        Code::Failed,
+                        lokyr_plugin_sdk::message::OWN_PANE,
+                    ));
+                }
             }
             Asked::ResizePane { pane, by, .. } => {
                 self.known_pane(*pane)?;

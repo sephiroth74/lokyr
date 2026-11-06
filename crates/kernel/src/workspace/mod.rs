@@ -1153,6 +1153,62 @@ impl Workspace {
         true
     }
 
+    /// Moves the panes of `tab` beside `pane`, of another tab, at its
+    /// `edge`, `tab`'s layout whole in that half of `pane`'s part, half and
+    /// half: `tab` goes, its programs running on, and its window shows the
+    /// tab next to it, or closes if it has none left; `pane`'s tab, its zoom
+    /// ended, shows in its window, its keyboard at the pane of `tab` that had
+    /// it. Whether both are open, and `pane` is not of `tab`.
+    pub fn tab_into_pane(&mut self, tab: TabId, pane: PaneId, edge: Edge) -> bool {
+        let Some(&into) = self.tab_of.get(&pane) else {
+            return false;
+        };
+        if into == tab {
+            return false;
+        }
+        let (Some(moving), Some(target)) = (self.tabs.get(&tab), self.tabs.get(&into)) else {
+            return false;
+        };
+        let mut grafted = target.layout.clone();
+        if !grafted.graft(pane, edge, moving.layout.clone(), Some(Ratio::HALF)) {
+            return false;
+        }
+        let left = self.detach_tab(tab);
+        let Some(moved) = self.tabs.remove(&tab) else {
+            return false;
+        };
+        let panes = moved.layout.panes();
+        let Some(target) = self.tabs.get_mut(&into) else {
+            return false;
+        };
+        target.layout = grafted;
+        target.zoomed = None;
+        target.active = moved.active;
+        for &moved_pane in &panes {
+            self.tab_of.insert(moved_pane, into);
+        }
+        for &moved_pane in &panes {
+            self.changed(WorkspaceEvent::PaneMoved {
+                pane: moved_pane.into(),
+                from: tab.into(),
+                tab: into.into(),
+            });
+        }
+        self.changed(WorkspaceEvent::TabClosed {
+            tab: tab.into(),
+            window: moved.window.into(),
+        });
+        self.take_active_look(into);
+        self.changed(WorkspaceEvent::LayoutChanged { tab: into.into() });
+        self.changed(WorkspaceEvent::PaneFocused {
+            pane: moved.active.into(),
+            tab: into.into(),
+        });
+        self.tell_left(left);
+        self.activate_tab(into);
+        true
+    }
+
     /// Moves `pane` out of its tab into a tab of its own in `window`, at
     /// `index` of its tabs, or at their end past them, and returns that
     /// tab; a pane alone in its tab moves with it.

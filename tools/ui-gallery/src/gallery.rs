@@ -432,7 +432,9 @@ impl Gallery {
             UiEventKind::DragCancel => self.drag = format!("drag of `{key}` cancelled"),
             UiEventKind::Reorder { index } => self.drag = format!("`{key}` moved to {index}"),
             // The gallery's nodes carry no tabs out of their bars.
-            UiEventKind::DropOnBar { .. } | UiEventKind::DropOutside { .. } => {}
+            UiEventKind::DropOnBar { .. }
+            | UiEventKind::DropOnPane { .. }
+            | UiEventKind::DropOutside { .. } => {}
             UiEventKind::Scroll { x, y } => {
                 let (_, across, down) = self.scrolled;
                 self.scrolled = (format!("`{key}` by {x:.0}, {y:.0}"), across + x, down + y);

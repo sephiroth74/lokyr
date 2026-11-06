@@ -1355,3 +1355,89 @@ fn two_panes_of_a_tab_swap_their_rooms_and_its_keyboard_stays_with_its_pane() {
             .all(|change| !matches!(change, Change::LayoutChanged { .. }))
     );
 }
+
+#[test]
+fn a_tab_goes_into_a_pane_of_another_whole_in_the_half_at_its_edge() {
+    let mut workspace = Workspace::new();
+    // A first window of a tab of one pane, and of a tab of two, one over
+    // the other; a second window of a tab of one pane.
+    let first = workspace.open_window(pane("sleep 10"));
+    let alone = workspace.window(first).unwrap().active_tab();
+    let a = workspace.tab(alone).unwrap().active_pane();
+    let pair = workspace.open_tab(first, pane("sleep 10"), 99).unwrap();
+    let top = workspace.tab(pair).unwrap().active_pane();
+    let bottom = workspace
+        .split(top, Direction::Vertical, pane("sleep 10"), Side::Second)
+        .unwrap();
+    let second = workspace.open_window(pane("sleep 10"));
+    let target = workspace.window(second).unwrap().active_tab();
+    let c = workspace.tab(target).unwrap().active_pane();
+    workspace.take_events();
+    let layout = |workspace: &Workspace| workspace.tab(target).unwrap().layout().clone();
+    // The pair on the left of the second's pane, whole, half and half: the
+    // first window shows its other tab, the keyboard goes to the pair's.
+    assert!(workspace.tab_into_pane(pair, c, Edge::Left));
+    let pair_layout = Layout::Split {
+        direction: Direction::Vertical,
+        ratio: None,
+        first: Box::new(Layout::Leaf(top)),
+        second: Box::new(Layout::Leaf(bottom)),
+    };
+    assert_eq!(
+        layout(&workspace),
+        Layout::Split {
+            direction: Direction::Horizontal,
+            ratio: Some(Ratio::HALF),
+            first: Box::new(pair_layout.clone()),
+            second: Box::new(Layout::Leaf(c)),
+        }
+    );
+    assert!(workspace.tab(pair).is_none());
+    assert_eq!(workspace.tab_of(top), Some(target));
+    assert_eq!(workspace.tab_of(bottom), Some(target));
+    assert_eq!(workspace.tab(target).unwrap().active_pane(), top);
+    assert_eq!(workspace.window(first).unwrap().tabs(), [alone]);
+    assert_eq!(workspace.window(first).unwrap().active_tab(), alone);
+    let events = workspace.take_events();
+    let moved = |pane: PaneId| {
+        Event::Changed(Change::PaneMoved {
+            pane: pane.into(),
+            from: pair.into(),
+            tab: target.into(),
+        })
+    };
+    assert!(events.contains(&moved(top)) && events.contains(&moved(bottom)));
+    assert!(events.contains(&Event::Changed(Change::TabClosed {
+        tab: pair.into(),
+        window: first.into(),
+    })));
+    // The first window's last tab below the second's pane: the window
+    // closes.
+    assert!(workspace.tab_into_pane(alone, c, Edge::Bottom));
+    assert_eq!(
+        layout(&workspace),
+        Layout::Split {
+            direction: Direction::Horizontal,
+            ratio: Some(Ratio::HALF),
+            first: Box::new(pair_layout),
+            second: Box::new(Layout::Split {
+                direction: Direction::Vertical,
+                ratio: Some(Ratio::HALF),
+                first: Box::new(Layout::Leaf(c)),
+                second: Box::new(Layout::Leaf(a)),
+            }),
+        }
+    );
+    assert!(workspace.window(first).is_none());
+    assert!(
+        workspace
+            .take_events()
+            .contains(&Event::Changed(Change::WindowClosed {
+                window: first.into()
+            }))
+    );
+    // Not into a pane of its own, nor of a tab not there.
+    assert!(!workspace.tab_into_pane(target, c, Edge::Right));
+    assert!(!workspace.tab_into_pane(pair, c, Edge::Right));
+    assert_eq!(workspace.panes_of(second).len(), 4);
+}

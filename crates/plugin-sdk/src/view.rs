@@ -20,7 +20,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::host::{TabId, WindowId};
+use crate::host::{Edge, PaneId, TabId, WindowId};
 
 /// A node's key, unique in its whole tree: what keeps the node, and the
 /// state that the host keeps of it, from one render to the next, and what
@@ -667,6 +667,16 @@ pub enum UiEventKind {
         /// The tab's index among the window's.
         index: usize,
     },
+    /// A node that carries a tab was dragged out of its bar and dropped on
+    /// a pane of another tab, of its window or of another, before its
+    /// drag's end: the pane, and its edge nearest the pointer, whose half
+    /// lit up, where the tab's layout goes beside it.
+    DropOnPane {
+        /// The pane.
+        pane: PaneId,
+        /// Its edge nearest the pointer.
+        edge: Edge,
+    },
     /// A node that carries a tab was dragged out of its bar and dropped
     /// outside every window of the app, before its drag's end: where a
     /// window of the tab alone puts its content's top left corner on the
@@ -1300,6 +1310,10 @@ mod tests {
                 window: WindowId(3),
                 index: 1,
             },
+            UiEventKind::DropOnPane {
+                pane: PaneId(4),
+                edge: Edge::Bottom,
+            },
             UiEventKind::DropOutside { x: 640.0, y: -20.5 },
             UiEventKind::SetValue {
                 value: "main".to_owned(),
@@ -1326,6 +1340,7 @@ mod tests {
                 r#"[{"kind":"double-click"},{"kind":"drag-move","x":12.0,"y":-1.5},"#,
                 r#"{"kind":"reorder","index":2},"#,
                 r#"{"kind":"drop-on-bar","window":3,"index":1},"#,
+                r#"{"kind":"drop-on-pane","pane":4,"edge":"bottom"},"#,
                 r#"{"kind":"drop-outside","x":640.0,"y":-20.5},"#,
                 r#"{"kind":"set-value","value":"main"},{"kind":"input-changed","text":"ma","revision":2},"#,
                 r#"{"kind":"submit","text":"main"},{"kind":"toggle","on":true},"#,

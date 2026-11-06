@@ -42,6 +42,10 @@ pub struct Call {
     pub request: Request,
 }
 
+/// The message of the error of [`Request::TabIntoPane`] of a pane of the
+/// tab itself, which every host gives alike.
+pub const OWN_PANE: &str = "a tab goes into a pane of another tab, not of its own";
+
 /// What a plugin asks of the host.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -328,6 +332,19 @@ pub enum Request {
         /// Its place among the window's tabs, from the first.
         index: usize,
     },
+    /// Moves the panes of a tab beside a pane of another tab, at its `edge`,
+    /// the tab's layout whole in that half of the pane's part, half and
+    /// half, as a tab dropped on a pane: the tab goes, its programs running
+    /// on, its window closing if it has none left; the pane's tab shows,
+    /// its keyboard at the moved tab's pane that had it.
+    TabIntoPane {
+        /// The tab.
+        tab: TabId,
+        /// The pane of another tab.
+        pane: PaneId,
+        /// The pane's edge where the tab goes.
+        edge: Edge,
+    },
     /// Moves a tab out of its window into a window of its own, whose
     /// content's top left corner goes at `at` on the screens, as a tab
     /// dropped outside every window, or where the platform places a new
@@ -527,6 +544,7 @@ impl Request {
             | Self::ActivateTab(_)
             | Self::FocusPane(_)
             | Self::MoveTab { .. }
+            | Self::TabIntoPane { .. }
             | Self::TabToNewWindow { .. }
             | Self::PaneToNewTab { .. }
             | Self::PaneToNewWindow(_)
@@ -592,6 +610,7 @@ impl Request {
             | Self::ActivateTab(_)
             | Self::FocusPane(_)
             | Self::MoveTab { .. }
+            | Self::TabIntoPane { .. }
             | Self::TabToNewWindow { .. }
             | Self::PaneToNewTab { .. }
             | Self::PaneToNewWindow(_)

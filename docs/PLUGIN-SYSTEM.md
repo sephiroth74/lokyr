@@ -328,8 +328,9 @@ type Node = {
     -- A reorderable node's tab, as a bar's tab carries it: dragged across its parent past a margin, or out
     -- of its window, it leaves its siblings, which close its room, and the host shows the tab's panes under
     -- the pointer, its window showing another tab meanwhile; the bar of another window opens a room for it.
-    -- A drop there gives it a "drop-on-bar", outside every window a "drop-outside", before its "drag-end",
-    -- of which its plugin makes the tab's move; Escape, or a drop elsewhere, puts it back.
+    -- A drop there gives it a "drop-on-bar", on a pane of another tab, whose half nearest the pointer lights
+    -- up, a "drop-on-pane", outside every window a "drop-outside", before its "drag-end", of which its
+    -- plugin makes the tab's move; Escape, or a drop elsewhere, puts it back.
     carries: number?,
     tooltip: string?, -- shown as the pointer rests over the node, by its key
     children: { Node }?,
@@ -426,7 +427,7 @@ type UiEvent = {
     kind: "click" | "double-click" | "middle-click" | "hover-enter" | "hover-leave" | "context-menu"
         | "input-changed" | "submit" | "focus" | "blur" | "scroll"
         | "drag-start" | "drag-move" | "drag-end" | "drag-cancel" | "reorder" | "drop-on-bar"
-        | "drop-outside" | "set-value" | "toggle" | "select" | "activate" | "list-range",
+        | "drop-on-pane" | "drop-outside" | "set-value" | "toggle" | "select" | "activate" | "list-range",
     text: string?, -- a field's text, as the host holds it: at each change, "input-changed", and as Return goes to it, "submit"
     revision: number?, -- an "input-changed" text's, one more at each edit, which `set_text` gives back
     item: number?, -- a list's item, selected or activated
@@ -434,6 +435,7 @@ type UiEvent = {
     x: number?, y: number?, -- a drag's, from its start, or a scroll's, in points; a "drop-outside"'s, where the tab's new window puts its content's corner on the screens
     index: number?, -- a "reorder"'s, the node's new index among its reorderable siblings, before its "drag-end"; a "drop-on-bar"'s, the tab's index among the window's
     window: number?, -- a "drop-on-bar"'s, the window whose bar took the tab
+    pane: PaneId?, edge: ("left" | "right" | "top" | "bottom")?, -- a "drop-on-pane"'s, the pane and its edge nearest the pointer
     value: string?, -- set by accessibility, as VoiceOver's; its press comes as a click, its focus as a focus
     on: boolean?, -- a toggle's state asked, the other than its render's, which the next render gives
 }
@@ -495,6 +497,9 @@ type Cx = {
     activate_tab: (tab: TabId) -> (boolean, Error?),
     focus_pane: (pane: PaneId) -> (boolean, Error?),
     move_tab: (tab: TabId, window: WindowId, index: number) -> (boolean, Error?),
+    -- The tab's panes beside a pane of another tab, at its edge, the tab's layout whole in that half, half and
+    -- half: the tab goes, its programs running on, its window closing if it has none left.
+    tab_into_pane: (tab: TabId, pane: PaneId, edge: "left" | "right" | "top" | "bottom") -> (boolean, Error?),
     -- A window of its own, its content's corner at `at` on the screens, from the menu bar's screen's top
     -- left corner, where it is given; a tab alone in its window stays, its window moving to `at`.
     tab_to_new_window: (tab: TabId, at: { x: number, y: number }?) -> (boolean, Error?),

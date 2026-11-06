@@ -727,11 +727,12 @@ fn kind(request: &Request) -> usize {
         Request::PaneGrid(_) => 63,
         Request::SwapPanes { .. } => 64,
         Request::SetWindowTabBarPlace { .. } => 65,
+        Request::TabIntoPane { .. } => 66,
     }
 }
 
 /// How many kinds of requests the plugin API has.
-const KINDS: usize = 66;
+const KINDS: usize = 67;
 
 #[test]
 fn the_scenarios_hold_every_request_of_the_plugin_api() {
