@@ -44,6 +44,10 @@ const SHAPED_GLYPHS: usize = 1 << 17;
 /// fields and their compositions ask for them each frame.
 const CARET_TEXTS: usize = 8;
 
+/// How many texts of the interface, shortened to their room, the font
+/// keeps, as each frame that draws the chrome shortens the same again.
+const SHORTENED_TEXTS: usize = 64;
+
 /// An icon's largest side, in pixels, past which it draws nothing: 512
 /// points at a scale of 2, a megabyte of the atlas.
 const ICON_LARGEST: f32 = 1024.0;
@@ -215,6 +219,8 @@ pub struct Font<B> {
     /// for, the newest first, of their face and size, so that a field's
     /// frames find them once.
     carets: Vec<KnownCarets>,
+    /// The texts of the interface shortened lately, the newest first.
+    shortened: Vec<KnownShortened>,
     /// The region of each glyph drawn, with its key, for the tests.
     #[cfg(test)]
     drawn: Vec<(AtlasRegion, GlyphKey)>,
@@ -483,6 +489,7 @@ impl<B: FontBackend> Font<B> {
             icons: FastMap::default(),
             icon_pixels: FastMap::default(),
             carets: Vec::new(),
+            shortened: Vec::new(),
             #[cfg(test)]
             drawn: Vec::new(),
             resolved,
@@ -1187,6 +1194,70 @@ impl<B: FontBackend> Font<B> {
         (placed, end)
     }
 
+    /// `text` of the interface's face cut at a grapheme cluster's end, of
+    /// an ellipsis after it, within `room` points: the most clusters whose
+    /// prefix fits with the ellipsis, measured of its own, as a text from
+    /// right to left or of both directions lays out its prefix apart, the
+    /// spaces before the ellipsis left out; the ellipsis alone where none
+    /// fits. Found once for the last texts shortened, which each frame of
+    /// the chrome shortens again.
+    pub fn interface_shortened(&mut self, text: &str, room: f32) -> Rc<str> {
+        const ELLIPSIS: &str = "…";
+        let (size, face) = {
+            let interface = self.interface();
+            (interface.size(), interface.face())
+        };
+        let key = (face, size.to_bits(), room.to_bits());
+        let known = self
+            .shortened
+            .iter()
+            .position(|known| (known.face, known.size, known.room) == key && known.text == text);
+        if let Some(at) = known {
+            let known = self.shortened.remove(at);
+            let shortened = Rc::clone(&known.shortened);
+            self.shortened.insert(0, known);
+            return shortened;
+        }
+        let features = Features { ligatures: true };
+        let ellipsis = self.backend.width(face, size, ELLIPSIS, features);
+        // The clusters' boundaries, from the text's start.
+        let mut bounds: Vec<usize> = self
+            .interface_carets(text)
+            .iter()
+            .map(|&(byte, _)| byte)
+            .filter(|&byte| byte > 0 && byte < text.len())
+            .collect();
+        bounds.sort_unstable();
+        bounds.dedup();
+        // The most clusters whose prefix, of its own width, which a text
+        // from right to left or of both directions lays out apart, fits
+        // with the ellipsis.
+        let (mut fit, mut over) = (0, bounds.len());
+        while fit < over {
+            let mid = (fit + over).div_ceil(2);
+            let prefix = text[..bounds[mid - 1]].trim_end();
+            if self.backend.width(face, size, prefix, features) + ellipsis <= room {
+                fit = mid;
+            } else {
+                over = mid - 1;
+            }
+        }
+        let cut = fit.checked_sub(1).map_or(0, |at| bounds[at]);
+        let shortened: Rc<str> = format!("{}{ELLIPSIS}", text[..cut].trim_end()).into();
+        self.shortened.truncate(SHORTENED_TEXTS - 1);
+        self.shortened.insert(
+            0,
+            KnownShortened {
+                face,
+                size: size.to_bits(),
+                room: room.to_bits(),
+                text: text.to_owned(),
+                shortened: Rc::clone(&shortened),
+            },
+        );
+        shortened
+    }
+
     /// The places between the grapheme clusters of `text` in the
     /// interface's face, in points from its start, as
     /// [`Font::interface_text`] draws it: each cluster's first byte and the
@@ -1600,6 +1671,17 @@ impl<B: FontBackend> Carets for Font<B> {
     fn carets(&mut self, text: &str) -> Rc<[(usize, f32)]> {
         self.interface_carets(text)
     }
+}
+
+/// A text of the interface shortened to a room, which the next frames
+/// shorten again: of its face, its size's bits and the room's.
+#[derive(Debug)]
+struct KnownShortened {
+    face: FaceId,
+    size: u32,
+    room: u32,
+    text: String,
+    shortened: Rc<str>,
 }
 
 /// The places of the caret in a text of the interface, which a field's

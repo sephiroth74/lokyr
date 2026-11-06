@@ -882,7 +882,7 @@ impl<'a, B: FontBackend> Painter<'a, B> {
         let past = natural.is_some_and(|width| width * scale > frame.width + 1.0);
         // A text too long for its frame ends in an ellipsis, as macOS's
         // labels do.
-        let shortened = past.then(|| self.shortened(text, frame.width / scale));
+        let shortened = past.then(|| self.font.interface_shortened(text, frame.width / scale));
         let (glyphs, _) = self.font.interface_text(
             shortened.as_deref().unwrap_or(text),
             (frame.x, baseline),
@@ -900,23 +900,6 @@ impl<'a, B: FontBackend> Painter<'a, B> {
         } else {
             self.glyphs(glyphs);
         }
-    }
-
-    /// `text` cut at the end of a grapheme cluster, of an ellipsis after
-    /// it, within `room` points: its clusters that fit before the
-    /// ellipsis, the spaces before it left out; the ellipsis alone where
-    /// none fits.
-    fn shortened(&mut self, text: &str, room: f32) -> String {
-        const ELLIPSIS: &str = "…";
-        let ellipsis = Measure::text(&mut *self.font, ELLIPSIS).0;
-        let carets = self.font.interface_carets(text);
-        let cut = carets
-            .iter()
-            .filter(|(_, x)| x + ellipsis <= room)
-            .map(|&(byte, _)| byte)
-            .max()
-            .unwrap_or(0);
-        format!("{}{ELLIPSIS}", text[..cut].trim_end())
     }
 
     /// A button's or a toggle's content, of `label` and `icon`, either

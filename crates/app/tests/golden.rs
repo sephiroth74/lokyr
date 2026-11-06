@@ -29,7 +29,7 @@ use lokyr_text_core::{FontConfig, Size};
 use lokyr_ui_core::animation::Animations;
 use lokyr_ui_core::field::Fields;
 use lokyr_ui_core::font::Font;
-use lokyr_ui_core::layout::{Layout, Room};
+use lokyr_ui_core::layout::{Layout, Measure, Room};
 use lokyr_ui_core::list::Lists;
 use lokyr_ui_core::paint::{Shown, paint, tooltip};
 use lokyr_ui_core::pane::{self as cells, CursorLook, Selection, TextLook};
@@ -1329,6 +1329,38 @@ fn check_tab_bar((name, style, position, (width, height), shown): Bar, (dark, sc
         (width, height, &pixels),
         most,
     );
+}
+
+#[test]
+fn a_title_of_either_direction_is_shortened_within_its_room() {
+    let Some(mut drawing) = Drawing::new(2.0) else {
+        return;
+    };
+    let font = &mut drawing.font;
+    let room = 80.0;
+    for text in [
+        "~/Documents/git/sephiroth74/rust/lokyr — cargo test",
+        "שלום עולם, זוהי כותרת ארוכה מאוד של לשונית",
+        "ab שלום עולם cd ef gh ij kl mn",
+        "🇮🇹 👨‍👩‍👧 a family 🧑🏽‍💻 at work, of flags",
+    ] {
+        let shortened = font.interface_shortened(text, room);
+        // Of an ellipsis, after a prefix of the text that ends at a
+        // cluster's end, within the room.
+        let prefix = shortened.strip_suffix('…').expect("an ellipsis");
+        assert!(
+            text.starts_with(prefix) && prefix.len() < text.len(),
+            "{text}: {shortened}"
+        );
+        let width = Measure::text(font, &shortened).0;
+        assert!(width <= room + 0.5, "{text}: {shortened}, {width}");
+        assert!(!prefix.is_empty(), "{text}: {shortened}");
+        // The next frame's is the same, of no shaping again.
+        assert!(std::rc::Rc::ptr_eq(
+            &shortened,
+            &font.interface_shortened(text, room)
+        ));
+    }
 }
 
 #[test]
