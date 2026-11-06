@@ -546,6 +546,7 @@ fn numbers(node: &Node) -> Result<(), Invalid> {
                 .all(size),
         ),
         ("width", length(layout.width)),
+        ("min-width", length(layout.min_width)),
         ("height", length(layout.height)),
         ("grow", size(layout.grow)),
         ("radius", size(style.radius)),

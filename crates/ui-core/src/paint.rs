@@ -389,10 +389,15 @@ impl<'a, B: FontBackend> Painter<'a, B> {
             self.node(child, color);
         }
         self.group = outer_group;
-        if matches!(kind, Kind::Scroll) {
+        if matches!(kind, Kind::Scroll) && !style.hides_indicator {
             let scale = self.layout.scale();
             let room = self.layout.scroll_room(tree, id) / scale;
-            self.indicator(frame, (self.layout.scrolled(id) / scale, room));
+            let scrolled = (self.layout.scrolled(id) / scale, room);
+            if crate::layout::across(tree, id) {
+                self.indicator_across(frame, scrolled);
+            } else {
+                self.indicator(frame, scrolled);
+            }
         }
         if clips {
             self.items.push(Item::PopClip);
@@ -627,6 +632,36 @@ impl<'a, B: FontBackend> Painter<'a, B> {
                 Rect {
                     x: (frame.x + frame.width - width - inset).round() as i32,
                     y: top.round() as i32,
+                    width: width.round() as u32,
+                    height: height.round() as u32,
+                },
+                color,
+            )
+        });
+    }
+
+    /// The indicator of a scroll across `frame`, a row's, scrolled
+    /// rightwards `scrolled` of `room`, in points, at its bottom edge, as
+    /// [`Painter::indicator`] is at a column's right edge.
+    fn indicator_across(&mut self, frame: Frame, (scrolled, room): (f32, f32)) {
+        let Some(color) = self.tokens.get("scrollbar") else {
+            return;
+        };
+        if room <= 0.0 {
+            return;
+        }
+        let scale = self.layout.scale();
+        let view = frame.width;
+        let total = view + room * scale;
+        let width = (view * view / total).max(INDICATOR.0 * scale).min(view);
+        let left = frame.x + (view - width) * (scrolled / room).clamp(0.0, 1.0);
+        let (height, inset) = (INDICATOR.1 * scale, INDICATOR.2 * scale);
+        self.push_shape(Shape {
+            radius: height / 2.0,
+            ..Shape::filled(
+                Rect {
+                    x: left.round() as i32,
+                    y: (frame.y + frame.height - height - inset).round() as i32,
                     width: width.round() as u32,
                     height: height.round() as u32,
                 },

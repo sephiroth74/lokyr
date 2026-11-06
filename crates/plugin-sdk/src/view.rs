@@ -418,6 +418,9 @@ pub struct Layout {
     pub width: Length,
     /// Its height.
     pub height: Length,
+    /// Its least width, which it keeps as its siblings share less room,
+    /// as a tab among many: of its content's by default.
+    pub min_width: Length,
     /// How much of the room left along its parent's direction it takes, in
     /// proportion to its siblings'.
     pub grow: f32,
@@ -433,6 +436,7 @@ impl Default for Layout {
             justify: Justify::Start,
             width: Length::Auto,
             height: Length::Auto,
+            min_width: Length::Auto,
             grow: 0.0,
         }
     }
@@ -470,6 +474,9 @@ pub struct Style {
     /// Whether its children draw within its box alone, as a list's rows
     /// within the list, and the pointer finds them there alone.
     pub clip: bool,
+    /// Of a scroll area, whether it shows no indicator of its scroll, as a
+    /// bar of tabs whose ends tell it.
+    pub hides_indicator: bool,
     /// How the pointer looks over its box, and over its children's that
     /// name none; `None` for its parent's, and at the root the arrow.
     pub pointer: Option<PointerShape>,
@@ -1037,6 +1044,7 @@ mod tests {
             shadow: Some(Shadow::default()),
             color: Some(Token::from("text.secondary")),
             clip: true,
+            hides_indicator: true,
             pointer: Some(PointerShape::PointingHand),
             opacity: Some(0.5),
             transition: Some(Transition::default()),

@@ -913,6 +913,25 @@ fn views(world: &World) -> Scenario {
                     ),
                 ),
                 (Request::RequestRender(menu.clone()), Response::Done),
+                // A node shown, of a render that the view may have yet to
+                // show, and none of a view that it has not rendered.
+                (
+                    Request::Reveal {
+                        view: menu.clone(),
+                        key: "results".into(),
+                    },
+                    Response::Done,
+                ),
+                (
+                    Request::Reveal {
+                        view: status_bar.clone(),
+                        key: "x".into(),
+                    },
+                    failed(
+                        Code::NotFound,
+                        &format!("the plugin has rendered no view {status_bar:?}"),
+                    ),
+                ),
                 (
                     Request::RequestRender(status_bar.clone()),
                     failed(

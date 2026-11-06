@@ -1280,7 +1280,12 @@ fn check_tab_bar((name, style, position, (width, height), shown): Bar, (dark, sc
     // presses, the window's keys and the room around them the window's.
     if place == lokyr_plugin_sdk::host::BarPlace::Titlebar && height.is_some() {
         let areas = lokyr_ui_core::chrome::titlebar_areas(&tree, &layout);
-        assert_eq!(areas.len(), tabs.len() + 1, "{name}: {areas:?}");
+        // Of many tabs, those that the bar's scroll shows alone.
+        if matches!(shown, BarTabs::Many) {
+            assert!(areas.len() < tabs.len() + 1, "{name}: {areas:?}");
+        } else {
+            assert_eq!(areas.len(), tabs.len() + 1, "{name}: {areas:?}");
+        }
         assert!(areas.iter().all(|area| area.x > 0.0), "{name}: {areas:?}");
     }
     let (width, height) = (frame.width as u32, frame.height as u32);

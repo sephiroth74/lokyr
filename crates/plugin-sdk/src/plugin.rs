@@ -737,6 +737,15 @@ impl<'a> Cx<'a> {
         })
     }
 
+    /// Scrolls the nearest scroll area around the node `key` of `view` as
+    /// little as shows it, once the view shows it, as this call returns.
+    pub fn reveal(&mut self, view: ViewId, key: impl Into<Key>) -> Result<(), Error> {
+        self.done(Request::Reveal {
+            view,
+            key: key.into(),
+        })
+    }
+
     /// Opens the panel `id`, as this call returns, which the host then
     /// renders.
     pub fn open_panel(

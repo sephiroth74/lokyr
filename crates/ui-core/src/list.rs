@@ -530,18 +530,25 @@ pub fn scrollable(tree: &Tree, path: &[NodeId]) -> Option<NodeId> {
 }
 
 /// Scrolls the list or the scroll area `node` of `tree`, as a wheel or a
-/// trackpad does, `y` points towards the content above, as the system's
-/// natural scrolling has it: whether it is one.
+/// trackpad does, `x` points towards the content on the left and `y`
+/// towards the content above, as the system's natural scrolling has it: a
+/// scroll area of a row across, of `x`, or of `y` where `x` is none, as a
+/// wheel of one axis scrolls a row; whether it is one.
 pub fn scroll(
     (tree, layout, lists): (&Tree, &mut Layout, &mut Lists),
     node: NodeId,
-    y: f32,
+    (x, y): (f32, f32),
 ) -> bool {
     match tree.kind(node) {
         Some(Kind::List(_)) => lists.scroll(tree, node, -y),
         Some(Kind::Scroll) => {
             let scale = layout.scale();
-            layout.scroll_by(tree, node, -y * scale);
+            let along = if crate::layout::across(tree, node) && x != 0.0 {
+                x
+            } else {
+                y
+            };
+            layout.scroll_by(tree, node, -along * scale);
             true
         }
         _ => false,
@@ -1114,25 +1121,25 @@ mod tests {
         assert_eq!(scrollable(&tree, &path[..1]), None);
         // 30 points up the content, by a wheel's -30: the fourth box at
         // the top.
-        assert!(scroll((&tree, &mut layout, &mut lists), node, -30.0));
+        assert!(scroll((&tree, &mut layout, &mut lists), node, (0.0, -30.0)));
         assert_eq!(layout.scrolled(node), 60.0);
         assert_eq!(layout.frame(&tree, child(&tree, 3)).unwrap().y, 0.0);
         // Past the content's end, its end: 150 points of 50.
-        scroll((&tree, &mut layout, &mut lists), node, -1000.0);
+        scroll((&tree, &mut layout, &mut lists), node, (0.0, -1000.0));
         assert_eq!(layout.scrolled(node), 300.0);
         assert!(!layout.scroll_by(&tree, node, 10.0));
-        scroll((&tree, &mut layout, &mut lists), node, 1000.0);
+        scroll((&tree, &mut layout, &mut lists), node, (0.0, 1000.0));
         assert_eq!(layout.scrolled(node), 0.0);
         // A node of neither scrolls nothing.
         assert!(!scroll(
             (&tree, &mut layout, &mut lists),
             child(&tree, 0),
-            -10.0
+            (0.0, -10.0)
         ));
         // A wheel's -30 over a list scrolls its rows down 30 points.
         let (tree, mut layout, rows) = laid(&list(100, 0..100, Some(20.0)), 1.0);
         lists.lay_out(&tree, &layout, &mut Fixed);
-        assert!(scroll((&tree, &mut layout, &mut lists), rows, -30.0));
+        assert!(scroll((&tree, &mut layout, &mut lists), rows, (0.0, -30.0)));
         assert_eq!(state(&lists).anchor(), (1, 10.0));
     }
 }

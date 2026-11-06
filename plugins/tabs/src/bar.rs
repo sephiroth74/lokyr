@@ -176,6 +176,16 @@ pub(crate) const NEW_KEY: &str = "new";
 /// The key of a column's rows, which scroll.
 pub(crate) const ROWS_KEY: &str = "rows";
 
+/// The key of the tabs across the bar, which scroll past their least
+/// widths.
+pub(crate) const TRACK_KEY: &str = "track";
+
+/// A tab's least width across the bar, in points, as a pill and as a
+/// cell: of its close button, its room that balances it, its paddings, and
+/// a few of its title's letters.
+const LEAST_PILL: f32 = 120.0;
+const LEAST_CELL: f32 = 120.0;
+
 /// How long a tab's hover and press fade, in seconds.
 const FADE: f32 = 0.15;
 
@@ -310,21 +320,25 @@ pub(crate) fn bar_with(
 /// and the button of a new tab; in a strip of a line by the panes, or in
 /// the titlebar, after the window's keys.
 fn pills(tabs: &[Shown<'_>], window: Option<&str>, (settings, texts): BarOf<'_>) -> Node {
-    let track = Node::container(
+    // Of the row's room, which scrolls past its tabs' least widths.
+    let track = Node::scroll(
         tabs.iter()
             .map(|tab| pill(tab, (settings, texts)))
             .collect(),
     )
+    .key(TRACK_KEY)
     .layout(Layout {
         gap: INSET,
         padding: Edges::all(INSET),
         align: Align::Stretch,
+        width: Length::Points(0.0),
         grow: 1.0,
         ..Layout::default()
     })
     .style(Style {
         background: Some(Token::from("tab.track.bg")),
         radius: PILL / 2.0 + INSET,
+        hides_indicator: true,
         ..Style::default()
     });
     let mut children = Vec::new();
@@ -417,6 +431,7 @@ fn pill(tab: &Shown<'_>, (settings, texts): BarOf<'_>) -> Node {
                 left: 6.0,
             },
             width: Length::Points(0.0),
+            min_width: Length::Points(LEAST_PILL),
             height: Length::Points(PILL),
             grow: 1.0,
             ..Layout::default()
@@ -446,13 +461,31 @@ fn cells(tabs: &[Shown<'_>], window: Option<&str>, (settings, texts): BarOf<'_>)
             ..Layout::default()
         });
         children.push(lined(content, top, false, Layout::default()));
+        children.push(Node::separator());
     }
-    for tab in tabs {
-        if !children.is_empty() {
-            children.push(Node::separator());
+    // The cells, a line between two, of the room left, which scrolls past
+    // their least widths.
+    let mut strip = Vec::new();
+    for (at, tab) in tabs.iter().enumerate() {
+        if at > 0 {
+            strip.push(Node::separator());
         }
-        children.push(cell(tab, top, (settings, texts)));
+        strip.push(cell(tab, top, (settings, texts)));
     }
+    children.push(
+        Node::scroll(strip)
+            .key(TRACK_KEY)
+            .layout(Layout {
+                align: Align::Stretch,
+                width: Length::Points(0.0),
+                grow: 1.0,
+                ..Layout::default()
+            })
+            .style(Style {
+                hides_indicator: true,
+                ..Style::default()
+            }),
+    );
     children.push(Node::separator());
     let plus = Node::icon_button("add")
         .key(NEW_KEY)
@@ -548,6 +581,7 @@ fn cell(tab: &Shown<'_>, top: bool, (settings, texts): BarOf<'_>) -> Node {
         !active,
         Layout {
             width: Length::Points(0.0),
+            min_width: Length::Points(LEAST_CELL),
             grow: 1.0,
             ..Layout::default()
         },

@@ -722,11 +722,12 @@ fn kind(request: &Request) -> usize {
         Request::TabBarPlace => 59,
         Request::KeysOf { .. } => 60,
         Request::Message { .. } => 61,
+        Request::Reveal { .. } => 62,
     }
 }
 
 /// How many kinds of requests the plugin API has.
-const KINDS: usize = 62;
+const KINDS: usize = 63;
 
 #[test]
 fn the_scenarios_hold_every_request_of_the_plugin_api() {

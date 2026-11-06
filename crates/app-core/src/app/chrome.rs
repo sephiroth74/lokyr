@@ -10,6 +10,7 @@ use std::time::Instant;
 use lokyr_kernel::plugins::Plugins;
 use lokyr_kernel::plugins::host::{self, BarPlace};
 use lokyr_kernel::plugins::ui::{PanelId, PanelOptions, Role, Slot, UiEvent, ViewId};
+use lokyr_kernel::plugins::view::Key as NodeKey;
 use lokyr_kernel::workspace::PaneId;
 use lokyr_platform_core::{Platform, Point, Size, Sweep, SweepShape, WindowId, WindowSize};
 use lokyr_render_core::{Item, Rect};
@@ -63,6 +64,10 @@ pub(crate) struct SlotView {
     pub(crate) frame: Option<Frame>,
     /// A panel's opening; `None` for a slot's view.
     pub(crate) placed: Option<PanelPlace>,
+    /// The node that its plugin asked to show, by its key, which the
+    /// nearest scroll area around it scrolls to as the view lays out, once
+    /// its tree has it.
+    pub(crate) reveal: Option<NodeKey>,
 }
 
 impl fmt::Debug for SlotView {
@@ -80,6 +85,20 @@ impl fmt::Debug for SlotView {
 }
 
 impl SlotView {
+    /// Scrolls to the node that its plugin asked to show, of the last
+    /// layout, once its tree has it.
+    pub(crate) fn settle_reveal(&mut self) {
+        let surface = &mut self.surface;
+        let found = self
+            .reveal
+            .as_ref()
+            .and_then(|key| surface.tree.by_key(key));
+        if let Some(node) = found {
+            surface.layout.reveal(&surface.tree, node);
+            self.reveal = None;
+        }
+    }
+
     /// Whether it has a tree to show.
     fn shows(&self) -> bool {
         self.surface.tree.root().is_some()
@@ -102,6 +121,7 @@ impl SlotView {
             surface: Surface::new(scale),
             frame: None,
             placed: Some(placed),
+            reveal: None,
         }
     }
 
@@ -247,6 +267,7 @@ impl<B: Backend> App<B> {
                         surface: Surface::new(scale),
                         frame: None,
                         placed: None,
+                        reveal: None,
                     }
                 }
             };
@@ -423,6 +444,7 @@ impl<B: Backend> App<B> {
                     let laid = view
                         .surface
                         .lay_out((Some(frame.width), Some(frame.height)), font);
+                    view.settle_reveal();
                     events.extend(
                         laid.into_iter()
                             .map(|event| (view.plugin.clone(), view.view.clone(), event)),

@@ -595,6 +595,22 @@ impl<B: Backend> App<B> {
         }
     }
 
+    /// The node of `key` that `plugin` shows in its view `view`, which the
+    /// nearest scroll area around it scrolls to as the view lays out next,
+    /// once it shows it.
+    pub(super) fn reveal_node(
+        &mut self,
+        platform: &mut dyn Platform,
+        (plugin, view): (&str, &ViewId),
+        key: NodeKey,
+    ) {
+        let Some((window, shown)) = self.shown_view(plugin, view) else {
+            return;
+        };
+        shown.reveal = Some(key);
+        platform.request_frame(window);
+    }
+
     /// The window that shows `plugin`'s view `view`, and its surface.
     fn shown_view(&mut self, plugin: &str, view: &ViewId) -> Option<(WindowId, &mut SlotView)> {
         self.windows.iter_mut().find_map(|(&window, state)| {

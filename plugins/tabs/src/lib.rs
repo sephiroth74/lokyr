@@ -323,6 +323,7 @@ impl Plugin for Tabs {
     /// was.
     fn on_event(&mut self, cx: &mut Cx<'_>, events: &[Event]) -> Result<(), Error> {
         let mut again = false;
+        let mut shown = Vec::new();
         for event in events {
             match event {
                 Event::Answered { id, text } => {
@@ -358,6 +359,12 @@ impl Plugin for Tabs {
                     // Without a state directory, the width stays for this run.
                     let _ = cx.set_state(state);
                 }
+                // A tab shown, which its bar scrolls to, as its render
+                // has it.
+                Event::Workspace(WorkspaceEvent::TabActivated { tab, window }) => {
+                    shown.push((*window, *tab));
+                    again = true;
+                }
                 // A closed window's view goes.
                 Event::Workspace(WorkspaceEvent::WindowClosed { window }) => {
                     let closed = ViewId::TabBar(*window);
@@ -369,6 +376,10 @@ impl Plugin for Tabs {
         }
         if again {
             self.render_again(cx);
+        }
+        for (window, tab) in shown {
+            // A bar of no view, as of a single tab, has nothing to show.
+            let _ = cx.reveal(ViewId::TabBar(window), bar::tab_key(tab.0).as_str());
         }
         Ok(())
     }

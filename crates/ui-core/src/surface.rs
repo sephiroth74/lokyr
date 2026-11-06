@@ -229,11 +229,7 @@ impl Surface {
         let path = pointer::hit(&self.tree, &self.layout, at);
         match list::scrollable(&self.tree, &path) {
             Some(node) => {
-                list::scroll(
-                    (&self.tree, &mut self.layout, &mut self.lists),
-                    node,
-                    delta.1,
-                );
+                list::scroll((&self.tree, &mut self.layout, &mut self.lists), node, delta);
                 self.pointer.laid_out(&self.tree, &self.layout)
             }
             None => self.pointer.scrolled(&self.tree, &self.layout, at, delta),

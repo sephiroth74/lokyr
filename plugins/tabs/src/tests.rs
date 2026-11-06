@@ -449,6 +449,32 @@ fn the_bar_shows_a_window_s_tabs_and_its_clicks_select_close_and_open() {
 }
 
 #[test]
+fn a_tab_shown_is_the_one_that_its_bar_scrolls_to() {
+    use lokyr_plugin_sdk::event::WorkspaceEvent;
+    let (mut host, mut plugin) = host(&[1, 1], 1);
+    let view = ViewId::TabBar(WINDOW);
+    let _ = host.render(&mut plugin, &view);
+    host.take_done();
+    host.post(Event::Workspace(WorkspaceEvent::TabActivated {
+        tab: TabId(2),
+        window: WINDOW,
+    }));
+    host.deliver(&mut plugin).unwrap();
+    let revealed: Vec<Request> = host
+        .take_done()
+        .into_iter()
+        .filter(|request| matches!(request, Request::Reveal { .. }))
+        .collect();
+    assert_eq!(
+        revealed,
+        [Request::Reveal {
+            view,
+            key: "tab-2".into()
+        }]
+    );
+}
+
+#[test]
 fn the_bar_s_own_texts_are_its_catalogs_in_the_language_shown() {
     let (mut host, mut plugin) = host(&[1, 1], 1);
     host.set_message(NEW_TAB, &[], Some("Nuovo tab"))

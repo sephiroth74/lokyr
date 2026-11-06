@@ -257,7 +257,9 @@ type Style = {
     padding: number?,
     width: Length?,
     height: Length?,
+    min_width: Length?, -- its least width, which it keeps as its siblings share less room, as a tab among many
     grow: number?,
+    hides_indicator: boolean?, -- of a scroll area, no indicator of its scroll, as a bar of tabs
     background: Color?,
     foreground: Color?,
     corner_radius: number?,
@@ -491,6 +493,9 @@ type Cx = {
     set_text: (view: ViewId, key: string, text: string, revision: number) -> (boolean, Error?),
     -- Moves the selection of a list of the view, by its key, to an item, which the list scrolls to.
     select: (view: ViewId, key: string, item: number) -> (boolean, Error?),
+    -- Scrolls the nearest scroll area around a node of the view, by its key, as little as shows it, once the view shows
+    -- it, as a tab bar shows its active tab: the node of a render yet to show too.
+    reveal: (view: ViewId, key: string) -> (boolean, Error?),
     -- Opens a panel, by an id of the plugin's, which the host then renders; a "panel-closed" event tells as it closes.
     open_panel: (id: string, options: PanelOptions) -> (boolean, Error?),
     close_panel: (id: string) -> (boolean, Error?),

@@ -121,7 +121,8 @@ pub struct Layout {
     nodes: HashMap<NodeId, taffy::NodeId>,
     scale: f32,
     room: Room,
-    /// How far each scroll area is scrolled down, in pixels.
+    /// How far each scroll area is scrolled along its direction, down a
+    /// column or across a row, in pixels.
     scrolled: HashMap<NodeId, f32>,
     /// The control of each view of tabs.
     controls: HashMap<NodeId, taffy::NodeId>,
@@ -462,8 +463,14 @@ impl Layout {
         let mut parent = tree.parent(id);
         while let Some(above) = parent {
             let laid = self.local(above)?;
+            let scrolled = self.scrolled(above);
             frame.x += laid.x;
-            frame.y += laid.y - self.scrolled(above);
+            frame.y += laid.y;
+            if across(tree, above) {
+                frame.x -= scrolled;
+            } else {
+                frame.y -= scrolled;
+            }
             parent = tree.parent(above);
         }
         Some(frame)
@@ -484,14 +491,15 @@ impl Layout {
         Some(frame)
     }
 
-    /// How far the scroll area `id` is scrolled down, in pixels: 0 for
-    /// another node.
+    /// How far the scroll area `id` is scrolled along its direction, down
+    /// a column or across a row, in pixels: 0 for another node.
     pub fn scrolled(&self, id: NodeId) -> f32 {
         self.scrolled.get(&id).copied().unwrap_or(0.0)
     }
 
-    /// Scrolls the scroll area `id` of `tree` down by `pixels`, up where
-    /// they are negative, within its content: whether it moved.
+    /// Scrolls the scroll area `id` of `tree` along its direction by
+    /// `pixels`, down or rightwards, back where they are negative, within
+    /// its content: whether it moved.
     pub fn scroll_by(&mut self, tree: &Tree, id: NodeId, pixels: f32) -> bool {
         let before = self.scrolled(id);
         let after = (before + pixels).clamp(0.0, self.scroll_room(tree, id));
@@ -502,20 +510,56 @@ impl Layout {
         true
     }
 
-    /// How far the scroll area `id` of `tree` can scroll down, in pixels:
-    /// its content's height, its children's and its padding's, past its
-    /// own.
+    /// How far the scroll area `id` of `tree` can scroll along its
+    /// direction, in pixels: its content's height, its children's and its
+    /// padding's, past its own, or its content's width across a row.
     pub fn scroll_room(&self, tree: &Tree, id: NodeId) -> f32 {
         let (Some(frame), Some(layout)) = (self.local(id), tree.layout(id)) else {
             return 0.0;
         };
-        let bottom = tree
+        let children = tree
             .children(id)
             .iter()
-            .filter_map(|&child| self.local(child))
+            .filter_map(|&child| self.local(child));
+        if across(tree, id) {
+            let right = children
+                .map(|child| child.x + child.width)
+                .fold(0.0, f32::max);
+            return (right + layout.padding.right * self.scale - frame.width).max(0.0);
+        }
+        let bottom = children
             .map(|child| child.y + child.height)
             .fold(0.0, f32::max);
         (bottom + layout.padding.bottom * self.scale - frame.height).max(0.0)
+    }
+
+    /// Scrolls the nearest scroll area around `id` of `tree`, of the last
+    /// layout, as little as shows the whole of `id`'s box, or its start
+    /// where the area is smaller: whether it moved.
+    pub fn reveal(&mut self, tree: &Tree, id: NodeId) -> bool {
+        let area = std::iter::successors(tree.parent(id), |&above| tree.parent(above))
+            .find(|&above| matches!(tree.kind(above), Some(Kind::Scroll)));
+        let (Some(area), Some(node), Some(room)) = (
+            area,
+            self.placed(tree, id),
+            area.and_then(|area| self.placed(tree, area)),
+        ) else {
+            return false;
+        };
+        let (start, size, view) = if across(tree, area) {
+            (node.x - room.x, node.width, room.width)
+        } else {
+            (node.y - room.y, node.height, room.height)
+        };
+        let scrolled = self.scrolled(area);
+        let wanted = if start < scrolled || size > view {
+            start
+        } else if start + size > scrolled + view {
+            start + size - view
+        } else {
+            return false;
+        };
+        self.scroll_by(tree, area, wanted - scrolled)
     }
 
     /// The size of `id`'s text or icon, in points, as the last layout
@@ -635,19 +679,26 @@ fn control_style(scale: f32, distribution: Distribution) -> Style {
     }
 }
 
-/// `style`, of `id` of `tree`, as its parent has it: a child of a column
-/// that scrolls keeps its height, which the scroll shows.
+/// `style`, of `id` of `tree`, as its parent has it: a child of a scroll
+/// area keeps its height down a column, and its width across a row, which
+/// the scroll shows.
 fn style_in(tree: &Tree, id: NodeId, mut style: Style) -> Style {
-    let scrolls = tree.parent(id).is_some_and(|parent| {
-        matches!(tree.kind(parent), Some(Kind::Scroll))
-            && tree
-                .layout(parent)
-                .is_some_and(|layout| layout.direction == Direction::Column)
-    });
+    let scrolls = tree
+        .parent(id)
+        .is_some_and(|parent| matches!(tree.kind(parent), Some(Kind::Scroll)));
     if scrolls {
         style.flex_shrink = 0.0;
     }
     style
+}
+
+/// Whether `id` of `tree` is a scroll area of a row, which scrolls
+/// across.
+pub(crate) fn across(tree: &Tree, id: NodeId) -> bool {
+    matches!(tree.kind(id), Some(Kind::Scroll))
+        && tree
+            .layout(id)
+            .is_some_and(|layout| layout.direction == Direction::Row)
 }
 
 /// `taffy`'s style of `layout`, of a node of `kind`, in pixels at `scale`,
@@ -702,22 +753,34 @@ fn style(kind: &Kind, layout: &view::Layout, scale: f32, room: Room) -> Style {
             height: length(layout.height),
         },
         min_size: Size {
-            width: match kind {
-                Kind::Text(_) => LengthPercentageAuto::length(0.0),
-                _ => LengthPercentageAuto::auto(),
+            width: match (kind, layout.min_width) {
+                (_, Length::Points(points)) => LengthPercentageAuto::length(points * scale),
+                (_, Length::Fraction(fraction)) => LengthPercentageAuto::percent(fraction),
+                (_, Length::Titlebar) => LengthPercentageAuto::length(room.titlebar),
+                (_, Length::Buttons) => LengthPercentageAuto::length(room.buttons),
+                (Kind::Text(_), Length::Auto) => LengthPercentageAuto::length(0.0),
+                (_, Length::Auto) => LengthPercentageAuto::auto(),
             },
             height: LengthPercentageAuto::auto(),
         },
         align_self: matches!(kind, Kind::Separator).then_some(AlignItems::STRETCH),
-        // A scroll area keeps to the room that its layout gives it, its
-        // children to their own heights.
-        overflow: taffy::Point {
-            x: Overflow::Visible,
-            y: if matches!(kind, Kind::Scroll) {
-                Overflow::Scroll
-            } else {
-                Overflow::Visible
-            },
+        // A scroll area keeps to the room that its layout gives it along
+        // its direction, its children to their own heights down a column,
+        // and to their own widths across a row.
+        overflow: {
+            let scrolls = matches!(kind, Kind::Scroll);
+            let row = layout.direction == Direction::Row;
+            let of = |along: bool| {
+                if scrolls && along {
+                    Overflow::Scroll
+                } else {
+                    Overflow::Visible
+                }
+            };
+            taffy::Point {
+                x: of(row),
+                y: of(!row),
+            }
         },
         scrollbar_width: 0.0,
         flex_grow: layout.grow,
@@ -843,6 +906,53 @@ mod tests {
         assert_eq!(status.x + status.width, 198.0);
         assert_eq!(spacer.x, title.x + title.width + 4.0);
         assert_eq!(spacer.x + spacer.width + 4.0, status.x);
+    }
+
+    #[test]
+    fn a_row_s_scroll_area_scrolls_across_its_tabs_of_their_least_width() {
+        // Eight tabs that share the row's 100 pixels, each of 30 at least:
+        // 240 across, 140 to scroll.
+        let tabs: Vec<Node> = (0..8)
+            .map(|at| {
+                Node::container(Vec::new())
+                    .key(format!("tab-{at}").as_str())
+                    .layout(view::Layout {
+                        width: Length::Points(0.0),
+                        min_width: Length::Points(30.0),
+                        height: Length::Points(10.0),
+                        grow: 1.0,
+                        ..view::Layout::default()
+                    })
+            })
+            .collect();
+        let area = Node::scroll(tabs).key("strip").layout(view::Layout {
+            width: Length::Points(100.0),
+            ..view::Layout::default()
+        });
+        let (tree, mut layout, _) = laid(&area, 1.0, 100.0);
+        let strip = tree.root().unwrap();
+        let tab = |at: usize| tree.by_key(&format!("tab-{at}").as_str().into()).unwrap();
+        assert_eq!(layout.frame(&tree, tab(1)).unwrap().width, 30.0);
+        assert_eq!(layout.scroll_room(&tree, strip), 140.0);
+        // A scroll moves them across, not down.
+        assert!(layout.scroll_by(&tree, strip, 50.0));
+        let second = layout.frame(&tree, tab(1)).unwrap();
+        assert_eq!((second.x, second.y), (-20.0, 0.0));
+        // The last shown, as far as it ends at the area's edge; the first,
+        // back to the start; one shown already, no scroll.
+        assert!(layout.reveal(&tree, tab(7)));
+        assert_eq!(layout.scrolled(strip), 140.0);
+        assert!(!layout.reveal(&tree, tab(6)));
+        assert!(layout.reveal(&tree, tab(0)));
+        assert_eq!(layout.scrolled(strip), 0.0);
+        // Of room for them all, they share it, of no scroll.
+        let mut wide = area.clone();
+        wide.layout.width = Length::Points(320.0);
+        let (tree, layout, _) = laid(&wide, 1.0, 320.0);
+        let strip = tree.root().unwrap();
+        assert_eq!(layout.scroll_room(&tree, strip), 0.0);
+        let first = tree.by_key(&"tab-0".into()).unwrap();
+        assert_eq!(layout.frame(&tree, first).unwrap().width, 40.0);
     }
 
     #[test]

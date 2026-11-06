@@ -1730,6 +1730,15 @@ impl Calling<'_> {
                 }
                 Response::Done
             }
+            Request::Reveal { view, .. } => {
+                if !self.host.views.contains_key(view) {
+                    return Err(Error::new(
+                        Code::NotFound,
+                        format!("the plugin has rendered no view {view:?}"),
+                    ));
+                }
+                Response::Done
+            }
             Request::MoveTab { tab, window, .. } => {
                 self.known_tab(*tab)?;
                 self.known_window(*window)?;

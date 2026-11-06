@@ -113,6 +113,16 @@ pub enum Request {
         /// The item's index.
         item: usize,
     },
+    /// Scroll the nearest scroll area around a node of a plugin's view as
+    /// little as shows it, once the view shows it.
+    Reveal {
+        /// The plugin.
+        plugin: String,
+        /// The view.
+        view: ViewId,
+        /// The node's key.
+        key: Key,
+    },
     /// Open a panel of a plugin's in `window`, whose tree the plugin's
     /// render gives.
     OpenPanel {
@@ -3148,6 +3158,19 @@ impl Host<'_, '_> {
                     view,
                     key,
                     item,
+                }
+            }
+            Asked::Reveal { view, key } => {
+                if !self.state.views.contains_key(&view) {
+                    return Err(Error::new(
+                        Code::NotFound,
+                        format!("the plugin has rendered no view {view:?}"),
+                    ));
+                }
+                Request::Reveal {
+                    plugin: self.state.name.clone(),
+                    view,
+                    key,
                 }
             }
             Asked::OpenPanel { id, options } => {

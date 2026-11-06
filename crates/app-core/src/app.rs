@@ -2350,6 +2350,9 @@ impl<B: Backend> App<B> {
                     key,
                     item,
                 } => self.select_item(platform, (&plugin, &view, &key), item),
+                Request::Reveal { plugin, view, key } => {
+                    self.reveal_node(platform, (&plugin, &view), key);
+                }
             }
         }
         // The views whose renders the calls asked for, and their panels'

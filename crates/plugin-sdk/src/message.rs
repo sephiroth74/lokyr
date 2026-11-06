@@ -395,6 +395,16 @@ pub enum Request {
         /// The item's index.
         item: usize,
     },
+    /// Scrolls the nearest scroll area around a node of one of the plugin's
+    /// views, by its key, as little as shows the whole node, once the view
+    /// shows it, as a tab bar shows its active tab: the node of a render
+    /// that the view has yet to show too.
+    Reveal {
+        /// The view.
+        view: ViewId,
+        /// The node's key.
+        key: Key,
+    },
     /// Opens a panel of the plugin's, of an id that none of its open panels
     /// has, `already-registered` otherwise, as the call returns, and asks
     /// for its render: over its window, at its anchor.
@@ -494,6 +504,7 @@ impl Request {
             | Self::RequestRender(_)
             | Self::SetText { .. }
             | Self::Select { .. }
+            | Self::Reveal { .. }
             | Self::OpenPanel { .. }
             | Self::ClosePanel(_)
             | Self::Config
@@ -562,6 +573,7 @@ impl Request {
             | Self::Quit
             | Self::SetText { .. }
             | Self::Select { .. }
+            | Self::Reveal { .. }
             | Self::OpenPanel { .. }
             | Self::ClosePanel(_)
             | Self::AskText { .. } => Effect::App,
