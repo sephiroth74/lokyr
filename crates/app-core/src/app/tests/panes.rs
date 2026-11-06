@@ -462,3 +462,122 @@ fn a_program_s_drag_stays_in_its_pane_across_the_divider() {
     });
     assert_eq!(app.focused(window), Some(b));
 }
+
+/// The middle of the first divider of `window`'s tab, in points, and the
+/// share of its split's first part.
+fn divider_middle(fake: &Fake, app: &App, window: WindowId) -> Point {
+    let scale = fake.window(window).unwrap().size.scale;
+    let line = app.windows[&window].dividers[0].line;
+    Point {
+        x: (f64::from(line.x) + f64::from(line.width) / 2.0) / scale,
+        y: (f64::from(line.y) + f64::from(line.height) / 2.0) / scale,
+    }
+}
+
+/// The share of the first part of `window`'s tab's top split.
+fn top_share(app: &App, window: WindowId) -> f64 {
+    let shown = app.workspace.window(app.windows[&window].window).unwrap();
+    let tab = app.workspace.tab(shown.active_tab()).unwrap();
+    tab.layout().share().unwrap()
+}
+
+#[test]
+fn a_divider_draws_between_two_panes_and_its_grab_area_is_wider_than_its_line() {
+    let (fake, app, window, a, b) = two_panes(echoing("a"), &echoing("b"));
+    let state = &app.windows[&window];
+    let [divider] = &state.dividers[..] else {
+        panic!("one divider: {:?}", state.dividers);
+    };
+    assert_eq!(divider.direction, Direction::Horizontal);
+    assert!(divider.path.is_empty());
+    // Between the two panes' rooms, a point wide.
+    let scale = fake.window(window).unwrap().size.scale;
+    let room = |pane| {
+        state
+            .views
+            .iter()
+            .find(|view| view.pane == pane)
+            .unwrap()
+            .rect
+    };
+    let (left, right) = (room(a), room(b));
+    assert_eq!(divider.line.x, left.x + left.width as i32);
+    assert_eq!(divider.line.x + divider.line.width as i32, right.x);
+    assert_eq!(f64::from(divider.line.width), scale);
+    // Its grab area, six points across, of a column's resize.
+    let area = crate::app::dividers::grab_area(divider, scale);
+    assert_eq!(area.shape, lokyr_platform_core::PointerShape::ResizeColumn);
+    assert_eq!(area.size.width, 6.0);
+    assert_eq!(area.size.height, f64::from(divider.line.height) / scale);
+    let middle = (f64::from(divider.line.x) + f64::from(divider.line.width) / 2.0) / scale;
+    assert_eq!(area.origin.x + area.size.width / 2.0, middle);
+}
+
+#[test]
+fn a_divider_s_drag_moves_its_split_and_a_double_click_shares_it_in_half() {
+    use lokyr_platform_core::PointerShape;
+
+    let none = Modifiers::NONE;
+    let (mut fake, mut app, window, a, _) = two_panes(echoing("a"), &echoing("b"));
+    let start = divider_middle(&fake, &app, window);
+    let before = top_share(&app, window);
+    let held = |fake: &Fake| fake.window(window).unwrap().held_pointer;
+    // A point beside the line, within its grab area.
+    let grabbed = Point {
+        x: start.x + 2.0,
+        ..start
+    };
+    fake.send(&mut app, window, click(true, grabbed, none, 1));
+    assert_eq!(held(&fake), Some(PointerShape::ResizeColumn));
+    let further = Point {
+        x: grabbed.x + 100.0,
+        ..grabbed
+    };
+    fake.send(&mut app, window, moved(further, none));
+    fake.send(&mut app, window, click(false, further, none, 1));
+    assert_eq!(held(&fake), None);
+    let after = top_share(&app, window);
+    assert!(after > before + 0.05, "{before} {after}");
+    // The press reached neither pane's program.
+    assert_eq!(app.focused(window), Some(a));
+    // Laid out anew, the first pane wider.
+    let scale = fake.window(window).unwrap().size.scale;
+    let from = f64::from(app.windows[&window].dividers[0].line.x);
+    run_until(&mut fake, &mut app, |_, app| {
+        f64::from(app.windows[&window].dividers[0].line.x) > from + 50.0 * scale
+    });
+    // A double click shares it half and half.
+    let middle = divider_middle(&fake, &app, window);
+    fake.send(&mut app, window, click(true, middle, none, 2));
+    fake.send(&mut app, window, click(false, middle, none, 2));
+    assert!((top_share(&app, window) - 0.5).abs() < 1e-9);
+}
+
+#[test]
+fn a_divider_s_drag_resizes_the_programs_at_the_resizes_pace() {
+    let none = Modifiers::NONE;
+    let counting = shell("trap 'echo winch' WINCH; echo ready-a; while :; do sleep 0.01; done");
+    let (mut fake, mut app, window, a, _) = two_panes(counting, &echoing("b"));
+    let start = divider_middle(&fake, &app, window);
+    let winches = |app: &App| screen_of(app, a).matches("winch").count();
+    let before = winches(&app);
+    fake.send(&mut app, window, click(true, start, none, 1));
+    // Forty steps of a cell's width, each with its frame, at once.
+    let mut at = start;
+    for _ in 0..40 {
+        at.x += 8.0;
+        fake.send(&mut app, window, moved(at, none));
+        fake.send(&mut app, window, WindowEvent::Frame);
+    }
+    fake.send(&mut app, window, click(false, at, none, 1));
+    // Settled: the program's grid is the layout's, of a few signals, not
+    // of one a step.
+    run_until(&mut fake, &mut app, |_, app| {
+        let pane = app.workspace.pane(a).unwrap();
+        pane.told() == pane.grid() && winches(app) > before
+    });
+    std::thread::sleep(std::time::Duration::from_millis(100));
+    fake.deliver_wake(&mut app);
+    let told = winches(&app) - before;
+    assert!((1..=4).contains(&told), "{told} signals");
+}

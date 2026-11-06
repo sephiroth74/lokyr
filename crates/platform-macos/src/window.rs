@@ -1919,6 +1919,7 @@ fn ns_cursor(shape: PointerShape) -> Retained<NSCursor> {
         PointerShape::Text => NSCursor::IBeamCursor(),
         PointerShape::PointingHand => NSCursor::pointingHandCursor(),
         PointerShape::ResizeColumn => NSCursor::columnResizeCursor(),
+        PointerShape::ResizeRow => NSCursor::rowResizeCursor(),
     }
 }
 

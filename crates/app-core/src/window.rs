@@ -61,6 +61,20 @@ pub(crate) struct ColumnDrag {
     pub(crate) width: f32,
 }
 
+/// A divider's drag under way: its tab and its split's path, whether it
+/// moves across, where the pointer started along it, in points, the
+/// split's first part's share then, and the split's room along it, in
+/// points, which the share is of.
+#[derive(Clone, Debug)]
+pub(crate) struct DividerDrag {
+    pub(crate) tab: lokyr_kernel::workspace::TabId,
+    pub(crate) path: Vec<lokyr_kernel::workspace::Side>,
+    pub(crate) across: bool,
+    pub(crate) from: f64,
+    pub(crate) share: f64,
+    pub(crate) room: f64,
+}
+
 /// A layer of a window, over its grid, which the window server blinks.
 #[derive(Debug)]
 pub(crate) struct WindowLayer<B: Backend> {
@@ -163,6 +177,10 @@ pub(crate) struct Window<B: Backend> {
     pub(crate) selecting: Option<Selecting>,
     /// The drag of the tab bar's column's edge under way, if one is.
     pub(crate) column_drag: Option<ColumnDrag>,
+    /// The dividers of its active tab's panes, as its last frame laid them
+    /// out, and the drag of one under way, if one is.
+    pub(crate) dividers: Vec<crate::app::frame::Divider>,
+    pub(crate) divider_drag: Option<DividerDrag>,
     /// The title of the man page that it shows, as `man ls`, when it shows
     /// one: it takes the man page's colors, and keeps the page once `man`
     /// has ended.
@@ -345,6 +363,8 @@ impl<B: Backend> Window<B> {
             taken: Vec::new(),
             selecting: None,
             column_drag: None,
+            dividers: Vec::new(),
+            divider_drag: None,
             page: None,
             place: (String::new(), String::new()),
             directory: None,

@@ -183,19 +183,27 @@ impl<B: Backend> App<B> {
             .workspace
             .window(state.window)
             .and_then(|shown| self.workspace.tab(shown.active_tab()));
-        let rooms = match tab {
-            Some(tab) => {
-                let divider = (DIVIDER * size.scale).round() as u32;
+        let divider = (DIVIDER * size.scale).round() as u32;
+        let (rooms, lines) = match tab {
+            Some(tab) => (
                 pane_rects(
                     tab.layout(),
                     tab.zoomed(),
                     content,
                     (width, height),
                     divider,
-                )
-            }
-            None => Vec::new(),
+                ),
+                dividers(
+                    tab.layout(),
+                    tab.zoomed(),
+                    content,
+                    (width, height),
+                    divider,
+                ),
+            ),
+            None => (Vec::new(), Vec::new()),
         };
+        state.dividers = lines;
         // Each pane's header at its room's top, and its grid below it.
         let mut rooms = rooms;
         self.lay_out_headers(window, &mut rooms);
@@ -894,6 +902,13 @@ impl<B: Backend> App<B> {
         let Some((_, tokens)) = state.chrome_tokens.as_ref() else {
             return;
         };
+        // The dividers between the panes, under the slots' views.
+        if let Some(line) = tokens.get("pane.divider") {
+            items.extend(state.dividers.iter().map(|divider| Item::Rect {
+                rect: divider.line,
+                color: line,
+            }));
+        }
         // The progresses' fills, which the window server draws where it
         // can, so that a value's change slides with no frame of the app's.
         let fills_apart = platform.draws_fills();
@@ -962,6 +977,13 @@ impl<B: Backend> App<B> {
             areas.push(points(&chrome::rect_of(zone), PointerShape::ResizeColumn));
         }
         areas.extend(surfaces::pointer_areas(&state.chrome, size.scale));
+        // The dividers' grab areas, under the slots' views.
+        areas.extend(
+            state
+                .dividers
+                .iter()
+                .map(|divider| super::dividers::grab_area(divider, size.scale)),
+        );
         // The hand over the decorations that ask for it, as a link's that
         // Command underlines, of every pane, under the bar.
         for (pane, (left, top)) in &pointed {
@@ -1349,7 +1371,6 @@ fn split_rooms(
     divider: u32,
     rooms: &mut Vec<(PaneId, Rect)>,
 ) {
-    let share = layout.share();
     let Layout::Split {
         direction,
         first,
@@ -1362,27 +1383,47 @@ fn split_rooms(
         }
         return;
     };
-    let share = share.unwrap_or(0.5);
+    let (first_area, _, second_area) = cut(layout, *direction, area, cell, divider);
+    split_rooms(first, first_area, cell, divider, rooms);
+    split_rooms(second, second_area, cell, divider, rooms);
+}
+
+/// The parts of `area`, in pixels, that `layout`, a split of `direction`,
+/// gives its first part, its divider and its second part: the first its
+/// share of the area less `divider`, cut at a whole cell of `cell`, so that
+/// its grid fills it, of one cell at least, and of as many as leave the
+/// second one, if the room has two; the second the rest, past the divider.
+fn cut(
+    layout: &Layout,
+    direction: Direction,
+    area: Rect,
+    cell: (u32, u32),
+    divider: u32,
+) -> (Rect, Rect, Rect) {
+    let share = layout.share().unwrap_or(0.5);
     let (length, step) = match direction {
         Direction::Horizontal => (area.width, cell.0.max(1)),
         Direction::Vertical => (area.height, cell.1.max(1)),
     };
     let room = length.saturating_sub(divider);
-    // Whole cells for the first part, of one cell at least, and as many as
-    // leave the second one, if the room has two.
     let cells = (f64::from(room) * share / f64::from(step)).round() as u32;
     let most = (room / step).saturating_sub(1).max(1);
     let first_length = (cells.clamp(1, most) * step).min(room);
     let second_length = room - first_length;
-    let past = i32::try_from(first_length + divider).unwrap_or(i32::MAX);
-    let (first_area, second_area) = match direction {
+    let at = |length: u32| i32::try_from(length).unwrap_or(i32::MAX);
+    match direction {
         Direction::Horizontal => (
             Rect {
                 width: first_length,
                 ..area
             },
             Rect {
-                x: area.x.saturating_add(past),
+                x: area.x.saturating_add(at(first_length)),
+                width: divider.min(length),
+                ..area
+            },
+            Rect {
+                x: area.x.saturating_add(at(first_length + divider)),
                 width: second_length,
                 ..area
             },
@@ -1393,14 +1434,91 @@ fn split_rooms(
                 ..area
             },
             Rect {
-                y: area.y.saturating_add(past),
+                y: area.y.saturating_add(at(first_length)),
+                height: divider.min(length),
+                ..area
+            },
+            Rect {
+                y: area.y.saturating_add(at(first_length + divider)),
                 height: second_length,
                 ..area
             },
         ),
+    }
+}
+
+/// A divider of a tab's layout: the split's path from the layout's top,
+/// its direction, its line between its parts, and the split's whole area,
+/// in pixels.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct Divider {
+    pub(crate) path: Vec<lokyr_kernel::workspace::Side>,
+    pub(crate) direction: Direction,
+    pub(crate) line: Rect,
+    pub(crate) area: Rect,
+}
+
+/// The dividers of `layout` in `area`, as [`pane_rects`] lays its panes
+/// out: none while a pane is zoomed. In the layout's order, a split before
+/// its parts'.
+pub(super) fn dividers(
+    layout: &Layout,
+    zoomed: Option<PaneId>,
+    area: Rect,
+    cell: (u32, u32),
+    divider: u32,
+) -> Vec<Divider> {
+    let mut found = Vec::new();
+    if zoomed.is_none_or(|pane| !layout.contains(pane)) {
+        divider_rooms(layout, (area, Vec::new()), cell, divider, &mut found);
+    }
+    found
+}
+
+fn divider_rooms(
+    layout: &Layout,
+    (area, path): (Rect, Vec<lokyr_kernel::workspace::Side>),
+    cell: (u32, u32),
+    divider: u32,
+    found: &mut Vec<Divider>,
+) {
+    use lokyr_kernel::workspace::Side;
+
+    let Layout::Split {
+        direction,
+        first,
+        second,
+        ..
+    } = layout
+    else {
+        return;
     };
-    split_rooms(first, first_area, cell, divider, rooms);
-    split_rooms(second, second_area, cell, divider, rooms);
+    let (first_area, line, second_area) = cut(layout, *direction, area, cell, divider);
+    found.push(Divider {
+        path: path.clone(),
+        direction: *direction,
+        line,
+        area,
+    });
+    let deeper = |side| {
+        let mut path = path.clone();
+        path.push(side);
+        path
+    };
+    divider_rooms(
+        first,
+        (first_area, deeper(Side::First)),
+        cell,
+        divider,
+        found,
+    );
+    divider_rooms(
+        second,
+        (second_area, deeper(Side::Second)),
+        cell,
+        divider,
+        found,
+    );
 }
 
 /// The titlebar of a window of `size`, over its content's top, opaque in

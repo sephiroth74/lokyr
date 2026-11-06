@@ -772,6 +772,55 @@ fn a_tab_s_panes_share_its_room_in_whole_cells() {
 }
 
 #[test]
+fn a_tab_s_dividers_lie_between_its_panes_rooms() {
+    use super::super::frame::dividers;
+    let id = |n| lokyr_kernel::workspace::PaneId::of(n);
+    let area = Rect {
+        x: 4,
+        y: 10,
+        width: 800,
+        height: 400,
+    };
+    let cell = (8, 16);
+    // 1 on the left, and 2 over 3 on the right.
+    let mut layout = Layout::Leaf(id(1));
+    layout.split(id(1), Direction::Horizontal, id(2), Side::Second);
+    layout.split(id(2), Direction::Vertical, id(3), Side::Second);
+    let rooms = pane_rects(&layout, None, area, cell, 2);
+    let found = dividers(&layout, None, area, cell, 2);
+    assert_eq!(found.len(), 2);
+    // The top split's, between 1 and the right half, its whole height.
+    assert_eq!(found[0].path, []);
+    assert_eq!(found[0].direction, Direction::Horizontal);
+    assert_eq!(found[0].area, area);
+    assert_eq!(
+        found[0].line,
+        Rect {
+            x: rooms[0].1.x + rooms[0].1.width as i32,
+            y: 10,
+            width: 2,
+            height: 400,
+        }
+    );
+    // The right half's, between 2 and 3, across that half.
+    assert_eq!(found[1].path, [Side::Second]);
+    assert_eq!(found[1].direction, Direction::Vertical);
+    assert_eq!(
+        found[1].line,
+        Rect {
+            x: rooms[1].1.x,
+            y: rooms[1].1.y + rooms[1].1.height as i32,
+            width: rooms[1].1.width,
+            height: 2,
+        }
+    );
+    assert_eq!(found[1].line.y + 2, rooms[2].1.y);
+    // A zoomed pane, or a pane alone, has none.
+    assert!(dividers(&layout, Some(id(2)), area, cell, 2).is_empty());
+    assert!(dividers(&Layout::Leaf(id(1)), None, area, cell, 2).is_empty());
+}
+
+#[test]
 fn a_window_of_two_panes_draws_both_each_in_its_room() {
     let drawing = Drawing::new(FontConfig::default()).unwrap();
     let mut fake = Fake::default();

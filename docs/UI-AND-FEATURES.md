@@ -192,7 +192,7 @@ The `command-header` plugin, as the user asked on 1 November 2026, after iTerm2:
 
 ## Splits
 
-The `splits` plugin. Each tab's layout tree lives in the kernel, because session restore, IPC and tmux -CC need it too. The plugin provides the commands and the interaction; the host draws the dividers from the layout tree, in the theme's tokens, and gives their drags to the plugin. Without the plugin, every tab has exactly one pane.
+The `splits` plugin. Each tab's layout tree lives in the kernel, because session restore, IPC and tmux -CC need it too. The plugin provides the commands; the host draws the dividers from the layout tree, in the theme's `pane.divider`, and takes their drags itself, giving their splits ratios in the workspace, which the plugins learn of by `layout-changed`. Without the plugin, every tab has exactly one pane.
 
 ```
 LayoutTree = Split { direction: horizontal | vertical, ratio?, first: LayoutTree, second: LayoutTree }
@@ -220,10 +220,10 @@ On macOS the shortcuts are the `keymap-macos` plugin's, which binds the keys of 
 - **The commands**, as `splits` gives them: a split takes the keyboard to its new pane, right or below; the focus by direction goes to the nearest pane whose side faces the pane's, of the most room shared along it, the first in the layout's order of a tie, and nowhere at the tab's edge or while a pane is zoomed; next and previous go round the tab's panes in its layout's order; a resize moves the divider on the pane's right, or its bottom, where it has one, as iTerm2's, the other otherwise, by `cells` cells, 1 by default, of the share of its split's room that the pane's grid gives a cell; the zoom toggles; swap exchanges the pane with the one beside it, each taking the other's room, the keyboard staying with the pane; to a tab puts the pane in a tab of its own after its tab, and to a window in a window of its own, a pane alone in its window's one tab staying.
 - **New panes** inherit the cwd (via OSC 7, which is why basic shell integration already lands in F3) and the profile of the pane they come from.
 - **Inactive panes** are dimmed (`dim-inactive`), as in iTerm2.
-- **Dividers**:
-  - can be dragged, with a grab area wider than the visible line;
+- **Dividers**, a line of a point:
+  - can be dragged, with a grab area of 6 points, wider than the visible line, the pointer a column's or a row's resize over it, and held at it while the drag goes on;
   - reset to 50/50 on double-click.
-- **PTY resizes during a drag** are coalesced: at most one every ~50 ms, plus a final one. This avoids storms of SIGWINCH.
+- **PTY resizes during a drag** are coalesced: at most one every 25 ms, the window's live resize's pace, plus a final one. This avoids storms of SIGWINCH.
 - **Options**: per-pane titles (`pane-header`), useful with many splits; `focus-follows-mouse`.
 
 ```toml

@@ -110,6 +110,10 @@ impl<B: Backend> App<B> {
         let Some(state) = self.windows.get_mut(&window) else {
             return;
         };
+        // A divider's drag holds its own.
+        if state.divider_drag.is_some() {
+            return;
+        }
         let dragged = state
             .captured
             .and_then(|id| state.chrome.iter().find(|view| view.id == id))

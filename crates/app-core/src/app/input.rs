@@ -348,8 +348,13 @@ impl<B: Backend> App<B> {
             }
             _ => {}
         }
-        // A press at a column's edge drags it, which takes its release.
+        // A press at a column's edge drags it, which takes its release, as
+        // a divider's drag takes its own.
         if self.column_button(platform, window, (platform_button, pressed), position) {
+            return;
+        }
+        let divider = (platform_button, pressed, clicks);
+        if !pressed && self.divider_button(platform, window, divider, position) {
             return;
         }
         // A slot's view under the press takes it, and keeps the pointer
@@ -360,6 +365,15 @@ impl<B: Backend> App<B> {
             (platform_button, pressed, clicks),
             (position, mods),
         ) {
+            return;
+        }
+        // A press over a divider's grab area drags it, or shares its split
+        // half and half of a double click, the panes beside it taking none.
+        let holds = self
+            .windows
+            .get(&window)
+            .is_some_and(|state| state.mouse.holder().is_some());
+        if pressed && !holds && self.divider_button(platform, window, divider, position) {
             return;
         }
         // A press gives the pane under it the keyboard, then acts there;
@@ -735,6 +749,10 @@ impl<B: Backend> App<B> {
         position: Point,
         mods: Modifiers,
     ) {
+        // A divider that a drag holds moves its split.
+        if self.divider_moved(platform, window, position) {
+            return;
+        }
         // A column's edge that a drag holds follows the pointer.
         if let Some(drag) = self
             .windows
