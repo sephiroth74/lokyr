@@ -1084,7 +1084,7 @@ type Bar = (
 /// `[plugins.tabs]` asks for them, of their width and, in the titlebar and
 /// down a column, of their height, in points, the pointer over the third
 /// tab; a single tab, many, and the keys of the user's bindings.
-const BARS: [Bar; 15] = [
+const BARS: [Bar; 20] = [
     (
         "standard-top",
         "standard",
@@ -1190,6 +1190,43 @@ const BARS: [Bar; 15] = [
         (640.0, Some(40.0)),
         BarTabs::Bound,
     ),
+    (
+        "unified-bottom",
+        "unified",
+        "bottom",
+        (640.0, None),
+        BarTabs::Three,
+    ),
+    (
+        "unified-right",
+        "unified",
+        "right",
+        (200.0, Some(180.0)),
+        BarTabs::Three,
+    ),
+    (
+        "seamless-right",
+        "seamless",
+        "right",
+        (200.0, Some(180.0)),
+        BarTabs::Three,
+    ),
+    // At the top with no titlebar, as in full screen, of its own height.
+    (
+        "seamless-full-screen",
+        "seamless",
+        "top",
+        (640.0, None),
+        BarTabs::Three,
+    ),
+    // More rows than the column holds, which scroll.
+    (
+        "standard-left-scrolled",
+        "standard",
+        "left",
+        (200.0, Some(200.0)),
+        BarTabs::Many,
+    ),
 ];
 
 /// Draws the tab bar of `style` at `position`, laid out as a window lays
@@ -1231,9 +1268,17 @@ fn check_tab_bar((name, style, position, (width, height), shown): Bar, (dark, sc
         &mut drawing.font,
     );
     let frame = layout.frame(&tree, tree.root().unwrap()).unwrap();
+    // Down a column, each row of its height, however many.
+    if matches!(position, "left" | "right") {
+        for tab in &tabs {
+            let key = view::Key::from(format!("tab-{}", tab.id.0).as_str());
+            let row = tree.by_key(&key).and_then(|id| layout.frame(&tree, id));
+            assert_eq!(row.map(|row| row.height), Some(28.0 * pixels), "{name}");
+        }
+    }
     // In the titlebar, the tabs and the button of a new tab take its
     // presses, the window's keys and the room around them the window's.
-    if place == lokyr_plugin_sdk::host::BarPlace::Titlebar {
+    if place == lokyr_plugin_sdk::host::BarPlace::Titlebar && height.is_some() {
         let areas = lokyr_ui_core::chrome::titlebar_areas(&tree, &layout);
         assert_eq!(areas.len(), tabs.len() + 1, "{name}: {areas:?}");
         assert!(areas.iter().all(|area| area.x > 0.0), "{name}: {areas:?}");

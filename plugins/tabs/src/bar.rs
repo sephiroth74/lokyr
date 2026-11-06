@@ -171,6 +171,9 @@ pub(crate) fn close_key(id: u64) -> String {
 /// The key of the button of a new tab.
 pub(crate) const NEW_KEY: &str = "new";
 
+/// The key of a column's rows, which scroll.
+pub(crate) const ROWS_KEY: &str = "rows";
+
 /// How long a tab's hover and press fade, in seconds.
 const FADE: f32 = 0.15;
 
@@ -190,7 +193,8 @@ const MARGIN: f32 = 6.0;
 /// smaller than a text's line.
 const BUTTON: f32 = 14.0;
 
-/// A seamless bar's height across the bottom, in points; in the titlebar,
+/// A seamless bar's height across the bottom, and at the top where the
+/// window has no titlebar, as in full screen, in points; in the titlebar,
 /// the titlebar's.
 const CELL: f32 = 30.0;
 
@@ -427,13 +431,11 @@ fn cells(tabs: &[Shown<'_>], window: Option<&str>, settings: &Settings) -> Node 
         )
         .style(veiled()),
     );
+    // In the titlebar, of its height; past it, as in full screen, of the
+    // cells' own.
     Node::container(children).layout(Layout {
         align: Align::Stretch,
-        height: if top {
-            Length::Auto
-        } else {
-            Length::Points(CELL)
-        },
+        height: Length::Points(CELL),
         grow: 1.0,
         ..Layout::default()
     })
@@ -576,9 +578,10 @@ fn column(tabs: &[Shown<'_>], window: Option<&str>, settings: &Settings) -> Node
                 .style(veiled()),
         );
     }
-    // Of the column's width, whatever its titles' widths.
+    // Of the column's width, whatever its titles' widths; its rows of
+    // their height, which scroll past the column's.
     let sidebar = matches!(settings.place(None), BarPlace::Sidebar { .. });
-    let list = Node::container(rows).layout(Layout {
+    let list = Node::scroll(rows).key(ROWS_KEY).layout(Layout {
         direction: Direction::Column,
         width: if sidebar {
             Length::Auto
