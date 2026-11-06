@@ -75,6 +75,8 @@ pub struct Gallery {
     /// is indeterminate.
     percent: u32,
     spinning: bool,
+    /// Whether the progresses step by themselves, ten times a second.
+    advancing: bool,
     /// The panels to open or to close, as a plugin asks the host, since
     /// the host took them last, and what they did.
     asks: Vec<PanelAsk>,
@@ -148,6 +150,7 @@ impl Gallery {
             listed: "none yet".to_owned(),
             percent: 40,
             spinning: false,
+            advancing: false,
             asks: Vec::new(),
             paneled: "none yet".to_owned(),
             note: false,
@@ -333,6 +336,21 @@ impl Gallery {
         self.dark = !self.dark;
     }
 
+    /// Whether the progresses step by themselves.
+    pub fn advancing(&self) -> bool {
+        self.advancing
+    }
+
+    /// The progresses' step: 3 percent further, from the start again past
+    /// the end.
+    pub fn advance(&mut self) {
+        self.percent = if self.percent >= 100 {
+            0
+        } else {
+            (self.percent + 3).min(100)
+        };
+    }
+
     /// What the pointer did to the node of `key`.
     pub fn event(&mut self, key: &str, kind: UiEventKind) {
         match kind {
@@ -371,6 +389,7 @@ impl Gallery {
             UiEventKind::Click if key == "less" => self.percent = self.percent.saturating_sub(10),
             UiEventKind::Click if key == "more" => self.percent = (self.percent + 10).min(100),
             UiEventKind::Toggle { on } if key == "spin" => self.spinning = on,
+            UiEventKind::Toggle { on } if key == "advance" => self.advancing = on,
             // A toggle of the menu, chosen, closes it, as a menu's item.
             UiEventKind::Toggle { on } if key.starts_with("menu.") => {
                 self.toggles.insert(key.to_owned(), on);
@@ -900,6 +919,48 @@ impl Gallery {
             align: Align::Center,
             ..Layout::default()
         });
+        // Outlines of boxes as a tab's, of their corners' radius: a
+        // program's progress, its failure, and one of no known end.
+        let outlined = |state, title: &str| {
+            Node::container(vec![
+                Node::text(title),
+                of(Progress {
+                    state,
+                    value,
+                    shape: ProgressShape::Outline,
+                    ..Progress::default()
+                }),
+            ])
+            .layout(Layout {
+                width: Length::Points(140.0),
+                height: Length::Points(28.0),
+                align: Align::Center,
+                justify: view::Justify::Center,
+                ..Layout::default()
+            })
+            .style(Style {
+                radius: 8.0,
+                background: Some(Token::from("tab.active.bg")),
+                ..Style::default()
+            })
+        };
+        let outlines = Node::container(vec![
+            outlined(ProgressState::Normal, "make"),
+            outlined(ProgressState::Error, "cargo test"),
+            outlined(
+                if self.spinning {
+                    ProgressState::Indeterminate
+                } else {
+                    ProgressState::Paused
+                },
+                "gradle",
+            ),
+        ])
+        .layout(Layout {
+            gap: 12.0,
+            align: Align::Center,
+            ..Layout::default()
+        });
         let controls = Node::container(vec![
             Node::button("−10%").key("less"),
             Node::button("+10%").key("more"),
@@ -909,6 +970,12 @@ impl Gallery {
                 ..view::Toggle::default()
             }))
             .key("spin"),
+            Node::new(Kind::Toggle(view::Toggle {
+                label: "Advancing".to_owned(),
+                on: self.advancing,
+                ..view::Toggle::default()
+            }))
+            .key("advance"),
             secondary(&format!("{}%", self.percent)),
         ])
         .layout(Layout {
@@ -927,6 +994,7 @@ impl Gallery {
                 labelled("1 pt, no track", hairline(1.0)),
                 labelled("1 px at 2x", hairline(0.5)),
                 rings,
+                outlines,
                 controls,
             ],
         )
@@ -1801,6 +1869,7 @@ mod tests {
             "less",
             "more",
             "spin",
+            "advance",
             "views.fit",
             "views.fill",
             "views.fill-equally",

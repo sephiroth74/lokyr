@@ -10,9 +10,10 @@ use std::time::{Duration, Instant, SystemTime};
 
 use crate::{
     AboutPanel, Alert, AlertId, AppEvent, Appearance, Backdrop, ContentRect, ContextMenu, Error,
-    GlobalKey, Handler, Layer, LayerPlace, MainMenu, Platform, Point, PointerArea, PointerShape,
-    QuickPlace, ScreenPoint, ScreenRect, Shortcut, Size, Sweep, Target, TargetKind, TimerId,
-    Titlebar, Usage, Waker, WindowAttributes, WindowEvent, WindowHandle, WindowId, WindowSize,
+    Fill, GlobalKey, Handler, Layer, LayerPlace, MainMenu, Platform, Point, PointerArea,
+    PointerShape, QuickPlace, ScreenPoint, ScreenRect, Shortcut, Size, Sweep, Target, TargetKind,
+    TimerId, Titlebar, Usage, Waker, WindowAttributes, WindowEvent, WindowHandle, WindowId,
+    WindowSize,
 };
 
 /// The scale of the fake's display when a test sets none: a Retina one.
@@ -82,6 +83,10 @@ pub struct FakeWindow {
     pub layer_places: usize,
     /// The sweeps that the app showed last.
     pub sweeps: Vec<Sweep>,
+    /// The fills that the app showed last.
+    pub fills: Vec<Fill>,
+    /// How many times the app showed fills.
+    pub fills_shown: usize,
     /// Whether it opened at the frame kept last.
     pub restore: bool,
     /// Whether it opened of the size of the frame kept last.
@@ -174,6 +179,8 @@ pub struct Fake {
     keyboard_navigation: bool,
     /// Whether the system reduces motion.
     reduce_motion: bool,
+    /// Whether it draws the progresses' fills, as a test says.
+    draws_fills: bool,
     windows: BTreeMap<WindowId, FakeWindow>,
     /// The windows from the front one back, as they opened and came
     /// forward.
@@ -265,6 +272,7 @@ impl Fake {
             own_appearance: None,
             keyboard_navigation: false,
             reduce_motion: false,
+            draws_fills: false,
             windows: BTreeMap::new(),
             order: Vec::new(),
             drag_image: None,
@@ -499,6 +507,12 @@ impl Fake {
     /// The windows that are open, from the first opened.
     pub fn windows(&self) -> impl Iterator<Item = WindowId> + '_ {
         self.windows.keys().copied()
+    }
+
+    /// Has the fake draw the progresses' fills, as a window server would,
+    /// or leave them to the app, as by default.
+    pub fn set_draws_fills(&mut self, draws: bool) {
+        self.draws_fills = draws;
     }
 
     /// Brings `window` in front of the others with no event, as the user
@@ -787,6 +801,8 @@ impl Platform for Fake {
                 layers: HashMap::new(),
                 layer_places: 0,
                 sweeps: Vec::new(),
+                fills: Vec::new(),
+                fills_shown: 0,
                 restore: attributes.restore,
                 restore_size: attributes.restore_size,
                 mouse_moves: false,
@@ -826,6 +842,8 @@ impl Platform for Fake {
                 layers: HashMap::new(),
                 layer_places: 0,
                 sweeps: Vec::new(),
+                fills: Vec::new(),
+                fills_shown: 0,
                 restore: false,
                 restore_size: false,
                 mouse_moves: false,
@@ -961,6 +979,17 @@ impl Platform for Fake {
     fn set_sweeps(&mut self, window: WindowId, sweeps: &[Sweep]) {
         if let Some(state) = self.windows.get_mut(&window) {
             state.sweeps = sweeps.to_vec();
+        }
+    }
+
+    fn draws_fills(&self) -> bool {
+        self.draws_fills
+    }
+
+    fn set_fills(&mut self, window: WindowId, fills: &[Fill]) {
+        if let Some(state) = self.windows.get_mut(&window) {
+            state.fills = fills.to_vec();
+            state.fills_shown += 1;
         }
     }
 

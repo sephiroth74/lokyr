@@ -220,6 +220,7 @@ fn absent_window(platform: &mut dyn Platform) -> Vec<String> {
     platform.set_window_appearance(window, None);
     platform.set_window_remember(window, false);
     platform.set_window_origin(window, ScreenPoint { x: 10.0, y: 10.0 });
+    platform.set_fills(window, &[]);
     platform.close_window(window);
     if platform.window_size(window).is_some() {
         failed.push("a window that never was has a size".to_owned());

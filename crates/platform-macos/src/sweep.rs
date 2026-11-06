@@ -14,9 +14,9 @@ use lokyr_platform_core::{Point, Size, Sweep, SweepShape};
 use objc2::rc::Retained;
 use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send};
 use objc2_app_kit::{NSAutoresizingMaskOptions, NSResponder, NSView, NSWorkspace};
-use objc2_core_foundation::{CGPoint, CGRect, CGSize};
+use objc2_core_foundation::{CFRetained, CGPoint, CGRect, CGSize};
 use objc2_core_graphics::{CGColor, CGMutablePath};
-use objc2_foundation::{NSNumber, NSObject, NSPoint, NSSize, NSString};
+use objc2_foundation::{NSArray, NSNumber, NSObject, NSPoint, NSSize, NSString};
 use objc2_quartz_core::{
     CABasicAnimation, CACurrentMediaTime, CALayer, CAMediaTiming, CAShapeLayer, CATransaction,
     kCALineCapButt,
@@ -137,7 +137,7 @@ impl SweepsView {
 /// The frame of `origin` and `size`, from the top left corner of a frame
 /// at `from`, as a layer's of a superlayer there, whose origin is its
 /// bottom left corner.
-fn up(origin: Point, size: Size, from: (f64, f64)) -> CGRect {
+pub(crate) fn up(origin: Point, size: Size, from: (f64, f64)) -> CGRect {
     CGRect::new(
         CGPoint::new(origin.x - from.0, from.1 - origin.y - size.height),
         CGSize::new(size.width, size.height),
@@ -220,6 +220,31 @@ fn sweep_layer(sweep: &Sweep, height: f64, (reduced, now): (bool, f64)) -> Retai
                 (0.0, -TAU),
             )
         }
+        SweepShape::Outline { span, thickness } => {
+            let moving = CAShapeLayer::new();
+            moving.setFrame(CGRect::new(CGPoint::ZERO, CGSize::new(width, tall)));
+            let (path, length) = outline_path(width, tall, sweep.radius, thickness);
+            moving.setPath(Some(&path));
+            moving.setFillColor(None);
+            moving.setStrokeColor(Some(&color));
+            moving.setLineWidth(thickness);
+            // SAFETY: Core Animation's constant.
+            moving.setLineCap(unsafe { kCALineCapButt });
+            // One dash, the segment, and a gap the rest of the length, whose
+            // phase runs it round, as the path's end meets its start.
+            let segment = (span.clamp(0.0, 1.0) * length).max(0.0);
+            let dashes = NSArray::from_retained_slice(&[
+                NSNumber::new_f64(segment),
+                NSNumber::new_f64((length - segment).max(0.0)),
+            ]);
+            moving.setLineDashPattern(Some(&dashes));
+            track.addSublayer(&moving);
+            (
+                Retained::into_super(moving),
+                "lineDashPhase",
+                (0.0, -length),
+            )
+        }
     };
     let (moving, key, (from, to)) = animation;
     let pulse = CABasicAnimation::animationWithKeyPath(Some(&NSString::from_str(if reduced {
@@ -243,7 +268,7 @@ fn sweep_layer(sweep: &Sweep, height: f64, (reduced, now): (bool, f64)) -> Retai
     }
     pulse.setTimingFunction(Some(&timing(match sweep.shape {
         SweepShape::Bar { .. } => lokyr_platform_core::Easing::EaseInOut,
-        SweepShape::Ring { .. } => lokyr_platform_core::Easing::Linear,
+        SweepShape::Ring { .. } | SweepShape::Outline { .. } => lokyr_platform_core::Easing::Linear,
     })));
     // From the sweeps' start, as the app counts it, so that a sweep placed
     // again goes on where it was.
@@ -251,4 +276,73 @@ fn sweep_layer(sweep: &Sweep, height: f64, (reduced, now): (bool, f64)) -> Retai
     pulse.setBeginTime(now - since.as_secs_f64());
     moving.addAnimation_forKey(&pulse, Some(&NSString::from_str(SWEEP)));
     within
+}
+
+/// The path of an outline of a box `width` by `height` points, of corners
+/// of `radius`, along the middle of a line `thickness` thick inside its
+/// edges, clockwise from the middle of its left edge, and its length.
+pub(crate) fn outline_path(
+    width: f64,
+    height: f64,
+    radius: f64,
+    thickness: f64,
+) -> (CFRetained<CGMutablePath>, f64) {
+    let inset = thickness / 2.0;
+    let (w, h) = ((width - thickness).max(0.0), (height - thickness).max(0.0));
+    let r = (radius - inset).clamp(0.0, w.min(h) / 2.0);
+    let (left, bottom, right, top) = (inset, inset, inset + w, inset + h);
+    let path = CGMutablePath::new();
+    // Clockwise, as the layer's y goes up: up the left edge first.
+    // SAFETY: a path of the call's own, and no transform.
+    unsafe {
+        let none = std::ptr::null();
+        CGMutablePath::move_to_point(Some(&path), none, left, bottom + h / 2.0);
+        CGMutablePath::add_line_to_point(Some(&path), none, left, top - r);
+        CGMutablePath::add_arc(
+            Some(&path),
+            none,
+            left + r,
+            top - r,
+            r,
+            std::f64::consts::PI,
+            FRAC_PI_2,
+            true,
+        );
+        CGMutablePath::add_line_to_point(Some(&path), none, right - r, top);
+        CGMutablePath::add_arc(
+            Some(&path),
+            none,
+            right - r,
+            top - r,
+            r,
+            FRAC_PI_2,
+            0.0,
+            true,
+        );
+        CGMutablePath::add_line_to_point(Some(&path), none, right, bottom + r);
+        CGMutablePath::add_arc(
+            Some(&path),
+            none,
+            right - r,
+            bottom + r,
+            r,
+            0.0,
+            -FRAC_PI_2,
+            true,
+        );
+        CGMutablePath::add_line_to_point(Some(&path), none, left + r, bottom);
+        CGMutablePath::add_arc(
+            Some(&path),
+            none,
+            left + r,
+            bottom + r,
+            r,
+            -FRAC_PI_2,
+            -std::f64::consts::PI,
+            true,
+        );
+        CGMutablePath::close_subpath(Some(&path));
+    }
+    let length = 2.0 * (w - 2.0 * r) + 2.0 * (h - 2.0 * r) + TAU * r;
+    (path, length.max(0.0))
 }

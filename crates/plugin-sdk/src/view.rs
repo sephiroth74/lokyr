@@ -243,15 +243,17 @@ pub struct Progress {
     /// Its shape.
     pub shape: ProgressShape,
     /// The radius of a bar's corners, in points: half its height, a pill's,
-    /// without it; 0 for square ones.
+    /// without it; 0 for square ones. Of an outline, its parent's corners'
+    /// without it.
     pub radius: Option<f32>,
-    /// The thickness of a ring's line, in points.
+    /// The thickness of a ring's line, or an outline's, in points.
     pub thickness: f32,
-    /// The part of an indeterminate one that moves, of a bar's width or of
-    /// a ring's turn, from 0 to 1.
+    /// The part of an indeterminate one that moves, of a bar's width, of a
+    /// ring's turn or of an outline's length, from 0 to 1.
     pub segment: f32,
-    /// How long an indeterminate one's sweep across, or turn round, takes,
-    /// in seconds: 1.5 for a bar, 1 for a ring, without it.
+    /// How long an indeterminate one's sweep across, turn round or run
+    /// along takes, in seconds: 1.5 for a bar, 1 for a ring, 2 for an
+    /// outline, without it.
     pub period: Option<f32>,
 }
 
@@ -293,6 +295,12 @@ pub enum ProgressShape {
     Bar,
     /// A ring, filled clockwise from the top, as a spinner of macOS's.
     Ring,
+    /// Its parent's outline: a line along the parent's edges, inside them,
+    /// of the parent's corners' radius, filled from its left end along its
+    /// top and its bottom at once as far as its value, as a tab shows its
+    /// program's progress. It takes its parent's whole box, over the
+    /// children before it, and none of their room.
+    Outline,
 }
 
 /// A list's own properties.

@@ -22,7 +22,7 @@ use lokyr_ui_core::font::Font;
 use lokyr_ui_core::layout::{Frame, Measure};
 use lokyr_ui_core::panel::{self, Anchor, Corner, Dismiss, MenuEntry, Options, Panels, Role};
 use lokyr_ui_core::pointer::{self, Area, Button, NodeEvent};
-use lokyr_ui_core::progress::SweepArea;
+use lokyr_ui_core::progress::{FillArea, SweepArea};
 use lokyr_ui_core::surface::Surface;
 use lokyr_ui_core::theme::Tokens;
 use lokyr_ui_core::tree::{NodeId, Tree};
@@ -1036,6 +1036,58 @@ impl View {
             );
         }
         sweeps
+    }
+
+    /// Whether the platform's window server draws the progresses' fills,
+    /// which the paint then leaves out.
+    pub fn set_fills_apart(&mut self, apart: bool) {
+        for surface in self.all_mut() {
+            surface.fills_apart = apart;
+        }
+    }
+
+    /// The fills of the progresses that are not indeterminate, in pixels
+    /// of the window, of their nodes' transitions at `now`, each of an id
+    /// of its surface and its node, but those that a panel over them
+    /// covers.
+    pub fn fills(&self, tokens: &Tokens, now: Instant) -> Vec<(u64, FillArea)> {
+        let moved = |fill: FillArea, (x, y): (f32, f32)| {
+            let moved = |rect: lokyr_render_core::Rect| lokyr_render_core::Rect {
+                x: rect.x + x as i32,
+                y: rect.y + y as i32,
+                ..rect
+            };
+            FillArea {
+                rect: moved(fill.rect),
+                visible: moved(fill.visible),
+                ..fill
+            }
+        };
+        let id = |surface: u8, fill: &FillArea| (u64::from(surface) << 48) ^ fill.node.bits();
+        let mut fills = Vec::new();
+        for (number, surface, frame) in self.placed() {
+            fills.extend(
+                surface
+                    .fills(tokens, now)
+                    .into_iter()
+                    .map(|fill| (id(number, &fill), moved(fill, (frame.x, frame.y))))
+                    .filter(|(_, fill)| !self.panels.covers(fill.visible, None)),
+            );
+        }
+        for panel in self.panels.order() {
+            let (Some(frame), Some(surface)) = (self.panels.frame(panel), self.surface(panel))
+            else {
+                continue;
+            };
+            fills.extend(
+                surface
+                    .fills(tokens, now)
+                    .into_iter()
+                    .map(|fill| (id(panel, &fill), moved(fill, (frame.x, frame.y))))
+                    .filter(|(_, fill)| !self.panels.covers(fill.visible, Some(panel))),
+            );
+        }
+        fills
     }
 
     /// The input method's rectangle of the field that has the focus, in

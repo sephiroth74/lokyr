@@ -21,7 +21,7 @@ use lokyr_plugin_sdk::view::{
 use taffy::Overflow;
 use taffy::prelude::{
     AlignItems, AvailableSpace, Dimension, FlexDirection, JustifyContent, LengthPercentage,
-    LengthPercentageAuto, Rect, Size, Style, TaffyTree,
+    LengthPercentageAuto, Position, Rect, Size, Style, TaffyTree,
 };
 
 use crate::tree::{Changes, NodeId, Tree};
@@ -720,6 +720,10 @@ fn style(kind: &Kind, layout: &view::Layout, scale: f32, room: Room) -> Style {
         Kind::Tabs(_) => (true, tabs::INSET, tabs::TOP),
         _ => (false, 0.0, 0.0),
     };
+    let outline = matches!(
+        kind,
+        Kind::Progress(progress) if progress.shape == view::ProgressShape::Outline
+    );
     Style {
         flex_direction: match layout.direction {
             _ if tabbed => FlexDirection::Column,
@@ -784,6 +788,23 @@ fn style(kind: &Kind, layout: &view::Layout, scale: f32, room: Room) -> Style {
         },
         scrollbar_width: 0.0,
         flex_grow: layout.grow,
+        // An outline takes its parent's whole box, none of its children's
+        // room.
+        position: if outline {
+            Position::Absolute
+        } else {
+            Position::Relative
+        },
+        inset: if outline {
+            Rect {
+                left: LengthPercentageAuto::length(0.0),
+                right: LengthPercentageAuto::length(0.0),
+                top: LengthPercentageAuto::length(0.0),
+                bottom: LengthPercentageAuto::length(0.0),
+            }
+        } else {
+            Rect::auto()
+        },
         ..Style::default()
     }
 }

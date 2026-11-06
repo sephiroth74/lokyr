@@ -1,9 +1,10 @@
 //! The layers of a window, of the text that blinks and of the cursor: views
 //! over the content's, the cursor's over the text's, where the app places
 //! them, whose opacity the window server animates as the blink says, faded
-//! or switched, and which clicks go through; and the sweeps of its
+//! or switched, and which clicks go through; the sweeps of its
 //! progresses, under them, which keep their distance from the top as the
-//! window resizes.
+//! window resizes; and the fills of its progresses, under the sweeps, which
+//! keep their layers as their values change and slide to them.
 
 #[cfg(target_os = "macos")]
 mod common;
@@ -15,8 +16,8 @@ mod probe {
     use std::time::{Duration, Instant};
 
     use lokyr_platform_core::{
-        AppEvent, Blink, Easing, Handler, Layer, LayerPlace, Platform, Point, Size, Sweep,
-        SweepShape, WindowAttributes, WindowEvent, WindowId,
+        AppEvent, Blink, Easing, Fill, FillShape, Handler, Layer, LayerPlace, Platform, Point,
+        Size, Sweep, SweepShape, WindowAttributes, WindowEvent, WindowId,
     };
     use objc2::MainThreadMarker;
     use objc2::rc::Retained;
@@ -52,6 +53,12 @@ mod probe {
         swept: Vec<(f64, NSSize)>,
         /// The content view's height, in points.
         height: f64,
+        /// A fill's layers as it showed, of a bar's width, and as its value
+        /// changed: whether it kept its layer, the bar's width, and whether
+        /// it slides; then how many fills show once another took its place.
+        filled: Option<f64>,
+        refilled: Option<(bool, f64, bool)>,
+        replaced: usize,
     }
 
     struct Probe(Rc<RefCell<Seen>>);
@@ -66,10 +73,10 @@ mod probe {
             .expect("the window");
         let content = window.contentView().expect("the content view");
         let subviews = content.subviews();
-        // The sweeps' view first, under the layers'.
-        assert_eq!(subviews.count(), 3, "the layers' views");
-        let text = subviews.objectAtIndex(1);
-        let cursor = subviews.objectAtIndex(2);
+        // The fills' view first, the sweeps' over it, under the layers'.
+        assert_eq!(subviews.count(), 4, "the layers' views");
+        let text = subviews.objectAtIndex(2);
+        let cursor = subviews.objectAtIndex(3);
         (content, text, cursor)
     }
 
@@ -217,7 +224,7 @@ mod probe {
                 }],
             );
             let sweep_from_top = |content: &NSView| {
-                let sweeps = content.subviews().objectAtIndex(0);
+                let sweeps = content.subviews().objectAtIndex(1);
                 let layer = sweeps.layer().expect("the sweeps' layer");
                 // SAFETY: the layer's sublayers, its sweeps'.
                 let within = unsafe { layer.sublayers() }
@@ -237,6 +244,52 @@ mod probe {
             }
             platform.place_layer(window, Layer::Cursor, None);
             look(&mut seen);
+            // A bar's fill, a quarter of 100 points; then a half, of the
+            // same id, which keeps its layers and slides; then another's.
+            let fill = Fill {
+                id: 7,
+                origin: bar.0,
+                size: bar.1,
+                within: bar,
+                radius: 2.0,
+                shape: FillShape::Bar,
+                color: [0.0, 0.5, 1.0, 1.0],
+                value: 0.25,
+            };
+            let fill_layers = |content: &NSView| {
+                let fills = content.subviews().objectAtIndex(0);
+                let layer = fills.layer().expect("the fills' layer");
+                // SAFETY: the layer's sublayers, its fills'.
+                unsafe { layer.sublayers() }
+            };
+            // The bar's layer, within its box's, within the part of the
+            // window where it shows.
+            let bar_of = |within: &objc2_quartz_core::CALayer| {
+                // SAFETY: the layer's sublayers, its fill's box.
+                let boxed = unsafe { within.sublayers() }
+                    .expect("the box")
+                    .objectAtIndex(0);
+                // SAFETY: the box's sublayers, its bar.
+                unsafe { boxed.sublayers() }
+                    .expect("the bar")
+                    .objectAtIndex(0)
+            };
+            let (content, _, _) = views();
+            platform.set_fills(window, &[fill]);
+            let first = fill_layers(&content)
+                .expect("a fill's layer")
+                .objectAtIndex(0);
+            seen.filled = Some(bar_of(&first).bounds().size.width);
+            platform.set_fills(window, &[Fill { value: 0.5, ..fill }]);
+            let again = fill_layers(&content)
+                .expect("a fill's layer")
+                .objectAtIndex(0);
+            let moved = bar_of(&again);
+            // SAFETY: the key that the backend gives its slide.
+            let slides = unsafe { moved.animationForKey(&NSString::from_str("slide")) }.is_some();
+            seen.refilled = Some((again == first, moved.bounds().size.width, slides));
+            platform.set_fills(window, &[Fill { id: 8, ..fill }]);
+            seen.replaced = fill_layers(&content).map_or(0, |layers| layers.count());
             common::wake_after(platform.waker(), 100);
         }
 
@@ -319,6 +372,11 @@ mod probe {
         assert!(values == [1.0, 0.0, 1.0] && switched, "{seen:?}");
         assert!(seen.text[1].1, "{seen:?}");
         assert_eq!(seen.cursor_then, Some(seen.frames[2]), "{seen:?}");
+        // The fill as far as its value, its layers kept as it changes, which
+        // slides there, but where the system reduces motion.
+        assert_eq!(seen.filled, Some(25.0), "{seen:?}");
+        assert_eq!(seen.refilled, Some((true, 50.0, !reduced)), "{seen:?}");
+        assert_eq!(seen.replaced, 1, "{seen:?}");
         println!("layers: ok");
     }
 }

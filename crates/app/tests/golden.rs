@@ -739,6 +739,7 @@ fn check_tree(
             pressed,
             lists: &Lists::new(),
             motion: None,
+            fills: true,
         },
     );
     // The tooltip, as the pointer rested at the middle of the node under
@@ -1310,6 +1311,7 @@ fn check_tab_bar((name, style, position, (width, height), shown): Bar, (dark, sc
             pressed: None,
             lists: &Lists::new(),
             motion: Some((&animations, now)),
+            fills: true,
         },
     );
     let list = DisplayList {

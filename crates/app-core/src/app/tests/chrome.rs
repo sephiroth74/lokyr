@@ -643,3 +643,131 @@ fn the_chrome_takes_the_window_s_own_appearance_and_the_terminal_s_colors() {
         Some(Appearance::Light)
     );
 }
+
+/// A plugin of a status bar of a progress bar of its value, which
+/// `progressing.step` takes a quarter further.
+struct Progressing {
+    value: f32,
+    shown: Option<ViewId>,
+}
+
+impl plugins::Plugin for Progressing {
+    fn activate(&mut self, cx: &mut plugins::Cx<'_>) -> Result<(), Error> {
+        cx.register_command(Command {
+            name: "progressing.step".to_owned(),
+            title: "Step".to_owned(),
+            category: Category::View,
+            capabilities: Vec::new(),
+            params: Vec::new(),
+            when: None,
+        })
+    }
+
+    fn on_command(&mut self, cx: &mut plugins::Cx<'_>, _: &str, _: Args) -> Result<(), Error> {
+        self.value = (self.value + 0.25).min(1.0);
+        match self.shown.clone() {
+            Some(view) => cx.request_render(view),
+            None => Ok(()),
+        }
+    }
+
+    fn render(&mut self, _: &mut plugins::Cx<'_>, view: &ViewId) -> Option<Node> {
+        if view.slot() != Some(Slot::StatusBar) {
+            return None;
+        }
+        self.shown = Some(view.clone());
+        let mut bar = Node::progress(
+            lokyr_kernel::plugins::view::ProgressShape::Bar,
+            lokyr_kernel::plugins::view::ProgressState::Normal,
+            self.value,
+        );
+        bar.layout.grow = 1.0;
+        let mut node = Node::container(vec![bar]);
+        node.layout.height = Length::Points(STATUS);
+        node.layout.grow = 1.0;
+        Some(node)
+    }
+}
+
+/// The app of a window of `Progressing`'s status bar, of a platform that
+/// draws the fills, or not, drawn until its look settles.
+fn progressing(draws_fills: bool) -> (Fake, App, WindowId) {
+    let manifest = concat!(
+        "[plugin]\nname = \"lokyr/progressing\"\nkind = \"builtin\"\nlicense = \"MIT\"\n",
+        "[contributes]\nslots = [\"status-bar\"]\n",
+    );
+    let drawing = Drawing::new(FontConfig::default()).unwrap();
+    let mut fake = Fake::default();
+    fake.set_draws_fills(draws_fills);
+    let plugin = Progressing {
+        value: 0.25,
+        shown: None,
+    };
+    let mut app = App::new(Some(drawing), unpadded(), None)
+        .with_program(idle())
+        .with_builtin(manifest, Box::new(plugin));
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    app.windows.get_mut(&window).unwrap().surface = Some(fakes::Surface::default());
+    let deadline = Instant::now() + std::time::Duration::from_secs(10);
+    let mut quiet = Instant::now();
+    while quiet.elapsed() < std::time::Duration::from_millis(200) {
+        assert!(Instant::now() < deadline, "the window settles");
+        fake.deliver_wake(&mut app);
+        if fake.window(window).unwrap().frame_requested {
+            fake.send(&mut app, window, WindowEvent::Frame);
+            quiet = Instant::now();
+        }
+        std::thread::sleep(std::time::Duration::from_millis(2));
+    }
+    (fake, app, window)
+}
+
+#[test]
+fn a_progress_s_fill_slides_on_the_platform_s_layer_with_no_frame_shown() {
+    let (mut fake, mut app, window) = progressing(true);
+    let fills = &fake.window(window).unwrap().fills;
+    let [fill] = fills[..] else {
+        panic!("one fill: {fills:?}");
+    };
+    assert_eq!(fill.value, 0.25);
+    assert_eq!(fill.shape, lokyr_platform_core::FillShape::Bar);
+    // The frame shows the bar's track alone.
+    let shapes = |app: &App, window: WindowId| -> usize {
+        let shown = app.windows[&window].shown.as_ref().expect("a frame");
+        shown
+            .items
+            .iter()
+            .map(|item| match item {
+                lokyr_render_core::Item::Shapes(shapes) => shapes.len(),
+                _ => 0,
+            })
+            .sum()
+    };
+    let tracks = shapes(&app, window);
+    let presented = |app: &App| {
+        let surface = app.windows[&window].surface.as_ref().unwrap();
+        surface.frames.load(std::sync::atomic::Ordering::Relaxed)
+    };
+    let before = presented(&app);
+    // A step: the fill goes further, of the same id, which the window
+    // server slides; the window presents no frame of it.
+    fake.send_app(&mut app, AppEvent::Command("progressing.step".to_owned()));
+    run_until(&mut fake, &mut app, |fake, _| {
+        fake.window(window)
+            .unwrap()
+            .fills
+            .first()
+            .map(|fill| fill.value)
+            == Some(0.5)
+    });
+    let after = fake.window(window).unwrap().fills[0];
+    assert_eq!(after.id, fill.id);
+    assert_eq!(presented(&app), before);
+    assert_eq!(shapes(&app, window), tracks);
+    // A platform that draws no fills: the frames draw them, one more
+    // shape, and the platform has none.
+    let (fake, app, window) = progressing(false);
+    assert!(fake.window(window).unwrap().fills.is_empty());
+    assert_eq!(shapes(&app, window), tracks + 1);
+}

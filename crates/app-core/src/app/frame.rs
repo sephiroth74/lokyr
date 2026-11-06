@@ -894,8 +894,12 @@ impl<B: Backend> App<B> {
         let Some((_, tokens)) = state.chrome_tokens.as_ref() else {
             return;
         };
+        // The progresses' fills, which the window server draws where it
+        // can, so that a value's change slides with no frame of the app's.
+        let fills_apart = platform.draws_fills();
         for view in &mut state.chrome {
             view.surface.animate(now, reduced);
+            view.surface.fills_apart = fills_apart;
         }
         let room = (size.pixels.width as f32, size.pixels.height as f32);
         let focused_node = match state.focus.target() {
@@ -1031,6 +1035,13 @@ impl<B: Backend> App<B> {
         if sweeps != state.sweeps.0 {
             platform.set_sweeps(window, &sweeps);
             state.sweeps.0 = sweeps;
+        }
+        if fills_apart {
+            let fills = chrome::fills(&state.chrome, &state.panels, tokens, now, size.scale);
+            if fills != state.fills {
+                platform.set_fills(window, &fills);
+                state.fills = fills;
+            }
         }
         // A frame at each refresh while a slot's transition runs.
         if chrome::animating(&state.chrome, now) {

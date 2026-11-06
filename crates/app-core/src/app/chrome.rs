@@ -12,7 +12,9 @@ use lokyr_kernel::plugins::host::{self, BarPlace};
 use lokyr_kernel::plugins::ui::{PanelId, PanelOptions, Role, Slot, UiEvent, ViewId};
 use lokyr_kernel::plugins::view::Key as NodeKey;
 use lokyr_kernel::workspace::PaneId;
-use lokyr_platform_core::{Platform, Point, Size, Sweep, SweepShape, WindowId, WindowSize};
+use lokyr_platform_core::{
+    Fill, FillShape, Platform, Point, Size, Sweep, SweepShape, WindowId, WindowSize,
+};
 use lokyr_render_core::{Item, Rect};
 use lokyr_text_core::FontBackend;
 use lokyr_ui_core::chrome::{self, Heights, Regions, TabBarPlace};
@@ -21,7 +23,7 @@ use lokyr_ui_core::font::Font;
 use lokyr_ui_core::layout::{Frame, Room};
 use lokyr_ui_core::panel::{self, Panels};
 use lokyr_ui_core::pointer::NodeEvent;
-use lokyr_ui_core::progress::{self, SweepArea};
+use lokyr_ui_core::progress::{self, FillArea, SweepArea};
 use lokyr_ui_core::surface::Surface;
 use lokyr_ui_core::theme::Tokens;
 use lokyr_ui_core::tree::NodeId;
@@ -641,6 +643,12 @@ pub(super) fn sweeps(
                                 span: f64::from(span),
                                 thickness: points(thickness),
                             },
+                            progress::SweepShape::Outline { span, thickness } => {
+                                SweepShape::Outline {
+                                    span: f64::from(span),
+                                    thickness: points(thickness),
+                                }
+                            }
                         },
                         color: [
                             f64::from(area.color.red),
@@ -650,6 +658,77 @@ pub(super) fn sweeps(
                         ],
                         period: area.period,
                         start,
+                    }
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect()
+}
+
+/// The fills of the progresses of the slots' views and the panels of
+/// `chrome` that are not indeterminate, which the window server draws, of
+/// `tokens`, at `now`, on a display of `scale`, but those that a panel of
+/// `panels` over them covers: each of an id of its view and its node, which
+/// stays as their renders keep the node.
+pub(super) fn fills(
+    chrome: &[SlotView],
+    panels: &Panels<u32>,
+    tokens: &Tokens,
+    now: Instant,
+    scale: f64,
+) -> Vec<Fill> {
+    let points = |pixels: f32| f64::from(pixels) / scale;
+    let place = |rect: Rect, (x, y): (f32, f32)| {
+        (
+            Point {
+                x: points(rect.x as f32 + x),
+                y: points(rect.y as f32 + y),
+            },
+            Size {
+                width: points(rect.width as f32),
+                height: points(rect.height as f32),
+            },
+        )
+    };
+    chrome
+        .iter()
+        .filter_map(|view| Some((view, view.frame?)))
+        .flat_map(|(view, frame)| {
+            let below = view.placed.is_some().then_some(view.id);
+            let moved = move |rect: Rect| Rect {
+                x: rect.x + frame.x as i32,
+                y: rect.y + frame.y as i32,
+                ..rect
+            };
+            view.surface
+                .fills(tokens, now)
+                .into_iter()
+                .filter(move |area| !panels.covers(moved(area.visible), below))
+                .map(move |area: FillArea| {
+                    let at = (frame.x, frame.y);
+                    let (origin, size) = place(area.rect, at);
+                    Fill {
+                        id: (u64::from(view.id) << 48) ^ area.node.bits(),
+                        origin,
+                        size,
+                        within: place(area.visible, at),
+                        radius: points(area.radius),
+                        shape: match area.shape {
+                            progress::FillShape::Bar => FillShape::Bar,
+                            progress::FillShape::Ring { thickness } => FillShape::Ring {
+                                thickness: points(thickness),
+                            },
+                            progress::FillShape::Outline { thickness } => FillShape::Outline {
+                                thickness: points(thickness),
+                            },
+                        },
+                        color: [
+                            f64::from(area.color.red),
+                            f64::from(area.color.green),
+                            f64::from(area.color.blue),
+                            f64::from(area.color.alpha),
+                        ],
+                        value: f64::from(area.value),
                     }
                 })
                 .collect::<Vec<_>>()

@@ -114,6 +114,7 @@ fn measure(count: usize) -> (Duration, Duration, Duration) {
                 pressed: None,
                 lists: &lists,
                 motion: None,
+                fills: true,
             },
         );
         assert!(!items.is_empty());

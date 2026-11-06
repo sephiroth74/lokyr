@@ -21,9 +21,13 @@ pub const BAR: (f32, f32) = (160.0, 4.0);
 /// A ring's natural side, in points.
 pub const RING: f32 = 16.0;
 
-/// How long an indeterminate bar's sweep takes, and a ring's turn, of a
-/// progress that gives none.
-pub const PERIODS: (Duration, Duration) = (Duration::from_millis(1500), Duration::from_secs(1));
+/// How long an indeterminate bar's sweep takes, a ring's turn, and an
+/// outline's run along it, of a progress that gives none.
+pub const PERIODS: (Duration, Duration, Duration) = (
+    Duration::from_millis(1500),
+    Duration::from_secs(1),
+    Duration::from_secs(2),
+);
 
 /// The part of an indeterminate progress that the window server moves: its
 /// box, in pixels from the tree's corner, the part of it within its clips,
@@ -44,6 +48,48 @@ pub struct SweepArea {
     pub period: Duration,
 }
 
+/// The fill of a progress that is not indeterminate, as far as its value,
+/// which the window server draws, so that a change of the value slides with
+/// no frame of the host's: its node, by which the platform keeps it from one
+/// placing to the next, its box, in pixels from the tree's corner, the part
+/// of it within its clips, its corners' radius, its color, its shape and
+/// its value.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FillArea {
+    /// Its progress's node.
+    pub node: NodeId,
+    /// The bar's box, the ring's square or the outline's box.
+    pub rect: Rect,
+    /// The part of it that shows, within the clips around it.
+    pub visible: Rect,
+    /// The bar's corners' radius, or the outline's, in pixels.
+    pub radius: f32,
+    /// Its color.
+    pub color: Color,
+    /// What it fills.
+    pub shape: FillShape,
+    /// How far, from 0 to 1.
+    pub value: f32,
+}
+
+/// What a fill fills.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum FillShape {
+    /// A bar, from its left.
+    Bar,
+    /// A ring, clockwise from its top, of its line's thickness in pixels.
+    Ring {
+        /// The line's thickness.
+        thickness: f32,
+    },
+    /// An outline, from its left along its top and its bottom, of its
+    /// line's thickness in pixels.
+    Outline {
+        /// The line's thickness.
+        thickness: f32,
+    },
+}
+
 /// What a sweep moves.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum SweepShape {
@@ -60,6 +106,14 @@ pub enum SweepShape {
         /// The line's thickness.
         thickness: f32,
     },
+    /// A segment of an outline, of its span of the outline's length and its
+    /// line's thickness in pixels, along it, clockwise.
+    Outline {
+        /// The part of the length.
+        span: f32,
+        /// The line's thickness.
+        thickness: f32,
+    },
 }
 
 /// The natural size of a progress of `shape`, in points.
@@ -67,6 +121,8 @@ pub fn natural(shape: ProgressShape) -> (f32, f32) {
     match shape {
         ProgressShape::Bar => BAR,
         ProgressShape::Ring => (RING, RING),
+        // Its parent's box, which its place gives it.
+        ProgressShape::Outline => (0.0, 0.0),
     }
 }
 
@@ -90,6 +146,19 @@ pub fn radius(progress: &Progress, height: f32, scale: f32) -> f32 {
         .map_or(height / 2.0, |radius| radius * scale)
 }
 
+/// The radius of the corners of an outline of `progress`, `id` of `tree`,
+/// in pixels at `scale`: its own, or its parent's.
+pub fn outline_radius(tree: &Tree, id: NodeId, progress: &Progress, scale: f32) -> f32 {
+    progress.radius.map_or_else(
+        || {
+            tree.parent(id)
+                .and_then(|parent| tree.style(parent))
+                .map_or(0.0, |style| style.radius * scale)
+        },
+        |radius| radius * scale,
+    )
+}
+
 /// The sweeps of the indeterminate progresses of `tree`, laid out in
 /// `layout`, of `tokens`' colors, in the tree's order, as `paint` draws
 /// their nodes: of the opacity of their nodes and of those around them,
@@ -101,16 +170,45 @@ pub fn sweeps(
     tokens: &Tokens,
     motion: Option<(&Animations, Instant)>,
 ) -> Vec<SweepArea> {
-    let mut sweeps = Vec::new();
+    parts(tree, layout, tokens, motion).sweeps
+}
+
+/// The fills of the progresses of `tree` that are not indeterminate, laid
+/// out in `layout`, of `tokens`' colors, in the tree's order, as `paint`
+/// draws their nodes, as [`sweeps`] gives the sweeps: those that their
+/// clips hide, or of no opacity, are left out.
+pub fn fills(
+    tree: &Tree,
+    layout: &Layout,
+    tokens: &Tokens,
+    motion: Option<(&Animations, Instant)>,
+) -> Vec<FillArea> {
+    parts(tree, layout, tokens, motion).fills
+}
+
+/// The parts of the progresses of `tree` that the window server draws.
+#[derive(Default)]
+struct Parts {
+    sweeps: Vec<SweepArea>,
+    fills: Vec<FillArea>,
+}
+
+fn parts(
+    tree: &Tree,
+    layout: &Layout,
+    tokens: &Tokens,
+    motion: Option<(&Animations, Instant)>,
+) -> Parts {
+    let mut parts = Parts::default();
     if let Some(root) = tree.root() {
         let shown = Shown {
             clip: None,
             offset: (0, 0),
             opacity: 1.0,
         };
-        walk((tree, layout, tokens, motion), root, shown, &mut sweeps);
+        walk((tree, layout, tokens, motion), root, shown, &mut parts);
     }
-    sweeps
+    parts
 }
 
 /// What the nodes around a node do to its sweep: their clips, of no clip
@@ -127,7 +225,7 @@ fn walk(
     (tree, layout, tokens, motion): (&Tree, &Layout, &Tokens, Option<(&Animations, Instant)>),
     id: NodeId,
     around: Shown,
-    sweeps: &mut Vec<SweepArea>,
+    parts: &mut Parts,
 ) {
     let (Some(kind), Some(style), Some(frame)) =
         (tree.kind(id), tree.style(id), layout.frame(tree, id))
@@ -162,6 +260,55 @@ fn walk(
     let clip = around.clip;
     let scale = layout.scale();
     if let Kind::Progress(progress) = kind
+        && progress.state != ProgressState::Indeterminate
+    {
+        let state = match progress.state {
+            ProgressState::Error => "progress.error",
+            ProgressState::Paused => "progress.paused",
+            ProgressState::Normal | ProgressState::Indeterminate => "progress.normal",
+        };
+        let color = style
+            .color
+            .as_ref()
+            .and_then(|token| tokens.get(&token.0))
+            .or_else(|| tokens.get(state));
+        let (boxed, shape, radius) = match progress.shape {
+            ProgressShape::Bar => (frame, FillShape::Bar, radius(progress, frame.height, scale)),
+            ProgressShape::Ring => (
+                ring_square(frame),
+                FillShape::Ring {
+                    thickness: progress.thickness * scale,
+                },
+                0.0,
+            ),
+            ProgressShape::Outline => (
+                frame,
+                FillShape::Outline {
+                    thickness: progress.thickness * scale,
+                },
+                outline_radius(tree, id, progress, scale),
+            ),
+        };
+        let pixels = rect(boxed);
+        let visible = clip.map_or(pixels, |clip| intersection(clip, pixels));
+        if let Some(color) = color
+            && !is_empty(visible)
+        {
+            parts.fills.push(FillArea {
+                node: id,
+                rect: pixels,
+                visible,
+                radius,
+                color: Color {
+                    alpha: color.alpha * around.opacity,
+                    ..color
+                },
+                shape,
+                value: progress.value.clamp(0.0, 1.0),
+            });
+        }
+    }
+    if let Kind::Progress(progress) = kind
         && progress.state == ProgressState::Indeterminate
     {
         let color = style
@@ -183,6 +330,13 @@ fn walk(
                     thickness: progress.thickness * scale,
                 },
             ),
+            ProgressShape::Outline => (
+                frame,
+                SweepShape::Outline {
+                    span: progress.segment,
+                    thickness: progress.thickness * scale,
+                },
+            ),
         };
         let pixels = rect(boxed);
         let visible = clip.map_or(pixels, |clip| intersection(clip, pixels));
@@ -193,13 +347,18 @@ fn walk(
                 match progress.shape {
                     ProgressShape::Bar => PERIODS.0,
                     ProgressShape::Ring => PERIODS.1,
+                    ProgressShape::Outline => PERIODS.2,
                 },
                 Duration::from_secs_f32,
             );
-            sweeps.push(SweepArea {
+            let radius = match progress.shape {
+                ProgressShape::Outline => outline_radius(tree, id, progress, scale),
+                _ => radius(progress, frame.height, scale),
+            };
+            parts.sweeps.push(SweepArea {
                 rect: pixels,
                 visible,
-                radius: radius(progress, frame.height, scale),
+                radius,
                 color: Color {
                     alpha: color.alpha * around.opacity,
                     ..color
@@ -223,7 +382,7 @@ fn walk(
                 clip: inner,
                 ..around
             },
-            sweeps,
+            parts,
         );
     }
 }
@@ -502,5 +661,143 @@ mod tests {
             (shown[0].color.alpha - normal.alpha * 0.5).abs() < 1e-3,
             "{shown:?}"
         );
+    }
+
+    /// A box as a tab's, 100 by 24 points, of corners of 6, padded, of a
+    /// text and an outline of `progress` over it.
+    fn outlined(progress: Progress) -> Node {
+        Node::container(vec![
+            Node::text("make"),
+            of(Progress {
+                shape: ProgressShape::Outline,
+                ..progress
+            }),
+        ])
+        .layout(view::Layout {
+            width: Length::Points(100.0),
+            height: Length::Points(24.0),
+            padding: view::Edges {
+                top: 4.0,
+                right: 8.0,
+                bottom: 4.0,
+                left: 8.0,
+            },
+            ..view::Layout::default()
+        })
+        .style(Style {
+            radius: 6.0,
+            ..Style::default()
+        })
+    }
+
+    #[test]
+    fn an_outline_takes_its_parent_s_whole_box_and_none_of_its_children_s_room() {
+        let (tree, layout) = laid(vec![outlined(Progress::default())], 2.0);
+        let root = tree.root().unwrap();
+        let tab = tree.children(root)[0];
+        let (text, outline) = (tree.children(tab)[0], tree.children(tab)[1]);
+        let frame = |id| layout.frame(&tree, id).unwrap();
+        assert_eq!(frame(outline), frame(tab));
+        // The text at the padding's corner, as without the outline.
+        assert_eq!((frame(text).x, frame(text).y), (16.0, 8.0));
+        assert_eq!(natural(ProgressShape::Outline), (0.0, 0.0));
+    }
+
+    #[test]
+    fn an_indeterminate_outline_sweeps_along_its_parent_s_corners() {
+        let (tree, layout) = laid(
+            vec![outlined(Progress {
+                state: ProgressState::Indeterminate,
+                thickness: 1.5,
+                segment: 0.2,
+                ..Progress::default()
+            })],
+            2.0,
+        );
+        let tokens = Theme::builtin().dark.tokens;
+        let swept = sweeps(&tree, &layout, &tokens, None);
+        let [sweep] = swept[..] else {
+            panic!("one sweep: {swept:?}");
+        };
+        assert_eq!(
+            sweep.rect,
+            Rect {
+                x: 0,
+                y: 0,
+                width: 200,
+                height: 48
+            }
+        );
+        assert_eq!(sweep.radius, 12.0);
+        assert_eq!(
+            sweep.shape,
+            SweepShape::Outline {
+                span: 0.2,
+                thickness: 3.0
+            }
+        );
+        assert_eq!(sweep.period, PERIODS.2);
+        assert_eq!(sweep.color, token("progress.normal"));
+        // Of a radius of its own.
+        let (tree, layout) = laid(
+            vec![outlined(Progress {
+                state: ProgressState::Indeterminate,
+                radius: Some(2.0),
+                ..Progress::default()
+            })],
+            2.0,
+        );
+        assert_eq!(sweeps(&tree, &layout, &tokens, None)[0].radius, 4.0);
+        assert!(fills(&tree, &layout, &tokens, None).is_empty());
+    }
+
+    #[test]
+    fn the_fills_of_bars_rings_and_outlines_go_as_far_as_their_values() {
+        let bar = of(Progress {
+            value: 0.25,
+            ..Progress::default()
+        });
+        let ring = of(Progress {
+            state: ProgressState::Error,
+            value: 0.5,
+            shape: ProgressShape::Ring,
+            thickness: 3.0,
+            ..Progress::default()
+        })
+        .layout(view::Layout {
+            height: Length::Points(20.0),
+            ..view::Layout::default()
+        });
+        let outline = outlined(Progress {
+            state: ProgressState::Paused,
+            value: 1.0,
+            ..Progress::default()
+        });
+        let spinning = of(Progress {
+            state: ProgressState::Indeterminate,
+            ..Progress::default()
+        });
+        let (tree, layout) = laid(vec![bar, ring, outline, spinning], 2.0);
+        let tokens = Theme::builtin().dark.tokens;
+        let fills = super::fills(&tree, &layout, &tokens, None);
+        let root = tree.root().unwrap();
+        let children = tree.children(root);
+        assert_eq!(fills.len(), 3, "{fills:?}");
+        assert_eq!(fills[0].node, children[0]);
+        assert_eq!(fills[0].shape, FillShape::Bar);
+        assert_eq!(fills[0].value, 0.25);
+        assert_eq!(fills[0].radius, 4.0);
+        assert_eq!(fills[0].color, token("progress.normal"));
+        assert_eq!(fills[1].shape, FillShape::Ring { thickness: 6.0 });
+        assert_eq!((fills[1].rect.width, fills[1].rect.height), (40, 40));
+        assert_eq!(fills[1].value, 0.5);
+        assert_eq!(fills[1].color, token("progress.error"));
+        // The outline's of its parent's box and corners.
+        assert_eq!(fills[2].node, tree.children(children[2])[1]);
+        assert_eq!(fills[2].shape, FillShape::Outline { thickness: 4.0 });
+        assert_eq!((fills[2].rect.width, fills[2].rect.height), (200, 48));
+        assert_eq!(fills[2].radius, 12.0);
+        assert_eq!(fills[2].value, 1.0);
+        assert_eq!(fills[2].color, token("progress.paused"));
     }
 }

@@ -20,7 +20,7 @@ use crate::layout::{Frame, Layout, Measure, Room};
 use crate::list::{self, Lists};
 use crate::paint::{self, Shown};
 use crate::pointer::{self, Button, NodeEvent, Pointer};
-use crate::progress::{self, SweepArea};
+use crate::progress::{self, FillArea, SweepArea};
 use crate::theme::Tokens;
 use crate::tooltip::Tooltip;
 use crate::tree::{Invalid, NodeId, Tree};
@@ -42,6 +42,11 @@ pub struct Surface {
     pub tooltip: Tooltip,
     /// Its nodes' transitions.
     pub animations: Animations,
+    /// Whether the platform's window server draws the fills of its
+    /// progresses that are not indeterminate, which its paint then leaves
+    /// out, as [`Surface::fills`] gives them, so that a change of their
+    /// value slides with no frame of the host's.
+    pub fills_apart: bool,
 }
 
 /// What a press of the pointer did to a surface.
@@ -68,6 +73,7 @@ impl Surface {
             lists: Lists::new(),
             tooltip: Tooltip::new(),
             animations: Animations::new(),
+            fills_apart: false,
         }
     }
 
@@ -448,6 +454,7 @@ impl Surface {
                 pressed: self.pointer.pressing().filter(|_| self.lifted().is_none()),
                 lists: &self.lists,
                 motion: Some((&self.animations, now)),
+                fills: !self.fills_apart,
             },
         );
         if let Some((text, at)) = self.tooltip.shown(&self.tree) {
@@ -468,6 +475,19 @@ impl Surface {
     /// tree's corner, of their nodes' transitions at `now`.
     pub fn sweeps(&self, tokens: &Tokens, now: Instant) -> Vec<SweepArea> {
         progress::sweeps(
+            &self.tree,
+            &self.layout,
+            tokens,
+            Some((&self.animations, now)),
+        )
+    }
+
+    /// The fills of its progresses that are not indeterminate, of
+    /// `tokens`' colors, as its nodes' transitions show them at `now`,
+    /// which the platform's window server draws where `fills_apart` says
+    /// so.
+    pub fn fills(&self, tokens: &Tokens, now: Instant) -> Vec<FillArea> {
+        progress::fills(
             &self.tree,
             &self.layout,
             tokens,

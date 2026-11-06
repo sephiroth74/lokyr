@@ -29,6 +29,12 @@ impl NodeId {
         self.index
     }
 
+    /// Its slot and its generation as one number, which no other node of
+    /// the tree has had.
+    pub fn bits(self) -> u64 {
+        (u64::from(self.generation) << 32) | u64::from(self.index)
+    }
+
     /// Its slot's generation.
     pub(crate) fn generation(self) -> u32 {
         self.generation

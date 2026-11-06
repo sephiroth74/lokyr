@@ -9,10 +9,10 @@ use std::time::Instant;
 
 use lokyr_font_coretext::CoreText;
 use lokyr_platform_core::{
-    AppEvent, Appearance, ContentRect, ContextMenu, Handler, Ime, KeyCode, KeyEvent, KeyState,
-    MainMenu, Menu, MenuItem, Modifiers, MouseButton, Platform, Point, PointerArea, PointerShape,
-    ScrollDelta, Shortcut, ShortcutKey, Size, StandardAction, Sweep, SweepShape, TimerId, Titlebar,
-    WindowAttributes, WindowEvent, WindowId, WindowSize,
+    AppEvent, Appearance, ContentRect, ContextMenu, Fill, FillShape, Handler, Ime, KeyCode,
+    KeyEvent, KeyState, MainMenu, Menu, MenuItem, Modifiers, MouseButton, Platform, Point,
+    PointerArea, PointerShape, ScrollDelta, Shortcut, ShortcutKey, Size, StandardAction, Sweep,
+    SweepShape, TimerId, Titlebar, WindowAttributes, WindowEvent, WindowId, WindowSize,
 };
 use lokyr_plugin_sdk::view::{self, UiEventKind};
 use lokyr_render_core::{Color, DisplayList, Renderer, Surface as _};
@@ -36,6 +36,9 @@ const QUIT: &str = "gallery.quit";
 
 /// The window's title.
 const TITLE: &str = "Lokyr's UI gallery";
+
+/// How often the progresses step while they advance by themselves.
+const ADVANCE: std::time::Duration = std::time::Duration::from_millis(100);
 
 /// The window's size, in points.
 const SIZE: Size = Size {
@@ -82,6 +85,12 @@ struct App {
     /// The indeterminate progresses' sweeps that the window shows, and
     /// when they started.
     sweeps: (Vec<Sweep>, Instant),
+    /// The progresses' fills that the window server draws, as the gallery
+    /// gave them last.
+    fills: Vec<Fill>,
+    /// The timer of the progresses' next step, while they advance by
+    /// themselves.
+    advancing: Option<TimerId>,
     /// The window's titlebar, as the gallery's tab bar's place asks, and
     /// the parts of it that the tab bar takes.
     titlebar: Titlebar,
@@ -174,6 +183,35 @@ impl App {
             platform.request_frame(*window);
         }
         self.show_native(platform);
+        self.keep_advancing(platform);
+    }
+
+    /// Steps the progresses ten times a second while their toggle asks so,
+    /// as a program's percentage that changes often.
+    fn keep_advancing(&mut self, platform: &mut dyn Platform) {
+        let wanted = self
+            .view
+            .as_ref()
+            .is_some_and(|view| view.gallery.advancing());
+        match (wanted, self.advancing) {
+            (true, None) => {
+                self.advancing = Some(platform.start_timer(Instant::now() + ADVANCE));
+            }
+            (false, Some(timer)) => {
+                platform.cancel_timer(timer);
+                self.advancing = None;
+            }
+            _ => {}
+        }
+    }
+
+    /// The progresses' step came: they advance, and the next waits.
+    fn advance(&mut self, platform: &mut dyn Platform) {
+        self.advancing = None;
+        if let Some(view) = &mut self.view {
+            view.gallery.advance();
+        }
+        self.request_frame(platform);
     }
 
     /// Shows the native menu that a menu's panel became, if one waits, at
@@ -215,6 +253,10 @@ impl App {
         let theme = Theme::builtin();
         let variant = theme.variant(view.gallery.dark());
         drawing.font.begin_frame();
+        // The fills of the progresses, which the window server draws where
+        // it can, so that a value's change slides with no frame.
+        let fills_apart = platform.draws_fills();
+        view.set_fills_apart(fills_apart);
         let items = view.paint(
             &mut drawing.font,
             &variant.tokens,
@@ -305,6 +347,10 @@ impl App {
                             span: f64::from(span),
                             thickness: points(thickness),
                         },
+                        progress::SweepShape::Outline { span, thickness } => SweepShape::Outline {
+                            span: f64::from(span),
+                            thickness: points(thickness),
+                        },
                     },
                     color: [
                         f64::from(area.color.red),
@@ -320,6 +366,42 @@ impl App {
         if sweeps != self.sweeps.0 {
             platform.set_sweeps(*window, &sweeps);
             self.sweeps.0 = sweeps;
+        }
+        if fills_apart {
+            let fills: Vec<Fill> = view
+                .fills(&variant.tokens, now)
+                .into_iter()
+                .map(|(id, area)| {
+                    let (origin, size) = place(area.rect);
+                    Fill {
+                        id,
+                        origin,
+                        size,
+                        within: place(area.visible),
+                        radius: points(area.radius),
+                        shape: match area.shape {
+                            progress::FillShape::Bar => FillShape::Bar,
+                            progress::FillShape::Ring { thickness } => FillShape::Ring {
+                                thickness: points(thickness),
+                            },
+                            progress::FillShape::Outline { thickness } => FillShape::Outline {
+                                thickness: points(thickness),
+                            },
+                        },
+                        color: [
+                            f64::from(area.color.red),
+                            f64::from(area.color.green),
+                            f64::from(area.color.blue),
+                            f64::from(area.color.alpha),
+                        ],
+                        value: f64::from(area.value),
+                    }
+                })
+                .collect();
+            if fills != self.fills {
+                platform.set_fills(*window, &fills);
+                self.fills = fills;
+            }
         }
         // The titlebar of the tab bar's place, whose height comes back as
         // the window's size, and the tab bar's parts of it.
@@ -613,6 +695,7 @@ impl Handler for App {
         match event {
             AppEvent::QuitRequested => platform.quit(),
             AppEvent::Command(command) if command == QUIT => platform.quit(),
+            AppEvent::Timer(timer) if self.advancing == Some(timer) => self.advance(platform),
             AppEvent::Timer(timer) => self.timer(platform, timer),
             _ => {}
         }
@@ -732,6 +815,8 @@ pub fn run() -> Result<(), String> {
         dark: false,
         timer: None,
         sweeps: (Vec::new(), Instant::now()),
+        fills: Vec::new(),
+        advancing: None,
         titlebar: Titlebar::Titled,
         titlebar_areas: Vec::new(),
         given: None,

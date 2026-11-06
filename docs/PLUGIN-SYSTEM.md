@@ -295,11 +295,11 @@ type Node = {
     progress: {
         state: ("normal" | "error" | "paused" | "indeterminate")?,
         value: number?, -- from 0 to 1
-        shape: ("bar" | "ring")?,
-        radius: number?, -- a bar's corners', a pill's without it
-        thickness: number?, -- a ring's line's
-        segment: number?, -- an indeterminate one's moving part, of the bar or of the turn, from 0 to 1
-        period: number?, -- an indeterminate one's sweep or turn, in seconds
+        shape: ("bar" | "ring" | "outline")?, -- an outline its parent's, along its edges, over its children
+        radius: number?, -- a bar's corners', a pill's without it; an outline's, its parent's without it
+        thickness: number?, -- a ring's line's, or an outline's
+        segment: number?, -- an indeterminate one's moving part, of the bar, of the turn or of the outline, from 0 to 1
+        period: number?, -- an indeterminate one's sweep, turn or run along, in seconds
     }?, -- for progress nodes: its track of the style's background, its fill of the style's color
     count: number?, -- for list nodes, of all their items
     first: number?, -- for list nodes, the index of the first of `items`
@@ -317,6 +317,12 @@ type Node = {
     -- place gives it a "reorder" of its index among them, which the next render shows; a render that keeps
     -- the order, or none within half a second, slides them back.
     reorderable: boolean?,
+    -- A reorderable node's tab, as a bar's tab carries it: dragged across its parent past a margin, or out
+    -- of its window, it leaves its siblings, which close its room, and the host shows the tab's panes under
+    -- the pointer, its window showing another tab meanwhile; the bar of another window opens a room for it.
+    -- A drop there gives it a "drop-on-bar", outside every window a "drop-outside", before its "drag-end",
+    -- of which its plugin makes the tab's move; Escape, or a drop elsewhere, puts it back.
+    carries: number?,
     tooltip: string?, -- shown as the pointer rests over the node, by its key
     children: { Node }?,
     -- What accessibility, as VoiceOver, takes the node for, in place of its kind's: a container a group, a
@@ -411,14 +417,15 @@ type UiEvent = {
     key: string,
     kind: "click" | "double-click" | "middle-click" | "hover-enter" | "hover-leave" | "context-menu"
         | "input-changed" | "submit" | "focus" | "blur" | "scroll"
-        | "drag-start" | "drag-move" | "drag-end" | "drag-cancel" | "reorder" | "set-value" | "toggle"
-        | "select" | "activate" | "list-range",
+        | "drag-start" | "drag-move" | "drag-end" | "drag-cancel" | "reorder" | "drop-on-bar"
+        | "drop-outside" | "set-value" | "toggle" | "select" | "activate" | "list-range",
     text: string?, -- a field's text, as the host holds it: at each change, "input-changed", and as Return goes to it, "submit"
     revision: number?, -- an "input-changed" text's, one more at each edit, which `set_text` gives back
     item: number?, -- a list's item, selected or activated
     first: number?, count: number?, -- the items of a list that the host asks for, which the next render gives
-    x: number?, y: number?, -- a drag's, from its start, or a scroll's, in points
-    index: number?, -- a "reorder"'s, the node's new index among its reorderable siblings, before its "drag-end"
+    x: number?, y: number?, -- a drag's, from its start, or a scroll's, in points; a "drop-outside"'s, where the tab's new window puts its content's corner on the screens
+    index: number?, -- a "reorder"'s, the node's new index among its reorderable siblings, before its "drag-end"; a "drop-on-bar"'s, the tab's index among the window's
+    window: number?, -- a "drop-on-bar"'s, the window whose bar took the tab
     value: string?, -- set by accessibility, as VoiceOver's; its press comes as a click, its focus as a focus
     on: boolean?, -- a toggle's state asked, the other than its render's, which the next render gives
 }
@@ -480,7 +487,9 @@ type Cx = {
     activate_tab: (tab: TabId) -> (boolean, Error?),
     focus_pane: (pane: PaneId) -> (boolean, Error?),
     move_tab: (tab: TabId, window: WindowId, index: number) -> (boolean, Error?),
-    tab_to_new_window: (tab: TabId) -> (boolean, Error?),
+    -- A window of its own, its content's corner at `at` on the screens, from the menu bar's screen's top
+    -- left corner, where it is given; a tab alone in its window stays, its window moving to `at`.
+    tab_to_new_window: (tab: TabId, at: { x: number, y: number }?) -> (boolean, Error?),
     pane_to_new_tab: (pane: PaneId, window: WindowId, index: number) -> (boolean, Error?),
     pane_to_new_window: (pane: PaneId) -> (boolean, Error?),
     -- Moves an edge by `by`, a share from -1 to 1 of the room of the split whose divider it is.

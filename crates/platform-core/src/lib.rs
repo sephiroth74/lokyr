@@ -189,6 +189,60 @@ pub enum SweepShape {
         /// Its line's thickness, in points.
         thickness: f64,
     },
+    /// A segment of an outline, a line along the box's edges, inside them,
+    /// of its corners' radius, clockwise round it.
+    Outline {
+        /// The part of the outline's length that it takes, from 0 to 1.
+        span: f64,
+        /// Its line's thickness, in points.
+        thickness: f64,
+    },
+}
+
+/// The fill of a progress that is not indeterminate, as far as its value,
+/// which the window server draws, so that a change of its value slides from
+/// the value that it showed, eased, about 0.2 s, with no frame of the app's;
+/// at once where the system reduces motion.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Fill {
+    /// The progress, as the app tells it apart from the others of its
+    /// window, from one placing to the next: a fill of the same id and box
+    /// slides to its new value.
+    pub id: u64,
+    /// The bar's box, the ring's square or the outline's box: its top left
+    /// corner, in points from the content's.
+    pub origin: Point,
+    /// Its size, in points.
+    pub size: Size,
+    /// The part of the window where it shows, its top left corner and its
+    /// size, in points, which clips it.
+    pub within: (Point, Size),
+    /// The radius of the bar's corners, or of the outline's, in points.
+    pub radius: f64,
+    /// What it fills.
+    pub shape: FillShape,
+    /// Its color: sRGB's encoded components, from 0 to 1, and its opacity.
+    pub color: [f64; 4],
+    /// How far it fills, from 0 to 1.
+    pub value: f64,
+}
+
+/// What a fill fills, as far as its value.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum FillShape {
+    /// A bar, from its left, of its corners' radius.
+    Bar,
+    /// A ring, clockwise from its top.
+    Ring {
+        /// Its line's thickness, in points.
+        thickness: f64,
+    },
+    /// An outline, a line along the box's edges, inside them, of its
+    /// corners' radius, from its left along its top and its bottom at once.
+    Outline {
+        /// Its line's thickness, in points.
+        thickness: f64,
+    },
 }
 
 /// How a fade goes, from its start to its end.
@@ -399,6 +453,17 @@ pub trait Platform {
     /// those that it showed: none hides them. Those as they were go on
     /// unchanged.
     fn set_sweeps(&mut self, window: WindowId, sweeps: &[Sweep]);
+
+    /// Whether the window server draws the fills of the progresses that
+    /// are not indeterminate, as [`Platform::set_fills`] gives them, which
+    /// the app then leaves out of its frames; the app draws them otherwise.
+    fn draws_fills(&self) -> bool;
+
+    /// Shows `fills` over `window`'s content, under the layers of the text
+    /// that blinks and of the cursor, in place of those that it showed: a
+    /// fill of an id and a box that it showed slides from the value that it
+    /// shows to its new one, at once where the system reduces motion.
+    fn set_fills(&mut self, window: WindowId, fills: &[Fill]);
 
     /// Asks for one [`WindowEvent::Frame`] of a window: at once, once the
     /// current call returns, if the window drew no frame since its display's

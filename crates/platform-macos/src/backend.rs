@@ -7,10 +7,10 @@ use std::rc::{Rc, Weak};
 use std::time::{Duration, Instant, SystemTime};
 
 use lokyr_platform_core::{
-    AboutPanel, Alert, AlertId, Appearance, Backdrop, ContentRect, ContextMenu, Error, GlobalKey,
-    Layer, LayerPlace, MainMenu, MenuRole, Platform, Point, PointerArea, PointerShape, QuickPlace,
-    ScreenPoint, ScreenRect, Shortcut, Size, Sweep, Target, TimerId, Titlebar, Usage, Waker,
-    WindowAttributes, WindowEvent, WindowHandle, WindowId, WindowSize,
+    AboutPanel, Alert, AlertId, Appearance, Backdrop, ContentRect, ContextMenu, Error, Fill,
+    GlobalKey, Layer, LayerPlace, MainMenu, MenuRole, Platform, Point, PointerArea, PointerShape,
+    QuickPlace, ScreenPoint, ScreenRect, Shortcut, Size, Sweep, Target, TimerId, Titlebar, Usage,
+    Waker, WindowAttributes, WindowEvent, WindowHandle, WindowId, WindowSize,
 };
 use objc2::rc::Retained;
 use objc2::{AnyThread, MainThreadMarker};
@@ -767,6 +767,16 @@ impl Platform for Backend {
     fn set_sweeps(&mut self, window: WindowId, sweeps: &[Sweep]) {
         if let Some(window) = self.windows.get(&window) {
             window.set_sweeps(sweeps);
+        }
+    }
+
+    fn draws_fills(&self) -> bool {
+        true
+    }
+
+    fn set_fills(&mut self, window: WindowId, fills: &[Fill]) {
+        if let Some(window) = self.windows.get(&window) {
+            window.set_fills(fills);
         }
     }
 

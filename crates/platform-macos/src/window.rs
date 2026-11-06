@@ -7,7 +7,7 @@ use std::ptr::NonNull;
 use std::rc::{Rc, Weak};
 
 use lokyr_platform_core::{
-    Backdrop, ContentRect, Dropped, Ime, Layer, LayerPlace, MouseButton, PixelSize, Point,
+    Backdrop, ContentRect, Dropped, Fill, Ime, Layer, LayerPlace, MouseButton, PixelSize, Point,
     PointerArea, PointerShape, QuickPlace, ScreenPoint, ScrollDelta, ScrollPhase, Size, Sweep,
     Titlebar, WindowAttributes, WindowEvent, WindowId, WindowSize,
 };
@@ -35,6 +35,7 @@ use objc2_quartz_core::{CALayer, CAMetalLayer};
 
 use crate::access::Access;
 use crate::accessory::TitleAccessory;
+use crate::fill::FillsView;
 use crate::frame::Pacer;
 use crate::keys;
 use crate::layer::LayerView;
@@ -52,6 +53,8 @@ pub(crate) struct Window {
     /// content's; of the text that blinks, over it; and of the cursor's
     /// cells, over everything.
     sweeps: Retained<SweepsView>,
+    /// The view of the progresses' fills, under the sweeps'.
+    fills: Retained<FillsView>,
     blinking_text: Retained<LayerView>,
     cursor: Retained<LayerView>,
     pacer: Pacer,
@@ -172,6 +175,7 @@ impl Window {
         ns_window.setTabbingMode(NSWindowTabbingMode::Disallowed);
         let view = ContentView::new(mtm, content, shared.clone(), id, option_as_meta);
         ns_window.setContentView(Some(&view));
+        let fills = FillsView::new(mtm, &view);
         let sweeps = SweepsView::new(mtm, &view);
         let blinking_text = LayerView::new(mtm, &view);
         let cursor = LayerView::new(mtm, &view);
@@ -190,6 +194,7 @@ impl Window {
             ns_window,
             view,
             sweeps,
+            fills,
             blinking_text,
             cursor,
             pacer,
@@ -233,6 +238,12 @@ impl Window {
     /// Shows `sweeps`, in place of those that it showed.
     pub(crate) fn set_sweeps(&self, sweeps: &[Sweep]) {
         self.sweeps.set(sweeps);
+    }
+
+    /// Shows `fills`, in place of those that it showed, a value that
+    /// changed sliding.
+    pub(crate) fn set_fills(&self, fills: &[Fill]) {
+        self.fills.set(fills);
     }
 
     /// The shortest time between two refreshes of the display that the

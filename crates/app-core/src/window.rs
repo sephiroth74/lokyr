@@ -10,8 +10,8 @@ use lokyr_kernel::keymap::Resolver;
 use lokyr_kernel::plugins::view::{Key as NodeKey, UiEventKind};
 use lokyr_kernel::workspace::{self, Grid, PaneId};
 use lokyr_platform_core::{
-    Appearance, Backdrop, ContentRect, KeyCode, KeyEvent, LayerPlace, PointerArea, PointerShape,
-    Sweep, Titlebar,
+    Appearance, Backdrop, ContentRect, Fill, KeyCode, KeyEvent, LayerPlace, PointerArea,
+    PointerShape, Sweep, Titlebar,
 };
 use lokyr_render_core::{CellBatch, Color, Item, Rect, Surface as _};
 use lokyr_ui_core::cursor::Blink;
@@ -220,6 +220,9 @@ pub(crate) struct Window<B: Backend> {
     /// The indeterminate progresses of its slots' views that the platform
     /// moves, and the moment from which their sweeps run.
     pub(crate) sweeps: (Vec<Sweep>, Instant),
+    /// The fills of its slots' views' progresses that the platform draws,
+    /// as the app gave them last.
+    pub(crate) fills: Vec<Fill>,
     /// The keyboard's focus, on its pane or on a node of a slot's view, by
     /// the view's id.
     pub(crate) focus: Focus<u32>,
@@ -360,6 +363,7 @@ impl<B: Backend> Window<B> {
             panes_top: 0,
             panes_room: None,
             sweeps: (Vec::new(), now),
+            fills: Vec::new(),
             focus: Focus::new(),
             keyboard: None,
             next_view: 0,

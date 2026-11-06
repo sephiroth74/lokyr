@@ -17,6 +17,7 @@ mod appearance;
 mod backend;
 mod definition;
 mod drag_image;
+mod fill;
 mod frame;
 mod global_keys;
 mod keys;

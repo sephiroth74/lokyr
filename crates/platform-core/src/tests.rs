@@ -777,3 +777,36 @@ fn the_fake_s_drag_image_shows_moves_and_hides() {
     fake.hide_drag_image(None);
     assert_eq!(fake.drag_image_hides(), [Some(back)]);
 }
+
+#[test]
+fn the_fake_draws_the_fills_as_a_test_says_and_keeps_them() {
+    let (mut fake, _, window) = started();
+    assert!(!fake.draws_fills());
+    fake.set_draws_fills(true);
+    assert!(fake.draws_fills());
+    let fill = Fill {
+        id: 3,
+        origin: Point { x: 10.0, y: 20.0 },
+        size: Size {
+            width: 100.0,
+            height: 4.0,
+        },
+        within: (
+            Point { x: 10.0, y: 20.0 },
+            Size {
+                width: 100.0,
+                height: 4.0,
+            },
+        ),
+        radius: 2.0,
+        shape: FillShape::Outline { thickness: 2.0 },
+        color: [0.0, 0.5, 1.0, 1.0],
+        value: 0.4,
+    };
+    fake.set_fills(window, &[fill]);
+    let state = fake.window(window).unwrap();
+    assert_eq!(
+        (state.fills.as_slice(), state.fills_shown),
+        (&[fill][..], 1)
+    );
+}
