@@ -81,8 +81,11 @@ fn two_panes(first: Program, second: &Program) -> (Fake, App, WindowId, PaneId, 
         .split(a, Direction::Horizontal, pane, Side::Second)
         .unwrap();
     fake.send(&mut app, window, WindowEvent::Frame);
+    // Both ready, and laid out side by side by a frame.
     run_until(&mut fake, &mut app, |_, app| {
-        screen_of(app, a).contains("ready-a") && screen_of(app, b).contains("ready-b")
+        screen_of(app, a).contains("ready-a")
+            && screen_of(app, b).contains("ready-b")
+            && app.windows[&window].views.len() == 2
     });
     (fake, app, window, a, b)
 }
@@ -330,6 +333,16 @@ fn reporting(name: &str) -> Program {
 #[test]
 fn the_keyboard_s_move_tells_the_programs_and_takes_the_pane_s_title_and_color() {
     let (mut fake, mut app, window, a, b) = two_panes(reporting("a"), &reporting("b"));
+    // The programs ready, and what the window's focus told them echoed,
+    // which comes some milliseconds after.
+    run_until(&mut fake, &mut app, |_, app| {
+        screen_of(app, a).contains("ready-a") && screen_of(app, b).contains("ready-b")
+    });
+    for _ in 0..20 {
+        fake.deliver_wake(&mut app);
+        fake.send(&mut app, window, WindowEvent::Frame);
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
     // The reports before the test's moves: the first pane's of the
     // window's focus, if its program asked for them before the window
     // took it.

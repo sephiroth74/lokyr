@@ -709,6 +709,12 @@ fn progressing(draws_fills: bool) -> (Fake, App, WindowId) {
     fake.start(&mut app);
     let window = fake.windows().next().unwrap();
     app.windows.get_mut(&window).unwrap().surface = Some(fakes::Surface::default());
+    // Its program ready, whose output would draw a frame of its own.
+    run_until(&mut fake, &mut app, |_, app| {
+        screen(app, window)
+            .iter()
+            .any(|line| line.contains("ready"))
+    });
     let deadline = Instant::now() + std::time::Duration::from_secs(10);
     let mut quiet = Instant::now();
     while quiet.elapsed() < std::time::Duration::from_millis(200) {

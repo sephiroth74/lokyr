@@ -18,7 +18,7 @@ lokyr_plugin_sdk::export_plugin!(KeymapMacos);
 /// The bindings, each of its keys and of the command that they run, in
 /// their order: a menu's item shows the first of its command's keys that no
 /// later binding takes.
-pub const BINDINGS: [(&str, &str); 30] = [
+pub const BINDINGS: [(&str, &str); 33] = [
     // The application's.
     ("cmd+,", "app.settings"),
     ("cmd+q", "app.quit"),
@@ -58,6 +58,10 @@ pub const BINDINGS: [(&str, &str); 30] = [
     ("cmd+shift+[", "tabs.prev"),
     ("ctrl+tab", "tabs.next"),
     ("ctrl+shift+tab", "tabs.prev"),
+    // The splits'.
+    ("cmd+]", "splits.focus-next"),
+    ("cmd+[", "splits.focus-prev"),
+    ("cmd+shift+enter", "splits.zoom-toggle"),
 ];
 
 /// The bindings of a command of an argument, a whole number, after the
@@ -89,6 +93,25 @@ pub const ARGUED: [(&str, &str, &str, i64); 20] = [
     ("alt+cmd+9", "window.goto", "index", 9),
 ];
 
+/// The bindings of a command of a direction, after the others: each of its
+/// keys, the command, and the direction, `left`, `right`, `up` or `down`,
+/// as iTerm2 binds its splits' keys.
+pub const DIRECTED: [(&str, &str, &str); 10] = [
+    // A pane split right or down.
+    ("cmd+d", "splits.split", "right"),
+    ("cmd+shift+d", "splits.split", "down"),
+    // The keyboard to the pane beside.
+    ("alt+cmd+left", "splits.focus", "left"),
+    ("alt+cmd+right", "splits.focus", "right"),
+    ("alt+cmd+up", "splits.focus", "up"),
+    ("alt+cmd+down", "splits.focus", "down"),
+    // A divider a cell along.
+    ("ctrl+cmd+left", "splits.resize", "left"),
+    ("ctrl+cmd+right", "splits.resize", "right"),
+    ("ctrl+cmd+up", "splits.resize", "up"),
+    ("ctrl+cmd+down", "splits.resize", "down"),
+];
+
 /// The plugin of macOS's default shortcuts.
 #[derive(Debug, Default)]
 pub struct KeymapMacos;
@@ -108,6 +131,14 @@ impl Plugin for KeymapMacos {
                 keys: keys.to_owned(),
                 command: command.to_owned(),
                 args: Args::from([(name.to_owned(), Value::Integer(value))]),
+                when: None,
+            })?;
+        }
+        for (keys, command, direction) in DIRECTED {
+            cx.bind(Binding {
+                keys: keys.to_owned(),
+                command: command.to_owned(),
+                args: Args::from([("direction".to_owned(), Value::String(direction.to_owned()))]),
                 when: None,
             })?;
         }

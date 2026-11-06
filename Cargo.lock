@@ -766,6 +766,7 @@ dependencies = [
  "lokyr-platform-core",
  "lokyr-pty",
  "lokyr-render-core",
+ "lokyr-splits",
  "lokyr-tabs",
  "lokyr-text-core",
  "lokyr-ui-core",
@@ -963,6 +964,13 @@ dependencies = [
  "lokyr-pty",
  "lokyr-vt-core",
  "thiserror",
+]
+
+[[package]]
+name = "lokyr-splits"
+version = "0.5.0"
+dependencies = [
+ "lokyr-plugin-sdk",
 ]
 
 [[package]]

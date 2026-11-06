@@ -1302,6 +1302,12 @@ The defaults, of the built-in plugin `keymap-macos`, the shortcuts of macOS's ap
 | `cmd+shift+[`, `ctrl+shift+tab` | `tabs.prev` | Shows the previous tab, the last before the first |
 | `cmd+1`, `cmd+2`, `cmd+3`, `cmd+4`, `cmd+5`, `cmd+6`, `cmd+7`, `cmd+8`, `cmd+9` | `tabs.goto` | Shows the tab of that number, `index`, from 1 at the left; a number of no tab does nothing |
 | `cmd+shift+left`, `cmd+shift+right` | `tabs.move` | Moves the tab a place to the left or to the right, `delta` of -1 or 1, as far as the bar's ends |
+| `cmd+d`, `cmd+shift+d` | `splits.split` | Splits the pane, `direction` `right` or `down`: the new pane, beside it or below it, takes the keyboard |
+| `alt+cmd+left`, `alt+cmd+right`, `alt+cmd+up`, `alt+cmd+down` | `splits.focus` | Gives the keyboard to the pane beside, `direction` `left`, `right`, `up` or `down`: the nearest, of the most room along the side, the first of a tie; none at the tab's edge, nor while a pane is zoomed |
+| `cmd+]` | `splits.focus-next` | Gives the keyboard to the tab's next pane, the first after the last |
+| `cmd+[` | `splits.focus-prev` | Gives the keyboard to the tab's previous pane, the last before the first |
+| `ctrl+cmd+left`, `ctrl+cmd+right`, `ctrl+cmd+up`, `ctrl+cmd+down` | `splits.resize` | Moves a divider of the pane a cell, `cells` of 1, towards `direction`: the one on its right, or its bottom, where it has one, the other otherwise |
+| `cmd+shift+enter` | `splits.zoom-toggle` | Has the pane take the tab's whole room, or gives the others theirs back |
 
 ## `[plugins.<namespace>]`
 

@@ -217,6 +217,7 @@ drag gives it a ratio, between 5% and 95%, which `splits.equalize` takes away.
 On macOS the shortcuts are the `keymap-macos` plugin's, which binds the keys of every plugin's commands; on Linux (F7) they use Ctrl+Shift and are defined in `keymap-linux`.
 
 **Behavior**
+- **The commands**, as `splits` gives them: a split takes the keyboard to its new pane, right or below; the focus by direction goes to the nearest pane whose side faces the pane's, of the most room shared along it, the first in the layout's order of a tie, and nowhere at the tab's edge or while a pane is zoomed; next and previous go round the tab's panes in its layout's order; a resize moves the divider on the pane's right, or its bottom, where it has one, as iTerm2's, the other otherwise, by `cells` cells, 1 by default, of the share of its split's room that the pane's grid gives a cell; the zoom toggles; swap exchanges the pane with the one beside it, each taking the other's room, the keyboard staying with the pane; to a tab puts the pane in a tab of its own after its tab, and to a window in a window of its own, a pane alone in its window's one tab staying.
 - **New panes** inherit the cwd (via OSC 7, which is why basic shell integration already lands in F3) and the profile of the pane they come from.
 - **Inactive panes** are dimmed (`dim-inactive`), as in iTerm2.
 - **Dividers**:

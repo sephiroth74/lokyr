@@ -12,3 +12,4 @@ keymap-macos = { path = "../plugins/keymap-macos", target = "macos" }
 core-actions = { path = "../plugins/core-actions" }
 links = { path = "../plugins/links" }
 tabs = { path = "../plugins/tabs" }
+splits = { path = "../plugins/splits" }

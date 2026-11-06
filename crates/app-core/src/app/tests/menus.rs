@@ -60,7 +60,14 @@ fn starting_opens_a_window_under_the_menus_of_the_commands() {
             "Select Next Tab shift+cmd+]",
             "Select Previous Tab shift+cmd+[",
             "Rename Tab…",
-            "Move Tab to New Window"
+            "Move Tab to New Window",
+            "-",
+            "Select Next Pane cmd+]",
+            "Select Previous Pane cmd+[",
+            "Zoom Pane shift+cmd+Enter",
+            "Equalize Panes",
+            "Move Pane to New Tab",
+            "Move Pane to New Window"
         ]
     );
     assert_eq!(
@@ -136,7 +143,14 @@ fn the_menus_follow_the_keys_of_the_config() {
             "Select Next Tab shift+cmd+]",
             "Select Previous Tab shift+cmd+[",
             "Rename Tab…",
-            "Move Tab to New Window"
+            "Move Tab to New Window",
+            "-",
+            "Select Next Pane cmd+]",
+            "Select Previous Pane cmd+[",
+            "Zoom Pane shift+cmd+Enter",
+            "Equalize Panes",
+            "Move Pane to New Tab",
+            "Move Pane to New Window"
         ]
     );
     assert_eq!(
@@ -234,7 +248,7 @@ fn the_built_in_plugins_bind_the_commands_that_are_there_alone() {
         .filter(|command| app.commands.get(command).is_none())
         .collect();
     assert_eq!(missing, Vec::<&str>::new());
-    assert_eq!(app.keymap.bindings().len(), 50);
+    assert_eq!(app.keymap.bindings().len(), 63);
 }
 
 #[test]

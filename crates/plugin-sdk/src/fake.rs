@@ -350,6 +350,19 @@ impl FakeHost {
         self
     }
 
+    /// The pane that has the keyboard of the focused window's shown tab, as
+    /// the plugin's writes left it.
+    pub fn keyboard(&mut self) -> Option<PaneId> {
+        self.settle();
+        self.focused_pane()
+    }
+
+    /// The layout of `tab`, as the plugin's writes left it.
+    pub fn tab_layout(&mut self, tab: TabId) -> Option<Layout> {
+        self.settle();
+        self.tabs.get(&tab).map(|shown| shown.layout.clone())
+    }
+
     /// Gives `tab` the `marks` that a read of the tabs tells, as the host
     /// finds them, which `tab-changed` tells as they change.
     pub fn set_tab_marks(&mut self, tab: TabId, marks: TabMarks) -> &mut Self {
