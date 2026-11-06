@@ -175,6 +175,7 @@ impl<B: Backend> App<B> {
             None => self.content(size),
         };
         let (width, height) = self.cell_pixels(size.scale);
+        let padding = self.padding(size.scale);
         let Some(state) = self.windows.get_mut(&window) else {
             return Vec::new();
         };
@@ -183,23 +184,14 @@ impl<B: Backend> App<B> {
             .workspace
             .window(state.window)
             .and_then(|shown| self.workspace.tab(shown.active_tab()));
-        let divider = (DIVIDER * size.scale).round() as u32;
+        let gap = Gap {
+            line: (DIVIDER * size.scale).round() as u32,
+            padding,
+        };
         let (rooms, lines) = match tab {
             Some(tab) => (
-                pane_rects(
-                    tab.layout(),
-                    tab.zoomed(),
-                    content,
-                    (width, height),
-                    divider,
-                ),
-                dividers(
-                    tab.layout(),
-                    tab.zoomed(),
-                    content,
-                    (width, height),
-                    divider,
-                ),
+                pane_rects(tab.layout(), tab.zoomed(), content, (width, height), gap),
+                dividers(tab.layout(), tab.zoomed(), content, (width, height), gap),
             ),
             None => (Vec::new(), Vec::new()),
         };
@@ -434,18 +426,15 @@ impl<B: Backend> App<B> {
         let size = platform.window_size(window)?;
         let room = self.windows.get(&window)?.panes_room?;
         let (width, height) = self.cell_pixels(size.scale);
-        let divider = (DIVIDER * size.scale).round() as u32;
+        let gap = Gap {
+            line: (DIVIDER * size.scale).round() as u32,
+            padding: self.padding(size.scale),
+        };
         let selection_colors = self.variant(platform, window).selection;
         let text = self.config.text;
         let thickness = self.config.cursor;
         let shown = self.workspace.tab(tab)?;
-        let rooms = pane_rects(
-            shown.layout(),
-            shown.zoomed(),
-            room,
-            (width, height),
-            divider,
-        );
+        let rooms = pane_rects(shown.layout(), shown.zoomed(), room, (width, height), gap);
         let background = cells::background(self.workspace.pane(shown.active_pane())?.snapshot());
         let drawing = self.drawing.as_mut()?;
         let oldest = drawing.renderer.drawing_from();
@@ -1348,23 +1337,55 @@ fn fit(pixels: u32, cell: u32) -> u16 {
     (pixels / cell.max(1)).clamp(1, u32::from(u16::MAX)) as u16
 }
 
-/// The rooms of the panes of `layout` in `area`, in pixels: a split's first
-/// part takes its share of the area less `divider`, the pixels between the
-/// parts, cut at a whole cell of `cell`, its width or its height, so that
-/// its grid fills it, and the second the rest, past the divider; `zoomed`,
-/// while one is, takes the whole area. In the layout's order.
+/// The room between the two parts of a split, in pixels: the divider's
+/// line, and each pane's padding on either side of it, across and down, as
+/// every pane keeps its padding.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Gap {
+    /// The divider's line's thickness.
+    pub(crate) line: u32,
+    /// The panes' padding at their left and right, and at their top and
+    /// bottom.
+    pub(crate) padding: (u32, u32),
+}
+
+impl Gap {
+    /// A gap of the line alone, of no padding.
+    #[cfg(test)]
+    pub(crate) const fn line(line: u32) -> Self {
+        Self {
+            line,
+            padding: (0, 0),
+        }
+    }
+
+    /// The padding along `direction`, a split's, and across it.
+    fn paddings(self, direction: Direction) -> (u32, u32) {
+        match direction {
+            Direction::Horizontal => self.padding,
+            Direction::Vertical => (self.padding.1, self.padding.0),
+        }
+    }
+}
+
+/// The rooms of the grids of the panes of `layout` in `area`, in pixels: a
+/// split's first part takes its share of the area less `gap`, the divider's
+/// line and the panes' padding on either side of it, cut at a whole cell of
+/// `cell`, its width or its height, so that its grid fills it, and the
+/// second the rest, past the gap; `zoomed`, while one is, takes the whole
+/// area. In the layout's order.
 pub(super) fn pane_rects(
     layout: &Layout,
     zoomed: Option<PaneId>,
     area: Rect,
     cell: (u32, u32),
-    divider: u32,
+    gap: Gap,
 ) -> Vec<(PaneId, Rect)> {
     if let Some(zoomed) = zoomed.filter(|&pane| layout.contains(pane)) {
         return vec![(zoomed, area)];
     }
     let mut rooms = Vec::new();
-    split_rooms(layout, area, cell, divider, &mut rooms);
+    split_rooms(layout, area, cell, gap, &mut rooms);
     rooms
 }
 
@@ -1372,7 +1393,7 @@ fn split_rooms(
     layout: &Layout,
     area: Rect,
     cell: (u32, u32),
-    divider: u32,
+    gap: Gap,
     rooms: &mut Vec<(PaneId, Rect)>,
 ) {
     let Layout::Split {
@@ -1387,47 +1408,54 @@ fn split_rooms(
         }
         return;
     };
-    let (first_area, _, second_area) = cut(layout, *direction, area, cell, divider);
-    split_rooms(first, first_area, cell, divider, rooms);
-    split_rooms(second, second_area, cell, divider, rooms);
+    let (first_area, _, second_area, _) = cut(layout, *direction, area, cell, gap);
+    split_rooms(first, first_area, cell, gap, rooms);
+    split_rooms(second, second_area, cell, gap, rooms);
 }
 
 /// The parts of `area`, in pixels, that `layout`, a split of `direction`,
 /// gives its first part, its divider and its second part: the first its
-/// share of the area less `divider`, cut at a whole cell of `cell`, so that
-/// its grid fills it, of one cell at least, and of as many as leave the
-/// second one, if the room has two; the second the rest, past the divider.
+/// share of the area less `gap`, cut at a whole cell of `cell`, so that its
+/// grid fills it, of one cell at least, and of as many as leave the second
+/// one, if the room has two; the divider's line in the gap's middle, past
+/// the first part's padding, and as long as the area and the padding
+/// across at either end, so that the lines meet and reach the panes' room's
+/// edges; the second the rest, past the gap. And the room that the parts
+/// share, the area less the gap.
 fn cut(
     layout: &Layout,
     direction: Direction,
     area: Rect,
     cell: (u32, u32),
-    divider: u32,
-) -> (Rect, Rect, Rect) {
+    gap: Gap,
+) -> (Rect, Rect, Rect, u32) {
     let share = layout.share().unwrap_or(0.5);
     let (length, step) = match direction {
         Direction::Horizontal => (area.width, cell.0.max(1)),
         Direction::Vertical => (area.height, cell.1.max(1)),
     };
-    let room = length.saturating_sub(divider);
+    let (along, across) = gap.paddings(direction);
+    let between = gap.line.saturating_add(along.saturating_mul(2));
+    let room = length.saturating_sub(between);
     let cells = (f64::from(room) * share / f64::from(step)).round() as u32;
     let most = (room / step).saturating_sub(1).max(1);
     let first_length = (cells.clamp(1, most) * step).min(room);
     let second_length = room - first_length;
     let at = |length: u32| i32::try_from(length).unwrap_or(i32::MAX);
-    match direction {
+    let parts = match direction {
         Direction::Horizontal => (
             Rect {
                 width: first_length,
                 ..area
             },
             Rect {
-                x: area.x.saturating_add(at(first_length)),
-                width: divider.min(length),
-                ..area
+                x: area.x.saturating_add(at(first_length + along)),
+                y: area.y.saturating_sub(at(across)),
+                width: gap.line.min(length),
+                height: area.height.saturating_add(across.saturating_mul(2)),
             },
             Rect {
-                x: area.x.saturating_add(at(first_length + divider)),
+                x: area.x.saturating_add(at(first_length + between)),
                 width: second_length,
                 ..area
             },
@@ -1438,17 +1466,19 @@ fn cut(
                 ..area
             },
             Rect {
-                y: area.y.saturating_add(at(first_length)),
-                height: divider.min(length),
-                ..area
+                x: area.x.saturating_sub(at(across)),
+                y: area.y.saturating_add(at(first_length + along)),
+                width: area.width.saturating_add(across.saturating_mul(2)),
+                height: gap.line.min(length),
             },
             Rect {
-                y: area.y.saturating_add(at(first_length + divider)),
+                y: area.y.saturating_add(at(first_length + between)),
                 height: second_length,
                 ..area
             },
         ),
-    }
+    };
+    (parts.0, parts.1, parts.2, room)
 }
 
 /// A divider of a tab's layout: the split's path from the layout's top,
@@ -1460,6 +1490,9 @@ pub(crate) struct Divider {
     pub(crate) direction: Direction,
     pub(crate) line: Rect,
     pub(crate) area: Rect,
+    /// The room that the split's parts share, along its direction: its
+    /// area less the gap between them.
+    pub(crate) room: u32,
 }
 
 /// The dividers of `layout` in `area`, as [`pane_rects`] lays its panes
@@ -1470,11 +1503,11 @@ pub(super) fn dividers(
     zoomed: Option<PaneId>,
     area: Rect,
     cell: (u32, u32),
-    divider: u32,
+    gap: Gap,
 ) -> Vec<Divider> {
     let mut found = Vec::new();
     if zoomed.is_none_or(|pane| !layout.contains(pane)) {
-        divider_rooms(layout, (area, Vec::new()), cell, divider, &mut found);
+        divider_rooms(layout, (area, Vec::new()), cell, gap, &mut found);
     }
     found
 }
@@ -1483,7 +1516,7 @@ fn divider_rooms(
     layout: &Layout,
     (area, path): (Rect, Vec<lokyr_kernel::workspace::Side>),
     cell: (u32, u32),
-    divider: u32,
+    gap: Gap,
     found: &mut Vec<Divider>,
 ) {
     use lokyr_kernel::workspace::Side;
@@ -1497,30 +1530,25 @@ fn divider_rooms(
     else {
         return;
     };
-    let (first_area, line, second_area) = cut(layout, *direction, area, cell, divider);
+    let (first_area, line, second_area, room) = cut(layout, *direction, area, cell, gap);
     found.push(Divider {
         path: path.clone(),
         direction: *direction,
         line,
         area,
+        room,
     });
     let deeper = |side| {
         let mut path = path.clone();
         path.push(side);
         path
     };
-    divider_rooms(
-        first,
-        (first_area, deeper(Side::First)),
-        cell,
-        divider,
-        found,
-    );
+    divider_rooms(first, (first_area, deeper(Side::First)), cell, gap, found);
     divider_rooms(
         second,
         (second_area, deeper(Side::Second)),
         cell,
-        divider,
+        gap,
         found,
     );
 }

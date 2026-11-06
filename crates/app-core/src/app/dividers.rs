@@ -134,17 +134,8 @@ impl<B: Backend> App<B> {
             .and_then(lokyr_kernel::workspace::Layout::share)
             .unwrap_or(0.5);
         let across = divider.direction == Direction::Horizontal;
-        let (from, room) = if across {
-            (
-                position.x,
-                f64::from(divider.area.width.saturating_sub(divider.line.width)) / scale,
-            )
-        } else {
-            (
-                position.y,
-                f64::from(divider.area.height.saturating_sub(divider.line.height)) / scale,
-            )
-        };
+        let from = if across { position.x } else { position.y };
+        let room = f64::from(divider.room) / scale;
         state.divider_drag = Some(DividerDrag {
             tab,
             path: divider.path.clone(),

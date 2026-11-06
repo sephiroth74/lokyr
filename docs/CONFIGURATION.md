@@ -621,6 +621,7 @@ The room between the grid and the window's edges, in points: `padding-x` at the 
 - In points, so that it keeps its look on a Retina display.
 - A window is seldom a whole number of cells: the room that the cells leave over goes to the right and the bottom, past the padding, so that the text stays where it is as the window's size changes.
 - The padding takes the background of the cells without a color of their own: a background that a program colors, such as a status line's, stops at the grid.
+- With splits, each pane keeps its padding on every side: a divider stands between the padding of the panes on either side of it, and runs to the panes' room's edges.
 
 ### `background-opacity`
 

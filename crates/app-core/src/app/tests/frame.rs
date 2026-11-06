@@ -4,7 +4,7 @@ use lokyr_kernel::workspace::{Direction, Environment, Layout, Pane, Settings, Si
 use lokyr_render_core::CellBatch;
 
 use super::*;
-use crate::app::frame::pane_rects;
+use crate::app::frame::{Gap, pane_rects};
 
 /// A program that shows `hello world` and `second line`, then `ready`.
 fn selecting_program() -> Program {
@@ -732,13 +732,16 @@ fn a_tab_s_panes_share_its_room_in_whole_cells() {
     let cell = (8, 16);
     // One pane takes the whole room.
     let one = Layout::Leaf(id(1));
-    assert_eq!(pane_rects(&one, None, area, cell, 2), [(id(1), area)]);
+    assert_eq!(
+        pane_rects(&one, None, area, cell, Gap::line(2)),
+        [(id(1), area)]
+    );
     // Three split alike: a third each, past the dividers, the first parts
     // of whole cells.
     let mut three = Layout::Leaf(id(1));
     three.split(id(1), Direction::Horizontal, id(2), Side::Second);
     three.split(id(2), Direction::Horizontal, id(3), Side::Second);
-    let rooms = pane_rects(&three, None, area, cell, 2);
+    let rooms = pane_rects(&three, None, area, cell, Gap::line(2));
     let widths: Vec<u32> = rooms.iter().map(|(_, rect)| rect.width).collect();
     assert_eq!(widths, [264, 264, 268]);
     let lefts: Vec<i32> = rooms.iter().map(|(_, rect)| rect.x).collect();
@@ -751,7 +754,7 @@ fn a_tab_s_panes_share_its_room_in_whole_cells() {
     // Over each other, the same way down.
     let mut stacked = Layout::Leaf(id(1));
     stacked.split(id(1), Direction::Vertical, id(2), Side::Second);
-    let rooms = pane_rects(&stacked, None, area, cell, 2);
+    let rooms = pane_rects(&stacked, None, area, cell, Gap::line(2));
     assert_eq!(
         rooms
             .iter()
@@ -761,13 +764,13 @@ fn a_tab_s_panes_share_its_room_in_whole_cells() {
     );
     // A zoomed pane takes the whole room.
     assert_eq!(
-        pane_rects(&three, Some(id(2)), area, cell, 2),
+        pane_rects(&three, Some(id(2)), area, cell, Gap::line(2)),
         [(id(2), area)]
     );
     // A user's ratio, within the room.
     let mut ratio = stacked.clone();
     ratio.set_ratio(&[], Some(lokyr_kernel::workspace::Ratio::new(0.25)));
-    let rooms = pane_rects(&ratio, None, area, cell, 2);
+    let rooms = pane_rects(&ratio, None, area, cell, Gap::line(2));
     assert_eq!(rooms[0].1.height, 96);
 }
 
@@ -786,8 +789,8 @@ fn a_tab_s_dividers_lie_between_its_panes_rooms() {
     let mut layout = Layout::Leaf(id(1));
     layout.split(id(1), Direction::Horizontal, id(2), Side::Second);
     layout.split(id(2), Direction::Vertical, id(3), Side::Second);
-    let rooms = pane_rects(&layout, None, area, cell, 2);
-    let found = dividers(&layout, None, area, cell, 2);
+    let rooms = pane_rects(&layout, None, area, cell, Gap::line(2));
+    let found = dividers(&layout, None, area, cell, Gap::line(2));
     assert_eq!(found.len(), 2);
     // The top split's, between 1 and the right half, its whole height.
     assert_eq!(found[0].path, []);
@@ -816,8 +819,8 @@ fn a_tab_s_dividers_lie_between_its_panes_rooms() {
     );
     assert_eq!(found[1].line.y + 2, rooms[2].1.y);
     // A zoomed pane, or a pane alone, has none.
-    assert!(dividers(&layout, Some(id(2)), area, cell, 2).is_empty());
-    assert!(dividers(&Layout::Leaf(id(1)), None, area, cell, 2).is_empty());
+    assert!(dividers(&layout, Some(id(2)), area, cell, Gap::line(2)).is_empty());
+    assert!(dividers(&Layout::Leaf(id(1)), None, area, cell, Gap::line(2)).is_empty());
 }
 
 #[test]
@@ -887,4 +890,58 @@ fn a_window_of_two_panes_draws_both_each_in_its_room() {
         assert!(view.grid.columns < old.grid.columns, "{view:?} {old:?}");
         assert_eq!(app.workspace.pane(view.pane).unwrap().grid(), view.grid);
     }
+}
+
+#[test]
+fn a_tab_s_panes_keep_their_padding_beside_their_dividers() {
+    use super::super::frame::dividers;
+    let id = |n| lokyr_kernel::workspace::PaneId::of(n);
+    // The panes' room within the window's padding, of 6 pixels across and
+    // 4 down; 1 on the left, and 2 over 3 on the right.
+    let area = Rect {
+        x: 4,
+        y: 10,
+        width: 800,
+        height: 400,
+    };
+    let cell = (8, 16);
+    let gap = Gap {
+        line: 2,
+        padding: (6, 4),
+    };
+    let mut layout = Layout::Leaf(id(1));
+    layout.split(id(1), Direction::Horizontal, id(2), Side::Second);
+    layout.split(id(2), Direction::Vertical, id(3), Side::Second);
+    let rooms: Vec<Rect> = pane_rects(&layout, None, area, cell, gap)
+        .into_iter()
+        .map(|(_, room)| room)
+        .collect();
+    let found = dividers(&layout, None, area, cell, gap);
+    let (left, right) = (found[0].line, found[1].line);
+    // Half of the 786 that the gap of 14 leaves, in whole cells, then the
+    // padding, the line, the padding.
+    assert_eq!(
+        rooms[0],
+        Rect {
+            x: 4,
+            y: 10,
+            width: 392,
+            height: 400
+        }
+    );
+    assert_eq!((left.x, left.width), (402, 2));
+    assert_eq!(rooms[1].x, 410);
+    assert_eq!(rooms[1].x + rooms[1].width as i32, 804);
+    // Down the right half: the padding, the line, the padding.
+    assert_eq!(rooms[1].height, 192);
+    assert_eq!((right.y, right.height), (206, 2));
+    assert_eq!((rooms[2].y, rooms[2].height), (212, 198));
+    // Each line as long as its split and the padding at either end: the
+    // left one from the room's top to its bottom past the padding, the
+    // right one from the left one to the room's right edge past it.
+    assert_eq!((left.y, left.height), (6, 408));
+    assert_eq!((right.x, right.width), (left.x + 2, 406));
+    assert_eq!(right.x + right.width as i32, 810);
+    // The rooms that the splits' parts share, of their areas less the gap.
+    assert_eq!((found[0].room, found[1].room), (786, 390));
 }
