@@ -57,6 +57,12 @@ const DETACH: &str = "tabs.detach";
 
 /// The plugin's catalogs, of its commands' titles and its question's
 /// texts.
+/// The messages of the bar's own texts: the button of a new tab's, a
+/// tab's close button's, and the title of a tab of none, of its number.
+const NEW_TAB: &str = "bar-new-tab";
+const CLOSE_TAB: &str = "bar-close-tab";
+const UNTITLED: &str = "bar-untitled";
+
 static CATALOGS: [(&str, &str); 2] = [
     ("en", include_str!("../locales/en/tabs.ftl")),
     ("it", include_str!("../locales/it/tabs.ftl")),
@@ -110,7 +116,7 @@ pub fn tab_bar(
 ) -> (Option<Node>, BarPlace) {
     let settings = Settings::of(config);
     (
-        bar::bar(tabs, keys, window, &settings),
+        bar::bar_with(tabs, keys, window, (&settings, &bar::BarTexts::default())),
         settings.place(None),
     )
 }
@@ -368,7 +374,25 @@ impl Tabs {
                 cx.keys_of(GOTO, args).ok().flatten()
             })
             .collect();
-        bar::bar(&tabs, &keys, shortcut.as_deref(), &self.settings)
+        // Its own texts, of its catalogs in the language shown, English's
+        // where a host gives none.
+        let message = |cx: &mut Cx<'_>, id: &str, args: &[(&str, Data)]| {
+            cx.message(id, args).ok().filter(|text| text != id)
+        };
+        let english = bar::BarTexts::default();
+        let texts = bar::BarTexts {
+            new_tab: message(cx, NEW_TAB, &[]).unwrap_or(english.new_tab),
+            close_tab: message(cx, CLOSE_TAB, &[]).unwrap_or(english.close_tab),
+            untitled: (1..)
+                .zip(&tabs)
+                .filter(|(_, tab)| tab.title.is_empty())
+                .filter_map(|(number, _)| {
+                    let index = Data::Integer(i64::try_from(number).unwrap_or(i64::MAX));
+                    Some((number, message(cx, UNTITLED, &[("index", index)])?))
+                })
+                .collect(),
+        };
+        bar::bar_with(&tabs, &keys, shortcut.as_deref(), (&self.settings, &texts))
     }
 
     /// Renders again its views whose trees changed, so that the host draws

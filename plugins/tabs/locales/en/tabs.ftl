@@ -14,3 +14,10 @@ command-tabs-detach = Move Tab to New Window
 # The question of a tab's title.
 rename-message = The tab's title
 rename-detail = Leave it empty for the tab's own: its program's title, or its folder.
+
+# The bar's own texts: the button of a new tab's label and tooltip, a
+# tab's close button's label, and the title of a tab of none, of its
+# number among its window's tabs.
+bar-new-tab = New Tab
+bar-close-tab = Close Tab
+bar-untitled = Tab { $index }

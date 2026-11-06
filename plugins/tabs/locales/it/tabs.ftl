@@ -12,3 +12,7 @@ command-tabs-detach = Sposta tab in una nuova finestra
 
 rename-message = Il titolo del tab
 rename-detail = Lascialo vuoto per quello del tab: il titolo del suo programma, o la sua cartella.
+
+bar-new-tab = Nuovo tab
+bar-close-tab = Chiudi tab
+bar-untitled = Tab { $index }

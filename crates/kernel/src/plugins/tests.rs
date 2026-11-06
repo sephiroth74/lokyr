@@ -146,6 +146,8 @@ pub(super) struct App {
     panes: Spawner,
     clipboard: Board,
     pub(super) focused: Option<WindowId>,
+    /// The language shown, English's of none.
+    pub(super) language: Option<&'static str>,
 }
 
 impl App {
@@ -159,6 +161,7 @@ impl App {
             font_size: 13.0,
             confirm_paste: crate::config::ConfirmPaste::Auto,
             keys: &|_, _| None,
+            language: self.language.unwrap_or("en"),
         }
     }
 }
@@ -464,6 +467,61 @@ fn a_plugin_s_catalogs_title_its_commands_in_the_language_shown() {
         ["titled.first", "titled.second", "titled.third"]
     );
     assert_eq!(title_message("pane.select-all"), "command-pane-select-all");
+}
+
+/// A plugin whose command reads three messages of its catalogs, of
+/// English and Italian, into what it said.
+struct Speaker(std::rc::Rc<std::cell::RefCell<Vec<String>>>);
+
+/// The catalogs of [`Speaker`].
+static SPOKEN: [(&str, &str); 2] = [
+    ("en", "tab-new = New Tab\ntab-untitled = Tab { $index }\n"),
+    ("it", "tab-new = Nuovo tab\n"),
+];
+
+impl Plugin for Speaker {
+    fn activate(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
+        cx.register_command(command("speaker.say"))
+    }
+
+    fn catalogs(&self) -> &'static [(&'static str, &'static str)] {
+        &SPOKEN
+    }
+
+    fn on_command(&mut self, cx: &mut Cx<'_>, _: &str, _: Args) -> Result<(), Error> {
+        let index = [("index", lokyr_plugin_sdk::message::Data::Integer(2))];
+        let said = [
+            cx.message("tab-new", &[])?,
+            cx.message("tab-untitled", &index)?,
+            cx.message("tab-missing", &[])?,
+        ];
+        self.0.borrow_mut().extend(said);
+        Ok(())
+    }
+}
+
+#[test]
+fn a_plugin_s_messages_are_of_its_catalogs_in_the_language_shown() {
+    let said = |language: &'static str| {
+        let heard = std::rc::Rc::default();
+        let mut app = App {
+            language: Some(language),
+            ..App::default()
+        };
+        let mut plugins = Plugins::new();
+        plugins
+            .add("speaker", Box::new(Speaker(std::rc::Rc::clone(&heard))))
+            .unwrap();
+        assert!(plugins.activate(&mut app.context()).is_empty());
+        plugins
+            .run("speaker.say", Args::new(), &mut app.context())
+            .unwrap();
+        heard.take()
+    };
+    // Of the language's, English's where it lacks one, and the message's
+    // id where the catalogs lack it.
+    assert_eq!(said("it"), ["Nuovo tab", "Tab 2", "tab-missing"]);
+    assert_eq!(said("en"), ["New Tab", "Tab 2", "tab-missing"]);
 }
 
 #[test]

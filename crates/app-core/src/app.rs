@@ -2261,6 +2261,7 @@ impl<B: Backend> App<B> {
             font_size,
             confirm_paste,
             keys: &keys,
+            language: self.texts.language(),
         };
         call(&mut self.plugins, &mut context)
     }

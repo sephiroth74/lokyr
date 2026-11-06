@@ -100,6 +100,12 @@ impl Texts {
     /// language's, or the source's where the language has none, or the id
     /// itself where neither has it.
     pub fn text_with(&self, id: &str, args: &[(&str, Arg<'_>)]) -> String {
+        self.get_with(id, args).unwrap_or_else(|| id.to_owned())
+    }
+
+    /// The message `id`, with the values of its variables, `args`, the
+    /// language's or the source's, if either has it.
+    pub fn get_with(&self, id: &str, args: &[(&str, Arg<'_>)]) -> Option<String> {
         let mut values = FluentArgs::new();
         for (name, arg) in args {
             let value = match arg {
@@ -108,15 +114,15 @@ impl Texts {
             };
             values.set(*name, value);
         }
-        for bundle in [&self.bundle, &self.source] {
-            if let Some(pattern) = bundle.get_message(id).and_then(|message| message.value()) {
-                let mut errors = Vec::new();
-                return bundle
+        [&self.bundle, &self.source].into_iter().find_map(|bundle| {
+            let pattern = bundle.get_message(id)?.value()?;
+            let mut errors = Vec::new();
+            Some(
+                bundle
                     .format_pattern(pattern, Some(&values), &mut errors)
-                    .into_owned();
-            }
-        }
-        id.to_owned()
+                    .into_owned(),
+            )
+        })
     }
 }
 

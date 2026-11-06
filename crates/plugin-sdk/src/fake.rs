@@ -191,6 +191,9 @@ pub struct FakeHost {
     numbers: BTreeMap<WindowId, (Option<u32>, Option<String>)>,
     /// The keys of commands of their arguments, as the test gave them.
     keys: Vec<(String, Args, String)>,
+    /// The texts of the plugin's messages, of their arguments, as the
+    /// host's catalogs would give them.
+    messages: Vec<(String, BTreeMap<String, Data>, String)>,
     /// The place of the plugin's tab bar.
     bar_place: BarPlace,
     /// The window that has the focus.
@@ -236,6 +239,7 @@ impl FakeHost {
             tabs: BTreeMap::new(),
             numbers: BTreeMap::new(),
             keys: Vec::new(),
+            messages: Vec::new(),
             bar_place: BarPlace::default(),
             focused: None,
             given_focus: None,
@@ -297,6 +301,27 @@ impl FakeHost {
     /// the pane after the tab's others, side by side.
     pub fn pane(&mut self, id: PaneId) -> &mut FakePane {
         self.panes.entry(id).or_default()
+    }
+
+    /// Gives the plugin's message `id` of `args` its `text`, as the host's
+    /// catalogs would in the language shown, which a read of the message
+    /// tells; none takes it away, as of a message that they lack.
+    pub fn set_message(
+        &mut self,
+        id: &str,
+        args: &[(&str, Data)],
+        text: Option<&str>,
+    ) -> &mut Self {
+        let args: BTreeMap<String, Data> = args
+            .iter()
+            .map(|(name, value)| ((*name).to_owned(), value.clone()))
+            .collect();
+        self.messages
+            .retain(|(known, known_args, _)| !(known == id && *known_args == args));
+        if let Some(text) = text {
+            self.messages.push((id.to_owned(), args, text.to_owned()));
+        }
+        self
     }
 
     /// Gives `command` of `args` the `keys` that run it, as the platform
@@ -1518,6 +1543,12 @@ impl Calling<'_> {
                     .iter()
                     .find(|(bound, bound_args, _)| bound == command && bound_args == args)
                     .map(|(_, _, keys)| keys.clone()),
+            ),
+            Request::Message { id, args } => Response::Text(
+                host.messages
+                    .iter()
+                    .find(|(known, known_args, _)| known == id && known_args == args)
+                    .map(|(_, _, text)| text.clone()),
             ),
             Request::Windows => Response::Windows(host.windows()),
             Request::Tabs(window) => {

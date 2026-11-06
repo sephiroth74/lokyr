@@ -585,6 +585,20 @@ impl<'a> Cx<'a> {
         })
     }
 
+    /// The text of `id`, a message of the plugin's catalogs, of `args`, in
+    /// the language that the app shows, as a view's texts, labels and
+    /// tooltips take it: `id` itself where the catalogs lack it.
+    pub fn message(&mut self, id: &str, args: &[(&str, Data)]) -> Result<String, Error> {
+        let text = self.text(Request::Message {
+            id: id.to_owned(),
+            args: args
+                .iter()
+                .map(|(name, value)| ((*name).to_owned(), value.clone()))
+                .collect(),
+        })?;
+        Ok(text.unwrap_or_else(|| id.to_owned()))
+    }
+
     /// Puts the plugin's tab bar at `place` in the windows that show it, as
     /// this call returns.
     pub fn set_tab_bar_place(&mut self, place: BarPlace) -> Result<(), Error> {

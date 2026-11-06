@@ -334,6 +334,34 @@ fn the_bar_shows_a_window_s_tabs_and_its_clicks_select_close_and_open() {
 }
 
 #[test]
+fn the_bar_s_own_texts_are_its_catalogs_in_the_language_shown() {
+    let (mut host, mut plugin) = host(&[1, 1], 1);
+    host.set_message(NEW_TAB, &[], Some("Nuovo tab"))
+        .set_message(CLOSE_TAB, &[], Some("Chiudi tab"));
+    for index in [1, 2] {
+        let title = format!("Scheda {index}");
+        host.set_message(UNTITLED, &[("index", Data::Integer(index))], Some(&title));
+    }
+    let node = host
+        .render(&mut plugin, &ViewId::TabBar(WINDOW))
+        .expect("a bar of two tabs");
+    let mut found = (Vec::new(), Vec::new(), Vec::new());
+    let mut walk = vec![&node];
+    while let Some(node) = walk.pop() {
+        if let lokyr_plugin_sdk::view::Kind::Text(text) = &node.kind {
+            found.0.push(text.clone());
+        }
+        found.1.extend(node.label.clone());
+        found.2.extend(node.tooltip.clone());
+        walk.extend(node.children.iter().rev());
+    }
+    assert_eq!(found.0, ["Scheda 1", "Scheda 2"]);
+    assert!(found.1.contains(&"Nuovo tab".to_owned()), "{:?}", found.1);
+    assert!(found.1.contains(&"Chiudi tab".to_owned()), "{:?}", found.1);
+    assert_eq!(found.2, ["Nuovo tab"]);
+}
+
+#[test]
 fn the_config_puts_the_bar_at_its_place_and_keeps_a_drag_s_width() {
     use lokyr_plugin_sdk::host::BarPlace;
 

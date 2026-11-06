@@ -291,6 +291,14 @@ fn tabs(world: &World) -> Scenario {
                     },
                     Response::Text(None),
                 ),
+                // A message that its catalogs lack, none on either host.
+                (
+                    Request::Message {
+                        id: "tab-untitled".to_owned(),
+                        args: BTreeMap::from([("index".to_owned(), Data::Integer(2))]),
+                    },
+                    Response::Text(None),
+                ),
             ]),
         ],
     }

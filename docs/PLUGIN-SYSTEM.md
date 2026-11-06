@@ -505,6 +505,10 @@ type Cx = {
     -- returns the question's id, and the answer comes as an "answered" event. The message and the detail are
     -- messages of the plugin's catalogs, shown in the language shown, or the texts themselves where they lack them.
     ask_text: (window: WindowId?, message: string, detail: string, text: string) -> (number?, Error?),
+    -- The text of a message of the plugin's catalogs, of its arguments, a text or a number each, in the language
+    -- shown, or English's where that one lacks it, as a view's texts, labels and tooltips take them: the id itself
+    -- where the catalogs lack it. A change of the language rebuilds the menus, which `keys-changed` tells.
+    message: (id: string, args: { [string]: string | number }?) -> (string, Error?),
 
     -- The terminal. The reads require `terminal-read`, and return a `denied` error without it.
     selection_text: (pane: PaneId) -> (string?, Error?),

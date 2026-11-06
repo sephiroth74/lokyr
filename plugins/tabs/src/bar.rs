@@ -31,6 +31,8 @@
 //! button shows at its start under the pointer over the tab, as the config
 //! says.
 
+use std::collections::BTreeMap;
+
 use lokyr_plugin_sdk::host::{BarPlace, COLUMN_WIDTHS, Color, TabInfo};
 use lokyr_plugin_sdk::message::Data;
 use lokyr_plugin_sdk::view::{
@@ -216,16 +218,61 @@ struct Shown<'a> {
     keys: Option<&'a str>,
 }
 
-/// The bar of `tabs`, a window's, each of the keys that select it of
-/// `keys`, and of the keys that bring the window forward, `window`, which a
-/// bar in the titlebar shows after the window's buttons, as `settings` lay
-/// it out; `None` of no tabs, or of one while the config hides the bar
-/// then.
+/// The bar's own texts, in the language that the app shows, of the
+/// plugin's catalogs: the button of a new tab's label and tooltip, a tab's
+/// close button's label, and the titles of the tabs of none, by their
+/// numbers; English's by default.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct BarTexts {
+    pub(crate) new_tab: String,
+    pub(crate) close_tab: String,
+    pub(crate) untitled: BTreeMap<usize, String>,
+}
+
+impl Default for BarTexts {
+    fn default() -> Self {
+        Self {
+            new_tab: "New Tab".to_owned(),
+            close_tab: "Close Tab".to_owned(),
+            untitled: BTreeMap::new(),
+        }
+    }
+}
+
+impl BarTexts {
+    /// The title of the tab of `number`, from 1, of none of its own.
+    fn untitled(&self, number: usize) -> String {
+        self.untitled
+            .get(&number)
+            .cloned()
+            .unwrap_or_else(|| format!("Tab {number}"))
+    }
+}
+
+/// The bar's look and its texts, which its parts take.
+type BarOf<'a> = (&'a Settings, &'a BarTexts);
+
+/// The bar of `tabs`, as [`bar_with`] gives it, of English's texts.
+#[cfg(test)]
 pub(crate) fn bar(
     tabs: &[TabInfo],
     keys: &[Option<String>],
     window: Option<&str>,
     settings: &Settings,
+) -> Option<Node> {
+    bar_with(tabs, keys, window, (settings, &BarTexts::default()))
+}
+
+/// The bar of `tabs`, a window's, each of the keys that select it of
+/// `keys`, and of the keys that bring the window forward, `window`, which a
+/// bar in the titlebar shows after the window's buttons, as `settings` lay
+/// it out, of `texts`; `None` of no tabs, or of one while the config hides
+/// the bar then.
+pub(crate) fn bar_with(
+    tabs: &[TabInfo],
+    keys: &[Option<String>],
+    window: Option<&str>,
+    (settings, texts): BarOf<'_>,
 ) -> Option<Node> {
     if tabs.is_empty() || (tabs.len() == 1 && settings.hide_when_single) {
         return None;
@@ -236,7 +283,7 @@ pub(crate) fn bar(
         .map(|(at, tab)| Shown {
             tab,
             title: if tab.title.is_empty() {
-                format!("Tab {}", at + 1)
+                texts.untitled(at + 1)
             } else {
                 tab.title.clone()
             },
@@ -253,35 +300,39 @@ pub(crate) fn bar(
         )
     });
     Some(match settings.look {
-        _ if settings.column() => column(&shown, window, settings),
-        Look::Seamless => cells(&shown, window, settings),
-        Look::Standard | Look::Unified => pills(&shown, window, settings),
+        _ if settings.column() => column(&shown, window, (settings, texts)),
+        Look::Seamless => cells(&shown, window, (settings, texts)),
+        Look::Standard | Look::Unified => pills(&shown, window, (settings, texts)),
     })
 }
 
 /// A bar of the standard or the unified look: its pills in their track,
 /// and the button of a new tab; in a strip of a line by the panes, or in
 /// the titlebar, after the window's keys.
-fn pills(tabs: &[Shown<'_>], window: Option<&str>, settings: &Settings) -> Node {
-    let track = Node::container(tabs.iter().map(|tab| pill(tab, settings)).collect())
-        .layout(Layout {
-            gap: INSET,
-            padding: Edges::all(INSET),
-            align: Align::Stretch,
-            grow: 1.0,
-            ..Layout::default()
-        })
-        .style(Style {
-            background: Some(Token::from("tab.track.bg")),
-            radius: PILL / 2.0 + INSET,
-            ..Style::default()
-        });
+fn pills(tabs: &[Shown<'_>], window: Option<&str>, (settings, texts): BarOf<'_>) -> Node {
+    let track = Node::container(
+        tabs.iter()
+            .map(|tab| pill(tab, (settings, texts)))
+            .collect(),
+    )
+    .layout(Layout {
+        gap: INSET,
+        padding: Edges::all(INSET),
+        align: Align::Stretch,
+        grow: 1.0,
+        ..Layout::default()
+    })
+    .style(Style {
+        background: Some(Token::from("tab.track.bg")),
+        radius: PILL / 2.0 + INSET,
+        ..Style::default()
+    });
     let mut children = Vec::new();
     if let Some(keys) = window {
         children.push(secondary(keys));
     }
     children.push(track);
-    children.push(new_circle());
+    children.push(new_circle(texts));
     let row = Node::container(children).layout(Layout {
         gap: 8.0,
         align: Align::Center,
@@ -317,7 +368,7 @@ fn pills(tabs: &[Shown<'_>], window: Option<&str>, settings: &Settings) -> Node 
 
 /// The pill of `tab`: its title and its keys in its middle, its close
 /// button at its start; the active one raised over the track.
-fn pill(tab: &Shown<'_>, settings: &Settings) -> Node {
+fn pill(tab: &Shown<'_>, (settings, texts): BarOf<'_>) -> Node {
     let mut middle = Vec::new();
     middle.extend(dot(tab.tab.color));
     middle.push(Node::text(tab.title.as_str()));
@@ -347,7 +398,7 @@ fn pill(tab: &Shown<'_>, settings: &Settings) -> Node {
     let ends = settings.close_button != CloseButton::Never;
     let children = if ends {
         vec![
-            close_button(tab.tab.id.0, settings.close_button),
+            close_button(tab.tab.id.0, settings.close_button, texts),
             middle,
             balance(),
         ]
@@ -379,7 +430,7 @@ fn pill(tab: &Shown<'_>, settings: &Settings) -> Node {
 /// at the top and at its top at the bottom; after the window's keys in the
 /// titlebar, of the titlebar's background and of no line, as the room of
 /// the window's buttons is. The bar draws no background of its own.
-fn cells(tabs: &[Shown<'_>], window: Option<&str>, settings: &Settings) -> Node {
+fn cells(tabs: &[Shown<'_>], window: Option<&str>, (settings, texts): BarOf<'_>) -> Node {
     let top = settings.position != Position::Bottom;
     let mut children = Vec::new();
     if let Some(keys) = window {
@@ -400,13 +451,13 @@ fn cells(tabs: &[Shown<'_>], window: Option<&str>, settings: &Settings) -> Node 
         if !children.is_empty() {
             children.push(Node::separator());
         }
-        children.push(cell(tab, top, settings));
+        children.push(cell(tab, top, (settings, texts)));
     }
     children.push(Node::separator());
     let plus = Node::icon_button("add")
         .key(NEW_KEY)
-        .label("New Tab")
-        .tooltip("New Tab")
+        .label(texts.new_tab.as_str())
+        .tooltip(texts.new_tab.as_str())
         .layout(Layout {
             grow: 1.0,
             ..Layout::default()
@@ -453,7 +504,7 @@ fn veiled() -> Style {
 /// The cell of `tab` in a seamless bar, at its top or not: its close button
 /// at its start, its title in its middle, its color and its keys at its
 /// end.
-fn cell(tab: &Shown<'_>, top: bool, settings: &Settings) -> Node {
+fn cell(tab: &Shown<'_>, top: bool, (settings, texts): BarOf<'_>) -> Node {
     let active = tab.tab.active;
     let title = Node::container(vec![Node::text(tab.title.as_str())])
         .layout(Layout {
@@ -469,7 +520,7 @@ fn cell(tab: &Shown<'_>, top: bool, settings: &Settings) -> Node {
         });
     let mut children = Vec::new();
     if settings.close_button != CloseButton::Never {
-        children.push(close_button(tab.tab.id.0, settings.close_button));
+        children.push(close_button(tab.tab.id.0, settings.close_button, texts));
     }
     children.push(title);
     children.extend(dot(tab.tab.color));
@@ -544,14 +595,14 @@ fn lined(content: Node, top: bool, lined: bool, layout: Layout) -> Node {
 /// tab takes under the veil, down to the column's bottom; as a sidebar,
 /// below the room of the window's buttons, which shows the window's keys,
 /// `window`, after them.
-fn column(tabs: &[Shown<'_>], window: Option<&str>, settings: &Settings) -> Node {
+fn column(tabs: &[Shown<'_>], window: Option<&str>, (settings, texts): BarOf<'_>) -> Node {
     let seamless = settings.look == Look::Seamless;
-    let mut rows: Vec<Node> = tabs.iter().map(|tab| row(tab, settings)).collect();
+    let mut rows: Vec<Node> = tabs.iter().map(|tab| row(tab, (settings, texts))).collect();
     rows.push(
         Node::container(vec![Node::icon("add")])
             .key(NEW_KEY)
-            .label("New Tab")
-            .tooltip("New Tab")
+            .label(texts.new_tab.as_str())
+            .tooltip(texts.new_tab.as_str())
             .layout(Layout {
                 align: Align::Center,
                 justify: Justify::Center,
@@ -652,12 +703,12 @@ fn buttons_room(window: Option<&str>, seamless: bool) -> Node {
 /// border in the standard look, a pill's in the unified one, or of the
 /// window's background in a seamless column, and the others under its
 /// veil.
-fn row(tab: &Shown<'_>, settings: &Settings) -> Node {
+fn row(tab: &Shown<'_>, (settings, texts): BarOf<'_>) -> Node {
     let seamless = settings.look == Look::Seamless;
     let active = tab.tab.active;
     let mut children = Vec::new();
     if settings.close_button != CloseButton::Never {
-        children.push(close_button(tab.tab.id.0, settings.close_button));
+        children.push(close_button(tab.tab.id.0, settings.close_button, texts));
     }
     let mut title = Node::text(tab.title.as_str());
     title.layout.grow = 1.0;
@@ -790,11 +841,11 @@ fn secondary(text: &str) -> Node {
 }
 
 /// The close button of tab `id`, shown as `when` says, of its own room.
-fn close_button(id: u64, when: CloseButton) -> Node {
+fn close_button(id: u64, when: CloseButton, texts: &BarTexts) -> Node {
     let hidden = when == CloseButton::Hover;
     Node::icon("close")
         .key(close_key(id).as_str())
-        .label("Close Tab")
+        .label(texts.close_tab.as_str())
         .layout(Layout {
             width: Length::Points(BUTTON),
             height: Length::Points(BUTTON),
@@ -833,12 +884,12 @@ fn balance() -> Node {
 
 /// The button of a new tab past the track, a circle of the track's
 /// color.
-fn new_circle() -> Node {
+fn new_circle(texts: &BarTexts) -> Node {
     let side = PILL + 2.0 * INSET;
     Node::icon_button("add")
         .key(NEW_KEY)
-        .label("New Tab")
-        .tooltip("New Tab")
+        .label(texts.new_tab.as_str())
+        .tooltip(texts.new_tab.as_str())
         .layout(Layout {
             width: Length::Points(side),
             height: Length::Points(side),

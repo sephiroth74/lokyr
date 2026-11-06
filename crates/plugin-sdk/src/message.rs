@@ -275,6 +275,17 @@ pub enum Request {
         /// Its arguments.
         args: Args,
     },
+    /// The text of `id`, a message of the plugin's catalogs, of `args`, its
+    /// placeables', a text or a number each, in the language that the app
+    /// shows, or English's where that one lacks it, as a view shows its
+    /// texts, labels and tooltips: none of a message that the catalogs
+    /// lack.
+    Message {
+        /// The message.
+        id: String,
+        /// Its arguments, by their names.
+        args: BTreeMap<String, Data>,
+    },
     /// Asks the user for a text, in an alert of `message` and `detail` on
     /// `window`, or on the focused window without one, in a field that
     /// holds `text` as it opens: the host answers with the question's id,
@@ -469,6 +480,7 @@ impl Request {
             | Self::SetTabBarPlace(_)
             | Self::TabBarPlace
             | Self::KeysOf { .. }
+            | Self::Message { .. }
             | Self::ActivateTab(_)
             | Self::FocusPane(_)
             | Self::MoveTab { .. }
@@ -511,7 +523,8 @@ impl Request {
             | Self::Config
             | Self::State
             | Self::TabBarPlace
-            | Self::KeysOf { .. } => Effect::Read,
+            | Self::KeysOf { .. }
+            | Self::Message { .. } => Effect::Read,
             Self::SetClipboardText(_)
             | Self::SelectAll(_)
             | Self::ClearScrollback(_)

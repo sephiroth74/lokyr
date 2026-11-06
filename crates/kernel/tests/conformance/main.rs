@@ -482,6 +482,7 @@ impl Kernel {
             font_size: 13.0,
             confirm_paste: lokyr_kernel::config::ConfirmPaste::Auto,
             keys: &keys,
+            language: "en",
         }
     }
 }
@@ -720,11 +721,12 @@ fn kind(request: &Request) -> usize {
         Request::SetTabBarPlace(_) => 58,
         Request::TabBarPlace => 59,
         Request::KeysOf { .. } => 60,
+        Request::Message { .. } => 61,
     }
 }
 
 /// How many kinds of requests the plugin API has.
-const KINDS: usize = 61;
+const KINDS: usize = 62;
 
 #[test]
 fn the_scenarios_hold_every_request_of_the_plugin_api() {

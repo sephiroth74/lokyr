@@ -47,7 +47,7 @@ use serde_json::{Map, Value};
 use crate::commands::{self, Args, Capability, Code, Command, Error, Registry, Uses};
 use crate::config::{ConfirmPaste, PluginsConfig};
 use crate::keymap::{self, Binding, Invocation, When};
-use crate::l10n::Texts;
+use crate::l10n::{Arg, Texts};
 use crate::paste::{self, Paste};
 use crate::workspace::{
     Direction, Edge, Layout, Pane, PaneId, Ratio, Side, TabId, WindowId, Workspace,
@@ -201,6 +201,9 @@ pub struct Context<'a> {
     /// The keys that run a command with its arguments, as the platform
     /// writes them, as `⌘1`; none without a binding.
     pub keys: &'a dyn Fn(&str, &Args) -> Option<String>,
+    /// The language that the app shows, of its own catalogs, which the
+    /// plugins' messages take.
+    pub language: &'a str,
 }
 
 /// Where a plugin is in its life.
@@ -2729,6 +2732,22 @@ impl Host<'_, '_> {
             Asked::Opens(target) => Response::Boolean(opens(&target)),
             Asked::FontSize => Response::FontSize(self.context.font_size),
             Asked::KeysOf { command, args } => Response::Text((self.context.keys)(&command, &args)),
+            Asked::Message { id, args } => {
+                let args: Vec<(&str, Arg<'_>)> = args
+                    .iter()
+                    .filter_map(|(name, value)| {
+                        let arg = match value {
+                            Data::Text(text) => Arg::Text(text),
+                            Data::Integer(number) => Arg::Number(*number),
+                            _ => return None,
+                        };
+                        Some((name.as_str(), arg))
+                    })
+                    .collect();
+                Response::Text(
+                    Texts::new(self.context.language, self.state.catalogs).get_with(&id, &args),
+                )
+            }
             Asked::TabBarPlace => Response::TabBarPlace(self.state.bar_place),
             Asked::Windows => Response::Windows(
                 self.context
