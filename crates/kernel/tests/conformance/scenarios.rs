@@ -156,6 +156,7 @@ fn tabs(world: &World) -> Scenario {
         bell: false,
         progress: None,
         running: false,
+        alternate: false,
         secure: false,
         agent: None,
     };
@@ -975,6 +976,7 @@ fn workspace(world: &World) -> Scenario {
         bell: false,
         progress: None,
         running: false,
+        alternate: false,
         secure: false,
         agent: None,
     };

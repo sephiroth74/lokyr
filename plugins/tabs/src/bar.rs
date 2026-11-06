@@ -196,6 +196,9 @@ const PILL: f32 = 24.0;
 /// The thickness of a tab's outline of its program's progress, in points.
 const OUTLINE: f32 = 2.0;
 
+/// The side of the spinner of a program that runs, in points.
+const SPINNER: f32 = 10.0;
+
 /// The room between the track's edge and its pills, and between two, in
 /// points.
 const INSET: f32 = 2.0;
@@ -881,9 +884,10 @@ fn tab_style(style: Style, radius: f32, active: bool) -> Style {
 }
 
 /// The marks of `tab` before its title, of `texts` to accessibility: the
-/// protected input's lock, its agent's state, its bell, and a dot of the
-/// output that came while it did not show, or a ring of a program that
-/// runs.
+/// protected input's lock, its agent's state, its bell, and a spinner of a
+/// program that runs and tells no progress, but a full-screen one; or a
+/// dot of the output that came while it did not show; or a ring of a
+/// program that runs.
 fn marks(tab: &TabInfo, texts: &MarkTexts) -> Vec<Node> {
     let mut marks = Vec::new();
     if tab.secure {
@@ -917,7 +921,12 @@ fn marks(tab: &TabInfo, texts: &MarkTexts) -> Vec<Node> {
                 ..Layout::default()
             })
     };
-    if tab.activity {
+    // A job under way, which the spinner tells over the output that comes
+    // while the tab does not show; a full-screen program, as vim, may stay
+    // for hours, and keeps the ring.
+    if tab.running && !tab.alternate && tab.progress.is_none() {
+        marks.push(spinner(texts.running.as_str()));
+    } else if tab.activity {
         let style = Style {
             background: Some(Token::from("accent")),
             ..Style::default()
@@ -934,6 +943,30 @@ fn marks(tab: &TabInfo, texts: &MarkTexts) -> Vec<Node> {
         marks.push(circle(style, texts.running.as_str()));
     }
     marks
+}
+
+/// The spinner of a program that runs, of `label` to accessibility: dots,
+/// of the secondary text's color over the disabled text's, lit in turn by
+/// the window server.
+fn spinner(label: &str) -> Node {
+    Node::new(Kind::Progress(Progress {
+        state: ProgressState::Indeterminate,
+        shape: ProgressShape::Dots,
+        ..Progress::default()
+    }))
+    .label(label)
+    .style(Style {
+        color: Some(Token::from("text.secondary")),
+        background: Some(Token::from("text.disabled")),
+        ..Style::default()
+    })
+    .layout(Layout {
+        width: Length::Points(SPINNER),
+        // Of its width beside a title too long for its room.
+        min_width: Length::Points(SPINNER),
+        height: Length::Points(SPINNER),
+        ..Layout::default()
+    })
 }
 
 /// The outline of `tab`'s progress, as its program tells it, OSC 9;4's,

@@ -200,6 +200,9 @@ pub struct Marks {
     /// A program other than a shell runs in its active pane's foreground,
     /// as the app finds it.
     pub running: bool,
+    /// Its active pane's program shows the alternate screen, as the app
+    /// finds it with `running`.
+    pub alternate: bool,
     /// The keyboard's protected input is on for it, as the app has it.
     pub secure: bool,
     /// The state of an AI agent that runs in it.
@@ -899,10 +902,13 @@ impl Workspace {
     }
 
     /// Marks `tab` of a program other than a shell running in its active
-    /// pane's foreground, or of none, as the app finds it; whether it is
-    /// open.
-    pub fn set_tab_running(&mut self, tab: TabId, running: bool) -> bool {
-        self.mark(tab, |marks| marks.running = running)
+    /// pane's foreground, or of none, and of whether that pane shows the
+    /// alternate screen, as the app finds them; whether it is open.
+    pub fn set_tab_running(&mut self, tab: TabId, running: bool, alternate: bool) -> bool {
+        self.mark(tab, |marks| {
+            marks.running = running;
+            marks.alternate = alternate;
+        })
     }
 
     /// Marks `tab` of the keyboard's protected input, or of none, as the

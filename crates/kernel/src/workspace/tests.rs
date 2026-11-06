@@ -1301,14 +1301,17 @@ fn a_tab_is_marked_of_what_runs_its_protected_input_and_its_agent_each_told_once
             .filter(|change| **change == Change::TabChanged { tab: tab.into() })
             .count()
     };
-    assert!(workspace.set_tab_running(tab, true));
-    assert!(workspace.set_tab_running(tab, true));
+    assert!(workspace.set_tab_running(tab, true, false));
+    assert!(workspace.set_tab_running(tab, true, false));
+    assert_eq!(told(&mut workspace), 1);
+    // A full-screen program's, one change more.
+    assert!(workspace.set_tab_running(tab, true, true));
     assert_eq!(told(&mut workspace), 1);
     assert!(workspace.set_tab_secure(tab, true));
     assert!(workspace.set_tab_agent(tab, Some(sdk::AgentState::Waiting)));
     assert_eq!(told(&mut workspace), 2);
     let marks = workspace.tab(tab).unwrap().marks();
-    assert!(marks.running && marks.secure);
+    assert!(marks.running && marks.alternate && marks.secure);
     assert_eq!(marks.agent, Some(sdk::AgentState::Waiting));
     assert!(!workspace.set_tab_secure(TabId::of(u64::MAX), true));
     assert!(is_shell("-zsh") && is_shell("tmux") && !is_shell("vim"));

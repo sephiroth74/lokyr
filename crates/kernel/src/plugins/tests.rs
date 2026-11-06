@@ -2189,6 +2189,7 @@ fn a_plugin_opens_a_tab_and_a_split_of_the_ids_that_its_call_gets() {
                 bell: false,
                 progress: None,
                 running: false,
+                alternate: false,
                 secure: false,
                 agent: None,
             },
@@ -2205,6 +2206,7 @@ fn a_plugin_opens_a_tab_and_a_split_of_the_ids_that_its_call_gets() {
                 bell: false,
                 progress: None,
                 running: false,
+                alternate: false,
                 secure: false,
                 agent: None,
             },
@@ -2959,7 +2961,7 @@ fn a_tab_s_marks_are_read_and_what_runs_of_process_read_alone() {
     window(&mut app, "sleep 10");
     let shown = app.focused.unwrap();
     let tab = app.workspace.window(shown).unwrap().active_tab();
-    assert!(app.workspace.set_tab_running(tab, true));
+    assert!(app.workspace.set_tab_running(tab, true, true));
     assert!(app.workspace.set_tab_secure(tab, true));
     assert!(
         app.workspace
@@ -2984,7 +2986,7 @@ fn a_tab_s_marks_are_read_and_what_runs_of_process_read_alone() {
                         let window = cx.focused_window().unwrap();
                         let info = cx.tabs(window)?.remove(0);
                         seen.borrow_mut().push((
-                            info.running,
+                            (info.running, info.alternate),
                             info.secure,
                             info.agent,
                             info.activity,
@@ -3004,7 +3006,10 @@ fn a_tab_s_marks_are_read_and_what_runs_of_process_read_alone() {
     let done = Some(lokyr_plugin_sdk::host::AgentState::Done);
     assert_eq!(
         *read.borrow(),
-        [(false, true, done, false), (true, true, done, false)]
+        [
+            ((false, false), true, done, false),
+            ((true, true), true, done, false)
+        ]
     );
 }
 

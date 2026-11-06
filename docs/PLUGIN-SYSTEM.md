@@ -242,6 +242,7 @@ type TabInfo = {
     bell: boolean, -- its bell rang while it did not show, until its window shows it
     progress: { state: "normal" | "error" | "paused" | "indeterminate", value: number? }?, -- OSC 9;4's, of its active pane or another, the value from 0 to 1 if told
     running: boolean, -- of `process-read`: a program other than a shell runs in its foreground
+    alternate: boolean, -- of `process-read`: its active pane's program shows the alternate screen, as vim's or htop's
     secure: boolean, -- the keyboard's protected input is on for it, as its window has the focus and shows it
     agent: ("working" | "waiting" | "done")?, -- the state of an AI agent that runs in it
 }

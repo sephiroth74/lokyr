@@ -2865,6 +2865,7 @@ impl<B: Backend> App<B> {
         state.place.1 = pane.foreground_program().unwrap_or_default();
         let (id, place) = (pane.id(), place_label(&state.place.0, &state.place.1));
         let running = runs_other_than_shell(&state.place.1);
+        let alternate = pane.is_alternate_screen();
         if let Some(tab) = self.workspace.tab_of(id)
             && self
                 .workspace
@@ -2872,7 +2873,7 @@ impl<B: Backend> App<B> {
                 .is_some_and(|tab| tab.active_pane() == id)
         {
             self.workspace.set_tab_place(tab, Some(place));
-            self.workspace.set_tab_running(tab, running);
+            self.workspace.set_tab_running(tab, running, alternate);
         }
         true
     }
@@ -2902,10 +2903,11 @@ impl<B: Backend> App<B> {
         };
         let name = directory_name(&directory, home.as_deref());
         let program = shown.foreground_program().unwrap_or_default();
+        let alternate = shown.is_alternate_screen();
         self.workspace
             .set_tab_place(tab, Some(place_label(&name, &program)));
         self.workspace
-            .set_tab_running(tab, runs_other_than_shell(&program));
+            .set_tab_running(tab, runs_other_than_shell(&program), alternate);
     }
 
     /// The titles' timer fired: the windows whose last frame of output came

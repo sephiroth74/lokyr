@@ -1005,6 +1005,7 @@ fn bar_tabs() -> Vec<TabInfo> {
         bell: false,
         progress: None,
         running: false,
+        alternate: false,
         secure: false,
         agent: None,
     };
@@ -1089,6 +1090,7 @@ impl BarTabs {
                             bell: false,
                             progress: None,
                             running: false,
+                            alternate: false,
                             secure: false,
                             agent: None,
                         }

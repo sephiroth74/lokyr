@@ -161,6 +161,8 @@ pub struct TabMarks {
     pub progress: Option<host::TabProgress>,
     /// A program other than a shell runs in its foreground.
     pub running: bool,
+    /// Its active pane's program shows the alternate screen.
+    pub alternate: bool,
     /// The keyboard's protected input is on for it.
     pub secure: bool,
     /// The state of an AI agent that runs in it.
@@ -1670,6 +1672,7 @@ impl Calling<'_> {
                                 bell: marks.bell,
                                 progress: marks.progress,
                                 running: marks.running,
+                                alternate: marks.alternate,
                                 secure: marks.secure,
                                 agent: marks.agent,
                             })

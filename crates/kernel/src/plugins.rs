@@ -2734,6 +2734,7 @@ impl Host<'_, '_> {
             progress: marks.progress.and_then(tab_progress),
             // What runs, to a plugin that reads the processes' alone.
             running: marks.running && self.state.reads_processes(),
+            alternate: marks.alternate && self.state.reads_processes(),
             secure: marks.secure,
             agent: marks.agent,
         }

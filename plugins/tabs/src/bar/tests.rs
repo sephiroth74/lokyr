@@ -22,6 +22,7 @@ fn tab(id: u64, title: &str, active: bool) -> TabInfo {
         bell: false,
         progress: None,
         running: false,
+        alternate: false,
         secure: false,
         agent: None,
     }
@@ -402,7 +403,19 @@ fn a_tab_marks_what_came_while_it_did_not_show_what_runs_and_its_program_s_progr
         }),
         ..tab(4, "spinning", false)
     };
-    let tabs = [quiet, busy, secure, spinning];
+    // A job that tells no progress, of output that came while the tab did
+    // not show; a full-screen program, as vim.
+    let job = TabInfo {
+        activity: true,
+        running: true,
+        ..tab(5, "gradle", false)
+    };
+    let full_screen = TabInfo {
+        running: true,
+        alternate: true,
+        ..tab(6, "vim", false)
+    };
+    let tabs = [quiet, busy, secure, spinning, job, full_screen];
     for style in ["standard", "unified", "seamless"] {
         for position in ["top", "left"] {
             let text = |value: &str| Data::Text(value.to_owned());
@@ -439,6 +452,10 @@ fn a_tab_marks_what_came_while_it_did_not_show_what_runs_and_its_program_s_progr
                 ["Agent Working", "Outline Indeterminate 0"],
                 "{place}"
             );
+            // The spinner over the output's dot; the ring of a full-screen
+            // one.
+            assert_eq!(of(5), ["Running", "Dots Indeterminate 0"], "{place}");
+            assert_eq!(of(6), ["Running"], "{place}");
         }
     }
 }

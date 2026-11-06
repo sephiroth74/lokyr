@@ -97,6 +97,11 @@ pub struct TabInfo {
     /// foreground, to a plugin of `process-read`; `false` to the others.
     #[serde(default)]
     pub running: bool,
+    /// Whether the program of its active pane shows the alternate screen,
+    /// as a full-screen one, vim or htop, does, to a plugin of
+    /// `process-read`; `false` to the others.
+    #[serde(default)]
+    pub alternate: bool,
     /// Whether the keyboard's protected input is on for it, as Secure
     /// Keyboard Entry: while its window has the focus and shows it.
     #[serde(default)]
