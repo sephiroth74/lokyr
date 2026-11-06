@@ -1098,6 +1098,16 @@ impl Workspace {
         self.relayout(tab, |layout| layout.resize(pane, edge, by))
     }
 
+    /// Swaps `pane` and `with`, of one tab, each taking the other's room,
+    /// the tab's keyboard staying with its pane; whether both are of one
+    /// tab.
+    pub fn swap_panes(&mut self, pane: PaneId, with: PaneId) -> bool {
+        let (Some(tab), Some(other)) = (self.tab_of(pane), self.tab_of(with)) else {
+            return false;
+        };
+        tab == other && self.relayout(tab, |layout| layout.swap(pane, with))
+    }
+
     /// Shares the room of every split of `tab` by its parts' weights;
     /// whether the tab is open.
     pub fn equalize(&mut self, tab: TabId) -> bool {

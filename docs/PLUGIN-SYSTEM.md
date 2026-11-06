@@ -500,6 +500,10 @@ type Cx = {
     pane_to_new_window: (pane: PaneId) -> (boolean, Error?),
     -- Moves an edge by `by`, a share from -1 to 1 of the room of the split whose divider it is.
     resize_pane: (pane: PaneId, edge: Edge, by: number) -> (boolean, Error?),
+    -- A pane's grid, as its window last laid it out, as a resize by cells reads it.
+    pane_grid: (pane: PaneId) -> ({ columns: number, rows: number }?, Error?),
+    -- Swaps two panes of one tab, each taking the other's room, the tab's keyboard staying with its pane.
+    swap_panes: (pane: PaneId, with: PaneId) -> (boolean, Error?),
     -- The split at `path`, the parts from the layout's top, takes the first part's share `ratio`, or its panes'.
     set_ratio: (tab: TabId, path: { Side }, ratio: number?) -> (boolean, Error?),
     equalize: (tab: TabId) -> (boolean, Error?),

@@ -2232,6 +2232,11 @@ fn apply(writes: Vec<Write>, context: &mut Context<'_>, out: &mut Outbox, state:
             Asked::Equalize(tab) => {
                 context.workspace.equalize(TabId::of(tab.0));
             }
+            Asked::SwapPanes { pane, with } => {
+                context
+                    .workspace
+                    .swap_panes(PaneId::of(pane.0), PaneId::of(with.0));
+            }
             Asked::Zoom { tab, pane } => {
                 context
                     .workspace
@@ -2600,6 +2605,22 @@ impl Host<'_, '_> {
         })
     }
 
+    /// The tab of `pane`, of a tab or a split that the call's writes so far
+    /// open, if they open it.
+    fn opened_tab_of(&self, pane: host::PaneId) -> Option<TabId> {
+        self.writes.iter().find_map(|write| match write {
+            Write::NewTab {
+                tab, pane: opened, ..
+            } if opened.get() == pane.0 => Some(*tab),
+            Write::Split { pane: of, new, .. } if new.get() == pane.0 => self
+                .context
+                .workspace
+                .tab_of(*of)
+                .or_else(|| self.opened_tab_of(host::PaneId(of.get()))),
+            _ => None,
+        })
+    }
+
     /// Whether the tab `tab` is there, or the call's writes so far open it,
     /// which a later write of the call then finds; `not-found` otherwise.
     fn known_tab(&self, tab: host::TabId) -> Result<(), Error> {
@@ -2876,6 +2897,13 @@ impl Host<'_, '_> {
                 Response::Tabs(infos)
             }
             Asked::Layout(tab) => Response::Layout(layout(self.tab(tab)?.layout())),
+            Asked::PaneGrid(pane) => {
+                let grid = self.pane(pane)?.grid();
+                Response::Grid {
+                    columns: grid.columns,
+                    rows: grid.rows,
+                }
+            }
             Asked::Config => Response::Data(self.state.config.clone()),
             Asked::State => Response::Data(self.stored()),
             other => {
@@ -2982,6 +3010,22 @@ impl Host<'_, '_> {
             | Asked::FocusPane(pane)
             | Asked::PaneToNewWindow(pane) => {
                 self.known_pane(*pane)?;
+            }
+            Asked::SwapPanes { pane, with } => {
+                self.known_pane(*pane)?;
+                self.known_pane(*with)?;
+                let tab_of = |pane: &host::PaneId| {
+                    self.context
+                        .workspace
+                        .tab_of(PaneId::of(pane.0))
+                        .or_else(|| self.opened_tab_of(*pane))
+                };
+                if tab_of(pane) != tab_of(with) {
+                    return Err(Error::new(
+                        Code::Failed,
+                        format!("the panes {} and {} are not of one tab", pane.0, with.0),
+                    ));
+                }
             }
             Asked::MoveTab { tab, window, .. } => {
                 self.known_tab(*tab)?;

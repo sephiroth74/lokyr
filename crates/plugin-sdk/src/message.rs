@@ -369,6 +369,17 @@ pub enum Request {
     /// Shares each split of a tab's layout by its panes again, the ratios
     /// that the drags gave dropped.
     Equalize(TabId),
+    /// The grid of a pane, its columns and its rows, as its window last
+    /// laid it out, as a resize by cells reads it.
+    PaneGrid(PaneId),
+    /// Swaps two panes of a tab's layout, each taking the other's room,
+    /// their programs running on, the tab's keyboard staying with its pane.
+    SwapPanes {
+        /// The pane.
+        pane: PaneId,
+        /// The other, of the same tab.
+        with: PaneId,
+    },
     /// Has a pane of a tab take its whole room, or, with `None`, ends the
     /// tab's zoom.
     Zoom {
@@ -490,6 +501,7 @@ impl Request {
             | Self::Windows
             | Self::Tabs(_)
             | Self::Layout(_)
+            | Self::PaneGrid(_)
             | Self::NewTab { .. }
             | Self::Split { .. }
             | Self::CloseTab { .. }
@@ -510,6 +522,7 @@ impl Request {
             | Self::ResizePane { .. }
             | Self::SetRatio { .. }
             | Self::Equalize(_)
+            | Self::SwapPanes { .. }
             | Self::Zoom { .. }
             | Self::RequestRender(_)
             | Self::SetText { .. }
@@ -541,6 +554,7 @@ impl Request {
             | Self::Windows
             | Self::Tabs(_)
             | Self::Layout(_)
+            | Self::PaneGrid(_)
             | Self::Config
             | Self::State
             | Self::TabBarPlace
@@ -572,6 +586,7 @@ impl Request {
             | Self::ResizePane { .. }
             | Self::SetRatio { .. }
             | Self::Equalize(_)
+            | Self::SwapPanes { .. }
             | Self::Zoom { .. }
             | Self::RequestRender(_)
             | Self::SetState(_) => Effect::Write,
@@ -627,6 +642,13 @@ pub enum Response {
     Tabs(Vec<TabInfo>),
     /// A tab's layout.
     Layout(Layout),
+    /// A pane's grid.
+    Grid {
+        /// Its columns.
+        columns: u16,
+        /// Its rows.
+        rows: u16,
+    },
     /// A plain value, as the plugin's config or its state.
     Data(Data),
     /// A tab that opens as the call returns, and its pane.

@@ -1313,3 +1313,42 @@ fn a_tab_is_marked_of_what_runs_its_protected_input_and_its_agent_each_told_once
     assert!(!workspace.set_tab_secure(TabId::of(u64::MAX), true));
     assert!(is_shell("-zsh") && is_shell("tmux") && !is_shell("vim"));
 }
+
+#[test]
+fn two_panes_of_a_tab_swap_their_rooms_and_its_keyboard_stays_with_its_pane() {
+    let mut workspace = Workspace::new();
+    let window = workspace.open_window(pane("read line"));
+    let tab = workspace.window(window).unwrap().active_tab();
+    let first = workspace.tab(tab).unwrap().active_pane();
+    let second = workspace
+        .split(
+            first,
+            Direction::Horizontal,
+            pane("read line"),
+            Side::Second,
+        )
+        .unwrap();
+    let third = workspace
+        .split(second, Direction::Vertical, pane("read line"), Side::Second)
+        .unwrap();
+    workspace.focus_pane(third);
+    workspace.take_events();
+    assert!(workspace.swap_panes(first, third));
+    let shown = workspace.tab(tab).unwrap();
+    assert_eq!(shown.layout().panes(), [third, second, first]);
+    assert_eq!(shown.active_pane(), third);
+    assert_eq!(
+        changes(&mut workspace),
+        [Change::LayoutChanged { tab: tab.into() }]
+    );
+    // A pane with itself, or of another tab, does not swap.
+    assert!(!workspace.swap_panes(first, first));
+    let other = workspace.open_tab(window, pane("read line"), 1).unwrap();
+    let alone = workspace.tab(other).unwrap().active_pane();
+    assert!(!workspace.swap_panes(first, alone));
+    assert!(
+        changes(&mut workspace)
+            .iter()
+            .all(|change| !matches!(change, Change::LayoutChanged { .. }))
+    );
+}

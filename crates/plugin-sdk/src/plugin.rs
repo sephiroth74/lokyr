@@ -682,6 +682,21 @@ impl<'a> Cx<'a> {
         self.done(Request::PaneToNewWindow(pane))
     }
 
+    /// The grid of `pane`, its columns and its rows, as its window last
+    /// laid it out.
+    pub fn pane_grid(&mut self, pane: PaneId) -> Result<(u16, u16), Error> {
+        match self.request(Request::PaneGrid(pane)) {
+            Response::Grid { columns, rows } => Ok((columns, rows)),
+            other => Err(failed(other)),
+        }
+    }
+
+    /// Swaps `pane` and `with`, of one tab, each taking the other's room,
+    /// as this call returns.
+    pub fn swap_panes(&mut self, pane: PaneId, with: PaneId) -> Result<(), Error> {
+        self.done(Request::SwapPanes { pane, with })
+    }
+
     /// Moves `edge` of `pane` by `by`, a share of the room of the split
     /// whose divider it is, as this call returns.
     pub fn resize_pane(&mut self, pane: PaneId, edge: Edge, by: f64) -> Result<(), Error> {

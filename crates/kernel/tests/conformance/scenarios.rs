@@ -1139,6 +1139,28 @@ fn workspace(world: &World) -> Scenario {
                         Response::Done,
                     ),
                     (
+                        Request::PaneGrid(pane(1)),
+                        Response::Grid {
+                            columns: 80,
+                            rows: 24,
+                        },
+                    ),
+                    // Swapped, and back.
+                    (
+                        Request::SwapPanes {
+                            pane: pane(0),
+                            with: pane(1),
+                        },
+                        Response::Done,
+                    ),
+                    (
+                        Request::SwapPanes {
+                            pane: pane(1),
+                            with: pane(0),
+                        },
+                        Response::Done,
+                    ),
+                    (
                         Request::MoveTab {
                             tab: tab(0),
                             window: w,
@@ -1156,6 +1178,8 @@ fn workspace(world: &World) -> Scenario {
                 ],
                 posts: Vec::new(),
                 heard: vec![
+                    ws(WorkspaceEvent::LayoutChanged { tab: tab(0) }),
+                    ws(WorkspaceEvent::LayoutChanged { tab: tab(0) }),
                     ws(WorkspaceEvent::LayoutChanged { tab: tab(0) }),
                     ws(WorkspaceEvent::TabMoved {
                         tab: tab(0),

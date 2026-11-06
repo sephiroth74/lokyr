@@ -91,12 +91,15 @@ pub struct FakePane {
     /// screen, which a decoration's cells and a read of rows are of: a
     /// screen of 24 rows without a scrollback by default.
     pub held: std::ops::Range<i64>,
+    /// Its grid, its columns and its rows, 80 by 24 by default.
+    pub grid: (u16, u16),
 }
 
 impl Default for FakePane {
     fn default() -> Self {
         Self {
             held: 0..24,
+            grid: (80, 24),
             window: WindowId(1),
             tab: TabId(1),
             lines: BTreeMap::new(),
@@ -806,6 +809,11 @@ impl FakeHost {
             Request::PaneToNewWindow(pane) => self.pane_to_new_window(*pane),
             Request::Zoom { tab, pane } => self.zoom(*tab, *pane),
             Request::Equalize(tab) => self.relayout(*tab, equalize),
+            Request::SwapPanes { pane, with } => {
+                if let Some(tab) = self.panes.get(pane).map(|pane| pane.tab) {
+                    self.relayout(tab, |layout| swap_leaves(layout, *pane, *with));
+                }
+            }
             Request::SetRatio { tab, path, ratio } => {
                 let ratio = ratio.map(|ratio| {
                     // A split's share, of ten-thousandths, within 5 % of
@@ -1428,6 +1436,19 @@ fn remove(layout: &mut Layout, pane: PaneId) -> Option<PaneId> {
     Some(nearest)
 }
 
+/// `layout` of `pane`'s leaf and `with`'s swapped.
+fn swap_leaves(layout: &mut Layout, pane: PaneId, with: PaneId) {
+    match layout {
+        Layout::Pane(leaf) if *leaf == pane => *leaf = with,
+        Layout::Pane(leaf) if *leaf == with => *leaf = pane,
+        Layout::Pane(_) => {}
+        Layout::Split { first, second, .. } => {
+            swap_leaves(first, pane, with);
+            swap_leaves(second, pane, with);
+        }
+    }
+}
+
 /// Shares each split of `layout` by its panes again.
 fn equalize(layout: &mut Layout) {
     if let Layout::Split {
@@ -1643,6 +1664,10 @@ impl Calling<'_> {
                         .collect(),
                 )
             }
+            Request::PaneGrid(pane) => {
+                let (columns, rows) = host.held(*pane)?.grid;
+                Response::Grid { columns, rows }
+            }
             Request::Layout(tab) => match host.tabs.get(tab) {
                 Some(tab) => Response::Layout(tab.layout.clone()),
                 None => {
@@ -1704,6 +1729,18 @@ impl Calling<'_> {
                     self.known_window(*window)?;
                 }
                 Response::Asking(self.host.next_id())
+            }
+            Request::SwapPanes { pane, with } => {
+                self.known_pane(*pane)?;
+                self.known_pane(*with)?;
+                let tab_of = |pane: &PaneId| self.host.panes.get(pane).map(|pane| pane.tab);
+                if tab_of(pane) != tab_of(with) {
+                    return Err(Error::new(
+                        Code::Failed,
+                        format!("the panes {} and {} are not of one tab", pane.0, with.0),
+                    ));
+                }
+                Response::Done
             }
             Request::ResizePane { pane, by, .. } => {
                 self.known_pane(*pane)?;

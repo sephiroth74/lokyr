@@ -323,6 +323,28 @@ impl Layout {
         false
     }
 
+    /// Swaps the leaves of `pane` and `with`, each taking the other's
+    /// room; whether the layout holds both.
+    pub fn swap(&mut self, pane: PaneId, with: PaneId) -> bool {
+        if pane == with || !self.contains(pane) || !self.contains(with) {
+            return false;
+        }
+        self.swap_leaves(pane, with);
+        true
+    }
+
+    fn swap_leaves(&mut self, pane: PaneId, with: PaneId) {
+        match self {
+            Self::Leaf(leaf) if *leaf == pane => *leaf = with,
+            Self::Leaf(leaf) if *leaf == with => *leaf = pane,
+            Self::Leaf(_) => {}
+            Self::Split { first, second, .. } => {
+                first.swap_leaves(pane, with);
+                second.swap_leaves(pane, with);
+            }
+        }
+    }
+
     /// Takes every ratio away, so that the panes share the room by their
     /// weights.
     pub fn equalize(&mut self) {

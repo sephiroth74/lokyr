@@ -724,11 +724,13 @@ fn kind(request: &Request) -> usize {
         Request::KeysOf { .. } => 60,
         Request::Message { .. } => 61,
         Request::Reveal { .. } => 62,
+        Request::PaneGrid(_) => 63,
+        Request::SwapPanes { .. } => 64,
     }
 }
 
 /// How many kinds of requests the plugin API has.
-const KINDS: usize = 63;
+const KINDS: usize = 65;
 
 #[test]
 fn the_scenarios_hold_every_request_of_the_plugin_api() {
