@@ -115,7 +115,13 @@ impl Panes for Spawner<'_> {
     fn spawn(&mut self, id: PaneId, near: Option<&Pane>) -> Pane {
         let directory = match &self.config.window.new_directory {
             NewDirectory::Home => None,
-            NewDirectory::Inherit => near.and_then(Pane::working_directory),
+            // The directory that its shell told last, of this machine, as
+            // through ssh its program's is the client's; its program's
+            // otherwise.
+            NewDirectory::Inherit => near.and_then(|pane| {
+                pane.told_directory(&lokyr_pty::host_name())
+                    .or_else(|| pane.working_directory())
+            }),
             NewDirectory::Path(path) => config::expanded(path, std::env::home_dir().as_deref()),
         }
         .filter(|directory| directory.is_dir());

@@ -12,7 +12,7 @@ use std::path::PathBuf;
 mod unix;
 
 #[cfg(unix)]
-pub use unix::{Batch, Next, Pty, PtyReader, PtyWriter, ReadAhead, spawn};
+pub use unix::{Batch, Next, Pty, PtyReader, PtyWriter, ReadAhead, host_name, spawn};
 
 /// The size of a terminal, in cells and in pixels.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

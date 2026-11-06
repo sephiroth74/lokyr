@@ -597,16 +597,17 @@ The folder that the first window's shell starts in, as Lokyr starts.
 
 <sub>Platforms: macOS</sub>
 
-The folder that a new window's shell starts in, as ⌘N opens one.
+The folder that a new window's shell starts in, as ⌘N opens one, and a new tab's or a split's.
 
 | Values | Default |
 |---|---|
 | `"inherit"`, `"home"`, or a path from `/` or `~` | `"inherit"` |
 
 - `"inherit"` starts in the folder of the program in the window that has the focus, or that had it last while Lokyr is not active, as from the Dock's menu: the shell's folder, or that of the program that runs in it, as `vim`'s; in your home folder without a window, or when the folder cannot be read, as a program of another user's, as `sudo`'s.
+- A new tab or a split, as ⌘T, ⌘D and ⇧⌘D open them, starts in the folder that the shell of the pane that it comes from told last, by OSC 7, where it is of this Mac and still there, so that a split of a pane where `ssh` runs starts where the shell worked before it; in the folder of the program that runs in the pane otherwise.
 - `"home"` starts in your home folder.
 - A path, as `"~/Projects"`, starts there; one that is not there starts in your home folder, and the log tells why.
-- It applies at once, to the windows that open from then.
+- It applies at once, to the windows, tabs and splits that open from then.
 
 ### `padding-x`, `padding-y`
 

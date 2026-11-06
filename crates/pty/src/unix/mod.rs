@@ -1151,6 +1151,23 @@ fn environment(
     env
 }
 
+/// This machine's name, as a shell's `file` URLs of OSC 7 give it; empty if
+/// it has none.
+pub fn host_name() -> String {
+    let mut name = [0u8; 256];
+    // SAFETY: the buffer is as long as the length given, which leaves room
+    // for the name's ending nul.
+    let status = unsafe { libc::gethostname(name.as_mut_ptr().cast(), name.len() - 1) };
+    if status != 0 {
+        return String::new();
+    }
+    let end = name
+        .iter()
+        .position(|&byte| byte == 0)
+        .unwrap_or(name.len());
+    String::from_utf8_lossy(&name[..end]).into_owned()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

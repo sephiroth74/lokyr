@@ -1199,6 +1199,49 @@ fn the_first_window_starts_where_start_directory_says() {
 }
 
 #[test]
+fn a_split_starts_in_the_directory_that_its_pane_s_shell_told() {
+    let base = real_directory("told-directory");
+    let told = base.join("told");
+    std::fs::create_dir(&told).unwrap();
+    let home = std::env::home_dir().unwrap().display().to_string();
+    // The first pane's shell tells, by OSC 7, a directory that its program,
+    // `sleep`, does not work in; each pane tells where it started.
+    let script = format!(
+        "pwd; [ \"$PWD\" = {home:?} ] && printf '\\033]7;file://localhost%s\\007' {:?}; exec sleep 10",
+        told.display().to_string()
+    );
+    let mut fake = Fake::default();
+    let mut app = app(Config::default(), shell(&script));
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    assert_eq!(started_in(&mut fake, &mut app, window), home);
+    let first = app
+        .workspace
+        .active_pane(app.windows[&window].window)
+        .unwrap();
+    run_until(&mut fake, &mut app, |_, app| {
+        app.workspace
+            .pane(first)
+            .and_then(|pane| pane.told_directory(&lokyr_pty::host_name()))
+            .is_some()
+    });
+    let mut right = Args::new();
+    right.insert(
+        "direction".to_owned(),
+        lokyr_kernel::commands::Value::String("right".to_owned()),
+    );
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    app.run(&mut fake, "splits.split", right);
+    // The new pane, of the keyboard, started there, its program working
+    // there.
+    run_until(&mut fake, &mut app, |_, app| {
+        app.workspace.active_pane(app.windows[&window].window) != Some(first)
+            && app.pane(window).working_directory().as_deref() == Some(told.as_path())
+    });
+    let _ = std::fs::remove_dir_all(base);
+}
+
+#[test]
 fn a_new_window_starts_where_new_directory_says_and_the_last_is_kept() {
     let base = real_directory("new-directory");
     let (inherited, path, state) = (base.join("inherit"), base.join("path"), base.join("state"));

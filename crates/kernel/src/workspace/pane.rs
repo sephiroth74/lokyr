@@ -768,6 +768,18 @@ impl Pane {
         session.foreground_directory()
     }
 
+    /// The working directory that the shell told last, by OSC 7, if it is
+    /// of this machine, whose name is `host`, and a directory there: where
+    /// the shell works, as a program in its foreground, as ssh, may not.
+    pub fn told_directory(&self, host: &str) -> Option<PathBuf> {
+        let session = self.session.as_ref().filter(|_| self.ended.is_none())?;
+        let told = session.lock().working_directory().cloned()?;
+        if !is_local(&told.host, host) {
+            return None;
+        }
+        Some(PathBuf::from(told.path)).filter(|path| path.is_dir())
+    }
+
     /// Selects the scrollback and the screen, whole.
     pub fn select_all(&self) {
         if let Some(session) = &self.session {
@@ -1044,6 +1056,19 @@ fn status(exit: Option<Exit>, told: Option<i32>, through_login: bool) -> Option<
         Some(code) if through_login => Some(Exit::Code(code)),
         _ => exit,
     }
+}
+
+/// Whether `host`, of an OSC 7 `file` URL, is this machine, whose name is
+/// `name`: none, `localhost`, or its name, with or without the domain that
+/// one of the two has.
+fn is_local(host: &str, name: &str) -> bool {
+    let short = |name: &str| name.split('.').next().unwrap_or_default().to_owned();
+    host.is_empty()
+        || host.eq_ignore_ascii_case("localhost")
+        || (!name.is_empty()
+            && (host.eq_ignore_ascii_case(name)
+                || host.eq_ignore_ascii_case(&short(name))
+                || short(host).eq_ignore_ascii_case(name)))
 }
 
 #[cfg(test)]
@@ -1370,5 +1395,18 @@ mod tests {
         let later = timer.unwrap() + RESIZE_PACE;
         assert_eq!(pane.resize(grid(205), later), None);
         assert_eq!(pane.told(), grid(205));
+    }
+
+    #[test]
+    fn a_told_directory_is_of_this_machine_alone() {
+        for host in ["", "localhost", "LocalHost", "mac", "MAC", "mac.local"] {
+            assert!(super::is_local(host, "mac.local"), "{host}");
+        }
+        assert!(super::is_local("mac.example.com", "mac"));
+        for host in ["server", "server.example.com", "mac-mini"] {
+            assert!(!super::is_local(host, "mac.local"), "{host}");
+        }
+        // A machine of no name knows its own by none, or `localhost`.
+        assert!(!super::is_local("mac", ""));
     }
 }
