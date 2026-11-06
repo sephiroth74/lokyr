@@ -30,7 +30,9 @@ mod tests;
 mod waker;
 
 pub use event::{AppEvent, Appearance, Dropped, WindowEvent};
-pub use geometry::{ContentRect, PixelSize, Point, Size, Titlebar, WindowSize};
+pub use geometry::{
+    ContentRect, PixelSize, Point, ScreenPoint, ScreenRect, Size, Titlebar, WindowSize,
+};
 pub use input::{
     Ime, KeyCode, KeyEvent, KeyState, Modifiers, MouseButton, PointerArea, PointerShape,
     ScrollDelta, ScrollPhase,
@@ -39,7 +41,7 @@ pub use menu::{
     AboutLine, AboutPanel, Alert, AlertId, AlertStyle, ContextMenu, MainMenu, Menu, MenuItem,
     MenuRole, Shortcut, ShortcutKey, StandardAction,
 };
-pub use quick::{GlobalKey, Length, QuickEdge, QuickPlace, QuickScreen, ScreenRect};
+pub use quick::{GlobalKey, Length, QuickEdge, QuickPlace, QuickScreen};
 pub use raw_window_handle::WindowHandle;
 pub use runs::{RUNS, runs_by_itself};
 pub use waker::Waker;
@@ -421,6 +423,39 @@ pub trait Platform {
     /// points from the content's top left corner, as a press of a modifier
     /// asks without a move; `None` for a window that is not open.
     fn pointer_position(&self, window: WindowId) -> Option<Point>;
+
+    /// The frame of `window`'s content on the screens, the part under its
+    /// titlebar too, where the content runs under it; `None` for a window
+    /// that is not open.
+    fn window_frame(&self, window: WindowId) -> Option<ScreenRect>;
+
+    /// Moves `window` so that its content's top left corner is at `origin`
+    /// on the screens, or as near as keeps its titlebar on a screen, as a
+    /// window opened for a tab dropped there goes under the pointer.
+    fn set_window_origin(&mut self, window: WindowId, origin: ScreenPoint);
+
+    /// The application's window that shows at `at` on the screens, over
+    /// the others: `None` where another application's window, the menu bar
+    /// or the Dock shows, or no window, as a tab dropped there opens a
+    /// window of its own. The drag's image, which the pointer goes through,
+    /// is none of them.
+    fn window_at(&self, at: ScreenPoint) -> Option<WindowId>;
+
+    /// Shows the image of a drag at `frame` on the screens, over every
+    /// window, the pointer going through it to what is under: a layer that
+    /// the renderer draws, through [`Platform::drag_image_handle`], clear
+    /// where it draws nothing. An image that shows already moves there, of
+    /// the size of `frame`, its layer keeping what it drew.
+    fn show_drag_image(&mut self, frame: ScreenRect);
+
+    /// The handle of the drag's image's layer, while the image shows, which
+    /// the renderer draws into.
+    fn drag_image_handle(&self) -> Option<WindowHandle<'_>>;
+
+    /// Hides the drag's image, at once; or, of `to`, sliding there on the
+    /// screens, of its size, as a dragged tab goes back to its place, and
+    /// fading out as it goes, which the window server animates.
+    fn hide_drag_image(&mut self, to: Option<ScreenRect>);
 
     /// Sets the main menu, in place of the one before it.
     fn set_main_menu(&mut self, menu: &MainMenu);

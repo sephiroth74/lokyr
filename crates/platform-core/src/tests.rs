@@ -689,3 +689,91 @@ fn a_shortcut_is_written_as_the_mac_s_menus_write_it() {
         assert_eq!(shortcut.mac_text(), text);
     }
 }
+
+#[test]
+fn the_fake_s_windows_cascade_and_show_on_top_where_they_came_forward() {
+    let mut fake = Fake::new(2.0);
+    let attributes = WindowAttributes {
+        title: "shell".to_owned(),
+        size: SIZE,
+        remember: false,
+        restore: false,
+        restore_size: false,
+    };
+    let first = fake.create_window(&attributes).unwrap();
+    let second = fake.create_window(&attributes).unwrap();
+    let frame = |fake: &Fake, window| fake.window_frame(window).unwrap();
+    assert_eq!(
+        frame(&fake, first),
+        ScreenRect {
+            x: 100.0,
+            y: 100.0,
+            width: 800.0,
+            height: 600.0,
+        }
+    );
+    assert_eq!(
+        frame(&fake, second).origin(),
+        ScreenPoint { x: 122.0, y: 122.0 }
+    );
+    // Where both show, the last one opened is in front, until the first
+    // comes forward.
+    let both = ScreenPoint { x: 200.0, y: 200.0 };
+    assert_eq!(fake.window_at(both), Some(second));
+    fake.focus_window(first);
+    assert_eq!(fake.window_at(both), Some(first));
+    fake.raise(second);
+    assert_eq!(fake.window_at(both), Some(second));
+    // Where the first alone shows, and where none does.
+    assert_eq!(
+        fake.window_at(ScreenPoint { x: 110.0, y: 110.0 }),
+        Some(first)
+    );
+    assert_eq!(fake.window_at(ScreenPoint { x: 50.0, y: 50.0 }), None);
+    fake.set_window_origin(first, ScreenPoint { x: 900.0, y: 300.0 });
+    assert_eq!(
+        frame(&fake, first).origin(),
+        ScreenPoint { x: 900.0, y: 300.0 }
+    );
+    assert_eq!(
+        fake.window_at(ScreenPoint {
+            x: 1000.0,
+            y: 400.0
+        }),
+        Some(first)
+    );
+    // A hidden quick window shows nowhere.
+    let quick = fake.create_quick_window("Lokyr").unwrap();
+    fake.set_window_origin(quick, ScreenPoint { x: 0.0, y: 0.0 });
+    assert_eq!(fake.window_at(ScreenPoint { x: 50.0, y: 50.0 }), None);
+    fake.close_window(second);
+    assert_eq!(fake.window_at(both), None);
+}
+
+#[test]
+fn the_fake_s_drag_image_shows_moves_and_hides() {
+    let mut fake = Fake::new(2.0);
+    assert_eq!(fake.drag_image(), None);
+    let frame = ScreenRect {
+        x: 10.0,
+        y: 20.0,
+        width: 320.0,
+        height: 200.0,
+    };
+    fake.show_drag_image(frame);
+    assert_eq!(fake.drag_image(), Some(frame));
+    let moved = ScreenRect { x: 30.0, ..frame };
+    fake.show_drag_image(moved);
+    assert_eq!(fake.drag_image(), Some(moved));
+    let back = ScreenRect {
+        x: 0.0,
+        y: 0.0,
+        width: 160.0,
+        height: 28.0,
+    };
+    fake.hide_drag_image(Some(back));
+    assert_eq!(fake.drag_image(), None);
+    // Hidden, a hide does nothing.
+    fake.hide_drag_image(None);
+    assert_eq!(fake.drag_image_hides(), [Some(back)]);
+}

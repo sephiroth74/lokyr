@@ -132,6 +132,10 @@ name = "run_loop"
 harness = false
 
 [[test]]
+name = "screen_places"
+harness = false
+
+[[test]]
 name = "quit_in_modal"
 harness = false
 

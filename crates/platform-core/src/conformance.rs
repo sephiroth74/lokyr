@@ -11,7 +11,9 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::{Layer, Platform, Point, PointerShape, Size, Target, TargetKind, WindowId};
+use crate::{
+    Layer, Platform, Point, PointerShape, ScreenPoint, Size, Target, TargetKind, WindowId,
+};
 
 /// Runs every check on `platform`, with the files that it makes in
 /// `directory`, which it empties first and removes after; returns what
@@ -24,6 +26,7 @@ pub fn check(platform: &mut dyn Platform, directory: &Path) -> Vec<String> {
     }
     let _ = fs::remove_dir_all(directory);
     failed.extend(absent_window(platform));
+    failed.extend(no_drag_image(platform));
     failed
 }
 
@@ -216,6 +219,7 @@ fn absent_window(platform: &mut dyn Platform) -> Vec<String> {
     platform.set_translucent(window, None);
     platform.set_window_appearance(window, None);
     platform.set_window_remember(window, false);
+    platform.set_window_origin(window, ScreenPoint { x: 10.0, y: 10.0 });
     platform.close_window(window);
     if platform.window_size(window).is_some() {
         failed.push("a window that never was has a size".to_owned());
@@ -234,6 +238,30 @@ fn absent_window(platform: &mut dyn Platform) -> Vec<String> {
     }
     if platform.focused_window() == Some(window) {
         failed.push("a window that never was has the focus".to_owned());
+    }
+    if platform.window_frame(window).is_some() {
+        failed.push("a window that never was has a frame".to_owned());
+    }
+    let off = ScreenPoint {
+        x: -1.0e7,
+        y: -1.0e7,
+    };
+    if platform.window_at(off).is_some() {
+        failed.push("a point off every screen shows a window".to_owned());
+    }
+    failed
+}
+
+/// The checks of the drag's image before it shows, and once it hid: no
+/// handle, and a hide that does nothing.
+fn no_drag_image(platform: &mut dyn Platform) -> Vec<String> {
+    let mut failed = Vec::new();
+    if platform.drag_image_handle().is_some() {
+        failed.push("the drag's image has a handle before it shows".to_owned());
+    }
+    platform.hide_drag_image(None);
+    if platform.drag_image_handle().is_some() {
+        failed.push("the drag's image has a handle once it hid".to_owned());
     }
     failed
 }

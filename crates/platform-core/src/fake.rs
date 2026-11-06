@@ -11,8 +11,8 @@ use std::time::{Duration, Instant, SystemTime};
 use crate::{
     AboutPanel, Alert, AlertId, AppEvent, Appearance, Backdrop, ContentRect, ContextMenu, Error,
     GlobalKey, Handler, Layer, LayerPlace, MainMenu, Platform, Point, PointerArea, PointerShape,
-    QuickPlace, ScreenRect, Shortcut, Size, Sweep, Target, TargetKind, TimerId, Titlebar, Usage,
-    Waker, WindowAttributes, WindowEvent, WindowHandle, WindowId, WindowSize,
+    QuickPlace, ScreenPoint, ScreenRect, Shortcut, Size, Sweep, Target, TargetKind, TimerId,
+    Titlebar, Usage, Waker, WindowAttributes, WindowEvent, WindowHandle, WindowId, WindowSize,
 };
 
 /// The scale of the fake's display when a test sets none: a Retina one.
@@ -39,6 +39,11 @@ const QUICK_SIZE: Size = Size {
     width: 800.0,
     height: 400.0,
 };
+
+/// Where the fake puts the first window's content's top left corner on the
+/// screen, and how far down and to the right of it each next one goes.
+const FIRST_ORIGIN: ScreenPoint = ScreenPoint { x: 100.0, y: 100.0 };
+const CASCADE: f64 = 22.0;
 
 /// A window that the app opened, as the fake keeps it.
 #[derive(Clone, Debug, PartialEq)]
@@ -105,6 +110,20 @@ pub struct FakeWindow {
     /// The updates of its accessibility tree that the app gave, once a
     /// client asked, in their order.
     pub accessibility: Vec<accesskit::TreeUpdate>,
+    /// Where its content's top left corner is on the screen.
+    pub origin: ScreenPoint,
+}
+
+impl FakeWindow {
+    /// Its content's frame on the screen.
+    pub fn frame(&self) -> ScreenRect {
+        ScreenRect {
+            x: self.origin.x,
+            y: self.origin.y,
+            width: self.size.points.width,
+            height: self.size.points.height,
+        }
+    }
 }
 
 /// An alert that is open, until a test answers it.
@@ -156,6 +175,13 @@ pub struct Fake {
     /// Whether the system reduces motion.
     reduce_motion: bool,
     windows: BTreeMap<WindowId, FakeWindow>,
+    /// The windows from the front one back, as they opened and came
+    /// forward.
+    order: Vec<WindowId>,
+    /// The drag's image, while it shows, and the places that it slid back
+    /// to as it hid, from the first, `None` of one hidden at once.
+    drag_image: Option<ScreenRect>,
+    drag_image_hides: Vec<Option<ScreenRect>>,
     focused: Option<WindowId>,
     menu: Option<MainMenu>,
     /// The commands whose menu items are dimmed, and those whose items are
@@ -240,6 +266,9 @@ impl Fake {
             keyboard_navigation: false,
             reduce_motion: false,
             windows: BTreeMap::new(),
+            order: Vec::new(),
+            drag_image: None,
+            drag_image_hides: Vec::new(),
             focused: None,
             menu: None,
             disabled: std::collections::BTreeSet::new(),
@@ -472,6 +501,26 @@ impl Fake {
         self.windows.keys().copied()
     }
 
+    /// Brings `window` in front of the others with no event, as the user
+    /// clicks it.
+    pub fn raise(&mut self, window: WindowId) {
+        if self.windows.contains_key(&window) {
+            self.order.retain(|&open| open != window);
+            self.order.insert(0, window);
+        }
+    }
+
+    /// The drag's image's frame on the screen, while it shows.
+    pub fn drag_image(&self) -> Option<ScreenRect> {
+        self.drag_image
+    }
+
+    /// Where the drag's image slid as it hid, each time, from the first:
+    /// `None` of one hidden at once.
+    pub fn drag_image_hides(&self) -> &[Option<ScreenRect>] {
+        &self.drag_image_hides
+    }
+
     /// The main menu that the app set, if it set one.
     pub fn main_menu(&self) -> Option<&MainMenu> {
         self.menu.as_ref()
@@ -700,6 +749,20 @@ impl Platform for Fake {
 
     fn create_window(&mut self, attributes: &WindowAttributes) -> Result<WindowId, Error> {
         let id = WindowId::new(self.next_id());
+        // Down and to the right of the front window, as the system cascades
+        // them.
+        let origin = self
+            .order
+            .iter()
+            .find_map(|window| {
+                self.windows
+                    .get(window)
+                    .filter(|state| state.quick.is_none())
+            })
+            .map_or(FIRST_ORIGIN, |front| ScreenPoint {
+                x: front.origin.x + CASCADE,
+                y: front.origin.y + CASCADE,
+            });
         self.windows.insert(
             id,
             FakeWindow {
@@ -737,8 +800,10 @@ impl Platform for Fake {
                 move_areas: Vec::new(),
                 accessibility_asked: false,
                 accessibility: Vec::new(),
+                origin,
             },
         );
+        self.order.insert(0, id);
         Ok(id)
     }
 
@@ -774,8 +839,10 @@ impl Platform for Fake {
                 move_areas: Vec::new(),
                 accessibility_asked: false,
                 accessibility: Vec::new(),
+                origin: ScreenPoint::default(),
             },
         );
+        self.order.push(id);
         Ok(id)
     }
 
@@ -805,11 +872,16 @@ impl Platform for Fake {
                     },
                     self.scale,
                 );
+                state.origin = frame.origin();
             }
             // Shown already, it keeps its place until it hides.
-            Some(_) => {}
-            None => *shown = None,
+            Some(_) => return,
+            None => {
+                *shown = None;
+                return;
+            }
         }
+        self.raise(window);
     }
 
     fn set_global_keys(&mut self, keys: &[GlobalKey]) -> Vec<usize> {
@@ -826,6 +898,7 @@ impl Platform for Fake {
 
     fn close_window(&mut self, window: WindowId) {
         self.windows.remove(&window);
+        self.order.retain(|&open| open != window);
         if self.focused == Some(window) {
             self.focused = None;
         }
@@ -909,6 +982,7 @@ impl Platform for Fake {
             .is_some_and(|state| state.quick == Some(None));
         if !hidden_quick {
             self.focus_requests.push(window);
+            self.raise(window);
         }
     }
 
@@ -918,6 +992,39 @@ impl Platform for Fake {
 
     fn pointer_position(&self, window: WindowId) -> Option<Point> {
         self.windows.get(&window).map(|state| state.pointer_at)
+    }
+
+    fn window_frame(&self, window: WindowId) -> Option<ScreenRect> {
+        self.windows.get(&window).map(FakeWindow::frame)
+    }
+
+    fn set_window_origin(&mut self, window: WindowId, origin: ScreenPoint) {
+        if let Some(state) = self.windows.get_mut(&window) {
+            state.origin = origin;
+        }
+    }
+
+    fn window_at(&self, at: ScreenPoint) -> Option<WindowId> {
+        self.order.iter().copied().find(|window| {
+            self.windows
+                .get(window)
+                .is_some_and(|state| state.quick != Some(None) && state.frame().contains(at))
+        })
+    }
+
+    fn show_drag_image(&mut self, frame: ScreenRect) {
+        self.drag_image = Some(frame);
+    }
+
+    fn drag_image_handle(&self) -> Option<WindowHandle<'_>> {
+        // Nothing draws into the fake's images.
+        None
+    }
+
+    fn hide_drag_image(&mut self, to: Option<ScreenRect>) {
+        if self.drag_image.take().is_some() {
+            self.drag_image_hides.push(to);
+        }
     }
 
     fn set_main_menu(&mut self, menu: &MainMenu) {

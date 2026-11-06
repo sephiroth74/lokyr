@@ -97,6 +97,22 @@ impl LayerView {
         view
     }
 
+    /// A view of a layer that fills its window, as its content view, and
+    /// shows, which the window's whole content is.
+    pub(crate) fn filling(mtm: MainThreadMarker, frame: NSRect) -> Retained<Self> {
+        let this = Self::alloc(mtm).set_ivars(LayerViewIvars {
+            blink: Cell::new(None),
+        });
+        // SAFETY: `NSView`'s `initWithFrame:` has this signature.
+        let view: Retained<Self> = unsafe { msg_send![super(this), initWithFrame: frame] };
+        view.setWantsLayer(true);
+        view.setAutoresizingMask(
+            NSAutoresizingMaskOptions::ViewWidthSizable
+                | NSAutoresizingMaskOptions::ViewHeightSizable,
+        );
+        view
+    }
+
     /// The view, by its address, for a renderer: it lives as long as the
     /// window.
     pub(crate) fn address(&self) -> NonNull<c_void> {

@@ -100,6 +100,58 @@ impl ContentRect {
     }
 }
 
+/// A point on the screens, in points, from the top left corner of the menu
+/// bar's screen, rightwards and downwards, as the screens lie on one plane.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct ScreenPoint {
+    /// From the left, rightwards.
+    pub x: f64,
+    /// From the top, downwards.
+    pub y: f64,
+}
+
+/// A rectangle on the screens, in points: its origin is its top left
+/// corner, from the top left corner of the menu bar's screen, rightwards
+/// and downwards.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct ScreenRect {
+    /// From the left, rightwards.
+    pub x: f64,
+    /// From the top, downwards.
+    pub y: f64,
+    /// Its width.
+    pub width: f64,
+    /// Its height.
+    pub height: f64,
+}
+
+impl ScreenRect {
+    /// Whether it and `other` share some area, more than an edge.
+    pub fn overlaps(&self, other: &ScreenRect) -> bool {
+        self.x < other.x + other.width
+            && other.x < self.x + self.width
+            && self.y < other.y + other.height
+            && other.y < self.y + self.height
+    }
+
+    /// Whether it holds `point`, its left and top edges in, its right and
+    /// bottom ones out.
+    pub fn contains(&self, point: ScreenPoint) -> bool {
+        point.x >= self.x
+            && point.y >= self.y
+            && point.x < self.x + self.width
+            && point.y < self.y + self.height
+    }
+
+    /// Its top left corner.
+    pub fn origin(&self) -> ScreenPoint {
+        ScreenPoint {
+            x: self.x,
+            y: self.y,
+        }
+    }
+}
+
 /// What a window's titlebar holds, over its content's top, which the
 /// content runs under.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

@@ -9,19 +9,20 @@ use std::time::{Duration, Instant, SystemTime};
 use lokyr_platform_core::{
     AboutPanel, Alert, AlertId, Appearance, Backdrop, ContentRect, ContextMenu, Error, GlobalKey,
     Layer, LayerPlace, MainMenu, MenuRole, Platform, Point, PointerArea, PointerShape, QuickPlace,
-    Shortcut, Size, Sweep, Target, TimerId, Titlebar, Usage, Waker, WindowAttributes, WindowEvent,
-    WindowHandle, WindowId, WindowSize,
+    ScreenPoint, ScreenRect, Shortcut, Size, Sweep, Target, TimerId, Titlebar, Usage, Waker,
+    WindowAttributes, WindowEvent, WindowHandle, WindowId, WindowSize,
 };
 use objc2::rc::Retained;
 use objc2::{AnyThread, MainThreadMarker};
 use objc2_app_kit::{
     NSAlert, NSAppearanceCustomization, NSApplication, NSBeep, NSEvent, NSEventModifierFlags,
     NSEventType, NSImage, NSMenu, NSPasteboard, NSPasteboardTypeString, NSRequestUserAttentionType,
-    NSScreen, NSView,
+    NSScreen, NSView, NSWindow,
 };
 use objc2_foundation::{NSLocale, NSPoint, NSString, NSTimer};
 use raw_window_handle::{AppKitWindowHandle, RawWindowHandle};
 
+use crate::drag_image::DragImage;
 use crate::global_keys::GlobalKeys;
 use crate::menu::MenuTarget;
 use crate::notify::Notifier;
@@ -29,7 +30,7 @@ use crate::secure::SecureInput;
 use crate::shared::{Pending, Shared};
 use crate::updates::Updates;
 use crate::window::Window;
-use crate::{alert, appearance, definition, menu, open, timer};
+use crate::{alert, appearance, definition, menu, open, screens, timer};
 
 /// An alert that is open.
 struct OpenAlert {
@@ -82,6 +83,8 @@ pub(crate) struct Backend {
     global_keys: GlobalKeys,
     /// The app's updates, where its bundle has the updater.
     updates: Updates,
+    /// The drag's image, while it shows.
+    drag_image: Option<DragImage>,
 }
 
 impl Backend {
@@ -105,6 +108,7 @@ impl Backend {
             secure: SecureInput::default(),
             global_keys: GlobalKeys::new(shared),
             updates: Updates::default(),
+            drag_image: None,
         }
     }
 
@@ -543,6 +547,56 @@ impl Platform for Backend {
 
     fn pointer_position(&self, window: WindowId) -> Option<Point> {
         self.windows.get(&window).map(Window::pointer)
+    }
+
+    fn window_frame(&self, window: WindowId) -> Option<ScreenRect> {
+        let open = self.windows.get(&window)?;
+        Some(screens::on_screens(
+            open.content_on_screen(),
+            screens::top(self.mtm),
+        ))
+    }
+
+    fn set_window_origin(&mut self, window: WindowId, origin: ScreenPoint) {
+        if let Some(open) = self.windows.get(&window) {
+            open.set_content_origin(origin);
+        }
+    }
+
+    fn window_at(&self, at: ScreenPoint) -> Option<WindowId> {
+        let point = screens::point_in_appkit(at, screens::top(self.mtm));
+        // The front window that a press there would reach, of any app's:
+        // the drag's image, which the pointer goes through, is none.
+        let number = NSWindow::windowNumberAtPoint_belowWindowWithWindowNumber(point, 0, self.mtm);
+        self.windows
+            .iter()
+            .find(|(_, open)| {
+                let ns_window = open.ns_window();
+                ns_window.windowNumber() == number && ns_window.isVisible()
+            })
+            .map(|(&id, _)| id)
+    }
+
+    fn show_drag_image(&mut self, frame: ScreenRect) {
+        let frame = screens::in_appkit(frame, screens::top(self.mtm));
+        match &self.drag_image {
+            Some(image) => image.place(frame),
+            None => self.drag_image = Some(DragImage::new(self.mtm, frame)),
+        }
+    }
+
+    fn drag_image_handle(&self) -> Option<WindowHandle<'_>> {
+        let view = self.drag_image.as_ref()?.address();
+        let raw = RawWindowHandle::AppKit(AppKitWindowHandle::new(view));
+        // SAFETY: the view is the image's, which lives as long as the image,
+        // and no image hides while the backend is borrowed.
+        Some(unsafe { WindowHandle::borrow_raw(raw) })
+    }
+
+    fn hide_drag_image(&mut self, to: Option<ScreenRect>) {
+        if let Some(image) = self.drag_image.take() {
+            image.hide(to.map(|to| screens::in_appkit(to, screens::top(self.mtm))));
+        }
     }
 
     fn focused_window(&self) -> Option<WindowId> {

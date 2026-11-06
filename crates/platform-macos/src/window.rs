@@ -8,8 +8,8 @@ use std::rc::{Rc, Weak};
 
 use lokyr_platform_core::{
     Backdrop, ContentRect, Dropped, Ime, Layer, LayerPlace, MouseButton, PixelSize, Point,
-    PointerArea, PointerShape, QuickPlace, ScrollDelta, ScrollPhase, Size, Sweep, Titlebar,
-    WindowAttributes, WindowEvent, WindowId, WindowSize,
+    PointerArea, PointerShape, QuickPlace, ScreenPoint, ScrollDelta, ScrollPhase, Size, Sweep,
+    Titlebar, WindowAttributes, WindowEvent, WindowId, WindowSize,
 };
 use std::path::PathBuf;
 
@@ -39,6 +39,7 @@ use crate::frame::Pacer;
 use crate::keys;
 use crate::layer::LayerView;
 use crate::quick::{self, Quick};
+use crate::screens;
 use crate::shared::{Pending, Shared};
 use crate::sweep::SweepsView;
 use crate::text_input::{self, Handled, Step, TextInput};
@@ -283,6 +284,53 @@ impl Window {
             // The view's own coordinates go up from its bottom edge.
             y: self.view.bounds().size.height - local.y,
         }
+    }
+
+    /// The frame of the content, under the titlebar too, in AppKit's
+    /// coordinates of the screens.
+    pub(crate) fn content_on_screen(&self) -> NSRect {
+        let content = self.view.convertRect_toView(self.view.bounds(), None);
+        self.ns_window.convertRectToScreen(content)
+    }
+
+    /// Moves the window so that its content's top left corner is at
+    /// `origin` on the screens, its titlebar kept on the screen of the
+    /// pointer, as AppKit keeps it on one; a window in full screen stays.
+    pub(crate) fn set_content_origin(&self, origin: ScreenPoint) {
+        if self
+            .ns_window
+            .styleMask()
+            .contains(NSWindowStyleMask::FullScreen)
+        {
+            return;
+        }
+        let mtm = self.ns_window.mtm();
+        let frame = self.ns_window.frame();
+        let content = self.content_on_screen();
+        // How far the content's top left corner is from the frame's.
+        let left = content.origin.x - frame.origin.x;
+        let below = frame.origin.y + frame.size.height - content.origin.y - content.size.height;
+        let top_left = screens::point_in_appkit(origin, screens::top(mtm));
+        let moved = NSRect::new(
+            NSPoint::new(top_left.x - left, top_left.y + below - frame.size.height),
+            frame.size,
+        );
+        let pointer = NSEvent::mouseLocation();
+        let screens = NSScreen::screens(mtm);
+        let screen = (0..screens.count())
+            .map(|index| screens.objectAtIndex(index))
+            .find(|screen| {
+                let area = screen.frame();
+                pointer.x >= area.origin.x
+                    && pointer.x < area.origin.x + area.size.width
+                    && pointer.y >= area.origin.y
+                    && pointer.y < area.origin.y + area.size.height
+            })
+            .or_else(|| self.ns_window.screen());
+        let moved = self
+            .ns_window
+            .constrainFrameRect_toScreen(moved, screen.as_deref());
+        self.ns_window.setFrame_display(moved, true);
     }
 
     pub(crate) fn view(&self) -> Retained<NSView> {
