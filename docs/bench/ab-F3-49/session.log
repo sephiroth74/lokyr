@@ -1,0 +1,103 @@
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=24117347)	100%; charged; 0:00 remaining present: true
+22:24  up  6:44, 5 users, load averages: 1.03 1.43 1.99
+Graphics/Displays:
+    Apple M5 Pro:
+      Displays:
+        DELL P2721Q:
+          Resolution: 5120 x 2880 (5K/UHD+ - Ultra High Definition Plus)
+          Main Display: Yes
+22:24:33 startup v050 1
+22:24:49 startup cur 1
+22:25:04 startup floor 1
+22:25:19 load { 1.81 1.57 2.01 }
+22:25:19 startup cur 2
+22:25:34 startup v050 2
+22:25:49 startup floor 2
+22:26:04 load { 4.07 2.24 2.23 }
+22:26:04 startup cur 3
+22:26:20 startup v050 3
+22:26:35 startup floor 3
+22:26:50 load { 2.78 2.17 2.21 }
+22:26:50 startup v050 4
+22:27:05 startup cur 4
+22:27:20 startup floor 4
+22:27:35 load { 2.38 2.14 2.19 }
+22:27:35 latency warm-up v050
+22:27:38 latency warm-up cur
+22:27:41 latency warm-up notabs
+22:27:44 latency v050 1 place 1
+22:27:56 latency cur 1 place 2
+22:28:08 load { 1.93 2.06 2.16 }
+22:28:08 latency cur 2 place 1
+22:28:21 latency v050 2 place 2
+22:28:33 load { 1.69 1.99 2.13 }
+22:28:33 latency cur 3 place 1
+22:28:45 latency v050 3 place 2
+22:28:58 load { 1.75 1.99 2.13 }
+22:28:58 latency v050 4 place 1
+22:29:10 latency cur 4 place 2
+22:29:22 load { 1.60 1.94 2.11 }
+22:29:22 latency v050 5 place 1
+22:29:35 latency cur 5 place 2
+22:29:47 load { 1.42 1.88 2.08 }
+22:29:47 latency cur 6 place 1
+22:29:59 latency v050 6 place 2
+22:30:12 load { 1.33 1.82 2.05 }
+22:30:12 latency cur 7 place 1
+22:30:24 latency v050 7 place 2
+22:30:36 load { 1.16 1.74 2.01 }
+22:30:36 latency v050 8 place 1
+22:30:48 latency cur 8 place 2
+22:31:01 load { 1.19 1.70 1.99 }
+22:31:01 idle v050 1
+22:32:38 idle cur 1
+22:34:16 load { 1.50 1.60 1.88 }
+22:34:16 idle cur 2
+22:35:53 idle v050 2
+22:37:30 load { 1.69 1.69 1.86 }
+22:37:30 throughput ascii v050 1
+22:37:37 throughput ascii cur 1
+22:37:44 throughput ascii cur 2
+22:37:51 throughput ascii v050 2
+22:37:57 load { 2.61 1.90 1.93 }
+22:37:57 throughput seq v050 1
+22:37:58 throughput seq cur 1
+22:38:00 throughput seq cur 2
+22:38:01 throughput seq v050 2
+22:38:02 load { 2.88 1.97 1.96 }
+22:38:02 throughput sgr v050 1
+22:38:03 throughput sgr cur 1
+22:38:04 throughput sgr cur 2
+22:38:05 throughput sgr v050 2
+22:38:06 load { 2.97 2.00 1.97 }
+22:38:07 throughput cjk v050 1
+22:38:08 throughput cjk cur 1
+22:38:10 throughput cjk cur 2
+22:38:11 throughput cjk v050 2
+22:38:13 load { 2.89 2.00 1.97 }
+22:38:13 startup cur 5
+22:38:28 startup notabs 5
+22:38:43 load { 2.30 1.95 1.95 }
+22:38:43 startup notabs 6
+22:38:58 startup cur 6
+22:39:13 load { 2.55 2.04 1.98 }
+22:39:13 latency cur 9 place 1
+22:39:26 latency notabs 9 place 2
+22:39:38 load { 2.81 2.15 2.02 }
+22:39:38 latency notabs 10 place 1
+22:39:50 latency cur 10 place 2
+22:40:03 load { 2.29 2.09 2.00 }
+22:40:03 latency notabs 11 place 1
+22:40:15 latency cur 11 place 2
+22:40:27 load { 2.15 2.07 2.00 }
+22:40:27 latency cur 12 place 1
+22:40:40 latency notabs 12 place 2
+22:40:52 load { 1.97 2.03 1.99 }
+22:40:52 titles cur 1
+22:40:59 titles notabs 1
+22:41:06 titles notabs 2
+22:41:12 titles cur 2
+22:41:19 progress cur 1
+22:41:25 progress cur 2
+22:41:31 done

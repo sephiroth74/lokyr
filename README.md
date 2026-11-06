@@ -119,7 +119,7 @@ position = "top"
 
 ## Programs' progress
 
-Lokyr shows the progress that a program reports with OSC 9;4, as a bar across the window's top and on the program's tab. Some programs send it only to the terminals that they recognize by their environment's variables, and do not recognize Lokyr yet, whose `TERM_PROGRAM` is `lokyr`. Until they do, turn their progress on as the table tells:
+Lokyr shows the progress that a program reports with OSC 9;4 on the program's tab, round its outline. Some programs send it only to the terminals that they recognize by their environment's variables, and do not recognize Lokyr yet, whose `TERM_PROGRAM` is `lokyr`. Until they do, turn their progress on as the table tells:
 
 | Program | Sends its progress by itself to | To get it in Lokyr |
 |---|---|---|

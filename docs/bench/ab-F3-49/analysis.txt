@@ -1,0 +1,68 @@
+## Startup, warm, first frame (ms): median, spread; floor's first window; gap
+round 1 v050: 226.2 ms, p90 247.0, spread 14.2%; floor 208.8; gap 17.4
+round 1 cur: 236.7 ms, p90 248.9, spread 7.1%; floor 208.8; gap 27.9
+round 2 cur: 234.2 ms, p90 249.2, spread 7.9%; floor 206.1; gap 28.1
+round 2 v050: 232.3 ms, p90 246.2, spread 10.7%; floor 206.1; gap 26.2
+round 3 cur: 239.8 ms, p90 249.4, spread 7.5%; floor 208.9; gap 30.9
+round 3 v050: 233.2 ms, p90 247.6, spread 13.5%; floor 208.9; gap 24.2
+round 4 v050: 230.9 ms, p90 234.0, spread 5.5%; floor 211.2; gap 19.7
+round 4 cur: 233.1 ms, p90 247.3, spread 13.3%; floor 211.2; gap 21.9
+## Latency (ms), and its histogram in refreshes
+round 1 place 1 v050: p50 19.09 p90 27.19 p99 63.06 max 69.10; refresh 16.67; {'1': 74, '2': 116, '3': 6, '4': 2, '5': 1}
+round 1 place 2 cur: p50 22.39 p90 28.73 p99 35.85 max 39.45; refresh 16.67; {'1': 26, '2': 169, '3': 4}
+round 2 place 1 cur: p50 21.41 p90 30.23 p99 34.49 max 35.55; refresh 16.67; {'1': 41, '2': 153, '3': 5}
+round 2 place 2 v050: p50 19.69 p90 29.31 p99 52.06 max 55.39; refresh 16.67; {'1': 61, '2': 127, '3': 9, '4': 2}
+round 3 place 1 cur: p50 20.67 p90 30.09 p99 34.34 max 34.70; refresh 16.67; {'1': 37, '2': 158, '3': 4}
+round 3 place 2 v050: p50 18.73 p90 25.34 p99 40.18 max 56.99; refresh 16.67; {'1': 76, '2': 120, '3': 2, '4': 1}
+round 4 place 1 v050: p50 18.84 p90 29.00 p99 42.70 max 46.89; refresh 16.67; {'1': 71, '2': 119, '3': 9}
+round 4 place 2 cur: p50 21.82 p90 30.01 p99 36.39 max 36.51; refresh 16.67; {'1': 39, '2': 153, '3': 7}
+round 5 place 1 v050: p50 18.06 p90 28.62 p99 44.23 max 58.58; refresh 16.67; {'1': 80, '2': 111, '3': 7, '4': 1}
+round 5 place 2 cur: p50 21.19 p90 28.95 p99 35.59 max 41.35; refresh 16.67; {'1': 37, '2': 158, '3': 4}
+round 6 place 1 cur: p50 21.77 p90 29.63 p99 35.53 max 36.62; refresh 16.67; {'1': 38, '2': 156, '3': 5}
+round 6 place 2 v050: p50 19.82 p90 28.12 p99 49.98 max 50.53; refresh 16.67; {'1': 64, '2': 127, '3': 7, '4': 1}
+round 7 place 1 cur: p50 21.52 p90 30.20 p99 36.75 max 37.54; refresh 16.67; {'1': 35, '2': 156, '3': 8}
+round 7 place 2 v050: p50 18.78 p90 27.78 p99 49.29 max 70.72; refresh 16.67; {'1': 68, '2': 123, '3': 7, '5': 1}
+round 8 place 1 v050: p50 19.20 p90 28.72 p99 41.09 max 60.00; refresh 16.67; {'1': 67, '2': 121, '3': 10, '4': 1}
+round 8 place 2 cur: p50 20.89 p90 29.47 p99 35.75 max 36.12; refresh 16.67; {'1': 47, '2': 147, '3': 5}
+v050: p50 mean 19.03 (sd 0.53), p99 mean 47.82 (sd 7.07), of 8 rounds; 10 of 1592 samples in the fourth refresh or later
+cur: p50 mean 21.46 (sd 0.51), p99 mean 35.59 (sd 0.78), of 8 rounds; 0 of 1592 samples in the fourth refresh or later
+place 1: p50 mean 20.07, p99 mean 41.52
+place 2: p50 mean 20.41, p99 mean 41.89
+## Idle (per s) and memory (MB)
+round 1 v050: package idle 0.000/s, interrupt 0.350/s; footprint w/o GPU 25.4 MB, GPU 30.0 MB
+round 1 cur: package idle 0.000/s, interrupt 0.333/s; footprint w/o GPU 26.4 MB, GPU 30.5 MB
+round 2 cur: package idle 0.000/s, interrupt 0.350/s; footprint w/o GPU 26.4 MB, GPU 30.5 MB
+round 2 v050: package idle 0.000/s, interrupt 0.350/s; footprint w/o GPU 25.6 MB, GPU 30.0 MB
+## Throughput on screen (MiB/s, median of the runs of both rounds) and frames (ms)
+ascii v050: 326.8 MiB/s (runs 321.2, 329.0, 326.3, 327.2); total p50 0.270 p99 0.380, total p50 0.269 p99 0.341
+ascii cur: 318.4 MiB/s (runs 316.5, 314.1, 320.4, 320.2); total p50 0.270 p99 0.381, total p50 0.270 p99 0.386
+seq v050: 219.8 MiB/s (runs 212.9, 226.6, 210.8, 231.2); total p50 0.265 p99 1.979, total p50 0.260 p99 1.899
+seq cur: 219.8 MiB/s (runs 214.9, 227.3, 215.0, 224.7); total p50 0.285 p99 4.950, total p50 0.266 p99 4.818
+sgr v050: 286.2 MiB/s (runs 282.1, 290.4, 280.5, 298.1); total p50 0.521 p99 3.617, total p50 0.523 p99 3.417
+sgr cur: 287.2 MiB/s (runs 281.1, 294.8, 279.1, 293.3); total p50 0.544 p99 4.948, total p50 0.546 p99 5.232
+cjk v050: 216.1 MiB/s (runs 216.6, 219.9, 215.6, 215.3); total p50 0.452 p99 3.914, total p50 0.443 p99 3.350
+cjk cur: 216.1 MiB/s (runs 215.3, 213.2, 216.8, 219.7); total p50 0.716 p99 4.784, total p50 0.711 p99 4.927
+## The single tab's title: with the tabs plugin (cur) and without it (notabs)
+round 5 cur: 231.9 ms, p90 247.2, spread 11.1%
+round 5 notabs: 217.9 ms, p90 233.3, spread 9.3%
+round 6 notabs: 214.6 ms, p90 250.1, spread 22.1%
+round 6 cur: 233.9 ms, p90 250.1, spread 14.3%
+round 9 place 1 cur: p50 21.37 p90 28.59 p99 39.40 max 47.95; refresh 16.67; {'1': 41, '2': 151, '3': 7}
+round 9 place 2 notabs: p50 18.77 p90 25.51 p99 45.27 max 62.85; refresh 16.67; {'1': 70, '2': 124, '3': 4, '4': 1}
+round 10 place 1 notabs: p50 18.99 p90 27.75 p99 54.62 max 60.92; refresh 16.67; {'1': 81, '2': 110, '3': 4, '4': 4}
+round 10 place 2 cur: p50 21.29 p90 30.05 p99 34.97 max 41.18; refresh 16.67; {'1': 37, '2': 154, '3': 8}
+round 11 place 1 notabs: p50 18.93 p90 26.43 p99 45.89 max 47.34; refresh 16.67; {'1': 77, '2': 117, '3': 5}
+round 11 place 2 cur: p50 22.11 p90 28.53 p99 31.99 max 33.82; refresh 16.67; {'1': 29, '2': 169, '3': 1}
+round 12 place 1 cur: p50 21.15 p90 29.65 p99 33.15 max 39.22; refresh 16.67; {'1': 39, '2': 159, '3': 1}
+round 12 place 2 notabs: p50 18.25 p90 27.12 p99 59.04 max 59.78; refresh 16.67; {'1': 89, '2': 101, '3': 6, '4': 3}
+cur: p50 mean 21.48 (sd 0.37), p99 mean 34.88 (sd 2.82), of 4 rounds; 0 of 796 samples in the fourth refresh or later
+notabs: p50 mean 18.73 (sd 0.29), p99 mean 51.20 (sd 5.84), of 4 rounds; 8 of 796 samples in the fourth refresh or later
+place 1: p50 mean 20.11, p99 mean 43.27
+place 2: p50 mean 20.11, p99 mean 42.82
+titles round 1 cur: 102 frames of 100 title changes; total p50 0.555 p99 1.045 ms
+titles round 1 notabs: 1 frames of 100 title changes; total p50 0.927 p99 0.927 ms
+titles round 2 notabs: 1 frames of 100 title changes; total p50 0.906 p99 0.906 ms
+titles round 2 cur: 102 frames of 100 title changes; total p50 0.571 p99 0.981 ms
+## A program's progress, 50 changes at 10 a second
+progress round 1: 2 frames; total p50 0.503 p99 4.779 ms
+progress round 2: 2 frames; total p50 0.384 p99 4.756 ms
