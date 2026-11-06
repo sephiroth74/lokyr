@@ -227,6 +227,7 @@ type BarPlace =
     | { kind: "bottom" }
     | { kind: "left", width: number }
     | { kind: "right", width: number }
+    | { kind: "sidebar", width: number } -- down the left from the window's top, through the titlebar, the window's buttons over its top, the panes beside it up to the top
 
 type TabInfo = {
     id: TabId,
@@ -245,10 +246,17 @@ type Layout =
     { pane: PaneId }
     | { direction: Direction, ratio: number?, first: Layout, second: Layout }
 
+-- Of its content, of points, of a fraction of its parent's, from 0 to 1, or the window's: the titlebar's height,
+-- and the width that the window's buttons take at its left, which a sidebar leaves them; 0 without them, as in
+-- full screen.
+type Length = "auto" | number | { fraction: number } | "titlebar" | "buttons"
+
 type Style = {
     direction: ("row" | "column")?,
     gap: number?,
     padding: number?,
+    width: Length?,
+    height: Length?,
     grow: number?,
     background: Color?,
     foreground: Color?,

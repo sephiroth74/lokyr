@@ -15,7 +15,7 @@ use lokyr_vt_core::input::KeyEvent;
 use crate::animation::Animations;
 use crate::field::{Carets, Clipboard, Fields};
 use crate::font::Font;
-use crate::layout::{Frame, Layout, Measure};
+use crate::layout::{Frame, Layout, Measure, Room};
 use crate::list::{self, Lists};
 use crate::paint::{self, Shown};
 use crate::pointer::{self, Button, NodeEvent, Pointer};
@@ -78,6 +78,12 @@ impl Surface {
         self.fields.updated(&self.tree);
         self.lists.updated(&self.tree);
         Ok(())
+    }
+
+    /// Gives its lengths of the titlebar and of the window's buttons
+    /// `room`, the window's, for its next layout.
+    pub fn set_room(&mut self, room: Room) {
+        self.layout.set_room(&self.tree, room);
     }
 
     /// Lays the tree out in `width` and `height` pixels, either as its

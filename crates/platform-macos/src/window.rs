@@ -492,9 +492,12 @@ impl Window {
     }
 
     /// The parts of the titlebar that are the content's, in place of those
-    /// before.
+    /// before, whose pointer is the content's areas' too.
     pub(crate) fn set_titlebar_areas(&self, areas: &[ContentRect]) {
-        *self.view.ivars().titlebar_areas.borrow_mut() = areas.to_vec();
+        if *self.view.ivars().titlebar_areas.borrow() != areas {
+            *self.view.ivars().titlebar_areas.borrow_mut() = areas.to_vec();
+            self.ns_window.invalidateCursorRectsForView(&self.view);
+        }
     }
 
     /// Whether an accessibility client asked for the window's tree.
@@ -679,10 +682,12 @@ define_class!(
         // rectangle that the pointer is in, in the key window.
         #[unsafe(method(resetCursorRects))]
         fn reset_cursor_rects(&self) {
-            // Below the titlebar, whose pointer is the arrow.
+            // Below the titlebar, and over its parts that are the content's,
+            // whose pointer is the arrow but over the content's areas.
+            let height = self.bounds().size.height;
             let rects = cursor_rects(
-                self.below_bar(),
-                self.bounds().size.height,
+                (self.below_bar(), &self.ivars().titlebar_areas.borrow()),
+                height,
                 &self.ivars().areas.borrow(),
                 self.ivars().pointer.get(),
             );
@@ -1590,39 +1595,74 @@ fn restore_size(window: &NSWindow) {
 }
 
 /// The cursor's rectangles of a view of `height` points, of its content
-/// `below`, the titlebar's bottom: each of `areas` of its own pointer,
-/// within the content, but where an area before it lies, and the rest of
-/// the content of `pointer`. None overlap, as AppKit leaves the cursor of
-/// rectangles that overlap undefined.
+/// `below`, the titlebar's bottom, and of the titlebar's parts that are the
+/// content's, `titlebar`, in points from the view's top left corner: each
+/// of `areas` of its own pointer, within them, but where an area before it
+/// lies, and the rest of the content of `pointer`, and of the titlebar's
+/// parts of the arrow, the titlebar's. None overlap, as AppKit leaves the
+/// cursor of rectangles that overlap undefined.
 fn cursor_rects(
-    below: NSRect,
+    (below, titlebar): (NSRect, &[ContentRect]),
     height: f64,
     areas: &[PointerArea],
     pointer: PointerShape,
 ) -> Vec<(NSRect, PointerShape)> {
+    // The view's origin is its bottom left corner.
+    let flipped = |x: f64, y: f64, width: f64, tall: f64| {
+        NSRect::new(NSPoint::new(x, height - y - tall), NSSize::new(width, tall))
+    };
+    let bar = NSRect::new(
+        NSPoint::new(below.origin.x, below.origin.y + below.size.height),
+        NSSize::new(
+            below.size.width,
+            (height - below.origin.y - below.size.height).max(0.0),
+        ),
+    );
+    let mut rooms = vec![(below, pointer)];
+    let mut held = vec![below];
+    for part in titlebar {
+        let rect = flipped(
+            part.origin.x,
+            part.origin.y,
+            part.size.width,
+            part.size.height,
+        );
+        let Some(rect) = intersection(rect, bar) else {
+            continue;
+        };
+        for piece in without(rect, &held) {
+            rooms.push((piece, PointerShape::Arrow));
+            held.push(piece);
+        }
+    }
     let mut rects = Vec::new();
     let mut taken: Vec<NSRect> = Vec::new();
     for area in areas {
-        // The view's origin is its bottom left corner.
-        let rect = NSRect::new(
-            NSPoint::new(area.origin.x, height - area.origin.y - area.size.height),
-            NSSize::new(area.size.width, area.size.height),
+        let rect = flipped(
+            area.origin.x,
+            area.origin.y,
+            area.size.width,
+            area.size.height,
         );
-        let Some(rect) = intersection(rect, below) else {
-            continue;
-        };
-        rects.extend(
-            without(rect, &taken)
-                .into_iter()
-                .map(|piece| (piece, area.shape)),
-        );
-        taken.push(rect);
+        for &(room, _) in &rooms {
+            let Some(rect) = intersection(rect, room) else {
+                continue;
+            };
+            rects.extend(
+                without(rect, &taken)
+                    .into_iter()
+                    .map(|piece| (piece, area.shape)),
+            );
+            taken.push(rect);
+        }
     }
-    rects.extend(
-        without(below, &taken)
-            .into_iter()
-            .map(|piece| (piece, pointer)),
-    );
+    for (room, shape) in rooms {
+        rects.extend(
+            without(room, &taken)
+                .into_iter()
+                .map(|piece| (piece, shape)),
+        );
+    }
     rects
 }
 
@@ -1811,7 +1851,7 @@ mod tests {
             area(90.0, 10.0, 10.0, 8.0, PointerShape::PointingHand),
             area(0.0, 10.0, 100.0, 8.0, PointerShape::Arrow),
         ];
-        let rects = cursor_rects(below, 50.0, &areas, PointerShape::Text);
+        let rects = cursor_rects((below, &[]), 50.0, &areas, PointerShape::Text);
         assert_eq!(
             rects,
             [
@@ -1823,8 +1863,27 @@ mod tests {
         // Without areas, the content alone; an area outside it, nothing.
         let outside = [area(0.0, 0.0, 100.0, 5.0, PointerShape::Arrow)];
         assert_eq!(
-            cursor_rects(below, 50.0, &outside, PointerShape::Arrow),
+            cursor_rects((below, &[]), 50.0, &outside, PointerShape::Arrow),
             [(below, PointerShape::Arrow)]
+        );
+        // A part of the titlebar that is the content's, of the arrow but
+        // under an area of the content's, as the panes' beside a sidebar,
+        // and within the titlebar alone.
+        let part = ContentRect {
+            origin: Point { x: 20.0, y: 0.0 },
+            size: Size {
+                width: 80.0,
+                height: 20.0,
+            },
+        };
+        let beside = [area(50.0, 0.0, 50.0, 10.0, PointerShape::Text)];
+        assert_eq!(
+            cursor_rects((below, &[part]), 50.0, &beside, PointerShape::Text),
+            [
+                (rect(50.0, 40.0, 50.0, 10.0), PointerShape::Text),
+                (below, PointerShape::Text),
+                (rect(20.0, 40.0, 30.0, 10.0), PointerShape::Arrow),
+            ]
         );
         // A hole in the middle leaves four parts.
         assert_eq!(

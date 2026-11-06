@@ -17,7 +17,7 @@ use lokyr_text_core::FontBackend;
 use lokyr_ui_core::chrome::{self, Heights, Regions, TabBarPlace};
 use lokyr_ui_core::focus::Target;
 use lokyr_ui_core::font::Font;
-use lokyr_ui_core::layout::Frame;
+use lokyr_ui_core::layout::{Frame, Room};
 use lokyr_ui_core::panel::{self, Panels};
 use lokyr_ui_core::pointer::NodeEvent;
 use lokyr_ui_core::progress::{self, SweepArea};
@@ -342,7 +342,17 @@ impl<B: Backend> App<B> {
             BarPlace::Bottom => TabBarPlace::Bottom,
             BarPlace::Left { width } => TabBarPlace::Left(width * size.scale as f32),
             BarPlace::Right { width } => TabBarPlace::Right(width * size.scale as f32),
+            BarPlace::Sidebar { width } => TabBarPlace::Sidebar(width * size.scale as f32),
         };
+        // The views' lengths of the titlebar and of the window's buttons,
+        // as a sidebar leaves them their room.
+        let room = Room {
+            titlebar,
+            buttons: (size.buttons * size.scale) as f32,
+        };
+        for view in &mut state.chrome {
+            view.surface.set_room(room);
+        }
         // Each slot's height, of its views laid out across the window, or
         // its share of it for a slot of many.
         let mut natural = |slot: Slot| {
@@ -369,7 +379,7 @@ impl<B: Backend> App<B> {
         let tab_bar = match place {
             _ if !tab_bar_shows => 0.0,
             TabBarPlace::Titlebar if titlebar > 0.0 => titlebar,
-            TabBarPlace::Left(_) | TabBarPlace::Right(_) => 1.0,
+            TabBarPlace::Left(_) | TabBarPlace::Right(_) | TabBarPlace::Sidebar(_) => 1.0,
             _ => natural(Slot::TabBar),
         };
         let heights = Heights {
@@ -380,7 +390,7 @@ impl<B: Backend> App<B> {
         let shape = chrome::Window {
             size: (width, size.pixels.height as f32),
             titlebar,
-            buttons: (size.buttons * size.scale) as f32,
+            buttons: room.buttons,
         };
         let regions = chrome::regions(&shape, place, heights);
         state.overlay = regions.window_overlay;
@@ -650,7 +660,7 @@ pub(super) fn column_edge(
         .find(|view| view.view.slot() == Some(Slot::TabBar) && view.shows())?;
     let frame = view.frame?;
     let left = match plugins.tab_bar_place(&view.plugin) {
-        BarPlace::Left { .. } => true,
+        BarPlace::Left { .. } | BarPlace::Sidebar { .. } => true,
         BarPlace::Right { .. } => false,
         _ => return None,
     };

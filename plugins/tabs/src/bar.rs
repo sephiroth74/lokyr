@@ -22,7 +22,9 @@
 //!   stadium's round ends in `unified`, or of the window's background in
 //!   `seamless`, the rest of the column under the veil; the button of a new
 //!   tab a row of its sign in its middle, and a line along the column's
-//!   edge by the panes.
+//!   edge by the panes. On the left, in `unified` and `seamless`, the
+//!   column runs up through the titlebar, as macOS's sidebars: the window's
+//!   buttons over its top, and the window's keys after them.
 //!
 //! A tab's background lightens under the pointer and darkens as it is
 //! pressed, which the host draws and fades, with no render; its close
@@ -135,7 +137,8 @@ impl Settings {
 
     /// The bar's place: at the top in the titlebar, of a unified or a
     /// seamless look, or below it, of a standard one; at the bottom; or down a
-    /// column of `width` points, the user's drag's, or the config's.
+    /// column of `width` points, the user's drag's, or the config's, on the
+    /// left through the titlebar, as a sidebar, but of a standard look.
     pub(crate) fn place(&self, width: Option<f32>) -> BarPlace {
         let (narrowest, widest) = COLUMN_WIDTHS;
         let width = width.unwrap_or(self.column_width).clamp(narrowest, widest);
@@ -143,7 +146,8 @@ impl Settings {
             (Position::Top, Look::Standard) => BarPlace::BelowTitlebar,
             (Position::Top, _) => BarPlace::Titlebar,
             (Position::Bottom, _) => BarPlace::Bottom,
-            (Position::Left, _) => BarPlace::Left { width },
+            (Position::Left, Look::Standard) => BarPlace::Left { width },
+            (Position::Left, _) => BarPlace::Sidebar { width },
             (Position::Right, _) => BarPlace::Right { width },
         }
     }
@@ -238,9 +242,14 @@ pub(crate) fn bar(
                 .filter(|_| settings.show_index),
         })
         .collect();
-    let window = window.filter(|_| settings.place(None) == BarPlace::Titlebar);
+    let window = window.filter(|_| {
+        matches!(
+            settings.place(None),
+            BarPlace::Titlebar | BarPlace::Sidebar { .. }
+        )
+    });
     Some(match settings.look {
-        _ if settings.column() => column(&shown, settings),
+        _ if settings.column() => column(&shown, window, settings),
         Look::Seamless => cells(&shown, window, settings),
         Look::Standard | Look::Unified => pills(&shown, window, settings),
     })
@@ -530,8 +539,10 @@ fn lined(content: Node, top: bool, lined: bool, layout: Layout) -> Node {
 /// A bar down a column: a row of each tab, and one of a new tab, its
 /// sign in its middle, and a line along the column's edge by the panes; in
 /// the seamless look, of no background of its own, the room that no active
-/// tab takes under the veil, down to the column's bottom.
-fn column(tabs: &[Shown<'_>], settings: &Settings) -> Node {
+/// tab takes under the veil, down to the column's bottom; as a sidebar,
+/// below the room of the window's buttons, which shows the window's keys,
+/// `window`, after them.
+fn column(tabs: &[Shown<'_>], window: Option<&str>, settings: &Settings) -> Node {
     let seamless = settings.look == Look::Seamless;
     let mut rows: Vec<Node> = tabs.iter().map(|tab| row(tab, settings)).collect();
     rows.push(
@@ -566,9 +577,14 @@ fn column(tabs: &[Shown<'_>], settings: &Settings) -> Node {
         );
     }
     // Of the column's width, whatever its titles' widths.
+    let sidebar = matches!(settings.place(None), BarPlace::Sidebar { .. });
     let list = Node::container(rows).layout(Layout {
         direction: Direction::Column,
-        width: Length::Points(0.0),
+        width: if sidebar {
+            Length::Auto
+        } else {
+            Length::Points(0.0)
+        },
         gap: if seamless { 0.0 } else { 2.0 },
         padding: if seamless {
             Edges::default()
@@ -579,9 +595,20 @@ fn column(tabs: &[Shown<'_>], settings: &Settings) -> Node {
         grow: 1.0,
         ..Layout::default()
     });
+    let body = if sidebar {
+        Node::container(vec![buttons_room(window, seamless), list]).layout(Layout {
+            direction: Direction::Column,
+            width: Length::Points(0.0),
+            align: Align::Stretch,
+            grow: 1.0,
+            ..Layout::default()
+        })
+    } else {
+        list
+    };
     let children = match settings.position {
-        Position::Right => vec![Node::separator(), list],
-        _ => vec![list, Node::separator()],
+        Position::Right => vec![Node::separator(), body],
+        _ => vec![body, Node::separator()],
     };
     Node::container(children)
         .layout(Layout {
@@ -592,6 +619,28 @@ fn column(tabs: &[Shown<'_>], settings: &Settings) -> Node {
         .style(Style {
             background: (!seamless).then(|| Token::from("tab.bar.bg")),
             ..Style::default()
+        })
+}
+
+/// The room at a sidebar's top under the window's buttons, the titlebar's
+/// height, the window's keys, `window`, past the buttons, under the veil in
+/// the seamless look: the window's, whose drag moves it, as no node of it
+/// has a key.
+fn buttons_room(window: Option<&str>, seamless: bool) -> Node {
+    let mut children = vec![Node::container(Vec::new()).layout(Layout {
+        width: Length::Buttons,
+        ..Layout::default()
+    })];
+    children.extend(window.map(secondary));
+    Node::container(children)
+        .layout(Layout {
+            align: Align::Center,
+            height: Length::Titlebar,
+            ..Layout::default()
+        })
+        .style(Style {
+            clip: true,
+            ..if seamless { veiled() } else { Style::default() }
         })
 }
 

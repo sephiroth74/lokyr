@@ -29,7 +29,7 @@ use lokyr_text_core::{FontConfig, Size};
 use lokyr_ui_core::animation::Animations;
 use lokyr_ui_core::field::Fields;
 use lokyr_ui_core::font::Font;
-use lokyr_ui_core::layout::Layout;
+use lokyr_ui_core::layout::{Layout, Room};
 use lokyr_ui_core::list::Lists;
 use lokyr_ui_core::paint::{Shown, paint, tooltip};
 use lokyr_ui_core::pane::{self as cells, CursorLook, Selection, TextLook};
@@ -990,6 +990,10 @@ fn bar_tabs() -> Vec<TabInfo> {
     ]
 }
 
+/// The room of a titlebar of tabs over a sidebar's top, its height and
+/// the width of the window's buttons, in points.
+const SIDEBAR_ROOM: (f32, f32) = (40.0, 84.0);
+
 /// A tab bar's image: its name, its config's `style` and `position`, and
 /// the room that a window gives it, its width and its height, in points,
 /// its height its own without one.
@@ -1025,12 +1029,21 @@ fn check_tab_bar((name, style, position, (width, height)): Bar, (dark, scale): (
         ("position".to_owned(), Data::Text(position.to_owned())),
     ]));
     let keys = ["⌘1", "⌘2", "⌘3"].map(|keys| Some(keys.to_owned()));
-    let (root, _) = lokyr_tabs::tab_bar(&bar_tabs(), &keys, Some("⌥⌘1"), &config);
+    let (root, place) = lokyr_tabs::tab_bar(&bar_tabs(), &keys, Some("⌥⌘1"), &config);
     let mut tree = Tree::new();
     let changes = tree.update(&root.unwrap()).unwrap();
     let pixels = scale as f32;
     let mut layout = Layout::new(pixels);
     layout.update(&tree, &changes);
+    // A sidebar under a titlebar of tabs, and the window's buttons at its
+    // left, as macOS's are.
+    if matches!(place, lokyr_plugin_sdk::host::BarPlace::Sidebar { .. }) {
+        let room = Room {
+            titlebar: SIDEBAR_ROOM.0 * pixels,
+            buttons: SIDEBAR_ROOM.1 * pixels,
+        };
+        layout.set_room(&tree, room);
+    }
     layout.compute(
         &tree,
         Some(width * pixels),

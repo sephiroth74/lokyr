@@ -104,11 +104,23 @@ enum Content {
     Segments(Vec<(String, String)>),
 }
 
+/// The room of a window's titlebar that its buttons take, in pixels, which
+/// a view's lengths of the titlebar and of the buttons give.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Room {
+    /// The titlebar's height; 0 without one.
+    pub titlebar: f32,
+    /// The width that the buttons take at the titlebar's left; 0 without
+    /// them.
+    pub buttons: f32,
+}
+
 /// The layout of a view tree.
 pub struct Layout {
     taffy: TaffyTree<Leaf>,
     nodes: HashMap<NodeId, taffy::NodeId>,
     scale: f32,
+    room: Room,
     /// How far each scroll area is scrolled down, in pixels.
     scrolled: HashMap<NodeId, f32>,
     /// The control of each view of tabs.
@@ -122,6 +134,7 @@ impl Layout {
             taffy: TaffyTree::new(),
             nodes: HashMap::new(),
             scale,
+            room: Room::default(),
             scrolled: HashMap::new(),
             controls: HashMap::new(),
         }
@@ -145,7 +158,7 @@ impl Layout {
             let (Some(kind), Some(layout)) = (tree.kind(id), tree.layout(id)) else {
                 continue;
             };
-            let style = style_in(tree, id, style(kind, layout, self.scale));
+            let style = style_in(tree, id, style(kind, layout, self.scale, self.room));
             let made = match leaf(kind) {
                 Some(leaf) => self.taffy.new_leaf_with_context(style, leaf),
                 None => self.taffy.new_leaf(style),
@@ -161,9 +174,10 @@ impl Layout {
             else {
                 continue;
             };
-            let _ = self
-                .taffy
-                .set_style(node, style_in(tree, id, style(kind, layout, self.scale)));
+            let _ = self.taffy.set_style(
+                node,
+                style_in(tree, id, style(kind, layout, self.scale, self.room)),
+            );
             let leaf = leaf(kind);
             let kept = self.taffy.get_node_context(node).map(|kept| &kept.content);
             if kept != leaf.as_ref().map(|leaf| &leaf.content) {
@@ -184,9 +198,10 @@ impl Layout {
                 else {
                     continue;
                 };
-                let _ = self
-                    .taffy
-                    .set_style(node, style_in(tree, child, style(kind, layout, self.scale)));
+                let _ = self.taffy.set_style(
+                    node,
+                    style_in(tree, child, style(kind, layout, self.scale, self.room)),
+                );
             }
         }
         for &id in changes
@@ -316,6 +331,23 @@ impl Layout {
         self.scale
     }
 
+    /// The window's titlebar's room, of `tree`'s lengths of the titlebar and
+    /// of the buttons: every node's style anew as it changes.
+    pub fn set_room(&mut self, tree: &Tree, room: Room) {
+        if room == self.room {
+            return;
+        }
+        self.room = room;
+        for (&id, &node) in &self.nodes {
+            if let (Some(kind), Some(layout)) = (tree.kind(id), tree.layout(id)) {
+                let _ = self.taffy.set_style(
+                    node,
+                    style_in(tree, id, style(kind, layout, self.scale, room)),
+                );
+            }
+        }
+    }
+
     /// Lays out `tree` again at `scale` pixels a point, every node's style
     /// of the new scale, as its parent has it, and each scroll area as far
     /// scrolled in points as before.
@@ -329,9 +361,10 @@ impl Layout {
         self.scale = scale;
         for (&id, &node) in &self.nodes {
             if let (Some(kind), Some(layout)) = (tree.kind(id), tree.layout(id)) {
-                let _ = self
-                    .taffy
-                    .set_style(node, style_in(tree, id, style(kind, layout, scale)));
+                let _ = self.taffy.set_style(
+                    node,
+                    style_in(tree, id, style(kind, layout, scale, self.room)),
+                );
             }
         }
         for (&id, &control) in &self.controls {
@@ -364,7 +397,7 @@ impl Layout {
             return;
         };
         // The root takes the room that it is given, where it is given.
-        let mut style = style(kind, layout, self.scale);
+        let mut style = style(kind, layout, self.scale, self.room);
         if let Some(width) = width {
             style.size.width = Dimension::length(width);
         }
@@ -617,15 +650,18 @@ fn style_in(tree: &Tree, id: NodeId, mut style: Style) -> Style {
     style
 }
 
-/// `taffy`'s style of `layout`, of a node of `kind`, in pixels at `scale`:
-/// a text shrinks below its content's width, as a title too long for its
-/// room, which its box clips; a separator stretches across its parent.
-fn style(kind: &Kind, layout: &view::Layout, scale: f32) -> Style {
+/// `taffy`'s style of `layout`, of a node of `kind`, in pixels at `scale`,
+/// the lengths of the titlebar and of its buttons of `room`: a text shrinks
+/// below its content's width, as a title too long for its room, which its
+/// box clips; a separator stretches across its parent.
+fn style(kind: &Kind, layout: &view::Layout, scale: f32, room: Room) -> Style {
     let pixels = |points: f32| LengthPercentage::length(points * scale);
     let length = |length: Length| match length {
         Length::Auto => Dimension::auto(),
         Length::Points(points) => Dimension::length(points * scale),
         Length::Fraction(fraction) => Dimension::percent(fraction),
+        Length::Titlebar => Dimension::length(room.titlebar),
+        Length::Buttons => Dimension::length(room.buttons),
     };
     // A view of tabs: a column of its control and its page, inside its
     // box's room.
@@ -750,6 +786,44 @@ mod tests {
             .iter()
             .map(|&child| layout.frame(tree, child).unwrap())
             .collect()
+    }
+
+    #[test]
+    fn the_lengths_of_the_titlebar_and_its_buttons_are_the_window_s() {
+        // A band of the titlebar's height, its text past the buttons.
+        let band = Node::container(vec![
+            Node::container(Vec::new()).layout(view::Layout {
+                width: Length::Buttons,
+                ..view::Layout::default()
+            }),
+            Node::text("~").key("keys"),
+        ])
+        .layout(view::Layout {
+            height: Length::Titlebar,
+            ..view::Layout::default()
+        });
+        let (tree, mut layout, mut font) = laid(&band, 2.0, 200.0);
+        let root = tree.root().unwrap();
+        let keys = tree.children(root)[1];
+        // Of none, as in full screen, none.
+        assert_eq!(layout.frame(&tree, root).unwrap().height, 0.0);
+        assert_eq!(layout.frame(&tree, keys).unwrap().x, 0.0);
+        // Of the window's room, in pixels, whatever the scale.
+        let room = Room {
+            titlebar: 80.0,
+            buttons: 150.0,
+        };
+        layout.set_room(&tree, room);
+        layout.compute(&tree, Some(200.0), None, &mut font);
+        assert_eq!(layout.frame(&tree, root).unwrap().height, 80.0);
+        assert_eq!(layout.frame(&tree, keys).unwrap().x, 150.0);
+        // Kept through a change of the scale, which the window gives anew.
+        layout.set_scale(&tree, 1.0);
+        layout.compute(&tree, Some(100.0), None, &mut font);
+        assert_eq!(layout.frame(&tree, root).unwrap().height, 80.0);
+        layout.set_room(&tree, Room::default());
+        layout.compute(&tree, Some(100.0), None, &mut font);
+        assert_eq!(layout.frame(&tree, root).unwrap().height, 0.0);
     }
 
     #[test]

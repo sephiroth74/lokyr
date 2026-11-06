@@ -1064,7 +1064,9 @@ impl Plugins {
             .find(|entry| entry.state.name == plugin)
         {
             match &mut entry.state.bar_place {
-                host::BarPlace::Left { width: kept } | host::BarPlace::Right { width: kept } => {
+                host::BarPlace::Left { width: kept }
+                | host::BarPlace::Right { width: kept }
+                | host::BarPlace::Sidebar { width: kept } => {
                     *kept = width;
                 }
                 _ => {}

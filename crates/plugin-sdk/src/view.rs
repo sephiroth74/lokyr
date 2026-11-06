@@ -767,6 +767,15 @@ pub enum Length {
     Points(f32),
     /// A fraction of its parent's, from 0 to 1.
     Fraction(f32),
+    /// The height of the window's titlebar over its content's top, which a
+    /// slot's view that runs under it leaves to the window's buttons, as
+    /// the host gives it; 0 without one, as in full screen, and in a
+    /// panel.
+    Titlebar,
+    /// The width of the room at the titlebar's left that the window's
+    /// buttons take, as the host gives it; 0 without them, as in full
+    /// screen, and in a panel.
+    Buttons,
 }
 
 impl Node {

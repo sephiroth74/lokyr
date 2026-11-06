@@ -4,7 +4,8 @@
 //! The tab bar goes in the titlebar, past the window's buttons, under a
 //! titlebar of the window's title, across the window's bottom, below the
 //! status bar, or down a column at its left or its right, from below the
-//! titlebar to the window's bottom; the window's strip goes across the
+//! titlebar to the window's bottom, or at its left from its top, through
+//! the titlebar, as macOS's sidebars; the window's strip goes across the
 //! panes' top, over them, as it takes none of their rows; the status bar
 //! goes across the bottom of the room that a column leaves, of its view's
 //! height; a pane's header goes across the pane's top, of its view's
@@ -33,12 +34,16 @@ pub enum TabBarPlace {
     Left(f32),
     /// Down a column at the window's right, likewise.
     Right(f32),
+    /// Down a column at the window's left, of this width in pixels, from
+    /// the window's top, through the titlebar, under the window's buttons,
+    /// the panes beside it up to the window's top too.
+    Sidebar(f32),
 }
 
 impl TabBarPlace {
     /// Whether the bar goes down a column, on a side.
     pub fn is_column(self) -> bool {
-        matches!(self, Self::Left(_) | Self::Right(_))
+        matches!(self, Self::Left(_) | Self::Right(_) | Self::Sidebar(_))
     }
 }
 
@@ -80,7 +85,7 @@ pub struct Regions {
     pub status_bar: Option<Frame>,
     /// The room that the panes share: below the titlebar and a tab bar
     /// across the top, beside a column's, above the status bar and a tab
-    /// bar across the bottom.
+    /// bar across the bottom; from the window's top beside a sidebar.
     pub panes: Frame,
     /// The window's overlays', as a palette's: the panes' room and the
     /// status bar's, which the tab bar leaves.
@@ -138,6 +143,17 @@ pub fn regions(window: &Window, place: TabBarPlace, heights: Heights) -> Regions
                 y: bottom,
                 width,
                 height: bar_height,
+            }
+        }
+        TabBarPlace::Sidebar(column) => {
+            let column = column.clamp(0.0, width);
+            left = column;
+            top = 0.0;
+            Frame {
+                x: 0.0,
+                y: 0.0,
+                width: column,
+                height,
             }
         }
         TabBarPlace::Left(column) | TabBarPlace::Right(column) => {
@@ -434,6 +450,28 @@ mod tests {
             (None, frame(0.0, 40.0, 800.0, 560.0))
         );
         assert!(TabBarPlace::Left(1.0).is_column() && !TabBarPlace::Bottom.is_column());
+    }
+
+    #[test]
+    fn a_sidebar_runs_through_the_titlebar_and_the_panes_beside_it_up_to_the_top() {
+        let heights = Heights {
+            tab_bar: 1.0,
+            window_strip: 2.0,
+            status_bar: 22.0,
+        };
+        let side = regions(&WINDOW, TabBarPlace::Sidebar(200.0), heights);
+        assert_eq!(side.tab_bar, Some(frame(0.0, 0.0, 200.0, 600.0)));
+        assert_eq!(side.panes, frame(200.0, 0.0, 600.0, 578.0));
+        assert_eq!(side.window_strip, Some(frame(200.0, 0.0, 600.0, 2.0)));
+        assert_eq!(side.status_bar, Some(frame(200.0, 578.0, 600.0, 22.0)));
+        assert_eq!(side.window_overlay, frame(200.0, 0.0, 600.0, 600.0));
+        assert!(TabBarPlace::Sidebar(1.0).is_column());
+        // Of no view, the titlebar's room is the panes'.
+        let bare = regions(&WINDOW, TabBarPlace::Sidebar(200.0), Heights::default());
+        assert_eq!(
+            (bare.tab_bar, bare.panes),
+            (None, frame(0.0, 40.0, 800.0, 560.0))
+        );
     }
 
     #[test]

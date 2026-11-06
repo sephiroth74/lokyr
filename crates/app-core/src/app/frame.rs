@@ -11,6 +11,7 @@ use std::time::Instant;
 use lokyr_kernel::commands::ErrorCategory;
 use lokyr_kernel::diagnostics::About;
 use lokyr_kernel::plugins;
+use lokyr_kernel::plugins::host::BarPlace;
 use lokyr_kernel::workspace::{Direction, Grid, Layout, Pane, PaneId};
 use lokyr_platform_core::{
     Appearance, Backdrop, Blink as PlatformBlink, Easing, Layer, LayerPlace, Platform, Point,
@@ -776,10 +777,17 @@ impl<B: Backend> App<B> {
                 cells::blinking_cells(snapshot, &cell, selection.as_ref(), text, preedit, font)
             });
         // Over a backdrop, what the cells leave shows it, and the titlebar
-        // too, unless the config keeps it opaque.
+        // too, unless the config keeps it opaque; a sidebar's window shows
+        // no titlebar but its buttons, over the sidebar, and the panes
+        // beside it, up to its top.
         let laid_out = started.map(|_| Instant::now());
         let opacity = if backdrop.is_some() { 0.0 } else { 1.0 };
-        let opaque_bar = backdrop.is_some() && self.config.window.opaque_titlebar;
+        let sidebar = chrome::has_tab_bar(&state.chrome)
+            && matches!(
+                chrome::tab_bar_place(&state.chrome, &self.plugins),
+                BarPlace::Sidebar { .. }
+            );
+        let opaque_bar = backdrop.is_some() && self.config.window.opaque_titlebar && !sidebar;
         let mut items: Vec<Item> = opaque_bar
             .then(|| bar_item(size, background))
             .flatten()
@@ -875,6 +883,18 @@ impl<B: Backend> App<B> {
                 areas.push(points(&rect, PointerShape::PointingHand));
             }
         }
+        // The panes' pointer over their part of a sidebar's titlebar, the
+        // content's, under every other area.
+        let band = (size.pixels.width as f32, size.bar_pixels() as f32);
+        if let Some(part) =
+            surfaces::sidebar_titlebar_area(&state.chrome, &self.plugins, band, size.scale)
+        {
+            areas.push(PointerArea {
+                origin: part.origin,
+                size: part.size,
+                shape: state.pointer,
+            });
+        }
         if areas != state.pointer_areas {
             platform.set_pointer_areas(window, &areas);
             state.pointer_areas = areas;
@@ -883,9 +903,10 @@ impl<B: Backend> App<B> {
         // otherwise, of a bar below it, at the bottom or down a column; a
         // quick window has none.
         let titlebar = if chrome::has_tab_bar(&state.chrome)
-            && chrome::tab_bar_place(&state.chrome, &self.plugins)
-                == lokyr_kernel::plugins::host::BarPlace::Titlebar
-        {
+            && matches!(
+                chrome::tab_bar_place(&state.chrome, &self.plugins),
+                BarPlace::Titlebar | BarPlace::Sidebar { .. }
+            ) {
             Titlebar::Tabs
         } else {
             Titlebar::Titled
@@ -909,6 +930,12 @@ impl<B: Backend> App<B> {
             Vec::new()
         };
         let band = (size.pixels.width as f32, size.bar_pixels() as f32);
+        own.extend(surfaces::sidebar_titlebar_area(
+            &state.chrome,
+            &self.plugins,
+            band,
+            size.scale,
+        ));
         own.extend(surfaces::panel_titlebar_areas(state, band, size.scale));
         if own != state.titlebar_areas {
             platform.set_titlebar_areas(window, &own);

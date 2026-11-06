@@ -533,6 +533,7 @@ fn numbers(node: &Node) -> Result<(), Invalid> {
         Length::Auto => true,
         Length::Points(points) => points.is_finite() && points >= 0.0,
         Length::Fraction(fraction) => (0.0..=1.0).contains(&fraction),
+        Length::Titlebar | Length::Buttons => true,
     };
     let size = |value: f32| value.is_finite() && value >= 0.0;
     let padding = &layout.padding;

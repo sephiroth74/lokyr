@@ -356,10 +356,53 @@ fn the_tab_bar_goes_at_its_plugin_s_place_and_the_titlebar_follows() {
     let (bar, tab_bar, ..) = placed(&mut fake, &mut app, BarPlace::Titlebar);
     assert_eq!(bar, Titlebar::Tabs);
     assert_eq!(tab_bar.y, 0);
+    // A sidebar, through the titlebar, of a titlebar of tabs, the panes
+    // beside it up to the window's top, their part of the titlebar the
+    // content's, whose presses come to the app, from the column's edge.
+    let (bar, tab_bar, status, pane) =
+        placed(&mut fake, &mut app, BarPlace::Sidebar { width: 100.0 });
+    assert_eq!(bar, Titlebar::Tabs);
+    assert_eq!(
+        (
+            tab_bar.x,
+            tab_bar.y,
+            tab_bar.width as i32,
+            tab_bar.height as i32
+        ),
+        (0, 0, pixels(100.0), height)
+    );
+    assert_eq!((pane.x, pane.y), (pixels(100.0), 0));
+    assert_eq!(status.x, pixels(100.0));
+    let areas = &fake.window(window).unwrap().titlebar_areas;
+    let beside = areas
+        .iter()
+        .find(|area| area.origin.y == 0.0 && area.origin.x > 0.0)
+        .expect("the panes' part of the titlebar");
+    let near = |a: f64, b: f64| (a - b).abs() < 0.01;
+    assert!(
+        beside.origin.x > 90.0 && beside.origin.x < 100.0,
+        "{beside:?}"
+    );
+    assert!(near(beside.origin.x + beside.size.width, size.points.width));
+    assert!(near(
+        beside.size.height,
+        f64::from(titlebar as u32) / size.scale
+    ));
+    // The panes' pointer there, under the column's edge's.
+    let shown = fake.window(window).unwrap();
+    let pointed = shown
+        .pointer_areas
+        .iter()
+        .find(|area| area.origin == beside.origin && area.size == beside.size)
+        .expect("the panes' pointer over their part of the titlebar");
+    assert_eq!(pointed.shape, shown.pointer);
     // A column too wide is refused, the place staying.
     place.set(BarPlace::Left { width: 2000.0 });
     app.run(&mut fake, "bars.place", Args::new());
-    assert_eq!(app.plugins.tab_bar_place("lokyr/bars"), BarPlace::Titlebar);
+    assert_eq!(
+        app.plugins.tab_bar_place("lokyr/bars"),
+        BarPlace::Sidebar { width: 100.0 }
+    );
 }
 
 #[test]

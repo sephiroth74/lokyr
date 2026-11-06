@@ -358,7 +358,7 @@ fn the_config_puts_the_bar_at_its_place_and_keeps_a_drag_s_width() {
     host.deliver(&mut plugin).unwrap();
     assert_eq!(
         placed(host.take_done()),
-        Some(BarPlace::Left { width: 240.0 })
+        Some(BarPlace::Sidebar { width: 240.0 })
     );
     // The user's drag's width, which the state keeps for the next start.
     host.post(Event::TabBarResized { width: 300.0 });
@@ -375,7 +375,7 @@ fn the_config_puts_the_bar_at_its_place_and_keeps_a_drag_s_width() {
     next.activate(&mut again).unwrap();
     assert_eq!(
         placed(next.take_done()),
-        Some(BarPlace::Left { width: 300.0 })
+        Some(BarPlace::Sidebar { width: 300.0 })
     );
 }
 

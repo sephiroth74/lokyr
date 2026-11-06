@@ -67,10 +67,17 @@ fn the_config_gives_the_bar_its_place_and_its_look() {
         ("hide-when-single", Data::Boolean(false)),
         ("close-button", text("never")),
     ]));
-    assert_eq!(left.place(None), BarPlace::Left { width: 240.0 });
+    // On the left through the titlebar, as a sidebar, but of the standard
+    // look.
+    assert_eq!(left.place(None), BarPlace::Sidebar { width: 240.0 });
     // The user's drag's width, within the limits.
-    assert_eq!(left.place(Some(320.0)), BarPlace::Left { width: 320.0 });
-    assert_eq!(left.place(Some(5000.0)), BarPlace::Left { width: 600.0 });
+    assert_eq!(left.place(Some(320.0)), BarPlace::Sidebar { width: 320.0 });
+    assert_eq!(left.place(Some(5000.0)), BarPlace::Sidebar { width: 600.0 });
+    let standard = Settings {
+        look: Look::Standard,
+        ..left
+    };
+    assert_eq!(standard.place(None), BarPlace::Left { width: 240.0 });
     assert!(!left.show_index && !left.hide_when_single);
     assert_eq!(left.close_button, CloseButton::Never);
     let right = Settings::of(&config(&[("position", text("right"))]));
@@ -178,8 +185,43 @@ fn a_column_lays_its_tabs_down_and_a_seamless_bar_shows_the_window_s_background(
     };
     assert_eq!(radius(Look::Standard), (6.0, false));
     assert_eq!(radius(Look::Unified), (ROW / 2.0, true));
-    // The window's keys in the titlebar alone.
+    // As a sidebar, the room of the window's buttons first, of the
+    // titlebar's height, the window's keys past the buttons, of no key, as
+    // the window's drag takes it.
+    let body = &list.children;
+    let room = &body[0];
+    assert_eq!(room.layout.height, Length::Titlebar);
+    assert_eq!(room.children[0].layout.width, Length::Buttons);
+    assert_eq!(texts(room), ["⌥⌘1"]);
+    assert!(room.key.is_none() && room.children.iter().all(|child| child.key.is_none()));
+    assert_eq!(body[1].layout.grow, 1.0);
+    // Of no keys of the window's, the room alone; under the veil in the
+    // seamless look.
+    let node = bar(&tabs, &[], None, &column).unwrap();
+    assert!(texts(&node.children[0].children[0]).is_empty());
+    let seamless_side = Settings {
+        look: Look::Seamless,
+        ..column
+    };
+    let node = bar(&tabs, &[], None, &seamless_side).unwrap();
+    assert_eq!(
+        node.children[0].children[0].style.background,
+        Some(Token::from("tab.seamless.veil"))
+    );
+    // Below the titlebar, the window's keys the titlebar's.
+    let standard = Settings {
+        look: Look::Standard,
+        ..column
+    };
+    let node = bar(&tabs, &[], Some("⌥⌘1"), &standard).unwrap();
     assert!(!texts(&node).contains(&"⌥⌘1".to_owned()));
+    assert_eq!(
+        node.children[0].children[0]
+            .key
+            .as_ref()
+            .map(|key| key.0.as_str()),
+        Some("tab-1")
+    );
     let right = Settings {
         position: Position::Right,
         ..column
@@ -233,7 +275,8 @@ fn a_column_lays_its_tabs_down_and_a_seamless_bar_shows_the_window_s_background(
     assert_eq!(node.style.background, None);
     assert_eq!(keyed(&node, "tab-1").unwrap().style.background, None);
     assert_eq!(keyed(&node, "tab-2").unwrap().style.background, veil);
-    let list = &node.children[0];
+    // A sidebar's list, below the room of the window's buttons.
+    let list = node.children[0].children.last().unwrap();
     let rest = list.children.last().unwrap();
     assert_eq!(
         (rest.style.background.clone(), rest.layout.grow),

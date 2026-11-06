@@ -201,6 +201,16 @@ pub enum BarPlace {
         /// The column's width, in points.
         width: f32,
     },
+    /// Down a column at the window's left from its top, through the
+    /// titlebar, as macOS's sidebars: the window's buttons over the
+    /// column's top, which leaves them its room of
+    /// [`Length::Titlebar`](crate::view::Length::Titlebar) and
+    /// [`Length::Buttons`](crate::view::Length::Buttons), and the panes
+    /// beside it up to the window's top, the window's title hidden.
+    Sidebar {
+        /// The column's width, in points.
+        width: f32,
+    },
 }
 
 /// The narrowest and the widest that a tab bar's column is, in points.
@@ -212,7 +222,7 @@ impl BarPlace {
     pub fn check(self) -> Result<(), String> {
         let (narrowest, widest) = COLUMN_WIDTHS;
         match self {
-            Self::Left { width } | Self::Right { width }
+            Self::Left { width } | Self::Right { width } | Self::Sidebar { width }
                 if !(narrowest..=widest).contains(&width) =>
             {
                 Err(format!(
@@ -226,7 +236,7 @@ impl BarPlace {
     /// The column's width, in points, of a place on a side.
     pub fn width(self) -> Option<f32> {
         match self {
-            Self::Left { width } | Self::Right { width } => Some(width),
+            Self::Left { width } | Self::Right { width } | Self::Sidebar { width } => Some(width),
             _ => None,
         }
     }
