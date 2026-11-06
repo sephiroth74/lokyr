@@ -1161,6 +1161,51 @@ fn a_tab_s_folder_and_program_are_read_of_process_read_alone() {
 }
 
 #[test]
+fn a_tab_s_change_that_a_plugin_cannot_read_tells_it_nothing() {
+    let mut app = App::default();
+    window(&mut app, "sleep 10");
+    let shown = app.focused.unwrap();
+    let tab = app.workspace.window(shown).unwrap().active_tab();
+    let mut plugins = Plugins::new();
+    let logs = [Rc::default(), Rc::default()];
+    for ((name, capabilities), log) in
+        [("acme/blind", ""), ("acme/seeing", "process-read = true\n")]
+            .into_iter()
+            .zip(&logs)
+    {
+        let manifest = Manifest::parse(&format!(
+            "[plugin]\nname = \"{name}\"\nversion = \"1.0.0\"\nkind = \"luau\"\napi = \"^0.1\"\nlicense = \"MIT\"\n[capabilities]\n{capabilities}"
+        ))
+        .unwrap();
+        plugins
+            .add_declared(manifest, listening(&["tab-changed"], log))
+            .unwrap();
+    }
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    let deliver = |app: &mut App, plugins: &mut Plugins| {
+        for event in app.workspace.take_events() {
+            if let crate::workspace::Event::Changed(change) = event {
+                plugins.post(Event::Workspace(change));
+            }
+        }
+        assert!(plugins.deliver(&mut app.context()).is_empty());
+    };
+    // Its folder and program, which the blind plugin cannot read.
+    assert!(
+        app.workspace
+            .set_tab_place(tab, Some("src — vim".to_owned()))
+    );
+    deliver(&mut app, &mut plugins);
+    assert!(logs[0].borrow().is_empty(), "{:?}", logs[0].borrow());
+    assert_eq!(*logs[1].borrow(), ["tab-changed"]);
+    // Its own title, which both read.
+    assert!(app.workspace.set_tab_title(tab, Some("mine".to_owned())));
+    deliver(&mut app, &mut plugins);
+    assert_eq!(*logs[0].borrow(), ["tab-changed"]);
+    assert_eq!(*logs[1].borrow(), ["tab-changed", "tab-changed"]);
+}
+
+#[test]
 fn a_request_needs_its_capability() {
     let mut app = App::default();
     window(&mut app, "sleep 10");
@@ -1236,6 +1281,7 @@ fn a_call_is_its_own_plugin_s() {
             wanted: true,
             ran: true,
             bar_place: host::BarPlace::default(),
+            told_tabs: BTreeMap::new(),
         },
         Outbox::default(),
         Vec::new(),

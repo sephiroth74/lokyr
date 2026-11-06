@@ -518,13 +518,21 @@ impl FakeHost {
         self.events(plugin, &batch)
     }
 
-    /// Has `plugin` render `view`, whose tree the host keeps.
+    /// Has `plugin` render `view`, whose tree the host keeps: one that
+    /// nests past [`Node::DEEPEST`] levels it refuses, as the host does,
+    /// and gives the last.
     pub fn render(&mut self, plugin: &mut dyn Plugin, view: &ViewId) -> Option<Node> {
         let mut tree = None;
         let _ = self.call(true, |cx| {
             tree = plugin.render(cx, view);
             Ok(())
         });
+        // A tree too deep the host refuses, the last staying, as it drops
+        // it without recursion.
+        if let Some(deep) = tree.take_if(|tree| !tree.nests_within_deepest()) {
+            crate::view::dismantle(deep);
+            return self.views.get(view).cloned().flatten();
+        }
         self.views.insert(view.clone(), tree.clone());
         tree
     }

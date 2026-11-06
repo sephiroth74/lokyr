@@ -32,6 +32,18 @@ impl From<&str> for Key {
     }
 }
 
+/// Drops `node`'s tree a level at a time, without recursion, as a tree
+/// too deep for a recursive drop.
+pub fn dismantle(node: Node) {
+    let mut left = vec![node];
+    while let Some(mut node) = left.pop() {
+        left.append(&mut node.children);
+        if let Kind::List(list) = &mut node.kind {
+            left.push(std::mem::replace(&mut *list.row, Node::new(Kind::Spacer)));
+        }
+    }
+}
+
 /// A node of a view tree.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Node {
@@ -779,6 +791,27 @@ pub enum Length {
 }
 
 impl Node {
+    /// The most levels that a view tree nests, its root the first and a
+    /// list's row its own, which the host takes: a deeper one it refuses,
+    /// as it walks the trees recursively, on the main thread.
+    pub const DEEPEST: usize = 64;
+
+    /// Whether the tree nests [`Node::DEEPEST`] levels at most, which it
+    /// tells without recursion, of a tree of any depth.
+    pub fn nests_within_deepest(&self) -> bool {
+        let mut left = vec![(self, 1)];
+        while let Some((node, depth)) = left.pop() {
+            if depth > Self::DEEPEST {
+                return false;
+            }
+            left.extend(node.children.iter().map(|child| (child, depth + 1)));
+            if let Kind::List(list) = &node.kind {
+                left.push((&list.row, depth + 1));
+            }
+        }
+        true
+    }
+
     /// A node of `kind`, without a key, of the default layout, and with no
     /// children.
     pub fn new(kind: Kind) -> Self {
@@ -956,6 +989,26 @@ impl Node {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A chain of containers `depth` levels deep, a text at its end, made
+    /// without recursion.
+    fn chain(depth: usize) -> Node {
+        (1..depth).fold(Node::text("leaf"), |inner, _| Node::container(vec![inner]))
+    }
+
+    #[test]
+    fn a_tree_s_depth_is_told_and_a_deep_one_dropped_without_recursion() {
+        assert!(chain(Node::DEEPEST).nests_within_deepest());
+        assert!(!chain(Node::DEEPEST + 1).nests_within_deepest());
+        // A list's row is a level of its own.
+        let list = |row: Node| Node::list(row, 0, (0, Vec::new()));
+        assert!(!list(chain(Node::DEEPEST)).nests_within_deepest());
+        assert!(list(chain(Node::DEEPEST - 1)).nests_within_deepest());
+        // A million levels, told and dropped of no recursion.
+        let deep = chain(1_000_000);
+        assert!(!deep.nests_within_deepest());
+        dismantle(deep);
+    }
 
     #[test]
     fn a_tree_crosses_the_boundary_as_it_is() {

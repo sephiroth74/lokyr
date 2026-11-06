@@ -289,6 +289,73 @@ struct State {
     ran: bool,
     /// Where its tab bar goes in the windows that show it.
     bar_place: host::BarPlace,
+    /// Of a plugin that does not read the processes, the title and the
+    /// color of each tab as it last learned them, which a change of the
+    /// tab's folder or program, that it cannot read, leaves.
+    told_tabs: BTreeMap<host::TabId, Seen>,
+}
+
+/// A tab's title and color, as a plugin that does not read the processes
+/// sees them.
+type Seen = (String, Option<host::Color>);
+
+impl State {
+    /// Whether it reads the processes, whose folders and programs a tab's
+    /// title tells it.
+    fn reads_processes(&self) -> bool {
+        self.granted
+            .as_ref()
+            .is_none_or(|granted| granted.contains(&Capability::ProcessRead))
+    }
+
+    /// Learns the title and the color of every tab of `workspace`, as it
+    /// starts, a plugin that does not read the processes.
+    fn learn_tabs(&mut self, workspace: &Workspace) {
+        self.told_tabs.clear();
+        if self.reads_processes() {
+            return;
+        }
+        for window in workspace.windows() {
+            for &tab in window.tabs() {
+                if let Some(shown) = workspace.tab(tab) {
+                    let seen = (shown.title().to_owned(), host_color(shown.color()));
+                    self.told_tabs.insert(tab.into(), seen);
+                }
+            }
+        }
+    }
+
+    /// Whether it hears `event`, of the workspace, of the tabs that
+    /// `workspace` has: a tab's change that it cannot read it does not, as
+    /// a plugin that does not read the processes, which learns each tab's
+    /// title and color.
+    fn hears(&mut self, event: &Event, workspace: &Workspace) -> bool {
+        if self.reads_processes() {
+            return true;
+        }
+        let seen = |tab: host::TabId| {
+            workspace
+                .tab(crate::workspace::TabId::of(tab.0))
+                .map(|tab| (tab.title().to_owned(), host_color(tab.color())))
+        };
+        match event {
+            Event::Workspace(WorkspaceEvent::TabCreated { tab, .. }) => {
+                if let Some(now) = seen(*tab) {
+                    self.told_tabs.insert(*tab, now);
+                }
+                true
+            }
+            Event::Workspace(WorkspaceEvent::TabClosed { tab, .. }) => {
+                self.told_tabs.remove(tab);
+                true
+            }
+            Event::Workspace(WorkspaceEvent::TabChanged { tab }) => match seen(*tab) {
+                Some(now) => self.told_tabs.insert(*tab, now.clone()) != Some(now),
+                None => true,
+            },
+            _ => true,
+        }
+    }
 }
 
 /// A plugin's state on the disk: its file, in the app's state directory,
@@ -651,6 +718,7 @@ impl Plugins {
                 wanted: true,
                 ran: false,
                 bar_place: host::BarPlace::default(),
+                told_tabs: BTreeMap::new(),
             },
         });
         Ok(())
@@ -864,6 +932,7 @@ impl Plugins {
             }
             entry.state.status = Status::Active;
             entry.state.ran = true;
+            entry.state.learn_tabs(context.workspace);
             let Entry { runner, state, .. } = entry;
             let plugin = match runner {
                 Runner::Main(plugin) => plugin,
@@ -1237,7 +1306,7 @@ impl Plugins {
                     &mut self.out,
                     &mut self.declarations_changed,
                     "render",
-                    |plugin, cx| Ok(plugin.render(cx, view)),
+                    |plugin, cx| tree_within_depth(plugin.render(cx, view)),
                 )?;
                 state.views.insert(view.clone(), (new_id(), tree));
             }
@@ -1423,6 +1492,10 @@ impl Plugins {
                     None => subscribed.iter().any(|name| name == event.name()),
                 })
                 .map(|(_, event)| event.clone())
+                .collect();
+            let batch: Vec<Event> = batch
+                .into_iter()
+                .filter(|event| entry.state.hears(event, context.workspace))
                 .collect();
             if batch.is_empty() {
                 continue;
@@ -2598,12 +2671,7 @@ impl Host<'_, '_> {
             .is_some_and(|window| window.active_tab() == tab.id());
         // The folder and the program of its pane, to a plugin that reads
         // the processes' alone.
-        let process_read = self
-            .state
-            .granted
-            .as_ref()
-            .is_none_or(|granted| granted.contains(&Capability::ProcessRead));
-        let title = if process_read {
+        let title = if self.state.reads_processes() {
             tab.label()
         } else {
             tab.title()
@@ -2612,9 +2680,7 @@ impl Host<'_, '_> {
             id: tab.id().into(),
             window: tab.window().into(),
             title: title.to_owned(),
-            color: tab
-                .color()
-                .map(|color| host::Color::Rgb(color.r, color.g, color.b)),
+            color: host_color(tab.color()),
             active,
             panes: tab.layout().panes().into_iter().map(Into::into).collect(),
             focused: tab.active_pane().into(),
@@ -2764,12 +2830,20 @@ impl Host<'_, '_> {
             ),
             Asked::Tabs(window) => {
                 let tabs = self.window(window)?.tabs().to_vec();
-                Response::Tabs(
-                    tabs.into_iter()
-                        .filter_map(|tab| self.context.workspace.tab(tab))
-                        .map(|tab| self.tab_info(tab))
-                        .collect(),
-                )
+                let infos: Vec<host::TabInfo> = tabs
+                    .into_iter()
+                    .filter_map(|tab| self.context.workspace.tab(tab))
+                    .map(|tab| self.tab_info(tab))
+                    .collect();
+                // What it learns of each tab, of which a change that it
+                // cannot read tells it nothing.
+                if !self.state.reads_processes() {
+                    for info in &infos {
+                        let seen = (info.title.clone(), info.color);
+                        self.state.told_tabs.insert(info.id, seen);
+                    }
+                }
+                Response::Tabs(infos)
             }
             Asked::Layout(tab) => Response::Layout(layout(self.tab(tab)?.layout())),
             Asked::Config => Response::Data(self.state.config.clone()),
@@ -3225,6 +3299,27 @@ impl host::Host for Host<'_, '_> {
             ))
         };
         answered.unwrap_or_else(Response::Failed)
+    }
+}
+
+/// The color of a tab of `color`, as a plugin learns it.
+fn host_color(color: Option<lokyr_vt_core::page::Rgb>) -> Option<host::Color> {
+    color.map(|color| host::Color::Rgb(color.r, color.g, color.b))
+}
+
+/// `tree`, a plugin's render, if it nests [`Node::DEEPEST`] levels at most,
+/// as the host takes it; `failed` otherwise, the tree dropped without
+/// recursion, where the render returned it, on the plugin's own thread.
+pub(super) fn tree_within_depth(tree: Option<Node>) -> Result<Option<Node>, Error> {
+    match tree {
+        Some(tree) if !tree.nests_within_deepest() => {
+            view::dismantle(tree);
+            Err(Error::new(
+                Code::Failed,
+                format!("a plugin's view nests {} levels at most", Node::DEEPEST),
+            ))
+        }
+        tree => Ok(tree),
     }
 }
 

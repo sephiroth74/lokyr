@@ -771,3 +771,56 @@ fn a_worker_s_value_nested_too_deep_is_refused_on_its_thread() {
     );
     assert_eq!(plugins.status("acme/busy"), Some(Status::Active));
 }
+
+/// A chain of containers `depth` levels deep, a text at its end, made
+/// without recursion.
+fn chain(depth: usize) -> Node {
+    (1..depth).fold(Node::text("leaf"), |inner, _| Node::container(vec![inner]))
+}
+
+#[test]
+fn a_worker_s_view_nested_too_deep_is_refused_on_its_thread_and_the_last_stays() {
+    let mut app = App::default();
+    let window = window(&mut app, "sleep 30");
+    let renders = Arc::new(AtomicUsize::new(0));
+    let counted = Arc::clone(&renders);
+    let plugin = Threaded {
+        render: Box::new(move |_, _| {
+            Some(match counted.fetch_add(1, Ordering::Relaxed) {
+                0 => Node::text("first"),
+                1 => chain(1_000_000),
+                _ => chain(Node::DEEPEST),
+            })
+        }),
+        ..Threaded::default()
+    };
+    let (mut plugins, _) = started(&mut app, plugin);
+    let view = ViewId::StatusBar(WindowHandle(window.get()));
+    let render = |plugins: &mut Plugins, app: &mut App| {
+        plugins
+            .render("acme/busy", &view, &mut app.context())
+            .unwrap();
+        served(plugins, app)
+    };
+    render(&mut plugins, &mut app);
+    let first = plugins.rendered("acme/busy", &view).unwrap();
+    // A million levels deep, refused, of no recursion on either thread:
+    // the last tree stays, and the plugin goes on.
+    let served = render(&mut plugins, &mut app);
+    assert!(
+        served.errors.iter().any(|error| error.code == Code::Failed),
+        "{:?}",
+        served.errors
+    );
+    assert_eq!(plugins.rendered("acme/busy", &view), Some(first));
+    assert_eq!(plugins.status("acme/busy"), Some(Status::Active));
+    // At the limit, taken.
+    render(&mut plugins, &mut app);
+    assert_ne!(plugins.rendered("acme/busy", &view), Some(first));
+    assert!(
+        plugins
+            .tree("acme/busy", &view)
+            .unwrap()
+            .nests_within_deepest()
+    );
+}
