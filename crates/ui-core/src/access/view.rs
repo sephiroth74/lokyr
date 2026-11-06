@@ -203,9 +203,15 @@ impl WindowTree {
         let surface = access.surface;
         let tree = &surface.tree;
         let kind = tree.kind(id)?;
-        let label = label(tree, id, kind);
+        // A node of a key that takes a press of its style, as a tab or an
+        // icon that closes it, is a button, which accessibility presses,
+        // of its texts where it has no label.
+        let presses = crate::chrome::takes_press(tree, id)
+            && matches!(kind, Kind::Container | Kind::Text(_) | Kind::Icon(_));
+        let label = label(tree, id, kind).or_else(|| presses.then(|| texts(tree, id)).flatten());
         let role = match (kind, tree.role(id)) {
             (Kind::Spacer | Kind::Separator, _) => return None,
+            (_, None) if presses => Role::Button,
             (Kind::Icon(_), None) if label.is_none() => return None,
             (Kind::Container | Kind::Text(_) | Kind::Icon(_) | Kind::Scroll, Some(role)) => {
                 role_of(role)
@@ -244,6 +250,9 @@ impl WindowTree {
         }
         if tree.focusable(id) {
             node.add_action(AxAction::Focus);
+        }
+        if presses {
+            node.add_action(AxAction::Click);
         }
         let mut children = Vec::new();
         match kind {
@@ -352,6 +361,22 @@ fn label(tree: &Tree, id: tree::NodeId, kind: &Kind) -> Option<String> {
             _ => None,
         })
         .or_else(|| tree.tooltip(id).map(str::to_owned))
+}
+
+/// The texts of `id`'s subtree, in their order, joined, as a button of
+/// them reads; none of none.
+fn texts(tree: &Tree, id: tree::NodeId) -> Option<String> {
+    let mut found = Vec::new();
+    let mut stack = vec![id];
+    while let Some(id) = stack.pop() {
+        if let Some(Kind::Text(text)) = tree.kind(id)
+            && !text.is_empty()
+        {
+            found.push(text.clone());
+        }
+        stack.extend(tree.children(id).iter().rev());
+    }
+    (!found.is_empty()).then(|| found.join(", "))
 }
 
 /// AccessKit's role of a node's `role`.
@@ -764,6 +789,57 @@ mod tests {
             .into_iter()
             .map(|event| (event.key.0, event.kind))
             .collect()
+    }
+
+    #[test]
+    fn a_node_that_takes_a_press_of_its_style_is_a_button_that_a_client_presses() {
+        use lokyr_plugin_sdk::view::{Hover, PointerShape, Style};
+        let pressing = Style {
+            pointer: Some(PointerShape::Arrow),
+            hover: Some(Hover::default()),
+            ..Style::default()
+        };
+        // A tab of its title and its keys, its close button an icon, and a
+        // box of a key that takes no press.
+        let root = column(vec![
+            ViewNode::container(vec![
+                ViewNode::icon("close")
+                    .key("close-1")
+                    .label("Close Tab")
+                    .style(pressing.clone()),
+                ViewNode::text("lokyr — vim"),
+                ViewNode::text("⌘1"),
+            ])
+            .key("tab-1")
+            .style(pressing),
+            ViewNode::container(vec![ViewNode::text("plain")]).key("plain"),
+        ]);
+        let mut surface = surface(&root);
+        let update = tree_of(&surface, None);
+        let tab = keyed(&update, &surface, "tab-1");
+        assert_eq!(tab.role(), Role::Button);
+        assert_eq!(tab.label(), Some("lokyr — vim, ⌘1"));
+        assert!(tab.supports_action(AxAction::Click));
+        let close = keyed(&update, &surface, "close-1");
+        assert_eq!(
+            (close.role(), close.label()),
+            (Role::Button, Some("Close Tab"))
+        );
+        assert!(close.supports_action(AxAction::Click));
+        let plain = keyed(&update, &surface, "plain");
+        assert_eq!(plain.role(), Role::GenericContainer);
+        assert!(!plain.supports_action(AxAction::Click));
+        // A press of each clicks it, as the pointer's does.
+        let mut focus: Focus<u8> = Focus::new();
+        for key in ["tab-1", "close-1"] {
+            let target = node_id(3, surface.tree.by_key(&key.into()).unwrap());
+            let events = perform(
+                &request(AxAction::Click, target, None),
+                (3, &mut surface),
+                &mut focus,
+            );
+            assert_eq!(told(events), [(key.to_owned(), UiEventKind::Click)]);
+        }
     }
 
     #[test]

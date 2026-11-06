@@ -287,7 +287,7 @@ fn pressed(tree: &Tree, layout: &Layout, id: NodeId, bounds: Frame, areas: &mut 
 
 /// Whether the node `id` takes a press: of a key, and of a kind that takes
 /// one, or of a pointer, a hover or a press of its own style.
-fn takes_press(tree: &Tree, id: NodeId) -> bool {
+pub(crate) fn takes_press(tree: &Tree, id: NodeId) -> bool {
     if tree.key(id).is_none() {
         return false;
     }
