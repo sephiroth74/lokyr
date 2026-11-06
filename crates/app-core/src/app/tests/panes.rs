@@ -330,6 +330,11 @@ fn reporting(name: &str) -> Program {
 #[test]
 fn the_keyboard_s_move_tells_the_programs_and_takes_the_pane_s_title_and_color() {
     let (mut fake, mut app, window, a, b) = two_panes(reporting("a"), &reporting("b"));
+    // The reports before the test's moves: the first pane's of the
+    // window's focus, if its program asked for them before the window
+    // took it.
+    let before = |pane| screen_of(&app, pane).matches("^[[").count();
+    let before = (before(a), before(b));
     let title = |fake: &Fake| fake.window(window).unwrap().title.clone();
     let tab = |app: &App| {
         let shown = app.windows[&window].window;
@@ -366,7 +371,7 @@ fn the_keyboard_s_move_tells_the_programs_and_takes_the_pane_s_title_and_color()
         screen_of(app, a).contains("^[[O^[[I^[[O") && screen_of(app, b).contains("^[[I^[[O^[[I")
     });
     let reports = |pane| screen_of(&app, pane).matches("^[[").count();
-    assert_eq!((reports(a), reports(b)), (3, 3));
+    assert_eq!((reports(a), reports(b)), (before.0 + 3, before.1 + 3));
     assert_eq!(tab(&app), ("title-b".to_owned(), blue));
     // A pane that closes tells nothing, and the other takes its title.
     app.close_pane(&mut fake, window, b);

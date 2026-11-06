@@ -609,14 +609,19 @@ fn a_hover_fades_with_no_render_of_its_plugin() {
 fn the_chrome_takes_the_window_s_own_appearance_and_the_terminal_s_colors() {
     let drawing = Drawing::new(FontConfig::default()).unwrap();
     let mut fake = Fake::default();
-    // A program that makes its background light, in the dark appearance.
-    let program = shell("printf '\\033]11;#fdf6e3\\007'; echo ready; exec sleep 30");
+    // A program that makes its background light, in the dark appearance,
+    // once the appearance's colors are the pane's, which would take the
+    // place of its own.
+    let program =
+        shell("echo ready; read line; printf '\\033]11;#fdf6e3\\007'; echo lit; exec sleep 30");
     let mut app = App::new(Some(drawing), unpadded(), None).with_program(program);
     fake.start(&mut app);
     fake.send_app(&mut app, AppEvent::AppearanceChanged(Appearance::Dark));
     let window = fake.windows().next().unwrap();
     app.windows.get_mut(&window).unwrap().surface = Some(fakes::Surface::default());
     run_until(&mut fake, &mut app, |_, app| shows(app, window, "ready"));
+    app.pane(window).send_text("\n");
+    run_until(&mut fake, &mut app, |_, app| shows(app, window, "lit"));
     fake.send(&mut app, window, WindowEvent::Frame);
     let state = &app.windows[&window];
     let Some(((dark, background, _), tokens)) = state.chrome_tokens.as_ref() else {
