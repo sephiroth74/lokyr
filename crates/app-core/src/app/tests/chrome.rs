@@ -520,6 +520,22 @@ fn a_hover_fades_with_no_render_of_its_plugin() {
     for _ in 0..2 {
         fake.send(&mut app, window, WindowEvent::Frame);
     }
+    // The chrome's tokens of the window's look, once its pane takes the
+    // theme's colors.
+    let theme = app.colors(fake.appearance()).background;
+    let theme = lokyr_render_core::Color::from_rgb8(theme.r, theme.g, theme.b);
+    let settled = |app: &App| {
+        app.windows[&window]
+            .chrome_tokens
+            .as_ref()
+            .is_some_and(|((_, background, _), _)| *background == theme)
+    };
+    let deadline = Instant::now() + std::time::Duration::from_secs(10);
+    while !settled(&app) {
+        assert!(Instant::now() < deadline, "the window's look settles");
+        fake.deliver_wake(&mut app);
+        fake.send(&mut app, window, WindowEvent::Frame);
+    }
     let rendered = renders.get();
     assert!(rendered > 0);
     let state = &app.windows[&window];
@@ -535,8 +551,8 @@ fn a_hover_fades_with_no_render_of_its_plugin() {
         x: f64::from(bar.x) / scale + 20.0,
         y: (f64::from(bar.y) + f64::from(bar.height) / 2.0) / scale,
     };
-    let dark = fake.appearance() == lokyr_platform_core::Appearance::Dark;
-    let tokens = &app.theme.variant(dark).tokens;
+    // The tokens of the window's chrome, of its own appearance.
+    let tokens = &state.chrome_tokens.as_ref().expect("the chrome's tokens").1;
     let (inactive, veil) = (
         tokens.get("tab.bar.bg").unwrap(),
         tokens.get("tab.hover.bg").unwrap(),
@@ -587,4 +603,38 @@ fn a_hover_fades_with_no_render_of_its_plugin() {
     };
     run_until(&mut fake, &mut app, |_, app| near(&fills(app)));
     assert_eq!(renders.get(), rendered);
+}
+
+#[test]
+fn the_chrome_takes_the_window_s_own_appearance_and_the_terminal_s_colors() {
+    let drawing = Drawing::new(FontConfig::default()).unwrap();
+    let mut fake = Fake::default();
+    // A program that makes its background light, in the dark appearance.
+    let program = shell("printf '\\033]11;#fdf6e3\\007'; echo ready; exec sleep 30");
+    let mut app = App::new(Some(drawing), unpadded(), None).with_program(program);
+    fake.start(&mut app);
+    fake.send_app(&mut app, AppEvent::AppearanceChanged(Appearance::Dark));
+    let window = fake.windows().next().unwrap();
+    app.windows.get_mut(&window).unwrap().surface = Some(fakes::Surface::default());
+    run_until(&mut fake, &mut app, |_, app| shows(app, window, "ready"));
+    fake.send(&mut app, window, WindowEvent::Frame);
+    let state = &app.windows[&window];
+    let Some(((dark, background, _), tokens)) = state.chrome_tokens.as_ref() else {
+        panic!("the chrome's tokens");
+    };
+    // The light variant's tokens, as the window's own appearance, and
+    // the terminal's background the program's.
+    assert!(!dark);
+    let light = app.theme.variant(false);
+    assert_eq!(
+        tokens.get("tab.inactive.fg"),
+        light.tokens.get("tab.inactive.fg")
+    );
+    let program = lokyr_render_core::Color::from_rgb8(0xfd, 0xf6, 0xe3);
+    assert_eq!(*background, program);
+    assert_eq!(tokens.get("terminal.bg"), Some(program));
+    assert_eq!(
+        fake.window(window).unwrap().appearance,
+        Some(Appearance::Light)
+    );
 }

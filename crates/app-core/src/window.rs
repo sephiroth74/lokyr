@@ -19,9 +19,14 @@ use lokyr_ui_core::focus::{Focus, Target};
 use lokyr_ui_core::layout::Frame;
 use lokyr_ui_core::pane::Preedit;
 use lokyr_ui_core::panel::Panels;
+use lokyr_ui_core::theme::Tokens;
 use lokyr_vt_core::terminal::{SelectionShape, SelectionUnit};
 
 use crate::app::chrome::SlotView;
+
+/// What a window's chrome's tokens are of: whether its own appearance is
+/// dark, and its terminal's default background and text colors.
+pub(crate) type ChromeLook = (bool, Color, Color);
 use crate::drawing::Backend;
 use crate::mouse::{Mouse, Spot};
 use crate::notice;
@@ -187,6 +192,9 @@ pub(crate) struct Window<B: Backend> {
     /// The appearance of its own that the platform has for it, once the
     /// app gave one: `None` for the app's.
     pub(crate) own_appearance: Option<Option<Appearance>>,
+    /// The tokens that its chrome takes, of its own appearance and of its
+    /// terminal's default colors, which a change of either makes anew.
+    pub(crate) chrome_tokens: Option<(ChromeLook, Tokens)>,
     /// Whether it is hidden or covered, which draws nothing.
     pub(crate) occluded: bool,
     /// What its surface shows, as its last frame drew it: its size in
@@ -339,6 +347,7 @@ impl<B: Backend> Window<B> {
             output_at: None,
             user_title: None,
             own_appearance: None,
+            chrome_tokens: None,
             occluded: false,
             shown: None,
             chrome: Vec::new(),

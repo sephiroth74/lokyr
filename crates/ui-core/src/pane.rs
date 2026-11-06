@@ -278,6 +278,12 @@ pub fn background(snapshot: &Snapshot) -> Color {
     defaults(snapshot).1
 }
 
+/// The default text's color of `snapshot`, as [`background`] is its
+/// background's: of the program's colors, swapped by reverse video.
+pub fn foreground(snapshot: &Snapshot) -> Color {
+    defaults(snapshot).0
+}
+
 /// The grid of `snapshot`, of cells of `cell`, with its top left corner at
 /// `x` and `y`: each cell's background, and the glyph of each cell that
 /// shows a character, which `glyph` finds, through the fonts and the atlas,

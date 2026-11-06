@@ -627,6 +627,7 @@ impl<B: Backend> App<B> {
         // background, under the whole window, the titlebar too, and follows
         // it, as the theme, the program or reverse video change it.
         let background = cells::background(pane.snapshot());
+        let foreground = cells::foreground(pane.snapshot());
         let sent = state.backdrop;
         let backdrop = self.backdrop(background);
         if backdrop != sent {
@@ -674,6 +675,11 @@ impl<B: Backend> App<B> {
         let config = self.config.cursor;
         let selection_colors = self.variant(platform, window).selection;
         let dark = platform.appearance() == Appearance::Dark;
+        // The chrome of the window's own appearance, as its title is, and
+        // the terminal's colors of the pane's own, which a program, reverse
+        // video or a man page's window change.
+        let chrome_dark = own.map_or(dark, |own| own == Appearance::Dark);
+        let chrome_look = (chrome_dark, background, foreground);
         let reduced = platform.reduce_motion();
         let (Some(drawing), Some(state)) = (self.drawing.as_mut(), self.windows.get_mut(&window))
         else {
@@ -799,8 +805,22 @@ impl<B: Backend> App<B> {
             .collect();
         items.push(Item::Cells(batch));
         items.extend(other_batches.into_iter().map(Item::Cells));
-        // The slots' views over the panes, of the theme's tokens.
-        let tokens = &self.theme.variant(dark).tokens;
+        // The slots' views over the panes, of the theme's tokens of the
+        // window's look.
+        if state
+            .chrome_tokens
+            .as_ref()
+            .is_none_or(|(kept, _)| *kept != chrome_look)
+        {
+            let (dark, background, foreground) = chrome_look;
+            let mut tokens = self.theme.variant(dark).tokens.clone();
+            tokens.set("terminal.bg", background.with_alpha(1.0));
+            tokens.set("terminal.fg", foreground.with_alpha(1.0));
+            state.chrome_tokens = Some((chrome_look, tokens));
+        }
+        let Some((_, tokens)) = state.chrome_tokens.as_ref() else {
+            return;
+        };
         for view in &mut state.chrome {
             view.surface.animate(now, reduced);
         }
@@ -814,7 +834,7 @@ impl<B: Backend> App<B> {
             font,
             tokens,
             room,
-            (dark, focused_node, now),
+            (chrome_dark, focused_node, now),
         ));
         // The notice, across the panes' top, under the titlebar and the tab
         // bar.
