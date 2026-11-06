@@ -605,8 +605,8 @@ impl<'a> Cx<'a> {
         self.done(Request::SetTabBarPlace(place))
     }
 
-    /// Veils the panes that have not their tab's keyboard of their
-    /// background at `dim`, from 0, none, to 1, while the plugin runs, as
+    /// Fades the panes that have not their tab's keyboard toward their
+    /// background by `dim`, from 0, none, to 1, while the plugin runs, as
     /// this call returns.
     pub fn set_inactive_dim(&mut self, dim: f32) -> Result<(), Error> {
         self.done(Request::SetInactiveDim(dim))

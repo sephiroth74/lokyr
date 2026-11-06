@@ -1463,7 +1463,7 @@ How much the panes that have not the keyboard fade into their background, in a t
 | from `0` to `1`, whole or not | `0.15` |
 
 - `0` leaves them as they are; `1` hides their text in their background.
-- The fade is a veil of each pane's own background over its text, its colors and its images, which the app draws in the frame of the panes, of no cost past a frame's.
+- The fade brings each pane's text, its lines, its cursor and the backgrounds that its program colors toward its own background, so that a translucent window's background stays as it is; a picture keeps its colors.
 - It applies at once, as you save the file.
 
 ### `pane-titles`

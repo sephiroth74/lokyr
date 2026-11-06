@@ -71,9 +71,9 @@ struct Scene {
     /// Whether it draws shapes alone, without text, which the GPU draws
     /// the same wherever it runs.
     shapes: bool,
-    /// The veil of its background over it, as over a pane that has not the
-    /// keyboard, of this opacity.
-    veil: Option<f32>,
+    /// The share by which its colors fade toward its background, as a pane's
+    /// that has not the keyboard.
+    fade: Option<f32>,
 }
 
 /// The GPU, its renderer and a font of `POINTS` at `scale`, as a window of
@@ -158,23 +158,14 @@ impl Drawing {
         let mut y = MARGIN;
         let mut width = 0;
         for scene in scenes {
-            let (batch, color) = self.batch(scene, (MARGIN as i32, y as i32));
-            let room = lokyr_render_core::Rect {
-                x: MARGIN as i32,
-                y: y as i32,
-                width: u32::from(scene.columns) * batch.cell_width,
-                height: u32::from(scene.rows) * batch.cell_height,
-            };
-            width = width.max(room.width);
-            y += room.height;
+            let (mut batch, color) = self.batch(scene, (MARGIN as i32, y as i32));
+            if let Some(share) = scene.fade {
+                cells::fade(&mut batch, color, share);
+            }
+            width = width.max(u32::from(scene.columns) * batch.cell_width);
+            y += u32::from(scene.rows) * batch.cell_height;
             background.get_or_insert(color);
             items.push(Item::Cells(batch));
-            if let Some(veil) = scene.veil {
-                items.push(Item::Rect {
-                    rect: room,
-                    color: color.with_alpha(veil),
-                });
-            }
         }
         let (width, height) = (width + 2 * MARGIN, y + MARGIN);
         let list = DisplayList {
@@ -210,7 +201,7 @@ fn text() -> Vec<Scene> {
         cursor: None,
         selection: None,
         shapes: false,
-        veil: None,
+        fade: None,
     }]
 }
 
@@ -247,7 +238,7 @@ fn colors() -> Vec<Scene> {
         cursor: None,
         selection: None,
         shapes: false,
-        veil: None,
+        fade: None,
     }]
 }
 
@@ -268,7 +259,7 @@ fn decorations() -> Vec<Scene> {
         cursor: None,
         selection: None,
         shapes: false,
-        veil: None,
+        fade: None,
     }]
 }
 
@@ -291,7 +282,7 @@ fn cursors() -> Vec<Scene> {
         cursor: Some(shape),
         selection: None,
         shapes: false,
-        veil: None,
+        fade: None,
     })
     .collect()
 }
@@ -307,17 +298,17 @@ fn selection() -> Vec<Scene> {
         cursor: None,
         selection: Some(((2, 0), (5, 1))),
         shapes: false,
-        veil: None,
+        fade: None,
     }]
 }
 
-/// A pane's text, and the same under the veil of its background of a pane
+/// A pane's text, and the same faded toward its background, as a pane's
 /// that has not the keyboard, of the splits' default fade.
 fn dimmed() -> Vec<Scene> {
     let text = "plain \x1b[31mred\x1b[0m \x1b[1;32mbold green\x1b[0m \x1b[44m on blue \x1b[0m";
     [None, Some(0.15)]
         .into_iter()
-        .map(|veil| Scene {
+        .map(|fade| Scene {
             name: "dim",
             columns: 36,
             rows: 1,
@@ -325,7 +316,7 @@ fn dimmed() -> Vec<Scene> {
             cursor: None,
             selection: None,
             shapes: false,
-            veil,
+            fade,
         })
         .collect()
 }
@@ -351,7 +342,7 @@ fn shapes() -> Vec<Scene> {
         cursor: Some(shape),
         selection: None,
         shapes: true,
-        veil: None,
+        fade: None,
     })
     .collect();
     let lines = ["4", "4:2", "4:3", "4:4", "4:5", "9", "53"]
@@ -365,7 +356,7 @@ fn shapes() -> Vec<Scene> {
         cursor: None,
         selection: None,
         shapes: true,
-        veil: None,
+        fade: None,
     });
     scenes
 }

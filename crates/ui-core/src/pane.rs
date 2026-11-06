@@ -1277,6 +1277,36 @@ fn style_colors(
     }
 }
 
+/// Fades `batch`, of a pane that has not the keyboard, toward its default
+/// background `toward` by `share`, from 0, not at all, to 1: its text, its
+/// lines, its cursor and its cells' own backgrounds, each of its own
+/// opacity, so that the cells of the default background stay clear over a
+/// translucent window, as a rectangle over them would not.
+pub fn fade(batch: &mut CellBatch, toward: Color, share: f32) {
+    let share = share.clamp(0.0, 1.0);
+    if share <= 0.0 {
+        return;
+    }
+    let faded = |color: Color| Color {
+        red: color.red + (toward.red - color.red) * share,
+        green: color.green + (toward.green - color.green) * share,
+        blue: color.blue + (toward.blue - color.blue) * share,
+        alpha: color.alpha,
+    };
+    for background in &mut batch.backgrounds {
+        *background = faded(*background);
+    }
+    for glyph in &mut batch.glyphs {
+        glyph.color = faded(glyph.color);
+    }
+    for line in &mut batch.lines {
+        line.color = faded(line.color);
+    }
+    if let Some(cursor) = &mut batch.cursor {
+        cursor.color = faded(cursor.color);
+    }
+}
+
 /// The color halfway between `a` and `b`, in the encoded space, where the
 /// text blends.
 fn mix(a: Color, b: Color) -> Color {

@@ -513,8 +513,8 @@ type Cx = {
     pane_grid: (pane: PaneId) -> ({ columns: number, rows: number }?, Error?),
     -- A pane's title, as its header shows it: its program's, or, of `process-read`, its folder and its program.
     pane_title: (pane: PaneId) -> (string?, Error?),
-    -- The panes that have not their tab's keyboard, of a tab of more than one, under a veil of their background of
-    -- this share, from 0 to 1, while the plugin runs; the most that the plugins ask for.
+    -- The panes that have not their tab's keyboard, of a tab of more than one, faded toward their background by this
+    -- share, from 0 to 1, their text, lines and cells' backgrounds, while the plugin runs; the most that the plugins ask.
     set_inactive_dim: (dim: number) -> (boolean, Error?),
     -- The keyboard goes to the pane that the pointer comes over, while the plugin runs, as any plugin asks.
     set_focus_follows_mouse: (on: boolean) -> (boolean, Error?),

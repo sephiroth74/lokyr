@@ -297,7 +297,7 @@ fn tabs(world: &World) -> Scenario {
                     },
                     Response::Done,
                 ),
-                // The panes' veil, of a share, and the keyboard that follows
+                // The panes' fade, of a share, and the keyboard that follows
                 // the pointer, and back.
                 (Request::SetInactiveDim(0.15), Response::Done),
                 (

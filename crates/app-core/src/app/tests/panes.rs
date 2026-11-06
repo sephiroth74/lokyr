@@ -602,38 +602,66 @@ fn a_divider_s_drag_resizes_the_programs_at_the_resizes_pace() {
 }
 
 #[test]
-fn the_panes_without_the_keyboard_fade_under_a_veil_of_their_background() {
-    let (mut fake, mut app, window, a, b) =
-        two_panes_of(unpadded(), echoing("a"), &echoing("b"), true);
-    let focused = app.focused(window).unwrap();
-    let other = if focused == a { b } else { a };
-    fake.send(&mut app, window, WindowEvent::Frame);
-    let state = &app.windows[&window];
-    let room = |pane: PaneId| {
-        state
-            .views
+fn the_panes_without_the_keyboard_fade_toward_their_background() {
+    // The lightest of the colors of the text of the pane without the
+    // keyboard, `ready-`'s, of the default foreground, and its background,
+    // of `config`; and whether a rectangle covers a pane.
+    let text_of = |config: Config| {
+        let (mut fake, mut app, window, a, b) =
+            two_panes_of(config, echoing("a"), &echoing("b"), true);
+        let focused = app.focused(window).unwrap();
+        let other = if focused == a { b } else { a };
+        fake.send(&mut app, window, WindowEvent::Frame);
+        let state = &app.windows[&window];
+        let room = |pane: PaneId| {
+            state
+                .views
+                .iter()
+                .find(|view| view.pane == pane)
+                .map(|view| view.rect)
+                .unwrap()
+        };
+        let items = &state.shown.as_ref().expect("a frame").items;
+        let color = items
             .iter()
-            .find(|view| view.pane == pane)
-            .map(|view| view.rect)
-            .unwrap()
+            .rev()
+            .find_map(|item| match item {
+                Item::Cells(batch) if (batch.x, batch.y) == (room(other).x, room(other).y) => batch
+                    .glyphs
+                    .iter()
+                    .map(|glyph| glyph.color)
+                    .max_by(|a, b| a.red.total_cmp(&b.red)),
+                _ => None,
+            })
+            .expect("the pane's text");
+        let background =
+            lokyr_ui_core::pane::background(app.workspace.pane(other).unwrap().snapshot());
+        let veiled = items.iter().any(|item| {
+            matches!(item, Item::Rect { rect, .. } if *rect == room(other) || *rect == room(focused))
+        });
+        (color, background, veiled)
     };
-    let veils: Vec<(Rect, f32)> = state
-        .shown
-        .as_ref()
-        .expect("a frame")
-        .items
-        .iter()
-        .filter_map(|item| match item {
-            Item::Rect { rect, color } if *rect == room(other) || *rect == room(focused) => {
-                Some((*rect, color.alpha))
-            }
-            _ => None,
-        })
-        .collect();
-    // Of the splits' default fade, over the other pane alone.
-    assert_eq!(veils.len(), 1, "{veils:?}");
-    assert_eq!(veils[0].0, room(other));
-    assert!((veils[0].1 - 0.15).abs() < 1e-6, "{veils:?}");
+    let mut plain = Config::parse(
+        "[plugins.splits]\ndim-inactive = 0\n",
+        std::path::Path::new("config.toml"),
+    )
+    .unwrap();
+    plain.window = unpadded().window;
+    let (shown, _, _) = text_of(plain);
+    let (faded, background, veiled) = text_of(unpadded());
+    // Of the splits' default fade, toward the background, of the same
+    // opacity, and no rectangle over it.
+    let toward = |of: f32, to: f32| of + (to - of) * 0.15;
+    assert!(
+        (faded.red - toward(shown.red, background.red)).abs() < 1e-5,
+        "{faded:?} {shown:?}"
+    );
+    assert!(
+        (faded.blue - toward(shown.blue, background.blue)).abs() < 1e-5,
+        "{faded:?}"
+    );
+    assert_eq!(faded.alpha, shown.alpha);
+    assert!(!veiled);
 }
 
 #[test]

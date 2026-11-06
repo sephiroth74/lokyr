@@ -269,9 +269,11 @@ pub enum Request {
     /// place of the place before, as its config says: a plugin that fills
     /// no tab bar puts it nowhere.
     SetTabBarPlace(BarPlace),
-    /// Veils the panes that have not their tab's keyboard, of a tab of more
-    /// than one, of their background at `dim`, a share from 0, none, to 1,
-    /// while the plugin runs: the most that the plugins ask for.
+    /// Fades the panes that have not their tab's keyboard, of a tab of more
+    /// than one, toward their background by `dim`, a share from 0, none, to
+    /// 1: their text's colors, their lines and their cells' own
+    /// backgrounds, while the plugin runs; the most that the plugins ask
+    /// for.
     SetInactiveDim(f32),
     /// Gives the keyboard to the pane of a tab that the pointer comes over,
     /// while the plugin runs, as any plugin asks it.

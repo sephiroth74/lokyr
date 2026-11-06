@@ -456,9 +456,9 @@ impl<B: Backend> App<B> {
             .collect();
         let font = &mut drawing.font;
         font.collect_missing(GLYPHS_BUDGET.0, GLYPHS_BUDGET.1);
-        let mut batches = other_cells(&panes, &cell, selection_colors, hollow, text, font);
+        let mut batches = other_cells(&panes, &cell, selection_colors, hollow, text, 0.0, font);
         if font.draw_pending() {
-            batches = other_cells(&panes, &cell, selection_colors, hollow, text, font);
+            batches = other_cells(&panes, &cell, selection_colors, hollow, text, 0.0, font);
         }
         let list = DisplayList {
             background,
@@ -816,6 +816,9 @@ impl<B: Backend> App<B> {
             shape: CursorShape::Hollow,
             thickness: config.thickness(&cell, size.scale as f32),
         };
+        // How much the panes that have not the keyboard fade, as the plugins
+        // ask.
+        let dim = self.plugins.inactive_dim();
         font.collect_missing(GLYPHS_BUDGET.0, GLYPHS_BUDGET.1);
         let mut batch = cells::cells_with(
             snapshot,
@@ -826,7 +829,8 @@ impl<B: Backend> App<B> {
             look,
             font,
         );
-        let mut other_batches = other_cells(&others, &cell, selection_colors, hollow, text, font);
+        let mut other_batches =
+            other_cells(&others, &cell, selection_colors, hollow, text, dim, font);
         if font.draw_pending() {
             batch = cells::cells_with(
                 snapshot,
@@ -837,7 +841,7 @@ impl<B: Backend> App<B> {
                 look,
                 font,
             );
-            other_batches = other_cells(&others, &cell, selection_colors, hollow, text, font);
+            other_batches = other_cells(&others, &cell, selection_colors, hollow, text, dim, font);
         }
         // The plugins' decorations over the text, under the composition.
         cells::decorate(&mut batch, snapshot, &cell);
@@ -877,25 +881,6 @@ impl<B: Backend> App<B> {
             .collect();
         items.push(Item::Cells(batch));
         items.extend(other_batches.into_iter().map(Item::Cells));
-        // The panes that have not the keyboard, under a veil of their own
-        // background, as the plugins ask; the padding round them is of that
-        // background already.
-        let dim = self.plugins.inactive_dim();
-        if dim > 0.0 && views.len() > 1 {
-            items.extend(
-                views
-                    .iter()
-                    .filter(|view| view.pane != active)
-                    .filter_map(|view| {
-                        let pane = self.workspace.pane(view.pane)?;
-                        let veil = cells::background(pane.snapshot()).with_alpha(dim);
-                        Some(Item::Rect {
-                            rect: view.rect,
-                            color: veil,
-                        })
-                    }),
-            );
-        }
         // The slots' views over the panes, of the theme's tokens of the
         // window's look.
         if state
@@ -1328,6 +1313,7 @@ fn other_cells(
     colors: SelectionColors,
     cursor: CursorLook,
     text: TextConfig,
+    dim: f32,
     font: &mut dyn cells::Glyphs,
 ) -> Vec<CellBatch> {
     let look = TextLook {
@@ -1355,6 +1341,9 @@ fn other_cells(
                 font,
             );
             cells::decorate(&mut batch, snapshot, cell);
+            // Faded toward its background, as the plugins ask of a pane
+            // that has not the keyboard.
+            cells::fade(&mut batch, cells::background(snapshot), dim);
             batch
         })
         .collect()

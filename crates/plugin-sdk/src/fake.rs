@@ -228,7 +228,7 @@ pub struct FakeHost {
     bar_place: BarPlace,
     /// The places of the plugin's tab bar of windows of their own.
     window_bar_places: BTreeMap<WindowId, BarPlace>,
-    /// The veil of the panes that have not the keyboard, and whether the
+    /// The fade of the panes that have not the keyboard, and whether the
     /// keyboard follows the pointer, as the plugin asked.
     inactive_dim: f32,
     focus_follows_mouse: bool,
@@ -446,7 +446,7 @@ impl FakeHost {
             .unwrap_or(self.bar_place)
     }
 
-    /// The veil of the panes that have not the keyboard that the plugin
+    /// The fade of the panes that have not the keyboard that the plugin
     /// asked for, and whether the keyboard follows the pointer.
     pub fn pane_looks(&self) -> (f32, bool) {
         (self.inactive_dim, self.focus_follows_mouse)

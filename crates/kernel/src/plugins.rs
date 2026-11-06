@@ -308,7 +308,7 @@ struct State {
     ran: bool,
     /// Where its tab bar goes in the windows that show it.
     bar_place: host::BarPlace,
-    /// The veil of the panes that have not the keyboard that it asked for,
+    /// The fade of the panes that have not the keyboard that it asked for,
     /// and whether it asked that the keyboard follow the pointer.
     dim: f32,
     follows: bool,
@@ -1144,7 +1144,7 @@ impl Plugins {
         commands
     }
 
-    /// The veil of the panes that have not their tab's keyboard, of their
+    /// The fade of the panes that have not their tab's keyboard, toward their
     /// background, from 0 to 1: the most that the active plugins asked for.
     pub fn inactive_dim(&self) -> f32 {
         self.entries
