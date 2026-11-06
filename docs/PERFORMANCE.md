@@ -13,7 +13,7 @@
 
 ## Budgets
 
-Figures are for Apple Silicon (M-series), release builds. They are targets to confirm with the F2 prototype. If one turns out to be unrealistic, changing it is an explicit decision, never a silent one. The [F0 baseline](bench/baseline-F0.md) of existing terminals revised the startup, footprint and idle budgets.
+Figures are for Apple Silicon (M-series), release builds. They are targets to confirm with the F2 prototype. If one turns out to be unrealistic, changing it is an explicit decision, never a silent one. The [F0 baseline](bench/baseline-F0.md) of existing terminals revised the startup, footprint and idle budgets. Every release's measures stand side by side in [the releases' table](bench/RELEASES.md), with the features that each brought and what they cost.
 
 | Metric | Target | How it is measured |
 |---|---|---|
