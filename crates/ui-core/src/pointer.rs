@@ -13,7 +13,7 @@
 //! Places are in pixels from the root's top left corner, as the layout's
 //! frames are.
 
-use lokyr_plugin_sdk::view::{self, Key, Kind, PointerShape, UiEventKind};
+use lokyr_plugin_sdk::view::{self, Key, Kind, PointerShape, ProgressShape, UiEventKind};
 use lokyr_render_core::Rect;
 
 use crate::layout::{Frame, Layout};
@@ -87,8 +87,9 @@ fn hit_node(
     at: (f32, f32),
     path: &mut Vec<NodeId>,
 ) -> bool {
-    // Nothing within a clip that `at` is outside of is hit.
-    if clip.is_some_and(|clip| !contains(clip, at)) {
+    // Nothing within a clip that `at` is outside of is hit; nor an outline,
+    // which the pointer goes through to its parent's children under it.
+    if clip.is_some_and(|clip| !contains(clip, at)) || is_outline(tree, id) {
         return false;
     }
     let (Some(local), Some(style)) = (layout.local(id), tree.style(id)) else {
@@ -591,6 +592,14 @@ fn within(inner: Rect, outer: Rect) -> bool {
             && inner.y >= outer.y
             && right(inner) <= right(outer)
             && bottom(inner) <= bottom(outer))
+}
+
+/// Whether `id` is a progress of its parent's outline.
+fn is_outline(tree: &Tree, id: NodeId) -> bool {
+    matches!(
+        tree.kind(id),
+        Some(Kind::Progress(progress)) if progress.shape == ProgressShape::Outline
+    )
 }
 
 #[cfg(test)]
@@ -1250,6 +1259,31 @@ mod tests {
             ..view::Layout::default()
         });
         column.key("column")
+    }
+
+    #[test]
+    fn the_pointer_goes_through_an_outline_to_its_parent_s_children() {
+        // The first tab of an outline over its title and its close.
+        let mut root = bar();
+        root.children[0]
+            .children
+            .push(Node::new(Kind::Progress(view::Progress {
+                shape: ProgressShape::Outline,
+                value: 0.5,
+                ..view::Progress::default()
+            })));
+        let (tree, layout) = laid(&root, 1.0);
+        let close = layout.frame(&tree, find(&tree, "one.close")).unwrap();
+        let at = (close.x + 2.0, close.y + 2.0);
+        assert_eq!(
+            keys(&tree, &layout, at).last().map(String::as_str),
+            Some("one.close")
+        );
+        let mut pointer = Pointer::new();
+        pointer.pressed(&tree, &layout, at, Button::Primary);
+        let events = pointer.released(&tree, &layout, at, Button::Primary, 1);
+        assert_eq!(told(&events), [("one.close", Click)]);
+        areas_agree(&tree, &layout, (220, 40));
     }
 
     #[test]

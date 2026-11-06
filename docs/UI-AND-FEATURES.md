@@ -130,13 +130,13 @@ The `tabs` plugin. Each window's tab list lives in the kernel. The plugin handle
   3. the foreground process plus cwd.
 - **Shortcut**, as the user asked on 4 November 2026, after iTerm2's: on each of the first nine tabs, the keys that select it, `tabs.goto` of its index, as the keymap binds them and the platform writes them, ⌘1 to ⌘9 by default, so that a binding of the user's shows as it is; none on a tab of no binding (optional, `show-index`).
 - **New tab**: a button at the end of the tabs, as iTerm2's.
-- **Indicators**:
-  - activity (new output in a hidden tab);
-  - bell;
-  - progress (OSC 9;4);
-  - running process;
-  - an AI agent's state: working, waiting or done ([Agents](#agents));
-  - protected input (Secure Keyboard Entry), which the window's title shows as a 🔒 until the tabs come.
+- **Indicators**, before the title, each of what VoiceOver calls it, as the host tells them of each tab, which its showing clears of what came while it hid:
+  - activity, new output in a hidden tab: a dot of the accent's color;
+  - bell, rung in a hidden tab: a bell;
+  - progress, OSC 9;4's, of the tab's active pane or another: the tab's outline, filled from its left along its top and its bottom at once as far as its percentage, of its state's color, as the window's strip fills; a failure or a pause of no percentage full; one of no known end a segment that runs round it;
+  - running process, a program other than a shell in the tab's foreground, to a plugin that reads the processes: a ring, which the activity's dot takes the place of;
+  - an AI agent's state ([Agents](#agents)): working, a sparkle of the accent's color; waiting, an `i` of the paused yellow; done, a check;
+  - protected input (Secure Keyboard Entry), of the tab that shows in the window with the focus: a lock, which the window's title leaves to the tab bar where one shows, and keeps as a 🔒 where none does.
 - **Close button**: always visible, on hover only, or never. Closing asks for confirmation if a process other than the shell is running.
 
 ### Interaction

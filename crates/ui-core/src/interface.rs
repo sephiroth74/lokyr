@@ -144,6 +144,7 @@ const ICONS: &[(&str, char)] = &[
     ("folder", '\u{ea83}'),
     ("history", '\u{ea82}'),
     ("info", '\u{ea74}'),
+    ("lock", '\u{ea75}'),
     ("pin", '\u{eb2b}'),
     ("regex", '\u{eb38}'),
     ("replace", '\u{eb3d}'),

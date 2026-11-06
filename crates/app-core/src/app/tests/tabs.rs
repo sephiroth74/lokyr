@@ -457,3 +457,44 @@ fn the_protected_input_leaves_the_title_for_its_tab_where_a_tab_bar_shows() {
         .collect();
     assert_eq!(marked, [false, false, true]);
 }
+
+/// The labels of the nodes of `window`'s bar under the tab `id`.
+fn labels_of(app: &App, window: WindowId, id: u64) -> Vec<String> {
+    let Some(view) = bar(app, window) else {
+        return Vec::new();
+    };
+    let tree = &view.surface.tree;
+    let Some(tab) = tree.by_key(&tab_key(id).as_str().into()) else {
+        return Vec::new();
+    };
+    let mut labels = Vec::new();
+    let mut left = vec![tab];
+    while let Some(node) = left.pop() {
+        labels.extend(tree.label(node).map(str::to_owned));
+        left.extend(tree.children(node).iter().rev().copied());
+    }
+    labels
+}
+
+#[test]
+fn a_hidden_tab_s_output_marks_it_on_the_bar_until_it_shows() {
+    let none = Modifiers::NONE;
+    let (mut fake, mut app, window) = three_tabs("unified", "top");
+    let ids = order(&app, window);
+    let shown = app.workspace.window(app.windows[&window].window).unwrap();
+    let first = shown.tabs()[0];
+    let pane = app.workspace.tab(first).unwrap().active_pane();
+    // Its program echoes a key while the third tab shows.
+    app.workspace.pane(pane).unwrap().text("x");
+    run_until(&mut fake, &mut app, |_, app| {
+        labels_of(app, window, ids[0]).contains(&"New Output".to_owned())
+    });
+    // Shown, it is seen.
+    let at = middle_of(&fake, &app, window, &tab_key(ids[0]));
+    fake.send(&mut app, window, click(true, at, none, 1));
+    fake.send(&mut app, window, click(false, at, none, 1));
+    run_until(&mut fake, &mut app, |_, app| {
+        active(app, window) == ids[0]
+            && !labels_of(app, window, ids[0]).contains(&"New Output".to_owned())
+    });
+}

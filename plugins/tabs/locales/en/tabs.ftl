@@ -22,3 +22,14 @@ bar-new-tab = New Tab
 bar-close-tab = Close Tab
 bar-untitled = Tab { $index }
 bar-close-others = Close Other Tabs
+
+# What accessibility calls a tab's marks: the output that came while it
+# did not show, its bell, a program that runs, the protected input, and
+# its agent's states.
+bar-mark-activity = New Output
+bar-mark-bell = Bell
+bar-mark-running = Running
+bar-mark-secure = Secure Keyboard Entry
+bar-mark-working = Agent Working
+bar-mark-waiting = Agent Waiting
+bar-mark-done = Agent Done

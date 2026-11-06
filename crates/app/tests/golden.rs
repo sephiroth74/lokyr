@@ -1003,14 +1003,15 @@ const SIDEBAR_ROOM: (f32, f32) = (40.0, 84.0);
 
 /// The tabs of a bar's image: the three of [`bar_tabs`], of the keys of
 /// the default bindings; one alone, which the config shows a bar for;
-/// twelve, more than the keys' nine; or the three, of keys of the user's
-/// bindings, one of none.
+/// twelve, more than the keys' nine; the three, of keys of the user's
+/// bindings, one of none; or four of their marks.
 #[derive(Clone, Copy)]
 enum BarTabs {
     Three,
     One,
     Many,
     Bound,
+    Marked,
 }
 
 /// A bar's tabs, the keys of each, and the config's keys past the look's.
@@ -1078,6 +1079,47 @@ impl BarTabs {
                 let keys = vec![Some("⌃1".to_owned()), Some("⌥⌘2".to_owned()), None];
                 (bar_tabs(), keys, Vec::new())
             }
+            Self::Marked => {
+                use lokyr_plugin_sdk::host::{AgentState, TabProgress};
+                use lokyr_plugin_sdk::view::ProgressState;
+                let mut tabs = bar_tabs();
+                // The first: output and a bell while it did not show, and
+                // its program's progress, 40 percent.
+                tabs[0].activity = true;
+                tabs[0].bell = true;
+                tabs[0].progress = Some(TabProgress {
+                    state: ProgressState::Normal,
+                    value: Some(0.4),
+                });
+                // The active one: the protected input, of a program that
+                // runs.
+                tabs[1].secure = true;
+                tabs[1].running = true;
+                // The third: an agent that waits, whose task failed.
+                tabs[2].agent = Some(AgentState::Waiting);
+                tabs[2].progress = Some(TabProgress {
+                    state: ProgressState::Error,
+                    value: Some(0.7),
+                });
+                // A fourth: an agent at work, of no known end.
+                let mut working = bar_tabs().swap_remove(1);
+                working.id = TabId(4);
+                working.title = "claude".to_owned();
+                working.active = false;
+                working.agent = Some(AgentState::Working);
+                working.progress = Some(TabProgress {
+                    state: ProgressState::Paused,
+                    value: Some(0.55),
+                });
+                tabs.push(working);
+                let keys = vec![
+                    Some("⌘1".to_owned()),
+                    Some("⌘2".to_owned()),
+                    Some("⌘3".to_owned()),
+                    Some("⌘4".to_owned()),
+                ];
+                (tabs, keys, Vec::new())
+            }
         }
     }
 }
@@ -1097,7 +1139,7 @@ type Bar = (
 /// `[plugins.tabs]` asks for them, of their width and, in the titlebar and
 /// down a column, of their height, in points, the pointer over the third
 /// tab; a single tab, many, and the keys of the user's bindings.
-const BARS: [Bar; 20] = [
+const BARS: [Bar; 23] = [
     (
         "standard-top",
         "standard",
@@ -1231,6 +1273,29 @@ const BARS: [Bar; 20] = [
         "top",
         (640.0, None),
         BarTabs::Three,
+    ),
+    // The tabs' marks: what came while they did not show, what runs, the
+    // protected input, agents' states and programs' progress.
+    (
+        "unified-marks",
+        "unified",
+        "top",
+        (640.0, Some(40.0)),
+        BarTabs::Marked,
+    ),
+    (
+        "seamless-marks",
+        "seamless",
+        "top",
+        (640.0, Some(40.0)),
+        BarTabs::Marked,
+    ),
+    (
+        "unified-left-marks",
+        "unified",
+        "left",
+        (200.0, Some(200.0)),
+        BarTabs::Marked,
     ),
     // More rows than the column holds, which scroll.
     (

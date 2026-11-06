@@ -72,6 +72,17 @@ const NEW_TAB: &str = "bar-new-tab";
 const CLOSE_TAB: &str = "bar-close-tab";
 const UNTITLED: &str = "bar-untitled";
 
+/// The messages of what accessibility calls a tab's marks.
+const MARKS: [&str; 7] = [
+    "bar-mark-activity",
+    "bar-mark-bell",
+    "bar-mark-running",
+    "bar-mark-secure",
+    "bar-mark-working",
+    "bar-mark-waiting",
+    "bar-mark-done",
+];
+
 static CATALOGS: [(&str, &str); 2] = [
     ("en", include_str!("../locales/en/tabs.ftl")),
     ("it", include_str!("../locales/it/tabs.ftl")),
@@ -449,7 +460,21 @@ impl Tabs {
             cx.message(id, args).ok().filter(|text| text != id)
         };
         let english = bar::BarTexts::default();
+        let marked = |cx: &mut Cx<'_>, at: usize, english: String| {
+            message(cx, MARKS[at], &[]).unwrap_or(english)
+        };
+        let marks = english.marks.clone();
+        let marks = bar::MarkTexts {
+            activity: marked(cx, 0, marks.activity),
+            bell: marked(cx, 1, marks.bell),
+            running: marked(cx, 2, marks.running),
+            secure: marked(cx, 3, marks.secure),
+            working: marked(cx, 4, marks.working),
+            waiting: marked(cx, 5, marks.waiting),
+            done: marked(cx, 6, marks.done),
+        };
         let texts = bar::BarTexts {
+            marks,
             new_tab: message(cx, NEW_TAB, &[]).unwrap_or(english.new_tab),
             close_tab: message(cx, CLOSE_TAB, &[]).unwrap_or(english.close_tab),
             untitled: (1..)

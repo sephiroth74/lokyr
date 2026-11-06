@@ -33,11 +33,11 @@
 
 use std::collections::BTreeMap;
 
-use lokyr_plugin_sdk::host::{BarPlace, COLUMN_WIDTHS, Color, TabInfo};
+use lokyr_plugin_sdk::host::{AgentState, BarPlace, COLUMN_WIDTHS, Color, TabInfo};
 use lokyr_plugin_sdk::message::Data;
 use lokyr_plugin_sdk::view::{
-    Align, Border, Direction, Easing, Edges, Hover, Justify, Layout, Length, Node, PointerShape,
-    Shadow, Style, Token, Transition,
+    Align, Border, Direction, Easing, Edges, Hover, Justify, Kind, Layout, Length, Node,
+    PointerShape, Progress, ProgressShape, ProgressState, Shadow, Style, Token, Transition,
 };
 
 /// Where the bar goes, of the config's `position`.
@@ -193,6 +193,9 @@ const FADE: f32 = 0.15;
 /// unified look.
 const PILL: f32 = 24.0;
 
+/// The thickness of a tab's outline of its program's progress, in points.
+const OUTLINE: f32 = 2.0;
+
 /// The room between the track's edge and its pills, and between two, in
 /// points.
 const INSET: f32 = 2.0;
@@ -237,6 +240,7 @@ pub(crate) struct BarTexts {
     pub(crate) new_tab: String,
     pub(crate) close_tab: String,
     pub(crate) untitled: BTreeMap<usize, String>,
+    pub(crate) marks: MarkTexts,
 }
 
 impl Default for BarTexts {
@@ -245,6 +249,35 @@ impl Default for BarTexts {
             new_tab: "New Tab".to_owned(),
             close_tab: "Close Tab".to_owned(),
             untitled: BTreeMap::new(),
+            marks: MarkTexts::default(),
+        }
+    }
+}
+
+/// What accessibility calls a tab's marks: the output that came while it
+/// did not show, its bell, a program that runs, the protected input, and
+/// its agent's states; English's by default.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct MarkTexts {
+    pub(crate) activity: String,
+    pub(crate) bell: String,
+    pub(crate) running: String,
+    pub(crate) secure: String,
+    pub(crate) working: String,
+    pub(crate) waiting: String,
+    pub(crate) done: String,
+}
+
+impl Default for MarkTexts {
+    fn default() -> Self {
+        Self {
+            activity: "New Output".to_owned(),
+            bell: "Bell".to_owned(),
+            running: "Running".to_owned(),
+            secure: "Secure Keyboard Entry".to_owned(),
+            working: "Agent Working".to_owned(),
+            waiting: "Agent Waiting".to_owned(),
+            done: "Agent Done".to_owned(),
         }
     }
 }
@@ -385,6 +418,7 @@ fn pills(tabs: &[Shown<'_>], window: Option<&str>, (settings, texts): BarOf<'_>)
 fn pill(tab: &Shown<'_>, (settings, texts): BarOf<'_>) -> Node {
     let mut middle = Vec::new();
     middle.extend(dot(tab.tab.color));
+    middle.extend(marks(tab.tab, &texts.marks));
     middle.push(Node::text(tab.title.as_str()));
     middle.extend(tab.keys.map(keys));
     let middle = Node::container(middle)
@@ -410,7 +444,7 @@ fn pill(tab: &Shown<'_>, (settings, texts): BarOf<'_>) -> Node {
         }
     };
     let ends = settings.close_button != CloseButton::Never;
-    let children = if ends {
+    let mut children = if ends {
         vec![
             close_button(tab.tab.id.0, settings.close_button, texts),
             middle,
@@ -419,6 +453,7 @@ fn pill(tab: &Shown<'_>, (settings, texts): BarOf<'_>) -> Node {
     } else {
         vec![middle]
     };
+    children.extend(outline(tab.tab));
     Node::container(children)
         .key(tab_key(tab.tab.id.0).as_str())
         .carries(tab.tab.id)
@@ -556,9 +591,11 @@ fn cell(tab: &Shown<'_>, top: bool, (settings, texts): BarOf<'_>) -> Node {
     if settings.close_button != CloseButton::Never {
         children.push(close_button(tab.tab.id.0, settings.close_button, texts));
     }
+    children.extend(marks(tab.tab, &texts.marks));
     children.push(title);
     children.extend(dot(tab.tab.color));
     children.extend(tab.keys.map(keys));
+    children.extend(outline(tab.tab));
     let content = Node::container(children).layout(Layout {
         gap: 6.0,
         align: Align::Center,
@@ -746,11 +783,13 @@ fn row(tab: &Shown<'_>, (settings, texts): BarOf<'_>) -> Node {
     if settings.close_button != CloseButton::Never {
         children.push(close_button(tab.tab.id.0, settings.close_button, texts));
     }
+    children.extend(marks(tab.tab, &texts.marks));
     let mut title = Node::text(tab.title.as_str());
     title.layout.grow = 1.0;
     children.push(title);
     children.extend(dot(tab.tab.color));
     children.extend(tab.keys.map(keys));
+    children.extend(outline(tab.tab));
     let style = match (active, settings.look) {
         (true, Look::Seamless) => Style {
             color: Some(Token::from("terminal.fg")),
@@ -841,6 +880,81 @@ fn tab_style(style: Style, radius: f32, active: bool) -> Style {
     }
 }
 
+/// The marks of `tab` before its title, of `texts` to accessibility: the
+/// protected input's lock, its agent's state, its bell, and a dot of the
+/// output that came while it did not show, or a ring of a program that
+/// runs.
+fn marks(tab: &TabInfo, texts: &MarkTexts) -> Vec<Node> {
+    let mut marks = Vec::new();
+    if tab.secure {
+        marks.push(Node::icon("lock").label(texts.secure.as_str()));
+    }
+    if let Some(agent) = tab.agent {
+        let (icon, color, label) = match agent {
+            AgentState::Working => ("sparkle", "accent", &texts.working),
+            AgentState::Waiting => ("info", "progress.paused", &texts.waiting),
+            AgentState::Done => ("check", "text.secondary", &texts.done),
+        };
+        marks.push(Node::icon(icon).label(label.as_str()).style(Style {
+            color: Some(Token::from(color)),
+            ..Style::default()
+        }));
+    }
+    if tab.bell {
+        marks.push(Node::icon("bell").label(texts.bell.as_str()));
+    }
+    let circle = |style: Style, label: &str| {
+        Node::container(vec![])
+            .label(label)
+            .style(Style {
+                radius: 3.0,
+                ..style
+            })
+            .layout(Layout {
+                width: Length::Points(6.0),
+                min_width: Length::Points(6.0),
+                height: Length::Points(6.0),
+                ..Layout::default()
+            })
+    };
+    if tab.activity {
+        let style = Style {
+            background: Some(Token::from("accent")),
+            ..Style::default()
+        };
+        marks.push(circle(style, texts.activity.as_str()));
+    } else if tab.running {
+        let style = Style {
+            border: Some(Border {
+                color: Token::from("text.secondary"),
+                width: 1.5,
+            }),
+            ..Style::default()
+        };
+        marks.push(circle(style, texts.running.as_str()));
+    }
+    marks
+}
+
+/// The outline of `tab`'s progress, as its program tells it, OSC 9;4's,
+/// filled from its left as far as its value along its top and its bottom
+/// at once, as the window's strip fills: a failed or a paused one of no
+/// value full, an indeterminate one a segment that runs round it.
+fn outline(tab: &TabInfo) -> Option<Node> {
+    let progress = tab.progress?;
+    let value = progress.value.unwrap_or(match progress.state {
+        ProgressState::Indeterminate => 0.0,
+        _ => 1.0,
+    });
+    Some(Node::new(Kind::Progress(Progress {
+        state: progress.state,
+        value: value.clamp(0.0, 1.0),
+        shape: ProgressShape::Outline,
+        thickness: OUTLINE,
+        ..Progress::default()
+    })))
+}
+
 /// The dot of a tab's own color, as its program or the user gave it.
 fn dot(color: Option<Color>) -> Option<Node> {
     let Some(Color::Rgb(red, green, blue)) = color else {
@@ -857,6 +971,8 @@ fn dot(color: Option<Color>) -> Option<Node> {
             })
             .layout(Layout {
                 width: Length::Points(6.0),
+                // Of its width beside a title too long for its room.
+                min_width: Length::Points(6.0),
                 height: Length::Points(6.0),
                 ..Layout::default()
             }),

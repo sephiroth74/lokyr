@@ -350,3 +350,95 @@ fn colored_dot(node: &Node, token: &str) -> bool {
     node.style.background == Some(Token::from(token))
         || node.children.iter().any(|child| colored_dot(child, token))
 }
+
+/// What `node`'s subtree marks, in its order: the labels of its nodes of
+/// one, and its progresses, of their shapes, states and values.
+fn marked(node: &Node) -> Vec<String> {
+    let mut found = Vec::new();
+    if let Some(label) = &node.label {
+        found.push(label.clone());
+    }
+    if let Kind::Progress(progress) = &node.kind {
+        found.push(format!(
+            "{:?} {:?} {}",
+            progress.shape, progress.state, progress.value
+        ));
+    }
+    for child in &node.children {
+        found.extend(marked(child));
+    }
+    found
+}
+
+#[test]
+fn a_tab_marks_what_came_while_it_did_not_show_what_runs_and_its_program_s_progress() {
+    use lokyr_plugin_sdk::host::{AgentState, TabProgress};
+    let quiet = tab(1, "quiet", true);
+    let busy = TabInfo {
+        activity: true,
+        bell: true,
+        running: true,
+        progress: Some(TabProgress {
+            state: ProgressState::Normal,
+            value: Some(0.4),
+        }),
+        ..tab(2, "busy", false)
+    };
+    let secure = TabInfo {
+        secure: true,
+        running: true,
+        agent: Some(AgentState::Waiting),
+        progress: Some(TabProgress {
+            state: ProgressState::Error,
+            value: None,
+        }),
+        ..tab(3, "secure", false)
+    };
+    let spinning = TabInfo {
+        agent: Some(AgentState::Working),
+        progress: Some(TabProgress {
+            state: ProgressState::Indeterminate,
+            value: None,
+        }),
+        ..tab(4, "spinning", false)
+    };
+    let tabs = [quiet, busy, secure, spinning];
+    for style in ["standard", "unified", "seamless"] {
+        for position in ["top", "left"] {
+            let text = |value: &str| Data::Text(value.to_owned());
+            let settings = Settings::of(&config(&[
+                ("style", text(style)),
+                ("position", text(position)),
+                ("close-button", text("never")),
+            ]));
+            let bar = bar(&tabs, &[], None, &settings).expect("a bar");
+            let of = |id: u64| marked(keyed(&bar, &tab_key(id)).expect("the tab"));
+            let place = format!("{style} at the {position}");
+            assert!(of(1).is_empty(), "{place}: {:?}", of(1));
+            // The bell, then the output's dot, which a running program's
+            // ring leaves to it; the outline of its value.
+            assert_eq!(
+                of(2),
+                ["Bell", "New Output", "Outline Normal 0.4"],
+                "{place}"
+            );
+            // The lock, the agent, the ring of what runs; a failure of no
+            // value, full.
+            assert_eq!(
+                of(3),
+                [
+                    "Secure Keyboard Entry",
+                    "Agent Waiting",
+                    "Running",
+                    "Outline Error 1"
+                ],
+                "{place}"
+            );
+            assert_eq!(
+                of(4),
+                ["Agent Working", "Outline Indeterminate 0"],
+                "{place}"
+            );
+        }
+    }
+}

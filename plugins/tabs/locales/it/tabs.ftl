@@ -17,3 +17,11 @@ bar-new-tab = Nuovo tab
 bar-close-tab = Chiudi tab
 bar-untitled = Tab { $index }
 bar-close-others = Chiudi gli altri tab
+
+bar-mark-activity = Nuovo output
+bar-mark-bell = Campanello
+bar-mark-running = In esecuzione
+bar-mark-secure = Inserimento sicuro da tastiera
+bar-mark-working = Agente al lavoro
+bar-mark-waiting = Agente in attesa
+bar-mark-done = Agente: fatto
