@@ -316,6 +316,10 @@ impl Symbols {
                 },
                 W::LayoutChanged { tab } => W::LayoutChanged { tab: self.tab(tab) },
                 W::TabChanged { tab } => W::TabChanged { tab: self.tab(tab) },
+                W::PaneChanged { pane, tab } => W::PaneChanged {
+                    pane: self.pane(pane),
+                    tab: self.tab(tab),
+                },
             }),
             other => other,
         }
@@ -728,11 +732,14 @@ fn kind(request: &Request) -> usize {
         Request::SwapPanes { .. } => 64,
         Request::SetWindowTabBarPlace { .. } => 65,
         Request::TabIntoPane { .. } => 66,
+        Request::SetInactiveDim(_) => 67,
+        Request::SetFocusFollowsMouse(_) => 68,
+        Request::PaneTitle(_) => 69,
     }
 }
 
 /// How many kinds of requests the plugin API has.
-const KINDS: usize = 67;
+const KINDS: usize = 70;
 
 #[test]
 fn the_scenarios_hold_every_request_of_the_plugin_api() {

@@ -71,6 +71,9 @@ struct Scene {
     /// Whether it draws shapes alone, without text, which the GPU draws
     /// the same wherever it runs.
     shapes: bool,
+    /// The veil of its background over it, as over a pane that has not the
+    /// keyboard, of this opacity.
+    veil: Option<f32>,
 }
 
 /// The GPU, its renderer and a font of `POINTS` at `scale`, as a window of
@@ -156,10 +159,22 @@ impl Drawing {
         let mut width = 0;
         for scene in scenes {
             let (batch, color) = self.batch(scene, (MARGIN as i32, y as i32));
-            width = width.max(u32::from(scene.columns) * batch.cell_width);
-            y += u32::from(scene.rows) * batch.cell_height;
+            let room = lokyr_render_core::Rect {
+                x: MARGIN as i32,
+                y: y as i32,
+                width: u32::from(scene.columns) * batch.cell_width,
+                height: u32::from(scene.rows) * batch.cell_height,
+            };
+            width = width.max(room.width);
+            y += room.height;
             background.get_or_insert(color);
             items.push(Item::Cells(batch));
+            if let Some(veil) = scene.veil {
+                items.push(Item::Rect {
+                    rect: room,
+                    color: color.with_alpha(veil),
+                });
+            }
         }
         let (width, height) = (width + 2 * MARGIN, y + MARGIN);
         let list = DisplayList {
@@ -195,6 +210,7 @@ fn text() -> Vec<Scene> {
         cursor: None,
         selection: None,
         shapes: false,
+        veil: None,
     }]
 }
 
@@ -231,6 +247,7 @@ fn colors() -> Vec<Scene> {
         cursor: None,
         selection: None,
         shapes: false,
+        veil: None,
     }]
 }
 
@@ -251,6 +268,7 @@ fn decorations() -> Vec<Scene> {
         cursor: None,
         selection: None,
         shapes: false,
+        veil: None,
     }]
 }
 
@@ -273,6 +291,7 @@ fn cursors() -> Vec<Scene> {
         cursor: Some(shape),
         selection: None,
         shapes: false,
+        veil: None,
     })
     .collect()
 }
@@ -288,7 +307,27 @@ fn selection() -> Vec<Scene> {
         cursor: None,
         selection: Some(((2, 0), (5, 1))),
         shapes: false,
+        veil: None,
     }]
+}
+
+/// A pane's text, and the same under the veil of its background of a pane
+/// that has not the keyboard, of the splits' default fade.
+fn dimmed() -> Vec<Scene> {
+    let text = "plain \x1b[31mred\x1b[0m \x1b[1;32mbold green\x1b[0m \x1b[44m on blue \x1b[0m";
+    [None, Some(0.15)]
+        .into_iter()
+        .map(|veil| Scene {
+            name: "dim",
+            columns: 36,
+            rows: 1,
+            text: text.to_owned(),
+            cursor: None,
+            selection: None,
+            shapes: false,
+            veil,
+        })
+        .collect()
 }
 
 /// The shapes that the renderer draws itself, without text: the cursor's
@@ -312,6 +351,7 @@ fn shapes() -> Vec<Scene> {
         cursor: Some(shape),
         selection: None,
         shapes: true,
+        veil: None,
     })
     .collect();
     let lines = ["4", "4:2", "4:3", "4:4", "4:5", "9", "53"]
@@ -325,6 +365,7 @@ fn shapes() -> Vec<Scene> {
         cursor: None,
         selection: None,
         shapes: true,
+        veil: None,
     });
     scenes
 }
@@ -950,6 +991,36 @@ fn the_cursor_s_shapes_draw_as_their_golden_image() {
 fn the_shapes_draw_as_their_golden_image() {
     for scale in [1, 2] {
         check(&shapes(), scale);
+    }
+}
+
+#[test]
+fn a_pane_without_the_keyboard_draws_faded_as_its_golden_image() {
+    for scale in [1, 2] {
+        check(&dimmed(), scale);
+    }
+}
+
+#[test]
+fn panes_headers_draw_as_their_golden_images() {
+    // The header of the pane that has the keyboard, then another's.
+    let root = Node::container(vec![
+        lokyr_splits::title_header("src — vim", true),
+        lokyr_splits::title_header("~ — cargo test", false),
+    ])
+    .layout(Box {
+        direction: Direction::Column,
+        width: Length::Points(320.0),
+        gap: 8.0,
+        padding: Edges::all(8.0),
+        ..Box::default()
+    });
+    for dark in [false, true] {
+        for scale in [1, 2] {
+            check_tree("pane-headers", &root, (dark, scale), |_| {
+                (None, None, None, None)
+            });
+        }
     }
 }
 

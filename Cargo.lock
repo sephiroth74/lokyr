@@ -745,6 +745,7 @@ dependencies = [
  "lokyr-pty",
  "lokyr-render-core",
  "lokyr-render-metal",
+ "lokyr-splits",
  "lokyr-tabs",
  "lokyr-text-core",
  "lokyr-ui-core",

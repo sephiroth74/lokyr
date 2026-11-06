@@ -14,8 +14,8 @@ use lokyr_kernel::plugins;
 use lokyr_kernel::plugins::host::BarPlace;
 use lokyr_kernel::workspace::{self, Direction, Grid, Layout, Pane, PaneId};
 use lokyr_platform_core::{
-    Appearance, Backdrop, Blink as PlatformBlink, Easing, Layer, LayerPlace, Platform, Point,
-    PointerArea, PointerShape, Size, Titlebar, WindowId, WindowSize,
+    Appearance, Backdrop, Blink as PlatformBlink, ContentRect, Easing, Layer, LayerPlace, Platform,
+    Point, PointerArea, PointerShape, Size, Titlebar, WindowId, WindowSize,
 };
 use lokyr_render_core::{
     CellBatch, Color, CursorShape, DisplayList, Item, PictureId, Rect, Renderer, Surface as _,
@@ -877,6 +877,25 @@ impl<B: Backend> App<B> {
             .collect();
         items.push(Item::Cells(batch));
         items.extend(other_batches.into_iter().map(Item::Cells));
+        // The panes that have not the keyboard, under a veil of their own
+        // background, as the plugins ask; the padding round them is of that
+        // background already.
+        let dim = self.plugins.inactive_dim();
+        if dim > 0.0 && views.len() > 1 {
+            items.extend(
+                views
+                    .iter()
+                    .filter(|view| view.pane != active)
+                    .filter_map(|view| {
+                        let pane = self.workspace.pane(view.pane)?;
+                        let veil = cells::background(pane.snapshot()).with_alpha(dim);
+                        Some(Item::Rect {
+                            rect: view.rect,
+                            color: veil,
+                        })
+                    }),
+            );
+        }
         // The slots' views over the panes, of the theme's tokens of the
         // window's look.
         if state
@@ -1023,7 +1042,30 @@ impl<B: Backend> App<B> {
         // their hover and their tooltips, and wake it over them alone; the
         // parts of a titlebar of tabs that are the bar's own take its
         // presses, and the panels drawn over a titlebar of either kind.
-        let moving = surfaces::move_areas(&state.chrome, size.scale);
+        let mut moving = surfaces::move_areas(&state.chrome, size.scale);
+        // While the keyboard follows the pointer, the moves over the panes
+        // that have it not, which the first of gives it them; none wakes
+        // the app over the pane that has it.
+        if self.plugins.focus_follows_mouse() && state.views.len() > 1 {
+            let active = self.workspace.active_pane(state.window);
+            let points = |pixels: i32| f64::from(pixels) / size.scale;
+            moving.extend(
+                state
+                    .views
+                    .iter()
+                    .filter(|view| Some(view.pane) != active)
+                    .map(|view| ContentRect {
+                        origin: Point {
+                            x: points(view.rect.x),
+                            y: points(view.rect.y),
+                        },
+                        size: Size {
+                            width: f64::from(view.rect.width) / size.scale,
+                            height: f64::from(view.rect.height) / size.scale,
+                        },
+                    }),
+            );
+        }
         if moving != state.move_areas {
             platform.set_move_areas(window, &moving);
             state.move_areas = moving;

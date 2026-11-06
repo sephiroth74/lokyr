@@ -47,7 +47,7 @@ use crate::host::{
     PaneId, ScreenPoint, Side, StyleRun, TabId, TabInfo, WindowId, WindowInfo,
 };
 use crate::keys::{When, parse_keys};
-use crate::message::{Call, Data, Effect, Event, OWN_PANE, Request, Response};
+use crate::message::{Call, DIM_RANGE, Data, Effect, Event, OWN_PANE, Request, Response};
 use crate::plugin::{Cx, Plugin};
 use crate::ui::{Anchor, PanelId, PanelOptions, Slot, UiEvent, ViewId};
 use crate::view::{Key, Kind, Node};
@@ -93,6 +93,8 @@ pub struct FakePane {
     pub held: std::ops::Range<i64>,
     /// Its grid, its columns and its rows, 80 by 24 by default.
     pub grid: (u16, u16),
+    /// Its title, as a read of a pane's title gives it.
+    pub title: Option<String>,
 }
 
 impl Default for FakePane {
@@ -108,6 +110,7 @@ impl Default for FakePane {
             styles: BTreeMap::new(),
             selection: None,
             directory: None,
+            title: None,
         }
     }
 }
@@ -225,6 +228,10 @@ pub struct FakeHost {
     bar_place: BarPlace,
     /// The places of the plugin's tab bar of windows of their own.
     window_bar_places: BTreeMap<WindowId, BarPlace>,
+    /// The veil of the panes that have not the keyboard, and whether the
+    /// keyboard follows the pointer, as the plugin asked.
+    inactive_dim: f32,
+    focus_follows_mouse: bool,
     /// The window that has the focus.
     focused: Option<WindowId>,
     /// The focus that the test gave last, which the next look at the
@@ -272,6 +279,8 @@ impl FakeHost {
             messages: Vec::new(),
             bar_place: BarPlace::default(),
             window_bar_places: BTreeMap::new(),
+            inactive_dim: 0.0,
+            focus_follows_mouse: false,
             focused: None,
             given_focus: None,
             clipboard: None,
@@ -435,6 +444,12 @@ impl FakeHost {
             .get(&window)
             .copied()
             .unwrap_or(self.bar_place)
+    }
+
+    /// The veil of the panes that have not the keyboard that the plugin
+    /// asked for, and whether the keyboard follows the pointer.
+    pub fn pane_looks(&self) -> (f32, bool) {
+        (self.inactive_dim, self.focus_follows_mouse)
     }
 
     /// The clipboard's text.
@@ -816,6 +831,8 @@ impl FakeHost {
                 }
             }
             Request::SetTabBarPlace(place) => self.bar_place = *place,
+            Request::SetInactiveDim(dim) => self.inactive_dim = *dim,
+            Request::SetFocusFollowsMouse(on) => self.focus_follows_mouse = *on,
             Request::SetWindowTabBarPlace { window, place } => match place {
                 Some(place) => {
                     self.window_bar_places.insert(*window, *place);
@@ -1793,6 +1810,7 @@ impl Calling<'_> {
                 let (columns, rows) = host.held(*pane)?.grid;
                 Response::Grid { columns, rows }
             }
+            Request::PaneTitle(pane) => Response::Text(host.held(*pane)?.title.clone()),
             Request::Layout(tab) => match host.tabs.get(tab) {
                 Some(tab) => Response::Layout(tab.layout.clone()),
                 None => {
@@ -1839,6 +1857,13 @@ impl Calling<'_> {
                     .map_err(|message| Error::new(Code::Failed, message))?;
                 Response::Done
             }
+            Request::SetInactiveDim(dim) => {
+                if !(0.0..=1.0).contains(dim) {
+                    return Err(Error::new(Code::Failed, DIM_RANGE));
+                }
+                Response::Done
+            }
+            Request::SetFocusFollowsMouse(_) => Response::Done,
             Request::SetWindowTabBarPlace { window, place } => {
                 self.known_window(*window)?;
                 if let Some(place) = place {

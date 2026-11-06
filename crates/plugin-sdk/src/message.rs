@@ -46,6 +46,10 @@ pub struct Call {
 /// tab itself, which every host gives alike.
 pub const OWN_PANE: &str = "a tab goes into a pane of another tab, not of its own";
 
+/// The message of the error of [`Request::SetInactiveDim`] of a dim out of
+/// its range, which every host gives alike.
+pub const DIM_RANGE: &str = "a dim is a share from 0 to 1";
+
 /// What a plugin asks of the host.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -265,6 +269,13 @@ pub enum Request {
     /// place of the place before, as its config says: a plugin that fills
     /// no tab bar puts it nowhere.
     SetTabBarPlace(BarPlace),
+    /// Veils the panes that have not their tab's keyboard, of a tab of more
+    /// than one, of their background at `dim`, a share from 0, none, to 1,
+    /// while the plugin runs: the most that the plugins ask for.
+    SetInactiveDim(f32),
+    /// Gives the keyboard to the pane of a tab that the pointer comes over,
+    /// while the plugin runs, as any plugin asks it.
+    SetFocusFollowsMouse(bool),
     /// Puts the plugin's tab bar of `window` at `place`, over the place of
     /// its bar in every window, as a window of a single tab shows its title
     /// in its titlebar, [`BarPlace::Title`]; `None` gives it that place
@@ -399,6 +410,10 @@ pub enum Request {
     /// The grid of a pane, its columns and its rows, as its window last
     /// laid it out, as a resize by cells reads it.
     PaneGrid(PaneId),
+    /// The title of a pane, as its header shows it: its program's, or, to
+    /// a plugin of `process-read`, its folder and its program; none without
+    /// either, as [`Response::Text`].
+    PaneTitle(PaneId),
     /// Swaps two panes of a tab's layout, each taking the other's room,
     /// their programs running on, the tab's keyboard staying with its pane.
     SwapPanes {
@@ -529,6 +544,7 @@ impl Request {
             | Self::Tabs(_)
             | Self::Layout(_)
             | Self::PaneGrid(_)
+            | Self::PaneTitle(_)
             | Self::NewTab { .. }
             | Self::Split { .. }
             | Self::CloseTab { .. }
@@ -538,6 +554,8 @@ impl Request {
             | Self::AskText { .. }
             | Self::SetTabBarPlace(_)
             | Self::SetWindowTabBarPlace { .. }
+            | Self::SetInactiveDim(_)
+            | Self::SetFocusFollowsMouse(_)
             | Self::TabBarPlace
             | Self::KeysOf { .. }
             | Self::Message { .. }
@@ -584,6 +602,7 @@ impl Request {
             | Self::Tabs(_)
             | Self::Layout(_)
             | Self::PaneGrid(_)
+            | Self::PaneTitle(_)
             | Self::Config
             | Self::State
             | Self::TabBarPlace
@@ -607,6 +626,8 @@ impl Request {
             | Self::SetTabColor { .. }
             | Self::SetTabBarPlace(_)
             | Self::SetWindowTabBarPlace { .. }
+            | Self::SetInactiveDim(_)
+            | Self::SetFocusFollowsMouse(_)
             | Self::ActivateTab(_)
             | Self::FocusPane(_)
             | Self::MoveTab { .. }

@@ -379,6 +379,8 @@ type Event =
     -- A tab's title or color changed, its own, its program's, or its active pane's folder and program as output comes;
     -- to a plugin without `process-read`, which reads no folder nor program, as its title or color changes alone.
     | { kind: "tab-changed", tab: TabId }
+    -- A pane's title changed, as its program set it, which its header shows.
+    | { kind: "pane-changed", pane: PaneId, tab: TabId }
     -- The keymap's bindings changed, as the config's or a plugin's: the keys of `keys_of` may be others.
     | { kind: "keys-changed" }
     -- The pointer over another cell of a pane, or out of it, or the modifiers changed over it, or a frame changed the text
@@ -509,6 +511,13 @@ type Cx = {
     resize_pane: (pane: PaneId, edge: Edge, by: number) -> (boolean, Error?),
     -- A pane's grid, as its window last laid it out, as a resize by cells reads it.
     pane_grid: (pane: PaneId) -> ({ columns: number, rows: number }?, Error?),
+    -- A pane's title, as its header shows it: its program's, or, of `process-read`, its folder and its program.
+    pane_title: (pane: PaneId) -> (string?, Error?),
+    -- The panes that have not their tab's keyboard, of a tab of more than one, under a veil of their background of
+    -- this share, from 0 to 1, while the plugin runs; the most that the plugins ask for.
+    set_inactive_dim: (dim: number) -> (boolean, Error?),
+    -- The keyboard goes to the pane that the pointer comes over, while the plugin runs, as any plugin asks.
+    set_focus_follows_mouse: (on: boolean) -> (boolean, Error?),
     -- Swaps two panes of one tab, each taking the other's room, the tab's keyboard staying with its pane.
     swap_panes: (pane: PaneId, with: PaneId) -> (boolean, Error?),
     -- The split at `path`, the parts from the layout's top, takes the first part's share `ratio`, or its panes'.

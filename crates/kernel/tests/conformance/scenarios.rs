@@ -25,7 +25,7 @@ use lokyr_plugin_sdk::host::{
     BarPlace, Binding, Color, DecorationLook, Direction, Edge, Layout, Line, LineText, MOST_STATE,
     PaneId, ScreenPoint, Scroll, Side, TabId, TabInfo, Underline, WindowId, WindowInfo,
 };
-use lokyr_plugin_sdk::message::{Data, Event, Mods, OWN_PANE, Request, Response};
+use lokyr_plugin_sdk::message::{DIM_RANGE, Data, Event, Mods, OWN_PANE, Request, Response};
 use lokyr_plugin_sdk::ui::{Anchor, PanelId, PanelOptions, Role, ViewId};
 use serde::{Deserialize, Serialize};
 
@@ -297,6 +297,16 @@ fn tabs(world: &World) -> Scenario {
                     },
                     Response::Done,
                 ),
+                // The panes' veil, of a share, and the keyboard that follows
+                // the pointer, and back.
+                (Request::SetInactiveDim(0.15), Response::Done),
+                (
+                    Request::SetInactiveDim(2.0),
+                    failed(Code::Failed, DIM_RANGE),
+                ),
+                (Request::SetFocusFollowsMouse(true), Response::Done),
+                (Request::SetInactiveDim(0.0), Response::Done),
+                (Request::SetFocusFollowsMouse(false), Response::Done),
             ]),
             // A drag of its column's edge, told to it alone.
             Step {
@@ -1169,6 +1179,12 @@ fn workspace(world: &World) -> Scenario {
                             columns: 80,
                             rows: 24,
                         },
+                    ),
+                    // The title of a pane not there, as a pane's title of
+                    // its program's folder is the kernel's alone to know.
+                    (
+                        Request::PaneTitle(NO_PANE),
+                        failed(Code::NotFound, "there is no pane 999999"),
                     ),
                     // Swapped, and back.
                     (

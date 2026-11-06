@@ -5,17 +5,23 @@
 //! tab's; move a divider by cells; zoom the pane, or end the zoom; share
 //! every split by its panes again; swap the pane with the one beside it;
 //! and move it out to a tab or a window of its own. The system's keymap
-//! binds their keys. The tabs' layouts are the host's, which the commands
-//! change through the HostApi. Like every built-in plugin, it depends only
-//! on the plugin SDK.
+//! binds their keys. Its config fades the panes that have not the
+//! keyboard, has the keyboard follow the pointer, and shows each pane's
+//! title in its header. The tabs' layouts are the host's, which the
+//! commands change through the HostApi. Like every built-in plugin, it
+//! depends only on the plugin SDK.
 
 #![forbid(unsafe_code)]
 
 mod geometry;
 
 use lokyr_plugin_sdk::command::{Args, Category, Code, Command, Error, Kind, Param, Value};
+use lokyr_plugin_sdk::event::WorkspaceEvent;
 use lokyr_plugin_sdk::host::{Direction as Lie, Edge, PaneId, Side, TabInfo};
+use lokyr_plugin_sdk::message::{Data, Event};
 use lokyr_plugin_sdk::plugin::{Cx, Plugin};
+use lokyr_plugin_sdk::ui::ViewId;
+use lokyr_plugin_sdk::view::{Align, Edges, Justify, Layout, Node, Style, Token};
 
 use crate::geometry::{Towards, rects};
 
@@ -77,13 +83,61 @@ const COMMANDS: [Spec; 10] = [
     (MOVE_TO_WINDOW, "Move Pane to New Window", &[]),
 ];
 
-/// The plugin of the splits, of no state of its own: the layouts are the
-/// host's.
+/// The plugin of the splits: its config, and the panes' headers that it
+/// rendered, each of its last tree, which it renders again as their trees
+/// change; the layouts are the host's.
 #[derive(Debug, Default)]
-pub struct Splits;
+pub struct Splits {
+    settings: Settings,
+    headers: Vec<(PaneId, Option<Node>)>,
+}
+
+/// Its config, as `[plugins.splits]` gives it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Settings {
+    /// How much the panes that have not the keyboard fade, from 0 to 1.
+    dim: f32,
+    /// Whether each pane of a tab of more than one shows its title.
+    titles: bool,
+    /// Whether the keyboard follows the pointer.
+    follows: bool,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            dim: 0.15,
+            titles: false,
+            follows: false,
+        }
+    }
+}
+
+impl Settings {
+    /// The settings of `config`, its section, which the host checked
+    /// against the schema and gave its defaults.
+    fn of(config: &Data) -> Self {
+        let mut settings = Self::default();
+        let Data::Map(config) = config else {
+            return settings;
+        };
+        settings.dim = match config.get("dim-inactive") {
+            Some(Data::Number(dim)) => *dim as f32,
+            Some(Data::Integer(dim)) => *dim as f32,
+            _ => settings.dim,
+        }
+        .clamp(0.0, 1.0);
+        let flag = |name: &str| matches!(config.get(name), Some(Data::Boolean(true)));
+        settings.titles = flag("pane-titles");
+        settings.follows = flag("focus-follows-mouse");
+        settings
+    }
+}
 
 impl Plugin for Splits {
     fn activate(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
+        self.configure(cx)?;
+        cx.subscribe(&WorkspaceEvent::NAMES)?;
         for (name, title, params) in COMMANDS {
             cx.register_command(Command {
                 name: name.to_owned(),
@@ -106,6 +160,47 @@ impl Plugin for Splits {
 
     fn catalogs(&self) -> &'static [(&'static str, &'static str)] {
         &CATALOGS
+    }
+
+    fn config_schema(&self) -> Option<&'static str> {
+        Some(include_str!("../splits.schema.json"))
+    }
+
+    /// A pane's header: its title, while the config shows them.
+    fn render(&mut self, cx: &mut Cx<'_>, view: &ViewId) -> Option<Node> {
+        let ViewId::PaneHeader(pane) = view else {
+            return None;
+        };
+        let node = self.header(cx, *pane);
+        match self.headers.iter_mut().find(|(known, _)| known == pane) {
+            Some((_, last)) => last.clone_from(&node),
+            None => self.headers.push((*pane, node.clone())),
+        }
+        node
+    }
+
+    /// A change of its config takes it; a change of the workspace renders
+    /// again the headers whose trees it changed.
+    fn on_event(&mut self, cx: &mut Cx<'_>, events: &[Event]) -> Result<(), Error> {
+        let mut again = false;
+        for event in events {
+            match event {
+                Event::ConfigChanged => {
+                    self.configure(cx)?;
+                    again = true;
+                }
+                Event::Workspace(WorkspaceEvent::PaneClosed { pane, .. }) => {
+                    self.headers.retain(|(known, _)| known != pane);
+                    again = true;
+                }
+                Event::Workspace(_) => again = true,
+                _ => {}
+            }
+        }
+        if again {
+            self.render_again(cx);
+        }
+        Ok(())
     }
 
     fn on_command(&mut self, cx: &mut Cx<'_>, name: &str, args: Args) -> Result<(), Error> {
@@ -193,6 +288,83 @@ impl Plugin for Splits {
             )),
         }
     }
+}
+
+impl Splits {
+    /// Takes its section of the config, and gives the host the panes' fade
+    /// and the keyboard's following the pointer.
+    fn configure(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
+        self.settings = Settings::of(&cx.config()?);
+        cx.set_inactive_dim(self.settings.dim)?;
+        cx.set_focus_follows_mouse(self.settings.follows)
+    }
+
+    /// The header of `pane`, while the config shows the titles and its tab
+    /// shows more than one pane: its title, in its middle, of the text's
+    /// color in the pane that has the keyboard, of the secondary text's in
+    /// the others, over the bar's background.
+    fn header(&self, cx: &mut Cx<'_>, pane: PaneId) -> Option<Node> {
+        if !self.settings.titles {
+            return None;
+        }
+        let tab = tab_of(cx, pane)?;
+        if tab.panes.len() < 2 || tab.zoomed.is_some() {
+            return None;
+        }
+        let title = cx.pane_title(pane).ok().flatten().unwrap_or_default();
+        Some(title_header(&title, tab.focused == pane))
+    }
+
+    /// Renders again the headers whose trees changed, so that the host
+    /// draws no frame of the same; those of panes gone go.
+    fn render_again(&mut self, cx: &mut Cx<'_>) {
+        let headers = std::mem::take(&mut self.headers);
+        for (pane, last) in headers {
+            let view = ViewId::PaneHeader(pane);
+            if self.header(cx, pane) != last && cx.request_render(view).is_err() {
+                continue;
+            }
+            self.headers.push((pane, last));
+        }
+    }
+}
+
+/// A pane's header of `title`, of the pane that has the keyboard or not.
+#[doc(hidden)]
+pub fn title_header(title: &str, focused: bool) -> Node {
+    let color = if focused { "text" } else { "text.secondary" };
+    Node::container(vec![Node::text(title).style(Style {
+        color: Some(Token::from(color)),
+        ..Style::default()
+    })])
+    .layout(Layout {
+        align: Align::Center,
+        justify: Justify::Center,
+        padding: Edges {
+            top: 3.0,
+            right: 8.0,
+            bottom: 3.0,
+            left: 8.0,
+        },
+        grow: 1.0,
+        ..Layout::default()
+    })
+    .style(Style {
+        background: Some(Token::from("tab.bar.bg")),
+        clip: true,
+        ..Style::default()
+    })
+}
+
+/// The tab that holds `pane`, of the windows' tabs.
+fn tab_of(cx: &mut Cx<'_>, pane: PaneId) -> Option<TabInfo> {
+    let windows = cx.windows().ok()?;
+    windows.into_iter().find_map(|window| {
+        cx.tabs(window.id)
+            .ok()?
+            .into_iter()
+            .find(|tab| tab.panes.contains(&pane))
+    })
 }
 
 /// The focused window's shown tab and its pane with the keyboard, if a

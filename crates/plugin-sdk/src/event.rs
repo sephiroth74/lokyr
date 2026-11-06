@@ -99,11 +99,19 @@ pub enum WorkspaceEvent {
         /// The tab.
         tab: TabId,
     },
+    /// A pane's title changed, as its program set it, which its header
+    /// shows.
+    PaneChanged {
+        /// The pane.
+        pane: PaneId,
+        /// The tab that it is in.
+        tab: TabId,
+    },
 }
 
 impl WorkspaceEvent {
     /// The names of the workspace's events, as plugins subscribe to them.
-    pub const NAMES: [&'static str; 12] = [
+    pub const NAMES: [&'static str; 13] = [
         "window-opened",
         "window-closed",
         "tab-created",
@@ -116,6 +124,7 @@ impl WorkspaceEvent {
         "pane-moved",
         "layout-changed",
         "tab-changed",
+        "pane-changed",
     ];
 
     /// The event's name, as a plugin subscribes to it.
@@ -133,6 +142,7 @@ impl WorkspaceEvent {
             Self::PaneMoved { .. } => "pane-moved",
             Self::LayoutChanged { .. } => "layout-changed",
             Self::TabChanged { .. } => "tab-changed",
+            Self::PaneChanged { .. } => "pane-changed",
         }
     }
 }

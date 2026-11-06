@@ -23,7 +23,8 @@ use lokyr_kernel::workspace::RESIZE_PACE;
 #[cfg(test)]
 use lokyr_kernel::workspace::TOLD_PACE;
 use lokyr_kernel::workspace::{
-    self, Environment, Event, Exited, Grid, Pane, PaneId, Settings, Workspace,
+    self, Environment, Event, Exited, Grid, Pane, PaneId, Settings, TITLE_DASH, Workspace,
+    directory_name, place_label,
 };
 use lokyr_platform_core::Layer;
 use lokyr_platform_core::{
@@ -190,9 +191,6 @@ const WINDOW_SIZE: Size = Size {
 /// more at the program in its foreground, for one that started without a
 /// word.
 const TITLE_LOOK: Duration = Duration::from_millis(250);
-
-/// What parts a title's parts.
-const TITLE_DASH: &str = " — ";
 
 /// The columns and the rows of a man page's window: `man` lays its pages
 /// out for 80 columns.
@@ -2642,7 +2640,7 @@ impl<B: Backend> App<B> {
             | WorkspaceEvent::PaneFocused { tab, .. }
             | WorkspaceEvent::LayoutChanged { tab } => vec![of_tab(self, tab)],
             // A tab's label and color, which the plugins' views show.
-            WorkspaceEvent::TabChanged { .. } => return,
+            WorkspaceEvent::TabChanged { .. } | WorkspaceEvent::PaneChanged { .. } => return,
             WorkspaceEvent::PaneMoved { from, tab, .. } => {
                 vec![of_tab(self, from), of_tab(self, tab)]
             }
@@ -3446,29 +3444,6 @@ impl<B: Backend> Handler for App<B> {
         self.take_window_event(platform, window, event);
         self.end_turn(platform);
     }
-}
-
-/// A tab's place of its folder's `name` and its `program`, as a window's
-/// title has them: `src — vim`, the folder's alone of no program or of
-/// one of its name.
-fn place_label(name: &str, program: &str) -> String {
-    if program.is_empty() || program == name {
-        name.to_owned()
-    } else {
-        format!("{name}{TITLE_DASH}{program}")
-    }
-}
-
-/// A title's name of `directory`: its last part, `~` for `home`, and `/`
-/// for the root.
-fn directory_name(directory: &std::path::Path, home: Option<&std::path::Path>) -> String {
-    if Some(directory) == home {
-        return "~".to_owned();
-    }
-    directory.file_name().map_or_else(
-        || "/".to_owned(),
-        |name| name.to_string_lossy().into_owned(),
-    )
 }
 
 /// The context of the keys in a window of `pane`: its pane has the

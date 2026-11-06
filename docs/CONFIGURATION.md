@@ -172,6 +172,11 @@ hide-when-single = true              # true | false: no bar for a single tab
 show-index = true                    # true | false: ⌘1 to ⌘9 on the first nine tabs
 close-button = "hover"               # always | hover | never: a tab's close button
 column-width = 200                   # points, 60 to 600: the bar's column on the left or the right
+
+[plugins.splits]
+dim-inactive = 0.15                  # 0 to 1: how much the panes without the keyboard fade
+pane-titles = false                  # true | false: each pane's title across its top
+focus-follows-mouse = false          # true | false: the keyboard goes to the pane under the pointer
 ```
 
 ## `config_version`
@@ -821,7 +826,7 @@ The plugin whose tab bar the windows show, by its name, as `"lokyr/tabs"`.
 
 - **Default**: none, which takes the first plugin that has a tab bar.
 - A plugin that is not installed, or that has no tab bar, gives the default one.
-- No plugin of Lokyr's has a tab bar yet: the tabs bring it.
+- `lokyr/tabs` has one.
 
 ### `pane-header`
 
@@ -831,7 +836,7 @@ The plugin whose headers the panes show across their tops, by its name, as `"lok
 
 - **Default**: none, which takes the first plugin that has the panes' headers.
 - A plugin that is not installed, or that has no headers, gives the default one.
-- No plugin of Lokyr's has the panes' headers yet.
+- `lokyr/splits` has them, which show each pane's title as its [`pane-titles`](#pane-titles) asks.
 
 ## `[terminal]`
 
@@ -1439,4 +1444,51 @@ The width of the bar's column, on the left or the right, in points.
 | from `60` to `600` | `200` |
 
 - A drag of the column's edge changes its width, which Lokyr keeps for its next start; a new value in the file takes the drag's place, at once or at the next start, as the file changes while Lokyr is closed too.
+- It applies at once, as you save the file.
+
+## `[plugins.splits]`
+
+<sub>Platforms: macOS</sub>
+
+The panes of the built-in plugin `lokyr/splits`: how the panes of a tab of more than one show, and where the keyboard goes. Its commands split a pane, move between panes, resize, zoom and swap them, as [the keys of the defaults](#keys) tell.
+
+### `dim-inactive`
+
+<sub>Platforms: macOS</sub>
+
+How much the panes that have not the keyboard fade into their background, in a tab of more than one.
+
+| Values | Default |
+|---|---|
+| from `0` to `1`, whole or not | `0.15` |
+
+- `0` leaves them as they are; `1` hides their text in their background.
+- The fade is a veil of each pane's own background over its text, its colors and its images, which the app draws in the frame of the panes, of no cost past a frame's.
+- It applies at once, as you save the file.
+
+### `pane-titles`
+
+<sub>Platforms: macOS</sub>
+
+Whether each pane of a tab of more than one shows its title across its top.
+
+| Values | Default |
+|---|---|
+| `true`, `false` | `false` |
+
+- The title is its program's, or its folder and the program in its foreground, as `src — vim`, of the text's color in the pane that has the keyboard and of a fainter one in the others.
+- The header takes its row of the pane's room, which its grid gives up; none while a pane is zoomed, or in a tab of one pane.
+- It applies at once, as you save the file.
+
+### `focus-follows-mouse`
+
+<sub>Platforms: macOS</sub>
+
+Whether the keyboard goes to the pane that the pointer comes over, without a click.
+
+| Values | Default |
+|---|---|
+| `true`, `false` | `false` |
+
+- The pointer's moves wake the app over the panes that have not the keyboard alone, so that it costs nothing while the pointer stays over the one that has it; none moves it while a button is down, as in a selection's drag.
 - It applies at once, as you save the file.

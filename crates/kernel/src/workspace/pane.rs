@@ -768,6 +768,24 @@ impl Pane {
         session.foreground_directory()
     }
 
+    /// Its title as its header shows it: its program's; or, of `places`,
+    /// its folder and the program in its foreground, as a tab without a
+    /// title shows them; none without either.
+    pub fn header_title(&self, places: bool) -> Option<String> {
+        if !self.title.is_empty() {
+            return Some(self.title.clone());
+        }
+        if !places {
+            return None;
+        }
+        let directory = self.working_directory()?;
+        let name = directory_name(&directory, std::env::home_dir().as_deref());
+        Some(place_label(
+            &name,
+            &self.foreground_program().unwrap_or_default(),
+        ))
+    }
+
     /// The working directory that the shell told last, by OSC 7, if it is
     /// of this machine, whose name is `host`, and a directory there: where
     /// the shell works, as a program in its foreground, as ssh, may not.
@@ -1056,6 +1074,32 @@ fn status(exit: Option<Exit>, told: Option<i32>, through_login: bool) -> Option<
         Some(code) if through_login => Some(Exit::Code(code)),
         _ => exit,
     }
+}
+
+/// What parts a title's parts.
+pub const TITLE_DASH: &str = " — ";
+
+/// A place of its folder's `name` and its `program`, as a window's title
+/// and a pane's header have them: `src — vim`, the folder's alone of no
+/// program or of one of its name.
+pub fn place_label(name: &str, program: &str) -> String {
+    if program.is_empty() || program == name {
+        name.to_owned()
+    } else {
+        format!("{name}{TITLE_DASH}{program}")
+    }
+}
+
+/// A title's name of `directory`: its last part, `~` for `home`, and `/`
+/// for the root.
+pub fn directory_name(directory: &std::path::Path, home: Option<&std::path::Path>) -> String {
+    if Some(directory) == home {
+        return "~".to_owned();
+    }
+    directory.file_name().map_or_else(
+        || "/".to_owned(),
+        |name| name.to_string_lossy().into_owned(),
+    )
 }
 
 /// Whether `host`, of an OSC 7 `file` URL, is this machine, whose name is

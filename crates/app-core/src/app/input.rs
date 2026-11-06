@@ -316,6 +316,19 @@ impl<B: Backend> App<B> {
             .or_else(|| self.focused(window))
     }
 
+    /// Gives the keyboard to the pane of `window` at `position`, if another
+    /// has it.
+    fn follow_pointer(&mut self, platform: &mut dyn Platform, window: WindowId, position: Point) {
+        let Some(under) = self.pane_at(platform, window, position) else {
+            return;
+        };
+        let shown = self.windows.get(&window).map(|state| state.window);
+        if shown.and_then(|shown| self.workspace.active_pane(shown)) != Some(under) {
+            self.focus_pane(platform, window, under);
+            platform.request_frame(window);
+        }
+    }
+
     /// A button of the mouse went down or up over `window`: the program
     /// learns of it, as its mouse modes have it, at the screen's row, and
     /// not of a press above the screen, in a view scrolled up. Shift keeps
@@ -775,6 +788,11 @@ impl<B: Backend> App<B> {
             .windows
             .get(&window)
             .is_some_and(|state| state.mouse.held().is_some());
+        // The keyboard follows the pointer to the pane that it comes over,
+        // as a plugin asks, but in a drag.
+        if !dragging && !held && self.plugins.focus_follows_mouse() {
+            self.follow_pointer(platform, window, position);
+        }
         // A slot's view under the pointer takes its move, unless a press
         // over the panes holds it; the plugins that follow the pointer learn
         // that it left the panes.

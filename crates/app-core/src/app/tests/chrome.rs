@@ -145,7 +145,10 @@ fn a_plugin_s_views_fill_their_slots_which_the_panes_give_their_room() {
     let drawing = Drawing::new(FontConfig::default()).unwrap();
     let mut fake = Fake::default();
     fake.set_bar(28.0);
-    let mut app = App::new(Some(drawing), unpadded(), None)
+    // Its headers over the splits', as the config chooses them.
+    let mut config = unpadded();
+    config.slots.pane_header = Some("lokyr/bars".to_owned());
+    let mut app = App::new(Some(drawing), config, None)
         .with_program(idle())
         .with_builtin(manifest, Box::new(bars));
     fake.start(&mut app);

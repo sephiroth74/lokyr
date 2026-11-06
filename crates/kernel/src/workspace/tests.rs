@@ -882,8 +882,9 @@ mod told {
         /// layouts it changed into `laid_out`.
         fn take(&mut self, change: &Change, laid_out: &mut BTreeSet<sdk::TabId>) {
             match *change {
-                // A tab's look, which the model does not keep.
-                Change::TabChanged { .. } => {}
+                // A tab's look and a pane's title, which the model does not
+                // keep.
+                Change::TabChanged { .. } | Change::PaneChanged { .. } => {}
                 Change::WindowOpened { window } => {
                     assert!(self.windows.insert(window, Window::default()).is_none());
                 }

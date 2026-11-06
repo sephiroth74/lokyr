@@ -62,10 +62,29 @@ fn click_in(fake: &mut Fake, app: &mut App, window: WindowId, pane: PaneId) {
 /// second `second`, of the keyboard and the focus, once both showed
 /// `ready-` and their names, `a` and `b`.
 fn two_panes(first: Program, second: &Program) -> (Fake, App, WindowId, PaneId, PaneId) {
+    two_panes_of(unpadded(), first, second, false)
+}
+
+/// [`two_panes`] of `config`, whose frames draw, of a surface that counts
+/// them, while `drawn`.
+fn two_panes_of(
+    config: Config,
+    first: Program,
+    second: &Program,
+    drawn: bool,
+) -> (Fake, App, WindowId, PaneId, PaneId) {
     let mut fake = Fake::default();
-    let mut app = app(unpadded(), first);
+    let mut app = if drawn {
+        let drawing = Drawing::new(lokyr_text_core::FontConfig::default()).unwrap();
+        App::new(Some(drawing), config, None).with_program(first)
+    } else {
+        app(config, first)
+    };
     fake.start(&mut app);
     let window = fake.windows().next().unwrap();
+    if drawn {
+        app.windows.get_mut(&window).unwrap().surface = Some(crate::fakes::Surface::default());
+    }
     fake.send(&mut app, window, WindowEvent::Focused(true));
     let a = app.focused(window).unwrap();
     let grid = app.pane(window).grid();
@@ -580,4 +599,93 @@ fn a_divider_s_drag_resizes_the_programs_at_the_resizes_pace() {
     fake.deliver_wake(&mut app);
     let told = winches(&app) - before;
     assert!((1..=4).contains(&told), "{told} signals");
+}
+
+#[test]
+fn the_panes_without_the_keyboard_fade_under_a_veil_of_their_background() {
+    let (mut fake, mut app, window, a, b) =
+        two_panes_of(unpadded(), echoing("a"), &echoing("b"), true);
+    let focused = app.focused(window).unwrap();
+    let other = if focused == a { b } else { a };
+    fake.send(&mut app, window, WindowEvent::Frame);
+    let state = &app.windows[&window];
+    let room = |pane: PaneId| {
+        state
+            .views
+            .iter()
+            .find(|view| view.pane == pane)
+            .map(|view| view.rect)
+            .unwrap()
+    };
+    let veils: Vec<(Rect, f32)> = state
+        .shown
+        .as_ref()
+        .expect("a frame")
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            Item::Rect { rect, color } if *rect == room(other) || *rect == room(focused) => {
+                Some((*rect, color.alpha))
+            }
+            _ => None,
+        })
+        .collect();
+    // Of the splits' default fade, over the other pane alone.
+    assert_eq!(veils.len(), 1, "{veils:?}");
+    assert_eq!(veils[0].0, room(other));
+    assert!((veils[0].1 - 0.15).abs() < 1e-6, "{veils:?}");
+}
+
+#[test]
+fn the_keyboard_follows_the_pointer_over_the_panes_as_the_config_asks() {
+    let none = Modifiers::NONE;
+    // Not by default: a move over the other pane leaves the keyboard.
+    let (mut fake, mut app, window, a, b) = two_panes(echoing("a"), &echoing("b"));
+    let focused = app.focused(window).unwrap();
+    let other = if focused == a { b } else { a };
+    let over = middle_of(&fake, &app, window, other);
+    fake.send(&mut app, window, moved(over, none));
+    assert_eq!(app.focused(window), Some(focused));
+    // Of the config's: the other pane's room wakes the app, the move there
+    // gives it the keyboard, and then it alone wakes it.
+    let mut config = Config::parse(
+        "[plugins.splits]\nfocus-follows-mouse = true\n",
+        std::path::Path::new("config.toml"),
+    )
+    .unwrap();
+    let flat = unpadded();
+    config.window = flat.window;
+    let (mut fake, mut app, window, a, b) = two_panes_of(config, echoing("a"), &echoing("b"), true);
+    let focused = app.focused(window).unwrap();
+    let other = if focused == a { b } else { a };
+    fake.send(&mut app, window, WindowEvent::Frame);
+    let scale = fake.window(window).unwrap().size.scale;
+    let origin = |app: &App, pane: PaneId| {
+        let rect = app.windows[&window]
+            .views
+            .iter()
+            .find(|view| view.pane == pane)
+            .unwrap()
+            .rect;
+        Point {
+            x: f64::from(rect.x) / scale,
+            y: f64::from(rect.y) / scale,
+        }
+    };
+    let moving = |fake: &Fake| -> Vec<Point> {
+        fake.window(window)
+            .unwrap()
+            .move_areas
+            .iter()
+            .map(|area| area.origin)
+            .collect()
+    };
+    assert!(moving(&fake).contains(&origin(&app, other)));
+    assert!(!moving(&fake).contains(&origin(&app, focused)));
+    let over = middle_of(&fake, &app, window, other);
+    fake.send(&mut app, window, moved(over, none));
+    assert_eq!(app.focused(window), Some(other));
+    fake.send(&mut app, window, WindowEvent::Frame);
+    assert!(moving(&fake).contains(&origin(&app, focused)));
+    assert!(!moving(&fake).contains(&origin(&app, other)));
 }

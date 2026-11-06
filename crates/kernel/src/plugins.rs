@@ -308,6 +308,10 @@ struct State {
     ran: bool,
     /// Where its tab bar goes in the windows that show it.
     bar_place: host::BarPlace,
+    /// The veil of the panes that have not the keyboard that it asked for,
+    /// and whether it asked that the keyboard follow the pointer.
+    dim: f32,
+    follows: bool,
     /// Where its tab bar goes in windows of a place of their own, as a
     /// window of a single tab shows its title, which goes as the window
     /// closes.
@@ -742,6 +746,8 @@ impl Plugins {
                 ran: false,
                 bar_place: host::BarPlace::default(),
                 window_places: BTreeMap::new(),
+                dim: 0.0,
+                follows: false,
                 told_tabs: BTreeMap::new(),
             },
         });
@@ -1136,6 +1142,24 @@ impl Plugins {
             }));
         }
         commands
+    }
+
+    /// The veil of the panes that have not their tab's keyboard, of their
+    /// background, from 0 to 1: the most that the active plugins asked for.
+    pub fn inactive_dim(&self) -> f32 {
+        self.entries
+            .iter()
+            .filter(|entry| entry.state.status == Status::Active)
+            .map(|entry| entry.state.dim)
+            .fold(0.0, f32::max)
+    }
+
+    /// Whether the keyboard goes to the pane that the pointer comes over, as
+    /// an active plugin asked.
+    pub fn focus_follows_mouse(&self) -> bool {
+        self.entries
+            .iter()
+            .any(|entry| entry.state.status == Status::Active && entry.state.follows)
     }
 
     /// Where the tab bar of `plugin`, the provider of a window's, goes; at
@@ -2205,6 +2229,8 @@ fn apply(writes: Vec<Write>, context: &mut Context<'_>, out: &mut Outbox, state:
                 context.workspace.set_tab_title(TabId::of(tab.0), title);
             }
             Asked::SetTabBarPlace(place) => state.bar_place = place,
+            Asked::SetInactiveDim(dim) => state.dim = dim,
+            Asked::SetFocusFollowsMouse(on) => state.follows = on,
             Asked::SetWindowTabBarPlace { window, place } => {
                 // The places of windows that closed go.
                 state
@@ -2957,6 +2983,10 @@ impl Host<'_, '_> {
                     rows: grid.rows,
                 }
             }
+            Asked::PaneTitle(pane) => {
+                let reads = self.state.reads_processes();
+                Response::Text(self.pane(pane)?.header_title(reads))
+            }
             Asked::Config => Response::Data(self.state.config.clone()),
             Asked::State => Response::Data(self.stored()),
             other => {
@@ -3042,6 +3072,14 @@ impl Host<'_, '_> {
                 place
                     .check()
                     .map_err(|message| Error::new(Code::Failed, message))?;
+            }
+            Asked::SetInactiveDim(dim) => {
+                if !(0.0..=1.0).contains(dim) {
+                    return Err(Error::new(
+                        Code::Failed,
+                        lokyr_plugin_sdk::message::DIM_RANGE,
+                    ));
+                }
             }
             Asked::SetWindowTabBarPlace { window, place } => {
                 self.window(*window)?;

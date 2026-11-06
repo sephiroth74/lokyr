@@ -34,7 +34,8 @@ use lokyr_vt_core::terminal::{self, ClipboardTarget};
 
 pub use layout::{Direction, Edge, Layout, Ratio, Side};
 pub use pane::{
-    ANSWER_WAIT, Environment, Exited, Grid, Pane, RESIZE_PACE, Settings, TOLD_PACE, is_shell,
+    ANSWER_WAIT, Environment, Exited, Grid, Pane, RESIZE_PACE, Settings, TITLE_DASH, TOLD_PACE,
+    directory_name, is_shell, place_label,
 };
 
 /// The last id that the process gave, to a window, a tab or a pane.
@@ -531,12 +532,14 @@ impl Workspace {
                 .filter(|tab| self.tabs.get(tab).is_some_and(|shown| shown.active == id));
             let before = active.and_then(|tab| self.tabs.get(&tab)).map(Tab::look);
             let mut tab = active.and_then(|tab| self.tabs.get_mut(&tab));
+            let mut retitled = false;
             for event in happened.events {
                 let event = match event {
                     terminal::Event::TitleChanged => {
                         if let (Some(tab), Some(title)) = (tab.as_deref_mut(), &happened.title) {
                             tab.title.clone_from(title);
                         }
+                        retitled = true;
                         Event::TitleChanged(id)
                     }
                     terminal::Event::ClipboardWrite { target, data } => Event::ClipboardWrite {
@@ -559,6 +562,13 @@ impl Workspace {
             }
             if let (Some(tab), Some(before)) = (active, before) {
                 self.tab_looked(tab, &before);
+            }
+            // Its title, which its header shows.
+            if retitled && let Some(owner) = self.tab_of.get(&id).copied() {
+                self.changed(WorkspaceEvent::PaneChanged {
+                    pane: id.into(),
+                    tab: owner.into(),
+                });
             }
             // Its tab's marks: its progress, and the output and the bell
             // that came while it did not show.

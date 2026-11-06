@@ -1282,6 +1282,8 @@ fn a_call_is_its_own_plugin_s() {
             ran: true,
             bar_place: host::BarPlace::default(),
             window_places: BTreeMap::new(),
+            dim: 0.0,
+            follows: false,
             told_tabs: BTreeMap::new(),
         },
         Outbox::default(),

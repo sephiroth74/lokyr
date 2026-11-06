@@ -20,7 +20,7 @@ fn host() -> (FakeHost, Splits) {
     let mut host = FakeHost::new(NAME);
     host.pane(PaneId(1)).tab = TAB;
     host.focus(Some(PaneId(1)));
-    let mut plugin = Splits;
+    let mut plugin = Splits::default();
     host.activate(&mut plugin).unwrap();
     (host, plugin)
 }
@@ -311,4 +311,120 @@ fn a_tab_s_rooms_follow_its_splits_ratios_and_their_panes() {
         crate::geometry::split_of(&layout, PaneId(4), Edge::Right),
         None
     );
+}
+
+/// The config of `pairs`.
+fn config(pairs: &[(&str, Data)]) -> Data {
+    Data::Map(
+        pairs
+            .iter()
+            .map(|(key, value)| ((*key).to_owned(), value.clone()))
+            .collect(),
+    )
+}
+
+#[test]
+fn the_config_fades_the_panes_and_has_the_keyboard_follow_the_pointer() {
+    // Of the defaults: a fade of 0.15, the keyboard where the clicks put it.
+    let (host, _) = host();
+    assert_eq!(host.pane_looks(), (0.15, false));
+    // Of the config's, at a start, and as it changes.
+    let mut host = FakeHost::new(NAME);
+    host.pane(PaneId(1)).tab = TAB;
+    host.set_config(config(&[
+        ("dim-inactive", Data::Number(0.3)),
+        ("focus-follows-mouse", Data::Boolean(true)),
+    ]));
+    let mut plugin = Splits::default();
+    host.activate(&mut plugin).unwrap();
+    assert_eq!(host.pane_looks(), (0.3, true));
+    host.set_config(config(&[("dim-inactive", Data::Integer(0))]));
+    host.deliver(&mut plugin).unwrap();
+    assert_eq!(host.pane_looks(), (0.0, false));
+}
+
+#[test]
+fn each_pane_of_a_tab_of_splits_shows_its_title_while_the_config_asks() {
+    use lokyr_plugin_sdk::ui::ViewId;
+    let (mut host, mut plugin, [first, second, _]) = three();
+    host.pane(first).title = Some("vim".to_owned());
+    let header = |host: &mut FakeHost, plugin: &mut Splits, pane| {
+        host.render(plugin, &ViewId::PaneHeader(pane))
+    };
+    // None by default.
+    assert_eq!(header(&mut host, &mut plugin, first), None);
+    host.set_config(config(&[("pane-titles", Data::Boolean(true))]));
+    host.deliver(&mut plugin).unwrap();
+    // Its title, faint but in the pane of the keyboard, the third; none of
+    // a pane whose program set none.
+    assert_eq!(
+        header(&mut host, &mut plugin, first),
+        Some(title_header("vim", false))
+    );
+    assert_eq!(
+        header(&mut host, &mut plugin, second),
+        Some(title_header("", false))
+    );
+    // The keyboard there, and a title's change, render it again.
+    host.take_done();
+    host.focus(Some(first));
+    host.post(Event::Workspace(WorkspaceEvent::PaneFocused {
+        pane: first,
+        tab: TAB,
+    }));
+    host.deliver(&mut plugin).unwrap();
+    let rendered: Vec<Request> = host
+        .take_done()
+        .into_iter()
+        .filter(|request| matches!(request, Request::RequestRender(_)))
+        .collect();
+    assert_eq!(
+        rendered,
+        [Request::RequestRender(ViewId::PaneHeader(first))]
+    );
+    assert_eq!(
+        header(&mut host, &mut plugin, first),
+        Some(title_header("vim", true))
+    );
+    // A tab of one pane, or a zoomed one, has none.
+    let (mut single, mut plugin) = self::host();
+    single.set_config(config(&[("pane-titles", Data::Boolean(true))]));
+    single.deliver(&mut plugin).unwrap();
+    assert_eq!(header(&mut single, &mut plugin, PaneId(1)), None);
+}
+
+#[test]
+fn the_guide_tells_every_key_of_the_schema_in_its_example_and_its_section() {
+    let guide = include_str!("../../../docs/CONFIGURATION.md");
+    let schema = include_str!("../splits.schema.json");
+    let keys: Vec<&str> = schema
+        .lines()
+        .filter_map(|line| line.strip_prefix("    \"")?.split_once("\": {"))
+        .map(|(key, _)| key)
+        .collect();
+    assert_eq!(keys, ["dim-inactive", "pane-titles", "focus-follows-mouse"]);
+    let example = guide
+        .split_once("\n[plugins.splits]\n")
+        .and_then(|(_, rest)| rest.split_once("```"))
+        .map(|(example, _)| example)
+        .expect("the complete example's section");
+    let section = guide
+        .split_once("\n## `[plugins.splits]`\n")
+        .map(|(_, rest)| {
+            rest.split_once("\n## ")
+                .map_or(rest, |(section, _)| section)
+        })
+        .expect("the guide's section");
+    for key in keys {
+        assert!(
+            example
+                .lines()
+                .any(|line| line.starts_with(&format!("{key} = "))),
+            "`{key}` in the example"
+        );
+        assert!(
+            section.contains(&format!("\n### `{key}`\n")),
+            "`{key}` in the section"
+        );
+    }
 }

@@ -605,6 +605,19 @@ impl<'a> Cx<'a> {
         self.done(Request::SetTabBarPlace(place))
     }
 
+    /// Veils the panes that have not their tab's keyboard of their
+    /// background at `dim`, from 0, none, to 1, while the plugin runs, as
+    /// this call returns.
+    pub fn set_inactive_dim(&mut self, dim: f32) -> Result<(), Error> {
+        self.done(Request::SetInactiveDim(dim))
+    }
+
+    /// Gives the keyboard to the pane that the pointer comes over, or no
+    /// more, while the plugin runs, as this call returns.
+    pub fn set_focus_follows_mouse(&mut self, on: bool) -> Result<(), Error> {
+        self.done(Request::SetFocusFollowsMouse(on))
+    }
+
     /// Puts the plugin's tab bar of `window` at `place`, over its place in
     /// every window, or at that place again with `None`, as this call
     /// returns.
@@ -697,6 +710,15 @@ impl<'a> Cx<'a> {
     /// Moves `pane` into a window of its own, as this call returns.
     pub fn pane_to_new_window(&mut self, pane: PaneId) -> Result<(), Error> {
         self.done(Request::PaneToNewWindow(pane))
+    }
+
+    /// The title of `pane`, as its header shows it: its program's, or its
+    /// folder and its program, to a plugin that reads the processes.
+    pub fn pane_title(&mut self, pane: PaneId) -> Result<Option<String>, Error> {
+        match self.request(Request::PaneTitle(pane)) {
+            Response::Text(title) => Ok(title),
+            other => Err(failed(other)),
+        }
     }
 
     /// The grid of `pane`, its columns and its rows, as its window last

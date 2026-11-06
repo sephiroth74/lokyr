@@ -219,17 +219,16 @@ On macOS the shortcuts are the `keymap-macos` plugin's, which binds the keys of 
 
 **Behavior**
 - **The commands**, as `splits` gives them: a split takes the keyboard to its new pane, right or below; the focus by direction goes to the nearest pane whose side faces the pane's, of the most room shared along it, the first in the layout's order of a tie, and nowhere at the tab's edge or while a pane is zoomed; next and previous go round the tab's panes in its layout's order; a resize moves the divider on the pane's right, or its bottom, where it has one, as iTerm2's, the other otherwise, by `cells` cells, 1 by default, of the share of its split's room that the pane's grid gives a cell; the zoom toggles; swap exchanges the pane with the one beside it, each taking the other's room, the keyboard staying with the pane; to a tab puts the pane in a tab of its own after its tab, and to a window in a window of its own, a pane alone in its window's one tab staying.
-- **New panes** inherit the cwd (via OSC 7, which is why basic shell integration already lands in F3) and the profile of the pane they come from.
-- **Inactive panes** are dimmed (`dim-inactive`), as in iTerm2.
+- **New panes** inherit the cwd of the pane they come from: the folder that its shell told last by OSC 7, which is why basic shell integration already lands in F3, where it is of this Mac, as a pane of `ssh` works in the client's, its program's otherwise; its profile with the profiles, in F5b.
+- **Inactive panes** are dimmed (`dim-inactive`, 0.15 by default), as in iTerm2, under a veil of their background that the host draws over them, as `splits` asks for it, as the user chose on 6 November 2026.
 - **Dividers**, a line of a point, between the padding of the panes on either side, as each pane keeps its padding on every side, which the user asked for on 6 November 2026, and as long as the panes' room, the lines meeting:
   - can be dragged, with a grab area of 6 points, wider than the visible line, the pointer a column's or a row's resize over it, and held at it while the drag goes on;
   - reset to 50/50 on double-click.
 - **PTY resizes during a drag** are coalesced: at most one every 25 ms, the window's live resize's pace, plus a final one. This avoids storms of SIGWINCH.
-- **Options**: per-pane titles (`pane-header`), useful with many splits; `focus-follows-mouse`.
+- **Options**: per-pane titles, in the `pane-header` slot, useful with many splits, of the pane's program's title or its folder and program, which `splits` reads and draws; `focus-follows-mouse`, which the host does as `splits` asks for it, the pointer's moves waking the app over the panes without the keyboard alone, as the user chose on 6 November 2026.
 
 ```toml
 [plugins.splits]
-divider-width = 1
 dim-inactive = 0.15        # 0 = no dimming
 pane-titles = false
 focus-follows-mouse = false
