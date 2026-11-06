@@ -482,13 +482,17 @@ impl Window {
         }
     }
 
-    /// Gives the window the titlebar `titlebar`: of the window's title, or
-    /// an empty compact toolbar's, of no title, on which the window's
-    /// buttons stand centred; the content's size comes anew, of the
-    /// titlebar's height and of the buttons' room. A quick window has no
-    /// titlebar.
+    /// Gives the window the titlebar `titlebar`: of the window's title, of
+    /// none, which the content draws, or an empty compact toolbar's, of no
+    /// title, on which the window's buttons stand centred; the content's
+    /// size comes anew, of the titlebar's height and of the buttons' room,
+    /// as the toolbar comes or goes. A quick window has no titlebar.
     pub(crate) fn set_titlebar(&self, titlebar: Titlebar) {
-        if self.quick.is_some() || self.view.ivars().titlebar.replace(titlebar) == titlebar {
+        if self.quick.is_some() {
+            return;
+        }
+        let before = self.view.ivars().titlebar.replace(titlebar);
+        if before == titlebar {
             return;
         }
         match titlebar {
@@ -503,17 +507,25 @@ impl Window {
                 self.ns_window
                     .setTitleVisibility(NSWindowTitleVisibility::Hidden);
             }
-            Titlebar::Titled => {
+            Titlebar::Titled | Titlebar::Untitled => {
                 self.ns_window.setToolbar(None);
                 self.ns_window
                     .setToolbarStyle(NSWindowToolbarStyle::Automatic);
                 self.ns_window
-                    .setTitleVisibility(NSWindowTitleVisibility::Visible);
+                    .setTitleVisibility(if titlebar == Titlebar::Titled {
+                        NSWindowTitleVisibility::Visible
+                    } else {
+                        NSWindowTitleVisibility::Hidden
+                    });
             }
         }
         self.ns_window.invalidateCursorRectsForView(&self.view);
-        self.view
-            .post(WindowEvent::Resized(size_of(&self.ns_window)));
+        // The system's titlebar of its title and of none are alike, of no
+        // new size.
+        if (before == Titlebar::Tabs) != (titlebar == Titlebar::Tabs) {
+            self.view
+                .post(WindowEvent::Resized(size_of(&self.ns_window)));
+        }
     }
 
     /// Shows `text` at the titlebar's right, or nothing with `None`; a

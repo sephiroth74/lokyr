@@ -223,6 +223,8 @@ pub struct FakeHost {
     messages: Vec<(String, BTreeMap<String, Data>, String)>,
     /// The place of the plugin's tab bar.
     bar_place: BarPlace,
+    /// The places of the plugin's tab bar of windows of their own.
+    window_bar_places: BTreeMap<WindowId, BarPlace>,
     /// The window that has the focus.
     focused: Option<WindowId>,
     /// The focus that the test gave last, which the next look at the
@@ -269,6 +271,7 @@ impl FakeHost {
             keys: Vec::new(),
             messages: Vec::new(),
             bar_place: BarPlace::default(),
+            window_bar_places: BTreeMap::new(),
             focused: None,
             given_focus: None,
             clipboard: None,
@@ -423,6 +426,15 @@ impl FakeHost {
     /// screens, the window of a tab that was alone too.
     pub fn place(&self, window: WindowId) -> Option<ScreenPoint> {
         self.places.get(&window).copied()
+    }
+
+    /// The place of the plugin's tab bar in `window`: the window's own, or
+    /// the bar's.
+    pub fn bar_place(&self, window: WindowId) -> BarPlace {
+        self.window_bar_places
+            .get(&window)
+            .copied()
+            .unwrap_or(self.bar_place)
     }
 
     /// The clipboard's text.
@@ -804,6 +816,14 @@ impl FakeHost {
                 }
             }
             Request::SetTabBarPlace(place) => self.bar_place = *place,
+            Request::SetWindowTabBarPlace { window, place } => match place {
+                Some(place) => {
+                    self.window_bar_places.insert(*window, *place);
+                }
+                None => {
+                    self.window_bar_places.remove(window);
+                }
+            },
             Request::SetTabColor { tab: id, color } => {
                 if let Some(tab) = self.tabs.get_mut(id)
                     && tab.color != *color
@@ -1728,6 +1748,15 @@ impl Calling<'_> {
                 place
                     .check()
                     .map_err(|message| Error::new(Code::Failed, message))?;
+                Response::Done
+            }
+            Request::SetWindowTabBarPlace { window, place } => {
+                self.known_window(*window)?;
+                if let Some(place) = place {
+                    place
+                        .check()
+                        .map_err(|message| Error::new(Code::Failed, message))?;
+                }
                 Response::Done
             }
             Request::SetTabColor { tab, color } => {

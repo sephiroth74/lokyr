@@ -272,6 +272,12 @@ pub enum BarPlace {
         /// The column's width, in points.
         width: f32,
     },
+    /// Across the whole titlebar, of its height, in place of the window's
+    /// own title, which the window keeps for its menu and the system's
+    /// lists of windows, as a window of a single tab shows its title and
+    /// its marks: the titlebar's presses stay the window's; none in full
+    /// screen, where the window has no titlebar.
+    Title,
 }
 
 /// The narrowest and the widest that a tab bar's column is, in points.

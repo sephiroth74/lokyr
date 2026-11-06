@@ -1397,7 +1397,7 @@ Whether the bar hides while the window has a single tab.
 |---|---|
 | `true`, `false` | `true` |
 
-- Hidden, the bar takes no room, and the window shows its title.
+- Hidden, the bar takes no room, and the window shows its tab's title in its titlebar, in its middle, with the tab's marks beside it: the lock of the protected input, the bell, and the dots of a program that runs; none in full screen, where the window has no titlebar.
 - It applies at once, as you save the file.
 
 ### `show-index`

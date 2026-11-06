@@ -61,6 +61,11 @@ mod probe {
         /// Whether the view is opaque, and lets AppKit drag the window from
         /// a press over it, of an opaque window and of a translucent one.
         moves_window: Vec<(bool, bool)>,
+        /// Of the titlebar of no title, whether the title shows, whether a
+        /// toolbar is there, and the window's title; and how many sizes had
+        /// come as it came, and once it was there.
+        untitled: Option<(bool, bool, String)>,
+        sizes_untitled: (usize, usize),
     }
 
     /// The rectangles of `view`'s tracking areas, and its height.
@@ -239,6 +244,19 @@ mod probe {
                 }
                 3 => {
                     seen.tracked.push(tracked(&content));
+                    // The system's titlebar of no title, which the content
+                    // draws, the window keeping its title.
+                    seen.sizes_untitled.0 = seen.sizes.len();
+                    platform.set_titlebar(id, Titlebar::Untitled);
+                    seen.untitled = Some((
+                        window.titleVisibility() == NSWindowTitleVisibility::Visible,
+                        window.toolbar().is_some(),
+                        window.title().to_string(),
+                    ));
+                    common::wake_after(platform.waker(), 300);
+                }
+                4 => {
+                    seen.sizes_untitled.1 = seen.sizes.len();
                     platform.quit();
                 }
                 _ => platform.quit(),
@@ -283,6 +301,14 @@ mod probe {
         assert!(tabs.bar > titled.bar && tabs.bar >= 36.0, "{seen:?}");
         assert!((50.0..=140.0).contains(&tabs.buttons), "{seen:?}");
         assert!(titled.bar >= 24.0 && titled.buttons > 0.0, "{seen:?}");
+        // Of no title, of the title's titlebar's size, which comes not anew.
+        assert_eq!(
+            seen.untitled,
+            Some((false, false, "The titlebar".to_owned())),
+            "{seen:?}"
+        );
+        let (before, after) = seen.sizes_untitled;
+        assert_eq!(before, after, "no new size: {seen:?}");
         // The tracking area 20 points below the view's top, before and after
         // the resize, and the pointer's leaving it.
         assert_eq!(seen.tracked.len(), 2, "{seen:?}");

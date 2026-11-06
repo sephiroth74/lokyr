@@ -261,6 +261,16 @@ pub enum Request {
     /// place of the place before, as its config says: a plugin that fills
     /// no tab bar puts it nowhere.
     SetTabBarPlace(BarPlace),
+    /// Puts the plugin's tab bar of `window` at `place`, over the place of
+    /// its bar in every window, as a window of a single tab shows its title
+    /// in its titlebar, [`BarPlace::Title`]; `None` gives it that place
+    /// again.
+    SetWindowTabBarPlace {
+        /// The window.
+        window: WindowId,
+        /// Its own place, or none.
+        place: Option<BarPlace>,
+    },
     /// The plugin's tab bar's place, a column's width as the user's drag
     /// of its edge left it, as its view lays its tabs out across or down.
     TabBarPlace,
@@ -510,6 +520,7 @@ impl Request {
             | Self::SetTabColor { .. }
             | Self::AskText { .. }
             | Self::SetTabBarPlace(_)
+            | Self::SetWindowTabBarPlace { .. }
             | Self::TabBarPlace
             | Self::KeysOf { .. }
             | Self::Message { .. }
@@ -577,6 +588,7 @@ impl Request {
             | Self::SetTabTitle { .. }
             | Self::SetTabColor { .. }
             | Self::SetTabBarPlace(_)
+            | Self::SetWindowTabBarPlace { .. }
             | Self::ActivateTab(_)
             | Self::FocusPane(_)
             | Self::MoveTab { .. }

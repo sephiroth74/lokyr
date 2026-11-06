@@ -180,6 +180,9 @@ pub(crate) const ROWS_KEY: &str = "rows";
 /// widths.
 pub(crate) const TRACK_KEY: &str = "track";
 
+/// The key of a single tab's title in the titlebar.
+pub(crate) const TITLE_KEY: &str = "title";
+
 /// A tab's least width across the bar, in points, as a pill and as a
 /// cell: of its close button, its room that balances it, its paddings, and
 /// a few of its title's letters.
@@ -312,16 +315,30 @@ pub(crate) fn bar(
 /// The bar of `tabs`, a window's, each of the keys that select it of
 /// `keys`, and of the keys that bring the window forward, `window`, which a
 /// bar in the titlebar shows after the window's buttons, as `settings` lay
-/// it out, of `texts`; `None` of no tabs, or of one while the config hides
-/// the bar then.
+/// it out, of `texts`; of one tab while the config hides the bar then, its
+/// title, which goes in the titlebar, as [`titled`] tells; `None` of no
+/// tabs.
 pub(crate) fn bar_with(
     tabs: &[TabInfo],
     keys: &[Option<String>],
     window: Option<&str>,
     (settings, texts): BarOf<'_>,
 ) -> Option<Node> {
-    if tabs.is_empty() || (tabs.len() == 1 && settings.hide_when_single) {
+    if tabs.is_empty() {
         return None;
+    }
+    if titled(tabs.len(), settings) {
+        let tab = &tabs[0];
+        let shown = Shown {
+            tab,
+            title: if tab.title.is_empty() {
+                texts.untitled(1)
+            } else {
+                tab.title.clone()
+            },
+            keys: None,
+        };
+        return Some(title(&shown, texts));
     }
     let shown: Vec<Shown<'_>> = tabs
         .iter()
@@ -350,6 +367,50 @@ pub(crate) fn bar_with(
         Look::Seamless => cells(&shown, window, (settings, texts)),
         Look::Standard | Look::Unified => pills(&shown, window, (settings, texts)),
     })
+}
+
+/// Whether a window of `count` tabs shows its title in its titlebar, in
+/// place of its bar, as `settings` hide the bar of a single tab: its place
+/// then [`BarPlace::Title`].
+pub(crate) fn titled(count: usize, settings: &Settings) -> bool {
+    count == 1 && settings.hide_when_single
+}
+
+/// The title of a window of a single tab, across its titlebar in place of
+/// the window's own: the tab's marks and its title in the titlebar's
+/// middle, between the room of the window's buttons on either side, so
+/// that it stands in the window's middle, as the system's title does.
+fn title(tab: &Shown<'_>, texts: &BarTexts) -> Node {
+    let mut middle = marks(tab.tab, &texts.marks);
+    middle.push(Node::text(tab.title.as_str()));
+    let middle = Node::container(middle)
+        .layout(Layout {
+            gap: 6.0,
+            align: Align::Center,
+            justify: Justify::Center,
+            width: Length::Points(0.0),
+            grow: 1.0,
+            ..Layout::default()
+        })
+        .style(Style {
+            clip: true,
+            ..Style::default()
+        });
+    let side = || {
+        Node::container(vec![]).layout(Layout {
+            width: Length::Buttons,
+            min_width: Length::Buttons,
+            ..Layout::default()
+        })
+    };
+    Node::container(vec![side(), middle, side()])
+        .key(TITLE_KEY)
+        .label(tab.title.as_str())
+        .layout(Layout {
+            align: Align::Center,
+            grow: 1.0,
+            ..Layout::default()
+        })
 }
 
 /// A bar of the standard or the unified look: its pills in their track,

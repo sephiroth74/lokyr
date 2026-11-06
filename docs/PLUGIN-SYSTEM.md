@@ -228,6 +228,7 @@ type BarPlace =
     | { kind: "left", width: number }
     | { kind: "right", width: number }
     | { kind: "sidebar", width: number } -- down the left from the window's top, through the titlebar, the window's buttons over its top, the panes beside it below the titlebar
+    | { kind: "title" } -- across the whole titlebar, in place of the window's title, as a window of a single tab shows its title and its marks; none in full screen
 
 type TabInfo = {
     id: TabId,
@@ -530,6 +531,9 @@ type Cx = {
     -- at the bottom, or down a column on a side of 60 to 600 points; `tab_bar_place` reads it, a column's width as the
     -- user's drag of its edge left it, as the bar's view lays its tabs out across or down.
     set_tab_bar_place: (place: BarPlace) -> (boolean, Error?),
+    -- Puts the plugin's tab bar of one window at its own place, over the place of every window, as a window of a
+    -- single tab shows its title in its titlebar; nil gives it that place again.
+    set_window_tab_bar_place: (window: WindowId, place: BarPlace?) -> (boolean, Error?),
     tab_bar_place: () -> (BarPlace?, Error?),
     -- The keys that run a command of its arguments, one key that no later binding takes, as the platform writes them,
     -- as "⌘1"; none without a binding.

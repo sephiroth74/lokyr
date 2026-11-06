@@ -165,6 +165,10 @@ pub enum Titlebar {
     /// content's top as the pointer reaches the screen's top, and leaves no
     /// room of its own.
     Tabs,
+    /// The system's, of its height and its buttons, of no title, which the
+    /// content draws in its place: the window keeps its title for its menu
+    /// and the system's lists of windows.
+    Untitled,
 }
 
 /// The pixels of a length in points, rounded; a negative length, or one

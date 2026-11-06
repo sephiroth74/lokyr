@@ -1574,6 +1574,11 @@ impl<B: Backend> App<B> {
         self.workspace.number_window(shown, number, None);
         self.windows.insert(window, state);
         self.window_keys(platform);
+        // Its tab's folder and program, which its program, started, has
+        // already, for the first frame's title to be the one that stays.
+        if let Some(pane) = self.workspace.focused(shown).map(Pane::id) {
+            self.look_at_tab_place(pane);
+        }
         self.draw(platform, window, size);
     }
 
@@ -1635,7 +1640,7 @@ impl<B: Backend> App<B> {
             .workspace
             .window(state.window)
             .and_then(workspace::Window::keys)
-            .filter(|_| state.titlebar == lokyr_platform_core::Titlebar::Titled);
+            .filter(|_| state.titlebar != lokyr_platform_core::Titlebar::Tabs);
         if keys != state.accessory.as_deref() {
             platform.set_title_accessory(window, keys);
             state.accessory = keys.map(str::to_owned);
@@ -2702,8 +2707,11 @@ impl<B: Backend> App<B> {
             return;
         };
         // Its tab bar marks the protected input of its tab, where one
-        // shows.
-        let lock = if secure && state.focused && !chrome::has_tab_bar(&state.chrome) {
+        // shows; a title in its place, of a single tab, leaves the window's
+        // own the lock for its menu and the system's lists of windows.
+        let titled = chrome::tab_bar_place(&state.chrome, &self.plugins)
+            == lokyr_kernel::plugins::host::BarPlace::Title;
+        let lock = if secure && state.focused && (!chrome::has_tab_bar(&state.chrome) || titled) {
             SECURE_MARK
         } else {
             ""

@@ -605,6 +605,17 @@ impl<'a> Cx<'a> {
         self.done(Request::SetTabBarPlace(place))
     }
 
+    /// Puts the plugin's tab bar of `window` at `place`, over its place in
+    /// every window, or at that place again with `None`, as this call
+    /// returns.
+    pub fn set_window_tab_bar_place(
+        &mut self,
+        window: WindowId,
+        place: Option<BarPlace>,
+    ) -> Result<(), Error> {
+        self.done(Request::SetWindowTabBarPlace { window, place })
+    }
+
     /// The plugin's tab bar's place, a column's width as the user's drag
     /// left it.
     pub fn tab_bar_place(&mut self) -> Result<BarPlace, Error> {

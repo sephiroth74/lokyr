@@ -1010,17 +1010,15 @@ impl<B: Backend> App<B> {
             platform.set_pointer_areas(window, &areas);
             state.pointer_areas = areas;
         }
-        // The titlebar of a tab bar while one shows in it, the system's
-        // otherwise, of a bar below it, at the bottom or down a column; a
-        // quick window has none.
-        let titlebar = if chrome::has_tab_bar(&state.chrome)
-            && matches!(
-                chrome::tab_bar_place(&state.chrome, &self.plugins),
-                BarPlace::Titlebar | BarPlace::Sidebar { .. }
-            ) {
-            Titlebar::Tabs
-        } else {
-            Titlebar::Titled
+        // The titlebar of a tab bar while one shows in it, the system's of
+        // no title while a bar's view shows the title in its place, the
+        // system's otherwise, of a bar below it, at the bottom or down a
+        // column; a quick window has none.
+        let titlebar = match chrome::tab_bar_place(&state.chrome, &self.plugins) {
+            _ if !chrome::has_tab_bar(&state.chrome) => Titlebar::Titled,
+            BarPlace::Titlebar | BarPlace::Sidebar { .. } => Titlebar::Tabs,
+            BarPlace::Title => Titlebar::Untitled,
+            _ => Titlebar::Titled,
         };
         if titlebar != state.titlebar && self.quick.is_none_or(|(quick, _)| quick != window) {
             platform.set_titlebar(window, titlebar);

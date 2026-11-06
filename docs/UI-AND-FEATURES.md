@@ -150,7 +150,7 @@ The `tabs` plugin. Each window's tab list lives in the kernel. The plugin handle
   - on a window whose bar hides, of a single tab, over its titlebar, it goes after that window's tab.
 
   The bar of another window opens a tab's room under the pointer as the tab passes over it, its tabs sliding aside as a reorder slides them, as the user chose on 6 November 2026; the image is a card 320 points wide, the tab at its top as its bar paints it, its panes under it, of its window's height in proportion.
-- With a single tab, the bar hides, by default: the window shows its title, and the tab moves by Move Tab to New Window, in the Window menu and the palette, which no key takes by default.
+- With a single tab, the bar hides, by default: the window shows its tab's title in its titlebar, which `tabs` draws in the system's title's place, as the user chose on 6 November 2026, after Nyx's, centered between the room of the window's buttons on either side, with the tab's marks beside it, the lock, the bell and the spinner of a program that runs; the window keeps its own title for its menu and the system's lists of windows; and the tab moves by Move Tab to New Window, in the Window menu and the palette, which no key takes by default.
 - Double-click to rename, in the question of its title, as Rename Tab… asks it; the title that it asked with, unchanged, leaves the tab's folder and program its own.
 - Context menu, the platform's: rename, move to a new window, close, close others; a tab's color, of a picker that the host lacks, later.
 - When there are too many tabs, each shrinks to a minimum width, 120 points across the bar, and then the bar scrolls, across or down a column, as the tab shown scrolls into view.

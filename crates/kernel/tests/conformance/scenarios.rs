@@ -274,6 +274,29 @@ fn tabs(world: &World) -> Scenario {
                     Response::TabBarPlace(BarPlace::Left { width: 200.0 }),
                 ),
                 (Request::SetTabBarPlace(BarPlace::Titlebar), Response::Done),
+                // A window's own place, its title in its titlebar, and
+                // none of a window not there.
+                (
+                    Request::SetWindowTabBarPlace {
+                        window: w,
+                        place: Some(BarPlace::Title),
+                    },
+                    Response::Done,
+                ),
+                (
+                    Request::SetWindowTabBarPlace {
+                        window: NO_WINDOW,
+                        place: None,
+                    },
+                    failed(Code::NotFound, "there is no window 999999"),
+                ),
+                (
+                    Request::SetWindowTabBarPlace {
+                        window: w,
+                        place: None,
+                    },
+                    Response::Done,
+                ),
             ]),
             // A drag of its column's edge, told to it alone.
             Step {

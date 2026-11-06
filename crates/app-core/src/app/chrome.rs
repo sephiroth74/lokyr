@@ -207,6 +207,7 @@ impl<B: Backend> App<B> {
             .collect();
         let mut rendered = false;
         for (plugin, view) in &due {
+            let written = self.plugins.written();
             let result = self.with_plugins(platform, |plugins, context| {
                 plugins.render(plugin, view, context)
             });
@@ -214,6 +215,16 @@ impl<B: Backend> App<B> {
                 eprintln!("lokyr: {error}");
             }
             rendered |= self.plugins.rendered(plugin, view).is_some();
+            // The writes of a render of the main thread's, as the place of
+            // the window's tab bar, which the frame under way lays out
+            // after it, show in that frame; the other windows draw them.
+            if !written && self.plugins.take_written() {
+                for &other in self.windows.keys() {
+                    if other != window {
+                        platform.request_frame(other);
+                    }
+                }
+            }
         }
         rendered
     }
@@ -366,6 +377,7 @@ impl<B: Backend> App<B> {
             BarPlace::Left { width } => TabBarPlace::Left(width * size.scale as f32),
             BarPlace::Right { width } => TabBarPlace::Right(width * size.scale as f32),
             BarPlace::Sidebar { width } => TabBarPlace::Sidebar(width * size.scale as f32),
+            BarPlace::Title => TabBarPlace::Title,
         };
         // The views' lengths of the titlebar and of the window's buttons,
         // as a sidebar leaves them their room.
@@ -401,7 +413,7 @@ impl<B: Backend> App<B> {
         // and across the window its view's.
         let tab_bar = match place {
             _ if !tab_bar_shows => 0.0,
-            TabBarPlace::Titlebar if titlebar > 0.0 => titlebar,
+            TabBarPlace::Titlebar | TabBarPlace::Title if titlebar > 0.0 => titlebar,
             TabBarPlace::Left(_) | TabBarPlace::Right(_) | TabBarPlace::Sidebar(_) => 1.0,
             _ => natural(Slot::TabBar),
         };
@@ -764,7 +776,7 @@ pub(super) fn column_edge(
         .iter()
         .find(|view| view.view.slot() == Some(Slot::TabBar) && view.shows())?;
     let frame = view.frame?;
-    let left = match plugins.tab_bar_place(&view.plugin) {
+    let left = match bar_place_of(view, plugins) {
         BarPlace::Left { .. } | BarPlace::Sidebar { .. } => true,
         BarPlace::Right { .. } => false,
         _ => return None,
@@ -786,8 +798,17 @@ pub(super) fn tab_bar_place(chrome: &[SlotView], plugins: &Plugins) -> BarPlace 
     chrome
         .iter()
         .find(|view| view.view.slot() == Some(Slot::TabBar))
-        .map(|view| plugins.tab_bar_place(&view.plugin))
+        .map(|view| bar_place_of(view, plugins))
         .unwrap_or_default()
+}
+
+/// Where the tab bar of `view` goes, as its plugin, of `plugins`, gives it
+/// its window, or every window.
+fn bar_place_of(view: &SlotView, plugins: &Plugins) -> BarPlace {
+    match &view.view {
+        ViewId::TabBar(window) => plugins.window_tab_bar_place(&view.plugin, *window),
+        _ => plugins.tab_bar_place(&view.plugin),
+    }
 }
 
 /// Whether a transition of `chrome`'s views runs at `now`.

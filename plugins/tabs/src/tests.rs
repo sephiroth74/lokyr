@@ -446,9 +446,33 @@ fn the_bar_shows_a_window_s_tabs_and_its_clicks_select_close_and_open() {
         ),
         "{opened:?}"
     );
-    // A window of one tab shows no bar, by default.
+    // A window of one tab shows its title in its titlebar, by default, as
+    // its render puts it there, and its bar again of a second tab.
     let (mut single, mut plugin) = self::host(&[1], 1);
-    assert!(single.render(&mut plugin, &view).is_none());
+    let title = single.render(&mut plugin, &view).expect("a title");
+    assert_eq!(title.key, Some(bar::TITLE_KEY.into()));
+    assert_eq!(single.bar_place(WINDOW), BarPlace::Title);
+    let places = |host: &mut FakeHost| -> Vec<Request> {
+        host.take_done()
+            .into_iter()
+            .filter(|request| matches!(request, Request::SetWindowTabBarPlace { .. }))
+            .collect()
+    };
+    // Once, not at every render.
+    places(&mut single);
+    let _ = single.render(&mut plugin, &view);
+    assert_eq!(places(&mut single), []);
+    run(&mut single, &mut plugin, NEW, Args::new());
+    let bar = single.render(&mut plugin, &view).expect("a bar");
+    assert_ne!(bar.key, Some(bar::TITLE_KEY.into()));
+    assert_eq!(single.bar_place(WINDOW), BarPlace::Titlebar);
+    assert_eq!(
+        places(&mut single),
+        [Request::SetWindowTabBarPlace {
+            window: WINDOW,
+            place: None
+        }]
+    );
 }
 
 #[test]

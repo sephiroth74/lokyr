@@ -383,6 +383,23 @@ fn the_tab_bar_goes_at_its_plugin_s_place_and_the_titlebar_follows() {
         app.plugins.tab_bar_place("lokyr/bars"),
         BarPlace::Sidebar { width: 100.0 }
     );
+    // A title across the whole titlebar, of the system's titlebar of no
+    // title, the panes below it, the titlebar's presses the window's.
+    let (bar, tab_bar, _, pane) = placed(&mut fake, &mut app, BarPlace::Title);
+    assert_eq!(bar, Titlebar::Untitled);
+    let below = fake.window(window).unwrap().size.bar_pixels() as i32;
+    assert_eq!(
+        (
+            tab_bar.x,
+            tab_bar.y,
+            tab_bar.width as i32,
+            tab_bar.height as i32
+        ),
+        (0, 0, width, below)
+    );
+    assert_eq!(pane.y, below);
+    let areas = &fake.window(window).unwrap().titlebar_areas;
+    assert!(areas.is_empty(), "{areas:?}");
 }
 
 #[test]

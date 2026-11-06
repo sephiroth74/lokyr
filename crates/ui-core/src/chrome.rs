@@ -40,6 +40,9 @@ pub enum TabBarPlace {
     /// the window's top, through the titlebar, under the window's buttons,
     /// the panes beside it below the titlebar.
     Sidebar(f32),
+    /// Across the whole titlebar, of its height, in place of the window's
+    /// title; none where the window has no titlebar, as in full screen.
+    Title,
 }
 
 impl TabBarPlace {
@@ -112,12 +115,19 @@ pub struct PaneRegions {
 pub fn regions(window: &Window, place: TabBarPlace, heights: Heights) -> Regions {
     let (width, height) = (window.size.0.max(0.0), window.size.1.max(0.0));
     let titlebar = window.titlebar.clamp(0.0, height);
-    let shows = heights.tab_bar > 0.0;
+    // A title has no room but the titlebar's.
+    let shows = heights.tab_bar > 0.0 && (place != TabBarPlace::Title || titlebar > 0.0);
     let mut top = titlebar;
     let (mut left, mut right, mut bottom) = (0.0, width, height);
     // A bar across the top, a column on a side, or one across the bottom,
     // within the window.
     let tab_bar = shows.then(|| match place {
+        TabBarPlace::Title => Frame {
+            x: 0.0,
+            y: 0.0,
+            width,
+            height: titlebar,
+        },
         TabBarPlace::Titlebar if titlebar > 0.0 => {
             let buttons = window.buttons.clamp(0.0, width);
             Frame {

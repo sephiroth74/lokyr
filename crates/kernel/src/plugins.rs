@@ -308,6 +308,10 @@ struct State {
     ran: bool,
     /// Where its tab bar goes in the windows that show it.
     bar_place: host::BarPlace,
+    /// Where its tab bar goes in windows of a place of their own, as a
+    /// window of a single tab shows its title, which goes as the window
+    /// closes.
+    window_places: BTreeMap<host::WindowId, host::BarPlace>,
     /// Of a plugin that does not read the processes, the title and the
     /// color of each tab as it last learned them, which a change of the
     /// tab's folder or program, that it cannot read, leaves.
@@ -737,6 +741,7 @@ impl Plugins {
                 wanted: true,
                 ran: false,
                 bar_place: host::BarPlace::default(),
+                window_places: BTreeMap::new(),
                 told_tabs: BTreeMap::new(),
             },
         });
@@ -1140,6 +1145,24 @@ impl Plugins {
             .iter()
             .find(|entry| entry.state.name == plugin)
             .map(|entry| entry.state.bar_place)
+            .unwrap_or_default()
+    }
+
+    /// Where the tab bar of `plugin`, the provider of `window`'s, goes in
+    /// it: the window's own place, or the bar's; at the titlebar for a
+    /// plugin not there.
+    pub fn window_tab_bar_place(&self, plugin: &str, window: host::WindowId) -> host::BarPlace {
+        self.entries
+            .iter()
+            .find(|entry| entry.state.name == plugin)
+            .map(|entry| {
+                entry
+                    .state
+                    .window_places
+                    .get(&window)
+                    .copied()
+                    .unwrap_or(entry.state.bar_place)
+            })
             .unwrap_or_default()
     }
 
@@ -1759,6 +1782,12 @@ impl Plugins {
     pub fn take_written(&mut self) -> bool {
         std::mem::take(&mut self.out.written)
     }
+
+    /// Whether a call wrote since the last [`Plugins::take_written`], as
+    /// that tells, without taking it.
+    pub fn written(&self) -> bool {
+        self.out.written
+    }
 }
 
 /// The schema of the config of the plugin `name`, of `manifest` and of
@@ -2176,6 +2205,20 @@ fn apply(writes: Vec<Write>, context: &mut Context<'_>, out: &mut Outbox, state:
                 context.workspace.set_tab_title(TabId::of(tab.0), title);
             }
             Asked::SetTabBarPlace(place) => state.bar_place = place,
+            Asked::SetWindowTabBarPlace { window, place } => {
+                // The places of windows that closed go.
+                state
+                    .window_places
+                    .retain(|kept, _| context.workspace.window(WindowId::of(kept.0)).is_some());
+                match place {
+                    Some(place) => {
+                        state.window_places.insert(window, place);
+                    }
+                    None => {
+                        state.window_places.remove(&window);
+                    }
+                }
+            }
             Asked::SetTabColor { tab, color } => {
                 let color = match color {
                     Some(host::Color::Rgb(red, green, blue)) => Some(Rgb::new(red, green, blue)),
@@ -2990,6 +3033,14 @@ impl Host<'_, '_> {
                 place
                     .check()
                     .map_err(|message| Error::new(Code::Failed, message))?;
+            }
+            Asked::SetWindowTabBarPlace { window, place } => {
+                self.window(*window)?;
+                if let Some(place) = place {
+                    place
+                        .check()
+                        .map_err(|message| Error::new(Code::Failed, message))?;
+                }
             }
             Asked::SetTabColor { tab, color } => {
                 self.known_tab(*tab)?;

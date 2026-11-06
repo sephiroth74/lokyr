@@ -653,7 +653,8 @@ pub trait Platform {
     /// Gives `window` the titlebar `titlebar`, of the system's title by
     /// default: its content's size then comes anew as
     /// [`WindowEvent::Resized`], of the titlebar's height and of the room
-    /// of the window's buttons.
+    /// of the window's buttons, as a titlebar of [`Titlebar::Tabs`] comes
+    /// or goes; the system's of its title and of none are of one size.
     fn set_titlebar(&mut self, window: WindowId, titlebar: Titlebar);
 
     /// The parts of `window`'s titlebar that are its content's, as the tabs

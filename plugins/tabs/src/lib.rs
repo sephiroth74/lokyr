@@ -13,7 +13,7 @@
 
 mod bar;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use lokyr_plugin_sdk::command::{Args, Category, Code, Command, Error, Kind, Param, Value};
 use lokyr_plugin_sdk::event::WorkspaceEvent;
@@ -135,9 +135,14 @@ pub fn tab_bar(
     config: &Data,
 ) -> (Option<Node>, BarPlace) {
     let settings = Settings::of(config);
+    let place = if bar::titled(tabs.len(), &settings) {
+        BarPlace::Title
+    } else {
+        settings.place(None)
+    };
     (
         bar::bar_with(tabs, keys, window, (&settings, &bar::BarTexts::default())),
-        settings.place(None),
+        place,
     )
 }
 
@@ -155,6 +160,9 @@ pub struct Tabs {
     width: Option<f32>,
     dragged_over: Option<f32>,
     views: Vec<(ViewId, Option<Node>)>,
+    /// The windows whose bar shows their single tab's title in their
+    /// titlebar.
+    titled: BTreeSet<WindowId>,
 }
 
 /// The keys of the plugin's state: the column's width of the user's last
@@ -214,6 +222,9 @@ impl Plugin for Tabs {
             return Some(self.menu_tree(cx));
         }
         let node = self.tree(cx, view);
+        if let ViewId::TabBar(window) = view {
+            self.place_window(cx, *window);
+        }
         match self.views.iter_mut().find(|(known, _)| known == view) {
             Some((_, last)) => last.clone_from(&node),
             None => self.views.push((view.clone(), node.clone())),
@@ -393,6 +404,7 @@ impl Plugin for Tabs {
                 Event::Workspace(WorkspaceEvent::WindowClosed { window }) => {
                     let closed = ViewId::TabBar(*window);
                     self.views.retain(|(view, _)| *view != closed);
+                    self.titled.remove(window);
                 }
                 Event::Workspace(_) | Event::KeysChanged => again = true,
                 _ => {}
@@ -532,6 +544,25 @@ impl Tabs {
                 Ok(())
             }
             _ => Ok(()),
+        }
+    }
+
+    /// Puts the bar of `window` in its titlebar as its title while it has a
+    /// single tab whose bar hides, at the bar's place otherwise, as its
+    /// tree, which this render gives, shows it, so that the place and the
+    /// tree come together.
+    fn place_window(&mut self, cx: &mut Cx<'_>, window: WindowId) {
+        let count = cx.tabs(window).map_or(0, |tabs| tabs.len());
+        let titled = count > 0 && bar::titled(count, &self.settings);
+        if titled == self.titled.contains(&window) {
+            return;
+        }
+        let place = titled.then_some(BarPlace::Title);
+        // A window that closed meanwhile keeps nothing.
+        if cx.set_window_tab_bar_place(window, place).is_ok() && titled {
+            self.titled.insert(window);
+        } else {
+            self.titled.remove(&window);
         }
     }
 

@@ -1029,7 +1029,8 @@ const SIDEBAR_ROOM: (f32, f32) = (40.0, 84.0);
 /// The tabs of a bar's image: the three of [`bar_tabs`], of the keys of
 /// the default bindings; one alone, which the config shows a bar for;
 /// twelve, more than the keys' nine; the three, of keys of the user's
-/// bindings, one of none; or four of their marks.
+/// bindings, one of none; four of their marks; or one alone, whose bar
+/// hides, of its title in the titlebar.
 #[derive(Clone, Copy)]
 enum BarTabs {
     Three,
@@ -1037,6 +1038,7 @@ enum BarTabs {
     Many,
     Bound,
     Marked,
+    Title,
 }
 
 /// A bar's tabs, the keys of each, and the config's keys past the look's.
@@ -1048,6 +1050,15 @@ impl BarTabs {
         let keys = |keys: &[&str]| keys.iter().map(|keys| Some((*keys).to_owned())).collect();
         match self {
             Self::Three => (bar_tabs(), keys(&["⌘1", "⌘2", "⌘3"]), Vec::new()),
+            // A single tab whose bar hides, of its title in the titlebar,
+            // of the protected input and a program that runs.
+            Self::Title => {
+                let mut tab = bar_tabs().swap_remove(1);
+                tab.id = TabId(1);
+                tab.secure = true;
+                tab.running = true;
+                (vec![tab], keys(&["⌘1"]), Vec::new())
+            }
             Self::One => {
                 let mut tab = bar_tabs().swap_remove(1);
                 tab.id = TabId(1);
@@ -1165,7 +1176,7 @@ type Bar = (
 /// `[plugins.tabs]` asks for them, of their width and, in the titlebar and
 /// down a column, of their height, in points, the pointer over the third
 /// tab; a single tab, many, and the keys of the user's bindings.
-const BARS: [Bar; 23] = [
+const BARS: [Bar; 24] = [
     (
         "standard-top",
         "standard",
@@ -1323,6 +1334,14 @@ const BARS: [Bar; 23] = [
         (200.0, Some(200.0)),
         BarTabs::Marked,
     ),
+    // A single tab's title, across a titlebar of the system's height.
+    (
+        "unified-title",
+        "unified",
+        "top",
+        (640.0, Some(28.0)),
+        BarTabs::Title,
+    ),
     // More rows than the column holds, which scroll.
     (
         "standard-left-scrolled",
@@ -1357,8 +1376,11 @@ fn check_tab_bar((name, style, position, (width, height), shown): Bar, (dark, sc
     let mut layout = Layout::new(pixels);
     layout.update(&tree, &changes);
     // A sidebar under a titlebar of tabs, and the window's buttons at its
-    // left, as macOS's are.
-    if matches!(place, lokyr_plugin_sdk::host::BarPlace::Sidebar { .. }) {
+    // left, as macOS's are; a title between their room on either side.
+    if matches!(
+        place,
+        lokyr_plugin_sdk::host::BarPlace::Sidebar { .. } | lokyr_plugin_sdk::host::BarPlace::Title
+    ) {
         let room = Room {
             titlebar: SIDEBAR_ROOM.0 * pixels,
             buttons: SIDEBAR_ROOM.1 * pixels,

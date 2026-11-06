@@ -94,8 +94,23 @@ fn the_config_gives_the_bar_its_place_and_its_look() {
 #[test]
 fn a_bar_shows_its_tabs_their_keys_and_their_close_buttons() {
     let settings = Settings::default();
-    // One tab, hidden by default, and shown as the config says.
-    assert!(bar(&[tab(1, "zsh", true)], &[], None, &settings).is_none());
+    // One tab, of its title alone by default, its marks beside it, between
+    // the room of the window's buttons on either side; and its bar as the
+    // config says.
+    let running = TabInfo {
+        running: true,
+        ..tab(1, "zsh", true)
+    };
+    let title = bar(&[running], &[], None, &settings).expect("a title");
+    assert_eq!(
+        title.key.as_ref().map(|key| key.0.as_str()),
+        Some(TITLE_KEY)
+    );
+    assert_eq!(texts(&title), ["zsh"]);
+    assert_eq!(marked(&title), ["zsh", "Running", "Dots Indeterminate 0"]);
+    let sides: Vec<Length> = [0, 2].map(|at| title.children[at].layout.width).to_vec();
+    assert_eq!(sides, [Length::Buttons, Length::Buttons]);
+    assert!(bar(&[], &[], None, &settings).is_none());
     let shown = Settings {
         hide_when_single: false,
         ..settings

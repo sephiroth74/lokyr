@@ -489,6 +489,11 @@ impl<B: Backend> App<B> {
         let size = platform.window_size(dest)?;
         let position = local_of(platform, dest, at)?;
         let state = self.windows.get(&dest)?;
+        // A title has no tabs to open a room among; the drop over it goes
+        // after the window's tab.
+        if chrome::tab_bar_place(&state.chrome, &self.plugins) == BarPlace::Title {
+            return None;
+        }
         let view = tab_bar(&state.chrome).filter(|view| view.shows())?;
         let frame = view.frame?;
         let across = !matches!(
@@ -568,14 +573,14 @@ impl<B: Backend> App<B> {
                 .and_then(|state| state.chrome.iter_mut().find(|view| view.id == id))
                 .and_then(|view| view.surface.drop_room(now)),
             _ => {
-                // A window whose bar hides takes it at its tabs' end, over
-                // its titlebar.
+                // A window whose bar hides, or shows its title, takes it at
+                // its tabs' end, over its titlebar.
                 let size = platform.window_size(dest)?;
                 let position = local_of(platform, dest, at)?;
-                let hidden = self
-                    .windows
-                    .get(&dest)
-                    .is_some_and(|state| !chrome::has_tab_bar(&state.chrome));
+                let hidden = self.windows.get(&dest).is_some_and(|state| {
+                    !chrome::has_tab_bar(&state.chrome)
+                        || chrome::tab_bar_place(&state.chrome, &self.plugins) == BarPlace::Title
+                });
                 (hidden && position.y < size.bar)
                     .then(|| shown.and_then(|shown| self.workspace.window(shown)))
                     .flatten()
