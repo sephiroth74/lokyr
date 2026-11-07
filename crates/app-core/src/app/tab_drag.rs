@@ -700,6 +700,12 @@ impl<B: Backend> App<B> {
         let (Some(index), Some(shown)) = (index, shown) else {
             return Some(Dropping::Back);
         };
+        // The room that the drop takes stays open for the tab.
+        if room.is_some_and(|(over, _)| over == dest)
+            && let Some(drag) = self.tab_drag.as_mut()
+        {
+            drag.room = None;
+        }
         // The window that takes it comes forward, its plugin's move showing
         // it there.
         let there = UiEventKind::DropOnBar {
@@ -711,8 +717,8 @@ impl<B: Backend> App<B> {
 
     /// The tab's drag ends: dropped, its image hides at once; otherwise it
     /// slides back to the tab's place in its bar, as the window shows the
-    /// tab again, and the room that another bar opened closes. The picture
-    /// of its panes goes.
+    /// tab again. The room that another bar opened closes, but the one
+    /// that the drop took, as does the picture of its panes.
     pub(super) fn end_tab_drag(&mut self, platform: &mut dyn Platform, dropped: bool) {
         let Some(mut drag) = self.tab_drag.take() else {
             return;
@@ -720,9 +726,7 @@ impl<B: Backend> App<B> {
         if let Some(lit) = drag.lit.take() {
             platform.request_frame(lit.window);
         }
-        if !dropped {
-            self.close_tab_room(platform, drag.room.take());
-        }
+        self.close_tab_room(platform, drag.room.take());
         if drag.out {
             let back = (!dropped && !platform.reduce_motion())
                 .then(|| self.tab_home(platform, &drag))

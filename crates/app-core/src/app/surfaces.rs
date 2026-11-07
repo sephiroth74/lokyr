@@ -190,6 +190,7 @@ impl<B: Backend> App<B> {
             return false;
         };
         let at = pixels(position, scale);
+        let platform_button = button;
         // A press closes the panels that a click outside them closes, which
         // a menu's closing takes.
         if pressed
@@ -207,6 +208,12 @@ impl<B: Backend> App<B> {
         let Some(state) = self.windows.get(&window) else {
             return false;
         };
+        // While a view holds the pointer, as a tab's drag, another button's
+        // press and release, as a tap of two fingers, do nothing: the drag
+        // ends with its own button's release.
+        if state.captured.is_some() && state.captured_by != Some(button) {
+            return true;
+        }
         // A release goes where its press went; a press under way over the
         // panes, a selection's or a program's, keeps them the pointer.
         let panes_hold =
@@ -272,6 +279,7 @@ impl<B: Backend> App<B> {
             ended |= pressed.composition_kept;
             events.extend(told(view, pressed.events));
             state.captured = Some(id);
+            state.captured_by = Some(platform_button);
             state.focus.pressed(id, &view.surface.tree, &pressed.path);
         } else {
             state.captured = None;

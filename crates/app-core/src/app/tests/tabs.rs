@@ -359,6 +359,87 @@ fn a_tab_dropped_out_of_every_window_opens_one_of_its_own_under_the_pointer() {
 }
 
 #[test]
+fn another_button_during_a_tab_s_drag_leaves_the_drag_under_way() {
+    let none = Modifiers::NONE;
+    let (mut fake, mut app, window) = three_tabs("unified", "top");
+    let ids = order(&app, window);
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    let first = middle_of(&fake, &app, window, &tab_key(ids[0]));
+    let out = Point { y: 300.0, ..first };
+    fake.send(&mut app, window, click(true, first, none, 1));
+    fake.send(&mut app, window, moved(out, none));
+    assert!(app.tab_dragged_of(window));
+    // A tap of two fingers, the secondary button's press and release.
+    fake.send(&mut app, window, press(MouseButton::Right, true, out, none));
+    fake.send(
+        &mut app,
+        window,
+        press(MouseButton::Right, false, out, none),
+    );
+    assert!(app.tab_dragged_of(window));
+    assert_eq!(order(&app, window), ids);
+    // Its own button's release ends it, back over its bar, the tab there.
+    fake.send(&mut app, window, moved(first, none));
+    fake.send(&mut app, window, click(false, first, none, 1));
+    assert!(!app.tab_dragged_of(window));
+    settle(&mut fake, &mut app);
+    assert_eq!(order(&app, window), ids);
+    assert_eq!(shown_order(&app, window), ids);
+}
+
+#[test]
+fn the_room_that_a_tab_opened_in_another_bar_closes_as_its_window_closes() {
+    let none = Modifiers::NONE;
+    let (mut fake, mut app, window) = three_tabs("unified", "top");
+    let ids = order(&app, window);
+    app.run(&mut fake, "window.new", Args::new());
+    run_until(&mut fake, &mut app, |fake, _| fake.windows().count() == 2);
+    let other = fake.windows().find(|&open| open != window).unwrap();
+    fake.set_window_origin(
+        other,
+        ScreenPoint {
+            x: 1000.0,
+            y: 400.0,
+        },
+    );
+    fake.raise(other);
+    fake.send(&mut app, other, WindowEvent::Focused(true));
+    app.run(&mut fake, "tabs.new", Args::new());
+    run_until(&mut fake, &mut app, |_, app| {
+        app.windows.contains_key(&other)
+            && shown_order(app, other).len() == 2
+            && bar(app, other).is_some_and(|view| view.frame.is_some())
+    });
+    let theirs = order(&app, other);
+    fake.send(&mut app, other, WindowEvent::Focused(false));
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    let first = middle_of(&fake, &app, window, &tab_key(ids[0]));
+    let their_first = middle_of(&fake, &app, other, &tab_key(theirs[0]));
+    let target = on_screen(
+        &fake,
+        other,
+        Point {
+            x: their_first.x - 20.0,
+            ..their_first
+        },
+    );
+    let corner = fake.window_frame(window).unwrap();
+    let over = Point {
+        x: target.x - corner.x,
+        y: target.y - corner.y,
+    };
+    fake.send(&mut app, window, click(true, first, none, 1));
+    fake.send(&mut app, window, moved(Point { y: 300.0, ..first }, none));
+    fake.send(&mut app, window, moved(over, none));
+    assert_eq!(bar(&app, other).unwrap().surface.room(), Some(0));
+    // The window that the tab comes from closes under the drag.
+    app.close(&mut fake, window);
+    assert!(!app.tab_dragged_of(window));
+    assert_eq!(bar(&app, other).unwrap().surface.room(), None);
+    assert_eq!(order(&app, other), theirs);
+}
+
+#[test]
 fn a_tab_dropped_on_another_window_s_bar_goes_there_at_the_room_that_it_opened() {
     let none = Modifiers::NONE;
     let (mut fake, mut app, window) = three_tabs("unified", "top");

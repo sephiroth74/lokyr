@@ -10,8 +10,8 @@ use lokyr_kernel::keymap::Resolver;
 use lokyr_kernel::plugins::view::{Key as NodeKey, UiEventKind};
 use lokyr_kernel::workspace::{self, Grid, PaneId};
 use lokyr_platform_core::{
-    Appearance, Backdrop, ContentRect, Fill, KeyCode, KeyEvent, LayerPlace, PointerArea,
-    PointerShape, Sweep, Titlebar,
+    Appearance, Backdrop, ContentRect, Fill, KeyCode, KeyEvent, LayerPlace, MouseButton,
+    PointerArea, PointerShape, Sweep, Titlebar,
 };
 use lokyr_render_core::{CellBatch, Color, Item, Rect, Surface as _};
 use lokyr_ui_core::cursor::Blink;
@@ -256,6 +256,9 @@ pub(crate) struct Window<B: Backend> {
     /// the pointer is over.
     pub(crate) captured: Option<u32>,
     pub(crate) over: Option<u32>,
+    /// The button whose press made `captured` hold the pointer, whose
+    /// release alone lets it go.
+    pub(crate) captured_by: Option<MouseButton>,
     /// The parts of its content where the pointer's moves come, its slots'
     /// views, and of its titlebar that are the tab bar's own, in points, as
     /// the app gave them last.
@@ -392,6 +395,7 @@ impl<B: Backend> Window<B> {
             keyboard: None,
             next_view: 0,
             captured: None,
+            captured_by: None,
             over: None,
             move_areas: Vec::new(),
             titlebar_areas: Vec::new(),
