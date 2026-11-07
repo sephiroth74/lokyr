@@ -23,6 +23,18 @@ bar-close-tab = Close Tab
 bar-untitled = Tab { $index }
 bar-close-others = Close Other Tabs
 
+# The context menu's submenu of the tab's color, macOS's system colors,
+# and of none.
+menu-color = Color
+menu-color-red = Red
+menu-color-orange = Orange
+menu-color-yellow = Yellow
+menu-color-green = Green
+menu-color-blue = Blue
+menu-color-purple = Purple
+menu-color-gray = Gray
+menu-color-none = No Color
+
 # What accessibility calls a tab's marks: the output that came while it
 # did not show, its bell, a program that runs, the protected input, and
 # its agent's states.

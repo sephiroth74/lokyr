@@ -353,7 +353,7 @@ fn a_tab_s_middle_click_double_click_and_context_menu_act_on_it() {
     let opened = on(
         &mut host,
         &mut plugin,
-        bar,
+        bar.clone(),
         "tab-2",
         UiEventKind::ContextMenu,
     );
@@ -379,6 +379,92 @@ fn a_tab_s_middle_click_double_click_and_context_menu_act_on_it() {
             "menu-close",
             "menu-close-others"
         ]
+    );
+    // Its submenu of the tab's color, after its rename: its title, the
+    // colors, each of its dot, and none, ticked of a tab of no color.
+    let submenu = &tree.children[1];
+    let view::Kind::Text(heading) = &submenu.children[0].kind else {
+        panic!("{submenu:?}");
+    };
+    assert_eq!(heading, "Color");
+    let items: Vec<(String, String, bool)> = submenu.children[1..]
+        .iter()
+        .filter_map(|item| match &item.kind {
+            view::Kind::Toggle(toggle) => Some((
+                item.key.as_ref().unwrap().0.clone(),
+                toggle.label.clone(),
+                toggle.on,
+            )),
+            _ => None,
+        })
+        .collect();
+    let item =
+        |name: &str, label: &str, on: bool| (format!("menu-color-{name}"), label.to_owned(), on);
+    assert_eq!(
+        items,
+        [
+            item("red", "🔴 Red", false),
+            item("orange", "🟠 Orange", false),
+            item("yellow", "🟡 Yellow", false),
+            item("green", "🟢 Green", false),
+            item("blue", "🔵 Blue", false),
+            item("purple", "🟣 Purple", false),
+            item("gray", "⚫ Gray", false),
+            item("none", "No Color", true),
+        ]
+    );
+    assert!(matches!(submenu.children[8].kind, view::Kind::Separator));
+    // A color, chosen, colors the tab that the menu opened over.
+    let colored = on(
+        &mut host,
+        &mut plugin,
+        menu.clone(),
+        "menu-color-blue",
+        UiEventKind::Toggle { on: true },
+    );
+    assert!(
+        colored.contains(&Request::SetTabColor {
+            tab: TabId(2),
+            color: Some(Color::Rgb(0x00, 0x7A, 0xFF)),
+        }),
+        "{colored:?}"
+    );
+    // Opened again, of its color ticked; none takes it away.
+    on(
+        &mut host,
+        &mut plugin,
+        bar.clone(),
+        "tab-2",
+        UiEventKind::ContextMenu,
+    );
+    let tree = host.render(&mut plugin, &menu).expect("the menu's items");
+    let ticked: Vec<&str> = tree.children[1]
+        .children
+        .iter()
+        .filter(|item| matches!(&item.kind, view::Kind::Toggle(toggle) if toggle.on))
+        .filter_map(|item| item.key.as_ref().map(|key| key.0.as_str()))
+        .collect();
+    assert_eq!(ticked, ["menu-color-blue"]);
+    let cleared = on(
+        &mut host,
+        &mut plugin,
+        menu.clone(),
+        "menu-color-none",
+        UiEventKind::Toggle { on: true },
+    );
+    assert!(
+        cleared.contains(&Request::SetTabColor {
+            tab: TabId(2),
+            color: None,
+        }),
+        "{cleared:?}"
+    );
+    on(
+        &mut host,
+        &mut plugin,
+        bar.clone(),
+        "tab-2",
+        UiEventKind::ContextMenu,
     );
     // Its items act on the tab that it opened over.
     let chosen = on(

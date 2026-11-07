@@ -23,7 +23,7 @@ use lokyr_plugin_sdk::host::{
 use lokyr_plugin_sdk::message::{Data, Event, KEYS_CHANGED};
 use lokyr_plugin_sdk::plugin::{Cx, Plugin};
 use lokyr_plugin_sdk::ui::{Anchor, PanelId, PanelOptions, Role, UiEvent, ViewId};
-use lokyr_plugin_sdk::view::{Node, UiEventKind};
+use lokyr_plugin_sdk::view::{self, Node, UiEventKind};
 
 use crate::bar::Settings;
 
@@ -66,6 +66,26 @@ const MENU_RENAME: &str = "menu-rename";
 const MENU_DETACH: &str = "menu-detach";
 const MENU_CLOSE: &str = "menu-close";
 const MENU_CLOSE_OTHERS: &str = "menu-close-others";
+/// The context menu's submenu of the tab's color: its title's message, its
+/// items' keys' start, and the item of no color.
+const MENU_COLOR: &str = "menu-color";
+const MENU_COLOR_NONE: &str = "menu-color-none";
+
+/// A color of a tab's context menu: its name, of its item's key and its
+/// message, its English title, the dot before it, as a menu of the system's
+/// shows no swatch, and its red, green and blue.
+type MenuColor = (&'static str, &'static str, &'static str, (u8, u8, u8));
+
+/// The colors of a tab's context menu, macOS's system colors.
+const COLORS: [MenuColor; 7] = [
+    ("red", "Red", "🔴", (0xFF, 0x3B, 0x30)),
+    ("orange", "Orange", "🟠", (0xFF, 0x95, 0x00)),
+    ("yellow", "Yellow", "🟡", (0xFF, 0xCC, 0x00)),
+    ("green", "Green", "🟢", (0x34, 0xC7, 0x59)),
+    ("blue", "Blue", "🔵", (0x00, 0x7A, 0xFF)),
+    ("purple", "Purple", "🟣", (0xAF, 0x52, 0xDE)),
+    ("gray", "Gray", "⚫", (0x8E, 0x8E, 0x93)),
+];
 const CLOSE_OTHERS: &str = "bar-close-others";
 
 /// The messages of the bar's own texts: the button of a new tab's, a
@@ -529,18 +549,46 @@ impl Tabs {
         bar::bar_with(&tabs, &keys, shortcut.as_deref(), (&self.settings, &texts))
     }
 
-    /// The context menu of a tab: its rename, its move to a window of its
-    /// own, its close and the others', of their titles in the language
-    /// shown.
+    /// The context menu of a tab: its rename, its color, its move to a
+    /// window of its own, its close and the others', of their titles in the
+    /// language shown.
     fn menu_tree(&self, cx: &mut Cx<'_>) -> Node {
+        // The color of the tab that the menu opened over, which its item
+        // ticks.
+        let current = self.menu.and_then(|(window, tab)| {
+            cx.tabs(window)
+                .ok()?
+                .into_iter()
+                .find(|shown| shown.id == tab)
+        });
+        let current = current.and_then(|shown| shown.color);
         let mut title = |id: &str, english: &str| {
             cx.message(id, &[])
                 .ok()
                 .filter(|text| text != id)
                 .unwrap_or_else(|| english.to_owned())
         };
+        let ticked = |label: String, on: bool, key: &str| {
+            Node::new(view::Kind::Toggle(view::Toggle {
+                label,
+                on,
+                ..view::Toggle::default()
+            }))
+            .key(key)
+        };
+        let mut colors = vec![Node::text(title(MENU_COLOR, "Color"))];
+        for (name, english, dot, (red, green, blue)) in COLORS {
+            let key = format!("{MENU_COLOR}-{name}");
+            let label = format!("{dot} {}", title(&key, english));
+            let on = current == Some(Color::Rgb(red, green, blue));
+            colors.push(ticked(label, on, &key));
+        }
+        colors.push(Node::separator());
+        let none = title(MENU_COLOR_NONE, "No Color");
+        colors.push(ticked(none, current.is_none(), MENU_COLOR_NONE));
         Node::container(vec![
             Node::button(title("command-tabs-rename", "Rename Tab…")).key(MENU_RENAME),
+            Node::container(colors),
             Node::button(title("command-tabs-detach", "Move Tab to New Window")).key(MENU_DETACH),
             Node::separator(),
             Node::button(title("command-tabs-close", "Close Tab")).key(MENU_CLOSE),
@@ -571,7 +619,17 @@ impl Tabs {
                 }
                 Ok(())
             }
-            _ => Ok(()),
+            MENU_COLOR_NONE => cx.set_tab_color(tab, None),
+            _ => match COLORS.iter().find(|(name, ..)| {
+                key.strip_prefix(MENU_COLOR)
+                    .and_then(|rest| rest.strip_prefix('-'))
+                    == Some(name)
+            }) {
+                Some(&(.., (red, green, blue))) => {
+                    cx.set_tab_color(tab, Some(Color::Rgb(red, green, blue)))
+                }
+                None => Ok(()),
+            },
         }
     }
 

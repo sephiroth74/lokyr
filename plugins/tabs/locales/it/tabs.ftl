@@ -18,6 +18,16 @@ bar-close-tab = Chiudi tab
 bar-untitled = Tab { $index }
 bar-close-others = Chiudi gli altri tab
 
+menu-color = Colore
+menu-color-red = Rosso
+menu-color-orange = Arancione
+menu-color-yellow = Giallo
+menu-color-green = Verde
+menu-color-blue = Blu
+menu-color-purple = Viola
+menu-color-gray = Grigio
+menu-color-none = Nessun colore
+
 bar-mark-activity = Nuovo output
 bar-mark-bell = Campanello
 bar-mark-running = In esecuzione

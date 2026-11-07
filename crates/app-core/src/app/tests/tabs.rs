@@ -1105,3 +1105,62 @@ fn a_program_s_progress_shows_in_a_thin_bar_across_the_window_s_top_over_the_pan
     run_until(&mut fake, &mut app, |_, app| strip(app).is_none());
     assert_eq!(app.windows[&window].views[0].rect, under);
 }
+
+#[test]
+fn a_tab_s_context_menu_colors_it_from_its_submenu() {
+    let none = Modifiers::NONE;
+    let (mut fake, mut app, window) = three_tabs("unified", "top");
+    let ids = order(&app, window);
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    let first = middle_of(&fake, &app, window, &tab_key(ids[0]));
+    fake.send(
+        &mut app,
+        window,
+        press(MouseButton::Right, true, first, none),
+    );
+    run_until(&mut fake, &mut app, |fake, _| {
+        !fake.context_menus().is_empty()
+    });
+    // The platform's menu, of a submenu of the colors, each of its dot,
+    // and none, ticked.
+    let (_, _, menu) = fake.context_menus().last().unwrap().clone();
+    let Some(lokyr_platform_core::MenuItem::Submenu(colors)) = menu.items.get(1) else {
+        panic!("{:?}", menu.items);
+    };
+    assert_eq!(colors.title, "Color");
+    let titles: Vec<&str> = colors
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            lokyr_platform_core::MenuItem::Command { title, .. } => Some(title.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        titles,
+        [
+            "🔴 Red",
+            "🟠 Orange",
+            "🟡 Yellow",
+            "🟢 Green",
+            "🔵 Blue",
+            "🟣 Purple",
+            "⚫ Gray",
+            "No Color"
+        ]
+    );
+    assert_eq!(menu.ticked, ["menu-color-none"]);
+    // Green, chosen, colors the tab.
+    fake.send(
+        &mut app,
+        window,
+        WindowEvent::ContextCommand("menu-color-green".to_owned()),
+    );
+    fake.send(&mut app, window, WindowEvent::ContextMenuClosed);
+    settle(&mut fake, &mut app);
+    let tab = lokyr_kernel::workspace::TabId::of(ids[0]);
+    assert_eq!(
+        app.workspace.tab(tab).unwrap().color(),
+        Some(lokyr_vt_core::page::Rgb::new(0x34, 0xC7, 0x59))
+    );
+}
