@@ -590,12 +590,9 @@ impl Workspace {
             if let (Some(tab), Some(before)) = (active, before) {
                 self.tab_looked(tab, &before);
             }
-            // Its title, which its header shows.
-            if retitled && let Some(owner) = self.tab_of.get(&id).copied() {
-                self.changed(WorkspaceEvent::PaneChanged {
-                    pane: id.into(),
-                    tab: owner.into(),
-                });
+            // Its title, which its header shows, if it changed.
+            if retitled {
+                self.look_at_headers(&[id]);
             }
             // Its tab's marks: its progress, whether its program prints,
             // and the output and the bell that came while it did not show.
@@ -644,6 +641,31 @@ impl Workspace {
             .filter_map(|id| self.panes.get(id)?.told_due());
         let printing = self.panes.values().filter_map(Pane::printing_due);
         told.chain(printing).min()
+    }
+
+    /// Looks at the titles that the headers of `panes` show, their
+    /// programs' or their folders and programs, as [`Pane::header_title`]
+    /// gives them, and tells `pane-changed` of each that changed since the
+    /// last look: as a title changes, and as the app finds the panes'
+    /// places after their output, a look at a pane's foreground of some
+    /// microseconds.
+    pub fn look_at_headers(&mut self, panes: &[PaneId]) {
+        for &id in panes {
+            let Some(pane) = self.panes.get_mut(&id) else {
+                continue;
+            };
+            let header = pane.header_title(true);
+            if header == pane.header {
+                continue;
+            }
+            pane.header = header;
+            if let Some(owner) = self.tab_of.get(&id).copied() {
+                self.changed(WorkspaceEvent::PaneChanged {
+                    pane: id.into(),
+                    tab: owner.into(),
+                });
+            }
+        }
     }
 
     /// Every pane's id, for a look at them all.

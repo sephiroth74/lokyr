@@ -2485,10 +2485,12 @@ impl<B: Backend> App<B> {
     /// that wait still.
     fn collect(&mut self, platform: &mut dyn Platform, panes: &[PaneId]) {
         let due = self.workspace.collect(panes, Instant::now());
-        // The tabs of the panes whose output came take their places anew.
+        // The tabs of the panes whose output came take their places anew,
+        // and their headers.
         for &pane in panes {
             self.look_at_tab_place(pane);
         }
+        self.workspace.look_at_headers(panes);
         self.events(platform);
         if let Some(due) = due
             && self.told_timer.is_none_or(|(_, at)| at > due)
@@ -2947,6 +2949,11 @@ impl<B: Backend> App<B> {
         for window in due {
             self.look_at_place(window);
             self.show_title(platform, window);
+            // The panes' headers, of a program that started without a word.
+            if let Some(shown) = self.windows.get(&window).map(|state| state.window) {
+                let panes = self.workspace.panes_of(shown);
+                self.workspace.look_at_headers(&panes);
+            }
         }
         if let Some(next) = next {
             self.title_timer = Some((platform.start_timer(next), next));

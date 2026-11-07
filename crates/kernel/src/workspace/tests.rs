@@ -1319,6 +1319,61 @@ fn a_tab_is_marked_of_what_runs_its_protected_input_and_its_agent_each_told_once
 }
 
 #[test]
+fn a_pane_s_header_is_told_as_its_title_or_its_place_changes_and_not_of_the_same_title() {
+    let mut workspace = Workspace::new();
+    let window = workspace.open_window(pane(
+        r#"printf '\033]0;same\007'; read line; printf '\033]0;same\007\a'; read line; printf '\033]0;\007'; read line; cd /tmp; exec sleep 30"#,
+    ));
+    let tab = workspace.window(window).unwrap().active_tab();
+    let id = workspace.tab(tab).unwrap().active_pane();
+    let told = Change::PaneChanged {
+        pane: id.into(),
+        tab: tab.into(),
+    };
+    let header = |workspace: &Workspace| workspace.pane(id).unwrap().header_title(true);
+    // Its program's title.
+    let start = Instant::now();
+    while !changes(&mut workspace).contains(&told) {
+        assert!(start.elapsed() < Duration::from_secs(10), "no title");
+        workspace.collect(&workspace.pane_ids(), Instant::now());
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert_eq!(header(&workspace).as_deref(), Some("same"));
+    // The same again, with a bell, tells nothing.
+    workspace.pane(id).unwrap().text("\n");
+    let events = collect_until(&mut workspace, |events| events.contains(&Event::Bell(id)));
+    assert!(
+        !events.contains(&Event::Changed(told.clone())),
+        "{events:?}"
+    );
+    // No title: its folder and its program, which follow as the app looks.
+    workspace.pane(id).unwrap().text("\n");
+    let start = Instant::now();
+    let mut seen = Vec::new();
+    while header(&workspace).is_none_or(|header| !header.contains("sleep")) {
+        assert!(start.elapsed() < Duration::from_secs(10), "{seen:?}");
+        workspace.collect(&workspace.pane_ids(), Instant::now());
+        workspace.look_at_headers(&[id]);
+        seen.extend(changes(&mut workspace));
+        if seen.iter().filter(|change| **change == told).count() == 1 {
+            // Past its title's end, to the folder of `cd`.
+            workspace.pane(id).unwrap().text("\n");
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    workspace.look_at_headers(&[id]);
+    seen.extend(changes(&mut workspace));
+    assert_eq!(header(&workspace).as_deref(), Some("tmp — sleep"));
+    assert!(
+        seen.iter().filter(|change| **change == told).count() >= 2,
+        "{seen:?}"
+    );
+    // Looked at again, the same, it tells nothing.
+    workspace.look_at_headers(&[id]);
+    assert!(!changes(&mut workspace).contains(&told));
+}
+
+#[test]
 fn a_tab_s_progress_goes_with_the_pane_that_told_it_and_comes_with_a_pane_moved_in() {
     let mut workspace = Workspace::new();
     let quiet = pane("read line");

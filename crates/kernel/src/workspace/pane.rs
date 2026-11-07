@@ -203,6 +203,9 @@ pub struct Pane {
     /// Whether its program prints of its own, as the workspace last found
     /// it: output that no input asked for came within [`PRINTING`].
     printing: bool,
+    /// The title that its header showed as the workspace last looked, of
+    /// [`Pane::header_title`], whose change tells `pane-changed`.
+    pub(super) header: Option<String>,
     /// How many slices of output the session had parsed when the
     /// workspace last looked.
     slices: u64,
@@ -312,6 +315,7 @@ impl Pane {
             ended_told: false,
             told_at: None,
             printing: false,
+            header: None,
             selection_touched: AtomicBool::new(false),
             title: String::new(),
             tab_color: None,
