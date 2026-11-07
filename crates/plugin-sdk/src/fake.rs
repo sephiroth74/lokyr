@@ -277,6 +277,9 @@ pub struct FakeHost {
     numbers: BTreeMap<WindowId, (Option<u32>, Option<String>)>,
     /// The keys of commands of their arguments, as the test gave them.
     keys: Vec<(String, Args, String)>,
+    /// The registry's commands of the app's and of other plugins', before
+    /// the plugin's own, as the test gave them.
+    registry: Vec<host::CommandInfo>,
     /// Where the plugin's moves of tabs to windows of their own put those
     /// windows on the screens.
     places: BTreeMap<WindowId, ScreenPoint>,
@@ -338,6 +341,7 @@ impl FakeHost {
             numbers: BTreeMap::new(),
             places: BTreeMap::new(),
             keys: Vec::new(),
+            registry: Vec::new(),
             messages: Vec::new(),
             bar_place: BarPlace::default(),
             window_bar_places: BTreeMap::new(),
@@ -450,6 +454,13 @@ impl FakeHost {
         if changed {
             self.changed(WorkspaceEvent::TabChanged { tab });
         }
+        self
+    }
+
+    /// Gives the registry `commands`, of the app's and of other plugins',
+    /// which a read of the commands gives before the plugin's own.
+    pub fn set_registry(&mut self, commands: Vec<host::CommandInfo>) -> &mut Self {
+        self.registry = commands;
         self
     }
 
@@ -1925,6 +1936,50 @@ impl Calling<'_> {
             }
             Request::FontSize => Response::FontSize(host.font_size),
             Request::TabBarPlace => Response::TabBarPlace(host.bar_place),
+            Request::Commands => {
+                // The rest of the registry to a plugin of `user-commands`
+                // alone, as the app's host gives it.
+                let user = host
+                    .granted
+                    .as_ref()
+                    .is_none_or(|granted| granted.contains(&Capability::UserCommands));
+                let keys = |name: &str| {
+                    host.keys
+                        .iter()
+                        .find(|(bound, args, _)| bound == name && args.is_empty())
+                        .map(|(_, _, keys)| keys.clone())
+                };
+                let own = host.commands.iter().map(|command| host::CommandInfo {
+                    name: command.name.clone(),
+                    title: command.title.clone(),
+                    category: command.category,
+                    params: command.params.clone(),
+                    plugin: Some(host.caller.clone()),
+                    keys: keys(&command.name),
+                    when: command.when.clone(),
+                    enabled: Some(true),
+                });
+                let infos = host
+                    .registry
+                    .iter()
+                    .cloned()
+                    .chain(own)
+                    .map(|info| {
+                        if user {
+                            info
+                        } else {
+                            host::CommandInfo {
+                                plugin: None,
+                                keys: None,
+                                when: None,
+                                enabled: None,
+                                ..info
+                            }
+                        }
+                    })
+                    .collect();
+                Response::Commands(infos)
+            }
             Request::KeysOf { command, args } => Response::Text(
                 host.keys
                     .iter()

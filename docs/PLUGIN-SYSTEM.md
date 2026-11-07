@@ -428,7 +428,7 @@ type Anchor =
     | { node: { view: ViewId, key: string } } -- below a node of a view of the plugin's
     | { pane_corner: { pane: PaneId, corner: Corner } }
     | { window_corner: { window: WindowId, corner: Corner } } -- of its room below the tab bar
-type Corner = "top-left" | "top-right" | "bottom-left" | "bottom-right"
+type Corner = "top-left" | "top-right" | "bottom-left" | "bottom-right" | "top" -- "top": the middle of the top edge, as a palette's
 
 type PanelOptions = {
     anchor: Anchor,
@@ -467,6 +467,15 @@ type Command = {
     when: string?, -- the context in which it can run, as a binding's `when`
 }
 
+-- A command, as a read of the registry gives it; `plugin`, `keys`, `when` and `enabled` to a plugin of `user-commands`
+-- alone: the plugin that registered it, nil of the app's own; its keys of no arguments, as "⌘T"; its context; and whether
+-- the menus enable it now.
+type CommandInfo = {
+    name: string, title: string, category: string,
+    params: { { name: string, kind: string, default: (string | number | boolean)? } },
+    plugin: string?, keys: string?, when: string?, enabled: boolean?,
+}
+
 -- `keys`: e.g. "cmd+f" or "ctrl+a>c"; `when`: e.g. "pane.focused && !search.open", where a plugin's
 -- panels give `namespace.open` while one shows, and `namespace.focused` while one has the keyboard.
 type Binding = { keys: string, command: string, args: Args?, when: string? }
@@ -488,7 +497,10 @@ type Cx = {
     subscribe: (names: { string }) -> (boolean, Error?),
     -- An event of the plugin's namespace, which comes after the call returns.
     emit: (name: string, schema: string, value: any) -> (boolean, Error?),
+    -- Runs a command, once the call returns: of a plugin of `user-commands`, any as the user's, without a declaration.
     run_command: (name: string, args: Args?) -> (boolean, Error?),
+    -- The registered commands, in the order of their registrations, as the menus list them.
+    commands: () -> ({ CommandInfo }?, Error?),
 
     -- The focus: the window that has it, and its pane that has the keyboard.
     focused_window: () -> WindowId?,

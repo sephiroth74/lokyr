@@ -8,7 +8,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::command::Args;
+use crate::command::{Args, Category, Param};
 use crate::message::{Call, Response};
 
 /// A window, by the host's id, which no other window, tab or pane of the
@@ -296,6 +296,36 @@ pub struct Found {
     pub count: usize,
     /// Whether the search went to its end.
     pub done: bool,
+}
+
+/// A command, as a read of the registry gives it: its name, its title, in
+/// the language that the app shows, its category and its parameters, to
+/// every plugin; and, to a plugin of `user-commands` alone, as its own
+/// commands' too, the plugin that registered it, its keys, its context, and
+/// whether the menus enable it now.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct CommandInfo {
+    /// Its name, `namespace.action`.
+    pub name: String,
+    /// Its title, as the menus show it.
+    pub title: String,
+    /// Its category.
+    pub category: Category,
+    /// Its parameters, in their order.
+    pub params: Vec<Param>,
+    /// The plugin that registered it, by its name; `None` of the app's own,
+    /// or to a plugin without `user-commands`.
+    pub plugin: Option<String>,
+    /// The keys that run it of no arguments, as the platform writes them,
+    /// as `⌘T`; `None` without a binding, or to a plugin without
+    /// `user-commands`.
+    pub keys: Option<String>,
+    /// The context in which it can run, as a binding's `when` writes it;
+    /// `None` of every context, or to a plugin without `user-commands`.
+    pub when: Option<String>,
+    /// Whether the menus enable it now, as its context and the focused pane
+    /// say; `None` to a plugin without `user-commands`.
+    pub enabled: Option<bool>,
 }
 
 /// The current match of a search, as a read of it gives it.

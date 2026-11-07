@@ -22,9 +22,9 @@ use std::collections::BTreeMap;
 use lokyr_plugin_sdk::command::{Args, Capability, Category, Code, Command, Error, Value};
 use lokyr_plugin_sdk::event::WorkspaceEvent;
 use lokyr_plugin_sdk::host::{
-    BarPlace, Binding, Color, DecorationLook, Direction, Edge, Layout, Line, LineText, MOST_STATE,
-    PaneId, ScreenPoint, Scroll, SearchMatch, SearchQuery, Side, TabId, TabInfo, Underline,
-    WindowId, WindowInfo,
+    BarPlace, Binding, Color, CommandInfo, DecorationLook, Direction, Edge, Layout, Line, LineText,
+    MOST_STATE, PaneId, ScreenPoint, Scroll, SearchMatch, SearchQuery, Side, TabId, TabInfo,
+    Underline, WindowId, WindowInfo,
 };
 use lokyr_plugin_sdk::message::{DIM_RANGE, Data, Event, Mods, OWN_PANE, Request, Response};
 use lokyr_plugin_sdk::ui::{Anchor, PanelId, PanelOptions, Role, ViewId};
@@ -711,6 +711,23 @@ fn declarations() -> Scenario {
         subscriptions: Vec::new(),
         steps: vec![ask(vec![
             (Request::RegisterCommand(other), Response::Done),
+            (
+                Request::Commands,
+                Response::Commands(
+                    ["conformer.ask", "conformer.other"]
+                        .map(|name| CommandInfo {
+                            name: name.to_owned(),
+                            title: "Ask".to_owned(),
+                            category: Category::View,
+                            params: Vec::new(),
+                            plugin: Some("conformer".to_owned()),
+                            keys: None,
+                            when: None,
+                            enabled: Some(true),
+                        })
+                        .to_vec(),
+                ),
+            ),
             (
                 Request::RegisterCommand(ask_command()),
                 failed(

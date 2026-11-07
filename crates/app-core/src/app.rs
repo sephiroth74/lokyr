@@ -2437,6 +2437,10 @@ impl<B: Backend> App<B> {
                 .and_then(menus::shortcut)
                 .map(writer)
         };
+        // Whether the menus enable a command, as the last frame of the
+        // focused pane settled them.
+        let menu_enabled = &self.menu_enabled;
+        let enabled = |command: &str| menu_enabled.get(command).copied().unwrap_or(true);
         let mut clipboard = PlatformClipboard(platform);
         let mut context = plugins::Context {
             registry: &mut self.commands,
@@ -2447,6 +2451,7 @@ impl<B: Backend> App<B> {
             font_size,
             confirm_paste,
             keys: &keys,
+            enabled: &enabled,
             language: self.texts.language(),
         };
         call(&mut self.plugins, &mut context)

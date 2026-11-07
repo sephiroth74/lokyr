@@ -501,6 +501,7 @@ impl Kernel {
             font_size: 13.0,
             confirm_paste: lokyr_kernel::config::ConfirmPaste::Auto,
             keys: &keys,
+            enabled: &|_| true,
             language: "en",
         }
     }
@@ -756,11 +757,12 @@ fn kind(request: &Request) -> usize {
         Request::FocusNode { .. } => 74,
         Request::ShowMatches { .. } => 75,
         Request::CurrentMatch(_) => 76,
+        Request::Commands => 77,
     }
 }
 
 /// How many kinds of requests the plugin API has.
-const KINDS: usize = 77;
+const KINDS: usize = 78;
 
 #[test]
 fn the_scenarios_hold_every_request_of_the_plugin_api() {

@@ -161,6 +161,7 @@ impl App {
             font_size: 13.0,
             confirm_paste: crate::config::ConfirmPaste::Auto,
             keys: &|_, _| None,
+            enabled: &|_| true,
             language: self.language.unwrap_or("en"),
         }
     }
@@ -1488,6 +1489,100 @@ fn a_plugin_that_declares_runs_its_own_commands_and_those_of_its_uses() {
             Some(Code::Undeclared)
         ]
     );
+}
+
+#[test]
+fn a_plugin_of_user_commands_reads_the_whole_registry_and_runs_any_command() {
+    let mut app = App::default();
+    app.registry
+        .register(Command {
+            when: Some("selection".to_owned()),
+            ..command("pane.copy")
+        })
+        .unwrap();
+    let mut plugins = Plugins::new();
+    plugins
+        .add(
+            "acme/other",
+            scripted(
+                |cx| {
+                    cx.register_command(Command {
+                        capabilities: vec![Capability::PtyWrite],
+                        ..command("other.writes")
+                    })
+                },
+                |_, _, _| Ok(()),
+            ),
+        )
+        .unwrap();
+    let read = Rc::new(RefCell::new(Vec::new()));
+    for (name, capabilities) in [
+        ("acme/blind", ""),
+        ("acme/palette", "user-commands = true\n"),
+    ] {
+        let manifest = Manifest::parse(&format!(
+            "[plugin]\nname = \"{name}\"\nversion = \"1.0.0\"\nkind = \"luau\"\napi = \"^0.1\"\nlicense = \"MIT\"\n[capabilities]\n{capabilities}"
+        ))
+        .unwrap();
+        let namespace = name.rsplit('/').next().unwrap().to_owned();
+        let seen = Rc::clone(&read);
+        let command_name = format!("{namespace}.go");
+        plugins
+            .add_declared(
+                manifest,
+                scripted(
+                    move |cx| cx.register_command(command(&command_name)),
+                    move |cx, _, _| {
+                        let commands = cx.commands()?;
+                        let ran = ["pane.copy", "other.writes"]
+                            .map(|name| cx.run_command(name, Args::new()).err().map(|e| e.code));
+                        seen.borrow_mut().push((commands, ran));
+                        Ok(())
+                    },
+                ),
+            )
+            .unwrap();
+    }
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    for command in ["blind.go", "palette.go"] {
+        plugins
+            .run(command, Args::new(), &mut app.context())
+            .unwrap();
+    }
+    let read = read.borrow();
+    let names: Vec<&str> = read[0].0.iter().map(|info| info.name.as_str()).collect();
+    assert_eq!(
+        names,
+        ["pane.copy", "other.writes", "blind.go", "palette.go"]
+    );
+    // Without the capability: the names, titles, categories and parameters
+    // alone; and no command that its manifest does not declare runs.
+    assert!(
+        read[0]
+            .0
+            .iter()
+            .all(|info| info.plugin.is_none() && info.when.is_none() && info.enabled.is_none())
+    );
+    assert_eq!(read[0].1, [Some(Code::Undeclared), Some(Code::Undeclared)]);
+    // With it: each one's plugin, of none the app's own, its context and
+    // its state; and any command runs, as the user's.
+    let plugins_of: Vec<Option<&str>> = read[1]
+        .0
+        .iter()
+        .map(|info| info.plugin.as_deref())
+        .collect();
+    assert_eq!(
+        plugins_of,
+        [
+            None,
+            Some("acme/other"),
+            Some("acme/blind"),
+            Some("acme/palette")
+        ]
+    );
+    assert_eq!(read[1].0[0].when.as_deref(), Some("selection"));
+    assert!(read[1].0.iter().all(|info| info.enabled == Some(true)));
+    assert_eq!(read[1].1, [None, None]);
 }
 
 #[test]

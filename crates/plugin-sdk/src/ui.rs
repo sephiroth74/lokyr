@@ -123,6 +123,8 @@ pub enum Corner {
     BottomLeft,
     /// The bottom right one.
     BottomRight,
+    /// The middle of the top edge, as a palette's.
+    Top,
 }
 
 /// Where a panel goes, and the window that it shows in.

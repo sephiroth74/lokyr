@@ -17,6 +17,9 @@ pub struct Registry {
     commands: BTreeMap<String, Command>,
     /// The commands' names, in the order of their registrations.
     order: Vec<String>,
+    /// The plugins that registered commands, by the commands' names; the
+    /// app's own commands have none.
+    owners: BTreeMap<String, String>,
 }
 
 impl Registry {
@@ -42,6 +45,21 @@ impl Registry {
         Ok(())
     }
 
+    /// Registers `command` of the plugin `plugin`, as
+    /// [`Registry::register`] does, which [`Registry::owner`] then tells.
+    pub fn register_for(&mut self, command: Command, plugin: &str) -> Result<(), Error> {
+        let name = command.name.clone();
+        self.register(command)?;
+        self.owners.insert(name, plugin.to_owned());
+        Ok(())
+    }
+
+    /// The plugin that registered the command `name`, by its name; `None`
+    /// of the app's own commands.
+    pub fn owner(&self, name: &str) -> Option<&str> {
+        self.owners.get(name).map(String::as_str)
+    }
+
     /// The command `name`, if it is registered.
     pub fn get(&self, name: &str) -> Option<&Command> {
         self.commands.get(name)
@@ -51,6 +69,7 @@ impl Registry {
     /// registered.
     pub fn unregister(&mut self, name: &str) -> Option<Command> {
         self.order.retain(|registered| registered != name);
+        self.owners.remove(name);
         self.commands.remove(name)
     }
 

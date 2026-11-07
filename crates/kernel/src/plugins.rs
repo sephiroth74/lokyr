@@ -230,6 +230,9 @@ pub struct Context<'a> {
     /// The keys that run a command with its arguments, as the platform
     /// writes them, as `⌘1`; none without a binding.
     pub keys: &'a dyn Fn(&str, &Args) -> Option<String>,
+    /// Whether the menus enable a command now, by its name, as its context
+    /// and the focused pane say.
+    pub enabled: &'a dyn Fn(&str) -> bool,
     /// The language that the app shows, of its own catalogs, which the
     /// plugins' messages take.
     pub language: &'a str,
@@ -3162,6 +3165,38 @@ impl Host<'_, '_> {
                     rows: grid.rows,
                 }
             }
+            Asked::Commands => {
+                // The rest of the registry to a plugin of `user-commands`
+                // alone, which tells the plugins installed and the user's
+                // keys.
+                let user = self
+                    .state
+                    .granted
+                    .as_ref()
+                    .is_none_or(|granted| granted.contains(&Capability::UserCommands));
+                let registry = &*self.context.registry;
+                let infos = registry
+                    .in_order()
+                    .map(|command| {
+                        let name = &command.name;
+                        host::CommandInfo {
+                            name: name.clone(),
+                            title: command.title.clone(),
+                            category: command.category,
+                            params: command.params.clone(),
+                            plugin: user
+                                .then(|| registry.owner(name).map(str::to_owned))
+                                .flatten(),
+                            keys: user
+                                .then(|| (self.context.keys)(name, &Args::new()))
+                                .flatten(),
+                            when: user.then(|| command.when.clone()).flatten(),
+                            enabled: user.then(|| (self.context.enabled)(name)),
+                        }
+                    })
+                    .collect();
+                Response::Commands(infos)
+            }
             Asked::PaneTitle(pane) => {
                 let reads = self.state.reads_processes();
                 let title = self.pane(pane)?.header_title(reads);
@@ -3427,14 +3462,17 @@ impl Host<'_, '_> {
         let asked = match request {
             Asked::RunCommand { name, args } => {
                 let registry = &self.context.registry;
+                // A plugin of `user-commands` runs any as the user's.
                 let args = match (&self.state.uses, &self.state.granted) {
-                    (Some(uses), Some(granted)) => registry.check_for_plugin(
-                        &name,
-                        args,
-                        &self.state.commands,
-                        uses,
-                        granted,
-                    )?,
+                    (Some(uses), Some(granted)) if !granted.contains(&Capability::UserCommands) => {
+                        registry.check_for_plugin(
+                            &name,
+                            args,
+                            &self.state.commands,
+                            uses,
+                            granted,
+                        )?
+                    }
                     _ => registry.check(&name, args)?,
                 };
                 Request::Run {
@@ -3615,7 +3653,9 @@ impl Host<'_, '_> {
                 if self.state.uses.is_some() {
                     self.of_its_namespace(&command.name)?;
                 }
-                self.context.registry.register(command.clone())?;
+                self.context
+                    .registry
+                    .register_for(command.clone(), &self.state.name)?;
                 self.state.commands.push(command);
                 *self.declarations_changed = true;
             }

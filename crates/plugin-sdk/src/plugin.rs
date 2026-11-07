@@ -47,8 +47,8 @@
 
 use crate::command::{Args, Code, Command, Error};
 use crate::host::{
-    BarPlace, Binding, Color, Current, DecorationLook, Direction, Edge, Found, Host, Layout,
-    LineText, PaneId, ScreenPoint, Scroll, SearchMatch, SearchQuery, Side, StyleRun, TabId,
+    BarPlace, Binding, Color, CommandInfo, Current, DecorationLook, Direction, Edge, Found, Host,
+    Layout, LineText, PaneId, ScreenPoint, Scroll, SearchMatch, SearchQuery, Side, StyleRun, TabId,
     TabInfo, WindowId, WindowInfo,
 };
 use crate::message::{Call, Data, Event, Request, Response};
@@ -419,6 +419,16 @@ impl<'a> Cx<'a> {
             count,
         }) {
             Response::Matches(found) => Ok(found),
+            other => Err(failed(other)),
+        }
+    }
+
+    /// The registered commands, in the order of their registrations, as
+    /// the menus list them: each one's plugin, keys, context and state of
+    /// the menus too, of a plugin of `user-commands`.
+    pub fn commands(&mut self) -> Result<Vec<CommandInfo>, Error> {
+        match self.request(Request::Commands) {
+            Response::Commands(commands) => Ok(commands),
             other => Err(failed(other)),
         }
     }

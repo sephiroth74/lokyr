@@ -26,8 +26,8 @@ use serde::{Deserialize, Serialize};
 use crate::command::{Args, Capability, Command, Error};
 use crate::event::WorkspaceEvent;
 use crate::host::{
-    BarPlace, Binding, Color, Current, DecorationLook, Direction, Edge, Found, Layout, Line,
-    LineText, PaneId, ScreenPoint, Scroll, SearchMatch, SearchQuery, Side, StyleRun, TabId,
+    BarPlace, Binding, Color, CommandInfo, Current, DecorationLook, Direction, Edge, Found, Layout,
+    Line, LineText, PaneId, ScreenPoint, Scroll, SearchMatch, SearchQuery, Side, StyleRun, TabId,
     TabInfo, WindowId, WindowInfo,
 };
 use crate::ui::{PanelId, PanelOptions, ViewId};
@@ -73,8 +73,12 @@ pub enum Request {
         /// Its value.
         value: Data,
     },
+    /// The registered commands, in the order of their registrations, as
+    /// the menus list them.
+    Commands,
     /// Runs a command with arguments, once the call returns; the call is
-    /// checked as it is asked.
+    /// checked as it is asked: of a plugin of `user-commands`, as the
+    /// user's, any command without a declaration.
     RunCommand {
         /// The command's name.
         name: String,
@@ -659,7 +663,8 @@ impl Request {
             | Self::ClosePanel(_)
             | Self::Config
             | Self::State
-            | Self::SetState(_) => None,
+            | Self::SetState(_)
+            | Self::Commands => None,
         }
     }
 
@@ -691,7 +696,8 @@ impl Request {
             | Self::State
             | Self::TabBarPlace
             | Self::KeysOf { .. }
-            | Self::Message { .. } => Effect::Read,
+            | Self::Message { .. }
+            | Self::Commands => Effect::Read,
             Self::SetClipboardText(_)
             | Self::SelectCells { .. }
             | Self::ShowMatches { .. }
@@ -773,6 +779,8 @@ pub enum Response {
     Matches(Found),
     /// A search's current match, as a read of it gives it.
     Current(Current),
+    /// The registered commands.
+    Commands(Vec<CommandInfo>),
     /// A question's id, whose answer comes as an event.
     Asking(u64),
     /// A tab bar's place.

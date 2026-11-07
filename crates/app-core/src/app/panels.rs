@@ -401,6 +401,7 @@ fn point(anchor: &Anchor) -> (f32, f32) {
                 Corner::TopRight => (right, top),
                 Corner::BottomLeft => (left, bottom),
                 Corner::BottomRight => (right, bottom),
+                Corner::Top => (rect.x + rect.width / 2.0, top),
             }
         }
     }
@@ -464,5 +465,6 @@ fn corner_of(corner: PanelCorner) -> Corner {
         PanelCorner::TopRight => Corner::TopRight,
         PanelCorner::BottomLeft => Corner::BottomLeft,
         PanelCorner::BottomRight => Corner::BottomRight,
+        PanelCorner::Top => Corner::Top,
     }
 }
