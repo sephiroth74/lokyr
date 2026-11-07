@@ -625,9 +625,22 @@ impl Layout {
         if !tree.kind(id).is_some_and(Kind::has_children) {
             return;
         }
-        let Some(&node) = self.nodes.get(&id) else {
+        let Some(mut node) = self.nodes.get(&id).copied() else {
             return;
         };
+        // A node that loses its last child is laid out as a leaf, which
+        // keeps the out-of-flow boxes that it held, gone now, among those
+        // that its layout's rounding visits: it takes a node of its own
+        // anew, of none.
+        let childless = tree.children(id).is_empty() && !self.controls.contains_key(&id);
+        if childless
+            && self
+                .taffy
+                .hoisted_children(node)
+                .is_ok_and(|held| !held.is_empty())
+        {
+            node = self.renew(id, node);
+        }
         // A view of tabs' control first, over its page.
         let children: Vec<taffy::NodeId> = self
             .controls
@@ -641,6 +654,35 @@ impl Layout {
             )
             .collect();
         let _ = self.taffy.set_children(node, &children);
+    }
+}
+
+impl Layout {
+    /// Gives `id` a node of `taffy`'s anew in place of `node`, of its style
+    /// and its content, at its place among its parent's children: the new
+    /// node.
+    fn renew(&mut self, id: NodeId, node: taffy::NodeId) -> taffy::NodeId {
+        let style = self.taffy.style(node).cloned().unwrap_or_default();
+        let made = match self.taffy.get_node_context(node).cloned() {
+            Some(leaf) => self.taffy.new_leaf_with_context(style, leaf),
+            None => self.taffy.new_leaf(style),
+        };
+        let Ok(fresh) = made else {
+            return node;
+        };
+        if let Some(parent) = self.taffy.parent(node) {
+            let at = self
+                .taffy
+                .children(parent)
+                .ok()
+                .and_then(|children| children.iter().position(|&child| child == node));
+            if let Some(at) = at {
+                let _ = self.taffy.replace_child_at_index(parent, at, fresh);
+            }
+        }
+        let _ = self.taffy.remove(node);
+        self.nodes.insert(id, fresh);
+        fresh
     }
 }
 
@@ -1356,5 +1398,103 @@ mod tests {
             .collect();
         // 50 points at 2, a quarter of 400, and the rest.
         assert_eq!(widths, [100.0, 100.0, 200.0]);
+    }
+
+    /// A tiny random generator of the tests', of a seed.
+    struct Random(u64);
+
+    impl Random {
+        fn below(&mut self, n: u64) -> u64 {
+            self.0 ^= self.0 << 13;
+            self.0 ^= self.0 >> 7;
+            self.0 ^= self.0 << 17;
+            self.0 % n
+        }
+    }
+
+    /// A random node of `depth`, of boxes of up to three children, texts,
+    /// icons and progresses of every shape, the outline's out of the flow;
+    /// a third of them of one of `keys`, which each takes once.
+    fn random_node(random: &mut Random, depth: u32, keys: &mut Vec<&'static str>) -> Node {
+        use lokyr_plugin_sdk::view::{ProgressShape, ProgressState};
+        let mut node = match random.below(5) {
+            0 | 1 if depth < 7 => Node::container(
+                (0..random.below(4))
+                    .map(|_| random_node(random, depth + 1, keys))
+                    .collect(),
+            ),
+            2 => Node::text(["x", "yy", "zzz"][random.below(3) as usize]),
+            3 => Node::progress(
+                [
+                    ProgressShape::Bar,
+                    ProgressShape::Ring,
+                    ProgressShape::Outline,
+                    ProgressShape::Dots,
+                ][random.below(4) as usize],
+                ProgressState::Normal,
+                0.5,
+            ),
+            _ => Node::icon(["a", "b"][random.below(2) as usize]),
+        };
+        if random.below(3) == 0 && !keys.is_empty() {
+            let at = random.below(keys.len() as u64) as usize;
+            node = node.key(keys.remove(at));
+        }
+        node
+    }
+
+    /// Checks that the layout's nodes of `id`'s subtree have the children
+    /// of `tree`'s, each of them as its parent.
+    fn in_step(tree: &Tree, layout: &Layout, id: NodeId) {
+        let node = layout.nodes[&id];
+        if tree.kind(id).is_some_and(Kind::has_children) {
+            let wanted: Vec<taffy::NodeId> = layout
+                .controls
+                .get(&id)
+                .copied()
+                .into_iter()
+                .chain(tree.children(id).iter().map(|child| layout.nodes[child]))
+                .collect();
+            assert_eq!(layout.taffy.children(node).unwrap(), wanted, "{id:?}");
+        }
+        for &child in tree.children(id) {
+            assert_eq!(layout.taffy.parent(layout.nodes[&child]), Some(node));
+            in_step(tree, layout, child);
+        }
+    }
+
+    #[test]
+    fn a_box_that_loses_its_last_child_out_of_the_flow_lays_out_again() {
+        use lokyr_plugin_sdk::view::{ProgressShape, ProgressState};
+        let outline = Node::progress(ProgressShape::Outline, ProgressState::Normal, 0.5);
+        let (mut tree, mut layout, mut font) = laid(&Node::container(vec![outline]), 2.0, 200.0);
+        let changes = tree.update(&Node::container(Vec::new())).unwrap();
+        layout.update(&tree, &changes);
+        layout.compute(&tree, Some(200.0), None, &mut font);
+        let root = tree.root().unwrap();
+        assert!(layout.frame(&tree, root).is_some());
+        in_step(&tree, &layout, root);
+    }
+
+    #[test]
+    fn random_renders_keep_the_layout_s_tree_in_step() {
+        for seed in 1..800_u64 {
+            let mut random = Random(seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1);
+            let mut tree = Tree::new();
+            let mut layout = Layout::new(2.0);
+            let mut font = Fixed::default();
+            for _ in 0..25 {
+                let mut keys = vec!["k1", "k2", "k3", "k4", "k5", "k6"];
+                let root = Node::container(
+                    (0..random.below(4))
+                        .map(|_| random_node(&mut random, 1, &mut keys))
+                        .collect(),
+                );
+                let changes = tree.update(&root).unwrap();
+                layout.update(&tree, &changes);
+                in_step(&tree, &layout, tree.root().unwrap());
+                layout.compute(&tree, Some(400.0), None, &mut font);
+            }
+        }
     }
 }
