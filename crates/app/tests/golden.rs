@@ -1102,6 +1102,7 @@ enum BarTabs {
     Bound,
     Marked,
     Title,
+    TitleProgress,
 }
 
 /// A bar's tabs, the keys of each, and the config's keys past the look's.
@@ -1121,6 +1122,21 @@ impl BarTabs {
                 tab.secure = true;
                 tab.running = true;
                 tab.printing = true;
+                (vec![tab], keys(&["⌘1"]), Vec::new())
+            }
+            // A single tab's title of its program's progress, 40 percent,
+            // in a ring.
+            Self::TitleProgress => {
+                use lokyr_plugin_sdk::host::TabProgress;
+                use lokyr_plugin_sdk::view::ProgressState;
+                let mut tab = bar_tabs().swap_remove(1);
+                tab.id = TabId(1);
+                tab.running = true;
+                tab.printing = true;
+                tab.progress = Some(TabProgress {
+                    state: ProgressState::Normal,
+                    value: Some(0.4),
+                });
                 (vec![tab], keys(&["⌘1"]), Vec::new())
             }
             Self::One => {
@@ -1242,7 +1258,7 @@ type Bar = (
 /// `[plugins.tabs]` asks for them, of their width and, in the titlebar and
 /// down a column, of their height, in points, the pointer over the third
 /// tab; a single tab, many, and the keys of the user's bindings.
-const BARS: [Bar; 24] = [
+const BARS: [Bar; 25] = [
     (
         "standard-top",
         "standard",
@@ -1400,13 +1416,21 @@ const BARS: [Bar; 24] = [
         (200.0, Some(200.0)),
         BarTabs::Marked,
     ),
-    // A single tab's title, across a titlebar of the system's height.
+    // A single tab's title, across a titlebar of the system's height; of
+    // its program's progress.
     (
         "unified-title",
         "unified",
         "top",
         (640.0, Some(28.0)),
         BarTabs::Title,
+    ),
+    (
+        "unified-title-progress",
+        "unified",
+        "top",
+        (640.0, Some(28.0)),
+        BarTabs::TitleProgress,
     ),
     // More rows than the column holds, which scroll.
     (

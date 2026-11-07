@@ -510,3 +510,53 @@ fn a_tab_marks_what_came_while_it_did_not_show_what_runs_and_its_program_s_progr
         }
     }
 }
+
+#[test]
+fn a_single_tab_s_title_shows_its_program_s_progress_in_a_ring() {
+    use lokyr_plugin_sdk::host::TabProgress;
+    let settings = Settings::default();
+    let of = |state: ProgressState, value: Option<f32>| {
+        let tab = TabInfo {
+            running: true,
+            printing: true,
+            progress: Some(TabProgress { state, value }),
+            ..tab(1, "cargo", true)
+        };
+        marked(&bar(&[tab], &[], None, &settings).expect("a title"))
+    };
+    // A ring filled as far as its value, in place of the ring that stands
+    // still, and of the spinner; a failed or a paused one of no value
+    // full; an indeterminate one, whose arc turns.
+    assert_eq!(
+        of(ProgressState::Normal, Some(0.4)),
+        ["cargo", "Running", "Ring Normal 0.4"]
+    );
+    assert_eq!(
+        of(ProgressState::Error, None),
+        ["cargo", "Running", "Ring Error 1"]
+    );
+    assert_eq!(
+        of(ProgressState::Paused, Some(0.7)),
+        ["cargo", "Running", "Ring Paused 0.7"]
+    );
+    assert_eq!(
+        of(ProgressState::Indeterminate, None),
+        ["cargo", "Running", "Ring Indeterminate 0"]
+    );
+    // Of a bar, the outline round the tab, and no ring.
+    let shown = Settings {
+        hide_when_single: false,
+        ..settings
+    };
+    let tab = TabInfo {
+        running: true,
+        progress: Some(TabProgress {
+            state: ProgressState::Normal,
+            value: Some(0.4),
+        }),
+        ..tab(1, "cargo", true)
+    };
+    let node = bar(&[tab], &[], None, &shown).expect("a bar");
+    let marks = marked(keyed(&node, &tab_key(1)).expect("the tab"));
+    assert_eq!(marks, ["Close Tab", "Running", "Outline Normal 0.4"]);
+}

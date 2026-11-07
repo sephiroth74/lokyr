@@ -33,7 +33,7 @@
 
 use std::collections::BTreeMap;
 
-use lokyr_plugin_sdk::host::{AgentState, BarPlace, COLUMN_WIDTHS, Color, TabInfo};
+use lokyr_plugin_sdk::host::{AgentState, BarPlace, COLUMN_WIDTHS, Color, TabInfo, TabProgress};
 use lokyr_plugin_sdk::message::Data;
 use lokyr_plugin_sdk::view::{
     Align, Border, Direction, Easing, Edges, Hover, Justify, Kind, Layout, Length, Node,
@@ -199,8 +199,13 @@ const PILL: f32 = 24.0;
 /// The thickness of a tab's outline of its program's progress, in points.
 const OUTLINE: f32 = 2.0;
 
-/// The side of the spinner of a program that runs, in points.
+/// The side of the spinner of a program that runs, in points, and of a
+/// single tab's ring of its program's progress.
 const SPINNER: f32 = 10.0;
+
+/// The thickness of a single tab's ring of its program's progress, in
+/// points.
+const RING_LINE: f32 = 2.0;
 
 /// The room between the track's edge and its pills, and between two, in
 /// points.
@@ -381,7 +386,7 @@ pub(crate) fn titled(count: usize, settings: &Settings) -> bool {
 /// middle, between the room of the window's buttons on either side, so
 /// that it stands in the window's middle, as the system's title does.
 fn title(tab: &Shown<'_>, texts: &BarTexts) -> Node {
-    let mut middle = marks(tab.tab, &texts.marks);
+    let mut middle = marks(tab.tab, &texts.marks, ProgressAt::Ring);
     middle.push(Node::text(tab.title.as_str()));
     let middle = Node::container(middle)
         .layout(Layout {
@@ -482,7 +487,7 @@ fn pills(tabs: &[Shown<'_>], window: Option<&str>, (settings, texts): BarOf<'_>)
 fn pill(tab: &Shown<'_>, (settings, texts): BarOf<'_>) -> Node {
     let mut middle = Vec::new();
     middle.extend(dot(tab.tab.color));
-    middle.extend(marks(tab.tab, &texts.marks));
+    middle.extend(marks(tab.tab, &texts.marks, ProgressAt::Outline));
     middle.push(Node::text(tab.title.as_str()));
     middle.extend(tab.keys.map(keys));
     let middle = Node::container(middle)
@@ -655,7 +660,7 @@ fn cell(tab: &Shown<'_>, top: bool, (settings, texts): BarOf<'_>) -> Node {
     if settings.close_button != CloseButton::Never {
         children.push(close_button(tab.tab.id.0, settings.close_button, texts));
     }
-    children.extend(marks(tab.tab, &texts.marks));
+    children.extend(marks(tab.tab, &texts.marks, ProgressAt::Outline));
     children.push(title);
     children.extend(dot(tab.tab.color));
     children.extend(tab.keys.map(keys));
@@ -847,7 +852,7 @@ fn row(tab: &Shown<'_>, (settings, texts): BarOf<'_>) -> Node {
     if settings.close_button != CloseButton::Never {
         children.push(close_button(tab.tab.id.0, settings.close_button, texts));
     }
-    children.extend(marks(tab.tab, &texts.marks));
+    children.extend(marks(tab.tab, &texts.marks, ProgressAt::Outline));
     let mut title = Node::text(tab.title.as_str());
     title.layout.grow = 1.0;
     children.push(title);
@@ -944,12 +949,22 @@ fn tab_style(style: Style, radius: f32, active: bool) -> Style {
     }
 }
 
+/// Where a tab's program's progress shows: round the tab, as its outline,
+/// which the tab's own tree adds, or among its marks, as a ring, as a
+/// single tab's title, round which no outline goes, shows it.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ProgressAt {
+    Outline,
+    Ring,
+}
+
 /// The marks of `tab` before its title, of `texts` to accessibility: the
-/// protected input's lock, its agent's state, its bell, and a spinner of a
+/// protected input's lock, its agent's state, its bell, and its program's
+/// progress in a ring, where it shows `at` a ring; or a spinner of a
 /// program that runs, prints of its own and tells no progress, but a
 /// full-screen one; or a dot of the output that came while it did not
-/// show; or a ring of a program that runs.
-fn marks(tab: &TabInfo, texts: &MarkTexts) -> Vec<Node> {
+/// show; or a ring of a program that runs, which stands still.
+fn marks(tab: &TabInfo, texts: &MarkTexts, at: ProgressAt) -> Vec<Node> {
     let mut marks = Vec::new();
     if tab.secure {
         marks.push(Node::icon("lock").label(texts.secure.as_str()));
@@ -986,7 +1001,9 @@ fn marks(tab: &TabInfo, texts: &MarkTexts) -> Vec<Node> {
     // while the tab does not show, while it prints: a program that waits
     // for the user, as ssh, a REPL or an agent, keeps the ring, as a
     // full-screen program, as vim, which may stay for hours.
-    if tab.running && tab.printing && !tab.alternate && tab.progress.is_none() {
+    if let Some(progress) = tab.progress.filter(|_| at == ProgressAt::Ring) {
+        marks.push(ring(progress, texts.running.as_str()));
+    } else if tab.running && tab.printing && !tab.alternate && tab.progress.is_none() {
         marks.push(spinner(texts.running.as_str()));
     } else if tab.activity {
         let style = Style {
@@ -1031,23 +1048,55 @@ fn spinner(label: &str) -> Node {
     })
 }
 
+/// The ring of a single tab's `progress`, as its program tells it, OSC
+/// 9;4's, of `label` to accessibility: filled clockwise from its top as far
+/// as its value, of its state's color, which the window server slides to a
+/// new value; a failed or a paused one of no value full, an indeterminate
+/// one an arc that turns round it.
+fn ring(progress: TabProgress, label: &str) -> Node {
+    Node::new(Kind::Progress(Progress {
+        state: progress.state,
+        value: filled(progress),
+        shape: ProgressShape::Ring,
+        thickness: RING_LINE,
+        ..Progress::default()
+    }))
+    .label(label)
+    .layout(Layout {
+        width: Length::Points(SPINNER),
+        // Of its width beside a title too long for its room.
+        min_width: Length::Points(SPINNER),
+        height: Length::Points(SPINNER),
+        ..Layout::default()
+    })
+}
+
 /// The outline of `tab`'s progress, as its program tells it, OSC 9;4's,
 /// filled from its left as far as its value along its top and its bottom
 /// at once, as the window's strip fills: a failed or a paused one of no
 /// value full, an indeterminate one a segment that runs round it.
 fn outline(tab: &TabInfo) -> Option<Node> {
     let progress = tab.progress?;
-    let value = progress.value.unwrap_or(match progress.state {
-        ProgressState::Indeterminate => 0.0,
-        _ => 1.0,
-    });
     Some(Node::new(Kind::Progress(Progress {
         state: progress.state,
-        value: value.clamp(0.0, 1.0),
+        value: filled(progress),
         shape: ProgressShape::Outline,
         thickness: OUTLINE,
         ..Progress::default()
     })))
+}
+
+/// How far `progress` fills, from 0 to 1: its value, or, of none, all of a
+/// failed or a paused one, and none of an indeterminate one, which a
+/// segment that moves shows.
+fn filled(progress: TabProgress) -> f32 {
+    progress
+        .value
+        .unwrap_or(match progress.state {
+            ProgressState::Indeterminate => 0.0,
+            _ => 1.0,
+        })
+        .clamp(0.0, 1.0)
 }
 
 /// The dot of a tab's own color, as its program or the user gave it.
