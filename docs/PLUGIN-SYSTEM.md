@@ -219,6 +219,21 @@ type WindowInfo = {
     number: number?, -- from 1, the lowest that no other open window had as it opened; none for the quick terminal's
     keys: string?, -- the keys that bring it forward, as the platform writes them, as "⌥⌘1", for its titlebar to show; nil while the config hides them
     bell: boolean, -- its bell rang while it had not the focus, until it takes it, as `[bell] mark-title` marks its title, for a title that a plugin draws, as a single tab's; its views of the tab bar render again as it changes
+    quick: boolean, -- a quick window, which slides in over every app's windows
+    hidden: boolean, -- hidden, as a quick window hides
+}
+
+-- Where a quick window shows: the edge that it slides in from, or the centre, where it fades; how far it reaches into
+-- its screen's area for windows, and its length along the edge, nil for the screen's whole, each a percentage, above 0
+-- and at most 100, or points, from 1 to 100000; its screen; its slide, in milliseconds, from 0 to 2000; and whether it
+-- shows on every Space.
+type QuickPlace = {
+    edge: "top" | "bottom" | "left" | "right" | "center",
+    primary: { percent: number } | { points: number },
+    secondary: ({ percent: number } | { points: number })?,
+    screen: ("main" | "pointer" | "menu-bar")?,
+    animation: number,
+    ["every-space"]: boolean,
 }
 
 type BarPlace =
@@ -396,6 +411,9 @@ type Event =
     | { kind: "pane-changed", pane: PaneId, tab: TabId }
     -- The keymap's bindings changed, as the config's or a plugin's: the keys of `keys_of` may be others.
     | { kind: "keys-changed" }
+    -- A window took the keyboard's focus, or lost it, as the user clicks another app or another window; not as a question of
+    -- the app's on it takes it.
+    | { kind: "window-focus", window: WindowId, focused: boolean }
     -- The pointer over another cell of a pane, or out of it, or the modifiers changed over it, or a frame changed the text
     -- of its row or scrolled its pane's rows under it, at the same cell; while Command is up, its
     -- moves come only as the system gives them, as a program that tracks the mouse asks.
@@ -486,7 +504,9 @@ type CommandInfo = {
 }
 
 -- `keys`: e.g. "cmd+f" or "ctrl+a>c"; `when`: e.g. "pane.focused && !search.open", where a plugin's
--- panels give `namespace.open` while one shows, and `namespace.focused` while one has the keyboard.
+-- panels give `namespace.open` while one shows, and `namespace.focused` while one has the keyboard. A key taken from every
+-- app, with `global-hotkey`, starts with "global:", as "global:ctrl+`", without `when`: one key, by its place on the US
+-- layout, with Command, Control or Alt, or a function key; the config's global keys come first.
 type Binding = { keys: string, command: string, args: Args?, when: string? }
 
 -- An item of the menu bar's menu of a category, after its commands, or of the pane's context menu, after the editing's:
@@ -513,7 +533,8 @@ type Cx = {
     bind: (binding: Binding) -> (boolean, Error?),
     -- An item of a menu, of a registered command and its arguments, which the plugin may run, for as long as it runs.
     add_menu_item: (item: MenuItem) -> (boolean, Error?),
-    -- The workspace's events, as "tab-created", the pointer's, "pointer", and plugins' own, as "search.progress".
+    -- The workspace's events, as "tab-created", the pointer's, "pointer", the windows' focus, "window-focus", and plugins' own, as
+    -- "search.progress".
     subscribe: (names: { string }) -> (boolean, Error?),
     -- An event of the plugin's namespace, which comes after the call returns.
     emit: (name: string, schema: string, value: any) -> (boolean, Error?),
@@ -580,6 +601,12 @@ type Cx = {
     zoom: (tab: TabId, pane: PaneId?) -> (boolean, Error?),
     -- A window, its pane in `directory`, as `new_tab`'s, if given.
     open_window: (directory: string?) -> (boolean, Error?),
+    -- A quick window of a new pane, which shows at `place` over every app's windows and takes the focus, its pane in
+    -- `directory`, if given: its id, at once. With `global-hotkey`.
+    open_quick_window: (place: QuickPlace, directory: string?) -> (WindowId?, Error?),
+    -- Shows a quick window at `place`, which takes the focus, or hides it, of nil, the app that had the focus taking it
+    -- back. With `global-hotkey`.
+    show_quick_window: (window: WindowId, place: QuickPlace?) -> (boolean, Error?),
     close_window: (window: WindowId) -> (boolean, Error?),
     quit: () -> (boolean, Error?),
 
@@ -740,7 +767,7 @@ type Plugin = {
 | `process-spawn` | Starting processes | Very high |
 | `net:<host>` | HTTP requests to the listed hosts | High |
 | `fs-read:<path>`, `fs-write:<path>` | Access to the listed paths | High |
-| `global-hotkey` | System-wide shortcuts | Medium |
+| `global-hotkey` | System-wide shortcuts, bindings of `global:` keys, and quick windows, which slide in over every app's | Medium |
 | `env-read:<name>` | Reading the listed variables of the app's environment and of the panes' programs', with `*` as `AWS_*` | High: they often hold secrets, as `GITHUB_TOKEN` |
 | `input-read` | Seeing the keys typed before they reach the program | Very high: a keylogger's power |
 | `history-read` | Reading the commands that the shell ran and their output, which shell integration marks | High: a password typed by mistake ends up there |

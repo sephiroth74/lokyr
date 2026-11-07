@@ -621,8 +621,9 @@ pub struct App<B: Backend> {
     /// The memory that the windows' scrollbacks share, which the config
     /// sizes.
     budget: Arc<Budget>,
-    /// The quick terminal's window, once it opened, and whether it shows.
-    quick: Option<(WindowId, bool)>,
+    /// The quick windows, each with the place that it showed at last, and
+    /// whether it shows.
+    quick: BTreeMap<WindowId, (lokyr_platform_core::QuickPlace, bool)>,
     /// The config's global keys that the Mac's keyboards have, by the
     /// indices that their presses tell, with the commands that they run,
     /// those that another app holds too.
@@ -780,7 +781,7 @@ impl<B: Backend> App<B> {
             },
             terminfo_dirs: programs_terminfo_dirs(),
             budget,
-            quick: None,
+            quick: BTreeMap::new(),
             global_keys: Vec::new(),
             startup_bench: None,
             latency_bench: None,
@@ -1372,7 +1373,7 @@ impl<B: Backend> App<B> {
         // resizes them from now; a man page's never does.
         if remember_changed {
             for (&window, state) in &self.windows {
-                if self.quick.is_some_and(|(quick, _)| quick == window) {
+                if self.quick.contains_key(&window) {
                     continue;
                 }
                 let remember = self.config.window.remember_frame && state.page.is_none();
@@ -1668,7 +1669,7 @@ impl<B: Backend> App<B> {
         };
         self.opened_one = true;
         match platform.create_window(&attributes) {
-            Ok(window) => self.run_in(platform, window, (program, page), &environment),
+            Ok(window) => self.run_in(platform, window, (program, page), &environment, None),
             Err(error) => {
                 eprintln!("lokyr: {error}");
                 if self.windows.is_empty() && self.quits_without_windows() {
@@ -1680,13 +1681,15 @@ impl<B: Backend> App<B> {
 
     /// Gives the platform's new `window` a pane that runs `program` in
     /// `environment`, of the man page of the title `page`, as `man ls`, of
-    /// its colors, when it shows one; and draws it.
+    /// its colors, when it shows one; and draws it. A quick window is the
+    /// workspace's of the id `quick`.
     fn run_in(
         &mut self,
         platform: &mut dyn Platform,
         window: WindowId,
         (program, page): (&Program, Option<String>),
         environment: &Environment,
+        quick: Option<workspace::WindowId>,
     ) {
         let size = platform
             .window_size(window)
@@ -1697,7 +1700,10 @@ impl<B: Backend> App<B> {
             None => self.colors(platform.appearance()),
         };
         let pane = self.spawn_pane(platform, program, environment, grid, &colors);
-        let shown = self.workspace.open_window(pane);
+        let shown = match quick {
+            Some(id) => self.workspace.open_quick_window(pane, id),
+            None => self.workspace.open_window(pane),
+        };
         self.attach(platform, window, shown, page);
     }
 
@@ -1725,7 +1731,7 @@ impl<B: Backend> App<B> {
         state.keyboard = self.workspace.focused(shown).map(Pane::id);
         // The lowest number that no other open window has; the quick
         // terminal's has none.
-        let quick = self.quick.is_some_and(|(quick, _)| quick == window);
+        let quick = self.quick.contains_key(&window);
         let number = (!quick).then(|| self.free_number());
         self.workspace.number_window(shown, number, None);
         self.windows.insert(window, state);
@@ -1917,34 +1923,74 @@ impl<B: Backend> App<B> {
     /// takes the focus.
     fn toggle_quick(&mut self, platform: &mut dyn Platform) {
         let place = quick::place(&self.config.quick_terminal);
-        match self.quick {
+        let own = self
+            .quick
+            .iter()
+            .next()
+            .map(|(&window, &(_, shown))| (window, shown));
+        match own {
             Some((window, true))
                 if self.windows.get(&window).is_some_and(|state| state.focused) =>
             {
-                platform.show_quick_window(window, None);
-                self.quick = Some((window, false));
+                self.show_quick(platform, window, None);
             }
-            Some((window, _)) => {
+            Some((window, _)) => self.show_quick(platform, window, Some(place)),
+            None => self.open_quick(platform, workspace::WindowId::new(), place, None),
+        }
+    }
+
+    /// Opens a quick window of a new pane, the workspace's of the id
+    /// `shown`, which shows at `place` and takes the focus; its pane starts
+    /// in `directory`, or as a new window's.
+    fn open_quick(
+        &mut self,
+        platform: &mut dyn Platform,
+        shown: workspace::WindowId,
+        place: lokyr_platform_core::QuickPlace,
+        directory: Option<PathBuf>,
+    ) {
+        let environment = Environment {
+            directory: directory.or_else(|| self.start_directory(platform)),
+            ..self.environment.clone()
+        };
+        match platform.create_quick_window(TITLE) {
+            Ok(window) => {
+                // Shown first, so that its pane starts of its size, and
+                // known as a quick one before it draws.
                 platform.show_quick_window(window, Some(&place));
-                self.quick = Some((window, true));
+                self.quick.insert(window, (place, true));
+                let program = self.program.clone();
+                self.run_in(
+                    platform,
+                    window,
+                    (&program, None),
+                    &environment,
+                    Some(shown),
+                );
             }
-            None => {
-                let environment = Environment {
-                    directory: self.start_directory(platform),
-                    ..self.environment.clone()
-                };
-                match platform.create_quick_window(TITLE) {
-                    Ok(window) => {
-                        // Shown first, so that its pane starts of its size,
-                        // and known as the quick one before it draws.
-                        platform.show_quick_window(window, Some(&place));
-                        self.quick = Some((window, true));
-                        let program = self.program.clone();
-                        self.run_in(platform, window, (&program, None), &environment);
-                    }
-                    Err(error) => eprintln!("lokyr: {error}"),
-                }
-            }
+            Err(error) => eprintln!("lokyr: {error}"),
+        }
+    }
+
+    /// Shows the quick window `window` at `place`, which takes the focus,
+    /// or hides it, of `None`, the app that had the focus taking it back.
+    fn show_quick(
+        &mut self,
+        platform: &mut dyn Platform,
+        window: WindowId,
+        place: Option<lokyr_platform_core::QuickPlace>,
+    ) {
+        let Some((kept, shown)) = self.quick.get_mut(&window) else {
+            return;
+        };
+        platform.show_quick_window(window, place.as_ref());
+        if let Some(place) = place {
+            *kept = place;
+        }
+        *shown = place.is_some();
+        if let Some(state) = self.windows.get(&window) {
+            self.workspace
+                .set_window_hidden(state.window, place.is_none());
         }
     }
 
@@ -1952,14 +1998,13 @@ impl<B: Backend> App<B> {
     /// if `autohide` says so: not for a question on it, which takes the
     /// focus.
     fn autohide(&mut self, platform: &mut dyn Platform, window: WindowId) {
-        if self.quick != Some((window, true))
+        if self.quick.get(&window).is_none_or(|&(_, shown)| !shown)
             || !self.config.quick_terminal.autohide
             || self.asks_on(window)
         {
             return;
         }
-        platform.show_quick_window(window, None);
-        self.quick = Some((window, false));
+        self.show_quick(platform, window, None);
     }
 
     /// Takes the config's global keys from every app, in place of those
@@ -1970,7 +2015,14 @@ impl<B: Backend> App<B> {
         let mut refused = Vec::new();
         let mut keys: Vec<GlobalKey> = Vec::new();
         self.global_keys.clear();
-        for (combo, invocation) in keymap::global_bindings(&self.config.keys) {
+        // The config's, then the plugins' of other keys.
+        let mut bindings = keymap::global_bindings(&self.config.keys);
+        for (combo, invocation) in self.plugins.global_bindings() {
+            if bindings.iter().all(|(taken, _)| taken != combo) {
+                bindings.push((*combo, invocation.clone()));
+            }
+        }
+        for (combo, invocation) in bindings {
             match quick::global_key(combo) {
                 Some(key) => {
                     keys.push(key);
@@ -2123,9 +2175,7 @@ impl<B: Backend> App<B> {
             }
             self.workspace.close_window(state.window);
         }
-        if self.quick.is_some_and(|(quick, _)| quick == window) {
-            self.quick = None;
-        }
+        self.quick.remove(&window);
         platform.close_window(window);
         // The secure entry goes with the window that had the focus, whose
         // loss of it the platform tells no more, unless another takes it.
@@ -2142,7 +2192,11 @@ impl<B: Backend> App<B> {
             // window closes.
             self.end_latency_bench(platform);
             platform.quit();
-        } else if self.windows.len() == 1 && self.quick.is_some_and(|(_, shown)| !shown) {
+        } else if self
+            .windows
+            .keys()
+            .all(|window| self.quick.get(window).is_some_and(|&(_, shown)| !shown))
+        {
             self.ask_quit(platform, false);
         }
     }
@@ -2527,6 +2581,14 @@ impl<B: Backend> App<B> {
             self.keymap =
                 Keymap::with_config(bindings(&self.plugins, &self.commands), &self.config.keys);
             self.set_menu(platform);
+            // The plugins' global keys, which the benches leave to the
+            // user's Lokyr.
+            if self.startup_bench.is_none()
+                && self.latency_bench.is_none()
+                && self.output_bench.is_none()
+            {
+                self.take_global_keys(platform);
+            }
         }
         for request in self.plugins.take_requests() {
             match request {
@@ -2538,6 +2600,25 @@ impl<B: Backend> App<B> {
                     invocation.command
                 ),
                 Request::OpenWindow(None) => self.open_window(platform),
+                Request::OpenQuickWindow {
+                    window,
+                    place,
+                    directory,
+                } => {
+                    let folder = directory.as_deref().and_then(spawn::folder_of);
+                    self.open_quick(platform, window, quick::host_place(&place), folder);
+                }
+                Request::ShowQuickWindow { window, place } => {
+                    let shown = self
+                        .windows
+                        .iter()
+                        .find(|(_, state)| state.window == window)
+                        .map(|(&shown, _)| shown);
+                    if let Some(shown) = shown {
+                        let place = place.as_ref().map(quick::host_place);
+                        self.show_quick(platform, shown, place);
+                    }
+                }
                 // A window in the folder that the plugin asked for, or a
                 // new window's of a path that is not there.
                 Request::OpenWindow(Some(directory)) => {
@@ -3586,6 +3667,18 @@ impl<B: Backend> App<B> {
                     }
                     self.settle_secure_input(platform);
                     self.show_title(platform, window);
+                }
+                // The plugins hear it, but of a question on the window, which
+                // takes the focus as a part of it.
+                if let Some(state) = self.windows.get(&window)
+                    && (focused || !self.asks_on(window))
+                {
+                    let shown = state.window;
+                    self.plugins
+                        .post(lokyr_kernel::plugins::Event::WindowFocus {
+                            window: shown.into(),
+                            focused,
+                        });
                 }
                 if !focused {
                     self.autohide(platform, window);

@@ -510,7 +510,7 @@ impl<B: Backend> App<B> {
             BarPlace::Title => Titlebar::Untitled,
             _ => Titlebar::Titled,
         };
-        if titlebar != state.titlebar && self.quick.is_none_or(|(quick, _)| quick != window) {
+        if titlebar != state.titlebar && !self.quick.contains_key(&window) {
             platform.set_titlebar(window, titlebar);
             state.titlebar = titlebar;
         }

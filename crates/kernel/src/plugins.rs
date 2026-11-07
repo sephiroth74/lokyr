@@ -33,7 +33,7 @@ pub use lokyr_plugin_sdk::event::WorkspaceEvent;
 pub use lokyr_plugin_sdk::host;
 pub use lokyr_plugin_sdk::message::Event;
 use lokyr_plugin_sdk::message::{Call, Effect, Request as Asked, Response, within_depth};
-pub use lokyr_plugin_sdk::message::{Data, KEYS_CHANGED, Mods, POINTER};
+pub use lokyr_plugin_sdk::message::{Data, KEYS_CHANGED, Mods, POINTER, WINDOW_FOCUS};
 pub use lokyr_plugin_sdk::plugin::{Cx, Plugin, Registration};
 use lokyr_plugin_sdk::ui::{Anchor, PanelId, PanelOptions, Slot, UiEvent, ViewId};
 use lokyr_plugin_sdk::view::{Key, Kind, Node};
@@ -74,6 +74,23 @@ pub enum Request {
     /// Open a window, its pane in `directory`, a path absolute or from `~`,
     /// or in the folder of a file there, if given.
     OpenWindow(Option<String>),
+    /// Open a quick window of the id `window`, which the plugin's request
+    /// gave, shown at `place`, its pane in `directory`, if given.
+    OpenQuickWindow {
+        /// Its id.
+        window: WindowId,
+        /// Where it shows.
+        place: host::QuickPlace,
+        /// The folder of its pane.
+        directory: Option<String>,
+    },
+    /// Show the quick window `window` at `place`, or hide it, of `None`.
+    ShowQuickWindow {
+        /// The quick window.
+        window: WindowId,
+        /// Where it shows, or `None` to hide it.
+        place: Option<host::QuickPlace>,
+    },
     /// Close a window.
     CloseWindow(WindowId),
     /// Quit.
@@ -309,6 +326,8 @@ struct State {
     subscribed: Vec<String>,
     commands: Vec<Command>,
     bindings: Vec<Binding>,
+    /// Its bindings of keys taken from every app, each of its command.
+    global_bindings: Vec<(keymap::Combo, Invocation)>,
     /// Its items of the menus, in their order.
     menu_items: Vec<host::MenuItem>,
     /// Its catalogs, of its commands' titles.
@@ -785,6 +804,7 @@ impl Plugins {
                 subscribed: Vec::new(),
                 commands: Vec::new(),
                 bindings: Vec::new(),
+                global_bindings: Vec::new(),
                 menu_items: Vec::new(),
                 catalogs,
                 views: BTreeMap::new(),
@@ -1172,6 +1192,12 @@ impl Plugins {
     /// keymap takes after the app's and before the config's.
     pub fn bindings(&self) -> impl Iterator<Item = &Binding> {
         self.active().flat_map(|state| &state.bindings)
+    }
+
+    /// The bindings of keys taken from every app of the active plugins, in
+    /// their order, which the app takes after the config's.
+    pub fn global_bindings(&self) -> impl Iterator<Item = &(keymap::Combo, Invocation)> {
+        self.active().flat_map(|state| &state.global_bindings)
     }
 
     /// The commands of the active plugins, which a registry made anew, as
@@ -2726,13 +2752,18 @@ fn message(payload: &(dyn Any + Send)) -> String {
 /// bindings and its menus' items go.
 fn disable(state: &mut State, registry: &mut Registry, declarations_changed: &mut bool) {
     state.status = Status::Disabled;
-    if !state.commands.is_empty() || !state.bindings.is_empty() || !state.menu_items.is_empty() {
+    if !state.commands.is_empty()
+        || !state.bindings.is_empty()
+        || !state.global_bindings.is_empty()
+        || !state.menu_items.is_empty()
+    {
         *declarations_changed = true;
     }
     for command in state.commands.drain(..) {
         registry.unregister(&command.name);
     }
     state.bindings.clear();
+    state.global_bindings.clear();
     state.menu_items.clear();
 }
 
@@ -3210,6 +3241,8 @@ impl Host<'_, '_> {
                         number: window.number(),
                         keys: window.keys().map(str::to_owned),
                         bell: window.bell(),
+                        quick: window.quick(),
+                        hidden: window.hidden(),
                     })
                     .collect(),
             ),
@@ -3562,6 +3595,44 @@ impl Host<'_, '_> {
                 }
                 Request::FontSize(size)
             }
+            Asked::OpenQuickWindow { place, directory } => {
+                place
+                    .check()
+                    .map_err(|message| Error::new(Code::Failed, message))?;
+                if let Some(directory) = &directory {
+                    host::check_directory(directory)
+                        .map_err(|message| Error::new(Code::Failed, message))?;
+                }
+                let window = WindowId::new();
+                self.out.requests.push(Request::OpenQuickWindow {
+                    window,
+                    place,
+                    directory,
+                });
+                return Ok(Response::Window(Some(window.into())));
+            }
+            Asked::ShowQuickWindow { window, place } => {
+                if let Some(place) = &place {
+                    place
+                        .check()
+                        .map_err(|message| Error::new(Code::Failed, message))?;
+                }
+                let quick = self
+                    .context
+                    .workspace
+                    .window(WindowId::of(window.0))
+                    .filter(|shown| shown.quick());
+                if quick.is_none() {
+                    return Err(Error::new(
+                        Code::NotFound,
+                        format!("there is no quick window {}", window.0),
+                    ));
+                }
+                Request::ShowQuickWindow {
+                    window: WindowId::of(window.0),
+                    place,
+                }
+            }
             Asked::OpenWindow { directory } => {
                 if let Some(directory) = &directory {
                     host::check_directory(directory)
@@ -3757,6 +3828,31 @@ impl Host<'_, '_> {
                 self.state.commands.push(command);
                 *self.declarations_changed = true;
             }
+            Asked::Bind(binding) if binding.keys.starts_with(keymap::GLOBAL) => {
+                let invalid = |message: String| Error::new(Code::InvalidBinding, message);
+                let combo =
+                    keymap::parse_global(&binding.keys[keymap::GLOBAL.len()..]).map_err(invalid)?;
+                if !commands::is_name(&binding.command) {
+                    return Err(invalid(format!(
+                        "`{}` is not a command's name, `namespace.action`",
+                        binding.command
+                    )));
+                }
+                if binding.when.is_some() {
+                    return Err(invalid(format!(
+                        "a global key holds everywhere, without `when`, in `{}`",
+                        binding.keys
+                    )));
+                }
+                self.state.global_bindings.push((
+                    combo,
+                    Invocation {
+                        command: binding.command,
+                        args: binding.args,
+                    },
+                ));
+                *self.declarations_changed = true;
+            }
             Asked::Bind(binding) => {
                 let invalid = |message: String| Error::new(Code::InvalidBinding, message);
                 let keys = keymap::parse_keys(&binding.keys).map_err(invalid)?;
@@ -3803,6 +3899,7 @@ impl Host<'_, '_> {
                     !WorkspaceEvent::NAMES.contains(&name.as_str())
                         && name.as_str() != POINTER
                         && name.as_str() != KEYS_CHANGED
+                        && name.as_str() != WINDOW_FOCUS
                         && !commands::is_name(name)
                 }) {
                     return Err(Error::new(

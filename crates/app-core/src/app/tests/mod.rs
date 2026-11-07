@@ -3123,3 +3123,141 @@ fn a_plugin_opens_a_tab_and_a_split_moves_the_pane_out_and_closes_it() {
     assert_eq!(log.borrow()[2], "pane-closed tab-closed window-closed");
     assert!(!fake.has_quit());
 }
+
+/// A plugin of a quick window of its own, at the bottom, which its
+/// global key toggles, and the windows' focus that it hears.
+#[derive(Default)]
+struct Slider {
+    window: Option<lokyr_kernel::plugins::host::WindowId>,
+    heard: std::rc::Rc<std::cell::RefCell<Vec<(lokyr_kernel::plugins::host::WindowId, bool)>>>,
+}
+
+impl Slider {
+    const PLACE: lokyr_kernel::plugins::host::QuickPlace =
+        lokyr_kernel::plugins::host::QuickPlace {
+            edge: lokyr_kernel::plugins::host::QuickEdge::Bottom,
+            primary: lokyr_kernel::plugins::host::QuickLength::Points(300.0),
+            secondary: None,
+            screen: lokyr_kernel::plugins::host::QuickScreen::Main,
+            animation: 0,
+            every_space: false,
+        };
+}
+
+impl plugins::Plugin for Slider {
+    fn activate(&mut self, cx: &mut plugins::Cx<'_>) -> Result<(), Error> {
+        for name in ["slider.toggle", "slider.hide"] {
+            cx.register_command(lokyr_kernel::commands::Command {
+                name: name.to_owned(),
+                title: name.to_owned(),
+                category: lokyr_kernel::commands::Category::Windows,
+                capabilities: Vec::new(),
+                params: Vec::new(),
+                when: None,
+            })?;
+        }
+        cx.bind(lokyr_kernel::plugins::host::Binding {
+            keys: "global:ctrl+f1".to_owned(),
+            command: "slider.toggle".to_owned(),
+            args: Args::new(),
+            when: None,
+        })?;
+        cx.subscribe(&[lokyr_kernel::plugins::WINDOW_FOCUS])
+    }
+
+    fn on_command(&mut self, cx: &mut plugins::Cx<'_>, name: &str, _: Args) -> Result<(), Error> {
+        match (name, self.window) {
+            ("slider.toggle", None) => {
+                self.window = Some(cx.open_quick_window(Self::PLACE, Some("/"))?);
+                Ok(())
+            }
+            ("slider.toggle", Some(window)) => cx.show_quick_window(window, Some(Self::PLACE)),
+            ("slider.hide", Some(window)) => cx.show_quick_window(window, None),
+            _ => Ok(()),
+        }
+    }
+
+    fn on_event(
+        &mut self,
+        _: &mut plugins::Cx<'_>,
+        events: &[plugins::Event],
+    ) -> Result<(), Error> {
+        for event in events {
+            if let plugins::Event::WindowFocus { window, focused } = event {
+                self.heard.borrow_mut().push((*window, *focused));
+            }
+        }
+        Ok(())
+    }
+}
+
+#[test]
+fn a_plugin_s_quick_window_shows_and_hides_and_its_global_key_is_taken() {
+    let slider = Slider::default();
+    let heard = std::rc::Rc::clone(&slider.heard);
+    let mut fake = Fake::default();
+    let mut app = app(Config::default(), quiet()).with_plugin("slider", Box::new(slider));
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    let f1 = GlobalKey {
+        code: KeyCode::F(1),
+        command: false,
+        control: true,
+        alt: false,
+        shift: false,
+    };
+    assert_eq!(fake.global_keys(), [f1]);
+    // Its key opens it, at its place, in the folder that it asked for.
+    let key = app
+        .global_keys
+        .iter()
+        .position(|(_, invocation)| invocation.command == "slider.toggle")
+        .unwrap();
+    fake.send_app(&mut app, AppEvent::GlobalKey(key));
+    let quick = quick_window(&fake).unwrap();
+    let place = fake.window(quick).unwrap().quick.unwrap().unwrap();
+    assert_eq!(
+        (place.edge, place.primary),
+        (
+            lokyr_platform_core::QuickEdge::Bottom,
+            lokyr_platform_core::Length::Points(300.0)
+        )
+    );
+    let shown = app.windows[&quick].window;
+    let state = |app: &App| {
+        let found = app.workspace.window(shown).unwrap();
+        (found.quick(), found.hidden())
+    };
+    assert_eq!(state(&app), (true, false));
+    assert!(
+        !app.workspace
+            .window(app.windows[&window].window)
+            .unwrap()
+            .quick()
+    );
+    run_until(&mut fake, &mut app, |_, app| {
+        app.pane(quick).working_directory().as_deref() == Some(std::path::Path::new("/"))
+    });
+    // It hears the focus, but of a question on the window.
+    fake.send(&mut app, quick, WindowEvent::Focused(true));
+    fake.send(&mut app, quick, WindowEvent::Focused(false));
+    fake.send(&mut app, quick, WindowEvent::Focused(true));
+    app.ask_title(&mut fake, quick);
+    fake.send(&mut app, quick, WindowEvent::Focused(false));
+    assert_eq!(
+        *heard.borrow(),
+        [
+            (shown.into(), true),
+            (shown.into(), false),
+            (shown.into(), true)
+        ]
+    );
+    // Hidden, and shown again by a notification's click at its place.
+    app.run(&mut fake, "slider.hide", Args::new());
+    assert_eq!(fake.window(quick).unwrap().quick, Some(None));
+    assert_eq!(state(&app), (true, true));
+    fake.send_app(&mut app, AppEvent::NotificationClicked(quick));
+    let place = fake.window(quick).unwrap().quick.unwrap().unwrap();
+    assert_eq!(place.edge, lokyr_platform_core::QuickEdge::Bottom);
+    assert_eq!(state(&app), (true, false));
+}

@@ -23,8 +23,8 @@ use lokyr_plugin_sdk::command::{Args, Capability, Category, Code, Command, Error
 use lokyr_plugin_sdk::event::WorkspaceEvent;
 use lokyr_plugin_sdk::host::{
     BarPlace, Binding, Color, CommandInfo, DecorationLook, Direction, Edge, Layout, Line, LineText,
-    MOST_STATE, MenuItem, MenuPlace, PaneId, ScreenPoint, Scroll, SearchMatch, SearchQuery, Side,
-    TabId, TabInfo, Underline, WindowId, WindowInfo,
+    MOST_STATE, MenuItem, MenuPlace, PaneId, QuickLength, QuickPlace, ScreenPoint, Scroll,
+    SearchMatch, SearchQuery, Side, TabId, TabInfo, Underline, WindowId, WindowInfo,
 };
 use lokyr_plugin_sdk::message::{DIM_RANGE, Data, Event, Mods, OWN_PANE, Request, Response};
 use lokyr_plugin_sdk::ui::{Anchor, PanelId, PanelOptions, Role, ViewId};
@@ -604,6 +604,22 @@ fn capabilities(world: &World) -> Scenario {
                 Request::SetClipboardText("x".to_owned()),
                 lacks("clipboard-write"),
             ),
+            (
+                Request::OpenQuickWindow {
+                    place: QuickPlace::default(),
+                    directory: None,
+                },
+                lacks("global-hotkey"),
+            ),
+            (
+                Request::Bind(Binding {
+                    keys: "global:ctrl+`".to_owned(),
+                    command: "conformer.ask".to_owned(),
+                    args: Args::new(),
+                    when: None,
+                }),
+                lacks("global-hotkey"),
+            ),
         ])],
     }
 }
@@ -791,8 +807,19 @@ fn declarations() -> Scenario {
                     "`conformer.ask` takes no argument `depth`",
                 ),
             ),
+            (bind("global:ctrl+`", "conformer.ask", None), Response::Done),
             (
-                Request::Subscribe(vec!["window-opened".to_owned()]),
+                bind("global:ctrl+~", "conformer.ask", None),
+                invalid(
+                    "`~` takes Shift on the US layout, by whose keys a global key goes: write `ctrl+shift+``, in `ctrl+~`",
+                ),
+            ),
+            (
+                bind("global:ctrl+`", "conformer.ask", Some("pane.focused")),
+                invalid("a global key holds everywhere, without `when`, in `global:ctrl+``"),
+            ),
+            (
+                Request::Subscribe(vec!["window-opened".to_owned(), "window-focus".to_owned()]),
                 Response::Done,
             ),
             (
@@ -856,6 +883,46 @@ fn app_requests(world: &World) -> Scenario {
                 ),
             ),
             (Request::OpenWindow { directory: None }, Response::Done),
+            (
+                Request::OpenQuickWindow {
+                    place: QuickPlace::default(),
+                    directory: Some("~".to_owned()),
+                },
+                Response::Window(Some(window(0))),
+            ),
+            (
+                Request::OpenQuickWindow {
+                    place: QuickPlace {
+                        primary: QuickLength::Percent(0.0),
+                        ..QuickPlace::default()
+                    },
+                    directory: None,
+                },
+                failed(
+                    Code::Failed,
+                    "a quick window's length is a percentage above 0 and at most 100, or from 1 to 100000 points",
+                ),
+            ),
+            (
+                Request::OpenQuickWindow {
+                    place: QuickPlace {
+                        animation: 2001,
+                        ..QuickPlace::default()
+                    },
+                    directory: None,
+                },
+                failed(
+                    Code::Failed,
+                    "a quick window slides from 0 to 2000 milliseconds, not 2001",
+                ),
+            ),
+            (
+                Request::ShowQuickWindow {
+                    window: NO_WINDOW,
+                    place: None,
+                },
+                failed(Code::NotFound, "there is no quick window 999999"),
+            ),
             (
                 Request::OpenWindow {
                     directory: Some("/tmp".to_owned()),
@@ -1344,6 +1411,8 @@ fn workspace(world: &World) -> Scenario {
                             number: None,
                             keys: None,
                             bell: false,
+                            quick: false,
+                            hidden: false,
                         }]),
                     ),
                     (
@@ -1440,6 +1509,8 @@ fn workspace(world: &World) -> Scenario {
                                 number: None,
                                 keys: None,
                                 bell: false,
+                                quick: false,
+                                hidden: false,
                             },
                             WindowInfo {
                                 id: window(0),
@@ -1448,6 +1519,8 @@ fn workspace(world: &World) -> Scenario {
                                 number: None,
                                 keys: None,
                                 bell: false,
+                                quick: false,
+                                hidden: false,
                             },
                         ]),
                     ),
@@ -1626,6 +1699,8 @@ fn workspace(world: &World) -> Scenario {
                     number: None,
                     keys: None,
                     bell: false,
+                    quick: false,
+                    hidden: false,
                 }]),
             )]),
         ],

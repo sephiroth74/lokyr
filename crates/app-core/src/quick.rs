@@ -31,6 +31,33 @@ pub(crate) fn place(config: &QuickTerminalConfig) -> QuickPlace {
     }
 }
 
+/// The platform's place of a quick window of a plugin's `place`.
+pub(crate) fn host_place(place: &lokyr_kernel::plugins::host::QuickPlace) -> QuickPlace {
+    use lokyr_kernel::plugins::host::{QuickEdge as Edge, QuickLength, QuickScreen as Screen};
+    let length = |length: QuickLength| match length {
+        QuickLength::Percent(percent) => Length::Percent(f64::from(percent)),
+        QuickLength::Points(points) => Length::Points(f64::from(points)),
+    };
+    QuickPlace {
+        edge: match place.edge {
+            Edge::Top => QuickEdge::Top,
+            Edge::Bottom => QuickEdge::Bottom,
+            Edge::Left => QuickEdge::Left,
+            Edge::Right => QuickEdge::Right,
+            Edge::Center => QuickEdge::Center,
+        },
+        primary: length(place.primary),
+        secondary: place.secondary.map(length),
+        screen: match place.screen {
+            Screen::Main => lokyr_platform_core::QuickScreen::Main,
+            Screen::Pointer => lokyr_platform_core::QuickScreen::Pointer,
+            Screen::MenuBar => lokyr_platform_core::QuickScreen::MenuBar,
+        },
+        animation: std::time::Duration::from_millis(u64::from(place.animation)),
+        every_space: place.every_space,
+    }
+}
+
 /// The key of `combo`, a global binding's, by its place on the US layout;
 /// `None` for a character that no key of that layout types.
 pub(crate) fn global_key(combo: Combo) -> Option<GlobalKey> {

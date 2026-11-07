@@ -613,6 +613,34 @@ impl<'a> Cx<'a> {
         })
     }
 
+    /// Opens a quick window of a new pane, which shows at `place` over every
+    /// app's windows and takes the focus, once this call returns: its id,
+    /// given at once. Its pane starts in `directory`, a path absolute or
+    /// from `~`, or in the folder of a file there, if given.
+    pub fn open_quick_window(
+        &mut self,
+        place: crate::host::QuickPlace,
+        directory: Option<&str>,
+    ) -> Result<WindowId, Error> {
+        match self.request(Request::OpenQuickWindow {
+            place,
+            directory: directory.map(str::to_owned),
+        }) {
+            Response::Window(Some(window)) => Ok(window),
+            other => Err(failed(other)),
+        }
+    }
+
+    /// Shows the quick window `window` at `place`, giving it the focus, or
+    /// hides it, of `None`, once this call returns.
+    pub fn show_quick_window(
+        &mut self,
+        window: WindowId,
+        place: Option<crate::host::QuickPlace>,
+    ) -> Result<(), Error> {
+        self.done(Request::ShowQuickWindow { window, place })
+    }
+
     /// Closes `window`, once this call returns.
     pub fn close_window(&mut self, window: WindowId) -> Result<(), Error> {
         self.done(Request::CloseWindow(window))

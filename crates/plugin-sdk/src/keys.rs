@@ -7,7 +7,9 @@
 //! `alt` or `opt`, and `shift`, and its key: the character that the key
 //! types without any modifier, Shift neither, as `]` in `cmd+shift+]`; a
 //! named key, as `enter` or `f5`; or a step of the wheel, `wheel-up`, or the
-//! left button's click, `click`, alone.
+//! left button's click, `click`, alone. A binding whose keys start with
+//! `global:`, as `global:ctrl+\``, takes its key from every app, by its
+//! place on the keyboard, as the US layout has it.
 //!
 //! A context, a binding's or a command's `when`, is an expression of the
 //! names of the host's contexts and of the plugins' panels, `!`, `&&`, `||`
@@ -259,6 +261,85 @@ pub fn parse_keys(text: &str) -> Result<Vec<Combo>, String> {
         return Err(format!("a click takes no sequence, in `{text}`"));
     }
     Ok(combos)
+}
+
+/// The prefix of the keys of a binding that takes its key from every app.
+pub const GLOBAL: &str = "global:";
+
+/// The characters that the US layout types without a modifier, by which
+/// a global key goes, as the system takes it by its place.
+const US_KEYS: &str = "abcdefghijklmnopqrstuvwxyz0123456789`-=[]\\;',./";
+
+/// The characters that the US layout types with Shift, each with the one
+/// of its key without it.
+const US_SHIFTED: [(char, char); 21] = [
+    ('~', '`'),
+    ('!', '1'),
+    ('@', '2'),
+    ('#', '3'),
+    ('$', '4'),
+    ('%', '5'),
+    ('^', '6'),
+    ('&', '7'),
+    ('*', '8'),
+    ('(', '9'),
+    (')', '0'),
+    ('_', '-'),
+    ('+', '='),
+    ('{', '['),
+    ('}', ']'),
+    ('|', '\\'),
+    (':', ';'),
+    ('"', '\''),
+    ('<', ','),
+    ('>', '.'),
+    ('?', '/'),
+];
+
+/// The combination of the keys of a global binding, `text` after
+/// [`GLOBAL`]: one key, which no sequence follows, with Command, Control
+/// or Alt, or a function key, alone or not; neither the wheel nor a
+/// click, which reach no other app. A character is a key of the US
+/// layout's, which types it without Shift, as the system takes the key by
+/// its place: `~` is `shift+\``.
+pub fn parse_global(text: &str) -> Result<Combo, String> {
+    let combo = Combo::parse(text)?;
+    match combo.press {
+        Press::Wheel(_) | Press::Click => {
+            return Err(format!(
+                "a global key is a key, not a step of the wheel nor a click, in `{text}`"
+            ));
+        }
+        Press::Char(character) if !US_KEYS.contains(character) => {
+            let message = match US_SHIFTED.iter().find(|(shifted, _)| *shifted == character) {
+                Some(&(_, key)) => {
+                    let mods = Mods {
+                        shift: true,
+                        ..combo.mods
+                    };
+                    let written = Combo {
+                        mods,
+                        press: Press::Char(key),
+                    };
+                    format!(
+                        "`{character}` takes Shift on the US layout, by whose keys a global key goes: write `{written}`, in `{text}`"
+                    )
+                }
+                None => format!(
+                    "`{character}` is no key of the US layout, by whose keys a global key goes, in `{text}`"
+                ),
+            };
+            return Err(message);
+        }
+        _ => {}
+    }
+    match combo.press {
+        Press::Named(Named::F(_)) => Ok(combo),
+        _ if combo.mods.cmd || combo.mods.ctrl || combo.mods.alt => Ok(combo),
+        _ => Err(format!(
+            "a global key takes `cmd`, `ctrl` or `alt`, but a function key, as it takes the key from every app, in `{text}`"
+        )),
+    }
 }
 
 /// A context, as a binding's `when` names it: whether the names that hold

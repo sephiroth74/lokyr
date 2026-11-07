@@ -11,7 +11,7 @@ use lokyr_platform_core::{Platform, Point, WindowId};
 
 use super::{App, BELL_PAUSE, FLASH, NOTIFICATION_BODY, NOTIFICATION_PAUSE, NOTIFICATION_TITLE};
 use crate::drawing::Backend;
-use crate::{notice, quick};
+use crate::notice;
 
 impl<B: Backend> App<B> {
     /// Tells `diagnostic`, in the log and, where it is one, in the notice
@@ -152,10 +152,8 @@ impl<B: Backend> App<B> {
     /// A click on a notification of `window`: the quick terminal, hidden,
     /// shows at its place; another window takes the focus.
     pub(super) fn notification_clicked(&mut self, platform: &mut dyn Platform, window: WindowId) {
-        if self.quick.is_some_and(|(quick, _)| quick == window) {
-            let place = quick::place(&self.config.quick_terminal);
-            platform.show_quick_window(window, Some(&place));
-            self.quick = Some((window, true));
+        if let Some(&(place, _)) = self.quick.get(&window) {
+            self.show_quick(platform, window, Some(place));
         } else if self.windows.contains_key(&window) {
             platform.focus_window(window);
         }

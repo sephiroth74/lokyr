@@ -238,6 +238,8 @@ enum Opened {
     Nothing,
     Tab(TabId, PaneId),
     Pane(PaneId),
+    /// A quick window, of its tab and its pane.
+    Quick(WindowId, TabId, PaneId),
 }
 
 /// A search of the plugin's that the fake host keeps.
@@ -275,6 +277,8 @@ pub struct FakeHost {
     /// The windows' numbers and the keys that select them, as the test
     /// gave them.
     numbers: BTreeMap<WindowId, (Option<u32>, Option<String>)>,
+    /// The quick windows that the plugin opened, each whether it is hidden.
+    quick: BTreeMap<WindowId, bool>,
     /// The keys of commands of their arguments, as the test gave them.
     keys: Vec<(String, Args, String)>,
     /// The registry's commands of the app's and of other plugins', before
@@ -342,6 +346,7 @@ impl FakeHost {
             windows: BTreeMap::new(),
             tabs: BTreeMap::new(),
             numbers: BTreeMap::new(),
+            quick: BTreeMap::new(),
             places: BTreeMap::new(),
             keys: Vec::new(),
             registry: Vec::new(),
@@ -1026,6 +1031,42 @@ impl FakeHost {
                 });
                 self.relayout(*tab, |layout| set_ratio(layout, path, ratio));
             }
+            // A quick window opens as the app opens it, of a tab of a pane,
+            // which takes the focus.
+            Request::OpenQuickWindow { .. } => {
+                if let Opened::Quick(window, tab, pane) = opened {
+                    self.panes.insert(
+                        pane,
+                        FakePane {
+                            window,
+                            tab,
+                            ..FakePane::default()
+                        },
+                    );
+                    self.quick.insert(window, false);
+                    self.given_focus = Some(Some(pane));
+                    self.changed(WorkspaceEvent::WindowOpened { window });
+                    self.changed(WorkspaceEvent::TabCreated {
+                        tab,
+                        window,
+                        index: 0,
+                    });
+                    self.changed(WorkspaceEvent::PaneCreated { pane, tab });
+                }
+            }
+            // Shown, it takes the focus; hidden, the app that had it takes
+            // it back.
+            Request::ShowQuickWindow { window, place } => {
+                self.quick.insert(*window, place.is_none());
+                self.given_focus = Some(match place {
+                    Some(_) => self
+                        .panes
+                        .iter()
+                        .find(|(_, pane)| pane.window == *window)
+                        .map(|(&id, _)| id),
+                    None => None,
+                });
+            }
             _ => {}
         }
         self.done.push(request);
@@ -1616,6 +1657,8 @@ impl FakeHost {
                     number,
                     keys,
                     bell: false,
+                    quick: self.quick.contains_key(&id),
+                    hidden: self.quick.get(&id) == Some(&true),
                 }
             })
             .collect()
@@ -1825,7 +1868,9 @@ impl Calling<'_> {
     fn opens_pane(&self, pane: PaneId) -> bool {
         self.writes.iter().any(|(_, opened)| match opened {
             Opened::Tab(_, opened) | Opened::Pane(opened) => *opened == pane,
-            Opened::Nothing => false,
+            // A quick window's pane opens with the window, as the app opens
+            // it after the call.
+            Opened::Nothing | Opened::Quick(..) => false,
         })
     }
 
@@ -2216,6 +2261,33 @@ impl Calling<'_> {
                     .map_err(|message| Error::new(Code::Failed, message))?;
                 Response::Done
             }
+            Request::OpenQuickWindow { place, directory } => {
+                place
+                    .check()
+                    .map_err(|message| Error::new(Code::Failed, message))?;
+                if let Some(directory) = directory {
+                    crate::host::check_directory(directory)
+                        .map_err(|message| Error::new(Code::Failed, message))?;
+                }
+                let window = WindowId(self.host.next_id());
+                let (tab, pane) = (TabId(self.host.next_id()), PaneId(self.host.next_id()));
+                opened = Opened::Quick(window, tab, pane);
+                Response::Window(Some(window))
+            }
+            Request::ShowQuickWindow { window, place } => {
+                if let Some(place) = place {
+                    place
+                        .check()
+                        .map_err(|message| Error::new(Code::Failed, message))?;
+                }
+                if !self.host.quick.contains_key(window) {
+                    return Err(Error::new(
+                        Code::NotFound,
+                        format!("there is no quick window {}", window.0),
+                    ));
+                }
+                Response::Done
+            }
             Request::PreviewTheme(Some(name)) | Request::SetTheme { name, .. }
                 if name.is_empty() || name.contains(['/', '\\']) || name.starts_with('.') =>
             {
@@ -2454,8 +2526,14 @@ impl Calling<'_> {
             }
             _ => Response::Done,
         };
+        // The quick windows' requests change what the fake keeps as the app
+        // would, as the writes do.
+        let quick = matches!(
+            request,
+            Request::OpenQuickWindow { .. } | Request::ShowQuickWindow { .. }
+        );
         match request.effect() {
-            Effect::App => self.asked.push(request),
+            Effect::App if !quick => self.asked.push(request),
             _ => self.writes.push((request, opened)),
         }
         Ok(response)
@@ -2501,6 +2579,24 @@ impl Calling<'_> {
                 command.check()?;
                 self.host.commands.push(command);
             }
+            Request::Bind(binding) if binding.keys.starts_with(crate::keys::GLOBAL) => {
+                let invalid = |message: String| Error::new(Code::InvalidBinding, message);
+                crate::keys::parse_global(&binding.keys[crate::keys::GLOBAL.len()..])
+                    .map_err(invalid)?;
+                if !is_name(&binding.command) {
+                    return Err(invalid(format!(
+                        "`{}` is not a command's name, `namespace.action`",
+                        binding.command
+                    )));
+                }
+                if binding.when.is_some() {
+                    return Err(invalid(format!(
+                        "a global key holds everywhere, without `when`, in `{}`",
+                        binding.keys
+                    )));
+                }
+                self.host.bindings.push(binding);
+            }
             Request::Bind(binding) => {
                 let invalid = |message: String| Error::new(Code::InvalidBinding, message);
                 parse_keys(&binding.keys).map_err(invalid)?;
@@ -2533,6 +2629,7 @@ impl Calling<'_> {
                     !WorkspaceEvent::NAMES.contains(&name.as_str())
                         && name.as_str() != POINTER
                         && name.as_str() != crate::message::KEYS_CHANGED
+                        && name.as_str() != crate::message::WINDOW_FOCUS
                         && !is_name(name)
                 }) {
                     return Err(Error::new(

@@ -282,6 +282,26 @@ pub enum Request {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         directory: Option<String>,
     },
+    /// Opens a quick window of a new pane, which shows at `place` over every
+    /// app's windows, as a global key shows it, and takes the focus: its id,
+    /// which the host gives at once, as it opens it once the call returns.
+    /// Its pane starts in `directory`, as a new tab's does, if given; in the
+    /// folder of a new window's pane otherwise.
+    OpenQuickWindow {
+        /// Where it shows.
+        place: crate::host::QuickPlace,
+        /// The folder of its pane.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        directory: Option<String>,
+    },
+    /// Shows a quick window at `place`, giving it the focus, or hides it, of
+    /// `None`, the focus going back to the app that had it.
+    ShowQuickWindow {
+        /// The quick window.
+        window: WindowId,
+        /// Where it shows, or `None` to hide it.
+        place: Option<crate::host::QuickPlace>,
+    },
     /// Closes a window.
     CloseWindow(WindowId),
     /// Quits the app.
@@ -630,6 +650,13 @@ impl Request {
             | Self::CurrentMatch(_)
             | Self::Styles { .. } => Some(Capability::TerminalRead),
             Self::WorkingDirectory(_) => Some(Capability::ProcessRead),
+            Self::OpenQuickWindow { .. } | Self::ShowQuickWindow { .. } => {
+                Some(Capability::GlobalHotkey)
+            }
+            // A key taken from every app.
+            Self::Bind(binding) if binding.keys.starts_with(crate::keys::GLOBAL) => {
+                Some(Capability::GlobalHotkey)
+            }
             Self::Open(_) | Self::Opens(_) => Some(Capability::Open),
             Self::Paste { .. } | Self::SendText { .. } => Some(Capability::PtyWrite),
             Self::RegisterCommand(_)
@@ -773,6 +800,8 @@ impl Request {
             | Self::Open(_)
             | Self::SetFontSize(_)
             | Self::OpenWindow { .. }
+            | Self::OpenQuickWindow { .. }
+            | Self::ShowQuickWindow { .. }
             | Self::CloseWindow(_)
             | Self::Quit
             | Self::SetText { .. }
@@ -863,6 +892,9 @@ pub const POINTER: &str = "pointer";
 /// The name of [`Event::KeysChanged`], as a plugin subscribes to it.
 pub const KEYS_CHANGED: &str = "keys-changed";
 
+/// The name of [`Event::WindowFocus`], as a plugin subscribes to it.
+pub const WINDOW_FOCUS: &str = "window-focus";
+
 /// The modifiers held.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Mods {
@@ -937,6 +969,15 @@ pub enum Event {
     /// The keymap's bindings changed, as the config's `[keys]` or a
     /// plugin's: the keys of [`Request::KeysOf`] may be others.
     KeysChanged,
+    /// A window took the keyboard's focus, or lost it, as the user clicks
+    /// another app or another window; not as a question of the app's on it
+    /// takes it.
+    WindowFocus {
+        /// The window.
+        window: WindowId,
+        /// Whether it has the focus now.
+        focused: bool,
+    },
     /// The user's drag of the edge of the plugin's tab bar's column ended,
     /// to it alone: the column's width, in points, in force since, which
     /// the plugin keeps, as for its next start.
@@ -979,6 +1020,7 @@ impl Event {
             Self::Answered { .. } => "answered",
             Self::TabBarResized { .. } => "tab-bar-resized",
             Self::KeysChanged => KEYS_CHANGED,
+            Self::WindowFocus { .. } => WINDOW_FOCUS,
             Self::ConfigChanged => "config-changed",
             Self::Custom { name, .. } => name,
         }

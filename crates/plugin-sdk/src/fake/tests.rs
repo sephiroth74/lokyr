@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use super::*;
 use crate::command::Category;
 use crate::host::Edge;
+use crate::host::QuickPlace;
 use crate::host::Scroll;
 use crate::ui::{Anchor, Role, Slot};
 use crate::view::{ProgressShape, ProgressState, Role as NodeRole, Tab};
@@ -222,6 +223,8 @@ fn the_workspace_s_reads_give_the_panes_windows_and_tabs() {
                 number: Some(1),
                 keys: Some("⌥⌘1".to_owned()),
                 bell: false,
+                quick: false,
+                hidden: false,
             }]
         );
         let tabs = cx.tabs(WindowId(1))?;
@@ -309,6 +312,8 @@ fn a_call_s_new_tab_and_split_enter_the_workspace_its_later_writes_find_them_and
                 number: None,
                 keys: None,
                 bell: false,
+                quick: false,
+                hidden: false,
             }]
         );
         // The window shows the new tab, whose keyboard the split has.
@@ -836,4 +841,55 @@ fn a_value_nested_too_deep_is_refused_as_the_app_s_host_refuses_it() {
         Ok(())
     });
     host.command(&mut probe, "probe.go", Args::new()).unwrap();
+}
+
+#[test]
+fn a_quick_window_opens_of_a_pane_with_the_focus_and_shows_and_hides() {
+    let mut host = FakeHost::new("lokyr/probe");
+    let opened = std::rc::Rc::new(std::cell::Cell::new(None));
+    let kept = std::rc::Rc::clone(&opened);
+    let mut probe = Probe::new(move |cx, _| {
+        match kept.get() {
+            None => kept.set(Some(cx.open_quick_window(QuickPlace::default(), None)?)),
+            Some(window) => {
+                let hidden = cx
+                    .windows()?
+                    .into_iter()
+                    .find(|info| info.id == window)
+                    .is_some_and(|info| info.hidden);
+                let place = hidden.then(QuickPlace::default);
+                cx.show_quick_window(window, place)?;
+            }
+        }
+        Ok(())
+    });
+    host.activate(&mut probe).unwrap();
+    host.command(&mut probe, "probe.go", Args::new()).unwrap();
+    let window = opened.get().unwrap();
+    let info = |host: &mut FakeHost| {
+        let mut found = None;
+        host.call(true, |cx| {
+            found = cx.windows()?.into_iter().find(|info| info.id == window);
+            Ok(())
+        })
+        .unwrap();
+        found.unwrap()
+    };
+    let shown = info(&mut host);
+    assert!(shown.quick && !shown.hidden);
+    assert_eq!(
+        host.keyboard().map(|pane| host.pane(pane).window),
+        Some(window)
+    );
+    // Hidden, the focus goes; shown again, it comes back.
+    host.command(&mut probe, "probe.go", Args::new()).unwrap();
+    assert!(info(&mut host).hidden);
+    assert_eq!(host.keyboard(), None);
+    host.command(&mut probe, "probe.go", Args::new()).unwrap();
+    assert!(!info(&mut host).hidden);
+    // A window that the plugin did not open as a quick one is none.
+    let error = host
+        .call(true, |cx| cx.show_quick_window(WindowId(99), None))
+        .unwrap_err();
+    assert_eq!(error.code, Code::NotFound);
 }

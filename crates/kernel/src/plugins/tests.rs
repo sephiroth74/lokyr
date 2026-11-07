@@ -1428,6 +1428,7 @@ fn a_call_is_its_own_plugin_s() {
             subscribed: Vec::new(),
             commands: Vec::new(),
             bindings: Vec::new(),
+            global_bindings: Vec::new(),
             menu_items: Vec::new(),
             catalogs: &[],
             views: BTreeMap::new(),
@@ -2432,6 +2433,8 @@ fn a_plugin_opens_a_tab_and_a_split_of_the_ids_that_its_call_gets() {
             number: Some(1),
             keys: Some("⌥⌘1".to_owned()),
             bell: false,
+            quick: false,
+            hidden: false,
         }]
     );
     assert_eq!(

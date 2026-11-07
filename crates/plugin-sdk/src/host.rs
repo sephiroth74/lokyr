@@ -59,6 +59,124 @@ pub struct WindowInfo {
     /// a plugin draws, as a single tab's, to draw.
     #[serde(default)]
     pub bell: bool,
+    /// Whether it is a quick window, which slides in over every app's
+    /// windows, as a global key shows it.
+    #[serde(default)]
+    pub quick: bool,
+    /// Whether it is hidden, as a quick window hides.
+    #[serde(default)]
+    pub hidden: bool,
+}
+
+/// Where a quick window comes from: an edge of its screen, which it slides
+/// in from, or its centre, where it fades in.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum QuickEdge {
+    /// The top edge.
+    #[default]
+    Top,
+    /// The bottom edge.
+    Bottom,
+    /// The left edge.
+    Left,
+    /// The right edge.
+    Right,
+    /// The centre.
+    Center,
+}
+
+/// A length of a quick window, of its screen's area for windows.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum QuickLength {
+    /// A percentage of the screen's, above 0 and at most 100.
+    Percent(f32),
+    /// Points, as macOS lays windows out, from 1 to 100 000.
+    Points(f32),
+}
+
+impl QuickLength {
+    /// Whether it is one that a host takes, within its limits.
+    fn holds(self) -> bool {
+        match self {
+            Self::Percent(percent) => percent > 0.0 && percent <= 100.0,
+            Self::Points(points) => (1.0..=100_000.0).contains(&points),
+        }
+    }
+}
+
+/// The screen that a quick window shows on.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum QuickScreen {
+    /// The system's main screen, of the window in front.
+    #[default]
+    Main,
+    /// The screen that the pointer is on.
+    Pointer,
+    /// The screen of the menu bar.
+    MenuBar,
+}
+
+/// The longest slide of a quick window, in milliseconds.
+pub const MOST_QUICK_ANIMATION: u32 = 2000;
+
+/// Where a quick window shows, and how it slides in and out.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct QuickPlace {
+    /// The edge that it comes from, or the centre.
+    pub edge: QuickEdge,
+    /// How far it reaches into its screen from its edge: its height at the
+    /// top or the bottom, its width at the left, the right or the centre.
+    pub primary: QuickLength,
+    /// Its length along its edge, its width at the top or the bottom, its
+    /// height elsewhere; `None` for the screen's whole, or, at the centre,
+    /// `primary`'s share of the screen's height.
+    #[serde(default)]
+    pub secondary: Option<QuickLength>,
+    /// Its screen.
+    #[serde(default)]
+    pub screen: QuickScreen,
+    /// How long it slides, or fades, in milliseconds; 0 for at once.
+    pub animation: u32,
+    /// Whether it shows on every Space, the one in front, rather than on the
+    /// one that it showed on.
+    pub every_space: bool,
+}
+
+impl Default for QuickPlace {
+    fn default() -> Self {
+        Self {
+            edge: QuickEdge::Top,
+            primary: QuickLength::Percent(50.0),
+            secondary: None,
+            screen: QuickScreen::Main,
+            animation: 200,
+            every_space: true,
+        }
+    }
+}
+
+impl QuickPlace {
+    /// Checks it as a host takes it: its lengths within their limits, and
+    /// its slide of [`MOST_QUICK_ANIMATION`] milliseconds at most.
+    pub fn check(&self) -> Result<(), String> {
+        if !self.primary.holds() || self.secondary.is_some_and(|length| !length.holds()) {
+            return Err(
+                "a quick window's length is a percentage above 0 and at most 100, or from 1 to 100000 points"
+                    .to_owned(),
+            );
+        }
+        if self.animation > MOST_QUICK_ANIMATION {
+            return Err(format!(
+                "a quick window slides from 0 to {MOST_QUICK_ANIMATION} milliseconds, not {}",
+                self.animation
+            ));
+        }
+        Ok(())
+    }
 }
 
 /// A tab, as a read of a window's tabs gives it.

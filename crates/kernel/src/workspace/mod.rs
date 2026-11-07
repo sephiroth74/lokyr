@@ -134,6 +134,8 @@ pub struct Window {
     number: Option<u32>,
     keys: Option<String>,
     bell: bool,
+    quick: bool,
+    hidden: bool,
 }
 
 impl Window {
@@ -167,6 +169,16 @@ impl Window {
     /// its title, until it takes it.
     pub fn bell(&self) -> bool {
         self.bell
+    }
+
+    /// Whether it is a quick window, which slides in over every app's.
+    pub fn quick(&self) -> bool {
+        self.quick
+    }
+
+    /// Whether it is hidden, as a quick window hides.
+    pub fn hidden(&self) -> bool {
+        self.hidden
     }
 }
 
@@ -358,6 +370,31 @@ impl Workspace {
         let window = self.window_for(tab);
         self.created(tab, &[id]);
         window
+    }
+
+    /// Opens a quick window of the id `window`, which a plugin's request
+    /// gave, of a tab of `pane`, as [`Workspace::open_window`] does a
+    /// window.
+    pub fn open_quick_window(&mut self, pane: Pane, window: WindowId) -> WindowId {
+        let id = pane.id();
+        self.panes.insert(id, pane);
+        let tab = self.new_tab(id);
+        let window = self.window_of_id(tab, window);
+        if let Some(shown) = self.windows.get_mut(&window) {
+            shown.quick = true;
+        }
+        self.created(tab, &[id]);
+        window
+    }
+
+    /// Marks the quick window `window` hidden or shown, as the app hides it
+    /// or shows it; whether it is open.
+    pub fn set_window_hidden(&mut self, window: WindowId, hidden: bool) -> bool {
+        let Some(shown) = self.windows.get_mut(&window) else {
+            return false;
+        };
+        shown.hidden = hidden;
+        true
     }
 
     /// Closes `window`, with its tabs and its panes, whose programs are hung
@@ -780,7 +817,12 @@ impl Workspace {
     /// Opens a window whose one tab, which it shows, is `tab`, and returns
     /// its id.
     fn window_for(&mut self, tab: TabId) -> WindowId {
-        let window = WindowId::new();
+        self.window_of_id(tab, WindowId::new())
+    }
+
+    /// A window of the id `window`, of `tab` alone, as [`Workspace::window_for`]
+    /// opens one.
+    fn window_of_id(&mut self, tab: TabId, window: WindowId) -> WindowId {
         if let Some(moved) = self.tabs.get_mut(&tab) {
             moved.window = window;
         }
@@ -793,6 +835,8 @@ impl Workspace {
                 number: None,
                 keys: None,
                 bell: false,
+                quick: false,
+                hidden: false,
             },
         );
         self.changed(WorkspaceEvent::WindowOpened {
