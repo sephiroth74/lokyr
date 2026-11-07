@@ -116,3 +116,13 @@ notice-fault = Un plugin si è fermato:
 
 # What an accessibility client, as VoiceOver, calls a pane.
 access-pane = Terminale
+
+theme-install-message = Installare il tema «{ $name }»?
+theme-install-detail = Lokyr lo copia nella sua cartella dei temi, { $folder }, dove la sezione [theme] della configurazione può nominarlo.
+theme-install-replace = Un tema con questo nome c'è già, e questo lo sostituisce.
+theme-install-use = Installa e usa
+theme-install-only = Installa
+theme-install-cancel = Annulla
+theme-install-failed = Il tema non si può installare.
+theme-install-no-folder = Lokyr non ha una cartella della configurazione che tenga i suoi temi.
+theme-install-not-copied = Non si può copiare in { $folder }: { $error }

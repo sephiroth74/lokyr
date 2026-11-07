@@ -75,6 +75,10 @@ pub(crate) struct Shared {
     /// accessibility client's asks, which come within AppKit's calls that
     /// the app's answers would come back into.
     later: RefCell<Vec<(WindowId, WindowEvent)>>,
+    /// The application's events that came before it launched, as the files
+    /// that the system opens with it as it starts, which the handler takes
+    /// once it has started.
+    early: RefCell<Vec<AppEvent>>,
 }
 
 impl Shared {
@@ -91,6 +95,7 @@ impl Shared {
             modal_aborted: Cell::new(false),
             menu_open: Cell::new(false),
             later: RefCell::new(Vec::new()),
+            early: RefCell::new(Vec::new()),
         })
     }
 
@@ -203,9 +208,22 @@ impl Shared {
     /// Hands `pending` to the handler, whose panic ends the application:
     /// the one made as the application starts.
     fn call(&self, pending: Pending) {
+        let pending = match pending {
+            Pending::App(event) if self.make.borrow().is_some() => {
+                self.early.borrow_mut().push(event);
+                return;
+            }
+            pending => pending,
+        };
         if matches!(pending, Pending::Started)
             && let Some(make) = self.make.borrow_mut().take()
         {
+            // What came before, right after the start.
+            let mut queue = self.queue.borrow_mut();
+            for event in self.early.take().into_iter().rev() {
+                queue.push_front(Pending::App(event));
+            }
+            drop(queue);
             match panic::catch_unwind(AssertUnwindSafe(make)) {
                 Ok(handler) => *self.handler.borrow_mut() = Some(handler),
                 Err(payload) => {

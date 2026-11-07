@@ -28,7 +28,8 @@ use std::io;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 
-use lokyr_plugin_sdk::theme::{TerminalColors, Theme, ThemeColor, ThemeVariant};
+use lokyr_plugin_sdk::theme::{TerminalColors, ThemeColor};
+pub use lokyr_plugin_sdk::theme::{Theme, ThemeVariant};
 use toml_edit::{Document, Item, TableLike, Value};
 
 use crate::config::{Error, Position};
@@ -205,6 +206,62 @@ fn load_itermcolors(
         });
     }
     Ok(None)
+}
+
+/// The extensions of the themes' files: the native format's and
+/// `.itermcolors`.
+pub const EXTENSIONS: [&str; 2] = ["toml", "itermcolors"];
+
+/// The themes of the file at `path`, of either format, as a theme's file
+/// to install: each one's name, as `[theme]` would name it once the file
+/// is in the themes' folder, and its variant. A native file is one theme,
+/// of its file's name, of the variant that it says, or of its colors, or
+/// dark of neither, as the theme that it extends may give them; a file of
+/// another extension, or that is no theme, is an error.
+pub fn themes_of(path: &Path) -> Result<Vec<(String, ThemeVariant)>, Error> {
+    let error = |message: String| Error {
+        path: path.to_owned(),
+        position: None,
+        message,
+    };
+    let stem = path
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .ok_or_else(|| error("its name is no theme's".to_owned()))?;
+    let extension = path.extension().and_then(|extension| extension.to_str());
+    let read_error = |e: io::Error| error(format!("it cannot be read: {e}"));
+    match extension {
+        Some("itermcolors") => {
+            let bytes = fs::read(path).map_err(read_error)?;
+            Ok(itermcolors::read(&bytes, stem, path)?
+                .into_iter()
+                .map(|theme| (theme.name, theme.variant))
+                .collect())
+        }
+        Some("toml") => {
+            let text = fs::read_to_string(path).map_err(read_error)?;
+            let file = parse(&text, path)?;
+            let partial = file.partial;
+            let variant =
+                partial
+                    .variant
+                    .unwrap_or(match (partial.background, partial.foreground) {
+                        (Some(background), Some(foreground))
+                            if lightness(background) > lightness(foreground) =>
+                        {
+                            ThemeVariant::Light
+                        }
+                        _ => ThemeVariant::Dark,
+                    });
+            Ok(vec![(stem.to_owned(), variant)])
+        }
+        _ => Err(error(format!(
+            "it is no theme's file, of {}",
+            EXTENSIONS
+                .map(|extension| format!(".{extension}"))
+                .join(" or ")
+        ))),
+    }
 }
 
 /// What a file of the native format gives: its partial theme, and the

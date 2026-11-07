@@ -59,6 +59,7 @@ pub(crate) mod chrome;
 pub(crate) mod dividers;
 pub(crate) mod frame;
 mod input;
+mod installs;
 mod menus;
 mod notices;
 mod panels;
@@ -519,6 +520,9 @@ pub struct App<B: Backend> {
     /// alerts: the window that the question is on, the URL or the path,
     /// and what it is.
     open_asks: BTreeMap<AlertId, (Option<WindowId>, (String, TargetKind))>,
+    /// The themes' files that the user is asked to install, by their
+    /// alerts.
+    theme_asks: BTreeMap<AlertId, installs::ThemeInstall>,
     /// The contexts in which the menus' commands that tell one can run, and
     /// whether the platform has each one's items enabled, as the focused
     /// pane's last frame had it.
@@ -705,6 +709,7 @@ impl<B: Backend> App<B> {
             paste_asks: BTreeMap::new(),
             pastes_unconfirmed: false,
             open_asks: BTreeMap::new(),
+            theme_asks: BTreeMap::new(),
             links_chosen: (None, None),
             appearance_chosen: None,
             performance: None,
@@ -3390,6 +3395,7 @@ impl<B: Backend> App<B> {
             AppEvent::AppearanceChanged(appearance) => {
                 self.appearance_changed(platform, appearance);
             }
+            AppEvent::OpenFiles(paths) => self.open_files(platform, paths),
             _ => {}
         }
     }

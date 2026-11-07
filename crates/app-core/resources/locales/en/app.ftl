@@ -137,3 +137,16 @@ notice-fault = A plugin stopped:
 
 # What an accessibility client, as VoiceOver, calls a pane.
 access-pane = Terminal
+
+# The question of a theme's file that the Finder opens with Lokyr, or that
+# is dropped on its icon, and its buttons, the default one first; and the
+# alert of a file that cannot be installed.
+theme-install-message = Install the theme “{ $name }”?
+theme-install-detail = Lokyr copies it into its themes' folder, { $folder }, where the config's [theme] can name it.
+theme-install-replace = A theme of its name is there already, which this one replaces.
+theme-install-use = Install and Use
+theme-install-only = Install
+theme-install-cancel = Cancel
+theme-install-failed = The theme cannot be installed.
+theme-install-no-folder = Lokyr has no config folder to hold its themes.
+theme-install-not-copied = It cannot be copied into { $folder }: { $error }

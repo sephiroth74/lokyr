@@ -11,7 +11,7 @@ use objc2_app_kit::{
     NSApplication, NSApplicationActivationPolicy, NSApplicationDelegate,
     NSApplicationTerminateReply, NSWindow,
 };
-use objc2_foundation::{NSNotification, NSObject, NSObjectProtocol};
+use objc2_foundation::{NSArray, NSNotification, NSObject, NSObjectProtocol, NSURL};
 
 use crate::appearance::AppearanceObserver;
 use crate::shared::{Pending, Shared};
@@ -103,6 +103,20 @@ define_class!(
             }
             self.post(Pending::App(AppEvent::Reopen));
             Bool::NO
+        }
+
+        #[unsafe(method(application:openURLs:))]
+        fn application_open_urls(&self, _sender: &NSApplication, urls: &NSArray<NSURL>) {
+            // The files that the Finder opens with the app, or that the user
+            // drops on its icon, of the types that its bundle declares.
+            let paths: Vec<std::path::PathBuf> = (0..urls.count())
+                .map(|index| urls.objectAtIndex(index))
+                .filter(|url| url.isFileURL())
+                .filter_map(|url| url.path().map(|path| std::path::PathBuf::from(path.to_string())))
+                .collect();
+            if !paths.is_empty() {
+                self.post(Pending::App(AppEvent::OpenFiles(paths)));
+            }
         }
 
         #[unsafe(method(applicationShouldTerminate:))]

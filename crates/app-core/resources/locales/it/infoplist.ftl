@@ -16,3 +16,8 @@ NSRemindersFullAccessUsageDescription = Un programma avviato nel terminale vuole
 NSPhotoLibraryUsageDescription = Un programma avviato nel terminale vuole leggere le tue foto.
 NSLocationUsageDescription = Un programma avviato nel terminale vuole conoscere la tua posizione.
 NSSpeechRecognitionUsageDescription = Un programma avviato nel terminale vuole usare il riconoscimento vocale.
+
+# I nomi dei file che Lokyr apre, che il Finder mostra.
+
+document-type-itermcolors = Preset di colori di iTerm2
+document-type-toml = Documento TOML

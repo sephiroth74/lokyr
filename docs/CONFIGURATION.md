@@ -1114,6 +1114,8 @@ A theme is a built-in one, `Lokyr Light` or `Lokyr Dark`, or a file of the `them
 - **An `.itermcolors` file** of colors for the light and the dark appearance is two themes, `<name> (Light)` and `<name> (Dark)`, as `dark = "Nightfall (Dark)"`.
 - Its colors read as their files say, of sRGB, Display P3 or the calibrated colors of older files, converted to sRGB; its link's, underline's and the find bar's match's colors too.
 
+A theme's file goes into the folder by hand, or as Lokyr installs it: on macOS, a double click on an `.itermcolors` file in the Finder, or a theme's file, `.itermcolors` or `.toml`, dropped on Lokyr's icon in the Dock, asks to install it. **Install** copies it into the folder, in place of a file of its name; **Install and Use** names it in `[theme]` too, `light` or `dark` by its variant, both for a file of both appearances; neither converts it. Where another app opens `.itermcolors` files at a double click, Lokyr is in the Finder's Open With menu.
+
 ```toml
 # ~/.config/lokyr/themes/Nightfall.toml
 [theme]

@@ -127,6 +127,10 @@ pub enum AppEvent {
     /// The user opened the app again, as from its icon in the Dock, while
     /// it shows no window, nor one minimized.
     Reopen,
+    /// The system asked the app to open files, as a double click in the
+    /// file manager on a file of a type that the app declares, or a file
+    /// dropped on its icon: their paths, in their order.
+    OpenFiles(Vec<std::path::PathBuf>),
     /// An open that the platform started failed, as the system told after
     /// the call that started it returned, as
     /// [`Platform::open_in_text_editor`](crate::Platform::open_in_text_editor)'s.

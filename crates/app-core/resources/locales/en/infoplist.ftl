@@ -19,3 +19,9 @@ NSRemindersFullAccessUsageDescription = A program started in the terminal wants 
 NSPhotoLibraryUsageDescription = A program started in the terminal wants to read your photos.
 NSLocationUsageDescription = A program started in the terminal wants to know your location.
 NSSpeechRecognitionUsageDescription = A program started in the terminal wants to use speech recognition.
+
+# The names of the files that Lokyr opens, which the Finder shows: iTerm2's
+# color presets, and TOML files, Lokyr's themes among them.
+
+document-type-itermcolors = iTerm2 Color Preset
+document-type-toml = TOML Document

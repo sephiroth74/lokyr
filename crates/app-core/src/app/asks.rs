@@ -25,6 +25,9 @@ impl<B: Backend> App<B> {
         (button, suppressed): (usize, bool),
         text: Option<&str>,
     ) {
+        if let Some(ask) = self.theme_asks.remove(&alert) {
+            self.theme_answered(platform, &ask, button);
+        }
         if let Some((pane, request)) = self.clipboard_asks.remove(&alert)
             && button == 1
             && let Some(pane) = self.workspace.pane(pane)

@@ -152,11 +152,8 @@ fn the_built_in_themes_names_are_the_kernel_s_and_ui_core_s() {
     assert_eq!(ui_theme::light_spec().name, lokyr_kernel::themes::LIGHT);
 }
 
-#[test]
-fn an_itermcolors_file_of_the_folder_applies_as_it_is() {
-    let config = "[theme]\ndark = \"Grays\"\nlight = \"Grays\"\n";
-    let (mut fake, mut app, directory) = with_themes("itermcolors", config, &[]);
-    assert!(app.diagnostics.shown().is_some(), "no theme `Grays` yet");
+/// An `.itermcolors` file of grays, dark: its background `#333333`.
+fn grays() -> String {
     let entry = |gray: f64| {
         format!(
             "<dict><key>Red Component</key><real>{gray}</real><key>Green Component</key>\
@@ -173,13 +170,17 @@ fn an_itermcolors_file_of_the_folder_applies_as_it_is() {
     }
     body.push_str(&format!("<key>Background Color</key>{}", entry(0.2)));
     body.push_str(&format!("<key>Foreground Color</key>{}", entry(0.9)));
+    format!("<plist version=\"1.0\"><dict>{body}</dict></plist>")
+}
+
+#[test]
+fn an_itermcolors_file_of_the_folder_applies_as_it_is() {
+    let config = "[theme]\ndark = \"Grays\"\nlight = \"Grays\"\n";
+    let (mut fake, mut app, directory) = with_themes("itermcolors", config, &[]);
+    assert!(app.diagnostics.shown().is_some(), "no theme `Grays` yet");
     let file = directory.join("themes").join("Grays.itermcolors");
     assert!(app.theme_files.paths.contains(&file));
-    std::fs::write(
-        &file,
-        format!("<plist version=\"1.0\"><dict>{body}</dict></plist>"),
-    )
-    .unwrap();
+    std::fs::write(&file, grays()).unwrap();
     changed(&mut fake, &mut app);
     assert_eq!(app.diagnostics.shown(), None);
     assert_eq!(app.theme.dark.colors.background, rgb(0x333333));
@@ -189,5 +190,127 @@ fn an_itermcolors_file_of_the_folder_applies_as_it_is() {
         .map(|entry| entry.unwrap().file_name())
         .collect();
     assert_eq!(names, ["Grays.itermcolors"]);
+    let _ = std::fs::remove_dir_all(directory);
+}
+
+/// A theme's file `name` of `text`, outside the themes' folder of the
+/// app's `directory`, as a download is.
+fn downloaded(directory: &Path, name: &str, text: &str) -> PathBuf {
+    let downloads = directory.join("Downloads");
+    std::fs::create_dir_all(&downloads).unwrap();
+    let path = downloads.join(name);
+    std::fs::write(&path, text).unwrap();
+    path
+}
+
+/// Opens `paths` as the system opens them with the app, and gives the
+/// question that the last asks.
+fn open(
+    fake: &mut Fake,
+    app: &mut App,
+    paths: Vec<PathBuf>,
+) -> lokyr_platform_core::fake::FakeAlert {
+    fake.send_app(app, AppEvent::OpenFiles(paths));
+    fake.alerts().last().cloned().expect("a question")
+}
+
+/// Answers `alert`'s question with its `button`.
+fn answer(fake: &mut Fake, app: &mut App, alert: AlertId, button: usize) {
+    fake.send_app(
+        app,
+        AppEvent::AlertClosed {
+            alert,
+            button,
+            suppressed: false,
+            text: None,
+        },
+    );
+}
+
+#[test]
+fn a_theme_s_file_opened_installs_on_its_answer_and_install_and_use_names_it() {
+    let (mut fake, mut app, directory) = with_themes("install-use", "", &[]);
+    let source = downloaded(&directory, "Grays.itermcolors", &grays());
+    let asked = open(&mut fake, &mut app, vec![source.clone()]);
+    assert!(asked.alert.message.contains("Grays"), "{:?}", asked.alert);
+    assert!(asked.alert.detail.contains("themes"), "{:?}", asked.alert);
+    assert_eq!(asked.alert.buttons.len(), 3);
+    answer(&mut fake, &mut app, asked.id, 0);
+    let target = directory.join("themes/Grays.itermcolors");
+    assert_eq!(
+        std::fs::read(&target).unwrap(),
+        std::fs::read(&source).unwrap()
+    );
+    // Dark, of its colors, it names the dark appearance's theme, at once.
+    let config = std::fs::read_to_string(directory.join("config.toml")).unwrap();
+    assert!(config.contains("[theme]\ndark = \"Grays\""), "{config}");
+    assert_eq!(app.config.theme.dark, "Grays");
+    assert_eq!(app.theme.dark.colors.background, rgb(0x333333));
+    assert_eq!(app.diagnostics.shown(), None);
+    assert!(app.theme_asks.is_empty());
+    let _ = std::fs::remove_dir_all(directory);
+}
+
+#[test]
+fn install_alone_copies_the_file_and_cancel_copies_nothing() {
+    let (mut fake, mut app, directory) = with_themes("install-only", "", &[]);
+    let paper = downloaded(&directory, "Paper.toml", &theme("#ffffff"));
+    let grays = downloaded(&directory, "Grays.itermcolors", &grays());
+    let asked = open(&mut fake, &mut app, vec![paper]);
+    answer(&mut fake, &mut app, asked.id, 1);
+    let asked = open(&mut fake, &mut app, vec![grays]);
+    answer(&mut fake, &mut app, asked.id, 2);
+    let names: Vec<_> = std::fs::read_dir(directory.join("themes"))
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .collect();
+    assert_eq!(names, ["Paper.toml"]);
+    let config = std::fs::read_to_string(directory.join("config.toml")).unwrap();
+    assert_eq!(config, "");
+    assert_eq!(app.config.theme.light, lokyr_kernel::themes::LIGHT);
+    let _ = std::fs::remove_dir_all(directory);
+}
+
+#[test]
+fn a_light_theme_installed_and_used_names_the_light_appearance_s_and_replaces_its_file() {
+    let config = "[theme]\nlight = \"Paper\"\n";
+    let (mut fake, mut app, directory) =
+        with_themes("install-replace", config, &[("Paper", &theme("#eeeeee"))]);
+    assert_eq!(app.theme.light.colors.background, rgb(0xeeeeee));
+    let source = downloaded(&directory, "Paper.toml", &theme("#ffffff"));
+    let asked = open(&mut fake, &mut app, vec![source]);
+    // A theme of its name there already, which it replaces, as the question
+    // tells.
+    let replace = app.texts.text("theme-install-replace");
+    assert!(asked.alert.detail.ends_with(&replace), "{:?}", asked.alert);
+    answer(&mut fake, &mut app, asked.id, 0);
+    let config = std::fs::read_to_string(directory.join("config.toml")).unwrap();
+    assert!(config.contains("light = \"Paper\""), "{config}");
+    assert!(!config.contains("dark"), "{config}");
+    // The same name, of new colors, which apply.
+    assert_eq!(app.theme.light.colors.background, rgb(0xffffff));
+    let _ = std::fs::remove_dir_all(directory);
+}
+
+#[test]
+fn a_file_of_no_theme_tells_why_and_asks_nothing() {
+    let (mut fake, mut app, directory) = with_themes("install-none", "", &[]);
+    let notes = downloaded(&directory, "notes.txt", "hello");
+    let broken = downloaded(
+        &directory,
+        "Broken.itermcolors",
+        "<plist><dict></dict></plist>",
+    );
+    for path in [notes, broken] {
+        let told = open(&mut fake, &mut app, vec![path]);
+        assert_eq!(told.alert.style, AlertStyle::Warning);
+        assert!(told.alert.buttons.is_empty());
+        assert_eq!(told.alert.message, app.texts.text("theme-install-failed"));
+    }
+    assert!(app.theme_asks.is_empty());
+    assert_eq!(
+        std::fs::read_dir(directory.join("themes")).unwrap().count(),
+        0
+    );
     let _ = std::fs::remove_dir_all(directory);
 }

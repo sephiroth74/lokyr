@@ -325,3 +325,50 @@ fn an_itermcolors_file_of_the_folder_is_a_theme_as_it_is_and_a_native_one_extend
         .theme;
     assert_eq!(native.terminal.background, ThemeColor::hex(0x123456));
 }
+
+#[test]
+fn a_file_to_install_tells_its_themes_and_their_variants() {
+    let text =
+        format!("[terminal]\nbackground = \"#fafafa\"\nforeground = \"#1e1e20\"\n{PALETTE}\n");
+    let directory = folder(
+        "install",
+        &[
+            ("Paper", &text),
+            ("Plain", "[theme]\nextends = \"Lokyr Dark\"\n"),
+        ],
+    );
+    fs::write(directory.join("Pair.itermcolors"), itermcolors(0.0, true)).unwrap();
+    fs::write(directory.join("notes.txt"), "").unwrap();
+    assert_eq!(
+        themes_of(&directory.join("Paper.toml")).unwrap(),
+        [("Paper".to_owned(), ThemeVariant::Light)]
+    );
+    assert_eq!(
+        themes_of(&directory.join("Plain.toml")).unwrap(),
+        [("Plain".to_owned(), ThemeVariant::Dark)]
+    );
+    assert_eq!(
+        themes_of(&directory.join("Pair.itermcolors")).unwrap(),
+        [
+            ("Pair (Light)".to_owned(), ThemeVariant::Light),
+            ("Pair (Dark)".to_owned(), ThemeVariant::Dark)
+        ]
+    );
+    let error = themes_of(&directory.join("notes.txt")).unwrap_err();
+    assert!(
+        error.message.contains(".toml or .itermcolors"),
+        "{}",
+        error.message
+    );
+    fs::write(
+        directory.join("Broken.toml"),
+        "[terminal]\nbackground = 1\n",
+    )
+    .unwrap();
+    assert!(
+        themes_of(&directory.join("Broken.toml"))
+            .unwrap_err()
+            .position
+            .is_some()
+    );
+}

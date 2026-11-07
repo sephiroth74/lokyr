@@ -85,6 +85,22 @@ const USAGES: [&str; 16] = [
     "NSSpeechRecognitionUsageDescription",
 ];
 
+/// The themes' files that the app opens, which it asks to install: each
+/// its name's message in the catalogs' `infoplist.ftl`, its type's
+/// identifier, and the app's rank among the apps that open it. iTerm2's
+/// color presets, `.itermcolors` files, of `Alternate`, which a double
+/// click opens with the app where no app of a higher rank claims them, and
+/// which the app's Open With menu has; TOML's of `None`, which the app
+/// opens only as they are dropped on its icon.
+const DOCUMENT_TYPES: [(&str, &str, &str); 2] = [
+    ("document-type-itermcolors", ITERMCOLORS, "Alternate"),
+    ("document-type-toml", "public.toml", "None"),
+];
+
+/// The type of iTerm2's color presets, which the bundle declares, as the
+/// system has none of them: property lists of the extension `itermcolors`.
+const ITERMCOLORS: &str = "com.googlecode.iterm2.itermcolors";
+
 /// The entitlements of the hardened runtime that let a program started in
 /// the terminal ask for what macOS guards, which it asks on the terminal's
 /// behalf: Apple Events, the microphone, the camera, the contacts, the
@@ -165,12 +181,16 @@ pub fn run(mut args: impl Iterator<Item = String>) -> Result<ExitCode> {
     copy_font_licenses(&root.join(SYMBOLS_FONT), &resources)?;
     crate::licenses::write(&root, &resources.join("licenses/crates"))?;
     let catalogs = usage_catalogs(&root.join(LOCALES))?;
-    for (language, usages) in &catalogs {
+    let source = &catalogs[SOURCE];
+    for (language, catalog) in &catalogs {
         let directory = resources.join(format!("{language}.lproj"));
         fs::create_dir_all(&directory)
             .with_context(|| format!("making {}", directory.display()))?;
-        fs::write(directory.join("InfoPlist.strings"), localized_plist(usages))
-            .with_context(|| format!("writing the {language} InfoPlist.strings"))?;
+        fs::write(
+            directory.join("InfoPlist.strings"),
+            localized_plist(catalog, source),
+        )
+        .with_context(|| format!("writing the {language} InfoPlist.strings"))?;
     }
     let version = told_version(&binary)?;
     // The binary of this build, not one of another day or release.
@@ -219,10 +239,20 @@ fn run_command(command: &mut Command, what: &str) -> Result<()> {
     Ok(())
 }
 
-/// The usage strings of each language of the catalogs in `locales`, by
-/// language: each language's `infoplist.ftl`, of a message for each key of
-/// [`USAGES`], each a line `key = text`, without variables.
-fn usage_catalogs(locales: &Path) -> Result<BTreeMap<String, Vec<(String, String)>>> {
+/// A language's texts of the bundle's `Info.plist`: its usage strings, of
+/// the keys of [`USAGES`], and its document types' names, of the messages
+/// of [`DOCUMENT_TYPES`], each in its order.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Catalog {
+    usages: Vec<(String, String)>,
+    types: Vec<String>,
+}
+
+/// The texts of each language of the catalogs in `locales`, by language:
+/// each language's `infoplist.ftl`, of a message for each key of
+/// [`USAGES`] and each document type's name, each a line `key = text`,
+/// without variables.
+fn usage_catalogs(locales: &Path) -> Result<BTreeMap<String, Catalog>> {
     let mut catalogs = BTreeMap::new();
     for entry in fs::read_dir(locales).with_context(|| format!("reading {}", locales.display()))? {
         let directory = entry?.path();
@@ -234,7 +264,7 @@ fn usage_catalogs(locales: &Path) -> Result<BTreeMap<String, Vec<(String, String
             fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
         catalogs.insert(
             language.to_owned(),
-            usages(&text).with_context(|| path.display().to_string())?,
+            catalog(&text).with_context(|| path.display().to_string())?,
         );
     }
     if !catalogs.contains_key(SOURCE) {
@@ -243,9 +273,10 @@ fn usage_catalogs(locales: &Path) -> Result<BTreeMap<String, Vec<(String, String
     Ok(catalogs)
 }
 
-/// The usage strings of `text`, a catalog's `infoplist.ftl`, in the order of
-/// [`USAGES`], each of which it has.
-fn usages(text: &str) -> Result<Vec<(String, String)>> {
+/// The texts of `text`, a catalog's `infoplist.ftl`: the usage strings, in
+/// the order of [`USAGES`], and the document types' names, in the order of
+/// [`DOCUMENT_TYPES`], each of which it has.
+fn catalog(text: &str) -> Result<Catalog> {
     let mut messages = BTreeMap::new();
     for line in text.lines() {
         let line = line.trim();
@@ -260,15 +291,20 @@ fn usages(text: &str) -> Result<Vec<(String, String)>> {
         }
         messages.insert(key.to_owned(), value.to_owned());
     }
-    USAGES
+    let mut take = |key: &str| {
+        messages
+            .remove(key)
+            .with_context(|| format!("no message `{key}`"))
+    };
+    let usages = USAGES
         .iter()
-        .map(|&key| {
-            let value = messages
-                .remove(key)
-                .with_context(|| format!("no message `{key}`"))?;
-            Ok((key.to_owned(), value))
-        })
-        .collect()
+        .map(|&key| Ok((key.to_owned(), take(key)?)))
+        .collect::<Result<_>>()?;
+    let types = DOCUMENT_TYPES
+        .iter()
+        .map(|&(message, _, _)| take(message))
+        .collect::<Result<_>>()?;
+    Ok(Catalog { usages, types })
 }
 
 /// A plist of `pairs`, keys and their strings, with `NSHighResolutionCapable`
@@ -390,7 +426,7 @@ fn info_plist(
     version: &str,
     moment: u64,
     copyright: &str,
-    catalogs: &BTreeMap<String, Vec<(String, String)>>,
+    catalogs: &BTreeMap<String, Catalog>,
 ) -> Result<String> {
     let (short, number) = bundle_versions(version, moment)?;
     let mut keys = vec![
@@ -415,7 +451,7 @@ fn info_plist(
     let source = catalogs
         .get(SOURCE)
         .with_context(|| format!("no catalog of {SOURCE}"))?;
-    pairs.extend(source.iter().cloned());
+    pairs.extend(source.usages.iter().cloned());
     let mut plist = plist(&pairs, true);
     // The languages that the bundle has, which the system's own texts of
     // the app, as its menus' items, take.
@@ -427,11 +463,58 @@ fn info_plist(
     plist.insert_str(
         at,
         &format!(
-            "\t<key>CFBundleLocalizations</key>\n\t<array>\n{languages}\t</array>\n{}",
+            "\t<key>CFBundleLocalizations</key>\n\t<array>\n{languages}\t</array>\n{}{}",
+            document_types(&source.types),
             crate::sparkle::plist_entries()
         ),
     );
     Ok(plist)
+}
+
+/// The entries of `Info.plist` of the files that the app opens, of the
+/// source's names of [`DOCUMENT_TYPES`], `names`: the document types, and
+/// the declaration of iTerm2's color presets' type.
+fn document_types(names: &[String]) -> String {
+    let mut entries = String::from("\t<key>CFBundleDocumentTypes</key>\n\t<array>\n");
+    for ((_, identifier, rank), name) in DOCUMENT_TYPES.iter().zip(names) {
+        entries.push_str(&format!(
+            concat!(
+                "\t\t<dict>\n",
+                "\t\t\t<key>CFBundleTypeName</key>\n\t\t\t<string>{name}</string>\n",
+                "\t\t\t<key>CFBundleTypeRole</key>\n\t\t\t<string>Viewer</string>\n",
+                "\t\t\t<key>LSHandlerRank</key>\n\t\t\t<string>{rank}</string>\n",
+                "\t\t\t<key>LSItemContentTypes</key>\n",
+                "\t\t\t<array>\n\t\t\t\t<string>{identifier}</string>\n\t\t\t</array>\n",
+                "\t\t</dict>\n",
+            ),
+            name = escaped(name),
+            rank = rank,
+            identifier = identifier,
+        ));
+    }
+    entries.push_str("\t</array>\n");
+    let itermcolors = DOCUMENT_TYPES
+        .iter()
+        .zip(names)
+        .find(|((_, identifier, _), _)| *identifier == ITERMCOLORS)
+        .map_or("", |(_, name)| name.as_str());
+    entries.push_str(&format!(
+        concat!(
+            "\t<key>UTImportedTypeDeclarations</key>\n\t<array>\n\t\t<dict>\n",
+            "\t\t\t<key>UTTypeIdentifier</key>\n\t\t\t<string>{ITERMCOLORS}</string>\n",
+            "\t\t\t<key>UTTypeDescription</key>\n\t\t\t<string>{name}</string>\n",
+            "\t\t\t<key>UTTypeConformsTo</key>\n",
+            "\t\t\t<array>\n\t\t\t\t<string>com.apple.property-list</string>\n\t\t\t</array>\n",
+            "\t\t\t<key>UTTypeTagSpecification</key>\n\t\t\t<dict>\n",
+            "\t\t\t\t<key>public.filename-extension</key>\n",
+            "\t\t\t\t<array>\n\t\t\t\t\t<string>itermcolors</string>\n\t\t\t\t</array>\n",
+            "\t\t\t</dict>\n",
+            "\t\t</dict>\n\t</array>\n",
+        ),
+        ITERMCOLORS = ITERMCOLORS,
+        name = escaped(itermcolors),
+    ));
+    entries
 }
 
 /// `text` with XML's special characters escaped.
@@ -496,15 +579,25 @@ fn copy_icons(icons: &Path, resources: &Path) -> Result<()> {
     Ok(())
 }
 
-/// A language's `InfoPlist.strings`: its usage strings, `usages`, and the
-/// app's name, the same in every language, which the Finder, the Dock and
-/// the menu bar take from the language's strings once the bundle has them.
-fn localized_plist(usages: &[(String, String)]) -> String {
+/// A language's `InfoPlist.strings`, of its `catalog`: its usage strings;
+/// the app's name, the same in every language, which the Finder, the Dock
+/// and the menu bar take from the language's strings once the bundle has
+/// them; and its document types' names, each keyed by the name of
+/// `source`, the catalog of `Info.plist`'s own, as the system looks them
+/// up.
+fn localized_plist(catalog: &Catalog, source: &Catalog) -> String {
     let mut pairs = vec![
         ("CFBundleDisplayName".to_owned(), NAME.to_owned()),
         ("CFBundleName".to_owned(), NAME.to_owned()),
     ];
-    pairs.extend(usages.iter().cloned());
+    pairs.extend(catalog.usages.iter().cloned());
+    pairs.extend(
+        source
+            .types
+            .iter()
+            .map(|name| escaped(name))
+            .zip(catalog.types.iter().cloned()),
+    );
     plist(&pairs, false)
 }
 
@@ -558,7 +651,7 @@ mod tests {
     use super::*;
 
     /// The catalogs of the workspace's app.
-    fn catalogs() -> BTreeMap<String, Vec<(String, String)>> {
+    fn catalogs() -> BTreeMap<String, Catalog> {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         usage_catalogs(&root.join(LOCALES)).unwrap()
     }
@@ -568,10 +661,11 @@ mod tests {
         let catalogs = catalogs();
         let languages: Vec<&str> = catalogs.keys().map(String::as_str).collect();
         assert_eq!(languages, ["en", "it"]);
-        for usages in catalogs.values() {
-            assert_eq!(usages.len(), USAGES.len());
+        for catalog in catalogs.values() {
+            assert_eq!(catalog.usages.len(), USAGES.len());
+            assert_eq!(catalog.types.len(), DOCUMENT_TYPES.len());
         }
-        let italian = &catalogs["it"];
+        let italian = &catalogs["it"].usages;
         assert_eq!(italian[0].0, "NSMicrophoneUsageDescription");
         assert_eq!(
             italian[0].1,
@@ -581,10 +675,10 @@ mod tests {
         assert!(strings.contains("<key>NSCameraUsageDescription</key>"));
         assert!(!strings.contains("NSHighResolutionCapable"));
         // A catalog that lacks one, or gives one a variable, is refused.
-        assert!(usages("NSMicrophoneUsageDescription = x\n").is_err());
+        assert!(catalog("NSMicrophoneUsageDescription = x\n").is_err());
         let variable = "NSMicrophoneUsageDescription = { $x }\n";
         assert!(
-            usages(variable)
+            catalog(variable)
                 .unwrap_err()
                 .to_string()
                 .contains("no variable")
@@ -771,11 +865,18 @@ mod tests {
     /// Each language's strings name the app as the bundle does.
     #[test]
     fn a_language_s_strings_name_the_app() {
-        let usages = vec![(
-            "NSCameraUsageDescription".to_owned(),
-            "Un programma vuole la fotocamera.".to_owned(),
-        )];
-        let strings = localized_plist(&usages);
+        let source = Catalog {
+            usages: Vec::new(),
+            types: vec!["Color preset & more".to_owned()],
+        };
+        let italian = Catalog {
+            usages: vec![(
+                "NSCameraUsageDescription".to_owned(),
+                "Un programma vuole la fotocamera.".to_owned(),
+            )],
+            types: vec!["Preset di colori".to_owned()],
+        };
+        let strings = localized_plist(&italian, &source);
         for key in ["CFBundleDisplayName", "CFBundleName"] {
             assert!(
                 strings.contains(&format!("<key>{key}</key>\n\t<string>Lokyr</string>")),
@@ -783,6 +884,13 @@ mod tests {
             );
         }
         assert!(strings.contains("Un programma vuole la fotocamera."));
+        // A document type's name, keyed by the source's, escaped.
+        assert!(
+            strings.contains(
+                "<key>Color preset &amp; more</key>\n\t<string>Preset di colori</string>"
+            ),
+            "{strings}"
+        );
     }
 
     /// The plist reads back as macOS reads it, whole, with each key's value.
@@ -832,6 +940,39 @@ mod tests {
         assert_eq!(
             extract("NSLocalNetworkUsageDescription"),
             "A program started in the terminal wants to reach devices on the local network."
+        );
+        // The themes' files, iTerm2's color presets of a type that the
+        // bundle declares, and TOML's, which only a drop opens.
+        assert_eq!(
+            extract("CFBundleDocumentTypes.0.LSItemContentTypes.0"),
+            ITERMCOLORS
+        );
+        assert_eq!(
+            extract("CFBundleDocumentTypes.0.LSHandlerRank"),
+            "Alternate"
+        );
+        assert_eq!(
+            extract("CFBundleDocumentTypes.0.CFBundleTypeRole"),
+            "Viewer"
+        );
+        assert_eq!(
+            extract("CFBundleDocumentTypes.1.LSItemContentTypes.0"),
+            "public.toml"
+        );
+        assert_eq!(extract("CFBundleDocumentTypes.1.LSHandlerRank"), "None");
+        assert_eq!(
+            extract("UTImportedTypeDeclarations.0.UTTypeIdentifier"),
+            ITERMCOLORS
+        );
+        assert_eq!(
+            extract(
+                "UTImportedTypeDeclarations.0.UTTypeTagSpecification.public\\.filename-extension.0"
+            ),
+            "itermcolors"
+        );
+        assert_eq!(
+            extract("UTImportedTypeDeclarations.0.UTTypeDescription"),
+            extract("CFBundleDocumentTypes.0.CFBundleTypeName")
         );
         fs::remove_file(path).unwrap();
     }
