@@ -1,0 +1,140 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="680" height="390" viewBox="0 0 680 390" role="img" aria-label="The window&#x27;s motion">
+
+<style>
+  .surface { fill: #fcfcfb; }
+  .primary { fill: #0b0b0b; }
+  .secondary { fill: #52514e; }
+  .muted { fill: #898781; }
+  .grid { stroke: #e1e0d9; }
+  .base { stroke: #c3c2b7; }
+  .accent { fill: #2a78d6; }
+  .context { fill: #898781; }
+  .accent-line { stroke: #2a78d6; }
+  .context-line { stroke: #898781; }
+  .second { fill: #eb6834; }
+  .second-line { stroke: #eb6834; }
+  .ring { stroke: #fcfcfb; }
+  .budget { stroke: #52514e; }
+  text { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+  .tick { font-variant-numeric: tabular-nums; }
+  @media (prefers-color-scheme: dark) {
+    .surface { fill: #1a1a19; }
+    .primary { fill: #f0efec; }
+    .secondary { fill: #c3c2b7; }
+    .muted { fill: #898781; }
+    .grid { stroke: #2c2c2a; }
+    .base { stroke: #383835; }
+    .accent { fill: #3987e5; }
+    .context { fill: #6f6e69; }
+    .accent-line { stroke: #3987e5; }
+    .context-line { stroke: #6f6e69; }
+    .second { fill: #d95926; }
+    .second-line { stroke: #d95926; }
+    .ring { stroke: #1a1a19; }
+    .budget { stroke: #c3c2b7; }
+  }
+</style>
+
+<rect class="surface" width="680" height="390" rx="8"/>
+<text class="primary" x="16" y="26" font-size="15" font-weight="600">The window&#x27;s motion</text>
+<text class="secondary" x="16" y="45" font-size="12">A drag by the titlebar and a live resize along a sine, 60 Hz</text>
+<circle class="accent" cx="21" cy="64" r="4"/>
+<text class="secondary" x="30" y="68" font-size="12">opaque</text>
+<circle class="second" cx="95" cy="64" r="4"/>
+<text class="secondary" x="104" y="68" font-size="12">translucent with a blur</text>
+<circle class="surface context-line" cx="288" cy="64" r="4" stroke-width="2"/>
+<text class="secondary" x="297" y="68" font-size="12">a build between releases</text>
+<text class="primary" x="16.0" y="94" font-size="12" font-weight="600">A drag, frames a second</text>
+<line class="grid" x1="54.0" y1="200.0" x2="280.0" y2="200.0" stroke-width="1"/>
+<text class="muted tick" x="48.0" y="203.5" font-size="10" text-anchor="end">0</text>
+<line class="grid" x1="54.0" y1="170.0" x2="280.0" y2="170.0" stroke-width="1"/>
+<text class="muted tick" x="48.0" y="173.5" font-size="10" text-anchor="end">20</text>
+<line class="grid" x1="54.0" y1="140.0" x2="280.0" y2="140.0" stroke-width="1"/>
+<text class="muted tick" x="48.0" y="143.5" font-size="10" text-anchor="end">40</text>
+<line class="grid" x1="54.0" y1="110.0" x2="280.0" y2="110.0" stroke-width="1"/>
+<text class="muted tick" x="48.0" y="113.5" font-size="10" text-anchor="end">60</text>
+<text class="muted" x="54.0" y="215.0" font-size="10" text-anchor="middle">0.5.0</text>
+<text class="muted" x="167.0" y="215.0" font-size="10" text-anchor="middle" font-style="italic">F3-49</text>
+<text class="muted" x="280.0" y="215.0" font-size="10" text-anchor="middle">0.5.1</text>
+<line class="accent-line" x1="54.0" y1="114.0" x2="167.0" y2="111.8" stroke-width="2" stroke-linecap="round"/>
+<line class="accent-line" x1="167.0" y1="111.8" x2="280.0" y2="113.0" stroke-width="2" stroke-linecap="round"/>
+<circle class="accent ring" cx="54.0" cy="114.0" r="4" stroke-width="2"><title>0.5.0, opaque: 57.3 /s</title></circle>
+<circle class="surface accent-line" cx="167.0" cy="111.8" r="4" stroke-width="2"><title>F3-49, opaque: 58.8 /s</title></circle>
+<circle class="accent ring" cx="280.0" cy="113.0" r="4" stroke-width="2"><title>0.5.1, opaque: 58.0 /s</title></circle>
+<line class="second-line" x1="54.0" y1="113.0" x2="167.0" y2="113.0" stroke-width="2" stroke-linecap="round"/>
+<line class="second-line" x1="167.0" y1="113.0" x2="280.0" y2="113.0" stroke-width="2" stroke-linecap="round"/>
+<circle class="second ring" cx="54.0" cy="113.0" r="4" stroke-width="2"><title>0.5.0, translucent with a blur: 58.0 /s</title></circle>
+<circle class="surface second-line" cx="167.0" cy="113.0" r="4" stroke-width="2"><title>F3-49, translucent with a blur: 58.0 /s</title></circle>
+<circle class="second ring" cx="280.0" cy="113.0" r="4" stroke-width="2"><title>0.5.1, translucent with a blur: 58.0 /s</title></circle>
+<text class="primary tick" x="289.0" y="117.0" font-size="11" font-weight="600">58.0</text>
+<text class="primary" x="354.0" y="94" font-size="12" font-weight="600">A resize, frames a second</text>
+<line class="grid" x1="392.0" y1="200.0" x2="618.0" y2="200.0" stroke-width="1"/>
+<text class="muted tick" x="386.0" y="203.5" font-size="10" text-anchor="end">0</text>
+<line class="grid" x1="392.0" y1="170.0" x2="618.0" y2="170.0" stroke-width="1"/>
+<text class="muted tick" x="386.0" y="173.5" font-size="10" text-anchor="end">20</text>
+<line class="grid" x1="392.0" y1="140.0" x2="618.0" y2="140.0" stroke-width="1"/>
+<text class="muted tick" x="386.0" y="143.5" font-size="10" text-anchor="end">40</text>
+<line class="grid" x1="392.0" y1="110.0" x2="618.0" y2="110.0" stroke-width="1"/>
+<text class="muted tick" x="386.0" y="113.5" font-size="10" text-anchor="end">60</text>
+<text class="muted" x="392.0" y="215.0" font-size="10" text-anchor="middle">0.5.0</text>
+<text class="muted" x="505.0" y="215.0" font-size="10" text-anchor="middle" font-style="italic">F3-49</text>
+<text class="muted" x="618.0" y="215.0" font-size="10" text-anchor="middle">0.5.1</text>
+<line class="accent-line" x1="392.0" y1="116.5" x2="505.0" y2="117.0" stroke-width="2" stroke-linecap="round"/>
+<line class="accent-line" x1="505.0" y1="117.0" x2="618.0" y2="115.7" stroke-width="2" stroke-linecap="round"/>
+<circle class="accent ring" cx="392.0" cy="116.5" r="4" stroke-width="2"><title>0.5.0, opaque: 55.7 /s</title></circle>
+<circle class="surface accent-line" cx="505.0" cy="117.0" r="4" stroke-width="2"><title>F3-49, opaque: 55.3 /s</title></circle>
+<circle class="accent ring" cx="618.0" cy="115.7" r="4" stroke-width="2"><title>0.5.1, opaque: 56.2 /s</title></circle>
+<line class="second-line" x1="392.0" y1="116.6" x2="505.0" y2="116.0" stroke-width="2" stroke-linecap="round"/>
+<line class="second-line" x1="505.0" y1="116.0" x2="618.0" y2="115.2" stroke-width="2" stroke-linecap="round"/>
+<circle class="second ring" cx="392.0" cy="116.6" r="4" stroke-width="2"><title>0.5.0, translucent with a blur: 55.6 /s</title></circle>
+<circle class="surface second-line" cx="505.0" cy="116.0" r="4" stroke-width="2"><title>F3-49, translucent with a blur: 56.0 /s</title></circle>
+<circle class="second ring" cx="618.0" cy="115.2" r="4" stroke-width="2"><title>0.5.1, translucent with a blur: 56.5 /s</title></circle>
+<text class="primary tick" x="627.0" y="119.7" font-size="11" font-weight="600">56.2</text>
+<text class="primary" x="16.0" y="246" font-size="12" font-weight="600">A resize, refreshes missed of 600</text>
+<line class="grid" x1="54.0" y1="352.0" x2="280.0" y2="352.0" stroke-width="1"/>
+<text class="muted tick" x="48.0" y="355.5" font-size="10" text-anchor="end">0</text>
+<line class="grid" x1="54.0" y1="322.0" x2="280.0" y2="322.0" stroke-width="1"/>
+<text class="muted tick" x="48.0" y="325.5" font-size="10" text-anchor="end">20</text>
+<line class="grid" x1="54.0" y1="292.0" x2="280.0" y2="292.0" stroke-width="1"/>
+<text class="muted tick" x="48.0" y="295.5" font-size="10" text-anchor="end">40</text>
+<line class="grid" x1="54.0" y1="262.0" x2="280.0" y2="262.0" stroke-width="1"/>
+<text class="muted tick" x="48.0" y="265.5" font-size="10" text-anchor="end">60</text>
+<text class="muted" x="54.0" y="367.0" font-size="10" text-anchor="middle">0.5.0</text>
+<text class="muted" x="167.0" y="367.0" font-size="10" text-anchor="middle" font-style="italic">F3-49</text>
+<text class="muted" x="280.0" y="367.0" font-size="10" text-anchor="middle">0.5.1</text>
+<line class="accent-line" x1="54.0" y1="296.5" x2="167.0" y2="288.2" stroke-width="2" stroke-linecap="round"/>
+<line class="accent-line" x1="167.0" y1="288.2" x2="280.0" y2="304.8" stroke-width="2" stroke-linecap="round"/>
+<circle class="accent ring" cx="54.0" cy="296.5" r="4" stroke-width="2"><title>0.5.0, opaque: 37.0 </title></circle>
+<circle class="surface accent-line" cx="167.0" cy="288.2" r="4" stroke-width="2"><title>F3-49, opaque: 42.5 </title></circle>
+<circle class="accent ring" cx="280.0" cy="304.8" r="4" stroke-width="2"><title>0.5.1, opaque: 31.5 </title></circle>
+<line class="second-line" x1="54.0" y1="294.2" x2="167.0" y2="300.2" stroke-width="2" stroke-linecap="round"/>
+<line class="second-line" x1="167.0" y1="300.2" x2="280.0" y2="307.0" stroke-width="2" stroke-linecap="round"/>
+<circle class="second ring" cx="54.0" cy="294.2" r="4" stroke-width="2"><title>0.5.0, translucent with a blur: 38.5 </title></circle>
+<circle class="surface second-line" cx="167.0" cy="300.2" r="4" stroke-width="2"><title>F3-49, translucent with a blur: 34.5 </title></circle>
+<circle class="second ring" cx="280.0" cy="307.0" r="4" stroke-width="2"><title>0.5.1, translucent with a blur: 30.0 </title></circle>
+<text class="primary tick" x="289.0" y="308.8" font-size="11" font-weight="600">31.5</text>
+<text class="primary" x="354.0" y="246" font-size="12" font-weight="600">A resize, the compositor&#x27;s delay p95, ms</text>
+<line class="grid" x1="392.0" y1="352.0" x2="618.0" y2="352.0" stroke-width="1"/>
+<text class="muted tick" x="386.0" y="355.5" font-size="10" text-anchor="end">0</text>
+<line class="grid" x1="392.0" y1="322.0" x2="618.0" y2="322.0" stroke-width="1"/>
+<text class="muted tick" x="386.0" y="325.5" font-size="10" text-anchor="end">10</text>
+<line class="grid" x1="392.0" y1="292.0" x2="618.0" y2="292.0" stroke-width="1"/>
+<text class="muted tick" x="386.0" y="295.5" font-size="10" text-anchor="end">20</text>
+<line class="grid" x1="392.0" y1="262.0" x2="618.0" y2="262.0" stroke-width="1"/>
+<text class="muted tick" x="386.0" y="265.5" font-size="10" text-anchor="end">30</text>
+<text class="muted" x="392.0" y="367.0" font-size="10" text-anchor="middle">0.5.0</text>
+<text class="muted" x="505.0" y="367.0" font-size="10" text-anchor="middle" font-style="italic">F3-49</text>
+<text class="muted" x="618.0" y="367.0" font-size="10" text-anchor="middle">0.5.1</text>
+<line class="accent-line" x1="392.0" y1="312.1" x2="505.0" y2="289.0" stroke-width="2" stroke-linecap="round"/>
+<line class="accent-line" x1="505.0" y1="289.0" x2="618.0" y2="289.6" stroke-width="2" stroke-linecap="round"/>
+<circle class="accent ring" cx="392.0" cy="312.1" r="4" stroke-width="2"><title>0.5.0, opaque: 13.3 ms</title></circle>
+<circle class="surface accent-line" cx="505.0" cy="289.0" r="4" stroke-width="2"><title>F3-49, opaque: 21.0 ms</title></circle>
+<circle class="accent ring" cx="618.0" cy="289.6" r="4" stroke-width="2"><title>0.5.1, opaque: 20.8 ms</title></circle>
+<line class="second-line" x1="392.0" y1="265.9" x2="505.0" y2="265.3" stroke-width="2" stroke-linecap="round"/>
+<line class="second-line" x1="505.0" y1="265.3" x2="618.0" y2="267.1" stroke-width="2" stroke-linecap="round"/>
+<circle class="second ring" cx="392.0" cy="265.9" r="4" stroke-width="2"><title>0.5.0, translucent with a blur: 28.7 ms</title></circle>
+<circle class="surface second-line" cx="505.0" cy="265.3" r="4" stroke-width="2"><title>F3-49, translucent with a blur: 28.9 ms</title></circle>
+<circle class="second ring" cx="618.0" cy="267.1" r="4" stroke-width="2"><title>0.5.1, translucent with a blur: 28.3 ms</title></circle>
+<text class="primary tick" x="627.0" y="293.6" font-size="11" font-weight="600">20.8</text>
+<text class="primary tick" x="627.0" y="271.1" font-size="11" font-weight="600">28.3</text>
+</svg>

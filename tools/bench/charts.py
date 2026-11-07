@@ -5,7 +5,8 @@ appearance, and tells each mark's value as the pointer rests on it, where
 the browser shows the SVG itself.
 
 The colors: the accent blue for what the chart is about, a gray for the
-rest, which recedes; text, grid and axes in their own grays.
+rest, which recedes, and an orange for a second series beside the blue;
+text, grid and axes in their own grays.
 """
 from html import escape
 import math
@@ -22,6 +23,8 @@ STYLE = """
   .context { fill: #898781; }
   .accent-line { stroke: #2a78d6; }
   .context-line { stroke: #898781; }
+  .second { fill: #eb6834; }
+  .second-line { stroke: #eb6834; }
   .ring { stroke: #fcfcfb; }
   .budget { stroke: #52514e; }
   text { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
@@ -37,6 +40,8 @@ STYLE = """
     .context { fill: #6f6e69; }
     .accent-line { stroke: #3987e5; }
     .context-line { stroke: #6f6e69; }
+    .second { fill: #d95926; }
+    .second-line { stroke: #d95926; }
     .ring { stroke: #1a1a19; }
     .budget { stroke: #c3c2b7; }
   }
@@ -300,3 +305,101 @@ def ranges(title, subtitle, rows, unit, labels=("median", "99th percentile"), di
                      f'{weight}>{number(high, digits)}</text>')
     parts.append("</svg>")
     return "\n".join(parts)
+
+
+PANEL_GAP = 28
+PANEL_HEIGHT = 152
+PLOT_TOP = 30
+PLOT_HEIGHT = 90
+PLOT_LEFT = 38
+PLOT_RIGHT = 46
+SERIES = ("accent", "second")
+
+
+def trends(title, subtitle, columns, panels, legend=None):
+    """Small multiples of measures over releases, a panel each, two to a
+    row: `columns`, `(label, is_build)` of each release, in their order;
+    `panels`, each `{"title", "unit", "digits", "budget", "series"}`,
+    `series` one or two lists of a value for each release, or None where
+    the release has none. Each panel has one scale from 0, its budget, if
+    any, a dashed line, each release's value a dot, a build between
+    releases a ring, and the last value written beside its dot; with a
+    second series, `legend` names the two."""
+    rows = math.ceil(len(panels) / 2)
+    top = TOP + 18
+    height = top + rows * PANEL_HEIGHT + 6
+    width = (WIDTH - 32 - PANEL_GAP) / 2
+    parts = header(title, subtitle, height)
+    # The legend: the series' colors where there are two, and the ring of a
+    # build between releases.
+    x = 16
+    for index, name in enumerate(legend or []):
+        parts.append(f'<circle class="{SERIES[index]}" cx="{x + 5}" cy="{TOP + 2}" r="4"/>')
+        parts.append(f'<text class="secondary" x="{x + 14}" y="{TOP + 6}" font-size="12">{escape(name)}</text>')
+        x += 32 + 7 * len(name)
+    parts.append(f'<circle class="surface context-line" cx="{x + 5}" cy="{TOP + 2}" r="4" stroke-width="2"/>')
+    parts.append(f'<text class="secondary" x="{x + 14}" y="{TOP + 6}" font-size="12">'
+                 'a build between releases</text>')
+    for index, panel in enumerate(panels):
+        left = 16 + (index % 2) * (width + PANEL_GAP)
+        y0 = top + (index // 2) * PANEL_HEIGHT
+        parts.extend(trend_panel(panel, columns, left, y0, width))
+    parts.append("</svg>")
+    return "\n".join(parts)
+
+
+def trend_panel(panel, columns, left, y0, width):
+    """The parts of a panel of `trends`, at `left` and `y0`, `width` wide."""
+    parts = [f'<text class="primary" x="{left:.1f}" y="{y0 + 14}" font-size="12" '
+             f'font-weight="600">{escape(panel["title"])}</text>']
+    digits, unit, budget = panel.get("digits", 1), panel.get("unit", ""), panel.get("budget")
+    values = [v for series in panel["series"] for v in series if v is not None]
+    ticks = nice_ticks(max(values + ([budget] if budget else [])), 3)
+    plot_left, plot_right = left + PLOT_LEFT, left + width - PLOT_RIGHT
+    plot_top, plot_bottom = y0 + PLOT_TOP, y0 + PLOT_TOP + PLOT_HEIGHT
+    ys = lambda value: plot_bottom - value / ticks[-1] * PLOT_HEIGHT
+    step = (plot_right - plot_left) / max(len(columns) - 1, 1)
+    xs = lambda index: plot_left + index * step
+    for tick in ticks:
+        y = ys(tick)
+        parts.append(f'<line class="grid" x1="{plot_left:.1f}" y1="{y:.1f}" x2="{plot_right:.1f}" '
+                     f'y2="{y:.1f}" stroke-width="1"/>')
+        parts.append(f'<text class="muted tick" x="{plot_left - 6:.1f}" y="{y + 3.5:.1f}" font-size="10" '
+                     f'text-anchor="end">{compact(tick)}</text>')
+    for index, (label, build) in enumerate(columns):
+        style = ' font-style="italic"' if build else ""
+        parts.append(f'<text class="muted" x="{xs(index):.1f}" y="{plot_bottom + 15:.1f}" font-size="10" '
+                     f'text-anchor="middle"{style}>{escape(label)}</text>')
+    if budget:
+        y = ys(budget)
+        parts.append(f'<line class="budget" x1="{plot_left:.1f}" y1="{y:.1f}" x2="{plot_right:.1f}" '
+                     f'y2="{y:.1f}" stroke-width="1.5" stroke-dasharray="4 3">'
+                     f'<title>budget: {budget:g} {escape(unit)}</title></line>')
+        parts.append(f'<text class="secondary" x="{plot_right:.1f}" y="{y - 5:.1f}" font-size="10" '
+                     f'text-anchor="end">budget {budget:g}</text>')
+    ends = []
+    for which, series in enumerate(panel["series"]):
+        tone = SERIES[which]
+        points = [(xs(i), ys(v), v, columns[i]) for i, v in enumerate(series) if v is not None]
+        # The line, through the releases that have a value, one after another.
+        for (x1, y1, _, _), (x2, y2, _, _) in zip(points, points[1:]):
+            parts.append(f'<line class="{tone}-line" x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" '
+                         f'y2="{y2:.1f}" stroke-width="2" stroke-linecap="round"/>')
+        name = panel.get("names", [None, None])[which]
+        for x, y, value, (label, build) in points:
+            tip = f'{escape(label)}{", " + escape(name) if name else ""}: {number(value, digits)} {escape(unit)}'
+            # A release's dot of its series' color in a ring of the surface; a
+            # build's a ring of the color.
+            style = f"surface {tone}-line" if build else f"{tone} ring"
+            parts.append(f'<circle class="{style}" cx="{x:.1f}" cy="{y:.1f}" r="4" '
+                         f'stroke-width="2"><title>{tip}</title></circle>')
+        if points:
+            ends.append(points[-1])
+    # The last value of each series beside its dot, but where two would meet,
+    # the first series' alone, the legend and the tooltips telling the rest.
+    if len(ends) == 2 and abs(ends[0][1] - ends[1][1]) < 13:
+        ends = ends[:1]
+    for x, y, value, _ in ends:
+        parts.append(f'<text class="primary tick" x="{x + 9:.1f}" y="{y + 4:.1f}" font-size="11" '
+                     f'font-weight="600">{number(value, digits)}</text>')
+    return parts

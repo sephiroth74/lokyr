@@ -1,8 +1,57 @@
 # The releases' benchmarks side by side
 
-Every release's measures in one table, and the build under way, each column of the A/B that measured it against the release before, at F2-134's conditions: Menlo at 13 points, 120 × 40 cells, an opaque window, the main display at 60 Hz. Each release's notes tell the features that it brought and what they cost, as its session found. Each release's session adds its column and its notes here, the window's motion among its measures, as the user asked on 6 November 2026.
+Every release's measures, at a glance and in one table, and the build under way, each column of the A/B that measured it against the release before, at F2-134's conditions: Menlo at 13 points, 120 × 40 cells, an opaque window, the main display at 60 Hz. Each release's notes tell the features that it brought and what they cost, as its session found. Each release's session adds its column and its notes here, the window's motion among its measures, as the user asked on 6 November 2026, and its values to [releases.json](releases.json), the data of the summary and the charts below, which `just release-charts` draws again.
 
 Measures of different sessions compare within a few percent alone: a session's load and display move them, as each report tells; the A/B of a release against the one before, in one session of balanced orders, is what tells a cost. The window's motion, a drag by the titlebar and a live resize along a sine of 200 points, is measured as [F3-152](motion-F3-152.md) measures it, of its config, Menlo at 20 points, 88 × 27 cells.
+
+<!-- The summary and the charts, which tools/bench/releases.py writes from releases.json: edit those, not this. -->
+
+## At a glance
+
+0.5.1 against 0.5.0, both measured in 0.5.1's session, [ab-F3-190](ab-F3-190.md): each measure's change, the share of its budget, and whether it is as before, better, or worse beyond its rounds' spread.
+
+| Measure | 0.5.0 | 0.5.1 | Change | Budget | |
+|---|---|---|---|---|---|
+| Startup, its gap to the minimal app's first window | 13.4 ms | 26.6 ms | +13.2 ms, +99 % | ≤ 35 ms, 76 % of it | ⚠️ Worse, within its budget |
+| Latency, a key to its echo, p50 | 18.9 ms | 18.9 ms | ±0.0 ms, ±0 % | — | ✅ As before |
+| Latency, a key to its echo, p99 | 46.6 ms | 48.6 ms | +2.0 ms, +4 % | — | ✅ As before |
+| Memory at rest, without the GPU's | 25.7 MB | 26.1 MB | +0.5 MB, +2 % | ≤ 35 MB, 75 % of it | ✅ As before |
+| Idle, interrupt wakeups | 0.35/s | 0.35/s | ±0.00/s, ±0 % | ≤ 0.5/s, 70 % of it | ✅ As before |
+| Idle, package idle wakeups | 0.00/s | 0.00/s | ±0.00/s | ≤ 0/s | ✅ As before |
+| `cat` of 1 GiB of ASCII on screen | 330.0 MiB/s | 318.6 MiB/s | −11.4 MiB/s, −3 % | — | ✅ As before |
+| `seq 1 10000000` | 218.9 MiB/s | 219.6 MiB/s | +0.7 MiB/s, +0 % | — | ✅ As before |
+| Colored text, SGR | 290.5 MiB/s | 287.4 MiB/s | −3.1 MiB/s, −1 % | — | ✅ As before |
+| CJK and emoji | 218.2 MiB/s | 213.7 MiB/s | −4.5 MiB/s, −2 % | — | ✅ As before |
+| A frame on the CPU, ASCII, p50 | 0.270 ms | 0.270 ms | +0.001 ms, +0 % | — | ✅ As before |
+| A frame on the CPU, CJK and emoji, p50 | 0.44 ms | 0.72 ms | +0.28 ms, +63 % | — | ⚠️ Worse |
+| A drag of the window, opaque, frames a second | 57.4/s | 58.0/s | +0.6/s, +1 % | — | ✅ As before |
+| A drag of the window, translucent with a blur, frames a second | 57.2/s | 58.0/s | +0.8/s, +1 % | — | ✅ As before |
+| A live resize, opaque, frames a second | 55.8/s | 56.2/s | +0.4/s, +1 % | — | ✅ As before |
+| A live resize, translucent with a blur, frames a second | 56.2/s | 56.5/s | +0.3/s, +1 % | — | ✅ As before |
+| A live resize, opaque, refreshes missed of 600 | 36.5 | 31.5 | −5.0, −14 % | — | ✅ As before |
+| A live resize, translucent with a blur, refreshes missed of 600 | 32.0 | 30.0 | −2.0, −6 % | — | ✅ As before |
+| A live resize, opaque, the compositor's delay, p95 | 14.3 ms | 20.8 ms | +6.5 ms, +45 % | — | ⚠️ Worse |
+| A live resize, translucent with a blur, the compositor's delay, p95 | 13.0 ms | 28.3 ms | +15.3 ms, +118 % | — | ⚠️ Worse |
+
+The latency's budgets, 2 refreshes at the p50 and 4.5 at the p99, are of a display at 120 Hz, which these sessions at 60 Hz do not measure.
+
+## Over the releases
+
+Each measure over the releases, a dot of each release and a ring of a build between two, its budget a dashed line, of the columns of [the table](#every-measure): different sessions, which compare within a few percent alone.
+
+![Starting and typing: the startup's gap to a minimal app's first window; a key to its echo on screen, at 60 Hz](releases/start.svg)
+
+![At rest: a window idle, its memory without the GPU's and its wakeups](releases/rest.svg)
+
+![Output on screen: the throughput of four workloads, MiB/s, higher is better](releases/output.svg)
+
+![A frame on the CPU: the CPU's time of a frame of steady output, p50, ms](releases/frames.svg)
+
+![The window's motion: a drag by the titlebar and a live resize along a sine, 60 Hz](releases/motion.svg)
+
+<!-- The end of what tools/bench/releases.py writes. -->
+
+## Every measure
 
 | Measure | F2, 0.1.0 | 0.2.0 | 0.3.0 | 0.4.0 | 0.5.0 | After F3-49 | 0.5.1 | Budget |
 |---|---|---|---|---|---|---|---|---|
