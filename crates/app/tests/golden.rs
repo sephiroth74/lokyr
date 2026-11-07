@@ -303,9 +303,10 @@ fn selection() -> Vec<Scene> {
 }
 
 /// A pane's text, and the same faded toward its background, as a pane's
-/// that has not the keyboard, of the splits' default fade.
+/// that has not the keyboard, of the splits' default fade: an emoji of its
+/// own colors too, faded as an opacity over its cell.
 fn dimmed() -> Vec<Scene> {
-    let text = "plain \x1b[31mred\x1b[0m \x1b[1;32mbold green\x1b[0m \x1b[44m on blue \x1b[0m";
+    let text = "plain \x1b[31mred\x1b[0m \x1b[1;32mbold green\x1b[0m \x1b[44m on blue \x1b[0m 🍎";
     [None, Some(0.15)]
         .into_iter()
         .map(|fade| Scene {

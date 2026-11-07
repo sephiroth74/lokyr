@@ -2,7 +2,7 @@
 //! its terminal.
 
 use lokyr_render_core::{
-    AtlasRegion, CellBatch, CellCursor, CellGlyph, CellLine, Color, CursorShape, LineStyle,
+    AtlasRegion, CellBatch, CellCursor, CellGlyph, CellLine, Color, CursorShape, LineStyle, Texture,
 };
 use lokyr_text_core::CellMetrics;
 use lokyr_vt_core::page::{self, Content, Rgb, Style, Width};
@@ -1281,7 +1281,9 @@ fn style_colors(
 /// background `toward` by `share`, from 0, not at all, to 1: its text, its
 /// lines, its cursor and its cells' own backgrounds, each of its own
 /// opacity, so that the cells of the default background stay clear over a
-/// translucent window, as a rectangle over them would not.
+/// translucent window, as a rectangle over them would not; a glyph of its
+/// own colors, as an emoji, whose color the renderer takes the opacity of
+/// alone, takes the fade as an opacity over its faded cell.
 pub fn fade(batch: &mut CellBatch, toward: Color, share: f32) {
     let share = share.clamp(0.0, 1.0);
     if share <= 0.0 {
@@ -1298,6 +1300,9 @@ pub fn fade(batch: &mut CellBatch, toward: Color, share: f32) {
     }
     for glyph in &mut batch.glyphs {
         glyph.color = faded(glyph.color);
+        if glyph.region.texture == Texture::Color {
+            glyph.color.alpha *= 1.0 - share;
+        }
     }
     for line in &mut batch.lines {
         line.color = faded(line.color);
