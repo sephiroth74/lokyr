@@ -222,6 +222,9 @@ struct Find {
     /// Whether its field, opened anew, waits for its text, which it takes
     /// as it takes the keys, once its view is there.
     filling: bool,
+    /// The count's text as the bar showed it last, which a new search
+    /// leaves until it tells something sure.
+    shown: String,
 }
 
 impl Find {
@@ -239,6 +242,7 @@ impl Find {
             current: None,
             invalid: false,
             filling: false,
+            shown: String::new(),
         }
     }
 
@@ -571,10 +575,15 @@ impl Plugin for Search {
     /// The bar, and its recent searches' menu.
     fn render(&mut self, cx: &mut Cx<'_>, view: &ViewId) -> Option<Node> {
         if *view == bar() {
-            let find = self.find.as_ref()?;
+            let find = self.find.as_mut()?;
+            // The count of before stays while the search tells nothing sure,
+            // as at each key typed, so that it does not flicker.
+            if let Some(count) = count(cx, find) {
+                find.shown = count;
+            }
             let view = BarView {
                 options: find.options,
-                count: count(cx, find),
+                count: find.shown.clone(),
             };
             let texts = texts(cx);
             return Some(find_bar(&view, &texts));
@@ -716,24 +725,27 @@ fn texts(cx: &mut Cx<'_>) -> BarTexts {
     }
 }
 
-/// The count of `find`'s matches, as its bar tells it: none of no text; a
-/// refused query; no result, or the search under way, of none yet; the
-/// current match's place among them, of short numbers past 9999, `…`
-/// while the search goes on.
-fn count(cx: &mut Cx<'_>, find: &Find) -> String {
+/// The count of `find`'s matches, as its bar tells it, if its search
+/// tells something sure: none of no text; a refused query; no result, once
+/// it went to its end of none; the current match's place among them, of
+/// short numbers past 9999, `…` while the search goes on. `None` while it
+/// has found nothing yet, and goes on: the count of before stays, or
+/// `Searching…` of none before.
+fn count(cx: &mut Cx<'_>, find: &Find) -> Option<String> {
     if find.text.is_empty() {
-        return String::new();
+        return Some(String::new());
     }
     if find.invalid {
-        return message(cx, "find-invalid", &[]);
+        return Some(message(cx, "find-invalid", &[]));
     }
     if find.count == 0 {
-        let id = if find.done {
-            "find-none"
+        return if find.done {
+            Some(message(cx, "find-none", &[]))
+        } else if find.shown.is_empty() {
+            Some(message(cx, "find-searching", &[]))
         } else {
-            "find-searching"
+            None
         };
-        return message(cx, id, &[]);
     }
     let count = short(find.count);
     let told = match find.current_index() {
@@ -747,11 +759,11 @@ fn count(cx: &mut Cx<'_>, find: &Find) -> String {
         }
         None => message(cx, "find-count-unknown", &[("count", &count)]),
     };
-    if find.done {
+    Some(if find.done {
         told
     } else {
         format!("{told}…")
-    }
+    })
 }
 
 impl Search {

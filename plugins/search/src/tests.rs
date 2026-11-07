@@ -421,3 +421,52 @@ fn the_count_keeps_its_width_of_short_numbers_past_9999() {
     assert_eq!(short(100_000), "100K");
     assert_eq!(short(3_400_000), "3M");
 }
+
+#[test]
+fn the_count_of_before_stays_until_a_new_search_tells_something_sure() {
+    let (mut host, mut plugin) = host(&ROWS, Data::Nil);
+    run(&mut host, &mut plugin, OPEN);
+    // The first search, before it tells: searching, of no count before.
+    host.ui_event(
+        &mut plugin,
+        &UiEvent {
+            view: bar(),
+            key: Key::from(FIELD),
+            kind: UiEventKind::InputChanged {
+                text: "needle".to_owned(),
+                revision: 1,
+            },
+        },
+    )
+    .unwrap();
+    assert_eq!(count(&mut host, &mut plugin), "Searching…");
+    host.deliver(&mut plugin).unwrap();
+    assert_eq!(count(&mut host, &mut plugin), "3 of 3");
+    // A key typed, and a toggle: the count of before stays until the new
+    // search tells, rather than flicker.
+    for kind in [
+        UiEventKind::InputChanged {
+            text: "needles".to_owned(),
+            revision: 2,
+        },
+        UiEventKind::Toggle { on: true },
+    ] {
+        let key = match kind {
+            UiEventKind::Toggle { .. } => CASE,
+            _ => FIELD,
+        };
+        let before = count(&mut host, &mut plugin);
+        host.ui_event(
+            &mut plugin,
+            &UiEvent {
+                view: bar(),
+                key: Key::from(key),
+                kind,
+            },
+        )
+        .unwrap();
+        assert_eq!(count(&mut host, &mut plugin), before);
+        host.deliver(&mut plugin).unwrap();
+        assert_eq!(count(&mut host, &mut plugin), "No results");
+    }
+}
