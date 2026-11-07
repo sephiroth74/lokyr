@@ -17,19 +17,21 @@ fn three_tabs(style: &str, position: &str) -> (Fake, App, WindowId) {
 /// The app of a window of `count` tabs, the last one active, its bar of
 /// the `style` at `position`, drawn.
 fn tabs_of(style: &str, position: &str, count: usize) -> (Fake, App, WindowId) {
-    tabs_running(style, position, count, idle())
+    tabs_running(style, position, count, idle(), "")
 }
 
 /// The app of a window of `count` tabs running `program`, the last one
-/// active, its bar of the `style` at `position`, drawn.
+/// active, its bar of the `style` at `position`, drawn, of the config's
+/// `more` sections.
 fn tabs_running(
     style: &str,
     position: &str,
     count: usize,
     program: lokyr_pty::Program,
+    more: &str,
 ) -> (Fake, App, WindowId) {
     let config = Config::parse(
-        &format!("[plugins.tabs]\nstyle = \"{style}\"\nposition = \"{position}\"\n"),
+        &format!("[plugins.tabs]\nstyle = \"{style}\"\nposition = \"{position}\"\n{more}"),
         std::path::Path::new("config.toml"),
     )
     .unwrap();
@@ -535,7 +537,7 @@ fn bar_labels(app: &App, window: WindowId) -> Vec<String> {
 #[test]
 fn a_single_tab_s_title_shows_its_window_s_bell_until_the_window_takes_the_focus() {
     let ringing = shell("echo ready; read line; printf '\\a'; read line");
-    let (mut fake, mut app, window) = tabs_running("unified", "top", 1, ringing);
+    let (mut fake, mut app, window) = tabs_running("unified", "top", 1, ringing, "");
     let rang = |app: &App| bar_labels(app, window).contains(&"Bell".to_owned());
     assert!(!rang(&app));
     fake.send(&mut app, window, WindowEvent::Focused(false));
@@ -609,6 +611,56 @@ fn the_pointer_keeps_its_shape_while_a_tab_is_dragged() {
     );
     assert_eq!(held(&fake), None);
     fake.send(&mut app, window, click(false, along, none, 1));
+}
+
+#[test]
+fn the_keyboard_stays_where_it_was_while_a_tab_is_dragged_over_another_pane() {
+    use lokyr_kernel::workspace::Layout;
+    let none = Modifiers::NONE;
+    let follows = "[plugins.splits]\nfocus-follows-mouse = true\n";
+    let (mut fake, mut app, window) = tabs_running("unified", "top", 2, idle(), follows);
+    let ids = order(&app, window);
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    let goto = |index: i64| {
+        let mut args = Args::new();
+        args.insert(
+            "index".to_owned(),
+            lokyr_kernel::commands::Value::Integer(index),
+        );
+        args
+    };
+    // The first tab split, side by side, its keyboard in its new pane.
+    app.run(&mut fake, "tabs.goto", goto(1));
+    let mut right = Args::new();
+    right.insert(
+        "direction".to_owned(),
+        lokyr_kernel::commands::Value::String("right".to_owned()),
+    );
+    app.run(&mut fake, "splits.split", right);
+    run_until(&mut fake, &mut app, |_, app| {
+        matches!(shown_layout(app, window), Layout::Split { .. })
+    });
+    app.run(&mut fake, "tabs.goto", goto(2));
+    settle(&mut fake, &mut app);
+    // The second tab out of its bar, the first showing, then over the
+    // pane of the first without its keyboard.
+    let second = middle_of(&fake, &app, window, &tab_key(ids[1]));
+    fake.send(&mut app, window, click(true, second, none, 1));
+    fake.send(&mut app, window, moved(Point { y: 300.0, ..second }, none));
+    settle(&mut fake, &mut app);
+    assert_eq!(active(&app, window), ids[0]);
+    let focused = app.focused(window).unwrap();
+    let other = app.windows[&window].views[0].pane;
+    assert_ne!(other, focused);
+    let (over, _) = in_pane(&fake, &app, window, (0.5, 0.5));
+    fake.send(&mut app, window, moved(over, none));
+    assert_eq!(app.focused(window), Some(focused));
+    fake.send(
+        &mut app,
+        window,
+        key_event(KeyCode::Escape, "\u{1b}", none, true),
+    );
+    fake.send(&mut app, window, click(false, over, none, 1));
 }
 
 /// The layout of `window`'s active tab.

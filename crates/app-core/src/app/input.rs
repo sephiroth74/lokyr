@@ -788,15 +788,17 @@ impl<B: Backend> App<B> {
             .windows
             .get(&window)
             .is_some_and(|state| state.mouse.held().is_some());
+        // A slot's view under the pointer takes its move, unless a press
+        // over the panes holds it, as does a panel over them, and a view
+        // whose press holds the pointer, as a tab's drag over the panes.
+        let taken = !dragging && !held && self.surface_moved(platform, window, position);
         // The keyboard follows the pointer to the pane that it comes over,
-        // as a plugin asks, but in a drag.
-        if !dragging && !held && self.plugins.focus_follows_mouse() {
+        // as a plugin asks, but in a drag, and where a view takes the move.
+        if !dragging && !held && !taken && self.plugins.focus_follows_mouse() {
             self.follow_pointer(platform, window, position);
         }
-        // A slot's view under the pointer takes its move, unless a press
-        // over the panes holds it; the plugins that follow the pointer learn
-        // that it left the panes.
-        if !dragging && !held && self.surface_moved(platform, window, position) {
+        // The plugins that follow the pointer learn that it left the panes.
+        if taken {
             self.tell_pointer(platform, window, None, mods);
             return;
         }

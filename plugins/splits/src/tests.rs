@@ -222,8 +222,11 @@ fn a_zoom_toggles_and_equalize_swap_and_moves_change_the_tab() {
             pane: Some(third),
         }]
     );
-    // Zoomed, the keyboard goes nowhere by direction, and the zoom ends.
+    // Zoomed, the keyboard goes nowhere, by direction, to the next or to
+    // the previous pane, and the zoom ends.
     assert_eq!(run(&mut host, &mut plugin, FOCUS, towards("up", None)), []);
+    assert_eq!(run(&mut host, &mut plugin, FOCUS_NEXT, Args::new()), []);
+    assert_eq!(run(&mut host, &mut plugin, FOCUS_PREV, Args::new()), []);
     assert_eq!(
         run(&mut host, &mut plugin, ZOOM, Args::new()),
         [Request::Zoom {

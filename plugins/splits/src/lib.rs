@@ -226,6 +226,9 @@ impl Plugin for Splits {
                 Some(next) => cx.focus_pane(next),
                 None => Ok(()),
             },
+            // Zoomed, the keyboard stays with the pane that shows, as it
+            // does by direction, rather than go to one that the zoom hides.
+            FOCUS_NEXT | FOCUS_PREV if tab.zoomed.is_some() => Ok(()),
             FOCUS_NEXT | FOCUS_PREV => {
                 let panes = &tab.panes;
                 let Some(at) = panes.iter().position(|&shown| shown == pane) else {
