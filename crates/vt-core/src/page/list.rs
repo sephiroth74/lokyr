@@ -526,6 +526,13 @@ impl PageList {
         }
     }
 
+    /// Row `row` of the page with `id`, warm or cold, if the page is in the
+    /// list and has that row, found without a walk of the list.
+    pub fn row_of(&self, id: PageId, row: u16) -> Option<ListRow<'_>> {
+        let node = self.node_of(id)?;
+        (row < self.node_len(node)).then(|| self.list_row(node, row))
+    }
+
     /// The index in the list, oldest first, of row `row` of the page with
     /// `id`, if the page is in the list and has that row.
     pub fn row_index(&self, id: PageId, row: u16) -> Option<usize> {

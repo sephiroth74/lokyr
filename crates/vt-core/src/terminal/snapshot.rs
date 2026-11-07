@@ -395,6 +395,7 @@ impl Terminal {
         }
         snapshot.selection = self.selection_in_snapshot(&snapshot.changed);
         snapshot.decorations = self.decorated_view();
+        self.drop_rewritten_matches();
         snapshot.highlights = self.highlighted_view();
         copied
     }

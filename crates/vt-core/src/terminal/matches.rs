@@ -4,13 +4,16 @@
 //! reading order; and which the view shows as highlights, as the embedder
 //! asks, the current one apart. Their cells are pins, which keep their text
 //! as output scrolls it into the scrollback and a resize reflows it, and go
-//! with it. However many they are, a snapshot finds those of the view by
-//! a binary search.
+//! with it; a match whose cells a program writes other text over where they
+//! are, as a full-screen program redraws, is one no more. However many they
+//! are, a snapshot finds those of the view by a binary search.
 
 use std::collections::BTreeMap;
+use std::hash::{DefaultHasher, Hash, Hasher};
 
 use super::Terminal;
-use super::selection::CellPin;
+use super::selection::{CellPin, row_at};
+use crate::page::Content;
 
 /// A span of a search's matches, as the view shows it: the cells of a row
 /// of the view from a column to another, both included.
@@ -30,8 +33,9 @@ pub struct Highlighted {
 /// numbers.
 pub type MatchCells = ((u16, i64), (u16, i64));
 
-/// A match's first and last cells' pins.
-type Span = (CellPin, CellPin);
+/// A match's first and last cells' pins, and the print of its text as the
+/// search found it.
+type Span = (CellPin, CellPin, u64);
 
 /// The first place in reading order of a match that keeps its text, after
 /// those whose text left.
@@ -57,6 +61,16 @@ impl Terminal {
     /// [`Terminal::drop_matches`] lets them go. The view does not show
     /// them until [`Terminal::show_matches`].
     pub fn add_matches(&mut self, id: u64, part: i64, found: Vec<(CellPin, CellPin)>) {
+        let mut spans = Vec::with_capacity(found.len());
+        for (start, end) in found {
+            match self.span_print(&start, &end) {
+                Some(print) => spans.push((start, end, print)),
+                None => {
+                    self.unpin_cell(&start);
+                    self.unpin_cell(&end);
+                }
+            }
+        }
         let at = match self.matches.iter().position(|kept| kept.id == id) {
             Some(at) => at,
             None => {
@@ -73,7 +87,7 @@ impl Terminal {
             .parts
             .entry(part)
             .or_default()
-            .extend(found);
+            .extend(spans);
     }
 
     /// Lets the matches of the search `id` go, and its current match.
@@ -82,7 +96,7 @@ impl Terminal {
             return;
         };
         let gone = self.matches.swap_remove(at);
-        for (start, end) in gone.parts.into_values().flatten().chain(gone.current) {
+        for (start, end, _) in gone.parts.into_values().flatten().chain(gone.current) {
             self.unpin_cell(&start);
             self.unpin_cell(&end);
         }
@@ -101,7 +115,7 @@ impl Terminal {
             .values()
             .flatten()
             .skip(gone)
-            .filter_map(|span| self.span_cells(span))
+            .filter_map(|span| self.kept_cells(span))
             .skip(first)
             .take(count)
             .collect()
@@ -120,7 +134,7 @@ impl Terminal {
         let current = kept
             .current
             .as_ref()
-            .and_then(|span| self.span_cells(span))
+            .and_then(|span| self.kept_cells(span))
             .map(|cells| {
                 let before = self.spans_before(kept, (cells.0.1, cells.0.0));
                 (before.saturating_sub(gone), cells)
@@ -159,18 +173,22 @@ impl Terminal {
         let Some(at) = self.matches.iter().position(|kept| kept.id == id) else {
             return false;
         };
-        if let Some((start, end)) = self.matches[at].current.take() {
+        if let Some((start, end, _)) = self.matches[at].current.take() {
             self.unpin_cell(&start);
             self.unpin_cell(&end);
         }
         let pinned = current
             .filter(|&(from, to)| (from.1, from.0) <= (to.1, to.0))
             .and_then(|(from, to)| {
+                let print = self.text_print((from, to));
                 let start = self.pin_cell(from)?;
-                match self.pin_cell(to) {
-                    Some(end) => Some((start, end)),
-                    None => {
+                match (self.pin_cell(to), print) {
+                    (Some(end), Some(print)) => Some((start, end, print)),
+                    (end, _) => {
                         self.unpin_cell(&start);
+                        if let Some(end) = end {
+                            self.unpin_cell(&end);
+                        }
                         None
                     }
                 }
@@ -190,10 +208,11 @@ impl Terminal {
     }
 
     /// The spans that the view shows of the matches shown, row by row, and
-    /// of the current matches, apart; nothing, and no cost, without them.
-    /// Those of the view are found by a binary search, as their matches lie
-    /// in reading order: of their last cells' rows, of those whose text
-    /// left before the others, as the oldest rows leave first.
+    /// of the current matches, apart, of those whose cells hold the text
+    /// that the search found; nothing, and no cost, without them. Those of
+    /// the view are found by a binary search, as their matches lie in
+    /// reading order: of their last cells' rows, of those whose text left
+    /// before the others, as the oldest rows leave first.
     pub(super) fn highlighted_view(&self) -> Vec<Highlighted> {
         if self
             .matches
@@ -206,34 +225,13 @@ impl Terminal {
         let bottom = top + i64::from(self.rows) - 1;
         let mut spans = Vec::new();
         for kept in &self.matches {
-            let current = kept.current.as_ref().and_then(|span| self.span_cells(span));
+            let current = kept.current.as_ref().and_then(|span| self.kept_cells(span));
             if kept.shown {
-                let parts: Vec<&Vec<Span>> = kept
-                    .parts
-                    .values()
-                    .filter(|part| !part.is_empty())
-                    .collect();
-                // The row of a match's last cell; before every row, of a
-                // match whose text left.
-                let row = |span: &Span| self.pinned_cell(&span.1).map_or(i64::MIN, |at| at.1);
-                let first_part =
-                    parts.partition_point(|part| part.last().is_some_and(|span| row(span) < top));
-                let mut first = parts
-                    .get(first_part)
-                    .map_or(0, |part| part.partition_point(|span| row(span) < top));
-                'parts: for part in parts.iter().skip(first_part) {
-                    for span in &part[first..] {
-                        let Some(cells) = self.span_cells(span) else {
-                            continue;
-                        };
-                        if cells.0.1 > bottom {
-                            break 'parts;
-                        }
-                        if Some(cells) != current {
-                            self.spans_of(cells, (top, bottom), false, &mut spans);
-                        }
+                for (part, index, cells) in self.in_view(kept, (top, bottom)) {
+                    let span = &kept.parts[&part][index];
+                    if Some(cells) != current && self.span_print(&span.0, &span.1) == Some(span.2) {
+                        self.spans_of(cells, (top, bottom), false, &mut spans);
                     }
-                    first = 0;
                 }
             }
             if let Some(cells) = current {
@@ -243,12 +241,141 @@ impl Terminal {
         spans
     }
 
-    /// Where `span`'s cells are now, if its text is still there, its first
+    /// Where `span`'s cells are now, if they are still there, its first
     /// not after its last, as a move of the rows between them, as a scroll
     /// region's, can have put them.
-    fn span_cells(&self, (start, end): &Span) -> Option<MatchCells> {
+    fn span_cells(&self, (start, end, _): &Span) -> Option<MatchCells> {
+        self.pins_cells(start, end)
+    }
+
+    /// Where the cells of the pins `start` and `end` are now, as
+    /// [`Terminal::span_cells`] tells them.
+    fn pins_cells(&self, start: &CellPin, end: &CellPin) -> Option<MatchCells> {
         let (start, end) = (self.pinned_cell(start)?, self.pinned_cell(end)?);
         ((start.1, start.0) <= (end.1, end.0)).then_some((start, end))
+    }
+
+    /// Where `span`'s cells are now, if they still hold the text that the
+    /// search found there.
+    fn kept_cells(&self, span: &Span) -> Option<MatchCells> {
+        let cells = self.span_cells(span)?;
+        (self.span_print(&span.0, &span.1)? == span.2).then_some(cells)
+    }
+
+    /// The print of the text of the cells from the pin `start` to `end`:
+    /// of a match on a row, read where the pins are, without a walk of the
+    /// list; of one across rows, as [`Terminal::text_print`] reads it.
+    fn span_print(&self, start: &CellPin, end: &CellPin) -> Option<u64> {
+        let (from, to) = (self.pin_place(start)?, self.pin_place(end)?);
+        if (from.page, from.row) == (to.page, to.row) && from.col <= to.col {
+            let row = self.screen().rows.row_of(from.page, from.row)?;
+            let mut hasher = DefaultHasher::new();
+            for x in from.col..=to.col.min(row.cols() - 1) {
+                hash_cell(&mut hasher, row.cell(x).content(), row.grapheme(x));
+            }
+            return Some(hasher.finish());
+        }
+        self.text_print(self.pins_cells(start, end)?)
+    }
+
+    /// The print of the text of the cells from `start` to `end`, in reading
+    /// order, a cell without a character a space; `None` of a row that the
+    /// active screen does not hold.
+    fn text_print(&self, (start, end): MatchCells) -> Option<u64> {
+        let mut hasher = DefaultHasher::new();
+        let rows = &self.screen().rows;
+        for number in start.1..=end.1 {
+            let row = row_at(rows, self.row_index(number)?)?;
+            let first = if number == start.1 { start.0 } else { 0 };
+            let last = if number == end.1 {
+                end.0
+            } else {
+                row.cols() - 1
+            };
+            for x in first..=last.min(row.cols() - 1) {
+                hash_cell(&mut hasher, row.cell(x).content(), row.grapheme(x));
+            }
+        }
+        Some(hasher.finish())
+    }
+
+    /// Lets go the matches of the view whose cells hold other text than the
+    /// search found there, as a program writes over them where they are,
+    /// and a current match's, their pins going, so that the matches' reads
+    /// and places leave them out; nothing, and no cost, without matches
+    /// shown.
+    pub(super) fn drop_rewritten_matches(&mut self) {
+        if self
+            .matches
+            .iter()
+            .all(|kept| !kept.shown && kept.current.is_none())
+        {
+            return;
+        }
+        let top = self.origin().top;
+        let bottom = top + i64::from(self.rows) - 1;
+        let mut gone = Vec::new();
+        for at in 0..self.matches.len() {
+            let kept = &self.matches[at];
+            let rewritten: Vec<(i64, usize)> = self
+                .in_view(kept, (top, bottom))
+                .into_iter()
+                .filter(|&(part, index, _)| {
+                    let span = &kept.parts[&part][index];
+                    self.span_print(&span.0, &span.1) != Some(span.2)
+                })
+                .map(|(part, index, _)| (part, index))
+                .collect();
+            let current_rewritten = kept.current.as_ref().is_some_and(|span| {
+                self.span_cells(span).is_some() && self.span_print(&span.0, &span.1) != Some(span.2)
+            });
+            let kept = &mut self.matches[at];
+            for (part, index) in rewritten.into_iter().rev() {
+                if let Some(spans) = kept.parts.get_mut(&part) {
+                    gone.push(spans.remove(index));
+                }
+            }
+            if current_rewritten {
+                gone.extend(kept.current.take());
+            }
+        }
+        for (start, end, _) in gone {
+            self.unpin_cell(&start);
+            self.unpin_cell(&end);
+        }
+    }
+
+    /// The matches of `kept` on the rows of the view, from the row numbered
+    /// `top` to `bottom`: each's part, its place in the part, and its
+    /// cells, found by a binary search of the parts, then of the first
+    /// one's matches, as they lie in reading order.
+    fn in_view(&self, kept: &Matches, (top, bottom): (i64, i64)) -> Vec<(i64, usize, MatchCells)> {
+        let parts: Vec<(i64, &Vec<Span>)> = kept
+            .parts
+            .iter()
+            .filter(|(_, part)| !part.is_empty())
+            .map(|(part, spans)| (*part, spans))
+            .collect();
+        let row = |span: &Span| self.pinned_cell(&span.1).map_or(i64::MIN, |at| at.1);
+        let first_part =
+            parts.partition_point(|(_, part)| part.last().is_some_and(|span| row(span) < top));
+        let mut first = parts
+            .get(first_part)
+            .map_or(0, |(_, part)| part.partition_point(|span| row(span) < top));
+        let mut found = Vec::new();
+        'parts: for (part, spans) in parts.iter().skip(first_part) {
+            for (index, span) in spans.iter().enumerate().skip(first) {
+                let Some(cells) = self.span_cells(span) else {
+                    continue;
+                };
+                if cells.0.1 > bottom {
+                    break 'parts;
+                }
+                found.push((*part, index, cells));
+            }
+            first = 0;
+        }
+        found
     }
 
     /// Pushes onto `spans` those of the match of `cells` on the rows of the
@@ -269,6 +396,21 @@ impl Terminal {
                 last: if row == end.1 { end.0 } else { last_column },
                 current,
             });
+        }
+    }
+}
+
+/// Adds to `hasher` a cell of `content` and `grapheme`, the codepoints of
+/// its cluster after the first, a cell without a character a space.
+fn hash_cell(hasher: &mut DefaultHasher, content: Content, grapheme: &[char]) {
+    match content {
+        Content::Char('\0') | Content::BgPalette(_) | Content::BgRgb(_) => ' '.hash(hasher),
+        Content::Char(character) => character.hash(hasher),
+        Content::Grapheme(character) => {
+            character.hash(hasher);
+            for codepoint in grapheme {
+                codepoint.hash(hasher);
+            }
         }
     }
 }
@@ -474,5 +616,49 @@ mod tests {
         assert_eq!(count, kept.len());
         // The reads skip those whose text left alike.
         assert_eq!(terminal.matches_of(1, kept.len() - 1, 5), [cells[1999]]);
+    }
+
+    #[test]
+    fn a_match_whose_text_a_program_writes_over_is_one_no_more() {
+        let mut terminal = Terminal::new(20, 3, Options::default());
+        feed(&mut terminal, "needle here\r\nneedle too");
+        let found = [((0, 0), (5, 0)), ((0, 1), (5, 1))];
+        add(&mut terminal, 1, 0, &found);
+        terminal.show_matches(1, true, Some(found[1]));
+        assert_eq!(shown(&mut terminal), [(0, 0, 5, false), (1, 0, 5, true)]);
+        // The same text written again where it is keeps it.
+        feed(&mut terminal, "\x1b[1;1Hneedle");
+        assert_eq!(shown(&mut terminal), [(0, 0, 5, false), (1, 0, 5, true)]);
+        // Other text over the first, an erase and a write as a full-screen
+        // program redraws: it goes, from the reads and the places too.
+        feed(&mut terminal, "\x1b[1;1H\x1b[2Kother text");
+        assert_eq!(shown(&mut terminal), [(1, 0, 5, true)]);
+        assert_eq!(terminal.matches_of(1, 0, 10), [found[1]]);
+        assert_eq!(terminal.current_match(1), (Some((0, found[1])), 1));
+        // The current one written over likewise.
+        feed(&mut terminal, "\x1b[2;1H\x1b[2Knothing");
+        assert_eq!(shown(&mut terminal), []);
+        assert_eq!(terminal.current_match(1), (None, 0));
+        let pins = terminal.screen_rows().pins();
+        terminal.drop_matches(1);
+        assert_eq!(terminal.screen_rows().pins(), pins);
+    }
+
+    #[test]
+    fn the_alternate_screen_s_matches_show_not_over_another_program_s_text() {
+        let mut terminal = Terminal::new(20, 3, Options::default());
+        feed(&mut terminal, "\x1b[?1049hneedle");
+        let found = [((0, terminal.row_number(0)), (5, terminal.row_number(0)))];
+        add(&mut terminal, 1, found[0].0.1, &found);
+        terminal.show_matches(1, true, None);
+        assert_eq!(shown(&mut terminal), [(0, 0, 5, false)]);
+        // Left, then a program of other text on it.
+        feed(&mut terminal, "\x1b[?1049l");
+        assert_eq!(shown(&mut terminal), []);
+        feed(&mut terminal, "\x1b[?1049h");
+        assert_eq!(shown(&mut terminal), []);
+        feed(&mut terminal, "something");
+        assert_eq!(shown(&mut terminal), []);
+        assert!(terminal.matches_of(1, 0, 10).is_empty());
     }
 }

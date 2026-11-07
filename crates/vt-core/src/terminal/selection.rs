@@ -316,7 +316,7 @@ fn class(row: ListRow<'_>, col: u16, separators: &str) -> Class {
 }
 
 /// The row at `index` of `rows`.
-fn row_at(rows: &PageList, index: usize) -> Option<ListRow<'_>> {
+pub(super) fn row_at(rows: &PageList, index: usize) -> Option<ListRow<'_>> {
     rows.rows_from(index).next()
 }
 
@@ -703,6 +703,16 @@ impl Terminal {
         let position = rows.pin_position(pin.pin)?;
         let index = rows.row_index(position.page, position.row)?;
         Some((position.col, self.row_number(index)))
+    }
+
+    /// Where `pin`'s cell is in the active screen's list, if it is of the
+    /// active screen and still there: its page, its row in the page and its
+    /// column.
+    pub(super) fn pin_place(&self, pin: &CellPin) -> Option<Position> {
+        if pin.alternate != self.alternate_active {
+            return None;
+        }
+        self.screen().rows.pin_position(pin.pin)
     }
 
     /// Whether `pin`'s cell left its screen's list, or the pin was let go.
