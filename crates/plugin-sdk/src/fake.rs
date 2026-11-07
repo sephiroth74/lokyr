@@ -458,8 +458,17 @@ impl FakeHost {
     }
 
     /// Gives the registry `commands`, of the app's and of other plugins',
-    /// which a read of the commands gives before the plugin's own.
+    /// which a read of the commands gives before the plugin's own, and
+    /// which the plugin's calls run, of no capability.
     pub fn set_registry(&mut self, commands: Vec<host::CommandInfo>) -> &mut Self {
+        self.others.extend(commands.iter().map(|info| Command {
+            name: info.name.clone(),
+            title: info.title.clone(),
+            category: info.category,
+            capabilities: Vec::new(),
+            params: info.params.clone(),
+            when: info.when.clone(),
+        }));
         self.registry = commands;
         self
     }
@@ -1532,7 +1541,10 @@ impl FakeHost {
         let (Some(uses), Some(granted)) = (&self.uses, &self.granted) else {
             return Ok(());
         };
-        if self.commands.iter().any(|own| own.name == name) {
+        // Its own, and any as the user's of `user-commands`.
+        if self.commands.iter().any(|own| own.name == name)
+            || granted.contains(&Capability::UserCommands)
+        {
             return Ok(());
         }
         if !uses.allows(name) {

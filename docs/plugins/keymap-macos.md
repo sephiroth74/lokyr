@@ -16,6 +16,7 @@ The keys that macOS's apps have taught you, bound to Lokyr's commands and to the
 | ⌘↑, ⌘↓, ⌘Page Up, ⌘Page Down, ⌘Home, ⌘End | scrolling, by a line, a page, or to the top and the bottom |
 | ⌘-click | `links.open` |
 | ⌘F, ⌘G, ⇧⌘G | `search.open`, `search.next`, `search.previous` |
+| ⇧⌘P, and ↑ and ↓ in the palette | `command-palette.open`, `command-palette.move` |
 | ⌘T, ⌘W, ⇧⌘], ⇧⌘[, ⌃Tab, ⌃⇧Tab, ⌘1 to ⌘9, ⇧⌘← and ⇧⌘→ | the tabs: new, close, next, previous, by number, move |
 | ⌘D, ⇧⌘D, ⌥⌘ and an arrow, ⌘], ⌘[, ⌃⌘ and an arrow, ⇧⌘Return | the splits: split right or down, the pane in a direction, the next and the previous pane, resize, zoom |
 

@@ -1405,6 +1405,8 @@ The defaults, of the built-in plugin `keymap-macos`, the shortcuts of macOS's ap
 | `cmd+f` | `search.open` | Opens the find bar at the top right of the pane, of your last search's text, selected, its field taking the keys, as [`[plugins.search]`](#pluginssearch) tells |
 | `cmd+g` | `search.next` | Makes the next match of the find bar's search the current one, the one above, the last after the first, and brings it into the view; it opens the bar while it is closed |
 | `cmd+shift+g` | `search.previous` | Makes the previous match the current one, the one below, the first after the last |
+| `cmd+shift+p` | `command-palette.open` | Opens the command palette, whose field ranks the commands as you type |
+| `up`, `down` | `command-palette.move` | In the command palette, while its field has the keys: moves the selection up or down the list |
 | `cmd+t` | `tabs.new` | Opens a tab in the window, after its others, which shows it; its shell starts in the folder of the pane that has the keyboard, as [`new-directory`](#new-directory) says |
 | `cmd+w` | `tabs.close` | Closes the tab, or its pane while the tab has splits; while a program other than a shell runs there, it asks you first, as closing the window does; the window's last tab closes the window, which `cmd+shift+w` closes whole |
 | `cmd+shift+]`, `ctrl+tab` | `tabs.next` | Shows the next tab, the first after the last |

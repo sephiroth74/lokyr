@@ -20,6 +20,7 @@ The catalogs, each in a folder of its language's code, `en` for English, `it` fo
 | [`plugins/tabs/locales/en/tabs.ftl`](plugins/tabs/locales/en/tabs.ftl) | The tab bar and its commands |
 | [`plugins/splits/locales/en/splits.ftl`](plugins/splits/locales/en/splits.ftl) | The panes' commands |
 | [`plugins/search/locales/en/search.ftl`](plugins/search/locales/en/search.ftl) | The find bar |
+| [`plugins/command-palette/locales/en/command-palette.ftl`](plugins/command-palette/locales/en/command-palette.ftl) | The command palette |
 
 The [`keymap-macos`](docs/plugins/keymap-macos.md) plugin has no texts of its own.
 

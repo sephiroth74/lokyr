@@ -16,7 +16,8 @@ fn it_binds_its_keys_in_their_order_and_registers_no_command() {
     host.activate(&mut KeymapMacos).unwrap();
     assert!(host.commands().is_empty());
     let (plain, rest) = host.bindings().split_at(BINDINGS.len());
-    let (windows, directed) = rest.split_at(ARGUED.len());
+    let (windows, rest) = rest.split_at(ARGUED.len());
+    let (directed, in_panels) = rest.split_at(DIRECTED.len());
     let bound: Vec<(&str, &str)> = plain
         .iter()
         .map(|binding| {
@@ -58,6 +59,24 @@ fn it_binds_its_keys_in_their_order_and_registers_no_command() {
         })
         .collect();
     assert_eq!(pointed, DIRECTED);
+    // Then those of a panel's context.
+    let panels: Vec<(&str, &str, &str, i64, &str)> = in_panels
+        .iter()
+        .map(|binding| {
+            let [(name, Value::Integer(value))] = binding.args.iter().collect::<Vec<_>>()[..]
+            else {
+                panic!("one argument, a whole number: {binding:?}");
+            };
+            (
+                binding.keys.as_str(),
+                binding.command.as_str(),
+                name.as_str(),
+                *value,
+                binding.when.as_deref().unwrap_or_default(),
+            )
+        })
+        .collect();
+    assert_eq!(panels, IN_PANELS);
 }
 
 #[test]
@@ -105,6 +124,11 @@ fn the_guide_s_table_of_the_defaults_is_the_plugin_s_keys() {
             DIRECTED
                 .iter()
                 .map(|&(keys, command, _)| (keys.to_owned(), command.to_owned())),
+        )
+        .chain(
+            IN_PANELS
+                .iter()
+                .map(|&(keys, command, ..)| (keys.to_owned(), command.to_owned())),
         )
         .collect();
     told.sort();

@@ -929,3 +929,61 @@ fn the_find_bar_searches_its_pane_steps_and_leaves_its_match_selected_as_it_clos
     assert!(highlights(&app, window).is_empty());
     assert_eq!(selected_text(&app, window).as_deref(), Some("日本"));
 }
+
+#[test]
+fn the_command_palette_opens_at_the_window_s_top_ranks_as_it_is_typed_and_runs_its_choice() {
+    let none = Modifiers::NONE;
+    let drawing = Drawing::new(FontConfig::default()).unwrap();
+    let mut fake = Fake::default();
+    let program = shell("echo ready; read line");
+    let mut app = App::new(Some(drawing), unpadded(), None).with_program(program);
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    app.windows.get_mut(&window).unwrap().surface = Some(fakes::Surface::default());
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    run_until(&mut fake, &mut app, |_, app| shows(app, window, "ready"));
+    frames(&mut fake, &mut app, window);
+    // Command-Shift-P, the keymap's.
+    let shifted = Modifiers { shift: true, ..CMD };
+    fake.send(
+        &mut app,
+        window,
+        key_event(KeyCode::KeyP, "P", shifted, true),
+    );
+    frames(&mut fake, &mut app, window);
+    let frame = panel_frame(&app, window, "command-palette").expect("the palette");
+    assert!(focused_in(&app, window, "command-palette"));
+    // At the middle of the window's top.
+    let width = fake.window(window).unwrap().size.pixels.width as f32;
+    assert!(
+        (frame.x + frame.width / 2.0 - width / 2.0).abs() <= 1.0,
+        "{frame:?} in {width}"
+    );
+    // Typed, its first command the one of the title that it matches best.
+    fake.send(
+        &mut app,
+        window,
+        WindowEvent::Ime(Ime::Commit("new win".to_owned())),
+    );
+    frames(&mut fake, &mut app, window);
+    // The arrows move the selection, down then up again.
+    fake.send(
+        &mut app,
+        window,
+        key_event(KeyCode::ArrowDown, "", none, true),
+    );
+    fake.send(
+        &mut app,
+        window,
+        key_event(KeyCode::ArrowUp, "", none, true),
+    );
+    frames(&mut fake, &mut app, window);
+    // Return runs it, the palette closed.
+    fake.send(
+        &mut app,
+        window,
+        key_event(KeyCode::Enter, "\r", none, true),
+    );
+    run_until(&mut fake, &mut app, |fake, _| fake.windows().count() == 2);
+    assert!(panel_frame(&app, window, "command-palette").is_none());
+}

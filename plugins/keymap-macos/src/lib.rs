@@ -18,7 +18,7 @@ lokyr_plugin_sdk::export_plugin!(KeymapMacos);
 /// The bindings, each of its keys and of the command that they run, in
 /// their order: a menu's item shows the first of its command's keys that no
 /// later binding takes.
-pub const BINDINGS: [(&str, &str); 36] = [
+pub const BINDINGS: [(&str, &str); 37] = [
     // The application's.
     ("cmd+,", "app.settings"),
     ("cmd+q", "app.quit"),
@@ -54,6 +54,8 @@ pub const BINDINGS: [(&str, &str); 36] = [
     ("cmd+f", "search.open"),
     ("cmd+g", "search.next"),
     ("cmd+shift+g", "search.previous"),
+    // The command palette's.
+    ("cmd+shift+p", "command-palette.open"),
     // The tabs': Command-W closes the tab, or its pane, once a tab bar
     // runs, the window's close keeping Command-Shift-W.
     ("cmd+t", "tabs.new"),
@@ -116,6 +118,28 @@ pub const DIRECTED: [(&str, &str, &str); 10] = [
     ("ctrl+cmd+down", "splits.resize", "down"),
 ];
 
+/// The bindings of a command of an argument, a whole number, that hold
+/// while a plugin's panel has the keyboard, after the others: each of its
+/// keys, the command, the argument's name and its value, and the context.
+pub const IN_PANELS: [(&str, &str, &str, i64, &str); 2] = [
+    // The command palette's arrows, through its list while its field has
+    // the keys.
+    (
+        "up",
+        "command-palette.move",
+        "delta",
+        -1,
+        "command-palette.focused",
+    ),
+    (
+        "down",
+        "command-palette.move",
+        "delta",
+        1,
+        "command-palette.focused",
+    ),
+];
+
 /// The plugin of macOS's default shortcuts.
 #[derive(Debug, Default)]
 pub struct KeymapMacos;
@@ -144,6 +168,14 @@ impl Plugin for KeymapMacos {
                 command: command.to_owned(),
                 args: Args::from([("direction".to_owned(), Value::String(direction.to_owned()))]),
                 when: None,
+            })?;
+        }
+        for (keys, command, name, value, when) in IN_PANELS {
+            cx.bind(Binding {
+                keys: keys.to_owned(),
+                command: command.to_owned(),
+                args: Args::from([(name.to_owned(), Value::Integer(value))]),
+                when: Some(when.to_owned()),
             })?;
         }
         Ok(())

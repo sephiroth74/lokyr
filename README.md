@@ -104,6 +104,7 @@ Every feature beyond the terminal itself is a plugin, and these come with the ap
 | [`tabs`](docs/plugins/tabs.md) | The tab bar: new, close, select, move, rename, color, and out to a window of its own |
 | [`splits`](docs/plugins/splits.md) | Split panes: split, focus by direction, resize, zoom, equalize, swap |
 | [`search`](docs/plugins/search.md) | The find bar: a pane's search as you type, its matches highlighted |
+| [`command-palette`](docs/plugins/command-palette.md) | The command palette: every command, ranked as you type, the recent ones first |
 
 Each page tells the plugin's commands, their keys, its config and what turning it off takes away; [the plugins' index](docs/plugins/README.md) tells how they fit together.
 

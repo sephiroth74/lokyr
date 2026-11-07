@@ -10,6 +10,7 @@ Every feature that you see in Lokyr beyond the terminal itself comes from a plug
 | [`tabs`](tabs.md) | The tab bar, and the tabs' commands |
 | [`splits`](splits.md) | Split panes, and the commands that move between them, resize and zoom them |
 | [`search`](search.md) | The find bar: a pane's search, its matches highlighted |
+| [`command-palette`](command-palette.md) | The command palette: every command, ranked as you type |
 
 The order of the table is the order in which they start, which matters for the keys alone: a later plugin's key wins over an earlier one's, and your own `[keys]` win over all of them.
 

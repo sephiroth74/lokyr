@@ -21,5 +21,7 @@ pub(crate) fn plugins() -> Vec<Registration> {
         lokyr_splits::registration(),
         #[cfg(feature = "plugin-search")]
         lokyr_search_plugin::registration(),
+        #[cfg(feature = "plugin-command-palette")]
+        lokyr_command_palette::registration(),
     ]
 }

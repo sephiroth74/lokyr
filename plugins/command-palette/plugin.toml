@@ -1,0 +1,9 @@
+# The manifest of the built-in plugin of the command palette.
+[plugin]
+name = "lokyr/command-palette"
+kind = "builtin"
+license = "MIT"
+description = "The command palette: the commands, ranked by a fuzzy search as you type, the recent ones first, run as yours"
+
+[capabilities]
+user-commands = true
