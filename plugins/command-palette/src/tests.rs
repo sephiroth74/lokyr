@@ -217,16 +217,35 @@ fn the_arrows_move_the_selection_and_a_double_click_runs_its_command() {
         },
     );
     assert_eq!(ran(&submitted), ["pane.paste"]);
-    // A click on an item runs it.
+    // A click on an item, which the menu's list activates, the selected
+    // one's too, runs it; the selection's move alone runs nothing.
     run(&mut host, &mut plugin, OPEN, Args::new());
-    let clicked = on_panel(
+    let moved = on_panel(
         &mut host,
         &mut plugin,
         LIST,
         UiEventKind::Select { item: 3 },
     );
+    assert!(ran(&moved).is_empty());
+    let clicked = on_panel(
+        &mut host,
+        &mut plugin,
+        LIST,
+        UiEventKind::Activate { item: 3 },
+    );
     assert_eq!(ran(&clicked), ["tabs.new"]);
-    // The list's own keys, while Tab gave it the keyboard, move alone.
+    // The first row, selected as the palette opens, of a click.
+    run(&mut host, &mut plugin, OPEN, Args::new());
+    let first = on_panel(
+        &mut host,
+        &mut plugin,
+        LIST,
+        UiEventKind::Activate { item: 0 },
+    );
+    // The first of the list, of the recent ones first: New Tab.
+    assert_eq!(ran(&first), ["tabs.new"]);
+    // The list's own keys, while Tab gave it the keyboard, move alone,
+    // and its row activated runs.
     run(&mut host, &mut plugin, OPEN, Args::new());
     on_panel(&mut host, &mut plugin, LIST, UiEventKind::Focus);
     let moved = on_panel(

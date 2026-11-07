@@ -557,7 +557,11 @@ impl Lists {
             return Vec::new();
         };
         let mut kinds: Vec<UiEventKind> = state.select(list, index).into_iter().collect();
-        if clicks == 2 {
+        // A menu's row takes a click, as a menu's item does, the selected
+        // one's too, and not the double click's second; another list's, a
+        // double click, its first click selecting it.
+        let activates = if list.menu { clicks == 1 } else { clicks == 2 };
+        if activates {
             kinds.push(UiEventKind::Activate { item: index });
         }
         kinds
@@ -953,6 +957,31 @@ mod tests {
         assert_eq!(click(40.0, 2), []);
         assert_eq!(click(90.0, 2), []);
         assert_eq!(state(&lists).visible(of(&tree, node)).len(), 2);
+    }
+
+    #[test]
+    fn a_menu_s_row_takes_a_click_the_selected_one_s_too() {
+        let mut root = list(5, 0..5, Some(20.0));
+        if let Kind::List(list) = &mut root.children[0].kind {
+            list.menu = true;
+        }
+        let (tree, layout, node) = laid(&root, 1.0);
+        let mut lists = Lists::new();
+        lists.lay_out(&tree, &layout, &mut Fixed);
+        let frame = layout.frame(&tree, node).unwrap();
+        let mut click =
+            |y, clicks| told(lists.press((&tree, &layout), node, ((frame.x, frame.y + y), clicks)));
+        // The first row, which a menu selects as it shows, of a click.
+        assert_eq!(click(10.0, 1), [UiEventKind::Activate { item: 0 }]);
+        // Another, selected and activated; the double click's second, none.
+        assert_eq!(
+            click(30.0, 1),
+            [
+                UiEventKind::Select { item: 1 },
+                UiEventKind::Activate { item: 1 }
+            ]
+        );
+        assert_eq!(click(30.0, 2), []);
     }
 
     #[test]

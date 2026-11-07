@@ -1018,6 +1018,51 @@ fn the_command_palette_opens_at_the_window_s_top_ranks_as_it_is_typed_and_runs_i
 }
 
 #[test]
+fn a_click_on_the_palette_s_selected_row_runs_it() {
+    let drawing = Drawing::new(FontConfig::default()).unwrap();
+    let mut fake = Fake::default();
+    let program = shell("echo ready; read line");
+    let mut app = App::new(Some(drawing), unpadded(), None).with_program(program);
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    app.windows.get_mut(&window).unwrap().surface = Some(fakes::Surface::default());
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    run_until(&mut fake, &mut app, |_, app| shows(app, window, "ready"));
+    let shifted = Modifiers { shift: true, ..CMD };
+    fake.send(
+        &mut app,
+        window,
+        key_event(KeyCode::KeyP, "P", shifted, true),
+    );
+    frames(&mut fake, &mut app, window);
+    fake.send(
+        &mut app,
+        window,
+        WindowEvent::Ime(Ime::Commit("new tab".to_owned())),
+    );
+    frames(&mut fake, &mut app, window);
+    // A click at the list's first row, New Tab, which the typing selected.
+    let scale = fake.window(window).unwrap().size.scale;
+    let list = node_frame(&app, window, "commands");
+    let at = Point {
+        x: f64::from(list.x + list.width / 2.0) / scale,
+        y: f64::from(list.y) / scale + 8.0,
+    };
+    let tabs = |app: &App| {
+        app.workspace
+            .window(app.windows[&window].window)
+            .unwrap()
+            .tabs()
+            .len()
+    };
+    assert_eq!(tabs(&app), 1);
+    fake.send(&mut app, window, click(true, at, Modifiers::NONE, 1));
+    fake.send(&mut app, window, click(false, at, Modifiers::NONE, 1));
+    run_until(&mut fake, &mut app, |_, app| tabs(app) == 2);
+    assert!(panel_frame(&app, window, "command-palette").is_none());
+}
+
+#[test]
 fn the_app_s_commands_keep_their_plugins_which_the_palette_finds_them_by() {
     let none = Modifiers::NONE;
     let drawing = Drawing::new(FontConfig::default()).unwrap();

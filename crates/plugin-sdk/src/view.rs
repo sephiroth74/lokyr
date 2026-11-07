@@ -335,7 +335,8 @@ pub struct List {
     /// hovered, and the selection a band of rounded corners inset from its
     /// edges, of the accent's whether the list has the keyboard or not, its
     /// first item selected as it shows, as a palette's list, whose field
-    /// takes the keys.
+    /// takes the keys; and a row activated of a click, the selected one's
+    /// too, as a menu's item is, where another list's takes a double click.
     #[serde(default)]
     pub menu: bool,
 }

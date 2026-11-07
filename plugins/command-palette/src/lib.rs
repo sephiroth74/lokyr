@@ -118,8 +118,7 @@ enum Mode {
 
 /// An open palette: its commands, as the registry gave them as it opened,
 /// the field's text, the commands' places that it ranks, the best first,
-/// the place among them of the selected one, and whether its list has the
-/// keyboard, as Tab gives it.
+/// and the place among them of the selected one.
 #[derive(Debug)]
 struct Open {
     mode: Mode,
@@ -127,7 +126,6 @@ struct Open {
     query: String,
     ranked: Vec<usize>,
     selected: usize,
-    list_focused: bool,
 }
 
 impl Open {
@@ -141,7 +139,6 @@ impl Open {
             query: String::new(),
             ranked,
             selected: 0,
-            list_focused: false,
         }
     }
 
@@ -269,22 +266,13 @@ impl Plugin for Palette {
                 self.preview(cx)
             }
             (UiEventKind::Submit { .. }, FIELD) => self.run(cx),
-            (UiEventKind::Focus, LIST) => {
-                open.list_focused = true;
-                Ok(())
-            }
-            (UiEventKind::Blur, LIST) => {
-                open.list_focused = false;
-                Ok(())
-            }
-            // A click, which leaves the keyboard where it is, runs the
-            // command; the list's own keys, while it has the keyboard, move.
+            // The list's own keys, while it has the keyboard, and a click
+            // move the selection, which a theme previews; a click, which
+            // leaves the keyboard where it is, Return and a double click run
+            // the command, as the list's menu activates its row.
             (UiEventKind::Select { item }, LIST) => {
                 open.selected = (*item).min(open.ranked.len().saturating_sub(1));
-                if open.list_focused {
-                    return Ok(());
-                }
-                self.run(cx)
+                self.preview(cx)
             }
             (UiEventKind::Activate { item }, LIST) => {
                 open.selected = (*item).min(open.ranked.len().saturating_sub(1));
