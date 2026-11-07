@@ -366,7 +366,10 @@ fn a_tab_dragged_among_the_others_goes_over_their_progresses_which_the_frame_dra
     let telling = shell(
         "printf '\\033]9;4;1;40\\a'; echo ready; read line; printf '\\033]9;4;3\\a'; read line",
     );
-    let (mut fake, mut app, window) = tabs_running("unified", "top", 3, telling, "");
+    // The tabs' outlines alone, without the window's strip of the same
+    // progress.
+    let without_strip = "\n[plugins.progress]\nenabled = false\n";
+    let (mut fake, mut app, window) = tabs_running("unified", "top", 3, telling, without_strip);
     fake.set_draws_fills(true);
     fake.send(&mut app, window, WindowEvent::Focused(true));
     let ids = order(&app, window);
@@ -1065,4 +1068,40 @@ fn the_window_s_keys_show_at_its_titlebar_s_right_of_the_frame_s_own_titlebar() 
         fake.deliver_wake(&mut app);
         fake.send(&mut app, window, WindowEvent::Frame);
     }
+}
+
+#[test]
+fn a_program_s_progress_shows_in_a_thin_bar_across_the_window_s_top_over_the_panes() {
+    // Its program tells a progress of 40 percent, then, after a line,
+    // ends it.
+    let telling = shell(
+        "printf '\\033]9;4;1;40\\a'; echo ready; read line; printf '\\033]9;4;0\\a'; read line",
+    );
+    let (mut fake, mut app, window) = tabs_running("unified", "top", 1, telling, "");
+    let strip = |app: &App| {
+        app.windows[&window]
+            .chrome
+            .iter()
+            .find(|view| view.plugin == "lokyr/progress")
+            .and_then(|view| view.frame)
+            .map(crate::app::chrome::rect_of)
+    };
+    run_until(&mut fake, &mut app, |_, app| strip(app).is_some());
+    // Under the titlebar, of 3 points, the window's width, over the pane,
+    // whose rows it takes none of.
+    let size = fake.window(window).unwrap().size;
+    let shown = strip(&app).unwrap();
+    let pixels = |points: f64| (points * size.scale).round() as u32;
+    assert_eq!(
+        (shown.y, shown.height, shown.width),
+        (size.bar_pixels() as i32, pixels(3.0), size.pixels.width)
+    );
+    let under = app.windows[&window].views[0].rect;
+    // Ended, the bar goes, the pane where it was.
+    let id = app.windows[&window].window;
+    let tab = app.workspace.window(id).unwrap().active_tab();
+    let pane = app.workspace.tab(tab).unwrap().active_pane();
+    app.workspace.pane(pane).unwrap().text("\n");
+    run_until(&mut fake, &mut app, |_, app| strip(app).is_none());
+    assert_eq!(app.windows[&window].views[0].rect, under);
 }

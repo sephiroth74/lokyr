@@ -1,0 +1,19 @@
+[package]
+name = "lokyr-progress"
+description = "Built-in plugin of the programs' progress"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+lokyr-plugin-sdk = { workspace = true, features = ["unstable"] }
+
+[dev-dependencies]
+lokyr-plugin-sdk = { workspace = true, features = ["fake"] }
+
+[lints]
+workspace = true

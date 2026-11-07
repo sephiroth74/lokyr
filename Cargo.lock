@@ -779,6 +779,7 @@ dependencies = [
  "lokyr-links",
  "lokyr-pkg-model",
  "lokyr-platform-core",
+ "lokyr-progress",
  "lokyr-pty",
  "lokyr-quick-terminal",
  "lokyr-render-core",
@@ -927,6 +928,13 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "lokyr-progress"
+version = "0.5.1"
+dependencies = [
+ "lokyr-plugin-sdk",
 ]
 
 [[package]]

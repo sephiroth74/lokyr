@@ -102,6 +102,7 @@ lokyr-render-metal = { path = "crates/render-metal" }
 lokyr-replay = { path = "tools/replay" }
 lokyr-search = { path = "crates/search" }
 lokyr-session = { path = "crates/session" }
+lokyr-progress = { path = "plugins/progress" }
 lokyr-quick-terminal = { path = "plugins/quick-terminal" }
 lokyr-search-plugin = { path = "plugins/search" }
 lokyr-splits = { path = "plugins/splits" }

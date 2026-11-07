@@ -164,11 +164,12 @@ fn a_plugin_s_views_fill_their_slots_which_the_panes_give_their_room() {
     let pixels = |points: f32| (f64::from(points) * scale).round() as i32;
     let titlebar = size.bar_pixels() as i32;
     let state = &app.windows[&window];
+    // The test's plugin's views, beside the built-in ones.
     let framed = |slot: Slot| {
         state
             .chrome
             .iter()
-            .find(|view| view.view.slot() == Some(slot))
+            .find(|view| view.view.slot() == Some(slot) && view.plugin == "lokyr/bars")
             .and_then(|view| view.frame)
             .map(super::super::chrome::rect_of)
     };

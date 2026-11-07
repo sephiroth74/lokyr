@@ -106,6 +106,7 @@ Every feature beyond the terminal itself is a plugin, and these come with the ap
 | [`search`](docs/plugins/search.md) | The find bar: a pane's search as you type, its matches highlighted |
 | [`command-palette`](docs/plugins/command-palette.md) | The command palette: every command, ranked as you type, the recent ones first |
 | [`quick-terminal`](docs/plugins/quick-terminal.md) | The quick terminal: a window that a global key slides in from an edge of the screen, over every app |
+| [`progress`](docs/plugins/progress.md) | The programs' progress, of OSC 9;4, in a thin bar across the window's top |
 
 Each page tells the plugin's commands, their keys, its config and what turning it off takes away; [the plugins' index](docs/plugins/README.md) tells how they fit together.
 
@@ -141,7 +142,7 @@ position = "top"
 
 ## Programs' progress
 
-Lokyr shows the progress that a program reports with OSC 9;4 on the program's tab, round its outline. Some programs send it only to the terminals that they recognize by their environment's variables, and do not recognize Lokyr yet, whose `TERM_PROGRAM` is `lokyr`. Until they do, turn their progress on as the table tells:
+Lokyr shows the progress that a program reports with OSC 9;4 on the program's tab, round its outline, and in a thin bar across the window's top. Some programs send it only to the terminals that they recognize by their environment's variables, and do not recognize Lokyr yet, whose `TERM_PROGRAM` is `lokyr`. Until they do, turn their progress on as the table tells:
 
 | Program | Sends its progress by itself to | To get it in Lokyr |
 |---|---|---|
