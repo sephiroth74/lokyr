@@ -1917,10 +1917,16 @@ mod tests {
             "narrow",
             "rows",
         ];
+        // The focus starts at the first field, `find`, as a panel's does as
+        // it opens, and Tab goes on in the nodes' order, round to the start.
+        let from_field = |order: Vec<&'static str>| {
+            let at = order.iter().position(|&key| key == "find").unwrap();
+            [&order[at..], &order[..at]].concat()
+        };
         // Without the system's keyboard navigation, the buttons, the
         // toggles and the view of tabs are left out, the disabled ones
         // always.
-        assert_eq!(order(false), rest);
+        assert_eq!(order(false), from_field(rest.to_vec()));
         let controls = [
             "replace",
             "settings",
@@ -1950,7 +1956,7 @@ mod tests {
         ];
         assert_eq!(
             order(true),
-            [&controls[..], &rest[..], &openers[..]].concat()
+            from_field([&controls[..], &rest[..], &openers[..]].concat())
         );
     }
 

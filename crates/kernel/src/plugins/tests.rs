@@ -3234,14 +3234,19 @@ fn searched_until_done(
     (parts, count)
 }
 
-/// The text of `pane`'s row numbered `row`.
-fn row_text(app: &App, pane: PaneId, row: i64) -> String {
+/// The text of `pane`'s row numbered `row`, if the pane holds it still, as
+/// the scrollback's limit takes the oldest rows.
+fn held_row_text(app: &App, pane: PaneId, row: i64) -> Option<String> {
     let reader = app.workspace.pane(pane).unwrap().reader().unwrap();
-    let rows = reader.lock().read_rows(row, 1);
-    rows.into_iter()
-        .next()
-        .map(|row| row.text)
-        .unwrap_or_default()
+    let terminal = reader.lock();
+    terminal.row_index(row)?;
+    let rows = terminal.read_rows(row, 1);
+    Some(
+        rows.into_iter()
+            .next()
+            .map(|row| row.text)
+            .unwrap_or_default(),
+    )
 }
 
 #[test]
@@ -3271,11 +3276,18 @@ fn a_search_finds_as_output_arrives_a_part_at_a_time_from_the_view_outward() {
     unique.sort_by_key(|found| (found.first.1, found.first.0));
     unique.dedup();
     assert_eq!(unique.len(), all.len(), "a match told twice");
+    // Those of the rows that the scrollback holds still, as its limit
+    // takes the oldest as the program prints on.
+    let mut held = 0;
     for found in &all {
-        let text = row_text(&app, pane, found.first.1);
-        assert!(text.ends_with("7 needle"), "{found:?}: {text:?}");
         assert_eq!(found.last, (found.first.0 + 5, found.first.1));
+        let Some(text) = held_row_text(&app, pane, found.first.1) else {
+            continue;
+        };
+        assert!(text.ends_with("7 needle"), "{found:?}: {text:?}");
+        held += 1;
     }
+    assert!(held > 0);
     // The view's part first, of the rows of a screen, as the program
     // printed on.
     assert!(parts.len() > 1, "{} parts", parts.len());
