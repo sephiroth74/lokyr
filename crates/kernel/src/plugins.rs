@@ -330,6 +330,10 @@ struct State {
     /// of each tab, which a change of the tab's folder or program, that it
     /// cannot read, leaves.
     told_tabs: BTreeMap<host::TabId, host::TabInfo>,
+    /// Of a plugin that does not read the processes, the title that it last
+    /// learned of each pane, its program's, of none at first, which a
+    /// change of the pane's folder or program, that it cannot read, leaves.
+    told_panes: BTreeMap<host::PaneId, Option<String>>,
     /// Its searches of the panes' terminals, a pane's last alone.
     searches: Vec<search::Search>,
     /// Its searches that showed their matches, stopped as a later one of
@@ -351,6 +355,7 @@ impl State {
     /// plugin that does not read the processes.
     fn learn_tabs(&mut self, workspace: &Workspace) {
         self.told_tabs.clear();
+        self.told_panes.clear();
         if self.reads_processes() {
             return;
         }
@@ -364,10 +369,11 @@ impl State {
         }
     }
 
-    /// Whether it hears `event`, of the workspace, of the tabs that
-    /// `workspace` has: a tab's change that it cannot read it does not, as
-    /// a plugin that does not read the processes, which learns what it
-    /// reads of each tab, its title, its color and its marks.
+    /// Whether it hears `event`, of the workspace, of the tabs and the panes
+    /// that `workspace` has: a tab's or a pane's change that it cannot read
+    /// it does not, as a plugin that does not read the processes, which
+    /// learns what it reads of each tab, its title, its color and its
+    /// marks, and of each pane, its program's title.
     fn hears(&mut self, event: &Event, workspace: &Workspace) -> bool {
         if self.reads_processes() {
             return true;
@@ -392,6 +398,19 @@ impl State {
                 Some(now) => self.told_tabs.insert(*tab, now.clone()) != Some(now),
                 None => true,
             },
+            Event::Workspace(WorkspaceEvent::PaneChanged { pane, .. }) => {
+                match workspace.pane(crate::workspace::PaneId::of(pane.0)) {
+                    Some(found) => {
+                        let now = found.header_title(false);
+                        self.told_panes.insert(*pane, now.clone()).flatten() != now
+                    }
+                    None => true,
+                }
+            }
+            Event::Workspace(WorkspaceEvent::PaneClosed { pane, .. }) => {
+                self.told_panes.remove(pane);
+                true
+            }
             _ => true,
         }
     }
@@ -761,6 +780,7 @@ impl Plugins {
                 dim: 0.0,
                 follows: false,
                 told_tabs: BTreeMap::new(),
+                told_panes: BTreeMap::new(),
                 searches: Vec::new(),
                 lingering: Vec::new(),
             },
@@ -3144,7 +3164,13 @@ impl Host<'_, '_> {
             }
             Asked::PaneTitle(pane) => {
                 let reads = self.state.reads_processes();
-                Response::Text(self.pane(pane)?.header_title(reads))
+                let title = self.pane(pane)?.header_title(reads);
+                // What it learns of the pane, of which a change that it
+                // cannot read tells it nothing.
+                if !reads {
+                    self.state.told_panes.insert(pane, title.clone());
+                }
+                Response::Text(title)
             }
             Asked::Config => Response::Data(self.state.config.clone()),
             Asked::State => Response::Data(self.stored()),

@@ -99,8 +99,9 @@ pub enum WorkspaceEvent {
         /// The tab.
         tab: TabId,
     },
-    /// A pane's title changed, as its program set it, which its header
-    /// shows.
+    /// A pane's header changed: its program's title, or, of none, its
+    /// folder and program as output comes; to a plugin without
+    /// `process-read`, as its program's title changes alone.
     PaneChanged {
         /// The pane.
         pane: PaneId,

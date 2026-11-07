@@ -390,7 +390,8 @@ type Event =
     -- A tab's title or color changed, its own, its program's, or its active pane's folder and program as output comes;
     -- to a plugin without `process-read`, which reads no folder nor program, as its title or color changes alone.
     | { kind: "tab-changed", tab: TabId }
-    -- A pane's title changed, as its program set it, which its header shows.
+    -- A pane's header changed: its program's title, or, of none, its folder and program as output comes; to a plugin
+    -- without `process-read`, which reads no folder nor program, as its program's title changes alone.
     | { kind: "pane-changed", pane: PaneId, tab: TabId }
     -- The keymap's bindings changed, as the config's or a plugin's: the keys of `keys_of` may be others.
     | { kind: "keys-changed" }

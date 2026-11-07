@@ -1178,6 +1178,64 @@ fn a_tab_s_folder_and_program_are_read_of_process_read_alone() {
 }
 
 #[test]
+fn a_pane_s_change_that_a_plugin_cannot_read_tells_it_nothing() {
+    let mut app = App::default();
+    window(&mut app, "read line; printf '\\033]0;mine\\007'; sleep 10");
+    let shown = app.focused.unwrap();
+    let tab = app.workspace.window(shown).unwrap().active_tab();
+    let pane = app.workspace.tab(tab).unwrap().active_pane();
+    let mut plugins = Plugins::new();
+    let logs = [Rc::default(), Rc::default()];
+    for ((name, capabilities), log) in
+        [("acme/blind", ""), ("acme/seeing", "process-read = true\n")]
+            .into_iter()
+            .zip(&logs)
+    {
+        let manifest = Manifest::parse(&format!(
+            "[plugin]\nname = \"{name}\"\nversion = \"1.0.0\"\nkind = \"luau\"\napi = \"^0.1\"\nlicense = \"MIT\"\n[capabilities]\n{capabilities}"
+        ))
+        .unwrap();
+        plugins
+            .add_declared(manifest, listening(&["pane-changed"], log))
+            .unwrap();
+    }
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    let changed = |app: &mut App, plugins: &mut Plugins| {
+        plugins.post(Event::Workspace(WorkspaceEvent::PaneChanged {
+            pane: pane.into(),
+            tab: tab.into(),
+        }));
+        assert!(plugins.deliver(&mut app.context()).is_empty());
+    };
+    let counts =
+        |logs: &[Rc<RefCell<Vec<String>>>; 2]| logs.each_ref().map(|log| log.borrow().len());
+    // Its folder or its program, of no title of its program's, which the
+    // blind plugin cannot read.
+    changed(&mut app, &mut plugins);
+    assert_eq!(counts(&logs), [0, 1]);
+    // Its program's title, which both read; the same again tells the
+    // blind one nothing.
+    app.workspace.pane(pane).unwrap().text("\n");
+    let start = Instant::now();
+    while app
+        .workspace
+        .pane(pane)
+        .unwrap()
+        .header_title(false)
+        .is_none()
+    {
+        assert!(start.elapsed() < Duration::from_secs(10), "no title");
+        let panes = app.workspace.pane_ids();
+        app.workspace.collect(&panes, Instant::now());
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    changed(&mut app, &mut plugins);
+    assert_eq!(counts(&logs), [1, 2]);
+    changed(&mut app, &mut plugins);
+    assert_eq!(counts(&logs), [1, 3]);
+}
+
+#[test]
 fn a_tab_s_change_that_a_plugin_cannot_read_tells_it_nothing() {
     let mut app = App::default();
     window(&mut app, "sleep 10");
@@ -1337,6 +1395,7 @@ fn a_call_is_its_own_plugin_s() {
             dim: 0.0,
             follows: false,
             told_tabs: BTreeMap::new(),
+            told_panes: BTreeMap::new(),
             searches: Vec::new(),
             lingering: Vec::new(),
         },
