@@ -1337,6 +1337,7 @@ fn a_call_is_its_own_plugin_s() {
             dim: 0.0,
             follows: false,
             told_tabs: BTreeMap::new(),
+            searches: Vec::new(),
         },
         Outbox::default(),
         Vec::new(),
@@ -3129,4 +3130,261 @@ fn a_window_s_bar_place_goes_as_the_window_closes() {
         plugins.window_tab_bar_place("placer", window.into()),
         BarPlace::default()
     );
+}
+
+/// What the test plugin of the searches heard and read: the matches told,
+/// by the searches' ids, and the last read of the matches.
+#[derive(Default)]
+struct Searched {
+    events: Vec<Event>,
+    read: Option<host::Found>,
+    last: Option<u64>,
+}
+
+/// A plugin of commands that search the focused pane for `needle`, for
+/// `x`, for what is nowhere, end its search, and read its matches, 10 000
+/// at most, which `searched` keeps.
+fn finder(searched: &Rc<RefCell<Searched>>) -> Box<dyn Plugin> {
+    let (seen, told) = (Rc::clone(searched), Rc::clone(searched));
+    Box::new(Scripted {
+        activate: Box::new(|cx| {
+            for name in ["needle", "x", "none", "end", "read"] {
+                cx.register_command(command(&format!("finder.{name}")))?;
+            }
+            Ok(())
+        }),
+        on_command: Box::new(move |cx, name, _| {
+            let pane = cx.focused_pane().unwrap();
+            let text = match name {
+                "finder.needle" => "needle",
+                "finder.x" => "x",
+                "finder.none" => "nowhere-at-all",
+                "finder.end" => {
+                    let last = seen.borrow().last.unwrap();
+                    return cx.end_search(last);
+                }
+                _ => {
+                    let last = seen.borrow().last.unwrap();
+                    let found = cx.search_matches(last, 0, 10_000)?;
+                    seen.borrow_mut().read = Some(found);
+                    return Ok(());
+                }
+            };
+            let query = host::SearchQuery {
+                text: text.to_owned(),
+                ..host::SearchQuery::default()
+            };
+            let id = cx.search(pane, query)?;
+            seen.borrow_mut().last = Some(id);
+            Ok(())
+        }),
+        on_event: Some(Box::new(move |_, events| {
+            told.borrow_mut().events.extend(events.iter().cloned());
+            Ok(())
+        })),
+    })
+}
+
+/// Delivers until the search `id` told its last part, for ten seconds at
+/// most, and returns its parts' matches, in their order, and its count.
+fn searched_until_done(
+    app: &mut App,
+    plugins: &mut Plugins,
+    searched: &Rc<RefCell<Searched>>,
+    id: u64,
+) -> (Vec<Vec<host::SearchMatch>>, usize) {
+    let start = Instant::now();
+    loop {
+        let done =
+            searched.borrow().events.iter().any(
+                |event| matches!(event, Event::Searched { id: of, done: true, .. } if *of == id),
+            );
+        if done {
+            break;
+        }
+        assert!(start.elapsed() < Duration::from_secs(10), "not done");
+        assert!(plugins.deliver(&mut app.context()).is_empty());
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    let mut parts = Vec::new();
+    let mut count = 0;
+    for event in &searched.borrow().events {
+        if let Event::Searched {
+            id: of,
+            matches,
+            count: so_far,
+            ..
+        } = event
+            && *of == id
+        {
+            parts.push(matches.clone());
+            count = *so_far;
+        }
+    }
+    (parts, count)
+}
+
+/// The text of `pane`'s row numbered `row`.
+fn row_text(app: &App, pane: PaneId, row: i64) -> String {
+    let reader = app.workspace.pane(pane).unwrap().reader().unwrap();
+    let rows = reader.lock().read_rows(row, 1);
+    rows.into_iter()
+        .next()
+        .map(|row| row.text)
+        .unwrap_or_default()
+}
+
+#[test]
+fn a_search_finds_as_output_arrives_a_part_at_a_time_from_the_view_outward() {
+    let mut app = App::default();
+    // A match on every tenth row, the program printing as the search goes.
+    let window = window(
+        &mut app,
+        "seq 1 30000 | sed 's/7$/7 needle/'; echo ready; sleep 30",
+    );
+    let pane = app.workspace.active_pane(window).unwrap();
+    row_once(&app, pane, 0, "1");
+    let mut plugins = Plugins::new();
+    let searched = Rc::new(RefCell::new(Searched::default()));
+    plugins.add("finder", finder(&searched)).unwrap();
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    plugins
+        .run("finder.needle", Args::new(), &mut app.context())
+        .unwrap();
+    let id = searched.borrow().last.unwrap();
+    let (parts, count) = searched_until_done(&mut app, &mut plugins, &searched, id);
+    // Of every part, its matches each once, on rows of a match's text.
+    let all: Vec<host::SearchMatch> = parts.iter().flatten().copied().collect();
+    assert!(!all.is_empty());
+    assert_eq!(all.len(), count);
+    let mut unique = all.clone();
+    unique.sort_by_key(|found| (found.first.1, found.first.0));
+    unique.dedup();
+    assert_eq!(unique.len(), all.len(), "a match told twice");
+    for found in &all {
+        let text = row_text(&app, pane, found.first.1);
+        assert!(text.ends_with("7 needle"), "{found:?}: {text:?}");
+        assert_eq!(found.last, (found.first.0 + 5, found.first.1));
+    }
+    // The view's part first, of the rows of a screen, as the program
+    // printed on.
+    assert!(parts.len() > 1, "{} parts", parts.len());
+    let rows: Vec<i64> = parts[0].iter().map(|found| found.first.1).collect();
+    let span = rows.iter().max().unwrap_or(&0) - rows.iter().min().unwrap_or(&0);
+    assert!(span < 24, "{rows:?}");
+    // The read of its matches gives them in the rows' order.
+    plugins
+        .run("finder.read", Args::new(), &mut app.context())
+        .unwrap();
+    let read = searched.borrow_mut().read.take().unwrap();
+    assert_eq!(read.count, count);
+    assert!(read.done);
+    assert_eq!(read.matches, unique[..read.matches.len()]);
+}
+
+#[test]
+fn a_search_that_the_next_one_ends_stops_and_lets_its_matches_go() {
+    let mut app = App::default();
+    // Of five parts, which the scrollback holds.
+    let window = window(&mut app, "seq 1 5000 | sed 's/$/ x/'; echo ready; sleep 30");
+    let pane = app.workspace.active_pane(window).unwrap();
+    row_once(&app, pane, 5000, "ready");
+    let pins = |app: &App| {
+        let reader = app.workspace.pane(pane).unwrap().reader().unwrap();
+        reader.lock().screen_rows().pins()
+    };
+    let before = pins(&app);
+    let mut plugins = Plugins::new();
+    let searched = Rc::new(RefCell::new(Searched::default()));
+    plugins.add("finder", finder(&searched)).unwrap();
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    // A search of 5000 matches, then at once another, of none.
+    plugins
+        .run("finder.x", Args::new(), &mut app.context())
+        .unwrap();
+    let first = searched.borrow().last.unwrap();
+    plugins
+        .run("finder.none", Args::new(), &mut app.context())
+        .unwrap();
+    let second = searched.borrow().last.unwrap();
+    let (_, count) = searched_until_done(&mut app, &mut plugins, &searched, second);
+    assert_eq!(count, 0);
+    // The first told nothing, and its pins went, those that its thread
+    // made after its end too.
+    assert!(
+        !searched
+            .borrow()
+            .events
+            .iter()
+            .any(|event| matches!(event, Event::Searched { id, .. } if *id == first)),
+        "the first told"
+    );
+    std::thread::sleep(Duration::from_millis(100));
+    assert_eq!(pins(&app), before);
+    // A search ended lets its matches go; a read of it is refused.
+    plugins
+        .run("finder.x", Args::new(), &mut app.context())
+        .unwrap();
+    let third = searched.borrow().last.unwrap();
+    let (_, count) = searched_until_done(&mut app, &mut plugins, &searched, third);
+    assert_eq!(count, 5000);
+    assert_eq!(pins(&app), before + 2 * 5000);
+    plugins
+        .run("finder.end", Args::new(), &mut app.context())
+        .unwrap();
+    assert_eq!(pins(&app), before);
+    let refused = plugins.run("finder.read", Args::new(), &mut app.context());
+    assert_eq!(refused.unwrap_err().code, Code::NotFound);
+}
+
+#[test]
+fn a_search_s_matches_stay_with_their_cells_through_output_until_the_scrollback_lets_them_go() {
+    let mut app = App::default();
+    let window = window(
+        &mut app,
+        "printf 'a needle\\nanother needle\\n'; echo ready; read x; seq 1 100; echo more; read y; seq 1 20000; echo done; sleep 30",
+    );
+    let pane = app.workspace.active_pane(window).unwrap();
+    row_once(&app, pane, 2, "ready");
+    app.workspace
+        .pane(pane)
+        .unwrap()
+        .set_scrollback_limit(64 * 1024);
+    let mut plugins = Plugins::new();
+    let searched = Rc::new(RefCell::new(Searched::default()));
+    plugins.add("finder", finder(&searched)).unwrap();
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    plugins
+        .run("finder.needle", Args::new(), &mut app.context())
+        .unwrap();
+    let id = searched.borrow().last.unwrap();
+    let (_, count) = searched_until_done(&mut app, &mut plugins, &searched, id);
+    assert_eq!(count, 2);
+    let wanted = vec![
+        host::SearchMatch {
+            first: (2, 0),
+            last: (7, 0),
+        },
+        host::SearchMatch {
+            first: (8, 1),
+            last: (13, 1),
+        },
+    ];
+    let read = |app: &mut App, plugins: &mut Plugins| {
+        plugins
+            .run("finder.read", Args::new(), &mut app.context())
+            .unwrap();
+        searched.borrow_mut().read.take().unwrap()
+    };
+    assert_eq!(read(&mut app, &mut plugins).matches, wanted);
+    // Output that scrolls them into the scrollback, after the echo of the
+    // line: the same rows.
+    app.workspace.pane(pane).unwrap().text("\n");
+    row_once(&app, pane, 104, "more");
+    assert_eq!(read(&mut app, &mut plugins).matches, wanted);
+    // Past the scrollback's limit, they go, the count staying.
+    app.workspace.pane(pane).unwrap().text("\n");
+    row_once(&app, pane, 20_106, "done");
+    let found = read(&mut app, &mut plugins);
+    assert_eq!((found.matches, found.count), (Vec::new(), 2));
 }

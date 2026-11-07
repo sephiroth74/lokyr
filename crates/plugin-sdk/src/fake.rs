@@ -115,6 +115,52 @@ impl Default for FakePane {
     }
 }
 
+/// The matches of `query` in the rows that `pane` holds, as the fake host
+/// finds them: literal text alone, in each row apart, of a cell a
+/// character, the leftmost of each row first, none overlapping another;
+/// the app's host searches regexes and logical lines too. A query of no
+/// text fails, as the app's host's does.
+fn found_in(pane: &FakePane, query: &host::SearchQuery) -> Result<Vec<host::SearchMatch>, Error> {
+    if query.text.is_empty() {
+        return Err(Error::new(
+            Code::Failed,
+            "a search of no text finds nothing",
+        ));
+    }
+    let insensitive = match query.case {
+        host::SearchCase::Sensitive => false,
+        host::SearchCase::Insensitive => true,
+        host::SearchCase::Smart => !query.text.chars().any(char::is_uppercase),
+    };
+    let fold = |text: &str| -> Vec<char> {
+        if insensitive {
+            text.chars().flat_map(char::to_lowercase).collect()
+        } else {
+            text.chars().collect()
+        }
+    };
+    let wanted = fold(&query.text);
+    let mut matches = Vec::new();
+    for row in pane.held.clone() {
+        let text = pane.rows.get(&row).map_or("", |(text, _)| text.as_str());
+        let chars = fold(text);
+        let mut at = 0;
+        while at + wanted.len() <= chars.len() {
+            if chars[at..at + wanted.len()] == wanted[..] {
+                let column = |at: usize| u16::try_from(at).unwrap_or(u16::MAX);
+                matches.push(host::SearchMatch {
+                    first: (column(at), row),
+                    last: (column(at + wanted.len() - 1), row),
+                });
+                at += wanted.len();
+            } else {
+                at += 1;
+            }
+        }
+    }
+    Ok(matches)
+}
+
 /// A decoration that the plugin laid: its pane, its cells and its look.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct FakeDecoration {
@@ -257,6 +303,8 @@ pub struct FakeHost {
     /// opening asks for its own.
     renders: Vec<ViewId>,
     owed: Vec<Event>,
+    /// The plugin's searches, by their ids: each's pane and its matches.
+    searches: BTreeMap<u64, (PaneId, Vec<host::SearchMatch>)>,
     last_id: u64,
 }
 
@@ -300,6 +348,7 @@ impl FakeHost {
             views: BTreeMap::new(),
             renders: Vec::new(),
             owed: Vec::new(),
+            searches: BTreeMap::new(),
             last_id: FIRST_ID - 1,
         }
     }
@@ -582,8 +631,8 @@ impl FakeHost {
 
     /// Gives `plugin` the events that it is owed, as a batch, if it is owed
     /// any: those of the plugin alone, as a panel's closing, a read's rows,
-    /// a question's answer and its config's change, and those that it
-    /// subscribed to, of the
+    /// a search's matches, a question's answer and its config's change, and
+    /// those that it subscribed to, of the
     /// workspace's, its own writes' among them, and those that it emitted;
     /// the others go.
     pub fn deliver(&mut self, plugin: &mut dyn Plugin) -> Result<(), Error> {
@@ -594,6 +643,7 @@ impl FakeHost {
                 matches!(
                     event,
                     Event::Lines { .. }
+                        | Event::Searched { .. }
                         | Event::PanelClosed(_)
                         | Event::ConfigChanged
                         | Event::Answered { .. }
@@ -1735,6 +1785,50 @@ impl Calling<'_> {
             Request::WorkingDirectory(pane) => Response::Text(host.held(*pane)?.directory.clone()),
             Request::Styles { pane, row } => {
                 Response::Styles(host.held(*pane)?.styles.get(row).cloned())
+            }
+            Request::Search { pane, query } => {
+                let held = host.held(*pane)?;
+                let matches = found_in(held, query)?;
+                let (pane, id) = (*pane, self.host.next_id());
+                // The plugin's search of the pane before ends.
+                self.host
+                    .searches
+                    .retain(|_, (searched, _)| *searched != pane);
+                self.host.owed.push(Event::Searched {
+                    id,
+                    pane,
+                    matches: matches.clone(),
+                    count: matches.len(),
+                    done: true,
+                });
+                self.host.searches.insert(id, (pane, matches));
+                Response::Searching(id)
+            }
+            Request::EndSearch(search) => {
+                self.host.searches.remove(search);
+                Response::Done
+            }
+            Request::SearchMatches {
+                search,
+                first,
+                count,
+            } => {
+                let Some((_, matches)) = host.searches.get(search) else {
+                    return Err(Error::new(
+                        Code::NotFound,
+                        format!("there is no search {search}"),
+                    ));
+                };
+                Response::Matches(host::Found {
+                    matches: matches
+                        .iter()
+                        .skip(*first)
+                        .take((*count).min(host::MOST_LINES))
+                        .copied()
+                        .collect(),
+                    count: matches.len(),
+                    done: true,
+                })
             }
             Request::ReadLines { pane, first, count } => {
                 // Every row that it holds from the first, or from its

@@ -682,6 +682,17 @@ impl Terminal {
         Some(CellPin { pin, alternate })
     }
 
+    /// `pin`, a pin of the active screen's list, as a search of
+    /// [`Terminal::screen_rows_mut`] makes one, as a cell pin of that
+    /// screen, which [`Terminal::pinned_cell`] tells and
+    /// [`Terminal::unpin_cell`] lets go.
+    pub fn cell_pin(&self, pin: PinId) -> CellPin {
+        CellPin {
+            pin,
+            alternate: self.alternate_active,
+        }
+    }
+
     /// Where `pin`'s cell is, by its column and its row's number, while its
     /// text is in the list and its screen is the active one.
     pub fn pinned_cell(&self, pin: &CellPin) -> Option<(u16, i64)> {

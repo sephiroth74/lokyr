@@ -239,6 +239,65 @@ pub const MOST_LINES: usize = 100_000;
 /// The most bytes of a plugin's state, as JSON.
 pub const MOST_STATE: usize = 1024 * 1024;
 
+/// The most matches of a search that the host keeps, past which it counts
+/// them alone.
+pub const MOST_MATCHES: usize = 100_000;
+
+/// What a search of a pane's terminal looks for, through its scrollback
+/// too: the text of each logical line, its soft-wrapped rows joined, of
+/// spaces for the cells without a character, without the spaces that end
+/// it.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct SearchQuery {
+    /// The text, as it is, or the regex, of the syntax of Rust's `regex`.
+    pub text: String,
+    /// Whether the text is a regex.
+    #[serde(default)]
+    pub regex: bool,
+    /// Whether case counts.
+    #[serde(default)]
+    pub case: SearchCase,
+    /// Whether a match takes whole words alone: the cells right before it
+    /// and right after it start with neither a letter, a digit nor `_`.
+    #[serde(default)]
+    pub whole_word: bool,
+}
+
+/// Whether case counts in a search.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum SearchCase {
+    /// Case counts of a text of a capital letter, and not otherwise.
+    #[default]
+    Smart,
+    /// `a` finds `a` alone.
+    Sensitive,
+    /// `a` finds `a` and `A`, of Unicode's simple case.
+    Insensitive,
+}
+
+/// A match of a search: its first cell and its last, by their columns and
+/// their rows' numbers, the last of a wide character its first half.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SearchMatch {
+    /// The first cell.
+    pub first: (u16, i64),
+    /// The last cell.
+    pub last: (u16, i64),
+}
+
+/// Matches of a search, as a read of them gives them.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Found {
+    /// The matches read, in the rows' order, as their cells are now.
+    pub matches: Vec<SearchMatch>,
+    /// How many matches the search found, those past [`MOST_MATCHES`] too.
+    pub count: usize,
+    /// Whether the search went to its end.
+    pub done: bool,
+}
+
 /// A row's text, as a read of rows gives it.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Line {

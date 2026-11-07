@@ -212,6 +212,7 @@ impl Symbols {
         match response {
             Response::Decoration(_) => Response::Decoration(0),
             Response::Reading(_) => Response::Reading(0),
+            Response::Searching(_) => Response::Searching(0),
             Response::Asking(_) => Response::Asking(0),
             Response::Window(window) => Response::Window(window.map(|id| self.window(id))),
             Response::Pane(pane) => Response::Pane(pane.map(|id| self.pane(id))),
@@ -264,6 +265,19 @@ impl Symbols {
                 pane: self.pane(pane),
                 lines,
                 complete,
+            },
+            Event::Searched {
+                pane,
+                matches,
+                count,
+                done,
+                ..
+            } => Event::Searched {
+                id: 0,
+                pane: self.pane(pane),
+                matches,
+                count,
+                done,
             },
             Event::Answered { text, .. } => Event::Answered { id: 0, text },
             Event::Workspace(change) => Event::Workspace(match change {
@@ -735,11 +749,14 @@ fn kind(request: &Request) -> usize {
         Request::SetInactiveDim(_) => 67,
         Request::SetFocusFollowsMouse(_) => 68,
         Request::PaneTitle(_) => 69,
+        Request::Search { .. } => 70,
+        Request::EndSearch(_) => 71,
+        Request::SearchMatches { .. } => 72,
     }
 }
 
 /// How many kinds of requests the plugin API has.
-const KINDS: usize = 70;
+const KINDS: usize = 73;
 
 #[test]
 fn the_scenarios_hold_every_request_of_the_plugin_api() {

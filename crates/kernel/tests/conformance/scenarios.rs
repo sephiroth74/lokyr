@@ -23,7 +23,8 @@ use lokyr_plugin_sdk::command::{Args, Capability, Category, Code, Command, Error
 use lokyr_plugin_sdk::event::WorkspaceEvent;
 use lokyr_plugin_sdk::host::{
     BarPlace, Binding, Color, DecorationLook, Direction, Edge, Layout, Line, LineText, MOST_STATE,
-    PaneId, ScreenPoint, Scroll, Side, TabId, TabInfo, Underline, WindowId, WindowInfo,
+    PaneId, ScreenPoint, Scroll, SearchMatch, SearchQuery, Side, TabId, TabInfo, Underline,
+    WindowId, WindowInfo,
 };
 use lokyr_plugin_sdk::message::{DIM_RANGE, Data, Event, Mods, OWN_PANE, Request, Response};
 use lokyr_plugin_sdk::ui::{Anchor, PanelId, PanelOptions, Role, ViewId};
@@ -37,6 +38,9 @@ pub const CLIPBOARD: &str = "old";
 
 /// A pane that no host holds.
 const NO_PANE: PaneId = PaneId(999_999);
+
+/// A search that no plugin made.
+const NO_SEARCH: u64 = 999_999;
 
 /// A window that no host holds.
 const NO_WINDOW: WindowId = WindowId(999_999);
@@ -864,6 +868,59 @@ fn state_and_rows(world: &World) -> Scenario {
                         wrapped: false,
                     }],
                     complete: true,
+                }],
+            },
+            // A search of the pane's terminal, whose one match, of the
+            // program's line, comes as an event; and what is refused.
+            Step {
+                asks: vec![
+                    (
+                        Request::Search {
+                            pane: world.pane,
+                            query: SearchQuery {
+                                text: "now".to_owned(),
+                                ..SearchQuery::default()
+                            },
+                        },
+                        Response::Searching(0),
+                    ),
+                    (
+                        Request::Search {
+                            pane: world.pane,
+                            query: SearchQuery::default(),
+                        },
+                        failed(Code::Failed, "a search of no text finds nothing"),
+                    ),
+                    (
+                        Request::Search {
+                            pane: NO_PANE,
+                            query: SearchQuery {
+                                text: "now".to_owned(),
+                                ..SearchQuery::default()
+                            },
+                        },
+                        failed(Code::NotFound, "there is no pane 999999"),
+                    ),
+                    (
+                        Request::SearchMatches {
+                            search: NO_SEARCH,
+                            first: 0,
+                            count: 10,
+                        },
+                        failed(Code::NotFound, "there is no search 999999"),
+                    ),
+                    (Request::EndSearch(NO_SEARCH), Response::Done),
+                ],
+                posts: Vec::new(),
+                heard: vec![Event::Searched {
+                    id: 0,
+                    pane: world.pane,
+                    matches: vec![SearchMatch {
+                        first: (24, world.row),
+                        last: (26, world.row),
+                    }],
+                    count: 1,
+                    done: true,
                 }],
             },
             ask(vec![(Request::State, Response::Data(kept))]),

@@ -156,7 +156,7 @@ return Search
 - **Names**: the Luau API uses the Rust names (`request_render`, `on_event`), so the two front ends read the same and share one reference.
 - **Conformance**: the conformance suite runs the same scenarios through both front ends, with Rust and Luau test plugins, and compares their command and event traces. It is `lokyr-kernel`'s test `conformance`: each scenario is of steps, each a call of the test plugin's, of the requests that it makes with the answers that they take, the workspace's events that the host posts after it, and the batch of events that the plugin then hears; the test plugin makes the requests through its front end, and its trace, each request with its answer, the ids of reads and decorations of 0, and each batch, must be the scenario's. The scenarios hold every request of the API, its failures among them, which a test checks of an exhaustive match: those of the first-party plugins, `links`' and `core-actions'`, and of the events, the panels, the capabilities, the declarations, the app's requests, the state, the reads of rows, the views and the workspace's writes that every plugin meets; the Rust test plugin runs them on the kernel's host and on the SDK's fake host, which must answer alike, in CI's macOS and Linux jobs. A window, a tab or a pane that a scenario opens, whose id each host gives its own, is a symbol of the order in which the trace first meets it, which the test plugin asks with the host's id of. The harness of the kernel's host does the app's part: it posts the workspace's changes, makes the renders that the calls ask for, and gives each scenario a state directory of its own. They cross as JSON, for the Luau test plugin of F4.
 - **Testing for plugin authors**:
-  - The Rust SDK ships a fake host for unit tests, `lokyr_plugin_sdk::fake::FakeHost`, of its `fake` feature, a plugin's dev-dependency. The test sets what it holds, its panes, their lines, rows, links, styles, selections and directories, the focus, the clipboard, the text's size, the targets not there, and the plugin's config and state; it answers the requests as the app's host does, the reads at once and the writes as the call returns, then the app's requests, refuses what the plugin's capabilities lack, and keeps the plugin's commands, bindings and subscriptions, what it did as the requests themselves, its decorations, its panels and its views' trees. It checks what the app's host checks, of the same code where the SDK holds it, the grammars of a binding's keys and of a context, the names, a command's registration and a call's arguments: a request of a pane, a tab, a window or a view not there, of a value out of its range, of a name, keys or a context that is none, of a command that is not registered or that the manifest does not declare, fails as it would in the app; `with_capabilities`, `with_uses`, `with_slots` and `with_commands` give what the plugin's manifest declares and the commands of the app's and of the other plugins'; `take_renders` tells the renders that the calls asked for, a panel's opening among them; a config's change reaches an active plugin alone, its schema's defaults the test's to give. Its workspace is the app's, of the panes that the test gives: each window's tabs in their order and the one that it shows, each tab's layout, the pane of its keyboard and its zoom; the plugin's writes change it as the app's workspace changes, owing their events in the app's order, and a later write of a call finds what an earlier one opens; a drag of a pane's edge changes nothing of it, as it has no sizes. It owes the plugin its events, which `deliver` gives it as a batch, and `snapshot` writes a view tree as text, a node a line, for tests to compare. `core-actions`' and `links`' tests run on it.
+  - The Rust SDK ships a fake host for unit tests, `lokyr_plugin_sdk::fake::FakeHost`, of its `fake` feature, a plugin's dev-dependency. The test sets what it holds, its panes, their lines, rows, links, styles, selections and directories, the focus, the clipboard, the text's size, the targets not there, and the plugin's config and state; it answers the requests as the app's host does, the reads at once and the writes as the call returns, then the app's requests, refuses what the plugin's capabilities lack, and keeps the plugin's commands, bindings and subscriptions, what it did as the requests themselves, its decorations, its panels and its views' trees. It checks what the app's host checks, of the same code where the SDK holds it, the grammars of a binding's keys and of a context, the names, a command's registration and a call's arguments: a request of a pane, a tab, a window or a view not there, of a value out of its range, of a name, keys or a context that is none, of a command that is not registered or that the manifest does not declare, fails as it would in the app; `with_capabilities`, `with_uses`, `with_slots` and `with_commands` give what the plugin's manifest declares and the commands of the app's and of the other plugins'; `take_renders` tells the renders that the calls asked for, a panel's opening among them; a config's change reaches an active plugin alone, its schema's defaults the test's to give. Its workspace is the app's, of the panes that the test gives: each window's tabs in their order and the one that it shows, each tab's layout, the pane of its keyboard and its zoom; the plugin's writes change it as the app's workspace changes, owing their events in the app's order, and a later write of a call finds what an earlier one opens; a drag of a pane's edge changes nothing of it, as it has no sizes. It owes the plugin its events, which `deliver` gives it as a batch, and `snapshot` writes a view tree as text, a node a line, for tests to compare. It searches literal text alone, in each row apart, its matches in one event, where the app's host searches regexes and logical lines too. `core-actions`' and `links`' tests run on it.
   - For Luau, `sleip test` runs the plugin in the same headless host.
 
 ## The Luau API
@@ -353,6 +353,13 @@ type ListItem = { texts: { string } }
 -- A row's text, by its number, without the spaces that end it, but where it wraps into the next.
 type Line = { row: number, text: string, wrapped: boolean }
 
+-- What a search of a pane's terminal looks for: the text, as it is, or a regex, of the syntax of Rust's `regex`;
+-- case "smart" counts of a text of a capital letter alone; whole words alone, as `whole_word` asks.
+type SearchQuery = { text: string, regex: boolean?, case: ("smart" | "sensitive" | "insensitive")?, whole_word: boolean? }
+
+-- A match of a search: its first cell and its last, each { column, row's number }.
+type SearchMatch = { first: { number }, last: { number } }
+
 -- The cells of a row from a column to another, of one style, as the program gave it.
 type StyleRun = { first: number, last: number, style: { foreground: any?, background: any?, bold: boolean, italic: boolean, underline: string? } }
 
@@ -391,6 +398,9 @@ type Event =
     | { kind: "pointer", pane: PaneId, at: { number }?, mods: { shift: boolean, control: boolean, option: boolean, command: boolean } }
     -- A read of rows that the plugin asked for, to it alone; incomplete if a resize renumbered the rows.
     | { kind: "lines", id: number, pane: PaneId, lines: { Line }, complete: boolean }
+    -- A part's matches of a search that the plugin asked for, to it alone, the nearest to the view first; how many it
+    -- found so far, past the 100 000 kept too; and whether it went to its end, or stopped at a resize or the pane's close.
+    | { kind: "searched", id: number, pane: PaneId, matches: { SearchMatch }, count: number, done: boolean }
     -- A panel of the plugin's closed, as a click outside it, Escape, the app or the plugin closed it, to it alone.
     | { kind: "panel-closed", id: string }
     -- The user's answer to a question of `ask_text`, to it alone: the text, or none as the user cancelled.
@@ -572,6 +582,15 @@ type Cx = {
     -- Reads 100 000 rows at most, from the row numbered `first`, on a thread of the host's, a part at a time:
     -- returns the read's id, and the rows come as a "lines" event.
     read_lines: (pane: PaneId, first: number, count: number) -> (number?, Error?),
+    -- Searches a pane's terminal, its scrollback too, on a thread of the host's, a part of its rows at a time from the
+    -- view's outward: returns the search's id, and the matches come as "searched" events. The plugin's search of the pane
+    -- before ends. The host keeps 100 000 matches at most as their cells' pins, through new output, scrolls and reflows,
+    -- until the next search of the pane, `end_search` or the pane's close; the count goes on past them.
+    search: (pane: PaneId, query: SearchQuery) -> (number?, Error?),
+    end_search: (id: number) -> (boolean, Error?),
+    -- A search's matches in the rows' order, from the one at `first`, 100 000 at most, as their cells are now, those that
+    -- left the scrollback gone; how many it found; and whether it went to its end.
+    search_matches: (id: number, first: number, count: number) -> ({ matches: { SearchMatch }, count: number, done: boolean }?, Error?),
     -- The styles of a row, by its number, as runs of cells of one style.
     styles: (pane: PaneId, row: number) -> ({ StyleRun }?, Error?),
     -- Decorates the cells from one to another, in reading order, each { column, row's number }: returns the

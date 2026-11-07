@@ -26,8 +26,9 @@ use serde::{Deserialize, Serialize};
 use crate::command::{Args, Capability, Command, Error};
 use crate::event::WorkspaceEvent;
 use crate::host::{
-    BarPlace, Binding, Color, DecorationLook, Direction, Edge, Layout, Line, LineText, PaneId,
-    ScreenPoint, Scroll, Side, StyleRun, TabId, TabInfo, WindowId, WindowInfo,
+    BarPlace, Binding, Color, DecorationLook, Direction, Edge, Found, Layout, Line, LineText,
+    PaneId, ScreenPoint, Scroll, SearchMatch, SearchQuery, Side, StyleRun, TabId, TabInfo,
+    WindowId, WindowInfo,
 };
 use crate::ui::{PanelId, PanelOptions, ViewId};
 use crate::view::Key;
@@ -122,6 +123,36 @@ pub enum Request {
         /// The first row's number.
         first: i64,
         /// How many rows, [`MOST_LINES`](crate::host::MOST_LINES) at most.
+        count: usize,
+    },
+    /// Searches a pane's terminal, its scrollback too, for `query`, on a
+    /// thread of the host's, a part of its rows at a time, from those that
+    /// its view shows outward: the host answers with the search's id, and
+    /// the matches come as [`Event::Searched`] events of that id, a part's
+    /// each, to the plugin alone. The plugin's search of the pane before
+    /// ends. The matches, kept as their cells' pins through new output, the
+    /// view's scrolls and a resize's reflow,
+    /// [`MOST_MATCHES`](crate::host::MOST_MATCHES) at most and the count
+    /// past them, stay until the plugin's next search of the pane, its
+    /// [`Request::EndSearch`], or the pane's close.
+    Search {
+        /// The pane.
+        pane: PaneId,
+        /// What it looks for.
+        query: SearchQuery,
+    },
+    /// Ends one of the plugin's searches, at once: it stops, and its
+    /// matches go.
+    EndSearch(u64),
+    /// The matches of one of the plugin's searches, in the rows' order,
+    /// from the one at `first`, `count` at most, as their cells are now: a
+    /// match whose cells left the scrollback is no more.
+    SearchMatches {
+        /// The search's id.
+        search: u64,
+        /// The first match's place among them, from 0.
+        first: usize,
+        /// How many, [`MOST_LINES`](crate::host::MOST_LINES) at most.
         count: usize,
     },
     /// The styles of a pane's row, by its number, as runs of cells.
@@ -520,6 +551,8 @@ impl Request {
             | Self::LineText { .. }
             | Self::LinkAt { .. }
             | Self::ReadLines { .. }
+            | Self::Search { .. }
+            | Self::SearchMatches { .. }
             | Self::Styles { .. } => Some(Capability::TerminalRead),
             Self::WorkingDirectory(_) => Some(Capability::ProcessRead),
             Self::Open(_) | Self::Opens(_) => Some(Capability::Open),
@@ -533,6 +566,7 @@ impl Request {
             | Self::FocusedPane
             | Self::Decorate { .. }
             | Self::Undecorate { .. }
+            | Self::EndSearch(_)
             | Self::SelectAll(_)
             | Self::ClearScrollback(_)
             | Self::Clear(_)
@@ -597,6 +631,9 @@ impl Request {
             | Self::LinkAt { .. }
             | Self::WorkingDirectory(_)
             | Self::ReadLines { .. }
+            | Self::Search { .. }
+            | Self::EndSearch(_)
+            | Self::SearchMatches { .. }
             | Self::Styles { .. }
             | Self::Opens(_)
             | Self::FontSize
@@ -682,6 +719,10 @@ pub enum Response {
     FontSize(f32),
     /// A read's id, whose rows come as an event.
     Reading(u64),
+    /// A search's id, whose matches come as events.
+    Searching(u64),
+    /// Matches of a search, as a read of them gives them.
+    Matches(Found),
     /// A question's id, whose answer comes as an event.
     Asking(u64),
     /// A tab bar's place.
@@ -771,6 +812,24 @@ pub enum Event {
         /// Whether the read went to its end.
         complete: bool,
     },
+    /// Matches of a search that the plugin asked for, to it alone: a
+    /// part's, of its rows, the nearest to the view first, as their cells
+    /// were found; how many the search found so far, those past
+    /// [`MOST_MATCHES`](crate::host::MOST_MATCHES) too; and whether it went
+    /// to its end, of its last part, or of a pane that closed or a resize
+    /// that renumbered its rows in the middle, as it stops.
+    Searched {
+        /// The search's id.
+        id: u64,
+        /// The pane.
+        pane: PaneId,
+        /// The part's matches, in its rows' order.
+        matches: Vec<SearchMatch>,
+        /// How many matches it found so far.
+        count: usize,
+        /// Whether it went to its end.
+        done: bool,
+    },
     /// A panel of the plugin's closed, as a click outside it, Escape, the
     /// app or the plugin closed it, or a menu shown as the platform's own
     /// closed with a choice or without one, to it alone.
@@ -815,6 +874,7 @@ impl Event {
             Self::Workspace(event) => event.name(),
             Self::Pointer { .. } => POINTER,
             Self::Lines { .. } => "lines",
+            Self::Searched { .. } => "searched",
             Self::PanelClosed(_) => "panel-closed",
             Self::Answered { .. } => "answered",
             Self::TabBarResized { .. } => "tab-bar-resized",

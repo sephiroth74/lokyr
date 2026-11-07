@@ -53,6 +53,7 @@ use crate::workspace::{
     Direction, Edge, Layout, Pane, PaneId, Ratio, Side, TabId, WindowId, Workspace,
 };
 
+mod search;
 mod worker;
 
 use worker::{Called, Done, FromWorker, Job, Worker};
@@ -320,6 +321,8 @@ struct State {
     /// of each tab, which a change of the tab's folder or program, that it
     /// cannot read, leaves.
     told_tabs: BTreeMap<host::TabId, host::TabInfo>,
+    /// Its searches of the panes' terminals, a pane's last alone.
+    searches: Vec<search::Search>,
 }
 
 impl State {
@@ -745,6 +748,7 @@ impl Plugins {
                 dim: 0.0,
                 follows: false,
                 told_tabs: BTreeMap::new(),
+                searches: Vec::new(),
             },
         });
         Ok(())
@@ -1300,9 +1304,12 @@ impl Plugins {
                     });
                 }
             }
+            // A pane's header goes with it, and its searches stop, its
+            // terminal gone.
             Event::Workspace(WorkspaceEvent::PaneClosed { pane, .. }) => {
                 for entry in &mut self.entries {
                     entry.state.views.remove(&ViewId::PaneHeader(*pane));
+                    entry.state.searches.retain(|search| search.pane != *pane);
                 }
             }
             _ => {}
@@ -1496,8 +1503,25 @@ impl Plugins {
             .push((Some(name.to_owned()), Event::PanelClosed(id.clone())));
     }
 
-    /// Takes the reads of rows that ended, as events to their plugins.
+    /// Takes the reads of rows that ended, and the searches' parts that
+    /// came, as events to their plugins.
     fn take_reads(&mut self) {
+        // The searches' parts that came, to their plugins.
+        for entry in &mut self.entries {
+            let name = &entry.state.name;
+            for search in &mut entry.state.searches {
+                for part in search.take() {
+                    let event = Event::Searched {
+                        id: search.id,
+                        pane: search.pane,
+                        matches: part.matches,
+                        count: part.count,
+                        done: part.done,
+                    };
+                    self.out.events.push((Some(name.clone()), event));
+                }
+            }
+        }
         let Outbox { reads, events, .. } = &mut self.out;
         reads.retain(|read| {
             let (lines, complete) = match read.rows.try_recv() {
@@ -1605,6 +1629,10 @@ impl Plugins {
     /// main thread.
     pub fn waiting(&self) -> bool {
         !self.out.reads.is_empty()
+            || self
+                .entries
+                .iter()
+                .any(|entry| entry.state.searches.iter().any(search::Search::is_busy))
             || self
                 .entries
                 .iter()
@@ -2048,6 +2076,13 @@ fn stop(
     }
     state.views.clear();
     state.subscribed.clear();
+    for search in std::mem::take(&mut state.searches) {
+        let reader = context
+            .workspace
+            .pane(PaneId::of(search.pane.0))
+            .and_then(Pane::reader);
+        search.end(reader.as_ref());
+    }
     state.bar_place = host::BarPlace::default();
     state.window_places.clear();
     state.dim = 0.0;
@@ -2887,6 +2922,65 @@ impl Host<'_, '_> {
                     rows: read_rows(reader, epoch, first, count.min(host::MOST_LINES)),
                 });
                 Response::Reading(id)
+            }
+            Asked::Search { pane, query } => {
+                let found = self.pane(pane)?;
+                let reader = found.reader().ok_or_else(|| {
+                    Error::new(
+                        Code::Unavailable,
+                        format!("the pane {} has no terminal", pane.0),
+                    )
+                })?;
+                let query =
+                    search::query(&query).map_err(|message| Error::new(Code::Failed, message))?;
+                // Its search of the pane before ends, its matches gone.
+                if let Some(at) = self
+                    .state
+                    .searches
+                    .iter()
+                    .position(|kept| kept.pane == pane)
+                {
+                    let before = self.state.searches.remove(at);
+                    before.end(Some(&reader));
+                }
+                let id = new_id();
+                self.state
+                    .searches
+                    .push(search::Search::start(id, pane, reader, query));
+                Response::Searching(id)
+            }
+            Asked::EndSearch(id) => {
+                if let Some(at) = self.state.searches.iter().position(|kept| kept.id == id) {
+                    let ended = self.state.searches.remove(at);
+                    let reader = self
+                        .context
+                        .workspace
+                        .pane(PaneId::of(ended.pane.0))
+                        .and_then(Pane::reader);
+                    ended.end(reader.as_ref());
+                }
+                Response::Done
+            }
+            Asked::SearchMatches {
+                search,
+                first,
+                count,
+            } => {
+                let not_found =
+                    || Error::new(Code::NotFound, format!("there is no search {search}"));
+                let kept = self
+                    .state
+                    .searches
+                    .iter()
+                    .find(|kept| kept.id == search)
+                    .ok_or_else(not_found)?;
+                let reader = self
+                    .context
+                    .workspace
+                    .pane(PaneId::of(kept.pane.0))
+                    .and_then(Pane::reader)
+                    .ok_or_else(not_found)?;
+                Response::Matches(kept.matches(&reader, first, count.min(host::MOST_LINES)))
             }
             Asked::Styles { pane, row } => {
                 Response::Styles(self.pane(pane)?.row_styles(row).map(|runs| {

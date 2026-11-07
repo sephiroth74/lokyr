@@ -59,7 +59,7 @@ impl Terminal {
     }
 
     /// The number of the active screen's row at `index` of its list.
-    pub(super) fn row_number(&self, index: usize) -> i64 {
+    pub fn row_number(&self, index: usize) -> i64 {
         let rows = &self.screen().rows;
         // Fewer rows, and scrolls, than an `i64` holds.
         let first = rows.scrolled() as i64 - rows.scrollback_rows() as i64;
@@ -68,7 +68,7 @@ impl Terminal {
 
     /// The index in the active screen's list of the row numbered `row`, if
     /// the list holds it.
-    pub(super) fn row_index(&self, row: i64) -> Option<usize> {
+    pub fn row_index(&self, row: i64) -> Option<usize> {
         let index = usize::try_from(row.checked_sub(self.row_number(0))?).ok()?;
         (index < self.screen().rows.total_rows()).then_some(index)
     }

@@ -47,8 +47,8 @@
 
 use crate::command::{Args, Code, Command, Error};
 use crate::host::{
-    BarPlace, Binding, Color, DecorationLook, Direction, Edge, Host, Layout, LineText, PaneId,
-    ScreenPoint, Scroll, Side, StyleRun, TabId, TabInfo, WindowId, WindowInfo,
+    BarPlace, Binding, Color, DecorationLook, Direction, Edge, Found, Host, Layout, LineText,
+    PaneId, ScreenPoint, Scroll, SearchQuery, Side, StyleRun, TabId, TabInfo, WindowId, WindowInfo,
 };
 use crate::message::{Call, Data, Event, Request, Response};
 use crate::ui::{PanelId, PanelOptions, UiEvent, ViewId};
@@ -350,6 +350,44 @@ impl<'a> Cx<'a> {
     pub fn read_lines(&mut self, pane: PaneId, first: i64, count: usize) -> Result<u64, Error> {
         match self.request(Request::ReadLines { pane, first, count }) {
             Response::Reading(id) => Ok(id),
+            other => Err(failed(other)),
+        }
+    }
+
+    /// Searches `pane`'s terminal, its scrollback too, for `query`, on a
+    /// thread of the host's, from the rows that its view shows outward:
+    /// returns the search's id, and the matches come to
+    /// [`on_event`](Plugin::on_event) as [`Event::Searched`] events of that
+    /// id, a part's each, which no subscription needs. The plugin's search
+    /// of the pane before ends; the matches stay until its next one,
+    /// [`Cx::end_search`], or the pane's close.
+    pub fn search(&mut self, pane: PaneId, query: SearchQuery) -> Result<u64, Error> {
+        match self.request(Request::Search { pane, query }) {
+            Response::Searching(id) => Ok(id),
+            other => Err(failed(other)),
+        }
+    }
+
+    /// Ends the plugin's search `search`, at once: it stops, and its
+    /// matches go.
+    pub fn end_search(&mut self, search: u64) -> Result<(), Error> {
+        self.done(Request::EndSearch(search))
+    }
+
+    /// The matches of the plugin's search `search`, in the rows' order,
+    /// from the one at `first`, `count` at most, as their cells are now.
+    pub fn search_matches(
+        &mut self,
+        search: u64,
+        first: usize,
+        count: usize,
+    ) -> Result<Found, Error> {
+        match self.request(Request::SearchMatches {
+            search,
+            first,
+            count,
+        }) {
+            Response::Matches(found) => Ok(found),
             other => Err(failed(other)),
         }
     }

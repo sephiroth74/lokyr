@@ -37,6 +37,38 @@ enum Matcher {
     Regex(Box<Regex>),
 }
 
+/// `text` with each of the regex syntax's own characters escaped, so that
+/// a regex of it finds it as it is.
+fn escaped(text: &str) -> String {
+    let mut escaped = String::with_capacity(text.len());
+    for c in text.chars() {
+        if matches!(
+            c,
+            '\\' | '.'
+                | '+'
+                | '*'
+                | '?'
+                | '('
+                | ')'
+                | '|'
+                | '['
+                | ']'
+                | '{'
+                | '}'
+                | '^'
+                | '$'
+                | '#'
+                | '&'
+                | '-'
+                | '~'
+        ) {
+            escaped.push('\\');
+        }
+        escaped.push(c);
+    }
+    escaped
+}
+
 /// A regex that does not compile.
 #[derive(Debug)]
 pub struct PatternError(Box<BuildError>);
@@ -70,6 +102,17 @@ impl Query {
             case,
             whole_word: false,
         })
+    }
+
+    /// `text`, as it is, with `case`, as [`Query::literal`] gives it; but,
+    /// of a case that does not count, text that is not ASCII is a regex of
+    /// the text escaped, whose engine folds Unicode's simple case, where a
+    /// literal folds ASCII's alone. `None` when it is empty.
+    pub fn text(text: &str, case: Case) -> Option<Self> {
+        if case == Case::Insensitive && !text.is_ascii() {
+            return Self::regex(&escaped(text), case).ok();
+        }
+        Self::literal(text, case)
     }
 
     /// The regex `pattern`, with `case`. Its lazy DFAs, forward and
