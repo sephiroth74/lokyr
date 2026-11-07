@@ -17,7 +17,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use lokyr_plugin_sdk::command::{Args, Category, Code, Command, Error, Kind, Param, Value};
 use lokyr_plugin_sdk::event::WorkspaceEvent;
-use lokyr_plugin_sdk::host::{BarPlace, Color, ScreenPoint, TabId, TabInfo, WindowId};
+use lokyr_plugin_sdk::host::{
+    BarPlace, Color, MenuItem, MenuPlace, ScreenPoint, TabId, TabInfo, WindowId,
+};
 use lokyr_plugin_sdk::message::{Data, Event, KEYS_CHANGED};
 use lokyr_plugin_sdk::plugin::{Cx, Plugin};
 use lokyr_plugin_sdk::ui::{Anchor, PanelId, PanelOptions, Role, UiEvent, ViewId};
@@ -204,6 +206,13 @@ impl Plugin for Tabs {
                 when: None,
             })?;
         }
+        // The pane's context menu renames its tab.
+        cx.add_menu_item(MenuItem {
+            place: MenuPlace::PaneContext,
+            command: RENAME.to_owned(),
+            args: Args::new(),
+            title: None,
+        })?;
         Ok(())
     }
 

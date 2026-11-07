@@ -785,11 +785,12 @@ fn kind(request: &Request) -> usize {
         Request::Themes => 78,
         Request::PreviewTheme(_) => 79,
         Request::SetTheme { .. } => 80,
+        Request::AddMenuItem(_) => 81,
     }
 }
 
 /// How many kinds of requests the plugin API has.
-const KINDS: usize = 81;
+const KINDS: usize = 82;
 
 #[test]
 fn the_scenarios_hold_every_request_of_the_plugin_api() {

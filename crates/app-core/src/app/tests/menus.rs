@@ -67,7 +67,17 @@ fn starting_opens_a_window_under_the_menus_of_the_commands() {
             "Zoom Pane shift+cmd+Enter",
             "Equalize Panes",
             "Move Pane to New Tab",
-            "Move Pane to New Window"
+            "Move Pane to New Window",
+            "Close Pane",
+            "-",
+            "Split Right cmd+d",
+            "Split Left",
+            "Split Down shift+cmd+d",
+            "Split Up",
+            "Select Pane Left alt+cmd+ArrowLeft",
+            "Select Pane Right alt+cmd+ArrowRight",
+            "Select Pane Above alt+cmd+ArrowUp",
+            "Select Pane Below alt+cmd+ArrowDown"
         ]
     );
     assert_eq!(
@@ -157,7 +167,17 @@ fn the_menus_follow_the_keys_of_the_config() {
             "Zoom Pane shift+cmd+Enter",
             "Equalize Panes",
             "Move Pane to New Tab",
-            "Move Pane to New Window"
+            "Move Pane to New Window",
+            "Close Pane",
+            "-",
+            "Split Right cmd+d",
+            "Split Left",
+            "Split Down shift+cmd+d",
+            "Split Up",
+            "Select Pane Left alt+cmd+ArrowLeft",
+            "Select Pane Right alt+cmd+ArrowRight",
+            "Select Pane Above alt+cmd+ArrowUp",
+            "Select Pane Below alt+cmd+ArrowDown"
         ]
     );
     assert_eq!(
@@ -327,7 +347,7 @@ fn the_app_s_commands_register_with_their_categories_and_titles() {
         ]
     );
     let texts = Texts::new("en", &CATALOGS);
-    let menu = main_menu(&registry, &Keymap::default(), &texts);
+    let menu = main_menu(&registry, &Keymap::default(), &texts, &[]);
     let titles: Vec<&str> = menu.menus[1]
         .items
         .iter()
@@ -448,16 +468,32 @@ fn a_right_click_selects_and_opens_the_context_menu_at_the_pointer() {
             "Paste",
             "-",
             "Select All",
-            "Clear"
+            "Clear",
+            "-",
+            "Rename Tab…",
+            "-",
+            "Split Right",
+            "Split Left",
+            "Split Down",
+            "Split Up",
+            "Move Pane to New Tab",
+            "Move Pane to New Window",
+            "Close Pane"
         ]
     );
-    assert_eq!(dimmed, ["links.open"]);
+    // A pane alone in its window moves nowhere, nor closes as a split.
+    let alone = [
+        "Move Pane to New Tab",
+        "Move Pane to New Window",
+        "Close Pane",
+    ];
+    assert_eq!(dimmed[..], [&["links.open"][..], &alone].concat());
     // Within the selection, which stays.
     select_drag(&mut fake, &mut app, window, (cell(0, 0), cell(3, 0)), none);
     right_click(&mut fake, &mut app, window, cell(1, 0), none);
     assert_eq!(selected_text(&app, window).as_deref(), Some("hel"));
     assert_eq!(context_menu(&fake, window).1[3], "Look Up “hel”");
-    assert_eq!(context_menu(&fake, window).2, ["links.open"]);
+    assert_eq!(context_menu(&fake, window).2[..1], ["links.open"]);
     // On a blank cell, which takes it away, and dims Copy and Look Up.
     right_click(&mut fake, &mut app, window, cell(5, 0), none);
     assert_eq!(selected_text(&app, window), None);
@@ -467,7 +503,7 @@ fn a_right_click_selects_and_opens_the_context_menu_at_the_pointer() {
         ["Open man Page", "-", "Look Up"]
     );
     assert_eq!(
-        context_menu(&fake, window).2,
+        context_menu(&fake, window).2[..4],
         ["links.open", "pane.man-page", "pane.look-up", "pane.copy"]
     );
     // A Control click opens it too, and starts no selection that the
@@ -694,9 +730,9 @@ fn the_context_menu_opens_the_link_at_its_cell() {
     fake.send(&mut app, window, WindowEvent::Focused(false));
     // On the URL, which names no man page.
     right_click(&mut fake, &mut app, window, cell(10, 0), Modifiers::NONE);
-    assert_eq!(context_menu(&fake, window).2, [MAN_PAGE]);
+    assert_eq!(context_menu(&fake, window).2[..1], [MAN_PAGE]);
     right_click(&mut fake, &mut app, window, cell(1, 0), Modifiers::NONE);
-    assert_eq!(context_menu(&fake, window).2, ["links.open"]);
+    assert_eq!(context_menu(&fake, window).2[..1], ["links.open"]);
     // The item takes the cell that the menu opened on.
     right_click(&mut fake, &mut app, window, cell(10, 0), Modifiers::NONE);
     let chosen = WindowEvent::ContextCommand("links.open".to_owned());
@@ -723,9 +759,9 @@ fn the_context_menu_s_link_is_told_by_its_row_s_number_after_a_scroll() {
         .expect("the URL on screen");
     // On the URL, Open Link is enabled; on the word before it, dimmed.
     right_click(&mut fake, &mut app, window, cell(10, url), Modifiers::NONE);
-    assert_eq!(context_menu(&fake, window).2, [MAN_PAGE]);
+    assert_eq!(context_menu(&fake, window).2[..1], [MAN_PAGE]);
     right_click(&mut fake, &mut app, window, cell(1, url), Modifiers::NONE);
-    assert_eq!(context_menu(&fake, window).2, ["links.open"]);
+    assert_eq!(context_menu(&fake, window).2[..1], ["links.open"]);
 }
 
 #[test]
@@ -1012,4 +1048,91 @@ fn the_context_menu_s_link_is_its_text_s_where_output_moved_it() {
     );
     fake.send(&mut app, window, chosen());
     assert!(fake.alerts().is_empty() && fake.opened().is_empty());
+}
+
+/// The id of the item of `title` of `window`'s last context menu.
+fn context_item(fake: &Fake, window: WindowId, title: &str) -> String {
+    let (over, _, menu) = fake.context_menus().last().expect("a context menu");
+    assert_eq!(*over, window);
+    menu.items
+        .iter()
+        .find_map(|item| match item {
+            MenuItem::Command {
+                title: shown,
+                command,
+                ..
+            } if shown == title => Some(command.clone()),
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("no item “{title}”"))
+}
+
+/// The id of the item of `title` of the menu bar's menu at `index`.
+fn bar_item(fake: &Fake, index: usize, title: &str) -> String {
+    fake.main_menu().unwrap().menus[index]
+        .items
+        .iter()
+        .find_map(|item| match item {
+            MenuItem::Command {
+                title: shown,
+                command,
+                ..
+            } if shown == title => Some(command.clone()),
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("no item “{title}”"))
+}
+
+#[test]
+fn a_plugin_s_items_run_their_commands_with_their_arguments() {
+    use lokyr_kernel::workspace::{Direction, Layout};
+    let (mut fake, mut app, window) = selecting("", "");
+    let shown = app.windows[&window].window;
+    let layout = |app: &App| {
+        let tab = app.workspace.window(shown).unwrap().active_tab();
+        app.workspace.tab(tab).unwrap().layout().clone()
+    };
+    let first = app.workspace.panes_of(shown)[0];
+    // The context menu's Split Left, in its window, which has no focus: the
+    // new pane on the left, with the keyboard.
+    right_click(&mut fake, &mut app, window, cell(8, 0), Modifiers::NONE);
+    let item = context_item(&fake, window, "Split Left");
+    assert!(item.starts_with("menu-item:"), "{item}");
+    fake.send(&mut app, window, WindowEvent::ContextCommand(item));
+    run_until(&mut fake, &mut app, |_, app| {
+        app.workspace.panes_of(shown).len() == 2
+    });
+    let Layout::Split {
+        direction: Direction::Horizontal,
+        first: left,
+        second: right,
+        ..
+    } = layout(&app)
+    else {
+        panic!("{:?}", layout(&app));
+    };
+    assert_eq!(*right, Layout::Leaf(first));
+    let Layout::Leaf(new) = *left else {
+        panic!("{left:?}");
+    };
+    // The menu bar's Split Up, of its window with the focus: a new pane
+    // over the left one.
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    let item = bar_item(&fake, 1, "Split Up");
+    fake.send_app(&mut app, AppEvent::Command(item));
+    run_until(&mut fake, &mut app, |_, app| {
+        app.workspace.panes_of(shown).len() == 3
+    });
+    let Layout::Split { first: left, .. } = layout(&app) else {
+        panic!("{:?}", layout(&app));
+    };
+    let Layout::Split {
+        direction: Direction::Vertical,
+        second: under,
+        ..
+    } = *left
+    else {
+        panic!("{left:?}");
+    };
+    assert_eq!(*under, Layout::Leaf(new));
 }

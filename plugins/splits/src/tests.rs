@@ -96,15 +96,170 @@ fn the_commands_register_with_their_parameters_and_their_titles() {
             (SWAP, vec!["direction"]),
             (MOVE_TO_TAB, vec![]),
             (MOVE_TO_WINDOW, vec![]),
+            (CLOSE, vec![]),
         ]
     );
-    // Every title in both languages.
+    // Every title in both languages, the items' too.
     for (_, catalog) in CATALOGS {
         for (name, ..) in COMMANDS {
             let message = format!("command-{} =", name.replace('.', "-"));
             assert!(catalog.contains(&message), "{message}");
         }
+        for (.., title) in ITEMS {
+            if let Some(title) = title {
+                assert!(catalog.contains(&format!("{title} =")), "{title}");
+            }
+        }
     }
+}
+
+#[test]
+fn the_menus_items_split_and_select_by_direction_and_the_context_moves_and_closes() {
+    let (host, _) = host();
+    let items: Vec<(MenuPlace, &str, Option<&Value>, Option<&str>)> = host
+        .menu_items()
+        .iter()
+        .map(|item| {
+            (
+                item.place,
+                item.command.as_str(),
+                item.args.get("direction"),
+                item.title.as_deref(),
+            )
+        })
+        .collect();
+    let to = |name: &str| Value::String(name.to_owned());
+    let (right, left, down, up) = (to("right"), to("left"), to("down"), to("up"));
+    assert_eq!(
+        items,
+        [
+            (BAR, SPLIT, Some(&right), Some("menu-split-right")),
+            (BAR, SPLIT, Some(&left), Some("menu-split-left")),
+            (BAR, SPLIT, Some(&down), Some("menu-split-down")),
+            (BAR, SPLIT, Some(&up), Some("menu-split-up")),
+            (BAR, FOCUS, Some(&left), Some("menu-select-left")),
+            (BAR, FOCUS, Some(&right), Some("menu-select-right")),
+            (BAR, FOCUS, Some(&up), Some("menu-select-up")),
+            (BAR, FOCUS, Some(&down), Some("menu-select-down")),
+            (CONTEXT, SPLIT, Some(&right), Some("menu-split-right")),
+            (CONTEXT, SPLIT, Some(&left), Some("menu-split-left")),
+            (CONTEXT, SPLIT, Some(&down), Some("menu-split-down")),
+            (CONTEXT, SPLIT, Some(&up), Some("menu-split-up")),
+            (CONTEXT, MOVE_TO_TAB, None, None),
+            (CONTEXT, MOVE_TO_WINDOW, None, None),
+            (CONTEXT, CLOSE, None, None),
+        ]
+    );
+}
+
+#[test]
+fn a_split_left_or_up_puts_the_new_pane_first() {
+    let (mut host, mut plugin) = host();
+    run(&mut host, &mut plugin, SPLIT, towards("left", None));
+    let second = focused(&mut host, &mut plugin);
+    run(&mut host, &mut plugin, SPLIT, towards("up", None));
+    let third = focused(&mut host, &mut plugin);
+    assert_eq!(
+        layout(&mut host, &mut plugin),
+        Layout::Split {
+            direction: Lie::Horizontal,
+            ratio: None,
+            first: Box::new(Layout::Split {
+                direction: Lie::Vertical,
+                ratio: None,
+                first: Box::new(Layout::Pane(third)),
+                second: Box::new(Layout::Pane(second)),
+            }),
+            second: Box::new(Layout::Pane(PaneId(1))),
+        }
+    );
+}
+
+#[test]
+fn close_pane_closes_the_focused_pane_of_a_tab_of_more_than_one() {
+    let (mut host, mut plugin, [.., third]) = three();
+    assert_eq!(
+        run(&mut host, &mut plugin, CLOSE, Args::new()),
+        [Request::ClosePane {
+            pane: third,
+            ask: true,
+        }]
+    );
+    let (mut host, mut plugin) = self::host();
+    assert_eq!(run(&mut host, &mut plugin, CLOSE, Args::new()), []);
+}
+
+#[test]
+fn a_command_applies_where_it_would_change_the_tab() {
+    let (mut host, mut plugin) = host();
+    let applies = |host: &mut FakeHost, plugin: &mut Splits, name: &str, args: Args| {
+        host.applies(plugin, name, &args)
+    };
+    // A pane alone: a split, a resize, nothing else.
+    assert!(applies(&mut host, &mut plugin, SPLIT, towards("up", None)));
+    assert!(applies(&mut host, &mut plugin, RESIZE, towards("up", None)));
+    for name in [
+        FOCUS_NEXT,
+        FOCUS_PREV,
+        ZOOM,
+        EQUALIZE,
+        MOVE_TO_TAB,
+        MOVE_TO_WINDOW,
+        CLOSE,
+    ] {
+        assert!(
+            !applies(&mut host, &mut plugin, name, Args::new()),
+            "{name}"
+        );
+    }
+    assert!(!applies(
+        &mut host,
+        &mut plugin,
+        FOCUS,
+        towards("left", None)
+    ));
+    // 1 on the left, 2 over 3 on the right, 3 of the keyboard.
+    let (mut host, mut plugin, _) = three();
+    for name in [
+        FOCUS_NEXT,
+        FOCUS_PREV,
+        ZOOM,
+        EQUALIZE,
+        MOVE_TO_TAB,
+        MOVE_TO_WINDOW,
+        CLOSE,
+    ] {
+        assert!(applies(&mut host, &mut plugin, name, Args::new()), "{name}");
+    }
+    assert!(applies(
+        &mut host,
+        &mut plugin,
+        FOCUS,
+        towards("left", None)
+    ));
+    assert!(applies(&mut host, &mut plugin, SWAP, towards("up", None)));
+    assert!(!applies(
+        &mut host,
+        &mut plugin,
+        FOCUS,
+        towards("right", None)
+    ));
+    assert!(!applies(
+        &mut host,
+        &mut plugin,
+        SWAP,
+        towards("down", None)
+    ));
+    // Zoomed, nothing beside, nor a next pane; the zoom ends.
+    run(&mut host, &mut plugin, ZOOM, Args::new());
+    assert!(!applies(
+        &mut host,
+        &mut plugin,
+        FOCUS,
+        towards("left", None)
+    ));
+    assert!(!applies(&mut host, &mut plugin, FOCUS_NEXT, Args::new()));
+    assert!(applies(&mut host, &mut plugin, ZOOM, Args::new()));
 }
 
 #[test]
@@ -125,12 +280,6 @@ fn a_split_right_or_down_gives_the_new_pane_the_keyboard() {
         }
     );
     assert_eq!(focused(&mut host, &mut plugin), third);
-    // Left and up are no splits'.
-    host.take_done();
-    let error = host
-        .command(&mut plugin, SPLIT, towards("left", None))
-        .unwrap_err();
-    assert_eq!(error.code, Code::Failed);
     // Of no direction, which the host's registry refuses first.
     let error = host.command(&mut plugin, SPLIT, Args::new()).unwrap_err();
     assert_eq!(error.code, Code::Failed);

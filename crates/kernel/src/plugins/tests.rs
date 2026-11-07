@@ -425,8 +425,9 @@ fn a_plugin_tells_whether_its_command_applies_and_asks_nothing_meanwhile() {
 }
 
 /// A plugin of three commands, of which its catalogs title the first in
-/// English and Italian, the second in English alone, and the third not;
-/// or whose catalogs panic.
+/// English and Italian, the second in English alone, and the third not,
+/// and of three menus' items, of a message, of a text and of none; or
+/// whose catalogs panic.
 struct Titled {
     panics: bool,
 }
@@ -444,6 +445,18 @@ impl Plugin for Titled {
     fn activate(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
         for name in ["titled.first", "titled.second", "titled.third"] {
             cx.register_command(command(name))?;
+        }
+        for (command, title) in [
+            ("titled.first", Some("command-titled-first")),
+            ("titled.second", Some("Just This")),
+            ("titled.third", None),
+        ] {
+            cx.add_menu_item(host::MenuItem {
+                place: host::MenuPlace::PaneContext,
+                command: command.to_owned(),
+                args: Args::new(),
+                title: title.map(str::to_owned),
+            })?;
         }
         Ok(())
     }
@@ -478,6 +491,31 @@ fn a_plugin_s_catalogs_title_its_commands_in_the_language_shown() {
         ["titled.first", "titled.second", "titled.third"]
     );
     assert_eq!(title_message("pane.select-all"), "command-pane-select-all");
+}
+
+#[test]
+fn a_plugin_s_menu_items_take_their_titles_from_its_catalogs_or_their_own() {
+    let mut app = App::default();
+    let mut plugins = Plugins::new();
+    plugins
+        .add("titled", Box::new(Titled { panics: false }))
+        .unwrap();
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    let titles = |plugins: &Plugins, language: &str| -> Vec<Option<String>> {
+        plugins
+            .menu_items_in(language)
+            .into_iter()
+            .map(|item| item.title)
+            .collect()
+    };
+    assert_eq!(
+        titles(&plugins, "it"),
+        [Some("Primo".to_owned()), Some("Just This".to_owned()), None]
+    );
+    assert_eq!(titles(&plugins, "en")[0].as_deref(), Some("First"));
+    let item = &plugins.menu_items_in("en")[2];
+    assert_eq!(item.place, host::MenuPlace::PaneContext);
+    assert_eq!(item.invocation.command, "titled.third");
 }
 
 /// A plugin whose command reads three messages of its catalogs, of
@@ -1390,6 +1428,7 @@ fn a_call_is_its_own_plugin_s() {
             subscribed: Vec::new(),
             commands: Vec::new(),
             bindings: Vec::new(),
+            menu_items: Vec::new(),
             catalogs: &[],
             views: BTreeMap::new(),
             panels: BTreeMap::new(),

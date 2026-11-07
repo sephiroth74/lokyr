@@ -91,6 +91,10 @@ pub enum Request {
         /// The theme's name.
         name: String,
     },
+    /// Adds a menu item of a command of its arguments, registered, to the
+    /// menu bar or to the pane's context menu, for as long as the plugin
+    /// runs.
+    AddMenuItem(crate::host::MenuItem),
     /// Runs a command with arguments, once the call returns; the call is
     /// checked as it is asked: of a plugin of `user-commands`, as the
     /// user's, any command without a declaration.
@@ -682,7 +686,8 @@ impl Request {
             | Self::Commands
             | Self::Themes
             | Self::PreviewTheme(_)
-            | Self::SetTheme { .. } => None,
+            | Self::SetTheme { .. }
+            | Self::AddMenuItem(_) => None,
         }
     }
 
@@ -768,7 +773,10 @@ impl Request {
             | Self::AskText { .. }
             | Self::PreviewTheme(_)
             | Self::SetTheme { .. } => Effect::App,
-            Self::RegisterCommand(_) | Self::Bind(_) | Self::Subscribe(_) => Effect::Declaration,
+            Self::RegisterCommand(_)
+            | Self::Bind(_)
+            | Self::Subscribe(_)
+            | Self::AddMenuItem(_) => Effect::Declaration,
         }
     }
 }

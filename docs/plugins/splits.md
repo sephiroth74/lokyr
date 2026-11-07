@@ -2,7 +2,7 @@
 
 <sub>`lokyr/splits` · bundled · [source](../../plugins/splits)</sub>
 
-A tab of several panes, side by side and one above another: the commands that split a pane, move the keyboard between panes, resize, zoom, equalize and swap them, and move a pane out to a tab or a window of its own.
+A tab of several panes, side by side and one above another: the commands that split a pane, move the keyboard between panes, resize, zoom, equalize and swap them, move a pane out to a tab or a window of its own, and close it.
 
 ## The panes
 
@@ -15,8 +15,8 @@ A tab of several panes, side by side and one above another: the commands that sp
 
 | Command | Menu | Default keys | What it does |
 |---|---|---|---|
-| `splits.split` | | ⌘D, ⇧⌘D | Splits the pane, `direction` `right` or `down`: the new pane takes the keyboard |
-| `splits.focus` | | ⌥⌘ and an arrow | Gives the keyboard to the pane beside, `direction` `left`, `right`, `up` or `down` |
+| `splits.split` | Shell › Split Right, Split Left, Split Down, Split Up | ⌘D (right), ⇧⌘D (down) | Splits the pane, `direction` `right`, `left`, `down` or `up`: the new pane, on that side, takes the keyboard |
+| `splits.focus` | Shell › Select Pane Left, Select Pane Right, Select Pane Above, Select Pane Below | ⌥⌘ and an arrow | Gives the keyboard to the pane beside, `direction` `left`, `right`, `up` or `down` |
 | `splits.focus-next`, `splits.focus-prev` | Shell › Select Next Pane, Select Previous Pane | ⌘], ⌘[ | Gives the keyboard to the tab's next or previous pane, around the ends |
 | `splits.resize` | | ⌃⌘ and an arrow | Moves a divider of the pane `cells`, 1 by default, towards `direction` |
 | `splits.zoom-toggle` | Shell › Zoom Pane | ⇧⌘Return | Has the pane take the tab's whole room, or gives the others theirs back |
@@ -24,6 +24,9 @@ A tab of several panes, side by side and one above another: the commands that sp
 | `splits.swap` | | | Swaps the pane with the one beside it, `direction` `left`, `right`, `up` or `down` |
 | `splits.move-to-tab` | Shell › Move Pane to New Tab | | Moves the pane out to a tab of its own |
 | `splits.move-to-window` | Shell › Move Pane to New Window | | Moves the pane out to a window of its own |
+| `splits.close` | Shell › Close Pane | | Closes the pane of a tab of more than one, asking first while a program other than the shell runs in it; ⌘W closes it too, as the tab's close does while the tab has splits |
+
+The pane's context menu splits it right, left, down or up, moves it to a tab or a window of its own, and closes it; an item that would do nothing there is dimmed, as Close Pane in a tab of one pane.
 
 The commands without keys are there for your own bindings:
 

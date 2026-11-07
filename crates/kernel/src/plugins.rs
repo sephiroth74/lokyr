@@ -307,6 +307,8 @@ struct State {
     subscribed: Vec<String>,
     commands: Vec<Command>,
     bindings: Vec<Binding>,
+    /// Its items of the menus, in their order.
+    menu_items: Vec<host::MenuItem>,
     /// Its catalogs, of its commands' titles.
     catalogs: &'static [(&'static str, &'static str)],
     /// The last tree of each of its views that it rendered, `None` for a
@@ -780,6 +782,7 @@ impl Plugins {
                 subscribed: Vec::new(),
                 commands: Vec::new(),
                 bindings: Vec::new(),
+                menu_items: Vec::new(),
                 catalogs,
                 views: BTreeMap::new(),
                 panels: BTreeMap::new(),
@@ -1192,6 +1195,31 @@ impl Plugins {
             }));
         }
         commands
+    }
+
+    /// The menus' items of the active plugins, in their order, each titled
+    /// in `language` from its plugin's catalogs, the language's or
+    /// English's, or by its own text where they lack it; `None` for the
+    /// command's title.
+    pub fn menu_items_in(&self, language: &str) -> Vec<MenuEntry> {
+        let mut items = Vec::new();
+        for state in self.active() {
+            let texts = Texts::new(language, state.catalogs);
+            items.extend(state.menu_items.iter().map(|item| {
+                MenuEntry {
+                    place: item.place,
+                    invocation: Invocation {
+                        command: item.command.clone(),
+                        args: item.args.clone(),
+                    },
+                    title: item
+                        .title
+                        .as_ref()
+                        .map(|title| texts.get(title).unwrap_or_else(|| title.clone())),
+                }
+            }));
+        }
+        items
     }
 
     /// The fade of the panes that have not their tab's keyboard, toward their
@@ -2006,6 +2034,19 @@ fn theme_name(name: &str) -> Result<(), Error> {
     }
 }
 
+/// A plugin's item of the menus, as the app shows it: where, the command
+/// that it runs with its arguments, and its title, `None` for the
+/// command's.
+#[derive(Clone, Debug, PartialEq)]
+pub struct MenuEntry {
+    /// The menu.
+    pub place: host::MenuPlace,
+    /// What it runs.
+    pub invocation: Invocation,
+    /// Its title, in the app's language.
+    pub title: Option<String>,
+}
+
 /// The message of a plugin's catalogs that titles its command `name`:
 /// `command-` and the name, with `-` for its `.`, as `command-pane-copy`.
 pub fn title_message(name: &str) -> String {
@@ -2678,16 +2719,17 @@ fn message(payload: &(dyn Any + Send)) -> String {
 }
 
 /// Disables the plugin of `state`: its commands leave `registry`, and its
-/// bindings go.
+/// bindings and its menus' items go.
 fn disable(state: &mut State, registry: &mut Registry, declarations_changed: &mut bool) {
     state.status = Status::Disabled;
-    if !state.commands.is_empty() || !state.bindings.is_empty() {
+    if !state.commands.is_empty() || !state.bindings.is_empty() || !state.menu_items.is_empty() {
         *declarations_changed = true;
     }
     for command in state.commands.drain(..) {
         registry.unregister(&command.name);
     }
     state.bindings.clear();
+    state.menu_items.clear();
 }
 
 /// Gives the commands that `requests` run the depth `depth`, of the
@@ -3488,20 +3530,7 @@ impl Host<'_, '_> {
     fn ask_app(&mut self, request: Asked) -> Result<Response, Error> {
         let asked = match request {
             Asked::RunCommand { name, args } => {
-                let registry = &self.context.registry;
-                // A plugin of `user-commands` runs any as the user's.
-                let args = match (&self.state.uses, &self.state.granted) {
-                    (Some(uses), Some(granted)) if !granted.contains(&Capability::UserCommands) => {
-                        registry.check_for_plugin(
-                            &name,
-                            args,
-                            &self.state.commands,
-                            uses,
-                            granted,
-                        )?
-                    }
-                    _ => registry.check(&name, args)?,
-                };
+                let args = self.check_run(&name, args)?;
                 Request::Run {
                     invocation: Invocation {
                         command: name,
@@ -3682,6 +3711,19 @@ impl Host<'_, '_> {
         Ok(Response::Done)
     }
 
+    /// Checks a run of `name` with `args` that the plugin asks for, as of
+    /// its manifest's commands and its capabilities; a plugin of
+    /// `user-commands` runs any as the user's.
+    fn check_run(&self, name: &str, args: Args) -> Result<Args, Error> {
+        let registry = &self.context.registry;
+        match (&self.state.uses, &self.state.granted) {
+            (Some(uses), Some(granted)) if !granted.contains(&Capability::UserCommands) => {
+                registry.check_for_plugin(name, args, &self.state.commands, uses, granted)
+            }
+            _ => registry.check(name, args),
+        }
+    }
+
     /// Takes `request`, a declaration of the plugin's commands or keys, at
     /// once.
     fn declare(&mut self, request: Asked) -> Result<Response, Error> {
@@ -3719,6 +3761,22 @@ impl Host<'_, '_> {
                     },
                     when,
                 });
+                *self.declarations_changed = true;
+            }
+            Asked::AddMenuItem(item) => {
+                if !commands::is_name(&item.command) {
+                    return Err(Error::new(
+                        Code::InvalidName,
+                        format!(
+                            "`{}` is not a command's name, `namespace.action`",
+                            item.command
+                        ),
+                    ));
+                }
+                // The item runs as the plugin would: its arguments make a
+                // whole call, which it may make.
+                self.check_run(&item.command, item.args.clone())?;
+                self.state.menu_items.push(item);
                 *self.declarations_changed = true;
             }
             Asked::Subscribe(names) => {

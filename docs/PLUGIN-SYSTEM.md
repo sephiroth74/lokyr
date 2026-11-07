@@ -469,9 +469,6 @@ type Command = {
     when: string?, -- the context in which it can run, as a binding's `when`
 }
 
--- A command, as a read of the registry gives it; `plugin`, `keys`, `when` and `enabled` to a plugin of `user-commands`
--- alone: the plugin that registered it, nil of the app's own; its keys of no arguments, as "⌘T"; its context; and whether
--- the menus enable it now.
 -- The themes that the app can show, as a read of them gives them: the appearance in force, its theme as `[theme]` names
 -- it, and every theme by name, a file of the user's folder before one of its name that the app holds or builds in.
 type Themes = {
@@ -479,6 +476,9 @@ type Themes = {
     themes: { { name: string, variant: "light" | "dark", origin: "folder" | "held" | "built-in" } },
 }
 
+-- A command, as a read of the registry gives it; `plugin`, `keys`, `when` and `enabled` to a plugin of `user-commands`
+-- alone: the plugin that registered it, nil of the app's own; its keys of no arguments, as "⌘T"; its context; and whether
+-- the menus enable it now.
 type CommandInfo = {
     name: string, title: string, category: string,
     params: { { name: string, kind: string, default: (string | number | boolean)? } },
@@ -488,6 +488,15 @@ type CommandInfo = {
 -- `keys`: e.g. "cmd+f" or "ctrl+a>c"; `when`: e.g. "pane.focused && !search.open", where a plugin's
 -- panels give `namespace.open` while one shows, and `namespace.focused` while one has the keyboard.
 type Binding = { keys: string, command: string, args: Args?, when: string? }
+
+-- An item of the menu bar's menu of a category, after its commands, or of the pane's context menu, after the editing's:
+-- a command and its arguments, a whole call, as Split Left's `{ direction = "left" }`; its title the message `title` of
+-- the plugin's catalogs, or `title` itself where they lack it, or the command's without one. The menu bar shows the keys
+-- bound to the same call; the command's `when` dims the item, and its plugin's `applies` the context menu's.
+type MenuItem = {
+    place: { bar: "app" | "windows" | "tabs" | "panes" | "input" | "clipboard" | "edit" | "find" | "view" } | "pane-context",
+    command: string, args: Args?, title: string?,
+}
 
 -- The logical line of a row: its text, and each character's cell, { column, row's number }.
 type LineText = { text: string, cells: { { number } } }
@@ -502,6 +511,8 @@ type Cx = {
     -- Declarations, at once.
     register_command: (command: Command) -> (boolean, Error?),
     bind: (binding: Binding) -> (boolean, Error?),
+    -- An item of a menu, of a registered command and its arguments, which the plugin may run, for as long as it runs.
+    add_menu_item: (item: MenuItem) -> (boolean, Error?),
     -- The workspace's events, as "tab-created", the pointer's, "pointer", and plugins' own, as "search.progress".
     subscribe: (names: { string }) -> (boolean, Error?),
     -- An event of the plugin's namespace, which comes after the call returns.
@@ -687,7 +698,8 @@ type Plugin = {
 ## Commands
 
 - **A command** ([ADR 0019](adr/0019-commands-errors-and-permissions.md)) has a name, `namespace.action`, each part of lowercase letters, digits and `-`, from a letter, as `window.new`, `tabs.goto` or `search-plus.open`; a title, for the menus and the palette; a category, which also tells the menu that lists it; the capabilities that its action needs; its parameters, a flat schema: each named as the parts are, of a string, an integer, a number or a boolean, and required, or optional with a default of its kind; and, if it needs one, the context in which it can run, written as a binding's `when`, as Copy's `selection`, outside of which its menu's item is dimmed. Its plugin's `applies` can dim the item too, where the command would do nothing, as Open Link where no link is. Its title, in the language that Lokyr shows, comes from its plugin's own catalogs ([ADR 0020](adr/0020-localization.md)), by the message `command-` and the command's name with `-` for its `.`, as `command-pane-copy`, or English's; a title that they lack is the one registered. A native plugin gives its catalogs through `Plugin::catalogs`; a Luau plugin carries them in its package.
-- **The pane's context menu**, of a right click, lists the commands of a cell, which take the `column` and the `row` of the cell clicked, then those of the clipboard and of the editing that need no arguments; its commands run in the pane that it opened over ([UI-AND-FEATURES](UI-AND-FEATURES.md#the-panes-context-menu)).
+- **The pane's context menu**, of a right click, lists the commands of a cell, which take the `column` and the `row` of the cell clicked, then those of the clipboard and of the editing that need no arguments, then the plugins' items, a group of each namespace of their commands; its commands run in the pane that it opened over ([UI-AND-FEATURES](UI-AND-FEATURES.md#the-panes-context-menu)).
+- **A plugin's menu items** add a command with its arguments to a menu, as a command that needs an argument has no item of its own: `add_menu_item`, a declaration, of the menu bar's menu of a category, after its commands, a group of their own, or of the pane's context menu, as `splits`' Split Left, `splits.split` of `{ direction = "left" }`. The command is registered, the arguments make a whole call, and the plugin may run it, as its manifest's commands and its capabilities say; the items go with their plugin, as it stops or the config turns it off. The menu bar shows the keys bound to the same call, as ⌘D beside Split Right; the command's `when` dims an item in both menus, and its plugin's `applies`, of the item's arguments, in the context menu.
 - **The kernel's registry**, `kernel::commands::Registry`, registers the commands of the app and of the plugins, and checks a call before its action runs: its name, and its arguments, to which it adds the defaults of those left out; an integer is a number too. The checks of a command and of a call are the SDK's, `Command::check` and `Command::check_call`, which the registry and the fake host share. A plugin's call is checked as well against the commands that its manifest declares and the capabilities that it has, its own commands aside. The action runs where it can: in the app for those that the platform does, in the plugin that registered the command otherwise.
 - **The app's commands**, whose actions the platform does: `app.quit`, `window.new` and `window.close`; the appearances, `app.appearance-system`, `app.appearance-light` and `app.appearance-dark`; and `pane.look-up` and `pane.man-page`, the context menu's Look Up and Open man Page.
 - **Errors**: a code, never renumbered, whose hundreds tell the category and how serious it is, a kind, as the Luau API names it, and a message:

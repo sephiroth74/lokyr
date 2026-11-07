@@ -547,6 +547,9 @@ pub struct App<B: Backend> {
     /// pane's last frame had it.
     menu_contexts: Vec<(String, When)>,
     menu_enabled: BTreeMap<String, bool>,
+    /// The plugins' items of the menus, titled, which the menus' items name
+    /// by their places here.
+    menu_items: Vec<lokyr_kernel::plugins::MenuEntry>,
     /// The window that the last context menu opened on, whose pane marks
     /// the cell that it opened on, which its commands of a cell take.
     context_window: Option<WindowId>,
@@ -739,6 +742,7 @@ impl<B: Backend> App<B> {
             layers: false,
             menu_contexts: Vec::new(),
             menu_enabled: BTreeMap::new(),
+            menu_items: Vec::new(),
             context_window: None,
             acting: None,
             close_asks: BTreeMap::new(),
@@ -3257,7 +3261,10 @@ impl<B: Backend> App<B> {
 
     fn take_app_event(&mut self, platform: &mut dyn Platform, event: AppEvent) {
         match event {
-            AppEvent::Command(command) => self.run(platform, &command, Args::new()),
+            AppEvent::Command(command) => match self.menu_item(&command) {
+                Some(invocation) => self.run(platform, &invocation.command, invocation.args),
+                None => self.run(platform, &command, Args::new()),
+            },
             AppEvent::GlobalKey(index) => {
                 if let Some((_, invocation)) = self.global_keys.get(index).cloned() {
                     self.run(platform, &invocation.command, invocation.args);

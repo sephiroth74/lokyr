@@ -2925,7 +2925,22 @@ fn context_menu(fake: &Fake, window: WindowId) -> (Point, Vec<String>, Vec<Strin
             other => panic!("{other:?}"),
         })
         .collect();
-    (*position, items, menu.dimmed.clone())
+    // A plugin's item by its title, as its id is its place in a list.
+    let dimmed = menu
+        .dimmed
+        .iter()
+        .map(|id| {
+            let title = menu.items.iter().find_map(|item| match item {
+                MenuItem::Command { title, command, .. } if command == id => Some(title),
+                _ => None,
+            });
+            match title {
+                Some(title) if id.starts_with("menu-item:") => title.clone(),
+                _ => id.clone(),
+            }
+        })
+        .collect();
+    (*position, items, dimmed)
 }
 
 /// A press and a release of the right button at `at`, with `mods`.

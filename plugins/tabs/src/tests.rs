@@ -96,6 +96,16 @@ fn the_commands_register_with_their_parameters_and_their_titles() {
         assert!(CATALOGS[1].1.contains(&id), "{id}");
     }
     assert!(host.bindings().is_empty());
+    // The pane's context menu renames the tab, of the command's title.
+    assert_eq!(
+        host.menu_items(),
+        [MenuItem {
+            place: MenuPlace::PaneContext,
+            command: RENAME.to_owned(),
+            args: Args::new(),
+            title: None,
+        }]
+    );
 }
 
 #[test]

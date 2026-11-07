@@ -1,12 +1,15 @@
 //! The menus: the menu bar of the commands, with their keys and the
 //! state of their items as the focused pane has it; the context menu at
 //! the pointer, and what its commands of a cell do, Look Up and the man
-//! page of the selection among them.
+//! page of the selection among them; and the plugins' items of both, each
+//! a command of its arguments.
 
 use lokyr_kernel::commands::{Args, Category, Command, Kind, Registry, Value};
 use lokyr_kernel::keymap;
-use lokyr_kernel::keymap::{Context, Keymap, When};
+use lokyr_kernel::keymap::{Context, Invocation, Keymap, When};
 use lokyr_kernel::l10n::{Arg, Texts};
+use lokyr_kernel::plugins::MenuEntry;
+use lokyr_kernel::plugins::host::MenuPlace;
 use lokyr_kernel::workspace::Pane;
 use lokyr_platform_core::{
     ContextMenu, KeyCode, MainMenu, Menu, MenuItem, MenuRole, Platform, Point, Shortcut,
@@ -31,9 +34,10 @@ impl<B: Backend> App<B> {
     /// selection stays when it holds the cell; else the cell's word is
     /// selected, as by a double click, or nothing on a blank cell. Its
     /// items are the commands of a cell, which take its `column` and `row`,
-    /// then the clipboard's and the editing's that run without arguments;
-    /// an item is dimmed where its command's context does not hold, or
-    /// where its plugin tells that it would do nothing.
+    /// then the clipboard's and the editing's that run without arguments,
+    /// then the plugins' items; an item is dimmed where its command's
+    /// context does not hold, or where its plugin tells that it would do
+    /// nothing.
     pub(super) fn context_menu(
         &mut self,
         platform: &mut dyn Platform,
@@ -80,8 +84,18 @@ impl<B: Backend> App<B> {
         }
         let context = context(Some(pane));
         // The cell by its row's number, as the marked cell's run takes it.
-        let cell = (pointer.col, top + i64::from(pointer.row));
-        let edits = |category: Category| -> Vec<Command> {
+        let (column, row) = (pointer.col, top + i64::from(pointer.row));
+        // Each item: its id, its command, and the arguments that it runs
+        // with.
+        let of = |command: &Command| {
+            let args = if of_cell(command) {
+                cell_args(column, row)
+            } else {
+                Args::new()
+            };
+            (command.name.clone(), command.clone(), args)
+        };
+        let edits = |category: Category| -> Vec<(String, Command, Args)> {
             self.commands
                 .in_order()
                 .filter(|command| {
@@ -90,28 +104,47 @@ impl<B: Backend> App<B> {
                         && !of_cell(command)
                         && !CONTEXT_ONLY.contains(&command.name.as_str())
                 })
-                .cloned()
+                .map(of)
                 .collect()
         };
         // As in Terminal: what opens, then Look Up, then the clipboard's,
-        // then the editing's.
-        let groups: [Vec<Command>; 4] = [
+        // then the editing's; the plugins' last, a group of each namespace
+        // of their commands.
+        let mut groups: Vec<Vec<(String, Command, Args)>> = vec![
             self.commands
                 .in_order()
                 .filter(|command| of_cell(command))
                 .chain(self.commands.get(MAN_PAGE))
-                .cloned()
+                .map(of)
                 .collect(),
-            self.commands.get(LOOK_UP).cloned().into_iter().collect(),
+            self.commands.get(LOOK_UP).map(of).into_iter().collect(),
             edits(Category::Clipboard),
             edits(Category::Edit),
         ];
+        let mut last = None;
+        for (at, entry) in self.menu_items.iter().enumerate() {
+            let Some(command) = self
+                .commands
+                .get(&entry.invocation.command)
+                .filter(|_| entry.place == MenuPlace::PaneContext)
+            else {
+                continue;
+            };
+            let space = namespace(&command.name);
+            if last.as_ref() != Some(&space) {
+                groups.push(Vec::new());
+            }
+            last = Some(space);
+            if let Some(group) = groups.last_mut() {
+                group.push((item_id(at), command.clone(), entry.invocation.args.clone()));
+            }
+        }
         self.acting = Some(window);
         let dimmed = groups
             .iter()
             .flatten()
-            .filter(|command| !self.applies(platform, command, &context, cell))
-            .map(|command| command.name.clone())
+            .filter(|(_, command, args)| !self.applies(platform, command, args, &context))
+            .map(|(id, ..)| id.clone())
             .collect();
         self.acting = None;
         self.context_window = Some(window);
@@ -130,14 +163,21 @@ impl<B: Backend> App<B> {
                     .text_with(message, &[(variable, Arg::Text(&text))]),
             )
         };
+        let title = |id: &str, command: &Command| {
+            match self.menu_item_entry(id) {
+                Some(entry) => entry.title.clone(),
+                None => named(&command.name),
+            }
+            .unwrap_or_else(|| command.title.clone())
+        };
         let mut items = Vec::new();
         for group in groups.iter().filter(|group| !group.is_empty()) {
             if !items.is_empty() {
                 items.push(MenuItem::Separator);
             }
-            items.extend(group.iter().map(|command| MenuItem::Command {
-                title: named(&command.name).unwrap_or_else(|| command.title.clone()),
-                command: command.name.clone(),
+            items.extend(group.iter().map(|(id, command, _)| MenuItem::Command {
+                title: title(id, command),
+                command: id.clone(),
                 shortcut: None,
             }));
         }
@@ -152,16 +192,14 @@ impl<B: Backend> App<B> {
         }
     }
 
-    /// Whether `command` would do something in `context`, at the cell
-    /// `cell`, its column and its row's number, for a command of a cell:
-    /// its context holds, and its plugin, if one runs it, tells that it
-    /// would.
+    /// Whether `command` would do something with `args` in `context`: its
+    /// context holds, and its plugin, if one runs it, tells that it would.
     fn applies(
         &mut self,
         platform: &mut dyn Platform,
         command: &Command,
+        args: &Args,
         context: &Context,
-        (column, row): (u16, i64),
     ) -> bool {
         let when = command.when.as_deref().map(When::parse);
         if when.is_some_and(|when| when.is_ok_and(|when| !context.holds_when(&when))) {
@@ -182,16 +220,14 @@ impl<B: Backend> App<B> {
         if !self.plugins.owns(&command.name) {
             return true;
         }
-        let args = if of_cell(command) {
-            cell_args(column, row)
-        } else {
-            Args::new()
-        };
-        let applies = self.commands.check(&command.name, args).and_then(|args| {
-            self.with_plugins(platform, |plugins, context| {
-                plugins.applies(&command.name, &args, context)
-            })
-        });
+        let applies = self
+            .commands
+            .check(&command.name, args.clone())
+            .and_then(|args| {
+                self.with_plugins(platform, |plugins, context| {
+                    plugins.applies(&command.name, &args, context)
+                })
+            });
         applies.unwrap_or_else(|error| {
             eprintln!("lokyr: {error}");
             false
@@ -305,13 +341,22 @@ impl<B: Backend> App<B> {
         let marked = pane
             .filter(|_| self.context_window == Some(window))
             .and_then(Pane::marked_cell);
-        let args = match self.commands.get(name) {
-            Some(command) if of_cell(command) => marked.map(|(column, row)| cell_args(column, row)),
-            _ => Some(Args::new()),
+        let invocation = match self.menu_item(name) {
+            Some(invocation) => Some(invocation),
+            None => match self.commands.get(name) {
+                Some(command) if of_cell(command) => marked.map(|(column, row)| Invocation {
+                    command: name.to_owned(),
+                    args: cell_args(column, row),
+                }),
+                _ => Some(Invocation {
+                    command: name.to_owned(),
+                    args: Args::new(),
+                }),
+            },
         };
-        if let Some(args) = args {
+        if let Some(invocation) = invocation {
             self.acting = Some(window);
-            self.run(platform, name, args);
+            self.run(platform, &invocation.command, invocation.args);
             self.acting = None;
         }
         if let Some(pane) = self.workspace.pane(id) {
@@ -324,7 +369,13 @@ impl<B: Backend> App<B> {
     /// it dimmed are enabled again, until the next frame of the focused
     /// pane settles them.
     pub(super) fn set_menu(&mut self, platform: &mut dyn Platform) {
-        platform.set_main_menu(&main_menu(&self.commands, &self.keymap, &self.texts));
+        self.menu_items = self.plugins.menu_items_in(self.texts.language());
+        platform.set_main_menu(&main_menu(
+            &self.commands,
+            &self.keymap,
+            &self.texts,
+            &self.menu_items,
+        ));
         // The windows' keys follow the keymap's too, and the plugins learn
         // that the keys may be others.
         self.window_keys(platform);
@@ -334,7 +385,19 @@ impl<B: Backend> App<B> {
                 platform.set_command_enabled(&command, true);
             }
         }
-        self.menu_contexts = menu_contexts(&self.commands);
+        self.menu_contexts = menu_contexts(&self.commands, &self.menu_items);
+    }
+
+    /// What the plugins' item of the menus of `id` runs, if `id` names one.
+    pub(super) fn menu_item(&self, id: &str) -> Option<Invocation> {
+        self.menu_item_entry(id)
+            .map(|entry| entry.invocation.clone())
+    }
+
+    /// The plugins' item of the menus of `id`, if `id` names one.
+    fn menu_item_entry(&self, id: &str) -> Option<&MenuEntry> {
+        let at: usize = id.strip_prefix(ITEM)?.parse().ok()?;
+        self.menu_items.get(at)
     }
 
     /// Enables the menus' items of the commands that can run in `context`,
@@ -440,10 +503,16 @@ fn cell_args(column: u16, row: i64) -> Args {
 /// system's palette of emoji and symbols; the view's; the windows', with the
 /// system's items; and the help's, which the system gives a search of the
 /// menus. A line parts the commands of a category or a namespace from the
-/// next. Its titles are `texts`'.
-pub(super) fn main_menu(commands: &Registry, keymap: &Keymap, texts: &Texts) -> MainMenu {
+/// next. The plugins' items of a category, `plugins_items`, come after its
+/// commands, a group of their own. Its titles are `texts`'.
+pub(super) fn main_menu(
+    commands: &Registry,
+    keymap: &Keymap,
+    texts: &Texts,
+    plugins_items: &[MenuEntry],
+) -> MainMenu {
     let items = |categories: &[Category]| {
-        let shown: Vec<&Command> = commands
+        let mut shown: Vec<Shown> = commands
             .in_order()
             .filter(|command| {
                 categories.contains(&command.category)
@@ -452,8 +521,42 @@ pub(super) fn main_menu(commands: &Registry, keymap: &Keymap, texts: &Texts) -> 
                     && command.name != PERFORMANCE
                     && !CONTEXT_ONLY.contains(&command.name.as_str())
             })
+            .map(|command| Shown {
+                group: (command.category, namespace(&command.name), false),
+                title: command.title.clone(),
+                id: command.name.clone(),
+                shortcut: keymap.shortcut(&command.name).and_then(shortcut),
+            })
             .collect();
-        command_items(shown, |name| keymap.shortcut(name).and_then(shortcut))
+        for (at, entry) in plugins_items.iter().enumerate() {
+            let MenuPlace::Bar(category) = entry.place else {
+                continue;
+            };
+            let Some(command) = commands
+                .get(&entry.invocation.command)
+                .filter(|_| categories.contains(&category))
+            else {
+                continue;
+            };
+            let after = shown
+                .iter()
+                .rposition(|shown| shown.group.0 == category)
+                .map_or(shown.len(), |last| last + 1);
+            let Invocation {
+                command: name,
+                args,
+            } = &entry.invocation;
+            shown.insert(
+                after,
+                Shown {
+                    group: (category, namespace(name), true),
+                    title: entry.title.clone().unwrap_or_else(|| command.title.clone()),
+                    id: item_id(at),
+                    shortcut: keymap.shortcut_with(name, args).and_then(shortcut),
+                },
+            );
+        }
+        command_items(shown)
     };
     // The appearances, in a menu of their own, by their short titles.
     let appearances = APPEARANCES
@@ -596,39 +699,64 @@ pub(super) fn main_menu(commands: &Registry, keymap: &Keymap, texts: &Texts) -> 
     }
 }
 
-/// The items of `commands`, in their order, each with the keys that
-/// `shortcut` gives its name: a line parts the commands of a category or a
-/// namespace from the next.
-fn command_items<'a>(
-    commands: impl IntoIterator<Item = &'a Command>,
-    shortcut: impl Fn(&str) -> Option<Shortcut>,
-) -> Vec<MenuItem> {
+/// An item of the menu bar, of a command or of a plugin's item: its group,
+/// of its category, its command's namespace and whether a plugin's item
+/// makes it, its title, its id and its keys.
+struct Shown {
+    group: (Category, String, bool),
+    title: String,
+    id: String,
+    shortcut: Option<Shortcut>,
+}
+
+/// The items of `shown`, in their order: a line parts a group from the
+/// next.
+fn command_items(shown: Vec<Shown>) -> Vec<MenuItem> {
     let mut items = Vec::new();
     let mut group = None;
-    for command in commands {
-        let namespace = command.name.split('.').next().unwrap_or_default();
-        if group.is_some_and(|group| group != (command.category, namespace)) {
+    for shown in shown {
+        if group.as_ref().is_some_and(|group| *group != shown.group) {
             items.push(MenuItem::Separator);
         }
-        group = Some((command.category, namespace));
+        group = Some(shown.group);
         items.push(MenuItem::Command {
-            title: command.title.clone(),
-            command: command.name.clone(),
-            shortcut: shortcut(&command.name),
+            title: shown.title,
+            command: shown.id,
+            shortcut: shown.shortcut,
         });
     }
     items
 }
 
+/// The namespace of the command `name`, before its `.`.
+fn namespace(name: &str) -> String {
+    name.split('.').next().unwrap_or_default().to_owned()
+}
+
+/// The prefix of the ids of the plugins' items of the menus, which no
+/// command's name has, as a name has no `:`.
+const ITEM: &str = "menu-item:";
+
+/// The id of the plugins' item of the menus at `at` of their list, which
+/// the platform gives back as it is chosen.
+fn item_id(at: usize) -> String {
+    format!("{ITEM}{at}")
+}
+
 /// The contexts in which the commands of `commands` that tell one can run,
-/// as the menus enable their items.
-fn menu_contexts(commands: &Registry) -> Vec<(String, When)> {
+/// and the plugins' items of `items` of their commands, as the menus
+/// enable their items.
+fn menu_contexts(commands: &Registry, items: &[MenuEntry]) -> Vec<(String, When)> {
+    let when = |name: &str| When::parse(commands.get(name)?.when.as_deref()?).ok();
     commands
         .in_order()
-        .filter_map(|command| {
-            let when = When::parse(command.when.as_deref()?).ok()?;
-            Some((command.name.clone(), when))
-        })
+        .filter_map(|command| Some((command.name.clone(), when(&command.name)?)))
+        .chain(
+            items
+                .iter()
+                .enumerate()
+                .filter_map(|(at, item)| Some((item_id(at), when(&item.invocation.command)?))),
+        )
         .collect()
 }
 

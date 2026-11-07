@@ -308,6 +308,7 @@ pub struct FakeHost {
     state: Data,
     commands: Vec<Command>,
     bindings: Vec<Binding>,
+    menu_items: Vec<crate::host::MenuItem>,
     subscribed: Vec<String>,
     done: Vec<Request>,
     decorations: Vec<FakeDecoration>,
@@ -374,6 +375,7 @@ impl FakeHost {
             state: Data::Nil,
             commands: Vec::new(),
             bindings: Vec::new(),
+            menu_items: Vec::new(),
             subscribed: Vec::new(),
             done: Vec::new(),
             decorations: Vec::new(),
@@ -617,6 +619,11 @@ impl FakeHost {
     /// The bindings that it made.
     pub fn bindings(&self) -> &[Binding] {
         &self.bindings
+    }
+
+    /// The menus' items that it added, in their order.
+    pub fn menu_items(&self) -> &[crate::host::MenuItem] {
+        &self.menu_items
     }
 
     /// The names of the events that it subscribed to.
@@ -2494,6 +2501,19 @@ impl Calling<'_> {
                     When::parse(when).map_err(invalid)?;
                 }
                 self.host.bindings.push(binding);
+            }
+            Request::AddMenuItem(item) => {
+                if !is_name(&item.command) {
+                    return Err(Error::new(
+                        Code::InvalidName,
+                        format!(
+                            "`{}` is not a command's name, `namespace.action`",
+                            item.command
+                        ),
+                    ));
+                }
+                self.host.check_run(&item.command, &item.args)?;
+                self.host.menu_items.push(item);
             }
             Request::Subscribe(names) => {
                 if let Some(name) = names.iter().find(|name| {

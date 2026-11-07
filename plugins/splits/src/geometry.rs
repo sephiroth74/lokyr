@@ -28,16 +28,6 @@ impl Towards {
             _ => None,
         }
     }
-
-    /// Its name, as a command's argument names it.
-    pub(crate) fn name(self) -> &'static str {
-        match self {
-            Self::Left => "left",
-            Self::Right => "right",
-            Self::Up => "up",
-            Self::Down => "down",
-        }
-    }
 }
 
 /// A rectangle of the tab's room, from 0 to 1 across and down.

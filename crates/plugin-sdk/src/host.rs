@@ -328,6 +328,38 @@ pub struct CommandInfo {
     pub enabled: Option<bool>,
 }
 
+/// Where a plugin's menu item goes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum MenuPlace {
+    /// The menu bar's menu of a category, after its commands.
+    Bar(Category),
+    /// The pane's context menu, in the plugins' group, after the
+    /// editing's.
+    PaneContext,
+}
+
+/// A plugin's menu item: a command of its arguments, in a menu, as a
+/// command that needs an argument has no item of its own, as a split's of
+/// its direction; the keys bound to the same call show beside it in the
+/// menu bar, and the command's context, and its plugin in the context
+/// menu, dim it.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct MenuItem {
+    /// The menu.
+    pub place: MenuPlace,
+    /// The command's name.
+    pub command: String,
+    /// Its arguments.
+    #[serde(default)]
+    pub args: Args,
+    /// The message of its title in the plugin's catalogs, as
+    /// `menu-split-right`, or its text where they lack it; the command's
+    /// title without one.
+    #[serde(default)]
+    pub title: Option<String>,
+}
+
 /// Where a theme comes from.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]

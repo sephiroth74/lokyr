@@ -388,6 +388,12 @@ impl Plugin for Toggled {
         cx.register_command(command("toggled.go"))?;
         cx.register_command(command("toggled.boom"))?;
         cx.bind(binding("cmd+t", "toggled.go", None))?;
+        cx.add_menu_item(host::MenuItem {
+            place: host::MenuPlace::Bar(lokyr_plugin_sdk::command::Category::View),
+            command: "toggled.go".to_owned(),
+            args: Args::new(),
+            title: None,
+        })?;
         cx.subscribe(&["tab-created"])
     }
 
@@ -463,6 +469,7 @@ fn a_plugin_that_its_section_turns_off_stops_and_one_turned_on_again_starts_anew
     assert_eq!(made(), 1);
     assert!(app.registry.get("toggled.go").is_some());
     assert!(plugins.take_declarations_changed());
+    assert_eq!(plugins.menu_items_in("en").len(), 1);
     // Active, with a decoration, a panel and a view.
     plugins
         .run("toggled.go", Args::new(), &mut app.context())
@@ -488,6 +495,7 @@ fn a_plugin_that_its_section_turns_off_stops_and_one_turned_on_again_starts_anew
     assert!(app.registry.get("toggled.go").is_none());
     assert!(plugins.take_declarations_changed());
     assert_eq!(plugins.bindings().count(), 0);
+    assert!(plugins.menu_items_in("en").is_empty());
     assert!(plugins.take_written());
     assert_eq!(
         plugins.take_requests(),
@@ -507,6 +515,7 @@ fn a_plugin_that_its_section_turns_off_stops_and_one_turned_on_again_starts_anew
     assert_eq!(plugins.status("acme/toggled"), Some(Status::Active));
     assert_eq!(made(), 2);
     assert!(app.registry.get("toggled.go").is_some());
+    assert_eq!(plugins.menu_items_in("en").len(), 1);
     assert!(plugins.subscribes("tab-created"));
     assert_eq!(plugins.providers(Slot::StatusBar), ["acme/toggled"]);
 }

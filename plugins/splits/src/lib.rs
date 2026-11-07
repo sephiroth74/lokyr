@@ -17,7 +17,7 @@ mod geometry;
 
 use lokyr_plugin_sdk::command::{Args, Category, Code, Command, Error, Kind, Param, Value};
 use lokyr_plugin_sdk::event::WorkspaceEvent;
-use lokyr_plugin_sdk::host::{Direction as Lie, Edge, PaneId, Side, TabInfo};
+use lokyr_plugin_sdk::host::{Direction as Lie, Edge, MenuItem, MenuPlace, PaneId, Side, TabInfo};
 use lokyr_plugin_sdk::message::{Data, Event};
 use lokyr_plugin_sdk::plugin::{Cx, Plugin};
 use lokyr_plugin_sdk::ui::ViewId;
@@ -27,8 +27,8 @@ use crate::geometry::{Towards, rects};
 
 lokyr_plugin_sdk::export_plugin!(Splits);
 
-/// Splits the focused pane, `right` or `down`, the new pane taking the
-/// keyboard.
+/// Splits the focused pane, `right`, `left`, `down` or `up`, the new pane
+/// taking the keyboard on that side.
 const SPLIT: &str = "splits.split";
 /// Moves the keyboard to the pane beside the focused one, `left`, `right`,
 /// `up` or `down`.
@@ -48,6 +48,9 @@ const SWAP: &str = "splits.swap";
 const MOVE_TO_TAB: &str = "splits.move-to-tab";
 /// Moves the focused pane to a window of its own.
 const MOVE_TO_WINDOW: &str = "splits.move-to-window";
+/// Closes the focused pane of a tab of more than one, asking first while a
+/// program other than the shell runs in it.
+const CLOSE: &str = "splits.close";
 
 static CATALOGS: [(&str, &str); 2] = [
     ("en", include_str!("../locales/en/splits.ftl")),
@@ -63,7 +66,7 @@ type Spec = (
 );
 
 /// The commands, in the order of the menus.
-const COMMANDS: [Spec; 10] = [
+const COMMANDS: [Spec; 11] = [
     (SPLIT, "Split Pane", &[("direction", Kind::String, None)]),
     (FOCUS, "Select Pane", &[("direction", Kind::String, None)]),
     (FOCUS_NEXT, "Select Next Pane", &[]),
@@ -81,7 +84,32 @@ const COMMANDS: [Spec; 10] = [
     (SWAP, "Swap Pane", &[("direction", Kind::String, None)]),
     (MOVE_TO_TAB, "Move Pane to New Tab", &[]),
     (MOVE_TO_WINDOW, "Move Pane to New Window", &[]),
+    (CLOSE, "Close Pane", &[]),
 ];
+
+/// The menus' items: each one's menu, its command, its direction, if it
+/// takes one, and the message of its title, if not the command's.
+const ITEMS: [(MenuPlace, &str, Option<&str>, Option<&str>); 15] = [
+    (BAR, SPLIT, Some("right"), Some("menu-split-right")),
+    (BAR, SPLIT, Some("left"), Some("menu-split-left")),
+    (BAR, SPLIT, Some("down"), Some("menu-split-down")),
+    (BAR, SPLIT, Some("up"), Some("menu-split-up")),
+    (BAR, FOCUS, Some("left"), Some("menu-select-left")),
+    (BAR, FOCUS, Some("right"), Some("menu-select-right")),
+    (BAR, FOCUS, Some("up"), Some("menu-select-up")),
+    (BAR, FOCUS, Some("down"), Some("menu-select-down")),
+    (CONTEXT, SPLIT, Some("right"), Some("menu-split-right")),
+    (CONTEXT, SPLIT, Some("left"), Some("menu-split-left")),
+    (CONTEXT, SPLIT, Some("down"), Some("menu-split-down")),
+    (CONTEXT, SPLIT, Some("up"), Some("menu-split-up")),
+    (CONTEXT, MOVE_TO_TAB, None, None),
+    (CONTEXT, MOVE_TO_WINDOW, None, None),
+    (CONTEXT, CLOSE, None, None),
+];
+
+/// The panes' menu of the menu bar, and the pane's context menu.
+const BAR: MenuPlace = MenuPlace::Bar(Category::Panes);
+const CONTEXT: MenuPlace = MenuPlace::PaneContext;
 
 /// The plugin of the splits: its config, and the panes' headers that it
 /// rendered, each of its last tree, which it renders again as their trees
@@ -155,7 +183,36 @@ impl Plugin for Splits {
                 when: None,
             })?;
         }
+        for (place, command, direction, title) in ITEMS {
+            cx.add_menu_item(MenuItem {
+                place,
+                command: command.to_owned(),
+                args: direction.map(towards).unwrap_or_default(),
+                title: title.map(str::to_owned),
+            })?;
+        }
         Ok(())
+    }
+
+    /// Whether a command would change the focused tab: a pane beside to
+    /// select or swap with, a tab of more than one pane to zoom, equalize,
+    /// close or move a pane out of, and a window of more than one pane to
+    /// move one out of; a split, and a resize, always.
+    fn applies(&mut self, cx: &mut Cx<'_>, name: &str, args: &Args) -> bool {
+        let Ok(Some((tab, pane))) = focused(cx) else {
+            return false;
+        };
+        let several = tab.panes.len() > 1;
+        match name {
+            FOCUS | SWAP => direction(args)
+                .and_then(|towards| beside(cx, &tab, pane, towards))
+                .is_ok_and(|beside| beside.is_some()),
+            FOCUS_NEXT | FOCUS_PREV => several && tab.zoomed.is_none(),
+            ZOOM => several || tab.zoomed.is_some(),
+            EQUALIZE | MOVE_TO_TAB | CLOSE => several,
+            MOVE_TO_WINDOW => several || cx.tabs(tab.window).is_ok_and(|tabs| tabs.len() > 1),
+            _ => true,
+        }
     }
 
     fn catalogs(&self) -> &'static [(&'static str, &'static str)] {
@@ -209,17 +266,13 @@ impl Plugin for Splits {
         };
         match name {
             SPLIT => {
-                let lie = match direction(&args)? {
-                    Towards::Right => Lie::Horizontal,
-                    Towards::Down => Lie::Vertical,
-                    other => {
-                        return Err(wrong(format!(
-                            "a pane splits right or down, not {}",
-                            other.name()
-                        )));
-                    }
+                let (lie, side) = match direction(&args)? {
+                    Towards::Right => (Lie::Horizontal, Side::Second),
+                    Towards::Left => (Lie::Horizontal, Side::First),
+                    Towards::Down => (Lie::Vertical, Side::Second),
+                    Towards::Up => (Lie::Vertical, Side::First),
                 };
-                let new = cx.split(pane, lie, Side::Second)?;
+                let new = cx.split(pane, lie, side)?;
                 cx.focus_pane(new)
             }
             FOCUS => match beside(cx, &tab, pane, direction(&args)?)? {
@@ -285,6 +338,9 @@ impl Plugin for Splits {
                 }
                 cx.pane_to_new_window(pane)
             }
+            // A pane alone closes with its tab.
+            CLOSE if tab.panes.len() < 2 => Ok(()),
+            CLOSE => cx.close_pane(pane, true),
             _ => Err(Error::new(
                 Code::NotFound,
                 format!("splits has no command `{name}`"),
@@ -395,6 +451,11 @@ fn direction(args: &Args) -> Result<Towards, Error> {
             "a direction is needed: left, right, up or down".to_owned(),
         )),
     }
+}
+
+/// The arguments of the direction `name`.
+fn towards(name: &str) -> Args {
+    Args::from([("direction".to_owned(), Value::String(name.to_owned()))])
 }
 
 fn wrong(message: String) -> Error {

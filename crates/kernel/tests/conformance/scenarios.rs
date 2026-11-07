@@ -23,8 +23,8 @@ use lokyr_plugin_sdk::command::{Args, Capability, Category, Code, Command, Error
 use lokyr_plugin_sdk::event::WorkspaceEvent;
 use lokyr_plugin_sdk::host::{
     BarPlace, Binding, Color, CommandInfo, DecorationLook, Direction, Edge, Layout, Line, LineText,
-    MOST_STATE, PaneId, ScreenPoint, Scroll, SearchMatch, SearchQuery, Side, TabId, TabInfo,
-    Underline, WindowId, WindowInfo,
+    MOST_STATE, MenuItem, MenuPlace, PaneId, ScreenPoint, Scroll, SearchMatch, SearchQuery, Side,
+    TabId, TabInfo, Underline, WindowId, WindowInfo,
 };
 use lokyr_plugin_sdk::message::{DIM_RANGE, Data, Event, Mods, OWN_PANE, Request, Response};
 use lokyr_plugin_sdk::ui::{Anchor, PanelId, PanelOptions, Role, ViewId};
@@ -688,9 +688,9 @@ pub fn ask_command() -> Command {
     }
 }
 
-/// What every plugin meets of its declarations: a command, a binding and
-/// subscriptions, each refused of a wrong name, keys or context, and a
-/// command registered twice.
+/// What every plugin meets of its declarations: a command, a binding,
+/// subscriptions and menus' items, each refused of a wrong name, keys,
+/// context or arguments, and a command registered twice.
 fn declarations() -> Scenario {
     let bind = |keys: &str, command: &str, when: Option<&str>| {
         Request::Bind(Binding {
@@ -701,6 +701,14 @@ fn declarations() -> Scenario {
         })
     };
     let invalid = |message: &str| failed(Code::InvalidBinding, message);
+    let item = |command: &str, args: Args| {
+        Request::AddMenuItem(MenuItem {
+            place: MenuPlace::Bar(Category::View),
+            command: command.to_owned(),
+            args,
+            title: Some("menu-ask".to_owned()),
+        })
+    };
     let other = Command {
         name: "conformer.other".to_owned(),
         ..ask_command()
@@ -760,6 +768,28 @@ fn declarations() -> Scenario {
             (
                 bind("cmd+k", "conformer.ask", Some("pane.focused &&")),
                 invalid("the expression ends early"),
+            ),
+            (item("conformer.ask", Args::new()), Response::Done),
+            (
+                item("conformer.none", Args::new()),
+                failed(Code::NotFound, "no command `conformer.none`"),
+            ),
+            (
+                item("conformer ask", Args::new()),
+                failed(
+                    Code::InvalidName,
+                    "`conformer ask` is not a command's name, `namespace.action`",
+                ),
+            ),
+            (
+                item(
+                    "conformer.ask",
+                    Args::from([("depth".to_owned(), Value::Integer(1))]),
+                ),
+                failed(
+                    Code::UnknownArgument,
+                    "`conformer.ask` takes no argument `depth`",
+                ),
             ),
             (
                 Request::Subscribe(vec!["window-opened".to_owned()]),

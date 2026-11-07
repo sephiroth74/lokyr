@@ -433,6 +433,12 @@ impl<'a> Cx<'a> {
         }
     }
 
+    /// Adds the menu item `item`, of a command registered, to the menu bar
+    /// or to the pane's context menu, for as long as the plugin runs.
+    pub fn add_menu_item(&mut self, item: crate::host::MenuItem) -> Result<(), Error> {
+        self.done(Request::AddMenuItem(item))
+    }
+
     /// The themes that the app can show, the appearance in force and its
     /// theme.
     pub fn themes(&mut self) -> Result<crate::host::Themes, Error> {
