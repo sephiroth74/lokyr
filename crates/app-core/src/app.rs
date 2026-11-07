@@ -63,6 +63,7 @@ mod installs;
 mod menus;
 mod notices;
 mod panels;
+mod pickers;
 mod spawn;
 mod surfaces;
 mod tab_drag;
@@ -417,6 +418,11 @@ pub struct App<B: Backend> {
     /// The folder of the themes that the app holds, its bundle's
     /// `Resources/themes`, when it runs from its bundle.
     held_themes: Option<PathBuf>,
+    /// The themes that it holds, as a picker lists them, read once.
+    held_theme_list: std::cell::OnceCell<Vec<lokyr_kernel::plugins::host::ThemeInfo>>,
+    /// The theme that a plugin's picker previews in place of the
+    /// appearance in force's, if one does.
+    theme_preview: Option<String>,
     /// The program that a new window runs.
     program: Program,
     /// The program that shows man pages, in place of the login shell's
@@ -674,6 +680,8 @@ impl<B: Backend> App<B> {
             theme: Theme::builtin(),
             theme_files: ThemeFiles::default(),
             held_themes: environment::resources().map(|resources| resources.join(HELD_THEMES)),
+            held_theme_list: std::cell::OnceCell::new(),
+            theme_preview: None,
             program: Program::LoginShell,
             man: None,
             config,
@@ -1187,7 +1195,15 @@ impl<B: Backend> App<B> {
         let mut paths = Vec::new();
         let mut resolved = Vec::new();
         let mut errors = Vec::new();
-        for name in [&config.light, &config.dark] {
+        // A picker's preview in place of the appearance in force's.
+        let mut names = [&config.light, &config.dark];
+        if let Some(preview) = &self.theme_preview {
+            match platform.appearance() {
+                Appearance::Light => names[0] = preview,
+                Appearance::Dark => names[1] = preview,
+            }
+        }
+        for name in names {
             match themes::resolve(
                 name,
                 directory.as_deref(),
@@ -2437,6 +2453,21 @@ impl<B: Backend> App<B> {
                 .and_then(menus::shortcut)
                 .map(writer)
         };
+        // The themes that a picker lists, read as a plugin asks.
+        let theme_folder = self
+            .config_file
+            .as_ref()
+            .and_then(|file| themes::directory(&file.path));
+        let (held_themes, held_list) = (self.held_themes.as_deref(), &self.held_theme_list);
+        let (appearance, theme_config) = (platform.appearance(), &self.config.theme);
+        let theme_list = || {
+            pickers::theme_list(
+                (theme_folder.as_deref(), held_themes),
+                held_list,
+                appearance,
+                theme_config,
+            )
+        };
         // Whether the menus enable a command, as the last frame of the
         // focused pane settled them.
         let menu_enabled = &self.menu_enabled;
@@ -2452,6 +2483,7 @@ impl<B: Backend> App<B> {
             confirm_paste,
             keys: &keys,
             enabled: &enabled,
+            themes: &theme_list,
             language: self.texts.language(),
         };
         call(&mut self.plugins, &mut context)
@@ -2492,6 +2524,8 @@ impl<B: Backend> App<B> {
                 }
                 Request::Quit => self.ask_quit(platform, false),
                 Request::FontSize(size) => self.set_font_size(platform, size),
+                Request::PreviewTheme(name) => self.preview_theme(platform, name),
+                Request::SetTheme { variant, name } => self.set_theme(platform, variant, &name),
                 Request::ConfirmPaste { pane, text } => self.ask_paste(platform, pane, text),
                 Request::Open(target) => self.open_target(platform, target),
                 // A plugin's panel over its window; one that its plugin

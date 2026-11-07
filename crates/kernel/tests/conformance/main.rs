@@ -502,6 +502,7 @@ impl Kernel {
             confirm_paste: lokyr_kernel::config::ConfirmPaste::Auto,
             keys: &keys,
             enabled: &|_| true,
+            themes: &themes,
             language: "en",
         }
     }
@@ -511,6 +512,29 @@ impl Kernel {
 /// the first tab's.
 fn keys(command: &str, args: &Args) -> Option<String> {
     (command == "tabs.goto" && *args == goto_first()).then(|| "⌘1".to_owned())
+}
+
+/// The themes of the world, as the fake host's are at first: the built-in
+/// ones, dark in force.
+fn themes() -> lokyr_plugin_sdk::host::Themes {
+    use lokyr_plugin_sdk::host::{ThemeInfo, ThemeOrigin, Themes};
+    use lokyr_plugin_sdk::theme::ThemeVariant;
+    Themes {
+        appearance: ThemeVariant::Dark,
+        current: "Lokyr Dark".to_owned(),
+        themes: vec![
+            ThemeInfo {
+                name: "Lokyr Light".to_owned(),
+                variant: ThemeVariant::Light,
+                origin: ThemeOrigin::BuiltIn,
+            },
+            ThemeInfo {
+                name: "Lokyr Dark".to_owned(),
+                variant: ThemeVariant::Dark,
+                origin: ThemeOrigin::BuiltIn,
+            },
+        ],
+    }
 }
 
 /// The arguments of the first tab's selection.
@@ -758,11 +782,14 @@ fn kind(request: &Request) -> usize {
         Request::ShowMatches { .. } => 75,
         Request::CurrentMatch(_) => 76,
         Request::Commands => 77,
+        Request::Themes => 78,
+        Request::PreviewTheme(_) => 79,
+        Request::SetTheme { .. } => 80,
     }
 }
 
 /// How many kinds of requests the plugin API has.
-const KINDS: usize = 78;
+const KINDS: usize = 81;
 
 #[test]
 fn the_scenarios_hold_every_request_of_the_plugin_api() {

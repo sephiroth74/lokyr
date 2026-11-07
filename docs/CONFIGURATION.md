@@ -1116,6 +1116,8 @@ Lokyr holds 278 themes, those of a permissive license of the largest collection 
 - **An `.itermcolors` file** of colors for the light and the dark appearance is two themes, `<name> (Light)` and `<name> (Dark)`, as `dark = "Nightfall (Dark)"`.
 - Its colors read as their files say, of sRGB, Display P3 or the calibrated colors of older files, converted to sRGB; its link's, underline's and the find bar's match's colors too.
 
+View › Choose Theme…, the command palette's theme picker, lists the themes of the appearance in force, shows each as you move through them, and names the one you choose in `[theme]`, `light` or `dark` as the appearance is.
+
 A theme's file goes into the folder by hand, or as Lokyr installs it: on macOS, a double click on an `.itermcolors` file in the Finder, or a theme's file, `.itermcolors` or `.toml`, dropped on Lokyr's icon in the Dock, asks to install it. **Install** copies it into the folder, in place of a file of its name; **Install and Use** names it in `[theme]` too, `light` or `dark` by its variant, both for a file of both appearances; neither converts it. The variant is the one that the file says: an `.itermcolors` file of ` (Light)` and ` (Dark)` keys is of both, a `.toml` one of its `variant`, and any other is light if its background is lighter than its text, and dark otherwise. A theme of the appearance not in force changes nothing that shows until Lokyr takes its appearance: the question tells it, and its checkbox switches Lokyr to that appearance, as View › Appearance does, which sets [`appearance`](#appearance). Where another app opens `.itermcolors` files at a double click, Lokyr is in the Finder's Open With menu.
 
 ```toml

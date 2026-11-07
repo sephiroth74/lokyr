@@ -460,3 +460,58 @@ fn a_name_of_no_file_of_the_folder_is_watched_nowhere() {
     );
     let _ = std::fs::remove_dir_all(directory);
 }
+
+#[test]
+fn a_picker_lists_the_themes_previews_one_and_names_the_chosen_one() {
+    use lokyr_kernel::plugins::host::ThemeOrigin;
+    use lokyr_kernel::themes::ThemeVariant;
+    let config = "[theme]\nlight = \"Lokyr Light\"\n";
+    let files = [("Paper", theme("#ffffff")), ("Night", theme("#101010"))];
+    let files: Vec<(&str, &str)> = files
+        .iter()
+        .map(|(name, text)| (*name, text.as_str()))
+        .collect();
+    let (mut fake, mut app, directory) = with_themes("picker", config, &files);
+    let held = directory.join("held");
+    std::fs::create_dir_all(&held).unwrap();
+    std::fs::write(held.join("Held Dawn.toml"), theme("#fafafa")).unwrap();
+    // A file of the folder of a held theme's name, the folder's.
+    std::fs::write(held.join("Paper.toml"), theme("#eeeeee")).unwrap();
+    app.held_themes = Some(held);
+    let list = pickers::theme_list(
+        (Some(&directory.join("themes")), app.held_themes.as_deref()),
+        &app.held_theme_list,
+        fake.appearance(),
+        &app.config.theme,
+    );
+    assert_eq!(list.appearance, ThemeVariant::Light);
+    assert_eq!(list.current, "Lokyr Light");
+    let names: Vec<(&str, ThemeVariant, ThemeOrigin)> = list
+        .themes
+        .iter()
+        .map(|theme| (theme.name.as_str(), theme.variant, theme.origin))
+        .collect();
+    assert_eq!(
+        names,
+        [
+            ("Held Dawn", ThemeVariant::Light, ThemeOrigin::Held),
+            ("Lokyr Dark", ThemeVariant::Dark, ThemeOrigin::BuiltIn),
+            ("Lokyr Light", ThemeVariant::Light, ThemeOrigin::BuiltIn),
+            ("Night", ThemeVariant::Dark, ThemeOrigin::Folder),
+            ("Paper", ThemeVariant::Light, ThemeOrigin::Folder),
+        ]
+    );
+    // Previewed in place of the light appearance's, then the config's.
+    app.preview_theme(&mut fake, Some("Paper".to_owned()));
+    assert_eq!(app.theme.light.colors.background, rgb(0xffffff));
+    app.preview_theme(&mut fake, None);
+    assert_eq!(app.theme.light, Theme::builtin().light);
+    // Chosen: named in the config, shown at once.
+    app.preview_theme(&mut fake, Some("Night".to_owned()));
+    app.set_theme(&mut fake, ThemeVariant::Light, "Paper");
+    let written = std::fs::read_to_string(directory.join("config.toml")).unwrap();
+    assert!(written.contains("light = \"Paper\""), "{written}");
+    assert_eq!(app.theme_preview, None);
+    assert_eq!(app.theme.light.colors.background, rgb(0xffffff));
+    let _ = std::fs::remove_dir_all(directory);
+}

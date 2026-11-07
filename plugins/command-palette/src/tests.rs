@@ -136,7 +136,7 @@ fn ran(requests: &[Request]) -> Vec<String> {
 fn the_palette_opens_at_the_window_s_top_of_the_commands_that_run_without_arguments() {
     let (mut host, mut plugin) = host();
     let commands: Vec<&str> = host.commands().iter().map(|c| c.name.as_str()).collect();
-    assert_eq!(commands, [OPEN, MOVE]);
+    assert_eq!(commands, [OPEN, THEME, MOVE]);
     run(&mut host, &mut plugin, OPEN, Args::new());
     let options = host
         .panels()
@@ -155,10 +155,10 @@ fn the_palette_opens_at_the_window_s_top_of_the_commands_that_run_without_argume
     );
     assert!(options.close_escape && options.close_outside);
     // In the registry's order, but those of an argument, the dimmed ones
-    // and its own.
+    // and its own opening; its theme picker last, its own.
     assert_eq!(
         shown(&mut host, &mut plugin),
-        ["New Window", "Copy", "Paste", "New Tab"]
+        ["New Window", "Copy", "Paste", "New Tab", "Choose Theme…"]
     );
 }
 
@@ -203,7 +203,7 @@ fn the_arrows_move_the_selection_and_a_double_click_runs_its_command() {
     );
     // Not past the ends.
     run(&mut host, &mut plugin, MOVE, delta(10));
-    assert_eq!(plugin.open.as_ref().unwrap().selected, 3);
+    assert_eq!(plugin.open.as_ref().unwrap().selected, 4);
     run(&mut host, &mut plugin, MOVE, delta(-10));
     assert_eq!(plugin.open.as_ref().unwrap().selected, 0);
     run(&mut host, &mut plugin, MOVE, delta(2));
@@ -276,7 +276,7 @@ fn the_recent_commands_come_first_and_the_state_keeps_them() {
     run(&mut host, &mut plugin, OPEN, Args::new());
     assert_eq!(
         shown(&mut host, &mut plugin),
-        ["Copy", "Paste", "New Window", "New Tab"]
+        ["Copy", "Paste", "New Window", "New Tab", "Choose Theme…"]
     );
     let Data::Map(state) = host.state() else {
         panic!("a state: {:?}", host.state());
@@ -334,4 +334,98 @@ fn a_palette_runs_its_choice_of_user_commands_alone() {
     let (mut host, mut plugin) = host_of(granted);
     assert!(submit(&mut host, &mut plugin).is_ok());
     assert_eq!(ran(&host.take_done()), ["window.new"]);
+}
+
+/// A host of the light appearance in force, of `Paper` its theme, and of
+/// themes of both appearances.
+fn themed() -> (FakeHost, Palette) {
+    use lokyr_plugin_sdk::host::{ThemeInfo, ThemeOrigin, Themes};
+    let (mut host, plugin) = host();
+    let theme = |name: &str, variant, origin| ThemeInfo {
+        name: name.to_owned(),
+        variant,
+        origin,
+    };
+    host.set_themes(Themes {
+        appearance: ThemeVariant::Light,
+        current: "Paper".to_owned(),
+        themes: vec![
+            theme("Dracula", ThemeVariant::Dark, ThemeOrigin::Held),
+            theme("Lokyr Dark", ThemeVariant::Dark, ThemeOrigin::BuiltIn),
+            theme("Lokyr Light", ThemeVariant::Light, ThemeOrigin::BuiltIn),
+            theme("Paper", ThemeVariant::Light, ThemeOrigin::Folder),
+            theme("Rose Pine Dawn", ThemeVariant::Light, ThemeOrigin::Held),
+        ],
+    });
+    (host, plugin)
+}
+
+/// The themes that `requests` preview, in their order.
+fn previewed(requests: &[Request]) -> Vec<Option<String>> {
+    requests
+        .iter()
+        .filter_map(|request| match request {
+            Request::PreviewTheme(name) => Some(name.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn the_theme_picker_lists_the_appearance_in_force_s_themes_its_own_first() {
+    let (mut host, mut plugin) = themed();
+    let opened = run(&mut host, &mut plugin, THEME, Args::new());
+    assert!(previewed(&opened).is_empty());
+    assert_eq!(
+        shown(&mut host, &mut plugin),
+        ["Paper", "Lokyr Light", "Rose Pine Dawn"]
+    );
+    let tree = host.render(&mut plugin, &panel()).expect("the picker");
+    let mut left = vec![&tree];
+    let mut keys = None;
+    while let Some(node) = left.pop() {
+        if let lokyr_plugin_sdk::view::Kind::List(list) = &node.kind {
+            keys = Some(list.items[0].texts[1].clone());
+        }
+        left.extend(&node.children);
+    }
+    assert_eq!(keys.as_deref(), Some("Current"));
+}
+
+#[test]
+fn the_theme_picker_previews_the_selected_theme_and_names_the_chosen_one() {
+    let (mut host, mut plugin) = themed();
+    run(&mut host, &mut plugin, THEME, Args::new());
+    let delta = |delta: i64| Args::from([("delta".to_owned(), Value::Integer(delta))]);
+    let moved = run(&mut host, &mut plugin, MOVE, delta(1));
+    assert_eq!(previewed(&moved), [Some("Lokyr Light".to_owned())]);
+    let typed = typed(&mut host, &mut plugin, "rose");
+    assert_eq!(previewed(&typed), [Some("Rose Pine Dawn".to_owned())]);
+    let submitted = on_panel(
+        &mut host,
+        &mut plugin,
+        FIELD,
+        UiEventKind::Submit {
+            text: "rose".to_owned(),
+            shift: false,
+        },
+    );
+    assert!(submitted.contains(&Request::SetTheme {
+        variant: ThemeVariant::Light,
+        name: "Rose Pine Dawn".to_owned()
+    }));
+    assert!(host.panels().get(&PanelId::from(PANEL)).is_none());
+    // Its closing's event, which it asked for, previews nothing more.
+    host.take_done();
+    host.deliver(&mut plugin).unwrap();
+    assert!(previewed(&host.take_done()).is_empty());
+    // Escape ends a preview, the config's theme shown again; the recent
+    // commands keep none of the themes.
+    run(&mut host, &mut plugin, THEME, Args::new());
+    run(&mut host, &mut plugin, MOVE, delta(1));
+    host.take_done();
+    host.close_panel(&PanelId::from(PANEL));
+    host.deliver(&mut plugin).unwrap();
+    assert_eq!(previewed(&host.take_done()), [None]);
+    assert!(plugin.recent.is_empty());
 }

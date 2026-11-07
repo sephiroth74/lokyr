@@ -433,6 +433,34 @@ impl<'a> Cx<'a> {
         }
     }
 
+    /// The themes that the app can show, the appearance in force and its
+    /// theme.
+    pub fn themes(&mut self) -> Result<crate::host::Themes, Error> {
+        match self.request(Request::Themes) {
+            Response::Themes(themes) => Ok(themes),
+            other => Err(failed(other)),
+        }
+    }
+
+    /// Shows the theme `name` in place of the appearance in force's, for a
+    /// while, as a picker previews it; `None` shows the config's again.
+    pub fn preview_theme(&mut self, name: Option<&str>) -> Result<(), Error> {
+        self.done(Request::PreviewTheme(name.map(str::to_owned)))
+    }
+
+    /// Names the theme `name` in the config's `[theme]` for the appearance
+    /// of `variant`, which the app shows at once, a preview ending.
+    pub fn set_theme(
+        &mut self,
+        variant: crate::theme::ThemeVariant,
+        name: &str,
+    ) -> Result<(), Error> {
+        self.done(Request::SetTheme {
+            variant,
+            name: name.to_owned(),
+        })
+    }
+
     /// The current match of the plugin's search `search`, as its cells are
     /// now, and its place among the search's matches now; and how many of
     /// them the host keeps.

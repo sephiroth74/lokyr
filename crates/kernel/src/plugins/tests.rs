@@ -150,6 +150,15 @@ pub(super) struct App {
     pub(super) language: Option<&'static str>,
 }
 
+/// The themes of an app of the tests: the built-in ones, dark in force.
+fn no_themes() -> host::Themes {
+    host::Themes {
+        appearance: crate::themes::ThemeVariant::Dark,
+        current: crate::themes::DARK.to_owned(),
+        themes: Vec::new(),
+    }
+}
+
 impl App {
     pub(super) fn context(&mut self) -> Context<'_> {
         Context {
@@ -162,6 +171,7 @@ impl App {
             confirm_paste: crate::config::ConfirmPaste::Auto,
             keys: &|_, _| None,
             enabled: &|_| true,
+            themes: &no_themes,
             language: self.language.unwrap_or("en"),
         }
     }

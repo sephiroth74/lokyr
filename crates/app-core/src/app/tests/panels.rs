@@ -1016,3 +1016,61 @@ fn the_command_palette_opens_at_the_window_s_top_ranks_as_it_is_typed_and_runs_i
     assert!(panel_frame(&app, window, "command-palette").is_none());
     assert_eq!(fake.windows().count(), 1);
 }
+
+#[test]
+fn the_palette_s_theme_picker_previews_a_theme_and_names_the_chosen_one() {
+    let none = Modifiers::NONE;
+    let directory = std::env::temp_dir().join(format!("lokyr-app-picker-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&directory);
+    std::fs::create_dir_all(directory.join("themes")).unwrap();
+    let palette: Vec<String> = (0..16).map(|_| "\"#808080\"".to_owned()).collect();
+    std::fs::write(
+        directory.join("themes/Paper.toml"),
+        format!(
+            "[terminal]\nbackground = \"#ffffff\"\nforeground = \"#202020\"\npalette = [{}]\n",
+            palette.join(", ")
+        ),
+    )
+    .unwrap();
+    let path = directory.join("config.toml");
+    std::fs::write(&path, "[theme]\nlight = \"Lokyr Light\"\n").unwrap();
+    let drawing = Drawing::new(FontConfig::default()).unwrap();
+    let mut fake = Fake::default();
+    let mut config = Config::read(&path).unwrap();
+    config.window = unpadded().window;
+    let mut app = App::new(Some(drawing), config, Some(path.clone())).with_program(quiet());
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    app.windows.get_mut(&window).unwrap().surface = Some(fakes::Surface::default());
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    frames(&mut fake, &mut app, window);
+    command(&mut fake, &mut app, window, "command-palette.theme");
+    assert!(panel_frame(&app, window, "command-palette").is_some());
+    // Lokyr Light, in force, then Paper, which ↓ previews.
+    fake.send(
+        &mut app,
+        window,
+        key_event(KeyCode::ArrowDown, "", none, true),
+    );
+    frames(&mut fake, &mut app, window);
+    assert_eq!(app.theme_preview.as_deref(), Some("Paper"));
+    let white = lokyr_vt_core::page::Rgb {
+        r: 255,
+        g: 255,
+        b: 255,
+    };
+    assert_eq!(app.theme.light.colors.background, white);
+    // Return names it in the config.
+    fake.send(
+        &mut app,
+        window,
+        key_event(KeyCode::Enter, "\r", none, true),
+    );
+    frames(&mut fake, &mut app, window);
+    assert!(panel_frame(&app, window, "command-palette").is_none());
+    assert_eq!(app.theme_preview, None);
+    let written = std::fs::read_to_string(&path).unwrap();
+    assert!(written.contains("light = \"Paper\""), "{written}");
+    assert_eq!(app.theme.light.colors.background, white);
+    let _ = std::fs::remove_dir_all(directory);
+}

@@ -79,6 +79,16 @@ pub enum Request {
     Quit,
     /// Give the text a size, in points; with `None`, the config's.
     FontSize(Option<f32>),
+    /// Show the theme of a name in place of the appearance in force's, for
+    /// a while; with `None`, the config's again.
+    PreviewTheme(Option<String>),
+    /// Name a theme in the config's `[theme]` for an appearance.
+    SetTheme {
+        /// The appearance.
+        variant: crate::themes::ThemeVariant,
+        /// The theme's name.
+        name: String,
+    },
     /// Open a URL, or an absolute path, with the system's handler.
     Open(String),
     /// Ask the user to confirm a paste of `text` into `pane`, whose
@@ -233,6 +243,9 @@ pub struct Context<'a> {
     /// Whether the menus enable a command now, by its name, as its context
     /// and the focused pane say.
     pub enabled: &'a dyn Fn(&str) -> bool,
+    /// The themes that the app can show, the appearance in force and its
+    /// theme.
+    pub themes: &'a dyn Fn() -> host::Themes,
     /// The language that the app shows, of its own catalogs, which the
     /// plugins' messages take.
     pub language: &'a str,
@@ -1980,6 +1993,19 @@ fn builtin_manifest(manifest: &str) -> Result<Manifest, Error> {
     })
 }
 
+/// Checks that `name` can name a theme, a file's name of the themes'
+/// folder.
+fn theme_name(name: &str) -> Result<(), Error> {
+    if crate::themes::is_name(name) {
+        Ok(())
+    } else {
+        Err(Error::new(
+            Code::Failed,
+            format!("`{name}` is no theme's name"),
+        ))
+    }
+}
+
 /// The message of a plugin's catalogs that titles its command `name`:
 /// `command-` and the name, with `-` for its `.`, as `command-pane-copy`.
 pub fn title_message(name: &str) -> String {
@@ -3165,6 +3191,7 @@ impl Host<'_, '_> {
                     rows: grid.rows,
                 }
             }
+            Asked::Themes => Response::Themes((self.context.themes)()),
             Asked::Commands => {
                 // The rest of the registry to a plugin of `user-commands`
                 // alone, which tells the plugins installed and the user's
@@ -3494,6 +3521,16 @@ impl Host<'_, '_> {
                 Request::FontSize(size)
             }
             Asked::OpenWindow => Request::OpenWindow,
+            Asked::PreviewTheme(name) => {
+                if let Some(name) = &name {
+                    theme_name(name)?;
+                }
+                Request::PreviewTheme(name)
+            }
+            Asked::SetTheme { variant, name } => {
+                theme_name(&name)?;
+                Request::SetTheme { variant, name }
+            }
             Asked::AskText {
                 window,
                 message,

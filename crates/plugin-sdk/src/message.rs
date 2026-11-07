@@ -76,6 +76,21 @@ pub enum Request {
     /// The registered commands, in the order of their registrations, as
     /// the menus list them.
     Commands,
+    /// The themes that the app can show, the appearance in force and its
+    /// theme.
+    Themes,
+    /// Shows the theme of a name in place of the appearance in force's,
+    /// for a while, as a picker previews it, until the next preview, the
+    /// theme's choice, or `None`, which shows the config's again.
+    PreviewTheme(Option<String>),
+    /// Names a theme in the config's `[theme]`, for the appearance of
+    /// `variant`, which the app shows at once, a preview ending.
+    SetTheme {
+        /// The appearance whose theme it names.
+        variant: crate::theme::ThemeVariant,
+        /// The theme's name.
+        name: String,
+    },
     /// Runs a command with arguments, once the call returns; the call is
     /// checked as it is asked: of a plugin of `user-commands`, as the
     /// user's, any command without a declaration.
@@ -664,7 +679,10 @@ impl Request {
             | Self::Config
             | Self::State
             | Self::SetState(_)
-            | Self::Commands => None,
+            | Self::Commands
+            | Self::Themes
+            | Self::PreviewTheme(_)
+            | Self::SetTheme { .. } => None,
         }
     }
 
@@ -697,7 +715,8 @@ impl Request {
             | Self::TabBarPlace
             | Self::KeysOf { .. }
             | Self::Message { .. }
-            | Self::Commands => Effect::Read,
+            | Self::Commands
+            | Self::Themes => Effect::Read,
             Self::SetClipboardText(_)
             | Self::SelectCells { .. }
             | Self::ShowMatches { .. }
@@ -746,7 +765,9 @@ impl Request {
             | Self::Reveal { .. }
             | Self::OpenPanel { .. }
             | Self::ClosePanel(_)
-            | Self::AskText { .. } => Effect::App,
+            | Self::AskText { .. }
+            | Self::PreviewTheme(_)
+            | Self::SetTheme { .. } => Effect::App,
             Self::RegisterCommand(_) | Self::Bind(_) | Self::Subscribe(_) => Effect::Declaration,
         }
     }
@@ -781,6 +802,8 @@ pub enum Response {
     Current(Current),
     /// The registered commands.
     Commands(Vec<CommandInfo>),
+    /// The themes that the app can show.
+    Themes(crate::host::Themes),
     /// A question's id, whose answer comes as an event.
     Asking(u64),
     /// A tab bar's place.

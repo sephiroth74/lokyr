@@ -111,6 +111,7 @@ fn starting_opens_a_window_under_the_menus_of_the_commands() {
             "Scroll to the Bottom cmd+End",
             "-",
             "Command Palette… shift+cmd+p",
+            "Choose Theme…",
             "-",
             "Appearance",
             "-",

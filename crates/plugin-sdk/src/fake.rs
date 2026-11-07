@@ -280,6 +280,8 @@ pub struct FakeHost {
     /// The registry's commands of the app's and of other plugins', before
     /// the plugin's own, as the test gave them.
     registry: Vec<host::CommandInfo>,
+    /// The themes that the app can show, as the test gave them.
+    themes: host::Themes,
     /// Where the plugin's moves of tabs to windows of their own put those
     /// windows on the screens.
     places: BTreeMap<WindowId, ScreenPoint>,
@@ -342,6 +344,22 @@ impl FakeHost {
             places: BTreeMap::new(),
             keys: Vec::new(),
             registry: Vec::new(),
+            themes: host::Themes {
+                appearance: crate::theme::ThemeVariant::Dark,
+                current: "Lokyr Dark".to_owned(),
+                themes: vec![
+                    host::ThemeInfo {
+                        name: "Lokyr Light".to_owned(),
+                        variant: crate::theme::ThemeVariant::Light,
+                        origin: host::ThemeOrigin::BuiltIn,
+                    },
+                    host::ThemeInfo {
+                        name: "Lokyr Dark".to_owned(),
+                        variant: crate::theme::ThemeVariant::Dark,
+                        origin: host::ThemeOrigin::BuiltIn,
+                    },
+                ],
+            },
             messages: Vec::new(),
             bar_place: BarPlace::default(),
             window_bar_places: BTreeMap::new(),
@@ -454,6 +472,13 @@ impl FakeHost {
         if changed {
             self.changed(WorkspaceEvent::TabChanged { tab });
         }
+        self
+    }
+
+    /// Gives the app the themes that it can show, `themes`, which a read of
+    /// them gives; the built-in ones, dark in force, at first.
+    pub fn set_themes(&mut self, themes: host::Themes) -> &mut Self {
+        self.themes = themes;
         self
     }
 
@@ -1948,6 +1973,7 @@ impl Calling<'_> {
             }
             Request::FontSize => Response::FontSize(host.font_size),
             Request::TabBarPlace => Response::TabBarPlace(host.bar_place),
+            Request::Themes => Response::Themes(host.themes.clone()),
             Request::Commands => {
                 // The rest of the registry to a plugin of `user-commands`
                 // alone, as the app's host gives it.
@@ -2175,6 +2201,14 @@ impl Calling<'_> {
                     ));
                 }
                 Response::Done
+            }
+            Request::PreviewTheme(Some(name)) | Request::SetTheme { name, .. }
+                if name.is_empty() || name.contains(['/', '\\']) || name.starts_with('.') =>
+            {
+                return Err(Error::new(
+                    Code::Failed,
+                    format!("`{name}` is no theme's name"),
+                ));
             }
             Request::SetFontSize(Some(size)) => {
                 // The text's sizes, in points, as the app takes them.

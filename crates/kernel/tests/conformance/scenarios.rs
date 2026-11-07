@@ -784,6 +784,23 @@ fn app_requests(world: &World) -> Scenario {
         capabilities: None,
         subscriptions: Vec::new(),
         steps: vec![ask(vec![
+            (Request::Themes, Response::Themes(super::themes())),
+            (
+                Request::PreviewTheme(Some("Dracula".to_owned())),
+                Response::Done,
+            ),
+            (Request::PreviewTheme(None), Response::Done),
+            (
+                Request::PreviewTheme(Some("../x".to_owned())),
+                failed(Code::Failed, "`../x` is no theme's name"),
+            ),
+            (
+                Request::SetTheme {
+                    variant: lokyr_plugin_sdk::theme::ThemeVariant::Dark,
+                    name: "Dracula".to_owned(),
+                },
+                Response::Done,
+            ),
             (
                 Request::RunCommand {
                     name: "conformer.ask".to_owned(),

@@ -328,6 +328,44 @@ pub struct CommandInfo {
     pub enabled: Option<bool>,
 }
 
+/// Where a theme comes from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ThemeOrigin {
+    /// A file of the user's themes' folder.
+    Folder,
+    /// One that the app holds.
+    Held,
+    /// One built into the app.
+    BuiltIn,
+}
+
+/// A theme that the app can show: its name, as `[theme]` names it, its
+/// variant, and where it comes from.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ThemeInfo {
+    /// Its name.
+    pub name: String,
+    /// Whether it is of the light appearance or of the dark one.
+    pub variant: crate::theme::ThemeVariant,
+    /// Where it comes from.
+    pub origin: ThemeOrigin,
+}
+
+/// The themes that the app can show, as a read of them gives them: the
+/// appearance in force, the theme in force for it as `[theme]` names it,
+/// and every theme, by name, a file of the user's folder before one of its
+/// name that the app holds or builds in.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Themes {
+    /// The appearance in force.
+    pub appearance: crate::theme::ThemeVariant,
+    /// The name of its theme, as `[theme]` gives it.
+    pub current: String,
+    /// The themes.
+    pub themes: Vec<ThemeInfo>,
+}
+
 /// The current match of a search, as a read of it gives it.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Current {

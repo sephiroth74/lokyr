@@ -6,8 +6,11 @@
 //! their keys and their plugins, the recent ones first. The arrows move
 //! through the list while the field takes the keys; Return, or a click,
 //! runs the selected command as the user's, of `user-commands`, and closes
-//! the palette; Escape, or a click outside it, closes it. Like every
-//! built-in plugin, it depends only on the plugin SDK.
+//! the palette; Escape, or a click outside it, closes it. Its theme picker
+//! lists the themes of the appearance in force, previews each as it is
+//! selected, and names the one chosen in the config's `[theme]` for that
+//! appearance, Escape showing the config's again. Like every built-in
+//! plugin, it depends only on the plugin SDK.
 
 #![forbid(unsafe_code)]
 
@@ -17,6 +20,7 @@ use lokyr_plugin_sdk::command::{Args, Category, Command, Error, Kind, Param, Val
 use lokyr_plugin_sdk::host::CommandInfo;
 use lokyr_plugin_sdk::message::{Data, Event};
 use lokyr_plugin_sdk::plugin::{Cx, Plugin};
+use lokyr_plugin_sdk::theme::ThemeVariant;
 use lokyr_plugin_sdk::ui::{Anchor, Corner, PanelId, PanelOptions, Role, UiEvent, ViewId};
 use lokyr_plugin_sdk::view::{
     Align, Border, Direction, Edges, Layout, Length, ListItem, Node, Shadow, Style, TextSize,
@@ -30,6 +34,10 @@ lokyr_plugin_sdk::export_plugin!(Palette);
 /// Opens the palette in the focused window, its field taking the keys;
 /// open, its field takes them again.
 const OPEN: &str = "command-palette.open";
+
+/// Opens the palette's theme picker, of the themes of the appearance in
+/// force.
+const THEME: &str = "command-palette.theme";
 
 /// Moves the list's selection by `delta` items, as the keymap's arrows do
 /// while the palette has the keyboard: of an argument that it needs, the
@@ -60,10 +68,13 @@ static CATALOGS: [(&str, &str); 2] = [
 ];
 
 /// The palette's texts, in English, where the host gives none.
-const ENGLISH: [(&str, &str); 3] = [
+const ENGLISH: [(&str, &str); 6] = [
     ("palette-placeholder", "Execute Command…"),
     ("palette-none", "No commands"),
     ("palette-commands", "Commands"),
+    ("palette-theme-placeholder", "Choose a Theme…"),
+    ("palette-themes", "Themes"),
+    ("palette-current", "Current"),
 ];
 
 /// The text of the message `id`, in the language shown, or English's where
@@ -92,6 +103,17 @@ pub struct Palette {
     recent: Vec<String>,
     /// The palette, while it is open.
     open: Option<Open>,
+    /// The closings of its panel that it asked for, as it ran a command,
+    /// whose events it leaves, as the command may open it anew.
+    closing: usize,
+}
+
+/// What an open palette lists: the commands, or the themes of an
+/// appearance, whose picker previews the selected one.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Mode {
+    Commands,
+    Themes(ThemeVariant),
 }
 
 /// An open palette: its commands, as the registry gave them as it opened,
@@ -100,6 +122,7 @@ pub struct Palette {
 /// keyboard, as Tab gives it.
 #[derive(Debug)]
 struct Open {
+    mode: Mode,
     commands: Vec<Entry>,
     query: String,
     ranked: Vec<usize>,
@@ -108,10 +131,12 @@ struct Open {
 }
 
 impl Open {
-    /// The palette of `commands`, of no text, of the recent ones `recent`.
-    fn new(commands: Vec<Entry>, recent: &[String]) -> Self {
+    /// The palette of `mode`, of `commands`, of no text, of the recent ones
+    /// `recent`.
+    fn new(mode: Mode, commands: Vec<Entry>, recent: &[String]) -> Self {
         let ranked = rank::rank(&commands, "", recent);
         Self {
+            mode,
             commands,
             query: String::new(),
             ranked,
@@ -127,11 +152,11 @@ impl Open {
 }
 
 /// Whether `command` is one that the palette lists: of no argument that
-/// it needs, enabled by the menus, and not the palette's own.
+/// it needs, enabled by the menus, and not the palette's own opening.
 fn listed(command: &CommandInfo) -> bool {
     command.params.iter().all(|param| param.default.is_some())
         && command.enabled != Some(false)
-        && !command.name.starts_with("command-palette.")
+        && command.name != OPEN
 }
 
 impl Plugin for Palette {
@@ -151,6 +176,14 @@ impl Plugin for Palette {
         cx.register_command(Command {
             name: OPEN.to_owned(),
             title: "Command Palette…".to_owned(),
+            category: Category::View,
+            capabilities: Vec::new(),
+            params: Vec::new(),
+            when: None,
+        })?;
+        cx.register_command(Command {
+            name: THEME.to_owned(),
+            title: "Choose Theme…".to_owned(),
             category: Category::View,
             capabilities: Vec::new(),
             params: Vec::new(),
@@ -178,6 +211,7 @@ impl Plugin for Palette {
     fn on_command(&mut self, cx: &mut Cx<'_>, name: &str, args: Args) -> Result<(), Error> {
         match name {
             OPEN => self.open(cx),
+            THEME => self.open_themes(cx),
             MOVE => {
                 let delta = match args.get("delta") {
                     Some(Value::Integer(delta)) => *delta,
@@ -194,10 +228,17 @@ impl Plugin for Palette {
             return None;
         }
         let open = self.open.as_ref()?;
-        let texts = Texts {
-            placeholder: message(cx, "palette-placeholder"),
-            none: message(cx, "palette-none"),
-            commands: message(cx, "palette-commands"),
+        let texts = match open.mode {
+            Mode::Commands => Texts {
+                placeholder: message(cx, "palette-placeholder"),
+                none: message(cx, "palette-none"),
+                commands: message(cx, "palette-commands"),
+            },
+            Mode::Themes(_) => Texts {
+                placeholder: message(cx, "palette-theme-placeholder"),
+                none: message(cx, "palette-none"),
+                commands: message(cx, "palette-themes"),
+            },
         };
         Some(palette(open, &texts))
     }
@@ -215,13 +256,17 @@ impl Plugin for Palette {
         match (&event.kind, event.key.0.as_str()) {
             (UiEventKind::InputChanged { text, .. }, FIELD) => {
                 open.query.clone_from(text);
-                open.ranked = rank::rank(&open.commands, text, &self.recent);
+                let recent: &[String] = match open.mode {
+                    Mode::Commands => &self.recent,
+                    Mode::Themes(_) => &[],
+                };
+                open.ranked = rank::rank(&open.commands, text, recent);
                 open.selected = 0;
                 cx.request_render(panel())?;
                 if !open.ranked.is_empty() {
                     cx.select(panel(), LIST, 0)?;
                 }
-                Ok(())
+                self.preview(cx)
             }
             (UiEventKind::Submit { .. }, FIELD) => self.run(cx),
             (UiEventKind::Focus, LIST) => {
@@ -250,12 +295,23 @@ impl Plugin for Palette {
     }
 
     /// The palette's closing, as Escape or a click outside it closes it.
-    fn on_event(&mut self, _: &mut Cx<'_>, events: &[Event]) -> Result<(), Error> {
+    fn on_event(&mut self, cx: &mut Cx<'_>, events: &[Event]) -> Result<(), Error> {
         for event in events {
             if let Event::PanelClosed(id) = event
                 && *id == PanelId::from(PANEL)
             {
-                self.open = None;
+                if self.closing > 0 {
+                    self.closing -= 1;
+                    continue;
+                }
+                // Closed without a choice, a theme's preview ends.
+                if let Some(Open {
+                    mode: Mode::Themes(_),
+                    ..
+                }) = self.open.take()
+                {
+                    cx.preview_theme(None)?;
+                }
             }
         }
         Ok(())
@@ -270,9 +326,6 @@ impl Palette {
         if self.open.is_some() {
             return cx.focus_node(panel(), FIELD);
         }
-        let Some(window) = cx.focused_window() else {
-            return Ok(());
-        };
         let commands = cx
             .commands()?
             .into_iter()
@@ -284,6 +337,43 @@ impl Palette {
                 plugin: command.plugin,
             })
             .collect();
+        self.show(cx, Mode::Commands, commands)
+    }
+
+    /// Opens the theme picker in the focused window, of the themes of the
+    /// appearance in force, its theme first, which it shows; open, its
+    /// field takes the keys again.
+    fn open_themes(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
+        if self.open.is_some() {
+            return cx.focus_node(panel(), FIELD);
+        }
+        let themes = cx.themes()?;
+        let current = message(cx, "palette-current");
+        let mut entries: Vec<Entry> = themes
+            .themes
+            .into_iter()
+            .filter(|theme| theme.variant == themes.appearance)
+            .map(|theme| Entry {
+                keys: (theme.name == themes.current).then(|| current.clone()),
+                title: theme.name.clone(),
+                name: theme.name,
+                plugin: None,
+            })
+            .collect();
+        // The theme in force first, selected as the picker opens.
+        if let Some(at) = entries.iter().position(|entry| entry.keys.is_some()) {
+            let first = entries.remove(at);
+            entries.insert(0, first);
+        }
+        self.show(cx, Mode::Themes(themes.appearance), entries)
+    }
+
+    /// Opens the palette's panel in the focused window, of `mode` and
+    /// `entries`.
+    fn show(&mut self, cx: &mut Cx<'_>, mode: Mode, entries: Vec<Entry>) -> Result<(), Error> {
+        let Some(window) = cx.focused_window() else {
+            return Ok(());
+        };
         cx.open_panel(
             PANEL,
             PanelOptions {
@@ -296,8 +386,24 @@ impl Palette {
                 close_escape: true,
             },
         )?;
-        self.open = Some(Open::new(commands, &self.recent));
+        let recent: &[String] = match mode {
+            Mode::Commands => &self.recent,
+            Mode::Themes(_) => &[],
+        };
+        self.open = Some(Open::new(mode, entries, recent));
         Ok(())
+    }
+
+    /// Of the theme picker, previews the selected theme, or the config's
+    /// of none.
+    fn preview(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
+        let Some(open) = &self.open else {
+            return Ok(());
+        };
+        if !matches!(open.mode, Mode::Themes(_)) {
+            return Ok(());
+        }
+        cx.preview_theme(open.chosen().map(|entry| entry.name.as_str()))
     }
 
     /// Moves the selection by `delta` places, within the list.
@@ -312,20 +418,27 @@ impl Palette {
             .unwrap_or(0)
             .saturating_add(delta);
         open.selected = usize::try_from(at.max(0)).unwrap_or(0).min(last);
-        cx.select(panel(), LIST, open.selected)
+        cx.select(panel(), LIST, open.selected)?;
+        self.preview(cx)
     }
 
     /// Runs the selected command as the user's, once the palette closes,
     /// and puts it first among the recent ones, which the state keeps.
     fn run(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
-        let Some(name) = self
+        let Some((mode, name)) = self
             .open
             .as_ref()
-            .and_then(Open::chosen)
-            .map(|entry| entry.name.clone())
+            .and_then(|open| Some((open.mode, open.chosen()?.name.clone())))
         else {
             return Ok(());
         };
+        cx.close_panel(PANEL)?;
+        self.closing += 1;
+        self.open = None;
+        // Of the theme picker, the theme named for its appearance.
+        if let Mode::Themes(variant) = mode {
+            return cx.set_theme(variant, &name);
+        }
         self.recent.retain(|kept| *kept != name);
         self.recent.insert(0, name.clone());
         self.recent.truncate(MOST_RECENT);
@@ -334,8 +447,6 @@ impl Palette {
         let _ = cx.set_state(Data::Map(
             [(STATE_RECENT.to_owned(), Data::List(recent))].into(),
         ));
-        cx.close_panel(PANEL)?;
-        self.open = None;
         cx.run_command(&name, Args::new())
     }
 }

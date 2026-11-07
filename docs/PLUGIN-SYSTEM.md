@@ -472,6 +472,13 @@ type Command = {
 -- A command, as a read of the registry gives it; `plugin`, `keys`, `when` and `enabled` to a plugin of `user-commands`
 -- alone: the plugin that registered it, nil of the app's own; its keys of no arguments, as "⌘T"; its context; and whether
 -- the menus enable it now.
+-- The themes that the app can show, as a read of them gives them: the appearance in force, its theme as `[theme]` names
+-- it, and every theme by name, a file of the user's folder before one of its name that the app holds or builds in.
+type Themes = {
+    appearance: "light" | "dark", current: string,
+    themes: { { name: string, variant: "light" | "dark", origin: "folder" | "held" | "built-in" } },
+}
+
 type CommandInfo = {
     name: string, title: string, category: string,
     params: { { name: string, kind: string, default: (string | number | boolean)? } },
@@ -503,6 +510,11 @@ type Cx = {
     run_command: (name: string, args: Args?) -> (boolean, Error?),
     -- The registered commands, in the order of their registrations, as the menus list them.
     commands: () -> ({ CommandInfo }?, Error?),
+    themes: () -> (Themes?, Error?),
+    -- Shows a theme in place of the appearance in force's, for a while, as a picker previews it; nil shows the config's.
+    preview_theme: (name: string?) -> (boolean, Error?),
+    -- Names a theme in the config's `[theme]` for an appearance, which shows at once, a preview ending.
+    set_theme: (variant: "light" | "dark", name: string) -> (boolean, Error?),
 
     -- The focus: the window that has it, and its pane that has the keyboard.
     focused_window: () -> WindowId?,
