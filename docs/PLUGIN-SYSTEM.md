@@ -543,9 +543,11 @@ type Cx = {
     -- The registered commands, in the order of their registrations, as the menus list them.
     commands: () -> ({ CommandInfo }?, Error?),
     themes: () -> (Themes?, Error?),
-    -- Shows a theme in place of the appearance in force's, for a while, as a picker previews it; nil shows the config's.
+    -- Require `user-commands`: shows a theme in place of the appearance in force's, for a while, as a picker
+    -- previews it; nil shows the config's.
     preview_theme: (name: string?) -> (boolean, Error?),
-    -- Names a theme in the config's `[theme]` for an appearance, which shows at once, a preview ending.
+    -- Names a theme in the config's `[theme]` for an appearance, which shows at once, a preview ending: one of the
+    -- appearance's themes, as `themes` lists them, else refused.
     set_theme: (variant: "light" | "dark", name: string) -> (boolean, Error?),
 
     -- The focus: the window that has it, and its pane that has the keyboard.
@@ -779,7 +781,7 @@ type Plugin = {
 | `input-read` | Seeing the keys typed before they reach the program | Very high: a keylogger's power |
 | `history-read` | Reading the commands that the shell ran and their output, which shell integration marks | High: a password typed by mistake ends up there |
 | `process-read` | Seeing the panes' processes: their command lines and working directories | Medium: command lines can hold passwords |
-| `user-commands` | Running any command as the user's, without declaring it, as the palette does; reading the whole registry, with each command's plugin, keys and context, and the plugins installed ([ADR 0024](adr/0024-user-commands.md)) | Very high: `pane.send-text` types into the shell |
+| `user-commands` | Running any command as the user's, without declaring it, as the palette does; reading the whole registry, with each command's plugin, keys and context, and the plugins installed ([ADR 0024](adr/0024-user-commands.md)); previewing a theme and naming one in the config's `[theme]`, as the palette's picker does | Very high: `pane.send-text` types into the shell |
 
 - **Commands** ([ADR 0019](adr/0019-commands-errors-and-permissions.md)): each has a category, `app`, `windows`, `tabs`, `panes`, `input`, `clipboard`, `edit`, `find` or `view` to start with, and the capabilities that its action needs, as `pane.paste` needs `clipboard-read` and `pty-write`. A plugin declares in its manifest the commands that it runs, `[uses] commands`, by name or by namespace, as `tabs.*`: one that it did not declare fails with `denied`, 301, and one whose capabilities it lacks with `denied`, 302. The commands that the user runs, through the keys, the menus or a plugin with `user-commands`, as the palette, and the plugin's own need no declaration. Without `user-commands`, a plugin reads the commands' names, titles, categories and parameters, not their plugins.
 - **Declaration and consent**:

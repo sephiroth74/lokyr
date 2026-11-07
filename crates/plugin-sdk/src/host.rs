@@ -516,6 +516,25 @@ pub struct Themes {
     pub themes: Vec<ThemeInfo>,
 }
 
+impl Themes {
+    /// Whether `name` is a theme of `variant` among them, or the error that
+    /// tells it is not, which a choice that the config would keep refuses.
+    pub fn check(&self, name: &str, variant: crate::theme::ThemeVariant) -> Result<(), String> {
+        if self
+            .themes
+            .iter()
+            .any(|theme| theme.name == name && theme.variant == variant)
+        {
+            return Ok(());
+        }
+        let variant = match variant {
+            crate::theme::ThemeVariant::Light => "light",
+            crate::theme::ThemeVariant::Dark => "dark",
+        };
+        Err(format!("there is no {variant} theme `{name}`"))
+    }
+}
+
 /// The current match of a search, as a read of it gives it.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Current {

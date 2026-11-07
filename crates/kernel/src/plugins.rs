@@ -3748,8 +3748,12 @@ impl Host<'_, '_> {
                 }
                 Request::PreviewTheme(name)
             }
+            // A choice that the config keeps, of a theme that is there.
             Asked::SetTheme { variant, name } => {
                 theme_name(&name)?;
+                (self.context.themes)()
+                    .check(&name, variant)
+                    .map_err(|message| Error::new(Code::NotFound, message))?;
                 Request::SetTheme { variant, name }
             }
             Asked::AskText {

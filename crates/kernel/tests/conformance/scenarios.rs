@@ -661,6 +661,18 @@ fn capabilities(world: &World) -> Scenario {
                 }),
                 lacks("global-hotkey"),
             ),
+            // The theme that the user sees, and the config's.
+            (
+                Request::PreviewTheme(Some("Lokyr Light".to_owned())),
+                lacks("user-commands"),
+            ),
+            (
+                Request::SetTheme {
+                    variant: lokyr_plugin_sdk::theme::ThemeVariant::Light,
+                    name: "Lokyr Light".to_owned(),
+                },
+                lacks("user-commands"),
+            ),
         ])],
     }
 }
@@ -895,9 +907,25 @@ fn app_requests(world: &World) -> Scenario {
             (
                 Request::SetTheme {
                     variant: lokyr_plugin_sdk::theme::ThemeVariant::Dark,
-                    name: "Dracula".to_owned(),
+                    name: "Lokyr Dark".to_owned(),
                 },
                 Response::Done,
+            ),
+            // A theme that is not there, or of the other appearance, which
+            // the config would keep.
+            (
+                Request::SetTheme {
+                    variant: lokyr_plugin_sdk::theme::ThemeVariant::Dark,
+                    name: "Dracula".to_owned(),
+                },
+                failed(Code::NotFound, "there is no dark theme `Dracula`"),
+            ),
+            (
+                Request::SetTheme {
+                    variant: lokyr_plugin_sdk::theme::ThemeVariant::Dark,
+                    name: "Lokyr Light".to_owned(),
+                },
+                failed(Code::NotFound, "there is no dark theme `Lokyr Light`"),
             ),
             (
                 Request::RunCommand {

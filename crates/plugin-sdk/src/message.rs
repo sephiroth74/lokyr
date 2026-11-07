@@ -672,6 +672,9 @@ impl Request {
             Self::OpenQuickWindow { .. } | Self::ShowQuickWindow { .. } => {
                 Some(Capability::GlobalHotkey)
             }
+            // The theme that the user sees, and the config's `[theme]` that
+            // a choice writes, as the palette's picker shows and sets them.
+            Self::PreviewTheme(_) | Self::SetTheme { .. } => Some(Capability::UserCommands),
             // A key taken from every app.
             Self::Bind(binding) if binding.keys.starts_with(crate::keys::GLOBAL) => {
                 Some(Capability::GlobalHotkey)
@@ -744,8 +747,6 @@ impl Request {
             | Self::SetState(_)
             | Self::Commands
             | Self::Themes
-            | Self::PreviewTheme(_)
-            | Self::SetTheme { .. }
             | Self::AddMenuItem(_) => None,
         }
     }

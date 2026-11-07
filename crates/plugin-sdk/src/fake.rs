@@ -2333,6 +2333,14 @@ impl Calling<'_> {
                     format!("`{name}` is no theme's name"),
                 ));
             }
+            // A choice that the config keeps, of a theme that is there.
+            Request::SetTheme { variant, name } => {
+                self.host
+                    .themes
+                    .check(name, *variant)
+                    .map_err(|message| Error::new(Code::NotFound, message))?;
+                Response::Done
+            }
             Request::SetFontSize(Some(size)) => {
                 // The text's sizes, in points, as the app takes them.
                 let (smallest, largest) = (4.0_f32, 200.0_f32);
