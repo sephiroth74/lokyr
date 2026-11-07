@@ -1,0 +1,78 @@
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=24117347)	100%; charged; 0:00 remaining present: true
+11:15  up 19:35, 7 users, load averages: 1.15 1.61 2.20
+Graphics/Displays:
+    Apple M5 Pro:
+      Displays:
+        DELL P2721Q:
+          Resolution: 5120 x 2880 (5K/UHD+ - Ultra High Definition Plus)
+          Main Display: Yes
+11:15:34 startup v050 1
+11:15:52 startup v051 1
+11:16:09 startup floor 1
+11:16:24 load { 1.35 1.60 2.16 }
+11:16:27 startup v051 2
+11:16:44 startup v050 2
+11:17:01 startup floor 2
+11:17:16 load { 3.44 2.19 2.35 }
+11:17:18 startup v051 3
+11:17:35 startup v050 3
+11:17:52 startup floor 3
+11:18:07 load { 3.59 2.47 2.44 }
+11:18:09 startup v050 4
+11:18:26 startup v051 4
+11:18:43 startup floor 4
+11:18:58 load { 2.53 2.33 2.39 }
+11:18:58 latency warm-up v050
+11:19:01 latency warm-up v051
+11:19:06 latency v050 1 place 1
+11:19:20 latency v051 1 place 2
+11:19:33 load { 1.83 2.18 2.33 }
+11:19:35 latency v051 2 place 1
+11:19:49 latency v050 2 place 2
+11:20:01 load { 1.61 2.10 2.30 }
+11:20:03 latency v051 3 place 1
+11:20:18 latency v050 3 place 2
+11:20:30 load { 1.77 2.09 2.29 }
+11:20:32 latency v050 4 place 1
+11:20:47 latency v051 4 place 2
+11:20:59 load { 1.54 2.00 2.24 }
+11:21:01 latency v050 5 place 1
+11:21:16 latency v051 5 place 2
+11:21:28 load { 1.51 1.95 2.22 }
+11:21:30 latency v051 6 place 1
+11:21:44 latency v050 6 place 2
+11:21:57 load { 1.97 2.02 2.23 }
+11:21:59 latency v051 7 place 1
+11:22:13 latency v050 7 place 2
+11:22:26 load { 1.76 1.97 2.21 }
+11:22:28 latency v050 8 place 1
+11:22:42 latency v051 8 place 2
+11:22:54 load { 1.66 1.92 2.18 }
+11:22:54 idle v050 1
+11:24:32 idle v051 1
+11:26:09 load { 1.93 1.90 2.11 }
+11:26:09 idle v051 2
+11:27:47 idle v050 2
+11:29:24 load { 2.39 2.00 2.10 }
+11:29:24 throughput ascii v050 1
+11:29:31 throughput ascii v051 1
+11:29:37 throughput ascii v051 2
+11:29:44 throughput ascii v050 2
+11:29:51 load { 2.45 2.05 2.11 }
+11:29:51 throughput seq v050 1
+11:29:52 throughput seq v051 1
+11:29:53 throughput seq v051 2
+11:29:54 throughput seq v050 2
+11:29:55 load { 3.38 2.25 2.18 }
+11:29:55 throughput sgr v050 1
+11:29:56 throughput sgr v051 1
+11:29:57 throughput sgr v051 2
+11:29:59 throughput sgr v050 2
+11:30:00 load { 3.35 2.26 2.19 }
+11:30:00 throughput cjk v050 1
+11:30:01 throughput cjk v051 1
+11:30:03 throughput cjk v051 2
+11:30:05 throughput cjk v050 2
+11:30:06 load { 4.52 2.52 2.28 }
+11:30:06 done
