@@ -5,6 +5,9 @@ kind = "builtin"
 license = "MIT"
 description = "The tab bar and the tabs' commands: new, close, select, move, rename, color and out to a window of their own"
 
+[capabilities]
+process-read = true
+
 [contributes]
 slots = ["tab-bar"]
 config-schema = "tabs.schema.json"

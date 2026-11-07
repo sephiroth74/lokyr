@@ -3733,8 +3733,8 @@ const MEASURED_LINES: i64 = 100_000;
 /// columns in the scrollback, through the search service, its plugin and
 /// its thread, as the find bar asks for it: until its first match shows,
 /// and until it counted them all. Of a release build alone, as `just
-/// bench-search` runs it: the median of five searches, which the exit
-/// criterion of F3's search bounds at 150 ms.
+/// bench-search` runs it: the median of five searches, which the search's
+/// budget bounds at 150 ms.
 #[test]
 #[ignore = "a measure, of a release build: just bench-search"]
 fn the_search_of_100k_lines_shows_its_first_match_and_counts_them_all_within_150_ms() {

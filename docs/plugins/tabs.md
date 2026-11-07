@@ -63,4 +63,4 @@ The bar and the tabs' commands go, with their keys: no key opens a tab, and ⌘W
 
 ## Permissions
 
-Its manifest asks for no capability: it reads the windows and the tabs, and changes them, as the plugin API lets every plugin.
+It reads the windows and the tabs, and changes them, as the plugin API lets every plugin; its manifest asks to read the processes, `process-read`, for the tabs' folders and programs in their titles, and for whether a program runs or prints, which its marks show.

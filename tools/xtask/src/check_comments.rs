@@ -13,11 +13,15 @@ use anyhow::{Context, Result, bail};
 use regex::Regex;
 
 /// What the comments must not hold, and how a finding names it.
-const PATTERNS: [(&str, &str); 5] = [
+const PATTERNS: [(&str, &str); 6] = [
     (r"\bF[0-9]b?-[0-9]{2,3}\b", "a task"),
     (r"\bADR[- ]?[0-9]{1,4}\b|\badr/[0-9]{4}", "an ADR"),
     (r"(?i)\bphases? F[0-9]b?\b", "a phase"),
     (r"\bF[0-9]b?(?:'s)? phase\b", "a phase"),
+    (
+        r"\bF[0-9]b?'s (?:search|exit|criteri\w*|tasks?|plan|blocks?|reviews?|end|work|plugins?|release)\b",
+        "a phase",
+    ),
     (r"docs/tasks\b", "the tasks' files"),
 ];
 
@@ -240,6 +244,7 @@ mod tests {
             "// docs/adr/0009-toml-config.md",
             "// comes in phase F3",
             "// F3b's phase brings it",
+            "// the exit criterion of F3's search",
             "// see docs/tasks/F2.md",
         ] {
             assert!(names(planned), "{planned}");
@@ -248,6 +253,7 @@ mod tests {
             "// F1 to F12, and F13 to F20",
             "// the F3 key",
             "// xterm's F1-F4 send SS3",
+            "// F1's sequence of the keypad",
         ] {
             assert!(!names(plain), "{plain}");
         }

@@ -1,4 +1,4 @@
-# I testi dell'app, in italiano.
+# The app's texts, in Italian.
 
 command-window-new = Nuova finestra
 command-window-close = Chiudi finestra

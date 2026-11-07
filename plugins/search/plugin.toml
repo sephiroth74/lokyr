@@ -5,5 +5,8 @@ kind = "builtin"
 license = "MIT"
 description = "The find bar: a pane's search, of its history, its case, regexes and whole words, its matches counted and stepped through"
 
+[capabilities]
+terminal-read = true
+
 [contributes]
 config-schema = "search.schema.json"

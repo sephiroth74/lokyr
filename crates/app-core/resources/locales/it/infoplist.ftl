@@ -1,4 +1,4 @@
-# I testi dei permessi di Info.plist, in italiano.
+# The usage strings of the bundle's Info.plist, in Italian.
 
 NSMicrophoneUsageDescription = Un programma avviato nel terminale vuole usare il microfono.
 NSCameraUsageDescription = Un programma avviato nel terminale vuole usare la fotocamera.
@@ -17,7 +17,7 @@ NSPhotoLibraryUsageDescription = Un programma avviato nel terminale vuole legger
 NSLocationUsageDescription = Un programma avviato nel terminale vuole conoscere la tua posizione.
 NSSpeechRecognitionUsageDescription = Un programma avviato nel terminale vuole usare il riconoscimento vocale.
 
-# I nomi dei file che Lokyr apre, che il Finder mostra.
+# The names of the files that Lokyr opens, which the Finder shows, in Italian.
 
 document-type-itermcolors = Preset di colori di iTerm2
 document-type-toml = Documento TOML

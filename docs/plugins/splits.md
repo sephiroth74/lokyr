@@ -60,4 +60,4 @@ The splits' commands go, with their keys, and the panes no longer fade or show t
 
 ## Permissions
 
-Its manifest asks for no capability: it reads the tabs' layouts, and changes them, as the plugin API lets every plugin.
+It reads the tabs' layouts, and changes them, as the plugin API lets every plugin; its manifest asks to read the processes, `process-read`, for the panes' folders and programs in their titles.

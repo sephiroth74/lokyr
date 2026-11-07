@@ -29,7 +29,7 @@
 </p>
 
 > [!IMPORTANT]
-> **Lokyr is not ready for daily use yet.** Its terminal core is done, and its macOS app has tabs, splits and search; themes, the command palette and third-party plugins come next. See the [status](#status).
+> **Lokyr is not ready for daily use yet.** Its terminal core is done, and its macOS app has tabs, splits, search and themes; the command palette and third-party plugins come next. See the [status](#status).
 
 <p align="center">
   <img src="docs/images/lokyr-code.png" alt="A Lokyr window of 100 by 30 cells, showing Rust source with syntax highlighting, by bat" width="760">
@@ -37,7 +37,7 @@
 
 ## Why Lokyr
 
-- **A small core, and plugins for the rest.** The tab bar, splits, search, themes and the command palette are plugins, on the same API that third parties get. The core keeps the terminal itself: the screen, the input, the rendering. Leave a plugin out, and Lokyr is a terminal without it.
+- **A small core, and plugins for the rest.** The tab bar, splits, search and the command palette are plugins, on the same API that third parties get. The core keeps the terminal itself: the screen, the input, the rendering. Leave a plugin out, and Lokyr is a terminal without it.
 - **Plugins you can trust.** A third-party plugin is Luau source, in a VM of its own, with a memory limit and a deadline. It reaches the screen, the clipboard, files or the network only through the capabilities that it declares, which Sleip shows at install and Lokyr asks for on first use. The app itself contains no networking code.
 - **Fast where you feel it.** Its own VT core, with 8-byte cells and a paged grid; a Metal renderer, one surface per window; a frame of steady output in about a quarter of a millisecond at 4K. It is measured against six other terminals, each change against the builds before it, and the numbers are [in the repository](docs/bench/).
 - **Native on macOS.** An AppKit window, CoreText shaping and font fallback, input methods, Secure Keyboard Entry, a quick terminal on a global key.

@@ -20,8 +20,8 @@ This document describes Lokyr as a whole. Each subsystem has its own document wi
                                         │ writes to disk: store + plugins.lock
 ┌───────────────────────────────────────▼────────── lokyr (app) ────────────────────────────┐
 │ First-party plugins (static)            │ Third-party plugins (Luau, sandboxed)          │
-│ tabs · splits · search · themes ·       │ read from disk, activated only when needed     │
-│ theme-iterm2 · core-actions · palette   │                                                │
+│ tabs · splits · search · links ·        │ read from disk, activated only when needed     │
+│ core-actions · palette                  │                                                │
 ├─────────────────────────────────────────┴────────────────────────────────────────────────┤
 │ plugin-sdk ── HostApi messages (native) │  plugin-host-luau (Luau VMs → same messages)  │
 ├──────────────────────────────────────────────────────────────────────────────────────────┤
@@ -135,7 +135,7 @@ lokyr/
 │   ├── pkg-model/         plugin.toml, plugins.toml/.lock, index format, dist (shared by app, sleip, registry)
 │   └── app/               the `lokyr` binary: `main`, the backends for the target, their wiring + distribution
 ├── plugins/               first-party: depend ONLY on plugin-sdk
-│   ├── core-actions/ links/ tabs/ splits/ search/ themes/ theme-iterm2/ quick-terminal/
+│   ├── core-actions/ links/ tabs/ splits/ search/ quick-terminal/
 │   ├── keymap-macos/ command-palette/ progress/ command-header/ copy-mode/
 │   ├── plugin-manager/ (F4) keymap-linux/ (F7)
 │   └── (F5) blocks/ tmux-cc/ triggers/ images/ …

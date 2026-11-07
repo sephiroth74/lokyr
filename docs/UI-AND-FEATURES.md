@@ -346,8 +346,8 @@ The default theme's terminal colors are the built-in palette of F2, with a light
 
 ```toml
 [theme]
-light = "Solarized Light"
-dark = "Dracula"          # file names, as in the iTerm2-Color-Schemes collection
+light = "Rose Pine Dawn"
+dark = "Dracula"          # the names of the collection's schemes, or of the themes' folder's files
 minimum-contrast = 1.0
 ```
 
@@ -376,10 +376,10 @@ minimum-contrast = 1.0
   match = "#ffd60a4d"            # #rrggbbaa, of an opacity
   current = "#ff7a0080"
 
-  [tabs]                         # the tab bar plugin's colors; its look is the config's
-  bar = "#18181a"
-  active = { background = "#1e1e20", text = "#e6e6e6" }
-  inactive = { text = "#9a9aa0" }
+  [tabs]                         # the tab bar's tokens, tabs.*; its look is the config's
+  bar.bg = "#18181a"
+  active = { bg = "#1e1e20", fg = "#e6e6e6" }
+  inactive = { fg = "#9a9aa0" }
 
   [interface]
   "panel.bg" = "#252528"

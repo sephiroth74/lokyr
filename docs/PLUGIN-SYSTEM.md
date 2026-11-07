@@ -1,6 +1,6 @@
 # Plugin system
 
-Everything you see in Lokyr is a plugin: the tab bar, splits, the find bar, themes, the palette. The kernel provides data and services, and plugins decide how things behave and look ([ADR 0002](adr/0002-micro-kernel-and-plugins.md), [ADR 0003](adr/0003-native-and-wasm-plugins.md), [ADR 0012](adr/0012-luau-plugins.md)).
+Everything you see in Lokyr is a plugin: the tab bar, splits, the find bar, the palette; the themes are the host's ([ADR 0035](adr/0035-themes-are-the-hosts.md)). The kernel provides data and services, and plugins decide how things behave and look ([ADR 0002](adr/0002-micro-kernel-and-plugins.md), [ADR 0003](adr/0003-native-and-wasm-plugins.md), [ADR 0012](adr/0012-luau-plugins.md)).
 
 ## Two tiers, one API
 
@@ -23,7 +23,6 @@ Everything you see in Lokyr is a plugin: the tab bar, splits, the find bar, them
 | Workspace and layout | Create, close and move tabs and panes; edit the layout tree | split, zoom, move to a new window | F3 |
 | UI | Provide view trees for slots | tab bar, find bar, status bar segments | F3 |
 | Terminal | Read lines and the selection; write input (with a capability); use the search and decoration services | highlight matches, gutter marks | F3 |
-| Themes | Register themes and importers | `.itermcolors`, base16 | F3 |
 | Config | A `[plugins.<namespace>]` section of the config file, checked against the plugin's JSON Schema, of the keywords that the host checks, a wrong value refusing that section alone, and what another version would know ignored with a notice ([ADR 0032](adr/0032-plugins-config-and-state.md)), the notice at the value's line as the file's lines move; `enum` and `const` comparing numbers by their values, and a whole number of a fraction, as `5.0`, of a schema of integers alone the integer; read as a request, a change told as `config-changed` | `[plugins.tabs] position = "top"` | F3 |
 | Storage | A file of the plugin's state, of plain values as JSON, 1 MiB at most, in the app's state directory, read as a request and written as the call returns ([ADR 0032](adr/0032-plugins-config-and-state.md)) | search history | F3 |
 | System | Clipboard, notifications, opening URLs and files, global hotkeys and quick windows in F3; processes and the network, through the app to Sleip's helper, from F4 (with capabilities) | notify when a command finishes | F3–F4 |
@@ -766,8 +765,6 @@ installed ──▶ resolved ──▶ consent ──▶ loaded ──▶ active
 | `tabs` | iTerm2-style tab bar and tab commands | F3 |
 | `splits` | Split commands, dividers and interaction | F3 |
 | `search` | Find bar and search commands | F3 |
-| `themes` | Theme model, light/dark switching, picker | F3 |
-| `theme-iterm2` | `.itermcolors` importer | F3 |
 | `keymap-macos` | Default macOS shortcuts, as iTerm2's: the keys of the app's commands and of the other plugins', which bind none of their own | F3 |
 | `keymap-linux` | Default Linux shortcuts | F7 |
 | `command-palette` | Command palette and theme picker | F3 |
@@ -844,8 +841,6 @@ links           = { path = "../plugins/links" }
 tabs            = { path = "../plugins/tabs" }
 splits          = { path = "../plugins/splits" }
 search          = { path = "../plugins/search" }
-themes          = { path = "../plugins/themes" }
-theme-iterm2    = { path = "../plugins/theme-iterm2" }
 command-palette = { path = "../plugins/command-palette" }
 plugin-manager  = { path = "../plugins/plugin-manager" }   # from F4
 ```
