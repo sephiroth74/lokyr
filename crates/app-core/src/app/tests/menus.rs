@@ -460,6 +460,9 @@ fn a_right_click_selects_and_opens_the_context_menu_at_the_pointer() {
         items,
         [
             "Open Link",
+            "Copy Link Address",
+            "New Window at Folder",
+            "New Tab at Folder",
             "Open man Page for “world”",
             "-",
             "Look Up “world”",
@@ -487,24 +490,30 @@ fn a_right_click_selects_and_opens_the_context_menu_at_the_pointer() {
         "Move Pane to New Window",
         "Close Pane",
     ];
-    assert_eq!(dimmed[..], [&["links.open"][..], &alone].concat());
+    let links = [
+        "links.open",
+        "links.copy",
+        "links.new-window",
+        "links.new-tab",
+    ];
+    assert_eq!(dimmed[..], [&links[..], &alone].concat());
     // Within the selection, which stays.
     select_drag(&mut fake, &mut app, window, (cell(0, 0), cell(3, 0)), none);
     right_click(&mut fake, &mut app, window, cell(1, 0), none);
     assert_eq!(selected_text(&app, window).as_deref(), Some("hel"));
-    assert_eq!(context_menu(&fake, window).1[3], "Look Up “hel”");
-    assert_eq!(context_menu(&fake, window).2[..1], ["links.open"]);
+    assert_eq!(context_menu(&fake, window).1[6], "Look Up “hel”");
+    assert_eq!(context_menu(&fake, window).2[..4], links);
     // On a blank cell, which takes it away, and dims Copy and Look Up.
     right_click(&mut fake, &mut app, window, cell(5, 0), none);
     assert_eq!(selected_text(&app, window), None);
     assert!(app.windows[&window].selecting.is_none());
     assert_eq!(
-        context_menu(&fake, window).1[1..4],
+        context_menu(&fake, window).1[4..7],
         ["Open man Page", "-", "Look Up"]
     );
     assert_eq!(
-        context_menu(&fake, window).2[..4],
-        ["links.open", "pane.man-page", "pane.look-up", "pane.copy"]
+        context_menu(&fake, window).2[..7],
+        [&links[..], &["pane.man-page", "pane.look-up", "pane.copy"]].concat()
     );
     // A Control click opens it too, and starts no selection that the
     // pointer would drag.
@@ -555,7 +564,7 @@ fn look_up_shows_the_definition_of_the_selection_of_one_line() {
     select_drag(&mut fake, &mut app, window, (cell(0, 0), cell(5, 1)), none);
     right_click(&mut fake, &mut app, window, cell(2, 0), none);
     let (_, items, dimmed) = context_menu(&fake, window);
-    assert_eq!(items[3], "Look Up");
+    assert_eq!(items[6], "Look Up");
     assert!(dimmed.contains(&LOOK_UP.to_owned()), "{dimmed:?}");
     look_up(&mut fake, &mut app);
     assert_eq!(fake.definitions().len(), 1);
@@ -653,9 +662,9 @@ fn the_man_page_of_the_selection_opens_in_a_window_of_its_own() {
     select_drag(&mut fake, &mut app, window, (cell(0, 0), cell(11, 0)), none);
     right_click(&mut fake, &mut app, window, cell(2, 0), none);
     let (_, items, dimmed) = context_menu(&fake, window);
-    assert_eq!(items[1], "Open man Page");
+    assert_eq!(items[4], "Open man Page");
     assert!(dimmed.contains(&MAN_PAGE.to_owned()), "{dimmed:?}");
-    assert_eq!(items[3], "Look Up “hello world”");
+    assert_eq!(items[6], "Look Up “hello world”");
     open(&mut fake, &mut app);
     assert_eq!(fake.windows().count(), 2);
     let _ = std::fs::remove_dir_all(directory);
@@ -730,9 +739,20 @@ fn the_context_menu_opens_the_link_at_its_cell() {
     fake.send(&mut app, window, WindowEvent::Focused(false));
     // On the URL, which names no man page.
     right_click(&mut fake, &mut app, window, cell(10, 0), Modifiers::NONE);
-    assert_eq!(context_menu(&fake, window).2[..1], [MAN_PAGE]);
+    assert_eq!(
+        context_menu(&fake, window).2[..3],
+        ["links.new-window", "links.new-tab", MAN_PAGE]
+    );
     right_click(&mut fake, &mut app, window, cell(1, 0), Modifiers::NONE);
-    assert_eq!(context_menu(&fake, window).2[..1], ["links.open"]);
+    assert_eq!(
+        context_menu(&fake, window).2[..4],
+        [
+            "links.open",
+            "links.copy",
+            "links.new-window",
+            "links.new-tab"
+        ]
+    );
     // The item takes the cell that the menu opened on.
     right_click(&mut fake, &mut app, window, cell(10, 0), Modifiers::NONE);
     let chosen = WindowEvent::ContextCommand("links.open".to_owned());
@@ -759,9 +779,20 @@ fn the_context_menu_s_link_is_told_by_its_row_s_number_after_a_scroll() {
         .expect("the URL on screen");
     // On the URL, Open Link is enabled; on the word before it, dimmed.
     right_click(&mut fake, &mut app, window, cell(10, url), Modifiers::NONE);
-    assert_eq!(context_menu(&fake, window).2[..1], [MAN_PAGE]);
+    assert_eq!(
+        context_menu(&fake, window).2[..3],
+        ["links.new-window", "links.new-tab", MAN_PAGE]
+    );
     right_click(&mut fake, &mut app, window, cell(1, url), Modifiers::NONE);
-    assert_eq!(context_menu(&fake, window).2[..1], ["links.open"]);
+    assert_eq!(
+        context_menu(&fake, window).2[..4],
+        [
+            "links.open",
+            "links.copy",
+            "links.new-window",
+            "links.new-tab"
+        ]
+    );
 }
 
 #[test]
@@ -1135,4 +1166,66 @@ fn a_plugin_s_items_run_their_commands_with_their_arguments() {
         panic!("{left:?}");
     };
     assert_eq!(*under, Layout::Leaf(new));
+}
+
+#[test]
+fn the_context_menu_opens_a_window_or_a_tab_in_the_folder_under_the_pointer() {
+    let base = real_directory("at-folder");
+    let folder = base.join("in");
+    std::fs::create_dir(&folder).unwrap();
+    let shown = folder.display().to_string();
+    let home = std::env::home_dir().unwrap().display().to_string();
+    // Each pane tells where it started; the first prints the folder's path
+    // on its second row.
+    let script = format!("pwd; [ \"$PWD\" = {home:?} ] && printf '%s\\n' {shown:?}; exec sleep 10");
+    let mut fake = Fake::default();
+    let mut app = app(unpadded(), shell(&script));
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    assert_eq!(started_in(&mut fake, &mut app, window), home);
+    run_until(&mut fake, &mut app, |_, app| row(app, window, 1) == shown);
+    // A tab, in the window, which shows it.
+    right_click(&mut fake, &mut app, window, cell(2, 1), Modifiers::NONE);
+    let (_, items, dimmed) = context_menu(&fake, window);
+    assert_eq!(
+        items[..4],
+        [
+            "Open Link",
+            "Copy Link Address",
+            "New Window at Folder",
+            "New Tab at Folder"
+        ]
+    );
+    assert!(
+        !dimmed.iter().any(|name| name.starts_with("links.")),
+        "{dimmed:?}"
+    );
+    let chosen = |name: &str| WindowEvent::ContextCommand(name.to_owned());
+    fake.send(&mut app, window, chosen("links.new-tab"));
+    let tabs = |app: &App| {
+        let shown = app.windows[&window].window;
+        app.workspace.window(shown).unwrap().tabs().len()
+    };
+    run_until(&mut fake, &mut app, |_, app| {
+        tabs(app) == 2 && app.pane(window).snapshot().rows() > 0 && row(app, window, 0) == shown
+    });
+    // A window, of the first tab's path.
+    let first = app
+        .workspace
+        .window(app.windows[&window].window)
+        .unwrap()
+        .tabs()[0];
+    app.workspace.activate_tab(first);
+    run_until(&mut fake, &mut app, |_, app| row(app, window, 1) == shown);
+    right_click(&mut fake, &mut app, window, cell(2, 1), Modifiers::NONE);
+    fake.send(&mut app, window, chosen("links.copy"));
+    assert_eq!(fake.clipboard_text().as_deref(), Some(shown.as_str()));
+    right_click(&mut fake, &mut app, window, cell(2, 1), Modifiers::NONE);
+    fake.send(&mut app, window, chosen("links.new-window"));
+    let opened = fake
+        .windows()
+        .find(|other| *other != window)
+        .expect("a new window");
+    assert_eq!(started_in(&mut fake, &mut app, opened), shown);
+    let _ = std::fs::remove_dir_all(base);
 }

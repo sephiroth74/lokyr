@@ -316,7 +316,7 @@ impl<B: Backend> App<B> {
             return;
         };
         let program = man_program(self.man.as_deref(), &args);
-        self.open_window_running(platform, &program, Some(format!("man {text}")));
+        self.open_window_running(platform, &program, Some(format!("man {text}")), None);
     }
 
     /// Runs `name`, which `window`'s context menu chose, in its pane, as

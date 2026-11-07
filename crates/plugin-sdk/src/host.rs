@@ -467,6 +467,20 @@ pub enum BarPlace {
 /// The narrowest and the widest that a tab bar's column is, in points.
 pub const COLUMN_WIDTHS: (f32, f32) = (60.0, 600.0);
 
+/// Checks `directory`, the folder that a new tab's or a new window's pane
+/// starts in, as a host takes it: a path, absolute or from `~`. As the pane
+/// starts, a file's path gives the folder that holds it, and a path that is
+/// not there the folder that a new pane takes otherwise.
+pub fn check_directory(directory: &str) -> Result<(), String> {
+    if directory.starts_with('/') || directory == "~" || directory.starts_with("~/") {
+        Ok(())
+    } else {
+        Err(format!(
+            "`{directory}` is not a path that is absolute or from `~`"
+        ))
+    }
+}
+
 impl BarPlace {
     /// Whether the place is one that a host takes: a column's width from
     /// [`COLUMN_WIDTHS`]'s narrowest to its widest; why not otherwise.

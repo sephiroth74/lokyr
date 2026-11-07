@@ -860,7 +860,7 @@ impl<B: Backend> App<B> {
         let flood = bench.flood;
         if flood {
             let program = Program::command("/bin/sh", ["-c", "exec yes 'flood flood flood flood'"]);
-            self.open_window_running(platform, &program, None);
+            self.open_window_running(platform, &program, None, None);
             if let Some(measured) = measured {
                 platform.focus_window(measured);
             }
@@ -1610,17 +1610,19 @@ impl<B: Backend> App<B> {
 
     fn open_window(&mut self, platform: &mut dyn Platform) {
         let program = self.program.clone();
-        self.open_window_running(platform, &program, None);
+        self.open_window_running(platform, &program, None, None);
     }
 
     /// Opens a window, whose pane runs `program`, and quits if it cannot
     /// while no other window is open: of the man page of the title `page`,
-    /// as `man ls`, of its size and colors, when it shows one.
+    /// as `man ls`, of its size and colors, when it shows one; in the
+    /// folder `directory`, if given, or a new window's.
     fn open_window_running(
         &mut self,
         platform: &mut dyn Platform,
         program: &Program,
         page: Option<String>,
+        directory: Option<PathBuf>,
     ) {
         // Of its cells, at the scale of the screen that it opens on; a man
         // page's of its own, which it neither keeps nor restores.
@@ -1640,7 +1642,7 @@ impl<B: Backend> App<B> {
             .bench_size
             .unwrap_or_else(|| self.size_of(platform.screen_scale(), cells));
         let environment = Environment {
-            directory: self.start_directory(platform),
+            directory: directory.or_else(|| self.start_directory(platform)),
             ..self.environment.clone()
         };
         let attributes = WindowAttributes {
@@ -2515,7 +2517,14 @@ impl<B: Backend> App<B> {
                     "lokyr: `{}` does not run, as commands that ran commands took it {COMMANDS_DEEP} deep",
                     invocation.command
                 ),
-                Request::OpenWindow => self.open_window(platform),
+                Request::OpenWindow(None) => self.open_window(platform),
+                // A window in the folder that the plugin asked for, or a
+                // new window's of a path that is not there.
+                Request::OpenWindow(Some(directory)) => {
+                    let program = self.program.clone();
+                    let folder = spawn::folder_of(&directory);
+                    self.open_window_running(platform, &program, None, folder);
+                }
                 Request::CloseWindow(window) => {
                     let shown = self
                         .windows

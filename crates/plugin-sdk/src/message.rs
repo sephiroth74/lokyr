@@ -274,8 +274,14 @@ pub enum Request {
     /// Gives the text a size, in points, from 4 to 200; with `None`, the
     /// config's.
     SetFontSize(Option<f32>),
-    /// Opens a window.
-    OpenWindow,
+    /// Opens a window, its pane in `directory`, a path absolute or from
+    /// `~`, or in the folder of a file there, if given; in the folder of a
+    /// new window's pane otherwise.
+    OpenWindow {
+        /// The folder of its pane.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        directory: Option<String>,
+    },
     /// Closes a window.
     CloseWindow(WindowId),
     /// Quits the app.
@@ -290,12 +296,17 @@ pub enum Request {
     /// without one or past them, of a pane whose program starts as a new
     /// pane's does, beside the window's focused pane: the host answers
     /// with the tab's id and the pane's, and opens them as the call
-    /// returns. The window shows the tab that it showed.
+    /// returns. The window shows the tab that it showed. Its pane starts in
+    /// `directory`, a path absolute or from `~`, or in the folder of a file
+    /// there, if given.
     NewTab {
         /// The window.
         window: WindowId,
         /// The tab's place among the window's tabs, from the first.
         index: Option<usize>,
+        /// The folder of its pane.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        directory: Option<String>,
     },
     /// Splits a pane's part along `direction`, with a new pane on `side`,
     /// whose program starts as a new pane's does, beside the pane: the host
@@ -639,7 +650,7 @@ impl Request {
             | Self::Scroll { .. }
             | Self::FontSize
             | Self::SetFontSize(_)
-            | Self::OpenWindow
+            | Self::OpenWindow { .. }
             | Self::CloseWindow(_)
             | Self::Quit
             | Self::Windows
@@ -761,7 +772,7 @@ impl Request {
             Self::RunCommand { .. }
             | Self::Open(_)
             | Self::SetFontSize(_)
-            | Self::OpenWindow
+            | Self::OpenWindow { .. }
             | Self::CloseWindow(_)
             | Self::Quit
             | Self::SetText { .. }

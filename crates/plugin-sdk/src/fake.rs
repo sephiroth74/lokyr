@@ -955,7 +955,7 @@ impl FakeHost {
                 schema: schema.clone(),
                 value: value.clone(),
             }),
-            Request::NewTab { window, index } => {
+            Request::NewTab { window, index, .. } => {
                 if let Opened::Tab(tab, pane) = opened {
                     self.open_tab(*window, index.unwrap_or(usize::MAX), tab, pane);
                 }
@@ -2209,6 +2209,13 @@ impl Calling<'_> {
                 }
                 Response::Done
             }
+            Request::OpenWindow {
+                directory: Some(directory),
+            } => {
+                crate::host::check_directory(directory)
+                    .map_err(|message| Error::new(Code::Failed, message))?;
+                Response::Done
+            }
             Request::PreviewTheme(Some(name)) | Request::SetTheme { name, .. }
                 if name.is_empty() || name.contains(['/', '\\']) || name.starts_with('.') =>
             {
@@ -2376,8 +2383,14 @@ impl Calling<'_> {
                 opening(target).map_err(|message| Error::new(Code::Failed, message))?;
                 Response::Done
             }
-            Request::NewTab { window, .. } => {
+            Request::NewTab {
+                window, directory, ..
+            } => {
                 self.known_window(*window)?;
+                if let Some(directory) = directory {
+                    crate::host::check_directory(directory)
+                        .map_err(|message| Error::new(Code::Failed, message))?;
+                }
                 let (tab, pane) = (TabId(self.host.next_id()), PaneId(self.host.next_id()));
                 opened = Opened::Tab(tab, pane);
                 Response::Tab { tab, pane }

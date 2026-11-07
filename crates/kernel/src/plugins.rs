@@ -71,8 +71,9 @@ pub enum Request {
         /// render's, and for a command that the user ran.
         depth: usize,
     },
-    /// Open a window.
-    OpenWindow,
+    /// Open a window, its pane in `directory`, a path absolute or from `~`,
+    /// or in the folder of a file there, if given.
+    OpenWindow(Option<String>),
     /// Close a window.
     CloseWindow(WindowId),
     /// Quit.
@@ -217,8 +218,9 @@ pub trait Panes {
     /// A pane of the id `id`, which nothing of the process took, beside
     /// `near`, the pane that it splits or the focused one of the window
     /// that it opens in, if there is one: its program, its directory and
-    /// its size as a new pane's beside it.
-    fn spawn(&mut self, id: PaneId, near: Option<&Pane>) -> Pane;
+    /// its size as a new pane's beside it; its directory `directory`, if
+    /// given, a path absolute or from `~`, or the folder of a file there.
+    fn spawn(&mut self, id: PaneId, near: Option<&Pane>, directory: Option<&str>) -> Pane;
 }
 
 /// What the host reaches of the app during a plugin's call.
@@ -590,6 +592,7 @@ enum Write {
         index: Option<usize>,
         tab: TabId,
         pane: PaneId,
+        directory: Option<String>,
     },
     /// A split of `pane`, of the id that the host gave the new pane.
     Split {
@@ -2276,11 +2279,12 @@ fn apply(writes: Vec<Write>, context: &mut Context<'_>, out: &mut Outbox, state:
                 index,
                 tab,
                 pane,
+                directory,
             } => {
                 if context.workspace.window(window).is_some() {
                     let near = context.workspace.active_pane(window);
                     let near = near.and_then(|near| context.workspace.pane(near));
-                    let new = context.panes.spawn(pane, near);
+                    let new = context.panes.spawn(pane, near, directory.as_deref());
                     context
                         .workspace
                         .open_tab_as(window, new, index.unwrap_or(usize::MAX), tab);
@@ -2294,7 +2298,7 @@ fn apply(writes: Vec<Write>, context: &mut Context<'_>, out: &mut Outbox, state:
                 new,
             } => {
                 if let Some(near) = context.workspace.pane(split) {
-                    let new = context.panes.spawn(new, Some(near));
+                    let new = context.panes.spawn(new, Some(near), None);
                     context.workspace.split(split, direction, new, side);
                 }
                 continue;
@@ -3337,14 +3341,23 @@ impl Host<'_, '_> {
                     ));
                 }
             }
-            Asked::NewTab { window, index } => {
+            Asked::NewTab {
+                window,
+                index,
+                directory,
+            } => {
                 self.window(*window)?;
+                if let Some(directory) = directory {
+                    host::check_directory(directory)
+                        .map_err(|message| Error::new(Code::Failed, message))?;
+                }
                 let (tab, pane) = (TabId::new(), PaneId::new());
                 self.writes.push(Write::NewTab {
                     window: WindowId::of(window.0),
                     index: *index,
                     tab,
                     pane,
+                    directory: directory.clone(),
                 });
                 return Ok(Response::Tab {
                     tab: tab.into(),
@@ -3549,7 +3562,13 @@ impl Host<'_, '_> {
                 }
                 Request::FontSize(size)
             }
-            Asked::OpenWindow => Request::OpenWindow,
+            Asked::OpenWindow { directory } => {
+                if let Some(directory) = &directory {
+                    host::check_directory(directory)
+                        .map_err(|message| Error::new(Code::Failed, message))?;
+                }
+                Request::OpenWindow(directory)
+            }
             Asked::PreviewTheme(name) => {
                 if let Some(name) = &name {
                     theme_name(name)?;

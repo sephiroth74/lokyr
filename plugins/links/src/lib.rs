@@ -4,8 +4,10 @@
 //! link at the cell that the click was on; else the URL, or the path, that the cell's line holds
 //! around it, a relative path from the working directory of the program in
 //! the pane's foreground. A file opens in its application, a directory in
-//! the file manager. Like every built-in plugin, it depends only on the
-//! plugin SDK.
+//! the file manager. Its other commands of a cell, which the pane's context
+//! menu lists, copy what would open, and open a window or a tab in the
+//! folder of the path there. Like every built-in plugin, it depends only on
+//! the plugin SDK.
 
 #![forbid(unsafe_code)]
 
@@ -25,6 +27,14 @@ lokyr_plugin_sdk::export_plugin!(Links);
 /// Opens the link at the cell of its `column` and `row`, the row's number,
 /// in the focused pane.
 const OPEN: &str = "links.open";
+/// Copies what [`OPEN`] would open at the cell: the link, the URL, or the
+/// path from its folder.
+const COPY: &str = "links.copy";
+/// Opens a window whose shell starts in the folder of the path at the
+/// cell, or in the folder that holds its file.
+const NEW_WINDOW: &str = "links.new-window";
+/// Opens a tab after the others, as [`NEW_WINDOW`] does a window.
+const NEW_TAB: &str = "links.new-tab";
 
 /// The rows before the clicked one and after it that the read of its line
 /// takes: a URL or a path of thousands of characters, and no more of a line
@@ -68,18 +78,28 @@ impl Plugin for Links {
             kind: Kind::Integer,
             default: None,
         };
-        cx.register_command(Command {
-            name: OPEN.to_owned(),
-            title: "Open Link".to_owned(),
-            category: Category::View,
-            capabilities: vec![
-                Capability::TerminalRead,
-                Capability::Open,
-                Capability::ProcessRead,
-            ],
-            params: vec![param("column"), param("row")],
-            when: None,
-        })?;
+        let reads = [Capability::TerminalRead, Capability::ProcessRead];
+        let commands = [
+            (OPEN, "Open Link", Category::View, Some(Capability::Open)),
+            (
+                COPY,
+                "Copy Link Address",
+                Category::Clipboard,
+                Some(Capability::ClipboardWrite),
+            ),
+            (NEW_WINDOW, "New Window at Folder", Category::Windows, None),
+            (NEW_TAB, "New Tab at Folder", Category::Tabs, None),
+        ];
+        for (name, title, category, capability) in commands {
+            cx.register_command(Command {
+                name: name.to_owned(),
+                title: title.to_owned(),
+                category,
+                capabilities: reads.iter().cloned().chain(capability).collect(),
+                params: vec![param("column"), param("row")],
+                when: None,
+            })?;
+        }
         cx.subscribe(&[POINTER])
     }
 
@@ -115,26 +135,42 @@ impl Plugin for Links {
     }
 
     fn on_command(&mut self, cx: &mut Cx<'_>, name: &str, args: Args) -> Result<(), Error> {
-        if name != OPEN {
-            return Err(Error::new(
+        match name {
+            OPEN => match target(cx, &args)? {
+                Some(target) => cx.open(&target),
+                None => Ok(()),
+            },
+            COPY => match opening(cx, &args)? {
+                Some(target) => cx.set_clipboard_text(&target),
+                None => Ok(()),
+            },
+            NEW_WINDOW => match folder(cx, &args)? {
+                Some(folder) => cx.open_window_in(&folder),
+                None => Ok(()),
+            },
+            NEW_TAB => {
+                let (Some(folder), Some(window)) = (folder(cx, &args)?, cx.focused_window()) else {
+                    return Ok(());
+                };
+                let (tab, _) = cx.new_tab_in(window, None, &folder)?;
+                cx.activate_tab(tab)
+            }
+            _ => Err(Error::new(
                 Code::NotFound,
                 format!("links has no command `{name}`"),
-            ));
-        }
-        match target(cx, &args)? {
-            Some(target) => cx.open(&target),
-            None => Ok(()),
+            )),
         }
     }
 
     /// Whether the cell holds a link, a URL or a path that is there, which
-    /// the command would open.
+    /// opening and its copy take; and a path there, of a folder or of a
+    /// file, which a window or a tab opens in.
     fn applies(&mut self, cx: &mut Cx<'_>, name: &str, args: &Args) -> bool {
-        name == OPEN
-            && target(cx, args)
-                .ok()
-                .flatten()
-                .is_some_and(|target| cx.opens(&target).unwrap_or(false))
+        match name {
+            OPEN | COPY => opening(cx, args).ok().flatten().is_some(),
+            NEW_WINDOW | NEW_TAB => folder(cx, args).ok().flatten().is_some(),
+            _ => false,
+        }
     }
 }
 
@@ -167,6 +203,60 @@ fn target(cx: &mut Cx<'_>, args: &Args) -> Result<Option<String>, Error> {
         }
     }
     Ok(last.map(|(target, _)| target))
+}
+
+/// What the cell of `args` holds that opens, as [`target`] finds it, if
+/// it opens.
+fn opening(cx: &mut Cx<'_>, args: &Args) -> Result<Option<String>, Error> {
+    let target = target(cx, args)?;
+    Ok(target.filter(|target| cx.opens(target).unwrap_or(false)))
+}
+
+/// The path at the cell of `args` that is there, which a window or a tab
+/// opens in: a path, or an OSC 8 link of a local file's URL; `None` for a
+/// URL of another place, or nothing there.
+fn folder(cx: &mut Cx<'_>, args: &Args) -> Result<Option<String>, Error> {
+    Ok(opening(cx, args)?.and_then(|target| local_path(&target)))
+}
+
+/// The path that `target` names on this machine: itself, absolute or from
+/// `~`, or a `file:` URL's of no host or `localhost`, its escapes decoded;
+/// `None` for another URL.
+fn local_path(target: &str) -> Option<String> {
+    if target.starts_with('/') || target == "~" || target.starts_with("~/") {
+        return Some(target.to_owned());
+    }
+    let rest = target
+        .get(..7)
+        .filter(|scheme| scheme.eq_ignore_ascii_case("file://"))
+        .map(|_| &target[7..])?;
+    let path = rest.strip_prefix("localhost").unwrap_or(rest);
+    path.starts_with('/').then(|| decoded(path))?
+}
+
+/// `text` with its `%` escapes decoded, as a URL's path writes its
+/// bytes; `None` where they make no UTF-8.
+fn decoded(text: &str) -> Option<String> {
+    let bytes = text.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut at = 0;
+    while at < bytes.len() {
+        let escaped = (bytes[at] == b'%')
+            .then(|| text.get(at + 1..at + 3))
+            .flatten()
+            .and_then(|hex| u8::from_str_radix(hex, 16).ok());
+        match escaped {
+            Some(byte) => {
+                out.push(byte);
+                at += 3;
+            }
+            None => {
+                out.push(bytes[at]);
+                at += 1;
+            }
+        }
+    }
+    String::from_utf8(out).ok()
 }
 
 /// The link that the cell `at` of `pane` holds and that opens, which

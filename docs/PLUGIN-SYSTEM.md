@@ -537,8 +537,10 @@ type Cx = {
     tabs: (window: WindowId) -> ({ TabInfo }?, Error?),
     layout: (tab: TabId) -> (Layout?, Error?),
     -- A tab of a new pane, whose program starts as a new pane's beside the window's focused one, at `index` of
-    -- its tabs or at their end: the tab's id and the pane's. The window shows the tab that it showed.
-    new_tab: (window: WindowId, index: number?) -> (TabId?, PaneId?, Error?),
+    -- its tabs or at their end: the tab's id and the pane's. The window shows the tab that it showed. Its pane
+    -- starts in `directory`, a path absolute or from `~`, or in the folder of a file there, if given, and as a new
+    -- pane's of a path that is not there.
+    new_tab: (window: WindowId, index: number?, directory: string?) -> (TabId?, PaneId?, Error?),
     -- A new pane on `side` of `pane`'s part, whose program starts as a new pane's beside it: its id.
     split: (pane: PaneId, direction: Direction, side: Side) -> (PaneId?, Error?),
     -- Closes a tab, or a pane; with `ask`, once the user confirms it while a program other than a shell runs there,
@@ -576,7 +578,8 @@ type Cx = {
     set_ratio: (tab: TabId, path: { Side }, ratio: number?) -> (boolean, Error?),
     equalize: (tab: TabId) -> (boolean, Error?),
     zoom: (tab: TabId, pane: PaneId?) -> (boolean, Error?),
-    open_window: () -> (boolean, Error?),
+    -- A window, its pane in `directory`, as `new_tab`'s, if given.
+    open_window: (directory: string?) -> (boolean, Error?),
     close_window: (window: WindowId) -> (boolean, Error?),
     quit: () -> (boolean, Error?),
 

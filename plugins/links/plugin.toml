@@ -9,6 +9,12 @@ description = "Opens the link, the URL or the path under a ⌘-click"
 terminal-read = true
 open = true
 process-read = true
+clipboard-write = true
 
 [contributes]
-commands = [{ name = "links.open", title = "Open Link" }]
+commands = [
+    { name = "links.open", title = "Open Link" },
+    { name = "links.copy", title = "Copy Link Address" },
+    { name = "links.new-window", title = "New Window at Folder" },
+    { name = "links.new-tab", title = "New Tab at Folder" },
+]

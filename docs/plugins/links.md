@@ -17,6 +17,11 @@ A URL or a file asks you first, as [`[links]`](../CONFIGURATION.md#links) says, 
 | Command | Default keys | What it does |
 |---|---|---|
 | `links.open` | ⌘-click | Opens the link, the URL or the path at the cell clicked, as above |
+| `links.copy` | | Copies what `links.open` would open at the cell: the link, the URL, or the path from `/` |
+| `links.new-window` | | Opens a window whose shell starts in the folder of the path at the cell, or in the folder that holds its file |
+| `links.new-tab` | | Opens a tab, after the others, as `links.new-window` does a window |
+
+Each takes the cell's `column` and `row`; the pane's context menu lists them, as Open Link, Copy Link Address, New Window at Folder and New Tab at Folder, each dimmed where the cell holds nothing that it takes: a URL of the web has no folder.
 
 ## Configuration
 
@@ -33,4 +38,4 @@ A ⌘-click then selects, as a click does, and holding ⌘ underlines nothing.
 
 ## Permissions
 
-It reads the terminal's text around the click and the folder of the program in the foreground, for a relative path, and opens what it finds with its application.
+It reads the terminal's text around the click and the folder of the program in the foreground, for a relative path, opens what it finds with its application, and writes the clipboard, as Copy Link Address copies.

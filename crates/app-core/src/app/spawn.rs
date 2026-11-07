@@ -3,6 +3,7 @@
 //! directory that the config gives, of the config's terminal.
 
 use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use lokyr_kernel::config::{self, ClipboardRead, Config, NewDirectory};
@@ -111,9 +112,23 @@ const ALONE: Grid = Grid {
     cell_height: 16,
 };
 
+/// The folder that `directory`, a path absolute or from `~`, gives a new
+/// pane: itself, or the folder that holds the file of its path; `None` for
+/// a path that is not there.
+pub(super) fn folder_of(directory: &str) -> Option<PathBuf> {
+    let path = config::expanded(directory, std::env::home_dir().as_deref())?;
+    if path.is_dir() {
+        Some(path)
+    } else if path.is_file() {
+        path.parent().map(Path::to_path_buf)
+    } else {
+        None
+    }
+}
+
 impl Panes for Spawner<'_> {
-    fn spawn(&mut self, id: PaneId, near: Option<&Pane>) -> Pane {
-        let directory = match &self.config.window.new_directory {
+    fn spawn(&mut self, id: PaneId, near: Option<&Pane>, asked: Option<&str>) -> Pane {
+        let new = match &self.config.window.new_directory {
             NewDirectory::Home => None,
             // The directory that its shell told last, of this machine, as
             // through ssh its program's is the client's; its program's
@@ -125,6 +140,8 @@ impl Panes for Spawner<'_> {
             NewDirectory::Path(path) => config::expanded(path, std::env::home_dir().as_deref()),
         }
         .filter(|directory| directory.is_dir());
+        // The folder that the plugin asked for, if it is there.
+        let directory = asked.and_then(folder_of).or(new);
         let environment = Environment {
             directory,
             ..self.environment.clone()

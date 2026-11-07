@@ -104,37 +104,178 @@ fn underlined(host: &FakeHost) -> Vec<Span> {
 }
 
 #[test]
-fn the_command_registers_with_cmd_click() {
+fn the_commands_of_a_cell_register_open_s_bound_to_cmd_click() {
     let mut host = FakeHost::new(NAME);
     host.activate(&mut Links::default()).unwrap();
-    let [command] = host.commands() else {
-        panic!("one command: {:?}", host.commands());
-    };
-    assert_eq!(
-        (command.name.as_str(), command.category),
-        ("links.open", Category::View)
-    );
-    let capabilities: Vec<String> = command
-        .capabilities
+    let registered: Vec<(&str, Category, Vec<String>)> = host
+        .commands()
         .iter()
-        .map(ToString::to_string)
+        .map(|command| {
+            (
+                command.name.as_str(),
+                command.category,
+                command
+                    .capabilities
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect(),
+            )
+        })
         .collect();
-    assert_eq!(capabilities, ["terminal-read", "open", "process-read"]);
-    let params: Vec<(&str, Kind, Option<&Value>)> = command
-        .params
-        .iter()
-        .map(|param| (param.name.as_str(), param.kind, param.default.as_ref()))
-        .collect();
+    let of = |capabilities: &[&str]| capabilities.iter().map(|&c| c.to_owned()).collect();
     assert_eq!(
-        params,
+        registered,
         [
-            ("column", Kind::Integer, None),
-            ("row", Kind::Integer, None)
+            (
+                OPEN,
+                Category::View,
+                of(&["terminal-read", "process-read", "open"])
+            ),
+            (
+                COPY,
+                Category::Clipboard,
+                of(&["terminal-read", "process-read", "clipboard-write"])
+            ),
+            (
+                NEW_WINDOW,
+                Category::Windows,
+                of(&["terminal-read", "process-read"])
+            ),
+            (
+                NEW_TAB,
+                Category::Tabs,
+                of(&["terminal-read", "process-read"])
+            ),
         ]
     );
+    for command in host.commands() {
+        let params: Vec<(&str, Kind, Option<&Value>)> = command
+            .params
+            .iter()
+            .map(|param| (param.name.as_str(), param.kind, param.default.as_ref()))
+            .collect();
+        assert_eq!(
+            params,
+            [
+                ("column", Kind::Integer, None),
+                ("row", Kind::Integer, None)
+            ]
+        );
+        // Every title in both languages.
+        for (_, catalog) in CATALOGS {
+            let message = format!("command-{} =", command.name.replace('.', "-"));
+            assert!(catalog.contains(&message), "{message}");
+        }
+    }
     // The system's keymap binds its click.
     assert!(host.bindings().is_empty());
     assert_eq!(host.subscriptions(), ["pointer"]);
+}
+
+/// What `name` asked of `host` at the cell of `column` and `row`, with
+/// whether it applied there.
+fn asked(host: &mut FakeHost, name: &str, (column, row): (i64, i64)) -> (bool, Vec<Request>) {
+    let applies = host.applies(&mut Links::default(), name, &cell(column, row));
+    host.take_done();
+    host.command(&mut Links::default(), name, cell(column, row))
+        .unwrap();
+    (applies, host.take_done())
+}
+
+#[test]
+fn copy_link_address_copies_what_would_open() {
+    let copied = |text: &str| vec![Request::SetClipboardText(text.to_owned())];
+    let mut host = focused("cat /etc/hosts");
+    assert_eq!(asked(&mut host, COPY, (6, 1)), (true, copied("/etc/hosts")));
+    let mut host = focused("--> src/main.rs:42:7");
+    assert_eq!(
+        asked(&mut host, COPY, (8, 1)),
+        (true, copied("/work/lokyr/src/main.rs"))
+    );
+    let mut host = linked(focused("see the docs"), "https://lokyr.dev/osc8");
+    assert_eq!(
+        asked(&mut host, COPY, (5, 1)),
+        (true, copied("https://lokyr.dev/osc8"))
+    );
+    // Nothing that opens: nothing copied.
+    let mut host = focused("v1.2 // 3.5");
+    assert_eq!(asked(&mut host, COPY, (1, 1)), (false, Vec::new()));
+    let mut host = focused("README.md");
+    host.set_missing(&["/work/lokyr/README.md"]);
+    assert_eq!(asked(&mut host, COPY, (2, 1)), (false, Vec::new()));
+}
+
+#[test]
+fn a_window_or_a_tab_opens_in_the_folder_of_the_path_at_the_cell() {
+    let window = |folder: &str| {
+        vec![Request::OpenWindow {
+            directory: Some(folder.to_owned()),
+        }]
+    };
+    let mut host = focused("cd ~/notes");
+    assert_eq!(
+        asked(&mut host, NEW_WINDOW, (4, 1)),
+        (true, window("~/notes"))
+    );
+    let mut host = focused("--> src/main.rs:42:7");
+    assert_eq!(
+        asked(&mut host, NEW_WINDOW, (8, 1)),
+        (true, window("/work/lokyr/src/main.rs"))
+    );
+    // A tab, after the others, which shows.
+    let mut host = focused("ls ../other");
+    let in_window = host.pane(PANE).window;
+    let (applies, done) = asked(&mut host, NEW_TAB, (5, 1));
+    assert!(applies);
+    let [
+        Request::NewTab {
+            window: opened_in,
+            index: None,
+            directory: Some(folder),
+        },
+        Request::ActivateTab(_),
+    ] = &done[..]
+    else {
+        panic!("{done:?}");
+    };
+    assert_eq!((*opened_in, folder.as_str()), (in_window, "/work/other"));
+    // An OSC 8 link of a local file's URL, its escapes decoded.
+    let mut host = linked(focused("the folder"), "file:///Users/me/My%20Work");
+    assert_eq!(
+        asked(&mut host, NEW_WINDOW, (1, 1)),
+        (true, window("/Users/me/My Work"))
+    );
+    let mut host = linked(focused("the folder"), "file://localhost/tmp");
+    assert_eq!(asked(&mut host, NEW_WINDOW, (1, 1)), (true, window("/tmp")));
+    // A URL of another place, or of another machine, and nothing there.
+    for (line, link) in [
+        ("see https://lokyr.dev/x", None),
+        ("the folder", Some("file://elsewhere/tmp")),
+        ("v1.2 // 3.5", None),
+    ] {
+        let mut host = focused(line);
+        if let Some(link) = link {
+            host = linked(host, link);
+        }
+        for name in [NEW_WINDOW, NEW_TAB] {
+            assert_eq!(
+                asked(&mut host, name, (6, 1)),
+                (false, Vec::new()),
+                "{line}"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_local_path_is_a_path_or_a_file_url_of_this_machine() {
+    assert_eq!(local_path("/a/b").as_deref(), Some("/a/b"));
+    assert_eq!(local_path("~").as_deref(), Some("~"));
+    assert_eq!(local_path("FILE:///a%2Fb%zz").as_deref(), Some("/a/b%zz"));
+    assert_eq!(local_path("file:///%FF"), None);
+    assert_eq!(local_path("file://host/a"), None);
+    assert_eq!(local_path("https://lokyr.dev"), None);
+    assert_eq!(local_path("~x"), None);
 }
 
 /// The pointer at the cell of `column` and `row`, or out of the pane, with

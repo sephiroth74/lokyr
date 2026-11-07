@@ -855,7 +855,22 @@ fn app_requests(world: &World) -> Scenario {
                     "`conformer.ask` takes no argument `n`",
                 ),
             ),
-            (Request::OpenWindow, Response::Done),
+            (Request::OpenWindow { directory: None }, Response::Done),
+            (
+                Request::OpenWindow {
+                    directory: Some("/tmp".to_owned()),
+                },
+                Response::Done,
+            ),
+            (
+                Request::OpenWindow {
+                    directory: Some("tmp".to_owned()),
+                },
+                failed(
+                    Code::Failed,
+                    "`tmp` is not a path that is absolute or from `~`",
+                ),
+            ),
             (Request::CloseWindow(world.window), Response::Done),
             (
                 Request::CloseWindow(NO_WINDOW),
@@ -1192,6 +1207,7 @@ fn workspace(world: &World) -> Scenario {
                         Request::NewTab {
                             window: w,
                             index: None,
+                            directory: Some("~/x".to_owned()),
                         },
                         Response::Tab {
                             tab: tab(0),
@@ -1226,8 +1242,20 @@ fn workspace(world: &World) -> Scenario {
                         Request::NewTab {
                             window: NO_WINDOW,
                             index: None,
+                            directory: None,
                         },
                         failed(Code::NotFound, "there is no window 999999"),
+                    ),
+                    (
+                        Request::NewTab {
+                            window: w,
+                            index: None,
+                            directory: Some("x".to_owned()),
+                        },
+                        failed(
+                            Code::Failed,
+                            "`x` is not a path that is absolute or from `~`",
+                        ),
                     ),
                     (
                         Request::CloseTab {
@@ -1510,6 +1538,7 @@ fn workspace(world: &World) -> Scenario {
                         Request::NewTab {
                             window: w,
                             index: None,
+                            directory: None,
                         },
                         Response::Tab {
                             tab: tab(2),

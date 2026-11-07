@@ -115,7 +115,7 @@ impl Clipboard for Board {
 pub(super) struct Spawner(Vec<(PaneId, Option<PaneId>)>);
 
 impl Panes for Spawner {
-    fn spawn(&mut self, id: PaneId, near: Option<&Pane>) -> Pane {
+    fn spawn(&mut self, id: PaneId, near: Option<&Pane>, _: Option<&str>) -> Pane {
         self.0.push((id, near.map(Pane::id)));
         Pane::spawn_as(
             id,
@@ -734,7 +734,7 @@ fn what_changes_the_app_waits_for_the_call_to_return() {
     assert_eq!(
         plugins.take_requests(),
         [
-            Request::OpenWindow,
+            Request::OpenWindow(None),
             Request::Quit,
             Request::FontSize(Some(20.0)),
             Request::FontSize(None),

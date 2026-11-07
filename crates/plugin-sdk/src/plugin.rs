@@ -602,7 +602,15 @@ impl<'a> Cx<'a> {
 
     /// Opens a window, once this call returns.
     pub fn open_window(&mut self) -> Result<(), Error> {
-        self.done(Request::OpenWindow)
+        self.done(Request::OpenWindow { directory: None })
+    }
+
+    /// Opens a window whose pane starts in `directory`, a path absolute or
+    /// from `~`, or in the folder of a file there, once this call returns.
+    pub fn open_window_in(&mut self, directory: &str) -> Result<(), Error> {
+        self.done(Request::OpenWindow {
+            directory: Some(directory.to_owned()),
+        })
     }
 
     /// Closes `window`, once this call returns.
@@ -646,7 +654,30 @@ impl<'a> Cx<'a> {
         window: WindowId,
         index: Option<usize>,
     ) -> Result<(TabId, PaneId), Error> {
-        match self.request(Request::NewTab { window, index }) {
+        match self.request(Request::NewTab {
+            window,
+            index,
+            directory: None,
+        }) {
+            Response::Tab { tab, pane } => Ok((tab, pane)),
+            other => Err(failed(other)),
+        }
+    }
+
+    /// Opens a tab as [`new_tab`](Self::new_tab) does, its pane in
+    /// `directory`, a path absolute or from `~`, or in the folder of a file
+    /// there.
+    pub fn new_tab_in(
+        &mut self,
+        window: WindowId,
+        index: Option<usize>,
+        directory: &str,
+    ) -> Result<(TabId, PaneId), Error> {
+        match self.request(Request::NewTab {
+            window,
+            index,
+            directory: Some(directory.to_owned()),
+        }) {
             Response::Tab { tab, pane } => Ok((tab, pane)),
             other => Err(failed(other)),
         }

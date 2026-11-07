@@ -405,7 +405,7 @@ const GRID: Grid = Grid {
 struct Spawner;
 
 impl Panes for Spawner {
-    fn spawn(&mut self, id: PaneId, _: Option<&Pane>) -> Pane {
+    fn spawn(&mut self, id: PaneId, _: Option<&Pane>, _: Option<&str>) -> Pane {
         Pane::spawn_as(
             id,
             &Program::command("/bin/sh", ["-c", "sleep 30"]),
@@ -731,7 +731,7 @@ fn kind(request: &Request) -> usize {
         Request::Scroll { .. } => 24,
         Request::FontSize => 25,
         Request::SetFontSize(_) => 26,
-        Request::OpenWindow => 27,
+        Request::OpenWindow { .. } => 27,
         Request::CloseWindow(_) => 28,
         Request::Quit => 29,
         Request::Windows => 30,
