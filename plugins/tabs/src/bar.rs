@@ -7,8 +7,10 @@
 //!
 //! - `standard` and `unified`: the tabs side by side in a rounded track, of
 //!   equal widths, each its title and its keys in its middle, the active
-//!   one a pill raised over the track, of a border and a shadow; the button
-//!   of a new tab a circle past the track. `standard` puts them in a strip
+//!   one a pill over the track, raised of a border and a shadow in
+//!   `standard`, of its background alone in `unified`, where the one border
+//!   that shows is a program's progress round the tab; the button of a new
+//!   tab a circle past the track. `standard` puts them in a strip
 //!   below the titlebar, or at the window's bottom; `unified`, in the
 //!   titlebar, after the window's shortcut.
 //! - `seamless`: the tabs as cells of the bar's whole height, a line
@@ -18,8 +20,9 @@
 //!   darker, of a veil, over a line; its title in its middle, its color and
 //!   its keys at its end, and the button of a new tab a cell of its own.
 //! - Down a column: a row each, its title at its start and its keys at its
-//!   end, the active one raised, of rounded corners in `standard` and a
-//!   stadium's round ends in `unified`, or of the window's background in
+//!   end, the active one raised, of rounded corners and a border in
+//!   `standard`, a stadium's round ends of its background alone in
+//!   `unified`, or of the window's background in
 //!   `seamless`, the rest of the column under the veil; the button of a new
 //!   tab a row of its sign in its middle, and a line along the column's
 //!   edge by the panes. On the left, in `unified` and `seamless`, the
@@ -505,7 +508,7 @@ fn pill(tab: &Shown<'_>, (settings, texts): BarOf<'_>) -> Node {
         });
     let active = tab.tab.active;
     let style = if active {
-        raised()
+        raised_in(settings.look)
     } else {
         Style {
             color: Some(Token::from("tabs.inactive.fg")),
@@ -864,7 +867,7 @@ fn row(tab: &Shown<'_>, (settings, texts): BarOf<'_>) -> Node {
             color: Some(Token::from("terminal.fg")),
             ..Style::default()
         },
-        (true, Look::Unified) => raised(),
+        (true, Look::Unified) => raised_in(Look::Unified),
         (true, Look::Standard) => Style {
             shadow: None,
             ..raised()
@@ -907,6 +910,20 @@ fn row_radius(look: Look) -> f32 {
         Look::Standard => 6.0,
         Look::Unified => ROW / 2.0,
         Look::Seamless => 0.0,
+    }
+}
+
+/// The style of the active tab of `look` over the others: raised of its
+/// border and its shadow in the standard look, of its background alone in
+/// the unified one.
+fn raised_in(look: Look) -> Style {
+    match look {
+        Look::Unified => Style {
+            border: None,
+            shadow: None,
+            ..raised()
+        },
+        _ => raised(),
     }
 }
 

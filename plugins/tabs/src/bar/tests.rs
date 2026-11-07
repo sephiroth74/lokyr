@@ -138,7 +138,16 @@ fn a_bar_shows_its_tabs_their_keys_and_their_close_buttons() {
     let first = keyed(&node, "tab-1").unwrap();
     assert_eq!(first.style.background, Some(Token::from("tabs.active.bg")));
     assert!(first.style.hover.is_none() && first.style.pressed.is_some());
-    assert!(first.style.border.is_some() && first.style.shadow.is_some());
+    // Of its background alone in the unified look; raised of a border and
+    // a shadow in the standard one.
+    assert!(first.style.border.is_none() && first.style.shadow.is_none());
+    let standard = Settings {
+        look: Look::Standard,
+        ..settings
+    };
+    let node = bar(&tabs, &keys, None, &standard).unwrap();
+    let raised = keyed(&node, "tab-1").unwrap();
+    assert!(raised.style.border.is_some() && raised.style.shadow.is_some());
     // The tabs of equal widths, whatever their titles.
     assert_eq!(first.layout.width, Length::Points(0.0));
     assert_eq!(first.layout.grow, 1.0);
@@ -207,16 +216,20 @@ fn a_column_lays_its_tabs_down_and_a_seamless_bar_shows_the_window_s_background(
         keyed(&node, NEW_KEY).unwrap().layout.justify,
         Justify::Center
     );
-    // The rows of rounded corners, a stadium's in the unified look, raised
-    // of its shadow too.
+    // The rows of rounded corners and a border, a stadium's of no border
+    // nor shadow in the unified look.
     let radius = |look: Look| {
         let settings = Settings { look, ..column };
         let node = bar(&tabs, &[], None, &settings).unwrap();
         let active = keyed(&node, "tab-1").unwrap();
-        (active.style.radius, active.style.shadow.is_some())
+        (
+            active.style.radius,
+            active.style.border.is_some(),
+            active.style.shadow.is_some(),
+        )
     };
-    assert_eq!(radius(Look::Standard), (6.0, false));
-    assert_eq!(radius(Look::Unified), (ROW / 2.0, true));
+    assert_eq!(radius(Look::Standard), (6.0, true, false));
+    assert_eq!(radius(Look::Unified), (ROW / 2.0, false, false));
     // As a sidebar, the room of the window's buttons first, of the
     // titlebar's height, the window's keys past the buttons, of no key, as
     // the window's drag takes it.

@@ -1421,10 +1421,10 @@ The bar's look.
 |---|---|
 | `"standard"`, `"unified"`, `"seamless"` | `"unified"` |
 
-- `"standard"` puts the bar in a strip below a titlebar of the window's title: the tabs side by side in a rounded track, of equal widths, each its title and its keys in its middle, the one shown raised over the track; the button of a new tab a circle after the track.
-- `"unified"` puts the same tabs in the titlebar, past the window's buttons and the keys that bring the window forward, as [`title-shortcut`](#title-shortcut) shows them.
+- `"standard"` puts the bar in a strip below a titlebar of the window's title: the tabs side by side in a rounded track, of equal widths, each its title and its keys in its middle, the one shown raised over the track, of a border and a shadow; the button of a new tab a circle after the track.
+- `"unified"` puts the same tabs in the titlebar, past the window's buttons and the keys that bring the window forward, as [`title-shortcut`](#title-shortcut) shows them; the one shown is of its background alone, without a border or a shadow, the one border round a tab being its program's progress.
 - `"seamless"` puts the tabs in the titlebar too, past the window's keys, which keep the titlebar's background, as cells of the titlebar's height, a line between two. The one shown has the window's own background, translucent and blurred as [`background-opacity`](#background-opacity) and [`background-blur`](#background-blur) make it, and opens onto the terminal below it; the others are a little darker, over a line. Each has its title in its middle, its color and its keys at its end, and the button of a new tab is a cell of its own.
-- At the bottom, each look keeps its tabs, under a titlebar of the window's title; down a column, the tabs are rows, the one shown raised, with rounded corners in `"standard"` and round ends in `"unified"`, or of the window's background in `"seamless"`, with the rest of the column a little darker; the button of a new tab is a row of its own, its sign in its middle.
+- At the bottom, each look keeps its tabs, under a titlebar of the window's title; down a column, the tabs are rows, the one shown raised, with rounded corners and a border in `"standard"` and round ends of its background alone in `"unified"`, or of the window's background in `"seamless"`, with the rest of the column a little darker; the button of a new tab is a row of its own, its sign in its middle.
 - A title too long for its tab ends in an ellipsis. A tab's background lightens under the pointer and darkens as you press it, fading in and out, at once where the system reduces motion; its close button shows at its start.
 - It applies at once, as you save the file.
 
