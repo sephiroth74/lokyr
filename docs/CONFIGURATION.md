@@ -177,6 +177,12 @@ column-width = 200                   # points, 60 to 600: the bar's column on th
 dim-inactive = 0.15                  # 0 to 1: how much the panes without the keyboard fade
 pane-titles = false                  # true | false: each pane's title across its top
 focus-follows-mouse = false          # true | false: the keyboard goes to the pane under the pointer
+
+[plugins.search]
+case = "smart"                       # smart | sensitive | insensitive: whether case counts as the find bar opens
+regex = false                        # true | false: the find bar's text a regex as it opens
+highlight-all = true                 # true | false: every match that shows highlighted
+wrap-around = true                   # true | false: a step past the last match goes on from the first
 ```
 
 ## `config_version`
@@ -1303,6 +1309,9 @@ The defaults, of the built-in plugin `keymap-macos`, the shortcuts of macOS's ap
 | `cmd+home` | `pane.scroll-top` | Scrolls the view to the scrollback's first row |
 | `cmd+end` | `pane.scroll-bottom` | Scrolls the view back to the screen |
 | `cmd+click` | `links.open` | Opens what you click: the link that the program gave the text, or the URL or the path that the text holds there. A URL is of `http`, `https`, `mailto` or `file`; a path starts from `/`, from `~`, or from the directory of the program in the foreground, as `ls` lists files, and compilers and `grep -n` write a line after it, as `src/main.rs:42:7`; between quotes, a path that is there can have spaces, as `git status` and Python write one, and a URL ends at a space. A URL or a file asks you first, as [`[links]`](#links) says; a folder opens in the Finder; a program, an application or a script that would run shows in the Finder, selected, and does not run. While you hold Command, the link under the pointer that would open is underlined, and the pointer over it is the pointing hand, as you move over it or press Command with the pointer still, and goes as the program changes its text, or the view scrolls it from under the pointer |
+| `cmd+f` | `search.open` | Opens the find bar at the top right of the pane, of your last search's text, its field taking the keys, as [`[plugins.search]`](#pluginssearch) tells |
+| `cmd+g` | `search.next` | Selects the next match of the find bar's search, the one above, the last after the first; it opens the bar while it is closed |
+| `cmd+shift+g` | `search.previous` | Selects the previous match, the one below, the first after the last |
 | `cmd+t` | `tabs.new` | Opens a tab in the window, after its others, which shows it; its shell starts in the folder of the pane that has the keyboard, as [`new-directory`](#new-directory) says |
 | `cmd+w` | `tabs.close` | Closes the tab, or its pane while the tab has splits; while a program other than a shell runs there, it asks you first, as closing the window does; the window's last tab closes the window, which `cmd+shift+w` closes whole |
 | `cmd+shift+]`, `ctrl+tab` | `tabs.next` | Shows the next tab, the first after the last |
@@ -1463,7 +1472,7 @@ How much the panes that have not the keyboard fade into their background, in a t
 | from `0` to `1`, whole or not | `0.15` |
 
 - `0` leaves them as they are; `1` hides their text in their background.
-- The fade brings each pane's text, its lines, its cursor and the backgrounds that its program colors toward its own background, so that a translucent window's background stays as it is; a picture keeps its colors.
+- The fade brings each pane's text, its lines, its cursor and the backgrounds that its program colors toward its own background, so that a translucent window's background stays as it is; a picture of colors of its own, as an emoji, fades as its opacity, over its faded cell.
 - It applies at once, as you save the file.
 
 ### `pane-titles`
@@ -1491,4 +1500,61 @@ Whether the keyboard goes to the pane that the pointer comes over, without a cli
 | `true`, `false` | `false` |
 
 - The pointer's moves wake the app over the panes that have not the keyboard alone, so that it costs nothing while the pointer stays over the one that has it; none moves it while a button is down, as in a selection's drag.
+- It applies at once, as you save the file.
+
+## `[plugins.search]`
+
+<sub>Platforms: macOS</sub>
+
+The find bar of the built-in plugin `lokyr/search`. `cmd+f` opens it at the top right of the pane that has the keyboard, of your last search's text, which it searches again; as you type, it searches the pane's screen and scrollback, the rows that show first, and counts the matches, as `3 of 12`. It searches from the bottom up, as the newest output is at the bottom: `enter`, `cmd+g` and the bar's up arrow select the next match, the one above; `shift+enter`, `cmd+shift+g` and its down arrow the previous one, the one below. Each match that it selects is your selection, ready for `cmd+c`, and comes into the view. `escape`, or its close button, closes it, the match staying selected. Its toggles count case, take the text as a regex, and match whole words alone; its clock lists your recent searches, which Lokyr keeps.
+
+### `case`
+
+<sub>Platforms: macOS</sub>
+
+Whether case counts as the find bar opens, which its toggle changes.
+
+| Values | Default |
+|---|---|
+| `smart`, `sensitive`, `insensitive` | `smart` |
+
+- `smart` counts case of a text of a capital letter, and not otherwise: `error` finds `Error`, and `Error` does not find `error`; `sensitive` always counts it, `insensitive` never.
+- It applies as the bar opens next.
+
+### `regex`
+
+<sub>Platforms: macOS</sub>
+
+Whether the find bar's text is a regular expression as it opens, of the syntax of Rust's `regex`, which its toggle changes.
+
+| Values | Default |
+|---|---|
+| `true`, `false` | `false` |
+
+- A text that is no valid regular expression tells so in the bar, and finds nothing.
+- It applies as the bar opens next.
+
+### `highlight-all`
+
+<sub>Platforms: macOS</sub>
+
+Whether every match that shows is highlighted, besides the current one.
+
+| Values | Default |
+|---|---|
+| `true`, `false` | `true` |
+
+- It does not apply yet: the matches' highlights come with a later version, the current match selected meanwhile.
+
+### `wrap-around`
+
+<sub>Platforms: macOS</sub>
+
+Whether a step past the last match goes on from the first, and past the first from the last.
+
+| Values | Default |
+|---|---|
+| `true`, `false` | `true` |
+
+- Without it, a step past either end stays there.
 - It applies at once, as you save the file.

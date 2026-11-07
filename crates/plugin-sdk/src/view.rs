@@ -720,6 +720,9 @@ pub enum UiEventKind {
     Submit {
         /// Its text.
         text: String,
+        /// Whether Shift was held, as Shift-Return goes the other way.
+        #[serde(default)]
+        shift: bool,
     },
     /// A toggle clicked, or pressed by Space or Return: the state asked of
     /// it, the other than its render's.
@@ -1324,6 +1327,7 @@ mod tests {
             },
             UiEventKind::Submit {
                 text: "main".to_owned(),
+                shift: true,
             },
             UiEventKind::Toggle { on: true },
             UiEventKind::Select { item: 3 },
@@ -1343,7 +1347,7 @@ mod tests {
                 r#"{"kind":"drop-on-pane","pane":4,"edge":"bottom"},"#,
                 r#"{"kind":"drop-outside","x":640.0,"y":-20.5},"#,
                 r#"{"kind":"set-value","value":"main"},{"kind":"input-changed","text":"ma","revision":2},"#,
-                r#"{"kind":"submit","text":"main"},{"kind":"toggle","on":true},"#,
+                r#"{"kind":"submit","text":"main","shift":true},{"kind":"toggle","on":true},"#,
                 r#"{"kind":"select","item":3},{"kind":"activate","item":3},"#,
                 r#"{"kind":"list-range","first":10,"count":105}]"#
             )

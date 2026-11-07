@@ -368,6 +368,19 @@ impl<'a> Cx<'a> {
         }
     }
 
+    /// Selects `pane`'s cells from `first` to `last`, each by its column
+    /// and its row's number, in reading order, as a drag would, which a
+    /// copy then takes, and scrolls the pane's view to show the first, as
+    /// the call returns.
+    pub fn select_cells(
+        &mut self,
+        pane: PaneId,
+        first: (u16, i64),
+        last: (u16, i64),
+    ) -> Result<(), Error> {
+        self.done(Request::SelectCells { pane, first, last })
+    }
+
     /// Ends the plugin's search `search`, at once: it stops, and its
     /// matches go.
     pub fn end_search(&mut self, search: u64) -> Result<(), Error> {

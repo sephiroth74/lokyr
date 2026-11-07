@@ -752,11 +752,12 @@ fn kind(request: &Request) -> usize {
         Request::Search { .. } => 70,
         Request::EndSearch(_) => 71,
         Request::SearchMatches { .. } => 72,
+        Request::SelectCells { .. } => 73,
     }
 }
 
 /// How many kinds of requests the plugin API has.
-const KINDS: usize = 73;
+const KINDS: usize = 74;
 
 #[test]
 fn the_scenarios_hold_every_request_of_the_plugin_api() {

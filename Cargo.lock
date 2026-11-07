@@ -767,6 +767,7 @@ dependencies = [
  "lokyr-platform-core",
  "lokyr-pty",
  "lokyr-render-core",
+ "lokyr-search-plugin",
  "lokyr-splits",
  "lokyr-tabs",
  "lokyr-text-core",
@@ -956,6 +957,13 @@ dependencies = [
  "memchr",
  "proptest",
  "regex-automata",
+]
+
+[[package]]
+name = "lokyr-search-plugin"
+version = "0.5.0"
+dependencies = [
+ "lokyr-plugin-sdk",
 ]
 
 [[package]]

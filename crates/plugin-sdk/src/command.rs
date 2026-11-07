@@ -118,6 +118,8 @@ pub enum Category {
     /// Handling what a pane holds, but through the clipboard: selecting
     /// it, clearing it.
     Edit,
+    /// Finding text in a pane, as the find bar and its steps.
+    Find,
     /// What a pane shows and how: its scrollback, the font's size.
     View,
 }

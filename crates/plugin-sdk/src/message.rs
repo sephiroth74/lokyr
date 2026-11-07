@@ -144,6 +144,18 @@ pub enum Request {
     /// Ends one of the plugin's searches, at once: it stops, and its
     /// matches go.
     EndSearch(u64),
+    /// Selects a pane's cells from one to another, by their columns and
+    /// their rows' numbers, in reading order, as a drag across them would,
+    /// which a copy then takes, and scrolls its view, through the
+    /// scrollback, to show the first.
+    SelectCells {
+        /// The pane.
+        pane: PaneId,
+        /// The first cell.
+        first: (u16, i64),
+        /// The last cell.
+        last: (u16, i64),
+    },
     /// The matches of one of the plugin's searches, in the rows' order,
     /// from the one at `first`, `count` at most, as their cells are now: a
     /// match whose cells left the scrollback is no more.
@@ -567,6 +579,7 @@ impl Request {
             | Self::Decorate { .. }
             | Self::Undecorate { .. }
             | Self::EndSearch(_)
+            | Self::SelectCells { .. }
             | Self::SelectAll(_)
             | Self::ClearScrollback(_)
             | Self::Clear(_)
@@ -648,6 +661,7 @@ impl Request {
             | Self::KeysOf { .. }
             | Self::Message { .. } => Effect::Read,
             Self::SetClipboardText(_)
+            | Self::SelectCells { .. }
             | Self::SelectAll(_)
             | Self::ClearScrollback(_)
             | Self::Clear(_)

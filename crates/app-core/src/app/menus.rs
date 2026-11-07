@@ -502,7 +502,7 @@ pub(super) fn main_menu(commands: &Registry, keymap: &Keymap, texts: &Texts) -> 
     };
     // The system's palette of emoji and symbols last, of its key on the
     // Mac, as AppKit adds it to the Edit menus of its own items.
-    let mut edit = items(&[Category::Clipboard, Category::Edit]);
+    let mut edit = items(&[Category::Clipboard, Category::Edit, Category::Find]);
     if !edit.is_empty() {
         edit.push(MenuItem::Separator);
     }

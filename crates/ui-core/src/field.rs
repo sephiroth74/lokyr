@@ -412,6 +412,7 @@ impl Fields {
                 key: key.clone(),
                 kind: UiEventKind::Submit {
                     text: state.text.clone(),
+                    shift,
                 },
             }]);
         }
@@ -1043,7 +1044,9 @@ mod tests {
                     .into_iter()
                     .map(|event| match event.kind {
                         UiEventKind::InputChanged { text, .. } => format!("input {text}"),
-                        UiEventKind::Submit { text } => format!("submit {text}"),
+                        UiEventKind::Submit { text, shift } => {
+                            format!("submit {text}{}", if shift { " shift" } else { "" })
+                        }
                         other => format!("{other:?}"),
                     })
                     .collect(),

@@ -3388,3 +3388,33 @@ fn a_search_s_matches_stay_with_their_cells_through_output_until_the_scrollback_
     let found = read(&mut app, &mut plugins);
     assert_eq!((found.matches, found.count), (Vec::new(), 2));
 }
+
+#[test]
+fn a_plugin_selects_cells_and_the_view_shows_the_first() {
+    let mut app = App::default();
+    let window = window(&mut app, "seq 1 200; echo ready; sleep 30");
+    let pane = app.workspace.active_pane(window).unwrap();
+    row_once(&app, pane, 200, "ready");
+    let mut plugins = Plugins::new();
+    plugins
+        .add(
+            "selector",
+            scripted(
+                |cx| cx.register_command(command("selector.select")),
+                |cx, _, _| {
+                    let pane = cx.focused_pane().unwrap();
+                    // `11`, on the row numbered 10, in the scrollback.
+                    cx.select_cells(pane, (0, 10), (1, 10))
+                },
+            ),
+        )
+        .unwrap();
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    plugins
+        .run("selector.select", Args::new(), &mut app.context())
+        .unwrap();
+    let shown = app.workspace.pane(pane).unwrap();
+    assert_eq!(shown.selection_text().as_deref(), Some("11"));
+    let top = shown.reader().unwrap().lock().origin().top;
+    assert_eq!(top, 10);
+}

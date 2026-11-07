@@ -452,7 +452,7 @@ impl Gallery {
                 self.texts.push((key.to_owned(), value));
             }
             UiEventKind::InputChanged { text, .. } => self.typed.0 = format!("`{key}`: {text}"),
-            UiEventKind::Submit { text } => self.typed.1 = format!("`{key}`: {text}"),
+            UiEventKind::Submit { text, .. } => self.typed.1 = format!("`{key}`: {text}"),
         }
     }
 

@@ -659,6 +659,27 @@ impl Pane {
         }
     }
 
+    /// Scrolls the view, through the scrollback, so that the row numbered
+    /// `row` shows: at the view's edge that it comes past, as it does
+    /// already, or not at all, of a row that the list does not hold.
+    pub fn show_row(&self, row: i64) {
+        let Some(session) = &self.session else {
+            return;
+        };
+        let mut terminal = session.lock();
+        if terminal.row_index(row).is_none() {
+            return;
+        }
+        let top = terminal.origin().top;
+        let bottom = top.saturating_add(i64::from(terminal.rows()));
+        let rows = |n: i64| usize::try_from(n).unwrap_or(usize::MAX);
+        if row < top {
+            terminal.scroll_viewport(Scroll::Up(rows(top - row)));
+        } else if row >= bottom {
+            terminal.scroll_viewport(Scroll::Down(rows(row - bottom + 1)));
+        }
+    }
+
     /// Anchors the selection that the mouse makes at the cell `at`, its
     /// column and its row's number, as [`Terminal::anchor_selection`] does:
     /// the anchor moves with its text.

@@ -79,6 +79,10 @@ fn starting_opens_a_window_under_the_menus_of_the_commands() {
             "Select All cmd+a",
             "Clear cmd+k",
             "-",
+            "Find… cmd+f",
+            "Find Next cmd+g",
+            "Find Previous shift+cmd+g",
+            "-",
             "Emoji & Symbols ctrl+cmd+ "
         ]
     );
@@ -161,6 +165,10 @@ fn the_menus_follow_the_keys_of_the_config() {
             "-",
             "Select All cmd+a",
             "Clear cmd+k",
+            "-",
+            "Find… cmd+f",
+            "Find Next cmd+g",
+            "Find Previous shift+cmd+g",
             "-",
             "Emoji & Symbols ctrl+cmd+ "
         ]
@@ -248,7 +256,7 @@ fn the_built_in_plugins_bind_the_commands_that_are_there_alone() {
         .filter(|command| app.commands.get(command).is_none())
         .collect();
     assert_eq!(missing, Vec::<&str>::new());
-    assert_eq!(app.keymap.bindings().len(), 63);
+    assert_eq!(app.keymap.bindings().len(), 66);
 }
 
 #[test]
@@ -374,6 +382,10 @@ fn the_menus_take_the_config_s_language_and_change_with_it() {
             "-",
             "Seleziona tutto cmd+a",
             "Cancella cmd+k",
+            "-",
+            "Trova… cmd+f",
+            "Trova successivo cmd+g",
+            "Trova precedente shift+cmd+g",
             "-",
             "Emoji e simboli ctrl+cmd+ "
         ]

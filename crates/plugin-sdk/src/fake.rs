@@ -573,6 +573,12 @@ impl FakeHost {
         std::mem::take(&mut self.done)
     }
 
+    /// The ids of the plugin's searches that the host keeps, in their
+    /// order, as their ends take them away.
+    pub fn searches(&self) -> Vec<u64> {
+        self.searches.keys().copied().collect()
+    }
+
     /// The decorations that it laid and did not take away, in their order.
     pub fn decorations(&self) -> &[FakeDecoration] {
         &self.decorations
@@ -581,6 +587,20 @@ impl FakeHost {
     /// Its open panels, by their ids.
     pub fn panels(&self) -> &BTreeMap<PanelId, PanelOptions> {
         &self.panels
+    }
+
+    /// Closes the plugin's panel `id` as the user does, by Escape or a
+    /// click outside it, as the app's host does: it forgets the panel and
+    /// its tree, and owes the plugin its closing; one not open stays so.
+    pub fn close_panel(&mut self, id: &PanelId) -> &mut Self {
+        if self.panels.remove(id).is_some() {
+            self.panel_windows.remove(id);
+            let view = ViewId::Panel(id.clone());
+            self.views.remove(&view);
+            self.renders.retain(|asked| *asked != view);
+            self.owed.push(Event::PanelClosed(id.clone()));
+        }
+        self
     }
 
     /// The last tree of `view` that it rendered, if it gave one.
@@ -1933,7 +1953,8 @@ impl Calling<'_> {
     fn queue(&mut self, request: Request) -> Result<Response, Error> {
         let mut opened = Opened::Nothing;
         let response = match &request {
-            Request::SelectAll(pane)
+            Request::SelectCells { pane, .. }
+            | Request::SelectAll(pane)
             | Request::ClearScrollback(pane)
             | Request::Clear(pane)
             | Request::Paste { pane, .. }

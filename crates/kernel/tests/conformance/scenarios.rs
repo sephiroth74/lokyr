@@ -910,6 +910,14 @@ fn state_and_rows(world: &World) -> Scenario {
                         failed(Code::NotFound, "there is no search 999999"),
                     ),
                     (Request::EndSearch(NO_SEARCH), Response::Done),
+                    (
+                        Request::SelectCells {
+                            pane: NO_PANE,
+                            first: (0, 0),
+                            last: (1, 0),
+                        },
+                        failed(Code::NotFound, "there is no pane 999999"),
+                    ),
                 ],
                 posts: Vec::new(),
                 heard: vec![Event::Searched {

@@ -263,10 +263,13 @@ The kernel's `search` service (the engine) plus the `search` plugin (UI and comm
 
 - **Find bar**: an overlay on the pane, top right as in iTerm2, with history.
 - **Options**: case (Aa), regex (`.*`), whole word; an "n of m" counter.
-- **Navigation**:
-  - Enter / ⇧Enter;
-  - ⌘G / ⇧⌘G on macOS, F3 / ⇧F3 on Linux;
+- **Navigation**, from the bottom up, as the newest output is at the bottom: the first match is the last of the nearest part to the view, the one nearest the bottom; the next is the one above, the previous the one below, past the ends as `wrap-around` says:
+  - Enter / ⇧Enter, the next and the previous;
+  - ⌘G / ⇧⌘G on macOS, F3 / ⇧F3 on Linux, which open the bar while it is closed;
+  - the bar's up and down arrows;
+  - each match selected, which a copy takes, and brought into the view;
   - Esc closes the bar and leaves the current match selected, ready for ⌘C.
+- **History**: the bar opens of the last search's text, which it searches again; its clock lists the recent searches, twenty at most, in the plugin's state.
 - **Highlighting**: all visible matches (`search.match`) and the current one (`search.current`), plus marks in the scrollbar.
 - **Filter mode**: iTerm2-style, showing only the matching lines. It arrives in F5b, because the renderer must first be able to show an arbitrary list of rows instead of a contiguous window.
 

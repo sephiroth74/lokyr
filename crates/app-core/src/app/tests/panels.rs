@@ -753,3 +753,83 @@ fn a_panel_is_in_the_window_s_tree_over_the_slots_and_its_field_has_the_focus() 
     assert!(place(bar) < place(dialog), "{surfaces:?}");
     assert_eq!(tree.focus, find);
 }
+
+/// The text of the find bar's count, as `window` shows it.
+fn find_count(app: &App, window: WindowId) -> Option<String> {
+    let view = app.windows[&window]
+        .chrome
+        .iter()
+        .find(|view| view.view == ViewId::Panel(PanelId::from("find")))?;
+    let tree = &view.surface.tree;
+    let node = tree.by_key(&"count".into())?;
+    match tree.kind(node)? {
+        lokyr_kernel::plugins::view::Kind::Text(text) => Some(text.clone()),
+        _ => None,
+    }
+}
+
+#[test]
+fn the_find_bar_searches_its_pane_steps_and_leaves_its_match_selected_as_it_closes() {
+    let none = Modifiers::NONE;
+    let drawing = Drawing::new(FontConfig::default()).unwrap();
+    let mut fake = Fake::default();
+    fake.set_bar(28.0);
+    let program = shell("printf 'a needle\\nnothing\\nneedle 日本 two\\n'; echo ready; read line");
+    let mut app = App::new(Some(drawing), unpadded(), None).with_program(program);
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    app.windows.get_mut(&window).unwrap().surface = Some(fakes::Surface::default());
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    run_until(&mut fake, &mut app, |_, app| shows(app, window, "ready"));
+    frames(&mut fake, &mut app, window);
+    command(&mut fake, &mut app, window, "search.open");
+    assert!(panel_frame(&app, window, "find").is_some());
+    assert!(focused_in(&app, window, "find"));
+    // Typed, as an input method commits it: the last match, the nearest
+    // to the bottom, selected, of two.
+    fake.send(
+        &mut app,
+        window,
+        WindowEvent::Ime(Ime::Commit("needle".to_owned())),
+    );
+    run_until(&mut fake, &mut app, |_, app| {
+        find_count(app, window).as_deref() == Some("2 of 2")
+    });
+    assert_eq!(selected_text(&app, window).as_deref(), Some("needle"));
+    let row = |app: &App| {
+        app.pane(window)
+            .selection()
+            .map(|selected| selected.start.1)
+    };
+    let bottom = row(&app);
+    // Return, up, the other.
+    fake.send(
+        &mut app,
+        window,
+        key_event(KeyCode::Enter, "\r", none, true),
+    );
+    run_until(&mut fake, &mut app, |_, app| {
+        find_count(app, window).as_deref() == Some("1 of 2")
+    });
+    assert_ne!(row(&app), bottom);
+    // Japanese, as its input method commits it, in place of the text.
+    fake.send(&mut app, window, key_event(KeyCode::KeyA, "a", CMD, true));
+    fake.send(
+        &mut app,
+        window,
+        WindowEvent::Ime(Ime::Commit("日本".to_owned())),
+    );
+    run_until(&mut fake, &mut app, |_, app| {
+        find_count(app, window).as_deref() == Some("1 of 1")
+    });
+    assert_eq!(selected_text(&app, window).as_deref(), Some("日本"));
+    // Escape closes it, its match staying selected.
+    fake.send(
+        &mut app,
+        window,
+        key_event(KeyCode::Escape, "\u{1b}", none, true),
+    );
+    frames(&mut fake, &mut app, window);
+    assert!(panel_frame(&app, window, "find").is_none());
+    assert_eq!(selected_text(&app, window).as_deref(), Some("日本"));
+}

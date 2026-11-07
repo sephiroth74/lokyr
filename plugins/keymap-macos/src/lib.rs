@@ -18,7 +18,7 @@ lokyr_plugin_sdk::export_plugin!(KeymapMacos);
 /// The bindings, each of its keys and of the command that they run, in
 /// their order: a menu's item shows the first of its command's keys that no
 /// later binding takes.
-pub const BINDINGS: [(&str, &str); 33] = [
+pub const BINDINGS: [(&str, &str); 36] = [
     // The application's.
     ("cmd+,", "app.settings"),
     ("cmd+q", "app.quit"),
@@ -50,6 +50,10 @@ pub const BINDINGS: [(&str, &str); 33] = [
     ("cmd+end", "pane.scroll-bottom"),
     // The links'.
     ("cmd+click", "links.open"),
+    // The search's.
+    ("cmd+f", "search.open"),
+    ("cmd+g", "search.next"),
+    ("cmd+shift+g", "search.previous"),
     // The tabs': Command-W closes the tab, or its pane, once a tab bar
     // runs, the window's close keeping Command-Shift-W.
     ("cmd+t", "tabs.new"),

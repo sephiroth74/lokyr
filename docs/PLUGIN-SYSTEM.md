@@ -444,6 +444,7 @@ type UiEvent = {
         | "drop-on-pane" | "drop-outside" | "set-value" | "toggle" | "select" | "activate" | "list-range",
     text: string?, -- a field's text, as the host holds it: at each change, "input-changed", and as Return goes to it, "submit"
     revision: number?, -- an "input-changed" text's, one more at each edit, which `set_text` gives back
+    shift: boolean?, -- a "submit"'s, whether Shift was held, as Shift-Return goes the other way
     item: number?, -- a list's item, selected or activated
     first: number?, count: number?, -- the items of a list that the host asks for, which the next render gives
     x: number?, y: number?, -- a drag's, from its start, or a scroll's, in points; a "drop-outside"'s, where the tab's new window puts its content's corner on the screens
@@ -458,7 +459,7 @@ type UiEvent = {
 type Command = {
     name: string, -- `namespace.action`
     title: string,
-    category: "app" | "windows" | "tabs" | "panes" | "input" | "clipboard" | "edit" | "view",
+    category: "app" | "windows" | "tabs" | "panes" | "input" | "clipboard" | "edit" | "find" | "view",
     capabilities: { string }?, -- those that its action needs, as "pty-write"
     params: { { name: string, kind: "string" | "integer" | "number" | "boolean", default: (string | number | boolean)? } }?,
     when: string?, -- the context in which it can run, as a binding's `when`
@@ -598,6 +599,9 @@ type Cx = {
     decorate: (pane: PaneId, from: { number }, to: { number }, look: DecorationLook) -> (number?, Error?),
     undecorate: (pane: PaneId, id: number) -> (boolean, Error?),
     select_all: (pane: PaneId) -> (boolean, Error?),
+    -- Selects the cells from one to another, in reading order, each { column, row's number }, as a drag would, which a
+    -- copy then takes, and scrolls the view, through the scrollback, to show the first, as the call returns.
+    select_cells: (pane: PaneId, first: { number }, last: { number }) -> (boolean, Error?),
     clear_scrollback: (pane: PaneId) -> (boolean, Error?),
     clear: (pane: PaneId) -> (boolean, Error?),
     -- Require `pty-write`: a paste, as the user's, which a text of line breaks may ask the user to confirm,
@@ -687,7 +691,7 @@ type Plugin = {
 | `process-read` | Seeing the panes' processes: their command lines and working directories | Medium: command lines can hold passwords |
 | `user-commands` | Running any command as the user's, without declaring it, as the palette does; reading the whole registry, with each command's plugin, keys and context, and the plugins installed ([ADR 0024](adr/0024-user-commands.md)) | Very high: `pane.send-text` types into the shell |
 
-- **Commands** ([ADR 0019](adr/0019-commands-errors-and-permissions.md)): each has a category, `app`, `windows`, `tabs`, `panes`, `input`, `clipboard`, `edit` or `view` to start with, and the capabilities that its action needs, as `pane.paste` needs `clipboard-read` and `pty-write`. A plugin declares in its manifest the commands that it runs, `[uses] commands`, by name or by namespace, as `tabs.*`: one that it did not declare fails with `denied`, 301, and one whose capabilities it lacks with `denied`, 302. The commands that the user runs, through the keys, the menus or a plugin with `user-commands`, as the palette, and the plugin's own need no declaration. Without `user-commands`, a plugin reads the commands' names, titles, categories and parameters, not their plugins.
+- **Commands** ([ADR 0019](adr/0019-commands-errors-and-permissions.md)): each has a category, `app`, `windows`, `tabs`, `panes`, `input`, `clipboard`, `edit`, `find` or `view` to start with, and the capabilities that its action needs, as `pane.paste` needs `clipboard-read` and `pty-write`. A plugin declares in its manifest the commands that it runs, `[uses] commands`, by name or by namespace, as `tabs.*`: one that it did not declare fails with `denied`, 301, and one whose capabilities it lacks with `denied`, 302. The commands that the user runs, through the keys, the menus or a plugin with `user-commands`, as the palette, and the plugin's own need no declaration. Without `user-commands`, a plugin reads the commands' names, titles, categories and parameters, not their plugins.
 - **Declaration and consent**:
   - Capabilities are declared in the manifest. Sleip shows them at install time, with the commands that the plugin runs, grouped by category, and the capabilities that those need; the app asks for confirmation on first use.
   - Decisions are stored in `~/.config/lokyr/permissions.toml`, which can be versioned with dotfiles and revoked at any time.
@@ -776,7 +780,7 @@ Plugins that we write as a third party would, in Luau, in a repository of their 
 
 ### `snap`
 
-As the user asked on 31 October 2026, after VS Code's [CodeSnap](https://marketplace.visualstudio.com/items?itemName=adpyke.codesnap):
+Similar to VS Code's [CodeSnap](https://marketplace.visualstudio.com/items?itemName=adpyke.codesnap):
 
 - **Commands**: `snap.selection`, the selection; `snap.screen`, the visible screen; and, once shell integration marks the commands, in F5a, `snap.output`, a command with its output. Each opens a preview in a panel over the window, the image as it will be, with a shutter and toggles of the frame's parts, which save the image or copy it.
 - **The image**: the text with its colors, styles and the terminal's font, in a frame as a macOS window's, with its three buttons and a title, the pane's; rounded corners, a shadow, padding and a background around it. The host draws it: an `image` service renders cells offscreen, with the terminal's own renderer, so that the image is what the window shows, and returns a PNG, at the display's scale or another. Any plugin can use the service, without a capability.
@@ -801,7 +805,7 @@ As the user asked on 31 October 2026, after VS Code's [CodeSnap](https://marketp
 
 ### `awake`
 
-As the user asked on 6 November 2026, after Nyx's menu beside the window's buttons:
+Menu beside the window's buttons:
 
 - **A button** beside the window's buttons, of the state's symbol, which opens a menu of three states, the current one ticked: **Default**, the system's rules of sleep; **Stay awake**, the system and the display kept awake; **Sleep after jobs**, kept awake while a tab runs a program, as its marks tell, and let sleep once the last one ends. Commands set each state, for the palette and the keys.
 - **Capabilities**: `keep-awake`, new, of a low risk, a battery's cost: a request that keeps the system, or the system and the display, from idle sleep, which the host holds as a power assertion of the platform's, IOKit's on macOS, and releases as the plugin asks, ends, is turned off or fails, so that no plugin leaves the Mac awake past its life.

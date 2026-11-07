@@ -41,7 +41,7 @@ pub use lokyr_plugin_sdk::{ui, view};
 use lokyr_session::Reader;
 use lokyr_text_core::Size;
 use lokyr_vt_core::page::{self, Rgb, Style};
-use lokyr_vt_core::terminal::{Look, Scroll};
+use lokyr_vt_core::terminal::{Look, Scroll, SelectionShape, SelectionUnit};
 use serde_json::{Map, Value};
 
 use crate::commands::{self, Args, Capability, Code, Command, Error, Registry, Uses};
@@ -2195,6 +2195,16 @@ fn apply(writes: Vec<Write>, context: &mut Context<'_>, out: &mut Outbox, state:
                     pane.select_all();
                 }
             }
+            Asked::SelectCells {
+                pane: id,
+                first,
+                last,
+            } => {
+                if let Some(pane) = pane(id) {
+                    pane.select(first, last, SelectionShape::Cells, SelectionUnit::Cell);
+                    pane.show_row(first.1);
+                }
+            }
             Asked::ClearScrollback(id) => {
                 if let Some(pane) = pane(id) {
                     pane.clear_scrollback();
@@ -3067,7 +3077,8 @@ impl Host<'_, '_> {
     /// there, nor opened by the call's writes so far, fails now.
     fn queue(&mut self, request: Asked) -> Result<Response, Error> {
         match &request {
-            Asked::SelectAll(pane)
+            Asked::SelectCells { pane, .. }
+            | Asked::SelectAll(pane)
             | Asked::ClearScrollback(pane)
             | Asked::Clear(pane)
             | Asked::Paste { pane, .. }
