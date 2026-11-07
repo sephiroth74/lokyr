@@ -2,7 +2,8 @@
 //! lock, so that it can draw without the lock.
 
 use super::{
-    Colors, Cursor, CursorStyle, Decorated, InputModes, KeyboardFlags, Origin, Selected, Terminal,
+    Colors, Cursor, CursorStyle, Decorated, Highlighted, InputModes, KeyboardFlags, Origin,
+    Selected, Terminal,
 };
 use crate::page::{Cell, Content, ListRow, Page, RowFlag, Style, StyleId};
 
@@ -43,6 +44,8 @@ pub struct Snapshot {
     selection: Option<Selected>,
     /// The decorations' spans that the view shows.
     decorations: Vec<Decorated>,
+    /// The spans of the searches' matches that the view shows.
+    highlights: Vec<Highlighted>,
 }
 
 /// The cursor, as a renderer draws it.
@@ -106,6 +109,12 @@ impl Snapshot {
     /// update found them, row by row.
     pub fn decorations(&self) -> &[Decorated] {
         &self.decorations
+    }
+
+    /// The spans of the searches' matches that the view shows, as the last
+    /// update found them, each search's, its current match's last.
+    pub fn highlights(&self) -> &[Highlighted] {
+        &self.highlights
     }
 
     /// Whether the last update copied row `y`, which the renderer then has
@@ -386,6 +395,7 @@ impl Terminal {
         }
         snapshot.selection = self.selection_in_snapshot(&snapshot.changed);
         snapshot.decorations = self.decorated_view();
+        snapshot.highlights = self.highlighted_view();
         copied
     }
 }
@@ -432,6 +442,7 @@ pub(super) fn copy_of(terminal: &Terminal) -> Snapshot {
         colors: terminal.colors().clone(),
         selection: None,
         decorations: Vec::new(),
+        highlights: Vec::new(),
     }
 }
 

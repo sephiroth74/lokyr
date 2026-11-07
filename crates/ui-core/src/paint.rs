@@ -1295,7 +1295,7 @@ pub(crate) fn rect(frame: Frame) -> Rect {
 
 /// `top` drawn over `bottom`, as one color: `top` itself where it is
 /// opaque.
-fn over(top: Color, bottom: Color) -> Color {
+pub(crate) fn over(top: Color, bottom: Color) -> Color {
     let alpha = top.alpha + bottom.alpha * (1.0 - top.alpha);
     if alpha <= 0.0 {
         return Color::CLEAR;

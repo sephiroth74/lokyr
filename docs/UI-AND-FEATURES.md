@@ -255,8 +255,10 @@ The kernel's `search` service (the engine) plus the `search` plugin (UI and comm
 - **Memory**: a line's text is built with where each cell's text starts and its column, about 10 bytes a cell, and a row's page once; a search of one line that fills a 10 MiB scrollback takes a few times that, transiently.
 - **Order and cancellation**: the search runs in chunks on a worker thread, 1000 rows under the pane's lock at a time, starting at the viewport and moving outward, a chunk below it and one above in turn, so nearby results arrive first, each chunk's as an event of the plugin's; it searches the rows that the scrollback holds as it starts, and ends at a resize, which renumbers them. Each keystroke in the find bar cancels the previous search, as a plugin's next search of a pane ends its last: the engine looks at a flag before each logical line, and between the matches it tries in one.
 - **Results**:
-  - Stored as stable pins, on a match's first and last cells, which stay valid as new output arrives, and go when the cells leave the scrollback.
+  - Stored as stable pins, on a match's first and last cells, which the terminal keeps by the search, which stay valid as new output arrives, and go when the cells leave the scrollback.
   - At most 100k are kept; past that, only the count.
+  - Shown as the plugin asks, `show_matches`: at each frame, the terminal finds those that the view shows by a binary search, as they lie in reading order, so that a frame's cost is of the view's matches, however many the search found. A search's matches that showed stay, stopped, as the next search of the pane starts, until that one shows its own, in the same frame, so that typing never leaves the view without them.
+  - The worker takes the lock in turn, and the main thread, a frame's copy or a plugin's request, ahead of its next chunk.
 - **Target**: 100k lines in ≤ 150 ms ([PERFORMANCE.md](PERFORMANCE.md)).
 
 ### UI
@@ -267,17 +269,16 @@ The kernel's `search` service (the engine) plus the `search` plugin (UI and comm
   - Enter / ⇧Enter, the next and the previous;
   - ⌘G / ⇧⌘G on macOS, F3 / ⇧F3 on Linux, which open the bar while it is closed;
   - the bar's up and down arrows;
-  - each match selected, which a copy takes, and brought into the view;
-  - Esc closes the bar and leaves the current match selected, ready for ⌘C.
+  - each match the current one, highlighted apart, and brought into the view;
+  - Esc closes the bar, its highlights going, and leaves the current match selected, ready for ⌘C.
 - **History**: the bar opens of the last search's text and its options, which it searches again; the magnifying glass of its field lists the recent searches, twenty at most, which the plugin's state keeps with the options.
 - **Layout**, as VS Code's find widget, of macOS's search field: the field, its glass at its start and its toggles of case, whole words and regexes at its end; the count, in a room of its own, which keeps the bar's width whatever it tells, `n of m`, of numbers past 9999 short, as `12K`; the arrows and the close button. The buttons and the toggles have no box at rest, their hover and press fading in, a toggle on of its own fill.
-- **Highlighting**: all visible matches (`search.match`) and the current one (`search.current`), plus marks in the scrollbar.
+- **Highlighting**: the visible matches (`search.match`), unless `highlight-all` is off, and the current one (`search.match.current`), the theme's translucent colors over each cell's own; marks in the scrollbar come with the scrollbar.
 - **Filter mode**: iTerm2-style, showing only the matching lines. It arrives in F5b, because the renderer must first be able to show an arbitrary list of rows instead of a contiguous window.
 
 ```toml
 [plugins.search]
-case = "smart"            # smart | sensitive | insensitive
-regex = false
+case = "smart"            # smart | insensitive, while the case toggle is off
 highlight-all = true
 wrap-around = true
 ```
@@ -291,7 +292,7 @@ The `themes` plugin (model, light/dark switching, picker) plus the `theme-iterm2
 | Group | Fields |
 |---|---|
 | Terminal | 16 ANSI colors, 256-color palette (derived or explicit), foreground, background, bold, cursor, cursor text, selection (background and text), link, underline, badge |
-| Search | `search.match`, `search.current` |
+| Search | `search.match`, `search.match.current` |
 | UI | Tokens for the tab bar; active, inactive and hovered tabs; dividers; overlays; accent; borders |
 | Chrome | Beyond iTerm2's colors, our themes give the chrome's look too: the tab bar's layout and the tabs' style and shape, the scrollbars' style, width, colors and visibility, and the other chrome that the plugins draw |
 | Options | Light/dark variants; `minimum-contrast`, the minimum ratio between text and background (as in iTerm2 and Ghostty) |

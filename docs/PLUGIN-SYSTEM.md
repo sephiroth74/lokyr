@@ -594,6 +594,11 @@ type Cx = {
     -- until the next search of the pane, `end_search` or the pane's close; the count goes on past them.
     search: (pane: PaneId, query: SearchQuery) -> (number?, Error?),
     end_search: (id: number) -> (boolean, Error?),
+    -- Shows a search's matches over its pane's cells in the theme's `search.match`, or hides them, as `all` says, and
+    -- its current match apart in `search.match.current`, whose row the view scrolls to, as the call returns: the host
+    -- draws those that the view shows at each frame, until the search ends. Those of the plugin's search before of the
+    -- pane, if they showed, show until this one does.
+    show_matches: (id: number, all: boolean, current: SearchMatch?) -> (boolean, Error?),
     -- A search's matches in the rows' order, from the one at `first`, 100 000 at most, as their cells are now, those that
     -- left the scrollback gone; how many it found; and whether it went to its end.
     search_matches: (id: number, first: number, count: number) -> ({ matches: { SearchMatch }, count: number, done: boolean }?, Error?),

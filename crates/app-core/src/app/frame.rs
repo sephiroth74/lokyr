@@ -25,8 +25,8 @@ use lokyr_ui_core::focus::Target;
 use lokyr_ui_core::font::Font;
 use lokyr_ui_core::pane::{CursorLook, TextLook};
 use lokyr_ui_core::text::TextConfig;
-use lokyr_ui_core::theme::SelectionColors;
 use lokyr_ui_core::theme::Variant;
+use lokyr_ui_core::theme::{MatchColors, SelectionColors};
 use lokyr_ui_core::{cursor, pane as cells};
 use lokyr_vt_core::terminal::MouseTracking;
 
@@ -430,7 +430,8 @@ impl<B: Backend> App<B> {
             line: (DIVIDER * size.scale).round() as u32,
             padding: self.padding(size.scale),
         };
-        let selection_colors = self.variant(platform, window).selection;
+        let variant = self.variant(platform, window);
+        let colors = (variant.selection, variant.match_colors());
         let text = self.config.text;
         let thickness = self.config.cursor;
         let shown = self.workspace.tab(tab)?;
@@ -456,9 +457,9 @@ impl<B: Backend> App<B> {
             .collect();
         let font = &mut drawing.font;
         font.collect_missing(GLYPHS_BUDGET.0, GLYPHS_BUDGET.1);
-        let mut batches = other_cells(&panes, &cell, selection_colors, hollow, text, 0.0, font);
+        let mut batches = other_cells(&panes, &cell, colors, hollow, text, 0.0, font);
         if font.draw_pending() {
-            batches = other_cells(&panes, &cell, selection_colors, hollow, text, 0.0, font);
+            batches = other_cells(&panes, &cell, colors, hollow, text, 0.0, font);
         }
         let list = DisplayList {
             background,
@@ -768,6 +769,8 @@ impl<B: Backend> App<B> {
         };
         let config = self.config.cursor;
         let selection_colors = self.variant(platform, window).selection;
+        let match_colors = self.variant(platform, window).match_colors();
+        let colors = (selection_colors, match_colors);
         let dark = platform.appearance() == Appearance::Dark;
         // The chrome of the window's own appearance, as its title is, and
         // the terminal's colors of the pane's own, which a program, reverse
@@ -851,8 +854,7 @@ impl<B: Backend> App<B> {
             look,
             font,
         );
-        let mut other_batches =
-            other_cells(&others, &cell, selection_colors, hollow, text, dim, font);
+        let mut other_batches = other_cells(&others, &cell, colors, hollow, text, dim, font);
         if font.draw_pending() {
             batch = cells::cells_with(
                 snapshot,
@@ -863,9 +865,11 @@ impl<B: Backend> App<B> {
                 look,
                 font,
             );
-            other_batches = other_cells(&others, &cell, selection_colors, hollow, text, dim, font);
+            other_batches = other_cells(&others, &cell, colors, hollow, text, dim, font);
         }
-        // The plugins' decorations over the text, under the composition.
+        // A search's matches over the cells, and the plugins' decorations
+        // over the text, under the composition.
+        cells::highlight(&mut batch, snapshot, match_colors);
         cells::decorate(&mut batch, snapshot, &cell);
         if let Some(preedit) = &state.preedit {
             cells::preedit(&mut batch, snapshot, &cell, preedit, font);
@@ -1322,14 +1326,14 @@ impl<B: Backend> App<B> {
 }
 
 /// The cells of `panes`, the panes of a window but the one with the
-/// keyboard, each at its origin, of `cell`: its selection in `colors`, its
-/// cursor `cursor`, as an unfocused window's, and its text as `text` has it
-/// look, steady, as the text that blinks blinks in the pane with the
-/// keyboard alone.
+/// keyboard, each at its origin, of `cell`: its selection and its search's
+/// matches in `colors`, its cursor `cursor`, as an unfocused window's, and
+/// its text as `text` has it look, steady, as the text that blinks blinks
+/// in the pane with the keyboard alone.
 fn other_cells(
     panes: &[(&Pane, (i32, i32))],
     cell: &CellMetrics,
-    colors: SelectionColors,
+    (colors, matches): (SelectionColors, MatchColors),
     cursor: CursorLook,
     text: TextConfig,
     dim: f32,
@@ -1359,6 +1363,7 @@ fn other_cells(
                 look,
                 font,
             );
+            cells::highlight(&mut batch, snapshot, matches);
             cells::decorate(&mut batch, snapshot, cell);
             // Faded toward its background, as the plugins ask of a pane
             // that has not the keyboard.

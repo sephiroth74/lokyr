@@ -17,6 +17,16 @@ pub struct SelectionColors {
     pub foreground: Option<Color>,
 }
 
+/// The colors of a search's matches over the terminal's cells, translucent,
+/// over the cells' own: a match's, and the current one's.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct MatchColors {
+    /// Over a match's cells.
+    pub matched: Color,
+    /// Over the current match's cells.
+    pub current: Color,
+}
+
 /// A variant of the theme: the terminal's colors, the selection's, and the
 /// interface's.
 #[derive(Clone, Debug, PartialEq)]
@@ -37,6 +47,18 @@ pub struct Tokens(HashMap<String, Color>);
 /// The token of no color, whatever a theme gives, as a progress's track
 /// that shows nothing.
 pub const TRANSPARENT: &str = "transparent";
+
+impl Variant {
+    /// The colors of a search's matches, of the tokens `search.match` and
+    /// `search.match.current`.
+    pub fn match_colors(&self) -> MatchColors {
+        let matched = self.tokens.get("search.match").unwrap_or(Color::CLEAR);
+        MatchColors {
+            matched,
+            current: self.tokens.get("search.match.current").unwrap_or(matched),
+        }
+    }
+}
 
 impl Tokens {
     /// The color of `token`; of the token without its last part where it

@@ -9,8 +9,9 @@ use lokyr_vt_core::page::{self, Content, Rgb, Style, Width};
 use lokyr_vt_core::terminal::{Colors, Snapshot};
 use lokyr_vt_core::unicode::Widths;
 
+use crate::paint;
 use crate::text::TextConfig;
-use crate::theme::SelectionColors;
+use crate::theme::{MatchColors, SelectionColors};
 
 /// A glyph as the atlas holds it: its pixels, and where they go from the pen
 /// on the baseline.
@@ -352,6 +353,31 @@ pub fn decorate(batch: &mut CellBatch, snapshot: &Snapshot, cell: &CellMetrics) 
             thickness: cell.underline_thickness,
             color: span.look.underline_color.map_or(text, color),
         });
+    }
+}
+
+/// Lays the highlights of `snapshot`'s searches' matches over `batch`, its
+/// grid as [`cells_with`] laid it out: `colors`' match's over each
+/// highlighted cell's background, and its current one's over the current
+/// match's, translucent, so that a cell's own color shows through, and a
+/// cell of the default background, clear, stays translucent over a
+/// translucent window.
+pub fn highlight(batch: &mut CellBatch, snapshot: &Snapshot, colors: MatchColors) {
+    for span in snapshot.highlights() {
+        if span.row >= batch.rows || span.first >= batch.columns || span.first > span.last {
+            continue;
+        }
+        let last = span.last.min(batch.columns - 1);
+        let color = if span.current {
+            colors.current
+        } else {
+            colors.matched
+        };
+        let start = usize::from(span.row) * usize::from(batch.columns);
+        for column in span.first..=last {
+            let cell = &mut batch.backgrounds[start + usize::from(column)];
+            *cell = paint::over(color, *cell);
+        }
     }
 }
 

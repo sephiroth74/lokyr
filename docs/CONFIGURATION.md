@@ -1531,7 +1531,8 @@ Whether every match that shows is highlighted, besides the current one.
 |---|---|
 | `true`, `false` | `true` |
 
-- It does not apply yet: the matches' highlights come with a later version, the current match selected meanwhile.
+- The current match is highlighted either way, in its own color, and selected as the bar closes.
+- It applies at once, as you save the file, to an open find bar too.
 
 ### `wrap-around`
 

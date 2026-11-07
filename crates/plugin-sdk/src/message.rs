@@ -156,6 +156,19 @@ pub enum Request {
         /// The last cell.
         last: (u16, i64),
     },
+    /// Shows one of the plugin's searches' matches over its pane's cells,
+    /// in the colors of the theme's `search.match`, or hides them, as `all`
+    /// says, and its current match apart, if it gives one, in those of
+    /// `search.match.current`, whose row the view scrolls to: at each frame,
+    /// the host draws those that the view shows, until the search ends.
+    ShowMatches {
+        /// The search's id.
+        search: u64,
+        /// Whether the view shows every match.
+        all: bool,
+        /// The current match, if one.
+        current: Option<SearchMatch>,
+    },
     /// The matches of one of the plugin's searches, in the rows' order,
     /// from the one at `first`, `count` at most, as their cells are now: a
     /// match whose cells left the scrollback is no more.
@@ -588,6 +601,7 @@ impl Request {
             | Self::Undecorate { .. }
             | Self::EndSearch(_)
             | Self::SelectCells { .. }
+            | Self::ShowMatches { .. }
             | Self::SelectAll(_)
             | Self::ClearScrollback(_)
             | Self::Clear(_)
@@ -671,6 +685,7 @@ impl Request {
             | Self::Message { .. } => Effect::Read,
             Self::SetClipboardText(_)
             | Self::SelectCells { .. }
+            | Self::ShowMatches { .. }
             | Self::SelectAll(_)
             | Self::ClearScrollback(_)
             | Self::Clear(_)

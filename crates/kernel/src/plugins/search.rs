@@ -1,9 +1,9 @@
 //! The search service: a search of a pane's terminal, its scrollback too,
 //! on a thread of the host's, a part of its rows at a time under the
 //! pane's lock, from the rows of its view outward, whose matches the
-//! terminal's pins keep through new output, scrolls and reflows.
+//! terminal keeps, of its pins, through new output, scrolls and reflows,
+//! and shows over its cells as its plugin asks.
 
-use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, mpsc};
 
@@ -81,18 +81,16 @@ pub(super) struct Part {
     pub(super) done: bool,
 }
 
-/// The matches that a search keeps, of the terminal's pins: each part's,
-/// by the number of its first row as the search started, so that they go
-/// in the rows' order, which a reflow keeps.
+/// What a search found, beside its matches, which the terminal keeps by
+/// the search's id.
 #[derive(Default)]
 struct Found {
-    parts: BTreeMap<i64, Vec<(CellPin, CellPin)>>,
     /// How many matches it found, those past [`MOST_MATCHES`] too.
     count: usize,
     /// Whether it went to its end.
     done: bool,
     /// Whether it ended, its matches let go: a part found after that lets
-    /// its own go at once.
+    /// its own go at once, rather than give them to the terminal.
     ended: bool,
 }
 
@@ -104,6 +102,8 @@ pub(super) struct Search {
     found: Arc<Mutex<Found>>,
     /// The parts that its thread tells, until it went to its end.
     parts: Option<mpsc::Receiver<Part>>,
+    /// Whether its plugin showed its matches, or its current one.
+    shown: bool,
 }
 
 impl Search {
@@ -121,7 +121,7 @@ impl Search {
             // the search done.
             let _ = std::thread::Builder::new()
                 .name("lokyr-search".to_owned())
-                .spawn(move || search(&reader, &query, &cancel, &found, &sender));
+                .spawn(move || search(id, &reader, &query, (&cancel, &found), &sender));
         }
         Self {
             id,
@@ -129,7 +129,20 @@ impl Search {
             cancel,
             found,
             parts: Some(receiver),
+            shown: false,
         }
+    }
+
+    /// Whether its plugin showed its matches, or its current one, last.
+    pub(super) fn is_shown(&self) -> bool {
+        self.shown
+    }
+
+    /// Stops it, its matches staying in the terminal, shown as they were,
+    /// until [`Search::end`]: its thread finds no more.
+    pub(super) fn stop(&self) {
+        self.cancel.store(true, Ordering::Relaxed);
+        lock(&self.found).ended = true;
     }
 
     /// Whether more of its parts may come.
@@ -170,40 +183,43 @@ impl Search {
         taken
     }
 
-    /// Ends the search: its thread stops, and its matches go from the
-    /// terminal that `reader` reads, if its pane is still there.
-    pub(super) fn end(self, reader: Option<&Reader>) {
+    /// Ends the search: its thread stops, and its matches go from
+    /// `terminal`, its pane's, locked, if the pane is still there.
+    pub(super) fn end(self, terminal: Option<&mut Terminal>) {
         self.cancel.store(true, Ordering::Relaxed);
-        let parts = {
-            let mut found = lock(&self.found);
-            found.ended = true;
-            std::mem::take(&mut found.parts)
-        };
-        if let Some(reader) = reader {
-            let mut terminal = reader.lock();
-            for (first, last) in parts.values().flatten() {
-                terminal.unpin_cell(first);
-                terminal.unpin_cell(last);
-            }
+        lock(&self.found).ended = true;
+        if let Some(terminal) = terminal {
+            terminal.drop_matches(self.id);
         }
     }
 
+    /// Shows its matches over the cells of `terminal`, its pane's, locked,
+    /// or hides them, as `all` says, and `current` apart, the current
+    /// match, if one. Whether the terminal keeps its matches, as its thread
+    /// gave it a part.
+    pub(super) fn show(
+        &mut self,
+        terminal: &mut Terminal,
+        all: bool,
+        current: Option<host::SearchMatch>,
+    ) -> bool {
+        self.shown = all || current.is_some();
+        let cells = current.map(|found| (found.first, found.last));
+        terminal.show_matches(self.id, all, cells)
+    }
+
     /// Its matches, in the rows' order, from the one at `first`, `count` at
-    /// most, as their cells are now in the terminal that `reader` reads,
+    /// most, as their cells are now in `terminal`, its pane's, locked,
     /// those whose cells left it gone; how many it found; and whether it
     /// went to its end.
-    pub(super) fn matches(&self, reader: &Reader, first: usize, count: usize) -> host::Found {
-        // The terminal's lock first, then the matches', as the search's
+    pub(super) fn matches(&self, terminal: &Terminal, first: usize, count: usize) -> host::Found {
+        // The terminal's lock first, then the count's, as the search's
         // thread takes them.
-        let terminal = reader.lock();
         let found = lock(&self.found);
-        let matches = found
-            .parts
-            .values()
-            .flatten()
-            .filter_map(|(start, end)| told(&terminal, start, end))
-            .skip(first)
-            .take(count)
+        let matches = terminal
+            .matches_of(self.id, first, count)
+            .into_iter()
+            .map(|(first, last)| host::SearchMatch { first, last })
             .collect();
         host::Found {
             matches,
@@ -234,16 +250,17 @@ fn told(terminal: &Terminal, start: &CellPin, end: &CellPin) -> Option<host::Sea
     })
 }
 
-/// The search's thread: each of its parts of `reader`'s terminal, under
-/// the lock, of the rows that the list holds as it starts, from the view's
-/// outward, its matches kept in `found` and told through `parts`, waking
-/// the main thread, until its last part, or a resize, or a change of the
-/// screen, which renumbers the rows, ends it; `cancel` stops it at once.
+/// The search `id`'s thread: each of its parts of `reader`'s terminal,
+/// under the lock, of the rows that the list holds as it starts, from the
+/// view's outward, its matches given to the terminal, counted in `found`
+/// and told through `parts`, waking the main thread, until its last part,
+/// or a resize, or a change of the screen, which renumbers the rows, ends
+/// it; `cancel` stops it at once.
 fn search(
+    id: u64,
     reader: &Reader,
     query: &Query,
-    cancel: &AtomicBool,
-    found: &Mutex<Found>,
+    (cancel, found): (&AtomicBool, &Mutex<Found>),
     parts: &mpsc::Sender<Part>,
 ) {
     let (epoch, order) = {
@@ -316,7 +333,7 @@ fn search(
             }
             kept += pins.len();
             count += all.count;
-            kept_found.parts.insert(from, pins);
+            terminal.add_matches(id, from, pins);
             kept_found.count = count;
             kept_found.done = done;
             matches

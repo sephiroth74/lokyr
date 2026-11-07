@@ -201,6 +201,10 @@ bench: vtebench
     target/release/lokyr-throughput --vtebench target/vtebench --runs 5 target/cat-1g.txt
     target/release/lokyr-replay --bench --cols 120 --rows 40 target/cat-1g.txt
 
+# Measure the search of 100 000 lines of 80 columns through the search service, as the find bar asks for it: until its first match shows, and until it counted them all, the median of five, of a release build; on an idle machine.
+bench-search:
+    cargo test --locked --release -p lokyr-kernel --lib -- --ignored --nocapture the_search_of_100k_lines
+
 # Fetch vtebench's scenarios from the pinned commit into target/vtebench (downloads it): their scripts, which nothing runs, and their data files.
 vtebench:
     #!/usr/bin/env bash

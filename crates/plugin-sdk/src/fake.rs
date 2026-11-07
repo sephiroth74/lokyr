@@ -1983,6 +1983,15 @@ impl Calling<'_> {
                 Response::Done
             }
             Request::SetFocusFollowsMouse(_) => Response::Done,
+            Request::ShowMatches { search, .. } => {
+                if !self.host.searches.contains_key(search) {
+                    return Err(Error::new(
+                        Code::NotFound,
+                        format!("there is no search {search}"),
+                    ));
+                }
+                Response::Done
+            }
             Request::SetWindowTabBarPlace { window, place } => {
                 self.known_window(*window)?;
                 if let Some(place) = place {

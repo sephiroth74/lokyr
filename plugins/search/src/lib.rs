@@ -2,13 +2,15 @@
 //! pane's top right, of a search field of macOS's look, whose magnifying
 //! glass lists the recent searches, and whose toggles of case, whole words
 //! and regexes sit at its end; the count of the matches, of a width of its
-//! own; and the steps through them, each of which selects its match, ready
-//! for a copy, and brings it into the view, over the kernel's search
+//! own; the matches highlighted over the pane's cells, the current one
+//! apart; and the steps through them, each of which makes its match the
+//! current one and brings it into the view, over the kernel's search
 //! service. The search goes from the bottom up, as the newest output is at
 //! the bottom: its next match is the one above, its previous the one below.
-//! Escape closes the bar, the current match staying selected; the bar
-//! opens again of the last search and its options. Like every built-in
-//! plugin, it depends only on the plugin SDK.
+//! Escape closes the bar, its highlights going and the current match
+//! selected, ready for a copy; the bar opens again of the last search and
+//! its options. Like every built-in plugin, it depends only on the plugin
+//! SDK.
 
 #![forbid(unsafe_code)]
 
@@ -195,6 +197,9 @@ struct Settings {
     /// Whether a step past the last match goes on from the first, and the
     /// other way.
     wrap_around: bool,
+    /// Whether every match that shows is highlighted, besides the current
+    /// one.
+    highlight_all: bool,
 }
 
 impl Default for Settings {
@@ -202,6 +207,7 @@ impl Default for Settings {
         Self {
             case: SearchCase::Smart,
             wrap_around: true,
+            highlight_all: true,
         }
     }
 }
@@ -221,6 +227,9 @@ impl Settings {
         }
         if let Some(Data::Boolean(wrap)) = config.get("wrap-around") {
             settings.wrap_around = *wrap;
+        }
+        if let Some(Data::Boolean(all)) = config.get("highlight-all") {
+            settings.highlight_all = *all;
         }
         settings
     }
@@ -259,13 +268,16 @@ struct Find {
     options: Options,
     /// The search under way, or done, of the text, if one is.
     search: Option<u64>,
+    /// Whether its search told a part, as its matches show from then on.
+    told: bool,
     /// Its matches told so far, in the rows' order.
     known: Vec<SearchMatch>,
     /// How many it found, those past the kept ones too, and whether it
     /// went to its end.
     count: usize,
     done: bool,
-    /// The match selected, if one is.
+    /// The current match, highlighted apart, which the bar's closing
+    /// selects, if one is.
     current: Option<SearchMatch>,
     /// Whether the host refused the search, as of a regex that does not
     /// compile.
@@ -287,6 +299,7 @@ impl Find {
             revision: 0,
             options,
             search: None,
+            told: false,
             known: Vec::new(),
             count: 0,
             done: false,
@@ -733,8 +746,9 @@ impl Plugin for Search {
     }
 
     /// A part of the search comes, whose first match, of the nearest part
-    /// to the view, is selected if none is; the bar's closing ends the
-    /// search; a change of the config takes its options.
+    /// to the view, is the current one if none is; the bar's closing ends
+    /// the search; a change of the config takes its options, the matches
+    /// shown as they say.
     fn on_event(&mut self, cx: &mut Cx<'_>, events: &[Event]) -> Result<(), Error> {
         for event in events {
             match event {
@@ -752,7 +766,15 @@ impl Plugin for Search {
                         self.closed(cx)?;
                     }
                 }
-                Event::ConfigChanged => self.settings = Settings::of(&cx.config()?),
+                Event::ConfigChanged => {
+                    self.settings = Settings::of(&cx.config()?);
+                    // Its matches shown as it now says.
+                    if let Some(find) = &self.find
+                        && let (Some(search), true) = (find.search, find.told)
+                    {
+                        cx.show_matches(search, self.settings.highlight_all, find.current)?;
+                    }
+                }
                 _ => {}
             }
         }
@@ -857,6 +879,7 @@ impl Search {
             return Ok(());
         };
         find.known.clear();
+        find.told = false;
         find.count = 0;
         find.done = false;
         find.current = None;
@@ -883,7 +906,9 @@ impl Search {
     /// Takes a part of the search `id`, if it is the bar's: its matches,
     /// the count, and whether it went to its end; the first match is the
     /// last of the first part of any, of the view's rows first, the
-    /// nearest to the bottom.
+    /// nearest to the bottom. The search's matches show from its first
+    /// part, those of the search before staying until then, so that the
+    /// view does not lose them as the text changes.
     fn searched(
         &mut self,
         cx: &mut Cx<'_>,
@@ -891,6 +916,7 @@ impl Search {
         matches: &[SearchMatch],
         (count, done): (usize, bool),
     ) -> Result<(), Error> {
+        let all = self.settings.highlight_all;
         let Some(find) = &mut self.find else {
             return Ok(());
         };
@@ -900,22 +926,31 @@ impl Search {
         find.take(matches);
         find.count = count;
         find.done = done;
+        let mut show = !find.told;
+        find.told = true;
         if find.current.is_none()
             && let Some(last) = matches.last()
         {
             find.current = Some(*last);
-            cx.select_cells(find.pane, last.first, last.last)?;
+            show = true;
+        }
+        if show {
+            cx.show_matches(id, all, find.current)?;
         }
         cx.request_render(bar())
     }
 
     /// Steps to the next match, up, or to the previous one, down, of those
-    /// told, which it selects; past the last, as the config's
-    /// `wrap-around` has it. A closed bar opens instead.
+    /// told, which it highlights as the current one, the view scrolling to
+    /// it; past the last, as the config's `wrap-around` has it. A closed
+    /// bar opens instead.
     fn step(&mut self, cx: &mut Cx<'_>, toward: Step) -> Result<(), Error> {
-        let wrap = self.settings.wrap_around;
+        let (wrap, all) = (self.settings.wrap_around, self.settings.highlight_all);
         let Some(find) = &mut self.find else {
             return self.open(cx);
+        };
+        let Some(search) = find.search else {
+            return Ok(());
         };
         let Some(last) = find.known.len().checked_sub(1) else {
             return Ok(());
@@ -930,16 +965,20 @@ impl Search {
         };
         let found = find.known[at];
         find.current = Some(found);
-        cx.select_cells(find.pane, found.first, found.last)?;
+        cx.show_matches(search, all, Some(found))?;
         cx.request_render(bar())
     }
 
-    /// The bar closed: its search ends, its current match staying
-    /// selected, and its text goes to the recent searches.
+    /// The bar closed: its search ends, its highlights going, its current
+    /// match selected, which a copy takes, and its text goes to the recent
+    /// searches.
     fn closed(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
         let Some(find) = self.find.take() else {
             return Ok(());
         };
+        if let Some(current) = find.current {
+            cx.select_cells(find.pane, current.first, current.last)?;
+        }
         if let Some(search) = find.search {
             cx.end_search(search)?;
         }

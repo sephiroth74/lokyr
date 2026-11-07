@@ -78,13 +78,41 @@ fn run(host: &mut FakeHost, plugin: &mut Search, name: &str) -> Vec<Request> {
 }
 
 /// The cells that `requests` select, the first's and the last's.
-fn selected(requests: &[Request]) -> Vec<((u16, i64), (u16, i64))> {
+fn selected(requests: &[Request]) -> Vec<Cells> {
     requests
         .iter()
         .filter_map(|request| match request {
             Request::SelectCells { first, last, .. } => Some((*first, *last)),
             _ => None,
         })
+        .collect()
+}
+
+/// A match's first and last cells.
+type Cells = ((u16, i64), (u16, i64));
+
+/// The current matches that `requests` show, the first's and the last's
+/// cells, with whether every match shows too.
+fn shown(requests: &[Request]) -> Vec<(Cells, bool)> {
+    requests
+        .iter()
+        .filter_map(|request| match request {
+            Request::ShowMatches {
+                current: Some(found),
+                all,
+                ..
+            } => Some(((found.first, found.last), *all)),
+            _ => None,
+        })
+        .collect()
+}
+
+/// The current matches that `requests` show, the first's and the last's
+/// cells.
+fn current(requests: &[Request]) -> Vec<Cells> {
+    shown(requests)
+        .into_iter()
+        .map(|(cells, _)| cells)
         .collect()
 }
 
@@ -135,12 +163,13 @@ fn the_bar_opens_at_the_pane_s_top_right_and_searches_as_its_text_is_typed() {
     );
     assert_eq!((options.role, options.close_escape), (Role::Dialog, true));
     // No text yet: no search, nothing to fill.
-    assert!(selected(&opened).is_empty());
+    assert!(current(&opened).is_empty());
     assert_eq!(query(&plugin), None);
     assert!(focused(&mut host, &mut plugin).is_empty());
     assert_eq!(count(&mut host, &mut plugin), "No results");
-    // Typed: a search of it, smart of its case; the last match of the
-    // first part, the nearest to the bottom, selected.
+    // Typed: a search of it, smart of its case; its matches shown, the
+    // last of the first part, the nearest to the bottom, the current one,
+    // nothing selected.
     let asked = typed(&mut host, &mut plugin, "needle");
     assert_eq!(host.searches().len(), 1);
     assert_eq!(
@@ -152,7 +181,8 @@ fn the_bar_opens_at_the_pane_s_top_right_and_searches_as_its_text_is_typed() {
             whole_word: false,
         })
     );
-    assert_eq!(selected(&asked), [((4, 3), (9, 3))]);
+    assert_eq!(shown(&asked), [(((4, 3), (9, 3)), true)]);
+    assert!(selected(&asked).is_empty());
     assert_eq!(count(&mut host, &mut plugin), "3 of 3");
     // Of no match.
     typed(&mut host, &mut plugin, "nowhere");
@@ -165,7 +195,7 @@ fn return_and_the_commands_step_up_and_down_through_the_matches_around_their_end
     run(&mut host, &mut plugin, OPEN);
     typed(&mut host, &mut plugin, "needle");
     // Up, the next, older, then past the first to the last.
-    let up = |host: &mut FakeHost, plugin: &mut Search| selected(&returned(host, plugin, false));
+    let up = |host: &mut FakeHost, plugin: &mut Search| current(&returned(host, plugin, false));
     assert_eq!(up(&mut host, &mut plugin), [((0, 2), (5, 2))]);
     assert_eq!(count(&mut host, &mut plugin), "2 of 3");
     assert_eq!(up(&mut host, &mut plugin), [((2, 0), (7, 0))]);
@@ -173,24 +203,24 @@ fn return_and_the_commands_step_up_and_down_through_the_matches_around_their_end
     // Down, the previous, newer, with Shift-Return and the command, past
     // the last to the first.
     assert_eq!(
-        selected(&returned(&mut host, &mut plugin, true)),
+        current(&returned(&mut host, &mut plugin, true)),
         [((2, 0), (7, 0))]
     );
     assert_eq!(
-        selected(&run(&mut host, &mut plugin, PREVIOUS)),
+        current(&run(&mut host, &mut plugin, PREVIOUS)),
         [((0, 2), (5, 2))]
     );
     assert_eq!(
-        selected(&run(&mut host, &mut plugin, NEXT)),
+        current(&run(&mut host, &mut plugin, NEXT)),
         [((2, 0), (7, 0))]
     );
     // The buttons.
     assert_eq!(
-        selected(&on_bar(&mut host, &mut plugin, DOWN, UiEventKind::Click)),
+        current(&on_bar(&mut host, &mut plugin, DOWN, UiEventKind::Click)),
         [((0, 2), (5, 2))]
     );
     assert_eq!(
-        selected(&on_bar(&mut host, &mut plugin, UP, UiEventKind::Click)),
+        current(&on_bar(&mut host, &mut plugin, UP, UiEventKind::Click)),
         [((2, 0), (7, 0))]
     );
 }
@@ -203,14 +233,14 @@ fn without_wrapping_around_a_step_past_an_end_stays_there() {
     typed(&mut host, &mut plugin, "needle");
     // At the last, down stays.
     assert_eq!(
-        selected(&returned(&mut host, &mut plugin, true)),
+        current(&returned(&mut host, &mut plugin, true)),
         [((4, 3), (9, 3))]
     );
     returned(&mut host, &mut plugin, false);
     returned(&mut host, &mut plugin, false);
     // At the first, up stays.
     assert_eq!(
-        selected(&returned(&mut host, &mut plugin, false)),
+        current(&returned(&mut host, &mut plugin, false)),
         [((2, 0), (7, 0))]
     );
 }
@@ -224,7 +254,7 @@ fn japanese_typed_searches_and_the_toggles_search_again_of_their_options() {
         query(&plugin).map(|query| query.text),
         Some("日本".to_owned())
     );
-    assert_eq!(selected(&asked), [((0, 0), (1, 0))]);
+    assert_eq!(current(&asked), [((0, 0), (1, 0))]);
     // Case counts of a capital letter, smart; and of the toggle.
     typed(&mut host, &mut plugin, "needle");
     assert_eq!(count(&mut host, &mut plugin), "2 of 2");
@@ -264,13 +294,14 @@ fn escape_ends_the_search_and_its_text_opens_the_bar_again_among_the_recent_ones
     typed(&mut host, &mut plugin, "needle");
     let search = plugin.find.as_ref().unwrap().search.unwrap();
     // Escape closes the panel, which the plugin hears: the search ends,
-    // its match staying selected, of no other selection.
+    // its highlights going, its current match selected.
     host.take_done();
     host.close_panel(&PanelId::from(BAR));
     host.deliver(&mut plugin).unwrap();
     let closed = host.take_done();
     assert!(!host.searches().contains(&search));
-    assert!(selected(&closed).is_empty());
+    assert_eq!(selected(&closed), [((4, 3), (9, 3))]);
+    assert!(current(&closed).is_empty());
     assert!(plugin.find.is_none());
     let Data::Map(state) = host.state() else {
         panic!("a state: {:?}", host.state());
@@ -282,7 +313,7 @@ fn escape_ends_the_search_and_its_text_opens_the_bar_again_among_the_recent_ones
     // Opened again, of its last text, searched again, its field filled as
     // it takes the keys.
     let opened = run(&mut host, &mut plugin, OPEN);
-    assert_eq!(selected(&opened), [((4, 3), (9, 3))]);
+    assert_eq!(current(&opened), [((4, 3), (9, 3))]);
     let filled = focused(&mut host, &mut plugin);
     assert!(filled.iter().any(|request| matches!(
         request,
@@ -420,6 +451,22 @@ fn the_count_keeps_its_width_of_short_numbers_past_9999() {
     assert_eq!(short(12_345), "12K");
     assert_eq!(short(100_000), "100K");
     assert_eq!(short(3_400_000), "3M");
+}
+
+#[test]
+fn without_highlight_all_the_current_match_alone_shows_until_the_config_says_otherwise() {
+    let off = config(&[("highlight-all", Data::Boolean(false))]);
+    let (mut host, mut plugin) = host(&ROWS, off);
+    run(&mut host, &mut plugin, OPEN);
+    let asked = typed(&mut host, &mut plugin, "needle");
+    assert_eq!(shown(&asked), [(((4, 3), (9, 3)), false)]);
+    let stepped = returned(&mut host, &mut plugin, false);
+    assert_eq!(shown(&stepped), [(((0, 2), (5, 2)), false)]);
+    // The config changed: every match shows, the current one kept.
+    host.take_done();
+    host.set_config(config(&[("highlight-all", Data::Boolean(true))]));
+    host.deliver(&mut plugin).unwrap();
+    assert_eq!(shown(&host.take_done()), [(((0, 2), (5, 2)), true)]);
 }
 
 #[test]

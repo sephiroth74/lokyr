@@ -622,6 +622,13 @@ impl Pane {
         self.session.as_ref().map(|_| self.snapshot.input_modes())
     }
 
+    /// The pane's terminal, locked ahead of its I/O thread's next slice
+    /// and of the next part of a thread's read, as the main thread takes
+    /// it; none for a pane whose program did not start.
+    pub fn terminal(&self) -> Option<std::sync::MutexGuard<'_, Terminal>> {
+        self.session.as_ref().map(Session::lock)
+    }
+
     /// How many times the pane's terminal was locked, as each lock waits
     /// for a slice of its I/O thread at most.
     pub fn locks(&self) -> u64 {

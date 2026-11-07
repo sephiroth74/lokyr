@@ -13,6 +13,7 @@ mod erase;
 mod escape;
 mod events;
 mod keyboard;
+mod matches;
 mod modes;
 mod osc;
 mod print;
@@ -30,6 +31,7 @@ pub use clipboard::{ClipboardRequest, ClipboardTarget};
 pub use colors::{Colors, SPECIAL_COLORS};
 pub use decorations::{Decorated, Look, MOST_DECORATIONS};
 pub use keyboard::KeyboardFlags;
+pub use matches::{Highlighted, MatchCells};
 pub use osc::{Event, Progress, WorkingDirectory};
 pub use selection::{CellPin, RowText, Selected, SelectionShape, SelectionUnit, WORD_SEPARATORS};
 pub use snapshot::{Line, Snapshot, SnapshotCursor};
@@ -484,6 +486,8 @@ pub struct Terminal {
     cell_mark: Option<selection::CellPin>,
     /// The decorations that the embedder laid over the text.
     decorations: Vec<decorations::Decoration>,
+    /// The matches of the searches that the embedder keeps, few at once.
+    matches: Vec<matches::Matches>,
 }
 
 impl Terminal {
@@ -590,6 +594,7 @@ impl Terminal {
             selection_anchor: None,
             cell_mark: None,
             decorations: Vec::new(),
+            matches: Vec::new(),
         }
     }
 

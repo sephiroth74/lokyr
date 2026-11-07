@@ -36,7 +36,9 @@ use lokyr_ui_core::pane::{self as cells, CursorLook, Selection, TextLook};
 use lokyr_ui_core::theme::Theme;
 use lokyr_ui_core::tree::{NodeId, Tree};
 use lokyr_vt_core::parser::Parser;
-use lokyr_vt_core::terminal::{Options, SelectionShape, SelectionUnit, Snapshot, Terminal};
+use lokyr_vt_core::terminal::{
+    MatchCells, Options, SelectionShape, SelectionUnit, Snapshot, Terminal,
+};
 
 /// The pixels around the cells, as a window's padding.
 const MARGIN: u32 = 4;
@@ -74,6 +76,16 @@ struct Scene {
     /// The share by which its colors fade toward its background, as a pane's
     /// that has not the keyboard.
     fade: Option<f32>,
+    /// A search's matches that it highlights, if any.
+    highlights: Option<Highlights>,
+}
+
+/// A search's matches highlighted over a scene's cells, of the theme's
+/// variant of the light appearance or of the dark one.
+struct Highlights {
+    matches: Vec<MatchCells>,
+    current: Option<MatchCells>,
+    light: bool,
 }
 
 /// The GPU, its renderer and a font of `POINTS` at `scale`, as a window of
@@ -116,12 +128,27 @@ impl Drawing {
         (x, y): (i32, i32),
     ) -> (CellBatch, lokyr_render_core::Color) {
         let theme = Theme::builtin();
-        let variant = theme.variant(true);
+        let light = scene.highlights.as_ref().is_some_and(|shown| shown.light);
+        let variant = theme.variant(!light);
         let mut terminal = Terminal::new(scene.columns, scene.rows, Options::default());
         terminal.set_default_colors(variant.colors.clone());
         Parser::new().advance(&mut terminal, scene.text.as_bytes());
         if let Some((from, to)) = scene.selection {
             terminal.select(from, to, SelectionShape::Cells, SelectionUnit::Cell, "");
+        }
+        if let Some(shown) = &scene.highlights {
+            let pins = shown
+                .matches
+                .iter()
+                .map(|&(from, to)| {
+                    (
+                        terminal.pin_cell(from).unwrap(),
+                        terminal.pin_cell(to).unwrap(),
+                    )
+                })
+                .collect();
+            terminal.add_matches(1, 0, pins);
+            assert!(terminal.show_matches(1, true, shown.current));
         }
         let mut snapshot = Snapshot::default();
         terminal.snapshot(&mut snapshot);
@@ -138,7 +165,7 @@ impl Drawing {
             colors: variant.selection,
             contains: &contains,
         });
-        let batch = cells::cells_with(
+        let mut batch = cells::cells_with(
             &snapshot,
             &cell,
             (x, y),
@@ -147,6 +174,7 @@ impl Drawing {
             TextLook::default(),
             &mut self.font,
         );
+        cells::highlight(&mut batch, &snapshot, variant.match_colors());
         (batch, cells::background(&snapshot))
     }
 
@@ -202,6 +230,7 @@ fn text() -> Vec<Scene> {
         selection: None,
         shapes: false,
         fade: None,
+        highlights: None,
     }]
 }
 
@@ -239,6 +268,7 @@ fn colors() -> Vec<Scene> {
         selection: None,
         shapes: false,
         fade: None,
+        highlights: None,
     }]
 }
 
@@ -260,6 +290,7 @@ fn decorations() -> Vec<Scene> {
         selection: None,
         shapes: false,
         fade: None,
+        highlights: None,
     }]
 }
 
@@ -283,8 +314,44 @@ fn cursors() -> Vec<Scene> {
         selection: None,
         shapes: false,
         fade: None,
+        highlights: None,
     })
     .collect()
+}
+
+/// A search's matches highlighted, the current one apart: over the default
+/// background, over a cell's own color, under a selection, and around wide
+/// characters, of the dark variant or the light one.
+fn highlights(light: bool) -> Vec<Scene> {
+    vec![Scene {
+        name: if light {
+            "highlights-light"
+        } else {
+            "highlights-dark"
+        },
+        columns: 32,
+        rows: 3,
+        text: concat!(
+            "find the needle in the stack\r\n",
+            "\x1b[42mneedle\x1b[0m on green, needle again\r\n",
+            "日本 needle 日本",
+        )
+        .to_owned(),
+        cursor: None,
+        selection: Some(((10, 0), (12, 0))),
+        shapes: false,
+        fade: None,
+        highlights: Some(Highlights {
+            matches: vec![
+                ((9, 0), (14, 0)),
+                ((0, 1), (5, 1)),
+                ((17, 1), (22, 1)),
+                ((5, 2), (10, 2)),
+            ],
+            current: Some(((17, 1), (22, 1))),
+            light,
+        }),
+    }]
 }
 
 /// A selection across two rows, over colored text and a wide character.
@@ -299,6 +366,7 @@ fn selection() -> Vec<Scene> {
         selection: Some(((2, 0), (5, 1))),
         shapes: false,
         fade: None,
+        highlights: None,
     }]
 }
 
@@ -318,6 +386,7 @@ fn dimmed() -> Vec<Scene> {
             selection: None,
             shapes: false,
             fade,
+            highlights: None,
         })
         .collect()
 }
@@ -344,6 +413,7 @@ fn shapes() -> Vec<Scene> {
         selection: None,
         shapes: true,
         fade: None,
+        highlights: None,
     })
     .collect();
     let lines = ["4", "4:2", "4:3", "4:4", "4:5", "9", "53"]
@@ -358,6 +428,7 @@ fn shapes() -> Vec<Scene> {
         selection: None,
         shapes: true,
         fade: None,
+        highlights: None,
     });
     scenes
 }
@@ -969,6 +1040,15 @@ fn colors_draw_as_their_golden_image() {
 fn decorations_draw_as_their_golden_image() {
     for scale in [1, 2] {
         check(&decorations(), scale);
+    }
+}
+
+#[test]
+fn a_search_s_matches_draw_highlighted_as_their_golden_images() {
+    for light in [false, true] {
+        for scale in [1, 2] {
+            check(&highlights(light), scale);
+        }
     }
 }
 

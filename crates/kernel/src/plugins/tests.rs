@@ -1338,6 +1338,7 @@ fn a_call_is_its_own_plugin_s() {
             follows: false,
             told_tabs: BTreeMap::new(),
             searches: Vec::new(),
+            lingering: Vec::new(),
         },
         Outbox::default(),
         Vec::new(),
@@ -3139,6 +3140,8 @@ struct Searched {
     events: Vec<Event>,
     read: Option<host::Found>,
     last: Option<u64>,
+    /// What `finder.show` shows: every match or not, and the current one.
+    show: (bool, Option<host::SearchMatch>),
 }
 
 /// A plugin of commands that search the focused pane for `needle`, for
@@ -3148,7 +3151,7 @@ fn finder(searched: &Rc<RefCell<Searched>>) -> Box<dyn Plugin> {
     let (seen, told) = (Rc::clone(searched), Rc::clone(searched));
     Box::new(Scripted {
         activate: Box::new(|cx| {
-            for name in ["needle", "x", "none", "end", "read"] {
+            for name in ["needle", "x", "none", "end", "read", "show"] {
                 cx.register_command(command(&format!("finder.{name}")))?;
             }
             Ok(())
@@ -3162,6 +3165,13 @@ fn finder(searched: &Rc<RefCell<Searched>>) -> Box<dyn Plugin> {
                 "finder.end" => {
                     let last = seen.borrow().last.unwrap();
                     return cx.end_search(last);
+                }
+                "finder.show" => {
+                    let (last, (all, current)) = {
+                        let seen = seen.borrow();
+                        (seen.last.unwrap(), seen.show)
+                    };
+                    return cx.show_matches(last, all, current);
                 }
                 _ => {
                     let last = seen.borrow().last.unwrap();
@@ -3387,6 +3397,238 @@ fn a_search_s_matches_stay_with_their_cells_through_output_until_the_scrollback_
     row_once(&app, pane, 20_106, "done");
     let found = read(&mut app, &mut plugins);
     assert_eq!((found.matches, found.count), (Vec::new(), 2));
+}
+
+#[test]
+fn a_search_s_matches_show_over_the_view_s_cells_and_the_view_goes_to_the_current_one() {
+    let mut app = App::default();
+    // A match on every tenth row, of 300.
+    let window = window(
+        &mut app,
+        "seq 1 300 | sed 's/7$/7 needle/'; echo ready; sleep 30",
+    );
+    let pane = app.workspace.active_pane(window).unwrap();
+    row_once(&app, pane, 300, "ready");
+    let mut plugins = Plugins::new();
+    let searched = Rc::new(RefCell::new(Searched::default()));
+    plugins.add("finder", finder(&searched)).unwrap();
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    plugins
+        .run("finder.needle", Args::new(), &mut app.context())
+        .unwrap();
+    let id = searched.borrow().last.unwrap();
+    let (parts, count) = searched_until_done(&mut app, &mut plugins, &searched, id);
+    assert_eq!(count, 30);
+    let highlights = |app: &App| {
+        let reader = app.workspace.pane(pane).unwrap().reader().unwrap();
+        let mut terminal = reader.lock();
+        let mut snapshot = lokyr_vt_core::terminal::Snapshot::default();
+        terminal.snapshot(&mut snapshot);
+        let top = terminal.origin().top;
+        let shown: Vec<(i64, u16, u16, bool)> = snapshot
+            .highlights()
+            .iter()
+            .map(|span| {
+                (
+                    top + i64::from(span.row),
+                    span.first,
+                    span.last,
+                    span.current,
+                )
+            })
+            .collect();
+        (top, shown)
+    };
+    // Not shown until the plugin asks.
+    assert!(highlights(&app).1.is_empty());
+    // `needle` of `7 needle`, on the row numbered 6, the first, current.
+    let first = parts
+        .iter()
+        .flatten()
+        .min_by_key(|found| found.first.1)
+        .copied()
+        .unwrap();
+    assert_eq!(first.first, (2, 6));
+    searched.borrow_mut().show = (true, Some(first));
+    plugins
+        .run("finder.show", Args::new(), &mut app.context())
+        .unwrap();
+    let (top, shown) = highlights(&app);
+    assert_eq!(top, 6);
+    let rows = i64::from(app.workspace.pane(pane).unwrap().grid().rows);
+    let wanted: Vec<(i64, u16, u16, bool)> = (16..top + rows)
+        .step_by(10)
+        .map(|row| (row, 3, 8, false))
+        .chain([(6, 2, 7, true)])
+        .collect();
+    assert_eq!(shown, wanted);
+    // The current one alone; then none, as the search ends.
+    searched.borrow_mut().show = (false, Some(first));
+    plugins
+        .run("finder.show", Args::new(), &mut app.context())
+        .unwrap();
+    assert_eq!(highlights(&app).1, [(6, 2, 7, true)]);
+    plugins
+        .run("finder.end", Args::new(), &mut app.context())
+        .unwrap();
+    assert!(highlights(&app).1.is_empty());
+    // A search that is not there is refused.
+    let refused = plugins.run("finder.show", Args::new(), &mut app.context());
+    assert_eq!(refused.unwrap_err().code, Code::NotFound);
+}
+
+#[test]
+fn a_shown_search_s_matches_stay_until_the_next_one_of_the_pane_shows_its_own() {
+    let mut app = App::default();
+    let window = window(
+        &mut app,
+        "seq 1 300 | sed 's/7$/7 needle/'; echo ready; sleep 30",
+    );
+    let pane = app.workspace.active_pane(window).unwrap();
+    row_once(&app, pane, 300, "ready");
+    let reader = app.workspace.pane(pane).unwrap().reader().unwrap();
+    let before = reader.lock().screen_rows().pins();
+    let highlighted = || {
+        let mut snapshot = lokyr_vt_core::terminal::Snapshot::default();
+        reader.lock().snapshot(&mut snapshot);
+        snapshot.highlights().len()
+    };
+    let mut plugins = Plugins::new();
+    let searched = Rc::new(RefCell::new(Searched::default()));
+    plugins.add("finder", finder(&searched)).unwrap();
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    let run = |app: &mut App, plugins: &mut Plugins, name: &str| {
+        plugins.run(name, Args::new(), &mut app.context()).unwrap();
+    };
+    // The needles shown, those of the view's rows.
+    run(&mut app, &mut plugins, "finder.needle");
+    let first = searched.borrow().last.unwrap();
+    searched_until_done(&mut app, &mut plugins, &searched, first);
+    searched.borrow_mut().show = (true, None);
+    run(&mut app, &mut plugins, "finder.show");
+    let shown = highlighted();
+    assert!(shown > 0);
+    // Another search of the pane, of none: the needles stay, through its
+    // end, until it shows its own.
+    run(&mut app, &mut plugins, "finder.none");
+    assert_eq!(highlighted(), shown);
+    let second = searched.borrow().last.unwrap();
+    searched_until_done(&mut app, &mut plugins, &searched, second);
+    assert_eq!(highlighted(), shown);
+    run(&mut app, &mut plugins, "finder.show");
+    assert_eq!(highlighted(), 0);
+    // Shown, then another, then its end: none, and every pin let go.
+    run(&mut app, &mut plugins, "finder.needle");
+    let third = searched.borrow().last.unwrap();
+    searched_until_done(&mut app, &mut plugins, &searched, third);
+    run(&mut app, &mut plugins, "finder.show");
+    run(&mut app, &mut plugins, "finder.none");
+    assert_eq!(highlighted(), shown);
+    run(&mut app, &mut plugins, "finder.end");
+    assert_eq!(highlighted(), 0);
+    std::thread::sleep(Duration::from_millis(50));
+    assert_eq!(reader.lock().screen_rows().pins(), before);
+}
+
+/// The lines of the measure of the search, of 80 columns, a match of
+/// `needle` on one in a hundred.
+const MEASURED_LINES: i64 = 100_000;
+
+/// The time that a search of a literal takes over 100 000 lines of 80
+/// columns in the scrollback, through the search service, its plugin and
+/// its thread, as the find bar asks for it: until its first match shows,
+/// and until it counted them all. Of a release build alone, as `just
+/// bench-search` runs it: the median of five searches, which the exit
+/// criterion of F3's search bounds at 150 ms.
+#[test]
+#[ignore = "a measure, of a release build: just bench-search"]
+fn the_search_of_100k_lines_shows_its_first_match_and_counts_them_all_within_150_ms() {
+    let mut app = App::default();
+    let window = window(
+        &mut app,
+        "read x; awk 'BEGIN { for (i = 0; i < 100000; i++) printf \"%06d the quick brown fox %s %046d\\n\", i, (i % 100 == 7 ? \"needle\" : \"nobody\"), i }'; echo done; sleep 60",
+    );
+    let pane = app.workspace.active_pane(window).unwrap();
+    let shown = app.workspace.pane(pane).unwrap();
+    shown.set_scrollback_limit(256 << 20);
+    shown.text("\n");
+    let start = Instant::now();
+    while app
+        .workspace
+        .pane(pane)
+        .unwrap()
+        .line_text(MEASURED_LINES + 1, 0)
+        .is_none_or(|(line, _)| line.trim_end() != "done")
+    {
+        assert!(start.elapsed() < Duration::from_secs(60), "no `done`");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let mut plugins = Plugins::new();
+    let searched = Rc::new(RefCell::new(Searched::default()));
+    plugins.add("finder", finder(&searched)).unwrap();
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    let (mut first, mut all) = (Vec::new(), Vec::new());
+    for _ in 0..5 {
+        searched.borrow_mut().events.clear();
+        let start = Instant::now();
+        plugins
+            .run("finder.needle", Args::new(), &mut app.context())
+            .unwrap();
+        let id = searched.borrow().last.unwrap();
+        let mut shown_at = None;
+        let count = loop {
+            assert!(start.elapsed() < Duration::from_secs(10), "not done");
+            assert!(plugins.deliver(&mut app.context()).is_empty());
+            let (found, done) = {
+                let told = searched.borrow();
+                let mut found = None;
+                let mut done = None;
+                for event in &told.events {
+                    if let Event::Searched {
+                        id: of,
+                        matches,
+                        count,
+                        done: ended,
+                        ..
+                    } = event
+                        && *of == id
+                    {
+                        found = found.or(matches.last().copied());
+                        if *ended {
+                            done = Some(*count);
+                        }
+                    }
+                }
+                (found, done)
+            };
+            // Its first match shown, as the find bar shows it.
+            if shown_at.is_none()
+                && let Some(found) = found
+            {
+                searched.borrow_mut().show = (true, Some(found));
+                plugins
+                    .run("finder.show", Args::new(), &mut app.context())
+                    .unwrap();
+                shown_at = Some(start.elapsed());
+            }
+            if let Some(count) = done {
+                all.push(start.elapsed());
+                break count;
+            }
+            std::thread::sleep(Duration::from_micros(200));
+        };
+        assert_eq!(count, 1000);
+        first.push(shown_at.expect("a match shown"));
+    }
+    first.sort();
+    all.sort();
+    let (first, all) = (first[2], all[2]);
+    println!(
+        "search of {MEASURED_LINES} lines of 80 columns: first match shown in {:.1} ms, all counted in {:.1} ms",
+        first.as_secs_f64() * 1000.0,
+        all.as_secs_f64() * 1000.0
+    );
+    assert!(all <= Duration::from_millis(150), "{all:?}");
 }
 
 #[test]

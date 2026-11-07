@@ -768,6 +768,28 @@ fn find_count(app: &App, window: WindowId) -> Option<String> {
     }
 }
 
+/// The highlights of the matches that `window`'s pane shows now, as
+/// `(row, first, last, current)`, of the rows' numbers.
+fn highlights(app: &App, window: WindowId) -> Vec<(i64, u16, u16, bool)> {
+    let reader = app.pane(window).reader().unwrap();
+    let mut terminal = reader.lock();
+    let mut snapshot = lokyr_vt_core::terminal::Snapshot::default();
+    terminal.snapshot(&mut snapshot);
+    let top = terminal.origin().top;
+    snapshot
+        .highlights()
+        .iter()
+        .map(|span| {
+            (
+                top + i64::from(span.row),
+                span.first,
+                span.last,
+                span.current,
+            )
+        })
+        .collect()
+}
+
 #[test]
 fn the_find_bar_searches_its_pane_steps_and_leaves_its_match_selected_as_it_closes() {
     let none = Modifiers::NONE;
@@ -821,8 +843,8 @@ fn the_find_bar_searches_its_pane_steps_and_leaves_its_match_selected_as_it_clos
     assert_eq!(shape(&fake, edge), Some(PointerShape::Text));
     let toggle = middle(node_frame(&app, window, "case"), scale);
     assert_ne!(shape(&fake, toggle), Some(PointerShape::Text));
-    // Typed, as an input method commits it: the last match, the nearest
-    // to the bottom, selected, of two.
+    // Typed, as an input method commits it: both matches highlighted, the
+    // last, the nearest to the bottom, the current one, nothing selected.
     fake.send(
         &mut app,
         window,
@@ -831,13 +853,11 @@ fn the_find_bar_searches_its_pane_steps_and_leaves_its_match_selected_as_it_clos
     run_until(&mut fake, &mut app, |_, app| {
         find_count(app, window).as_deref() == Some("2 of 2")
     });
-    assert_eq!(selected_text(&app, window).as_deref(), Some("needle"));
-    let row = |app: &App| {
-        app.pane(window)
-            .selection()
-            .map(|selected| selected.start.1)
-    };
-    let bottom = row(&app);
+    assert_eq!(
+        highlights(&app, window),
+        [(0, 2, 7, false), (2, 0, 5, true)]
+    );
+    assert_eq!(selected_text(&app, window), None);
     // Return, up, the other.
     fake.send(
         &mut app,
@@ -847,7 +867,10 @@ fn the_find_bar_searches_its_pane_steps_and_leaves_its_match_selected_as_it_clos
     run_until(&mut fake, &mut app, |_, app| {
         find_count(app, window).as_deref() == Some("1 of 2")
     });
-    assert_ne!(row(&app), bottom);
+    assert_eq!(
+        highlights(&app, window),
+        [(2, 0, 5, false), (0, 2, 7, true)]
+    );
     // Japanese, as its input method commits it, in place of the text.
     fake.send(&mut app, window, key_event(KeyCode::KeyA, "a", CMD, true));
     fake.send(
@@ -858,7 +881,8 @@ fn the_find_bar_searches_its_pane_steps_and_leaves_its_match_selected_as_it_clos
     run_until(&mut fake, &mut app, |_, app| {
         find_count(app, window).as_deref() == Some("1 of 1")
     });
-    assert_eq!(selected_text(&app, window).as_deref(), Some("日本"));
+    let japanese = highlights(&app, window);
+    assert!(matches!(japanese[..], [(2, 7, _, true)]), "{japanese:?}");
     // The pane given the keys, Command-F gives them back to its field,
     // the bar as it was.
     let view = |app: &App| {
@@ -876,17 +900,15 @@ fn the_find_bar_searches_its_pane_steps_and_leaves_its_match_selected_as_it_clos
     command(&mut fake, &mut app, window, "search.open");
     assert!(focused_in(&app, window, "find"));
     assert_eq!(view(&app), bar);
-    // The click took the selection away; Return selects the match again,
-    // the one, around.
+    // Return steps around to the one again.
     fake.send(
         &mut app,
         window,
         key_event(KeyCode::Enter, "\r", none, true),
     );
-    run_until(&mut fake, &mut app, |_, app| {
-        selected_text(app, window).as_deref() == Some("日本")
-    });
-    // Escape closes it, its match staying selected.
+    frames(&mut fake, &mut app, window);
+    assert_eq!(highlights(&app, window), japanese);
+    // Escape closes it: its highlights go, its match selected.
     fake.send(
         &mut app,
         window,
@@ -894,5 +916,6 @@ fn the_find_bar_searches_its_pane_steps_and_leaves_its_match_selected_as_it_clos
     );
     frames(&mut fake, &mut app, window);
     assert!(panel_frame(&app, window, "find").is_none());
+    assert!(highlights(&app, window).is_empty());
     assert_eq!(selected_text(&app, window).as_deref(), Some("日本"));
 }

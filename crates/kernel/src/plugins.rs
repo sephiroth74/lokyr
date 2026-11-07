@@ -332,6 +332,10 @@ struct State {
     told_tabs: BTreeMap<host::TabId, host::TabInfo>,
     /// Its searches of the panes' terminals, a pane's last alone.
     searches: Vec<search::Search>,
+    /// Its searches that showed their matches, stopped as a later one of
+    /// their pane started, whose matches show until the later one shows
+    /// its own or ends, so that the view does not lose them in between.
+    lingering: Vec<search::Search>,
 }
 
 impl State {
@@ -758,6 +762,7 @@ impl Plugins {
                 follows: false,
                 told_tabs: BTreeMap::new(),
                 searches: Vec::new(),
+                lingering: Vec::new(),
             },
         });
         Ok(())
@@ -1319,6 +1324,7 @@ impl Plugins {
                 for entry in &mut self.entries {
                     entry.state.views.remove(&ViewId::PaneHeader(*pane));
                     entry.state.searches.retain(|search| search.pane != *pane);
+                    entry.state.lingering.retain(|search| search.pane != *pane);
                 }
             }
             _ => {}
@@ -2085,12 +2091,13 @@ fn stop(
     }
     state.views.clear();
     state.subscribed.clear();
-    for search in std::mem::take(&mut state.searches) {
-        let reader = context
-            .workspace
-            .pane(PaneId::of(search.pane.0))
-            .and_then(Pane::reader);
-        search.end(reader.as_ref());
+    let searches = std::mem::take(&mut state.searches);
+    for search in searches
+        .into_iter()
+        .chain(std::mem::take(&mut state.lingering))
+    {
+        let pane = context.workspace.pane(PaneId::of(search.pane.0));
+        search.end(pane.and_then(Pane::terminal).as_deref_mut());
     }
     state.bar_place = host::BarPlace::default();
     state.window_places.clear();
@@ -2128,6 +2135,22 @@ fn failed_start(
     );
     state.fault = Some(message.clone());
     Error::new(error.code, message)
+}
+
+/// Ends the searches of `lingering` of `pane`, of `workspace`, their
+/// matches gone.
+fn end_lingering(lingering: &mut Vec<search::Search>, pane: host::PaneId, workspace: &Workspace) {
+    let (gone, kept): (Vec<_>, Vec<_>) = std::mem::take(lingering)
+        .into_iter()
+        .partition(|search| search.pane == pane);
+    *lingering = kept;
+    if gone.is_empty() {
+        return;
+    }
+    let mut terminal = workspace.pane(PaneId::of(pane.0)).and_then(Pane::terminal);
+    for search in gone {
+        search.end(terminal.as_deref_mut());
+    }
 }
 
 /// Applies a call's `writes`, of the plugin of `state`, to the kernel's
@@ -2213,6 +2236,28 @@ fn apply(writes: Vec<Write>, context: &mut Context<'_>, out: &mut Outbox, state:
                     pane.select(first, last, SelectionShape::Cells, SelectionUnit::Cell);
                     pane.show_row(first.1);
                 }
+            }
+            // Of a search that the call or an earlier one did not end; the
+            // one before of its pane, which lingered, goes.
+            Asked::ShowMatches {
+                search,
+                all,
+                current,
+            } => {
+                let Some(kept) = state.searches.iter_mut().find(|kept| kept.id == search) else {
+                    continue;
+                };
+                let Some(found) = context.workspace.pane(PaneId::of(kept.pane.0)) else {
+                    continue;
+                };
+                let showed = found
+                    .terminal()
+                    .is_some_and(|mut terminal| kept.show(&mut terminal, all, current));
+                if showed && let Some(current) = current {
+                    found.show_row(current.first.1);
+                }
+                let shown = kept.pane;
+                end_lingering(&mut state.lingering, shown, context.workspace);
             }
             Asked::ClearScrollback(id) => {
                 if let Some(pane) = pane(id) {
@@ -2952,7 +2997,9 @@ impl Host<'_, '_> {
                 })?;
                 let query =
                     search::query(&query).map_err(|message| Error::new(Code::Failed, message))?;
-                // Its search of the pane before ends, its matches gone.
+                // Its search of the pane before ends, its matches gone; shown,
+                // they show until this one shows its own, as one that lingered
+                // before, which goes.
                 if let Some(at) = self
                     .state
                     .searches
@@ -2960,7 +3007,14 @@ impl Host<'_, '_> {
                     .position(|kept| kept.pane == pane)
                 {
                     let before = self.state.searches.remove(at);
-                    before.end(Some(&reader));
+                    if before.is_shown() {
+                        end_lingering(&mut self.state.lingering, pane, self.context.workspace);
+                        before.stop();
+                        self.state.lingering.push(before);
+                    } else {
+                        let pane = self.context.workspace.pane(PaneId::of(pane.0));
+                        before.end(pane.and_then(Pane::terminal).as_deref_mut());
+                    }
                 }
                 let id = new_id();
                 self.state
@@ -2971,12 +3025,13 @@ impl Host<'_, '_> {
             Asked::EndSearch(id) => {
                 if let Some(at) = self.state.searches.iter().position(|kept| kept.id == id) {
                     let ended = self.state.searches.remove(at);
-                    let reader = self
-                        .context
-                        .workspace
-                        .pane(PaneId::of(ended.pane.0))
-                        .and_then(Pane::reader);
-                    ended.end(reader.as_ref());
+                    end_lingering(
+                        &mut self.state.lingering,
+                        ended.pane,
+                        self.context.workspace,
+                    );
+                    let pane = self.context.workspace.pane(PaneId::of(ended.pane.0));
+                    ended.end(pane.and_then(Pane::terminal).as_deref_mut());
                 }
                 Response::Done
             }
@@ -2993,13 +3048,13 @@ impl Host<'_, '_> {
                     .iter()
                     .find(|kept| kept.id == search)
                     .ok_or_else(not_found)?;
-                let reader = self
+                let terminal = self
                     .context
                     .workspace
                     .pane(PaneId::of(kept.pane.0))
-                    .and_then(Pane::reader)
+                    .and_then(Pane::terminal)
                     .ok_or_else(not_found)?;
-                Response::Matches(kept.matches(&reader, first, count.min(host::MOST_LINES)))
+                Response::Matches(kept.matches(&terminal, first, count.min(host::MOST_LINES)))
             }
             Asked::Styles { pane, row } => {
                 Response::Styles(self.pane(pane)?.row_styles(row).map(|runs| {
@@ -3086,6 +3141,14 @@ impl Host<'_, '_> {
     /// there, nor opened by the call's writes so far, fails now.
     fn queue(&mut self, request: Asked) -> Result<Response, Error> {
         match &request {
+            Asked::ShowMatches { search, .. } => {
+                if !self.state.searches.iter().any(|kept| kept.id == *search) {
+                    return Err(Error::new(
+                        Code::NotFound,
+                        format!("there is no search {search}"),
+                    ));
+                }
+            }
             Asked::SelectCells { pane, .. }
             | Asked::SelectAll(pane)
             | Asked::ClearScrollback(pane)

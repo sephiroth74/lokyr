@@ -48,7 +48,8 @@
 use crate::command::{Args, Code, Command, Error};
 use crate::host::{
     BarPlace, Binding, Color, DecorationLook, Direction, Edge, Found, Host, Layout, LineText,
-    PaneId, ScreenPoint, Scroll, SearchQuery, Side, StyleRun, TabId, TabInfo, WindowId, WindowInfo,
+    PaneId, ScreenPoint, Scroll, SearchMatch, SearchQuery, Side, StyleRun, TabId, TabInfo,
+    WindowId, WindowInfo,
 };
 use crate::message::{Call, Data, Event, Request, Response};
 use crate::ui::{PanelId, PanelOptions, UiEvent, ViewId};
@@ -379,6 +380,23 @@ impl<'a> Cx<'a> {
         last: (u16, i64),
     ) -> Result<(), Error> {
         self.done(Request::SelectCells { pane, first, last })
+    }
+
+    /// Shows the matches of the plugin's search `search` over its pane's
+    /// cells, or hides them, as `all` says, and `current` apart, if one,
+    /// whose row the pane's view scrolls to, as the call returns: the host
+    /// draws them in the theme's colors until the search ends.
+    pub fn show_matches(
+        &mut self,
+        search: u64,
+        all: bool,
+        current: Option<SearchMatch>,
+    ) -> Result<(), Error> {
+        self.done(Request::ShowMatches {
+            search,
+            all,
+            current,
+        })
     }
 
     /// Ends the plugin's search `search`, at once: it stops, and its
