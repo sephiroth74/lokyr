@@ -464,11 +464,17 @@ impl Tabs {
         // The keys that bring the window forward, which a bar in the
         // titlebar shows after its buttons.
         let shortcut = shown.as_ref().and_then(|shown| shown.keys.clone());
-        // The window's bell, which the title of a single tab shows, in
-        // place of the system's title, which would.
+        // The window's bell, which its shown tab shows where the bar hides
+        // the system's title that would: a single tab's title, or a bar in
+        // the titlebar, at the top or down a sidebar.
+        let hides_title = bar::titled(tabs.len(), &self.settings)
+            || matches!(
+                self.settings.place(None),
+                BarPlace::Titlebar | BarPlace::Sidebar { .. }
+            );
         if shown.is_some_and(|shown| shown.bell)
-            && bar::titled(tabs.len(), &self.settings)
-            && let Some(tab) = tabs.first_mut()
+            && hides_title
+            && let Some(tab) = tabs.iter_mut().find(|tab| tab.active)
         {
             tab.bell = true;
         }

@@ -1099,7 +1099,7 @@ Whether the Dock's icon bounces once when the bell of a window without the focus
 
 <sub>Platforms: macOS</sub>
 
-Whether a window without the focus whose bell rang shows 🔔 before its title, until it takes the focus.
+Whether a window without the focus whose bell rang shows 🔔 before its title, until it takes the focus. Where the tab bar is in the titlebar, or a single tab's title takes its place, the shown tab shows the bell's mark instead.
 
 | Values | Default |
 |---|---|

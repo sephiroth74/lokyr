@@ -718,6 +718,22 @@ fn a_single_tab_s_title_shows_its_window_s_bell_until_the_window_takes_the_focus
 }
 
 #[test]
+fn a_bar_in_the_titlebar_shows_its_window_s_bell_on_the_shown_tab() {
+    let ringing = shell("echo ready; read line; printf '\\a'; read line");
+    let (mut fake, mut app, window) = tabs_running("unified", "top", 2, ringing, "");
+    let shown = app.workspace.window(app.windows[&window].window).unwrap();
+    let active_tab = shown.active_tab();
+    let rang = |app: &App| labels_of(app, window, active_tab.get()).contains(&"Bell".to_owned());
+    assert!(!rang(&app));
+    fake.send(&mut app, window, WindowEvent::Focused(false));
+    let pane = app.workspace.tab(active_tab).unwrap().active_pane();
+    app.workspace.pane(pane).unwrap().text("\n");
+    run_until(&mut fake, &mut app, |_, app| rang(app));
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    run_until(&mut fake, &mut app, |_, app| !rang(app));
+}
+
+#[test]
 fn a_hidden_tab_s_output_marks_it_on_the_bar_until_it_shows() {
     let none = Modifiers::NONE;
     let (mut fake, mut app, window) = three_tabs("unified", "top");
