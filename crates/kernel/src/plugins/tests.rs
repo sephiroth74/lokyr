@@ -3091,3 +3091,42 @@ fn a_program_s_progress_reads_as_a_state_and_a_share() {
     read(Progress::Indeterminate, ProgressState::Indeterminate, None);
     assert_eq!(super::tab_progress(Progress::Remove), None);
 }
+
+#[test]
+fn a_window_s_bar_place_goes_as_the_window_closes() {
+    use lokyr_plugin_sdk::host::BarPlace;
+    let mut app = App::default();
+    let window = window(&mut app, "sleep 10");
+    let mut plugins = Plugins::new();
+    plugins
+        .add(
+            "placer",
+            scripted(
+                |cx| cx.register_command(command("placer.place")),
+                |cx, _, _| {
+                    let window = cx.focused_window().unwrap();
+                    cx.set_window_tab_bar_place(window, Some(BarPlace::Title))
+                },
+            ),
+        )
+        .unwrap();
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    plugins
+        .run("placer.place", Args::new(), &mut app.context())
+        .unwrap();
+    assert_eq!(
+        plugins.window_tab_bar_place("placer", window.into()),
+        BarPlace::Title
+    );
+    // Closed, its place goes with it.
+    assert!(app.workspace.close_window(window));
+    for event in app.workspace.take_events() {
+        if let crate::workspace::Event::Changed(change) = event {
+            plugins.post(Event::Workspace(change));
+        }
+    }
+    assert_eq!(
+        plugins.window_tab_bar_place("placer", window.into()),
+        BarPlace::default()
+    );
+}

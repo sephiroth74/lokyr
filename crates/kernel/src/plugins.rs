@@ -1290,6 +1290,8 @@ impl Plugins {
                             .events
                             .push((Some(state.name.clone()), Event::PanelClosed(id)));
                     }
+                    // The place of its bar in the window, too.
+                    state.window_places.remove(window);
                     state.views.retain(|view, _| match view {
                         ViewId::TabBar(shown)
                         | ViewId::WindowStrip(shown)
@@ -2021,7 +2023,9 @@ pub const ENABLED: &str = "enabled";
 /// Stops the plugin of `entry`, which its section of the config turns off:
 /// its commands and its bindings go, as a disabled plugin's, its panels
 /// close, as the app hears, its decorations leave their panes, its views
-/// show no more, and its thread, if it has one, ends.
+/// show no more, the places of its tab bar, its fade and its keyboard's
+/// following go, for the plugin made anew to ask again, and its thread,
+/// if it has one, ends.
 fn stop(
     entry: &mut Entry,
     context: &mut Context<'_>,
@@ -2044,6 +2048,10 @@ fn stop(
     }
     state.views.clear();
     state.subscribed.clear();
+    state.bar_place = host::BarPlace::default();
+    state.window_places.clear();
+    state.dim = 0.0;
+    state.follows = false;
     if let Runner::Worker(_) = entry.runner {
         entry.runner = Runner::Stopped;
     }

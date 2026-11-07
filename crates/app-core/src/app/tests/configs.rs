@@ -267,3 +267,68 @@ fn a_plugin_turned_off_by_its_section_leaves_the_windows_and_comes_back_anew() {
     assert_eq!(BARRED_MADE.load(Ordering::Relaxed), made + 1);
     let _ = std::fs::remove_dir_all(&directory);
 }
+
+#[test]
+fn the_tab_bar_turned_off_and_on_again_takes_its_place_afresh() {
+    use lokyr_kernel::plugins::host::BarPlace;
+    use lokyr_kernel::workspace::{Environment, Grid, Pane, Settings};
+    let directory = std::env::temp_dir().join(format!("lokyr-app-tabs-off-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&directory);
+    std::fs::create_dir_all(&directory).unwrap();
+    let path = directory.join("config.toml");
+    std::fs::write(&path, "").unwrap();
+    let mut fake = Fake::default();
+    let drawing = Drawing::new(lokyr_text_core::FontConfig::default()).unwrap();
+    let mut app = App::new(
+        Some(drawing),
+        Config::read(&path).unwrap(),
+        Some(path.clone()),
+    )
+    .with_program(quiet());
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    app.windows.get_mut(&window).unwrap().surface = Some(crate::fakes::Surface::default());
+    let shown = app.windows[&window].window;
+    let place = |app: &App| app.plugins.window_tab_bar_place("lokyr/tabs", shown.into());
+    let frames = |fake: &mut Fake, app: &mut App| {
+        for _ in 0..3 {
+            fake.send(app, window, WindowEvent::Frame);
+        }
+    };
+    // A single tab, of its title in the titlebar.
+    run_until(&mut fake, &mut app, |_, app| place(app) == BarPlace::Title);
+    // Turned off, the window takes a second tab.
+    std::fs::write(&path, "[plugins.tabs]\nenabled = false\n").unwrap();
+    reload(&mut fake, &mut app);
+    frames(&mut fake, &mut app);
+    let second = Pane::spawn(
+        &lokyr_pty::Program::command("/bin/sh", ["-c", "read line"]),
+        &Environment::default(),
+        &Settings::default(),
+        Grid {
+            columns: 80,
+            rows: 24,
+            cell_width: 8,
+            cell_height: 16,
+        },
+        &lokyr_vt_core::terminal::Colors::default(),
+        &lokyr_kernel::l10n::Texts::new("en", &lokyr_kernel::l10n::KERNEL),
+        || {},
+    );
+    assert!(app.workspace.open_tab(shown, second, 1).is_some());
+    fake.send_app(&mut app, AppEvent::Wake);
+    frames(&mut fake, &mut app);
+    // On again: a bar of two tabs, at the titlebar, not the title of the
+    // single tab that it left.
+    std::fs::write(&path, "[plugins.tabs]\nenabled = true\n").unwrap();
+    reload(&mut fake, &mut app);
+    run_until(&mut fake, &mut app, |_, app| {
+        place(app) == BarPlace::Titlebar
+            && app.windows[&window]
+                .chrome
+                .iter()
+                .any(|view| view.view.slot() == Some(lokyr_kernel::plugins::ui::Slot::TabBar))
+    });
+    assert_eq!(app.workspace.window(shown).unwrap().tabs().len(), 2);
+    let _ = std::fs::remove_dir_all(&directory);
+}
