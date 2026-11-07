@@ -33,14 +33,25 @@ mod probe {
         /// image had a layer as it showed and once it hid.
         under_image: Option<Option<WindowId>>,
         handles: Vec<bool>,
+        /// When the second window opened, from which the probe waits for
+        /// the window server to show it.
+        opened: Option<Instant>,
     }
 
     struct Probe(Rc<RefCell<Seen>>);
 
-    const FIRST: ScreenPoint = ScreenPoint { x: 200.0, y: 200.0 };
-    const SECOND: ScreenPoint = ScreenPoint { x: 300.0, y: 260.0 };
-    const FIRST_ALONE: ScreenPoint = ScreenPoint { x: 220.0, y: 220.0 };
-    const BOTH: ScreenPoint = ScreenPoint { x: 400.0, y: 330.0 };
+    // Near the main screen's top left corner, away from its middle, where
+    // the system's windows of other apps, as an alert, show over a small
+    // screen's, as a runner of the CI's has.
+    const FIRST: ScreenPoint = ScreenPoint { x: 40.0, y: 80.0 };
+    const SECOND: ScreenPoint = ScreenPoint { x: 110.0, y: 130.0 };
+    const FIRST_ALONE: ScreenPoint = ScreenPoint { x: 60.0, y: 100.0 };
+    const BOTH: ScreenPoint = ScreenPoint { x: 180.0, y: 200.0 };
+
+    /// How long the window server may take to show the second window, as a
+    /// runner of the CI's can be slow, and how often the probe looks.
+    const SHOWN_WITHIN: Duration = Duration::from_secs(5);
+    const LOOK_AGAIN: Duration = Duration::from_millis(100);
 
     fn open(platform: &mut dyn Platform) -> WindowId {
         platform
@@ -72,6 +83,16 @@ mod probe {
             let (Some(first), Some(second)) = (seen.first, seen.second) else {
                 return;
             };
+            // Until the window server shows the second window over the
+            // first, for a while.
+            if platform.window_at(BOTH) != Some(second)
+                && seen
+                    .opened
+                    .is_some_and(|opened| opened.elapsed() < SHOWN_WITHIN)
+            {
+                platform.start_timer(Instant::now() + LOOK_AGAIN);
+                return;
+            }
             seen.frames = vec![platform.window_frame(first), platform.window_frame(second)];
             let off = ScreenPoint {
                 x: -1.0e6,
@@ -109,6 +130,7 @@ mod probe {
                 let second = open(platform);
                 platform.set_window_origin(second, SECOND);
                 seen.second = Some(second);
+                seen.opened = Some(Instant::now());
                 // A moment for the window server, before the checks.
                 platform.start_timer(Instant::now() + Duration::from_millis(300));
             }
