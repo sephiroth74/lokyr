@@ -13,7 +13,7 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 
 use super::Terminal;
 use super::selection::{CellPin, row_at};
-use crate::page::Content;
+use crate::page::{Content, Width};
 
 /// A span of a search's matches, as the view shows it: the cells of a row
 /// of the view from a column to another, both included.
@@ -299,6 +299,22 @@ impl Terminal {
         Some(hasher.finish())
     }
 
+    /// The last column of the character whose first cell is `at`: the next
+    /// of a wide one, within the row.
+    fn character_end(&self, (column, row): (u16, i64)) -> u16 {
+        let wide = self
+            .row_index(row)
+            .and_then(|index| row_at(&self.screen().rows, index))
+            .is_some_and(|list_row| {
+                column < list_row.cols() && list_row.cell(column).width() == Width::Wide
+            });
+        if wide && column + 1 < self.cols {
+            column + 1
+        } else {
+            column
+        }
+    }
+
     /// Lets go the matches of the view whose cells hold other text than the
     /// search found there, as a program writes over them where they are,
     /// and a current match's, their pins going, so that the matches' reads
@@ -379,7 +395,8 @@ impl Terminal {
     }
 
     /// Pushes onto `spans` those of the match of `cells` on the rows of the
-    /// view, from the row numbered `top` to `bottom`.
+    /// view, from the row numbered `top` to `bottom`, its last character's
+    /// both cells of a wide one, whose first half its last cell is.
     fn spans_of(
         &self,
         (start, end): MatchCells,
@@ -388,6 +405,7 @@ impl Terminal {
         spans: &mut Vec<Highlighted>,
     ) {
         let last_column = self.cols - 1;
+        let end = (self.character_end(end), end.1);
         for row in start.1.max(top)..=end.1.min(bottom) {
             spans.push(Highlighted {
                 // Within the view's rows, which a `u16` holds.
@@ -660,5 +678,18 @@ mod tests {
         feed(&mut terminal, "something");
         assert_eq!(shown(&mut terminal), []);
         assert!(terminal.matches_of(1, 0, 10).is_empty());
+    }
+
+    #[test]
+    fn a_match_that_ends_in_a_wide_character_covers_both_its_cells() {
+        let mut terminal = Terminal::new(20, 3, Options::default());
+        feed(&mut terminal, "ab日本語cd");
+        // `日本`, its last cell the first half of `本`.
+        add(&mut terminal, 1, 0, &[((2, 0), (4, 0))]);
+        terminal.show_matches(1, true, None);
+        assert_eq!(shown(&mut terminal), [(0, 2, 5, false)]);
+        // The current one alike.
+        terminal.show_matches(1, false, Some(((2, 0), (4, 0))));
+        assert_eq!(shown(&mut terminal), [(0, 2, 5, true)]);
     }
 }
