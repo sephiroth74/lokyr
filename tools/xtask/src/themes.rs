@@ -65,6 +65,10 @@ const CHECKED: [(&str, &str, &str); 1] = [("Dracula", "MIT", "https://github.com
 /// relative to the workspace root.
 const TEXTS: &str = "tools/xtask/licenses";
 
+/// The copyright lines of the held themes' sources and their authors, by
+/// each source, relative to the workspace root.
+const COPYRIGHTS: &str = "tools/xtask/licenses/themes/copyrights.toml";
+
 /// The bundle's folders of the held themes and of their notices, within
 /// its resources.
 const THEMES: &str = "themes";
@@ -94,7 +98,8 @@ pub(crate) fn run(mut args: impl Iterator<Item = String>) -> Result<ExitCode> {
 /// bundle's, or any folder, with their notices. Returns how many.
 pub(crate) fn write(root: &Path, resources: &Path) -> Result<usize> {
     let collection = collection(&root.join("target"))?;
-    let checked = check(&collection)?;
+    let copyrights = copyrights(&root.join(COPYRIGHTS))?;
+    let checked = check(&collection, &copyrights)?;
     println!(
         "themes: {} schemes read, {} checked against their Ghostty files, {} held",
         checked.read,
@@ -112,7 +117,7 @@ pub(crate) fn write(root: &Path, resources: &Path) -> Result<usize> {
     fs::create_dir_all(&folder).with_context(|| format!("making {}", folder.display()))?;
     for held in &checked.held {
         let credits = Credits {
-            author: None,
+            author: Some(held.author.as_str()).filter(|author| !author.is_empty()),
             license: Some(&held.license),
             source: Some(&held.source),
         };
@@ -244,13 +249,48 @@ fn digest(directory: &Path) -> Result<String> {
 }
 
 /// A theme that the bundle holds: the theme, the scheme of its file, its
-/// license and its source.
+/// license, its source, and its source's copyright line and author.
 #[derive(Debug)]
 struct Held {
     theme: Theme,
     scheme: String,
     license: String,
     source: String,
+    copyright: String,
+    author: String,
+}
+
+/// A source's copyright line, empty of a source that names no holder, and
+/// its author.
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Copyright {
+    copyright: String,
+    author: String,
+}
+
+/// The copyright lines of [`COPYRIGHTS`], at `path`, by each source, each
+/// of an author or a line at least.
+fn copyrights(path: &Path) -> Result<BTreeMap<String, Copyright>> {
+    let text = fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
+    let copyrights: BTreeMap<String, Copyright> =
+        toml::from_str(&text).with_context(|| path.display().to_string())?;
+    if let Some((source, _)) = copyrights
+        .iter()
+        .find(|(_, copyright)| copyright.copyright.is_empty() && copyright.author.is_empty())
+    {
+        bail!(
+            "{}: `{source}` gives no copyright line nor author",
+            path.display()
+        );
+    }
+    Ok(copyrights)
+}
+
+/// The source of `source`, an entry's of `licenses.yml`, by which
+/// [`COPYRIGHTS`] knows it: its first address.
+fn source_key(source: &str) -> &str {
+    source.split_whitespace().next().unwrap_or_default()
 }
 
 /// What the check of the collection found: how many schemes it read, how
@@ -265,8 +305,9 @@ struct Checked {
 /// Reads every scheme of `collection`, which must all read and have an
 /// entry of `licenses.yml`; compares those of sRGB and P3 colors with
 /// their Ghostty files; and keeps the themes of the schemes that the
-/// bundle may hold, by their names.
-fn check(collection: &Path) -> Result<Checked> {
+/// bundle may hold, by their names, each of its source's copyright line of
+/// `copyrights`, which every held source must have.
+fn check(collection: &Path, copyrights: &BTreeMap<String, Copyright>) -> Result<Checked> {
     let licenses = collection.join("licenses.yml");
     let text =
         fs::read_to_string(&licenses).with_context(|| format!("reading {}", licenses.display()))?;
@@ -322,12 +363,21 @@ fn check(collection: &Path) -> Result<Checked> {
             }
             None => continue,
         };
+        let Some(copyright) = copyrights.get(source_key(&source)) else {
+            errors.push(format!(
+                "{name}: no copyright line of its source, `{}`, in {COPYRIGHTS}",
+                source_key(&source)
+            ));
+            continue;
+        };
         for theme in read {
             held.push(Held {
                 theme,
                 scheme: name.to_owned(),
                 license: license.clone(),
                 source: source.clone(),
+                copyright: copyright.copyright.clone(),
+                author: copyright.author.clone(),
             });
         }
     }
@@ -724,17 +774,26 @@ fn readme(held: &[Held]) -> String {
          whose license is in `LICENSE` and whose credits are in `CREDITS.md`: \
          its schemes of a permissive license, as its `licenses.yml` tells, and those \
          whose license was checked at their source, converted into Lokyr's format.\n\n\
-         Each theme's copyright is its author's, as its source tells. `licenses/` holds \
-         the text of each license, of SPDX's templates, and the notices of the themes \
-         checked at their source, of their names.\n\n\
-         | Theme | License | Source |\n|---|---|---|\n"
+         Each theme's copyright is its author's: the table gives its source's copyright \
+         line, as the source's license tells it, or its author, of a source that names no \
+         holder. `licenses/` holds the text of each license, of SPDX's list, whose \
+         copyright line is the theme's, and the notices of the themes checked at their \
+         source, of their names.\n\n\
+         | Theme | License | Copyright | Source |\n|---|---|---|---|\n"
     );
+    let cell = |text: &str| text.replace('\n', "<br>").replace('|', "\\|");
     for theme in held {
+        let copyright = if theme.copyright.is_empty() {
+            format!("by {}", theme.author)
+        } else {
+            theme.copyright.clone()
+        };
         text.push_str(&format!(
-            "| {} | {} | {} |\n",
-            theme.theme.name.replace('|', "\\|"),
+            "| {} | {} | {} | {} |\n",
+            cell(&theme.theme.name),
             theme.license,
-            theme.source.replace('\n', "<br>").replace('|', "\\|")
+            cell(&copyright),
+            cell(&theme.source)
         ));
     }
     text

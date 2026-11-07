@@ -138,10 +138,27 @@ fn the_notices_list_each_theme_with_its_license_and_source() {
         scheme: "One | Two".to_owned(),
         license: "MIT".to_owned(),
         source: "a\nb".to_owned(),
+        copyright: "Copyright (c) 2026 Ada".to_owned(),
+        author: "Ada".to_owned(),
     };
-    let text = readme(&[held]);
+    let unnamed = Held {
+        copyright: String::new(),
+        ..Held {
+            theme: grays(),
+            scheme: "Grays".to_owned(),
+            license: "MIT".to_owned(),
+            source: "c".to_owned(),
+            copyright: String::new(),
+            author: "Bea".to_owned(),
+        }
+    };
+    let text = readme(&[held, unnamed]);
     assert!(text.contains(COMMIT));
-    assert!(text.contains("| One \\| Two | MIT | a<br>b |"), "{text}");
+    assert!(
+        text.contains("| One \\| Two | MIT | Copyright (c) 2026 Ada | a<br>b |"),
+        "{text}"
+    );
+    assert!(text.contains("| Grays | MIT | by Bea | c |"), "{text}");
 }
 
 #[test]
@@ -158,4 +175,24 @@ fn every_license_of_a_held_theme_has_its_text() {
         let path = texts.join("themes").join(format!("{name}.txt"));
         assert!(path.is_file(), "{}", path.display());
     }
+}
+
+#[test]
+fn every_source_of_the_copyrights_gives_a_line_or_an_author() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let kept = copyrights(&root.join(COPYRIGHTS)).unwrap();
+    assert!(kept.len() > 100, "{}", kept.len());
+    assert_eq!(
+        kept["https://github.com/dracula/iterm"],
+        Copyright {
+            copyright: "Copyright (c) 2013-present Dracula Theme".to_owned(),
+            author: "Dracula Theme".to_owned(),
+        }
+    );
+    assert_eq!(source_key("https://a/b\nhttps://c/d"), "https://a/b");
+    // A source of neither is refused.
+    let path = std::env::temp_dir().join(format!("lokyr-copyrights-{}.toml", std::process::id()));
+    fs::write(&path, "[\"https://a\"]\ncopyright = \"\"\nauthor = \"\"\n").unwrap();
+    assert!(copyrights(&path).is_err());
+    fs::remove_file(path).unwrap();
 }

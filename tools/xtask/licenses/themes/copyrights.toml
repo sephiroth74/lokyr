@@ -1,0 +1,559 @@
+# The copyright lines of the sources of the themes that the bundle holds,
+# by each source, the first address of its entry of the collection's
+# licenses.yml: as the source's license tells it, or its README where it has
+# no file of its license; and the author that each theme's file names, the
+# holder of the line, or, of a source that names none, its author as its
+# page or its account tells. An empty `copyright` is of a source that names
+# no holder. Gathered on 7 November 2026 of the collection's commit b84cd1e.
+
+["https://github.com/filipjanevski/0x96f-term-theme"]
+copyright = "Copyright (c) 2024 Filip Janevski"
+author = "Filip Janevski"
+
+["https://iamkate.com/data/12-bit-rainbow/"]
+copyright = ""
+author = "Kate Morley"
+
+["https://github.com/mkaschenko/iterm2-theme-alabaster"]
+copyright = "Copyright (c) 2018 Nikita Prokopov"
+author = "Nikita Prokopov"
+
+["https://terminalthemes.com/themes/all-nighter"]
+copyright = ""
+author = "Mark Badolato"
+
+["https://github.com/al-xpro/alxpro-theme"]
+copyright = "Copyright (c) 2026 Alex Prostamo"
+author = "Alex Prostamo"
+
+["https://terminalthemes.com/themes/analog-heartbeat"]
+copyright = ""
+author = "Mark Badolato"
+
+["https://terminalthemes.com/themes/analog-heartbeat-phosphor"]
+copyright = ""
+author = "Mark Badolato"
+
+["https://github.com/EliverLara/Andromeda"]
+copyright = "Copyright (c) 2017 <eliverlara@gmail.com>"
+author = "Eliver L."
+
+["https://atelierbram.mit-license.org/"]
+copyright = "Copyright (c) 2016 Bram de Haan"
+author = "Bram de Haan"
+
+["https://github.com/bahlo/iterm-colors"]
+copyright = ""
+author = "Arne Bahlo"
+
+["https://github.com/atom/atom/tree/master/packages/one-dark-ui"]
+copyright = "Copyright (c) 2011-2022 GitHub Inc."
+author = "GitHub Inc"
+
+["https://github.com/atom/atom/tree/master/packages/one-light-ui"]
+copyright = "Copyright (c) 2011-2022 GitHub Inc."
+author = "GitHub Inc"
+
+["https://github.com/daltonmenezes/aura-theme"]
+copyright = "Copyright (c) 2021 - * Dalton Menezes"
+author = "Dalton Menezes"
+
+["https://github.com/ayu-theme/vscode-ayu"]
+copyright = "Copyright (c) 2016 Ike Kurghinyan"
+author = "Ike Kurghinyan"
+
+["https://github.com/jayvicsanantonio/barbenheimer-zed-theme"]
+copyright = "Copyright (c) 2024 Jayvic San Antonio"
+author = "Jayvic San Antonio"
+
+["https://github.com/dmnsgn/vscode-bauhaus-theme"]
+copyright = "Copyright (C) 2026 Damien Seguin"
+author = "Damien Seguin"
+
+["https://github.com/metalelf0/base16-black-metal-scheme"]
+copyright = "Copyright 2020 Andrea Schiavini"
+author = "Andrea Schiavini"
+
+["https://github.com/vimiomori/BlueDolphin"]
+copyright = "Copyright (c) 2021 Vi Mio"
+author = "Vi Mio"
+
+["https://gitlab.com/warningnonpotablewater/breadog"]
+copyright = ""
+author = "warningnonpotablewater"
+
+["https://github.com/jdhmtl/cga-theme"]
+copyright = "Copyright (c) 2021 John Hodges"
+author = "John Hodges"
+
+["https://github.com/Pustur/calamity-vscode"]
+copyright = "Copyright (c) 2017 <loris.bettazza@gmail.com>"
+author = "Loris Bettazza"
+
+["https://github.com/EdenEast/nightfox.nvim/tree/main/extra"]
+copyright = "Copyright (c) 2021 James Simpson"
+author = "James Simpson"
+
+["https://github.com/catppuccin/palette"]
+copyright = "Copyright (c) 2021 Catppuccin"
+author = "Catppuccin"
+
+["https://github.com/challenger-deep-theme/vim"]
+copyright = "Copyright (c) 2014 MaxSt"
+author = "MaxSt"
+
+["https://github.com/zootedb0t/citruszest.nvim"]
+copyright = "Copyright (c) 2023 zootedb0t"
+author = "zootedb0t"
+
+["https://github.com/davidleininger/cobaltnext-vscode"]
+copyright = "Copyright (c) 2017 David Leininger"
+author = "David Leininger"
+
+["https://github.com/microsoft/vscode"]
+copyright = "Copyright (c) 2015 - present Microsoft Corporation"
+author = "Microsoft Corporation"
+
+["https://github.com/edeneast/nightfox.nvim"]
+copyright = "Copyright (c) 2021 James Simpson"
+author = "James Simpson"
+
+["https://github.com/dofuuz/dimidium"]
+copyright = "Copyright (c) 2024 Myungchul Keum"
+author = "Myungchul Keum"
+
+["https://github.com/doomemacs/themes"]
+copyright = "Copyright (c) 2016-2026 Henrik Lissner."
+author = "Henrik Lissner"
+
+["https://v1.designsystem.digital.gov/components/colors/"]
+copyright = ""
+author = "U.S. Web Design System"
+
+["https://github.com/dracula/iterm"]
+copyright = "Copyright (c) 2013-present Dracula Theme"
+author = "Dracula Theme"
+
+["https://github.com/zenbones-theme/zenbones.nvim"]
+copyright = "Copyright (c) 2022 Michael Chris Lopez"
+author = "Michael Chris Lopez"
+
+["https://github.com/simurai/duotone-dark-syntax"]
+copyright = "Copyright (c) 2015 simurai"
+author = "simurai"
+
+["https://github.com/sainnhe/edge"]
+copyright = "Copyright (c) 2019 Sainnhepark"
+author = "Sainnhepark"
+
+["https://github.com/electron-highlighter/ghostty"]
+copyright = "Copyright (c) 2023 Electron Highlighter"
+author = "Electron Highlighter"
+
+["https://github.com/embark-theme/vim"]
+copyright = "Copyright (c) 2020 embark-theme"
+author = "embark-theme"
+
+["https://github.com/Everblush/everblush"]
+copyright = "Copyright (c) 2022 Everblush"
+author = "Everblush"
+
+["https://github.com/icewind/everforest.iterm2"]
+copyright = "Copyright (c) 2021 Nikolai Osaulenko"
+author = "Nikolai Osaulenko"
+
+["https://github.com/sailorhg/fairyfloss"]
+copyright = ""
+author = "Amy"
+
+["https://github.com/mattly/iterm-colors-farmhouse"]
+copyright = "Copyright (c) 2015 Matthew Lyon"
+author = "Matthew Lyon"
+
+["https://github.com/kepano/flexoki"]
+copyright = "Copyright (c) 2023 Steph Ango"
+author = "Steph Ango"
+
+["https://github.com/jglovier/galaxy-theme-iterm"]
+copyright = "Copyright (c) 2015 Joel Glovier"
+author = "Joel Glovier"
+
+["https://github.com/razielanarki/vscode-galizur-theme"]
+copyright = "Copyright (c) 2022 - 2024 by Raziel Anarki"
+author = "Raziel Anarki"
+
+["https://github.com/ghostty-org/ghostty"]
+copyright = "Copyright (c) 2024 Mitchell Hashimoto, Ghostty contributors"
+author = "Mitchell Hashimoto, Ghostty contributors"
+
+["https://github.com/primer/github-vscode-theme"]
+copyright = "Copyright (c) 2020 Primer"
+author = "Primer"
+
+["https://github.com/albertorestifo/gitlab-webide-theme"]
+copyright = "Copyright (c) 2022-present GitLab B.V."
+author = "GitLab B.V"
+
+["https://github.com/rexim/gruber-darker-theme"]
+copyright = ""
+author = "Alexey Kutepov"
+
+["https://github.com/morhetz/gruvbox/blob/697c00291db857ca0af00ec154e5bd514a79191f/package.json#L6"]
+copyright = ""
+author = "Pavel Pertsev"
+
+["https://github.com/sainnhe/gruvbox-material"]
+copyright = "Copyright (c) 2020 sainnhe"
+author = "sainnhe"
+
+["https://terminalthemes.com/themes/hadal-bloom"]
+copyright = ""
+author = "Mark Badolato"
+
+["https://github.com/kinoute/hivacruz-itermcolors"]
+copyright = "Copyright (c) 2019 Yann Defretin"
+author = "Yann Defretin"
+
+["https://github.com/idleberg/Hopscotch"]
+copyright = ""
+author = "Jan T. Sott"
+
+["https://github.com/jolaleye/horizon-theme-vscode"]
+copyright = "Copyright (c) 2018 Jonathan Olaleye"
+author = "Jonathan Olaleye"
+
+["https://github.com/w0ng/vim-hybrid"]
+copyright = ""
+author = "Andrew Wong"
+
+["https://github.com/cocopon/iceberg.vim"]
+copyright = "Copyright (c) 2014 cocopon <cocopon@me.com>"
+author = "cocopon"
+
+["https://github.com/aereal/vim-colors-japanesque"]
+copyright = ""
+author = "aereal"
+
+["https://terminalthemes.com/themes/kizz"]
+copyright = ""
+author = "Mark Badolato"
+
+["https://github.com/rebelot/kanagawa.nvim"]
+copyright = "Copyright (c) 2021 Tommaso Laurenzi"
+author = "Tommaso Laurenzi"
+
+["https://github.com/RazikSF/lumina-themes"]
+copyright = "Copyright (c) 2026 Razik Ikhlef"
+author = "Razik Ikhlef"
+
+["https://github.com/kaicataldo/material.vim"]
+copyright = "Copyright (c) 2017 Kai Cataldo"
+author = "Kai Cataldo"
+
+["https://github.com/mbadolato/iTerm2-Color-Schemes/pull/241"]
+copyright = "Copyright (c) 2011 to Present Mark Badolato"
+author = ""
+
+["https://github.com/MartinSeeler/iterm2-material-design"]
+copyright = "Copyright (c) 2015 Martin Seeler"
+author = "Martin Seeler"
+
+["https://github.com/i3d/vim-jimbothemes/tree/2731e2279e627f64c52119ada3e13bbc2e99fabd"]
+copyright = "Copyright (c) 2021 i3d"
+author = "i3d"
+
+["https://github.com/savq/melange-nvim"]
+copyright = "Copyright (c) 2021 Sergio Alejandro Vargas"
+author = "Sergio Alejandro Vargas"
+
+["https://github.com/ramojus/mellifluous.nvim"]
+copyright = "Copyright (c) 2024 Ramojus Lapinskas"
+author = "Ramojus Lapinskas"
+
+["https://github.com/mellow-theme/mellow.nvim"]
+copyright = "Copyright (c) 2023 Rohit K Viswanath"
+author = "Rohit K Viswanath"
+
+["https://github.com/xero/miasma.nvim"]
+copyright = ""
+author = "xero harrison"
+
+["https://github.com/tomasr/molokai"]
+copyright = "Copyright (c) 2011 Tomas Restrepo"
+author = "Tomas Restrepo"
+
+["https://github.com/bluz71/vim-moonfly-colors"]
+copyright = "Copyright (c) 2017-present vim-moonfly-colors authors"
+author = "vim-moonfly-colors authors"
+
+["https://terminalthemes.com/themes/moss-ember"]
+copyright = ""
+author = "Mark Badolato"
+
+["https://terminalthemes.com/themes/neon-raincheck"]
+copyright = ""
+author = "Mark Badolato"
+
+["https://terminalthemes.com/themes/neon-raincheck-after-hours"]
+copyright = ""
+author = "Mark Badolato"
+
+["https://github.com/Nephrite-theme/terminal"]
+copyright = "Copyright (c) 2025-2026 Nephrite Theme"
+author = "Nephrite Theme"
+
+["https://github.com/praveenpuglia/night-owlish-theme"]
+copyright = ""
+author = "Praveen Puglia"
+
+["https://github.com/nordtheme/iterm2"]
+copyright = "Copyright (c) 2016-present Sven Greb <development@svengreb.de> (https://www.svengreb.de)"
+author = "Sven Greb"
+
+["https://terminalthemes.com/themes/nudisia"]
+copyright = ""
+author = "Mark Badolato"
+
+["https://terminalthemes.com/themes/numix-dark"]
+copyright = ""
+author = "Tom Hardy"
+
+["https://terminalthemes.com/themes/numix-light"]
+copyright = ""
+author = "Tom Hardy"
+
+["https://github.com/neovim/neovim/pull/26540"]
+copyright = "Copyright Neovim contributors. All rights reserved."
+author = "Neovim contributors"
+
+["https://github.com/rahulpatel/oceanic-material-iterm"]
+copyright = "Copyright (c) 2015 Rahul Patel"
+author = "Rahul Patel"
+
+["https://github.com/sonph/onehalf"]
+copyright = "Copyright (c) 2019 Son A. Pham <sp@sonpham.me>"
+author = "Son A. Pham"
+
+["https://github.com/sst/opencode"]
+copyright = "Copyright (c) 2025 opencode"
+author = "opencode"
+
+["https://github.com/vharadkou/OperatorMonoThemes"]
+copyright = "Copyright (c) 2023 Valiantsin Haradkou"
+author = "Valiantsin Haradkou"
+
+["https://github.com/cevr/overnight"]
+copyright = ""
+author = "Cristian Velasquez Ramos"
+
+["https://github.com/nyoom-engineering/oxocarbon.nvim"]
+copyright = "Copyright (c) 2022 Riccardo Mazzarini"
+author = "Riccardo Mazzarini"
+
+["https://terminalthemes.com/themes/paper-crane"]
+copyright = ""
+author = "Mark Badolato"
+
+["https://terminalthemes.com/themes/paper-crane-midnight-ink"]
+copyright = ""
+author = "Mark Badolato"
+
+["https://github.com/paulmillr/dotfiles/tree/master/terminal"]
+copyright = "Copyright (c) 2011 Paul Miller"
+author = "Paul Miller"
+
+["https://github.com/drcmda/poimandres-theme"]
+copyright = "Copyright (c) 2023 drcmda"
+author = "drcmda"
+
+["https://github.com/hedinne/popping-and-locking-vscode"]
+copyright = ""
+author = "Hedinn Eiriksson"
+
+["https://github.com/google/vim-colorscheme-primary"]
+copyright = ""
+author = "Google"
+
+["https://github.com/reactivepixels/sparklebios"]
+copyright = ""
+author = "reactivepixels"
+
+["https://github.com/Pustur/rapture-vscode"]
+copyright = "Copyright (c) 2020 <loris.bettazza@gmail.com>"
+author = "Loris Bettazza"
+
+["https://github.com/vic/rebecca-theme"]
+copyright = "Copyright (c) 2016 Victor Hugo Borja"
+author = "Victor Hugo Borja"
+
+["https://github.com/eliquious/Red-Planet-Theme"]
+copyright = ""
+author = "Max"
+
+["https://github.com/Relaxed-Theme/relaxed-terminal-themes"]
+copyright = "Copyright (c) Michael Kühnel <mail@michael-kuehnel.de>"
+author = "Michael Kühnel"
+
+["https://github.com/rose-pine/build"]
+copyright = "Copyright (c) mvllow"
+author = "mvllow"
+
+["https://github.com/josefaidt/rouge-theme"]
+copyright = "Copyright (c) 2017 josef"
+author = "josef"
+
+["https://github.com/dylanaraps/ryuuko"]
+copyright = "Copyright (c) 2017 Dylan Araps"
+author = "Dylan Araps"
+
+["https://github.com/jan-warchol/selenized"]
+copyright = "Copyright (c) 2021 Jan Warchoł"
+author = "Jan Warchoł"
+
+["https://github.com/jesseweed/seti-syntax/"]
+copyright = "Copyright (c) 2014 Jesse Weed"
+author = "Jesse Weed"
+
+["https://github.com/ahmadawais/shades-of-purple-iterm2"]
+copyright = ""
+author = "Ahmad Awais"
+
+["https://github.com/hukl/Smyck-Color-Scheme"]
+copyright = ""
+author = "John-Paul Bader"
+
+["https://github.com/sindresorhus/iterm2-snazzy"]
+copyright = "Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)"
+author = "Sindre Sorhus"
+
+["https://github.com/mbadolato/iTerm2-Color-Schemes/pull/474"]
+copyright = "Copyright (c) 2011 to Present Mark Badolato"
+author = ""
+
+["https://github.com/craftzdog/solarized-osaka.nvim"]
+copyright = ""
+author = "Takuya Matsuyama"
+
+["https://github.com/sainnhe/sonokai"]
+copyright = "Copyright (c) 2020 sainnhe"
+author = "sainnhe"
+
+["https://terminalthemes.com/themes/sonoran-afterglow"]
+copyright = ""
+author = "Mark Badolato"
+
+["https://terminalthemes.com/themes/sonoran-blue-hour"]
+copyright = ""
+author = "Mark Badolato"
+
+["https://github.com/hallski/spacedust-theme"]
+copyright = "Copyright (c) 2021 Mikael Hallendal"
+author = "Mikael Hallendal"
+
+["https://github.com/SublimeText/Spacegray"]
+copyright = "Copyright (c) 2024 Sublime Text Packages"
+author = "Sublime Text Packages"
+
+["https://github.com/mbadolato/iTerm2-Color-Schemes/pull/452"]
+copyright = "Copyright (c) 2011 to Present Mark Badolato"
+author = ""
+
+["https://github.com/mbadolato/iTerm2-Color-Schemes/commit/843cf2bb81ae932df2a5288d4e3f34135408ce9a"]
+copyright = "Copyright (c) 2011 to Present Mark Badolato"
+author = ""
+
+["https://github.com/sapegin/squirrelsong"]
+copyright = "Copyright © 2016 Artem Sapegin (http://sapegin.me), contributors"
+author = "Artem Sapegin, contributors"
+
+["https://github.com/srcery-colors/srcery-terminal"]
+copyright = "Copyright (c) 2018 Daniel Berg\nCopyright (c) 2018 Srcery Contributers"
+author = "Daniel Berg"
+
+["https://github.com/CosmicToast/starlight"]
+copyright = ""
+author = "Chloé Vulquin"
+
+["https://github.com/sublee/sublette"]
+copyright = "Copyright (c) 2019 Heungsub Lee"
+author = "Heungsub Lee"
+
+["https://github.com/gdsrosa/subliminal-itermcolors"]
+copyright = "Copyright (c) 2019 Gabriel Rosa"
+author = "Gabriel Rosa"
+
+["https://github.com/lemonlime0x3C33/iTerm2-Color-Schemes-Sugarplum"]
+copyright = "Copyright (c) 2011 to Present Mark Badolato"
+author = "Mark Badolato"
+
+["https://github.com/EldinBegano/sumi-ink"]
+copyright = "Copyright (c) 2026 EldinBegano"
+author = "EldinBegano"
+
+["https://github.com/robb0wen/synthwave-vscode"]
+copyright = "Copyright (c) 2019 Robb Owen"
+author = "Robb Owen"
+
+["https://github.com/leobeosab/tearout.nvim"]
+copyright = "Copyright (c) 2025 Ryan Wise"
+author = "Ryan Wise"
+
+["https://terminalthemes.com/themes/this-one-goes-to-11"]
+copyright = ""
+author = "Mark Badolato"
+
+["https://terminalthemes.com/themes/tideglass"]
+copyright = ""
+author = "Mark Badolato"
+
+["https://github.com/folke/tokyonight.nvim"]
+copyright = ""
+author = "Folke Lemaitre"
+
+["https://github.com/chriskempson/tomorrow-theme"]
+copyright = "Copyright (C) 2011 [Chris Kempson](https://github.com/chriskempson)"
+author = "Chris Kempson"
+
+["https://github.com/chriskempson/tomorrow-theme/tree/master/iTerm2"]
+copyright = "Copyright (C) 2011 [Chris Kempson](https://github.com/chriskempson)"
+author = "Chris Kempson"
+
+["https://github.com/mbadolato/iTerm2-Color-Schemes/pull/123"]
+copyright = "Copyright (c) 2011 to Present Mark Badolato"
+author = ""
+
+["https://github.com/vague-theme/vague.nvim"]
+copyright = "Copyright (c) 2024 Alberto Hernandez"
+author = "Alberto Hernandez"
+
+["https://terminalthemes.com/themes/vaughn"]
+copyright = ""
+author = "Mark Badolato"
+
+["https://github.com/raunofreiberg/vesper"]
+copyright = "Copyright (c) 2023 Rauno Freiberg"
+author = "Rauno Freiberg"
+
+["https://github.com/chlp/ghostty-fallout-theme"]
+copyright = "Copyright (c) 2026 Aleksei Rytikov"
+author = "Aleksei Rytikov"
+
+["https://github.com/rod/iterm2-whimsy/tree/master"]
+copyright = "Copyright (c) Rodney Dennis"
+author = "Rodney Dennis"
+
+["https://github.com/mashaal/wild-cherry"]
+copyright = ""
+author = "mashaal"
+
+["https://github.com/lunacookies/vim-colors-xcode"]
+copyright = "Copyright (c) 2020, Luna Razzaghipour"
+author = "Luna Razzaghipour"
+
+["https://github.com/zacesshq/themes/blob/main/LICENSE"]
+copyright = "Copyright (c) 2026 Zacess <https://zacess.com>"
+author = "Zacess"
+
+["https://terminalthemes.com/themes/everslate"]
+copyright = ""
+author = "zeroskull"
