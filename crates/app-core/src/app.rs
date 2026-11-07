@@ -3355,12 +3355,12 @@ impl<B: Backend> App<B> {
                     } else {
                         state.taken.clear();
                     }
-                    if focused {
-                        state.bell_marked = false;
-                    }
                     platform.request_frame(window);
                     // Its title takes the lock, or leaves it, and its bell's
                     // mark goes with the focus.
+                    if focused {
+                        self.mark_bell(platform, window, false);
+                    }
                     self.settle_secure_input(platform);
                     self.show_title(platform, window);
                 }

@@ -1463,6 +1463,7 @@ impl FakeHost {
                     active: window.active,
                     number,
                     keys,
+                    bell: false,
                 }
             })
             .collect()

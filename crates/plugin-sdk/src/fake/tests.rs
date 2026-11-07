@@ -221,6 +221,7 @@ fn the_workspace_s_reads_give_the_panes_windows_and_tabs() {
                 active: TabId(1),
                 number: Some(1),
                 keys: Some("⌥⌘1".to_owned()),
+                bell: false,
             }]
         );
         let tabs = cx.tabs(WindowId(1))?;
@@ -307,6 +308,7 @@ fn a_call_s_new_tab_and_split_enter_the_workspace_its_later_writes_find_them_and
                 active: tab,
                 number: None,
                 keys: None,
+                bell: false,
             }]
         );
         // The window shows the new tab, whose keyboard the split has.

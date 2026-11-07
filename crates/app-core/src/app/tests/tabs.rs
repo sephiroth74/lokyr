@@ -17,6 +17,17 @@ fn three_tabs(style: &str, position: &str) -> (Fake, App, WindowId) {
 /// The app of a window of `count` tabs, the last one active, its bar of
 /// the `style` at `position`, drawn.
 fn tabs_of(style: &str, position: &str, count: usize) -> (Fake, App, WindowId) {
+    tabs_running(style, position, count, idle())
+}
+
+/// The app of a window of `count` tabs running `program`, the last one
+/// active, its bar of the `style` at `position`, drawn.
+fn tabs_running(
+    style: &str,
+    position: &str,
+    count: usize,
+    program: lokyr_pty::Program,
+) -> (Fake, App, WindowId) {
     let config = Config::parse(
         &format!("[plugins.tabs]\nstyle = \"{style}\"\nposition = \"{position}\"\n"),
         std::path::Path::new("config.toml"),
@@ -24,7 +35,7 @@ fn tabs_of(style: &str, position: &str, count: usize) -> (Fake, App, WindowId) {
     .unwrap();
     let drawing = Drawing::new(FontConfig::default()).unwrap();
     let mut fake = Fake::default();
-    let mut app = App::new(Some(drawing), config, None).with_program(idle());
+    let mut app = App::new(Some(drawing), config, None).with_program(program);
     fake.start(&mut app);
     let window = fake.windows().next().unwrap();
     app.windows.get_mut(&window).unwrap().surface = Some(fakes::Surface::default());
@@ -33,8 +44,15 @@ fn tabs_of(style: &str, position: &str, count: usize) -> (Fake, App, WindowId) {
         app.run(&mut fake, "tabs.new", Args::new());
     }
     run_until(&mut fake, &mut app, |_, app| {
-        shown_order(app, window).len() == count
-            && bar(app, window).is_some_and(|view| view.frame.is_some())
+        let drawn = bar(app, window).is_some_and(|view| view.frame.is_some());
+        // A single tab's title, which holds no tab.
+        let title =
+            bar(app, window).is_some_and(|view| view.surface.tree.by_key(&TITLE.into()).is_some());
+        if count == 1 {
+            title
+        } else {
+            shown_order(app, window).len() == count && drawn
+        }
     });
     (fake, app, window)
 }
@@ -492,6 +510,42 @@ fn labels_of(app: &App, window: WindowId, id: u64) -> Vec<String> {
         left.extend(tree.children(node).iter().rev().copied());
     }
     labels
+}
+
+/// The key of a single tab's title in the titlebar, as the tabs plugin
+/// draws it.
+const TITLE: &str = "title";
+
+/// The labels of every node of `window`'s bar, or of its single tab's
+/// title.
+fn bar_labels(app: &App, window: WindowId) -> Vec<String> {
+    let Some(view) = bar(app, window) else {
+        return Vec::new();
+    };
+    let tree = &view.surface.tree;
+    let mut labels = Vec::new();
+    let mut left: Vec<_> = tree.root().into_iter().collect();
+    while let Some(node) = left.pop() {
+        labels.extend(tree.label(node).map(str::to_owned));
+        left.extend(tree.children(node).iter().rev().copied());
+    }
+    labels
+}
+
+#[test]
+fn a_single_tab_s_title_shows_its_window_s_bell_until_the_window_takes_the_focus() {
+    let ringing = shell("echo ready; read line; printf '\\a'; read line");
+    let (mut fake, mut app, window) = tabs_running("unified", "top", 1, ringing);
+    let rang = |app: &App| bar_labels(app, window).contains(&"Bell".to_owned());
+    assert!(!rang(&app));
+    fake.send(&mut app, window, WindowEvent::Focused(false));
+    let shown = app.workspace.window(app.windows[&window].window).unwrap();
+    let pane = app.workspace.tab(shown.active_tab()).unwrap().active_pane();
+    // Its program rings after a line.
+    app.workspace.pane(pane).unwrap().text("\n");
+    run_until(&mut fake, &mut app, |_, app| rang(app));
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    run_until(&mut fake, &mut app, |_, app| !rang(app));
 }
 
 #[test]

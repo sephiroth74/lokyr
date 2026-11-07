@@ -219,6 +219,7 @@ type WindowInfo = {
     active: TabId, -- the tab that it shows
     number: number?, -- from 1, the lowest that no other open window had as it opened; none for the quick terminal's
     keys: string?, -- the keys that bring it forward, as the platform writes them, as "⌥⌘1", for its titlebar to show; nil while the config hides them
+    bell: boolean, -- its bell rang while it had not the focus, until it takes it, as `[bell] mark-title` marks its title, for a title that a plugin draws, as a single tab's; its views of the tab bar render again as it changes
 }
 
 type BarPlace =

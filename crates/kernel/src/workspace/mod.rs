@@ -133,6 +133,7 @@ pub struct Window {
     active: TabId,
     number: Option<u32>,
     keys: Option<String>,
+    bell: bool,
 }
 
 impl Window {
@@ -160,6 +161,12 @@ impl Window {
     /// binding has them.
     pub fn keys(&self) -> Option<&str> {
         self.keys.as_deref()
+    }
+
+    /// Whether its bell rang while it had not the focus, as the app marks
+    /// its title, until it takes it.
+    pub fn bell(&self) -> bool {
+        self.bell
     }
 }
 
@@ -763,6 +770,7 @@ impl Workspace {
                 active: tab,
                 number: None,
                 keys: None,
+                bell: false,
             },
         );
         self.changed(WorkspaceEvent::WindowOpened {
@@ -843,6 +851,16 @@ impl Workspace {
         };
         shown.number = number;
         shown.keys = keys;
+        true
+    }
+
+    /// Marks `window` of a bell that rang while it had not the focus, or of
+    /// none, as the app marks its title; whether it is open.
+    pub fn set_window_bell(&mut self, window: WindowId, bell: bool) -> bool {
+        let Some(shown) = self.windows.get_mut(&window) else {
+            return false;
+        };
+        shown.bell = bell;
         true
     }
 

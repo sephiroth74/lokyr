@@ -2226,6 +2226,7 @@ fn a_plugin_opens_a_tab_and_a_split_of_the_ids_that_its_call_gets() {
             active: first_tab.into(),
             number: Some(1),
             keys: Some("⌥⌘1".to_owned()),
+            bell: false,
         }]
     );
     assert_eq!(

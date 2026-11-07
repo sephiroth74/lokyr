@@ -5,6 +5,7 @@
 use std::time::Instant;
 
 use lokyr_kernel::diagnostics::Diagnostic;
+use lokyr_kernel::plugins::ui::ViewId;
 use lokyr_kernel::workspace::PaneId;
 use lokyr_platform_core::{Platform, Point, WindowId};
 
@@ -73,8 +74,38 @@ impl<B: Backend> App<B> {
             platform.request_attention();
         }
         if bell.mark_title && !state.bell_marked {
-            state.bell_marked = true;
+            self.mark_bell(platform, window, true);
             self.show_title(platform, window);
+        }
+    }
+
+    /// Marks `window`'s title of a bell that rang while it had not the
+    /// focus, or of none, as it takes it: the workspace keeps the mark for
+    /// the plugins, whose views of the window's tab bar render again, as
+    /// the title of a single tab, which the system's leaves to them, draws
+    /// it.
+    pub(super) fn mark_bell(&mut self, platform: &mut dyn Platform, window: WindowId, bell: bool) {
+        let Some(state) = self.windows.get_mut(&window) else {
+            return;
+        };
+        if state.bell_marked == bell {
+            return;
+        }
+        state.bell_marked = bell;
+        let shown = state.window;
+        self.workspace.set_window_bell(shown, bell);
+        let bar = ViewId::TabBar(shown.into());
+        for (plugin, view) in self.plugins.views() {
+            if view != bar {
+                continue;
+            }
+            let result = self.with_plugins(platform, |plugins, context| {
+                plugins.render(&plugin, &view, context)
+            });
+            if let Err(error) = result {
+                eprintln!("lokyr: {error}");
+            }
+            self.rendered_slots = true;
         }
     }
 

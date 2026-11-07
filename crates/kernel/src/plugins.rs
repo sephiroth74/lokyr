@@ -2921,6 +2921,7 @@ impl Host<'_, '_> {
                         active: window.active_tab().into(),
                         number: window.number(),
                         keys: window.keys().map(str::to_owned),
+                        bell: window.bell(),
                     })
                     .collect(),
             ),

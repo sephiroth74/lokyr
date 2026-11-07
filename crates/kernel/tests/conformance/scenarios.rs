@@ -1156,6 +1156,7 @@ fn workspace(world: &World) -> Scenario {
                             active: tab(0),
                             number: None,
                             keys: None,
+                            bell: false,
                         }]),
                     ),
                     (
@@ -1251,6 +1252,7 @@ fn workspace(world: &World) -> Scenario {
                                 active: t,
                                 number: None,
                                 keys: None,
+                                bell: false,
                             },
                             WindowInfo {
                                 id: window(0),
@@ -1258,6 +1260,7 @@ fn workspace(world: &World) -> Scenario {
                                 active: tab(0),
                                 number: None,
                                 keys: None,
+                                bell: false,
                             },
                         ]),
                     ),
@@ -1434,6 +1437,7 @@ fn workspace(world: &World) -> Scenario {
                     active: t,
                     number: None,
                     keys: None,
+                    bell: false,
                 }]),
             )]),
         ],

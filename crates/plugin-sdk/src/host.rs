@@ -54,6 +54,11 @@ pub struct WindowInfo {
     /// titlebar.
     #[serde(default)]
     pub keys: Option<String>,
+    /// Whether its bell rang while it had not the focus, until it takes
+    /// it, as `[bell] mark-title` marks its title: of a window whose title
+    /// a plugin draws, as a single tab's, to draw.
+    #[serde(default)]
+    pub bell: bool,
 }
 
 /// A tab, as a read of a window's tabs gives it.

@@ -455,15 +455,23 @@ impl Tabs {
         let ViewId::TabBar(window) = view else {
             return None;
         };
-        let tabs = cx.tabs(*window).ok()?;
-        // The keys that bring the window forward, which a bar in the
-        // titlebar shows after its buttons.
-        let shortcut = cx
+        let mut tabs = cx.tabs(*window).ok()?;
+        let shown = cx
             .windows()
             .ok()?
             .into_iter()
-            .find(|shown| shown.id == *window)
-            .and_then(|shown| shown.keys);
+            .find(|shown| shown.id == *window);
+        // The keys that bring the window forward, which a bar in the
+        // titlebar shows after its buttons.
+        let shortcut = shown.as_ref().and_then(|shown| shown.keys.clone());
+        // The window's bell, which the title of a single tab shows, in
+        // place of the system's title, which would.
+        if shown.is_some_and(|shown| shown.bell)
+            && bar::titled(tabs.len(), &self.settings)
+            && let Some(tab) = tabs.first_mut()
+        {
+            tab.bell = true;
+        }
         let keys: Vec<Option<String>> = (1..=NUMBERED)
             .take(tabs.len())
             .map(|index| {
