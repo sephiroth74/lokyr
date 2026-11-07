@@ -133,6 +133,7 @@ fn a_theme_extends_another_whose_values_its_own_override() {
             directory.join("Dimmer.toml"),
             directory.join("Dim.toml"),
             directory.join("Lokyr Dark.toml"),
+            directory.join("Lokyr Dark.itermcolors"),
         ]
     );
 }
@@ -240,4 +241,87 @@ fn a_chain_that_loops_or_goes_too_deep_and_a_name_of_nothing_are_errors() {
             "{name}"
         );
     }
+}
+
+/// An `.itermcolors` file of grays, of a background of `background`, and of
+/// the light and the dark appearance's backgrounds too with `pair`.
+fn itermcolors(background: f64, pair: bool) -> String {
+    let entry = |gray: f64| {
+        format!(
+            "<dict><key>Red Component</key><real>{gray}</real><key>Green Component</key>\
+             <real>{gray}</real><key>Blue Component</key><real>{gray}</real>\
+             <key>Color Space</key><string>sRGB</string></dict>"
+        )
+    };
+    let mut body = String::new();
+    for index in 0..16 {
+        body.push_str(&format!(
+            "<key>Ansi {index} Color</key>{}",
+            entry(f64::from(index) / 15.0)
+        ));
+    }
+    body.push_str(&format!("<key>Background Color</key>{}", entry(background)));
+    body.push_str(&format!("<key>Foreground Color</key>{}", entry(0.9)));
+    if pair {
+        body.push_str(&format!(
+            "<key>Background Color (Light)</key>{}",
+            entry(1.0)
+        ));
+        body.push_str(&format!(
+            "<key>Foreground Color (Light)</key>{}",
+            entry(0.0)
+        ));
+    }
+    format!("<?xml version=\"1.0\"?><plist version=\"1.0\"><dict>{body}</dict></plist>")
+}
+
+#[test]
+fn an_itermcolors_file_of_the_folder_is_a_theme_as_it_is_and_a_native_one_extends_it() {
+    let directory = folder(
+        "itermcolors",
+        &[(
+            "Mine",
+            "[theme]\nextends = \"Grays\"\n\n[interface]\n\"panel.bg\" = \"#010203\"\n",
+        )],
+    );
+    fs::write(directory.join("Grays.itermcolors"), itermcolors(0.0, false)).unwrap();
+    fs::write(directory.join("Pair.itermcolors"), itermcolors(0.0, true)).unwrap();
+    let grays = resolve("Grays", Some(&directory), &[builtin()]).unwrap();
+    assert_eq!(grays.theme.terminal.background, ThemeColor::rgb(0, 0, 0));
+    assert_eq!(
+        grays.files,
+        [
+            directory.join("Grays.toml"),
+            directory.join("Grays.itermcolors")
+        ]
+    );
+    let mine = resolve("Mine", Some(&directory), &[builtin()])
+        .unwrap()
+        .theme;
+    assert_eq!(mine.terminal.palette[15], ThemeColor::rgb(255, 255, 255));
+    assert_eq!(mine.tokens["panel.bg"], ThemeColor::hex(0x010203));
+    // A file of both appearances is a theme of each, named.
+    let light = resolve("Pair (Light)", Some(&directory), &[builtin()])
+        .unwrap()
+        .theme;
+    assert_eq!(light.terminal.background, ThemeColor::rgb(255, 255, 255));
+    assert_eq!(light.variant, ThemeVariant::Light);
+    let dark = resolve("Pair (Dark)", Some(&directory), &[builtin()])
+        .unwrap()
+        .theme;
+    assert_eq!(dark.terminal.background, ThemeColor::rgb(0, 0, 0));
+    let error = resolve("Pair", Some(&directory), &[builtin()]).unwrap_err();
+    assert!(
+        error.message.contains("`Pair (Light)` and `Pair (Dark)`"),
+        "{}",
+        error.message
+    );
+    // A native file before an `.itermcolors` one of its name.
+    let text =
+        format!("[terminal]\nbackground = \"#123456\"\nforeground = \"#e0e0e0\"\n{PALETTE}\n");
+    fs::write(directory.join("Grays.toml"), text).unwrap();
+    let native = resolve("Grays", Some(&directory), &[builtin()])
+        .unwrap()
+        .theme;
+    assert_eq!(native.terminal.background, ThemeColor::hex(0x123456));
 }

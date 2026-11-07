@@ -72,6 +72,8 @@ toml = "1.1.8"
 notify = { version = "8.2.1", default-features = false, features = ["macos_fsevent"] }
 # The config's reader, which keeps the place of each key and value.
 toml_edit = { version = "0.25.17", default-features = false, features = ["parse", "serde"] }
+# The reader of the themes of `.itermcolors`, property lists.
+plist = { version = "1.10.3", default-features = false }
 tracing = "0.1.44"
 unicode-normalization = "0.1.25"
 # The language tags of the catalogs.

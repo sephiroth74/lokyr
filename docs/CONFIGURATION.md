@@ -1109,7 +1109,10 @@ Whether a window without the focus whose bell rang shows 🔔 before its title, 
 
 The colors of the terminal and of Lokyr's own interface: a theme for the light appearance and one for the dark one, which follow the system's appearance, or the one that View › Appearance chooses, and switch at once.
 
-A theme is a built-in one, `Lokyr Light` or `Lokyr Dark`, or a file of the `themes` folder beside the config file, `~/.config/lokyr/themes/`, named by its file without `.toml`: `Nightfall` is `themes/Nightfall.toml`. A file of a built-in theme's name takes its place.
+A theme is a built-in one, `Lokyr Light` or `Lokyr Dark`, or a file of the `themes` folder beside the config file, `~/.config/lokyr/themes/`, named by its file without its extension: `Nightfall` is `themes/Nightfall.toml`, in Lokyr's own format below, or `themes/Nightfall.itermcolors`, the format of the largest collections of terminal themes, which Lokyr reads as it is. A file of a built-in theme's name takes its place, and a `.toml` one an `.itermcolors` one of its name.
+
+- **An `.itermcolors` file** of colors for the light and the dark appearance is two themes, `<name> (Light)` and `<name> (Dark)`, as `dark = "Nightfall (Dark)"`.
+- Its colors read as their files say, of sRGB, Display P3 or the calibrated colors of older files, converted to sRGB; its link's, underline's and the find bar's match's colors too.
 
 ```toml
 # ~/.config/lokyr/themes/Nightfall.toml

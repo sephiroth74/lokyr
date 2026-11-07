@@ -23,6 +23,7 @@ lokyr-vt-core.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 toml_edit = { workspace = true, features = ["display"] }
+plist.workspace = true
 unic-langid.workspace = true
 
 [dev-dependencies]

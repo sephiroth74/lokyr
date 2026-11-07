@@ -151,3 +151,43 @@ fn the_built_in_themes_names_are_the_kernel_s_and_ui_core_s() {
     assert_eq!(lokyr_kernel::themes::DARK, ui_theme::DARK_NAME);
     assert_eq!(ui_theme::light_spec().name, lokyr_kernel::themes::LIGHT);
 }
+
+#[test]
+fn an_itermcolors_file_of_the_folder_applies_as_it_is() {
+    let config = "[theme]\ndark = \"Grays\"\nlight = \"Grays\"\n";
+    let (mut fake, mut app, directory) = with_themes("itermcolors", config, &[]);
+    assert!(app.diagnostics.shown().is_some(), "no theme `Grays` yet");
+    let entry = |gray: f64| {
+        format!(
+            "<dict><key>Red Component</key><real>{gray}</real><key>Green Component</key>\
+             <real>{gray}</real><key>Blue Component</key><real>{gray}</real>\
+             <key>Color Space</key><string>sRGB</string></dict>"
+        )
+    };
+    let mut body = String::new();
+    for index in 0..16 {
+        body.push_str(&format!(
+            "<key>Ansi {index} Color</key>{}",
+            entry(f64::from(index) / 15.0)
+        ));
+    }
+    body.push_str(&format!("<key>Background Color</key>{}", entry(0.2)));
+    body.push_str(&format!("<key>Foreground Color</key>{}", entry(0.9)));
+    let file = directory.join("themes").join("Grays.itermcolors");
+    assert!(app.theme_files.paths.contains(&file));
+    std::fs::write(
+        &file,
+        format!("<plist version=\"1.0\"><dict>{body}</dict></plist>"),
+    )
+    .unwrap();
+    changed(&mut fake, &mut app);
+    assert_eq!(app.diagnostics.shown(), None);
+    assert_eq!(app.theme.dark.colors.background, rgb(0x333333));
+    // Never converted: the folder holds the file as it was.
+    let names: Vec<_> = std::fs::read_dir(directory.join("themes"))
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .collect();
+    assert_eq!(names, ["Grays.itermcolors"]);
+    let _ = std::fs::remove_dir_all(directory);
+}

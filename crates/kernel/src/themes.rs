@@ -1,7 +1,8 @@
 //! Themes of the native format: TOML files in the themes' folder beside the
 //! config, `themes/<name>.toml`, each a variant of the light appearance or
-//! the dark one, and the built-in themes, which a file of their name takes
-//! the place of. A file's `[theme]` names it and the theme that it extends;
+//! the dark one; iTerm2's `.itermcolors` files there, read as they are; and
+//! the built-in themes, which a file of their name takes the place of, a
+//! native one before an `.itermcolors` one. A file's `[theme]` names it and the theme that it extends;
 //! `[terminal]` gives the terminal's colors; `[search]` the search's
 //! highlights; `[interface]` the interface's tokens by their names; and
 //! each other section the tokens of its name, as `[tabs]` the tab bar's,
@@ -31,6 +32,8 @@ use lokyr_plugin_sdk::theme::{TerminalColors, Theme, ThemeColor, ThemeVariant};
 use toml_edit::{Document, Item, TableLike, Value};
 
 use crate::config::{Error, Position};
+
+pub mod itermcolors;
 
 /// The built-in theme of the light appearance's name.
 pub const LIGHT: &str = "Lokyr Light";
@@ -73,7 +76,7 @@ pub fn resolve(
     let mut files = Vec::new();
     let mut chain = Vec::new();
     let partial = load(name, directory, builtins, &mut files, &mut chain)?;
-    let theme = partial.finish(name, files.last().map(PathBuf::as_path))?;
+    let theme = partial.finish(name, files.first().map(PathBuf::as_path))?;
     Ok(Resolved { theme, files })
 }
 
@@ -142,11 +145,66 @@ fn load(
             }
         }
     }
+    if let Some(directory) = directory
+        && let Some(theme) = load_itermcolors(name, directory, files)?
+    {
+        return Ok(Partial::of(&theme));
+    }
     builtins
         .iter()
         .find(|theme| theme.name == name)
         .map(Partial::of)
         .ok_or_else(|| not_found(path.as_deref()))
+}
+
+/// The theme of `name` of an `.itermcolors` file of `directory`, read as
+/// it is: `<name>.itermcolors`, or the light or the dark variant of
+/// `<base>.itermcolors` of a name `<base> (Light)` or `<base> (Dark)`;
+/// `None` of no such file. The files looked for go into `files`.
+fn load_itermcolors(
+    name: &str,
+    directory: &Path,
+    files: &mut Vec<PathBuf>,
+) -> Result<Option<Theme>, Error> {
+    let base = [" (Light)", " (Dark)"]
+        .into_iter()
+        .find_map(|suffix| name.strip_suffix(suffix));
+    for stem in std::iter::once(name).chain(base) {
+        let path = directory.join(format!("{stem}.itermcolors"));
+        files.push(path.clone());
+        let bytes = match fs::read(&path) {
+            Ok(bytes) => bytes,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
+            Err(error) => {
+                return Err(Error {
+                    path,
+                    position: None,
+                    message: format!("it cannot be read: {error}"),
+                });
+            }
+        };
+        let themes = itermcolors::read(&bytes, stem, &path)?;
+        if let Some(theme) = themes.iter().find(|theme| theme.name == name) {
+            return Ok(Some(theme.clone()));
+        }
+        if stem != name {
+            continue;
+        }
+        // A file of both appearances' keys, named without one.
+        let names: Vec<String> = themes
+            .iter()
+            .map(|theme| format!("`{}`", theme.name))
+            .collect();
+        return Err(Error {
+            path,
+            position: None,
+            message: format!(
+                "the file holds the themes {}, of the light and the dark appearance: name one of them",
+                names.join(" and ")
+            ),
+        });
+    }
+    Ok(None)
 }
 
 /// What a file of the native format gives: its partial theme, and the

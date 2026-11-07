@@ -1179,6 +1179,7 @@ impl<B: Backend> App<B> {
                     // error.
                     if let Some(directory) = &directory {
                         paths.push(directory.join(format!("{name}.toml")));
+                        paths.push(directory.join(format!("{name}.itermcolors")));
                         if error.path.starts_with(directory) {
                             paths.push(error.path.clone());
                         }
