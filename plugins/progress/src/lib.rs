@@ -27,8 +27,8 @@ static CATALOGS: [(&str, &str); 2] = [
     ("it", include_str!("../locales/it/progress.ftl")),
 ];
 
-/// The bar's height, in points.
-const HEIGHT: f32 = 3.0;
+/// The bar's height, in points: a line, two pixels on a Retina display.
+const HEIGHT: f32 = 1.0;
 
 /// The plugin of the progress's bar, and the progress that each window's
 /// bar showed at its last render, which a change renders again.

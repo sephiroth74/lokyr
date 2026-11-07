@@ -1087,14 +1087,14 @@ fn a_program_s_progress_shows_in_a_thin_bar_across_the_window_s_top_over_the_pan
             .map(crate::app::chrome::rect_of)
     };
     run_until(&mut fake, &mut app, |_, app| strip(app).is_some());
-    // Under the titlebar, of 3 points, the window's width, over the pane,
+    // Under the titlebar, of a point, the window's width, over the pane,
     // whose rows it takes none of.
     let size = fake.window(window).unwrap().size;
     let shown = strip(&app).unwrap();
     let pixels = |points: f64| (points * size.scale).round() as u32;
     assert_eq!(
         (shown.y, shown.height, shown.width),
-        (size.bar_pixels() as i32, pixels(3.0), size.pixels.width)
+        (size.bar_pixels() as i32, pixels(1.0), size.pixels.width)
     );
     let under = app.windows[&window].views[0].rect;
     // Ended, the bar goes, the pane where it was.
