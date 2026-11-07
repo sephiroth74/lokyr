@@ -2271,6 +2271,8 @@ dependencies = [
  "anyhow",
  "cargo_metadata",
  "libc",
+ "lokyr-kernel",
+ "plist",
  "regex",
  "rustc-demangle",
  "serde",

@@ -254,6 +254,9 @@ const BENCH_DEADLINE: Duration = Duration::from_secs(15);
 /// refresh at 60 Hz, and a page of them shows whole in a few frames.
 const GLYPHS_BUDGET: (Duration, Duration) = (Duration::from_millis(2), Duration::from_millis(2));
 
+/// The folder of the bundle's resources of the themes that the app holds.
+const HELD_THEMES: &str = "themes";
+
 /// Checks `config` as the app takes it, without applying it: its font,
 /// whose failure fails the whole config, and its icon and its language,
 /// which the log tells of when they are not Lokyr's, and whose defaults
@@ -404,6 +407,9 @@ pub struct App<B: Backend> {
     theme: Theme,
     /// The files of the themes, which their changes load again.
     theme_files: ThemeFiles,
+    /// The folder of the themes that the app holds, its bundle's
+    /// `Resources/themes`, when it runs from its bundle.
+    held_themes: Option<PathBuf>,
     /// The program that a new window runs.
     program: Program,
     /// The program that shows man pages, in place of the login shell's
@@ -660,6 +666,7 @@ impl<B: Backend> App<B> {
             drawing,
             theme: Theme::builtin(),
             theme_files: ThemeFiles::default(),
+            held_themes: environment::resources().map(|resources| resources.join(HELD_THEMES)),
             program: Program::LoginShell,
             man: None,
             config,
@@ -1174,7 +1181,12 @@ impl<B: Backend> App<B> {
         let mut resolved = Vec::new();
         let mut errors = Vec::new();
         for name in [&config.light, &config.dark] {
-            match themes::resolve(name, directory.as_deref(), &builtins) {
+            match themes::resolve(
+                name,
+                directory.as_deref(),
+                self.held_themes.as_deref(),
+                &builtins,
+            ) {
                 Ok(theme) => {
                     paths.extend(theme.files);
                     resolved.push(theme.theme);

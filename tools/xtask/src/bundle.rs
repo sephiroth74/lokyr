@@ -179,6 +179,7 @@ pub fn run(mut args: impl Iterator<Item = String>) -> Result<ExitCode> {
     )?;
     copy_icons(&root.join(ICONS), &resources)?;
     copy_font_licenses(&root.join(SYMBOLS_FONT), &resources)?;
+    crate::themes::write(&root, &resources)?;
     crate::licenses::write(&root, &resources.join("licenses/crates"))?;
     let catalogs = usage_catalogs(&root.join(LOCALES))?;
     let source = &catalogs[SOURCE];

@@ -56,9 +56,9 @@ allowed = ["crates/plugin-sdk"]
 [[rule]]
 name = "kernel-only-in-app"
 kind = "dependents-only"
-description = "Only the app and its window controller depend on the kernel; everything else goes through the plugin SDK."
+description = "Only the app and its window controller depend on the kernel, and xtask, which converts the themes that the bundle holds with the kernel's importer and never ships; everything else goes through the plugin SDK."
 crates = ["crates/kernel"]
-dependents = ["crates/app", "crates/app-core"]
+dependents = ["crates/app", "crates/app-core", "tools/xtask"]
 
 [[rule]]
 name = "alacritty-only-in-the-differential-tests"

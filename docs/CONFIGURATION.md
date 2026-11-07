@@ -140,7 +140,7 @@ bounce = false                       # true | false: the Dock's icon, for a wind
 mark-title = false                   # true | false: 🔔 in its title until it takes the focus
 
 [theme]
-light = "Lokyr Light"                # the light appearance's theme, a file of themes/ or built in
+light = "Lokyr Light"                # the light appearance's theme, a file of themes/, held or built in
 dark = "Nightfall"                   # the dark appearance's theme
 minimum-contrast = 3.0               # 1 to 21: the least contrast of the terminal's text
 
@@ -1109,7 +1109,9 @@ Whether a window without the focus whose bell rang shows 🔔 before its title, 
 
 The colors of the terminal and of Lokyr's own interface: a theme for the light appearance and one for the dark one, which follow the system's appearance, or the one that View › Appearance chooses, and switch at once.
 
-A theme is a built-in one, `Lokyr Light` or `Lokyr Dark`, or a file of the `themes` folder beside the config file, `~/.config/lokyr/themes/`, named by its file without its extension: `Nightfall` is `themes/Nightfall.toml`, in Lokyr's own format below, or `themes/Nightfall.itermcolors`, the format of the largest collections of terminal themes, which Lokyr reads as it is. A file of a built-in theme's name takes its place, and a `.toml` one an `.itermcolors` one of its name.
+A theme is a built-in one, `Lokyr Light` or `Lokyr Dark`, one of the themes that Lokyr holds, or a file of the `themes` folder beside the config file, `~/.config/lokyr/themes/`, named by its file without its extension: `Nightfall` is `themes/Nightfall.toml`, in Lokyr's own format below, or `themes/Nightfall.itermcolors`, the format of the largest collections of terminal themes, which Lokyr reads as it is. A file of the folder of a held or built-in theme's name takes its place, and a `.toml` one an `.itermcolors` one of its name.
+
+Lokyr holds 278 themes, those of a permissive license of the largest collection of `.itermcolors` themes, by their names there, as `Dracula`, `Catppuccin Mocha`, `Nord`, `Rose Pine Dawn` or `TokyoNight Day`, and `<name> (Light)` and `<name> (Dark)` of those of both appearances: `Lokyr.app/Contents/Resources/licenses/themes/README.md` lists them, with their licenses and sources, and their files are in `Lokyr.app/Contents/Resources/themes`, which a theme of the folder can extend.
 
 - **An `.itermcolors` file** of colors for the light and the dark appearance is two themes, `<name> (Light)` and `<name> (Dark)`, as `dark = "Nightfall (Dark)"`.
 - Its colors read as their files say, of sRGB, Display P3 or the calibrated colors of older files, converted to sRGB; its link's, underline's and the find bar's match's colors too.
@@ -1165,7 +1167,7 @@ The light appearance's theme, by its name.
 |---|---|
 | the name of a theme | `"Lokyr Light"` |
 
-- A name that no file and no built-in theme has shows in the bar, and the theme in force stays.
+- A name that no file, no held theme and no built-in theme has shows in the bar, and the theme in force stays.
 
 ### `dark`
 

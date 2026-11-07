@@ -15,6 +15,7 @@ mod sbom;
 mod sparkle;
 mod symbolicate;
 mod terminfo;
+mod themes;
 mod ucd;
 
 use std::process::ExitCode;
@@ -37,6 +38,7 @@ fn main() -> ExitCode {
         Some("release") => release::run(args),
         Some("symbolicate") => symbolicate::run(args),
         Some("terminfo") => terminfo::run(args),
+        Some("themes") => themes::run(args),
         Some("ucd") => ucd::run(args),
         Some(task) => {
             eprintln!("error: unknown task `{task}`\n");
@@ -67,6 +69,7 @@ fn print_help() {
          release <version> [--without-feed]  a candidate's or a release's bundle, DMG, dSYM and SBOM, to a draft on GitHub and the feed\n  \
          symbolicate <report.ips>    the crashed thread of a crash report, Lokyr's frames told by the release's dSYM\n  \
          terminfo [--out DIR]        compile the terminfo entry xterm-lokyr, into target/terminfo by default\n  \
+         themes [--out DIR]          check the themes' collection and write the themes that the bundle holds, into target/themes by default\n  \
          ucd [--check]               generate the Unicode tables of vt-core, or check them"
     );
 }

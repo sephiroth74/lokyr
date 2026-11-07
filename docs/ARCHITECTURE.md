@@ -175,7 +175,7 @@ sleip/* ─▶ pkg-model           registry/* ─▶ pkg-model
 |---|---|---|
 | `vt-core` and `search` do not depend on UI, platform or plugins | Headless tests, fuzzing, reuse | `xtask check-deps` |
 | `plugin-sdk` depends on no other workspace crate | The SDK must be publishable and usable on its own | `xtask check-deps` |
-| Only `app` and `app-core` depend on `kernel` | Plugins must not be able to bypass the SDK | `cargo-deny` (`wrappers`) |
+| Only `app` and `app-core` depend on `kernel`, and `xtask`, which converts the themes that the bundle holds with the kernel's importer and never ships | Plugins must not be able to bypass the SDK | `cargo-deny` (`wrappers`) and `xtask check-deps` |
 | `plugins/*` depend only on `plugin-sdk`, plus a whitelist of utility crates | Proves the public API is sufficient | `xtask check-deps` |
 | First-party plugins use `#![forbid(unsafe_code)]`; clippy `disallowed-methods` forbids threads, blocking I/O and clocks | They follow the same rules as Luau plugins | clippy in CI |
 | Luau (`mlua`) only in `plugin-host-luau` | The C++ runtime stays behind one crate and one feature | `cargo-deny` (`wrappers`) |

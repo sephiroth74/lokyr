@@ -1,8 +1,10 @@
 //! Themes of the native format: TOML files in the themes' folder beside the
 //! config, `themes/<name>.toml`, each a variant of the light appearance or
-//! the dark one; iTerm2's `.itermcolors` files there, read as they are; and
-//! the built-in themes, which a file of their name takes the place of, a
-//! native one before an `.itermcolors` one. A file's `[theme]` names it and the theme that it extends;
+//! the dark one; iTerm2's `.itermcolors` files there, read as they are; the
+//! themes that the app holds, native files of a folder of its own; and the
+//! built-in themes. A file of the themes' folder takes the place of a held
+//! or built-in theme of its name, a native one before an `.itermcolors`
+//! one. A file's `[theme]` names it and the theme that it extends;
 //! `[terminal]` gives the terminal's colors; `[search]` the search's
 //! highlights; `[interface]` the interface's tokens by their names; and
 //! each other section the tokens of its name, as `[tabs]` the tab bar's,
@@ -28,8 +30,7 @@ use std::io;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 
-use lokyr_plugin_sdk::theme::{TerminalColors, ThemeColor};
-pub use lokyr_plugin_sdk::theme::{Theme, ThemeVariant};
+pub use lokyr_plugin_sdk::theme::{TerminalColors, Theme, ThemeColor, ThemeVariant};
 use toml_edit::{Document, Item, TableLike, Value};
 
 use crate::config::{Error, Position};
@@ -66,34 +67,53 @@ pub struct Resolved {
 }
 
 /// The theme of `name`: its file of the themes' folder `directory`, if
-/// there is one, or else the built-in one of that name among `builtins`;
-/// of the theme that it extends, whose values its own override, as deep as
-/// it goes. The error of a file tells its place in it.
+/// there is one, or else the native file of that name of `held`, the
+/// folder of the themes that the app holds, or else the built-in one of
+/// that name among `builtins`; of the theme that it extends, whose values
+/// its own override, as deep as it goes. The error of a file tells its
+/// place in it.
 pub fn resolve(
     name: &str,
     directory: Option<&Path>,
+    held: Option<&Path>,
     builtins: &[Theme],
 ) -> Result<Resolved, Error> {
+    let sources = Sources {
+        directory,
+        held,
+        builtins,
+    };
     let mut files = Vec::new();
     let mut chain = Vec::new();
-    let partial = load(name, directory, builtins, &mut files, &mut chain)?;
+    let partial = load(name, &sources, &mut files, &mut chain)?;
     let theme = partial.finish(name, files.first().map(PathBuf::as_path))?;
     Ok(Resolved { theme, files })
 }
 
-/// The partial theme of `name` and those that it extends, the files looked
-/// for added to `files`, the names of its chain so far in `chain`.
+/// Where a theme's name is looked for: the themes' folder, whose files a
+/// watch follows, the folder of the themes that the app holds, which never
+/// change, and the built-in themes.
+struct Sources<'a> {
+    directory: Option<&'a Path>,
+    held: Option<&'a Path>,
+    builtins: &'a [Theme],
+}
+
+/// The partial theme of `name` and those that it extends, the files of the
+/// themes' folder looked for added to `files`, the names of its chain so
+/// far in `chain`.
 fn load(
     name: &str,
-    directory: Option<&Path>,
-    builtins: &[Theme],
+    sources: &Sources<'_>,
     files: &mut Vec<PathBuf>,
     chain: &mut Vec<String>,
 ) -> Result<Partial, Error> {
     let not_found = |path: Option<&Path>| Error {
         path: path.map_or_else(|| PathBuf::from(name), Path::to_path_buf),
         position: None,
-        message: format!("there is no theme `{name}`, of a file of the themes' folder or built in"),
+        message: format!(
+            "there is no theme `{name}`, of a file of the themes' folder, of Lokyr's own or built in"
+        ),
     };
     if name.is_empty() || name.contains(['/', '\\']) || name.starts_with('.') {
         return Err(Error {
@@ -105,57 +125,78 @@ fn load(
         });
     }
     chain.push(name.to_owned());
-    let path = directory.map(|directory| directory.join(format!("{name}.toml")));
+    let path = sources
+        .directory
+        .map(|directory| directory.join(format!("{name}.toml")));
     if let Some(path) = &path {
         files.push(path.clone());
-        match fs::read_to_string(path) {
-            Ok(text) => {
-                let file = parse(&text, path)?;
-                let base = match &file.extends {
-                    Some((parent, span)) => {
-                        let at = || Some(Position::at(&text, span.start));
-                        if chain.iter().any(|known| known == parent) {
-                            return Err(Error {
-                                path: path.clone(),
-                                position: at(),
-                                message: format!("`{parent}` extends this theme, which extends it"),
-                            });
-                        }
-                        if chain.len() >= MOST_EXTENDED {
-                            return Err(Error {
-                                path: path.clone(),
-                                position: at(),
-                                message: format!(
-                                    "a theme extends {MOST_EXTENDED} others at most, one after another"
-                                ),
-                            });
-                        }
-                        Some(load(parent, directory, builtins, files, chain)?)
-                    }
-                    None => None,
-                };
-                return Ok(file.partial.over(base));
-            }
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-            Err(error) => {
-                return Err(Error {
-                    path: path.clone(),
-                    position: None,
-                    message: format!("it cannot be read: {error}"),
-                });
-            }
+        if let Some(partial) = load_native(path, sources, files, chain)? {
+            return Ok(partial);
         }
     }
-    if let Some(directory) = directory
+    if let Some(directory) = sources.directory
         && let Some(theme) = load_itermcolors(name, directory, files)?
     {
         return Ok(Partial::of(&theme));
     }
-    builtins
+    if let Some(held) = sources.held
+        && let Some(partial) =
+            load_native(&held.join(format!("{name}.toml")), sources, files, chain)?
+    {
+        return Ok(partial);
+    }
+    sources
+        .builtins
         .iter()
         .find(|theme| theme.name == name)
         .map(Partial::of)
         .ok_or_else(|| not_found(path.as_deref()))
+}
+
+/// The partial theme of the native file at `path` and those that it
+/// extends, as [`load`] finds them; `None` of no file there.
+fn load_native(
+    path: &Path,
+    sources: &Sources<'_>,
+    files: &mut Vec<PathBuf>,
+    chain: &mut Vec<String>,
+) -> Result<Option<Partial>, Error> {
+    let text = match fs::read_to_string(path) {
+        Ok(text) => text,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => {
+            return Err(Error {
+                path: path.to_owned(),
+                position: None,
+                message: format!("it cannot be read: {error}"),
+            });
+        }
+    };
+    let file = parse(&text, path)?;
+    let base = match &file.extends {
+        Some((parent, span)) => {
+            let at = || Some(Position::at(&text, span.start));
+            if chain.iter().any(|known| known == parent) {
+                return Err(Error {
+                    path: path.to_owned(),
+                    position: at(),
+                    message: format!("`{parent}` extends this theme, which extends it"),
+                });
+            }
+            if chain.len() >= MOST_EXTENDED {
+                return Err(Error {
+                    path: path.to_owned(),
+                    position: at(),
+                    message: format!(
+                        "a theme extends {MOST_EXTENDED} others at most, one after another"
+                    ),
+                });
+            }
+            Some(load(parent, sources, files, chain)?)
+        }
+        None => None,
+    };
+    Ok(Some(file.partial.over(base)))
 }
 
 /// The theme of `name` of an `.itermcolors` file of `directory`, read as
@@ -206,6 +247,110 @@ fn load_itermcolors(
         });
     }
     Ok(None)
+}
+
+/// What a theme tells people of itself, which its file of the native
+/// format writes in `[theme]`, and which changes nothing that it colors.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Credits<'a> {
+    /// Who made it.
+    pub author: Option<&'a str>,
+    /// Its license, an SPDX expression.
+    pub license: Option<&'a str>,
+    /// Where it comes from.
+    pub source: Option<&'a str>,
+}
+
+/// The text of a file of the native format of `theme`, whole, with its
+/// `credits`, which reads back as the same theme: the search's tokens in
+/// `[search]`, and any other in `[interface]`, by its whole name.
+pub fn native(theme: &Theme, credits: Credits<'_>) -> String {
+    let mut text = String::from("[theme]\n");
+    let mut line = |key: &str, value: &str| {
+        text.push_str(&format!("{key} = {}\n", quoted(value)));
+    };
+    line("name", &theme.name);
+    for (key, value) in [
+        ("author", credits.author),
+        ("license", credits.license),
+        ("source", credits.source),
+    ] {
+        if let Some(value) = value {
+            line(key, value);
+        }
+    }
+    line(
+        "variant",
+        match theme.variant {
+            ThemeVariant::Light => "light",
+            ThemeVariant::Dark => "dark",
+        },
+    );
+    let terminal = &theme.terminal;
+    text.push_str(&format!(
+        "\n[terminal]\nbackground = \"{}\"\nforeground = \"{}\"\npalette = [\n",
+        terminal.background, terminal.foreground
+    ));
+    for row in terminal.palette.chunks(8) {
+        let colors: Vec<String> = row.iter().map(|color| format!("\"{color}\"")).collect();
+        text.push_str(&format!("    {},\n", colors.join(", ")));
+    }
+    text.push_str("]\n");
+    for (key, color) in [
+        ("cursor", terminal.cursor),
+        ("cursor-text", terminal.cursor_text),
+        ("selection", terminal.selection),
+        ("selection-text", terminal.selection_text),
+        ("bold", terminal.bold),
+        ("link", terminal.link),
+        ("underline", terminal.underline),
+    ] {
+        if let Some(color) = color {
+            text.push_str(&format!("{key} = \"{color}\"\n"));
+        }
+    }
+    let search: Vec<(&str, ThemeColor)> = [
+        ("match", "search.match"),
+        ("current", "search.match.current"),
+    ]
+    .into_iter()
+    .filter_map(|(key, token)| theme.tokens.get(token).map(|color| (key, *color)))
+    .collect();
+    if !search.is_empty() {
+        text.push_str("\n[search]\n");
+        for (key, color) in search {
+            text.push_str(&format!("{key} = \"{color}\"\n"));
+        }
+    }
+    let others: Vec<(&String, &ThemeColor)> = theme
+        .tokens
+        .iter()
+        .filter(|(token, _)| !matches!(token.as_str(), "search.match" | "search.match.current"))
+        .collect();
+    if !others.is_empty() {
+        text.push_str("\n[interface]\n");
+        for (token, color) in others {
+            text.push_str(&format!("{} = \"{color}\"\n", quoted(token)));
+        }
+    }
+    text
+}
+
+/// `text` as a basic string of TOML, of its escapes.
+fn quoted(text: &str) -> String {
+    let mut quoted = String::from("\"");
+    for c in text.chars() {
+        match c {
+            '"' => quoted.push_str("\\\""),
+            '\\' => quoted.push_str("\\\\"),
+            '\n' => quoted.push_str("\\n"),
+            '\t' => quoted.push_str("\\t"),
+            c if c.is_control() => quoted.push_str(&format!("\\u{:04X}", u32::from(c))),
+            c => quoted.push(c),
+        }
+    }
+    quoted.push('"');
+    quoted
 }
 
 /// The extensions of the themes' files: the native format's and

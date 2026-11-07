@@ -134,6 +134,32 @@ fn a_name_of_no_theme_tells_itself_and_its_file_applies_as_it_comes() {
 }
 
 #[test]
+fn a_theme_that_the_app_holds_applies_by_its_name_after_the_folder_s() {
+    let config = "[theme]\ndark = \"Held Night\"\n";
+    let (mut fake, mut app, directory) = with_themes("held", config, &[]);
+    assert!(app.diagnostics.shown().is_some(), "none held yet");
+    let held = directory.join("held");
+    std::fs::create_dir_all(&held).unwrap();
+    std::fs::write(held.join("Held Night.toml"), theme("#123456")).unwrap();
+    app.held_themes = Some(held.clone());
+    changed(&mut fake, &mut app);
+    assert_eq!(app.diagnostics.shown(), None);
+    assert_eq!(app.theme.dark.colors.background, rgb(0x123456));
+    // The held folder is not watched; the themes' folder's file of its
+    // name is, which takes its place.
+    assert!(
+        app.theme_files
+            .paths
+            .iter()
+            .all(|path| !path.starts_with(&held))
+    );
+    write(&directory, "Held Night", &theme("#654321"));
+    changed(&mut fake, &mut app);
+    assert_eq!(app.theme.dark.colors.background, rgb(0x654321));
+    let _ = std::fs::remove_dir_all(directory);
+}
+
+#[test]
 fn a_theme_s_file_saved_reloads_through_its_watch() {
     let config = "[theme]\ndark = \"Watched\"\nlight = \"Watched\"\n";
     let (mut fake, mut app, directory) =
