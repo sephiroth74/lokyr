@@ -1,11 +1,13 @@
 //! Built-in plugin of the search: the find bar, a panel at the focused
-//! pane's top right, of its field and its history, the toggles of case,
-//! regexes and whole words, the count of the matches, and the steps
-//! through them, each of which selects its match, ready for a copy, and
-//! brings it into the view, over the kernel's search service. The search
-//! goes from the bottom up, as the newest output is at the bottom: its
-//! next match is the one above, its previous the one below. Escape closes
-//! the bar, the current match staying selected. Like every built-in
+//! pane's top right, of a search field of macOS's look, whose magnifying
+//! glass lists the recent searches, and whose toggles of case, whole words
+//! and regexes sit at its end; the count of the matches, of a width of its
+//! own; and the steps through them, each of which selects its match, ready
+//! for a copy, and brings it into the view, over the kernel's search
+//! service. The search goes from the bottom up, as the newest output is at
+//! the bottom: its next match is the one above, its previous the one below.
+//! Escape closes the bar, the current match staying selected; the bar
+//! opens again of the last search and its options. Like every built-in
 //! plugin, it depends only on the plugin SDK.
 
 #![forbid(unsafe_code)]
@@ -18,7 +20,8 @@ use lokyr_plugin_sdk::message::{Data, Event};
 use lokyr_plugin_sdk::plugin::{Cx, Plugin};
 use lokyr_plugin_sdk::ui::{Anchor, Corner, PanelId, PanelOptions, Role, UiEvent, ViewId};
 use lokyr_plugin_sdk::view::{
-    Align, Border, Edges, Layout, Length, Node, Shadow, Style, Token, UiEventKind,
+    Align, Border, Edges, Hover, Justify, Layout, Length, Node, Shadow, Style, Token, Transition,
+    UiEventKind,
 };
 
 lokyr_plugin_sdk::export_plugin!(Search);
@@ -55,11 +58,28 @@ const PAST_ITEM: &str = "recent-";
 /// The most recent searches that the plugin's state keeps.
 const MOST_RECENT: usize = 20;
 
-/// The key of the recent searches in the plugin's state.
+/// The keys of the plugin's state: the recent searches, and the options
+/// of the last search.
 const STATE_RECENT: &str = "recent";
+const STATE_CASE: &str = "case-sensitive";
+const STATE_REGEX: &str = "regex";
+const STATE_WORD: &str = "whole-word";
 
-/// The width of the bar's field, in points.
-const FIELD_WIDTH: f32 = 180.0;
+/// The width of the search field, its glass, its text and its toggles, in
+/// points.
+const FIELD_WIDTH: f32 = 260.0;
+
+/// The width of the count, which its text never changes, in points: of
+/// `9999 of 9999`, the longest of its numbers, which go short past it.
+const COUNT_WIDTH: f32 = 96.0;
+
+/// The side of a button of an icon, and of a toggle, in points, and of
+/// those in the field.
+const BUTTON: f32 = 22.0;
+const IN_FIELD: f32 = 20.0;
+
+/// How long a button's hover and press fade, in seconds.
+const FADE: f32 = 0.12;
 
 /// The plugin's catalogs, of its commands' titles and its bar's texts.
 static CATALOGS: [(&str, &str); 2] = [
@@ -72,7 +92,7 @@ const ENGLISH: [(&str, &str); 13] = [
     ("find-placeholder", "Find"),
     ("find-none", "No results"),
     ("find-searching", "Searching…"),
-    ("find-invalid", "Not a valid regex"),
+    ("find-invalid", "Invalid regex"),
     ("find-case", "Match Case"),
     ("find-regex", "Regular Expression"),
     ("find-word", "Whole Words"),
@@ -86,15 +106,10 @@ const ENGLISH: [(&str, &str); 13] = [
 
 /// The text of the message `id` of `args`, in the language shown, or
 /// English's where the host gives none, its arguments in their places.
-fn message(cx: &mut Cx<'_>, id: &str, args: &[(&str, usize)]) -> String {
+fn message(cx: &mut Cx<'_>, id: &str, args: &[(&str, &str)]) -> String {
     let data: Vec<(&str, Data)> = args
         .iter()
-        .map(|&(name, value)| {
-            (
-                name,
-                Data::Integer(i64::try_from(value).unwrap_or(i64::MAX)),
-            )
-        })
+        .map(|&(name, value)| (name, Data::Text(value.to_owned())))
         .collect();
     if let Ok(text) = cx.message(id, &data)
         && text != id
@@ -106,17 +121,26 @@ fn message(cx: &mut Cx<'_>, id: &str, args: &[(&str, usize)]) -> String {
         .find(|(english, _)| *english == id)
         .map_or(id, |(_, text)| *text);
     args.iter().fold(english.to_owned(), |text, (name, value)| {
-        text.replace(&format!("{{ ${name} }}"), &value.to_string())
+        text.replace(&format!("{{ ${name} }}"), value)
     })
+}
+
+/// `count`, short past 9999, so that the count keeps its width: `12K`,
+/// `3M`.
+pub fn short(count: usize) -> String {
+    match count {
+        0..10_000 => count.to_string(),
+        10_000..1_000_000 => format!("{}K", count / 1000),
+        _ => format!("{}M", count / 1_000_000),
+    }
 }
 
 /// The config of `[plugins.search]`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Settings {
-    /// Whether case counts as the bar opens.
+    /// Whether case counts while the case toggle is off: of a capital
+    /// letter alone, smart, or never.
     case: SearchCase,
-    /// Whether the text is a regex as the bar opens.
-    regex: bool,
     /// Whether a step past the last match goes on from the first, and the
     /// other way.
     wrap_around: bool,
@@ -126,7 +150,6 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             case: SearchCase::Smart,
-            regex: false,
             wrap_around: true,
         }
     }
@@ -140,19 +163,28 @@ impl Settings {
         let Data::Map(config) = config else {
             return settings;
         };
-        settings.case = match config.get("case") {
-            Some(Data::Text(case)) if case == "sensitive" => SearchCase::Sensitive,
-            Some(Data::Text(case)) if case == "insensitive" => SearchCase::Insensitive,
-            _ => SearchCase::Smart,
-        };
-        if let Some(Data::Boolean(regex)) = config.get("regex") {
-            settings.regex = *regex;
+        if let Some(Data::Text(case)) = config.get("case")
+            && case == "insensitive"
+        {
+            settings.case = SearchCase::Insensitive;
         }
         if let Some(Data::Boolean(wrap)) = config.get("wrap-around") {
             settings.wrap_around = *wrap;
         }
         settings
     }
+}
+
+/// The options of a search, of the bar's toggles, which the plugin's
+/// state keeps from one search to the next.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Options {
+    /// Whether case counts.
+    pub sensitive: bool,
+    /// Whether the text is a regex.
+    pub regex: bool,
+    /// Whether matches take whole words alone.
+    pub whole_word: bool,
 }
 
 /// Which way a step goes.
@@ -172,12 +204,8 @@ struct Find {
     /// The field's text, and its revision.
     text: String,
     revision: u64,
-    /// Whether case counts, of its toggle; otherwise the config's.
-    sensitive: bool,
-    /// Whether the text is a regex.
-    regex: bool,
-    /// Whether matches take whole words alone.
-    whole_word: bool,
+    /// The search's options.
+    options: Options,
     /// The search under way, or done, of the text, if one is.
     search: Option<u64>,
     /// Its matches told so far, in the rows' order.
@@ -197,15 +225,13 @@ struct Find {
 }
 
 impl Find {
-    /// The bar of `pane`, of no text yet, of `settings`' options.
-    fn new(pane: PaneId, settings: Settings) -> Self {
+    /// The bar of `pane`, of no text yet, of `options`.
+    fn new(pane: PaneId, options: Options) -> Self {
         Self {
             pane,
             text: String::new(),
             revision: 0,
-            sensitive: settings.case == SearchCase::Sensitive,
-            regex: settings.regex,
-            whole_word: false,
+            options,
             search: None,
             known: Vec::new(),
             count: 0,
@@ -219,16 +245,15 @@ impl Find {
     /// The query of its text and its options, of `settings`' case where
     /// its toggle leaves case aside: smart, or insensitive.
     fn query(&self, settings: Settings) -> SearchQuery {
-        let case = match (self.sensitive, settings.case) {
-            (true, _) => SearchCase::Sensitive,
-            (false, SearchCase::Smart) => SearchCase::Smart,
-            (false, _) => SearchCase::Insensitive,
-        };
         SearchQuery {
             text: self.text.clone(),
-            regex: self.regex,
-            case,
-            whole_word: self.whole_word,
+            regex: self.options.regex,
+            case: if self.options.sensitive {
+                SearchCase::Sensitive
+            } else {
+                settings.case
+            },
+            whole_word: self.options.whole_word,
         }
     }
 
@@ -259,11 +284,222 @@ fn place(found: &SearchMatch) -> (i64, u16) {
     (found.first.1, found.first.0)
 }
 
+/// What the find bar shows: its options and its count's text.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct BarView {
+    /// The toggles' states.
+    pub options: Options,
+    /// The count's text.
+    pub count: String,
+}
+
+/// The texts of the find bar, in the language shown: its field's
+/// placeholder, and its toggles' and its buttons' labels, which their
+/// tooltips show.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BarTexts {
+    /// The field's placeholder.
+    pub placeholder: String,
+    /// The case toggle's label.
+    pub case: String,
+    /// The regex toggle's label.
+    pub regex: String,
+    /// The whole words toggle's label.
+    pub word: String,
+    /// The next match's button's label.
+    pub next: String,
+    /// The previous match's button's label.
+    pub previous: String,
+    /// The recent searches' glass's label.
+    pub recent: String,
+    /// The close button's label.
+    pub close: String,
+}
+
+impl Default for BarTexts {
+    fn default() -> Self {
+        let english = |id: &str| {
+            ENGLISH
+                .iter()
+                .find(|(english, _)| *english == id)
+                .map_or(id, |(_, text)| *text)
+                .to_owned()
+        };
+        Self {
+            placeholder: english("find-placeholder"),
+            case: english("find-case"),
+            regex: english("find-regex"),
+            word: english("find-word"),
+            next: english("find-next"),
+            previous: english("find-previous"),
+            recent: english("find-history"),
+            close: english("find-close"),
+        }
+    }
+}
+
+/// `node`, a button or a toggle of an icon of `side` points, without a
+/// box at rest, as macOS's and the editors' find bars have them: its hover
+/// and its press fill it, faded; a toggle `on` keeps its own fill and
+/// color.
+fn plain(node: Node, side: f32, on: bool, label: &str) -> Node {
+    node.label(label)
+        .tooltip(label)
+        .layout(Layout {
+            width: Length::Points(side),
+            min_width: Length::Points(side),
+            height: Length::Points(side),
+            justify: Justify::Center,
+            align: Align::Center,
+            ..Layout::default()
+        })
+        .style(Style {
+            background: Some(Token::from(if on { "toggle.on.bg" } else { "transparent" })),
+            color: on.then(|| Token::from("toggle.on.fg")),
+            radius: 4.0,
+            hover: Some(Hover {
+                background: Some(Token::from("button.hover.bg")),
+                ..Hover::default()
+            }),
+            pressed: Some(Hover {
+                background: Some(Token::from("button.pressed.bg")),
+                ..Hover::default()
+            }),
+            transition: Some(Transition {
+                duration: FADE,
+                ..Transition::default()
+            }),
+            ..Style::default()
+        })
+}
+
+/// The find bar of `view`, of `texts`: a search field of macOS's look,
+/// its magnifying glass, which lists the recent searches, its text, and
+/// its toggles of case, whole words and regexes at its end; the count, of
+/// a width of its own, so that the bar keeps its width whatever it tells;
+/// and the buttons of the next and the previous match and of the close.
+pub fn find_bar(view: &BarView, texts: &BarTexts) -> Node {
+    let options = view.options;
+    let text = Node::field(texts.placeholder.as_str())
+        .key(FIELD)
+        .layout(Layout {
+            grow: 1.0,
+            width: Length::Points(0.0),
+            ..Layout::default()
+        })
+        // Of the search field's box, which it lies in, of no box of its own.
+        .style(Style {
+            background: Some(Token::from("transparent")),
+            ..Style::default()
+        });
+    let field = Node::container(vec![
+        plain(
+            Node::icon_button("search").key(PAST),
+            IN_FIELD,
+            false,
+            &texts.recent,
+        ),
+        text,
+        plain(
+            Node::toggle("case-sensitive", options.sensitive).key(CASE),
+            IN_FIELD,
+            options.sensitive,
+            &texts.case,
+        ),
+        plain(
+            Node::toggle("whole-word", options.whole_word).key(WORD),
+            IN_FIELD,
+            options.whole_word,
+            &texts.word,
+        ),
+        plain(
+            Node::toggle("regex", options.regex).key(REGEX),
+            IN_FIELD,
+            options.regex,
+            &texts.regex,
+        ),
+    ])
+    .layout(Layout {
+        width: Length::Points(FIELD_WIDTH),
+        min_width: Length::Points(FIELD_WIDTH),
+        gap: 1.0,
+        padding: Edges::all(2.0),
+        align: Align::Center,
+        ..Layout::default()
+    })
+    .style(Style {
+        background: Some(Token::from("field.bg")),
+        border: Some(Border {
+            color: Token::from("field.border"),
+            width: 1.0,
+        }),
+        radius: 6.0,
+        ..Style::default()
+    });
+    let count = Node::container(vec![Node::text(view.count.as_str()).key(COUNT).style(
+        Style {
+            color: Some(Token::from("text.secondary")),
+            ..Style::default()
+        },
+    )])
+    .layout(Layout {
+        width: Length::Points(COUNT_WIDTH),
+        min_width: Length::Points(COUNT_WIDTH),
+        justify: Justify::Center,
+        align: Align::Center,
+        ..Layout::default()
+    })
+    .style(Style {
+        clip: true,
+        ..Style::default()
+    });
+    Node::container(vec![
+        field,
+        count,
+        plain(
+            Node::icon_button("arrow-up").key(UP),
+            BUTTON,
+            false,
+            &texts.next,
+        ),
+        plain(
+            Node::icon_button("arrow-down").key(DOWN),
+            BUTTON,
+            false,
+            &texts.previous,
+        ),
+        plain(
+            Node::icon_button("close").key(CLOSE),
+            BUTTON,
+            false,
+            &texts.close,
+        ),
+    ])
+    .layout(Layout {
+        gap: 2.0,
+        padding: Edges::all(5.0),
+        align: Align::Center,
+        ..Layout::default()
+    })
+    .style(Style {
+        background: Some(Token::from("panel.bg")),
+        border: Some(Border {
+            color: Token::from("panel.border"),
+            width: 1.0,
+        }),
+        radius: 8.0,
+        shadow: Some(Shadow::default()),
+        ..Style::default()
+    })
+}
+
 /// The plugin of the search.
 #[derive(Debug, Default)]
 pub struct Search {
     settings: Settings,
     find: Option<Find>,
+    /// The options of the last search, which the next takes.
+    options: Options,
     /// The recent searches' texts, the latest first.
     recent: Vec<String>,
     /// The closings of its bar that it asked for, to open it anew, whose
@@ -273,17 +509,23 @@ pub struct Search {
 
 impl Plugin for Search {
     fn activate(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
-        if let Ok(Data::Map(state)) = cx.state()
-            && let Some(Data::List(recent)) = state.get(STATE_RECENT)
-        {
-            self.recent = recent
-                .iter()
-                .filter_map(|text| match text {
-                    Data::Text(text) if !text.is_empty() => Some(text.clone()),
-                    _ => None,
-                })
-                .take(MOST_RECENT)
-                .collect();
+        if let Ok(Data::Map(state)) = cx.state() {
+            if let Some(Data::List(recent)) = state.get(STATE_RECENT) {
+                self.recent = recent
+                    .iter()
+                    .filter_map(|text| match text {
+                        Data::Text(text) if !text.is_empty() => Some(text.clone()),
+                        _ => None,
+                    })
+                    .take(MOST_RECENT)
+                    .collect();
+            }
+            let on = |key: &str| matches!(state.get(key), Some(Data::Boolean(true)));
+            self.options = Options {
+                sensitive: on(STATE_CASE),
+                regex: on(STATE_REGEX),
+                whole_word: on(STATE_WORD),
+            };
         }
         self.settings = Settings::of(&cx.config()?);
         for (name, title) in [
@@ -323,7 +565,13 @@ impl Plugin for Search {
     /// The bar, and its recent searches' menu.
     fn render(&mut self, cx: &mut Cx<'_>, view: &ViewId) -> Option<Node> {
         if *view == bar() {
-            return self.find.as_ref().map(|find| self.bar_tree(cx, find));
+            let find = self.find.as_ref()?;
+            let view = BarView {
+                options: find.options,
+                count: count(cx, find),
+            };
+            let texts = texts(cx);
+            return Some(find_bar(&view, &texts));
         }
         if *view == ViewId::Panel(PanelId::from(RECENT)) {
             return Some(Node::container(
@@ -340,9 +588,9 @@ impl Plugin for Search {
     }
 
     /// The field's text searches as it changes, Return steps up, and
-    /// Shift-Return down; the toggles search again; the buttons step, show
-    /// the recent searches or close the bar; a recent search chosen
-    /// searches again.
+    /// Shift-Return down; the toggles search again, and their options go
+    /// to the next search; the buttons step or close the bar, and its
+    /// glass shows the recent searches, one of which searches again.
     fn on_ui_event(&mut self, cx: &mut Cx<'_>, event: &UiEvent) -> Result<(), Error> {
         let key = event.key.0.as_str();
         if event.view == ViewId::Panel(PanelId::from(RECENT)) {
@@ -386,10 +634,12 @@ impl Plugin for Search {
             }
             (UiEventKind::Toggle { on }, CASE | REGEX | WORD) => {
                 match key {
-                    CASE => find.sensitive = *on,
-                    REGEX => find.regex = *on,
-                    _ => find.whole_word = *on,
+                    CASE => find.options.sensitive = *on,
+                    REGEX => find.options.regex = *on,
+                    _ => find.options.whole_word = *on,
                 }
+                self.options = find.options;
+                self.keep(cx);
                 self.search(cx)
             }
             (UiEventKind::Click, UP) => self.step(cx, Step::Up),
@@ -445,11 +695,64 @@ fn bar() -> ViewId {
     ViewId::Panel(PanelId::from(BAR))
 }
 
+/// The bar's texts, in the language shown.
+fn texts(cx: &mut Cx<'_>) -> BarTexts {
+    let mut text = |id: &str| message(cx, id, &[]);
+    BarTexts {
+        placeholder: text("find-placeholder"),
+        case: text("find-case"),
+        regex: text("find-regex"),
+        word: text("find-word"),
+        next: text("find-next"),
+        previous: text("find-previous"),
+        recent: text("find-history"),
+        close: text("find-close"),
+    }
+}
+
+/// The count of `find`'s matches, as its bar tells it: none of no text; a
+/// refused query; no result, or the search under way, of none yet; the
+/// current match's place among them, of short numbers past 9999, `…`
+/// while the search goes on.
+fn count(cx: &mut Cx<'_>, find: &Find) -> String {
+    if find.text.is_empty() {
+        return String::new();
+    }
+    if find.invalid {
+        return message(cx, "find-invalid", &[]);
+    }
+    if find.count == 0 {
+        let id = if find.done {
+            "find-none"
+        } else {
+            "find-searching"
+        };
+        return message(cx, id, &[]);
+    }
+    let count = short(find.count);
+    let told = match find.current_index() {
+        Some(at) => {
+            let current = short(at + 1);
+            message(
+                cx,
+                "find-count",
+                &[("current", &current), ("count", &count)],
+            )
+        }
+        None => message(cx, "find-count-unknown", &[("count", &count)]),
+    };
+    if find.done {
+        told
+    } else {
+        format!("{told}…")
+    }
+}
+
 impl Search {
     /// Opens the bar at the focused pane, of its last search's text, which
-    /// it searches again; open already, its field takes the keys again, as
-    /// it opens anew, at the focused pane, its search ending if it moves to
-    /// another.
+    /// it searches again, of its options; open already, its field takes
+    /// the keys again, as it opens anew, at the focused pane, its search
+    /// ending if it moves to another.
     fn open(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
         let Some(pane) = cx.focused_pane() else {
             return Ok(());
@@ -482,7 +785,7 @@ impl Search {
                 Ok(())
             }
             None => {
-                let mut find = Find::new(pane, self.settings);
+                let mut find = Find::new(pane, self.options);
                 find.text = self.recent.first().cloned().unwrap_or_default();
                 find.filling = true;
                 self.find = Some(find);
@@ -600,94 +903,26 @@ impl Search {
         self.recent.retain(|kept| kept != text);
         self.recent.insert(0, text.to_owned());
         self.recent.truncate(MOST_RECENT);
-        let state = Data::Map(BTreeMap::from([(
-            STATE_RECENT.to_owned(),
-            Data::List(self.recent.iter().cloned().map(Data::Text).collect()),
-        )]));
-        // Without a state directory, they stay for this run.
-        let _ = cx.set_state(state);
+        self.keep(cx);
     }
 
-    /// The bar's tree: its field, the count, its toggles and its buttons,
-    /// of its texts in the language shown.
-    fn bar_tree(&self, cx: &mut Cx<'_>, find: &Find) -> Node {
-        let count = if find.text.is_empty() {
-            String::new()
-        } else if find.invalid {
-            message(cx, "find-invalid", &[])
-        } else if find.count == 0 {
-            if find.done {
-                message(cx, "find-none", &[])
-            } else {
-                message(cx, "find-searching", &[])
-            }
-        } else {
-            let told = match find.current_index() {
-                Some(at) => message(
-                    cx,
-                    "find-count",
-                    &[("current", at + 1), ("count", find.count)],
-                ),
-                None => message(cx, "find-count-unknown", &[("count", find.count)]),
-            };
-            if find.done {
-                told
-            } else {
-                format!("{told}…")
-            }
-        };
-        let mut text = |id: &str| message(cx, id, &[]);
-        let labelled = |node: Node, label: String| node.label(label.as_str()).tooltip(label);
-        let field = Node::field(text("find-placeholder"))
-            .key(FIELD)
-            .layout(Layout {
-                width: Length::Points(FIELD_WIDTH),
-                min_width: Length::Points(FIELD_WIDTH),
-                ..Layout::default()
-            });
-        let count = Node::text(count).key(COUNT).style(Style {
-            color: Some(Token::from("text.secondary")),
-            ..Style::default()
-        });
-        Node::container(vec![
-            field,
-            count,
-            labelled(
-                Node::toggle("case-sensitive", find.sensitive).key(CASE),
-                text("find-case"),
+    /// Keeps the recent searches and the last options in the plugin's
+    /// state.
+    fn keep(&self, cx: &mut Cx<'_>) {
+        let state = Data::Map(BTreeMap::from([
+            (
+                STATE_RECENT.to_owned(),
+                Data::List(self.recent.iter().cloned().map(Data::Text).collect()),
             ),
-            labelled(
-                Node::toggle("regex", find.regex).key(REGEX),
-                text("find-regex"),
+            (STATE_CASE.to_owned(), Data::Boolean(self.options.sensitive)),
+            (STATE_REGEX.to_owned(), Data::Boolean(self.options.regex)),
+            (
+                STATE_WORD.to_owned(),
+                Data::Boolean(self.options.whole_word),
             ),
-            labelled(
-                Node::toggle("whole-word", find.whole_word).key(WORD),
-                text("find-word"),
-            ),
-            labelled(Node::icon_button("arrow-up").key(UP), text("find-next")),
-            labelled(
-                Node::icon_button("arrow-down").key(DOWN),
-                text("find-previous"),
-            ),
-            labelled(Node::icon_button("history").key(PAST), text("find-history")),
-            labelled(Node::icon_button("close").key(CLOSE), text("find-close")),
-        ])
-        .layout(Layout {
-            gap: 4.0,
-            padding: Edges::all(6.0),
-            align: Align::Center,
-            ..Layout::default()
-        })
-        .style(Style {
-            background: Some(Token::from("panel.bg")),
-            border: Some(Border {
-                color: Token::from("panel.border"),
-                width: 1.0,
-            }),
-            radius: 8.0,
-            shadow: Some(Shadow::default()),
-            ..Style::default()
-        })
+        ]));
+        // Without a state directory, they stay for this run.
+        let _ = cx.set_state(state);
     }
 }
 

@@ -179,8 +179,7 @@ pane-titles = false                  # true | false: each pane's title across it
 focus-follows-mouse = false          # true | false: the keyboard goes to the pane under the pointer
 
 [plugins.search]
-case = "smart"                       # smart | sensitive | insensitive: whether case counts as the find bar opens
-regex = false                        # true | false: the find bar's text a regex as it opens
+case = "smart"                       # smart | insensitive: whether case counts while the bar's case toggle is off
 highlight-all = true                 # true | false: every match that shows highlighted
 wrap-around = true                   # true | false: a step past the last match goes on from the first
 ```
@@ -1506,33 +1505,21 @@ Whether the keyboard goes to the pane that the pointer comes over, without a cli
 
 <sub>Platforms: macOS</sub>
 
-The find bar of the built-in plugin `lokyr/search`. `cmd+f` opens it at the top right of the pane that has the keyboard, of your last search's text, which it searches again; as you type, it searches the pane's screen and scrollback, the rows that show first, and counts the matches, as `3 of 12`. It searches from the bottom up, as the newest output is at the bottom: `enter`, `cmd+g` and the bar's up arrow select the next match, the one above; `shift+enter`, `cmd+shift+g` and its down arrow the previous one, the one below. Each match that it selects is your selection, ready for `cmd+c`, and comes into the view. `escape`, or its close button, closes it, the match staying selected. Its toggles count case, take the text as a regex, and match whole words alone; its clock lists your recent searches, which Lokyr keeps.
+The find bar of the built-in plugin `lokyr/search`. `cmd+f` opens it at the top right of the pane that has the keyboard, of your last search's text and its options, which it searches again; as you type, it searches the pane's screen and scrollback, the rows that show first, and counts the matches, as `3 of 12`, in a room of its own, which keeps the bar's width, numbers past 9999 short, as `12K`. It searches from the bottom up, as the newest output is at the bottom: `enter`, `cmd+g` and the bar's up arrow select the next match, the one above; `shift+enter`, `cmd+shift+g` and its down arrow the previous one, the one below. Each match that it selects is your selection, ready for `cmd+c`, and comes into the view. `escape`, or its close button, closes it, the match staying selected. The toggles at its field's end count case, match whole words alone, and take the text as a regex, which the next search keeps; the magnifying glass at its start lists your recent searches, which Lokyr keeps.
 
 ### `case`
 
 <sub>Platforms: macOS</sub>
 
-Whether case counts as the find bar opens, which its toggle changes.
+Whether case counts while the find bar's case toggle is off; on, it always counts.
 
 | Values | Default |
 |---|---|
-| `smart`, `sensitive`, `insensitive` | `smart` |
+| `smart`, `insensitive` | `smart` |
 
-- `smart` counts case of a text of a capital letter, and not otherwise: `error` finds `Error`, and `Error` does not find `error`; `sensitive` always counts it, `insensitive` never.
-- It applies as the bar opens next.
-
-### `regex`
-
-<sub>Platforms: macOS</sub>
-
-Whether the find bar's text is a regular expression as it opens, of the syntax of Rust's `regex`, which its toggle changes.
-
-| Values | Default |
-|---|---|
-| `true`, `false` | `false` |
-
-- A text that is no valid regular expression tells so in the bar, and finds nothing.
-- It applies as the bar opens next.
+- `smart` counts case of a text of a capital letter, and not otherwise: `error` finds `Error`, and `Error` does not find `error`; `insensitive` never counts it.
+- The toggles, of case, whole words and regular expressions, of the syntax of Rust's `regex`, keep their states from one search to the next, as Lokyr keeps them; a text that is no valid regular expression tells so in the bar, and finds nothing.
+- It applies at the next search, as you save the file.
 
 ### `highlight-all`
 

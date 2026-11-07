@@ -4,15 +4,10 @@
   "type": "object",
   "properties": {
     "case": {
-      "description": "Whether case counts as the find bar opens: smart, of a text of a capital letter alone; sensitive; or insensitive.",
+      "description": "Whether case counts while the find bar's case toggle is off: smart, of a text of a capital letter alone; or insensitive, never.",
       "type": "string",
-      "enum": ["smart", "sensitive", "insensitive"],
+      "enum": ["smart", "insensitive"],
       "default": "smart"
-    },
-    "regex": {
-      "description": "Whether the find bar's text is a regex as it opens.",
-      "type": "boolean",
-      "default": false
     },
     "highlight-all": {
       "description": "Whether every match that shows is highlighted, besides the current one.",

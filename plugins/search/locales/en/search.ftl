@@ -5,14 +5,15 @@ command-search-open = Find…
 command-search-next = Find Next
 command-search-previous = Find Previous
 
-# The find bar: its field's placeholder, the count of the matches, and
-# the labels and tooltips of its toggles and buttons.
+# The find bar: its field's placeholder, the count of the matches, of
+# short numbers past 9999, and the labels and tooltips of its toggles and
+# buttons.
 find-placeholder = Find
 find-count = { $current } of { $count }
 find-count-unknown = { $count } found
 find-none = No results
 find-searching = Searching…
-find-invalid = Not a valid regex
+find-invalid = Invalid regex
 find-case = Match Case
 find-regex = Regular Expression
 find-word = Whole Words

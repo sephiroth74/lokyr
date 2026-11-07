@@ -1017,6 +1017,45 @@ fn panes_headers_draw_as_their_golden_images() {
 }
 
 #[test]
+fn the_find_bar_draws_as_its_golden_images() {
+    use lokyr_search_plugin::{BarTexts, BarView, Options, find_bar};
+    // Of no option, its count empty, its field's placeholder showing; then
+    // of case and regex, a count, the pointer over the up arrow.
+    let quiet = find_bar(&BarView::default(), &BarTexts::default());
+    let busy = find_bar(
+        &BarView {
+            options: Options {
+                sensitive: true,
+                regex: true,
+                whole_word: false,
+            },
+            count: "3 of 12".to_owned(),
+        },
+        &BarTexts::default(),
+    );
+    let room = |bar: Node| {
+        Node::container(vec![bar]).layout(Box {
+            width: Length::Points(470.0),
+            padding: Edges::all(8.0),
+            ..Box::default()
+        })
+    };
+    for dark in [false, true] {
+        for scale in [1, 2] {
+            check_tree("find-bar", &room(quiet.clone()), (dark, scale), |_| {
+                (None, None, None, None)
+            });
+            check_tree(
+                "find-bar-options",
+                &room(busy.clone()),
+                (dark, scale),
+                |tree| (None, tree.by_key(&"up".into()), None, None),
+            );
+        }
+    }
+}
+
+#[test]
 fn a_selection_draws_as_its_golden_image() {
     for scale in [1, 2] {
         check(&selection(), scale);

@@ -269,7 +269,8 @@ The kernel's `search` service (the engine) plus the `search` plugin (UI and comm
   - the bar's up and down arrows;
   - each match selected, which a copy takes, and brought into the view;
   - Esc closes the bar and leaves the current match selected, ready for ⌘C.
-- **History**: the bar opens of the last search's text, which it searches again; its clock lists the recent searches, twenty at most, in the plugin's state.
+- **History**: the bar opens of the last search's text and its options, which it searches again; the magnifying glass of its field lists the recent searches, twenty at most, which the plugin's state keeps with the options.
+- **Layout**, as VS Code's find widget, of macOS's search field: the field, its glass at its start and its toggles of case, whole words and regexes at its end; the count, in a room of its own, which keeps the bar's width whatever it tells, `n of m`, of numbers past 9999 short, as `12K`; the arrows and the close button. The buttons and the toggles have no box at rest, their hover and press fading in, a toggle on of its own fill.
 - **Highlighting**: all visible matches (`search.match`) and the current one (`search.current`), plus marks in the scrollbar.
 - **Filter mode**: iTerm2-style, showing only the matching lines. It arrives in F5b, because the renderer must first be able to show an arbitrary list of rows instead of a contiguous window.
 

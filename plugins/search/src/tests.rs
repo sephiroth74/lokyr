@@ -272,12 +272,12 @@ fn escape_ends_the_search_and_its_text_opens_the_bar_again_among_the_recent_ones
     assert!(!host.searches().contains(&search));
     assert!(selected(&closed).is_empty());
     assert!(plugin.find.is_none());
+    let Data::Map(state) = host.state() else {
+        panic!("a state: {:?}", host.state());
+    };
     assert_eq!(
-        host.state(),
-        &config(&[(
-            STATE_RECENT,
-            Data::List(vec![Data::Text("needle".to_owned())])
-        )])
+        state.get(STATE_RECENT),
+        Some(&Data::List(vec![Data::Text("needle".to_owned())]))
     );
     // Opened again, of its last text, searched again, its field filled as
     // it takes the keys.
@@ -348,4 +348,66 @@ fn the_bar_opened_again_while_open_keeps_its_search_and_a_step_opens_a_closed_on
         request,
         Request::SetText { text, revision: 0, .. } if text == "needle"
     )));
+}
+
+#[test]
+fn the_bar_opens_of_the_options_of_the_last_search_as_the_state_keeps_them() {
+    let (mut host, mut plugin) = host(&ROWS, Data::Nil);
+    run(&mut host, &mut plugin, OPEN);
+    typed(&mut host, &mut plugin, "needle");
+    on_bar(
+        &mut host,
+        &mut plugin,
+        REGEX,
+        UiEventKind::Toggle { on: true },
+    );
+    on_bar(
+        &mut host,
+        &mut plugin,
+        WORD,
+        UiEventKind::Toggle { on: true },
+    );
+    host.close_panel(&PanelId::from(BAR));
+    host.deliver(&mut plugin).unwrap();
+    // Opened again, of the same options, as its toggles show.
+    run(&mut host, &mut plugin, OPEN);
+    let options = Options {
+        sensitive: false,
+        regex: true,
+        whole_word: true,
+    };
+    assert_eq!(plugin.find.as_ref().unwrap().options, options);
+    let tree = host.render(&mut plugin, &bar()).expect("the bar");
+    let mut on = Vec::new();
+    let mut left = vec![&tree];
+    while let Some(node) = left.pop() {
+        if let Kind::Toggle(toggle) = &node.kind
+            && toggle.on
+        {
+            on.push(node.key.as_ref().unwrap().0.clone());
+        }
+        left.extend(&node.children);
+    }
+    on.sort();
+    assert_eq!(on, [REGEX, WORD]);
+    // A plugin made anew, as at the app's next start, takes them from its
+    // state.
+    let state = host.state().clone();
+    let mut again = FakeHost::new(NAME);
+    again.pane(PANE);
+    again.focus(Some(PANE));
+    again.set_state(state);
+    let mut made = Search::default();
+    again.activate(&mut made).unwrap();
+    again.command(&mut made, OPEN, Args::new()).unwrap();
+    assert_eq!(made.find.as_ref().unwrap().options, options);
+    assert_eq!(made.find.as_ref().unwrap().text, "needle");
+}
+
+#[test]
+fn the_count_keeps_its_width_of_short_numbers_past_9999() {
+    assert_eq!(short(9999), "9999");
+    assert_eq!(short(12_345), "12K");
+    assert_eq!(short(100_000), "100K");
+    assert_eq!(short(3_400_000), "3M");
 }
