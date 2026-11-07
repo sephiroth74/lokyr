@@ -2011,7 +2011,8 @@ impl<B: Backend> App<B> {
     /// way ends, which the input method forgets, so that its commit goes to
     /// no other pane, and so does a selection being made; the cursor starts
     /// blinking, on; the window looks at its new place, its program and its
-    /// directory, and draws again.
+    /// directory, and draws again; the protected input and its lock follow
+    /// the keyboard.
     fn keyboard_moved(&mut self, platform: &mut dyn Platform, window: WindowId) {
         let Some(state) = self.windows.get_mut(&window) else {
             return;
@@ -2036,6 +2037,9 @@ impl<B: Backend> App<B> {
         state.blink.restart(Instant::now());
         self.look_at_place(window);
         platform.request_frame(window);
+        // The protected input is the pane's that has the keyboard now, as
+        // another tab shows, and the lock its tab's.
+        self.settle_secure_input(platform);
     }
 
     /// Closes `pane` of `window`, whose program is hung up: its room goes

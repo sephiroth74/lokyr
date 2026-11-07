@@ -391,7 +391,19 @@ impl Workspace {
 
     /// Records `event`, for the embedder.
     fn changed(&mut self, event: WorkspaceEvent) {
+        // A tab's progress is its panes', which a change of its layout or
+        // of its active pane changes, or its panes that came from another.
+        let progressed = match &event {
+            WorkspaceEvent::LayoutChanged { tab }
+            | WorkspaceEvent::PaneFocused { tab, .. }
+            | WorkspaceEvent::TabCreated { tab, .. } => Some(TabId::of(tab.0)),
+            _ => None,
+        };
         self.events.push(Event::Changed(event));
+        if let Some(tab) = progressed {
+            let progress = self.tab_progress(tab);
+            self.mark(tab, |marks| marks.progress = progress);
+        }
     }
 
     /// Records that `tab`, at its place in its window, and its `panes`

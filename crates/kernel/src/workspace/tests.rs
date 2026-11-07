@@ -1319,6 +1319,36 @@ fn a_tab_is_marked_of_what_runs_its_protected_input_and_its_agent_each_told_once
 }
 
 #[test]
+fn a_tab_s_progress_goes_with_the_pane_that_told_it_and_comes_with_a_pane_moved_in() {
+    let mut workspace = Workspace::new();
+    let quiet = pane("read line");
+    let quiet_id = quiet.id();
+    let window = workspace.open_window(quiet);
+    let tab = workspace.window(window).unwrap().active_tab();
+    let telling = || pane("printf '\\033]9;4;1;40\\a'; read line");
+    let told = Some(terminal::Progress::Set(40));
+    let first = workspace
+        .split(quiet_id, Direction::Horizontal, telling(), Side::Second)
+        .unwrap();
+    collect_marks(&mut workspace, tab, |marks| marks.progress == told);
+    // Closed, its tab's outline goes.
+    workspace.take_events();
+    assert!(workspace.close_pane(first));
+    assert_eq!(workspace.tab(tab).unwrap().marks().progress, None);
+    assert!(changes(&mut workspace).contains(&Change::TabChanged { tab: tab.into() }));
+    // Out to a tab of its own, its progress goes with it.
+    let second = workspace
+        .split(quiet_id, Direction::Horizontal, telling(), Side::Second)
+        .unwrap();
+    collect_marks(&mut workspace, tab, |marks| marks.progress == told);
+    let moved = workspace
+        .pane_to_new_tab(second, window, 1)
+        .expect("a tab of its own");
+    assert_eq!(workspace.tab(tab).unwrap().marks().progress, None);
+    assert_eq!(workspace.tab(moved).unwrap().marks().progress, told);
+}
+
+#[test]
 fn a_tab_is_marked_while_its_program_prints_of_its_own_and_not_of_its_input_s_echo() {
     let mut workspace = Workspace::new();
     let window = workspace.open_window(pane(

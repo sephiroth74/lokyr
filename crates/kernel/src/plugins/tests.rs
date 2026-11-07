@@ -1220,6 +1220,41 @@ fn a_tab_s_change_that_a_plugin_cannot_read_tells_it_nothing() {
     deliver(&mut app, &mut plugins);
     assert_eq!(*logs[0].borrow(), ["tab-changed"]);
     assert_eq!(*logs[1].borrow(), ["tab-changed", "tab-changed"]);
+    // A tab behind it, whose bell rings: a change of its marks alone,
+    // which both read.
+    let ringing = Pane::spawn(
+        &Program::command("/bin/sh", ["-c", "sleep 0.2; printf '\\a'; sleep 10"]),
+        &Environment::default(),
+        &Settings::default(),
+        GRID,
+        &Colors::default(),
+        &Texts::new("en", &crate::l10n::KERNEL),
+        || {},
+    );
+    let behind = app.workspace.open_tab(shown, ringing, 1).unwrap();
+    deliver(&mut app, &mut plugins);
+    let before = logs.each_ref().map(|log| log.borrow().len());
+    let start = Instant::now();
+    while !app.workspace.tab(behind).unwrap().marks().bell {
+        assert!(start.elapsed() < Duration::from_secs(10), "no bell");
+        let panes = app.workspace.pane_ids();
+        app.workspace.collect(&panes, Instant::now());
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    deliver(&mut app, &mut plugins);
+    for (log, before) in logs.iter().zip(before) {
+        assert!(log.borrow().len() > before, "{:?}", log.borrow());
+    }
+    // A change of the agent's state, of the marks alone.
+    let told = logs.each_ref().map(|log| log.borrow().len());
+    assert!(
+        app.workspace
+            .set_tab_agent(tab, Some(lokyr_plugin_sdk::host::AgentState::Working))
+    );
+    deliver(&mut app, &mut plugins);
+    for (log, told) in logs.iter().zip(told) {
+        assert_eq!(log.borrow().len(), told + 1, "{:?}", log.borrow());
+    }
 }
 
 #[test]

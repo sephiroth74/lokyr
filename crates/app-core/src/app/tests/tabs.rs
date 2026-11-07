@@ -456,6 +456,24 @@ fn the_protected_input_leaves_the_title_for_its_tab_where_a_tab_bar_shows() {
         .map(|&tab| app.workspace.tab(tab).unwrap().marks().secure)
         .collect();
     assert_eq!(marked, [false, false, true]);
+    // The lock goes with the tab that shows.
+    app.run(&mut fake, "tabs.goto", {
+        let mut args = Args::new();
+        args.insert(
+            "index".to_owned(),
+            lokyr_kernel::commands::Value::Integer(1),
+        );
+        args
+    });
+    settle(&mut fake, &mut app);
+    let shown = app.workspace.window(app.windows[&window].window).unwrap();
+    let marked: Vec<bool> = shown
+        .tabs()
+        .iter()
+        .map(|&tab| app.workspace.tab(tab).unwrap().marks().secure)
+        .collect();
+    assert_eq!(marked, [true, false, false]);
+    assert!(fake.secure_input().0);
 }
 
 /// The labels of the nodes of `window`'s bar under the tab `id`.

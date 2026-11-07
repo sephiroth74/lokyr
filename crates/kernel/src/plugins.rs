@@ -316,15 +316,11 @@ struct State {
     /// window of a single tab shows its title, which goes as the window
     /// closes.
     window_places: BTreeMap<host::WindowId, host::BarPlace>,
-    /// Of a plugin that does not read the processes, the title and the
-    /// color of each tab as it last learned them, which a change of the
-    /// tab's folder or program, that it cannot read, leaves.
-    told_tabs: BTreeMap<host::TabId, Seen>,
+    /// Of a plugin that does not read the processes, what it last learned
+    /// of each tab, which a change of the tab's folder or program, that it
+    /// cannot read, leaves.
+    told_tabs: BTreeMap<host::TabId, host::TabInfo>,
 }
-
-/// A tab's title and color, as a plugin that does not read the processes
-/// sees them.
-type Seen = (String, Option<host::Color>);
 
 impl State {
     /// Whether it reads the processes, whose folders and programs a tab's
@@ -335,8 +331,8 @@ impl State {
             .is_none_or(|granted| granted.contains(&Capability::ProcessRead))
     }
 
-    /// Learns the title and the color of every tab of `workspace`, as it
-    /// starts, a plugin that does not read the processes.
+    /// Learns what it reads of every tab of `workspace`, as it starts, a
+    /// plugin that does not read the processes.
     fn learn_tabs(&mut self, workspace: &Workspace) {
         self.told_tabs.clear();
         if self.reads_processes() {
@@ -345,8 +341,8 @@ impl State {
         for window in workspace.windows() {
             for &tab in window.tabs() {
                 if let Some(shown) = workspace.tab(tab) {
-                    let seen = (shown.title().to_owned(), host_color(shown.color()));
-                    self.told_tabs.insert(tab.into(), seen);
+                    self.told_tabs
+                        .insert(tab.into(), tab_info(workspace, shown, false));
                 }
             }
         }
@@ -354,8 +350,8 @@ impl State {
 
     /// Whether it hears `event`, of the workspace, of the tabs that
     /// `workspace` has: a tab's change that it cannot read it does not, as
-    /// a plugin that does not read the processes, which learns each tab's
-    /// title and color.
+    /// a plugin that does not read the processes, which learns what it
+    /// reads of each tab, its title, its color and its marks.
     fn hears(&mut self, event: &Event, workspace: &Workspace) -> bool {
         if self.reads_processes() {
             return true;
@@ -363,7 +359,7 @@ impl State {
         let seen = |tab: host::TabId| {
             workspace
                 .tab(crate::workspace::TabId::of(tab.0))
-                .map(|tab| (tab.title().to_owned(), host_color(tab.color())))
+                .map(|tab| tab_info(workspace, tab, false))
         };
         match event {
             Event::Workspace(WorkspaceEvent::TabCreated { tab, .. }) => {
@@ -2785,38 +2781,7 @@ impl Host<'_, '_> {
 
     /// What a read of a window's tabs tells of `tab`.
     fn tab_info(&self, tab: &crate::workspace::Tab) -> host::TabInfo {
-        let active = self
-            .context
-            .workspace
-            .window(tab.window())
-            .is_some_and(|window| window.active_tab() == tab.id());
-        // The folder and the program of its pane, to a plugin that reads
-        // the processes' alone.
-        let title = if self.state.reads_processes() {
-            tab.label()
-        } else {
-            tab.title()
-        };
-        let marks = tab.marks();
-        host::TabInfo {
-            id: tab.id().into(),
-            window: tab.window().into(),
-            title: title.to_owned(),
-            color: host_color(tab.color()),
-            active,
-            panes: tab.layout().panes().into_iter().map(Into::into).collect(),
-            focused: tab.active_pane().into(),
-            zoomed: tab.zoomed().map(Into::into),
-            activity: marks.activity,
-            bell: marks.bell,
-            progress: marks.progress.and_then(tab_progress),
-            // What runs, to a plugin that reads the processes' alone.
-            printing: marks.printing && self.state.reads_processes(),
-            running: marks.running && self.state.reads_processes(),
-            alternate: marks.alternate && self.state.reads_processes(),
-            secure: marks.secure,
-            agent: marks.agent,
-        }
+        tab_info(self.context.workspace, tab, self.state.reads_processes())
     }
 
     /// Whether the plugin may make `request`: it has the capability that
@@ -2970,8 +2935,7 @@ impl Host<'_, '_> {
                 // cannot read tells it nothing.
                 if !self.state.reads_processes() {
                     for info in &infos {
-                        let seen = (info.title.clone(), info.color);
-                        self.state.told_tabs.insert(info.id, seen);
+                        self.state.told_tabs.insert(info.id, info.clone());
                     }
                 }
                 Response::Tabs(infos)
@@ -3496,6 +3460,35 @@ impl host::Host for Host<'_, '_> {
             ))
         };
         answered.unwrap_or_else(Response::Failed)
+    }
+}
+
+/// What a read of a window's tabs tells of `tab` of `workspace`, to a plugin
+/// that `reads` the processes or not: their folders and programs, and what
+/// runs, to one that does alone.
+fn tab_info(workspace: &Workspace, tab: &crate::workspace::Tab, reads: bool) -> host::TabInfo {
+    let active = workspace
+        .window(tab.window())
+        .is_some_and(|window| window.active_tab() == tab.id());
+    let title = if reads { tab.label() } else { tab.title() };
+    let marks = tab.marks();
+    host::TabInfo {
+        id: tab.id().into(),
+        window: tab.window().into(),
+        title: title.to_owned(),
+        color: host_color(tab.color()),
+        active,
+        panes: tab.layout().panes().into_iter().map(Into::into).collect(),
+        focused: tab.active_pane().into(),
+        zoomed: tab.zoomed().map(Into::into),
+        activity: marks.activity,
+        bell: marks.bell,
+        progress: marks.progress.and_then(tab_progress),
+        printing: marks.printing && reads,
+        running: marks.running && reads,
+        alternate: marks.alternate && reads,
+        secure: marks.secure,
+        agent: marks.agent,
     }
 }
 
