@@ -100,7 +100,8 @@ The phases (F0–F7) are described in the [ROADMAP](ROADMAP.md).
 | [0033](adr/0033-plugins-turned-off-in-their-sections.md) | A plugin turned off by `enabled = false` in its section, at once, and on again a new one of it | Accepted; amends 0032 |
 | [0034](adr/0034-themes-native-format-and-itermcolors.md) | Themes: a native format of TOML, a file a variant, colors alone; `.itermcolors` the one format imported, read as iTerm2 reads it and never converted; the themes of permissive licenses held, converted as the app builds; the user's in a folder, installed from the Finder | Accepted |
 | [0035](adr/0035-themes-are-the-hosts.md) | Themes are the host's: `[theme]` in the config, the themes' files and `.itermcolors` read by the app, no `themes` plugin; the palette's picker writes `[theme]` | Accepted; amends 0002 |
-| [0036](adr/0036-plugin-ecosystem-before-1-0.md) | The plugin ecosystem, F4, whole, before 1.0.0, as 0.8 and 0.9, `snap` and `awake` published; semantic versioning from 1.0.0; the settings' panel in F3b; the agents on their tabs in the daily features | Accepted; amends 0027 and 0029 |
+| [0036](adr/0036-plugin-ecosystem-before-1-0.md) | The plugin ecosystem, F4, whole, before 1.0.0, as 0.8 and 0.9, `snap` and `awake` published; semantic versioning from 1.0.0; the settings' panel in F3b; the agents on their tabs in the daily features | Accepted; amends 0027 and 0029; the agents on their tabs after F4, per 0037 |
+| [0037](adr/0037-agents-on-their-tabs-before-1-0.md) | The agents on their tabs, F3-63, right after F4's third-party plugins, before 1.0.0, which shows them; 0.7 without them | Accepted; amends 0036 |
 
 ## Glossary
 
