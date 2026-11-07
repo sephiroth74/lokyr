@@ -91,15 +91,16 @@ The phases (F0–F7) are described in the [ROADMAP](ROADMAP.md).
 | [0024](adr/0024-user-commands.md) | The commands that the user runs through a plugin, as the palette's: the capability `user-commands`, which also reads the whole registry | Accepted; amends 0019 |
 | [0025](adr/0025-symbols-font.md) | A font of symbols in the binary, Symbols Nerd Font Mono, for the icons of the private use areas that the configured font lacks | Accepted; amends 0006 |
 | [0026](adr/0026-app-updates.md) | The app updates itself through Sparkle 2, from a signed feed on the repository's GitHub releases | Accepted; amends 0008; its feed at the project's address, per 0029; its notes in English, per 0030 |
-| [0027](adr/0027-version-numbers.md) | Version numbers: releases, builds of a date and candidates; F3 from 0.2 to the first public release, 1.0.0; the plugin API's own version | Accepted; replaces the roadmap's versions; F3's blocks' minors in their new order, per 0029 |
+| [0027](adr/0027-version-numbers.md) | Version numbers: releases, builds of a date and candidates; F3 from 0.2 to the first public release, 1.0.0; the plugin API's own version | Accepted; replaces the roadmap's versions; F3's blocks' minors in their new order, per 0029; F4 before 1.0.0, per 0036 |
 | [0028](adr/0028-plugin-calls-as-messages.md) | The plugins' calls as messages, with every plugin's changes queued, and their UI as data, whose widgets keep their state in the host | Accepted; amends 0003 |
-| [0029](adr/0029-update-feed-and-releases.md) | The updates' feed at `lokyr.dev`, builds' numbers that grow with each release, Sparkle in the app, and the distribution as F3's second block | Accepted; amends 0026 and 0027 |
+| [0029](adr/0029-update-feed-and-releases.md) | The updates' feed at `lokyr.dev`, builds' numbers that grow with each release, Sparkle in the app, and the distribution as F3's second block | Accepted; amends 0026 and 0027; F4's blocks 0.8 and 0.9, per 0036 |
 | [0030](adr/0030-release-notes-in-english.md) | The release notes in English alone, and the feed of Sparkle's `generate_appcast` | Accepted; amends 0026 |
 | [0031](adr/0031-registry-v0.md) | Registry v0: a repository of the index, publishing by pull request, the archives in its releases, the index and the site on GitHub Pages, and a root key in Sleip that vouches for the index's keys | Accepted; details 0008 |
 | [0032](adr/0032-plugins-config-and-state.md) | The plugins' config in `[plugins.<namespace>]` sections of the config file, checked against their JSON Schemas of the keywords that the host checks, a wrong value refusing its section alone; the plugins' states in files of their own | Accepted; the host's key `enabled`, per 0033 |
 | [0033](adr/0033-plugins-turned-off-in-their-sections.md) | A plugin turned off by `enabled = false` in its section, at once, and on again a new one of it | Accepted; amends 0032 |
 | [0034](adr/0034-themes-native-format-and-itermcolors.md) | Themes: a native format of TOML, a file a variant, colors alone; `.itermcolors` the one format imported, read as iTerm2 reads it and never converted; the themes of permissive licenses held, converted as the app builds; the user's in a folder, installed from the Finder | Accepted |
 | [0035](adr/0035-themes-are-the-hosts.md) | Themes are the host's: `[theme]` in the config, the themes' files and `.itermcolors` read by the app, no `themes` plugin; the palette's picker writes `[theme]` | Accepted; amends 0002 |
+| [0036](adr/0036-plugin-ecosystem-before-1-0.md) | The plugin ecosystem, F4, whole, before 1.0.0, as 0.8 and 0.9, `snap` and `awake` published; semantic versioning from 1.0.0; the settings' panel in F3b; the agents on their tabs in the daily features | Accepted; amends 0027 and 0029 |
 
 ## Glossary
 
