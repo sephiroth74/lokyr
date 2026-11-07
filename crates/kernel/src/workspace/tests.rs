@@ -1319,6 +1319,86 @@ fn a_tab_is_marked_of_what_runs_its_protected_input_and_its_agent_each_told_once
 }
 
 #[test]
+fn a_tab_is_marked_while_its_program_prints_of_its_own_and_not_of_its_input_s_echo() {
+    let mut workspace = Workspace::new();
+    let window = workspace.open_window(pane(
+        r#"read line; printf 'got %s\a' "$line"; sleep 0.8; echo late; read line"#,
+    ));
+    let tab = workspace.window(window).unwrap().active_tab();
+    let id = workspace.tab(tab).unwrap().active_pane();
+    // As the app finds a program other than a shell.
+    assert!(workspace.set_tab_running(tab, true, false));
+    // The echo of a line typed, and the program's answer to it, are not
+    // its own.
+    workspace.pane(id).unwrap().text("x\n");
+    collect_until(&mut workspace, |events| events.contains(&Event::Bell(id)));
+    assert!(!workspace.tab(tab).unwrap().marks().printing);
+    assert!(!workspace.pane(id).unwrap().printing());
+    // What it prints a while after, as nothing asked for it, is, which
+    // marks the tab for a while.
+    let events = collect_marks(&mut workspace, tab, |marks| marks.printing);
+    assert!(
+        events
+            .iter()
+            .any(|event| *event == Event::Changed(Change::TabChanged { tab: tab.into() })),
+        "{events:?}"
+    );
+    let now = Instant::now();
+    let due = workspace.collect(&[], now).expect("when it may be quiet");
+    assert!(due > now && due <= now + PRINTING, "{due:?}");
+    assert!(workspace.tab(tab).unwrap().marks().printing);
+    // A shell's output marks nothing, as its prompt.
+    assert!(workspace.set_tab_running(tab, false, false));
+    assert!(!workspace.tab(tab).unwrap().marks().printing);
+    assert!(workspace.set_tab_running(tab, true, false));
+    assert!(workspace.tab(tab).unwrap().marks().printing);
+    // Quiet once its time is up, as told.
+    workspace.take_events();
+    let later = Instant::now() + PRINTING;
+    assert_eq!(workspace.collect(&[], later), None);
+    assert!(!workspace.tab(tab).unwrap().marks().printing);
+    assert_eq!(
+        changes(&mut workspace),
+        [Change::TabChanged { tab: tab.into() }]
+    );
+}
+
+#[test]
+fn a_tab_is_marked_of_the_printing_of_its_active_pane_alone() {
+    let mut workspace = Workspace::new();
+    let quiet = pane("read line");
+    let quiet_id = quiet.id();
+    let window = workspace.open_window(quiet);
+    let tab = workspace.window(window).unwrap().active_tab();
+    assert!(workspace.set_tab_running(tab, true, false));
+    let printing = workspace
+        .split(
+            quiet_id,
+            Direction::Horizontal,
+            pane("echo one; read line"),
+            Side::Second,
+        )
+        .unwrap();
+    let start = Instant::now();
+    while !workspace.pane(printing).unwrap().printing() {
+        assert!(
+            start.elapsed() < Duration::from_secs(10),
+            "it never printed"
+        );
+        workspace.collect(&workspace.pane_ids(), Instant::now());
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    // The keyboard stays where it was, in the quiet pane.
+    assert!(!workspace.tab(tab).unwrap().marks().printing);
+    workspace.take_events();
+    assert!(workspace.focus_pane(printing));
+    assert!(workspace.tab(tab).unwrap().marks().printing);
+    assert!(changes(&mut workspace).contains(&Change::TabChanged { tab: tab.into() }));
+    assert!(workspace.focus_pane(quiet_id));
+    assert!(!workspace.tab(tab).unwrap().marks().printing);
+}
+
+#[test]
 fn two_panes_of_a_tab_swap_their_rooms_and_its_keyboard_stays_with_its_pane() {
     let mut workspace = Workspace::new();
     let window = workspace.open_window(pane("read line"));

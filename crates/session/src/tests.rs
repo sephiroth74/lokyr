@@ -226,6 +226,74 @@ fn keys_pastes_and_resizes_reach_the_program() {
     });
 }
 
+#[test]
+fn the_program_s_own_output_wakes_the_main_thread_again_once_found_quiet() {
+    let wakes = Arc::new(AtomicUsize::new(0));
+    let session = {
+        let wakes = Arc::clone(&wakes);
+        let script = "echo one; sleep 0.3; echo two; sleep 0.3; echo three; sleep 30";
+        Session::spawn(&sh(script), move || {
+            wakes.fetch_add(1, Ordering::SeqCst);
+        })
+        .unwrap()
+    };
+    let wait_wakes = |count: usize| {
+        let start = Instant::now();
+        while wakes.load(Ordering::SeqCst) < count {
+            assert!(start.elapsed() < Duration::from_secs(10), "no wake");
+            thread::sleep(Duration::from_millis(10));
+        }
+    };
+    // Its output of its own, as nothing asked it.
+    wait_for(&session, "one", |terminal| shows(terminal, "one"));
+    wait_wakes(1);
+    let first = session.printed_at().expect("the first output's time");
+    // The main thread takes what was told, and draws nothing; the program
+    // prints on, of its own, which wakes no one while the main thread
+    // has not found it quiet.
+    session.clear_told();
+    wait_for(&session, "two", |terminal| shows(terminal, "two"));
+    thread::sleep(Duration::from_millis(50));
+    assert_eq!(wakes.load(Ordering::SeqCst), 1);
+    let second = session.printed_at().expect("the second output's time");
+    assert!(second > first, "{second:?} after {first:?}");
+    // Found quiet, its next output wakes it.
+    session.clear_told();
+    session.clear_printed();
+    wait_for(&session, "three", |terminal| shows(terminal, "three"));
+    wait_wakes(2);
+    assert!(session.printed_at().is_some_and(|third| third > second));
+}
+
+#[test]
+fn the_echo_of_input_and_the_answer_to_a_new_size_are_not_the_program_s_own() {
+    let script = r#"trap 'echo resized' WINCH; read line; echo "got $line"; sleep 0.8; echo late; while :; do sleep 0.05; done"#;
+    let session = Session::spawn(&sh(script), || {}).unwrap();
+    // The line discipline's echo of the line, and the program's answer to
+    // it.
+    session.write("hello\n");
+    wait_for(&session, "the answer", |terminal| {
+        shows(terminal, "got hello")
+    });
+    assert_eq!(session.printed_at(), None);
+    // What it prints a while after is its own.
+    wait_for(&session, "late", |terminal| shows(terminal, "late"));
+    let late = session.printed_at().expect("the late output's time");
+    // Its redraw at a new size is not.
+    session
+        .resize(Size {
+            cols: 100,
+            rows: 30,
+            width: 0,
+            height: 0,
+        })
+        .unwrap();
+    wait_for(&session, "the redraw", |terminal| {
+        shows(terminal, "resized")
+    });
+    assert_eq!(session.printed_at(), Some(late));
+}
+
 /// A session whose program prints 60 lines, then `ready`, and waits for a
 /// line before it prints `more`; its terminal has 80 columns and 24 rows.
 fn scrolled_back(scroll_on_output: bool) -> Session {

@@ -43,6 +43,11 @@ pub const ANSWER_WAIT: Duration = Duration::from_millis(50);
 /// bells and its terminal's events: a frame's at 60 Hz.
 pub const TOLD_PACE: Duration = Duration::from_micros(16_667);
 
+/// How long a pane's program is taken to print after its last output of its
+/// own, which no input asked for: a few seconds, so that a program that
+/// prints now and then, as a build between its steps, keeps printing.
+pub const PRINTING: Duration = Duration::from_secs(3);
+
 /// A pane's grid: its columns and rows, and the pixels of its cell.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Grid {
@@ -195,6 +200,9 @@ pub struct Pane {
     /// The progress that its program tells last, OSC 9;4's, if it tells
     /// one.
     pub(super) progress: Option<terminal::Progress>,
+    /// Whether its program prints of its own, as the workspace last found
+    /// it: output that no input asked for came within [`PRINTING`].
+    printing: bool,
     /// How many slices of output the session had parsed when the
     /// workspace last looked.
     slices: u64,
@@ -303,6 +311,7 @@ impl Pane {
             bells: 0,
             ended_told: false,
             told_at: None,
+            printing: false,
             selection_touched: AtomicBool::new(false),
             title: String::new(),
             tab_color: None,
@@ -356,6 +365,40 @@ impl Pane {
     /// the main thread that often at most; `None` before the first.
     pub(super) fn told_due(&self) -> Option<Instant> {
         self.told_at.map(|at| at + TOLD_PACE)
+    }
+
+    /// Whether its program prints of its own, as the workspace last found
+    /// it: output that no input asked for, nor a new size, came within
+    /// [`PRINTING`].
+    pub fn printing(&self) -> bool {
+        self.printing
+    }
+
+    /// When its program, found printing, is quiet unless it prints again:
+    /// [`PRINTING`] after its last output of its own.
+    pub(super) fn printing_due(&self) -> Option<Instant> {
+        if !self.printing {
+            return None;
+        }
+        Some(self.session.as_ref()?.printed_at()? + PRINTING)
+    }
+
+    /// Finds whether its program prints at `now`, of output of its own
+    /// within [`PRINTING`]; whether that changed. Its session tells the
+    /// main thread of the next output of its own of a program found quiet.
+    pub(super) fn look_at_printing(&mut self, now: Instant) -> bool {
+        let Some(session) = &self.session else {
+            return false;
+        };
+        let printing =
+            |session: &Session| session.printed_at().is_some_and(|at| now < at + PRINTING);
+        // Cleared before the second look, so that output that came between
+        // the two tells the main thread.
+        let printing = printing(session) || {
+            session.clear_printed();
+            printing(session)
+        };
+        std::mem::replace(&mut self.printing, printing) != printing
     }
 
     /// What the session told since the last look, at `now`; `None` for a

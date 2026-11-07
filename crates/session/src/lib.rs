@@ -30,6 +30,12 @@ const SLICE: usize = 64 * 1024;
 /// The most bytes that the writer writes at a time.
 const PASTE_CHUNK: usize = 4 * 1024;
 
+/// How long after the owner's last input, or a new size, the program's
+/// output is taken for its answer, the echo of keys or a redraw, rather
+/// than for output of its own: the round trip of a remote shell's echo
+/// over a slow link, with room to spare.
+pub const ECHO: Duration = Duration::from_millis(500);
+
 /// How to start a session.
 #[derive(Clone, Debug)]
 pub struct Options {
@@ -91,9 +97,39 @@ struct Shared {
     bytes: AtomicU64,
     /// How many times the session's owner locked the terminal.
     locks: AtomicU64,
+    /// The moment that the times below count from.
+    born: Instant,
+    /// When the owner's input last reached the program, or the program was
+    /// last told a new size, as [`Shared::stamp`] gives it; 0 before.
+    asked: AtomicU64,
+    /// When the last slice of output of the program's own came, as
+    /// [`Shared::stamp`] gives it; 0 before.
+    printed: AtomicU64,
+    /// Whether a slice of the program's own woke the main thread, which
+    /// [`Session::clear_printed`] lets wake again.
+    printed_woken: AtomicBool,
 }
 
 impl Shared {
+    /// `at`, as the stamps of the times above keep it: past 0, which is
+    /// none.
+    fn stamp(&self, at: Instant) -> u64 {
+        u64::try_from(at.saturating_duration_since(self.born).as_nanos()).unwrap_or(u64::MAX - 1)
+            + 1
+    }
+
+    /// The moment of `stamp`, as [`Shared::stamp`] gave it, if any.
+    fn instant(&self, stamp: u64) -> Option<Instant> {
+        (stamp != 0).then(|| self.born + Duration::from_nanos(stamp - 1))
+    }
+
+    /// Notes that the program is asked something now: input, or a new
+    /// size.
+    fn asked_now(&self) {
+        self.asked
+            .store(self.stamp(Instant::now()), Ordering::SeqCst);
+    }
+
     /// Tells the main thread of a change of the grid, unless it has one to
     /// look at already; and of something `told`, unless something told
     /// waits for it already.
@@ -161,7 +197,8 @@ impl Session {
     /// thread has looked at the last change, as [`Session::snapshot`] does;
     /// when the terminal tells something, an event or a bell, and the main
     /// thread has taken what it told last, as [`Session::clear_told`] lets
-    /// it; and when the output ends.
+    /// it; when the program prints of its own, the first time and the
+    /// first after [`Session::clear_printed`]; and when the output ends.
     pub fn spawn(
         options: &Options,
         wake: impl Fn() + Send + Sync + 'static,
@@ -187,6 +224,10 @@ impl Session {
             slices: AtomicU64::new(0),
             bytes: AtomicU64::new(0),
             locks: AtomicU64::new(0),
+            born: Instant::now(),
+            asked: AtomicU64::new(0),
+            printed: AtomicU64::new(0),
+            printed_woken: AtomicBool::new(false),
         });
         let sync_timeout = options.sync_timeout;
         {
@@ -256,6 +297,24 @@ impl Session {
     /// after it took them calls `wake`.
     pub fn clear_told(&self) {
         self.shared.told_woken.store(false, Ordering::Release);
+    }
+
+    /// When the program last printed of its own: the last slice of output
+    /// that came [`ECHO`] or more after the owner's input last reached it,
+    /// or it was last told a new size, rather than as its answer; `None`
+    /// before the first. The first slice of its own calls `wake`, as one
+    /// told does, and the next after [`Session::clear_printed`].
+    pub fn printed_at(&self) -> Option<Instant> {
+        self.shared
+            .instant(self.shared.printed.load(Ordering::SeqCst))
+    }
+
+    /// Lets the program's next slice of its own call `wake` again, as the
+    /// owner, having found it quiet, waits for it to print: it calls it
+    /// before it looks at [`Session::printed_at`], so that a slice that
+    /// came after its look calls `wake`.
+    pub fn clear_printed(&self) {
+        self.shared.printed_woken.store(false, Ordering::SeqCst);
     }
 
     /// Whether the program's output has ended: the program, and every
@@ -396,6 +455,7 @@ impl Session {
     /// the program redraws, on SIGWINCH, at the new size.
     pub fn resize(&self, size: Size) -> io::Result<()> {
         self.lock().resize(size.cols, size.rows);
+        self.shared.asked_now();
         self.pty.resize(size)
     }
 
@@ -404,6 +464,7 @@ impl Session {
     /// the size that the program was told last, which the program must
     /// draw again, as the grid's prompt or screen changed meanwhile.
     pub fn signal_resize(&self) -> io::Result<()> {
+        self.shared.asked_now();
         self.pty.signal_resize()
     }
 
@@ -412,6 +473,7 @@ impl Session {
     /// step of a live resize tells the program at its own pace, so that it
     /// redraws a few times a second rather than at each step.
     pub fn resize_pty(&self, size: Size) -> io::Result<()> {
+        self.shared.asked_now();
         self.pty.resize(size)
     }
 
@@ -466,13 +528,24 @@ fn read_output(shared: &Shared, mut output: ReadAhead, sync_timeout: Duration) {
             Next::TimedOut => continue,
             Next::End => break,
         };
+        // Output of the program's own, rather than its answer to input or
+        // to a new size; its first since the main thread found it quiet
+        // tells it.
+        let came = Instant::now();
+        let own = shared
+            .instant(shared.asked.load(Ordering::SeqCst))
+            .is_none_or(|asked| came.saturating_duration_since(asked) >= ECHO);
+        let started = own && {
+            shared.printed.store(shared.stamp(came), Ordering::SeqCst);
+            !shared.printed_woken.swap(true, Ordering::SeqCst)
+        };
         let n = slice.len();
         let mut terminal = shared.terminal.lock_in_turn();
         let bells = terminal.bells();
         parser.advance(&mut *terminal, &slice);
         // Its buffer goes back to the reader.
         drop(slice);
-        let told = terminal.has_events() || terminal.bells() != bells;
+        let told = started || terminal.has_events() || terminal.bells() != bells;
         if terminal.scroll_on_output() {
             terminal.scroll_viewport(Scroll::Bottom);
         }
@@ -520,16 +593,26 @@ impl Drop for Ending<'_> {
 /// writes of [`PASTE_CHUNK`] bytes at most, so that it stops between two
 /// of them once the session closes.
 fn write_input(shared: &Shared, mut writer: PtyWriter) {
-    while let Some(bytes) = shared.queue.next() {
+    while let Some((bytes, reply)) = shared.queue.next() {
         for chunk in bytes.chunks(PASTE_CHUNK) {
             if shared.queue.is_closed() {
                 return;
+            }
+            // The owner's input, whose echo, which the terminal's line
+            // discipline may give as it is written, is not the program's
+            // own output; the replies to the program's queries are not
+            // asked.
+            if !reply {
+                shared.asked_now();
             }
             // The program has gone, or the PTY has: what follows has no one
             // to read it.
             if writer.write_all(chunk).is_err() {
                 shared.queue.close();
                 return;
+            }
+            if !reply {
+                shared.asked_now();
             }
         }
     }

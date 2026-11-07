@@ -946,9 +946,9 @@ fn tab_style(style: Style, radius: f32, active: bool) -> Style {
 
 /// The marks of `tab` before its title, of `texts` to accessibility: the
 /// protected input's lock, its agent's state, its bell, and a spinner of a
-/// program that runs and tells no progress, but a full-screen one; or a
-/// dot of the output that came while it did not show; or a ring of a
-/// program that runs.
+/// program that runs, prints of its own and tells no progress, but a
+/// full-screen one; or a dot of the output that came while it did not
+/// show; or a ring of a program that runs.
 fn marks(tab: &TabInfo, texts: &MarkTexts) -> Vec<Node> {
     let mut marks = Vec::new();
     if tab.secure {
@@ -983,9 +983,10 @@ fn marks(tab: &TabInfo, texts: &MarkTexts) -> Vec<Node> {
             })
     };
     // A job under way, which the spinner tells over the output that comes
-    // while the tab does not show; a full-screen program, as vim, may stay
-    // for hours, and keeps the ring.
-    if tab.running && !tab.alternate && tab.progress.is_none() {
+    // while the tab does not show, while it prints: a program that waits
+    // for the user, as ssh, a REPL or an agent, keeps the ring, as a
+    // full-screen program, as vim, which may stay for hours.
+    if tab.running && tab.printing && !tab.alternate && tab.progress.is_none() {
         marks.push(spinner(texts.running.as_str()));
     } else if tab.activity {
         let style = Style {

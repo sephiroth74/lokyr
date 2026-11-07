@@ -1119,13 +1119,22 @@ fn a_read_or_a_write_of_a_pane_that_closed_is_not_found() {
 #[test]
 fn a_tab_s_folder_and_program_are_read_of_process_read_alone() {
     let mut app = App::default();
-    window(&mut app, "sleep 10");
+    window(&mut app, "echo out; sleep 10");
     let shown = app.focused.unwrap();
     let tab = app.workspace.window(shown).unwrap().active_tab();
     assert!(
         app.workspace
             .set_tab_place(tab, Some("src — vim".to_owned()))
     );
+    // A program other than a shell, which prints of its own.
+    assert!(app.workspace.set_tab_running(tab, true, false));
+    let start = std::time::Instant::now();
+    while !app.workspace.tab(tab).unwrap().marks().printing {
+        assert!(start.elapsed() < std::time::Duration::from_secs(10));
+        let panes = app.workspace.pane_ids();
+        app.workspace.collect(&panes, std::time::Instant::now());
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
     let mut plugins = Plugins::new();
     let titles = Rc::new(RefCell::new(Vec::new()));
     for (name, capabilities) in [("acme/blind", ""), ("acme/seeing", "process-read = true\n")] {
@@ -1144,7 +1153,9 @@ fn a_tab_s_folder_and_program_are_read_of_process_read_alone() {
                     move |cx, _, _| {
                         let window = cx.focused_window().unwrap();
                         let tabs = cx.tabs(window)?;
-                        seen.borrow_mut().push(tabs[0].title.clone());
+                        let tab = &tabs[0];
+                        seen.borrow_mut()
+                            .push((tab.title.clone(), tab.running, tab.printing));
                         Ok(())
                     },
                 ),
@@ -1157,7 +1168,13 @@ fn a_tab_s_folder_and_program_are_read_of_process_read_alone() {
             .run(command, Args::new(), &mut app.context())
             .unwrap();
     }
-    assert_eq!(*titles.borrow(), ["", "src — vim"]);
+    assert_eq!(
+        *titles.borrow(),
+        [
+            (String::new(), false, false),
+            ("src — vim".to_owned(), true, true)
+        ]
+    );
 }
 
 #[test]
@@ -2191,6 +2208,7 @@ fn a_plugin_opens_a_tab_and_a_split_of_the_ids_that_its_call_gets() {
                 activity: false,
                 bell: false,
                 progress: None,
+                printing: false,
                 running: false,
                 alternate: false,
                 secure: false,
@@ -2208,6 +2226,7 @@ fn a_plugin_opens_a_tab_and_a_split_of_the_ids_that_its_call_gets() {
                 activity: false,
                 bell: false,
                 progress: None,
+                printing: false,
                 running: false,
                 alternate: false,
                 secure: false,

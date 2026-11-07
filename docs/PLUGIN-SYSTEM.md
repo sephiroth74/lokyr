@@ -242,6 +242,7 @@ type TabInfo = {
     activity: boolean, -- output came while it did not show, until its window shows it
     bell: boolean, -- its bell rang while it did not show, until its window shows it
     progress: { state: "normal" | "error" | "paused" | "indeterminate", value: number? }?, -- OSC 9;4's, of its active pane or another, the value from 0 to 1 if told
+    printing: boolean, -- of `process-read`: the program of `running` prints of its own, output within the last 3 seconds apart from the echo of the user's input and the redraw of a new size, as a build, rather than ssh, a REPL or an agent waiting for the user
     running: boolean, -- of `process-read`: a program other than a shell runs in its foreground
     alternate: boolean, -- of `process-read`: its active pane's program shows the alternate screen, as vim's or htop's
     secure: boolean, -- the keyboard's protected input is on for it, as its window has the focus and shows it

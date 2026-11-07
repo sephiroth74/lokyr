@@ -21,6 +21,7 @@ fn tab(id: u64, title: &str, active: bool) -> TabInfo {
         activity: false,
         bell: false,
         progress: None,
+        printing: false,
         running: false,
         alternate: false,
         secure: false,
@@ -97,17 +98,26 @@ fn a_bar_shows_its_tabs_their_keys_and_their_close_buttons() {
     // One tab, of its title alone by default, its marks beside it, between
     // the room of the window's buttons on either side; and its bar as the
     // config says.
-    let running = TabInfo {
+    let printing = TabInfo {
         running: true,
-        ..tab(1, "zsh", true)
+        printing: true,
+        ..tab(1, "make", true)
     };
-    let title = bar(&[running], &[], None, &settings).expect("a title");
+    let title = bar(&[printing], &[], None, &settings).expect("a title");
     assert_eq!(
         title.key.as_ref().map(|key| key.0.as_str()),
         Some(TITLE_KEY)
     );
-    assert_eq!(texts(&title), ["zsh"]);
-    assert_eq!(marked(&title), ["zsh", "Running", "Dots Indeterminate 0"]);
+    assert_eq!(texts(&title), ["make"]);
+    assert_eq!(marked(&title), ["make", "Running", "Dots Indeterminate 0"]);
+    // A program that runs and prints nothing of its own, as ssh waiting
+    // for the user, of the ring.
+    let waiting = TabInfo {
+        running: true,
+        ..tab(1, "ssh", true)
+    };
+    let title = bar(&[waiting], &[], None, &settings).expect("a title");
+    assert_eq!(marked(&title), ["ssh", "Running"]);
     let sides: Vec<Length> = [0, 2].map(|at| title.children[at].layout.width).to_vec();
     assert_eq!(sides, [Length::Buttons, Length::Buttons]);
     assert!(bar(&[], &[], None, &settings).is_none());
@@ -419,18 +429,40 @@ fn a_tab_marks_what_came_while_it_did_not_show_what_runs_and_its_program_s_progr
         ..tab(4, "spinning", false)
     };
     // A job that tells no progress, of output that came while the tab did
-    // not show; a full-screen program, as vim.
+    // not show, which prints on; a full-screen program, as vim, which
+    // prints too; and a program that printed while the tab did not show,
+    // then waits for the user, as ssh, or printed nothing.
     let job = TabInfo {
         activity: true,
         running: true,
+        printing: true,
         ..tab(5, "gradle", false)
     };
     let full_screen = TabInfo {
         running: true,
+        printing: true,
         alternate: true,
         ..tab(6, "vim", false)
     };
-    let tabs = [quiet, busy, secure, spinning, job, full_screen];
+    let waiting = TabInfo {
+        activity: true,
+        running: true,
+        ..tab(7, "ssh", false)
+    };
+    let silent = TabInfo {
+        running: true,
+        ..tab(8, "sleep", false)
+    };
+    let tabs = [
+        quiet,
+        busy,
+        secure,
+        spinning,
+        job,
+        full_screen,
+        waiting,
+        silent,
+    ];
     for style in ["standard", "unified", "seamless"] {
         for position in ["top", "left"] {
             let text = |value: &str| Data::Text(value.to_owned());
@@ -471,6 +503,10 @@ fn a_tab_marks_what_came_while_it_did_not_show_what_runs_and_its_program_s_progr
             // one.
             assert_eq!(of(5), ["Running", "Dots Indeterminate 0"], "{place}");
             assert_eq!(of(6), ["Running"], "{place}");
+            // The output's dot, then the ring, of a program that does not
+            // print.
+            assert_eq!(of(7), ["New Output"], "{place}");
+            assert_eq!(of(8), ["Running"], "{place}");
         }
     }
 }

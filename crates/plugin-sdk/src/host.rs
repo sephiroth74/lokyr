@@ -93,6 +93,14 @@ pub struct TabInfo {
     /// active pane's, or another's.
     #[serde(default)]
     pub progress: Option<TabProgress>,
+    /// Whether the program of its active pane, other than a shell, as
+    /// `running` tells, prints of its own: output that came within the last
+    /// few seconds, apart from the echo of the user's input and the redraw
+    /// of a new size, as a build's or a download's, rather than ssh, a REPL
+    /// or an agent waiting for the user; to a plugin of `process-read`,
+    /// `false` to the others.
+    #[serde(default)]
+    pub printing: bool,
     /// Whether a program other than a shell runs in its active pane's
     /// foreground, to a plugin of `process-read`; `false` to the others.
     #[serde(default)]

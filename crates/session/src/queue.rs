@@ -88,9 +88,10 @@ impl Queue {
         self.state().closed
     }
 
-    /// Waits for the next entry, or for the queue to close; the entry
-    /// before, which the writer has written, no longer counts.
-    pub(crate) fn next(&self) -> Option<Vec<u8>> {
+    /// Waits for the next entry, with whether it is a reply, or for the
+    /// queue to close; the entry before, which the writer has written, no
+    /// longer counts.
+    pub(crate) fn next(&self) -> Option<(Vec<u8>, bool)> {
         let mut state = self.state();
         state.replies -= std::mem::take(&mut state.in_flight);
         loop {
@@ -101,7 +102,7 @@ impl Queue {
                 if reply {
                     state.in_flight = bytes.len();
                 }
-                return Some(bytes);
+                return Some((bytes, reply));
             }
             state = self
                 .ready
@@ -121,8 +122,8 @@ mod tests {
         queue.push(b"a".to_vec());
         queue.push(Vec::new());
         queue.push(b"b".to_vec());
-        assert_eq!(queue.next(), Some(b"a".to_vec()));
-        assert_eq!(queue.next(), Some(b"b".to_vec()));
+        assert_eq!(queue.next(), Some((b"a".to_vec(), false)));
+        assert_eq!(queue.next(), Some((b"b".to_vec(), false)));
         assert!(!queue.is_closed());
         queue.push(b"c".to_vec());
         queue.close();
@@ -144,16 +145,16 @@ mod tests {
         assert_eq!(queue.replies(), REPLY_BYTES);
         // A reply that the writer writes still counts, until it asks for
         // the next entry, having written it.
-        assert_eq!(queue.next(), Some(reply.clone()));
+        assert_eq!(queue.next(), Some((reply.clone(), true)));
         assert_eq!(queue.replies(), REPLY_BYTES);
         queue.push_replies(b"dropped".to_vec());
-        assert_eq!(queue.next(), Some(reply));
+        assert_eq!(queue.next(), Some((reply, true)));
         assert_eq!(queue.replies(), REPLY_BYTES / 2);
         queue.push_replies(b"kept".to_vec());
-        assert_eq!(queue.next(), Some(b"key".to_vec()));
-        assert_eq!(queue.next(), Some(b"kept".to_vec()));
+        assert_eq!(queue.next(), Some((b"key".to_vec(), false)));
+        assert_eq!(queue.next(), Some((b"kept".to_vec(), true)));
         queue.push(b"last".to_vec());
-        assert_eq!(queue.next(), Some(b"last".to_vec()));
+        assert_eq!(queue.next(), Some((b"last".to_vec(), false)));
         assert_eq!(queue.replies(), 0);
     }
 
@@ -166,6 +167,6 @@ mod tests {
         };
         std::thread::sleep(std::time::Duration::from_millis(20));
         queue.push(b"a".to_vec());
-        assert_eq!(writer.join().unwrap(), Some(b"a".to_vec()));
+        assert_eq!(writer.join().unwrap(), Some((b"a".to_vec(), false)));
     }
 }

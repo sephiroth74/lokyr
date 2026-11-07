@@ -1066,6 +1066,7 @@ fn bar_tabs() -> Vec<TabInfo> {
         activity: false,
         bell: false,
         progress: None,
+        printing: false,
         running: false,
         alternate: false,
         secure: false,
@@ -1113,12 +1114,13 @@ impl BarTabs {
         match self {
             Self::Three => (bar_tabs(), keys(&["⌘1", "⌘2", "⌘3"]), Vec::new()),
             // A single tab whose bar hides, of its title in the titlebar,
-            // of the protected input and a program that runs.
+            // of the protected input and a program that runs and prints.
             Self::Title => {
                 let mut tab = bar_tabs().swap_remove(1);
                 tab.id = TabId(1);
                 tab.secure = true;
                 tab.running = true;
+                tab.printing = true;
                 (vec![tab], keys(&["⌘1"]), Vec::new())
             }
             Self::One => {
@@ -1162,6 +1164,7 @@ impl BarTabs {
                             activity: false,
                             bell: false,
                             progress: None,
+                            printing: false,
                             running: false,
                             alternate: false,
                             secure: false,
@@ -1191,9 +1194,10 @@ impl BarTabs {
                     value: Some(0.4),
                 });
                 // The active one: the protected input, of a program that
-                // runs.
+                // runs and prints.
                 tabs[1].secure = true;
                 tabs[1].running = true;
+                tabs[1].printing = true;
                 // The third: an agent that waits, whose task failed.
                 tabs[2].agent = Some(AgentState::Waiting);
                 tabs[2].progress = Some(TabProgress {

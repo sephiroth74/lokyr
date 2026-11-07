@@ -162,6 +162,8 @@ pub struct TabMarks {
     pub bell: bool,
     /// The progress that a program of its panes tells.
     pub progress: Option<host::TabProgress>,
+    /// Its active pane's program, other than a shell, prints of its own.
+    pub printing: bool,
     /// A program other than a shell runs in its foreground.
     pub running: bool,
     /// Its active pane's program shows the alternate screen.
@@ -1797,6 +1799,7 @@ impl Calling<'_> {
                                 activity: marks.activity,
                                 bell: marks.bell,
                                 progress: marks.progress,
+                                printing: marks.printing,
                                 running: marks.running,
                                 alternate: marks.alternate,
                                 secure: marks.secure,

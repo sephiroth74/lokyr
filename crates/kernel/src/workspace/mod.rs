@@ -34,8 +34,8 @@ use lokyr_vt_core::terminal::{self, ClipboardTarget};
 
 pub use layout::{Direction, Edge, Layout, Ratio, Side};
 pub use pane::{
-    ANSWER_WAIT, Environment, Exited, Grid, Pane, RESIZE_PACE, Settings, TITLE_DASH, TOLD_PACE,
-    directory_name, is_shell, place_label,
+    ANSWER_WAIT, Environment, Exited, Grid, PRINTING, Pane, RESIZE_PACE, Settings, TITLE_DASH,
+    TOLD_PACE, directory_name, is_shell, place_label,
 };
 
 /// The last id that the process gave, to a window, a tab or a pane.
@@ -198,6 +198,10 @@ pub struct Marks {
     /// The progress that a program of its panes tells, OSC 9;4's: its
     /// active pane's, or another's.
     pub progress: Option<terminal::Progress>,
+    /// Its active pane's program, other than a shell, as `running` tells,
+    /// prints of its own: output that no input asked for came within the
+    /// last few seconds, [`PRINTING`].
+    pub printing: bool,
     /// A program other than a shell runs in its active pane's foreground,
     /// as the app finds it.
     pub running: bool,
@@ -486,8 +490,11 @@ impl Workspace {
     /// bells, the writes to the clipboards, the ends of the output, and the
     /// terminals' other events, as [`Event`]s. A pane looked at within
     /// [`TOLD_PACE`] waits for its turn, as its session wakes the main
-    /// thread for nothing it tells meanwhile; this returns when the first
-    /// that waits has it, for the app to collect again.
+    /// thread for nothing it tells meanwhile. A tab's active pane's program
+    /// other than a shell that prints of its own marks it while it prints,
+    /// until [`PRINTING`] after its last output of its own. This returns
+    /// when the first pane that waits has its turn, or the first that
+    /// prints may be quiet, for the app to collect again.
     pub fn collect(&mut self, panes: &[PaneId], now: Instant) -> Option<Instant> {
         let mut asked: BTreeSet<PaneId> = std::mem::take(&mut self.waiting);
         asked.extend(panes);
@@ -502,6 +509,7 @@ impl Workspace {
             let Some(happened) = pane.happened(now) else {
                 continue;
             };
+            pane.look_at_printing(now);
             // The pane keeps its program's title and color, for when it
             // takes its tab's keyboard.
             if let Some(title) = &happened.title {
@@ -570,13 +578,15 @@ impl Workspace {
                     tab: owner.into(),
                 });
             }
-            // Its tab's marks: its progress, and the output and the bell
-            // that came while it did not show.
+            // Its tab's marks: its progress, whether its program prints,
+            // and the output and the bell that came while it did not show.
             if let Some(owner) = self.tab_of.get(&id).copied() {
                 let shown = self.is_shown(owner);
                 let progress = self.tab_progress(owner);
+                let printing = self.tab_printing(owner);
                 self.mark(owner, |marks| {
                     marks.progress = progress;
+                    marks.printing = printing;
                     if !shown {
                         marks.activity |= happened.output;
                         marks.bell |= happened.bell;
@@ -590,10 +600,31 @@ impl Workspace {
                 self.events.push(Event::Ended(id));
             }
         }
-        self.waiting
+        // The programs that printed, quiet once their time is up but if
+        // they printed since.
+        let quiet: Vec<PaneId> = self
+            .panes
+            .values()
+            .filter(|pane| pane.printing_due().is_some_and(|due| due <= now))
+            .map(Pane::id)
+            .collect();
+        for id in quiet {
+            if self
+                .panes
+                .get_mut(&id)
+                .is_some_and(|pane| pane.look_at_printing(now))
+                && let Some(owner) = self.tab_of.get(&id).copied()
+            {
+                let printing = self.tab_printing(owner);
+                self.mark(owner, |marks| marks.printing = printing);
+            }
+        }
+        let told = self
+            .waiting
             .iter()
-            .filter_map(|id| self.panes.get(id)?.told_due())
-            .min()
+            .filter_map(|id| self.panes.get(id)?.told_due());
+        let printing = self.panes.values().filter_map(Pane::printing_due);
+        told.chain(printing).min()
     }
 
     /// Every pane's id, for a look at them all.
@@ -687,7 +718,8 @@ impl Workspace {
     }
 
     /// Gives `tab` the title and the color that the program of its active
-    /// pane set, as that pane takes the tab's keyboard.
+    /// pane set, and whether it prints, as that pane takes the tab's
+    /// keyboard.
     fn take_active_look(&mut self, tab: TabId) {
         let Some(shown) = self.tabs.get_mut(&tab) else {
             return;
@@ -697,6 +729,8 @@ impl Workspace {
             shown.title.clone_from(&pane.title);
             shown.color = pane.tab_color;
         }
+        shown.marks.printing =
+            shown.marks.running && self.panes.get(&shown.active).is_some_and(Pane::printing);
         // Its place is the new pane's, which the app gives it anew.
         shown.place = None;
         self.tab_looked(tab, &before);
@@ -890,6 +924,15 @@ impl Workspace {
         of(tab.active).or_else(|| tab.layout.panes().into_iter().find_map(of))
     }
 
+    /// Whether the program of `tab`'s active pane prints of its own, while
+    /// it is marked of one that runs, other than a shell: a shell's prompt
+    /// tells nothing.
+    fn tab_printing(&self, tab: TabId) -> bool {
+        self.tabs.get(&tab).is_some_and(|tab| {
+            tab.marks.running && self.panes.get(&tab.active).is_some_and(Pane::printing)
+        })
+    }
+
     /// Changes `tab`'s marks as `change` does, which `tab-changed` tells if
     /// they changed; whether it is open.
     fn mark(&mut self, tab: TabId, change: impl FnOnce(&mut Marks)) -> bool {
@@ -915,9 +958,16 @@ impl Workspace {
     /// pane's foreground, or of none, and of whether that pane shows the
     /// alternate screen, as the app finds them; whether it is open.
     pub fn set_tab_running(&mut self, tab: TabId, running: bool, alternate: bool) -> bool {
+        let printing = running
+            && self
+                .tabs
+                .get(&tab)
+                .and_then(|tab| self.panes.get(&tab.active))
+                .is_some_and(Pane::printing);
         self.mark(tab, |marks| {
             marks.running = running;
             marks.alternate = alternate;
+            marks.printing = printing;
         })
     }
 
