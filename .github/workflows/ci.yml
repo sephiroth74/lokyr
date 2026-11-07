@@ -13,10 +13,12 @@ on:
 permissions:
   contents: read
 
-# A newer push to the same branch or pull request cancels the older run.
+# A newer push to the same branch or pull request cancels the older run,
+# but on main, whose every run goes to its end, so that no push of code
+# goes untested on macOS; a run asked by hand is a group of its own.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.event_name != 'workflow_dispatch' }}
 
 env:
   CARGO_TERM_COLOR: always
@@ -26,10 +28,16 @@ env:
 jobs:
   changes:
     # Whether the push or the pull request changes more than documents,
-    # Markdown files and docs/, which the macOS job needs to check.
+    # Markdown files and docs/, which the macOS job needs to check: of a
+    # push to main, since the last commit whose macOS job passed, so that a
+    # push of documents after one of code whose job failed, or did not
+    # run, checks it again.
     name: changes
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
     outputs:
       code: ${{ steps.diff.outputs.code }}
     steps:
@@ -40,16 +48,36 @@ jobs:
       - id: diff
         env:
           EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
           BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
           NEW_BRANCH: ${{ github.event.created }}
           FORCED: ${{ github.event.forced }}
-        # A run asked by hand, a branch's first push, a forced one, or a base
-        # that the history lacks, checks everything.
+          RUN: ${{ github.run_id }}
+          GH_TOKEN: ${{ github.token }}
+        # A run asked by hand, a branch's first push, a forced one, a base
+        # that the history lacks, or a push to main of no passed macOS job
+        # among the last runs, checks everything. Renames count as two
+        # paths, so that a file moved into docs/ counts its old place.
         run: |
+          if [ "$EVENT" = push ] && [ "$REF" = refs/heads/main ]; then
+            passed=""
+            runs="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?branch=main&event=push&per_page=30" \
+              --jq ".workflow_runs[] | select(.id != $RUN) | \"\(.id) \(.head_sha)\"")" || runs=""
+            while read -r id sha; do
+              [ -n "$id" ] || continue
+              job="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$id/jobs" \
+                --jq '.jobs[] | select(.name == "macos") | .conclusion')" || job=""
+              if [ "$job" = success ]; then
+                passed="$sha"
+                break
+              fi
+            done <<< "$runs"
+            BASE="$passed"
+          fi
           code=true
           if [ "$EVENT" != workflow_dispatch ] && [ "$NEW_BRANCH" != true ] && [ "$FORCED" != true ] \
-            && git cat-file -e "$BASE^{commit}" 2>/dev/null \
-            && ! git diff --name-only "$BASE" HEAD | grep -qvE '^docs/|\.md$'; then
+            && [ -n "$BASE" ] && git cat-file -e "$BASE^{commit}" 2>/dev/null \
+            && ! git diff --no-renames --name-only "$BASE" HEAD | grep -qvE '^docs/|\.md$'; then
             code=false
           fi
           echo "code=$code" >> "$GITHUB_OUTPUT"
@@ -63,7 +91,12 @@ jobs:
     # each push.
     name: macos
     needs: changes
-    if: needs.changes.outputs.code == 'true' && (github.event_name != 'push' || github.ref == 'refs/heads/main')
+    # Of a `changes` job that failed too, which would leave the code
+    # unchecked, as a required check takes a skipped job as passed.
+    if: >-
+      !cancelled()
+      && (needs.changes.result != 'success' || needs.changes.outputs.code == 'true')
+      && (github.event_name != 'push' || github.ref == 'refs/heads/main')
     # The oldest macOS that Lokyr supports, pinned so that the job does not
     # move along with macos-latest.
     runs-on: macos-26
