@@ -20,8 +20,8 @@ use lokyr_plugin_sdk::message::{Data, Event};
 use lokyr_plugin_sdk::plugin::{Cx, Plugin};
 use lokyr_plugin_sdk::ui::{Anchor, Corner, PanelId, PanelOptions, Role, UiEvent, ViewId};
 use lokyr_plugin_sdk::view::{
-    Align, Border, Edges, Hover, Justify, Layout, Length, Node, Shadow, Style, Token, Transition,
-    UiEventKind,
+    Align, Border, Edges, Hover, Justify, Layout, Length, Node, PointerShape, Shadow, Style, Token,
+    Transition, UiEventKind,
 };
 
 lokyr_plugin_sdk::export_plugin!(Search);
@@ -357,6 +357,8 @@ fn plain(node: Node, side: f32, on: bool, label: &str) -> Node {
             background: Some(Token::from(if on { "toggle.on.bg" } else { "transparent" })),
             color: on.then(|| Token::from("toggle.on.fg")),
             radius: 4.0,
+            // The arrow, over a field's I-beam around it.
+            pointer: Some(PointerShape::Arrow),
             hover: Some(Hover {
                 background: Some(Token::from("button.hover.bg")),
                 ..Hover::default()
@@ -434,6 +436,10 @@ pub fn find_bar(view: &BarView, texts: &BarTexts) -> Node {
             width: 1.0,
         }),
         radius: 6.0,
+        // The ring of its text's focus round the whole field, and the
+        // I-beam over it, but over its buttons.
+        holds_ring: true,
+        pointer: Some(PointerShape::Text),
         ..Style::default()
     });
     let count = Node::container(vec![Node::text(view.count.as_str()).key(COUNT).style(
@@ -750,19 +756,20 @@ fn count(cx: &mut Cx<'_>, find: &Find) -> String {
 
 impl Search {
     /// Opens the bar at the focused pane, of its last search's text, which
-    /// it searches again, of its options; open already, its field takes
-    /// the keys again, as it opens anew, at the focused pane, its search
-    /// ending if it moves to another.
+    /// it searches again, of its options; open already at the pane, its
+    /// field takes the keys again, if it has them not; at another pane, it
+    /// moves there, its search ending.
     fn open(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
         let Some(pane) = cx.focused_pane() else {
             return Ok(());
         };
         if let Some(find) = &self.find {
+            if find.pane == pane {
+                return cx.focus_node(bar(), FIELD);
+            }
             cx.close_panel(BAR)?;
             self.reopening += 1;
-            if find.pane != pane {
-                self.closed(cx)?;
-            }
+            self.closed(cx)?;
         }
         cx.open_panel(
             BAR,
@@ -778,20 +785,11 @@ impl Search {
         )?;
         // Its field, of no revision yet, takes its text as it takes the
         // keys, once the bar's view is there.
-        match &mut self.find {
-            Some(find) => {
-                find.revision = 0;
-                find.filling = true;
-                Ok(())
-            }
-            None => {
-                let mut find = Find::new(pane, self.options);
-                find.text = self.recent.first().cloned().unwrap_or_default();
-                find.filling = true;
-                self.find = Some(find);
-                self.search(cx)
-            }
-        }
+        let mut find = Find::new(pane, self.options);
+        find.text = self.recent.first().cloned().unwrap_or_default();
+        find.filling = true;
+        self.find = Some(find);
+        self.search(cx)
     }
 
     /// Searches the bar's text anew, of its options, the search before

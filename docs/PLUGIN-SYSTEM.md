@@ -270,6 +270,7 @@ type Style = {
     min_width: Length?, -- its least width, which it keeps as its siblings share less room, as a tab among many
     grow: number?,
     hides_indicator: boolean?, -- of a scroll area, no indicator of its scroll, as a bar of tabs
+    holds_ring: boolean?, -- the ring of the keyboard's focus of a node inside it round its own box, as a search field's box round its text
     background: Color?,
     foreground: Color?,
     corner_radius: number?,
@@ -551,7 +552,10 @@ type Cx = {
     -- Scrolls the nearest scroll area around a node of the view, by its key, as little as shows it, once the view shows
     -- it, as a tab bar shows its active tab: the node of a render yet to show too.
     reveal: (view: ViewId, key: string) -> (boolean, Error?),
+    -- Gives the keyboard's focus to a node of the view, by its key, as a click on it would, which tells it "focus".
+    focus_node: (view: ViewId, key: string) -> (boolean, Error?),
     -- Opens a panel, by an id of the plugin's, which the host then renders; a "panel-closed" event tells as it closes.
+    -- A dialog or a menu takes the keyboard as it opens, at its first field, or at its first node that takes it.
     open_panel: (id: string, options: PanelOptions) -> (boolean, Error?),
     close_panel: (id: string) -> (boolean, Error?),
     -- Puts the plugin's tab bar, in the windows that show it, in the titlebar, below a titlebar of the window's title,

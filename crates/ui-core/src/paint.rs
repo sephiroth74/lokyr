@@ -116,6 +116,7 @@ fn paint_of<B: FontBackend>(
         group: 0.0,
         clip: None,
         ring: None,
+        holder: None,
         items: Vec::new(),
     };
     if let Some(root) = tree.root() {
@@ -253,6 +254,9 @@ struct Painter<'a, B> {
     clip: Option<Rect>,
     /// The ring of the focus, and the clips of its node.
     ring: Option<(Shape, Option<Rect>)>,
+    /// The nearest node around the node painted that holds the ring of a
+    /// focus inside it: its box, its style, and the clips around it.
+    holder: Option<(Frame, Style, Option<Rect>)>,
     items: Vec<Item>,
 }
 
@@ -373,11 +377,15 @@ impl<'a, B: FontBackend> Painter<'a, B> {
                 radius: widget::RADIUS,
                 ..style.clone()
             };
-            self.ring = match control {
-                Some(control) => self.ring(control, &rounded),
-                None => self.ring(frame, style),
-            }
-            .map(|ring| (ring, self.clip));
+            // A node around it that holds its ring takes it, round its own
+            // box, within its own clips.
+            self.ring = match (&self.holder, control) {
+                (Some((around, held, clip)), _) => {
+                    self.ring(*around, held).map(|ring| (ring, *clip))
+                }
+                (None, Some(control)) => self.ring(control, &rounded).map(|ring| (ring, self.clip)),
+                (None, None) => self.ring(frame, style).map(|ring| (ring, self.clip)),
+            };
         }
         if let Some(shape) = self.hovered_shape(frame, style, &hovers) {
             self.push_shape(shape);
@@ -412,6 +420,11 @@ impl<'a, B: FontBackend> Painter<'a, B> {
         // A scroll area clips its children, which its scroll moves.
         let clips = style.clip || matches!(kind, Kind::Scroll);
         let outer = self.clip;
+        // A node that holds the ring of a focus inside it, for its
+        // children.
+        let outer_holder = style
+            .holds_ring
+            .then(|| self.holder.replace((frame, style.clone(), outer)));
         if clips {
             let inside = inside_border(rect(frame), style, self.layout.scale());
             self.items.push(Item::PushClip(inside));
@@ -436,6 +449,9 @@ impl<'a, B: FontBackend> Painter<'a, B> {
             self.node(raised, color);
         }
         self.group = outer_group;
+        if let Some(outer_holder) = outer_holder {
+            self.holder = outer_holder;
+        }
         if matches!(kind, Kind::Scroll) && !style.hides_indicator {
             let scale = self.layout.scale();
             let room = self.layout.scroll_room(tree, id) / scale;
@@ -1847,6 +1863,76 @@ mod tests {
             ring.last().unwrap().border_color,
             full.with_alpha(full.alpha * 0.5)
         );
+    }
+
+    #[test]
+    fn a_node_that_holds_the_ring_shows_it_round_itself_of_a_focus_inside_it() {
+        // A search field's box, of a radius of 6, round its text field and a
+        // button.
+        let held = |holds: bool| {
+            Node::container(vec![
+                Node::field("Find").key("field").layout(view::Layout {
+                    width: view::Length::Points(80.0),
+                    ..view::Layout::default()
+                }),
+                Node::icon_button("regex").key("regex"),
+            ])
+            .layout(view::Layout {
+                padding: Edges::all(4.0),
+                ..view::Layout::default()
+            })
+            .style(view::Style {
+                background: Some(Token::from("field.bg")),
+                radius: 6.0,
+                holds_ring: holds,
+                ..view::Style::default()
+            })
+        };
+        let root = |holds: bool| {
+            Node::container(vec![held(holds)]).layout(view::Layout {
+                padding: Edges::all(8.0),
+                ..view::Layout::default()
+            })
+        };
+        let scale = 2.0;
+        let ring_of = |holds: bool| {
+            let mut font = Font::new(Blocks, FontConfig::default(), scale).unwrap();
+            let mut tree = Tree::new();
+            let changes = tree.update(&root(holds)).unwrap();
+            let mut layout = Layout::new(scale);
+            layout.update(&tree, &changes);
+            layout.compute(&tree, Some(300.0 * scale), None, &mut font);
+            let boxed = tree.children(tree.root().unwrap())[0];
+            let field = tree.by_key(&"field".into()).unwrap();
+            let items = paint(
+                &tree,
+                &layout,
+                &mut font,
+                &Theme::builtin().dark.tokens,
+                (0.0, 0.0),
+                shown(true, Some(field)),
+            );
+            let ring = items
+                .iter()
+                .flat_map(|item| match item {
+                    Item::Shapes(shapes) => shapes.clone(),
+                    _ => Vec::new(),
+                })
+                .find(|shape| shape.border_color == token("focus.ring") && shape.border > 0.0)
+                .expect("a ring");
+            let frame = |id| rect(layout.frame(&tree, id).unwrap());
+            (ring, frame(boxed), frame(field))
+        };
+        let width = (RING * scale).round() as i32;
+        let outset = |inner: Rect| (inner.x - width, inner.y - width);
+        // Held: round the box, of its radius.
+        let (ring, boxed, _) = ring_of(true);
+        assert_eq!((ring.rect.x, ring.rect.y), outset(boxed));
+        assert_eq!(ring.rect.width, boxed.width + 2 * width as u32);
+        assert_eq!(ring.radius, 6.0 * scale + width as f32);
+        // Not held: round the field alone.
+        let (ring, _, field) = ring_of(false);
+        assert_eq!((ring.rect.x, ring.rect.y), outset(field));
     }
 
     #[test]

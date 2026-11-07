@@ -493,6 +493,14 @@ pub enum Request {
         /// The revision of the field's text that it answers.
         revision: u64,
     },
+    /// Gives the keyboard's focus to a node of one of the plugin's views,
+    /// by its key, as a click on it would, which tells it `focus`.
+    FocusNode {
+        /// The view.
+        view: ViewId,
+        /// The node's key.
+        key: Key,
+    },
     /// Moves the selection of a list of one of the plugin's views, by its
     /// key, to an item, which the list scrolls to.
     Select {
@@ -623,6 +631,7 @@ impl Request {
             | Self::RequestRender(_)
             | Self::SetText { .. }
             | Self::Select { .. }
+            | Self::FocusNode { .. }
             | Self::Reveal { .. }
             | Self::OpenPanel { .. }
             | Self::ClosePanel(_)
@@ -703,6 +712,7 @@ impl Request {
             | Self::Quit
             | Self::SetText { .. }
             | Self::Select { .. }
+            | Self::FocusNode { .. }
             | Self::Reveal { .. }
             | Self::OpenPanel { .. }
             | Self::ClosePanel(_)

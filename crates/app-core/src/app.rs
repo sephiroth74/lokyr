@@ -2415,6 +2415,9 @@ impl<B: Backend> App<B> {
                 Request::Reveal { plugin, view, key } => {
                     self.reveal_node(platform, (&plugin, &view), key);
                 }
+                Request::FocusNode { plugin, view, key } => {
+                    self.focus_node(platform, (&plugin, &view), &key);
+                }
                 Request::PlaceWindow { window, at } => {
                     self.place_window(platform, window, ScreenPoint { x: at.x, y: at.y });
                 }

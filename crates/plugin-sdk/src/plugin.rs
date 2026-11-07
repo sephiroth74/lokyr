@@ -849,6 +849,15 @@ impl<'a> Cx<'a> {
         })
     }
 
+    /// Gives the keyboard's focus to the node `key` of `view`, as a click
+    /// on it would, as this call returns.
+    pub fn focus_node(&mut self, view: ViewId, key: impl Into<Key>) -> Result<(), Error> {
+        self.done(Request::FocusNode {
+            view,
+            key: key.into(),
+        })
+    }
+
     /// Scrolls the nearest scroll area around the node `key` of `view` as
     /// little as shows it, once the view shows it, as this call returns.
     pub fn reveal(&mut self, view: ViewId, key: impl Into<Key>) -> Result<(), Error> {

@@ -154,10 +154,16 @@ impl<P: Copy + Eq> Focus<P> {
         self.every_control = every;
     }
 
-    /// Gives the focus to the first node of `panel` that takes it, as a
-    /// panel that opens takes the keyboard: whether one does.
+    /// Gives the focus to the first field of `panel` that takes it, or to
+    /// its first node that takes it, as a panel that opens takes the
+    /// keyboard, its text first, as macOS's dialogs: whether one does.
     pub fn first(&mut self, panel: P, tree: &Tree) -> bool {
-        match order(tree).into_iter().find(|&id| self.tabs_to(tree, id)) {
+        let order = order(tree);
+        let field = order
+            .iter()
+            .copied()
+            .find(|&id| matches!(tree.kind(id), Some(Kind::Field(_))) && self.tabs_to(tree, id));
+        match field.or_else(|| order.into_iter().find(|&id| self.tabs_to(tree, id))) {
             Some(node) => self.focus(panel, tree, node),
             None => false,
         }
@@ -614,6 +620,30 @@ mod tests {
             focus.contexts(&[(SEARCH, "search"), (OTHER, "search")]),
             ["pane.focused", "search.open"]
         );
+    }
+
+    #[test]
+    fn a_panel_that_opens_takes_the_keyboard_at_its_field_before_its_controls() {
+        // A search field's glass before its text, Tab reaching every
+        // control: the text first.
+        let tree = tree_of(&Node::container(vec![
+            Node::icon_button("search").key("glass"),
+            Node::field("Find").key("field"),
+            Node::toggle("regex", false).key("regex"),
+        ]));
+        let mut focus = Focus::new();
+        focus.set_every_control(true);
+        assert!(focus.first(SEARCH, &tree));
+        assert_eq!(focused(&focus, &tree), "field");
+        // Of no field, its first control.
+        let tree = tree_of(&Node::container(vec![
+            Node::icon_button("search").key("glass"),
+            Node::toggle("regex", false).key("regex"),
+        ]));
+        let mut focus = Focus::new();
+        focus.set_every_control(true);
+        assert!(focus.first(SEARCH, &tree));
+        assert_eq!(focused(&focus, &tree), "glass");
     }
 
     #[test]

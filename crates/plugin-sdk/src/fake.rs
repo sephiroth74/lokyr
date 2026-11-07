@@ -2102,6 +2102,10 @@ impl Calling<'_> {
                 }
                 Response::Done
             }
+            Request::FocusNode { view, key } => {
+                self.host.node(view, key)?;
+                Response::Done
+            }
             Request::Reveal { view, .. } => {
                 if !self.host.views.contains_key(view) {
                     return Err(Error::new(

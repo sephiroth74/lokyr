@@ -514,6 +514,10 @@ pub struct Style {
     /// Of a scroll area, whether it shows no indicator of its scroll, as a
     /// bar of tabs whose ends tell it.
     pub hides_indicator: bool,
+    /// Whether the ring of the keyboard's focus of a node inside it goes
+    /// round its box instead, as a search field's box, which holds its
+    /// text field, its glass and its toggles, shows the ring of its text.
+    pub holds_ring: bool,
     /// How the pointer looks over its box, and over its children's that
     /// name none; `None` for its parent's, and at the root the arrow.
     pub pointer: Option<PointerShape>,
@@ -1143,6 +1147,7 @@ mod tests {
             color: Some(Token::from("text.secondary")),
             clip: true,
             hides_indicator: true,
+            holds_ring: true,
             pointer: Some(PointerShape::PointingHand),
             opacity: Some(0.5),
             transition: Some(Transition::default()),

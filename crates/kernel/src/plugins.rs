@@ -114,6 +114,15 @@ pub enum Request {
         /// The item's index.
         item: usize,
     },
+    /// Give the keyboard's focus to a node of a plugin's view.
+    FocusNode {
+        /// The plugin.
+        plugin: String,
+        /// The view.
+        view: ViewId,
+        /// The node's key.
+        key: Key,
+    },
     /// Scroll the nearest scroll area around a node of a plugin's view as
     /// little as shows it, once the view shows it.
     Reveal {
@@ -3410,6 +3419,14 @@ impl Host<'_, '_> {
                     view,
                     key,
                     item,
+                }
+            }
+            Asked::FocusNode { view, key } => {
+                self.node(&view, &key)?;
+                Request::FocusNode {
+                    plugin: self.state.name.clone(),
+                    view,
+                    key,
                 }
             }
             Asked::Reveal { view, key } => {

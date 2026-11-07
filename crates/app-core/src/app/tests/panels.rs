@@ -784,7 +784,43 @@ fn the_find_bar_searches_its_pane_steps_and_leaves_its_match_selected_as_it_clos
     frames(&mut fake, &mut app, window);
     command(&mut fake, &mut app, window, "search.open");
     assert!(panel_frame(&app, window, "find").is_some());
+    // Its field takes the keys as it opens, though Tab reached every
+    // control.
     assert!(focused_in(&app, window, "find"));
+    assert!(matches!(
+        app.windows[&window].focus.target(),
+        lokyr_ui_core::focus::Target::Node { node, .. }
+            if app.windows[&window].chrome.iter().any(|view| {
+                view.surface.tree.key(node).is_some_and(|key| key.0 == "query")
+            })
+    ));
+    // The I-beam over its field's whole box, its edge above the text too,
+    // but over its toggles.
+    let scale = fake.window(window).unwrap().size.scale;
+    let shape = |fake: &Fake, point: Point| {
+        fake.window(window)
+            .unwrap()
+            .pointer_areas
+            .iter()
+            .find(|area| {
+                lokyr_platform_core::ContentRect {
+                    origin: area.origin,
+                    size: area.size,
+                }
+                .contains(point)
+            })
+            .map(|area| area.shape)
+    };
+    let text = node_frame(&app, window, "query");
+    let over = middle(text, scale);
+    let edge = Point {
+        x: over.x,
+        y: f64::from(text.y) / scale - 1.0,
+    };
+    assert_eq!(shape(&fake, over), Some(PointerShape::Text));
+    assert_eq!(shape(&fake, edge), Some(PointerShape::Text));
+    let toggle = middle(node_frame(&app, window, "case"), scale);
+    assert_ne!(shape(&fake, toggle), Some(PointerShape::Text));
     // Typed, as an input method commits it: the last match, the nearest
     // to the bottom, selected, of two.
     fake.send(
@@ -823,6 +859,33 @@ fn the_find_bar_searches_its_pane_steps_and_leaves_its_match_selected_as_it_clos
         find_count(app, window).as_deref() == Some("1 of 1")
     });
     assert_eq!(selected_text(&app, window).as_deref(), Some("日本"));
+    // The pane given the keys, Command-F gives them back to its field,
+    // the bar as it was.
+    let view = |app: &App| {
+        app.windows[&window]
+            .chrome
+            .iter()
+            .find(|view| view.view == ViewId::Panel(PanelId::from("find")))
+            .map(|view| view.id)
+    };
+    let bar = view(&app);
+    fake.send(&mut app, window, click(true, OVER_PANE, none, 1));
+    fake.send(&mut app, window, click(false, OVER_PANE, none, 1));
+    frames(&mut fake, &mut app, window);
+    assert!(app.windows[&window].pane_has_focus());
+    command(&mut fake, &mut app, window, "search.open");
+    assert!(focused_in(&app, window, "find"));
+    assert_eq!(view(&app), bar);
+    // The click took the selection away; Return selects the match again,
+    // the one, around.
+    fake.send(
+        &mut app,
+        window,
+        key_event(KeyCode::Enter, "\r", none, true),
+    );
+    run_until(&mut fake, &mut app, |_, app| {
+        selected_text(app, window).as_deref() == Some("日本")
+    });
     // Escape closes it, its match staying selected.
     fake.send(
         &mut app,

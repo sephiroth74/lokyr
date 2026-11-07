@@ -728,6 +728,48 @@ impl<B: Backend> App<B> {
         platform.request_frame(window);
     }
 
+    /// Gives the keyboard's focus to the node `key` of `plugin`'s view
+    /// `view`, as a click on it would: the composition of where it was
+    /// ends as it stands, the pane's program learns that it lost it, and
+    /// the nodes' plugins hear the blur and the focus.
+    pub(super) fn focus_node(
+        &mut self,
+        platform: &mut dyn Platform,
+        (plugin, view): (&str, &ViewId),
+        key: &NodeKey,
+    ) {
+        let found = self.windows.iter().find_map(|(&window, state)| {
+            state
+                .chrome
+                .iter()
+                .find(|shown| shown.plugin == plugin && &shown.view == view)
+                .map(|shown| (window, shown.id))
+        });
+        let Some((window, id)) = found else {
+            return;
+        };
+        let Some(state) = self.windows.get_mut(&window) else {
+            return;
+        };
+        let before = state.focus.target();
+        let Some(shown) = state.chrome.iter().find(|shown| shown.id == id) else {
+            return;
+        };
+        let tree = &shown.surface.tree;
+        let Some(node) = tree.by_key(key) else {
+            return;
+        };
+        state.focus.focus(id, tree, node);
+        let mut events = Vec::new();
+        if state.focus.target() != before {
+            state.composition_dropped |= end_composition(state, before, &mut events);
+            tell_pane(&self.workspace, state, before);
+        }
+        events.extend(focus_events(state));
+        self.ui_events.extend(events);
+        platform.request_frame(window);
+    }
+
     /// The window that shows `plugin`'s view `view`, and its surface.
     fn shown_view(&mut self, plugin: &str, view: &ViewId) -> Option<(WindowId, &mut SlotView)> {
         self.windows.iter_mut().find_map(|(&window, state)| {

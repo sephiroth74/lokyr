@@ -329,25 +329,35 @@ fn escape_ends_the_search_and_its_text_opens_the_bar_again_among_the_recent_ones
 }
 
 #[test]
-fn the_bar_opened_again_while_open_keeps_its_search_and_a_step_opens_a_closed_one() {
+fn command_f_on_an_open_bar_gives_its_field_the_keys_and_a_step_opens_a_closed_one() {
     let (mut host, mut plugin) = host(&ROWS, Data::Nil);
     // A step of no bar opens it, of no text yet.
     run(&mut host, &mut plugin, NEXT);
     assert!(host.panels().contains_key(&PanelId::from(BAR)));
     typed(&mut host, &mut plugin, "needle");
     let search = plugin.find.as_ref().unwrap().search;
-    // ⌘F again: closed and opened anew, its field taking the keys, its
-    // search kept, though it hears the closing.
+    // ⌘F again: the bar stays as it is, its field taking the keys again,
+    // its search kept.
+    host.render(&mut plugin, &bar()).expect("the bar");
     let again = run(&mut host, &mut plugin, OPEN);
-    assert!(again.contains(&Request::ClosePanel(PanelId::from(BAR))));
-    assert!(host.panels().contains_key(&PanelId::from(BAR)));
+    assert_eq!(
+        again,
+        [Request::FocusNode {
+            view: bar(),
+            key: Key::from(FIELD),
+        }]
+    );
     assert_eq!(plugin.find.as_ref().unwrap().search, search);
     assert_eq!(count(&mut host, &mut plugin), "3 of 3");
-    let filled = focused(&mut host, &mut plugin);
-    assert!(filled.iter().any(|request| matches!(
-        request,
-        Request::SetText { text, revision: 0, .. } if text == "needle"
-    )));
+    // At another pane, it moves there, its search ending, its text
+    // searched there again.
+    host.pane(PaneId(2));
+    host.focus(Some(PaneId(2)));
+    let moved = run(&mut host, &mut plugin, OPEN);
+    assert!(moved.contains(&Request::ClosePanel(PanelId::from(BAR))));
+    assert_eq!(plugin.find.as_ref().unwrap().pane, PaneId(2));
+    assert!(!host.searches().contains(&search.unwrap()));
+    assert!(host.panels().contains_key(&PanelId::from(BAR)));
 }
 
 #[test]

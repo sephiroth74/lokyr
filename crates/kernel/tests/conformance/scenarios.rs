@@ -1019,6 +1019,24 @@ fn views(world: &World) -> Scenario {
                     ),
                 ),
                 (Request::RequestRender(menu.clone()), Response::Done),
+                // The keyboard's focus given to a node, of none not there.
+                (
+                    Request::FocusNode {
+                        view: menu.clone(),
+                        key: "query".into(),
+                    },
+                    Response::Done,
+                ),
+                (
+                    Request::FocusNode {
+                        view: menu.clone(),
+                        key: "none".into(),
+                    },
+                    failed(
+                        Code::NotFound,
+                        &format!("the view {menu:?} has no node `none`"),
+                    ),
+                ),
                 // A node shown, of a render that the view may have yet to
                 // show, and none of a view that it has not rendered.
                 (
