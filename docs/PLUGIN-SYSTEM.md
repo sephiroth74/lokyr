@@ -602,10 +602,11 @@ type Cx = {
     -- A window, its pane in `directory`, as `new_tab`'s, if given.
     open_window: (directory: string?) -> (boolean, Error?),
     -- A quick window of a new pane, which shows at `place` over every app's windows and takes the focus, its pane in
-    -- `directory`, if given: its id, at once. With `global-hotkey`.
+    -- `directory`, if given: its id, at once. With `global-hotkey`. The plugin's own, which closes as the plugin stops,
+    -- shown first if hidden, of the close's question of a program that runs.
     open_quick_window: (place: QuickPlace, directory: string?) -> (WindowId?, Error?),
-    -- Shows a quick window at `place`, which takes the focus, or hides it, of nil, the app that had the focus taking it
-    -- back. With `global-hotkey`.
+    -- Shows one of the plugin's quick windows at `place`, which takes the focus, or hides it, of nil, the app that had
+    -- the focus taking it back. With `global-hotkey`.
     show_quick_window: (window: WindowId, place: QuickPlace?) -> (boolean, Error?),
     close_window: (window: WindowId) -> (boolean, Error?),
     quit: () -> (boolean, Error?),

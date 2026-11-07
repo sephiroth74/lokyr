@@ -343,6 +343,8 @@ struct State {
     /// The marks of the panes' gutters that it laid, by their ids, each of
     /// its pane.
     gutter_marks: BTreeMap<u64, host::PaneId>,
+    /// The quick windows that it opened, which close as it stops.
+    quick_windows: Vec<WindowId>,
     /// Its calls on the main thread that took long, since the last look:
     /// each callback's name, and how long.
     slow: Vec<(&'static str, Duration)>,
@@ -821,6 +823,7 @@ impl Plugins {
                 panels: BTreeMap::new(),
                 decorations: BTreeMap::new(),
                 gutter_marks: BTreeMap::new(),
+                quick_windows: Vec::new(),
                 slow: Vec::new(),
                 fault: None,
                 schema,
@@ -1382,6 +1385,17 @@ impl Plugins {
     /// Takes what the plugins' calls asked of the app since the last take.
     pub fn take_requests(&mut self) -> Vec<Request> {
         std::mem::take(&mut self.out.requests)
+    }
+
+    /// Takes the quick windows of the plugins that stopped, by a fault or
+    /// their sections of the config, which the app closes, as none can
+    /// show them again.
+    pub fn take_stopped_quick_windows(&mut self) -> Vec<WindowId> {
+        self.entries
+            .iter_mut()
+            .filter(|entry| entry.state.status != Status::Active)
+            .flat_map(|entry| std::mem::take(&mut entry.state.quick_windows))
+            .collect()
     }
 
     /// Gives `plugin` the user's answer to its question `id`, the text
@@ -2130,8 +2144,8 @@ fn call<T>(
 
 /// Calls `call` on a plugin of the main thread, as [`call`] does, but
 /// drops its writes and its requests, as the call only looks: the panels
-/// that it opens or closes, its decorations and its gutters' marks, stay
-/// as they were.
+/// that it opens or closes, its decorations, its gutters' marks and its
+/// quick windows, stay as they were.
 fn look<T>(
     (plugin, state): (&mut dyn Plugin, &mut State),
     context: &mut Context<'_>,
@@ -2142,6 +2156,7 @@ fn look<T>(
     let (mut out, mut writes) = (Outbox::default(), Vec::new());
     let (panels, decorations) = (state.panels.clone(), state.decorations.clone());
     let gutter_marks = state.gutter_marks.clone();
+    let quick_windows = state.quick_windows.clone();
     let outcome = within(
         (plugin, state),
         context,
@@ -2152,6 +2167,7 @@ fn look<T>(
     state.panels = panels;
     state.decorations = decorations;
     state.gutter_marks = gutter_marks;
+    state.quick_windows = quick_windows;
     outcome.unwrap_or_else(|fault| fault)
 }
 
@@ -3674,6 +3690,12 @@ impl Host<'_, '_> {
                         .map_err(|message| Error::new(Code::Failed, message))?;
                 }
                 let window = WindowId::new();
+                // Those that closed are forgotten.
+                let workspace = &self.context.workspace;
+                self.state
+                    .quick_windows
+                    .retain(|&kept| workspace.window(kept).is_some());
+                self.state.quick_windows.push(window);
                 self.out.requests.push(Request::OpenQuickWindow {
                     window,
                     place,
@@ -3687,12 +3709,14 @@ impl Host<'_, '_> {
                         .check()
                         .map_err(|message| Error::new(Code::Failed, message))?;
                 }
+                // The plugin's own alone.
+                let id = WindowId::of(window.0);
                 let quick = self
                     .context
                     .workspace
-                    .window(WindowId::of(window.0))
+                    .window(id)
                     .filter(|shown| shown.quick());
-                if quick.is_none() {
+                if quick.is_none() || !self.state.quick_windows.contains(&id) {
                     return Err(Error::new(
                         Code::NotFound,
                         format!("there is no quick window {}", window.0),

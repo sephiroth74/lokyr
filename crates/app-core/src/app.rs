@@ -2689,6 +2689,23 @@ impl<B: Backend> App<B> {
                 eprintln!("lokyr: {error}");
             }
         }
+        // The quick windows of the plugins that stopped, which none can show
+        // again, close, shown first if hidden, so that the close's question
+        // of a program that runs shows.
+        for window in self.plugins.take_stopped_quick_windows() {
+            let shown = self
+                .windows
+                .iter()
+                .find(|(_, state)| state.window == window)
+                .map(|(&shown, _)| shown);
+            let Some(shown) = shown else {
+                continue;
+            };
+            if let Some(&(place, false)) = self.quick.get(&shown) {
+                self.show_quick(platform, shown, Some(place));
+            }
+            self.ask_close(platform, shown);
+        }
         // A window that shows a view rendered anew draws it.
         self.frame_rendered(platform);
         // A plugin's state that could not be written goes to the log.

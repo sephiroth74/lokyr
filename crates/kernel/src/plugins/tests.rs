@@ -1437,6 +1437,7 @@ fn a_call_is_its_own_plugin_s() {
             panels: BTreeMap::new(),
             decorations: BTreeMap::new(),
             gutter_marks: BTreeMap::new(),
+            quick_windows: Vec::new(),
             slow: Vec::new(),
             fault: None,
             schema: None,

@@ -2704,6 +2704,54 @@ fn the_quick_terminal_shows_and_hides_keeping_its_pane() {
 }
 
 #[test]
+fn a_quick_window_closes_as_its_plugin_stops_and_comes_back_alone() {
+    let (mut fake, mut app) = started();
+    let config = |text: &str| Config::parse(text, std::path::Path::new("config.toml")).unwrap();
+    let quick_windows = |fake: &Fake| {
+        fake.windows()
+            .filter(|&window| {
+                fake.window(window)
+                    .is_some_and(|state| state.quick.is_some())
+            })
+            .count()
+    };
+    // Shown, then hidden.
+    toggle(&mut fake, &mut app);
+    let quick = quick_window(&fake).unwrap();
+    fake.send(&mut app, quick, WindowEvent::Focused(true));
+    toggle(&mut fake, &mut app);
+    assert_eq!(fake.window(quick).unwrap().quick, Some(None));
+    // Turned off, its window closes, shown first for the close's question
+    // of a program that runs, which the user answers.
+    app.apply(
+        &mut fake,
+        config("[plugins.quick-terminal]\nenabled = false\n"),
+    );
+    if let Some(alert) = fake.alerts().first() {
+        assert_eq!(alert.window, Some(quick));
+        assert!(fake.window(quick).unwrap().quick.unwrap().is_some());
+        let alert = alert.id;
+        fake.send_app(
+            &mut app,
+            AppEvent::AlertClosed {
+                alert,
+                button: 0,
+                suppressed: false,
+                text: None,
+            },
+        );
+    }
+    assert!(fake.window(quick).is_none(), "the hidden window stayed");
+    // On again, one quick window.
+    app.apply(
+        &mut fake,
+        config("[plugins.quick-terminal]\nenabled = true\n"),
+    );
+    toggle(&mut fake, &mut app);
+    assert_eq!(quick_windows(&fake), 1);
+}
+
+#[test]
 fn the_quick_terminal_s_old_section_tells_its_new_place_and_its_plugin_s_applies() {
     let text = "[quick-terminal]\nposition = \"left\"\n\n[plugins.quick-terminal]\nposition = \"bottom\"\n";
     let config = Config::parse(text, std::path::Path::new("config.toml")).unwrap();
@@ -3306,6 +3354,56 @@ fn a_plugin_s_quick_window_shows_and_hides_and_its_global_key_is_taken() {
     let place = fake.window(quick).unwrap().quick.unwrap().unwrap();
     assert_eq!(place.edge, lokyr_platform_core::QuickEdge::Bottom);
     assert_eq!(state(&app), (true, false));
+}
+
+/// A plugin that tries to hide every quick window, another plugin's too,
+/// and keeps the codes of its refusals.
+#[derive(Default)]
+struct Thief {
+    refused: std::rc::Rc<std::cell::RefCell<Vec<lokyr_kernel::commands::Code>>>,
+}
+
+impl plugins::Plugin for Thief {
+    fn activate(&mut self, cx: &mut plugins::Cx<'_>) -> Result<(), Error> {
+        cx.register_command(lokyr_kernel::commands::Command {
+            name: "thief.hide".to_owned(),
+            title: "thief.hide".to_owned(),
+            category: lokyr_kernel::commands::Category::Windows,
+            capabilities: Vec::new(),
+            params: Vec::new(),
+            when: None,
+        })
+    }
+
+    fn on_command(&mut self, cx: &mut plugins::Cx<'_>, _: &str, _: Args) -> Result<(), Error> {
+        for window in cx.windows()? {
+            if window.quick
+                && let Err(error) = cx.show_quick_window(window.id, None)
+            {
+                self.refused.borrow_mut().push(error.code);
+            }
+        }
+        Ok(())
+    }
+}
+
+#[test]
+fn a_plugin_cannot_show_or_hide_another_plugin_s_quick_window() {
+    let thief = Thief::default();
+    let refused = std::rc::Rc::clone(&thief.refused);
+    let mut fake = Fake::default();
+    let mut app = app(Config::default(), quiet())
+        .with_plugin("slider", Box::new(Slider::default()))
+        .with_plugin("thief", Box::new(thief));
+    fake.start(&mut app);
+    app.run(&mut fake, "slider.toggle", Args::new());
+    let quick = quick_window(&fake).unwrap();
+    app.run(&mut fake, "thief.hide", Args::new());
+    assert_eq!(*refused.borrow(), [lokyr_kernel::commands::Code::NotFound]);
+    assert!(fake.window(quick).unwrap().quick.unwrap().is_some());
+    // Its own plugin hides it.
+    app.run(&mut fake, "slider.hide", Args::new());
+    assert_eq!(fake.window(quick).unwrap().quick, Some(None));
 }
 
 #[test]
