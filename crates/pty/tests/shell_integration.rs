@@ -48,11 +48,20 @@ struct Shell {
 impl Shell {
     /// The shell at `path`, of the integration, in `home`, its folder too.
     fn start(path: &Path, home: &Path) -> Self {
+        Self::of(path, home, true)
+    }
+
+    /// The shell at `path`, without the integration, in `home`.
+    fn plain(path: &Path, home: &Path) -> Self {
+        Self::of(path, home, false)
+    }
+
+    fn of(path: &Path, home: &Path, integrated: bool) -> Self {
         let mut options = Options::new(
             Program::command(path, Vec::<String>::new()),
             "xterm-256color",
         );
-        options.shell_integration = Some(scripts());
+        options.shell_integration = integrated.then(scripts);
         options.working_directory = Some(home.to_owned());
         options.env = vec![
             ("HOME".into(), home.into()),
@@ -98,11 +107,26 @@ impl Shell {
         &self.text[self.from..]
     }
 
+    /// Everything read since the last line typed or the last `through`, up
+    /// to `needle`'s end, past which the next look starts.
+    fn through(&mut self, needle: &str) -> String {
+        self.until(needle);
+        let at = self.from + self.text[self.from..].find(needle).unwrap_or(0) + needle.len();
+        let text = self.text[self.from..at].to_owned();
+        self.from = at;
+        text
+    }
+
     /// Types `line` and Return, past what came before.
     fn run(&mut self, line: &str) {
-        self.from = self.text.len();
-        self.writer.write_all(line.as_bytes()).unwrap();
+        self.press(line.as_bytes());
         self.writer.write_all(b"\r").unwrap();
+    }
+
+    /// Types `keys`, past what came before.
+    fn press(&mut self, keys: &[u8]) {
+        self.from = self.text.len();
+        self.writer.write_all(keys).unwrap();
     }
 }
 
@@ -174,23 +198,17 @@ fn zsh_loads_the_integration_after_the_user_s_own_files() {
 
 #[test]
 fn bash_reads_the_user_s_files_out_of_posix_mode_and_marks_its_prompts() {
-    // A bash of 4 or later, as macOS's own, 3.2, gets no integration.
-    let paths: &[&str] = if cfg!(target_os = "macos") {
-        &["/opt/homebrew/bin/bash", "/usr/local/bin/bash"]
-    } else {
-        &["/bin/bash", "/usr/bin/bash"]
-    };
-    let Some(bash) = found(paths) else {
+    let Some(bash) = modern_bash() else {
         eprintln!("no bash of 4 or later here");
         return;
     };
     // An interactive bash that is no login shell reads `.bashrc`, of a
-    // prompt command of the user's.
+    // prompt command of the user's, which ends with a comment.
     let home = home(
         "bash",
         &[(
             ".bashrc",
-            "PS1='bash> '\nalias hello='echo from-rc'\nPROMPT_COMMAND='USER_PROMPT=yes'\n",
+            "PS1='bash> '\nalias hello='echo from-rc'\nPROMPT_COMMAND='USER_PROMPT=yes # a comment'\n",
         )],
     );
     let mut shell = Shell::start(&bash, &home);
@@ -212,6 +230,106 @@ fn bash_reads_the_user_s_files_out_of_posix_mode_and_marks_its_prompts() {
     shell.until(&format!("\x1b]7;file://{}{folder}\x07", host()));
 }
 
+/// A bash of 4 or later: macOS's own, 3.2, gets no integration.
+fn modern_bash() -> Option<PathBuf> {
+    found(if cfg!(target_os = "macos") {
+        &["/opt/homebrew/bin/bash", "/usr/local/bin/bash"]
+    } else {
+        &["/bin/bash", "/usr/bin/bash"]
+    })
+}
+
+#[test]
+fn bash_keeps_its_last_argument_and_marks_no_widget_nor_empty_line() {
+    let Some(bash) = modern_bash() else {
+        eprintln!("no bash of 4 or later here");
+        return;
+    };
+    // A key's command, as fzf's, and the prompt's commands of an array.
+    let home = home(
+        "bash-widgets",
+        &[(
+            ".bashrc",
+            "PS1='bash> '\nua() { :; }\nub() { :; }\nPROMPT_COMMAND=(ua ub)\n\
+             bind -x '\"\\ew\": echo widget-ran'\n",
+        )],
+    );
+    let mut shell = Shell::start(&bash, &home);
+    shell.through("bash> \x1b]133;B");
+    // `$_`, the last argument of the command before, as bash keeps it.
+    shell.run("mkdir -p d1 && cd $_ && echo \"here=$PWD=\"");
+    let text = shell.through("\x1b]133;D;0");
+    assert!(text.contains("/d1="), "{text:?}");
+    shell.through("bash> \x1b]133;B");
+    shell.run("echo lastarg >/dev/null; echo \"last=$_=\"");
+    let text = shell.through("\x1b]133;D;0");
+    assert!(text.contains("last=lastarg="), "{text:?}");
+    shell.through("bash> \x1b]133;B");
+    // The widget, at the prompt, marks no command's output, nor the prompt
+    // drawn again after it: of Alt-W, as macOS's terminal driver takes
+    // Ctrl-T for its status.
+    shell.press(b"\x1bw");
+    shell.through("widget-ran");
+    let text = shell.through("bash> \x1b]133;B");
+    assert!(!text.contains("\x1b]133;C"), "{text:?}");
+    // The command after it, of its marks in order, the prompt's commands
+    // of the array before the prompt's.
+    shell.run("false");
+    let text = shell.through("bash> \x1b]133;B");
+    assert_eq!(text.matches("\x1b]133;C").count(), 1, "{text:?}");
+    marks_in_order(&text, 1, &url_path(&home.join("d1")));
+    // An empty line, of no command: no output's mark, no end.
+    shell.run("");
+    let text = shell.through("bash> \x1b]133;B");
+    assert!(
+        !text.contains("\x1b]133;C") && !text.contains("\x1b]133;D"),
+        "{text:?}"
+    );
+}
+
+#[test]
+fn bash_marks_its_commands_beside_the_user_s_debug_trap() {
+    let Some(bash) = modern_bash() else {
+        eprintln!("no bash of 4 or later here");
+        return;
+    };
+    // A trap of the user's, as starship's, atuin's or bash-preexec's.
+    let home = home(
+        "bash-trap",
+        &[(".bashrc", "PS1='bash> '\ntrap 'USER_TRAP=yes' DEBUG\n")],
+    );
+    let mut shell = Shell::start(&bash, &home);
+    shell.until("bash> ");
+    shell.run("false");
+    let text = shell.until("bash> \x1b]133;B").to_owned();
+    marks_in_order(&text, 1, &url_path(&home));
+    shell.run("echo \"trap=$USER_TRAP=\"");
+    let text = shell.until("\x1b]133;D;0").to_owned();
+    assert!(text.contains("trap=yes="), "{text:?}");
+}
+
+#[test]
+fn bash_s_options_and_traps_are_a_plain_bash_s() {
+    let Some(bash) = modern_bash() else {
+        eprintln!("no bash of 4 or later here");
+        return;
+    };
+    let home = home("bash-options", &[(".bashrc", "PS1='bash> '\n")]);
+    let options = |mut shell: Shell, file: &str| {
+        shell.until("bash> ");
+        // The output's word made as it runs, which the line's echo is not.
+        shell.run(&format!(
+            "{{ shopt -p; set +o; trap -p; }} > {file}; echo done-$((40 + 2))"
+        ));
+        shell.until("done-42");
+        std::fs::read_to_string(home.join(file)).unwrap()
+    };
+    let plain = options(Shell::plain(&bash, &home), "plain.txt");
+    let integrated = options(Shell::start(&bash, &home), "integrated.txt");
+    assert!(plain.contains("shopt"), "{plain:?}");
+    assert_eq!(integrated, plain);
+}
+
 #[test]
 fn fish_takes_the_folder_out_of_its_data_dirs_and_marks_its_prompts() {
     let Some(fish) = found(&[
@@ -231,14 +349,27 @@ fn fish_takes_the_folder_out_of_its_data_dirs_and_marks_its_prompts() {
     );
     let mut shell = Shell::start(&fish, &home);
     shell.until("fish> ");
-    shell.run("hello; set -q LOKYR_SHELL_INTEGRATION_XDG_DIR; or echo dirs=(string join , $XDG_DATA_DIRS)=; false");
+    // Each word that the output tells made as it runs, which the line's
+    // echo is not.
+    shell.run(
+        "hello; if set -q LOKYR_SHELL_INTEGRATION_XDG_DIR; or set -q LOKYR_SHELL_INTEGRATION_XDG_UNSET; \
+         printf 'vars-%s\\n' left; else if set -q XDG_DATA_DIRS; \
+         printf 'd%s:%s|\\n' irs (string join , $XDG_DATA_DIRS); else; printf 'none-%s\\n' set; end; false",
+    );
     shell.until("from-rc");
     let text = shell.until("\x1b]133;D;1").to_owned();
-    // The terminal's folder gone from the data's folders, its variable too.
-    let dirs = text.split("dirs=").nth(1).unwrap_or_default();
-    let dirs = dirs.split('=').next().unwrap_or_default();
-    assert!(!dirs.is_empty() || text.contains("dirs=="), "{text:?}");
-    assert!(!dirs.contains("shell-integration"), "{dirs:?}");
+    // The terminal's folder gone from the data's folders, its variables
+    // too, and the data's folders none, as the test's own environment has
+    // none.
+    assert!(!text.contains("vars-left"), "{text:?}");
+    if std::env::var_os("XDG_DATA_DIRS").is_none() {
+        assert!(text.contains("none-set"), "{text:?}");
+    } else {
+        let dirs = text.split("dirs:").nth(1).unwrap_or_default();
+        let dirs = dirs.split('|').next().unwrap_or_default();
+        assert!(!dirs.is_empty(), "{text:?}");
+        assert!(!dirs.contains("shell-integration"), "{dirs:?}");
+    }
     let text = shell.until("fish> ").to_owned();
     marks_in_order(&text, 1, &url_path(&home));
     // One mark of each, not fish's and the integration's both.
@@ -258,6 +389,27 @@ fn macos_s_own_bash_loads_nothing() {
     let text = shell.until("old> ").to_owned();
     assert!(text.contains("unset unset"), "{text:?}");
     assert!(!shell.text.contains("\x1b]133;"), "{:?}", shell.text);
+}
+
+#[test]
+fn macos_s_own_bash_marks_its_commands_of_the_script_that_its_files_load() {
+    if !cfg!(target_os = "macos") {
+        return;
+    }
+    // As the config's guide has a user of `/bin/bash` load it, whose 3.2
+    // shows no PS0: the marks of the DEBUG trap.
+    let script = scripts().join("bash").join("lokyr.bash");
+    let rc = format!("PS1='old> '\nsource '{}'\n", script.display());
+    let home = home("old-bash-sourced", &[(".bashrc", &rc)]);
+    let mut shell = Shell::plain(Path::new("/bin/bash"), &home);
+    shell.through("old> \x1b]133;B");
+    shell.run("false");
+    let text = shell.through("old> \x1b]133;B");
+    marks_in_order(&text, 1, &url_path(&home));
+    shell.run("echo lastarg >/dev/null; echo \"last=$_=\"");
+    let text = shell.through("\x1b]133;D;0");
+    assert!(text.contains("last=lastarg="), "{text:?}");
+    assert_eq!(text.matches("\x1b]133;C").count(), 1, "{text:?}");
 }
 
 #[test]

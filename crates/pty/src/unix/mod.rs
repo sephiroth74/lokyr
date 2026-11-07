@@ -1048,18 +1048,21 @@ fn integration(shell: &Path, dir: &Path, env: &BTreeMap<OsString, OsString>) -> 
         }
         // A folder of a `:` would be two of `XDG_DATA_DIRS`.
         "fish" if !dir.as_os_str().as_bytes().contains(&b':') => {
-            let others = kept("XDG_DATA_DIRS")
-                .filter(|dirs| !dirs.is_empty())
-                .unwrap_or_else(|| XDG_DATA_DIRS.into());
+            let own = kept("XDG_DATA_DIRS").filter(|dirs| !dirs.is_empty());
             let mut dirs = dir.as_os_str().to_owned();
             dirs.push(":");
-            dirs.push(others);
+            dirs.push(own.clone().unwrap_or_else(|| XDG_DATA_DIRS.into()));
+            let mut env = vec![
+                pair("XDG_DATA_DIRS", dirs),
+                pair("LOKYR_SHELL_INTEGRATION_XDG_DIR", dir.into()),
+            ];
+            // The script takes the variable away of a user who had none.
+            if own.is_none() {
+                env.push(pair("LOKYR_SHELL_INTEGRATION_XDG_UNSET", "1".into()));
+            }
             Some(Injection {
                 args: Vec::new(),
-                env: vec![
-                    pair("XDG_DATA_DIRS", dirs),
-                    pair("LOKYR_SHELL_INTEGRATION_XDG_DIR", dir.into()),
-                ],
+                env,
             })
         }
         _ => None,
@@ -1972,6 +1975,7 @@ mod tests {
                 ),
             ]
         );
+        // Of none, the defaults', and the script told to take it away.
         let bare = integration(Path::new("fish"), dir, &BTreeMap::new()).unwrap();
         assert_eq!(
             bare.env[0],
@@ -1980,6 +1984,7 @@ mod tests {
                 "/App/Resources/shell-integration:/usr/local/share:/usr/share"
             )
         );
+        assert_eq!(bare.env[2], pair("LOKYR_SHELL_INTEGRATION_XDG_UNSET", "1"));
         assert!(integration(Path::new("fish"), Path::new("/a:b"), &env).is_none());
         // Another shell, none.
         for shell in ["/bin/sh", "/bin/dash", "/usr/bin/nu"] {

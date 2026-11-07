@@ -1,12 +1,17 @@
 # Lokyr's shell integration for fish, which the terminal brings in through
 # XDG_DATA_DIRS, whose folders' vendor_conf.d fish reads: the terminal's
-# folder leaves XDG_DATA_DIRS first, then, in an interactive fish before
+# folder leaves XDG_DATA_DIRS first, which goes if the user had none, then, in an interactive fish before
 # 4, which tells them itself, the marks of OSC 133 around each prompt, its
 # input, a command's output and its exit status, and the folder of OSC 7.
 # The user's files are never touched.
 
 if set -q LOKYR_SHELL_INTEGRATION_XDG_DIR
-    if set -q XDG_DATA_DIRS
+    if set -q LOKYR_SHELL_INTEGRATION_XDG_UNSET
+        # The user had none, which the terminal's folder and the defaults
+        # stood for.
+        set -e XDG_DATA_DIRS
+        set -e LOKYR_SHELL_INTEGRATION_XDG_UNSET
+    else if set -q XDG_DATA_DIRS
         set -l kept
         for dir in (string split : -- $XDG_DATA_DIRS)
             if test "$dir" != "$LOKYR_SHELL_INTEGRATION_XDG_DIR"
