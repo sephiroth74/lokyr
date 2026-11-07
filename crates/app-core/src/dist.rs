@@ -23,5 +23,7 @@ pub(crate) fn plugins() -> Vec<Registration> {
         lokyr_search_plugin::registration(),
         #[cfg(feature = "plugin-command-palette")]
         lokyr_command_palette::registration(),
+        #[cfg(feature = "plugin-quick-terminal")]
+        lokyr_quick_terminal::registration(),
     ]
 }

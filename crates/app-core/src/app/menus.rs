@@ -588,6 +588,14 @@ pub(super) fn main_menu(
                 shortcut: keymap.shortcut(&command.name).and_then(shortcut),
             })
             .collect();
+        // By the menu's categories, each of its commands in the order of
+        // their registrations, as a plugin's that registers after the
+        // others.
+        shown.sort_by_key(|item| {
+            categories
+                .iter()
+                .position(|category| *category == item.group.0)
+        });
         for (at, entry) in plugins_items.iter().enumerate() {
             let MenuPlace::Bar(category) = entry.place else {
                 continue;

@@ -540,6 +540,18 @@ impl FakeHost {
         self
     }
 
+    /// Closes `window`, with its tabs and its panes, as its last program
+    /// ended or the user closed it, which the plugin is owed.
+    pub fn close_window(&mut self, window: WindowId) -> &mut Self {
+        self.panes.retain(|_, pane| pane.window != window);
+        self.quick.remove(&window);
+        if self.focused == Some(window) {
+            self.given_focus = Some(None);
+        }
+        self.changed(WorkspaceEvent::WindowClosed { window });
+        self
+    }
+
     /// Puts `text` on the clipboard, or empties it.
     pub fn set_clipboard(&mut self, text: Option<&str>) -> &mut Self {
         self.clipboard = text.map(str::to_owned);

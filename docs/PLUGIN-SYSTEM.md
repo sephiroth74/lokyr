@@ -838,7 +838,7 @@ installed ──▶ resolved ──▶ consent ──▶ loaded ──▶ active
 | `command-palette` | Command palette and theme picker | F3 |
 | `plugin-manager` | UI for Sleip (calls `sleip --json`) | F4 |
 | `blocks` | Command + output blocks, over the prompts' marks that the kernel keeps since F3 | F5a |
-| `quick-terminal` | The quick terminal's policy, which the app holds in F2 | F3 |
+| `quick-terminal` | The quick terminal: its command, which shows and hides its quick window, its autohide and its place, of `[plugins.quick-terminal]`, through the quick windows and the global keys of `global-hotkey` | F3 |
 | `progress` | The programs' progress (OSC 9;4), in the `window-strip` slot; the tab shows it with `tabs` | F3 |
 | `command-header` | The command whose output the view shows, at the pane's top, in a panel of its pane's top corner, over OSC 133's marks, as iTerm2's | F3 |
 | `copy-mode` | The keyboard's selection over the screen and the scrollback, as tmux's and vim's | F3 |

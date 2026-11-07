@@ -447,7 +447,7 @@ fn the_app_s_catalogs_match_their_source() {
         .iter()
         .map(|registration| (registration.make)())
         .collect();
-    assert_eq!(builtins.len(), 7);
+    assert_eq!(builtins.len(), 8);
     for plugin in &builtins {
         let catalogs = plugin.catalogs();
         // A plugin of no commands, as the keymap's, has no titles.
@@ -2647,6 +2647,9 @@ fn quick_window(fake: &Fake) -> Option<WindowId> {
     })
 }
 
+/// The quick terminal's command, of its plugin.
+const TOGGLE_QUICK: &str = "window.toggle-quick-terminal";
+
 fn toggle(fake: &mut Fake, app: &mut App) {
     fake.send_app(app, AppEvent::Command(TOGGLE_QUICK.to_owned()));
 }
@@ -2694,10 +2697,46 @@ fn the_quick_terminal_shows_and_hides_keeping_its_pane() {
 }
 
 #[test]
+fn the_quick_terminal_s_old_section_tells_its_new_place_and_its_plugin_s_applies() {
+    let text = "[quick-terminal]\nposition = \"left\"\n\n[plugins.quick-terminal]\nposition = \"bottom\"\n";
+    let config = Config::parse(text, std::path::Path::new("config.toml")).unwrap();
+    let mut fake = Fake::default();
+    let mut app = app(config, quiet());
+    fake.start(&mut app);
+    let shown = app.diagnostics.shown().unwrap();
+    assert_eq!(
+        shown.about,
+        About::PluginConfig("quick-terminal".to_owned())
+    );
+    assert!(
+        shown.text.starts_with("config.toml:1:")
+            && shown
+                .text
+                .contains("`[quick-terminal]` is now `[plugins.quick-terminal]`"),
+        "{}",
+        shown.text
+    );
+    toggle(&mut fake, &mut app);
+    let quick = quick_window(&fake).unwrap();
+    let place = fake.window(quick).unwrap().quick.unwrap().unwrap();
+    assert_eq!(place.edge, lokyr_platform_core::QuickEdge::Bottom);
+    // Moved, the notice goes.
+    let text = "[plugins.quick-terminal]\nposition = \"bottom\"\n";
+    app.apply(
+        &mut fake,
+        Config::parse(text, std::path::Path::new("config.toml")).unwrap(),
+    );
+    assert!(app.diagnostics.shown().is_none());
+}
+
+#[test]
 fn the_quick_terminal_stays_as_it_loses_the_focus_without_autohide_or_to_a_question() {
-    let mut config = Config::default();
-    config.quick_terminal.autohide = false;
-    config.quick_terminal.position = config::QuickPosition::Left;
+    let section = |autohide: bool| {
+        let text =
+            format!("[plugins.quick-terminal]\nautohide = {autohide}\nposition = \"left\"\n");
+        Config::parse(&text, std::path::Path::new("config.toml")).unwrap()
+    };
+    let config = section(false);
     let mut fake = Fake::default();
     let mut app = app(config, quiet());
     fake.start(&mut app);
@@ -2709,7 +2748,7 @@ fn the_quick_terminal_stays_as_it_loses_the_focus_without_autohide_or_to_a_quest
     fake.send(&mut app, quick, WindowEvent::Focused(false));
     assert!(fake.window(quick).unwrap().quick.unwrap().is_some());
     // With autohide, a question on it, which takes the focus, keeps it.
-    app.config.quick_terminal.autohide = true;
+    app.apply(&mut fake, section(true));
     fake.send(&mut app, quick, WindowEvent::Focused(true));
     app.ask_title(&mut fake, quick);
     fake.send(&mut app, quick, WindowEvent::Focused(false));

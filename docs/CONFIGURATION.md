@@ -94,14 +94,6 @@ title-size = false                   # true | false: the grid's size in the titl
 title-shortcut = false               # true | false: ⌥⌘1 at the titlebar's right
 opaque-titlebar = true               # true | false: the titlebar opaque over a translucent window
 
-[quick-terminal]
-position = "bottom"                  # top | bottom | left | right | center
-size = "40%,80%"                     # into the screen, then along the edge: 1% to 100%, or points as "300px"
-screen = "mouse"                     # main | mouse | menu-bar
-animation = 150                      # ms, from 0 to 2000
-autohide = false                     # true | false: hides as it loses the focus
-spaces = "remain"                    # move | remain
-
 [interface]
 font-family = "Helvetica Neue"       # the system's interface font when absent
 font-size = 14                       # points, from 4 to 200
@@ -183,6 +175,14 @@ column-width = 200                   # points, 60 to 600: the bar's column on th
 dim-inactive = 0.15                  # 0 to 1: how much the panes without the keyboard fade
 pane-titles = false                  # true | false: each pane's title across its top
 focus-follows-mouse = false          # true | false: the keyboard goes to the pane under the pointer
+
+[plugins.quick-terminal]
+position = "bottom"                  # top | bottom | left | right | center
+size = "40%,80%"                     # into the screen, then along the edge: 1% to 100%, or points as "300px"
+screen = "mouse"                     # main | mouse | menu-bar
+animation = 150                      # ms, from 0 to 2000
+autohide = false                     # true | false: hides as it loses the focus
+spaces = "remain"                    # move | remain
 
 [plugins.search]
 case = "smart"                       # smart | insensitive: whether case counts while the bar's case toggle is off
@@ -709,94 +709,6 @@ Whether the titlebar stays opaque over a translucent window, in the default back
 - A tab bar on the left that runs up through the titlebar, as [`position`](#position-1) and [`style`](#style-1) put it, keeps its own colors there: the titlebar is opaque beside it, over the panes.
 - The title's color reads over the background: a light background in the dark appearance, or a dark one in the light appearance, gives the window the appearance of its background.
 - It applies at once, as you save the file.
-
-## `[quick-terminal]`
-
-A window that a global key slides in from an edge of the screen, over every app, the ones in full screen too, and out again: a terminal at hand from anywhere. Bind its command, `window.toggle-quick-terminal`, to a key of `[keys]` that works in every app, with `global:`, which macOS gives Lokyr without the Accessibility permission, as [Bindings](#bindings) says, as ``"global:ctrl+`" = "window.toggle-quick-terminal"`` does; Shell › Quick Terminal runs it too.
-
-```toml
-[keys]
-"global:ctrl+`" = "window.toggle-quick-terminal"
-```
-
-Pick a key that no other app takes: VS Code, as an example, takes Control-` for its own terminal while it is in front. The key shows the quick terminal and gives it the keys; again, it hides it, and the app that had the focus takes it back; shown without the focus, it takes the focus. Its shell runs while it is hidden, so that it shows at once, where [`new-directory`](#new-directory) says; closed, as its shell exits, the next key opens a new one.
-
-Hidden, it keeps its shell, its screen and its scrollback, as a window does, and its last frame, so that it shows at once: some ten megabytes of memory at half the screen of a Retina laptop, more on a larger screen. It draws nothing while hidden.
-
-### `position`
-
-<sub>Platforms: macOS</sub>
-
-The edge of the screen that the quick terminal comes from, or its centre, where it fades in and out; it fades in and out in its place too where another display lies past its edge, rather than slide across that display.
-
-| Values | Default |
-|---|---|
-| `"top"`, `"bottom"`, `"left"`, `"right"`, `"center"` | `"top"` |
-
-It applies as it shows next.
-
-### `size`
-
-<sub>Platforms: macOS</sub>
-
-The quick terminal's size: first, how far it reaches into the screen from its edge, its height at the top or the bottom, its width at the left or the right, and its width at the centre; then, after a comma, its length along the edge, its width at the top or the bottom, and its height at the left, the right or the centre.
-
-| Values | Default |
-|---|---|
-| a percentage of the screen's, from `"1%"` to `"100%"`, or points, as `"300px"`; a second one after a comma | `"50%"` |
-
-- The screen's part is of its area below the menu bar and beside the Dock, where the quick terminal shows, centred along its edge.
-- Without the second, it takes the screen's whole width at the top or the bottom, its whole height at the left or the right, and, at the centre, the first's share of the height, or its points.
-- Points are those that macOS lays windows out in, two pixels each on a Retina display; a size past the screen's takes the screen's.
-- It applies as it shows next.
-
-### `screen`
-
-<sub>Platforms: macOS</sub>
-
-The screen that the quick terminal shows on.
-
-| Values | Default |
-|---|---|
-| `"main"`, `"mouse"`, `"menu-bar"` | `"main"` |
-
-`"main"` is the system's main screen, the one of the window in front; `"mouse"` the screen that the pointer is on; `"menu-bar"` the one that has the menu bar. It applies as it shows next.
-
-### `animation`
-
-<sub>Platforms: macOS</sub>
-
-How long the quick terminal slides in and out, in milliseconds.
-
-| Values | Default |
-|---|---|
-| from `0` to `2000`; `0` shows and hides it at once | `200` |
-
-With the system's Reduce motion, it shows and hides at once. It applies at once.
-
-### `autohide`
-
-<sub>Platforms: macOS</sub>
-
-Whether the quick terminal hides as it loses the focus, as you click another app or another of Lokyr's windows.
-
-| Values | Default |
-|---|---|
-| `true`, `false` | `true` |
-
-It applies at once.
-
-### `spaces`
-
-<sub>Platforms: macOS</sub>
-
-Whether the quick terminal follows you to the Space in front, as you switch Spaces, or stays on the one that it showed on.
-
-| Values | Default |
-|---|---|
-| `"move"`, `"remain"` | `"move"` |
-
-It applies as it shows next.
 
 ## `[interface]`
 
@@ -1370,7 +1282,7 @@ Each entry of the section is a binding: its name is the keys, in quotes, and its
 Commands without keys of their own, for your bindings:
 
 - `pane.send-text` sends its `text` to the program as it is, its control characters too, as keys that typed it would, which can run commands; the view comes back to the screen. In the TOML string, `\u0017` writes Control-W, and `\u001b` Escape.
-- `window.toggle-quick-terminal` shows the quick terminal, or hides it, as [`[quick-terminal]`](#quick-terminal) says: bound to a global key, from every app. Shell › Quick Terminal runs it too.
+- `window.toggle-quick-terminal` shows the quick terminal, or hides it, as [`[plugins.quick-terminal]`](#pluginsquick-terminal) says: bound to a global key, from every app. Shell › Quick Terminal runs it too.
 - `tabs.rename` gives the tab its `title`, in place of its program's; without one, as Shell › Rename Tab… runs it, it asks you for it, and an empty one gives the tab its program's back.
 - `tabs.set-color` gives the tab its `color`, as `"#ff8800"`, in place of the one that its program set; an empty one gives the program's back.
 - `tabs.detach` moves the tab out to a window of its own, as Shell › Move Tab to New Window does.
@@ -1614,6 +1526,99 @@ Whether the keyboard goes to the pane that the pointer comes over, without a cli
 
 - The pointer's moves wake the app over the panes that have not the keyboard alone, so that it costs nothing while the pointer stays over the one that has it; none moves it while a button is down, as in a selection's drag.
 - It applies at once, as you save the file.
+
+## `[plugins.quick-terminal]`
+
+<sub>Platforms: macOS</sub>
+
+The quick terminal of the built-in plugin `lokyr/quick-terminal`: a window that a global key slides in from an edge of the screen, over every app, the ones in full screen too, and out again: a terminal at hand from anywhere. Bind its command, `window.toggle-quick-terminal`, to a key of `[keys]` that works in every app, with `global:`, which macOS gives Lokyr without the Accessibility permission, as [Bindings](#bindings) says, as ``"global:ctrl+`" = "window.toggle-quick-terminal"`` does; Shell › Quick Terminal runs it too.
+
+```toml
+[keys]
+"global:ctrl+`" = "window.toggle-quick-terminal"
+```
+
+Pick a key that no other app takes: VS Code, as an example, takes Control-` for its own terminal while it is in front. The key shows the quick terminal and gives it the keys; again, it hides it, and the app that had the focus takes it back; shown without the focus, it takes the focus. Its shell runs while it is hidden, so that it shows at once, where [`new-directory`](#new-directory) says; closed, as its shell exits, the next key opens a new one.
+
+Hidden, it keeps its shell, its screen and its scrollback, as a window does, and its last frame, so that it shows at once: some ten megabytes of memory at half the screen of a Retina laptop, more on a larger screen. It draws nothing while hidden.
+
+These keys were the section `[quick-terminal]` before; a file that still has it reads, a notice at its line telling you to move its keys here, which it ignores until then. With `enabled = false`, the quick terminal goes, its window and its shell with it, and Shell › Quick Terminal too.
+
+### `position`
+
+<sub>Platforms: macOS</sub>
+
+The edge of the screen that the quick terminal comes from, or its centre, where it fades in and out; it fades in and out in its place too where another display lies past its edge, rather than slide across that display.
+
+| Values | Default |
+|---|---|
+| `"top"`, `"bottom"`, `"left"`, `"right"`, `"center"` | `"top"` |
+
+It applies as it shows next.
+
+### `size`
+
+<sub>Platforms: macOS</sub>
+
+The quick terminal's size: first, how far it reaches into the screen from its edge, its height at the top or the bottom, its width at the left or the right, and its width at the centre; then, after a comma, its length along the edge, its width at the top or the bottom, and its height at the left, the right or the centre.
+
+| Values | Default |
+|---|---|
+| a percentage of the screen's, from `"1%"` to `"100%"`, or points, as `"300px"`; a second one after a comma | `"50%"` |
+
+- A size that does not read takes `"50%"`, as the log tells.
+- The screen's part is of its area below the menu bar and beside the Dock, where the quick terminal shows, centred along its edge.
+- Without the second, it takes the screen's whole width at the top or the bottom, its whole height at the left or the right, and, at the centre, the first's share of the height, or its points.
+- Points are those that macOS lays windows out in, two pixels each on a Retina display; a size past the screen's takes the screen's.
+- It applies as it shows next.
+
+### `screen`
+
+<sub>Platforms: macOS</sub>
+
+The screen that the quick terminal shows on.
+
+| Values | Default |
+|---|---|
+| `"main"`, `"mouse"`, `"menu-bar"` | `"main"` |
+
+`"main"` is the system's main screen, the one of the window in front; `"mouse"` the screen that the pointer is on; `"menu-bar"` the one that has the menu bar. It applies as it shows next.
+
+### `animation`
+
+<sub>Platforms: macOS</sub>
+
+How long the quick terminal slides in and out, in milliseconds.
+
+| Values | Default |
+|---|---|
+| from `0` to `2000`; `0` shows and hides it at once | `200` |
+
+With the system's Reduce motion, it shows and hides at once. It applies at once.
+
+### `autohide`
+
+<sub>Platforms: macOS</sub>
+
+Whether the quick terminal hides as it loses the focus, as you click another app or another of Lokyr's windows.
+
+| Values | Default |
+|---|---|
+| `true`, `false` | `true` |
+
+It applies at once.
+
+### `spaces`
+
+<sub>Platforms: macOS</sub>
+
+Whether the quick terminal follows you to the Space in front, as you switch Spaces, or stays on the one that it showed on.
+
+| Values | Default |
+|---|---|
+| `"move"`, `"remain"` | `"move"` |
+
+It applies as it shows next.
 
 ## `[plugins.search]`
 

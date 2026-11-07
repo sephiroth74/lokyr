@@ -117,9 +117,6 @@ const SET_TITLE: &str = "window.set-title";
 /// Brings forward the window whose number is its `index`, from 1.
 const GOTO_WINDOW: &str = "window.goto";
 
-/// The command that shows the quick terminal, or hides it.
-const TOGGLE_QUICK: &str = "window.toggle-quick-terminal";
-
 /// The command that shows the system's definition of the selection, of
 /// one line, which the context menu alone shows, naming it.
 const LOOK_UP: &str = "pane.look-up";
@@ -1187,6 +1184,15 @@ impl<B: Backend> App<B> {
             );
             self.report(platform, diagnostic);
         }
+        // The sections that are plugins' now, which the file still has.
+        for (namespace, told) in self.config.moved.clone() {
+            let diagnostic = Diagnostic::new(
+                Code::InvalidConfig,
+                told.to_string(),
+                About::PluginConfig(namespace),
+            );
+            self.report(platform, diagnostic);
+        }
     }
 
     /// Takes the notice about `about` away, as a fix does.
@@ -1351,7 +1357,8 @@ impl<B: Backend> App<B> {
             self.keymap =
                 Keymap::with_config(bindings(&self.plugins, &self.commands), &config.keys);
         }
-        let plugins_changed = config.plugins != self.config.plugins;
+        let plugins_changed =
+            config.plugins != self.config.plugins || config.moved != self.config.moved;
         self.config = config;
         // The plugins take their sections, and hear of their changes; those
         // that their sections turn off stop, and those turned on again
@@ -1917,28 +1924,6 @@ impl<B: Backend> App<B> {
         .pane(PaneId::new(), grid)
     }
 
-    /// Shows the quick terminal, at the place that the config gives, and
-    /// opens it first, in the directory that `new-directory` gives; or
-    /// hides it, if it shows with the focus. Shown without the focus, it
-    /// takes the focus.
-    fn toggle_quick(&mut self, platform: &mut dyn Platform) {
-        let place = quick::place(&self.config.quick_terminal);
-        let own = self
-            .quick
-            .iter()
-            .next()
-            .map(|(&window, &(_, shown))| (window, shown));
-        match own {
-            Some((window, true))
-                if self.windows.get(&window).is_some_and(|state| state.focused) =>
-            {
-                self.show_quick(platform, window, None);
-            }
-            Some((window, _)) => self.show_quick(platform, window, Some(place)),
-            None => self.open_quick(platform, workspace::WindowId::new(), place, None),
-        }
-    }
-
     /// Opens a quick window of a new pane, the workspace's of the id
     /// `shown`, which shows at `place` and takes the focus; its pane starts
     /// in `directory`, or as a new window's.
@@ -1992,19 +1977,6 @@ impl<B: Backend> App<B> {
             self.workspace
                 .set_window_hidden(state.window, place.is_none());
         }
-    }
-
-    /// Hides the quick terminal as `window`, which it is, lost the focus,
-    /// if `autohide` says so: not for a question on it, which takes the
-    /// focus.
-    fn autohide(&mut self, platform: &mut dyn Platform, window: WindowId) {
-        if self.quick.get(&window).is_none_or(|&(_, shown)| !shown)
-            || !self.config.quick_terminal.autohide
-            || self.asks_on(window)
-        {
-            return;
-        }
-        self.show_quick(platform, window, None);
     }
 
     /// Takes the config's global keys from every app, in place of those
@@ -2416,10 +2388,6 @@ impl<B: Backend> App<B> {
                 }
                 NEW_WINDOW => {
                     self.open_window(platform);
-                    Ok(())
-                }
-                TOGGLE_QUICK => {
-                    self.toggle_quick(platform);
                     Ok(())
                 }
                 CLOSE_WINDOW => {
@@ -3680,9 +3648,6 @@ impl<B: Backend> App<B> {
                             focused,
                         });
                 }
-                if !focused {
-                    self.autohide(platform, window);
-                }
             }
             // A key goes to the program, and starts the cursor blinking
             // again, on; a key that types or acts, not a modifier, a lock,
@@ -3876,11 +3841,6 @@ fn commands(texts: &Texts, plugins: &Plugins) -> Registry {
         (CLOSE_WINDOW, "window-close", Category::Windows),
         (SET_TITLE, "window-set-title", Category::Windows),
         (GOTO_WINDOW, "window-goto", Category::Windows),
-        (
-            TOGGLE_QUICK,
-            "window-toggle-quick-terminal",
-            Category::Windows,
-        ),
         (QUIT, "app-quit", Category::App),
         (LOOK_UP, "pane-look-up", Category::Edit),
         (MAN_PAGE, "pane-man-page", Category::Windows),

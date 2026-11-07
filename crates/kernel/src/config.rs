@@ -67,8 +67,7 @@
 //!
 //! Each section documents its keys: `[font]` is [`FontConfig`], `[text]`
 //! [`TextConfig`], `[cursor]` [`CursorConfig`], `[window]` [`WindowConfig`],
-//! `[quick-terminal]` [`QuickTerminalConfig`], `[interface]`
-//! [`InterfaceConfig`], `[slots]` [`SlotsConfig`], `[terminal]` [`TerminalConfig`], `[scrollback]` [`ScrollbackConfig`],
+//! `[interface]` [`InterfaceConfig`], `[slots]` [`SlotsConfig`], `[terminal]` [`TerminalConfig`], `[scrollback]` [`ScrollbackConfig`],
 //! `[keyboard]` [`KeyboardConfig`],
 //! `[clipboard]` [`ClipboardConfig`], `[links]` [`LinksConfig`], `[bell]`
 //! [`BellConfig`], `[theme]` [`ThemeConfig`], `[app]`
@@ -126,8 +125,11 @@ pub struct Config {
     pub cursor: CursorConfig,
     /// The `[window]` section.
     pub window: WindowConfig,
-    /// The `[quick-terminal]` section.
-    pub quick_terminal: QuickTerminalConfig,
+    /// The quick terminal's section before it was its plugin's,
+    /// `[quick-terminal]`, whose keys the file's reading ignores, telling
+    /// it in [`Config::moved`].
+    #[serde(rename = "quick-terminal", skip_serializing)]
+    old_quick_terminal: Ignored,
     /// The `[interface]` section.
     pub interface: InterfaceConfig,
     /// The `[slots]` section.
@@ -158,7 +160,27 @@ pub struct Config {
     /// check once the plugins are there.
     #[serde(skip_serializing)]
     pub plugins: PluginsConfig,
+    /// The sections of the file that are plugins' now, each with the
+    /// namespace of the plugin whose section it is, and what tells it, at
+    /// its place: their keys are ignored.
+    #[serde(skip)]
+    pub moved: Vec<(String, Error)>,
 }
+
+/// A section that the file's reading ignores, whatever it holds.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct Ignored;
+
+impl<'de> Deserialize<'de> for Ignored {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        serde::de::IgnoredAny::deserialize(deserializer)?;
+        Ok(Self)
+    }
+}
+
+/// The sections that are the built-in plugins' now, each with the
+/// namespace of its plugin.
+const MOVED: [(&str, &str); 1] = [("quick-terminal", "quick-terminal")];
 
 /// The `[keys]` section: bindings of keys to commands over the defaults, by
 /// their keys, as [`crate::keymap`] writes them.
@@ -805,203 +827,6 @@ impl Default for UpdatesConfig {
     }
 }
 
-/// The `[quick-terminal]` section: the window that a global key slides in
-/// from an edge of the screen, and out again.
-#[derive(Clone, Copy, Debug, PartialEq, Deserialize, Serialize)]
-#[serde(default, deny_unknown_fields, rename_all = "kebab-case")]
-pub struct QuickTerminalConfig {
-    /// The edge that it comes from, or the centre.
-    pub position: QuickPosition,
-    /// Its size into the screen, and along its edge.
-    pub size: QuickSize,
-    /// The screen that it shows on.
-    pub screen: QuickScreen,
-    /// How long it slides in and out, in milliseconds.
-    pub animation: AnimationTime,
-    /// Whether it hides as it loses the focus.
-    pub autohide: bool,
-    /// Whether it follows to the Space in front, or stays on its own.
-    pub spaces: QuickSpaces,
-}
-
-impl Default for QuickTerminalConfig {
-    fn default() -> Self {
-        Self {
-            position: QuickPosition::default(),
-            size: QuickSize::default(),
-            screen: QuickScreen::default(),
-            animation: AnimationTime(200),
-            autohide: true,
-            spaces: QuickSpaces::default(),
-        }
-    }
-}
-
-/// Where the quick terminal comes from.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum QuickPosition {
-    /// The screen's top edge.
-    #[default]
-    Top,
-    /// Its bottom edge.
-    Bottom,
-    /// Its left edge.
-    Left,
-    /// Its right edge.
-    Right,
-    /// Its centre.
-    Center,
-}
-
-/// The screen that the quick terminal shows on.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum QuickScreen {
-    /// The system's main screen, of the window in front.
-    #[default]
-    Main,
-    /// The screen that the pointer is on.
-    Mouse,
-    /// The screen of the menu bar, the first.
-    MenuBar,
-}
-
-/// Whether the quick terminal follows to the Space in front.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum QuickSpaces {
-    /// It shows on every Space, the one in front.
-    #[default]
-    Move,
-    /// It stays on the Space that it showed on.
-    Remain,
-}
-
-/// A length of the quick terminal: a share of the screen's, or points.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum Extent {
-    /// A percentage of the screen's, from 1 to 100.
-    Percent(f32),
-    /// Points, as macOS lays windows out.
-    Points(f32),
-}
-
-impl Extent {
-    fn parse(text: &str) -> Option<Self> {
-        let text = text.trim();
-        if let Some(percent) = text.strip_suffix('%') {
-            let percent: f32 = percent.trim().parse().ok()?;
-            (percent > 0.0 && percent <= 100.0).then_some(Self::Percent(percent))
-        } else {
-            let points: f32 = text.strip_suffix("px")?.trim().parse().ok()?;
-            (1.0..=100_000.0)
-                .contains(&points)
-                .then_some(Self::Points(points))
-        }
-    }
-}
-
-impl fmt::Display for Extent {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Percent(percent) => write!(f, "{}%", as_written(*percent)),
-            Self::Points(points) => write!(f, "{}px", as_written(*points)),
-        }
-    }
-}
-
-/// The quick terminal's size: first, how far it reaches into the screen
-/// from its edge, its height at the top or the bottom, its width at the
-/// left or the right, and its width at the centre; then, if it is given,
-/// its length along the edge, its width at the top or the bottom and its
-/// height elsewhere, else the screen's whole, or, at the centre, the
-/// first's share of the screen's height.
-#[derive(Clone, Copy, Debug, PartialEq, Deserialize, Serialize)]
-#[serde(try_from = "String", into = "String")]
-pub struct QuickSize {
-    /// Into the screen.
-    pub primary: Extent,
-    /// Along the edge, if it is given.
-    pub secondary: Option<Extent>,
-}
-
-impl Default for QuickSize {
-    fn default() -> Self {
-        Self {
-            primary: Extent::Percent(50.0),
-            secondary: None,
-        }
-    }
-}
-
-impl From<QuickSize> for String {
-    fn from(size: QuickSize) -> Self {
-        match size.secondary {
-            Some(secondary) => format!("{},{secondary}", size.primary),
-            None => size.primary.to_string(),
-        }
-    }
-}
-
-impl TryFrom<String> for QuickSize {
-    type Error = String;
-
-    fn try_from(text: String) -> Result<Self, Self::Error> {
-        let wrong = || {
-            format!(
-                "`{text}` is no size of the quick terminal: a percentage from 1% to 100%, or points, as `300px`, and another after a comma, along its edge"
-            )
-        };
-        let (primary, secondary) = match text.split_once(',') {
-            Some((primary, secondary)) => (primary, Some(secondary)),
-            None => (text.as_str(), None),
-        };
-        let primary = Extent::parse(primary).ok_or_else(wrong)?;
-        let secondary = match secondary {
-            Some(secondary) => Some(Extent::parse(secondary).ok_or_else(wrong)?),
-            None => None,
-        };
-        Ok(Self { primary, secondary })
-    }
-}
-
-/// How long an animation takes, in milliseconds, from 0, none, to 2000.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(try_from = "u32", into = "u32")]
-pub struct AnimationTime(u32);
-
-impl From<AnimationTime> for u32 {
-    fn from(time: AnimationTime) -> Self {
-        time.0
-    }
-}
-
-impl AnimationTime {
-    /// The most.
-    pub const MAX: u32 = 2000;
-
-    /// Its duration.
-    pub fn duration(self) -> std::time::Duration {
-        std::time::Duration::from_millis(u64::from(self.0))
-    }
-}
-
-impl TryFrom<u32> for AnimationTime {
-    type Error = String;
-
-    fn try_from(millis: u32) -> Result<Self, Self::Error> {
-        if millis <= Self::MAX {
-            Ok(Self(millis))
-        } else {
-            Err(format!(
-                "an animation takes from 0 to {} milliseconds, not {millis}",
-                Self::MAX
-            ))
-        }
-    }
-}
-
 /// The `[debug]` section: what Lokyr shows of its own work.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields, rename_all = "kebab-case")]
@@ -1466,9 +1291,20 @@ impl Config {
         check_bindings(document.as_table()).map_err(|(span, message)| error(span, &message))?;
         let plugins = PluginsConfig::read(document.as_table(), text, path)
             .map_err(|(span, message)| error(span, &message))?;
+        let moved: Vec<(String, Error)> = MOVED
+            .iter()
+            .filter_map(|&(section, namespace)| {
+                let key = document.as_table().key(section)?;
+                let message = format!(
+                    "`[{section}]` is now `[plugins.{namespace}]`, its plugin's section: move its keys there; here they are ignored"
+                );
+                Some((namespace.to_owned(), error(key.span(), &message)))
+            })
+            .collect();
         let mut config = Self::deserialize(toml_edit::de::Deserializer::from(document))
             .map_err(|e| error(e.span(), e.message()))?;
         config.plugins = plugins;
+        config.moved = moved;
         Ok(config)
     }
 }
@@ -1669,13 +1505,12 @@ impl Position {
 }
 
 /// The sections of the file, with the keys of each.
-fn sections() -> [(&'static str, &'static [&'static str]); 17] {
+fn sections() -> [(&'static str, &'static [&'static str]); 16] {
     [
         ("font", keys::<FontConfig>()),
         ("text", keys::<TextConfig>()),
         ("cursor", keys::<CursorConfig>()),
         ("window", keys::<WindowConfig>()),
-        ("quick-terminal", keys::<QuickTerminalConfig>()),
         ("interface", keys::<InterfaceConfig>()),
         ("slots", keys::<SlotsConfig>()),
         ("terminal", keys::<TerminalConfig>()),
@@ -1964,60 +1799,24 @@ mod tests {
     }
 
     #[test]
-    fn the_quick_terminal_takes_its_edge_size_screen_and_times() {
-        let quick = |text: &str| {
-            parse(&format!("[quick-terminal]\n{text}\n"))
-                .unwrap()
-                .quick_terminal
+    fn the_quick_terminal_s_old_section_is_ignored_and_told_at_its_line() {
+        let config =
+            parse("[font]\nsize = 14\n\n[quick-terminal]\nposition = \"left\"\nwhatever = 1\n")
+                .unwrap();
+        assert_eq!(config.font.size.points(), 14.0);
+        let [(namespace, told)] = &config.moved[..] else {
+            panic!("{:?}", config.moved);
         };
-        let default = QuickTerminalConfig::default();
-        assert_eq!(
-            (default.position, default.screen, default.spaces),
-            (QuickPosition::Top, QuickScreen::Main, QuickSpaces::Move)
+        assert_eq!(namespace, "quick-terminal");
+        assert_eq!(told.position.map(|at| at.line), Some(4));
+        assert!(
+            told.message
+                .contains("`[quick-terminal]` is now `[plugins.quick-terminal]`"),
+            "{}",
+            told.message
         );
-        assert_eq!(default.size, QuickSize::try_from("50%".to_owned()).unwrap());
-        assert!(default.autohide);
-        assert_eq!(
-            default.animation.duration(),
-            std::time::Duration::from_millis(200)
-        );
-        assert_eq!(
-            keys::<QuickTerminalConfig>(),
-            [
-                "position",
-                "size",
-                "screen",
-                "animation",
-                "autohide",
-                "spaces"
-            ]
-        );
-        let read = quick("position = \"left\"\nsize = \"300px, 80%\"\nscreen = \"menu-bar\"");
-        assert_eq!(
-            (read.position, read.screen),
-            (QuickPosition::Left, QuickScreen::MenuBar)
-        );
-        assert_eq!(
-            (read.size.primary, read.size.secondary),
-            (Extent::Points(300.0), Some(Extent::Percent(80.0)))
-        );
-        // Written back as it read.
-        assert_eq!(String::from(read.size), "300px,80%");
-        // Neither a bare number, nor a share past the whole, nor a long
-        // animation.
-        for wrong in [
-            "size = \"50\"",
-            "size = \"120%\"",
-            "size = \"0%\"",
-            "animation = 2001",
-        ] {
-            let (_, message) = error(&format!("[quick-terminal]\n{wrong}\n"));
-            assert!(
-                message.contains("no size of the quick terminal")
-                    || message.contains("from 0 to 2000 milliseconds"),
-                "{wrong}: {message}"
-            );
-        }
+        // A config without it tells nothing.
+        assert!(parse("[font]\nsize = 14\n").unwrap().moved.is_empty());
     }
 
     #[test]
@@ -2908,7 +2707,13 @@ mod tests {
         let root = document.as_table();
         // The plugins' sections hold their plugins' keys, which no built-in
         // plugin has yet: the example shows their form in a comment.
-        for key in keys::<Config>().iter().filter(|key| **key != "plugins") {
+        // The sections that are plugins' now, which the example has in
+        // theirs.
+        let moved = |key: &str| MOVED.iter().any(|(section, _)| *section == key);
+        for key in keys::<Config>()
+            .iter()
+            .filter(|key| **key != "plugins" && !moved(key))
+        {
             assert!(root.contains_key(key), "`{key}` is in the complete example");
         }
         assert!(example.contains("\n# [plugins.<namespace>]\n"));

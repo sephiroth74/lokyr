@@ -11,6 +11,7 @@ Every feature that you see in Lokyr beyond the terminal itself comes from a plug
 | [`splits`](splits.md) | Split panes, and the commands that move between them, resize and zoom them |
 | [`search`](search.md) | The find bar: a pane's search, its matches highlighted |
 | [`command-palette`](command-palette.md) | The command palette: every command, ranked as you type |
+| [`quick-terminal`](quick-terminal.md) | The quick terminal: a window that a global key slides in over every app |
 
 The order of the table is the order in which they start, which matters for the keys alone: a later plugin's key wins over an earlier one's, and your own `[keys]` win over all of them.
 

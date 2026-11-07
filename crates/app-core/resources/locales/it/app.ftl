@@ -4,7 +4,6 @@ command-window-new = Nuova finestra
 command-window-close = Chiudi finestra
 command-window-set-title = Imposta titolo…
 command-window-goto = Vai alla finestra
-command-window-toggle-quick-terminal = Terminale rapido
 command-app-about = Informazioni su Lokyr
 command-app-quit = Esci da Lokyr
 command-app-check-for-updates = Controlla aggiornamenti…

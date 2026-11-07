@@ -1,35 +1,8 @@
-//! The quick terminal's place, as the config gives it to the platform, and
+//! The quick windows' places, as a plugin gives them to the platform, and
 //! the keys that the app takes from every app, as the platform takes them.
 
-use lokyr_kernel::config::{Extent, QuickPosition, QuickScreen, QuickSpaces, QuickTerminalConfig};
 use lokyr_kernel::keymap::{Combo, Named, Press};
 use lokyr_platform_core::{GlobalKey, KeyCode, Length, QuickEdge, QuickPlace};
-
-/// The place of the quick terminal that `config` gives.
-pub(crate) fn place(config: &QuickTerminalConfig) -> QuickPlace {
-    let length = |extent: Extent| match extent {
-        Extent::Percent(percent) => Length::Percent(f64::from(percent)),
-        Extent::Points(points) => Length::Points(f64::from(points)),
-    };
-    QuickPlace {
-        edge: match config.position {
-            QuickPosition::Top => QuickEdge::Top,
-            QuickPosition::Bottom => QuickEdge::Bottom,
-            QuickPosition::Left => QuickEdge::Left,
-            QuickPosition::Right => QuickEdge::Right,
-            QuickPosition::Center => QuickEdge::Center,
-        },
-        primary: length(config.size.primary),
-        secondary: config.size.secondary.map(length),
-        screen: match config.screen {
-            QuickScreen::Main => lokyr_platform_core::QuickScreen::Main,
-            QuickScreen::Mouse => lokyr_platform_core::QuickScreen::Pointer,
-            QuickScreen::MenuBar => lokyr_platform_core::QuickScreen::MenuBar,
-        },
-        animation: config.animation.duration(),
-        every_space: config.spaces == QuickSpaces::Move,
-    }
-}
 
 /// The platform's place of a quick window of a plugin's `place`.
 pub(crate) fn host_place(place: &lokyr_kernel::plugins::host::QuickPlace) -> QuickPlace {
@@ -96,19 +69,21 @@ pub(crate) fn global_key(combo: Combo) -> Option<GlobalKey> {
 mod tests {
     use std::time::Duration;
 
-    use lokyr_kernel::config::Config;
-
     use super::*;
 
     #[test]
-    fn the_config_gives_the_quick_terminal_s_place() {
-        let config = Config::parse(
-            "[quick-terminal]\nposition = \"right\"\nsize = \"30%,400px\"\nscreen = \"mouse\"\nanimation = 0\nspaces = \"remain\"\n",
-            std::path::Path::new("config.toml"),
-        )
-        .unwrap();
+    fn a_plugin_s_place_is_the_platform_s() {
+        use lokyr_kernel::plugins::host;
+        let place = host::QuickPlace {
+            edge: host::QuickEdge::Right,
+            primary: host::QuickLength::Percent(30.0),
+            secondary: Some(host::QuickLength::Points(400.0)),
+            screen: host::QuickScreen::Pointer,
+            animation: 0,
+            every_space: false,
+        };
         assert_eq!(
-            place(&config.quick_terminal),
+            host_place(&place),
             QuickPlace {
                 edge: QuickEdge::Right,
                 primary: Length::Percent(30.0),
@@ -119,7 +94,7 @@ mod tests {
             }
         );
         assert_eq!(
-            place(&QuickTerminalConfig::default()),
+            host_place(&host::QuickPlace::default()),
             QuickPlace::default()
         );
     }

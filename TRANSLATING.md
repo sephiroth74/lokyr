@@ -21,6 +21,7 @@ The catalogs, each in a folder of its language's code, `en` for English, `it` fo
 | [`plugins/splits/locales/en/splits.ftl`](plugins/splits/locales/en/splits.ftl) | The panes' commands |
 | [`plugins/search/locales/en/search.ftl`](plugins/search/locales/en/search.ftl) | The find bar |
 | [`plugins/command-palette/locales/en/command-palette.ftl`](plugins/command-palette/locales/en/command-palette.ftl) | The command palette |
+| [`plugins/quick-terminal/locales/en/quick-terminal.ftl`](plugins/quick-terminal/locales/en/quick-terminal.ftl) | The quick terminal |
 
 The [`keymap-macos`](docs/plugins/keymap-macos.md) plugin has no texts of its own.
 
@@ -80,7 +81,7 @@ Lokyr takes languages by their two- or three-letter code alone, as `fr`, `de` or
    |---|---|
    | `crates/kernel/src/l10n.rs` | `KERNEL`, the kernel's |
    | `crates/app-core/src/app.rs` | `CATALOGS`, the kernel's and the app's: `l10n::KERNEL[2]` and your `app.ftl` |
-   | `plugins/core-actions/src/lib.rs`, `plugins/links/src/lib.rs`, `plugins/tabs/src/lib.rs`, `plugins/splits/src/lib.rs`, `plugins/search/src/lib.rs` | each plugin's `CATALOGS` |
+   | `plugins/core-actions/src/lib.rs`, `plugins/links/src/lib.rs`, `plugins/tabs/src/lib.rs`, `plugins/splits/src/lib.rs`, `plugins/search/src/lib.rs`, `plugins/command-palette/src/lib.rs`, `plugins/quick-terminal/src/lib.rs` | each plugin's `CATALOGS` |
 
    ```rust
    pub const KERNEL: [(&str, &str); 3] = [

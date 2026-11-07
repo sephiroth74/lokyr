@@ -105,6 +105,7 @@ Every feature beyond the terminal itself is a plugin, and these come with the ap
 | [`splits`](docs/plugins/splits.md) | Split panes: split, focus by direction, resize, zoom, equalize, swap |
 | [`search`](docs/plugins/search.md) | The find bar: a pane's search as you type, its matches highlighted |
 | [`command-palette`](docs/plugins/command-palette.md) | The command palette: every command, ranked as you type, the recent ones first |
+| [`quick-terminal`](docs/plugins/quick-terminal.md) | The quick terminal: a window that a global key slides in from an edge of the screen, over every app |
 
 Each page tells the plugin's commands, their keys, its config and what turning it off takes away; [the plugins' index](docs/plugins/README.md) tells how they fit together.
 
@@ -134,7 +135,7 @@ size = 14
 background-opacity = 0.9
 background-blur = 20
 
-[quick-terminal]
+[plugins.quick-terminal]
 position = "top"
 ```
 

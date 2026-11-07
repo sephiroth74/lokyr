@@ -780,6 +780,7 @@ dependencies = [
  "lokyr-pkg-model",
  "lokyr-platform-core",
  "lokyr-pty",
+ "lokyr-quick-terminal",
  "lokyr-render-core",
  "lokyr-search-plugin",
  "lokyr-splits",
@@ -934,6 +935,13 @@ version = "0.5.1"
 dependencies = [
  "libc",
  "thiserror",
+]
+
+[[package]]
+name = "lokyr-quick-terminal"
+version = "0.5.1"
+dependencies = [
+ "lokyr-plugin-sdk",
 ]
 
 [[package]]

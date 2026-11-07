@@ -15,3 +15,4 @@ tabs = { path = "../plugins/tabs" }
 splits = { path = "../plugins/splits" }
 search = { path = "../plugins/search" }
 command-palette = { path = "../plugins/command-palette" }
+quick-terminal = { path = "../plugins/quick-terminal" }

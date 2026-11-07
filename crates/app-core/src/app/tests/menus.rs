@@ -347,11 +347,6 @@ fn the_app_s_commands_register_with_their_categories_and_titles() {
             ("window.goto", "Go to Window", Category::Windows),
             ("window.new", "New Window", Category::Windows),
             ("window.set-title", "Set Title…", Category::Windows),
-            (
-                "window.toggle-quick-terminal",
-                "Quick Terminal",
-                Category::Windows
-            ),
         ]
     );
     let texts = Texts::new("en", &CATALOGS);
@@ -364,10 +359,7 @@ fn the_app_s_commands_register_with_their_categories_and_titles() {
             _ => None,
         })
         .collect();
-    assert_eq!(
-        titles,
-        ["New Window", "Close Window", "Set Title…", "Quick Terminal"]
-    );
+    assert_eq!(titles, ["New Window", "Close Window", "Set Title…"]);
     // A command that takes no argument rejects one, and does nothing.
     let mut args = Args::new();
     args.insert(
