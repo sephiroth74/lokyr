@@ -511,6 +511,11 @@ fn cells_of(
     // No color has the bits of a NaN, which start it.
     let mut readables = [([u32::MAX; 4], Color::default()); 4];
     let mut readable_next = 0;
+    // The text's colors of the theme's least contrast, by the bits of each
+    // pair of a text's color and the background under it: a frame has few
+    // such pairs, and a contrast is dear for each cell.
+    let mut contrasted = [([u32::MAX; 8], Color::default()); CONTRASTED];
+    let mut contrasted_next = 0;
     let area = usize::from(columns) * usize::from(rows);
     let mut batch = CellBatch {
         x,
@@ -558,7 +563,19 @@ fn cells_of(
                 } else {
                     defaults.1
                 };
-                foreground = theme::with_contrast(foreground, under, text.minimum_contrast);
+                let (text_bits, under_bits) = (bits(foreground), bits(under));
+                let mut key = [0; 8];
+                key[..4].copy_from_slice(&text_bits);
+                key[4..].copy_from_slice(&under_bits);
+                foreground = match contrasted.iter().find(|(known, _)| *known == key) {
+                    Some(&(_, shown)) => shown,
+                    None => {
+                        let shown = theme::with_contrast(foreground, under, text.minimum_contrast);
+                        contrasted[contrasted_next] = (key, shown);
+                        contrasted_next = (contrasted_next + 1) % CONTRASTED;
+                        shown
+                    }
+                };
             }
             if !own_background && !style.inverse {
                 background = background.with_alpha(0.0);
@@ -943,6 +960,10 @@ fn readable(text: Color, background: Color, (fg, bg): (Color, Color)) -> Color {
 }
 
 /// The bits of `color`'s components, which compare as one.
+/// How many pairs of a text's color and its background a frame keeps the
+/// colors of the least contrast of: the palette's sixteen, and the default.
+const CONTRASTED: usize = 17;
+
 fn bits(color: Color) -> [u32; 4] {
     [
         color.red.to_bits(),
@@ -2032,6 +2053,53 @@ mod tests {
         assert!(theme::contrast(raised.glyphs[0].color, dark) >= 4.5);
         // The text that reads on its own background stays as it is.
         assert_eq!(raised.glyphs[1].color, plain.glyphs[1].color);
+    }
+
+    /// The frame's time of 200 by 60 cells of a theme of a low contrast,
+    /// at a least contrast of 1 and of 4.5, which `cargo test --release
+    /// -- --ignored` measures.
+    #[test]
+    #[ignore = "a measure, of a release build"]
+    fn the_least_contrast_costs_a_frame_little() {
+        let line: String = "the quick brown fox jumps over the lazy dog "
+            .chars()
+            .cycle()
+            .take(200)
+            .collect();
+        let text = format!(
+            "\x1b]10;#657b83\x07\x1b]11;#fdf6e3\x07{}",
+            vec![line; 60].join("\r\n")
+        );
+        let snapshot = snapshot(200, 60, &text);
+        let mut asked = Vec::new();
+        let mut time = |minimum_contrast| {
+            let look = TextLook {
+                minimum_contrast,
+                ..TextLook::default()
+            };
+            let mut atlas = atlas(&mut asked);
+            let mut best = std::time::Duration::MAX;
+            for _ in 0..20 {
+                let start = std::time::Instant::now();
+                std::hint::black_box(cells_with(
+                    &snapshot,
+                    &cell(),
+                    (0, 0),
+                    None,
+                    None,
+                    look,
+                    &mut atlas,
+                ));
+                best = best.min(start.elapsed());
+            }
+            best
+        };
+        let (plain, raised) = (time(1.0), time(4.5));
+        eprintln!("a frame at 1: {plain:?}; at 4.5: {raised:?}");
+        assert!(
+            raised < plain + std::time::Duration::from_micros(500),
+            "{plain:?} and {raised:?}"
+        );
     }
 
     #[test]
