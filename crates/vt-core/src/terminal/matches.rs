@@ -193,10 +193,22 @@ impl Terminal {
                     }
                 }
             });
+        let holds = pinned.is_some();
         let kept = &mut self.matches[at];
         kept.shown = all;
         kept.current = pinned;
+        // The view stays where it is as the program prints on, at the
+        // screen too, until it is scrolled or the search ends.
+        if holds {
+            self.pin_viewport();
+        }
         true
+    }
+
+    /// Whether a search shows its current match, which holds the view where
+    /// it is.
+    pub(super) fn holds_view(&self) -> bool {
+        self.matches.iter().any(|kept| kept.current.is_some())
     }
 
     /// Whether output brings the view back to the screen now: as
@@ -204,7 +216,7 @@ impl Terminal {
     /// current match, as a find bar does, whose view stays where the search
     /// put it as the program prints on.
     pub fn output_scrolls_view(&self) -> bool {
-        self.scroll_on_output && self.matches.iter().all(|kept| kept.current.is_none())
+        self.scroll_on_output && !self.holds_view()
     }
 
     /// The spans that the view shows of the matches shown, row by row, and
@@ -691,5 +703,35 @@ mod tests {
         // The current one alike.
         terminal.show_matches(1, false, Some(((2, 0), (4, 0))));
         assert_eq!(shown(&mut terminal), [(0, 2, 5, true)]);
+    }
+
+    #[test]
+    fn output_leaves_the_view_at_a_current_match_on_the_screen() {
+        let options = Options {
+            scroll_on_output: true,
+            ..Options::default()
+        };
+        let mut terminal = Terminal::new(10, 3, options);
+        feed(&mut terminal, "one\r\nab\r\nthree");
+        let row = terminal.row_number(terminal.screen_rows().scrollback_rows() + 1);
+        add(&mut terminal, 1, row, &[((0, row), (1, row))]);
+        terminal.show_matches(1, true, Some(((0, row), (1, row))));
+        assert_eq!(shown(&mut terminal), [(1, 0, 1, true)]);
+        // More rows than the screen's: the view stays at the match.
+        feed(&mut terminal, "\r\nfour\r\nfive\r\nsix\r\nseven");
+        assert_eq!(shown(&mut terminal), [(1, 0, 1, true)]);
+        assert_eq!(terminal.origin().row(1), row);
+        // Scrolled to the screen, the view follows it again.
+        terminal.scroll_viewport(Scroll::Bottom);
+        feed(&mut terminal, "\r\neight");
+        assert_eq!(terminal.viewport_offset(), 0);
+        assert!(shown(&mut terminal).is_empty());
+        // The search's end lets the view go.
+        terminal.show_matches(1, true, Some(((0, row), (1, row))));
+        terminal.drop_matches(1);
+        feed(&mut terminal, "\r\nnine");
+        shown(&mut terminal);
+        terminal.scroll_viewport(Scroll::Bottom);
+        assert_eq!(terminal.viewport_offset(), 0);
     }
 }

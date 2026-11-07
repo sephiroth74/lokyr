@@ -111,13 +111,26 @@ impl Terminal {
 
     /// The view's offset, as [`Terminal::viewport_offset`] tells it, with
     /// its pin let go when a reflow brought the view down to the screen,
-    /// which it then follows.
+    /// which it then follows, but while a search holds it at its current
+    /// match.
     pub(super) fn settle_viewport(&mut self) -> usize {
         let offset = self.viewport_offset();
-        if offset == 0 && self.viewport.is_some() {
+        if offset == 0 && self.viewport.is_some() && !self.holds_view() {
             self.set_viewport_offset(0);
         }
         offset
+    }
+
+    /// Pins the view by its first row where it is, at the screen too, so
+    /// that output scrolls the screen under it rather than taking it along.
+    pub(super) fn pin_viewport(&mut self) {
+        if self.alternate_active || self.viewport.is_some() {
+            return;
+        }
+        let rows = &mut self.primary.rows;
+        if let Some((page, row)) = rows.row_at(rows.scrollback_rows()) {
+            self.viewport = rows.pin(Position { page, row, col: 0 });
+        }
     }
 
     /// Scrolls the view of the primary screen, within its scrollback and
