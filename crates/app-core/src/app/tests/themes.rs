@@ -214,17 +214,22 @@ fn open(
     fake.alerts().last().cloned().expect("a question")
 }
 
-/// Answers `alert`'s question with its `button`.
-fn answer(fake: &mut Fake, app: &mut App, alert: AlertId, button: usize) {
+/// Answers `alert`'s question with its `button`, its checkbox `ticked`.
+fn answer_ticked(fake: &mut Fake, app: &mut App, alert: AlertId, button: usize, ticked: bool) {
     fake.send_app(
         app,
         AppEvent::AlertClosed {
             alert,
             button,
-            suppressed: false,
+            suppressed: ticked,
             text: None,
         },
     );
+}
+
+/// Answers `alert`'s question with its `button`.
+fn answer(fake: &mut Fake, app: &mut App, alert: AlertId, button: usize) {
+    answer_ticked(fake, app, alert, button, false);
 }
 
 #[test]
@@ -235,7 +240,15 @@ fn a_theme_s_file_opened_installs_on_its_answer_and_install_and_use_names_it() {
     assert!(asked.alert.message.contains("Grays"), "{:?}", asked.alert);
     assert!(asked.alert.detail.contains("themes"), "{:?}", asked.alert);
     assert_eq!(asked.alert.buttons.len(), 3);
+    // Dark, in the light appearance: the question tells it, and offers the
+    // dark one, which the user leaves.
+    let variant = app
+        .texts
+        .text_with("theme-install-variant", &[("variant", Arg::Text("dark"))]);
+    assert!(asked.alert.detail.ends_with(&variant), "{:?}", asked.alert);
+    assert!(asked.alert.suppression.is_some());
     answer(&mut fake, &mut app, asked.id, 0);
+    assert_eq!(app.config.app.appearance, AppearanceMode::System);
     let target = directory.join("themes/Grays.itermcolors");
     assert_eq!(
         std::fs::read(&target).unwrap(),
@@ -283,6 +296,8 @@ fn a_light_theme_installed_and_used_names_the_light_appearance_s_and_replaces_it
     // tells.
     let replace = app.texts.text("theme-install-replace");
     assert!(asked.alert.detail.ends_with(&replace), "{:?}", asked.alert);
+    // Light, in the light appearance: nothing to switch.
+    assert_eq!(asked.alert.suppression, None);
     answer(&mut fake, &mut app, asked.id, 0);
     let config = std::fs::read_to_string(directory.join("config.toml")).unwrap();
     assert!(config.contains("light = \"Paper\""), "{config}");
@@ -312,5 +327,30 @@ fn a_file_of_no_theme_tells_why_and_asks_nothing() {
         std::fs::read_dir(directory.join("themes")).unwrap().count(),
         0
     );
+    let _ = std::fs::remove_dir_all(directory);
+}
+
+#[test]
+fn the_question_s_checkbox_switches_to_the_theme_s_appearance() {
+    let (mut fake, mut app, directory) = with_themes("install-switch", "", &[]);
+    let window = fake.windows().next().unwrap();
+    let source = downloaded(&directory, "Grays.itermcolors", &grays());
+    let asked = open(&mut fake, &mut app, vec![source]);
+    let switch = app
+        .texts
+        .text_with("theme-install-switch", &[("variant", Arg::Text("dark"))]);
+    assert_eq!(asked.alert.suppression.as_deref(), Some(switch.as_str()));
+    answer_ticked(&mut fake, &mut app, asked.id, 0, true);
+    let config = std::fs::read_to_string(directory.join("config.toml")).unwrap();
+    assert!(config.contains("appearance = \"dark\""), "{config}");
+    assert!(config.contains("dark = \"Grays\""), "{config}");
+    assert_eq!(app.config.app.appearance, AppearanceMode::Dark);
+    assert_eq!(fake.appearance(), Appearance::Dark);
+    // The theme shows at once.
+    assert_eq!(pane_background(&app, window), rgb(0x333333));
+    // A theme of the appearance in force now asks nothing of it.
+    let source = downloaded(&directory, "Grays.itermcolors", &grays());
+    let asked = open(&mut fake, &mut app, vec![source]);
+    assert_eq!(asked.alert.suppression, None);
     let _ = std::fs::remove_dir_all(directory);
 }

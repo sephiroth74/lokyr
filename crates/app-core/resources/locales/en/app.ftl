@@ -147,6 +147,14 @@ theme-install-replace = A theme of its name is there already, which this one rep
 theme-install-use = Install and Use
 theme-install-only = Install
 theme-install-cancel = Cancel
+theme-install-variant = { $variant ->
+    [light] It is a light theme, which Lokyr uses in the light appearance, not the one in force now.
+   *[dark] It is a dark theme, which Lokyr uses in the dark appearance, not the one in force now.
+}
+theme-install-switch = { $variant ->
+    [light] Switch Lokyr to the light appearance
+   *[dark] Switch Lokyr to the dark appearance
+}
 theme-install-failed = The theme cannot be installed.
 theme-install-no-folder = Lokyr has no config folder to hold its themes.
 theme-install-not-copied = It cannot be copied into { $folder }: { $error }

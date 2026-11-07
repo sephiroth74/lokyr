@@ -1,27 +1,31 @@
 //! The themes' files that the system opens with the app, as a double click
 //! in the Finder on an `.itermcolors` file, or a theme's file dropped on
 //! the app's icon: a question asks to install each into the themes' folder
-//! beside the config file, and to use it; a file that is no theme tells
-//! why.
+//! beside the config file, and to use it; a theme of the appearance not in
+//! force offers to switch the app to its own; a file that is no theme
+//! tells why.
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use lokyr_kernel::config;
+use lokyr_kernel::config::{self, AppearanceMode};
 use lokyr_kernel::l10n::Arg;
 use lokyr_kernel::themes::{self, ThemeVariant};
-use lokyr_platform_core::{Alert, AlertStyle, Platform};
+use lokyr_platform_core::{Alert, AlertStyle, Appearance, Platform};
 
 use super::App;
 use crate::drawing::Backend;
 
 /// A theme's file that the user is asked to install: where it is, where it
-/// goes, and its themes, each one's name and variant.
+/// goes, its themes, each one's name and variant, and the appearance that
+/// the question's checkbox switches the app to, of a theme of the one not
+/// in force.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct ThemeInstall {
     source: PathBuf,
     target: PathBuf,
     themes: Vec<(String, ThemeVariant)>,
+    switch: Option<AppearanceMode>,
 }
 
 /// What the user answered: the question's buttons, from the first.
@@ -68,6 +72,30 @@ impl<B: Backend> App<B> {
             detail.push(' ');
             detail.push_str(&self.texts.text("theme-install-replace"));
         }
+        // A theme of one appearance, which is not the one in force: using
+        // it changes nothing that shows, unless the app switches to its
+        // appearance, as the question offers.
+        let in_force = match platform.appearance() {
+            Appearance::Light => ThemeVariant::Light,
+            Appearance::Dark => ThemeVariant::Dark,
+        };
+        let other = match found.as_slice() {
+            [(_, variant)] if *variant != in_force => Some(*variant),
+            _ => None,
+        };
+        let mut suppression = None;
+        let mut switch = None;
+        if let Some(variant) = other {
+            let (name, mode) = match variant {
+                ThemeVariant::Light => ("light", AppearanceMode::Light),
+                ThemeVariant::Dark => ("dark", AppearanceMode::Dark),
+            };
+            let args = [("variant", Arg::Text(name))];
+            detail.push('\n');
+            detail.push_str(&self.texts.text_with("theme-install-variant", &args));
+            suppression = Some(self.texts.text_with("theme-install-switch", &args));
+            switch = Some(mode);
+        }
         let alert = Alert {
             style: AlertStyle::Informational,
             message: self
@@ -79,7 +107,7 @@ impl<B: Backend> App<B> {
                 self.texts.text("theme-install-only"),
                 self.texts.text("theme-install-cancel"),
             ],
-            suppression: None,
+            suppression,
             input: None,
         };
         let id = platform.show_alert(None, &alert);
@@ -89,19 +117,22 @@ impl<B: Backend> App<B> {
                 source,
                 target,
                 themes: found,
+                switch,
             },
         );
     }
 
-    /// The answer to the question of `ask`: its `button`, from the first.
-    /// Installing copies the file into the themes' folder, its own place
-    /// being already there; using it names its themes in `[theme]`, each
-    /// for its variant's appearance, which the config's reading then loads.
+    /// The answer to the question of `ask`: its `button`, from the first,
+    /// and whether its checkbox, `switch`, was ticked. Installing copies the
+    /// file into the themes' folder, its own place being already there;
+    /// using it names its themes in `[theme]`, each for its variant's
+    /// appearance, which the config's reading then loads; the checkbox
+    /// switches the app to the theme's appearance, with either button.
     pub(super) fn theme_answered(
         &mut self,
         platform: &mut dyn Platform,
         ask: &ThemeInstall,
-        button: usize,
+        (button, switch): (usize, bool),
     ) {
         if button != USE && button != INSTALL {
             return;
@@ -137,6 +168,11 @@ impl<B: Backend> App<B> {
                     return self.tell_install_failed(platform, &error.to_string());
                 }
             }
+        }
+        if switch && let Some(mode) = ask.switch {
+            self.choose_appearance(platform, mode);
+        }
+        if button == USE {
             // The config read again, which loads the themes that it names.
             self.reload(platform);
         }

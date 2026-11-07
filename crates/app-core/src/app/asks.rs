@@ -26,7 +26,7 @@ impl<B: Backend> App<B> {
         text: Option<&str>,
     ) {
         if let Some(ask) = self.theme_asks.remove(&alert) {
-            self.theme_answered(platform, &ask, button);
+            self.theme_answered(platform, &ask, (button, suppressed));
         }
         if let Some((pane, request)) = self.clipboard_asks.remove(&alert)
             && button == 1
