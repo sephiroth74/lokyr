@@ -52,6 +52,8 @@ The updates' feed of tests, until the repository is public, is on the maintainer
 - `cargo xtask check-links`: the internal links and anchors of the Markdown files resolve;
 - `cargo xtask bundle`: the app's bundle, `target/Lokyr.app`, signed with the identity that `LOKYR_SIGN_IDENTITY` names, or ad hoc without it.
 
+CI's macOS job, whose minutes GitHub bills ten times a Linux job's, runs on `main`'s pushes, on pull requests and on the runs that `gh workflow run CI --ref <branch>` asks for, and only of changes beyond documents, Markdown files and `docs/`; a phase's branch, as `f3`, runs its Linux jobs at each push, and the macOS job by hand, as before a release, `just ci` on the Mac covering it meanwhile.
+
 Two checks of CI are not in it, and run on Linux: the tests of the platform-independent crates, which `just ci` builds for Linux without running; and the count of the instructions that the terminal's core takes for a set of scenarios, which fails a pull request that raises one by more than 3% over its base, with `just instructions <base>` where Valgrind runs.
 
 ## The code

@@ -2,9 +2,13 @@ name: CI
 
 on:
   push:
-    # A phase's branch too, whose pushes cost the same minutes as main's.
+    # A phase's branch too, whose pushes run the Linux jobs alone: the
+    # macOS job runs on main's, as the next job tells.
     branches: [main, f3]
   pull_request:
+  # Every job, the macOS one too, of any branch, as `gh workflow run CI
+  # --ref f3` asks.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -20,10 +24,46 @@ env:
 # Actions are pinned by commit SHA; the comment after each one names its tag.
 # Every job runs the same `just` recipes used locally.
 jobs:
+  changes:
+    # Whether the push or the pull request changes more than documents,
+    # Markdown files and docs/, which the macOS job needs to check.
+    name: changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      code: ${{ steps.diff.outputs.code }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - id: diff
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          NEW_BRANCH: ${{ github.event.created }}
+          FORCED: ${{ github.event.forced }}
+        # A run asked by hand, a branch's first push, a forced one, or a base
+        # that the history lacks, checks everything.
+        run: |
+          code=true
+          if [ "$EVENT" != workflow_dispatch ] && [ "$NEW_BRANCH" != true ] && [ "$FORCED" != true ] \
+            && git cat-file -e "$BASE^{commit}" 2>/dev/null \
+            && ! git diff --name-only "$BASE" HEAD | grep -qvE '^docs/|\.md$'; then
+            code=false
+          fi
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+
   macos:
     # Only the checks that need macOS run here, because macOS runners are the
-    # most expensive ones.
+    # most expensive ones: GitHub bills a macOS runner's minute as ten of the
+    # account's. So the job runs on main's pushes, on pull requests and on
+    # the runs asked by hand, of changes beyond documents; a phase's branch,
+    # as f3, runs it by hand, `just ci` running its checks on the Mac before
+    # each push.
     name: macos
+    needs: changes
+    if: needs.changes.outputs.code == 'true' && (github.event_name != 'push' || github.ref == 'refs/heads/main')
     # The oldest macOS that Lokyr supports, pinned so that the job does not
     # move along with macos-latest.
     runs-on: macos-26
