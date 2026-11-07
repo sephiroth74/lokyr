@@ -95,6 +95,18 @@ pub(crate) fn terminfo(resources: Option<&Path>) -> Option<PathBuf> {
     )
 }
 
+/// The directory of the shells' integration, its scripts for zsh, bash and
+/// fish: the bundle's, in its `resources`, or, outside a bundle, as `cargo
+/// run` starts the app, the source tree's; `None` where neither has them.
+pub(crate) fn shell_integration(resources: Option<&Path>) -> Option<PathBuf> {
+    let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("../pty/shell-integration");
+    resources
+        .map(|resources| resources.join("shell-integration"))
+        .into_iter()
+        .chain([source])
+        .find(|directory| directory.join("zsh").join(".zshenv").is_file())
+}
+
 /// The first of `bundled` and `source` that holds the entry, by the
 /// letter's directory or, as macOS's `tic` writes it, by its hex code's.
 fn terminfo_in(bundled: Option<PathBuf>, source: PathBuf) -> Option<PathBuf> {

@@ -660,6 +660,7 @@ impl<B: Backend> App<B> {
         if let Some(drawing) = &mut drawing {
             drawing.set_interface(&config.interface);
         }
+        let integrated = config.terminal.shell_integration;
         let mut plugins = Plugins::new();
         // The distribution's plugins, whose manifests read, as the build
         // checked them.
@@ -768,11 +769,13 @@ impl<B: Backend> App<B> {
             system_quit: false,
             environment: {
                 let resources = environment::resources();
+                let scripts = environment::shell_integration(resources.as_deref());
                 Environment {
                     terminfo: environment::terminfo(resources.as_deref()),
                     resources,
                     binaries: environment::binaries(),
                     version: env!("CARGO_PKG_VERSION").to_owned(),
+                    shell_integration: scripts.filter(|_| integrated),
                     ..Environment::default()
                 }
             },
@@ -1359,6 +1362,15 @@ impl<B: Backend> App<B> {
         }
         let plugins_changed =
             config.plugins != self.config.plugins || config.moved != self.config.moved;
+        // The shells' integration, as the config has it, of the panes that
+        // start from now.
+        if config.terminal.shell_integration != self.config.terminal.shell_integration {
+            self.environment.shell_integration = config
+                .terminal
+                .shell_integration
+                .then(|| environment::shell_integration(self.environment.resources.as_deref()))
+                .flatten();
+        }
         self.config = config;
         // The plugins take their sections, and hear of their changes; those
         // that their sections turn off stop, and those turned on again

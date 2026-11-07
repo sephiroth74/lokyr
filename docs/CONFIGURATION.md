@@ -107,6 +107,7 @@ term = "xterm-lokyr"                 # the TERM that programs see
 unicode-widths = "8"                 # current | 8: the width tables
 ambiguous-width = 2                  # 1 | 2: the cells of an ambiguous character
 normalization = "nfc"                # none | nfc | nfd | hfs+
+shell-integration = false            # true | false: the shell tells its prompts and its folder
 
 [scrollback]
 scroll-on-output = true              # true | false: output brings the view back down
@@ -826,6 +827,22 @@ The normal form that printed text takes, which changes how a character and its a
 - `"nfc"` composes it: `e` and a combining acute accent become `é`.
 - `"nfd"` decomposes it, the other way round; `"hfs+"` decomposes it as the file names of Apple's former file system, HFS+, are.
 - It applies to the text that comes after the change, in the open windows too.
+
+### `shell-integration`
+
+<sub>Platforms: macOS</sub>
+
+Whether your shell loads Lokyr's integration, which has it tell the terminal where each prompt starts, where your command starts and ends, of its exit status, and the folder that it works in.
+
+| Values | Default |
+|---|---|
+| `true`, `false` | `true` |
+
+- It applies to zsh, bash and fish, your login shell or one of theirs that a new pane starts, without touching your files: zsh's through `ZDOTDIR`, which the integration puts back to yours as it starts, so that your `.zshenv`, `.zprofile`, `.zshrc` and `.zlogin` load as they would; bash's through `ENV`, of a bash started in POSIX mode, which reads your `.bash_profile` or your `.bashrc` itself, then leaves POSIX mode; fish's through `XDG_DATA_DIRS`, of a folder that leaves it as fish starts.
+- fish 4 and later tell the prompts and the folder themselves: the integration adds nothing to them.
+- macOS's own bash, `/bin/bash`, of version 3.2, reads your files and not `ENV` in POSIX mode, and gets no integration: a later bash, as Homebrew's, does. To have it in `/bin/bash`, add to your `.bashrc` `[ -n "$LOKYR_RESOURCES_DIR" ] && source "$LOKYR_RESOURCES_DIR/shell-integration/bash/lokyr.bash"`.
+- The marks are OSC 133's, the folder OSC 7's; a new pane starts in the folder that its shell told last, as [`new-directory`](#new-directory) says.
+- It applies to the shells that start after the change; the open ones keep what they started with.
 
 ## `[scrollback]`
 

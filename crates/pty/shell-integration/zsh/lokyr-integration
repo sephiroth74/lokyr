@@ -1,0 +1,51 @@
+# Lokyr's shell integration for zsh: the marks of OSC 133 around each
+# prompt, its input, a command's output and its exit status, and the
+# folder of OSC 7, as the terminal reads them, after
+# https://gitlab.freedesktop.org/Per_Bothner/specifications/-/blob/master/proposals/semantic-prompts.md
+
+(( ${+_lokyr_integration} )) && builtin return 0
+builtin typeset -gi _lokyr_integration=1
+# Whether a command ran since the last prompt, whose end its next tells.
+builtin typeset -gi _lokyr_running=0
+
+# The folder, as a `file` URL of this machine, its bytes but letters,
+# digits and `/._~-` escaped.
+_lokyr_report_cwd() {
+    builtin emulate -L zsh -o extended_glob -o no_multibyte
+    builtin local url="${PWD//(#m)[^A-Za-z0-9\/._~-]/%${(l:2::0:)$(( [##16] #MATCH ))}}"
+    builtin print -nr -- $'\e]7;file://'"${HOST}${url}"$'\a'
+}
+
+# Before each prompt: the last command's end, of its status, the folder,
+# and the prompt's marks in PS1, whose prompt a theme may have set anew.
+_lokyr_precmd() {
+    builtin local ret=$?
+    if (( _lokyr_running )); then
+        builtin print -nr -- $'\e]133;D;'"$ret"$'\a'
+        _lokyr_running=0
+    fi
+    _lokyr_report_cwd
+    builtin local start=$'%{\e]133;A\a%}' input=$'%{\e]133;B\a%}'
+    PS1="${PS1//"$start"/}"
+    PS1="${PS1//"$input"/}"
+    PS1="${start}${PS1}${input}"
+    builtin return $ret
+}
+
+# As a command starts: its output's mark.
+_lokyr_preexec() {
+    builtin print -nr -- $'\e]133;C\a'
+    _lokyr_running=1
+}
+
+# At the first prompt, once the user's files have loaded: the hooks last,
+# after the user's own, as a prompt's theme may set PS1 in its own.
+_lokyr_deferred() {
+    precmd_functions=(${precmd_functions:#_lokyr_deferred})
+    precmd_functions=(${precmd_functions:#_lokyr_precmd} _lokyr_precmd)
+    preexec_functions=(${preexec_functions:#_lokyr_preexec} _lokyr_preexec)
+    _lokyr_precmd
+}
+
+builtin typeset -ga precmd_functions preexec_functions
+precmd_functions+=(_lokyr_deferred)

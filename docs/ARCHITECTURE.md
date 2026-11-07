@@ -114,10 +114,10 @@ lokyr/
 ├── Cargo.toml · justfile · deny.toml · rust-toolchain.toml · .github/workflows/
 ├── crates/
 │   ├── vt-core/           parser, state, paged grid, scrollback, reflow, input encoding (pure)
-│   ├── pty/               fork+exec, resize; no RawFd in the API (ConPTY later)
+│   ├── pty/               fork+exec, resize, the shells' integration's scripts and their injection; no RawFd in the API (ConPTY later)
 │   ├── session/           pty + vt-core + I/O thread, snapshots for the renderer
 │   ├── search/            literal and regex search over the grid
-│   ├── kernel/            modules: workspace and layout tree, commands, keymap, events, config, texts (l10n), services, shell integration's scripts and marks; serves the HostApi's messages
+│   ├── kernel/            modules: workspace and layout tree, commands, keymap, events, config, texts (l10n), services, shell integration's marks; serves the HostApi's messages
 │   ├── app-core/          the window's controller: windows' and panes' state, input's routing, gestures, confirmations, layout geometry, frame composition; generic over a `Backend`, its GPU's Renderer and Surface and its FontBackend; tested with the fake platform and a fake drawing
 │   ├── ui-core/           view tree, layout (taffy), widgets (IME text field, lists, menus), surfaces and floating panels, the chrome's regions, hit testing, AccessKit, display list
 │   ├── text-core/         FontBackend trait (discovery, fallback, shaping, rasterization), shaping cache, glyph atlas, box-drawing sprites, UCD tables, the symbols' font

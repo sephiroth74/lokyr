@@ -104,6 +104,9 @@ pub struct Environment {
     /// `TERM_PROGRAM_VERSION` and which XTVERSION reports: this crate's by
     /// default.
     pub version: String,
+    /// The directory of the shells' integration, which the user's shell
+    /// loads, if the config has it.
+    pub shell_integration: Option<PathBuf>,
 }
 
 impl Default for Environment {
@@ -115,6 +118,7 @@ impl Default for Environment {
             binaries: None,
             directory: None,
             version: env!("CARGO_PKG_VERSION").to_owned(),
+            shell_integration: None,
         }
     }
 }
@@ -240,6 +244,8 @@ fn pty_options(
     pty.working_directory.clone_from(&environment.directory);
     pty.fallback_locale.clone_from(&environment.locale);
     pty.version.clone_from(&environment.version);
+    pty.shell_integration
+        .clone_from(&environment.shell_integration);
     pty
 }
 
@@ -1204,6 +1210,9 @@ mod tests {
             binaries: Some("/Applications/Lokyr.app/Contents/MacOS".into()),
             directory: Some("/tmp".into()),
             version: "1.2.3-20261101".to_owned(),
+            shell_integration: Some(
+                "/Applications/Lokyr.app/Contents/Resources/shell-integration".into(),
+            ),
         };
         let grid = Grid {
             columns: 80,
@@ -1219,6 +1228,7 @@ mod tests {
         assert_eq!(options.binaries_dir, environment.binaries);
         assert_eq!(options.working_directory, environment.directory);
         assert_eq!(options.version, "1.2.3-20261101");
+        assert_eq!(options.shell_integration, environment.shell_integration);
         assert_eq!(Settings::default().term, "xterm-256color");
         assert_eq!(options.size, grid.size());
     }

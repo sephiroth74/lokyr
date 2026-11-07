@@ -47,8 +47,19 @@ pub struct Pty {
 pub fn spawn(options: &Options) -> Result<Pty, Error> {
     let (master, slave, tty) = open(options.size).map_err(Error::Open)?;
     let account = Account::current();
-    let (program, args, arg0) = command_line(&options.program, &account);
-    let env = environment(options, std::env::vars_os());
+    let mut env = environment(options, std::env::vars_os());
+    // A shell of the user's, which loads the shells' integration.
+    let shell = match &options.program {
+        Program::LoginShell => Some(account.shell.as_path()),
+        Program::Command { program, args } if args.is_empty() => Some(program.as_path()),
+        _ => None,
+    };
+    let injection = shell
+        .zip(options.shell_integration.as_deref())
+        .and_then(|(shell, dir)| integration(shell, dir, &env))
+        .unwrap_or_default();
+    env.extend(injection.env);
+    let (program, args, arg0) = command_line(&options.program, &account, &injection.args);
     let spawn_error = |source| Error::Spawn {
         program: program.display().to_string(),
         source,
@@ -995,16 +1006,91 @@ impl Account {
     }
 }
 
-/// The program to run for `program`, its arguments, and the name that it
-/// gets as `argv[0]`, if not its path.
+/// What the shells' integration adds to a shell's start: its arguments,
+/// after the shell's own, and variables of its environment.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+struct Injection {
+    args: Vec<OsString>,
+    env: Vec<(OsString, OsString)>,
+}
+
+/// The integration of the shell at `shell`, by its name, of the scripts of
+/// `dir`, in `env`, the environment that it would have otherwise: zsh's
+/// through `ZDOTDIR`, the user's own kept in `LOKYR_ZSH_ZDOTDIR`; bash's
+/// through `ENV`, which a bash in POSIX mode reads alone, and which reads
+/// the user's files itself, but of macOS's own bash, 3.2, which reads the
+/// user's files and not `ENV` in POSIX mode; fish's through `XDG_DATA_DIRS`, whose
+/// folders' `vendor_conf.d` fish reads, after which it takes the folder
+/// away; `None` for another shell.
+fn integration(shell: &Path, dir: &Path, env: &BTreeMap<OsString, OsString>) -> Option<Injection> {
+    let name = shell.file_name()?.to_str()?.trim_start_matches('-');
+    let kept = |name: &str| env.get(OsStr::new(name)).cloned();
+    let pair = |name: &str, value: OsString| (OsString::from(name), value);
+    match name {
+        "zsh" => {
+            let mut env = vec![pair("ZDOTDIR", dir.join("zsh").into())];
+            env.extend(kept("ZDOTDIR").map(|own| pair("LOKYR_ZSH_ZDOTDIR", own)));
+            Some(Injection {
+                args: Vec::new(),
+                env,
+            })
+        }
+        "bash" if !is_old_bash(shell) => {
+            let mut env = vec![
+                pair("ENV", dir.join("bash").join("lokyr.bash").into()),
+                pair("LOKYR_BASH_INJECT", "1".into()),
+            ];
+            env.extend(kept("ENV").map(|own| pair("LOKYR_BASH_ENV", own)));
+            Some(Injection {
+                args: vec!["--posix".into()],
+                env,
+            })
+        }
+        // A folder of a `:` would be two of `XDG_DATA_DIRS`.
+        "fish" if !dir.as_os_str().as_bytes().contains(&b':') => {
+            let others = kept("XDG_DATA_DIRS")
+                .filter(|dirs| !dirs.is_empty())
+                .unwrap_or_else(|| XDG_DATA_DIRS.into());
+            let mut dirs = dir.as_os_str().to_owned();
+            dirs.push(":");
+            dirs.push(others);
+            Some(Injection {
+                args: Vec::new(),
+                env: vec![
+                    pair("XDG_DATA_DIRS", dirs),
+                    pair("LOKYR_SHELL_INTEGRATION_XDG_DIR", dir.into()),
+                ],
+            })
+        }
+        _ => None,
+    }
+}
+
+/// Whether `shell` is macOS's own bash, 3.2, of no later version.
+fn is_old_bash(shell: &Path) -> bool {
+    cfg!(target_os = "macos") && shell == Path::new("/bin/bash")
+}
+
+/// The folders of `XDG_DATA_DIRS` where it is not set, as the XDG Base
+/// Directory Specification has them:
+/// <https://specifications.freedesktop.org/basedir-spec/latest/>.
+const XDG_DATA_DIRS: &str = "/usr/local/share:/usr/share";
+
+/// The program to run for `program`, its arguments, of `extra` after a
+/// shell's own, and the name that it gets as `argv[0]`, if not its path.
 fn command_line(
     program: &Program,
     account: &Account,
+    extra: &[OsString],
 ) -> (PathBuf, Vec<OsString>, Option<OsString>) {
     match program {
-        Program::Command { program, args } => (program.clone(), args.clone(), None),
-        Program::LoginShell => login_shell(account, None),
-        Program::LoginCommand { command } => login_shell(account, Some(command)),
+        Program::Command { program, args } => {
+            let mut all = args.clone();
+            all.extend_from_slice(extra);
+            (program.clone(), all, None)
+        }
+        Program::LoginShell => login_shell(account, None, extra),
+        Program::LoginCommand { command } => login_shell(account, Some(command), extra),
     }
 }
 
@@ -1025,6 +1111,7 @@ fn command_line(
 fn login_shell(
     account: &Account,
     command: Option<&OsStr>,
+    extra: &[OsString],
 ) -> (PathBuf, Vec<OsString>, Option<OsString>) {
     let name = account
         .shell
@@ -1034,6 +1121,10 @@ fn login_shell(
     exec.extend(quoted(&name));
     exec.push(b' ');
     exec.extend(quoted(account.shell.as_os_str()));
+    for arg in extra {
+        exec.push(b' ');
+        exec.extend(quoted(arg));
+    }
     if let Some(command) = command {
         exec.extend_from_slice(b" -c ");
         exec.extend(quoted(command));
@@ -1059,10 +1150,14 @@ fn login_shell(
 fn login_shell(
     account: &Account,
     command: Option<&OsStr>,
+    extra: &[OsString],
 ) -> (PathBuf, Vec<OsString>, Option<OsString>) {
     let mut arg0 = OsString::from("-");
     arg0.push(account.shell.file_name().unwrap_or(OsStr::new("sh")));
-    let args = command.map_or_else(Vec::new, |command| vec!["-c".into(), command.to_owned()]);
+    let mut args = extra.to_vec();
+    if let Some(command) = command {
+        args.extend(["-c".into(), command.to_owned()]);
+    }
     (account.shell.clone(), args, Some(arg0))
 }
 
@@ -1796,7 +1891,7 @@ mod tests {
             home: "/Users/me".into(),
             shell: "/opt/my shell/fish".into(),
         };
-        let (program, args, arg0) = command_line(&Program::LoginShell, &account);
+        let (program, args, arg0) = command_line(&Program::LoginShell, &account, &[]);
         assert_eq!(program, Path::new("/usr/bin/login"));
         assert_eq!(
             args,
@@ -1816,13 +1911,102 @@ mod tests {
         let command = Program::LoginCommand {
             command: "exec man -- it's".into(),
         };
-        let (_, args, _) = command_line(&command, &account);
+        let (_, args, _) = command_line(&command, &account, &[]);
         assert_eq!(args[0], "-flpq");
         assert_eq!(
             args[6],
             "( exec -l -a 'fish' '/opt/my shell/fish' -c 'exec man -- it'\\''s' ); status=$?; \
              printf '\\033]133;D;%d\\007' \"$status\"; exit \"$status\""
         );
+    }
+
+    #[test]
+    fn a_shell_s_integration_goes_by_its_name() {
+        let dir = Path::new("/App/Resources/shell-integration");
+        let pair = |name: &str, value: &str| (OsString::from(name), OsString::from(value));
+        let env: BTreeMap<OsString, OsString> = [
+            pair("ZDOTDIR", "/Users/me/.zsh"),
+            pair("XDG_DATA_DIRS", "/opt/share"),
+            pair("ENV", "/Users/me/.shrc"),
+        ]
+        .into();
+        // zsh, of the user's own ZDOTDIR kept, a login shell's name too.
+        for shell in ["/bin/zsh", "-zsh"] {
+            let zsh = integration(Path::new(shell), dir, &env).unwrap();
+            assert!(zsh.args.is_empty());
+            assert_eq!(
+                zsh.env,
+                [
+                    pair("ZDOTDIR", "/App/Resources/shell-integration/zsh"),
+                    pair("LOKYR_ZSH_ZDOTDIR", "/Users/me/.zsh"),
+                ]
+            );
+        }
+        // bash, in POSIX mode, of the user's own ENV kept; but macOS's own.
+        let bash = integration(Path::new("/opt/homebrew/bin/bash"), dir, &env).unwrap();
+        assert_eq!(bash.args, ["--posix"]);
+        assert_eq!(
+            bash.env,
+            [
+                pair("ENV", "/App/Resources/shell-integration/bash/lokyr.bash"),
+                pair("LOKYR_BASH_INJECT", "1"),
+                pair("LOKYR_BASH_ENV", "/Users/me/.shrc"),
+            ]
+        );
+        assert_eq!(
+            integration(Path::new("/bin/bash"), dir, &env).is_none(),
+            cfg!(target_os = "macos")
+        );
+        // fish, of the folder before the others, or before the default's.
+        let fish = integration(Path::new("/opt/homebrew/bin/fish"), dir, &env).unwrap();
+        assert_eq!(
+            fish.env,
+            [
+                pair(
+                    "XDG_DATA_DIRS",
+                    "/App/Resources/shell-integration:/opt/share"
+                ),
+                pair(
+                    "LOKYR_SHELL_INTEGRATION_XDG_DIR",
+                    "/App/Resources/shell-integration"
+                ),
+            ]
+        );
+        let bare = integration(Path::new("fish"), dir, &BTreeMap::new()).unwrap();
+        assert_eq!(
+            bare.env[0],
+            pair(
+                "XDG_DATA_DIRS",
+                "/App/Resources/shell-integration:/usr/local/share:/usr/share"
+            )
+        );
+        assert!(integration(Path::new("fish"), Path::new("/a:b"), &env).is_none());
+        // Another shell, none.
+        for shell in ["/bin/sh", "/bin/dash", "/usr/bin/nu"] {
+            assert!(
+                integration(Path::new(shell), dir, &env).is_none(),
+                "{shell}"
+            );
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn a_login_shell_takes_its_integration_s_arguments() {
+        let account = Account {
+            name: "me".into(),
+            home: "/Users/me".into(),
+            shell: "/opt/homebrew/bin/bash".into(),
+        };
+        let (_, args, _) = command_line(&Program::LoginShell, &account, &["--posix".into()]);
+        assert_eq!(
+            args[6],
+            "( exec -l -a 'bash' '/opt/homebrew/bin/bash' '--posix' ); status=$?; \
+             printf '\\033]133;D;%d\\007' \"$status\"; exit \"$status\""
+        );
+        let program = Program::command("/bin/zsh", Vec::<String>::new());
+        let (_, args, _) = command_line(&program, &account, &["-x".into()]);
+        assert_eq!(args, ["-x"]);
     }
 
     #[cfg(target_os = "macos")]
@@ -1846,7 +2030,7 @@ mod tests {
         let command = Program::LoginCommand {
             command: "echo ran; exit 4".into(),
         };
-        let (program, args, _) = command_line(&command, &account);
+        let (program, args, _) = command_line(&command, &account, &[]);
         let options = Options::new(Program::Command { program, args }, "dumb");
         let pty = spawn(&options).unwrap();
         let mut text = String::new();
@@ -1875,7 +2059,7 @@ mod tests {
                 shell,
                 ..Account::current()
             };
-            let (program, args, _) = command_line(&Program::LoginShell, &account);
+            let (program, args, _) = command_line(&Program::LoginShell, &account, &[]);
             let options = Options::new(Program::Command { program, args }, "dumb");
             let mut pty = spawn(&options).unwrap();
             let mut text = String::new();
@@ -1898,14 +2082,14 @@ mod tests {
             home: "/home/me".into(),
             shell: "/usr/bin/fish".into(),
         };
-        let (program, args, arg0) = command_line(&Program::LoginShell, &account);
+        let (program, args, arg0) = command_line(&Program::LoginShell, &account, &[]);
         assert_eq!(program, Path::new("/usr/bin/fish"));
         assert!(args.is_empty());
         assert_eq!(arg0, Some("-fish".into()));
         let command = Program::LoginCommand {
             command: "exec man -- ls".into(),
         };
-        let (program, args, arg0) = command_line(&command, &account);
+        let (program, args, arg0) = command_line(&command, &account, &[]);
         assert_eq!(program, Path::new("/usr/bin/fish"));
         assert_eq!(args, ["-c", "exec man -- ls"]);
         assert_eq!(arg0, Some("-fish".into()));

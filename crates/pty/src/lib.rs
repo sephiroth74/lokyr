@@ -130,6 +130,11 @@ pub struct Options {
     /// The locale that `LANG` gets when the environment sets none, as when
     /// the app starts from the Dock: a UTF-8 one.
     pub fallback_locale: String,
+    /// The directory of the shells' integration, its scripts for zsh, bash
+    /// and fish, which a shell of theirs started without arguments loads,
+    /// as the user's login shell, the user's own files untouched: `None`
+    /// for none.
+    pub shell_integration: Option<PathBuf>,
     /// More environment variables, set after the others.
     pub env: Vec<(OsString, OsString)>,
     /// The terminal's size.
@@ -149,6 +154,7 @@ impl Options {
             terminfo_dir: None,
             binaries_dir: None,
             fallback_locale: "en_US.UTF-8".to_owned(),
+            shell_integration: None,
             env: Vec::new(),
             size: Size {
                 cols: 80,

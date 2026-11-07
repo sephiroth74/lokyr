@@ -10,7 +10,8 @@
 //! loads, and the keys of its feed in `Info.plist`; and in
 //! `Contents/Resources/licenses` the notices of the licenses of what the
 //! binary and the bundle hold of other projects: the crates', Sparkle's and
-//! the symbols' font's.
+//! the symbols' font's; and the shells' integration, its scripts for zsh,
+//! bash and fish, in `Contents/Resources/shell-integration`.
 //! It is signed with the identity that `LOKYR_SIGN_IDENTITY` names, the
 //! maintainer's Developer ID, in the environment or in the untracked
 //! `private/lokyr.env`, so that macOS keeps the permissions that it gave the
@@ -84,6 +85,26 @@ const USAGES: [&str; 16] = [
     "NSLocationUsageDescription",
     "NSSpeechRecognitionUsageDescription",
 ];
+
+/// The shells' integration's scripts, which the bundle copies whole, of
+/// their names that start with a dot too, as zsh's `.zshenv`.
+const SHELL_INTEGRATION: &str = "crates/pty/shell-integration";
+
+/// Copies the tree of `from` into `to`, its files and its folders.
+fn copy_tree(from: &Path, to: &Path) -> Result<()> {
+    fs::create_dir_all(to).with_context(|| format!("making {}", to.display()))?;
+    for entry in fs::read_dir(from).with_context(|| format!("reading {}", from.display()))? {
+        let entry = entry?;
+        let target = to.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            copy_tree(&entry.path(), &target)?;
+        } else {
+            fs::copy(entry.path(), &target)
+                .with_context(|| format!("copying {}", entry.path().display()))?;
+        }
+    }
+    Ok(())
+}
 
 /// The themes' files that the app opens, which it asks to install: each
 /// its name's message in the catalogs' `infoplist.ftl`, its type's
@@ -178,6 +199,10 @@ pub fn run(mut args: impl Iterator<Item = String>) -> Result<ExitCode> {
         &resources.join("terminfo"),
     )?;
     copy_icons(&root.join(ICONS), &resources)?;
+    copy_tree(
+        &root.join(SHELL_INTEGRATION),
+        &resources.join("shell-integration"),
+    )?;
     copy_font_licenses(&root.join(SYMBOLS_FONT), &resources)?;
     crate::themes::write(&root, &resources)?;
     crate::licenses::write(&root, &resources.join("licenses/crates"))?;

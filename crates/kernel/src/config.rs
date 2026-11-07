@@ -298,7 +298,7 @@ impl Default for AppConfig {
 
 /// The `[terminal]` section: what programs are told of the terminal, and
 /// how it counts and keeps their text, which must match how they count it.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields, rename_all = "kebab-case")]
 pub struct TerminalConfig {
     /// The `TERM` that programs see, which changes only what they are
@@ -310,6 +310,21 @@ pub struct TerminalConfig {
     pub ambiguous_width: AmbiguousWidth,
     /// The normal form that printed text takes.
     pub normalization: TextNormalization,
+    /// Whether the user's shell, zsh, bash or fish, loads the shells'
+    /// integration, which tells the prompts' marks and the folder.
+    pub shell_integration: bool,
+}
+
+impl Default for TerminalConfig {
+    fn default() -> Self {
+        Self {
+            term: Term::default(),
+            unicode_widths: UnicodeWidths::default(),
+            ambiguous_width: AmbiguousWidth::default(),
+            normalization: TextNormalization::default(),
+            shell_integration: true,
+        }
+    }
 }
 
 impl TerminalConfig {
@@ -2620,7 +2635,13 @@ mod tests {
         );
         assert_eq!(
             keys::<TerminalConfig>(),
-            ["term", "unicode-widths", "ambiguous-width", "normalization"]
+            [
+                "term",
+                "unicode-widths",
+                "ambiguous-width",
+                "normalization",
+                "shell-integration"
+            ]
         );
         assert_eq!(
             keys::<ClipboardConfig>(),
