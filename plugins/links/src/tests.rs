@@ -245,8 +245,23 @@ fn a_window_or_a_tab_opens_in_the_folder_of_the_path_at_the_cell() {
         asked(&mut host, NEW_WINDOW, (1, 1)),
         (true, window("/Users/me/My Work"))
     );
-    let mut host = linked(focused("the folder"), "file://localhost/tmp");
-    assert_eq!(asked(&mut host, NEW_WINDOW, (1, 1)), (true, window("/tmp")));
+    // Of `localhost`, of either case, and of this machine's name, as
+    // `ls --hyperlink`, ripgrep and `fd` write it.
+    let named = format!("file://{}/tmp", lokyr_plugin_sdk::fake::HOST_NAME);
+    for link in [
+        "file://localhost/tmp",
+        "file://LOCALHOST/tmp",
+        named.as_str(),
+    ] {
+        let mut host = linked(focused("the folder"), link);
+        assert_eq!(
+            asked(&mut host, NEW_WINDOW, (1, 1)),
+            (true, window("/tmp")),
+            "{link}"
+        );
+        let mut host = linked(focused("the folder"), link);
+        assert!(asked(&mut host, NEW_TAB, (1, 1)).0, "{link}");
+    }
     // A URL of another place, or of another machine, and nothing there.
     for (line, link) in [
         ("see https://lokyr.dev/x", None),
@@ -268,12 +283,15 @@ fn a_window_or_a_tab_opens_in_the_folder_of_the_path_at_the_cell() {
 }
 
 #[test]
-fn a_local_path_is_a_path_or_a_file_url_of_this_machine() {
+fn a_local_path_is_a_path_or_a_file_url_s() {
     assert_eq!(local_path("/a/b").as_deref(), Some("/a/b"));
     assert_eq!(local_path("~").as_deref(), Some("~"));
     assert_eq!(local_path("FILE:///a%2Fb%zz").as_deref(), Some("/a/b%zz"));
     assert_eq!(local_path("file:///%FF"), None);
-    assert_eq!(local_path("file://host/a"), None);
+    // Of whatever host, as a URL of another machine's opens not.
+    assert_eq!(local_path("file://mac.local/a").as_deref(), Some("/a"));
+    assert_eq!(local_path("file:/a").as_deref(), Some("/a"));
+    assert_eq!(local_path("file://host"), None);
     assert_eq!(local_path("https://lokyr.dev"), None);
     assert_eq!(local_path("~x"), None);
 }

@@ -585,6 +585,32 @@ pub enum BarPlace {
 /// The narrowest and the widest that a tab bar's column is, in points.
 pub const COLUMN_WIDTHS: (f32, f32) = (60.0, 600.0);
 
+/// Whether `host`, of a `file` URL, is this machine, whose name is `name`:
+/// none, `localhost`, or its name, with or without the domain that one of
+/// the two has, of any case.
+pub fn is_local_host(host: &str, name: &str) -> bool {
+    let short = |name: &str| name.split('.').next().unwrap_or_default().to_owned();
+    host.is_empty()
+        || host.eq_ignore_ascii_case("localhost")
+        || (!name.is_empty()
+            && (host.eq_ignore_ascii_case(name)
+                || host.eq_ignore_ascii_case(&short(name))
+                || short(host).eq_ignore_ascii_case(name)))
+}
+
+/// The host of `target`, if it is a `file` URL: what comes between its
+/// `//` and its path, empty of none, as `file:///tmp` has.
+pub fn file_host(target: &str) -> Option<&str> {
+    let rest = target
+        .get(..5)
+        .filter(|scheme| scheme.eq_ignore_ascii_case("file:"))
+        .map(|_| &target[5..])?;
+    Some(
+        rest.strip_prefix("//")
+            .map_or("", |rest| rest.find('/').map_or(rest, |end| &rest[..end])),
+    )
+}
+
 /// Checks `directory`, the folder that a new tab's or a new window's pane
 /// starts in, as a host takes it: a path, absolute or from `~`. As the pane
 /// starts, a file's path gives the folder that holds it, and a path that is
@@ -741,4 +767,31 @@ pub trait Host {
     /// returns, a request that the caller may not make, or of a window, a
     /// tab or a pane that is not there, with its error.
     fn handle(&mut self, call: Call) -> Response;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_file_url_s_host_is_this_machine_s_of_none_localhost_or_its_name() {
+        for (target, host) in [
+            ("file:///tmp", Some("")),
+            ("FILE://mac.local/a%20b", Some("mac.local")),
+            ("file://localhost", Some("localhost")),
+            ("file:/tmp", Some("")),
+            ("https://lokyr.dev", None),
+            ("fil", None),
+        ] {
+            assert_eq!(file_host(target), host, "{target}");
+        }
+        for host in ["", "localhost", "LOCALHOST", "mac", "MAC.local"] {
+            assert!(is_local_host(host, "mac.local"), "{host}");
+        }
+        assert!(is_local_host("mac.example.com", "mac"));
+        for host in ["other", "other.local", "mac.other"] {
+            assert!(!is_local_host(host, "mac.local"), "{host}");
+        }
+        assert!(!is_local_host("mac", ""));
+    }
 }

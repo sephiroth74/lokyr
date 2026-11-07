@@ -21,7 +21,7 @@ A URL or a file asks you first, as [`[links]`](../CONFIGURATION.md#links) says, 
 | `links.new-window` | | Opens a window whose shell starts in the folder of the path at the cell, or in the folder that holds its file |
 | `links.new-tab` | | Opens a tab, after the others, as `links.new-window` does a window |
 
-Each takes the cell's `column` and `row`; the pane's context menu lists them, as Open Link, Copy Link Address, New Window at Folder and New Tab at Folder, each dimmed where the cell holds nothing that it takes: a URL of the web has no folder.
+Each takes the cell's `column` and `row`; the pane's context menu lists them, as Open Link, Copy Link Address, New Window at Folder and New Tab at Folder, each dimmed where the cell holds nothing that it takes: a URL of the web has no folder. A link's `file:` URL of this Mac, of no host, of `localhost` or of the Mac's name, as `ls --hyperlink`, ripgrep and `fd` write it, opens and has its folder; one of another machine opens not.
 
 ## Configuration
 

@@ -703,7 +703,8 @@ type Cx = {
 
     -- Require `process-read`: the directory of the program in the pane's foreground.
     working_directory: (pane: PaneId) -> (string?, Error?),
-    -- Requires `open`: a URL of `http`, `https`, `mailto` or `file`, or a path from `/` or `~`.
+    -- Requires `open`: a URL of `http`, `https`, `mailto` or `file`, a `file` URL of this machine alone, of no host,
+    -- `localhost` or its name, as OSC 7's folder, or a path from `/` or `~`.
     open: (target: string) -> (boolean, Error?),
     -- Whether `open` would open `target`: a URL of its schemes, or a path that is there.
     opens: (target: string) -> (boolean, Error?),

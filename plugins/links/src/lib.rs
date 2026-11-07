@@ -16,7 +16,7 @@ mod scan;
 use lokyr_plugin_sdk::command::{
     Args, Capability, Category, Code, Command, Error, Kind, Param, Value,
 };
-use lokyr_plugin_sdk::host::{DecorationLook, PaneId, Underline};
+use lokyr_plugin_sdk::host::{DecorationLook, PaneId, Underline, file_host};
 use lokyr_plugin_sdk::message::{Event, POINTER};
 use lokyr_plugin_sdk::plugin::{Cx, Plugin};
 
@@ -219,18 +219,17 @@ fn folder(cx: &mut Cx<'_>, args: &Args) -> Result<Option<String>, Error> {
     Ok(opening(cx, args)?.and_then(|target| local_path(&target)))
 }
 
-/// The path that `target` names on this machine: itself, absolute or from
-/// `~`, or a `file:` URL's of no host or `localhost`, its escapes decoded;
-/// `None` for another URL.
+/// The path that `target`, which opens, names: itself, absolute or from
+/// `~`, or a `file:` URL's, its escapes decoded, of whatever host, as one
+/// that opens is this machine's, as `ls --hyperlink`, ripgrep and `fd`
+/// name it; `None` for another URL.
 fn local_path(target: &str) -> Option<String> {
     if target.starts_with('/') || target == "~" || target.starts_with("~/") {
         return Some(target.to_owned());
     }
-    let rest = target
-        .get(..7)
-        .filter(|scheme| scheme.eq_ignore_ascii_case("file://"))
-        .map(|_| &target[7..])?;
-    let path = rest.strip_prefix("localhost").unwrap_or(rest);
+    let host = file_host(target)?;
+    let rest = target[5..].strip_prefix("//").unwrap_or(&target[5..]);
+    let path = &rest[host.len()..];
     path.starts_with('/').then(|| decoded(path))?
 }
 

@@ -2764,9 +2764,21 @@ impl host::Host for Calling<'_> {
 /// The schemes of the URLs that open, as the app's host has them.
 const SCHEMES: [&str; 4] = ["http", "https", "mailto", "file"];
 
+/// The name of the machine that the fake host is, which a `file` URL's
+/// host names, as the app's host takes its own.
+pub const HOST_NAME: &str = "fake-mac";
+
 /// Whether `target` opens, as the app's host takes it: a URL of one of
-/// [`SCHEMES`], or a path from `/` or `~`; the error of what does not.
+/// [`SCHEMES`], a `file` URL of this machine alone, or a path from `/` or
+/// `~`; the error of what does not.
 fn opening(target: &str) -> Result<(), String> {
+    if let Some(host) = crate::host::file_host(target)
+        && !crate::host::is_local_host(host, HOST_NAME)
+    {
+        return Err(format!(
+            "a `file:` URL of another machine, `{host}`, does not open"
+        ));
+    }
     if target.starts_with('/') || target == "~" || target.starts_with("~/") {
         return Ok(());
     }

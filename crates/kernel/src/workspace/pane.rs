@@ -890,7 +890,7 @@ impl Pane {
     pub fn told_directory(&self, host: &str) -> Option<PathBuf> {
         let session = self.session.as_ref().filter(|_| self.ended.is_none())?;
         let told = session.lock().working_directory().cloned()?;
-        if !is_local(&told.host, host) {
+        if !lokyr_plugin_sdk::host::is_local_host(&told.host, host) {
             return None;
         }
         Some(PathBuf::from(told.path)).filter(|path| path.is_dir())
@@ -1198,19 +1198,6 @@ pub fn directory_name(directory: &std::path::Path, home: Option<&std::path::Path
         || "/".to_owned(),
         |name| name.to_string_lossy().into_owned(),
     )
-}
-
-/// Whether `host`, of an OSC 7 `file` URL, is this machine, whose name is
-/// `name`: none, `localhost`, or its name, with or without the domain that
-/// one of the two has.
-fn is_local(host: &str, name: &str) -> bool {
-    let short = |name: &str| name.split('.').next().unwrap_or_default().to_owned();
-    host.is_empty()
-        || host.eq_ignore_ascii_case("localhost")
-        || (!name.is_empty()
-            && (host.eq_ignore_ascii_case(name)
-                || host.eq_ignore_ascii_case(&short(name))
-                || short(host).eq_ignore_ascii_case(name)))
 }
 
 #[cfg(test)]
@@ -1546,13 +1533,22 @@ mod tests {
     #[test]
     fn a_told_directory_is_of_this_machine_alone() {
         for host in ["", "localhost", "LocalHost", "mac", "MAC", "mac.local"] {
-            assert!(super::is_local(host, "mac.local"), "{host}");
+            assert!(
+                lokyr_plugin_sdk::host::is_local_host(host, "mac.local"),
+                "{host}"
+            );
         }
-        assert!(super::is_local("mac.example.com", "mac"));
+        assert!(lokyr_plugin_sdk::host::is_local_host(
+            "mac.example.com",
+            "mac"
+        ));
         for host in ["server", "server.example.com", "mac-mini"] {
-            assert!(!super::is_local(host, "mac.local"), "{host}");
+            assert!(
+                !lokyr_plugin_sdk::host::is_local_host(host, "mac.local"),
+                "{host}"
+            );
         }
         // A machine of no name knows its own by none, or `localhost`.
-        assert!(!super::is_local("mac", ""));
+        assert!(!lokyr_plugin_sdk::host::is_local_host("mac", ""));
     }
 }

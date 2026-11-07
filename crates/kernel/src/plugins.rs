@@ -2838,9 +2838,17 @@ fn deepen(requests: &mut [Request], depth: usize) {
 /// application on the user's behalf.
 const SCHEMES: [&str; 4] = ["http", "https", "mailto", "file"];
 
-/// What opening `target` opens: a URL of one of [`SCHEMES`], or a path,
+/// What opening `target` opens: a URL of one of [`SCHEMES`], a `file`
+/// URL of this machine alone, as OSC 7 takes its folder, or a path,
 /// absolute or from `~`, which becomes the home directory.
 fn opening(target: &str) -> Result<String, String> {
+    if let Some(host) = host::file_host(target)
+        && !host::is_local_host(host, &lokyr_pty::host_name())
+    {
+        return Err(format!(
+            "a `file:` URL of another machine, `{host}`, does not open"
+        ));
+    }
     if target.starts_with('/') {
         return Ok(target.to_owned());
     }

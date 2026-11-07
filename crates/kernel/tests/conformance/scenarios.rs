@@ -411,6 +411,18 @@ fn links(world: &World) -> Scenario {
                     Request::Opens("javascript:x".to_owned()),
                     Response::Boolean(false),
                 ),
+                // A file of another machine, which OSC 7's rule tells.
+                (
+                    Request::Opens("file://elsewhere.invalid/tmp".to_owned()),
+                    Response::Boolean(false),
+                ),
+                (
+                    Request::Open("file://elsewhere.invalid/tmp".to_owned()),
+                    failed(
+                        Code::Failed,
+                        "a `file:` URL of another machine, `elsewhere.invalid`, does not open",
+                    ),
+                ),
                 (
                     Request::Open("javascript:x".to_owned()),
                     failed(
