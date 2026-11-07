@@ -259,7 +259,6 @@ The plugin API has its own version, `plugin-sdk`'s, experimental until its 1.0 (
 
 | Question | When to decide |
 |---|---|
-| Which themes to bundle, after checking their licenses | F3 |
 | How `sleip check` type-checks Luau: Luau's analyzer is C++, to embed or to ship as `luau-analyze` ([ADR 0012](adr/0012-luau-plugins.md)) | F4 |
 | An atomic store for the watchdog's interrupt in the vendored Luau, or Luau's guarantee that the race is harmless ([ADR 0012](adr/0012-luau-plugins.md)) | F4 |
 | The buffers for bulk data between the host and Luau plugins, and how the Luau type definitions are generated from the Rust types ([ADR 0012](adr/0012-luau-plugins.md)) | F4 |

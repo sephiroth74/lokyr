@@ -294,7 +294,7 @@ The `themes` plugin (model, light/dark switching, picker) plus the `theme-iterm2
 | Terminal | 16 ANSI colors, 256-color palette (derived or explicit), foreground, background, bold, cursor, cursor text, selection (background and text), link, underline, badge |
 | Search | `search.match`, `search.match.current` |
 | UI | Tokens for the tab bar; active, inactive and hovered tabs; dividers; overlays; accent; borders |
-| Chrome | Beyond iTerm2's colors, our themes give the chrome's look too: the tab bar's layout and the tabs' style and shape, the scrollbars' style, width, colors and visibility, and the other chrome that the plugins draw |
+| Chrome | The colors of the chrome that the plugins draw, a section of each plugin's, as the tab bar's: the bar, the active, inactive and hovered tabs, their marks. The chrome's look, as the tab bar's style, place and shape, stays in the config, never in a theme ([ADR 0034](adr/0034-themes-native-format-and-itermcolors.md)) |
 | Options | Light/dark variants; `minimum-contrast`, the minimum ratio between text and background (as in iTerm2 and Ghostty) |
 
 UI tokens that are not specified are **derived** from the terminal colors, the way iTerm2 does it:
@@ -307,7 +307,7 @@ UI tokens that are not specified are **derived** from the terminal colors, the w
 | Dividers | background mixed 15% toward the foreground |
 | Accent | cursor color |
 
-This gives every imported iTerm2 theme matching tabs right away; the chrome's look that an iTerm2 theme does not give comes from the default theme.
+This gives every imported iTerm2 theme matching tabs right away; the chrome's colors that an iTerm2 theme does not give derive from its terminal's colors.
 
 The default theme's terminal colors are the built-in palette of F2, with a light and a dark variant, whose colors meet WCAG's contrast on their backgrounds.
 
@@ -318,16 +318,23 @@ The default theme's terminal colors are the built-in palette of F2, with a light
   - `Foreground Color`, `Background Color`, `Bold Color`;
   - `Cursor Color`, `Cursor Text Color`, `Cursor Guide Color`;
   - `Selection Color`, `Selected Text Color`;
-  - `Link Color`, `Badge Color`, `Tab Color`, `Underline Color`.
+  - `Link Color`, `Badge Color`, `Tab Color`, `Underline Color`, `Match Background Color`.
 - **Color components**: each color has `Red Component`, `Green Component` and `Blue Component` (floats 0–1), an optional `Alpha Component`, and a `Color Space`:
   - `sRGB`: used as is.
-  - `Calibrated` (Generic RGB): converted to sRGB. On macOS this uses ColorSync or `NSColor` for exact results; elsewhere, a matrix plus a transfer curve.
-  - `P3`: kept in Display P3 when the drawable is P3, converted otherwise.
-  - `Device`, or missing: treated as sRGB.
-- **`(Light)` / `(Dark)` suffixes**: keys from profiles that use separate colors for light and dark mode. They become the theme's two variants.
+  - `P3`: converted to sRGB.
+  - `Calibrated`, `Device`, or missing: calibrated Generic RGB, of a gamma of 1.8, as iTerm2 reads them, its own old files of no color space among them, converted to sRGB. On macOS this uses ColorSync for exact results; elsewhere, a matrix plus a transfer curve.
+  - The `Alpha Component` is kept; the cursor guide, of none, takes 0.25, as iTerm2 gives it.
+- **`(Light)` / `(Dark)` suffixes**: keys from profiles that use separate colors for light and dark mode. A file of them is two themes, `<name> (Light)` and `<name> (Dark)`, as a theme is a file a variant.
 - **Missing keys**: sensible defaults (bold = foreground, cursor text = background, derived selection).
-- **Theme locations**: `~/.config/lokyr/themes/`, or `themes` packages.
-- **Other formats**: importers for Ghostty, kitty, Alacritty and base16 ship as separate plugins.
+- **Read as they are**: a user's `.itermcolors` is never converted; the importer reads it at each start and as it changes.
+- **No other format**: `.itermcolors` is the one format imported, the source of the largest collection, iTerm2-Color-Schemes, whose formats generated for other terminals lose its variants, its opacity and some keys, and take its Calibrated colors as sRGB ([ADR 0034](adr/0034-themes-native-format-and-itermcolors.md)).
+
+### Where themes come from
+
+- **Held by the app**: the collection's schemes of a permissive license, as its `licenses.yml` tells, and those whose license is checked at their source, converted into the native format as the app builds, of a pinned commit, by the same importer, each with its author, license and source; their notices in the bundle's `Contents/Resources/licenses`; and Lokyr's own light and dark themes.
+- **The user's**: the files of `~/.config/lokyr/themes/`, `.toml` and `.itermcolors`, each named by its file; one of a name that the app holds takes its place; a file with an error tells it with its line, the theme in force staying.
+- **From the Finder**: a double click on an `.itermcolors` file, or a file dropped on Lokyr's icon in the Dock, asks to install it into the themes' folder. Lokyr opens `.itermcolors` files of an alternate rank, so that iTerm2 keeps them where it is installed. A file dropped on a pane gives the program its path, as for every file.
+- **The whole collection**, those that the app cannot hold too, with Sleip in F4.
 
 ### Usage
 
@@ -340,13 +347,43 @@ minimum-contrast = 1.0
 
 - **Light/dark**: with both keys set, the theme follows the system appearance and switches live.
 - **Picker**: the palette has a theme picker with live preview.
-- **Native format**: TOML, with the same fields as the internal model, for anyone who also wants to define UI tokens.
+- **Native format**: TOML, a file a variant, of the internal model's fields, all but the terminal's background, foreground and palette optional, the rest derived:
+
+  ```toml
+  [theme]
+  name = "Nightfall"
+  author = "Ada"
+  license = "MIT"
+  variant = "dark"
+  extends = "Dracula"            # optional: a theme of either format, whose values these override
+
+  [terminal]
+  background = "#1e1e20"
+  foreground = "#e6e6e6"
+  palette = ["#45454b", "#f25d62", "#58c672", "#e3bd4c", "#5aa2f7", "#c983de", "#4cc4cf", "#c4c4ca",
+             "#75757d", "#ff8488", "#7edb94", "#f5d47a", "#86bcff", "#dca3ec", "#7adce4", "#f4f4f6"]
+  cursor = "#e6e6e6"
+  selection = "#34445f"
+  link = "#5aa2f7"
+
+  [search]
+  match = "#ffd60a4d"            # #rrggbbaa, of an opacity
+  current = "#ff7a0080"
+
+  [tabs]                         # the tab bar plugin's colors; its look is the config's
+  bar = "#18181a"
+  active = { background = "#1e1e20", text = "#e6e6e6" }
+  inactive = { text = "#9a9aa0" }
+
+  [interface]
+  "panel.bg" = "#252528"
+  ```
 
 ### Verification
 
 - **Full collection**: import the entire iTerm2-Color-Schemes collection with zero errors.
   - Check RGB values against computed references.
-  - The collection also ships files generated for other terminals, which are useful as a cross-check.
+  - The collection also ships files generated for other terminals, which are useful as a cross-check of its sRGB and P3 schemes; those of Calibrated RGB and of no color space differ from them by design, as their generator takes them as sRGB.
 - **Targeted tests**: for the Light/Dark keys and for each color space.
 - **Licenses**: check each theme's license before bundling it in the app or in a `themes` package.
 
