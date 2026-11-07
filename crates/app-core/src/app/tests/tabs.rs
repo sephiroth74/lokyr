@@ -987,3 +987,38 @@ fn a_tab_of_splits_dropped_on_its_own_window_s_pane_goes_in_whole() {
     assert_eq!(order(&app, window), [ids[1], ids[2]]);
     assert_eq!(app.lit_half(window), None);
 }
+
+#[test]
+fn the_window_s_keys_show_at_its_titlebar_s_right_of_the_frame_s_own_titlebar() {
+    use lokyr_platform_core::Titlebar;
+    let (mut fake, mut app, window) = tabs_of("unified", "top", 1);
+    // Each frame's titlebar and keys: the keys of a titlebar of its title,
+    // none of a bar of tabs there, which shows its own.
+    let check = |fake: &Fake| {
+        let shown = fake.window(window).unwrap();
+        let keys = shown.title_accessory.as_deref();
+        match shown.titlebar {
+            Titlebar::Tabs => assert_eq!(keys, None),
+            _ => assert_eq!(keys, Some("⌥⌘1")),
+        }
+        shown.titlebar
+    };
+    fake.send(&mut app, window, WindowEvent::Frame);
+    assert_eq!(check(&fake), Titlebar::Untitled);
+    // A second tab, its bar in the titlebar, of each frame.
+    app.run(&mut fake, "tabs.new", Args::new());
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while check(&fake) != Titlebar::Tabs {
+        assert!(Instant::now() < deadline, "no bar in the titlebar");
+        fake.deliver_wake(&mut app);
+        fake.send(&mut app, window, WindowEvent::Frame);
+    }
+    // Closed back to one, its title again.
+    app.run(&mut fake, "tabs.close", Args::new());
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while check(&fake) != Titlebar::Untitled {
+        assert!(Instant::now() < deadline, "no title");
+        fake.deliver_wake(&mut app);
+        fake.send(&mut app, window, WindowEvent::Frame);
+    }
+}

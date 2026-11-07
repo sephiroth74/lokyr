@@ -490,6 +490,26 @@ impl<B: Backend> App<B> {
         }
     }
 
+    /// Settles `window`'s titlebar: a tab bar's while one shows in it, the
+    /// system's of no title while a bar's view shows the title in its
+    /// place, the system's otherwise, of a bar below it, at the bottom or
+    /// down a column; a quick window keeps its own.
+    fn settle_titlebar(&mut self, platform: &mut dyn Platform, window: WindowId) {
+        let Some(state) = self.windows.get_mut(&window) else {
+            return;
+        };
+        let titlebar = match chrome::tab_bar_place(&state.chrome, &self.plugins) {
+            _ if !chrome::has_tab_bar(&state.chrome) => Titlebar::Titled,
+            BarPlace::Titlebar | BarPlace::Sidebar { .. } => Titlebar::Tabs,
+            BarPlace::Title => Titlebar::Untitled,
+            _ => Titlebar::Titled,
+        };
+        if titlebar != state.titlebar && self.quick.is_none_or(|(quick, _)| quick != window) {
+            platform.set_titlebar(window, titlebar);
+            state.titlebar = titlebar;
+        }
+    }
+
     /// Draws `window`, of `size`: its program's screen, brought up to date,
     /// in the grid that fits its content within the padding, with the
     /// cursor.
@@ -507,6 +527,8 @@ impl<B: Backend> App<B> {
         // platform's own.
         let views = self.lay_out_panes(window, size);
         self.show_native(platform, window, size);
+        // The titlebar first, whose kind the window's keys follow.
+        self.settle_titlebar(platform, window);
         self.show_window_keys(platform, window);
         // The pointer's moves while Command is held, for the plugins that
         // follow it, as `links` does.
@@ -1025,20 +1047,6 @@ impl<B: Backend> App<B> {
         if areas != state.pointer_areas {
             platform.set_pointer_areas(window, &areas);
             state.pointer_areas = areas;
-        }
-        // The titlebar of a tab bar while one shows in it, the system's of
-        // no title while a bar's view shows the title in its place, the
-        // system's otherwise, of a bar below it, at the bottom or down a
-        // column; a quick window has none.
-        let titlebar = match chrome::tab_bar_place(&state.chrome, &self.plugins) {
-            _ if !chrome::has_tab_bar(&state.chrome) => Titlebar::Titled,
-            BarPlace::Titlebar | BarPlace::Sidebar { .. } => Titlebar::Tabs,
-            BarPlace::Title => Titlebar::Untitled,
-            _ => Titlebar::Titled,
-        };
-        if titlebar != state.titlebar && self.quick.is_none_or(|(quick, _)| quick != window) {
-            platform.set_titlebar(window, titlebar);
-            state.titlebar = titlebar;
         }
         // The pointer's moves over the slots' views come to the app, for
         // their hover and their tooltips, and wake it over them alone; the
