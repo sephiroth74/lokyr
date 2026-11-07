@@ -3142,6 +3142,8 @@ struct Searched {
     last: Option<u64>,
     /// What `finder.show` shows: every match or not, and the current one.
     show: (bool, Option<host::SearchMatch>),
+    /// The current match as `finder.current` read it last.
+    current: Option<host::Current>,
 }
 
 /// A plugin of commands that search the focused pane for `needle`, for
@@ -3151,7 +3153,7 @@ fn finder(searched: &Rc<RefCell<Searched>>) -> Box<dyn Plugin> {
     let (seen, told) = (Rc::clone(searched), Rc::clone(searched));
     Box::new(Scripted {
         activate: Box::new(|cx| {
-            for name in ["needle", "x", "none", "end", "read", "show"] {
+            for name in ["needle", "x", "none", "end", "read", "show", "current"] {
                 cx.register_command(command(&format!("finder.{name}")))?;
             }
             Ok(())
@@ -3172,6 +3174,12 @@ fn finder(searched: &Rc<RefCell<Searched>>) -> Box<dyn Plugin> {
                         (seen.last.unwrap(), seen.show)
                     };
                     return cx.show_matches(last, all, current);
+                }
+                "finder.current" => {
+                    let last = seen.borrow().last.unwrap();
+                    let current = cx.current_match(last)?;
+                    seen.borrow_mut().current = Some(current);
+                    return Ok(());
                 }
                 _ => {
                     let last = seen.borrow().last.unwrap();
@@ -3486,6 +3494,74 @@ fn a_search_s_matches_show_over_the_view_s_cells_and_the_view_goes_to_the_curren
     assert!(highlights(&app).1.is_empty());
     // A search that is not there is refused.
     let refused = plugins.run("finder.show", Args::new(), &mut app.context());
+    assert_eq!(refused.unwrap_err().code, Code::NotFound);
+}
+
+#[test]
+fn the_current_match_is_read_where_a_resize_moved_it_and_its_text_still_is() {
+    let mut app = App::default();
+    // A match on every tenth row, of 300.
+    let window = window(
+        &mut app,
+        "seq 1 300 | sed 's/7$/7 needle/'; echo ready; sleep 30",
+    );
+    let pane = app.workspace.active_pane(window).unwrap();
+    row_once(&app, pane, 300, "ready");
+    let mut plugins = Plugins::new();
+    let searched = Rc::new(RefCell::new(Searched::default()));
+    plugins.add("finder", finder(&searched)).unwrap();
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    plugins
+        .run("finder.needle", Args::new(), &mut app.context())
+        .unwrap();
+    let id = searched.borrow().last.unwrap();
+    let (parts, count) = searched_until_done(&mut app, &mut plugins, &searched, id);
+    assert_eq!(count, 30);
+    let mut told: Vec<host::SearchMatch> = parts.into_iter().flatten().collect();
+    told.sort_by_key(|found| (found.first.1, found.first.0));
+    // The match of `7 needle` on the row numbered 6, the first, current.
+    searched.borrow_mut().show = (true, Some(told[0]));
+    plugins
+        .run("finder.show", Args::new(), &mut app.context())
+        .unwrap();
+    let current = |app: &mut App, plugins: &mut Plugins| {
+        plugins
+            .run("finder.current", Args::new(), &mut app.context())
+            .unwrap();
+        searched.borrow().current.unwrap()
+    };
+    assert_eq!(
+        current(&mut app, &mut plugins),
+        host::Current {
+            current: Some((0, told[0])),
+            kept: 30
+        }
+    );
+    // A resize that renumbers the rows: the current match read where its
+    // text is now, its place the same.
+    let grid = Grid {
+        columns: 60,
+        rows: 20,
+        cell_width: 8,
+        cell_height: 16,
+    };
+    let found = app.workspace.pane_mut(pane).unwrap();
+    found.resize(grid, Instant::now());
+    found.end_live_resize(Instant::now() + Duration::from_secs(1));
+    let now = current(&mut app, &mut plugins);
+    let (place, moved) = now.current.unwrap();
+    assert_eq!((place, now.kept), (0, 30));
+    assert_ne!(moved, told[0]);
+    let text = held_row_text(&app, pane, moved.first.1).unwrap();
+    let chars: Vec<char> = text.chars().collect();
+    let first = usize::from(moved.first.0);
+    let word: String = chars[first..first + 6].iter().collect();
+    assert_eq!(word, "needle");
+    plugins
+        .run("finder.end", Args::new(), &mut app.context())
+        .unwrap();
+    // Of a search that is not there, refused.
+    let refused = plugins.run("finder.current", Args::new(), &mut app.context());
     assert_eq!(refused.unwrap_err().code, Code::NotFound);
 }
 

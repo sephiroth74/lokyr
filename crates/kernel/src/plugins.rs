@@ -3056,6 +3056,23 @@ impl Host<'_, '_> {
                     .ok_or_else(not_found)?;
                 Response::Matches(kept.matches(&terminal, first, count.min(host::MOST_LINES)))
             }
+            Asked::CurrentMatch(search) => {
+                let not_found =
+                    || Error::new(Code::NotFound, format!("there is no search {search}"));
+                let kept = self
+                    .state
+                    .searches
+                    .iter()
+                    .find(|kept| kept.id == search)
+                    .ok_or_else(not_found)?;
+                let terminal = self
+                    .context
+                    .workspace
+                    .pane(PaneId::of(kept.pane.0))
+                    .and_then(Pane::terminal)
+                    .ok_or_else(not_found)?;
+                Response::Current(kept.current(&terminal))
+            }
             Asked::Styles { pane, row } => {
                 Response::Styles(self.pane(pane)?.row_styles(row).map(|runs| {
                     runs.iter()

@@ -47,9 +47,9 @@
 
 use crate::command::{Args, Code, Command, Error};
 use crate::host::{
-    BarPlace, Binding, Color, DecorationLook, Direction, Edge, Found, Host, Layout, LineText,
-    PaneId, ScreenPoint, Scroll, SearchMatch, SearchQuery, Side, StyleRun, TabId, TabInfo,
-    WindowId, WindowInfo,
+    BarPlace, Binding, Color, Current, DecorationLook, Direction, Edge, Found, Host, Layout,
+    LineText, PaneId, ScreenPoint, Scroll, SearchMatch, SearchQuery, Side, StyleRun, TabId,
+    TabInfo, WindowId, WindowInfo,
 };
 use crate::message::{Call, Data, Event, Request, Response};
 use crate::ui::{PanelId, PanelOptions, UiEvent, ViewId};
@@ -419,6 +419,16 @@ impl<'a> Cx<'a> {
             count,
         }) {
             Response::Matches(found) => Ok(found),
+            other => Err(failed(other)),
+        }
+    }
+
+    /// The current match of the plugin's search `search`, as its cells are
+    /// now, and its place among the search's matches now; and how many of
+    /// them the host keeps.
+    pub fn current_match(&mut self, search: u64) -> Result<Current, Error> {
+        match self.request(Request::CurrentMatch(search)) {
+            Response::Current(current) => Ok(current),
             other => Err(failed(other)),
         }
     }

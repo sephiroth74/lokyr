@@ -917,6 +917,10 @@ fn state_and_rows(world: &World) -> Scenario {
                         },
                         failed(Code::NotFound, "there is no search 999999"),
                     ),
+                    (
+                        Request::CurrentMatch(NO_SEARCH),
+                        failed(Code::NotFound, "there is no search 999999"),
+                    ),
                     (Request::EndSearch(NO_SEARCH), Response::Done),
                     (
                         Request::SelectCells {

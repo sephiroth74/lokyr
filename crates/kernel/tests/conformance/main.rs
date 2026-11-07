@@ -755,11 +755,12 @@ fn kind(request: &Request) -> usize {
         Request::SelectCells { .. } => 73,
         Request::FocusNode { .. } => 74,
         Request::ShowMatches { .. } => 75,
+        Request::CurrentMatch(_) => 76,
     }
 }
 
 /// How many kinds of requests the plugin API has.
-const KINDS: usize = 76;
+const KINDS: usize = 77;
 
 #[test]
 fn the_scenarios_hold_every_request_of_the_plugin_api() {

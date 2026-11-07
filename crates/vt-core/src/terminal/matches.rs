@@ -33,6 +33,10 @@ pub type MatchCells = ((u16, i64), (u16, i64));
 /// A match's first and last cells' pins.
 type Span = (CellPin, CellPin);
 
+/// The first place in reading order of a match that keeps its text, after
+/// those whose text left.
+const KEPT: (i64, u16) = (i64::MIN, 1);
+
 /// The matches of a search that the terminal keeps.
 #[derive(Debug)]
 pub(super) struct Matches {
@@ -91,13 +95,60 @@ impl Terminal {
         let Some(kept) = self.matches.iter().find(|kept| kept.id == id) else {
             return Vec::new();
         };
+        // Those whose text left come first, as the oldest rows leave first.
+        let gone = self.spans_before(kept, KEPT);
         kept.parts
             .values()
             .flatten()
+            .skip(gone)
             .filter_map(|span| self.span_cells(span))
             .skip(first)
             .take(count)
             .collect()
+    }
+
+    /// The current match of the search `id`, where its cells are now, and
+    /// its place among the search's matches now, from 0, those whose text
+    /// left not counted; `None` of none, or of one whose text left. And how
+    /// many of the search's matches keep their text.
+    pub fn current_match(&self, id: u64) -> (Option<(usize, MatchCells)>, usize) {
+        let Some(kept) = self.matches.iter().find(|kept| kept.id == id) else {
+            return (None, 0);
+        };
+        let gone = self.spans_before(kept, KEPT);
+        let total: usize = kept.parts.values().map(Vec::len).sum();
+        let current = kept
+            .current
+            .as_ref()
+            .and_then(|span| self.span_cells(span))
+            .map(|cells| {
+                let before = self.spans_before(kept, (cells.0.1, cells.0.0));
+                (before.saturating_sub(gone), cells)
+            });
+        (current, total - gone)
+    }
+
+    /// Where a match starts in reading order, its first cell's row then its
+    /// column, of one whose text left before every other's.
+    fn order(&self, span: &Span) -> (i64, u16) {
+        self.pinned_cell(&span.0)
+            .map_or((i64::MIN, 0), |(column, row)| (row, column))
+    }
+
+    /// How many of `kept`'s matches start before `at` in reading order, by
+    /// a binary search of its parts, then of the part's matches.
+    fn spans_before(&self, kept: &Matches, at: (i64, u16)) -> usize {
+        let parts: Vec<&Vec<Span>> = kept
+            .parts
+            .values()
+            .filter(|part| !part.is_empty())
+            .collect();
+        let whole =
+            parts.partition_point(|part| part.last().is_some_and(|span| self.order(span) < at));
+        let within = parts
+            .get(whole)
+            .map_or(0, |part| part.partition_point(|span| self.order(span) < at));
+        parts[..whole].iter().map(|part| part.len()).sum::<usize>() + within
     }
 
     /// Shows the matches of the search `id`, or hides them, as `all` says,
@@ -364,5 +415,64 @@ mod tests {
         assert_eq!(shown(&mut terminal), []);
         feed(&mut terminal, "\x1b[?1049l");
         assert_eq!(shown(&mut terminal), [(0, 8, 9, false), (1, 0, 1, false)]);
+    }
+
+    #[test]
+    fn the_current_match_is_told_where_its_text_is_now_and_its_place() {
+        let mut terminal = Terminal::new(20, 3, Options::default());
+        feed(&mut terminal, "ab ab\r\nxx ab\r\nnone");
+        let first = terminal.row_number(0);
+        let found = [
+            ((0, first), (1, first)),
+            ((3, first), (4, first)),
+            ((3, first + 1), (4, first + 1)),
+        ];
+        add(&mut terminal, 1, first, &found);
+        assert_eq!(terminal.current_match(1), (None, 3));
+        terminal.show_matches(1, true, Some(found[2]));
+        assert_eq!(terminal.current_match(1), (Some((2, found[2])), 3));
+        // A resize that wraps every row moves the matches' text, and the
+        // current one is told where it is now, its place the same.
+        terminal.resize(3, 3);
+        let (current, kept) = terminal.current_match(1);
+        let (place, (start, end)) = current.unwrap();
+        assert_eq!((place, kept), (2, 3));
+        assert_eq!(terminal.matches_of(1, 2, 1), [(start, end)]);
+        assert_ne!((start, end), found[2]);
+        assert_eq!(terminal.matches_of(1, 0, 3).len(), 3);
+        // Of no search, nothing.
+        assert_eq!(terminal.current_match(2), (None, 0));
+    }
+
+    #[test]
+    fn a_current_match_whose_text_left_is_none_and_the_others_places_go_down() {
+        let options = Options {
+            scrollback: Scrollback {
+                limit: 64 << 20,
+                ..Scrollback::default()
+            },
+            ..Options::default()
+        };
+        let mut terminal = Terminal::new(500, 4, options);
+        let text: Vec<String> = (0..2000).map(|n| format!("m{n}")).collect();
+        feed(&mut terminal, &text.join("\r\n"));
+        let first = terminal.row_number(0);
+        let cells: Vec<MatchCells> = (0..2000)
+            .map(|n| ((0, first + n), (1, first + n)))
+            .collect();
+        add(&mut terminal, 1, first, &cells);
+        // The current one among the oldest, then the last.
+        terminal.show_matches(1, true, Some(cells[1]));
+        assert_eq!(terminal.current_match(1), (Some((1, cells[1])), 2000));
+        terminal.set_scrollback_limit(0);
+        let kept = terminal.matches_of(1, 0, usize::MAX);
+        assert!((4..2000).contains(&kept.len()), "{} kept", kept.len());
+        assert_eq!(terminal.current_match(1), (None, kept.len()));
+        terminal.show_matches(1, true, Some(cells[1999]));
+        let (current, count) = terminal.current_match(1);
+        assert_eq!(current, Some((kept.len() - 1, cells[1999])));
+        assert_eq!(count, kept.len());
+        // The reads skip those whose text left alike.
+        assert_eq!(terminal.matches_of(1, kept.len() - 1, 5), [cells[1999]]);
     }
 }

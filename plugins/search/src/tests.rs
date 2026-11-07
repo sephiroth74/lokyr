@@ -226,6 +226,61 @@ fn return_and_the_commands_step_up_and_down_through_the_matches_around_their_end
 }
 
 #[test]
+fn a_step_and_escape_go_from_where_the_current_match_is_now() {
+    let (mut host, mut plugin) = host(&ROWS, Data::Nil);
+    run(&mut host, &mut plugin, OPEN);
+    typed(&mut host, &mut plugin, "needle");
+    let search = plugin.find.as_ref().unwrap().search.unwrap();
+    // A resize reflows the rows: every match ten rows down, a column on.
+    let moved = |found: SearchMatch| {
+        Some(SearchMatch {
+            first: (found.first.0 + 1, found.first.1 + 10),
+            last: (found.last.0 + 1, found.last.1 + 10),
+        })
+    };
+    host.move_matches(search, moved);
+    assert_eq!(
+        current(&run(&mut host, &mut plugin, NEXT)),
+        [((1, 12), (6, 12))]
+    );
+    assert_eq!(count(&mut host, &mut plugin), "2 of 3");
+    host.move_matches(search, moved);
+    host.take_done();
+    host.close_panel(&PanelId::from(BAR));
+    host.deliver(&mut plugin).unwrap();
+    assert_eq!(selected(&host.take_done()), [((2, 22), (7, 22))]);
+}
+
+#[test]
+fn a_current_match_that_left_the_scrollback_is_skipped_and_selects_nothing() {
+    let (mut host, mut plugin) = host(&ROWS, Data::Nil);
+    run(&mut host, &mut plugin, OPEN);
+    typed(&mut host, &mut plugin, "needle");
+    let search = plugin.find.as_ref().unwrap().search.unwrap();
+    // Up to the first, which the scrollback's limit then takes.
+    returned(&mut host, &mut plugin, false);
+    returned(&mut host, &mut plugin, false);
+    let gone = |found: SearchMatch| (found.first.1 > 0).then_some(found);
+    host.move_matches(search, gone);
+    // Escape selects nothing.
+    host.take_done();
+    host.close_panel(&PanelId::from(BAR));
+    host.deliver(&mut plugin).unwrap();
+    assert!(selected(&host.take_done()).is_empty());
+    // Of another search, a step from a current match gone goes to the
+    // last of those kept.
+    run(&mut host, &mut plugin, OPEN);
+    let search = plugin.find.as_ref().unwrap().search.unwrap();
+    returned(&mut host, &mut plugin, false);
+    returned(&mut host, &mut plugin, false);
+    host.move_matches(search, gone);
+    assert_eq!(
+        current(&run(&mut host, &mut plugin, NEXT)),
+        [((4, 3), (9, 3))]
+    );
+}
+
+#[test]
 fn without_wrapping_around_a_step_past_an_end_stays_there() {
     let wrap = config(&[("wrap-around", Data::Boolean(false))]);
     let (mut host, mut plugin) = host(&ROWS, wrap);

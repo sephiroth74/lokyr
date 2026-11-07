@@ -298,6 +298,18 @@ pub struct Found {
     pub done: bool,
 }
 
+/// The current match of a search, as a read of it gives it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Current {
+    /// The current match, as its cells are now, and its place among the
+    /// search's matches now, from 0, those that left the scrollback not
+    /// counted; `None` of none, or of one that left the scrollback.
+    pub current: Option<(usize, SearchMatch)>,
+    /// How many of the search's matches the host keeps now, those that
+    /// left the scrollback not counted.
+    pub kept: usize,
+}
+
 /// A row's text, as a read of rows gives it.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Line {

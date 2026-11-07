@@ -208,6 +208,18 @@ impl Search {
         terminal.show_matches(self.id, all, cells)
     }
 
+    /// Its current match, as its cells are now in `terminal`, its pane's,
+    /// locked, and its place among its matches now; and how many of them
+    /// keep their text.
+    pub(super) fn current(&self, terminal: &Terminal) -> host::Current {
+        let (current, kept) = terminal.current_match(self.id);
+        host::Current {
+            current: current
+                .map(|(place, (first, last))| (place, host::SearchMatch { first, last })),
+            kept,
+        }
+    }
+
     /// Its matches, in the rows' order, from the one at `first`, `count` at
     /// most, as their cells are now in `terminal`, its pane's, locked,
     /// those whose cells left it gone; how many it found; and whether it

@@ -604,6 +604,9 @@ type Cx = {
     -- A search's matches in the rows' order, from the one at `first`, 100 000 at most, as their cells are now, those that
     -- left the scrollback gone; how many it found; and whether it went to its end.
     search_matches: (id: number, first: number, count: number) -> ({ matches: { SearchMatch }, count: number, done: boolean }?, Error?),
+    -- A search's current match as its cells are now, which a resize moves, and its place among the matches now, which
+    -- those that leave the scrollback lower; nil of none, or of one that left; and how many matches the host keeps.
+    current_match: (id: number) -> ({ current: { place: number, match: SearchMatch }?, kept: number }?, Error?),
     -- The styles of a row, by its number, as runs of cells of one style.
     styles: (pane: PaneId, row: number) -> ({ StyleRun }?, Error?),
     -- Decorates the cells from one to another, in reading order, each { column, row's number }: returns the

@@ -240,6 +240,17 @@ enum Opened {
     Pane(PaneId),
 }
 
+/// A search of the plugin's that the fake host keeps.
+#[derive(Clone, Debug)]
+struct FakeSearch {
+    /// Its pane.
+    pane: PaneId,
+    /// Its matches, in the rows' order.
+    matches: Vec<host::SearchMatch>,
+    /// Its current match, as the plugin showed it.
+    current: Option<host::SearchMatch>,
+}
+
 /// The host of a plugin's unit tests.
 #[derive(Debug)]
 pub struct FakeHost {
@@ -303,8 +314,9 @@ pub struct FakeHost {
     /// opening asks for its own.
     renders: Vec<ViewId>,
     owed: Vec<Event>,
-    /// The plugin's searches, by their ids: each's pane and its matches.
-    searches: BTreeMap<u64, (PaneId, Vec<host::SearchMatch>)>,
+    /// The plugin's searches, by their ids: each's pane, its matches, and
+    /// its current match, as the plugin showed it.
+    searches: BTreeMap<u64, FakeSearch>,
     last_id: u64,
 }
 
@@ -577,6 +589,21 @@ impl FakeHost {
     /// order, as their ends take them away.
     pub fn searches(&self) -> Vec<u64> {
         self.searches.keys().copied().collect()
+    }
+
+    /// Moves the matches of the search `search`, its current one too, as
+    /// `to` gives each anew, as a resize's reflow moves their cells, and
+    /// drops those that it gives none of, as the scrollback's limit takes
+    /// their rows.
+    pub fn move_matches(
+        &mut self,
+        search: u64,
+        to: impl Fn(host::SearchMatch) -> Option<host::SearchMatch>,
+    ) {
+        if let Some(kept) = self.searches.get_mut(&search) {
+            kept.matches = kept.matches.iter().filter_map(|&found| to(found)).collect();
+            kept.current = kept.current.and_then(&to);
+        }
     }
 
     /// The decorations that it laid and did not take away, in their order.
@@ -1813,7 +1840,7 @@ impl Calling<'_> {
                 // The plugin's search of the pane before ends.
                 self.host
                     .searches
-                    .retain(|_, (searched, _)| *searched != pane);
+                    .retain(|_, searched| searched.pane != pane);
                 self.host.owed.push(Event::Searched {
                     id,
                     pane,
@@ -1821,7 +1848,14 @@ impl Calling<'_> {
                     count: matches.len(),
                     done: true,
                 });
-                self.host.searches.insert(id, (pane, matches));
+                self.host.searches.insert(
+                    id,
+                    FakeSearch {
+                        pane,
+                        matches,
+                        current: None,
+                    },
+                );
                 Response::Searching(id)
             }
             Request::EndSearch(search) => {
@@ -1833,7 +1867,7 @@ impl Calling<'_> {
                 first,
                 count,
             } => {
-                let Some((_, matches)) = host.searches.get(search) else {
+                let Some(FakeSearch { matches, .. }) = host.searches.get(search) else {
                     return Err(Error::new(
                         Code::NotFound,
                         format!("there is no search {search}"),
@@ -1848,6 +1882,22 @@ impl Calling<'_> {
                         .collect(),
                     count: matches.len(),
                     done: true,
+                })
+            }
+            Request::CurrentMatch(search) => {
+                let Some(kept) = host.searches.get(search) else {
+                    return Err(Error::new(
+                        Code::NotFound,
+                        format!("there is no search {search}"),
+                    ));
+                };
+                let current = kept.current.and_then(|current| {
+                    let place = kept.matches.iter().position(|found| *found == current)?;
+                    Some((place, current))
+                });
+                Response::Current(host::Current {
+                    current,
+                    kept: kept.matches.len(),
                 })
             }
             Request::ReadLines { pane, first, count } => {
@@ -1983,13 +2033,16 @@ impl Calling<'_> {
                 Response::Done
             }
             Request::SetFocusFollowsMouse(_) => Response::Done,
-            Request::ShowMatches { search, .. } => {
-                if !self.host.searches.contains_key(search) {
+            Request::ShowMatches {
+                search, current, ..
+            } => {
+                let Some(kept) = self.host.searches.get_mut(search) else {
                     return Err(Error::new(
                         Code::NotFound,
                         format!("there is no search {search}"),
                     ));
-                }
+                };
+                kept.current = *current;
                 Response::Done
             }
             Request::SetWindowTabBarPlace { window, place } => {

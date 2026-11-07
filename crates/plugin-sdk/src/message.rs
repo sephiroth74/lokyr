@@ -26,9 +26,9 @@ use serde::{Deserialize, Serialize};
 use crate::command::{Args, Capability, Command, Error};
 use crate::event::WorkspaceEvent;
 use crate::host::{
-    BarPlace, Binding, Color, DecorationLook, Direction, Edge, Found, Layout, Line, LineText,
-    PaneId, ScreenPoint, Scroll, SearchMatch, SearchQuery, Side, StyleRun, TabId, TabInfo,
-    WindowId, WindowInfo,
+    BarPlace, Binding, Color, Current, DecorationLook, Direction, Edge, Found, Layout, Line,
+    LineText, PaneId, ScreenPoint, Scroll, SearchMatch, SearchQuery, Side, StyleRun, TabId,
+    TabInfo, WindowId, WindowInfo,
 };
 use crate::ui::{PanelId, PanelOptions, ViewId};
 use crate::view::Key;
@@ -180,6 +180,11 @@ pub enum Request {
         /// How many, [`MOST_LINES`](crate::host::MOST_LINES) at most.
         count: usize,
     },
+    /// The current match of one of the plugin's searches, as its cells
+    /// are now, which a resize's reflow moves, and its place among the
+    /// search's matches now, which the matches that leave the scrollback
+    /// lower; and how many of them the host keeps.
+    CurrentMatch(u64),
     /// The styles of a pane's row, by its number, as runs of cells.
     Styles {
         /// The pane.
@@ -588,6 +593,7 @@ impl Request {
             | Self::ReadLines { .. }
             | Self::Search { .. }
             | Self::SearchMatches { .. }
+            | Self::CurrentMatch(_)
             | Self::Styles { .. } => Some(Capability::TerminalRead),
             Self::WorkingDirectory(_) => Some(Capability::ProcessRead),
             Self::Open(_) | Self::Opens(_) => Some(Capability::Open),
@@ -672,6 +678,7 @@ impl Request {
             | Self::Search { .. }
             | Self::EndSearch(_)
             | Self::SearchMatches { .. }
+            | Self::CurrentMatch(_)
             | Self::Styles { .. }
             | Self::Opens(_)
             | Self::FontSize
@@ -764,6 +771,8 @@ pub enum Response {
     Searching(u64),
     /// Matches of a search, as a read of them gives them.
     Matches(Found),
+    /// A search's current match, as a read of it gives it.
+    Current(Current),
     /// A question's id, whose answer comes as an event.
     Asking(u64),
     /// A tab bar's place.

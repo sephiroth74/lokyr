@@ -279,6 +279,9 @@ struct Find {
     /// The current match, highlighted apart, which the bar's closing
     /// selects, if one is.
     current: Option<SearchMatch>,
+    /// Its place among the matches as the host told it at the last step,
+    /// until a part comes.
+    place: Option<usize>,
     /// Whether the host refused the search, as of a regex that does not
     /// compile.
     invalid: bool,
@@ -304,6 +307,7 @@ impl Find {
             count: 0,
             done: false,
             current: None,
+            place: None,
             invalid: false,
             filling: false,
             shown: String::new(),
@@ -335,11 +339,15 @@ impl Find {
             .known
             .partition_point(|known| place(known) < place(first));
         self.known.splice(at..at, matches.iter().copied());
+        self.place = None;
     }
 
-    /// The place among the matches told of the current one, if it is one
-    /// of them.
+    /// The place among the matches of the current one, if it is one of
+    /// them: as the host told it at the last step, or among those told.
     fn current_index(&self) -> Option<usize> {
+        if self.place.is_some() {
+            return self.place;
+        }
         let current = self.current?;
         self.known
             .binary_search_by(|known| place(known).cmp(&place(&current)))
@@ -770,11 +778,13 @@ impl Plugin for Search {
                 }
                 Event::ConfigChanged => {
                     self.settings = Settings::of(&cx.config()?);
-                    // Its matches shown as it now says.
+                    // Its matches shown as it now says, its current one
+                    // where it is now.
                     if let Some(find) = &self.find
                         && let (Some(search), true) = (find.search, find.told)
                     {
-                        cx.show_matches(search, self.settings.highlight_all, find.current)?;
+                        let now = cx.current_match(search)?.current.map(|(_, found)| found);
+                        cx.show_matches(search, self.settings.highlight_all, now)?;
                     }
                 }
                 _ => {}
@@ -885,6 +895,7 @@ impl Search {
         find.count = 0;
         find.done = false;
         find.current = None;
+        find.place = None;
         find.invalid = false;
         if find.text.is_empty() {
             if let Some(before) = find.search.take() {
@@ -943,9 +954,11 @@ impl Search {
     }
 
     /// Steps to the next match, up, or to the previous one, down, of those
-    /// told, which it highlights as the current one, the view scrolling to
-    /// it; past the last, as the config's `wrap-around` has it. A closed
-    /// bar opens instead.
+    /// that the host keeps, from the current one where it is now, which a
+    /// resize moves and the scrollback's limit takes, and highlights it as
+    /// the current one, the view scrolling to it; past the last, as the
+    /// config's `wrap-around` has it; from the last of all, of none. A
+    /// closed bar opens instead.
     fn step(&mut self, cx: &mut Cx<'_>, toward: Step) -> Result<(), Error> {
         let (wrap, all) = (self.settings.wrap_around, self.settings.highlight_all);
         let Some(find) = &mut self.find else {
@@ -954,10 +967,11 @@ impl Search {
         let Some(search) = find.search else {
             return Ok(());
         };
-        let Some(last) = find.known.len().checked_sub(1) else {
+        let now = cx.current_match(search)?;
+        let Some(last) = now.kept.checked_sub(1) else {
             return Ok(());
         };
-        let at = match (find.current_index(), toward) {
+        let at = match (now.current.map(|(at, _)| at), toward) {
             (None, _) => last,
             (Some(0), Step::Up) if wrap => last,
             (Some(0), Step::Up) => 0,
@@ -965,21 +979,26 @@ impl Search {
             (Some(at), Step::Down) if at == last && wrap => 0,
             (Some(at), Step::Down) => (at + 1).min(last),
         };
-        let found = find.known[at];
+        let Some(&found) = cx.search_matches(search, at, 1)?.matches.first() else {
+            return Ok(());
+        };
         find.current = Some(found);
+        find.place = Some(at);
         cx.show_matches(search, all, Some(found))?;
         cx.request_render(bar())
     }
 
     /// The bar closed: its search ends, its highlights going, its current
-    /// match selected, which a copy takes, and its text goes to the recent
-    /// searches.
+    /// match selected where it is now, which a copy takes, but of one that
+    /// left the scrollback, and its text goes to the recent searches.
     fn closed(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
         let Some(find) = self.find.take() else {
             return Ok(());
         };
-        if let Some(current) = find.current {
-            cx.select_cells(find.pane, current.first, current.last)?;
+        if let (Some(_), Some(search)) = (find.current, find.search)
+            && let Some((_, now)) = cx.current_match(search)?.current
+        {
+            cx.select_cells(find.pane, now.first, now.last)?;
         }
         if let Some(search) = find.search {
             cx.end_search(search)?;
