@@ -14,6 +14,7 @@
   <a href="#why-lokyr">Why Lokyr</a> ·
   <a href="#status">Status</a> ·
   <a href="#performance">Performance</a> ·
+  <a href="#bundled-plugins">Plugins</a> ·
   <a href="#building">Building</a> ·
   <a href="docs/README.md">Documentation</a> ·
   <a href="CONTRIBUTING.md">Contributing</a> ·
@@ -28,7 +29,7 @@
 </p>
 
 > [!IMPORTANT]
-> **Lokyr is not ready for daily use yet.** Its terminal core is done, and its macOS app, a window of one pane, is being finished; tabs, splits and plugins come next. See the [status](#status).
+> **Lokyr is not ready for daily use yet.** Its terminal core is done, and its macOS app has tabs, splits and search; themes, the command palette and third-party plugins come next. See the [status](#status).
 
 <p align="center">
   <img src="docs/images/lokyr-code.png" alt="A Lokyr window of 100 by 30 cells, showing Rust source with syntax highlighting, by bat" width="760">
@@ -39,7 +40,7 @@
 - **A small core, and plugins for the rest.** The tab bar, splits, search, themes and the command palette are plugins, on the same API that third parties get. The core keeps the terminal itself: the screen, the input, the rendering. Leave a plugin out, and Lokyr is a terminal without it.
 - **Plugins you can trust.** A third-party plugin is Luau source, in a VM of its own, with a memory limit and a deadline. It reaches the screen, the clipboard, files or the network only through the capabilities that it declares, which Sleip shows at install and Lokyr asks for on first use. The app itself contains no networking code.
 - **Fast where you feel it.** Its own VT core, with 8-byte cells and a paged grid; a Metal renderer, one surface per window; a frame of steady output in about a quarter of a millisecond at 4K. It is measured against six other terminals, each change against the builds before it, and the numbers are [in the repository](docs/bench/).
-- **Native on macOS.** An AppKit window, CoreText shaping and font fallback, input methods, Secure Keyboard Entry, a quick terminal on a global key, and English and Italian.
+- **Native on macOS.** An AppKit window, CoreText shaping and font fallback, input methods, Secure Keyboard Entry, a quick terminal on a global key.
 - **Ready for agents.** Lokyr will be an [MCP server](docs/adr/0017-mcp-and-agents.md): an agent works in its own pane and the panes it opens, and the tabs show what each agent is doing.
 
 ## Status
@@ -51,7 +52,7 @@ Lokyr is built in phases, each with exit criteria that are measured, not assumed
 | F0 | Foundations: the workspace, CI, the measuring tools, the plugin runtime chosen | ✅ |
 | F1 | The headless terminal core, checked against xterm, `alacritty_terminal` and fuzzers | ✅ |
 | F2 | The macOS app, a window of one pane | 🚧 |
-| F3 | The macOS MVP: tabs, splits, search, themes, the command palette | |
+| F3 | The macOS MVP: tabs, splits, search, themes, the command palette | 🚧 |
 | F3b | MCP and agents | |
 | F4 | Third-party plugins in Luau, Sleip and its registry | |
 | F5 | Shell integration, iTerm2's power features, images | |
@@ -78,7 +79,10 @@ Lokyr against Ghostty, Alacritty, kitty, WezTerm, iTerm2 and Terminal.app, under
   <img src="docs/images/lokyr-htop.png" alt="htop in a Lokyr window of 100 by 30 cells, with the tree of the window's own processes: lokyr, login, bash and htop" width="760">
 </p>
 
-- ✅ A window of one pane, drawn with Metal, at the display's refresh rate, its frames only when something changed.
+- ✅ Windows drawn with Metal, at the display's refresh rate, their frames only when something changed.
+- ✅ Tabs, in a bar at the top, at the bottom or down a side, in three looks, dragged between windows and onto panes, a program's progress round its tab.
+- ✅ Split panes, their dividers dragged, the panes without the keyboard faded.
+- ✅ A find bar that highlights every match, through 100 000 lines in about 25 ms.
 - ✅ Fonts through CoreText: fallback, ligatures, bold and italic faces or their synthesis, emoji, box drawing and powerline symbols drawn to the cell.
 - ✅ xterm's sequences, the kitty keyboard protocol, synchronized output, OSC 8 links, OSC 52 with consent, Unicode 18's grapheme clusters and widths.
 - ✅ Input methods, Secure Keyboard Entry, Option as Meta, chords and leaders in the keys.
@@ -86,6 +90,22 @@ Lokyr against Ghostty, Alacritty, kitty, WezTerm, iTerm2 and Terminal.app, under
 - ✅ A quick terminal on a global key, from any edge of the screen.
 - ✅ Notifications, the bell, smooth cursor blinking that the window server draws.
 - ✅ A config in TOML, applied as it is saved, its errors shown in the window.
+- ✅ English and Italian, as the system's language is, or as the config says.
+
+## Bundled plugins
+
+Every feature beyond the terminal itself is a plugin, and these come with the app, built into it, on the same API that third-party plugins will get. Each can be turned off with `enabled = false` in its section of the config, and has its own keys there.
+
+| Plugin | What it does |
+|---|---|
+| [`keymap-macos`](docs/plugins/keymap-macos.md) | The default shortcuts of macOS's apps: ⌘N, ⌘C, ⌘V, ⌘T, ⌘F and the rest |
+| [`core-actions`](docs/plugins/core-actions.md) | Copy and paste, select all, clear, scrolling, and the text's size |
+| [`links`](docs/plugins/links.md) | ⌘-click opens a link, a URL or a path, as a compiler's `src/main.rs:42` |
+| [`tabs`](docs/plugins/tabs.md) | The tab bar: new, close, select, move, rename, color, and out to a window of its own |
+| [`splits`](docs/plugins/splits.md) | Split panes: split, focus by direction, resize, zoom, equalize, swap |
+| [`search`](docs/plugins/search.md) | The find bar: a pane's search as you type, its matches highlighted |
+
+Each page tells the plugin's commands, their keys, its config and what turning it off takes away; [the plugins' index](docs/plugins/README.md) tells how they fit together.
 
 ## Building
 
@@ -146,6 +166,10 @@ If you like Lokyr, or what it aims for, a coffee helps to keep it going:
 ## Contributing
 
 Contributions are welcome: [CONTRIBUTING.md](CONTRIBUTING.md) tells how to set up the project and what a pull request needs. Everyone who takes part follows the [code of conduct](CODE_OF_CONDUCT.md).
+
+### Translating
+
+Lokyr speaks English and Italian, and would like to speak yours. Its texts are in [Project Fluent](https://projectfluent.org) catalogs, one set for each language, which need no Rust to translate: [TRANSLATING.md](TRANSLATING.md) tells what there is to translate, how to improve a translation, and how to add a language.
 
 ## License
 

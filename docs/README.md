@@ -26,6 +26,8 @@ Start with [ARCHITECTURE.md](ARCHITECTURE.md), then read the [ROADMAP.md](ROADMA
 | [SECURITY.md](SECURITY.md) | Threat model, security defaults, IPC, packages, robustness, macOS environment |
 | [PERFORMANCE.md](PERFORMANCE.md) | Budgets, how to measure them, benchmarks and CI |
 | [CONFIGURATION.md](CONFIGURATION.md) | The user's guide to the config file: where it is, how it reloads, and every key, with its values and its default |
+| [plugins/](plugins/README.md) | The bundled plugins, a page each: their commands, keys, config and what turning one off takes away |
+| [TRANSLATING.md](../TRANSLATING.md) | How to translate Lokyr: the catalogs, their format, and the steps of a new language |
 | [ROADMAP.md](ROADMAP.md) | Phases, exit criteria, first code files, open questions |
 | [LINUX-VM.md](LINUX-VM.md) | A proposal, not implemented: CI's Linux job in a VM on the Mac, of Apple's Virtualization framework |
 | [tasks/](tasks/README.md) | Each phase broken into tasks of one day or less, one file per phase |

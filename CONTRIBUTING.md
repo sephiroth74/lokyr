@@ -90,6 +90,10 @@ The [conventions](docs/ARCHITECTURE.md#conventions) are the full list. The ones 
 - Keep it to one subject: a smaller pull request is reviewed sooner.
 - CI must be green. A reviewer may ask for changes; push them as new commits, which are squashed or kept as the review decides.
 
+## Translations
+
+A translation, a new language or a better one, follows [TRANSLATING.md](TRANSLATING.md): the catalogs, their format, and the steps of a new language.
+
 ## Reporting a bug
 
 Open an issue with the bug's template: the macOS version, the Mac, Lokyr's commit, your config, the steps that make the bug happen, and what you expected. A security problem goes privately to the maintainer, through GitHub's private vulnerability reporting, not in a public issue.
