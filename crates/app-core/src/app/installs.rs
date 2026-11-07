@@ -68,7 +68,7 @@ impl<B: Backend> App<B> {
             "theme-install-detail",
             &[("folder", Arg::Text(&shown_path(&directory)))],
         );
-        if target.exists() && target != source {
+        if target.exists() && !same_file(&source, &target) {
             detail.push(' ');
             detail.push_str(&self.texts.text("theme-install-replace"));
         }
@@ -137,7 +137,8 @@ impl<B: Backend> App<B> {
         if button != USE && button != INSTALL {
             return;
         }
-        if ask.source != ask.target {
+        // A copy onto itself would empty it.
+        if !same_file(&ask.source, &ask.target) {
             let copied = ask
                 .target
                 .parent()
@@ -192,6 +193,25 @@ impl<B: Backend> App<B> {
         };
         platform.show_alert(None, &alert);
     }
+}
+
+/// Whether `one` and `other` are the same file, as the file system tells,
+/// whatever their paths, as of a folder that a link reaches: of their real
+/// paths, or of the same device and inode, as of a hard link.
+fn same_file(one: &Path, other: &Path) -> bool {
+    if let (Ok(one), Ok(other)) = (fs::canonicalize(one), fs::canonicalize(other))
+        && one == other
+    {
+        return true;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        if let (Ok(one), Ok(other)) = (fs::metadata(one), fs::metadata(other)) {
+            return (one.dev(), one.ino()) == (other.dev(), other.ino());
+        }
+    }
+    false
 }
 
 /// `path` as a person reads it: of `~` for the home directory.

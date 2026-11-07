@@ -380,3 +380,25 @@ fn the_question_s_checkbox_switches_to_the_theme_s_appearance() {
     assert_eq!(asked.alert.suppression, None);
     let _ = std::fs::remove_dir_all(directory);
 }
+
+#[test]
+fn a_theme_opened_by_another_path_of_its_own_file_is_installed_whole() {
+    let (mut fake, mut app, directory) = with_themes("install-self", "", &[]);
+    let file = directory.join("themes/Grays.itermcolors");
+    std::fs::write(&file, grays()).unwrap();
+    let length = std::fs::metadata(&file).unwrap().len();
+    // The config's folder reached through a link, as GNU Stow makes it.
+    let linked =
+        std::env::temp_dir().join(format!("lokyr-app-themes-linked-{}", std::process::id()));
+    let _ = std::fs::remove_file(&linked);
+    std::os::unix::fs::symlink(directory.join("themes"), &linked).unwrap();
+    let asked = open(&mut fake, &mut app, vec![linked.join("Grays.itermcolors")]);
+    // Its own file, which it does not replace.
+    let replace = app.texts.text("theme-install-replace");
+    assert!(!asked.alert.detail.contains(&replace), "{:?}", asked.alert);
+    answer(&mut fake, &mut app, asked.id, 0);
+    assert_eq!(std::fs::metadata(&file).unwrap().len(), length);
+    assert_eq!(app.theme.dark.colors.background, rgb(0x333333));
+    let _ = std::fs::remove_file(&linked);
+    let _ = std::fs::remove_dir_all(directory);
+}
