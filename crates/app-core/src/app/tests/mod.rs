@@ -474,7 +474,7 @@ fn the_app_s_catalogs_match_their_source() {
         .plugins
         .commands_in("en")
         .into_iter()
-        .map(|command| (command.name, command.title))
+        .map(|(command, _)| (command.name, command.title))
         .collect();
     assert_eq!(english, registered);
     assert!(registered.iter().any(|(name, _)| name == "links.open"));

@@ -3888,8 +3888,9 @@ fn commands(texts: &Texts, plugins: &Plugins) -> Registry {
             eprintln!("lokyr: {error}");
         }
     }
-    for command in plugins.commands_in(texts.language()) {
-        if let Err(error) = registry.register(command) {
+    // Each of its plugin, which the plugins' reads of the commands tell.
+    for (command, plugin) in plugins.commands_in(texts.language()) {
+        if let Err(error) = registry.register_for(command, &plugin) {
             eprintln!("lokyr: {error}");
         }
     }

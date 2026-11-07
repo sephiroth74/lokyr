@@ -474,10 +474,12 @@ fn a_plugin_s_catalogs_title_its_commands_in_the_language_shown() {
         let mut plugins = Plugins::new();
         plugins.add("titled", Box::new(plugin)).unwrap();
         assert!(plugins.activate(&mut app.context()).is_empty());
-        plugins
-            .commands_in(language)
+        let commands = plugins.commands_in(language);
+        // Each of its plugin.
+        assert!(commands.iter().all(|(_, plugin)| plugin == "titled"));
+        commands
             .into_iter()
-            .map(|command| command.title)
+            .map(|(command, _)| command.title)
             .collect()
     };
     let calm = || Titled { panics: false };

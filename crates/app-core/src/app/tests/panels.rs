@@ -1018,6 +1018,56 @@ fn the_command_palette_opens_at_the_window_s_top_ranks_as_it_is_typed_and_runs_i
 }
 
 #[test]
+fn the_app_s_commands_keep_their_plugins_which_the_palette_finds_them_by() {
+    let none = Modifiers::NONE;
+    let drawing = Drawing::new(FontConfig::default()).unwrap();
+    let mut fake = Fake::default();
+    let program = shell("echo ready; read line");
+    let mut app = App::new(Some(drawing), unpadded(), None).with_program(program);
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    app.windows.get_mut(&window).unwrap().surface = Some(fakes::Surface::default());
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    run_until(&mut fake, &mut app, |_, app| shows(app, window, "ready"));
+    // A plugin's command of its plugin, the app's of none, in the registry
+    // that the app made of the plugins' commands.
+    assert_eq!(app.commands.owner("tabs.new"), Some("lokyr/tabs"));
+    assert_eq!(app.commands.owner("pane.copy"), Some("lokyr/core-actions"));
+    assert_eq!(app.commands.owner("window.new"), None);
+    // The palette finds the core actions by their plugin's name, which no
+    // title nor name of theirs holds.
+    let shifted = Modifiers { shift: true, ..CMD };
+    fake.send(
+        &mut app,
+        window,
+        key_event(KeyCode::KeyP, "P", shifted, true),
+    );
+    frames(&mut fake, &mut app, window);
+    fake.send(
+        &mut app,
+        window,
+        WindowEvent::Ime(Ime::Commit("core-actions".to_owned())),
+    );
+    frames(&mut fake, &mut app, window);
+    // Its note of no command missing, as the list holds some.
+    let palette = app.windows[&window]
+        .chrome
+        .iter()
+        .find(|view| view.view == ViewId::Panel(PanelId::from("command-palette")))
+        .expect("the palette");
+    assert!(palette.surface.tree.by_key(&"commands".into()).is_some());
+    assert!(
+        palette.surface.tree.by_key(&"none".into()).is_none(),
+        "no command of core-actions"
+    );
+    fake.send(
+        &mut app,
+        window,
+        key_event(KeyCode::Escape, "\u{1b}", none, true),
+    );
+}
+
+#[test]
 fn the_palette_s_theme_picker_previews_a_theme_and_names_the_chosen_one() {
     let none = Modifiers::NONE;
     let directory = std::env::temp_dir().join(format!("lokyr-app-picker-{}", std::process::id()));

@@ -1220,18 +1220,20 @@ impl Plugins {
     /// The commands of the active plugins, as [`Plugins::commands`], titled
     /// in `language` from their plugins' catalogs: by their messages, as
     /// [`title_message`] names them, the language's or English's; or by the
-    /// titles that they registered.
-    pub fn commands_in(&self, language: &str) -> Vec<Command> {
+    /// titles that they registered; each with its plugin's name, which a
+    /// registry keeps as its owner.
+    pub fn commands_in(&self, language: &str) -> Vec<(Command, String)> {
         let mut commands = Vec::new();
         for state in self.active() {
             let texts = Texts::new(language, state.catalogs);
             commands.extend(state.commands.iter().map(|command| {
-                Command {
+                let titled = Command {
                     title: texts
                         .get(&title_message(&command.name))
                         .unwrap_or_else(|| command.title.clone()),
                     ..command.clone()
-                }
+                };
+                (titled, state.name.clone())
             }));
         }
         commands
