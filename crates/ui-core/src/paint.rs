@@ -625,12 +625,21 @@ impl<'a, B: FontBackend> Painter<'a, B> {
                 continue;
             };
             let inherited = if selected { selected_color } else { color };
-            let items = paint_of(
+            // A row shorter than the list's rows' height, in the middle of
+            // its own.
+            let natural = row
+                .tree()
+                .root()
+                .and_then(|root| row.layout().frame(row.tree(), root))
+                .map_or(0.0, |root| root.height);
+            let slot = state.height_of(list, index) * scale;
+            let top = y + ((slot - natural) / 2.0).max(0.0).round();
+            let mut items = paint_of(
                 row.tree(),
                 row.layout(),
                 &mut *self.font,
                 self.tokens,
-                ((frame.x, y), inherited),
+                ((frame.x, top), inherited),
                 Shown {
                     dark: self.dark,
                     focused: None,
@@ -642,6 +651,18 @@ impl<'a, B: FontBackend> Painter<'a, B> {
                     fills: self.fills,
                 },
             );
+            // On the accent's selection, every text of the row in its
+            // color, a shortcut's of its own secondary color too, which
+            // would not read on it.
+            if selected && focused {
+                for item in &mut items {
+                    if let Item::Glyphs(glyphs) = item {
+                        for glyph in glyphs.iter_mut() {
+                            glyph.color = selected_color;
+                        }
+                    }
+                }
+            }
             self.items.extend(items);
         }
         self.indicator(frame, state.extent(list));
@@ -2964,6 +2985,97 @@ mod tests {
         }));
         assert!(lists.hover((&tree, &layout), None));
         assert_eq!(lists.state(&"rows".into()).unwrap().hovered(), None);
+    }
+
+    #[test]
+    fn a_list_s_short_rows_sit_in_the_middle_of_theirs_and_its_selection_colors_all_their_texts() {
+        use lokyr_plugin_sdk::view::ListItem;
+        // Rows of a title and of a shortcut of the secondary color, of
+        // `height` points each, or of their own.
+        let glyphs_of = |height: Option<f32>, menu: bool| {
+            let row = Node::container(vec![
+                Node::text(""),
+                Node::spacer(),
+                Node::text("").style(view::Style {
+                    color: Some(Token::from("text.secondary")),
+                    ..view::Style::default()
+                }),
+            ]);
+            let items = (0..3)
+                .map(|index| ListItem {
+                    texts: vec![format!("row {index}"), "⌘N".to_owned()],
+                })
+                .collect();
+            let mut node = Node::list(row, 3, (0, items))
+                .key("rows")
+                .layout(view::Layout {
+                    height: view::Length::Points(150.0),
+                    ..view::Layout::default()
+                });
+            if let lokyr_plugin_sdk::view::Kind::List(list) = &mut node.kind {
+                list.row_height = height;
+                list.menu = menu;
+            }
+            let mut font = Font::new(Blocks, FontConfig::default(), 1.0).unwrap();
+            let mut tree = Tree::new();
+            let changes = tree.update(&node).unwrap();
+            let mut layout = Layout::new(1.0);
+            layout.update(&tree, &changes);
+            layout.compute(&tree, Some(200.0), None, &mut font);
+            let mut lists = Lists::new();
+            lists.lay_out(&tree, &layout, &mut font);
+            let fields = Fields::new();
+            paint(
+                &tree,
+                &layout,
+                &mut font,
+                &Theme::builtin().dark.tokens,
+                (0.0, 0.0),
+                Shown {
+                    dark: true,
+                    focused: None,
+                    fields: &fields,
+                    hovered: None,
+                    pressed: None,
+                    lists: &lists,
+                    motion: None,
+                    fills: Fills::All,
+                },
+            )
+            .into_iter()
+            .filter_map(|item| match item {
+                Item::Glyphs(glyphs) => Some(glyphs),
+                _ => None,
+            })
+            .flatten()
+            .collect::<Vec<PlacedGlyph>>()
+        };
+        // Of their own height, one under the other.
+        let own = glyphs_of(None, false);
+        let mut tops: Vec<i32> = own.iter().map(|glyph| glyph.y).collect();
+        tops.sort_unstable();
+        tops.dedup();
+        let natural = tops[1] - tops[0];
+        // Of 40 points, each in the middle of its own.
+        let taller = glyphs_of(Some(40.0), false);
+        let first_row = taller.iter().map(|glyph| glyph.y).min().unwrap();
+        let offset = ((40.0 - natural as f32) / 2.0).round() as i32;
+        assert_eq!(first_row, tops[0] + offset, "{tops:?}");
+        // A menu's first row, selected as it shows, of every text in the
+        // selection's color, the shortcut's too; the others' shortcuts of
+        // the secondary color.
+        let menu = glyphs_of(Some(40.0), true);
+        let in_first = |glyph: &&PlacedGlyph| glyph.y < first_row + 30;
+        assert!(
+            menu.iter()
+                .filter(in_first)
+                .all(|glyph| glyph.color == token("list.selection.fg"))
+        );
+        assert!(
+            menu.iter()
+                .filter(|glyph| !in_first(glyph))
+                .any(|glyph| glyph.color == token("text.secondary"))
+        );
     }
 
     #[test]
