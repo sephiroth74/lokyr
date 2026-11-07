@@ -30,7 +30,7 @@ Start with [ARCHITECTURE.md](ARCHITECTURE.md), then read the [ROADMAP.md](ROADMA
 | [LINUX-VM.md](LINUX-VM.md) | A proposal, not implemented: CI's Linux job in a VM on the Mac, of Apple's Virtualization framework |
 | [tasks/](tasks/README.md) | Each phase broken into tasks of one day or less, one file per phase |
 | [tasks/BACKLOG.md](tasks/BACKLOG.md) | The issues that no task of a phase's plan tracks, an entry each, by priority |
-| [bench/](bench/baseline-F0.md) | Measurements: of existing terminals, starting with the F0 baseline, of Lokyr's compatibility, starting with [esctest](bench/esctest-F1-44.md), [then](bench/esctest-F1-45.md) and [then](bench/esctest-F1-46.md), and of the VT core's [throughput](bench/throughput-F1-50.md) against `alacritty_terminal`'s, [then](bench/throughput-F1-51.md), of [search](bench/search-F1-54.md), and of the [instructions](bench/instructions-F1-52.md) that CI counts |
+| [bench/](bench/baseline-F0.md) | Measurements: of existing terminals, starting with the F0 baseline, of Lokyr's compatibility, starting with [esctest](bench/esctest-F1-44.md), [then](bench/esctest-F1-45.md) and [then](bench/esctest-F1-46.md), and of the VT core's [throughput](bench/throughput-F1-50.md) against `alacritty_terminal`'s, [then](bench/throughput-F1-51.md), of [search](bench/search-F1-54.md), [then through the app's service](bench/search-F3-52.md), and of the [instructions](bench/instructions-F1-52.md) that CI counts |
 | [adr/](adr/) | Architecture decision records, one per file |
 
 ## Requirements → solution
