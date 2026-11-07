@@ -138,7 +138,7 @@ fn the_bar_opens_at_the_pane_s_top_right_and_searches_as_its_text_is_typed() {
     assert!(selected(&opened).is_empty());
     assert_eq!(query(&plugin), None);
     assert!(focused(&mut host, &mut plugin).is_empty());
-    assert_eq!(count(&mut host, &mut plugin), "");
+    assert_eq!(count(&mut host, &mut plugin), "No results");
     // Typed: a search of it, smart of its case; the last match of the
     // first part, the nearest to the bottom, selected.
     let asked = typed(&mut host, &mut plugin, "needle");
@@ -426,7 +426,9 @@ fn the_count_keeps_its_width_of_short_numbers_past_9999() {
 fn the_count_of_before_stays_until_a_new_search_tells_something_sure() {
     let (mut host, mut plugin) = host(&ROWS, Data::Nil);
     run(&mut host, &mut plugin, OPEN);
-    // The first search, before it tells: searching, of no count before.
+    // No text: no result; then the first search, which leaves it until
+    // it tells.
+    assert_eq!(count(&mut host, &mut plugin), "No results");
     host.ui_event(
         &mut plugin,
         &UiEvent {
@@ -439,7 +441,7 @@ fn the_count_of_before_stays_until_a_new_search_tells_something_sure() {
         },
     )
     .unwrap();
-    assert_eq!(count(&mut host, &mut plugin), "Searching…");
+    assert_eq!(count(&mut host, &mut plugin), "No results");
     host.deliver(&mut plugin).unwrap();
     assert_eq!(count(&mut host, &mut plugin), "3 of 3");
     // A key typed, and a toggle: the count of before stays until the new

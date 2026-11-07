@@ -70,8 +70,9 @@ const STATE_WORD: &str = "whole-word";
 const FIELD_WIDTH: f32 = 260.0;
 
 /// The width of the count, which its text never changes, in points: of
-/// `9999 of 9999`, the longest of its numbers, which go short past it.
-const COUNT_WIDTH: f32 = 96.0;
+/// `9999 of 9999`, the longest of its numbers, which go short past it,
+/// and of its longest text, Italian's `Nessun risultato`.
+const COUNT_WIDTH: f32 = 112.0;
 
 /// The side of a button of an icon, and of a toggle, in points, and of
 /// those in the field.
@@ -88,10 +89,9 @@ static CATALOGS: [(&str, &str); 2] = [
 ];
 
 /// The texts of the bar, in English, where the host gives none.
-const ENGLISH: [(&str, &str); 13] = [
+const ENGLISH: [(&str, &str); 12] = [
     ("find-placeholder", "Find"),
     ("find-none", "No results"),
-    ("find-searching", "Searching…"),
     ("find-invalid", "Invalid regex"),
     ("find-case", "Match Case"),
     ("find-regex", "Regular Expression"),
@@ -726,26 +726,16 @@ fn texts(cx: &mut Cx<'_>) -> BarTexts {
 }
 
 /// The count of `find`'s matches, as its bar tells it, if its search
-/// tells something sure: none of no text; a refused query; no result, once
-/// it went to its end of none; the current match's place among them, of
+/// tells something sure: no result of no text, or once it went to its end
+/// of none; a refused query; the current match's place among them, of
 /// short numbers past 9999, `…` while the search goes on. `None` while it
-/// has found nothing yet, and goes on: the count of before stays, or
-/// `Searching…` of none before.
+/// has found nothing yet, and goes on: the count of before stays.
 fn count(cx: &mut Cx<'_>, find: &Find) -> Option<String> {
-    if find.text.is_empty() {
-        return Some(String::new());
-    }
     if find.invalid {
         return Some(message(cx, "find-invalid", &[]));
     }
     if find.count == 0 {
-        return if find.done {
-            Some(message(cx, "find-none", &[]))
-        } else if find.shown.is_empty() {
-            Some(message(cx, "find-searching", &[]))
-        } else {
-            None
-        };
+        return (find.text.is_empty() || find.done).then(|| message(cx, "find-none", &[]));
     }
     let count = short(find.count);
     let told = match find.current_index() {

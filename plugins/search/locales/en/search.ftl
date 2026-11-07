@@ -12,7 +12,6 @@ find-placeholder = Find
 find-count = { $current } of { $count }
 find-count-unknown = { $count } found
 find-none = No results
-find-searching = Searching…
 find-invalid = Invalid regex
 find-case = Match Case
 find-regex = Regular Expression

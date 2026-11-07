@@ -1019,9 +1019,15 @@ fn panes_headers_draw_as_their_golden_images() {
 #[test]
 fn the_find_bar_draws_as_its_golden_images() {
     use lokyr_search_plugin::{BarTexts, BarView, Options, find_bar};
-    // Of no option, its count empty, its field's placeholder showing; then
+    // Of no option, of no result, its field's placeholder showing; then
     // of case and regex, a count, the pointer over the up arrow.
-    let quiet = find_bar(&BarView::default(), &BarTexts::default());
+    let quiet = find_bar(
+        &BarView {
+            count: "No results".to_owned(),
+            ..BarView::default()
+        },
+        &BarTexts::default(),
+    );
     let busy = find_bar(
         &BarView {
             options: Options {
