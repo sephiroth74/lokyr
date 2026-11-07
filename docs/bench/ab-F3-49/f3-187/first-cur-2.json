@@ -1,0 +1,74 @@
+{
+  "app": "/private/tmp/lokyr/bench-cur/Lokyr.app",
+  "executable": "/private/tmp/lokyr/bench-cur/Lokyr.app/Contents/MacOS/lokyr",
+  "warmup": 2,
+  "runs": [
+    {
+      "pid": 82218,
+      "from_start_ms": 215.5,
+      "from_request_ms": 217.1
+    },
+    {
+      "pid": 82227,
+      "from_start_ms": 251.0,
+      "from_request_ms": 252.8
+    },
+    {
+      "pid": 82240,
+      "from_start_ms": 231.5,
+      "from_request_ms": 233.3
+    },
+    {
+      "pid": 82256,
+      "from_start_ms": 249.7,
+      "from_request_ms": 251.5
+    },
+    {
+      "pid": 82270,
+      "from_start_ms": 230.5,
+      "from_request_ms": 232.4
+    },
+    {
+      "pid": 82289,
+      "from_start_ms": 266.7,
+      "from_request_ms": 269.3
+    },
+    {
+      "pid": 82303,
+      "from_start_ms": 235.5,
+      "from_request_ms": 237.7
+    },
+    {
+      "pid": 82315,
+      "from_start_ms": 250.8,
+      "from_request_ms": 252.4
+    },
+    {
+      "pid": 82336,
+      "from_start_ms": 249.3,
+      "from_request_ms": 251.0
+    },
+    {
+      "pid": 82349,
+      "from_start_ms": 248.7,
+      "from_request_ms": 250.5
+    }
+  ],
+  "summary": {
+    "from_start_ms": {
+      "min": 215.5,
+      "p10": 230.5,
+      "median": 249.0,
+      "p90": 251.0,
+      "max": 266.7
+    },
+    "from_request_ms": {
+      "min": 217.1,
+      "p10": 232.4,
+      "median": 250.75,
+      "p90": 252.8,
+      "max": 269.3
+    },
+    "spread": 0.082
+  }
+}

@@ -1573,10 +1573,13 @@ impl<B: Backend> App<B> {
         self.windows.insert(window, state);
         self.window_keys(platform);
         // Its tab's folder and program, which its program, started, has
-        // already, for the first frame's title to be the one that stays.
-        if let Some(pane) = self.workspace.focused(shown).map(Pane::id) {
-            self.look_at_tab_place(pane);
-        }
+        // already, for the first frame's title to be the one that stays: as
+        // the frame looks after its output, of the program alone while its
+        // folder cannot be read, as `login`'s, which runs as root. A label
+        // that changed after the frame drew the slots' views would draw
+        // them again a refresh later, as the window shows, which puts its
+        // showing off by a refresh.
+        self.look_at_place(window);
         self.draw(platform, window, size);
     }
 

@@ -1,0 +1,33 @@
+ 0:56  up  9:16, 6 users, load averages: 2.97 2.97 3.19
+00:56:58 startup cur 1
+00:57:30 startup fix 1
+00:58:01 startup fixnotabs 1
+00:58:31 load { 7.00 4.12 3.60 }
+00:58:32 startup fixnotabs 2
+00:59:02 startup fix 2
+00:59:33 startup cur 2
+01:00:04 load { 3.89 3.76 3.51 }
+01:00:04 startup fix 3
+01:00:35 startup cur 3
+01:01:06 startup fixnotabs 3
+01:01:36 load { 4.52 3.95 3.60 }
+01:01:36 startup fixnotabs 4
+01:02:07 startup cur 4
+01:02:38 startup fix 4
+01:03:09 load { 3.84 4.00 3.66 }
+01:03:31 latency cur 1
+01:03:43 latency fix 1
+01:03:55 latency fixnotabs 1
+01:04:08 load { 2.84 3.66 3.56 }
+01:04:08 latency fix 2
+01:04:20 latency fixnotabs 2
+01:04:32 latency cur 2
+01:04:45 load { 2.56 3.48 3.49 }
+01:04:45 latency fixnotabs 3
+01:04:57 latency cur 3
+01:05:09 latency fix 3
+01:05:22 load { 2.02 3.25 3.41 }
+01:05:22 latency cur 4
+01:05:34 latency fixnotabs 4
+01:05:46 latency fix 4
+01:05:58 load { 1.92 3.06 3.33 }
