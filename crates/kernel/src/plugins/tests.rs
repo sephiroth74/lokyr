@@ -3530,6 +3530,54 @@ fn a_shown_search_s_matches_stay_until_the_next_one_of_the_pane_shows_its_own() 
     assert_eq!(reader.lock().screen_rows().pins(), before);
 }
 
+#[test]
+fn output_leaves_the_view_at_the_current_match_until_the_search_ends() {
+    let mut app = App::default();
+    // Matches, then, a second after, output on and on.
+    let window = window(
+        &mut app,
+        "seq 1 300 | sed 's/7$/7 needle/'; echo ready; sleep 1; while true; do echo tick; sleep 0.005; done",
+    );
+    let pane = app.workspace.active_pane(window).unwrap();
+    row_once(&app, pane, 300, "ready");
+    app.workspace.pane(pane).unwrap().set_scroll_on_output(true);
+    let mut plugins = Plugins::new();
+    let searched = Rc::new(RefCell::new(Searched::default()));
+    plugins.add("finder", finder(&searched)).unwrap();
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    plugins
+        .run("finder.needle", Args::new(), &mut app.context())
+        .unwrap();
+    let id = searched.borrow().last.unwrap();
+    let (parts, _) = searched_until_done(&mut app, &mut plugins, &searched, id);
+    let first = parts
+        .iter()
+        .flatten()
+        .min_by_key(|found| found.first.1)
+        .copied()
+        .unwrap();
+    searched.borrow_mut().show = (true, Some(first));
+    plugins
+        .run("finder.show", Args::new(), &mut app.context())
+        .unwrap();
+    let reader = app.workspace.pane(pane).unwrap().reader().unwrap();
+    let top = || reader.lock().origin().top;
+    assert_eq!(top(), 6);
+    // The program prints on: the view stays at the match.
+    row_once(&app, pane, 310, "tick");
+    assert_eq!(top(), 6);
+    // The search ended, the next output brings the view back to the screen.
+    plugins
+        .run("finder.end", Args::new(), &mut app.context())
+        .unwrap();
+    let start = Instant::now();
+    while top() == 6 {
+        assert!(start.elapsed() < Duration::from_secs(10), "the view stays");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert_eq!(reader.lock().viewport_offset(), 0);
+}
+
 /// The lines of the measure of the search, of 80 columns, a match of
 /// `needle` on one in a hundred.
 const MEASURED_LINES: i64 = 100_000;

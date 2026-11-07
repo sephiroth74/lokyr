@@ -900,6 +900,16 @@ fn the_find_bar_searches_its_pane_steps_and_leaves_its_match_selected_as_it_clos
     command(&mut fake, &mut app, window, "search.open");
     assert!(focused_in(&app, window, "find"));
     assert_eq!(view(&app), bar);
+    // Its text selected, which typing replaces.
+    let field = app.windows[&window]
+        .chrome
+        .iter()
+        .find(|view| view.view == ViewId::Panel(PanelId::from("find")))
+        .and_then(|view| view.surface.fields.state(&"query".into()))
+        .cloned()
+        .unwrap();
+    assert_eq!(field.text(), "日本");
+    assert_eq!(field.selection(), 0.."日本".len());
     // Return steps around to the one again.
     fake.send(
         &mut app,

@@ -553,7 +553,8 @@ type Cx = {
     -- Scrolls the nearest scroll area around a node of the view, by its key, as little as shows it, once the view shows
     -- it, as a tab bar shows its active tab: the node of a render yet to show too.
     reveal: (view: ViewId, key: string) -> (boolean, Error?),
-    -- Gives the keyboard's focus to a node of the view, by its key, as a click on it would, which tells it "focus".
+    -- Gives the keyboard's focus to a node of the view, by its key, which tells it "focus": a field selects all of its
+    -- text, as macOS's does as it becomes the first responder, so that typing replaces it.
     focus_node: (view: ViewId, key: string) -> (boolean, Error?),
     -- Opens a panel, by an id of the plugin's, which the host then renders; a "panel-closed" event tells as it closes.
     -- A dialog or a menu takes the keyboard as it opens, at its first field, or at its first node that takes it.
@@ -597,7 +598,8 @@ type Cx = {
     -- Shows a search's matches over its pane's cells in the theme's `search.match`, or hides them, as `all` says, and
     -- its current match apart in `search.match.current`, whose row the view scrolls to, as the call returns: the host
     -- draws those that the view shows at each frame, until the search ends. Those of the plugin's search before of the
-    -- pane, if they showed, show until this one does.
+    -- pane, if they showed, show until this one does. While a current match shows, output leaves the view where it is,
+    -- whatever `scroll-on-output` says.
     show_matches: (id: number, all: boolean, current: SearchMatch?) -> (boolean, Error?),
     -- A search's matches in the rows' order, from the one at `first`, 100 000 at most, as their cells are now, those that
     -- left the scrollback gone; how many it found; and whether it went to its end.

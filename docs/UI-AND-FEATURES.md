@@ -269,9 +269,9 @@ The kernel's `search` service (the engine) plus the `search` plugin (UI and comm
   - Enter / ⇧Enter, the next and the previous;
   - ⌘G / ⇧⌘G on macOS, F3 / ⇧F3 on Linux, which open the bar while it is closed;
   - the bar's up and down arrows;
-  - each match the current one, highlighted apart, and brought into the view;
+  - each match the current one, highlighted apart, and brought into the view, where the view stays as the program prints on, whatever `scroll-on-output` says, until the bar closes;
   - Esc closes the bar, its highlights going, and leaves the current match selected, ready for ⌘C.
-- **History**: the bar opens of the last search's text and its options, which it searches again; the magnifying glass of its field lists the recent searches, twenty at most, which the plugin's state keeps with the options.
+- **History**: the bar opens of the last search's text, selected, so that typing replaces it, and its options, which it searches again; ⌘F on an open bar selects its text too; the magnifying glass of its field lists the recent searches, twenty at most, which the plugin's state keeps with the options.
 - **Layout**, as VS Code's find widget, of macOS's search field: the field, its glass at its start and its toggles of case, whole words and regexes at its end; the count, in a room of its own, which keeps the bar's width whatever it tells, `n of m`, of numbers past 9999 short, as `12K`; the arrows and the close button. The buttons and the toggles have no box at rest, their hover and press fading in, a toggle on of its own fill.
 - **Highlighting**: the visible matches (`search.match`), unless `highlight-all` is off, and the current one (`search.match.current`), the theme's translucent colors over each cell's own; marks in the scrollbar come with the scrollbar.
 - **Filter mode**: iTerm2-style, showing only the matching lines. It arrives in F5b, because the renderer must first be able to show an arbitrary list of rows instead of a contiguous window.

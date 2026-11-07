@@ -546,7 +546,7 @@ fn read_output(shared: &Shared, mut output: ReadAhead, sync_timeout: Duration) {
         // Its buffer goes back to the reader.
         drop(slice);
         let told = started || terminal.has_events() || terminal.bells() != bells;
-        if terminal.scroll_on_output() {
+        if terminal.output_scrolls_view() {
             terminal.scroll_viewport(Scroll::Bottom);
         }
         let replies = terminal.take_replies();

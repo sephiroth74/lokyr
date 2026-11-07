@@ -925,6 +925,7 @@ Whether a program's output brings a view scrolled up into the scrollback back do
 
 - With `false`, the view stays on the rows you scrolled to while the program goes on writing, so that you can read what scrolled past.
 - Typing, pasting and the input method's text always bring the view back down, whatever the key says; a modifier alone, as Shift, does not.
+- While the find bar shows a match, the view stays where the search took it, at the match, whatever the key says, and output brings it down again once the bar closes.
 - A new value applies at once, to the windows that are open too.
 
 ### `limit`

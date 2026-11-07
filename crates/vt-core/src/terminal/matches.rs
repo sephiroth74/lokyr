@@ -130,6 +130,14 @@ impl Terminal {
         true
     }
 
+    /// Whether output brings the view back to the screen now: as
+    /// [`Terminal::scroll_on_output`] says, but while a search shows its
+    /// current match, as a find bar does, whose view stays where the search
+    /// put it as the program prints on.
+    pub fn output_scrolls_view(&self) -> bool {
+        self.scroll_on_output && self.matches.iter().all(|kept| kept.current.is_none())
+    }
+
     /// The spans that the view shows of the matches shown, row by row, and
     /// of the current matches, apart; nothing, and no cost, without them.
     /// Those of the view are found by a binary search, as their matches lie
@@ -320,6 +328,28 @@ mod tests {
         assert_eq!(shown(&mut terminal), screen);
         terminal.scroll_viewport(Scroll::Top);
         assert_eq!(shown(&mut terminal), screen);
+    }
+
+    #[test]
+    fn output_leaves_the_view_where_a_search_shows_its_current_match() {
+        let options = Options {
+            scroll_on_output: true,
+            ..Options::default()
+        };
+        let mut terminal = Terminal::new(10, 3, options);
+        feed(&mut terminal, "ab\r\nnone");
+        add(&mut terminal, 1, 0, &[((0, 0), (1, 0))]);
+        assert!(terminal.output_scrolls_view());
+        // Shown without a current match, output scrolls the view still.
+        terminal.show_matches(1, true, None);
+        assert!(terminal.output_scrolls_view());
+        terminal.show_matches(1, true, Some(((0, 0), (1, 0))));
+        assert!(!terminal.output_scrolls_view());
+        // Its end gives the view back to the output.
+        terminal.drop_matches(1);
+        assert!(terminal.output_scrolls_view());
+        terminal.set_scroll_on_output(false);
+        assert!(!terminal.output_scrolls_view());
     }
 
     #[test]

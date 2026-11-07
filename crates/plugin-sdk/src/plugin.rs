@@ -867,8 +867,9 @@ impl<'a> Cx<'a> {
         })
     }
 
-    /// Gives the keyboard's focus to the node `key` of `view`, as a click
-    /// on it would, as this call returns.
+    /// Gives the keyboard's focus to the node `key` of `view`, as this call
+    /// returns: a field selects all of its text, so that typing replaces
+    /// it.
     pub fn focus_node(&mut self, view: ViewId, key: impl Into<Key>) -> Result<(), Error> {
         self.done(Request::FocusNode {
             view,

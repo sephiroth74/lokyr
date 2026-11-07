@@ -507,7 +507,9 @@ pub enum Request {
         revision: u64,
     },
     /// Gives the keyboard's focus to a node of one of the plugin's views,
-    /// by its key, as a click on it would, which tells it `focus`.
+    /// by its key, which tells it `focus`: a field selects all of its
+    /// text, as macOS's does as it becomes the first responder, so that
+    /// typing replaces it.
     FocusNode {
         /// The view.
         view: ViewId,

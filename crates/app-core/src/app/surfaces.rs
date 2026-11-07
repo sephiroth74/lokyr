@@ -729,9 +729,11 @@ impl<B: Backend> App<B> {
     }
 
     /// Gives the keyboard's focus to the node `key` of `plugin`'s view
-    /// `view`, as a click on it would: the composition of where it was
-    /// ends as it stands, the pane's program learns that it lost it, and
-    /// the nodes' plugins hear the blur and the focus.
+    /// `view`: the composition of where it was ends as it stands, the
+    /// pane's program learns that it lost it, and the nodes' plugins hear
+    /// the blur and the focus. A field selects all of its text, as macOS's
+    /// does as it becomes the first responder, but while the input method
+    /// composes in it, so that typing replaces it.
     pub(super) fn focus_node(
         &mut self,
         platform: &mut dyn Platform,
@@ -760,6 +762,13 @@ impl<B: Backend> App<B> {
             return;
         };
         state.focus.focus(id, tree, node);
+        let field = matches!(tree.kind(node), Some(Kind::Field(_)));
+        if field
+            && let Some(shown) = state.chrome.iter_mut().find(|shown| shown.id == id)
+            && shown.surface.fields.composing(&shown.surface.tree) != Some(node)
+        {
+            shown.surface.fields.select_all(&shown.surface.tree, node);
+        }
         let mut events = Vec::new();
         if state.focus.target() != before {
             state.composition_dropped |= end_composition(state, before, &mut events);

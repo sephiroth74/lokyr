@@ -319,6 +319,11 @@ fn escape_ends_the_search_and_its_text_opens_the_bar_again_among_the_recent_ones
         request,
         Request::SetText { text, .. } if text == "needle"
     )));
+    // Its text selected after, as the field takes the focus again.
+    assert!(matches!(
+        filled.last(),
+        Some(Request::FocusNode { key, .. }) if key.0 == FIELD
+    ));
     // The recent searches' menu, whose item searches its text again.
     typed(&mut host, &mut plugin, "one");
     returned(&mut host, &mut plugin, false);

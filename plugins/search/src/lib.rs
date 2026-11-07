@@ -697,13 +697,15 @@ impl Plugin for Search {
             return Ok(());
         };
         match (&event.kind, key) {
-            // Opened anew, its field takes its text as it takes the keys.
+            // Opened anew, its field takes its text as it takes the keys,
+            // selected, so that typing replaces it.
             (UiEventKind::Focus, FIELD) if find.filling => {
                 find.filling = false;
                 if find.text.is_empty() {
                     return Ok(());
                 }
-                cx.set_text(bar(), FIELD, &find.text, find.revision)
+                cx.set_text(bar(), FIELD, &find.text, find.revision)?;
+                cx.focus_node(bar(), FIELD)
             }
             (UiEventKind::InputChanged { text, revision }, FIELD) => {
                 find.text.clone_from(text);
@@ -836,7 +838,7 @@ fn count(cx: &mut Cx<'_>, find: &Find) -> Option<String> {
 impl Search {
     /// Opens the bar at the focused pane, of its last search's text, which
     /// it searches again, of its options; open already at the pane, its
-    /// field takes the keys again, if it has them not; at another pane, it
+    /// field takes the keys again, its text selected; at another pane, it
     /// moves there, its search ending.
     fn open(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
         let Some(pane) = cx.focused_pane() else {
