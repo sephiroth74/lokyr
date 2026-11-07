@@ -210,12 +210,12 @@ impl Gallery {
             .map(|tab| {
                 let key = format!("bar.tab-{tab}");
                 let (background, color) = if tab == self.chosen {
-                    ("tab.active.bg", "tab.active.fg")
+                    ("tabs.active.bg", "tabs.active.fg")
                 } else {
-                    ("tab.inactive.bg", "tab.inactive.fg")
+                    ("tabs.inactive.bg", "tabs.inactive.fg")
                 };
                 let hover = (tab != self.chosen).then(|| Hover {
-                    background: Some(Token::from("tab.hover.bg")),
+                    background: Some(Token::from("tabs.hover.bg")),
                     ..Hover::default()
                 });
                 Node::container(vec![Node::text(format!("Tab {}", tab + 1))])
@@ -264,7 +264,7 @@ impl Gallery {
                 ..Layout::default()
             })
             .style(Style {
-                background: Some(Token::from("tab.bar.bg")),
+                background: Some(Token::from("tabs.bar.bg")),
                 ..Style::default()
             })
     }
@@ -321,7 +321,7 @@ impl Gallery {
             ..Layout::default()
         })
         .style(Style {
-            background: Some(Token::from("tab.bar.bg")),
+            background: Some(Token::from("tabs.bar.bg")),
             ..Style::default()
         })
     }
@@ -650,7 +650,7 @@ impl Gallery {
                     PointerShape::Arrow,
                 )
                 .style(Style {
-                    background: Some(Token::from("tab.inactive.bg")),
+                    background: Some(Token::from("tabs.inactive.bg")),
                     border: Some(Border {
                         color: Token::from("separator"),
                         width: 1.0,
@@ -942,7 +942,7 @@ impl Gallery {
             })
             .style(Style {
                 radius: 8.0,
-                background: Some(Token::from("tab.active.bg")),
+                background: Some(Token::from("tabs.active.bg")),
                 ..Style::default()
             })
         };
@@ -1002,7 +1002,7 @@ impl Gallery {
         })
         .style(Style {
             radius: 8.0,
-            background: Some(Token::from("tab.active.bg")),
+            background: Some(Token::from("tabs.active.bg")),
             ..Style::default()
         });
         let dots = Node::container(vec![
@@ -1181,16 +1181,16 @@ impl Gallery {
             ..Layout::default()
         })
         .style(Style {
-            background: Some(Token::from("tab.inactive.bg")),
+            background: Some(Token::from("tabs.inactive.bg")),
             border: Some(Border {
                 color: Token::from("separator"),
                 width: 1.0,
             }),
             radius: 6.0,
-            color: Some(Token::from("tab.inactive.fg")),
+            color: Some(Token::from("tabs.inactive.fg")),
             hover: Some(Hover {
-                background: Some(Token::from("tab.hover.bg")),
-                color: Some(Token::from("tab.active.fg")),
+                background: Some(Token::from("tabs.hover.bg")),
+                color: Some(Token::from("tabs.active.fg")),
                 ..Hover::default()
             }),
             pressed: Some(Hover {

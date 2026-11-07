@@ -1310,18 +1310,18 @@ mod tests {
         click(&mut view, tab);
         assert_eq!(
             tab_background(&view, "bar.tab-1").as_deref(),
-            Some("tab.active.bg")
+            Some("tabs.active.bg")
         );
         assert_eq!(
             tab_background(&view, "bar.tab-0").as_deref(),
-            Some("tab.inactive.bg")
+            Some("tabs.inactive.bg")
         );
         // A new tab, chosen.
         let new = slot_middle(&view, Slot::TabBar, "bar.new");
         click(&mut view, new);
         assert_eq!(
             tab_background(&view, "bar.tab-3").as_deref(),
-            Some("tab.active.bg")
+            Some("tabs.active.bg")
         );
         assert_eq!(view.titlebar_areas().len(), 5);
         // The page's toggle, below the chrome, at its place in the window.
@@ -1341,7 +1341,7 @@ mod tests {
         view.animate(now, false);
         assert_eq!(
             tab_background(&view, "bar.tab-0").as_deref(),
-            Some("tab.inactive.bg")
+            Some("tabs.inactive.bg")
         );
         let surface = view.surface(slot_id(Slot::TabBar)).unwrap();
         let later = now + std::time::Duration::from_secs(1);
@@ -1373,7 +1373,7 @@ mod tests {
         click(&mut view, tab);
         assert_eq!(
             tab_background(&view, "bar.tab-2").as_deref(),
-            Some("tab.active.bg")
+            Some("tabs.active.bg")
         );
         // Back in the titlebar, then in full screen: no titlebar, no
         // buttons, the bar at the top of its view's height.

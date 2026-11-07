@@ -207,12 +207,12 @@ impl Plugin for SampleSlots {
                         Node::button("Find").key("find").tooltip("A find panel"),
                         Node::button("Menu").key("menu").tooltip("A native menu"),
                     ],
-                    "tab.bar.bg",
+                    "tabs.bar.bg",
                 ))
             }
             ViewId::PaneHeader(pane) => Some(bar(
                 vec![text(format!("pane {}", pane.0), "text.secondary")],
-                "tab.inactive.bg",
+                "tabs.inactive.bg",
             )),
             ViewId::Panel(PanelId(id)) if id == "menu" => Some(Node::container(vec![
                 Node::button("One").key("one"),
@@ -230,7 +230,7 @@ impl Plugin for SampleSlots {
                 panel.layout.padding = Edges::all(8.0);
                 panel.layout.align = Align::Center;
                 panel.style = Style {
-                    background: Some(Token::from("tab.bar.bg")),
+                    background: Some(Token::from("tabs.bar.bg")),
                     radius: 6.0,
                     ..Style::default()
                 };
@@ -256,17 +256,17 @@ impl SampleSlots {
                     tab.title.clone()
                 };
                 let color = if tab.active {
-                    "tab.active.fg"
+                    "tabs.active.fg"
                 } else {
-                    "tab.inactive.fg"
+                    "tabs.inactive.fg"
                 };
                 let key = tab_key(tab.id);
                 let background = if self.hovered.as_deref() == Some(key.as_str()) {
-                    "tab.hover.bg"
+                    "tabs.hover.bg"
                 } else if tab.active {
-                    "tab.active.bg"
+                    "tabs.active.bg"
                 } else {
-                    "tab.inactive.bg"
+                    "tabs.inactive.bg"
                 };
                 let mut node = Node::container(vec![text(title, color)]).key(key.as_str());
                 node.layout.padding = Edges::all(4.0);
@@ -280,7 +280,7 @@ impl SampleSlots {
             })
             .collect();
         shown.push(Node::button("+").key("new").tooltip("New Tab"));
-        let mut bar = bar(shown, "tab.bar.bg");
+        let mut bar = bar(shown, "tabs.bar.bg");
         // Down a column, of its place.
         if cx
             .tab_bar_place()

@@ -232,7 +232,7 @@ const ROW: f32 = 28.0;
 
 /// The token of the veil that darkens the window's background in the
 /// seamless look, under its tabs but the active one.
-const VEIL: &str = "tab.seamless.veil";
+const VEIL: &str = "tabs.seamless.veil";
 
 /// A tab as the bar shows it: its own, its title, or `Tab N` of none, and
 /// the keys that select it, as the config shows them.
@@ -438,7 +438,7 @@ fn pills(tabs: &[Shown<'_>], window: Option<&str>, (settings, texts): BarOf<'_>)
         ..Layout::default()
     })
     .style(Style {
-        background: Some(Token::from("tab.track.bg")),
+        background: Some(Token::from("tabs.track.bg")),
         radius: PILL / 2.0 + INSET,
         hides_indicator: true,
         ..Style::default()
@@ -477,7 +477,7 @@ fn pills(tabs: &[Shown<'_>], window: Option<&str>, (settings, texts): BarOf<'_>)
             ..Layout::default()
         })
         .style(Style {
-            background: Some(Token::from("tab.bar.bg")),
+            background: Some(Token::from("tabs.bar.bg")),
             ..Style::default()
         })
 }
@@ -508,7 +508,7 @@ fn pill(tab: &Shown<'_>, (settings, texts): BarOf<'_>) -> Node {
         raised()
     } else {
         Style {
-            color: Some(Token::from("tab.inactive.fg")),
+            color: Some(Token::from("tabs.inactive.fg")),
             ..Style::default()
         }
     };
@@ -680,7 +680,7 @@ fn cell(tab: &Shown<'_>, top: bool, (settings, texts): BarOf<'_>) -> Node {
     let (background, color) = if active {
         (None, "terminal.fg")
     } else {
-        (Some(Token::from(VEIL)), "tab.inactive.fg")
+        (Some(Token::from(VEIL)), "tabs.inactive.fg")
     };
     lined(
         content,
@@ -716,7 +716,7 @@ fn lined(content: Node, top: bool, lined: bool, layout: Layout) -> Node {
             ..Layout::default()
         })
         .style(Style {
-            background: lined.then(|| Token::from("tab.seamless.line")),
+            background: lined.then(|| Token::from("tabs.seamless.line")),
             ..Style::default()
         });
     let children = if top {
@@ -754,7 +754,7 @@ fn column(tabs: &[Shown<'_>], window: Option<&str>, (settings, texts): BarOf<'_>
             .style(tab_style(
                 Style {
                     background: seamless.then(|| Token::from(VEIL)),
-                    color: Some(Token::from("tab.inactive.fg")),
+                    color: Some(Token::from("tabs.inactive.fg")),
                     ..Style::default()
                 },
                 row_radius(settings.look),
@@ -813,7 +813,7 @@ fn column(tabs: &[Shown<'_>], window: Option<&str>, (settings, texts): BarOf<'_>
             ..Layout::default()
         })
         .style(Style {
-            background: (!seamless).then(|| Token::from("tab.bar.bg")),
+            background: (!seamless).then(|| Token::from("tabs.bar.bg")),
             ..Style::default()
         })
 }
@@ -871,7 +871,7 @@ fn row(tab: &Shown<'_>, (settings, texts): BarOf<'_>) -> Node {
         },
         (false, _) => Style {
             background: seamless.then(|| Token::from(VEIL)),
-            color: Some(Token::from("tab.inactive.fg")),
+            color: Some(Token::from("tabs.inactive.fg")),
             ..Style::default()
         },
     };
@@ -914,18 +914,18 @@ fn row_radius(look: Look) -> f32 {
 /// border and its shadow, and its text's color.
 fn raised() -> Style {
     Style {
-        background: Some(Token::from("tab.active.bg")),
+        background: Some(Token::from("tabs.active.bg")),
         border: Some(Border {
-            color: Token::from("tab.active.border"),
+            color: Token::from("tabs.active.border"),
             width: 1.0,
         }),
         shadow: Some(Shadow {
-            color: Token::from("tab.active.shadow"),
+            color: Token::from("tabs.active.shadow"),
             x: 0.0,
             y: 1.0,
             blur: 2.0,
         }),
-        color: Some(Token::from("tab.active.fg")),
+        color: Some(Token::from("tabs.active.fg")),
         ..Style::default()
     }
 }
@@ -937,7 +937,7 @@ fn tab_style(style: Style, radius: f32, active: bool) -> Style {
         radius,
         pointer: Some(PointerShape::Arrow),
         hover: (!active).then(|| Hover {
-            background: Some(Token::from("tab.hover.bg")),
+            background: Some(Token::from("tabs.hover.bg")),
             ..Hover::default()
         }),
         pressed: Some(Hover {
@@ -1194,8 +1194,8 @@ fn new_circle(texts: &BarTexts) -> Node {
         })
         .style(tab_style(
             Style {
-                background: Some(Token::from("tab.track.bg")),
-                color: Some(Token::from("tab.inactive.fg")),
+                background: Some(Token::from("tabs.track.bg")),
+                color: Some(Token::from("tabs.inactive.fg")),
                 ..Style::default()
             },
             side / 2.0,

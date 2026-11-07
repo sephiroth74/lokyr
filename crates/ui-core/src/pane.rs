@@ -11,7 +11,7 @@ use lokyr_vt_core::unicode::Widths;
 
 use crate::paint;
 use crate::text::TextConfig;
-use crate::theme::{MatchColors, SelectionColors};
+use crate::theme::{self, MatchColors, SelectionColors};
 
 /// A glyph as the atlas holds it: its pixels, and where they go from the pen
 /// on the baseline.
@@ -226,13 +226,17 @@ impl RunBuilder {
 
 /// How the text draws in a frame: its section of the configuration, and
 /// whether the text that blinks shows.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct TextLook {
     /// The configuration's `[text]` section.
     pub config: TextConfig,
     /// Whether the text that blinks shows in this frame, which hides it half
     /// of the time.
     pub blink_shown: bool,
+    /// The least contrast ratio of a cell's text to its background, from 1,
+    /// none, to 21: a text of less moves toward white or black, as the
+    /// theme's `minimum-contrast` asks.
+    pub minimum_contrast: f32,
 }
 
 impl Default for TextLook {
@@ -240,6 +244,7 @@ impl Default for TextLook {
         Self {
             config: TextConfig::default(),
             blink_shown: true,
+            minimum_contrast: 1.0,
         }
     }
 }
@@ -435,6 +440,7 @@ pub fn blinking_cells(
     let look = TextLook {
         config: text,
         blink_shown: true,
+        ..TextLook::default()
     };
     let shown = Shown::Blinking;
     let mut batch = cells_of(
@@ -545,6 +551,16 @@ fn cells_of(
             let (mut foreground, mut background) =
                 style_colors(&style, colors, defaults, text.config);
             let own_background = text.config.ansi_colors && style.bg != page::Color::Default;
+            // The text of the contrast that the theme asks, over the
+            // background that shows under it.
+            if text.minimum_contrast > 1.0 {
+                let under = if own_background || style.inverse {
+                    background
+                } else {
+                    defaults.1
+                };
+                foreground = theme::with_contrast(foreground, under, text.minimum_contrast);
+            }
             if !own_background && !style.inverse {
                 background = background.with_alpha(0.0);
             }
@@ -1587,6 +1603,7 @@ mod tests {
         let look = TextLook {
             config,
             blink_shown: shown,
+            ..TextLook::default()
         };
         cells_with(
             &snapshot,
@@ -1707,6 +1724,7 @@ mod tests {
         let look = |blink_shown| TextLook {
             config: TextConfig::default(),
             blink_shown,
+            ..TextLook::default()
         };
         let draw = |look, asked: &mut Vec<_>| {
             let glyphs = &mut atlas(asked);
@@ -1979,6 +1997,39 @@ mod tests {
         assert_eq!(batch.glyphs[1].color, rgb(0x44, 0x55, 0x66));
         assert_eq!(batch.backgrounds[3], clear(rgb(0x77, 0x88, 0x99)));
         assert_eq!(background(&snapshot), rgb(0x77, 0x88, 0x99));
+    }
+
+    #[test]
+    fn a_text_of_too_little_contrast_takes_the_theme_s_least() {
+        // A dark gray on the dark background, and white on its own blue.
+        let snapshot = snapshot(
+            4,
+            1,
+            "\x1b]11;#1e1e20\x07\x1b]4;8;#3a3a40\x07\x1b[90ma\x1b[0m\x1b[97;44mb",
+        );
+        let mut asked = Vec::new();
+        let draw = |minimum_contrast, asked: &mut Vec<_>| {
+            let look = TextLook {
+                minimum_contrast,
+                ..TextLook::default()
+            };
+            cells_with(
+                &snapshot,
+                &cell(),
+                (0, 0),
+                None,
+                None,
+                look,
+                &mut atlas(asked),
+            )
+        };
+        let dark = rgb(0x1e, 0x1e, 0x20);
+        let plain = draw(1.0, &mut asked);
+        assert_eq!(plain.glyphs[0].color, rgb(0x3a, 0x3a, 0x40));
+        let raised = draw(4.5, &mut asked);
+        assert!(theme::contrast(raised.glyphs[0].color, dark) >= 4.5);
+        // The text that reads on its own background stays as it is.
+        assert_eq!(raised.glyphs[1].color, plain.glyphs[1].color);
     }
 
     #[test]

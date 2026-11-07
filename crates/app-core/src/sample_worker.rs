@@ -66,7 +66,7 @@ impl Plugin for SampleWorker {
         bar.layout.align = Align::Center;
         bar.layout.padding = Edges::all(6.0);
         bar.style = Style {
-            background: Some(Token::from("tab.bar.bg")),
+            background: Some(Token::from("tabs.bar.bg")),
             ..Style::default()
         };
         Some(bar)

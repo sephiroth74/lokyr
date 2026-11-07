@@ -492,16 +492,19 @@ impl<'a, B: FontBackend> Painter<'a, B> {
             .map(moved)
             .collect();
         // The box, of the whole view, its control inside it at its top.
-        if let Some(fill) = self.tokens.get("tabs.box.bg") {
+        if let Some(fill) = self.tokens.get("segments.box.bg") {
             self.push_shape(Shape {
                 radius: tabs::RADIUS * scale,
                 border: scale.round().max(1.0),
-                border_color: self.tokens.get("tabs.box.border").unwrap_or(Color::CLEAR),
+                border_color: self
+                    .tokens
+                    .get("segments.box.border")
+                    .unwrap_or(Color::CLEAR),
                 ..Shape::filled(rect(frame), fill)
             });
         }
         let radius = widget::RADIUS * scale;
-        if let Some(track) = self.tokens.get("tabs.bg") {
+        if let Some(track) = self.tokens.get("segments.bg") {
             self.push_shape(Shape {
                 radius,
                 ..Shape::filled(rect(control), track)
@@ -511,7 +514,7 @@ impl<'a, B: FontBackend> Painter<'a, B> {
         let thin = scale.round().max(1.0);
         for (at, (tab, segment)) in view.tabs.iter().zip(&segments).enumerate() {
             let chosen = at == view.chosen;
-            if chosen && let Some(tint) = self.tokens.get("tabs.chosen.bg") {
+            if chosen && let Some(tint) = self.tokens.get("segments.chosen.bg") {
                 self.push_shape(Shape {
                     radius,
                     ..Shape::filled(rect(*segment), tint)
@@ -534,7 +537,7 @@ impl<'a, B: FontBackend> Painter<'a, B> {
             let text = if tab.disabled {
                 self.tokens.get("text.disabled").unwrap_or(color)
             } else if chosen {
-                self.tokens.get("tabs.chosen.fg").unwrap_or(color)
+                self.tokens.get("segments.chosen.fg").unwrap_or(color)
             } else {
                 color
             };
@@ -1741,17 +1744,17 @@ mod tests {
         let frame = layout.frame(&tree, node).unwrap();
         // The box of the whole view, the control's track inside it, the
         // first tab tinted, a line between the second and the third alone.
-        assert_eq!(shapes[0].fill, token("tabs.box.bg"));
-        assert_eq!(shapes[0].border_color, token("tabs.box.border"));
+        assert_eq!(shapes[0].fill, token("segments.box.bg"));
+        assert_eq!(shapes[0].border_color, token("segments.box.border"));
         assert_eq!(shapes[0].rect, rect(frame));
         assert!(control.y > frame.y);
         assert_eq!(
             (shapes[1].fill, shapes[1].rect),
-            (token("tabs.bg"), rect(control))
+            (token("segments.bg"), rect(control))
         );
         assert_eq!(
             (shapes[2].fill, shapes[2].rect),
-            (token("tabs.chosen.bg"), rect(segments[0]))
+            (token("segments.chosen.bg"), rect(segments[0]))
         );
         let lines: Vec<i32> = shapes
             .iter()
@@ -1780,7 +1783,7 @@ mod tests {
                 .unwrap()
                 .color
         };
-        assert_eq!(of(segments[0]), token("tabs.chosen.fg"));
+        assert_eq!(of(segments[0]), token("segments.chosen.fg"));
         assert_eq!(of(segments[1]), token("text"));
         assert_eq!(of(segments[3]), token("text.disabled"));
         // Its focus's ring round its control, of a button's corners.
@@ -3353,9 +3356,9 @@ mod tests {
             Node::container(vec![Node::text("tab")])
                 .key("tab")
                 .style(view::Style {
-                    background: Some(Token::from("tab.inactive.bg")),
+                    background: Some(Token::from("tabs.inactive.bg")),
                     hover: Some(Hover {
-                        background: Some(Token::from("tab.hover.bg")),
+                        background: Some(Token::from("tabs.hover.bg")),
                         ..Hover::default()
                     }),
                     pressed: Some(Hover {
@@ -3417,8 +3420,8 @@ mod tests {
             .iter()
             .all(|(x, y)| (x - y).abs() < 1e-3)
         };
-        let inactive = token("tab.inactive.bg");
-        let hovered = over(token("tab.hover.bg"), inactive);
+        let inactive = token("tabs.inactive.bg");
+        let hovered = over(token("tabs.hover.bg"), inactive);
         let pressed = over(token("button.pressed.bg"), hovered);
         // Hovered, then pressed once the hover showed.
         animations.hovered([&tab], start);
@@ -3508,9 +3511,9 @@ mod tests {
             ])
             .key("tab")
             .style(view::Style {
-                background: Some(Token::from("tab.bar.bg")),
+                background: Some(Token::from("tabs.bar.bg")),
                 hover: Some(Hover {
-                    background: Some(Token::from("tab.hover.bg")),
+                    background: Some(Token::from("tabs.hover.bg")),
                     color: Some(Token::from("accent")),
                     ..Hover::default()
                 }),
@@ -3571,7 +3574,7 @@ mod tests {
         };
         // The hover's veil over the tab's own background; the accent over
         // the text's color, opaque.
-        let (inactive, veil) = (token("tab.bar.bg"), token("tab.hover.bg"));
+        let (inactive, veil) = (token("tabs.bar.bg"), token("tabs.hover.bg"));
         let hovered = over(veil, inactive);
         assert!(hovered.alpha >= 1.0 - 1e-6 && veil.alpha < 1.0);
         let (text, accent) = (token("text"), token("accent"));

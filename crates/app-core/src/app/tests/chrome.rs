@@ -108,7 +108,7 @@ impl plugins::Plugin for Bars {
         node.layout.height = Length::Points(height);
         node.layout.grow = 1.0;
         node.style = Style {
-            background: Some(Token::from("tab.bar.bg")),
+            background: Some(Token::from("tabs.bar.bg")),
             ..Style::default()
         };
         Some(node)
@@ -505,9 +505,9 @@ impl plugins::Plugin for Hovering {
         let mut node = Node::container(vec![Node::text("hover me")])
             .key("box")
             .style(Style {
-                background: Some(Token::from("tab.bar.bg")),
+                background: Some(Token::from("tabs.bar.bg")),
                 hover: Some(lokyr_kernel::plugins::view::Hover {
-                    background: Some(Token::from("tab.hover.bg")),
+                    background: Some(Token::from("tabs.hover.bg")),
                     ..Default::default()
                 }),
                 transition: Some(lokyr_kernel::plugins::view::Transition {
@@ -574,8 +574,8 @@ fn a_hover_fades_with_no_render_of_its_plugin() {
     // The tokens of the window's chrome, of its own appearance.
     let tokens = &state.chrome_tokens.as_ref().expect("the chrome's tokens").1;
     let (inactive, veil) = (
-        tokens.get("tab.bar.bg").unwrap(),
-        tokens.get("tab.hover.bg").unwrap(),
+        tokens.get("tabs.bar.bg").unwrap(),
+        tokens.get("tabs.hover.bg").unwrap(),
     );
     // The hover's veil over the box's own background, opaque.
     let hovered = lokyr_render_core::Color {
@@ -652,8 +652,8 @@ fn the_chrome_takes_the_window_s_own_appearance_and_the_terminal_s_colors() {
     assert!(!dark);
     let light = app.theme.variant(false);
     assert_eq!(
-        tokens.get("tab.inactive.fg"),
-        light.tokens.get("tab.inactive.fg")
+        tokens.get("tabs.inactive.fg"),
+        light.tokens.get("tabs.inactive.fg")
     );
     let program = lokyr_render_core::Color::from_rgb8(0xfd, 0xf6, 0xe3);
     assert_eq!(*background, program);

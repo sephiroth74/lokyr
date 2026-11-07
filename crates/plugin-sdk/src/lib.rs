@@ -25,6 +25,8 @@ pub mod message;
 #[cfg(feature = "unstable")]
 pub mod plugin;
 #[cfg(feature = "unstable")]
+pub mod theme;
+#[cfg(feature = "unstable")]
 pub mod ui;
 #[cfg(feature = "unstable")]
 pub mod view;

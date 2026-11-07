@@ -479,10 +479,10 @@ impl Default for Layout {
     }
 }
 
-/// A color of the theme, by its token's name, as `tab.active.bg` or
+/// A color of the theme, by its token's name, as `tabs.active.bg` or
 /// `search.match`, which the theme gives in the light and the dark
 /// appearance. A name that the theme lacks takes the color of the name
-/// without its last part, `tab.active` for `tab.active.bg`, then `tab`.
+/// without its last part, `tabs.active` for `tabs.active.bg`, then `tabs`.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct Token(pub String);
 
@@ -1168,7 +1168,7 @@ mod tests {
             opacity: Some(0.5),
             transition: Some(Transition::default()),
             hover: Some(Hover {
-                background: Some(Token::from("tab.hover.bg")),
+                background: Some(Token::from("tabs.hover.bg")),
                 opacity: Some(1.0),
                 ..Hover::default()
             }),
@@ -1180,7 +1180,7 @@ mod tests {
                 ..Hover::default()
             }),
             pressed: Some(Hover {
-                color: Some(Token::from("tab.active.fg")),
+                color: Some(Token::from("tabs.active.fg")),
                 ..Hover::default()
             }),
         });

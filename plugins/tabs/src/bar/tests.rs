@@ -136,7 +136,7 @@ fn a_bar_shows_its_tabs_their_keys_and_their_close_buttons() {
     // The active tab of its tokens and of no hover; the other's hover; each
     // of its press, faded.
     let first = keyed(&node, "tab-1").unwrap();
-    assert_eq!(first.style.background, Some(Token::from("tab.active.bg")));
+    assert_eq!(first.style.background, Some(Token::from("tabs.active.bg")));
     assert!(first.style.hover.is_none() && first.style.pressed.is_some());
     assert!(first.style.border.is_some() && first.style.shadow.is_some());
     // The tabs of equal widths, whatever their titles.
@@ -194,7 +194,7 @@ fn a_column_lays_its_tabs_down_and_a_seamless_bar_shows_the_window_s_background(
     };
     let tabs = [tab(1, "a", true), tab(2, "b", false)];
     let node = bar(&tabs, &[], Some("⌥⌘1"), &column).unwrap();
-    assert_eq!(node.style.background, Some(Token::from("tab.bar.bg")));
+    assert_eq!(node.style.background, Some(Token::from("tabs.bar.bg")));
     // The rows down the column, and a line along its edge by the panes.
     let [list, edge] = &node.children[..] else {
         panic!("{node:#?}");
@@ -238,7 +238,7 @@ fn a_column_lays_its_tabs_down_and_a_seamless_bar_shows_the_window_s_background(
     let node = bar(&tabs, &[], None, &seamless_side).unwrap();
     assert_eq!(
         node.children[0].children[0].style.background,
-        Some(Token::from("tab.seamless.veil"))
+        Some(Token::from("tabs.seamless.veil"))
     );
     // Below the titlebar, the window's keys the titlebar's.
     let standard = Settings {
@@ -267,7 +267,7 @@ fn a_column_lays_its_tabs_down_and_a_seamless_bar_shows_the_window_s_background(
     let node = bar(&tabs, &[], None, &seamless).unwrap();
     // The window's background through the bar and its active tab, and the
     // others under the veil.
-    let veil = Some(Token::from("tab.seamless.veil"));
+    let veil = Some(Token::from("tabs.seamless.veil"));
     assert_eq!(node.style.background, None);
     let active = keyed(&node, "tab-1").unwrap();
     assert_eq!(active.style.background, None);
@@ -278,7 +278,7 @@ fn a_column_lays_its_tabs_down_and_a_seamless_bar_shows_the_window_s_background(
     assert_eq!(line(active), None);
     assert_eq!(
         line(keyed(&node, "tab-2").unwrap()),
-        Some(Token::from("tab.seamless.line"))
+        Some(Token::from("tabs.seamless.line"))
     );
     // A line between two cells.
     assert!(
@@ -295,7 +295,7 @@ fn a_column_lays_its_tabs_down_and_a_seamless_bar_shows_the_window_s_background(
     let other = keyed(&node, "tab-2").unwrap();
     assert_eq!(
         other.children[0].style.background,
-        Some(Token::from("tab.seamless.line"))
+        Some(Token::from("tabs.seamless.line"))
     );
     // Down a seamless column, the active row of the window's background,
     // the others and the rest of the column under the veil.

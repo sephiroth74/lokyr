@@ -196,7 +196,7 @@ type PaneId = number
 -- integer, a number or a boolean.
 type Args = { [string]: string | number | boolean }
 
--- Plugins should prefer theme tokens (e.g. "tab.active.bg") to literals.
+-- Plugins should prefer theme tokens (e.g. "tabs.active.bg") to literals.
 type Color = string | { r: number, g: number, b: number, a: number? }
 
 -- How a split lays its two parts out, the first left or above; a part of

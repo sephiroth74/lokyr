@@ -114,7 +114,7 @@ impl plugins::Plugin for Widgets {
             node.layout.grow = 1.0;
             node.layout.gap = 8.0;
             node.style = Style {
-                background: Some(Token::from("tab.bar.bg")),
+                background: Some(Token::from("tabs.bar.bg")),
                 ..Style::default()
             };
             node

@@ -353,7 +353,7 @@ pub fn title_header(title: &str, focused: bool) -> Node {
         ..Layout::default()
     })
     .style(Style {
-        background: Some(Token::from("tab.bar.bg")),
+        background: Some(Token::from("tabs.bar.bg")),
         clip: true,
         ..Style::default()
     })

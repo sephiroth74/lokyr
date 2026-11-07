@@ -766,6 +766,7 @@ impl<B: Backend> App<B> {
         let look = TextLook {
             config: text,
             blink_shown,
+            ..TextLook::default()
         };
         let config = self.config.cursor;
         let selection_colors = self.variant(platform, window).selection;
@@ -1342,6 +1343,7 @@ fn other_cells(
     let look = TextLook {
         config: text,
         blink_shown: true,
+        ..TextLook::default()
     };
     panes
         .iter()

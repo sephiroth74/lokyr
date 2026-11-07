@@ -440,9 +440,9 @@ const VIEW_WIDTH: f32 = 480.0;
 /// in its colors of the active tab or of another.
 fn tab(title: &str, active: bool) -> Node {
     let (background, color) = if active {
-        ("tab.active.bg", "tab.active.fg")
+        ("tabs.active.bg", "tabs.active.fg")
     } else {
-        ("tab.inactive.bg", "tab.inactive.fg")
+        ("tabs.inactive.bg", "tabs.inactive.fg")
     };
     Node::container(vec![
         Node::icon("terminal"),
@@ -520,7 +520,7 @@ fn view_tree() -> Node {
         ..Box::default()
     })
     .style(Style {
-        background: Some("tab.bar.bg".into()),
+        background: Some("tabs.bar.bg".into()),
         ..Style::default()
     });
     let field = Node::container(vec![Node::text("fn main\\(")])
