@@ -26,7 +26,9 @@ use crate::app::chrome::SlotView;
 
 /// What a window's chrome's tokens are of: whether its own appearance is
 /// dark, and its terminal's default background and text colors.
-pub(crate) type ChromeLook = (bool, Color, Color);
+/// The look of a window's chrome: of the dark appearance or not, the
+/// terminal's background and text, and the window's background's opacity.
+pub(crate) type ChromeLook = (bool, Color, Color, f32);
 use crate::drawing::Backend;
 use crate::mouse::{Mouse, Spot};
 use crate::notice;

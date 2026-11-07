@@ -549,7 +549,7 @@ fn a_hover_fades_with_no_render_of_its_plugin() {
         app.windows[&window]
             .chrome_tokens
             .as_ref()
-            .is_some_and(|((_, background, _), _)| *background == theme)
+            .is_some_and(|((_, background, ..), _)| *background == theme)
     };
     let deadline = Instant::now() + std::time::Duration::from_secs(10);
     while !settled(&app) {
@@ -645,7 +645,7 @@ fn the_chrome_takes_the_window_s_own_appearance_and_the_terminal_s_colors() {
     run_until(&mut fake, &mut app, |_, app| shows(app, window, "lit"));
     fake.send(&mut app, window, WindowEvent::Frame);
     let state = &app.windows[&window];
-    let Some(((dark, background, _), tokens)) = state.chrome_tokens.as_ref() else {
+    let Some(((dark, background, ..), tokens)) = state.chrome_tokens.as_ref() else {
         panic!("the chrome's tokens");
     };
     // The light variant's tokens, as the window's own appearance, and

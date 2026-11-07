@@ -1164,3 +1164,23 @@ fn a_tab_s_context_menu_colors_it_from_its_submenu() {
         Some(lokyr_vt_core::page::Rgb::new(0x34, 0xC7, 0x59))
     );
 }
+
+#[test]
+fn the_active_tab_and_the_bar_are_as_translucent_as_the_window() {
+    let translucent = "\n[window]\nbackground-opacity = 0.5\n";
+    let (mut fake, mut app, window) = tabs_running("unified", "top", 2, idle(), translucent);
+    settle(&mut fake, &mut app);
+    let alpha = |app: &App, name: &str| {
+        let (_, tokens) = app.windows[&window].chrome_tokens.as_ref().unwrap();
+        tokens.get(name).unwrap().alpha
+    };
+    for name in ["tabs.active.bg", "tabs.bar.bg", "terminal.bg"] {
+        assert!((alpha(&app, name) - 0.5).abs() < 1e-6, "{name}");
+    }
+    // Opaque again, as the config changes.
+    let mut config = app.config.clone();
+    config.window.background_opacity = 1.0.try_into().unwrap();
+    app.apply(&mut fake, config);
+    settle(&mut fake, &mut app);
+    assert!((alpha(&app, "tabs.active.bg") - 1.0).abs() < 1e-6);
+}

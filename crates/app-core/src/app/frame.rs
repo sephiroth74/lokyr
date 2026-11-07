@@ -43,6 +43,11 @@ use crate::{notice, performance, size_label};
 /// divider takes.
 const DIVIDER: f64 = 1.0;
 
+/// The tokens of the chrome's backgrounds, which take the window's
+/// background's opacity: the tab bar's, of a pane's header too, and the
+/// active tab's.
+const TRANSLUCENT: [&str; 2] = ["tabs.bar.bg", "tabs.active.bg"];
+
 impl<B: Backend> App<B> {
     /// Asks every window for a frame.
     pub(super) fn request_frames(&self, platform: &mut dyn Platform) {
@@ -782,7 +787,8 @@ impl<B: Backend> App<B> {
         // the terminal's colors of the pane's own, which a program, reverse
         // video or a man page's window change.
         let chrome_dark = own.map_or(dark, |own| own == Appearance::Dark);
-        let chrome_look = (chrome_dark, background, foreground);
+        let opacity = self.config.window.background_opacity.value();
+        let chrome_look = (chrome_dark, background, foreground, opacity);
         let reduced = platform.reduce_motion();
         let (Some(drawing), Some(state)) = (self.drawing.as_mut(), self.windows.get_mut(&window))
         else {
@@ -920,10 +926,18 @@ impl<B: Backend> App<B> {
             .as_ref()
             .is_none_or(|(kept, _)| *kept != chrome_look)
         {
-            let (dark, background, foreground) = chrome_look;
+            let (dark, background, foreground, opacity) = chrome_look;
             let mut tokens = self.theme.variant(dark).tokens.clone();
-            tokens.set("terminal.bg", background.with_alpha(1.0));
+            tokens.set("terminal.bg", background.with_alpha(opacity));
             tokens.set("terminal.fg", foreground.with_alpha(1.0));
+            // The chrome's backgrounds, as the window's own is, as
+            // translucent as the config makes the window, the active tab's
+            // too.
+            for name in TRANSLUCENT {
+                if let Some(color) = tokens.get(name) {
+                    tokens.set(name, color.with_alpha(color.alpha * opacity));
+                }
+            }
             state.chrome_tokens = Some((chrome_look, tokens));
         }
         let Some((_, tokens)) = state.chrome_tokens.as_ref() else {
