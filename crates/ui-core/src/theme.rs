@@ -2,7 +2,7 @@
 //! the system's appearance: the terminal's, and the interface's, by their
 //! tokens.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use lokyr_plugin_sdk::theme::{TerminalColors, Theme as Spec, ThemeColor, ThemeVariant};
 use lokyr_render_core::Color;
@@ -41,9 +41,11 @@ pub struct Variant {
     pub tokens: Tokens,
 }
 
-/// The colors of the interface, by their tokens' names, as `tabs.active.bg`.
+/// The colors of the interface, by their tokens' names, as `tabs.active.bg`,
+/// and the backgrounds among them that take the place of what is under
+/// them, as a translucent window's chrome's do.
 #[derive(Clone, Debug, Default, PartialEq)]
-pub struct Tokens(HashMap<String, Color>);
+pub struct Tokens(HashMap<String, Color>, HashSet<String>);
 
 /// The token of no color, whatever a theme gives, as a progress's track
 /// that shows nothing.
@@ -86,6 +88,20 @@ impl Tokens {
     /// Gives `token` its color.
     pub fn set(&mut self, token: &str, color: Color) {
         self.0.insert(token.to_owned(), color);
+    }
+
+    /// Has the backgrounds of `token` take the place of what is under them,
+    /// by the part of each pixel that they cover, rather than go over it,
+    /// as a translucent window's chrome shows the window's opacity over the
+    /// window's own background, which the frame draws.
+    pub fn knock_out(&mut self, token: &str) {
+        self.1.insert(token.to_owned());
+    }
+
+    /// Whether the backgrounds of `token` take the place of what is under
+    /// them, as [`Tokens::knock_out`] has them.
+    pub fn knocks_out(&self, token: &str) -> bool {
+        self.1.contains(token)
     }
 }
 
@@ -470,6 +486,7 @@ pub fn derived(terminal: &TerminalColors) -> Tokens {
             .into_iter()
             .map(|(name, color)| (name.to_owned(), color))
             .collect(),
+        HashSet::new(),
     )
 }
 

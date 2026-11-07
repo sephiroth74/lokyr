@@ -225,6 +225,7 @@ pub fn tooltip<B: FontBackend>(
             color: shadow,
         }),
         arc: None,
+        knockout: false,
     };
     let baseline = y + (down * scale).round() + (ascent * scale).round();
     let (glyphs, _) = font.interface_text(
@@ -738,12 +739,14 @@ impl<'a, B: FontBackend> Painter<'a, B> {
                 if let Some(track) = track.filter(|track| track.alpha > 0.0) {
                     self.push_shape(Shape {
                         arc: Some(arc(1.0)),
+                        knockout: false,
                         ..Shape::filled(square, track)
                     });
                 }
                 if let Some(fill) = fill.filter(|_| filled) {
                     self.push_shape(Shape {
                         arc: Some(arc(value)),
+                        knockout: false,
                         ..Shape::filled(square, fill)
                     });
                 }
@@ -887,6 +890,7 @@ impl<'a, B: FontBackend> Painter<'a, B> {
             border_color: color,
             shadow: None,
             arc: None,
+            knockout: false,
         })
     }
 
@@ -924,6 +928,10 @@ impl<'a, B: FontBackend> Painter<'a, B> {
             border_color: border.unwrap_or(Color::CLEAR),
             shadow,
             arc: None,
+            knockout: style
+                .background
+                .as_ref()
+                .is_some_and(|token| self.tokens.knocks_out(&token.0)),
         })
     }
 
@@ -987,6 +995,7 @@ impl<'a, B: FontBackend> Painter<'a, B> {
                 border_color: Color::CLEAR,
                 shadow: None,
                 arc: None,
+                knockout: false,
             });
             // Over the box's own colors, as its theme's veils are.
             if let Some(fill) = fill {
@@ -2125,6 +2134,7 @@ mod tests {
                     border_color: token("focus.ring"),
                     shadow: None,
                     arc: None,
+                    knockout: false,
                 }]
             );
             // Without the focus, or of a node that the tree lacks, no ring.

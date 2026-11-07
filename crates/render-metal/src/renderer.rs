@@ -124,6 +124,8 @@ pub struct MetalRenderer {
     lines: Pipeline,
     glyphs: Pipeline,
     shapes: Pipeline,
+    /// The shapes' fills that take the place of what is under them.
+    knockouts: Pipeline,
     pictures: Pipeline,
     coverage: MetalTexture,
     color: MetalTexture,
@@ -178,14 +180,21 @@ impl MetalRenderer {
         let library = device
             .newLibraryWithData_error(&data)
             .map_err(|error| Error::Shaders(error.to_string()))?;
-        let pipeline =
-            |vertex: &str, fragment: &str| make_pipeline(&device, &library, vertex, fragment);
+        let pipeline = |vertex: &str, fragment: &str| {
+            make_pipeline(&device, &library, (vertex, fragment), Blend::Over)
+        };
         Ok(Self {
             solid: pipeline("rect_vertex", "solid_fragment")?,
             background: pipeline("background_vertex", "solid_fragment")?,
             lines: pipeline("line_vertex", "line_fragment")?,
             glyphs: pipeline("glyph_vertex", "glyph_fragment")?,
             shapes: pipeline("shape_vertex", "shape_fragment")?,
+            knockouts: make_pipeline(
+                &device,
+                &library,
+                ("shape_vertex", "shape_knockout_fragment"),
+                Blend::Knockout,
+            )?,
             pictures: pipeline("picture_vertex", "picture_fragment")?,
             coverage: make_texture(&device, Texture::Coverage, coverage)?,
             color: make_texture(&device, Texture::Color, color)?,
@@ -834,9 +843,14 @@ impl Frame<'_> {
             Item::Cells(batch) => self.cells(batch),
             Item::Picture { rect, picture } => self.picture(rect, *picture),
             Item::Shapes(shapes) => {
-                let instances: Vec<ShapeInstance> =
+                // Each run of the instances of one pipeline, in their order.
+                let instances: Vec<(Blend, ShapeInstance)> =
                     shapes.iter().flat_map(shape_instances).collect();
-                self.shapes(&instances);
+                for run in instances.chunk_by(|a, b| a.0 == b.0) {
+                    let blend = run[0].0;
+                    let run: Vec<ShapeInstance> = run.iter().map(|&(_, shape)| shape).collect();
+                    self.shapes(&run, blend);
+                }
             }
         }
     }
@@ -901,11 +915,15 @@ impl Frame<'_> {
         }
     }
 
-    fn shapes(&self, shapes: &[ShapeInstance]) {
+    fn shapes(&self, shapes: &[ShapeInstance], blend: Blend) {
         let Some((buffer, offset)) = self.arena.borrow_mut().put(shapes) else {
             return;
         };
-        self.encoder.setRenderPipelineState(&self.renderer.shapes);
+        let pipeline = match blend {
+            Blend::Over => &self.renderer.shapes,
+            Blend::Knockout => &self.renderer.knockouts,
+        };
+        self.encoder.setRenderPipelineState(pipeline);
         // SAFETY: the buffers and bytes that the shapes' shaders take, at
         // their indices.
         unsafe {
@@ -1117,8 +1135,10 @@ fn rect_instance(rect: &Rect, color: Color) -> RectInstance {
     }
 }
 
-/// The instances of `shape`: its shadow's, if it casts one, under its own.
-fn shape_instances(shape: &Shape) -> impl Iterator<Item = ShapeInstance> {
+/// The instances of `shape`, each of its pipeline's blend: its shadow's, if
+/// it casts one, under its own; a fill that knocks out what is under it of
+/// its own, then its border over it.
+fn shape_instances(shape: &Shape) -> impl Iterator<Item = (Blend, ShapeInstance)> {
     let rect = shape.rect;
     // A shape of no width or height draws nothing, nor casts a shadow.
     let drawn = rect.width > 0 && rect.height > 0;
@@ -1169,9 +1189,27 @@ fn shape_instances(shape: &Shape) -> impl Iterator<Item = ShapeInstance> {
     };
     // An arc casts no shadow.
     let shadow = shadow.filter(|_| shape.arc.is_none());
+    let knockout = shape.knockout && shape.arc.is_none();
+    let own: Vec<(Blend, ShapeInstance)> = if knockout {
+        let fill = ShapeInstance {
+            border: 0.0,
+            border_color: [0.0; 4],
+            ..own
+        };
+        let border = (own.border > 0.0).then_some(ShapeInstance {
+            fill: [0.0; 4],
+            ..own
+        });
+        std::iter::once((Blend::Knockout, fill))
+            .chain(border.map(|border| (Blend::Over, border)))
+            .collect()
+    } else {
+        vec![(Blend::Over, own)]
+    };
     shadow
+        .map(|shadow| (Blend::Over, shadow))
         .into_iter()
-        .chain(std::iter::once(own))
+        .chain(own)
         .filter(move |_| drawn)
 }
 
@@ -1208,11 +1246,21 @@ fn intersect(clip: MTLScissorRect, rect: Rect) -> Option<MTLScissorRect> {
     })
 }
 
+/// How a pipeline's fragments go onto what is under them.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Blend {
+    /// Over it, by their opacity, as premultiplied colors go.
+    Over,
+    /// In its place, by the part of the pixel that they cover, which their
+    /// second source gives.
+    Knockout,
+}
+
 fn make_pipeline(
     device: &ProtocolObject<dyn MTLDevice>,
     library: &ProtocolObject<dyn MTLLibrary>,
-    vertex: &str,
-    fragment: &str,
+    (vertex, fragment): (&str, &str),
+    blend: Blend,
 ) -> Result<Pipeline, Error> {
     let function = |name: &str| {
         library
@@ -1231,8 +1279,18 @@ fn make_pipeline(
     attachment.setBlendingEnabled(true);
     attachment.setSourceRGBBlendFactor(MTLBlendFactor::One);
     attachment.setSourceAlphaBlendFactor(MTLBlendFactor::One);
-    attachment.setDestinationRGBBlendFactor(MTLBlendFactor::OneMinusSourceAlpha);
-    attachment.setDestinationAlphaBlendFactor(MTLBlendFactor::OneMinusSourceAlpha);
+    let (rgb, alpha) = match blend {
+        Blend::Over => (
+            MTLBlendFactor::OneMinusSourceAlpha,
+            MTLBlendFactor::OneMinusSourceAlpha,
+        ),
+        Blend::Knockout => (
+            MTLBlendFactor::OneMinusSource1Color,
+            MTLBlendFactor::OneMinusSource1Alpha,
+        ),
+    };
+    attachment.setDestinationRGBBlendFactor(rgb);
+    attachment.setDestinationAlphaBlendFactor(alpha);
     device
         .newRenderPipelineStateWithDescriptor_error(&descriptor)
         .map_err(|error| Error::Shaders(error.to_string()))
@@ -1939,6 +1997,55 @@ mod tests {
         assert_eq!(pixel(28, 3), [255, 0, 0]);
         let edge = pixel(22, 4);
         assert!(edge[1] > 0 && edge[1] < 255, "{edge:?}");
+    }
+
+    #[test]
+    fn a_knocked_out_fill_takes_the_place_of_what_is_under_it() {
+        let Some((_, mut renderer)) = renderer() else {
+            return;
+        };
+        // A translucent window's background, of half its opacity, and
+        // fills of half theirs: one over it, one in its place, of round
+        // corners, and one in its place of a border that goes over.
+        let background = Color::from_rgb8(0, 0, 0).with_alpha(0.5);
+        let white = Color::from_rgb8(255, 255, 255).with_alpha(0.5);
+        let over = Shape::filled(rect(2, 2, 16, 16), white);
+        let knockout = Shape {
+            radius: 8.0,
+            knockout: true,
+            ..Shape::filled(rect(20, 2, 16, 16), white)
+        };
+        let bordered = Shape {
+            border: 1.0,
+            border_color: Color::from_rgb8(255, 0, 0),
+            knockout: true,
+            ..Shape::filled(rect(38, 2, 10, 10), white)
+        };
+        let list = DisplayList {
+            frame: 1,
+            background,
+            items: vec![Item::Shapes(vec![over, knockout, bordered])],
+        };
+        let rows = drawn(&mut renderer, &list, 50, 20);
+        let pixel = |x: usize, y: usize| rows[y][x * 4..][..4].to_vec();
+        let near = |got: u8, wanted: u8| got.abs_diff(wanted) <= 2;
+        // Over: three quarters opaque; in its place: half, as the window.
+        let o = pixel(10, 10);
+        assert!(near(o[3], 191), "{o:?}");
+        let k = pixel(28, 10);
+        assert!(near(k[3], 128) && near(k[0], 128), "{k:?}");
+        // Its edge, between the fill and the background, half opaque still.
+        let edge = pixel(22, 5);
+        assert!(near(edge[3], 128), "{edge:?}");
+        // A border over its fill, of its color, opaque.
+        let border = pixel(38, 6);
+        assert!(
+            border[0] > 250 && border[1] < 5 && border[3] > 250,
+            "{border:?}"
+        );
+        assert!(near(pixel(43, 6)[3], 128));
+        // Past it, the background.
+        assert!(near(pixel(19, 10)[3], 128));
     }
 
     #[test]

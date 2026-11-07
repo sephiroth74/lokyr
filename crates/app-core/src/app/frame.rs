@@ -53,7 +53,9 @@ const GUTTER_ROOM: f64 = 4.0;
 
 /// The tokens of the chrome's backgrounds, which take the window's
 /// background's opacity: the tab bar's, of a pane's header too, and the
-/// active tab's.
+/// active tab's. Over a translucent window, they take the place of what is
+/// under them, the window's background that the frame draws, so that they
+/// show the window's opacity rather than theirs over it.
 const TRANSLUCENT: [&str; 2] = ["tabs.bar.bg", "tabs.active.bg"];
 
 impl<B: Backend> App<B> {
@@ -86,21 +88,17 @@ impl<B: Backend> App<B> {
             .variant(platform.appearance() == Appearance::Dark)
     }
 
-    /// The backdrop of a window whose terminal's default background is
-    /// `background`, as the config's opacity and blur make it: `None` for
-    /// an opaque one.
-    fn backdrop(&self, background: Color) -> Option<Backdrop> {
+    /// The backdrop of a window, as the config's opacity and blur make it:
+    /// clear, of the blur of what is behind it, as the frame draws the
+    /// window's background of its opacity, under the chrome that takes its
+    /// place; `None` for an opaque one.
+    fn backdrop(&self) -> Option<Backdrop> {
         let window = &self.config.window;
         window
             .background_opacity
             .is_translucent()
             .then(|| Backdrop {
-                color: [
-                    f64::from(background.red),
-                    f64::from(background.green),
-                    f64::from(background.blue),
-                    f64::from(window.background_opacity.value()),
-                ],
+                color: [0.0; 4],
                 blur: f64::from(window.background_blur.points()),
             })
     }
@@ -742,13 +740,15 @@ impl<B: Backend> App<B> {
                 height: height / size.scale,
             },
         );
-        // A translucent window's backdrop is the terminal's default
-        // background, under the whole window, the titlebar too, and follows
-        // it, as the theme, the program or reverse video change it.
+        // A translucent window's background is the terminal's default
+        // background, under the whole window, the titlebar too, which the
+        // frame draws, and follows it, as the theme, the program or reverse
+        // video change it; the platform's backdrop, clear, blurs what is
+        // behind.
         let background = cells::background(pane.snapshot());
         let foreground = cells::foreground(pane.snapshot());
         let sent = state.backdrop;
-        let backdrop = self.backdrop(background);
+        let backdrop = self.backdrop();
         if backdrop != sent {
             platform.set_translucent(window, backdrop);
             if let Some(state) = self.windows.get_mut(&window) {
@@ -916,11 +916,15 @@ impl<B: Backend> App<B> {
             .and_then(|_| {
                 cells::blinking_cells(snapshot, &cell, selection.as_ref(), look, preedit, font)
             });
-        // Over a backdrop, what the cells leave shows it, and the titlebar
-        // too, unless the config keeps it opaque: past a sidebar, which runs
-        // through it, its view's own.
+        // A translucent window's background, of its opacity, which the cells
+        // leave showing, and the titlebar too, unless the config keeps it
+        // opaque: past a sidebar, which runs through it, its view's own.
         let laid_out = started.map(|_| Instant::now());
-        let opacity = if backdrop.is_some() { 0.0 } else { 1.0 };
+        let opacity = if backdrop.is_some() {
+            chrome_look.3
+        } else {
+            1.0
+        };
         let sidebar = chrome::has_tab_bar(&state.chrome)
             && matches!(
                 chrome::tab_bar_place(&state.chrome, &self.plugins),
@@ -956,6 +960,11 @@ impl<B: Backend> App<B> {
             for name in TRANSLUCENT {
                 if let Some(color) = tokens.get(name) {
                     tokens.set(name, color.with_alpha(color.alpha * opacity));
+                }
+            }
+            if opacity < 1.0 {
+                for name in TRANSLUCENT.into_iter().chain(["terminal.bg"]) {
+                    tokens.knock_out(name);
                 }
             }
             state.chrome_tokens = Some((chrome_look, tokens));
@@ -1425,6 +1434,7 @@ fn gutter_marks<'a>(
             border_color: Color::CLEAR,
             shadow: None,
             arc: None,
+            knockout: false,
         })
     })
 }

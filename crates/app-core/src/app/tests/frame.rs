@@ -423,25 +423,20 @@ fn a_translucent_background_makes_the_window_translucent() {
     )
     .unwrap();
     change(&mut fake, &mut reloaded);
-    // The terminal's default background, of the light variant, with the
-    // opacity.
-    let light = reloaded.colors(Appearance::Light).background;
-    let rgb = |rgb: lokyr_vt_core::page::Rgb| {
-        [rgb.r, rgb.g, rgb.b].map(|component| f64::from(f32::from(component) / 255.0))
+    // A clear backdrop, of the blur, and the frame's background the
+    // terminal's default one, of the light variant, of the opacity, which
+    // the frame draws under the whole window.
+    let drawn = |app: &App| {
+        app.windows[&window]
+            .shown
+            .as_ref()
+            .map(|shown| shown.background)
     };
-    let [red, green, blue] = rgb(light);
-    let opacity = f64::from(0.9_f32);
-    assert_eq!(
-        backdrop(&mut fake, &mut reloaded),
-        Some(([red, green, blue, opacity], 20.0))
-    );
-    // The dark variant's background takes its place.
-    fake.send_app(&mut reloaded, AppEvent::AppearanceChanged(Appearance::Dark));
-    let [red, green, blue] = rgb(reloaded.colors(Appearance::Dark).background);
-    assert_eq!(
-        backdrop(&mut fake, &mut reloaded),
-        Some(([red, green, blue, opacity], 20.0))
-    );
+    let of = |rgb: lokyr_vt_core::page::Rgb| Color::from_rgb8(rgb.r, rgb.g, rgb.b).with_alpha(0.9);
+    assert_eq!(backdrop(&mut fake, &mut reloaded), Some(([0.0; 4], 20.0)));
+    // The app of no drawing draws no frame, which the panels' tests draw.
+    assert_eq!(drawn(&reloaded), None);
+    let _ = of;
     // A blur alone, of an opaque background, leaves the window opaque.
     std::fs::write(&path, "[window]\nbackground-blur = 20\n").unwrap();
     change(&mut fake, &mut reloaded);

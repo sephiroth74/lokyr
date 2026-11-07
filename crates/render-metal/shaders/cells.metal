@@ -348,6 +348,24 @@ fragment float4 shape_fragment(ShapeFragment in [[stage_in]]) {
     return in.border_color * ring + in.fill * (outer - in.border_color.a * ring);
 }
 
+// A shape's fill that takes the place of what is under it, by the part of
+// each pixel that its outline covers, rather than going over it: its color
+// and that part, which the blend takes of the second source, so that what
+// is under it stays at its edges by the part that it leaves.
+struct Knockout {
+    float4 color [[color(0), index(0)]];
+    float4 cover [[color(0), index(1)]];
+};
+
+fragment Knockout shape_knockout_fragment(ShapeFragment in [[stage_in]]) {
+    float2 p = in.position.xy - in.center;
+    float cover = clamp(0.5 - rounded_box(p, in.extent, in.radius), 0.0, 1.0);
+    Knockout out;
+    out.color = in.fill * cover;
+    out.cover = float4(cover);
+    return out;
+}
+
 // A picture that fills a rectangle, in pixels, of a texture of its own,
 // sampled of its mipmaps as it shrinks, its colors premultiplied as the
 // frame's.

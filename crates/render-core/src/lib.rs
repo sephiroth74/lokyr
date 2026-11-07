@@ -340,6 +340,12 @@ pub struct Shape {
     /// The arc of the ring inscribed in its rectangle that it draws, of its
     /// fill, in place of the rectangle, its border and its shadow.
     pub arc: Option<Arc>,
+    /// Whether its fill takes the place of what is under it, by the part of
+    /// each pixel that it covers, rather than going over it: a background
+    /// that shows a translucent window's opacity over what the window
+    /// draws of it, rather than its own over that. Its border and its
+    /// shadow go over, and an arc's fill too.
+    pub knockout: bool,
 }
 
 /// An arc of a ring: a line along the circle inscribed in a shape's
@@ -368,6 +374,7 @@ impl Shape {
             border_color: Color::CLEAR,
             shadow: None,
             arc: None,
+            knockout: false,
         }
     }
 }

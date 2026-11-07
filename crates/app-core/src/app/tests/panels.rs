@@ -1017,6 +1017,71 @@ fn the_command_palette_opens_at_the_window_s_top_ranks_as_it_is_typed_and_runs_i
     assert_eq!(fake.windows().count(), 1);
 }
 
+/// The shapes that `window`'s last frame drew.
+fn drawn_shapes(app: &App, window: WindowId) -> Vec<lokyr_render_core::Shape> {
+    app.windows[&window]
+        .shown
+        .as_ref()
+        .expect("a frame")
+        .items
+        .iter()
+        .flat_map(|item| match item {
+            Item::Shapes(shapes) => shapes.clone(),
+            _ => Vec::new(),
+        })
+        .collect()
+}
+
+#[test]
+fn a_translucent_window_s_chrome_shows_its_opacity_in_place_of_its_background() {
+    let of_opacity = |opacity: f32| {
+        let mut config = unpadded();
+        config.window.background_opacity = f64::from(opacity).try_into().unwrap();
+        let drawing = Drawing::new(FontConfig::default()).unwrap();
+        let mut fake = Fake::default();
+        let program = shell("echo ready; read line");
+        let mut app = App::new(Some(drawing), config, None).with_program(program);
+        fake.start(&mut app);
+        let window = fake.windows().next().unwrap();
+        app.windows.get_mut(&window).unwrap().surface = Some(fakes::Surface::default());
+        fake.send(&mut app, window, WindowEvent::Focused(true));
+        run_until(&mut fake, &mut app, |_, app| shows(app, window, "ready"));
+        // Two tabs, which the bar shows.
+        command(&mut fake, &mut app, window, "tabs.new");
+        frames(&mut fake, &mut app, window);
+        (fake, app, window)
+    };
+    let (fake, app, window) = of_opacity(0.5);
+    // The frame draws the window's background, of its opacity, under the
+    // whole window, over a clear backdrop of the platform's.
+    let background = lokyr_ui_core::pane::background(app.pane(window).snapshot());
+    let shown = app.windows[&window].shown.as_ref().unwrap().background;
+    assert_eq!(shown, background.with_alpha(0.5));
+    assert_eq!(
+        fake.window(window)
+            .unwrap()
+            .translucent
+            .map(|backdrop| backdrop.color),
+        Some([0.0; 4])
+    );
+    // The bar's and the active tab's backgrounds take its place, of the
+    // window's opacity at most, rather than going over it.
+    let shapes = drawn_shapes(&app, window);
+    let knocked: Vec<_> = shapes.iter().filter(|shape| shape.knockout).collect();
+    assert!(!knocked.is_empty(), "{shapes:?}");
+    assert!(
+        knocked.iter().all(|shape| shape.fill.alpha <= 0.5 + 1e-6),
+        "{knocked:?}"
+    );
+    // An opaque window's go over, as ever.
+    let (_, app, window) = of_opacity(1.0);
+    assert!(
+        drawn_shapes(&app, window)
+            .iter()
+            .all(|shape| !shape.knockout)
+    );
+}
+
 #[test]
 fn a_click_on_the_palette_s_selected_row_runs_it() {
     let drawing = Drawing::new(FontConfig::default()).unwrap();
