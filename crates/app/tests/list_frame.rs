@@ -19,7 +19,7 @@ use lokyr_ui_core::field::Fields;
 use lokyr_ui_core::font::Font;
 use lokyr_ui_core::layout::Layout;
 use lokyr_ui_core::list::Lists;
-use lokyr_ui_core::paint::{Shown, paint};
+use lokyr_ui_core::paint::{Fills, Shown, paint};
 use lokyr_ui_core::theme::Theme;
 use lokyr_ui_core::tree::Tree;
 
@@ -114,7 +114,7 @@ fn measure(count: usize) -> (Duration, Duration, Duration) {
                 pressed: None,
                 lists: &lists,
                 motion: None,
-                fills: true,
+                fills: Fills::All,
             },
         );
         assert!(!items.is_empty());

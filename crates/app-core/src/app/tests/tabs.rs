@@ -359,6 +359,64 @@ fn a_tab_dropped_out_of_every_window_opens_one_of_its_own_under_the_pointer() {
 }
 
 #[test]
+fn a_tab_dragged_among_the_others_goes_over_their_progresses_which_the_frame_draws() {
+    let none = Modifiers::NONE;
+    // Each tab's program tells a progress of 40 percent, then, after a
+    // line, one of no known end.
+    let telling = shell(
+        "printf '\\033]9;4;1;40\\a'; echo ready; read line; printf '\\033]9;4;3\\a'; read line",
+    );
+    let (mut fake, mut app, window) = tabs_running("unified", "top", 3, telling, "");
+    fake.set_draws_fills(true);
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    let ids = order(&app, window);
+    let platform = |fake: &Fake| {
+        let shown = fake.window(window).unwrap();
+        (shown.fills.len(), shown.sweeps.len())
+    };
+    let covered = |app: &App| bar(app, window).map_or(0, |view| view.surface.covered.len());
+    let drag = |fake: &mut Fake, app: &mut App| {
+        let first = middle_of(fake, app, window, &tab_key(ids[0]));
+        let along = Point {
+            x: first.x + 40.0,
+            ..first
+        };
+        fake.send(app, window, click(true, first, none, 1));
+        fake.send(app, window, moved(along, none));
+        settle(fake, app);
+        along
+    };
+    let drop = |fake: &mut Fake, app: &mut App, at: Point| {
+        fake.send(
+            app,
+            window,
+            key_event(KeyCode::Escape, "\u{1b}", none, true),
+        );
+        fake.send(app, window, click(false, at, none, 1));
+        settle(fake, app);
+    };
+    // The outlines' fills, the window server's; then, as the first goes
+    // over the others, theirs the frame's, its own still the window
+    // server's.
+    run_until(&mut fake, &mut app, |fake, _| platform(fake) == (3, 0));
+    let at = drag(&mut fake, &mut app);
+    assert_eq!((platform(&fake), covered(&app)), ((1, 0), 2));
+    drop(&mut fake, &mut app, at);
+    assert_eq!((platform(&fake), covered(&app)), ((3, 0), 0));
+    // The outlines' sweeps likewise.
+    let shown = app.workspace.window(app.windows[&window].window).unwrap();
+    for tab in shown.tabs().to_vec() {
+        let pane = app.workspace.tab(tab).unwrap().active_pane();
+        app.workspace.pane(pane).unwrap().text("\n");
+    }
+    run_until(&mut fake, &mut app, |fake, _| platform(fake) == (0, 3));
+    let at = drag(&mut fake, &mut app);
+    assert_eq!((platform(&fake), covered(&app)), ((0, 1), 2));
+    drop(&mut fake, &mut app, at);
+    assert_eq!((platform(&fake), covered(&app)), ((0, 3), 0));
+}
+
+#[test]
 fn another_button_during_a_tab_s_drag_leaves_the_drag_under_way() {
     let none = Modifiers::NONE;
     let (mut fake, mut app, window) = three_tabs("unified", "top");

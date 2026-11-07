@@ -44,6 +44,8 @@ pub const DOTS_PERIOD: Duration = Duration::from_millis(1200);
 /// its corners' radius, its color, its shape and how long a sweep takes.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct SweepArea {
+    /// Its progress's node.
+    pub node: NodeId,
     /// The bar's box, or the ring's square.
     pub rect: Rect,
     /// The part of it that shows, within the clips around it.
@@ -404,6 +406,7 @@ fn walk(
                 _ => radius(progress, frame.height, scale),
             };
             parts.sweeps.push(SweepArea {
+                node: id,
                 rect: pixels,
                 visible,
                 radius,

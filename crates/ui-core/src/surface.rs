@@ -5,11 +5,12 @@
 //! the surfaces of a window, the clipboard and the platform's composition,
 //! which the surface tells it to end; the events go to the view's plugin.
 
+use std::collections::BTreeSet;
 use std::time::Instant;
 
 use lokyr_plugin_sdk::host::TabId;
 use lokyr_plugin_sdk::view::{Key, Kind, Node, UiEventKind};
-use lokyr_render_core::Item;
+use lokyr_render_core::{Item, Rect};
 use lokyr_text_core::FontBackend;
 use lokyr_vt_core::input::KeyEvent;
 
@@ -47,6 +48,10 @@ pub struct Surface {
     /// out, as [`Surface::fills`] gives them, so that a change of their
     /// value slides with no frame of the host's.
     pub fills_apart: bool,
+    /// The progresses whose fills and moving parts its paint draws while
+    /// the window server draws the others, as something drawn over them
+    /// covers them, which the host finds.
+    pub covered: BTreeSet<NodeId>,
 }
 
 /// What a press of the pointer did to a surface.
@@ -74,6 +79,7 @@ impl Surface {
             tooltip: Tooltip::new(),
             animations: Animations::new(),
             fills_apart: false,
+            covered: BTreeSet::new(),
         }
     }
 
@@ -198,6 +204,30 @@ impl Surface {
             .dragging()
             .then(|| reorder.raised().cloned())
             .flatten()
+    }
+
+    /// The node dragged among its siblings, drawn over them, while the drag
+    /// is under way.
+    pub fn lifted_node(&self) -> Option<NodeId> {
+        self.tree.by_key(&self.lifted()?)
+    }
+
+    /// The box of its tooltip, while it shows, in the window's pixels, of
+    /// the surface at `origin` in a window of `room`, as its paint draws
+    /// it.
+    pub fn tooltip_rect<B: FontBackend>(
+        &self,
+        font: &mut Font<B>,
+        (origin, room): ((f32, f32), (f32, f32)),
+    ) -> Option<Rect> {
+        let (text, at) = self.tooltip.shown(&self.tree)?;
+        let at = (at.0 + origin.0, at.1 + origin.1);
+        Some(paint::tooltip_rect(
+            font,
+            text,
+            (at, room),
+            self.layout.scale(),
+        ))
     }
 
     /// The node dragged that carries a tab, its key and the tab, while its
@@ -454,7 +484,11 @@ impl Surface {
                 pressed: self.pointer.pressing().filter(|_| self.lifted().is_none()),
                 lists: &self.lists,
                 motion: Some((&self.animations, now)),
-                fills: !self.fills_apart,
+                fills: if self.fills_apart {
+                    paint::Fills::Covered(&self.covered)
+                } else {
+                    paint::Fills::All
+                },
             },
         );
         if let Some((text, at)) = self.tooltip.shown(&self.tree) {

@@ -6,6 +6,7 @@
 //! over its siblings before it; and the ring of the keyboard's focus around
 //! the node that has it, over them all, within its ancestors' clips.
 
+use std::collections::BTreeSet;
 use std::time::Instant;
 
 use lokyr_plugin_sdk::view::{self, Hover, Kind, Style};
@@ -50,10 +51,25 @@ pub struct Shown<'a> {
     /// The transitions of its nodes, and the time to draw them at; `None`
     /// for none.
     pub motion: Option<(&'a Animations, Instant)>,
-    /// Whether it draws the fills of its progresses that are not
-    /// indeterminate, which the platform's window server draws otherwise,
-    /// as `progress::fills` gives them.
-    pub fills: bool,
+    /// Which fills of its progresses it draws, and which moving parts of
+    /// the indeterminate ones, which the platform's window server draws
+    /// otherwise, as `progress::fills` and `progress::sweeps` give them.
+    pub fills: Fills<'a>,
+}
+
+/// Which fills of a tree's progresses that are not indeterminate a paint
+/// draws, and which moving parts of the indeterminate ones.
+#[derive(Clone, Copy, Debug)]
+pub enum Fills<'a> {
+    /// Every fill, and no moving part: of a platform whose window server
+    /// draws no fills, or of a picture of the tree.
+    All,
+    /// The fills and the moving parts of these progresses alone, which
+    /// something drawn over them covers, as a node dragged among its
+    /// siblings, a panel or a tooltip, while the platform's window server
+    /// draws the others over the host's drawing: a moving part held still,
+    /// as the window server holds it where the system reduces motion.
+    Covered(&'a BTreeSet<NodeId>),
 }
 
 /// The display list of `tree`, laid out in `layout`, from `origin` in the
@@ -138,6 +154,39 @@ const TOOLTIP_BELOW: f32 = 20.0;
 /// The room that a tooltip keeps from its window's edges, in points.
 const TOOLTIP_MARGIN: f32 = 4.0;
 
+/// The box of a tooltip of `text`, as the pointer was at `at`, in the
+/// window's pixels, of `font` at `scale`, as [`tooltip`] draws it: below
+/// the pointer, or above it where the window's `room` has none below, and
+/// within its edges.
+pub fn tooltip_rect<B: FontBackend>(
+    font: &mut Font<B>,
+    text: &str,
+    (at, room): ((f32, f32), (f32, f32)),
+    scale: f32,
+) -> Rect {
+    let (down, across) = TOOLTIP_PADDING;
+    let natural = Measure::text(&mut *font, text).0;
+    let line = font.interface().line();
+    let width = ((natural + 2.0 * across) * scale).ceil();
+    let height = ((line + 2.0 * down) * scale).ceil();
+    let margin = TOOLTIP_MARGIN * scale;
+    let x = at.0.min(room.0 - width - margin).max(margin).round();
+    let below = at.1 + TOOLTIP_BELOW * scale;
+    let y = if below + height + margin <= room.1 {
+        below
+    } else {
+        at.1 - height - margin
+    }
+    .max(margin)
+    .round();
+    Rect {
+        x: x as i32,
+        y: y as i32,
+        width: width as u32,
+        height: height as u32,
+    }
+}
+
 /// The display list of a tooltip of `text`, as the pointer was at `at`, in
 /// the window's pixels, of `font` at `scale` and `tokens`' colors: a box of
 /// a border, rounded corners and a shadow, below the pointer, or above it
@@ -151,29 +200,12 @@ pub fn tooltip<B: FontBackend>(
     (scale, dark): (f32, bool),
 ) -> Vec<Item> {
     let (down, across) = TOOLTIP_PADDING;
-    let natural = Measure::text(&mut *font, text).0;
-    let face = font.interface();
-    let (line, ascent) = (face.line(), face.ascent());
-    let width = ((natural + 2.0 * across) * scale).ceil();
-    let height = ((line + 2.0 * down) * scale).ceil();
-    let margin = TOOLTIP_MARGIN * scale;
-    let x = at.0.min(room.0 - width - margin).max(margin).round();
-    let below = at.1 + TOOLTIP_BELOW * scale;
-    let y = if below + height + margin <= room.1 {
-        below
-    } else {
-        at.1 - height - margin
-    }
-    .max(margin)
-    .round();
+    let boxed = tooltip_rect(font, text, (at, room), scale);
+    let (x, y) = (boxed.x as f32, boxed.y as f32);
+    let ascent = font.interface().ascent();
     let color = |token: &str, fallback| tokens.get(token).unwrap_or(fallback);
     let shape = Shape {
-        rect: Rect {
-            x: x as i32,
-            y: y as i32,
-            width: width as u32,
-            height: height as u32,
-        },
+        rect: boxed,
         radius: 4.0 * scale,
         fill: color("tooltip.bg", Color::from_rgb8(255, 255, 255)),
         border: scale.round().max(1.0),
@@ -213,7 +245,7 @@ struct Painter<'a, B> {
     pressed: Option<NodeId>,
     lists: &'a Lists,
     motion: Option<(&'a Animations, Instant)>,
-    fills: bool,
+    fills: Fills<'a>,
     /// How far the hover of the nearest node of a key around the node
     /// painted shows, from 0 to 1, which its parent's hover takes.
     group: f32,
@@ -585,9 +617,21 @@ impl<'a, B: FontBackend> Painter<'a, B> {
         };
         let track = token(style.background.as_ref(), "progress.track");
         let fill = token(style.color.as_ref(), state);
-        let value = progress.value.clamp(0.0, 1.0);
-        let filled =
-            self.fills && progress.state != view::ProgressState::Indeterminate && value > 0.0;
+        let indeterminate = progress.state == view::ProgressState::Indeterminate;
+        let (all, covered) = match self.fills {
+            Fills::All => (true, false),
+            Fills::Covered(covered) => (false, covered.contains(&id)),
+        };
+        // An indeterminate one's moving part, covered, held still at its
+        // start, of its share of the bar, the turn or the outline.
+        let still = covered && indeterminate;
+        let value = if still {
+            progress.segment
+        } else {
+            progress.value
+        }
+        .clamp(0.0, 1.0);
+        let filled = (still || (all || covered) && !indeterminate) && value > 0.0;
         match progress.shape {
             view::ProgressShape::Bar => {
                 let bar = rect(frame);
@@ -654,7 +698,9 @@ impl<'a, B: FontBackend> Painter<'a, B> {
                 let (centers, diameter) = crate::progress::dots(square.width);
                 // Of a value, as many lit as its thirds, from the top; the
                 // window server lights an indeterminate one's in turn.
-                let lit = if progress.state == view::ProgressState::Indeterminate {
+                let lit = if still {
+                    1
+                } else if indeterminate {
                     0
                 } else {
                     (value * 3.0).ceil() as usize
@@ -1301,7 +1347,7 @@ mod tests {
             // A tree of no lists: nothing to keep, as the test ends.
             lists: Box::leak(Box::new(Lists::new())),
             motion: None,
-            fills: true,
+            fills: Fills::All,
         }
     }
 
@@ -2009,7 +2055,7 @@ mod tests {
                     pressed: None,
                     lists: &Lists::new(),
                     motion: None,
-                    fills: true,
+                    fills: Fills::All,
                 },
             )
         };
@@ -2175,7 +2221,7 @@ mod tests {
                     pressed: None,
                     lists: &Lists::new(),
                     motion: None,
-                    fills: true,
+                    fills: Fills::All,
                 },
             )
         };
@@ -2253,7 +2299,7 @@ mod tests {
                     pressed: None,
                     lists: &Lists::new(),
                     motion: None,
-                    fills: true,
+                    fills: Fills::All,
                 },
             )
         };
@@ -2354,7 +2400,7 @@ mod tests {
                     pressed,
                     lists: &Lists::new(),
                     motion: None,
-                    fills: true,
+                    fills: Fills::All,
                 },
             );
             let mut fills = Vec::new();
@@ -2480,7 +2526,7 @@ mod tests {
                 pressed: Some(first),
                 lists: &Lists::new(),
                 motion: None,
-                fills: true,
+                fills: Fills::All,
             },
         );
         (tree, layout, items)
@@ -2593,7 +2639,7 @@ mod tests {
                     pressed: None,
                     lists,
                     motion: None,
-                    fills: true,
+                    fills: Fills::All,
                 },
             )
         };
@@ -2891,7 +2937,8 @@ mod tests {
     }
 
     #[test]
-    fn an_outline_paints_its_parent_s_border_and_its_fill_within_its_value_or_none_drawn_apart() {
+    fn an_outline_paints_its_parent_s_border_and_its_fill_within_its_value_or_none_drawn_apart_but_covered()
+     {
         use lokyr_plugin_sdk::view::{Kind, Progress, ProgressShape};
         let mut font = Font::new(Blocks, FontConfig::default(), 2.0).unwrap();
         // A box 100 points by 24, of corners of 6, at a scale of 2, of an
@@ -2912,7 +2959,10 @@ mod tests {
                 ..view::Style::default()
             })
         };
-        let painted = |font: &mut Font<Blocks>, node: Node, fills: bool| {
+        // Every fill drawn, of `None`; or those that the window server does
+        // not draw, its progresses' of `Some(true)`, as something covers
+        // them, and none of `Some(false)`.
+        let painted = |font: &mut Font<Blocks>, node: Node, covered: Option<bool>| {
             let mut tree = Tree::new();
             let root = Node::container(vec![node]).layout(view::Layout {
                 direction: view::Direction::Column,
@@ -2923,6 +2973,20 @@ mod tests {
             let mut layout = Layout::new(2.0);
             layout.update(&tree, &changes);
             layout.compute(&tree, Some(400.0), None, font);
+            let mut progresses = BTreeSet::new();
+            let mut left: Vec<NodeId> = tree.root().into_iter().collect();
+            while let Some(id) = left.pop() {
+                if matches!(tree.kind(id), Some(Kind::Progress(_))) {
+                    progresses.insert(id);
+                }
+                left.extend(tree.children(id));
+            }
+            let none = BTreeSet::new();
+            let fills = match covered {
+                None => Fills::All,
+                Some(true) => Fills::Covered(&progresses),
+                Some(false) => Fills::Covered(&none),
+            };
             paint(
                 &tree,
                 &layout,
@@ -2947,23 +3011,48 @@ mod tests {
             border_color: token(color),
             ..Shape::filled(outline, Color::CLEAR)
         };
-        assert_eq!(
-            painted(&mut font, tab(0.3), true),
-            [
+        let filled = |width| {
+            vec![
                 Item::Shapes(vec![line("progress.track")]),
-                Item::PushClip(Rect {
-                    width: 60,
-                    ..outline
-                }),
+                Item::PushClip(Rect { width, ..outline }),
                 Item::Shapes(vec![line("progress.normal")]),
                 Item::PopClip,
             ]
-        );
-        // The window server draws the fill: the track alone.
+        };
+        assert_eq!(painted(&mut font, tab(0.3), None), filled(60));
+        // The window server draws the fill: the track alone; covered, the
+        // paint draws it.
         assert_eq!(
-            painted(&mut font, tab(0.3), false),
+            painted(&mut font, tab(0.3), Some(false)),
             [Item::Shapes(vec![line("progress.track")])]
         );
+        assert_eq!(painted(&mut font, tab(0.3), Some(true)), filled(60));
+        // An indeterminate one's moving part, the window server's, or,
+        // covered, held still at its start, of its segment's share.
+        let running = Node::container(vec![Node::new(Kind::Progress(Progress {
+            shape: ProgressShape::Outline,
+            state: view::ProgressState::Indeterminate,
+            segment: 0.25,
+            ..Progress::default()
+        }))])
+        .layout(view::Layout {
+            width: view::Length::Points(100.0),
+            height: view::Length::Points(24.0),
+            ..view::Layout::default()
+        })
+        .style(view::Style {
+            radius: 6.0,
+            ..view::Style::default()
+        });
+        assert_eq!(
+            painted(&mut font, running.clone(), Some(false)),
+            [Item::Shapes(vec![line("progress.track")])]
+        );
+        assert_eq!(
+            painted(&mut font, running.clone(), None),
+            painted(&mut font, running.clone(), Some(false))
+        );
+        assert_eq!(painted(&mut font, running, Some(true)), filled(50));
         // A bar's and a ring's, likewise.
         for shape in [ProgressShape::Bar, ProgressShape::Ring] {
             let root = Node::new(Kind::Progress(Progress {
@@ -2980,8 +3069,9 @@ mod tests {
                     })
                     .sum()
             };
-            assert_eq!(shapes(painted(&mut font, root.clone(), true)), 2);
-            assert_eq!(shapes(painted(&mut font, root, false)), 1);
+            assert_eq!(shapes(painted(&mut font, root.clone(), None)), 2);
+            assert_eq!(shapes(painted(&mut font, root.clone(), Some(true))), 2);
+            assert_eq!(shapes(painted(&mut font, root, Some(false))), 1);
         }
     }
 
@@ -3035,7 +3125,7 @@ mod tests {
                 pressed: None,
                 lists: &Lists::new(),
                 motion: Some((&animations, now)),
-                fills: true,
+                fills: Fills::All,
             },
         );
         let xs: Vec<i32> = items
@@ -3115,7 +3205,7 @@ mod tests {
                     pressed: None,
                     lists: &Lists::new(),
                     motion: Some((&animations, now)),
-                    fills: true,
+                    fills: Fills::All,
                 },
             )
         };
@@ -3217,7 +3307,7 @@ mod tests {
                     pressed: None,
                     lists: &Lists::new(),
                     motion: Some((animations, start + Duration::from_millis(ms))),
-                    fills: true,
+                    fills: Fills::All,
                 },
             );
             items
@@ -3371,7 +3461,7 @@ mod tests {
                     pressed: None,
                     lists: &Lists::new(),
                     motion: Some((animations, start + Duration::from_millis(ms))),
-                    fills: true,
+                    fills: Fills::All,
                 },
             );
             let mut shapes = Vec::new();
@@ -3477,7 +3567,7 @@ mod tests {
                 pressed: None,
                 lists: &lists,
                 motion: None,
-                fills: true,
+                fills: Fills::All,
             },
         );
         let glyphs: usize = items

@@ -31,7 +31,7 @@ use lokyr_ui_core::field::Fields;
 use lokyr_ui_core::font::Font;
 use lokyr_ui_core::layout::{Layout, Measure, Room};
 use lokyr_ui_core::list::Lists;
-use lokyr_ui_core::paint::{Shown, paint, tooltip};
+use lokyr_ui_core::paint::{Fills, Shown, paint, tooltip};
 use lokyr_ui_core::pane::{self as cells, CursorLook, Selection, TextLook};
 use lokyr_ui_core::theme::Theme;
 use lokyr_ui_core::tree::{NodeId, Tree};
@@ -795,7 +795,7 @@ fn check_tree(
             pressed,
             lists: &Lists::new(),
             motion: None,
-            fills: true,
+            fills: Fills::All,
         },
     );
     // The tooltip, as the pointer rested at the middle of the node under
@@ -1526,7 +1526,7 @@ fn check_tab_bar((name, style, position, (width, height), shown): Bar, (dark, sc
             pressed: None,
             lists: &Lists::new(),
             motion: Some((&animations, now)),
-            fills: true,
+            fills: Fills::All,
         },
     );
     let list = DisplayList {

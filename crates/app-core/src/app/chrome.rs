@@ -4,6 +4,7 @@
 //! chrome places them, and painted over the panes in the window's one
 //! drawable, of the theme's tokens.
 
+use std::collections::BTreeSet;
 use std::fmt;
 use std::time::Instant;
 
@@ -601,13 +602,101 @@ pub(super) fn paint<F: FontBackend>(
         .collect()
 }
 
+/// The progresses of `view` that something drawn over them covers, whose
+/// fills and moving parts its frame draws, under what covers them, rather
+/// than the window server over the frame, of `tokens`, at `now`: those
+/// under a panel of `panels` above the view, or under one of `tooltips`,
+/// their boxes in the window's pixels, and, while a node of its own is
+/// dragged among its siblings, those of every other node, which it goes
+/// over.
+pub(super) fn covered(
+    view: &SlotView,
+    panels: &Panels<u32>,
+    tooltips: &[Rect],
+    tokens: &Tokens,
+    now: Instant,
+) -> BTreeSet<NodeId> {
+    let Some(frame) = view.frame else {
+        return BTreeSet::new();
+    };
+    let moved = |rect: Rect| Rect {
+        x: rect.x + frame.x as i32,
+        y: rect.y + frame.y as i32,
+        ..rect
+    };
+    let whole = Rect {
+        x: frame.x as i32,
+        y: frame.y as i32,
+        width: frame.width as u32,
+        height: frame.height as u32,
+    };
+    let below = view.placed.is_some().then_some(view.id);
+    let lifted = view.surface.lifted_node();
+    let tooltips: Vec<Rect> = tooltips
+        .iter()
+        .copied()
+        .filter(|&tooltip| overlaps(tooltip, whole))
+        .collect();
+    // Nothing over the view, of no walk of its tree.
+    if lifted.is_none() && tooltips.is_empty() && !panels.covers(whole, below) {
+        return BTreeSet::new();
+    }
+    let tree = &view.surface.tree;
+    let within_lifted = |node: NodeId| {
+        let mut at = Some(node);
+        while let Some(node) = at {
+            if Some(node) == lifted {
+                return true;
+            }
+            at = tree.parent(node);
+        }
+        false
+    };
+    let fills = view
+        .surface
+        .fills(tokens, now)
+        .into_iter()
+        .map(|area| (area.node, area.visible));
+    let sweeps = view
+        .surface
+        .sweeps(tokens, now)
+        .into_iter()
+        .map(|area| (area.node, area.visible));
+    fills
+        .chain(sweeps)
+        .filter(|&(node, visible)| {
+            let shown = moved(visible);
+            panels.covers(shown, below)
+                || tooltips.iter().any(|&tooltip| overlaps(tooltip, shown))
+                || lifted.is_some() && !within_lifted(node)
+        })
+        .map(|(node, _)| node)
+        .collect()
+}
+
+/// Whether `a` and `b`, in pixels, share any of their area.
+fn overlaps(a: Rect, b: Rect) -> bool {
+    let (a_right, b_right) = (
+        i64::from(a.x) + i64::from(a.width),
+        i64::from(b.x) + i64::from(b.width),
+    );
+    let (a_bottom, b_bottom) = (
+        i64::from(a.y) + i64::from(a.height),
+        i64::from(b.y) + i64::from(b.height),
+    );
+    i64::from(a.x) < b_right
+        && i64::from(b.x) < a_right
+        && i64::from(a.y) < b_bottom
+        && i64::from(b.y) < a_bottom
+}
+
 /// The indeterminate progresses of the slots' views and the panels of
 /// `chrome`, which the window server moves, of `tokens`, at `now`, on a
-/// display of `scale`, of their sweeps' `start`, but those that a panel
-/// of `panels` over them covers.
+/// display of `scale`, of their sweeps' `start`, but those that something
+/// drawn over them covers, as each view's `covered` says, which its frame
+/// draws.
 pub(super) fn sweeps(
     chrome: &[SlotView],
-    panels: &Panels<u32>,
     tokens: &Tokens,
     (now, start): (Instant, Instant),
     scale: f64,
@@ -629,16 +718,10 @@ pub(super) fn sweeps(
         .iter()
         .filter_map(|view| Some((view, view.frame?)))
         .flat_map(|(view, frame)| {
-            let below = view.placed.is_some().then_some(view.id);
-            let moved = move |rect: Rect| Rect {
-                x: rect.x + frame.x as i32,
-                y: rect.y + frame.y as i32,
-                ..rect
-            };
             view.surface
                 .sweeps(tokens, now)
                 .into_iter()
-                .filter(move |area| !panels.covers(moved(area.visible), below))
+                .filter(|area| !view.surface.covered.contains(&area.node))
                 .map(move |area: SweepArea| {
                     let at = (frame.x, frame.y);
                     let (origin, size) = place(area.rect, at);
@@ -683,16 +766,11 @@ pub(super) fn sweeps(
 
 /// The fills of the progresses of the slots' views and the panels of
 /// `chrome` that are not indeterminate, which the window server draws, of
-/// `tokens`, at `now`, on a display of `scale`, but those that a panel of
-/// `panels` over them covers: each of an id of its view and its node, which
-/// stays as their renders keep the node.
-pub(super) fn fills(
-    chrome: &[SlotView],
-    panels: &Panels<u32>,
-    tokens: &Tokens,
-    now: Instant,
-    scale: f64,
-) -> Vec<Fill> {
+/// `tokens`, at `now`, on a display of `scale`, but those that something
+/// drawn over them covers, as each view's `covered` says, which its frame
+/// draws: each of an id of its view and its node, which stays as their
+/// renders keep the node.
+pub(super) fn fills(chrome: &[SlotView], tokens: &Tokens, now: Instant, scale: f64) -> Vec<Fill> {
     let points = |pixels: f32| f64::from(pixels) / scale;
     let place = |rect: Rect, (x, y): (f32, f32)| {
         (
@@ -710,16 +788,10 @@ pub(super) fn fills(
         .iter()
         .filter_map(|view| Some((view, view.frame?)))
         .flat_map(|(view, frame)| {
-            let below = view.placed.is_some().then_some(view.id);
-            let moved = move |rect: Rect| Rect {
-                x: rect.x + frame.x as i32,
-                y: rect.y + frame.y as i32,
-                ..rect
-            };
             view.surface
                 .fills(tokens, now)
                 .into_iter()
-                .filter(move |area| !panels.covers(moved(area.visible), below))
+                .filter(|area| !view.surface.covered.contains(&area.node))
                 .map(move |area: FillArea| {
                     let at = (frame.x, frame.y);
                     let (origin, size) = place(area.rect, at);

@@ -5,8 +5,12 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use lokyr_kernel::plugins::ui::{Anchor, Corner, PanelId, PanelOptions, Role, UiEvent, ViewId};
-use lokyr_kernel::plugins::view::{Layout as NodeLayout, Length, Node, UiEventKind};
+use lokyr_kernel::plugins::ui::{
+    Anchor, Corner, PanelId, PanelOptions, Role, Slot, UiEvent, ViewId,
+};
+use lokyr_kernel::plugins::view::{
+    Layout as NodeLayout, Length, Node, ProgressShape, ProgressState, UiEventKind,
+};
 use lokyr_platform_core::Ime;
 use lokyr_text_core::FontConfig;
 
@@ -194,8 +198,15 @@ impl plugins::Plugin for Paneler {
 
     fn render(&mut self, _: &mut plugins::Cx<'_>, view: &ViewId) -> Option<Node> {
         let ViewId::Panel(PanelId(id)) = view else {
-            let mut bar =
-                Node::container(vec![sized(Node::button("Open"), 60.0, 20.0).key("open")]);
+            let mut bar = Node::container(vec![
+                sized(Node::button("Open"), 60.0, 20.0).key("open"),
+                sized(
+                    Node::progress(ProgressShape::Bar, ProgressState::Normal, 0.5),
+                    100.0,
+                    4.0,
+                )
+                .key("progress"),
+            ]);
             bar.layout.grow = 1.0;
             return Some(bar);
         };
@@ -382,6 +393,39 @@ fn a_menu_at_the_pointer_closes_as_a_click_outside_takes_the_press() {
     );
     run_until(&mut fake, &mut app, |_, app| shows(app, window, "x"));
     assert!(!shows(&app, window, "^["), "{:?}", screen(&app, window));
+}
+
+#[test]
+fn a_fill_that_a_panel_covers_is_the_frame_s_to_draw_under_the_panel() {
+    let (mut fake, mut app, window, _) = paneler(reader(""));
+    fake.set_draws_fills(true);
+    frames(&mut fake, &mut app, window);
+    let fills = |fake: &Fake| fake.window(window).unwrap().fills.len();
+    let covered = |app: &App| {
+        app.windows[&window]
+            .chrome
+            .iter()
+            .find(|view| view.view.slot() == Some(Slot::TabBar))
+            .map(|view| view.surface.covered.len())
+    };
+    // The bar's progress, which the window server fills.
+    assert_eq!((fills(&fake), covered(&app)), (1, Some(0)));
+    // A menu at the pointer over it: the frame fills it, under the menu.
+    let scale = fake.window(window).unwrap().size.scale;
+    let over = middle(node_frame(&app, window, "progress"), scale);
+    fake.set_pointer(window, over);
+    command(&mut fake, &mut app, window, "paneler.menu");
+    assert!(panel_frame(&app, window, "menu").is_some());
+    assert_eq!((fills(&fake), covered(&app)), (0, Some(1)));
+    // Closed, the window server fills it again.
+    fake.send(
+        &mut app,
+        window,
+        key_event(KeyCode::Escape, "\u{1b}", Modifiers::NONE, true),
+    );
+    frames(&mut fake, &mut app, window);
+    assert!(panel_frame(&app, window, "menu").is_none());
+    assert_eq!((fills(&fake), covered(&app)), (1, Some(0)));
 }
 
 #[test]

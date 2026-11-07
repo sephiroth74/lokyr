@@ -911,11 +911,28 @@ impl<B: Backend> App<B> {
         // The progresses' fills, which the window server draws where it
         // can, so that a value's change slides with no frame of the app's.
         let fills_apart = platform.draws_fills();
+        let room = (size.pixels.width as f32, size.pixels.height as f32);
+        // The progresses that something drawn over them covers, a node
+        // dragged among its siblings, a panel or a tooltip, whose fills and
+        // moving parts the frame draws under it, as the window server's
+        // would show over it.
+        let tooltips: Vec<Rect> = state
+            .chrome
+            .iter()
+            .filter_map(|view| {
+                let frame = view.frame?;
+                view.surface.tooltip_rect(font, ((frame.x, frame.y), room))
+            })
+            .collect();
         for view in &mut state.chrome {
             view.surface.animate(now, reduced);
             view.surface.fills_apart = fills_apart;
+            view.surface.covered = if fills_apart {
+                chrome::covered(view, &state.panels, &tooltips, tokens, now)
+            } else {
+                std::collections::BTreeSet::new()
+            };
         }
-        let room = (size.pixels.width as f32, size.pixels.height as f32);
         let focused_node = match state.focus.target() {
             Target::Node { panel, node } => Some((panel, node)),
             Target::Pane => None,
@@ -1067,19 +1084,13 @@ impl<B: Backend> App<B> {
             state.titlebar_areas = own;
         }
         // The slots' indeterminate progresses, which the window server moves.
-        let sweeps = chrome::sweeps(
-            &state.chrome,
-            &state.panels,
-            tokens,
-            (now, state.sweeps.1),
-            size.scale,
-        );
+        let sweeps = chrome::sweeps(&state.chrome, tokens, (now, state.sweeps.1), size.scale);
         if sweeps != state.sweeps.0 {
             platform.set_sweeps(window, &sweeps);
             state.sweeps.0 = sweeps;
         }
         if fills_apart {
-            let fills = chrome::fills(&state.chrome, &state.panels, tokens, now, size.scale);
+            let fills = chrome::fills(&state.chrome, tokens, now, size.scale);
             if fills != state.fills {
                 platform.set_fills(window, &fills);
                 state.fills = fills;
