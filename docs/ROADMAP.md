@@ -133,7 +133,7 @@ Before 1.0.0, after F3's daily features, as 0.8 and 0.9, as the user chose on 7 
 - **`plugin-manager` plugin**: the in-app UI for Sleip.
 - **`snap`**, a [reference third-party plugin](PLUGIN-SYSTEM.md#reference-third-party-plugins), as VS Code's CodeSnap: an image of the selection, of the screen or of a command's output, in a window's frame; written in Luau as a third party would, published to the registry, with its own config, its capabilities, and the host's `image` service.
 - **`awake`**, a [reference third-party plugin](PLUGIN-SYSTEM.md#awake), in Luau, as the user asked on 6 November 2026: the Mac kept awake, always or while programs run, from a button beside the window's buttons; the host's request of a power assertion, its capability `keep-awake`, of an ADR, and a slot of the titlebar's buttons.
-- **Registry v0** (static), ed25519 signatures, templates, a guide for plugin authors: a repository of the index, publishing by pull request, the archives in its releases, the index and the site on GitHub Pages at `pkg.lokyr.dev`, and the keys that Sleip trusts ([ADR 0031](adr/0031-registry-v0.md)).
+- **Registry v0** (static), ed25519 signatures, templates, a guide for plugin authors, of a minimal practical example, a plugin that works, step by step, as the user asked on 7 November 2026: a repository of the index, publishing by pull request, the archives in its releases, the index and the site on GitHub Pages at `pkg.lokyr.dev`, and the keys that Sleip trusts ([ADR 0031](adr/0031-registry-v0.md)).
 
 **Exit**:
 - the `sleip new → check → dev` loop works;
