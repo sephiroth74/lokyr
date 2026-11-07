@@ -90,6 +90,12 @@ pub fn resolve(
     Ok(Resolved { theme, files })
 }
 
+/// Whether `name` can name a theme: a file's name of the themes' folder,
+/// not empty, of no separator of paths, and not hidden.
+pub fn is_name(name: &str) -> bool {
+    !name.is_empty() && !name.contains(['/', '\\']) && !name.starts_with('.')
+}
+
 /// Where a theme's name is looked for: the themes' folder, whose files a
 /// watch follows, the folder of the themes that the app holds, which never
 /// change, and the built-in themes.
@@ -115,7 +121,7 @@ fn load(
             "there is no theme `{name}`, of a file of the themes' folder, of Lokyr's own or built in"
         ),
     };
-    if name.is_empty() || name.contains(['/', '\\']) || name.starts_with('.') {
+    if !is_name(name) {
         return Err(Error {
             path: PathBuf::from(name),
             position: None,

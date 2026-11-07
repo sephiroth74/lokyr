@@ -402,3 +402,61 @@ fn a_theme_opened_by_another_path_of_its_own_file_is_installed_whole() {
     let _ = std::fs::remove_file(&linked);
     let _ = std::fs::remove_dir_all(directory);
 }
+
+/// Waits until a watch of the themes' files tells a change, for five
+/// seconds at most.
+fn watched(app: &App) {
+    let start = std::time::Instant::now();
+    while !app.theme_files.changed.load(Ordering::Acquire) {
+        assert!(
+            start.elapsed() < std::time::Duration::from_secs(5),
+            "no change told"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+}
+
+#[test]
+fn a_themes_folder_made_after_the_start_is_watched_for_its_files() {
+    let directory = std::env::temp_dir().join(format!(
+        "lokyr-app-themes-folder-made-later-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&directory);
+    std::fs::create_dir_all(&directory).unwrap();
+    let path = directory.join("config.toml");
+    std::fs::write(&path, "[theme]\ndark = \"Later\"\n").unwrap();
+    let config = Config::read(&path).unwrap();
+    let mut fake = Fake::default();
+    let mut app = App::new(None, config, Some(path)).with_program(quiet());
+    fake.start(&mut app);
+    assert!(app.diagnostics.shown().is_some(), "no theme `Later` yet");
+    // The folder comes, then the theme's file in it.
+    std::fs::create_dir(directory.join("themes")).unwrap();
+    watched(&app);
+    changed(&mut fake, &mut app);
+    assert!(!app.theme_files.changed.load(Ordering::Acquire));
+    write(&directory, "Later", &theme("#404040"));
+    watched(&app);
+    changed(&mut fake, &mut app);
+    assert_eq!(app.diagnostics.shown(), None);
+    assert_eq!(app.theme.dark.colors.background, rgb(0x404040));
+    let _ = std::fs::remove_dir_all(directory);
+}
+
+#[test]
+fn a_name_of_no_file_of_the_folder_is_watched_nowhere() {
+    let config = "[theme]\ndark = \"/etc/x\"\nlight = \"../y\"\n";
+    let (_fake, app, directory) = with_themes("names", config, &[]);
+    assert!(app.diagnostics.shown().is_some());
+    let themes = directory.join("themes");
+    assert!(
+        app.theme_files
+            .paths
+            .iter()
+            .all(|path| path.starts_with(&themes)),
+        "{:?}",
+        app.theme_files.paths
+    );
+    let _ = std::fs::remove_dir_all(directory);
+}

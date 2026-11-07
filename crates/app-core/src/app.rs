@@ -368,7 +368,8 @@ impl ConfigFile {
 #[derive(Debug, Default)]
 struct ThemeFiles {
     paths: Vec<PathBuf>,
-    watchers: Vec<Watcher>,
+    /// The watches of the paths, each with its path.
+    watchers: Vec<(PathBuf, Watcher)>,
     /// Whether a file may have changed, which the watches' threads tell.
     changed: Arc<AtomicBool>,
     /// The timer of the loading, which waits for the changes that come
@@ -378,9 +379,14 @@ struct ThemeFiles {
 
 impl ThemeFiles {
     /// Watches `paths`, unless it watches them already, so that their
-    /// changes wake `platform`.
+    /// changes wake `platform`: anew where a watch went stale, as of a
+    /// folder that came since, or of a link to another file.
     fn watch(&mut self, platform: &dyn Platform, paths: Vec<PathBuf>) {
-        if paths == self.paths {
+        let stale = self
+            .watchers
+            .iter()
+            .any(|(path, watcher)| watcher.is_stale(path));
+        if paths == self.paths && !stale {
             return;
         }
         self.watchers = paths
@@ -393,6 +399,7 @@ impl ThemeFiles {
                 })
                 .inspect_err(|error| eprintln!("lokyr: {error}"))
                 .ok()
+                .map(|watcher| (path.clone(), watcher))
             })
             .collect();
         self.paths = paths;
@@ -1193,8 +1200,9 @@ impl<B: Backend> App<B> {
                 }
                 Err(error) => {
                     // The file of the name, there or not, and the one of the
-                    // error.
-                    if let Some(directory) = &directory {
+                    // error; none of a name that names no file of the
+                    // folder.
+                    if let Some(directory) = directory.as_ref().filter(|_| themes::is_name(name)) {
                         paths.push(directory.join(format!("{name}.toml")));
                         paths.push(directory.join(format!("{name}.itermcolors")));
                         if error.path.starts_with(directory) {
