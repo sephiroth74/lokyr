@@ -537,14 +537,116 @@ pub enum ConfirmPaste {
 }
 
 /// The `[links]` section: what a click on a link does, as the links'
-/// plugin opens it, or another plugin; a directory always opens.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
+/// plugin opens it, or another plugin; a directory always opens. And the
+/// engine that searches the web for the selection.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields, rename_all = "kebab-case")]
 pub struct LinksConfig {
     /// What a URL does.
     pub urls: OpenUrl,
     /// What a file does.
     pub files: OpenFile,
+    /// The engine that searches the web.
+    pub search_engine: SearchEngine,
+}
+
+/// The engine that searches the web for a text: one of a name, or a URL
+/// of its own.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(try_from = "String", into = "String")]
+pub enum SearchEngine {
+    /// Google's, `google`.
+    #[default]
+    Google,
+    /// DuckDuckGo's, `duckduckgo`.
+    DuckDuckGo,
+    /// Bing's, `bing`.
+    Bing,
+    /// Ecosia's, `ecosia`.
+    Ecosia,
+    /// Kagi's, `kagi`.
+    Kagi,
+    /// Startpage's, `startpage`.
+    Startpage,
+    /// A URL from `https://` or `http://`, whose `{query}` the text takes.
+    Url(String),
+}
+
+/// The engines of a name, each with its URL of the text's `{query}`.
+const SEARCH_ENGINES: [(&str, &str); 6] = [
+    ("google", "https://www.google.com/search?q={query}"),
+    ("duckduckgo", "https://duckduckgo.com/?q={query}"),
+    ("bing", "https://www.bing.com/search?q={query}"),
+    ("ecosia", "https://www.ecosia.org/search?q={query}"),
+    ("kagi", "https://kagi.com/search?q={query}"),
+    ("startpage", "https://www.startpage.com/do/search?q={query}"),
+];
+
+impl SearchEngine {
+    /// The engines of a name, in the order of [`SEARCH_ENGINES`].
+    const NAMED: [Self; 6] = [
+        Self::Google,
+        Self::DuckDuckGo,
+        Self::Bing,
+        Self::Ecosia,
+        Self::Kagi,
+        Self::Startpage,
+    ];
+
+    /// The URL that searches for `text`, its characters but letters,
+    /// digits and `-._~` escaped, as a URL's query takes them.
+    pub fn url(&self, text: &str) -> String {
+        let template = match self {
+            Self::Url(url) => url.as_str(),
+            named => Self::NAMED
+                .iter()
+                .position(|engine| engine == named)
+                .map_or(SEARCH_ENGINES[0].1, |at| SEARCH_ENGINES[at].1),
+        };
+        let mut query = String::new();
+        for byte in text.bytes() {
+            if byte.is_ascii_alphanumeric() || b"-._~".contains(&byte) {
+                query.push(char::from(byte));
+            } else {
+                query.push_str(&format!("%{byte:02X}"));
+            }
+        }
+        template.replace("{query}", &query)
+    }
+}
+
+impl From<SearchEngine> for String {
+    fn from(engine: SearchEngine) -> Self {
+        match engine {
+            SearchEngine::Url(url) => url,
+            named => SearchEngine::NAMED
+                .iter()
+                .position(|engine| *engine == named)
+                .map_or_else(String::new, |at| SEARCH_ENGINES[at].0.to_owned()),
+        }
+    }
+}
+
+impl TryFrom<String> for SearchEngine {
+    type Error = String;
+
+    fn try_from(text: String) -> Result<Self, Self::Error> {
+        if let Some(at) = SEARCH_ENGINES.iter().position(|(name, _)| *name == text) {
+            return Ok(Self::NAMED[at].clone());
+        }
+        let web = text.starts_with("https://") || text.starts_with("http://");
+        if web && text.contains("{query}") {
+            return Ok(Self::Url(text));
+        }
+        let names: Vec<String> = SEARCH_ENGINES
+            .iter()
+            .map(|(name, _)| format!("`\"{name}\"`"))
+            .collect();
+        Err(format!(
+            "`{text}` is no search engine: {}, or a URL from `https://` or `http://` that holds `{{query}}`",
+            names.join(", ")
+        ))
+    }
 }
 
 /// What opening a URL does.
@@ -1955,6 +2057,49 @@ mod tests {
     }
 
     #[test]
+    fn the_web_s_search_engine_is_a_name_or_a_url_of_the_query() {
+        let links = |text: &str| parse(&format!("[links]\n{text}\n")).map(|config| config.links);
+        assert_eq!(
+            links("").unwrap().search_engine.url("a b"),
+            "https://www.google.com/search?q=a%20b"
+        );
+        let engine = links("search-engine = \"duckduckgo\"")
+            .unwrap()
+            .search_engine;
+        assert_eq!(engine, SearchEngine::DuckDuckGo);
+        // Every byte but a letter's, a digit's and `-._~`, escaped.
+        assert_eq!(
+            engine.url("ß & c++/x?~"),
+            "https://duckduckgo.com/?q=%C3%9F%20%26%20c%2B%2B%2Fx%3F~"
+        );
+        for (name, engine) in ["google", "bing", "ecosia", "kagi", "startpage"]
+            .into_iter()
+            .zip(
+                SearchEngine::NAMED
+                    .into_iter()
+                    .filter(|e| *e != SearchEngine::DuckDuckGo),
+            )
+        {
+            let read = links(&format!("search-engine = \"{name}\"")).unwrap();
+            assert_eq!(read.search_engine, engine);
+            assert_eq!(String::from(engine), name);
+        }
+        let own = "https://example.org/find?q={query}&safe=1";
+        let read = links(&format!("search-engine = \"{own}\"")).unwrap();
+        assert_eq!(
+            read.search_engine.url("x y"),
+            "https://example.org/find?q=x%20y&safe=1"
+        );
+        assert_eq!(String::from(read.search_engine), own);
+        // A URL without its query, of another scheme, and another word.
+        for wrong in ["https://example.org/", "ftp://x/{query}", "yahoo"] {
+            let (at, message) = error(&format!("[links]\nsearch-engine = \"{wrong}\"\n"));
+            assert_eq!(at.map(|(line, _)| line), Some(2));
+            assert!(message.contains("is no search engine"), "{message}");
+        }
+    }
+
+    #[test]
     fn an_empty_file_is_the_defaults() {
         assert_eq!(parse(""), Ok(Config::default()));
         assert_eq!(parse("# nothing\n\n[font]\n"), Ok(Config::default()));
@@ -2669,7 +2814,7 @@ mod tests {
             ]
         );
         assert_eq!(keys::<ThemeConfig>(), ["light", "dark", "minimum-contrast"]);
-        assert_eq!(keys::<LinksConfig>(), ["urls", "files"]);
+        assert_eq!(keys::<LinksConfig>(), ["urls", "files", "search-engine"]);
         assert_eq!(
             keys::<ScrollbackConfig>(),
             ["scroll-on-output", "limit", "budget"]

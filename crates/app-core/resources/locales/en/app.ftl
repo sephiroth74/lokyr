@@ -26,6 +26,8 @@ command-appearance-light = Light Appearance
 command-appearance-dark = Dark Appearance
 command-pane-look-up = Look Up
 command-pane-man-page = Open man Page
+command-pane-man-search = Search man Page Index
+command-pane-search-web = Search the Web
 
 # The notice of a plugin that a fault stopped, by its name.
 plugin-stopped = The plugin { $name } stopped, and its views show as they were, taking no clicks: { $fault }
@@ -58,6 +60,11 @@ menu-appearance-dark = Dark
 menu-look-up = Look Up “{ $word }”
 # The context menu's man page, which names the page.
 menu-man-page = Open man Page for “{ $page }”
+# The context menu's search of the man pages, which names the words.
+menu-man-search = Search man Page Index for “{ $words }”
+# The context menu's search of the web, which names the selection,
+# shortened.
+menu-search-web = Search the Web for “{ $text }”
 
 # The alert of a program's read of the clipboard, and its buttons, the
 # default one first.

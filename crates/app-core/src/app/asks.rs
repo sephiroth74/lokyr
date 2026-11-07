@@ -2,7 +2,7 @@
 //! program runs, quitting, a window's title, a paste of several lines, a
 //! link to open, a program's read of the clipboard; and their answers.
 
-use lokyr_kernel::config::{ConfirmPaste, LinksConfig, OpenFile, OpenUrl};
+use lokyr_kernel::config::{ConfirmPaste, OpenFile, OpenUrl};
 use lokyr_kernel::l10n::Arg;
 use lokyr_kernel::plugins::Closing;
 use lokyr_kernel::workspace::{self, Pane, PaneId};
@@ -237,12 +237,12 @@ impl<B: Backend> App<B> {
 
     /// What links do: the config's `[links]`, or what the user chose where
     /// the config could not keep it.
-    fn links(&self) -> LinksConfig {
+    fn links(&self) -> (OpenUrl, OpenFile) {
         let (urls, files) = self.links_chosen;
-        LinksConfig {
-            urls: urls.unwrap_or(self.config.links.urls),
-            files: files.unwrap_or(self.config.links.files),
-        }
+        (
+            urls.unwrap_or(self.config.links.urls),
+            files.unwrap_or(self.config.links.files),
+        )
     }
 
     /// Asks the user whether to open `target`, a URL or a file, of `kind`,
@@ -699,11 +699,11 @@ pub(super) enum Opening {
 }
 
 /// What the app does with a target of `kind`, as the platform tells it:
-/// a program shows in the file manager, and never runs, whatever `links`
-/// says; a directory opens; a URL and a file do as `links` says, asking
-/// first by default.
-pub(super) fn opening(kind: TargetKind, links: LinksConfig) -> Opening {
-    match (kind, links.urls, links.files) {
+/// a program shows in the file manager, and never runs, whatever `urls`
+/// and `files` say; a directory opens; a URL and a file do as they say,
+/// asking first by default.
+pub(super) fn opening(kind: TargetKind, (urls, files): (OpenUrl, OpenFile)) -> Opening {
+    match (kind, urls, files) {
         (TargetKind::Program, ..) | (TargetKind::File, _, OpenFile::Reveal) => Opening::Reveal,
         (TargetKind::Url, OpenUrl::Ask, _) | (TargetKind::File, _, OpenFile::Ask) => Opening::Ask,
         (TargetKind::Directory, ..)

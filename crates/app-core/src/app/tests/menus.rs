@@ -1,5 +1,7 @@
 //! The tests of the menu bar and of the context menu's commands.
 
+use lokyr_kernel::config::SearchEngine;
+
 use super::*;
 
 #[test]
@@ -335,6 +337,12 @@ fn the_app_s_commands_register_with_their_categories_and_titles() {
             ("app.settings", "Settings…", Category::App),
             ("pane.look-up", "Look Up", Category::Edit),
             ("pane.man-page", "Open man Page", Category::Windows),
+            (
+                "pane.man-search",
+                "Search man Page Index",
+                Category::Windows
+            ),
+            ("pane.search-web", "Search the Web", Category::Edit),
             ("window.close", "Close Window", Category::Windows),
             ("window.goto", "Go to Window", Category::Windows),
             ("window.new", "New Window", Category::Windows),
@@ -464,8 +472,10 @@ fn a_right_click_selects_and_opens_the_context_menu_at_the_pointer() {
             "New Window at Folder",
             "New Tab at Folder",
             "Open man Page for “world”",
+            "Search man Page Index for “world”",
             "-",
             "Look Up “world”",
+            "Search the Web for “world”",
             "-",
             "Copy",
             "Paste",
@@ -501,19 +511,32 @@ fn a_right_click_selects_and_opens_the_context_menu_at_the_pointer() {
     select_drag(&mut fake, &mut app, window, (cell(0, 0), cell(3, 0)), none);
     right_click(&mut fake, &mut app, window, cell(1, 0), none);
     assert_eq!(selected_text(&app, window).as_deref(), Some("hel"));
-    assert_eq!(context_menu(&fake, window).1[6], "Look Up “hel”");
+    assert_eq!(context_menu(&fake, window).1[7], "Look Up “hel”");
     assert_eq!(context_menu(&fake, window).2[..4], links);
     // On a blank cell, which takes it away, and dims Copy and Look Up.
     right_click(&mut fake, &mut app, window, cell(5, 0), none);
     assert_eq!(selected_text(&app, window), None);
     assert!(app.windows[&window].selecting.is_none());
     assert_eq!(
-        context_menu(&fake, window).1[4..7],
-        ["Open man Page", "-", "Look Up"]
+        context_menu(&fake, window).1[4..9],
+        [
+            "Open man Page",
+            "Search man Page Index",
+            "-",
+            "Look Up",
+            "Search the Web"
+        ]
     );
+    let selection = [
+        "pane.man-page",
+        "pane.man-search",
+        "pane.look-up",
+        "pane.search-web",
+        "pane.copy",
+    ];
     assert_eq!(
-        context_menu(&fake, window).2[..7],
-        [&links[..], &["pane.man-page", "pane.look-up", "pane.copy"]].concat()
+        context_menu(&fake, window).2[..9],
+        [&links[..], &selection].concat()
     );
     // A Control click opens it too, and starts no selection that the
     // pointer would drag.
@@ -564,7 +587,7 @@ fn look_up_shows_the_definition_of_the_selection_of_one_line() {
     select_drag(&mut fake, &mut app, window, (cell(0, 0), cell(5, 1)), none);
     right_click(&mut fake, &mut app, window, cell(2, 0), none);
     let (_, items, dimmed) = context_menu(&fake, window);
-    assert_eq!(items[6], "Look Up");
+    assert_eq!(items[7], "Look Up");
     assert!(dimmed.contains(&LOOK_UP.to_owned()), "{dimmed:?}");
     look_up(&mut fake, &mut app);
     assert_eq!(fake.definitions().len(), 1);
@@ -664,7 +687,7 @@ fn the_man_page_of_the_selection_opens_in_a_window_of_its_own() {
     let (_, items, dimmed) = context_menu(&fake, window);
     assert_eq!(items[4], "Open man Page");
     assert!(dimmed.contains(&MAN_PAGE.to_owned()), "{dimmed:?}");
-    assert_eq!(items[6], "Look Up “hello world”");
+    assert_eq!(items[7], "Look Up “hello world”");
     open(&mut fake, &mut app);
     assert_eq!(fake.windows().count(), 2);
     let _ = std::fs::remove_dir_all(directory);
@@ -1228,4 +1251,108 @@ fn the_context_menu_opens_a_window_or_a_tab_in_the_folder_under_the_pointer() {
         .expect("a new window");
     assert_eq!(started_in(&mut fake, &mut app, opened), shown);
     let _ = std::fs::remove_dir_all(base);
+}
+
+#[test]
+fn the_man_pages_index_lists_the_pages_of_the_selection_s_words_in_a_window() {
+    let (mut fake, mut app, window) = selecting("", "");
+    // A man that tells its arguments and ends.
+    let directory = std::env::temp_dir().join(format!("lokyr-man-k-{}", std::process::id()));
+    std::fs::create_dir_all(&directory).unwrap();
+    let man = directory.join("man");
+    std::fs::write(&man, "#!/bin/sh\necho \"man $*\"\n").unwrap();
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&man, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    app.man = Some(man);
+    // Of the two words of the first line.
+    select_drag(
+        &mut fake,
+        &mut app,
+        window,
+        (cell(0, 0), cell(11, 0)),
+        Modifiers::NONE,
+    );
+    right_click(&mut fake, &mut app, window, cell(2, 0), Modifiers::NONE);
+    let (_, items, dimmed) = context_menu(&fake, window);
+    assert_eq!(items[5], "Search man Page Index for “hello world”");
+    assert!(!dimmed.contains(&MAN_SEARCH.to_owned()), "{dimmed:?}");
+    fake.send(
+        &mut app,
+        window,
+        WindowEvent::ContextCommand(MAN_SEARCH.to_owned()),
+    );
+    let opened: Vec<WindowId> = fake.windows().filter(|&other| other != window).collect();
+    let [listed] = opened[..] else {
+        panic!("one window more: {opened:?}");
+    };
+    assert_eq!(
+        fake.window(listed).unwrap().title,
+        "man -k hello world — 80×48"
+    );
+    run_until(&mut fake, &mut app, |_, app| {
+        app.pane(listed).is_kept() && row(app, listed, 0) == "man -P ul -k -- hello world"
+    });
+    let _ = std::fs::remove_dir_all(directory);
+}
+
+#[test]
+fn the_man_pages_index_takes_words_that_a_shell_takes_without_quotes() {
+    let words = |text: &str| man_keywords(text).map(|words| words.join(" "));
+    for (text, wanted) in [
+        ("printf", "printf"),
+        ("  file   system ", "file system"),
+        ("File::Spec c++ x.y_z", "File::Spec c++ x.y_z"),
+    ] {
+        assert_eq!(words(text).as_deref(), Some(wanted), "{text}");
+    }
+    for text in [
+        "",
+        "-k",
+        "a -k",
+        ".x",
+        "a/b",
+        "x;rm",
+        "$(x)",
+        "it's",
+        "a b c d e f g h i",
+    ] {
+        assert_eq!(words(text), None, "{text}");
+    }
+    assert!(words(&"a".repeat(100)).is_some());
+    assert_eq!(words(&"a".repeat(101)), None);
+}
+
+#[test]
+fn the_web_s_search_opens_the_engine_s_page_of_the_selection() {
+    let (mut fake, mut app, window) = selecting("", "");
+    let search = |fake: &mut Fake, app: &mut App| {
+        right_click(fake, app, window, cell(8, 0), Modifiers::NONE);
+        fake.send(
+            app,
+            window,
+            WindowEvent::ContextCommand(SEARCH_WEB.to_owned()),
+        );
+    };
+    right_click(&mut fake, &mut app, window, cell(8, 0), Modifiers::NONE);
+    assert_eq!(
+        context_menu(&fake, window).1[8],
+        "Search the Web for “world”"
+    );
+    search(&mut fake, &mut app);
+    assert_eq!(fake.opened(), ["https://www.google.com/search?q=world"]);
+    app.config.links.search_engine =
+        SearchEngine::try_from("https://search.example/?s={query}&x=1".to_owned()).unwrap();
+    search(&mut fake, &mut app);
+    assert_eq!(fake.opened()[1], "https://search.example/?s=world&x=1");
+    // Nothing selected: dimmed, and nothing opens.
+    right_click(&mut fake, &mut app, window, cell(5, 0), Modifiers::NONE);
+    assert!(
+        context_menu(&fake, window)
+            .2
+            .contains(&SEARCH_WEB.to_owned())
+    );
+    app.search_web(&mut fake);
+    assert_eq!(fake.opened().len(), 2);
 }

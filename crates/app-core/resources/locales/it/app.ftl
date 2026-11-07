@@ -25,6 +25,8 @@ command-appearance-light = Aspetto chiaro
 command-appearance-dark = Aspetto scuro
 command-pane-look-up = Cerca info
 command-pane-man-page = Apri pagina man
+command-pane-man-search = Cerca nell'indice delle pagine man
+command-pane-search-web = Cerca sul web
 
 # The notice of a plugin that a fault stopped, by its name.
 plugin-stopped = Il plugin { $name } si è fermato, e le sue viste restano com'erano, senza rispondere ai clic: { $fault }
@@ -54,6 +56,8 @@ menu-appearance-light = Chiaro
 menu-appearance-dark = Scuro
 menu-look-up = Cerca info su “{ $word }”
 menu-man-page = Apri la pagina man per “{ $page }”
+menu-man-search = Cerca “{ $words }” nell'indice delle pagine man
+menu-search-web = Cerca “{ $text }” sul web
 
 clipboard-read-message = Un programma in questa finestra vuole leggere gli appunti.
 clipboard-read-detail = Riceverebbe il testo che hai copiato per ultimo, che può contenere una password. Consentilo solo se ti fidi del programma e del computer su cui gira.

@@ -330,7 +330,7 @@ fn a_program_never_opens_and_the_rest_do_as_the_config_says() {
 
     for urls in [OpenUrl::Ask, OpenUrl::Open] {
         for files in [OpenFile::Ask, OpenFile::Open, OpenFile::Reveal] {
-            let links = lokyr_kernel::config::LinksConfig { urls, files };
+            let links = (urls, files);
             let of = |kind| opening(kind, links);
             assert_eq!(of(TargetKind::Program), Opening::Reveal, "{links:?}");
             assert_eq!(of(TargetKind::Directory), Opening::Open, "{links:?}");

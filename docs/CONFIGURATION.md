@@ -132,6 +132,7 @@ copy-on-select = true                # a selection by the mouse copies its text 
 [links]
 urls = "open"                        # ask | open: a URL that ⌘-click opens
 files = "reveal"                     # ask | open | reveal: a file that ⌘-click opens
+search-engine = "duckduckgo"         # google | duckduckgo | bing | ecosia | kagi | startpage, or a URL of {query}
 
 [bell]
 sound = true                         # true | false: the system's alert sound
@@ -1030,7 +1031,7 @@ Whether a selection that you make with the mouse copies its text to the clipboar
 
 ## `[links]`
 
-What a link does as you open it, with [`cmd+click`](#bindings), or as a plugin opens one. A folder always opens in the Finder, without asking. A file that would run rather than open, as a program, an application, an installer or a script that macOS would run in a terminal, never runs: it shows in the Finder, selected. A symbolic link and a Finder alias count as the file that they lead to, and a file counts as the application that would open it, which a file's own "Open With" can choose.
+What a link does as you open it, with [`cmd+click`](#bindings), or as a plugin opens one. A folder always opens in the Finder, without asking. A file that would run rather than open, as a program, an application, an installer or a script that macOS would run in a terminal, never runs: it shows in the Finder, selected. A symbolic link and a Finder alias count as the file that they lead to, and a file counts as the application that would open it, which a file's own "Open With" can choose. The section also names the engine that searches the web for the selection.
 
 ### `urls`
 
@@ -1059,6 +1060,21 @@ What a file does: a path, or a `file` URL.
 - `"ask"` asks you first, showing the path in full, with three buttons: Open, the default one, Show in Finder, and Cancel. Its checkbox, Don't ask again for files, sets this key to the button that you choose, `"open"` or `"reveal"`, in your config file, as [`urls`](#urls) does.
 - `"open"` opens it in its application, as the Finder would.
 - `"reveal"` shows it in the Finder, selected.
+- It applies as you save the file.
+
+### `search-engine`
+
+<sub>Platforms: macOS</sub>
+
+The engine of Search the Web, which the pane's context menu has for the selection of one line.
+
+| Values | Default |
+|---|---|
+| `"google"`, `"duckduckgo"`, `"bing"`, `"ecosia"`, `"kagi"`, `"startpage"`, or a URL from `https://` or `http://` that holds `{query}` | `"google"` |
+
+- A name searches that engine.
+- A URL of your own takes the selection in place of its `{query}`, escaped as a URL's query takes it, as `"https://search.example/?q={query}"`.
+- The search opens in your browser at once, without asking, as [`urls`](#urls) would for a program's link, since you chose it.
 - It applies as you save the file.
 
 ## `[bell]`

@@ -137,9 +137,21 @@ const MAN_PAGE: &str = "pane.man-page";
 const MAN_PAGE_NAME: usize = 100;
 const MAN_SECTION: usize = 8;
 
+/// The command that opens a window whose pane lists the man pages that the
+/// selection's words describe, as `man -k` finds them, which the context
+/// menu alone shows, naming them.
+const MAN_SEARCH: &str = "pane.man-search";
+
+/// The most words of the selection that the man pages' search takes.
+const MAN_KEYWORDS: usize = 8;
+
+/// The command that searches the web for the selection, with the engine of
+/// the config, which the context menu alone shows, naming it.
+const SEARCH_WEB: &str = "pane.search-web";
+
 /// The commands that the context menu alone shows, as they name the
 /// selection.
-const CONTEXT_ONLY: [&str; 2] = [LOOK_UP, MAN_PAGE];
+const CONTEXT_ONLY: [&str; 4] = [LOOK_UP, MAN_PAGE, MAN_SEARCH, SEARCH_WEB];
 
 /// The commands that give the app an appearance, as the View menu's
 /// Appearance chooses it, each with its own and its title's message.
@@ -2380,6 +2392,14 @@ impl<B: Backend> App<B> {
                     self.open_man_page(platform);
                     Ok(())
                 }
+                MAN_SEARCH => {
+                    self.search_man_pages(platform);
+                    Ok(())
+                }
+                SEARCH_WEB => {
+                    self.search_web(platform);
+                    Ok(())
+                }
                 _ if let Some(&(_, mode, _)) =
                     APPEARANCES.iter().find(|(command, ..)| *command == name) =>
                 {
@@ -3771,6 +3791,8 @@ fn commands(texts: &Texts, plugins: &Plugins) -> Registry {
         (QUIT, "app-quit", Category::App),
         (LOOK_UP, "pane-look-up", Category::Edit),
         (MAN_PAGE, "pane-man-page", Category::Windows),
+        (MAN_SEARCH, "pane-man-search", Category::Windows),
+        (SEARCH_WEB, "pane-search-web", Category::Edit),
     ]
     .into_iter()
     .chain(

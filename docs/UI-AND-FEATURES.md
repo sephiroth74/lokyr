@@ -429,6 +429,8 @@ The actions come with the features that they belong to, as the user asked on 29 
 
 Its items show no keys, as macOS's context menus and Terminal's, the menu bar telling them, as the user chose on 5 November 2026.
 
+Its groups, from the top: what opens at the cell, Open Link, Copy Link Address, New Window and New Tab at Folder, and the man pages of the selection; Look Up and Search the Web, of the selection; the clipboard's; the editing's; then the plugins' items, a group of each plugin, as `tabs`' Rename Tab… and `splits`' Split Right, Left, Down and Up, the moves of the pane to a tab or a window, and Close Pane. A plugin adds its items through the HostApi, each a command of its arguments, as it adds them to the menu bar's menus, where they show their keys.
+
 Left out: downloads with scp (i), as the app has no networking code ([ADR 0008](adr/0008-separate-package-manager.md)), and editing the session (i), as the settings are the config's.
 
 ## Agents

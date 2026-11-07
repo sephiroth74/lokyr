@@ -20,9 +20,9 @@ use lokyr_vt_core::terminal as vt;
 use lokyr_vt_core::terminal::{SelectionShape, SelectionUnit};
 
 use super::{
-    ABOUT, APPEARANCES, App, CHECK_UPDATES, CONTEXT_ONLY, LOOK_UP, LOOK_UP_TITLE, MAN_PAGE,
-    MAN_PAGE_NAME, MAN_SECTION, PERFORMANCE, REPORT_ISSUE, SECURE_INPUT, SETTINGS, context,
-    show_selection, shown_top,
+    ABOUT, APPEARANCES, App, CHECK_UPDATES, CONTEXT_ONLY, LOOK_UP, LOOK_UP_TITLE, MAN_KEYWORDS,
+    MAN_PAGE, MAN_PAGE_NAME, MAN_SEARCH, MAN_SECTION, PERFORMANCE, REPORT_ISSUE, SEARCH_WEB,
+    SECURE_INPUT, SETTINGS, context, show_selection, shown_top,
 };
 use crate::drawing::Backend;
 use crate::mouse;
@@ -107,17 +107,22 @@ impl<B: Backend> App<B> {
                 .map(of)
                 .collect()
         };
-        // As in Terminal: what opens, then Look Up, then the clipboard's,
-        // then the editing's; the plugins' last, a group of each namespace
-        // of their commands.
+        // As in Terminal: what opens, the man pages among it, then Look Up
+        // and the web's search, then the clipboard's, then the editing's;
+        // the plugins' last, a group of each namespace of their commands.
         let mut groups: Vec<Vec<(String, Command, Args)>> = vec![
             self.commands
                 .in_order()
                 .filter(|command| of_cell(command))
                 .chain(self.commands.get(MAN_PAGE))
+                .chain(self.commands.get(MAN_SEARCH))
                 .map(of)
                 .collect(),
-            self.commands.get(LOOK_UP).map(of).into_iter().collect(),
+            [LOOK_UP, SEARCH_WEB]
+                .into_iter()
+                .filter_map(|name| self.commands.get(name))
+                .map(of)
+                .collect(),
             edits(Category::Clipboard),
             edits(Category::Edit),
         ];
@@ -155,6 +160,8 @@ impl<B: Backend> App<B> {
             let (message, variable) = match name {
                 LOOK_UP => ("menu-look-up", "word"),
                 MAN_PAGE if man_page(text).is_some() => ("menu-man-page", "page"),
+                MAN_SEARCH if man_keywords(text).is_some() => ("menu-man-search", "words"),
+                SEARCH_WEB => ("menu-search-web", "text"),
                 _ => return None,
             };
             let text = shortened(text, LOOK_UP_TITLE);
@@ -205,17 +212,14 @@ impl<B: Backend> App<B> {
         if when.is_some_and(|when| when.is_ok_and(|when| !context.holds_when(&when))) {
             return false;
         }
-        if command.name == LOOK_UP {
-            return self
-                .acting
-                .and_then(|window| self.looked_up(window))
-                .is_some();
-        }
-        if command.name == MAN_PAGE {
-            return self
-                .acting
-                .and_then(|window| self.looked_up(window))
-                .is_some_and(|(text, _)| man_page(&text).is_some());
+        let looked_up = || self.acting.and_then(|window| self.looked_up(window));
+        match command.name.as_str() {
+            LOOK_UP | SEARCH_WEB => return looked_up().is_some(),
+            MAN_PAGE => return looked_up().is_some_and(|(text, _)| man_page(&text).is_some()),
+            MAN_SEARCH => {
+                return looked_up().is_some_and(|(text, _)| man_keywords(&text).is_some());
+            }
+            _ => {}
         }
         if !self.plugins.owns(&command.name) {
             return true;
@@ -317,6 +321,44 @@ impl<B: Backend> App<B> {
         };
         let program = man_program(self.man.as_deref(), &args);
         self.open_window_running(platform, &program, Some(format!("man {text}")), None);
+    }
+
+    /// Opens a window whose pane lists the man pages that the words of the
+    /// selection of the window that the commands run in describe, as
+    /// `man -k` finds them, which the user's login shell runs.
+    pub(super) fn search_man_pages(&mut self, platform: &mut dyn Platform) {
+        let Some(window) = self.acting.or_else(|| platform.focused_window()) else {
+            return;
+        };
+        let Some((words, args)) = self
+            .looked_up(window)
+            .and_then(|(text, _)| Some((text.clone(), man_keywords(&text)?)))
+        else {
+            return;
+        };
+        let mut all = vec!["-k".to_owned(), "--".to_owned()];
+        all.extend(args);
+        let program = man_program(self.man.as_deref(), &all);
+        self.open_window_running(platform, &program, Some(format!("man -k {words}")), None);
+    }
+
+    /// Searches the web for the selection of the window that the commands
+    /// run in, with the engine of `[links]`, in the browser, without asking,
+    /// as the user chose the search.
+    pub(super) fn search_web(&mut self, platform: &mut dyn Platform) {
+        let Some(window) = self.acting.or_else(|| platform.focused_window()) else {
+            return;
+        };
+        let Some((text, _)) = self.looked_up(window) else {
+            return;
+        };
+        let url = self.config.links.search_engine.url(&text);
+        let opened = platform
+            .resolve_target(&url)
+            .and_then(|target| platform.open(&target));
+        if let Err(error) = opened {
+            eprintln!("lokyr: the web's search does not open, {error}");
+        }
     }
 
     /// Runs `name`, which `window`'s context menu chose, in its pane, as
@@ -442,6 +484,24 @@ pub(super) fn man_page(text: &str) -> Option<Vec<String>> {
         args.push(name.to_owned());
         args
     })
+}
+
+/// The words of `text` that the man pages' search takes, each as a page's
+/// name is made, of letters, digits and `.`, `_`, `+`, `:` and `-`, not
+/// from `-` or `.`, so that a shell takes them without quotes; `None` for a
+/// text of another character, or of more than [`MAN_KEYWORDS`] words.
+pub(super) fn man_keywords(text: &str) -> Option<Vec<String>> {
+    let words: Vec<String> = text.split_whitespace().map(str::to_owned).collect();
+    let taken = !words.is_empty()
+        && words.len() <= MAN_KEYWORDS
+        && words.iter().all(|word| {
+            word.len() <= MAN_PAGE_NAME
+                && !word.starts_with(['-', '.'])
+                && word
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || "._+:-".contains(c))
+        });
+    taken.then_some(words)
 }
 
 /// The program that shows the man page of `args`: `man`, the path, or the

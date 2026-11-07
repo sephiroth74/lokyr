@@ -13,7 +13,7 @@ use lokyr_ui_core::pane::Preedit;
 
 use super::asks::{invisible, shown};
 use super::frame::{appearance_over, bar_item};
-use super::menus::{main_menu, man_page, man_program, shortened};
+use super::menus::{main_menu, man_keywords, man_page, man_program, shortened};
 use super::*;
 use crate::{fakes, notice};
 
