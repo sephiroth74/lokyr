@@ -248,7 +248,7 @@ fn the_arrows_move_the_selection_and_a_double_click_runs_its_command() {
 }
 
 #[test]
-fn each_row_tells_its_title_its_category_and_its_keys_in_a_menu_s_list() {
+fn each_row_tells_its_title_and_its_keys_in_a_menu_s_list() {
     let (mut host, mut plugin) = host();
     run(&mut host, &mut plugin, OPEN, Args::new());
     let tree = host.render(&mut plugin, &panel()).expect("the palette");
@@ -262,7 +262,7 @@ fn each_row_tells_its_title_its_category_and_its_keys_in_a_menu_s_list() {
     }
     let list = found.expect("the list");
     assert!(list.menu);
-    assert_eq!(list.items[0].texts, ["New Window", "View", "⌘N"]);
+    assert_eq!(list.items[0].texts, ["New Window", "⌘N"]);
 }
 
 #[test]

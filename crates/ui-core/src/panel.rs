@@ -50,7 +50,8 @@ pub enum Corner {
     BottomLeft,
     /// The bottom right one.
     BottomRight,
-    /// The middle of the top edge.
+    /// The middle of the top, an eighth of the height down, as a
+    /// palette's.
     Top,
 }
 
@@ -129,7 +130,10 @@ pub fn place(anchor: &Anchor, size: (f32, f32), window: (f32, f32)) -> (f32, f32
                 Corner::TopRight => (right, top),
                 Corner::BottomLeft => (left, bottom),
                 Corner::BottomRight => (right, bottom),
-                Corner::Top => (rect.x + (rect.width - width) / 2.0, top),
+                Corner::Top => (
+                    rect.x + (rect.width - width) / 2.0,
+                    rect.y + (rect.height / 8.0).max(margin),
+                ),
             }
         }
     };
@@ -450,8 +454,9 @@ mod tests {
         assert_eq!(at(Corner::TopRight), (490.0, 60.0));
         assert_eq!(at(Corner::BottomLeft), (110.0, 440.0));
         assert_eq!(at(Corner::BottomRight), (490.0, 440.0));
-        // The middle of the top edge, as a palette's.
-        assert_eq!(at(Corner::Top), (300.0, 60.0));
+        // The middle of the top, an eighth of the height down, as a
+        // palette's.
+        assert_eq!(at(Corner::Top), (300.0, (50.0_f32 + 500.0 / 8.0).round()));
         // A window that shrank past the pane: within the window still, of
         // its top left edges first where it is smaller than the panel.
         let small = (300.0, 150.0);

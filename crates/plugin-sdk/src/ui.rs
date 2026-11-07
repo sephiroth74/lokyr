@@ -123,7 +123,8 @@ pub enum Corner {
     BottomLeft,
     /// The bottom right one.
     BottomRight,
-    /// The middle of the top edge, as a palette's.
+    /// The middle of the top, an eighth of the height down, as a
+    /// palette's.
     Top,
 }
 

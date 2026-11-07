@@ -333,8 +333,9 @@ pub struct List {
     pub row_height: Option<f32>,
     /// Whether it looks as a menu's items do: the row under the pointer
     /// hovered, and the selection a band of rounded corners inset from its
-    /// edges, of the accent's whether the list has the keyboard or not, as
-    /// a palette's list, whose field takes the keys.
+    /// edges, of the accent's whether the list has the keyboard or not, its
+    /// first item selected as it shows, as a palette's list, whose field
+    /// takes the keys.
     #[serde(default)]
     pub menu: bool,
 }

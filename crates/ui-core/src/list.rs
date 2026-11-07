@@ -327,6 +327,11 @@ impl Lists {
             {
                 state.selected = list.count.checked_sub(1);
             }
+            // A menu's list shows its first item selected, as a palette's,
+            // whose Return runs it.
+            if list.menu && state.selected.is_none() && list.count > 0 {
+                state.selected = Some(0);
+            }
             state.keep_within(list);
             // A render of other items, or of another count, as its plugin's
             // data changed, asks again for those about the rows that show.

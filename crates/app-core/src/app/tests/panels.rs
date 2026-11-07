@@ -953,6 +953,30 @@ fn the_command_palette_opens_at_the_window_s_top_ranks_as_it_is_typed_and_runs_i
     frames(&mut fake, &mut app, window);
     let frame = panel_frame(&app, window, "command-palette").expect("the palette");
     assert!(focused_in(&app, window, "command-palette"));
+    // Its first command selected as it opens, which ↓ moves from.
+    let selected = |app: &App| {
+        app.windows[&window]
+            .chrome
+            .iter()
+            .find(|view| view.view == ViewId::Panel(PanelId::from("command-palette")))
+            .and_then(|view| view.surface.lists.state(&"commands".into()))
+            .and_then(lokyr_ui_core::list::ListState::selected)
+    };
+    assert_eq!(selected(&app), Some(0));
+    fake.send(
+        &mut app,
+        window,
+        key_event(KeyCode::ArrowDown, "", none, true),
+    );
+    frames(&mut fake, &mut app, window);
+    assert_eq!(selected(&app), Some(1));
+    fake.send(
+        &mut app,
+        window,
+        key_event(KeyCode::ArrowUp, "", none, true),
+    );
+    frames(&mut fake, &mut app, window);
+    assert_eq!(selected(&app), Some(0));
     // At the middle of the window's top.
     let width = fake.window(window).unwrap().size.pixels.width as f32;
     assert!(
@@ -973,13 +997,7 @@ fn the_command_palette_opens_at_the_window_s_top_ranks_as_it_is_typed_and_runs_i
     }
     frames(&mut fake, &mut app, window);
     assert!(focused_in(&app, window, "command-palette"));
-    let selected = app.windows[&window]
-        .chrome
-        .iter()
-        .find(|view| view.view == ViewId::Panel(PanelId::from("command-palette")))
-        .and_then(|view| view.surface.lists.state(&"commands".into()))
-        .and_then(lokyr_ui_core::list::ListState::selected);
-    assert_eq!(selected, Some(1));
+    assert_eq!(selected(&app), Some(1));
     // Return runs it, the palette closed.
     let tabs = |app: &App| {
         app.workspace

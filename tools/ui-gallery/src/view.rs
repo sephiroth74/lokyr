@@ -1143,7 +1143,10 @@ fn point(anchor: &Anchor) -> (f32, f32) {
                 Corner::TopRight => (right, top),
                 Corner::BottomLeft => (left, bottom),
                 Corner::BottomRight => (right, bottom),
-                Corner::Top => (rect.x + rect.width / 2.0, top),
+                Corner::Top => (
+                    rect.x + rect.width / 2.0,
+                    rect.y + (rect.height / 8.0).max(margin),
+                ),
             }
         }
     }

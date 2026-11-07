@@ -2914,6 +2914,8 @@ mod tests {
         let list = tree.children(tree.root().unwrap())[0];
         let mut lists = Lists::new();
         lists.lay_out(&tree, &layout, &mut font);
+        // Its first item selected as it shows.
+        assert_eq!(lists.state(&"rows".into()).unwrap().selected(), Some(0));
         lists.select(&tree, list, 2);
         // The pointer over the first row, then over none.
         assert!(lists.hover((&tree, &layout), Some((list, (15.0, 15.0)))));

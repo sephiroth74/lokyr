@@ -10,15 +10,3 @@ command-command-palette-move = Move in the Command Palette
 palette-placeholder = Execute Command…
 palette-none = No commands
 palette-commands = Commands
-
-# The categories of the commands, which each row of the palette shows
-# below its title.
-category-app = App
-category-windows = Windows
-category-tabs = Tabs
-category-panes = Panes
-category-input = Input
-category-clipboard = Clipboard
-category-edit = Edit
-category-find = Find
-category-view = View
