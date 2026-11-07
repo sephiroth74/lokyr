@@ -2735,6 +2735,8 @@ fn scrolled(scroll: host::Scroll) -> Scroll {
         host::Scroll::PageDown => Scroll::PageDown,
         host::Scroll::Top => Scroll::Top,
         host::Scroll::Bottom => Scroll::Bottom,
+        host::Scroll::PreviousPrompt => Scroll::PreviousPrompt,
+        host::Scroll::NextPrompt => Scroll::NextPrompt,
     }
 }
 

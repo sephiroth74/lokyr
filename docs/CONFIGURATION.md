@@ -1342,8 +1342,10 @@ The defaults, of the built-in plugin `keymap-macos`, the shortcuts of macOS's ap
 | `cmd+=`, `cmd+shift+=`, `cmd++` | `font.bigger` | Makes the text a point larger, in every window, up to 200 |
 | `cmd+-` | `font.smaller` | Makes the text a point smaller, down to 4 |
 | `cmd+0` | `font.reset` | Gives the text the size of [`size`](#size) again |
-| `cmd+up` | `pane.scroll-line-up` | Scrolls the view a line up |
-| `cmd+down` | `pane.scroll-line-down` | Scrolls the view a line down |
+| `shift+cmd+up` | `pane.scroll-line-up` | Scrolls the view a line up |
+| `shift+cmd+down` | `pane.scroll-line-down` | Scrolls the view a line down |
+| `cmd+up` | `pane.prompt-previous` | Scrolls the view to the prompt above its top, of the commands that the shell marks, as [`shell-integration`](#shell-integration) has it, the prompt at the view's top |
+| `cmd+down` | `pane.prompt-next` | Scrolls the view to the prompt below its top, or to the screen past the last |
 | `cmd+pageup`, `shift+pageup` | `pane.scroll-page-up` | Scrolls the view a page up |
 | `cmd+pagedown`, `shift+pagedown` | `pane.scroll-page-down` | Scrolls the view a page down |
 | `cmd+home` | `pane.scroll-top` | Scrolls the view to the scrollback's first row |

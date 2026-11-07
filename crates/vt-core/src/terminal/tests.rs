@@ -6584,3 +6584,171 @@ fn alternate_scroll_starts_as_the_options_say_and_again_after_a_full_reset() {
         assert_eq!(term.terminal.input_modes().alternate_scroll, on, "RIS");
     }
 }
+
+/// A command of a prompt `$ `, its input `line`, its output `output`, of
+/// its lines, and its end of `status`.
+fn marked_command(line: &str, output: &[&str], status: i32) -> String {
+    let mut text = format!("\x1b]133;A\x07$ \x1b]133;B\x07{line}\r\n\x1b]133;C\x07");
+    for row in output {
+        text.push_str(row);
+        text.push_str("\r\n");
+    }
+    text.push_str(&format!("\x1b]133;D;{status}\x07"));
+    text
+}
+
+#[test]
+fn the_commands_marks_keep_their_rows_through_output_and_the_scrollback() {
+    let mut term = Term::new(20, 4);
+    term.feed(marked_command("ls", &["a", "b"], 0));
+    term.feed(marked_command("false", &[], 1));
+    term.feed("\x1b]133;A\x07$ \x1b]133;B\x07");
+    let commands = term.terminal.commands();
+    assert_eq!(
+        commands,
+        [
+            CommandMarks {
+                prompt: Some((0, 0)),
+                input: Some((2, 0)),
+                output: Some((0, 1)),
+                end: Some((0, 3)),
+                status: Some(0),
+            },
+            CommandMarks {
+                prompt: Some((0, 3)),
+                input: Some((2, 3)),
+                output: Some((0, 4)),
+                end: Some((0, 4)),
+                status: Some(1),
+            },
+            CommandMarks {
+                prompt: Some((0, 4)),
+                input: Some((2, 4)),
+                output: None,
+                end: None,
+                status: None,
+            },
+        ]
+    );
+    // Output that scrolls them into the scrollback leaves their numbers.
+    for _ in 0..30 {
+        term.feed("line\r\n");
+    }
+    assert_eq!(term.terminal.commands(), commands);
+    // A reflowing resize renumbers the rows, but the marks follow their
+    // cells.
+    term.terminal.resize(10, 4);
+    let after = term.terminal.commands();
+    assert_eq!(after.len(), 3);
+    assert_eq!(after[0].status, Some(0));
+    assert_eq!(after[1].status, Some(1));
+    let rows: Vec<i64> = after
+        .iter()
+        .filter_map(|command| command.prompt)
+        .map(|(_, row)| row)
+        .collect();
+    assert!(rows.windows(2).all(|pair| pair[0] < pair[1]), "{after:?}");
+}
+
+#[test]
+fn a_command_whose_rows_leave_the_scrollback_goes() {
+    let mut term = Term::with(
+        20,
+        3,
+        Options {
+            scrollback: Scrollback {
+                limit: 0,
+                ..Scrollback::default()
+            },
+            ..Options::default()
+        },
+    );
+    term.feed(marked_command("one", &[], 0));
+    term.feed(marked_command("two", &[], 0));
+    assert_eq!(term.terminal.commands().len(), 2);
+    // Past the list's first pages, which the limit drops.
+    for _ in 0..20_000 {
+        term.feed("line\r\n");
+    }
+    assert!(term.terminal.commands().is_empty());
+    // ED 3 too, of the scrollback's rows.
+    let mut cleared = Term::new(20, 3);
+    cleared.feed(marked_command("one", &[], 0));
+    cleared.feed("\r\n\r\n\r\n\x1b[3J");
+    assert!(cleared.terminal.commands().is_empty());
+    // A new prompt lets go of the pins of those gone.
+    term.feed("\x1b]133;A\x07$ ");
+    assert_eq!(term.terminal.commands().len(), 1);
+}
+
+#[test]
+fn the_alternate_screen_s_prompts_mark_no_command_and_a_reset_forgets_them() {
+    let mut term = Term::new(20, 4);
+    term.feed(marked_command("vim", &[], 0));
+    term.feed("\x1b[?1049h\x1b]133;A\x07> \x1b]133;D;3\x07\x1b[?1049l");
+    let commands = term.terminal.commands();
+    assert_eq!(commands.len(), 1);
+    assert_eq!(commands[0].status, Some(0));
+    term.feed("\x1bc");
+    assert!(term.terminal.commands().is_empty());
+}
+
+#[test]
+fn the_commands_kept_are_the_last_of_the_most() {
+    let mut term = Term::new(20, 4);
+    for _ in 0..MOST_COMMANDS + 5 {
+        term.feed("\x1b]133;A\x07");
+    }
+    assert_eq!(term.terminal.commands().len(), MOST_COMMANDS);
+}
+
+#[test]
+fn the_view_jumps_from_prompt_to_prompt() {
+    let mut term = Term::new(20, 4);
+    // Three commands of ten lines each, then a prompt.
+    let mut lines = Vec::new();
+    for at in 0..10 {
+        lines.push(format!("out {at}"));
+    }
+    let output: Vec<&str> = lines.iter().map(String::as_str).collect();
+    for name in ["one", "two", "three"] {
+        term.feed(marked_command(name, &output, 0));
+    }
+    term.feed("\x1b]133;A\x07$ ");
+    let prompts: Vec<i64> = term
+        .terminal
+        .commands()
+        .iter()
+        .filter_map(|command| command.prompt)
+        .map(|(_, row)| row)
+        .collect();
+    assert_eq!(prompts, [0, 11, 22, 33]);
+    let top = |term: &Term| term.terminal.origin().top;
+    // From the screen, up to the last prompt above the view's top, then the
+    // one before; the first stays.
+    term.terminal.scroll_viewport(Scroll::PreviousPrompt);
+    assert_eq!(top(&term), 22);
+    term.terminal.scroll_viewport(Scroll::PreviousPrompt);
+    assert_eq!(top(&term), 11);
+    term.terminal.scroll_viewport(Scroll::PreviousPrompt);
+    assert_eq!(top(&term), 0);
+    term.terminal.scroll_viewport(Scroll::PreviousPrompt);
+    assert_eq!(top(&term), 0);
+    // Down again, past the scrollback's last prompt to the screen.
+    term.terminal.scroll_viewport(Scroll::NextPrompt);
+    assert_eq!(top(&term), 11);
+    term.terminal.scroll_viewport(Scroll::NextPrompt);
+    assert_eq!(top(&term), 22);
+    term.terminal.scroll_viewport(Scroll::NextPrompt);
+    assert_eq!(term.terminal.viewport_offset(), 0);
+    // A terminal of no prompts moves nowhere up, and to the screen down.
+    let mut bare = Term::new(20, 4);
+    for _ in 0..10 {
+        bare.feed("x\r\n");
+    }
+    bare.terminal.scroll_viewport(Scroll::Up(3));
+    bare.terminal.scroll_viewport(Scroll::PreviousPrompt);
+    assert_eq!(bare.terminal.viewport_offset(), 3);
+    bare.terminal.scroll_viewport(Scroll::NextPrompt);
+    assert_eq!(bare.terminal.viewport_offset(), 0);
+}

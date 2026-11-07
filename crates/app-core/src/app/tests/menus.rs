@@ -115,12 +115,14 @@ fn starting_opens_a_window_under_the_menus_of_the_commands() {
             "Smaller cmd+-",
             "Default Size cmd+0",
             "-",
-            "Scroll Up a Line cmd+ArrowUp",
-            "Scroll Down a Line cmd+ArrowDown",
+            "Scroll Up a Line shift+cmd+ArrowUp",
+            "Scroll Down a Line shift+cmd+ArrowDown",
             "Scroll Up a Page cmd+PageUp",
             "Scroll Down a Page cmd+PageDown",
             "Scroll to the Top cmd+Home",
             "Scroll to the Bottom cmd+End",
+            "Jump to Previous Prompt cmd+ArrowUp",
+            "Jump to Next Prompt cmd+ArrowDown",
             "-",
             "Command Palette… shift+cmd+p",
             "Choose Theme…",
@@ -281,7 +283,7 @@ fn the_built_in_plugins_bind_the_commands_that_are_there_alone() {
         .filter(|command| app.commands.get(command).is_none())
         .collect();
     assert_eq!(missing, Vec::<&str>::new());
-    assert_eq!(app.keymap.bindings().len(), 69);
+    assert_eq!(app.keymap.bindings().len(), 71);
 }
 
 #[test]
@@ -910,9 +912,14 @@ fn the_underline_goes_as_the_program_erases_the_link_under_a_still_pointer() {
 #[test]
 fn the_underline_goes_as_the_view_scrolls_the_link_from_under_a_still_pointer() {
     let (mut fake, mut app, window, row) = underlined_still("scrolled", "true");
-    // A line up, with Command held: the pointer is over the line before
-    // the link's.
-    fake.send(&mut app, window, key_event(KeyCode::ArrowUp, "", CMD, true));
+    // A line up, with Command held, and Shift: the pointer is over the line
+    // before the link's.
+    let shift_cmd = Modifiers { shift: true, ..CMD };
+    fake.send(
+        &mut app,
+        window,
+        key_event(KeyCode::ArrowUp, "", shift_cmd, true),
+    );
     run_until(&mut fake, &mut app, |_, app| {
         app.pane(window).snapshot().offset() == 1
     });
@@ -924,7 +931,7 @@ fn the_underline_goes_as_the_view_scrolls_the_link_from_under_a_still_pointer() 
     fake.send(
         &mut app,
         window,
-        key_event(KeyCode::ArrowDown, "", CMD, true),
+        key_event(KeyCode::ArrowDown, "", shift_cmd, true),
     );
     run_until(&mut fake, &mut app, |_, app| {
         decorated(app, window) == [(row, 4, 22)]

@@ -12,4 +12,6 @@ command-pane-scroll-page-up = Scorri su di una pagina
 command-pane-scroll-page-down = Scorri giù di una pagina
 command-pane-scroll-top = Scorri fino in cima
 command-pane-scroll-bottom = Scorri fino in fondo
+command-pane-prompt-previous = Vai al prompt precedente
+command-pane-prompt-next = Vai al prompt successivo
 command-pane-send-text = Invia testo

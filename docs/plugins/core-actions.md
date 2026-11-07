@@ -15,7 +15,8 @@ The terminal's everyday actions: copy and paste, select all, clear, the scrollin
 | `font.bigger` | View › Bigger | ⌘=, ⌘+ | Makes the text a point larger, in every window |
 | `font.smaller` | View › Smaller | ⌘- | Makes the text a point smaller |
 | `font.reset` | View › Default Size | ⌘0 | Gives the text the size of your config again |
-| `pane.scroll-line-up`, `pane.scroll-line-down` | View › Scroll Up a Line, Scroll Down a Line | ⌘↑, ⌘↓ | Scrolls the view a line |
+| `pane.scroll-line-up`, `pane.scroll-line-down` | View › Scroll Up a Line, Scroll Down a Line | ⇧⌘↑, ⇧⌘↓ | Scrolls the view a line |
+| `pane.prompt-previous`, `pane.prompt-next` | View › Jump to Previous Prompt, Jump to Next Prompt | ⌘↑, ⌘↓ | Scrolls the view to the prompt above its top, or below it, of the commands that the shell marks, as [`shell-integration`](../CONFIGURATION.md#shell-integration) has it; past the last, to the screen |
 | `pane.scroll-page-up`, `pane.scroll-page-down` | View › Scroll Up a Page, Scroll Down a Page | ⌘Page Up, ⌘Page Down, ⇧Page Up, ⇧Page Down | Scrolls the view a page |
 | `pane.scroll-top`, `pane.scroll-bottom` | View › Scroll to the Top, Scroll to the Bottom | ⌘Home, ⌘End | Scrolls the view to the scrollback's first row, or back to the screen |
 | `pane.send-text` | | | Sends its `text` to the program, as keys that typed it would: for your own bindings, as it needs its text |

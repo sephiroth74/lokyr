@@ -2139,7 +2139,12 @@ fn a_binding_of_the_config_sends_its_text_as_it_is() {
     fake.send(&mut app, window, WindowEvent::Focused(true));
     // A view up the scrollback comes back down, as typing brings it.
     let offset = |app: &App| app.pane(window).snapshot().offset();
-    fake.send(&mut app, window, key_event(KeyCode::ArrowUp, "", CMD, true));
+    let shift_cmd = Modifiers { shift: true, ..CMD };
+    fake.send(
+        &mut app,
+        window,
+        key_event(KeyCode::ArrowUp, "", shift_cmd, true),
+    );
     run_until(&mut fake, &mut app, |_, app| offset(app) == 1);
     let alt = Modifiers {
         left_alt: true,
@@ -2363,7 +2368,8 @@ fn the_font_s_size_and_the_view_take_their_keys() {
     assert_eq!(app.font_size, None);
     // A line up, a page down, to the top.
     let offset = |app: &App| app.pane(window).snapshot().offset();
-    fake.send(&mut app, window, named(KeyCode::ArrowUp, "", CMD));
+    let shift_cmd = Modifiers { shift: true, ..CMD };
+    fake.send(&mut app, window, named(KeyCode::ArrowUp, "", shift_cmd));
     run_until(&mut fake, &mut app, |_, app| offset(app) == 1);
     fake.send(&mut app, window, named(KeyCode::PageDown, "", SHIFT));
     run_until(&mut fake, &mut app, |_, app| offset(app) == 0);
@@ -3299,4 +3305,45 @@ fn a_plugin_s_quick_window_shows_and_hides_and_its_global_key_is_taken() {
     let place = fake.window(quick).unwrap().quick.unwrap().unwrap();
     assert_eq!(place.edge, lokyr_platform_core::QuickEdge::Bottom);
     assert_eq!(state(&app), (true, false));
+}
+
+#[test]
+fn command_up_and_down_jump_to_the_prompts_that_the_shell_marks() {
+    // Three commands of the shell's marks, of 30 lines each, then the
+    // terminal raw for the keys; the last command's prompt on the screen.
+    let program = shell(concat!(
+        "for n in 1 2 3; do printf '\\033]133;A\\007$ \\033]133;B\\007run %s\\r\\n\\033]133;C\\007' $n; ",
+        "seq 1 30; printf '\\033]133;D;0\\007'; done; stty raw -echo; echo ready; cat -v"
+    ));
+    let (mut fake, mut app, window) = bound("", program);
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    let first_row = |app: &App| screen(app, window)[0].clone();
+    let key = |code| key_event(code, "", CMD, true);
+    // Up past the prompt that the view shows, to the one above its top, at
+    // its top, then the first.
+    fake.send(&mut app, window, key(KeyCode::ArrowUp));
+    run_until(&mut fake, &mut app, |_, app| {
+        first_row(app).starts_with("$ run 2")
+    });
+    fake.send(&mut app, window, key(KeyCode::ArrowUp));
+    run_until(&mut fake, &mut app, |_, app| {
+        first_row(app).starts_with("$ run 1")
+    });
+    // Down again, then to the screen, past the scrollback's last prompt.
+    fake.send(&mut app, window, key(KeyCode::ArrowDown));
+    run_until(&mut fake, &mut app, |_, app| {
+        first_row(app).starts_with("$ run 2")
+    });
+    fake.send(&mut app, window, key(KeyCode::ArrowDown));
+    run_until(&mut fake, &mut app, |_, app| {
+        app.pane(window).snapshot().offset() == 0
+    });
+    // The marks, as the terminal keeps them, of their statuses.
+    let pane = app.pane(window);
+    let commands = pane
+        .terminal()
+        .map(|terminal| terminal.commands())
+        .unwrap_or_default();
+    let statuses: Vec<Option<i32>> = commands.iter().map(|command| command.status).collect();
+    assert_eq!(statuses, [Some(0), Some(0), Some(0)]);
 }

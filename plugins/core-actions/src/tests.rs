@@ -65,6 +65,8 @@ fn the_commands_register_without_keys() {
             view("pane.scroll-page-down"),
             view("pane.scroll-top"),
             view("pane.scroll-bottom"),
+            view("pane.prompt-previous"),
+            view("pane.prompt-next"),
             ("pane.send-text", Category::Input, names(&["pty-write"])),
         ]
     );
@@ -172,7 +174,7 @@ fn the_font_grows_and_shrinks_a_point_within_its_sizes() {
 }
 
 #[test]
-fn the_view_scrolls_by_lines_pages_and_to_its_ends() {
+fn the_view_scrolls_by_lines_pages_to_its_ends_and_to_the_prompts() {
     let mut host = host(Some(5));
     for name in [
         SCROLL_LINE_UP,
@@ -181,6 +183,8 @@ fn the_view_scrolls_by_lines_pages_and_to_its_ends() {
         SCROLL_PAGE_DOWN,
         SCROLL_TOP,
         SCROLL_BOTTOM,
+        PROMPT_PREVIOUS,
+        PROMPT_NEXT,
     ] {
         run(&mut host, name).unwrap();
     }
@@ -191,6 +195,8 @@ fn the_view_scrolls_by_lines_pages_and_to_its_ends() {
         Scroll::PageDown,
         Scroll::Top,
         Scroll::Bottom,
+        Scroll::PreviousPrompt,
+        Scroll::NextPrompt,
     ]
     .map(|scroll| Request::Scroll {
         pane: PaneId(5),

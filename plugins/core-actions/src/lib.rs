@@ -43,6 +43,11 @@ const SCROLL_PAGE_DOWN: &str = "pane.scroll-page-down";
 const SCROLL_TOP: &str = "pane.scroll-top";
 const SCROLL_BOTTOM: &str = "pane.scroll-bottom";
 
+/// Scroll the focused pane's view to the prompt before its top, or after
+/// it, of the commands that the shell marks.
+const PROMPT_PREVIOUS: &str = "pane.prompt-previous";
+const PROMPT_NEXT: &str = "pane.prompt-next";
+
 /// Sends its `text` to the focused pane's program, as it is: for keys that
 /// the config binds, as those of a shell's line editing.
 const SEND_TEXT: &str = "pane.send-text";
@@ -60,7 +65,7 @@ const SIZES: (f32, f32) = (4.0, 200.0);
 type Spec = (&'static str, &'static str, Category, &'static [Capability]);
 
 /// The commands.
-const COMMANDS: [Spec; 13] = [
+const COMMANDS: [Spec; 15] = [
     (
         COPY,
         "Copy",
@@ -84,6 +89,13 @@ const COMMANDS: [Spec; 13] = [
     (SCROLL_PAGE_DOWN, "Scroll Down a Page", Category::View, &[]),
     (SCROLL_TOP, "Scroll to the Top", Category::View, &[]),
     (SCROLL_BOTTOM, "Scroll to the Bottom", Category::View, &[]),
+    (
+        PROMPT_PREVIOUS,
+        "Jump to Previous Prompt",
+        Category::View,
+        &[],
+    ),
+    (PROMPT_NEXT, "Jump to Next Prompt", Category::View, &[]),
 ];
 
 /// The plugin of the basic terminal actions.
@@ -148,6 +160,8 @@ impl Plugin for CoreActions {
             SCROLL_PAGE_DOWN => Some(Scroll::PageDown),
             SCROLL_TOP => Some(Scroll::Top),
             SCROLL_BOTTOM => Some(Scroll::Bottom),
+            PROMPT_PREVIOUS => Some(Scroll::PreviousPrompt),
+            PROMPT_NEXT => Some(Scroll::NextPrompt),
             _ => None,
         };
         if let Some(scroll) = scroll {

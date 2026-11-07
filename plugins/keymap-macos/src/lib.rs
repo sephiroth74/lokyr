@@ -18,7 +18,7 @@ lokyr_plugin_sdk::export_plugin!(KeymapMacos);
 /// The bindings, each of its keys and of the command that they run, in
 /// their order: a menu's item shows the first of its command's keys that no
 /// later binding takes.
-pub const BINDINGS: [(&str, &str); 37] = [
+pub const BINDINGS: [(&str, &str); 39] = [
     // The application's.
     ("cmd+,", "app.settings"),
     ("cmd+q", "app.quit"),
@@ -40,8 +40,11 @@ pub const BINDINGS: [(&str, &str); 37] = [
     ("cmd+-", "font.smaller"),
     ("cmd+0", "font.reset"),
     // The scrollback's.
-    ("cmd+up", "pane.scroll-line-up"),
-    ("cmd+down", "pane.scroll-line-down"),
+    ("shift+cmd+up", "pane.scroll-line-up"),
+    ("shift+cmd+down", "pane.scroll-line-down"),
+    // The prompts that the shell marks, as Terminal's marks.
+    ("cmd+up", "pane.prompt-previous"),
+    ("cmd+down", "pane.prompt-next"),
     ("cmd+pageup", "pane.scroll-page-up"),
     ("shift+pageup", "pane.scroll-page-up"),
     ("cmd+pagedown", "pane.scroll-page-down"),

@@ -28,6 +28,12 @@ pub enum Scroll {
     Top,
     /// To the screen, which the view then follows.
     Bottom,
+    /// To the prompt above the view's first row, of the commands that the
+    /// shell marked, at the view's top; none moves it.
+    PreviousPrompt,
+    /// To the prompt below the view's first row, at the view's top, or to
+    /// the screen past the scrollback's last.
+    NextPrompt,
 }
 
 /// Where the active screen's rows are, at a moment: the epoch of their
@@ -148,6 +154,21 @@ impl Terminal {
             Scroll::PageDown => offset.saturating_sub(page),
             Scroll::Top => usize::MAX,
             Scroll::Bottom => 0,
+            Scroll::PreviousPrompt | Scroll::NextPrompt => {
+                let scrollback = self.primary.rows.scrollback_rows();
+                let top = scrollback - offset;
+                let prompts = self.prompt_indexes();
+                let found = if scroll == Scroll::PreviousPrompt {
+                    prompts.into_iter().filter(|&index| index < top).max()
+                } else {
+                    prompts.into_iter().filter(|&index| index > top).min()
+                };
+                match found {
+                    Some(index) => scrollback.saturating_sub(index),
+                    None if scroll == Scroll::NextPrompt => 0,
+                    None => offset,
+                }
+            }
         };
         self.set_viewport_offset(target);
     }

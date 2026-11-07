@@ -723,6 +723,12 @@ pub enum Scroll {
     Top,
     /// To the screen, which the view then follows.
     Bottom,
+    /// To the prompt above the view's first row, of the commands that the
+    /// shell marked, at the view's top.
+    PreviousPrompt,
+    /// To the prompt below the view's first row, at the view's top, or to
+    /// the screen past the scrollback's last.
+    NextPrompt,
 }
 
 /// What carries a plugin's calls to the host, and the host's answers

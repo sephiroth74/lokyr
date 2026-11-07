@@ -2,6 +2,7 @@
 //! embedder, besides text: titles, the working directory, notifications,
 //! progress and the tab's color.
 
+use super::marks::Mark;
 use super::{ClipboardRequest, ClipboardTarget, Redraw, Terminal};
 use crate::page::{Rgb, RowFlag, Semantic};
 use crate::parser::StringEnd;
@@ -212,13 +213,26 @@ impl Terminal {
     fn mark_prompt(&mut self, fields: &[u8]) {
         let mut fields = fields.split(|&byte| byte == b';');
         let kind = fields.next().unwrap_or_default();
+        let mut status = None;
         if kind == b"D"
-            && let Some(status) = fields
+            && let Some(told) = fields
                 .next()
                 .and_then(|status| std::str::from_utf8(status).ok())
                 .and_then(|status| status.parse().ok())
         {
-            self.command_status = Some(status);
+            self.command_status = Some(told);
+            status = Some(told);
+        }
+        // The command's mark, of the cursor's cell, before the zone's.
+        let mark = match kind {
+            b"A" => Some(Mark::Prompt),
+            b"B" => Some(Mark::Input),
+            b"C" => Some(Mark::Output),
+            b"D" => Some(Mark::End(status)),
+            _ => None,
+        };
+        if let Some(mark) = mark {
+            self.mark_command(mark);
         }
         self.zone = match kind {
             b"A" => {

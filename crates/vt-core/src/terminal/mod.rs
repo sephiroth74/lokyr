@@ -13,6 +13,7 @@ mod erase;
 mod escape;
 mod events;
 mod keyboard;
+mod marks;
 mod matches;
 mod modes;
 mod osc;
@@ -31,6 +32,7 @@ pub use clipboard::{ClipboardRequest, ClipboardTarget};
 pub use colors::{Colors, SPECIAL_COLORS};
 pub use decorations::{Decorated, Look, MOST_DECORATIONS};
 pub use keyboard::KeyboardFlags;
+pub use marks::{CommandMarks, MOST_COMMANDS};
 pub use matches::{Highlighted, MatchCells};
 pub use osc::{Event, Progress, WorkingDirectory};
 pub use selection::{CellPin, RowText, Selected, SelectionShape, SelectionUnit, WORD_SEPARATORS};
@@ -426,6 +428,8 @@ pub struct Terminal {
     /// The status of the last command that ended, as OSC 133's `D` tells
     /// it.
     command_status: Option<i32>,
+    /// The commands that the shell marked, of the primary screen.
+    commands: marks::Commands,
     /// The theme's colors, which the resets bring back, and the colors
     /// now, which programs can change.
     default_colors: Colors,
@@ -566,6 +570,7 @@ impl Terminal {
             zone: Semantic::Output,
             redraw: Redraw::Whole,
             command_status: None,
+            commands: marks::Commands::default(),
             default_colors: Colors::default(),
             colors: Colors::default(),
             cell_size: None,

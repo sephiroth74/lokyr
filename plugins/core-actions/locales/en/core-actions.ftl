@@ -13,4 +13,6 @@ command-pane-scroll-page-up = Scroll Up a Page
 command-pane-scroll-page-down = Scroll Down a Page
 command-pane-scroll-top = Scroll to the Top
 command-pane-scroll-bottom = Scroll to the Bottom
+command-pane-prompt-previous = Jump to Previous Prompt
+command-pane-prompt-next = Jump to Next Prompt
 command-pane-send-text = Send Text

@@ -521,7 +521,7 @@ type MenuItem = {
 -- The logical line of a row: its text, and each character's cell, { column, row's number }.
 type LineText = { text: string, cells: { { number } } }
 
-type Scroll = { up: number } | { down: number } | "page-up" | "page-down" | "top" | "bottom"
+type Scroll = { up: number } | { down: number } | "page-up" | "page-down" | "top" | "bottom" | "previous-prompt" | "next-prompt"
 
 -- The host's requests, each by the Rust front end's name. A read answers at once, of the state as it is; a
 -- write, and a request of the app's, as a window to open or a command to run, applies as the call returns,
