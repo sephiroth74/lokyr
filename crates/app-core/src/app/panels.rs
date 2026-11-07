@@ -235,6 +235,13 @@ impl<B: Backend> App<B> {
         window: WindowId,
         size: WindowSize,
     ) {
+        if self
+            .windows
+            .get(&window)
+            .is_some_and(|state| !state.native_due.is_empty())
+        {
+            self.release_capture(platform, window);
+        }
         let Some(state) = self.windows.get_mut(&window) else {
             return;
         };
@@ -291,6 +298,7 @@ impl<B: Backend> App<B> {
     /// that it showed closes, as its plugin hears, after its choice where
     /// one was made.
     pub(super) fn native_closed(&mut self, platform: &mut dyn Platform, window: WindowId) {
+        self.release_capture(platform, window);
         let shown = self
             .windows
             .get_mut(&window)

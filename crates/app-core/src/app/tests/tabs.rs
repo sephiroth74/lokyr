@@ -446,6 +446,34 @@ fn another_button_during_a_tab_s_drag_leaves_the_drag_under_way() {
 }
 
 #[test]
+fn a_tab_s_context_menu_leaves_the_window_s_next_clicks_where_they_fall() {
+    let none = Modifiers::NONE;
+    let (mut fake, mut app, window) = three_tabs("unified", "top");
+    let ids = order(&app, window);
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    let first = middle_of(&fake, &app, window, &tab_key(ids[0]));
+    // The secondary button's press opens the tab's menu, the platform's,
+    // whose own loop takes the release.
+    fake.send(
+        &mut app,
+        window,
+        press(MouseButton::Right, true, first, none),
+    );
+    run_until(&mut fake, &mut app, |fake, _| {
+        !fake.context_menus().is_empty()
+    });
+    assert_eq!(app.windows[&window].captured, None);
+    fake.send(&mut app, window, WindowEvent::ContextMenuClosed);
+    settle(&mut fake, &mut app);
+    // A click on another tab shows it.
+    let third = middle_of(&fake, &app, window, &tab_key(ids[2]));
+    fake.send(&mut app, window, click(true, third, none, 1));
+    fake.send(&mut app, window, click(false, third, none, 1));
+    settle(&mut fake, &mut app);
+    assert_eq!(active(&app, window), ids[2]);
+}
+
+#[test]
 fn the_room_that_a_tab_opened_in_another_bar_closes_as_its_window_closes() {
     let none = Modifiers::NONE;
     let (mut fake, mut app, window) = three_tabs("unified", "top");

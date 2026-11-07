@@ -613,6 +613,29 @@ impl<B: Backend> App<B> {
         self.wake_for_tooltips(platform);
     }
 
+    /// The platform's menu of `window` takes the rest of the press that
+    /// opened it, its release among it, in a loop of its own: the view
+    /// that took the press lets the pointer go, its press cancelled, so
+    /// that the window's next presses go where they fall.
+    pub(super) fn release_capture(&mut self, platform: &mut dyn Platform, window: WindowId) {
+        let Some(state) = self.windows.get_mut(&window) else {
+            return;
+        };
+        let Some(id) = state.captured.take() else {
+            return;
+        };
+        state.captured_by = None;
+        let Some(view) = view_mut(&mut state.chrome, id) else {
+            return;
+        };
+        let cancelled = view.surface.cancel(Instant::now());
+        let events: Vec<_> = told(view, cancelled).collect();
+        if !events.is_empty() {
+            platform.request_frame(window);
+        }
+        self.ui_events.extend(events);
+    }
+
     /// A key hides the tooltips of `window`'s slots' views.
     pub(super) fn dismiss_tooltips(&mut self, platform: &mut dyn Platform, window: WindowId) {
         let Some(state) = self.windows.get_mut(&window) else {
