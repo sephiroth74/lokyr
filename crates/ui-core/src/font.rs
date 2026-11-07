@@ -67,6 +67,10 @@ const ICON_INK: f32 = 0.75;
 /// ones'.
 pub const SMALL: f32 = 11.0 / 13.0;
 
+/// The share of the interface's size that its large text takes: eighteen
+/// points of thirteen, as a palette's field.
+pub const LARGE: f32 = 18.0 / 13.0;
+
 /// VARIATION SELECTOR-16, which asks for a character's emoji.
 const EMOJI_PRESENTATION: char = '\u{FE0F}';
 
@@ -215,12 +219,13 @@ pub struct Font<B> {
     /// interface finds it, so that a window without them, and the app's
     /// start, do not pay for it.
     interface: Option<InterfaceFace>,
-    /// The interface's small face, of the same family, once a small text
-    /// asks for it.
+    /// The interface's small face and its large one, of the same family,
+    /// once a text of their size asks for it.
     interface_small: Option<InterfaceFace>,
-    /// Whether the interface's texts take its small face, as the node that
-    /// they are measured or drawn for has it.
-    small: bool,
+    interface_large: Option<InterfaceFace>,
+    /// The size of the interface's texts, as the node that they are
+    /// measured or drawn for has it.
+    size: TextSize,
     /// The glyph of each icon's character in the symbols' font, once
     /// asked for.
     icons: FastMap<char, Option<GlyphId>>,
@@ -499,7 +504,8 @@ impl<B: FontBackend> Font<B> {
             interface_config: InterfaceConfig::default(),
             interface: None,
             interface_small: None,
-            small: false,
+            interface_large: None,
+            size: TextSize::Regular,
             icons: FastMap::default(),
             icon_pixels: FastMap::default(),
             carets: Vec::new(),
@@ -1113,19 +1119,20 @@ impl<B: FontBackend> Font<B> {
         self.interface_config = config.clone();
         self.interface = None;
         self.interface_small = None;
+        self.interface_large = None;
     }
 
     /// Takes `size` for the interface's texts that it measures and draws
     /// next, until another size.
     pub fn set_text_size(&mut self, size: TextSize) {
-        self.small = size == TextSize::Small;
+        self.size = size;
     }
 
     /// The face of the interface's text, found the first time: the one that
     /// [`Font::set_interface`]'s configuration names; the default one where
     /// that fails, as the log tells; the terminal's face where the system
-    /// has no interface family; of [`SMALL`] of its size where
-    /// [`Font::set_text_size`] took the small one.
+    /// has no interface family; of [`SMALL`] or [`LARGE`] of its size where
+    /// [`Font::set_text_size`] took the small one or the large one.
     pub fn interface(&mut self) -> &InterfaceFace {
         let (backend, resolved, config) =
             (&mut self.backend, &self.resolved, &self.interface_config);
@@ -1149,11 +1156,15 @@ impl<B: FontBackend> Font<B> {
                     )
                 })
         });
-        if !self.small {
-            return regular;
+        match self.size {
+            TextSize::Regular => regular,
+            TextSize::Small => self
+                .interface_small
+                .get_or_insert_with(|| regular.sized(backend, regular.size() * SMALL)),
+            TextSize::Large => self
+                .interface_large
+                .get_or_insert_with(|| regular.sized(backend, regular.size() * LARGE)),
         }
-        self.interface_small
-            .get_or_insert_with(|| regular.sized(backend, regular.size() * SMALL))
     }
 
     /// The glyphs of `text` on one line in the interface's face, at the

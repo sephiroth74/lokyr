@@ -229,11 +229,26 @@ impl<B: Backend> App<B> {
         };
         // A node of a slot's view that has the focus leaves out the pane's
         // contexts.
-        let context = if state.pane_has_focus() {
+        let mut context = if state.pane_has_focus() {
             context(self.workspace.focused(state.window))
         } else {
             keymap::Context::new(Vec::<&str>::new())
         };
+        // The plugins' panels: `<namespace>.open` of each that shows, and
+        // `<namespace>.focused` of the one whose node has the keyboard.
+        let focused_view = match state.focus.target() {
+            lokyr_ui_core::focus::Target::Node { panel, .. } => Some(panel),
+            lokyr_ui_core::focus::Target::Pane => None,
+        };
+        for view in &state.chrome {
+            let namespace = view.plugin.rsplit('/').next().unwrap_or_default();
+            if matches!(view.view, lokyr_kernel::plugins::ui::ViewId::Panel(_)) {
+                context.hold(format!("{namespace}.open"));
+            }
+            if focused_view == Some(view.id) {
+                context.hold(format!("{namespace}.focused"));
+            }
+        }
         match state.resolver.press(&self.keymap, pressed, &context) {
             Resolved::Run(invocation) => {
                 state.held_back.clear();

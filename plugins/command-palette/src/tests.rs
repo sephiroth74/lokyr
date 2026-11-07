@@ -217,15 +217,52 @@ fn the_arrows_move_the_selection_and_a_double_click_runs_its_command() {
         },
     );
     assert_eq!(ran(&submitted), ["pane.paste"]);
-    // A double click on an item.
+    // A click on an item runs it.
     run(&mut host, &mut plugin, OPEN, Args::new());
+    let clicked = on_panel(
+        &mut host,
+        &mut plugin,
+        LIST,
+        UiEventKind::Select { item: 3 },
+    );
+    assert_eq!(ran(&clicked), ["tabs.new"]);
+    // The list's own keys, while Tab gave it the keyboard, move alone.
+    run(&mut host, &mut plugin, OPEN, Args::new());
+    on_panel(&mut host, &mut plugin, LIST, UiEventKind::Focus);
+    let moved = on_panel(
+        &mut host,
+        &mut plugin,
+        LIST,
+        UiEventKind::Select { item: 1 },
+    );
+    assert!(ran(&moved).is_empty());
+    assert_eq!(plugin.open.as_ref().unwrap().selected, 1);
     let activated = on_panel(
         &mut host,
         &mut plugin,
         LIST,
-        UiEventKind::Activate { item: 3 },
+        UiEventKind::Activate { item: 1 },
     );
-    assert_eq!(ran(&activated), ["tabs.new"]);
+    // The second of the list, of the recent ones first: New Tab, Paste.
+    assert_eq!(ran(&activated), ["pane.paste"]);
+}
+
+#[test]
+fn each_row_tells_its_title_its_category_and_its_keys_in_a_menu_s_list() {
+    let (mut host, mut plugin) = host();
+    run(&mut host, &mut plugin, OPEN, Args::new());
+    let tree = host.render(&mut plugin, &panel()).expect("the palette");
+    let mut left = vec![&tree];
+    let mut found = None;
+    while let Some(node) = left.pop() {
+        if let lokyr_plugin_sdk::view::Kind::List(list) = &node.kind {
+            found = Some(list.clone());
+        }
+        left.extend(&node.children);
+    }
+    let list = found.expect("the list");
+    assert!(list.menu);
+    assert_eq!(list.items[0].texts, ["New Window", "View", "⌘N"]);
 }
 
 #[test]

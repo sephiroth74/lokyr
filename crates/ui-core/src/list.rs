@@ -52,6 +52,8 @@ pub struct ListState {
     /// The points of the anchor's row above the list's top.
     offset: f32,
     selected: Option<usize>,
+    /// The row under the pointer, of a menu's list, which shows it.
+    hovered: Option<usize>,
     /// The rows' heights, in points, as they were measured, of a list of
     /// rows of their own heights.
     heights: HashMap<usize, f32>,
@@ -106,6 +108,22 @@ impl ListState {
     /// The selected item, if one is.
     pub fn selected(&self) -> Option<usize> {
         self.selected
+    }
+
+    /// The item under the pointer, of a menu's list, if one is.
+    pub fn hovered(&self) -> Option<usize> {
+        self.hovered
+    }
+
+    /// The row of `list` at `y`, in points from the list's top, of those
+    /// that show; `None` below the last.
+    fn row_at(&self, list: &view::List, y: f32) -> Option<usize> {
+        self.visible(list)
+            .into_iter()
+            .take_while(|&(_, top)| top <= y)
+            .last()
+            .filter(|&(index, top)| y < top + self.height(list, index))
+            .map(|(index, _)| index)
     }
 
     /// The first row that shows, and the points of it above the list's top.
@@ -385,6 +403,40 @@ impl Lists {
         true
     }
 
+    /// The pointer at `at`, in pixels from the tree's corner, over the list
+    /// `node` of `tree`, or over no list of `None`: of a menu's list, the
+    /// row under it hovered, and every other list's row not. Whether a
+    /// row's hover changed, which a frame shows.
+    pub fn hover(
+        &mut self,
+        (tree, layout): (&Tree, &Layout),
+        over: Option<(NodeId, (f32, f32))>,
+    ) -> bool {
+        let under = over.and_then(|(node, at)| {
+            let (Some(Kind::List(list)), Some(key), Some(frame)) =
+                (tree.kind(node), tree.key(node), layout.frame(tree, node))
+            else {
+                return None;
+            };
+            if !list.menu {
+                return None;
+            }
+            let state = self.states.get(key)?;
+            let index = state.row_at(list, (at.1 - frame.y) / layout.scale())?;
+            Some((key.clone(), index))
+        });
+        let mut changed = false;
+        for (key, state) in &mut self.states {
+            let hovered = under
+                .as_ref()
+                .filter(|(under, _)| under == key)
+                .map(|&(_, index)| index);
+            changed |= state.hovered != hovered;
+            state.hovered = hovered;
+        }
+        changed
+    }
+
     /// Selects the item `item` of the list `node` of `tree`, and shows its
     /// row, as its plugin asks: no event.
     pub fn select(&mut self, tree: &Tree, node: NodeId, item: usize) {
@@ -496,13 +548,7 @@ impl Lists {
         let state = self.states.entry(key.clone()).or_default();
         let y = (at.1 - frame.y) / layout.scale();
         // Below the last row, nothing.
-        let Some((index, _)) = state
-            .visible(list)
-            .into_iter()
-            .take_while(|&(_, top)| top <= y)
-            .last()
-            .filter(|&(index, top)| y < top + state.height(list, index))
-        else {
+        let Some(index) = state.row_at(list, y) else {
             return Vec::new();
         };
         let mut kinds: Vec<UiEventKind> = state.select(list, index).into_iter().collect();

@@ -270,7 +270,8 @@ type Style = {
     grow: number?,
     hides_indicator: boolean?, -- of a scroll area, no indicator of its scroll, as a bar of tabs
     holds_ring: boolean?, -- the ring of the keyboard's focus of a node inside it round its own box, as a search field's box round its text
-    text_size: ("regular" | "small")?, -- its texts' size, its children's too, unless they give their own: small, eleven thirteenths of the interface's, as a find bar's count and field
+    hides_ring: boolean?, -- no ring of the keyboard's focus round it, as a palette's field, whose caret alone tells it
+    text_size: ("regular" | "small" | "large")?, -- its texts' size, its children's too, unless they give their own: small, eleven thirteenths of the interface's, as a find bar's count and field; large, eighteen thirteenths, as a palette's field
     background: Color?,
     foreground: Color?,
     corner_radius: number?,
@@ -317,6 +318,7 @@ type Node = {
     items: { ListItem }?, -- for list nodes, flat: a window of them, from `first`, as the host asks for them
     row: Node?, -- for list nodes: the template of a row, of containers, texts, icons, spacers and separators
     row_height: number?, -- for list nodes, of rows of one height, a point at least; without it, each row takes its own, a point at least
+    menu: boolean?, -- for list nodes, a menu's look: the row under the pointer hovered, the selection a rounded band inset from its edges, of the accent's whether the list has the keyboard or not, as a palette's
     tabs: { { label: string, icon: string?, disabled: boolean? } }?, -- for tabs nodes, in their order: a control of them over the box of its page, its child
     chosen: number?, -- for tabs nodes, the tab chosen, whose page is its child; a click or the arrows choose another, as "select" tells
     distribution: ("fit" | "fill" | "fill-equally" | "fill-proportionally")?, -- for tabs nodes, as macOS's segmented controls: each tab of its content's width, the control in the middle, by default; or the control of the view's width, each tab of its content's and an equal share of the room left, of equal widths, or of its content's share

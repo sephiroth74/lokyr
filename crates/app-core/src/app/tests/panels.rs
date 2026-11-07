@@ -959,31 +959,42 @@ fn the_command_palette_opens_at_the_window_s_top_ranks_as_it_is_typed_and_runs_i
         (frame.x + frame.width / 2.0 - width / 2.0).abs() <= 1.0,
         "{frame:?} in {width}"
     );
-    // Typed, its first command the one of the title that it matches best.
+    // Typed: New Window first, of the app, then New Tab, of the tabs.
     fake.send(
         &mut app,
         window,
-        WindowEvent::Ime(Ime::Commit("new win".to_owned())),
+        WindowEvent::Ime(Ime::Commit("new".to_owned())),
     );
     frames(&mut fake, &mut app, window);
-    // The arrows move the selection, down then up again.
-    fake.send(
-        &mut app,
-        window,
-        key_event(KeyCode::ArrowDown, "", none, true),
-    );
-    fake.send(
-        &mut app,
-        window,
-        key_event(KeyCode::ArrowUp, "", none, true),
-    );
+    // The arrows move the selection while the field takes the keys: down
+    // twice, up once, to New Tab.
+    for code in [KeyCode::ArrowDown, KeyCode::ArrowDown, KeyCode::ArrowUp] {
+        fake.send(&mut app, window, key_event(code, "", none, true));
+    }
     frames(&mut fake, &mut app, window);
+    assert!(focused_in(&app, window, "command-palette"));
+    let selected = app.windows[&window]
+        .chrome
+        .iter()
+        .find(|view| view.view == ViewId::Panel(PanelId::from("command-palette")))
+        .and_then(|view| view.surface.lists.state(&"commands".into()))
+        .and_then(lokyr_ui_core::list::ListState::selected);
+    assert_eq!(selected, Some(1));
     // Return runs it, the palette closed.
+    let tabs = |app: &App| {
+        app.workspace
+            .window(app.windows[&window].window)
+            .unwrap()
+            .tabs()
+            .len()
+    };
+    assert_eq!(tabs(&app), 1);
     fake.send(
         &mut app,
         window,
         key_event(KeyCode::Enter, "\r", none, true),
     );
-    run_until(&mut fake, &mut app, |fake, _| fake.windows().count() == 2);
+    run_until(&mut fake, &mut app, |_, app| tabs(app) == 2);
     assert!(panel_frame(&app, window, "command-palette").is_none());
+    assert_eq!(fake.windows().count(), 1);
 }

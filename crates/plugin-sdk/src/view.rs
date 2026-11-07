@@ -331,6 +331,12 @@ pub struct List {
     /// at least.
     #[serde(default)]
     pub row_height: Option<f32>,
+    /// Whether it looks as a menu's items do: the row under the pointer
+    /// hovered, and the selection a band of rounded corners inset from its
+    /// edges, of the accent's whether the list has the keyboard or not, as
+    /// a palette's list, whose field takes the keys.
+    #[serde(default)]
+    pub menu: bool,
 }
 
 /// A list's item: the texts that its row's template shows, by their
@@ -518,6 +524,9 @@ pub struct Style {
     /// round its box instead, as a search field's box, which holds its
     /// text field, its glass and its toggles, shows the ring of its text.
     pub holds_ring: bool,
+    /// Whether it shows no ring of the keyboard's focus, as a palette's
+    /// field, whose caret alone tells that it takes the keys.
+    pub hides_ring: bool,
     /// The size of its text, a field's too, and of its children's that
     /// name none; `None` for its parent's, and at the root the interface's.
     pub text_size: Option<TextSize>,
@@ -608,6 +617,9 @@ pub enum TextSize {
     /// Smaller, as macOS's small controls have it: eleven thirteenths of
     /// the interface's size, as a find bar's count and field save room.
     Small,
+    /// Larger, as a palette's field: eighteen thirteenths of the
+    /// interface's size.
+    Large,
 }
 
 /// How the pointer looks over a node.
@@ -1015,6 +1027,7 @@ impl Node {
             first,
             items,
             row_height: None,
+            menu: false,
         }))
     }
 
@@ -1163,6 +1176,7 @@ mod tests {
             clip: true,
             hides_indicator: true,
             holds_ring: true,
+            hides_ring: true,
             text_size: Some(TextSize::Small),
             pointer: Some(PointerShape::PointingHand),
             opacity: Some(0.5),

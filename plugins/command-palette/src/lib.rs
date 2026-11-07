@@ -1,12 +1,13 @@
 //! Built-in plugin of the command palette: Command-Shift-P opens a panel at
-//! the top of the focused window, of a field and of the list of the
-//! commands that run without arguments and that the menus enable, which a
+//! the top of the focused window, of a large field and, below a thin line,
+//! of the list of the commands that run without arguments and that the
+//! menus enable, each of its title, its category and its keys, which a
 //! fuzzy search ranks as the user types, by their titles, their names,
 //! their keys and their plugins, the recent ones first. The arrows move
-//! through the list; Return, or a double click, runs the selected command
-//! as the user's, of `user-commands`, and closes the palette; Escape, or a
-//! click outside it, closes it. Like every built-in plugin, it depends only
-//! on the plugin SDK.
+//! through the list while the field takes the keys; Return, or a click,
+//! runs the selected command as the user's, of `user-commands`, and closes
+//! the palette; Escape, or a click outside it, closes it. Like every
+//! built-in plugin, it depends only on the plugin SDK.
 
 #![forbid(unsafe_code)]
 
@@ -18,8 +19,8 @@ use lokyr_plugin_sdk::message::{Data, Event};
 use lokyr_plugin_sdk::plugin::{Cx, Plugin};
 use lokyr_plugin_sdk::ui::{Anchor, Corner, PanelId, PanelOptions, Role, UiEvent, ViewId};
 use lokyr_plugin_sdk::view::{
-    Align, Border, Direction, Edges, Layout, Length, Node, Shadow, Style, TextSize, Token,
-    UiEventKind,
+    Align, Border, Direction, Edges, Layout, Length, ListItem, Node, Shadow, Style, TextSize,
+    Token, UiEventKind,
 };
 
 use rank::Entry;
@@ -46,11 +47,12 @@ const NONE: &str = "none";
 const STATE_RECENT: &str = "recent";
 const MOST_RECENT: usize = 20;
 
-/// The palette's width, a row's height, and the most rows that its list
-/// shows at once, past which it scrolls, in points.
-const WIDTH: f32 = 520.0;
-const ROW: f32 = 26.0;
-const MOST_ROWS: usize = 12;
+/// The palette's width, a row's height, of its title and its category, and
+/// the most rows that its list shows at once, past which it scrolls, in
+/// points.
+const WIDTH: f32 = 560.0;
+const ROW: f32 = 48.0;
+const MOST_ROWS: usize = 8;
 
 /// The plugin's catalogs, of its commands' titles and its texts.
 static CATALOGS: [(&str, &str); 2] = [
@@ -59,11 +61,35 @@ static CATALOGS: [(&str, &str); 2] = [
 ];
 
 /// The palette's texts, in English, where the host gives none.
-const ENGLISH: [(&str, &str); 3] = [
-    ("palette-placeholder", "Type a command"),
+const ENGLISH: [(&str, &str); 12] = [
+    ("palette-placeholder", "Execute Command…"),
     ("palette-none", "No commands"),
     ("palette-commands", "Commands"),
+    ("category-app", "App"),
+    ("category-windows", "Windows"),
+    ("category-tabs", "Tabs"),
+    ("category-panes", "Panes"),
+    ("category-input", "Input"),
+    ("category-clipboard", "Clipboard"),
+    ("category-edit", "Edit"),
+    ("category-find", "Find"),
+    ("category-view", "View"),
 ];
+
+/// The message of `category`'s name.
+fn category_message(category: Category) -> &'static str {
+    match category {
+        Category::App => "category-app",
+        Category::Windows => "category-windows",
+        Category::Tabs => "category-tabs",
+        Category::Panes => "category-panes",
+        Category::Input => "category-input",
+        Category::Clipboard => "category-clipboard",
+        Category::Edit => "category-edit",
+        Category::Find => "category-find",
+        Category::View => "category-view",
+    }
+}
 
 /// The text of the message `id`, in the language shown, or English's where
 /// the host gives none.
@@ -94,25 +120,31 @@ pub struct Palette {
 }
 
 /// An open palette: its commands, as the registry gave them as it opened,
-/// the field's text, the commands' places that it ranks, the best first,
-/// and the place among them of the selected one.
+/// each one's category's name, the field's text, the commands' places that
+/// it ranks, the best first, the place among them of the selected one, and
+/// whether its list has the keyboard, as Tab gives it.
 #[derive(Debug)]
 struct Open {
     commands: Vec<Entry>,
+    categories: Vec<String>,
     query: String,
     ranked: Vec<usize>,
     selected: usize,
+    list_focused: bool,
 }
 
 impl Open {
-    /// The palette of `commands`, of no text, of the recent ones `recent`.
-    fn new(commands: Vec<Entry>, recent: &[String]) -> Self {
+    /// The palette of `commands`, each of its category's name of
+    /// `categories`, of no text, of the recent ones `recent`.
+    fn new(commands: Vec<Entry>, categories: Vec<String>, recent: &[String]) -> Self {
         let ranked = rank::rank(&commands, "", recent);
         Self {
             commands,
+            categories,
             query: String::new(),
             ranked,
             selected: 0,
+            list_focused: false,
         }
     }
 
@@ -199,8 +231,8 @@ impl Plugin for Palette {
     }
 
     /// The field's text ranks the commands as it changes, and Return runs
-    /// the selected one; the list's selection follows a click, and a double
-    /// click runs its command.
+    /// the selected one; a click on the list runs its command, and the
+    /// keys move its selection alone while the list has the keyboard.
     fn on_ui_event(&mut self, cx: &mut Cx<'_>, event: &UiEvent) -> Result<(), Error> {
         if event.view != panel() {
             return Ok(());
@@ -220,9 +252,22 @@ impl Plugin for Palette {
                 Ok(())
             }
             (UiEventKind::Submit { .. }, FIELD) => self.run(cx),
+            (UiEventKind::Focus, LIST) => {
+                open.list_focused = true;
+                Ok(())
+            }
+            (UiEventKind::Blur, LIST) => {
+                open.list_focused = false;
+                Ok(())
+            }
+            // A click, which leaves the keyboard where it is, runs the
+            // command; the list's own keys, while it has the keyboard, move.
             (UiEventKind::Select { item }, LIST) => {
                 open.selected = (*item).min(open.ranked.len().saturating_sub(1));
-                Ok(())
+                if open.list_focused {
+                    return Ok(());
+                }
+                self.run(cx)
             }
             (UiEventKind::Activate { item }, LIST) => {
                 open.selected = (*item).min(open.ranked.len().saturating_sub(1));
@@ -256,10 +301,13 @@ impl Palette {
         let Some(window) = cx.focused_window() else {
             return Ok(());
         };
-        let commands = cx
-            .commands()?
+        let listed: Vec<CommandInfo> = cx.commands()?.into_iter().filter(listed).collect();
+        let categories = listed
+            .iter()
+            .map(|command| message(cx, category_message(command.category)))
+            .collect();
+        let commands = listed
             .into_iter()
-            .filter(listed)
             .map(|command| Entry {
                 name: command.name,
                 title: command.title,
@@ -279,7 +327,7 @@ impl Palette {
                 close_escape: true,
             },
         )?;
-        self.open = Some(Open::new(commands, &self.recent));
+        self.open = Some(Open::new(commands, categories, &self.recent));
         Ok(())
     }
 
@@ -331,24 +379,34 @@ struct Texts {
     commands: String,
 }
 
-/// The palette's view of `open`: its field, and the list of the commands
-/// that it ranks, each of its title and its keys, or a line of none.
+/// The palette's view of `open`: its field, large, of no box and no ring,
+/// a thin line, and the list of the commands that it ranks, each of its
+/// title, its category below it and its keys at its end, of a menu's
+/// look, or a line of none.
 fn palette(open: &Open, texts: &Texts) -> Node {
-    let field = Node::field(texts.placeholder.as_str())
-        .key(FIELD)
-        .layout(Layout {
-            width: Length::Fraction(1.0),
-            ..Layout::default()
-        })
-        .style(Style {
-            background: Some(Token::from("field.bg")),
-            border: Some(Border {
-                color: Token::from("field.border"),
-                width: 1.0,
+    let field = Node::container(vec![
+        Node::field(texts.placeholder.as_str())
+            .key(FIELD)
+            .layout(Layout {
+                width: Length::Fraction(1.0),
+                ..Layout::default()
+            })
+            .style(Style {
+                background: Some(Token::from("transparent")),
+                text_size: Some(TextSize::Large),
+                hides_ring: true,
+                ..Style::default()
             }),
-            radius: 6.0,
-            ..Style::default()
-        });
+    ])
+    .layout(Layout {
+        padding: Edges {
+            top: 14.0,
+            right: 16.0,
+            bottom: 14.0,
+            left: 16.0,
+        },
+        ..Layout::default()
+    });
     let secondary = |text: &str| {
         Node::text(text).style(Style {
             color: Some(Token::from("text.secondary")),
@@ -356,26 +414,36 @@ fn palette(open: &Open, texts: &Texts) -> Node {
             ..Style::default()
         })
     };
-    // The list, of no item where none matches, and its line of none then.
-    let row = Node::container(vec![Node::text(""), Node::spacer(), secondary("")]).layout(Layout {
+    // A row: its title, its category below it, its keys at its end.
+    let row = Node::container(vec![
+        Node::container(vec![Node::text(""), secondary("")]).layout(Layout {
+            direction: Direction::Column,
+            gap: 3.0,
+            ..Layout::default()
+        }),
+        Node::spacer(),
+        secondary(""),
+    ])
+    .layout(Layout {
         gap: 8.0,
         align: Align::Center,
         padding: Edges {
-            top: 2.0,
-            right: 8.0,
-            bottom: 2.0,
-            left: 8.0,
+            top: 6.0,
+            right: 20.0,
+            bottom: 6.0,
+            left: 20.0,
         },
         ..Layout::default()
     });
     let items = open
         .ranked
         .iter()
-        .map(|&at| {
-            let entry = &open.commands[at];
-            lokyr_plugin_sdk::view::ListItem {
-                texts: vec![entry.title.clone(), entry.keys.clone().unwrap_or_default()],
-            }
+        .map(|&at| ListItem {
+            texts: vec![
+                open.commands[at].title.clone(),
+                open.categories[at].clone(),
+                open.commands[at].keys.clone().unwrap_or_default(),
+            ],
         })
         .collect();
     let shown = open.ranked.len().min(MOST_ROWS);
@@ -389,17 +457,35 @@ fn palette(open: &Open, texts: &Texts) -> Node {
         });
     if let lokyr_plugin_sdk::view::Kind::List(list) = &mut list.kind {
         list.row_height = Some(ROW);
+        list.menu = true;
     }
-    let mut children = vec![field, list];
-    if open.ranked.is_empty() {
-        children.push(secondary(&texts.none).key(NONE));
-    }
-    Node::container(children)
+    let below = if open.ranked.is_empty() {
+        Node::container(vec![list, secondary(&texts.none).key(NONE)]).layout(Layout {
+            direction: Direction::Column,
+            padding: Edges {
+                top: 10.0,
+                right: 20.0,
+                bottom: 12.0,
+                left: 20.0,
+            },
+            ..Layout::default()
+        })
+    } else {
+        Node::container(vec![list]).layout(Layout {
+            direction: Direction::Column,
+            padding: Edges {
+                top: 6.0,
+                right: 0.0,
+                bottom: 6.0,
+                left: 0.0,
+            },
+            ..Layout::default()
+        })
+    };
+    Node::container(vec![field, Node::separator(), below])
         .layout(Layout {
             direction: Direction::Column,
             width: Length::Points(WIDTH),
-            gap: 6.0,
-            padding: Edges::all(6.0),
             ..Layout::default()
         })
         .style(Style {
@@ -408,8 +494,9 @@ fn palette(open: &Open, texts: &Texts) -> Node {
                 color: Token::from("panel.border"),
                 width: 1.0,
             }),
-            radius: 10.0,
+            radius: 12.0,
             shadow: Some(Shadow::default()),
+            clip: true,
             ..Style::default()
         })
 }

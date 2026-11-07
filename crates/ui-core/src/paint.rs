@@ -24,6 +24,12 @@ use crate::{tabs, widget};
 
 /// The width of the ring of the keyboard's focus, outside its node's box,
 /// in points.
+/// The inset of a menu's list's bands from its sides and from its rows'
+/// edges, and their corners' radius, in points.
+const MENU_INSET: f32 = 6.0;
+const MENU_GAP: f32 = 2.0;
+const MENU_RADIUS: f32 = 6.0;
+
 const RING: f32 = 3.0;
 
 /// The top and the height of a clip across alone, a text's: down the whole
@@ -364,7 +370,7 @@ impl<'a, B: FontBackend> Painter<'a, B> {
             }
             _ => style,
         };
-        if self.focused == Some(id) {
+        if self.focused == Some(id) && !style.hides_ring {
             // A view of tabs' ring goes round its control, of a button's
             // corners.
             let control = match kind {
@@ -549,7 +555,9 @@ impl<'a, B: FontBackend> Painter<'a, B> {
     /// `frame`, of `style`, inside its border: each of the selection's
     /// background where it is selected, of the accent's while the list has
     /// the keyboard's focus, its texts in `color`, or the selection's; and
-    /// its scroll's indicator.
+    /// its scroll's indicator. A menu's list's selection is of the accent's
+    /// always, and its row under the pointer hovered, each a band of
+    /// rounded corners inset from its edges.
     fn list(
         &mut self,
         id: NodeId,
@@ -563,7 +571,11 @@ impl<'a, B: FontBackend> Painter<'a, B> {
         let scale = self.layout.scale();
         let inside = inside_border(rect(frame), style, scale);
         self.items.push(Item::PushClip(inside));
-        let focused = self.focused == Some(id);
+        let focused = self.focused == Some(id) || list.menu;
+        let hover = list
+            .menu
+            .then(|| self.tokens.get("list.selection.inactive.bg"))
+            .flatten();
         let (selection, selected_color) = if focused {
             (
                 self.tokens.get("list.selection.bg"),
@@ -577,7 +589,15 @@ impl<'a, B: FontBackend> Painter<'a, B> {
         for (index, top) in state.visible(list) {
             let y = frame.y + top * scale;
             let selected = state.selected() == Some(index);
-            if selected && let Some(selection) = selection {
+            let hovered = state.hovered() == Some(index);
+            let fill = if selected {
+                selection
+            } else if hovered {
+                hover
+            } else {
+                None
+            };
+            if let Some(fill) = fill {
                 let height = state.height_of(list, index) * scale;
                 let band = Rect {
                     x: frame.x.round() as i32,
@@ -585,7 +605,21 @@ impl<'a, B: FontBackend> Painter<'a, B> {
                     width: frame.width.round() as u32,
                     height: ((y + height).round() - y.round()).max(0.0) as u32,
                 };
-                self.push_shape(Shape::filled(band, selection));
+                if list.menu {
+                    let (inset, gap) = ((MENU_INSET * scale).round(), (MENU_GAP * scale).round());
+                    let band = Rect {
+                        x: band.x + inset as i32,
+                        y: band.y + gap as i32,
+                        width: band.width.saturating_sub(2 * inset as u32),
+                        height: band.height.saturating_sub(2 * gap as u32),
+                    };
+                    self.push_shape(Shape {
+                        radius: (MENU_RADIUS * scale).round(),
+                        ..Shape::filled(band, fill)
+                    });
+                } else {
+                    self.push_shape(Shape::filled(band, fill));
+                }
             }
             let Some(row) = state.row(index) else {
                 continue;
@@ -1941,6 +1975,41 @@ mod tests {
     }
 
     #[test]
+    fn a_node_that_hides_the_ring_shows_none_of_its_focus() {
+        let field = Node::field("Execute").key("field").style(view::Style {
+            hides_ring: true,
+            ..view::Style::default()
+        });
+        let root = Node::container(vec![field]).layout(view::Layout {
+            padding: Edges::all(8.0),
+            ..view::Layout::default()
+        });
+        let mut font = Font::new(Blocks, FontConfig::default(), 1.0).unwrap();
+        let mut tree = Tree::new();
+        let changes = tree.update(&root).unwrap();
+        let mut layout = Layout::new(1.0);
+        layout.update(&tree, &changes);
+        layout.compute(&tree, Some(300.0), None, &mut font);
+        let field = tree.by_key(&"field".into()).unwrap();
+        let items = paint(
+            &tree,
+            &layout,
+            &mut font,
+            &Theme::builtin().dark.tokens,
+            (0.0, 0.0),
+            shown(true, Some(field)),
+        );
+        let ringed = items
+            .iter()
+            .flat_map(|item| match item {
+                Item::Shapes(shapes) => shapes.clone(),
+                _ => Vec::new(),
+            })
+            .any(|shape| shape.border_color == token("focus.ring") && shape.border > 0.0);
+        assert!(!ringed);
+    }
+
+    #[test]
     fn the_focus_s_ring_goes_round_its_node_over_the_others_within_its_clips() {
         // A panel that clips, inside its border of 1, a field of a radius
         // of 4 at 8 points from its corner, of 40 by 20, and a box after it
@@ -2811,6 +2880,88 @@ mod tests {
         // A list of no state yet paints none of its rows.
         let (_, glyphs) = split(&painted(&mut font, None, &Lists::new()));
         assert!(glyphs.is_empty());
+    }
+
+    #[test]
+    fn a_menu_s_list_shows_its_selection_of_the_accent_and_its_hovered_row_in_rounded_bands() {
+        use lokyr_plugin_sdk::view::ListItem;
+        let items = (0..5)
+            .map(|index| ListItem {
+                texts: vec![format!("{index:03}")],
+            })
+            .collect();
+        let mut node = Node::list(Node::text(""), 5, (0, items))
+            .key("rows")
+            .layout(view::Layout {
+                height: view::Length::Points(100.0),
+                ..view::Layout::default()
+            });
+        if let lokyr_plugin_sdk::view::Kind::List(list) = &mut node.kind {
+            list.row_height = Some(20.0);
+            list.menu = true;
+        }
+        let root = Node::container(vec![node]).layout(view::Layout {
+            direction: view::Direction::Column,
+            padding: Edges::all(10.0),
+            ..view::Layout::default()
+        });
+        let mut font = Font::new(Blocks, FontConfig::default(), 1.0).unwrap();
+        let mut tree = Tree::new();
+        let changes = tree.update(&root).unwrap();
+        let mut layout = Layout::new(1.0);
+        layout.update(&tree, &changes);
+        layout.compute(&tree, Some(200.0), None, &mut font);
+        let list = tree.children(tree.root().unwrap())[0];
+        let mut lists = Lists::new();
+        lists.lay_out(&tree, &layout, &mut font);
+        lists.select(&tree, list, 2);
+        // The pointer over the first row, then over none.
+        assert!(lists.hover((&tree, &layout), Some((list, (15.0, 15.0)))));
+        assert!(!lists.hover((&tree, &layout), Some((list, (15.0, 25.0)))));
+        let tokens = &Theme::builtin().dark.tokens;
+        let fields = Fields::new();
+        let items = paint(
+            &tree,
+            &layout,
+            &mut font,
+            tokens,
+            (0.0, 0.0),
+            Shown {
+                dark: true,
+                focused: None,
+                fields: &fields,
+                hovered: None,
+                pressed: None,
+                lists: &lists,
+                motion: None,
+                fills: Fills::All,
+            },
+        );
+        let shapes: Vec<Shape> = items
+            .iter()
+            .filter_map(|item| match item {
+                Item::Shapes(found) => Some(found.clone()),
+                _ => None,
+            })
+            .flatten()
+            .collect();
+        let band = |y: i32| Rect {
+            x: 16,
+            y,
+            width: 168,
+            height: 16,
+        };
+        // Without the focus, the selection of the accent all the same.
+        assert!(shapes.contains(&Shape {
+            radius: 6.0,
+            ..Shape::filled(band(52), token("list.selection.bg"))
+        }));
+        assert!(shapes.contains(&Shape {
+            radius: 6.0,
+            ..Shape::filled(band(12), token("list.selection.inactive.bg"))
+        }));
+        assert!(lists.hover((&tree, &layout), None));
+        assert_eq!(lists.state(&"rows".into()).unwrap().hovered(), None);
     }
 
     #[test]

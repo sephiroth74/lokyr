@@ -52,6 +52,9 @@ pub struct Surface {
     /// the window server draws the others, as something drawn over them
     /// covers them, which the host finds.
     pub covered: BTreeSet<NodeId>,
+    /// Whether the pointer changed what shows without an event, as the row
+    /// of a menu's list that it hovers, which a frame shows.
+    repaint: bool,
 }
 
 /// What a press of the pointer did to a surface.
@@ -80,7 +83,15 @@ impl Surface {
             animations: Animations::new(),
             fills_apart: false,
             covered: BTreeSet::new(),
+            repaint: false,
         }
+    }
+
+    /// Whether the pointer changed what shows without an event since the
+    /// last time, as the row of a menu's list that it hovers, which a
+    /// frame shows.
+    pub fn take_repaint(&mut self) -> bool {
+        std::mem::take(&mut self.repaint)
     }
 
     /// Takes `root`, its plugin's new render, diffed against the last; the
@@ -155,6 +166,14 @@ impl Surface {
             self.fields.drag((&self.tree, &self.layout), at, carets);
         }
         let events = self.pointer.moved(&self.tree, &self.layout, at);
+        // The row of a menu's list under the pointer, hovered.
+        let list = self
+            .pointer
+            .hovered()
+            .rfind(|&node| matches!(self.tree.kind(node), Some(Kind::List(_))));
+        self.repaint |= self
+            .lists
+            .hover((&self.tree, &self.layout), list.map(|node| (node, at)));
         for event in &events {
             match event.kind {
                 UiEventKind::DragStart => {
@@ -288,6 +307,7 @@ impl Surface {
     /// window: the leaves of the nodes that it was over.
     pub fn left(&mut self, now: Instant) -> Vec<NodeEvent> {
         self.tooltip.left(now);
+        self.repaint |= self.lists.hover((&self.tree, &self.layout), None);
         let events = self.pointer.left(&self.tree);
         self.show_pointer(now);
         events

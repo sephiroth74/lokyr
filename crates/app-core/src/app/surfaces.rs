@@ -70,6 +70,7 @@ impl<B: Backend> App<B> {
             if let Some(left) = state.over.and_then(|id| view_mut(&mut state.chrome, id)) {
                 changed |= left.surface.tooltip.shown(&left.surface.tree).is_some();
                 let gone = left.surface.left(now);
+                changed |= left.surface.take_repaint();
                 events.extend(told(left, gone));
             }
             state.over = target;
@@ -81,6 +82,7 @@ impl<B: Backend> App<B> {
             let shown = view.surface.tooltip.shown(&view.surface.tree).is_some();
             let (moved, _) = view.surface.moved(local(view, at), &mut drawing.font, now);
             changed |= shown != view.surface.tooltip.shown(&view.surface.tree).is_some();
+            changed |= view.surface.take_repaint();
             events.extend(told(view, moved));
             carrying = view.view.slot() == Some(Slot::TabBar) && view.surface.carried().is_some();
         }

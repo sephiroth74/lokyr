@@ -144,6 +144,11 @@ impl Context {
         }
     }
 
+    /// Has `name` hold too.
+    pub fn hold(&mut self, name: impl Into<String>) {
+        self.holding.insert(name.into());
+    }
+
     /// Whether `name` holds.
     pub fn holds(&self, name: &str) -> bool {
         self.holding.contains(name)
