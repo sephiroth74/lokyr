@@ -130,6 +130,7 @@ notice-config = The config file does not apply:
 notice-font = A font is missing:
 notice-global-keys = A global key does not work:
 notice-term = The terminal type is unknown:
+notice-theme = A theme does not apply:
 notice-plugin-config = A plugin's section of the config:
 notice-failed = A command failed:
 notice-fault = A plugin stopped:

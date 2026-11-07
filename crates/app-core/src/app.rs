@@ -18,6 +18,7 @@ use lokyr_kernel::keymap::{self, Binding, Context, Invocation, Keymap, When};
 use lokyr_kernel::l10n::{self, Arg, Texts};
 use lokyr_kernel::plugins::{self, Plugins, Request, WorkspaceEvent, host};
 use lokyr_kernel::state;
+use lokyr_kernel::themes;
 #[cfg(test)]
 use lokyr_kernel::workspace::RESIZE_PACE;
 #[cfg(test)]
@@ -35,7 +36,7 @@ use lokyr_platform_core::{
 use lokyr_pty::Program;
 use lokyr_render_core::{Renderer, Surface as _};
 use lokyr_text_core::FontConfig;
-use lokyr_ui_core::theme::Theme;
+use lokyr_ui_core::theme::{self as ui_theme, Theme};
 use lokyr_vt_core::page::Budget;
 use lokyr_vt_core::terminal::{self as vt, ClipboardRequest, Scroll};
 
@@ -358,12 +359,50 @@ impl ConfigFile {
     }
 }
 
+/// The files of the themes in force, and those that their names looked
+/// for, there or not, whose changes load the themes again.
+#[derive(Debug, Default)]
+struct ThemeFiles {
+    paths: Vec<PathBuf>,
+    watchers: Vec<Watcher>,
+    /// Whether a file may have changed, which the watches' threads tell.
+    changed: Arc<AtomicBool>,
+    /// The timer of the loading, which waits for the changes that come
+    /// together.
+    reading: Option<TimerId>,
+}
+
+impl ThemeFiles {
+    /// Watches `paths`, unless it watches them already, so that their
+    /// changes wake `platform`.
+    fn watch(&mut self, platform: &dyn Platform, paths: Vec<PathBuf>) {
+        if paths == self.paths {
+            return;
+        }
+        self.watchers = paths
+            .iter()
+            .filter_map(|path| {
+                let (changed, waker) = (Arc::clone(&self.changed), platform.waker());
+                Watcher::new(path, move || {
+                    changed.store(true, Ordering::Release);
+                    waker.wake();
+                })
+                .inspect_err(|error| eprintln!("lokyr: {error}"))
+                .ok()
+            })
+            .collect();
+        self.paths = paths;
+    }
+}
+
 /// The application, which opens a window when it starts, and quits with its
 /// last window or from its menu.
 #[derive(Debug)]
 pub struct App<B: Backend> {
     drawing: Option<Drawing<B>>,
     theme: Theme,
+    /// The files of the themes, which their changes load again.
+    theme_files: ThemeFiles,
     /// The program that a new window runs.
     program: Program,
     /// The program that shows man pages, in place of the login shell's
@@ -616,6 +655,7 @@ impl<B: Backend> App<B> {
         Self {
             drawing,
             theme: Theme::builtin(),
+            theme_files: ThemeFiles::default(),
             program: Program::LoginShell,
             man: None,
             config,
@@ -1112,6 +1152,59 @@ impl<B: Backend> App<B> {
         }
     }
 
+    /// Loads the themes that `[theme]` names, of the themes' folder beside
+    /// the config file or built in: they take the place of those in force,
+    /// whose notice goes, the panes and the views taking their colors; an
+    /// error tells itself, with its line, and the themes in force stay. The
+    /// files looked for are watched, those of an error too, so that the
+    /// file that fixes it loads.
+    fn load_themes(&mut self, platform: &mut dyn Platform) {
+        let directory = self
+            .config_file
+            .as_ref()
+            .and_then(|file| themes::directory(&file.path));
+        let builtins = [ui_theme::light_spec(), ui_theme::dark_spec()];
+        let config = &self.config.theme;
+        let mut paths = Vec::new();
+        let mut resolved = Vec::new();
+        let mut errors = Vec::new();
+        for name in [&config.light, &config.dark] {
+            match themes::resolve(name, directory.as_deref(), &builtins) {
+                Ok(theme) => {
+                    paths.extend(theme.files);
+                    resolved.push(theme.theme);
+                }
+                Err(error) => {
+                    // The file of the name, there or not, and the one of the
+                    // error.
+                    if let Some(directory) = &directory {
+                        paths.push(directory.join(format!("{name}.toml")));
+                        if error.path.starts_with(directory) {
+                            paths.push(error.path.clone());
+                        }
+                    }
+                    errors.push(error);
+                }
+            }
+        }
+        paths.sort();
+        paths.dedup();
+        self.theme_files.watch(platform, paths);
+        if let Some(error) = errors.into_iter().next() {
+            let text = format!("{error}; the themes in force stay");
+            let diagnostic = Diagnostic::new(Code::InvalidConfig, text, About::Theme);
+            self.report(platform, diagnostic);
+            return;
+        }
+        self.resolve(platform, &About::Theme);
+        let theme = Theme::of(&resolved[0], &resolved[1]);
+        if theme != self.theme {
+            self.theme = theme;
+            let appearance = platform.appearance();
+            self.appearance_changed(platform, appearance);
+        }
+    }
+
     /// Tells what the font lacks of the config's, or takes the notice of
     /// what it lacked away.
     fn tell_font(&mut self, platform: &mut dyn Platform) {
@@ -1192,6 +1285,8 @@ impl<B: Backend> App<B> {
         let performance_changed =
             config.debug.performance_overlay != self.config.debug.performance_overlay;
         let term_changed = config.terminal.term != self.config.terminal.term;
+        let themes_changed = config.theme.light != self.config.theme.light
+            || config.theme.dark != self.config.theme.dark;
         self.settle_update_checks(platform, config.updates.check);
         if keys_changed {
             self.keymap =
@@ -1211,6 +1306,9 @@ impl<B: Backend> App<B> {
         }
         if term_changed {
             self.tell_term(platform);
+        }
+        if themes_changed {
+            self.load_themes(platform);
         }
         // The open windows keep their frames, or not, as the user moves or
         // resizes them from now; a man page's never does.
@@ -3054,6 +3152,8 @@ impl<B: Backend> App<B> {
         // The plugins' commands, registered in English, take their
         // catalogs' titles in the language shown as their activations end.
         self.activate_plugins(platform);
+        // The themes before the first window, whose panes take their colors.
+        self.load_themes(platform);
         self.set_menu(platform);
         self.show_appearance(platform);
         self.show_performance(platform);
@@ -3124,6 +3224,13 @@ impl<B: Backend> App<B> {
                     }
                     file.reading = Some(platform.start_timer(Instant::now() + SETTLE));
                 }
+                let themes = &mut self.theme_files;
+                if themes.changed.swap(false, Ordering::AcqRel) {
+                    if let Some(timer) = themes.reading.take() {
+                        platform.cancel_timer(timer);
+                    }
+                    themes.reading = Some(platform.start_timer(Instant::now() + SETTLE));
+                }
                 for pane in changed {
                     if let Some(window) = self.window_of(pane) {
                         platform.request_frame(window);
@@ -3145,6 +3252,10 @@ impl<B: Backend> App<B> {
             AppEvent::Timer(timer) if self.told_timer.is_some_and(|(told, _)| told == timer) => {
                 self.told_timer = None;
                 self.collect(platform, &[]);
+            }
+            AppEvent::Timer(timer) if self.theme_files.reading == Some(timer) => {
+                self.theme_files.reading = None;
+                self.load_themes(platform);
             }
             AppEvent::Timer(timer)
                 if self

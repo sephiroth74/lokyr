@@ -24,7 +24,6 @@ use lokyr_text_core::{CellMetrics, FontBackend};
 use lokyr_ui_core::focus::Target;
 use lokyr_ui_core::font::Font;
 use lokyr_ui_core::pane::{CursorLook, TextLook};
-use lokyr_ui_core::text::TextConfig;
 use lokyr_ui_core::theme::Variant;
 use lokyr_ui_core::theme::{MatchColors, SelectionColors};
 use lokyr_ui_core::{cursor, pane as cells};
@@ -433,6 +432,7 @@ impl<B: Backend> App<B> {
         let variant = self.variant(platform, window);
         let colors = (variant.selection, variant.match_colors());
         let text = self.config.text;
+        let minimum_contrast = self.config.theme.minimum_contrast.value();
         let thickness = self.config.cursor;
         let shown = self.workspace.tab(tab)?;
         let rooms = pane_rects(shown.layout(), shown.zoomed(), room, (width, height), gap);
@@ -457,9 +457,14 @@ impl<B: Backend> App<B> {
             .collect();
         let font = &mut drawing.font;
         font.collect_missing(GLYPHS_BUDGET.0, GLYPHS_BUDGET.1);
-        let mut batches = other_cells(&panes, &cell, colors, hollow, text, 0.0, font);
+        let look = TextLook {
+            config: text,
+            minimum_contrast,
+            ..TextLook::default()
+        };
+        let mut batches = other_cells(&panes, &cell, colors, hollow, look, 0.0, font);
         if font.draw_pending() {
-            batches = other_cells(&panes, &cell, colors, hollow, text, 0.0, font);
+            batches = other_cells(&panes, &cell, colors, hollow, look, 0.0, font);
         }
         let list = DisplayList {
             background,
@@ -766,7 +771,7 @@ impl<B: Backend> App<B> {
         let look = TextLook {
             config: text,
             blink_shown,
-            ..TextLook::default()
+            minimum_contrast: self.config.theme.minimum_contrast.value(),
         };
         let config = self.config.cursor;
         let selection_colors = self.variant(platform, window).selection;
@@ -855,7 +860,7 @@ impl<B: Backend> App<B> {
             look,
             font,
         );
-        let mut other_batches = other_cells(&others, &cell, colors, hollow, text, dim, font);
+        let mut other_batches = other_cells(&others, &cell, colors, hollow, look, dim, font);
         if font.draw_pending() {
             batch = cells::cells_with(
                 snapshot,
@@ -866,7 +871,7 @@ impl<B: Backend> App<B> {
                 look,
                 font,
             );
-            other_batches = other_cells(&others, &cell, colors, hollow, text, dim, font);
+            other_batches = other_cells(&others, &cell, colors, hollow, look, dim, font);
         }
         // A search's matches over the cells, and the plugins' decorations
         // over the text, under the composition.
@@ -883,7 +888,7 @@ impl<B: Backend> App<B> {
         let text_cells = text_blink
             .filter(|_| state.text_layer.surface.is_some())
             .and_then(|_| {
-                cells::blinking_cells(snapshot, &cell, selection.as_ref(), text, preedit, font)
+                cells::blinking_cells(snapshot, &cell, selection.as_ref(), look, preedit, font)
             });
         // Over a backdrop, what the cells leave shows it, and the titlebar
         // too, unless the config keeps it opaque: past a sidebar, which runs
@@ -979,6 +984,7 @@ impl<B: Backend> App<B> {
                 (About::Font, _) => "notice-font",
                 (About::GlobalKeys, _) => "notice-global-keys",
                 (About::Term, _) => "notice-term",
+                (About::Theme, _) => "notice-theme",
                 (About::PluginConfig(_), _) => "notice-plugin-config",
                 (About::Other, ErrorCategory::Fault) => "notice-fault",
                 (About::Other, _) => "notice-failed",
@@ -1336,14 +1342,13 @@ fn other_cells(
     cell: &CellMetrics,
     (colors, matches): (SelectionColors, MatchColors),
     cursor: CursorLook,
-    text: TextConfig,
+    text: TextLook,
     dim: f32,
     font: &mut dyn cells::Glyphs,
 ) -> Vec<CellBatch> {
     let look = TextLook {
-        config: text,
         blink_shown: true,
-        ..TextLook::default()
+        ..text
     };
     panes
         .iter()

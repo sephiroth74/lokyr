@@ -71,7 +71,7 @@
 //! [`InterfaceConfig`], `[slots]` [`SlotsConfig`], `[terminal]` [`TerminalConfig`], `[scrollback]` [`ScrollbackConfig`],
 //! `[keyboard]` [`KeyboardConfig`],
 //! `[clipboard]` [`ClipboardConfig`], `[links]` [`LinksConfig`], `[bell]`
-//! [`BellConfig`], `[app]`
+//! [`BellConfig`], `[theme]` [`ThemeConfig`], `[app]`
 //! [`AppConfig`], `[updates]` [`UpdatesConfig`], `[keys]` [`KeysConfig`],
 //! and the plugins' own, `[plugins.<namespace>]`, [`PluginsConfig`], which
 //! their schemas check. Every key and every section can be
@@ -144,6 +144,8 @@ pub struct Config {
     pub links: LinksConfig,
     /// The `[bell]` section.
     pub bell: BellConfig,
+    /// The `[theme]` section.
+    pub theme: ThemeConfig,
     /// The `[app]` section.
     pub app: AppConfig,
     /// The `[updates]` section.
@@ -607,6 +609,68 @@ impl Default for BellConfig {
             flash: true,
             bounce: true,
             mark_title: true,
+        }
+    }
+}
+
+/// The `[theme]` section: the themes of the light and the dark appearance,
+/// by their names, a file's of the themes' folder or a built-in one's, and
+/// the least contrast of the terminal's text to its background.
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(default, deny_unknown_fields, rename_all = "kebab-case")]
+pub struct ThemeConfig {
+    /// The light appearance's theme.
+    pub light: String,
+    /// The dark appearance's theme.
+    pub dark: String,
+    /// The least contrast ratio of the terminal's text to its background.
+    pub minimum_contrast: Contrast,
+}
+
+impl Default for ThemeConfig {
+    fn default() -> Self {
+        Self {
+            light: crate::themes::LIGHT.to_owned(),
+            dark: crate::themes::DARK.to_owned(),
+            minimum_contrast: Contrast::default(),
+        }
+    }
+}
+
+/// A contrast ratio, as WCAG 2 defines it, from 1, none, to 21, black on
+/// white.
+#[derive(Clone, Copy, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(try_from = "f64", into = "f64")]
+pub struct Contrast(f32);
+
+impl Contrast {
+    /// The ratio.
+    pub fn value(self) -> f32 {
+        self.0
+    }
+}
+
+impl Default for Contrast {
+    fn default() -> Self {
+        Self(1.0)
+    }
+}
+
+impl From<Contrast> for f64 {
+    fn from(value: Contrast) -> Self {
+        as_written(value.0)
+    }
+}
+
+impl TryFrom<f64> for Contrast {
+    type Error = String;
+
+    fn try_from(ratio: f64) -> Result<Self, Self::Error> {
+        if (1.0..=21.0).contains(&ratio) {
+            // Within the range, the value fits an `f32`.
+            Ok(Self(ratio as f32))
+        } else {
+            Err(format!("a contrast ratio is from 1 to 21, not {ratio}"))
         }
     }
 }
@@ -1488,7 +1552,7 @@ pub struct Position {
 
 impl Position {
     /// The place of the byte at `offset` in `text`.
-    fn at(text: &str, offset: usize) -> Self {
+    pub(crate) fn at(text: &str, offset: usize) -> Self {
         let mut offset = offset.min(text.len());
         while !text.is_char_boundary(offset) {
             offset -= 1;
@@ -1503,7 +1567,7 @@ impl Position {
 }
 
 /// The sections of the file, with the keys of each.
-fn sections() -> [(&'static str, &'static [&'static str]); 16] {
+fn sections() -> [(&'static str, &'static [&'static str]); 17] {
     [
         ("font", keys::<FontConfig>()),
         ("text", keys::<TextConfig>()),
@@ -1518,6 +1582,7 @@ fn sections() -> [(&'static str, &'static [&'static str]); 16] {
         ("clipboard", keys::<ClipboardConfig>()),
         ("links", keys::<LinksConfig>()),
         ("bell", keys::<BellConfig>()),
+        ("theme", keys::<ThemeConfig>()),
         ("app", keys::<AppConfig>()),
         ("updates", keys::<UpdatesConfig>()),
         ("debug", keys::<DebugConfig>()),
@@ -2595,6 +2660,7 @@ mod tests {
                 "clipboard",
                 "links",
                 "bell",
+                "theme",
                 "app",
                 "updates",
                 "debug",
@@ -2602,6 +2668,7 @@ mod tests {
                 "plugins"
             ]
         );
+        assert_eq!(keys::<ThemeConfig>(), ["light", "dark", "minimum-contrast"]);
         assert_eq!(keys::<LinksConfig>(), ["urls", "files"]);
         assert_eq!(
             keys::<ScrollbackConfig>(),

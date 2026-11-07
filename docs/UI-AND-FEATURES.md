@@ -285,7 +285,7 @@ wrap-around = true
 
 ## iTerm2 themes
 
-The `themes` plugin (model, light/dark switching, picker) plus the `theme-iterm2` plugin (the importer).
+The host's, as it draws them: the app reads `[theme]` and the themes' files, light/dark switching, the importer of `.itermcolors`; the palette's picker, a plugin's, writes `[theme]` ([ADR 0035](adr/0035-themes-are-the-hosts.md)).
 
 ### Internal model
 

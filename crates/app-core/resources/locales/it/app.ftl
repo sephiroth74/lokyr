@@ -109,6 +109,7 @@ notice-config = Il file di configurazione non si applica:
 notice-font = Manca un font:
 notice-global-keys = Un tasto globale non funziona:
 notice-term = Il tipo di terminale è sconosciuto:
+notice-theme = Un tema non si applica:
 notice-plugin-config = La sezione di un plugin nella configurazione:
 notice-failed = Un comando non è riuscito:
 notice-fault = Un plugin si è fermato:

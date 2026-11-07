@@ -139,6 +139,11 @@ flash = false                        # true | false: a flash of the window that 
 bounce = false                       # true | false: the Dock's icon, for a window in the background
 mark-title = false                   # true | false: 🔔 in its title until it takes the focus
 
+[theme]
+light = "Lokyr Light"                # the light appearance's theme, a file of themes/ or built in
+dark = "Nightfall"                   # the dark appearance's theme
+minimum-contrast = 3.0               # 1 to 21: the least contrast of the terminal's text
+
 [app]
 icon = "laguz"                       # jormungandr | laguz
 language = "it"                      # system | en | it
@@ -1099,6 +1104,87 @@ Whether a window without the focus whose bell rang shows 🔔 before its title, 
 | Values | Default |
 |---|---|
 | `true`, `false` | `true` |
+
+## `[theme]`
+
+The colors of the terminal and of Lokyr's own interface: a theme for the light appearance and one for the dark one, which follow the system's appearance, or the one that View › Appearance chooses, and switch at once.
+
+A theme is a built-in one, `Lokyr Light` or `Lokyr Dark`, or a file of the `themes` folder beside the config file, `~/.config/lokyr/themes/`, named by its file without `.toml`: `Nightfall` is `themes/Nightfall.toml`. A file of a built-in theme's name takes its place.
+
+```toml
+# ~/.config/lokyr/themes/Nightfall.toml
+[theme]
+name = "Nightfall"                   # what the theme calls itself; the file's name names it in the config
+author = "Ada"                       # author, license and source tell people, and change nothing
+license = "MIT"
+variant = "dark"                     # light | dark; of its colors when left out
+extends = "Lokyr Dark"               # a theme whose colors this one's override
+
+[terminal]
+background = "#1e1e20"               # the text's background
+foreground = "#e6e6e6"               # the text
+palette = ["#45454b", "#f25d62", "#58c672", "#e3bd4c", "#5aa2f7", "#c983de", "#4cc4cf", "#c4c4ca",
+           "#75757d", "#ff8488", "#7edb94", "#f5d47a", "#86bcff", "#dca3ec", "#7adce4", "#f4f4f6"]
+cursor = "#e6e6e6"                   # the cursor; the text's color when left out
+selection = "#34445f"                # the selection's background
+bold = "#ffffff"                     # bold text's color; its own when left out
+
+[search]
+match = "#ffd60a4d"                  # a match of the find bar, #rrggbbaa of an opacity
+current = "#ff7a0080"                # the current match
+
+[tabs]                               # the tab bar's colors
+bar.bg = "#18181a"
+active = { bg = "#1e1e20", fg = "#ffffff" }
+
+[interface]                          # Lokyr's own colors, by their names
+"panel.bg" = "#252528"
+```
+
+- **Colors** are `#rrggbb`, or `#rrggbbaa` of an opacity, in sRGB.
+- **`[terminal]`** gives the terminal's colors: `background`, `foreground` and the 16 colors of `palette`, black to bright white, which every theme gives itself or through the theme that it extends; `cursor`, `cursor-text`, `selection`, `selection-text`, `bold`, `link` and `underline`, which it can give.
+- **What a theme leaves out** follows its terminal's colors: the tab bar, the panels, the fields, the buttons and the find bar's highlights take colors of its background, its text and its palette, so that a theme of `[terminal]` alone colors all of Lokyr.
+- **The other sections** give the interface's colors by their names: `[search]` the find bar's highlights, `match` and `current`; `[tabs]` the tab bar's, as `bar.bg`, `active.bg`, `active.fg`, `inactive.fg` and `hover.bg`; `[interface]` the rest of Lokyr's, as `panel.bg`, `field.bg`, `accent` or `text.secondary`.
+- **A theme gives colors alone**: the tab bar's look, its place and the rest stay in the config, as [`[plugins.tabs]`](#pluginstabs) has them.
+- **`extends`** names a theme, a file's or a built-in one, whose colors this one takes where it gives none, eight deep at most.
+- **As you save** a theme's file, or the config, the theme applies at once, in the open windows too.
+- **A file with an error** tells it, with its line, in the bar across the windows' top, and the theme in force stays.
+
+### `light`
+
+<sub>Platforms: macOS</sub>
+
+The light appearance's theme, by its name.
+
+| Values | Default |
+|---|---|
+| the name of a theme | `"Lokyr Light"` |
+
+- A name that no file and no built-in theme has shows in the bar, and the theme in force stays.
+
+### `dark`
+
+<sub>Platforms: macOS</sub>
+
+The dark appearance's theme, by its name.
+
+| Values | Default |
+|---|---|
+| the name of a theme | `"Lokyr Dark"` |
+
+### `minimum-contrast`
+
+<sub>Platforms: macOS</sub>
+
+The least contrast of the terminal's text to its background, as the ratio of WCAG's guidelines for the web: a text of less moves toward white or black, whichever reads better, as little as gives it.
+
+| Values | Default |
+|---|---|
+| from `1` to `21`, whole or not | `1` |
+
+- `1` leaves the colors as the programs and the theme give them; `4.5` is the contrast that the guidelines ask of text; `21` makes every text black or white.
+- It applies to the terminal's text alone, Lokyr's own following its theme.
+- It applies at once, as you save the file.
 
 ## `[app]`
 

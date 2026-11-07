@@ -425,22 +425,21 @@ pub fn cells_with(
 /// rows from the first that shows them to the last, with the cells'
 /// backgrounds clear, as the grid shows them; none where the composition
 /// of `preedit` covers it. With the first of its rows in the grid; `None`
-/// without text that blinks, or when `text` keeps it steady.
+/// without text that blinks, or when `text`'s config keeps it steady.
 pub fn blinking_cells(
     snapshot: &Snapshot,
     cell: &CellMetrics,
     selection: Option<&Selection<'_>>,
-    text: TextConfig,
+    text: TextLook,
     preedit: Option<&Preedit>,
     glyphs: &mut dyn Glyphs,
 ) -> Option<(u16, CellBatch)> {
-    if !text.blink || !has_blinking_text(snapshot) {
+    if !text.config.blink || !has_blinking_text(snapshot) {
         return None;
     }
     let look = TextLook {
-        config: text,
         blink_shown: true,
-        ..TextLook::default()
+        ..text
     };
     let shown = Shown::Blinking;
     let mut batch = cells_of(
@@ -1744,7 +1743,7 @@ mod tests {
             &shown,
             &cell(),
             Some(&selection),
-            TextConfig::default(),
+            TextLook::default(),
             None,
             &mut atlas(&mut first),
         )
@@ -1781,14 +1780,17 @@ mod tests {
         assert_eq!(lines, [(0, 1, 2)]);
         assert!(grid.lines.is_empty());
         // Nothing without text that blinks, or when it shows steadily.
-        let steady = TextConfig {
-            blink: false,
-            ..TextConfig::default()
+        let steady = TextLook {
+            config: TextConfig {
+                blink: false,
+                ..TextConfig::default()
+            },
+            ..TextLook::default()
         };
         let glyphs = &mut atlas(&mut first);
         assert!(blinking_cells(&shown, &cell(), None, steady, None, glyphs).is_none());
         let plain = snapshot(8, 2, "abc");
-        let default = TextConfig::default();
+        let default = TextLook::default();
         assert!(blinking_cells(&plain, &cell(), None, default, None, glyphs).is_none());
         // A composition at the cursor covers the text under it, and its
         // lines, a strikeout's.

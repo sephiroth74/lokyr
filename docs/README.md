@@ -6,7 +6,7 @@ Lokyr is a terminal emulator for macOS. Version 1.0 targets macOS only ([ADR 001
 
 - **Fast and light on memory**, with budgets measured in CI ([PERFORMANCE.md](PERFORMANCE.md)).
 - **The best of existing terminals**: the speed and protocols of Ghostty and kitty; the tabs, tmux -CC and triggers of iTerm2; the restraint of Alacritty; the blocks of Warp.
-- **Everything is a plugin**: tabs, splits, search and themes are all plugins. The terminal itself is a small kernel plus a list of plugins.
+- **Everything is a plugin**: tabs, splits and search are all plugins; themes are the host's, as it draws them, of files that anyone writes ([ADR 0035](adr/0035-themes-are-the-hosts.md)). The terminal itself is a small kernel plus a list of plugins.
 - **An open ecosystem**: third-party plugins are Luau scripts that run in a sandbox, installed by **Sleip**. Sleip is a separate program from the app, the same way cargo is separate from rustc.
 
 **Status**: F1, the headless terminal core, done on 25 October 2026; F2, macOS with a single pane, is under way: the review of its breakdown with the user, on 26 October 2026, brought the MCP server and the AI agents into the plan ([ADR 0017](adr/0017-mcp-and-agents.md)), with phase F3b after F3. F0 built the workspace skeleton, CI, the dependency rules and the measurement tools; F1 has the parser, the paged grid with its scrollback and reflow, the terminal state, Unicode, the input encoders, the PTY, the session and the search, and the tools that check them: the recorded sessions and their replay, the headless harness with esctest and vttest, the differential tests against `alacritty_terminal`, fuzzing, the benchmarks and the Linux job; its exit criteria are met, and its known issues are listed in its tasks' file. This folder holds the architecture, the decisions and the roadmap.
@@ -49,7 +49,7 @@ The phases (F0–F7) are described in the [ROADMAP](ROADMAP.md).
 | iTerm2's text options: Unicode normalization (NFC, NFD, HFS+), a separate font for non-ASCII text | The `normalization` option of `[terminal]`; the non-ASCII font in `[font]` | [VT-CORE](VT-CORE.md#unicode), [ROADMAP](ROADMAP.md#f2--macos-single-pane) | F1–F2 |
 | The Nerd Fonts' icons, of prompts and tools, with any font | Symbols Nerd Font Mono in the binary, which draws the private use areas' characters that the configured font lacks, before the system's fallback | [ADR 0025](adr/0025-symbols-font.md) | F2 |
 | Encodings other than UTF-8 | UTF-8 only in the MVP; other encodings per profile, as a conversion in the session | [VT-CORE](VT-CORE.md#session-session) | F5b |
-| iTerm2 theme compatibility | `theme-iterm2` plugin: `.itermcolors`, the one format imported, read as iTerm2 reads it, its color spaces and its light/dark keys; a native format of TOML, a file a variant; the themes of permissive licenses held | [UI-AND-FEATURES](UI-AND-FEATURES.md#iterm2-themes), [ADR 0034](adr/0034-themes-native-format-and-itermcolors.md) | F3 |
+| iTerm2 theme compatibility | The host's: `.itermcolors`, the one format imported, read as iTerm2 reads it, its color spaces and its light/dark keys; a native format of TOML, a file a variant; the themes of permissive licenses held | [UI-AND-FEATURES](UI-AND-FEATURES.md#iterm2-themes), [ADR 0034](adr/0034-themes-native-format-and-itermcolors.md), [ADR 0035](adr/0035-themes-are-the-hosts.md) | F3 |
 | Customizable iTerm2-style tabs | `tabs` plugin, drawn in the titlebar by our UI engine; native tabs disabled | [UI-AND-FEATURES](UI-AND-FEATURES.md#tabs) | F3 |
 | Powerful plugin system | Native first-party plugins and sandboxed Luau third-party plugins share one API; the commands that a plugin runs are declared in its manifest, and checked against its capabilities, but those that the user runs through a plugin with `user-commands`, as the palette; the calls are messages, and the plugins' UI is data that the host draws; each plugin's keys in its section of the config file, of its JSON Schema | [PLUGIN-SYSTEM](PLUGIN-SYSTEM.md), [ADR 0019](adr/0019-commands-errors-and-permissions.md), [ADR 0024](adr/0024-user-commands.md), [ADR 0028](adr/0028-plugin-calls-as-messages.md), [ADR 0032](adr/0032-plugins-config-and-state.md) | F3–F4 |
 | Terminal built from its own plugins | Micro-kernel; the distributions, `dist/*.toml`, are the app's features, which `xtask gen-dist` writes; a plugin turned off by `enabled = false` in its section | [PLUGIN-SYSTEM](PLUGIN-SYSTEM.md#distribution), [ADR 0033](adr/0033-plugins-turned-off-in-their-sections.md) | F3 |
@@ -66,7 +66,7 @@ The phases (F0–F7) are described in the [ROADMAP](ROADMAP.md).
 | ADR | Decision | Status |
 |---|---|---|
 | [0001](adr/0001-language-rust.md) | Rust for the app, the CLI and the registry | Accepted; its wasmtime reasons outdated by 0012 |
-| [0002](adr/0002-micro-kernel-and-plugins.md) | Micro-kernel: mechanism in the core, policy in plugins | Accepted |
+| [0002](adr/0002-micro-kernel-and-plugins.md) | Micro-kernel: mechanism in the core, policy in plugins | Accepted; themes the host's, per 0035 |
 | [0003](adr/0003-native-and-wasm-plugins.md) | Two tiers of plugins (native and Wasm) with one API | Accepted; third-party tier superseded by 0012; the calls as messages, per 0028 |
 | [0004](adr/0004-native-shell-and-gpu-chrome.md) | Native shell per OS, our own GPU-drawn chrome | Accepted; confirmed by a survey of UI toolkits on 3 November 2026 |
 | [0005](adr/0005-native-renderers.md) | Native renderers (Metal, OpenGL), one surface per window | Accepted; OpenGL in F7, per 0011; the cursor's layer, per 0021; two drawables, per 0022; blinking text's layer, per 0023 |
@@ -99,6 +99,7 @@ The phases (F0–F7) are described in the [ROADMAP](ROADMAP.md).
 | [0032](adr/0032-plugins-config-and-state.md) | The plugins' config in `[plugins.<namespace>]` sections of the config file, checked against their JSON Schemas of the keywords that the host checks, a wrong value refusing its section alone; the plugins' states in files of their own | Accepted; the host's key `enabled`, per 0033 |
 | [0033](adr/0033-plugins-turned-off-in-their-sections.md) | A plugin turned off by `enabled = false` in its section, at once, and on again a new one of it | Accepted; amends 0032 |
 | [0034](adr/0034-themes-native-format-and-itermcolors.md) | Themes: a native format of TOML, a file a variant, colors alone; `.itermcolors` the one format imported, read as iTerm2 reads it and never converted; the themes of permissive licenses held, converted as the app builds; the user's in a folder, installed from the Finder | Accepted |
+| [0035](adr/0035-themes-are-the-hosts.md) | Themes are the host's: `[theme]` in the config, the themes' files and `.itermcolors` read by the app, no `themes` plugin; the palette's picker writes `[theme]` | Accepted; amends 0002 |
 
 ## Glossary
 

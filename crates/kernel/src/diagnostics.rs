@@ -19,6 +19,8 @@ pub enum About {
     /// The `TERM` that the programs take, which a name of a terminfo entry
     /// fixes.
     Term,
+    /// The themes of `[theme]`, which themes that resolve fix.
+    Theme,
     /// A plugin's section of the config, `[plugins.<namespace>]`, by the
     /// namespace, which a section that its plugin takes fixes.
     PluginConfig(String),
