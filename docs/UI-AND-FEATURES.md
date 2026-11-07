@@ -184,6 +184,10 @@ The `progress` plugin, as the user asked on 1 November 2026, after iTerm2 and Gh
 - **Motion**: a change of the percentage slides the fill from where it was, eased, of about 0.2 s, in the strip and on the tab; the slides and the indeterminate sweeps go on layers that the window server animates, so that a program's percentage, of many changes a second, costs the app no frames.
 - **States**: normal, in the accent's color, with its percentage; error, red; paused, yellow; indeterminate, which moves without frames of the app's; and none, which takes the bar away.
 
+## The gutter
+
+A few points at the left of each pane's cells, in its padding, which takes no column of the grid, with a thin bar on the prompt of each command that ran, of the commands that the shell marks with OSC 133: faint gray for a success, red for a failure, the accent while it runs, the theme's `gutter.succeeded`, `gutter.failed` and `gutter.running`; plugins lay marks of their own colors in it by the rows' numbers, which keep their rows as output and a reflow move them. `[window] gutter` turns it off.
+
 ## The command's sticky header
 
 The `command-header` plugin, as the user asked on 1 November 2026, after iTerm2: the command whose output the view shows stays at the pane's top, in a panel of its pane's top corner, over the grid's top rows, which it takes no row of, so that the grid keeps its size as it shows and hides, over OSC 133's marks.

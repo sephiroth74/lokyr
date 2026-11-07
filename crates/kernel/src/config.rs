@@ -21,6 +21,7 @@
 //! close-on-exit = "clean"   # clean | always | never
 //! padding-x = 4             # points, at the left and the right
 //! padding-y = 4             # points, at the top and the bottom
+//! gutter = true             # the marks at the panes' left, as a command's end
 //! background-opacity = 1    # from 0 to 1
 //! background-blur = 0       # points
 //! title-size = true         # the grid's size in the title
@@ -919,6 +920,10 @@ pub struct WindowConfig {
     pub padding_x: Padding,
     /// The room between the grid and the window's top and bottom edges.
     pub padding_y: Padding,
+    /// Whether each pane shows a gutter at the left of its cells, of the
+    /// marks of its commands' ends and the plugins' marks, in its padding,
+    /// which it widens as far as it needs.
+    pub gutter: bool,
     /// The opacity of the default background.
     pub background_opacity: Opacity,
     /// The blur of what shows through the default background.
@@ -944,6 +949,7 @@ impl Default for WindowConfig {
             new_directory: NewDirectory::default(),
             padding_x: Padding::default(),
             padding_y: Padding::default(),
+            gutter: true,
             background_opacity: Opacity::default(),
             background_blur: Blur::default(),
             title_size: true,
@@ -1949,6 +1955,7 @@ mod tests {
             close-on-exit = "never"
             padding-x = 10
             padding-y = 2.5
+            gutter = false
             background-opacity = 0.85
             background-blur = 20
             title-size = false
@@ -2059,7 +2066,7 @@ mod tests {
         assert_eq!(config.window.background_opacity.value(), 0.85);
         assert_eq!(config.window.background_blur.points(), 20.0);
         assert!(!config.window.title_size && config.window.opaque_titlebar);
-        assert!(!config.window.title_shortcut);
+        assert!(!config.window.title_shortcut && !config.window.gutter);
         assert_eq!(
             (config.window.columns.count(), config.window.rows.count()),
             (80, 24)
@@ -2067,6 +2074,7 @@ mod tests {
         assert!(!config.window.remember_frame);
         let window = Config::default().window;
         assert!(window.title_size && window.title_shortcut && !window.opaque_titlebar);
+        assert!(window.gutter);
         assert_eq!((window.columns.count(), window.rows.count()), (100, 30));
         assert!(window.remember_frame);
         for (text, wanted) in [
@@ -2674,6 +2682,7 @@ mod tests {
                 "new-directory",
                 "padding-x",
                 "padding-y",
+                "gutter",
                 "background-opacity",
                 "background-blur",
                 "title-size",

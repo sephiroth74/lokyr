@@ -88,6 +88,7 @@ start-directory = "last"             # home | last | a path: the first window's 
 new-directory = "~/Projects"         # inherit | home | a path: a new window's folder
 padding-x = 6                        # points, from 0 to 100
 padding-y = 4
+gutter = false                       # true | false: the commands' marks at the panes' left
 background-opacity = 0.9             # from 0 to 1
 background-blur = 20                 # points, from 0 to 100
 title-size = false                   # true | false: the grid's size in the title
@@ -640,6 +641,25 @@ The room between the grid and the window's edges, in points: `padding-x` at the 
 - A window is seldom a whole number of cells: the room that the cells leave over goes to the right and the bottom, past the padding, so that the text stays where it is as the window's size changes.
 - The padding takes the background of the cells without a color of their own: a background that a program colors, such as a status line's, stops at the grid.
 - With splits, each pane keeps its padding on every side: a divider stands between the padding of the panes on either side of it, and runs to the panes' room's edges.
+- The gutter takes the padding at the cells' left: with [`gutter`](#gutter) on, a padding narrower than 4 points widens to 4, at the left and the right.
+
+### `gutter`
+
+<sub>Platforms: macOS</sub>
+
+Whether each pane shows a gutter at the left of its cells, with a mark on the prompt of each command that ran: a thin bar the height of the prompt's row, faint gray for a command that succeeded, red for one that failed, the accent's color for one that still runs.
+
+| Values | Default |
+|---|---|
+| `true`, `false` | `true` |
+
+- The marks need the shell to mark its prompts and its commands, as the shells' integration does ([`shell-integration`](#shell-integration)): without it, the gutter shows nothing.
+- A command's mark shows its exit status: 0, or none that the shell told, is a success, any other a failure, as an interrupted command's.
+- The gutter takes no column of the grid: it lies in the padding at the cells' left, which widens to 4 points, at the left and the right, if [`padding-x`](#padding-x-padding-y) is narrower.
+- The marks keep their lines as output scrolls them into the scrollback and a resize reflows them, and go with them, as the scrollback's limit or a clearing takes them.
+- A program of the full screen, as an editor's, shows no prompt's mark, as its screen has no shell's prompts.
+- Plugins can lay marks of their own colors in the gutter, which show over a prompt's mark of the same row; they show only while it is on.
+- The colors are the theme's: `gutter.succeeded`, `gutter.failed` and `gutter.running`.
 
 ### `background-opacity`
 

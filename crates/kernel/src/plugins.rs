@@ -340,6 +340,9 @@ struct State {
     panels: BTreeMap<PanelId, WindowId>,
     /// The decorations that it laid, by their ids, each of its pane.
     decorations: BTreeMap<u64, host::PaneId>,
+    /// The marks of the panes' gutters that it laid, by their ids, each of
+    /// its pane.
+    gutter_marks: BTreeMap<u64, host::PaneId>,
     /// Its calls on the main thread that took long, since the last look:
     /// each callback's name, and how long.
     slow: Vec<(&'static str, Duration)>,
@@ -630,6 +633,13 @@ enum Write {
         to: (u16, i64),
         look: host::DecorationLook,
     },
+    /// A mark of a pane's gutter, of the id that the host gave it.
+    MarkGutter {
+        id: u64,
+        pane: host::PaneId,
+        row: i64,
+        color: (u8, u8, u8),
+    },
 }
 
 /// The rows that a read takes under the lock at a time: about a frame's
@@ -810,6 +820,7 @@ impl Plugins {
                 views: BTreeMap::new(),
                 panels: BTreeMap::new(),
                 decorations: BTreeMap::new(),
+                gutter_marks: BTreeMap::new(),
                 slow: Vec::new(),
                 fault: None,
                 schema,
@@ -2117,7 +2128,8 @@ fn call<T>(
 
 /// Calls `call` on a plugin of the main thread, as [`call`] does, but
 /// drops its writes and its requests, as the call only looks: the panels
-/// that it opens or closes, and its decorations, stay as they were.
+/// that it opens or closes, its decorations and its gutters' marks, stay
+/// as they were.
 fn look<T>(
     (plugin, state): (&mut dyn Plugin, &mut State),
     context: &mut Context<'_>,
@@ -2127,6 +2139,7 @@ fn look<T>(
 ) -> Result<T, Error> {
     let (mut out, mut writes) = (Outbox::default(), Vec::new());
     let (panels, decorations) = (state.panels.clone(), state.decorations.clone());
+    let gutter_marks = state.gutter_marks.clone();
     let outcome = within(
         (plugin, state),
         context,
@@ -2136,6 +2149,7 @@ fn look<T>(
     );
     state.panels = panels;
     state.decorations = decorations;
+    state.gutter_marks = gutter_marks;
     outcome.unwrap_or_else(|fault| fault)
 }
 
@@ -2184,7 +2198,8 @@ pub const ENABLED: &str = "enabled";
 
 /// Stops the plugin of `entry`, which its section of the config turns off:
 /// its commands and its bindings go, as a disabled plugin's, its panels
-/// close, as the app hears, its decorations leave their panes, its views
+/// close, as the app hears, its decorations and its gutters' marks leave
+/// their panes, its views
 /// show no more, the places of its tab bar, its fade and its keyboard's
 /// following go, for the plugin made anew to ask again, and its thread,
 /// if it has one, ends.
@@ -2200,6 +2215,11 @@ fn stop(
     for (id, pane) in std::mem::take(&mut state.decorations) {
         if let Some(pane) = context.workspace.pane(PaneId::of(pane.0)) {
             pane.undecorate(id);
+        }
+    }
+    for (id, pane) in std::mem::take(&mut state.gutter_marks) {
+        if let Some(pane) = context.workspace.pane(PaneId::of(pane.0)) {
+            pane.unmark_gutter(id);
         }
     }
     for id in std::mem::take(&mut state.panels).into_keys() {
@@ -2295,6 +2315,17 @@ fn apply(writes: Vec<Write>, context: &mut Context<'_>, out: &mut Outbox, state:
             } => {
                 if !pane(on).is_some_and(|pane| pane.decorate(id, from, to, decoration(look))) {
                     state.decorations.remove(&id);
+                }
+                continue;
+            }
+            Write::MarkGutter {
+                id,
+                pane: on,
+                row,
+                color: (r, g, b),
+            } => {
+                if !pane(on).is_some_and(|pane| pane.mark_gutter(id, row, Rgb { r, g, b })) {
+                    state.gutter_marks.remove(&id);
                 }
                 continue;
             }
@@ -2419,6 +2450,12 @@ fn apply(writes: Vec<Write>, context: &mut Context<'_>, out: &mut Outbox, state:
                     pane.undecorate(id);
                 }
                 state.decorations.remove(&id);
+            }
+            Asked::UnmarkGutter { pane: on, id } => {
+                if let Some(pane) = pane(on) {
+                    pane.unmark_gutter(id);
+                }
+                state.gutter_marks.remove(&id);
             }
             Asked::Emit {
                 name,
@@ -3373,6 +3410,35 @@ impl Host<'_, '_> {
                     return Err(Error::new(
                         Code::NotFound,
                         format!("the plugin has no decoration {id} of the pane {}", pane.0),
+                    ));
+                }
+            }
+            Asked::MarkGutter { pane, row, color } => {
+                if !self.pane(*pane)?.holds(&[*row]) {
+                    return Err(Error::new(
+                        Code::Failed,
+                        format!("the pane {} holds no row {row}", pane.0),
+                    ));
+                }
+                let id = new_id();
+                self.state.gutter_marks.insert(id, *pane);
+                self.writes.push(Write::MarkGutter {
+                    id,
+                    pane: *pane,
+                    row: *row,
+                    color: *color,
+                });
+                return Ok(Response::Decoration(id));
+            }
+            Asked::UnmarkGutter { pane, id } => {
+                let own = self.state.gutter_marks.get(id) == Some(pane);
+                if !own {
+                    return Err(Error::new(
+                        Code::NotFound,
+                        format!(
+                            "the plugin has no mark {id} of the pane {}'s gutter",
+                            pane.0
+                        ),
                     ));
                 }
             }

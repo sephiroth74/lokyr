@@ -514,6 +514,28 @@ impl<'a> Cx<'a> {
         self.done(Request::Undecorate { pane, id })
     }
 
+    /// Lays a mark of `color`, red, green and blue, in `pane`'s gutter, at
+    /// the left of its cells, on the row numbered `row`, as this call
+    /// returns: returns the mark's id. It keeps its row as output scrolls
+    /// it and a resize reflows it, and goes with it.
+    pub fn mark_gutter(
+        &mut self,
+        pane: PaneId,
+        row: i64,
+        color: (u8, u8, u8),
+    ) -> Result<u64, Error> {
+        match self.request(Request::MarkGutter { pane, row, color }) {
+            Response::Decoration(id) => Ok(id),
+            other => Err(failed(other)),
+        }
+    }
+
+    /// Takes away the plugin's mark `id` of `pane`'s gutter, as this call
+    /// returns.
+    pub fn unmark_gutter(&mut self, pane: PaneId, id: u64) -> Result<(), Error> {
+        self.done(Request::UnmarkGutter { pane, id })
+    }
+
     /// The working directory of the program in `pane`'s foreground, as a
     /// shell's at its prompt.
     pub fn working_directory(&mut self, pane: PaneId) -> Result<Option<String>, Error> {

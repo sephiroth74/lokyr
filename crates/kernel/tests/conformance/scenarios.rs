@@ -451,6 +451,35 @@ fn links(world: &World) -> Scenario {
                     ),
                 ),
                 (
+                    Request::MarkGutter {
+                        pane,
+                        row,
+                        color: (255, 0, 0),
+                    },
+                    Response::Decoration(0),
+                ),
+                (
+                    Request::MarkGutter {
+                        pane,
+                        row: 900_000,
+                        color: (255, 0, 0),
+                    },
+                    failed(
+                        Code::Failed,
+                        &format!("the pane {} holds no row 900000", pane.0),
+                    ),
+                ),
+                (
+                    Request::UnmarkGutter { pane, id: 999_999 },
+                    failed(
+                        Code::NotFound,
+                        &format!(
+                            "the plugin has no mark 999999 of the pane {}'s gutter",
+                            pane.0
+                        ),
+                    ),
+                ),
+                (
                     Request::LineText {
                         pane: NO_PANE,
                         row,

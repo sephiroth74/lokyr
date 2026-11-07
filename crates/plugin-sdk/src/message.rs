@@ -237,6 +237,25 @@ pub enum Request {
         /// The decoration's id.
         id: u64,
     },
+    /// Lays a mark of a color in a pane's gutter, at the left of its cells,
+    /// on a row by its number: the host answers with the mark's id, and
+    /// lays it as the call returns. The mark keeps its row as output
+    /// scrolls it and a resize reflows it, and goes with it.
+    MarkGutter {
+        /// The pane.
+        pane: PaneId,
+        /// The row's number.
+        row: i64,
+        /// Its color, red, green and blue.
+        color: (u8, u8, u8),
+    },
+    /// Takes away one of the plugin's marks of a pane's gutter.
+    UnmarkGutter {
+        /// The pane.
+        pane: PaneId,
+        /// The mark's id.
+        id: u64,
+    },
     /// Opens a URL, or a path, absolute or from `~`, with the system's
     /// handler, as the user's config says.
     Open(String),
@@ -668,6 +687,8 @@ impl Request {
             | Self::FocusedPane
             | Self::Decorate { .. }
             | Self::Undecorate { .. }
+            | Self::MarkGutter { .. }
+            | Self::UnmarkGutter { .. }
             | Self::EndSearch(_)
             | Self::SelectCells { .. }
             | Self::ShowMatches { .. }
@@ -771,6 +792,8 @@ impl Request {
             | Self::Scroll { .. }
             | Self::Decorate { .. }
             | Self::Undecorate { .. }
+            | Self::MarkGutter { .. }
+            | Self::UnmarkGutter { .. }
             | Self::Emit { .. }
             | Self::NewTab { .. }
             | Self::Split { .. }
@@ -858,7 +881,7 @@ pub enum Response {
     TabBarPlace(BarPlace),
     /// A row's styles, or none of a row that the pane does not hold.
     Styles(Option<Vec<StyleRun>>),
-    /// A decoration's id.
+    /// A decoration's id, or a mark's of a pane's gutter.
     Decoration(u64),
     /// The windows.
     Windows(Vec<WindowInfo>),

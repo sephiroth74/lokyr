@@ -144,6 +144,9 @@ const LIGHT_TOKENS: &[TokenColor] = &[
     ("segments.box.border", 0x000000, 0.1),
     ("search.match", 0xffd60a, 0.5),
     ("search.match.current", 0xff7a00, 0.6),
+    ("gutter.running", 0x0a64d8, 1.0),
+    ("gutter.succeeded", 0x000000, 0.22),
+    ("gutter.failed", 0xd63b3b, 1.0),
 ];
 
 /// The interface's colors in the dark variant.
@@ -197,6 +200,9 @@ const DARK_TOKENS: &[TokenColor] = &[
     ("segments.box.border", 0xffffff, 0.1),
     ("search.match", 0xffd60a, 0.3),
     ("search.match.current", 0xff7a00, 0.5),
+    ("gutter.running", 0x4c9bff, 1.0),
+    ("gutter.succeeded", 0xffffff, 0.25),
+    ("gutter.failed", 0xff5f57, 1.0),
 ];
 
 /// The built-in theme, of a light and a dark variant, and of the man
@@ -452,6 +458,9 @@ pub fn derived(terminal: &TerminalColors) -> Tokens {
         ("segments.box.border", veil(0.1)),
         ("search.match", palette[3].with_alpha(pick(0.5, 0.3))),
         ("search.match.current", orange.with_alpha(pick(0.6, 0.5))),
+        ("gutter.running", accent),
+        ("gutter.succeeded", veil(pick(0.22, 0.25))),
+        ("gutter.failed", palette[1]),
         // The terminal's own, as a bar of its colors takes them.
         ("terminal.bg", bg),
         ("terminal.fg", fg),

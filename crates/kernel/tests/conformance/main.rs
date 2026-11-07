@@ -788,11 +788,13 @@ fn kind(request: &Request) -> usize {
         Request::AddMenuItem(_) => 81,
         Request::OpenQuickWindow { .. } => 82,
         Request::ShowQuickWindow { .. } => 83,
+        Request::MarkGutter { .. } => 84,
+        Request::UnmarkGutter { .. } => 85,
     }
 }
 
 /// How many kinds of requests the plugin API has.
-const KINDS: usize = 84;
+const KINDS: usize = 86;
 
 #[test]
 fn the_scenarios_hold_every_request_of_the_plugin_api() {

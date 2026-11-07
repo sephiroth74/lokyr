@@ -680,6 +680,11 @@ type Cx = {
     -- decoration's id. It keeps its text as output scrolls it and a resize reflows it, and goes with it.
     decorate: (pane: PaneId, from: { number }, to: { number }, look: DecorationLook) -> (number?, Error?),
     undecorate: (pane: PaneId, id: number) -> (boolean, Error?),
+    -- Lays a mark of a color, { red, green, blue }, in the pane's gutter, at the left of its cells, on a row by its
+    -- number: returns the mark's id. It keeps its row as output scrolls it and a resize reflows it, and goes with it;
+    -- it shows over the mark of a prompt of its row, and only while `[window] gutter` is on.
+    mark_gutter: (pane: PaneId, row: number, color: { number }) -> (number?, Error?),
+    unmark_gutter: (pane: PaneId, id: number) -> (boolean, Error?),
     select_all: (pane: PaneId) -> (boolean, Error?),
     -- Selects the cells from one to another, in reading order, each { column, row's number }, as a drag would, which a
     -- copy then takes, and scrolls the view, through the scrollback, to show the first, as the call returns.

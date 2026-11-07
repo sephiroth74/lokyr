@@ -376,15 +376,33 @@ fn the_grid_fits_the_window_less_its_padding() {
     let (origin, _) = fake.window(window).unwrap().text_area.unwrap();
     assert_eq!((origin.x, origin.y), (10.0, 4.0));
     // A reloaded padding gives the grid that it leaves: of a window of
-    // 100 columns and 30 rows with their padding, 420 points by 248.
+    // 100 columns and 30 rows with their padding, 420 points by 248, the
+    // gutter keeping 4 points at the left and the right.
     std::fs::write(&path, "[window]\npadding-x = 0\npadding-y = 0\n").unwrap();
     change(&mut fake, &mut app);
     assert!(fake.window(window).unwrap().frame_requested);
     fake.send(&mut app, window, WindowEvent::Frame);
     settle(&mut fake, &mut app, window);
     let snapshot = app.pane(window).snapshot();
-    assert_eq!((snapshot.cols(), snapshot.rows()), (105, 31));
+    assert_eq!((snapshot.cols(), snapshot.rows()), (103, 31));
     let _ = std::fs::remove_dir_all(path.parent().unwrap());
+}
+
+#[test]
+fn the_gutter_takes_a_padding_of_4_points_at_least() {
+    let config = |text: &str| Config::parse(text, std::path::Path::new("config.toml")).unwrap();
+    // 1600 by 1000 pixels, less 8 at the left and the right for the gutter.
+    let mut gutter = app(config("[window]\npadding-x = 0\npadding-y = 0\n"), quiet());
+    let grid = gutter.grid(points(800.0, 500.0));
+    assert_eq!((grid.columns, grid.rows), (198, 62));
+    // A wider padding stays as it is.
+    let mut wide = app(config("[window]\npadding-x = 10\npadding-y = 0\n"), quiet());
+    assert_eq!(wide.grid(points(800.0, 500.0)).columns, 195);
+    let mut none = app(
+        config("[window]\npadding-x = 0\npadding-y = 0\ngutter = false\n"),
+        quiet(),
+    );
+    assert_eq!(none.grid(points(800.0, 500.0)).columns, 200);
 }
 
 #[test]
@@ -944,4 +962,65 @@ fn a_tab_s_panes_keep_their_padding_beside_their_dividers() {
     assert_eq!(right.x + right.width as i32, 810);
     // The rooms that the splits' parts share, of their areas less the gap.
     assert_eq!((found[0].room, found[1].room), (786, 390));
+}
+
+/// The marks drawn in the gutter of `window`'s pane, at its grid's left, as
+/// their rectangles and colors.
+fn gutter_marks(app: &App, window: WindowId) -> Vec<(Rect, Color)> {
+    let state = &app.windows[&window];
+    let grid = state.views[0].rect;
+    state
+        .shown
+        .as_ref()
+        .expect("a frame")
+        .items
+        .iter()
+        .flat_map(|item| match item {
+            Item::Shapes(shapes) => shapes.clone(),
+            _ => Vec::new(),
+        })
+        .filter(|shape| shape.rect.x < grid.x && shape.rect.y >= grid.y)
+        .map(|shape| (shape.rect, shape.fill))
+        .collect()
+}
+
+#[test]
+fn the_gutter_shows_the_prompts_of_the_commands_that_ended_in_the_padding() {
+    // A command that succeeded, one that failed, then one that runs.
+    let marks = "printf '\\033]133;A\\007$ \\033]133;B\\007ok\\r\\n\\033]133;C\\007\\033]133;D;0\\007';\
+        printf '\\033]133;A\\007$ \\033]133;B\\007bad\\r\\n\\033]133;C\\007\\033]133;D;1\\007';\
+        printf '\\033]133;A\\007$ \\033]133;B\\007run\\r\\n\\033]133;C\\007'; echo ready; sleep 30";
+    let mut fake = Fake::default();
+    let drawing = Drawing::new(lokyr_text_core::FontConfig::default()).unwrap();
+    let mut app = App::new(Some(drawing), Config::default(), None).with_program(shell(marks));
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    app.windows.get_mut(&window).unwrap().surface = Some(crate::fakes::Surface::default());
+    run_until(&mut fake, &mut app, |_, app| shows(app, window, "ready"));
+    fake.send(&mut app, window, WindowEvent::Frame);
+    let cell_height = u32::from(app.windows[&window].views[0].grid.cell_height);
+    let scale = fake.window(window).unwrap().size.scale;
+    let grid = app.windows[&window].views[0].rect;
+    let dark = fake.appearance() == Appearance::Dark;
+    let tokens = &app.theme.variant(dark).tokens;
+    let token = |name: &str| tokens.get(name).unwrap();
+    // A bar of 2 points in the middle of the padding of 4, a point shorter
+    // than its row at either end, on each prompt's row.
+    let padding = (4.0 * scale).round() as i32;
+    let width = (2.0 * scale).round() as u32;
+    let inset = scale.round() as u32;
+    let bar = |row: u32| Rect {
+        x: grid.x - padding + (padding - width as i32) / 2,
+        y: grid.y + i32::try_from(row * cell_height + inset).unwrap(),
+        width,
+        height: cell_height - 2 * inset,
+    };
+    assert_eq!(
+        gutter_marks(&app, window),
+        [
+            (bar(0), token("gutter.succeeded")),
+            (bar(1), token("gutter.failed")),
+            (bar(2), token("gutter.running")),
+        ]
+    );
 }

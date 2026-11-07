@@ -18,7 +18,8 @@ use lokyr_platform_core::{
     Point, PointerArea, PointerShape, Size, Titlebar, WindowId, WindowSize,
 };
 use lokyr_render_core::{
-    CellBatch, Color, CursorShape, DisplayList, Item, PictureId, Rect, Renderer, Surface as _,
+    CellBatch, Color, CursorShape, DisplayList, Item, PictureId, Rect, Renderer, Shape,
+    Surface as _,
 };
 use lokyr_text_core::{CellMetrics, FontBackend};
 use lokyr_ui_core::focus::Target;
@@ -27,7 +28,7 @@ use lokyr_ui_core::pane::{CursorLook, TextLook};
 use lokyr_ui_core::theme::Variant;
 use lokyr_ui_core::theme::{MatchColors, SelectionColors};
 use lokyr_ui_core::{cursor, pane as cells};
-use lokyr_vt_core::terminal::MouseTracking;
+use lokyr_vt_core::terminal::{GutterKind, MouseTracking};
 
 use super::access;
 use super::chrome;
@@ -42,6 +43,13 @@ use crate::{notice, performance, size_label};
 /// The room between the two parts of a split, in points, which their
 /// divider takes.
 const DIVIDER: f64 = 1.0;
+
+/// The width of a mark of a pane's gutter, in points.
+const GUTTER_MARK: f64 = 2.0;
+
+/// The least room at the left of a pane's cells that its gutter takes, in
+/// points: its mark, and a point on either side.
+const GUTTER_ROOM: f64 = 4.0;
 
 /// The tokens of the chrome's backgrounds, which take the window's
 /// background's opacity: the tab bar's, of a pane's header too, and the
@@ -263,12 +271,18 @@ impl<B: Backend> App<B> {
     /// The room between the grid and the window's edges, in pixels on a
     /// display of `scale`: at the left and the right, and at the top and
     /// the bottom.
+    /// The gutter at the cells' left takes the padding, which widens, at
+    /// the right too, as far as the gutter needs.
     fn padding(&self, scale: f64) -> (u32, u32) {
         let window = &self.config.window;
-        (
-            window.padding_x.pixels(scale),
-            window.padding_y.pixels(scale),
-        )
+        let x = window.padding_x.pixels(scale);
+        let x = if window.gutter {
+            // A cast from a float saturates.
+            x.max((GUTTER_ROOM * scale).round() as u32)
+        } else {
+            x
+        };
+        (x, window.padding_y.pixels(scale))
     }
 
     /// The surface of `window`, if the app draws and the platform has a
@@ -790,6 +804,12 @@ impl<B: Backend> App<B> {
         let opacity = self.config.window.background_opacity.value();
         let chrome_look = (chrome_dark, background, foreground, opacity);
         let reduced = platform.reduce_motion();
+        // The padding at the cells' left that the gutter takes, if it shows.
+        let gutter = self
+            .config
+            .window
+            .gutter
+            .then(|| self.padding(size.scale).0);
         let (Some(drawing), Some(state)) = (self.drawing.as_mut(), self.windows.get_mut(&window))
         else {
             return;
@@ -943,6 +963,25 @@ impl<B: Backend> App<B> {
         let Some((_, tokens)) = state.chrome_tokens.as_ref() else {
             return;
         };
+        // The marks of the panes' gutters, in their paddings at the cells'
+        // left, faded as their panes' cells are.
+        if let Some(padding) = gutter {
+            let shown = std::iter::once((snapshot, (x, y), 0.0))
+                .chain(others.iter().map(|(pane, at)| (pane.snapshot(), *at, dim)));
+            let shapes: Vec<Shape> = shown
+                .flat_map(|(snapshot, at, dim)| {
+                    gutter_marks(snapshot, at, (padding, cell.height), size.scale, tokens).map(
+                        move |mut shape| {
+                            shape.fill = shape.fill.with_alpha(shape.fill.alpha * (1.0 - dim));
+                            shape
+                        },
+                    )
+                })
+                .collect();
+            if !shapes.is_empty() {
+                items.push(Item::Shapes(shapes));
+            }
+        }
         // The dividers between the panes, under the slots' views.
         if let Some(line) = tokens.get("pane.divider") {
             items.extend(state.dividers.iter().map(|divider| Item::Rect {
@@ -1344,6 +1383,50 @@ impl<B: Backend> App<B> {
                 .spawn(move || B::warm_up(&family));
         }
     }
+}
+
+/// The marks of `snapshot`'s gutter, of a pane whose grid's top left
+/// corner is at `origin`, in pixels, each a bar along its row, a point
+/// shorter at either end, in the middle of the padding at the cells' left,
+/// of `room`'s width, of `room`'s height of a row, on a display of
+/// `scale`: a prompt's of the theme's token of its command's state, a laid
+/// one of its color.
+fn gutter_marks<'a>(
+    snapshot: &'a lokyr_vt_core::terminal::Snapshot,
+    origin: (i32, i32),
+    (padding, row_height): (u32, u32),
+    scale: f64,
+    tokens: &'a lokyr_ui_core::theme::Tokens,
+) -> impl Iterator<Item = Shape> + 'a {
+    // Casts from floats saturate.
+    let width = ((GUTTER_MARK * scale).round() as u32).clamp(1, padding.max(1));
+    let inset = (scale.round() as u32).min(row_height / 4);
+    let x = origin.0 - i32::try_from(padding.div_ceil(2) + width / 2).unwrap_or(0);
+    snapshot.gutter().iter().filter_map(move |mark| {
+        let fill = match mark.kind {
+            GutterKind::Laid(rgb) => Color::from_rgb8(rgb.r, rgb.g, rgb.b),
+            GutterKind::Running => tokens.get("gutter.running")?,
+            GutterKind::Succeeded => tokens.get("gutter.succeeded")?,
+            GutterKind::Failed => tokens.get("gutter.failed")?,
+        };
+        let top = u32::from(mark.row) * row_height + inset;
+        Some(Shape {
+            rect: Rect {
+                x,
+                y: origin
+                    .1
+                    .saturating_add(i32::try_from(top).unwrap_or(i32::MAX)),
+                width,
+                height: row_height.saturating_sub(2 * inset),
+            },
+            radius: width as f32 / 2.0,
+            fill,
+            border: 0.0,
+            border_color: Color::CLEAR,
+            shadow: None,
+            arc: None,
+        })
+    })
 }
 
 /// The cells of `panes`, the panes of a window but the one with the

@@ -1922,6 +1922,7 @@ fn unpadded() -> Config {
     let mut config = Config::default();
     config.window.padding_x = 0.0.try_into().unwrap();
     config.window.padding_y = 0.0.try_into().unwrap();
+    config.window.gutter = false;
     config.window.columns = 200.try_into().unwrap();
     config.window.rows = 62.try_into().unwrap();
     config

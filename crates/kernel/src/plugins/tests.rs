@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 use lokyr_plugin_sdk::command::{Category, Kind, Param, Value};
 use lokyr_plugin_sdk::host::{self, Binding as PluginBinding};
 use lokyr_pty::Program;
-use lokyr_vt_core::terminal::Colors;
+use lokyr_vt_core::terminal::{Colors, GutterKind};
 
 use super::*;
 use crate::config::KeysConfig;
@@ -1434,6 +1434,7 @@ fn a_call_is_its_own_plugin_s() {
             views: BTreeMap::new(),
             panels: BTreeMap::new(),
             decorations: BTreeMap::new(),
+            gutter_marks: BTreeMap::new(),
             slow: Vec::new(),
             fault: None,
             schema: None,
@@ -2141,6 +2142,97 @@ fn a_plugin_s_decorations_keep_their_text_through_new_output() {
         .unwrap_err();
     assert_eq!(refused.code, Code::NotFound);
     assert_eq!(spans(&mut app).len(), 2);
+}
+
+#[test]
+fn a_plugin_s_gutter_marks_keep_their_rows_through_new_output() {
+    let mut app = App::default();
+    let window = window(
+        &mut app,
+        "printf 'one\\ntwo\\nthree\\n'; echo ready; read x; seq 1 40; echo done; sleep 30",
+    );
+    let pane = app.workspace.active_pane(window).unwrap();
+    row_once(&app, pane, 3, "ready");
+    let mut plugins = Plugins::new();
+    let ids = Rc::new(RefCell::new(Vec::new()));
+    let found = Rc::clone(&ids);
+    plugins
+        .add(
+            "marker",
+            scripted(
+                |cx| {
+                    cx.register_command(command("marker.mark"))?;
+                    cx.register_command(command("marker.erase"))
+                },
+                move |cx, name, _| {
+                    let pane = cx.focused_pane().unwrap();
+                    if name == "marker.erase" {
+                        let first = found.borrow()[0];
+                        return cx.unmark_gutter(pane, first);
+                    }
+                    found
+                        .borrow_mut()
+                        .push(cx.mark_gutter(pane, 0, (255, 0, 0))?);
+                    found
+                        .borrow_mut()
+                        .push(cx.mark_gutter(pane, 2, (0, 0, 255))?);
+                    let missing = cx.mark_gutter(pane, 900, (0, 0, 0)).unwrap_err();
+                    assert_eq!(missing.code, Code::Failed);
+                    Ok(())
+                },
+            ),
+        )
+        .unwrap();
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    plugins
+        .run("marker.mark", Args::new(), &mut app.context())
+        .unwrap();
+    let marks = |app: &mut App| {
+        let found = app.workspace.pane_mut(pane).unwrap();
+        found.update();
+        found
+            .snapshot()
+            .gutter()
+            .iter()
+            .filter_map(|mark| match mark.kind {
+                GutterKind::Laid(color) => Some((mark.row, color.r, color.b)),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(marks(&mut app), [(0, 255, 0), (2, 0, 255)]);
+    // New output scrolls them out of the view; up there, they kept their
+    // rows.
+    app.workspace.pane(pane).unwrap().send_text("\r");
+    row_once(&app, pane, 45, "done");
+    assert!(marks(&mut app).is_empty());
+    app.workspace.pane(pane).unwrap().scroll(Scroll::Top);
+    assert_eq!(marks(&mut app), [(0, 255, 0), (2, 0, 255)]);
+    // Another plugin cannot take them away; their own can.
+    let first = ids.borrow()[0];
+    let mut asked = Plugins::new();
+    asked
+        .add(
+            "thief",
+            scripted(
+                |cx| cx.register_command(command("thief.take")),
+                move |cx, _, _| {
+                    let pane = cx.focused_pane().unwrap();
+                    cx.unmark_gutter(pane, first)
+                },
+            ),
+        )
+        .unwrap();
+    assert!(asked.activate(&mut app.context()).is_empty());
+    let refused = asked
+        .run("thief.take", Args::new(), &mut app.context())
+        .unwrap_err();
+    assert_eq!(refused.code, Code::NotFound);
+    assert_eq!(marks(&mut app).len(), 2);
+    plugins
+        .run("marker.erase", Args::new(), &mut app.context())
+        .unwrap();
+    assert_eq!(marks(&mut app), [(2, 0, 255)]);
 }
 
 #[test]

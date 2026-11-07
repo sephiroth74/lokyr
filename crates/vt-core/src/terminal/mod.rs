@@ -12,6 +12,7 @@ mod edit;
 mod erase;
 mod escape;
 mod events;
+mod gutter;
 mod keyboard;
 mod marks;
 mod matches;
@@ -31,6 +32,7 @@ pub use charsets::{Charset, Charsets, Shift};
 pub use clipboard::{ClipboardRequest, ClipboardTarget};
 pub use colors::{Colors, SPECIAL_COLORS};
 pub use decorations::{Decorated, Look, MOST_DECORATIONS};
+pub use gutter::{GutterKind, GutterMark, MOST_GUTTER_MARKS};
 pub use keyboard::KeyboardFlags;
 pub use marks::{CommandMarks, MOST_COMMANDS};
 pub use matches::{Highlighted, MatchCells};
@@ -490,6 +492,8 @@ pub struct Terminal {
     cell_mark: Option<selection::CellPin>,
     /// The decorations that the embedder laid over the text.
     decorations: Vec<decorations::Decoration>,
+    /// The gutter's marks that the embedder laid.
+    gutter: Vec<gutter::Laid>,
     /// The matches of the searches that the embedder keeps, few at once.
     matches: Vec<matches::Matches>,
 }
@@ -599,6 +603,7 @@ impl Terminal {
             selection_anchor: None,
             cell_mark: None,
             decorations: Vec::new(),
+            gutter: Vec::new(),
             matches: Vec::new(),
         }
     }

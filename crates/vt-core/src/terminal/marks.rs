@@ -10,6 +10,7 @@
 use std::collections::VecDeque;
 
 use super::Terminal;
+use super::gutter::GutterKind;
 use crate::page::{PageList, PinId, Position};
 
 /// The most commands that a terminal keeps, its oldest going first, so
@@ -130,6 +131,43 @@ impl Terminal {
             })
             .filter(|command| {
                 command.prompt.is_some() || command.output.is_some() || command.end.is_some()
+            })
+            .collect()
+    }
+
+    /// The prompts of the primary screen's commands that ran, on the rows
+    /// numbered from `top` to before `bottom`, oldest first, each of its
+    /// row's number and its command's state: the commands of no output's
+    /// mark have none.
+    pub(super) fn prompts_in(&self, top: i64, bottom: i64) -> Vec<(i64, GutterKind)> {
+        let rows = &self.primary.rows;
+        let first = rows.scrolled() as i64 - rows.scrollback_rows() as i64;
+        let row_of = |marked: &Marked| {
+            let position = rows.pin_position(marked.prompt?)?;
+            let index = rows.row_index(position.page, position.row)?;
+            Some(first.saturating_add(index as i64))
+        };
+        // The commands are in their prompts' order, those whose prompts left
+        // the list first: a binary search finds the view's first, as each
+        // row's number costs a walk of the list's pages.
+        let commands = &self.commands.0;
+        let from = commands.partition_point(|marked| row_of(marked).is_none_or(|row| row < top));
+        commands
+            .range(from..)
+            .map_while(|marked| Some((row_of(marked).filter(|&row| row < bottom)?, marked)))
+            .filter_map(|(row, marked)| {
+                // A line of no command, which the shell ends at once
+                // without its output's mark, shows none.
+                marked.output?;
+                let ended = marked
+                    .end
+                    .is_some_and(|pin| rows.pin_position(pin).is_some());
+                let kind = match (ended, marked.status) {
+                    (true, Some(0) | None) => GutterKind::Succeeded,
+                    (true, Some(_)) => GutterKind::Failed,
+                    (false, _) => GutterKind::Running,
+                };
+                Some((row, kind))
             })
             .collect()
     }

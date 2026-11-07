@@ -783,6 +783,23 @@ impl Pane {
         }
     }
 
+    /// Lays a mark of `color` in the gutter at the row numbered `row`, as
+    /// the mark `id`, as [`Terminal::mark_gutter`] does; whether it took
+    /// it. The next frame shows it.
+    pub fn mark_gutter(&self, id: u64, row: i64, color: Rgb) -> bool {
+        self.session
+            .as_ref()
+            .is_some_and(|session| session.lock().mark_gutter(id, row, color))
+    }
+
+    /// Takes the gutter's mark `id` away, as [`Terminal::unmark_gutter`]
+    /// does.
+    pub fn unmark_gutter(&self, id: u64) {
+        if let Some(session) = &self.session {
+            session.lock().unmark_gutter(id);
+        }
+    }
+
     /// A handle on the terminal for a thread of the host's, which reads
     /// it a part at a time, as [`Session::reader`] gives it; none for a
     /// pane whose program did not start.

@@ -25,7 +25,8 @@
 //! It keeps what the plugin declared, its commands, its bindings and its
 //! subscriptions; what it did, its writes and its requests of the app's, as
 //! the requests themselves, in their order, which a test asserts; its
-//! decorations and its panels; the events that it is owed, which
+//! decorations, its marks of the panes' gutters and its panels; the events
+//! that it is owed, which
 //! [`FakeHost::deliver`] gives it; and the trees of its views, which
 //! [`snapshot`] writes as text.
 //!
@@ -176,6 +177,20 @@ pub struct FakeDecoration {
     pub look: DecorationLook,
 }
 
+/// A mark that the plugin laid in a pane's gutter: its pane, its row and
+/// its color.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FakeGutterMark {
+    /// Its id.
+    pub id: u64,
+    /// Its pane.
+    pub pane: PaneId,
+    /// Its row's number.
+    pub row: i64,
+    /// Its color, red, green and blue.
+    pub color: (u8, u8, u8),
+}
+
 /// A window of the fake host: its tabs, in their order, and the one that
 /// it shows.
 #[derive(Clone, Debug, PartialEq)]
@@ -316,6 +331,7 @@ pub struct FakeHost {
     subscribed: Vec<String>,
     done: Vec<Request>,
     decorations: Vec<FakeDecoration>,
+    gutter_marks: Vec<FakeGutterMark>,
     panels: BTreeMap<PanelId, PanelOptions>,
     /// The window that each open panel shows in.
     panel_windows: BTreeMap<PanelId, WindowId>,
@@ -384,6 +400,7 @@ impl FakeHost {
             subscribed: Vec::new(),
             done: Vec::new(),
             decorations: Vec::new(),
+            gutter_marks: Vec::new(),
             panels: BTreeMap::new(),
             panel_windows: BTreeMap::new(),
             views: BTreeMap::new(),
@@ -680,6 +697,12 @@ impl FakeHost {
         &self.decorations
     }
 
+    /// The marks of the panes' gutters that it laid and did not take away,
+    /// in their order.
+    pub fn gutter_marks(&self) -> &[FakeGutterMark] {
+        &self.gutter_marks
+    }
+
     /// Its open panels, by their ids.
     pub fn panels(&self) -> &BTreeMap<PanelId, PanelOptions> {
         &self.panels
@@ -809,7 +832,7 @@ impl FakeHost {
         let caller = self.caller.clone();
         let kept = (!apply).then(|| {
             (
-                self.decorations.clone(),
+                (self.decorations.clone(), self.gutter_marks.clone()),
                 (self.panels.clone(), self.panel_windows.clone()),
                 (self.owed.len(), self.renders.len()),
                 self.last_id,
@@ -822,8 +845,9 @@ impl FakeHost {
         };
         let result = call(&mut Cx::new(&mut calling, &caller));
         let (writes, asked) = (calling.writes, calling.asked);
-        if let Some((decorations, (panels, windows), (owed, renders), last_id)) = kept {
+        if let Some(((decorations, marks), (panels, windows), (owed, renders), last_id)) = kept {
             self.decorations = decorations;
+            self.gutter_marks = marks;
             self.panels = panels;
             self.panel_windows = windows;
             self.owed.truncate(owed);
@@ -961,6 +985,7 @@ impl FakeHost {
         match &request {
             Request::SetClipboardText(text) => self.clipboard = Some(text.clone()),
             Request::Undecorate { id, .. } => self.decorations.retain(|laid| laid.id != *id),
+            Request::UnmarkGutter { id, .. } => self.gutter_marks.retain(|laid| laid.id != *id),
             Request::RequestRender(view) => self.ask_render(view.clone()),
             Request::SetState(state) => self.state = state.clone(),
             Request::Emit {
@@ -2459,6 +2484,39 @@ impl Calling<'_> {
                     return Err(Error::new(
                         Code::NotFound,
                         format!("the plugin has no decoration {id} of the pane {}", pane.0),
+                    ));
+                }
+                Response::Done
+            }
+            Request::MarkGutter { pane, row, color } => {
+                if !self.host.held(*pane)?.held.contains(row) {
+                    return Err(Error::new(
+                        Code::Failed,
+                        format!("the pane {} holds no row {row}", pane.0),
+                    ));
+                }
+                let id = self.host.next_id();
+                self.host.gutter_marks.push(FakeGutterMark {
+                    id,
+                    pane: *pane,
+                    row: *row,
+                    color: *color,
+                });
+                Response::Decoration(id)
+            }
+            Request::UnmarkGutter { pane, id } => {
+                let own = self
+                    .host
+                    .gutter_marks
+                    .iter()
+                    .any(|laid| laid.id == *id && laid.pane == *pane);
+                if !own {
+                    return Err(Error::new(
+                        Code::NotFound,
+                        format!(
+                            "the plugin has no mark {id} of the pane {}'s gutter",
+                            pane.0
+                        ),
                     ));
                 }
                 Response::Done
