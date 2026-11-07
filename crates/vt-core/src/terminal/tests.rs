@@ -6697,9 +6697,57 @@ fn the_alternate_screen_s_prompts_mark_no_command_and_a_reset_forgets_them() {
 fn the_commands_kept_are_the_last_of_the_most() {
     let mut term = Term::new(20, 4);
     for _ in 0..MOST_COMMANDS + 5 {
-        term.feed("\x1b]133;A\x07");
+        term.feed("\x1b]133;A\x07\x1b]133;C\x07\r\n");
     }
     assert_eq!(term.terminal.commands().len(), MOST_COMMANDS);
+}
+
+#[test]
+fn a_prompt_drawn_again_takes_the_place_of_its_command() {
+    let mut term = Term::new(20, 6);
+    term.feed(marked_command("ls", &["a"], 0));
+    // The prompt drawn again on its row, as a theme's redraw does, then
+    // below, after a key's command printed a line, as bash's widget does.
+    term.feed("\x1b]133;A\x07$ \x1b]133;B\x07");
+    term.feed("\r\x1b]133;A\x07$ \x1b]133;B\x07");
+    term.feed("\r\nwidget\r\n\x1b]133;A\x07$ \x1b]133;B\x07");
+    let commands = term.terminal.commands();
+    assert_eq!(commands.len(), 2, "{commands:?}");
+    assert_eq!(commands[1].prompt, Some((0, 4)));
+    assert_eq!(commands[1].output, None);
+    // The command typed then marks its output and ends of its own.
+    term.feed("false\r\n\x1b]133;C\x07\x1b]133;D;1\x07");
+    let commands = term.terminal.commands();
+    assert_eq!(commands.len(), 2);
+    assert_eq!(
+        (commands[1].output, commands[1].status),
+        (Some((0, 5)), Some(1))
+    );
+}
+
+#[test]
+fn a_screen_cleared_in_place_lets_go_of_the_commands_on_its_rows() {
+    let mut term = Term::new(20, 10);
+    for status in [0, 1, 0] {
+        term.feed(marked_command("run", &["out"], status));
+    }
+    assert_eq!(term.terminal.commands().len(), 3);
+    // A clear from the top, without the scrollback, as `tput clear` of an
+    // older terminal's entry does, then a new prompt at the top.
+    term.feed("\x1b[H\x1b[J\x1b]133;A\x07$ \x1b]133;B\x07");
+    let commands = term.terminal.commands();
+    assert_eq!(commands.len(), 1, "{commands:?}");
+    assert_eq!(commands[0].prompt, Some((0, 0)));
+    // Its command shows its own state alone.
+    term.feed("true\r\n\x1b]133;C\x07\x1b]133;D;0\x07\x1b]133;A\x07$ ");
+    let mut snapshot = Snapshot::default();
+    term.terminal.snapshot(&mut snapshot);
+    let kinds: Vec<(u16, GutterKind)> = snapshot
+        .gutter()
+        .iter()
+        .map(|mark| (mark.row, mark.kind))
+        .collect();
+    assert_eq!(kinds, [(0, GutterKind::Succeeded)]);
 }
 
 #[test]

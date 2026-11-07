@@ -66,6 +66,13 @@ impl Terminal {
     /// Marks the cursor's cell of the primary screen as `mark` of the last
     /// command, a prompt starting a new one; the alternate screen's prompts
     /// are its program's, which no command keeps.
+    ///
+    /// A prompt lets go of the commands whose prompts are at its row or
+    /// below, which a screen cleared in place left on rows written anew,
+    /// and of the last command if it has no output's mark, as a shell that
+    /// draws its prompt again, after a key's command or of a theme's
+    /// redraw, gives the prompt's mark again for the same command; so that
+    /// the commands stay in their prompts' order.
     pub(super) fn mark_command(&mut self, mark: Mark) {
         if self.alternate_active {
             return;
@@ -75,6 +82,22 @@ impl Terminal {
         let (page, row) = rows.screen_row_id(y);
         let pin = rows.pin(Position { page, row, col: x });
         let commands = &mut self.commands.0;
+        if mark == Mark::Prompt {
+            let at = rows.row_index(page, row);
+            let row_of = |rows: &PageList, marked: &Marked| {
+                let position = rows.pin_position(marked.prompt?)?;
+                rows.row_index(position.page, position.row)
+            };
+            while let Some(last) = commands.back() {
+                let below = at.is_some_and(|at| row_of(rows, last).is_some_and(|row| row >= at));
+                if !below && last.output.is_some() {
+                    break;
+                }
+                if let Some(gone) = commands.pop_back() {
+                    unpin(rows, &gone);
+                }
+            }
+        }
         if mark == Mark::Prompt || commands.is_empty() {
             // The commands whose prompts left the list go, and the oldest
             // past the most kept.
