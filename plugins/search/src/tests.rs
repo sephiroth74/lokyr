@@ -423,6 +423,50 @@ fn the_count_keeps_its_width_of_short_numbers_past_9999() {
 }
 
 #[test]
+fn a_recent_search_s_item_ends_in_an_ellipsis_past_its_most_characters_of_whole_clusters() {
+    assert_eq!(label("short", 40), "short");
+    let long = "a".repeat(50);
+    let shown = label(&long, 40);
+    assert_eq!(shown.chars().count(), 40);
+    assert!(shown.ends_with('\u{2026}'));
+    // A mark at the cut goes with its letter, before the ellipsis.
+    let marked = format!("{}e\u{301}yyy", "x".repeat(38));
+    assert_eq!(label(&marked, 40), format!("{}\u{2026}", "x".repeat(38)));
+    // A joined emoji at the cut goes whole.
+    let joined = format!("{}\u{1F469}\u{200D}\u{1F4BB}zz", "x".repeat(37));
+    assert_eq!(label(&joined, 40), format!("{}\u{2026}", "x".repeat(37)));
+    // The space before the cut goes too.
+    let spaced = format!("{} {}", "x".repeat(38), "y".repeat(5));
+    assert_eq!(label(&spaced, 40), format!("{}\u{2026}", "x".repeat(38)));
+}
+
+#[test]
+fn the_recent_menu_shows_a_long_search_short_and_searches_it_whole() {
+    let (mut host, mut plugin) = host(&["needle"], Data::Nil);
+    run(&mut host, &mut plugin, OPEN);
+    let long = format!("needle {}", "z".repeat(60));
+    typed(&mut host, &mut plugin, &long);
+    returned(&mut host, &mut plugin, false);
+    host.render(&mut plugin, &bar()).expect("the bar");
+    on_bar(&mut host, &mut plugin, PAST, UiEventKind::Click);
+    let recent = ViewId::Panel(PanelId::from(RECENT));
+    let menu = host.render(&mut plugin, &recent).expect("the recent menu");
+    let Kind::Button(button) = &menu.children[0].kind else {
+        panic!("a button: {:?}", menu.children[0]);
+    };
+    assert_eq!(button.label, label(&long, RECENT_LABEL));
+    assert_eq!(button.label.chars().count(), RECENT_LABEL);
+    let item = UiEvent {
+        view: recent,
+        key: Key::from(format!("{PAST_ITEM}0").as_str()),
+        kind: UiEventKind::Click,
+    };
+    host.ui_event(&mut plugin, &item).expect("the item's click");
+    host.deliver(&mut plugin).unwrap();
+    assert_eq!(query(&plugin).map(|query| query.text), Some(long));
+}
+
+#[test]
 fn the_count_of_before_stays_until_a_new_search_tells_something_sure() {
     let (mut host, mut plugin) = host(&ROWS, Data::Nil);
     run(&mut host, &mut plugin, OPEN);

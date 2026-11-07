@@ -7,6 +7,7 @@ use std::hash::{Hash, Hasher};
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
+use lokyr_plugin_sdk::view::TextSize;
 use lokyr_render_core::{AtlasRegion, Color, PlacedGlyph, Texture, TextureUpdate};
 use lokyr_text_core::{
     Atlas, BitmapFormat, CellMetrics, Change, Face, FaceError, FaceId, Faces, FastMap, Features,
@@ -60,6 +61,11 @@ const DRAWN_SLOTS: usize = 512;
 /// 12 points of a line of 16, as the system's symbols beside text of 13
 /// points.
 const ICON_INK: f32 = 0.75;
+
+/// The share of the interface's size that its small text takes: eleven
+/// points of thirteen, as macOS's small controls' text of its regular
+/// ones'.
+pub const SMALL: f32 = 11.0 / 13.0;
 
 /// VARIATION SELECTOR-16, which asks for a character's emoji.
 const EMOJI_PRESENTATION: char = '\u{FE0F}';
@@ -209,6 +215,12 @@ pub struct Font<B> {
     /// interface finds it, so that a window without them, and the app's
     /// start, do not pay for it.
     interface: Option<InterfaceFace>,
+    /// The interface's small face, of the same family, once a small text
+    /// asks for it.
+    interface_small: Option<InterfaceFace>,
+    /// Whether the interface's texts take its small face, as the node that
+    /// they are measured or drawn for has it.
+    small: bool,
     /// The glyph of each icon's character in the symbols' font, once
     /// asked for.
     icons: FastMap<char, Option<GlyphId>>,
@@ -486,6 +498,8 @@ impl<B: FontBackend> Font<B> {
             deferred: FastMap::default(),
             interface_config: InterfaceConfig::default(),
             interface: None,
+            interface_small: None,
+            small: false,
             icons: FastMap::default(),
             icon_pixels: FastMap::default(),
             carets: Vec::new(),
@@ -1098,16 +1112,24 @@ impl<B: FontBackend> Font<B> {
     pub fn set_interface(&mut self, config: &InterfaceConfig) {
         self.interface_config = config.clone();
         self.interface = None;
+        self.interface_small = None;
+    }
+
+    /// Takes `size` for the interface's texts that it measures and draws
+    /// next, until another size.
+    pub fn set_text_size(&mut self, size: TextSize) {
+        self.small = size == TextSize::Small;
     }
 
     /// The face of the interface's text, found the first time: the one that
     /// [`Font::set_interface`]'s configuration names; the default one where
     /// that fails, as the log tells; the terminal's face where the system
-    /// has no interface family.
+    /// has no interface family; of [`SMALL`] of its size where
+    /// [`Font::set_text_size`] took the small one.
     pub fn interface(&mut self) -> &InterfaceFace {
         let (backend, resolved, config) =
             (&mut self.backend, &self.resolved, &self.interface_config);
-        self.interface.get_or_insert_with(|| {
+        let regular = self.interface.get_or_insert_with(|| {
             InterfaceFace::new(backend, config)
                 .or_else(|error| {
                     eprintln!("lokyr: the interface's font is the default one, {error}");
@@ -1126,7 +1148,12 @@ impl<B: FontBackend> Font<B> {
                         config.font_size.points(),
                     )
                 })
-        })
+        });
+        if !self.small {
+            return regular;
+        }
+        self.interface_small
+            .get_or_insert_with(|| regular.sized(backend, regular.size() * SMALL))
     }
 
     /// The glyphs of `text` on one line in the interface's face, at the
@@ -1653,6 +1680,10 @@ fn texture(format: BitmapFormat) -> Texture {
 /// view tree's layout: a text of its advances, as its run draws them at
 /// the display's scale, and an icon a square of a line.
 impl<B: FontBackend> Measure for Font<B> {
+    fn text_size(&mut self, size: TextSize) {
+        self.set_text_size(size);
+    }
+
     fn text(&mut self, text: &str) -> (f32, f32) {
         let features = Features { ligatures: true };
         let interface = self.interface();
@@ -1670,6 +1701,10 @@ impl<B: FontBackend> Measure for Font<B> {
 impl<B: FontBackend> Carets for Font<B> {
     fn carets(&mut self, text: &str) -> Rc<[(usize, f32)]> {
         self.interface_carets(text)
+    }
+
+    fn text_size(&mut self, size: TextSize) {
+        self.set_text_size(size);
     }
 }
 
@@ -3171,6 +3206,30 @@ mod tests {
         };
         let (short, long) = (cost(10_000), cost(100_000));
         assert!(long < short * 40, "{short:?} {long:?}");
+    }
+
+    #[test]
+    fn the_small_size_takes_its_share_of_the_interface_s_until_the_regular_one_again() {
+        let mut font = Font::new(Squares::default(), FontConfig::default(), 1.0).unwrap();
+        let regular = font.interface().clone();
+        let wide = Measure::text(&mut font, "find").0;
+        let places = font.interface_carets("find");
+        font.set_text_size(TextSize::Small);
+        let small = font.interface().clone();
+        assert_eq!(small.size(), regular.size() * SMALL);
+        assert_eq!(small.family(), regular.family());
+        assert!(Measure::text(&mut font, "find").0 < wide);
+        assert_ne!(*font.interface_carets("find"), *places);
+        font.set_text_size(TextSize::Regular);
+        assert_eq!(font.interface().size(), regular.size());
+        // A new config takes a new small face too.
+        let larger = InterfaceConfig {
+            font_size: lokyr_text_core::Size::try_from(26.0).unwrap(),
+            ..InterfaceConfig::default()
+        };
+        font.set_interface(&larger);
+        font.set_text_size(TextSize::Small);
+        assert_eq!(font.interface().size(), 22.0);
     }
 
     #[test]

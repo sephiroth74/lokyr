@@ -271,6 +271,7 @@ type Style = {
     grow: number?,
     hides_indicator: boolean?, -- of a scroll area, no indicator of its scroll, as a bar of tabs
     holds_ring: boolean?, -- the ring of the keyboard's focus of a node inside it round its own box, as a search field's box round its text
+    text_size: ("regular" | "small")?, -- its texts' size, its children's too, unless they give their own: small, eleven thirteenths of the interface's, as a find bar's count and field
     background: Color?,
     foreground: Color?,
     corner_radius: number?,

@@ -35,6 +35,8 @@ pub struct InterfaceConfig {
 pub struct InterfaceFace {
     family: String,
     missing_family: Option<String>,
+    /// The family's regular face, of no optical size.
+    regular: FaceId,
     face: FaceId,
     size: f32,
     ascent: f32,
@@ -79,11 +81,24 @@ impl InterfaceFace {
         Self {
             family,
             missing_family,
+            regular,
             face,
             size,
             ascent: metrics.ascent,
             line: metrics.ascent + metrics.descent + metrics.leading,
         }
+    }
+
+    /// The same family's face at `size` points, of the optical size of
+    /// those.
+    pub(crate) fn sized(&self, backend: &mut dyn FontBackend, size: f32) -> Self {
+        Self::of(
+            backend,
+            self.family.clone(),
+            self.missing_family.clone(),
+            self.regular,
+            size,
+        )
     }
 
     /// The family's name.

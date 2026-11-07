@@ -12,6 +12,7 @@
 
 #![forbid(unsafe_code)]
 
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 
 use lokyr_plugin_sdk::command::{Args, Category, Code, Command, Error};
@@ -20,8 +21,8 @@ use lokyr_plugin_sdk::message::{Data, Event};
 use lokyr_plugin_sdk::plugin::{Cx, Plugin};
 use lokyr_plugin_sdk::ui::{Anchor, Corner, PanelId, PanelOptions, Role, UiEvent, ViewId};
 use lokyr_plugin_sdk::view::{
-    Align, Border, Edges, Hover, Justify, Layout, Length, Node, PointerShape, Shadow, Style, Token,
-    Transition, UiEventKind,
+    Align, Border, Edges, Hover, Justify, Layout, Length, Node, PointerShape, Shadow, Style,
+    TextSize, Token, Transition, UiEventKind,
 };
 
 lokyr_plugin_sdk::export_plugin!(Search);
@@ -71,8 +72,14 @@ const FIELD_WIDTH: f32 = 260.0;
 
 /// The width of the count, which its text never changes, in points: of
 /// `9999 of 9999`, the longest of its numbers, which go short past it,
-/// and of its longest text, Italian's `Nessun risultato`.
-const COUNT_WIDTH: f32 = 112.0;
+/// and of its longest text, Italian's `Nessun risultato`, in the small
+/// text.
+const COUNT_WIDTH: f32 = 96.0;
+
+/// The most characters of a recent search that its item of the menu
+/// shows, past which it ends in an ellipsis, so that a long one keeps the
+/// menu narrow.
+const RECENT_LABEL: usize = 40;
 
 /// The side of a button of an icon, and of a toggle, in points, and of
 /// those in the field.
@@ -133,6 +140,50 @@ pub fn short(count: usize) -> String {
         10_000..1_000_000 => format!("{}K", count / 1000),
         _ => format!("{}M", count / 1_000_000),
     }
+}
+
+/// `text` as an item of a menu shows it, of `most` characters at most: cut
+/// before a character that starts a cluster of its own, as a mark, a
+/// joiner or a selector leans on the one before it, and ended in an
+/// ellipsis, when it has more.
+pub fn label(text: &str, most: usize) -> Cow<'_, str> {
+    if most == 0 || text.chars().count() <= most {
+        return Cow::Borrowed(text);
+    }
+    // The room of the ellipsis.
+    let kept = most - 1;
+    let mut cut = None;
+    let mut joined = false;
+    for (byte, char) in text.char_indices().take(kept + 1) {
+        if !joined && !leans(char) {
+            cut = Some(byte);
+        }
+        joined = char == '\u{200D}';
+    }
+    let cut = cut
+        .filter(|&cut| cut > 0)
+        .or_else(|| text.char_indices().nth(kept).map(|(byte, _)| byte))
+        .unwrap_or(text.len());
+    Cow::Owned(format!("{}\u{2026}", text[..cut].trim_end()))
+}
+
+/// Whether `char` leans on the character before it, in the same cluster:
+/// a combining mark, a joiner, a variation selector, a skin tone or a
+/// tag.
+fn leans(char: char) -> bool {
+    matches!(
+        char,
+        '\u{0300}'..='\u{036F}'
+            | '\u{1AB0}'..='\u{1AFF}'
+            | '\u{1DC0}'..='\u{1DFF}'
+            | '\u{200C}'..='\u{200D}'
+            | '\u{20D0}'..='\u{20FF}'
+            | '\u{FE00}'..='\u{FE0F}'
+            | '\u{FE20}'..='\u{FE2F}'
+            | '\u{1F3FB}'..='\u{1F3FF}'
+            | '\u{E0020}'..='\u{E007F}'
+            | '\u{E0100}'..='\u{E01EF}'
+    )
 }
 
 /// The config of `[plugins.search]`.
@@ -393,9 +444,11 @@ pub fn find_bar(view: &BarView, texts: &BarTexts) -> Node {
             width: Length::Points(0.0),
             ..Layout::default()
         })
-        // Of the search field's box, which it lies in, of no box of its own.
+        // Of the search field's box, which it lies in, of no box of its own,
+        // its text small as macOS's search fields' in a toolbar.
         .style(Style {
             background: Some(Token::from("transparent")),
+            text_size: Some(TextSize::Small),
             ..Style::default()
         });
     let field = Node::container(vec![
@@ -449,6 +502,7 @@ pub fn find_bar(view: &BarView, texts: &BarTexts) -> Node {
     let count = Node::container(vec![Node::text(view.count.as_str()).key(COUNT).style(
         Style {
             color: Some(Token::from("text.secondary")),
+            text_size: Some(TextSize::Small),
             ..Style::default()
         },
     )])
@@ -594,7 +648,8 @@ impl Plugin for Search {
                     .iter()
                     .enumerate()
                     .map(|(at, text)| {
-                        Node::button(text.as_str()).key(format!("{PAST_ITEM}{at}").as_str())
+                        Node::button(label(text, RECENT_LABEL))
+                            .key(format!("{PAST_ITEM}{at}").as_str())
                     })
                     .collect(),
             ));

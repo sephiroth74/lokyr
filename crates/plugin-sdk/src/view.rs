@@ -518,6 +518,9 @@ pub struct Style {
     /// round its box instead, as a search field's box, which holds its
     /// text field, its glass and its toggles, shows the ring of its text.
     pub holds_ring: bool,
+    /// The size of its text, a field's too, and of its children's that
+    /// name none; `None` for its parent's, and at the root the interface's.
+    pub text_size: Option<TextSize>,
     /// How the pointer looks over its box, and over its children's that
     /// name none; `None` for its parent's, and at the root the arrow.
     pub pointer: Option<PointerShape>,
@@ -593,6 +596,18 @@ pub enum Easing {
     EaseOut,
     /// Slow at its start and at its end.
     EaseInOut,
+}
+
+/// The size of a node's text, as the interface's text has it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum TextSize {
+    /// The interface's own size.
+    #[default]
+    Regular,
+    /// Smaller, as macOS's small controls have it: eleven thirteenths of
+    /// the interface's size, as a find bar's count and field save room.
+    Small,
 }
 
 /// How the pointer looks over a node.
@@ -1148,6 +1163,7 @@ mod tests {
             clip: true,
             hides_indicator: true,
             holds_ring: true,
+            text_size: Some(TextSize::Small),
             pointer: Some(PointerShape::PointingHand),
             opacity: Some(0.5),
             transition: Some(Transition::default()),

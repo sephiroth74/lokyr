@@ -13,7 +13,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::mem::{Discriminant, discriminant};
 
 use lokyr_plugin_sdk::host::TabId;
-use lokyr_plugin_sdk::view::{Key, Kind, Layout, Length, Node, Role, Style};
+use lokyr_plugin_sdk::view::{Key, Kind, Layout, Length, Node, Role, Style, TextSize};
 
 /// A node of the arena: its slot, and the slot's generation, which a node
 /// taken away ends, so that its id finds no other node in its slot.
@@ -249,6 +249,19 @@ impl Tree {
     /// The parent of `id`, if the tree has it and it is not the root.
     pub fn parent(&self, id: NodeId) -> Option<NodeId> {
         self.entry(id)?.parent
+    }
+
+    /// The size of the text of `id`: its style's, or its nearest parent's
+    /// that names one, or the interface's.
+    pub fn text_size(&self, id: NodeId) -> TextSize {
+        let mut at = Some(id);
+        while let Some(node) = at {
+            if let Some(size) = self.style(node).and_then(|style| style.text_size) {
+                return size;
+            }
+            at = self.parent(node);
+        }
+        TextSize::Regular
     }
 
     /// The children of `id`, in their order; none if the tree lacks it.

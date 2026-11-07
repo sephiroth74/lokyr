@@ -9,7 +9,7 @@
 use std::collections::BTreeSet;
 use std::time::Instant;
 
-use lokyr_plugin_sdk::view::{self, Hover, Kind, Style};
+use lokyr_plugin_sdk::view::{self, Hover, Kind, Style, TextSize};
 use lokyr_render_core::{Arc, Color, Item, PlacedGlyph, Rect, Shadow, Shape};
 use lokyr_text_core::FontBackend;
 
@@ -122,6 +122,7 @@ fn paint_of<B: FontBackend>(
     if let Some(root) = tree.root() {
         painter.node(root, inherited);
     }
+    painter.font.set_text_size(TextSize::Regular);
     let mut items = painter.items;
     match painter.ring {
         Some((ring, Some(clip))) => {
@@ -310,6 +311,7 @@ impl<'a, B: FontBackend> Painter<'a, B> {
         else {
             return;
         };
+        self.font.set_text_size(tree.text_size(id));
         let frame = Frame {
             x: frame.x + self.origin.0,
             y: frame.y + self.origin.1,

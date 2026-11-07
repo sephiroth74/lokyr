@@ -16,7 +16,7 @@
 use std::collections::HashMap;
 
 use lokyr_plugin_sdk::view::{
-    self, Align, Direction, Distribution, Justify, Kind, Length, ProgressShape,
+    self, Align, Direction, Distribution, Justify, Kind, Length, ProgressShape, TextSize,
 };
 use taffy::Overflow;
 use taffy::prelude::{
@@ -29,6 +29,11 @@ use crate::{field, progress, tabs, widget};
 
 /// What sizes the leaves of the view tree that take their content's size.
 pub trait Measure {
+    /// Takes `size` for the texts that it measures next, of a node whose
+    /// style or whose parent's names one; one that knows a single size
+    /// does nothing.
+    fn text_size(&mut self, _size: TextSize) {}
+
     /// The size of `text`, on one line, in points, its width and height.
     fn text(&mut self, text: &str) -> (f32, f32);
 
@@ -83,6 +88,8 @@ pub struct Frame {
 #[derive(Clone, Debug, PartialEq)]
 struct Leaf {
     content: Content,
+    /// The size of its text, of its style or its parents'.
+    size: TextSize,
     measured: Option<(f32, f32)>,
     /// The widths of its parts, in points, once measured: a control's
     /// segments'.
@@ -160,7 +167,7 @@ impl Layout {
                 continue;
             };
             let style = style_in(tree, id, style(kind, layout, self.scale, self.room));
-            let made = match leaf(kind) {
+            let made = match leaf(kind, tree.text_size(id)) {
                 Some(leaf) => self.taffy.new_leaf_with_context(style, leaf),
                 None => self.taffy.new_leaf(style),
             };
@@ -179,9 +186,12 @@ impl Layout {
                 node,
                 style_in(tree, id, style(kind, layout, self.scale, self.room)),
             );
-            let leaf = leaf(kind);
-            let kept = self.taffy.get_node_context(node).map(|kept| &kept.content);
-            if kept != leaf.as_ref().map(|leaf| &leaf.content) {
+            let leaf = leaf(kind, tree.text_size(id));
+            let kept = self
+                .taffy
+                .get_node_context(node)
+                .map(|kept| (&kept.content, kept.size));
+            if kept != leaf.as_ref().map(|leaf| (&leaf.content, leaf.size)) {
                 let _ = self.taffy.set_node_context(node, leaf);
             }
             if self.keep_control(tree, id) {
@@ -212,6 +222,31 @@ impl Layout {
             .chain(&controls)
         {
             self.set_children(tree, id);
+        }
+        // A node whose style changed may change its texts' size, and its
+        // children's that name none.
+        for &id in &changes.restyled {
+            self.size_texts(tree, id);
+        }
+    }
+
+    /// Takes the size of the texts of `id` of `tree` and of its subtree's,
+    /// measuring again those whose size changed.
+    fn size_texts(&mut self, tree: &Tree, id: NodeId) {
+        let mut left = vec![id];
+        while let Some(at) = left.pop() {
+            left.extend_from_slice(tree.children(at));
+            let Some(&node) = self.nodes.get(&at) else {
+                continue;
+            };
+            let size = tree.text_size(at);
+            if let Some(leaf) = self.taffy.get_node_context_mut(node)
+                && leaf.size != size
+            {
+                leaf.size = size;
+                leaf.measured = None;
+                let _ = self.taffy.mark_dirty(node);
+            }
         }
     }
 
@@ -246,6 +281,7 @@ impl Layout {
                     control,
                     Some(Leaf {
                         content,
+                        size: TextSize::Regular,
                         measured: None,
                         parts: Vec::new(),
                     }),
@@ -253,8 +289,11 @@ impl Layout {
             }
             return false;
         }
+        // A segmented control's labels keep the interface's size, as
+        // macOS's do.
         let leaf = Leaf {
             content,
+            size: TextSize::Regular,
             measured: None,
             parts: Vec::new(),
         };
@@ -426,7 +465,9 @@ impl Layout {
                     |known, _| {
                         let (width, height) = context.map_or((0.0, 0.0), |leaf| {
                             if leaf.measured.is_none() {
+                                measure.text_size(leaf.size);
                                 let (size, parts) = measured(&leaf.content, measure);
+                                measure.text_size(TextSize::Regular);
                                 leaf.measured = Some(size);
                                 leaf.parts = parts;
                             }
@@ -604,7 +645,7 @@ impl Layout {
 }
 
 /// What a node of `kind` holds to be measured, if its content sizes it.
-fn leaf(kind: &Kind) -> Option<Leaf> {
+fn leaf(kind: &Kind, size: TextSize) -> Option<Leaf> {
     let content = match kind {
         Kind::Text(text) => Content::Text(text.clone()),
         Kind::Icon(name) => Content::Icon(name.clone()),
@@ -625,6 +666,7 @@ fn leaf(kind: &Kind) -> Option<Leaf> {
     };
     Some(Leaf {
         content,
+        size,
         measured: None,
         parts: Vec::new(),
     })
@@ -818,16 +860,23 @@ mod tests {
     use super::*;
 
     /// A font of the tests': a text 6 points a character wide and 14 high,
-    /// an icon of 16, which counts what it measures.
+    /// 4 and 10 of the small size, an icon of 16, which counts what it
+    /// measures.
     #[derive(Default)]
     struct Fixed {
         measured: BTreeMap<String, usize>,
+        small: bool,
     }
 
     impl Measure for Fixed {
+        fn text_size(&mut self, size: TextSize) {
+            self.small = size == TextSize::Small;
+        }
+
         fn text(&mut self, text: &str) -> (f32, f32) {
             *self.measured.entry(text.to_owned()).or_default() += 1;
-            (6.0 * text.chars().count() as f32, 14.0)
+            let (width, height) = if self.small { (4.0, 10.0) } else { (6.0, 14.0) };
+            (width * text.chars().count() as f32, height)
         }
 
         fn icon(&mut self, name: &str) -> (f32, f32) {
@@ -870,6 +919,52 @@ mod tests {
             .iter()
             .map(|&child| layout.frame(tree, child).unwrap())
             .collect()
+    }
+
+    #[test]
+    fn a_small_text_measures_in_the_small_size_of_its_style_or_its_parent_s_as_it_changes() {
+        let bar = |size: Option<TextSize>| {
+            Node::container(vec![
+                Node::text("count").key("count"),
+                Node::field("Find").key("field").style(view::Style {
+                    text_size: Some(TextSize::Regular),
+                    ..view::Style::default()
+                }),
+            ])
+            .style(view::Style {
+                text_size: size,
+                ..view::Style::default()
+            })
+            .layout(view::Layout {
+                direction: Direction::Column,
+                align: Align::Start,
+                ..view::Layout::default()
+            })
+        };
+        let (mut tree, mut layout, mut font) = laid(&bar(Some(TextSize::Small)), 1.0, 200.0);
+        let width = |tree: &Tree, layout: &Layout, key: &str| {
+            let node = tree.by_key(&view::Key::from(key)).unwrap();
+            layout.frame(tree, node).unwrap().width
+        };
+        // The parent's small size, of 4 points a character; the field's own
+        // regular one, of its own.
+        assert_eq!(width(&tree, &layout, "count"), 20.0);
+        assert_eq!(
+            tree.text_size(tree.by_key(&view::Key::from("count")).unwrap()),
+            TextSize::Small
+        );
+        assert_eq!(
+            tree.text_size(tree.by_key(&view::Key::from("field")).unwrap()),
+            TextSize::Regular
+        );
+        // The parent's style changed: the child measured again, of 6.
+        let changes = tree.update(&bar(None)).unwrap();
+        layout.update(&tree, &changes);
+        layout.compute(&tree, Some(200.0), None, &mut font);
+        assert_eq!(width(&tree, &layout, "count"), 30.0);
+        assert_eq!(font.measured["count"], 2);
+        // A measure leaves the font of the regular size.
+        assert!(!font.small);
     }
 
     #[test]

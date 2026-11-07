@@ -28,7 +28,7 @@ use std::collections::HashMap;
 use std::ops::Range;
 use std::rc::Rc;
 
-use lokyr_plugin_sdk::view::{Key as NodeKey, Kind, UiEventKind};
+use lokyr_plugin_sdk::view::{Key as NodeKey, Kind, TextSize, UiEventKind};
 use lokyr_vt_core::input::{Key, KeyAction, KeyEvent, Keypad};
 use lokyr_vt_core::unicode::Segmenter;
 
@@ -59,6 +59,25 @@ pub trait Carets {
     /// text's start, then the text's end and the caret's place after its
     /// last cluster.
     fn carets(&mut self, text: &str) -> Rc<[(usize, f32)]>;
+
+    /// Takes `size` for the texts whose places it gives next, of a field
+    /// whose style or whose parent's names one; one that knows a single
+    /// size does nothing.
+    fn text_size(&mut self, _size: TextSize) {}
+}
+
+/// The places of `text` as [`Carets::carets`] gives them, in the size of
+/// the text of the field `node` of `tree`.
+fn sized_carets(
+    carets: &mut dyn Carets,
+    tree: &Tree,
+    node: NodeId,
+    text: &str,
+) -> Rc<[(usize, f32)]> {
+    carets.text_size(tree.text_size(node));
+    let places = carets.carets(text);
+    carets.text_size(TextSize::Regular);
+    places
 }
 
 /// The caret's place at `byte`, in `places` as [`Carets::carets`] gives
@@ -574,7 +593,7 @@ impl Fields {
             }
             None => ("", 0..0),
         };
-        let places = carets.carets(text);
+        let places = sized_carets(carets, tree, node, text);
         let x = |byte: usize| {
             let scroll = state.map_or(0.0, FieldState::scroll);
             frame.x + (PADDING.1 + place(&places, byte) - scroll) * scale
@@ -703,7 +722,7 @@ impl Fields {
                     .as_ref()
                     .map_or(state.caret, |(composition, _)| composition.end)
             });
-            let places = carets.carets(&showing.text);
+            let places = sized_carets(carets, tree, node, &showing.text);
             // The text's room, of its places' leftmost and rightmost.
             let width = places.iter().fold(0.0_f32, |width, &(_, x)| width.max(x));
             let caret = place(&places, at);
@@ -761,8 +780,7 @@ fn caret_at(
     let frame = layout.frame(tree, node)?;
     let scale = layout.scale();
     let points = (x - frame.x) / scale - PADDING.1 + state.scroll;
-    carets
-        .carets(&state.text)
+    sized_carets(carets, tree, node, &state.text)
         .iter()
         .min_by(|(_, a), (_, b)| (a - points).abs().total_cmp(&(b - points).abs()))
         .map(|&(byte, _)| byte)
