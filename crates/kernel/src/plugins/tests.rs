@@ -3611,10 +3611,13 @@ fn held_row_text(app: &App, pane: PaneId, row: i64) -> Option<String> {
 #[test]
 fn a_search_finds_as_output_arrives_a_part_at_a_time_from_the_view_outward() {
     let mut app = App::default();
-    // A match on every tenth row, the program printing as the search goes.
+    // A match on every tenth row, the program printing as the search goes,
+    // of rows that the scrollback's limit of 10 MiB holds whole, so that
+    // none that a part found goes before the checks, as a slow machine
+    // ends the search before the program ends.
     let window = window(
         &mut app,
-        "seq 1 30000 | sed 's/7$/7 needle/'; echo ready; sleep 30",
+        "seq 1 10000 | sed 's/7$/7 needle/'; echo ready; sleep 30",
     );
     let pane = app.workspace.active_pane(window).unwrap();
     row_once(&app, pane, 0, "1");
@@ -3635,18 +3638,16 @@ fn a_search_finds_as_output_arrives_a_part_at_a_time_from_the_view_outward() {
     unique.sort_by_key(|found| (found.first.1, found.first.0));
     unique.dedup();
     assert_eq!(unique.len(), all.len(), "a match told twice");
-    // Those of the rows that the scrollback holds still, as its limit
-    // takes the oldest as the program prints on.
-    let mut held = 0;
+    // Each on its row, which the scrollback holds still.
     for found in &all {
         assert_eq!(found.last, (found.first.0 + 5, found.first.1));
-        let Some(text) = held_row_text(&app, pane, found.first.1) else {
-            continue;
-        };
-        assert!(text.ends_with("7 needle"), "{found:?}: {text:?}");
-        held += 1;
+        let text = held_row_text(&app, pane, found.first.1);
+        assert!(
+            text.as_deref()
+                .is_some_and(|text| text.ends_with("7 needle")),
+            "{found:?}: {text:?}"
+        );
     }
-    assert!(held > 0);
     // The view's part first, of the rows of a screen, as the program
     // printed on.
     assert!(parts.len() > 1, "{} parts", parts.len());
