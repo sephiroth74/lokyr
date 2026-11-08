@@ -205,6 +205,10 @@ bench: vtebench
 release-charts:
     python3 tools/bench/releases.py
 
+# Check target/Lokyr.app end to end, built first, as a hand would use it: windows, tabs, splits, keys and the find bar, through the system's synthetic events and the app's accessibility tree; it takes the Accessibility permission of the app that runs it, and the keyboard's focus for about a minute, so leave the Mac alone meanwhile. `just e2e --dump` prints the app's tree.
+e2e *args: bundle
+    cargo run --locked -p lokyr-e2e -- {{args}}
+
 # Measure the search of 100 000 lines of 80 columns through the search service, as the find bar asks for it: until its first match shows, and until it counted them all, the median of five, of a release build; on an idle machine.
 bench-search:
     cargo test --locked --release -p lokyr-kernel --lib -- --ignored --nocapture the_search_of_100k_lines
