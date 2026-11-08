@@ -234,20 +234,33 @@ fn a_closed_pane_s_header_goes_and_a_moved_one_s_opens_anew() {
     assert!(plugin.panes.is_empty());
 }
 
-/// The config of `text_size` and `align`.
-fn config(text_size: &str, align: &str) -> Data {
+/// A config of the pairs of `values`, texts, numbers or integers.
+fn config(values: &[(&str, Data)]) -> Data {
     Data::Map(
-        [
-            ("text-size".to_owned(), Data::Text(text_size.to_owned())),
-            ("align".to_owned(), Data::Text(align.to_owned())),
-        ]
-        .into(),
+        values
+            .iter()
+            .map(|(key, value)| ((*key).to_owned(), value.clone()))
+            .collect(),
     )
 }
 
-/// The rendered header's pill's text size and radius, and the widths of
-/// the hairlines on its sides, a length of points or one that grows.
-fn looks(host: &mut FakeHost, plugin: &mut Header) -> (TextSize, f32, [Option<f32>; 2]) {
+fn text(value: &str) -> Data {
+    Data::Text(value.to_owned())
+}
+
+/// The rendered header's look: its pill's tokens, of its background, its
+/// text, its border and its hover, and its line's; its text's family, size
+/// and weight; its padding, across and down; and the widths of the
+/// hairlines on its sides, a length of points or one that grows.
+#[derive(Debug, PartialEq)]
+struct Look {
+    tokens: [String; 5],
+    font: (Option<FontFamily>, Option<f32>, Option<FontWeight>),
+    padding: (f32, f32),
+    sides: [Option<f32>; 2],
+}
+
+fn look(host: &mut FakeHost, plugin: &mut Header) -> Look {
     let tree = host
         .render(plugin, &ViewId::Panel(panel(PANE)))
         .expect("a header");
@@ -258,61 +271,95 @@ fn looks(host: &mut FakeHost, plugin: &mut Header) -> (TextSize, f32, [Option<f3
         Length::Points(points) => Some(points),
         _ => None,
     };
-    (
-        pill.style.text_size.unwrap(),
-        pill.style.radius,
-        [width(before), width(after)],
-    )
+    let name = |token: Option<&Token>| token.map(|token| token.0.clone()).unwrap_or_default();
+    let style = &pill.style;
+    // Round at either end.
+    assert!(style.radius >= 50.0, "{style:?}");
+    Look {
+        tokens: [
+            name(style.background.as_ref()),
+            name(style.color.as_ref()),
+            name(style.border.as_ref().map(|border| &border.color)),
+            name(
+                style
+                    .hover
+                    .as_ref()
+                    .and_then(|hover| hover.background.as_ref()),
+            ),
+            name(before.style.background.as_ref()),
+        ],
+        font: (style.font_family, style.font_size, style.font_weight),
+        padding: (pill.layout.padding.left, pill.layout.padding.top),
+        sides: [width(before), width(after)],
+    }
 }
 
 #[test]
-fn the_config_sets_the_text_s_size_and_the_pill_s_place_and_the_theme_its_colors() {
+fn the_config_names_the_theme_s_tokens_and_sets_the_text_the_padding_and_the_place() {
     let (mut host, mut plugin) = host();
     assert_eq!(
         scrolled(&mut host, &mut plugin, 10).as_deref(),
         Some("ls -l")
     );
-    // The defaults: small text, a little in from the left.
+    // The defaults: the panels' colors, the terminal's font of its own
+    // size and face, a little in from the left.
+    let defaults = |tokens: [&str; 5]| tokens.map(str::to_owned);
     assert_eq!(
-        looks(&mut host, &mut plugin),
-        (TextSize::Small, 9.0, [Some(LEAD), None])
+        look(&mut host, &mut plugin),
+        Look {
+            tokens: defaults([
+                "panel.bg",
+                "text",
+                "panel.border",
+                "button.hover.bg",
+                "panel.border"
+            ]),
+            font: (Some(FontFamily::Terminal), None, Some(FontWeight::Regular)),
+            padding: (8.0, 1.0),
+            sides: [Some(LEAD), None],
+        }
     );
-    // The theme's tokens of its own.
-    let tree = host
-        .render(&mut plugin, &ViewId::Panel(panel(PANE)))
-        .unwrap();
-    let pill = &tree.children[1];
-    assert_eq!(
-        (
-            pill.style.background.clone(),
-            pill.style.color.clone(),
-            pill.style.border.clone().map(|border| border.color),
-            pill.style.hover.clone().and_then(|hover| hover.background),
-            tree.children[0].style.background.clone(),
-        ),
-        (
-            Some(Token::from("command-header.bg")),
-            Some(Token::from("command-header.fg")),
-            Some(Token::from("command-header.border")),
-            Some(Token::from("command-header.hover.bg")),
-            Some(Token::from("command-header.line")),
-        )
-    );
-    // A change renders the header that shows again.
+    // A change renders the header that shows again, of its tokens, its
+    // text, its padding and its place.
     host.take_renders();
-    host.set_config(config("regular", "center"));
+    host.set_config(config(&[
+        ("border", text("accent")),
+        ("background", text("field.bg")),
+        ("font-size", Data::Number(15.5)),
+        ("font-weight", text("semibold")),
+        ("padding-x", Data::Integer(12)),
+        ("padding-y", Data::Number(3.0)),
+        ("align", text("center")),
+    ]));
     host.deliver(&mut plugin).unwrap();
     assert_eq!(host.take_renders(), [ViewId::Panel(panel(PANE))]);
     assert_eq!(
-        looks(&mut host, &mut plugin),
-        (TextSize::Regular, 11.0, [None, None])
+        look(&mut host, &mut plugin),
+        Look {
+            tokens: defaults([
+                "field.bg",
+                "text",
+                "accent",
+                "button.hover.bg",
+                "panel.border"
+            ]),
+            font: (
+                Some(FontFamily::Terminal),
+                Some(15.5),
+                Some(FontWeight::Semibold)
+            ),
+            padding: (12.0, 3.0),
+            sides: [None, None],
+        }
     );
-    host.set_config(config("small", "right"));
+    // 0 for the terminal's size; on the right.
+    host.set_config(config(&[
+        ("font-size", Data::Integer(0)),
+        ("align", text("right")),
+    ]));
     host.deliver(&mut plugin).unwrap();
-    assert_eq!(
-        looks(&mut host, &mut plugin),
-        (TextSize::Small, 9.0, [None, Some(LEAD)])
-    );
+    let right = look(&mut host, &mut plugin);
+    assert_eq!((right.font.1, right.sides), (None, [None, Some(LEAD)]));
     // The same config asks nothing.
     host.take_renders();
     host.post(Event::ConfigChanged);
@@ -329,7 +376,21 @@ fn the_guide_tells_every_key_of_the_schema_in_its_example_and_its_section() {
         .filter_map(|line| line.strip_prefix("    \"")?.split_once("\": {"))
         .map(|(key, _)| key)
         .collect();
-    assert_eq!(keys, ["text-size", "align"]);
+    assert_eq!(
+        keys,
+        [
+            "background",
+            "text",
+            "border",
+            "line",
+            "hover",
+            "font-size",
+            "font-weight",
+            "padding-x",
+            "padding-y",
+            "align"
+        ]
+    );
     let example = guide
         .split_once("\n[plugins.command-header]\n")
         .and_then(|(_, rest)| rest.split_once("```"))
@@ -349,8 +410,12 @@ fn the_guide_tells_every_key_of_the_schema_in_its_example_and_its_section() {
                 .any(|line| line.starts_with(&format!("{key} = "))),
             "`{key}` in the example"
         );
+        // A heading of its own, or of keys alike, as `padding-x`, `padding-y`.
         assert!(
-            section.contains(&format!("\n### `{key}`\n")),
+            section
+                .lines()
+                .filter(|line| line.starts_with("### "))
+                .any(|line| line.contains(&format!("`{key}`"))),
             "`{key}` in the section"
         );
     }

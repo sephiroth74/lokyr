@@ -163,11 +163,6 @@ const LIGHT_TOKENS: &[TokenColor] = &[
     ("gutter.running", 0x0a64d8, 1.0),
     ("gutter.succeeded", 0x000000, 0.22),
     ("gutter.failed", 0xd63b3b, 1.0),
-    ("command-header.bg", 0xf6f6f6, 1.0),
-    ("command-header.fg", 0x1e1e20, 1.0),
-    ("command-header.border", 0x000000, 0.14),
-    ("command-header.line", 0x000000, 0.14),
-    ("command-header.hover.bg", 0x000000, 0.1),
 ];
 
 /// The interface's colors in the dark variant.
@@ -224,11 +219,6 @@ const DARK_TOKENS: &[TokenColor] = &[
     ("gutter.running", 0x4c9bff, 1.0),
     ("gutter.succeeded", 0xffffff, 0.25),
     ("gutter.failed", 0xff5f57, 1.0),
-    ("command-header.bg", 0x2a2a2d, 1.0),
-    ("command-header.fg", 0xe6e6e6, 1.0),
-    ("command-header.border", 0xffffff, 0.12),
-    ("command-header.line", 0xffffff, 0.12),
-    ("command-header.hover.bg", 0xffffff, 0.12),
 ];
 
 /// The built-in theme, of a light and a dark variant, and of the man
@@ -487,12 +477,6 @@ pub fn derived(terminal: &TerminalColors) -> Tokens {
         ("gutter.running", accent),
         ("gutter.succeeded", veil(pick(0.22, 0.25))),
         ("gutter.failed", palette[1]),
-        // The command's header, a pill of a panel's colors on a hairline.
-        ("command-header.bg", panel),
-        ("command-header.fg", fg),
-        ("command-header.border", veil(pick(0.14, 0.12))),
-        ("command-header.line", veil(pick(0.14, 0.12))),
-        ("command-header.hover.bg", veil(pick(0.1, 0.12))),
         // The terminal's own, as a bar of its colors takes them.
         ("terminal.bg", bg),
         ("terminal.fg", fg),
@@ -850,14 +834,6 @@ mod tests {
             assert!(
                 ratio >= (own * 0.9).min(4.5),
                 "{name}: text on its panel: {ratio:.2} of {own:.2}"
-            );
-            let ratio = contrast(
-                opaque(token("command-header.fg")),
-                opaque(token("command-header.bg")),
-            );
-            assert!(
-                ratio >= (own * 0.9).min(4.5),
-                "{name}: the command's header: {ratio:.2} of {own:.2}"
             );
             let ratio = contrast(opaque(token("text.secondary")), panel);
             assert!(

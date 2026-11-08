@@ -9,7 +9,7 @@
 use std::collections::BTreeSet;
 use std::time::Instant;
 
-use lokyr_plugin_sdk::view::{self, Hover, Kind, Style, TextSize};
+use lokyr_plugin_sdk::view::{self, Hover, Kind, Style};
 use lokyr_render_core::{Arc, Color, Item, PlacedGlyph, Rect, Shadow, Shape};
 use lokyr_text_core::FontBackend;
 
@@ -19,7 +19,7 @@ use crate::font::Font;
 use crate::layout::{Frame, Layout, Measure};
 use crate::list::Lists;
 use crate::theme::Tokens;
-use crate::tree::{NodeId, Tree};
+use crate::tree::{NodeId, Tree, Typeset};
 use crate::{tabs, widget};
 
 /// The width of the ring of the keyboard's focus, outside its node's box,
@@ -128,7 +128,7 @@ fn paint_of<B: FontBackend>(
     if let Some(root) = tree.root() {
         painter.node(root, inherited);
     }
-    painter.font.set_text_size(TextSize::Regular);
+    painter.font.set_typeset(Typeset::default());
     let mut items = painter.items;
     match painter.ring {
         Some((ring, Some(clip))) => {
@@ -318,7 +318,7 @@ impl<'a, B: FontBackend> Painter<'a, B> {
         else {
             return;
         };
-        self.font.set_text_size(tree.text_size(id));
+        self.font.set_typeset(tree.typeset(id));
         let frame = Frame {
             x: frame.x + self.origin.0,
             y: frame.y + self.origin.1,

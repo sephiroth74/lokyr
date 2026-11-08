@@ -2,7 +2,7 @@
 
 <sub>`lokyr/command-header` · bundled · [source](../../plugins/command-header)</sub>
 
-The command whose output you are looking at, at the top of its pane, once its line has scrolled above the view: a pill of the command as you typed it, on a thin line across the pane.
+The command whose output you are looking at, at the top of its pane, once its line has scrolled above the view: a pill of the command as you typed it, in the terminal's font, on a thin line across the pane.
 
 ## The header
 
@@ -20,35 +20,24 @@ Its keys go in [`[plugins.command-header]`](../CONFIGURATION.md#pluginscommand-h
 
 | Key | Values | Default | What it does |
 |---|---|---|---|
-| `text-size` | `"small"`, `"regular"` | `"small"` | The size of the header's text: macOS's small controls', or the interface's own |
+| `background`, `text`, `border`, `line`, `hover` | a theme's token, by its name | `"panel.bg"`, `"text"`, `"panel.border"`, `"panel.border"`, `"button.hover.bg"` | The pill's background, its text, its border, the line across the pane, and the color over the pill's background under the pointer |
+| `font-size` | points, `0` to `200` | `0` | The text's size, in the terminal's font; `0` for the terminal's own size |
+| `font-weight` | `"light"`, `"regular"`, `"medium"`, `"semibold"`, `"bold"`, `"heavy"` | `"regular"` | The text's weight, the terminal's font's face nearest to it; `regular` the terminal's own face |
+| `padding-x`, `padding-y` | points, `0` to `40` and `0` to `20` | `8`, `1` | The room in the pill left and right of the text, and above and below it |
 | `align` | `"left"`, `"center"`, `"right"` | `"left"` | Where the pill sits along the line across the pane |
 
 ```toml
 [plugins.command-header]
-text-size = "regular"
+border = "accent"
+font-size = 12
+font-weight = "semibold"
+padding-x = 10
 align = "center"
 ```
 
 ## Colors
 
-Its colors are the theme's, as every color of Lokyr is, so that they follow the light and the dark appearance: by default the pill takes the panels' background and border and the interface's text, and the line the border's color. A theme of your own changes them, in a section `[command-header]` of its file, beside the theme that it extends, as [`[theme]`](../CONFIGURATION.md#theme) tells:
-
-```toml
-# ~/.config/lokyr/themes/My Dark.toml
-[theme]
-name = "My Dark"
-variant = "dark"
-extends = "Lokyr Dark"
-
-[command-header]
-bg = "#2b2b40"                       # the pill's background
-fg = "#e0e0ff"                       # its text
-border = "#5a5aff80"                 # its border
-line = "#5a5aff40"                   # the line across the pane
-hover.bg = "#ffffff1a"               # over the pill's background, under the pointer
-```
-
-and `dark = "My Dark"` in the config's [`[theme]`](../CONFIGURATION.md#theme). A theme that gives none of them colors the header of its own panels' colors.
+The header's colors are the theme's tokens that its keys name, so that they follow the light and the dark appearance, and a theme's colors: by default the pill takes the panels' background and border and the interface's text, and the line the border's color. Any token of the theme goes, as `accent`, `field.bg`, `text.secondary` or `tabs.active.bg`, as a theme's `[interface]` lists them.
 
 ## Turning it off
 

@@ -162,7 +162,7 @@ fn the_command_header_s_section_is_checked_against_its_schema() {
     let path = directory.join("config.toml");
     std::fs::write(
         &path,
-        "[plugins.command-header]\ntext-size = \"regular\"\nalign = \"middle\"\n",
+        "[plugins.command-header]\nborder = \"accent\"\nalign = \"middle\"\n",
     )
     .unwrap();
     let mut fake = Fake::default();
@@ -178,7 +178,7 @@ fn the_command_header_s_section_is_checked_against_its_schema() {
     // Of its values, it takes the section.
     std::fs::write(
         &path,
-        "[plugins.command-header]\ntext-size = \"regular\"\nalign = \"center\"\n",
+        "[plugins.command-header]\nborder = \"accent\"\nfont-weight = \"bold\"\npadding-x = 10\n",
     )
     .unwrap();
     change(&mut fake, &mut app);

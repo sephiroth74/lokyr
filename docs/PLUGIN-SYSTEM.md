@@ -287,6 +287,9 @@ type Style = {
     holds_ring: boolean?, -- the ring of the keyboard's focus of a node inside it round its own box, as a search field's box round its text
     hides_ring: boolean?, -- no ring of the keyboard's focus round it, as a palette's field, whose caret alone tells it
     text_size: ("regular" | "small" | "large")?, -- its texts' size, its children's too, unless they give their own: small, eleven thirteenths of the interface's, as a find bar's count and field; large, eighteen thirteenths, as a palette's field
+    font_size: number?, -- its texts' size in points, 4 to 200, in place of text_size's, its children's too
+    font_weight: ("light" | "regular" | "medium" | "semibold" | "bold" | "heavy")?, -- its texts' weight, its family's face nearest to it, its children's too; regular of the terminal's family its own face
+    font_family: ("interface" | "terminal")?, -- its texts' family, its children's too: the interface's, or the terminal's, of [font]'s face and size, as a command's line
     background: Color?,
     foreground: Color?,
     corner_radius: number?,

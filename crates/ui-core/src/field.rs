@@ -28,13 +28,13 @@ use std::collections::HashMap;
 use std::ops::Range;
 use std::rc::Rc;
 
-use lokyr_plugin_sdk::view::{Key as NodeKey, Kind, TextSize, UiEventKind};
+use lokyr_plugin_sdk::view::{Key as NodeKey, Kind, UiEventKind};
 use lokyr_vt_core::input::{Key, KeyAction, KeyEvent, Keypad};
 use lokyr_vt_core::unicode::Segmenter;
 
 use crate::layout::{Frame, Layout};
 use crate::pointer::NodeEvent;
-use crate::tree::{NodeId, Tree};
+use crate::tree::{NodeId, Tree, Typeset};
 
 /// The room inside a field's edges, in points: down, above and below its
 /// line, and across, before and after its text.
@@ -60,23 +60,23 @@ pub trait Carets {
     /// last cluster.
     fn carets(&mut self, text: &str) -> Rc<[(usize, f32)]>;
 
-    /// Takes `size` for the texts whose places it gives next, of a field
-    /// whose style or whose parent's names one; one that knows a single
-    /// size does nothing.
-    fn text_size(&mut self, _size: TextSize) {}
+    /// Takes `typeset` for the texts whose places it gives next, of a
+    /// field whose style or whose parent's names a size or a weight; one
+    /// that knows a single face does nothing.
+    fn typeset(&mut self, _typeset: Typeset) {}
 }
 
-/// The places of `text` as [`Carets::carets`] gives them, in the size of
-/// the text of the field `node` of `tree`.
+/// The places of `text` as [`Carets::carets`] gives them, in the size and
+/// the weight of the text of the field `node` of `tree`.
 fn sized_carets(
     carets: &mut dyn Carets,
     tree: &Tree,
     node: NodeId,
     text: &str,
 ) -> Rc<[(usize, f32)]> {
-    carets.text_size(tree.text_size(node));
+    carets.typeset(tree.typeset(node));
     let places = carets.carets(text);
-    carets.text_size(TextSize::Regular);
+    carets.typeset(Typeset::default());
     places
 }
 

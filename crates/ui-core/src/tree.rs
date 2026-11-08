@@ -13,7 +13,9 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::mem::{Discriminant, discriminant};
 
 use lokyr_plugin_sdk::host::TabId;
-use lokyr_plugin_sdk::view::{Key, Kind, Layout, Length, Node, Role, Style, TextSize};
+use lokyr_plugin_sdk::view::{
+    FontFamily, FontWeight, Key, Kind, Layout, Length, Node, Role, Style, TextSize,
+};
 
 /// A node of the arena: its slot, and the slot's generation, which a node
 /// taken away ends, so that its id finds no other node in its slot.
@@ -121,6 +123,21 @@ struct Entry {
 struct Slot {
     generation: u32,
     entry: Option<Entry>,
+}
+
+/// How a node's text is set, as its style and its parents' have it: its
+/// family, its size, one of the family's or, in its place, one in points;
+/// and its weight.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Typeset {
+    /// The interface's size that it takes, without points.
+    pub size: TextSize,
+    /// Its size in points, which takes the place of `size`'s.
+    pub points: Option<f32>,
+    /// Its weight.
+    pub weight: FontWeight,
+    /// Its family.
+    pub family: FontFamily,
 }
 
 /// A view tree, as a flat arena of nodes.
@@ -249,6 +266,38 @@ impl Tree {
     /// The parent of `id`, if the tree has it and it is not the root.
     pub fn parent(&self, id: NodeId) -> Option<NodeId> {
         self.entry(id)?.parent
+    }
+
+    /// How the text of `id` is set: its size, of its style or of its
+    /// nearest parent's that names one, a size in points or one of its
+    /// family's; its weight and its family, each of its style or of its
+    /// nearest parent's that names one; the interface's regular text
+    /// otherwise.
+    pub fn typeset(&self, id: NodeId) -> Typeset {
+        let mut typeset = Typeset::default();
+        let (mut sized, mut weighed, mut named) = (false, false, false);
+        let mut at = Some(id);
+        while let Some(node) = at
+            && !(sized && weighed && named)
+        {
+            if let Some(style) = self.style(node) {
+                if !sized && (style.font_size.is_some() || style.text_size.is_some()) {
+                    typeset.points = style.font_size;
+                    typeset.size = style.text_size.unwrap_or_default();
+                    sized = true;
+                }
+                if !weighed && let Some(weight) = style.font_weight {
+                    typeset.weight = weight;
+                    weighed = true;
+                }
+                if !named && let Some(family) = style.font_family {
+                    typeset.family = family;
+                    named = true;
+                }
+            }
+            at = self.parent(node);
+        }
+        typeset
     }
 
     /// The size of the text of `id`: its style's, or its nearest parent's
@@ -661,6 +710,58 @@ mod tests {
             Node::spacer(),
             Node::text(status).key("status"),
         ])
+    }
+
+    #[test]
+    fn a_node_s_typeset_takes_each_part_of_its_nearest_style_that_names_it() {
+        use lokyr_plugin_sdk::view::{FontFamily, FontWeight};
+
+        let styled = |style: Style, children: Vec<Node>| {
+            let mut node = Node::container(children).style(style);
+            node.key = None;
+            node
+        };
+        let leaf = Node::text("leaf").key("leaf");
+        let middle = styled(
+            Style {
+                font_size: Some(15.0),
+                ..Style::default()
+            },
+            vec![leaf],
+        );
+        let root = styled(
+            Style {
+                text_size: Some(TextSize::Small),
+                font_weight: Some(FontWeight::Bold),
+                font_family: Some(FontFamily::Terminal),
+                ..Style::default()
+            },
+            vec![middle],
+        );
+        let mut tree = Tree::default();
+        tree.update(&root).unwrap();
+        let leaf = tree.by_key(&Key::from("leaf")).unwrap();
+        // The size of the nearest that names one, its points in place of
+        // the root's size; the weight and the family of the root's.
+        assert_eq!(
+            tree.typeset(leaf),
+            Typeset {
+                size: TextSize::Regular,
+                points: Some(15.0),
+                weight: FontWeight::Bold,
+                family: FontFamily::Terminal,
+            }
+        );
+        let root = tree.root().unwrap();
+        assert_eq!(
+            tree.typeset(root),
+            Typeset {
+                size: TextSize::Small,
+                points: None,
+                weight: FontWeight::Bold,
+                family: FontFamily::Terminal,
+            }
+        );
     }
 
     #[test]

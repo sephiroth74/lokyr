@@ -7,7 +7,7 @@ use std::hash::{Hash, Hasher};
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
-use lokyr_plugin_sdk::view::TextSize;
+use lokyr_plugin_sdk::view::{FontFamily, FontWeight, TextSize};
 use lokyr_render_core::{AtlasRegion, Color, PlacedGlyph, Texture, TextureUpdate};
 use lokyr_text_core::{
     Atlas, BitmapFormat, CellMetrics, Change, Face, FaceError, FaceId, Faces, FastMap, Features,
@@ -21,6 +21,7 @@ use crate::interface::{self, InterfaceConfig, InterfaceFace};
 use crate::layout::Measure;
 use crate::pane::{AtlasGlyph, CellText, Glyphs as GlyphSource, Run, RunGlyph};
 use crate::text::TextConfig;
+use crate::tree::Typeset;
 
 /// The face of the glyphs that the terminal draws itself, of box drawing
 /// and of the powerline symbols, whose glyph is their character's code.
@@ -70,6 +71,12 @@ pub const SMALL: f32 = 11.0 / 13.0;
 /// The share of the interface's size that its large text takes: eighteen
 /// points of thirteen, as a palette's field.
 pub const LARGE: f32 = 18.0 / 13.0;
+
+/// The fewest points of a node's text, as the interface's font's are.
+pub const MOST_SMALL: f32 = 4.0;
+
+/// The most points of a node's text.
+pub const MOST_LARGE: f32 = 200.0;
 
 /// VARIATION SELECTOR-16, which asks for a character's emoji.
 const EMOJI_PRESENTATION: char = '\u{FE0F}';
@@ -219,13 +226,16 @@ pub struct Font<B> {
     /// interface finds it, so that a window without them, and the app's
     /// start, do not pay for it.
     interface: Option<InterfaceFace>,
-    /// The interface's small face and its large one, of the same family,
-    /// once a text of their size asks for it.
-    interface_small: Option<InterfaceFace>,
-    interface_large: Option<InterfaceFace>,
-    /// The size of the interface's texts, as the node that they are
+    /// The terminal's regular face at its size, as an interface's text of
+    /// its family takes it, once one asks for it.
+    terminal_text: Option<InterfaceFace>,
+    /// The interface's faces of other sizes and weights, of its family or
+    /// the terminal's, by their families, their points' bits and their
+    /// weights, once a text of theirs asks for one.
+    interfaces: FastMap<(FontFamily, u32, FontWeight), InterfaceFace>,
+    /// How the interface's texts are set, as the node that they are
     /// measured or drawn for has it.
-    size: TextSize,
+    typeset: Typeset,
     /// The glyph of each icon's character in the symbols' font, once
     /// asked for.
     icons: FastMap<char, Option<GlyphId>>,
@@ -503,9 +513,9 @@ impl<B: FontBackend> Font<B> {
             deferred: FastMap::default(),
             interface_config: InterfaceConfig::default(),
             interface: None,
-            interface_small: None,
-            interface_large: None,
-            size: TextSize::Regular,
+            terminal_text: None,
+            interfaces: FastMap::default(),
+            typeset: Typeset::default(),
             icons: FastMap::default(),
             icon_pixels: FastMap::default(),
             carets: Vec::new(),
@@ -1118,53 +1128,92 @@ impl<B: FontBackend> Font<B> {
     pub fn set_interface(&mut self, config: &InterfaceConfig) {
         self.interface_config = config.clone();
         self.interface = None;
-        self.interface_small = None;
-        self.interface_large = None;
+        self.terminal_text = None;
+        self.interfaces.clear();
+    }
+
+    /// Takes `typeset` for the interface's texts that it measures and draws
+    /// next, until another one.
+    pub fn set_typeset(&mut self, typeset: Typeset) {
+        self.typeset = typeset;
     }
 
     /// Takes `size` for the interface's texts that it measures and draws
-    /// next, until another size.
+    /// next, of the regular weight, until another size.
     pub fn set_text_size(&mut self, size: TextSize) {
-        self.size = size;
+        self.typeset = Typeset {
+            size,
+            ..Typeset::default()
+        };
     }
 
     /// The face of the interface's text, found the first time: the one that
     /// [`Font::set_interface`]'s configuration names; the default one where
     /// that fails, as the log tells; the terminal's face where the system
     /// has no interface family; of [`SMALL`] or [`LARGE`] of its size where
-    /// [`Font::set_text_size`] took the small one or the large one.
+    /// [`Font::set_typeset`] took the small one or the large one, or of the
+    /// points that it took, from 4 to 200, and of the family's face nearest
+    /// to the weight that it took. A typeset of the terminal's family takes
+    /// its regular face and its size, as `[font]` names them, in the place
+    /// of the interface's.
     pub fn interface(&mut self) -> &InterfaceFace {
-        let (backend, resolved, config) =
-            (&mut self.backend, &self.resolved, &self.interface_config);
-        let regular = self.interface.get_or_insert_with(|| {
-            InterfaceFace::new(backend, config)
-                .or_else(|error| {
-                    eprintln!("lokyr: the interface's font is the default one, {error}");
-                    let default = InterfaceConfig {
-                        font_family: None,
-                        ..config.clone()
-                    };
-                    InterfaceFace::new(backend, &default)
-                })
-                .unwrap_or_else(|_| {
-                    InterfaceFace::of(
-                        backend,
-                        resolved.family.clone(),
-                        None,
-                        resolved.faces.regular.id,
-                        config.font_size.points(),
-                    )
-                })
-        });
-        match self.size {
-            TextSize::Regular => regular,
-            TextSize::Small => self
-                .interface_small
-                .get_or_insert_with(|| regular.sized(backend, regular.size() * SMALL)),
-            TextSize::Large => self
-                .interface_large
-                .get_or_insert_with(|| regular.sized(backend, regular.size() * LARGE)),
+        let (backend, resolved, config, interfaces, typeset) = (
+            &mut self.backend,
+            &self.resolved,
+            &self.interface_config,
+            &mut self.interfaces,
+            self.typeset,
+        );
+        let terminal_points = self.config.size.points();
+        let regular = match typeset.family {
+            FontFamily::Terminal => self.terminal_text.get_or_insert_with(|| {
+                InterfaceFace::of(
+                    backend,
+                    resolved.family.clone(),
+                    None,
+                    resolved.faces.regular.id,
+                    terminal_points,
+                )
+            }),
+            FontFamily::Interface => self.interface.get_or_insert_with(|| {
+                InterfaceFace::new(backend, config)
+                    .or_else(|error| {
+                        eprintln!("lokyr: the interface's font is the default one, {error}");
+                        let default = InterfaceConfig {
+                            font_family: None,
+                            ..config.clone()
+                        };
+                        InterfaceFace::new(backend, &default)
+                    })
+                    .unwrap_or_else(|_| {
+                        InterfaceFace::of(
+                            backend,
+                            resolved.family.clone(),
+                            None,
+                            resolved.faces.regular.id,
+                            config.font_size.points(),
+                        )
+                    })
+            }),
+        };
+        let points = typeset.points.map_or_else(
+            || match typeset.size {
+                TextSize::Regular => regular.size(),
+                TextSize::Small => regular.size() * SMALL,
+                TextSize::Large => regular.size() * LARGE,
+            },
+            |points| points.clamp(MOST_SMALL, MOST_LARGE),
+        );
+        if typeset.weight == FontWeight::Regular && points == regular.size() {
+            return regular;
         }
+        interfaces
+            .entry((typeset.family, points.to_bits(), typeset.weight))
+            .or_insert_with(|| {
+                regular
+                    .weighted(backend, typeset.weight)
+                    .sized(backend, points)
+            })
     }
 
     /// The glyphs of `text` on one line in the interface's face, at the
@@ -1691,8 +1740,8 @@ fn texture(format: BitmapFormat) -> Texture {
 /// view tree's layout: a text of its advances, as its run draws them at
 /// the display's scale, and an icon a square of a line.
 impl<B: FontBackend> Measure for Font<B> {
-    fn text_size(&mut self, size: TextSize) {
-        self.set_text_size(size);
+    fn typeset(&mut self, typeset: Typeset) {
+        self.set_typeset(typeset);
     }
 
     fn text(&mut self, text: &str) -> (f32, f32) {
@@ -1714,8 +1763,8 @@ impl<B: FontBackend> Carets for Font<B> {
         self.interface_carets(text)
     }
 
-    fn text_size(&mut self, size: TextSize) {
-        self.set_text_size(size);
+    fn typeset(&mut self, typeset: Typeset) {
+        self.set_typeset(typeset);
     }
 }
 
@@ -3241,6 +3290,58 @@ mod tests {
         font.set_interface(&larger);
         font.set_text_size(TextSize::Small);
         assert_eq!(font.interface().size(), 22.0);
+    }
+
+    #[test]
+    fn a_typeset_takes_its_points_its_weight_s_nearest_face_and_the_terminal_s_family() {
+        let mut font = Font::new(Squares::default(), FontConfig::default(), 1.0).unwrap();
+        let regular = font.interface().clone();
+        // Points in place of the interface's size, within their bounds.
+        font.set_typeset(Typeset {
+            points: Some(30.0),
+            ..Typeset::default()
+        });
+        assert_eq!(font.interface().size(), 30.0);
+        font.set_typeset(Typeset {
+            points: Some(1000.0),
+            size: TextSize::Small,
+            ..Typeset::default()
+        });
+        assert_eq!(font.interface().size(), MOST_LARGE);
+        // The family's face nearest to a weight, upright.
+        font.set_typeset(Typeset {
+            weight: FontWeight::Semibold,
+            ..Typeset::default()
+        });
+        let bold = font.interface().clone();
+        assert_eq!(
+            (bold.face(), bold.size(), bold.family()),
+            (FaceId(1), regular.size(), regular.family())
+        );
+        // The terminal's family, of its regular face and its size; its
+        // weights of its own faces.
+        font.set_typeset(Typeset {
+            family: FontFamily::Terminal,
+            ..Typeset::default()
+        });
+        let terminal = font.interface().clone();
+        assert_eq!(
+            (terminal.face(), terminal.size(), terminal.family()),
+            (FaceId(0), font.config.size.points(), "Mono")
+        );
+        font.set_typeset(Typeset {
+            family: FontFamily::Terminal,
+            weight: FontWeight::Bold,
+            points: Some(9.0),
+            ..Typeset::default()
+        });
+        assert_eq!(
+            (font.interface().face(), font.interface().size()),
+            (FaceId(1), 9.0)
+        );
+        // The regular typeset again.
+        font.set_typeset(Typeset::default());
+        assert_eq!(*font.interface(), regular);
     }
 
     #[test]

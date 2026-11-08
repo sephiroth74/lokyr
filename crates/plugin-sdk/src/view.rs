@@ -532,6 +532,17 @@ pub struct Style {
     /// The size of its text, a field's too, and of its children's that
     /// name none; `None` for its parent's, and at the root the interface's.
     pub text_size: Option<TextSize>,
+    /// The size of its text in points, from 4 to 200, in place of
+    /// `text_size`'s, and of its children's that name none.
+    pub font_size: Option<f32>,
+    /// The weight of its text, a field's too, and of its children's that
+    /// name none, as near as its family has it; `None` for its parent's,
+    /// and at the root the regular one.
+    pub font_weight: Option<FontWeight>,
+    /// The family of its text, a field's too, and of its children's that
+    /// name none: the interface's or the terminal's; `None` for its
+    /// parent's, and at the root the interface's.
+    pub font_family: Option<FontFamily>,
     /// How the pointer looks over its box, and over its children's that
     /// name none; `None` for its parent's, and at the root the arrow.
     pub pointer: Option<PointerShape>,
@@ -622,6 +633,53 @@ pub enum TextSize {
     /// Larger, as a palette's field: eighteen thirteenths of the
     /// interface's size.
     Large,
+}
+
+/// The family of a node's text.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum FontFamily {
+    /// The interface's, as `[interface]` names it, of its size.
+    #[default]
+    Interface,
+    /// The terminal's, as `[font]` names it, of its size and its regular
+    /// face, as a command's line shows in the terminal.
+    Terminal,
+}
+
+/// The weight of a node's text, of its family's faces, the nearest that it
+/// has: the regular one of the terminal's family its regular face as
+/// `[font]` names it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum FontWeight {
+    /// Lighter than the regular face.
+    Light,
+    /// The regular face.
+    #[default]
+    Regular,
+    /// A little heavier.
+    Medium,
+    /// Between the medium face and the bold one.
+    Semibold,
+    /// The bold face.
+    Bold,
+    /// Heavier than the bold face.
+    Heavy,
+}
+
+impl FontWeight {
+    /// The weight as CSS numbers them: 400 regular, 700 bold.
+    pub fn css(self) -> f32 {
+        match self {
+            Self::Light => 300.0,
+            Self::Regular => 400.0,
+            Self::Medium => 500.0,
+            Self::Semibold => 600.0,
+            Self::Bold => 700.0,
+            Self::Heavy => 800.0,
+        }
+    }
 }
 
 /// How the pointer looks over a node.
@@ -1180,6 +1238,9 @@ mod tests {
             holds_ring: true,
             hides_ring: true,
             text_size: Some(TextSize::Small),
+            font_size: Some(12.5),
+            font_weight: Some(FontWeight::Semibold),
+            font_family: Some(FontFamily::Terminal),
             pointer: Some(PointerShape::PointingHand),
             opacity: Some(0.5),
             transition: Some(Transition::default()),

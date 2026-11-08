@@ -6,10 +6,11 @@
 //! shows and hides. As the view scrolls up to the command's line, the
 //! header goes, and the command before it takes its place once that one's
 //! line is above the view; down, the next one does. A click scrolls the
-//! view to the command's prompt. The alternate screen shows none. Its
-//! colors are the theme's `command-header.*`; its config sets its text's
-//! size and where the pill sits. Like every built-in plugin, it depends
-//! only on the plugin SDK.
+//! view to the command's prompt. The alternate screen shows none. Its text
+//! is the terminal's font's; its config names the theme's tokens of its
+//! colors, and sets its text's size and weight, its pill's padding and
+//! where the pill sits. Like every built-in plugin, it depends only on the
+//! plugin SDK.
 
 #![forbid(unsafe_code)]
 
@@ -22,8 +23,8 @@ use lokyr_plugin_sdk::message::{COMMAND_ENDED, COMMAND_STARTED, Data, Event, VIE
 use lokyr_plugin_sdk::plugin::{Cx, Plugin};
 use lokyr_plugin_sdk::ui::{Anchor, PanelId, PanelOptions, Role, UiEvent, ViewId};
 use lokyr_plugin_sdk::view::{
-    Align, Border, Edges, Hover, Layout, Length, Node, PointerShape, Style, TextSize, Token,
-    Transition, UiEventKind,
+    Align, Border, Edges, FontFamily, FontWeight, Hover, Layout, Length, Node, PointerShape, Style,
+    Token, Transition, UiEventKind,
 };
 
 lokyr_plugin_sdk::export_plugin!(Header);
@@ -54,6 +55,10 @@ const LEAD: f32 = 12.0;
 /// How long the pill's hover fades, in seconds.
 const FADE: f32 = 0.12;
 
+/// The pill's corners' radius, in points, past half its height, as the
+/// renderer takes half the box's height at most: round at either end.
+const PILL_RADIUS: f32 = 100.0;
+
 /// The plugin, its settings, and what it follows of each pane whose view
 /// it heard of.
 #[derive(Debug, Default)]
@@ -74,12 +79,44 @@ enum Place {
     Right,
 }
 
-/// The plugin's settings, of its config's section: its text's size and
-/// where its pill sits.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+/// The plugin's settings, of its config's section: the theme's tokens of
+/// its colors, by their names, its text's size and weight, its pill's
+/// padding, and where its pill sits.
+#[derive(Clone, Debug, PartialEq)]
 struct Settings {
-    regular: bool,
+    /// The pill's background.
+    background: String,
+    /// Its text.
+    text: String,
+    /// Its border.
+    border: String,
+    /// The hairline across the pane.
+    line: String,
+    /// The pill's background under the pointer, over its own.
+    hover: String,
+    /// The text's size in points; `None` for the terminal's.
+    font_size: Option<f32>,
+    /// The text's weight.
+    font_weight: FontWeight,
+    /// The pill's padding, across and down, in points.
+    padding: (f32, f32),
     place: Place,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            background: "panel.bg".to_owned(),
+            text: "text".to_owned(),
+            border: "panel.border".to_owned(),
+            line: "panel.border".to_owned(),
+            hover: "button.hover.bg".to_owned(),
+            font_size: None,
+            font_weight: FontWeight::Regular,
+            padding: (8.0, 1.0),
+            place: Place::Left,
+        }
+    }
 }
 
 impl Settings {
@@ -90,10 +127,46 @@ impl Settings {
         let Data::Map(config) = config else {
             return settings;
         };
-        if let Some(Data::Text(size)) = config.get("text-size") {
-            settings.regular = size == "regular";
+        let text = |key: &str| match config.get(key) {
+            Some(Data::Text(text)) if !text.is_empty() => Some(text.clone()),
+            _ => None,
+        };
+        let number = |key: &str| match config.get(key) {
+            // Within the schema's bounds, an `f32`'s.
+            Some(Data::Number(number)) => Some(*number as f32),
+            Some(Data::Integer(number)) => Some(*number as f32),
+            _ => None,
+        };
+        for (key, place) in [
+            ("background", &mut settings.background),
+            ("text", &mut settings.text),
+            ("border", &mut settings.border),
+            ("line", &mut settings.line),
+            ("hover", &mut settings.hover),
+        ] {
+            if let Some(token) = text(key) {
+                *place = token;
+            }
         }
-        if let Some(Data::Text(align)) = config.get("align") {
+        // 0, or none, for the terminal's size.
+        settings.font_size = number("font-size").filter(|&size| size > 0.0);
+        if let Some(weight) = text("font-weight") {
+            settings.font_weight = match weight.as_str() {
+                "light" => FontWeight::Light,
+                "medium" => FontWeight::Medium,
+                "semibold" => FontWeight::Semibold,
+                "bold" => FontWeight::Bold,
+                "heavy" => FontWeight::Heavy,
+                _ => FontWeight::Regular,
+            };
+        }
+        if let Some(across) = number("padding-x") {
+            settings.padding.0 = across;
+        }
+        if let Some(down) = number("padding-y") {
+            settings.padding.1 = down;
+        }
+        if let Some(align) = text("align") {
             settings.place = match align.as_str() {
                 "center" => Place::Center,
                 "right" => Place::Right,
@@ -203,7 +276,7 @@ impl Plugin for Header {
         let shown = self.panes.get(&pane_of(id)?)?.shown.as_ref()?;
         let label = cx.message("header-label", &[]).unwrap_or_default();
         let tooltip = cx.message("header-tooltip", &[]).unwrap_or_default();
-        Some(header(&shown.line, (&label, &tooltip), self.settings))
+        Some(header(&shown.line, (&label, &tooltip), &self.settings))
     }
 
     /// A click on the pill scrolls the view to the command's prompt, at
@@ -345,10 +418,10 @@ fn pane_of(panel: &PanelId) -> Option<PaneId> {
 }
 
 /// A header of `line`, of `label` to accessibility and of `tooltip`: a pill
-/// of the line on a hairline across the pane, of the theme's
-/// `command-header.*`, its text of the size and its place along the line
-/// that `settings` say.
-fn header(line: &str, (label, tooltip): (&str, &str), settings: Settings) -> Node {
+/// of the line, in the terminal's font, on a hairline across the pane, of
+/// the theme's tokens that `settings` name, its text of their size and
+/// weight, its padding theirs, and its place along the line theirs.
+fn header(line: &str, (label, tooltip): (&str, &str), settings: &Settings) -> Node {
     let hairline = |width: Length, grow: f32| {
         Node::container(Vec::new())
             .layout(Layout {
@@ -358,45 +431,45 @@ fn header(line: &str, (label, tooltip): (&str, &str), settings: Settings) -> Nod
                 ..Layout::default()
             })
             .style(Style {
-                background: Some(Token::from("command-header.line")),
+                background: Some(Token::from(settings.line.as_str())),
                 ..Style::default()
             })
     };
-    let (size, radius) = if settings.regular {
-        (TextSize::Regular, 11.0)
-    } else {
-        (TextSize::Small, 9.0)
-    };
+    let (across, down) = settings.padding;
     let pill = Node::container(vec![Node::text(line)])
         .key(PILL)
         .label(label)
         .tooltip(tooltip)
         .layout(Layout {
             padding: Edges {
-                top: 1.0,
-                right: 8.0,
-                bottom: 1.0,
-                left: 8.0,
+                top: down,
+                right: across,
+                bottom: down,
+                left: across,
             },
             align: Align::Center,
             ..Layout::default()
         })
         .style(Style {
-            background: Some(Token::from("command-header.bg")),
+            background: Some(Token::from(settings.background.as_str())),
             border: Some(Border {
-                color: Token::from("command-header.border"),
+                color: Token::from(settings.border.as_str()),
                 width: 1.0,
             }),
-            color: Some(Token::from("command-header.fg")),
-            radius,
-            text_size: Some(size),
+            color: Some(Token::from(settings.text.as_str())),
+            // Round at either end, as the renderer takes a radius of half
+            // the box's height at most.
+            radius: PILL_RADIUS,
+            font_family: Some(FontFamily::Terminal),
+            font_size: settings.font_size,
+            font_weight: Some(settings.font_weight),
             pointer: Some(PointerShape::PointingHand),
             transition: Some(Transition {
                 duration: FADE,
                 ..Transition::default()
             }),
             hover: Some(Hover {
-                background: Some(Token::from("command-header.hover.bg")),
+                background: Some(Token::from(settings.hover.as_str())),
                 ..Hover::default()
             }),
             ..Style::default()

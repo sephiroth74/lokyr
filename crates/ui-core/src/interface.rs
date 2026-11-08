@@ -12,7 +12,10 @@
 //! measures the view trees' texts and icons for their
 //! [`layout`](crate::layout), and draws them.
 
-use lokyr_text_core::{FaceError, FaceId, FontBackend, FontConfig, Name, Size, choose_faces};
+use lokyr_plugin_sdk::view::FontWeight;
+use lokyr_text_core::{
+    FaceError, FaceId, FaceInfo, FontBackend, FontConfig, Name, Size, choose_faces,
+};
 use serde::{Deserialize, Serialize};
 
 /// The `[interface]` section: the font of the app's own interface.
@@ -99,6 +102,36 @@ impl InterfaceFace {
             self.regular,
             size,
         )
+    }
+
+    /// The same family's face nearest to `weight`, upright and of its
+    /// normal width where it has one, at the same size; itself of the
+    /// regular weight, or of a family whose faces the system does not list.
+    pub(crate) fn weighted(&self, backend: &mut dyn FontBackend, weight: FontWeight) -> Self {
+        if weight == FontWeight::Regular {
+            return self.clone();
+        }
+        let wanted = weight.css();
+        let faces = backend.family(&self.family).unwrap_or_default();
+        let nearest = faces
+            .iter()
+            .filter(|face| !face.italic && !face.oblique)
+            .min_by(|a, b| {
+                let off = |face: &FaceInfo| ((face.weight - wanted).abs(), face.width.abs());
+                off(a)
+                    .partial_cmp(&off(b))
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
+        match nearest {
+            Some(face) => Self::of(
+                backend,
+                self.family.clone(),
+                self.missing_family.clone(),
+                face.id,
+                self.size,
+            ),
+            None => self.clone(),
+        }
     }
 
     /// The family's name.
