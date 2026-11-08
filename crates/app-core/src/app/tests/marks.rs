@@ -1,7 +1,7 @@
 //! The commands that the shell marks and the panes' views in the app: a
 //! plugin hears each command's start and end, reads their marks, and
 //! follows its pane's view through its scroll, output and the scrollback's
-//! limit.
+//! limit; and the command's header over the pane's top.
 
 use std::cell::RefCell;
 use std::path::Path;
@@ -9,9 +9,12 @@ use std::rc::Rc;
 
 use lokyr_kernel::commands::{Category, Command};
 use lokyr_kernel::plugins::host::{PaneId, Scroll, ShellCommand, Viewport};
+use lokyr_kernel::plugins::ui::{PanelId, ViewId};
 use lokyr_kernel::plugins::{Cx, Plugin};
+use lokyr_text_core::FontConfig;
 
 use super::*;
+use crate::fakes;
 
 /// What the plugin heard and read.
 #[derive(Default)]
@@ -232,4 +235,93 @@ fn a_plugin_follows_three_commands_and_its_pane_s_view_through_output_and_the_sc
     assert_eq!(after.top, up.top, "{after:?}");
     assert!(after.oldest >= up.oldest, "{after:?}");
     let _ = std::fs::remove_dir_all(&directory);
+}
+
+/// The frame, in pixels, of the command's header of `window`'s pane, and
+/// its pill's, if it shows.
+fn header(app: &App, window: WindowId) -> Option<(Frame, Frame)> {
+    let state = &app.windows[&window];
+    let pane = state.views.first()?.pane;
+    let id = ViewId::Panel(PanelId(format!("command-header-{}", pane.get())));
+    let view = state.chrome.iter().find(|view| view.view == id)?;
+    let frame = view.frame?;
+    let node = view.surface.tree.by_key(&"command".into())?;
+    let pill = view.surface.layout.frame(&view.surface.tree, node)?;
+    Some((
+        frame,
+        Frame {
+            x: pill.x + frame.x,
+            y: pill.y + frame.y,
+            ..pill
+        },
+    ))
+}
+
+type Frame = lokyr_ui_core::layout::Frame;
+
+/// The middle of `frame`, of pixels, in points of a display of `scale`.
+fn middle(frame: Frame, scale: f64) -> Point {
+    Point {
+        x: f64::from(frame.x + frame.width / 2.0) / scale,
+        y: f64::from(frame.y + frame.height / 2.0) / scale,
+    }
+}
+
+#[test]
+fn the_command_s_header_spans_the_pane_s_top_takes_no_keys_lets_a_scroll_through_and_scrolls_at_a_click()
+ {
+    // Three commands of 40 lines each, then a prompt: the view, at the
+    // screen, shows the third's output, whose line is above it.
+    let program = shell(concat!(
+        "m() { printf '\\033]133;%s\\007' \"$1\"; }\n",
+        "for c in one two three; do m A; printf '$ '; m B; echo \"$c\"; m C; ",
+        "seq 1 40; m 'D;0'; done; m A; printf '$ '; sleep 30\n",
+    ));
+    let drawing = Drawing::new(FontConfig::default()).unwrap();
+    let mut fake = Fake::default();
+    let mut app = App::new(Some(drawing), unpadded(), None).with_program(program);
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    app.windows.get_mut(&window).unwrap().surface = Some(fakes::Surface::default());
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    run_until(&mut fake, &mut app, |_, app| header(app, window).is_some());
+    let (frame, pill) = header(&app, window).unwrap();
+    // Across the pane's top, of its width.
+    let rect = app.windows[&window].views[0].rect;
+    assert_eq!(
+        (frame.x, frame.y, frame.width),
+        (rect.x as f32, rect.y as f32, rect.width as f32)
+    );
+    assert!(pill.width < frame.width && pill.x > frame.x, "{pill:?}");
+    // The keyboard stays at the pane.
+    assert_eq!(
+        app.windows[&window].focus.target(),
+        lokyr_ui_core::focus::Target::Pane
+    );
+    // A scroll over it scrolls the pane.
+    let scale = fake.window(window).unwrap().size.scale;
+    let pane = app.windows[&window].views[0].pane;
+    let offset = |app: &App| app.workspace.pane(pane).unwrap().view_offset();
+    fake.send(
+        &mut app,
+        window,
+        WindowEvent::Scroll {
+            delta: ScrollDelta::Lines { x: 0.0, y: 1.0 },
+            phase: None,
+            momentum: false,
+            position: middle(frame, scale),
+            mods: Modifiers::NONE,
+        },
+    );
+    run_until(&mut fake, &mut app, |_, app| offset(app) > 0);
+    // A click on its pill scrolls the view to its command's prompt, at its
+    // top, which takes it away.
+    run_until(&mut fake, &mut app, |_, app| header(app, window).is_some());
+    let (_, pill) = header(&app, window).unwrap();
+    let at = middle(pill, scale);
+    fake.send(&mut app, window, click(true, at, Modifiers::NONE, 1));
+    fake.send(&mut app, window, click(false, at, Modifiers::NONE, 1));
+    run_until(&mut fake, &mut app, |_, app| header(app, window).is_none());
+    let line = row(&app, window, 0);
+    assert!(line.starts_with("$ "), "{line:?}");
 }

@@ -415,6 +415,13 @@ impl Surface {
         events
     }
 
+    /// Whether a list or a scroll area under `at` would scroll, of the
+    /// innermost under the pointer.
+    pub fn scrolls_at(&self, at: (f32, f32)) -> bool {
+        let path = pointer::hit(&self.tree, &self.layout, at);
+        list::scrollable(&self.tree, &path).is_some()
+    }
+
     /// A wheel or a trackpad scrolled at `at`, `delta` points across and
     /// towards the content above: the innermost list or scroll area under
     /// the pointer scrolls, and the hover follows; another node learns of

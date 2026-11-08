@@ -1653,9 +1653,10 @@ impl FakeHost {
     /// window, or its node's view's.
     fn anchor_window(&self, anchor: &Anchor) -> Result<WindowId, Error> {
         match anchor {
-            Anchor::Cell { pane, .. } | Anchor::Cursor(pane) | Anchor::PaneCorner { pane, .. } => {
-                self.pane_window(*pane)
-            }
+            Anchor::Cell { pane, .. }
+            | Anchor::Cursor(pane)
+            | Anchor::PaneCorner { pane, .. }
+            | Anchor::PaneTop(pane) => self.pane_window(*pane),
             Anchor::Pointer(window) | Anchor::WindowCorner { window, .. } => {
                 if self.windows.contains_key(window) {
                     Ok(*window)

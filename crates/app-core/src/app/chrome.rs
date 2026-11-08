@@ -128,6 +128,14 @@ impl SlotView {
         }
     }
 
+    /// Whether it is a panel's view of the role of an overlay, over a pane,
+    /// which a scroll goes through but where its view would scroll.
+    pub(crate) fn is_overlay(&self) -> bool {
+        self.placed
+            .as_ref()
+            .is_some_and(|placed| placed.options.role == Role::Overlay)
+    }
+
     /// Whether it is a panel's view of the role of a tooltip, which the
     /// pointer goes through.
     pub(crate) fn is_tooltip(&self) -> bool {
@@ -309,13 +317,13 @@ impl<B: Backend> App<B> {
                     composing && slot.surface.fields.composing(&slot.surface.tree).is_none();
                 // A panel's first tree: a menu of menu items alone shows as
                 // the platform's own, and draws nothing; one that takes the
-                // keyboard takes the focus.
+                // keyboard, a menu's or a dialog's, takes the focus.
                 if first && let Some(placed) = &slot.placed {
                     let role = placed.options.role;
                     if role == Role::Menu && panel::native_menu(&slot.surface.tree).is_some() {
                         state.panels.close(slot.id);
                         state.native_due.push(slot.id);
-                    } else if role != Role::Tooltip {
+                    } else if role.takes_focus() {
                         state.focus.first(slot.id, &slot.surface.tree);
                     }
                 }

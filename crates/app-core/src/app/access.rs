@@ -86,6 +86,7 @@ impl<B: Backend> App<B> {
                         PanelRole::Tooltip => Role::Tooltip,
                         PanelRole::Menu => Role::Menu,
                         PanelRole::Dialog => Role::Dialog,
+                        PanelRole::Overlay => Role::Overlay,
                     }),
             });
         }

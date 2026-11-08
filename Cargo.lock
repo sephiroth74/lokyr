@@ -772,6 +772,7 @@ version = "0.5.1"
 dependencies = [
  "accesskit",
  "libc",
+ "lokyr-command-header",
  "lokyr-command-palette",
  "lokyr-core-actions",
  "lokyr-kernel",
@@ -802,6 +803,13 @@ dependencies = [
  "objc2-core-graphics",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "lokyr-command-header"
+version = "0.5.1"
+dependencies = [
+ "lokyr-plugin-sdk",
 ]
 
 [[package]]

@@ -85,6 +85,7 @@ vte = "0.15.0"
 sleip-index = { path = "sleip/index" }
 sleip-resolver = { path = "sleip/resolver" }
 lokyr-app-core = { path = "crates/app-core", default-features = false }
+lokyr-command-header = { path = "plugins/command-header" }
 lokyr-command-palette = { path = "plugins/command-palette" }
 lokyr-core-actions = { path = "plugins/core-actions" }
 lokyr-font-coretext = { path = "crates/font-coretext" }

@@ -6987,6 +6987,25 @@ fn a_snapshot_tells_the_scrollback_s_rows() {
 }
 
 #[test]
+fn the_view_scrolls_to_a_row_at_its_top_within_the_list() {
+    let mut term = Term::new(10, 4);
+    for at in 0..20 {
+        term.feed(format!("{at}\r\n"));
+    }
+    // 17 rows of scrollback above the screen's 4, numbered from 0.
+    term.terminal.scroll_viewport(Scroll::Row(5));
+    assert_eq!(term.terminal.origin().top, 5);
+    // A row of the screen brings the view to it, as do those past the
+    // list's ends, at its nearer one.
+    term.terminal.scroll_viewport(Scroll::Row(18));
+    assert_eq!(term.terminal.viewport_offset(), 0);
+    term.terminal.scroll_viewport(Scroll::Row(-50));
+    assert_eq!(term.terminal.origin().top, 0);
+    term.terminal.scroll_viewport(Scroll::Row(1000));
+    assert_eq!(term.terminal.viewport_offset(), 0);
+}
+
+#[test]
 fn the_view_jumps_from_prompt_to_prompt() {
     let mut term = Term::new(20, 4);
     // Three commands of ten lines each, then a prompt.

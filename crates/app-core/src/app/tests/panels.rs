@@ -37,7 +37,8 @@ struct Heard {
 /// its top right corner; `paneler.close` closes the dialog;
 /// `paneler.commands`, a menu of two buttons alone keyed `window.new` and
 /// `third`, which `paneler.close-commands` closes; `paneler.both` opens
-/// `native` and `commands` in one call.
+/// `native` and `commands` in one call; `paneler.overlay`, an overlay
+/// across the pane's top, of a field.
 struct Paneler {
     heard: Rc<RefCell<Heard>>,
 }
@@ -47,7 +48,7 @@ const MANIFEST: &str = concat!(
     "[contributes]\nslots = [\"tab-bar\"]\n",
 );
 
-const COMMANDS: [&str; 11] = [
+const COMMANDS: [&str; 12] = [
     "paneler.dialog",
     "paneler.menu",
     "paneler.native",
@@ -59,6 +60,7 @@ const COMMANDS: [&str; 11] = [
     "paneler.commands",
     "paneler.close-commands",
     "paneler.both",
+    "paneler.overlay",
 ];
 
 fn sized(node: Node, width: f32, height: f32) -> Node {
@@ -161,6 +163,10 @@ impl plugins::Plugin for Paneler {
             "paneler.cursor" => (
                 "dialog",
                 options(Anchor::Cursor(pane), Role::Dialog, (false, true)),
+            ),
+            "paneler.overlay" => (
+                "overlay",
+                options(Anchor::PaneTop(pane), Role::Overlay, (false, false)),
             ),
             "paneler.corner" => (
                 "dialog",
@@ -313,6 +319,24 @@ fn focused_in(app: &App, window: WindowId, id: &str) -> bool {
 
 /// A point over the pane, below the titlebar's tab bar.
 const OVER_PANE: Point = Point { x: 9.0, y: 60.0 };
+
+#[test]
+fn an_overlay_across_a_pane_s_top_takes_its_width_and_leaves_the_keys_to_the_pane() {
+    let (mut fake, mut app, window, _) = paneler(reader(""));
+    command(&mut fake, &mut app, window, "paneler.overlay");
+    let frame = panel_frame(&app, window, "overlay").expect("the overlay");
+    let rect = app.windows[&window].views[0].rect;
+    assert_eq!(
+        (frame.x, frame.y, frame.width),
+        (rect.x as f32, rect.y as f32, rect.width as f32)
+    );
+    // Its field takes no keys as it opens, as a dialog's would.
+    assert!(!focused_in(&app, window, "overlay"));
+    fake.send(&mut app, window, key());
+    run_until(&mut fake, &mut app, |_, app| {
+        row(app, window, 1).trim() == "a"
+    });
+}
 
 #[test]
 fn a_dialog_below_a_node_takes_the_keys_and_escape_closes_it_back_to_the_pane() {

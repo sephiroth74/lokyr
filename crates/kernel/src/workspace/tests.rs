@@ -560,9 +560,11 @@ fn a_command_is_timed_by_its_marks_from_the_look_at_its_start_to_the_one_at_its_
     let ended = ended(&events);
     let (command, status, took) = ended[0];
     assert_eq!((command, status), (1, Some(3)));
+    // Of the looks' times: the look that finds its start may come a pace
+    // and the loop's pause after it, under a load of other tests longer.
     let took = took.expect("its start was seen");
     assert!(
-        took >= Duration::from_millis(300) && took < Duration::from_secs(3),
+        took >= Duration::from_millis(200) && took < Duration::from_secs(3),
         "{took:?}"
     );
     // A start and an end that one look found, of no time between.

@@ -324,8 +324,8 @@ impl<B: Backend> App<B> {
 
     /// A wheel or a trackpad scrolled by `delta` at `position` over
     /// `window`: the slot's view under it takes it, its list or its scroll
-    /// area under the pointer scrolling. Whether a view took it, which the
-    /// panes then do not.
+    /// area under the pointer scrolling, but an overlay's of none there.
+    /// Whether a view took it, which the panes then do not.
     pub(super) fn surface_scrolled(
         &mut self,
         platform: &mut dyn Platform,
@@ -344,6 +344,11 @@ impl<B: Backend> App<B> {
         else {
             return false;
         };
+        // An overlay over a pane, as a command's header, lets the pane under
+        // it scroll, but where a list or a scroll area of its own would.
+        if view.is_overlay() && !view.surface.scrolls_at(local(view, at)) {
+            return false;
+        }
         let (x, y) = match delta {
             ScrollDelta::Lines { x, y } => (x * LINE, y * LINE),
             ScrollDelta::Points { x, y } => (x, y),

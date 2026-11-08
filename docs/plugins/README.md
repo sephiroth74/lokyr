@@ -13,6 +13,7 @@ Every feature that you see in Lokyr beyond the terminal itself comes from a plug
 | [`command-palette`](command-palette.md) | The command palette: every command, ranked as you type |
 | [`quick-terminal`](quick-terminal.md) | The quick terminal: a window that a global key slides in over every app |
 | [`progress`](progress.md) | The programs' progress, in a thin bar across the window's top |
+| [`command-header`](command-header.md) | The command whose output you are looking at, at the pane's top |
 
 The order of the table is the order in which they start, which matters for the keys alone: a later plugin's key wins over an earlier one's, and your own `[keys]` win over all of them.
 

@@ -839,6 +839,13 @@ fn core_actions(world: &World) -> Scenario {
                     },
                     Response::Done,
                 ),
+                (
+                    Request::Scroll {
+                        pane,
+                        scroll: Scroll::Row(0),
+                    },
+                    Response::Done,
+                ),
                 (Request::SelectAll(pane), Response::Done),
                 (Request::ClearScrollback(pane), Response::Done),
                 (Request::Clear(pane), Response::Done),
@@ -1314,36 +1321,61 @@ fn views(world: &World) -> Scenario {
         capabilities: None,
         subscriptions: Vec::new(),
         steps: vec![
-            ask(vec![
-                (
-                    Request::OpenPanel {
-                        id: PanelId::from(MENU),
-                        options: options(Anchor::Pointer(world.window)),
-                    },
-                    Response::Done,
-                ),
-                (
-                    Request::OpenPanel {
-                        id: PanelId::from(""),
-                        options: options(Anchor::Pointer(world.window)),
-                    },
-                    failed(Code::InvalidName, "a panel's id is not empty"),
-                ),
-                (
-                    Request::OpenPanel {
-                        id: PanelId::from("other"),
-                        options: options(Anchor::Pointer(NO_WINDOW)),
-                    },
-                    failed(Code::NotFound, "there is no window 999999"),
-                ),
-                (
-                    Request::OpenPanel {
-                        id: PanelId::from("other"),
-                        options: options(Anchor::Cursor(NO_PANE)),
-                    },
-                    failed(Code::NotFound, "there is no pane 999999"),
-                ),
-            ]),
+            Step {
+                asks: vec![
+                    (
+                        Request::OpenPanel {
+                            id: PanelId::from(MENU),
+                            options: options(Anchor::Pointer(world.window)),
+                        },
+                        Response::Done,
+                    ),
+                    (
+                        Request::OpenPanel {
+                            id: PanelId::from(""),
+                            options: options(Anchor::Pointer(world.window)),
+                        },
+                        failed(Code::InvalidName, "a panel's id is not empty"),
+                    ),
+                    (
+                        Request::OpenPanel {
+                            id: PanelId::from("other"),
+                            options: options(Anchor::Pointer(NO_WINDOW)),
+                        },
+                        failed(Code::NotFound, "there is no window 999999"),
+                    ),
+                    (
+                        Request::OpenPanel {
+                            id: PanelId::from("other"),
+                            options: options(Anchor::Cursor(NO_PANE)),
+                        },
+                        failed(Code::NotFound, "there is no pane 999999"),
+                    ),
+                    // An overlay across a pane's top, as a command's header.
+                    (
+                        Request::OpenPanel {
+                            id: PanelId::from("header"),
+                            options: PanelOptions {
+                                anchor: Anchor::PaneTop(world.pane),
+                                role: Role::Overlay,
+                                close_outside: false,
+                                close_escape: false,
+                            },
+                        },
+                        Response::Done,
+                    ),
+                    (Request::ClosePanel(PanelId::from("header")), Response::Done),
+                    (
+                        Request::OpenPanel {
+                            id: PanelId::from("other"),
+                            options: options(Anchor::PaneTop(NO_PANE)),
+                        },
+                        failed(Code::NotFound, "there is no pane 999999"),
+                    ),
+                ],
+                posts: Vec::new(),
+                heard: vec![Event::PanelClosed(PanelId::from("header"))],
+            },
             // Its render came as it opened.
             ask(vec![
                 (set_text("query"), Response::Done),

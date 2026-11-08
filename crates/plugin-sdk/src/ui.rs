@@ -160,6 +160,9 @@ pub enum Anchor {
         /// The corner.
         corner: Corner,
     },
+    /// Across a pane's top, as wide as the pane, at its top edge, of its
+    /// tree's height, as a command's header over the pane's first rows.
+    PaneTop(PaneId),
     /// In a corner of a window's room below its tab bar.
     WindowCorner {
         /// The window.
@@ -183,6 +186,17 @@ pub enum Role {
     /// A dialog, as a find bar: it takes the keyboard as it opens.
     #[default]
     Dialog,
+    /// An overlay, as a command's header over a pane: it takes the pointer,
+    /// whose clicks go to it, and not the keyboard, which stays where it
+    /// is as it opens.
+    Overlay,
+}
+
+impl Role {
+    /// Whether a panel of the role takes the keyboard's focus as it opens.
+    pub fn takes_focus(self) -> bool {
+        matches!(self, Self::Menu | Self::Dialog)
+    }
 }
 
 /// A panel's anchor, its role and what closes it, besides its plugin.

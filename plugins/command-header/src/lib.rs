@@ -1,0 +1,347 @@
+//! Built-in plugin of the command's header: the command whose output a
+//! pane's view shows, at the pane's top, while the command's line is above
+//! the view, as the shell marks its commands. It sits over the pane's first
+//! row, a pill of the command's line on a hairline across the pane, and
+//! takes none of the grid's rows, so that the grid keeps its size as it
+//! shows and hides. As the view scrolls up to the command's line, the
+//! header goes, and the command before it takes its place once that one's
+//! line is above the view; down, the next one does. A click scrolls the
+//! view to the command's prompt. The alternate screen shows none. Like
+//! every built-in plugin, it depends only on the plugin SDK.
+
+#![forbid(unsafe_code)]
+
+use std::collections::{BTreeMap, BTreeSet};
+
+use lokyr_plugin_sdk::command::Error;
+use lokyr_plugin_sdk::event::WorkspaceEvent;
+use lokyr_plugin_sdk::host::{PaneId, Scroll, ShellCommand, Viewport};
+use lokyr_plugin_sdk::message::{COMMAND_ENDED, COMMAND_STARTED, Event, VIEWPORT_CHANGED};
+use lokyr_plugin_sdk::plugin::{Cx, Plugin};
+use lokyr_plugin_sdk::ui::{Anchor, PanelId, PanelOptions, Role, UiEvent, ViewId};
+use lokyr_plugin_sdk::view::{
+    Align, Border, Edges, Hover, Layout, Length, Node, PointerShape, Style, TextSize, Token,
+    Transition, UiEventKind,
+};
+
+lokyr_plugin_sdk::export_plugin!(Header);
+
+/// The plugin's catalogs, of the header's label and tooltip.
+static CATALOGS: [(&str, &str); 2] = [
+    ("en", include_str!("../locales/en/command-header.ftl")),
+    ("it", include_str!("../locales/it/command-header.ftl")),
+];
+
+/// The prefix of a header's panel's id, of its pane's id.
+const PANEL: &str = "command-header-";
+
+/// The key of a header's pill, which a click scrolls by.
+const PILL: &str = "command";
+
+/// The most characters of a command's line that a header shows, past which
+/// the pill ends where the pane does.
+const MOST_LINE: usize = 500;
+
+/// The rows of a command's logical line that a read of its line reaches,
+/// past its input's.
+const LINE_REACH: usize = 16;
+
+/// The length of the hairline at the pill's left, in points.
+const LEAD: f32 = 12.0;
+
+/// How long the pill's hover fades, in seconds.
+const FADE: f32 = 0.12;
+
+/// The plugin, and what it follows of each pane whose view it heard of.
+#[derive(Debug, Default)]
+pub struct Header {
+    panes: BTreeMap<PaneId, Followed>,
+}
+
+/// What the plugin follows of a pane: its view, and the header that its
+/// panel shows, if one does.
+#[derive(Debug, Default)]
+struct Followed {
+    viewport: Option<Viewport>,
+    shown: Option<Shown>,
+}
+
+/// A header: its command's id, the row of its prompt, which a click
+/// scrolls to the view's top, and its line.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Shown {
+    command: u64,
+    row: i64,
+    line: String,
+}
+
+impl Plugin for Header {
+    fn activate(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
+        cx.subscribe(&[
+            VIEWPORT_CHANGED,
+            COMMAND_STARTED,
+            COMMAND_ENDED,
+            "pane-closed",
+            "pane-moved",
+        ])
+    }
+
+    fn catalogs(&self) -> &'static [(&'static str, &'static str)] {
+        &CATALOGS
+    }
+
+    /// A pane's view, or its commands, changed: its header follows them. A
+    /// pane that closed takes its header away, and one that moved to
+    /// another tab opens it anew, in its window.
+    fn on_event(&mut self, cx: &mut Cx<'_>, events: &[Event]) -> Result<(), Error> {
+        let mut looked = BTreeSet::new();
+        for event in events {
+            match *event {
+                Event::ViewportChanged { pane, viewport } => {
+                    self.panes.entry(pane).or_default().viewport = Some(viewport);
+                    looked.insert(pane);
+                }
+                Event::CommandStarted { pane, .. } | Event::CommandEnded { pane, .. } => {
+                    if self.panes.contains_key(&pane) {
+                        looked.insert(pane);
+                    }
+                }
+                Event::Workspace(WorkspaceEvent::PaneClosed { pane, .. }) => {
+                    if let Some(followed) = self.panes.remove(&pane)
+                        && followed.shown.is_some()
+                    {
+                        // The host lets it go with its pane, if it did not yet.
+                        let _ = cx.close_panel(panel(pane));
+                    }
+                    looked.remove(&pane);
+                }
+                Event::Workspace(WorkspaceEvent::PaneMoved { pane, .. }) => {
+                    if let Some(followed) = self.panes.get_mut(&pane)
+                        && followed.shown.take().is_some()
+                    {
+                        let _ = cx.close_panel(panel(pane));
+                        looked.insert(pane);
+                    }
+                }
+                _ => {}
+            }
+        }
+        for pane in looked {
+            self.look(cx, pane)?;
+        }
+        Ok(())
+    }
+
+    /// A header's panel: the pill of its command's line on a hairline.
+    fn render(&mut self, cx: &mut Cx<'_>, view: &ViewId) -> Option<Node> {
+        let ViewId::Panel(id) = view else {
+            return None;
+        };
+        let shown = self.panes.get(&pane_of(id)?)?.shown.as_ref()?;
+        let label = cx.message("header-label", &[]).unwrap_or_default();
+        let tooltip = cx.message("header-tooltip", &[]).unwrap_or_default();
+        Some(header(&shown.line, &label, &tooltip))
+    }
+
+    /// A click on the pill scrolls the view to the command's prompt, at
+    /// its top, which takes the header away.
+    fn on_ui_event(&mut self, cx: &mut Cx<'_>, event: &UiEvent) -> Result<(), Error> {
+        let (ViewId::Panel(id), UiEventKind::Click) = (&event.view, &event.kind) else {
+            return Ok(());
+        };
+        if event.key.0 != PILL {
+            return Ok(());
+        }
+        let Some(pane) = pane_of(id) else {
+            return Ok(());
+        };
+        let Some(shown) = self
+            .panes
+            .get(&pane)
+            .and_then(|followed| followed.shown.as_ref())
+        else {
+            return Ok(());
+        };
+        cx.scroll(pane, Scroll::Row(shown.row))
+    }
+}
+
+impl Header {
+    /// Shows `pane`'s header of the command whose output its view's top row
+    /// shows, while the command's line is above the view; takes it away
+    /// otherwise.
+    fn look(&mut self, cx: &mut Cx<'_>, pane: PaneId) -> Result<(), Error> {
+        let Some(followed) = self.panes.get(&pane) else {
+            return Ok(());
+        };
+        let wanted = match followed.viewport {
+            Some(viewport) if !viewport.alternate => {
+                shown_at(cx, pane, viewport, followed.shown.as_ref())
+            }
+            _ => None,
+        };
+        let Some(followed) = self.panes.get_mut(&pane) else {
+            return Ok(());
+        };
+        match (&followed.shown, wanted) {
+            (None, None) => {}
+            (Some(_), None) => {
+                followed.shown = None;
+                cx.close_panel(panel(pane))?;
+            }
+            (None, Some(wanted)) => {
+                followed.shown = Some(wanted);
+                cx.open_panel(
+                    panel(pane),
+                    PanelOptions {
+                        anchor: Anchor::PaneTop(pane),
+                        role: Role::Overlay,
+                        close_outside: false,
+                        close_escape: false,
+                    },
+                )?;
+            }
+            (Some(before), Some(wanted)) => {
+                if *before != wanted {
+                    followed.shown = Some(wanted);
+                    cx.request_render(ViewId::Panel(panel(pane)))?;
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+/// The header of `pane`, of `viewport`, if one shows: of the command whose
+/// output the view's top row shows, whose line is above it, and that
+/// started; its line read anew unless `before` is the same command's.
+fn shown_at(
+    cx: &mut Cx<'_>,
+    pane: PaneId,
+    viewport: Viewport,
+    before: Option<&Shown>,
+) -> Option<Shown> {
+    let top = viewport.top;
+    let commands = cx.shell_commands(pane, top, top + 1).ok()?;
+    let command = commands.first()?;
+    command.output?;
+    let (_, row) = command.input?;
+    if row >= top {
+        return None;
+    }
+    // The top row past its output, of the next prompt's line or of what
+    // came after its end.
+    if command
+        .end
+        .is_some_and(|(column, end)| end < top || (end == top && column == 0))
+    {
+        return None;
+    }
+    let line = match before {
+        Some(before) if before.command == command.id => before.line.clone(),
+        _ => command_line(cx, pane, command)?,
+    };
+    Some(Shown {
+        command: command.id,
+        row: command.prompt.map_or(row, |(_, prompt)| prompt),
+        line,
+    })
+}
+
+/// The line of `command`, as the user typed it: its text from its input's
+/// mark to its output's, of the input's logical line, without the spaces
+/// around it; none of no text.
+fn command_line(cx: &mut Cx<'_>, pane: PaneId, command: &ShellCommand) -> Option<String> {
+    let (column, row) = command.input?;
+    let line = cx.line_text(pane, row, LINE_REACH).ok()??;
+    // In reading order: a row's number, then a column.
+    let from = (row, column);
+    let to = command.output.map(|(column, row)| (row, column));
+    let text: String = line
+        .text
+        .chars()
+        .zip(line.cells)
+        .filter(|&(_, (column, row))| {
+            (row, column) >= from && to.is_none_or(|to| (row, column) < to)
+        })
+        .map(|(character, _)| character)
+        .take(MOST_LINE)
+        .collect();
+    let text = text.trim();
+    (!text.is_empty()).then(|| text.to_owned())
+}
+
+/// The id of `pane`'s header's panel.
+fn panel(pane: PaneId) -> PanelId {
+    PanelId(format!("{PANEL}{}", pane.0))
+}
+
+/// The pane of a header's panel, by its id.
+fn pane_of(panel: &PanelId) -> Option<PaneId> {
+    panel.0.strip_prefix(PANEL)?.parse().ok().map(PaneId)
+}
+
+/// A header of `line`, of `label` to accessibility and of `tooltip`: a pill
+/// of the line on a hairline across the pane, the pill a little in from
+/// the pane's left.
+fn header(line: &str, label: &str, tooltip: &str) -> Node {
+    let hairline = |width: Length, grow: f32| {
+        Node::container(Vec::new())
+            .layout(Layout {
+                width,
+                grow,
+                height: Length::Points(1.0),
+                ..Layout::default()
+            })
+            .style(Style {
+                background: Some(Token::from("panel.border")),
+                ..Style::default()
+            })
+    };
+    let pill = Node::container(vec![Node::text(line)])
+        .key(PILL)
+        .label(label)
+        .tooltip(tooltip)
+        .layout(Layout {
+            padding: Edges {
+                top: 1.0,
+                right: 8.0,
+                bottom: 1.0,
+                left: 8.0,
+            },
+            align: Align::Center,
+            ..Layout::default()
+        })
+        .style(Style {
+            background: Some(Token::from("panel.bg")),
+            border: Some(Border {
+                color: Token::from("panel.border"),
+                width: 1.0,
+            }),
+            radius: 9.0,
+            text_size: Some(TextSize::Small),
+            pointer: Some(PointerShape::PointingHand),
+            transition: Some(Transition {
+                duration: FADE,
+                ..Transition::default()
+            }),
+            hover: Some(Hover {
+                background: Some(Token::from("button.hover.bg")),
+                ..Hover::default()
+            }),
+            ..Style::default()
+        });
+    Node::container(vec![
+        hairline(Length::Points(LEAD), 0.0),
+        pill,
+        hairline(Length::Auto, 1.0),
+    ])
+    .layout(Layout {
+        align: Align::Center,
+        grow: 1.0,
+        ..Layout::default()
+    })
+}
+
+#[cfg(test)]
+mod tests;

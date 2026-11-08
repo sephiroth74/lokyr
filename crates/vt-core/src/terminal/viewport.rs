@@ -34,6 +34,10 @@ pub enum Scroll {
     /// To the prompt below the view's first row, at the view's top, or to
     /// the screen past the scrollback's last.
     NextPrompt,
+    /// To the row of this number, at the view's top, as far as the
+    /// scrollback's first row and the screen let it: a row that the list
+    /// does not hold, to its nearer end.
+    Row(i64),
 }
 
 /// Where the active screen's rows are, at a moment: the epoch of their
@@ -160,6 +164,10 @@ impl Terminal {
             Scroll::PageDown => offset.saturating_sub(page),
             Scroll::Top => usize::MAX,
             Scroll::Bottom => 0,
+            Scroll::Row(row) => {
+                let scrollback = self.primary.rows.scrollback_rows();
+                scrollback.saturating_sub(self.nearest_index(row))
+            }
             Scroll::PreviousPrompt | Scroll::NextPrompt => {
                 let scrollback = self.primary.rows.scrollback_rows();
                 let top = scrollback - offset;

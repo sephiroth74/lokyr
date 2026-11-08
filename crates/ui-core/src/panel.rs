@@ -8,8 +8,9 @@
 //! A panel's role tells what it is to the system, so that a platform can
 //! show a menu as its own: a tooltip, which takes neither the pointer nor
 //! the keyboard; a menu, which takes the keyboard as it opens, and which a
-//! click outside it closes without the click going on; or a dialog, which
-//! takes the keyboard as it opens. A click outside a panel, or Escape
+//! click outside it closes without the click going on; a dialog, which
+//! takes the keyboard as it opens; or an overlay, which takes the pointer
+//! alone. A click outside a panel, or Escape
 //! within it, closes it where its plugin asks so.
 //!
 //! A menu's panel of menu items alone, buttons and toggles of labels,
@@ -67,12 +68,15 @@ pub enum Role {
     /// A dialog, as a find bar: it takes the keyboard as it opens.
     #[default]
     Dialog,
+    /// An overlay, as a command's header over a pane: it takes the pointer,
+    /// and not the keyboard.
+    Overlay,
 }
 
 impl Role {
     /// Whether a panel of the role takes the keyboard's focus as it opens.
     pub fn takes_focus(self) -> bool {
-        self != Self::Tooltip
+        matches!(self, Self::Menu | Self::Dialog)
     }
 }
 
@@ -227,6 +231,15 @@ impl<P: Copy + Eq> Panels<P> {
         };
         *placed = Some(frame);
         Some(frame)
+    }
+
+    /// Takes `panel`'s place away, as of an anchor that the window does not
+    /// show now, as a pane of a tab behind: it takes the pointer nowhere
+    /// until it is placed again.
+    pub fn hide(&mut self, panel: P) {
+        if let Some((.., placed)) = self.stack.iter_mut().find(|(id, ..)| *id == panel) {
+            *placed = None;
+        }
     }
 
     /// Where `panel` was placed last, if it is open and placed.
@@ -583,7 +596,7 @@ mod tests {
         assert!(panels.close(7));
         assert_eq!(panels.escaped_menu(), None);
         assert!(Role::Menu.takes_focus() && Role::Dialog.takes_focus());
-        assert!(!Role::Tooltip.takes_focus());
+        assert!(!Role::Tooltip.takes_focus() && !Role::Overlay.takes_focus());
         // Escape closes the dialog that asks so, not one that does not.
         panels.open(4, options(Role::Dialog, false, false));
         assert!(!panels.escaped(4));

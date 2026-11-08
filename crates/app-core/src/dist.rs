@@ -27,5 +27,7 @@ pub(crate) fn plugins() -> Vec<Registration> {
         lokyr_quick_terminal::registration(),
         #[cfg(feature = "plugin-progress")]
         lokyr_progress::registration(),
+        #[cfg(feature = "plugin-command-header")]
+        lokyr_command_header::registration(),
     ]
 }

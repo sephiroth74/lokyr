@@ -178,8 +178,9 @@ impl<B: Backend> App<B> {
     }
 
     /// Lays `window`'s panels out in a window of `size`, from the lowest:
-    /// each of its tree's own size, of the window's width at most, at its
-    /// anchor as the window's layout now has it, within the window. The
+    /// each of its tree's own size, of the window's width at most, or of its
+    /// pane's width across its top, at its anchor as the window's layout
+    /// now has it, within the window. The
     /// events of the lists' rows that ask for their items go to their
     /// plugins as the turn ends.
     pub(super) fn lay_out_panels(&mut self, window: WindowId, size: WindowSize) {
@@ -199,9 +200,26 @@ impl<B: Backend> App<B> {
             let Some(placed) = state.chrome[at].placed.clone() else {
                 continue;
             };
+            // A panel across a pane's top shows while its pane does, and
+            // hides behind another tab or a zoomed pane.
+            if let PanelAnchor::PaneTop(pane) = &placed.options.anchor
+                && !state
+                    .views
+                    .iter()
+                    .any(|view| view.pane == PaneId::of(pane.0))
+            {
+                state.panels.hide(id);
+                state.chrome[at].frame = None;
+                continue;
+            }
             let anchor = anchor_of(&self.workspace, state, &placed, scale);
             let view = &mut state.chrome[at];
-            let mut laid = view.surface.lay_out((None, None), font);
+            // A panel across a pane's top takes the pane's width.
+            let across = match (&placed.options.anchor, anchor) {
+                (PanelAnchor::PaneTop(_), Anchor::Corner(rect, ..)) => Some(rect.width),
+                _ => None,
+            };
+            let mut laid = view.surface.lay_out((across, None), font);
             let mut natural = view.surface.size().unwrap_or_default();
             if natural.0 > room.0 {
                 laid.extend(view.surface.lay_out((Some(room.0), None), font));
@@ -380,6 +398,17 @@ fn anchor_of<B: Backend>(
             };
             Anchor::Corner(frame, corner_of(*corner), margin)
         }),
+        // Across the pane's top, of its width, at its edge.
+        PanelAnchor::PaneTop(pane) => pane_view(*pane).map_or(pointer, |view| {
+            let rect = view.rect;
+            let frame = Frame {
+                x: rect.x as f32,
+                y: rect.y as f32,
+                width: rect.width as f32,
+                height: rect.height as f32,
+            };
+            Anchor::Corner(frame, Corner::TopLeft, 0.0)
+        }),
         PanelAnchor::WindowCorner { corner, .. } => {
             Anchor::Corner(state.overlay, corner_of(*corner), margin)
         }
@@ -458,6 +487,7 @@ fn role_of(role: PanelRole) -> Role {
         PanelRole::Tooltip => Role::Tooltip,
         PanelRole::Menu => Role::Menu,
         PanelRole::Dialog => Role::Dialog,
+        PanelRole::Overlay => Role::Overlay,
     }
 }
 

@@ -2795,6 +2795,7 @@ fn scrolled(scroll: host::Scroll) -> Scroll {
         host::Scroll::Bottom => Scroll::Bottom,
         host::Scroll::PreviousPrompt => Scroll::PreviousPrompt,
         host::Scroll::NextPrompt => Scroll::NextPrompt,
+        host::Scroll::Row(row) => Scroll::Row(row),
     }
 }
 
@@ -3067,9 +3068,10 @@ impl Host<'_, '_> {
                 .ok_or_else(|| Error::new(Code::NotFound, format!("there is no pane {}", pane.0)))
         };
         match anchor {
-            Anchor::Cell { pane, .. } | Anchor::Cursor(pane) | Anchor::PaneCorner { pane, .. } => {
-                pane_window(*pane)
-            }
+            Anchor::Cell { pane, .. }
+            | Anchor::Cursor(pane)
+            | Anchor::PaneCorner { pane, .. }
+            | Anchor::PaneTop(pane) => pane_window(*pane),
             Anchor::Pointer(window) | Anchor::WindowCorner { window, .. } => {
                 Ok(self.window(*window)?.id())
             }

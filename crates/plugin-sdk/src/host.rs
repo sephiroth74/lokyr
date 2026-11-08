@@ -827,6 +827,11 @@ pub enum Scroll {
     /// To the prompt below the view's first row, at the view's top, or to
     /// the screen past the scrollback's last.
     NextPrompt,
+    /// To the row of this number, at the view's top, as far as the
+    /// scrollback's first row and the screen let it, as the terminal is
+    /// when the write applies: a row that the pane does not hold, to its
+    /// nearer end.
+    Row(i64),
 }
 
 /// What carries a plugin's calls to the host, and the host's answers

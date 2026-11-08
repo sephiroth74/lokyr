@@ -473,12 +473,15 @@ type Anchor =
     | { pointer: WindowId } -- where it is as the panel opens
     | { node: { view: ViewId, key: string } } -- below a node of a view of the plugin's
     | { pane_corner: { pane: PaneId, corner: Corner } }
+    | { pane_top: PaneId } -- across a pane's top, of its width, at its edge, as a command's header
     | { window_corner: { window: WindowId, corner: Corner } } -- of its room below the tab bar
 type Corner = "top-left" | "top-right" | "bottom-left" | "bottom-right" | "top" -- "top": the top's middle, an eighth of the height down, as a palette's
 
 type PanelOptions = {
     anchor: Anchor,
-    role: ("tooltip" | "menu" | "dialog")?, -- a dialog by default; a menu of menu items alone shows as the platform's own
+    -- a dialog by default; a menu of menu items alone shows as the platform's own; an overlay takes the pointer, a scroll
+    -- going through to the pane under it but where a list or a scroll area of its own is, and not the keyboard
+    role: ("tooltip" | "menu" | "dialog" | "overlay")?,
     close_outside: boolean?, -- a click outside it closes it
     close_escape: boolean?, -- Escape closes it, while it has the keyboard's focus
 }
@@ -547,7 +550,8 @@ type MenuItem = {
 -- The logical line of a row: its text, and each character's cell, { column, row's number }.
 type LineText = { text: string, cells: { { number } } }
 
-type Scroll = { up: number } | { down: number } | "page-up" | "page-down" | "top" | "bottom" | "previous-prompt" | "next-prompt"
+-- `row`: to the row of that number, at the view's top, as far as the scrollback's first row and the screen let it.
+type Scroll = { up: number } | { down: number } | "page-up" | "page-down" | "top" | "bottom" | "previous-prompt" | "next-prompt" | { row: number }
 
 -- The host's requests, each by the Rust front end's name. A read answers at once, of the state as it is; a
 -- write, and a request of the app's, as a window to open or a command to run, applies as the call returns,
@@ -883,7 +887,7 @@ installed ──▶ resolved ──▶ consent ──▶ loaded ──▶ active
 | `blocks` | Command + output blocks, over the prompts' marks that the kernel keeps since F3 | F5a |
 | `quick-terminal` | The quick terminal: its command, which shows and hides its quick window, its autohide and its place, of `[plugins.quick-terminal]`, through the quick windows and the global keys of `global-hotkey` | F3 |
 | `progress` | The programs' progress (OSC 9;4), in the `window-strip` slot; the tab shows it with `tabs` | F3 |
-| `command-header` | The command whose output the view shows, at the pane's top, in a panel of its pane's top corner, over OSC 133's marks, as iTerm2's | F3 |
+| `command-header` | The command whose output the view shows, at the pane's top, a pill of its line on a hairline across the pane, in an overlay of the pane's top, over OSC 133's marks, as iTerm2's | F3 |
 | `copy-mode` | The keyboard's selection over the screen and the scrollback, as tmux's and vim's | F3 |
 | `tmux-cc`, `triggers`, `profiles`, `broadcast` | iTerm2 power features | F5b |
 | `images` | Inline images | F5c |

@@ -17,3 +17,4 @@ search = { path = "../plugins/search" }
 command-palette = { path = "../plugins/command-palette" }
 quick-terminal = { path = "../plugins/quick-terminal" }
 progress = { path = "../plugins/progress" }
+command-header = { path = "../plugins/command-header" }
