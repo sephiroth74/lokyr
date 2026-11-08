@@ -309,6 +309,24 @@ fn bash_marks_its_commands_beside_the_user_s_debug_trap() {
 }
 
 #[test]
+fn bash_marks_its_commands_under_the_user_s_set_u() {
+    let Some(bash) = modern_bash() else {
+        eprintln!("no bash of 4 or later here");
+        return;
+    };
+    // Of unset variables an error, as a strict `.bashrc` has it.
+    let home = home("bash-nounset", &[(".bashrc", "PS1='bash> '\nset -u\n")]);
+    let mut shell = Shell::start(&bash, &home);
+    shell.until("bash> ");
+    shell.run("false");
+    let text = shell.until("bash> \x1b]133;B").to_owned();
+    marks_in_order(&text, 1, &url_path(&home));
+    shell.run("true");
+    let text = shell.until("\x1b]133;D;0").to_owned();
+    assert!(!text.contains("unbound variable"), "{text:?}");
+}
+
+#[test]
 fn bash_s_options_and_traps_are_a_plain_bash_s() {
     let Some(bash) = modern_bash() else {
         eprintln!("no bash of 4 or later here");

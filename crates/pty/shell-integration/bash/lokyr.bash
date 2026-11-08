@@ -87,12 +87,16 @@ if [[ $- == *i* && -z "${_lokyr_integration-}" ]]; then
     _lokyr_prompt_end() {
         builtin local ret=$?
         builtin local start='\[\e]133;A\a\]' input='\[\e]133;B\a\]'
+        PS1="${PS1-}"
         PS1="${PS1//"$start"/}"
         PS1="${PS1//"$input"/}"
         PS1="${start}${PS1}${input}"
         if [ "$_lokyr_ps0" = 1 ]; then
             builtin local output='${_lokyr_running:0:$((_lokyr_running = 1, 0))}\e]133;C\a'
-            PS0="${PS0//"$output"/}"
+            # PS0, which bash leaves unset, of a default, as `set -u` takes
+            # an unset variable's substitution for an error.
+            builtin local ps0="${PS0-}"
+            PS0="${ps0//"$output"/}"
             if builtin shopt -q promptvars; then
                 PS0+="$output"
             fi
