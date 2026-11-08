@@ -2217,8 +2217,9 @@ impl<B: Backend> App<B> {
         }
         if self.windows.is_empty() {
             // The latency's bench of the user's keys tells them as its
-            // window closes.
+            // window closes; the windows kept, none now, forgotten.
             self.end_latency_bench(platform);
+            self.keep_windows(platform);
             platform.quit();
         } else if self
             .windows

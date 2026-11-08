@@ -296,6 +296,12 @@ fn a_newer_or_unreadable_file_is_left_aside_with_a_notice() {
         assert_eq!(fake.windows().count(), 1, "{text}");
         let notice = app.diagnostics.shown().expect("a notice");
         assert!(notice.text.contains("left aside"), "{}", notice.text);
+        // Of its own heading, not a command's.
+        assert_eq!(notice.about, About::KeptWindows);
+        assert_eq!(
+            app.texts.text("notice-kept-windows"),
+            "The windows of the last run do not open again:"
+        );
         // This version's own, as it quits.
         app.quit(&mut fake);
         assert_eq!(kept(&state).version, windows::VERSION);
@@ -345,13 +351,33 @@ fn the_windows_open_again_as_the_config_and_the_system_s_setting_say() {
     app.close(&mut fake, window);
     app.quit(&mut fake);
     assert!(windows::read(&state).unwrap().is_none());
-    // A bench's window is its own: it opens none of them.
+    // A bench's window is its own: it opens none of them, and leaves
+    // them kept as it quits.
     keep_frames(&state, &[frame, frame]);
     let mut fake = Fake::default();
     let mut bench = app_of(restoring(), quiet())
         .with_state(Some(state.clone()))
-        .with_startup_bench();
+        .with_latency_bench(10, false);
     fake.start(&mut bench);
     assert_eq!(fake.windows().count(), 1);
+    bench.quit(&mut fake);
+    assert_eq!(
+        windows::read(&state)
+            .unwrap()
+            .map(|kept| kept.windows.len()),
+        Some(2)
+    );
+    // The last window's close that quits, as the config says, forgets
+    // them too.
+    let mut config = restoring();
+    config.app.quit_after_last_window_closed = true;
+    let mut fake = Fake::default();
+    let mut app = app_of(config, quiet()).with_state(Some(state.clone()));
+    fake.start(&mut app);
+    for window in fake.windows().collect::<Vec<_>>() {
+        app.close(&mut fake, window);
+    }
+    assert!(fake.has_quit());
+    assert!(windows::read(&state).unwrap().is_none());
     let _ = std::fs::remove_dir_all(base);
 }

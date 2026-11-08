@@ -24,6 +24,9 @@ pub enum About {
     /// A plugin's section of the config, `[plugins.<namespace>]`, by the
     /// namespace, which a section that its plugin takes fixes.
     PluginConfig(String),
+    /// The windows kept as the app last quit, whose file does not read,
+    /// which the next quit's file takes the place of.
+    KeptWindows,
     /// Anything else, as a plugin or a command, of which each diagnostic
     /// is its own.
     Other,

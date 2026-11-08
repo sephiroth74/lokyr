@@ -1098,6 +1098,7 @@ impl<B: Backend> App<B> {
                 (About::Term, _) => "notice-term",
                 (About::Theme, _) => "notice-theme",
                 (About::PluginConfig(_), _) => "notice-plugin-config",
+                (About::KeptWindows, _) => "notice-kept-windows",
                 (About::Other, ErrorCategory::Fault) => "notice-fault",
                 (About::Other, _) => "notice-failed",
             };

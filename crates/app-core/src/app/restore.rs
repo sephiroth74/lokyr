@@ -30,11 +30,18 @@ impl<B: Backend> App<B> {
 
     /// Keeps the windows open now, in the order of their numbers, for the
     /// next start, or, as the config keeps none, forgets those kept. A
-    /// quick window and a man page's window are not kept.
+    /// quick window and a man page's window are not kept. A bench's app,
+    /// of the user's state, neither keeps nor forgets the user's windows.
     pub(super) fn keep_windows(&self, platform: &dyn Platform) {
         let Some(state) = &self.state else {
             return;
         };
+        if self.startup_bench.is_some()
+            || self.latency_bench.is_some()
+            || self.output_bench.is_some()
+        {
+            return;
+        }
         if self.restores_windows(platform) {
             let mut shown: Vec<(u32, workspace::WindowId, Option<windows::Frame>)> = self
                 .windows
@@ -99,7 +106,10 @@ impl<B: Backend> App<B> {
                     "the windows of the last run do not open again, as their file in {} is left aside: {unread}",
                     state.display()
                 );
-                self.report(platform, Diagnostic::new(Code::Failed, text, About::Other));
+                self.report(
+                    platform,
+                    Diagnostic::new(Code::Failed, text, About::KeptWindows),
+                );
                 return false;
             }
         };

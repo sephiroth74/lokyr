@@ -438,7 +438,7 @@ As Lokyr quits, the windows that are open, the quick terminal's and the man page
 - **What does not**: the panes' text and their programs, whose scrollback comes back with F5b; full screen itself, B-580 of the backlog.
 - **When**: as Lokyr quits, alone, as the user chose: no write while it runs, so that a crash or a force quit opens the windows of the quit before. A quit of no window, or with the windows not kept, forgets them.
 - **The file**: JSON, of the format's version first, `"version": 1`, which a later format raises; a file of a newer version, as a later Lokyr writes, or that does not read, or of more than 256 panes, is left aside with a notice, the start going on as without it, and this version writes its own as it quits. Fields that it does not know are read past, so that a later version may add some of its own without raising it.
-- The benchmarks open none of the kept windows.
+- The benchmarks open none of the kept windows, and neither keep nor forget them as they quit; the last window's close that quits, as `[app] quit-after-last-window-closed` says, forgets them, as a quit of no window does. A file left aside tells it in a notice of its own.
 
 ## The Finder's services and the Dock
 
