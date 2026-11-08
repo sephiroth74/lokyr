@@ -1552,8 +1552,9 @@ mod tests {
             assert!(!shown);
             assert_eq!(quiet.snapshot().cols(), 80);
         }
+        // Past the wait, it shows, unless the look above showed it.
         std::thread::sleep(ANSWER_WAIT);
-        assert!(quiet.update());
+        assert!(quiet.update() || shown);
         assert_eq!(quiet.snapshot().cols(), 95);
     }
 
