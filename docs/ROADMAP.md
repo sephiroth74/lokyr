@@ -129,11 +129,15 @@ Before 1.0.0, after F3's daily features, as 0.8 and 0.9, as the user chose on 7 
 - **Sleip**:
   - `new`, `check`, `test`, `dev`;
   - `add` from a path, from git, and then from the registry;
+  - `remove`, `update`, `list`, `search`, `info`, `publish`, which opens the registry's pull request, `gc` and `doctor`, each of `--json`; the accounts' commands wait for registry v1 ([ADR 0038](adr/0038-plugin-ecosystem-scope.md));
   - the shared `pkg-model` formats.
+- **Plugins reloaded at once**, without IPC: the app watches the plugins installed and a `sleip dev` folder, and turns a plugin that changed off and on again, as `enabled` does ([ADR 0038](adr/0038-plugin-ecosystem-scope.md)).
 - **`plugin-manager` plugin**: the in-app UI for Sleip.
 - **`snap`**, a [reference third-party plugin](PLUGIN-SYSTEM.md#reference-third-party-plugins), as VS Code's CodeSnap: an image of the selection, of the screen or of a command's output, in a window's frame; written in Luau as a third party would, published to the registry, with its own config, its capabilities, and the host's `image` service.
 - **`awake`**, a [reference third-party plugin](PLUGIN-SYSTEM.md#awake), in Luau, as the user asked on 6 November 2026: the Mac kept awake, always or while programs run, from a button beside the window's buttons; the host's request of a power assertion, its capability `keep-awake`, of an ADR, and a slot of the titlebar's buttons.
 - **Registry v0** (static), ed25519 signatures, templates, a guide for plugin authors, of a minimal practical example, a plugin that works, step by step, as the user asked on 7 November 2026: a repository of the index, publishing by pull request, the archives in its releases, the index and the site on GitHub Pages at `pkg.lokyr.dev`, and the keys that Sleip trusts ([ADR 0031](adr/0031-registry-v0.md)).
+
+**Not in F4** ([ADR 0038](adr/0038-plugin-ecosystem-scope.md)): the plugins' network and processes, refused until F6; a canvas of drawing primitives; packages of themes, as the app holds the collection ([ADR 0035](adr/0035-themes-are-the-hosts.md)).
 
 **Exit**:
 - the `sleip new → check → dev` loop works;
@@ -187,6 +191,7 @@ After 1.0.0, as 1.1 ([ADR 0036](adr/0036-plugin-ecosystem-before-1-0.md)).
 ### F6 — Plugin API 1.0 and hardening
 
 - Stabilize the plugin API as 1.0, in both front ends.
+- **The plugins' network and processes** ([ADR 0038](adr/0038-plugin-ecosystem-scope.md)): `net:<host>` through the app to the bundle's `sleip net-helper`, and `process-spawn`, of an ADR of their own.
 - Complete the docs: user guide, plugin author guide, reference.
 - Fix bugs and harden; reconfirm the license ([ADR 0010](adr/0010-mit-license.md)) and the final names.
 - **Distribution**, as the user asked on 29 October 2026: the menu's Install Command Line Tool…, which links `lokyr` to the bundle's executable in a directory of the `PATH`; and, if Lokyr goes through Homebrew, a cask whose `binary` stanza links it in Homebrew's `bin`. The DMG and the updates came in F3.

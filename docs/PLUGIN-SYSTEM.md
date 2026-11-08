@@ -25,7 +25,7 @@ Everything you see in Lokyr is a plugin: the tab bar, splits, the find bar, the 
 | Terminal | Read lines and the selection; read the commands that the shell marked and hear their starts and ends (with a capability); follow a pane's view; write input (with a capability); use the search and decoration services | highlight matches, gutter marks, a command's header | F3 |
 | Config | A `[plugins.<namespace>]` section of the config file, checked against the plugin's JSON Schema, of the keywords that the host checks, a wrong value refusing that section alone, and what another version would know ignored with a notice ([ADR 0032](adr/0032-plugins-config-and-state.md)), the notice at the value's line as the file's lines move; `enum` and `const` comparing numbers by their values, and a whole number of a fraction, as `5.0`, of a schema of integers alone the integer; read as a request, a change told as `config-changed` | `[plugins.tabs] position = "top"` | F3 |
 | Storage | A file of the plugin's state, of plain values as JSON, 1 MiB at most, in the app's state directory, read as a request and written as the call returns ([ADR 0032](adr/0032-plugins-config-and-state.md)) | search history | F3 |
-| System | Clipboard, notifications, opening URLs and files, global hotkeys and quick windows in F3; processes and the network, through the app to Sleip's helper, from F4 (with capabilities) | notify when a command finishes | F3–F4 |
+| System | Clipboard, notifications, opening URLs and files, global hotkeys and quick windows in F3; processes and the network, through the app to Sleip's helper, after 1.0.0, in F6, as [ADR 0038](adr/0038-plugin-ecosystem-scope.md) decided (with capabilities) | notify when a command finishes | F3–F4 |
 | Protocols | Handlers for rare OSC/DCS/APC sequences | iTerm2's OSC 1337 | F5 |
 | Triggers | Regexes over completed lines, with batched callbacks | highlight `ERROR` in red | F5b |
 
@@ -854,7 +854,7 @@ type Plugin = {
 - **Enforcement**:
   - Every host function exists in every plugin. Without the capability it returns a `denied` error, so a plugin can treat a capability as optional and request it at the moment it's needed.
   - The VM itself reaches nothing outside the computation: it has no `io`, `os` or `debug` library, and its `require` stays inside the package. Files, processes and the network exist only as host functions, limited to the granted paths and hosts.
-- **The app as the plugins' gateway to the network**, from F4:
+- **The app as the plugins' gateway to the network**, after 1.0.0, in F6 ([ADR 0038](adr/0038-plugin-ecosystem-scope.md)); until then `net:<host>` and `process-spawn` are refused with a notice:
   - A plugin has no network of its own: a request with `net:<host>` goes to the app, which checks its capability and its host against the allowlist, and logs it.
   - The connection runs in a helper process started on demand, `sleip net-helper`, of the Sleip that the bundle holds, which enforces the allowlist too, so that no response from the network is parsed in the process that sees what the user types.
   - Lokyr's own code contains no HTTP/TLS client; Sparkle's updater is the app's one network client ([ADR 0008](adr/0008-separate-package-manager.md), [ADR 0026](adr/0026-app-updates.md), [ADR 0029](adr/0029-update-feed-and-releases.md)).
@@ -873,7 +873,7 @@ installed ──▶ resolved ──▶ consent ──▶ loaded ──▶ active
 - **Lazy activation** through `activation.on`: `startup`, `command:<glob>`, `event:<name>`, `slot:<name>`, `osc:<number>`.
 - **Zero cost without third-party plugins**: no Luau VM exists until the first one activates.
 - **Backoff**: after 3 failures within a minute, the plugin stays disabled until the user re-enables it.
-- **Hot reload**: `sleip dev` watches the plugin's sources and reloads it into the running app over IPC. Reloading means creating a fresh VM: nothing needs to be compiled ahead.
+- **Hot reload**: the app watches the plugins installed, the store and `plugins.lock`, and the folder of a plugin that `sleip dev` links, and reloads a plugin that changed at once, turning it off and on again as `enabled` does, without IPC ([ADR 0038](adr/0038-plugin-ecosystem-scope.md)). Reloading means creating a fresh VM: nothing needs to be compiled ahead. A plugin installed or updated activates without a restart.
 
 ## Limits and isolation
 

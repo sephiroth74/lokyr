@@ -26,11 +26,12 @@ The split is the same as cargo and rustc: the app runs plugins, and Sleip provid
 | `sleip new <name>` | Scaffolds a plugin: manifest, Luau sources, the API's type definitions, tests |
 | `sleip check` | Type-checks the Luau sources against the API's definitions, and checks the manifest and the API version |
 | `sleip test` | Runs the plugin in a headless host with simulated events |
-| `sleip dev` | Checks the plugin, reloads it into the running app (over IPC), and repeats on every change |
+| `sleip dev` | Checks the plugin and links its folder into the app's plugins, which the app watches and reloads at each change, and checks it again at each change ([ADR 0038](adr/0038-plugin-ecosystem-scope.md)) |
 | `sleip add <plugin>` | Adds a plugin to `plugins.toml` (from the registry, `--path` or `--git`), then resolves and installs |
 | `sleip remove <plugin>` / `sleip update [<plugin>]` | Removes or updates, always through the lockfile |
 | `sleip list` / `search <text>` / `info <plugin>` | Installed plugins, catalog, details (capabilities, compatibility, versions) |
-| `sleip login` / `logout` / `publish` / `yank` / `owner` | Registry account and publishing |
+| `sleip publish` | Opens the registry's pull request of a plugin's tagged version |
+| `sleip login` / `logout` / `yank` / `owner` (registry v1) | Registry accounts, which registry v0, of GitHub's accounts and pull requests, has none of ([ADR 0038](adr/0038-plugin-ecosystem-scope.md)) |
 | `sleip gc` | Removes unreferenced packages from the store |
 | `sleip doctor` | Diagnoses the installation, the cache, and compatibility with the app |
 | `sleip audit` (F7) | Checks installed plugins against security advisories |

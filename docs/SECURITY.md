@@ -40,7 +40,7 @@ Out of scope: a process running as the same user with full privileges. It could 
 - **Luau sandbox**: one VM per plugin, with only the libraries that compute, a memory limit and a deadline per call. A plugin that fails or misses its deadline is disabled.
 - **Sources only**: packages carry Luau sources, never bytecode, and the host compiles every script itself.
 - **Audit log**: capability requests and grants are recorded and can be reviewed.
-- **Networking**, from F4: a plugin has none of its own; its requests go to the app, which checks their capability and their hosts, and logs them, then to a helper process, `sleip net-helper`, of the Sleip that the bundle holds, which enforces the allowed hosts too and parses the responses outside the app's process. Lokyr's own code has no HTTP client; Sparkle's updater is the app's one network client ([ADR 0026](adr/0026-app-updates.md)).
+- **Networking**, after 1.0.0, in F6 ([ADR 0038](adr/0038-plugin-ecosystem-scope.md)), refused until then: a plugin has none of its own; its requests go to the app, which checks their capability and their hosts, and logs them, then to a helper process, `sleip net-helper`, of the Sleip that the bundle holds, which enforces the allowed hosts too and parses the responses outside the app's process. Lokyr's own code has no HTTP client; Sparkle's updater is the app's one network client ([ADR 0026](adr/0026-app-updates.md)).
 - **First-party plugins** are our own code, reviewed and limited to the SDK.
 
 ## Packages and the registry
