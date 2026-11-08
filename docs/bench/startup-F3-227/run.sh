@@ -1,6 +1,6 @@
 #!/bin/sh
-# The start of 0.5.1's app, of 0.7.0's and of the build that asks for the
-# default terminal a second after it, in four rounds of rotated orders,
+# The start of 0.5.1's app and of 0.7.0's, in a session of its own, after
+# the A/B's, in four rounds of balanced orders,
 # each of the minimal AppKit app of F0 as its floor, of 0.7.0's A/B's
 # config, the same pause before each run.
 set -u
@@ -13,15 +13,12 @@ app() {
   case $1 in
     v051) echo /tmp/lokyr/bench-v051/Lokyr.app ;;
     v070) echo /tmp/lokyr/bench-v070/Lokyr.app ;;
-    fix) echo /tmp/lokyr/bench-fix/Lokyr.app ;;
   esac
 }
 order() {
   case $(( ($1 - 1) % 4 )) in
-    0) echo "v051 v070 fix" ;;
-    1) echo "fix v070 v051" ;;
-    2) echo "v070 fix v051" ;;
-    *) echo "v051 fix v070" ;;
+    0|3) echo "v051 v070" ;;
+    *) echo "v070 v051" ;;
   esac
 }
 log() { echo "$(date +%T) $*" | tee -a $OUT/session.log; }
