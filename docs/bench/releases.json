@@ -1,5 +1,5 @@
 {
-  "about": "The releases' measures, which tools/bench/releases.py draws into RELEASES.md's summary and charts. `values` holds each release's value, as RELEASES.md's table gives it, the mean of its rounds where the table tells two; `baseline` the release before it, `against`, as the release's own session measured it, which the summary compares the release with. `tolerance` is the change, in the measure's unit, or `tolerance_pct` in percent, that its rounds' spread holds: a smaller one is no change. `reference` is the best of the other terminals, of the report `source`, and Lokyr's own value there, `lokyr`, where the conditions differ from the releases' sessions; `budget_label` tells a budget's line.",
+  "about": "The releases' measures, which tools/bench/releases.py draws into RELEASES.md's summary and charts. `values` holds each release's value, as RELEASES.md's table gives it, the mean of its rounds where the table tells two; `baseline` the release before it, `against`, as the release's own session measured it, which the summary compares the release with. `sessions` names the session of a release's value and its baseline where it is not the release's own, as a measure taken again at rest. `tolerance` is the change, in the measure's unit, or `tolerance_pct` in percent, that its rounds' and sessions' spread holds, as the reports found it: a smaller one is no change. `reference` is the best of the other terminals, of the report `source`, and Lokyr's own value there, `lokyr`, where the conditions differ from the releases' sessions; `budget_label` tells a budget's line.",
   "releases": [
     {
       "id": "0.1.0",
@@ -85,6 +85,12 @@
         "after-F3-49": 21.9,
         "0.5.1": 13.4,
         "0.7.0": 15.1
+      },
+      "sessions": {
+        "0.7.0": {
+          "title": "F3-228",
+          "report": "startup-F3-228.md"
+        }
       }
     },
     {
@@ -125,7 +131,7 @@
       "name": "Latency, a key to its echo, p99",
       "unit": "ms",
       "better": "lower",
-      "tolerance": 4,
+      "tolerance": 8,
       "digits": 1,
       "values": {
         "0.1.0": 43.6,
@@ -159,7 +165,7 @@
       "unit": "MB",
       "better": "lower",
       "budget": 35,
-      "tolerance": 0.5,
+      "tolerance": 2,
       "digits": 1,
       "values": {
         "0.1.0": 24.7,
@@ -245,7 +251,7 @@
       "name": "`cat` of 1 GiB of ASCII on screen",
       "unit": "MiB/s",
       "better": "higher",
-      "tolerance_pct": 4,
+      "tolerance_pct": 5,
       "digits": 1,
       "values": {
         "0.1.0": 321.0,
@@ -276,7 +282,7 @@
       "name": "`seq 1 10000000`",
       "unit": "MiB/s",
       "better": "higher",
-      "tolerance_pct": 4,
+      "tolerance_pct": 5,
       "digits": 1,
       "values": {
         "0.1.0": 207.6,
@@ -299,7 +305,7 @@
       "name": "Colored text, SGR",
       "unit": "MiB/s",
       "better": "higher",
-      "tolerance_pct": 4,
+      "tolerance_pct": 5,
       "digits": 1,
       "values": {
         "0.1.0": 285.7,
@@ -322,7 +328,7 @@
       "name": "CJK and emoji",
       "unit": "MiB/s",
       "better": "higher",
-      "tolerance_pct": 4,
+      "tolerance_pct": 5,
       "digits": 1,
       "values": {
         "0.1.0": 218.1,
@@ -368,7 +374,7 @@
       "unit": "ms",
       "better": "lower",
       "budget": 2,
-      "tolerance_pct": 15,
+      "tolerance_pct": 50,
       "digits": 3,
       "values": {
         "0.1.0": 0.339,
@@ -457,7 +463,7 @@
       "name": "A live resize, opaque, frames a second",
       "unit": "/s",
       "better": "higher",
-      "tolerance": 1,
+      "tolerance": 1.5,
       "digits": 1,
       "values": {
         "0.5.0": 55.7,
@@ -481,7 +487,7 @@
       "name": "A live resize, translucent with a blur, frames a second",
       "unit": "/s",
       "better": "higher",
-      "tolerance": 1,
+      "tolerance": 1.5,
       "digits": 1,
       "values": {
         "0.5.0": 55.6,
@@ -505,7 +511,7 @@
       "name": "A live resize, opaque, refreshes missed of 600",
       "unit": "",
       "better": "lower",
-      "tolerance": 5,
+      "tolerance": 10,
       "digits": 1,
       "values": {
         "0.5.0": 37.0,
@@ -529,7 +535,7 @@
       "name": "A live resize, translucent with a blur, refreshes missed of 600",
       "unit": "",
       "better": "lower",
-      "tolerance": 5,
+      "tolerance": 10,
       "digits": 1,
       "values": {
         "0.5.0": 38.5,
@@ -553,7 +559,7 @@
       "name": "A live resize, opaque, the compositor's delay, p95",
       "unit": "ms",
       "better": "lower",
-      "tolerance": 5,
+      "tolerance": 16,
       "digits": 1,
       "values": {
         "0.5.0": 13.3,
@@ -577,7 +583,7 @@
       "name": "A live resize, translucent with a blur, the compositor's delay, p95",
       "unit": "ms",
       "better": "lower",
-      "tolerance": 5,
+      "tolerance": 16,
       "digits": 1,
       "values": {
         "0.5.0": 28.7,

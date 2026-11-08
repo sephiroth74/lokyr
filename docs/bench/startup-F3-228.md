@@ -1,6 +1,6 @@
 # The start's gap at rest (F3-228)
 
-Measured on 2026-11-08 between 17:26 and 17:33, the user away, as [0.7.0's A/B](ab-F3-77.md) found its startup 34 ms longer than 0.5.1's, its gap to the minimal app 46.9 ms past the budget of 35. The script, [`run.sh`](startup-F3-228/run.sh), its analysis, [`analyze.py`](startup-F3-228/analyze.py), and the reports are in [startup-F3-228](startup-F3-228/).
+Measured on 2026-11-08 between 17:26 and 17:33, the user away, as [0.7.0's A/B](ab-F3-77.md) found its startup 30 ms longer than 0.5.1's, its gap to the minimal app 46.9 ms past the budget of 35. The script, [`run.sh`](startup-F3-228/run.sh), its analysis, [`analyze.py`](startup-F3-228/analyze.py), and the reports are in [startup-F3-228](startup-F3-228/).
 
 ## Method
 

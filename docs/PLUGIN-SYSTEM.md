@@ -25,7 +25,7 @@ Everything you see in Lokyr is a plugin: the tab bar, splits, the find bar, the 
 | Terminal | Read lines and the selection; read the commands that the shell marked and hear their starts and ends (with a capability); follow a pane's view; write input (with a capability); use the search and decoration services | highlight matches, gutter marks, a command's header | F3 |
 | Config | A `[plugins.<namespace>]` section of the config file, checked against the plugin's JSON Schema, of the keywords that the host checks, a wrong value refusing that section alone, and what another version would know ignored with a notice ([ADR 0032](adr/0032-plugins-config-and-state.md)), the notice at the value's line as the file's lines move; `enum` and `const` comparing numbers by their values, and a whole number of a fraction, as `5.0`, of a schema of integers alone the integer; read as a request, a change told as `config-changed` | `[plugins.tabs] position = "top"` | F3 |
 | Storage | A file of the plugin's state, of plain values as JSON, 1 MiB at most, in the app's state directory, read as a request and written as the call returns ([ADR 0032](adr/0032-plugins-config-and-state.md)) | search history | F3 |
-| System | Clipboard, notifications, opening URLs and files, global hotkeys and quick windows in F3; processes and the network, through the app to Sleip's helper, after 1.0.0, in F6, as [ADR 0038](adr/0038-plugin-ecosystem-scope.md) decided (with capabilities) | notify when a command finishes | F3–F4 |
+| System | Clipboard, notifications, opening URLs and files, global hotkeys and quick windows in F3; processes and the network, through the app to Sleip's helper, after 1.0.0, in F6, as [ADR 0038](adr/0038-plugin-ecosystem-scope.md) decided (with capabilities) | notify when a command finishes | F3; processes and the network F6 |
 | Protocols | Handlers for rare OSC/DCS/APC sequences | iTerm2's OSC 1337 | F5 |
 | Triggers | Regexes over completed lines, with batched callbacks | highlight `ERROR` in red | F5b |
 
@@ -870,7 +870,7 @@ installed ──▶ resolved ──▶ consent ──▶ loaded ──▶ active
                          re-enabled ◀── disabled ◀── restart with backoff
 ```
 
-- **Lazy activation** through `activation.on`: `startup`, `command:<glob>`, `event:<name>`, `slot:<name>`, `osc:<number>`.
+- **Lazy activation** through `activation.on`: `startup`, `command:<glob>`, `event:<name>`, `slot:<name>`, and `osc:<number>` with the OSC handlers, in F5.
 - **Zero cost without third-party plugins**: no Luau VM exists until the first one activates.
 - **Backoff**: after 3 failures within a minute, the plugin stays disabled until the user re-enables it.
 - **Hot reload**: the app watches the plugins installed, the store and `plugins.lock`, and the folder of a plugin that `sleip dev` links, and reloads a plugin that changed at once, turning it off and on again as `enabled` does, without IPC ([ADR 0038](adr/0038-plugin-ecosystem-scope.md)). Reloading means creating a fresh VM: nothing needs to be compiled ahead. A plugin installed or updated activates without a restart.
@@ -878,7 +878,7 @@ installed ──▶ resolved ──▶ consent ──▶ loaded ──▶ active
 ## Limits and isolation
 
 - **One VM per plugin**: plugins share no Lua state, so one plugin cannot see or change another's globals.
-- **Memory**: a limit per VM (64 MB by default, configurable per plugin). An allocation over the limit raises a memory error, which ends the call.
+- **Memory**: a limit per VM, 64 MB, fixed in 1.0.0, of no key of the config; a key, if one is asked for, in F6. An allocation over the limit raises a memory error, which ends the call.
 - **CPU**:
   - A deadline per call type (e.g. 16 ms for `render`, 250 ms for commands).
   - A watchdog thread installs Luau's interrupt only once the deadline has passed, so the check costs nothing until then. The interrupt then ends the call at the next loop iteration or function call, native code included.
@@ -936,7 +936,7 @@ Plugins that we write as a third party would, in Luau, in a repository of their 
 
 Similar to VS Code's [CodeSnap](https://marketplace.visualstudio.com/items?itemName=adpyke.codesnap):
 
-- **Commands**: `snap.selection`, the selection; `snap.screen`, the visible screen; and, once shell integration marks the commands, in F5a, `snap.output`, a command with its output. Each opens a preview in a panel over the window, the image as it will be, with a shutter and toggles of the frame's parts, which save the image or copy it.
+- **Commands**: `snap.selection`, the selection; `snap.screen`, the visible screen; and `snap.output`, a command with its output, in F4, of `history-read`, as shell integration marks the commands and their lines. Each opens a preview in a panel over the window, the image as it will be, with a shutter and toggles of the frame's parts, which save the image or copy it.
 - **The image**: the text with its colors, styles and the terminal's font, in a frame as a macOS window's, with its three buttons and a title, the pane's; rounded corners, a shadow, padding and a background around it. The host draws it: an `image` service renders cells offscreen, with the terminal's own renderer, so that the image is what the window shows, and returns a PNG, at the display's scale or another. Any plugin can use the service, without a capability.
 - **Its config**, after CodeSnap's settings:
 
@@ -962,7 +962,7 @@ Similar to VS Code's [CodeSnap](https://marketplace.visualstudio.com/items?itemN
 Menu beside the window's buttons:
 
 - **A button** beside the window's buttons, of the state's symbol, which opens a menu of three states, the current one ticked: **Default**, the system's rules of sleep; **Stay awake**, the system and the display kept awake; **Sleep after jobs**, kept awake while a tab runs a program, as its marks tell, and let sleep once the last one ends. Commands set each state, for the palette and the keys.
-- **Capabilities**: `keep-awake`, new, of a low risk, a battery's cost: a request that keeps the system, or the system and the display, from idle sleep, which the host holds as a power assertion of the platform's, IOKit's on macOS, and releases as the plugin asks, ends, is turned off or fails, so that no plugin leaves the Mac awake past its life.
+- **Capabilities**: `keep-awake`, new, of a high risk, as a display kept awake keeps the screen from locking, and of a battery's cost: a request that keeps the system, or the system and the display, from idle sleep, which the host holds as a power assertion of the platform's, IOKit's on macOS, and releases as the plugin asks, ends, is turned off or fails, so that no plugin leaves the Mac awake past its life; and `process-read`, of the tabs' `running`, which Sleep after jobs reads.
 - **What the API needs for it**: the request and its capability, of an ADR; a slot of small buttons in the titlebar, beside the window's buttons, which no slot has yet; the tabs' marks of a running program, which `TabInfo` gives, and their changes as events, of no polling.
 
 ## Distribution

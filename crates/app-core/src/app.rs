@@ -270,9 +270,10 @@ const BELL_MARK: &str = "🔔 ";
 /// the display, as one that sleeps, or a machine without one, shows none.
 const BENCH_DEADLINE: Duration = Duration::from_secs(15);
 
-/// How long a start that the system made to open files or folders, or for
-/// a service, waits for what it opens to open a window, before it opens a
-/// new one: a theme's file opens none.
+/// How long a start that the system made to open files, folders or links
+/// waits for what it opens to open a window, before it opens a new one: a
+/// theme's file opens none. A start for a service is a default one, whose
+/// new window opens beside the service's own.
 const UNTITLED_WAIT: Duration = Duration::from_secs(1);
 
 /// How long a frame starts looking up the faces of characters that it has
@@ -503,9 +504,8 @@ pub struct App<B: Backend> {
     /// keep their screens as their programs end, whatever `close-on-exit`
     /// says.
     scripts: BTreeSet<PaneId>,
-    /// The timer past which a start that the system made to open files or
-    /// folders, or for a service, opens a new window, if what it opened
-    /// opened none.
+    /// The timer past which a start that the system made to open files,
+    /// folders or links opens a new window, if what it opened opened none.
     untitled_timer: Option<TimerId>,
     /// The timer of the turn of the panes whose sessions told something
     /// within the pace of their last look, and its time.
@@ -3467,8 +3467,9 @@ impl<B: Backend> App<B> {
             file.watch(platform);
         }
         // The windows kept as the app last quit, or a new one; none yet
-        // where the system started the app to open folders, or for a
-        // service, which open their own windows right after.
+        // where the system started the app to open files, folders or
+        // links, whose events came before the start and follow it, which
+        // open their own windows.
         let bench = self.startup_bench.is_some()
             || self.latency_bench.is_some()
             || self.output_bench.is_some();

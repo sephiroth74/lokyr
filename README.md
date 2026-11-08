@@ -61,7 +61,7 @@ Lokyr is built in phases, each with exit criteria that are measured, not assumed
 
 ## Performance
 
-Lokyr against Ghostty, Alacritty, kitty, WezTerm, iTerm2 and Terminal.app, under the same conditions: Menlo 13 in 120 × 40 cells, the same plain shell, release builds, on an M5 Pro. Lokyr is the build after F3-72, measured on 8 November 2026 ([its report](docs/bench/compare-F3-72.md)); the others were measured once of their versions on 31 October, as [the full report](docs/bench/compare-F2-134.md) tells, with every measure, its method and its limits; the latency, by Typometer, is of Lokyr of 1 November. Each release's own measures, against its budgets and the best of the others, are in [the releases' table](docs/bench/RELEASES.md).
+Lokyr against Ghostty, Alacritty, kitty, WezTerm, iTerm2 and Terminal.app, under the same conditions: Menlo 13 in 120 × 40 cells, the same plain shell, release builds, on an M5 Pro. Lokyr is a build of 8 November 2026, measured that day ([its report](docs/bench/compare-F3-72.md)); the others were measured once of their versions on 31 October, as [the full report](docs/bench/compare-F2-134.md) tells, with every measure, its method and its limits; the latency, by Typometer, is of Lokyr of 1 November. Each release's own measures, against its budgets and the best of the others, are in [the releases' table](docs/bench/RELEASES.md).
 
 <p align="center">
   <img src="docs/bench/compare-F3-72/charts/startup.svg" alt="Startup to the first window: Lokyr 236 ms, Ghostty 331, Terminal.app 340, Alacritty 349, WezTerm 394, kitty 672, iTerm2 794" width="680">

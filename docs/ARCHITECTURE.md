@@ -178,7 +178,7 @@ sleip/* ─▶ pkg-model           registry/* ─▶ pkg-model
 | Only `app` and `app-core` depend on `kernel`, and `xtask`, which converts the themes that the bundle holds with the kernel's importer and never ships | Plugins must not be able to bypass the SDK | `cargo-deny` (`wrappers`) and `xtask check-deps` |
 | `plugins/*` depend only on `plugin-sdk`, plus a whitelist of utility crates | Proves the public API is sufficient | `xtask check-deps` |
 | First-party plugins use `#![forbid(unsafe_code)]`; clippy `disallowed-methods` forbids threads, blocking I/O and clocks | They follow the same rules as Luau plugins | clippy in CI |
-| Luau (`mlua`) only in `plugin-host-luau` | The C++ runtime stays behind one crate and one feature | `cargo-deny` (`wrappers`) |
+| Luau (`mlua`) only in `plugin-host-luau`, and Luau's analyzer only in `sleip-analyzer`, a crate of Sleip's that the app never links | The C++ runtime stays behind one crate and one feature, and the app holds no analyzer | `cargo-deny` (`wrappers`) |
 | HTTP/TLS (`hyper`, `reqwest`, `rustls`, …) only in `sleip/*` | No networking code of the app's own; Sparkle's updater, a framework, is its one network client | `cargo-deny` (`bans` + `wrappers`) |
 | No async runtime (`tokio`, `async-std`, …) in the app | Fewer threads, less memory, fewer dependencies | `cargo-deny` |
 | Only `app` picks the backends, via `cfg(target_os)` | Core crates stay portable | `xtask check-deps` (`backends-only-in-app`) |

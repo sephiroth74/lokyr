@@ -396,8 +396,9 @@ pub trait Platform {
     fn scrollers(&self) -> Scrollers;
 
     /// Whether the system started the app of its own, as from its icon, a
-    /// command or a shell: not to open files, folders or links, whose
-    /// events come right after the start, and which open its windows.
+    /// command, a shell or a service: not to open files, folders or links,
+    /// whose events come before the start, which the platform hands the
+    /// app right after it, and which open its windows.
     fn default_launch(&self) -> bool;
 
     /// Whether the file at `path` came from the internet, as the system

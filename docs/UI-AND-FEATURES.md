@@ -55,7 +55,7 @@ This document covers our UI engine and the features the MVP cannot ship without:
   - the pointer, the keys, the input method's composition and commits, and its rectangle, to the panel under the pointer or with the focus, as to the window's content, a composition under way ending as it stands where a panel takes the focus as it opens; a panel over the titlebar takes its presses there, which would drag the window, a tooltip's aside, and while one that a press outside closes shows, the whole bar's, whose press closes it; a press's button captured by the panel that it went down over, until it goes up; the indeterminate progresses' sweeps that a panel covers left out;
   - drawn within the window, as its one drawable draws them; but a menu's panel of menu items alone, buttons and toggles of labels, separators, and submenus, containers of a text, their title, then their items, shows on macOS as a native menu at its anchor, which the system places, out of the window too: a toggle's item ticked, a disabled one dimmed, a choice told as its node's press, a `click` or a `toggle`, and never run as a command of the app's, whatever its node's key; the panel that its plugin closes closes the system's menu, and a menu that another one replaces closes, as its plugin hears, each in its turn; a menu of other nodes stays drawn, as on Linux;
 - menus. Context menus and the menu bar are native `NSMenu`s on macOS, to which plugins add their items, and drawn by us on Linux; menus drawn by `ui-core` serve inside panels alone, as a find bar's choice.
-- A canvas of drawing primitives, for a plugin's own graphics, comes with F4's Luau API.
+- A canvas of drawing primitives, for a plugin's own graphics, comes later, after F4, as no plugin of F4 needs one ([B-582](tasks/BACKLOG.md)).
 
 **Focus and IME**
 - Focus belongs to exactly one element: the window's pane, or a node of a panel that takes it, a widget or a node of a key that a plugin marks `focusable`. A press over a panel's node gives it to the innermost node under the pointer that takes it, but a control's, a button's or a toggle's, disabled or not, which leaves it where it was, as macOS's controls do: a click on a find bar's option keeps the typing in its field.
@@ -460,10 +460,12 @@ Lokyr › Make Lokyr the Default Terminal, as the user asked on 6 November 2026,
 The `core-actions` plugin:
 - **Clipboard and scrollback**: copy, paste (with the rules in [SECURITY.md](SECURITY.md)), select all, clear the scrollback. A drop of files pastes their paths, quoted for the shell; a drop of text pastes it, as a paste does.
 - **Font and scrolling**: font size (+, −, reset); scroll by line or page, to the top or bottom.
-- **Windows**: new window, close window, quit; Window › Float on Top, the app's `window.toggle-float-on-top`, as the user asked on 6 November 2026, keeps a window above the other applications' windows, at AppKit's floating level, each window of its own, its item ticked as the window in front floats and dimmed for the quick terminal, which floats of its own; a window in full screen takes the normal level there, and floats again as it leaves it.
+- **Windows**: new window, close window, quit.
 - **Mouse selection**:
   - double-click selects a word, triple-click a line, and ⌥ (Alt on Linux) makes a rectangular selection;
   - copy-on-select is optional.
+
+The app's own, of no plugin: Window › Float on Top, `window.toggle-float-on-top`, as the user asked on 6 November 2026, keeps a window above the other applications' windows, at AppKit's floating level, each window of its own, its item ticked as the window in front floats and dimmed for the quick terminal, which floats of its own; a window in full screen takes the normal level there, and floats again as it leaves it.
 
 ## The pane's context menu
 

@@ -37,8 +37,8 @@
 
 <rect class="surface" width="680" height="322" rx="8"/>
 <text class="primary" x="16" y="26" font-size="15" font-weight="600">Wakeups at rest</text>
-<text class="secondary" x="16" y="45" font-size="12">Interrupt wakeups a second, over 60 s with a steady cursor; less is better; Lokyr of the build after F3-72,</text>
-<text class="secondary" x="16" y="61" font-size="12">the others of F2-134</text>
+<text class="secondary" x="16" y="45" font-size="12">Interrupt wakeups a second, over 60 s with a steady cursor; less is better; Lokyr measured on 8 November</text>
+<text class="secondary" x="16" y="61" font-size="12">2026, the others on 31 October 2026</text>
 <line class="grid" x1="118.0" y1="72" x2="118.0" y2="282.0" stroke-width="1"/>
 <text class="muted tick" x="118.0" y="297.0" font-size="11" text-anchor="middle">0</text>
 <line class="grid" x1="216.4" y1="72" x2="216.4" y2="282.0" stroke-width="1"/>

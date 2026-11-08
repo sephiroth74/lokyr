@@ -81,7 +81,8 @@ def summary(data):
         "## At a glance",
         "",
         f"{last['title']} against {against['title']}, both measured in {last['title']}'s session, "
-        f"[{last['report'][:-3]}]({last['report']}): each measure's change, the share of its budget, "
+        f"[{last['report'][:-3]}]({last['report']}), but a measure that names another: each measure's "
+        "change, the share of its budget, "
         "the best of the other terminals, of [F2-134](compare-F2-134.md) and [F3-152](motion-F3-152.md), "
         "with Lokyr's own value of that session where its conditions differ, and whether it is as before, "
         "better, or worse beyond its rounds' spread.",
@@ -96,7 +97,11 @@ def summary(data):
             continue
         reference = reference_of(measure)
         best = reference["label"] if reference else "—"
-        lines.append(f"| {measure['name']} | {value_text(before, measure)} | {value_text(after, measure)} | "
+        name = measure["name"]
+        session = measure.get("sessions", {}).get(last["id"])
+        if session:
+            name += f", of [{session['title']}]({session['report']})'s session"
+        lines.append(f"| {name} | {value_text(before, measure)} | {value_text(after, measure)} | "
                      f"{change_text(measure, before, after)} | {budget_text(measure, after)} | {best} | "
                      f"{verdict(measure, before, after)} |")
     lines += ["", "The latency's budgets, 2 refreshes at the p50 and 4.5 at the p99, set of a display at 120 Hz, "

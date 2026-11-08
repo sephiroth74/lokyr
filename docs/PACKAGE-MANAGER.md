@@ -10,7 +10,7 @@ The split is the same as cargo and rustc: the app runs plugins, and Sleip provid
 |---|---|
 | Resolves versions, downloads, checks signatures and checksums, extracts | Reads `plugins.lock` and the store from disk |
 | Writes `plugins.lock` atomically | Watches the config directory and loads or unloads plugins |
-| Publishes to the registry, manages tokens and owners | Asks the user to confirm capabilities, compiles, activates |
+| Publishes to the registry, of a pull request in v0; its tokens and owners in v1 | Asks the user to confirm capabilities, compiles, activates |
 | Contains the HTTP/TLS clients | **Contains no networking code** |
 
 - **How it ships**:
@@ -26,7 +26,7 @@ The split is the same as cargo and rustc: the app runs plugins, and Sleip provid
 | `sleip new <name>` | Scaffolds a plugin: manifest, Luau sources, the API's type definitions, tests |
 | `sleip check` | Type-checks the Luau sources against the API's definitions, and checks the manifest and the API version |
 | `sleip test` | Runs the plugin in a headless host with simulated events |
-| `sleip dev` | Checks the plugin and links its folder into the app's plugins, which the app watches and reloads at each change, and checks it again at each change ([ADR 0038](adr/0038-plugin-ecosystem-scope.md)) |
+| `sleip dev` | Checks the plugin and links its folder into the app's plugins, a dev entry of `plugins.lock` that names the folder, of no hash, which the app watches and reloads at each change, and checks it again at each change; the entry goes as it ends ([ADR 0038](adr/0038-plugin-ecosystem-scope.md)) |
 | `sleip add <plugin>` | Adds a plugin to `plugins.toml` (from the registry, `--path` or `--git`), then resolves and installs |
 | `sleip remove <plugin>` / `sleip update [<plugin>]` | Removes or updates, always through the lockfile |
 | `sleip list` / `search <text>` / `info <plugin>` | Installed plugins, catalog, details (capabilities, compatibility, versions) |
@@ -34,6 +34,7 @@ The split is the same as cargo and rustc: the app runs plugins, and Sleip provid
 | `sleip login` / `logout` / `yank` / `owner` (registry v1) | Registry accounts, which registry v0, of GitHub's accounts and pull requests, has none of ([ADR 0038](adr/0038-plugin-ecosystem-scope.md)) |
 | `sleip gc` | Removes unreferenced packages from the store |
 | `sleip doctor` | Diagnoses the installation, the cache, and compatibility with the app |
+| `sleip registry` (hidden) | The registry's index generated and signed, which the registry's CI runs, hidden from the help |
 | `sleip audit` (F7) | Checks installed plugins against security advisories |
 
 **Common flags**
@@ -237,4 +238,5 @@ Built once there are enough external plugins to justify it.
 
 - **Format**: `owner/name`, using lowercase letters, digits and `-`, at most 64 characters per part.
 - **Reserved**: `lokyr/*` belongs to first-party plugins.
+- **Unique across owners**: the namespace, which the app and the config know a plugin by, is the name after the owner, so that the registry's CI refuses a name that another owner holds, and `acme/x` and `bob/x` never meet in one app.
 - **Owner**: in v0, the PR author (a GitHub user or organization); in v1, the verified account.

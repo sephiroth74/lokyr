@@ -67,16 +67,22 @@ def median(values):
     return values[middle] if len(values) % 2 else (values[middle - 1] + values[middle]) / 2
 
 
-# The other terminals are measured once of their versions, in F2-134;
-# Lokyr again, of the same tool and conditions, in the latest session of
-# its own, whose figures take the place of F2-134's.
+# The other terminals are measured once of their versions, in the
+# comparison's first session, of 31 October 2026, `OTHERS`; Lokyr again,
+# of the same tool and conditions, in the latest session of its own, of
+# 8 November 2026, `LOKYR`, whose figures take the place of its first.
 OTHERS = "compare-F2-134"
 LOKYR = "compare-F3-72"
+OTHERS_DATE = "31 October 2026"
+LOKYR_DATE = "8 November 2026"
+# Typometer's keys, of every terminal, the user's part of the first
+# session, the next morning.
+TYPOMETER_DATE = "1 November 2026"
 
 
 def compare_figures():
     """Each terminal's figures in the comparison, from its raw results:
-    Lokyr's of its latest session, the others' of F2-134."""
+    Lokyr's of its latest session, the others' of the first."""
     figures = {}
     for key, _ in TERMINALS:
         root = LOKYR if key == "lokyr" else OTHERS
@@ -126,12 +132,14 @@ def nearest_rank(values, percent):
 
 def compare():
     """Lokyr against the other terminals of macOS: Lokyr of its latest
-    session, the others of F2-134, which the subtitles tell. The README
-    shows the charts one under another, of one height, the tallest's."""
+    session, the others of the first, which the subtitles tell, as the
+    latency's do of their one session, Typometer's, of every terminal, which
+    Lokyr's latest session did not measure again. The README shows the
+    charts one under another, of one height, the tallest's."""
     figures = compare_figures()
     rows = lambda measure: [(name, figures[key][measure], key == "lokyr")
                             for key, name in TERMINALS]
-    of = "; Lokyr of the build after F3-72, the others of F2-134"
+    of = f"; Lokyr measured on {LOKYR_DATE}, the others on {OTHERS_DATE}"
     bars = [
         ("startup", "Startup", "From the process's start to its first window, median of 10 runs; "
          "less is better" + of, rows("startup"), "ms", {}),
@@ -148,7 +156,7 @@ def compare():
     latency = [
         (rate, f"Latency at {rate} Hz",
          "A key to its echo on screen, in ms, of 200 keys of Typometer's, the window alone; "
-         "less is better",
+         f"less is better; every terminal measured on {TYPOMETER_DATE}",
          [(name, statistics.median(cases[rate][key]),
            nearest_rank(cases[rate][key], 99), key == "lokyr")
           for key, name in TERMINALS if key in cases[rate]])

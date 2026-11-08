@@ -37,52 +37,53 @@
 
 <rect class="surface" width="680" height="322" rx="8"/>
 <text class="primary" x="16" y="26" font-size="15" font-weight="600">Latency at 120 Hz</text>
-<text class="secondary" x="16" y="45" font-size="12">A key to its echo on screen, in ms, of 200 keys of Typometer&#x27;s, the window alone; less is better</text>
-<circle class="context" cx="22" cy="64" r="5"/>
-<text class="secondary" x="32" y="68" font-size="12">median</text>
-<circle class="surface context-line" cx="86" cy="64" r="4.5" stroke-width="2"/>
-<text class="secondary" x="96" y="68" font-size="12">99th percentile</text>
-<line class="grid" x1="118.0" y1="78" x2="118.0" y2="282.0" stroke-width="1"/>
+<text class="secondary" x="16" y="45" font-size="12">A key to its echo on screen, in ms, of 200 keys of Typometer&#x27;s, the window alone; less is better; every</text>
+<text class="secondary" x="16" y="61" font-size="12">terminal measured on 1 November 2026</text>
+<circle class="context" cx="22" cy="80" r="5"/>
+<text class="secondary" x="32" y="84" font-size="12">median</text>
+<circle class="surface context-line" cx="86" cy="80" r="4.5" stroke-width="2"/>
+<text class="secondary" x="96" y="84" font-size="12">99th percentile</text>
+<line class="grid" x1="118.0" y1="94" x2="118.0" y2="282.0" stroke-width="1"/>
 <text class="muted tick" x="118.0" y="297.0" font-size="11" text-anchor="middle">0</text>
-<line class="grid" x1="216.4" y1="78" x2="216.4" y2="282.0" stroke-width="1"/>
+<line class="grid" x1="216.4" y1="94" x2="216.4" y2="282.0" stroke-width="1"/>
 <text class="muted tick" x="216.4" y="297.0" font-size="11" text-anchor="middle">10</text>
-<line class="grid" x1="314.8" y1="78" x2="314.8" y2="282.0" stroke-width="1"/>
+<line class="grid" x1="314.8" y1="94" x2="314.8" y2="282.0" stroke-width="1"/>
 <text class="muted tick" x="314.8" y="297.0" font-size="11" text-anchor="middle">20</text>
-<line class="grid" x1="413.2" y1="78" x2="413.2" y2="282.0" stroke-width="1"/>
+<line class="grid" x1="413.2" y1="94" x2="413.2" y2="282.0" stroke-width="1"/>
 <text class="muted tick" x="413.2" y="297.0" font-size="11" text-anchor="middle">30</text>
-<line class="grid" x1="511.6" y1="78" x2="511.6" y2="282.0" stroke-width="1"/>
+<line class="grid" x1="511.6" y1="94" x2="511.6" y2="282.0" stroke-width="1"/>
 <text class="muted tick" x="511.6" y="297.0" font-size="11" text-anchor="middle">40</text>
-<line class="grid" x1="610.0" y1="78" x2="610.0" y2="282.0" stroke-width="1"/>
+<line class="grid" x1="610.0" y1="94" x2="610.0" y2="282.0" stroke-width="1"/>
 <text class="muted tick" x="610.0" y="297.0" font-size="11" text-anchor="middle">50</text>
-<line class="base" x1="118" y1="78" x2="118" y2="282.0" stroke-width="1"/>
-<text class="secondary" x="108" y="102.4" font-size="12" text-anchor="end">Alacritty</text>
-<line class="context-line" x1="330.4" y1="98.4" x2="371.6" y2="98.4" stroke-width="2" stroke-linecap="round"/>
-<circle class="context ring" cx="330.4" cy="98.4" r="5" stroke-width="2"><title>Alacritty, median: 21.6 ms</title></circle>
-<circle class="surface context-line" cx="371.6" cy="98.4" r="4.5" stroke-width="2"><title>Alacritty, 99th percentile: 25.8 ms</title></circle>
-<text class="secondary tick" x="320.4" y="102.4" font-size="12" text-anchor="end">21.6</text>
-<text class="secondary tick" x="381.6" y="102.4" font-size="12">25.8</text>
-<text class="secondary" x="108" y="143.2" font-size="12" text-anchor="end">kitty</text>
-<line class="context-line" x1="332.3" y1="139.2" x2="409.4" y2="139.2" stroke-width="2" stroke-linecap="round"/>
-<circle class="context ring" cx="332.3" cy="139.2" r="5" stroke-width="2"><title>kitty, median: 21.8 ms</title></circle>
-<circle class="surface context-line" cx="409.4" cy="139.2" r="4.5" stroke-width="2"><title>kitty, 99th percentile: 29.6 ms</title></circle>
-<text class="secondary tick" x="322.3" y="143.2" font-size="12" text-anchor="end">21.8</text>
-<text class="secondary tick" x="419.4" y="143.2" font-size="12">29.6</text>
-<text class="primary" x="108" y="184.0" font-size="12" text-anchor="end" font-weight="600">Lokyr</text>
-<line class="accent-line" x1="326.9" y1="180.0" x2="435.0" y2="180.0" stroke-width="2" stroke-linecap="round"/>
-<circle class="accent ring" cx="326.9" cy="180.0" r="5" stroke-width="2"><title>Lokyr, median: 21.2 ms</title></circle>
-<circle class="surface accent-line" cx="435.0" cy="180.0" r="4.5" stroke-width="2"><title>Lokyr, 99th percentile: 32.2 ms</title></circle>
-<text class="primary tick" x="316.9" y="184.0" font-size="12" text-anchor="end" font-weight="600">21.2</text>
-<text class="primary tick" x="445.0" y="184.0" font-size="12" font-weight="600">32.2</text>
-<text class="secondary" x="108" y="224.8" font-size="12" text-anchor="end">iTerm2</text>
-<line class="context-line" x1="327.6" y1="220.8" x2="561.2" y2="220.8" stroke-width="2" stroke-linecap="round"/>
-<circle class="context ring" cx="327.6" cy="220.8" r="5" stroke-width="2"><title>iTerm2, median: 21.3 ms</title></circle>
-<circle class="surface context-line" cx="561.2" cy="220.8" r="4.5" stroke-width="2"><title>iTerm2, 99th percentile: 45.0 ms</title></circle>
-<text class="secondary tick" x="317.6" y="224.8" font-size="12" text-anchor="end">21.3</text>
-<text class="secondary tick" x="571.2" y="224.8" font-size="12">45.0</text>
-<text class="secondary" x="108" y="265.6" font-size="12" text-anchor="end">Ghostty</text>
-<line class="context-line" x1="362.0" y1="261.6" x2="587.2" y2="261.6" stroke-width="2" stroke-linecap="round"/>
-<circle class="context ring" cx="362.0" cy="261.6" r="5" stroke-width="2"><title>Ghostty, median: 24.8 ms</title></circle>
-<circle class="surface context-line" cx="587.2" cy="261.6" r="4.5" stroke-width="2"><title>Ghostty, 99th percentile: 47.7 ms</title></circle>
-<text class="secondary tick" x="352.0" y="265.6" font-size="12" text-anchor="end">24.8</text>
-<text class="secondary tick" x="597.2" y="265.6" font-size="12">47.7</text>
+<line class="base" x1="118" y1="94" x2="118" y2="282.0" stroke-width="1"/>
+<text class="secondary" x="108" y="116.8" font-size="12" text-anchor="end">Alacritty</text>
+<line class="context-line" x1="330.4" y1="112.8" x2="371.6" y2="112.8" stroke-width="2" stroke-linecap="round"/>
+<circle class="context ring" cx="330.4" cy="112.8" r="5" stroke-width="2"><title>Alacritty, median: 21.6 ms</title></circle>
+<circle class="surface context-line" cx="371.6" cy="112.8" r="4.5" stroke-width="2"><title>Alacritty, 99th percentile: 25.8 ms</title></circle>
+<text class="secondary tick" x="320.4" y="116.8" font-size="12" text-anchor="end">21.6</text>
+<text class="secondary tick" x="381.6" y="116.8" font-size="12">25.8</text>
+<text class="secondary" x="108" y="154.4" font-size="12" text-anchor="end">kitty</text>
+<line class="context-line" x1="332.3" y1="150.4" x2="409.4" y2="150.4" stroke-width="2" stroke-linecap="round"/>
+<circle class="context ring" cx="332.3" cy="150.4" r="5" stroke-width="2"><title>kitty, median: 21.8 ms</title></circle>
+<circle class="surface context-line" cx="409.4" cy="150.4" r="4.5" stroke-width="2"><title>kitty, 99th percentile: 29.6 ms</title></circle>
+<text class="secondary tick" x="322.3" y="154.4" font-size="12" text-anchor="end">21.8</text>
+<text class="secondary tick" x="419.4" y="154.4" font-size="12">29.6</text>
+<text class="primary" x="108" y="192.0" font-size="12" text-anchor="end" font-weight="600">Lokyr</text>
+<line class="accent-line" x1="326.9" y1="188.0" x2="435.0" y2="188.0" stroke-width="2" stroke-linecap="round"/>
+<circle class="accent ring" cx="326.9" cy="188.0" r="5" stroke-width="2"><title>Lokyr, median: 21.2 ms</title></circle>
+<circle class="surface accent-line" cx="435.0" cy="188.0" r="4.5" stroke-width="2"><title>Lokyr, 99th percentile: 32.2 ms</title></circle>
+<text class="primary tick" x="316.9" y="192.0" font-size="12" text-anchor="end" font-weight="600">21.2</text>
+<text class="primary tick" x="445.0" y="192.0" font-size="12" font-weight="600">32.2</text>
+<text class="secondary" x="108" y="229.6" font-size="12" text-anchor="end">iTerm2</text>
+<line class="context-line" x1="327.6" y1="225.6" x2="561.2" y2="225.6" stroke-width="2" stroke-linecap="round"/>
+<circle class="context ring" cx="327.6" cy="225.6" r="5" stroke-width="2"><title>iTerm2, median: 21.3 ms</title></circle>
+<circle class="surface context-line" cx="561.2" cy="225.6" r="4.5" stroke-width="2"><title>iTerm2, 99th percentile: 45.0 ms</title></circle>
+<text class="secondary tick" x="317.6" y="229.6" font-size="12" text-anchor="end">21.3</text>
+<text class="secondary tick" x="571.2" y="229.6" font-size="12">45.0</text>
+<text class="secondary" x="108" y="267.2" font-size="12" text-anchor="end">Ghostty</text>
+<line class="context-line" x1="362.0" y1="263.2" x2="587.2" y2="263.2" stroke-width="2" stroke-linecap="round"/>
+<circle class="context ring" cx="362.0" cy="263.2" r="5" stroke-width="2"><title>Ghostty, median: 24.8 ms</title></circle>
+<circle class="surface context-line" cx="587.2" cy="263.2" r="4.5" stroke-width="2"><title>Ghostty, 99th percentile: 47.7 ms</title></circle>
+<text class="secondary tick" x="352.0" y="267.2" font-size="12" text-anchor="end">24.8</text>
+<text class="secondary tick" x="597.2" y="267.2" font-size="12">47.7</text>
 </svg>

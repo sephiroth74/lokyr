@@ -105,8 +105,8 @@ pub struct Tab {
 pub enum Layout {
     /// A pane, of the directory that its program started in.
     Pane {
-        /// The directory that its program worked in; none for the one
-        /// that a new window's takes.
+        /// The directory that its program worked in; none for the home
+        /// directory, where the app starts it.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         directory: Option<String>,
     },
@@ -352,7 +352,7 @@ impl Layout {
             workspace::Layout::Leaf(pane) => Self::Pane {
                 // A path that is not text, as a path's bytes may be on
                 // Unix, is kept of its characters that are; one that is
-                // then not a directory starts where a new window does.
+                // then not a directory starts in the home directory.
                 directory: workspace
                     .pane(*pane)
                     .and_then(directory)
