@@ -11,6 +11,8 @@
   .context { fill: #898781; }
   .accent-line { stroke: #2a78d6; }
   .context-line { stroke: #898781; }
+  .second { fill: #eb6834; }
+  .second-line { stroke: #eb6834; }
   .ring { stroke: #fcfcfb; }
   .budget { stroke: #52514e; }
   text { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
@@ -26,6 +28,8 @@
     .context { fill: #6f6e69; }
     .accent-line { stroke: #3987e5; }
     .context-line { stroke: #6f6e69; }
+    .second { fill: #d95926; }
+    .second-line { stroke: #d95926; }
     .ring { stroke: #1a1a19; }
     .budget { stroke: #c3c2b7; }
   }

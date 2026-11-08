@@ -67,11 +67,19 @@ def median(values):
     return values[middle] if len(values) % 2 else (values[middle - 1] + values[middle]) / 2
 
 
+# The other terminals are measured once of their versions, in F2-134;
+# Lokyr again, of the same tool and conditions, in the latest session of
+# its own, whose figures take the place of F2-134's.
+OTHERS = "compare-F2-134"
+LOKYR = "compare-F3-72"
+
+
 def compare_figures():
-    """Each terminal's figures in the comparison, from its raw results."""
-    root = "compare-F2-134"
+    """Each terminal's figures in the comparison, from its raw results:
+    Lokyr's of its latest session, the others' of F2-134."""
     figures = {}
     for key, _ in TERMINALS:
+        root = LOKYR if key == "lokyr" else OTHERS
         runs = [run["from_start_ms"] for round_ in (1, 2)
                 for run in load(f"{root}/startup/startup-{key}-{round_}.json")["runs"]]
         idle = load(f"{root}/idle/idle-{key}.json")
@@ -117,27 +125,30 @@ def nearest_rank(values, percent):
 
 
 def compare():
-    """Lokyr against the other terminals of macOS."""
+    """Lokyr against the other terminals of macOS: Lokyr of its latest
+    session, the others of F2-134, which the subtitles tell."""
     figures = compare_figures()
     rows = lambda measure: [(name, figures[key][measure], key == "lokyr")
                             for key, name in TERMINALS]
-    root = "compare-F2-134/charts"
+    root = f"{LOKYR}/charts"
+    of = "; Lokyr of the build after F3-72, the others of F2-134"
     save(f"{root}/startup.svg", charts.bars(
         "Startup", "From the process's start to its first window, median of 10 runs; "
-        "less is better", rows("startup"), "ms"))
+        "less is better" + of, rows("startup"), "ms"))
     save(f"{root}/memory.svg", charts.bars(
         "Memory at rest", "Footprint without the GPU's, a window of 120 × 40 cells; "
-        "less is better", rows("footprint"), "MB", digits=1))
+        "less is better" + of, rows("footprint"), "MB", digits=1))
     save(f"{root}/wakeups.svg", charts.bars(
         "Wakeups at rest", "Interrupt wakeups a second, over 60 s with a steady cursor; "
-        "less is better", rows("wakeups"), "a second", digits=2))
+        "less is better" + of, rows("wakeups"), "a second", digits=2))
     save(f"{root}/throughput.svg", charts.bars(
         "Throughput", "cat of 1 GiB of ASCII lines, on screen, median of 5 runs; "
-        "more is better", rows("cat"), "MiB/s", order="descending"))
+        "more is better" + of, rows("cat"), "MiB/s", order="descending"))
     save(f"{root}/energy.svg", charts.bars(
         "CPU energy", "Joules that the terminal's CPU spends to show cat of 1 GiB; "
-        "less is better",
+        "less is better" + of,
         rows("energy"), "J", digits=1))
+    root = f"{OTHERS}/charts"
     cases = typometer()
     for rate in ("60", "120"):
         save(f"{root}/latency-{rate}hz.svg", charts.ranges(

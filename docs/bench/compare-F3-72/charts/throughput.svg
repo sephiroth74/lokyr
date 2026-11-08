@@ -1,0 +1,73 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="680" height="306" viewBox="0 0 680 306" role="img" aria-label="Throughput">
+
+<style>
+  .surface { fill: #fcfcfb; }
+  .primary { fill: #0b0b0b; }
+  .secondary { fill: #52514e; }
+  .muted { fill: #898781; }
+  .grid { stroke: #e1e0d9; }
+  .base { stroke: #c3c2b7; }
+  .accent { fill: #2a78d6; }
+  .context { fill: #898781; }
+  .accent-line { stroke: #2a78d6; }
+  .context-line { stroke: #898781; }
+  .second { fill: #eb6834; }
+  .second-line { stroke: #eb6834; }
+  .ring { stroke: #fcfcfb; }
+  .budget { stroke: #52514e; }
+  text { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+  .tick { font-variant-numeric: tabular-nums; }
+  @media (prefers-color-scheme: dark) {
+    .surface { fill: #1a1a19; }
+    .primary { fill: #f0efec; }
+    .secondary { fill: #c3c2b7; }
+    .muted { fill: #898781; }
+    .grid { stroke: #2c2c2a; }
+    .base { stroke: #383835; }
+    .accent { fill: #3987e5; }
+    .context { fill: #6f6e69; }
+    .accent-line { stroke: #3987e5; }
+    .context-line { stroke: #6f6e69; }
+    .second { fill: #d95926; }
+    .second-line { stroke: #d95926; }
+    .ring { stroke: #1a1a19; }
+    .budget { stroke: #c3c2b7; }
+  }
+</style>
+
+<rect class="surface" width="680" height="306" rx="8"/>
+<text class="primary" x="16" y="26" font-size="15" font-weight="600">Throughput</text>
+<text class="secondary" x="16" y="45" font-size="12">cat of 1 GiB of ASCII lines, on screen, median of 5 runs; more is better; Lokyr of the build after F3-72, the others of F2-134</text>
+<line class="grid" x1="118.0" y1="56" x2="118.0" y2="266" stroke-width="1"/>
+<text class="muted tick" x="118.0" y="281" font-size="11" text-anchor="middle">0</text>
+<line class="grid" x1="241.0" y1="56" x2="241.0" y2="266" stroke-width="1"/>
+<text class="muted tick" x="241.0" y="281" font-size="11" text-anchor="middle">100</text>
+<line class="grid" x1="364.0" y1="56" x2="364.0" y2="266" stroke-width="1"/>
+<text class="muted tick" x="364.0" y="281" font-size="11" text-anchor="middle">200</text>
+<line class="grid" x1="487.0" y1="56" x2="487.0" y2="266" stroke-width="1"/>
+<text class="muted tick" x="487.0" y="281" font-size="11" text-anchor="middle">300</text>
+<line class="grid" x1="610.0" y1="56" x2="610.0" y2="266" stroke-width="1"/>
+<text class="muted tick" x="610.0" y="281" font-size="11" text-anchor="middle">400</text>
+<line class="base" x1="118" y1="56" x2="118" y2="266" stroke-width="1"/>
+<text class="primary" x="108" y="75.0" font-size="12" text-anchor="end" font-weight="600">Lokyr</text>
+<path class="accent" d="M118.0,62.0 h383.9 a4,4 0 0 1 4,4 v10.0 a4,4 0 0 1 -4,4 h-383.9 z"><title>Lokyr: 315 MiB/s</title></path>
+<text class="primary tick" x="511.9" y="75.0" font-size="12" font-weight="600">315</text>
+<text class="secondary" x="108" y="105.0" font-size="12" text-anchor="end">Ghostty</text>
+<path class="context" d="M118.0,92.0 h371.9 a4,4 0 0 1 4,4 v10.0 a4,4 0 0 1 -4,4 h-371.9 z"><title>Ghostty: 306 MiB/s</title></path>
+<text class="secondary tick" x="499.9" y="105.0" font-size="12">306</text>
+<text class="secondary" x="108" y="135.0" font-size="12" text-anchor="end">Alacritty</text>
+<path class="context" d="M118.0,122.0 h204.6 a4,4 0 0 1 4,4 v10.0 a4,4 0 0 1 -4,4 h-204.6 z"><title>Alacritty: 170 MiB/s</title></path>
+<text class="secondary tick" x="332.6" y="135.0" font-size="12">170</text>
+<text class="secondary" x="108" y="165.0" font-size="12" text-anchor="end">kitty</text>
+<path class="context" d="M118.0,152.0 h176.4 a4,4 0 0 1 4,4 v10.0 a4,4 0 0 1 -4,4 h-176.4 z"><title>kitty: 147 MiB/s</title></path>
+<text class="secondary tick" x="304.4" y="165.0" font-size="12">147</text>
+<text class="secondary" x="108" y="195.0" font-size="12" text-anchor="end">iTerm2</text>
+<path class="context" d="M118.0,182.0 h58.7 a4,4 0 0 1 4,4 v10.0 a4,4 0 0 1 -4,4 h-58.7 z"><title>iTerm2: 51 MiB/s</title></path>
+<text class="secondary tick" x="186.7" y="195.0" font-size="12">51</text>
+<text class="secondary" x="108" y="225.0" font-size="12" text-anchor="end">WezTerm</text>
+<path class="context" d="M118.0,212.0 h50.9 a4,4 0 0 1 4,4 v10.0 a4,4 0 0 1 -4,4 h-50.9 z"><title>WezTerm: 45 MiB/s</title></path>
+<text class="secondary tick" x="178.9" y="225.0" font-size="12">45</text>
+<text class="secondary" x="108" y="255.0" font-size="12" text-anchor="end">Terminal.app</text>
+<path class="context" d="M118.0,242.0 h45.1 a4,4 0 0 1 4,4 v10.0 a4,4 0 0 1 -4,4 h-45.1 z"><title>Terminal.app: 40 MiB/s</title></path>
+<text class="secondary tick" x="173.1" y="255.0" font-size="12">40</text>
+</svg>

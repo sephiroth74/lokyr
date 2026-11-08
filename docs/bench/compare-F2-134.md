@@ -2,6 +2,8 @@
 
 Measured on 2026-10-31, in five sessions between 14:54 and 22:30, on the bundle of commit e2f9e85, with this task's change of `lokyr --bench output`, which takes the config's columns and rows without `--window` and through which `compare.py` runs each measure's program in Lokyr, against Ghostty, Alacritty, kitty, WezTerm, iTerm2 and Terminal.app, under the same conditions. The raw results, the configs and each terminal's reports are in [compare-F2-134/](compare-F2-134/); `python3 tools/bench/compare.py` takes the measures again, and `python3 tools/bench/report_charts.py compare` draws the charts from the raw results. The user's own part came on 2026-11-01, on the bundle of commit e070548, after F2-152: the latency with Typometer, `powermetrics`, the smoothness by eye and vttest's screens.
 
+Lokyr alone was measured again on 2026-11-08, of the build after F3-72, of this tool and these conditions, [compare-F3-72](compare-F3-72.md), whose figures the README's charts show beside the other terminals' of this report, which are not measured again of the same versions.
+
 ## In short
 
 | Measure | Lokyr | Its place of 7 | The best of the others |
