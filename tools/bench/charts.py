@@ -308,8 +308,8 @@ def ranges(title, subtitle, rows, unit, labels=("median", "99th percentile"), di
 
 
 PANEL_GAP = 28
-PANEL_HEIGHT = 152
-PLOT_TOP = 30
+PANEL_HEIGHT = 166
+PLOT_TOP = 44
 PLOT_HEIGHT = 90
 PLOT_LEFT = 38
 PLOT_RIGHT = 46
@@ -353,8 +353,9 @@ def trend_panel(panel, columns, left, y0, width):
     parts = [f'<text class="primary" x="{left:.1f}" y="{y0 + 14}" font-size="12" '
              f'font-weight="600">{escape(panel["title"])}</text>']
     digits, unit, budget = panel.get("digits", 1), panel.get("unit", ""), panel.get("budget")
+    references = [r for r in panel.get("references", []) if r]
     values = [v for series in panel["series"] for v in series if v is not None]
-    ticks = nice_ticks(max(values + ([budget] if budget else [])), 3)
+    ticks = nice_ticks(max(values + ([budget] if budget else []) + [r["value"] for r in references]), 3)
     plot_left, plot_right = left + PLOT_LEFT, left + width - PLOT_RIGHT
     plot_top, plot_bottom = y0 + PLOT_TOP, y0 + PLOT_TOP + PLOT_HEIGHT
     ys = lambda value: plot_bottom - value / ticks[-1] * PLOT_HEIGHT
@@ -370,13 +371,32 @@ def trend_panel(panel, columns, left, y0, width):
         style = ' font-style="italic"' if build else ""
         parts.append(f'<text class="muted" x="{xs(index):.1f}" y="{plot_bottom + 15:.1f}" font-size="10" '
                      f'text-anchor="middle"{style}>{escape(label)}</text>')
-    if budget:
+    if budget is not None:
         y = ys(budget)
+        label = panel.get("budget_label") or f"{budget:g}"
         parts.append(f'<line class="budget" x1="{plot_left:.1f}" y1="{y:.1f}" x2="{plot_right:.1f}" '
                      f'y2="{y:.1f}" stroke-width="1.5" stroke-dasharray="4 3">'
-                     f'<title>budget: {budget:g} {escape(unit)}</title></line>')
-        parts.append(f'<text class="secondary" x="{plot_right:.1f}" y="{y - 5:.1f}" font-size="10" '
-                     f'text-anchor="end">budget {budget:g}</text>')
+                     f'<title>budget: {escape(label)} {escape(unit)}</title></line>')
+        # Its label on the side of the line away from the values.
+        above = not values or sum(values) / len(values) <= budget
+        ly = y - 5 if above else y + 12
+        parts.append(f'<text class="secondary" x="{plot_right:.1f}" y="{ly:.1f}" font-size="10" '
+                     f'text-anchor="end">budget {escape(label)}</text>')
+    # The best of the other terminals, a dotted line of each series' tone,
+    # and named under the panel's title, after a sample of the line.
+    shown = [(which, r) for which, r in enumerate(panel.get("references", [])) if r]
+    for which, reference in shown:
+        y = ys(reference["value"])
+        tone = "context" if len(panel["series"]) == 1 else SERIES[which]
+        parts.append(f'<line class="{tone}-line" x1="{plot_left:.1f}" y1="{y:.1f}" x2="{plot_right:.1f}" '
+                     f'y2="{y:.1f}" stroke-width="1.5" stroke-dasharray="1 3" stroke-linecap="round">'
+                     f'<title>{escape(reference["label"])} {escape(unit)}</title></line>')
+    if shown:
+        label = shown[0][1]["label"] if len(shown) == 1 else panel.get("reference_label", shown[0][1]["label"])
+        parts.append(f'<line class="context-line" x1="{left:.1f}" y1="{y0 + 26:.1f}" x2="{left + 15:.1f}" '
+                     f'y2="{y0 + 26:.1f}" stroke-width="1.5" stroke-dasharray="1 3" stroke-linecap="round"/>')
+        parts.append(f'<text class="muted" x="{left + 21:.1f}" y="{y0 + 29.5}" font-size="10">'
+                     f'{escape(label)}</text>')
     ends = []
     for which, series in enumerate(panel["series"]):
         tone = SERIES[which]

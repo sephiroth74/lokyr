@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="680" height="238" viewBox="0 0 680 238" role="img" aria-label="At rest">
+<svg xmlns="http://www.w3.org/2000/svg" width="680" height="252" viewBox="0 0 680 252" role="img" aria-label="At rest">
 
 <style>
   .surface { fill: #fcfcfb; }
@@ -35,71 +35,83 @@
   }
 </style>
 
-<rect class="surface" width="680" height="238" rx="8"/>
+<rect class="surface" width="680" height="252" rx="8"/>
 <text class="primary" x="16" y="26" font-size="15" font-weight="600">At rest</text>
 <text class="secondary" x="16" y="45" font-size="12">A window idle, its memory without the GPU&#x27;s and its wakeups</text>
 <circle class="surface context-line" cx="21" cy="64" r="4" stroke-width="2"/>
 <text class="secondary" x="30" y="68" font-size="12">a build between releases</text>
 <text class="primary" x="16.0" y="94" font-size="12" font-weight="600">Memory, MB</text>
-<line class="grid" x1="54.0" y1="200.0" x2="280.0" y2="200.0" stroke-width="1"/>
-<text class="muted tick" x="48.0" y="203.5" font-size="10" text-anchor="end">0</text>
-<line class="grid" x1="54.0" y1="155.0" x2="280.0" y2="155.0" stroke-width="1"/>
-<text class="muted tick" x="48.0" y="158.5" font-size="10" text-anchor="end">20</text>
-<line class="grid" x1="54.0" y1="110.0" x2="280.0" y2="110.0" stroke-width="1"/>
-<text class="muted tick" x="48.0" y="113.5" font-size="10" text-anchor="end">40</text>
-<text class="muted" x="54.0" y="215.0" font-size="10" text-anchor="middle">0.1.0</text>
-<text class="muted" x="91.7" y="215.0" font-size="10" text-anchor="middle">0.2.0</text>
-<text class="muted" x="129.3" y="215.0" font-size="10" text-anchor="middle">0.3.0</text>
-<text class="muted" x="167.0" y="215.0" font-size="10" text-anchor="middle">0.4.0</text>
-<text class="muted" x="204.7" y="215.0" font-size="10" text-anchor="middle">0.5.0</text>
-<text class="muted" x="242.3" y="215.0" font-size="10" text-anchor="middle" font-style="italic">F3-49</text>
-<text class="muted" x="280.0" y="215.0" font-size="10" text-anchor="middle">0.5.1</text>
-<line class="budget" x1="54.0" y1="121.2" x2="280.0" y2="121.2" stroke-width="1.5" stroke-dasharray="4 3"><title>budget: 35 MB</title></line>
-<text class="secondary" x="280.0" y="116.2" font-size="10" text-anchor="end">budget 35</text>
-<line class="accent-line" x1="54.0" y1="144.4" x2="91.7" y2="145.1" stroke-width="2" stroke-linecap="round"/>
-<line class="accent-line" x1="91.7" y1="145.1" x2="129.3" y2="144.2" stroke-width="2" stroke-linecap="round"/>
-<line class="accent-line" x1="129.3" y1="144.2" x2="167.0" y2="143.5" stroke-width="2" stroke-linecap="round"/>
-<line class="accent-line" x1="167.0" y1="143.5" x2="204.7" y2="142.4" stroke-width="2" stroke-linecap="round"/>
-<line class="accent-line" x1="204.7" y1="142.4" x2="242.3" y2="140.6" stroke-width="2" stroke-linecap="round"/>
-<line class="accent-line" x1="242.3" y1="140.6" x2="280.0" y2="141.3" stroke-width="2" stroke-linecap="round"/>
-<circle class="accent ring" cx="54.0" cy="144.4" r="4" stroke-width="2"><title>0.1.0: 24.7 MB</title></circle>
-<circle class="accent ring" cx="91.7" cy="145.1" r="4" stroke-width="2"><title>0.2.0: 24.4 MB</title></circle>
-<circle class="accent ring" cx="129.3" cy="144.2" r="4" stroke-width="2"><title>0.3.0: 24.8 MB</title></circle>
-<circle class="accent ring" cx="167.0" cy="143.5" r="4" stroke-width="2"><title>0.4.0: 25.1 MB</title></circle>
-<circle class="accent ring" cx="204.7" cy="142.4" r="4" stroke-width="2"><title>0.5.0: 25.6 MB</title></circle>
-<circle class="surface accent-line" cx="242.3" cy="140.6" r="4" stroke-width="2"><title>F3-49: 26.4 MB</title></circle>
-<circle class="accent ring" cx="280.0" cy="141.3" r="4" stroke-width="2"><title>0.5.1: 26.1 MB</title></circle>
-<text class="primary tick" x="289.0" y="145.3" font-size="11" font-weight="600">26.1</text>
+<line class="grid" x1="54.0" y1="214.0" x2="280.0" y2="214.0" stroke-width="1"/>
+<text class="muted tick" x="48.0" y="217.5" font-size="10" text-anchor="end">0</text>
+<line class="grid" x1="54.0" y1="169.0" x2="280.0" y2="169.0" stroke-width="1"/>
+<text class="muted tick" x="48.0" y="172.5" font-size="10" text-anchor="end">20</text>
+<line class="grid" x1="54.0" y1="124.0" x2="280.0" y2="124.0" stroke-width="1"/>
+<text class="muted tick" x="48.0" y="127.5" font-size="10" text-anchor="end">40</text>
+<text class="muted" x="54.0" y="229.0" font-size="10" text-anchor="middle">0.1.0</text>
+<text class="muted" x="86.3" y="229.0" font-size="10" text-anchor="middle">0.2.0</text>
+<text class="muted" x="118.6" y="229.0" font-size="10" text-anchor="middle">0.3.0</text>
+<text class="muted" x="150.9" y="229.0" font-size="10" text-anchor="middle">0.4.0</text>
+<text class="muted" x="183.1" y="229.0" font-size="10" text-anchor="middle">0.5.0</text>
+<text class="muted" x="215.4" y="229.0" font-size="10" text-anchor="middle" font-style="italic">F3-49</text>
+<text class="muted" x="247.7" y="229.0" font-size="10" text-anchor="middle">0.5.1</text>
+<text class="muted" x="280.0" y="229.0" font-size="10" text-anchor="middle" font-style="italic">F3-72</text>
+<line class="budget" x1="54.0" y1="135.2" x2="280.0" y2="135.2" stroke-width="1.5" stroke-dasharray="4 3"><title>budget: 35 MB</title></line>
+<text class="secondary" x="280.0" y="130.2" font-size="10" text-anchor="end">budget 35</text>
+<line class="context-line" x1="54.0" y1="143.6" x2="280.0" y2="143.6" stroke-width="1.5" stroke-dasharray="1 3" stroke-linecap="round"><title>Alacritty 31.3, Lokyr 25 then MB</title></line>
+<line class="context-line" x1="16.0" y1="106.0" x2="31.0" y2="106.0" stroke-width="1.5" stroke-dasharray="1 3" stroke-linecap="round"/>
+<text class="muted" x="37.0" y="109.5" font-size="10">Alacritty 31.3, Lokyr 25 then</text>
+<line class="accent-line" x1="54.0" y1="158.4" x2="86.3" y2="159.1" stroke-width="2" stroke-linecap="round"/>
+<line class="accent-line" x1="86.3" y1="159.1" x2="118.6" y2="158.2" stroke-width="2" stroke-linecap="round"/>
+<line class="accent-line" x1="118.6" y1="158.2" x2="150.9" y2="157.5" stroke-width="2" stroke-linecap="round"/>
+<line class="accent-line" x1="150.9" y1="157.5" x2="183.1" y2="156.4" stroke-width="2" stroke-linecap="round"/>
+<line class="accent-line" x1="183.1" y1="156.4" x2="215.4" y2="154.6" stroke-width="2" stroke-linecap="round"/>
+<line class="accent-line" x1="215.4" y1="154.6" x2="247.7" y2="155.3" stroke-width="2" stroke-linecap="round"/>
+<line class="accent-line" x1="247.7" y1="155.3" x2="280.0" y2="153.9" stroke-width="2" stroke-linecap="round"/>
+<circle class="accent ring" cx="54.0" cy="158.4" r="4" stroke-width="2"><title>0.1.0: 24.7 MB</title></circle>
+<circle class="accent ring" cx="86.3" cy="159.1" r="4" stroke-width="2"><title>0.2.0: 24.4 MB</title></circle>
+<circle class="accent ring" cx="118.6" cy="158.2" r="4" stroke-width="2"><title>0.3.0: 24.8 MB</title></circle>
+<circle class="accent ring" cx="150.9" cy="157.5" r="4" stroke-width="2"><title>0.4.0: 25.1 MB</title></circle>
+<circle class="accent ring" cx="183.1" cy="156.4" r="4" stroke-width="2"><title>0.5.0: 25.6 MB</title></circle>
+<circle class="surface accent-line" cx="215.4" cy="154.6" r="4" stroke-width="2"><title>F3-49: 26.4 MB</title></circle>
+<circle class="accent ring" cx="247.7" cy="155.3" r="4" stroke-width="2"><title>0.5.1: 26.1 MB</title></circle>
+<circle class="surface accent-line" cx="280.0" cy="153.9" r="4" stroke-width="2"><title>F3-72: 26.7 MB</title></circle>
+<text class="primary tick" x="289.0" y="157.9" font-size="11" font-weight="600">26.7</text>
 <text class="primary" x="354.0" y="94" font-size="12" font-weight="600">Interrupt wakeups a second</text>
-<line class="grid" x1="392.0" y1="200.0" x2="618.0" y2="200.0" stroke-width="1"/>
-<text class="muted tick" x="386.0" y="203.5" font-size="10" text-anchor="end">0</text>
-<line class="grid" x1="392.0" y1="170.0" x2="618.0" y2="170.0" stroke-width="1"/>
-<text class="muted tick" x="386.0" y="173.5" font-size="10" text-anchor="end">0.2</text>
-<line class="grid" x1="392.0" y1="140.0" x2="618.0" y2="140.0" stroke-width="1"/>
-<text class="muted tick" x="386.0" y="143.5" font-size="10" text-anchor="end">0.4</text>
-<line class="grid" x1="392.0" y1="110.0" x2="618.0" y2="110.0" stroke-width="1"/>
-<text class="muted tick" x="386.0" y="113.5" font-size="10" text-anchor="end">0.6</text>
-<text class="muted" x="392.0" y="215.0" font-size="10" text-anchor="middle">0.1.0</text>
-<text class="muted" x="429.7" y="215.0" font-size="10" text-anchor="middle">0.2.0</text>
-<text class="muted" x="467.3" y="215.0" font-size="10" text-anchor="middle">0.3.0</text>
-<text class="muted" x="505.0" y="215.0" font-size="10" text-anchor="middle">0.4.0</text>
-<text class="muted" x="542.7" y="215.0" font-size="10" text-anchor="middle">0.5.0</text>
-<text class="muted" x="580.3" y="215.0" font-size="10" text-anchor="middle" font-style="italic">F3-49</text>
-<text class="muted" x="618.0" y="215.0" font-size="10" text-anchor="middle">0.5.1</text>
-<line class="budget" x1="392.0" y1="125.0" x2="618.0" y2="125.0" stroke-width="1.5" stroke-dasharray="4 3"><title>budget: 0.5 /s</title></line>
-<text class="secondary" x="618.0" y="120.0" font-size="10" text-anchor="end">budget 0.5</text>
-<line class="accent-line" x1="392.0" y1="147.5" x2="429.7" y2="147.5" stroke-width="2" stroke-linecap="round"/>
-<line class="accent-line" x1="429.7" y1="147.5" x2="467.3" y2="147.5" stroke-width="2" stroke-linecap="round"/>
-<line class="accent-line" x1="467.3" y1="147.5" x2="505.0" y2="147.5" stroke-width="2" stroke-linecap="round"/>
-<line class="accent-line" x1="505.0" y1="147.5" x2="542.7" y2="149.8" stroke-width="2" stroke-linecap="round"/>
-<line class="accent-line" x1="542.7" y1="149.8" x2="580.3" y2="149.0" stroke-width="2" stroke-linecap="round"/>
-<line class="accent-line" x1="580.3" y1="149.0" x2="618.0" y2="147.5" stroke-width="2" stroke-linecap="round"/>
-<circle class="accent ring" cx="392.0" cy="147.5" r="4" stroke-width="2"><title>0.1.0: 0.35 /s</title></circle>
-<circle class="accent ring" cx="429.7" cy="147.5" r="4" stroke-width="2"><title>0.2.0: 0.35 /s</title></circle>
-<circle class="accent ring" cx="467.3" cy="147.5" r="4" stroke-width="2"><title>0.3.0: 0.35 /s</title></circle>
-<circle class="accent ring" cx="505.0" cy="147.5" r="4" stroke-width="2"><title>0.4.0: 0.35 /s</title></circle>
-<circle class="accent ring" cx="542.7" cy="149.8" r="4" stroke-width="2"><title>0.5.0: 0.34 /s</title></circle>
-<circle class="surface accent-line" cx="580.3" cy="149.0" r="4" stroke-width="2"><title>F3-49: 0.34 /s</title></circle>
-<circle class="accent ring" cx="618.0" cy="147.5" r="4" stroke-width="2"><title>0.5.1: 0.35 /s</title></circle>
-<text class="primary tick" x="627.0" y="151.5" font-size="11" font-weight="600">0.35</text>
+<line class="grid" x1="392.0" y1="214.0" x2="618.0" y2="214.0" stroke-width="1"/>
+<text class="muted tick" x="386.0" y="217.5" font-size="10" text-anchor="end">0</text>
+<line class="grid" x1="392.0" y1="184.0" x2="618.0" y2="184.0" stroke-width="1"/>
+<text class="muted tick" x="386.0" y="187.5" font-size="10" text-anchor="end">0.2</text>
+<line class="grid" x1="392.0" y1="154.0" x2="618.0" y2="154.0" stroke-width="1"/>
+<text class="muted tick" x="386.0" y="157.5" font-size="10" text-anchor="end">0.4</text>
+<line class="grid" x1="392.0" y1="124.0" x2="618.0" y2="124.0" stroke-width="1"/>
+<text class="muted tick" x="386.0" y="127.5" font-size="10" text-anchor="end">0.6</text>
+<text class="muted" x="392.0" y="229.0" font-size="10" text-anchor="middle">0.1.0</text>
+<text class="muted" x="424.3" y="229.0" font-size="10" text-anchor="middle">0.2.0</text>
+<text class="muted" x="456.6" y="229.0" font-size="10" text-anchor="middle">0.3.0</text>
+<text class="muted" x="488.9" y="229.0" font-size="10" text-anchor="middle">0.4.0</text>
+<text class="muted" x="521.1" y="229.0" font-size="10" text-anchor="middle">0.5.0</text>
+<text class="muted" x="553.4" y="229.0" font-size="10" text-anchor="middle" font-style="italic">F3-49</text>
+<text class="muted" x="585.7" y="229.0" font-size="10" text-anchor="middle">0.5.1</text>
+<text class="muted" x="618.0" y="229.0" font-size="10" text-anchor="middle" font-style="italic">F3-72</text>
+<line class="budget" x1="392.0" y1="139.0" x2="618.0" y2="139.0" stroke-width="1.5" stroke-dasharray="4 3"><title>budget: 0.5 /s</title></line>
+<text class="secondary" x="618.0" y="134.0" font-size="10" text-anchor="end">budget 0.5</text>
+<line class="context-line" x1="392.0" y1="158.5" x2="618.0" y2="158.5" stroke-width="1.5" stroke-dasharray="1 3" stroke-linecap="round"><title>Alacritty 0.37, Lokyr 0.38 then /s</title></line>
+<line class="context-line" x1="354.0" y1="106.0" x2="369.0" y2="106.0" stroke-width="1.5" stroke-dasharray="1 3" stroke-linecap="round"/>
+<text class="muted" x="375.0" y="109.5" font-size="10">Alacritty 0.37, Lokyr 0.38 then</text>
+<line class="accent-line" x1="392.0" y1="161.5" x2="424.3" y2="161.5" stroke-width="2" stroke-linecap="round"/>
+<line class="accent-line" x1="424.3" y1="161.5" x2="456.6" y2="161.5" stroke-width="2" stroke-linecap="round"/>
+<line class="accent-line" x1="456.6" y1="161.5" x2="488.9" y2="161.5" stroke-width="2" stroke-linecap="round"/>
+<line class="accent-line" x1="488.9" y1="161.5" x2="521.1" y2="163.8" stroke-width="2" stroke-linecap="round"/>
+<line class="accent-line" x1="521.1" y1="163.8" x2="553.4" y2="163.0" stroke-width="2" stroke-linecap="round"/>
+<line class="accent-line" x1="553.4" y1="163.0" x2="585.7" y2="161.5" stroke-width="2" stroke-linecap="round"/>
+<line class="accent-line" x1="585.7" y1="161.5" x2="618.0" y2="162.7" stroke-width="2" stroke-linecap="round"/>
+<circle class="accent ring" cx="392.0" cy="161.5" r="4" stroke-width="2"><title>0.1.0: 0.35 /s</title></circle>
+<circle class="accent ring" cx="424.3" cy="161.5" r="4" stroke-width="2"><title>0.2.0: 0.35 /s</title></circle>
+<circle class="accent ring" cx="456.6" cy="161.5" r="4" stroke-width="2"><title>0.3.0: 0.35 /s</title></circle>
+<circle class="accent ring" cx="488.9" cy="161.5" r="4" stroke-width="2"><title>0.4.0: 0.35 /s</title></circle>
+<circle class="accent ring" cx="521.1" cy="163.8" r="4" stroke-width="2"><title>0.5.0: 0.34 /s</title></circle>
+<circle class="surface accent-line" cx="553.4" cy="163.0" r="4" stroke-width="2"><title>F3-49: 0.34 /s</title></circle>
+<circle class="accent ring" cx="585.7" cy="161.5" r="4" stroke-width="2"><title>0.5.1: 0.35 /s</title></circle>
+<circle class="surface accent-line" cx="618.0" cy="162.7" r="4" stroke-width="2"><title>F3-72: 0.34 /s</title></circle>
+<text class="primary tick" x="627.0" y="166.7" font-size="11" font-weight="600">0.34</text>
 </svg>
