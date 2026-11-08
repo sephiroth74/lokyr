@@ -23,7 +23,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::panic::{self, AssertUnwindSafe};
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
@@ -31,6 +31,7 @@ use lokyr_pkg_model::manifest::{Manifest, ManifestError, Thread};
 use lokyr_pkg_model::schema::Schema;
 pub use lokyr_plugin_sdk::event::WorkspaceEvent;
 pub use lokyr_plugin_sdk::host;
+use lokyr_plugin_sdk::host::MOST_WRITES;
 pub use lokyr_plugin_sdk::message::Event;
 pub use lokyr_plugin_sdk::message::{
     COMMAND_ENDED, COMMAND_STARTED, Data, KEYS_CHANGED, Mods, POINTER, VIEWPORT_CHANGED,
@@ -399,6 +400,9 @@ struct State {
     told_panes: BTreeMap<host::PaneId, Option<String>>,
     /// Its searches of the panes' terminals, a pane's last alone.
     searches: Vec<search::Search>,
+    /// How many of its reads of rows are under way, whose threads have not
+    /// ended, [`MOST_READS`] at most.
+    reading: Arc<AtomicUsize>,
     /// Its searches that showed their matches, stopped as a later one of
     /// their pane started, whose matches show until the later one shows
     /// its own or ends, so that the view does not lose them in between.
@@ -627,6 +631,18 @@ struct Read {
     plugin: String,
     pane: host::PaneId,
     rows: mpsc::Receiver<(Vec<host::Line>, bool)>,
+    /// What stops its thread at its next part, as the read goes.
+    _cancel: Cancel,
+}
+
+/// What stops a read's thread at its next part once dropped, as its plugin
+/// stops or a read of no plugin's waits no more.
+struct Cancel(Arc<AtomicBool>);
+
+impl Drop for Cancel {
+    fn drop(&mut self) {
+        self.0.store(true, Ordering::Relaxed);
+    }
 }
 
 /// A write of a call, which the host applies as the call returns.
@@ -670,6 +686,10 @@ enum Write {
 /// The rows that a read takes under the lock at a time: about a frame's
 /// copy's time.
 const READ_PART: usize = 256;
+
+/// The most reads of rows that a plugin has under way, each of a thread,
+/// past which another is refused until one ends.
+const MOST_READS: usize = 4;
 
 /// The last id of a read or a decoration, which none takes twice.
 static LAST_ID: AtomicU64 = AtomicU64::new(0);
@@ -879,6 +899,7 @@ impl Plugins {
                 told_tabs: BTreeMap::new(),
                 told_panes: BTreeMap::new(),
                 searches: Vec::new(),
+                reading: Arc::default(),
                 lingering: Vec::new(),
             },
         });
@@ -1105,7 +1126,8 @@ impl Plugins {
                     let wake = self.wake.clone().unwrap_or_else(|| Arc::new(|| {}));
                     match Worker::start(&state.name, plugin, wake) {
                         Ok(mut worker) => {
-                            worker.ask(Job::Activate, context.focused);
+                            // Its first call, of nothing waiting.
+                            let _ = worker.ask(Job::Activate, context.focused);
                             *runner = Runner::Worker(Box::new(worker));
                         }
                         Err(error) => errors.push(failed_start(
@@ -1203,11 +1225,16 @@ impl Plugins {
             }
             // Its failure comes as its call ends.
             Runner::Worker(worker) => {
-                worker.ask(
+                let within = worker.ask(
                     Job::Command(command.to_owned(), args, chain),
                     context.focused,
                 );
-                Ok(())
+                within_bound(
+                    within,
+                    (runner, state),
+                    context,
+                    &mut self.declarations_changed,
+                )
             }
             Runner::Unstarted(_) | Runner::Stopped => Ok(()),
         }
@@ -1558,7 +1585,15 @@ impl Plugins {
                 )?;
                 state.views.insert(view.clone(), (new_id(), tree));
             }
-            Runner::Worker(worker) => worker.ask(Job::Render(view.clone()), context.focused),
+            Runner::Worker(worker) => {
+                let within = worker.ask(Job::Render(view.clone()), context.focused);
+                within_bound(
+                    within,
+                    (runner, state),
+                    context,
+                    &mut self.declarations_changed,
+                )?;
+            }
             Runner::Unstarted(_) | Runner::Stopped => {}
         }
         Ok(())
@@ -1654,8 +1689,13 @@ impl Plugins {
                 |plugin, cx| plugin.on_ui_event(cx, event),
             ),
             Runner::Worker(worker) => {
-                worker.ask(Job::Ui(event.clone()), context.focused);
-                Ok(())
+                let within = worker.ask(Job::Ui(event.clone()), context.focused);
+                within_bound(
+                    within,
+                    (runner, state),
+                    context,
+                    &mut self.declarations_changed,
+                )
             }
             Runner::Unstarted(_) | Runner::Stopped => Ok(()),
         }
@@ -1699,7 +1739,15 @@ impl Plugins {
                 }
             }
         }
+        // The reads of a plugin that a panic disabled stop.
+        let active: BTreeSet<&str> = self
+            .entries
+            .iter()
+            .filter(|entry| entry.state.status == Status::Active)
+            .map(|entry| entry.state.name.as_str())
+            .collect();
         let Outbox { reads, events, .. } = &mut self.out;
+        reads.retain(|read| active.contains(read.plugin.as_str()));
         reads.retain(|read| {
             let (lines, complete) = match read.rows.try_recv() {
                 Ok(read) => read,
@@ -1776,8 +1824,13 @@ impl Plugins {
                     |plugin, cx| plugin.on_event(cx, &batch),
                 ),
                 Runner::Worker(worker) => {
-                    worker.ask(Job::Events(batch), context.focused);
-                    Ok(())
+                    let within = worker.ask(Job::Events(batch), context.focused);
+                    within_bound(
+                        within,
+                        (runner, state),
+                        context,
+                        &mut self.declarations_changed,
+                    )
                 }
                 Runner::Unstarted(_) | Runner::Stopped => Ok(()),
             };
@@ -1898,22 +1951,42 @@ impl Plugins {
                         // asked, as it would have run then on the main
                         // thread.
                         let now = std::mem::replace(&mut context.focused, busy.focused);
-                        let mut host = Host {
-                            state,
-                            context: &mut *context,
-                            out: &mut busy.out,
-                            writes: &mut busy.writes,
-                            declarations_changed,
-                        };
-                        let response = host::Host::handle(&mut host, asked);
+                        let handled = panic::catch_unwind(AssertUnwindSafe(|| {
+                            let mut host = Host {
+                                state: &mut *state,
+                                context: &mut *context,
+                                out: &mut busy.out,
+                                writes: &mut busy.writes,
+                                declarations_changed: &mut *declarations_changed,
+                            };
+                            host::Host::handle(&mut host, asked)
+                        }));
                         context.focused = now;
-                        response
+                        handled
                     }
-                    None => {
-                        Response::Failed(Error::new(Code::Fault, "a request came outside a call"))
-                    }
+                    None => Ok(Response::Failed(Error::new(
+                        Code::Fault,
+                        "a request came outside a call",
+                    ))),
                 };
-                worker.answer(response);
+                match response {
+                    Ok(response) => worker.answer(response),
+                    // The host broke on the request: its plugin is
+                    // disabled, as a panic of its own disables it, and its
+                    // thread, which waits for the answer, ends without it.
+                    Err(payload) => {
+                        disable(state, context.registry, declarations_changed);
+                        release_cursors(state, context.workspace);
+                        let fault = format!(
+                            "the host broke on a request of the plugin `{}`{}; it is disabled",
+                            state.name,
+                            message(payload.as_ref())
+                        );
+                        state.fault = Some(fault.clone());
+                        served.errors.push(Error::new(Code::Fault, fault));
+                        *runner = Runner::Stopped;
+                    }
+                }
                 return true;
             }
             Ok(FromWorker::Done(done)) => done,
@@ -2297,6 +2370,8 @@ fn stop(
     }
     state.views.clear();
     state.subscribed.clear();
+    // Its reads of rows stop at their next parts.
+    out.reads.retain(|read| read.plugin != state.name);
     let searches = std::mem::take(&mut state.searches);
     for search in searches
         .into_iter()
@@ -2813,17 +2888,33 @@ fn text_style(style: &Style) -> host::TextStyle {
 /// [`READ_PART`] rows under the lock at a time, and wakes the main thread
 /// once it is done: the rows, and whether the read went to its end, as the
 /// rows' epoch stayed from the request to the last part, come through the
-/// receiver.
+/// receiver. `cancel` stops it at its next part; `reading`, its plugin's
+/// count of reads under way, counts it until its thread ends.
 fn read_rows(
     reader: Reader,
-    epoch: u64,
-    first: i64,
-    count: usize,
+    (epoch, first, count): (u64, i64, usize),
+    cancel: Arc<AtomicBool>,
+    reading: Arc<AtomicUsize>,
 ) -> mpsc::Receiver<(Vec<host::Line>, bool)> {
+    /// Counts a read under way until it drops, at its thread's end, as it
+    /// ends or panics, or as its thread does not start.
+    struct Counted(Arc<AtomicUsize>);
+    impl Drop for Counted {
+        fn drop(&mut self) {
+            self.0.fetch_sub(1, Ordering::AcqRel);
+        }
+    }
+    reading.fetch_add(1, Ordering::AcqRel);
+    let counted = Counted(reading);
     let (sender, receiver) = mpsc::channel();
     let read = move || {
+        let _counted = counted;
         let (mut lines, mut next, mut complete) = (Vec::new(), first, true);
         while lines.len() < count {
+            if cancel.load(Ordering::Relaxed) {
+                complete = false;
+                break;
+            }
             let part = {
                 let terminal = reader.lock();
                 if terminal.origin().epoch != epoch {
@@ -2878,6 +2969,31 @@ fn message(payload: &(dyn Any + Send)) -> String {
         .or_else(|| payload.downcast_ref::<String>().cloned())
         .map(|message| format!(": {message}"))
         .unwrap_or_default()
+}
+
+/// Disables the plugin of `state`, unless the work that waits for its
+/// thread is `within` its bound: its thread, which took none of it, is
+/// left to end, as the calls that waited go, which a notice tells.
+fn within_bound(
+    within: bool,
+    (runner, state): (&mut Runner, &mut State),
+    context: &mut Context<'_>,
+    declarations_changed: &mut bool,
+) -> Result<(), Error> {
+    if within {
+        return Ok(());
+    }
+    disable(state, context.registry, declarations_changed);
+    release_cursors(state, context.workspace);
+    let fault = format!(
+        "the plugin `{}` took none of the {} calls or {} events that waited for its thread; it is disabled",
+        state.name,
+        worker::MOST_WAITING,
+        worker::MOST_EVENTS
+    );
+    state.fault = Some(fault.clone());
+    *runner = Runner::Stopped;
+    Err(Error::new(Code::Fault, fault))
 }
 
 /// Gives the terminal's cursor back in each pane where the plugin of
@@ -3260,12 +3376,31 @@ impl Host<'_, '_> {
                 // which a resize before the read's first part changes.
                 let epoch = found.origin().ok_or_else(unavailable)?.epoch;
                 let reader = found.reader().ok_or_else(unavailable)?;
+                // A thread each, a few of them at a time.
+                let reading = Arc::clone(&self.state.reading);
+                if reading.load(Ordering::Acquire) >= MOST_READS {
+                    return Err(Error::new(
+                        Code::Unavailable,
+                        format!(
+                            "the plugin `{}` has {MOST_READS} reads of rows under way, the most, until one ends",
+                            self.state.name
+                        ),
+                    ));
+                }
                 let id = new_id();
+                let cancel = Arc::new(AtomicBool::new(false));
+                let rows = read_rows(
+                    reader,
+                    (epoch, first, count.min(host::MOST_LINES)),
+                    Arc::clone(&cancel),
+                    reading,
+                );
                 self.out.reads.push(Read {
                     id,
                     plugin: self.state.name.clone(),
                     pane,
-                    rows: read_rows(reader, epoch, first, count.min(host::MOST_LINES)),
+                    rows,
+                    _cancel: Cancel(cancel),
                 });
                 Response::Reading(id)
             }
@@ -3493,8 +3628,16 @@ impl Host<'_, '_> {
     }
 
     /// Checks `request`, a write, and queues it: one to a pane that is not
-    /// there, nor opened by the call's writes so far, fails now.
+    /// there, nor opened by the call's writes so far, fails now, and so
+    /// does one past the [`MOST_WRITES`] of a call, which waits for its
+    /// end.
     fn queue(&mut self, request: Asked) -> Result<Response, Error> {
+        if self.writes.len() >= MOST_WRITES {
+            return Err(Error::new(
+                Code::Failed,
+                format!("a call writes {MOST_WRITES} times at most, which apply as it returns"),
+            ));
+        }
         match &request {
             Asked::ShowMatches { search, .. } => {
                 if !self.state.searches.iter().any(|kept| kept.id == *search) {
@@ -4151,8 +4294,19 @@ impl Host<'_, '_> {
     }
 }
 
+#[cfg(test)]
+thread_local! {
+    /// Whether the next request that the host handles on this thread
+    /// panics, as a bug of the host's would, which no request is known to.
+    pub(super) static BREAKS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
 impl host::Host for Host<'_, '_> {
     fn handle(&mut self, call: Call) -> Response {
+        #[cfg(test)]
+        if BREAKS.with(|breaks| breaks.replace(false)) {
+            panic!("the host broke, on purpose");
+        }
         let answered = if call.caller == self.state.name {
             let request = call.request;
             within_depth(request)

@@ -4,6 +4,8 @@
 
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use lokyr_plugin_sdk::command::{Category, Kind, Param, Value};
@@ -1637,6 +1639,7 @@ fn a_call_is_its_own_plugin_s() {
             told_tabs: BTreeMap::new(),
             told_panes: BTreeMap::new(),
             searches: Vec::new(),
+            reading: Arc::default(),
             lingering: Vec::new(),
         },
         Outbox::default(),
@@ -2153,7 +2156,7 @@ fn a_read_of_the_epoch_before_a_resize_is_incomplete_without_other_rows() {
         .unwrap()
         .resize(grid, Instant::now());
     let read = |reader, epoch| {
-        super::read_rows(reader, epoch, 0, 3)
+        super::read_rows(reader, (epoch, 0, 3), Arc::default(), Arc::default())
             .recv_timeout(Duration::from_secs(10))
             .unwrap()
     };
@@ -2169,6 +2172,85 @@ fn a_read_of_the_epoch_before_a_resize_is_incomplete_without_other_rows() {
     let (lines, complete) = read(found.reader().unwrap(), found.origin().unwrap().epoch);
     assert!(complete);
     assert_eq!(lines.len(), 3);
+}
+
+#[test]
+fn a_read_counts_until_its_thread_ends_and_stops_as_it_is_cancelled() {
+    let mut app = App::default();
+    let window = window(&mut app, "seq 1 300; echo ready; sleep 30");
+    let pane = app.workspace.active_pane(window).unwrap();
+    row_once(&app, pane, 300, "ready");
+    let found = app.workspace.pane(pane).unwrap();
+    let epoch = found.origin().unwrap().epoch;
+    let reading = Arc::new(AtomicUsize::new(0));
+    // A read cancelled before its first part reads nothing, and tells it
+    // incomplete; each, once its thread ends, counts no more.
+    let cancelled = Arc::new(AtomicBool::new(true));
+    let (lines, complete) = super::read_rows(
+        found.reader().unwrap(),
+        (epoch, 0, 300),
+        cancelled,
+        Arc::clone(&reading),
+    )
+    .recv_timeout(Duration::from_secs(10))
+    .unwrap();
+    assert_eq!((lines.len(), complete), (0, false));
+    let (lines, complete) = super::read_rows(
+        found.reader().unwrap(),
+        (epoch, 0, 300),
+        Arc::default(),
+        Arc::clone(&reading),
+    )
+    .recv_timeout(Duration::from_secs(10))
+    .unwrap();
+    assert_eq!((lines.len(), complete), (300, true));
+    let start = Instant::now();
+    while reading.load(Ordering::Acquire) > 0 {
+        assert!(start.elapsed() < Duration::from_secs(10), "still counted");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+}
+
+#[test]
+fn a_plugin_s_reads_of_rows_are_a_few_at_a_time() {
+    let mut app = App::default();
+    window(&mut app, "seq 1 30; echo ready; sleep 30");
+    let mut plugins = Plugins::new();
+    let codes = Rc::new(RefCell::new(Vec::new()));
+    let seen = Rc::clone(&codes);
+    plugins
+        .add(
+            "reader",
+            scripted(
+                |cx| cx.register_command(command("reader.read")),
+                move |cx, _, _| {
+                    let pane = cx.focused_pane().unwrap();
+                    let code = cx.read_lines(pane, 0, 10).err().map(|error| error.code);
+                    seen.borrow_mut().push(code);
+                    Ok(())
+                },
+            ),
+        )
+        .unwrap();
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    // Of as many under way as the most, another is refused; of one fewer,
+    // it reads.
+    let reading = Arc::clone(&plugins.entries[0].state.reading);
+    reading.store(MOST_READS, Ordering::Release);
+    plugins
+        .run("reader.read", Args::new(), &mut app.context())
+        .unwrap();
+    reading.store(MOST_READS - 1, Ordering::Release);
+    plugins
+        .run("reader.read", Args::new(), &mut app.context())
+        .unwrap();
+    assert_eq!(*codes.borrow(), [Some(Code::Unavailable), None]);
+    // A plugin that stops lets its reads go, which stop at their next
+    // parts.
+    assert_eq!(plugins.out.reads.len(), 1);
+    plugins.entries[0].state.status = Status::Disabled;
+    plugins.take_reads();
+    assert!(plugins.out.reads.is_empty());
 }
 
 #[test]
@@ -4416,4 +4498,40 @@ fn a_plugin_selects_cells_and_the_view_shows_the_first() {
     assert_eq!(shown.selection_text().as_deref(), Some("11"));
     let top = shown.reader().unwrap().lock().origin().top;
     assert_eq!(top, 10);
+}
+
+#[test]
+fn a_call_s_writes_are_bounded_as_they_wait_for_its_end() {
+    let mut app = App::default();
+    window(&mut app, "sleep 10");
+    let mut plugins = Plugins::new();
+    let codes = Rc::new(RefCell::new(Vec::new()));
+    let seen = Rc::clone(&codes);
+    plugins
+        .add(
+            "writer",
+            scripted(
+                |cx| cx.register_command(command("writer.go")),
+                move |cx, _, _| {
+                    let pane = cx.focused_pane().unwrap();
+                    let mut seen = seen.borrow_mut();
+                    for _ in 0..=MOST_WRITES {
+                        seen.push(
+                            cx.scroll(pane, host::Scroll::Top)
+                                .err()
+                                .map(|error| error.code),
+                        );
+                    }
+                    Ok(())
+                },
+            ),
+        )
+        .unwrap();
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    plugins
+        .run("writer.go", Args::new(), &mut app.context())
+        .unwrap();
+    let codes = codes.borrow();
+    assert!(codes[..MOST_WRITES].iter().all(Option::is_none));
+    assert_eq!(codes[MOST_WRITES], Some(Code::Failed));
 }

@@ -2290,8 +2290,17 @@ impl Calling<'_> {
     /// Checks `request`, a write or a request of the app's, and queues it:
     /// one of a pane, a tab or a window that the host does not hold, nor
     /// the call's writes so far open, or of a target that does not open,
-    /// fails now.
+    /// fails now, and so does one past the [`host::MOST_WRITES`] of a call.
     fn queue(&mut self, request: Request) -> Result<Response, Error> {
+        if request.effect() == Effect::Write && self.writes.len() >= host::MOST_WRITES {
+            return Err(Error::new(
+                Code::Failed,
+                format!(
+                    "a call writes {} times at most, which apply as it returns",
+                    host::MOST_WRITES
+                ),
+            ));
+        }
         let mut opened = Opened::Nothing;
         let response = match &request {
             Request::SelectCells { pane, .. }

@@ -55,6 +55,15 @@ pub(super) enum Called {
     Ui,
 }
 
+/// The most calls that wait for a plugin's thread while it makes one,
+/// its commands, renders and events of its views, past which its thread is
+/// taken for stuck and its plugin disabled.
+pub(super) const MOST_WAITING: usize = 256;
+
+/// The most events that wait for a plugin's thread while it makes a call,
+/// in its batches, past which its thread is taken for stuck.
+pub(super) const MOST_EVENTS: usize = 10_000;
+
 /// What the main thread keeps of the call under way: which call, its
 /// writes, and what it asks of the app and emits, which come as it
 /// returns; the chain of commands that ran the command that it is, and the window
@@ -98,6 +107,10 @@ pub(super) enum FromWorker {
 /// and those that wait for it to end, each with the window that had the
 /// focus as it was asked; and the events posted while it activates, before
 /// its subscriptions are known.
+///
+/// The work that waits for a call under way is bounded: past
+/// [`MOST_WAITING`] calls, or [`MOST_EVENTS`] events, its thread, which
+/// took none of them, is taken for stuck.
 pub(super) struct Worker {
     to: mpsc::Sender<ToWorker>,
     from: mpsc::Receiver<FromWorker>,
@@ -130,17 +143,19 @@ impl Worker {
         })
     }
 
-    /// Asks for `job`, as `focused` had the focus: now, if no call is
-    /// under way, or after those that wait. Events join the batch that
+    /// Asks for `job`, as `focused` had the focus, and tells whether the
+    /// work that waits for its thread is within its bound: now, if no call
+    /// is under way, or after those that wait. Events join the batch that
     /// waits last, if it is the last call that waits, which then reads the
     /// focus of the latest; a render of a view whose render is under way
     /// or waits is not asked again, as that one renders it: a render that
     /// the plugin asks for within its render comes as the render returns,
     /// once it is no longer under way.
-    pub(super) fn ask(&mut self, job: Job, focused: Option<WindowId>) {
+    #[must_use]
+    pub(super) fn ask(&mut self, job: Job, focused: Option<WindowId>) -> bool {
         let Some(busy) = &self.busy else {
             self.begin(job, focused);
-            return;
+            return true;
         };
         match job {
             Job::Events(events) => match self.waiting.back_mut() {
@@ -162,6 +177,15 @@ impl Worker {
             }
             job => self.waiting.push_back((job, focused)),
         }
+        let events: usize = self
+            .waiting
+            .iter()
+            .map(|(job, _)| match job {
+                Job::Events(batch) => batch.len(),
+                _ => 0,
+            })
+            .sum();
+        self.waiting.len() <= MOST_WAITING && events <= MOST_EVENTS
     }
 
     fn begin(&mut self, job: Job, focused: Option<WindowId>) {

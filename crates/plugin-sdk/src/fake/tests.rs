@@ -1060,3 +1060,26 @@ fn a_declared_plugin_s_keys_run_what_it_may_run_as_the_app_s_host_checks_them() 
             .is_ok()
     );
 }
+
+#[test]
+fn a_call_s_writes_are_bounded_as_the_app_s_host_bounds_them() {
+    let mut host = FakeHost::new("acme/probe");
+    host.pane(PaneId(1));
+    let codes = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+    let seen = std::rc::Rc::clone(&codes);
+    let mut probe = Probe::new(move |cx, _| {
+        let mut seen = seen.borrow_mut();
+        for _ in 0..=host::MOST_WRITES {
+            seen.push(
+                cx.scroll(PaneId(1), Scroll::Top)
+                    .err()
+                    .map(|error| error.code),
+            );
+        }
+        Ok(())
+    });
+    host.command(&mut probe, "probe.go", Args::new()).unwrap();
+    let codes = codes.borrow();
+    assert!(codes[..host::MOST_WRITES].iter().all(Option::is_none));
+    assert_eq!(codes[host::MOST_WRITES], Some(Code::Failed));
+}

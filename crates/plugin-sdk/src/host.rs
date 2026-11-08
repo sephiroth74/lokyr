@@ -354,6 +354,11 @@ pub const MOST_REACH: usize = 256;
 /// The most rows that a read of rows takes.
 pub const MOST_LINES: usize = 100_000;
 
+/// The most writes of a call, which wait for its end, past which another
+/// fails, as a call of a plugin's thread that never returned would keep
+/// them all.
+pub const MOST_WRITES: usize = 10_000;
+
 /// The most bytes of a plugin's state, as JSON.
 pub const MOST_STATE: usize = 1024 * 1024;
 

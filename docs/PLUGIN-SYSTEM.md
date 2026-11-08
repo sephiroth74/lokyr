@@ -699,7 +699,8 @@ type Cx = {
     -- The target of the OSC 8 link at a cell, by its row's number.
     link_at: (pane: PaneId, column: number, row: number) -> (string?, Error?),
     -- Reads 100 000 rows at most, from the row numbered `first`, on a thread of the host's, a part at a time:
-    -- returns the read's id, and the rows come as a "lines" event.
+    -- returns the read's id, and the rows come as a "lines" event. Four of a plugin's reads are under way at most,
+    -- past which another fails until one ends; they stop as the plugin stops.
     read_lines: (pane: PaneId, first: number, count: number) -> (number?, Error?),
     -- Searches a pane's terminal, its scrollback too, on a thread of the host's, a part of its rows at a time from the
     -- view's outward: returns the search's id, and the matches come as "searched" events. The plugin's search of the pane
@@ -890,7 +891,12 @@ installed ──▶ resolved ──▶ consent ──▶ loaded ──▶ active
   - A watchdog thread installs Luau's interrupt only once the deadline has passed, so the check costs nothing until then. The interrupt then ends the call at the next loop iteration or function call, native code included.
   - The watchdog runs **only while a plugin is executing**, so there are no wakeups when idle.
   - The watchdog writes the interrupt from another thread, which races with the code that reads it. The vendored Luau gets an atomic store for that field, unless Luau guarantees that the race is harmless.
-- **Failures**: a failing plugin never affects the terminal. The plugin is disabled and the user gets a notification. In native plugins, `catch_unwind` at the boundary stops panics.
+- **Failures**: a failing plugin never affects the terminal. The plugin is disabled and the user gets a notification. In native plugins, `catch_unwind` at the boundary stops panics; a panic of the host's own, as it answers a request of a plugin's thread, disables that plugin and leaves the app running.
+- **Bounded queues**: what a plugin's calls leave for later is bounded, so that a plugin cannot grow the app's memory without end:
+  - a call's writes, which apply as it returns, 10 000 at most, past which another fails;
+  - its reads of rows, each on a thread of the host's, four under way at most;
+  - the calls that wait for a plugin's thread while it makes one, its commands, renders and its views' events, 256 at most, and 10 000 events: past them, its thread, which took none of them, is taken for stuck, and its plugin disabled, as a notice tells;
+  - a chain of commands that run commands, 16 deep and 256 runs at most.
 - **Hostile plugins in CI**: an infinite loop, a memory bomb, a runaway recursion and the escape probes of [F0-22](tasks/F0-foundations.md#f0-22--spike-lua-plugin-runtimes) run against every build, so the sandbox stays closed.
 
 ## Native code and the hardened runtime

@@ -832,3 +832,73 @@ fn a_worker_s_view_nested_too_deep_is_refused_on_its_thread_and_the_last_stays()
             .nests_within_deepest()
     );
 }
+
+#[test]
+fn a_stuck_worker_s_plugin_is_disabled_as_the_work_that_waits_for_it_passes_its_bound() {
+    let mut app = App::default();
+    window(&mut app, "sleep 30");
+    // A command that waits until the test lets it go, as a plugin stuck
+    // in a call.
+    let (free, freed) = mpsc::channel::<()>();
+    let freed = std::sync::Mutex::new(freed);
+    let plugin = Threaded {
+        on_command: Box::new(move |_, _| {
+            let _ = freed.lock().unwrap().recv();
+            Ok(())
+        }),
+        ..Threaded::default()
+    };
+    let (mut plugins, _) = started(&mut app, plugin);
+    plugins
+        .run("busy.go", Args::new(), &mut app.context())
+        .unwrap();
+    // The calls that wait for it, up to the bound, and the one past it.
+    for _ in 0..super::MOST_WAITING {
+        plugins
+            .run("busy.go", Args::new(), &mut app.context())
+            .unwrap();
+    }
+    assert_eq!(plugins.status("acme/busy"), Some(Status::Active));
+    let past = plugins
+        .run("busy.go", Args::new(), &mut app.context())
+        .unwrap_err();
+    assert_eq!(past.code, Code::Fault);
+    assert!(past.message.contains("took none"), "{past}");
+    assert_eq!(plugins.status("acme/busy"), Some(Status::Disabled));
+    // Its commands went, and nothing waits for its thread, which ends as
+    // it is let go.
+    assert!(app.registry.get("busy.go").is_none());
+    assert!(!plugins.waiting());
+    let _ = free.send(());
+}
+
+#[test]
+fn a_request_that_breaks_the_host_disables_its_plugin_and_the_app_goes_on() {
+    let mut app = App::default();
+    window(&mut app, "sleep 30");
+    let plugin = Threaded {
+        on_command: Box::new(|cx, _| {
+            cx.focused_pane()
+                .map(drop)
+                .ok_or_else(|| Error::new(Code::NotFound, "no pane"))
+        }),
+        ..Threaded::default()
+    };
+    let (mut plugins, _) = started(&mut app, plugin);
+    super::super::BREAKS.with(|breaks| breaks.set(true));
+    plugins
+        .run("busy.go", Args::new(), &mut app.context())
+        .unwrap();
+    let served = served(&mut plugins, &mut app);
+    assert!(
+        served
+            .errors
+            .iter()
+            .any(|error| error.code == Code::Fault && error.message.contains("the host broke")),
+        "{:?}",
+        served.errors
+    );
+    assert_eq!(plugins.status("acme/busy"), Some(Status::Disabled));
+    // The host answers the next plugin's requests as before.
+    assert!(!super::super::BREAKS.with(std::cell::Cell::get));
+}
