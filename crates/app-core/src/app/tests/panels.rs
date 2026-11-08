@@ -1366,3 +1366,43 @@ fn the_tabs_labels_take_the_interface_s_new_size() {
     assert_eq!(again, label);
     assert!(after.height > before.height, "{before:?} {after:?}");
 }
+
+#[test]
+fn an_opaque_titlebar_s_tabs_go_over_it_of_their_own_opacity() {
+    let mut config = unpadded();
+    config.window.background_opacity = 0.5_f64.try_into().unwrap();
+    config.window.opaque_titlebar = true;
+    let drawing = Drawing::new(FontConfig::default()).unwrap();
+    let mut fake = Fake::default();
+    fake.set_bar(28.0);
+    let program = shell("echo ready; read line");
+    let mut app = App::new(Some(drawing), config, None).with_program(program);
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    app.windows.get_mut(&window).unwrap().surface = Some(fakes::Surface::default());
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    run_until(&mut fake, &mut app, |_, app| shows(app, window, "ready"));
+    // Two tabs, of the unified look, in the titlebar.
+    command(&mut fake, &mut app, window, "tabs.new");
+    frames(&mut fake, &mut app, window);
+    let band = fake.window(window).unwrap().size.bar_pixels();
+    let shapes = drawn_shapes(&app, window);
+    let in_band: Vec<_> = shapes
+        .iter()
+        .filter(|shape| shape.rect.y < i32::try_from(band).unwrap())
+        .collect();
+    assert!(!in_band.is_empty(), "{shapes:?}");
+    // None knocks the opaque titlebar out, the active tab of its own
+    // color, opaque.
+    assert!(in_band.iter().all(|shape| !shape.knockout), "{in_band:?}");
+    let active = app
+        .theme
+        .variant(false)
+        .tokens
+        .get("tabs.active.bg")
+        .unwrap();
+    assert!(
+        in_band.iter().any(|shape| shape.fill == active),
+        "{in_band:?}"
+    );
+}

@@ -1073,13 +1073,21 @@ impl<B: Backend> App<B> {
             Target::Node { panel, node } => Some((panel, node)),
             Target::Pane => None,
         };
-        items.extend(chrome::paint(
+        let mut painted = chrome::paint(
             &state.chrome,
             font,
             tokens,
             room,
             (chrome_dark, focused_node, now),
-        ));
+        );
+        // Under an opaque titlebar, the chrome in its band goes over it, of
+        // its colors' own opacity, rather than knocking it out to the
+        // window's.
+        if opaque_bar && let Some(Item::Rect { rect: band, .. }) = bar_item(size, background, past)
+        {
+            over_opaque(&mut painted, band, opacity);
+        }
+        items.extend(painted);
         // The notice, across the panes' top, under the titlebar and the tab
         // bar.
         state.notice = self.diagnostics.shown().map(|shown| {
@@ -1816,6 +1824,34 @@ pub(super) fn bar_item(size: WindowSize, background: Color, left: u32) -> Option
         },
         color: background.with_alpha(1.0),
     })
+}
+
+/// `items`' shapes that knock out what is under them and meet `band`, an
+/// opaque titlebar's, of a window of `opacity`, made to go over it, of
+/// their colors' own opacity, which the window's took a share of.
+pub(super) fn over_opaque(items: &mut [Item], band: Rect, opacity: f32) {
+    let meets = |rect: &Rect| {
+        let right = i64::from(rect.x) + i64::from(rect.width);
+        let bottom = i64::from(rect.y) + i64::from(rect.height);
+        i64::from(rect.x) < i64::from(band.x) + i64::from(band.width)
+            && right > i64::from(band.x)
+            && i64::from(rect.y) < i64::from(band.y) + i64::from(band.height)
+            && bottom > i64::from(band.y)
+    };
+    for item in items {
+        let Item::Shapes(shapes) = item else {
+            continue;
+        };
+        for shape in shapes
+            .iter_mut()
+            .filter(|shape| shape.knockout && meets(&shape.rect))
+        {
+            shape.knockout = false;
+            if opacity > 0.0 {
+                shape.fill.alpha = (shape.fill.alpha / opacity).min(1.0);
+            }
+        }
+    }
 }
 
 /// The appearance that a window whose default background is `background`

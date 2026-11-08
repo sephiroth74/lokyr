@@ -1247,6 +1247,12 @@ fn moved_shape(shape: &mut Shape, (dx, dy): (i32, i32), opacity: f32) {
     let fade = |color: &mut Color| color.alpha *= opacity;
     shape.rect.x = shape.rect.x.saturating_add(dx);
     shape.rect.y = shape.rect.y.saturating_add(dy);
+    // A background that knocks out what is under it, faded, goes over it
+    // instead, so that its fade leaves no hole of what is behind the
+    // window, as a tab carried out of its bar would.
+    if opacity < 1.0 {
+        shape.knockout = false;
+    }
     fade(&mut shape.fill);
     fade(&mut shape.border_color);
     if let Some(shadow) = &mut shape.shadow {
@@ -1899,6 +1905,56 @@ mod tests {
         );
         moved_shape(&mut ring, (5, 0), 1.0);
         assert_eq!(ring.rect.x, i32::MAX);
+    }
+
+    #[test]
+    fn a_faded_background_that_knocks_out_goes_over_instead() {
+        // A background of a token that knocks out what is under it, as a
+        // translucent window's active tab's, opaque, half faded, gone.
+        let of_opacity = |opacity: f32| {
+            let root = Node::container(vec![
+                Node::container(vec![])
+                    .layout(view::Layout {
+                        width: view::Length::Points(20.0),
+                        height: view::Length::Points(10.0),
+                        ..view::Layout::default()
+                    })
+                    .style(view::Style {
+                        background: Some(Token::from("tabs.active.bg")),
+                        opacity: Some(opacity),
+                        ..view::Style::default()
+                    }),
+            ]);
+            let mut font = Font::new(Blocks, FontConfig::default(), 1.0).unwrap();
+            let mut tree = Tree::new();
+            let changes = tree.update(&root).unwrap();
+            let mut layout = Layout::new(1.0);
+            layout.update(&tree, &changes);
+            layout.compute(&tree, Some(100.0), None, &mut font);
+            let mut tokens = Theme::builtin().dark.tokens.clone();
+            tokens.knock_out("tabs.active.bg");
+            let items = paint(
+                &tree,
+                &layout,
+                &mut font,
+                &tokens,
+                (0.0, 0.0),
+                shown(true, None),
+            );
+            items
+                .iter()
+                .flat_map(|item| match item {
+                    Item::Shapes(shapes) => shapes.clone(),
+                    _ => Vec::new(),
+                })
+                .map(|shape| (shape.knockout, shape.fill.alpha))
+                .collect::<Vec<_>>()
+        };
+        let opaque = of_opacity(1.0);
+        assert!(matches!(opaque[..], [(true, _)]), "{opaque:?}");
+        let alpha = opaque[0].1;
+        assert_eq!(of_opacity(0.5), [(false, alpha * 0.5)]);
+        assert!(matches!(of_opacity(0.0)[..], [] | [(false, 0.0)]));
     }
 
     #[test]
