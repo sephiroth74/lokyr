@@ -51,6 +51,10 @@ pub struct Drawing<B: Backend> {
     /// How many fonts it took, the first one too: a layer draws its cells
     /// again of a new one, whose atlas gives their regions to other pixels.
     pub(crate) fonts: u64,
+    /// The faces' generation of the views' text, the terminal's and the
+    /// interface's, which each change of either moves on, as the views'
+    /// text is measured of them.
+    pub(crate) faces: u64,
     /// Whether a thread readies the system's fallback of fonts, as one does
     /// once the first frame is drawn.
     pub(crate) warmed_up: bool,
@@ -71,6 +75,7 @@ impl<B: Backend> Drawing<B> {
             renderer,
             font,
             fonts: 1,
+            faces: 1,
             warmed_up: false,
             interface: InterfaceConfig::default(),
         })
@@ -83,6 +88,7 @@ impl<B: Backend> Drawing<B> {
     pub(crate) fn set_interface(&mut self, config: &InterfaceConfig) {
         self.interface = config.clone();
         self.font.set_interface(&self.interface);
+        self.faces += 1;
     }
 
     /// Takes the font that `config` gives, with an atlas of its own, and a
@@ -95,6 +101,7 @@ impl<B: Backend> Drawing<B> {
         self.font = font;
         self.renderer = renderer;
         self.fonts += 1;
+        self.faces += 1;
         self.font.set_interface(&self.interface);
         Ok(())
     }

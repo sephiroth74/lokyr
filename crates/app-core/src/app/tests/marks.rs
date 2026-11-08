@@ -365,3 +365,48 @@ fn the_command_s_header_opens_anew_in_the_window_that_its_tab_moves_to() {
             .all(|view| view.view != own)
     );
 }
+
+/// The text of the command's header's pill of `window`'s pane, and its
+/// text's frame, in pixels, if it shows.
+fn header_text(app: &App, window: WindowId) -> Option<(String, Frame)> {
+    let state = &app.windows[&window];
+    let pane = state.views.first()?.pane;
+    let id = ViewId::Panel(PanelId(format!("command-header-{}", pane.get())));
+    let view = state.chrome.iter().find(|view| view.view == id)?;
+    let tree = &view.surface.tree;
+    let pill = tree.by_key(&"command".into())?;
+    let text = *tree.children(pill).first()?;
+    let lokyr_kernel::plugins::view::Kind::Text(line) = tree.kind(text)? else {
+        return None;
+    };
+    Some((line.clone(), view.surface.layout.frame(tree, text)?))
+}
+
+#[test]
+fn the_command_s_header_takes_the_text_s_new_size() {
+    let program = shell(concat!(
+        "m() { printf '\\033]133;%s\\007' \"$1\"; }\n",
+        "m A; printf '$ '; m B; echo long; m C; seq 1 200; m 'D;0'; m A; printf '$ '; sleep 30\n",
+    ));
+    let drawing = Drawing::new(FontConfig::default()).unwrap();
+    let mut fake = Fake::default();
+    let mut app = App::new(Some(drawing), unpadded(), None).with_program(program);
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    app.windows.get_mut(&window).unwrap().surface = Some(fakes::Surface::default());
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    run_until(&mut fake, &mut app, |_, app| {
+        header_text(app, window).is_some()
+    });
+    let (line, before) = header_text(&app, window).unwrap();
+    assert_eq!(line, "long");
+    // A point larger, ⌘+'s: the text measured anew, of the pill's line.
+    let points = app.config.font.size.points() as f32;
+    app.set_font_size(&mut fake, Some(points + 4.0));
+    run_until(&mut fake, &mut app, |_, app| {
+        header_text(app, window).is_some_and(|(_, after)| after.height > before.height)
+    });
+    let (line, after) = header_text(&app, window).unwrap();
+    assert_eq!(line, "long");
+    assert!(after.width > before.width, "{before:?} {after:?}");
+}

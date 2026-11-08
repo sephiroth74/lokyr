@@ -71,6 +71,8 @@ pub(crate) struct SlotView {
     /// nearest scroll area around it scrolls to as the view lays out, once
     /// its tree has it.
     pub(crate) reveal: Option<NodeKey>,
+    /// The faces' generation that its text was measured of.
+    pub(crate) faces: u64,
 }
 
 impl fmt::Debug for SlotView {
@@ -125,6 +127,7 @@ impl SlotView {
             frame: None,
             placed: Some(placed),
             reveal: None,
+            faces: 0,
         }
     }
 
@@ -290,6 +293,7 @@ impl<B: Backend> App<B> {
                         frame: None,
                         placed: None,
                         reveal: None,
+                        faces: 0,
                     }
                 }
             };

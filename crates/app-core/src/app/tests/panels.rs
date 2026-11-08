@@ -1326,3 +1326,43 @@ fn a_find_bar_of_a_pane_that_a_zoom_hides_gives_the_keyboard_back() {
     fake.send(&mut app, window, typed(KeyCode::Enter, "\r", false));
     run_until(&mut fake, &mut app, |_, app| shows(app, window, "got:j"));
 }
+
+/// The first text of the tab bar of `window`, and its frame, in pixels.
+fn tab_text(app: &App, window: WindowId) -> Option<(String, lokyr_ui_core::layout::Frame)> {
+    let view = app.windows[&window]
+        .chrome
+        .iter()
+        .find(|view| matches!(view.view, ViewId::TabBar(_)))?;
+    let tree = &view.surface.tree;
+    let mut nodes = vec![tree.root()?];
+    while let Some(node) = nodes.pop() {
+        if let Some(lokyr_kernel::plugins::view::Kind::Text(text)) = tree.kind(node)
+            && !text.is_empty()
+        {
+            return Some((text.clone(), view.surface.layout.frame(tree, node)?));
+        }
+        nodes.extend(tree.children(node).iter().rev());
+    }
+    None
+}
+
+#[test]
+fn the_tabs_labels_take_the_interface_s_new_size() {
+    let (mut fake, mut app, window) = reading_with_panels();
+    command(&mut fake, &mut app, window, "tabs.new");
+    run_until(&mut fake, &mut app, |_, app| {
+        tab_text(app, window).is_some()
+    });
+    frames(&mut fake, &mut app, window);
+    let (label, before) = tab_text(&app, window).unwrap();
+    // As a reload of `[interface] font-size` gives it.
+    let interface = lokyr_ui_core::interface::InterfaceConfig {
+        font_size: lokyr_text_core::Size::try_from(20.0).unwrap(),
+        ..lokyr_ui_core::interface::InterfaceConfig::default()
+    };
+    app.drawing.as_mut().unwrap().set_interface(&interface);
+    frames(&mut fake, &mut app, window);
+    let (again, after) = tab_text(&app, window).unwrap();
+    assert_eq!(again, label);
+    assert!(after.height > before.height, "{before:?} {after:?}");
+}

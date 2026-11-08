@@ -174,6 +174,16 @@ impl<B: Backend> App<B> {
     pub(super) fn lay_out_panes(&mut self, window: WindowId, size: WindowSize) -> Vec<PaneView> {
         // The slots' views take their regions, and the panes the rest.
         self.take_trees(window, size.scale as f32);
+        // Their text measured anew of a new font, the terminal's or the
+        // interface's, as their boxes take its new size.
+        if let (Some(drawing), Some(state)) = (&self.drawing, self.windows.get_mut(&window)) {
+            for view in &mut state.chrome {
+                if view.faces != drawing.faces {
+                    view.surface.layout.measure_again();
+                    view.faces = drawing.faces;
+                }
+            }
+        }
         let content = match self.lay_out_chrome(window, size) {
             Some(regions) => {
                 let panes = chrome::rect_of(regions.panes);
