@@ -372,6 +372,7 @@ impl Palette {
                 role: Role::Dialog,
                 close_outside: true,
                 close_escape: true,
+                takes_keys: false,
             },
         )?;
         let recent: &[String] = match mode {

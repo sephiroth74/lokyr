@@ -213,6 +213,13 @@ pub struct PanelOptions {
     /// Whether Escape closes it, while it has the keyboard's focus.
     #[serde(default)]
     pub close_escape: bool,
+    /// Whether it holds the keys back from the program, as a mode of the
+    /// keyboard's, as copy mode's: while it shows and the keyboard is its
+    /// pane's, of an anchor of a pane, or any pane's, of another, the keys
+    /// that no binding takes and the text typed go nowhere, rather than to
+    /// the program; the pane keeps the keyboard, and its cursor its look.
+    #[serde(default)]
+    pub takes_keys: bool,
 }
 
 /// What happened to a node of a key of one of a plugin's views.

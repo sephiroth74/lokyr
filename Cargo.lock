@@ -774,6 +774,7 @@ dependencies = [
  "libc",
  "lokyr-command-header",
  "lokyr-command-palette",
+ "lokyr-copy-mode",
  "lokyr-core-actions",
  "lokyr-kernel",
  "lokyr-keymap-macos",
@@ -814,6 +815,13 @@ dependencies = [
 
 [[package]]
 name = "lokyr-command-palette"
+version = "0.5.1"
+dependencies = [
+ "lokyr-plugin-sdk",
+]
+
+[[package]]
+name = "lokyr-copy-mode"
 version = "0.5.1"
 dependencies = [
  "lokyr-plugin-sdk",

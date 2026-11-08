@@ -747,6 +747,7 @@ impl Plugin for Search {
                     role: Role::Menu,
                     close_outside: true,
                     close_escape: true,
+                    takes_keys: false,
                 },
             ),
             // Its closing, which the plugin hears, ends the search.
@@ -872,6 +873,7 @@ impl Search {
                 role: Role::Dialog,
                 close_outside: false,
                 close_escape: true,
+                takes_keys: false,
             },
         )?;
         // Its field, of no revision yet, takes its text as it takes the

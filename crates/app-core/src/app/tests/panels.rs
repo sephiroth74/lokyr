@@ -81,6 +81,7 @@ fn options(
         role,
         close_outside,
         close_escape,
+        takes_keys: false,
     }
 }
 

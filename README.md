@@ -87,7 +87,7 @@ Lokyr against Ghostty, Alacritty, kitty, WezTerm, iTerm2 and Terminal.app, under
 - ✅ Fonts through CoreText: fallback, ligatures, bold and italic faces or their synthesis, emoji, box drawing and powerline symbols drawn to the cell.
 - ✅ xterm's sequences, the kitty keyboard protocol, synchronized output, OSC 8 links, OSC 52 with consent, Unicode 18's grapheme clusters and widths.
 - ✅ Input methods, Secure Keyboard Entry, Option as Meta, chords and leaders in the keys.
-- ✅ Selection, copy on select, paste with a check of what it holds, drag and drop of files.
+- ✅ Selection, copy on select, a copy mode of vi's keys through the scrollback, paste with a check of what it holds, drag and drop of files.
 - ✅ A quick terminal on a global key, from any edge of the screen.
 - ✅ Notifications, the bell, smooth cursor blinking that the window server draws.
 - ✅ A config in TOML, applied as it is saved, its errors shown in the window.
@@ -109,6 +109,7 @@ Every feature beyond the terminal itself is a plugin, and these come with the ap
 | [`quick-terminal`](docs/plugins/quick-terminal.md) | The quick terminal: a window that a global key slides in from an edge of the screen, over every app |
 | [`progress`](docs/plugins/progress.md) | The programs' progress, of OSC 9;4, in a thin bar across the window's top |
 | [`command-header`](docs/plugins/command-header.md) | The command whose output you are looking at, at the pane's top, which a click scrolls to |
+| [`copy-mode`](docs/plugins/copy-mode.md) | The copy mode: ⇧⌘C, then vi's keys move a cursor through the scrollback, select and copy, without the mouse |
 
 Each page tells the plugin's commands, their keys, its config and what turning it off takes away; [the plugins' index](docs/plugins/README.md) tells how they fit together.
 

@@ -2426,6 +2426,11 @@ fn apply(writes: Vec<Write>, context: &mut Context<'_>, out: &mut Outbox, state:
                     pane.show_row(last.1);
                 }
             }
+            Asked::Deselect(id) => {
+                if let Some(pane) = pane(id) {
+                    pane.clear_selection();
+                }
+            }
             // The plugin's cursor, which its stop takes away.
             Asked::ShowCursor { pane: id, at } => {
                 if let Some(pane) = pane(id) {
@@ -3455,6 +3460,7 @@ impl Host<'_, '_> {
                 }
             }
             Asked::SelectCells { pane, .. }
+            | Asked::Deselect(pane)
             | Asked::ShowCursor { pane, .. }
             | Asked::SelectAll(pane)
             | Asked::ClearScrollback(pane)

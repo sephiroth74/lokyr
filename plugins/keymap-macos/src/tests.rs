@@ -17,7 +17,9 @@ fn it_binds_its_keys_in_their_order_and_registers_no_command() {
     assert!(host.commands().is_empty());
     let (plain, rest) = host.bindings().split_at(BINDINGS.len());
     let (windows, rest) = rest.split_at(ARGUED.len());
-    let (directed, in_panels) = rest.split_at(DIRECTED.len());
+    let (directed, rest) = rest.split_at(DIRECTED.len());
+    let (in_panels, rest) = rest.split_at(IN_PANELS.len());
+    let (copy_mode, counts) = rest.split_at(COPY_MODE.len());
     let bound: Vec<(&str, &str)> = plain
         .iter()
         .map(|binding| {
@@ -77,6 +79,39 @@ fn it_binds_its_keys_in_their_order_and_registers_no_command() {
         })
         .collect();
     assert_eq!(panels, IN_PANELS);
+    // Then the copy mode's, of its context.
+    let copying: Vec<(&str, &str, &str, &str)> = copy_mode
+        .iter()
+        .map(|binding| {
+            let [(name, Value::String(value))] = binding.args.iter().collect::<Vec<_>>()[..] else {
+                panic!("one argument, a text: {binding:?}");
+            };
+            assert_eq!(binding.when.as_deref(), Some(IN_COPY_MODE));
+            (
+                binding.keys.as_str(),
+                binding.command.as_str(),
+                name.as_str(),
+                value.as_str(),
+            )
+        })
+        .collect();
+    assert_eq!(copying, COPY_MODE);
+    let digits: Vec<(&str, i64)> = counts
+        .iter()
+        .map(|binding| {
+            assert_eq!(
+                (binding.command.as_str(), binding.when.as_deref()),
+                ("copy-mode.count", Some(IN_COPY_MODE))
+            );
+            let [(name, Value::Integer(value))] = binding.args.iter().collect::<Vec<_>>()[..]
+            else {
+                panic!("one argument, a whole number: {binding:?}");
+            };
+            assert_eq!(name, "digit");
+            (binding.keys.as_str(), *value)
+        })
+        .collect();
+    assert_eq!(digits, COPY_MODE_COUNTS);
 }
 
 #[test]
@@ -129,6 +164,16 @@ fn the_guide_s_table_of_the_defaults_is_the_plugin_s_keys() {
             IN_PANELS
                 .iter()
                 .map(|&(keys, command, ..)| (keys.to_owned(), command.to_owned())),
+        )
+        .chain(
+            COPY_MODE
+                .iter()
+                .map(|&(keys, command, ..)| (keys.to_owned(), command.to_owned())),
+        )
+        .chain(
+            COPY_MODE_COUNTS
+                .iter()
+                .map(|&(keys, _)| (keys.to_owned(), "copy-mode.count".to_owned())),
         )
         .collect();
     told.sort();

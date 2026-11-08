@@ -169,6 +169,7 @@ fn the_events_that_a_plugin_is_owed_come_as_a_batch_of_those_of_its_own_and_its_
                 role: Role::Menu,
                 close_outside: true,
                 close_escape: true,
+                takes_keys: false,
             },
         )?;
         cx.close_panel("menu")
@@ -566,6 +567,7 @@ impl Plugin for Looker {
                         role: Role::Menu,
                         close_outside: true,
                         close_escape: true,
+                        takes_keys: false,
                     },
                 )
                 .is_ok()
@@ -700,6 +702,7 @@ fn the_requests_that_the_app_s_host_refuses_the_fake_refuses_alike() {
             role: Role::Menu,
             close_outside: true,
             close_escape: true,
+            takes_keys: false,
         };
         push(cx.open_panel("", menu(Anchor::Pointer(WindowId(1)))));
         push(cx.open_panel("menu", menu(Anchor::Pointer(none))));
@@ -820,6 +823,7 @@ fn a_panel_s_opening_asks_its_render_its_close_drops_its_tree_and_a_decoration_o
             role: Role::Menu,
             close_outside: true,
             close_escape: true,
+            takes_keys: false,
         };
         match name {
             "probe.go" => cx.open_panel("menu", options),

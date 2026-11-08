@@ -491,6 +491,10 @@ type PanelOptions = {
     role: ("tooltip" | "menu" | "dialog" | "overlay")?,
     close_outside: boolean?, -- a click outside it closes it
     close_escape: boolean?, -- Escape closes it, while it has the keyboard's focus
+    -- it holds the keys back from the program, as a mode of the keyboard's, as the copy mode's: while it shows and the
+    -- keyboard is its pane's, of an anchor of a pane, or any pane's, of another, the keys that no binding takes and the
+    -- text typed go nowhere; the pane keeps the keyboard, and its cursor its look
+    takes_keys: boolean?,
 }
 
 type UiEvent = {
@@ -540,7 +544,8 @@ type CommandInfo = {
 }
 
 -- `keys`: e.g. "cmd+f" or "ctrl+a>c"; `when`: e.g. "pane.focused && !search.open", where a plugin's
--- panels give `namespace.open` while one shows, and `namespace.focused` while one has the keyboard. A key taken from every
+-- panels give `namespace.open` while one shows, not one of a pane behind another tab or a zoomed pane, and
+-- `namespace.focused` while one has the keyboard. A key taken from every
 -- app, with `global-hotkey`, starts with "global:", as "global:ctrl+`", without `when`: one key, by its place on the US
 -- layout, with Command, Control or Alt, or a function key; the config's global keys come first.
 type Binding = { keys: string, command: string, args: Args?, when: string? }
@@ -743,6 +748,8 @@ type Cx = {
     -- still, while the view shows its row, keeping its text as output scrolls it and a resize reflows it; while the
     -- other screen shows, the terminal's; nil gives the terminal's cursor back, as the plugin's stop or fault does.
     show_cursor: (pane: PaneId, at: { number }?) -> (boolean, Error?),
+    -- Takes the selection away, as a click would.
+    deselect: (pane: PaneId) -> (boolean, Error?),
     -- The cell of the terminal's own cursor, { column, row's number }.
     cursor_cell: (pane: PaneId) -> ({ number }?, Error?),
     clear_scrollback: (pane: PaneId) -> (boolean, Error?),

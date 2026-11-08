@@ -29,5 +29,7 @@ pub(crate) fn plugins() -> Vec<Registration> {
         lokyr_progress::registration(),
         #[cfg(feature = "plugin-command-header")]
         lokyr_command_header::registration(),
+        #[cfg(feature = "plugin-copy-mode")]
+        lokyr_copy_mode::registration(),
     ]
 }

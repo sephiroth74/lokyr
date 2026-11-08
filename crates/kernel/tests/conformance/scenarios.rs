@@ -542,6 +542,7 @@ fn events(world: &World) -> Scenario {
             role: Role::Menu,
             close_outside: true,
             close_escape: true,
+            takes_keys: false,
         },
     };
     let created = Event::Workspace(WorkspaceEvent::TabCreated {
@@ -719,8 +720,9 @@ fn capabilities(world: &World) -> Scenario {
 }
 
 /// What a mode of the keyboard's over the scrollback asks: the terminal's
-/// cursor's cell, and a cursor of the plugin's over a cell and back; its
-/// selections are `core-actions`', which leaves the pane as it does.
+/// cursor's cell, a cursor of the plugin's over a cell and back, and the
+/// selection taken away; its selections are `core-actions`', which leaves
+/// the pane as it does.
 fn copy_mode(world: &World) -> Scenario {
     let row = world.row;
     let no_pane = || failed(Code::NotFound, "there is no pane 999999");
@@ -755,6 +757,8 @@ fn copy_mode(world: &World) -> Scenario {
                 },
                 no_pane(),
             ),
+            (Request::Deselect(world.pane), Response::Done),
+            (Request::Deselect(NO_PANE), no_pane()),
         ])],
     }
 }
@@ -1359,6 +1363,7 @@ fn views(world: &World) -> Scenario {
         role: Role::Menu,
         close_outside: true,
         close_escape: true,
+        takes_keys: false,
     };
     let set_text = |key: &str| Request::SetText {
         view: menu.clone(),
@@ -1416,6 +1421,7 @@ fn views(world: &World) -> Scenario {
                                 role: Role::Overlay,
                                 close_outside: false,
                                 close_escape: false,
+                                takes_keys: false,
                             },
                         },
                         Response::Done,

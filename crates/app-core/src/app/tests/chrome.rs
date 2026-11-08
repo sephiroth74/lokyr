@@ -79,6 +79,7 @@ impl plugins::Plugin for Bars {
                             role: lokyr_kernel::plugins::ui::Role::Menu,
                             close_outside: true,
                             close_escape: true,
+                            takes_keys: false,
                         },
                     )?;
                     cx.close_panel("menu")?;

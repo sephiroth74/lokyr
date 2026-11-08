@@ -1041,6 +1041,11 @@ impl FakeHost {
                     pane.held_cursor = *at;
                 }
             }
+            Request::Deselect(pane) => {
+                if let Some(pane) = self.panes.get_mut(pane) {
+                    pane.selection = None;
+                }
+            }
             Request::Undecorate { id, .. } => self.decorations.retain(|laid| laid.id != *id),
             Request::UnmarkGutter { id, .. } => self.gutter_marks.retain(|laid| laid.id != *id),
             Request::RequestRender(view) => self.ask_render(view.clone()),
@@ -2249,6 +2254,7 @@ impl Calling<'_> {
         let mut opened = Opened::Nothing;
         let response = match &request {
             Request::SelectCells { pane, .. }
+            | Request::Deselect(pane)
             | Request::ShowCursor { pane, .. }
             | Request::SelectAll(pane)
             | Request::ClearScrollback(pane)

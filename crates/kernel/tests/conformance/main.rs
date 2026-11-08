@@ -827,11 +827,12 @@ fn kind(request: &Request) -> usize {
         Request::Viewport(_) => 87,
         Request::ShowCursor { .. } => 88,
         Request::CursorCell(_) => 89,
+        Request::Deselect(_) => 90,
     }
 }
 
 /// How many kinds of requests the plugin API has.
-const KINDS: usize = 90;
+const KINDS: usize = 91;
 
 #[test]
 fn the_scenarios_hold_every_request_of_the_plugin_api() {

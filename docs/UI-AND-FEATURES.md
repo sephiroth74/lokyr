@@ -294,6 +294,16 @@ highlight-all = true
 wrap-around = true
 ```
 
+## Copy mode
+
+The `copy-mode` plugin, of the host's selection by a range, its scroll to a row, and a cursor of the plugin's own: a cursor of the keyboard's over the scrollback and the screen, which vi's keys move, as tmux's copy mode has them, to select and copy without the mouse.
+
+- **Starting**: ⇧⌘C, as iTerm2's, or Edit › Copy Mode, in the pane that has the keyboard, at the terminal's cursor, or at the view's last row while the view is up in the scrollback; not on the alternate screen, whose rows have no scrollback.
+- **The keys**: a badge at the pane's bottom right, an overlay panel, holds the keys back from the program, `takes_keys`, while it shows and its pane has the keyboard: the keys that no binding takes go nowhere, and the input method's text with them. The pane keeps the keyboard, so that its cursor keeps its look and the program hears no change of the focus, as a dialog's panel would have given it. Its bindings hold in `copy-mode.open && pane.focused`, so that a panel's field, as the find bar's, keeps its keys.
+- **The moves**: by cells and rows; by words and big words, through the rows that a line wraps over, a line's end parting two words; to a line's start, its first character and its last; by paragraphs; to the scrollback's top and the last row that shows something; to the view's rows; by half a page and a page, the view with the cursor; with counts. They read the logical lines a few rows at a time, so that a line of many rows costs no more.
+- **Selecting**: of cells, of whole lines, or of a block, from where it started to the cursor, the host's selection, which ⌘C copies as any other; `y` copies it, or the cursor's line without one, and ends.
+- **Its end**: another pane of its tab that takes the keyboard, the alternate screen, a resize, which numbers the rows anew, and its pane's move to another tab end it; a tab in front leaves it as it is, its panel hidden and its keys with it, as `<namespace>.open` holds of a panel that shows alone.
+
 ## iTerm2 themes
 
 The host's, as it draws them: the app reads `[theme]` and the themes' files, light/dark switching, the importer of `.itermcolors`; the palette's picker, a plugin's, writes `[theme]` ([ADR 0035](adr/0035-themes-are-the-hosts.md)).

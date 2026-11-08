@@ -167,6 +167,7 @@ impl Plugin for SampleSlots {
                         role,
                         close_outside: true,
                         close_escape: true,
+                        takes_keys: false,
                     },
                 )?;
             }

@@ -183,6 +183,8 @@ pub enum Request {
         #[serde(default)]
         kind: SelectionKind,
     },
+    /// Takes a pane's selection away, as a click would.
+    Deselect(PaneId),
     /// Shows a cursor of the plugin's over a pane's cell, by its column and
     /// its row's number, in place of the terminal's, which hides while it
     /// shows, as a mode of the keyboard's over the scrollback moves one: of
@@ -743,6 +745,7 @@ impl Request {
             | Self::UnmarkGutter { .. }
             | Self::EndSearch(_)
             | Self::SelectCells { .. }
+            | Self::Deselect(_)
             | Self::ShowCursor { .. }
             | Self::CursorCell(_)
             | Self::ShowMatches { .. }
@@ -839,6 +842,7 @@ impl Request {
             | Self::Themes => Effect::Read,
             Self::SetClipboardText(_)
             | Self::SelectCells { .. }
+            | Self::Deselect(_)
             | Self::ShowCursor { .. }
             | Self::ShowMatches { .. }
             | Self::SelectAll(_)

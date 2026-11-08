@@ -1,0 +1,10 @@
+# The manifest of the built-in plugin of the copy mode.
+[plugin]
+name = "lokyr/copy-mode"
+kind = "builtin"
+license = "MIT"
+description = "A cursor of the keyboard's over a pane's scrollback and screen, which vi's keys move, to select and copy without the mouse"
+
+[capabilities]
+terminal-read = true
+clipboard-write = true

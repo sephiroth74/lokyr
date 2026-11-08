@@ -60,6 +60,9 @@ impl<B: Backend> App<B> {
             self.dismiss_tooltips(platform, window);
         }
         let options = keys::options(self.config.keyboard.option_as_meta);
+        // A mode of the keyboard's takes the keys of a pane whose program
+        // ended too, which a key would close.
+        let held_back = self.keys_held_back(window);
         let Some(state) = self.windows.get_mut(&window) else {
             return;
         };
@@ -75,7 +78,7 @@ impl<B: Backend> App<B> {
             }
             return;
         }
-        if pane_keys && pane.is_kept() {
+        if pane_keys && pane.is_kept() && !held_back {
             if pressed && closes(key) {
                 let id = pane.id();
                 self.close_pane(platform, window, id);
@@ -92,9 +95,10 @@ impl<B: Backend> App<B> {
             }
             Taken::Held => {}
             Taken::Program(keys) => {
-                // A node of a slot's view that has the focus takes them.
+                // A node of a slot's view that has the focus takes them,
+                // and a mode of the keyboard's holds them back.
                 let keys = self.surface_keys(platform, window, keys);
-                if keys.is_empty() {
+                if keys.is_empty() || self.keys_held_back(window) {
                     return;
                 }
                 let Some(pane) = self
@@ -115,8 +119,9 @@ impl<B: Backend> App<B> {
     /// back to the screen, and the cursor's blinking on, as typing
     /// does.
     pub(super) fn ime(&mut self, platform: &mut dyn Platform, window: WindowId, ime: Ime) {
-        // A field of a slot's view that has the focus takes it.
-        if self.surface_ime(platform, window, &ime) {
+        // A field of a slot's view that has the focus takes it, and a mode
+        // of the keyboard's holds it back.
+        if self.surface_ime(platform, window, &ime) || self.keys_held_back(window) {
             return;
         }
         let options = keys::options(self.config.keyboard.option_as_meta);
@@ -234,7 +239,8 @@ impl<B: Backend> App<B> {
         } else {
             keymap::Context::new(Vec::<&str>::new())
         };
-        // The plugins' panels: `<namespace>.open` of each that shows, and
+        // The plugins' panels: `<namespace>.open` of each that shows, not
+        // of one whose pane another tab or a zoomed pane hides, and
         // `<namespace>.focused` of the one whose node has the keyboard.
         let focused_view = match state.focus.target() {
             lokyr_ui_core::focus::Target::Node { panel, .. } => Some(panel),
@@ -242,7 +248,11 @@ impl<B: Backend> App<B> {
         };
         for view in &state.chrome {
             let namespace = view.plugin.rsplit('/').next().unwrap_or_default();
-            if matches!(view.view, lokyr_kernel::plugins::ui::ViewId::Panel(_)) {
+            let shows = view
+                .placed
+                .as_ref()
+                .is_none_or(|placed| super::panels::anchor_shows(state, &placed.options.anchor));
+            if matches!(view.view, lokyr_kernel::plugins::ui::ViewId::Panel(_)) && shows {
                 context.hold(format!("{namespace}.open"));
             }
             if focused_view == Some(view.id) {

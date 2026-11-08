@@ -419,6 +419,7 @@ impl Plugin for Toggled {
                 role: lokyr_plugin_sdk::ui::Role::Menu,
                 close_outside: true,
                 close_escape: true,
+                takes_keys: false,
             },
         )
     }

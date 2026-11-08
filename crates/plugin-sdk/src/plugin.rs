@@ -409,6 +409,12 @@ impl<'a> Cx<'a> {
         self.done(Request::ShowCursor { pane, at })
     }
 
+    /// Takes `pane`'s selection away, as a click would, as the call
+    /// returns.
+    pub fn deselect(&mut self, pane: PaneId) -> Result<(), Error> {
+        self.done(Request::Deselect(pane))
+    }
+
     /// The cell of `pane`'s terminal's own cursor, by its column and its
     /// row's number.
     pub fn cursor_cell(&mut self, pane: PaneId) -> Result<Option<(u16, i64)>, Error> {

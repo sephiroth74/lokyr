@@ -449,7 +449,7 @@ fn the_app_s_catalogs_match_their_source() {
         .iter()
         .map(|registration| (registration.make)())
         .collect();
-    assert_eq!(builtins.len(), 10);
+    assert_eq!(builtins.len(), 11);
     for plugin in &builtins {
         let catalogs = plugin.catalogs();
         // A plugin of no commands, as the keymap's, has no titles.

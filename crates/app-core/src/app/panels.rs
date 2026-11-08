@@ -31,6 +31,33 @@ use crate::window::{NativeMenu, Window};
 const MARGIN: f32 = 12.0;
 
 impl<B: Backend> App<B> {
+    /// Whether `window`'s keys and text that no binding takes go nowhere,
+    /// rather than to the program, while a pane has its keyboard: a panel
+    /// that holds them back shows, of the pane that has the keyboard, or of
+    /// an anchor of no pane.
+    pub(super) fn keys_held_back(&self, window: WindowId) -> bool {
+        let Some(state) = self.windows.get(&window) else {
+            return false;
+        };
+        if !state.pane_has_focus() {
+            return false;
+        }
+        let focused = self
+            .workspace
+            .focused(state.window)
+            .map(workspace::Pane::id);
+        state
+            .chrome
+            .iter()
+            .filter_map(|view| view.placed.as_ref())
+            .any(|placed| {
+                let anchor = &placed.options.anchor;
+                placed.options.takes_keys
+                    && anchor_shows(state, anchor)
+                    && anchor_pane(anchor).is_none_or(|pane| Some(PaneId::of(pane.0)) == focused)
+            })
+    }
+
     /// Opens `plugin`'s panel `id` over the platform's window that shows
     /// `shown`, of `options`, over the panels open before it, its anchor
     /// taken anew at each layout, the pointer's place as it opens kept;
@@ -200,14 +227,9 @@ impl<B: Backend> App<B> {
             let Some(placed) = state.chrome[at].placed.clone() else {
                 continue;
             };
-            // A panel across a pane's top shows while its pane does, and
-            // hides behind another tab or a zoomed pane.
-            if let PanelAnchor::PaneTop(pane) = &placed.options.anchor
-                && !state
-                    .views
-                    .iter()
-                    .any(|view| view.pane == PaneId::of(pane.0))
-            {
+            // A panel at a pane's corner or across its top shows while its
+            // pane does, and hides behind another tab or a zoomed pane.
+            if !anchor_shows(state, &placed.options.anchor) {
                 state.panels.hide(id);
                 state.chrome[at].frame = None;
                 continue;
@@ -412,6 +434,33 @@ fn anchor_of<B: Backend>(
         PanelAnchor::WindowCorner { corner, .. } => {
             Anchor::Corner(state.overlay, corner_of(*corner), margin)
         }
+    }
+}
+
+/// The pane of a panel's anchor, if it is a pane's: of a cell, the cursor,
+/// a corner or the top.
+fn anchor_pane(anchor: &PanelAnchor) -> Option<host::PaneId> {
+    match anchor {
+        PanelAnchor::Cell { pane, .. }
+        | PanelAnchor::Cursor(pane)
+        | PanelAnchor::PaneCorner { pane, .. }
+        | PanelAnchor::PaneTop(pane) => Some(*pane),
+        PanelAnchor::Pointer(_) | PanelAnchor::Node { .. } | PanelAnchor::WindowCorner { .. } => {
+            None
+        }
+    }
+}
+
+/// Whether a panel of `anchor` shows in `state`'s window: one at a pane's
+/// corner or across its top while the window shows its pane, behind no
+/// other tab nor a zoomed pane; any other always.
+pub(super) fn anchor_shows<B: Backend>(state: &Window<B>, anchor: &PanelAnchor) -> bool {
+    match anchor {
+        PanelAnchor::PaneCorner { pane, .. } | PanelAnchor::PaneTop(pane) => state
+            .views
+            .iter()
+            .any(|view| view.pane == PaneId::of(pane.0)),
+        _ => true,
     }
 }
 

@@ -3064,6 +3064,7 @@ fn a_plugin_opens_and_closes_a_panel_which_tells_it_as_it_closes() {
         role: Role::Menu,
         close_outside: true,
         close_escape: true,
+        takes_keys: false,
     };
     let answer: Answer = Rc::new(move |cx, view| {
         vec![
@@ -3194,6 +3195,7 @@ impl Plugin for Looker {
                 role: lokyr_plugin_sdk::ui::Role::Menu,
                 close_outside: true,
                 close_escape: true,
+                takes_keys: false,
             },
         )
         .is_ok()
@@ -3214,6 +3216,7 @@ fn a_panel_opens_once_of_its_id_and_no_tree_of_a_closed_panel_or_window_stays() 
         role: lokyr_plugin_sdk::ui::Role::Menu,
         close_outside: true,
         close_escape: true,
+        takes_keys: false,
     };
     // Opened twice, closed, and opened again, in one call.
     let answer: Answer = Rc::new(move |cx, _| {
