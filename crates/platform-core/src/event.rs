@@ -143,7 +143,8 @@ pub enum AppEvent {
         failed: Vec<String>,
     },
     /// The system told whether the app is its default terminal, as the
-    /// platform asked it after the start, out of its way:
+    /// platform asked it after the start, out of its way, at the next turn
+    /// that something else brings:
     /// [`Platform::is_default_terminal`](crate::Platform::is_default_terminal)
     /// tells it from then.
     DefaultTerminalKnown,

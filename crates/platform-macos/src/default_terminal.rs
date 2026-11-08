@@ -52,7 +52,9 @@ const NOT_DEFAULT: u8 = 1;
 const DEFAULT: u8 = 2;
 
 /// Whether the look after the start told [`KNOWN`], which the main thread
-/// takes as a waker wakes it.
+/// takes at the next turn that a wake brings, as a pane's output does
+/// soon after the start: a wake of its own would be one more turn of the
+/// app's, for a menu's item.
 static TOLD: AtomicBool = AtomicBool::new(false);
 
 thread_local! {
@@ -98,15 +100,14 @@ fn look_now() {
 }
 
 /// Asks the system whether the app is the default terminal, on a thread of
-/// its own, out of the start's way, and has `waker` wake the main thread
-/// once it told.
-pub(crate) fn look(waker: Waker) {
+/// its own, out of the start's way, which the main thread takes at the next
+/// turn that a wake brings.
+pub(crate) fn look() {
     let started = std::thread::Builder::new()
         .name("default-terminal".to_owned())
-        .spawn(move || {
+        .spawn(|| {
             look_now();
             TOLD.store(true, Ordering::Release);
-            waker.wake();
         });
     if let Err(error) = started {
         eprintln!("lokyr: whether Lokyr is the default terminal is not asked: {error}");

@@ -157,7 +157,7 @@ impl Backend {
     /// Asks whether the app is the default terminal, out of the start's
     /// way, which an event tells once the system answered.
     pub(crate) fn look_at_default_terminal(&self) {
-        crate::default_terminal::look(self.waker.clone());
+        crate::default_terminal::look();
     }
 
     /// Whether the app has quit.
