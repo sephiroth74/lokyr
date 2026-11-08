@@ -404,3 +404,54 @@ fn an_app_of_no_plugin_of_luau_makes_no_vm() {
     fake.send_app(&mut app, AppEvent::Command("window.new".to_owned()));
     assert_eq!(lokyr_plugin_host_luau::vms_made(), 0);
 }
+
+/// How many times the faulting plugin of the app's test was made.
+static FAULTING_MADE: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// A plugin whose `faulting.go` returns a fault, as a limit of a plugin's
+/// VM gives one.
+struct Faulting;
+
+impl Plugin for Faulting {
+    fn activate(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
+        cx.register_command(Command {
+            name: "faulting.go".to_owned(),
+            title: "Fault".to_owned(),
+            category: Category::View,
+            capabilities: Vec::new(),
+            params: Vec::new(),
+            when: None,
+        })
+    }
+
+    fn on_command(&mut self, _: &mut Cx<'_>, _: &str, _: Args) -> Result<(), Error> {
+        Err(Error::new(Code::Fault, "the plugin ran past its deadline"))
+    }
+}
+
+fn make_faulting() -> Box<dyn Plugin + Send> {
+    FAULTING_MADE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    Box::new(Faulting)
+}
+
+#[test]
+fn a_plugin_that_faults_starts_again_as_the_notice_tells() {
+    let mut fake = Fake::default();
+    let mut app = app(Config::default(), quiet()).with_registration(plugins::Registration {
+        manifest: "[plugin]\nname = \"lokyr/faulting\"\nkind = \"builtin\"\nlicense = \"MIT\"\n",
+        make: make_faulting,
+    });
+    fake.start(&mut app);
+    let made = FAULTING_MADE.load(std::sync::atomic::Ordering::Relaxed);
+    fake.send_app(&mut app, AppEvent::Command("faulting.go".to_owned()));
+    let shown = app.diagnostics.shown().cloned().expect("a notice");
+    assert!(shown.text.contains("starts again in 1 s"), "{shown:?}");
+    assert!(app.commands.get("faulting.go").is_none());
+    // A second later, it is back, made anew.
+    fake.fire_timers(&mut app, Instant::now() + Duration::from_millis(1100));
+    assert!(app.commands.get("faulting.go").is_some());
+    assert_eq!(
+        FAULTING_MADE.load(std::sync::atomic::Ordering::Relaxed),
+        made + 1
+    );
+}

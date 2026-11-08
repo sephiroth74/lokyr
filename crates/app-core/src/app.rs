@@ -516,6 +516,9 @@ pub struct App<B: Backend> {
     /// The timer past which a start that the system made to open files,
     /// folders or links opens a new window, if what it opened opened none.
     untitled_timer: Option<TimerId>,
+    /// The timer of the next plugin that faulted to start again, and its
+    /// time.
+    restart_timer: Option<(TimerId, Instant)>,
     /// The timer of the turn of the panes whose sessions told something
     /// within the pace of their last look, and its time.
     told_timer: Option<(TimerId, Instant)>,
@@ -768,6 +771,7 @@ impl<B: Backend> App<B> {
             exit_timer: None,
             bench_deadline: None,
             untitled_timer: None,
+            restart_timer: None,
             scripts: BTreeSet::new(),
             script_asks: BTreeMap::new(),
             told_timer: None,
@@ -2875,6 +2879,23 @@ impl<B: Backend> App<B> {
                 Diagnostic::new(Code::Unavailable, text, About::Other),
             );
         }
+        // The plugins that faulted start again after a while, which the
+        // notice tells, or are turned off, after three faults in a minute.
+        self.plugins.schedule_restarts(Instant::now());
+        match self.plugins.next_restart() {
+            Some(at) if self.restart_timer.is_none_or(|(_, armed)| armed != at) => {
+                if let Some((timer, _)) = self.restart_timer.take() {
+                    platform.cancel_timer(timer);
+                }
+                self.restart_timer = Some((platform.start_timer(at), at));
+            }
+            None => {
+                if let Some((timer, _)) = self.restart_timer.take() {
+                    platform.cancel_timer(timer);
+                }
+            }
+            Some(_) => {}
+        }
         for (plugin, fault) in self.plugins.take_disabled() {
             let text = self.texts.text_with(
                 "plugin-stopped",
@@ -3632,6 +3653,20 @@ impl<B: Backend> App<B> {
             AppEvent::Timer(timer) if self.bench_deadline == Some(timer) => {
                 self.bench_deadline = None;
                 self.give_up_benches(platform);
+            }
+            AppEvent::Timer(timer)
+                if self
+                    .restart_timer
+                    .is_some_and(|(restart, _)| restart == timer) =>
+            {
+                self.restart_timer = None;
+                let now = Instant::now();
+                for error in self.with_plugins(platform, |plugins, context| {
+                    plugins.restart_due(now, context)
+                }) {
+                    eprintln!("lokyr: {error}");
+                }
+                self.after_plugins(platform);
             }
             AppEvent::Timer(timer) if self.untitled_timer == Some(timer) => {
                 self.untitled_timer = None;

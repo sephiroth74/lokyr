@@ -687,3 +687,104 @@ fn a_plugin_turned_on_again_takes_none_of_the_subscriptions_of_the_one_before() 
     assert_eq!(plugins.status("acme/fickle"), Some(Status::Active));
     assert!(!plugins.subscribes("tab-created"));
 }
+
+/// How many times the faulting plugin was made.
+static FAULTY_MADE: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// A plugin whose `faulty.go` panics the first time that it was made, and
+/// returns a fault, as a limit of a plugin's VM gives one, after.
+struct Faulty;
+
+impl Plugin for Faulty {
+    fn activate(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
+        cx.register_command(command("faulty.go"))
+    }
+
+    fn on_command(&mut self, _: &mut Cx<'_>, _: &str, _: Args) -> Result<(), Error> {
+        if FAULTY_MADE.load(std::sync::atomic::Ordering::Relaxed) == 1 {
+            panic!("on purpose");
+        }
+        Err(Error::new(
+            Code::Fault,
+            "the plugin `acme/faulty` ran past its deadline",
+        ))
+    }
+}
+
+const FAULTY: &str = "[plugin]\nname = \"acme/faulty\"\nkind = \"builtin\"\nlicense = \"MIT\"\n";
+
+fn make_faulty() -> Box<dyn Plugin + Send> {
+    FAULTY_MADE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    Box::new(Faulty)
+}
+
+#[test]
+fn a_plugin_that_faults_starts_again_after_a_while_until_three_faults_in_a_minute() {
+    use std::sync::atomic::Ordering;
+
+    let mut app = App::default();
+    window(&mut app, "sleep 30");
+    let mut plugins = Plugins::new();
+    plugins
+        .add_registered(Registration {
+            manifest: FAULTY,
+            make: make_faulty,
+        })
+        .unwrap();
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    let start = Instant::now();
+    let fault = |plugins: &mut Plugins, app: &mut App, at: Duration| {
+        let error = plugins
+            .run("faulty.go", Args::new(), &mut app.context())
+            .unwrap_err();
+        assert_eq!(error.code, Code::Fault);
+        assert_eq!(plugins.status("acme/faulty"), Some(Status::Disabled));
+        assert!(app.registry.get("faulty.go").is_none());
+        plugins.schedule_restarts(start + at);
+        let told = plugins.take_disabled();
+        assert_eq!(told.len(), 1, "{told:?}");
+        told[0].1.clone()
+    };
+    // A panic: again in a second, not before.
+    let told = fault(&mut plugins, &mut app, Duration::ZERO);
+    assert!(told.contains("starts again in 1 s"), "{told}");
+    assert_eq!(plugins.next_restart(), Some(start + Duration::from_secs(1)));
+    assert!(
+        plugins
+            .restart_due(start + Duration::from_millis(500), &mut app.context())
+            .is_empty()
+    );
+    assert_eq!(plugins.status("acme/faulty"), Some(Status::Disabled));
+    assert!(
+        plugins
+            .restart_due(start + Duration::from_secs(1), &mut app.context())
+            .is_empty()
+    );
+    assert_eq!(plugins.status("acme/faulty"), Some(Status::Active));
+    assert_eq!(FAULTY_MADE.load(Ordering::Relaxed), 2);
+    assert!(app.registry.get("faulty.go").is_some());
+    assert_eq!(plugins.next_restart(), None);
+    // A fault that a call returns: twice as long.
+    let told = fault(&mut plugins, &mut app, Duration::from_secs(2));
+    assert!(told.contains("ran past its deadline"), "{told}");
+    assert!(told.contains("starts again in 2 s"), "{told}");
+    assert!(
+        plugins
+            .restart_due(start + Duration::from_secs(4), &mut app.context())
+            .is_empty()
+    );
+    assert_eq!(plugins.status("acme/faulty"), Some(Status::Active));
+    // The third within a minute turns it off.
+    let told = fault(&mut plugins, &mut app, Duration::from_secs(5));
+    assert!(
+        told.contains("turned off, after 3 faults within a minute"),
+        "{told}"
+    );
+    assert_eq!(plugins.next_restart(), None);
+    assert!(
+        plugins
+            .restart_due(start + Duration::from_secs(120), &mut app.context())
+            .is_empty()
+    );
+    assert_eq!(plugins.status("acme/faulty"), Some(Status::Disabled));
+}

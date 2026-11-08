@@ -4,10 +4,28 @@
 
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, PoisonError};
+use std::time::Instant;
 
 use mlua::{Function, Lua, LuaOptions, StdLib, Table, Value};
 
-use crate::{Execution, Package};
+use crate::watchdog::Watchdog;
+use crate::{Callback, Deadlines, Execution, Package};
+
+/// The most memory of a VM, of Luau's allocator, past which an allocation
+/// fails, which ends the call.
+pub const MOST_MEMORY: usize = 64 * 1024 * 1024;
+
+/// Why a call of a VM failed: the plugin's code, or a limit of the VM's,
+/// which faults the plugin.
+#[derive(Debug)]
+pub(crate) enum Failure {
+    /// The code failed, of its error.
+    Code(mlua::Error),
+    /// The call ran past its deadline.
+    PastDeadline,
+    /// The VM ran out of its memory.
+    OutOfMemory,
+}
 
 /// The path of a package's entry, which returns its callbacks' table.
 pub const ENTRY: &str = "src/init.luau";
@@ -37,10 +55,13 @@ pub(crate) fn native_supported() -> bool {
 
 /// A plugin's VM, and the table of its callbacks.
 pub(crate) struct Vm {
-    /// The state, which the VM owns as long as its plugin runs.
-    _lua: Lua,
+    /// Its watchdog, which ends before the state.
+    watchdog: Watchdog,
     callbacks: Table,
     native: bool,
+    deadlines: Deadlines,
+    /// The state, which the VM owns as long as its plugin runs.
+    _lua: Lua,
 }
 
 /// The modules that a VM's `require` loaded, by their paths, and those that
@@ -52,10 +73,52 @@ struct Modules {
 }
 
 impl Vm {
-    /// The VM of `package`, run as `execution` says: its sandbox, its
-    /// `require`, and its entry run, which returns the table of its
-    /// callbacks; an error of an entry that fails or returns none.
-    pub(crate) fn new(package: &Arc<Package>, execution: Execution) -> mlua::Result<Self> {
+    /// The VM of `package`, of the plugin `name`, run as `execution` says,
+    /// its calls within `deadlines`: its sandbox, its memory's limit, its
+    /// `require`, and its entry run, within the activation's deadline,
+    /// which returns the table of its callbacks; why it failed, of an entry
+    /// that fails or returns none.
+    pub(crate) fn new(
+        package: &Arc<Package>,
+        name: &str,
+        execution: Execution,
+        deadlines: Deadlines,
+    ) -> Result<Self, Failure> {
+        let lua = Self::state(execution).map_err(Failure::Code)?;
+        let native = execution == Execution::Native && native_supported();
+        let mut state = 0;
+        // SAFETY: the closure only keeps the state's address, which the
+        // watchdog, which the VM drops before the state, takes.
+        #[allow(unsafe_code)]
+        let watchdog = unsafe {
+            lua.exec_raw::<()>((), |raw| state = raw as usize)
+                .map_err(Failure::Code)?;
+            Watchdog::new(state, name)
+                .map_err(|error| Failure::Code(mlua::Error::external(error)))?
+        };
+        let modules = Arc::new(Mutex::new(Modules::default()));
+        let entry = watched(&watchdog, deadlines.of(Callback::Activate), || {
+            load(&lua, package, &modules, ENTRY)
+        })?;
+        let Value::Table(callbacks) = entry else {
+            return Err(Failure::Code(mlua::Error::runtime(format!(
+                "{ENTRY} returns the table of the plugin's callbacks, not {}",
+                entry.type_name()
+            ))));
+        };
+        Ok(Self {
+            watchdog,
+            callbacks,
+            native,
+            deadlines,
+            _lua: lua,
+        })
+    }
+
+    /// The state of a VM run as `execution` says: of the libraries that
+    /// compute, the others taken away, its memory's limit, and Luau's
+    /// sandbox mode.
+    fn state(execution: Execution) -> mlua::Result<Lua> {
         let libraries = StdLib::STRING
             | StdLib::TABLE
             | StdLib::MATH
@@ -63,8 +126,8 @@ impl Vm {
             | StdLib::UTF8
             | StdLib::BUFFER;
         let lua = Lua::new_with(libraries, LuaOptions::default())?;
-        let native = execution == Execution::Native && native_supported();
-        lua.enable_jit(native);
+        lua.enable_jit(execution == Execution::Native && native_supported());
+        lua.set_memory_limit(MOST_MEMORY)?;
         let globals = lua.globals();
         for name in TAKEN {
             globals.raw_set(name, Value::Nil)?;
@@ -72,19 +135,7 @@ impl Vm {
         // The libraries and the globals read-only from here, each thread of
         // an environment of its own.
         lua.sandbox(true)?;
-        let modules = Arc::new(Mutex::new(Modules::default()));
-        let entry = load(&lua, package, &modules, ENTRY)?;
-        let Value::Table(callbacks) = entry else {
-            return Err(mlua::Error::runtime(format!(
-                "{ENTRY} returns the table of the plugin's callbacks, not {}",
-                entry.type_name()
-            )));
-        };
-        Ok(Self {
-            _lua: lua,
-            callbacks,
-            native,
-        })
+        Ok(lua)
     }
 
     /// Whether it runs its code of the native code generator.
@@ -92,22 +143,65 @@ impl Vm {
         self.native
     }
 
-    /// Calls the callback `name` of the plugin's table, if it has one.
-    pub(crate) fn call(&self, name: &str) -> mlua::Result<()> {
-        match self.callbacks.get::<Value>(name)? {
+    /// Calls the plugin's callback of `callback`, if its table has one,
+    /// within the deadline of its kind.
+    pub(crate) fn call(&self, callback: Callback) -> Result<(), Failure> {
+        let name = callback.name();
+        match self.callbacks.get::<Value>(name).map_err(Failure::Code)? {
             Value::Nil => Ok(()),
-            Value::Function(function) => function.call::<()>(()),
-            other => Err(mlua::Error::runtime(format!(
+            Value::Function(function) => {
+                watched(&self.watchdog, self.deadlines.of(callback), || {
+                    function.call::<()>(())
+                })
+            }
+            other => Err(Failure::Code(mlua::Error::runtime(format!(
                 "the callback `{name}` is a function, not {}",
                 other.type_name()
-            ))),
+            )))),
         }
+    }
+
+    /// How many times its watchdog's thread woke.
+    #[cfg(test)]
+    pub(crate) fn watchdog_wakes(&self) -> usize {
+        self.watchdog.wakes()
     }
 
     /// The Lua state, as the tests reach its globals.
     #[cfg(test)]
     pub(crate) fn lua(&self) -> &Lua {
         &self._lua
+    }
+}
+
+/// Runs `run` within `deadline` from now, as `watchdog` watches it: what it
+/// gives, or why it failed, past its deadline, out of memory, or of its
+/// code's error.
+fn watched<T>(
+    watchdog: &Watchdog,
+    deadline: std::time::Duration,
+    run: impl FnOnce() -> mlua::Result<T>,
+) -> Result<T, Failure> {
+    watchdog.arm(Instant::now() + deadline);
+    let ran = run();
+    let fired = watchdog.disarm();
+    ran.map_err(|error| {
+        if fired {
+            Failure::PastDeadline
+        } else if is_memory(&error) {
+            Failure::OutOfMemory
+        } else {
+            Failure::Code(error)
+        }
+    })
+}
+
+/// Whether `error` is of the VM's memory's limit, of a callback's too.
+fn is_memory(error: &mlua::Error) -> bool {
+    match error {
+        mlua::Error::MemoryError(_) => true,
+        mlua::Error::CallbackError { cause, .. } => is_memory(cause),
+        _ => false,
     }
 }
 

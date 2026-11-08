@@ -192,3 +192,130 @@ return {
     );
     assert!(resolve("src/a/b.luau", "../../../c", &package).is_err());
 }
+
+/// Short deadlines, which the tests' endless loops meet soon.
+fn short() -> Deadlines {
+    Deadlines {
+        activate: std::time::Duration::from_millis(80),
+        command: std::time::Duration::from_millis(40),
+        render: std::time::Duration::from_millis(20),
+    }
+}
+
+/// The VM of `modules`, run as `execution` says, within short deadlines.
+fn vm(modules: &[(&str, &str)], execution: Execution) -> Result<Vm, Failure> {
+    Vm::new(&Arc::new(package(modules)), "acme/test", execution, short())
+}
+
+#[test]
+fn an_endless_loop_stops_at_its_deadline_and_its_plugin_faults() {
+    for execution in [Execution::Native, Execution::Interpreter] {
+        // In `activate`, as the plugin tells it.
+        let looping = "return { activate = function() while true do end end }";
+        let mut plugin = LuauPlugin::new("acme/test", package(&[(ENTRY, looping)]), execution)
+            .with_deadlines(short());
+        let start = std::time::Instant::now();
+        let error = FakeHost::new("acme/test")
+            .activate(&mut plugin)
+            .unwrap_err();
+        assert!(start.elapsed() < std::time::Duration::from_secs(5));
+        assert_eq!(error.code, Code::Fault);
+        assert!(
+            error
+                .message
+                .contains("past its deadline of 80 ms in `activate`"),
+            "{error}"
+        );
+        // At the entry's top, of a function's call at each step.
+        let calling = "local function f() return 1 end\nwhile true do f() end";
+        assert!(matches!(
+            vm(&[(ENTRY, calling)], execution),
+            Err(Failure::PastDeadline)
+        ));
+        // In a render, of its own deadline; the VM runs the next call.
+        let rendering = r#"
+local n = 0
+return {
+    render = function()
+        n += 1
+        if n == 1 then
+            while true do end
+        end
+    end,
+}
+"#;
+        let made = vm(&[(ENTRY, rendering)], execution).unwrap();
+        let start = std::time::Instant::now();
+        assert!(matches!(
+            made.call(Callback::Render),
+            Err(Failure::PastDeadline)
+        ));
+        assert!(start.elapsed() >= std::time::Duration::from_millis(20));
+        assert!(made.call(Callback::Render).is_ok());
+        assert!(made.call(Callback::Render).is_ok());
+    }
+}
+
+#[test]
+fn a_vm_runs_out_of_its_memory_and_runs_on() {
+    let bomb = r#"
+local kept = {}
+return {
+    activate = function()
+        while true do
+            -- A buffer each, as strings of the same text are one.
+            table.insert(kept, buffer.create(1024 * 1024))
+        end
+    end,
+    render = function()
+        kept = {}
+    end,
+}
+"#;
+    let made = vm(&[(ENTRY, bomb)], Execution::Native).unwrap();
+    let failed = made.call(Callback::Activate);
+    assert!(matches!(failed, Err(Failure::OutOfMemory)), "{failed:?}");
+    // Its memory freed, it runs on.
+    assert!(made.call(Callback::Render).is_ok());
+    let mut plugin = LuauPlugin::new("acme/test", package(&[(ENTRY, bomb)]), Execution::Native);
+    let error = FakeHost::new("acme/test")
+        .activate(&mut plugin)
+        .unwrap_err();
+    assert_eq!(error.code, Code::Fault);
+    assert!(
+        error.message.contains("ran out of its 64 MB of memory"),
+        "{error}"
+    );
+}
+
+#[test]
+fn a_call_within_its_deadline_is_left_alone() {
+    let quick = r#"
+return {
+    render = function()
+        local total = 0
+        for i = 1, 1000 do
+            total += i
+        end
+    end,
+}
+"#;
+    let made = vm(&[(ENTRY, quick)], Execution::Native).unwrap();
+    for _ in 0..200 {
+        assert!(made.call(Callback::Render).is_ok());
+    }
+}
+
+#[test]
+fn the_watchdog_sleeps_while_no_call_runs() {
+    let quick = "return { render = function() end }";
+    let made = vm(&[(ENTRY, quick)], Execution::Native).unwrap();
+    for _ in 0..10 {
+        assert!(made.call(Callback::Render).is_ok());
+    }
+    // Its last wakes, of the last call's end, settle; then none.
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    let woke = made.watchdog_wakes();
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    assert_eq!(made.watchdog_wakes(), woke);
+}

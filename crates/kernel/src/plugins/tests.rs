@@ -1640,6 +1640,7 @@ fn a_call_is_its_own_plugin_s() {
             told_panes: BTreeMap::new(),
             searches: Vec::new(),
             reading: Arc::default(),
+            restarts: Restarts::default(),
             lingering: Vec::new(),
         },
         Outbox::default(),

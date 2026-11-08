@@ -400,6 +400,10 @@ struct State {
     told_panes: BTreeMap<host::PaneId, Option<String>>,
     /// Its searches of the panes' terminals, a pane's last alone.
     searches: Vec<search::Search>,
+    /// Its restarts after its faults: the times of its faults within the
+    /// last [`FAULTS_WITHIN`], when it starts again, if it does, and
+    /// whether its last fault was counted.
+    restarts: Restarts,
     /// How many of its reads of rows are under way, whose threads have not
     /// ended, [`MOST_READS`] at most.
     reading: Arc<AtomicUsize>,
@@ -691,6 +695,28 @@ const READ_PART: usize = 256;
 /// past which another is refused until one ends.
 const MOST_READS: usize = 4;
 
+/// How long a plugin that faulted waits before it starts again, its first
+/// time, which each fault within [`FAULTS_WITHIN`] doubles.
+const RESTART_AFTER: Duration = Duration::from_secs(1);
+
+/// The faults of a plugin within [`FAULTS_WITHIN`] that turn it off, past
+/// restarting, until the app's next start or its section turns it on.
+const MOST_FAULTS: usize = 3;
+
+/// The span of time that a plugin's faults count within.
+const FAULTS_WITHIN: Duration = Duration::from_secs(60);
+
+/// A plugin's restarts after its faults.
+#[derive(Default)]
+struct Restarts {
+    /// The times of its faults within the last [`FAULTS_WITHIN`].
+    faults: Vec<Instant>,
+    /// When it starts again, if it does.
+    at: Option<Instant>,
+    /// Whether its last fault was counted.
+    counted: bool,
+}
+
 /// The last id of a read or a decoration, which none takes twice.
 static LAST_ID: AtomicU64 = AtomicU64::new(0);
 
@@ -900,6 +926,7 @@ impl Plugins {
                 told_panes: BTreeMap::new(),
                 searches: Vec::new(),
                 reading: Arc::default(),
+                restarts: Restarts::default(),
                 lingering: Vec::new(),
             },
         });
@@ -1623,6 +1650,79 @@ impl Plugins {
             .map(|(number, _)| *number)
     }
 
+    /// Counts the faults of the plugins that faults disabled since the last
+    /// count, at `now`, of those that the host can make anew, as a
+    /// registration's: each starts again after a while, [`RESTART_AFTER`],
+    /// twice as long at each fault, and three faults within a minute turn
+    /// it off, past restarting; its fault tells which, as the app's notice
+    /// of the plugins that stopped shows it.
+    pub fn schedule_restarts(&mut self, now: Instant) {
+        for entry in &mut self.entries {
+            let state = &mut entry.state;
+            if entry.make.is_none() || state.status != Status::Disabled || state.restarts.counted {
+                continue;
+            }
+            let Some(fault) = &mut state.fault else {
+                continue;
+            };
+            let restarts = &mut state.restarts;
+            restarts.counted = true;
+            restarts
+                .faults
+                .retain(|at| now.saturating_duration_since(*at) < FAULTS_WITHIN);
+            restarts.faults.push(now);
+            let count = restarts.faults.len();
+            if count >= MOST_FAULTS {
+                restarts.at = None;
+                fault.push_str(&format!(
+                    "; it is turned off, after {count} faults within a minute, until the app's next start"
+                ));
+            } else {
+                let wait = RESTART_AFTER * 2_u32.pow(u32::try_from(count - 1).unwrap_or(0));
+                restarts.at = Some(now + wait);
+                fault.push_str(&format!("; it starts again in {} s", wait.as_secs()));
+            }
+        }
+    }
+
+    /// When the next plugin that faulted starts again, if one does.
+    pub fn next_restart(&self) -> Option<Instant> {
+        self.entries
+            .iter()
+            .filter_map(|entry| entry.state.restarts.at)
+            .min()
+    }
+
+    /// Starts again the plugins that faulted whose time came at `now`: each
+    /// stopped, as its section turning it off stops it, and made anew of
+    /// its registration, as its section turning it on again makes it, and
+    /// activated; the errors of those whose activation failed.
+    pub fn restart_due(&mut self, now: Instant, context: &mut Context<'_>) -> Vec<Error> {
+        let mut any = false;
+        for entry in &mut self.entries {
+            if entry.state.restarts.at.is_none_or(|at| at > now) {
+                continue;
+            }
+            entry.state.restarts.at = None;
+            entry.state.restarts.counted = false;
+            if entry.state.status == Status::Disabled {
+                stop(
+                    entry,
+                    context,
+                    &mut self.out,
+                    &mut self.declarations_changed,
+                );
+                entry.state.status = Status::Off;
+                any = true;
+            }
+        }
+        if any {
+            self.activate(context)
+        } else {
+            Vec::new()
+        }
+    }
+
     /// The plugins that a fault disabled, or whose activation failed, since
     /// the last look, in their order, each with its error's message, as the
     /// app tells the user that they stopped.
@@ -2050,6 +2150,21 @@ impl Plugins {
                 Ok(())
             }
         };
+        // A call that returns a fault faults its plugin, as a panic does.
+        if let Err(error) = &result
+            && error.code == Code::Fault
+        {
+            if let Some(kept) = kept {
+                kept.restore(state);
+            }
+            disable(state, context.registry, declarations_changed);
+            clear_leftovers(state, context, out);
+            let fault = format!("{}; it is disabled", error.message);
+            state.fault = Some(fault.clone());
+            served.errors.push(Error::new(Code::Fault, fault));
+            *runner = Runner::Stopped;
+            return true;
+        }
         if result.is_ok() {
             apply(writes, context, &mut sent, state);
         } else {
@@ -2288,6 +2403,17 @@ fn call<T>(
         Ok(Ok(result)) => {
             apply(writes, context, out, state);
             Ok(result)
+        }
+        // A call that returns a fault, as a limit of its plugin's VM gives
+        // one, faults its plugin, as a panic does.
+        Ok(Err(error)) if error.code == Code::Fault => {
+            out.requests.truncate(requests);
+            out.reads.truncate(reads);
+            kept.restore(state);
+            disable(state, context.registry, declarations_changed);
+            state.fault = Some(format!("{}; it is disabled", error.message));
+            clear_leftovers(state, context, out);
+            Err(error)
         }
         // A call that failed leaves things as they were: its writes, its
         // requests and its reads go, and what its requests took at once of

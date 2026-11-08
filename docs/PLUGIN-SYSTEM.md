@@ -887,11 +887,11 @@ installed ──▶ resolved ──▶ consent ──▶ loaded ──▶ active
 - **One VM per plugin**: plugins share no Lua state, so one plugin cannot see or change another's globals.
 - **Memory**: a limit per VM, 64 MB, fixed in 1.0.0, of no key of the config; a key, if one is asked for, in F6. An allocation over the limit raises a memory error, which ends the call.
 - **CPU**:
-  - A deadline per call type (e.g. 16 ms for `render`, 250 ms for commands).
+  - A deadline per call type: 16 ms for `render` and `applies`, 250 ms for commands, events and a view's events, a second for the activation, the entry's run included. Past it, the call fails and the plugin faults.
   - A watchdog thread installs Luau's interrupt only once the deadline has passed, so the check costs nothing until then. The interrupt then ends the call at the next loop iteration or function call, native code included.
-  - The watchdog runs **only while a plugin is executing**, so there are no wakeups when idle.
-  - The watchdog writes the interrupt from another thread, which races with the code that reads it. The vendored Luau gets an atomic store for that field, unless Luau guarantees that the race is harmless.
-- **Failures**: a failing plugin never affects the terminal. The plugin is disabled and the user gets a notification; what it left in the panes and the app goes, its decorations, its gutter's marks, the cursors that it held, its panels, its searches and its reads, its views showing as they were, taking no event. In native plugins, `catch_unwind` at the boundary stops panics; a panic of the host's own, as it answers a request of a plugin's thread, disables that plugin and leaves the app running.
+  - The watchdog, a thread of each VM's, runs **only while a plugin is executing**: it sleeps on a condition variable otherwise, so there are no wakeups when idle.
+  - The watchdog writes the interrupt from another thread while the code reads it, as Luau's own command line writes it from a signal's handler at a Control-C: one aligned pointer, which a 64-bit CPU stores whole, of no patch to the vendored Luau.
+- **Failures**: a failing plugin never affects the terminal. The plugin is disabled and the user gets a notification; a fault, a panic, a deadline passed or the memory's limit, of a plugin that the host can make anew starts it again after a second, two at the next fault, and the third within a minute turns it off until the app's next start, as the notification tells; what it left in the panes and the app goes, its decorations, its gutter's marks, the cursors that it held, its panels, its searches and its reads, its views showing as they were, taking no event. In native plugins, `catch_unwind` at the boundary stops panics; a panic of the host's own, as it answers a request of a plugin's thread, disables that plugin and leaves the app running.
 - **Bounded queues**: what a plugin's calls leave for later is bounded, so that a plugin cannot grow the app's memory without end:
   - a call's writes, which apply as it returns, 10 000 at most, past which another fails;
   - its reads of rows, each on a thread of the host's, four under way at most;
