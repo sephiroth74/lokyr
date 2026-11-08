@@ -34,10 +34,15 @@ pub fn trusted() -> bool {
 }
 
 /// The element of an element's value, if it is one: a retained `CFType`.
+///
+/// # Safety
+///
+/// `raw` is null or a CF type that the caller owns, as a `Create` or
+/// `Copy` function of the system's gives it, whose ownership passes to the
+/// value returned.
 #[allow(unsafe_code)]
-fn retained(raw: *mut c_void) -> Option<CFRetained<CFType>> {
-    // SAFETY: the system gives a value that the caller owns, a CF type, or
-    // none.
+unsafe fn retained(raw: *mut c_void) -> Option<CFRetained<CFType>> {
+    // SAFETY: as the caller vouches.
     NonNull::new(raw).map(|raw| unsafe { CFRetained::from_raw(raw.cast::<CFType>()) })
 }
 
@@ -47,7 +52,7 @@ impl Element {
     pub fn application(pid: libc::pid_t) -> Option<Self> {
         // SAFETY: a call of a process id, which gives an element that the
         // caller owns.
-        retained(unsafe { AXUIElementCreateApplication(pid) }).map(Self)
+        unsafe { retained(AXUIElementCreateApplication(pid)) }.map(Self)
     }
 
     /// The value of the attribute `name`, if the element has one.
@@ -62,7 +67,12 @@ impl Element {
         if error != 0 {
             return None;
         }
-        retained(value)
+        // SAFETY: the value that a call of no error gives, owned by the
+        // caller, or none.
+        #[allow(unsafe_code)]
+        unsafe {
+            retained(value)
+        }
     }
 
     /// The text of the attribute `name`, if it has one of text.

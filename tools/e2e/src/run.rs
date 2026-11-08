@@ -42,31 +42,97 @@ remember-frame = false
 enabled = false
 "#;
 
-/// The app that the checks run, its process and the home of its own.
+/// The home of the app that the checks run, a folder of its own, removed
+/// as the checks pass, and kept with the app's log where they fail.
+struct Home {
+    path: PathBuf,
+    keep: bool,
+}
+
+impl Home {
+    /// A new home, of the checks' config.
+    fn new() -> Result<Self> {
+        let path = std::env::temp_dir().join(format!("lokyr-e2e-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&path);
+        // The guard before anything is in it, so that a failure leaves
+        // nothing behind.
+        let home = Self { path, keep: false };
+        let config = home.config().join("lokyr");
+        fs::create_dir_all(&config).with_context(|| format!("making {}", config.display()))?;
+        fs::write(config.join("config.toml"), CONFIG)?;
+        Ok(home)
+    }
+
+    /// Its config's folder, which `XDG_CONFIG_HOME` names.
+    fn config(&self) -> PathBuf {
+        self.path.join(".config")
+    }
+
+    /// The app's log, of its standard output and error.
+    fn log(&self) -> PathBuf {
+        self.path.join("lokyr.log")
+    }
+}
+
+impl Drop for Home {
+    fn drop(&mut self) {
+        if self.keep {
+            eprintln!(
+                "lokyr-e2e: the app's home is kept in {}, its log in {}",
+                self.path.display(),
+                self.log().display()
+            );
+        } else {
+            let _ = fs::remove_dir_all(&self.path);
+        }
+    }
+}
+
+/// The app that the checks run: its process, the newest of the bundle's
+/// executable but those that ran before the checks started it, and the
+/// home of its own.
 struct App {
     pid: libc::pid_t,
-    home: PathBuf,
+    home: Home,
+}
+
+/// The processes of `executable` that run now.
+fn processes(executable: &Path) -> Result<Vec<libc::pid_t>> {
+    let found = Command::new("/usr/bin/pgrep")
+        .arg("-f")
+        .arg(executable)
+        .output()
+        .context("running pgrep")?;
+    Ok(String::from_utf8_lossy(&found.stdout)
+        .lines()
+        .filter_map(|line| line.trim().parse().ok())
+        .collect())
 }
 
 impl App {
     /// Starts the app of the bundle `bundle`, of a home of its own, through
     /// Launch Services, as the Finder starts it, so that it comes in front
     /// and its menus take their keys, which an app that a process in the
-    /// background starts does not.
+    /// background starts does not. A Lokyr of the same bundle that runs
+    /// already is never the checks', even where the new one fails to start.
     fn start(bundle: &Path) -> Result<Self> {
-        let home = std::env::temp_dir().join(format!("lokyr-e2e-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&home);
-        let config = home.join(".config/lokyr");
-        fs::create_dir_all(&config).with_context(|| format!("making {}", config.display()))?;
-        fs::write(config.join("config.toml"), CONFIG)?;
+        let mut home = Home::new()?;
         let bundle = fs::canonicalize(bundle)?;
         let executable = bundle.join("Contents/MacOS/lokyr");
-        let log = home.join("lokyr.log");
+        let log = home.log();
+        let before = processes(&executable)?;
         let status = Command::new("/usr/bin/open")
             .args(["-n", "-F", "-a"])
             .arg(&bundle)
             .arg("--env")
-            .arg(format!("HOME={}", home.display()))
+            .arg(format!("HOME={}", home.path.display()))
+            .arg("--env")
+            .arg(format!("XDG_CONFIG_HOME={}", home.config().display()))
+            .arg("--env")
+            .arg(format!(
+                "XDG_STATE_HOME={}",
+                home.path.join(".local/state").display()
+            ))
             .arg("--stdout")
             .arg(&log)
             .arg("--stderr")
@@ -75,21 +141,21 @@ impl App {
             .status()
             .context("running open")?;
         if !status.success() {
+            home.keep = true;
             bail!("open could not start {}", bundle.display());
         }
-        // Its process, the newest of its executable's.
+        // Its process: the newest of its executable's but those before.
         let start = Instant::now();
         let pid = loop {
-            let found = Command::new("/usr/bin/pgrep")
-                .arg("-n")
-                .arg("-f")
-                .arg(&executable)
-                .output()
-                .context("running pgrep")?;
-            if let Ok(pid) = String::from_utf8_lossy(&found.stdout).trim().parse() {
+            let new = processes(&executable)?
+                .into_iter()
+                .filter(|pid| !before.contains(pid))
+                .max();
+            if let Some(pid) = new {
                 break pid;
             }
             if start.elapsed() > WAIT {
+                home.keep = true;
                 bail!("{} did not start", executable.display());
             }
             thread::sleep(LOOK_AGAIN);
@@ -124,7 +190,6 @@ impl Drop for App {
                 libc::kill(self.pid, libc::SIGKILL)
             };
         }
-        let _ = fs::remove_dir_all(&self.home);
     }
 }
 
@@ -281,10 +346,13 @@ fn steps() -> Vec<Step> {
             name: "Escape closes the find bar",
             act: |pid| keys::press(pid, Key::Escape, Mods::default()),
             done: |shown| {
-                !shown
-                    .texts
-                    .iter()
-                    .any(|text| text == "lokyr-e2e-4" || is_count(text))
+                shown.windows == 1
+                    && shown.terminals.len() == 1
+                    && shown.shows(FIRST)
+                    && !shown
+                        .texts
+                        .iter()
+                        .any(|text| text == "lokyr-e2e-4" || is_count(text))
             },
         },
         Step {
@@ -380,15 +448,12 @@ fn checks() -> Result<()> {
         );
     }
     let mut app = App::start(&bundle)?;
+    // Kept, with the app's log, unless every step passes.
+    app.home.keep = true;
     let element = app.element()?;
     let started = steps().remove(0);
     if let Err(shown) = wait_for(&element, started.done) {
-        bail!(
-            "step 1, {}, failed: {}; the app's log is in {}",
-            started.name,
-            shown.summary(),
-            app.home.join("lokyr.log").display()
-        );
+        bail!("step 1, {}, failed: {}", started.name, shown.summary());
     }
     if dump {
         // A moment for the shell's prompt.
@@ -398,6 +463,7 @@ fn checks() -> Result<()> {
                 println!("{}", found.line());
             }
         }
+        app.home.keep = false;
         return Ok(());
     }
     println!("lokyr-e2e: 1. {}: ok", started.name);
@@ -431,6 +497,7 @@ fn checks() -> Result<()> {
         thread::sleep(LOOK_AGAIN);
     }
     println!("lokyr-e2e: ⌘Q quits: ok");
+    app.home.keep = false;
     Ok(())
 }
 

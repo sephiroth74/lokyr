@@ -127,6 +127,9 @@ pub fn type_text(pid: libc::pid_t, text: &str) {
         let units = character.encode_utf16(&mut units);
         for down in [true, false] {
             if let Some(event) = CGEvent::new_keyboard_event(None, 0, down) {
+                // Of no modifier, whatever a hand holds meanwhile, as the
+                // event takes the keyboard's state otherwise.
+                CGEvent::set_flags(Some(&event), CGEventFlags::empty());
                 // SAFETY: the units live through the call, of the length
                 // given.
                 #[allow(unsafe_code)]
