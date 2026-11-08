@@ -1,10 +1,12 @@
 //! What the app tells the user apart from the windows' text: the notices
 //! of what went wrong, in a bar over the window, and a click on it; the
-//! bell; the programs' notifications, and a click on one.
+//! bell; the programs' notifications, the long commands' ends, and a click
+//! on a notification.
 
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use lokyr_kernel::diagnostics::Diagnostic;
+use lokyr_kernel::l10n::Arg;
 use lokyr_kernel::plugins::ui::ViewId;
 use lokyr_kernel::workspace::PaneId;
 use lokyr_platform_core::{Platform, Point, WindowId};
@@ -147,6 +149,72 @@ impl<B: Backend> App<B> {
         let title: String = title.chars().take(NOTIFICATION_TITLE).collect();
         let body: String = body.chars().take(NOTIFICATION_BODY).collect();
         platform.notify(window, &title, &body);
+    }
+
+    /// Tells the end of `pane`'s command `command`, of `status`, that ran
+    /// for `took`, in a notification while its window has no focus, if it
+    /// ran for `[notifications] long-command` at least: of the command's
+    /// line as its title, or the window's once it left the scrollback, and
+    /// whether it succeeded or its status, and its time.
+    pub(super) fn long_command_ended(
+        &mut self,
+        platform: &mut dyn Platform,
+        pane: PaneId,
+        command: u64,
+        status: Option<i32>,
+        took: Duration,
+    ) {
+        let Some(long) = self.config.notifications.long_command.duration() else {
+            return;
+        };
+        if took < long {
+            return;
+        }
+        let title = self
+            .workspace
+            .pane(pane)
+            .and_then(|pane| pane.command_line(command))
+            .unwrap_or_default();
+        let took = self.duration_text(took);
+        let body = match status {
+            Some(0) => self
+                .texts
+                .text_with("command-succeeded", &[("took", Arg::Text(&took))]),
+            Some(status) => self.texts.text_with(
+                "command-failed",
+                &[
+                    ("status", Arg::Number(i64::from(status))),
+                    ("took", Arg::Text(&took)),
+                ],
+            ),
+            None => self
+                .texts
+                .text_with("command-ended", &[("took", Arg::Text(&took))]),
+        };
+        self.notify(platform, pane, &title, &body);
+    }
+
+    /// `took`, as a command's time tells it: of seconds, of minutes and
+    /// seconds past a minute, of hours and minutes past an hour.
+    pub(super) fn duration_text(&self, took: Duration) -> String {
+        let seconds = took.as_secs();
+        let (hours, minutes, seconds) = (seconds / 3600, seconds / 60 % 60, seconds % 60);
+        // Fewer seconds than an `i64` holds.
+        let number = |value: u64| Arg::Number(value as i64);
+        if hours > 0 {
+            self.texts.text_with(
+                "command-took-hours",
+                &[("hours", number(hours)), ("minutes", number(minutes))],
+            )
+        } else if minutes > 0 {
+            self.texts.text_with(
+                "command-took-minutes",
+                &[("minutes", number(minutes)), ("seconds", number(seconds))],
+            )
+        } else {
+            self.texts
+                .text_with("command-took-seconds", &[("seconds", number(seconds))])
+        }
     }
 
     /// A click on a notification of `window`: the quick terminal, hidden,

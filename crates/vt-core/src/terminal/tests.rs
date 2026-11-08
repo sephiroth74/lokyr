@@ -6945,6 +6945,30 @@ fn a_command_whose_end_stays_in_the_scrollback_stays_past_the_next_prompt() {
 }
 
 #[test]
+fn a_command_s_line_is_its_input_to_its_output() {
+    let mut term = Term::new(12, 6);
+    term.feed(marked_command("ls -l", &["a"], 0));
+    // A command typed past the row's end, which wraps.
+    term.feed(marked_command("echo 1234567890", &[], 0));
+    term.feed("\x1b]133;A\x07$ \x1b]133;B\x07typing");
+    assert_eq!(term.terminal.command_line(1).as_deref(), Some("ls -l"));
+    assert_eq!(
+        term.terminal.command_line(2).as_deref(),
+        Some("echo 1234567890")
+    );
+    // Typed so far, before its output's mark.
+    assert_eq!(term.terminal.command_line(3).as_deref(), Some("typing"));
+    assert_eq!(term.terminal.command_line(4), None);
+    assert_eq!(
+        term.terminal.command(2).map(|command| command.status),
+        Some(Some(0))
+    );
+    // None while the alternate screen shows.
+    term.feed("\x1b[?1049h");
+    assert_eq!(term.terminal.command_line(1), None);
+}
+
+#[test]
 fn a_snapshot_tells_the_scrollback_s_rows() {
     let mut term = Term::new(20, 4);
     let mut snapshot = Snapshot::default();

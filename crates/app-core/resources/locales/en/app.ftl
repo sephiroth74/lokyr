@@ -164,3 +164,14 @@ theme-install-switch = { $variant ->
 theme-install-failed = The theme cannot be installed.
 theme-install-no-folder = Lokyr has no config folder to hold its themes.
 theme-install-not-copied = It cannot be copied into { $folder }: { $error }
+
+# The notification of a long command's end, under the command as its title:
+# whether it succeeded, or its exit status, or neither as the shell told
+# none; and how long it ran, of seconds, of minutes and seconds, or of hours
+# and minutes.
+command-succeeded = Succeeded after { $took }
+command-failed = Failed with status { $status } after { $took }
+command-ended = Ended after { $took }
+command-took-seconds = { $seconds } s
+command-took-minutes = { $minutes } min { $seconds } s
+command-took-hours = { $hours } h { $minutes } min

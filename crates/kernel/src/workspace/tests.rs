@@ -531,6 +531,55 @@ fn the_sessions_events_come_in_as_they_are_collected() {
 }
 
 #[test]
+fn a_command_is_timed_by_its_marks_from_the_look_at_its_start_to_the_one_at_its_end() {
+    let mut workspace = Workspace::new();
+    // A command of 0.3 s, of the status 3, then one whose start and end
+    // come at once, which one look may find.
+    let window = workspace.open_window(pane(concat!(
+        "printf '\\033]133;A\\007$ \\033]133;B\\007sleep\\n\\033]133;C\\007'; sleep 0.3; ",
+        "printf '\\033]133;D;3\\007\\033]133;A\\007$ '; sleep 0.1; ",
+        "printf '\\033]133;B\\007x\\n\\033]133;C\\007\\033]133;D;0\\007'; sleep 5",
+    )));
+    let id = workspace.active_pane(window).unwrap();
+    workspace.take_events();
+    let ended = |events: &[Event]| -> Vec<(u64, Option<i32>, Option<Duration>)> {
+        events
+            .iter()
+            .filter_map(|event| match *event {
+                Event::CommandEnded {
+                    pane,
+                    command,
+                    status,
+                    took,
+                } if pane == id => Some((command, status, took)),
+                _ => None,
+            })
+            .collect()
+    };
+    let events = collect_until(&mut workspace, |events| ended(events).len() == 2);
+    let ended = ended(&events);
+    let (command, status, took) = ended[0];
+    assert_eq!((command, status), (1, Some(3)));
+    let took = took.expect("its start was seen");
+    assert!(
+        took >= Duration::from_millis(300) && took < Duration::from_secs(3),
+        "{took:?}"
+    );
+    // A start and an end that one look found, of no time between.
+    let (command, status, took) = ended[1];
+    assert_eq!((command, status), (2, Some(0)));
+    assert!(
+        took.is_some_and(|took| took < Duration::from_millis(300)),
+        "{took:?}"
+    );
+    // The start goes to the plugins as the terminal told it.
+    assert!(events.contains(&Event::Terminal {
+        pane: id,
+        event: terminal::Event::CommandStarted(1),
+    }));
+}
+
+#[test]
 fn a_tab_takes_the_title_and_the_color_of_the_pane_that_takes_its_keyboard() {
     let mut workspace = Workspace::new();
     let window = workspace.open_window(pane(

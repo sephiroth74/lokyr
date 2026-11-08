@@ -241,6 +241,55 @@ impl Terminal {
             .collect()
     }
 
+    /// The command of the id `id`, as [`Terminal::commands`] gives it, if
+    /// the terminal keeps it.
+    pub fn command(&self, id: u64) -> Option<CommandMarks> {
+        let list = &self.commands.list;
+        let marked = list[list.binary_search_by_key(&id, |marked| marked.id).ok()?];
+        let rows = &self.primary.rows;
+        let first = rows.scrolled() as i64 - rows.scrollback_rows() as i64;
+        let cell = |pin: Option<PinId>| {
+            let position = rows.pin_position(pin?)?;
+            let index = rows.row_index(position.page, position.row)?;
+            Some((position.col, first.saturating_add(index as i64)))
+        };
+        Some(CommandMarks {
+            id,
+            prompt: cell(marked.prompt),
+            input: cell(marked.input),
+            output: cell(marked.output),
+            end: cell(marked.end),
+            status: marked.status,
+        })
+    }
+
+    /// The command line of the command of the id `id`, as the user typed
+    /// it: the text from its input's mark to its output's, of the input's
+    /// logical line, 256 rows of it at most, without the spaces around it;
+    /// `None` for a command of no input's mark in the list, of no text, or
+    /// while the alternate screen shows.
+    pub fn command_line(&self, id: u64) -> Option<String> {
+        if self.alternate_active {
+            return None;
+        }
+        let command = self.command(id)?;
+        let (column, row) = command.input?;
+        let (text, cells) = self.line_text(row, 256)?;
+        // In reading order: a row's number, then a column.
+        let from = (row, column);
+        let to = command.output.map(|(column, row)| (row, column));
+        let line: String = text
+            .chars()
+            .zip(cells)
+            .filter(|&(_, (column, row))| {
+                (row, column) >= from && to.is_none_or(|to| (row, column) < to)
+            })
+            .map(|(character, _)| character)
+            .collect();
+        let line = line.trim();
+        (!line.is_empty()).then(|| line.to_owned())
+    }
+
     /// The prompts of the primary screen's commands that ran, on the rows
     /// numbered from `top` to before `bottom`, oldest first, each of its
     /// row's number and its command's state: the commands of no output's

@@ -55,6 +55,9 @@
 //! bounce = true             # the Dock's icon bounces for one in the background
 //! mark-title = true         # 🔔 in its title, until it takes the focus
 //!
+//! [notifications]
+//! long-command = 10         # seconds; a notification as one this long ends
+//!
 //! [app]
 //! icon = "jormungandr"      # the icon's variant
 //! appearance = "system"     # system | light | dark
@@ -71,7 +74,7 @@
 //! `[interface]` [`InterfaceConfig`], `[slots]` [`SlotsConfig`], `[terminal]` [`TerminalConfig`], `[scrollback]` [`ScrollbackConfig`],
 //! `[keyboard]` [`KeyboardConfig`],
 //! `[clipboard]` [`ClipboardConfig`], `[links]` [`LinksConfig`], `[bell]`
-//! [`BellConfig`], `[theme]` [`ThemeConfig`], `[app]`
+//! [`BellConfig`], `[notifications]` [`NotificationsConfig`], `[theme]` [`ThemeConfig`], `[app]`
 //! [`AppConfig`], `[updates]` [`UpdatesConfig`], `[keys]` [`KeysConfig`],
 //! and the plugins' own, `[plugins.<namespace>]`, [`PluginsConfig`], which
 //! their schemas check. Every key and every section can be
@@ -85,6 +88,7 @@ use std::fmt;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use lokyr_text_core::FontConfig;
 use lokyr_text_core::as_written;
@@ -147,6 +151,8 @@ pub struct Config {
     pub links: LinksConfig,
     /// The `[bell]` section.
     pub bell: BellConfig,
+    /// The `[notifications]` section.
+    pub notifications: NotificationsConfig,
     /// The `[theme]` section.
     pub theme: ThemeConfig,
     /// The `[app]` section.
@@ -749,6 +755,60 @@ impl Default for BellConfig {
             flash: true,
             bounce: true,
             mark_title: true,
+        }
+    }
+}
+
+/// The `[notifications]` section: the notifications that the app shows of
+/// its own, as the system's, while a window has no focus.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(default, deny_unknown_fields, rename_all = "kebab-case")]
+pub struct NotificationsConfig {
+    /// How long a command that the shell marks runs, at least, for a
+    /// notification as it ends.
+    pub long_command: LongCommand,
+}
+
+/// How long a command runs, at least, in seconds, for a notification as it
+/// ends, from 1 to a day; 0 for none.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(try_from = "u32", into = "u32")]
+pub struct LongCommand(u32);
+
+impl LongCommand {
+    /// The most seconds, a day's.
+    pub const MAX: u32 = 86_400;
+
+    /// How long a command runs, at least, for a notification; `None` for
+    /// none.
+    pub fn duration(self) -> Option<Duration> {
+        (self.0 > 0).then(|| Duration::from_secs(u64::from(self.0)))
+    }
+}
+
+impl Default for LongCommand {
+    fn default() -> Self {
+        Self(10)
+    }
+}
+
+impl From<LongCommand> for u32 {
+    fn from(seconds: LongCommand) -> Self {
+        seconds.0
+    }
+}
+
+impl TryFrom<u32> for LongCommand {
+    type Error = String;
+
+    fn try_from(seconds: u32) -> Result<Self, Self::Error> {
+        if seconds <= Self::MAX {
+            Ok(Self(seconds))
+        } else {
+            Err(format!(
+                "a long command's time, in seconds, is from 0 to {}, not {seconds}",
+                Self::MAX
+            ))
         }
     }
 }
@@ -1526,7 +1586,7 @@ impl Position {
 }
 
 /// The sections of the file, with the keys of each.
-fn sections() -> [(&'static str, &'static [&'static str]); 16] {
+fn sections() -> [(&'static str, &'static [&'static str]); 17] {
     [
         ("font", keys::<FontConfig>()),
         ("text", keys::<TextConfig>()),
@@ -1540,6 +1600,7 @@ fn sections() -> [(&'static str, &'static [&'static str]); 16] {
         ("clipboard", keys::<ClipboardConfig>()),
         ("links", keys::<LinksConfig>()),
         ("bell", keys::<BellConfig>()),
+        ("notifications", keys::<NotificationsConfig>()),
         ("theme", keys::<ThemeConfig>()),
         ("app", keys::<AppConfig>()),
         ("updates", keys::<UpdatesConfig>()),
@@ -1987,6 +2048,9 @@ mod tests {
             sound = true
             mark-title = false
 
+            [notifications]
+            long-command = 30
+
             [app]
             icon = "laguz"
             language = "it"
@@ -2040,6 +2104,30 @@ mod tests {
         );
         let bell = Config::default().bell;
         assert!(!bell.sound && bell.flash && bell.bounce && bell.mark_title);
+        // A long command's time, of 0 for none.
+        assert_eq!(
+            config.notifications.long_command.duration(),
+            Some(std::time::Duration::from_secs(30))
+        );
+        assert_eq!(
+            Config::default().notifications.long_command.duration(),
+            Some(std::time::Duration::from_secs(10))
+        );
+        let none = parse(
+            "[notifications]
+long-command = 0
+",
+        )
+        .unwrap();
+        assert_eq!(none.notifications.long_command.duration(), None);
+        for (text, wanted) in [
+            ("long-command = 86401", "from 0 to 86400, not 86401"),
+            ("long-command = -1", "-1"),
+            ("long-commands = 5", "long-command"),
+        ] {
+            let message = error(&format!("[notifications]\n{text}\n")).1;
+            assert!(message.contains(wanted), "{text}: {message}");
+        }
         assert_eq!(Config::default().clipboard.read, ClipboardRead::Never);
         assert_eq!(config.app.language, "it");
         assert_eq!(Config::default().app.language, "system");
@@ -2627,6 +2715,7 @@ mod tests {
                 "clipboard",
                 "links",
                 "bell",
+                "notifications",
                 "theme",
                 "app",
                 "updates",
@@ -2659,6 +2748,7 @@ mod tests {
             keys::<BellConfig>(),
             ["sound", "flash", "bounce", "mark-title"]
         );
+        assert_eq!(keys::<NotificationsConfig>(), ["long-command"]);
         assert_eq!(keys::<KeyboardConfig>(), ["option-as-meta"]);
         assert_eq!(
             keys::<AppConfig>(),

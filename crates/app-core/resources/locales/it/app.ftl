@@ -137,3 +137,10 @@ theme-install-switch = { $variant ->
 theme-install-failed = Il tema non si può installare.
 theme-install-no-folder = Lokyr non ha una cartella della configurazione che tenga i suoi temi.
 theme-install-not-copied = Non si può copiare in { $folder }: { $error }
+
+command-succeeded = Riuscito dopo { $took }
+command-failed = Fallito con stato { $status } dopo { $took }
+command-ended = Terminato dopo { $took }
+command-took-seconds = { $seconds } s
+command-took-minutes = { $minutes } min { $seconds } s
+command-took-hours = { $hours } h { $minutes } min

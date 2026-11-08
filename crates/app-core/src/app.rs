@@ -2875,14 +2875,21 @@ impl<B: Backend> App<B> {
                     pane: host::PaneId(pane.get()),
                     command,
                 }),
-                Event::Terminal {
+                Event::CommandEnded {
                     pane,
-                    event: vt::Event::CommandEnded { id, status },
-                } => self.plugins.post(plugins::Event::CommandEnded {
-                    pane: host::PaneId(pane.get()),
-                    command: id,
+                    command,
                     status,
-                }),
+                    took,
+                } => {
+                    self.plugins.post(plugins::Event::CommandEnded {
+                        pane: host::PaneId(pane.get()),
+                        command,
+                        status,
+                    });
+                    if let Some(took) = took {
+                        self.long_command_ended(platform, pane, command, status, took);
+                    }
+                }
                 Event::Ended(_) | Event::Terminal { .. } => {}
             }
         }

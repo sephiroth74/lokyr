@@ -218,6 +218,9 @@ pub struct Pane {
     /// The view that a frame showed as it was last told, whose change
     /// tells `viewport-changed`.
     told_viewport: Option<Viewport>,
+    /// The command that started last, of its id, and when the workspace's
+    /// look found its start, until its end.
+    pub(super) command_started: Option<(u64, Instant)>,
 }
 
 impl std::fmt::Debug for Pane {
@@ -355,6 +358,7 @@ impl Pane {
             progress: None,
             slices: 0,
             told_viewport: None,
+            command_started: None,
         };
         let mut options = Options::new(pty);
         // The wheel scrolls programs of the alternate screen, as `less`, by
@@ -806,6 +810,12 @@ impl Pane {
                 status: marks.status,
             })
             .collect()
+    }
+
+    /// The command line of the command of the id `command`, as
+    /// [`Terminal::command_line`] gives it.
+    pub fn command_line(&self, command: u64) -> Option<String> {
+        self.session.as_ref()?.lock().command_line(command)
     }
 
     /// Lets the selection go.

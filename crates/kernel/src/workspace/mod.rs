@@ -25,7 +25,7 @@ mod tests;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use lokyr_plugin_sdk::event::WorkspaceEvent;
 use lokyr_plugin_sdk::host as sdk;
@@ -332,6 +332,20 @@ pub enum Event {
     /// A pane's program's output ended: the program has, with the
     /// processes that it left.
     Ended(PaneId),
+    /// A command that a pane's shell marked ended, as its terminal tells
+    /// it, of its exit status, if the shell told one, and of its time, from
+    /// the look at the pane's output that found its start to the one that
+    /// found its end, if one found its start.
+    CommandEnded {
+        /// The pane.
+        pane: PaneId,
+        /// The command's id.
+        command: u64,
+        /// Its exit status.
+        status: Option<i32>,
+        /// How long it ran.
+        took: Option<Duration>,
+    },
     /// Another event of a pane's terminal, as the terminal tells it.
     Terminal {
         /// The pane.
@@ -587,6 +601,25 @@ impl Workspace {
                     progress => Some(progress),
                 };
             }
+            // The commands' times, from the look that found a command's
+            // start to the one that finds its end, without a timer.
+            let mut took = Vec::new();
+            for event in &happened.events {
+                match *event {
+                    terminal::Event::CommandStarted(command) => {
+                        pane.command_started = Some((command, now));
+                    }
+                    terminal::Event::CommandEnded { id: command, .. } => {
+                        if let Some((_, at)) = pane
+                            .command_started
+                            .take_if(|(started, _)| *started == command)
+                        {
+                            took.push((command, now.saturating_duration_since(at)));
+                        }
+                    }
+                    _ => {}
+                }
+            }
             // The tab that takes the pane's title and color, as its active
             // pane.
             let active = self
@@ -620,6 +653,18 @@ impl Workspace {
                             event: terminal::Event::TabColor(color),
                         }
                     }
+                    terminal::Event::CommandEnded {
+                        id: command,
+                        status,
+                    } => Event::CommandEnded {
+                        pane: id,
+                        command,
+                        status,
+                        took: took
+                            .iter()
+                            .find(|(ended, _)| *ended == command)
+                            .map(|&(_, took)| took),
+                    },
                     event => Event::Terminal { pane: id, event },
                 };
                 self.events.push(event);

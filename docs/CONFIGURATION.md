@@ -134,6 +134,9 @@ flash = false                        # true | false: a flash of the window that 
 bounce = false                       # true | false: the Dock's icon, for a window in the background
 mark-title = false                   # true | false: 🔔 in its title until it takes the focus
 
+[notifications]
+long-command = 30                    # seconds, from 1 to 86400, or 0 for none: a notification as a command this long ends
+
 [theme]
 light = "Lokyr Light"                # the light appearance's theme, a file of themes/, held or built in
 dark = "Nightfall"                   # the dark appearance's theme
@@ -1070,6 +1073,24 @@ Whether a window without the focus whose bell rang shows 🔔 before its title, 
 | Values | Default |
 |---|---|
 | `true`, `false` | `true` |
+
+## `[notifications]`
+
+What Lokyr tells you of its own in a notification of the system's, while the window has no focus. A notification within two seconds of the last one of the window shows nothing, and a click on one brings its window forward.
+
+### `long-command`
+
+<sub>Platforms: macOS</sub>
+
+How long a command runs, at least, in seconds, for a notification as it ends while its window has no focus, which tells the command, whether it succeeded or its exit status, and how long it ran.
+
+| Values | Default |
+|---|---|
+| from `1` to `86400`; `0` for none | `10` |
+
+- It needs your shell to mark its commands, as [`shell-integration`](#shell-integration) has zsh, bash and fish do: a command runs from the mark of its output's start to that of its end, as Lokyr finds them in its output, without a clock that runs meanwhile.
+- The notification's title is the command as you typed it, or the window's, once its line has left the scrollback.
+- It applies as you save the file, to the commands that end after.
 
 ## `[theme]`
 

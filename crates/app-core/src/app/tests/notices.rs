@@ -268,6 +268,58 @@ fn a_notification_shows_for_a_window_without_the_focus() {
 }
 
 #[test]
+fn a_long_command_s_end_shows_while_its_window_has_no_focus() {
+    // At a key, a short command, then one of 1.2 s that fails; at the next,
+    // another of 1.2 s that succeeds.
+    let program = shell(concat!(
+        "m() { printf '\\033]133;%s\\007' \"$1\"; }; stty raw -echo; echo ready; ",
+        "head -c 1 >/dev/null; ",
+        "m A; printf '$ '; m B; echo true; m C; m 'D;0'; ",
+        "m A; printf '$ '; m B; echo 'make all'; m C; sleep 1.2; m 'D;2'; ",
+        "head -c 1 >/dev/null; ",
+        "m A; printf '$ '; m B; echo 'sleep 1.2'; m C; sleep 1.2; m 'D;0'; echo done; sleep 10",
+    ));
+    let (mut fake, mut app, window) = configured("[notifications]\nlong-command = 1\n", program);
+    fake.send(&mut app, window, WindowEvent::Focused(false));
+    fake.send(&mut app, window, key());
+    run_until(&mut fake, &mut app, |fake, _| {
+        !fake.notifications().is_empty()
+    });
+    // The long one alone, of its line and its status, its time from its
+    // marks.
+    let shown = fake.notifications();
+    assert_eq!(shown.len(), 1, "{shown:?}");
+    assert_eq!(
+        (shown[0].window, shown[0].title.as_str()),
+        (window, "make all")
+    );
+    assert!(
+        shown[0].body.starts_with("Failed with status 2 after ") && shown[0].body.ends_with(" s"),
+        "{}",
+        shown[0].body
+    );
+    // Nothing while the window has the focus.
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    fake.send(&mut app, window, key());
+    run_until(&mut fake, &mut app, |_, app| shows(app, window, "done"));
+    assert_eq!(fake.notifications().len(), 1);
+}
+
+#[test]
+fn a_command_s_time_tells_seconds_minutes_and_hours() {
+    let (_, app) = started();
+    for (seconds, wanted) in [
+        (0, "0 s"),
+        (59, "59 s"),
+        (65, "1 min 5 s"),
+        (3600, "1 h 0 min"),
+        (3725, "1 h 2 min"),
+    ] {
+        assert_eq!(app.duration_text(Duration::from_secs(seconds)), wanted);
+    }
+}
+
+#[test]
 fn a_notification_without_a_title_takes_the_user_s() {
     let (mut fake, mut app, window) = configured("", notifier());
     app.windows.get_mut(&window).unwrap().user_title = Some("build".to_owned());
