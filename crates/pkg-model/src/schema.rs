@@ -8,15 +8,16 @@
 //! `exclusiveMaximum`, `minLength`, `maxLength`, `properties`, `required`,
 //! `additionalProperties`, `items`, `minItems` and `maxItems`, with the
 //! annotations `$schema`, `$id`, `$comment`, `title`, `description`,
-//! `default`, `examples` and `deprecated`. A schema of any other keyword does
-//! not read, by its name.
+//! `default`, `examples`, `deprecated`, `readOnly` and `writeOnly`, and
+//! the schemas `true` and `false`. A schema of any other keyword does not
+//! read, by its name.
 
 use std::collections::BTreeMap;
 
 use serde_json::{Map, Value};
 
 /// The annotations, which a value is not checked against.
-const ANNOTATIONS: [&str; 8] = [
+const ANNOTATIONS: [&str; 10] = [
     "$schema",
     "$id",
     "$comment",
@@ -25,6 +26,8 @@ const ANNOTATIONS: [&str; 8] = [
     "default",
     "examples",
     "deprecated",
+    "readOnly",
+    "writeOnly",
 ];
 
 /// The kinds of JSON values, of the keyword `type`.
@@ -87,6 +90,9 @@ impl Type {
 /// What an object takes besides its `properties`.
 #[derive(Clone, Debug, PartialEq)]
 enum Additional {
+    /// Any value, as the schema says nothing of them: at the section's
+    /// top, its other keys are ignored, as another version's.
+    Unsaid,
     /// Any value.
     Any,
     /// Nothing.
@@ -98,6 +104,8 @@ enum Additional {
 /// A schema of a value.
 #[derive(Clone, Debug, PartialEq)]
 struct Node {
+    /// Whether it takes no value, as the schema `false`.
+    never: bool,
     types: Option<Vec<Type>>,
     choices: Option<Vec<Value>>,
     constant: Option<Value>,
@@ -168,7 +176,10 @@ impl Schema {
     pub fn check(&self, section: &Map<String, Value>) -> Checked {
         let (mut known, mut ignored) = (Map::new(), Vec::new());
         for (key, value) in section {
-            if self.root.properties.contains_key(key) {
+            // The others are ignored, but where the schema says what they
+            // take, of its `additionalProperties`, as `false` refuses them.
+            let said = !matches!(self.root.additional, Additional::Unsaid);
+            if self.root.properties.contains_key(key) || said {
                 known.insert(key.clone(), value.clone());
             } else {
                 ignored.push(key.clone());
@@ -182,17 +193,35 @@ impl Schema {
         Checked { values, ignored }
     }
 
-    /// The section's defaults: the values of a section that holds no key.
+    /// The section's defaults: the defaults of its keys, those that it
+    /// needs, of no default, left out.
     pub fn defaults(&self) -> Map<String, Value> {
-        self.check(&Map::new()).values.unwrap_or_default()
+        self.root
+            .properties
+            .iter()
+            .filter_map(|(key, property)| Some((key.clone(), property.default.clone()?)))
+            .collect()
     }
 }
 
 /// The schema of `value`, at the place `at` of the schema, as `/properties/x`.
 fn node(value: &Value, at: &str) -> Result<Node, String> {
     let place = if at.is_empty() { "/" } else { at };
-    let Some(object) = value.as_object() else {
-        return Err(format!("the schema at `{place}` is not an object"));
+    // The schema `true` takes any value, and `false` none.
+    let empty = Map::new();
+    let object = match value {
+        Value::Bool(holds) => {
+            return node(&Value::Object(empty), at).map(|node| Node {
+                never: !holds,
+                ..node
+            });
+        }
+        Value::Object(object) => object,
+        _ => {
+            return Err(format!(
+                "the schema at `{place}` is not an object nor a boolean"
+            ));
+        }
     };
     let number = |key: &str| -> Result<Option<f64>, String> {
         object
@@ -204,18 +233,27 @@ fn node(value: &Value, at: &str) -> Result<Node, String> {
             })
             .transpose()
     };
+    // A count is a number of no fraction, as `2` or `2.0`, as JSON Schema
+    // takes an integer.
     let count = |key: &str| -> Result<Option<usize>, String> {
         object
             .get(key)
             .map(|value| {
                 value
                     .as_u64()
+                    .or_else(|| {
+                        value
+                            .as_f64()
+                            .filter(|count| count.fract() == 0.0 && *count >= 0.0 && *count < 9e15)
+                            .map(|count| count as u64)
+                    })
                     .and_then(|count| usize::try_from(count).ok())
                     .ok_or_else(|| format!("`{key}` at `{place}` is not a count"))
             })
             .transpose()
     };
     let mut node = Node {
+        never: false,
         types: None,
         choices: None,
         constant: object.get("const").cloned(),
@@ -228,7 +266,7 @@ fn node(value: &Value, at: &str) -> Result<Node, String> {
         longest: count("maxLength")?,
         properties: BTreeMap::new(),
         required: Vec::new(),
-        additional: Additional::Any,
+        additional: Additional::Unsaid,
         items: None,
         fewest: count("minItems")?,
         most: count("maxItems")?,
@@ -244,6 +282,7 @@ fn node(value: &Value, at: &str) -> Result<Node, String> {
                     .into_iter()
                     .map(|name| name.as_str().and_then(Type::of))
                     .collect::<Option<Vec<Type>>>()
+                    .filter(|types| !types.is_empty())
                     .ok_or_else(|| format!("`type` at `{place}` is not of JSON's types"))?;
                 node.types = Some(types);
             }
@@ -354,6 +393,9 @@ fn check(node: &Node, value: &Value, path: &mut Vec<String>) -> Result<Value, Pr
         Some(key) => format!("`{key}`"),
         None => "the section".to_owned(),
     };
+    if node.never {
+        return Err(fail(path, format!("{what} takes no value")));
+    }
     if let Some(types) = &node.types
         && !types.iter().any(|kind| kind.holds(value))
     {
@@ -464,7 +506,7 @@ fn check(node: &Node, value: &Value, path: &mut Vec<String>) -> Result<Value, Pr
                 path.push(key.clone());
                 let item = match (node.properties.get(key), &node.additional) {
                     (Some(property), _) => check(property, item, path),
-                    (None, Additional::Any) => Ok(item.clone()),
+                    (None, Additional::Any | Additional::Unsaid) => Ok(item.clone()),
                     (None, Additional::Of(schema)) => check(schema, item, path),
                     (None, Additional::None) => {
                         let known: Vec<String> = node

@@ -4695,3 +4695,57 @@ fn a_look_declares_nothing() {
     assert!(app.registry.get("declarer.more").is_none());
     assert_eq!(plugins.bindings().count(), 0);
 }
+
+#[test]
+fn a_state_file_past_the_most_of_a_state_is_read_no_further_and_starts_anew() {
+    let state = std::env::temp_dir().join(format!("lokyr-plugin-big-state-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&state);
+    std::fs::create_dir_all(state.join("plugins")).unwrap();
+    // A string of JSON one byte past the most.
+    let big = format!("\"{}\"", "x".repeat(MOST_STATE - 1));
+    std::fs::write(state.join("plugins/stater.json"), &big).unwrap();
+    let mut app = App::default();
+    window(&mut app, "sleep 10");
+    let read = Rc::new(RefCell::new(None));
+    let seen = Rc::clone(&read);
+    let mut plugins = Plugins::new();
+    plugins
+        .add(
+            "stater",
+            scripted(
+                |cx| cx.register_command(command("stater.go")),
+                move |cx, _, _| {
+                    *seen.borrow_mut() = Some(cx.state()?);
+                    Ok(())
+                },
+            ),
+        )
+        .unwrap();
+    plugins.set_state_directory(Some(state.clone()));
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    plugins
+        .run("stater.go", Args::new(), &mut app.context())
+        .unwrap();
+    assert_eq!(*read.borrow(), Some(lokyr_plugin_sdk::message::Data::Nil));
+    let faults = plugins.take_faults();
+    assert!(
+        faults
+            .iter()
+            .any(|fault| fault.message.contains("more than")),
+        "{faults:?}"
+    );
+    // One within it reads.
+    let fits = format!("\"{}\"", "x".repeat(MOST_STATE - 2));
+    assert_eq!(
+        read_capped(&state.join("x.json"), 4).unwrap_err().kind(),
+        std::io::ErrorKind::NotFound
+    );
+    std::fs::write(state.join("fits.json"), &fits).unwrap();
+    assert_eq!(
+        read_capped(&state.join("fits.json"), MOST_STATE)
+            .unwrap()
+            .map(|bytes| bytes.len()),
+        Some(MOST_STATE)
+    );
+    let _ = std::fs::remove_dir_all(&state);
+}

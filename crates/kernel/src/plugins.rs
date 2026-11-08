@@ -49,7 +49,7 @@ use lokyr_vt_core::terminal::{Look, Scroll, SelectionShape, SelectionUnit};
 use serde_json::{Map, Value};
 
 use crate::commands::{self, Args, Capability, Code, Command, Error, Registry, Uses};
-use crate::config::{ConfirmPaste, PluginsConfig};
+use crate::config::{ConfirmPaste, PluginSection, PluginsConfig};
 use crate::keymap::{self, Binding, Invocation, When};
 use crate::l10n::{Arg, Texts};
 use crate::paste::{self, Paste};
@@ -964,6 +964,19 @@ impl Plugins {
             }
             // A plugin turned off takes no keys.
             if !state.wanted {
+                continue;
+            }
+            // A value that JSON does not hold refuses the section alone.
+            if let Some((path, message)) = section.and_then(PluginSection::unread) {
+                notices.push(ConfigNotice {
+                    text: format!(
+                        "{}{message} in `[plugins.{namespace}]`; the plugin `{}` keeps its config in force",
+                        at(path),
+                        state.name
+                    ),
+                    namespace,
+                    refused: true,
+                });
                 continue;
             }
             let Some(schema) = &state.schema else {
@@ -2958,6 +2971,17 @@ fn text_style(style: &Style) -> host::TextStyle {
     }
 }
 
+/// The bytes of the file at `path`, `most` of them at most: `None` of a
+/// longer one, which it reads no further than that.
+fn read_capped(path: &std::path::Path, most: usize) -> std::io::Result<Option<Vec<u8>>> {
+    use std::io::Read;
+    let mut bytes = Vec::new();
+    std::fs::File::open(path)?
+        .take(u64::try_from(most).unwrap_or(u64::MAX).saturating_add(1))
+        .read_to_end(&mut bytes)?;
+    Ok((bytes.len() <= most).then_some(bytes))
+}
+
 /// Reads `count` rows of `reader`'s terminal from the row numbered
 /// `first`, of the rows' `epoch`, the request's, on a thread of its own,
 /// [`READ_PART`] rows under the lock at a time, and wakes the main thread
@@ -3185,13 +3209,17 @@ impl Host<'_, '_> {
         }
         let read = match &self.state.stored.file {
             None => Ok(Data::Nil),
-            Some(file) => match std::fs::read(file) {
+            Some(file) => match read_capped(file, MOST_STATE) {
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Data::Nil),
                 Err(error) => Err(format!(
                     "it cannot be read from {}: {error}",
                     file.display()
                 )),
-                Ok(bytes) => serde_json::from_slice::<Value>(&bytes)
+                Ok(None) => Err(format!(
+                    "{} holds more than {MOST_STATE} bytes, the most of a state",
+                    file.display()
+                )),
+                Ok(Some(bytes)) => serde_json::from_slice::<Value>(&bytes)
                     .map(|value| data(&value))
                     .map_err(|error| format!("{} is not JSON: {error}", file.display())),
             },

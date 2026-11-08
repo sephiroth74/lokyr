@@ -357,11 +357,8 @@ fn a_plugin_keeps_its_state_for_the_next_run() {
         refused.message
     );
     let refused = keep(&mut plugins, &mut app, "NaN").unwrap_err();
-    assert!(
-        refused.message.contains("finite numbers"),
-        "{}",
-        refused.message
-    );
+    assert_eq!(refused.code, Code::WrongKind);
+    assert!(refused.message.contains("finite"), "{}", refused.message);
     assert_eq!(
         std::fs::read_to_string(&file).unwrap(),
         r#"{"history":["x"]}"#

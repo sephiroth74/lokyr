@@ -150,6 +150,15 @@ fn a_refused_section_s_notice_follows_its_line_and_a_whole_number_is_an_integer(
     change(&mut fake, &mut app);
     assert_eq!(text(&app), None);
     assert_eq!(heard.borrow().last(), Some(&count(5)));
+    // A number that is not finite refuses the section alone, at its line,
+    // the plugin keeping its config, and the rest of the file applying.
+    std::fs::write(&path, "[font]\nsize = 15\n[plugins.keyed]\ncount = nan\n").unwrap();
+    change(&mut fake, &mut app);
+    let told = text(&app).unwrap_or_default();
+    assert!(told.contains("config.toml:4:1:"), "{told}");
+    assert!(told.contains("`count` is not a finite number"), "{told}");
+    assert_eq!(app.config.font.size.points(), 15.0);
+    assert_eq!(heard.borrow().last(), Some(&count(5)));
     let _ = std::fs::remove_dir_all(&directory);
 }
 

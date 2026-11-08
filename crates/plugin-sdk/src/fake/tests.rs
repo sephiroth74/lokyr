@@ -714,7 +714,7 @@ fn the_requests_that_the_app_s_host_refuses_the_fake_refuses_alike() {
         Ok(())
     });
     host.command(&mut probe, "probe.go", Args::new()).unwrap();
-    use Code::{Failed, InvalidName, NotFound};
+    use Code::{Failed, InvalidName, NotFound, WrongKind};
     assert_eq!(
         *codes.borrow(),
         [
@@ -727,7 +727,7 @@ fn the_requests_that_the_app_s_host_refuses_the_fake_refuses_alike() {
             Some(Failed),
             Some(Failed),
             Some(Failed),
-            Some(Failed),
+            Some(WrongKind),
             Some(InvalidName),
             Some(InvalidName),
             Some(NotFound),

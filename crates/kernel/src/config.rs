@@ -2748,17 +2748,22 @@ long-command = 0
                 "[plugins]\ntabs = 1\n",
                 "config.toml:2:8: `plugins.tabs` is a plugin's section, of its keys, not a value",
             ),
-            (
-                "[plugins.tabs]\nfade = nan\n",
-                "config.toml:2:8: `fade` is not a finite number",
-            ),
-            (
-                "[plugins.tabs]\nsizes = [1, inf]\n",
-                "config.toml:2:13: `sizes.1` is not a finite number",
-            ),
         ] {
             assert_eq!(parse(text).unwrap_err().to_string(), message, "{text}");
         }
+        // A value that JSON does not hold refuses its section alone, as
+        // the plugin's check tells at its place; the file reads, and so do
+        // the other sections.
+        let config = parse(
+            "[font]\nsize = 14\n[plugins.tabs]\nfade = nan\nsizes = [1, inf]\n[plugins.other]\nx = 1\n",
+        )
+        .unwrap();
+        assert_eq!(config.font.size.points(), 14.0);
+        let tabs = config.plugins.get("tabs").unwrap();
+        let (path, message) = tabs.unread().unwrap();
+        assert_eq!(message, "`fade` is not a finite number");
+        assert_eq!(tabs.at(path), "config.toml:4:1");
+        assert!(config.plugins.get("other").unwrap().unread().is_none());
     }
 
     #[test]

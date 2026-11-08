@@ -231,7 +231,7 @@ fn a_schema_of_a_keyword_that_the_host_does_not_check_does_not_read() {
         ),
         (
             r#"{"type": "object", "properties": {"a": 3}}"#,
-            "the schema at `/properties/a` is not an object",
+            "the schema at `/properties/a` is not an object nor a boolean",
         ),
     ];
     for (text, message) in refused {
@@ -283,5 +283,75 @@ fn numbers_are_the_same_of_the_same_value_and_a_whole_one_of_an_integer_s_schema
     assert_eq!(
         problem(&schema, &json!({ "level": 1.5 })).message,
         "`level` is one of 1, 2, [3], not 1.5"
+    );
+}
+
+#[test]
+fn a_root_s_required_keys_keep_the_others_defaults_and_its_additional_properties_hold() {
+    // A key that the section needs leaves the others' defaults.
+    let needs = Schema::parse(
+        r#"{ "type": "object", "required": ["token"], "properties": {
+            "token": { "type": "string" }, "size": { "type": "integer", "default": 3 } } }"#,
+    )
+    .unwrap();
+    assert_eq!(needs.defaults(), section(&json!({ "size": 3 })));
+    assert_eq!(
+        problem(&needs, &json!({})).message,
+        "the section needs `token`"
+    );
+    // The root's other keys, of a schema, are checked and kept; of
+    // `false`, refused; of nothing said, ignored.
+    let of =
+        Schema::parse(r#"{ "type": "object", "additionalProperties": { "type": "integer" } }"#)
+            .unwrap();
+    let checked = of.check(&section(&json!({ "a": 1 })));
+    assert_eq!(checked.values.unwrap(), section(&json!({ "a": 1 })));
+    assert!(checked.ignored.is_empty());
+    assert_eq!(problem(&of, &json!({ "a": "1" })).path, ["a"]);
+    let none = Schema::parse(r#"{ "type": "object", "additionalProperties": false }"#).unwrap();
+    assert_eq!(
+        problem(&none, &json!({ "a": 1 })).message,
+        "`a` is not a key of the section, which has none"
+    );
+    let unsaid = Schema::parse(r#"{ "type": "object" }"#).unwrap();
+    assert_eq!(unsaid.check(&section(&json!({ "a": 1 }))).ignored, ["a"]);
+}
+
+#[test]
+fn the_subset_reads_as_json_schema_does() {
+    // No type is refused, as JSON Schema refuses it.
+    assert!(
+        Schema::parse(r#"{ "type": "object", "properties": { "a": { "type": [] } } }"#)
+            .unwrap_err()
+            .contains("`type` at `/properties/a`")
+    );
+    // A count of a whole number of a fraction.
+    let counted = Schema::parse(
+        r#"{ "type": "object", "properties": { "a": { "type": "string", "minLength": 2.0 } } }"#,
+    )
+    .unwrap();
+    assert_eq!(
+        problem(&counted, &json!({ "a": "x" })).message,
+        "`a` is of 2 characters at least, not 1"
+    );
+    assert!(
+        Schema::parse(r#"{ "type": "object", "properties": { "a": { "minLength": 2.5 } } }"#)
+            .is_err()
+    );
+    // The schemas `true` and `false`, and the annotations of JSON Schema's.
+    let booleans = Schema::parse(
+        r#"{ "type": "object", "properties": { "any": true, "none": false,
+            "kept": { "type": "integer", "readOnly": true, "writeOnly": false } } }"#,
+    )
+    .unwrap();
+    assert!(
+        booleans
+            .check(&section(&json!({ "any": [1, "x"] })))
+            .values
+            .is_ok()
+    );
+    assert_eq!(
+        problem(&booleans, &json!({ "none": 1 })).message,
+        "`none` takes no value"
     );
 }

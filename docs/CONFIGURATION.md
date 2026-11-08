@@ -1511,13 +1511,13 @@ position = "top"
 ```
 
 - **Its keys** are those of the plugin's schema, the JSON Schema file that its manifest names, with their values and their defaults: a key left out takes its default, and a section left out gives all of them.
-- **A wrong value**, of another type or none of its choices, refuses that plugin's section alone: the plugin keeps the keys in force, its defaults at the start, and the rest of the file applies. The bar across the windows' top tells the error at its line, until you save a section that the plugin takes:
+- **A wrong value**, of another type or none of its choices, or a number that is not finite, as `nan` or `inf`, refuses that plugin's section alone: the plugin keeps the keys in force, its defaults at the start, and the rest of the file applies. The bar across the windows' top tells the error at its line, until you save a section that the plugin takes:
 
   ```text
   lokyr: error 109 (usage): /Users/you/.config/lokyr/config.toml:12:1: `position` is one of "top", "bottom", not "middle" in `[plugins.tabs]`; the plugin `lokyr/tabs` keeps its config in force
   ```
 
-- **What another version would know** is ignored, as the bar tells: the section of a plugin that is not installed, and a key that the plugin's schema lacks, as one of a newer version, so that one file serves two Macs.
+- **What another version would know** is ignored, as the bar tells: the section of a plugin that is not installed, and a key that the plugin's schema lacks, as one of a newer version, so that one file serves two Macs; but where the schema says what its other keys take, its `additionalProperties`, they are checked against it, and refused of `false`.
 - **Reloading**: as you save the file, each plugin takes its section anew, and hears of a change.
 - `lokyr +validate-config` checks the file's own keys and the sections' form, each a table of keys, and `lokyr +show-config` prints the sections as the file has them; their keys apply as the plugins take them, once Lokyr runs.
 

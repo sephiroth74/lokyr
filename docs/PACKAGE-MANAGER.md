@@ -157,7 +157,8 @@ Archive rules:
 ## Resolution
 
 - **Algorithm**: PubGrub (`pubgrub` crate), for readable conflict messages.
-- **Constraints**: semver, caret by default, as in Cargo.
+- **Versions**: [Semantic Versioning 2.0.0](https://semver.org/), of numbers of no leading zero, a pre-release after `-` and a build after `+`, which the manifest's check holds a version to.
+- **Constraints**: semver, caret by default, as in Cargo: an operator, `^`, `~`, `=`, `>=`, `<=`, `>` or `<`, of a version or its first numbers, as `^0.3`, or `*`.
 - **App compatibility**: each plugin's `api` constraint must include the installed app's API version. Sleip reads that version from `lokyr --api-version` or from the `api-version` file in the app's resources.
 - **One version per plugin**: at runtime each plugin is a single instance.
 - **Yanked versions** are excluded, unless they are already in the lockfile.

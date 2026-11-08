@@ -30,11 +30,15 @@ pub struct PluginSection {
     places: BTreeMap<Vec<String>, Position>,
     /// The file.
     path: PathBuf,
+    /// The first value that JSON does not hold, as a number that is not
+    /// finite, by the keys and the indexes that lead to it, and why, which
+    /// refuses the section alone.
+    unread: Option<(Vec<String>, String)>,
 }
 
 impl PartialEq for PluginSection {
     fn eq(&self, other: &Self) -> bool {
-        self.values == other.values
+        self.values == other.values && self.unread == other.unread
     }
 }
 
@@ -74,8 +78,8 @@ impl PluginsConfig {
 
     /// The `[plugins]` section of `root`, the document of `text`, the file
     /// at `path`: a table of a table of each plugin; the place and the
-    /// error of what is not, or of a value that JSON does not hold, as a
-    /// number that is not finite.
+    /// error of what is not. A value that JSON does not hold, as a number
+    /// that is not finite, refuses its section alone, which keeps it.
     pub(super) fn read(
         root: &dyn TableLike,
         text: &str,
@@ -106,18 +110,25 @@ impl PluginsConfig {
             if let Some(place) = at(item.span().or(key)) {
                 places.insert(Vec::new(), place);
             }
-            let mut values = Map::new();
+            let (mut values, mut unread) = (Map::new(), None);
             let mut path_to = Vec::new();
             for (name, value) in section.iter() {
                 path_to.push(name.to_owned());
                 if let Some(place) = at(section.key(name).and_then(toml_edit::Key::span)) {
                     places.insert(path_to.clone(), place);
                 }
-                values.insert(
-                    name.to_owned(),
-                    item_json(value, &mut path_to, &mut places, text)?,
-                );
-                path_to.pop();
+                match item_json(value, &mut path_to, &mut places, text) {
+                    Ok(json) => {
+                        values.insert(name.to_owned(), json);
+                    }
+                    // At the value's key, or its index.
+                    Err((_, message)) => {
+                        unread.get_or_insert((path_to.clone(), message));
+                    }
+                }
+                // A value that did not read leaves its path as deep as it
+                // went.
+                path_to.clear();
             }
             sections.insert(
                 namespace.to_owned(),
@@ -125,6 +136,7 @@ impl PluginsConfig {
                     values,
                     places,
                     path: path.to_owned(),
+                    unread,
                 },
             );
         }
@@ -147,6 +159,15 @@ impl PluginSection {
     /// Its values, by their keys.
     pub fn values(&self) -> &Map<String, Value> {
         &self.values
+    }
+
+    /// The first value of the section that JSON does not hold, by the keys
+    /// and the indexes that lead to its place, and why, which refuses the
+    /// section.
+    pub fn unread(&self) -> Option<(&[String], &str)> {
+        self.unread
+            .as_ref()
+            .map(|(path, message)| (path.as_slice(), message.as_str()))
     }
 
     /// The file.

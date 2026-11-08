@@ -1256,6 +1256,21 @@ impl Data {
         }
         true
     }
+
+    /// Whether every number of the value is finite, as JSON holds them, no
+    /// NaN nor infinity, which it tells without recursion.
+    pub fn is_finite(&self) -> bool {
+        let mut left = vec![self];
+        while let Some(value) = left.pop() {
+            match value {
+                Self::Number(number) if !number.is_finite() => return false,
+                Self::List(items) => left.extend(items),
+                Self::Map(map) => left.extend(map.values()),
+                _ => {}
+            }
+        }
+        true
+    }
 }
 
 /// Drops `data` a level at a time, without recursion, as a value too deep
@@ -1290,13 +1305,38 @@ impl Request {
             _ => None,
         }
     }
+
+    /// The arguments of a command's call that the request carries, as a
+    /// run's, a binding's or a menu item's.
+    fn args(&self) -> Option<&crate::command::Args> {
+        match self {
+            Self::RunCommand { args, .. } => Some(args),
+            Self::Bind(binding) => Some(&binding.args),
+            Self::AddMenuItem(item) => Some(&item.args),
+            _ => None,
+        }
+    }
 }
 
 /// `request`, if the data that it carries nests [`Data::DEEPEST`] levels at
-/// most, as the host takes it; `failed` otherwise, its data dropped
+/// most, as the host takes it, and its numbers, and its arguments', are
+/// finite, as JSON holds them; `failed` otherwise, its data dropped
 /// without recursion, where it is checked, on the plugin's own thread.
 pub fn within_depth(mut request: Request) -> Result<Request, crate::command::Error> {
     if request.data().is_none_or(Data::nests_within_deepest) {
+        let finite = request.data().is_none_or(Data::is_finite)
+            && request.args().is_none_or(|args| {
+                args.values().all(|value| match value {
+                    crate::command::Value::Number(number) => number.is_finite(),
+                    _ => true,
+                })
+            });
+        if !finite {
+            return Err(crate::command::Error::new(
+                crate::command::Code::WrongKind,
+                "a plugin's numbers are finite, as JSON holds them, not NaN nor an infinity",
+            ));
+        }
         return Ok(request);
     }
     if let Some(data) = request.take_data() {
@@ -1336,6 +1376,21 @@ mod tests {
         assert_eq!(within_depth(deep).unwrap_err().code, Code::Failed);
         let kept = Request::SetState(nested(3));
         assert_eq!(within_depth(kept.clone()), Ok(kept));
+        // A NaN or an infinity, which JSON does not hold, in a value or an
+        // argument, is refused; a finite number crosses.
+        for number in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let state = Request::SetState(Data::List(vec![Data::Map(
+                [("x".to_owned(), Data::Number(number))].into(),
+            )]));
+            assert_eq!(within_depth(state).unwrap_err().code, Code::WrongKind);
+            let run = Request::RunCommand {
+                name: "x.go".to_owned(),
+                args: Args::from([("n".to_owned(), crate::command::Value::Number(number))]),
+            };
+            assert_eq!(within_depth(run).unwrap_err().code, Code::WrongKind);
+        }
+        let finite = Request::SetState(Data::Number(2.5));
+        assert_eq!(within_depth(finite.clone()), Ok(finite));
     }
     use crate::command::{Category, Code, Value};
 

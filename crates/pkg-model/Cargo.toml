@@ -10,7 +10,7 @@ repository.workspace = true
 publish = false
 
 [dependencies]
-lokyr-plugin-sdk.workspace = true
+lokyr-plugin-sdk = { workspace = true, features = ["unstable"] }
 serde.workspace = true
 serde_json.workspace = true
 toml.workspace = true

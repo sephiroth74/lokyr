@@ -7,7 +7,9 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
-use lokyr_plugin_sdk::command::Capability;
+use lokyr_plugin_sdk::command::{self, Capability};
+use lokyr_plugin_sdk::keys;
+use lokyr_plugin_sdk::ui::Slot;
 use serde::Deserialize;
 
 /// A plugin's manifest, as it reads.
@@ -108,9 +110,37 @@ struct File {
     #[serde(default)]
     uses: Uses,
     #[serde(default)]
-    contributes: Contributes,
+    contributes: RawContributes,
     #[serde(default)]
-    dependencies: BTreeMap<String, String>,
+    dependencies: BTreeMap<toml::Spanned<String>, toml::Spanned<String>>,
+}
+
+/// What a plugin contributes, as the file writes it, of the places that
+/// its checks tell.
+#[derive(Default, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "kebab-case")]
+struct RawContributes {
+    #[serde(default)]
+    commands: Vec<RawContributed>,
+    #[serde(default)]
+    keybindings: Vec<RawKeybinding>,
+    #[serde(default)]
+    slots: Vec<toml::Spanned<String>>,
+    config_schema: Option<toml::Spanned<String>>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawContributed {
+    name: toml::Spanned<String>,
+    title: toml::Spanned<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawKeybinding {
+    key: toml::Spanned<String>,
+    command: toml::Spanned<String>,
 }
 
 #[derive(Deserialize)]
@@ -119,7 +149,7 @@ struct Plugin {
     name: toml::Spanned<String>,
     version: Option<toml::Spanned<String>>,
     kind: toml::Spanned<Kind>,
-    api: Option<String>,
+    api: Option<toml::Spanned<String>>,
     license: String,
     #[serde(default)]
     thread: Thread,
@@ -226,12 +256,23 @@ impl Manifest {
                 "a Luau plugin needs the plugin API's version that it takes, `api`".to_owned(),
             ));
         }
+        if let Some(api) = &plugin.api
+            && !is_requirement(api.get_ref())
+        {
+            return Err(fail(
+                api.span(),
+                format!(
+                    "`{}` is not a version's constraint, as `^0.1`",
+                    api.get_ref()
+                ),
+            ));
+        }
         for on in &file.activation.on {
             if !is_activation(on.get_ref()) {
                 return Err(fail(
                     on.span(),
                     format!(
-                        "`{}` is not an activation: `startup`, `command:<glob>`, `event:<name>`, `slot:<name>` or `osc:<number>`",
+                        "`{}` is not an activation: `startup`, `command:<glob>`, `event:<name>`, `slot:<name>` of a slot's name, or `osc:<number>`",
                         on.get_ref()
                     ),
                 ));
@@ -253,6 +294,30 @@ impl Manifest {
                 ));
             }
         }
+        let namespace = name.rsplit('/').next().unwrap_or(name).to_owned();
+        let contributes = contributed(file.contributes, kind, &namespace, &fail)?;
+        let mut dependencies = BTreeMap::new();
+        for (needed, constraint) in file.dependencies {
+            if !is_name(needed.get_ref()) {
+                return Err(fail(
+                    needed.span(),
+                    format!(
+                        "`{}` is not a plugin's name, `owner/name`",
+                        needed.get_ref()
+                    ),
+                ));
+            }
+            if !is_requirement(constraint.get_ref()) {
+                return Err(fail(
+                    constraint.span(),
+                    format!(
+                        "`{}` is not a version's constraint, as `^0.3`",
+                        constraint.get_ref()
+                    ),
+                ));
+            }
+            dependencies.insert(needed.into_inner(), constraint.into_inner());
+        }
         let activation: Vec<String> = file
             .activation
             .on
@@ -263,7 +328,7 @@ impl Manifest {
             name: plugin.name.into_inner(),
             kind,
             version: plugin.version.map(toml::Spanned::into_inner),
-            api: plugin.api,
+            api: plugin.api.map(toml::Spanned::into_inner),
             license: plugin.license,
             description: plugin.description,
             repository: plugin.repository,
@@ -284,8 +349,8 @@ impl Manifest {
                 .into_iter()
                 .map(toml::Spanned::into_inner)
                 .collect(),
-            contributes: file.contributes,
-            dependencies: file.dependencies,
+            contributes,
+            dependencies,
         })
     }
 
@@ -328,6 +393,106 @@ fn capability(key: &str, value: &toml::Spanned<toml::Value>) -> Result<Vec<Capab
     }
 }
 
+/// The contributions of `raw`, of a plugin of `kind` and `namespace`,
+/// checked: its commands of names, of its namespace but a built-in
+/// plugin's, and of titles; its keys of the config's grammar, of commands'
+/// names; its slots of the UI's; its schema a file of the package, within
+/// it; or why not, as `fail` tells, at its place.
+fn contributed(
+    raw: RawContributes,
+    kind: Kind,
+    namespace: &str,
+    fail: &impl Fn(std::ops::Range<usize>, String) -> ManifestError,
+) -> Result<Contributes, ManifestError> {
+    let mut contributes = Contributes::default();
+    let prefix = format!("{namespace}.");
+    for command in raw.commands {
+        let name = command.name.get_ref();
+        if !command::is_name(name) {
+            return Err(fail(
+                command.name.span(),
+                format!("`{name}` is not a command's name, `namespace.action`"),
+            ));
+        }
+        if kind != Kind::Builtin && !name.starts_with(&prefix) {
+            return Err(fail(
+                command.name.span(),
+                format!("`{name}` is not of the plugin's namespace, `{namespace}`"),
+            ));
+        }
+        if command.title.get_ref().trim().is_empty() {
+            return Err(fail(
+                command.title.span(),
+                "a command's title is empty".to_owned(),
+            ));
+        }
+        contributes.commands.push(Contributed {
+            name: command.name.into_inner(),
+            title: command.title.into_inner(),
+        });
+    }
+    for binding in raw.keybindings {
+        if let Err(why) = keys::parse_keys(binding.key.get_ref()) {
+            return Err(fail(binding.key.span(), why));
+        }
+        if !command::is_name(binding.command.get_ref()) {
+            return Err(fail(
+                binding.command.span(),
+                format!(
+                    "`{}` is not a command's name, `namespace.action`",
+                    binding.command.get_ref()
+                ),
+            ));
+        }
+        contributes.keybindings.push(Keybinding {
+            key: binding.key.into_inner(),
+            command: binding.command.into_inner(),
+        });
+    }
+    for slot in raw.slots {
+        if !is_slot(slot.get_ref()) {
+            return Err(fail(
+                slot.span(),
+                format!("`{}` is no slot: {}", slot.get_ref(), slot_names()),
+            ));
+        }
+        contributes.slots.push(slot.into_inner());
+    }
+    if let Some(schema) = raw.config_schema {
+        use std::path::{Component, Path};
+        let path = Path::new(schema.get_ref());
+        let within = !schema.get_ref().is_empty()
+            && path
+                .components()
+                .all(|component| matches!(component, Component::Normal(_)));
+        if !within {
+            return Err(fail(
+                schema.span(),
+                format!(
+                    "`{}` is not a file of the package, a path within it",
+                    schema.get_ref()
+                ),
+            ));
+        }
+        contributes.config_schema = Some(schema.into_inner());
+    }
+    Ok(contributes)
+}
+
+/// Whether `name` is the name of a slot of the UI, as `tab-bar`.
+fn is_slot(name: &str) -> bool {
+    Slot::ALL.iter().any(|slot| slot.name() == name)
+}
+
+/// The slots' names, as an error lists them.
+fn slot_names() -> String {
+    Slot::ALL
+        .iter()
+        .map(|slot| format!("`{}`", slot.name()))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 /// Whether `name` is `owner/name`, each part of lowercase letters, digits
 /// and `-`, from a letter.
 fn is_name(name: &str) -> bool {
@@ -342,15 +507,69 @@ fn is_part(part: &str) -> bool {
         && bytes.all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
 }
 
-/// Whether `version` is `major.minor.patch`, with a pre-release after a
-/// `-` if any.
+/// Whether `version` is a version of Semantic Versioning 2.0.0,
+/// `major.minor.patch`, of numbers of no leading zero, with a pre-release
+/// after a `-` and a build after a `+` if any, each of identifiers of
+/// letters, digits and `-` after dots, a pre-release's numbers of no
+/// leading zero: <https://semver.org/#backusnaur-form-grammar-for-valid-semver-versions>.
 fn is_version(version: &str) -> bool {
-    let core = version.split_once('-').map_or(version, |(core, _)| core);
+    let (rest, build) = match version.split_once('+') {
+        Some((rest, build)) => (rest, Some(build)),
+        None => (version, None),
+    };
+    let (core, pre) = match rest.split_once('-') {
+        Some((core, pre)) => (core, Some(pre)),
+        None => (rest, None),
+    };
+    let number = |part: &str| {
+        !part.is_empty()
+            && part.bytes().all(|byte| byte.is_ascii_digit())
+            && (part == "0" || !part.starts_with('0'))
+    };
+    let identifier = |part: &str| {
+        !part.is_empty()
+            && part
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+    };
     let numbers: Vec<&str> = core.split('.').collect();
     numbers.len() == 3
-        && numbers
-            .iter()
-            .all(|number| !number.is_empty() && number.bytes().all(|byte| byte.is_ascii_digit()))
+        && numbers.iter().all(|part| number(part))
+        && pre.is_none_or(|pre| {
+            pre.split('.').all(|part| {
+                identifier(part)
+                    && (!part.bytes().all(|byte| byte.is_ascii_digit()) || number(part))
+            })
+        })
+        && build.is_none_or(|build| build.split('.').all(identifier))
+}
+
+/// Whether `constraint` is a version's constraint: an operator, `^`, `~`,
+/// `=`, `>=`, `<=`, `>` or `<`, or none, of a version or of its first
+/// numbers, as `^0.3` or `>=1.2.3-beta.1`; or `*`.
+fn is_requirement(constraint: &str) -> bool {
+    if constraint == "*" {
+        return true;
+    }
+    let version = [">=", "<=", "^", "~", "=", ">", "<"]
+        .iter()
+        .find_map(|operator| constraint.strip_prefix(operator))
+        .unwrap_or(constraint)
+        .trim_start();
+    let core = version.split(['-', '+']).next().unwrap_or_default();
+    let parts = core.split('.').count();
+    match parts {
+        3 => is_version(version),
+        1 | 2 => {
+            core == version
+                && core.split('.').all(|part| {
+                    !part.is_empty()
+                        && part.bytes().all(|byte| byte.is_ascii_digit())
+                        && (part == "0" || !part.starts_with('0'))
+                })
+        }
+        _ => false,
+    }
 }
 
 /// Whether `on` is an activation event.
@@ -359,7 +578,8 @@ fn is_activation(on: &str) -> bool {
         return true;
     }
     match on.split_once(':') {
-        Some(("command" | "event" | "slot", rest)) => !rest.is_empty(),
+        Some(("command" | "event", rest)) => !rest.is_empty(),
+        Some(("slot", name)) => is_slot(name),
         Some(("osc", number)) => {
             !number.is_empty() && number.bytes().all(|byte| byte.is_ascii_digit())
         }
@@ -367,12 +587,13 @@ fn is_activation(on: &str) -> bool {
     }
 }
 
-/// Whether `pattern` is a command's name, `namespace.action`, or a
-/// namespace's, `namespace.*`.
+/// Whether `pattern` is a command's name, `namespace.action`, of as many
+/// parts as a command's name may have, or a namespace's, `namespace.*`.
 fn is_pattern(pattern: &str) -> bool {
-    pattern
-        .split_once('.')
-        .is_some_and(|(namespace, action)| is_part(namespace) && (action == "*" || is_part(action)))
+    match pattern.strip_suffix(".*") {
+        Some(namespace) => namespace.split('.').all(is_part),
+        None => command::is_name(pattern),
+    }
 }
 
 /// The line and the column, both from 1, of the byte `at` of `text`.
@@ -523,5 +744,109 @@ config-schema = "schema.json"
         );
         // A text that is no TOML.
         assert!(wrong("[plugin\n").starts_with("1:8: "));
+    }
+
+    #[test]
+    fn a_version_is_semantic_versioning_s_and_a_constraint_of_one() {
+        for good in [
+            "1.2.3",
+            "0.0.0",
+            "1.2.3-beta.1",
+            "1.2.3-0.alpha",
+            "1.2.3+build.5",
+            "1.2.3-rc.1+20261108",
+        ] {
+            assert!(is_version(good), "{good}");
+        }
+        for bad in [
+            "1.2",
+            "01.2.3",
+            "1.02.3",
+            "1.2.3-",
+            "1.2.3-01",
+            "1.2.3-a..b",
+            "1.2.3+",
+            "1.2.3+a_b",
+            "v1.2.3",
+            "1.2.3.4",
+        ] {
+            assert!(!is_version(bad), "{bad}");
+        }
+        for good in ["^0.1", "~1.2", ">=1.2.3-beta.1", "1", "=2.0.0", "*", "<3"] {
+            assert!(is_requirement(good), "{good}");
+        }
+        for bad in ["^", "0.1.x", "^01.2", ">>1", "1.2-beta", "latest", ""] {
+            assert!(!is_requirement(bad), "{bad}");
+        }
+    }
+
+    #[test]
+    fn a_package_s_contributions_dependencies_and_uses_are_checked_at_their_places() {
+        let wrong = |text: &str| Manifest::parse(text).unwrap_err().to_string();
+        let luau = "[plugin]\nname = \"acme/x\"\nversion = \"1.0.0\"\nkind = \"luau\"\napi = \"^0.1\"\nlicense = \"MIT\"\n";
+        // A command of another plugin's namespace, of no title.
+        assert_eq!(
+            wrong(&format!(
+                "{luau}[contributes]\ncommands = [{{ name = \"tabs.new\", title = \"New\" }}]\n"
+            )),
+            "8:22: `tabs.new` is not of the plugin's namespace, `x`"
+        );
+        assert!(
+            wrong(&format!(
+                "{luau}[contributes]\ncommands = [{{ name = \"x.go\", title = \" \" }}]\n"
+            ))
+            .starts_with("8:38: a command's title is empty")
+        );
+        // A key that does not read, a slot that is none, a schema out of
+        // the package.
+        assert!(
+            wrong(&format!(
+                "{luau}[contributes]\nkeybindings = [{{ key = \"cmd+\", command = \"x.go\" }}]\n"
+            ))
+            .starts_with("8:24: `` is not a key")
+        );
+        assert!(
+            wrong(&format!("{luau}[contributes]\nslots = [\"tabbar\"]\n"))
+                .starts_with("8:10: `tabbar` is no slot: `pane-header`")
+        );
+        assert!(
+            wrong(&format!(
+                "{luau}[contributes]\nconfig-schema = \"../x.json\"\n"
+            ))
+            .starts_with("8:17: `../x.json` is not a file of the package")
+        );
+        // A dependency's name and constraint, the API's constraint.
+        assert!(
+            wrong(&format!("{luau}[dependencies]\nThemes = \"^0.3\"\n"))
+                .starts_with("8:1: `Themes` is not a plugin's name")
+        );
+        assert!(
+            wrong(&format!(
+                "{luau}[dependencies]\n\"lokyr/themes\" = \"newest\"\n"
+            ))
+            .starts_with("8:18: `newest` is not a version's constraint")
+        );
+        assert!(
+            wrong(&luau.replace("^0.1", "one"))
+                .starts_with("5:7: `one` is not a version's constraint")
+        );
+        // An activation of a slot that is none.
+        assert!(
+            wrong(&format!("{luau}[activation]\non = [\"slot:sidebar\"]\n"))
+                .starts_with("8:7: `slot:sidebar` is not an activation")
+        );
+        // Commands of three parts, and namespaces of two, in `uses`.
+        let manifest = Manifest::parse(&format!(
+            "{luau}[uses]\ncommands = [\"search-plus.open.recent\", \"search-plus.open.*\"]\n[contributes]\nslots = [\"tab-bar\"]\n"
+        ))
+        .unwrap();
+        assert_eq!(
+            manifest.uses,
+            ["search-plus.open.recent", "search-plus.open.*"]
+        );
+        assert_eq!(manifest.contributes.slots, ["tab-bar"]);
+        // A built-in plugin contributes the app's commands.
+        let builtin = "[plugin]\nname = \"lokyr/quick\"\nkind = \"builtin\"\nlicense = \"MIT\"\n[contributes]\ncommands = [{ name = \"window.toggle-quick\", title = \"Quick\" }]\n";
+        assert!(Manifest::parse(builtin).is_ok());
     }
 }
