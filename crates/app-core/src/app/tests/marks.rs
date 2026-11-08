@@ -401,7 +401,7 @@ fn the_command_s_header_takes_the_text_s_new_size() {
     let (line, before) = header_text(&app, window).unwrap();
     assert_eq!(line, "long");
     // A point larger, ⌘+'s: the text measured anew, of the pill's line.
-    let points = app.config.font.size.points() as f32;
+    let points = app.config.font.size.points();
     app.set_font_size(&mut fake, Some(points + 4.0));
     run_until(&mut fake, &mut app, |_, app| {
         header_text(app, window).is_some_and(|(_, after)| after.height > before.height)
