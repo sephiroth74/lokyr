@@ -138,6 +138,10 @@ impl<B: Backend> App<B> {
         platform: &mut dyn Platform,
         kept: &windows::Window,
     ) -> Option<WindowId> {
+        // A window of no tab opens nothing, not even a window to close.
+        if kept.tabs.is_empty() {
+            return None;
+        }
         let window_config = &self.config.window;
         let cells = (
             u32::from(window_config.columns.count()),

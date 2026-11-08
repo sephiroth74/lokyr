@@ -100,6 +100,10 @@ impl ContentRect {
     }
 }
 
+/// How far below a window's top its titlebar's middle lies, at most, which
+/// keeps the window where it is while it lies on a screen.
+const GRIP: f64 = 14.0;
+
 /// A point on the screens, in points, from the top left corner of the menu
 /// bar's screen, rightwards and downwards, as the screens lie on one plane.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -152,21 +156,25 @@ impl ScreenRect {
     }
 
     /// Where a window of this frame goes on the screens whose areas for
-    /// windows are `areas`: here, if it lies on one; otherwise on the one
-    /// nearest to it, as near to here as it fits, of its size within that
-    /// area. Here, without areas.
+    /// windows are `areas`: within the area that its titlebar's middle lies
+    /// on, or, where it lies on none, as a screen that held it went, the
+    /// area nearest to its middle; of its size within that area, as near
+    /// to here as it fits. Here, without areas.
     pub fn onto(&self, areas: &[ScreenRect]) -> ScreenRect {
-        if areas.iter().any(|area| self.overlaps(area)) {
-            return *self;
-        }
+        // The middle of the titlebar, by which the window is dragged.
+        let grip = ScreenPoint {
+            x: self.x + self.width / 2.0,
+            y: self.y + (self.height / 2.0).min(GRIP),
+        };
         let center = ScreenPoint {
             x: self.x + self.width / 2.0,
             y: self.y + self.height / 2.0,
         };
-        let Some(area) = areas
-            .iter()
-            .min_by(|one, other| one.distance(center).total_cmp(&other.distance(center)))
-        else {
+        let Some(area) = areas.iter().find(|area| area.contains(grip)).or_else(|| {
+            areas
+                .iter()
+                .min_by(|one, other| one.distance(center).total_cmp(&other.distance(center)))
+        }) else {
             return *self;
         };
         let width = self.width.min(area.width);

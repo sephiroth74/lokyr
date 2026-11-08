@@ -31,6 +31,10 @@ pub const VERSION: u32 = 1;
 /// left aside, as no one of them is the user's: each starts a program.
 pub const MOST_PANES: usize = 256;
 
+/// The most windows that a file opens, past which it is left aside, as a
+/// window of no tab, which opens nothing, counts in no pane.
+pub const MOST_WINDOWS: usize = 100;
+
 /// The windows that the app keeps, as it quits, to open again.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Kept {
@@ -136,7 +140,8 @@ pub enum Direction {
 pub enum Unread {
     /// It is of a newer format's version, which a later Lokyr wrote.
     Newer(u64),
-    /// It does not read, or holds more than [`MOST_PANES`] panes.
+    /// It does not read, or holds more than [`MOST_PANES`] panes or
+    /// [`MOST_WINDOWS`] windows.
     Invalid(String),
 }
 
@@ -177,6 +182,12 @@ pub fn read(state: &Path) -> Result<Option<Kept>, Unread> {
         .flat_map(|window| &window.tabs)
         .map(|tab| tab.layout.panes())
         .sum();
+    if kept.windows.len() > MOST_WINDOWS {
+        return Err(Unread::Invalid(format!(
+            "it holds {} windows, past the {MOST_WINDOWS} that it may open",
+            kept.windows.len()
+        )));
+    }
     if panes > MOST_PANES {
         return Err(Unread::Invalid(format!(
             "it holds {panes} panes, past the {MOST_PANES} that it may open"

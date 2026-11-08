@@ -177,6 +177,20 @@ fn a_newer_or_unreadable_file_is_left_aside() {
         panic!("a file of too many panes reads");
     };
     assert!(error.contains("257 panes"), "{error}");
+    // More windows than any user's, though of no pane.
+    let mut kept = sample();
+    kept.windows = (0..=MOST_WINDOWS)
+        .map(|_| Window {
+            frame: None,
+            tabs: Vec::new(),
+            active: 0,
+        })
+        .collect();
+    write(&state, &kept).unwrap();
+    let Err(Unread::Invalid(error)) = read(&state) else {
+        panic!("a file of too many windows reads");
+    };
+    assert!(error.contains("101 windows"), "{error}");
     let _ = fs::remove_dir_all(&state);
 }
 

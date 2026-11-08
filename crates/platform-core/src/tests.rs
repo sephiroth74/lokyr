@@ -868,6 +868,42 @@ fn a_frame_on_no_screen_goes_onto_the_nearest_within_its_area() {
     );
     // Without screens, here.
     assert_eq!(frame.onto(&[]), frame);
+    // Mostly on a screen that went, its titlebar's middle off the main
+    // one: within the main one, whole.
+    let mostly_off = ScreenRect { x: 1400.0, ..frame };
+    assert_eq!(mostly_off.onto(&[main]), ScreenRect { x: 640.0, ..frame });
+    // Its titlebar on the main screen but past its edges: within it.
+    let past = ScreenRect {
+        x: 1000.0,
+        y: 600.0,
+        width: 800.0,
+        height: 600.0,
+    };
+    assert_eq!(
+        past.onto(&[main]),
+        ScreenRect {
+            x: 640.0,
+            y: 300.0,
+            width: 800.0,
+            height: 600.0,
+        }
+    );
+    // Of a size that no screen has: the main one's, whole.
+    let huge = ScreenRect {
+        x: -1.0e308,
+        y: 100.0,
+        width: 1.7e308,
+        height: 1.0e300,
+    };
+    assert_eq!(huge.onto(&[main]), main);
+    // Within a screen, it stays.
+    let inside = ScreenRect {
+        x: 100.0,
+        y: 100.0,
+        width: 640.0,
+        height: 480.0,
+    };
+    assert_eq!(inside.onto(&[main, right]), inside);
 }
 
 #[test]

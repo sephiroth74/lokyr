@@ -279,6 +279,43 @@ fn a_window_of_a_display_that_went_opens_on_one_that_is_there() {
     );
     // Where the platform places a new one, of the config's grid.
     assert_ne!(frame(windows[2]).width, 0.0);
+    // Mostly on a screen that went, and of a size that no screen has:
+    // each within the main screen. A window of no tab opens none.
+    let mostly_off = windows::Frame {
+        x: 1400.0,
+        y: 100.0,
+        width: 800.0,
+        height: 600.0,
+    };
+    let huge = windows::Frame {
+        x: -1.0e308,
+        y: 100.0,
+        width: 1.7e308,
+        height: 1.0e300,
+    };
+    keep_frames(&state, &[Some(mostly_off), Some(huge)]);
+    let mut kept = windows::read(&state).unwrap().unwrap();
+    kept.windows.push(windows::Window {
+        frame: None,
+        tabs: Vec::new(),
+        active: 0,
+    });
+    windows::write(&state, &kept).unwrap();
+    let mut fake = Fake::default();
+    let mut app = app_of(restoring(), quiet()).with_state(Some(state.clone()));
+    fake.start(&mut app);
+    let windows: Vec<WindowId> = fake.windows().collect();
+    assert_eq!(windows.len(), 2);
+    let within = |rect: ScreenRect| {
+        rect.x >= SCREEN_AREA.x
+            && rect.y >= SCREEN_AREA.y
+            && rect.x + rect.width <= SCREEN_AREA.x + SCREEN_AREA.width
+            && rect.y + rect.height <= SCREEN_AREA.y + SCREEN_AREA.height
+    };
+    for window in windows {
+        let frame = fake.window_frame(window).unwrap();
+        assert!(within(frame), "{frame:?}");
+    }
     let _ = std::fs::remove_dir_all(base);
 }
 
