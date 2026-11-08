@@ -100,6 +100,108 @@ fn a_script_runs_in_a_window_of_its_own_which_keeps_what_it_printed() {
     let _ = std::fs::remove_dir_all(base);
 }
 
+/// The window that `paths` open, as the system opens them with the app.
+fn open_one(fake: &mut Fake, app: &mut App, paths: Vec<std::path::PathBuf>) -> WindowId {
+    let before: Vec<WindowId> = fake.windows().collect();
+    let asked = fake.alerts().len();
+    fake.send_app(app, AppEvent::OpenFiles(paths));
+    assert_eq!(fake.alerts().len(), asked, "{:?}", fake.alerts());
+    let new = opened(fake, &before);
+    let [window] = new[..] else {
+        panic!("one window: {new:?}");
+    };
+    window
+}
+
+/// Runs `app` until a row of `window`'s first lines reads `text`.
+fn shows(fake: &mut Fake, app: &mut App, window: WindowId, text: &str) {
+    run_until(fake, app, |_, app| {
+        app.windows.contains_key(&window)
+            && app.pane(window).is_kept()
+            && (0..4).any(|line| row(app, window, line) == text)
+    });
+}
+
+#[test]
+fn a_script_not_executable_runs_of_its_interpreter_never_asked_for_as_a_theme() {
+    let base = real_directory("opened-interpreters");
+    let mut fake = Fake::default();
+    let mut app = app(Config::default(), quiet());
+    fake.start(&mut app);
+    // Of its extension's interpreter: zsh's `print`, and Python's, which
+    // `/bin/sh` reads otherwise.
+    let zsh = base.join("deploy.zsh");
+    std::fs::write(&zsh, "print -r -- \"zsh ${ZSH_VERSION:+ran}\"\n").unwrap();
+    let window = open_one(&mut fake, &mut app, vec![zsh]);
+    shows(&mut fake, &mut app, window, "zsh ran");
+    let python = base.join("tool.py");
+    std::fs::write(
+        &python,
+        "import sys\nprint('python', sys.version_info[0])\n",
+    )
+    .unwrap();
+    let window = open_one(&mut fake, &mut app, vec![python]);
+    shows(&mut fake, &mut app, window, "python 3");
+    let sh = base.join("plain.sh");
+    std::fs::write(&sh, "echo \"sh ${ZSH_VERSION:-ran}\"\n").unwrap();
+    let window = open_one(&mut fake, &mut app, vec![sh]);
+    shows(&mut fake, &mut app, window, "sh ran");
+    // Of its first line's, whatever its extension.
+    let named = base.join("named.txt");
+    std::fs::write(&named, "#!/bin/zsh -f\nprint -r -- \"named ${ZSH_NAME}\"\n").unwrap();
+    let window = open_one(&mut fake, &mut app, vec![named]);
+    shows(&mut fake, &mut app, window, "named zsh");
+    // A path of `!`, which csh and tcsh read as history's even in quotes,
+    // does not run, and a notice tells why.
+    let bang = base.join("Install!.command");
+    script(&bang, "#!/bin/sh\necho bang\n");
+    let before: Vec<WindowId> = fake.windows().collect();
+    let asked = fake.alerts().len();
+    fake.send_app(&mut app, AppEvent::OpenFiles(vec![bang.clone()]));
+    assert!(opened(&fake, &before).is_empty());
+    assert_eq!(fake.alerts().len(), asked);
+    let shown = app.diagnostics.shown().expect("a notice");
+    assert!(shown.text.contains("Install!.command"), "{shown:?}");
+    let _ = std::fs::remove_dir_all(base);
+}
+
+#[test]
+fn a_downloaded_script_runs_once_the_user_says_so() {
+    let base = real_directory("opened-downloaded");
+    let path = base.join("setup.command");
+    script(&path, "#!/bin/sh\necho downloaded\n");
+    let mut fake = Fake::default();
+    fake.set_downloaded(&path);
+    let mut app = app(Config::default(), quiet());
+    fake.start(&mut app);
+    let before: Vec<WindowId> = fake.windows().collect();
+    // It asks, and opens nothing until the answer.
+    fake.send_app(&mut app, AppEvent::OpenFiles(vec![path.clone()]));
+    assert!(opened(&fake, &before).is_empty());
+    let asked = fake.alerts().last().cloned().expect("a question");
+    assert_eq!(asked.alert.style, AlertStyle::Warning);
+    assert!(
+        asked.alert.message.contains("setup.command"),
+        "{:?}",
+        asked.alert
+    );
+    assert_eq!(asked.alert.buttons, ["Run", "Cancel"]);
+    // Cancel runs nothing.
+    assert!(fake.answer_alert(&mut app, asked.id, 1));
+    assert!(opened(&fake, &before).is_empty());
+    // Run runs it, in a window in front.
+    fake.send_app(&mut app, AppEvent::OpenFiles(vec![path]));
+    let asked = fake.alerts().last().cloned().expect("a question");
+    assert!(fake.answer_alert(&mut app, asked.id, 0));
+    let new = opened(&fake, &before);
+    let [window] = new[..] else {
+        panic!("one window: {new:?}");
+    };
+    assert_eq!(fake.focus_requests().last(), Some(&window));
+    shows(&mut fake, &mut app, window, "downloaded");
+    let _ = std::fs::remove_dir_all(base);
+}
+
 #[test]
 fn an_ssh_link_runs_ssh_to_its_host_and_a_man_page_s_link_its_page() {
     let base = real_directory("opened-links");

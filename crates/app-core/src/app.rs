@@ -496,6 +496,9 @@ pub struct App<B: Backend> {
     /// The timer past which the startup's and the latency's benches give up
     /// waiting for a frame on the display.
     bench_deadline: Option<TimerId>,
+    /// The questions of the scripts that came from the internet, which run
+    /// once the user says so, by their alerts.
+    script_asks: BTreeMap<AlertId, PathBuf>,
     /// The panes of the scripts that the system opened with the app, which
     /// keep their screens as their programs end, whatever `close-on-exit`
     /// says.
@@ -754,6 +757,7 @@ impl<B: Backend> App<B> {
             bench_deadline: None,
             untitled_timer: None,
             scripts: BTreeSet::new(),
+            script_asks: BTreeMap::new(),
             told_timer: None,
             pane_wakes: BTreeMap::new(),
             ui_events: Vec::new(),

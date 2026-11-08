@@ -8,7 +8,8 @@ use std::path::{Path, PathBuf};
 
 use lokyr_kernel::commands::Code;
 use lokyr_kernel::diagnostics::{About, Diagnostic};
-use lokyr_platform_core::Platform;
+use lokyr_kernel::l10n::Arg;
+use lokyr_platform_core::{Alert, AlertStyle, Platform, WindowId};
 use lokyr_pty::Program;
 
 use super::menus::{man_page, man_program};
@@ -52,38 +53,91 @@ impl<B: Backend> App<B> {
     }
 
     /// Runs each of `scripts`, a script or an executable that the system
-    /// opens with the app, in a window of its own, in its folder: the
-    /// user's login shell runs it, of the user's environment, and the
-    /// window keeps the screen once it ends, whatever `close-on-exit`
-    /// says, until a key closes it.
+    /// opens with the app, in a window of its own, in its folder; one that
+    /// came from the internet once the user says so, as a question asks.
     pub(super) fn run_scripts(&mut self, platform: &mut dyn Platform, scripts: Vec<PathBuf>) {
         let mut shown = None;
         for script in scripts {
-            let Some(command) = script_command(&script) else {
-                let text = format!(
-                    "{} does not run, as its path holds a backslash or a control character, which a shell may read otherwise",
-                    script.display()
-                );
-                self.report(platform, Diagnostic::new(Code::Failed, text, About::Other));
-                continue;
-            };
-            let program = Program::LoginCommand {
-                command: command.into(),
-            };
-            let folder = script.parent().map(Path::to_path_buf);
-            let Some(window) = self.open_window_running(platform, &program, None, folder) else {
-                continue;
-            };
-            if let Some(pane) = self
-                .windows
-                .get(&window)
-                .and_then(|state| self.workspace.active_pane(state.window))
-            {
-                self.scripts.insert(pane);
+            if platform.downloaded(&script) {
+                self.ask_script(platform, script);
+            } else if let Some(window) = self.run_script(platform, &script) {
+                shown = Some(window);
             }
-            shown = Some(window);
         }
         if let Some(window) = shown {
+            platform.focus_window(window);
+        }
+    }
+
+    /// Runs `script` in a window of its own, in its folder: the user's
+    /// login shell runs it, of the user's environment, itself where it is
+    /// executable, else of its interpreter, its first line's or its
+    /// extension's; and the window keeps the screen once it ends, whatever
+    /// `close-on-exit` says, until a key closes it. The window, if it
+    /// opened; a notice tells why one does not run.
+    pub(super) fn run_script(
+        &mut self,
+        platform: &mut dyn Platform,
+        script: &Path,
+    ) -> Option<WindowId> {
+        let command = match script_command(script, is_executable(script), &first_line(script)) {
+            Ok(command) => command,
+            Err(why) => {
+                let text = format!("{} does not run, as {why}", script.display());
+                self.report(platform, Diagnostic::new(Code::Failed, text, About::Other));
+                return None;
+            }
+        };
+        let program = Program::LoginCommand {
+            command: command.into(),
+        };
+        let folder = script.parent().map(Path::to_path_buf);
+        let window = self.open_window_running(platform, &program, None, folder)?;
+        if let Some(pane) = self
+            .windows
+            .get(&window)
+            .and_then(|state| self.workspace.active_pane(state.window))
+        {
+            self.scripts.insert(pane);
+        }
+        Some(window)
+    }
+
+    /// Asks whether to run `script`, which came from the internet, as macOS
+    /// asks of an app downloaded: it runs once the user says so.
+    fn ask_script(&mut self, platform: &mut dyn Platform, script: PathBuf) {
+        let name = script
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let alert = Alert {
+            style: AlertStyle::Warning,
+            message: self
+                .texts
+                .text_with("script-downloaded-message", &[("name", Arg::Text(&name))]),
+            detail: self.texts.text("script-downloaded-detail"),
+            buttons: vec![
+                self.texts.text("script-downloaded-run"),
+                self.texts.text("script-downloaded-cancel"),
+            ],
+            suppression: None,
+            input: None,
+        };
+        let alert = platform.show_alert(None, &alert);
+        self.script_asks.insert(alert, script);
+    }
+
+    /// The question of a downloaded script closed of `button`: the script
+    /// runs of the first, Run.
+    pub(super) fn script_answered(
+        &mut self,
+        platform: &mut dyn Platform,
+        script: &Path,
+        button: usize,
+    ) {
+        if button == 0
+            && let Some(window) = self.run_script(platform, script)
+        {
             platform.focus_window(window);
         }
     }
@@ -115,17 +169,110 @@ impl<B: Backend> App<B> {
     }
 }
 
-/// The command that the login shell runs `script` of: `exec`, of its path
-/// in single quotes, which sh, bash, zsh, fish and tcsh read alike, a
-/// quote in it closed, escaped and opened again; `None` for a path of a
-/// backslash, which fish reads otherwise in quotes, or of a control
-/// character.
-fn script_command(script: &Path) -> Option<String> {
-    let path = script.to_str()?;
-    if path.contains('\\') || path.chars().any(char::is_control) {
+/// The interpreters of the scripts that run of their extensions, where a
+/// script is not executable and names none on its first line, as the
+/// login shell finds them on the user's `PATH`.
+const INTERPRETERS: [(&str, &str); 15] = [
+    ("command", "/bin/sh"),
+    ("tool", "/bin/sh"),
+    ("sh", "/bin/sh"),
+    ("bash", "bash"),
+    ("zsh", "zsh"),
+    ("ksh", "ksh"),
+    ("csh", "tcsh"),
+    ("tcsh", "tcsh"),
+    ("fish", "fish"),
+    ("py", "python3"),
+    ("rb", "ruby"),
+    ("pl", "perl"),
+    ("php", "php"),
+    ("lua", "lua"),
+    ("tcl", "tclsh"),
+];
+
+/// The interpreter of the scripts of `path`'s extension, whatever its case.
+pub(super) fn interpreter_of(path: &Path) -> Option<&'static str> {
+    let extension = path.extension()?.to_str()?;
+    INTERPRETERS
+        .iter()
+        .find(|(name, _)| extension.eq_ignore_ascii_case(name))
+        .map(|&(_, interpreter)| interpreter)
+}
+
+/// Whether the file at `path` is executable by someone.
+pub(super) fn is_executable(path: &Path) -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::metadata(path).is_ok_and(|metadata| metadata.permissions().mode() & 0o111 != 0)
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = path;
+        false
+    }
+}
+
+/// The interpreter's words that the first line of the file at `path` names,
+/// `#!/usr/bin/env python3`'s, as the system runs an executable script of;
+/// none for a file of no such line, or one that does not read.
+pub(super) fn first_line(path: &Path) -> Vec<String> {
+    use std::io::Read;
+    let mut head = [0u8; 256];
+    let read = std::fs::File::open(path)
+        .and_then(|mut file| file.read(&mut head))
+        .unwrap_or(0);
+    let head = &head[..read];
+    let Some(rest) = head.strip_prefix(b"#!") else {
+        return Vec::new();
+    };
+    let line = rest.split(|&byte| byte == b'\n').next().unwrap_or_default();
+    String::from_utf8_lossy(line)
+        .split_whitespace()
+        .map(str::to_owned)
+        .collect()
+}
+
+/// `text` in single quotes, which sh, bash, zsh, fish and tcsh read alike,
+/// a quote in it closed, escaped and opened again; `None` for a text of a
+/// backslash, which fish reads otherwise in quotes, of `!`, which tcsh and
+/// csh take as history's even there, or of a control character.
+fn quoted(text: &str) -> Option<String> {
+    if text.contains(['\\', '!']) || text.chars().any(char::is_control) {
         return None;
     }
-    Some(format!("exec '{}'", path.replace('\'', "'\\''")))
+    Some(format!("'{}'", text.replace('\'', "'\\''")))
+}
+
+/// The command that the login shell runs `script` of: `exec` of its path,
+/// where it is `executable`; else of its interpreter, of `named`, the words
+/// of its first line, or of its extension's; why it cannot, else.
+fn script_command(
+    script: &Path,
+    executable: bool,
+    named: &[String],
+) -> Result<String, &'static str> {
+    let path = script
+        .to_str()
+        .and_then(quoted)
+        .ok_or("its path holds a backslash, a `!` or a control character, or is not text, which a shell may read otherwise")?;
+    if executable {
+        return Ok(format!("exec {path}"));
+    }
+    let interpreter = if named.is_empty() {
+        vec![
+            interpreter_of(script)
+                .ok_or("it is not executable, and names no interpreter on its first line nor of its extension")?
+                .to_owned(),
+        ]
+    } else {
+        named.to_vec()
+    };
+    let words: Option<Vec<String>> = interpreter.iter().map(|word| quoted(word)).collect();
+    let words = words.ok_or(
+        "its first line names an interpreter of a character that a shell may read otherwise",
+    )?;
+    Ok(format!("exec {} {path}", words.join(" ")))
 }
 
 /// The arguments of `ssh` for `link`, `ssh://[user[;parameters]@]host[:port][/]`:
@@ -279,16 +426,55 @@ mod tests {
     }
 
     #[test]
-    fn a_script_runs_of_its_path_in_quotes() {
+    fn a_script_runs_of_its_path_in_quotes_or_of_its_interpreter() {
+        let command = |path: &str, executable, named: &[&str]| {
+            let named: Vec<String> = named.iter().map(|word| (*word).to_owned()).collect();
+            script_command(Path::new(path), executable, &named)
+        };
         assert_eq!(
-            script_command(Path::new("/Users/ada/run me.command")).as_deref(),
-            Some("exec '/Users/ada/run me.command'")
+            command("/Users/ada/run me.command", true, &[]).as_deref(),
+            Ok("exec '/Users/ada/run me.command'")
         );
         assert_eq!(
-            script_command(Path::new("/tmp/it's.sh")).as_deref(),
-            Some("exec '/tmp/it'\\''s.sh'")
+            command("/tmp/it's.sh", true, &[]).as_deref(),
+            Ok("exec '/tmp/it'\\''s.sh'")
         );
-        assert_eq!(script_command(Path::new("/tmp/a\\b.sh")), None);
-        assert_eq!(script_command(Path::new("/tmp/a\nb.sh")), None);
+        // Not executable: of its first line's interpreter, or its
+        // extension's.
+        assert_eq!(
+            command("/tmp/a.py", false, &["/usr/bin/env", "python3"]).as_deref(),
+            Ok("exec '/usr/bin/env' 'python3' '/tmp/a.py'")
+        );
+        assert_eq!(
+            command("/tmp/deploy.ZSH", false, &[]).as_deref(),
+            Ok("exec 'zsh' '/tmp/deploy.ZSH'")
+        );
+        assert_eq!(
+            command("/tmp/plain.sh", false, &[]).as_deref(),
+            Ok("exec '/bin/sh' '/tmp/plain.sh'")
+        );
+        // Of no interpreter, or of characters that a shell reads otherwise.
+        assert!(command("/tmp/notes", false, &[]).is_err());
+        assert!(command("/tmp/a\\b.sh", true, &[]).is_err());
+        assert!(command("/tmp/Install!.command", true, &[]).is_err());
+        assert!(command("/tmp/a\nb.sh", true, &[]).is_err());
+        assert!(command("/tmp/a.sh", false, &["/bin/sh;", "rm!"]).is_err());
+    }
+
+    #[test]
+    fn a_script_s_first_line_names_its_interpreter() {
+        let directory =
+            std::env::temp_dir().join(format!("lokyr-first-line-{}", std::process::id()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let with = directory.join("a.py");
+        std::fs::write(&with, "#!/usr/bin/env python3 -u\nprint(1)\n").unwrap();
+        assert_eq!(first_line(&with), ["/usr/bin/env", "python3", "-u"]);
+        let without = directory.join("b.py");
+        std::fs::write(&without, "print(1)\n").unwrap();
+        assert!(first_line(&without).is_empty());
+        assert!(first_line(&directory.join("gone")).is_empty());
+        assert_eq!(interpreter_of(Path::new("x.Rb")), Some("ruby"));
+        assert_eq!(interpreter_of(Path::new("x.txt")), None);
+        let _ = std::fs::remove_dir_all(directory);
     }
 }

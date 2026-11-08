@@ -400,6 +400,12 @@ pub trait Platform {
     /// events come right after the start, and which open its windows.
     fn default_launch(&self) -> bool;
 
+    /// Whether the file at `path` came from the internet, as the system
+    /// marks the files that a browser or a mail downloads, and the user has
+    /// not let it open yet: on the Mac, their quarantine's attribute, of
+    /// no approval of Gatekeeper's.
+    fn downloaded(&self, path: &Path) -> bool;
+
     /// Whether the app is the system's default terminal: the application
     /// that it opens shell scripts and executables in, and `ssh` and
     /// `x-man-page` URLs, as the system told it last: after the start, as

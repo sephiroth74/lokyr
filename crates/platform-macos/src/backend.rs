@@ -331,6 +331,10 @@ impl Platform for Backend {
         self.default_launch
     }
 
+    fn downloaded(&self, path: &Path) -> bool {
+        downloaded(path)
+    }
+
     fn is_default_terminal(&self) -> bool {
         crate::default_terminal::known()
     }
@@ -1046,6 +1050,44 @@ fn sysctl_string(name: &std::ffi::CStr) -> Option<String> {
     Some(text.to_string_lossy().into_owned())
 }
 
+/// Whether the file at `path` holds the quarantine's attribute of a
+/// download, of no approval of Gatekeeper's.
+fn downloaded(path: &Path) -> bool {
+    use std::os::unix::ffi::OsStrExt;
+    /// The flag of a quarantined file that the user let open, as
+    /// Gatekeeper sets it.
+    const USER_APPROVED: u32 = 0x0040;
+    let Ok(path) = std::ffi::CString::new(path.as_os_str().as_bytes()) else {
+        return false;
+    };
+    // The attribute reads `flags;time;agent;id`, its flags in hex.
+    let mut value = [0u8; 128];
+    // SAFETY: both strings are NUL-terminated and live through the
+    // call, which writes `value.len()` bytes at most into `value`.
+    let size = unsafe {
+        libc::getxattr(
+            path.as_ptr(),
+            c"com.apple.quarantine".as_ptr(),
+            value.as_mut_ptr().cast(),
+            value.len(),
+            0,
+            0,
+        )
+    };
+    if size < 0 {
+        // No attribute, or one longer than any that the system
+        // writes, which asks all the same.
+        return std::io::Error::last_os_error().raw_os_error() == Some(libc::ERANGE);
+    }
+    let value = &value[..size.unsigned_abs()];
+    let flags = value
+        .split(|&byte| byte == b';')
+        .next()
+        .and_then(|flags| std::str::from_utf8(flags).ok())
+        .and_then(|flags| u32::from_str_radix(flags, 16).ok());
+    flags.is_none_or(|flags| flags & USER_APPROVED == 0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1059,5 +1101,40 @@ mod tests {
         );
         assert!(sysctl_string(c"kern.osversion").is_some_and(|build| !build.is_empty()));
         assert_eq!(sysctl_string(c"kern.no-such-control"), None);
+    }
+
+    #[test]
+    fn a_file_is_downloaded_of_its_quarantine_until_gatekeeper_approves_it() {
+        let directory =
+            std::env::temp_dir().join(format!("lokyr-quarantine-{}", std::process::id()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let file = |name: &str, quarantine: Option<&str>| {
+            let path = directory.join(name);
+            std::fs::write(&path, "echo\n").unwrap();
+            if let Some(value) = quarantine {
+                let status = std::process::Command::new("/usr/bin/xattr")
+                    .args(["-w", "com.apple.quarantine", value])
+                    .arg(&path)
+                    .status()
+                    .unwrap();
+                assert!(status.success());
+            }
+            path
+        };
+        assert!(downloaded(&file(
+            "safari.command",
+            Some("0083;6720a000;Safari;")
+        )));
+        assert!(!downloaded(&file(
+            "approved.command",
+            Some("00c3;6720a000;Safari;")
+        )));
+        assert!(downloaded(&file(
+            "unreadable.command",
+            Some("zz;6720a000;Safari;")
+        )));
+        assert!(!downloaded(&file("made.command", None)));
+        assert!(!downloaded(&directory.join("gone")));
+        let _ = std::fs::remove_dir_all(directory);
     }
 }

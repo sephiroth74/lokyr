@@ -147,3 +147,8 @@ command-ended = Terminato dopo { $took }
 command-took-seconds = { $seconds } s
 command-took-minutes = { $minutes } min { $seconds } s
 command-took-hours = { $hours } h { $minutes } min
+
+script-downloaded-message = “{ $name }” è stato scaricato da internet.
+script-downloaded-detail = Eseguire uno script scaricato da internet può danneggiare il Mac. Eseguilo solo se ti fidi della sua provenienza.
+script-downloaded-run = Esegui
+script-downloaded-cancel = Annulla

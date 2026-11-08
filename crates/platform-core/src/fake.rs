@@ -188,6 +188,8 @@ pub struct Fake {
     keeps_windows: bool,
     /// Whether the system started the app of its own.
     default_launch: bool,
+    /// The files that came from the internet, as a test says.
+    downloaded: Vec<PathBuf>,
     /// Whether the app is the system's default terminal, and how many
     /// times it asked to be.
     default_terminal: bool,
@@ -290,6 +292,7 @@ impl Fake {
             scrollers: Scrollers::default(),
             keeps_windows: false,
             default_launch: true,
+            downloaded: Vec::new(),
             default_terminal: false,
             default_terminal_asks: 0,
             screens: vec![SCREEN_AREA],
@@ -362,6 +365,11 @@ impl Fake {
     /// open files or for a service.
     pub fn set_default_launch(&mut self, default: bool) {
         self.default_launch = default;
+    }
+
+    /// Marks the file at `path` as one that came from the internet.
+    pub fn set_downloaded(&mut self, path: &Path) {
+        self.downloaded.push(path.to_path_buf());
     }
 
     /// Gives whether the app is the system's default terminal.
@@ -801,6 +809,10 @@ impl Platform for Fake {
 
     fn default_launch(&self) -> bool {
         self.default_launch
+    }
+
+    fn downloaded(&self, path: &Path) -> bool {
+        self.downloaded.iter().any(|marked| marked == path)
     }
 
     fn is_default_terminal(&self) -> bool {

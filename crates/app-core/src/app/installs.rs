@@ -236,30 +236,21 @@ fn shown_path(path: &Path) -> String {
     }
 }
 
-/// Whether `path` is a file that the default terminal runs: a script of
-/// its extension, `.command`, `.tool` or `.sh`, whatever its case, or an
-/// executable, but a theme's file, `.itermcolors` or `.toml`.
+/// Whether `path` is a file that the default terminal runs: a script of an
+/// interpreter's extension, `.command`, `.sh`, `.py` and the others that
+/// the system takes for scripts, whatever its case, one that names its
+/// interpreter on its first line, or an executable; but a theme's file,
+/// `.itermcolors` or `.toml`.
 fn is_script(path: &Path) -> bool {
-    let extension = path
+    let theme = path
         .extension()
         .and_then(|extension| extension.to_str())
-        .unwrap_or_default();
-    let of = |names: &[&str]| {
-        names
-            .iter()
-            .any(|name| extension.eq_ignore_ascii_case(name))
-    };
-    if !path.is_file() || of(&["itermcolors", "toml"]) {
-        return false;
-    }
-    if of(&["command", "tool", "sh"]) {
-        return true;
-    }
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        fs::metadata(path).is_ok_and(|metadata| metadata.permissions().mode() & 0o111 != 0)
-    }
-    #[cfg(not(unix))]
-    false
+        .is_some_and(|extension| {
+            extension.eq_ignore_ascii_case("itermcolors") || extension.eq_ignore_ascii_case("toml")
+        });
+    path.is_file()
+        && !theme
+        && (super::opens::interpreter_of(path).is_some()
+            || super::opens::is_executable(path)
+            || !super::opens::first_line(path).is_empty())
 }
