@@ -45,11 +45,14 @@ fn the_default_terminal_s_item_shows_the_system_s_default_and_asks_for_it() {
     );
     assert!(fake.command_checked(DEFAULT_TERMINAL));
     assert!(!fake.command_enabled(DEFAULT_TERMINAL));
-    // As the app starts, as the system has it.
+    // As the system tells it, after the start, which does not wait for
+    // its answer.
     let mut fake = Fake::default();
     fake.set_default_terminal(true);
     let mut app = app_of(Config::default(), quiet());
     fake.start(&mut app);
+    assert!(!fake.command_checked(DEFAULT_TERMINAL));
+    fake.send_app(&mut app, AppEvent::DefaultTerminalKnown);
     assert!(fake.command_checked(DEFAULT_TERMINAL));
     assert!(!fake.command_enabled(DEFAULT_TERMINAL));
 }

@@ -131,6 +131,7 @@ unsafe extern "C-unwind" fn perform(_info: *mut c_void) {
             shared.post(Pending::App(AppEvent::OpenFailed { target, error }));
         }
         crate::default_terminal::take_answers(&shared);
+        crate::default_terminal::take_known(&shared);
         shared.post(Pending::App(AppEvent::Wake));
     }
 }

@@ -395,14 +395,16 @@ pub trait Platform {
     /// How the system shows its scroll bars, as its settings say now.
     fn scrollers(&self) -> Scrollers;
 
-    /// Whether the system started the app of its own, as from its icon or
-    /// a command: not to open files or folders, nor for a service on them,
-    /// whose events come right after the start, and which open its windows.
+    /// Whether the system started the app of its own, as from its icon, a
+    /// command or a shell: not to open files, folders or links, whose
+    /// events come right after the start, and which open its windows.
     fn default_launch(&self) -> bool;
 
     /// Whether the app is the system's default terminal: the application
     /// that it opens shell scripts and executables in, and `ssh` and
-    /// `x-man-page` URLs, as its settings say now.
+    /// `x-man-page` URLs, as the system told it last: after the start, as
+    /// [`AppEvent::DefaultTerminalKnown`] tells, and as the app's ask to be
+    /// it ends; `false` before.
     fn is_default_terminal(&self) -> bool;
 
     /// Asks the system to make the app its default terminal, which it asks

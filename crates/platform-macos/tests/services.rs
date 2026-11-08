@@ -1,7 +1,9 @@
 //! The services that the app gives the Finder's folders: the provider that
 //! the application has answers New Lokyr Window Here and New Lokyr Tab Here
 //! of a pasteboard of folders, which come to the app as their paths, a
-//! window's then a tab's; the app started of its own is a default launch.
+//! window's then a tab's; the app started of its own is a default launch,
+//! and the system's answer of whether it is the default terminal comes
+//! after the start.
 
 #[cfg(target_os = "macos")]
 mod common;
@@ -29,6 +31,9 @@ mod probe {
         default_launch: Option<bool>,
         /// The folders that came, and whether as tabs.
         opened: Vec<(Vec<PathBuf>, bool)>,
+        /// Whether the default terminal's answer came, and what it told: a
+        /// binary outside a bundle is never the default.
+        known: Option<bool>,
     }
 
     struct Probe(Rc<RefCell<Seen>>);
@@ -84,7 +89,10 @@ mod probe {
                 AppEvent::OpenFolders { folders, tabs } => {
                     self.0.borrow_mut().opened.push((folders, tabs));
                 }
-                AppEvent::Wake => platform.quit(),
+                AppEvent::DefaultTerminalKnown => {
+                    self.0.borrow_mut().known = Some(platform.is_default_terminal());
+                }
+                AppEvent::Wake if self.0.borrow().known.is_some() => platform.quit(),
                 _ => {}
             }
         }
@@ -98,6 +106,7 @@ mod probe {
         lokyr_platform_macos::run(Probe(Rc::clone(&seen))).expect("the application runs");
         let seen = seen.borrow();
         assert_eq!(seen.default_launch, Some(true), "{seen:?}");
+        assert_eq!(seen.known, Some(false), "{seen:?}");
         let folders: Vec<PathBuf> = FOLDERS.iter().map(PathBuf::from).collect();
         assert_eq!(
             seen.opened,

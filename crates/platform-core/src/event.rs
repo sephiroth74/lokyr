@@ -142,6 +142,11 @@ pub enum AppEvent {
         /// The changes that failed, each what it was and why.
         failed: Vec<String>,
     },
+    /// The system told whether the app is its default terminal, as the
+    /// platform asked it after the start, out of its way:
+    /// [`Platform::is_default_terminal`](crate::Platform::is_default_terminal)
+    /// tells it from then.
+    DefaultTerminalKnown,
     /// The user asked for a window, or a tab, at each of `folders`, as
     /// from the file manager's services on folders that it selected.
     OpenFolders {

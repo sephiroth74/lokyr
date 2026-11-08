@@ -1,13 +1,16 @@
 //! The app as the system's default terminal: the application that Launch
 //! Services opens shell scripts, `.command` and `.tool` files and
 //! executables in, and `ssh` and `x-man-page` URLs, which the bundle
-//! declares. The system asks the user to confirm each change, and answers
-//! on a thread of its own: the changes go one after another, each once the
-//! main thread took the answer to the one before.
+//! declares. Whether it is, which takes Launch Services some milliseconds
+//! in a new process, is asked on a thread of its own after the start, and
+//! kept. The system asks the user to confirm each change, and answers on a
+//! thread of its own: the changes go one after another, each once the main
+//! thread took the answer to the one before.
 
 use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 
 use block2::RcBlock;
 use lokyr_platform_core::{AppEvent, Waker};
@@ -41,6 +44,17 @@ enum Change {
 /// own: what failed, or `None`.
 static ANSWERS: Mutex<Vec<Option<String>>> = Mutex::new(Vec::new());
 
+/// Whether the app is the default terminal, as the system told it last:
+/// [`UNKNOWN`] before, [`NOT_DEFAULT`] or [`DEFAULT`].
+static KNOWN: AtomicU8 = AtomicU8::new(UNKNOWN);
+const UNKNOWN: u8 = 0;
+const NOT_DEFAULT: u8 = 1;
+const DEFAULT: u8 = 2;
+
+/// Whether the look after the start told [`KNOWN`], which the main thread
+/// takes as a waker wakes it.
+static TOLD: AtomicBool = AtomicBool::new(false);
+
 thread_local! {
     /// The changes under way, on the main thread.
     static RUN: RefCell<Option<Run>> = const { RefCell::new(None) };
@@ -70,9 +84,46 @@ fn is_app(url: Option<Retained<NSURL>>, identifier: &str) -> bool {
         .is_some_and(|found| found.to_string() == identifier)
 }
 
+/// Whether the app is the default terminal, as the system told it last;
+/// `false` before it told.
+pub(crate) fn known() -> bool {
+    KNOWN.load(Ordering::Acquire) == DEFAULT
+}
+
+/// Keeps whether the app is the default terminal, as the system tells it
+/// now.
+fn look_now() {
+    let found = if is_default() { DEFAULT } else { NOT_DEFAULT };
+    KNOWN.store(found, Ordering::Release);
+}
+
+/// Asks the system whether the app is the default terminal, on a thread of
+/// its own, out of the start's way, and has `waker` wake the main thread
+/// once it told.
+pub(crate) fn look(waker: Waker) {
+    let started = std::thread::Builder::new()
+        .name("default-terminal".to_owned())
+        .spawn(move || {
+            look_now();
+            TOLD.store(true, Ordering::Release);
+            waker.wake();
+        });
+    if let Err(error) = started {
+        eprintln!("lokyr: whether Lokyr is the default terminal is not asked: {error}");
+    }
+}
+
+/// Posts the app's event of the look's answer, on the main thread, once it
+/// came.
+pub(crate) fn take_known(shared: &Shared) {
+    if TOLD.swap(false, Ordering::AcqRel) {
+        shared.post(Pending::App(AppEvent::DefaultTerminalKnown));
+    }
+}
+
 /// Whether the app is the system's default application for each of
-/// [`TYPES`] and [`SCHEMES`].
-pub(crate) fn is_default() -> bool {
+/// [`TYPES`] and [`SCHEMES`], as Launch Services finds it now.
+fn is_default() -> bool {
     let Some((_, identifier)) = bundle() else {
         return false;
     };
@@ -186,7 +237,10 @@ pub(crate) fn take_answers(shared: &Shared) {
         None
     });
     match done {
-        Some(failed) => shared.post(Pending::App(AppEvent::DefaultTerminalMade { failed })),
+        Some(failed) => {
+            look_now();
+            shared.post(Pending::App(AppEvent::DefaultTerminalMade { failed }));
+        }
         None => {
             next();
         }

@@ -9,9 +9,9 @@ use objc2::runtime::{Bool, ProtocolObject};
 use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send};
 use objc2_app_kit::{
     NSApplication, NSApplicationActivationPolicy, NSApplicationDelegate,
-    NSApplicationLaunchIsDefaultLaunchKey, NSApplicationTerminateReply, NSWindow,
+    NSApplicationTerminateReply, NSWindow,
 };
-use objc2_foundation::{NSArray, NSNotification, NSNumber, NSObject, NSObjectProtocol, NSURL};
+use objc2_foundation::{NSArray, NSNotification, NSObject, NSObjectProtocol, NSURL};
 
 use crate::appearance::AppearanceObserver;
 use crate::services::ServicesProvider;
@@ -85,26 +85,13 @@ define_class!(
     // AppKit's signature.
     unsafe impl NSApplicationDelegate for AppDelegate {
         #[unsafe(method(applicationDidFinishLaunching:))]
-        fn application_did_finish_launching(&self, notification: &NSNotification) {
+        fn application_did_finish_launching(&self, _notification: &NSNotification) {
             // An application that starts from a terminal, rather than from
             // its bundle, comes forward only when it asks, and the
             // cooperative `activate` waits for the active application to
             // yield, which a terminal does not.
             #[allow(deprecated)]
             NSApplication::sharedApplication(self.mtm()).activateIgnoringOtherApps(true);
-            // Whether the system started the app of its own, rather than to
-            // open files or for a service, whose events follow; of its own
-            // where it does not tell.
-            // SAFETY: the framework's constant, a key that it keeps.
-            let key = unsafe { NSApplicationLaunchIsDefaultLaunchKey };
-            let default = notification
-                .userInfo()
-                .and_then(|info| info.objectForKey(key))
-                .and_then(|value| value.downcast::<NSNumber>().ok())
-                .is_none_or(|value| value.boolValue());
-            if let Some(shared) = self.ivars().upgrade() {
-                shared.set_default_launch(default);
-            }
             self.post(Pending::Started);
         }
 

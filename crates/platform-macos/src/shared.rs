@@ -125,11 +125,6 @@ impl Shared {
         self.dispatch();
     }
 
-    /// Tells the backend whether the system started the app of its own.
-    pub(crate) fn set_default_launch(&self, default: bool) {
-        self.backend.borrow_mut().set_default_launch(default);
-    }
-
     /// Queues `pending` for the dispatch in progress.
     pub(crate) fn enqueue(&self, pending: Pending) {
         self.queue.borrow_mut().push_back(pending);
@@ -223,9 +218,21 @@ impl Shared {
         if matches!(pending, Pending::Started)
             && let Some(make) = self.make.borrow_mut().take()
         {
-            // What came before, right after the start.
+            // What came before, right after the start: files, folders or
+            // links that the system started the app to open, which open
+            // their own windows. AppKit's own key of the launch tells a
+            // start from a shell as no default one too, which opens none.
+            let early = self.early.take();
+            let opens = early.iter().any(|event| {
+                matches!(
+                    event,
+                    AppEvent::OpenFiles(_) | AppEvent::OpenUrls(_) | AppEvent::OpenFolders { .. }
+                )
+            });
+            self.backend.borrow_mut().set_default_launch(!opens);
+            self.backend.borrow().look_at_default_terminal();
             let mut queue = self.queue.borrow_mut();
-            for event in self.early.take().into_iter().rev() {
+            for event in early.into_iter().rev() {
                 queue.push_front(Pending::App(event));
             }
             drop(queue);

@@ -3436,7 +3436,6 @@ impl<B: Backend> App<B> {
         // The themes before the first window, whose panes take their colors.
         self.load_themes(platform);
         self.set_menu(platform);
-        self.show_default_terminal(platform);
         self.show_appearance(platform);
         self.show_performance(platform);
         self.tell_font(platform);
@@ -3706,6 +3705,7 @@ impl<B: Backend> App<B> {
             AppEvent::DefaultTerminalMade { failed } => {
                 self.default_terminal_made(platform, &failed);
             }
+            AppEvent::DefaultTerminalKnown => self.show_default_terminal(platform),
             _ => {}
         }
     }
