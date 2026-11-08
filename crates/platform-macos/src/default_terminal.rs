@@ -2,10 +2,11 @@
 //! Services opens shell scripts, `.command` and `.tool` files and
 //! executables in, and `ssh` and `x-man-page` URLs, which the bundle
 //! declares. Whether it is, which takes Launch Services some milliseconds
-//! in a new process, is asked on a thread of its own after the start, and
-//! kept. The system asks the user to confirm each change, and answers on a
-//! thread of its own: the changes go one after another, each once the main
-//! thread took the answer to the one before.
+//! in a new process, is asked on a thread of its own after the start and
+//! as the app becomes active, as another app may take the default in the
+//! meantime, and kept. The system asks the user to confirm each change,
+//! and answers on a thread of its own: the changes go one after another,
+//! each once the main thread took the answer to the one before.
 
 use std::cell::RefCell;
 use std::collections::VecDeque;
@@ -51,15 +52,20 @@ const UNKNOWN: u8 = 0;
 const NOT_DEFAULT: u8 = 1;
 const DEFAULT: u8 = 2;
 
-/// Whether the look after the start told [`KNOWN`], which the main thread
-/// takes at the next turn that a wake brings, as a pane's output does
-/// soon after the start: a wake of its own would be one more turn of the
-/// app's, for a menu's item.
+/// Whether a look found an answer other than the one before, which the
+/// main thread takes at the wake that the look gives.
 static TOLD: AtomicBool = AtomicBool::new(false);
+
+/// Whether a look is under way, which a look that comes meanwhile leaves
+/// alone.
+static LOOKING: AtomicBool = AtomicBool::new(false);
 
 thread_local! {
     /// The changes under way, on the main thread.
     static RUN: RefCell<Option<Run>> = const { RefCell::new(None) };
+    /// What wakes the main thread as a look finds a new answer, from the
+    /// start's look on.
+    static WAKER: RefCell<Option<Waker>> = const { RefCell::new(None) };
 }
 
 /// The changes under way: those to come, what failed, the bundle's URL, and
@@ -100,17 +106,49 @@ fn look_now() {
 }
 
 /// Asks the system whether the app is the default terminal, on a thread of
-/// its own, out of the start's way, which the main thread takes at the next
-/// turn that a wake brings.
-pub(crate) fn look() {
+/// its own, out of the start's way, of `waker`, which wakes the main thread
+/// as the answer is another than the app shows, and the looks after.
+pub(crate) fn look(waker: Waker) {
+    WAKER.with(|kept| *kept.borrow_mut() = Some(waker));
+    look_again();
+}
+
+/// Asks again, as [`look`] does, as the app becomes active: nothing before
+/// the start's look, nor while one is under way; outside a bundle, where
+/// the app is never the default, as the menu's item shows from the start,
+/// of no thread and no wake.
+pub(crate) fn look_again() {
+    let Some(waker) = WAKER.with(|kept| kept.borrow().clone()) else {
+        return;
+    };
+    if bundle().is_none() {
+        KNOWN.store(NOT_DEFAULT, Ordering::Release);
+        return;
+    }
+    if LOOKING.swap(true, Ordering::AcqRel) {
+        return;
+    }
     let started = std::thread::Builder::new()
         .name("default-terminal".to_owned())
-        .spawn(|| {
-            look_now();
-            TOLD.store(true, Ordering::Release);
+        .spawn(move || {
+            let found = if is_default() { DEFAULT } else { NOT_DEFAULT };
+            LOOKING.store(false, Ordering::Release);
+            settle(found, &waker);
         });
     if let Err(error) = started {
+        LOOKING.store(false, Ordering::Release);
         eprintln!("lokyr: whether Lokyr is the default terminal is not asked: {error}");
+    }
+}
+
+/// Keeps `found`, and wakes the main thread of `waker` once, where it is
+/// another answer than the one before: the app shows the item unticked
+/// before the first, as of an app that is not the default.
+fn settle(found: u8, waker: &Waker) {
+    let before = KNOWN.swap(found, Ordering::AcqRel);
+    if (before == DEFAULT) != (found == DEFAULT) {
+        TOLD.store(true, Ordering::Release);
+        waker.wake();
     }
 }
 
@@ -171,16 +209,19 @@ pub(crate) fn make_default(waker: Waker) -> bool {
 }
 
 /// Asks the system for the next change, if one is left: whether one was.
+/// The changes' borrow ends before AppKit's call, which may run the main
+/// thread's loop, and the answers' take with it.
 fn next() -> bool {
-    RUN.with(|run| {
+    let taken = RUN.with(|run| {
         let mut run = run.borrow_mut();
-        let Some(run) = run.as_mut() else {
-            return false;
-        };
-        let Some(change) = run.remaining.pop_front() else {
-            return false;
-        };
-        let waker = run.waker.clone();
+        let run = run.as_mut()?;
+        let change = run.remaining.pop_front()?;
+        Some((change, run.bundle.clone(), run.waker.clone()))
+    });
+    let Some((change, bundle, waker)) = taken else {
+        return false;
+    };
+    {
         let named = match change {
             Change::Type(name) => format!("the type {name}"),
             Change::Scheme(scheme) => format!("the {scheme} URLs"),
@@ -200,7 +241,7 @@ fn next() -> bool {
             Change::Type(name) => match UTType::typeWithIdentifier(&NSString::from_str(name)) {
                 Some(kind) => workspace
                     .setDefaultApplicationAtURL_toOpenContentType_completionHandler(
-                        &run.bundle,
+                        &bundle,
                         &kind,
                         Some(&answered),
                     ),
@@ -208,13 +249,13 @@ fn next() -> bool {
             },
             Change::Scheme(scheme) => workspace
                 .setDefaultApplicationAtURL_toOpenURLsWithScheme_completionHandler(
-                    &run.bundle,
+                    &bundle,
                     &NSString::from_str(scheme),
                     Some(&answered),
                 ),
         }
-        true
-    })
+    }
+    true
 }
 
 /// Takes the answers that came, on the main thread, as a waker woke it:
@@ -245,5 +286,37 @@ pub(crate) fn take_answers(shared: &Shared) {
         None => {
             next();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+    use std::sync::atomic::AtomicUsize;
+
+    #[test]
+    fn a_look_wakes_the_main_thread_once_of_each_new_answer() {
+        let wakes = Arc::new(AtomicUsize::new(0));
+        let counted = Arc::clone(&wakes);
+        let waker = Waker::new(move || {
+            counted.fetch_add(1, Ordering::Relaxed);
+        });
+        let told = || TOLD.swap(false, Ordering::AcqRel);
+        // Not the default, as the item shows before any answer: no wake.
+        settle(NOT_DEFAULT, &waker);
+        assert_eq!(wakes.load(Ordering::Relaxed), 0);
+        assert!(!told());
+        // The default: once, and not again of the same answer.
+        settle(DEFAULT, &waker);
+        settle(DEFAULT, &waker);
+        assert_eq!(wakes.load(Ordering::Relaxed), 1);
+        assert!(told());
+        assert!(known());
+        // Another app took it, as a look at an activation finds.
+        settle(NOT_DEFAULT, &waker);
+        assert_eq!(wakes.load(Ordering::Relaxed), 2);
+        assert!(told());
+        assert!(!known());
     }
 }

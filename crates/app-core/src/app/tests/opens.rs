@@ -55,6 +55,12 @@ fn the_default_terminal_s_item_shows_the_system_s_default_and_asks_for_it() {
     fake.send_app(&mut app, AppEvent::DefaultTerminalKnown);
     assert!(fake.command_checked(DEFAULT_TERMINAL));
     assert!(!fake.command_enabled(DEFAULT_TERMINAL));
+    // Another app took it, as the platform finds as the app becomes
+    // active: unticked, and offered again.
+    fake.set_default_terminal(false);
+    fake.send_app(&mut app, AppEvent::DefaultTerminalKnown);
+    assert!(!fake.command_checked(DEFAULT_TERMINAL));
+    assert!(fake.command_enabled(DEFAULT_TERMINAL));
 }
 
 #[test]

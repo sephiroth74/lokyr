@@ -95,6 +95,13 @@ define_class!(
             self.post(Pending::Started);
         }
 
+        #[unsafe(method(applicationDidBecomeActive:))]
+        fn application_did_become_active(&self, _notification: &NSNotification) {
+            // Another app may have taken the default terminal while the app
+            // was in the background.
+            crate::default_terminal::look_again();
+        }
+
         #[unsafe(method(applicationShouldHandleReopen:hasVisibleWindows:))]
         fn application_should_handle_reopen(
             &self,

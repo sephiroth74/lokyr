@@ -408,9 +408,10 @@ pub trait Platform {
 
     /// Whether the app is the system's default terminal: the application
     /// that it opens shell scripts and executables in, and `ssh` and
-    /// `x-man-page` URLs, as the system told it last: after the start, as
-    /// [`AppEvent::DefaultTerminalKnown`] tells, and as the app's ask to be
-    /// it ends; `false` before.
+    /// `x-man-page` URLs, as the system told it last: after the start and
+    /// as the app becomes active, as [`AppEvent::DefaultTerminalKnown`]
+    /// tells of a new answer, and as the app's ask to be it ends; `false`
+    /// before.
     fn is_default_terminal(&self) -> bool;
 
     /// Asks the system to make the app its default terminal, which it asks
