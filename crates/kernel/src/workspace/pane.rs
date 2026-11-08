@@ -1119,7 +1119,7 @@ impl Pane {
     /// Gives the terminal the theme's `colors`.
     pub fn set_colors(&self, colors: &Colors) {
         if let Some(session) = &self.session {
-            session.lock().set_default_colors(colors.clone());
+            session.set_default_colors(colors.clone());
         }
     }
 

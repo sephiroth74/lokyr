@@ -30,7 +30,7 @@ mod window;
 
 pub use charsets::{Charset, Charsets, Shift};
 pub use clipboard::{ClipboardRequest, ClipboardTarget};
-pub use colors::{Colors, SPECIAL_COLORS};
+pub use colors::{ColorScheme, Colors, SPECIAL_COLORS};
 pub use decorations::{Decorated, Look, MOST_DECORATIONS};
 pub use gutter::{GutterKind, GutterMark, MOST_GUTTER_MARKS};
 pub use keyboard::KeyboardFlags;
@@ -390,6 +390,9 @@ pub struct Terminal {
     /// Synchronized output (mode 2026): the screen should not be drawn
     /// until the program ends the update.
     synchronized_output: bool,
+    /// The reports of the color scheme (mode 2031): as the theme's colors
+    /// change, the program is told their scheme, as `CSI ? 996 n` answers.
+    color_scheme_reports: bool,
     /// How many synchronized updates programs started.
     synchronized_updates: u64,
     /// The widths the terminal was made with, which RIS brings back after
@@ -559,6 +562,7 @@ impl Terminal {
             reverse_wrap: false,
             reverse_wrap_extended: false,
             synchronized_output: false,
+            color_scheme_reports: false,
             synchronized_updates: 0,
             configured_widths: options.widths,
             configured_alternate_scroll: options.alternate_scroll,
@@ -1148,10 +1152,21 @@ impl Terminal {
     }
 
     /// Sets the theme's colors, which become the colors to draw with, and
-    /// those that the resets bring back.
+    /// those that the resets bring back: of other colors than the theme's
+    /// before, a program that set mode 2031 is told their scheme.
     pub fn set_default_colors(&mut self, colors: Colors) {
+        let changed = colors != self.default_colors;
         self.colors.clone_from(&colors);
         self.default_colors = colors;
+        if changed && self.color_scheme_reports {
+            self.report_color_scheme();
+        }
+    }
+
+    /// The scheme of the theme's colors, dark or light, as programs learn
+    /// of it, whatever colors they set.
+    pub fn color_scheme(&self) -> ColorScheme {
+        self.default_colors.scheme()
     }
 
     /// Takes what the embedder has to act on, oldest first.

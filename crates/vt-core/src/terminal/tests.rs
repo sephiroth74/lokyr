@@ -7145,3 +7145,68 @@ fn the_view_jumps_from_prompt_to_prompt() {
     bare.terminal.scroll_viewport(Scroll::NextPrompt);
     assert_eq!(bare.terminal.viewport_offset(), 0);
 }
+
+/// Colors of the background `background`, the rest xterm's.
+fn of_background(r: u8, g: u8, b: u8) -> Colors {
+    Colors {
+        background: Rgb { r, g, b },
+        ..Colors::default()
+    }
+}
+
+#[test]
+fn a_background_s_luminance_tells_its_scheme() {
+    for (background, scheme) in [
+        ((0, 0, 0), ColorScheme::Dark),
+        ((0x00, 0x2b, 0x36), ColorScheme::Dark),
+        ((0x75, 0x75, 0x75), ColorScheme::Dark),
+        ((0x77, 0x77, 0x77), ColorScheme::Light),
+        ((0xfd, 0xf6, 0xe3), ColorScheme::Light),
+        ((0xff, 0xff, 0xff), ColorScheme::Light),
+    ] {
+        let (r, g, b) = background;
+        assert_eq!(of_background(r, g, b).scheme(), scheme, "{background:?}");
+    }
+}
+
+#[test]
+fn the_color_scheme_answers_its_query_and_its_changes_reach_mode_2031() {
+    let mut term = Term::new(10, 2);
+    let dark = of_background(0x1e, 0x1e, 0x2e);
+    let light = of_background(0xfd, 0xf6, 0xe3);
+    term.terminal.set_default_colors(dark.clone());
+    assert_eq!(term.terminal.color_scheme(), ColorScheme::Dark);
+    // The query, whatever the mode.
+    term.feed("\x1b[?996n");
+    assert_eq!(replies(&mut term), "\x1b[?997;1n");
+    // Without the mode, a change tells nothing.
+    term.terminal.set_default_colors(light.clone());
+    assert_eq!(replies(&mut term), "");
+    term.feed("\x1b[?996n");
+    assert_eq!(replies(&mut term), "\x1b[?997;2n");
+    // The mode, which DECRQM tells; each change of the theme's colors
+    // tells their scheme, the same colors nothing.
+    term.feed("\x1b[?2031$p");
+    assert_eq!(replies(&mut term), "\x1b[?2031;2$y");
+    term.feed("\x1b[?2031h\x1b[?2031$p");
+    assert_eq!(replies(&mut term), "\x1b[?2031;1$y");
+    term.terminal.set_default_colors(dark.clone());
+    assert_eq!(replies(&mut term), "\x1b[?997;1n");
+    term.terminal.set_default_colors(dark.clone());
+    assert_eq!(replies(&mut term), "");
+    let darker = of_background(0, 0, 0);
+    term.terminal.set_default_colors(darker);
+    assert_eq!(replies(&mut term), "\x1b[?997;1n");
+    // A program's own background is not the theme's.
+    term.feed("\x1b]11;rgb:ffff/ffff/ffff\x07\x1b[?996n");
+    assert_eq!(replies(&mut term), "\x1b[?997;1n");
+    // Off, and RIS takes it off too.
+    term.feed("\x1b[?2031l");
+    term.terminal.set_default_colors(light.clone());
+    assert_eq!(replies(&mut term), "");
+    term.feed("\x1b[?2031h\x1bc");
+    term.terminal.set_default_colors(dark);
+    assert_eq!(replies(&mut term), "");
+    term.feed("\x1b[?2031$p");
+    assert_eq!(replies(&mut term), "\x1b[?2031;2$y");
+}

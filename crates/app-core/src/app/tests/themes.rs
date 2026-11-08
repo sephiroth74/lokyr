@@ -4,6 +4,7 @@
 use std::path::Path;
 
 use lokyr_vt_core::page::Rgb;
+use lokyr_vt_core::terminal::ColorScheme;
 
 use super::*;
 
@@ -514,4 +515,21 @@ fn a_picker_lists_the_themes_previews_one_and_names_the_chosen_one() {
     assert_eq!(app.theme_preview, None);
     assert_eq!(app.theme.light.colors.background, rgb(0xffffff));
     let _ = std::fs::remove_dir_all(directory);
+}
+
+#[test]
+fn a_program_of_mode_2031_learns_of_the_appearance_s_scheme_as_it_switches() {
+    // In raw mode, the reports of the color scheme on, and the report read
+    // back, with ESC as E, once the program tells that it waits.
+    let script = r#"stty raw -echo; printf '\033[?2031hwaiting\r\n'; r=$(dd bs=1 count=9 2>/dev/null); stty sane; printf 'got:%s\n' "$r" | tr '\033' E; exec sleep 10"#;
+    let mut fake = Fake::default();
+    let mut app = app(Config::default(), shell(script));
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    let shown = |app: &App, text: &str| (0..4).any(|line| row(app, window, line) == text);
+    run_until(&mut fake, &mut app, |_, app| shown(app, "waiting"));
+    // The light theme's to the dark one's.
+    assert_eq!(app.colors(Appearance::Dark).scheme(), ColorScheme::Dark);
+    fake.send_app(&mut app, AppEvent::AppearanceChanged(Appearance::Dark));
+    run_until(&mut fake, &mut app, |_, app| shown(app, "got:E[?997;1n"));
 }

@@ -27,8 +27,49 @@ pub struct Colors {
 /// How many special colors there are.
 pub const SPECIAL_COLORS: usize = 5;
 
+/// Whether colors are of a dark scheme or a light one, as programs ask by
+/// `CSI ? 996 n` and learn of under mode 2031, to take colors of their own
+/// that go with it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ColorScheme {
+    /// A dark background.
+    Dark,
+    /// A light background.
+    Light,
+}
+
+/// The relative luminance under which a background is dark: where white
+/// text and black text stand out of it alike, `sqrt(1.05 × 0.05) − 0.05`.
+const DARK_BELOW: f64 = 0.179;
+
 /// The number of the first special color in OSC 4 and 104.
 const FIRST_SPECIAL: u16 = 256;
+
+impl Colors {
+    /// The scheme of the colors, as their background tells: dark where
+    /// white text stands out of it more than black text does, light
+    /// otherwise.
+    pub fn scheme(&self) -> ColorScheme {
+        // The relative luminance of sRGB, as WCAG takes it.
+        let linear = |channel: u8| {
+            let channel = f64::from(channel) / 255.0;
+            if channel <= 0.040_45 {
+                channel / 12.92
+            } else {
+                ((channel + 0.055) / 1.055).powf(2.4)
+            }
+        };
+        let background = self.background;
+        let luminance = 0.2126 * linear(background.r)
+            + 0.7152 * linear(background.g)
+            + 0.0722 * linear(background.b);
+        if luminance < DARK_BELOW {
+            ColorScheme::Dark
+        } else {
+            ColorScheme::Light
+        }
+    }
+}
 
 impl Default for Colors {
     /// xterm's colors, until the embedder gives the theme's.

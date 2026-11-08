@@ -845,3 +845,27 @@ fn errors_leave_their_causes_to_their_sources() {
     let source = std::error::Error::source(&error).map(ToString::to_string);
     assert_eq!(source.as_deref(), Some("no terminals"));
 }
+
+#[test]
+fn a_new_theme_s_scheme_reaches_a_program_that_asked_in_silence() {
+    // In raw mode, the reports of the color scheme on, and the report read
+    // back, with ESC as E, once the program tells that it waits.
+    let script = r#"stty raw -echo; printf '\033[?2031hwaiting\r\n'; r=$(dd bs=1 count=9 2>/dev/null); stty sane; printf 'got:%s\n' "$r" | tr '\033' E"#;
+    let session = Session::spawn(&sh(script), || {}).unwrap();
+    wait_for(&session, "the program's wait", |terminal| {
+        shows(terminal, "waiting")
+    });
+    // A light theme, as its background tells.
+    let light = Colors {
+        background: lokyr_vt_core::page::Rgb {
+            r: 0xfd,
+            g: 0xf6,
+            b: 0xe3,
+        },
+        ..Colors::default()
+    };
+    session.set_default_colors(light);
+    wait_for(&session, "the report", |terminal| {
+        shows(terminal, "got:E[?997;2n")
+    });
+}

@@ -94,6 +94,7 @@ impl Terminal {
                 self.widths.mode = if on { Mode::Unicode } else { Mode::Legacy };
                 self.moved();
             }
+            2031 => self.color_scheme_reports = on,
             _ => {}
         }
     }
@@ -196,6 +197,7 @@ impl Terminal {
             2004 => input.bracketed_paste,
             2026 => self.synchronized_output,
             2027 => self.widths.mode == Mode::Unicode,
+            2031 => self.color_scheme_reports,
             _ => return None,
         })
     }

@@ -19,7 +19,7 @@ use std::time::{Duration, Instant};
 use lokyr_pty::{Exit, Next, Pty, PtyWriter, ReadAhead, Size};
 use lokyr_vt_core::input::{self, KeyEvent, KeyOptions, MouseEvent};
 use lokyr_vt_core::parser::Parser;
-use lokyr_vt_core::terminal::{self, ClipboardRequest, Scroll, Snapshot, Terminal};
+use lokyr_vt_core::terminal::{self, ClipboardRequest, Colors, Scroll, Snapshot, Terminal};
 
 use lock::FairMutex;
 use queue::Queue;
@@ -405,6 +405,19 @@ impl Session {
         let mut bytes = Vec::new();
         input::encode_focus(focused, &self.lock().input_modes(), &mut bytes);
         self.write(bytes);
+    }
+
+    /// Gives the terminal the theme's `colors`: a program that asked is told
+    /// their scheme at once, as their change's report waits for no output.
+    pub fn set_default_colors(&self, colors: Colors) {
+        let replies = {
+            let mut terminal = self.lock();
+            terminal.set_default_colors(colors);
+            terminal.take_replies()
+        };
+        if !replies.is_empty() {
+            self.shared.queue.push_replies(replies);
+        }
     }
 
     /// Answers `request`, a program's read of the clipboard that the user
