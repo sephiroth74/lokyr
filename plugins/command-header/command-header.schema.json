@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "lokyr/command-header",
+  "type": "object",
+  "properties": {
+    "text-size": {
+      "description": "The size of the header's text: small, as macOS's small controls have it, or regular, the interface's own.",
+      "type": "string",
+      "enum": ["small", "regular"],
+      "default": "small"
+    },
+    "align": {
+      "description": "Where the header's pill sits along the hairline across the pane: a little in from its left, in its middle, or a little in from its right.",
+      "type": "string",
+      "enum": ["left", "center", "right"],
+      "default": "left"
+    }
+  }
+}

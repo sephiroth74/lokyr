@@ -153,6 +153,39 @@ fn a_refused_section_s_notice_follows_its_line_and_a_whole_number_is_an_integer(
     let _ = std::fs::remove_dir_all(&directory);
 }
 
+#[test]
+fn the_command_header_s_section_is_checked_against_its_schema() {
+    let directory =
+        std::env::temp_dir().join(format!("lokyr-app-header-config-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&directory);
+    std::fs::create_dir_all(&directory).unwrap();
+    let path = directory.join("config.toml");
+    std::fs::write(
+        &path,
+        "[plugins.command-header]\ntext-size = \"regular\"\nalign = \"middle\"\n",
+    )
+    .unwrap();
+    let mut fake = Fake::default();
+    let mut app =
+        App::new(None, Config::read(&path).unwrap(), Some(path.clone())).with_program(quiet());
+    fake.start(&mut app);
+    let shown = app.diagnostics.shown().cloned().expect("a notice");
+    assert_eq!(
+        shown.about,
+        About::PluginConfig("command-header".to_owned())
+    );
+    assert!(shown.text.contains("middle"), "{}", shown.text);
+    // Of its values, it takes the section.
+    std::fs::write(
+        &path,
+        "[plugins.command-header]\ntext-size = \"regular\"\nalign = \"center\"\n",
+    )
+    .unwrap();
+    change(&mut fake, &mut app);
+    assert_eq!(app.diagnostics.shown(), None);
+    let _ = std::fs::remove_dir_all(&directory);
+}
+
 /// The `Barred` plugins that the test made.
 static BARRED_MADE: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 

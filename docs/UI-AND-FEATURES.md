@@ -195,7 +195,7 @@ A command that the shell marks with OSC 133 and that runs for `[notifications] l
 ## The command's sticky header
 
 The `command-header` plugin, as the user asked on 1 November 2026, after iTerm2: the command whose output the view shows stays at the pane's top, over the grid's top rows, which it takes no row of, so that the grid keeps its size as it shows and hides, over OSC 133's marks.
-- **Its look**, as the user chose on 8 November 2026: a pill of the command's line, in the interface's small text, on a hairline across the pane, the pill a little in from the left; the theme's `panel.bg` and `panel.border`, and `button.hover.bg` under the pointer.
+- **Its look**, as the user chose on 8 November 2026: a pill of the command's line, in the interface's small text, on a hairline across the pane, the pill a little in from the left; the theme's `command-header.bg`, `.fg`, `.border`, `.line` and `.hover.bg`, of the panels' colors in the built-in themes and of the terminal's in the others, which a theme's `[command-header]` gives, as the user chose; `[plugins.command-header]`'s `text-size`, `small` or `regular`, and `align`, `left`, `center` or `right`.
 - **When it shows**: while the view's first row shows a command's output and the command's line is above the view; the alternate screen shows none.
 - As the scroll goes up past a command, the header gives way to the command before it; down, to the next.
 - A click on it scrolls to the command's prompt, at the view's top.

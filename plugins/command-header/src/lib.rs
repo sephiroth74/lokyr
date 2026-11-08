@@ -6,8 +6,10 @@
 //! shows and hides. As the view scrolls up to the command's line, the
 //! header goes, and the command before it takes its place once that one's
 //! line is above the view; down, the next one does. A click scrolls the
-//! view to the command's prompt. The alternate screen shows none. Like
-//! every built-in plugin, it depends only on the plugin SDK.
+//! view to the command's prompt. The alternate screen shows none. Its
+//! colors are the theme's `command-header.*`; its config sets its text's
+//! size and where the pill sits. Like every built-in plugin, it depends
+//! only on the plugin SDK.
 
 #![forbid(unsafe_code)]
 
@@ -16,7 +18,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use lokyr_plugin_sdk::command::Error;
 use lokyr_plugin_sdk::event::WorkspaceEvent;
 use lokyr_plugin_sdk::host::{PaneId, Scroll, ShellCommand, Viewport};
-use lokyr_plugin_sdk::message::{COMMAND_ENDED, COMMAND_STARTED, Event, VIEWPORT_CHANGED};
+use lokyr_plugin_sdk::message::{COMMAND_ENDED, COMMAND_STARTED, Data, Event, VIEWPORT_CHANGED};
 use lokyr_plugin_sdk::plugin::{Cx, Plugin};
 use lokyr_plugin_sdk::ui::{Anchor, PanelId, PanelOptions, Role, UiEvent, ViewId};
 use lokyr_plugin_sdk::view::{
@@ -52,10 +54,54 @@ const LEAD: f32 = 12.0;
 /// How long the pill's hover fades, in seconds.
 const FADE: f32 = 0.12;
 
-/// The plugin, and what it follows of each pane whose view it heard of.
+/// The plugin, its settings, and what it follows of each pane whose view
+/// it heard of.
 #[derive(Debug, Default)]
 pub struct Header {
+    settings: Settings,
     panes: BTreeMap<PaneId, Followed>,
+}
+
+/// Where a header's pill sits along its hairline.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum Place {
+    /// A little in from the pane's left.
+    #[default]
+    Left,
+    /// In the middle.
+    Center,
+    /// A little in from the pane's right.
+    Right,
+}
+
+/// The plugin's settings, of its config's section: its text's size and
+/// where its pill sits.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct Settings {
+    regular: bool,
+    place: Place,
+}
+
+impl Settings {
+    /// The settings of `config`, its section, which the host checked
+    /// against the schema and gave its defaults.
+    fn of(config: &Data) -> Self {
+        let mut settings = Self::default();
+        let Data::Map(config) = config else {
+            return settings;
+        };
+        if let Some(Data::Text(size)) = config.get("text-size") {
+            settings.regular = size == "regular";
+        }
+        if let Some(Data::Text(align)) = config.get("align") {
+            settings.place = match align.as_str() {
+                "center" => Place::Center,
+                "right" => Place::Right,
+                _ => Place::Left,
+            };
+        }
+        settings
+    }
 }
 
 /// What the plugin follows of a pane: its view, and the header that its
@@ -77,6 +123,7 @@ struct Shown {
 
 impl Plugin for Header {
     fn activate(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
+        self.settings = Settings::of(&cx.config()?);
         cx.subscribe(&[
             VIEWPORT_CHANGED,
             COMMAND_STARTED,
@@ -90,13 +137,29 @@ impl Plugin for Header {
         &CATALOGS
     }
 
+    fn config_schema(&self) -> Option<&'static str> {
+        Some(include_str!("../command-header.schema.json"))
+    }
+
     /// A pane's view, or its commands, changed: its header follows them. A
     /// pane that closed takes its header away, and one that moved to
-    /// another tab opens it anew, in its window.
+    /// another tab opens it anew, in its window. A change of the config
+    /// renders the headers that show again.
     fn on_event(&mut self, cx: &mut Cx<'_>, events: &[Event]) -> Result<(), Error> {
         let mut looked = BTreeSet::new();
         for event in events {
             match *event {
+                Event::ConfigChanged => {
+                    let settings = Settings::of(&cx.config()?);
+                    if settings != self.settings {
+                        self.settings = settings;
+                        for (&pane, followed) in &self.panes {
+                            if followed.shown.is_some() {
+                                cx.request_render(ViewId::Panel(panel(pane)))?;
+                            }
+                        }
+                    }
+                }
                 Event::ViewportChanged { pane, viewport } => {
                     self.panes.entry(pane).or_default().viewport = Some(viewport);
                     looked.insert(pane);
@@ -140,7 +203,7 @@ impl Plugin for Header {
         let shown = self.panes.get(&pane_of(id)?)?.shown.as_ref()?;
         let label = cx.message("header-label", &[]).unwrap_or_default();
         let tooltip = cx.message("header-tooltip", &[]).unwrap_or_default();
-        Some(header(&shown.line, &label, &tooltip))
+        Some(header(&shown.line, (&label, &tooltip), self.settings))
     }
 
     /// A click on the pill scrolls the view to the command's prompt, at
@@ -282,9 +345,10 @@ fn pane_of(panel: &PanelId) -> Option<PaneId> {
 }
 
 /// A header of `line`, of `label` to accessibility and of `tooltip`: a pill
-/// of the line on a hairline across the pane, the pill a little in from
-/// the pane's left.
-fn header(line: &str, label: &str, tooltip: &str) -> Node {
+/// of the line on a hairline across the pane, of the theme's
+/// `command-header.*`, its text of the size and its place along the line
+/// that `settings` say.
+fn header(line: &str, (label, tooltip): (&str, &str), settings: Settings) -> Node {
     let hairline = |width: Length, grow: f32| {
         Node::container(Vec::new())
             .layout(Layout {
@@ -294,9 +358,14 @@ fn header(line: &str, label: &str, tooltip: &str) -> Node {
                 ..Layout::default()
             })
             .style(Style {
-                background: Some(Token::from("panel.border")),
+                background: Some(Token::from("command-header.line")),
                 ..Style::default()
             })
+    };
+    let (size, radius) = if settings.regular {
+        (TextSize::Regular, 11.0)
+    } else {
+        (TextSize::Small, 9.0)
     };
     let pill = Node::container(vec![Node::text(line)])
         .key(PILL)
@@ -313,30 +382,33 @@ fn header(line: &str, label: &str, tooltip: &str) -> Node {
             ..Layout::default()
         })
         .style(Style {
-            background: Some(Token::from("panel.bg")),
+            background: Some(Token::from("command-header.bg")),
             border: Some(Border {
-                color: Token::from("panel.border"),
+                color: Token::from("command-header.border"),
                 width: 1.0,
             }),
-            radius: 9.0,
-            text_size: Some(TextSize::Small),
+            color: Some(Token::from("command-header.fg")),
+            radius,
+            text_size: Some(size),
             pointer: Some(PointerShape::PointingHand),
             transition: Some(Transition {
                 duration: FADE,
                 ..Transition::default()
             }),
             hover: Some(Hover {
-                background: Some(Token::from("button.hover.bg")),
+                background: Some(Token::from("command-header.hover.bg")),
                 ..Hover::default()
             }),
             ..Style::default()
         });
-    Node::container(vec![
-        hairline(Length::Points(LEAD), 0.0),
-        pill,
-        hairline(Length::Auto, 1.0),
-    ])
-    .layout(Layout {
+    let lead = || hairline(Length::Points(LEAD), 0.0);
+    let rest = || hairline(Length::Auto, 1.0);
+    let children = match settings.place {
+        Place::Left => vec![lead(), pill, rest()],
+        Place::Center => vec![rest(), pill, rest()],
+        Place::Right => vec![rest(), pill, lead()],
+    };
+    Node::container(children).layout(Layout {
         align: Align::Center,
         grow: 1.0,
         ..Layout::default()

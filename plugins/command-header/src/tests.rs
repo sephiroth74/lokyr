@@ -234,6 +234,128 @@ fn a_closed_pane_s_header_goes_and_a_moved_one_s_opens_anew() {
     assert!(plugin.panes.is_empty());
 }
 
+/// The config of `text_size` and `align`.
+fn config(text_size: &str, align: &str) -> Data {
+    Data::Map(
+        [
+            ("text-size".to_owned(), Data::Text(text_size.to_owned())),
+            ("align".to_owned(), Data::Text(align.to_owned())),
+        ]
+        .into(),
+    )
+}
+
+/// The rendered header's pill's text size and radius, and the widths of
+/// the hairlines on its sides, a length of points or one that grows.
+fn looks(host: &mut FakeHost, plugin: &mut Header) -> (TextSize, f32, [Option<f32>; 2]) {
+    let tree = host
+        .render(plugin, &ViewId::Panel(panel(PANE)))
+        .expect("a header");
+    let [before, pill, after] = &tree.children[..] else {
+        panic!("{tree:?}");
+    };
+    let width = |line: &Node| match line.layout.width {
+        Length::Points(points) => Some(points),
+        _ => None,
+    };
+    (
+        pill.style.text_size.unwrap(),
+        pill.style.radius,
+        [width(before), width(after)],
+    )
+}
+
+#[test]
+fn the_config_sets_the_text_s_size_and_the_pill_s_place_and_the_theme_its_colors() {
+    let (mut host, mut plugin) = host();
+    assert_eq!(
+        scrolled(&mut host, &mut plugin, 10).as_deref(),
+        Some("ls -l")
+    );
+    // The defaults: small text, a little in from the left.
+    assert_eq!(
+        looks(&mut host, &mut plugin),
+        (TextSize::Small, 9.0, [Some(LEAD), None])
+    );
+    // The theme's tokens of its own.
+    let tree = host
+        .render(&mut plugin, &ViewId::Panel(panel(PANE)))
+        .unwrap();
+    let pill = &tree.children[1];
+    assert_eq!(
+        (
+            pill.style.background.clone(),
+            pill.style.color.clone(),
+            pill.style.border.clone().map(|border| border.color),
+            pill.style.hover.clone().and_then(|hover| hover.background),
+            tree.children[0].style.background.clone(),
+        ),
+        (
+            Some(Token::from("command-header.bg")),
+            Some(Token::from("command-header.fg")),
+            Some(Token::from("command-header.border")),
+            Some(Token::from("command-header.hover.bg")),
+            Some(Token::from("command-header.line")),
+        )
+    );
+    // A change renders the header that shows again.
+    host.take_renders();
+    host.set_config(config("regular", "center"));
+    host.deliver(&mut plugin).unwrap();
+    assert_eq!(host.take_renders(), [ViewId::Panel(panel(PANE))]);
+    assert_eq!(
+        looks(&mut host, &mut plugin),
+        (TextSize::Regular, 11.0, [None, None])
+    );
+    host.set_config(config("small", "right"));
+    host.deliver(&mut plugin).unwrap();
+    assert_eq!(
+        looks(&mut host, &mut plugin),
+        (TextSize::Small, 9.0, [None, Some(LEAD)])
+    );
+    // The same config asks nothing.
+    host.take_renders();
+    host.post(Event::ConfigChanged);
+    host.deliver(&mut plugin).unwrap();
+    assert!(host.take_renders().is_empty());
+}
+
+#[test]
+fn the_guide_tells_every_key_of_the_schema_in_its_example_and_its_section() {
+    let guide = include_str!("../../../docs/CONFIGURATION.md");
+    let schema = include_str!("../command-header.schema.json");
+    let keys: Vec<&str> = schema
+        .lines()
+        .filter_map(|line| line.strip_prefix("    \"")?.split_once("\": {"))
+        .map(|(key, _)| key)
+        .collect();
+    assert_eq!(keys, ["text-size", "align"]);
+    let example = guide
+        .split_once("\n[plugins.command-header]\n")
+        .and_then(|(_, rest)| rest.split_once("```"))
+        .map(|(example, _)| example)
+        .expect("the complete example's section");
+    let section = guide
+        .split_once("\n## `[plugins.command-header]`\n")
+        .map(|(_, rest)| {
+            rest.split_once("\n## ")
+                .map_or(rest, |(section, _)| section)
+        })
+        .expect("the guide's section");
+    for key in keys {
+        assert!(
+            example
+                .lines()
+                .any(|line| line.starts_with(&format!("{key} = "))),
+            "`{key}` in the example"
+        );
+        assert!(
+            section.contains(&format!("\n### `{key}`\n")),
+            "`{key}` in the section"
+        );
+    }
+}
+
 #[test]
 fn the_texts_are_in_both_languages() {
     for (_, catalog) in CATALOGS {

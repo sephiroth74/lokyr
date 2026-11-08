@@ -193,6 +193,10 @@ spaces = "remain"                    # move | remain
 case = "smart"                       # smart | insensitive: whether case counts while the bar's case toggle is off
 highlight-all = true                 # true | false: every match that shows highlighted
 wrap-around = true                   # true | false: a step past the last match goes on from the first
+
+[plugins.command-header]
+text-size = "small"                  # small | regular: the header's text
+align = "left"                       # left | center | right: where its pill sits along the line
 ```
 
 ## `config_version`
@@ -1140,8 +1144,8 @@ active = { bg = "#1e1e20", fg = "#ffffff" }
 - **Colors** are `#rrggbb`, or `#rrggbbaa` of an opacity, in sRGB.
 - **`[terminal]`** gives the terminal's colors: `background`, `foreground` and the 16 colors of `palette`, black to bright white, which every theme gives itself or through the theme that it extends; `cursor`, `cursor-text`, `selection`, `selection-text`, `bold`, `link` and `underline`, which it can give.
 - **What a theme leaves out** follows its terminal's colors: the tab bar, the panels, the fields, the buttons and the find bar's highlights take colors of its background, its text and its palette, so that a theme of `[terminal]` alone colors all of Lokyr.
-- **The other sections** give the interface's colors by their names: `[search]` the find bar's highlights, `match` and `current`; `[tabs]` the tab bar's, as `bar.bg`, `active.bg`, `active.fg`, `inactive.fg` and `hover.bg`; `[interface]` the rest of Lokyr's, as `panel.bg`, `field.bg`, `accent` or `text.secondary`.
-- **A theme gives colors alone**: the tab bar's look, its place and the rest stay in the config, as [`[plugins.tabs]`](#pluginstabs) has them.
+- **The other sections** give the interface's colors by their names: `[search]` the find bar's highlights, `match` and `current`; `[tabs]` the tab bar's, as `bar.bg`, `active.bg`, `active.fg`, `inactive.fg` and `hover.bg`; `[command-header]` the command's header's, `bg`, `fg`, `border`, `line` and `hover.bg`; `[interface]` the rest of Lokyr's, as `panel.bg`, `field.bg`, `accent` or `text.secondary`.
+- **A theme gives colors alone**: the tab bar's look, its place and the rest stay in the config, as [`[plugins.tabs]`](#pluginstabs) has them, and the command's header's text and place as [`[plugins.command-header]`](#pluginscommand-header) has them.
 - **`extends`** names a theme, a file's or a built-in one, whose colors this one takes where it gives none, eight deep at most.
 - **As you save** a theme's file, or the config, the theme applies at once, in the open windows too.
 - **A file with an error** tells it, with its line, in the bar across the windows' top, and the theme in force stays.
@@ -1726,3 +1730,35 @@ Whether a step past the last match goes on from the first, and past the first fr
 
 - Without it, a step past either end stays there.
 - It applies at once, as you save the file.
+
+## `[plugins.command-header]`
+
+<sub>Platforms: macOS</sub>
+
+The command's header of the built-in plugin `lokyr/command-header`: while a pane's first row shows a command's output and the command's line is above the view, a pill of the command as you typed it sits on a thin line across the pane's top, over its first row, which a click scrolls to the command's prompt. Its colors are the theme's, of a section `[command-header]` of a theme's file, `bg`, `fg`, `border`, `line` and `hover.bg`, as [`[theme]`](#theme) tells.
+
+### `text-size`
+
+<sub>Platforms: macOS</sub>
+
+The size of the header's text.
+
+| Values | Default |
+|---|---|
+| `small`, `regular` | `small` |
+
+- `small` is the size of macOS's small controls, so that the pill keeps within about a row of the terminal; `regular` is the interface's own, of [`[interface] font-size`](#font-size).
+- It applies at once, as you save the file, to a header that shows too.
+
+### `align`
+
+<sub>Platforms: macOS</sub>
+
+Where the header's pill sits along the line across the pane.
+
+| Values | Default |
+|---|---|
+| `left`, `center`, `right` | `left` |
+
+- `left` and `right` keep it a little in from the pane's edge; `center` in the pane's middle.
+- It applies at once, as you save the file, to a header that shows too.
