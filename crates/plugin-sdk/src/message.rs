@@ -1306,6 +1306,21 @@ impl Request {
         }
     }
 
+    /// The numbers that the request carries of its own, a window's point, a
+    /// share, a size or a fade.
+    fn numbers(&self) -> Vec<f64> {
+        match self {
+            Self::TabToNewWindow { at: Some(at), .. } => vec![at.x, at.y],
+            Self::ResizePane { by, .. } => vec![*by],
+            Self::SetRatio {
+                ratio: Some(ratio), ..
+            } => vec![*ratio],
+            Self::SetFontSize(Some(size)) => vec![f64::from(*size)],
+            Self::SetInactiveDim(dim) => vec![f64::from(*dim)],
+            _ => Vec::new(),
+        }
+    }
+
     /// The arguments of a command's call that the request carries, as a
     /// run's, a binding's or a menu item's.
     fn args(&self) -> Option<&crate::command::Args> {
@@ -1325,6 +1340,7 @@ impl Request {
 pub fn within_depth(mut request: Request) -> Result<Request, crate::command::Error> {
     if request.data().is_none_or(Data::nests_within_deepest) {
         let finite = request.data().is_none_or(Data::is_finite)
+            && request.numbers().iter().all(|number| number.is_finite())
             && request.args().is_none_or(|args| {
                 args.values().all(|value| match value {
                     crate::command::Value::Number(number) => number.is_finite(),
@@ -1391,6 +1407,25 @@ mod tests {
         }
         let finite = Request::SetState(Data::Number(2.5));
         assert_eq!(within_depth(finite.clone()), Ok(finite));
+        // A window's point, a share, a size or a fade of no number, too.
+        let at = |x: f64| Request::TabToNewWindow {
+            tab: crate::host::TabId(1),
+            at: Some(ScreenPoint { x, y: 10.0 }),
+        };
+        for request in [
+            at(f64::NAN),
+            at(f64::INFINITY),
+            Request::SetRatio {
+                tab: crate::host::TabId(1),
+                path: Vec::new(),
+                ratio: Some(f64::NAN),
+            },
+            Request::SetFontSize(Some(f32::NAN)),
+            Request::SetInactiveDim(f32::INFINITY),
+        ] {
+            assert_eq!(within_depth(request).unwrap_err().code, Code::WrongKind);
+        }
+        assert_eq!(within_depth(at(120.0)), Ok(at(120.0)));
     }
     use crate::command::{Category, Code, Value};
 

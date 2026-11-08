@@ -313,9 +313,9 @@ impl fmt::Display for Capability {
 }
 
 /// What went wrong, by its code, which never changes: the hundreds tell
-/// the category.
+/// the category. It crosses by its number, as Luau's errors carry it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
+#[serde(into = "u16", try_from = "u16")]
 pub enum Code {
     /// 101: no command of the name, or no window, tab or pane of the id,
     /// as one that closed.
@@ -352,7 +352,43 @@ pub enum Code {
     Fault,
 }
 
+impl From<Code> for u16 {
+    fn from(code: Code) -> Self {
+        code.number()
+    }
+}
+
+impl TryFrom<u16> for Code {
+    type Error = String;
+
+    /// The code of `number`, one of those that [`Code::number`] gives.
+    fn try_from(number: u16) -> Result<Self, Self::Error> {
+        Code::ALL
+            .into_iter()
+            .find(|code| code.number() == number)
+            .ok_or_else(|| format!("{number} is no error's code"))
+    }
+}
+
 impl Code {
+    /// Every code, in the order of their numbers.
+    pub const ALL: [Self; 14] = [
+        Self::NotFound,
+        Self::UnknownArgument,
+        Self::MissingArgument,
+        Self::WrongKind,
+        Self::InvalidName,
+        Self::AlreadyRegistered,
+        Self::InvalidSchema,
+        Self::InvalidBinding,
+        Self::InvalidConfig,
+        Self::Failed,
+        Self::Unavailable,
+        Self::Undeclared,
+        Self::MissingCapability,
+        Self::Fault,
+    ];
+
     /// The code's number.
     pub fn number(self) -> u16 {
         match self {
@@ -660,6 +696,23 @@ mod tests {
             error.to_string(),
             "error 301 (security): `plugin` runs `pane.paste`"
         );
+    }
+
+    #[test]
+    fn a_code_crosses_by_its_number_both_ways() {
+        for code in Code::ALL {
+            let text = serde_json::to_string(&code).unwrap();
+            assert_eq!(text, code.number().to_string());
+            assert_eq!(serde_json::from_str::<Code>(&text).unwrap(), code);
+        }
+        // An error, of its code's number; a number of no code is refused.
+        let error = Error::new(Code::MissingCapability, "x");
+        let text = serde_json::to_string(&error).unwrap();
+        assert!(text.contains("\"code\":302"), "{text}");
+        assert_eq!(serde_json::from_str::<Error>(&text).unwrap(), error);
+        assert!(serde_json::from_str::<Code>("150").is_err());
+        assert!(serde_json::from_str::<Code>("\"not-found\"").is_err());
+        assert_eq!(Code::ALL.len(), 14);
     }
 
     #[test]

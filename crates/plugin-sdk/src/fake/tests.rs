@@ -1133,3 +1133,25 @@ impl Plugin for Binder {
         true
     }
 }
+
+#[test]
+fn a_window_s_point_of_no_number_is_refused_as_the_app_s_host_refuses_it() {
+    let mut host = FakeHost::new("acme/probe");
+    host.focus(Some(PaneId(1)));
+    let mut probe = Probe::new(|cx, _| {
+        let window = cx.focused_window().unwrap();
+        let tab = cx.tabs(window)?[0].id;
+        cx.tab_to_new_window_at(
+            tab,
+            host::ScreenPoint {
+                x: f64::NAN,
+                y: 0.0,
+            },
+        )
+    });
+    let refused = host
+        .command(&mut probe, "probe.go", Args::new())
+        .unwrap_err();
+    assert_eq!(refused.code, Code::WrongKind);
+    assert!(refused.message.contains("finite"), "{refused}");
+}

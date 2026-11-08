@@ -897,6 +897,7 @@ installed ──▶ resolved ──▶ consent ──▶ loaded ──▶ active
   - its reads of rows, each on a thread of the host's, four under way at most;
   - the calls that wait for a plugin's thread while it makes one, its commands, renders and its views' events, 256 at most, and 10 000 events: past them, its thread, which took none of them, is taken for stuck, and its plugin disabled, as a notice tells;
   - a chain of commands that run commands, 16 deep and 256 runs at most.
+- **Numbers**: a request's numbers are finite, as JSON holds them, its values', its arguments', a window's point, a share, a size and a fade: a NaN or an infinity is refused, as `wrong-kind`; a text's points, from 4 to 200, go to a quarter of one, and the interface keeps 32 faces of other sizes at most, as a plugin's text of a new size at each frame would keep one each.
 - **Hostile plugins in CI**: an infinite loop, a memory bomb, a runaway recursion and the escape probes of [F0-22](tasks/F0-foundations.md#f0-22--spike-lua-plugin-runtimes) run against every build, so the sandbox stays closed.
 
 ## Native code and the hardened runtime

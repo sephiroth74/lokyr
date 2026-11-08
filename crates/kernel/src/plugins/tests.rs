@@ -4749,3 +4749,45 @@ fn a_state_file_past_the_most_of_a_state_is_read_no_further_and_starts_anew() {
     );
     let _ = std::fs::remove_dir_all(&state);
 }
+
+#[test]
+fn a_window_s_point_of_no_number_is_refused() {
+    let mut app = App::default();
+    window(&mut app, "sleep 30");
+    let codes = Rc::new(RefCell::new(Vec::new()));
+    let seen = Rc::clone(&codes);
+    let mut plugins = Plugins::new();
+    plugins
+        .add(
+            "mover",
+            scripted(
+                |cx| cx.register_command(command("mover.go")),
+                move |cx, _, _| {
+                    let window = cx.focused_window().unwrap();
+                    let tab = cx.tabs(window).unwrap()[0].id;
+                    let mut seen = seen.borrow_mut();
+                    for x in [f64::NAN, f64::INFINITY] {
+                        let at = host::ScreenPoint { x, y: 10.0 };
+                        let moved = cx.tab_to_new_window_at(tab, at);
+                        seen.push(moved.err().map(|error| (error.code, error.message)));
+                    }
+                    Ok(())
+                },
+            ),
+        )
+        .unwrap();
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    plugins
+        .run("mover.go", Args::new(), &mut app.context())
+        .unwrap();
+    let codes = codes.borrow();
+    assert!(
+        codes
+            .iter()
+            .all(|code| code.as_ref().is_some_and(|(code, message)| {
+                *code == Code::WrongKind && message.contains("finite")
+            })),
+        "{codes:?}"
+    );
+    assert!(plugins.take_requests().is_empty());
+}

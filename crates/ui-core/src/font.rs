@@ -78,6 +78,12 @@ pub const MOST_SMALL: f32 = 4.0;
 /// The most points of a node's text.
 pub const MOST_LARGE: f32 = 200.0;
 
+/// The most faces of the interface's other sizes and weights that the font
+/// keeps, past which it lets them all go, to find those that the texts ask
+/// for again, as a plugin's text of a new size at each frame would keep a
+/// face of each.
+const MOST_INTERFACES: usize = 32;
+
 /// VARIATION SELECTOR-16, which asks for a character's emoji.
 const EMOJI_PRESENTATION: char = '\u{FE0F}';
 
@@ -1152,8 +1158,9 @@ impl<B: FontBackend> Font<B> {
     /// that fails, as the log tells; the terminal's face where the system
     /// has no interface family; of [`SMALL`] or [`LARGE`] of its size where
     /// [`Font::set_typeset`] took the small one or the large one, or of the
-    /// points that it took, from 4 to 200, and of the family's face nearest
-    /// to the weight that it took. A typeset of the terminal's family takes
+    /// points that it took, from 4 to 200, to a quarter of a point, a
+    /// number that is not one taking the regular size, and of the family's
+    /// face nearest to the weight that it took. A typeset of the terminal's family takes
     /// its regular face and its size, as `[font]` names them, in the place
     /// of the interface's.
     pub fn interface(&mut self) -> &InterfaceFace {
@@ -1202,18 +1209,26 @@ impl<B: FontBackend> Font<B> {
                 TextSize::Small => regular.size() * SMALL,
                 TextSize::Large => regular.size() * LARGE,
             },
-            |points| points.clamp(MOST_SMALL, MOST_LARGE),
+            |points| {
+                if points.is_nan() {
+                    regular.size()
+                } else {
+                    (points.clamp(MOST_SMALL, MOST_LARGE) * 4.0).round() / 4.0
+                }
+            },
         );
         if typeset.weight == FontWeight::Regular && points == regular.size() {
             return regular;
         }
-        interfaces
-            .entry((typeset.family, points.to_bits(), typeset.weight))
-            .or_insert_with(|| {
-                regular
-                    .weighted(backend, typeset.weight)
-                    .sized(backend, points)
-            })
+        let key = (typeset.family, points.to_bits(), typeset.weight);
+        if !interfaces.contains_key(&key) && interfaces.len() >= MOST_INTERFACES {
+            interfaces.clear();
+        }
+        interfaces.entry(key).or_insert_with(|| {
+            regular
+                .weighted(backend, typeset.weight)
+                .sized(backend, points)
+        })
     }
 
     /// The glyphs of `text` on one line in the interface's face, at the
@@ -3308,6 +3323,32 @@ mod tests {
             ..Typeset::default()
         });
         assert_eq!(font.interface().size(), MOST_LARGE);
+        // A number that is not one takes the regular size, and points go to
+        // a quarter of one.
+        font.set_typeset(Typeset {
+            points: Some(f32::NAN),
+            ..Typeset::default()
+        });
+        assert_eq!(font.interface().size(), regular.size());
+        font.set_typeset(Typeset {
+            points: Some(f32::INFINITY),
+            ..Typeset::default()
+        });
+        assert_eq!(font.interface().size(), MOST_LARGE);
+        font.set_typeset(Typeset {
+            points: Some(12.3),
+            ..Typeset::default()
+        });
+        assert_eq!(font.interface().size(), 12.25);
+        // A size at each frame keeps a few faces at most.
+        for step in 0..1000_u16 {
+            font.set_typeset(Typeset {
+                points: Some(8.0 + f32::from(step) * 0.1),
+                ..Typeset::default()
+            });
+            font.interface();
+            assert!(font.interfaces.len() <= MOST_INTERFACES);
+        }
         // The family's face nearest to a weight, upright.
         font.set_typeset(Typeset {
             weight: FontWeight::Semibold,
