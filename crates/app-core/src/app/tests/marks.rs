@@ -325,3 +325,43 @@ fn the_command_s_header_spans_the_pane_s_top_takes_no_keys_lets_a_scroll_through
     let line = row(&app, window, 0);
     assert!(line.starts_with("$ "), "{line:?}");
 }
+
+#[test]
+fn the_command_s_header_opens_anew_in_the_window_that_its_tab_moves_to() {
+    let program = shell(concat!(
+        "m() { printf '\\033]133;%s\\007' \"$1\"; }\n",
+        "for c in one two three; do m A; printf '$ '; m B; echo \"$c\"; m C; ",
+        "seq 1 40; m 'D;0'; done; m A; printf '$ '; sleep 30\n",
+    ));
+    let drawing = Drawing::new(FontConfig::default()).unwrap();
+    let mut fake = Fake::default();
+    let mut app = App::new(Some(drawing), unpadded(), None).with_program(program);
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    app.windows.get_mut(&window).unwrap().surface = Some(fakes::Surface::default());
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    run_until(&mut fake, &mut app, |_, app| header(app, window).is_some());
+    // Another tab, then the header's tab, moved to a window of its own.
+    app.run(&mut fake, "tabs.new", Args::new());
+    let first = Args::from([(
+        "index".to_owned(),
+        lokyr_kernel::commands::Value::Integer(1),
+    )]);
+    app.run(&mut fake, "tabs.goto", first);
+    run_until(&mut fake, &mut app, |_, app| header(app, window).is_some());
+    app.run(&mut fake, "tabs.detach", Args::new());
+    run_until(&mut fake, &mut app, |fake, _| fake.windows().count() == 2);
+    let moved = fake.windows().find(|&other| other != window).unwrap();
+    app.windows.get_mut(&moved).unwrap().surface = Some(fakes::Surface::default());
+    run_until(&mut fake, &mut app, |_, app| header(app, moved).is_some());
+    // Its header stays in none of the window that it left, which shows the
+    // other tab's own.
+    let pane = app.windows[&moved].views[0].pane;
+    let own = ViewId::Panel(PanelId(format!("command-header-{}", pane.get())));
+    assert!(
+        app.windows[&window]
+            .chrome
+            .iter()
+            .all(|view| view.view != own)
+    );
+}

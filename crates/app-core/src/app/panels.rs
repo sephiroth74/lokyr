@@ -58,6 +58,35 @@ impl<B: Backend> App<B> {
             })
     }
 
+    /// Closes the panels anchored to a pane that closed, or that another
+    /// window shows now, as its tab or itself moved there, telling their
+    /// plugins, which can open them anew where the pane is.
+    pub(super) fn close_strayed_panels(&mut self, platform: &mut dyn Platform) {
+        let panes = &self.workspace;
+        let mut strayed: Vec<(WindowId, u32)> = Vec::new();
+        for (&window, state) in &self.windows {
+            for view in &state.chrome {
+                let Some(pane) = view
+                    .placed
+                    .as_ref()
+                    .and_then(|placed| anchor_pane(&placed.options.anchor))
+                else {
+                    continue;
+                };
+                let shown = panes
+                    .tab_of(PaneId::of(pane.0))
+                    .and_then(|tab| panes.tab(tab))
+                    .map(workspace::Tab::window);
+                if shown != Some(state.window) {
+                    strayed.push((window, view.id));
+                }
+            }
+        }
+        for (window, view) in strayed {
+            self.close_panel(platform, window, view, true);
+        }
+    }
+
     /// Opens `plugin`'s panel `id` over the platform's window that shows
     /// `shown`, of `options`, over the panels open before it, its anchor
     /// taken anew at each layout, the pointer's place as it opens kept;

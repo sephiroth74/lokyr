@@ -216,8 +216,9 @@ impl Plugin for Header {
 
     /// A pane's view, or its commands, changed: its header follows them. A
     /// pane that closed takes its header away, and one that moved to
-    /// another tab opens it anew, in its window. A change of the config
-    /// renders the headers that show again.
+    /// another tab opens it anew, in its window, as does a header that the
+    /// host closed, as its tab went to another window. A change of the
+    /// config renders the headers that show again.
     fn on_event(&mut self, cx: &mut Cx<'_>, events: &[Event]) -> Result<(), Error> {
         let mut looked = BTreeSet::new();
         for event in events {
@@ -250,6 +251,16 @@ impl Plugin for Header {
                         let _ = cx.close_panel(panel(pane));
                     }
                     looked.remove(&pane);
+                }
+                // The host closed a header, as its tab went to another
+                // window: it opens anew where its pane is, as it looks.
+                Event::PanelClosed(ref id) => {
+                    if let Some(pane) = pane_of(id)
+                        && let Some(followed) = self.panes.get_mut(&pane)
+                        && followed.shown.take().is_some()
+                    {
+                        looked.insert(pane);
+                    }
                 }
                 Event::Workspace(WorkspaceEvent::PaneMoved { pane, .. }) => {
                     if let Some(followed) = self.panes.get_mut(&pane)

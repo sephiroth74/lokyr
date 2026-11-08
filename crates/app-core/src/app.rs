@@ -2940,6 +2940,7 @@ impl<B: Backend> App<B> {
             }
             WorkspaceEvent::PaneClosed { pane, tab } => {
                 self.forget_panes(&[PaneId::of(pane.0)]);
+                self.close_strayed_panels(platform);
                 vec![of_tab(self, tab)]
             }
             WorkspaceEvent::TabCreated { window, .. }
@@ -2947,16 +2948,20 @@ impl<B: Backend> App<B> {
             | WorkspaceEvent::TabActivated { window, .. } => {
                 vec![showing(self, workspace::WindowId::of(window.0))]
             }
-            WorkspaceEvent::TabMoved { from, window, .. } => vec![
-                showing(self, workspace::WindowId::of(from.0)),
-                showing(self, workspace::WindowId::of(window.0)),
-            ],
+            WorkspaceEvent::TabMoved { from, window, .. } => {
+                self.close_strayed_panels(platform);
+                vec![
+                    showing(self, workspace::WindowId::of(from.0)),
+                    showing(self, workspace::WindowId::of(window.0)),
+                ]
+            }
             WorkspaceEvent::PaneCreated { tab, .. }
             | WorkspaceEvent::PaneFocused { tab, .. }
             | WorkspaceEvent::LayoutChanged { tab } => vec![of_tab(self, tab)],
             // A tab's label and color, which the plugins' views show.
             WorkspaceEvent::TabChanged { .. } | WorkspaceEvent::PaneChanged { .. } => return,
             WorkspaceEvent::PaneMoved { from, tab, .. } => {
+                self.close_strayed_panels(platform);
                 vec![of_tab(self, from), of_tab(self, tab)]
             }
         };

@@ -285,8 +285,9 @@ impl Plugin for CopyMode {
 
     /// Another pane of its tab that takes the keyboard ends it, and so do
     /// the alternate screen, which has a cursor of its own, a resize, which
-    /// numbers the rows anew, its pane's move to another tab, and its
-    /// badge's closing; its pane's closing takes it away.
+    /// numbers the rows anew, its pane's move to another tab or its
+    /// closing, and its badge's closing by the host, as its tab goes to
+    /// another window.
     fn on_event(&mut self, cx: &mut Cx<'_>, events: &[Event]) -> Result<(), Error> {
         for event in events {
             let Some(copying) = &self.copying else {
@@ -300,15 +301,15 @@ impl Plugin for CopyMode {
                     *pane != copying.pane && Some(*tab) == copying.tab
                 }
                 Event::Workspace(WorkspaceEvent::PaneMoved { pane, .. }) => *pane == copying.pane,
-                Event::Workspace(WorkspaceEvent::PaneClosed { pane, .. }) => {
-                    if *pane == copying.pane {
-                        self.copying = None;
-                    }
-                    false
-                }
+                Event::Workspace(WorkspaceEvent::PaneClosed { pane, .. }) => *pane == copying.pane,
+                // The host closed the badge, as its pane closed or its tab
+                // went to another window: the terminal's cursor back.
                 Event::PanelClosed(id) => {
                     if *id == badge() {
+                        let pane = copying.pane;
                         self.copying = None;
+                        // A pane that closed took its cursor with it.
+                        let _ = cx.show_cursor(pane, None);
                     }
                     false
                 }

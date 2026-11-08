@@ -2842,8 +2842,6 @@ fn message(payload: &(dyn Any + Send)) -> String {
         .unwrap_or_default()
 }
 
-/// Disables the plugin of `state`: its commands leave `registry`, and its
-/// bindings and its menus' items go.
 /// Gives the terminal's cursor back in each pane where the plugin of
 /// `state` shows one of its own, as it stops or a panic disables it, so
 /// that no cursor stays that nothing moves.
@@ -2855,6 +2853,8 @@ fn release_cursors(state: &mut State, workspace: &Workspace) {
     }
 }
 
+/// Disables the plugin of `state`: its commands leave `registry`, and its
+/// bindings and its menus' items go.
 fn disable(state: &mut State, registry: &mut Registry, declarations_changed: &mut bool) {
     state.status = Status::Disabled;
     if !state.commands.is_empty()

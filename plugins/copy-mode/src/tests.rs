@@ -408,7 +408,7 @@ fn exit_ends_and_takes_the_selection_away() {
 }
 
 #[test]
-fn the_alternate_screen_a_resize_and_another_pane_s_keyboard_end_it() {
+fn the_alternate_screen_a_resize_another_pane_s_keyboard_and_its_pane_s_close_end_it() {
     for event in [
         Event::ViewportChanged {
             pane: PANE,
@@ -426,6 +426,10 @@ fn the_alternate_screen_a_resize_and_another_pane_s_keyboard_end_it() {
         },
         Event::Workspace(WorkspaceEvent::PaneFocused {
             pane: OTHER,
+            tab: TabId(1),
+        }),
+        Event::Workspace(WorkspaceEvent::PaneClosed {
+            pane: PANE,
             tab: TabId(1),
         }),
     ] {
@@ -477,4 +481,17 @@ fn its_keys_are_not_its_commands_out_of_the_mode() {
     act(&mut host, &mut plugin, "copy");
     assert_eq!(cursor(&mut host), None);
     assert_eq!(host.clipboard(), None);
+}
+
+#[test]
+fn the_host_s_close_of_the_badge_gives_the_cursor_back_and_a_toggle_starts_anew() {
+    let (mut host, mut plugin) = host();
+    toggle(&mut host, &mut plugin);
+    // As the pane's tab goes to another window.
+    host.close_panel(&badge());
+    host.deliver(&mut plugin).unwrap();
+    assert_eq!(cursor(&mut host), None);
+    toggle(&mut host, &mut plugin);
+    assert_eq!(cursor(&mut host), Some(CURSOR));
+    assert!(host.panels().contains_key(&badge()));
 }

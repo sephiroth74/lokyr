@@ -205,7 +205,7 @@ fn a_command_that_did_not_run_or_whose_line_left_shows_no_header() {
 }
 
 #[test]
-fn a_closed_pane_s_header_goes_and_a_moved_one_s_opens_anew() {
+fn a_closed_pane_s_header_goes_and_a_moved_one_s_or_one_that_the_host_closed_opens_anew() {
     let (mut host, mut plugin) = host();
     assert!(scrolled(&mut host, &mut plugin, 10).is_some());
     host.take_done();
@@ -223,6 +223,15 @@ fn a_closed_pane_s_header_goes_and_a_moved_one_s_opens_anew() {
             [Request::ClosePanel(_), Request::OpenPanel { .. }]
         ),
         "{done:?}"
+    );
+    // The host closes it, as its tab goes to another window: it opens anew
+    // where its pane is.
+    host.close_panel(&panel(PANE));
+    host.deliver(&mut plugin).unwrap();
+    assert!(host.panels().contains_key(&panel(PANE)));
+    assert_eq!(
+        shown(&mut host, &mut plugin).as_deref(),
+        scrolled(&mut host, &mut plugin, 10).as_deref()
     );
     // Closed, it goes, and the plugin forgets the pane.
     host.post(Event::Workspace(WorkspaceEvent::PaneClosed {

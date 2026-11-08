@@ -253,3 +253,75 @@ fn the_copy_mode_s_keys_copy_from_a_pane_whose_program_ended_and_close_it_not() 
     press(&mut fake, &mut app, KeyCode::KeyX, "x", Modifiers::NONE);
     run_until(&mut fake, &mut app, |fake, _| fake.windows().count() == 0);
 }
+
+/// The app of a window, focused, running a program that reads a line and
+/// tells it, once it shows its prompt.
+fn reading() -> (Fake, App, WindowId) {
+    let program = shell("printf 'ready $ '; read typed; echo \"got:$typed\"; sleep 30");
+    let mut fake = Fake::default();
+    let mut app = app(unpadded(), program);
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    run_until(&mut fake, &mut app, |_, app| shows(app, window, "ready $"));
+    (fake, app, window)
+}
+
+/// Runs the copy mode's toggle, as Edit › Copy Mode does.
+fn toggle(fake: &mut Fake, app: &mut App) {
+    fake.send_app(app, AppEvent::Command("copy-mode.toggle".to_owned()));
+}
+
+#[test]
+fn the_copy_mode_of_a_pane_that_closes_goes_and_starts_anew_in_another() {
+    let (mut fake, mut app, window) = reading();
+    let right = Args::from([(
+        "direction".to_owned(),
+        lokyr_kernel::commands::Value::String("right".to_owned()),
+    )]);
+    app.run(&mut fake, "splits.split", right);
+    run_until(&mut fake, &mut app, |_, app| {
+        app.windows[&window].views.len() == 2
+    });
+    toggle(&mut fake, &mut app);
+    run_until(&mut fake, &mut app, |_, app| badge_shows(app, window));
+    let closed = app.focused(window).unwrap();
+    app.close_pane(&mut fake, window, closed);
+    run_until(&mut fake, &mut app, |_, app| {
+        app.windows[&window].views.len() == 1 && !badge_shows(app, window)
+    });
+    // In the pane left, at once.
+    toggle(&mut fake, &mut app);
+    run_until(&mut fake, &mut app, |_, app| badge_shows(app, window));
+    assert!(app.keys_held_back(window));
+}
+
+#[test]
+fn the_copy_mode_of_a_tab_moved_to_a_new_window_ends_and_its_keys_reach_the_program() {
+    let (mut fake, mut app, window) = reading();
+    app.run(&mut fake, "tabs.new", Args::new());
+    run_until(&mut fake, &mut app, |_, app| {
+        app.workspace
+            .window(app.windows[&window].window)
+            .is_some_and(|shown| shown.tabs().len() == 2)
+    });
+    let first = Args::from([(
+        "index".to_owned(),
+        lokyr_kernel::commands::Value::Integer(1),
+    )]);
+    app.run(&mut fake, "tabs.goto", first);
+    run_until(&mut fake, &mut app, |_, app| shows(app, window, "ready $"));
+    toggle(&mut fake, &mut app);
+    run_until(&mut fake, &mut app, |_, app| badge_shows(app, window));
+    app.run(&mut fake, "tabs.detach", Args::new());
+    run_until(&mut fake, &mut app, |fake, _| fake.windows().count() == 2);
+    let moved = fake.windows().find(|&other| other != window).unwrap();
+    run_until(&mut fake, &mut app, |_, app| {
+        !badge_shows(app, window) && !badge_shows(app, moved)
+    });
+    assert!(!app.keys_held_back(moved));
+    fake.send(&mut app, moved, WindowEvent::Focused(true));
+    fake.send(&mut app, moved, typed(KeyCode::KeyX, "x", false));
+    fake.send(&mut app, moved, typed(KeyCode::Enter, "\r", false));
+    run_until(&mut fake, &mut app, |_, app| shows(app, moved, "got:x"));
+}
