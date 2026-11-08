@@ -447,6 +447,14 @@ A window, or a tab, at a folder, from the Finder, as the user's daily path into 
 - **The Dock**: a folder dropped on the app's icon opens a window there, as the bundle declares `public.folder` among its document types, of the rank `None`, so that the Finder never opens folders with Lokyr of its own; a theme's file dropped with it still asks to install.
 - **At the start**: a start that macOS makes to open a folder, or for a service, as `NSApplicationLaunchIsDefaultLaunchKey` tells, opens no new window of its own, the folder's alone, beside the windows restored; one whose files open no window, as a theme's, opens a new window after a second.
 
+## Lokyr as the default terminal
+
+Lokyr › Make Lokyr the Default Terminal, as the user asked on 6 November 2026, asks macOS, through Launch Services' default handlers, `NSWorkspace`'s `setDefaultApplicationAtURL:`, to open in Lokyr the shell scripts, Terminal's `com.apple.terminal.shell-script`, `.command` and `.tool`, and `public.shell-script`, `.sh`, the executables, `public.unix-executable`, and the `ssh` and `x-man-page` links; macOS asks the user to confirm the changes, one after the other, and what the user declines stays as it was, as the log tells. The item is ticked and dimmed while Lokyr is the default of them all, as the app finds it as it starts and as the changes end; nothing changes but at the user's choice.
+- **The bundle**: the scripts and the executables among its document types, of the Shell role and the rank `Alternate`, so that Lokyr is in the Finder's Open With and opens them of its own once it is the default; Terminal's type imported; `CFBundleURLTypes` of the two schemes; their names in the catalogs' `infoplist.ftl`.
+- **A script**: a window of its own in the script's folder, which the user's login shell runs, `exec` of its path, so that it has the user's environment; the window keeps what it printed once it ends, whatever `close-on-exit` says, as Terminal's does. A file of `.command`, `.tool` or `.sh` runs, and one of no such extension if it is executable.
+- **An `ssh` link**: `ssh://[user[;parameters]@]host[:port]`, a window that runs `ssh` to the host, as [SECURITY.md](SECURITY.md#terminal-defaults) tells of its checks.
+- **A man page's link**: `x-man-page://[section/]name`, the window of its page, as Open man Page opens it.
+
 ## Basic actions
 
 The `core-actions` plugin:

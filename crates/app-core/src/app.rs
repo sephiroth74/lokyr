@@ -63,6 +63,7 @@ mod input;
 mod installs;
 mod menus;
 mod notices;
+mod opens;
 mod panels;
 mod pickers;
 mod restore;
@@ -103,6 +104,10 @@ const PERFORMANCE: &str = "app.performance";
 /// The command that turns Secure Keyboard Entry on for good, until the app
 /// quits, or back to its own way, on at a password's prompt.
 const SECURE_INPUT: &str = "app.secure-keyboard-entry";
+
+/// The command that asks the system to make Lokyr its default terminal,
+/// which its item, ticked and dimmed while it is, shows.
+const DEFAULT_TERMINAL: &str = "app.make-default-terminal";
 
 /// What stands before the title of the window whose keys Secure Keyboard
 /// Entry keeps from other apps.
@@ -445,6 +450,9 @@ pub struct App<B: Backend> {
     /// The program that shows man pages, in place of the login shell's
     /// `man`, as the tests give one.
     man: Option<PathBuf>,
+    /// The program that an `ssh` link runs, `ssh` as the system finds it,
+    /// or the tests' own.
+    ssh: PathBuf,
     /// The config in force.
     config: Config,
     /// The file of the config, if it has one.
@@ -484,6 +492,10 @@ pub struct App<B: Backend> {
     /// The timer past which the startup's and the latency's benches give up
     /// waiting for a frame on the display.
     bench_deadline: Option<TimerId>,
+    /// The panes of the scripts that the system opened with the app, which
+    /// keep their screens as their programs end, whatever `close-on-exit`
+    /// says.
+    scripts: BTreeSet<PaneId>,
     /// The timer past which a start that the system made to open files or
     /// folders, or for a service, opens a new window, if what it opened
     /// opened none.
@@ -714,6 +726,7 @@ impl<B: Backend> App<B> {
             theme_preview: None,
             program: Program::LoginShell,
             man: None,
+            ssh: PathBuf::from("ssh"),
             config,
             config_file: path.map(|path| ConfigFile {
                 path,
@@ -736,6 +749,7 @@ impl<B: Backend> App<B> {
             exit_timer: None,
             bench_deadline: None,
             untitled_timer: None,
+            scripts: BTreeSet::new(),
             told_timer: None,
             pane_wakes: BTreeMap::new(),
             ui_events: Vec::new(),
@@ -2297,6 +2311,7 @@ impl<B: Backend> App<B> {
         self.paste_asks.retain(|_, (pane, _)| !panes.contains(pane));
         for &pane in panes {
             self.pane_wakes.remove(&pane);
+            self.scripts.remove(&pane);
             for state in self.windows.values_mut() {
                 state.mouse.forget(pane);
             }
@@ -2327,8 +2342,13 @@ impl<B: Backend> App<B> {
             let Some(pane) = self.workspace.pane_mut(id) else {
                 continue;
             };
-            // A man page's window keeps the page, from its top.
-            let close = if page { CloseOnExit::Never } else { close };
+            // A man page's window keeps the page, from its top, and a
+            // script's pane what it printed.
+            let close = if page || self.scripts.contains(&id) {
+                CloseOnExit::Never
+            } else {
+                close
+            };
             match pane.exited(close, now, &self.texts) {
                 Some(Exited::Close) => {
                     closing.push((window, id));
@@ -2422,6 +2442,10 @@ impl<B: Backend> App<B> {
                     self.secure_chosen = !self.secure_chosen;
                     platform.set_command_checked(SECURE_INPUT, self.secure_chosen);
                     self.settle_secure_input(platform);
+                    Ok(())
+                }
+                DEFAULT_TERMINAL => {
+                    self.make_default_terminal(platform);
                     Ok(())
                 }
                 NEW_WINDOW => {
@@ -3386,6 +3410,7 @@ impl<B: Backend> App<B> {
         // The themes before the first window, whose panes take their colors.
         self.load_themes(platform);
         self.set_menu(platform);
+        self.show_default_terminal(platform);
         self.show_appearance(platform);
         self.show_performance(platform);
         self.tell_font(platform);
@@ -3651,6 +3676,10 @@ impl<B: Backend> App<B> {
             }
             AppEvent::OpenFiles(paths) => self.open_files(platform, paths),
             AppEvent::OpenFolders { folders, tabs } => self.open_folders(platform, folders, tabs),
+            AppEvent::OpenUrls(links) => self.open_links(platform, &links),
+            AppEvent::DefaultTerminalMade { failed } => {
+                self.default_terminal_made(platform, &failed);
+            }
             _ => {}
         }
     }
@@ -3950,6 +3979,7 @@ fn commands(texts: &Texts, plugins: &Plugins) -> Registry {
         (REPORT_ISSUE, "app-report-issue", Category::App),
         (SETTINGS, "app-settings", Category::App),
         (SECURE_INPUT, "app-secure-keyboard-entry", Category::App),
+        (DEFAULT_TERMINAL, "app-make-default-terminal", Category::App),
         (PERFORMANCE, "app-performance", Category::View),
         (NEW_WINDOW, "window-new", Category::Windows),
         (CLOSE_WINDOW, "window-close", Category::Windows),

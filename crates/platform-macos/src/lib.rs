@@ -15,6 +15,7 @@ mod alert;
 mod app;
 mod appearance;
 mod backend;
+mod default_terminal;
 mod definition;
 mod drag_image;
 mod fill;

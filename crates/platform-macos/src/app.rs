@@ -129,14 +129,24 @@ define_class!(
         #[unsafe(method(application:openURLs:))]
         fn application_open_urls(&self, _sender: &NSApplication, urls: &NSArray<NSURL>) {
             // The files that the Finder opens with the app, or that the user
-            // drops on its icon, of the types that its bundle declares.
-            let paths: Vec<std::path::PathBuf> = (0..urls.count())
-                .map(|index| urls.objectAtIndex(index))
+            // drops on its icon, of the types that its bundle declares; and
+            // the links of its schemes.
+            let urls: Vec<_> = (0..urls.count()).map(|index| urls.objectAtIndex(index)).collect();
+            let paths: Vec<std::path::PathBuf> = urls
+                .iter()
                 .filter(|url| url.isFileURL())
                 .filter_map(|url| url.path().map(|path| std::path::PathBuf::from(path.to_string())))
                 .collect();
+            let links: Vec<String> = urls
+                .iter()
+                .filter(|url| !url.isFileURL())
+                .filter_map(|url| url.absoluteString().map(|text| text.to_string()))
+                .collect();
             if !paths.is_empty() {
                 self.post(Pending::App(AppEvent::OpenFiles(paths)));
+            }
+            if !links.is_empty() {
+                self.post(Pending::App(AppEvent::OpenUrls(links)));
             }
         }
 

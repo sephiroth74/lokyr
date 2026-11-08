@@ -186,6 +186,10 @@ pub struct Fake {
     keeps_windows: bool,
     /// Whether the system started the app of its own.
     default_launch: bool,
+    /// Whether the app is the system's default terminal, and how many
+    /// times it asked to be.
+    default_terminal: bool,
+    default_terminal_asks: usize,
     /// The screens' areas for windows, the menu bar's screen's first.
     screens: Vec<ScreenRect>,
     /// Whether it draws the progresses' fills, as a test says.
@@ -284,6 +288,8 @@ impl Fake {
             scrollers: Scrollers::default(),
             keeps_windows: false,
             default_launch: true,
+            default_terminal: false,
+            default_terminal_asks: 0,
             screens: vec![SCREEN_AREA],
             draws_fills: false,
             windows: BTreeMap::new(),
@@ -354,6 +360,16 @@ impl Fake {
     /// open files or for a service.
     pub fn set_default_launch(&mut self, default: bool) {
         self.default_launch = default;
+    }
+
+    /// Gives whether the app is the system's default terminal.
+    pub fn set_default_terminal(&mut self, default: bool) {
+        self.default_terminal = default;
+    }
+
+    /// How many times the app asked to be the system's default terminal.
+    pub fn default_terminal_asks(&self) -> usize {
+        self.default_terminal_asks
     }
 
     /// Gives the screens' areas for windows, the menu bar's screen's
@@ -783,6 +799,15 @@ impl Platform for Fake {
 
     fn default_launch(&self) -> bool {
         self.default_launch
+    }
+
+    fn is_default_terminal(&self) -> bool {
+        self.default_terminal
+    }
+
+    fn make_default_terminal(&mut self) -> bool {
+        self.default_terminal_asks += 1;
+        true
     }
 
     fn set_appearance(&mut self, appearance: Option<Appearance>) {

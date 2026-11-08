@@ -27,9 +27,16 @@ NSSpeechRecognitionUsageDescription = A program started in the terminal wants to
 document-type-itermcolors = iTerm2 Color Preset
 document-type-toml = TOML Document
 document-type-folder = Folder
+document-type-shell-script = Shell Script
+document-type-executable = Unix Executable
 
 # The services that Lokyr gives the Finder's folders, in its menu of a
 # folder and in the Services menu.
 
 service-new-window = New Lokyr Window Here
 service-new-tab = New Lokyr Tab Here
+
+# The links that Lokyr opens as the default terminal, which macOS names.
+
+url-type-ssh = Secure Shell Link
+url-type-man-page = Manual Page Link

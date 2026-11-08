@@ -34,16 +34,23 @@ const INSTALL: usize = 1;
 
 impl<B: Backend> App<B> {
     /// The files that the system asks the app to open: the folders, as
-    /// dropped on its icon, a window each; each theme's file asks to
-    /// install it; any other is told as no theme's.
+    /// dropped on its icon, a window each; the scripts and the executables,
+    /// as the default terminal opens them, each run in a window of its own;
+    /// each other file asks to install it as a theme's, or tells why it
+    /// cannot.
     pub(super) fn open_files(&mut self, platform: &mut dyn Platform, paths: Vec<PathBuf>) {
         let (folders, files): (Vec<PathBuf>, Vec<PathBuf>) =
             paths.into_iter().partition(|path| path.is_dir());
         if !folders.is_empty() {
             self.open_folders(platform, folders, false);
         }
-        for path in files {
+        let (scripts, themes): (Vec<PathBuf>, Vec<PathBuf>) =
+            files.into_iter().partition(|path| is_script(path));
+        for path in themes {
             self.ask_install(platform, path);
+        }
+        if !scripts.is_empty() {
+            self.run_scripts(platform, scripts);
         }
     }
 
@@ -227,4 +234,32 @@ fn shown_path(path: &Path) -> String {
         Some(inner) => format!("~/{}", inner.display()),
         None => path.display().to_string(),
     }
+}
+
+/// Whether `path` is a file that the default terminal runs: a script of
+/// its extension, `.command`, `.tool` or `.sh`, whatever its case, or an
+/// executable, but a theme's file, `.itermcolors` or `.toml`.
+fn is_script(path: &Path) -> bool {
+    let extension = path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .unwrap_or_default();
+    let of = |names: &[&str]| {
+        names
+            .iter()
+            .any(|name| extension.eq_ignore_ascii_case(name))
+    };
+    if !path.is_file() || of(&["itermcolors", "toml"]) {
+        return false;
+    }
+    if of(&["command", "tool", "sh"]) {
+        return true;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::metadata(path).is_ok_and(|metadata| metadata.permissions().mode() & 0o111 != 0)
+    }
+    #[cfg(not(unix))]
+    false
 }

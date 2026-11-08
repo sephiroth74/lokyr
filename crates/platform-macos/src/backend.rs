@@ -325,6 +325,14 @@ impl Platform for Backend {
         self.default_launch
     }
 
+    fn is_default_terminal(&self) -> bool {
+        crate::default_terminal::is_default()
+    }
+
+    fn make_default_terminal(&mut self) -> bool {
+        crate::default_terminal::make_default(self.waker.clone())
+    }
+
     fn keeps_windows(&self) -> bool {
         // "Close windows when quitting an application" off, in the global
         // domain, which the standard defaults search; read at each call.

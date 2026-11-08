@@ -114,12 +114,42 @@ fn copy_tree(from: &Path, to: &Path) -> Result<()> {
 /// which the app's Open With menu has; TOML's of `None`, which the app
 /// opens only as they are dropped on its icon. The folders, of `None`, a
 /// window each as they are dropped on its icon, the Finder's own opening
-/// of a folder left as it is.
-const DOCUMENT_TYPES: [(&str, &str, &str); 3] = [
-    ("document-type-itermcolors", ITERMCOLORS, "Alternate"),
-    ("document-type-toml", "public.toml", "None"),
-    ("document-type-folder", "public.folder", "None"),
+/// of a folder left as it is. The shell scripts, Terminal's `.command`
+/// and `.tool` and `.sh`, and the executables, of the Shell role and
+/// `Alternate`, which the app opens once the user makes it the default
+/// terminal, each run in a window of its own. Each its types, its rank and
+/// its role.
+const DOCUMENT_TYPES: [(&str, &[&str], &str, &str); 5] = [
+    (
+        "document-type-itermcolors",
+        &[ITERMCOLORS],
+        "Alternate",
+        "Viewer",
+    ),
+    ("document-type-toml", &["public.toml"], "None", "Viewer"),
+    ("document-type-folder", &["public.folder"], "None", "Viewer"),
+    (
+        "document-type-shell-script",
+        &[TERMINAL_SCRIPT, "public.shell-script"],
+        "Alternate",
+        "Shell",
+    ),
+    (
+        "document-type-executable",
+        &["public.unix-executable"],
+        "Alternate",
+        "Shell",
+    ),
 ];
+
+/// Terminal's type of the shell scripts that it runs, `.command` and
+/// `.tool`, which the bundle declares as it imports it.
+const TERMINAL_SCRIPT: &str = "com.apple.terminal.shell-script";
+
+/// The schemes of the links that the app opens once the user makes it the
+/// default terminal: each its name's message in the catalogs'
+/// `infoplist.ftl`, and its scheme.
+const URL_TYPES: [(&str, &str); 2] = [("url-type-ssh", "ssh"), ("url-type-man-page", "x-man-page")];
 
 /// The services that the app gives the Finder's folders, in its menu of a
 /// folder and in the Services menu: each its title's message in the
@@ -290,6 +320,7 @@ struct Catalog {
     usages: Vec<(String, String)>,
     types: Vec<String>,
     services: Vec<String>,
+    urls: Vec<String>,
 }
 
 /// The texts of each language of the catalogs in `locales`, by language:
@@ -346,7 +377,11 @@ fn catalog(text: &str) -> Result<Catalog> {
         .collect::<Result<_>>()?;
     let types = DOCUMENT_TYPES
         .iter()
-        .map(|&(message, _, _)| take(message))
+        .map(|&(message, ..)| take(message))
+        .collect::<Result<_>>()?;
+    let urls = URL_TYPES
+        .iter()
+        .map(|&(message, _)| take(message))
         .collect::<Result<_>>()?;
     let services = SERVICES
         .iter()
@@ -356,6 +391,7 @@ fn catalog(text: &str) -> Result<Catalog> {
         usages,
         types,
         services,
+        urls,
     })
 }
 
@@ -516,7 +552,7 @@ fn info_plist(
         at,
         &format!(
             "\t<key>CFBundleLocalizations</key>\n\t<array>\n{languages}\t</array>\n{}{}{}",
-            document_types(&source.types),
+            document_types(&source.types, &source.urls),
             services(&source.services),
             crate::sparkle::plist_entries()
         ),
@@ -524,49 +560,94 @@ fn info_plist(
     Ok(plist)
 }
 
-/// The entries of `Info.plist` of the files that the app opens, of the
-/// source's names of [`DOCUMENT_TYPES`], `names`: the document types, and
-/// the declaration of iTerm2's color presets' type.
-fn document_types(names: &[String]) -> String {
+/// The entries of `Info.plist` of the files and the links that the app
+/// opens, of the source's names of [`DOCUMENT_TYPES`], `names`, and of
+/// [`URL_TYPES`], `links`: the document types, the declarations of the
+/// types of other apps that it takes, iTerm2's color presets and
+/// Terminal's shell scripts, and the links' schemes.
+fn document_types(names: &[String], links: &[String]) -> String {
     let mut entries = String::from("\t<key>CFBundleDocumentTypes</key>\n\t<array>\n");
-    for ((_, identifier, rank), name) in DOCUMENT_TYPES.iter().zip(names) {
+    for ((_, identifiers, rank, role), name) in DOCUMENT_TYPES.iter().zip(names) {
+        let identifiers: String = identifiers
+            .iter()
+            .map(|identifier| format!("\t\t\t\t<string>{identifier}</string>\n"))
+            .collect();
         entries.push_str(&format!(
             concat!(
                 "\t\t<dict>\n",
                 "\t\t\t<key>CFBundleTypeName</key>\n\t\t\t<string>{name}</string>\n",
-                "\t\t\t<key>CFBundleTypeRole</key>\n\t\t\t<string>Viewer</string>\n",
+                "\t\t\t<key>CFBundleTypeRole</key>\n\t\t\t<string>{role}</string>\n",
                 "\t\t\t<key>LSHandlerRank</key>\n\t\t\t<string>{rank}</string>\n",
                 "\t\t\t<key>LSItemContentTypes</key>\n",
-                "\t\t\t<array>\n\t\t\t\t<string>{identifier}</string>\n\t\t\t</array>\n",
+                "\t\t\t<array>\n{identifiers}\t\t\t</array>\n",
                 "\t\t</dict>\n",
             ),
             name = escaped(name),
+            role = role,
             rank = rank,
-            identifier = identifier,
+            identifiers = identifiers,
         ));
     }
     entries.push_str("\t</array>\n");
-    let itermcolors = DOCUMENT_TYPES
-        .iter()
-        .zip(names)
-        .find(|((_, identifier, _), _)| *identifier == ITERMCOLORS)
-        .map_or("", |(_, name)| name.as_str());
-    entries.push_str(&format!(
-        concat!(
-            "\t<key>UTImportedTypeDeclarations</key>\n\t<array>\n\t\t<dict>\n",
-            "\t\t\t<key>UTTypeIdentifier</key>\n\t\t\t<string>{ITERMCOLORS}</string>\n",
-            "\t\t\t<key>UTTypeDescription</key>\n\t\t\t<string>{name}</string>\n",
-            "\t\t\t<key>UTTypeConformsTo</key>\n",
-            "\t\t\t<array>\n\t\t\t\t<string>com.apple.property-list</string>\n\t\t\t</array>\n",
-            "\t\t\t<key>UTTypeTagSpecification</key>\n\t\t\t<dict>\n",
-            "\t\t\t\t<key>public.filename-extension</key>\n",
-            "\t\t\t\t<array>\n\t\t\t\t\t<string>itermcolors</string>\n\t\t\t\t</array>\n",
-            "\t\t\t</dict>\n",
-            "\t\t</dict>\n\t</array>\n",
-        ),
-        ITERMCOLORS = ITERMCOLORS,
-        name = escaped(itermcolors),
+    let name_of = |type_identifier: &str| {
+        DOCUMENT_TYPES
+            .iter()
+            .zip(names)
+            .find(|((_, identifiers, ..), _)| identifiers.contains(&type_identifier))
+            .map_or("", |(_, name)| name.as_str())
+    };
+    let imported = |identifier: &str, conforms: &str, extensions: &[&str]| {
+        let extensions: String = extensions
+            .iter()
+            .map(|extension| format!("\t\t\t\t\t<string>{extension}</string>\n"))
+            .collect();
+        format!(
+            concat!(
+                "\t\t<dict>\n",
+                "\t\t\t<key>UTTypeIdentifier</key>\n\t\t\t<string>{identifier}</string>\n",
+                "\t\t\t<key>UTTypeDescription</key>\n\t\t\t<string>{name}</string>\n",
+                "\t\t\t<key>UTTypeConformsTo</key>\n",
+                "\t\t\t<array>\n\t\t\t\t<string>{conforms}</string>\n\t\t\t</array>\n",
+                "\t\t\t<key>UTTypeTagSpecification</key>\n\t\t\t<dict>\n",
+                "\t\t\t\t<key>public.filename-extension</key>\n",
+                "\t\t\t\t<array>\n{extensions}\t\t\t\t</array>\n",
+                "\t\t\t</dict>\n",
+                "\t\t</dict>\n",
+            ),
+            identifier = identifier,
+            name = escaped(name_of(identifier)),
+            conforms = conforms,
+            extensions = extensions,
+        )
+    };
+    entries.push_str("\t<key>UTImportedTypeDeclarations</key>\n\t<array>\n");
+    entries.push_str(&imported(
+        ITERMCOLORS,
+        "com.apple.property-list",
+        &["itermcolors"],
     ));
+    entries.push_str(&imported(
+        TERMINAL_SCRIPT,
+        "public.shell-script",
+        &["command", "tool"],
+    ));
+    entries.push_str("\t</array>\n");
+    entries.push_str("\t<key>CFBundleURLTypes</key>\n\t<array>\n");
+    for ((_, scheme), name) in URL_TYPES.iter().zip(links) {
+        entries.push_str(&format!(
+            concat!(
+                "\t\t<dict>\n",
+                "\t\t\t<key>CFBundleURLName</key>\n\t\t\t<string>{name}</string>\n",
+                "\t\t\t<key>CFBundleTypeRole</key>\n\t\t\t<string>Viewer</string>\n",
+                "\t\t\t<key>CFBundleURLSchemes</key>\n",
+                "\t\t\t<array>\n\t\t\t\t<string>{scheme}</string>\n\t\t\t</array>\n",
+                "\t\t</dict>\n",
+            ),
+            name = escaped(name),
+            scheme = scheme,
+        ));
+    }
+    entries.push_str("\t</array>\n");
     entries
 }
 
@@ -676,9 +757,9 @@ fn copy_icons(icons: &Path, resources: &Path) -> Result<()> {
 /// A language's `InfoPlist.strings`, of its `catalog`: its usage strings;
 /// the app's name, the same in every language, which the Finder, the Dock
 /// and the menu bar take from the language's strings once the bundle has
-/// them; and its document types' names, each keyed by the name of
-/// `source`, the catalog of `Info.plist`'s own, as the system looks them
-/// up.
+/// them; and its document types' and links' names, each keyed by the
+/// name of `source`, the catalog of `Info.plist`'s own, as the system
+/// looks them up.
 fn localized_plist(catalog: &Catalog, source: &Catalog) -> String {
     let mut pairs = vec![
         ("CFBundleDisplayName".to_owned(), NAME.to_owned()),
@@ -691,6 +772,13 @@ fn localized_plist(catalog: &Catalog, source: &Catalog) -> String {
             .iter()
             .map(|name| escaped(name))
             .zip(catalog.types.iter().cloned()),
+    );
+    pairs.extend(
+        source
+            .urls
+            .iter()
+            .map(|name| escaped(name))
+            .zip(catalog.urls.iter().cloned()),
     );
     plist(&pairs, false)
 }
@@ -759,6 +847,7 @@ mod tests {
             assert_eq!(catalog.usages.len(), USAGES.len());
             assert_eq!(catalog.types.len(), DOCUMENT_TYPES.len());
             assert_eq!(catalog.services.len(), SERVICES.len());
+            assert_eq!(catalog.urls.len(), URL_TYPES.len());
         }
         assert_eq!(catalogs["it"].services[0], "Nuova finestra Lokyr qui");
         let italian = &catalogs["it"].usages;
@@ -965,6 +1054,7 @@ mod tests {
             usages: Vec::new(),
             types: vec!["Color preset & more".to_owned()],
             services: vec!["New Window <Here>".to_owned()],
+            urls: vec!["SSH & co.".to_owned()],
         };
         let italian = Catalog {
             usages: vec![(
@@ -973,6 +1063,7 @@ mod tests {
             )],
             types: vec!["Preset di colori".to_owned()],
             services: vec!["Nuova finestra & co.".to_owned()],
+            urls: vec!["Link SSH".to_owned()],
         };
         let strings = localized_plist(&italian, &source);
         for key in ["CFBundleDisplayName", "CFBundleName"] {
@@ -987,6 +1078,11 @@ mod tests {
             strings.contains(
                 "<key>Color preset &amp; more</key>\n\t<string>Preset di colori</string>"
             ),
+            "{strings}"
+        );
+        // A link's name, keyed alike.
+        assert!(
+            strings.contains("<key>SSH &amp; co.</key>\n\t<string>Link SSH</string>"),
             "{strings}"
         );
         // A service's title, of the services' own strings, keyed alike.
@@ -1074,6 +1170,49 @@ mod tests {
             "public.folder"
         );
         assert_eq!(extract("CFBundleDocumentTypes.2.LSHandlerRank"), "None");
+        // The scripts and the executables, of the Shell role, which the app
+        // opens once it is the default terminal, and their links.
+        assert_eq!(
+            extract("CFBundleDocumentTypes.3.LSItemContentTypes.0"),
+            TERMINAL_SCRIPT
+        );
+        assert_eq!(
+            extract("CFBundleDocumentTypes.3.LSItemContentTypes.1"),
+            "public.shell-script"
+        );
+        assert_eq!(extract("CFBundleDocumentTypes.3.CFBundleTypeRole"), "Shell");
+        assert_eq!(
+            extract("CFBundleDocumentTypes.3.LSHandlerRank"),
+            "Alternate"
+        );
+        assert_eq!(
+            extract("CFBundleDocumentTypes.4.LSItemContentTypes.0"),
+            "public.unix-executable"
+        );
+        assert_eq!(extract("CFBundleDocumentTypes.4.CFBundleTypeRole"), "Shell");
+        assert_eq!(
+            extract("UTImportedTypeDeclarations.1.UTTypeIdentifier"),
+            TERMINAL_SCRIPT
+        );
+        assert_eq!(
+            extract(
+                "UTImportedTypeDeclarations.1.UTTypeTagSpecification.public\\.filename-extension.1"
+            ),
+            "tool"
+        );
+        assert_eq!(
+            extract("UTImportedTypeDeclarations.1.UTTypeDescription"),
+            "Shell Script"
+        );
+        assert_eq!(extract("CFBundleURLTypes.0.CFBundleURLSchemes.0"), "ssh");
+        assert_eq!(
+            extract("CFBundleURLTypes.0.CFBundleURLName"),
+            "Secure Shell Link"
+        );
+        assert_eq!(
+            extract("CFBundleURLTypes.1.CFBundleURLSchemes.0"),
+            "x-man-page"
+        );
         // The services on the Finder's folders, on by default.
         assert_eq!(
             extract("NSServices.0.NSMenuItem.default"),

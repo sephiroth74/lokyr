@@ -41,6 +41,7 @@ fn starting_opens_a_window_under_the_menus_of_the_commands() {
             "-",
             "Settings… cmd+,",
             "Secure Keyboard Entry",
+            "Make Lokyr the Default Terminal",
             "-",
             "Hide Lokyr cmd+h",
             "Hide Others alt+cmd+h",
@@ -332,6 +333,11 @@ fn the_app_s_commands_register_with_their_categories_and_titles() {
                 Category::View
             ),
             ("app.check-for-updates", "Check for Updates…", Category::App),
+            (
+                "app.make-default-terminal",
+                "Make Lokyr the Default Terminal",
+                Category::App
+            ),
             ("app.performance", "Show Performance", Category::View),
             ("app.quit", "Quit Lokyr", Category::App),
             ("app.report-issue", "Report an Issue…", Category::App),

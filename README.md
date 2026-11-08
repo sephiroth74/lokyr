@@ -89,7 +89,7 @@ Lokyr against Ghostty, Alacritty, kitty, WezTerm, iTerm2 and Terminal.app, under
 - ✅ Input methods, Secure Keyboard Entry, Option as Meta, chords and leaders in the keys.
 - ✅ Selection, copy on select, a copy mode of vi's keys through the scrollback, paste with a check of what it holds, drag and drop of files.
 - ✅ A quick terminal on a global key, from any edge of the screen.
-- ✅ Windows, tabs and splits that open again as Lokyr starts, each pane in its folder; New Lokyr Window Here and New Lokyr Tab Here in the Finder, and a folder dropped on the Dock's icon.
+- ✅ Windows, tabs and splits that open again as Lokyr starts, each pane in its folder; New Lokyr Window Here and New Lokyr Tab Here in the Finder, and a folder dropped on the Dock's icon; Lokyr as the default terminal of scripts, `ssh` and man pages' links.
 - ✅ Notifications, the bell, smooth cursor blinking that the window server draws.
 - ✅ A config in TOML, applied as it is saved, its errors shown in the window.
 - ✅ English and Italian, as the system's language is, or as the config says.

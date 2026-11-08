@@ -400,6 +400,17 @@ pub trait Platform {
     /// whose events come right after the start, and which open its windows.
     fn default_launch(&self) -> bool;
 
+    /// Whether the app is the system's default terminal: the application
+    /// that it opens shell scripts and executables in, and `ssh` and
+    /// `x-man-page` URLs, as its settings say now.
+    fn is_default_terminal(&self) -> bool;
+
+    /// Asks the system to make the app its default terminal, which it asks
+    /// the user to confirm, change by change: whether it asked, as an app
+    /// outside its bundle cannot be one. [`AppEvent::DefaultTerminalMade`]
+    /// tells the answers, once they all came.
+    fn make_default_terminal(&mut self) -> bool;
+
     /// Whether the system's settings have an app's windows open again as
     /// it starts, as they were as it quit: on the Mac, "Close windows when
     /// quitting an application" off.

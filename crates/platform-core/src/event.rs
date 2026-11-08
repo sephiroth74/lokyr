@@ -131,6 +131,17 @@ pub enum AppEvent {
     /// file manager on a file of a type that the app declares, or a file
     /// dropped on its icon: their paths, in their order.
     OpenFiles(Vec<std::path::PathBuf>),
+    /// The system asked the app to open URLs other than files', of the
+    /// schemes that the app declares, as `ssh` and `x-man-page` links: as
+    /// they were written, in their order.
+    OpenUrls(Vec<String>),
+    /// The system answered the app's ask to make it the default terminal,
+    /// [`Platform::make_default_terminal`](crate::Platform::make_default_terminal):
+    /// what did not change, each told, as one that the user declined.
+    DefaultTerminalMade {
+        /// The changes that failed, each what it was and why.
+        failed: Vec<String>,
+    },
     /// The user asked for a window, or a tab, at each of `folders`, as
     /// from the file manager's services on folders that it selected.
     OpenFolders {

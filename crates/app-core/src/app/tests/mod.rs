@@ -29,6 +29,7 @@ mod marks;
 mod menus;
 mod notices;
 mod numbers;
+mod opens;
 mod panels;
 mod panes;
 mod parts;
@@ -116,8 +117,13 @@ fn settings_opens_the_config_in_the_text_editor_made_first() {
     // The application's menu has it first after About and the updates, of
     // its key.
     assert_eq!(
-        menu_items(&fake, 0)[3..6],
-        ["Settings… cmd+,", "Secure Keyboard Entry", "-"]
+        menu_items(&fake, 0)[3..7],
+        [
+            "Settings… cmd+,",
+            "Secure Keyboard Entry",
+            "Make Lokyr the Default Terminal",
+            "-"
+        ]
     );
     assert_eq!(menu_items(&fake, 0).last().unwrap(), "Quit Lokyr cmd+q");
     // A file that is not there is made of the template, then opens.
