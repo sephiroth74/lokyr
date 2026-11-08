@@ -29,9 +29,9 @@ pub(super) type Wake = Arc<dyn Fn() + Send + Sync>;
 pub(super) enum Job {
     /// Its activation.
     Activate,
-    /// A command of its, with its arguments, which commands ran as deep
-    /// as the number tells.
-    Command(String, Args, usize),
+    /// A command of its, with its arguments, of the chain of commands
+    /// that ran it.
+    Command(String, Args, super::Chain),
     /// A batch of events.
     Events(Vec<Event>),
     /// A render of one of its views.
@@ -57,14 +57,14 @@ pub(super) enum Called {
 
 /// What the main thread keeps of the call under way: which call, its
 /// writes, and what it asks of the app and emits, which come as it
-/// returns; how deep commands ran the command that it is, and the window
+/// returns; the chain of commands that ran the command that it is, and the window
 /// that had the focus as it was asked, which its reads of the focus read,
 /// as a call of the main thread would have.
 pub(super) struct Busy {
     pub(super) called: Called,
     pub(super) writes: Vec<Write>,
     pub(super) out: Outbox,
-    pub(super) depth: usize,
+    pub(super) chain: super::Chain,
     pub(super) focused: Option<WindowId>,
 }
 
@@ -165,12 +165,13 @@ impl Worker {
     }
 
     fn begin(&mut self, job: Job, focused: Option<WindowId>) {
-        let (called, depth) = match &job {
-            Job::Activate => (Called::Activate, 0),
-            Job::Command(_, _, depth) => (Called::Command, *depth),
-            Job::Events(_) => (Called::Events, 0),
-            Job::Render(view) => (Called::Render(view.clone()), 0),
-            Job::Ui(_) => (Called::Ui, 0),
+        let none = super::Chain::default();
+        let (called, chain) = match &job {
+            Job::Activate => (Called::Activate, none),
+            Job::Command(_, _, chain) => (Called::Command, *chain),
+            Job::Events(_) => (Called::Events, none),
+            Job::Render(view) => (Called::Render(view.clone()), none),
+            Job::Ui(_) => (Called::Ui, none),
         };
         // A thread that ended takes nothing, which its next message tells.
         let _ = self.to.send(ToWorker::Call(job));
@@ -178,7 +179,7 @@ impl Worker {
             called,
             writes: Vec::new(),
             out: Outbox::default(),
-            depth,
+            chain,
             focused,
         });
     }

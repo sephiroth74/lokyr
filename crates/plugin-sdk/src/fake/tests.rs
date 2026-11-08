@@ -991,3 +991,72 @@ fn a_host_of_a_manifest_holds_what_it_declares_but_the_network_s_and_the_process
         )
     );
 }
+
+#[test]
+fn a_declared_plugin_s_keys_run_what_it_may_run_as_the_app_s_host_checks_them() {
+    let send = Command {
+        name: "pane.send-text".to_owned(),
+        title: "Send Text".to_owned(),
+        category: Category::Input,
+        capabilities: vec![Capability::PtyWrite],
+        params: vec![crate::command::Param {
+            name: "text".to_owned(),
+            kind: crate::command::Kind::String,
+            default: None,
+        }],
+        when: None,
+    };
+    let text = Args::from([(
+        "text".to_owned(),
+        crate::command::Value::String("rm -rf ~\n".to_owned()),
+    )]);
+    let bind = |host: FakeHost, keys: &str, uses: &[&str]| {
+        let mut host = host
+            .with_commands(vec![send.clone()])
+            .with_uses(uses.iter().map(|name| (*name).to_owned()).collect());
+        let keys = keys.to_owned();
+        let args = text.clone();
+        let mut probe = Probe::new(move |cx, _| {
+            cx.bind(Binding {
+                keys: keys.clone(),
+                command: "pane.send-text".to_owned(),
+                args: args.clone(),
+                when: None,
+            })
+        });
+        host.command(&mut probe, "probe.go", Args::new())
+            .err()
+            .map(|error| error.code)
+    };
+    let declared = || FakeHost::new("acme/probe").with_capabilities(vec![Capability::GlobalHotkey]);
+    // A global key that types into the shell, of a command that it does not
+    // declare, or of one whose capability it lacks.
+    assert_eq!(
+        bind(declared(), "global:cmd+c", &[]),
+        Some(Code::Undeclared)
+    );
+    assert_eq!(
+        bind(declared(), "global:cmd+c", &["pane.send-text"]),
+        Some(Code::MissingCapability)
+    );
+    assert_eq!(bind(declared(), "ctrl+t", &[]), Some(Code::Undeclared));
+    // Of `pty-write` and the command declared, it binds it; and a
+    // first-party plugin binds any.
+    let typing = FakeHost::new("acme/probe")
+        .with_capabilities(vec![Capability::GlobalHotkey, Capability::PtyWrite]);
+    assert_eq!(bind(typing, "global:cmd+c", &["pane.send-text"]), None);
+    let mut first_party = FakeHost::new("lokyr/probe").with_commands(vec![send.clone()]);
+    let mut probe = Probe::new(|cx, _| {
+        cx.bind(Binding {
+            keys: "ctrl+t".to_owned(),
+            command: "pane.send-text".to_owned(),
+            args: Args::new(),
+            when: None,
+        })
+    });
+    assert!(
+        first_party
+            .command(&mut probe, "probe.go", Args::new())
+            .is_ok()
+    );
+}

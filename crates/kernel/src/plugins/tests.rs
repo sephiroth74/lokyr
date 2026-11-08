@@ -520,6 +520,83 @@ fn a_plugin_s_menu_items_take_their_titles_from_its_catalogs_or_their_own() {
     assert_eq!(item.invocation.command, "titled.third");
 }
 
+#[test]
+fn a_declared_plugin_s_keys_run_what_it_may_run_as_its_menu_items_do() {
+    let mut app = App::default();
+    // The app's command that types its text into a pane, of `pty-write`.
+    let mut send = command("pane.send-text");
+    send.capabilities = vec![Capability::PtyWrite];
+    send.params = vec![Param {
+        name: "text".to_owned(),
+        kind: Kind::String,
+        default: None,
+    }];
+    app.registry.register(send).unwrap();
+    app.registry.register(command("tabs.new")).unwrap();
+    let codes = Rc::new(RefCell::new(Vec::new()));
+    let seen = Rc::clone(&codes);
+    let manifest = Manifest::parse(concat!(
+        "[plugin]\nname = \"acme/keys\"\nversion = \"1.0.0\"\nkind = \"luau\"\n",
+        "api = \"^0.1\"\nlicense = \"MIT\"\n[capabilities]\nglobal-hotkey = true\n",
+        "[uses]\ncommands = [\"tabs.new\"]\n",
+    ))
+    .unwrap();
+    let mut plugins = Plugins::new();
+    plugins
+        .add_declared(
+            manifest,
+            scripted(
+                move |cx| {
+                    cx.register_command(command("keys.own"))?;
+                    let code = |done: Result<(), Error>| done.err().map(|error| error.code);
+                    let text =
+                        Args::from([("text".to_owned(), Value::String("rm -rf ~\n".to_owned()))]);
+                    let mut seen = seen.borrow_mut();
+                    // A global key that types into the shell at the next ⌘C
+                    // in any app: of a command that it does not declare, nor
+                    // the capability that it needs.
+                    seen.push(code(cx.bind(host::Binding {
+                        keys: "global:cmd+c".to_owned(),
+                        command: "pane.send-text".to_owned(),
+                        args: text.clone(),
+                        when: None,
+                    })));
+                    // A key of the same, in the app.
+                    seen.push(code(cx.bind(host::Binding {
+                        keys: "ctrl+t".to_owned(),
+                        command: "pane.send-text".to_owned(),
+                        args: text,
+                        when: None,
+                    })));
+                    // Its own command, and one that its manifest declares.
+                    seen.push(code(cx.bind(binding("ctrl+o", "keys.own", None))));
+                    seen.push(code(cx.bind(binding("ctrl+n", "tabs.new", None))));
+                    // A declared one of arguments that it does not take.
+                    seen.push(code(cx.bind(host::Binding {
+                        keys: "ctrl+m".to_owned(),
+                        command: "tabs.new".to_owned(),
+                        args: Args::from([("index".to_owned(), Value::Integer(1))]),
+                        when: None,
+                    })));
+                    Ok(())
+                },
+                |_, _, _| Ok(()),
+            ),
+        )
+        .unwrap();
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    assert_eq!(
+        *codes.borrow(),
+        [
+            Some(Code::Undeclared),
+            Some(Code::Undeclared),
+            None,
+            None,
+            Some(Code::UnknownArgument)
+        ]
+    );
+}
+
 /// A plugin whose command reads three messages of its catalogs, of
 /// English and Italian, into what it said.
 struct Speaker(std::rc::Rc<std::cell::RefCell<Vec<String>>>);
@@ -746,7 +823,7 @@ fn what_changes_the_app_waits_for_the_call_to_return() {
                     command: "app.other".to_owned(),
                     args: Args::from([("n".to_owned(), Value::Number(2.0))]),
                 },
-                depth: 0,
+                chain: Chain::default(),
             },
         ]
     );

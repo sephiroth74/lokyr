@@ -135,7 +135,8 @@ impl<B: Backend> App<B> {
             else {
                 continue;
             };
-            let space = namespace(&command.name);
+            // Each plugin's items in a group of their own.
+            let space = entry.plugin.clone();
             if last.as_ref() != Some(&space) {
                 groups.push(Vec::new());
             }
@@ -188,6 +189,7 @@ impl<B: Backend> App<B> {
                 shortcut: None,
             }));
         }
+        let items = unique_titles(items);
         let menu = ContextMenu {
             items,
             dimmed,
@@ -618,7 +620,7 @@ pub(super) fn main_menu(
             shown.insert(
                 after,
                 Shown {
-                    group: (category, namespace(name), true),
+                    group: (category, entry.plugin.clone(), true),
                     title: entry.title.clone().unwrap_or_else(|| command.title.clone()),
                     id: item_id(at),
                     shortcut: keymap.shortcut_with(name, args).and_then(shortcut),
@@ -741,7 +743,7 @@ pub(super) fn main_menu(
         application.push(MenuItem::Separator);
         application.extend(app_commands);
     }
-    MainMenu {
+    let mut main = MainMenu {
         menus: vec![
             Menu {
                 title: "Lokyr".to_owned(),
@@ -788,12 +790,72 @@ pub(super) fn main_menu(
             ),
             menu("menu-help", help, Some(MenuRole::Help)),
         ],
+    };
+    for menu in &mut main.menus {
+        menu.items = unique_titles(std::mem::take(&mut menu.items));
     }
+    main
+}
+
+/// `items`, a menu's, but the plugins' items whose titles are those of the
+/// app's items of the menu, as a plugin's "Copy" in the Edit menu, which
+/// the user would take for the app's; the lines that parted them go too.
+pub(super) fn unique_titles(items: Vec<MenuItem>) -> Vec<MenuItem> {
+    // A title as the user reads it: of no case, nor the dots of an item
+    // that asks more.
+    let read = |title: &str| {
+        title
+            .trim()
+            .trim_end_matches('…')
+            .trim_end_matches("...")
+            .trim()
+            .to_lowercase()
+    };
+    let of_plugin = |item: &MenuItem| matches!(item, MenuItem::Command { command, .. } if command.starts_with(ITEM));
+    let apps: Vec<String> = items
+        .iter()
+        .filter(|item| !of_plugin(item))
+        .filter_map(|item| match item {
+            MenuItem::Command { title, .. } | MenuItem::Standard { title, .. } => Some(read(title)),
+            MenuItem::Submenu(menu) => Some(read(&menu.title)),
+            _ => None,
+        })
+        .collect();
+    let mut kept: Vec<MenuItem> = Vec::with_capacity(items.len());
+    for item in items {
+        if let MenuItem::Command { title, .. } = &item
+            && of_plugin(&item)
+            && apps.contains(&read(title))
+        {
+            eprintln!(
+                "lokyr: a plugin's menu item “{title}” is left out, as an item of the app's has its title"
+            );
+            continue;
+        }
+        // No line first, after another, nor last.
+        let line = matches!(item, MenuItem::Separator);
+        if line
+            && kept
+                .last()
+                .is_none_or(|last| matches!(last, MenuItem::Separator))
+        {
+            continue;
+        }
+        kept.push(item);
+    }
+    if kept
+        .last()
+        .is_some_and(|last| matches!(last, MenuItem::Separator))
+    {
+        kept.pop();
+    }
+    kept
 }
 
 /// An item of the menu bar, of a command or of a plugin's item: its group,
-/// of its category, its command's namespace and whether a plugin's item
-/// makes it, its title, its id and its keys.
+/// of its category, its command's namespace or the plugin that adds the
+/// item, and whether a plugin's item makes it, its title, its id and its
+/// keys.
 struct Shown {
     group: (Category, String, bool),
     title: String,

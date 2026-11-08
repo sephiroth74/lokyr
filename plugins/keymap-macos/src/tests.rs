@@ -12,7 +12,7 @@ const GUIDE: &str = include_str!("../../../docs/CONFIGURATION.md");
 
 #[test]
 fn it_binds_its_keys_in_their_order_and_registers_no_command() {
-    let mut host = FakeHost::new(NAME).with_manifest(crate::MANIFEST);
+    let mut host = FakeHost::new(NAME);
     host.activate(&mut KeymapMacos).unwrap();
     assert!(host.commands().is_empty());
     let (plain, rest) = host.bindings().split_at(BINDINGS.len());

@@ -1429,3 +1429,93 @@ fn the_copy_mode_takes_the_keys_of_a_man_page_s_window() {
     });
     let _ = std::fs::remove_dir_all(directory);
 }
+
+/// A plugin of a command of an argument, `menuer.go`, which has no item of
+/// its own, and items of it in the Edit menu and the context menu, of
+/// titles of the app's items and of its own.
+struct Menuer;
+
+impl plugins::Plugin for Menuer {
+    fn activate(&mut self, cx: &mut plugins::Cx<'_>) -> Result<(), Error> {
+        cx.register_command(Command {
+            name: "menuer.go".to_owned(),
+            title: "Go".to_owned(),
+            category: Category::Clipboard,
+            capabilities: Vec::new(),
+            params: vec![lokyr_kernel::commands::Param {
+                name: "which".to_owned(),
+                kind: lokyr_kernel::commands::Kind::String,
+                default: None,
+            }],
+            when: None,
+        })?;
+        for (place, title) in [
+            (plugins::host::MenuPlace::Bar(Category::Clipboard), "Copy"),
+            (plugins::host::MenuPlace::Bar(Category::Clipboard), "copy…"),
+            (
+                plugins::host::MenuPlace::Bar(Category::Clipboard),
+                "Copy as HTML",
+            ),
+            (plugins::host::MenuPlace::PaneContext, "Paste"),
+        ] {
+            cx.add_menu_item(plugins::host::MenuItem {
+                place,
+                command: "menuer.go".to_owned(),
+                args: Args::from([(
+                    "which".to_owned(),
+                    lokyr_kernel::commands::Value::String(title.to_owned()),
+                )]),
+                title: Some(title.to_owned()),
+            })?;
+        }
+        Ok(())
+    }
+}
+
+#[test]
+fn a_plugin_s_menu_item_of_an_app_s_title_is_left_out_and_its_others_stand_apart() {
+    let mut fake = Fake::default();
+    let mut app = app(Config::default(), quiet()).with_plugin("menuer", Box::new(Menuer));
+    fake.start(&mut app);
+    let edit = menu_items(&fake, 2);
+    // The app's Copy alone, and the plugin's own title after a line of its
+    // own, after the clipboard's commands.
+    assert!(!edit.iter().any(|item| item == "Copy"), "{edit:?}");
+    let at = edit
+        .iter()
+        .position(|item| item == "Copy as HTML")
+        .expect("its item");
+    assert_eq!(edit[..at], ["Copy cmd+c", "Paste cmd+v", "-"], "{edit:?}");
+    assert!(!edit.iter().any(|item| item == "copy…"), "{edit:?}");
+    // Of the context menu, as of any menu: no line first, after another,
+    // nor last.
+    let item = |title: &str, command: &str| MenuItem::Command {
+        title: title.to_owned(),
+        command: command.to_owned(),
+        shortcut: None,
+    };
+    let titles = |items: Vec<MenuItem>| -> Vec<String> {
+        items
+            .into_iter()
+            .map(|item| match item {
+                MenuItem::Command { title, .. } => title,
+                MenuItem::Separator => "-".to_owned(),
+                _ => "?".to_owned(),
+            })
+            .collect()
+    };
+    let menu = vec![
+        item("Copy", "pane.copy"),
+        item("Paste", "pane.paste"),
+        MenuItem::Separator,
+        item(" PASTE ", "menu-item:0"),
+        MenuItem::Separator,
+        item("Paste and Go", "menu-item:1"),
+        MenuItem::Separator,
+        item("Copy...", "menu-item:2"),
+    ];
+    assert_eq!(
+        titles(unique_titles(menu)),
+        ["Copy", "Paste", "-", "Paste and Go"]
+    );
+}

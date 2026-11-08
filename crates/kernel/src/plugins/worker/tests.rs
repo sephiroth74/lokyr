@@ -16,7 +16,7 @@ use lokyr_plugin_sdk::ui::ViewId;
 use lokyr_plugin_sdk::view::Node;
 
 use super::super::tests::{App, binding, command, text_once, window};
-use super::super::{Plugins, Request, Runner, Served, Status};
+use super::super::{Chain, Plugins, Request, Runner, Served, Status};
 use crate::commands::{Args, Code, Error};
 use crate::keymap::Invocation;
 use crate::workspace::{PaneId, TabId, WindowId};
@@ -709,7 +709,7 @@ fn a_worker_s_call_reads_the_focus_of_the_time_that_it_was_asked() {
 }
 
 #[test]
-fn the_commands_that_a_worker_s_command_runs_are_one_deeper_whenever_its_call_ends() {
+fn the_commands_that_a_worker_s_command_runs_are_of_its_chain_whenever_its_call_ends() {
     let mut app = App::default();
     window(&mut app, "sleep 30");
     let plugin = Threaded {
@@ -718,7 +718,12 @@ fn the_commands_that_a_worker_s_command_runs_are_one_deeper_whenever_its_call_en
     };
     let (mut plugins, _) = started(&mut app, plugin);
     plugins
-        .run_deep("busy.go", Args::new(), 3, &mut app.context())
+        .run_deep(
+            "busy.go",
+            Args::new(),
+            Chain { id: 7, depth: 3 },
+            &mut app.context(),
+        )
         .unwrap();
     served(&mut plugins, &mut app);
     assert_eq!(
@@ -728,7 +733,7 @@ fn the_commands_that_a_worker_s_command_runs_are_one_deeper_whenever_its_call_en
                 command: "busy.go".to_owned(),
                 args: Args::new(),
             },
-            depth: 3,
+            chain: Chain { id: 7, depth: 3 },
         }]
     );
     // Those of an event's call, or of a command that the user ran, start
@@ -739,7 +744,10 @@ fn the_commands_that_a_worker_s_command_runs_are_one_deeper_whenever_its_call_en
     served(&mut plugins, &mut app);
     assert!(matches!(
         &plugins.take_requests()[..],
-        [Request::Run { depth: 0, .. }]
+        [Request::Run {
+            chain: Chain { id: 0, depth: 0 },
+            ..
+        }]
     ));
 }
 

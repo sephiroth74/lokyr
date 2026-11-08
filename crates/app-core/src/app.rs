@@ -196,6 +196,15 @@ const STEP_SHARE: f64 = 0.5;
 /// would go on forever.
 const COMMANDS_DEEP: usize = 16;
 
+/// How many commands one chain of commands that ran commands runs at most,
+/// past the first, as a plugin's command that runs itself twice would run
+/// twice as often at each step, 2^16 times within the depth.
+const COMMANDS_WIDE: usize = 256;
+
+/// How many chains of commands the app keeps the runs of, the newest, as a
+/// worker's chain goes on over turns.
+const CHAINS_KEPT: usize = 64;
+
 /// The catalogs of the texts that the app shows, the kernel's and its own,
 /// by language.
 pub(crate) const CATALOGS: [(&str, &str); 4] = [
@@ -611,6 +620,9 @@ pub struct App<B: Backend> {
     /// or the config's key changes.
     performance: Option<Performance>,
     performance_chosen: Option<bool>,
+    /// The runs of each chain of commands that ran commands, of the newest
+    /// chains, by their ids, and the last id given.
+    chains: (BTreeMap<u64, usize>, u64),
     /// Whether the cursors and the text that blinks blink as on layers of
     /// their own without them, as the tests' fake platform, which draws
     /// nothing, shows them.
@@ -790,6 +802,7 @@ impl<B: Backend> App<B> {
             appearance_chosen: None,
             performance: None,
             performance_chosen: None,
+            chains: (BTreeMap::new(), 0),
             layers: false,
             menu_contexts: Vec::new(),
             menu_enabled: BTreeMap::new(),
@@ -2398,17 +2411,63 @@ impl<B: Backend> App<B> {
         if self.field_command(platform, name) {
             return;
         }
-        self.run_deep(platform, name, args, 0);
+        let chain = self.new_chain();
+        self.run_deep(platform, name, args, chain);
     }
 
-    /// Runs `name`, which commands of plugins `depth` deep ran.
-    fn run_deep(&mut self, platform: &mut dyn Platform, name: &str, args: Args, depth: usize) {
+    /// A new chain of commands that ran commands, which a command that the
+    /// user ran, or that a call of no command's asked, starts.
+    fn new_chain(&mut self) -> plugins::Chain {
+        let (runs, last) = &mut self.chains;
+        *last += 1;
+        runs.insert(*last, 0);
+        while runs.len() > CHAINS_KEPT {
+            runs.pop_first();
+        }
+        plugins::Chain {
+            id: *last,
+            depth: 0,
+        }
+    }
+
+    /// Counts a run of `chain`, which commands asked: whether it may run,
+    /// within the chain's depth and its runs.
+    fn may_run(&mut self, chain: plugins::Chain, command: &str) -> bool {
+        if chain.depth >= COMMANDS_DEEP {
+            eprintln!(
+                "lokyr: `{command}` does not run, as commands that ran commands took it {COMMANDS_DEEP} deep"
+            );
+            return false;
+        }
+        let runs = self.chains.0.entry(chain.id).or_insert(0);
+        *runs += 1;
+        if *runs > COMMANDS_WIDE {
+            // Told once a chain.
+            if *runs == COMMANDS_WIDE + 1 {
+                eprintln!(
+                    "lokyr: `{command}` does not run, as commands that ran commands ran {COMMANDS_WIDE} of one chain"
+                );
+            }
+            return false;
+        }
+        true
+    }
+
+    /// Runs `name`, of the chain `chain` of commands of plugins that ran
+    /// it.
+    fn run_deep(
+        &mut self,
+        platform: &mut dyn Platform,
+        name: &str,
+        args: Args,
+        chain: plugins::Chain,
+    ) {
         let ran = match self.commands.check(name, args) {
             Err(error) => Err(error),
             Ok(args) if self.plugins.owns(name) => {
                 let owner = self.plugins.owner_of(name).map(str::to_owned);
                 let ran = self.with_plugins(platform, |plugins, context| {
-                    plugins.run_deep(name, args, depth, context)
+                    plugins.run_deep(name, args, chain, context)
                 });
                 self.after_plugins(platform);
                 // A fault that stopped its plugin shows as the plugins that
@@ -2642,13 +2701,20 @@ impl<B: Backend> App<B> {
         }
         for request in self.plugins.take_requests() {
             match request {
-                Request::Run { invocation, depth } if depth < COMMANDS_DEEP => {
-                    self.run_deep(platform, &invocation.command, invocation.args, depth + 1);
+                Request::Run { invocation, chain } => {
+                    // A call of no command's starts a chain.
+                    let chain = match chain.id {
+                        0 => self.new_chain(),
+                        _ => chain,
+                    };
+                    if self.may_run(chain, &invocation.command) {
+                        let deeper = plugins::Chain {
+                            depth: chain.depth + 1,
+                            ..chain
+                        };
+                        self.run_deep(platform, &invocation.command, invocation.args, deeper);
+                    }
                 }
-                Request::Run { invocation, .. } => eprintln!(
-                    "lokyr: `{}` does not run, as commands that ran commands took it {COMMANDS_DEEP} deep",
-                    invocation.command
-                ),
                 Request::OpenWindow(None) => self.open_window(platform),
                 Request::OpenQuickWindow {
                     window,

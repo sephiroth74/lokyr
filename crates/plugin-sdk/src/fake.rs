@@ -1728,6 +1728,16 @@ impl FakeHost {
             .find(|command| command.name == name)
     }
 
+    /// Checks `binding` of a plugin of a manifest that is not a first-party
+    /// one, as the app's host checks it: as its menu items, a command that
+    /// it may run, of arguments that make a whole call.
+    fn check_binding(&self, binding: &Binding) -> Result<(), Error> {
+        if self.uses.is_some() {
+            self.check_run(&binding.command, &binding.args)?;
+        }
+        Ok(())
+    }
+
     /// Checks a call of the command `name` with `args` that the plugin
     /// makes, as the app's registry does: of a command that is registered,
     /// of the arguments that its parameters take; of a command that the
@@ -2774,6 +2784,7 @@ impl Calling<'_> {
                         binding.keys
                     )));
                 }
+                self.host.check_binding(&binding)?;
                 self.host.bindings.push(binding);
             }
             Request::Bind(binding) => {
@@ -2788,6 +2799,7 @@ impl Calling<'_> {
                 if let Some(when) = &binding.when {
                     When::parse(when).map_err(invalid)?;
                 }
+                self.host.check_binding(&binding)?;
                 self.host.bindings.push(binding);
             }
             Request::AddMenuItem(item) => {

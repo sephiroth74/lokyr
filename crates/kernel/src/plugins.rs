@@ -61,6 +61,20 @@ mod worker;
 
 use worker::{Called, Done, FromWorker, Job, Worker};
 
+/// The chain of commands that ran commands that a command's run is of:
+/// its id, which the app gives the run that starts it, a command that the
+/// user ran or that a call of no command's asked, 0 before; and how deep
+/// in it the command ran, 0 for the first. The app bounds a chain in
+/// depth and in its runs, as a command that runs itself twice would run
+/// twice as often at each step.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Chain {
+    /// The chain's id, 0 for none yet.
+    pub id: u64,
+    /// How deep in it the command ran.
+    pub depth: usize,
+}
+
 /// What a plugin asks of the app, which the app does once the plugin's
 /// call returns.
 #[derive(Clone, Debug, PartialEq)]
@@ -69,10 +83,10 @@ pub enum Request {
     Run {
         /// The command and its arguments.
         invocation: Invocation,
-        /// How deep the command whose call asked it ran, as commands ran
-        /// commands: 0 for a call of no command's, an event's or a
-        /// render's, and for a command that the user ran.
-        depth: usize,
+        /// The chain of the command whose call asked it, as commands ran
+        /// commands: none for a call of no command's, an event's or a
+        /// render's.
+        chain: Chain,
     },
     /// Open a window, its pane in `directory`, a path absolute or from `~`,
     /// or in the folder of a file there, if given.
@@ -1153,17 +1167,17 @@ impl Plugins {
         args: Args,
         context: &mut Context<'_>,
     ) -> Result<(), Error> {
-        self.run_deep(command, args, 0, context)
+        self.run_deep(command, args, Chain::default(), context)
     }
 
-    /// Runs `command` as [`Plugins::run`] does, which commands ran `depth`
-    /// deep: the commands that its call runs, whenever it ends, are
-    /// [`Request::Run`]s of that depth.
+    /// Runs `command` as [`Plugins::run`] does, of the chain `chain`, as
+    /// commands ran it: the commands that its call runs, whenever it ends,
+    /// are [`Request::Run`]s of that chain.
     pub fn run_deep(
         &mut self,
         command: &str,
         args: Args,
-        depth: usize,
+        chain: Chain,
         context: &mut Context<'_>,
     ) -> Result<(), Error> {
         let Some(at) = self.owner(command) else {
@@ -1184,13 +1198,13 @@ impl Plugins {
                     "on_command",
                     |plugin, cx| plugin.on_command(cx, command, args),
                 );
-                deepen(&mut self.out.requests[before..], depth);
+                deepen(&mut self.out.requests[before..], chain);
                 ran
             }
             // Its failure comes as its call ends.
             Runner::Worker(worker) => {
                 worker.ask(
-                    Job::Command(command.to_owned(), args, depth),
+                    Job::Command(command.to_owned(), args, chain),
                     context.focused,
                 );
                 Ok(())
@@ -1279,6 +1293,7 @@ impl Plugins {
             let texts = Texts::new(language, state.catalogs);
             items.extend(state.menu_items.iter().map(|item| {
                 MenuEntry {
+                    plugin: state.name.clone(),
                     place: item.place,
                     invocation: Invocation {
                         command: item.command.clone(),
@@ -1910,7 +1925,7 @@ impl Plugins {
             called,
             writes,
             out: mut sent,
-            depth,
+            chain,
             ..
         } = busy;
         let result = match done {
@@ -1939,7 +1954,7 @@ impl Plugins {
             }
         };
         apply(writes, context, &mut sent, state);
-        deepen(&mut sent.requests, depth);
+        deepen(&mut sent.requests, chain);
         out.merge(sent);
         let activated = called == Called::Activate && result.is_ok();
         match (called, result) {
@@ -2123,6 +2138,8 @@ fn theme_name(name: &str) -> Result<(), Error> {
 /// command's.
 #[derive(Clone, Debug, PartialEq)]
 pub struct MenuEntry {
+    /// The plugin that added it.
+    pub plugin: String,
     /// The menu.
     pub place: host::MenuPlace,
     /// What it runs.
@@ -2893,12 +2910,12 @@ fn disable(state: &mut State, registry: &mut Registry, declarations_changed: &mu
     state.menu_items.clear();
 }
 
-/// Gives the commands that `requests` run the depth `depth`, of the
+/// Gives the commands that `requests` run the chain `chain`, of the
 /// command whose call asked them.
-fn deepen(requests: &mut [Request], depth: usize) {
+fn deepen(requests: &mut [Request], chain: Chain) {
     for request in requests {
-        if let Request::Run { depth: asked, .. } = request {
-            *asked = depth;
+        if let Request::Run { chain: asked, .. } = request {
+            *asked = chain;
         }
     }
 }
@@ -3767,7 +3784,7 @@ impl Host<'_, '_> {
                         command: name,
                         args,
                     },
-                    depth: 0,
+                    chain: Chain::default(),
                 }
             }
             Asked::Open(target) => Request::Open(
@@ -4011,6 +4028,18 @@ impl Host<'_, '_> {
         }
     }
 
+    /// Checks `binding` of a plugin of a manifest that is not a first-party
+    /// one, as its menu items are: its keys run the call as the plugin
+    /// would, a command that it may run, of arguments that make a whole
+    /// call, as a key's run is the user's, which no check of the plugin's
+    /// meets after.
+    fn check_binding(&self, binding: &host::Binding) -> Result<(), Error> {
+        if self.state.uses.is_some() {
+            self.check_run(&binding.command, binding.args.clone())?;
+        }
+        Ok(())
+    }
+
     /// Takes `request`, a declaration of the plugin's commands or keys, at
     /// once.
     fn declare(&mut self, request: Asked) -> Result<Response, Error> {
@@ -4041,6 +4070,7 @@ impl Host<'_, '_> {
                         binding.keys
                     )));
                 }
+                self.check_binding(&binding)?;
                 self.state.global_bindings.push((
                     combo,
                     Invocation {
@@ -4065,6 +4095,7 @@ impl Host<'_, '_> {
                     .map(When::parse)
                     .transpose()
                     .map_err(invalid)?;
+                self.check_binding(&binding)?;
                 self.state.bindings.push(Binding {
                     keys,
                     invocation: Invocation {

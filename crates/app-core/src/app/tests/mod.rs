@@ -13,7 +13,7 @@ use lokyr_ui_core::pane::Preedit;
 
 use super::asks::{invisible, shown};
 use super::frame::{appearance_over, bar_item};
-use super::menus::{main_menu, man_keywords, man_page, man_program, shortened};
+use super::menus::{main_menu, man_keywords, man_page, man_program, shortened, unique_titles};
 use super::*;
 use crate::{fakes, notice};
 
@@ -2187,7 +2187,8 @@ fn a_binding_of_the_config_sends_its_text_as_it_is() {
 /// line of the focused pane's text on the clipboard, and opens a
 /// window through `window.new`; `test.boom`, on Control-B, panics;
 /// `test.size` gives the text 18 points; `test.close` closes the
-/// focused window; and `test.again` runs itself, counting its runs.
+/// focused window; `test.again` runs itself, and `test.twice` runs itself
+/// twice, counting their runs.
 struct Tester {
     runs: std::rc::Rc<std::cell::Cell<usize>>,
 }
@@ -2200,6 +2201,7 @@ impl plugins::Plugin for Tester {
             "test.size",
             "test.close",
             "test.again",
+            "test.twice",
             "test.bind",
         ];
         for name in names {
@@ -2239,6 +2241,11 @@ impl plugins::Plugin for Tester {
             "test.again" => {
                 self.runs.set(self.runs.get() + 1);
                 cx.run_command("test.again", Args::new())
+            }
+            "test.twice" => {
+                self.runs.set(self.runs.get() + 1);
+                cx.run_command("test.twice", Args::new())?;
+                cx.run_command("test.twice", Args::new())
             }
             // A binding that takes a key of the app's own.
             "test.bind" => cx.bind(plugins::host::Binding {
@@ -2340,6 +2347,15 @@ fn a_plugin_s_requests_change_the_app_after_its_call() {
     // again as the depth allows.
     app.run(&mut fake, "test.again", Args::new());
     assert_eq!(runs.get(), COMMANDS_DEEP + 1);
+    // One that runs itself twice, at each step, stops as its chain ran as
+    // many as the app lets one chain run, not 2^16 times; and the next
+    // chain, the user's next run, runs as many again.
+    runs.set(0);
+    app.run(&mut fake, "test.twice", Args::new());
+    assert_eq!(runs.get(), COMMANDS_WIDE + 1);
+    runs.set(0);
+    app.run(&mut fake, "test.twice", Args::new());
+    assert_eq!(runs.get(), COMMANDS_WIDE + 1);
 }
 
 /// The press of Command and the key of `letter`.

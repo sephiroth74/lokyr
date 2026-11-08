@@ -132,21 +132,24 @@ fn a_worker_s_status_bar_shows_once_its_render_comes_and_its_failure_tells_the_u
 }
 
 /// A plugin of a thread of its own whose command, `again.go`, runs itself,
-/// as `runs` counts.
+/// and `again.twice` itself twice, as `runs` counts.
 struct Again {
     runs: Arc<AtomicUsize>,
 }
 
 impl Plugin for Again {
     fn activate(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
-        cx.register_command(Command {
-            name: "again.go".to_owned(),
-            title: "Again".to_owned(),
-            category: Category::View,
-            capabilities: Vec::new(),
-            params: Vec::new(),
-            when: None,
-        })
+        for name in ["again.go", "again.twice"] {
+            cx.register_command(Command {
+                name: name.to_owned(),
+                title: "Again".to_owned(),
+                category: Category::View,
+                capabilities: Vec::new(),
+                params: Vec::new(),
+                when: None,
+            })?;
+        }
+        Ok(())
     }
 
     fn catalogs(&self) -> &'static [(&'static str, &'static str)] {
@@ -156,9 +159,12 @@ impl Plugin for Again {
         ]
     }
 
-    fn on_command(&mut self, cx: &mut Cx<'_>, _: &str, _: Args) -> Result<(), Error> {
+    fn on_command(&mut self, cx: &mut Cx<'_>, name: &str, _: Args) -> Result<(), Error> {
         self.runs.fetch_add(1, Ordering::Relaxed);
-        cx.run_command("again.go", Args::new())
+        if name == "again.twice" {
+            cx.run_command(name, Args::new())?;
+        }
+        cx.run_command(name, Args::new())
     }
 }
 
@@ -206,4 +212,20 @@ fn a_worker_s_command_that_runs_itself_stops_as_deep_as_a_main_thread_s() {
     let pause = Instant::now() + Duration::from_millis(200);
     run_until(&mut fake, &mut app, |_, _| Instant::now() > pause);
     assert_eq!(runs.load(Ordering::Relaxed), COMMANDS_DEEP + 1);
+}
+
+#[test]
+fn a_worker_s_command_that_runs_itself_twice_stops_as_its_chain_ran_its_most() {
+    let (mut fake, mut app, runs) = with_again("en");
+    run_until(&mut fake, &mut app, |_, app| {
+        app.commands.get("again.twice").is_some()
+    });
+    fake.send_app(&mut app, AppEvent::Command("again.twice".to_owned()));
+    run_until(&mut fake, &mut app, |_, _| {
+        runs.load(Ordering::Relaxed) > COMMANDS_WIDE
+    });
+    // The turns that more runs would take, which none takes.
+    let pause = Instant::now() + Duration::from_millis(300);
+    run_until(&mut fake, &mut app, |_, _| Instant::now() > pause);
+    assert_eq!(runs.load(Ordering::Relaxed), COMMANDS_WIDE + 1);
 }
