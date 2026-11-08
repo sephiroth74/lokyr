@@ -168,8 +168,12 @@ const ITERMCOLORS: &str = "com.googlecode.iterm2.itermcolors";
 /// the terminal ask for what macOS guards, which it asks on the terminal's
 /// behalf: Apple Events, the microphone, the camera, the contacts, the
 /// calendars, the location and the photos. Without them, the runtime
-/// refuses each without the prompt that its usage string tells.
-const ENTITLEMENTS: [&str; 7] = [
+/// refuses each without the prompt that its usage string tells. And the
+/// one exception of the hardened runtime, `allow-jit`, which lets Luau's
+/// native code generator map its code with `MAP_JIT`, the plugins of Luau
+/// running in its interpreter without it.
+const ENTITLEMENTS: [&str; 8] = [
+    "com.apple.security.cs.allow-jit",
     "com.apple.security.automation.apple-events",
     "com.apple.security.device.audio-input",
     "com.apple.security.device.camera",

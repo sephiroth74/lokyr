@@ -102,7 +102,7 @@ The MCP server lets AI agents drive the terminal ([ADR 0017](adr/0017-mcp-and-ag
 - **Signing**:
   - Hardened Runtime and notarization.
   - The hardened runtime's entitlements of the resources that the child processes ask for, without which it refuses them with no prompt: `com.apple.security.automation.apple-events`, `com.apple.security.device.audio-input` and `com.apple.security.device.camera`, and `com.apple.security.personal-information.addressbook`, `.calendars`, `.location` and `.photos-library`. They let a program ask; macOS still asks the user, with the usage strings above.
-  - One hardened-runtime exception, `com.apple.security.cs.allow-jit`, for Luau's native code generator ([ADR 0012](adr/0012-luau-plugins.md)). Without it, plugins run in Luau's interpreter.
+  - One hardened-runtime exception, `com.apple.security.cs.allow-jit`, for Luau's native code generator ([ADR 0012](adr/0012-luau-plugins.md)), which the bundle holds since the Luau host. Without it, plugins run in Luau's interpreter.
   - No App Sandbox, which is incompatible with a terminal.
 
 ## Supply chain of our own code

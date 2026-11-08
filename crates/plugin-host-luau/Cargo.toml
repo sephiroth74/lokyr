@@ -10,7 +10,11 @@ repository.workspace = true
 publish = false
 
 [dependencies]
-lokyr-plugin-sdk.workspace = true
+lokyr-plugin-sdk = { workspace = true, features = ["unstable"] }
+mlua.workspace = true
+
+[dev-dependencies]
+lokyr-plugin-sdk = { workspace = true, features = ["fake"] }
 
 [lints]
 workspace = true

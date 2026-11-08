@@ -27,6 +27,15 @@ const PLATFORM: &str = "aarch64-apple-darwin";
 /// font's README tells it.
 const FONT_RELEASE: &str = "3.5.1";
 
+/// The build-dependencies whose builds compile their sources into the
+/// binary, as Luau's through its sources' crate, which the tree of the
+/// normal dependencies leaves out.
+const COMPILED_IN: [&str; 1] = ["luau0-src"];
+
+/// The name of the component of Rust's standard library, which every Rust
+/// binary holds.
+pub(crate) const STD: &str = "rust-std";
+
 /// A crate of another project that the binary holds.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct Component {
@@ -43,21 +52,30 @@ pub(crate) struct Component {
 }
 
 /// The crates of other projects that the app's binary holds, by name and
-/// version.
+/// version: those of its normal dependencies, those of [`COMPILED_IN`] of
+/// its build-dependencies, and Rust's standard library, [`STD`].
 pub(crate) fn crates(root: &Path) -> Result<Vec<Component>> {
-    let tree = Command::new(env!("CARGO"))
-        .args(["tree", "--quiet", "--locked", "-p", APP])
-        .args(["-e", "normal,no-proc-macro", "--target", PLATFORM])
-        .args(["--prefix", "none", "--format", "{p}"])
-        .current_dir(root)
-        .output()
-        .context("running `cargo tree`")?;
-    ensure!(
-        tree.status.success(),
-        "`cargo tree` failed: {}",
-        String::from_utf8_lossy(&tree.stderr)
+    let tree = |edges: &str| -> Result<String> {
+        let tree = Command::new(env!("CARGO"))
+            .args(["tree", "--quiet", "--locked", "-p", APP])
+            .args(["-e", edges, "--target", PLATFORM])
+            .args(["--prefix", "none", "--format", "{p}"])
+            .current_dir(root)
+            .output()
+            .context("running `cargo tree`")?;
+        ensure!(
+            tree.status.success(),
+            "`cargo tree` failed: {}",
+            String::from_utf8_lossy(&tree.stderr)
+        );
+        Ok(String::from_utf8_lossy(&tree.stdout).into_owned())
+    };
+    let mut built = built(&tree("normal,no-proc-macro")?);
+    built.extend(
+        self::built(&tree("normal,build,no-proc-macro")?)
+            .into_iter()
+            .filter(|(name, _)| COMPILED_IN.contains(&name.as_str())),
     );
-    let built = built(&String::from_utf8_lossy(&tree.stdout));
     let metadata = MetadataCommand::new()
         .manifest_path(root.join("Cargo.toml"))
         .other_options(vec!["--locked".to_owned()])
@@ -83,9 +101,39 @@ pub(crate) fn crates(root: &Path) -> Result<Vec<Component>> {
                 .unwrap_or_default(),
         })
         .collect();
+    components.push(standard_library()?);
     components.sort();
     components.dedup_by(|a, b| a.name == b.name && a.version == b.version);
     Ok(components)
+}
+
+/// Rust's standard library of the toolchain that builds the app: its
+/// version, `rustc`'s, its license, and the directory of its notices, the
+/// toolchain's `share/doc/rust`.
+fn standard_library() -> Result<Component> {
+    let rustc = std::env::var("RUSTC").unwrap_or_else(|_| "rustc".to_owned());
+    let output = |args: &[&str]| -> Result<String> {
+        let ran = Command::new(&rustc)
+            .args(args)
+            .output()
+            .with_context(|| format!("running `{rustc}`"))?;
+        ensure!(ran.status.success(), "`{rustc} {}` failed", args.join(" "));
+        Ok(String::from_utf8_lossy(&ran.stdout).trim().to_owned())
+    };
+    // `rustc 1.99.0 (b940084d7 2026-09-28)`.
+    let version = output(&["--version"])?
+        .split_whitespace()
+        .nth(1)
+        .context("`rustc --version` tells no version")?
+        .to_owned();
+    let sysroot = output(&["--print", "sysroot"])?;
+    Ok(Component {
+        name: STD.to_owned(),
+        version,
+        license: Some("MIT OR Apache-2.0".to_owned()),
+        authors: vec!["The Rust Project Developers".to_owned()],
+        source: Path::new(&sysroot).join("share/doc/rust"),
+    })
 }
 
 /// The packages, by name and version, of `cargo tree`'s lines without
@@ -107,7 +155,12 @@ pub(crate) fn bill(version: &str, crates: &[Component], sparkle: &str) -> Value 
     let mut components: Vec<Value> = crates
         .iter()
         .map(|component| {
-            let purl = format!("pkg:cargo/{}@{}", component.name, component.version);
+            // The standard library is no crate of crates.io's.
+            let purl = if component.name == STD {
+                format!("pkg:generic/{STD}@{}", component.version)
+            } else {
+                format!("pkg:cargo/{}@{}", component.name, component.version)
+            };
             let mut value = json!({
                 "type": "library",
                 "bom-ref": purl,
@@ -184,6 +237,15 @@ mod tests {
         assert!(!names.contains(&"serde_derive"));
         assert!(!names.contains(&"insta"));
         assert!(!names.contains(&"cc"));
+        // A build-dependency's sources that the build compiles into the
+        // binary, Luau's, and the standard library.
+        assert!(names.contains(&"luau0-src"), "{names:?}");
+        let std = crates
+            .iter()
+            .find(|component| component.name == STD)
+            .expect("the standard library");
+        assert_eq!(std.license.as_deref(), Some("MIT OR Apache-2.0"));
+        assert!(std.source.is_dir(), "{}", std.source.display());
         // A procedural macro of test targets too, and its own dependencies,
         // which build alone; optional dependencies whose features are off,
         // which `cargo metadata`'s resolution names.

@@ -49,6 +49,9 @@ accesskit = "0.25.2"
 accesskit_macos = "0.27.2"
 block2 = "0.6.2"
 dispatch2 = { version = "0.3.1", default-features = false }
+# Luau, of its vendored sources, pinned with mlua's release, its native code
+# generator, and a state that a plugin's thread takes.
+mlua = { version = "=0.12.2", features = ["luau", "luau-jit", "vendored", "send"] }
 objc2 = "0.6.5"
 objc2-app-kit = { version = "0.3.2", default-features = false }
 objc2-core-foundation = { version = "0.3.2", default-features = false }
