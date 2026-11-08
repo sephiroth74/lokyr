@@ -52,6 +52,7 @@ objc2-app-kit = { workspace = true, features = [
     "NSPasteboard",
     "NSResponder",
     "NSScreen",
+    "NSScroller",
     "NSText",
     "NSTextField",
     "NSTextInputClient",

@@ -823,6 +823,10 @@ impl<B: Backend> App<B> {
             .window
             .gutter
             .then(|| self.padding(size.scale).0);
+        // The panes' scroll bars, as the config and the system show them,
+        // over the padding at each pane's right too.
+        let bar_mode = self.bar_mode(platform);
+        let bar_padding = self.padding(size.scale).0;
         let (Some(drawing), Some(state)) = (self.drawing.as_mut(), self.windows.get_mut(&window))
         else {
             return;
@@ -956,6 +960,13 @@ impl<B: Backend> App<B> {
             .collect();
         items.push(Item::Cells(batch));
         items.extend(other_batches.into_iter().map(Item::Cells));
+        let bars = super::scrollbars::settle(
+            &self.workspace,
+            state,
+            bar_mode,
+            (size.scale, bar_padding),
+            (now, reduced),
+        );
         // The slots' views over the panes, of the theme's tokens of the
         // window's look.
         if state
@@ -1010,6 +1021,12 @@ impl<B: Backend> App<B> {
                 rect: divider.line,
                 color: line,
             }));
+        }
+        // The panes' scroll bars, over their cells and under the slots'
+        // views.
+        let bar_shapes = super::scrollbars::shapes(&state.bars, tokens, size.scale);
+        if !bar_shapes.is_empty() {
+            items.push(Item::Shapes(bar_shapes));
         }
         // The half of a pane that a tab dragged over it lights up.
         if let (Some(half), Some(color)) = (lit, tokens.get("pane.drop")) {
@@ -1108,6 +1125,14 @@ impl<B: Backend> App<B> {
                 .iter()
                 .map(|divider| super::dividers::grab_area(divider, size.scale)),
         );
+        // The arrow over the scroll bars that show, under the slots' views.
+        areas.extend(
+            state
+                .bars
+                .iter()
+                .filter(|bar| bar.look.opacity > 0.0)
+                .map(|bar| points(&bar.area, PointerShape::Arrow)),
+        );
         // The hand over the decorations that ask for it, as a link's that
         // Command underlines, of every pane, under the bar.
         for (pane, (left, top)) in &pointed {
@@ -1139,6 +1164,18 @@ impl<B: Backend> App<B> {
         // parts of a titlebar of tabs that are the bar's own take its
         // presses, and the panels drawn over a titlebar of either kind.
         let mut moving = surfaces::move_areas(&state.chrome, size.scale);
+        // The moves over the scroll bars, shown or not, which the pointer
+        // shows as it comes over them.
+        moving.extend(state.bars.iter().map(|bar| ContentRect {
+            origin: Point {
+                x: f64::from(bar.area.x) / size.scale,
+                y: f64::from(bar.area.y) / size.scale,
+            },
+            size: Size {
+                width: f64::from(bar.area.width) / size.scale,
+                height: f64::from(bar.area.height) / size.scale,
+            },
+        }));
         // While the keyboard follows the pointer, the moves over the panes
         // that have it not, which the first of gives it them; none wakes
         // the app over the pane that has it.
@@ -1190,8 +1227,9 @@ impl<B: Backend> App<B> {
                 state.fills = fills;
             }
         }
-        // A frame at each refresh while a slot's transition runs.
-        if chrome::animating(&state.chrome, now) {
+        // A frame at each refresh while a slot's transition runs, or a
+        // scroll bar fades.
+        if chrome::animating(&state.chrome, now) || bars.fading {
             platform.request_frame(window);
         }
         // The grid's size, at the content's centre, while the window
@@ -1404,6 +1442,8 @@ impl<B: Backend> App<B> {
                 .name("font-warm-up".into())
                 .spawn(move || B::warm_up(&family));
         }
+        // The scroll bar that shows a while fades at its time.
+        self.bar_timer_at(platform, bars.due);
     }
 }
 

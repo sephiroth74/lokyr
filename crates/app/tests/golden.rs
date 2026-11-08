@@ -23,7 +23,7 @@ use lokyr_plugin_sdk::message::Data;
 use lokyr_plugin_sdk::view::{
     self, Align, Border, Direction, Edges, Kind, Layout as Box, Length, Node, Shadow, Style,
 };
-use lokyr_render_core::{CellBatch, CursorShape, DisplayList, Item, Renderer};
+use lokyr_render_core::{CellBatch, CursorShape, DisplayList, Item, Rect, Renderer};
 use lokyr_render_metal::{Gpu, MetalRenderer};
 use lokyr_text_core::{FontConfig, Size};
 use lokyr_ui_core::animation::Animations;
@@ -33,6 +33,7 @@ use lokyr_ui_core::layout::{Layout, Measure, Room};
 use lokyr_ui_core::list::Lists;
 use lokyr_ui_core::paint::{Fills, Shown, paint, tooltip};
 use lokyr_ui_core::pane::{self as cells, CursorLook, Selection, TextLook};
+use lokyr_ui_core::scrollbar::{self, Look, Mark, Rows};
 use lokyr_ui_core::theme::Theme;
 use lokyr_ui_core::tree::{NodeId, Tree};
 use lokyr_vt_core::parser::Parser;
@@ -1040,6 +1041,122 @@ fn colors_draw_as_their_golden_image() {
 fn decorations_draw_as_their_golden_image() {
     for scale in [1, 2] {
         check(&decorations(), scale);
+    }
+}
+
+/// The scroll bars over a pane of text, in the light variant or the dark
+/// one, at `scale`, one under the other: thin, as the view scrolls; wide
+/// over its track, as the pointer is over it, of a search's marks, the
+/// current one apart; and pressed, as a drag holds it, at the screen.
+fn check_bars(light: bool, scale: u32) {
+    let Some(mut drawing) = Drawing::new(scale as f32) else {
+        return;
+    };
+    let lines: Vec<String> = (1..=8).map(|n| format!("line {n} of the output")).collect();
+    let scene = Scene {
+        name: if light {
+            "scrollbar-light"
+        } else {
+            "scrollbar-dark"
+        },
+        columns: 32,
+        rows: 8,
+        text: lines.join("\r\n"),
+        cursor: None,
+        selection: None,
+        shapes: false,
+        fade: None,
+        highlights: Some(Highlights {
+            matches: Vec::new(),
+            current: None,
+            light,
+        }),
+    };
+    let tokens = Theme::builtin().variant(!light).tokens.clone();
+    let rows = |top: u64| Rows {
+        total: 400,
+        top,
+        shown: 8,
+    };
+    let mark = |at: f32, current: bool| Mark { at, current };
+    let bars = [
+        (
+            rows(120),
+            Look {
+                opacity: 1.0,
+                wide: false,
+                pressed: false,
+            },
+            Vec::new(),
+        ),
+        (
+            rows(300),
+            Look {
+                opacity: 1.0,
+                wide: true,
+                pressed: false,
+            },
+            vec![mark(0.1, false), mark(0.35, false), mark(0.8, true)],
+        ),
+        (
+            rows(392),
+            Look {
+                opacity: 1.0,
+                wide: true,
+                pressed: true,
+            },
+            Vec::new(),
+        ),
+    ];
+    let (mut items, mut background, mut y, mut width) = (Vec::new(), None, MARGIN, 0);
+    for (rows, look, marks) in &bars {
+        let (batch, color) = drawing.batch(&scene, (MARGIN as i32, y as i32));
+        let pane = Rect {
+            x: MARGIN as i32,
+            y: y as i32,
+            width: u32::from(scene.columns) * batch.cell_width,
+            height: u32::from(scene.rows) * batch.cell_height,
+        };
+        width = width.max(pane.width);
+        y += pane.height;
+        background.get_or_insert(color);
+        items.push(Item::Cells(batch));
+        let area = scrollbar::area(pane, scale as f32);
+        items.push(Item::Shapes(scrollbar::shapes(
+            area,
+            *rows,
+            *look,
+            marks,
+            &tokens,
+            scale as f32,
+        )));
+    }
+    let (width, height) = (width + 2 * MARGIN, y + MARGIN);
+    let list = DisplayList {
+        background: background.unwrap_or_default(),
+        items,
+        frame: drawing.font.atlas_frame(),
+    };
+    let updates = drawing.font.texture_updates();
+    drawing.renderer.update_textures(&updates).unwrap();
+    let pixels = drawing
+        .renderer
+        .draw_offscreen(&list, width, height)
+        .unwrap();
+    let most = (f64::from(width * height) * SHARE) as usize;
+    compare(
+        &format!("{}-{scale}x", scene.name),
+        (width, height, &pixels),
+        most,
+    );
+}
+
+#[test]
+fn the_scroll_bars_draw_as_their_golden_images() {
+    for light in [false, true] {
+        for scale in [1, 2] {
+            check_bars(light, scale);
+        }
     }
 }
 

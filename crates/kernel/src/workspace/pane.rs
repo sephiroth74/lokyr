@@ -1046,6 +1046,15 @@ impl Pane {
         }
     }
 
+    /// The marks of the searches' matches that the view shows, along the
+    /// rows that the terminal holds, parted into `slots` runs, as
+    /// [`Terminal::match_marks`] tells them.
+    pub fn match_marks(&self, slots: usize) -> Vec<(usize, bool)> {
+        self.session
+            .as_ref()
+            .map_or_else(Vec::new, |session| session.lock().match_marks(slots))
+    }
+
     /// Scrolls the view, through the scrollback.
     pub fn scroll(&self, scroll: Scroll) {
         if let Some(session) = &self.session {

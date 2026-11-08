@@ -89,6 +89,7 @@ new-directory = "~/Projects"         # inherit | home | a path: a new window's f
 padding-x = 6                        # points, from 0 to 100
 padding-y = 4
 gutter = false                       # true | false: the commands' marks at the panes' left
+scrollbar = "always"                 # system | always | never: the panes' scroll bars
 background-opacity = 0.9             # from 0 to 1
 background-blur = 20                 # points, from 0 to 100
 title-size = false                   # true | false: the grid's size in the title
@@ -675,6 +676,28 @@ Whether each pane shows a gutter at the left of its cells, with a mark on the pr
 - A program of the full screen, as an editor's, shows no prompt's mark, as its screen has no shell's prompts.
 - Plugins can lay marks of their own colors in the gutter, which show over a prompt's mark of the same row; they show only while it is on.
 - The colors are the theme's: `gutter.succeeded`, `gutter.failed` and `gutter.running`.
+
+### `scrollbar`
+
+<sub>Platforms: macOS</sub>
+
+When each pane shows its scroll bar, over its right edge: a knob whose length and place tell how much of the scrollback and the screen the view shows, and where.
+
+| Value | Meaning |
+|---|---|
+| `"system"` | As macOS shows its own, as Show scroll bars in its Appearance settings says: as the view moves and as the pointer comes over it, or always, as it does with a mouse, or as you chose it |
+| `"always"` | Always |
+| `"never"` | Never |
+
+Default: `"system"`.
+
+- **As the view moves** through the scrollback, by the wheel, the keys, a search or the copy mode, a thin knob shows, and fades a second after; output that comes at the screen shows none. With Reduce motion in macOS's Accessibility settings, it goes at once.
+- **The pointer** over the pane's right edge shows it, wider over its track. A drag of the knob moves the view to the line that its place gives; at the bottom, the view follows the output again. A click on the track moves a page toward it, or the view to the spot clicked, as Click in the scroll bar to in macOS's settings says; Option the other way.
+- **A search's matches** show along it as marks, the current match's apart, while the find bar shows them, which keeps it shown.
+- It takes no column of the grid: it lies over the padding at the pane's right and the cells next to it, 15 points wide; while it shows, it takes the presses there.
+- A view that shows every row, and a program's own screen, as vim's or less's, have none.
+- Its colors are the theme's: `scrollbar`, the knob's, `scrollbar.hover`, while a drag holds it, `scrollbar.track`, and `scrollbar.mark` and `scrollbar.mark.current`, the matches'.
+- It applies as you save the file. A change of macOS's settings shows at the window's next frame, as you come back to it.
 
 ### `background-opacity`
 

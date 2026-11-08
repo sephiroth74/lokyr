@@ -260,7 +260,7 @@ fn paneler(program: Program) -> (Fake, App, WindowId, Rc<RefCell<Heard>>) {
 }
 
 /// The frames that `window` asks for, until it asks for none.
-fn frames(fake: &mut Fake, app: &mut App, window: WindowId) {
+pub(super) fn frames(fake: &mut Fake, app: &mut App, window: WindowId) {
     for _ in 0..4 {
         fake.send(app, window, WindowEvent::Frame);
     }

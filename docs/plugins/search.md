@@ -9,6 +9,7 @@ A bar at the top right of the pane that searches its screen and its scrollback a
 - **⌘F** opens it, of your last search's text, selected, so that typing replaces it, and of its options; ⌘F on an open bar gives its field the keys again.
 - **As you type**, it searches the pane, the rows that show first, and counts the matches, as `3 of 12`, numbers past 9999 short, as `12K`. A search of 100 000 lines counts them all in about 25 ms.
 - **The matches** that show are highlighted, the current one in a color of its own, over each cell's own colors.
+- **The scroll bar** marks every match along it, the current one in its own color, and stays shown while the bar's search shows them, as [`scrollbar`](../CONFIGURATION.md#scrollbar) tells.
 - **It goes from the bottom up**, as the newest output is at the bottom: the first match is the one nearest the bottom, the next one the one above it, the previous one the one below it. The view follows the current match, and stays there while the program prints on.
 - **The toggles** at the field's end count case, take whole words alone, and read the text as a regular expression, of the syntax of Rust's `regex`; they keep their states for the next search.
 - **The magnifying glass** at the field's start lists your last twenty searches, which Lokyr keeps.

@@ -11,9 +11,9 @@ use std::time::{Duration, Instant, SystemTime};
 use crate::{
     AboutPanel, Alert, AlertId, AppEvent, Appearance, Backdrop, ContentRect, ContextMenu, Error,
     Fill, GlobalKey, Handler, Layer, LayerPlace, MainMenu, Platform, Point, PointerArea,
-    PointerShape, QuickPlace, ScreenPoint, ScreenRect, Shortcut, Size, Sweep, Target, TargetKind,
-    TimerId, Titlebar, Usage, Waker, WindowAttributes, WindowEvent, WindowHandle, WindowId,
-    WindowSize,
+    PointerShape, QuickPlace, ScreenPoint, ScreenRect, Scrollers, Shortcut, Size, Sweep, Target,
+    TargetKind, TimerId, Titlebar, Usage, Waker, WindowAttributes, WindowEvent, WindowHandle,
+    WindowId, WindowSize,
 };
 
 /// The scale of the fake's display when a test sets none: a Retina one.
@@ -181,6 +181,7 @@ pub struct Fake {
     keyboard_navigation: bool,
     /// Whether the system reduces motion.
     reduce_motion: bool,
+    scrollers: Scrollers,
     /// Whether it draws the progresses' fills, as a test says.
     draws_fills: bool,
     windows: BTreeMap<WindowId, FakeWindow>,
@@ -274,6 +275,7 @@ impl Fake {
             own_appearance: None,
             keyboard_navigation: false,
             reduce_motion: false,
+            scrollers: Scrollers::default(),
             draws_fills: false,
             windows: BTreeMap::new(),
             order: Vec::new(),
@@ -326,6 +328,11 @@ impl Fake {
     /// Turns the system's reduced motion on or off.
     pub fn set_reduce_motion(&mut self, on: bool) {
         self.reduce_motion = on;
+    }
+
+    /// Gives the system's settings of its scroll bars.
+    pub fn set_scrollers(&mut self, scrollers: Scrollers) {
+        self.scrollers = scrollers;
     }
 
     /// Starts the application, as a backend's `run` does.
@@ -737,6 +744,10 @@ impl Platform for Fake {
 
     fn reduce_motion(&self) -> bool {
         self.reduce_motion
+    }
+
+    fn scrollers(&self) -> Scrollers {
+        self.scrollers
     }
 
     fn set_appearance(&mut self, appearance: Option<Appearance>) {

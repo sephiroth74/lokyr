@@ -64,6 +64,7 @@ mod menus;
 mod notices;
 mod panels;
 mod pickers;
+pub(crate) mod scrollbars;
 mod spawn;
 mod surfaces;
 mod tab_drag;
@@ -498,6 +499,9 @@ pub struct App<B: Backend> {
     /// The timer of the next step of the views that scroll under a
     /// selection dragged past their grid.
     scroll_timer: Option<TimerId>,
+    /// The timer of the start of the next fade of the panes' scroll bars,
+    /// and when it fires, while one waits.
+    bar_timer: Option<(TimerId, Instant)>,
     /// Whether Command is held, as the last key told, while which the
     /// pointer's moves go to the plugins that subscribed to them.
     command_held: bool,
@@ -727,6 +731,7 @@ impl<B: Backend> App<B> {
             flash_timer: None,
             access_timer: None,
             scroll_timer: None,
+            bar_timer: None,
             command_held: false,
             pointer_told: None,
             pointer_mods: lokyr_platform_core::Modifiers::NONE,
@@ -3505,6 +3510,10 @@ impl<B: Backend> App<B> {
             AppEvent::Timer(timer) if self.title_timer.is_some_and(|(title, _)| title == timer) => {
                 self.look_at_places_again(platform);
             }
+            // The panes' scroll bars that showed a while fade.
+            AppEvent::Timer(timer) if self.bar_timer.is_some_and(|(bar, _)| bar == timer) => {
+                self.bar_timer_fired(platform);
+            }
             // A selection dragged past a window's edge scrolls its view.
             AppEvent::Timer(timer) if self.scroll_timer == Some(timer) => {
                 self.scroll_selections(platform);
@@ -3718,7 +3727,10 @@ impl<B: Backend> App<B> {
             WindowEvent::MouseMoved { position, mods } => {
                 self.mouse_moved(platform, window, position, mods);
             }
-            WindowEvent::MouseExited => self.surface_exited(platform, window),
+            WindowEvent::MouseExited => {
+                self.bar_hovered(platform, window, None);
+                self.surface_exited(platform, window);
+            }
             WindowEvent::Scroll {
                 delta,
                 phase,

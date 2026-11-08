@@ -188,6 +188,15 @@ The `progress` plugin, as the user asked on 1 November 2026, after iTerm2 and Gh
 
 A few points at the left of each pane's cells, in its padding, which takes no column of the grid, with a thin bar on the prompt of each command that ran, of the commands that the shell marks with OSC 133: faint gray for a success, red for a failure, the accent while it runs, the theme's `gutter.succeeded`, `gutter.failed` and `gutter.running`; plugins lay marks of their own colors in it by the rows' numbers, which keep their rows as output and a reflow move them. `[window] gutter` turns it off.
 
+## The scroll bar
+
+Each pane's, drawn by the host, as the dividers and a search's matches are, over the pane's right edge, as macOS's overlay scroll bars look: a knob whose length and place tell how much of the scrollback and the screen the view shows, and where, of the theme's `scrollbar` tokens. It takes no column of the grid.
+
+- **When it shows**: as macOS's Show scroll bars says, `[window] scrollbar = "system"` by default: as the view moves, through its rows and from the screen at once, so that output at the screen moves none, a thin knob that fades a second after, at once with Reduce motion; as the pointer comes over it, a wider knob over a track; or always, as macOS has it with a mouse. `"always"` and `"never"` override it.
+- **The pointer**: a drag of the knob moves the view to the row that its place gives, the screen at the bottom, which the view follows again; a click on the track pages toward it, or jumps there, the knob's middle at the click, which the drag then holds, as macOS's Click in the scroll bar to says, Option the other way.
+- **A search's marks**: the matches that the view shows, along the bar, the current one apart, of `scrollbar.mark` and `scrollbar.mark.current`, which keep it shown: the terminal finds them for each of the bar's runs of rows by a binary search, of one walk of its pages, however many they are, and takes its lock for them only while a search shows matches.
+- **Its cost**: a frame looks at each pane's view, from its snapshot; a fade takes a timer a second after the view stops, and its frames for 0.3 s; at rest, nothing.
+
 ## A long command's end
 
 A command that the shell marks with OSC 133 and that runs for `[notifications] long-command` seconds at least, 10 by default, tells its end in a notification of the system's while its window has no focus: the command as it was typed, whether it succeeded or its exit status, and how long it ran. Its time runs from its output's mark to its end's, as the workspace finds them in the pane's output, a frame's pace apart at most, without a timer meanwhile; a click on the notification brings its window forward.
@@ -284,7 +293,7 @@ The kernel's `search` service (the engine) plus the `search` plugin (UI and comm
   - Esc closes the bar, its highlights going, and leaves the current match selected, ready for ⌘C.
 - **History**: the bar opens of the last search's text, selected, so that typing replaces it, and its options, which it searches again; ⌘F on an open bar selects its text too; the magnifying glass of its field lists the recent searches, twenty at most, which the plugin's state keeps with the options.
 - **Layout**, as VS Code's find widget, of macOS's search field: the field, its glass at its start and its toggles of case, whole words and regexes at its end; the count, in a room of its own, which keeps the bar's width whatever it tells, `n of m`, of numbers past 9999 short, as `12K`; the arrows and the close button. The buttons and the toggles have no box at rest, their hover and press fading in, a toggle on of its own fill.
-- **Highlighting**: the visible matches (`search.match`), unless `highlight-all` is off, and the current one (`search.match.current`), the theme's translucent colors over each cell's own; marks in the scrollbar come with the scrollbar.
+- **Highlighting**: the visible matches (`search.match`), unless `highlight-all` is off, and the current one (`search.match.current`), the theme's translucent colors over each cell's own; [the scroll bar](#the-scroll-bar) marks them along it.
 - **Filter mode**: iTerm2-style, showing only the matching lines. It arrives in F5b, because the renderer must first be able to show an arbitrary list of rows instead of a contiguous window.
 
 ```toml

@@ -22,6 +22,7 @@
 //! padding-x = 4             # points, at the left and the right
 //! padding-y = 4             # points, at the top and the bottom
 //! gutter = true             # the marks at the panes' left, as a command's end
+//! scrollbar = "system"      # system | always | never
 //! background-opacity = 1    # from 0 to 1
 //! background-blur = 0       # points
 //! title-size = true         # the grid's size in the title
@@ -984,6 +985,8 @@ pub struct WindowConfig {
     /// marks of its commands' ends and the plugins' marks, in its padding,
     /// which it widens as far as it needs.
     pub gutter: bool,
+    /// When each pane shows its scroll bar, over its right edge.
+    pub scrollbar: Scrollbar,
     /// The opacity of the default background.
     pub background_opacity: Opacity,
     /// The blur of what shows through the default background.
@@ -1010,6 +1013,7 @@ impl Default for WindowConfig {
             padding_x: Padding::default(),
             padding_y: Padding::default(),
             gutter: true,
+            scrollbar: Scrollbar::default(),
             background_opacity: Opacity::default(),
             background_blur: Blur::default(),
             title_size: true,
@@ -1292,6 +1296,21 @@ pub fn expanded(path: &str, home: Option<&Path>) -> Option<PathBuf> {
     } else {
         home.join(rest)
     })
+}
+
+/// When a pane's scroll bar shows, over its right edge, of a view that has
+/// a scrollback to move through: it never takes a column of the grid.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Scrollbar {
+    /// As the system shows its own: as the view scrolls and as the pointer
+    /// comes over it, or always, as its settings say.
+    #[default]
+    System,
+    /// Always.
+    Always,
+    /// Never.
+    Never,
 }
 
 /// What a window does when its program ends.
@@ -2017,6 +2036,7 @@ mod tests {
             padding-x = 10
             padding-y = 2.5
             gutter = false
+            scrollbar = "never"
             background-opacity = 0.85
             background-blur = 20
             title-size = false
@@ -2155,6 +2175,7 @@ long-command = 0
         assert_eq!(config.window.background_blur.points(), 20.0);
         assert!(!config.window.title_size && config.window.opaque_titlebar);
         assert!(!config.window.title_shortcut && !config.window.gutter);
+        assert_eq!(config.window.scrollbar, Scrollbar::Never);
         assert_eq!(
             (config.window.columns.count(), config.window.rows.count()),
             (80, 24)
@@ -2163,6 +2184,7 @@ long-command = 0
         let window = Config::default().window;
         assert!(window.title_size && window.title_shortcut && !window.opaque_titlebar);
         assert!(window.gutter);
+        assert_eq!(window.scrollbar, Scrollbar::System);
         assert_eq!((window.columns.count(), window.rows.count()), (100, 30));
         assert!(window.remember_frame);
         for (text, wanted) in [
@@ -2773,6 +2795,7 @@ long-command = 0
                 "padding-x",
                 "padding-y",
                 "gutter",
+                "scrollbar",
                 "background-opacity",
                 "background-blur",
                 "title-size",

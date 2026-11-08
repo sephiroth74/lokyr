@@ -205,6 +205,13 @@ impl Terminal {
         true
     }
 
+    /// Whether a search shows its matches, or its current one.
+    pub(super) fn matches_shown(&self) -> bool {
+        self.matches
+            .iter()
+            .any(|kept| kept.shown || kept.current.is_some())
+    }
+
     /// Whether a search shows its current match, which holds the view where
     /// it is.
     pub(super) fn holds_view(&self) -> bool {
@@ -251,6 +258,71 @@ impl Terminal {
             }
         }
         spans
+    }
+
+    /// The marks of the matches that the view shows, along the rows that
+    /// the active screen holds, from the oldest to its last, parted into
+    /// `slots` runs of as many rows each as they part evenly: each run that
+    /// a shown match starts in, by its place from the oldest's, 0, and
+    /// whether the current match starts there, in order; nothing, and no
+    /// cost, without matches shown. Each run takes a binary search of the
+    /// matches, as they lie in reading order, of one walk of the list for
+    /// their rows' places, however many they are.
+    pub fn match_marks(&self, slots: usize) -> Vec<(usize, bool)> {
+        if slots == 0
+            || self
+                .matches
+                .iter()
+                .all(|kept| !kept.shown && kept.current.is_none())
+        {
+            return Vec::new();
+        }
+        let rows = &self.screen().rows;
+        let total = rows.total_rows().max(1);
+        let index = rows.row_indexes();
+        // The place in the list of a pin's row, of a match whose text left
+        // before every other's.
+        let place = |pin: &CellPin| -> Option<usize> {
+            let position = self.pin_place(pin)?;
+            index(position.page, position.row)
+        };
+        let starts = |span: &Span| place(&span.0);
+        let slot = |at: usize| (at * slots / total).min(slots - 1);
+        let mut marks = std::collections::BTreeMap::new();
+        for kept in &self.matches {
+            if kept.shown {
+                let parts: Vec<&Vec<Span>> = kept
+                    .parts
+                    .values()
+                    .filter(|part| !part.is_empty())
+                    .collect();
+                // How many of the matches start on the rows before `at`.
+                let before = |at: usize| -> usize {
+                    let ahead = |span: &Span| starts(span).is_none_or(|start| start < at);
+                    let whole = parts.partition_point(|part| part.last().is_some_and(ahead));
+                    let within = parts
+                        .get(whole)
+                        .map_or(0, |part| part.partition_point(&ahead));
+                    parts[..whole].iter().map(|part| part.len()).sum::<usize>() + within
+                };
+                // The row at `at` is of the run `at * slots / total`, as the
+                // current match's is: a run ends where the next one's first
+                // row is.
+                let mut from = before(0);
+                for run in 0..slots {
+                    let end = ((run + 1) * total).div_ceil(slots);
+                    let to = before(end);
+                    if to > from {
+                        marks.entry(run).or_insert(false);
+                    }
+                    from = to;
+                }
+            }
+            if let Some(start) = kept.current.as_ref().and_then(starts) {
+                marks.insert(slot(start), true);
+            }
+        }
+        marks.into_iter().collect()
     }
 
     /// Where `span`'s cells are now, if they are still there, its first
@@ -551,6 +623,39 @@ mod tests {
         assert_eq!(shown(&mut terminal), screen);
         terminal.scroll_viewport(Scroll::Top);
         assert_eq!(shown(&mut terminal), screen);
+    }
+
+    #[test]
+    fn the_marks_tell_the_runs_of_rows_that_shown_matches_start_in() {
+        let mut terminal = Terminal::new(20, 10, Options::default());
+        // 100 rows, 90 of scrollback.
+        let text: Vec<String> = (0..100).map(|n| format!("r{n}")).collect();
+        feed(&mut terminal, &text.join("\r\n"));
+        let first = terminal.row_number(0);
+        // Matches on the rows 5, 6, 50 and 99, of two parts.
+        let at = |row: i64| ((0, first + row), (1, first + row));
+        add(&mut terminal, 1, first + 50, &[at(50), at(99)]);
+        add(&mut terminal, 1, first, &[at(5), at(6)]);
+        // Not shown, no marks.
+        assert!(terminal.match_marks(10).is_empty());
+        // In 10 runs of 10 rows: the first, the sixth and the last; the
+        // current one at 50.
+        terminal.show_matches(1, true, Some(at(50)));
+        assert_eq!(
+            terminal.match_marks(10),
+            [(0, false), (5, true), (9, false)]
+        );
+        // In 200 runs, half a row each, the runs of their rows' starts.
+        assert_eq!(
+            terminal.match_marks(200),
+            [(10, false), (12, false), (100, true), (198, false)]
+        );
+        // The current one alone.
+        terminal.show_matches(1, false, Some(at(6)));
+        assert_eq!(terminal.match_marks(10), [(0, true)]);
+        assert!(terminal.match_marks(0).is_empty());
+        terminal.drop_matches(1);
+        assert!(terminal.match_marks(10).is_empty());
     }
 
     #[test]

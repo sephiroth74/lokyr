@@ -268,6 +268,28 @@ pub enum Easing {
     EaseInOut,
 }
 
+/// How the system shows its scroll bars, as its settings say.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Scrollers {
+    /// Whether they show as the content scrolls and as the pointer comes
+    /// over them alone, over the content, rather than always: Show scroll
+    /// bars in macOS's settings, as a trackpad has it, or When scrolling.
+    pub overlay: bool,
+    /// Whether a click in a bar's track jumps to the spot clicked, rather
+    /// than a page toward it: Click in the scroll bar to, in macOS's
+    /// settings.
+    pub jump_to_spot: bool,
+}
+
+impl Default for Scrollers {
+    fn default() -> Self {
+        Self {
+            overlay: true,
+            jump_to_spot: false,
+        }
+    }
+}
+
 /// What the process has used of the machine, as the system counts it.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Usage {
@@ -351,6 +373,9 @@ pub trait Platform {
     /// Whether the system reduces motion, Reduce motion in macOS's
     /// accessibility settings: the interface's transitions end at once.
     fn reduce_motion(&self) -> bool;
+
+    /// How the system shows its scroll bars, as its settings say now.
+    fn scrollers(&self) -> Scrollers;
 
     /// Gives the app the appearance `appearance`, its windows' and its
     /// menus' too, whatever the system's is, or the system's again with

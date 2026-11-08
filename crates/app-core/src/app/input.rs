@@ -395,6 +395,11 @@ impl<B: Backend> App<B> {
         if !pressed && self.divider_button(platform, window, divider, position) {
             return;
         }
+        // A knob's drag takes its release, wherever it is.
+        let bar = (platform_button, pressed);
+        if !pressed && self.bar_button(platform, window, bar, (position, mods)) {
+            return;
+        }
         // A slot's view under the press takes it, and keeps the pointer
         // until the button goes up.
         if self.surface_button(
@@ -412,6 +417,11 @@ impl<B: Backend> App<B> {
             .get(&window)
             .is_some_and(|state| state.mouse.holder().is_some());
         if pressed && !holds && self.divider_button(platform, window, divider, position) {
+            return;
+        }
+        // A press over a scroll bar that shows drags its knob, or pages or
+        // jumps over its track, the pane under it taking none.
+        if pressed && !holds && self.bar_button(platform, window, bar, (position, mods)) {
             return;
         }
         // A press gives the pane under it the keyboard, then acts there;
@@ -791,6 +801,12 @@ impl<B: Backend> App<B> {
         if self.divider_moved(platform, window, position) {
             return;
         }
+        // A knob that a drag holds moves the view; a scroll bar under the
+        // pointer shows.
+        if self.bar_dragged(platform, window, position) {
+            return;
+        }
+        self.bar_hovered(platform, window, Some(position));
         // A column's edge that a drag holds follows the pointer.
         if let Some(drag) = self
             .windows

@@ -183,6 +183,15 @@ pub(crate) struct Window<B: Backend> {
     /// out, and the drag of one under way, if one is.
     pub(crate) dividers: Vec<crate::app::frame::Divider>,
     pub(crate) divider_drag: Option<DividerDrag>,
+    /// Its panes' scroll bars, as its last frame laid them out; what it
+    /// keeps of each between its frames; the bar under the pointer, if
+    /// one; the drag of a knob under way, if one is; and when the next
+    /// bar's fade starts, if one waits.
+    pub(crate) bars: Vec<crate::app::scrollbars::Bar>,
+    pub(crate) bars_kept: std::collections::BTreeMap<PaneId, crate::app::scrollbars::Kept>,
+    pub(crate) bar_hover: Option<PaneId>,
+    pub(crate) bar_drag: Option<crate::app::scrollbars::BarDrag>,
+    pub(crate) bar_due: Option<Instant>,
     /// The title of the man page that it shows, as `man ls`, when it shows
     /// one: it takes the man page's colors, and keeps the page once `man`
     /// has ended.
@@ -370,6 +379,11 @@ impl<B: Backend> Window<B> {
             column_drag: None,
             dividers: Vec::new(),
             divider_drag: None,
+            bars: Vec::new(),
+            bars_kept: std::collections::BTreeMap::new(),
+            bar_hover: None,
+            bar_drag: None,
+            bar_due: None,
             page: None,
             place: (String::new(), String::new()),
             directory: None,

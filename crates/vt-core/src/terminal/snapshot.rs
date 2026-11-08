@@ -50,6 +50,9 @@ pub struct Snapshot {
     gutter: Vec<GutterMark>,
     /// The spans of the searches' matches that the view shows.
     highlights: Vec<Highlighted>,
+    /// Whether a search shows its matches, or its current one, wherever
+    /// they are.
+    matches_shown: bool,
 }
 
 /// The cursor, as a renderer draws it.
@@ -131,6 +134,13 @@ impl Snapshot {
     /// update found them, each search's, its current match's last.
     pub fn highlights(&self) -> &[Highlighted] {
         &self.highlights
+    }
+
+    /// Whether a search showed its matches, or its current one, at the last
+    /// update, wherever they are, as [`Terminal::match_marks`] then marks
+    /// them.
+    pub fn matches_shown(&self) -> bool {
+        self.matches_shown
     }
 
     /// Whether the last update copied row `y`, which the renderer then has
@@ -429,6 +439,7 @@ impl Terminal {
         snapshot.gutter = self.gutter_view();
         self.drop_rewritten_matches();
         snapshot.highlights = self.highlighted_view();
+        snapshot.matches_shown = self.matches_shown();
         copied
     }
 }
@@ -478,6 +489,7 @@ pub(super) fn copy_of(terminal: &Terminal) -> Snapshot {
         decorations: Vec::new(),
         gutter: Vec::new(),
         highlights: Vec::new(),
+        matches_shown: terminal.matches_shown(),
     }
 }
 

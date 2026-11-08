@@ -9,8 +9,8 @@ use std::time::{Duration, Instant, SystemTime};
 use lokyr_platform_core::{
     AboutPanel, Alert, AlertId, Appearance, Backdrop, ContentRect, ContextMenu, Error, Fill,
     GlobalKey, Layer, LayerPlace, MainMenu, MenuRole, Platform, Point, PointerArea, PointerShape,
-    QuickPlace, ScreenPoint, ScreenRect, Shortcut, Size, Sweep, Target, TimerId, Titlebar, Usage,
-    Waker, WindowAttributes, WindowEvent, WindowHandle, WindowId, WindowSize,
+    QuickPlace, ScreenPoint, ScreenRect, Scrollers, Shortcut, Size, Sweep, Target, TimerId,
+    Titlebar, Usage, Waker, WindowAttributes, WindowEvent, WindowHandle, WindowId, WindowSize,
 };
 use objc2::rc::Retained;
 use objc2::{AnyThread, MainThreadMarker};
@@ -299,6 +299,18 @@ impl Platform for Backend {
 
     fn reduce_motion(&self) -> bool {
         objc2_app_kit::NSWorkspace::sharedWorkspace().accessibilityDisplayShouldReduceMotion()
+    }
+
+    fn scrollers(&self) -> Scrollers {
+        // AppKit reads the preferences at each call, cheaply.
+        let defaults = objc2_foundation::NSUserDefaults::standardUserDefaults();
+        Scrollers {
+            overlay: objc2_app_kit::NSScroller::preferredScrollerStyle(self.mtm)
+                == objc2_app_kit::NSScrollerStyle::Overlay,
+            jump_to_spot: defaults.boolForKey(&objc2_foundation::NSString::from_str(
+                "AppleScrollerPagingBehavior",
+            )),
+        }
     }
 
     fn keyboard_navigation(&self) -> bool {
