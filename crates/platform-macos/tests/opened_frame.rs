@@ -1,7 +1,8 @@
 //! A window opened at a frame: its content's frame is that one, out of full
 //! screen too; one asked for where no screen is opens on the nearest, of
 //! its size, within the screen's area for windows. The system's setting of
-//! the windows kept reads as the preferences have it.
+//! the windows kept reads as the preferences have it. A window floats above
+//! the other applications' windows, and goes back among them.
 
 #[cfg(target_os = "macos")]
 mod common;
@@ -13,7 +14,7 @@ mod probe {
 
     use lokyr_platform_core::{Handler, Platform, ScreenRect, Size, WindowAttributes};
     use objc2::MainThreadMarker;
-    use objc2_app_kit::NSScreen;
+    use objc2_app_kit::{NSApplication, NSScreen};
     use objc2_foundation::{NSString, NSUserDefaults};
 
     use crate::common;
@@ -29,6 +30,8 @@ mod probe {
         areas: Vec<ScreenRect>,
         /// The setting as the platform tells it, and the preferences.
         keeps: Option<(bool, bool)>,
+        /// The windows' levels as they float, then once they do not.
+        levels: Vec<Vec<isize>>,
     }
 
     struct Probe(Rc<RefCell<Seen>>);
@@ -92,6 +95,19 @@ mod probe {
             let preferences = NSUserDefaults::standardUserDefaults()
                 .boolForKey(&NSString::from_str("NSQuitAlwaysKeepsWindows"));
             seen.keeps = Some((platform.keeps_windows(), preferences));
+            let levels = || -> Vec<isize> {
+                let windows = NSApplication::sharedApplication(mtm).windows();
+                (0..windows.count())
+                    .map(|index| windows.objectAtIndex(index))
+                    .filter(|window| window.title().to_string() == "An opened frame")
+                    .map(|window| window.level())
+                    .collect()
+            };
+            for floating in [true, false] {
+                platform.set_window_floating(at, floating);
+                platform.set_window_floating(far, floating);
+                seen.levels.push(levels());
+            }
             platform.quit();
         }
 
@@ -125,6 +141,8 @@ mod probe {
         );
         let (told, preferences) = seen.keeps.expect("the setting");
         assert_eq!(told, preferences, "{seen:?}");
+        // AppKit's floating level, then the normal one.
+        assert_eq!(seen.levels, [vec![3, 3], vec![0, 0]], "{seen:?}");
         println!("opened_frame: ok");
     }
 }

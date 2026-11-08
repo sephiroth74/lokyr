@@ -572,6 +572,10 @@ pub trait Platform {
     /// that it had before, which it takes back as it leaves it.
     fn windowed_frame(&self, window: WindowId) -> Option<ScreenRect>;
 
+    /// Keeps `window` above the other applications' windows, or puts it
+    /// back among them: in full screen, from when it leaves it.
+    fn set_window_floating(&mut self, window: WindowId, floating: bool);
+
     /// Moves `window` so that its content's top left corner is at `origin`
     /// on the screens, or as near as keeps its titlebar on a screen, as a
     /// window opened for a tab dropped there goes under the pointer.

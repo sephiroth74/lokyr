@@ -119,6 +119,8 @@ pub struct FakeWindow {
     pub accessibility: Vec<accesskit::TreeUpdate>,
     /// Where its content's top left corner is on the screen.
     pub origin: ScreenPoint,
+    /// Whether it floats above the other applications' windows.
+    pub floating: bool,
 }
 
 impl FakeWindow {
@@ -897,6 +899,7 @@ impl Platform for Fake {
                 accessibility_asked: false,
                 accessibility: Vec::new(),
                 origin,
+                floating: false,
             },
         );
         self.order.insert(0, id);
@@ -939,6 +942,7 @@ impl Platform for Fake {
                 accessibility_asked: false,
                 accessibility: Vec::new(),
                 origin: ScreenPoint::default(),
+                floating: false,
             },
         );
         self.order.push(id);
@@ -1110,6 +1114,12 @@ impl Platform for Fake {
 
     fn windowed_frame(&self, window: WindowId) -> Option<ScreenRect> {
         self.window_frame(window)
+    }
+
+    fn set_window_floating(&mut self, window: WindowId, floating: bool) {
+        if let Some(state) = self.windows.get_mut(&window) {
+            state.floating = floating;
+        }
     }
 
     fn set_window_origin(&mut self, window: WindowId, origin: ScreenPoint) {

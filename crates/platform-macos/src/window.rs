@@ -18,12 +18,13 @@ use objc2::runtime::{AnyObject, Bool, ProtocolObject, Sel};
 use objc2::{ClassType, DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send};
 use objc2_app_kit::{
     NSApplicationPresentationOptions, NSBackingStoreType, NSColor, NSCursor, NSDragOperation,
-    NSDraggingDestination, NSDraggingInfo, NSEvent, NSEventPhase, NSEventType, NSPasteboard,
-    NSPasteboardTypeFileURL, NSPasteboardTypeString, NSPasteboardURLReadingFileURLsOnlyKey,
-    NSResponder, NSScreen, NSTextInputClient, NSTitlebarSeparatorStyle, NSToolbar, NSTrackingArea,
-    NSTrackingAreaOptions, NSView, NSViewLayerContentsPlacement, NSWindow, NSWindowButton,
-    NSWindowDelegate, NSWindowOcclusionState, NSWindowStyleMask, NSWindowTabbingMode,
-    NSWindowTitleVisibility, NSWindowToolbarStyle,
+    NSDraggingDestination, NSDraggingInfo, NSEvent, NSEventPhase, NSEventType,
+    NSFloatingWindowLevel, NSNormalWindowLevel, NSPasteboard, NSPasteboardTypeFileURL,
+    NSPasteboardTypeString, NSPasteboardURLReadingFileURLsOnlyKey, NSResponder, NSScreen,
+    NSTextInputClient, NSTitlebarSeparatorStyle, NSToolbar, NSTrackingArea, NSTrackingAreaOptions,
+    NSView, NSViewLayerContentsPlacement, NSWindow, NSWindowButton, NSWindowDelegate,
+    NSWindowOcclusionState, NSWindowStyleMask, NSWindowTabbingMode, NSWindowTitleVisibility,
+    NSWindowToolbarStyle,
 };
 use objc2_foundation::{
     NSArray, NSAttributedString, NSAttributedStringKey, NSDictionary, NSNotFound, NSNotification,
@@ -307,6 +308,23 @@ impl Window {
     pub(crate) fn content_on_screen(&self) -> NSRect {
         let content = self.view.convertRect_toView(self.view.bounds(), None);
         self.ns_window.convertRectToScreen(content)
+    }
+
+    /// Keeps the window above the other applications' windows, or puts it
+    /// back among them; in full screen, from when it leaves it.
+    pub(crate) fn set_floating(&self, floating: bool) {
+        self.delegate.ivars().floating.set(floating);
+        let full_screen = self
+            .ns_window
+            .styleMask()
+            .contains(NSWindowStyleMask::FullScreen);
+        if !full_screen {
+            self.ns_window.setLevel(if floating {
+                NSFloatingWindowLevel
+            } else {
+                NSNormalWindowLevel
+            });
+        }
     }
 
     /// The frame of the content as [`Window::content_on_screen`] gives it,
@@ -1560,6 +1578,9 @@ pub(crate) struct WindowDelegateIvars {
     /// The frame of the window's content before it went into full screen,
     /// in AppKit's coordinates, while it is there.
     windowed: Cell<Option<NSRect>>,
+    /// Whether the window floats above the other applications' windows,
+    /// out of full screen.
+    floating: Cell<bool>,
 }
 
 /// The name under which the windows keep their frame, in the app's
@@ -1619,12 +1640,19 @@ define_class!(
                     |view| window.convertRectToScreen(view.convertRect_toView(view.bounds(), None)),
                 );
                 self.ivars().windowed.set(Some(content));
+                // Full screen is a space of its own, of no level.
+                window.setLevel(NSNormalWindowLevel);
             }
         }
 
         #[unsafe(method(windowDidExitFullScreen:))]
-        fn window_did_exit_full_screen(&self, _notification: &NSNotification) {
+        fn window_did_exit_full_screen(&self, notification: &NSNotification) {
             self.ivars().windowed.set(None);
+            if let Some(window) = window_of(notification)
+                && self.ivars().floating.get()
+            {
+                window.setLevel(NSFloatingWindowLevel);
+            }
         }
 
         #[unsafe(method(windowWillStartLiveResize:))]
@@ -1701,6 +1729,7 @@ impl WindowDelegate {
             remember: Cell::new(false),
             occluded,
             windowed: Cell::new(None),
+            floating: Cell::new(false),
         });
         // SAFETY: `NSObject`'s `init` has this signature.
         unsafe { msg_send![super(this), init] }

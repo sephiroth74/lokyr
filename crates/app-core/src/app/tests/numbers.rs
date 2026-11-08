@@ -102,3 +102,59 @@ fn the_config_hides_the_keys_and_a_binding_of_the_user_s_shows_its_own() {
     assert_eq!(numbered(&app, window), (Some(1), None));
     assert_eq!(accessory(&fake), None);
 }
+
+#[test]
+fn float_on_top_keeps_each_window_above_the_others_and_ticks_the_front_one_s() {
+    let (mut fake, mut app) = started();
+    fake.send_app(&mut app, AppEvent::Command(NEW_WINDOW.to_owned()));
+    let windows: Vec<WindowId> = fake.windows().collect();
+    let [first, second] = windows[..] else {
+        panic!("two windows: {windows:?}");
+    };
+    // In the Window menu, between Zoom and Bring All to Front, and in no
+    // other.
+    assert_eq!(
+        menu_items(&fake, 4),
+        [
+            "Minimize cmd+m",
+            "Zoom",
+            "-",
+            "Float on Top",
+            "-",
+            "Bring All to Front"
+        ]
+    );
+    assert!(!menu_items(&fake, 1).contains(&"Float on Top".to_owned()));
+    let floating = |fake: &Fake, window| fake.window(window).unwrap().floating;
+    let toggle = |fake: &mut Fake, app: &mut App| {
+        fake.send_app(app, AppEvent::Command(FLOAT_ON_TOP.to_owned()));
+    };
+    // The window in front floats, ticked.
+    fake.send(&mut app, first, WindowEvent::Focused(true));
+    assert!(!fake.command_checked(FLOAT_ON_TOP));
+    toggle(&mut fake, &mut app);
+    assert!(floating(&fake, first) && !floating(&fake, second));
+    assert!(fake.command_checked(FLOAT_ON_TOP));
+    // The tick follows the window in front, each window of its own.
+    fake.send(&mut app, first, WindowEvent::Focused(false));
+    fake.send(&mut app, second, WindowEvent::Focused(true));
+    assert!(!fake.command_checked(FLOAT_ON_TOP));
+    toggle(&mut fake, &mut app);
+    assert!(floating(&fake, first) && floating(&fake, second));
+    fake.send(&mut app, second, WindowEvent::Focused(false));
+    fake.send(&mut app, first, WindowEvent::Focused(true));
+    assert!(fake.command_checked(FLOAT_ON_TOP));
+    toggle(&mut fake, &mut app);
+    assert!(!floating(&fake, first) && floating(&fake, second));
+    assert!(!fake.command_checked(FLOAT_ON_TOP));
+    assert!(fake.command_enabled(FLOAT_ON_TOP));
+    // The quick terminal floats of its own: the item dims, and does
+    // nothing.
+    fake.send_app(&mut app, AppEvent::Command(TOGGLE_QUICK.to_owned()));
+    let quick = quick_window(&fake).unwrap();
+    fake.send(&mut app, first, WindowEvent::Focused(false));
+    fake.send(&mut app, quick, WindowEvent::Focused(true));
+    assert!(!fake.command_enabled(FLOAT_ON_TOP));
+    toggle(&mut fake, &mut app);
+    assert!(!floating(&fake, quick));
+}

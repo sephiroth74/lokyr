@@ -460,7 +460,7 @@ Lokyr › Make Lokyr the Default Terminal, as the user asked on 6 November 2026,
 The `core-actions` plugin:
 - **Clipboard and scrollback**: copy, paste (with the rules in [SECURITY.md](SECURITY.md)), select all, clear the scrollback. A drop of files pastes their paths, quoted for the shell; a drop of text pastes it, as a paste does.
 - **Font and scrolling**: font size (+, −, reset); scroll by line or page, to the top or bottom.
-- **Windows**: new window, close window, quit.
+- **Windows**: new window, close window, quit; Window › Float on Top, the app's `window.toggle-float-on-top`, as the user asked on 6 November 2026, keeps a window above the other applications' windows, at AppKit's floating level, each window of its own, its item ticked as the window in front floats and dimmed for the quick terminal, which floats of its own; a window in full screen takes the normal level there, and floats again as it leaves it.
 - **Mouse selection**:
   - double-click selects a word, triple-click a line, and ⌥ (Alt on Linux) makes a rectangular selection;
   - copy-on-select is optional.

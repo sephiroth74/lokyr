@@ -20,9 +20,9 @@ use lokyr_vt_core::terminal as vt;
 use lokyr_vt_core::terminal::{SelectionShape, SelectionUnit};
 
 use super::{
-    ABOUT, APPEARANCES, App, CHECK_UPDATES, CONTEXT_ONLY, DEFAULT_TERMINAL, LOOK_UP, LOOK_UP_TITLE,
-    MAN_KEYWORDS, MAN_PAGE, MAN_PAGE_NAME, MAN_SEARCH, MAN_SECTION, PERFORMANCE, REPORT_ISSUE,
-    SEARCH_WEB, SECURE_INPUT, SETTINGS, context, show_selection, shown_top,
+    ABOUT, APPEARANCES, App, CHECK_UPDATES, CONTEXT_ONLY, DEFAULT_TERMINAL, FLOAT_ON_TOP, LOOK_UP,
+    LOOK_UP_TITLE, MAN_KEYWORDS, MAN_PAGE, MAN_PAGE_NAME, MAN_SEARCH, MAN_SECTION, PERFORMANCE,
+    REPORT_ISSUE, SEARCH_WEB, SECURE_INPUT, SETTINGS, context, show_selection, shown_top,
 };
 use crate::drawing::Backend;
 use crate::mouse;
@@ -579,6 +579,7 @@ pub(super) fn main_menu(
                     && command.params.iter().all(|param| param.default.is_some())
                     && APPEARANCES.iter().all(|(name, ..)| *name != command.name)
                     && command.name != PERFORMANCE
+                    && command.name != FLOAT_ON_TOP
                     && !CONTEXT_ONLY.contains(&command.name.as_str())
             })
             .map(|command| Shown {
@@ -769,12 +770,20 @@ pub(super) fn main_menu(
                     ),
                     standard("menu-zoom", StandardAction::Zoom, None),
                     MenuItem::Separator,
-                    standard(
-                        "menu-bring-all-to-front",
-                        StandardAction::BringAllToFront,
-                        None,
-                    ),
-                ],
+                ]
+                .into_iter()
+                .chain(commands.get(FLOAT_ON_TOP).map(|command| MenuItem::Command {
+                    title: command.title.clone(),
+                    command: FLOAT_ON_TOP.to_owned(),
+                    shortcut: keymap.shortcut(FLOAT_ON_TOP).and_then(shortcut),
+                }))
+                .chain(commands.get(FLOAT_ON_TOP).map(|_| MenuItem::Separator))
+                .chain([standard(
+                    "menu-bring-all-to-front",
+                    StandardAction::BringAllToFront,
+                    None,
+                )])
+                .collect(),
                 Some(MenuRole::Window),
             ),
             menu("menu-help", help, Some(MenuRole::Help)),

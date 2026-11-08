@@ -5,6 +5,7 @@ command-window-new = New Window
 command-window-close = Close Window
 command-window-set-title = Set Title…
 command-window-goto = Go to Window
+command-window-toggle-float-on-top = Float on Top
 command-app-about = About Lokyr
 command-app-quit = Quit Lokyr
 command-app-check-for-updates = Check for Updates…

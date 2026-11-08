@@ -158,6 +158,9 @@ pub(crate) struct Window<B: Backend> {
     pub(crate) notified_at: Option<Instant>,
     /// Whether its title shows that its bell rang while it had no focus.
     pub(crate) bell_marked: bool,
+    /// Whether it floats above the other applications' windows, as the
+    /// user chose.
+    pub(crate) floating: bool,
     /// The backdrop that the platform has for it, while it is translucent.
     pub(crate) backdrop: Option<Backdrop>,
     /// The mouse over it.
@@ -374,6 +377,7 @@ impl<B: Backend> Window<B> {
             rang_at: None,
             notified_at: None,
             bell_marked: false,
+            floating: false,
             backdrop: None,
             mouse: Mouse::default(),
             mouse_moves: false,

@@ -605,6 +605,13 @@ impl Platform for Backend {
         ))
     }
 
+    fn set_window_floating(&mut self, window: WindowId, floating: bool) {
+        // A quick window floats of its own place.
+        if let Some(open) = self.windows.get(&window).filter(|open| !open.is_quick()) {
+            open.set_floating(floating);
+        }
+    }
+
     fn set_window_origin(&mut self, window: WindowId, origin: ScreenPoint) {
         if let Some(open) = self.windows.get(&window) {
             open.set_content_origin(origin);

@@ -137,7 +137,14 @@ fn starting_opens_a_window_under_the_menus_of_the_commands() {
     );
     assert_eq!(
         menu_items(&fake, 4),
-        ["Minimize cmd+m", "Zoom", "-", "Bring All to Front"]
+        [
+            "Minimize cmd+m",
+            "Zoom",
+            "-",
+            "Float on Top",
+            "-",
+            "Bring All to Front"
+        ]
     );
     assert_eq!(menu_items(&fake, 5), ["Report an Issue…"]);
 }
@@ -359,6 +366,11 @@ fn the_app_s_commands_register_with_their_categories_and_titles() {
             ("window.goto", "Go to Window", Category::Windows),
             ("window.new", "New Window", Category::Windows),
             ("window.set-title", "Set Title…", Category::Windows),
+            (
+                "window.toggle-float-on-top",
+                "Float on Top",
+                Category::Windows
+            ),
         ]
     );
     let texts = Texts::new("en", &CATALOGS);

@@ -125,6 +125,10 @@ const SET_TITLE: &str = "window.set-title";
 /// Brings forward the window whose number is its `index`, from 1.
 const GOTO_WINDOW: &str = "window.goto";
 
+/// The command that keeps the window above the other applications'
+/// windows, or puts it back among them, which the Window menu's item ticks.
+const FLOAT_ON_TOP: &str = "window.toggle-float-on-top";
+
 /// The command that shows the system's definition of the selection, of
 /// one line, which the context menu alone shows, naming it.
 const LOOK_UP: &str = "pane.look-up";
@@ -2448,6 +2452,17 @@ impl<B: Backend> App<B> {
                     self.make_default_terminal(platform);
                     Ok(())
                 }
+                FLOAT_ON_TOP => {
+                    if let Some(window) = self.acting.or_else(|| platform.focused_window())
+                        && !self.quick.contains_key(&window)
+                        && let Some(state) = self.windows.get_mut(&window)
+                    {
+                        state.floating = !state.floating;
+                        platform.set_window_floating(window, state.floating);
+                        self.show_floating(platform, Some(window));
+                    }
+                    Ok(())
+                }
                 NEW_WINDOW => {
                     self.open_window(platform);
                     Ok(())
@@ -3058,6 +3073,17 @@ impl<B: Backend> App<B> {
             .iter()
             .find(|(_, state)| state.window == tab.window())
             .map(|(&window, _)| window)
+    }
+
+    /// Ticks the Window menu's Float on Top as `window`, the one in front,
+    /// floats, dimmed for the quick terminal's, which floats of its own,
+    /// and without a window.
+    fn show_floating(&self, platform: &mut dyn Platform, window: Option<WindowId>) {
+        let state = window
+            .filter(|window| !self.quick.contains_key(window))
+            .and_then(|window| self.windows.get(&window));
+        platform.set_command_checked(FLOAT_ON_TOP, state.is_some_and(|state| state.floating));
+        platform.set_command_enabled(FLOAT_ON_TOP, state.is_some());
     }
 
     /// Gives `window` the title of its active tab, or Lokyr's when its
@@ -3776,6 +3802,9 @@ impl<B: Backend> App<B> {
                     self.settle_secure_input(platform);
                     self.show_title(platform, window);
                 }
+                if focused {
+                    self.show_floating(platform, Some(window));
+                }
                 // The plugins hear it, but of a question on the window, which
                 // takes the focus as a part of it.
                 if let Some(state) = self.windows.get(&window)
@@ -3985,6 +4014,11 @@ fn commands(texts: &Texts, plugins: &Plugins) -> Registry {
         (CLOSE_WINDOW, "window-close", Category::Windows),
         (SET_TITLE, "window-set-title", Category::Windows),
         (GOTO_WINDOW, "window-goto", Category::Windows),
+        (
+            FLOAT_ON_TOP,
+            "window-toggle-float-on-top",
+            Category::Windows,
+        ),
         (QUIT, "app-quit", Category::App),
         (LOOK_UP, "pane-look-up", Category::Edit),
         (MAN_PAGE, "pane-man-page", Category::Windows),
