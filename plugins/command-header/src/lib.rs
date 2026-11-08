@@ -18,7 +18,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use lokyr_plugin_sdk::command::Error;
 use lokyr_plugin_sdk::event::WorkspaceEvent;
-use lokyr_plugin_sdk::host::{PaneId, Scroll, ShellCommand, Viewport};
+use lokyr_plugin_sdk::host::{PaneId, Scroll, Viewport};
 use lokyr_plugin_sdk::message::{COMMAND_ENDED, COMMAND_STARTED, Data, Event, VIEWPORT_CHANGED};
 use lokyr_plugin_sdk::plugin::{Cx, Plugin};
 use lokyr_plugin_sdk::ui::{Anchor, PanelId, PanelOptions, Role, UiEvent, ViewId};
@@ -44,10 +44,6 @@ const PILL: &str = "command";
 /// The most characters of a command's line that a header shows, past which
 /// the pill ends where the pane does.
 const MOST_LINE: usize = 500;
-
-/// The rows of a command's logical line that a read of its line reaches,
-/// past its input's.
-const LINE_REACH: usize = 16;
 
 /// The length of the hairline at the pill's left, in points.
 const LEAD: f32 = 12.0;
@@ -385,38 +381,22 @@ fn shown_at(
     {
         return None;
     }
+    // As the shell told it, which leaves its right prompt out, or as its
+    // text reads.
     let line = match before {
         Some(before) if before.command == command.id => before.line.clone(),
-        _ => command_line(cx, pane, command)?,
+        _ => cx
+            .command_line(pane, command.id)
+            .ok()??
+            .chars()
+            .take(MOST_LINE)
+            .collect(),
     };
     Some(Shown {
         command: command.id,
         row: command.prompt.map_or(row, |(_, prompt)| prompt),
         line,
     })
-}
-
-/// The line of `command`, as the user typed it: its text from its input's
-/// mark to its output's, of the input's logical line, without the spaces
-/// around it; none of no text.
-fn command_line(cx: &mut Cx<'_>, pane: PaneId, command: &ShellCommand) -> Option<String> {
-    let (column, row) = command.input?;
-    let line = cx.line_text(pane, row, LINE_REACH).ok()??;
-    // In reading order: a row's number, then a column.
-    let from = (row, column);
-    let to = command.output.map(|(column, row)| (row, column));
-    let text: String = line
-        .text
-        .chars()
-        .zip(line.cells)
-        .filter(|&(_, (column, row))| {
-            (row, column) >= from && to.is_none_or(|to| (row, column) < to)
-        })
-        .map(|(character, _)| character)
-        .take(MOST_LINE)
-        .collect();
-    let text = text.trim();
-    (!text.is_empty()).then(|| text.to_owned())
 }
 
 /// The id of `pane`'s header's panel.

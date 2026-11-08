@@ -3377,6 +3377,9 @@ impl Host<'_, '_> {
                 Response::Tabs(infos)
             }
             Asked::Layout(tab) => Response::Layout(layout(self.tab(tab)?.layout())),
+            Asked::CommandLine { pane, command } => {
+                Response::Text(self.pane(pane)?.command_line(command))
+            }
             Asked::ShellCommands { pane, top, bottom } => {
                 Response::ShellCommands(self.pane(pane)?.commands_meeting(top, bottom))
             }

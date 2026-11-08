@@ -217,8 +217,9 @@ impl Terminal {
 
     /// OSC 133, FinalTerm's semantic prompts: `A` starts a prompt, which
     /// also marks its row, `B` the command that the user types, and `C`
-    /// its output, as `D` ends the command, with its status when a number
-    /// follows. The text printed next is in that zone. `A`'s `redraw`
+    /// its output, of the command's line, percent-encoded, after
+    /// `cmdline_url=`, as fish and kitty's shells tell it, as `D` ends the
+    /// command, with its status when a number follows. The text printed next is in that zone. `A`'s `redraw`
     /// option tells what the shell draws again of its prompt on a resize,
     /// until another `A` tells otherwise: `1`, the whole prompt, as by
     /// default; `last`, its last line; `0`, nothing.
@@ -235,6 +236,14 @@ impl Terminal {
             self.command_status = Some(told);
             status = Some(told);
         }
+        // The line of the command that `C` starts, as the shell tells it.
+        let line = (kind == b"C")
+            .then(|| {
+                fields
+                    .clone()
+                    .find_map(|field| field.strip_prefix(b"cmdline_url="))
+            })
+            .flatten();
         // The command's mark, of the cursor's cell, before the zone's.
         let mark = match kind {
             b"A" => Some(Mark::Prompt),
@@ -245,6 +254,9 @@ impl Terminal {
         };
         if let Some(mark) = mark {
             self.mark_command(mark);
+        }
+        if let Some(line) = line {
+            self.tell_command_line(line);
         }
         self.zone = match kind {
             b"A" => {

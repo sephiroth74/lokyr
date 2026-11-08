@@ -6969,6 +6969,40 @@ fn a_command_s_line_is_its_input_to_its_output() {
 }
 
 #[test]
+fn a_command_s_line_as_the_shell_tells_it_leaves_a_right_prompt_out() {
+    let mut term = Term::new(40, 6);
+    // zsh's right prompt, drawn at the row's end as the line is typed, and
+    // left there as the command runs.
+    let right = "\x1b7\x1b[1;30H~/src 10:32\x1b8";
+    term.feed(format!("\x1b]133;A\x07$ \x1b]133;B\x07sleep 5{right}\r\n"));
+    term.feed("\x1b]133;C\x07\x1b]133;D;0\x07");
+    // Read of the row, the right prompt is in it.
+    let read = term.terminal.command_line(1).unwrap();
+    assert!(read.ends_with("10:32"), "{read:?}");
+    // Told, as the zsh integration and fish tell it: decoded, its control
+    // characters as spaces, its characters past ASCII whole.
+    term.feed(format!("\x1b]133;A\x07$ \x1b]133;B\x07sleep 5{right}\r\n"));
+    term.feed("\x1b]133;C;cmdline_url=sleep%205%20%C3%A9%0Ax%25\x07");
+    assert_eq!(
+        term.terminal.command_line(2).as_deref(),
+        Some("sleep 5 é x%")
+    );
+    // A bad escape, as it is; told past the output's mark, nothing.
+    term.feed("\x1b]133;D;0\x07");
+    term.feed("\x1b]133;A\x07$ \x1b]133;B\x07ls\r\n");
+    term.feed("\x1b]133;C;aid=1;cmdline_url=ls%2G%\x07");
+    assert_eq!(term.terminal.command_line(3).as_deref(), Some("ls%2G%"));
+    term.feed("\x1b]133;D;0\x07\x1b]133;C;cmdline_url=other\x07");
+    assert_eq!(term.terminal.command_line(3).as_deref(), Some("ls%2G%"));
+    // Told, it shows on the alternate screen too.
+    term.feed("\x1b[?1049h");
+    assert_eq!(
+        term.terminal.command_line(2).as_deref(),
+        Some("sleep 5 é x%")
+    );
+}
+
+#[test]
 fn a_snapshot_tells_the_scrollback_s_rows() {
     let mut term = Term::new(20, 4);
     let mut snapshot = Snapshot::default();

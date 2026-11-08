@@ -18,8 +18,13 @@ use crate::page::{PageList, PinId, Position};
 /// that a program that marks prompts without end costs no more.
 pub const MOST_COMMANDS: usize = 10_000;
 
-/// A command's marks, of the cells that their pins follow, and its id.
-#[derive(Clone, Copy, Debug, Default)]
+/// The most bytes of a command's line that a shell tells, past which the
+/// rest goes, so that the lines of the commands kept cost no more.
+const MOST_LINE: usize = 2048;
+
+/// A command's marks, of the cells that their pins follow, its id, and its
+/// line, as the shell told it, if it did.
+#[derive(Clone, Debug, Default)]
 pub(super) struct Marked {
     id: u64,
     prompt: Option<PinId>,
@@ -27,6 +32,7 @@ pub(super) struct Marked {
     output: Option<PinId>,
     end: Option<PinId>,
     status: Option<i32>,
+    line: Option<String>,
 }
 
 /// The kept commands of a terminal, oldest first, and the id of the last
@@ -245,7 +251,7 @@ impl Terminal {
     /// the terminal keeps it.
     pub fn command(&self, id: u64) -> Option<CommandMarks> {
         let list = &self.commands.list;
-        let marked = list[list.binary_search_by_key(&id, |marked| marked.id).ok()?];
+        let marked = &list[list.binary_search_by_key(&id, |marked| marked.id).ok()?];
         let rows = &self.primary.rows;
         let first = rows.scrolled() as i64 - rows.scrollback_rows() as i64;
         let cell = |pin: Option<PinId>| {
@@ -263,12 +269,70 @@ impl Terminal {
         })
     }
 
+    /// Gives the last command, whose output's mark came and whose end did
+    /// not, the line that the shell told of it, of `bytes`, percent-encoded,
+    /// as OSC 133 `C`'s `cmdline_url` tells it: decoded, of UTF-8, 2048
+    /// bytes of it at most, its control characters as spaces, and without
+    /// the spaces around it.
+    pub(super) fn tell_command_line(&mut self, bytes: &[u8]) {
+        if self.alternate_active {
+            return;
+        }
+        let Some(last) = self.commands.list.back_mut() else {
+            return;
+        };
+        if last.output.is_none() || last.end.is_some() {
+            return;
+        }
+        let mut decoded = Vec::with_capacity(bytes.len().min(MOST_LINE));
+        let mut at = 0;
+        while at < bytes.len() && decoded.len() < MOST_LINE {
+            let hex = |byte: u8| char::from(byte).to_digit(16);
+            let escaped = (bytes[at] == b'%')
+                .then(|| Some(hex(*bytes.get(at + 1)?)? * 16 + hex(*bytes.get(at + 2)?)?))
+                .flatten();
+            match escaped {
+                // Two hex digits make a byte.
+                Some(byte) => {
+                    decoded.push(byte as u8);
+                    at += 3;
+                }
+                None => {
+                    decoded.push(bytes[at]);
+                    at += 1;
+                }
+            }
+        }
+        let line: String = String::from_utf8_lossy(&decoded)
+            .chars()
+            .map(|character| {
+                if character.is_control() {
+                    ' '
+                } else {
+                    character
+                }
+            })
+            .collect();
+        let line = line.trim();
+        last.line = (!line.is_empty()).then(|| line.to_owned());
+    }
+
     /// The command line of the command of the id `id`, as the user typed
-    /// it: the text from its input's mark to its output's, of the input's
-    /// logical line, 256 rows of it at most, without the spaces around it;
-    /// `None` for a command of no input's mark in the list, of no text, or
+    /// it: as the shell told it, if it did, which a right prompt on its row
+    /// leaves out; or else the text from its input's mark to its output's,
+    /// of the input's logical line, 256 rows of it at most, without the
+    /// spaces around it; `None` for a command not kept, of no input's mark
+    /// in the list, of no text, or, of a line that the shell did not tell,
     /// while the alternate screen shows.
     pub fn command_line(&self, id: u64) -> Option<String> {
+        let list = &self.commands.list;
+        let told = list
+            .binary_search_by_key(&id, |marked| marked.id)
+            .ok()
+            .and_then(|at| list[at].line.clone());
+        if told.is_some() {
+            return told;
+        }
         if self.alternate_active {
             return None;
         }

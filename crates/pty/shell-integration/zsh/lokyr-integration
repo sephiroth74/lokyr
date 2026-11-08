@@ -32,9 +32,14 @@ _lokyr_precmd() {
     builtin return $ret
 }
 
-# As a command starts: its output's mark.
+# As a command starts: its output's mark, of its line as the user typed
+# it, `cmdline_url`, its bytes but letters, digits and `/._~-` escaped, as
+# the terminal takes it in place of the row's text, which a right prompt
+# shares.
 _lokyr_preexec() {
-    builtin print -nr -- $'\e]133;C\a'
+    builtin emulate -L zsh -o extended_glob -o no_multibyte
+    builtin local line="${1//(#m)[^A-Za-z0-9\/._~-]/%${(l:2::0:)$(( [##16] #MATCH ))}}"
+    builtin print -nr -- $'\e]133;C;cmdline_url='"${line}"$'\a'
     _lokyr_running=1
 }
 

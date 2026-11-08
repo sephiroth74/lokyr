@@ -498,6 +498,10 @@ impl Kernel {
         };
         let pane = workspace.pane(id).expect("the pane");
         let commands = pane.commands_meeting(i64::MIN, i64::MAX);
+        let command_lines = commands
+            .iter()
+            .map(|command| pane.command_line(command.id))
+            .collect();
         let viewport = pane.viewport().expect("the pane's view");
         let cursor = pane.cursor_cell().expect("the pane's cursor");
         Self {
@@ -515,6 +519,7 @@ impl Kernel {
                     cells: line.1,
                 },
                 commands,
+                command_lines,
                 viewport,
                 cursor,
             },
@@ -670,6 +675,12 @@ fn on_fake(scenario: &Scenario, world: &World) -> Vec<Entry> {
     pane.rows
         .insert(world.row, (scenarios::LINE.to_owned(), false));
     pane.commands.clone_from(&world.commands);
+    pane.command_lines = world
+        .commands
+        .iter()
+        .zip(&world.command_lines)
+        .filter_map(|(command, line)| Some((command.id, line.clone()?)))
+        .collect();
     pane.viewport = Some(world.viewport);
     pane.cursor = world.cursor;
     host.set_keys("tabs.goto", goto_first(), Some("⌘1"));
@@ -828,11 +839,12 @@ fn kind(request: &Request) -> usize {
         Request::ShowCursor { .. } => 88,
         Request::CursorCell(_) => 89,
         Request::Deselect(_) => 90,
+        Request::CommandLine { .. } => 91,
     }
 }
 
 /// How many kinds of requests the plugin API has.
-const KINDS: usize = 91;
+const KINDS: usize = 92;
 
 #[test]
 fn the_scenarios_hold_every_request_of_the_plugin_api() {
@@ -846,6 +858,7 @@ fn the_scenarios_hold_every_request_of_the_plugin_api() {
             cells: Vec::new(),
         },
         commands: vec![host::ShellCommand::default(); 2],
+        command_lines: vec![None; 2],
         viewport: host::Viewport::default(),
         cursor: (0, 0),
     };

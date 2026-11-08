@@ -97,6 +97,9 @@ pub struct FakePane {
     /// commands gives them: a command of no prompt starts at its first row
     /// held, as one whose prompt left the scrollback does.
     pub commands: Vec<host::ShellCommand>,
+    /// The lines of its commands, by their ids, as a read of a command's
+    /// line gives them.
+    pub command_lines: BTreeMap<u64, String>,
     /// Its view, as a read of it gives it; of none, its screen, the last
     /// of its rows held, as many as its grid's, of no scrollback above
     /// them.
@@ -161,6 +164,7 @@ impl Default for FakePane {
             directory: None,
             title: None,
             commands: Vec::new(),
+            command_lines: BTreeMap::new(),
             viewport: None,
             cursor: (0, 0),
             held_cursor: None,
@@ -2224,6 +2228,9 @@ impl Calling<'_> {
                 Response::Grid { columns, rows }
             }
             Request::PaneTitle(pane) => Response::Text(host.held(*pane)?.title.clone()),
+            Request::CommandLine { pane, command } => {
+                Response::Text(host.held(*pane)?.command_lines.get(command).cloned())
+            }
             Request::ShellCommands { pane, top, bottom } => {
                 Response::ShellCommands(host.held(*pane)?.commands_meeting(*top, *bottom))
             }

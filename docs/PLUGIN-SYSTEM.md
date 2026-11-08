@@ -726,6 +726,10 @@ type Cx = {
     -- output the row `top` may show, and those after it whose first rows are above `bottom`; a command's first row is
     -- its prompt's, or the oldest row of one whose prompt left the scrollback but not its end.
     shell_commands: (pane: PaneId, top: number, bottom: number) -> ({ ShellCommand }?, Error?),
+    -- Requires `history-read`: a command's line, as the user typed it: as the shell told it, of OSC 133 `C`'s
+    -- `cmdline_url`, which a right prompt on its row leaves out, or else the text from its input's mark to its
+    -- output's; as the long command's notification takes it.
+    command_line: (pane: PaneId, command: number) -> (string?, Error?),
     -- The view, as its last frame showed it, which "viewport-changed" tells the changes of; no capability, as it tells
     -- no text.
     viewport: (pane: PaneId) -> (Viewport?, Error?),

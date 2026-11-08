@@ -2,7 +2,7 @@
 //! and tells the views that the test gives.
 
 use lokyr_plugin_sdk::fake::FakeHost;
-use lokyr_plugin_sdk::host::{LineText, TabId};
+use lokyr_plugin_sdk::host::{ShellCommand, TabId};
 use lokyr_plugin_sdk::message::Request;
 use lokyr_plugin_sdk::view::{Key, Kind};
 
@@ -32,16 +32,6 @@ fn commands() -> Vec<ShellCommand> {
     ]
 }
 
-/// The logical line of `row`, of `text`, a cell a character.
-fn line(row: i64, text: &str) -> LineText {
-    LineText {
-        text: text.to_owned(),
-        cells: (0..text.chars().count())
-            .map(|column| (u16::try_from(column).unwrap(), row))
-            .collect(),
-    }
-}
-
 /// A host of a pane of 100 rows and the three commands, and the plugin,
 /// activated.
 fn host() -> (FakeHost, Header) {
@@ -50,8 +40,9 @@ fn host() -> (FakeHost, Header) {
     pane.tab = TabId(1);
     pane.held = 0..100;
     pane.commands = commands();
-    for (row, text) in [(0, "$ ls -l"), (30, "$ make  "), (60, "$ seq 100")] {
-        pane.lines.insert(row, line(row, text));
+    // As the host reads them, of the shell's telling or of their text.
+    for (id, line) in [(1, "ls -l"), (2, "make"), (3, "seq 100")] {
+        pane.command_lines.insert(id, line.to_owned());
     }
     let mut plugin = Header::default();
     host.activate(&mut plugin).unwrap();
@@ -202,6 +193,18 @@ fn a_command_that_did_not_run_or_whose_line_left_shows_no_header() {
     ];
     assert_eq!(scrolled(&mut host, &mut plugin, 10), None);
     assert_eq!(scrolled(&mut host, &mut plugin, 40), None);
+}
+
+#[test]
+fn the_line_is_the_host_s_read_of_it_cut_where_the_pane_ends() {
+    let (mut host, mut plugin) = host();
+    // A line that the host reads as none shows no header; a long one, its
+    // first 500 characters.
+    host.pane(PANE).command_lines.remove(&1);
+    assert_eq!(scrolled(&mut host, &mut plugin, 10), None);
+    host.pane(PANE).command_lines.insert(2, "x".repeat(800));
+    let shown = scrolled(&mut host, &mut plugin, 40).expect("the header");
+    assert_eq!(shown, "x".repeat(500));
 }
 
 #[test]

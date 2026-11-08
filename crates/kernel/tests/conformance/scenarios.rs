@@ -92,6 +92,8 @@ pub struct World {
     pub row: i64,
     pub line: LineText,
     pub commands: Vec<ShellCommand>,
+    /// The lines of the commands, in their order.
+    pub command_lines: Vec<Option<String>>,
     pub viewport: Viewport,
     pub cursor: (u16, i64),
 }
@@ -701,6 +703,13 @@ fn capabilities(world: &World) -> Scenario {
                 lacks("history-read"),
             ),
             (
+                Request::CommandLine {
+                    pane: world.pane,
+                    command: 1,
+                },
+                lacks("history-read"),
+            ),
+            (
                 Request::Subscribe(vec![
                     "viewport-changed".to_owned(),
                     "command-ended".to_owned(),
@@ -819,6 +828,35 @@ fn commands_and_viewport(world: &World) -> Scenario {
                 (commands(row, row + 3), ids(&[first, second])),
                 (commands(row + 2, row + 3), ids(&[second])),
                 (commands(row + 5, row + 5), ids(&[])),
+                // Their lines, as the long command's notification reads them.
+                (
+                    Request::CommandLine {
+                        pane: world.pane,
+                        command: first,
+                    },
+                    Response::Text(world.command_lines[0].clone()),
+                ),
+                (
+                    Request::CommandLine {
+                        pane: world.pane,
+                        command: second,
+                    },
+                    Response::Text(world.command_lines[1].clone()),
+                ),
+                (
+                    Request::CommandLine {
+                        pane: world.pane,
+                        command: 999_999,
+                    },
+                    Response::Text(None),
+                ),
+                (
+                    Request::CommandLine {
+                        pane: NO_PANE,
+                        command: first,
+                    },
+                    failed(Code::NotFound, "there is no pane 999999"),
+                ),
                 (
                     Request::ShellCommands {
                         pane: NO_PANE,

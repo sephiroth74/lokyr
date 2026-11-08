@@ -197,6 +197,25 @@ fn zsh_loads_the_integration_after_the_user_s_own_files() {
 }
 
 #[test]
+fn zsh_tells_each_command_s_line_with_its_output_s_mark() {
+    let Some(zsh) = found(&["/bin/zsh", "/usr/bin/zsh", "/opt/homebrew/bin/zsh"]) else {
+        eprintln!("no zsh here");
+        return;
+    };
+    // A right prompt, which the row shares with the line.
+    let home = home(
+        "zsh-line",
+        &[(".zshrc", "PS1='line> '\nRPROMPT='~/src 10:32'\n")],
+    );
+    let mut shell = Shell::start(&zsh, &home);
+    shell.until("line> ");
+    shell.run("echo é  x%y");
+    // Its bytes but letters, digits and `/._~-` escaped, of UTF-8.
+    shell.until("\x1b]133;C;cmdline_url=echo%20%C3%A9%20%20x%25y\x07");
+    shell.until("\x1b]133;D;0");
+}
+
+#[test]
 fn bash_reads_the_user_s_files_out_of_posix_mode_and_marks_its_prompts() {
     let Some(bash) = modern_bash() else {
         eprintln!("no bash of 4 or later here");

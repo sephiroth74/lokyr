@@ -537,6 +537,15 @@ impl<'a> Cx<'a> {
         }
     }
 
+    /// The line of `pane`'s command of the id `command`, as the user typed
+    /// it: as the shell told it, if it did, which a right prompt on its row
+    /// leaves out, or else the text from its input's mark to its output's,
+    /// as the long command's notification takes it; `None` for a command
+    /// not kept, or of no text. Requires `history-read`.
+    pub fn command_line(&mut self, pane: PaneId, command: u64) -> Result<Option<String>, Error> {
+        self.text(Request::CommandLine { pane, command })
+    }
+
     /// The view of `pane`, the rows that it shows by their numbers, as its
     /// last frame showed it, which `viewport-changed` tells the changes
     /// of.

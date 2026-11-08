@@ -1145,7 +1145,7 @@ How long a command runs, at least, in seconds, for a notification as it ends whi
 | from `1` to `86400`; `0` for none | `10` |
 
 - It needs your shell to mark its commands, as [`shell-integration`](#shell-integration) has zsh, bash and fish do: a command runs from the mark of its output's start to that of its end, as Lokyr finds them in its output, without a clock that runs meanwhile.
-- The notification's title is the command as you typed it, or the window's, once its line has left the scrollback.
+- The notification's title is the command as you typed it, or the window's, once its line has left the scrollback. zsh and fish tell the line itself, which leaves a right prompt out, as zsh's `RPROMPT`; bash's is the text of its row.
 - It applies as you save the file, to the commands that end after.
 
 ## `[theme]`

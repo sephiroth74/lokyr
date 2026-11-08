@@ -246,6 +246,15 @@ pub enum Request {
         /// The number of the row past the last.
         bottom: i64,
     },
+    /// The line of a pane's command, by its id, as the user typed it: as
+    /// the shell told it, if it did, which a right prompt on its row leaves
+    /// out, or else the text from its input's mark to its output's.
+    CommandLine {
+        /// The pane.
+        pane: PaneId,
+        /// The command's id.
+        command: u64,
+    },
     /// A pane's view, as its last frame showed it, or as its terminal is
     /// before its first frame.
     Viewport(PaneId),
@@ -712,7 +721,7 @@ impl Request {
             Self::WorkingDirectory(_) => Some(Capability::ProcessRead),
             // The commands that the shell ran, as their marks and their
             // events tell them.
-            Self::ShellCommands { .. } => Some(Capability::HistoryRead),
+            Self::ShellCommands { .. } | Self::CommandLine { .. } => Some(Capability::HistoryRead),
             Self::Subscribe(names)
                 if names
                     .iter()
@@ -823,6 +832,7 @@ impl Request {
             | Self::SearchMatches { .. }
             | Self::CurrentMatch(_)
             | Self::ShellCommands { .. }
+            | Self::CommandLine { .. }
             | Self::Viewport(_)
             | Self::CursorCell(_)
             | Self::Styles { .. }
