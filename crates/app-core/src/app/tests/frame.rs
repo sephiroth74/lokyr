@@ -1,6 +1,7 @@
 //! The tests of the windows' frames, their cursors' and blinking text's layers, and the grid's geometry.
 
 use lokyr_kernel::workspace::{Direction, Environment, Layout, Pane, Settings, Side};
+use lokyr_platform_core::{LayerPlace, Slide};
 use lokyr_render_core::CellBatch;
 
 use super::*;
@@ -1018,4 +1019,113 @@ fn the_gutter_shows_the_prompts_of_the_commands_that_ended_in_the_padding() {
             (bar(2), token("gutter.running")),
         ]
     );
+}
+
+/// The app of `config`, which draws its frames and its cursor's layer, its
+/// window, focused, running a shell that echoes the keys typed, once it
+/// shows `ready`.
+fn sliding(config: Config) -> (Fake, App, WindowId) {
+    let drawing = Drawing::new(FontConfig::default()).unwrap();
+    let mut fake = Fake::default();
+    let program = shell("printf 'ready '; sleep 30");
+    let mut app = App::new(Some(drawing), config, None).with_program(program);
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    let state = app.windows.get_mut(&window).unwrap();
+    state.surface = Some(fakes::Surface::default());
+    state.cursor_layer.surface = Some(fakes::Surface::default());
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    run_until(&mut fake, &mut app, |_, app| shows(app, window, "ready"));
+    for _ in 0..4 {
+        fake.send(&mut app, window, WindowEvent::Frame);
+    }
+    (fake, app, window)
+}
+
+/// Where the cursor's layer is placed, and how it slid there.
+fn cursor_place(fake: &Fake, window: WindowId) -> Option<LayerPlace> {
+    fake.window(window)
+        .unwrap()
+        .layers
+        .get(&lokyr_platform_core::Layer::Cursor)
+        .copied()
+}
+
+/// Types `text`'s key, whose echo moves the cursor a cell, and returns the
+/// cursor's layer's place once it moved.
+fn typed_moves(fake: &mut Fake, app: &mut App, window: WindowId, text: &str) -> LayerPlace {
+    let before = cursor_place(fake, window).expect("the cursor's layer");
+    fake.send(app, window, typed(KeyCode::KeyA, text, false));
+    run_until(fake, app, |fake, _| {
+        cursor_place(fake, window).is_some_and(|place| place.origin.x > before.origin.x)
+    });
+    cursor_place(fake, window).unwrap()
+}
+
+#[test]
+fn a_move_of_the_cursor_s_own_slides_its_layer_as_the_config_says() {
+    let mut config = unpadded();
+    config.cursor.movement = cursor::Movement::Snappy;
+    let (mut fake, mut app, window) = sliding(config);
+    let millis = Duration::from_millis;
+    // A key's echo, a cell along: a quick slide, slowing as it comes.
+    let place = typed_moves(&mut fake, &mut app, window, "a");
+    assert_eq!(
+        place.slide,
+        Some(Slide {
+            duration: millis(80),
+            easing: Easing::EaseOut,
+        })
+    );
+    // Gliding, as the config changes: longer and softer.
+    app.config.cursor.movement = cursor::Movement::Gliding;
+    let place = typed_moves(&mut fake, &mut app, window, "b");
+    assert_eq!(
+        place.slide,
+        Some(Slide {
+            duration: millis(180),
+            easing: Easing::EaseInOut,
+        })
+    );
+    // At once where the system reduces motion, and as the config says.
+    fake.set_reduce_motion(true);
+    assert_eq!(typed_moves(&mut fake, &mut app, window, "c").slide, None);
+    fake.set_reduce_motion(false);
+    app.config.cursor.movement = cursor::Movement::Instant;
+    assert_eq!(typed_moves(&mut fake, &mut app, window, "d").slide, None);
+}
+
+#[test]
+fn a_cursor_that_the_view_or_the_screen_moves_goes_at_once() {
+    let mut config = unpadded();
+    config.cursor.movement = cursor::Movement::Gliding;
+    let (mut fake, mut app, window) = sliding(config);
+    // Rows to the screen's bottom, then a line more, which scrolls the
+    // screen under the cursor: at once.
+    let rows = app.pane(window).grid().rows;
+    for _ in 0..rows {
+        fake.send(&mut app, window, typed(KeyCode::Enter, "\r", false));
+    }
+    run_until(&mut fake, &mut app, |_, app| {
+        app.pane(window).snapshot().scrollback() > 0
+    });
+    for _ in 0..4 {
+        fake.send(&mut app, window, WindowEvent::Frame);
+    }
+    // A character on the last row, which slides, then Return, whose line
+    // scrolls the screen as the cursor goes back to the row's start.
+    let typed_one = typed_moves(&mut fake, &mut app, window, "x");
+    assert!(typed_one.slide.is_some());
+    fake.send(&mut app, window, typed(KeyCode::Enter, "\r", false));
+    run_until(&mut fake, &mut app, |fake, _| {
+        cursor_place(fake, window).is_some_and(|place| place.origin.x < typed_one.origin.x)
+    });
+    assert_eq!(cursor_place(&fake, window).unwrap().slide, None);
+    // A new size of the text: at once.
+    let before = cursor_place(&fake, window).unwrap();
+    fake.send_app(&mut app, AppEvent::Command("font.bigger".to_owned()));
+    run_until(&mut fake, &mut app, |fake, _| {
+        cursor_place(fake, window).is_some_and(|place| place.size != before.size)
+    });
+    assert_eq!(cursor_place(&fake, window).unwrap().slide, None);
 }

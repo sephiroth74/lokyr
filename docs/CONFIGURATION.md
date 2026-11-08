@@ -78,6 +78,7 @@ visible = 700                        # ms held visible, from 0 to 10000
 fade-out = 400
 fade-out-curve = "ease-in"
 hidden = 200                         # ms held hidden
+movement = "snappy"                  # instant | snappy | gliding: how it moves to a new cell
 
 [window]
 columns = 120                        # a new window's size, in cells, from 1 to 1000
@@ -561,6 +562,27 @@ With `smooth-blink = "custom"`, how long the cursor holds visible, after it fade
 | Values | Default |
 |---|---|
 | from `0` to `10000` | `500` |
+
+### `movement`
+
+<sub>Platforms: macOS</sub>
+
+How the cursor moves to a new cell: at once, or slid there.
+
+| Value | Meaning |
+|---|---|
+| `"instant"` | At once |
+| `"snappy"` | Slid there in 80 ms, slowing as it comes |
+| `"gliding"` | Slid there in 180 ms, softer, slow at its start and at its end |
+
+Default: `"instant"`.
+
+- Only the cursor slides: the text that a key changes shows at the next frame, as with `"instant"`, so that what you type takes no longer to show.
+- It slides as it moves of its own, as a program writes or moves it; a scroll of the view or of the screen, a new size of the text or of the window, another pane, and the cursor that shows again after it was hidden move it at once.
+- A burst of output moves it once, from where it shows to where it is at the next frame; a slide under way goes on from where the cursor is.
+- The window server slides it, as it blinks it: Lokyr draws no frame of its own for it, and wakes no more.
+- With Reduce motion on, in System Settings › Accessibility › Display on macOS, it moves at once.
+- It applies as you save the file.
 
 ## `[window]`
 

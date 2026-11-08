@@ -63,6 +63,10 @@ pub(crate) struct ColumnDrag {
     pub(crate) width: f32,
 }
 
+/// What a frame's cursor is of: its pane, its grid's corner, in pixels,
+/// its cells' width and height, and its view's offset above the screen.
+pub(crate) type CursorSteady = (PaneId, (i32, i32), (u32, u32), usize);
+
 /// A divider's drag under way: its tab and its split's path, whether it
 /// moves across, where the pointer started along it, in points, the
 /// split's first part's share then, and the split's room along it, in
@@ -192,6 +196,9 @@ pub(crate) struct Window<B: Backend> {
     pub(crate) bar_hover: Option<PaneId>,
     pub(crate) bar_drag: Option<crate::app::scrollbars::BarDrag>,
     pub(crate) bar_due: Option<Instant>,
+    /// The cursor's pane, its grid's corner, its cells' size and its view's
+    /// offset at the last frame, of which a move of the cursor's own slides.
+    pub(crate) cursor_steady: Option<CursorSteady>,
     /// The title of the man page that it shows, as `man ls`, when it shows
     /// one: it takes the man page's colors, and keeps the page once `man`
     /// has ended.
@@ -384,6 +391,7 @@ impl<B: Backend> Window<B> {
             bar_hover: None,
             bar_drag: None,
             bar_due: None,
+            cursor_steady: None,
             page: None,
             place: (String::new(), String::new()),
             directory: None,

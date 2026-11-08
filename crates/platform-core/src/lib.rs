@@ -122,6 +122,19 @@ pub struct LayerPlace {
     pub size: Size,
     /// How it blinks; `None` to show it, steady.
     pub blink: Option<Blink>,
+    /// How it slides there from where it shows, of the same size; `None`
+    /// to go there at once.
+    pub slide: Option<Slide>,
+}
+
+/// A layer's slide from where it shows, in the middle of a slide too, to
+/// its new place, which the window server runs without the app.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Slide {
+    /// How long it takes.
+    pub duration: Duration,
+    /// Its curve.
+    pub easing: Easing,
 }
 
 /// A blink of a layer, which the window server runs without the app: from `start`, on, it holds visible, fades out, holds hidden, and

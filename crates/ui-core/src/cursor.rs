@@ -17,6 +17,7 @@
 //! fade-out = 900
 //! fade-out-curve = "ease-in-out"
 //! hidden = 500
+//! movement = "instant"         # instant | snappy | gliding
 //! ```
 
 use std::time::{Duration, Instant};
@@ -64,6 +65,8 @@ pub struct CursorConfig {
     pub fade_out_curve: Curve,
     /// With [`SmoothBlink::Custom`]: how long it holds hidden.
     pub hidden: Span,
+    /// How it moves to a new cell.
+    pub movement: Movement,
 }
 
 impl Default for CursorConfig {
@@ -82,6 +85,7 @@ impl Default for CursorConfig {
             fade_out: Span(breathing.fade_out),
             fade_out_curve: breathing.fade_out_curve,
             hidden: Span(breathing.hidden),
+            movement: Movement::Instant,
         }
     }
 }
@@ -319,6 +323,31 @@ impl SmoothBlink {
             Self::Slow => eased(500, 1000, 750, 200),
             Self::Subtle => eased(150, 900, 150, 200),
             Self::Off | Self::Breathing | Self::Custom => Self::BREATHING,
+        }
+    }
+}
+
+/// How the cursor moves to a new cell: at once, or eased there, the
+/// window server sliding its layer, the text at its next frame still.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Movement {
+    /// At once.
+    #[default]
+    Instant,
+    /// Eased there quickly, slowing as it comes.
+    Snappy,
+    /// Eased there more slowly and softly, from its start to its end.
+    Gliding,
+}
+
+impl Movement {
+    /// How long its slide takes, and its curve; `None` of none.
+    pub fn slide(self) -> Option<(Duration, Curve)> {
+        match self {
+            Self::Instant => None,
+            Self::Snappy => Some((Duration::from_millis(80), Curve::EaseOut)),
+            Self::Gliding => Some((Duration::from_millis(180), Curve::EaseInOut)),
         }
     }
 }

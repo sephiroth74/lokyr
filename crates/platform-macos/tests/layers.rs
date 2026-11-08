@@ -17,7 +17,7 @@ mod probe {
 
     use lokyr_platform_core::{
         AppEvent, Blink, Easing, Fill, FillShape, Handler, Layer, LayerPlace, Platform, Point,
-        Size, Sweep, SweepShape, WindowAttributes, WindowEvent, WindowId,
+        Size, Slide, Sweep, SweepShape, WindowAttributes, WindowEvent, WindowId,
     };
     use objc2::MainThreadMarker;
     use objc2::rc::Retained;
@@ -45,6 +45,9 @@ mod probe {
         /// animation, placed, then hidden; and the cursor's frame then.
         text: Vec<(NSRect, bool, Option<Animation>)>,
         cursor_then: Option<(NSRect, bool)>,
+        /// A slide's duration, the frame's left edge at its end, and whether
+        /// a move at once took it away.
+        slid: Option<(Option<f64>, f64, bool)>,
         /// The cursor's distance from the content's top, and its frame's
         /// size, before and after the window grows, and shrinks.
         resized: Vec<(f64, NSSize)>,
@@ -164,6 +167,7 @@ mod probe {
                     height: 16.0,
                 },
                 blink,
+                slide: None,
             };
             // Faded, then switched, then steady, then hidden.
             let cursor = Layer::Cursor;
@@ -178,6 +182,27 @@ mod probe {
             look(&mut seen);
             platform.place_layer(window, cursor, Some(&place(None)));
             look(&mut seen);
+            // A slide to the next cell, which the window server runs, then a
+            // move back at once, which takes the slide away.
+            let next = LayerPlace {
+                origin: Point { x: 28.0, y: 50.0 },
+                slide: Some(Slide {
+                    duration: millis(80),
+                    easing: Easing::EaseOut,
+                }),
+                ..place(None)
+            };
+            platform.place_layer(window, cursor, Some(&next));
+            let (_, _, view) = views();
+            let layer = view.layer().expect("the cursor's layer");
+            let key = NSString::from_str("slide");
+            // SAFETY: the key that the backend gives its slide.
+            let slid = unsafe { layer.animationForKey(&key) }.map(|found| found.duration());
+            let at = view.frame().origin.x;
+            platform.place_layer(window, cursor, Some(&place(None)));
+            // SAFETY: as above.
+            let gone = unsafe { layer.animationForKey(&key) }.is_none();
+            seen.slid = Some((slid, at, gone));
             // The text's, rows of it, switched, under the cursor's, which it
             // leaves where it is; then hidden.
             let rows = LayerPlace {
@@ -187,6 +212,7 @@ mod probe {
                     height: 48.0,
                 },
                 blink: Some(switched),
+                slide: None,
             };
             platform.place_layer(window, Layer::BlinkingText, Some(&rows));
             look_at_text(&mut seen);
@@ -410,6 +436,12 @@ mod probe {
         assert!((duration - 1.0).abs() < 1e-9 && switched, "{seen:?}");
         // Steady, then hidden.
         assert_eq!(seen.animations[2], None, "{seen:?}");
+        // A slide to the next cell, of its duration, the frame there at once.
+        let (slid, at, gone) = seen.slid.expect("a slide");
+        assert!(
+            slid.is_some_and(|duration| (duration - 0.08).abs() < 1e-9) && at == 28.0 && gone,
+            "{seen:?}"
+        );
         assert!(!seen.frames[2].1 && seen.frames[3].1, "{seen:?}");
         assert!(seen.through, "{seen:?}");
         let placed = (50.0, NSSize::new(8.0, 16.0));

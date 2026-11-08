@@ -15,7 +15,7 @@ use lokyr_kernel::plugins::host::BarPlace;
 use lokyr_kernel::workspace::{self, Direction, Grid, Layout, Pane, PaneId};
 use lokyr_platform_core::{
     Appearance, Backdrop, Blink as PlatformBlink, ContentRect, Easing, Layer, LayerPlace, Platform,
-    Point, PointerArea, PointerShape, Size, Titlebar, WindowId, WindowSize,
+    Point, PointerArea, PointerShape, Size, Slide, Titlebar, WindowId, WindowSize,
 };
 use lokyr_render_core::{
     CellBatch, Color, CursorShape, DisplayList, Item, PictureId, Rect, Renderer, Shape,
@@ -806,6 +806,7 @@ impl<B: Backend> App<B> {
             minimum_contrast: self.config.theme.minimum_contrast.value(),
         };
         let config = self.config.cursor;
+        let movement = config.movement;
         let selection_colors = self.variant(platform, window).selection;
         let match_colors = self.variant(platform, window).match_colors();
         let colors = (selection_colors, match_colors);
@@ -1395,6 +1396,20 @@ impl<B: Backend> App<B> {
             );
             (cells, at)
         });
+        // A move of the cursor's own, in the pane that showed it, of the
+        // same view, cells and place, of rows that did not scroll, slides,
+        // as the config says, but where the system reduces motion.
+        let steady = (active, (x, y), (cell.width, cell.height), snapshot.offset());
+        let moved_alone =
+            state.cursor_steady.replace(steady) == Some(steady) && snapshot.scrolled() == 0;
+        let slide =
+            movement
+                .slide()
+                .filter(|_| moved_alone && !reduced)
+                .map(|(duration, curve)| Slide {
+                    duration,
+                    easing: easing_of(curve),
+                });
         show_layer(
             platform,
             drawing,
@@ -1402,7 +1417,7 @@ impl<B: Backend> App<B> {
             &mut state.cursor_layer,
             cursor_shown,
             size.scale,
-            shown_cursor.and_then(|(_, blink)| blink),
+            (shown_cursor.and_then(|(_, blink)| blink), slide),
         );
         // The text that blinks, into its layer, over its rows, with a cell's
         // margin on each side, which glyphs that go past their cells take.
@@ -1420,7 +1435,7 @@ impl<B: Backend> App<B> {
             &mut state.text_layer,
             text_shown,
             size.scale,
-            text_blink,
+            (text_blink, None),
         );
         // Hidden, it lets its drawables go, as blinking text seldom shows.
         if was_shown && state.text_layer.place.is_none() {
@@ -1820,7 +1835,8 @@ pub(super) fn appearance_over(background: Color, appearance: Appearance) -> Opti
 /// Shows `shown` in `layer` of `window`, which `state` keeps: cells, which
 /// `drawing` draws into the layer's surface as they change, as large as
 /// they are and as their margin on each side, their batch's corner, at a
-/// corner in pixels of the content, of `scale`, blinking as `blink` says.
+/// corner in pixels of the content, of `scale`, blinking as `blink` says,
+/// and sliding there as `slide` says, from where it showed, of its size.
 /// `None` hides the layer.
 fn show_layer<B: Backend>(
     platform: &mut dyn Platform,
@@ -1829,7 +1845,7 @@ fn show_layer<B: Backend>(
     state: &mut WindowLayer<B>,
     shown: Option<(CellBatch, (f64, f64))>,
     scale: f64,
-    blink: Option<PlatformBlink>,
+    (blink, slide): (Option<PlatformBlink>, Option<Slide>),
 ) {
     let place = shown.and_then(|(cells, (x, y))| {
         let surface = state.surface.as_ref()?;
@@ -1861,22 +1877,36 @@ fn show_layer<B: Backend>(
                 height: points(f64::from(height)),
             },
             blink,
+            slide: None,
         })
     });
     if state.place != place {
-        platform.place_layer(window, layer, place.as_ref());
+        let sent = match (&state.place, place) {
+            (Some(before), Some(after))
+                if before.size == after.size && before.origin != after.origin =>
+            {
+                Some(LayerPlace { slide, ..after })
+            }
+            _ => place,
+        };
+        platform.place_layer(window, layer, sent.as_ref());
         state.place = place;
+    }
+}
+
+/// The platform's curve of `curve`.
+fn easing_of(curve: cursor::Curve) -> Easing {
+    match curve {
+        cursor::Curve::Linear => Easing::Linear,
+        cursor::Curve::EaseIn => Easing::EaseIn,
+        cursor::Curve::EaseOut => Easing::EaseOut,
+        cursor::Curve::EaseInOut => Easing::EaseInOut,
     }
 }
 
 /// The platform's blink of `pattern`, from `start`.
 fn blink_of(pattern: cursor::Pattern, start: Instant) -> PlatformBlink {
-    let easing = |curve: cursor::Curve| match curve {
-        cursor::Curve::Linear => Easing::Linear,
-        cursor::Curve::EaseIn => Easing::EaseIn,
-        cursor::Curve::EaseOut => Easing::EaseOut,
-        cursor::Curve::EaseInOut => Easing::EaseInOut,
-    };
+    let easing = easing_of;
     PlatformBlink {
         start,
         visible: pattern.visible,
