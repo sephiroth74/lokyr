@@ -1,0 +1,20 @@
+round 1 v051: 253.2 ms, p90 256.7; floor 233.5; gap 19.7
+round 1 v070: 263.9 ms, p90 271.9; floor 233.5; gap 30.4
+round 1 head: 254.1 ms, p90 285.8; floor 233.5; gap 20.6
+round 1 delay: 254.0 ms, p90 270.5; floor 233.5; gap 20.5
+round 2 v051: 242.8 ms, p90 264.0; floor 230.1; gap 12.7
+round 2 v070: 240.8 ms, p90 248.7; floor 230.1; gap 10.8
+round 2 head: 265.2 ms, p90 281.9; floor 230.1; gap 35.2
+round 2 delay: 264.6 ms, p90 275.9; floor 230.1; gap 34.5
+round 3 v051: 247.2 ms, p90 265.2; floor 227.3; gap 19.8
+round 3 v070: 248.5 ms, p90 280.4; floor 227.3; gap 21.2
+round 3 head: 259.4 ms, p90 270.0; floor 227.3; gap 32.1
+round 3 delay: 263.9 ms, p90 279.0; floor 227.3; gap 36.5
+round 4 v051: 243.8 ms, p90 263.6; floor 235.4; gap 8.3
+round 4 v070: 248.1 ms, p90 265.4; floor 235.4; gap 12.7
+round 4 head: 248.1 ms, p90 255.5; floor 235.4; gap 12.7
+round 4 delay: 238.8 ms, p90 249.0; floor 235.4; gap 3.4
+v051: median's mean 246.7 ms, gap's mean 15.1 ms
+v070: median's mean 250.3 ms, gap's mean 18.8 ms
+head: median's mean 256.7 ms, gap's mean 25.1 ms
+delay: median's mean 255.3 ms, gap's mean 23.7 ms
