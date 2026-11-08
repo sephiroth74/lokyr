@@ -525,7 +525,7 @@ fn a_live_resize_draws_once_a_refresh() {
     fake.send(&mut app, window, WindowEvent::Resized(points(420.0, 310.0)));
     assert_ne!(laid_out(&app), before);
     let before = laid_out(&app);
-    drawn(&mut app, 2);
+    drawn(&mut app, 12);
     fake.send(&mut app, window, WindowEvent::Frame);
     assert_eq!(laid_out(&app), before);
     assert!(fake.window(window).unwrap().frame_requested);

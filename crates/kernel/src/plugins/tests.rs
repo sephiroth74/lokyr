@@ -3608,19 +3608,36 @@ fn held_row_text(app: &App, pane: PaneId, row: i64) -> Option<String> {
     )
 }
 
+/// A script that prints the rows `1` to `first`, a match on every tenth,
+/// then `half`, then waits for the file at `flag`, then prints the rows to
+/// `last`, then `ready`.
+fn printing_in_two(first: u32, last: u32, flag: &std::path::Path) -> String {
+    format!(
+        "seq 1 {first} | sed 's/7$/7 needle/'; echo half; \
+         while [ ! -e '{flag}' ]; do sleep 0.01; done; \
+         seq {} {last} | sed 's/7$/7 needle/'; echo ready; sleep 30",
+        first + 1,
+        flag = flag.display()
+    )
+}
+
+/// A flag's path of the test `name`, which no file holds yet.
+fn flag(name: &str) -> std::path::PathBuf {
+    let path = std::env::temp_dir().join(format!("lokyr-{name}-{}", std::process::id()));
+    let _ = std::fs::remove_file(&path);
+    path
+}
+
 #[test]
-fn a_search_finds_as_output_arrives_a_part_at_a_time_from_the_view_outward() {
+fn a_search_finds_a_part_at_a_time_from_the_view_outward_its_matches_held_through_output_after_it()
+{
     let mut app = App::default();
-    // A match on every tenth row, the program printing as the search goes,
-    // of rows that the scrollback's limit of 10 MiB holds whole, so that
-    // none that a part found goes before the checks, as a slow machine
-    // ends the search before the program ends.
-    let window = window(
-        &mut app,
-        "seq 1 10000 | sed 's/7$/7 needle/'; echo ready; sleep 30",
-    );
+    // 5000 rows of 500 matches, then, once the search started, 5000 more,
+    // within the scrollback's limit.
+    let flag = flag("search-output");
+    let window = window(&mut app, &printing_in_two(5000, 10_000, &flag));
     let pane = app.workspace.active_pane(window).unwrap();
-    row_once(&app, pane, 0, "1");
+    row_once(&app, pane, 5000, "half");
     let mut plugins = Plugins::new();
     let searched = Rc::new(RefCell::new(Searched::default()));
     plugins.add("finder", finder(&searched)).unwrap();
@@ -3628,18 +3645,23 @@ fn a_search_finds_as_output_arrives_a_part_at_a_time_from_the_view_outward() {
     plugins
         .run("finder.needle", Args::new(), &mut app.context())
         .unwrap();
+    std::fs::write(&flag, "").unwrap();
     let id = searched.borrow().last.unwrap();
     let (parts, count) = searched_until_done(&mut app, &mut plugins, &searched, id);
-    // Of every part, its matches each once, on rows of a match's text.
+    row_once(&app, pane, 10_001, "ready");
+    let _ = std::fs::remove_file(&flag);
+    // Of the rows that the pane held as it started, every part's matches
+    // each once.
     let all: Vec<host::SearchMatch> = parts.iter().flatten().copied().collect();
-    assert!(!all.is_empty());
+    assert_eq!(count, 500);
     assert_eq!(all.len(), count);
     let mut unique = all.clone();
     unique.sort_by_key(|found| (found.first.1, found.first.0));
     unique.dedup();
     assert_eq!(unique.len(), all.len(), "a match told twice");
-    // Each on its row, which the scrollback holds still.
+    // Each on its row, through the output that came after.
     for found in &all {
+        assert!(found.first.1 < 5000, "{found:?}");
         assert_eq!(found.last, (found.first.0 + 5, found.first.1));
         let text = held_row_text(&app, pane, found.first.1);
         assert!(
@@ -3648,20 +3670,83 @@ fn a_search_finds_as_output_arrives_a_part_at_a_time_from_the_view_outward() {
             "{found:?}: {text:?}"
         );
     }
-    // The view's part first, of the rows of a screen, as the program
-    // printed on.
+    // The view's part first, of the rows of a screen.
     assert!(parts.len() > 1, "{} parts", parts.len());
     let rows: Vec<i64> = parts[0].iter().map(|found| found.first.1).collect();
     let span = rows.iter().max().unwrap_or(&0) - rows.iter().min().unwrap_or(&0);
     assert!(span < 24, "{rows:?}");
-    // The read of its matches gives them in the rows' order.
+    // The read of its matches gives them in the rows' order, where the
+    // output after left them.
     plugins
         .run("finder.read", Args::new(), &mut app.context())
         .unwrap();
     let read = searched.borrow_mut().read.take().unwrap();
     assert_eq!(read.count, count);
     assert!(read.done);
-    assert_eq!(read.matches, unique[..read.matches.len()]);
+    assert_eq!(read.matches, unique);
+}
+
+#[test]
+fn a_search_s_matches_of_rows_that_the_scrollback_s_limit_took_go_and_the_others_stay() {
+    let mut app = App::default();
+    // 10 000 rows of 1000 matches, then, once the search ended, 10 000
+    // more, which take about the older half of them past the scrollback's
+    // limit of 10 MiB, of some 15 000 rows of 80 columns.
+    let flag = flag("search-limit");
+    let window = window(&mut app, &printing_in_two(10_000, 20_000, &flag));
+    let pane = app.workspace.active_pane(window).unwrap();
+    row_once(&app, pane, 10_000, "half");
+    let mut plugins = Plugins::new();
+    let searched = Rc::new(RefCell::new(Searched::default()));
+    plugins.add("finder", finder(&searched)).unwrap();
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    plugins
+        .run("finder.needle", Args::new(), &mut app.context())
+        .unwrap();
+    let id = searched.borrow().last.unwrap();
+    let (_, count) = searched_until_done(&mut app, &mut plugins, &searched, id);
+    assert_eq!(count, 1000);
+    std::fs::write(&flag, "").unwrap();
+    text_once(&app, pane, "ready");
+    let _ = std::fs::remove_file(&flag);
+    plugins
+        .run("finder.read", Args::new(), &mut app.context())
+        .unwrap();
+    let read = searched.borrow_mut().read.take().unwrap();
+    // The count of what it found; the matches of the rows held alone, the
+    // newer, each on its row, as the rows before them went.
+    assert_eq!(read.count, count);
+    assert!(read.done);
+    assert!(
+        (1..count).contains(&read.matches.len()),
+        "{} held",
+        read.matches.len()
+    );
+    for found in &read.matches {
+        let text = held_row_text(&app, pane, found.first.1);
+        assert!(
+            text.as_deref()
+                .is_some_and(|text| text.ends_with("7 needle")),
+            "{found:?}: {text:?}"
+        );
+    }
+    // Those of every row of a match that the pane holds still, and no
+    // other: the row `n - 1` of the number `n`, its `needle` after it.
+    let first = {
+        let reader = app.workspace.pane(pane).unwrap().reader().unwrap();
+        reader.lock().row_number(0)
+    };
+    let held: Vec<host::SearchMatch> = (first.max(0)..10_000)
+        .filter(|row| (row + 1) % 10 == 7)
+        .map(|row| {
+            let digits = u16::try_from((row + 1).to_string().len()).unwrap();
+            host::SearchMatch {
+                first: (digits + 1, row),
+                last: (digits + 6, row),
+            }
+        })
+        .collect();
+    assert_eq!(read.matches, held);
 }
 
 #[test]

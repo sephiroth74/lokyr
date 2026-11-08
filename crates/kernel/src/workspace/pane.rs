@@ -1521,10 +1521,17 @@ mod tests {
         let mut answering =
             spawned("trap 'sleep 0.2; echo W' WINCH; echo ready; while :; do sleep 0.01; done");
         wait_for(&mut answering, "ready", 1);
-        assert_eq!(answering.resize(grid(90), Instant::now()), None);
+        let start = Instant::now();
+        assert_eq!(answering.resize(grid(90), start), None);
         assert!(answering.answer_due().is_some());
-        assert!(!answering.update());
-        assert_eq!(answering.snapshot().cols(), 80);
+        // Unless the wait ended before the look, as a loaded machine can
+        // take it whole: the time read after it, so that a look that came
+        // before the wait's end never passes for one after.
+        let shown = answering.update();
+        if start.elapsed() < ANSWER_WAIT {
+            assert!(!shown);
+            assert_eq!(answering.snapshot().cols(), 80);
+        }
         wait_for(&mut answering, "W", 1);
         assert_eq!(answering.snapshot().cols(), 90);
         assert_eq!(answering.answer_due(), None);
@@ -1539,9 +1546,11 @@ mod tests {
         assert_eq!(quiet.grid().columns, 95);
         assert_eq!(quiet.answer_due(), Some(start + ANSWER_WAIT));
         // Before the wait's end, as a loaded machine can take it whole
-        // between the sizes and this look.
+        // between the sizes and this look: the time read after it.
+        let shown = quiet.update();
         if start.elapsed() < ANSWER_WAIT {
-            assert!(!quiet.update());
+            assert!(!shown);
+            assert_eq!(quiet.snapshot().cols(), 80);
         }
         std::thread::sleep(ANSWER_WAIT);
         assert!(quiet.update());
