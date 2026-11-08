@@ -58,9 +58,6 @@ use crate::view::{Key, Kind, Node};
 /// tabs.
 pub const FIRST_ID: u64 = 1001;
 
-/// The name of the pointer's events, as a plugin subscribes to them.
-const POINTER: &str = "pointer";
-
 /// The most levels of a tree that a look for a key goes down, as the app's
 /// host's.
 const DEEPEST: usize = 64;
@@ -96,6 +93,51 @@ pub struct FakePane {
     pub grid: (u16, u16),
     /// Its title, as a read of a pane's title gives it.
     pub title: Option<String>,
+    /// The commands that its shell marked, oldest first, as a read of its
+    /// commands gives them: a command of no prompt starts at its first row
+    /// held, as one whose prompt left the scrollback does.
+    pub commands: Vec<host::ShellCommand>,
+    /// Its view, as a read of it gives it; of none, its screen, the last
+    /// of its rows held, as many as its grid's, of no scrollback above
+    /// them.
+    pub viewport: Option<host::Viewport>,
+}
+
+impl FakePane {
+    /// Its commands whose rows meet the rows numbered from `top` to before
+    /// `bottom`, as the app's host gives them: the last whose first row is
+    /// at `top` or above it, and those after it whose first rows are above
+    /// `bottom`.
+    fn commands_meeting(&self, top: i64, bottom: i64) -> Vec<host::ShellCommand> {
+        if top >= bottom {
+            return Vec::new();
+        }
+        let first_row =
+            |command: &host::ShellCommand| command.prompt.map_or(self.held.start, |(_, row)| row);
+        let after = self
+            .commands
+            .partition_point(|command| first_row(command) <= top);
+        self.commands[after.saturating_sub(1)..]
+            .iter()
+            .take_while(|command| first_row(command) < bottom)
+            .copied()
+            .collect()
+    }
+
+    /// Its view, as a read of it gives it.
+    fn viewport(&self) -> host::Viewport {
+        self.viewport.unwrap_or_else(|| {
+            let top = self.held.end - i64::from(self.grid.1);
+            host::Viewport {
+                top,
+                rows: self.grid.1,
+                screen: top,
+                oldest: self.held.start,
+                epoch: 0,
+                alternate: false,
+            }
+        })
+    }
 }
 
 impl Default for FakePane {
@@ -112,6 +154,8 @@ impl Default for FakePane {
             selection: None,
             directory: None,
             title: None,
+            commands: Vec::new(),
+            viewport: None,
         }
     }
 }
@@ -2161,6 +2205,10 @@ impl Calling<'_> {
                 Response::Grid { columns, rows }
             }
             Request::PaneTitle(pane) => Response::Text(host.held(*pane)?.title.clone()),
+            Request::ShellCommands { pane, top, bottom } => {
+                Response::ShellCommands(host.held(*pane)?.commands_meeting(*top, *bottom))
+            }
+            Request::Viewport(pane) => Response::Viewport(host.held(*pane)?.viewport()),
             Request::Layout(tab) => match host.tabs.get(tab) {
                 Some(tab) => Response::Layout(tab.layout.clone()),
                 None => {
@@ -2703,13 +2751,10 @@ impl Calling<'_> {
                 self.host.menu_items.push(item);
             }
             Request::Subscribe(names) => {
-                if let Some(name) = names.iter().find(|name| {
-                    !WorkspaceEvent::NAMES.contains(&name.as_str())
-                        && name.as_str() != POINTER
-                        && name.as_str() != crate::message::KEYS_CHANGED
-                        && name.as_str() != crate::message::WINDOW_FOCUS
-                        && !is_name(name)
-                }) {
+                if let Some(name) = names
+                    .iter()
+                    .find(|name| !crate::message::is_event_name(name))
+                {
                     return Err(Error::new(
                         Code::InvalidName,
                         format!(

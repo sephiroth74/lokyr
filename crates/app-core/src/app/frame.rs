@@ -556,6 +556,9 @@ impl<B: Backend> App<B> {
         // The pointer's moves while Command is held, for the plugins that
         // follow it, as `links` does.
         let pointer_moves = self.command_held && self.plugins.subscribes(plugins::POINTER);
+        // The panes' views that changed, for the plugins that follow them.
+        let tells_viewports = self.plugins.subscribes(plugins::VIEWPORT_CHANGED);
+        let mut viewports = Vec::new();
         // The half of a pane that a tab's drag lights up.
         let lit = self.lit_half(window);
         let Some(state) = self.windows.get_mut(&window) else {
@@ -601,6 +604,7 @@ impl<B: Backend> App<B> {
             };
             if view.pane != active {
                 let updated = pane.update();
+                viewports.extend(pane.viewport_changed().map(|now| (view.pane, now)));
                 others |= updated;
                 self.pointer_text_changed |=
                     updated && text_changed_under(self.pointer_told, view.pane, pane);
@@ -622,6 +626,15 @@ impl<B: Backend> App<B> {
         }
         // Output starts the cursor blinking again, on, as a key does.
         let output = pane.update();
+        viewports.extend(pane.viewport_changed().map(|now| (active, now)));
+        if tells_viewports {
+            for (pane, viewport) in viewports {
+                self.plugins.post(plugins::Event::ViewportChanged {
+                    pane: plugins::host::PaneId(pane.get()),
+                    viewport,
+                });
+            }
+        }
         self.pointer_text_changed |= output && text_changed_under(self.pointer_told, active, pane);
         let copied = started.map(|_| Instant::now());
         if output {

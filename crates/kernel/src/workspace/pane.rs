@@ -17,6 +17,8 @@ use lokyr_vt_core::terminal::{
 };
 use lokyr_vt_core::unicode::{Normalization, Tables, Widths};
 
+use lokyr_plugin_sdk::host::{ShellCommand, Viewport};
+
 use super::PaneId;
 use crate::config::CloseOnExit;
 use crate::l10n::{Arg, Texts};
@@ -213,6 +215,9 @@ pub struct Pane {
     /// How many slices of output the session had parsed when the
     /// workspace last looked.
     slices: u64,
+    /// The view that a frame showed as it was last told, whose change
+    /// tells `viewport-changed`.
+    told_viewport: Option<Viewport>,
 }
 
 impl std::fmt::Debug for Pane {
@@ -225,6 +230,28 @@ impl std::fmt::Debug for Pane {
             .field("ended", &self.ended)
             .field("kept", &self.kept)
             .finish_non_exhaustive()
+    }
+}
+
+/// A view of the first row `origin`, of `rows` rows, `offset` rows above
+/// the screen, over a scrollback of `scrollback` rows, of the alternate
+/// screen or not.
+fn viewport(
+    origin: Origin,
+    rows: u16,
+    offset: usize,
+    scrollback: usize,
+    alternate: bool,
+) -> Viewport {
+    // Fewer rows than an `i64` holds.
+    let screen = origin.top.saturating_add(offset as i64);
+    Viewport {
+        top: origin.top,
+        rows,
+        screen,
+        oldest: screen.saturating_sub(scrollback as i64),
+        epoch: origin.epoch,
+        alternate,
     }
 }
 
@@ -327,6 +354,7 @@ impl Pane {
             tab_color: None,
             progress: None,
             slices: 0,
+            told_viewport: None,
         };
         let mut options = Options::new(pty);
         // The wheel scrolls programs of the alternate screen, as `less`, by
@@ -723,6 +751,61 @@ impl Pane {
     /// since the snapshot's, the drawn frame's.
     pub fn origin(&self) -> Option<Origin> {
         Some(self.session.as_ref()?.lock().origin())
+    }
+
+    /// The view, the rows that it shows by their numbers, as the last
+    /// frame showed it, or as the terminal has it now before the first;
+    /// none for a pane whose program did not start.
+    pub fn viewport(&self) -> Option<Viewport> {
+        let snapshot = &self.snapshot;
+        if let Some(origin) = snapshot.origin() {
+            return Some(viewport(
+                origin,
+                snapshot.rows(),
+                snapshot.offset(),
+                snapshot.scrollback(),
+                snapshot.alternate_screen(),
+            ));
+        }
+        let terminal = self.session.as_ref()?.lock();
+        Some(viewport(
+            terminal.origin(),
+            terminal.rows(),
+            terminal.viewport_offset(),
+            terminal.scrollback_rows(),
+            terminal.is_alternate_screen(),
+        ))
+    }
+
+    /// The view as the last frame showed it, if it changed since the last
+    /// time that this told it, which it notes: so that each frame tells its
+    /// change once, and the first frame tells the view.
+    pub fn viewport_changed(&mut self) -> Option<Viewport> {
+        self.snapshot.origin()?;
+        let now = self.viewport()?;
+        (self.told_viewport.replace(now) != Some(now)).then_some(now)
+    }
+
+    /// The commands that the shell marked whose rows meet the rows
+    /// numbered from `top` to before `bottom`, as
+    /// [`Terminal::commands_meeting`] gives them.
+    pub fn commands_meeting(&self, top: i64, bottom: i64) -> Vec<ShellCommand> {
+        let Some(session) = &self.session else {
+            return Vec::new();
+        };
+        session
+            .lock()
+            .commands_meeting(top, bottom)
+            .into_iter()
+            .map(|marks| ShellCommand {
+                id: marks.id,
+                prompt: marks.prompt,
+                input: marks.input,
+                output: marks.output,
+                end: marks.end,
+                status: marks.status,
+            })
+            .collect()
     }
 
     /// Lets the selection go.

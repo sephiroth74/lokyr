@@ -4,9 +4,10 @@
 //! decorations and the pointer's events, and `core-actions`', the text's
 //! size, the clipboard and the writes to a pane; and the events, the
 //! panels, the capabilities, the declarations, the app's requests, the
-//! state, the reads of rows, the views and the workspace's writes that
-//! every plugin meets. Each runs in the world of the suite: a window of a
-//! pane whose program, in `/`, wrote [`LINE`], the focused one, and a
+//! state, the reads of rows, the views, the shell's commands and the
+//! pane's view, and the workspace's writes that every plugin meets. Each
+//! runs in the world of the suite: a window of a pane whose program, in
+//! `/`, wrote [`LINE`] and [`COMMAND`], the focused one, and a
 //! clipboard of [`CLIPBOARD`]; the kernel's host runs them in their order,
 //! in one world, the workspace's leaving it as it found it, and
 //! `core-actions`' last, as its writes change the pane.
@@ -24,7 +25,8 @@ use lokyr_plugin_sdk::event::WorkspaceEvent;
 use lokyr_plugin_sdk::host::{
     BarPlace, Binding, Color, CommandInfo, DecorationLook, Direction, Edge, Layout, Line, LineText,
     MOST_STATE, MenuItem, MenuPlace, PaneId, QuickLength, QuickPlace, ScreenPoint, Scroll,
-    SearchMatch, SearchQuery, Side, TabId, TabInfo, Underline, WindowId, WindowInfo,
+    SearchMatch, SearchQuery, ShellCommand, Side, TabId, TabInfo, Underline, Viewport, WindowId,
+    WindowInfo,
 };
 use lokyr_plugin_sdk::message::{DIM_RANGE, Data, Event, Mods, OWN_PANE, Request, Response};
 use lokyr_plugin_sdk::ui::{Anchor, PanelId, PanelOptions, Role, ViewId};
@@ -32,6 +34,14 @@ use serde::{Deserialize, Serialize};
 
 /// The line that the world's pane's program wrote.
 pub const LINE: &str = "see https://lokyr.dev/x now";
+
+/// What the world's pane's program wrote after [`LINE`], as `printf`'s
+/// format: a command that the shell would mark, `true`, of no output and
+/// an exit status of 0, then a prompt.
+pub const COMMAND: &str = concat!(
+    "\\033]133;A\\007$ \\033]133;B\\007true\\n",
+    "\\033]133;C\\007\\033]133;D;0\\007\\033]133;A\\007$ ",
+);
 
 /// The clipboard's text as the world starts.
 pub const CLIPBOARD: &str = "old";
@@ -72,7 +82,8 @@ pub const fn pane(k: u64) -> PaneId {
 
 /// The world of the scenarios, as the kernel's host made it: its window,
 /// its tab and its pane, and the pane's row of [`LINE`], with the line's
-/// text and cells as the pane reads them.
+/// text and cells as the pane reads them, the commands of [`COMMAND`] and
+/// the pane's view.
 #[derive(Clone, Debug, PartialEq)]
 pub struct World {
     pub window: WindowId,
@@ -80,6 +91,8 @@ pub struct World {
     pub pane: PaneId,
     pub row: i64,
     pub line: LineText,
+    pub commands: Vec<ShellCommand>,
+    pub viewport: Viewport,
 }
 
 /// A scenario: what the test plugin holds, and its steps.
@@ -135,6 +148,7 @@ pub fn all(world: &World) -> Vec<Scenario> {
         app_requests(world),
         state_and_rows(world),
         views(world),
+        commands_and_viewport(world),
         workspace(world),
         tabs(world),
         core_actions(world),
@@ -673,7 +687,111 @@ fn capabilities(world: &World) -> Scenario {
                 },
                 lacks("user-commands"),
             ),
+            // The commands that the shell ran, and their events; the view,
+            // which tells nothing of the text, to every plugin.
+            (
+                Request::ShellCommands {
+                    pane: world.pane,
+                    top: 0,
+                    bottom: 100,
+                },
+                lacks("history-read"),
+            ),
+            (
+                Request::Subscribe(vec![
+                    "viewport-changed".to_owned(),
+                    "command-ended".to_owned(),
+                ]),
+                lacks("history-read"),
+            ),
+            (
+                Request::Subscribe(vec!["viewport-changed".to_owned()]),
+                Response::Done,
+            ),
+            (
+                Request::Viewport(world.pane),
+                Response::Viewport(world.viewport),
+            ),
         ])],
+    }
+}
+
+/// The commands that the world's pane's shell marked, read whole and by
+/// the rows that they meet, the pane's view, and their events.
+fn commands_and_viewport(world: &World) -> Scenario {
+    let ids = |ids: &[u64]| -> Response {
+        Response::ShellCommands(
+            world
+                .commands
+                .iter()
+                .filter(|command| ids.contains(&command.id))
+                .copied()
+                .collect(),
+        )
+    };
+    let commands = |top: i64, bottom: i64| Request::ShellCommands {
+        pane: world.pane,
+        top,
+        bottom,
+    };
+    // `true`'s prompt is on the row after the line's, its end and the
+    // prompt after it on the row after that.
+    let (first, second) = (world.commands[0].id, world.commands[1].id);
+    let row = world.row;
+    let events = vec![
+        Event::ViewportChanged {
+            pane: world.pane,
+            viewport: world.viewport,
+        },
+        Event::CommandStarted {
+            pane: world.pane,
+            command: second,
+        },
+        Event::CommandEnded {
+            pane: world.pane,
+            command: second,
+            status: Some(1),
+        },
+    ];
+    Scenario {
+        name: "commands and viewport".to_owned(),
+        capabilities: None,
+        subscriptions: vec![
+            "viewport-changed".to_owned(),
+            "command-started".to_owned(),
+            "command-ended".to_owned(),
+        ],
+        steps: vec![Step {
+            asks: vec![
+                (
+                    commands(-1_000_000, 1_000_000),
+                    Response::ShellCommands(world.commands.clone()),
+                ),
+                (commands(row, row + 1), ids(&[])),
+                (commands(row + 1, row + 2), ids(&[first])),
+                (commands(row, row + 3), ids(&[first, second])),
+                (commands(row + 2, row + 3), ids(&[second])),
+                (commands(row + 5, row + 5), ids(&[])),
+                (
+                    Request::ShellCommands {
+                        pane: NO_PANE,
+                        top: 0,
+                        bottom: 1,
+                    },
+                    failed(Code::NotFound, "there is no pane 999999"),
+                ),
+                (
+                    Request::Viewport(world.pane),
+                    Response::Viewport(world.viewport),
+                ),
+                (
+                    Request::Viewport(NO_PANE),
+                    failed(Code::NotFound, "there is no pane 999999"),
+                ),
+            ],
+            posts: events.clone(),
+            heard: events,
+        }],
     }
 }
 

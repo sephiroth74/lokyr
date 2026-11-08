@@ -27,8 +27,8 @@ use crate::command::{Args, Capability, Command, Error};
 use crate::event::WorkspaceEvent;
 use crate::host::{
     BarPlace, Binding, Color, CommandInfo, Current, DecorationLook, Direction, Edge, Found, Layout,
-    Line, LineText, PaneId, ScreenPoint, Scroll, SearchMatch, SearchQuery, Side, StyleRun, TabId,
-    TabInfo, WindowId, WindowInfo,
+    Line, LineText, PaneId, ScreenPoint, Scroll, SearchMatch, SearchQuery, ShellCommand, Side,
+    StyleRun, TabId, TabInfo, Viewport, WindowId, WindowInfo,
 };
 use crate::ui::{PanelId, PanelOptions, ViewId};
 use crate::view::Key;
@@ -208,6 +208,25 @@ pub enum Request {
     /// search's matches now, which the matches that leave the scrollback
     /// lower; and how many of them the host keeps.
     CurrentMatch(u64),
+    /// The commands that the shell marked in a pane, as its integration
+    /// tells them, [`MOST_COMMANDS`](crate::host::MOST_COMMANDS) at most,
+    /// whose rows meet the rows numbered from `top` to before `bottom`,
+    /// oldest first: the last whose first row is at `top` or above it, whose
+    /// output the row `top` may show, and those after it whose first rows
+    /// are above `bottom`. A command's first row is its prompt's; of a
+    /// prompt that left the scrollback, the pane's oldest row, unless every
+    /// row of it left too.
+    ShellCommands {
+        /// The pane.
+        pane: PaneId,
+        /// The first row's number.
+        top: i64,
+        /// The number of the row past the last.
+        bottom: i64,
+    },
+    /// A pane's view, as its last frame showed it, or as its terminal is
+    /// before its first frame.
+    Viewport(PaneId),
     /// The styles of a pane's row, by its number, as runs of cells.
     Styles {
         /// The pane.
@@ -669,6 +688,16 @@ impl Request {
             | Self::CurrentMatch(_)
             | Self::Styles { .. } => Some(Capability::TerminalRead),
             Self::WorkingDirectory(_) => Some(Capability::ProcessRead),
+            // The commands that the shell ran, as their marks and their
+            // events tell them.
+            Self::ShellCommands { .. } => Some(Capability::HistoryRead),
+            Self::Subscribe(names)
+                if names
+                    .iter()
+                    .any(|name| name == COMMAND_STARTED || name == COMMAND_ENDED) =>
+            {
+                Some(Capability::HistoryRead)
+            }
             Self::OpenQuickWindow { .. } | Self::ShowQuickWindow { .. } => {
                 Some(Capability::GlobalHotkey)
             }
@@ -709,6 +738,7 @@ impl Request {
             | Self::Layout(_)
             | Self::PaneGrid(_)
             | Self::PaneTitle(_)
+            | Self::Viewport(_)
             | Self::NewTab { .. }
             | Self::Split { .. }
             | Self::CloseTab { .. }
@@ -767,6 +797,8 @@ impl Request {
             | Self::EndSearch(_)
             | Self::SearchMatches { .. }
             | Self::CurrentMatch(_)
+            | Self::ShellCommands { .. }
+            | Self::Viewport(_)
             | Self::Styles { .. }
             | Self::Opens(_)
             | Self::FontSize
@@ -880,6 +912,10 @@ pub enum Response {
     Asking(u64),
     /// A tab bar's place.
     TabBarPlace(BarPlace),
+    /// A pane's commands, as a read of them gives them.
+    ShellCommands(Vec<ShellCommand>),
+    /// A pane's view.
+    Viewport(Viewport),
     /// A row's styles, or none of a row that the pane does not hold.
     Styles(Option<Vec<StyleRun>>),
     /// A decoration's id, or a mark's of a pane's gutter.
@@ -918,6 +954,32 @@ pub const KEYS_CHANGED: &str = "keys-changed";
 
 /// The name of [`Event::WindowFocus`], as a plugin subscribes to it.
 pub const WINDOW_FOCUS: &str = "window-focus";
+
+/// The name of [`Event::ViewportChanged`], as a plugin subscribes to it.
+pub const VIEWPORT_CHANGED: &str = "viewport-changed";
+
+/// The name of [`Event::CommandStarted`], as a plugin subscribes to it.
+pub const COMMAND_STARTED: &str = "command-started";
+
+/// The name of [`Event::CommandEnded`], as a plugin subscribes to it.
+pub const COMMAND_ENDED: &str = "command-ended";
+
+/// Whether a plugin can subscribe to the events of `name`: one of the
+/// workspace's, the host's own that every plugin hears of, or a plugin's
+/// own, `namespace.event`.
+pub fn is_event_name(name: &str) -> bool {
+    WorkspaceEvent::NAMES.contains(&name)
+        || [
+            POINTER,
+            KEYS_CHANGED,
+            WINDOW_FOCUS,
+            VIEWPORT_CHANGED,
+            COMMAND_STARTED,
+            COMMAND_ENDED,
+        ]
+        .contains(&name)
+        || crate::command::is_name(name)
+}
 
 /// The modifiers held.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -1002,6 +1064,41 @@ pub enum Event {
         /// Whether it has the focus now.
         focused: bool,
     },
+    /// A pane's view changed, as a frame showed it: its first row, as the
+    /// user or output scrolled it, its rows, the screen's first row, as
+    /// output scrolled the screen under a view above it, the oldest row, as
+    /// the scrollback's limit took rows away, or the epoch or the screen
+    /// shown. The host tells it once a frame of the pane at most, as the
+    /// frame shows the change; a pane that does not show tells it as it
+    /// shows again.
+    ViewportChanged {
+        /// The pane.
+        pane: PaneId,
+        /// Its view.
+        viewport: Viewport,
+    },
+    /// A command that the shell marked started in a pane, as its output's
+    /// mark came, of its id among the pane's commands, as a read of them
+    /// gives it, to a plugin of `history-read`.
+    CommandStarted {
+        /// The pane.
+        pane: PaneId,
+        /// The command's id.
+        command: u64,
+    },
+    /// A command that started ended, as its end's mark came, of the exit
+    /// status that the shell told, if it told one, to a plugin of
+    /// `history-read`; or as its pane let go of it before its end, as a
+    /// reset or a screen cleared under it does, of none. A shell that marks
+    /// no end tells none.
+    CommandEnded {
+        /// The pane.
+        pane: PaneId,
+        /// The command's id.
+        command: u64,
+        /// Its exit status.
+        status: Option<i32>,
+    },
     /// The user's drag of the edge of the plugin's tab bar's column ended,
     /// to it alone: the column's width, in points, in force since, which
     /// the plugin keeps, as for its next start.
@@ -1045,6 +1142,9 @@ impl Event {
             Self::TabBarResized { .. } => "tab-bar-resized",
             Self::KeysChanged => KEYS_CHANGED,
             Self::WindowFocus { .. } => WINDOW_FOCUS,
+            Self::ViewportChanged { .. } => VIEWPORT_CHANGED,
+            Self::CommandStarted { .. } => COMMAND_STARTED,
+            Self::CommandEnded { .. } => COMMAND_ENDED,
             Self::ConfigChanged => "config-changed",
             Self::Custom { name, .. } => name,
         }

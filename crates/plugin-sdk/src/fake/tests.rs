@@ -1,4 +1,6 @@
+use std::cell::RefCell;
 use std::collections::BTreeMap;
+use std::rc::Rc;
 
 use super::*;
 use crate::command::Category;
@@ -492,6 +494,50 @@ fn a_read_of_rows_gives_every_row_held_from_the_first_a_blank_one_empty() {
             ],
             vec![(2, String::new(), false), (3, "last".to_owned(), false)],
         ]
+    );
+}
+
+#[test]
+fn a_read_of_commands_gives_those_that_meet_its_rows_and_the_view_its_screen() {
+    let mut host = FakeHost::new("acme/probe");
+    let pane = host.pane(PaneId(1));
+    pane.held = -10..24;
+    let command = |id: u64, prompt: Option<i64>| host::ShellCommand {
+        id,
+        prompt: prompt.map(|row| (0, row)),
+        ..host::ShellCommand::default()
+    };
+    // The first's prompt left the scrollback: it starts at its first row.
+    pane.commands = vec![command(1, None), command(2, Some(3)), command(3, Some(8))];
+    let read = Rc::new(RefCell::new(Vec::new()));
+    let mut probe = Probe::new({
+        let read = Rc::clone(&read);
+        move |cx, _| {
+            for (top, bottom) in [(-10, -9), (2, 3), (3, 9), (4, 100), (9, 9)] {
+                let ids: Vec<u64> = cx
+                    .shell_commands(PaneId(1), top, bottom)?
+                    .iter()
+                    .map(|command| command.id)
+                    .collect();
+                read.borrow_mut().push(ids);
+            }
+            let viewport = cx.viewport(PaneId(1))?;
+            assert_eq!(
+                (
+                    viewport.top,
+                    viewport.screen,
+                    viewport.oldest,
+                    viewport.rows
+                ),
+                (0, 0, -10, 24)
+            );
+            Ok(())
+        }
+    });
+    host.command(&mut probe, "probe.go", Args::new()).unwrap();
+    assert_eq!(
+        *read.borrow(),
+        [vec![1], vec![1], vec![2, 3], vec![2, 3], vec![]]
     );
 }
 

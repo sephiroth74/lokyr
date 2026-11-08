@@ -29,6 +29,8 @@ pub struct Snapshot {
     scrolled: i32,
     /// How many rows the view is above the screen's top.
     offset: usize,
+    /// How many rows the scrollback holds, above the screen.
+    scrollback: usize,
     /// Whether the last update found other colors, or reverse video.
     colors_changed: bool,
     cursor: SnapshotCursor,
@@ -100,6 +102,12 @@ impl Snapshot {
     /// [`Terminal::viewport_offset`] tells: 0 when it shows the screen.
     pub fn offset(&self) -> usize {
         self.offset
+    }
+
+    /// How many rows the active screen's scrollback held at the last
+    /// update, above the screen: none on the alternate screen.
+    pub fn scrollback(&self) -> usize {
+        self.scrollback
     }
 
     /// The selection, as the view shows it, if there is one.
@@ -352,6 +360,7 @@ impl Terminal {
         };
         snapshot.origin = Some(origin);
         snapshot.offset = offset;
+        snapshot.scrollback = scrollback;
         snapshot.cols = cols;
         snapshot.lines.resize_with(lines, Line::default);
         snapshot.changed.clear();
@@ -433,6 +442,7 @@ pub(super) fn copy_of(terminal: &Terminal) -> Snapshot {
         changed: vec![true; lines.len()],
         scrolled: 0,
         offset,
+        scrollback: rows.scrollback_rows(),
         colors_changed: false,
         cursor: SnapshotCursor {
             position: Cursor {

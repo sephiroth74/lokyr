@@ -87,6 +87,12 @@ impl Terminal {
         usize::try_from(index).map_or(last, |index| index.min(last))
     }
 
+    /// How many rows the active screen's scrollback holds, above the
+    /// screen: none on the alternate screen.
+    pub fn scrollback_rows(&self) -> usize {
+        self.screen().rows.scrollback_rows()
+    }
+
     /// The list's index of the view's first row.
     pub(super) fn view_top(&self) -> usize {
         self.screen().rows.scrollback_rows() - self.viewport_offset()

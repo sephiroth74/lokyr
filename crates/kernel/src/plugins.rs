@@ -32,8 +32,11 @@ use lokyr_pkg_model::schema::Schema;
 pub use lokyr_plugin_sdk::event::WorkspaceEvent;
 pub use lokyr_plugin_sdk::host;
 pub use lokyr_plugin_sdk::message::Event;
+pub use lokyr_plugin_sdk::message::{
+    COMMAND_ENDED, COMMAND_STARTED, Data, KEYS_CHANGED, Mods, POINTER, VIEWPORT_CHANGED,
+    WINDOW_FOCUS,
+};
 use lokyr_plugin_sdk::message::{Call, Effect, Request as Asked, Response, within_depth};
-pub use lokyr_plugin_sdk::message::{Data, KEYS_CHANGED, Mods, POINTER, WINDOW_FOCUS};
 pub use lokyr_plugin_sdk::plugin::{Cx, Plugin, Registration};
 use lokyr_plugin_sdk::ui::{Anchor, PanelId, PanelOptions, Slot, UiEvent, ViewId};
 use lokyr_plugin_sdk::view::{Key, Kind, Node};
@@ -3328,6 +3331,17 @@ impl Host<'_, '_> {
                 Response::Tabs(infos)
             }
             Asked::Layout(tab) => Response::Layout(layout(self.tab(tab)?.layout())),
+            Asked::ShellCommands { pane, top, bottom } => {
+                Response::ShellCommands(self.pane(pane)?.commands_meeting(top, bottom))
+            }
+            Asked::Viewport(pane) => {
+                Response::Viewport(self.pane(pane)?.viewport().ok_or_else(|| {
+                    Error::new(
+                        Code::Unavailable,
+                        format!("the pane {} has no terminal", pane.0),
+                    )
+                })?)
+            }
             Asked::PaneGrid(pane) => {
                 let grid = self.pane(pane)?.grid();
                 Response::Grid {
@@ -4001,13 +4015,10 @@ impl Host<'_, '_> {
                 *self.declarations_changed = true;
             }
             Asked::Subscribe(names) => {
-                if let Some(name) = names.iter().find(|name| {
-                    !WorkspaceEvent::NAMES.contains(&name.as_str())
-                        && name.as_str() != POINTER
-                        && name.as_str() != KEYS_CHANGED
-                        && name.as_str() != WINDOW_FOCUS
-                        && !commands::is_name(name)
-                }) {
+                if let Some(name) = names
+                    .iter()
+                    .find(|name| !lokyr_plugin_sdk::message::is_event_name(name))
+                {
                     return Err(Error::new(
                         Code::InvalidName,
                         format!(

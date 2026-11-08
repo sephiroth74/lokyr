@@ -2866,6 +2866,23 @@ impl<B: Backend> App<B> {
                     self.follow(platform, &change);
                     self.plugins.post(plugins::Event::Workspace(change));
                 }
+                // The commands that the shell marked, for the plugins that
+                // follow them.
+                Event::Terminal {
+                    pane,
+                    event: vt::Event::CommandStarted(command),
+                } => self.plugins.post(plugins::Event::CommandStarted {
+                    pane: host::PaneId(pane.get()),
+                    command,
+                }),
+                Event::Terminal {
+                    pane,
+                    event: vt::Event::CommandEnded { id, status },
+                } => self.plugins.post(plugins::Event::CommandEnded {
+                    pane: host::PaneId(pane.get()),
+                    command: id,
+                    status,
+                }),
                 Event::Ended(_) | Event::Terminal { .. } => {}
             }
         }

@@ -6608,6 +6608,7 @@ fn the_commands_marks_keep_their_rows_through_output_and_the_scrollback() {
         commands,
         [
             CommandMarks {
+                id: 1,
                 prompt: Some((0, 0)),
                 input: Some((2, 0)),
                 output: Some((0, 1)),
@@ -6615,6 +6616,7 @@ fn the_commands_marks_keep_their_rows_through_output_and_the_scrollback() {
                 status: Some(0),
             },
             CommandMarks {
+                id: 2,
                 prompt: Some((0, 3)),
                 input: Some((2, 3)),
                 output: Some((0, 4)),
@@ -6622,6 +6624,7 @@ fn the_commands_marks_keep_their_rows_through_output_and_the_scrollback() {
                 status: Some(1),
             },
             CommandMarks {
+                id: 3,
                 prompt: Some((0, 4)),
                 input: Some((2, 4)),
                 output: None,
@@ -6748,6 +6751,215 @@ fn a_screen_cleared_in_place_lets_go_of_the_commands_on_its_rows() {
         .map(|mark| (mark.row, mark.kind))
         .collect();
     assert_eq!(kinds, [(0, GutterKind::Succeeded)]);
+}
+
+/// The events of the commands' starts and ends that `term` owes, which it
+/// takes.
+fn command_events(term: &mut Term) -> Vec<Event> {
+    term.terminal
+        .take_events()
+        .into_iter()
+        .filter(|event| matches!(event, Event::CommandStarted(_) | Event::CommandEnded { .. }))
+        .collect()
+}
+
+#[test]
+fn a_command_tells_its_start_and_its_end_once_of_its_id() {
+    let mut term = Term::new(20, 6);
+    term.feed(marked_command("ls", &["a"], 0));
+    term.feed(marked_command("false", &[], 1));
+    assert_eq!(
+        command_events(&mut term),
+        [
+            Event::CommandStarted(1),
+            Event::CommandEnded {
+                id: 1,
+                status: Some(0)
+            },
+            Event::CommandStarted(2),
+            Event::CommandEnded {
+                id: 2,
+                status: Some(1)
+            },
+        ]
+    );
+    // A line of no command, whose end comes at once, tells nothing; marks
+    // given again tell nothing again; an end of no status tells none.
+    term.feed("\x1b]133;A\x07$ \x1b]133;B\x07\r\n\x1b]133;D\x07");
+    term.feed("\x1b]133;A\x07$ \x1b]133;B\x07x\r\n\x1b]133;C\x07\x1b]133;C\x07");
+    term.feed("\x1b]133;D\x07\x1b]133;D;3\x07");
+    assert_eq!(
+        command_events(&mut term),
+        [
+            Event::CommandStarted(4),
+            Event::CommandEnded {
+                id: 4,
+                status: None
+            },
+        ]
+    );
+    // The alternate screen's marks tell nothing.
+    term.feed("\x1b[?1049h\x1b]133;A\x07\x1b]133;C\x07\x1b]133;D;0\x07\x1b[?1049l");
+    assert_eq!(command_events(&mut term), []);
+}
+
+#[test]
+fn a_command_let_go_of_before_its_end_ends_and_a_reset_keeps_the_ids_going() {
+    let mut term = Term::new(20, 6);
+    // A command that runs, then a clear from the top and a prompt there,
+    // which lets go of it.
+    term.feed("\x1b]133;A\x07$ \x1b]133;B\x07sleep\r\n\x1b]133;C\x07");
+    term.feed("\x1b[H\x1b[J\x1b]133;A\x07$ ");
+    assert_eq!(
+        command_events(&mut term),
+        [
+            Event::CommandStarted(1),
+            Event::CommandEnded {
+                id: 1,
+                status: None
+            },
+        ]
+    );
+    // A reset forgets a command that runs, which ends, and the next one's
+    // id follows.
+    term.feed("\x1b]133;B\x07reset\r\n\x1b]133;C\x07\x1bc");
+    assert_eq!(
+        command_events(&mut term),
+        [
+            Event::CommandStarted(2),
+            Event::CommandEnded {
+                id: 2,
+                status: None
+            },
+        ]
+    );
+    assert!(term.terminal.commands().is_empty());
+    term.feed(marked_command("ls", &[], 0));
+    assert_eq!(term.terminal.commands()[0].id, 3);
+}
+
+#[test]
+fn the_commands_that_meet_rows_are_the_one_over_the_first_and_those_below() {
+    let mut term = Term::new(20, 4);
+    // Prompts on rows 0, 4 and 8, each of three lines of output, then a
+    // prompt on row 12.
+    for _ in 0..3 {
+        term.feed(marked_command("run", &["a", "b", "c"], 0));
+    }
+    term.feed("\x1b]133;A\x07$ ");
+    let ids = |term: &Term, top: i64, bottom: i64| -> Vec<u64> {
+        term.terminal
+            .commands_meeting(top, bottom)
+            .iter()
+            .map(|command| command.id)
+            .collect()
+    };
+    assert_eq!(ids(&term, 0, 1), [1]);
+    // The output of the first, then its last row and the second's prompt.
+    assert_eq!(ids(&term, 2, 4), [1]);
+    assert_eq!(ids(&term, 3, 5), [1, 2]);
+    // A first row at the top: the one before it does not meet them.
+    assert_eq!(ids(&term, 4, 9), [2, 3]);
+    assert_eq!(ids(&term, 6, 100), [2, 3, 4]);
+    assert_eq!(ids(&term, -100, 0), []);
+    assert_eq!(ids(&term, 5, 5), []);
+    assert_eq!(
+        term.terminal.commands_meeting(i64::MIN, i64::MAX),
+        term.terminal.commands()
+    );
+    // A command whose prompt left the scrollback starts at its first mark
+    // that is in it still.
+    let mut short = Term::with(
+        20,
+        3,
+        Options {
+            scrollback: Scrollback {
+                limit: 0,
+                ..Scrollback::default()
+            },
+            ..Options::default()
+        },
+    );
+    short.feed(marked_command("seq", &[], 0));
+    short.feed("\x1b]133;A\x07$ \x1b]133;B\x07seq\r\n\x1b]133;C\x07");
+    for at in 0..20_000 {
+        short.feed(format!("{at}\r\n"));
+    }
+    let running = short.terminal.commands_meeting(i64::MIN, i64::MAX);
+    assert_eq!(running.len(), 1, "{running:?}");
+    assert_eq!(
+        (running[0].id, running[0].prompt, running[0].end),
+        (2, None, None)
+    );
+    let oldest = short.terminal.row_number(0);
+    assert_eq!(ids(&short, oldest, oldest + 1), [2]);
+}
+
+#[test]
+fn a_command_whose_end_stays_in_the_scrollback_stays_past_the_next_prompt() {
+    let mut term = Term::with(
+        20,
+        3,
+        Options {
+            scrollback: Scrollback {
+                limit: 0,
+                ..Scrollback::default()
+            },
+            ..Options::default()
+        },
+    );
+    term.feed("\x1b]133;A\x07$ \x1b]133;B\x07seq\r\n\x1b]133;C\x07");
+    for at in 0..20_000 {
+        term.feed(format!("{at}\r\n"));
+    }
+    term.feed("\x1b]133;D;2\x07\x1b]133;A\x07$ ");
+    let end = 1 + 20_000;
+    assert_eq!(
+        term.terminal.commands(),
+        [
+            CommandMarks {
+                id: 1,
+                end: Some((0, end)),
+                status: Some(2),
+                ..CommandMarks::default()
+            },
+            CommandMarks {
+                id: 2,
+                prompt: Some((0, end)),
+                ..CommandMarks::default()
+            },
+        ]
+    );
+    // It goes once its end does.
+    for _ in 0..20_000 {
+        term.feed("line\r\n");
+    }
+    term.feed("\x1b]133;A\x07$ ");
+    let ids: Vec<u64> = term
+        .terminal
+        .commands()
+        .iter()
+        .map(|command| command.id)
+        .collect();
+    assert_eq!(ids, [3]);
+}
+
+#[test]
+fn a_snapshot_tells_the_scrollback_s_rows() {
+    let mut term = Term::new(20, 4);
+    let mut snapshot = Snapshot::default();
+    term.terminal.snapshot(&mut snapshot);
+    assert_eq!(snapshot.scrollback(), 0);
+    for _ in 0..10 {
+        term.feed("line\r\n");
+    }
+    term.terminal.snapshot(&mut snapshot);
+    assert_eq!(snapshot.scrollback(), 7);
+    assert_eq!(term.terminal.scrollback_rows(), 7);
+    // The alternate screen has none.
+    term.feed("\x1b[?1049h");
+    term.terminal.snapshot(&mut snapshot);
+    assert_eq!(snapshot.scrollback(), 0);
 }
 
 #[test]

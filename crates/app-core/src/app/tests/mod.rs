@@ -23,6 +23,7 @@ mod chrome;
 mod configs;
 mod frame;
 mod input;
+mod marks;
 mod menus;
 mod notices;
 mod numbers;

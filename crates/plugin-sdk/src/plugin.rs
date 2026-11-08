@@ -48,8 +48,8 @@
 use crate::command::{Args, Code, Command, Error};
 use crate::host::{
     BarPlace, Binding, Color, CommandInfo, Current, DecorationLook, Direction, Edge, Found, Host,
-    Layout, LineText, PaneId, ScreenPoint, Scroll, SearchMatch, SearchQuery, Side, StyleRun, TabId,
-    TabInfo, WindowId, WindowInfo,
+    Layout, LineText, PaneId, ScreenPoint, Scroll, SearchMatch, SearchQuery, ShellCommand, Side,
+    StyleRun, TabId, TabInfo, Viewport, WindowId, WindowInfo,
 };
 use crate::message::{Call, Data, Event, Request, Response};
 use crate::ui::{PanelId, PanelOptions, UiEvent, ViewId};
@@ -473,6 +473,34 @@ impl<'a> Cx<'a> {
     pub fn current_match(&mut self, search: u64) -> Result<Current, Error> {
         match self.request(Request::CurrentMatch(search)) {
             Response::Current(current) => Ok(current),
+            other => Err(failed(other)),
+        }
+    }
+
+    /// The commands that the shell marked in `pane`, as its integration
+    /// tells them, whose rows meet the rows numbered from `top` to before
+    /// `bottom`, oldest first: the last whose first row is at `top` or
+    /// above it, whose output the row `top` may show, and those after it
+    /// whose first rows are above `bottom`; every command that the pane
+    /// keeps of `i64::MIN` to `i64::MAX`. Requires `history-read`.
+    pub fn shell_commands(
+        &mut self,
+        pane: PaneId,
+        top: i64,
+        bottom: i64,
+    ) -> Result<Vec<ShellCommand>, Error> {
+        match self.request(Request::ShellCommands { pane, top, bottom }) {
+            Response::ShellCommands(commands) => Ok(commands),
+            other => Err(failed(other)),
+        }
+    }
+
+    /// The view of `pane`, the rows that it shows by their numbers, as its
+    /// last frame showed it, which `viewport-changed` tells the changes
+    /// of.
+    pub fn viewport(&mut self, pane: PaneId) -> Result<Viewport, Error> {
+        match self.request(Request::Viewport(pane)) {
+            Response::Viewport(viewport) => Ok(viewport),
             other => Err(failed(other)),
         }
     }

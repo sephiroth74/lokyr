@@ -280,6 +280,23 @@ impl Symbols {
                 done,
             },
             Event::Answered { text, .. } => Event::Answered { id: 0, text },
+            Event::ViewportChanged { pane, viewport } => Event::ViewportChanged {
+                pane: self.pane(pane),
+                viewport,
+            },
+            Event::CommandStarted { pane, command } => Event::CommandStarted {
+                pane: self.pane(pane),
+                command,
+            },
+            Event::CommandEnded {
+                pane,
+                command,
+                status,
+            } => Event::CommandEnded {
+                pane: self.pane(pane),
+                command,
+                status,
+            },
             Event::Workspace(change) => Event::Workspace(match change {
                 W::WindowOpened { window } => W::WindowOpened {
                     window: self.window(window),
@@ -421,7 +438,8 @@ impl Panes for Spawner {
 
 /// The kernel's host's state: its registry, its workspace and its
 /// clipboard, of the world of the scenarios, a window of a pane in `/`
-/// whose program wrote [`scenarios::LINE`].
+/// whose program wrote [`scenarios::LINE`], then a command that the shell
+/// would mark, `true`, and a prompt.
 struct Kernel {
     registry: Registry,
     workspace: Workspace,
@@ -437,7 +455,11 @@ impl Kernel {
                 "/bin/sh",
                 [
                     "-c",
-                    &format!("cd /; printf '%s\\n' '{}'; sleep 30", scenarios::LINE),
+                    &format!(
+                        "cd /; printf '%s\\n' '{}'; printf '{}'; sleep 30",
+                        scenarios::LINE,
+                        scenarios::COMMAND
+                    ),
                 ],
             ),
             &Environment::default(),
@@ -464,6 +486,7 @@ impl Kernel {
             let directory = pane.working_directory();
             if let Some(found) = found
                 && directory.as_deref() == Some(std::path::Path::new("/"))
+                && pane.commands_meeting(i64::MIN, i64::MAX).len() == 2
             {
                 break found;
             }
@@ -473,6 +496,9 @@ impl Kernel {
             );
             std::thread::sleep(Duration::from_millis(10));
         };
+        let pane = workspace.pane(id).expect("the pane");
+        let commands = pane.commands_meeting(i64::MIN, i64::MAX);
+        let viewport = pane.viewport().expect("the pane's view");
         Self {
             registry: Registry::default(),
             workspace,
@@ -487,6 +513,8 @@ impl Kernel {
                     text: line.0,
                     cells: line.1,
                 },
+                commands,
+                viewport,
             },
         }
     }
@@ -639,6 +667,8 @@ fn on_fake(scenario: &Scenario, world: &World) -> Vec<Entry> {
     pane.lines.insert(world.row, world.line.clone());
     pane.rows
         .insert(world.row, (scenarios::LINE.to_owned(), false));
+    pane.commands.clone_from(&world.commands);
+    pane.viewport = Some(world.viewport);
     host.set_keys("tabs.goto", goto_first(), Some("⌘1"));
     host.activate(&mut plugin).unwrap();
     for step in &scenario.steps {
@@ -790,11 +820,13 @@ fn kind(request: &Request) -> usize {
         Request::ShowQuickWindow { .. } => 83,
         Request::MarkGutter { .. } => 84,
         Request::UnmarkGutter { .. } => 85,
+        Request::ShellCommands { .. } => 86,
+        Request::Viewport(_) => 87,
     }
 }
 
 /// How many kinds of requests the plugin API has.
-const KINDS: usize = 86;
+const KINDS: usize = 88;
 
 #[test]
 fn the_scenarios_hold_every_request_of_the_plugin_api() {
@@ -807,6 +839,8 @@ fn the_scenarios_hold_every_request_of_the_plugin_api() {
             text: String::new(),
             cells: Vec::new(),
         },
+        commands: vec![host::ShellCommand::default(); 2],
+        viewport: host::Viewport::default(),
     };
     let mut held = [false; KINDS];
     for scenario in scenarios::all(&world) {

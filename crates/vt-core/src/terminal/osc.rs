@@ -68,6 +68,18 @@ pub enum Event {
     /// what it can, and tells the terminal how the window ended with
     /// [`Terminal::set_window`].
     WindowChanged,
+    /// A command that the shell marked started, as its output's mark came
+    /// (OSC 133 `C`), of its id among the terminal's commands, as
+    /// [`Terminal::commands`] gives them.
+    CommandStarted(u64),
+    /// A command that started ended, as its end's mark came (OSC 133 `D`),
+    /// of its id and the exit status that the shell told, if it told one.
+    CommandEnded {
+        /// Its id.
+        id: u64,
+        /// Its exit status.
+        status: Option<i32>,
+    },
     /// A program asks to read the clipboards (OSC 52), which the
     /// configuration allows. An embedder with a session answers with the
     /// session's `reply_clipboard`; one without, with

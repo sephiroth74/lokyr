@@ -549,6 +549,24 @@ impl PageList {
         Some(start + usize::from(row))
     }
 
+    /// The index in the list, oldest first, of a row by its page's id and
+    /// its row in the page, as [`PageList::row_index`] gives it, of one
+    /// walk of the list for every row that it finds, where that walks the
+    /// list for each.
+    pub fn row_indexes(&self) -> impl Fn(PageId, u16) -> Option<usize> + '_ {
+        let mut starts = vec![0; self.nodes.len()];
+        let (mut node, mut start) = (self.head, 0);
+        while node != NONE {
+            starts[node as usize] = start;
+            start += usize::from(self.node_len(node));
+            node = self.nodes[node as usize].next;
+        }
+        move |id, row| {
+            let node = self.node_of(id)?;
+            (row < self.node_len(node)).then(|| starts[node as usize] + usize::from(row))
+        }
+    }
+
     /// Pins the cell at `position`, if it is in the list.
     pub fn pin(&mut self, position: Position) -> Option<PinId> {
         let node = self.node_of(position.page)?;

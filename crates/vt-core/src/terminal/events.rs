@@ -92,6 +92,14 @@ impl Events {
                 }
                 (None, (set != 0).then_some(set))
             }
+            // Each command's start and end, as a program can mark them
+            // without end.
+            Event::CommandStarted(_) | Event::CommandEnded { .. } => {
+                if !self.fits(0) {
+                    return;
+                }
+                (None, None)
+            }
             Event::ClipboardRead(_) => {
                 if !self.fits(0) {
                     return;

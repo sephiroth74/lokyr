@@ -22,7 +22,7 @@ Everything you see in Lokyr is a plugin: the tab bar, splits, the find bar, the 
 | Events | Receive kernel events (batched) and emit its own | `tab-created`, `layout-changed`, `pointer`, `search.progress` | F3 |
 | Workspace and layout | Create, close and move tabs and panes; edit the layout tree | split, zoom, move to a new window | F3 |
 | UI | Provide view trees for slots | tab bar, find bar, status bar segments | F3 |
-| Terminal | Read lines and the selection; write input (with a capability); use the search and decoration services | highlight matches, gutter marks | F3 |
+| Terminal | Read lines and the selection; read the commands that the shell marked and hear their starts and ends (with a capability); follow a pane's view; write input (with a capability); use the search and decoration services | highlight matches, gutter marks, a command's header | F3 |
 | Config | A `[plugins.<namespace>]` section of the config file, checked against the plugin's JSON Schema, of the keywords that the host checks, a wrong value refusing that section alone, and what another version would know ignored with a notice ([ADR 0032](adr/0032-plugins-config-and-state.md)), the notice at the value's line as the file's lines move; `enum` and `const` comparing numbers by their values, and a whole number of a fraction, as `5.0`, of a schema of integers alone the integer; read as a request, a change told as `config-changed` | `[plugins.tabs] position = "top"` | F3 |
 | Storage | A file of the plugin's state, of plain values as JSON, 1 MiB at most, in the app's state directory, read as a request and written as the call returns ([ADR 0032](adr/0032-plugins-config-and-state.md)) | search history | F3 |
 | System | Clipboard, notifications, opening URLs and files, global hotkeys and quick windows in F3; processes and the network, through the app to Sleip's helper, from F4 (with capabilities) | notify when a command finishes | F3–F4 |
@@ -155,7 +155,7 @@ return Search
 - **Names**: the Luau API uses the Rust names (`request_render`, `on_event`), so the two front ends read the same and share one reference.
 - **Conformance**: the conformance suite runs the same scenarios through both front ends, with Rust and Luau test plugins, and compares their command and event traces. It is `lokyr-kernel`'s test `conformance`: each scenario is of steps, each a call of the test plugin's, of the requests that it makes with the answers that they take, the workspace's events that the host posts after it, and the batch of events that the plugin then hears; the test plugin makes the requests through its front end, and its trace, each request with its answer, the ids of reads and decorations of 0, and each batch, must be the scenario's. The scenarios hold every request of the API, its failures among them, which a test checks of an exhaustive match: those of the first-party plugins, `links`' and `core-actions'`, and of the events, the panels, the capabilities, the declarations, the app's requests, the state, the reads of rows, the views and the workspace's writes that every plugin meets; the Rust test plugin runs them on the kernel's host and on the SDK's fake host, which must answer alike, in CI's macOS and Linux jobs. A window, a tab or a pane that a scenario opens, whose id each host gives its own, is a symbol of the order in which the trace first meets it, which the test plugin asks with the host's id of. The harness of the kernel's host does the app's part: it posts the workspace's changes, makes the renders that the calls ask for, and gives each scenario a state directory of its own. They cross as JSON, for the Luau test plugin of F4.
 - **Testing for plugin authors**:
-  - The Rust SDK ships a fake host for unit tests, `lokyr_plugin_sdk::fake::FakeHost`, of its `fake` feature, a plugin's dev-dependency. The test sets what it holds, its panes, their lines, rows, links, styles, selections and directories, the focus, the clipboard, the text's size, the targets not there, and the plugin's config and state; it answers the requests as the app's host does, the reads at once and the writes as the call returns, then the app's requests, refuses what the plugin's capabilities lack, and keeps the plugin's commands, bindings and subscriptions, what it did as the requests themselves, its decorations, its panels and its views' trees. It checks what the app's host checks, of the same code where the SDK holds it, the grammars of a binding's keys and of a context, the names, a command's registration and a call's arguments: a request of a pane, a tab, a window or a view not there, of a value out of its range, of a name, keys or a context that is none, of a command that is not registered or that the manifest does not declare, fails as it would in the app; `with_capabilities`, `with_uses`, `with_slots` and `with_commands` give what the plugin's manifest declares and the commands of the app's and of the other plugins'; `take_renders` tells the renders that the calls asked for, a panel's opening among them; a config's change reaches an active plugin alone, its schema's defaults the test's to give. Its workspace is the app's, of the panes that the test gives: each window's tabs in their order and the one that it shows, each tab's layout, the pane of its keyboard and its zoom; the plugin's writes change it as the app's workspace changes, owing their events in the app's order, and a later write of a call finds what an earlier one opens; a drag of a pane's edge changes nothing of it, as it has no sizes. It owes the plugin its events, which `deliver` gives it as a batch, and `snapshot` writes a view tree as text, a node a line, for tests to compare. It searches literal text alone, in each row apart, its matches in one event, where the app's host searches regexes and logical lines too. `core-actions`' and `links`' tests run on it.
+  - The Rust SDK ships a fake host for unit tests, `lokyr_plugin_sdk::fake::FakeHost`, of its `fake` feature, a plugin's dev-dependency. The test sets what it holds, its panes, their lines, rows, links, styles, selections and directories, the commands that their shells marked and their views, the focus, the clipboard, the text's size, the targets not there, and the plugin's config and state; it answers the requests as the app's host does, the reads at once and the writes as the call returns, then the app's requests, refuses what the plugin's capabilities lack, and keeps the plugin's commands, bindings and subscriptions, what it did as the requests themselves, its decorations, its panels and its views' trees. It checks what the app's host checks, of the same code where the SDK holds it, the grammars of a binding's keys and of a context, the names, a command's registration and a call's arguments: a request of a pane, a tab, a window or a view not there, of a value out of its range, of a name, keys or a context that is none, of a command that is not registered or that the manifest does not declare, fails as it would in the app; `with_capabilities`, `with_uses`, `with_slots` and `with_commands` give what the plugin's manifest declares and the commands of the app's and of the other plugins'; `take_renders` tells the renders that the calls asked for, a panel's opening among them; a config's change reaches an active plugin alone, its schema's defaults the test's to give. Its workspace is the app's, of the panes that the test gives: each window's tabs in their order and the one that it shows, each tab's layout, the pane of its keyboard and its zoom; the plugin's writes change it as the app's workspace changes, owing their events in the app's order, and a later write of a call finds what an earlier one opens; a drag of a pane's edge changes nothing of it, as it has no sizes. It owes the plugin its events, which `deliver` gives it as a batch, and `snapshot` writes a view tree as text, a node a line, for tests to compare. It searches literal text alone, in each row apart, its matches in one event, where the app's host searches regexes and logical lines too. `core-actions`' and `links`' tests run on it.
   - For Luau, `sleip test` runs the plugin in the same headless host.
 
 ## The Luau API
@@ -378,6 +378,22 @@ type SearchQuery = { text: string, regex: boolean?, case: ("smart" | "sensitive"
 -- A match of a search: its first cell and its last, each { column, row's number }.
 type SearchMatch = { first: { number }, last: { number } }
 
+-- A command that the shell marked, as its integration tells it (OSC 133): its id, of the pane's commands from 1 in their
+-- prompts' order; each mark's cell, { column, row's number }, if its row is in the pane still, of its prompt, the input
+-- typed past it, its output, and its end; and its exit status, if it ended and the shell told it. Its output is the
+-- cells from `output` to before `end`, in reading order, which `read_lines` reads.
+type ShellCommand = {
+    id: number,
+    prompt: { number }?, input: { number }?, output: { number }?, ["end"]: { number }?,
+    status: number?,
+}
+
+-- A pane's view, as its last frame showed it: the number of its first row, its rows, the number of the screen's first
+-- row, as `top` is while it shows the screen and less above, the number of the oldest row, which the scrollback's limit
+-- raises, the epoch of the rows' numbers, which a resize changes as it numbers them anew, and whether the alternate
+-- screen shows, of rows of its own, of no scrollback nor commands.
+type Viewport = { top: number, rows: number, screen: number, oldest: number, epoch: number, alternate: boolean }
+
 -- The cells of a row from a column to another, of one style, as the program gave it.
 type StyleRun = { first: number, last: number, style: { foreground: any?, background: any?, bold: boolean, italic: boolean, underline: string? } }
 
@@ -418,6 +434,16 @@ type Event =
     -- of its row or scrolled its pane's rows under it, at the same cell; while Command is up, its
     -- moves come only as the system gives them, as a program that tracks the mouse asks.
     | { kind: "pointer", pane: PaneId, at: { number }?, mods: { shift: boolean, control: boolean, option: boolean, command: boolean } }
+    -- A pane's view changed, as a frame showed it: its first row, as the user or output scrolled it, its rows, the
+    -- screen's first row, as output scrolled the screen under a view above it, the oldest row, as the scrollback's limit
+    -- took rows away, the epoch or the screen shown; once a frame of the pane at most, a pane that does not show telling
+    -- it as it shows again.
+    | { kind: "viewport-changed", pane: PaneId, viewport: Viewport }
+    -- A command that the shell marked started, as its output's mark came, and ended, as its end's came, of the status
+    -- that the shell told; or of none, as its pane let go of it before its end, as a reset or a screen cleared under it
+    -- does. A shell that marks no end tells none. To a plugin of `history-read`, which a subscription needs.
+    | { kind: "command-started", pane: PaneId, command: number }
+    | { kind: "command-ended", pane: PaneId, command: number, status: number? }
     -- A read of rows that the plugin asked for, to it alone; incomplete if a resize renumbered the rows.
     | { kind: "lines", id: number, pane: PaneId, lines: { Line }, complete: boolean }
     -- A part's matches of a search that the plugin asked for, to it alone, the nearest to the view first; how many it
@@ -679,6 +705,14 @@ type Cx = {
     current_match: (id: number) -> ({ current: { place: number, match: SearchMatch }?, kept: number }?, Error?),
     -- The styles of a row, by its number, as runs of cells of one style.
     styles: (pane: PaneId, row: number) -> ({ StyleRun }?, Error?),
+    -- Requires `history-read`: the commands that the shell marked, 10 000 at most kept, whose rows meet the rows
+    -- numbered from `top` to before `bottom`, oldest first: the last whose first row is at `top` or above it, whose
+    -- output the row `top` may show, and those after it whose first rows are above `bottom`; a command's first row is
+    -- its prompt's, or the oldest row of one whose prompt left the scrollback but not its end.
+    shell_commands: (pane: PaneId, top: number, bottom: number) -> ({ ShellCommand }?, Error?),
+    -- The view, as its last frame showed it, which "viewport-changed" tells the changes of; no capability, as it tells
+    -- no text.
+    viewport: (pane: PaneId) -> (Viewport?, Error?),
     -- Decorates the cells from one to another, in reading order, each { column, row's number }: returns the
     -- decoration's id. It keeps its text as output scrolls it and a resize reflows it, and goes with it.
     decorate: (pane: PaneId, from: { number }, to: { number }, look: DecorationLook) -> (number?, Error?),
@@ -779,7 +813,7 @@ type Plugin = {
 | `global-hotkey` | System-wide shortcuts, bindings of `global:` keys, and quick windows, which slide in over every app's | Medium |
 | `env-read:<name>` | Reading the listed variables of the app's environment and of the panes' programs', with `*` as `AWS_*` | High: they often hold secrets, as `GITHUB_TOKEN` |
 | `input-read` | Seeing the keys typed before they reach the program | Very high: a keylogger's power |
-| `history-read` | Reading the commands that the shell ran and their output, which shell integration marks | High: a password typed by mistake ends up there |
+| `history-read` | Reading the commands that the shell ran and their output, which shell integration marks, and hearing their starts and ends, as `shell_commands`, `command-started` and `command-ended` | High: a password typed by mistake ends up there |
 | `process-read` | Seeing the panes' processes: their command lines and working directories | Medium: command lines can hold passwords |
 | `user-commands` | Running any command as the user's, without declaring it, as the palette does; reading the whole registry, with each command's plugin, keys and context, and the plugins installed ([ADR 0024](adr/0024-user-commands.md)); previewing a theme and naming one in the config's `[theme]`, as the palette's picker does | Very high: `pane.send-text` types into the shell |
 

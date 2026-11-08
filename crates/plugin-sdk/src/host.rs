@@ -416,6 +416,59 @@ pub struct Found {
     pub done: bool,
 }
 
+/// The most commands that a pane keeps of those that the shell marked, its
+/// oldest going first.
+pub const MOST_COMMANDS: usize = 10_000;
+
+/// A command that the shell marked, as its integration tells it (OSC 133),
+/// as a read of a pane's commands gives it: its id, the cell of each of its
+/// marks, by its column and its row's number, if its row is in the pane
+/// still, and its exit status, if it ended and the shell told it.
+///
+/// Its prompt starts at `prompt`, the input that the user typed at
+/// `input`, its output at `output`, and it ended at `end`: its output is
+/// the cells from `output` to before `end`, in reading order, which a read
+/// of rows reads.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ShellCommand {
+    /// Its id, of the pane's commands from 1 in their prompts' order, as
+    /// `command-started` and `command-ended` tell it.
+    pub id: u64,
+    /// Where its prompt starts.
+    pub prompt: Option<(u16, i64)>,
+    /// Where the input that the user typed starts, past the prompt.
+    pub input: Option<(u16, i64)>,
+    /// Where its output starts.
+    pub output: Option<(u16, i64)>,
+    /// Where it ended.
+    pub end: Option<(u16, i64)>,
+    /// Its exit status.
+    pub status: Option<i32>,
+}
+
+/// A pane's view: the rows that it shows, of its screen or of the
+/// scrollback above it, by their numbers, as its last frame showed them.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Viewport {
+    /// The number of its first row.
+    pub top: i64,
+    /// How many rows it shows, its grid's.
+    pub rows: u16,
+    /// The number of the screen's first row: the view shows the screen
+    /// with a `top` of it, and the scrollback above with a `top` less.
+    pub screen: i64,
+    /// The number of the pane's oldest row, the scrollback's first, or the
+    /// screen's of none, which the scrollback's limit raises as the oldest
+    /// rows go.
+    pub oldest: i64,
+    /// The epoch of the rows' numbers, which a resize changes, as it
+    /// numbers the rows anew.
+    pub epoch: u64,
+    /// Whether the alternate screen shows, as a program such as vim shows
+    /// its own: rows of its own, of no scrollback nor commands.
+    pub alternate: bool,
+}
+
 /// A command, as a read of the registry gives it: its name, its title, in
 /// the language that the app shows, its category and its parameters, to
 /// every plugin; and, to a plugin of `user-commands` alone, as its own
