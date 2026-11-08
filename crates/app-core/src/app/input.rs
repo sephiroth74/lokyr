@@ -73,8 +73,9 @@ impl<B: Backend> App<B> {
             return;
         };
         let pane_keys = state.pane_has_focus();
-        // A man page's keys scroll it, and close nothing.
-        if pane_keys && pane.is_kept() && state.page.is_some() {
+        // A man page's keys scroll it, and close nothing, but in a mode of
+        // the keyboard's, whose keys they are.
+        if pane_keys && pane.is_kept() && state.page.is_some() && !held_back {
             if pressed && let Some(scroll) = page_scroll(key) {
                 pane.scroll(scroll);
                 platform.request_frame(window);

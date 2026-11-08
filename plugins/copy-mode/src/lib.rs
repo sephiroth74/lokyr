@@ -427,8 +427,13 @@ impl CopyMode {
         let Some(copying) = self.copying.as_mut() else {
             return Ok(());
         };
-        let count = copying.count.take().unwrap_or(1);
+        // A count that the move takes leaves the badge.
+        let counted = copying.count.take();
+        let count = counted.unwrap_or(1);
         let pane = copying.pane;
+        if counted.is_some() {
+            cx.request_render(ViewId::Panel(badge()))?;
+        }
         let viewport = cx.viewport(pane)?;
         let (columns, _) = cx.pane_grid(pane)?;
         let bounds = Bounds {
@@ -612,7 +617,9 @@ impl CopyMode {
         let Some(copying) = self.copying.as_mut() else {
             return Ok(());
         };
-        copying.count = None;
+        if copying.count.take().is_some() {
+            cx.request_render(ViewId::Panel(badge()))?;
+        }
         let Some(selection) = &mut copying.selection else {
             return Ok(());
         };
@@ -637,13 +644,21 @@ impl CopyMode {
     }
 }
 
-/// `step` taken `count` times from `at`.
+/// `step` taken `count` times from `at`, or until a step stays where it
+/// is, as at the text's edge.
 fn repeated(
     count: u32,
-    at: (u16, i64),
+    mut at: (u16, i64),
     mut step: impl FnMut((u16, i64)) -> (u16, i64),
 ) -> (u16, i64) {
-    (0..count).fold(at, |at, _| step(at))
+    for _ in 0..count {
+        let next = step(at);
+        if next == at {
+            break;
+        }
+        at = next;
+    }
+    at
 }
 
 /// The reads of a pane's text that the moves take.

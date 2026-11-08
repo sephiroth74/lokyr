@@ -187,3 +187,27 @@ fn the_bottom_is_the_last_row_that_shows_something_or_the_cursor_s() {
     assert_eq!(bottom(&mut rows, bounds, 1), (0, 2));
     assert_eq!(bottom(&mut rows, bounds, 3), (0, 3));
 }
+
+/// Rows of which the second reads no cell, as a pane of one column whose
+/// cell is a wide character's spacer.
+struct Gap;
+
+impl Text for Gap {
+    fn line(&mut self, row: i64, _: usize) -> Option<LineText> {
+        let text = if row == 1 { "" } else { "ab" };
+        Some(LineText {
+            text: text.to_owned(),
+            cells: (0..text.len())
+                .map(|column| (u16::try_from(column).unwrap(), row))
+                .collect(),
+        })
+    }
+}
+
+#[test]
+fn a_row_of_no_cells_leaves_the_walker_where_it_was() {
+    let bounds = Bounds { oldest: 0, last: 2 };
+    assert_eq!(word_next(&mut Gap, bounds, (0, 0), false), (1, 0));
+    assert_eq!(word_end(&mut Gap, bounds, (1, 0), false), (1, 0));
+    assert_eq!(word_previous(&mut Gap, bounds, (0, 2), false), (0, 2));
+}

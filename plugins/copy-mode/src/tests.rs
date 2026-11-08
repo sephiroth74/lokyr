@@ -211,8 +211,11 @@ fn the_arrows_move_the_cursor_by_counts_within_the_pane() {
         badge_text(&mut host, &mut plugin).as_deref(),
         Some("Copy 12")
     );
+    host.take_renders();
     go(&mut host, &mut plugin, "right");
     assert_eq!(cursor(&mut host), Some((16, 109)));
+    // The move takes the count, which the badge renders without.
+    assert!(host.take_renders().contains(&ViewId::Panel(badge())));
     assert_eq!(badge_text(&mut host, &mut plugin).as_deref(), Some("Copy"));
     // Within the columns and the screen's last row.
     count(&mut host, &mut plugin, 9);
@@ -494,4 +497,16 @@ fn the_host_s_close_of_the_badge_gives_the_cursor_back_and_a_toggle_starts_anew(
     toggle(&mut host, &mut plugin);
     assert_eq!(cursor(&mut host), Some(CURSOR));
     assert!(host.panels().contains_key(&badge()));
+}
+
+#[test]
+fn a_count_s_steps_stop_as_a_move_stays_where_it_is() {
+    let mut steps = 0;
+    let at = repeated(99_999, (3, 7), |at| {
+        steps += 1;
+        at
+    });
+    assert_eq!((at, steps), ((3, 7), 1));
+    let at = repeated(5, (0, 0), |(column, row)| (column + 1, row));
+    assert_eq!(at, (5, 0));
 }

@@ -1362,3 +1362,52 @@ fn the_web_s_search_opens_the_engine_s_page_of_the_selection() {
     app.search_web(&mut fake);
     assert_eq!(fake.opened().len(), 2);
 }
+
+#[test]
+fn the_copy_mode_takes_the_keys_of_a_man_page_s_window() {
+    let (mut fake, mut app, window) = selecting("", "");
+    let directory = std::env::temp_dir().join(format!("lokyr-man-copy-{}", std::process::id()));
+    std::fs::create_dir_all(&directory).unwrap();
+    let man = directory.join("man");
+    std::fs::write(
+        &man,
+        "#!/bin/sh\necho \"man $*\"\ni=1\nwhile [ $i -le 100 ]; do echo \"line $i\"; i=$((i+1)); done\n",
+    )
+    .unwrap();
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&man, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    app.man = Some(man);
+    right_click(&mut fake, &mut app, window, cell(8, 0), Modifiers::NONE);
+    fake.send(
+        &mut app,
+        window,
+        WindowEvent::ContextCommand(MAN_PAGE.to_owned()),
+    );
+    let page = fake.windows().find(|&other| other != window).unwrap();
+    run_until(&mut fake, &mut app, |_, app| {
+        app.pane(page).is_kept() && row(app, page, 0) == "man -P ul -- world"
+    });
+    fake.send(&mut app, page, WindowEvent::Focused(true));
+    fake.send_app(&mut app, AppEvent::Command("copy-mode.toggle".to_owned()));
+    run_until(&mut fake, &mut app, |_, app| {
+        app.windows[&page]
+            .chrome
+            .iter()
+            .any(|view| view.plugin == "lokyr/copy-mode")
+    });
+    // To the page's top, its first line copied, rather than the page
+    // scrolled.
+    let press = |fake: &mut Fake, app: &mut App, code: KeyCode, plain: &str, mods: Modifiers| {
+        fake.send(app, page, key_event(code, plain, mods, true));
+        fake.send(app, page, key_event(code, plain, mods, false));
+    };
+    press(&mut fake, &mut app, KeyCode::KeyG, "g", Modifiers::NONE);
+    press(&mut fake, &mut app, KeyCode::KeyG, "g", Modifiers::NONE);
+    press(&mut fake, &mut app, KeyCode::KeyY, "y", SHIFT);
+    run_until(&mut fake, &mut app, |fake, _| {
+        fake.clipboard_text().as_deref() == Some("man -P ul -- world")
+    });
+    let _ = std::fs::remove_dir_all(directory);
+}

@@ -85,25 +85,13 @@ impl<'t, T: Text> Walker<'t, T> {
             cells: Vec::new(),
             at: 0,
         };
-        walker.load(line);
+        (walker.chars, walker.cells) = read(line);
         walker.at = walker
             .cells
             .iter()
             .rposition(|&(other, at)| (at, other) <= (row, column))
             .unwrap_or(0);
         (!walker.cells.is_empty()).then_some(walker)
-    }
-
-    /// Reads `line` in place of the rows before, a character of each cell.
-    fn load(&mut self, line: LineText) {
-        self.chars.clear();
-        self.cells.clear();
-        for (character, cell) in line.text.chars().zip(line.cells) {
-            if self.cells.last() != Some(&cell) {
-                self.chars.push(character);
-                self.cells.push(cell);
-            }
-        }
     }
 
     /// The cell of its character.
@@ -131,8 +119,10 @@ impl<'t, T: Text> Walker<'t, T> {
         let line = self.text.line(row, REACH)?;
         // A row whose line starts above it goes on with the line before.
         let started = line.cells.first().is_some_and(|&(_, first)| first >= row);
-        self.load(line);
-        self.at = self.cells.iter().position(|&(_, at)| at >= row)?;
+        // A read of no cell of the row leaves the walker where it was.
+        let (chars, cells) = read(line);
+        let at = cells.iter().position(|&(_, at)| at >= row)?;
+        (self.chars, self.cells, self.at) = (chars, cells, at);
         Some(started)
     }
 
@@ -151,10 +141,24 @@ impl<'t, T: Text> Walker<'t, T> {
         let line = self.text.line(row, REACH)?;
         // A row whose line goes on below it is of the line after.
         let ended = line.cells.last().is_some_and(|&(_, last)| last <= row);
-        self.load(line);
-        self.at = self.cells.iter().rposition(|&(_, at)| at <= row)?;
+        let (chars, cells) = read(line);
+        let at = cells.iter().rposition(|&(_, at)| at <= row)?;
+        (self.chars, self.cells, self.at) = (chars, cells, at);
         Some(ended)
     }
+}
+
+/// The characters of `line` and their cells, a character of each cell: a
+/// grapheme's first.
+fn read(line: LineText) -> (Vec<char>, Vec<(u16, i64)>) {
+    let mut kept: (Vec<char>, Vec<(u16, i64)>) = (Vec::new(), Vec::new());
+    for (character, cell) in line.text.chars().zip(line.cells) {
+        if kept.1.last() != Some(&cell) {
+            kept.0.push(character);
+            kept.1.push(cell);
+        }
+    }
+    kept
 }
 
 /// The start of the next word after `from`, of a big word or not, as vi's
