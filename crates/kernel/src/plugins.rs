@@ -1233,7 +1233,7 @@ impl Plugins {
                     within,
                     (runner, state),
                     context,
-                    &mut self.declarations_changed,
+                    (&mut self.out, &mut self.declarations_changed),
                 )
             }
             Runner::Unstarted(_) | Runner::Stopped => Ok(()),
@@ -1264,7 +1264,7 @@ impl Plugins {
         look(
             (plugin.as_mut(), state),
             context,
-            &mut self.declarations_changed,
+            (&mut self.out, &mut self.declarations_changed),
             "applies",
             |plugin, cx| Ok(plugin.applies(cx, command, args)),
         )
@@ -1591,7 +1591,7 @@ impl Plugins {
                     within,
                     (runner, state),
                     context,
-                    &mut self.declarations_changed,
+                    (&mut self.out, &mut self.declarations_changed),
                 )?;
             }
             Runner::Unstarted(_) | Runner::Stopped => {}
@@ -1694,7 +1694,7 @@ impl Plugins {
                     within,
                     (runner, state),
                     context,
-                    &mut self.declarations_changed,
+                    (&mut self.out, &mut self.declarations_changed),
                 )
             }
             Runner::Unstarted(_) | Runner::Stopped => Ok(()),
@@ -1829,7 +1829,7 @@ impl Plugins {
                         within,
                         (runner, state),
                         context,
-                        &mut self.declarations_changed,
+                        (&mut self.out, &mut self.declarations_changed),
                     )
                 }
                 Runner::Unstarted(_) | Runner::Stopped => Ok(()),
@@ -1951,6 +1951,9 @@ impl Plugins {
                         // asked, as it would have run then on the main
                         // thread.
                         let now = std::mem::replace(&mut context.focused, busy.focused);
+                        if busy.kept.is_none() {
+                            busy.kept = Some(Kept::of(state));
+                        }
                         let handled = panic::catch_unwind(AssertUnwindSafe(|| {
                             let mut host = Host {
                                 state: &mut *state,
@@ -1958,6 +1961,7 @@ impl Plugins {
                                 out: &mut busy.out,
                                 writes: &mut busy.writes,
                                 declarations_changed: &mut *declarations_changed,
+                                looking: false,
                             };
                             host::Host::handle(&mut host, asked)
                         }));
@@ -1975,8 +1979,11 @@ impl Plugins {
                     // disabled, as a panic of its own disables it, and its
                     // thread, which waits for the answer, ends without it.
                     Err(payload) => {
+                        if let Some(kept) = worker.busy_mut().and_then(|busy| busy.kept.take()) {
+                            kept.restore(state);
+                        }
                         disable(state, context.registry, declarations_changed);
-                        release_cursors(state, context.workspace);
+                        clear_leftovers(state, context, out);
                         let fault = format!(
                             "the host broke on a request of the plugin `{}`{}; it is disabled",
                             state.name,
@@ -1999,12 +2006,16 @@ impl Plugins {
             writes,
             out: mut sent,
             chain,
+            kept,
             ..
         } = busy;
         let result = match done {
             Done::Panicked(message) => {
+                if let Some(kept) = kept {
+                    kept.restore(state);
+                }
                 disable(state, context.registry, declarations_changed);
-                release_cursors(state, context.workspace);
+                clear_leftovers(state, context, out);
                 let fault = format!(
                     "the plugin `{}` panicked{message}; it is disabled",
                     state.name
@@ -2026,7 +2037,18 @@ impl Plugins {
                 Ok(())
             }
         };
-        apply(writes, context, &mut sent, state);
+        if result.is_ok() {
+            apply(writes, context, &mut sent, state);
+        } else {
+            // A call that failed leaves things as they were, as the main
+            // thread's does: its writes, its requests and its reads go,
+            // and what its requests took at once of its state comes back.
+            sent.requests.clear();
+            sent.reads.clear();
+            if let Some(kept) = kept {
+                kept.restore(state);
+            }
+        }
         deepen(&mut sent.requests, chain);
         out.merge(sent);
         let activated = called == Called::Activate && result.is_ok();
@@ -2239,24 +2261,71 @@ fn call<T>(
     callback: &'static str,
     call: impl FnOnce(&mut dyn Plugin, &mut Cx<'_>) -> Result<T, Error>,
 ) -> Result<T, Error> {
-    let before = out.requests.len();
+    let (requests, reads) = (out.requests.len(), out.reads.len());
+    let kept = Kept::of(state);
     let mut writes = Vec::new();
     let outcome = within(
         (plugin, state),
         context,
         (&mut *out, &mut writes),
-        (declarations_changed, callback),
+        (declarations_changed, callback, false),
         call,
     );
     match outcome {
-        Ok(result) => {
+        Ok(Ok(result)) => {
             apply(writes, context, out, state);
-            result
+            Ok(result)
         }
+        // A call that failed leaves things as they were: its writes, its
+        // requests and its reads go, and what its requests took at once of
+        // its state comes back.
+        Ok(Err(error)) => {
+            out.requests.truncate(requests);
+            out.reads.truncate(reads);
+            kept.restore(state);
+            Err(error)
+        }
+        // One that panicked too, and its plugin, disabled, leaves nothing.
         Err(fault) => {
-            out.requests.truncate(before);
+            out.requests.truncate(requests);
+            out.reads.truncate(reads);
+            kept.restore(state);
+            clear_leftovers(state, context, out);
             fault
         }
+    }
+}
+
+/// What a call's requests take of its plugin's state at once, as they give
+/// their ids, whose writes apply as the call returns: kept before a call
+/// whose writes may go, as a look's or a failed call's, to come back.
+struct Kept {
+    panels: BTreeMap<PanelId, WindowId>,
+    decorations: BTreeMap<u64, host::PaneId>,
+    gutter_marks: BTreeMap<u64, host::PaneId>,
+    held_cursors: BTreeSet<host::PaneId>,
+    quick_windows: Vec<WindowId>,
+}
+
+impl Kept {
+    /// What `state` holds now.
+    fn of(state: &State) -> Self {
+        Self {
+            panels: state.panels.clone(),
+            decorations: state.decorations.clone(),
+            gutter_marks: state.gutter_marks.clone(),
+            held_cursors: state.held_cursors.clone(),
+            quick_windows: state.quick_windows.clone(),
+        }
+    }
+
+    /// Gives `state` what it held back.
+    fn restore(self, state: &mut State) {
+        state.panels = self.panels;
+        state.decorations = self.decorations;
+        state.gutter_marks = self.gutter_marks;
+        state.held_cursors = self.held_cursors;
+        state.quick_windows = self.quick_windows;
     }
 }
 
@@ -2267,27 +2336,24 @@ fn call<T>(
 fn look<T>(
     (plugin, state): (&mut dyn Plugin, &mut State),
     context: &mut Context<'_>,
-    declarations_changed: &mut bool,
+    (outbox, declarations_changed): (&mut Outbox, &mut bool),
     callback: &'static str,
     call: impl FnOnce(&mut dyn Plugin, &mut Cx<'_>) -> Result<T, Error>,
 ) -> Result<T, Error> {
     let (mut out, mut writes) = (Outbox::default(), Vec::new());
-    let (panels, decorations) = (state.panels.clone(), state.decorations.clone());
-    let gutter_marks = state.gutter_marks.clone();
-    let held_cursors = state.held_cursors.clone();
-    let quick_windows = state.quick_windows.clone();
+    let kept = Kept::of(state);
     let outcome = within(
         (plugin, state),
         context,
         (&mut out, &mut writes),
-        (declarations_changed, callback),
+        (declarations_changed, callback, true),
         call,
     );
-    state.panels = panels;
-    state.decorations = decorations;
-    state.gutter_marks = gutter_marks;
-    state.held_cursors = held_cursors;
-    state.quick_windows = quick_windows;
+    kept.restore(state);
+    // A look that panicked disabled its plugin, whose leftovers go.
+    if outcome.is_err() {
+        clear_leftovers(state, context, outbox);
+    }
     outcome.unwrap_or_else(|fault| fault)
 }
 
@@ -2299,7 +2365,7 @@ fn within<T>(
     (plugin, state): (&mut dyn Plugin, &mut State),
     context: &mut Context<'_>,
     (out, writes): (&mut Outbox, &mut Vec<Write>),
-    (declarations_changed, callback): (&mut bool, &'static str),
+    (declarations_changed, callback, looking): (&mut bool, &'static str, bool),
     call: impl FnOnce(&mut dyn Plugin, &mut Cx<'_>) -> Result<T, Error>,
 ) -> Result<Result<T, Error>, Result<T, Error>> {
     let name = state.name.clone();
@@ -2311,6 +2377,7 @@ fn within<T>(
             out: &mut *out,
             writes: &mut *writes,
             declarations_changed: &mut *declarations_changed,
+            looking,
         };
         call(plugin, &mut Cx::new(&mut host, &name))
     }));
@@ -2320,7 +2387,6 @@ fn within<T>(
     }
     outcome.map_err(|payload| {
         disable(state, context.registry, declarations_changed);
-        release_cursors(state, context.workspace);
         let fault = format!(
             "the plugin `{}` panicked{}; it is disabled",
             state.name,
@@ -2351,6 +2417,25 @@ fn stop(
     let state = &mut entry.state;
     disable(state, context.registry, declarations_changed);
     *declarations_changed = true;
+    clear_leftovers(state, context, out);
+    state.views.clear();
+    state.subscribed.clear();
+    state.bar_place = host::BarPlace::default();
+    state.window_places.clear();
+    state.dim = 0.0;
+    state.follows = false;
+    if let Runner::Worker(_) = entry.runner {
+        entry.runner = Runner::Stopped;
+    }
+}
+
+/// Takes away what the plugin of `state`, which stops or a fault disabled,
+/// left in the panes and the app: its decorations and its gutters' marks
+/// leave their panes, the cursors that it held go back to the terminals,
+/// its panels close, as the app hears through `out`, its searches end,
+/// their matches gone, and its reads of rows stop at their next parts. Its
+/// views stay as they were, of a disabled plugin's, which take no event.
+fn clear_leftovers(state: &mut State, context: &mut Context<'_>, out: &mut Outbox) {
     for (id, pane) in std::mem::take(&mut state.decorations) {
         if let Some(pane) = context.workspace.pane(PaneId::of(pane.0)) {
             pane.undecorate(id);
@@ -2368,9 +2453,6 @@ fn stop(
             id,
         });
     }
-    state.views.clear();
-    state.subscribed.clear();
-    // Its reads of rows stop at their next parts.
     out.reads.retain(|read| read.plugin != state.name);
     let searches = std::mem::take(&mut state.searches);
     for search in searches
@@ -2379,13 +2461,6 @@ fn stop(
     {
         let pane = context.workspace.pane(PaneId::of(search.pane.0));
         search.end(pane.and_then(Pane::terminal).as_deref_mut());
-    }
-    state.bar_place = host::BarPlace::default();
-    state.window_places.clear();
-    state.dim = 0.0;
-    state.follows = false;
-    if let Runner::Worker(_) = entry.runner {
-        entry.runner = Runner::Stopped;
     }
 }
 
@@ -2978,13 +3053,13 @@ fn within_bound(
     within: bool,
     (runner, state): (&mut Runner, &mut State),
     context: &mut Context<'_>,
-    declarations_changed: &mut bool,
+    (out, declarations_changed): (&mut Outbox, &mut bool),
 ) -> Result<(), Error> {
     if within {
         return Ok(());
     }
     disable(state, context.registry, declarations_changed);
-    release_cursors(state, context.workspace);
+    clear_leftovers(state, context, out);
     let fault = format!(
         "the plugin `{}` took none of the {} calls or {} events that waited for its thread; it is disabled",
         state.name,
@@ -3097,6 +3172,8 @@ struct Host<'h, 'c> {
     /// The call's writes, which it applies as the call returns.
     writes: &'h mut Vec<Write>,
     declarations_changed: &'h mut bool,
+    /// Whether the call only looks, as `applies`, which declares nothing.
+    looking: bool,
 }
 
 impl Host<'_, '_> {
@@ -4315,6 +4392,10 @@ impl host::Host for Host<'_, '_> {
                     Effect::Read => self.read(request),
                     Effect::Write => self.queue(request),
                     Effect::App => self.ask_app(request),
+                    Effect::Declaration if self.looking => Err(Error::new(
+                        Code::Failed,
+                        "a call that only looks, as `applies`, declares nothing",
+                    )),
                     Effect::Declaration => self.declare(request),
                 })
         } else {

@@ -910,29 +910,35 @@ impl FakeHost {
     ) -> Result<(), Error> {
         self.settle();
         let caller = self.caller.clone();
-        let kept = (!apply).then(|| {
-            (
-                (self.decorations.clone(), self.gutter_marks.clone()),
-                (self.panels.clone(), self.panel_windows.clone()),
-                (self.owed.len(), self.renders.len()),
-                self.last_id,
-            )
-        });
+        let kept = (
+            (self.decorations.clone(), self.gutter_marks.clone()),
+            (self.panels.clone(), self.panel_windows.clone()),
+            (self.owed.len(), self.renders.len()),
+            self.last_id,
+        );
         let mut calling = Calling {
             host: self,
             writes: Vec::new(),
             asked: Vec::new(),
+            looking: !apply,
         };
         let result = call(&mut Cx::new(&mut calling, &caller));
         let (writes, asked) = (calling.writes, calling.asked);
-        if let Some(((decorations, marks), (panels, windows), (owed, renders), last_id)) = kept {
+        // A look, or a call that failed, leaves things as they were, as the
+        // app's host leaves them: its writes and what it asked of the app
+        // go, and what its requests took at once comes back; a look takes
+        // nothing at all, its ids and the renders that it asked for too.
+        if !apply || result.is_err() {
+            let ((decorations, marks), (panels, windows), (owed, renders), last_id) = kept;
             self.decorations = decorations;
             self.gutter_marks = marks;
             self.panels = panels;
             self.panel_windows = windows;
-            self.owed.truncate(owed);
-            self.renders.truncate(renders);
-            self.last_id = last_id;
+            if !apply {
+                self.owed.truncate(owed);
+                self.renders.truncate(renders);
+                self.last_id = last_id;
+            }
             return result;
         }
         for (request, opened) in writes {
@@ -1999,6 +2005,8 @@ struct Calling<'h> {
     host: &'h mut FakeHost,
     writes: Vec<(Request, Opened)>,
     asked: Vec<Request>,
+    /// Whether the call only looks, as `applies`, which declares nothing.
+    looking: bool,
 }
 
 impl Calling<'_> {
@@ -2885,6 +2893,10 @@ impl host::Host for Calling<'_> {
         let answered = match request.effect() {
             Effect::Read => self.read(&request),
             Effect::Write | Effect::App => self.queue(request),
+            Effect::Declaration if self.looking => Err(Error::new(
+                Code::Failed,
+                "a call that only looks, as `applies`, declares nothing",
+            )),
             Effect::Declaration => self.declare(request),
         };
         answered.unwrap_or_else(Response::Failed)

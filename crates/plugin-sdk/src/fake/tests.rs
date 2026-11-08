@@ -1083,3 +1083,53 @@ fn a_call_s_writes_are_bounded_as_the_app_s_host_bounds_them() {
     assert!(codes[..host::MOST_WRITES].iter().all(Option::is_none));
     assert_eq!(codes[host::MOST_WRITES], Some(Code::Failed));
 }
+
+#[test]
+fn a_call_that_fails_drops_what_it_asked_and_a_look_declares_nothing() {
+    let mut host = FakeHost::new("acme/probe");
+    host.pane(PaneId(1));
+    let mut failing = Probe::new(|cx, _| {
+        cx.scroll(PaneId(1), Scroll::Top)?;
+        cx.open("https://lokyr.dev")?;
+        Err(Error::new(Code::Failed, "after its writes"))
+    });
+    let failed = host.command(&mut failing, "probe.go", Args::new());
+    assert!(failed.is_err_and(|error| error.code == Code::Failed));
+    assert!(host.take_done().is_empty());
+    // A look's declarations fail, and none stays.
+    let mut binder = Binder::default();
+    host.activate(&mut binder).unwrap();
+    assert!(host.applies(&mut binder, "binder.go", &Args::new()));
+    assert_eq!(binder.tried, [Some(Code::Failed)]);
+    assert!(host.bindings().is_empty());
+}
+
+/// A plugin whose `applies` tries to bind a key, as `tried` keeps.
+#[derive(Default)]
+struct Binder {
+    tried: Vec<Option<Code>>,
+}
+
+impl Plugin for Binder {
+    fn activate(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
+        cx.register_command(Command {
+            name: "binder.go".to_owned(),
+            title: "Go".to_owned(),
+            category: Category::View,
+            capabilities: Vec::new(),
+            params: Vec::new(),
+            when: None,
+        })
+    }
+
+    fn applies(&mut self, cx: &mut Cx<'_>, _: &str, _: &Args) -> bool {
+        let tried = cx.bind(Binding {
+            keys: "ctrl+l".to_owned(),
+            command: "binder.go".to_owned(),
+            args: Args::new(),
+            when: None,
+        });
+        self.tried.push(tried.err().map(|error| error.code));
+        true
+    }
+}

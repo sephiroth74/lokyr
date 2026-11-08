@@ -902,3 +902,35 @@ fn a_request_that_breaks_the_host_disables_its_plugin_and_the_app_goes_on() {
     // The host answers the next plugin's requests as before.
     assert!(!super::super::BREAKS.with(std::cell::Cell::get));
 }
+
+#[test]
+fn a_worker_s_call_that_fails_after_its_writes_leaves_the_workspace_as_it_was() {
+    let mut app = App::default();
+    let window = window(&mut app, "sleep 30");
+    let tab = app.workspace.window(window).unwrap().tabs()[0];
+    let plugin = Threaded {
+        on_command: Box::new(|cx, _| {
+            let window = cx.focused_window().unwrap();
+            let tab = cx.tabs(window).unwrap()[0].id;
+            cx.set_tab_title(tab, Some("written"))?;
+            cx.new_tab(window, None)?;
+            Err(Error::new(Code::Failed, "after its writes"))
+        }),
+        ..Threaded::default()
+    };
+    let (mut plugins, _) = started(&mut app, plugin);
+    plugins
+        .run("busy.go", Args::new(), &mut app.context())
+        .unwrap();
+    let served = served(&mut plugins, &mut app);
+    assert!(
+        served
+            .commands
+            .iter()
+            .any(|error| error.code == Code::Failed),
+        "{served:?}"
+    );
+    assert_eq!(app.workspace.tab(tab).unwrap().own_title(), None);
+    assert_eq!(app.workspace.window(window).unwrap().tabs().len(), 1);
+    assert_eq!(plugins.status("acme/busy"), Some(Status::Active));
+}

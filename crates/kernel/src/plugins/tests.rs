@@ -1652,6 +1652,7 @@ fn a_call_is_its_own_plugin_s() {
         out: &mut out,
         writes: &mut writes,
         declarations_changed: &mut changed,
+        looking: false,
     };
     let call = |caller: &str| Call {
         caller: caller.to_owned(),
@@ -4534,4 +4535,163 @@ fn a_call_s_writes_are_bounded_as_they_wait_for_its_end() {
     let codes = codes.borrow();
     assert!(codes[..MOST_WRITES].iter().all(Option::is_none));
     assert_eq!(codes[MOST_WRITES], Some(Code::Failed));
+}
+
+/// A plugin whose `leaver.mark` decorates a cell, marks the gutter, holds
+/// the cursor, searches and reads its pane, and whose `leaver.boom`
+/// panics.
+fn leaver() -> Box<dyn Plugin> {
+    scripted(
+        |cx| {
+            cx.register_command(command("leaver.mark"))?;
+            cx.register_command(command("leaver.boom"))
+        },
+        |cx, name, _| {
+            if name == "leaver.boom" {
+                panic!("on purpose");
+            }
+            let pane = cx.focused_pane().unwrap();
+            let look = host::DecorationLook {
+                underline: Some(host::Underline::Single),
+                underline_color: None,
+                background: None,
+                pointing: false,
+            };
+            cx.decorate(pane, (0, 0), (2, 0), look)?;
+            cx.mark_gutter(pane, 0, (255, 0, 0))?;
+            cx.show_cursor(pane, Some((1, 0)))?;
+            cx.search(
+                pane,
+                host::SearchQuery {
+                    text: "1".to_owned(),
+                    ..host::SearchQuery::default()
+                },
+            )?;
+            cx.read_lines(pane, 0, 3).map(drop)
+        },
+    )
+}
+
+#[test]
+fn a_plugin_that_panics_leaves_nothing_of_its_own_in_the_panes() {
+    let mut app = App::default();
+    let window = window(&mut app, "seq 1 3; echo ready; sleep 30");
+    let pane = app.workspace.active_pane(window).unwrap();
+    row_once(&app, pane, 3, "ready");
+    let mut plugins = Plugins::new();
+    plugins.add("leaver", leaver()).unwrap();
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    plugins
+        .run("leaver.mark", Args::new(), &mut app.context())
+        .unwrap();
+    let left = |app: &mut App, plugins: &Plugins| {
+        let found = app.workspace.pane_mut(pane).unwrap();
+        found.update();
+        let snapshot = found.snapshot();
+        let terminal = found.terminal().unwrap();
+        (
+            snapshot.decorations().len(),
+            snapshot
+                .gutter()
+                .iter()
+                .filter(|mark| matches!(mark.kind, GutterKind::Laid(_)))
+                .count(),
+            terminal.held_cursor().is_some(),
+            plugins.entries[0].state.searches.len(),
+            plugins.out.reads.len(),
+        )
+    };
+    assert_eq!(left(&mut app, &plugins), (1, 1, true, 1, 1));
+    let fault = plugins
+        .run("leaver.boom", Args::new(), &mut app.context())
+        .unwrap_err();
+    assert_eq!(fault.code, Code::Fault);
+    assert_eq!(plugins.status("leaver"), Some(Status::Disabled));
+    assert_eq!(left(&mut app, &plugins), (0, 0, false, 0, 0));
+}
+
+#[test]
+fn a_call_that_fails_after_its_writes_leaves_the_workspace_as_it_was() {
+    let mut app = App::default();
+    let window = window(&mut app, "sleep 30");
+    let tab = app.workspace.window(window).unwrap().tabs()[0];
+    let mut plugins = Plugins::new();
+    plugins
+        .add(
+            "failer",
+            scripted(
+                |cx| cx.register_command(command("failer.go")),
+                |cx, _, _| {
+                    let window = cx.focused_window().unwrap();
+                    let tab = cx.tabs(window).unwrap()[0].id;
+                    cx.set_tab_title(tab, Some("written"))?;
+                    cx.new_tab(window, None)?;
+                    cx.open("https://lokyr.dev")?;
+                    Err(Error::new(Code::Failed, "after its writes"))
+                },
+            ),
+        )
+        .unwrap();
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    let failed = plugins
+        .run("failer.go", Args::new(), &mut app.context())
+        .unwrap_err();
+    assert_eq!(failed.code, Code::Failed);
+    assert_eq!(app.workspace.tab(tab).unwrap().own_title(), None);
+    assert_eq!(app.workspace.window(window).unwrap().tabs().len(), 1);
+    assert!(plugins.take_requests().is_empty());
+    // An activation that fails after a request leaves none either.
+    let mut started = Plugins::new();
+    started
+        .add(
+            "starter",
+            scripted(
+                |cx| {
+                    cx.open("https://lokyr.dev")?;
+                    Err(Error::new(Code::Failed, "after its request"))
+                },
+                |_, _, _| Ok(()),
+            ),
+        )
+        .unwrap();
+    assert_eq!(started.activate(&mut app.context()).len(), 1);
+    assert!(started.take_requests().is_empty());
+}
+
+/// A plugin whose `applies` tries to register a command and bind a key,
+/// as `tried` keeps their errors' codes.
+struct Declarer(Rc<RefCell<Vec<Option<Code>>>>);
+
+impl Plugin for Declarer {
+    fn activate(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
+        cx.register_command(command("declarer.go"))
+    }
+
+    fn applies(&mut self, cx: &mut Cx<'_>, _: &str, _: &Args) -> bool {
+        let code = |done: Result<(), Error>| done.err().map(|error| error.code);
+        let mut tried = self.0.borrow_mut();
+        tried.push(code(cx.register_command(command("declarer.more"))));
+        tried.push(code(cx.bind(binding("ctrl+l", "declarer.go", None))));
+        true
+    }
+}
+
+#[test]
+fn a_look_declares_nothing() {
+    let mut app = App::default();
+    window(&mut app, "sleep 30");
+    let tried = Rc::new(RefCell::new(Vec::new()));
+    let mut plugins = Plugins::new();
+    plugins
+        .add("declarer", Box::new(Declarer(Rc::clone(&tried))))
+        .unwrap();
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    assert!(
+        plugins
+            .applies("declarer.go", &Args::new(), &mut app.context())
+            .unwrap()
+    );
+    assert_eq!(*tried.borrow(), [Some(Code::Failed), Some(Code::Failed)]);
+    assert!(app.registry.get("declarer.more").is_none());
+    assert_eq!(plugins.bindings().count(), 0);
 }

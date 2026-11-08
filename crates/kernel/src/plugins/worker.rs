@@ -75,6 +75,9 @@ pub(super) struct Busy {
     pub(super) out: Outbox,
     pub(super) chain: super::Chain,
     pub(super) focused: Option<WindowId>,
+    /// What its requests take at once of its plugin's state, as it was
+    /// before its first, which a call that fails gives back.
+    pub(super) kept: Option<super::Kept>,
 }
 
 /// How a call ended on the plugin's thread.
@@ -205,6 +208,7 @@ impl Worker {
             out: Outbox::default(),
             chain,
             focused,
+            kept: None,
         });
     }
 
