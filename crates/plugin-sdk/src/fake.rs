@@ -469,12 +469,36 @@ impl FakeHost {
 
     /// The host, whose plugin holds the capabilities of `granted` alone, as
     /// another than a first-party plugin does, of a manifest that declares
-    /// them: its commands are of its namespace, and it runs those of
-    /// [`FakeHost::with_uses`] alone, beside its own.
+    /// them, but those that the host withholds, the network's and the
+    /// processes', as it refuses them: its commands are of its namespace,
+    /// and it runs those of [`FakeHost::with_uses`] alone, beside its own.
     pub fn with_capabilities(mut self, granted: Vec<Capability>) -> Self {
-        self.granted = Some(granted);
+        self.granted = Some(
+            granted
+                .into_iter()
+                .filter(|capability| !capability.is_withheld())
+                .collect(),
+        );
         self.uses.get_or_insert_with(Uses::default);
         self
+    }
+
+    /// The host, whose plugin holds the capabilities that `manifest`, its
+    /// `plugin.toml`, declares in `[capabilities]`, as
+    /// [`FakeHost::with_capabilities`] gives them, and runs the commands of
+    /// its `[uses]`, as the app's host gives a plugin of that manifest
+    /// that is not a first-party one, so that a plugin's tests find a
+    /// request that its manifest does not cover. It reads the forms that a
+    /// manifest writes them in, `name = true` and lists of texts, a list
+    /// over lines too; a name that is no capability panics, as a manifest
+    /// that the app would refuse.
+    pub fn with_manifest(self, manifest: &str) -> Self {
+        let (capabilities, uses) = declared(manifest);
+        let host = self.with_capabilities(capabilities);
+        match uses {
+            Some(patterns) => host.with_uses(patterns),
+            None => host,
+        }
     }
 
     /// The host, whose plugin's manifest says that it runs the commands of
@@ -1720,7 +1744,7 @@ impl FakeHost {
         };
         // Its own, and any as the user's of `user-commands`.
         if self.commands.iter().any(|own| own.name == name)
-            || granted.contains(&Capability::UserCommands)
+            || crate::command::grants(granted, &Capability::UserCommands)
         {
             return Ok(());
         }
@@ -1733,7 +1757,7 @@ impl FakeHost {
         if let Some(missing) = command
             .capabilities
             .iter()
-            .find(|capability| !granted.contains(capability))
+            .find(|capability| !crate::command::grants(granted, capability))
         {
             return Err(Error::new(
                 Code::MissingCapability,
@@ -2823,8 +2847,11 @@ impl host::Host for Calling<'_> {
             Ok(request) => request,
             Err(error) => return Response::Failed(error),
         };
-        if let (Some(needed), Some(granted)) = (request.capability(), &self.host.granted)
-            && !granted.contains(&needed)
+        if let Some(granted) = &self.host.granted
+            && let Some(needed) = request
+                .capabilities()
+                .into_iter()
+                .find(|needed| !crate::command::grants(granted, needed))
         {
             return Response::Failed(Error::new(
                 Code::MissingCapability,
@@ -2972,6 +2999,66 @@ fn write_node(out: &mut String, node: &Node, depth: usize) {
     for child in &node.children {
         write_node(out, child, depth + 1);
     }
+}
+
+/// The capabilities that the manifest `text` declares in its
+/// `[capabilities]`, and the commands of its `[uses]`, if it has them, as
+/// [`FakeHost::with_manifest`] reads them.
+fn declared(text: &str) -> (Vec<Capability>, Option<Vec<String>>) {
+    let (mut capabilities, mut uses) = (Vec::new(), None);
+    let mut section = "";
+    let mut lines = text.lines();
+    while let Some(line) = lines.next() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        if let Some(name) = line
+            .strip_prefix('[')
+            .and_then(|line| line.strip_suffix(']'))
+        {
+            section = match name.trim() {
+                "capabilities" => "capabilities",
+                "uses" => "uses",
+                _ => "",
+            };
+            continue;
+        }
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
+        let (key, mut value) = (key.trim(), value.trim().to_owned());
+        // A list over lines, to its end.
+        while value.starts_with('[') && !value.contains(']') {
+            match lines.next() {
+                Some(next) => value.push_str(next.trim()),
+                None => break,
+            }
+        }
+        // The texts of a list, between its quotes.
+        let texts = || -> Vec<String> {
+            value
+                .split('"')
+                .skip(1)
+                .step_by(2)
+                .map(str::to_owned)
+                .collect()
+        };
+        match section {
+            "capabilities" if value == "true" => capabilities.push(
+                Capability::of_name(key)
+                    .unwrap_or_else(|| panic!("`{key}` is no capability of a manifest")),
+            ),
+            "capabilities" if value == "false" => {}
+            "capabilities" => capabilities.extend(texts().into_iter().map(|parameter| {
+                Capability::of_parameter(key, parameter)
+                    .unwrap_or_else(|| panic!("`{key}` is no capability of a list"))
+            })),
+            "uses" if key == "commands" => uses = Some(texts()),
+            _ => {}
+        }
+    }
+    (capabilities, uses)
 }
 
 #[cfg(test)]

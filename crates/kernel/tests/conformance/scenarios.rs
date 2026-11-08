@@ -724,6 +724,31 @@ fn capabilities(world: &World) -> Scenario {
                 Request::Viewport(world.pane),
                 Response::Viewport(world.viewport),
             ),
+            // The windows, the tabs and the panes; what the panes show; what
+            // a plugin draws over them; and the pointer.
+            (
+                Request::NewTab {
+                    window: world.window,
+                    index: None,
+                    directory: None,
+                },
+                lacks("workspace-write"),
+            ),
+            (Request::Quit, lacks("workspace-write")),
+            (Request::FocusPane(world.pane), lacks("workspace-write")),
+            (Request::SelectAll(world.pane), lacks("pane-view")),
+            (Request::ClearScrollback(world.pane), lacks("pane-view")),
+            (
+                Request::Undecorate {
+                    pane: world.pane,
+                    id: 1,
+                },
+                lacks("decorate"),
+            ),
+            (
+                Request::Subscribe(vec!["pointer".to_owned()]),
+                lacks("pointer-read"),
+            ),
         ])],
     }
 }

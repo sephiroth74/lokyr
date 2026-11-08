@@ -15,7 +15,7 @@ const PANE: PaneId = PaneId(1);
 /// A host of one pane, of `rows`' texts from the row numbered 0, focused,
 /// of `config`, and the plugin, activated.
 fn host(rows: &[&str], config: Data) -> (FakeHost, Search) {
-    let mut host = FakeHost::new(NAME);
+    let mut host = FakeHost::new(NAME).with_manifest(crate::MANIFEST);
     let pane = host.pane(PANE);
     for (row, text) in (0..).zip(rows) {
         pane.rows.insert(row, ((*text).to_owned(), false));
@@ -494,7 +494,7 @@ fn the_bar_opens_of_the_options_of_the_last_search_as_the_state_keeps_them() {
     // A plugin made anew, as at the app's next start, takes them from its
     // state.
     let state = host.state().clone();
-    let mut again = FakeHost::new(NAME);
+    let mut again = FakeHost::new(NAME).with_manifest(crate::MANIFEST);
     again.pane(PANE);
     again.focus(Some(PANE));
     again.set_state(state);

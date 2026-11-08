@@ -7,6 +7,8 @@ description = "The tab bar and the tabs' commands: new, close, select, move, ren
 
 [capabilities]
 process-read = true
+workspace-write = true
+pane-view = true
 
 [contributes]
 slots = ["tab-bar"]

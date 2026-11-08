@@ -120,7 +120,7 @@ impl Registry {
         if let Some(missing) = command
             .capabilities
             .iter()
-            .find(|capability| !granted.contains(capability))
+            .find(|capability| !lokyr_plugin_sdk::command::grants(granted, capability))
         {
             return Err(Error::new(
                 Code::MissingCapability,
@@ -321,6 +321,9 @@ mod tests {
         for name in ["search.open", "search.other"] {
             registry.register(command(name, Vec::new())).unwrap();
         }
+        let mut note = command("notes.write", Vec::new());
+        note.capabilities = vec![Capability::FsWrite("/Users/ada/notes/today.md".to_owned())];
+        registry.register(note).unwrap();
         let goto = || args(&[("index", Value::Integer(1))]);
         let uses = Uses::new(["tabs.*", "pane.paste"]);
         let granted = [Capability::ClipboardRead, Capability::PtyWrite];
@@ -345,6 +348,15 @@ mod tests {
         assert!(error.message.contains("pty-write"), "{error}");
         // The call's own errors come first.
         assert_eq!(code(check("tabs.goto", Args::new(), &uses, &[])), 103);
+        // A capability of a parameter, of what its parameter covers: a
+        // folder of the path that the command writes, not another.
+        let uses = Uses::new(["notes.*"]);
+        let folder = [Capability::FsWrite("/Users/ada/notes".to_owned())];
+        assert!(check("notes.write", Args::new(), &uses, &folder).is_ok());
+        let other = [Capability::FsWrite("/Users/ada/notes-old".to_owned())];
+        assert_eq!(code(check("notes.write", Args::new(), &uses, &other)), 302);
+        let read = [Capability::FsRead("/Users/ada/notes".to_owned())];
+        assert_eq!(code(check("notes.write", Args::new(), &uses, &read)), 302);
     }
 
     #[test]

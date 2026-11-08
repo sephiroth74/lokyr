@@ -164,6 +164,125 @@ pub enum Capability {
     /// Running any command as the user's, without declaring it, and
     /// reading the whole registry, with each command's plugin.
     UserCommands,
+    /// Opening, closing and moving the windows, the tabs and the panes,
+    /// the keyboard's focus between them, a split's ratio, the zoom, and
+    /// the app's quit.
+    WorkspaceWrite,
+    /// The panes' scroll and selection, the screen and the scrollback
+    /// cleared, the font's size, the tabs' titles and colors, the tab
+    /// bar's place, the inactive panes' fade and the focus that follows
+    /// the mouse.
+    PaneView,
+    /// Drawing over a pane: decorations, the gutter's marks, a search's
+    /// matches and a held cursor.
+    Decorate,
+    /// The cell under the pointer over the panes, and the modifiers held.
+    PointerRead,
+}
+
+impl Capability {
+    /// The capability of no parameter of the manifest's name `name`, as
+    /// `pty-write`; `None` of another name, or of one that takes a
+    /// parameter, as `net`.
+    pub fn of_name(name: &str) -> Option<Self> {
+        Some(match name {
+            "terminal-read" => Self::TerminalRead,
+            "pty-write" => Self::PtyWrite,
+            "clipboard-read" => Self::ClipboardRead,
+            "clipboard-write" => Self::ClipboardWrite,
+            "notifications" => Self::Notifications,
+            "open" => Self::Open,
+            "process-spawn" => Self::ProcessSpawn,
+            "global-hotkey" => Self::GlobalHotkey,
+            "input-read" => Self::InputRead,
+            "history-read" => Self::HistoryRead,
+            "process-read" => Self::ProcessRead,
+            "user-commands" => Self::UserCommands,
+            "workspace-write" => Self::WorkspaceWrite,
+            "pane-view" => Self::PaneView,
+            "decorate" => Self::Decorate,
+            "pointer-read" => Self::PointerRead,
+            _ => return None,
+        })
+    }
+
+    /// The capability of the manifest's name `name`, which takes a
+    /// parameter, of `parameter`: a host of `net`, a path of `fs-read` and
+    /// `fs-write`, a variable of `env-read`; `None` of another name.
+    pub fn of_parameter(name: &str, parameter: String) -> Option<Self> {
+        Some(match name {
+            "net" => Self::Net(parameter),
+            "fs-read" => Self::FsRead(parameter),
+            "fs-write" => Self::FsWrite(parameter),
+            "env-read" => Self::EnvRead(parameter),
+            _ => return None,
+        })
+    }
+
+    /// Whether holding this capability lets a plugin do what `needed`
+    /// asks: the same one; or, of a parameter, one that covers it: of
+    /// `fs-read:` and `fs-write:`, a folder of the path, or of a folder
+    /// above it, of whole components, neither of `..`; of `env-read:`, a
+    /// name that matches the variable, `*` as any characters, as `AWS_*`;
+    /// of `net:`, the host, whatever its case.
+    pub fn grants(&self, needed: &Capability) -> bool {
+        match (self, needed) {
+            (Self::FsRead(folder), Self::FsRead(path))
+            | (Self::FsWrite(folder), Self::FsWrite(path)) => is_under(path, folder),
+            (Self::EnvRead(pattern), Self::EnvRead(name)) => matches(pattern, name),
+            (Self::Net(host), Self::Net(asked)) => host
+                .trim_end_matches('.')
+                .eq_ignore_ascii_case(asked.trim_end_matches('.')),
+            _ => self == needed,
+        }
+    }
+
+    /// Whether the host gives it to no plugin yet, whatever a manifest
+    /// declares, as it has no request of it: the network's and the
+    /// processes'. A manifest that declares one has it refused, with a
+    /// notice, and its plugin runs without it.
+    pub fn is_withheld(&self) -> bool {
+        matches!(self, Self::Net(_) | Self::ProcessSpawn)
+    }
+}
+
+/// Whether `granted` holds a capability that grants `needed`.
+pub fn grants(granted: &[Capability], needed: &Capability) -> bool {
+    granted.iter().any(|capability| capability.grants(needed))
+}
+
+/// Whether `path` is `folder` or under it, of whole components, neither
+/// of `..`, which could climb out of it.
+fn is_under(path: &str, folder: &str) -> bool {
+    use std::path::{Component, Path};
+    let (path, folder) = (Path::new(path), Path::new(folder));
+    let climbs = |path: &Path| {
+        path.components()
+            .any(|component| matches!(component, Component::ParentDir))
+    };
+    !climbs(path) && !climbs(folder) && path.starts_with(folder)
+}
+
+/// Whether `text` matches `pattern`, whose `*` stands for any characters,
+/// none too.
+fn matches(pattern: &str, text: &str) -> bool {
+    let mut parts = pattern.split('*');
+    let first = parts.next().unwrap_or_default();
+    let Some(mut rest) = text.strip_prefix(first) else {
+        return false;
+    };
+    let parts: Vec<&str> = parts.collect();
+    let Some((last, middle)) = parts.split_last() else {
+        // No `*`: the whole text.
+        return rest.is_empty();
+    };
+    for part in middle {
+        match rest.find(part) {
+            Some(at) => rest = &rest[at + part.len()..],
+            None => return false,
+        }
+    }
+    rest.len() >= last.len() && rest.ends_with(last)
 }
 
 impl fmt::Display for Capability {
@@ -185,6 +304,10 @@ impl fmt::Display for Capability {
             Self::HistoryRead => f.write_str("history-read"),
             Self::ProcessRead => f.write_str("process-read"),
             Self::UserCommands => f.write_str("user-commands"),
+            Self::WorkspaceWrite => f.write_str("workspace-write"),
+            Self::PaneView => f.write_str("pane-view"),
+            Self::Decorate => f.write_str("decorate"),
+            Self::PointerRead => f.write_str("pointer-read"),
         }
     }
 }
@@ -547,5 +670,80 @@ mod tests {
             "env-read:AWS_*"
         );
         assert_eq!(Capability::ProcessRead.to_string(), "process-read");
+        assert_eq!(Capability::WorkspaceWrite.to_string(), "workspace-write");
+        assert_eq!(Capability::PaneView.to_string(), "pane-view");
+        assert_eq!(Capability::Decorate.to_string(), "decorate");
+        assert_eq!(Capability::PointerRead.to_string(), "pointer-read");
+    }
+
+    #[test]
+    fn a_capability_reads_of_the_name_that_it_writes() {
+        let plain = [
+            Capability::TerminalRead,
+            Capability::PtyWrite,
+            Capability::ClipboardRead,
+            Capability::ClipboardWrite,
+            Capability::Notifications,
+            Capability::Open,
+            Capability::ProcessSpawn,
+            Capability::GlobalHotkey,
+            Capability::InputRead,
+            Capability::HistoryRead,
+            Capability::ProcessRead,
+            Capability::UserCommands,
+            Capability::WorkspaceWrite,
+            Capability::PaneView,
+            Capability::Decorate,
+            Capability::PointerRead,
+        ];
+        for capability in plain {
+            assert_eq!(
+                Capability::of_name(&capability.to_string()),
+                Some(capability)
+            );
+        }
+        assert_eq!(Capability::of_name("net"), None);
+        assert_eq!(Capability::of_name("decorations"), None);
+        let net = Capability::of_parameter("net", "lokyr.dev".to_owned()).unwrap();
+        assert_eq!(net.to_string(), "net:lokyr.dev");
+        assert_eq!(Capability::of_parameter("pty-write", String::new()), None);
+    }
+
+    #[test]
+    fn a_capability_of_a_parameter_grants_what_its_parameter_covers() {
+        let fs = |path: &str| Capability::FsWrite(path.to_owned());
+        let held = fs("/Users/ada/notes");
+        assert!(held.grants(&fs("/Users/ada/notes")));
+        assert!(held.grants(&fs("/Users/ada/notes/today.md")));
+        assert!(held.grants(&fs("/Users/ada/notes/a/b")));
+        // Of whole components, and never of `..`, nor another kind.
+        assert!(!held.grants(&fs("/Users/ada/notes-old/x")));
+        assert!(!held.grants(&fs("/Users/ada/notes/../.ssh/id_ed25519")));
+        assert!(!held.grants(&fs("/Users/ada")));
+        assert!(!held.grants(&Capability::FsRead("/Users/ada/notes/x".to_owned())));
+        assert!(!fs("/Users/ada/../bob").grants(&fs("/Users/bob/x")));
+        let env = |name: &str| Capability::EnvRead(name.to_owned());
+        assert!(env("AWS_*").grants(&env("AWS_PROFILE")));
+        assert!(env("AWS_*").grants(&env("AWS_")));
+        assert!(!env("AWS_*").grants(&env("GITHUB_TOKEN")));
+        assert!(!env("AWS_*").grants(&env("XAWS_PROFILE")));
+        assert!(env("*_TOKEN").grants(&env("GITHUB_TOKEN")));
+        assert!(env("A*B*C").grants(&env("AxxBxxC")));
+        assert!(!env("A*B*C").grants(&env("AxxC")));
+        assert!(!env("A*C").grants(&env("AC_")));
+        assert!(env("HOME").grants(&env("HOME")));
+        assert!(!env("HOME").grants(&env("HOMEDIR")));
+        assert!(env("*").grants(&env("ANY")));
+        let net = |host: &str| Capability::Net(host.to_owned());
+        assert!(net("api.github.com").grants(&net("API.GitHub.com.")));
+        assert!(!net("github.com").grants(&net("api.github.com")));
+        // The others, of equality alone.
+        assert!(Capability::PaneView.grants(&Capability::PaneView));
+        assert!(!Capability::WorkspaceWrite.grants(&Capability::PaneView));
+        assert!(grants(
+            &[Capability::Decorate, env("AWS_*")],
+            &env("AWS_REGION")
+        ));
+        assert!(!grants(&[Capability::Decorate], &Capability::PointerRead));
     }
 }

@@ -7,6 +7,8 @@ description = "The panes' commands: split, focus by direction, next and previous
 
 [capabilities]
 process-read = true
+workspace-write = true
+pane-view = true
 
 [contributes]
 slots = ["pane-header"]

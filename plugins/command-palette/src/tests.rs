@@ -31,7 +31,7 @@ fn info(name: &str, title: &str, keys: Option<&str>, params: Vec<Param>) -> Comm
 /// A host of a focused window, of a registry of the app's commands, and
 /// the plugin, activated.
 fn host() -> (FakeHost, Palette) {
-    host_of(FakeHost::new(NAME))
+    host_of(FakeHost::new(NAME).with_manifest(crate::MANIFEST))
 }
 
 /// The host `host` of a focused window, of a registry of the app's
@@ -308,7 +308,7 @@ fn the_recent_commands_come_first_and_the_state_keeps_them() {
         ]))
     );
     // A new plugin of the same state, as the app starts again.
-    let mut other = FakeHost::new(NAME);
+    let mut other = FakeHost::new(NAME).with_manifest(crate::MANIFEST);
     other.set_state(host.state().clone());
     let mut again = Palette::default();
     other.activate(&mut again).unwrap();

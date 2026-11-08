@@ -35,7 +35,7 @@ fn commands() -> Vec<ShellCommand> {
 /// A host of a pane of 100 rows and the three commands, and the plugin,
 /// activated.
 fn host() -> (FakeHost, Header) {
-    let mut host = FakeHost::new(NAME);
+    let mut host = FakeHost::new(NAME).with_manifest(crate::MANIFEST);
     let pane = host.pane(PANE);
     pane.tab = TabId(1);
     pane.held = 0..100;

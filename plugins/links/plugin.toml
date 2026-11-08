@@ -10,6 +10,9 @@ terminal-read = true
 open = true
 process-read = true
 clipboard-write = true
+workspace-write = true
+decorate = true
+pointer-read = true
 
 [contributes]
 commands = [

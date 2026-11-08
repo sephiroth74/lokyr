@@ -18,7 +18,7 @@ const VIEW: ViewId = ViewId::WindowStrip(WINDOW);
 /// A host of one window of two tabs, of panes 1 and 2, the first shown,
 /// and the plugin, activated, its bar rendered once.
 fn host() -> (FakeHost, Strip) {
-    let mut host = FakeHost::new(NAME);
+    let mut host = FakeHost::new(NAME).with_manifest(crate::MANIFEST);
     host.pane(PaneId(1)).tab = TabId(1);
     host.pane(PaneId(2)).tab = TabId(2);
     host.focus(Some(PaneId(1)));

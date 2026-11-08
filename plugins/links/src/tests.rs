@@ -33,7 +33,7 @@ fn focused(line: &str) -> FakeHost {
 /// A host whose focused pane's view has `line` on the cells `cells`, of
 /// its rows 1 and 2, in the directory `/work/lokyr`.
 fn on_cells(line: &str, cells: &[(u16, i64)]) -> FakeHost {
-    let mut host = FakeHost::new(NAME);
+    let mut host = FakeHost::new(NAME).with_manifest(crate::MANIFEST);
     host.focus(Some(PANE));
     let pane = host.pane(PANE);
     pane.directory = Some("/work/lokyr".to_owned());
@@ -105,7 +105,7 @@ fn underlined(host: &FakeHost) -> Vec<Span> {
 
 #[test]
 fn the_commands_of_a_cell_register_open_s_bound_to_cmd_click() {
-    let mut host = FakeHost::new(NAME);
+    let mut host = FakeHost::new(NAME).with_manifest(crate::MANIFEST);
     host.activate(&mut Links::default()).unwrap();
     let registered: Vec<(&str, Category, Vec<String>)> = host
         .commands()

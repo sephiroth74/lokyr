@@ -8,3 +8,5 @@ description = "A cursor of the keyboard's over a pane's scrollback and screen, w
 [capabilities]
 terminal-read = true
 clipboard-write = true
+pane-view = true
+decorate = true

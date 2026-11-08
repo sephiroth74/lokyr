@@ -2793,6 +2793,22 @@ impl<B: Backend> App<B> {
         }
         // A plugin that stopped, whose views show as they were and take no
         // event, tells it in a notice.
+        // A capability that no plugin has yet, which a manifest declared,
+        // refused: the plugin runs without it, as a notice tells.
+        for (plugin, capability) in self.plugins.take_withheld() {
+            let capability = capability.to_string();
+            let text = self.texts.text_with(
+                "plugin-capability-withheld",
+                &[
+                    ("name", Arg::Text(&plugin)),
+                    ("capability", Arg::Text(&capability)),
+                ],
+            );
+            self.report(
+                platform,
+                Diagnostic::new(Code::Unavailable, text, About::Other),
+            );
+        }
         for (plugin, fault) in self.plugins.take_disabled() {
             let text = self.texts.text_with(
                 "plugin-stopped",

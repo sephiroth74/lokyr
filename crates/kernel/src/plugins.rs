@@ -509,6 +509,10 @@ pub struct Plugins {
     serve_for: Option<Duration>,
     /// The app's state directory, which the plugins' states are kept in.
     state_directory: Option<PathBuf>,
+    /// The capabilities that the host withholds and that a declared
+    /// plugin's manifest asked for, by the plugin's name, which
+    /// [`Plugins::take_withheld`] tells.
+    withheld: Vec<(String, Capability)>,
 }
 
 /// What a plugin's section of the config tells the user, of the plugin's
@@ -727,22 +731,39 @@ impl Plugins {
     }
 
     /// Adds `plugin`, which `manifest` describes, by the manifest's name,
-    /// to activate, with what the manifest declares: its capabilities, and
-    /// the commands of its `[uses]` with those that it registers, of its
-    /// own namespace alone; a request that needs another capability, or a
-    /// run of another command, fails. One of another plugin's namespace
-    /// adds nothing.
+    /// to activate, with what the manifest declares: its capabilities, but
+    /// those that the host withholds, the network's and the processes',
+    /// which [`Plugins::take_withheld`] tells, and the commands of its
+    /// `[uses]` with those that it registers, of its own namespace alone; a
+    /// request that needs another capability, or a run of another command,
+    /// fails. One of another plugin's namespace adds nothing.
     pub fn add_declared(
         &mut self,
         manifest: Manifest,
         plugin: Box<dyn Plugin>,
     ) -> Result<(), Error> {
         let name = manifest.name.clone();
-        let granted = (
-            manifest.capabilities.clone(),
-            Uses::new(manifest.uses.clone()),
+        let (withheld, capabilities): (Vec<Capability>, Vec<Capability>) = manifest
+            .capabilities
+            .iter()
+            .cloned()
+            .partition(Capability::is_withheld);
+        let granted = (capabilities, Uses::new(manifest.uses.clone()));
+        self.insert(&name, Some(manifest), Runner::Main(plugin), Some(granted))?;
+        self.withheld.extend(
+            withheld
+                .into_iter()
+                .map(|capability| (name.clone(), capability)),
         );
-        self.insert(&name, Some(manifest), Runner::Main(plugin), Some(granted))
+        Ok(())
+    }
+
+    /// Takes the capabilities that the host withheld from the declared
+    /// plugins since the last take, by each plugin's name, which the user
+    /// is told of: the network's and the processes', which no plugin has
+    /// yet.
+    pub fn take_withheld(&mut self) -> Vec<(String, Capability)> {
+        std::mem::take(&mut self.withheld)
     }
 
     fn insert(
@@ -3134,18 +3155,22 @@ impl Host<'_, '_> {
     /// Whether the plugin may make `request`: it has the capability that
     /// the request needs, if it needs one.
     fn allows(&self, request: &Asked) -> Result<(), Error> {
-        let Some(needed) = request.capability() else {
+        let Some(granted) = &self.state.granted else {
             return Ok(());
         };
-        match &self.state.granted {
-            Some(granted) if !granted.contains(&needed) => Err(Error::new(
+        match request
+            .capabilities()
+            .into_iter()
+            .find(|needed| !lokyr_plugin_sdk::command::grants(granted, needed))
+        {
+            Some(needed) => Err(Error::new(
                 Code::MissingCapability,
                 format!(
                     "the plugin `{}` lacks the capability `{needed}`",
                     self.state.name
                 ),
             )),
-            _ => Ok(()),
+            None => Ok(()),
         }
     }
 

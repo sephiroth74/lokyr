@@ -66,6 +66,7 @@ lokyr-pkg-model.workspace = true
 
 [dev-dependencies]
 lokyr-platform-core = { workspace = true, features = ["fake"] }
+lokyr-pkg-model.workspace = true
 
 # The Mac's default shortcuts, which the tests press on every system.
 [target.'cfg(not(target_os = "macos"))'.dev-dependencies]

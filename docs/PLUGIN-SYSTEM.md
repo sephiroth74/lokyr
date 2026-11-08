@@ -837,15 +837,21 @@ type Plugin = {
 | `clipboard-write` | Writing to the clipboard | Medium |
 | `notifications` | Showing system notifications | Low |
 | `open` | Opening URLs and files with the system handler | Medium |
-| `process-spawn` | Starting processes | Very high |
-| `net:<host>` | HTTP requests to the listed hosts | High |
-| `fs-read:<path>`, `fs-write:<path>` | Access to the listed paths | High |
+| `process-spawn` | Starting processes; refused before 1.0.0, with a notice ([ADR 0038](adr/0038-plugin-ecosystem-scope.md)) | Very high |
+| `net:<host>` | HTTP requests to the listed hosts, whatever their case; refused before 1.0.0, with a notice ([ADR 0038](adr/0038-plugin-ecosystem-scope.md)) | High |
+| `fs-read:<path>`, `fs-write:<path>` | Access to the listed paths and to the paths under them, of whole components and no `..` | High |
 | `global-hotkey` | System-wide shortcuts, bindings of `global:` keys, and quick windows, which slide in over every app's | Medium |
 | `env-read:<name>` | Reading the listed variables of the app's environment and of the panes' programs', with `*` as `AWS_*` | High: they often hold secrets, as `GITHUB_TOKEN` |
 | `input-read` | Seeing the keys typed before they reach the program | Very high: a keylogger's power |
 | `history-read` | Reading the commands that the shell ran and their output, which shell integration marks, and hearing their starts and ends, as `shell_commands`, `command-started` and `command-ended` | High: a password typed by mistake ends up there |
 | `process-read` | Seeing the panes' processes: their command lines and working directories | Medium: command lines can hold passwords |
+| `workspace-write` | Opening, closing and moving windows, tabs and panes, the keyboard's focus between them, a split's ratio, the panes equalized and swapped, the zoom, and the app's quit ([ADR 0039](adr/0039-workspace-view-decorate-pointer-capabilities.md)) | High: it can end every program, start shells, or move the keys typed to another pane |
+| `pane-view` | The panes' scroll and selection, the screen and the scrollback cleared, the font's size, the tabs' titles and colors, the tab bar's place, the inactive panes' fade and the focus that follows the mouse | Medium: a cleared scrollback is lost text, and a selection is what a copy takes |
+| `decorate` | Drawing over a pane: decorations, the gutter's marks, a search's matches and a held cursor | Medium: a drawing over the text can show what the terminal does not hold |
+| `pointer-read` | The `pointer` event: the cell under the pointer over the panes, and the modifiers held | Low |
 | `user-commands` | Running any command as the user's, without declaring it, as the palette does; reading the whole registry, with each command's plugin, keys and context, and the plugins installed ([ADR 0024](adr/0024-user-commands.md)); previewing a theme and naming one in the config's `[theme]`, as the palette's picker does | Very high: `pane.send-text` types into the shell |
+
+A request takes every capability that it needs, as a subscription to `pointer` and to `command-started` takes `pointer-read` and `history-read`. The reads of the workspace, the plugin's own views, panels and questions, its declarations, its config and its state take none.
 
 - **Commands** ([ADR 0019](adr/0019-commands-errors-and-permissions.md)): each has a category, `app`, `windows`, `tabs`, `panes`, `input`, `clipboard`, `edit`, `find` or `view` to start with, and the capabilities that its action needs, as `pane.paste` needs `clipboard-read` and `pty-write`. A plugin declares in its manifest the commands that it runs, `[uses] commands`, by name or by namespace, as `tabs.*`: one that it did not declare fails with `denied`, 301, and one whose capabilities it lacks with `denied`, 302. The commands that the user runs, through the keys, the menus or a plugin with `user-commands`, as the palette, and the plugin's own need no declaration. Without `user-commands`, a plugin reads the commands' names, titles, categories and parameters, not their plugins.
 - **Declaration and consent**:

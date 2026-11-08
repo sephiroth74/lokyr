@@ -8,6 +8,7 @@ description = "The command whose output a pane's view shows, at the pane's top w
 [capabilities]
 terminal-read = true
 history-read = true
+pane-view = true
 
 [contributes]
 config-schema = "command-header.schema.json"

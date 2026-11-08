@@ -365,3 +365,24 @@ fn the_tab_bar_turned_off_and_on_again_takes_its_place_afresh() {
     assert_eq!(app.workspace.window(shown).unwrap().tabs().len(), 2);
     let _ = std::fs::remove_dir_all(&directory);
 }
+
+/// A plugin that does nothing of its own.
+struct Idle;
+
+impl Plugin for Idle {}
+
+#[test]
+fn a_capability_that_no_plugin_has_yet_is_refused_with_a_notice() {
+    let mut fake = Fake::default();
+    let mut app = app(Config::default(), quiet());
+    let manifest = lokyr_pkg_model::manifest::Manifest::parse(concat!(
+        "[plugin]\nname = \"acme/fetch\"\nversion = \"1.0.0\"\nkind = \"luau\"\n",
+        "api = \"^0.1\"\nlicense = \"MIT\"\n[capabilities]\nnet = [\"api.github.com\"]\n",
+    ))
+    .unwrap();
+    app.plugins.add_declared(manifest, Box::new(Idle)).unwrap();
+    fake.start(&mut app);
+    let shown = app.diagnostics.shown().expect("a notice");
+    assert!(shown.text.contains("acme/fetch"), "{shown:?}");
+    assert!(shown.text.contains("net:api.github.com"), "{shown:?}");
+}

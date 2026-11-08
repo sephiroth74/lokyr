@@ -17,7 +17,7 @@ const TAB: TabId = TabId(1);
 /// A host of one window of one tab of pane 1, which has the keyboard, and
 /// the plugin, activated.
 fn host() -> (FakeHost, Splits) {
-    let mut host = FakeHost::new(NAME);
+    let mut host = FakeHost::new(NAME).with_manifest(crate::MANIFEST);
     host.pane(PaneId(1)).tab = TAB;
     host.focus(Some(PaneId(1)));
     let mut plugin = Splits::default();
@@ -481,7 +481,7 @@ fn the_config_fades_the_panes_and_has_the_keyboard_follow_the_pointer() {
     let (host, _) = host();
     assert_eq!(host.pane_looks(), (0.15, false));
     // Of the config's, at a start, and as it changes.
-    let mut host = FakeHost::new(NAME);
+    let mut host = FakeHost::new(NAME).with_manifest(crate::MANIFEST);
     host.pane(PaneId(1)).tab = TAB;
     host.set_config(config(&[
         ("dim-inactive", Data::Number(0.3)),

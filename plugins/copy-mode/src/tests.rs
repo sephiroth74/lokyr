@@ -42,7 +42,7 @@ fn line(row: i64, text: &str) -> LineText {
 /// A host of the pane, focused, of `view`, its cursor at [`CURSOR`], and
 /// the plugin, activated.
 fn host_of(view: Viewport) -> (FakeHost, CopyMode) {
-    let mut host = FakeHost::new(NAME);
+    let mut host = FakeHost::new(NAME).with_manifest(crate::MANIFEST);
     let pane = host.pane(PANE);
     pane.held = 0..124;
     pane.viewport = Some(view);

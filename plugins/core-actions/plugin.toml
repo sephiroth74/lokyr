@@ -10,3 +10,4 @@ terminal-read = true
 clipboard-read = true
 clipboard-write = true
 pty-write = true
+pane-view = true

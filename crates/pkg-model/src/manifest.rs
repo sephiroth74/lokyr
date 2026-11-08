@@ -185,22 +185,6 @@ pub struct Keybinding {
     pub command: String,
 }
 
-/// The capabilities that a manifest asks for with `true`.
-const PLAIN: [(&str, Capability); 12] = [
-    ("terminal-read", Capability::TerminalRead),
-    ("pty-write", Capability::PtyWrite),
-    ("clipboard-read", Capability::ClipboardRead),
-    ("clipboard-write", Capability::ClipboardWrite),
-    ("notifications", Capability::Notifications),
-    ("open", Capability::Open),
-    ("process-spawn", Capability::ProcessSpawn),
-    ("global-hotkey", Capability::GlobalHotkey),
-    ("input-read", Capability::InputRead),
-    ("history-read", Capability::HistoryRead),
-    ("process-read", Capability::ProcessRead),
-    ("user-commands", Capability::UserCommands),
-];
-
 impl Manifest {
     /// The manifest of `text`, or why it does not read, and where.
     pub fn parse(text: &str) -> Result<Self, ManifestError> {
@@ -332,11 +316,11 @@ fn capability(key: &str, value: &toml::Spanned<toml::Value>) -> Result<Vec<Capab
         "fs-write" => listed(Capability::FsWrite),
         "env-read" => listed(Capability::EnvRead),
         _ => {
-            let Some((_, plain)) = PLAIN.iter().find(|(name, _)| *name == key) else {
+            let Some(plain) = Capability::of_name(key) else {
                 return Err(format!("`{key}` is no capability"));
             };
             match value.get_ref() {
-                toml::Value::Boolean(true) => Ok(vec![plain.clone()]),
+                toml::Value::Boolean(true) => Ok(vec![plain]),
                 toml::Value::Boolean(false) => Ok(Vec::new()),
                 _ => Err(format!("`{key}` is `true` or `false`")),
             }

@@ -32,6 +32,7 @@ command-pane-search-web = Search the Web
 
 # The notice of a plugin that a fault stopped, by its name.
 plugin-stopped = The plugin { $name } stopped, and its views show as they were, taking no clicks: { $fault }
+plugin-capability-withheld = The plugin { $name } asks for { $capability }, which no plugin has yet: it runs without it.
 
 # The credits of the About panel, under the version and the copyright: the
 # license, and the links to the source code and to the licenses' notices of

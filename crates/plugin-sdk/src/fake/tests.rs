@@ -100,7 +100,8 @@ fn a_read_after_a_write_reads_what_was_before_and_the_write_applies_as_the_call_
 
 #[test]
 fn a_request_of_a_pane_not_there_or_that_the_plugin_may_not_make_fails() {
-    let mut host = FakeHost::new("acme/probe").with_capabilities(vec![Capability::ClipboardRead]);
+    let mut host = FakeHost::new("acme/probe")
+        .with_capabilities(vec![Capability::ClipboardRead, Capability::PaneView]);
     host.pane(PaneId(1)).selection = Some("x".to_owned());
     let errors = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
     let failed = std::rc::Rc::clone(&errors);
@@ -942,4 +943,51 @@ fn a_quick_window_opens_of_a_pane_with_the_focus_and_shows_and_hides() {
         .call(true, |cx| cx.show_quick_window(WindowId(99), None))
         .unwrap_err();
     assert_eq!(error.code, Code::NotFound);
+}
+
+#[test]
+fn a_host_of_a_manifest_holds_what_it_declares_but_the_network_s_and_the_processes() {
+    let manifest = concat!(
+        "# A plugin's manifest.\n[plugin]\nname = \"acme/probe\"\n",
+        "[capabilities]\npane-view = true\nclipboard-read = false\n",
+        "net = [\"lokyr.dev\"]\nprocess-spawn = true\n",
+        "env-read = [\n  \"AWS_*\",\n  \"HOME\",\n]\n",
+        "[uses]\ncommands = [\"tabs.*\"]\n[contributes]\nslots = [\"tab-bar\"]\n",
+    );
+    let mut host = FakeHost::new("acme/probe").with_manifest(manifest);
+    host.pane(PaneId(1));
+    let codes = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+    let seen = std::rc::Rc::clone(&codes);
+    let mut probe = Probe::new(move |cx, _| {
+        let code = |done: Result<(), Error>| done.err().map(|error| error.code);
+        let mut seen = seen.borrow_mut();
+        seen.push(code(cx.scroll(PaneId(1), Scroll::Top)));
+        seen.push(code(cx.clipboard_text().map(drop)));
+        seen.push(code(cx.select_all(PaneId(1))));
+        seen.push(code(cx.quit()));
+        Ok(())
+    });
+    host.command(&mut probe, "probe.go", Args::new()).unwrap();
+    assert_eq!(
+        *codes.borrow(),
+        [
+            None,
+            Some(Code::MissingCapability),
+            None,
+            Some(Code::MissingCapability)
+        ]
+    );
+    assert_eq!(
+        super::declared(manifest),
+        (
+            vec![
+                Capability::PaneView,
+                Capability::Net("lokyr.dev".to_owned()),
+                Capability::ProcessSpawn,
+                Capability::EnvRead("AWS_*".to_owned()),
+                Capability::EnvRead("HOME".to_owned()),
+            ],
+            Some(vec!["tabs.*".to_owned()])
+        )
+    );
 }

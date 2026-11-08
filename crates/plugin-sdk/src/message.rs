@@ -704,9 +704,33 @@ pub enum Effect {
 }
 
 impl Request {
-    /// The capability that the request needs, which the host checks
-    /// against the plugin's, if it needs one.
-    pub fn capability(&self) -> Option<Capability> {
+    /// The capabilities that the request needs, which the host checks
+    /// against the plugin's: all of them, none for most.
+    pub fn capabilities(&self) -> Vec<Capability> {
+        match self {
+            // A subscription takes those of the events that it names.
+            Self::Subscribe(names) => {
+                let mut needed = Vec::new();
+                if names
+                    .iter()
+                    .any(|name| name == COMMAND_STARTED || name == COMMAND_ENDED)
+                {
+                    // The commands that the shell ran, as their events tell
+                    // them.
+                    needed.push(Capability::HistoryRead);
+                }
+                if names.iter().any(|name| name == POINTER) {
+                    needed.push(Capability::PointerRead);
+                }
+                needed
+            }
+            _ => self.capability().into_iter().collect(),
+        }
+    }
+
+    /// The one capability that a request other than a subscription needs,
+    /// if it needs one.
+    fn capability(&self) -> Option<Capability> {
         match self {
             Self::ClipboardText => Some(Capability::ClipboardRead),
             Self::SetClipboardText(_) => Some(Capability::ClipboardWrite),
@@ -719,16 +743,8 @@ impl Request {
             | Self::CurrentMatch(_)
             | Self::Styles { .. } => Some(Capability::TerminalRead),
             Self::WorkingDirectory(_) => Some(Capability::ProcessRead),
-            // The commands that the shell ran, as their marks and their
-            // events tell them.
+            // The commands that the shell ran, as their marks tell them.
             Self::ShellCommands { .. } | Self::CommandLine { .. } => Some(Capability::HistoryRead),
-            Self::Subscribe(names)
-                if names
-                    .iter()
-                    .any(|name| name == COMMAND_STARTED || name == COMMAND_ENDED) =>
-            {
-                Some(Capability::HistoryRead)
-            }
             Self::OpenQuickWindow { .. } | Self::ShowQuickWindow { .. } => {
                 Some(Capability::GlobalHotkey)
             }
@@ -741,52 +757,14 @@ impl Request {
             }
             Self::Open(_) | Self::Opens(_) => Some(Capability::Open),
             Self::Paste { .. } | Self::SendText { .. } => Some(Capability::PtyWrite),
-            Self::RegisterCommand(_)
-            | Self::Bind(_)
-            | Self::Subscribe(_)
-            | Self::Emit { .. }
-            | Self::RunCommand { .. }
-            | Self::FocusedWindow
-            | Self::FocusedPane
-            | Self::Decorate { .. }
-            | Self::Undecorate { .. }
-            | Self::MarkGutter { .. }
-            | Self::UnmarkGutter { .. }
-            | Self::EndSearch(_)
-            | Self::SelectCells { .. }
-            | Self::Deselect(_)
-            | Self::ShowCursor { .. }
-            | Self::CursorCell(_)
-            | Self::ShowMatches { .. }
-            | Self::SelectAll(_)
-            | Self::ClearScrollback(_)
-            | Self::Clear(_)
-            | Self::Scroll { .. }
-            | Self::FontSize
-            | Self::SetFontSize(_)
-            | Self::OpenWindow { .. }
+            // The windows, the tabs and the panes, and where the keys go.
+            Self::OpenWindow { .. }
             | Self::CloseWindow(_)
             | Self::Quit
-            | Self::Windows
-            | Self::Tabs(_)
-            | Self::Layout(_)
-            | Self::PaneGrid(_)
-            | Self::PaneTitle(_)
-            | Self::Viewport(_)
             | Self::NewTab { .. }
             | Self::Split { .. }
             | Self::CloseTab { .. }
             | Self::ClosePane { .. }
-            | Self::SetTabTitle { .. }
-            | Self::SetTabColor { .. }
-            | Self::AskText { .. }
-            | Self::SetTabBarPlace(_)
-            | Self::SetWindowTabBarPlace { .. }
-            | Self::SetInactiveDim(_)
-            | Self::SetFocusFollowsMouse(_)
-            | Self::TabBarPlace
-            | Self::KeysOf { .. }
-            | Self::Message { .. }
             | Self::ActivateTab(_)
             | Self::FocusPane(_)
             | Self::MoveTab { .. }
@@ -798,7 +776,50 @@ impl Request {
             | Self::SetRatio { .. }
             | Self::Equalize(_)
             | Self::SwapPanes { .. }
-            | Self::Zoom { .. }
+            | Self::Zoom { .. } => Some(Capability::WorkspaceWrite),
+            // What the panes show and how, and the tabs' looks.
+            Self::SelectCells { .. }
+            | Self::Deselect(_)
+            | Self::SelectAll(_)
+            | Self::ClearScrollback(_)
+            | Self::Clear(_)
+            | Self::Scroll { .. }
+            | Self::SetFontSize(_)
+            | Self::SetTabTitle { .. }
+            | Self::SetTabColor { .. }
+            | Self::SetTabBarPlace(_)
+            | Self::SetWindowTabBarPlace { .. }
+            | Self::SetInactiveDim(_)
+            | Self::SetFocusFollowsMouse(_) => Some(Capability::PaneView),
+            // What a plugin draws over a pane.
+            Self::Decorate { .. }
+            | Self::Undecorate { .. }
+            | Self::MarkGutter { .. }
+            | Self::UnmarkGutter { .. }
+            | Self::ShowMatches { .. }
+            | Self::ShowCursor { .. } => Some(Capability::Decorate),
+            // The reads of the workspace, the plugin's own UI, its
+            // declarations, its config and its state.
+            Self::RegisterCommand(_)
+            | Self::Bind(_)
+            | Self::Subscribe(_)
+            | Self::Emit { .. }
+            | Self::RunCommand { .. }
+            | Self::FocusedWindow
+            | Self::FocusedPane
+            | Self::EndSearch(_)
+            | Self::CursorCell(_)
+            | Self::FontSize
+            | Self::Windows
+            | Self::Tabs(_)
+            | Self::Layout(_)
+            | Self::PaneGrid(_)
+            | Self::PaneTitle(_)
+            | Self::Viewport(_)
+            | Self::AskText { .. }
+            | Self::TabBarPlace
+            | Self::KeysOf { .. }
+            | Self::Message { .. }
             | Self::RequestRender(_)
             | Self::SetText { .. }
             | Self::Select { .. }
@@ -1397,18 +1418,69 @@ mod tests {
     fn each_request_needs_its_capability_and_has_its_effect() {
         let pane = PaneId(1);
         assert_eq!(
-            Request::ClipboardText.capability(),
-            Some(Capability::ClipboardRead)
+            Request::ClipboardText.capabilities(),
+            [Capability::ClipboardRead]
         );
         assert_eq!(
             Request::SendText {
                 pane,
                 text: String::new()
             }
-            .capability(),
-            Some(Capability::PtyWrite)
+            .capabilities(),
+            [Capability::PtyWrite]
         );
-        assert_eq!(Request::SelectAll(pane).capability(), None);
+        // The workspace's writes, the panes' views, what a plugin draws
+        // over a pane, and the pointer's events.
+        assert_eq!(
+            Request::CloseTab {
+                tab: crate::host::TabId(1),
+                ask: false
+            }
+            .capabilities(),
+            [Capability::WorkspaceWrite]
+        );
+        assert_eq!(Request::Quit.capabilities(), [Capability::WorkspaceWrite]);
+        assert_eq!(
+            Request::FocusPane(pane).capabilities(),
+            [Capability::WorkspaceWrite]
+        );
+        assert_eq!(
+            Request::SelectAll(pane).capabilities(),
+            [Capability::PaneView]
+        );
+        assert_eq!(
+            Request::ClearScrollback(pane).capabilities(),
+            [Capability::PaneView]
+        );
+        assert_eq!(
+            Request::SetTabTitle {
+                tab: crate::host::TabId(1),
+                title: None
+            }
+            .capabilities(),
+            [Capability::PaneView]
+        );
+        assert_eq!(
+            Request::Undecorate { pane, id: 1 }.capabilities(),
+            [Capability::Decorate]
+        );
+        assert_eq!(
+            Request::Subscribe(vec![POINTER.to_owned()]).capabilities(),
+            [Capability::PointerRead]
+        );
+        assert_eq!(
+            Request::Subscribe(vec![POINTER.to_owned(), COMMAND_ENDED.to_owned()]).capabilities(),
+            [Capability::HistoryRead, Capability::PointerRead]
+        );
+        assert!(
+            Request::Subscribe(vec!["tab-changed".to_owned()])
+                .capabilities()
+                .is_empty()
+        );
+        // The reads of the workspace and the plugin's own UI take none.
+        assert!(Request::Windows.capabilities().is_empty());
+        assert!(Request::PaneTitle(pane).capabilities().is_empty());
+        assert!(Request::Config.capabilities().is_empty());
         assert_eq!(Request::SelectionText(pane).effect(), Effect::Read);
         assert_eq!(
             Request::SetClipboardText(String::new()).effect(),

@@ -15,7 +15,7 @@ const WINDOW: WindowId = WindowId(1);
 /// A host of one window of tabs of `tabs` panes each, from tab 1 and
 /// pane 1, whose focused pane is `focused`, and the plugin, activated.
 fn host(tabs: &[u64], focused: u64) -> (FakeHost, Tabs) {
-    let mut host = FakeHost::new(NAME);
+    let mut host = FakeHost::new(NAME).with_manifest(crate::MANIFEST);
     let mut pane = 0;
     for (tab, &panes) in (1..).zip(tabs) {
         for _ in 0..panes {
@@ -774,7 +774,7 @@ fn the_config_puts_the_bar_at_its_place_and_keeps_a_drag_s_width() {
             _ => None,
         })
     };
-    let mut host = FakeHost::new(NAME);
+    let mut host = FakeHost::new(NAME).with_manifest(crate::MANIFEST);
     host.pane(PaneId(1)).tab = TabId(1);
     host.focus(Some(PaneId(1)));
     let mut plugin = Tabs::default();
@@ -798,7 +798,7 @@ fn the_config_puts_the_bar_at_its_place_and_keeps_a_drag_s_width() {
         panic!("a state of the width");
     };
     assert_eq!(state.get("column-width"), Some(&Data::Number(300.0)));
-    let mut next = FakeHost::new(NAME);
+    let mut next = FakeHost::new(NAME).with_manifest(crate::MANIFEST);
     next.pane(PaneId(1)).tab = TabId(1);
     next.set_config(config);
     next.set_state(Data::Map(state));
@@ -822,7 +822,7 @@ fn the_config_puts_the_bar_at_its_place_and_keeps_a_drag_s_width() {
         placed(next.take_done()),
         Some(BarPlace::Sidebar { width: 150.0 })
     );
-    let mut third = FakeHost::new(NAME);
+    let mut third = FakeHost::new(NAME).with_manifest(crate::MANIFEST);
     third.pane(PaneId(1)).tab = TabId(1);
     third.set_config(wider(150));
     third.set_state(next.state().clone());
@@ -835,7 +835,7 @@ fn the_config_puts_the_bar_at_its_place_and_keeps_a_drag_s_width() {
     // A drag, then the file changed while Lokyr is closed: the file's.
     third.post(Event::TabBarResized { width: 320.0 });
     third.deliver(&mut plugin).unwrap();
-    let mut fourth = FakeHost::new(NAME);
+    let mut fourth = FakeHost::new(NAME).with_manifest(crate::MANIFEST);
     fourth.pane(PaneId(1)).tab = TabId(1);
     fourth.set_config(wider(350));
     fourth.set_state(third.state().clone());

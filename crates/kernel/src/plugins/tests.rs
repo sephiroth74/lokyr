@@ -1405,7 +1405,7 @@ fn a_request_needs_its_capability() {
         *log.borrow(),
         [
             None,
-            None,
+            Some(Code::MissingCapability),
             Some(Code::MissingCapability),
             Some(Code::MissingCapability),
             Some(Code::MissingCapability)
@@ -1413,6 +1413,113 @@ fn a_request_needs_its_capability() {
     );
     // Nothing that it lacked went to the app.
     assert!(plugins.take_requests().is_empty());
+}
+
+/// Whether the host refused a plugin's calls of each group of requests
+/// that take `workspace-write`, `pane-view`, `decorate` and
+/// `pointer-read`, for a capability that it lacks, of the manifest's
+/// `capabilities`, the part after `[capabilities]`: of a new tab, a tab's
+/// title, a decoration let go and a subscription to the pointer; and how
+/// many tabs the window has after them.
+fn refused_of(capabilities: &str) -> (Vec<bool>, usize) {
+    let mut app = App::default();
+    let window = window(&mut app, "sleep 10");
+    let mut plugins = Plugins::new();
+    let log = Rc::new(RefCell::new(Vec::new()));
+    let seen = Rc::clone(&log);
+    let manifest = Manifest::parse(&format!(
+        "[plugin]\nname = \"acme/tidy\"\nversion = \"1.0.0\"\nkind = \"luau\"\napi = \"^0.1\"\nlicense = \"MIT\"\n[capabilities]\n{capabilities}"
+    ))
+    .unwrap();
+    plugins
+        .add_declared(
+            manifest,
+            scripted(
+                |cx| cx.register_command(command("tidy.go")),
+                move |cx, _, _| {
+                    let window = cx.focused_window().unwrap();
+                    let pane = cx.focused_pane().unwrap();
+                    let tab = cx.tabs(window).unwrap()[0].id;
+                    let code = |done: Result<(), Error>| {
+                        done.is_err_and(|error| error.code == Code::MissingCapability)
+                    };
+                    let mut seen = seen.borrow_mut();
+                    seen.push(code(cx.new_tab(window, None).map(drop)));
+                    seen.push(code(cx.set_tab_title(tab, Some("tidy"))));
+                    seen.push(code(cx.undecorate(pane, 1)));
+                    seen.push(code(cx.subscribe(&[POINTER])));
+                    Ok(())
+                },
+            ),
+        )
+        .unwrap();
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    plugins
+        .run("tidy.go", Args::new(), &mut app.context())
+        .unwrap();
+    let refused = log.borrow().clone();
+    let tabs = app.workspace.window(window).unwrap().tabs().len();
+    (refused, tabs)
+}
+
+#[test]
+fn the_workspace_s_writes_the_views_the_decorations_and_the_pointer_take_their_capabilities() {
+    // Of none, each refused, the window of its one tab still.
+    let (refused, tabs) = refused_of("");
+    assert_eq!((refused, tabs), (vec![true; 4], 1));
+    // Of each, none refused.
+    let (refused, tabs) = refused_of(
+        "workspace-write = true\npane-view = true\ndecorate = true\npointer-read = true\n",
+    );
+    assert_eq!((refused, tabs), (vec![false; 4], 2));
+    // Of one, the others still refused.
+    let (refused, _) = refused_of("pane-view = true\n");
+    assert_eq!(refused, [true, false, true, true]);
+}
+
+#[test]
+fn the_network_s_and_the_processes_capabilities_are_withheld_and_told() {
+    let mut app = App::default();
+    window(&mut app, "sleep 10");
+    let mut plugins = Plugins::new();
+    let manifest = Manifest::parse(concat!(
+        "[plugin]\nname = \"acme/fetch\"\nversion = \"1.0.0\"\nkind = \"luau\"\n",
+        "api = \"^0.1\"\nlicense = \"MIT\"\n[capabilities]\nterminal-read = true\n",
+        "net = [\"api.github.com\"]\nprocess-spawn = true\n",
+    ))
+    .unwrap();
+    let read = Rc::new(RefCell::new(None));
+    let seen = Rc::clone(&read);
+    plugins
+        .add_declared(
+            manifest,
+            scripted(
+                |cx| cx.register_command(command("fetch.go")),
+                move |cx, _, _| {
+                    let pane = cx.focused_pane().unwrap();
+                    *seen.borrow_mut() = Some(cx.selection_text(pane).is_ok());
+                    Ok(())
+                },
+            ),
+        )
+        .unwrap();
+    assert_eq!(
+        plugins.take_withheld(),
+        [
+            (
+                "acme/fetch".to_owned(),
+                Capability::Net("api.github.com".to_owned())
+            ),
+            ("acme/fetch".to_owned(), Capability::ProcessSpawn)
+        ]
+    );
+    assert!(plugins.take_withheld().is_empty());
+    // It runs of the others.
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    plugins
+        .run("fetch.go", Args::new(), &mut app.context())
+        .unwrap();
+    assert_eq!(*read.borrow(), Some(true));
 }
 
 #[test]
