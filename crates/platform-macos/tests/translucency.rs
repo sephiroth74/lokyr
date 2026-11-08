@@ -1,6 +1,7 @@
 //! A window made translucent, then opaque again: the window, its content
 //! view and the view's layer turn non-opaque together, over the backdrop's
-//! color, and back.
+//! color, and back; a clear backdrop's background keeps the least opacity,
+//! as a clear one gives the window's corners the blur's shape.
 
 #[cfg(target_os = "macos")]
 mod common;
@@ -79,6 +80,14 @@ mod probe {
                 }),
             );
             seen.push(look(platform, window));
+            platform.set_translucent(
+                window,
+                Some(Backdrop {
+                    color: [0.0; 4],
+                    ..backdrop
+                }),
+            );
+            seen.push(look(platform, window));
             platform.set_translucent(window, None);
             seen.push(look(platform, window));
             platform.quit();
@@ -106,7 +115,11 @@ mod probe {
             assert!((alpha - 0.8).abs() < 1e-6, "{seen:?}");
             assert!(titlebar, "the titlebar shows the backdrop: {seen:?}");
         }
-        assert_eq!(seen[3], opaque, "back as it opened");
+        // A clear backdrop, of the least opacity.
+        let (window, _, _, alpha, _) = seen[3];
+        assert!(!window, "{seen:?}");
+        assert!((alpha - 0.001).abs() < 1e-9, "{seen:?}");
+        assert_eq!(seen[4], opaque, "back as it opened");
         println!("translucency: ok");
     }
 }

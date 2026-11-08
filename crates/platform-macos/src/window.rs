@@ -603,7 +603,8 @@ impl Window {
 
     /// Makes the window translucent over `backdrop`, its background, which
     /// fills its whole shape, the titlebar and the rounded corners too,
-    /// under the content that the renderer draws clear; or, with `None`,
+    /// under the content that the renderer draws clear, of an opacity of
+    /// [`LEAST_OPACITY`] at least; or, with `None`,
     /// keeps it opaque. The window, its view and the view's layer turn
     /// non-opaque together, as the window server composes the window with
     /// what is behind it only then.
@@ -618,7 +619,12 @@ impl Window {
             Some(Backdrop {
                 color: [red, green, blue, alpha],
                 ..
-            }) => NSColor::colorWithSRGBRed_green_blue_alpha(red, green, blue, alpha),
+            }) => NSColor::colorWithSRGBRed_green_blue_alpha(
+                red,
+                green,
+                blue,
+                alpha.max(LEAST_OPACITY),
+            ),
             None => NSColor::windowBackgroundColor(),
         };
         self.ns_window.setBackgroundColor(Some(&background));
@@ -638,6 +644,12 @@ impl Window {
         self.ns_window.invalidateShadow();
     }
 }
+
+/// The least opacity of a translucent window's background, which shows
+/// nothing: a clear one, which macOS takes apart, leaves the blur behind
+/// the window its own shape at the corners, of a smaller radius than the
+/// window's, so that what is behind shows bare between the two.
+const LEAST_OPACITY: f64 = 0.001;
 
 // The window server's calls of the blur behind a window, private ones of
 // Core Graphics, which the terminals of macOS that blur make too: there is
