@@ -58,6 +58,7 @@ impl App {
                 remember: false,
                 restore: false,
                 restore_size: false,
+                frame: None,
             })
             .unwrap();
         self.windows.push(window);
@@ -620,6 +621,7 @@ fn a_quick_window_opens_hidden_and_takes_its_place_s_size_as_it_shows() {
             remember: false,
             restore: false,
             restore_size: false,
+            frame: None,
         })
         .unwrap();
     fake.show_quick_window(window, Some(&place));
@@ -699,6 +701,7 @@ fn the_fake_s_windows_cascade_and_show_on_top_where_they_came_forward() {
         remember: false,
         restore: false,
         restore_size: false,
+        frame: None,
     };
     let first = fake.create_window(&attributes).unwrap();
     let second = fake.create_window(&attributes).unwrap();
@@ -809,4 +812,101 @@ fn the_fake_draws_the_fills_as_a_test_says_and_keeps_them() {
         (state.fills.as_slice(), state.fills_shown),
         (&[fill][..], 1)
     );
+}
+
+#[test]
+fn a_frame_on_no_screen_goes_onto_the_nearest_within_its_area() {
+    let main = ScreenRect {
+        x: 0.0,
+        y: 25.0,
+        width: 1440.0,
+        height: 875.0,
+    };
+    let right = ScreenRect {
+        x: 1440.0,
+        y: 0.0,
+        width: 1920.0,
+        height: 1080.0,
+    };
+    let frame = ScreenRect {
+        x: 2000.0,
+        y: 100.0,
+        width: 800.0,
+        height: 600.0,
+    };
+    // On a screen that is there, it stays.
+    assert_eq!(frame.onto(&[main, right]), frame);
+    // As that screen goes, to the main one's right edge, at its height.
+    assert_eq!(frame.onto(&[main]), ScreenRect { x: 640.0, ..frame });
+    // Larger than the area, of its size within it.
+    let large = ScreenRect {
+        x: 1500.0,
+        y: -50.0,
+        width: 1900.0,
+        height: 1100.0,
+    };
+    assert_eq!(large.onto(&[main]), main);
+    // The nearest of two.
+    let left = ScreenRect {
+        x: -1280.0,
+        y: 0.0,
+        width: 1280.0,
+        height: 800.0,
+    };
+    let far_left = ScreenRect {
+        x: -3000.0,
+        y: 200.0,
+        width: 400.0,
+        height: 300.0,
+    };
+    assert_eq!(
+        far_left.onto(&[main, left]),
+        ScreenRect {
+            x: -1280.0,
+            ..far_left
+        }
+    );
+    // Without screens, here.
+    assert_eq!(frame.onto(&[]), frame);
+}
+
+#[test]
+fn the_fake_s_window_opens_at_its_frame_on_a_screen_that_is_there() {
+    let mut fake = Fake::new(2.0);
+    let second = ScreenRect {
+        x: 1440.0,
+        y: 0.0,
+        width: 1920.0,
+        height: 1080.0,
+    };
+    fake.set_screens(vec![crate::fake::SCREEN_AREA, second]);
+    let frame = ScreenRect {
+        x: 2000.0,
+        y: 100.0,
+        width: 800.0,
+        height: 600.0,
+    };
+    let attributes = WindowAttributes {
+        title: "shell".to_owned(),
+        size: SIZE,
+        remember: false,
+        restore: false,
+        restore_size: false,
+        frame: Some(frame),
+    };
+    let window = fake.create_window(&attributes).unwrap();
+    assert_eq!(fake.window_frame(window), Some(frame));
+    assert_eq!(fake.windowed_frame(window), Some(frame));
+    assert_eq!(fake.window_size(window).unwrap().points.width, 800.0);
+    // The second screen gone.
+    fake.set_screens(vec![crate::fake::SCREEN_AREA]);
+    let window = fake.create_window(&attributes).unwrap();
+    assert_eq!(
+        fake.window_frame(window),
+        Some(ScreenRect { x: 640.0, ..frame })
+    );
+    // The system's setting of the windows kept.
+    assert!(!fake.keeps_windows());
+    fake.set_keeps_windows(true);
+    assert!(fake.keeps_windows());
 }

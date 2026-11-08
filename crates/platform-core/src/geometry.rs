@@ -150,6 +150,45 @@ impl ScreenRect {
             y: self.y,
         }
     }
+
+    /// Where a window of this frame goes on the screens whose areas for
+    /// windows are `areas`: here, if it lies on one; otherwise on the one
+    /// nearest to it, as near to here as it fits, of its size within that
+    /// area. Here, without areas.
+    pub fn onto(&self, areas: &[ScreenRect]) -> ScreenRect {
+        if areas.iter().any(|area| self.overlaps(area)) {
+            return *self;
+        }
+        let center = ScreenPoint {
+            x: self.x + self.width / 2.0,
+            y: self.y + self.height / 2.0,
+        };
+        let Some(area) = areas
+            .iter()
+            .min_by(|one, other| one.distance(center).total_cmp(&other.distance(center)))
+        else {
+            return *self;
+        };
+        let width = self.width.min(area.width);
+        let height = self.height.min(area.height);
+        ScreenRect {
+            x: self.x.clamp(area.x, area.x + area.width - width),
+            y: self.y.clamp(area.y, area.y + area.height - height),
+            width,
+            height,
+        }
+    }
+
+    /// How far `point` is from it: 0 within it.
+    fn distance(&self, point: ScreenPoint) -> f64 {
+        let x = (self.x - point.x)
+            .max(point.x - (self.x + self.width))
+            .max(0.0);
+        let y = (self.y - point.y)
+            .max(point.y - (self.y + self.height))
+            .max(0.0);
+        x.hypot(y)
+    }
 }
 
 /// What a window's titlebar holds, over its content's top, which the

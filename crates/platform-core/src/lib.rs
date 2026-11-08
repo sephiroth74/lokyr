@@ -101,6 +101,11 @@ pub struct WindowAttributes {
     /// if one did and it does not restore it, rather than of `size`, where
     /// the platform places it, cascaded or centred; within the screen.
     pub restore_size: bool,
+    /// The frame that its content opens at, under the titlebar too, on the
+    /// screens, rather than `size` where the platform places it, or a frame
+    /// that a window kept: moved onto the nearest screen, within its area
+    /// for windows, if it lies on none, as a screen that held it went.
+    pub frame: Option<ScreenRect>,
 }
 
 /// A layer of a window over its content, which the window server blinks
@@ -390,6 +395,11 @@ pub trait Platform {
     /// How the system shows its scroll bars, as its settings say now.
     fn scrollers(&self) -> Scrollers;
 
+    /// Whether the system's settings have an app's windows open again as
+    /// it starts, as they were as it quit: on the Mac, "Close windows when
+    /// quitting an application" off.
+    fn keeps_windows(&self) -> bool;
+
     /// Gives the app the appearance `appearance`, its windows' and its
     /// menus' too, whatever the system's is, or the system's again with
     /// `None`. [`Platform::appearance`] tells it at once; a change can come
@@ -540,6 +550,11 @@ pub trait Platform {
     /// titlebar too, where the content runs under it; `None` for a window
     /// that is not open.
     fn window_frame(&self, window: WindowId) -> Option<ScreenRect>;
+
+    /// The frame of `window`'s content as [`Platform::window_frame`] tells
+    /// it, but out of full screen: for a window in full screen, the frame
+    /// that it had before, which it takes back as it leaves it.
+    fn windowed_frame(&self, window: WindowId) -> Option<ScreenRect>;
 
     /// Moves `window` so that its content's top left corner is at `origin`
     /// on the screens, or as near as keeps its titlebar on a screen, as a

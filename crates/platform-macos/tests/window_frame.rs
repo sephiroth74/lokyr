@@ -74,6 +74,7 @@ mod probe {
                 remember,
                 restore,
                 restore_size,
+                frame: None,
             })
             .expect("a window")
     }

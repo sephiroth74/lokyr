@@ -125,6 +125,7 @@ impl App {
             remember: false,
             restore: false,
             restore_size: false,
+            frame: None,
         };
         let window = platform
             .create_window(&attributes)

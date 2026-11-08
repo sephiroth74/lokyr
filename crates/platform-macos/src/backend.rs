@@ -313,6 +313,14 @@ impl Platform for Backend {
         }
     }
 
+    fn keeps_windows(&self) -> bool {
+        // "Close windows when quitting an application" off, in the global
+        // domain, which the standard defaults search; read at each call.
+        objc2_foundation::NSUserDefaults::standardUserDefaults().boolForKey(
+            &objc2_foundation::NSString::from_str("NSQuitAlwaysKeepsWindows"),
+        )
+    }
+
     fn keyboard_navigation(&self) -> bool {
         // AppKit reads the preference at each call, cheaply, and tells no
         // change of it.
@@ -565,6 +573,14 @@ impl Platform for Backend {
         let open = self.windows.get(&window)?;
         Some(screens::on_screens(
             open.content_on_screen(),
+            screens::top(self.mtm),
+        ))
+    }
+
+    fn windowed_frame(&self, window: WindowId) -> Option<ScreenRect> {
+        let open = self.windows.get(&window)?;
+        Some(screens::on_screens(
+            open.windowed_frame(),
             screens::top(self.mtm),
         ))
     }

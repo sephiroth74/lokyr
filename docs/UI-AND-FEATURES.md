@@ -431,6 +431,15 @@ The `command-palette` plugin (⌘⇧P on macOS, Ctrl+Shift+P on Linux):
 - shows in a panel over the window, of an IME-capable text field.
 - runs the commands as the user's, and lists every command with its plugin and keys, through the capability `user-commands`, which a palette of a third party asks for at install ([ADR 0024](adr/0024-user-commands.md)).
 
+## Windows restored
+
+As Lokyr quits, the windows that are open, the quick terminal's and the man pages' aside, are kept in the state's directory, in `windows.json`, and open again as it starts, as `[app] restore-windows` says: as macOS restores an app's windows, of its setting "Close windows when quitting an application", by default, or always, or never, as the user chose on 8 November 2026.
+- **What opens again**: each window at its frame, out of full screen at the one that it had before, on a screen that is there, or on the nearest one within its area for windows, as `ScreenRect::onto` finds it; its tabs in their order, the one shown, each tab's title and color of its own, its splits and their ratios, the pane of the keyboard and the one zoomed; each pane's program anew, the configured one, in the folder that its shell told last, by OSC 7, of this Mac, or that its program worked in, as a new pane's. The window in front takes the focus, and the windows' numbers follow their order.
+- **What does not**: the panes' text and their programs, whose scrollback comes back with F5b; full screen itself, B-580 of the backlog.
+- **When**: as Lokyr quits, alone, as the user chose: no write while it runs, so that a crash or a force quit opens the windows of the quit before. A quit of no window, or with the windows not kept, forgets them.
+- **The file**: JSON, of the format's version first, `"version": 1`, which a later format raises; a file of a newer version, as a later Lokyr writes, or that does not read, or of more than 256 panes, is left aside with a notice, the start going on as without it, and this version writes its own as it quits. Fields that it does not know are read past, so that a later version may add some of its own without raising it.
+- The benchmarks open none of the kept windows.
+
 ## Basic actions
 
 The `core-actions` plugin:

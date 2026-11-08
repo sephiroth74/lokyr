@@ -133,6 +133,10 @@ name = "run_loop"
 harness = false
 
 [[test]]
+name = "opened_frame"
+harness = false
+
+[[test]]
 name = "screen_places"
 harness = false
 

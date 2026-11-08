@@ -149,6 +149,7 @@ icon = "laguz"                       # jormungandr | laguz
 language = "it"                      # system | en | it
 appearance = "dark"                  # system | light | dark
 quit-after-last-window-closed = true # true | false: Lokyr quits as its last window closes
+restore-windows = "always"           # system | always | never: the windows open again as Lokyr starts
 
 [updates]
 check = false                        # true | false: a check for a newer version, once a day at most
@@ -611,6 +612,7 @@ Whether the first window, as Lokyr starts, opens where the last window that you 
 
 - The windows that you open after the first take the size of the last window that you moved or resized, or [`columns` and `rows`](#columns-rows) while no window kept one, down and to the right of the window that has the focus, or of the one in front, as when a question is open on it; within the display. Where Lokyr places a window is not kept, only where you move or resize it.
 - A window that was on a display that is no longer there opens on one that is.
+- The windows that open again as Lokyr starts, as [`restore-windows`](#restore-windows) says, open where they were, whatever this key says.
 - Lokyr keeps the place in its preferences of macOS, not in the config file; a window in full screen leaves it as it was.
 - It applies as you save the file, to the windows that you move or resize from then, and to the next start.
 
@@ -646,6 +648,7 @@ The folder that the first window's shell starts in, as Lokyr starts.
 - `"last"` starts in the folder of the last window that closed, or of the window in front as you quit Lokyr with several open: the shell's folder, or that of the program that ran in it, as `vim`'s. Lokyr keeps it in `~/Library/Application Support/lokyr/state/` on macOS, not in the config file.
 - A path, as `"~/Projects"`, starts there.
 - A folder that is not there, or that you cannot enter, starts in your home folder, and the log tells why.
+- The windows that open again as Lokyr starts, as [`restore-windows`](#restore-windows) says, start in their own folders.
 - It applies at the next start.
 
 ### `new-directory`
@@ -1298,6 +1301,24 @@ Whether Lokyr quits as you close its last window.
 - With `false`, Lokyr stays open without windows, as macOS's apps do, its menus and a [global key](#bindings) at hand: its icon in the Dock opens a window, and so do ⌘N and Shell › New Window, and the quick terminal, hidden, keeps its shell.
 - With `true`, closing the last window quits Lokyr, the hidden quick terminal and its shell with it, asking you first while a program runs there, a global key's quick terminal too.
 - It applies at once, as you save the file.
+
+### `restore-windows`
+
+<sub>Platforms: macOS</sub>
+
+Whether the windows that were open as you quit Lokyr open again as it starts: each where it was, of its size, with its tabs, their splits, and each pane in its folder.
+
+| Values | Default |
+|---|---|
+| `"system"`, `"always"`, `"never"` | `"system"` |
+
+- `"system"` does as macOS's setting says, "Close windows when quitting an application" in System Settings › Desktop & Dock: with it on, as it is by default, the windows do not open again.
+- `"always"` opens them again, whatever macOS says; `"never"` never does.
+- What opens again: each window where it was, on a display that is still there, or on the nearest one, within it; a window in full screen opens out of it, where it was before; its tabs in their order, the one that showed, each tab's own title and color, its splits and their sizes, the pane that had the keyboard and the one zoomed. Each pane starts your shell anew, in the folder that its shell told last, or where its program worked: what the panes showed, and the programs that ran in them, do not come back.
+- The quick terminal and the man pages' windows are not kept.
+- Lokyr keeps the windows as it quits, in `~/Library/Application Support/lokyr/state/` on macOS, not in the config file: after a crash or a force quit, the windows of the quit before open again. Quitting with no window open, or while this key keeps none, forgets them.
+- A file that a newer Lokyr wrote, or that cannot be read, is left aside, as a notice tells, and Lokyr opens a new window, as without it.
+- It applies as you quit, and at the next start.
 
 ## `[updates]`
 

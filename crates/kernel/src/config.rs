@@ -63,6 +63,7 @@
 //! icon = "jormungandr"      # the icon's variant
 //! appearance = "system"     # system | light | dark
 //! quit-after-last-window-closed = false  # stays open without windows
+//! restore-windows = "system"  # system | always | never
 //!
 //! [keys]
 //! "cmd+shift+]" = "tabs.next"                    # a command
@@ -242,8 +243,9 @@ pub enum ArgValue {
     String(String),
 }
 
-/// The `[app]` section: the application's own looks and language, and
-/// whether it quits as its last window closes.
+/// The `[app]` section: the application's own looks and language, whether
+/// it quits as its last window closes, and whether its windows open again
+/// as it starts.
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields, rename_all = "kebab-case")]
 pub struct AppConfig {
@@ -261,6 +263,35 @@ pub struct AppConfig {
     /// terminal's aside, which goes with it: otherwise it stays open
     /// without windows, until its icon in the Dock or a command opens one.
     pub quit_after_last_window_closed: bool,
+    /// Whether the windows open again as the app starts, as they were as
+    /// it quit: their frames, tabs, splits and directories.
+    pub restore_windows: RestoreWindows,
+}
+
+/// Whether the windows that were open as the app quit open again as it
+/// starts.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum RestoreWindows {
+    /// As the system restores an app's windows, as its settings say.
+    #[default]
+    System,
+    /// Always.
+    Always,
+    /// Never.
+    Never,
+}
+
+impl RestoreWindows {
+    /// Whether the windows open again, of `system`, whether the system's
+    /// settings restore an app's windows.
+    pub fn restores(self, system: bool) -> bool {
+        match self {
+            Self::System => system,
+            Self::Always => true,
+            Self::Never => false,
+        }
+    }
 }
 
 /// The appearance that the app takes.
@@ -300,6 +331,7 @@ impl Default for AppConfig {
             language: "system".to_owned(),
             appearance: AppearanceMode::System,
             quit_after_last_window_closed: false,
+            restore_windows: RestoreWindows::System,
         }
     }
 }
@@ -2076,6 +2108,7 @@ mod tests {
             language = "it"
             appearance = "dark"
             quit-after-last-window-closed = true
+            restore-windows = "always"
             "#,
         )
         .unwrap();
@@ -2155,6 +2188,16 @@ long-command = 0
         assert_eq!(Config::default().app.appearance, AppearanceMode::System);
         assert!(config.app.quit_after_last_window_closed);
         assert!(!Config::default().app.quit_after_last_window_closed);
+        assert_eq!(config.app.restore_windows, RestoreWindows::Always);
+        assert_eq!(
+            Config::default().app.restore_windows,
+            RestoreWindows::System
+        );
+        for system in [false, true] {
+            assert_eq!(RestoreWindows::System.restores(system), system);
+            assert!(RestoreWindows::Always.restores(system));
+            assert!(!RestoreWindows::Never.restores(system));
+        }
         for mode in [
             AppearanceMode::System,
             AppearanceMode::Light,
@@ -2778,7 +2821,8 @@ long-command = 0
                 "icon",
                 "language",
                 "appearance",
-                "quit-after-last-window-closed"
+                "quit-after-last-window-closed",
+                "restore-windows"
             ]
         );
         assert_eq!(OptionAsMeta::default().sides(), (false, false));

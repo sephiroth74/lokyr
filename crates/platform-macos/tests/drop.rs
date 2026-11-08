@@ -81,6 +81,7 @@ mod probe {
                     remember: false,
                     restore: false,
                     restore_size: false,
+                    frame: None,
                 })
                 .expect("the window");
             let mtm = MainThreadMarker::new().expect("the main thread");

@@ -256,6 +256,18 @@ impl Tab {
         self.own_color.or(self.color)
     }
 
+    /// The title of its own, as a plugin gave it, in place of its
+    /// program's, if one did.
+    pub fn own_title(&self) -> Option<&str> {
+        self.own_title.as_deref()
+    }
+
+    /// The color of its own, as a plugin gave it, in place of its
+    /// program's, if one did.
+    pub fn own_color(&self) -> Option<Rgb> {
+        self.own_color
+    }
+
     /// Its label, as a tab bar shows it: its title, as [`Tab::title`] gives
     /// it, or, without one, its active pane's folder and program, as the
     /// app gave them; empty for none.

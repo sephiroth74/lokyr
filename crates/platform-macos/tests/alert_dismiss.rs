@@ -65,6 +65,7 @@ mod probe {
                     remember: false,
                     restore: false,
                     restore_size: false,
+                    frame: None,
                 })
                 .expect("the window opens");
             self.window = Some(window);

@@ -64,6 +64,7 @@ mod menus;
 mod notices;
 mod panels;
 mod pickers;
+mod restore;
 pub(crate) mod scrollbars;
 mod spawn;
 mod surfaces;
@@ -518,7 +519,8 @@ pub struct App<B: Backend> {
     /// window's directory.
     opened_one: bool,
     /// The directory of the app's state, which keeps the directory of the
-    /// last window that closed; `None` keeps nothing, as in the tests.
+    /// last window that closed, and the windows open as the app quits;
+    /// `None` keeps nothing, as in the tests.
     state: Option<PathBuf>,
     /// The window that took the focus last, which is the one in front as
     /// the app quits, though the app is not active.
@@ -1690,6 +1692,7 @@ impl<B: Backend> App<B> {
             // that a window kept, cascaded.
             restore: remember && !self.opened_one,
             restore_size: remember && self.opened_one,
+            frame: None,
         };
         self.opened_one = true;
         match platform.create_window(&attributes) {
@@ -1875,6 +1878,7 @@ impl<B: Backend> App<B> {
             remember: false,
             restore: false,
             restore_size: false,
+            frame: None,
         };
         match platform.create_window(&attributes) {
             Ok(window) => {
@@ -2111,11 +2115,12 @@ impl<B: Backend> App<B> {
     }
 
     /// Quits, as the directory of the window in front is kept as the last
-    /// window's.
+    /// window's, and the windows for the next start, as the config says.
     fn quit(&mut self, platform: &mut dyn Platform) {
         if let Some(front) = self.front.or_else(|| platform.focused_window()) {
             self.keep_directory(front);
         }
+        self.keep_windows(platform);
         self.end_latency_bench(platform);
         platform.quit();
     }
@@ -3390,7 +3395,10 @@ impl<B: Backend> App<B> {
             }
             file.watch(platform);
         }
-        self.open_window(platform);
+        // The windows kept as the app last quit, or a new one.
+        if !self.restore_windows(platform) {
+            self.open_window(platform);
+        }
         self.start_updates(platform);
         self.end_output_bench_unstarted(platform);
         self.end_startup_bench(platform);

@@ -182,6 +182,10 @@ pub struct Fake {
     /// Whether the system reduces motion.
     reduce_motion: bool,
     scrollers: Scrollers,
+    /// Whether the system's settings have an app's windows open again.
+    keeps_windows: bool,
+    /// The screens' areas for windows, the menu bar's screen's first.
+    screens: Vec<ScreenRect>,
     /// Whether it draws the progresses' fills, as a test says.
     draws_fills: bool,
     windows: BTreeMap<WindowId, FakeWindow>,
@@ -276,6 +280,8 @@ impl Fake {
             keyboard_navigation: false,
             reduce_motion: false,
             scrollers: Scrollers::default(),
+            keeps_windows: false,
+            screens: vec![SCREEN_AREA],
             draws_fills: false,
             windows: BTreeMap::new(),
             order: Vec::new(),
@@ -333,6 +339,18 @@ impl Fake {
     /// Gives the system's settings of its scroll bars.
     pub fn set_scrollers(&mut self, scrollers: Scrollers) {
         self.scrollers = scrollers;
+    }
+
+    /// Gives whether the system's settings have an app's windows open
+    /// again as it starts.
+    pub fn set_keeps_windows(&mut self, keeps: bool) {
+        self.keeps_windows = keeps;
+    }
+
+    /// Gives the screens' areas for windows, the menu bar's screen's
+    /// first, in place of [`SCREEN_AREA`] alone, as a screen comes or goes.
+    pub fn set_screens(&mut self, areas: Vec<ScreenRect>) {
+        self.screens = areas;
     }
 
     /// Starts the application, as a backend's `run` does.
@@ -750,6 +768,10 @@ impl Platform for Fake {
         self.scrollers
     }
 
+    fn keeps_windows(&self) -> bool {
+        self.keeps_windows
+    }
+
     fn set_appearance(&mut self, appearance: Option<Appearance>) {
         self.own_appearance = appearance;
     }
@@ -790,19 +812,25 @@ impl Platform for Fake {
                 x: front.origin.x + CASCADE,
                 y: front.origin.y + CASCADE,
             });
+        // Or at the frame asked for, on a screen that is there.
+        let frame = attributes.frame.map(|frame| frame.onto(&self.screens));
+        let origin = frame.map_or(origin, |frame| frame.origin());
+        let points = frame.map_or(
+            Size {
+                width: attributes.size.width,
+                height: attributes.size.height + self.bar,
+            },
+            |frame| Size {
+                width: frame.width,
+                height: frame.height,
+            },
+        );
         self.windows.insert(
             id,
             FakeWindow {
                 title: attributes.title.clone(),
                 title_accessory: None,
-                size: WindowSize::new(
-                    Size {
-                        width: attributes.size.width,
-                        height: attributes.size.height + self.bar,
-                    },
-                    self.scale,
-                )
-                .with_bar(self.bar),
+                size: WindowSize::new(points, self.scale).with_bar(self.bar),
                 occluded: false,
                 frame_requested: false,
                 frames_asked: 0,
@@ -1040,6 +1068,10 @@ impl Platform for Fake {
 
     fn window_frame(&self, window: WindowId) -> Option<ScreenRect> {
         self.windows.get(&window).map(FakeWindow::frame)
+    }
+
+    fn windowed_frame(&self, window: WindowId) -> Option<ScreenRect> {
+        self.window_frame(window)
     }
 
     fn set_window_origin(&mut self, window: WindowId, origin: ScreenPoint) {

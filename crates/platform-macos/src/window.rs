@@ -8,8 +8,8 @@ use std::rc::{Rc, Weak};
 
 use lokyr_platform_core::{
     Backdrop, ContentRect, Dropped, Fill, Ime, Layer, LayerPlace, MouseButton, PixelSize, Point,
-    PointerArea, PointerShape, QuickPlace, ScreenPoint, ScrollDelta, ScrollPhase, Size, Sweep,
-    Titlebar, WindowAttributes, WindowEvent, WindowId, WindowSize,
+    PointerArea, PointerShape, QuickPlace, ScreenPoint, ScreenRect, ScrollDelta, ScrollPhase, Size,
+    Sweep, Titlebar, WindowAttributes, WindowEvent, WindowId, WindowSize,
 };
 use std::path::PathBuf;
 
@@ -130,11 +130,16 @@ impl Window {
             option_as_meta,
             None,
         );
-        // The frame that a window kept, on a screen that is still there,
-        // rather than the size asked for.
-        window.restored = attributes.restore && restore_frame(&window.ns_window);
-        if !window.restored && attributes.restore_size {
-            restore_size(&window.ns_window);
+        // The frame asked for, or that a window kept, on a screen that is
+        // still there, rather than the size asked for.
+        if let Some(frame) = attributes.frame {
+            window.open_at(frame);
+            window.restored = true;
+        } else {
+            window.restored = attributes.restore && restore_frame(&window.ns_window);
+            if !window.restored && attributes.restore_size {
+                restore_size(&window.ns_window);
+            }
         }
         window
     }
@@ -302,6 +307,47 @@ impl Window {
     pub(crate) fn content_on_screen(&self) -> NSRect {
         let content = self.view.convertRect_toView(self.view.bounds(), None);
         self.ns_window.convertRectToScreen(content)
+    }
+
+    /// The frame of the content as [`Window::content_on_screen`] gives it,
+    /// but, in full screen, the one that it had before.
+    pub(crate) fn windowed_frame(&self) -> NSRect {
+        let full_screen = self
+            .ns_window
+            .styleMask()
+            .contains(NSWindowStyleMask::FullScreen);
+        match self.delegate.ivars().windowed.get() {
+            Some(windowed) if full_screen => windowed,
+            _ => self.content_on_screen(),
+        }
+    }
+
+    /// Gives the window the frame whose content is `frame` on the screens,
+    /// moved onto the nearest screen, within its area for windows, if it
+    /// lies on none.
+    fn open_at(&self, frame: ScreenRect) {
+        let mtm = self.ns_window.mtm();
+        let top = screens::top(mtm);
+        let all = NSScreen::screens(mtm);
+        let areas: Vec<ScreenRect> = (0..all.count())
+            .map(|index| screens::on_screens(all.objectAtIndex(index).visibleFrame(), top))
+            .collect();
+        let content = screens::in_appkit(frame.onto(&areas), top);
+        // The frame around the content, as far from it as the window's is
+        // from its content now.
+        let now = self.ns_window.frame();
+        let shown = self.content_on_screen();
+        let frame = NSRect::new(
+            NSPoint::new(
+                content.origin.x - (shown.origin.x - now.origin.x),
+                content.origin.y - (shown.origin.y - now.origin.y),
+            ),
+            NSSize::new(
+                content.size.width + (now.size.width - shown.size.width),
+                content.size.height + (now.size.height - shown.size.height),
+            ),
+        );
+        self.ns_window.setFrame_display(frame, false);
     }
 
     /// Moves the window so that its content's top left corner is at
@@ -1511,6 +1557,9 @@ pub(crate) struct WindowDelegateIvars {
     remember: Cell<bool>,
     /// Whether the window is hidden or covered, which the backend reads.
     occluded: Rc<Cell<bool>>,
+    /// The frame of the window's content before it went into full screen,
+    /// in AppKit's coordinates, while it is there.
+    windowed: Cell<Option<NSRect>>,
 }
 
 /// The name under which the windows keep their frame, in the app's
@@ -1560,6 +1609,22 @@ define_class!(
             proposed: NSApplicationPresentationOptions,
         ) -> NSApplicationPresentationOptions {
             proposed | NSApplicationPresentationOptions::AutoHideToolbar
+        }
+
+        #[unsafe(method(windowWillEnterFullScreen:))]
+        fn window_will_enter_full_screen(&self, notification: &NSNotification) {
+            if let Some(window) = window_of(notification) {
+                let content = window.contentView().map_or_else(
+                    || window.frame(),
+                    |view| window.convertRectToScreen(view.convertRect_toView(view.bounds(), None)),
+                );
+                self.ivars().windowed.set(Some(content));
+            }
+        }
+
+        #[unsafe(method(windowDidExitFullScreen:))]
+        fn window_did_exit_full_screen(&self, _notification: &NSNotification) {
+            self.ivars().windowed.set(None);
         }
 
         #[unsafe(method(windowWillStartLiveResize:))]
@@ -1635,6 +1700,7 @@ impl WindowDelegate {
             scale: Cell::new(scale),
             remember: Cell::new(false),
             occluded,
+            windowed: Cell::new(None),
         });
         // SAFETY: `NSObject`'s `init` has this signature.
         unsafe { msg_send![super(this), init] }

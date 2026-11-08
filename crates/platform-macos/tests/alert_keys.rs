@@ -252,6 +252,7 @@ mod probe {
                     remember: false,
                     restore: false,
                     restore_size: false,
+                    frame: None,
                 })
                 .expect("the window opens");
             platform.show_alert(

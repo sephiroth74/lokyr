@@ -31,6 +31,7 @@ mod numbers;
 mod panels;
 mod panes;
 mod parts;
+mod restore;
 mod scrollbars;
 mod surfaces;
 #[cfg(feature = "plugin-tabs")]

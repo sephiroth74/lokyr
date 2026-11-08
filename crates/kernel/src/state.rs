@@ -1,11 +1,14 @@
 //! What Lokyr keeps between its runs that is not the user's config: the
 //! directory of the last window that closed, which the first window of the
-//! next run starts in when the config says so.
+//! next run starts in when the config says so, and the windows that were
+//! open as it quit, which it opens again.
 
 use std::ffi::OsString;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+
+pub mod windows;
 
 /// The file of the last window's directory, in the state's directory.
 const LAST_DIRECTORY: &str = "last-directory";

@@ -84,7 +84,7 @@ The MCP server lets AI agents drive the terminal ([ADR 0017](adr/0017-mcp-and-ag
   - An out-of-process crash handler (e.g. `crash-handler` + `minidumper`) writes a minidump, later.
   - dSYMs are archived for every release, for symbolication.
   - Nothing is uploaded automatically: the user decides whether to attach a minidump to a report.
-- **Sessions**: windows, tabs, layouts and cwds are saved periodically and on quit, so they can be restored after a crash or an update.
+- **Sessions**: windows, tabs, layouts and cwds are saved as Lokyr quits, in the state directory, so that they open again after an update or a restart of the Mac, as `[app] restore-windows` says; a crash or a force quit restores those of the quit before, as the user chose on 8 November 2026. A file of a newer format's version, or that does not read, is left aside with a notice.
 - **Config**: reloads are all-or-nothing ([ADR 0009](adr/0009-toml-config.md)). If the new config has errors, the previous one stays active and a notice shows the file, line and column.
 
 ## macOS environment
