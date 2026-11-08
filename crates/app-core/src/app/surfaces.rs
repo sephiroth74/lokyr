@@ -555,6 +555,27 @@ impl<B: Backend> App<B> {
         true
     }
 
+    /// Gives `window`'s keyboard back to its pane from a node of a panel
+    /// that hides, as one of a pane behind another tab or a zoomed pane:
+    /// no key goes to a node that does not show.
+    pub(super) fn keys_from_hidden(&mut self, platform: &mut dyn Platform, window: WindowId) {
+        let Some(state) = self.windows.get(&window) else {
+            return;
+        };
+        let Target::Node { panel, .. } = state.focus.target() else {
+            return;
+        };
+        let hidden = state
+            .chrome
+            .iter()
+            .find(|view| view.id == panel)
+            .and_then(|view| view.placed.as_ref())
+            .is_some_and(|placed| !super::panels::anchor_shows(state, &placed.options.anchor));
+        if hidden {
+            self.keys_to_pane(platform, window);
+        }
+    }
+
     /// Gives `window`'s keyboard back to its pane, from a node of a slot's
     /// view, as a press over the panes does.
     pub(super) fn keys_to_pane(&mut self, platform: &mut dyn Platform, window: WindowId) {

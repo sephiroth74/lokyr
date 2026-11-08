@@ -549,6 +549,7 @@ impl<B: Backend> App<B> {
         // under the panels; a menu's panel of menu items alone, the
         // platform's own.
         let views = self.lay_out_panes(window, size);
+        self.keys_from_hidden(platform, window);
         self.show_native(platform, window, size);
         // The titlebar first, whose kind the window's keys follow.
         self.settle_titlebar(platform, window);

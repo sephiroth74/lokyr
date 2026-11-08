@@ -1259,3 +1259,70 @@ fn the_palette_s_theme_picker_previews_a_theme_and_names_the_chosen_one() {
     assert_eq!(app.theme.light.colors.background, white);
     let _ = std::fs::remove_dir_all(directory);
 }
+
+/// The app that draws its panels, of a window, focused, running a program
+/// that reads a line and tells it, once it shows its prompt.
+fn reading_with_panels() -> (Fake, App, WindowId) {
+    let drawing = Drawing::new(FontConfig::default()).unwrap();
+    let mut fake = Fake::default();
+    let program = shell("printf 'ready $ '; read line; echo \"got:$line\"; sleep 30");
+    let mut app = App::new(Some(drawing), unpadded(), None).with_program(program);
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    app.windows.get_mut(&window).unwrap().surface = Some(fakes::Surface::default());
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    run_until(&mut fake, &mut app, |_, app| shows(app, window, "ready $"));
+    frames(&mut fake, &mut app, window);
+    (fake, app, window)
+}
+
+#[test]
+fn a_find_bar_behind_another_tab_gives_the_keyboard_back_to_the_tab_in_front() {
+    let (mut fake, mut app, window) = reading_with_panels();
+    command(&mut fake, &mut app, window, "search.open");
+    assert!(focused_in(&app, window, "find"));
+    let first = app.windows[&window].views[0].pane;
+    command(&mut fake, &mut app, window, "tabs.new");
+    run_until(&mut fake, &mut app, |_, app| {
+        app.windows[&window].views[0].pane != first && shows(app, window, "ready $")
+    });
+    frames(&mut fake, &mut app, window);
+    // The bar hides with its tab, and the keyboard is the new tab's pane's.
+    assert_eq!(panel_frame(&app, window, "find"), None);
+    assert_eq!(
+        app.windows[&window].focus.target(),
+        lokyr_ui_core::focus::Target::Pane
+    );
+    fake.send(&mut app, window, typed(KeyCode::KeyJ, "j", false));
+    fake.send(&mut app, window, typed(KeyCode::Enter, "\r", false));
+    run_until(&mut fake, &mut app, |_, app| shows(app, window, "got:j"));
+}
+
+#[test]
+fn a_find_bar_of_a_pane_that_a_zoom_hides_gives_the_keyboard_back() {
+    let (mut fake, mut app, window) = reading_with_panels();
+    let first = app.windows[&window].views[0].pane;
+    let right = Args::from([("direction".to_owned(), Value::String("right".to_owned()))]);
+    app.run(&mut fake, "splits.split", right);
+    run_until(&mut fake, &mut app, |_, app| {
+        app.windows[&window].views.len() == 2 && shows(app, window, "ready $")
+    });
+    frames(&mut fake, &mut app, window);
+    // The bar of the new pane, then the first pane zoomed.
+    command(&mut fake, &mut app, window, "search.open");
+    assert!(focused_in(&app, window, "find"));
+    app.focus_pane(&mut fake, window, first);
+    command(&mut fake, &mut app, window, "splits.zoom-toggle");
+    run_until(&mut fake, &mut app, |_, app| {
+        app.windows[&window].views.len() == 1
+    });
+    frames(&mut fake, &mut app, window);
+    assert_eq!(panel_frame(&app, window, "find"), None);
+    assert_eq!(
+        app.windows[&window].focus.target(),
+        lokyr_ui_core::focus::Target::Pane
+    );
+    fake.send(&mut app, window, typed(KeyCode::KeyJ, "j", false));
+    fake.send(&mut app, window, typed(KeyCode::Enter, "\r", false));
+    run_until(&mut fake, &mut app, |_, app| shows(app, window, "got:j"));
+}

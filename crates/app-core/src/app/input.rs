@@ -54,6 +54,9 @@ impl<B: Backend> App<B> {
         // The key's own prompt, which no output told, as after a
         // silent `stty -echo`, is secure from the next key.
         self.settle_secure_input(platform);
+        // A panel that hid since the last frame, as another tab came in
+        // front, takes no key.
+        self.keys_from_hidden(platform, window);
         let pressed = key.state != KeyState::Released;
         // A key hides the slots' tooltips.
         if pressed {
@@ -119,8 +122,9 @@ impl<B: Backend> App<B> {
     /// back to the screen, and the cursor's blinking on, as typing
     /// does.
     pub(super) fn ime(&mut self, platform: &mut dyn Platform, window: WindowId, ime: Ime) {
-        // A field of a slot's view that has the focus takes it, and a mode
-        // of the keyboard's holds it back.
+        // A field of a slot's view that has the focus takes it, but of a
+        // panel that hid, and a mode of the keyboard's holds it back.
+        self.keys_from_hidden(platform, window);
         if self.surface_ime(platform, window, &ime) || self.keys_held_back(window) {
             return;
         }
