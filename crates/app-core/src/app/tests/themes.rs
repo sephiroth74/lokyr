@@ -417,6 +417,24 @@ fn watched(app: &App) {
     }
 }
 
+/// Takes the changes that the watch told until it tells none for a while,
+/// as Linux's inotify can tell a folder's making twice, the second after
+/// the first is taken.
+fn settled(fake: &mut Fake, app: &mut App) {
+    let start = std::time::Instant::now();
+    loop {
+        changed(fake, app);
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        if !app.theme_files.changed.load(Ordering::Acquire) {
+            return;
+        }
+        assert!(
+            start.elapsed() < std::time::Duration::from_secs(5),
+            "the watch tells changes without end"
+        );
+    }
+}
+
 #[test]
 fn a_themes_folder_made_after_the_start_is_watched_for_its_files() {
     let directory = std::env::temp_dir().join(format!(
@@ -435,8 +453,7 @@ fn a_themes_folder_made_after_the_start_is_watched_for_its_files() {
     // The folder comes, then the theme's file in it.
     std::fs::create_dir(directory.join("themes")).unwrap();
     watched(&app);
-    changed(&mut fake, &mut app);
-    assert!(!app.theme_files.changed.load(Ordering::Acquire));
+    settled(&mut fake, &mut app);
     write(&directory, "Later", &theme("#404040"));
     watched(&app);
     changed(&mut fake, &mut app);

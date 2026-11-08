@@ -582,6 +582,7 @@ fn a_divider_s_drag_resizes_the_programs_at_the_resizes_pace() {
     let before = winches(&app);
     fake.send(&mut app, window, click(true, start, none, 1));
     // Forty steps of a cell's width, each with its frame, at once.
+    let began = std::time::Instant::now();
     let mut at = start;
     for _ in 0..40 {
         at.x += 8.0;
@@ -589,6 +590,13 @@ fn a_divider_s_drag_resizes_the_programs_at_the_resizes_pace() {
         fake.send(&mut app, window, WindowEvent::Frame);
     }
     fake.send(&mut app, window, click(false, at, none, 1));
+    // A signal a pace at most while the steps came, as a slow machine
+    // takes longer over them, and the settled grid's.
+    let paces = began.elapsed().as_millis() / lokyr_kernel::workspace::RESIZE_PACE.as_millis();
+    let most = usize::try_from(paces)
+        .unwrap_or(usize::MAX)
+        .saturating_add(2)
+        .max(4);
     // Settled: the program's grid is the layout's, of a few signals, not
     // of one a step.
     run_until(&mut fake, &mut app, |_, app| {
@@ -598,7 +606,7 @@ fn a_divider_s_drag_resizes_the_programs_at_the_resizes_pace() {
     std::thread::sleep(std::time::Duration::from_millis(100));
     fake.deliver_wake(&mut app);
     let told = winches(&app) - before;
-    assert!((1..=4).contains(&told), "{told} signals");
+    assert!((1..=most).contains(&told), "{told} signals, {most} at most");
 }
 
 #[test]
