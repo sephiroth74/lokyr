@@ -106,16 +106,28 @@ fn copy_tree(from: &Path, to: &Path) -> Result<()> {
     Ok(())
 }
 
-/// The themes' files that the app opens, which it asks to install: each
-/// its name's message in the catalogs' `infoplist.ftl`, its type's
-/// identifier, and the app's rank among the apps that open it. iTerm2's
+/// The files that the app opens: each its name's message in the catalogs'
+/// `infoplist.ftl`, its type's identifier, and the app's rank among the
+/// apps that open it. The themes' files, which it asks to install: iTerm2's
 /// color presets, `.itermcolors` files, of `Alternate`, which a double
 /// click opens with the app where no app of a higher rank claims them, and
 /// which the app's Open With menu has; TOML's of `None`, which the app
-/// opens only as they are dropped on its icon.
-const DOCUMENT_TYPES: [(&str, &str, &str); 2] = [
+/// opens only as they are dropped on its icon. The folders, of `None`, a
+/// window each as they are dropped on its icon, the Finder's own opening
+/// of a folder left as it is.
+const DOCUMENT_TYPES: [(&str, &str, &str); 3] = [
     ("document-type-itermcolors", ITERMCOLORS, "Alternate"),
     ("document-type-toml", "public.toml", "None"),
+    ("document-type-folder", "public.folder", "None"),
+];
+
+/// The services that the app gives the Finder's folders, in its menu of a
+/// folder and in the Services menu: each its title's message in the
+/// catalogs' `infoplist.ftl`, and the message of the app's provider that
+/// it sends, a window or a tab at each folder.
+const SERVICES: [(&str, &str); 2] = [
+    ("service-new-window", "openWindow"),
+    ("service-new-tab", "openTab"),
 ];
 
 /// The type of iTerm2's color presets, which the bundle declares, as the
@@ -217,6 +229,11 @@ pub fn run(mut args: impl Iterator<Item = String>) -> Result<ExitCode> {
             localized_plist(catalog, source),
         )
         .with_context(|| format!("writing the {language} InfoPlist.strings"))?;
+        fs::write(
+            directory.join("ServicesMenu.strings"),
+            services_strings(catalog, source),
+        )
+        .with_context(|| format!("writing the {language} ServicesMenu.strings"))?;
     }
     let version = told_version(&binary)?;
     // The binary of this build, not one of another day or release.
@@ -272,6 +289,7 @@ fn run_command(command: &mut Command, what: &str) -> Result<()> {
 struct Catalog {
     usages: Vec<(String, String)>,
     types: Vec<String>,
+    services: Vec<String>,
 }
 
 /// The texts of each language of the catalogs in `locales`, by language:
@@ -330,7 +348,15 @@ fn catalog(text: &str) -> Result<Catalog> {
         .iter()
         .map(|&(message, _, _)| take(message))
         .collect::<Result<_>>()?;
-    Ok(Catalog { usages, types })
+    let services = SERVICES
+        .iter()
+        .map(|&(message, _)| take(message))
+        .collect::<Result<_>>()?;
+    Ok(Catalog {
+        usages,
+        types,
+        services,
+    })
 }
 
 /// A plist of `pairs`, keys and their strings, with `NSHighResolutionCapable`
@@ -489,8 +515,9 @@ fn info_plist(
     plist.insert_str(
         at,
         &format!(
-            "\t<key>CFBundleLocalizations</key>\n\t<array>\n{languages}\t</array>\n{}{}",
+            "\t<key>CFBundleLocalizations</key>\n\t<array>\n{languages}\t</array>\n{}{}{}",
             document_types(&source.types),
+            services(&source.services),
             crate::sparkle::plist_entries()
         ),
     );
@@ -541,6 +568,47 @@ fn document_types(names: &[String]) -> String {
         name = escaped(itermcolors),
     ));
     entries
+}
+
+/// The entries of `Info.plist` of the services that the app gives, of the
+/// source's titles of [`SERVICES`], `titles`: each on the folders that the
+/// Finder selected, on by default, as its required context, empty, makes
+/// it, its title localized by each language's `ServicesMenu.strings`.
+fn services(titles: &[String]) -> String {
+    let mut entries = String::from("\t<key>NSServices</key>\n\t<array>\n");
+    for ((_, message), title) in SERVICES.iter().zip(titles) {
+        entries.push_str(&format!(
+            concat!(
+                "\t\t<dict>\n",
+                "\t\t\t<key>NSMenuItem</key>\n",
+                "\t\t\t<dict>\n\t\t\t\t<key>default</key>\n\t\t\t\t<string>{title}</string>\n\t\t\t</dict>\n",
+                "\t\t\t<key>NSMessage</key>\n\t\t\t<string>{message}</string>\n",
+                "\t\t\t<key>NSPortName</key>\n\t\t\t<string>{NAME}</string>\n",
+                "\t\t\t<key>NSRequiredContext</key>\n\t\t\t<dict/>\n",
+                "\t\t\t<key>NSSendFileTypes</key>\n",
+                "\t\t\t<array>\n\t\t\t\t<string>public.folder</string>\n\t\t\t</array>\n",
+                "\t\t</dict>\n",
+            ),
+            title = escaped(title),
+            message = message,
+            NAME = NAME,
+        ));
+    }
+    entries.push_str("\t</array>\n");
+    entries
+}
+
+/// A language's `ServicesMenu.strings`, of its `catalog`: its services'
+/// titles, each keyed by the title of `source`, the catalog of
+/// `Info.plist`'s own, as the system looks them up.
+fn services_strings(catalog: &Catalog, source: &Catalog) -> String {
+    let pairs: Vec<(String, String)> = source
+        .services
+        .iter()
+        .map(|title| escaped(title))
+        .zip(catalog.services.iter().cloned())
+        .collect();
+    plist(&pairs, false)
 }
 
 /// `text` with XML's special characters escaped.
@@ -690,7 +758,9 @@ mod tests {
         for catalog in catalogs.values() {
             assert_eq!(catalog.usages.len(), USAGES.len());
             assert_eq!(catalog.types.len(), DOCUMENT_TYPES.len());
+            assert_eq!(catalog.services.len(), SERVICES.len());
         }
+        assert_eq!(catalogs["it"].services[0], "Nuova finestra Lokyr qui");
         let italian = &catalogs["it"].usages;
         assert_eq!(italian[0].0, "NSMicrophoneUsageDescription");
         assert_eq!(
@@ -894,6 +964,7 @@ mod tests {
         let source = Catalog {
             usages: Vec::new(),
             types: vec!["Color preset & more".to_owned()],
+            services: vec!["New Window <Here>".to_owned()],
         };
         let italian = Catalog {
             usages: vec![(
@@ -901,6 +972,7 @@ mod tests {
                 "Un programma vuole la fotocamera.".to_owned(),
             )],
             types: vec!["Preset di colori".to_owned()],
+            services: vec!["Nuova finestra & co.".to_owned()],
         };
         let strings = localized_plist(&italian, &source);
         for key in ["CFBundleDisplayName", "CFBundleName"] {
@@ -916,6 +988,15 @@ mod tests {
                 "<key>Color preset &amp; more</key>\n\t<string>Preset di colori</string>"
             ),
             "{strings}"
+        );
+        // A service's title, of the services' own strings, keyed alike.
+        assert!(!strings.contains("Nuova finestra"), "{strings}");
+        let services = services_strings(&italian, &source);
+        assert!(
+            services.contains(
+                "<key>New Window &lt;Here&gt;</key>\n\t<string>Nuova finestra &amp; co.</string>"
+            ),
+            "{services}"
         );
     }
 
@@ -986,6 +1067,38 @@ mod tests {
             "public.toml"
         );
         assert_eq!(extract("CFBundleDocumentTypes.1.LSHandlerRank"), "None");
+        // The folders, a window each as they are dropped on the icon, the
+        // Finder's opener of folders left as it is.
+        assert_eq!(
+            extract("CFBundleDocumentTypes.2.LSItemContentTypes.0"),
+            "public.folder"
+        );
+        assert_eq!(extract("CFBundleDocumentTypes.2.LSHandlerRank"), "None");
+        // The services on the Finder's folders, on by default.
+        assert_eq!(
+            extract("NSServices.0.NSMenuItem.default"),
+            "New Lokyr Window Here"
+        );
+        assert_eq!(extract("NSServices.0.NSMessage"), "openWindow");
+        assert_eq!(extract("NSServices.0.NSPortName"), "Lokyr");
+        assert_eq!(extract("NSServices.0.NSSendFileTypes.0"), "public.folder");
+        assert_eq!(
+            extract("NSServices.1.NSMenuItem.default"),
+            "New Lokyr Tab Here"
+        );
+        assert_eq!(extract("NSServices.1.NSMessage"), "openTab");
+        let context = Command::new("plutil")
+            .args([
+                "-extract",
+                "NSServices.1.NSRequiredContext",
+                "json",
+                "-o",
+                "-",
+            ])
+            .arg(&path)
+            .output()
+            .unwrap();
+        assert_eq!(String::from_utf8_lossy(&context.stdout).trim(), "{}");
         assert_eq!(
             extract("UTImportedTypeDeclarations.0.UTTypeIdentifier"),
             ITERMCOLORS

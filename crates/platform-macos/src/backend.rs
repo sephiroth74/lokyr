@@ -70,6 +70,8 @@ pub(crate) struct Backend {
     /// The last context menu that the app asked for, until it closes.
     context_menu: Option<OpenMenu>,
     last_id: u64,
+    /// Whether the system started the app of its own, as the launch told.
+    default_launch: bool,
     quit: bool,
     stopped: bool,
     /// The notifications, once the app shows one: `None` before, and
@@ -102,6 +104,7 @@ impl Backend {
             checked: Rc::default(),
             context_menu: None,
             last_id: 0,
+            default_launch: true,
             quit: false,
             stopped: false,
             notifier: None,
@@ -144,6 +147,11 @@ impl Backend {
     /// panicked.
     pub(crate) fn quit_now(&mut self) {
         self.quit = true;
+    }
+
+    /// Notes whether the system started the app of its own.
+    pub(crate) fn set_default_launch(&mut self, default: bool) {
+        self.default_launch = default;
     }
 
     /// Whether the app has quit.
@@ -311,6 +319,10 @@ impl Platform for Backend {
                 "AppleScrollerPagingBehavior",
             )),
         }
+    }
+
+    fn default_launch(&self) -> bool {
+        self.default_launch
     }
 
     fn keeps_windows(&self) -> bool {

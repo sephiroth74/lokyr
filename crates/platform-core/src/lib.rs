@@ -395,6 +395,11 @@ pub trait Platform {
     /// How the system shows its scroll bars, as its settings say now.
     fn scrollers(&self) -> Scrollers;
 
+    /// Whether the system started the app of its own, as from its icon or
+    /// a command: not to open files or folders, nor for a service on them,
+    /// whose events come right after the start, and which open its windows.
+    fn default_launch(&self) -> bool;
+
     /// Whether the system's settings have an app's windows open again as
     /// it starts, as they were as it quit: on the Mac, "Close windows when
     /// quitting an application" off.

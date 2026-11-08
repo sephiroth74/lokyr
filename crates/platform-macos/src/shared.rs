@@ -125,6 +125,11 @@ impl Shared {
         self.dispatch();
     }
 
+    /// Tells the backend whether the system started the app of its own.
+    pub(crate) fn set_default_launch(&self, default: bool) {
+        self.backend.borrow_mut().set_default_launch(default);
+    }
+
     /// Queues `pending` for the dispatch in progress.
     pub(crate) fn enqueue(&self, pending: Pending) {
         self.queue.borrow_mut().push_back(pending);

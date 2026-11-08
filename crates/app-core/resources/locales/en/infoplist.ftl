@@ -21,7 +21,15 @@ NSLocationUsageDescription = A program started in the terminal wants to know you
 NSSpeechRecognitionUsageDescription = A program started in the terminal wants to use speech recognition.
 
 # The names of the files that Lokyr opens, which the Finder shows: iTerm2's
-# color presets, and TOML files, Lokyr's themes among them.
+# color presets, TOML files, Lokyr's themes among them, and the folders
+# dropped on its icon.
 
 document-type-itermcolors = iTerm2 Color Preset
 document-type-toml = TOML Document
+document-type-folder = Folder
+
+# The services that Lokyr gives the Finder's folders, in its menu of a
+# folder and in the Services menu.
+
+service-new-window = New Lokyr Window Here
+service-new-tab = New Lokyr Tab Here

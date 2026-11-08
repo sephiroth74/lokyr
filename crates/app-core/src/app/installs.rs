@@ -33,10 +33,16 @@ const USE: usize = 0;
 const INSTALL: usize = 1;
 
 impl<B: Backend> App<B> {
-    /// The files that the system asks the app to open: each theme's file
-    /// asks to install it; any other is told as no theme's.
+    /// The files that the system asks the app to open: the folders, as
+    /// dropped on its icon, a window each; each theme's file asks to
+    /// install it; any other is told as no theme's.
     pub(super) fn open_files(&mut self, platform: &mut dyn Platform, paths: Vec<PathBuf>) {
-        for path in paths {
+        let (folders, files): (Vec<PathBuf>, Vec<PathBuf>) =
+            paths.into_iter().partition(|path| path.is_dir());
+        if !folders.is_empty() {
+            self.open_folders(platform, folders, false);
+        }
+        for path in files {
             self.ask_install(platform, path);
         }
     }

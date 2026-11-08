@@ -28,6 +28,7 @@ mod open;
 mod quick;
 mod screens;
 mod secure;
+mod services;
 mod shared;
 mod sweep;
 mod text_input;

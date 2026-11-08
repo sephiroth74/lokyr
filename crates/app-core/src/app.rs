@@ -57,6 +57,7 @@ pub(crate) use access::TreeCursor;
 mod asks;
 pub(crate) mod chrome;
 pub(crate) mod dividers;
+mod folders;
 pub(crate) mod frame;
 mod input;
 mod installs;
@@ -259,6 +260,11 @@ const BELL_MARK: &str = "🔔 ";
 /// How long the startup's and the latency's benches wait for a frame on
 /// the display, as one that sleeps, or a machine without one, shows none.
 const BENCH_DEADLINE: Duration = Duration::from_secs(15);
+
+/// How long a start that the system made to open files or folders, or for
+/// a service, waits for what it opens to open a window, before it opens a
+/// new one: a theme's file opens none.
+const UNTITLED_WAIT: Duration = Duration::from_secs(1);
 
 /// How long a frame starts looking up the faces of characters that it has
 /// not met, and how long it draws the glyphs that the atlas lacks, on the
@@ -478,6 +484,10 @@ pub struct App<B: Backend> {
     /// The timer past which the startup's and the latency's benches give up
     /// waiting for a frame on the display.
     bench_deadline: Option<TimerId>,
+    /// The timer past which a start that the system made to open files or
+    /// folders, or for a service, opens a new window, if what it opened
+    /// opened none.
+    untitled_timer: Option<TimerId>,
     /// The timer of the turn of the panes whose sessions told something
     /// within the pace of their last look, and its time.
     told_timer: Option<(TimerId, Instant)>,
@@ -725,6 +735,7 @@ impl<B: Backend> App<B> {
             deliver_timer: None,
             exit_timer: None,
             bench_deadline: None,
+            untitled_timer: None,
             told_timer: None,
             pane_wakes: BTreeMap::new(),
             ui_events: Vec::new(),
@@ -1655,14 +1666,15 @@ impl<B: Backend> App<B> {
     /// Opens a window, whose pane runs `program`, and quits if it cannot
     /// while no other window is open: of the man page of the title `page`,
     /// as `man ls`, of its size and colors, when it shows one; in the
-    /// folder `directory`, if given, or a new window's.
+    /// folder `directory`, if given, or a new window's. The window, if it
+    /// opened.
     fn open_window_running(
         &mut self,
         platform: &mut dyn Platform,
         program: &Program,
         page: Option<String>,
         directory: Option<PathBuf>,
-    ) {
+    ) -> Option<WindowId> {
         // Of its cells, at the scale of the screen that it opens on; a man
         // page's of its own, which it neither keeps nor restores.
         let window_config = &self.config.window;
@@ -1696,12 +1708,16 @@ impl<B: Backend> App<B> {
         };
         self.opened_one = true;
         match platform.create_window(&attributes) {
-            Ok(window) => self.run_in(platform, window, (program, page), &environment, None),
+            Ok(window) => {
+                self.run_in(platform, window, (program, page), &environment, None);
+                Some(window)
+            }
             Err(error) => {
                 eprintln!("lokyr: {error}");
                 if self.windows.is_empty() && self.quits_without_windows() {
                     platform.quit();
                 }
+                None
             }
         }
     }
@@ -3395,9 +3411,18 @@ impl<B: Backend> App<B> {
             }
             file.watch(platform);
         }
-        // The windows kept as the app last quit, or a new one.
+        // The windows kept as the app last quit, or a new one; none yet
+        // where the system started the app to open folders, or for a
+        // service, which open their own windows right after.
+        let bench = self.startup_bench.is_some()
+            || self.latency_bench.is_some()
+            || self.output_bench.is_some();
         if !self.restore_windows(platform) {
-            self.open_window(platform);
+            if platform.default_launch() || bench {
+                self.open_window(platform);
+            } else {
+                self.untitled_timer = Some(platform.start_timer(Instant::now() + UNTITLED_WAIT));
+            }
         }
         self.start_updates(platform);
         self.end_output_bench_unstarted(platform);
@@ -3469,6 +3494,16 @@ impl<B: Backend> App<B> {
             AppEvent::Timer(timer) if self.bench_deadline == Some(timer) => {
                 self.bench_deadline = None;
                 self.give_up_benches(platform);
+            }
+            AppEvent::Timer(timer) if self.untitled_timer == Some(timer) => {
+                self.untitled_timer = None;
+                if self
+                    .windows
+                    .keys()
+                    .all(|window| self.quick.contains_key(window))
+                {
+                    self.open_window(platform);
+                }
             }
             AppEvent::Timer(timer) if self.told_timer.is_some_and(|(told, _)| told == timer) => {
                 self.told_timer = None;
@@ -3615,6 +3650,7 @@ impl<B: Backend> App<B> {
                 self.appearance_changed(platform, appearance);
             }
             AppEvent::OpenFiles(paths) => self.open_files(platform, paths),
+            AppEvent::OpenFolders { folders, tabs } => self.open_folders(platform, folders, tabs),
             _ => {}
         }
     }

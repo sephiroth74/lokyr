@@ -184,6 +184,8 @@ pub struct Fake {
     scrollers: Scrollers,
     /// Whether the system's settings have an app's windows open again.
     keeps_windows: bool,
+    /// Whether the system started the app of its own.
+    default_launch: bool,
     /// The screens' areas for windows, the menu bar's screen's first.
     screens: Vec<ScreenRect>,
     /// Whether it draws the progresses' fills, as a test says.
@@ -281,6 +283,7 @@ impl Fake {
             reduce_motion: false,
             scrollers: Scrollers::default(),
             keeps_windows: false,
+            default_launch: true,
             screens: vec![SCREEN_AREA],
             draws_fills: false,
             windows: BTreeMap::new(),
@@ -345,6 +348,12 @@ impl Fake {
     /// again as it starts.
     pub fn set_keeps_windows(&mut self, keeps: bool) {
         self.keeps_windows = keeps;
+    }
+
+    /// Gives whether the system started the app of its own, rather than to
+    /// open files or for a service.
+    pub fn set_default_launch(&mut self, default: bool) {
+        self.default_launch = default;
     }
 
     /// Gives the screens' areas for windows, the menu bar's screen's
@@ -770,6 +779,10 @@ impl Platform for Fake {
 
     fn keeps_windows(&self) -> bool {
         self.keeps_windows
+    }
+
+    fn default_launch(&self) -> bool {
+        self.default_launch
     }
 
     fn set_appearance(&mut self, appearance: Option<Appearance>) {

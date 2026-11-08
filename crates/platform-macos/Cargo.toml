@@ -141,6 +141,10 @@ name = "screen_places"
 harness = false
 
 [[test]]
+name = "services"
+harness = false
+
+[[test]]
 name = "quit_in_modal"
 harness = false
 

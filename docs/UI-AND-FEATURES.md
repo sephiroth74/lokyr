@@ -440,6 +440,13 @@ As Lokyr quits, the windows that are open, the quick terminal's and the man page
 - **The file**: JSON, of the format's version first, `"version": 1`, which a later format raises; a file of a newer version, as a later Lokyr writes, or that does not read, or of more than 256 panes, is left aside with a notice, the start going on as without it, and this version writes its own as it quits. Fields that it does not know are read past, so that a later version may add some of its own without raising it.
 - The benchmarks open none of the kept windows.
 
+## The Finder's services and the Dock
+
+A window, or a tab, at a folder, from the Finder, as the user's daily path into a project:
+- **The services**: New Lokyr Window Here and New Lokyr Tab Here, in the Finder's menu of a folder, under Quick Actions or Services, and in the app menu's Services. The bundle declares them in `NSServices`, on `public.folder` alone, of an empty `NSRequiredContext`, which has macOS show them without the user turning them on in the keyboard's settings; their titles are the catalogs' `infoplist.ftl`, each language's `ServicesMenu.strings`. The app's provider, `ServicesProvider`, answers `openWindow:userData:error:` and `openTab:userData:error:` of the pasteboard's file URLs, as `AppEvent::OpenFolders`: a window at each folder, or a tab at each after the tabs of the window in front, the quick terminal's and the man pages' aside, a window without one; a file's folder for a file; the last window brought forward with the app, as the Finder keeps the focus otherwise.
+- **The Dock**: a folder dropped on the app's icon opens a window there, as the bundle declares `public.folder` among its document types, of the rank `None`, so that the Finder never opens folders with Lokyr of its own; a theme's file dropped with it still asks to install.
+- **At the start**: a start that macOS makes to open a folder, or for a service, as `NSApplicationLaunchIsDefaultLaunchKey` tells, opens no new window of its own, the folder's alone, beside the windows restored; one whose files open no window, as a theme's, opens a new window after a second.
+
 ## Basic actions
 
 The `core-actions` plugin:

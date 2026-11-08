@@ -22,6 +22,7 @@ mod asks;
 mod chrome;
 mod configs;
 mod copy;
+mod folders;
 mod frame;
 mod input;
 mod marks;

@@ -131,6 +131,16 @@ pub enum AppEvent {
     /// file manager on a file of a type that the app declares, or a file
     /// dropped on its icon: their paths, in their order.
     OpenFiles(Vec<std::path::PathBuf>),
+    /// The user asked for a window, or a tab, at each of `folders`, as
+    /// from the file manager's services on folders that it selected.
+    OpenFolders {
+        /// The folders, in their order; a file's stands for the folder that
+        /// holds it.
+        folders: Vec<std::path::PathBuf>,
+        /// Whether each opens as a tab of the window in front, rather than
+        /// as a window of its own.
+        tabs: bool,
+    },
     /// An open that the platform started failed, as the system told after
     /// the call that started it returned, as
     /// [`Platform::open_in_text_editor`](crate::Platform::open_in_text_editor)'s.
