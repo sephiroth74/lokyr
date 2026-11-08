@@ -579,7 +579,7 @@ Default: `"instant"`.
 - Only the cursor slides: the text that a key changes shows at the next frame, as with `"instant"`, so that what you type takes no longer to show.
 - It slides as it moves of its own, as a program writes or moves it; a scroll of the view or of the screen, a new size of the text or of the window, another pane, and the cursor that shows again after it was hidden move it at once.
 - A burst of output moves it once, from where it shows to where it is at the next frame; a slide under way goes on from where the cursor is.
-- The window server slides it, as it blinks it: Lokyr draws no frame of its own for it, and wakes no more.
+- The window server slides it, as it blinks it: Lokyr draws no frame of its own for it, and wakes no more. What it costs: a key's echo shows a refresh later more often, about 2.6 ms of the latency's median at 60 Hz on an M5 Pro, as the window server shows the frame of a slide's start later; the tail is no longer, and at rest it costs nothing.
 - With Reduce motion on, in System Settings › Accessibility › Display on macOS, it moves at once.
 - It applies as you save the file.
 

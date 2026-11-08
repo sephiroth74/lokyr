@@ -1,0 +1,42 @@
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=24117347)	100%; charged; 0:00 remaining present: true
+11:20  up 1 day, 19:40, 22 users, load averages: 3.21 3.10 3.34
+Graphics/Displays:
+    Apple M5 Pro:
+      Displays:
+        DELL P2721Q:
+          Resolution: 5120 x 2880 (5K/UHD+ - Ultra High Definition Plus)
+          Main Display: Yes
+11:20:29 latency warm-up instant
+11:20:32 latency warm-up snappy
+11:20:37 latency instant 1 place 1
+11:20:51 latency snappy 1 place 2
+11:21:04 load { 2.60 2.96 3.28 }
+11:21:06 latency snappy 2 place 1
+11:21:20 latency instant 2 place 2
+11:21:32 load { 2.05 2.79 3.21 }
+11:21:34 latency snappy 3 place 1
+11:21:49 latency instant 3 place 2
+11:22:01 load { 1.95 2.70 3.16 }
+11:22:03 latency instant 4 place 1
+11:22:17 latency snappy 4 place 2
+11:22:30 load { 1.57 2.53 3.08 }
+11:22:32 latency instant 5 place 1
+11:22:46 latency snappy 5 place 2
+11:22:58 load { 1.72 2.49 3.05 }
+11:23:00 latency snappy 6 place 1
+11:23:15 latency instant 6 place 2
+11:23:27 load { 1.74 2.41 3.00 }
+11:23:29 latency snappy 7 place 1
+11:23:44 latency instant 7 place 2
+11:23:56 load { 1.61 2.31 2.94 }
+11:23:58 latency instant 8 place 1
+11:24:12 latency snappy 8 place 2
+11:24:25 load { 1.77 2.28 2.91 }
+11:24:25 idle instant 1
+11:26:03 idle snappy 1
+11:27:40 load { 1.74 1.99 2.65 }
+11:27:40 idle snappy 2
+11:29:18 idle instant 2
+11:30:55 load { 1.28 1.76 2.42 }
+11:30:55 done

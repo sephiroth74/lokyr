@@ -1,0 +1,20 @@
+# The cursor's movement's measures: F2-134's conditions, as the A/Bs',
+# Menlo 13, 120 × 40 cells, no ligatures, an opaque window, about 10 000
+# rows of scrollback; the cursor blinks, as by default, and stops 15 s
+# after the last key or output; it slides to each new cell.
+[font]
+family = "Menlo"
+size = 13
+ligatures = false
+
+[cursor]
+movement = "snappy"
+
+[window]
+columns = 120
+rows = 40
+remember-frame = false
+background-opacity = 1
+
+[scrollback]
+limit = 10
