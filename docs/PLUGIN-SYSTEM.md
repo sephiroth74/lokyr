@@ -378,6 +378,10 @@ type Line = { row: number, text: string, wrapped: boolean }
 -- case "smart" counts of a text of a capital letter alone; whole words alone, as `whole_word` asks.
 type SearchQuery = { text: string, regex: boolean?, case: ("smart" | "sensitive" | "insensitive")?, whole_word: boolean? }
 
+-- What a selection takes of its cells: the cells in reading order, the words or the logical lines that its ends are in,
+-- or the block of their columns and rows.
+type SelectionKind = "cells" | "words" | "lines" | "block"
+
 -- A match of a search: its first cell and its last, each { column, row's number }.
 type SearchMatch = { first: { number }, last: { number } }
 
@@ -730,9 +734,17 @@ type Cx = {
     mark_gutter: (pane: PaneId, row: number, color: { number }) -> (number?, Error?),
     unmark_gutter: (pane: PaneId, id: number) -> (boolean, Error?),
     select_all: (pane: PaneId) -> (boolean, Error?),
-    -- Selects the cells from one to another, in reading order, each { column, row's number }, as a drag would, which a
-    -- copy then takes, and scrolls the view, through the scrollback, to show the first, as the call returns.
-    select_cells: (pane: PaneId, first: { number }, last: { number }) -> (boolean, Error?),
+    -- Selects the cells from one to another, each { column, row's number }, as `kind` takes them, "cells" by default,
+    -- as a drag would, which a copy then takes, and scrolls the view, through the scrollback, to show the last, the end
+    -- that a keyboard's selection moves, as the call returns.
+    select_cells: (pane: PaneId, first: { number }, last: { number }, kind: SelectionKind?) -> (boolean, Error?),
+    -- A cursor of the plugin's over a cell, { column, row's number }, in place of the terminal's, which hides while it
+    -- shows, as a mode of the keyboard's over the scrollback moves one: of the terminal's cursor's shape and colors,
+    -- still, while the view shows its row, keeping its text as output scrolls it and a resize reflows it; while the
+    -- other screen shows, the terminal's; nil gives the terminal's cursor back, as the plugin's stop or fault does.
+    show_cursor: (pane: PaneId, at: { number }?) -> (boolean, Error?),
+    -- The cell of the terminal's own cursor, { column, row's number }.
+    cursor_cell: (pane: PaneId) -> ({ number }?, Error?),
     clear_scrollback: (pane: PaneId) -> (boolean, Error?),
     clear: (pane: PaneId) -> (boolean, Error?),
     -- Require `pty-write`: a paste, as the user's, which a text of line breaks may ask the user to confirm,

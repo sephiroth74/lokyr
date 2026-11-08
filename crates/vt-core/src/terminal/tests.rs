@@ -6987,6 +6987,62 @@ fn a_snapshot_tells_the_scrollback_s_rows() {
 }
 
 #[test]
+fn a_held_cursor_takes_the_terminal_s_place_in_the_snapshot_and_keeps_its_text() {
+    let mut term = Term::new(10, 4);
+    for at in 0..10 {
+        term.feed(format!("{at}\r\n"));
+    }
+    term.feed("$ ");
+    // The terminal's own cursor, by its row's number.
+    assert_eq!(term.terminal.cursor_cell(), (2, 10));
+    let mut snapshot = Snapshot::default();
+    term.terminal.snapshot(&mut snapshot);
+    let cursor = snapshot.cursor();
+    assert_eq!(
+        (cursor.position.x, cursor.position.y, cursor.visible),
+        (2, 3, true)
+    );
+    // Held on the screen's first row, still, in the terminal's place.
+    term.terminal.hold_cursor(Some((1, 7)));
+    term.terminal.snapshot(&mut snapshot);
+    let held = snapshot.cursor();
+    assert_eq!(
+        (held.position.x, held.position.y, held.visible, held.blink),
+        (1, 0, true, false)
+    );
+    assert_eq!(term.terminal.held_cursor(), Some((1, 7)));
+    // Output scrolls its row up and out of the view, which hides it, and
+    // the terminal's cursor with it; the view on its row shows it again.
+    term.feed("\r\nx\r\ny");
+    term.terminal.snapshot(&mut snapshot);
+    assert!(!snapshot.cursor().visible);
+    assert_eq!(term.terminal.held_cursor(), Some((1, 7)));
+    term.terminal.scroll_viewport(Scroll::Row(6));
+    term.terminal.snapshot(&mut snapshot);
+    let shown = snapshot.cursor();
+    assert_eq!(
+        (shown.position.x, shown.position.y, shown.visible),
+        (1, 1, true)
+    );
+    // None gives the terminal's back; a row past the list's end, its last.
+    term.terminal.scroll_viewport(Scroll::Bottom);
+    term.terminal.hold_cursor(None);
+    term.terminal.snapshot(&mut snapshot);
+    let back = snapshot.cursor();
+    assert_eq!(
+        (back.position.x, back.position.y, back.visible),
+        (1, 3, true)
+    );
+    term.terminal.hold_cursor(Some((50, 1000)));
+    assert_eq!(term.terminal.held_cursor(), Some((9, 12)));
+    // The alternate screen shows none of the primary's.
+    term.feed("\x1b[?1049h");
+    term.terminal.snapshot(&mut snapshot);
+    assert_eq!(term.terminal.held_cursor(), None);
+    assert!(snapshot.cursor().visible);
+}
+
+#[test]
 fn the_view_scrolls_to_a_row_at_its_top_within_the_list() {
     let mut term = Term::new(10, 4);
     for at in 0..20 {

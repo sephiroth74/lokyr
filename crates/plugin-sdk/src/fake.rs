@@ -101,6 +101,12 @@ pub struct FakePane {
     /// of its rows held, as many as its grid's, of no scrollback above
     /// them.
     pub viewport: Option<host::Viewport>,
+    /// Its terminal's cursor's cell, by its column and its row's number:
+    /// the first column of its first row held by default.
+    pub cursor: (u16, i64),
+    /// The cell of the cursor that a plugin's write shows in place of the
+    /// terminal's, if one does.
+    pub held_cursor: Option<(u16, i64)>,
 }
 
 impl FakePane {
@@ -156,6 +162,8 @@ impl Default for FakePane {
             title: None,
             commands: Vec::new(),
             viewport: None,
+            cursor: (0, 0),
+            held_cursor: None,
         }
     }
 }
@@ -1028,6 +1036,11 @@ impl FakeHost {
     fn apply(&mut self, request: Request, opened: Opened) {
         match &request {
             Request::SetClipboardText(text) => self.clipboard = Some(text.clone()),
+            Request::ShowCursor { pane, at } => {
+                if let Some(pane) = self.panes.get_mut(pane) {
+                    pane.held_cursor = *at;
+                }
+            }
             Request::Undecorate { id, .. } => self.decorations.retain(|laid| laid.id != *id),
             Request::UnmarkGutter { id, .. } => self.gutter_marks.retain(|laid| laid.id != *id),
             Request::RequestRender(view) => self.ask_render(view.clone()),
@@ -2210,6 +2223,7 @@ impl Calling<'_> {
                 Response::ShellCommands(host.held(*pane)?.commands_meeting(*top, *bottom))
             }
             Request::Viewport(pane) => Response::Viewport(host.held(*pane)?.viewport()),
+            Request::CursorCell(pane) => Response::Cell(Some(host.held(*pane)?.cursor)),
             Request::Layout(tab) => match host.tabs.get(tab) {
                 Some(tab) => Response::Layout(tab.layout.clone()),
                 None => {
@@ -2235,6 +2249,7 @@ impl Calling<'_> {
         let mut opened = Opened::Nothing;
         let response = match &request {
             Request::SelectCells { pane, .. }
+            | Request::ShowCursor { pane, .. }
             | Request::SelectAll(pane)
             | Request::ClearScrollback(pane)
             | Request::Clear(pane)

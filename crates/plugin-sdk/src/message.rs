@@ -27,8 +27,8 @@ use crate::command::{Args, Capability, Command, Error};
 use crate::event::WorkspaceEvent;
 use crate::host::{
     BarPlace, Binding, Color, CommandInfo, Current, DecorationLook, Direction, Edge, Found, Layout,
-    Line, LineText, PaneId, ScreenPoint, Scroll, SearchMatch, SearchQuery, ShellCommand, Side,
-    StyleRun, TabId, TabInfo, Viewport, WindowId, WindowInfo,
+    Line, LineText, PaneId, ScreenPoint, Scroll, SearchMatch, SearchQuery, SelectionKind,
+    ShellCommand, Side, StyleRun, TabId, TabInfo, Viewport, WindowId, WindowInfo,
 };
 use crate::ui::{PanelId, PanelOptions, ViewId};
 use crate::view::Key;
@@ -168,9 +168,10 @@ pub enum Request {
     /// matches go.
     EndSearch(u64),
     /// Selects a pane's cells from one to another, by their columns and
-    /// their rows' numbers, in reading order, as a drag across them would,
-    /// which a copy then takes, and scrolls its view, through the
-    /// scrollback, to show the first.
+    /// their rows' numbers, as `kind` takes them, in reading order of the
+    /// cells by default, as a drag across them would, which a copy then
+    /// takes, and scrolls its view, through the scrollback, to show the
+    /// last, the end that a keyboard's selection moves.
     SelectCells {
         /// The pane.
         pane: PaneId,
@@ -178,7 +179,26 @@ pub enum Request {
         first: (u16, i64),
         /// The last cell.
         last: (u16, i64),
+        /// What the selection takes of them.
+        #[serde(default)]
+        kind: SelectionKind,
     },
+    /// Shows a cursor of the plugin's over a pane's cell, by its column and
+    /// its row's number, in place of the terminal's, which hides while it
+    /// shows, as a mode of the keyboard's over the scrollback moves one: of
+    /// the terminal's cursor's shape and colors, still, while the view
+    /// shows its row, keeping its text as output scrolls it and a resize
+    /// reflows it; while the other screen shows, the terminal's. `None`
+    /// gives the terminal's cursor back.
+    ShowCursor {
+        /// The pane.
+        pane: PaneId,
+        /// The cell, or none.
+        at: Option<(u16, i64)>,
+    },
+    /// The cell of a pane's terminal's own cursor, by its column and its
+    /// row's number.
+    CursorCell(PaneId),
     /// Shows one of the plugin's searches' matches over its pane's cells,
     /// in the colors of the theme's `search.match`, or hides them, as `all`
     /// says, and its current match apart, if it gives one, in those of
@@ -723,6 +743,8 @@ impl Request {
             | Self::UnmarkGutter { .. }
             | Self::EndSearch(_)
             | Self::SelectCells { .. }
+            | Self::ShowCursor { .. }
+            | Self::CursorCell(_)
             | Self::ShowMatches { .. }
             | Self::SelectAll(_)
             | Self::ClearScrollback(_)
@@ -799,6 +821,7 @@ impl Request {
             | Self::CurrentMatch(_)
             | Self::ShellCommands { .. }
             | Self::Viewport(_)
+            | Self::CursorCell(_)
             | Self::Styles { .. }
             | Self::Opens(_)
             | Self::FontSize
@@ -816,6 +839,7 @@ impl Request {
             | Self::Themes => Effect::Read,
             Self::SetClipboardText(_)
             | Self::SelectCells { .. }
+            | Self::ShowCursor { .. }
             | Self::ShowMatches { .. }
             | Self::SelectAll(_)
             | Self::ClearScrollback(_)
@@ -916,6 +940,8 @@ pub enum Response {
     ShellCommands(Vec<ShellCommand>),
     /// A pane's view.
     Viewport(Viewport),
+    /// A cell, by its column and its row's number, or none.
+    Cell(Option<(u16, i64)>),
     /// A row's styles, or none of a row that the pane does not hold.
     Styles(Option<Vec<StyleRun>>),
     /// A decoration's id, or a mark's of a pane's gutter.

@@ -25,8 +25,8 @@ use lokyr_plugin_sdk::event::WorkspaceEvent;
 use lokyr_plugin_sdk::host::{
     BarPlace, Binding, Color, CommandInfo, DecorationLook, Direction, Edge, Layout, Line, LineText,
     MOST_STATE, MenuItem, MenuPlace, PaneId, QuickLength, QuickPlace, ScreenPoint, Scroll,
-    SearchMatch, SearchQuery, ShellCommand, Side, TabId, TabInfo, Underline, Viewport, WindowId,
-    WindowInfo,
+    SearchMatch, SearchQuery, SelectionKind, ShellCommand, Side, TabId, TabInfo, Underline,
+    Viewport, WindowId, WindowInfo,
 };
 use lokyr_plugin_sdk::message::{DIM_RANGE, Data, Event, Mods, OWN_PANE, Request, Response};
 use lokyr_plugin_sdk::ui::{Anchor, PanelId, PanelOptions, Role, ViewId};
@@ -82,8 +82,8 @@ pub const fn pane(k: u64) -> PaneId {
 
 /// The world of the scenarios, as the kernel's host made it: its window,
 /// its tab and its pane, and the pane's row of [`LINE`], with the line's
-/// text and cells as the pane reads them, the commands of [`COMMAND`] and
-/// the pane's view.
+/// text and cells as the pane reads them, the commands of [`COMMAND`], the
+/// pane's view and its terminal's cursor's cell.
 #[derive(Clone, Debug, PartialEq)]
 pub struct World {
     pub window: WindowId,
@@ -93,6 +93,7 @@ pub struct World {
     pub line: LineText,
     pub commands: Vec<ShellCommand>,
     pub viewport: Viewport,
+    pub cursor: (u16, i64),
 }
 
 /// A scenario: what the test plugin holds, and its steps.
@@ -149,6 +150,7 @@ pub fn all(world: &World) -> Vec<Scenario> {
         state_and_rows(world),
         views(world),
         commands_and_viewport(world),
+        copy_mode(world),
         workspace(world),
         tabs(world),
         core_actions(world),
@@ -716,6 +718,47 @@ fn capabilities(world: &World) -> Scenario {
     }
 }
 
+/// What a mode of the keyboard's over the scrollback asks: the terminal's
+/// cursor's cell, and a cursor of the plugin's over a cell and back; its
+/// selections are `core-actions`', which leaves the pane as it does.
+fn copy_mode(world: &World) -> Scenario {
+    let row = world.row;
+    let no_pane = || failed(Code::NotFound, "there is no pane 999999");
+    Scenario {
+        name: "copy mode".to_owned(),
+        capabilities: None,
+        subscriptions: Vec::new(),
+        steps: vec![ask(vec![
+            (
+                Request::CursorCell(world.pane),
+                Response::Cell(Some(world.cursor)),
+            ),
+            (Request::CursorCell(NO_PANE), no_pane()),
+            (
+                Request::ShowCursor {
+                    pane: world.pane,
+                    at: Some((4, row)),
+                },
+                Response::Done,
+            ),
+            (
+                Request::ShowCursor {
+                    pane: world.pane,
+                    at: None,
+                },
+                Response::Done,
+            ),
+            (
+                Request::ShowCursor {
+                    pane: NO_PANE,
+                    at: None,
+                },
+                no_pane(),
+            ),
+        ])],
+    }
+}
+
 /// The commands that the world's pane's shell marked, read whole and by
 /// the rows that they meet, the pane's view, and their events.
 fn commands_and_viewport(world: &World) -> Scenario {
@@ -796,9 +839,16 @@ fn commands_and_viewport(world: &World) -> Scenario {
 }
 
 /// What `core-actions` asks: the text's size, the clipboard, whose write a
-/// read of the same call does not see, and the writes to the focused pane.
+/// read of the same call does not see, and the writes to the focused pane,
+/// the selections of each kind among them.
 fn core_actions(world: &World) -> Scenario {
     let pane = world.pane;
+    let select = |kind| Request::SelectCells {
+        pane,
+        first: (0, world.row),
+        last: (3, world.row),
+        kind,
+    };
     Scenario {
         name: "core-actions".to_owned(),
         capabilities: None,
@@ -809,6 +859,11 @@ fn core_actions(world: &World) -> Scenario {
                 (Request::SetFontSize(Some(14.0)), Response::Done),
                 (Request::FocusedPane, Response::Pane(Some(pane))),
                 (Request::SelectionText(pane), Response::Text(None)),
+                // A selection of each kind, as a mode of the keyboard's
+                // makes them, which the select-all after takes the place of.
+                (select(SelectionKind::Words), Response::Done),
+                (select(SelectionKind::Lines), Response::Done),
+                (select(SelectionKind::Block), Response::Done),
                 (
                     Request::ClipboardText,
                     Response::Text(Some(CLIPBOARD.to_owned())),
@@ -1267,6 +1322,7 @@ fn state_and_rows(world: &World) -> Scenario {
                             pane: NO_PANE,
                             first: (0, 0),
                             last: (1, 0),
+                            kind: SelectionKind::Cells,
                         },
                         failed(Code::NotFound, "there is no pane 999999"),
                     ),

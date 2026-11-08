@@ -446,6 +446,25 @@ pub struct ShellCommand {
     pub status: Option<i32>,
 }
 
+/// What a selection of cells takes, from its first cell to its last.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum SelectionKind {
+    /// The cells in reading order, as text runs from row to row, as a drag
+    /// selects.
+    #[default]
+    Cells,
+    /// The words that the two are in, and those between, as a double
+    /// click's drag selects.
+    Words,
+    /// The logical lines that the two are in, and those between, their
+    /// soft-wrapped rows whole, as a triple click's drag selects.
+    Lines,
+    /// The rectangle of the columns from the first's to the last's, on each
+    /// row from the first's to the last's, as a drag with Option selects.
+    Block,
+}
+
 /// A pane's view: the rows that it shows, of its screen or of the
 /// scrollback above it, by their numbers, as its last frame showed them.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]

@@ -19,7 +19,7 @@
 //! [`Plugins::serve`], never waiting for them.
 
 use std::any::Any;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::panic::{self, AssertUnwindSafe};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -346,6 +346,8 @@ struct State {
     /// The marks of the panes' gutters that it laid, by their ids, each of
     /// its pane.
     gutter_marks: BTreeMap<u64, host::PaneId>,
+    /// The panes where it shows a cursor of its own.
+    held_cursors: BTreeSet<host::PaneId>,
     /// The quick windows that it opened, which close as it stops.
     quick_windows: Vec<WindowId>,
     /// Its calls on the main thread that took long, since the last look:
@@ -826,6 +828,7 @@ impl Plugins {
                 panels: BTreeMap::new(),
                 decorations: BTreeMap::new(),
                 gutter_marks: BTreeMap::new(),
+                held_cursors: BTreeSet::new(),
                 quick_windows: Vec::new(),
                 slow: Vec::new(),
                 fault: None,
@@ -1892,6 +1895,7 @@ impl Plugins {
         let result = match done {
             Done::Panicked(message) => {
                 disable(state, context.registry, declarations_changed);
+                release_cursors(state, context.workspace);
                 let fault = format!(
                     "the plugin `{}` panicked{message}; it is disabled",
                     state.name
@@ -2159,6 +2163,7 @@ fn look<T>(
     let (mut out, mut writes) = (Outbox::default(), Vec::new());
     let (panels, decorations) = (state.panels.clone(), state.decorations.clone());
     let gutter_marks = state.gutter_marks.clone();
+    let held_cursors = state.held_cursors.clone();
     let quick_windows = state.quick_windows.clone();
     let outcome = within(
         (plugin, state),
@@ -2170,6 +2175,7 @@ fn look<T>(
     state.panels = panels;
     state.decorations = decorations;
     state.gutter_marks = gutter_marks;
+    state.held_cursors = held_cursors;
     state.quick_windows = quick_windows;
     outcome.unwrap_or_else(|fault| fault)
 }
@@ -2203,6 +2209,7 @@ fn within<T>(
     }
     outcome.map_err(|payload| {
         disable(state, context.registry, declarations_changed);
+        release_cursors(state, context.workspace);
         let fault = format!(
             "the plugin `{}` panicked{}; it is disabled",
             state.name,
@@ -2243,6 +2250,7 @@ fn stop(
             pane.unmark_gutter(id);
         }
     }
+    release_cursors(state, context.workspace);
     for id in std::mem::take(&mut state.panels).into_keys() {
         out.requests.push(Request::ClosePanel {
             plugin: state.name.clone(),
@@ -2403,10 +2411,30 @@ fn apply(writes: Vec<Write>, context: &mut Context<'_>, out: &mut Outbox, state:
                 pane: id,
                 first,
                 last,
+                kind,
             } => {
                 if let Some(pane) = pane(id) {
-                    pane.select(first, last, SelectionShape::Cells, SelectionUnit::Cell);
-                    pane.show_row(first.1);
+                    let (shape, unit) = match kind {
+                        host::SelectionKind::Cells => (SelectionShape::Cells, SelectionUnit::Cell),
+                        host::SelectionKind::Words => (SelectionShape::Cells, SelectionUnit::Word),
+                        host::SelectionKind::Lines => (SelectionShape::Cells, SelectionUnit::Line),
+                        host::SelectionKind::Block => {
+                            (SelectionShape::Rectangle, SelectionUnit::Cell)
+                        }
+                    };
+                    pane.select(first, last, shape, unit);
+                    pane.show_row(last.1);
+                }
+            }
+            // The plugin's cursor, which its stop takes away.
+            Asked::ShowCursor { pane: id, at } => {
+                if let Some(pane) = pane(id) {
+                    pane.hold_cursor(at);
+                    if at.is_some() {
+                        state.held_cursors.insert(id);
+                    } else {
+                        state.held_cursors.remove(&id);
+                    }
                 }
             }
             // Of a search that the call or an earlier one did not end; the
@@ -2811,6 +2839,17 @@ fn message(payload: &(dyn Any + Send)) -> String {
 
 /// Disables the plugin of `state`: its commands leave `registry`, and its
 /// bindings and its menus' items go.
+/// Gives the terminal's cursor back in each pane where the plugin of
+/// `state` shows one of its own, as it stops or a panic disables it, so
+/// that no cursor stays that nothing moves.
+fn release_cursors(state: &mut State, workspace: &Workspace) {
+    for pane in std::mem::take(&mut state.held_cursors) {
+        if let Some(pane) = workspace.pane(PaneId::of(pane.0)) {
+            pane.hold_cursor(None);
+        }
+    }
+}
+
 fn disable(state: &mut State, registry: &mut Registry, declarations_changed: &mut bool) {
     state.status = Status::Disabled;
     if !state.commands.is_empty()
@@ -3336,6 +3375,7 @@ impl Host<'_, '_> {
             Asked::ShellCommands { pane, top, bottom } => {
                 Response::ShellCommands(self.pane(pane)?.commands_meeting(top, bottom))
             }
+            Asked::CursorCell(pane) => Response::Cell(self.pane(pane)?.cursor_cell()),
             Asked::Viewport(pane) => {
                 Response::Viewport(self.pane(pane)?.viewport().ok_or_else(|| {
                     Error::new(
@@ -3415,6 +3455,7 @@ impl Host<'_, '_> {
                 }
             }
             Asked::SelectCells { pane, .. }
+            | Asked::ShowCursor { pane, .. }
             | Asked::SelectAll(pane)
             | Asked::ClearScrollback(pane)
             | Asked::Clear(pane)

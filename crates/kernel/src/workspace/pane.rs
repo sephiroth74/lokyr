@@ -818,6 +818,22 @@ impl Pane {
         self.session.as_ref()?.lock().command_line(command)
     }
 
+    /// Holds a cursor of a plugin's at the cell `at`, its column and its
+    /// row's number, in place of the terminal's, or gives the terminal's
+    /// back with `None`, as [`Terminal::hold_cursor`] does.
+    pub fn hold_cursor(&self, at: Option<(u16, i64)>) {
+        if let Some(session) = &self.session {
+            session.lock().hold_cursor(at);
+        }
+    }
+
+    /// The cell of the terminal's own cursor, as
+    /// [`Terminal::cursor_cell`] gives it; none for a pane whose program
+    /// did not start.
+    pub fn cursor_cell(&self) -> Option<(u16, i64)> {
+        Some(self.session.as_ref()?.lock().cursor_cell())
+    }
+
     /// Lets the selection go.
     pub fn clear_selection(&self) {
         if let Some(session) = &self.session {

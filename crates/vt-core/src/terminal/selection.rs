@@ -653,6 +653,54 @@ impl Terminal {
         }
     }
 
+    /// Holds a cursor of the embedder's at the active screen's cell `at`,
+    /// its column and its row's number, of the row past the list's ends at
+    /// the nearest end's and of the last column past it, which takes the
+    /// place of the terminal's in the snapshots, as a mode of the keyboard's
+    /// over the scrollback moves one: a cursor that does not blink, of the
+    /// program's shape, shown while its row is in the view, the terminal's
+    /// hidden meanwhile; while the other screen shows, the terminal's. Its pin
+    /// keeps its text as output scrolls it and a resize reflows it; `None`
+    /// gives the terminal's cursor back.
+    pub fn hold_cursor(&mut self, at: Option<(u16, i64)>) {
+        if let Some(held) = self.held_cursor.take() {
+            self.unpin_cell(&held);
+        }
+        self.held_cursor = at.and_then(|at| self.pin_nearest(at));
+    }
+
+    /// The cell of the cursor that [`Terminal::hold_cursor`] holds, by its
+    /// column and its row's number, while its text is in the list and its
+    /// screen is the active one.
+    pub fn held_cursor(&self) -> Option<(u16, i64)> {
+        self.pinned_cell(self.held_cursor.as_ref()?)
+    }
+
+    /// Where the held cursor shows in the view, as the snapshot takes it:
+    /// `None` without one, or of the other screen's, whose program has its
+    /// own cursor; `Some(None)` of one whose row the view does not show.
+    pub(super) fn held_cursor_in_view(&self) -> Option<Option<(u16, u16)>> {
+        let held = self
+            .held_cursor
+            .as_ref()
+            .filter(|held| held.alternate == self.alternate_active)?;
+        let place = self.pin_place(held).and_then(|position| {
+            let rows = &self.screen().rows;
+            let index = rows.row_index(position.page, position.row)?;
+            let y = index.checked_sub(self.view_top())?;
+            (y < usize::from(self.rows)).then_some((position.col, y as u16))
+        });
+        Some(place)
+    }
+
+    /// The cell of the terminal's own cursor, by its column and its row's
+    /// number, of the active screen.
+    pub fn cursor_cell(&self) -> (u16, i64) {
+        let cursor = self.cursor();
+        let index = self.screen().rows.scrollback_rows() + usize::from(cursor.y);
+        (cursor.x, self.row_number(index))
+    }
+
     /// A pin of the active screen's cell `at`, its column and its row's
     /// number, which keeps its text as [`CellPin`] tells; `None` for a row
     /// that the list does not hold, or a column past the rows' last.

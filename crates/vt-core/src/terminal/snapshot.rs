@@ -330,6 +330,20 @@ impl Terminal {
             style: self.cursor_style(),
             blink: self.cursor_blink(),
         };
+        // An embedder's cursor in its place, still, of the program's shape.
+        if let Some(held) = self.held_cursor_in_view() {
+            let (x, y) = held.unwrap_or((cursor.x, 0));
+            snapshot.cursor = SnapshotCursor {
+                position: Cursor {
+                    x,
+                    y,
+                    pending_wrap: false,
+                },
+                visible: held.is_some(),
+                style: self.cursor_style(),
+                blink: false,
+            };
+        }
         let reverse_video = self.reverse_video();
         snapshot.colors_changed =
             snapshot.reverse_video != reverse_video || snapshot.colors != self.colors;

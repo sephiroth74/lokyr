@@ -490,6 +490,9 @@ pub struct Terminal {
     /// The cell that the embedder marked, as the one that a menu opened
     /// on, if one was.
     cell_mark: Option<selection::CellPin>,
+    /// A cursor of the embedder's, which takes the place of the terminal's
+    /// in the snapshots, as [`Terminal::hold_cursor`] pins it.
+    held_cursor: Option<selection::CellPin>,
     /// The decorations that the embedder laid over the text.
     decorations: Vec<decorations::Decoration>,
     /// The gutter's marks that the embedder laid.
@@ -602,6 +605,7 @@ impl Terminal {
             selection: None,
             selection_anchor: None,
             cell_mark: None,
+            held_cursor: None,
             decorations: Vec::new(),
             gutter: Vec::new(),
             matches: Vec::new(),

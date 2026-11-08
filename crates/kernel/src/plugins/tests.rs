@@ -1437,6 +1437,7 @@ fn a_call_is_its_own_plugin_s() {
             panels: BTreeMap::new(),
             decorations: BTreeMap::new(),
             gutter_marks: BTreeMap::new(),
+            held_cursors: std::collections::BTreeSet::new(),
             quick_windows: Vec::new(),
             slow: Vec::new(),
             fault: None,
@@ -2145,6 +2146,52 @@ fn a_plugin_s_decorations_keep_their_text_through_new_output() {
         .unwrap_err();
     assert_eq!(refused.code, Code::NotFound);
     assert_eq!(spans(&mut app).len(), 2);
+}
+
+#[test]
+fn a_plugin_s_cursor_goes_as_the_plugin_stops() {
+    let mut app = App::default();
+    let window = window(&mut app, "echo ready; sleep 30");
+    let pane = app.workspace.active_pane(window).unwrap();
+    row_once(&app, pane, 0, "ready");
+    let mut plugins = Plugins::new();
+    plugins
+        .add(
+            "pointer",
+            scripted(
+                |cx| {
+                    cx.register_command(command("pointer.show"))?;
+                    cx.register_command(command("pointer.panic"))
+                },
+                move |cx, name, _| {
+                    let pane = cx.focused_pane().unwrap();
+                    if name == "pointer.panic" {
+                        panic!("the plugin fails");
+                    }
+                    let at = cx.cursor_cell(pane)?;
+                    assert_eq!(at, Some((0, 1)));
+                    cx.show_cursor(pane, Some((2, 0)))
+                },
+            ),
+        )
+        .unwrap();
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    plugins
+        .run("pointer.show", Args::new(), &mut app.context())
+        .unwrap();
+    let held = |app: &App| {
+        app.workspace
+            .pane(pane)
+            .unwrap()
+            .terminal()
+            .unwrap()
+            .held_cursor()
+    };
+    assert_eq!(held(&app), Some((2, 0)));
+    // A panic disables the plugin, whose cursor goes.
+    let _ = plugins.run("pointer.panic", Args::new(), &mut app.context());
+    assert_eq!(plugins.status("pointer"), Some(Status::Disabled));
+    assert_eq!(held(&app), None);
 }
 
 #[test]

@@ -499,6 +499,7 @@ impl Kernel {
         let pane = workspace.pane(id).expect("the pane");
         let commands = pane.commands_meeting(i64::MIN, i64::MAX);
         let viewport = pane.viewport().expect("the pane's view");
+        let cursor = pane.cursor_cell().expect("the pane's cursor");
         Self {
             registry: Registry::default(),
             workspace,
@@ -515,6 +516,7 @@ impl Kernel {
                 },
                 commands,
                 viewport,
+                cursor,
             },
         }
     }
@@ -669,6 +671,7 @@ fn on_fake(scenario: &Scenario, world: &World) -> Vec<Entry> {
         .insert(world.row, (scenarios::LINE.to_owned(), false));
     pane.commands.clone_from(&world.commands);
     pane.viewport = Some(world.viewport);
+    pane.cursor = world.cursor;
     host.set_keys("tabs.goto", goto_first(), Some("⌘1"));
     host.activate(&mut plugin).unwrap();
     for step in &scenario.steps {
@@ -822,11 +825,13 @@ fn kind(request: &Request) -> usize {
         Request::UnmarkGutter { .. } => 85,
         Request::ShellCommands { .. } => 86,
         Request::Viewport(_) => 87,
+        Request::ShowCursor { .. } => 88,
+        Request::CursorCell(_) => 89,
     }
 }
 
 /// How many kinds of requests the plugin API has.
-const KINDS: usize = 88;
+const KINDS: usize = 90;
 
 #[test]
 fn the_scenarios_hold_every_request_of_the_plugin_api() {
@@ -841,6 +846,7 @@ fn the_scenarios_hold_every_request_of_the_plugin_api() {
         },
         commands: vec![host::ShellCommand::default(); 2],
         viewport: host::Viewport::default(),
+        cursor: (0, 0),
     };
     let mut held = [false; KINDS];
     for scenario in scenarios::all(&world) {

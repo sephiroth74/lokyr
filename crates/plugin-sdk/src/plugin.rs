@@ -48,8 +48,8 @@
 use crate::command::{Args, Code, Command, Error};
 use crate::host::{
     BarPlace, Binding, Color, CommandInfo, Current, DecorationLook, Direction, Edge, Found, Host,
-    Layout, LineText, PaneId, ScreenPoint, Scroll, SearchMatch, SearchQuery, ShellCommand, Side,
-    StyleRun, TabId, TabInfo, Viewport, WindowId, WindowInfo,
+    Layout, LineText, PaneId, ScreenPoint, Scroll, SearchMatch, SearchQuery, SelectionKind,
+    ShellCommand, Side, StyleRun, TabId, TabInfo, Viewport, WindowId, WindowInfo,
 };
 use crate::message::{Call, Data, Event, Request, Response};
 use crate::ui::{PanelId, PanelOptions, UiEvent, ViewId};
@@ -371,7 +371,7 @@ impl<'a> Cx<'a> {
 
     /// Selects `pane`'s cells from `first` to `last`, each by its column
     /// and its row's number, in reading order, as a drag would, which a
-    /// copy then takes, and scrolls the pane's view to show the first, as
+    /// copy then takes, and scrolls the pane's view to show the last, as
     /// the call returns.
     pub fn select_cells(
         &mut self,
@@ -379,7 +379,43 @@ impl<'a> Cx<'a> {
         first: (u16, i64),
         last: (u16, i64),
     ) -> Result<(), Error> {
-        self.done(Request::SelectCells { pane, first, last })
+        self.select_range(pane, first, last, SelectionKind::Cells)
+    }
+
+    /// Selects `pane`'s cells from `first` to `last`, each by its column
+    /// and its row's number, as `kind` takes them: the cells in reading
+    /// order, the words or the lines that they are in, or the block of
+    /// their columns and rows, which a copy then takes, and scrolls the
+    /// pane's view to show the last, as the call returns.
+    pub fn select_range(
+        &mut self,
+        pane: PaneId,
+        first: (u16, i64),
+        last: (u16, i64),
+        kind: SelectionKind,
+    ) -> Result<(), Error> {
+        self.done(Request::SelectCells {
+            pane,
+            first,
+            last,
+            kind,
+        })
+    }
+
+    /// Shows a cursor of the plugin's over `pane`'s cell `at`, by its
+    /// column and its row's number, in place of the terminal's, as this
+    /// call returns; `None` gives the terminal's cursor back.
+    pub fn show_cursor(&mut self, pane: PaneId, at: Option<(u16, i64)>) -> Result<(), Error> {
+        self.done(Request::ShowCursor { pane, at })
+    }
+
+    /// The cell of `pane`'s terminal's own cursor, by its column and its
+    /// row's number.
+    pub fn cursor_cell(&mut self, pane: PaneId) -> Result<Option<(u16, i64)>, Error> {
+        match self.request(Request::CursorCell(pane)) {
+            Response::Cell(cell) => Ok(cell),
+            other => Err(failed(other)),
+        }
     }
 
     /// Shows the matches of the plugin's search `search` over its pane's
