@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="680" height="306" viewBox="0 0 680 306" role="img" aria-label="CPU energy">
+<svg xmlns="http://www.w3.org/2000/svg" width="680" height="322" viewBox="0 0 680 322" role="img" aria-label="CPU energy">
 
 <style>
   .surface { fill: #fcfcfb; }
@@ -35,39 +35,40 @@
   }
 </style>
 
-<rect class="surface" width="680" height="306" rx="8"/>
+<rect class="surface" width="680" height="322" rx="8"/>
 <text class="primary" x="16" y="26" font-size="15" font-weight="600">CPU energy</text>
-<text class="secondary" x="16" y="45" font-size="12">Joules that the terminal&#x27;s CPU spends to show cat of 1 GiB; less is better; Lokyr of the build after F3-72, the others of F2-134</text>
-<line class="grid" x1="118.0" y1="56" x2="118.0" y2="266" stroke-width="1"/>
-<text class="muted tick" x="118.0" y="281" font-size="11" text-anchor="middle">0</text>
-<line class="grid" x1="241.0" y1="56" x2="241.0" y2="266" stroke-width="1"/>
-<text class="muted tick" x="241.0" y="281" font-size="11" text-anchor="middle">50</text>
-<line class="grid" x1="364.0" y1="56" x2="364.0" y2="266" stroke-width="1"/>
-<text class="muted tick" x="364.0" y="281" font-size="11" text-anchor="middle">100</text>
-<line class="grid" x1="487.0" y1="56" x2="487.0" y2="266" stroke-width="1"/>
-<text class="muted tick" x="487.0" y="281" font-size="11" text-anchor="middle">150</text>
-<line class="grid" x1="610.0" y1="56" x2="610.0" y2="266" stroke-width="1"/>
-<text class="muted tick" x="610.0" y="281" font-size="11" text-anchor="middle">200</text>
-<line class="base" x1="118" y1="56" x2="118" y2="266" stroke-width="1"/>
-<text class="primary" x="108" y="75.0" font-size="12" text-anchor="end" font-weight="600">Lokyr</text>
-<path class="accent" d="M118.0,62.0 h35.5 a4,4 0 0 1 4,4 v10.0 a4,4 0 0 1 -4,4 h-35.5 z"><title>Lokyr: 16.0 J</title></path>
-<text class="primary tick" x="163.5" y="75.0" font-size="12" font-weight="600">16.0</text>
-<text class="secondary" x="108" y="105.0" font-size="12" text-anchor="end">kitty</text>
-<path class="context" d="M118.0,92.0 h97.1 a4,4 0 0 1 4,4 v10.0 a4,4 0 0 1 -4,4 h-97.1 z"><title>kitty: 41.1 J</title></path>
-<text class="secondary tick" x="225.1" y="105.0" font-size="12">41.1</text>
-<text class="secondary" x="108" y="135.0" font-size="12" text-anchor="end">Alacritty</text>
-<path class="context" d="M118.0,122.0 h99.0 a4,4 0 0 1 4,4 v10.0 a4,4 0 0 1 -4,4 h-99.0 z"><title>Alacritty: 41.9 J</title></path>
-<text class="secondary tick" x="227.0" y="135.0" font-size="12">41.9</text>
-<text class="secondary" x="108" y="165.0" font-size="12" text-anchor="end">Ghostty</text>
-<path class="context" d="M118.0,152.0 h102.1 a4,4 0 0 1 4,4 v10.0 a4,4 0 0 1 -4,4 h-102.1 z"><title>Ghostty: 43.1 J</title></path>
-<text class="secondary tick" x="230.1" y="165.0" font-size="12">43.1</text>
-<text class="secondary" x="108" y="195.0" font-size="12" text-anchor="end">iTerm2</text>
-<path class="context" d="M118.0,182.0 h261.4 a4,4 0 0 1 4,4 v10.0 a4,4 0 0 1 -4,4 h-261.4 z"><title>iTerm2: 107.9 J</title></path>
-<text class="secondary tick" x="389.4" y="195.0" font-size="12">107.9</text>
-<text class="secondary" x="108" y="225.0" font-size="12" text-anchor="end">Terminal.app</text>
-<path class="context" d="M118.0,212.0 h301.8 a4,4 0 0 1 4,4 v10.0 a4,4 0 0 1 -4,4 h-301.8 z"><title>Terminal.app: 124.3 J</title></path>
-<text class="secondary tick" x="429.8" y="225.0" font-size="12">124.3</text>
-<text class="secondary" x="108" y="255.0" font-size="12" text-anchor="end">WezTerm</text>
-<path class="context" d="M118.0,242.0 h478.9 a4,4 0 0 1 4,4 v10.0 a4,4 0 0 1 -4,4 h-478.9 z"><title>WezTerm: 196.3 J</title></path>
-<text class="secondary tick" x="606.9" y="255.0" font-size="12">196.3</text>
+<text class="secondary" x="16" y="45" font-size="12">Joules that the terminal&#x27;s CPU spends to show cat of 1 GiB; less is better; Lokyr of the build after F3-72,</text>
+<text class="secondary" x="16" y="61" font-size="12">the others of F2-134</text>
+<line class="grid" x1="118.0" y1="72" x2="118.0" y2="282.0" stroke-width="1"/>
+<text class="muted tick" x="118.0" y="297.0" font-size="11" text-anchor="middle">0</text>
+<line class="grid" x1="241.0" y1="72" x2="241.0" y2="282.0" stroke-width="1"/>
+<text class="muted tick" x="241.0" y="297.0" font-size="11" text-anchor="middle">50</text>
+<line class="grid" x1="364.0" y1="72" x2="364.0" y2="282.0" stroke-width="1"/>
+<text class="muted tick" x="364.0" y="297.0" font-size="11" text-anchor="middle">100</text>
+<line class="grid" x1="487.0" y1="72" x2="487.0" y2="282.0" stroke-width="1"/>
+<text class="muted tick" x="487.0" y="297.0" font-size="11" text-anchor="middle">150</text>
+<line class="grid" x1="610.0" y1="72" x2="610.0" y2="282.0" stroke-width="1"/>
+<text class="muted tick" x="610.0" y="297.0" font-size="11" text-anchor="middle">200</text>
+<line class="base" x1="118" y1="72" x2="118" y2="282.0" stroke-width="1"/>
+<text class="primary" x="108" y="91.0" font-size="12" text-anchor="end" font-weight="600">Lokyr</text>
+<path class="accent" d="M118.0,78.0 h35.5 a4,4 0 0 1 4,4 v10.0 a4,4 0 0 1 -4,4 h-35.5 z"><title>Lokyr: 16.0 J</title></path>
+<text class="primary tick" x="163.5" y="91.0" font-size="12" font-weight="600">16.0</text>
+<text class="secondary" x="108" y="121.0" font-size="12" text-anchor="end">kitty</text>
+<path class="context" d="M118.0,108.0 h97.1 a4,4 0 0 1 4,4 v10.0 a4,4 0 0 1 -4,4 h-97.1 z"><title>kitty: 41.1 J</title></path>
+<text class="secondary tick" x="225.1" y="121.0" font-size="12">41.1</text>
+<text class="secondary" x="108" y="151.0" font-size="12" text-anchor="end">Alacritty</text>
+<path class="context" d="M118.0,138.0 h99.0 a4,4 0 0 1 4,4 v10.0 a4,4 0 0 1 -4,4 h-99.0 z"><title>Alacritty: 41.9 J</title></path>
+<text class="secondary tick" x="227.0" y="151.0" font-size="12">41.9</text>
+<text class="secondary" x="108" y="181.0" font-size="12" text-anchor="end">Ghostty</text>
+<path class="context" d="M118.0,168.0 h102.1 a4,4 0 0 1 4,4 v10.0 a4,4 0 0 1 -4,4 h-102.1 z"><title>Ghostty: 43.1 J</title></path>
+<text class="secondary tick" x="230.1" y="181.0" font-size="12">43.1</text>
+<text class="secondary" x="108" y="211.0" font-size="12" text-anchor="end">iTerm2</text>
+<path class="context" d="M118.0,198.0 h261.4 a4,4 0 0 1 4,4 v10.0 a4,4 0 0 1 -4,4 h-261.4 z"><title>iTerm2: 107.9 J</title></path>
+<text class="secondary tick" x="389.4" y="211.0" font-size="12">107.9</text>
+<text class="secondary" x="108" y="241.0" font-size="12" text-anchor="end">Terminal.app</text>
+<path class="context" d="M118.0,228.0 h301.8 a4,4 0 0 1 4,4 v10.0 a4,4 0 0 1 -4,4 h-301.8 z"><title>Terminal.app: 124.3 J</title></path>
+<text class="secondary tick" x="429.8" y="241.0" font-size="12">124.3</text>
+<text class="secondary" x="108" y="271.0" font-size="12" text-anchor="end">WezTerm</text>
+<path class="context" d="M118.0,258.0 h478.9 a4,4 0 0 1 4,4 v10.0 a4,4 0 0 1 -4,4 h-478.9 z"><title>WezTerm: 196.3 J</title></path>
+<text class="secondary tick" x="606.9" y="271.0" font-size="12">196.3</text>
 </svg>

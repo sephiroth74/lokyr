@@ -126,38 +126,45 @@ def nearest_rank(values, percent):
 
 def compare():
     """Lokyr against the other terminals of macOS: Lokyr of its latest
-    session, the others of F2-134, which the subtitles tell."""
+    session, the others of F2-134, which the subtitles tell. The README
+    shows the charts one under another, of one height, the tallest's."""
     figures = compare_figures()
     rows = lambda measure: [(name, figures[key][measure], key == "lokyr")
                             for key, name in TERMINALS]
-    root = f"{LOKYR}/charts"
     of = "; Lokyr of the build after F3-72, the others of F2-134"
-    save(f"{root}/startup.svg", charts.bars(
-        "Startup", "From the process's start to its first window, median of 10 runs; "
-        "less is better" + of, rows("startup"), "ms"))
-    save(f"{root}/memory.svg", charts.bars(
-        "Memory at rest", "Footprint without the GPU's, a window of 120 × 40 cells; "
-        "less is better" + of, rows("footprint"), "MB", digits=1))
-    save(f"{root}/wakeups.svg", charts.bars(
-        "Wakeups at rest", "Interrupt wakeups a second, over 60 s with a steady cursor; "
-        "less is better" + of, rows("wakeups"), "a second", digits=2))
-    save(f"{root}/throughput.svg", charts.bars(
-        "Throughput", "cat of 1 GiB of ASCII lines, on screen, median of 5 runs; "
-        "more is better" + of, rows("cat"), "MiB/s", order="descending"))
-    save(f"{root}/energy.svg", charts.bars(
-        "CPU energy", "Joules that the terminal's CPU spends to show cat of 1 GiB; "
-        "less is better" + of,
-        rows("energy"), "J", digits=1))
-    root = f"{OTHERS}/charts"
+    bars = [
+        ("startup", "Startup", "From the process's start to its first window, median of 10 runs; "
+         "less is better" + of, rows("startup"), "ms", {}),
+        ("memory", "Memory at rest", "Footprint without the GPU's, a window of 120 × 40 cells; "
+         "less is better" + of, rows("footprint"), "MB", {"digits": 1}),
+        ("wakeups", "Wakeups at rest", "Interrupt wakeups a second, over 60 s with a steady cursor; "
+         "less is better" + of, rows("wakeups"), "a second", {"digits": 2}),
+        ("throughput", "Throughput", "cat of 1 GiB of ASCII lines, on screen, median of 5 runs; "
+         "more is better" + of, rows("cat"), "MiB/s", {"order": "descending"}),
+        ("energy", "CPU energy", "Joules that the terminal's CPU spends to show cat of 1 GiB; "
+         "less is better" + of, rows("energy"), "J", {"digits": 1}),
+    ]
     cases = typometer()
-    for rate in ("60", "120"):
-        save(f"{root}/latency-{rate}hz.svg", charts.ranges(
-            f"Latency at {rate} Hz",
-            "A key to its echo on screen, in ms, of 200 keys of Typometer's, the window alone; "
-            "less is better",
-            [(name, statistics.median(cases[rate][key]),
-              nearest_rank(cases[rate][key], 99), key == "lokyr")
-             for key, name in TERMINALS if key in cases[rate]], "ms"))
+    latency = [
+        (rate, f"Latency at {rate} Hz",
+         "A key to its echo on screen, in ms, of 200 keys of Typometer's, the window alone; "
+         "less is better",
+         [(name, statistics.median(cases[rate][key]),
+           nearest_rank(cases[rate][key], 99), key == "lokyr")
+          for key, name in TERMINALS if key in cases[rate]])
+        for rate in ("60", "120")
+    ]
+    height = max(
+        [charts.top_of(subtitle) + charts.BAND * len(data) + 34
+         for _, _, subtitle, data, _, _ in bars]
+        + [charts.top_of(subtitle) + 22 + charts.BAND * len(data) + 34
+           for _, _, subtitle, data in latency])
+    for name, title, subtitle, data, unit, options in bars:
+        save(f"{LOKYR}/charts/{name}.svg",
+             charts.bars(title, subtitle, data, unit, height=height, **options))
+    for rate, title, subtitle, data in latency:
+        save(f"{OTHERS}/charts/latency-{rate}hz.svg",
+             charts.ranges(title, subtitle, data, "ms", height=height))
 
 
 REPORTS = {"latency": latency, "compare": compare}
