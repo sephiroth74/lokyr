@@ -503,37 +503,42 @@ fn a_live_resize_draws_once_a_refresh() {
     // A frame drawn within this refresh: the display's frame, and a step
     // within half of it, wait for the next, as a second frame within the
     // transaction's commit would wait a second for a drawable.
-    app.windows.get_mut(&window).unwrap().drawn_at = Some(Instant::now());
+    // Each draw's time set right before the event that reads it, as a slow
+    // machine's own steps between them would take part of the refresh.
+    let drawn = |app: &mut App, ago: u64| {
+        app.windows.get_mut(&window).unwrap().drawn_at =
+            Some(Instant::now() - Duration::from_millis(ago));
+    };
     // The grid that a frame lays out, which a draw changes.
     let laid_out = |app: &App| app.windows[&window].views[0].grid;
     let before = laid_out(&app);
+    drawn(&mut app, 0);
     fake.send(&mut app, window, WindowEvent::Frame);
     assert!(fake.window(window).unwrap().frame_requested);
+    drawn(&mut app, 0);
     fake.send(&mut app, window, WindowEvent::Resized(points(400.0, 300.0)));
     assert_eq!(laid_out(&app), before);
     assert!(fake.window(window).unwrap().frame_requested);
     // Past half the refresh, a step draws at once, in its own transaction,
-    // where the display's frame waits for the next refresh.
-    let half = Instant::now() - Duration::from_millis(12);
-    app.windows.get_mut(&window).unwrap().drawn_at = Some(half);
+    // where the display's frame, within the refresh, waits for the next.
+    drawn(&mut app, 12);
     fake.send(&mut app, window, WindowEvent::Resized(points(420.0, 310.0)));
     assert_ne!(laid_out(&app), before);
     let before = laid_out(&app);
-    app.windows.get_mut(&window).unwrap().drawn_at = Some(half);
+    drawn(&mut app, 2);
     fake.send(&mut app, window, WindowEvent::Frame);
     assert_eq!(laid_out(&app), before);
     assert!(fake.window(window).unwrap().frame_requested);
     // A refresh later, it draws at once, and so does the display's frame.
-    let earlier = Instant::now() - Duration::from_millis(50);
-    app.windows.get_mut(&window).unwrap().drawn_at = Some(earlier);
+    drawn(&mut app, 50);
     fake.send(&mut app, window, WindowEvent::Resized(points(400.0, 300.0)));
     assert_ne!(laid_out(&app), before);
-    app.windows.get_mut(&window).unwrap().drawn_at = Some(earlier);
+    drawn(&mut app, 50);
     fake.send(&mut app, window, WindowEvent::Frame);
     assert!(!fake.window(window).unwrap().frame_requested);
     // Out of a live resize, a frame draws whenever it comes.
     fake.send(&mut app, window, WindowEvent::LiveResize(false));
-    app.windows.get_mut(&window).unwrap().drawn_at = Some(Instant::now());
+    drawn(&mut app, 0);
     fake.send(&mut app, window, WindowEvent::Frame);
     assert!(!fake.window(window).unwrap().frame_requested);
 }
