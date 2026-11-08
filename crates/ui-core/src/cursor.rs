@@ -17,7 +17,7 @@
 //! fade-out = 900
 //! fade-out-curve = "ease-in-out"
 //! hidden = 500
-//! movement = "instant"         # instant | snappy | gliding
+//! movement = "instant"         # instant | snappy
 //! ```
 
 use std::time::{Duration, Instant};
@@ -337,8 +337,6 @@ pub enum Movement {
     Instant,
     /// Eased there quickly, slowing as it comes.
     Snappy,
-    /// Eased there more slowly and softly, from its start to its end.
-    Gliding,
 }
 
 impl Movement {
@@ -347,7 +345,6 @@ impl Movement {
         match self {
             Self::Instant => None,
             Self::Snappy => Some((Duration::from_millis(80), Curve::EaseOut)),
-            Self::Gliding => Some((Duration::from_millis(180), Curve::EaseInOut)),
         }
     }
 }

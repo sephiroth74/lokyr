@@ -490,14 +490,14 @@ fade-out = 900
 fade-out-curve = "ease-in-out"
 hidden = 500
 blink-timeout = 15        # seconds without keys or output before blinking stops; 0 never stops
-movement = "instant"      # instant | snappy | gliding
+movement = "instant"      # instant | snappy
 ```
 
 - **Shape**: a block, a vertical bar, an underline, or a hollow block, of its edges alone. Programs change the shape and the blinking with DECSCUSR, as vim does in insert mode, among the first three. The options are the default, which `CSI 0 SP q` and a reset bring back.
   - The text under a block takes its cell's background. A bar and an underline take `thickness`, which scales with the display as the font's size does, or else the face's underline thickness, which a hollow block's edges always take.
   - Mode 12, which `cvvis` sets in xterm's terminfo, makes the cursor blink too. Its reset, which `cnorm` sends as each full-screen program ends, leaves the configuration's blinking, so that the cursor does not stop blinking after `less` or `vim`.
 - **Blinking**: on and off for `blink-interval` each. With `smooth-blink`, the cursor fades between the two instead of switching, as iTerm2's does, of its presets, Breathing, Linear, Fast, Slow and Subtle, or of six values of the user's: each fade's duration and curve, and how long the cursor holds visible and hidden between them. The cursor's cell is a layer of its own, whose opacity the window server animates, so that the blinking and its fades wake the app no more.
-- **Movement**: `snappy` eases the cursor to its new position in 80 ms, slowing as it comes, `gliding` in 180 ms, slow at its start and its end, and `instant`, the default, moves it at once.
+- **Movement**: `snappy` eases the cursor to its new position in 80 ms, slowing as it comes, and `instant`, the default, moves it at once.
   - The animation only moves the cursor that is drawn. The text that a key press changes still appears in the next frame, so the latency budget holds.
   - Each frame animates from where the cursor was drawn to where it is now, so a burst of output, or a synchronized update (mode 2026), moves it once rather than once per sequence.
   - The window server slides the cursor's layer, as it blinks it, from where it shows, in the middle of a slide too, so that a movement takes no frame of the app's and no display link: the frame tells the layer its new place with the slide.

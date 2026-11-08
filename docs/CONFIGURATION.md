@@ -78,7 +78,7 @@ visible = 700                        # ms held visible, from 0 to 10000
 fade-out = 400
 fade-out-curve = "ease-in"
 hidden = 200                         # ms held hidden
-movement = "snappy"                  # instant | snappy | gliding: how it moves to a new cell
+movement = "snappy"                  # instant | snappy: how it moves to a new cell
 
 [window]
 columns = 120                        # a new window's size, in cells, from 1 to 1000
@@ -573,7 +573,6 @@ How the cursor moves to a new cell: at once, or slid there.
 |---|---|
 | `"instant"` | At once |
 | `"snappy"` | Slid there in 80 ms, slowing as it comes |
-| `"gliding"` | Slid there in 180 ms, softer, slow at its start and at its end |
 
 Default: `"instant"`.
 

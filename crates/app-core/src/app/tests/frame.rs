@@ -1077,17 +1077,8 @@ fn a_move_of_the_cursor_s_own_slides_its_layer_as_the_config_says() {
             easing: Easing::EaseOut,
         })
     );
-    // Gliding, as the config changes: longer and softer.
-    app.config.cursor.movement = cursor::Movement::Gliding;
-    let place = typed_moves(&mut fake, &mut app, window, "b");
-    assert_eq!(
-        place.slide,
-        Some(Slide {
-            duration: millis(180),
-            easing: Easing::EaseInOut,
-        })
-    );
-    // At once where the system reduces motion, and as the config says.
+    // At once where the system reduces motion, and as the config says, as
+    // it changes.
     fake.set_reduce_motion(true);
     assert_eq!(typed_moves(&mut fake, &mut app, window, "c").slide, None);
     fake.set_reduce_motion(false);
@@ -1098,7 +1089,7 @@ fn a_move_of_the_cursor_s_own_slides_its_layer_as_the_config_says() {
 #[test]
 fn a_cursor_that_the_view_or_the_screen_moves_goes_at_once() {
     let mut config = unpadded();
-    config.cursor.movement = cursor::Movement::Gliding;
+    config.cursor.movement = cursor::Movement::Snappy;
     let (mut fake, mut app, window) = sliding(config);
     // Rows to the screen's bottom, then a line more, which scrolls the
     // screen under the cursor: at once.
