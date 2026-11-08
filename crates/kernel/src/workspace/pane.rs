@@ -1538,7 +1538,11 @@ mod tests {
         assert_eq!(quiet.resize(grid(95), start + RESIZE_PACE), None);
         assert_eq!(quiet.grid().columns, 95);
         assert_eq!(quiet.answer_due(), Some(start + ANSWER_WAIT));
-        assert!(!quiet.update());
+        // Before the wait's end, as a loaded machine can take it whole
+        // between the sizes and this look.
+        if start.elapsed() < ANSWER_WAIT {
+            assert!(!quiet.update());
+        }
         std::thread::sleep(ANSWER_WAIT);
         assert!(quiet.update());
         assert_eq!(quiet.snapshot().cols(), 95);
