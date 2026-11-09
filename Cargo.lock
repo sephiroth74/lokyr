@@ -2046,6 +2046,8 @@ name = "sleip-cli"
 version = "0.7.0"
 dependencies = [
  "lokyr-pkg-model",
+ "lokyr-plugin-host-luau",
+ "lokyr-plugin-sdk",
  "serde_json",
  "sleip-index",
  "sleip-resolver",

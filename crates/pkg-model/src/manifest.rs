@@ -498,6 +498,12 @@ fn slot_names() -> String {
         .join(", ")
 }
 
+/// Whether `name` is a plugin's name, `owner/name`, each part of lowercase
+/// letters, digits and `-`, from a letter.
+pub fn is_plugin_name(name: &str) -> bool {
+    is_name(name)
+}
+
 /// Whether `name` is `owner/name`, each part of lowercase letters, digits
 /// and `-`, from a letter.
 pub(crate) fn is_name(name: &str) -> bool {

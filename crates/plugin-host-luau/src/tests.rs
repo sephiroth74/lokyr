@@ -381,21 +381,25 @@ return {
 
 #[test]
 fn the_template_s_plugin_runs_as_its_types_tell() {
+    use lokyr_plugin_sdk::view::Role as NodeRole;
+
     let mut plugin = plugin(include_str!("../luau/template/src/init.luau"));
-    let mut host = FakeHost::new("acme/test");
+    let mut host = FakeHost::new("acme/hello");
     host.pane(lokyr_plugin_sdk::host::PaneId(1));
-    host.pane(lokyr_plugin_sdk::host::PaneId(2));
     host.focus(Some(lokyr_plugin_sdk::host::PaneId(1)));
     host.activate(&mut plugin).unwrap();
-    assert_eq!(host.commands()[0].name, "hello.count");
-    host.command(&mut plugin, "hello.count", Args::new())
+    assert_eq!(host.commands()[0].name, "hello.say");
+    // Its command shows its notice, which goes by itself.
+    host.command(&mut plugin, "hello.say", Args::new()).unwrap();
+    let notice = PanelId::from("notice");
+    assert!(host.panels().contains_key(&notice));
+    let tree = host
+        .render(&mut plugin, &ViewId::Panel(notice.clone()))
         .unwrap();
-    assert_eq!(
-        host.state(),
-        &Data::Map(BTreeMap::from([("panes".to_owned(), Data::Integer(2))]))
-    );
-    let view = ViewId::Panel(PanelId::from("x"));
-    let tree = nowhere(|cx| plugin.render(cx, &view)).unwrap();
-    assert_eq!(tree.kind, Kind::Text("Panes".to_owned()));
+    assert_eq!(tree.role, Some(NodeRole::Alert));
+    assert_eq!(tree.children[0].kind, Kind::Text("Hello!".to_owned()));
+    host.advance(std::time::Duration::from_millis(3000));
+    host.deliver(&mut plugin).unwrap();
+    assert!(!host.panels().contains_key(&notice));
     assert_eq!(plugin.take_failure(), None);
 }

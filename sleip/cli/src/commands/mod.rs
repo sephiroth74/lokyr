@@ -4,6 +4,7 @@
 mod doctor;
 mod gc;
 mod list;
+mod new;
 mod remove;
 
 use std::process::ExitCode;
@@ -24,6 +25,7 @@ pub fn run(options: Options, command: &Command) -> ExitCode {
         }
     };
     let ran = match command {
+        Command::New(plugin) => new::new(out, plugin),
         Command::List => list::list(&paths, out),
         Command::Remove(plugin) => remove::remove(&paths, options, out, plugin),
         Command::Gc => gc::gc(&paths, out),

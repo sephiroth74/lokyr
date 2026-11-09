@@ -16,6 +16,8 @@ pub struct Options {
 /// A command and its arguments.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Command {
+    /// A plugin made, by its name.
+    New(String),
     /// The installed plugins.
     List,
     /// A plugin removed, by its name.
@@ -44,6 +46,7 @@ Sleip, the plugin package manager for Lokyr.
 Usage: sleip [options] <command> [arguments]
 
 Commands:
+  new <plugin>       Make a plugin of Luau, as owner/name, in a folder of its name
   list               List the installed plugins, their versions and capabilities
   remove <plugin>    Remove a plugin, as owner/name; its package stays until `gc`
   gc                 Remove the packages of the store that no lockfile names
@@ -61,6 +64,9 @@ Options:
 /// The help of the command `name`, if it is one.
 fn command_help(name: &str) -> Option<&'static str> {
     Some(match name {
+        "new" => {
+            "Usage: sleip new [options] <plugin>\n\nMakes a plugin of Luau that works, as owner/name, in a folder of its name\nafter the owner in the current folder: its manifest, src/init.luau of a\ncommand that shows a notice, its texts in English, a test, the plugin API's\ntypes and luau-lsp's settings.\n"
+        }
         "list" => {
             "Usage: sleip list [options]\n\nLists the plugins of plugins.lock: each one's version, kind, source and\ncapabilities.\n"
         }
@@ -115,6 +121,7 @@ pub fn parse(args: &[String]) -> Result<Parsed, String> {
         ["help"] => help_of(None),
         ["help", name] => help_of(Some(name)),
         [name, ..] if help => help_of(Some(name)),
+        ["new", plugin] => Ok(Parsed::Run(options, Command::New((*plugin).to_owned()))),
         ["list"] => Ok(Parsed::Run(options, Command::List)),
         ["remove", plugin] => Ok(Parsed::Run(options, Command::Remove((*plugin).to_owned()))),
         ["gc"] => Ok(Parsed::Run(options, Command::Gc)),

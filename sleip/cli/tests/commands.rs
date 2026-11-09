@@ -360,3 +360,94 @@ fn two_sleips_at_once_wait_on_the_store_s_lock() {
     assert_eq!(events(&free)[0]["event"], "done");
     let _: &Path = &path;
 }
+
+#[test]
+fn new_makes_a_plugin_that_reads_packs_and_runs() {
+    use lokyr_plugin_host_luau::{Execution, LuauPlugin, Package};
+    use lokyr_plugin_sdk::fake::FakeHost;
+    use lokyr_plugin_sdk::host::PaneId;
+    use lokyr_plugin_sdk::ui::{PanelId, ViewId};
+
+    let sandbox = Sandbox::new("new");
+    let work = sandbox.home.join("work");
+    std::fs::create_dir_all(&work).unwrap();
+    let made = sandbox
+        .command(&["--json", "new", "acme/greeter"])
+        .current_dir(&work)
+        .output()
+        .unwrap();
+    assert!(made.status.success(), "{made:?}");
+    let json = events(&made);
+    assert_eq!(json[0]["event"], "created");
+    assert_eq!(json[0]["name"], "acme/greeter");
+    assert_eq!(json[0]["files"].as_array().unwrap().len(), 8);
+    let folder = work.join("greeter");
+    let read = |path: &str| std::fs::read_to_string(folder.join(path)).unwrap();
+    // Its manifest, of its name, its command and the plugin API.
+    let manifest = lokyr_pkg_model::manifest::Manifest::parse(&read("plugin.toml")).unwrap();
+    assert_eq!(manifest.name, "acme/greeter");
+    assert_eq!(manifest.contributes.commands[0].name, "greeter.say");
+    assert_eq!(manifest.activation, ["command:greeter.say"]);
+    assert!(manifest.takes_api(lokyr_plugin_sdk::API_VERSION));
+    // Nothing of the template's name left.
+    for path in [
+        "plugin.toml",
+        "src/init.luau",
+        "locales/en/greeter.ftl",
+        "tests/greeter.luau",
+        "README.md",
+    ] {
+        let text = read(path);
+        for left in ["acme/hello", "hello.", "hello-", "# hello"] {
+            assert!(!text.contains(left), "{path} holds `{left}`");
+        }
+    }
+    assert!(read("lokyr.d.luau").contains("export type Cx"));
+    // Its package packs, of its layout.
+    lokyr_pkg_model::archive::pack(&folder).unwrap();
+    // It runs, its notice of its catalog's text.
+    let catalog = read("locales/en/greeter.ftl");
+    let notice_text = catalog
+        .lines()
+        .find_map(|line| line.strip_prefix("greeter-notice = "))
+        .unwrap();
+    let mut plugin = LuauPlugin::new(
+        "acme/greeter",
+        Package::new([("src/init.luau".to_owned(), read("src/init.luau"))]),
+        Execution::Native,
+    );
+    let mut host = FakeHost::new("acme/greeter");
+    host.pane(PaneId(1));
+    host.focus(Some(PaneId(1)));
+    host.set_message("greeter-notice", &[], Some(notice_text));
+    host.activate(&mut plugin).unwrap();
+    host.command(
+        &mut plugin,
+        "greeter.say",
+        lokyr_plugin_sdk::command::Args::new(),
+    )
+    .unwrap();
+    let notice = PanelId::from("notice");
+    assert!(host.panels().contains_key(&notice));
+    let tree = host.render(&mut plugin, &ViewId::Panel(notice)).unwrap();
+    assert_eq!(
+        tree.children[0].kind,
+        lokyr_plugin_sdk::view::Kind::Text(notice_text.to_owned())
+    );
+    // A folder there already, and names that are not a plugin's.
+    let again = sandbox
+        .command(&["new", "acme/greeter"])
+        .current_dir(&work)
+        .output()
+        .unwrap();
+    assert_eq!(again.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&again.stderr).contains("there already"));
+    for wrong in ["greeter", "Acme/greeter", "acme/9lives", "lokyr/mine"] {
+        let output = sandbox
+            .command(&["new", wrong])
+            .current_dir(&work)
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(1), "{wrong}");
+    }
+}

@@ -23,7 +23,7 @@ The split is the same as cargo and rustc: the app runs plugins, and Sleip provid
 
 | Command | What it does |
 |---|---|
-| `sleip new <name>` | Scaffolds a plugin: manifest, Luau sources, the API's type definitions, tests |
+| `sleip new <name>` | Scaffolds a plugin of Luau that works, as `owner/name`, in a folder of its name after the owner: its manifest, `src/init.luau` of a command that shows a notice, its texts in English, a test, the API's type definitions and luau-lsp's settings |
 | `sleip check` | Type-checks the Luau sources against the API's definitions, and checks the manifest and the API version |
 | `sleip test` | Runs the plugin in a headless host with simulated events |
 | `sleip dev` | Checks the plugin and links its folder into the app's plugins, a dev entry of `plugins.lock` that names the folder, of no hash, which the app watches and reloads at each change, and checks it again at each change; the entry goes as it ends ([ADR 0038](adr/0038-plugin-ecosystem-scope.md)) |
@@ -44,7 +44,7 @@ The split is the same as cargo and rustc: the app runs plugins, and Sleip provid
 - `--registry <name>`: selects a registry.
 
 **Output, exit codes and places**
-- Text for a person by default; with `--json`, an event of NDJSON a line on the standard output, each a JSON object of its `event`: `plugin` of `list`, of `name`, `version`, `kind`, `source` and `capabilities`; `removed` of `remove`, of `name`; `collected` of `gc`, of a package's `digest`, or a `leftover` of an install that stopped, and its `bytes`, then `done` of `collected` and `bytes`; `check` of `doctor`, of `name`, `level`, `ok`, `note` or `error`, and `detail`, then `done` of `problems`; `waiting`, of what a command waits for, as the store's lock; and `error`, of its `message`.
+- Text for a person by default; with `--json`, an event of NDJSON a line on the standard output, each a JSON object of its `event`: `created` of `new`, of `name`, `folder` and `files`; `plugin` of `list`, of `name`, `version`, `kind`, `source` and `capabilities`; `removed` of `remove`, of `name`; `collected` of `gc`, of a package's `digest`, or a `leftover` of an install that stopped, and its `bytes`, then `done` of `collected` and `bytes`; `check` of `doctor`, of `name`, `level`, `ok`, `note` or `error`, and `detail`, then `done` of `problems`; `waiting`, of what a command waits for, as the store's lock; and `error`, of its `message`.
 - Exit codes: 0, done; 1, a failure, as a plugin that another needs or a problem that `doctor` found; 2, a command line that is wrong, as the help tells.
 - The places are the app's: the config's folder, `~/.config/lokyr/` or `$XDG_CONFIG_HOME/lokyr/`, of `plugins.toml`, `plugins.lock` and `permissions.toml`; the store, `~/Library/Application Support/lokyr/store/` on macOS, `$XDG_DATA_HOME/lokyr/store/` elsewhere; the cache, `~/Library/Caches/lokyr/sleip/` on macOS, `$XDG_CACHE_HOME/lokyr/sleip/` elsewhere.
 - The app's plugin API, which the plugins are resolved against, of the app that `SLEIP_LOKYR` names, a bundle, its resources' `api-version` file or its binary; of the bundle that Sleip's binary is in; of `Lokyr.app` in the Applications folders; or of `lokyr --api-version` on the `PATH`.
