@@ -154,6 +154,20 @@ pub fn native_supported() -> bool {
     vm::native_supported()
 }
 
+/// The bytes of a plugin's error that its failure tells, so that a message
+/// of megabytes, as `error(string.rep("x", 4 * 1024 * 1024))` raises,
+/// reaches neither the log nor the notices whole.
+pub const MOST_TOLD: usize = 4096;
+
+/// `message`, a plugin's error, as its failure tells it: its first
+/// [`MOST_TOLD`] bytes, of `…` where it goes on.
+fn told(message: &str) -> String {
+    if message.len() <= MOST_TOLD {
+        return message.to_owned();
+    }
+    format!("{}…", &message[..message.floor_char_boundary(MOST_TOLD)])
+}
+
 /// A plugin's package: its sources, by their paths in the package, as
 /// `src/init.luau`.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -228,7 +242,10 @@ impl LuauPlugin {
         match failure {
             vm::Failure::Code(error) => Error::new(
                 Code::Failed,
-                format!("the plugin `{name}` failed in `{call}`: {error}"),
+                format!(
+                    "the plugin `{name}` failed in `{call}`: {}",
+                    told(&error.to_string())
+                ),
             ),
             vm::Failure::PastDeadline => Error::new(
                 Code::Fault,
@@ -284,9 +301,10 @@ impl LuauPlugin {
         Error::new(
             Code::Failed,
             format!(
-                "the plugin `{}`'s `{}` returns {wanted}: {error}",
+                "the plugin `{}`'s `{}` returns {wanted}: {}",
                 self.name,
-                callback.name()
+                callback.name(),
+                told(&error.to_string())
             ),
         )
     }

@@ -403,3 +403,64 @@ fn the_template_s_plugin_runs_as_its_types_tell() {
     assert!(!host.panels().contains_key(&notice));
     assert_eq!(plugin.take_failure(), None);
 }
+
+#[test]
+fn a_plugin_s_errors_of_long_texts_are_told_short() {
+    // The long texts made as it activates, whose deadline is longer than a
+    // render's.
+    let entry = r#"
+local long, kind, field
+return {
+    activate = function(cx)
+        long = string.rep("x", 4 * 1024 * 1024)
+        kind = string.rep("k", 17 * 1024 * 1024)
+        field = string.rep("f", 1024 * 1024)
+    end,
+    on_command = function(cx, name)
+        error(long)
+    end,
+    render = function(cx, view)
+        if view.panel == "kind" then
+            return { kind = kind }
+        elseif view.panel == "field" then
+            return { kind = "text", text = "t", [field] = 1 }
+        end
+        return { kind = field }
+    end,
+}
+"#;
+    let mut plugin = plugin(entry);
+    let mut host = FakeHost::new("acme/test");
+    host.activate(&mut plugin).unwrap();
+    // A message of megabytes, cut.
+    let error = host
+        .command(&mut plugin, "acme.go", Args::new())
+        .unwrap_err();
+    assert_eq!(error.code, Code::Failed);
+    assert!(
+        error.message.len() <= MOST_TOLD + 256,
+        "{}",
+        error.message.len()
+    );
+    assert!(error.message.ends_with('…'));
+    // A node's kind past the texts' bytes, refused as such; a kind and a
+    // field of no name of a node's, told of their first characters.
+    for (panel, told) in [
+        ("kind", "MiB of texts at most"),
+        ("short", "is no kind of node"),
+        ("field", "no field `fff"),
+    ] {
+        nowhere(|cx| plugin.render(cx, &ViewId::Panel(PanelId::from(panel))));
+        let failure = plugin.take_failure().unwrap();
+        assert!(
+            failure.message.contains(told),
+            "{panel}: {}",
+            &failure.message[..200.min(failure.message.len())]
+        );
+        assert!(
+            failure.message.len() < 1024,
+            "{panel}: {}",
+            failure.message.len()
+        );
+    }
+}

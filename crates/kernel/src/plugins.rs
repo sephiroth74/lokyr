@@ -430,6 +430,10 @@ struct State {
     /// their pane started, whose matches show until the later one shows
     /// its own or ends, so that the view does not lose them in between.
     lingering: Vec<search::Search>,
+    /// Its searches that a later one of their pane replaced in the call
+    /// under way, which stop, or linger, as the call returns, and run on of
+    /// a call that fails, as if it had not been.
+    replaced: Vec<search::Search>,
     /// Its timers, by their ids, [`host::MOST_TIMERS`] at most.
     timers: BTreeMap<u64, Timer>,
     /// What activates it, of its manifest's `activation.on`: the app's
@@ -1260,6 +1264,7 @@ impl Plugins {
                 reading: Arc::default(),
                 restarts: Restarts::default(),
                 lingering: Vec::new(),
+                replaced: Vec::new(),
                 timers: BTreeMap::new(),
                 triggers,
                 undecided: Vec::new(),
@@ -1985,6 +1990,7 @@ impl Plugins {
                     entry.state.views.remove(&ViewId::PaneHeader(*pane));
                     entry.state.searches.retain(|search| search.pane != *pane);
                     entry.state.lingering.retain(|search| search.pane != *pane);
+                    entry.state.replaced.retain(|search| search.pane != *pane);
                 }
             }
             _ => {}
@@ -2723,6 +2729,7 @@ impl Plugins {
         }
         if result.is_ok() {
             closed_panels(state, &mut sent, tally.closed);
+            settle_replaced(state, context.workspace);
             apply(writes, context, &mut sent, state);
         } else {
             // A call that failed leaves things as they were, as the main
@@ -2971,6 +2978,7 @@ fn call<T>(
     match outcome {
         Ok(Ok(result)) => {
             closed_panels(state, out, tally.closed);
+            settle_replaced(state, context.workspace);
             apply(writes, context, out, state);
             deepen(&mut out.requests[requests..], Chain::default());
             Ok(result)
@@ -3321,6 +3329,7 @@ fn clear_leftovers(state: &mut State, context: &mut Context<'_>, out: &mut Outbo
     for search in searches
         .into_iter()
         .chain(std::mem::take(&mut state.lingering))
+        .chain(std::mem::take(&mut state.replaced))
     {
         let pane = context.workspace.pane(PaneId::of(search.pane.0));
         search.end(pane.and_then(Pane::terminal).as_deref_mut());
@@ -3401,13 +3410,36 @@ fn fired(state: &mut State) -> Vec<Event> {
 /// failed started, of `workspace`: its ids name nothing, as the call left
 /// things as they were.
 fn end_searches(state: &mut State, ids: &[u64], workspace: &Workspace) {
-    for id in ids {
-        if let Some(at) = state.searches.iter().position(|kept| kept.id == *id) {
-            let ended = state.searches.remove(at);
-            let mut terminal = workspace
-                .pane(PaneId::of(ended.pane.0))
-                .and_then(Pane::terminal);
-            ended.end(terminal.as_deref_mut());
+    let started = |search: &search::Search| ids.contains(&search.id);
+    let (ended, kept): (Vec<_>, Vec<_>) = std::mem::take(&mut state.searches)
+        .into_iter()
+        .chain(std::mem::take(&mut state.replaced))
+        .partition(started);
+    // Those that the call replaced, which it did not start, run on.
+    state.searches = kept;
+    for search in ended {
+        let mut terminal = workspace
+            .pane(PaneId::of(search.pane.0))
+            .and_then(Pane::terminal);
+        search.end(terminal.as_deref_mut());
+    }
+}
+
+/// Settles the searches that the call of the plugin of `state` replaced,
+/// as it returns: each stops, its matches gone; shown, of a pane there
+/// still, they show until its pane's search shows its own, as one that
+/// lingered before, which goes.
+fn settle_replaced(state: &mut State, workspace: &Workspace) {
+    for search in std::mem::take(&mut state.replaced) {
+        let pane = search.pane;
+        let mut terminal = workspace.pane(PaneId::of(pane.0)).and_then(Pane::terminal);
+        if search.is_shown() && terminal.is_some() {
+            drop(terminal);
+            end_lingering(&mut state.lingering, pane, workspace);
+            search.stop();
+            state.lingering.push(search);
+        } else {
+            search.end(terminal.as_deref_mut());
         }
     }
 }
@@ -4479,9 +4511,9 @@ impl Host<'_, '_> {
                 })?;
                 let query =
                     search::query(&query).map_err(|message| Error::new(Code::Failed, message))?;
-                // Its search of the pane before ends, its matches gone; shown,
-                // they show until this one shows its own, as one that lingered
-                // before, which goes.
+                // Its search of the pane before ends as the call returns, its
+                // matches gone; shown, they show until this one shows its
+                // own, as one that lingered before, which goes.
                 if let Some(at) = self
                     .state
                     .searches
@@ -4489,14 +4521,7 @@ impl Host<'_, '_> {
                     .position(|kept| kept.pane == pane)
                 {
                     let before = self.state.searches.remove(at);
-                    if before.is_shown() {
-                        end_lingering(&mut self.state.lingering, pane, self.context.workspace);
-                        before.stop();
-                        self.state.lingering.push(before);
-                    } else {
-                        let pane = self.context.workspace.pane(PaneId::of(pane.0));
-                        before.end(pane.and_then(Pane::terminal).as_deref_mut());
-                    }
+                    self.state.replaced.push(before);
                 }
                 let id = new_id();
                 self.state
@@ -4519,6 +4544,7 @@ impl Host<'_, '_> {
                         ended.pane,
                         self.context.workspace,
                     );
+                    end_lingering(&mut self.state.replaced, ended.pane, self.context.workspace);
                     let pane = self.context.workspace.pane(PaneId::of(ended.pane.0));
                     ended.end(pane.and_then(Pane::terminal).as_deref_mut());
                 }

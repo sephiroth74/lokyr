@@ -206,7 +206,7 @@ impl Budget {
     }
 
     /// Counts `bytes` of a text or a buffer that it copies against it.
-    fn copy(&self, bytes: usize) -> Result<(), ShapeError> {
+    pub(crate) fn copy(&self, bytes: usize) -> Result<(), ShapeError> {
         let left = self.bytes.get();
         if bytes > left {
             return Err(ShapeError(format!(
@@ -347,6 +347,19 @@ impl<'b> Taking<'b> {
             }
             _ => Err(self.expected(expected)),
         }
+    }
+}
+
+/// The characters that an error tells of a plugin's text, which may be
+/// long.
+const MOST_TOLD: usize = 64;
+
+/// `text`, of a plugin's, as an error tells it: its first characters, of
+/// `…` where it goes on, so that the error is short however long it is.
+pub(crate) fn excerpt(text: &str) -> String {
+    match text.char_indices().nth(MOST_TOLD) {
+        Some((at, _)) => format!("{}…", &text[..at]),
+        None => text.to_owned(),
     }
 }
 
@@ -506,7 +519,10 @@ impl<'de> de::Deserializer<'de> for Taking<'_> {
         let mut chars = text.chars();
         match (chars.next(), chars.next()) {
             (Some(char), None) => visitor.visit_char(char),
-            _ => Err(ShapeError(format!("expected one character, not {text:?}"))),
+            _ => Err(ShapeError(format!(
+                "expected one character, not {:?}",
+                excerpt(&text)
+            ))),
         }
     }
 
@@ -635,7 +651,8 @@ impl<'de> de::Deserializer<'de> for Taking<'_> {
         let unknown = |given: &str| {
             let names: Vec<_> = variants.iter().map(|name| rust_name(name)).collect();
             ShapeError(format!(
-                "`{given}` is no variant of {name}, of {}",
+                "`{}` is no variant of {name}, of {}",
+                excerpt(given),
                 names.join(", ")
             ))
         };
@@ -673,6 +690,7 @@ impl<'de> de::Deserializer<'de> for Taking<'_> {
                     .to_str()
                     .map(|key| key.to_owned())
                     .map_err(|_| unknown("?"))?;
+                self.budget.copy(given.len())?;
                 let variant = named(&given, variants).ok_or_else(|| unknown(&given))?;
                 visitor.visit_enum(Variant {
                     variant,
@@ -795,10 +813,12 @@ impl<'de> MapAccess<'de> for Entries<'_> {
             .to_str()
             .map(|key| key.to_owned())
             .map_err(|_| ShapeError("a field's name is a text of UTF-8".to_owned()))?;
+        self.of.budget.copy(given.len())?;
         let Some(field) = named(&given, fields) else {
             let names: Vec<_> = fields.iter().map(|name| rust_name(name)).collect();
             return Err(ShapeError(format!(
-                "no field `{given}`, of {}",
+                "no field `{}`, of {}",
+                excerpt(&given),
                 names.join(", ")
             )));
         };

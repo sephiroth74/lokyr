@@ -397,3 +397,29 @@ fn a_capability_is_its_text_as_a_manifest_writes_it() {
     );
     assert!(take::<Capability>(r#""pty-write:x""#).is_err());
 }
+
+#[test]
+fn a_refusal_tells_the_first_characters_of_a_long_text() {
+    let long = r#"string.rep("y", 1024 * 1024)"#;
+    // A variant of no name of the enum's, a field of no name of the
+    // struct's, a character of many: each told short.
+    let variant = take::<Corner>(long).unwrap_err().0;
+    assert!(
+        variant.starts_with(&format!("`{}…` is no variant", "y".repeat(64))),
+        "{}",
+        &variant[..100]
+    );
+    let field = take::<PanelOptions>(&format!("{{ [{long}] = 1 }}"))
+        .unwrap_err()
+        .0;
+    assert!(
+        field.starts_with(&format!("no field `{}…`", "y".repeat(64))),
+        "{}",
+        &field[..100]
+    );
+    let character = take::<char>(long).unwrap_err().0;
+    assert!(character.len() < 200, "{}", character.len());
+    // A short text, whole.
+    assert_eq!(excerpt("short"), "short");
+    assert_eq!(excerpt(&"é".repeat(65)), format!("{}…", "é".repeat(64)));
+}

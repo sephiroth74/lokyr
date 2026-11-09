@@ -213,13 +213,18 @@ fn one(value: Value, budget: &Budget) -> Result<(Node, Vec<Value>, Option<Value>
             .to_str()
             .map_err(|_| ShapeError("a node's field is named by a text of UTF-8".to_owned()))?
             .to_owned();
+        budget.copy(key.len())?;
         fields.insert(key, value);
     }
     let kind = match fields.remove("kind") {
-        Some(Value::String(kind)) => kind
-            .to_str()
-            .map_err(|_| ShapeError("a node's `kind` is a text of UTF-8".to_owned()))?
-            .to_owned(),
+        Some(Value::String(kind)) => {
+            let kind = kind
+                .to_str()
+                .map_err(|_| ShapeError("a node's `kind` is a text of UTF-8".to_owned()))?
+                .to_owned();
+            budget.copy(kind.len())?;
+            kind
+        }
         Some(other) => {
             return Err(ShapeError(format!(
                 "`kind`: expected a text, not {}",
@@ -235,7 +240,8 @@ fn one(value: Value, budget: &Budget) -> Result<(Node, Vec<Value>, Option<Value>
     };
     let own = own(&kind).ok_or_else(|| {
         ShapeError(format!(
-            "`{kind}` is no kind of node, of {}",
+            "`{}` is no kind of node, of {}",
+            shape::excerpt(&kind),
             KINDS.join(", ")
         ))
     })?;
@@ -250,7 +256,8 @@ fn one(value: Value, budget: &Budget) -> Result<(Node, Vec<Value>, Option<Value>
             .filter(|name| *name != "kind")
             .collect();
         return Err(ShapeError(format!(
-            "no field `{unknown}` of a {kind} node, of {}",
+            "no field `{}` of a {kind} node, of {}",
+            shape::excerpt(unknown),
             names.join(", ")
         )));
     }

@@ -164,11 +164,14 @@ fn a_call_s_searches_are_bounded_a_look_starts_none_and_a_failed_call_s_end() {
     );
     assert_eq!(codes.borrow_mut().pop(), Some(Some(Code::Failed)));
     assert_eq!(searches(&plugins), 1);
-    // A failed call's search ends, as its id names nothing.
+    // A failed call's search ends, as its id names nothing, and the one
+    // that it replaced runs on.
+    let before = plugins.entries[0].state.searches[0].id;
     let failed = plugins.run("searcher.fails", Args::new(), &mut app.context());
     assert_eq!(failed.unwrap_err().code, Code::Failed);
     assert_eq!(codes.borrow_mut().pop(), Some(None));
-    assert_eq!(searches(&plugins), 0);
+    assert_eq!(searches(&plugins), 1);
+    assert_eq!(plugins.entries[0].state.searches[0].id, before);
 }
 
 #[test]
@@ -369,4 +372,136 @@ fn a_failed_call_or_a_look_that_closes_a_panel_leaves_it_open_of_its_tree() {
     assert!(plugins.deliver(&mut app.context()).is_empty());
     assert_eq!(*closed.borrow(), 1);
     assert!(plugins.tree("panelist", &panel).is_none());
+}
+
+/// A plugin of searches of the focused pane: `shower.show` starts one and
+/// shows its matches, `shower.next` starts one, `shower.fails` starts one
+/// and fails, and `shower.ended` starts one and ends it.
+struct Shower;
+
+impl Plugin for Shower {
+    fn activate(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
+        for name in ["show", "next", "fails", "ended"] {
+            cx.register_command(command(&format!("shower.{name}")))?;
+        }
+        Ok(())
+    }
+
+    fn on_command(&mut self, cx: &mut Cx<'_>, name: &str, _: Args) -> Result<(), Error> {
+        let pane = cx.focused_pane().unwrap();
+        let query = host::SearchQuery {
+            text: "x".to_owned(),
+            ..host::SearchQuery::default()
+        };
+        let id = cx.search(pane, query)?;
+        match name {
+            "shower.show" => cx.show_matches(id, true, None),
+            "shower.fails" => Err(Error::new(Code::Failed, "on purpose")),
+            "shower.ended" => cx.end_search(id),
+            _ => Ok(()),
+        }
+    }
+}
+
+#[test]
+fn a_search_that_a_call_replaces_stops_as_the_call_returns_and_runs_on_if_it_fails() {
+    let mut app = App::default();
+    window(&mut app, "echo x; sleep 10");
+    let mut plugins = Plugins::new();
+    plugins.add("shower", Box::new(Shower)).unwrap();
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    let run = |plugins: &mut Plugins, app: &mut App, name: &str| {
+        plugins.run(name, Args::new(), &mut app.context())
+    };
+    let ids = |plugins: &Plugins| {
+        let state = &plugins.entries[0].state;
+        let of = |searches: &[search::Search]| searches.iter().map(|search| search.id).collect();
+        let (searches, lingering): (Vec<u64>, Vec<u64>) =
+            (of(&state.searches), of(&state.lingering));
+        assert!(state.replaced.is_empty());
+        (searches, lingering)
+    };
+    // A search shown.
+    run(&mut plugins, &mut app, "shower.show").unwrap();
+    let (shown, lingering) = ids(&plugins);
+    assert_eq!(shown.len(), 1);
+    assert!(lingering.is_empty());
+    assert!(plugins.entries[0].state.searches[0].is_shown());
+    // A call that replaces it and fails leaves it running and shown.
+    assert_eq!(
+        run(&mut plugins, &mut app, "shower.fails")
+            .unwrap_err()
+            .code,
+        Code::Failed
+    );
+    assert_eq!(ids(&plugins), (shown.clone(), Vec::new()));
+    assert!(plugins.entries[0].state.searches[0].is_shown());
+    // One that succeeds stops it, its matches lingering.
+    run(&mut plugins, &mut app, "shower.next").unwrap();
+    let (next, lingering) = ids(&plugins);
+    assert_ne!(next, shown);
+    assert_eq!(lingering, shown);
+    // A search shown that replaces one not shown: it ends, and the
+    // lingering one goes as the new one shows.
+    run(&mut plugins, &mut app, "shower.show").unwrap();
+    let (again, lingering) = ids(&plugins);
+    assert_ne!(again, next);
+    assert!(lingering.is_empty());
+    // A call that replaces a shown one and ends its own: neither lingers.
+    run(&mut plugins, &mut app, "shower.ended").unwrap();
+    assert_eq!(ids(&plugins), (Vec::new(), Vec::new()));
+}
+
+#[test]
+fn a_search_that_a_call_on_a_plugin_s_thread_replaces_runs_on_if_the_call_fails() {
+    let mut app = App::default();
+    window(&mut app, "echo x; sleep 10");
+    let mut plugins = Plugins::new();
+    let manifest = Manifest::parse(
+        "[plugin]\nname = \"acme/shower\"\nversion = \"1.0.0\"\nkind = \"luau\"\napi = \"^0.1\"\nlicense = \"MIT\"\n[capabilities]\nterminal-read = true\ndecorate = true\n",
+    )
+    .unwrap();
+    plugins
+        .add_installed(
+            manifest,
+            Box::new(|| Box::new(Shower)),
+            (&[Capability::TerminalRead, Capability::Decorate], &[]),
+        )
+        .unwrap();
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    let served = |plugins: &mut Plugins, app: &mut App| {
+        let start = Instant::now();
+        while plugins.waiting() {
+            let told = plugins.serve(&mut app.context());
+            assert!(
+                told.commands
+                    .iter()
+                    .all(|error| error.message == "on purpose"),
+                "{:?}",
+                told.commands
+            );
+            assert!(start.elapsed() < Duration::from_secs(10), "a call hangs");
+            std::thread::sleep(Duration::from_millis(1));
+        }
+    };
+    served(&mut plugins, &mut app);
+    let ids = |plugins: &Plugins| {
+        let state = &plugins.entries[0].state;
+        let of = |searches: &[search::Search]| -> Vec<u64> {
+            searches.iter().map(|search| search.id).collect()
+        };
+        (of(&state.searches), of(&state.lingering))
+    };
+    for name in ["shower.show", "shower.fails"] {
+        plugins.run(name, Args::new(), &mut app.context()).unwrap();
+        served(&mut plugins, &mut app);
+    }
+    let (shown, lingering) = ids(&plugins);
+    assert_eq!(shown.len(), 1);
+    assert!(lingering.is_empty());
+    plugins
+        .run("shower.next", Args::new(), &mut app.context())
+        .unwrap();
+    served(&mut plugins, &mut app);
+    assert_eq!(ids(&plugins).1, shown);
 }

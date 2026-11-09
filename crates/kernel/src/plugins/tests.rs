@@ -1670,6 +1670,7 @@ fn a_call_is_its_own_plugin_s() {
             reading: Arc::default(),
             restarts: Restarts::default(),
             lingering: Vec::new(),
+            replaced: Vec::new(),
             timers: BTreeMap::new(),
             triggers: vec![Trigger::Startup],
             undecided: Vec::new(),

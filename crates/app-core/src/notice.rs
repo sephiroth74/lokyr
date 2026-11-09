@@ -45,12 +45,17 @@ fn lines(text: &str, columns: usize) -> Vec<String> {
     let columns = columns.max(2);
     let mut lines = Vec::new();
     let (mut line, mut used) = (String::new(), 0);
-    for word in text.split_whitespace() {
+    // A line past the last that shows tells that the text goes on: the
+    // rest is never read, however long.
+    'words: for word in text.split_whitespace() {
         let wide: usize = word.chars().map(cells).sum();
         // A word that fits goes on, after a space; another starts a line.
         if used > 0 && used + 1 + wide > columns {
             lines.push(std::mem::take(&mut line));
             used = 0;
+            if lines.len() > LINES {
+                break 'words;
+            }
         }
         if used > 0 {
             line.push(' ');
@@ -61,12 +66,15 @@ fn lines(text: &str, columns: usize) -> Vec<String> {
             if used > 0 && used + cells(character) > columns {
                 lines.push(std::mem::take(&mut line));
                 used = 0;
+                if lines.len() > LINES {
+                    break 'words;
+                }
             }
             line.push(character);
             used += cells(character);
         }
     }
-    if !line.is_empty() {
+    if !line.is_empty() && lines.len() <= LINES {
         lines.push(line);
     }
     if lines.len() > LINES {
@@ -199,6 +207,11 @@ mod tests {
         let long = "aa bb cc dd ee ff gg";
         assert_eq!(lines(long, 5), ["aa bb", "cc dd", "ee f…"]);
         assert_eq!(lines("", 10), [] as [String; 0]);
+        // A text of millions of words is read no further than its lines.
+        let huge = "x ".repeat(8_000_000);
+        let start = std::time::Instant::now();
+        assert_eq!(lines(&huge, 5), ["x x x", "x x x", "x x …"]);
+        assert!(start.elapsed() < std::time::Duration::from_secs(1));
     }
 
     #[test]
