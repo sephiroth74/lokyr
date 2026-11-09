@@ -12,8 +12,8 @@ use crate::{
     AboutPanel, Alert, AlertId, AppEvent, Appearance, Backdrop, ContentRect, ContextMenu, Error,
     Fill, GlobalKey, Handler, Layer, LayerPlace, MainMenu, Platform, Point, PointerArea,
     PointerShape, QuickPlace, ScreenPoint, ScreenRect, Scrollers, Shortcut, Size, Sweep, Target,
-    TargetKind, TimerId, Titlebar, Usage, Waker, WindowAttributes, WindowEvent, WindowHandle,
-    WindowId, WindowSize,
+    TargetKind, TimerId, Titlebar, ToolLink, Usage, Waker, WindowAttributes, WindowEvent,
+    WindowHandle, WindowId, WindowSize,
 };
 
 /// The scale of the fake's display when a test sets none: a Retina one.
@@ -194,6 +194,8 @@ pub struct Fake {
     /// times it asked to be.
     default_terminal: bool,
     default_terminal_asks: usize,
+    /// The links that the app asked for, each of the reason that it told.
+    tool_links: Vec<(Vec<ToolLink>, String)>,
     /// The screens' areas for windows, the menu bar's screen's first.
     screens: Vec<ScreenRect>,
     /// Whether it draws the progresses' fills, as a test says.
@@ -295,6 +297,7 @@ impl Fake {
             downloaded: Vec::new(),
             default_terminal: false,
             default_terminal_asks: 0,
+            tool_links: Vec::new(),
             screens: vec![SCREEN_AREA],
             draws_fills: false,
             windows: BTreeMap::new(),
@@ -380,6 +383,12 @@ impl Fake {
     /// How many times the app asked to be the system's default terminal.
     pub fn default_terminal_asks(&self) -> usize {
         self.default_terminal_asks
+    }
+
+    /// The links of the command line tools that the app asked for, each of
+    /// the reason that it told, which the fake does not make.
+    pub fn tool_links(&self) -> &[(Vec<ToolLink>, String)] {
+        &self.tool_links
     }
 
     /// Gives the screens' areas for windows, the menu bar's screen's
@@ -822,6 +831,10 @@ impl Platform for Fake {
     fn make_default_terminal(&mut self) -> bool {
         self.default_terminal_asks += 1;
         true
+    }
+
+    fn link_tools(&mut self, links: Vec<ToolLink>, reason: &str) {
+        self.tool_links.push((links, reason.to_owned()));
     }
 
     fn set_appearance(&mut self, appearance: Option<Appearance>) {

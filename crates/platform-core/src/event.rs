@@ -148,6 +148,9 @@ pub enum AppEvent {
     /// [`Platform::is_default_terminal`](crate::Platform::is_default_terminal)
     /// tells it from then.
     DefaultTerminalKnown,
+    /// The links of [`Platform::link_tools`](crate::Platform::link_tools)
+    /// were made, or not, as it tells.
+    ToolsLinked(crate::LinkOutcome),
     /// The user asked for a window, or a tab, at each of `folders`, as
     /// from the file manager's services on folders that it selected.
     OpenFolders {

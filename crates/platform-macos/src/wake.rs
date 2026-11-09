@@ -119,8 +119,9 @@ impl Drop for WakeSource {
 
 /// What the source does on the main thread once a waker signalled it, one
 /// call for the signals that came since the last: the clicks on
-/// notifications, the opens that failed and the answers to the changes of
-/// the default terminal, which other threads keep, as events, then a wake.
+/// notifications, the opens that failed, the answers to the changes of
+/// the default terminal and the command line tools' links, which other
+/// threads keep, as events, then a wake.
 unsafe extern "C-unwind" fn perform(_info: *mut c_void) {
     let shared = TARGET.with(|target| target.borrow().upgrade());
     if let Some(shared) = shared {
@@ -132,6 +133,7 @@ unsafe extern "C-unwind" fn perform(_info: *mut c_void) {
         }
         crate::default_terminal::take_answers(&shared);
         crate::default_terminal::take_known(&shared);
+        crate::tools::take_linked(&shared);
         shared.post(Pending::App(AppEvent::Wake));
     }
 }

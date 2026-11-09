@@ -34,6 +34,7 @@ mod shared;
 mod sweep;
 mod text_input;
 mod timer;
+mod tools;
 mod updates;
 mod wake;
 mod window;

@@ -27,6 +27,7 @@ mod quick;
 mod runs;
 #[cfg(test)]
 mod tests;
+mod tools;
 mod waker;
 
 pub use event::{AppEvent, Appearance, Dropped, WindowEvent};
@@ -44,6 +45,7 @@ pub use menu::{
 pub use quick::{GlobalKey, Length, QuickEdge, QuickPlace, QuickScreen};
 pub use raw_window_handle::WindowHandle;
 pub use runs::{RUNS, runs_by_itself};
+pub use tools::{LinkOutcome, ToolLink};
 pub use waker::Waker;
 
 /// A window, which no other window of the process takes, even once it is
@@ -420,6 +422,14 @@ pub trait Platform {
     /// outside its bundle cannot be one. [`AppEvent::DefaultTerminalMade`]
     /// tells the answers, once they all came.
     fn make_default_terminal(&mut self) -> bool;
+
+    /// Makes `links`, each a symbolic link at its path to its target, of
+    /// what was there replaced, their folders made where they are not
+    /// there: of the app's own rights where they are enough, else of an
+    /// administrator's, which the system asks the user's password for,
+    /// telling `reason`; on a thread of its own, as the question waits for
+    /// the user. [`AppEvent::ToolsLinked`] tells how it ended.
+    fn link_tools(&mut self, links: Vec<ToolLink>, reason: &str);
 
     /// Whether the system's settings have an app's windows open again as
     /// it starts, as they were as it quit: on the Mac, "Close windows when

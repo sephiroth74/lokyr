@@ -20,9 +20,10 @@ use lokyr_vt_core::terminal as vt;
 use lokyr_vt_core::terminal::{SelectionShape, SelectionUnit};
 
 use super::{
-    ABOUT, APPEARANCES, App, CHECK_UPDATES, CONTEXT_ONLY, DEFAULT_TERMINAL, FLOAT_ON_TOP, LOOK_UP,
-    LOOK_UP_TITLE, MAN_KEYWORDS, MAN_PAGE, MAN_PAGE_NAME, MAN_SEARCH, MAN_SECTION, PERFORMANCE,
-    REPORT_ISSUE, SEARCH_WEB, SECURE_INPUT, SETTINGS, context, show_selection, shown_top,
+    ABOUT, APPEARANCES, App, CHECK_UPDATES, CONTEXT_ONLY, DEFAULT_TERMINAL, FLOAT_ON_TOP,
+    INSTALL_TOOLS, LOOK_UP, LOOK_UP_TITLE, MAN_KEYWORDS, MAN_PAGE, MAN_PAGE_NAME, MAN_SEARCH,
+    MAN_SECTION, PERFORMANCE, REPORT_ISSUE, SEARCH_WEB, SECURE_INPUT, SETTINGS, context,
+    show_selection, shown_top,
 };
 use crate::drawing::Backend;
 use crate::mouse;
@@ -695,8 +696,8 @@ pub(super) fn main_menu(
         }),
     ));
     // About and Check for Updates… first, where macOS's apps have them,
-    // then Settings, Secure Keyboard Entry and the default terminal, then
-    // the system's items.
+    // then Settings, Secure Keyboard Entry, the default terminal and the
+    // command line tools, then the system's items.
     let of = |item: &MenuItem, names: &[&str]| matches!(item, MenuItem::Command { command, .. } if names.contains(&command.as_str()));
     let first = |item: &MenuItem| {
         of(
@@ -707,13 +708,14 @@ pub(super) fn main_menu(
                 SETTINGS,
                 SECURE_INPUT,
                 DEFAULT_TERMINAL,
+                INSTALL_TOOLS,
             ],
         )
     };
     let mut application = Vec::new();
     for group in [
         &[ABOUT, CHECK_UPDATES][..],
-        &[SETTINGS, SECURE_INPUT, DEFAULT_TERMINAL],
+        &[SETTINGS, SECURE_INPUT, DEFAULT_TERMINAL, INSTALL_TOOLS],
     ] {
         let group: Vec<MenuItem> = items(&[Category::App])
             .into_iter()

@@ -455,6 +455,12 @@ Lokyr › Make Lokyr the Default Terminal, as the user asked on 6 November 2026,
 - **An `ssh` link**: `ssh://[user[;parameters]@]host[:port]`, a window that runs `ssh` to the host, as [SECURITY.md](SECURITY.md#terminal-defaults) tells of its checks.
 - **A man page's link**: `x-man-page://[section/]name`, the window of its page, as Open man Page opens it.
 
+## The command line tools
+
+Lokyr › Install Command Line Tools…, as the user asked on 9 November 2026, links `lokyr` and `sleip`, the binaries of the bundle's `Contents/MacOS`, into `/usr/local/bin`, on macOS's default `PATH` (`/etc/paths`), so that another terminal and the scripts run them as Lokyr's panes do, whose `PATH` ends in that folder. Both run through a link: Sleip finds the app's plugin API of its bundle, the link resolved, and the app's command line, as `lokyr --api-version`, of its own.
+- **What is there**: links to this app's binaries, through other links or not, an alert tells installed already; a file of another program, or a link to another bundle, as an older copy's, a question names before it is replaced; a folder, an alert leaves alone; a binary not beside the app, as of a build outside its bundle, an alert tells.
+- **The links**: the platform makes them on a thread of its own, the folder made if it is not there, each link beside its place renamed over what was there, of the app's own rights where the user may write in the folder, as of Homebrew's on an Intel Mac; else through `osascript`'s `do shell script … with administrator privileges`, which the system asks the user's password for, telling why, as `/usr/local/bin` is the system's own. An alert tells that they are there, or why not; a question of the system's that the user cancels, nothing.
+
 ## Basic actions
 
 The `core-actions` plugin:

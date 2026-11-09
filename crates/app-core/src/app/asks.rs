@@ -31,6 +31,13 @@ impl<B: Backend> App<B> {
         if let Some(script) = self.script_asks.remove(&alert) {
             self.script_answered(platform, &script, button);
         }
+        if let Some((asked, links)) = self.tools_ask.take() {
+            if asked == alert {
+                self.tools_answered(platform, links, button);
+            } else {
+                self.tools_ask = Some((asked, links));
+            }
+        }
         if let Some((pane, request)) = self.clipboard_asks.remove(&alert)
             && button == 1
             && let Some(pane) = self.workspace.pane(pane)

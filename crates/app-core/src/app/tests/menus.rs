@@ -42,6 +42,7 @@ fn starting_opens_a_window_under_the_menus_of_the_commands() {
             "Settings… cmd+,",
             "Secure Keyboard Entry",
             "Make Lokyr the Default Terminal",
+            "Install Command Line Tools…",
             "-",
             "Hide Lokyr cmd+h",
             "Hide Others alt+cmd+h",
@@ -340,6 +341,11 @@ fn the_app_s_commands_register_with_their_categories_and_titles() {
                 Category::View
             ),
             ("app.check-for-updates", "Check for Updates…", Category::App),
+            (
+                "app.install-command-line-tools",
+                "Install Command Line Tools…",
+                Category::App
+            ),
             (
                 "app.make-default-terminal",
                 "Make Lokyr the Default Terminal",

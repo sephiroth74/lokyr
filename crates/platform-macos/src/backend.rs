@@ -343,6 +343,10 @@ impl Platform for Backend {
         crate::default_terminal::make_default(self.waker.clone())
     }
 
+    fn link_tools(&mut self, links: Vec<lokyr_platform_core::ToolLink>, reason: &str) {
+        crate::tools::link(links, reason.to_owned(), self.waker.clone());
+    }
+
     fn keeps_windows(&self) -> bool {
         // "Close windows when quitting an application" off, in the global
         // domain, which the standard defaults search; read at each call.

@@ -13,6 +13,7 @@ command-app-settings = Settings…
 command-app-report-issue = Report an Issue…
 command-app-secure-keyboard-entry = Secure Keyboard Entry
 command-app-make-default-terminal = Make Lokyr the Default Terminal
+command-app-install-command-line-tools = Install Command Line Tools…
 command-app-performance = Show Performance
 performance-measuring = Measuring…
 performance-frames = { $rate } FPS
@@ -221,3 +222,24 @@ script-downloaded-message = “{ $name }” was downloaded from the internet.
 script-downloaded-detail = Running a script from the internet can harm your Mac. Run it only if you trust where it came from.
 script-downloaded-run = Run
 script-downloaded-cancel = Cancel
+
+# The command line tools, `lokyr` and `sleip`, linked into a folder of the
+# shells' PATH: $value is a folder, a path or why it failed, $folder the
+# folder, $path a link's path, $target the file that a link points to. The
+# reason shows in the system's question of an administrator's password.
+tools-reason = Lokyr wants to link lokyr and sleip into { $folder }.
+tools-linked-message = The command line tools are installed
+tools-linked-detail = Other terminals and scripts now run lokyr and sleip, linked in { $value }.
+tools-there-message = The command line tools are installed already
+tools-there-detail = lokyr and sleip in { $value } are this Lokyr's.
+tools-replace-message = Replace what is in { $folder }?
+tools-replace-link = { $path } is a link to { $target }.
+tools-replace-file = { $path } is a file of another program.
+tools-replace-replace = Replace
+tools-replace-cancel = Cancel
+tools-folder-message = { $value } is a folder
+tools-folder-detail = Lokyr leaves it as it is: move it away, then install the command line tools again.
+tools-missing-message = The command line tools are not beside Lokyr
+tools-missing-detail = { $value } is not there, as when Lokyr runs outside its bundle.
+tools-failed-message = The command line tools could not be installed
+tools-failed-detail = { $value }

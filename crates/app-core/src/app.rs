@@ -75,6 +75,7 @@ mod surfaces;
 mod tab_drag;
 #[cfg(test)]
 mod tests;
+mod tools;
 
 use input::{show_selection, shown_top};
 
@@ -110,6 +111,10 @@ const SECURE_INPUT: &str = "app.secure-keyboard-entry";
 /// The command that asks the system to make Lokyr its default terminal,
 /// which its item, ticked and dimmed while it is, shows.
 const DEFAULT_TERMINAL: &str = "app.make-default-terminal";
+
+/// The command that links the command line tools, `lokyr` and `sleip`,
+/// into a folder of the shells' `PATH`.
+const INSTALL_TOOLS: &str = "app.install-command-line-tools";
 
 /// What stands before the title of the window whose keys Secure Keyboard
 /// Entry keeps from other apps.
@@ -513,6 +518,12 @@ pub struct App<B: Backend> {
     /// The questions of the scripts that came from the internet, which run
     /// once the user says so, by their alerts.
     script_asks: BTreeMap<AlertId, PathBuf>,
+    /// The question of the command line tools' links that replace what is
+    /// in their folder, and the links, until the user answers.
+    tools_ask: Option<(AlertId, Vec<lokyr_platform_core::ToolLink>)>,
+    /// Where the command line tools' links go, and where their binaries
+    /// are.
+    tools_places: tools::Places,
     /// The panes of the scripts that the system opened with the app, which
     /// keep their screens as their programs end, whatever `close-on-exit`
     /// says.
@@ -810,6 +821,8 @@ impl<B: Backend> App<B> {
             plugin_timer: None,
             scripts: BTreeSet::new(),
             script_asks: BTreeMap::new(),
+            tools_ask: None,
+            tools_places: tools::Places::default(),
             told_timer: None,
             pane_wakes: BTreeMap::new(),
             ui_events: Vec::new(),
@@ -2569,6 +2582,10 @@ impl<B: Backend> App<B> {
                     self.make_default_terminal(platform);
                     Ok(())
                 }
+                INSTALL_TOOLS => {
+                    self.install_tools(platform);
+                    Ok(())
+                }
                 FLOAT_ON_TOP => {
                     if let Some(window) = self.acting.or_else(|| platform.focused_window())
                         && !self.quick.contains_key(&window)
@@ -3939,6 +3956,7 @@ impl<B: Backend> App<B> {
                 self.default_terminal_made(platform, &failed);
             }
             AppEvent::DefaultTerminalKnown => self.show_default_terminal(platform),
+            AppEvent::ToolsLinked(outcome) => self.tools_linked(platform, &outcome),
             _ => {}
         }
     }
@@ -4242,6 +4260,11 @@ fn commands(texts: &Texts, plugins: &Plugins) -> Registry {
         (SETTINGS, "app-settings", Category::App),
         (SECURE_INPUT, "app-secure-keyboard-entry", Category::App),
         (DEFAULT_TERMINAL, "app-make-default-terminal", Category::App),
+        (
+            INSTALL_TOOLS,
+            "app-install-command-line-tools",
+            Category::App,
+        ),
         (PERFORMANCE, "app-performance", Category::View),
         (NEW_WINDOW, "window-new", Category::Windows),
         (CLOSE_WINDOW, "window-close", Category::Windows),
