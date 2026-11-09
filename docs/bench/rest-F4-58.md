@@ -84,7 +84,7 @@ The bench tells each key's phases since this task: the press, as the system stam
 | None | 50.0 ms | 2.1 and 16.9 ms | 2.3 and 17.1 ms | 8.3 and 36.1 ms |
 | `allow-unsigned-executable-memory` | 50.8 ms | 2.1 and 16.9 ms | 2.3 and 17.0 ms | 8.4 and 36.4 ms |
 
-The tail's keys wait a refresh in a phase, the most of them in the presentation's.
+The tail's keys wait a refresh in a phase, the most of them in the presentation's; which holds the wait for a drawable and the frame's encoding too, as the phase `framed` ends before the renderer draws, the review after F4-59 found ([B-651](../tasks/BACKLOG.md)), so that a wait of the main thread for a drawable counts there.
 
 ## Luau's interpreter against its native code
 
