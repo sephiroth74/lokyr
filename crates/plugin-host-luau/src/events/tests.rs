@@ -116,6 +116,7 @@ fn every() -> Vec<Event> {
         },
         Event::Answered { id: 9, text: None },
         Event::ConfigChanged,
+        Event::Timer { id: 12 },
         Event::Custom {
             name: "acme.done".to_owned(),
             schema: "acme.done/1".to_owned(),
@@ -161,7 +162,8 @@ fn every_event_is_a_flat_table_of_its_kind_and_its_fields_both_ways() {
         assert(keys.kind == "keys-changed" and next(keys, next(keys)) == nil)
         assert(events[21].viewport.alternate == true)
         assert(events[24].kind == "command-ended" and events[24].status == nil)
-        local custom = events[29]
+        assert(events[29].kind == "timer" and events[29].id == 12)
+        local custom = events[30]
         assert(custom.kind == "custom" and custom.name == "acme.done" and custom.value[1] == 1)
         "#,
     )

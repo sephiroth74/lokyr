@@ -112,6 +112,8 @@ export type Cx = {
     config: () -> (Data?, string?, number?),
     state: () -> (Data?, string?, number?),
     set_state: (state: Data) -> (true?, string?, number?),
+    start_timer: (delay: number, repeats: boolean) -> (number?, string?, number?),
+    cancel_timer: (timer: number) -> (true?, string?, number?),
 }
 
 export type Event =
@@ -140,6 +142,7 @@ export type Event =
     | { kind: "tab-bar-resized", width: number }
     | { kind: "answered", id: number, text: string? }
     | { kind: "config-changed" }
+    | { kind: "timer", id: number }
     | { kind: "custom", name: string, schema: string, value: Data }
 
 export type UiEvent =

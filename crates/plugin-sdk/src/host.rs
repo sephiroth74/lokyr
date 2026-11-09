@@ -367,6 +367,18 @@ pub const MOST_STATE: usize = 1024 * 1024;
 /// them alone.
 pub const MOST_MATCHES: usize = 100_000;
 
+/// The most timers that a plugin has at once, past which another is
+/// refused until one fires or is cancelled.
+pub const MOST_TIMERS: usize = 64;
+
+/// The least delay of a timer, in milliseconds, which a shorter one takes,
+/// so that a timer that repeats, or one started again at each of its
+/// events, wakes the app 100 times a second at most.
+pub const LEAST_DELAY: u64 = 10;
+
+/// The most delay of a timer, in milliseconds: a day.
+pub const MOST_DELAY: u64 = 24 * 60 * 60 * 1000;
+
 /// What a search of a pane's terminal looks for, through its scrollback
 /// too: the text of each logical line, its soft-wrapped rows joined, of
 /// spaces for the cells without a character, without the spaces that end

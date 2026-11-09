@@ -1037,3 +1037,61 @@ fn a_worker_s_failed_call_that_closes_a_panel_leaves_it_open_of_its_tree() {
     );
     assert!(plugins.tree("acme/busy", &panel).is_some());
 }
+
+#[test]
+fn a_worker_hears_its_timers_once_its_thread_is_free_and_none_that_it_cancelled_meanwhile() {
+    let mut app = App::default();
+    let (gate, held): (Sender<()>, Receiver<()>) = mpsc::channel();
+    let ids = Arc::new(Mutex::new(Vec::new()));
+    let batches = Arc::new(Mutex::new(Vec::new()));
+    let (started_ids, cancelled_ids, heard) =
+        (Arc::clone(&ids), Arc::clone(&ids), Arc::clone(&batches));
+    let plugin = Threaded {
+        activate: Box::new(move |cx| {
+            cx.register_command(command("busy.go"))?;
+            for _ in 0..2 {
+                let id = cx.start_timer(Duration::from_millis(50), true)?;
+                started_ids.lock().unwrap().push(id);
+            }
+            Ok(())
+        }),
+        on_command: Box::new(move |cx, _| {
+            held.recv().unwrap();
+            let cancelled = cancelled_ids.lock().unwrap()[1];
+            cx.cancel_timer(cancelled)
+        }),
+        on_event: Box::new(move |_, events| {
+            let fired: Vec<u64> = events
+                .iter()
+                .filter_map(|event| match event {
+                    Event::Timer { id } => Some(*id),
+                    _ => None,
+                })
+                .collect();
+            heard.lock().unwrap().push(fired);
+            Ok(())
+        }),
+        ..Threaded::default()
+    };
+    let (mut plugins, _) = started(&mut app, plugin);
+    let [kept, _] = ids.lock().unwrap()[..] else {
+        panic!("two timers");
+    };
+    plugins
+        .run("busy.go", Args::new(), &mut app.context())
+        .unwrap();
+    // Both fire as its command waits: their events wait for its thread, of
+    // no delivery meanwhile.
+    let now = app.wait(Duration::from_millis(50));
+    plugins.timers_due(now);
+    assert!(!plugins.has_events());
+    assert!(plugins.deliver(&mut app.context()).is_empty());
+    // Its command cancels one: the other's event comes once it is free.
+    gate.send(()).unwrap();
+    served(&mut plugins, &mut app);
+    assert!(plugins.has_events());
+    assert!(plugins.deliver(&mut app.context()).is_empty());
+    served(&mut plugins, &mut app);
+    assert_eq!(*batches.lock().unwrap(), [vec![kept]]);
+    assert!(!plugins.has_events());
+}

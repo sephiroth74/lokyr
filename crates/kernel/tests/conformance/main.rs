@@ -101,14 +101,16 @@ impl Plugin for Conformer {
     }
 }
 
-/// The ids of the windows, the tabs and the panes that a scenario opened,
-/// each host's own, in the order in which the trace met them, the `k`th of
-/// each kind of the symbol `k`; the world's ids stand for themselves.
+/// The ids of the windows, the tabs, the panes and the timers that a
+/// scenario opened, each host's own, in the order in which the trace met
+/// them, the `k`th of each kind of the symbol `k`; the world's ids stand
+/// for themselves.
 struct Symbols {
     world: World,
     windows: Vec<u64>,
     tabs: Vec<u64>,
     panes: Vec<u64>,
+    timers: Vec<u64>,
 }
 
 impl Symbols {
@@ -118,6 +120,7 @@ impl Symbols {
             windows: Vec::new(),
             tabs: Vec::new(),
             panes: Vec::new(),
+            timers: Vec::new(),
         }
     }
 
@@ -132,7 +135,8 @@ impl Symbols {
                         let ids = match kind {
                             1 => &symbols.windows,
                             2 => &symbols.tabs,
-                            _ => &symbols.panes,
+                            3 => &symbols.panes,
+                            _ => &symbols.timers,
                         };
                         let id = ids.get(k).unwrap_or_else(|| {
                             panic!(
@@ -189,6 +193,10 @@ impl Symbols {
         host::PaneId(Self::symbol(&mut self.panes, id.0, 3))
     }
 
+    fn timer(&mut self, id: u64) -> u64 {
+        Self::symbol(&mut self.timers, id, 4)
+    }
+
     fn layout(&mut self, layout: Layout) -> Layout {
         match layout {
             Layout::Pane(pane) => Layout::Pane(self.pane(pane)),
@@ -214,6 +222,7 @@ impl Symbols {
             Response::Reading(_) => Response::Reading(0),
             Response::Searching(_) => Response::Searching(0),
             Response::Asking(_) => Response::Asking(0),
+            Response::Timer(id) => Response::Timer(self.timer(id)),
             Response::Window(window) => Response::Window(window.map(|id| self.window(id))),
             Response::Pane(pane) => Response::Pane(pane.map(|id| self.pane(id))),
             Response::Tab { tab, pane } => Response::Tab {
@@ -280,6 +289,7 @@ impl Symbols {
                 done,
             },
             Event::Answered { text, .. } => Event::Answered { id: 0, text },
+            Event::Timer { id } => Event::Timer { id: self.timer(id) },
             Event::ViewportChanged { pane, viewport } => Event::ViewportChanged {
                 pane: self.pane(pane),
                 viewport,
@@ -446,6 +456,8 @@ struct Kernel {
     spawner: Spawner,
     clipboard: Board,
     world: World,
+    /// The host's time, which the scenarios' steps move on.
+    clock: Instant,
 }
 
 impl Kernel {
@@ -509,6 +521,7 @@ impl Kernel {
             workspace,
             spawner: Spawner,
             clipboard: Board(Some(scenarios::CLIPBOARD.to_owned())),
+            clock: Instant::now(),
             world: World {
                 window: host::WindowId(window.get()),
                 tab: host::TabId(tab.get()),
@@ -539,6 +552,7 @@ impl Kernel {
             enabled: &|_| true,
             themes: &themes,
             language: "en",
+            now: self.clock,
         }
     }
 }
@@ -651,6 +665,9 @@ fn on_kernel(scenario: &Scenario, kernel: &mut Kernel, state: &std::path::Path) 
                 event => plugins.post(event.clone()),
             }
         }
+        // The time that the step waits, whose timers fire.
+        kernel.clock += Duration::from_millis(step.wait);
+        plugins.timers_due(kernel.clock);
         deliver(&mut plugins, kernel);
     }
     trace.borrow().clone()
@@ -695,6 +712,7 @@ fn on_fake(scenario: &Scenario, world: &World) -> Vec<Entry> {
         for event in &step.posts {
             host.post(event.clone());
         }
+        host.advance(Duration::from_millis(step.wait));
         host.deliver(&mut plugin).unwrap();
     }
     trace.borrow().clone()
@@ -840,11 +858,13 @@ fn kind(request: &Request) -> usize {
         Request::CursorCell(_) => 89,
         Request::Deselect(_) => 90,
         Request::CommandLine { .. } => 91,
+        Request::StartTimer { .. } => 92,
+        Request::CancelTimer(_) => 93,
     }
 }
 
 /// How many kinds of requests the plugin API has.
-const KINDS: usize = 92;
+const KINDS: usize = 94;
 
 #[test]
 fn the_scenarios_hold_every_request_of_the_plugin_api() {

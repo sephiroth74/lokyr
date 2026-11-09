@@ -48,7 +48,9 @@ use crate::host::{
     PaneId, ScreenPoint, Side, StyleRun, TabId, TabInfo, WindowId, WindowInfo,
 };
 use crate::keys::{When, parse_keys};
-use crate::message::{Call, DIM_RANGE, Data, Effect, Event, OWN_PANE, Request, Response};
+use crate::message::{
+    Call, DELAY_RANGE, DIM_RANGE, Data, Effect, Event, OWN_PANE, Request, Response, TIMERS_BOUND,
+};
 use crate::plugin::{Cx, Plugin};
 use crate::ui::{Anchor, PanelId, PanelOptions, Slot, UiEvent, ViewId};
 use crate::view::{Key, Kind, Node};
@@ -313,6 +315,18 @@ enum Opened {
     Quick(WindowId, TabId, PaneId),
 }
 
+/// A timer of the plugin's that the fake host keeps, of its clock.
+#[derive(Clone, Debug)]
+struct FakeTimer {
+    /// When it fires next, in milliseconds of the host's clock; none once
+    /// it fired, of one that does not repeat, whose event waits.
+    at: Option<u64>,
+    /// How long it waits again after it fires, of one that repeats.
+    every: Option<u64>,
+    /// Whether it fired since the plugin last heard of it.
+    due: bool,
+}
+
 /// A search of the plugin's that the fake host keeps.
 #[derive(Clone, Debug)]
 struct FakeSearch {
@@ -399,6 +413,11 @@ pub struct FakeHost {
     /// The plugin's searches, by their ids: each's pane, its matches, and
     /// its current match, as the plugin showed it.
     searches: BTreeMap<u64, FakeSearch>,
+    /// The plugin's timers, by their ids.
+    timers: BTreeMap<u64, FakeTimer>,
+    /// The host's time, in milliseconds since it started, which
+    /// [`FakeHost::advance`] moves on.
+    clock: u64,
     last_id: u64,
 }
 
@@ -463,6 +482,8 @@ impl FakeHost {
             renders: Vec::new(),
             owed: Vec::new(),
             searches: BTreeMap::new(),
+            timers: BTreeMap::new(),
+            clock: 0,
             last_id: FIRST_ID - 1,
         }
     }
@@ -772,6 +793,39 @@ impl FakeHost {
         }
     }
 
+    /// The ids of the plugin's timers, in their order: those that wait, and
+    /// those that fired once, whose events it was not given yet.
+    pub fn timers(&self) -> Vec<u64> {
+        self.timers.keys().copied().collect()
+    }
+
+    /// Moves the host's time on by `by`, as the app's runs, to the
+    /// millisecond: each timer whose time comes fires, which owes the
+    /// plugin its event once however many times it fired, as
+    /// [`FakeHost::deliver`] gives it, and one that repeats waits again
+    /// from its time, or from the time now if it fell behind by more than
+    /// its delay, as the app's host's.
+    pub fn advance(&mut self, by: std::time::Duration) -> &mut Self {
+        let by = u64::try_from(by.as_millis()).unwrap_or(u64::MAX);
+        let now = self.clock.saturating_add(by);
+        self.clock = now;
+        for timer in self.timers.values_mut() {
+            let Some(at) = timer.at.filter(|&at| at <= now) else {
+                continue;
+            };
+            timer.due = true;
+            timer.at = timer.every.map(|every| {
+                let next = at.saturating_add(every);
+                if next > now {
+                    next
+                } else {
+                    now.saturating_add(every)
+                }
+            });
+        }
+        self
+    }
+
     /// The decorations that it laid and did not take away, in their order.
     pub fn decorations(&self) -> &[FakeDecoration] {
         &self.decorations
@@ -855,10 +909,11 @@ impl FakeHost {
     /// a search's matches, a question's answer and its config's change, and
     /// those that it subscribed to, of the
     /// workspace's, its own writes' among them, and those that it emitted;
-    /// the others go.
+    /// the others go. Then those of its timers that fired, in their ids'
+    /// order, a timer that does not repeat going with its event.
     pub fn deliver(&mut self, plugin: &mut dyn Plugin) -> Result<(), Error> {
         let owed = std::mem::take(&mut self.owed);
-        let batch: Vec<Event> = owed
+        let mut batch: Vec<Event> = owed
             .into_iter()
             .filter(|event| {
                 matches!(
@@ -872,6 +927,13 @@ impl FakeHost {
                 ) || self.subscribed.iter().any(|name| name == event.name())
             })
             .collect();
+        self.timers.retain(|&id, timer| {
+            if timer.due {
+                timer.due = false;
+                batch.push(Event::Timer { id });
+            }
+            timer.at.is_some()
+        });
         if batch.is_empty() {
             return Ok(());
         }
@@ -920,7 +982,7 @@ impl FakeHost {
             (self.decorations.clone(), self.gutter_marks.clone()),
             (self.panels.clone(), self.panel_windows.clone()),
             (self.owed.len(), self.renders.len()),
-            self.last_id,
+            (self.last_id, self.timers.clone()),
         );
         let mut calling = Calling {
             host: self,
@@ -936,11 +998,13 @@ impl FakeHost {
         // go, and what its requests took at once comes back; a look takes
         // nothing at all, its ids and the renders that it asked for too.
         if !apply || result.is_err() {
-            let ((decorations, marks), (panels, windows), (owed, renders), last_id) = kept;
+            let ((decorations, marks), (panels, windows), (owed, renders), (last_id, timers)) =
+                kept;
             self.decorations = decorations;
             self.gutter_marks = marks;
             self.panels = panels;
             self.panel_windows = windows;
+            self.timers = timers;
             if !apply {
                 self.owed.truncate(owed);
                 self.renders.truncate(renders);
@@ -2862,6 +2926,29 @@ impl Calling<'_> {
                         self.host.subscribed.push(name);
                     }
                 }
+            }
+            Request::StartTimer { delay, repeats } => {
+                if delay > host::MOST_DELAY {
+                    return Err(Error::new(Code::Failed, DELAY_RANGE));
+                }
+                if self.host.timers.len() >= host::MOST_TIMERS {
+                    return Err(Error::new(Code::Unavailable, TIMERS_BOUND));
+                }
+                let every = delay.max(host::LEAST_DELAY);
+                let id = self.host.next_id();
+                let at = self.host.clock.saturating_add(every);
+                self.host.timers.insert(
+                    id,
+                    FakeTimer {
+                        at: Some(at),
+                        every: repeats.then_some(every),
+                        due: false,
+                    },
+                );
+                return Ok(Response::Timer(id));
+            }
+            Request::CancelTimer(id) => {
+                self.host.timers.remove(&id);
             }
             other => {
                 return Err(Error::new(

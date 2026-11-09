@@ -1219,3 +1219,99 @@ fn a_failed_call_or_a_look_that_closes_a_panel_leaves_it_open_of_its_tree() {
     assert!(host.tree(&panel).is_some());
     assert!(host.owed.is_empty(), "{:?}", host.owed);
 }
+
+#[test]
+fn the_fake_host_s_timers_fire_as_its_time_moves_on_once_and_repeating() {
+    let mut host = FakeHost::new("acme/probe");
+    let ids = Rc::new(RefCell::new(Vec::new()));
+    let (kept, asks) = (Rc::clone(&ids), Rc::new(RefCell::new(0)));
+    let mut probe = Probe::new(move |cx, _| {
+        let mut asked = asks.borrow_mut();
+        *asked += 1;
+        match *asked {
+            1 => {
+                let once = cx.start_timer(std::time::Duration::from_millis(100), false)?;
+                let again = cx.start_timer(std::time::Duration::from_millis(40), true)?;
+                let soon = cx.start_timer(std::time::Duration::ZERO, false)?;
+                kept.borrow_mut().extend([once, again, soon]);
+                Ok(())
+            }
+            // A call that cancels one, starts another and fails: the timers
+            // stay as they were.
+            2 => {
+                cx.cancel_timer(kept.borrow()[1])?;
+                cx.start_timer(std::time::Duration::from_millis(10), true)?;
+                Err(Error::new(Code::Failed, "after its timers"))
+            }
+            _ => cx.cancel_timer(kept.borrow()[1]),
+        }
+    });
+    host.activate(&mut probe).unwrap();
+    host.command(&mut probe, "probe.go", Args::new()).unwrap();
+    let [once, again, soon] = ids.borrow()[..] else {
+        panic!("three timers");
+    };
+    assert_eq!(host.timers(), [once, again, soon]);
+    let wait = |host: &mut FakeHost, probe: &mut Probe, by: u64| {
+        host.advance(std::time::Duration::from_millis(by));
+        host.deliver(probe).unwrap();
+        std::mem::take(&mut probe.heard)
+    };
+    // The one of no delay at the least, the one that repeats at each delay,
+    // their events to the plugin alone, which subscribed to none.
+    let timer = || vec!["timer".to_owned()];
+    assert_eq!(wait(&mut host, &mut probe, host::LEAST_DELAY), [timer()]);
+    assert_eq!(host.timers(), [once, again]);
+    assert!(wait(&mut host, &mut probe, 29).is_empty());
+    assert_eq!(wait(&mut host, &mut probe, 1), [timer()]);
+    // At 140 ms the one of 100 ms, and the one that repeats once.
+    assert_eq!(
+        wait(&mut host, &mut probe, 100),
+        [vec!["timer".to_owned(); 2]]
+    );
+    assert_eq!(host.timers(), [again]);
+    let failed = host.command(&mut probe, "probe.go", Args::new());
+    assert_eq!(failed.unwrap_err().code, Code::Failed);
+    assert_eq!(host.timers(), [again]);
+    // At 180 ms it fires; cancelled, the event that it owes goes too.
+    host.advance(std::time::Duration::from_millis(40));
+    host.command(&mut probe, "probe.go", Args::new()).unwrap();
+    host.deliver(&mut probe).unwrap();
+    assert!(probe.heard.is_empty());
+    assert!(host.timers().is_empty());
+}
+
+#[test]
+fn the_fake_host_bounds_the_timers_and_starts_none_in_a_look() {
+    struct Looking;
+    impl Plugin for Looking {
+        fn activate(&mut self, _: &mut Cx<'_>) -> Result<(), Error> {
+            Ok(())
+        }
+
+        fn on_command(&mut self, cx: &mut Cx<'_>, _: &str, _: Args) -> Result<(), Error> {
+            let day = std::time::Duration::from_millis(host::MOST_DELAY);
+            let past = cx.start_timer(day + std::time::Duration::from_millis(1), false);
+            assert_eq!(past, Err(Error::new(Code::Failed, DELAY_RANGE)));
+            for _ in 0..host::MOST_TIMERS {
+                cx.start_timer(day, true)?;
+            }
+            let more = cx.start_timer(day, true);
+            assert_eq!(more, Err(Error::new(Code::Unavailable, TIMERS_BOUND)));
+            Ok(())
+        }
+
+        fn applies(&mut self, cx: &mut Cx<'_>, _: &str, _: &Args) -> bool {
+            cx.start_timer(std::time::Duration::from_millis(10), false)
+                .is_ok()
+        }
+    }
+    let mut host = FakeHost::new("acme/looking");
+    let mut plugin = Looking;
+    host.activate(&mut plugin).unwrap();
+    assert!(!host.applies(&mut plugin, "looking.go", &Args::new()));
+    assert!(host.timers().is_empty());
+    host.command(&mut plugin, "looking.go", Args::new())
+        .unwrap();
+    assert_eq!(host.timers().len(), host::MOST_TIMERS);
+}

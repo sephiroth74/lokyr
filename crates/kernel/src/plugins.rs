@@ -286,6 +286,8 @@ pub struct Context<'a> {
     /// The language that the app shows, of its own catalogs, which the
     /// plugins' messages take.
     pub language: &'a str,
+    /// The host's time, which the timers that the plugins start wait from.
+    pub now: Instant,
 }
 
 /// Where a plugin is in its life.
@@ -411,6 +413,21 @@ struct State {
     /// their pane started, whose matches show until the later one shows
     /// its own or ends, so that the view does not lose them in between.
     lingering: Vec<search::Search>,
+    /// Its timers, by their ids, [`host::MOST_TIMERS`] at most.
+    timers: BTreeMap<u64, Timer>,
+}
+
+/// A timer of a plugin's.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Timer {
+    /// When it fires next; none once it fired, of one that does not repeat,
+    /// whose event waits for its plugin.
+    at: Option<Instant>,
+    /// How long it waits again after it fires, of one that repeats.
+    every: Option<Duration>,
+    /// Whether it fired since its plugin last heard of it: its event waits,
+    /// one however many times it fired meanwhile.
+    due: bool,
 }
 
 impl State {
@@ -726,10 +743,11 @@ struct Restarts {
     counted: bool,
 }
 
-/// The last id of a read or a decoration, which none takes twice.
+/// The last id of a read, a search, a decoration or a timer, which none
+/// takes twice.
 static LAST_ID: AtomicU64 = AtomicU64::new(0);
 
-/// An id that no read nor decoration of the process took.
+/// An id that no read, search, decoration nor timer of the process took.
 fn new_id() -> u64 {
     LAST_ID.fetch_add(1, Ordering::Relaxed) + 1
 }
@@ -946,6 +964,7 @@ impl Plugins {
                 reading: Arc::default(),
                 restarts: Restarts::default(),
                 lingering: Vec::new(),
+                timers: BTreeMap::new(),
             },
         });
         Ok(())
@@ -1902,15 +1921,17 @@ impl Plugins {
 
     /// Delivers the events posted and emitted since the last delivery, in
     /// their order, as a batch to each active plugin, in their order, of
-    /// those that it subscribed to; those that the deliveries' calls emit
-    /// wait for the next. Returns the calls' errors, of which a panic's
-    /// disables its plugin. A plugin of a thread of its own takes its batch
-    /// there, which joins the one that waits for it, if one does.
+    /// those that it subscribed to, and then those of its timers that fired,
+    /// in their ids' order; those that the deliveries' calls emit wait for
+    /// the next. Returns the calls' errors, of which a panic's disables its
+    /// plugin. A plugin of a thread of its own takes its batch there, which
+    /// joins the one that waits for it, if one does; its timers' events wait
+    /// until its thread is free.
     pub fn deliver(&mut self, context: &mut Context<'_>) -> Vec<Error> {
         self.take_reads();
         let events = std::mem::take(&mut self.out.events);
         let mut errors = Vec::new();
-        if events.is_empty() {
+        if events.is_empty() && !self.timers_owed() {
             return errors;
         }
         for entry in &mut self.entries {
@@ -1940,10 +1961,16 @@ impl Plugins {
                 })
                 .map(|(_, event)| event.clone())
                 .collect();
-            let batch: Vec<Event> = batch
+            let mut batch: Vec<Event> = batch
                 .into_iter()
                 .filter(|event| entry.state.hears(event, context.workspace))
                 .collect();
+            // Its timers that fired, once it can take them: a plugin of a
+            // thread of its own as its thread is free, so that a timer that
+            // its call under way cancels tells it nothing.
+            if takes_timers(&entry.runner) {
+                batch.extend(fired(&mut entry.state));
+            }
             if batch.is_empty() {
                 continue;
             }
@@ -1983,9 +2010,51 @@ impl Plugins {
     }
 
     /// Whether events wait for the next delivery: those of the reads of
-    /// rows that ended once [`Plugins::serve`] took them.
+    /// rows that ended once [`Plugins::serve`] took them, and those of the
+    /// timers that fired, of plugins that can take them.
     pub fn has_events(&self) -> bool {
-        !self.out.events.is_empty()
+        !self.out.events.is_empty() || self.timers_owed()
+    }
+
+    /// Whether a timer that fired owes its plugin its event, which the
+    /// plugin can take now.
+    fn timers_owed(&self) -> bool {
+        self.entries.iter().any(|entry| {
+            entry.state.status == Status::Active
+                && takes_timers(&entry.runner)
+                && entry.state.timers.values().any(|timer| timer.due)
+        })
+    }
+
+    /// Fires the timers of the active plugins whose time came at `now`:
+    /// each owes its plugin its event, once however many times it fired
+    /// since the plugin last heard of it, and one that repeats waits its
+    /// delay again, from its time, or from `now` if it fell behind by more
+    /// than its delay, as the app was busy.
+    pub fn timers_due(&mut self, now: Instant) {
+        for entry in &mut self.entries {
+            if entry.state.status != Status::Active {
+                continue;
+            }
+            for timer in entry.state.timers.values_mut() {
+                let Some(at) = timer.at.filter(|&at| at <= now) else {
+                    continue;
+                };
+                timer.due = true;
+                timer.at = timer.every.map(|every| {
+                    let next = at + every;
+                    if next > now { next } else { now + every }
+                });
+            }
+        }
+    }
+
+    /// When the next timer of an active plugin fires, if one waits, which
+    /// the app wakes for: none costs nothing.
+    pub fn next_timer(&self) -> Option<Instant> {
+        self.active()
+            .flat_map(|state| state.timers.values().filter_map(|timer| timer.at))
+            .min()
     }
 
     /// Whether reads of rows, or calls of plugins on threads of their own,
@@ -2470,6 +2539,7 @@ struct Kept {
     gutter_marks: BTreeMap<u64, host::PaneId>,
     held_cursors: BTreeSet<host::PaneId>,
     quick_windows: Vec<WindowId>,
+    timers: BTreeMap<u64, Timer>,
 }
 
 impl Kept {
@@ -2481,6 +2551,7 @@ impl Kept {
             gutter_marks: state.gutter_marks.clone(),
             held_cursors: state.held_cursors.clone(),
             quick_windows: state.quick_windows.clone(),
+            timers: state.timers.clone(),
         }
     }
 
@@ -2491,6 +2562,17 @@ impl Kept {
         state.gutter_marks = self.gutter_marks;
         state.held_cursors = self.held_cursors;
         state.quick_windows = self.quick_windows;
+        // The timers that the call started go, and those that it cancelled
+        // come back; the others stay as they are, of the firings that came
+        // meanwhile, as a call of a plugin's thread runs beside the main
+        // thread's timers.
+        let mut timers = self.timers;
+        for (id, timer) in &mut timers {
+            if let Some(now) = state.timers.get(id) {
+                timer.clone_from(now);
+            }
+        }
+        state.timers = timers;
     }
 }
 
@@ -2621,8 +2703,9 @@ fn stop(
 /// left in the panes and the app: its decorations and its gutters' marks
 /// leave their panes, the cursors that it held go back to the terminals,
 /// its panels close, as the app hears through `out`, its searches end,
-/// their matches gone, and its reads of rows stop at their next parts. Its
-/// views stay as they were, of a disabled plugin's, which take no event.
+/// their matches gone, its reads of rows stop at their next parts, and its
+/// timers end. Its views stay as they were, of a disabled plugin's, which
+/// take no event.
 fn clear_leftovers(state: &mut State, context: &mut Context<'_>, out: &mut Outbox) {
     for (id, pane) in std::mem::take(&mut state.decorations) {
         if let Some(pane) = context.workspace.pane(PaneId::of(pane.0)) {
@@ -2642,6 +2725,7 @@ fn clear_leftovers(state: &mut State, context: &mut Context<'_>, out: &mut Outbo
         });
     }
     out.reads.retain(|read| read.plugin != state.name);
+    state.timers.clear();
     let searches = std::mem::take(&mut state.searches);
     for search in searches
         .into_iter()
@@ -2695,6 +2779,31 @@ fn end_lingering(lingering: &mut Vec<search::Search>, pane: host::PaneId, worksp
     for search in gone {
         search.end(terminal.as_deref_mut());
     }
+}
+
+/// Whether the plugin of `runner` can take its timers' events now: one of
+/// the main thread, or one of a thread of its own that is free.
+fn takes_timers(runner: &Runner) -> bool {
+    match runner {
+        Runner::Main(_) => true,
+        Runner::Worker(worker) => !worker.is_busy(),
+        Runner::Unstarted(_) | Runner::Stopped => false,
+    }
+}
+
+/// Takes the events of the timers of the plugin of `state` that fired
+/// since it last heard of them, in their ids' order: a timer that does not
+/// repeat goes with its event.
+fn fired(state: &mut State) -> Vec<Event> {
+    let mut events = Vec::new();
+    state.timers.retain(|&id, timer| {
+        if timer.due {
+            timer.due = false;
+            events.push(Event::Timer { id });
+        }
+        timer.at.is_some()
+    });
+    events
 }
 
 /// Ends the searches of `ids` of the plugin of `state`, which a call that
@@ -4555,11 +4664,17 @@ impl Host<'_, '_> {
         Ok(())
     }
 
-    /// Takes `request`, a declaration of the plugin's commands or keys, at
-    /// once: one that the plugin made already changes nothing, so that the
-    /// keymap and the menus are not made anew for it.
+    /// Takes `request`, a declaration of the plugin's commands, its keys,
+    /// its subscriptions or its timers, at once: a command, a key or an item
+    /// that the plugin declared already changes nothing, so that the keymap
+    /// and the menus are not made anew for it. A timer of the call's waits
+    /// from the host's time of the call, and goes, as a timer that it
+    /// cancels comes back, if the call fails.
     fn declare(&mut self, request: Asked) -> Result<Response, Error> {
-        if !matches!(request, Asked::Subscribe(_)) {
+        if !matches!(
+            request,
+            Asked::Subscribe(_) | Asked::StartTimer { .. } | Asked::CancelTimer(_)
+        ) {
             self.within_declared()?;
         }
         match request {
@@ -4666,6 +4781,34 @@ impl Host<'_, '_> {
                         self.state.subscribed.push(name);
                     }
                 }
+            }
+            Asked::StartTimer { delay, repeats } => {
+                if delay > host::MOST_DELAY {
+                    return Err(Error::new(
+                        Code::Failed,
+                        lokyr_plugin_sdk::message::DELAY_RANGE,
+                    ));
+                }
+                if self.state.timers.len() >= host::MOST_TIMERS {
+                    return Err(Error::new(
+                        Code::Unavailable,
+                        lokyr_plugin_sdk::message::TIMERS_BOUND,
+                    ));
+                }
+                let every = Duration::from_millis(delay.max(host::LEAST_DELAY));
+                let id = new_id();
+                self.state.timers.insert(
+                    id,
+                    Timer {
+                        at: Some(self.context.now + every),
+                        every: repeats.then_some(every),
+                        due: false,
+                    },
+                );
+                return Ok(Response::Timer(id));
+            }
+            Asked::CancelTimer(id) => {
+                self.state.timers.remove(&id);
             }
             other => {
                 return Err(Error::new(

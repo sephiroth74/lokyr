@@ -23,12 +23,14 @@ use std::collections::BTreeMap;
 use lokyr_plugin_sdk::command::{Args, Capability, Category, Code, Command, Error, Value};
 use lokyr_plugin_sdk::event::WorkspaceEvent;
 use lokyr_plugin_sdk::host::{
-    BarPlace, Binding, Color, CommandInfo, DecorationLook, Direction, Edge, Layout, Line, LineText,
-    MOST_STATE, MenuItem, MenuPlace, PaneId, QuickLength, QuickPlace, ScreenPoint, Scroll,
-    SearchMatch, SearchQuery, SelectionKind, ShellCommand, Side, TabId, TabInfo, Underline,
-    Viewport, WindowId, WindowInfo,
+    BarPlace, Binding, Color, CommandInfo, DecorationLook, Direction, Edge, LEAST_DELAY, Layout,
+    Line, LineText, MOST_DELAY, MOST_STATE, MOST_TIMERS, MenuItem, MenuPlace, PaneId, QuickLength,
+    QuickPlace, ScreenPoint, Scroll, SearchMatch, SearchQuery, SelectionKind, ShellCommand, Side,
+    TabId, TabInfo, Underline, Viewport, WindowId, WindowInfo,
 };
-use lokyr_plugin_sdk::message::{DIM_RANGE, Data, Event, Mods, OWN_PANE, Request, Response};
+use lokyr_plugin_sdk::message::{
+    DELAY_RANGE, DIM_RANGE, Data, Event, Mods, OWN_PANE, Request, Response, TIMERS_BOUND,
+};
 use lokyr_plugin_sdk::ui::{Anchor, PanelId, PanelOptions, Role, ViewId};
 use serde::{Deserialize, Serialize};
 
@@ -58,6 +60,9 @@ const NO_WINDOW: WindowId = WindowId(999_999);
 /// A tab that no host holds.
 const NO_TAB: TabId = TabId(999_999);
 
+/// A timer that no plugin started.
+const NO_TIMER: u64 = 999_999;
+
 /// The first of the symbols, past every id that a host gives: a window's
 /// are from it, a tab's from twice it, a pane's from three times it.
 pub const SYMBOL: u64 = 1 << 40;
@@ -78,6 +83,12 @@ pub const fn tab(k: u64) -> TabId {
 /// opens.
 pub const fn pane(k: u64) -> PaneId {
     PaneId(3 * SYMBOL + k)
+}
+
+/// The timer that the trace meets as the `k`th of those that the scenario
+/// starts.
+pub const fn timer(k: u64) -> u64 {
+    4 * SYMBOL + k
 }
 
 /// The world of the scenarios, as the kernel's host made it: its window,
@@ -113,7 +124,7 @@ pub struct Scenario {
 }
 
 /// A step of a scenario: a call of the plugin's, the workspace's events,
-/// and what the plugin hears after them.
+/// the time that passes, and what the plugin hears after them.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct Step {
@@ -122,13 +133,24 @@ pub struct Step {
     pub asks: Vec<(Request, Response)>,
     /// The workspace's events, which the host posts after the call.
     pub posts: Vec<Event>,
+    /// How long the host's time moves on after them, in milliseconds, as
+    /// the plugin's timers fire.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub wait: u64,
     /// The events that the plugin hears after them, as one batch.
     pub heard: Vec<Event>,
+}
+
+/// Whether `wait` is none, which a step's JSON leaves out.
+#[allow(clippy::trivially_copy_pass_by_ref)]
+fn is_zero(wait: &u64) -> bool {
+    *wait == 0
 }
 
 /// A step of a call alone.
 fn ask(asks: Vec<(Request, Response)>) -> Step {
     Step {
+        wait: 0,
         asks,
         posts: Vec::new(),
         heard: Vec::new(),
@@ -148,6 +170,7 @@ pub fn all(world: &World) -> Vec<Scenario> {
         events(world),
         capabilities(world),
         declarations(),
+        timers(),
         app_requests(world),
         state_and_rows(world),
         views(world),
@@ -194,6 +217,7 @@ fn tabs(world: &World) -> Scenario {
         subscriptions: Vec::new(),
         steps: vec![
             Step {
+                wait: 0,
                 asks: vec![
                     (
                         Request::SetTabTitle {
@@ -333,6 +357,7 @@ fn tabs(world: &World) -> Scenario {
             ]),
             // A drag of its column's edge, told to it alone.
             Step {
+                wait: 0,
                 asks: Vec::new(),
                 posts: vec![Event::TabBarResized { width: 240.0 }],
                 heard: vec![Event::TabBarResized { width: 240.0 }],
@@ -519,6 +544,7 @@ fn links(world: &World) -> Scenario {
                 ),
             ]),
             Step {
+                wait: 0,
                 asks: Vec::new(),
                 posts: vec![pointer.clone()],
                 heard: vec![pointer],
@@ -558,6 +584,7 @@ fn events(world: &World) -> Scenario {
         subscriptions: vec!["conformer.ping".to_owned(), "tab-created".to_owned()],
         steps: vec![
             Step {
+                wait: 0,
                 asks: vec![
                     (
                         Request::Emit {
@@ -619,6 +646,7 @@ fn events(world: &World) -> Scenario {
             },
             // The workspace's events that it did not subscribe to go.
             Step {
+                wait: 0,
                 asks: Vec::new(),
                 posts: vec![
                     created.clone(),
@@ -843,6 +871,7 @@ fn commands_and_viewport(world: &World) -> Scenario {
             "command-ended".to_owned(),
         ],
         steps: vec![Step {
+            wait: 0,
             asks: vec![
                 (
                     commands(-1_000_000, 1_000_000),
@@ -1001,6 +1030,75 @@ pub fn ask_command() -> Command {
         capabilities: Vec::new(),
         params: Vec::new(),
         when: None,
+    }
+}
+
+/// What every plugin meets of its timers, of the host's time that the
+/// steps move on: one that fires once, one that repeats, once however many
+/// times it fired since the plugin last heard of it, one of no delay, which
+/// waits the least, a delay past a day refused; a timer cancelled, which
+/// tells nothing more, and one that no plugin started; the most timers of
+/// a plugin, past which one is refused until one is cancelled. Their events
+/// come to the plugin alone, which subscribed to none.
+fn timers() -> Scenario {
+    let start = |delay: u64, repeats: bool| Request::StartTimer { delay, repeats };
+    let fired = |ids: &[u64]| -> Vec<Event> {
+        ids.iter().map(|&k| Event::Timer { id: timer(k) }).collect()
+    };
+    let step = |wait: u64, heard: Vec<Event>| Step {
+        wait,
+        asks: Vec::new(),
+        posts: Vec::new(),
+        heard,
+    };
+    // As many as a plugin has, then one more, refused.
+    let mut most: Vec<(Request, Response)> = (0..MOST_TIMERS as u64)
+        .map(|k| (start(MOST_DELAY, false), Response::Timer(timer(3 + k))))
+        .collect();
+    most.push((start(10, false), failed(Code::Unavailable, TIMERS_BOUND)));
+    let next = 3 + MOST_TIMERS as u64;
+    Scenario {
+        name: "timers".to_owned(),
+        capabilities: Some(Vec::new()),
+        subscriptions: Vec::new(),
+        steps: vec![
+            ask(vec![
+                (start(100, false), Response::Timer(timer(0))),
+                (start(40, true), Response::Timer(timer(1))),
+                (start(0, false), Response::Timer(timer(2))),
+                (
+                    start(MOST_DELAY + 1, false),
+                    failed(Code::Failed, DELAY_RANGE),
+                ),
+                (Request::CancelTimer(NO_TIMER), Response::Done),
+            ]),
+            // The timer of no delay, at the least.
+            step(LEAST_DELAY, fired(&[2])),
+            // The one that repeats, at 40 ms.
+            step(40 - LEAST_DELAY, fired(&[1])),
+            // At 140 ms, the one of 100 ms, and the one that repeats once,
+            // which fired at 80 and at 120.
+            step(100, fired(&[0, 1])),
+            // The one that repeats cancelled, and the others fired once:
+            // nothing more.
+            Step {
+                wait: 1000,
+                asks: vec![(Request::CancelTimer(timer(1)), Response::Done)],
+                posts: Vec::new(),
+                heard: Vec::new(),
+            },
+            ask(most),
+            // One cancelled, another can start.
+            Step {
+                wait: LEAST_DELAY,
+                asks: vec![
+                    (Request::CancelTimer(timer(3)), Response::Done),
+                    (start(LEAST_DELAY, false), Response::Timer(timer(next))),
+                ],
+                posts: Vec::new(),
+                heard: fired(&[next]),
+            },
+        ],
     }
 }
 
@@ -1284,6 +1382,7 @@ fn state_and_rows(world: &World) -> Scenario {
         subscriptions: Vec::new(),
         steps: vec![
             Step {
+                wait: 0,
                 asks: vec![
                     (Request::SetState(kept.clone()), Response::Done),
                     (Request::State, Response::Data(Data::Nil)),
@@ -1335,6 +1434,7 @@ fn state_and_rows(world: &World) -> Scenario {
             // A search of the pane's terminal, whose one match, of the
             // program's line, comes as an event; and what is refused.
             Step {
+                wait: 0,
                 asks: vec![
                     (
                         Request::Search {
@@ -1446,6 +1546,7 @@ fn views(world: &World) -> Scenario {
         subscriptions: Vec::new(),
         steps: vec![
             Step {
+                wait: 0,
                 asks: vec![
                     (
                         Request::OpenPanel {
@@ -1567,6 +1668,7 @@ fn views(world: &World) -> Scenario {
                 ),
             ]),
             Step {
+                wait: 0,
                 asks: vec![(Request::ClosePanel(PanelId::from(MENU)), Response::Done)],
                 posts: Vec::new(),
                 heard: vec![Event::PanelClosed(PanelId::from(MENU))],
@@ -1613,6 +1715,7 @@ fn workspace(world: &World) -> Scenario {
         subscriptions: names.collect(),
         steps: vec![
             Step {
+                wait: 0,
                 asks: vec![
                     (
                         Request::NewTab {
@@ -1745,6 +1848,7 @@ fn workspace(world: &World) -> Scenario {
                 ],
             },
             Step {
+                wait: 0,
                 asks: vec![
                     (
                         Request::Windows,
@@ -1842,6 +1946,7 @@ fn workspace(world: &World) -> Scenario {
                 ],
             },
             Step {
+                wait: 0,
                 asks: vec![
                     (
                         Request::Windows,
@@ -1908,6 +2013,7 @@ fn workspace(world: &World) -> Scenario {
                 ],
             },
             Step {
+                wait: 0,
                 asks: vec![
                     (
                         Request::CloseTab {
@@ -1950,6 +2056,7 @@ fn workspace(world: &World) -> Scenario {
             // half: the tab goes, the first showing still; and none into a
             // pane of its own.
             Step {
+                wait: 0,
                 asks: vec![
                     (
                         Request::NewTab {
@@ -2017,6 +2124,7 @@ fn workspace(world: &World) -> Scenario {
             )]),
             // Its pane closed, the first as it was, for the next scenarios.
             Step {
+                wait: 0,
                 asks: vec![(
                     Request::ClosePane {
                         pane: pane(2),

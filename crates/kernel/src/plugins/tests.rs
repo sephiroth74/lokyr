@@ -21,6 +21,7 @@ use crate::workspace::{Environment, Grid, Settings};
 
 mod bounds;
 mod config;
+mod timers;
 
 type Activate = Box<dyn FnMut(&mut Cx<'_>) -> Result<(), Error>>;
 type OnCommand = Box<dyn FnMut(&mut Cx<'_>, &str, Args) -> Result<(), Error>>;
@@ -151,6 +152,9 @@ pub(super) struct App {
     pub(super) focused: Option<WindowId>,
     /// The language shown, English's of none.
     pub(super) language: Option<&'static str>,
+    /// The host's time, which the test moves on, from the time of its
+    /// first look.
+    pub(super) clock: Option<Instant>,
 }
 
 /// The themes of an app of the tests: the built-in ones, dark in force.
@@ -163,7 +167,20 @@ fn no_themes() -> host::Themes {
 }
 
 impl App {
+    /// The host's time now.
+    pub(super) fn now(&mut self) -> Instant {
+        *self.clock.get_or_insert_with(Instant::now)
+    }
+
+    /// Moves the host's time on by `by`: the time now.
+    pub(super) fn wait(&mut self, by: Duration) -> Instant {
+        let now = self.now() + by;
+        self.clock = Some(now);
+        now
+    }
+
     pub(super) fn context(&mut self) -> Context<'_> {
+        let now = self.now();
         Context {
             registry: &mut self.registry,
             workspace: &mut self.workspace,
@@ -176,6 +193,7 @@ impl App {
             enabled: &|_| true,
             themes: &no_themes,
             language: self.language.unwrap_or("en"),
+            now,
         }
     }
 }
@@ -1650,6 +1668,7 @@ fn a_call_is_its_own_plugin_s() {
             reading: Arc::default(),
             restarts: Restarts::default(),
             lingering: Vec::new(),
+            timers: BTreeMap::new(),
         },
         Outbox::default(),
         Vec::new(),

@@ -520,6 +520,9 @@ pub struct App<B: Backend> {
     /// The timer of the next plugin that faulted to start again, and its
     /// time.
     restart_timer: Option<(TimerId, Instant)>,
+    /// The timer of the next of the plugins' timers to fire, and its time:
+    /// none while no plugin's timer waits.
+    plugin_timer: Option<(TimerId, Instant)>,
     /// The timer of the turn of the panes whose sessions told something
     /// within the pace of their last look, and its time.
     told_timer: Option<(TimerId, Instant)>,
@@ -783,6 +786,7 @@ impl<B: Backend> App<B> {
             bench_deadline: None,
             untitled_timer: None,
             restart_timer: None,
+            plugin_timer: None,
             scripts: BTreeSet::new(),
             script_asks: BTreeMap::new(),
             told_timer: None,
@@ -2688,6 +2692,7 @@ impl<B: Backend> App<B> {
             enabled: &enabled,
             themes: &theme_list,
             language: self.texts.language(),
+            now: Instant::now(),
         };
         call(&mut self.plugins, &mut context)
     }
@@ -2906,6 +2911,7 @@ impl<B: Backend> App<B> {
             }
             Some(_) => {}
         }
+        self.arm_plugin_timer(platform);
         for (plugin, fault) in self.plugins.take_disabled() {
             let text = self.texts.text_with(
                 "plugin-stopped",
@@ -2920,6 +2926,26 @@ impl<B: Backend> App<B> {
             for &window in self.windows.keys() {
                 platform.request_frame(window);
             }
+        }
+    }
+
+    /// Arms the platform's timer at the time of the next of the plugins'
+    /// timers, as their calls started and cancelled them and as they
+    /// fired; none while no plugin's timer waits, which costs nothing.
+    fn arm_plugin_timer(&mut self, platform: &mut dyn Platform) {
+        match self.plugins.next_timer() {
+            Some(at) if self.plugin_timer.is_none_or(|(_, armed)| armed != at) => {
+                if let Some((timer, _)) = self.plugin_timer.take() {
+                    platform.cancel_timer(timer);
+                }
+                self.plugin_timer = Some((platform.start_timer(at), at));
+            }
+            None => {
+                if let Some((timer, _)) = self.plugin_timer.take() {
+                    platform.cancel_timer(timer);
+                }
+            }
+            Some(_) => {}
         }
     }
 
@@ -3657,6 +3683,15 @@ impl<B: Backend> App<B> {
             AppEvent::Timer(timer) if self.bench_deadline == Some(timer) => {
                 self.bench_deadline = None;
                 self.give_up_benches(platform);
+            }
+            // The plugins' timers whose time came fire, whose events the
+            // turn's end delivers.
+            AppEvent::Timer(timer)
+                if self.plugin_timer.is_some_and(|(armed, _)| armed == timer) =>
+            {
+                self.plugin_timer = None;
+                self.plugins.timers_due(Instant::now());
+                self.arm_plugin_timer(platform);
             }
             AppEvent::Timer(timer)
                 if self

@@ -1149,6 +1149,29 @@ impl<'a> Cx<'a> {
         self.done(Request::SetState(value))
     }
 
+    /// Starts a timer, of the host's time, which fires once `delay` passed,
+    /// and again at each `delay` after, if it `repeats`: returns its id,
+    /// and its firings come to [`on_event`](Plugin::on_event) as
+    /// [`Event::Timer`](crate::message::Event::Timer) events of that id,
+    /// which no subscription needs, once however many times it fired since
+    /// the plugin last heard of it. The delay goes to the millisecond,
+    /// [`LEAST_DELAY`](crate::host::LEAST_DELAY) at least, a day at most;
+    /// a plugin has [`MOST_TIMERS`](crate::host::MOST_TIMERS) at most, and
+    /// they end as it stops.
+    pub fn start_timer(&mut self, delay: std::time::Duration, repeats: bool) -> Result<u64, Error> {
+        let delay = u64::try_from(delay.as_millis()).unwrap_or(u64::MAX);
+        match self.request(Request::StartTimer { delay, repeats }) {
+            Response::Timer(id) => Ok(id),
+            other => Err(failed(other)),
+        }
+    }
+
+    /// Cancels the plugin's timer `timer`, at once: its events come no
+    /// more, the one that it owes neither.
+    pub fn cancel_timer(&mut self, timer: u64) -> Result<(), Error> {
+        self.done(Request::CancelTimer(timer))
+    }
+
     /// Sends `request`, which a plain value answers.
     fn data(&mut self, request: Request) -> Result<Data, Error> {
         match self.request(request) {

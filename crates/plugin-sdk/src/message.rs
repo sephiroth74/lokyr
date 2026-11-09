@@ -9,9 +9,9 @@
 //! as the plugin's call returns: a plugin that reads what it just wrote, in
 //! the same call, reads the state before its write. What changes the app,
 //! as a window to open or a command to run, comes once the call returns
-//! too, after the writes. A plugin's declarations, its commands, its keys
-//! and the events that it subscribes to, take effect at once, as the host
-//! checks them.
+//! too, after the writes. A plugin's declarations, its commands, its keys,
+//! the events that it subscribes to and its timers, take effect at once, as
+//! the host checks them; a timer's event comes to its plugin alone.
 //!
 //! The host gathers the events, the workspace's changes and those that
 //! plugins emit, and delivers them in batches, in their order, each plugin
@@ -50,6 +50,15 @@ pub const OWN_PANE: &str = "a tab goes into a pane of another tab, not of its ow
 /// The message of the error of [`Request::SetInactiveDim`] of a dim out of
 /// its range, which every host gives alike.
 pub const DIM_RANGE: &str = "a dim is a share from 0 to 1";
+
+/// The message of the error of [`Request::StartTimer`] of a delay past
+/// [`MOST_DELAY`](crate::host::MOST_DELAY), which every host gives alike.
+pub const DELAY_RANGE: &str = "a timer's delay is a day at most, 86400000 ms";
+
+/// The message of the error of [`Request::StartTimer`] of a plugin that
+/// has [`MOST_TIMERS`](crate::host::MOST_TIMERS) timers, which every host
+/// gives alike.
+pub const TIMERS_BOUND: &str = "a plugin has 64 timers at most, until one fires or is cancelled";
 
 /// What a plugin asks of the host.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -689,6 +698,24 @@ pub enum Request {
     /// Keeps a value as the plugin's state, 1 MiB at most as JSON, written
     /// whole as the call returns.
     SetState(Data),
+    /// Starts a timer of the plugin's, of the host's time, which fires once
+    /// `delay` passed, and again at each `delay` after, if it repeats: its
+    /// id, and its event, [`Event::Timer`], comes to the plugin alone, once
+    /// however many times it fired since the plugin last heard of it. The
+    /// delay is in milliseconds, [`LEAST_DELAY`](crate::host::LEAST_DELAY)
+    /// at least, which a shorter one takes, and a day at most; a plugin has
+    /// [`MOST_TIMERS`](crate::host::MOST_TIMERS) at most. Its timers end as
+    /// it stops.
+    StartTimer {
+        /// How long it waits, in milliseconds.
+        delay: u64,
+        /// Whether it fires again at each delay after.
+        repeats: bool,
+    },
+    /// Cancels a timer of the plugin's, at once: its event comes no more,
+    /// nor the one that it owes, if it fired; one that is not there stays
+    /// so.
+    CancelTimer(u64),
 }
 
 /// What a request is to the host.
@@ -701,8 +728,8 @@ pub enum Effect {
     Write,
     /// It asks the app, which acts once the call returns.
     App,
-    /// It declares the plugin's commands or keys, which take effect at
-    /// once.
+    /// It declares the plugin's commands, its keys, the events that it
+    /// subscribes to or its timers, which take effect at once.
     Declaration,
 }
 
@@ -835,7 +862,9 @@ impl Request {
             | Self::SetState(_)
             | Self::Commands
             | Self::Themes
-            | Self::AddMenuItem(_) => None,
+            | Self::AddMenuItem(_)
+            | Self::StartTimer { .. }
+            | Self::CancelTimer(_) => None,
         }
     }
 
@@ -934,7 +963,9 @@ impl Request {
             Self::RegisterCommand(_)
             | Self::Bind(_)
             | Self::Subscribe(_)
-            | Self::AddMenuItem(_) => Effect::Declaration,
+            | Self::AddMenuItem(_)
+            | Self::StartTimer { .. }
+            | Self::CancelTimer(_) => Effect::Declaration,
         }
     }
 }
@@ -972,6 +1003,8 @@ pub enum Response {
     Themes(crate::host::Themes),
     /// A question's id, whose answer comes as an event.
     Asking(u64),
+    /// A timer's id, whose firings come as events.
+    Timer(u64),
     /// A tab bar's place.
     TabBarPlace(BarPlace),
     /// A pane's commands, as a read of them gives them.
@@ -1182,6 +1215,14 @@ pub enum Event {
     /// The plugin's config changed, as the config file reloaded, to it
     /// alone: its request of [`Request::Config`] reads the new one.
     ConfigChanged,
+    /// A timer of the plugin's fired, to it alone, once however many times
+    /// it fired since the plugin last heard of it: one of a thread of its
+    /// own hears of it once the thread is free, so that a timer that it
+    /// cancels meanwhile tells it nothing.
+    Timer {
+        /// The timer's id.
+        id: u64,
+    },
     /// An event of a plugin's own.
     Custom {
         /// Its name, `namespace.event`, of the plugin's namespace.
@@ -1210,6 +1251,7 @@ impl Event {
             Self::CommandStarted { .. } => COMMAND_STARTED,
             Self::CommandEnded { .. } => COMMAND_ENDED,
             Self::ConfigChanged => "config-changed",
+            Self::Timer { .. } => "timer",
             Self::Custom { name, .. } => name,
         }
     }
@@ -1337,7 +1379,8 @@ impl Request {
             | Self::Reveal { .. }
             | Self::OpenPanel { .. }
             | Self::ClosePanel { .. }
-            | Self::SetState { .. } => "done",
+            | Self::SetState { .. }
+            | Self::CancelTimer { .. } => "done",
             Self::Commands { .. } => "commands",
             Self::Themes { .. } => "themes",
             Self::ClipboardText { .. }
@@ -1368,6 +1411,7 @@ impl Request {
             Self::NewTab { .. } => "tab",
             Self::TabBarPlace { .. } => "tab-bar-place",
             Self::AskText { .. } => "asking",
+            Self::StartTimer { .. } => "timer",
             Self::PaneGrid { .. } => "grid",
             Self::Config { .. } | Self::State { .. } => "data",
         }
@@ -1603,6 +1647,18 @@ mod tests {
         let text = serde_json::to_string(&custom).unwrap();
         assert_eq!(serde_json::from_str::<Event>(&text).unwrap(), custom);
         assert_eq!(custom.name(), "search.progress");
+        let fired = Event::Timer { id: 7 };
+        let text = serde_json::to_string(&fired).unwrap();
+        assert_eq!(text, r#"{"timer":{"id":7}}"#);
+        assert_eq!(serde_json::from_str::<Event>(&text).unwrap(), fired);
+        assert_eq!(fired.name(), "timer");
+    }
+
+    #[test]
+    fn the_timers_messages_tell_their_bounds() {
+        assert!(TIMERS_BOUND.contains(&format!(" {} ", crate::host::MOST_TIMERS)));
+        assert!(DELAY_RANGE.contains(&format!(" {} ms", crate::host::MOST_DELAY)));
+        assert_eq!(crate::host::MOST_DELAY, 86_400_000);
     }
 
     #[test]
@@ -1672,6 +1728,17 @@ mod tests {
         assert!(Request::Windows.capabilities().is_empty());
         assert!(Request::PaneTitle(pane).capabilities().is_empty());
         assert!(Request::Config.capabilities().is_empty());
+        // Timers, every plugin's, as declarations.
+        let timer = Request::StartTimer {
+            delay: 500,
+            repeats: true,
+        };
+        assert!(timer.capabilities().is_empty());
+        assert_eq!(timer.effect(), Effect::Declaration);
+        assert_eq!(timer.answer(), "timer");
+        assert!(Request::CancelTimer(1).capabilities().is_empty());
+        assert_eq!(Request::CancelTimer(1).effect(), Effect::Declaration);
+        assert_eq!(Request::CancelTimer(1).answer(), "done");
         assert_eq!(Request::SelectionText(pane).effect(), Effect::Read);
         assert_eq!(
             Request::SetClipboardText(String::new()).effect(),
