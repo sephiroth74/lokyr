@@ -378,3 +378,24 @@ return {
         "{error}"
     );
 }
+
+#[test]
+fn the_template_s_plugin_runs_as_its_types_tell() {
+    let mut plugin = plugin(include_str!("../luau/template/src/init.luau"));
+    let mut host = FakeHost::new("acme/test");
+    host.pane(lokyr_plugin_sdk::host::PaneId(1));
+    host.pane(lokyr_plugin_sdk::host::PaneId(2));
+    host.focus(Some(lokyr_plugin_sdk::host::PaneId(1)));
+    host.activate(&mut plugin).unwrap();
+    assert_eq!(host.commands()[0].name, "hello.count");
+    host.command(&mut plugin, "hello.count", Args::new())
+        .unwrap();
+    assert_eq!(
+        host.state(),
+        &Data::Map(BTreeMap::from([("panes".to_owned(), Data::Integer(2))]))
+    );
+    let view = ViewId::Panel(PanelId::from("x"));
+    let tree = nowhere(|cx| plugin.render(cx, &view)).unwrap();
+    assert_eq!(tree.kind, Kind::Text("Panes".to_owned()));
+    assert_eq!(plugin.take_failure(), None);
+}

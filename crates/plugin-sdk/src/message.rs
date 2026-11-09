@@ -1276,6 +1276,104 @@ impl Data {
     }
 }
 
+impl Request {
+    /// The variant of [`Response`] that answers the request, by serde's
+    /// name of it, as `line` or `done`, unless the request fails: what a
+    /// front end of another language answers of it.
+    pub fn answer(&self) -> &'static str {
+        match self {
+            Self::RegisterCommand { .. }
+            | Self::Bind { .. }
+            | Self::Subscribe { .. }
+            | Self::Emit { .. }
+            | Self::PreviewTheme { .. }
+            | Self::SetTheme { .. }
+            | Self::AddMenuItem { .. }
+            | Self::RunCommand { .. }
+            | Self::SetClipboardText { .. }
+            | Self::EndSearch { .. }
+            | Self::SelectCells { .. }
+            | Self::Deselect { .. }
+            | Self::ShowCursor { .. }
+            | Self::ShowMatches { .. }
+            | Self::Undecorate { .. }
+            | Self::UnmarkGutter { .. }
+            | Self::Open { .. }
+            | Self::SelectAll { .. }
+            | Self::ClearScrollback { .. }
+            | Self::Clear { .. }
+            | Self::Paste { .. }
+            | Self::SendText { .. }
+            | Self::Scroll { .. }
+            | Self::SetFontSize { .. }
+            | Self::OpenWindow { .. }
+            | Self::ShowQuickWindow { .. }
+            | Self::CloseWindow { .. }
+            | Self::Quit { .. }
+            | Self::CloseTab { .. }
+            | Self::ClosePane { .. }
+            | Self::SetTabTitle { .. }
+            | Self::SetTabColor { .. }
+            | Self::SetTabBarPlace { .. }
+            | Self::SetInactiveDim { .. }
+            | Self::SetFocusFollowsMouse { .. }
+            | Self::SetWindowTabBarPlace { .. }
+            | Self::ActivateTab { .. }
+            | Self::FocusPane { .. }
+            | Self::MoveTab { .. }
+            | Self::TabIntoPane { .. }
+            | Self::TabToNewWindow { .. }
+            | Self::PaneToNewTab { .. }
+            | Self::PaneToNewWindow { .. }
+            | Self::ResizePane { .. }
+            | Self::SetRatio { .. }
+            | Self::Equalize { .. }
+            | Self::SwapPanes { .. }
+            | Self::Zoom { .. }
+            | Self::RequestRender { .. }
+            | Self::SetText { .. }
+            | Self::FocusNode { .. }
+            | Self::Select { .. }
+            | Self::Reveal { .. }
+            | Self::OpenPanel { .. }
+            | Self::ClosePanel { .. }
+            | Self::SetState { .. } => "done",
+            Self::Commands { .. } => "commands",
+            Self::Themes { .. } => "themes",
+            Self::ClipboardText { .. }
+            | Self::SelectionText { .. }
+            | Self::LinkAt { .. }
+            | Self::WorkingDirectory { .. }
+            | Self::CommandLine { .. }
+            | Self::KeysOf { .. }
+            | Self::Message { .. }
+            | Self::PaneTitle { .. } => "text",
+            Self::FocusedWindow { .. } | Self::OpenQuickWindow { .. } => "window",
+            Self::FocusedPane { .. } | Self::Split { .. } => "pane",
+            Self::LineText { .. } => "line",
+            Self::ReadLines { .. } => "reading",
+            Self::Search { .. } => "searching",
+            Self::CursorCell { .. } => "cell",
+            Self::SearchMatches { .. } => "matches",
+            Self::CurrentMatch { .. } => "current",
+            Self::ShellCommands { .. } => "shell-commands",
+            Self::Viewport { .. } => "viewport",
+            Self::Styles { .. } => "styles",
+            Self::Decorate { .. } | Self::MarkGutter { .. } => "decoration",
+            Self::Opens { .. } => "boolean",
+            Self::FontSize { .. } => "font-size",
+            Self::Windows { .. } => "windows",
+            Self::Tabs { .. } => "tabs",
+            Self::Layout { .. } => "layout",
+            Self::NewTab { .. } => "tab",
+            Self::TabBarPlace { .. } => "tab-bar-place",
+            Self::AskText { .. } => "asking",
+            Self::PaneGrid { .. } => "grid",
+            Self::Config { .. } | Self::State { .. } => "data",
+        }
+    }
+}
+
 /// Drops `data` a level at a time, without recursion, as a value too deep
 /// for a recursive drop.
 pub fn dismantle(data: Data) {

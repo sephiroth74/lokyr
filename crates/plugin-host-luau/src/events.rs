@@ -16,7 +16,7 @@ use crate::shape::{self, ShapeError};
 
 /// The variant of the workspace's events, which an event's table names by
 /// their own names.
-const WORKSPACE: &str = "workspace";
+pub(crate) const WORKSPACE: &str = "workspace";
 
 /// The field of the value of an event's variant of a value that is no
 /// table, by the event's name, as a panel's closing names its panel.
@@ -24,7 +24,7 @@ const VALUES: [(&str, &str); 1] = [("panel-closed", "id")];
 
 /// The field of the value of the event `kind`'s variant of a value that is
 /// no table.
-fn value_field(kind: &str) -> &'static str {
+pub(crate) fn value_field(kind: &str) -> &'static str {
     VALUES
         .iter()
         .find(|(name, _)| *name == kind)

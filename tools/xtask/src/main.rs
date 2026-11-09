@@ -8,6 +8,7 @@ mod dmg;
 mod feed;
 mod gen_dist;
 mod licenses;
+mod luau_types;
 mod notarize;
 mod private;
 mod release;
@@ -34,6 +35,7 @@ fn main() -> ExitCode {
         Some("dmg") => dmg::run(args),
         Some("feed") => feed::run(args),
         Some("gen-dist") => gen_dist::run(args),
+        Some("luau-types") => luau_types::run(args),
         Some("notarize") => notarize::run(args),
         Some("release") => release::run(args),
         Some("symbolicate") => symbolicate::run(args),
@@ -65,6 +67,7 @@ fn print_help() {
          feed add <dmg> [--notes <file>] [--channel <name>]  add a DMG and its notes to the feed of tests, its appcast signed\n  \
          feed serve                  have Lokyr on this Mac read the feed of tests, and serve it on 127.0.0.1:8123\n  \
          gen-dist [--check]          the app's distributions' features and plugins, of dist/*.toml, or check them\n  \
+         luau-types [--check]        write the plugin API's types for Luau, lokyr.d.luau, of the SDK's, or check them\n  \
          notarize                    have Apple notarize target/Lokyr.app, and staple the ticket\n  \
          release <version> [--without-feed]  a candidate's or a release's bundle, DMG, dSYM and SBOM, to a draft on GitHub and the feed\n  \
          symbolicate <report.ips>    the crashed thread of a crash report, Lokyr's frames told by the release's dSYM\n  \

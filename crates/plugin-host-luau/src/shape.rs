@@ -56,6 +56,10 @@ const LOOK_EVERY: usize = 64;
 /// variants: the SDK's `Data` and a command's argument's `Value`.
 const PLAIN: [&str; 2] = ["Data", "Value"];
 
+/// The enums whose variants of a value are texts of their name, `:` and
+/// the value, as a manifest writes a capability, `net:example.com`.
+const TEXTS: [&str; 1] = ["Capability"];
+
 /// Why a value did not take its shape.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ShapeError(pub(crate) String);
@@ -638,10 +642,22 @@ impl<'de> de::Deserializer<'de> for Taking<'_> {
         match &self.value {
             Value::String(_) => {
                 let given = self.text()?;
+                // A variant of a value, of a text of its name and its value.
+                if TEXTS.contains(&name)
+                    && let Some((given, text)) = given.split_once(':')
+                {
+                    let variant = named(given, variants).ok_or_else(|| unknown(given))?;
+                    return visitor.visit_enum(Variant {
+                        variant,
+                        value: None,
+                        text: Some(text.to_owned()),
+                    });
+                }
                 let variant = named(&given, variants).ok_or_else(|| unknown(&given))?;
                 visitor.visit_enum(Variant {
                     variant,
                     value: None,
+                    text: None,
                 })
             }
             Value::Table(table) => {
@@ -661,6 +677,7 @@ impl<'de> de::Deserializer<'de> for Taking<'_> {
                 visitor.visit_enum(Variant {
                     variant,
                     value: Some(self.inner(value)),
+                    text: None,
                 })
             }
             _ => Err(self.expected(&format!("a variant of {name}"))),
@@ -801,14 +818,16 @@ impl<'de> MapAccess<'de> for Entries<'_> {
     }
 }
 
-/// A variant given by its name, of its value, if it has one.
+/// A variant given by its name, of its value, if it has one, or of its
+/// text, of a text of its name and its value.
 struct Variant<'b> {
     variant: &'static str,
     value: Option<Taking<'b>>,
+    text: Option<String>,
 }
 
-/// A variant's value, if it has one.
-struct Inside<'b>(Option<Taking<'b>>);
+/// A variant's value, if it has one, or its text.
+struct Inside<'b>(Option<Taking<'b>>, Option<String>);
 
 impl<'de, 'b> EnumAccess<'de> for Variant<'b> {
     type Error = ShapeError;
@@ -820,7 +839,7 @@ impl<'de, 'b> EnumAccess<'de> for Variant<'b> {
     ) -> Result<(T::Value, Self::Variant), ShapeError> {
         let name: de::value::StrDeserializer<'_, ShapeError> = self.variant.into_deserializer();
         let variant = seed.deserialize(name)?;
-        Ok((variant, Inside(self.value)))
+        Ok((variant, Inside(self.value, self.text)))
     }
 }
 
@@ -828,9 +847,9 @@ impl<'de> VariantAccess<'de> for Inside<'_> {
     type Error = ShapeError;
 
     fn unit_variant(self) -> Result<(), ShapeError> {
-        match self.0 {
-            None => Ok(()),
-            Some(_) => Err(ShapeError(
+        match self {
+            Inside(None, None) => Ok(()),
+            _ => Err(ShapeError(
                 "a variant of no value is its name alone, a text".to_owned(),
             )),
         }
@@ -840,9 +859,13 @@ impl<'de> VariantAccess<'de> for Inside<'_> {
         self,
         seed: T,
     ) -> Result<T::Value, ShapeError> {
-        match self.0 {
-            Some(value) => seed.deserialize(value),
-            None => Err(ShapeError(
+        match self {
+            Inside(Some(value), _) => seed.deserialize(value),
+            Inside(None, Some(text)) => {
+                let text: de::value::StringDeserializer<ShapeError> = text.into_deserializer();
+                seed.deserialize(text)
+            }
+            Inside(None, None) => Err(ShapeError(
                 "a variant of a value is a table of one field, its name's".to_owned(),
             )),
         }
@@ -1258,6 +1281,12 @@ impl<'l> ser::Serializer for Giving<'l> {
             return value.serialize(self);
         }
         let value = value.serialize(self.inner()?)?;
+        if TEXTS.contains(&name)
+            && let Value::String(text) = &value
+        {
+            let text = format!("{variant}:{}", text.to_str()?);
+            return Ok(Value::String(self.lua.create_string(text)?));
+        }
         self.variant(variant, value)
     }
 

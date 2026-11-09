@@ -38,6 +38,7 @@ mod events;
 mod requests;
 mod shape;
 mod tree;
+pub mod types;
 mod vm;
 mod watchdog;
 

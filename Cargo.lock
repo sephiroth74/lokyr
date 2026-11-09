@@ -2422,6 +2422,7 @@ dependencies = [
  "cargo_metadata",
  "libc",
  "lokyr-kernel",
+ "lokyr-plugin-host-luau",
  "plist",
  "regex",
  "rustc-demangle",

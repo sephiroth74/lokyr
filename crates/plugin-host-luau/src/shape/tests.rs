@@ -367,3 +367,33 @@ fn a_conversion_stops_as_its_call_s_deadline_passes() {
     let error = Vec::<u64>::deserialize(Taking::new(list, &gone())).unwrap_err();
     assert!(error.0.contains(past), "{error}");
 }
+
+#[test]
+fn a_capability_is_its_text_as_a_manifest_writes_it() {
+    use lokyr_plugin_sdk::command::Capability;
+
+    gives(&Capability::PtyWrite, r#""pty-write""#);
+    gives(
+        &Capability::Net("example.com".to_owned()),
+        r#""net:example.com""#,
+    );
+    gives(
+        &vec![
+            Capability::FsRead("~/notes".to_owned()),
+            Capability::EnvRead("HOME".to_owned()),
+        ],
+        r#"{ "fs-read:~/notes", "env-read:HOME" }"#,
+    );
+    // A host's text after its first `:`, whatever it holds.
+    assert_eq!(
+        take::<Capability>(r#""net:[::1]""#),
+        Ok(Capability::Net("[::1]".to_owned()))
+    );
+    assert!(
+        take::<Capability>(r#""nett:example.com""#)
+            .unwrap_err()
+            .0
+            .contains("`nett` is no variant of Capability")
+    );
+    assert!(take::<Capability>(r#""pty-write:x""#).is_err());
+}

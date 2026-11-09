@@ -910,3 +910,24 @@ fn every_event_of_the_scenarios_reaches_a_luau_plugin_as_its_table_and_back() {
     assert!(events > 0);
     assert!(wrong.is_empty(), "{wrong:#?}");
 }
+
+#[test]
+fn every_request_of_the_scenarios_is_answered_by_the_response_that_it_tells() {
+    // `Request::answer`, which the Luau API's types read, as each host
+    // answers: every answer of the scenarios that is no failure.
+    let world = Kernel::new().world;
+    let mut wrong = Vec::new();
+    for scenario in scenarios::all(&world) {
+        for (request, response) in scenario.steps.iter().flat_map(|step| &step.asks) {
+            let variant = match serde_json::to_value(response).unwrap() {
+                serde_json::Value::String(name) => name,
+                serde_json::Value::Object(map) => map.keys().next().unwrap().clone(),
+                other => panic!("{other:?}"),
+            };
+            if variant != "failed" && variant != request.answer() {
+                wrong.push(format!("{}: {request:?} answered {variant}", scenario.name));
+            }
+        }
+    }
+    assert!(wrong.is_empty(), "{wrong:#?}");
+}

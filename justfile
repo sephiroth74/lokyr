@@ -104,6 +104,26 @@ check-dist:
 build-minimal:
     cargo build --locked -p lokyr-app --no-default-features --features dist-minimal
 
+# Write the plugin API's types for Luau, lokyr.d.luau, of the SDK's types.
+luau-types:
+    cargo xtask luau-types
+
+# Check that lokyr.d.luau is the SDK's.
+check-luau-types:
+    cargo xtask luau-types --check
+
+# Analyze the template's plugin, and one of wrong fields, against lokyr.d.luau with luau-lsp: the one that LUAU_LSP names, or the VS Code extension's.
+luau-lsp:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    lsp="${LUAU_LSP:-$(ls -d "$HOME"/.vscode/extensions/johnnymorganz.luau-lsp-*/bin/server 2>/dev/null | sort -V | tail -1)}"
+    if [ -z "$lsp" ] || [ ! -x "$lsp" ]; then
+        echo "luau-lsp not found: install the VS Code extension Luau Language Server, or name it in LUAU_LSP" >&2
+        exit 1
+    fi
+    echo "luau-lsp: $lsp ($("$lsp" --version))"
+    LUAU_LSP="$lsp" cargo test --locked -p lokyr-plugin-host-luau --test luau_lsp -- --ignored
+
 # Check that the code's comments name no task, phase or ADR.
 check-comments:
     cargo xtask check-comments
@@ -121,7 +141,7 @@ ui-gallery *args:
     cargo run --locked -p lokyr-ui-gallery -- {{args}}
 
 # Run the CI checks locally. Linux is covered by `check-linux`.
-ci: lint build test check-linux deny check-deps check-comments check-links check-dist build-minimal bundle
+ci: lint build test check-linux deny check-deps check-comments check-links check-dist check-luau-types build-minimal bundle
 
 # Build target/Lokyr.app from the release binary, signed with the identity that $LOKYR_SIGN_IDENTITY names, or ad hoc, with Sparkle's release and the themes' collection (downloads them the first time); `--features three-drawables` builds it of three drawables a window, and `--no-default-features --features dist-minimal` of the minimal distribution.
 bundle *args:

@@ -25,7 +25,7 @@ use serde::de::DeserializeOwned;
 use crate::shape::{self, Budget, ShapeError, Taking};
 
 /// The fields of a node of every kind, by their names in Luau.
-const NODE: [&str; 11] = [
+pub(crate) const NODE: [&str; 11] = [
     "key",
     "kind",
     "layout",
@@ -40,7 +40,7 @@ const NODE: [&str; 11] = [
 ];
 
 /// The kinds of node, by their names in Luau.
-const KINDS: [&str; 12] = [
+pub(crate) const KINDS: [&str; 12] = [
     "container",
     "text",
     "icon",
@@ -57,7 +57,7 @@ const KINDS: [&str; 12] = [
 
 /// The fields of a node of `kind`'s own, by their names in Luau, if it is
 /// a kind of node.
-fn own(kind: &str) -> Option<&'static [&'static str]> {
+pub(crate) fn own(kind: &str) -> Option<&'static [&'static str]> {
     Some(match kind {
         "container" | "spacer" | "separator" | "scroll" => &[],
         "text" => &["text"],
