@@ -386,3 +386,70 @@ fn a_package_s_folder_of_a_link_or_out_of_its_layout_does_not_pack() {
         let _ = std::fs::remove_dir_all(folder(name));
     }
 }
+
+#[test]
+fn a_store_s_package_changed_since_it_was_stored_is_made_anew_as_it_is_added_again() {
+    let package = folder("repaired-package");
+    write(
+        &package,
+        &[
+            ("plugin.toml", manifest(None).as_bytes()),
+            ("src/init.luau", b"return {}\n"),
+        ],
+    );
+    let packed = pack(&package).unwrap();
+    let root = folder("repaired-store");
+    let store = Store::new(root.join("store"));
+    let unpacked = store.add(packed.as_slice()).unwrap();
+    let stored = store.folder(&unpacked.digest);
+    // The Finder's file, and a file that a power cut left empty.
+    std::fs::write(stored.join(".DS_Store"), b"finder").unwrap();
+    std::fs::write(stored.join("src/init.luau"), b"").unwrap();
+    assert!(store.check(&unpacked.digest).is_err());
+    assert_eq!(store.add(packed.as_slice()).unwrap(), unpacked);
+    store.check(&unpacked.digest).unwrap();
+    assert!(!stored.join(".DS_Store").exists());
+    // Nothing left beside it.
+    assert_eq!(store.digests().unwrap(), [unpacked.digest]);
+    assert_eq!(std::fs::read_dir(store.root()).unwrap().count(), 1);
+    for name in ["repaired-package", "repaired-store"] {
+        let _ = std::fs::remove_dir_all(folder(name));
+    }
+}
+
+#[test]
+fn a_package_that_no_unpacking_takes_does_not_pack() {
+    // More files than an unpacking takes.
+    let many = folder("many-files");
+    write(
+        &many,
+        &[
+            ("plugin.toml", manifest(None).as_bytes()),
+            ("src/init.luau", b"return {}\n"),
+        ],
+    );
+    for at in 0..MOST_FILES {
+        std::fs::write(many.join(format!("src/m{at}.luau")), b"").unwrap();
+    }
+    let ArchiveError::Refused(message) = pack(&many).unwrap_err() else {
+        panic!("not a refusal");
+    };
+    assert!(message.contains("more than 10000 files"), "{message}");
+    // A source that compresses as a bomb would.
+    let bomb = folder("bomb-source");
+    let repeated = vec![b'x'; 3 * 1024 * 1024];
+    write(
+        &bomb,
+        &[
+            ("plugin.toml", manifest(None).as_bytes()),
+            ("src/init.luau", &repeated),
+        ],
+    );
+    let ArchiveError::Refused(message) = pack(&bomb).unwrap_err() else {
+        panic!("not a refusal");
+    };
+    assert!(message.contains("as a bomb would"), "{message}");
+    for name in ["many-files", "bomb-source"] {
+        let _ = std::fs::remove_dir_all(folder(name));
+    }
+}

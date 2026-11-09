@@ -94,3 +94,52 @@ fn the_decisions_are_written_whole_and_read_back_of_their_file() {
     assert_eq!(error.at, Some((2, 12)));
     let _ = std::fs::remove_dir_all(&folder);
 }
+
+#[test]
+fn a_linked_file_stays_a_link_its_target_written_of_its_mode() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let root =
+        std::env::temp_dir().join(format!("lokyr-permissions-linked-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    let dotfiles = root.join("dotfiles");
+    let config = root.join("config");
+    std::fs::create_dir_all(&dotfiles).unwrap();
+    std::fs::create_dir_all(&config).unwrap();
+    // GNU Stow's link, of a file of its own mode.
+    let target = dotfiles.join(FILE);
+    std::fs::write(&target, "").unwrap();
+    std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o600)).unwrap();
+    let link = config.join(FILE);
+    std::os::unix::fs::symlink(&target, &link).unwrap();
+    let mut permissions = Permissions::default();
+    permissions
+        .plugins
+        .entry("acme/x".to_owned())
+        .or_default()
+        .decide(&[Capability::Open], true);
+    permissions.write(&link).unwrap();
+    assert!(
+        std::fs::symlink_metadata(&link)
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
+    assert_eq!(Permissions::read(&target).unwrap(), permissions);
+    let mode = std::fs::metadata(&target).unwrap().permissions().mode();
+    assert_eq!(mode & 0o777, 0o600);
+    // Nothing of the write left beside either.
+    assert_eq!(std::fs::read_dir(&dotfiles).unwrap().count(), 1);
+    assert_eq!(std::fs::read_dir(&config).unwrap().count(), 1);
+    // A link to a file not there yet makes the file, the link kept.
+    std::fs::remove_file(&target).unwrap();
+    permissions.write(&link).unwrap();
+    assert!(
+        std::fs::symlink_metadata(&link)
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
+    assert_eq!(Permissions::read(&target).unwrap(), permissions);
+    let _ = std::fs::remove_dir_all(&root);
+}

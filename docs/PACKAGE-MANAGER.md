@@ -187,7 +187,7 @@ Archive rules:
 
 ### The store
 
-`~/Library/Application Support/lokyr/store/` on macOS, `$XDG_DATA_HOME/lokyr/store/` elsewhere: a folder for each package, which Sleip unpacks beside the packages and renames into `store/<digest>/` at once, and never changes. The digest is the SHA-256 of the package's files alone, in the byte order of their paths, of `/` between their folders: each its path, a zero byte, its size as eight bytes, most significant first, and its bytes; its folders, its files' permissions and times count for nothing, so that the app checks a package of its folder as it loads it, and a package unpacked anew keeps its digest. `pkg-model`'s `store::Store` holds it.
+`~/Library/Application Support/lokyr/store/` on macOS, `$XDG_DATA_HOME/lokyr/store/` elsewhere: a folder for each package, which Sleip unpacks beside the packages, its files flushed to the disk, and renames into `store/<digest>/` at once, and never changes; one whose files are no longer those of its digest, as of a `.DS_Store` of the Finder or a power cut, the same package added again takes the place of. The digest is the SHA-256 of the package's files alone, in the byte order of their paths, of `/` between their folders: each its path, a zero byte, its size as eight bytes, most significant first, and its bytes; its folders, its files' permissions and times count for nothing, so that the app checks a package of its folder as it loads it, and a package unpacked anew keeps its digest. `pkg-model`'s `store::Store` holds it.
 
 ## Resolution
 

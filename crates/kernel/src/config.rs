@@ -92,6 +92,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use lokyr_pkg_model::{link_target, write_whole};
 use lokyr_text_core::FontConfig;
 use lokyr_text_core::as_written;
 use lokyr_ui_core::cursor::CursorConfig;
@@ -1537,55 +1538,6 @@ pub fn make(path: &Path) -> Result<bool, Error> {
         message: format!("it cannot be written: {error}"),
     })?;
     Ok(true)
-}
-
-/// How many links a config's path can lead through, each to the next.
-const LINKS: usize = 32;
-
-/// The file that `path` leads to, through its symbolic links: its target
-/// when it is one that exists, and otherwise the last link's target, which
-/// a write makes, so that a link stays a link.
-fn link_target(path: &Path) -> PathBuf {
-    if let Ok(target) = fs::canonicalize(path) {
-        return target;
-    }
-    let mut path = path.to_owned();
-    for _ in 0..LINKS {
-        let Ok(target) = fs::read_link(&path) else {
-            break;
-        };
-        // A relative target is the link's directory's.
-        path = match path.parent() {
-            Some(directory) => directory.join(target),
-            None => target,
-        };
-    }
-    path
-}
-
-/// Writes `text` to `path` whole: into a file of its own beside it, with
-/// its permissions, on the disk, renamed over it, so that a reader never
-/// sees half of it; a failure leaves no file of its own behind.
-fn write_whole(path: &Path, text: &str) -> io::Result<()> {
-    use std::io::Write;
-
-    let directory = path.parent().unwrap_or(Path::new("."));
-    fs::create_dir_all(directory)?;
-    let name = path.file_name().unwrap_or_default().to_string_lossy();
-    let temporary = directory.join(format!(".{name}.{}.new", std::process::id()));
-    let written = (|| {
-        let mut file = fs::File::create(&temporary)?;
-        file.write_all(text.as_bytes())?;
-        if let Ok(metadata) = fs::metadata(path) {
-            file.set_permissions(metadata.permissions())?;
-        }
-        file.sync_all()?;
-        fs::rename(&temporary, path)
-    })();
-    if written.is_err() {
-        let _ = fs::remove_file(&temporary);
-    }
-    written
 }
 
 /// An error of the config file, at its place in the file when it has one.

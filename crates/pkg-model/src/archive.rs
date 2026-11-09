@@ -188,7 +188,24 @@ pub fn pack(folder: &Path) -> Result<Vec<u8>, ArchiveError> {
             MOST_COMPRESSED / (1024 * 1024)
         )));
     }
+    unpacks(&compressed)?;
     Ok(compressed)
+}
+
+/// Checks that `archive`, which [`pack`] made, unpacks within the bounds
+/// that every unpacking holds, of its files, its size with its headers and
+/// its ratio, so that no package packs that no store takes: it unpacks it
+/// into a folder of its own, then takes the folder away.
+fn unpacks(archive: &[u8]) -> Result<(), ArchiveError> {
+    static PACKS: AtomicUsize = AtomicUsize::new(0);
+    let folder = std::env::temp_dir().join(format!(
+        "lokyr-pack-{}-{}",
+        std::process::id(),
+        PACKS.fetch_add(1, Ordering::Relaxed)
+    ));
+    let unpacked = unpack(archive, &folder);
+    let _ = std::fs::remove_dir_all(&folder);
+    unpacked.map(|_| ())
 }
 
 /// Unpacks the archive `archive` into the folder `into`, which it makes:
@@ -313,29 +330,77 @@ fn unpack_into(archive: impl Read, into: &Path, bounds: Bounds) -> Result<Unpack
 
 impl Store {
     /// Unpacks the archive `archive` into the store, as [`unpack`] does,
-    /// beside its packages, then under its digest at once, so that the
-    /// store holds a package whole or not at all; one that it held already
-    /// stays as it was. The store is made if it is not there.
+    /// beside its packages, its files and folders flushed to the disk, then
+    /// under its digest at once, so that the store holds a package whole or
+    /// not at all; one that it held already stays as it was, unless its
+    /// files are no longer those of its digest, as of a file that the
+    /// Finder or a power cut left, which the new one takes the place of.
+    /// The store is made if it is not there.
     pub fn add(&self, archive: impl Read) -> Result<Unpacked, ArchiveError> {
         static UNPACKS: AtomicUsize = AtomicUsize::new(0);
         std::fs::create_dir_all(self.root())?;
-        let temporary = self.root().join(format!(
-            ".unpack-{}-{}",
-            std::process::id(),
-            UNPACKS.fetch_add(1, Ordering::Relaxed)
-        ));
+        let aside = |what: &str| {
+            self.root().join(format!(
+                ".{what}-{}-{}",
+                std::process::id(),
+                UNPACKS.fetch_add(1, Ordering::Relaxed)
+            ))
+        };
+        let temporary = aside("unpack");
         let unpacked = unpack(archive, &temporary)?;
-        let folder = self.folder(&unpacked.digest);
-        if folder.is_dir() || std::fs::rename(&temporary, &folder).is_err() {
-            std::fs::remove_dir_all(&temporary)?;
-            if !folder.is_dir() {
-                return Err(refused(format!(
-                    "the package {} could not take its place in the store",
-                    unpacked.digest
-                )));
+        let placed = (|| {
+            sync_folders(&temporary)?;
+            let folder = self.folder(&unpacked.digest);
+            if folder.is_dir() {
+                if self.check(&unpacked.digest).is_ok() {
+                    return std::fs::remove_dir_all(&temporary);
+                }
+                // Changed since it was stored: set aside, then gone.
+                let stale = aside("stale");
+                std::fs::rename(&folder, &stale)?;
+                let _ = std::fs::remove_dir_all(&stale);
             }
+            if std::fs::rename(&temporary, &folder).is_err() && !folder.is_dir() {
+                return Err(io::Error::other("its folder could not be renamed"));
+            }
+            let _ = std::fs::remove_dir_all(&temporary);
+            sync_folder(self.root());
+            Ok(())
+        })();
+        if let Err(error) = placed {
+            let _ = std::fs::remove_dir_all(&temporary);
+            return Err(refused(format!(
+                "the package {} could not take its place in the store: {error}",
+                unpacked.digest
+            )));
         }
         Ok(unpacked)
+    }
+}
+
+/// Flushes the files of `folder`, and its folders, their entries, to the
+/// disk: a few milliseconds a file on an Apple disk, whose flush empties
+/// the drive's cache too.
+fn sync_folders(folder: &Path) -> io::Result<()> {
+    let mut left = vec![folder.to_path_buf()];
+    while let Some(at) = left.pop() {
+        for entry in std::fs::read_dir(&at)? {
+            let entry = entry?;
+            if entry.file_type()?.is_dir() {
+                left.push(entry.path());
+            } else {
+                std::fs::File::open(entry.path())?.sync_all()?;
+            }
+        }
+        std::fs::File::open(&at)?.sync_all()?;
+    }
+    Ok(())
+}
+
+/// Flushes the entries of `folder` to the disk, as far as it can.
+fn sync_folder(folder: &Path) {
+    if let Ok(folder) = std::fs::File::open(folder) {
+        let _ = folder.sync_all();
     }
 }
 

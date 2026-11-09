@@ -9,7 +9,7 @@
 
 use std::fmt;
 use std::io::{self, Write as _};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 #[cfg(feature = "archive")]
 pub mod archive;
@@ -65,17 +65,49 @@ pub(crate) fn unread(text: &str, error: &toml::de::Error) -> FileError {
     }
 }
 
-/// Writes `text` to `path` whole: to a file beside it, flushed to the disk,
-/// which takes `path`'s place at once, so that a reader of `path` reads the
-/// old text or the new one, never a part, whatever stops the write.
+/// How many links a path can lead through, each to the next.
+const LINKS: usize = 32;
+
+/// The file that `path` leads to, through its symbolic links: its target
+/// when it is one that exists, and otherwise the last link's target, which
+/// a write makes, so that a link stays a link.
+pub fn link_target(path: &Path) -> PathBuf {
+    if let Ok(target) = std::fs::canonicalize(path) {
+        return target;
+    }
+    let mut path = path.to_owned();
+    for _ in 0..LINKS {
+        let Ok(target) = std::fs::read_link(&path) else {
+            break;
+        };
+        // A relative target is the link's directory's.
+        path = match path.parent() {
+            Some(directory) => directory.join(target),
+            None => target,
+        };
+    }
+    path
+}
+
+/// Writes `text` to the file that `path` leads to, through its links, as
+/// [`link_target`] finds it, so that a link of dotfiles stays a link,
+/// whole: to a file beside it, of its permissions, flushed to the disk,
+/// which takes its place at once, so that a reader reads the old text or
+/// the new one, never a part, whatever stops the write; its folder made if
+/// it is not there; a failure leaves no file of its own behind.
 pub fn write_whole(path: &Path, text: &str) -> io::Result<()> {
+    let path = link_target(path);
     let folder = path
         .parent()
         .filter(|folder| !folder.as_os_str().is_empty());
     let name = path
         .file_name()
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "a file's path"))?;
-    let mut temporary = name.to_owned();
+    if let Some(folder) = folder {
+        std::fs::create_dir_all(folder)?;
+    }
+    let mut temporary = std::ffi::OsString::from(".");
+    temporary.push(name);
     temporary.push(format!(".{}.tmp", std::process::id()));
     let temporary = folder.map_or_else(
         || temporary.clone().into(),
@@ -84,8 +116,11 @@ pub fn write_whole(path: &Path, text: &str) -> io::Result<()> {
     let written = (|| {
         let mut file = std::fs::File::create(&temporary)?;
         file.write_all(text.as_bytes())?;
+        if let Ok(metadata) = std::fs::metadata(&path) {
+            file.set_permissions(metadata.permissions())?;
+        }
         file.sync_all()?;
-        std::fs::rename(&temporary, path)
+        std::fs::rename(&temporary, &path)
     })();
     if written.is_err() {
         let _ = std::fs::remove_file(&temporary);
