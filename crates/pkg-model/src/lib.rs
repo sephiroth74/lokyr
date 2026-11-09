@@ -45,7 +45,9 @@ impl std::error::Error for FileError {}
 pub fn capability_of(text: &str) -> Option<lokyr_plugin_sdk::command::Capability> {
     use lokyr_plugin_sdk::command::Capability;
     match text.split_once(':') {
-        Some((name, parameter)) if !parameter.is_empty() => {
+        Some((name, parameter))
+            if !parameter.is_empty() && !parameter.chars().any(char::is_control) =>
+        {
             Capability::of_parameter(name, parameter.to_owned())
         }
         Some(_) => None,

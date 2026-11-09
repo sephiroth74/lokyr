@@ -47,10 +47,14 @@ fn risk(capability: &Capability) -> &'static str {
 }
 
 /// What `capability` allows, in the language of `texts`, of its parameter,
-/// as a host or a path, if it takes one.
+/// as a host or a path, if it takes one: `*` of every environment variable
+/// its own words.
 pub(super) fn capability_text(texts: &Texts, capability: &Capability) -> String {
     let written = capability.to_string();
     let (name, parameter) = written.split_once(':').unwrap_or((&written, ""));
+    if name == "env-read" && parameter == "*" {
+        return texts.text("consent-capability-env-read-any");
+    }
     texts.text_with(
         &format!("consent-capability-{name}"),
         &[("parameter", Arg::Text(parameter))],
@@ -84,17 +88,19 @@ pub(super) fn question(texts: &Texts, plugin: &str, capabilities: &[Capability])
 
 impl<B: Backend> App<B> {
     /// The user's decisions, of `permissions.toml`: none of no installed
-    /// plugins, and none of a file that does not read, as a notice tells.
-    pub(super) fn permissions(&mut self, platform: &mut dyn Platform) -> Permissions {
+    /// plugins, or of no file; `None` of a file that does not read, as a
+    /// notice tells, whose decisions in force stay, as the config's do,
+    /// and which nothing writes over.
+    pub(super) fn permissions(&mut self, platform: &mut dyn Platform) -> Option<Permissions> {
         let Some(path) = self
             .installed
             .as_ref()
             .map(|installed| installed.permissions.clone())
         else {
-            return Permissions::default();
+            return Some(Permissions::default());
         };
         match Permissions::read(&path) {
-            Ok(permissions) => permissions,
+            Ok(permissions) => Some(permissions),
             Err(error) => {
                 let text = self.texts.text_with(
                     "permissions-unread",
@@ -104,8 +110,24 @@ impl<B: Backend> App<B> {
                     platform,
                     Diagnostic::new(Code::Unavailable, text, About::Other),
                 );
-                Permissions::default()
+                None
             }
+        }
+    }
+
+    /// Forgets the questions of the plugin `plugin`, which went, as a
+    /// reload took it away or made it anew: each withdrawn, and an answer
+    /// that comes of one all the same taken by none.
+    pub(super) fn forget_consent(&mut self, platform: &mut dyn Platform, plugin: &str) {
+        let asked: Vec<_> = self
+            .consent_asks
+            .iter()
+            .filter(|(_, (asker, _))| asker == plugin)
+            .map(|(alert, _)| *alert)
+            .collect();
+        for alert in asked {
+            self.consent_asks.remove(&alert);
+            platform.dismiss_alert(alert);
         }
     }
 
@@ -124,36 +146,39 @@ impl<B: Backend> App<B> {
     }
 
     /// Takes the user's answer to the question of whether `plugin` may hold
-    /// `capabilities`: the decisions kept in `permissions.toml`, the audit
-    /// log told, and the plugin activated, of them or without them.
+    /// `capabilities`: the decisions kept in `permissions.toml`, after the
+    /// file's own changes that its watch has not told yet apply, so that
+    /// none is lost; the audit log told; and the plugin activated, of those
+    /// of them that it asks for still, or without them. A file that does
+    /// not read keeps the answer for this run alone, never written over.
     pub(super) fn consent_answered(
         &mut self,
         platform: &mut dyn Platform,
         (plugin, capabilities): (String, Vec<Capability>),
         allowed: bool,
     ) {
-        let mut permissions = self.permissions(platform);
-        permissions
+        let readable = self.permissions_changed(platform);
+        self.decisions
             .plugins
             .entry(plugin.clone())
             .or_default()
             .decide(&capabilities, allowed);
-        if let Some(installed) = &self.installed
-            && let Err(error) = permissions.write(&installed.permissions)
+        if readable
+            && let Some(installed) = &self.installed
+            && let Err(error) = self.decisions.write(&installed.permissions)
         {
             eprintln!(
                 "lokyr: the decisions on the plugins' capabilities cannot be written to {}: {error}",
                 installed.permissions.display()
             );
         }
-        self.decisions = permissions;
         self.audit(
             if allowed { "granted" } else { "refused" },
             &plugin,
             &capabilities,
         );
         for error in self.with_plugins(platform, |plugins, context| {
-            plugins.consent(&plugin, allowed, context)
+            plugins.consent(&plugin, &capabilities, allowed, context)
         }) {
             eprintln!("lokyr: {error}");
         }
@@ -163,11 +188,14 @@ impl<B: Backend> App<B> {
     /// Reads `permissions.toml` again, as it changed: each installed plugin
     /// takes its decisions, one that lost a capability that it held, as
     /// the user revoked it, stopping, as the audit log and the notice of
-    /// the plugins that stopped tell.
-    pub(super) fn permissions_changed(&mut self, platform: &mut dyn Platform) {
-        let permissions = self.permissions(platform);
+    /// the plugins that stopped tell. A file that does not read changes
+    /// nothing, as a notice tells: whether it read.
+    pub(super) fn permissions_changed(&mut self, platform: &mut dyn Platform) -> bool {
+        let Some(permissions) = self.permissions(platform) else {
+            return false;
+        };
         if permissions == self.decisions {
-            return;
+            return true;
         }
         let names: Vec<String> = self.reloads.loaded.keys().cloned().collect();
         for name in names {
@@ -191,6 +219,7 @@ impl<B: Backend> App<B> {
         }
         self.decisions = permissions;
         self.after_plugins(platform);
+        true
     }
 
     /// Adds a line to the audit log, in the state's folder: the time, what

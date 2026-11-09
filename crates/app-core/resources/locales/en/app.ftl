@@ -60,6 +60,7 @@ consent-capability-fs-read = read { $parameter } and what it holds
 consent-capability-fs-write = write to { $parameter } and to what it holds
 consent-capability-global-hotkey = take keys in every app, and slide quick windows over them
 consent-capability-env-read = read the environment variable { $parameter }
+consent-capability-env-read-any = read every environment variable
 consent-capability-input-read = see the keys typed before the programs do
 consent-capability-history-read = read the commands that the shell ran, and their output
 consent-capability-process-read = see the panes' programs, their command lines and folders

@@ -59,6 +59,7 @@ consent-capability-fs-read = leggere { $parameter } e quello che contiene
 consent-capability-fs-write = scrivere in { $parameter } e in quello che contiene
 consent-capability-global-hotkey = prendere tasti in ogni app, e far scorrere finestre rapide sopra di esse
 consent-capability-env-read = leggere la variabile d'ambiente { $parameter }
+consent-capability-env-read-any = leggere tutte le variabili d'ambiente
 consent-capability-input-read = vedere i tasti premuti prima dei programmi
 consent-capability-history-read = leggere i comandi eseguiti dalla shell, e il loro output
 consent-capability-process-read = vedere i programmi dei pannelli, le loro righe di comando e cartelle

@@ -110,7 +110,12 @@ fn an_activation_asks_once_and_runs_of_the_capabilities_granted_or_without_those
         assert!(questions(&mut plugins).is_empty());
         assert!(
             plugins
-                .consent("acme/asker", allowed, &mut app.context())
+                .consent(
+                    "acme/asker",
+                    &[Capability::Open],
+                    allowed,
+                    &mut app.context()
+                )
                 .is_empty()
         );
         served(&mut plugins, &mut app);
@@ -119,7 +124,12 @@ fn an_activation_asks_once_and_runs_of_the_capabilities_granted_or_without_those
         // Answered, a second answer changes nothing.
         assert!(
             plugins
-                .consent("acme/asker", !allowed, &mut app.context())
+                .consent(
+                    "acme/asker",
+                    &[Capability::Open],
+                    !allowed,
+                    &mut app.context()
+                )
                 .is_empty()
         );
     }
@@ -153,7 +163,7 @@ fn the_events_and_the_views_of_a_trigger_come_once_the_user_answers() {
     assert!(plugins.take_renders().is_empty());
     assert!(
         plugins
-            .consent("acme/asker", true, &mut app.context())
+            .consent("acme/asker", &[Capability::Open], true, &mut app.context())
             .is_empty()
     );
     served(&mut plugins, &mut app);
@@ -224,9 +234,49 @@ fn a_plugin_turned_off_as_it_asks_does_not_activate_at_the_answer() {
     assert!(plugins.activate(&mut app.context()).is_empty());
     assert!(
         plugins
-            .consent("acme/asker", true, &mut app.context())
+            .consent("acme/asker", &[Capability::Open], true, &mut app.context())
             .is_empty()
     );
     assert_eq!(plugins.status("acme/asker"), Some(Status::Off));
     assert!(did.lock().unwrap().is_empty());
+}
+
+#[test]
+fn an_answer_grants_the_capabilities_of_its_question_alone_and_the_others_are_asked_again() {
+    let mut app = App::default();
+    let (mut plugins, did) = asker(&[], "clipboard-write = true\n");
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    assert_eq!(
+        questions(&mut plugins),
+        [(
+            "acme/asker".to_owned(),
+            vec![Capability::ClipboardWrite, Capability::Open]
+        )]
+    );
+    // An answer of a question of `open` alone, as of an older version's.
+    assert!(
+        plugins
+            .consent("acme/asker", &[Capability::Open], true, &mut app.context())
+            .is_empty()
+    );
+    assert_eq!(plugins.status("acme/asker"), Some(Status::Inactive));
+    assert_eq!(
+        questions(&mut plugins),
+        [("acme/asker".to_owned(), vec![Capability::ClipboardWrite])]
+    );
+    assert!(did.lock().unwrap().is_empty());
+    // Refused, it runs of `open` alone.
+    assert!(
+        plugins
+            .consent(
+                "acme/asker",
+                &[Capability::ClipboardWrite],
+                false,
+                &mut app.context()
+            )
+            .is_empty()
+    );
+    served(&mut plugins, &mut app);
+    assert_eq!(plugins.status("acme/asker"), Some(Status::Active));
+    assert_eq!(*did.lock().unwrap(), ["activate opened=true"]);
 }

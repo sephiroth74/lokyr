@@ -238,7 +238,8 @@ impl<B: Backend> App<B> {
         let Some(installed) = self.installed.clone() else {
             return;
         };
-        self.decisions = self.permissions(platform);
+        // Of a file that does not read, none, which nothing writes over.
+        self.decisions = self.permissions(platform).unwrap_or_default();
         let mut file = super::ConfigFile {
             path: installed.permissions.clone(),
             watcher: None,
@@ -259,7 +260,9 @@ impl<B: Backend> App<B> {
         let Some(installed) = self.installed.clone() else {
             return;
         };
-        self.decisions = self.permissions(platform);
+        // The decisions' own changes that their watch has not told yet,
+        // applied to the plugins that stay, so that none is lost.
+        self.permissions_changed(platform);
         self.watch_installed(platform, &installed);
         self.apply_installed(platform, &installed);
         self.configure_plugins(platform);
@@ -336,6 +339,7 @@ impl<B: Backend> App<B> {
             .collect();
         for name in gone {
             self.with_plugins(platform, |plugins, context| plugins.remove(&name, context));
+            self.forget_consent(platform, &name);
             self.reloads.loaded.remove(&name);
         }
         let mut refused = found.refused;

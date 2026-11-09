@@ -375,8 +375,16 @@ fn capability(key: &str, value: &toml::Spanned<toml::Value>) -> Result<Vec<Capab
         toml::Value::Array(items) => items
             .iter()
             .map(|item| match item {
-                toml::Value::String(item) if !item.is_empty() => Ok(of(item.clone())),
-                _ => Err(format!("`{key}` lists texts, none empty")),
+                // A parameter of no control character, which the question
+                // of the user's consent shows as it is.
+                toml::Value::String(item)
+                    if !item.is_empty() && !item.chars().any(char::is_control) =>
+                {
+                    Ok(of(item.clone()))
+                }
+                _ => Err(format!(
+                    "`{key}` lists texts, none empty nor of a control character"
+                )),
             })
             .collect(),
         _ => Err(format!("`{key}` is a list, as `{key} = [\"…\"]`")),
@@ -735,6 +743,13 @@ config-schema = "schema.json"
             wrong(&format!("{plugin}[capabilities]\nnet = true\n")),
             "6:7: `net` is a list, as `net = [\"…\"]`"
         );
+        // A parameter of a control character, which the consent's question
+        // would show as it is.
+        assert_eq!(
+            wrong(&format!("{plugin}[capabilities]\nenv-read = [\"A\\nB\"]\n")),
+            "6:12: `env-read` lists texts, none empty nor of a control character"
+        );
+        assert_eq!(crate::capability_of("env-read:A\nB"), None);
         assert!(
             wrong(&format!("{plugin}color = \"red\"\n")).starts_with("5:1: unknown field `color`")
         );

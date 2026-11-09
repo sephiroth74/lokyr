@@ -1103,11 +1103,20 @@ impl Plugins {
     }
 
     /// Gives the plugin `name`, whose activation asked the user for its
-    /// capabilities, the answer: all of them granted, or refused, which it
-    /// runs without; then it activates, and what its trigger brought comes,
-    /// its commands run, its events heard and its views rendered. The
-    /// errors of its activation and its commands, as they fail at once.
-    pub fn consent(&mut self, name: &str, allowed: bool, context: &mut Context<'_>) -> Vec<Error> {
+    /// capabilities, the answer of the question of `answered`: those of
+    /// them that it asks for still granted, or refused, which it runs
+    /// without; then it activates, and what its trigger brought comes, its
+    /// commands run, its events heard and its views rendered. One that asks
+    /// for others than the question's, as a new version of it, is asked
+    /// again of them. The errors of its activation and its commands, as
+    /// they fail at once.
+    pub fn consent(
+        &mut self,
+        name: &str,
+        answered: &[Capability],
+        allowed: bool,
+        context: &mut Context<'_>,
+    ) -> Vec<Error> {
         let Some(at) = self
             .entries
             .iter()
@@ -1117,15 +1126,27 @@ impl Plugins {
         };
         let state = &mut self.entries[at].state;
         state.asking = false;
-        let asked = std::mem::take(&mut state.undecided);
+        let (decided, left): (Vec<Capability>, Vec<Capability>) =
+            std::mem::take(&mut state.undecided)
+                .into_iter()
+                .partition(|capability| answered.contains(capability));
         if allowed && let Some(granted) = &mut state.granted {
-            granted.extend(asked);
+            granted.extend(decided);
         }
-        let deferred = std::mem::take(&mut state.deferred);
+        state.undecided = left;
         if state.status != Status::Inactive || !state.wanted {
+            state.deferred = Deferred::default();
             return Vec::new();
         }
         let mut errors = Vec::new();
+        // Asked again of the others, what its trigger brought waiting.
+        if !state.undecided.is_empty() {
+            if let Err(error) = self.waken(at, context) {
+                errors.push(error);
+            }
+            return errors;
+        }
+        let deferred = std::mem::take(&mut self.entries[at].state.deferred);
         if let Err(error) = self.waken(at, context) {
             errors.push(error);
             return errors;

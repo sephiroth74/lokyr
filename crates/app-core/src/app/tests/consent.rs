@@ -347,3 +347,251 @@ fn the_question_tells_each_capability_and_its_risk_in_italian() {
     }
     let _ = std::fs::remove_dir_all(&folder);
 }
+
+/// Tells `app` that the lockfile changed, as its watch does, and reloads
+/// once the burst settles.
+fn reloaded(fake: &mut Fake, app: &mut App) {
+    app.reloads.changed.store(true, Ordering::Release);
+    fake.send_app(app, AppEvent::Wake);
+    fake.fire_timers(app, Instant::now() + Duration::from_secs(1));
+}
+
+/// Tells `app` that `permissions.toml` changed, as its watch does.
+fn permissions_told(app: &App) {
+    app.permissions_file
+        .as_ref()
+        .unwrap()
+        .changed
+        .store(true, Ordering::Release);
+}
+
+#[test]
+fn an_answer_to_a_question_of_a_version_gone_grants_nothing_of_the_new_one() {
+    let _luau = LUAU.lock().unwrap_or_else(PoisonError::into_inner);
+    let folder = shelf("consent-gone");
+    // Its first version asks for `open`.
+    let packages = [(
+        "grown",
+        manifest("grown", &[], "^0.1", ""),
+        opening("activate", "grown", ""),
+    )];
+    let mut fake = Fake::default();
+    let mut app = installed(&folder, &packages, "en");
+    fake.start(&mut app);
+    let first = question(&fake).expect("a question");
+    // A new version, of `clipboard-write` too, as its question is open:
+    // the question goes, and the new version asks of both.
+    let store = Store::new(folder.join("store"));
+    Lock {
+        api: lokyr_kernel::plugins::API_VERSION.to_owned(),
+        packages: BTreeMap::from([stored(
+            &store,
+            "grown",
+            &asking("grown", &[], ""),
+            &opening(
+                "activate",
+                "grown",
+                r#"assert(cx.set_clipboard_text("v2"))"#,
+            ),
+        )]),
+    }
+    .write(&folder.join("plugins.lock"))
+    .unwrap();
+    reloaded(&mut fake, &mut app);
+    assert!(fake.alerts().iter().all(|open| open.id != first.id));
+    let second = question(&fake).expect("the new version's question");
+    assert!(second.alert.detail.contains("write to the clipboard"));
+    // The first's answer, which an alert of its own still running gives,
+    // grants nothing, and writes nothing.
+    fake.send_app(
+        &mut app,
+        AppEvent::AlertClosed {
+            alert: first.id,
+            button: 1,
+            suppressed: false,
+            text: None,
+        },
+    );
+    assert_eq!(
+        app.plugins.status("acme/grown"),
+        Some(plugins::Status::Inactive)
+    );
+    assert!(!folder.join(FILE).exists());
+    // The second's refusal keeps both refused, and the plugin runs
+    // without them.
+    fake.answer_alert(&mut app, second.id, 0);
+    assert_eq!(
+        kept(&folder).plugins["acme/grown"].refused,
+        [Capability::ClipboardWrite, Capability::Open]
+    );
+    run_until(&mut fake, &mut app, |_, app| {
+        app.plugins.status("acme/grown") == Some(plugins::Status::Disabled)
+    });
+    assert!(!opened(&fake, "grown"));
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
+#[test]
+fn a_permissions_file_that_does_not_read_stops_no_plugin_and_is_never_written_over() {
+    let _luau = LUAU.lock().unwrap_or_else(PoisonError::into_inner);
+    let folder = shelf("consent-typo");
+    super::installed::grant_open(&folder, &["kept"]);
+    let packages = [
+        (
+            "kept",
+            manifest("kept", &[], "^0.1", ""),
+            opening("activate", "kept", ""),
+        ),
+        (
+            "late",
+            manifest(
+                "late",
+                &["command:late.go"],
+                "^0.1",
+                "[contributes]\ncommands = [{ name = \"late.go\", title = \"Go\" }]\n",
+            ),
+            opening(
+                "on_command",
+                "late",
+                r#"assert(cx.register_command({ name = "late.go", title = "Go", category = "view" }))"#,
+            ),
+        ),
+    ];
+    let mut fake = Fake::default();
+    let mut app = installed(&folder, &packages, "en");
+    fake.start(&mut app);
+    run_until(&mut fake, &mut app, |fake, _| opened(fake, "kept"));
+    // A typo as the user edits the file: told, and nothing stops.
+    let typo = std::fs::read_to_string(folder.join(FILE))
+        .unwrap()
+        .replace("\"open\"", "\"opne\"");
+    std::fs::write(folder.join(FILE), &typo).unwrap();
+    permissions_told(&app);
+    fake.send_app(&mut app, AppEvent::Wake);
+    fake.fire_timers(&mut app, Instant::now() + Duration::from_secs(1));
+    assert_eq!(
+        app.plugins.status("acme/kept"),
+        Some(plugins::Status::Active)
+    );
+    assert!(notices(&mut app).iter().any(|text| text.contains("opne")));
+    assert!(
+        audited(&folder)
+            .iter()
+            .all(|line| !line.starts_with("revoked"))
+    );
+    // A question answered meanwhile holds for this run, and the file stays
+    // the user's.
+    fake.send_app(&mut app, AppEvent::Command("late.go".to_owned()));
+    let asked = question(&fake).expect("a question");
+    fake.answer_alert(&mut app, asked.id, 1);
+    run_until(&mut fake, &mut app, |fake, _| opened(fake, "late"));
+    assert_eq!(std::fs::read_to_string(folder.join(FILE)).unwrap(), typo);
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
+#[test]
+fn a_revocation_that_a_reload_reads_first_reaches_its_plugin() {
+    let _luau = LUAU.lock().unwrap_or_else(PoisonError::into_inner);
+    let folder = shelf("consent-reload");
+    super::installed::grant_open(&folder, &["kept"]);
+    let packages = [(
+        "kept",
+        manifest("kept", &[], "^0.1", ""),
+        opening("activate", "kept", ""),
+    )];
+    let mut fake = Fake::default();
+    let mut app = installed(&folder, &packages, "en");
+    fake.start(&mut app);
+    run_until(&mut fake, &mut app, |fake, _| opened(fake, "kept"));
+    // The user revokes `open`, and a reload comes before the file's watch
+    // tells it.
+    let mut permissions = kept(&folder);
+    permissions
+        .plugins
+        .get_mut("acme/kept")
+        .unwrap()
+        .decide(&[Capability::Open], false);
+    permissions.write(&folder.join(FILE)).unwrap();
+    reloaded(&mut fake, &mut app);
+    assert_eq!(
+        app.plugins.status("acme/kept"),
+        Some(plugins::Status::Disabled)
+    );
+    assert_eq!(audited(&folder), ["revoked acme/kept 1.0.0 open"]);
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
+#[test]
+fn every_environment_variable_has_its_own_words() {
+    for (language, every, one) in [
+        (
+            "en",
+            "read every environment variable",
+            "read the environment variable HOME",
+        ),
+        (
+            "it",
+            "leggere tutte le variabili d'ambiente",
+            "leggere la variabile d'ambiente HOME",
+        ),
+    ] {
+        let texts = lokyr_kernel::l10n::Texts::new(language, &crate::app::CATALOGS);
+        let text = |name: &str| {
+            crate::app::consent::capability_text(&texts, &Capability::EnvRead(name.to_owned()))
+        };
+        assert_eq!(text("*"), every);
+        assert_eq!(text("HOME"), one);
+    }
+}
+
+#[test]
+fn a_revocation_that_an_answer_reads_first_reaches_its_plugin() {
+    let _luau = LUAU.lock().unwrap_or_else(PoisonError::into_inner);
+    let folder = shelf("consent-answer-read");
+    super::installed::grant_open(&folder, &["kept"]);
+    let packages = [
+        (
+            "kept",
+            manifest("kept", &[], "^0.1", ""),
+            opening("activate", "kept", ""),
+        ),
+        (
+            "late",
+            manifest(
+                "late",
+                &["command:late.go"],
+                "^0.1",
+                "[contributes]\ncommands = [{ name = \"late.go\", title = \"Go\" }]\n",
+            ),
+            opening(
+                "on_command",
+                "late",
+                r#"assert(cx.register_command({ name = "late.go", title = "Go", category = "view" }))"#,
+            ),
+        ),
+    ];
+    let mut fake = Fake::default();
+    let mut app = installed(&folder, &packages, "en");
+    fake.start(&mut app);
+    run_until(&mut fake, &mut app, |fake, _| opened(fake, "kept"));
+    fake.send_app(&mut app, AppEvent::Command("late.go".to_owned()));
+    let asked = question(&fake).expect("a question");
+    // The user revokes `kept`'s `open`, and answers before the file's
+    // watch tells it.
+    let mut permissions = kept(&folder);
+    permissions
+        .plugins
+        .get_mut("acme/kept")
+        .unwrap()
+        .decide(&[Capability::Open], false);
+    permissions.write(&folder.join(FILE)).unwrap();
+    fake.answer_alert(&mut app, asked.id, 1);
+    assert_eq!(
+        app.plugins.status("acme/kept"),
+        Some(plugins::Status::Disabled)
+    );
+    let now = kept(&folder);
+    assert_eq!(now.plugins["acme/kept"].refused, [Capability::Open]);
+    assert_eq!(now.plugins["acme/late"].granted, [Capability::Open]);
+    let _ = std::fs::remove_dir_all(&folder);
+}
