@@ -37,6 +37,39 @@ pub enum Command {
     Gc,
     /// The installation diagnosed.
     Doctor,
+    /// One of the registry's tools, which its CI runs, hidden from the help.
+    Registry(Registry),
+}
+
+/// A tool of the registry's, of `sleip registry`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Registry {
+    /// A pull request of the registry checked, of its files in `head`
+    /// against those of the branch that it merges into in `base`, opened by
+    /// `author`, a public member of `orgs`: each plugin's version that it
+    /// publishes packaged into `out`, checked and tested, and whether it
+    /// merges by itself, written to `report` too.
+    Verify {
+        head: std::path::PathBuf,
+        base: std::path::PathBuf,
+        author: String,
+        orgs: Vec<String>,
+        out: std::path::PathBuf,
+        report: Option<std::path::PathBuf>,
+        /// Repositories of `file://` taken, as the tests' are.
+        local: bool,
+    },
+    /// The archive of the version `version` of the plugin `plugin`, of the
+    /// registry in `registry`, packaged into `out`.
+    Build {
+        plugin: String,
+        version: String,
+        registry: std::path::PathBuf,
+        out: std::path::PathBuf,
+        local: bool,
+    },
+    /// Every version of the registry in `registry`, of its release's names.
+    Versions { registry: std::path::PathBuf },
 }
 
 /// What a command line asks.
@@ -78,6 +111,24 @@ Options:
   -V, --version      Show Sleip's version
 ";
 
+/// The help of `sleip registry`, which Sleip's own help leaves out.
+const REGISTRY_HELP: &str = "\
+Usage: sleip [options] registry verify <head> --base <folder> --author <login> [--orgs <org,...>] --out <folder> [--report <file>]
+       sleip [options] registry build <owner/name> <version> [--registry <folder>] --out <folder>
+       sleip [options] registry versions [--registry <folder>]
+
+The registry's tools, which its CI runs.
+  verify    Checks a pull request of the registry, of its files in <head> against those of
+            the branch that it merges into in <base>: the plugins' files that it changes, their
+            owner the author or one of its organizations, their names, the versions published
+            left as they were, and each new version's tag, manifest, check and tests, its
+            archive packaged into <out>; whether it merges by itself, or the maintainer reviews
+            it, and a report of Markdown in <report>. A failure of a pull request refused.
+  build     Packages the archive of a version of the registry's plugin into <out>.
+  versions  Lists every version of the registry, of its release's tag and archive.
+  --local   Takes repositories of file://, as the tests' are.
+";
+
 /// The help of the command `name`, if it is one.
 fn command_help(name: &str) -> Option<&'static str> {
     Some(match name {
@@ -108,6 +159,7 @@ fn command_help(name: &str) -> Option<&'static str> {
         "gc" => {
             "Usage: sleip gc [options]\n\nRemoves the packages of the store that plugins.lock does not name, and what\nan install that stopped left there.\n"
         }
+        "registry" => REGISTRY_HELP,
         "doctor" => {
             "Usage: sleip doctor [options]\n\nChecks the config's folder, plugins.toml, plugins.lock and permissions.toml,\neach package of the store against its digest, the folders that `sleip dev`\nlinks, the cache, and the app's plugin API against each plugin's.\n"
         }
@@ -135,6 +187,14 @@ pub fn parse(args: &[String]) -> Result<Parsed, String> {
                     .next()
                     .ok_or_else(|| format!("`{name}` takes a value\n\n{HELP}"))?;
                 valued.push((name, value));
+            }
+            "registry" if words.is_empty() && !help => {
+                let rest: Vec<&String> = args.collect();
+                if rest.iter().any(|arg| *arg == "-h" || *arg == "--help") {
+                    return Ok(Parsed::Help(REGISTRY_HELP.to_owned()));
+                }
+                return registry(&rest)
+                    .map(|command| Parsed::Run(options, Command::Registry(command)));
             }
             flag if flag.starts_with('-') => {
                 return Err(format!("`{flag}` is no option of Sleip's\n\n{HELP}"));
@@ -222,6 +282,72 @@ pub fn parse(args: &[String]) -> Result<Parsed, String> {
     }
 }
 
+/// The tool that `args`, the command line past `registry`, asks; or the
+/// text of why it is wrong.
+fn registry(args: &[&String]) -> Result<Registry, String> {
+    use std::path::PathBuf;
+
+    let (mut words, mut local) = (Vec::new(), false);
+    let mut valued: Vec<(&str, &str)> = Vec::new();
+    let mut args = args.iter();
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--local" => local = true,
+            name @ ("--base" | "--author" | "--orgs" | "--out" | "--report" | "--registry") => {
+                let value = args
+                    .next()
+                    .ok_or_else(|| format!("`{name}` takes a value\n\n{REGISTRY_HELP}"))?;
+                valued.push((name, value.as_str()));
+            }
+            flag if flag.starts_with('-') => {
+                return Err(format!(
+                    "`{flag}` is no option of `sleip registry`\n\n{REGISTRY_HELP}"
+                ));
+            }
+            word => words.push(word),
+        }
+    }
+    let value = |name: &str| {
+        valued
+            .iter()
+            .find(|(given, _)| *given == name)
+            .map(|(_, value)| (*value).to_owned())
+    };
+    let needed =
+        |name: &str| value(name).ok_or_else(|| format!("`{name}` is needed\n\n{REGISTRY_HELP}"));
+    let registry = || PathBuf::from(value("--registry").unwrap_or_else(|| ".".to_owned()));
+    match words.as_slice() {
+        ["verify", head] => Ok(Registry::Verify {
+            head: PathBuf::from(head),
+            base: PathBuf::from(needed("--base")?),
+            author: needed("--author")?,
+            orgs: value("--orgs")
+                .unwrap_or_default()
+                .split(',')
+                .map(str::trim)
+                .filter(|org| !org.is_empty())
+                .map(str::to_owned)
+                .collect(),
+            out: PathBuf::from(needed("--out")?),
+            report: value("--report").map(PathBuf::from),
+            local,
+        }),
+        ["build", plugin, version] => Ok(Registry::Build {
+            plugin: (*plugin).to_owned(),
+            version: (*version).to_owned(),
+            registry: registry(),
+            out: PathBuf::from(needed("--out")?),
+            local,
+        }),
+        ["versions"] => Ok(Registry::Versions {
+            registry: registry(),
+        }),
+        _ => Err(format!(
+            "`sleip registry` takes `verify`, `build` or `versions`, of their arguments\n\n{REGISTRY_HELP}"
+        )),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -256,7 +382,48 @@ mod tests {
         assert!(
             matches!(parsed("doctor -h"), Ok(Parsed::Help(text)) if text.starts_with("Usage: sleip doctor"))
         );
+        assert_eq!(
+            parsed(
+                "--json registry verify pr --base main --author ann --orgs acme,,bob --out dist"
+            ),
+            Ok(Parsed::Run(
+                Options {
+                    json: true,
+                    ..Options::default()
+                },
+                Command::Registry(Registry::Verify {
+                    head: "pr".into(),
+                    base: "main".into(),
+                    author: "ann".to_owned(),
+                    orgs: vec!["acme".to_owned(), "bob".to_owned()],
+                    out: "dist".into(),
+                    report: None,
+                    local: false,
+                })
+            ))
+        );
+        assert_eq!(
+            parsed("registry build acme/x 0.1.0 --out dist --local"),
+            Ok(Parsed::Run(
+                Options::default(),
+                Command::Registry(Registry::Build {
+                    plugin: "acme/x".to_owned(),
+                    version: "0.1.0".to_owned(),
+                    registry: ".".into(),
+                    out: "dist".into(),
+                    local: true,
+                })
+            ))
+        );
+        assert!(!HELP.contains("registry"));
+        assert!(
+            matches!(parsed("help registry"), Ok(Parsed::Help(text)) if text.contains("registry verify"))
+        );
         for wrong in [
+            "registry",
+            "registry verify pr --author ann --out dist",
+            "registry build acme/x --out dist",
+            "registry versions --fast",
             "",
             "remove",
             "remove a b",

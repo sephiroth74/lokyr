@@ -22,24 +22,26 @@ pub(super) const DEFINITIONS: &str =
 /// The problems and the notes told so far.
 struct Findings {
     out: Out,
-    problems: usize,
+    /// Each problem, as a person reads it.
+    problems: Vec<String>,
 }
 
 impl Findings {
     /// Tells a problem of `file`, at `line` and `column` if given, of
     /// `kind`, as `message` says.
     fn problem(&mut self, file: &str, at: Option<(u32, u32)>, kind: &str, message: &str) {
-        self.problems += 1;
         let (line, column) = at.unwrap_or((0, 0));
         let place = match at {
             Some((line, column)) => format!("{file}:{line}:{column}"),
             None => file.to_owned(),
         };
+        let text = format!("{place}: {kind}: {message}");
         self.out.tell(
             "problem",
             json!({ "file": file, "line": line, "column": column, "kind": kind, "message": message }),
-            &format!("{place}: {kind}: {message}"),
+            &text,
         );
+        self.problems.push(text);
     }
 
     /// Tells a note of `file`, as `message` says.
@@ -69,7 +71,16 @@ pub fn check(out: Out) -> Result<(), String> {
 /// Checks the plugin in `folder`, each problem and note told as `out`
 /// tells: how many problems it found.
 pub(super) fn problems_in(folder: &Path, out: Out) -> usize {
-    let mut findings = Findings { out, problems: 0 };
+    problems_of(folder, out).len()
+}
+
+/// Checks the plugin in `folder`, each problem and note told as `out`
+/// tells: each problem, as a person reads it.
+pub(super) fn problems_of(folder: &Path, out: Out) -> Vec<String> {
+    let mut findings = Findings {
+        out,
+        problems: Vec::new(),
+    };
     check_folder(folder, &mut findings);
     findings.problems
 }

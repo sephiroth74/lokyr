@@ -10,8 +10,7 @@
 //! that the lockfile holds stays as the lockfile holds it.
 
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use lokyr_pkg_model::list::{GitAt, List, Wanted};
@@ -22,6 +21,7 @@ use semver::Version;
 use serde_json::json;
 use sleip_resolver::Candidate;
 
+use super::git;
 use crate::args::Options;
 use crate::output::Out;
 use crate::paths::{self, Paths};
@@ -467,29 +467,6 @@ fn clone(
     git(Some(&folder), &["checkout", "--quiet", "--detach", &commit])
         .map_err(|error| format!("{url} at {commit} cannot be checked out: {error}"))?;
     Ok((folder, commit))
-}
-
-/// Runs git of `args`, in `folder` if given, of no question at the
-/// terminal: its output's first line, or its error.
-fn git(folder: Option<&Path>, args: &[&str]) -> Result<String, String> {
-    let mut command = Command::new("git");
-    if let Some(folder) = folder {
-        command.arg("-C").arg(folder);
-    }
-    let output = command
-        .args(args)
-        .env("GIT_TERMINAL_PROMPT", "0")
-        .output()
-        .map_err(|error| format!("git cannot run: {error}"))?;
-    if !output.status.success() {
-        return Err(String::from_utf8_lossy(&output.stderr).trim().to_owned());
-    }
-    Ok(String::from_utf8_lossy(&output.stdout)
-        .lines()
-        .next()
-        .unwrap_or_default()
-        .trim()
-        .to_owned())
 }
 
 /// `source` as a message tells it.

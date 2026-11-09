@@ -34,7 +34,7 @@ The split is the same as cargo and rustc: the app runs plugins, and Sleip provid
 | `sleip login` / `logout` / `yank` / `owner` (registry v1) | Registry accounts, which registry v0, of GitHub's accounts and pull requests, has none of ([ADR 0038](adr/0038-plugin-ecosystem-scope.md)) |
 | `sleip gc` | Removes unreferenced packages from the store; refused without a lockfile in the config's folder while the store holds packages, as every config folder shares the store |
 | `sleip doctor` | Diagnoses the installation, the cache, and compatibility with the app |
-| `sleip registry` (hidden) | The registry's index generated and signed, which the registry's CI runs, hidden from the help |
+| `sleip registry` (hidden) | The registry's tools, which its CI runs, hidden from the help: `verify`, a pull request of the registry checked, as [below](#v0-static-end-of-f4); `build`, a version's archive packaged again from its commit, alike; `versions`, every version of the registry, of its release's tag and archive; and the index generated and signed |
 | `sleip audit` (F7) | Checks installed plugins against security advisories |
 
 **Common flags**
@@ -47,7 +47,7 @@ The split is the same as cargo and rustc: the app runs plugins, and Sleip provid
 - Text for a person by default; with `--json`, an event of NDJSON a line on the standard output, each a JSON object of its `event`: `created` of `new`, of `name`, `folder` and `files`; `plugin` of `list`, of `name`, `version`, `kind`, `source` and `capabilities`; `removed` of `remove`, of `name`; `collected` of `gc`, of a package's `digest`, or a `leftover` of an install that stopped, and its `bytes`, then `done` of `collected` and `bytes`; `check` of `doctor`, of `name`, `level`, `ok`, `note` or `error`, and `detail`, then `done` of `problems`; `test` of `test`, of `file`, `name`, `ok`, and a failure's `line` and `message`, then `done` of `passed` and `failed`; `installed` of `add` and `update`, of `name`, `version`, `source` and `capabilities`, of each plugin that the lockfile holds anew, then `done` of `changed`, and `note` of no Lokyr found, whose plugin API is then Sleip's; `checked` of `dev`, of `problems`, after its `problem` and `note` events, at its start and at each save, `linked`, of `name`, `folder` and the version that it `replaced`, if it took an installed plugin's place, and `unlinked`, of `name`, as it ends; `problem` of `check`, of `file`, `line` and `column`, both 0 of a problem of a whole file, `kind`, as `Manifest`, `Capability`, `Api`, `Catalog`, `Package`, `Source`, `SyntaxError`, `TypeError` or `InternalError`, and `message`, and `note`, of `file` and `message`, of what is not wrong but worth knowing, then `done` of `problems`; `waiting`, of what a command waits for, as the store's lock; and `error`, of its `message`.
 - Exit codes: 0, done; 1, a failure, as a plugin that another needs, a problem that `doctor` or `check` found, or a test that failed; 2, a command line that is wrong, as the help tells.
 - The places are the app's: the config's folder, `~/.config/lokyr/` or `$XDG_CONFIG_HOME/lokyr/`, of `plugins.toml`, `plugins.lock` and `permissions.toml`; the store, `~/Library/Application Support/lokyr/store/` on macOS, `$XDG_DATA_HOME/lokyr/store/` elsewhere; the cache, `~/Library/Caches/lokyr/sleip/` on macOS, `$XDG_CACHE_HOME/lokyr/sleip/` elsewhere.
-- The app's plugin API, which the plugins are resolved against, of the app that `SLEIP_LOKYR` names, a bundle, its resources' `api-version` file or its binary; of the bundle that Sleip's binary is in, through the links to it; of `Lokyr.app` in the Applications folders; or of `lokyr --api-version` on the `PATH`.
+- The app's plugin API, which the plugins are resolved against, of the app that `SLEIP_LOKYR` names, a bundle, its resources' `api-version` file or its binary, alone where it names one; else of the bundle that Sleip's binary is in, through the links to it; of `Lokyr.app` in the Applications folders; or of `lokyr --api-version` on the `PATH`.
 - **The store's lock**: a command that changes the store or the lockfile, `remove` and `gc` so far, takes `store.lock`, beside the store rather than in it, so that the app's watch of the store takes no lock for a change; a second Sleip waits for the first, as it tells.
 - `remove` takes the plugin out of `plugins.toml` in place, its comments and order kept, and out of `plugins.lock`, written whole; it refuses a plugin that another needs, and, of `--locked`, a change of the lockfile; the package stays until `gc`, the decisions on its capabilities in `permissions.toml`. `gc` refuses a lockfile that does not read, whose packages it could not tell.
 
@@ -249,14 +249,28 @@ Sleip refuses a file signed by a key that `keys.json` lacks, or older than the o
 ### v0: static (end of F4)
 
 As [ADR 0031](adr/0031-registry-v0.md) decided, on 4 November 2026:
-- **Repo**: `sephiroth74/sleip-registry` holds a file of each plugin, `plugins/<owner>/<name>.toml`, of its versions, each with its repository's URL, its tag and the tag's commit.
+- **Repo**: `sephiroth74/sleip-registry` holds a file of each plugin, `plugins/<owner>/<name>.toml`, of its repository's URL, over HTTPS, its manifest at its root, and of its versions, in their order, each greater than the one before, each of its tag, the tag's commit, its whole hash, and whether it is `yanked`; `sleip-index`'s `registry` reads it:
+
+  ```toml
+  repository = "https://github.com/acme/hello"
+
+  [[versions]]
+  version = "0.1.0"
+  tag = "v0.1.0"
+  commit = "0123456789abcdef0123456789abcdef01234567"
+  ```
 - **Publishing = opening a PR**, which `sleip publish` can open. CI then:
   - checks that the PR's author is the plugin's owner, the GitHub user or a member of the organization of its name, and that the tag names its commit;
   - packages the plugin **from the tagged sources** in a clean container;
-  - checks it as `sleip check` does, runs its tests, and validates the manifest, the capabilities, `[uses] commands`, the names and the sizes.
-- **Merging the PR** publishes the version: the CI of `main` uploads the archive to a release of the registry's repository, generates the index, signs it, and deploys it with the site.
+  - checks it as `sleip check` does, runs its tests, and validates the manifest, the capabilities, `[uses] commands`, the names and the sizes;
+  - refuses a published version changed or taken out, and a name that another owner holds, or of `lokyr`;
+  - tells what it found in the pull request's comment.
+
+  `sleip registry verify` does it all but the author's organizations, which the workflow reads of GitHub, of the pull request's files against those of `main`; the workflow, of `pull_request_target`, is `main`'s whatever the pull request changes, reads the pull request's files as data, and runs the plugins' code, in Sleip's sandbox, in a job that holds no right of the repository's. The CI runs a build of Sleip for Linux on arm64, a release of the registry's repository, which `just registry-sleip` and `just registry-sleip-release` make, and the workflow pins by its SHA-256.
+- **Merging the PR** publishes the version: the CI of `main` packages the archive again from its commit, alike, uploads it to a release of the registry's repository, `<owner>.<name>.<version>`, generates the index, signs it, and deploys it with the site; the workflow that merges a version by itself makes its release itself, as a merge of a workflow's own token starts no other workflow.
   - A new plugin is merged by the maintainer, after a review.
-  - A version of a plugin already published merges by itself if it asks for nothing new: no capability, no host, path or variable of one, and no command in `[uses] commands`; one that asks for more is reviewed.
+  - A version of a plugin already published merges by itself if it asks for nothing new, against the version published last: no capability, no host, path or variable of one, and no command in `[uses] commands`; one that asks for more is reviewed.
+  - A yank, `yanked = true`, merges by itself; taking one back, or a change of a file other than a plugin's, is reviewed.
 - **Hosting**: the index and the site on GitHub Pages, `pkg.lokyr.dev` a CNAME of it; the archives in the releases, where a version published stays as it was, whatever its author does to their repository.
 - **The site**: static, generated from the index; each plugin's page, with its README, versions, API, capabilities and commands, and a search in the browser, as Pagefind's.
 - **Benefits**: there's no server to run, and every artifact can be traced to a commit. This is the model of Zed's extensions repository, and of Homebrew's.

@@ -18,6 +18,17 @@ use crate::output::Out;
 pub fn test(out: Out) -> Result<(), String> {
     let folder = std::env::current_dir()
         .map_err(|error| format!("the current folder cannot be read: {error}"))?;
+    // The summary told the failures already.
+    if failures_of(&folder, out)?.is_empty() {
+        Ok(())
+    } else {
+        Err(String::new())
+    }
+}
+
+/// Runs the tests of the plugin in `folder`, each and their summary told as
+/// `out` tells: each failure, as a person reads it; or why they cannot run.
+pub(super) fn failures_of(folder: &Path, out: Out) -> Result<Vec<String>, String> {
     let manifest = std::fs::read_to_string(folder.join("plugin.toml"))
         .map_err(|error| format!("plugin.toml cannot be read, as no plugin is in this folder or the file is not there: {error}"))?;
     let parsed = Manifest::parse(&manifest).map_err(|error| format!("plugin.toml:{error}"))?;
@@ -27,22 +38,19 @@ pub fn test(out: Out) -> Result<(), String> {
             parsed.name
         ));
     }
-    let (sources, unread) = super::luau_sources(&folder);
+    let (sources, unread) = super::luau_sources(folder);
     if let Some((name, error)) = unread.first() {
         return Err(format!("{name} cannot be read: {error}"));
     }
     let package = Package::new(sources);
-    let messages = messages(&folder);
+    let messages = messages(folder);
     let outcomes = test_host::run(&Plugin {
         name: &parsed.name,
         manifest: &manifest,
         package: &package,
         messages: &messages,
     });
-    let failed = outcomes
-        .iter()
-        .filter(|outcome| outcome.failure.is_some())
-        .count();
+    let mut failures = Vec::new();
     for outcome in &outcomes {
         let (file, name) = (&outcome.file, &outcome.name);
         match &outcome.failure {
@@ -55,6 +63,7 @@ pub fn test(out: Out) -> Result<(), String> {
                 let place = failure
                     .line
                     .map_or_else(|| file.clone(), |line| format!("{file}:{line}"));
+                failures.push(format!("{place} {name}: {}", failure.message));
                 out.tell(
                     "test",
                     json!({
@@ -69,6 +78,7 @@ pub fn test(out: Out) -> Result<(), String> {
             }
         }
     }
+    let failed = failures.len();
     let passed = outcomes.len() - failed;
     let summary = match (outcomes.len(), failed) {
         (0, _) => "No test found, as no file tests/*.luau returns one.".to_owned(),
@@ -80,12 +90,7 @@ pub fn test(out: Out) -> Result<(), String> {
         json!({ "passed": passed, "failed": failed }),
         &summary,
     );
-    // The summary told the failures already.
-    if failed == 0 {
-        Ok(())
-    } else {
-        Err(String::new())
-    }
+    Ok(failures)
 }
 
 /// The plugin's messages in English of no argument, of its catalogs

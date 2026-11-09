@@ -8,10 +8,12 @@ mod gc;
 mod install;
 mod list;
 mod new;
+mod registry;
 mod remove;
 mod test;
 
-use std::process::ExitCode;
+use std::path::Path;
+use std::process::{Command as Process, ExitCode};
 
 use crate::args::{Command, Options};
 use crate::output::Out;
@@ -39,6 +41,7 @@ pub fn run(options: Options, command: &Command) -> ExitCode {
         Command::Remove(plugin) => remove::remove(&paths, options, out, plugin),
         Command::Gc => gc::gc(&paths, out),
         Command::Doctor => doctor::doctor(&paths, out),
+        Command::Registry(tool) => registry::run(out, tool),
     };
     match ran {
         Ok(()) => ExitCode::SUCCESS,
@@ -48,6 +51,29 @@ pub fn run(options: Options, command: &Command) -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+/// Runs git of `args`, in `folder` if given, of no question at the
+/// terminal: its output's first line, or its error.
+pub(super) fn git(folder: Option<&Path>, args: &[&str]) -> Result<String, String> {
+    let mut command = Process::new("git");
+    if let Some(folder) = folder {
+        command.arg("-C").arg(folder);
+    }
+    let output = command
+        .args(args)
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .output()
+        .map_err(|error| format!("git cannot run: {error}"))?;
+    if !output.status.success() {
+        return Err(String::from_utf8_lossy(&output.stderr).trim().to_owned());
+    }
+    Ok(String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .next()
+        .unwrap_or_default()
+        .trim()
+        .to_owned())
 }
 
 /// The bytes of the files in `folder` and its folders, of a folder that

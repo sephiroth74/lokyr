@@ -11,6 +11,9 @@ publish = false
 
 [dependencies]
 lokyr-pkg-model.workspace = true
+semver.workspace = true
+serde.workspace = true
+toml.workspace = true
 
 [lints]
 workspace = true

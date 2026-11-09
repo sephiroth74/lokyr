@@ -91,6 +91,30 @@ check-linux-here:
     cargo check --locked --target x86_64-unknown-linux-gnu {{ portable }}
     cargo check --locked --target x86_64-unknown-linux-gnu --tests {{ portable_tests }}
 
+# Build Sleip for the registry's CI, Linux on arm64, in the container of Linux's checks: target/registry/sleip-aarch64-linux, stripped, and its SHA-256.
+registry-sleip: (linux "registry-sleip-here")
+    shasum -a 256 target/registry/sleip-aarch64-linux
+
+# `just registry-sleip`, on the Linux of the container of Linux's checks.
+registry-sleip-here:
+    cargo build --locked --release -p sleip-cli
+    mkdir -p target/registry
+    cp "${CARGO_TARGET_DIR:-target}/release/sleip" target/registry/sleip-aarch64-linux
+    strip target/registry/sleip-aarch64-linux
+
+# Upload target/registry/sleip-aarch64-linux to a release of the registry's repository, `sleip-<commit>`, of the commit that it was built of, which the registry's `.github/actions/sleip/action.yml` pins by its address and SHA-256.
+registry-sleip-release:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    file=target/registry/sleip-aarch64-linux
+    commit=$(git rev-parse --short=10 HEAD)
+    tag="sleip-$commit"
+    gh release create "$tag" "$file" --repo sephiroth74/sleip-registry --prerelease \
+        --title "Sleip for the registry's CI, $tag" \
+        --notes "Sleip $(git describe --tags --always) for Linux on arm64, of Lokyr's commit $commit, which the registry's checks run. SHA-256: $(shasum -a 256 "$file" | cut -d ' ' -f 1)."
+    echo "URL: https://github.com/sephiroth74/sleip-registry/releases/download/$tag/sleip-aarch64-linux"
+    shasum -a 256 "$file"
+
 # The image of Linux's checks, of tools/linux/Containerfile, made anew, of the toolchain of rust-toolchain.toml (Apple's `container`, macOS 26 or later).
 linux-image:
     #!/usr/bin/env bash

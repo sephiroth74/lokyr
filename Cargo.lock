@@ -2097,6 +2097,9 @@ name = "sleip-index"
 version = "0.8.0"
 dependencies = [
  "lokyr-pkg-model",
+ "semver",
+ "serde",
+ "toml",
 ]
 
 [[package]]
