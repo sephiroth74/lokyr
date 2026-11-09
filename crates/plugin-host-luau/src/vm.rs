@@ -8,6 +8,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 use lokyr_plugin_sdk::plugin::Cx;
+use mlua::chunk::ChunkMode;
 use mlua::{Function, Lua, LuaOptions, MultiValue, StdLib, Table, Value};
 
 use crate::shape::ShapeError;
@@ -37,16 +38,18 @@ pub(crate) enum Failure {
 /// The path of a package's entry, which returns its callbacks' table.
 pub const ENTRY: &str = "src/init.luau";
 
-/// The globals of Luau's base library that reach past the computation, or
-/// past the sandbox: code of text, a function's environment, and the
-/// collector's control; and the output of `print`, which goes nowhere a
-/// plugin's user sees.
-const TAKEN: [&str; 6] = [
+/// The globals that reach past the computation, or past the sandbox: code
+/// of text, a function's environment, and the collector's control, of
+/// Luau's base library; mlua's `require`, of the file system, as each
+/// module's environment holds the package's own; and the output of
+/// `print`, which goes nowhere a plugin's user sees.
+const TAKEN: [&str; 7] = [
     "loadstring",
     "getfenv",
     "setfenv",
     "collectgarbage",
     "gcinfo",
+    "require",
     "print",
 ];
 
@@ -330,8 +333,11 @@ fn run(
     lookup.raw_set("__index", lua.globals())?;
     environment.set_metatable(Some(lookup))?;
     environment.raw_set("require", requirer(lua, package, modules, path)?)?;
+    // Its source as text alone, as Luau takes a chunk that starts as its
+    // bytecode does for bytecode, never compiled.
     lua.load(source)
         .set_name(format!("@{path}"))
+        .set_mode(ChunkMode::Text)
         .set_environment(environment)
         .into_function()?
         .call::<Value>(())

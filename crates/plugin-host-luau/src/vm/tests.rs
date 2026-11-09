@@ -126,7 +126,7 @@ fn the_sandbox_holds_the_libraries_that_compute_alone() {
     let entry = r#"
 local reached = {}
 for _, name in { "os", "io", "debug", "package", "dofile", "loadfile", "load",
-    "loadstring", "getfenv", "setfenv", "collectgarbage", "gcinfo", "print" } do
+    "loadstring", "getfenv", "setfenv", "collectgarbage", "gcinfo", "require", "print" } do
     if _G[name] ~= nil then
         table.insert(reached, name)
     end
@@ -158,6 +158,44 @@ return {
     {
         assert!(globals.raw_get::<Value>(*name).unwrap().is_nil(), "{name}");
     }
+}
+
+#[test]
+fn a_module_s_require_is_its_own_and_the_file_system_s_none() {
+    // mlua's `require` reads the file system: a plugin reaches none, its
+    // module's own `require` taking its package's modules.
+    let modules = [
+        (
+            ENTRY,
+            r#"
+local util = require("./util")
+return {
+    activate = function()
+        assert(_G.require == nil and rawget(_G, "require") == nil, "the globals' require")
+        assert(util.n == 1 and type(require) == "function")
+    end,
+}
+"#,
+        ),
+        ("src/util.luau", "return { n = 1 }"),
+    ];
+    let (_, done) = activated(&modules, Execution::Native);
+    assert_eq!(done, Ok(()));
+}
+
+#[test]
+fn a_package_s_bytecode_is_refused_as_its_sources_alone_run() {
+    // A chunk of Luau's bytecode, of text that is UTF-8, as a package's
+    // file can hold: compiled as a source, it fails, never loaded as
+    // bytecode.
+    let bytecode = mlua::chunk::Compiler::new()
+        .set_optimization_level(1)
+        .set_debug_level(0)
+        .compile("return { activate = function() end }")
+        .unwrap();
+    let entry = String::from_utf8(bytecode).expect("a chunk of UTF-8");
+    let (_, done) = activated(&[(ENTRY, &entry)], Execution::Native);
+    assert!(done.is_err(), "the bytecode ran");
 }
 
 #[test]
