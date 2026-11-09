@@ -9,10 +9,19 @@ authors.workspace = true
 repository.workspace = true
 publish = false
 
+[features]
+# The packages' archives, packed, checked and unpacked into the store, which
+# Sleip and the registry's tools use and the app, which reads the store, does
+# not.
+archive = ["dep:ruzstd", "dep:tar"]
+
 [dependencies]
 lokyr-plugin-sdk = { workspace = true, features = ["unstable"] }
+ruzstd = { workspace = true, optional = true }
 serde.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
+tar = { workspace = true, optional = true }
 toml.workspace = true
 
 [lints]

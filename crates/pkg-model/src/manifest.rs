@@ -5,7 +5,6 @@
 //! not read tells where, by its line and its column.
 
 use std::collections::BTreeMap;
-use std::fmt;
 
 use lokyr_plugin_sdk::command::{self, Capability};
 use lokyr_plugin_sdk::keys;
@@ -79,24 +78,7 @@ pub enum Thread {
 }
 
 /// Why a manifest does not read: where, and what.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ManifestError {
-    /// The line and the column, both from 1, if the error has a place.
-    pub at: Option<(usize, usize)>,
-    /// What is wrong.
-    pub message: String,
-}
-
-impl fmt::Display for ManifestError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self.at {
-            Some((line, column)) => write!(f, "{line}:{column}: {}", self.message),
-            None => f.write_str(&self.message),
-        }
-    }
-}
-
-impl std::error::Error for ManifestError {}
+pub type ManifestError = crate::FileError;
 
 /// The file as serde reads it.
 #[derive(Deserialize)]
@@ -495,13 +477,13 @@ fn slot_names() -> String {
 
 /// Whether `name` is `owner/name`, each part of lowercase letters, digits
 /// and `-`, from a letter.
-fn is_name(name: &str) -> bool {
+pub(crate) fn is_name(name: &str) -> bool {
     name.split_once('/')
         .is_some_and(|(owner, rest)| is_part(owner) && is_part(rest))
 }
 
 /// Whether `part` is of lowercase letters, digits and `-`, from a letter.
-fn is_part(part: &str) -> bool {
+pub(crate) fn is_part(part: &str) -> bool {
     let mut bytes = part.bytes();
     bytes.next().is_some_and(|first| first.is_ascii_lowercase())
         && bytes.all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
@@ -512,7 +494,7 @@ fn is_part(part: &str) -> bool {
 /// after a `-` and a build after a `+` if any, each of identifiers of
 /// letters, digits and `-` after dots, a pre-release's numbers of no
 /// leading zero: <https://semver.org/#backusnaur-form-grammar-for-valid-semver-versions>.
-fn is_version(version: &str) -> bool {
+pub(crate) fn is_version(version: &str) -> bool {
     let (rest, build) = match version.split_once('+') {
         Some((rest, build)) => (rest, Some(build)),
         None => (version, None),
@@ -547,7 +529,7 @@ fn is_version(version: &str) -> bool {
 /// Whether `constraint` is a version's constraint: an operator, `^`, `~`,
 /// `=`, `>=`, `<=`, `>` or `<`, or none, of a version or of its first
 /// numbers, as `^0.3` or `>=1.2.3-beta.1`; or `*`.
-fn is_requirement(constraint: &str) -> bool {
+pub(crate) fn is_requirement(constraint: &str) -> bool {
     if constraint == "*" {
         return true;
     }
@@ -597,7 +579,7 @@ fn is_pattern(pattern: &str) -> bool {
 }
 
 /// The line and the column, both from 1, of the byte `at` of `text`.
-fn line_and_column(text: &str, at: usize) -> (usize, usize) {
+pub(crate) fn line_and_column(text: &str, at: usize) -> (usize, usize) {
     let before = &text[..at.min(text.len())];
     let line = before.matches('\n').count() + 1;
     let column = before

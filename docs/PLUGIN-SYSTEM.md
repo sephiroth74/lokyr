@@ -182,7 +182,7 @@ return Search
 ### Versioning
 
 - The API version is the version of `plugin-sdk` (`plugin-sdk 0.1.0` ↔ API 0.1).
-- New APIs start as unstable: in Rust behind the `unstable` feature, in Luau under `cx.unstable`. They become stable in a minor release.
+- New APIs start as unstable: in Rust behind the `unstable` feature; in Luau every request is a function of `cx` by its Rust name, unprefixed, as the user chose on 9 November 2026, the whole API experimental while `plugin-sdk` is 0.x, until F6, so that a request that becomes stable keeps its name and no plugin breaks of a rename. They become stable in a minor release.
 - The manifest declares the API version it requires (`api = "^0.1"`). The host supports the current major version and, through adapters, the previous one.
 - Before 1.0, minor versions may break compatibility. After 1.0, semver is followed strictly.
 

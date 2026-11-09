@@ -120,6 +120,10 @@ The plugins the user has declared, like the dependencies in `Cargo.toml` or `pub
 default = "https://pkg.lokyr.dev"
 ```
 
+- **A plugin** is of a version's constraint of the registry, as `"^0.1"`; of a folder, `path`, absolute or from `~`; or of a git repository, `git`, of `https://`, `ssh://`, `git@host:path` or `file://`, never `http://` nor `git://`, which do not authenticate their server, at a `tag` or a commit, `rev`, of 7 to 40 hexadecimal digits, one of them.
+- **A registry** is of `https://`, or `file://` of a folder, as a mirror of the tests; `default` is `https://pkg.lokyr.dev` unless the file names another.
+- `pkg-model`'s `list::List` reads it, each mistake at its line and column, and writes it whole, the plugins in their names' order.
+
 ### `plugins.lock`
 
 ```toml
@@ -135,24 +139,47 @@ source = "registry+https://pkg.lokyr.dev"
 checksum = "sha256:9f2c…"
 capabilities = ["terminal-read", "clipboard-write"]
 dependencies = ["lokyr/themes 0.3.1"]
+
+[[package]]
+name = "me/my-plugin"
+version = "0.0.1"
+kind = "luau"
+source = "dev+/Users/me/dev/my-plugin"
+capabilities = []
+dependencies = []
 ```
+
+- **`version`**, the format's: a lockfile of another version is refused, as a newer Sleip wrote it.
+- **`source`**: `registry+<address>`; `path+<path>`, a folder copied into the store; `git+<address>#<commit>`, of the commit's whole hash; or `dev+<path>`, a folder that `sleip dev` links, which the app reads in place and watches. Its paths are absolute.
+- **`checksum`**: the digest of the plugin's package in the store, which names its folder there, and which the app checks as it loads the plugin; a `dev+` plugin has none, as its files change. The archive's own checksum is the index's `cksum`, which Sleip checks as it downloads it.
+- **`capabilities`**: each as its manifest's text, `net:<host>` and the others of a parameter after a `:`; read in their order, each once.
+- **`dependencies`**: `owner/name version`, each of the lockfile at that version, one version of each plugin.
+- `pkg-model`'s `lock::Lock` reads it, each mistake at its line and column, and writes it whole: to a file beside it, flushed to the disk, which takes its place at once, so that the app, which watches it, reads the old lockfile or the new one, never a part.
 
 ### `.tar.zst` archive
 
 ```
 plugin.toml
-src/                     # kind = "luau" only: the sources, entry point src/init.luau; never bytecode
-themes/                  # kind = "themes" only
-schema.json              # config schema, if any
+src/                     # kind = "luau" only: the sources, `.luau`, entry point src/init.luau; never bytecode
+themes/                  # kind = "themes" only: `.toml` and `.itermcolors`
+schema.json              # config schema, if any, or the file that `config-schema` names
+locales/<language>/      # the catalogs, Project Fluent's `.ftl`, as `locales/it/hello.ftl`
 README.md · LICENSE · CHANGELOG.md
 assets/                  # icons and screenshots for the registry
 ```
 
 Archive rules:
 - regular files only, no symlinks or hard links;
-- no absolute paths and no `..`;
-- normalized permissions;
-- at most 20 MB compressed and 100 MB extracted, with a compression-ratio check against zstd bombs.
+- no absolute paths, no `..` and no empty part; no two paths that differ by their case alone, nor a file within a file, as the Mac's file system takes them for one;
+- each file of the layout of its kind: a package of Luau holds `src/init.luau`, one of themes holds `themes/`, and the config's schema that the manifest names is there;
+- normalized permissions: the store's, whatever the archive says;
+- at most 20 MB compressed and 100 MB extracted, 10 000 files, and, past 1 MB extracted, 100 times its compressed size at most, against zstd bombs; frames of zstd's windows of 8 MiB at most.
+
+`pkg-model`'s `archive`, of its feature `archive`, which Sleip and the registry's tools use and the app does not, packs a package's folder, the files of its layout alone, in their paths' order, of no time and no owner, so that a package packs alike wherever it is packed; and checks an archive as it unpacks it into the store, zstd of Rust alone, `ruzstd`.
+
+### The store
+
+`~/Library/Application Support/lokyr/store/` on macOS, `$XDG_DATA_HOME/lokyr/store/` elsewhere: a folder for each package, which Sleip unpacks beside the packages and renames into `store/<digest>/` at once, and never changes. The digest is the SHA-256 of the package's files alone, in the byte order of their paths, of `/` between their folders: each its path, a zero byte, its size as eight bytes, most significant first, and its bytes; its folders, its files' permissions and times count for nothing, so that the app checks a package of its folder as it loads it, and a package unpacked anew keeps its digest. `pkg-model`'s `store::Store` holds it.
 
 ## Resolution
 
@@ -168,7 +195,7 @@ Archive rules:
 1. Take an exclusive lock on the store (`flock`), so two Sleip processes never collide.
 2. Resolve, then download any missing archives into a temporary directory.
 3. Verify the SHA-256 checksum, from the index, whose signature Sleip checked as it read it.
-4. Extract with the archive checks, then atomically rename into `store/<sha256>/`. The store is **content-addressed**: an installed package never changes.
+4. Extract with the archive checks, then atomically rename into `store/<digest>/`, of the digest of its files. The store is **content-addressed**: an installed package never changes.
 5. Write the new `plugins.lock` to a temporary file, `fsync` it, and rename it atomically.
 6. The app, which watches the directory, sees the change and computes the diff. It re-checks the hash of each plugin it loads, asks the user to confirm new capabilities, then compiles and activates. No restart is needed.
 

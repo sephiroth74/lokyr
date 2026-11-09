@@ -132,7 +132,7 @@ lokyr/
 │   ├── font-freetype/     (F7) fontconfig + freetype-rs + harfrust
 │   ├── plugin-sdk/        the plugin API (the HostApi's messages and their types, the view tree's data) and its Rust front end; no internal dependencies
 │   ├── plugin-host-luau/  Luau host (mlua): one VM per plugin, the Luau front end, capabilities, limits (behind a feature)
-│   ├── pkg-model/         plugin.toml, plugins.toml/.lock, index format, dist (shared by app, sleip, registry)
+│   ├── pkg-model/         plugin.toml, plugins.toml/.lock, the store, the archive, index format, dist (shared by app, sleip, registry)
 │   └── app/               the `lokyr` binary: `main`, the backends for the target, their wiring + distribution
 ├── plugins/               first-party: depend ONLY on plugin-sdk
 │   ├── core-actions/ links/ tabs/ splits/ search/ quick-terminal/
