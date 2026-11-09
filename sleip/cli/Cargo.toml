@@ -23,6 +23,8 @@ lokyr-plugin-sdk.workspace = true
 # The host of a plugin's own tests, of the SDK's fake host.
 lokyr-plugin-host-luau = { workspace = true, features = ["test-host"] }
 serde_json.workspace = true
+# `sleip dev`'s end, as the user interrupts it.
+signal-hook.workspace = true
 # The user's plugins.toml edited in place, of its comments and order.
 toml_edit = { workspace = true, features = ["display"] }
 

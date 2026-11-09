@@ -885,3 +885,62 @@ fn test_runs_the_tests_of_a_plugin_and_tells_a_failure_of_its_file_and_line() {
         stdout(&checked)
     );
 }
+
+#[test]
+fn dev_links_a_plugin_checks_it_at_each_save_and_gives_the_installed_one_back_as_it_ends() {
+    use std::io::BufRead;
+
+    let sandbox = Sandbox::new("dev");
+    // An installed plugin of the name that `sleip dev` takes the place of.
+    let installed = sandbox.package("devved", "1.0.0", "^0.1");
+    sandbox.lock(BTreeMap::from([installed.clone()]));
+    let folder = made(&sandbox, "devved");
+    let mut dev = sandbox
+        .command(&["--json", "dev"])
+        .current_dir(&folder)
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut lines = std::io::BufReader::new(dev.stdout.take().unwrap()).lines();
+    let mut next = |wanted: &str| -> Value {
+        loop {
+            let line = lines.next().expect("its output ended").unwrap();
+            let event: Value = serde_json::from_str(&line).unwrap();
+            if event["event"] == wanted {
+                return event;
+            }
+        }
+    };
+    assert_eq!(next("checked")["problems"], 0);
+    let linked = next("linked");
+    assert_eq!(linked["name"], "acme/devved");
+    assert_eq!(linked["replaced"], "1.0.0");
+    // Its folder in the lockfile, of no checksum, as the app reloads it.
+    let entry = sandbox.locked().packages["acme/devved"].clone();
+    let canonical = std::fs::canonicalize(&folder).unwrap();
+    assert_eq!(entry.source, Source::Dev(canonical.display().to_string()));
+    assert_eq!(entry.checksum, None);
+    // A save of a fault: checked again, the fault told.
+    edit(&folder, "src/init.luau", |text| {
+        text.replacen(
+            "--!strict\n",
+            "--!strict\nlocal wrong: number = \"text\"\n",
+            1,
+        )
+    });
+    loop {
+        let checked = next("checked");
+        if checked["problems"] != 0 {
+            break;
+        }
+    }
+    // Interrupted, as Ctrl-C does: the installed plugin back.
+    let killed = Command::new("kill")
+        .args(["-INT", &dev.id().to_string()])
+        .status()
+        .unwrap();
+    assert!(killed.success());
+    assert_eq!(next("unlinked")["name"], "acme/devved");
+    assert!(dev.wait().unwrap().success());
+    assert_eq!(sandbox.locked().packages["acme/devved"], installed.1);
+}

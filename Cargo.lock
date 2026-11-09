@@ -2059,6 +2059,7 @@ dependencies = [
  "lokyr-plugin-host-luau",
  "lokyr-plugin-sdk",
  "serde_json",
+ "signal-hook",
  "sleip-analyzer",
  "sleip-index",
  "sleip-resolver",

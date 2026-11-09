@@ -438,3 +438,51 @@ fn a_permissions_file_linked_elsewhere_after_the_start_is_watched_there() {
     }
     let _ = std::fs::remove_dir_all(&folder);
 }
+
+#[test]
+fn a_plugin_saved_under_sleip_dev_runs_its_new_command_without_a_restart() {
+    let _luau = LUAU.lock().unwrap_or_else(PoisonError::into_inner);
+    let folder = shelf("reloads-dev-command");
+    grant_open(&folder, &["grown"]);
+    let grown = folder.join("grown");
+    std::fs::create_dir_all(grown.join("src")).unwrap();
+    std::fs::write(
+        grown.join("plugin.toml"),
+        manifest("grown", &[], "^0.1", ""),
+    )
+    .unwrap();
+    let entry = grown.join("src/init.luau");
+    std::fs::write(&entry, opening("activate", "first", "")).unwrap();
+    // The entry that `sleip dev` writes: its folder, of no checksum.
+    lock(
+        &folder,
+        BTreeMap::from([(
+            "acme/grown".to_owned(),
+            Locked {
+                version: "1.0.0".to_owned(),
+                kind: Kind::Luau,
+                source: Source::Dev(grown.display().to_string()),
+                checksum: None,
+                capabilities: vec![lokyr_kernel::commands::Capability::Open],
+                dependencies: BTreeMap::new(),
+            },
+        )]),
+    );
+    let mut fake = Fake::default();
+    let mut app = reloading(&folder);
+    fake.start(&mut app);
+    run_until(&mut fake, &mut app, |fake, _| opens(fake, "first") == 1);
+    assert!(app.commands.get("grown.new").is_none());
+    // Saved of a new command, which the app runs once it reloads.
+    let register =
+        r#"assert(cx.register_command({ name = "grown.new", title = "New", category = "view" }))"#;
+    std::fs::write(&entry, opening("on_command", "new", register)).unwrap();
+    changed(&mut fake, &mut app);
+    settled(&mut fake, &mut app);
+    run_until(&mut fake, &mut app, |_, app| {
+        app.commands.get("grown.new").is_some()
+    });
+    fake.send_app(&mut app, AppEvent::Command("grown.new".to_owned()));
+    run_until(&mut fake, &mut app, |fake, _| opens(fake, "new") == 1);
+    let _ = std::fs::remove_dir_all(&folder);
+}

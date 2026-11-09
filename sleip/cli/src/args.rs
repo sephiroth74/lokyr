@@ -22,6 +22,8 @@ pub enum Command {
     Check,
     /// The tests of the plugin of the current folder run.
     Test,
+    /// The plugin of the current folder linked into the app's plugins.
+    Dev,
     /// The installed plugins.
     List,
     /// A plugin removed, by its name.
@@ -53,6 +55,7 @@ Commands:
   new <plugin>       Make a plugin of Luau, as owner/name, in a folder of its name
   check              Check the plugin of the current folder: its manifest, texts and types
   test               Run the tests of the plugin of the current folder, tests/*.luau
+  dev                Link the plugin of the current folder into Lokyr, reloaded at each save
   list               List the installed plugins, their versions and capabilities
   remove <plugin>    Remove a plugin, as owner/name; its package stays until `gc`
   gc                 Remove the packages of the store that no lockfile names
@@ -78,6 +81,9 @@ fn command_help(name: &str) -> Option<&'static str> {
         }
         "test" => {
             "Usage: sleip test [options]\n\nRuns the tests of the plugin of the current folder: each function of the\ntable that each file tests/*.luau returns, of a TestHost of its own, the\nplugin made anew on a host of the tests; a failure tells its file and line.\n"
+        }
+        "dev" => {
+            "Usage: sleip dev [options]\n\nChecks the plugin of the current folder and links it into Lokyr's plugins,\nan entry of plugins.lock of its folder, which Lokyr reloads at each save;\nchecks it again at each change, telling its problems. Ctrl-C ends it, the\nentry taken back, and an installed plugin of its name given back.\n"
         }
         "list" => {
             "Usage: sleip list [options]\n\nLists the plugins of plugins.lock: each one's version, kind, source and\ncapabilities.\n"
@@ -136,6 +142,7 @@ pub fn parse(args: &[String]) -> Result<Parsed, String> {
         ["new", plugin] => Ok(Parsed::Run(options, Command::New((*plugin).to_owned()))),
         ["check"] => Ok(Parsed::Run(options, Command::Check)),
         ["test"] => Ok(Parsed::Run(options, Command::Test)),
+        ["dev"] => Ok(Parsed::Run(options, Command::Dev)),
         ["list"] => Ok(Parsed::Run(options, Command::List)),
         ["remove", plugin] => Ok(Parsed::Run(options, Command::Remove((*plugin).to_owned()))),
         ["gc"] => Ok(Parsed::Run(options, Command::Gc)),

@@ -56,19 +56,30 @@ impl Findings {
 pub fn check(out: Out) -> Result<(), String> {
     let folder = std::env::current_dir()
         .map_err(|error| format!("the current folder cannot be read: {error}"))?;
-    let mut findings = Findings { out, problems: 0 };
-    check_folder(&folder, &mut findings);
-    let summary = match findings.problems {
-        0 => "No problem found.".to_owned(),
-        1 => "1 problem found.".to_owned(),
-        count => format!("{count} problems found."),
-    };
-    out.tell("done", json!({ "problems": findings.problems }), &summary);
+    let problems = problems_in(&folder, out);
+    out.tell("done", json!({ "problems": problems }), &summary(problems));
     // The summary told the problems already.
-    if findings.problems == 0 {
+    if problems == 0 {
         Ok(())
     } else {
         Err(String::new())
+    }
+}
+
+/// Checks the plugin in `folder`, each problem and note told as `out`
+/// tells: how many problems it found.
+pub(super) fn problems_in(folder: &Path, out: Out) -> usize {
+    let mut findings = Findings { out, problems: 0 };
+    check_folder(folder, &mut findings);
+    findings.problems
+}
+
+/// The text of `problems` found.
+pub(super) fn summary(problems: usize) -> String {
+    match problems {
+        0 => "No problem found.".to_owned(),
+        1 => "1 problem found.".to_owned(),
+        count => format!("{count} problems found."),
     }
 }
 
