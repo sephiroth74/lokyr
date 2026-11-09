@@ -16,6 +16,7 @@ pub mod archive;
 pub mod list;
 pub mod lock;
 pub mod manifest;
+pub mod permissions;
 pub mod schema;
 pub mod store;
 
@@ -38,6 +39,19 @@ impl fmt::Display for FileError {
 }
 
 impl std::error::Error for FileError {}
+
+/// The capability of `text`, as its `Display` writes it: its name, of a
+/// parameter after a `:`, as `net:api.github.com`.
+pub fn capability_of(text: &str) -> Option<lokyr_plugin_sdk::command::Capability> {
+    use lokyr_plugin_sdk::command::Capability;
+    match text.split_once(':') {
+        Some((name, parameter)) if !parameter.is_empty() => {
+            Capability::of_parameter(name, parameter.to_owned())
+        }
+        Some(_) => None,
+        None => Capability::of_name(text),
+    }
+}
 
 /// The error of a file of `text` that `toml` did not read, at its place.
 pub(crate) fn unread(text: &str, error: &toml::de::Error) -> FileError {

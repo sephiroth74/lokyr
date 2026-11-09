@@ -212,6 +212,16 @@ pub enum Request {
         /// Where its content's top left corner goes.
         at: host::ScreenPoint,
     },
+    /// Ask the user whether the plugin may hold `capabilities`, which its
+    /// manifest declares and no decision of the user's grants or refuses
+    /// yet: its activation waits for the answer, which
+    /// [`Plugins::consent`] gives.
+    AskConsent {
+        /// The plugin.
+        plugin: String,
+        /// The capabilities, in their order.
+        capabilities: Vec<Capability>,
+    },
     /// Ask the user for a text, whose answer [`Plugins::answer`] gives the
     /// plugin.
     AskText {
@@ -419,6 +429,24 @@ struct State {
     /// What activates it, of its manifest's `activation.on`: the app's
     /// start, as of none.
     triggers: Vec<Trigger>,
+    /// The capabilities that its manifest declares and that no decision of
+    /// the user's grants or refuses, which its activation asks for first.
+    undecided: Vec<Capability>,
+    /// Whether the user is asked for them, its activation waiting.
+    asking: bool,
+    /// What its trigger brought as the user was asked, which comes once it
+    /// activates.
+    deferred: Deferred,
+}
+
+/// What a plugin's trigger brought as its activation waited for the user's
+/// consent: the commands to run, the events to hear and the views to
+/// render.
+#[derive(Default)]
+struct Deferred {
+    commands: Vec<(String, Args, Chain)>,
+    events: Vec<Event>,
+    renders: Vec<ViewId>,
 }
 
 /// What activates a plugin, of its manifest's `activation.on`.
@@ -941,12 +969,114 @@ impl Plugins {
     /// [`Plugins::add_declared`] does, on a thread of its own, which starts
     /// as it activates: at the app's start, or at its trigger, as its
     /// manifest's activation says, its commands showing before.
+    /// It holds the capabilities that the user's decisions grant, of
+    /// `granted`; those that they neither grant nor refuse, of `refused`,
+    /// its activation asks the user for first, as a [`Request::AskConsent`].
     pub fn add_installed(
         &mut self,
         manifest: Manifest,
         plugin: Box<dyn Plugin + Send>,
+        (granted, refused): (&[Capability], &[Capability]),
     ) -> Result<(), Error> {
-        self.add_declared_on(manifest, Runner::Unstarted(plugin))
+        self.add_declared_on(manifest, Runner::Unstarted(plugin))?;
+        if let Some(entry) = self.entries.last_mut() {
+            decide(&mut entry.state, granted, refused);
+        }
+        Ok(())
+    }
+
+    /// Gives the installed plugin `name` the decisions of the user's, as
+    /// they changed, as [`Plugins::add_installed`] takes them: one that
+    /// held a capability that they no longer grant, as the user revoked
+    /// it, stops, as a fault stops it, until the app's next start. Whether
+    /// it stopped.
+    pub fn set_consent(
+        &mut self,
+        name: &str,
+        (granted, refused): (&[Capability], &[Capability]),
+        context: &mut Context<'_>,
+    ) -> bool {
+        let Some(entry) = self
+            .entries
+            .iter_mut()
+            .find(|entry| entry.state.name == name)
+        else {
+            return false;
+        };
+        let held = entry.state.granted.clone().unwrap_or_default();
+        decide(&mut entry.state, granted, refused);
+        let now = entry.state.granted.clone().unwrap_or_default();
+        let lost: Vec<String> = held
+            .iter()
+            .filter(|capability| !now.contains(capability))
+            .map(ToString::to_string)
+            .collect();
+        if lost.is_empty() || entry.state.status != Status::Active {
+            return false;
+        }
+        let error = Error::new(
+            Code::Fault,
+            format!(
+                "the plugin `{name}` lost {}, which the user revoked; it starts again at the app's next start",
+                lost.iter()
+                    .map(|capability| format!("`{capability}`"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+        );
+        let Entry { runner, state, .. } = entry;
+        disable(state, context.registry, &mut self.declarations_changed);
+        clear_leftovers(state, context, &mut self.out);
+        state.fault = Some(error.message);
+        if let Runner::Worker(_) = runner {
+            *runner = Runner::Stopped;
+        }
+        true
+    }
+
+    /// Gives the plugin `name`, whose activation asked the user for its
+    /// capabilities, the answer: all of them granted, or refused, which it
+    /// runs without; then it activates, and what its trigger brought comes,
+    /// its commands run, its events heard and its views rendered. The
+    /// errors of its activation and its commands, as they fail at once.
+    pub fn consent(&mut self, name: &str, allowed: bool, context: &mut Context<'_>) -> Vec<Error> {
+        let Some(at) = self
+            .entries
+            .iter()
+            .position(|entry| entry.state.name == name && entry.state.asking)
+        else {
+            return Vec::new();
+        };
+        let state = &mut self.entries[at].state;
+        state.asking = false;
+        let asked = std::mem::take(&mut state.undecided);
+        if allowed && let Some(granted) = &mut state.granted {
+            granted.extend(asked);
+        }
+        let deferred = std::mem::take(&mut state.deferred);
+        if state.status != Status::Inactive || !state.wanted {
+            return Vec::new();
+        }
+        let mut errors = Vec::new();
+        if let Err(error) = self.waken(at, context) {
+            errors.push(error);
+            return errors;
+        }
+        for event in deferred.events {
+            self.out.events.push((Some(name.to_owned()), event));
+        }
+        for view in deferred.renders {
+            let render = (name.to_owned(), view);
+            if !self.out.renders.contains(&render) {
+                self.out.renders.push(render);
+            }
+        }
+        for (command, args, chain) in deferred.commands {
+            if let Err(error) = self.run_on(at, &command, args, chain, context) {
+                errors.push(error);
+            }
+        }
+        errors
     }
 
     /// Takes the capabilities that the host withheld from the declared
@@ -1067,6 +1197,9 @@ impl Plugins {
                 lingering: Vec::new(),
                 timers: BTreeMap::new(),
                 triggers,
+                undecided: Vec::new(),
+                asking: false,
+                deferred: Deferred::default(),
             },
         });
         // A lazy plugin's commands, of its manifest, show in the menus and
@@ -1394,6 +1527,16 @@ impl Plugins {
                     ));
                 };
                 self.waken(at, context)?;
+                // Its activation waits for the user's consent: the command
+                // runs after it.
+                let state = &mut self.entries[at].state;
+                if state.asking {
+                    state
+                        .deferred
+                        .commands
+                        .push((command.to_owned(), args, chain));
+                    return Ok(());
+                }
                 match (&self.entries[at].runner, self.owner(command)) {
                     (_, Some(at)) => at,
                     (Runner::Worker(_), None) => at,
@@ -1409,6 +1552,19 @@ impl Plugins {
                 }
             }
         };
+        self.run_on(at, command, args, chain, context)
+    }
+
+    /// Runs `command` with `args`, of the chain `chain`, on the plugin at
+    /// `at`, as [`Plugins::run_deep`] does.
+    fn run_on(
+        &mut self,
+        at: usize,
+        command: &str,
+        args: Args,
+        chain: Chain,
+        context: &mut Context<'_>,
+    ) -> Result<(), Error> {
         let Entry { runner, state, .. } = &mut self.entries[at];
         match runner {
             Runner::Main(plugin) => {
@@ -1817,6 +1973,12 @@ impl Plugins {
             && shows(state, view, context.workspace)
         {
             self.waken(at, context)?;
+            // Its activation waits for the user's consent: the view renders
+            // after it.
+            let state = &mut self.entries[at].state;
+            if state.asking && !state.deferred.renders.contains(view) {
+                state.deferred.renders.push(view.clone());
+            }
         }
         let Entry { runner, state, .. } = &mut self.entries[at];
         if state.status != Status::Active || !shows(state, view, context.workspace) {
@@ -2118,8 +2280,28 @@ impl Plugins {
                 && state.triggers.iter().any(
                     |trigger| matches!(trigger, Trigger::Event(name) if names.contains(name.as_str())),
                 );
-            if wakes && let Err(error) = self.waken(at, context) {
+            if !wakes {
+                continue;
+            }
+            if let Err(error) = self.waken(at, context) {
                 errors.push(error);
+            }
+            // Its activation waits for the user's consent: the events of
+            // its trigger come after it.
+            let state = &mut self.entries[at].state;
+            if state.asking {
+                let triggered = |name: &str| {
+                    state
+                        .triggers
+                        .iter()
+                        .any(|trigger| matches!(trigger, Trigger::Event(event) if event == name))
+                };
+                let held: Vec<Event> = events
+                    .iter()
+                    .filter(|(to, event)| to.is_none() && triggered(event.name()))
+                    .map(|(_, event)| event.clone())
+                    .collect();
+                state.deferred.events.extend(held);
             }
         }
         for entry in &mut self.entries {
@@ -2869,6 +3051,18 @@ fn start(
     (out, declarations_changed): (&mut Outbox, &mut bool),
     wake: Option<&worker::Wake>,
 ) -> Result<(), Error> {
+    // The capabilities that the user did not decide on yet, asked for
+    // once, its activation waiting for the answer.
+    if !entry.state.undecided.is_empty() {
+        if !entry.state.asking {
+            entry.state.asking = true;
+            out.requests.push(Request::AskConsent {
+                plugin: entry.state.name.clone(),
+                capabilities: entry.state.undecided.clone(),
+            });
+        }
+        return Ok(());
+    }
     entry.state.status = Status::Active;
     entry.state.ran = true;
     entry.state.learn_tabs(context.workspace);
@@ -2917,6 +3111,38 @@ fn start(
             &error,
         )),
         Err(error) => Err(error),
+    }
+}
+
+/// Gives the plugin of `state` the capabilities of its manifest that
+/// `granted` holds, but the host's withheld ones; those that neither
+/// `granted` nor `refused` holds are undecided, which its activation asks
+/// for, unless a question of them is out.
+fn decide(state: &mut State, granted: &[Capability], refused: &[Capability]) {
+    let declared: Vec<Capability> = state
+        .manifest
+        .as_ref()
+        .map(|manifest| {
+            manifest
+                .capabilities
+                .iter()
+                .filter(|capability| !capability.is_withheld())
+                .cloned()
+                .collect()
+        })
+        .unwrap_or_default();
+    state.granted = Some(
+        declared
+            .iter()
+            .filter(|capability| granted.contains(capability))
+            .cloned()
+            .collect(),
+    );
+    if !state.asking {
+        state.undecided = declared
+            .into_iter()
+            .filter(|capability| !granted.contains(capability) && !refused.contains(capability))
+            .collect();
     }
 }
 

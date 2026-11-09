@@ -56,6 +56,7 @@ mod access;
 pub(crate) use access::TreeCursor;
 mod asks;
 pub(crate) mod chrome;
+mod consent;
 pub(crate) mod dividers;
 mod folders;
 pub(crate) mod frame;
@@ -376,7 +377,8 @@ impl PaneWake {
     }
 }
 
-/// The config file, and its watch.
+/// A file of the config's folder, the config file or the decisions on the
+/// plugins' capabilities, and its watch.
 #[derive(Debug)]
 struct ConfigFile {
     path: PathBuf,
@@ -524,6 +526,15 @@ pub struct App<B: Backend> {
     /// Where the plugins that Sleip installed are, which the app adds as it
     /// starts; none for an app of the built-in plugins alone.
     installed: Option<installed::Installed>,
+    /// The names of the installed plugins that the app added.
+    installed_names: Vec<String>,
+    /// The user's decisions on their capabilities, as last read.
+    decisions: lokyr_pkg_model::permissions::Permissions,
+    /// The file of those decisions, and its watch.
+    permissions_file: Option<ConfigFile>,
+    /// The questions of the capabilities of the plugins that activate, each
+    /// plugin and its capabilities, by their alerts.
+    consent_asks: BTreeMap<AlertId, (String, Vec<lokyr_kernel::commands::Capability>)>,
     /// The timer of the next of the plugins' timers to fire, and its time:
     /// none while no plugin's timer waits.
     plugin_timer: Option<(TimerId, Instant)>,
@@ -791,6 +802,10 @@ impl<B: Backend> App<B> {
             untitled_timer: None,
             restart_timer: None,
             installed: None,
+            installed_names: Vec::new(),
+            decisions: lokyr_pkg_model::permissions::Permissions::default(),
+            permissions_file: None,
+            consent_asks: BTreeMap::new(),
             plugin_timer: None,
             scripts: BTreeSet::new(),
             script_asks: BTreeMap::new(),
@@ -1191,7 +1206,12 @@ impl<B: Backend> App<B> {
     /// The app, which adds the plugins that Sleip installed as it starts:
     /// those of the lockfile `lock`, of their packages in `store`.
     pub fn with_installed(mut self, lock: PathBuf, store: lokyr_pkg_model::store::Store) -> Self {
-        self.installed = Some(installed::Installed { lock, store });
+        let permissions = lock.with_file_name(lokyr_pkg_model::permissions::FILE);
+        self.installed = Some(installed::Installed {
+            lock,
+            store,
+            permissions,
+        });
         self
     }
 
@@ -2800,6 +2820,10 @@ impl<B: Backend> App<B> {
                 } => self.open_panel(platform, (plugin, id), window, options),
                 Request::ClosePanel { plugin, id } => self.panel_gone(platform, &plugin, &id),
                 Request::CloseAsked(closing) => self.ask_close_part(platform, closing),
+                Request::AskConsent {
+                    plugin,
+                    capabilities,
+                } => self.ask_consent(platform, plugin, capabilities),
                 Request::AskText {
                     plugin,
                     id,
@@ -3672,6 +3696,14 @@ impl<B: Backend> App<B> {
                     }
                     file.reading = Some(platform.start_timer(Instant::now() + SETTLE));
                 }
+                if let Some(file) = &mut self.permissions_file
+                    && file.changed.swap(false, Ordering::AcqRel)
+                {
+                    if let Some(timer) = file.reading.take() {
+                        platform.cancel_timer(timer);
+                    }
+                    file.reading = Some(platform.start_timer(Instant::now() + SETTLE));
+                }
                 let themes = &mut self.theme_files;
                 if themes.changed.swap(false, Ordering::AcqRel) {
                     if let Some(timer) = themes.reading.take() {
@@ -3737,6 +3769,17 @@ impl<B: Backend> App<B> {
             AppEvent::Timer(timer) if self.theme_files.reading == Some(timer) => {
                 self.theme_files.reading = None;
                 self.load_themes(platform);
+            }
+            AppEvent::Timer(timer)
+                if self
+                    .permissions_file
+                    .as_ref()
+                    .is_some_and(|file| file.reading == Some(timer)) =>
+            {
+                if let Some(file) = &mut self.permissions_file {
+                    file.reading = None;
+                }
+                self.permissions_changed(platform);
             }
             AppEvent::Timer(timer)
                 if self

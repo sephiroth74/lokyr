@@ -233,6 +233,7 @@ fn a_plugin_of_a_thread_of_its_own_runs_its_trigger_s_command_after_its_activati
         .add_installed(
             manifest("far", &["command:far.go"], more),
             Box::new(Far(told)),
+            (&[], &[]),
         )
         .unwrap();
     assert!(plugins.activate(&mut app.context()).is_empty());

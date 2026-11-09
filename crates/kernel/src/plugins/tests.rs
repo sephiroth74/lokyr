@@ -21,6 +21,7 @@ use crate::workspace::{Environment, Grid, Settings};
 
 mod bounds;
 mod config;
+mod consent;
 mod lazy;
 mod timers;
 
@@ -1671,6 +1672,9 @@ fn a_call_is_its_own_plugin_s() {
             lingering: Vec::new(),
             timers: BTreeMap::new(),
             triggers: vec![Trigger::Startup],
+            undecided: Vec::new(),
+            asking: false,
+            deferred: Deferred::default(),
         },
         Outbox::default(),
         Vec::new(),

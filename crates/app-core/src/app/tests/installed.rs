@@ -15,7 +15,7 @@ use lokyr_pkg_model::store::{Store, digest_of};
 use super::*;
 
 /// The folder of a test's lockfile and store, made anew.
-fn shelf(name: &str) -> PathBuf {
+pub(super) fn shelf(name: &str) -> PathBuf {
     let folder =
         std::env::temp_dir().join(format!("lokyr-installed-{}-{name}", std::process::id()));
     let _ = std::fs::remove_dir_all(&folder);
@@ -25,7 +25,7 @@ fn shelf(name: &str) -> PathBuf {
 
 /// The manifest of the plugin `acme/<name>`, of the activation `on`, the
 /// API `api` and what follows, `more`.
-fn manifest(name: &str, on: &[&str], api: &str, more: &str) -> String {
+pub(super) fn manifest(name: &str, on: &[&str], api: &str, more: &str) -> String {
     let on: Vec<String> = on.iter().map(|on| format!("\"{on}\"")).collect();
     format!(
         "[plugin]\nname = \"acme/{name}\"\nversion = \"1.0.0\"\nkind = \"luau\"\napi = \"{api}\"\nlicense = \"MIT\"\n[activation]\non = [{}]\n[capabilities]\nopen = true\n{more}",
@@ -42,7 +42,7 @@ fn package(folder: &Path, manifest: &str, entry: &str) {
 
 /// Stores the package of `manifest` and `entry` in `store`, as Sleip does:
 /// the lockfile's entry of `acme/<name>`.
-fn stored(store: &Store, name: &str, manifest: &str, entry: &str) -> (String, Locked) {
+pub(super) fn stored(store: &Store, name: &str, manifest: &str, entry: &str) -> (String, Locked) {
     let unpacked = std::env::temp_dir().join(format!(
         "lokyr-installed-{}-unpacked-{name}",
         std::process::id()
@@ -66,7 +66,7 @@ fn stored(store: &Store, name: &str, manifest: &str, entry: &str) -> (String, Lo
 
 /// The entry of a plugin that opens `https://lokyr.dev/<what>` as its
 /// callback `callback` runs, of `before` first in its activation.
-fn opening(callback: &str, what: &str, before: &str) -> String {
+pub(super) fn opening(callback: &str, what: &str, before: &str) -> String {
     let open = format!(r#"assert(cx.open("https://lokyr.dev/{what}"))"#);
     if callback == "activate" {
         format!("return {{ activate = function(cx) {before} {open} end }}")
@@ -77,8 +77,24 @@ fn opening(callback: &str, what: &str, before: &str) -> String {
     }
 }
 
+/// Grants `open` to the plugins `acme/<name>` of `names`, as the user
+/// answered, in the decisions beside the lockfile in `folder`.
+pub(super) fn grant_open(folder: &Path, names: &[&str]) {
+    let mut permissions = lokyr_pkg_model::permissions::Permissions::default();
+    for name in names {
+        permissions
+            .plugins
+            .entry(format!("acme/{name}"))
+            .or_default()
+            .decide(&[lokyr_kernel::commands::Capability::Open], true);
+    }
+    permissions
+        .write(&folder.join(lokyr_pkg_model::permissions::FILE))
+        .unwrap();
+}
+
 /// Every notice that `app` shows, the latest first, which it dismisses.
-fn notices(app: &mut App) -> Vec<String> {
+pub(super) fn notices(app: &mut App) -> Vec<String> {
     let mut texts = Vec::new();
     while let Some(shown) = app.diagnostics.shown() {
         texts.push(shown.text.clone());
@@ -88,7 +104,7 @@ fn notices(app: &mut App) -> Vec<String> {
 }
 
 /// Whether `fake` opened `https://lokyr.dev/<what>`.
-fn opened(fake: &Fake, what: &str) -> bool {
+pub(super) fn opened(fake: &Fake, what: &str) -> bool {
     fake.opened()
         .iter()
         .any(|target| target == &format!("https://lokyr.dev/{what}"))
@@ -173,6 +189,7 @@ fn installed_plugins_load_from_the_store_and_activate_each_at_its_trigger_alone(
     }
     .write(&lock)
     .unwrap();
+    grant_open(&folder, &["early", "late", "watcher", "devved"]);
     // URLs that open without a question, as the plugins open them.
     let config = Config::parse("[links]\nurls = \"open\"\n", Path::new("config.toml")).unwrap();
     let mut fake = Fake::default();
@@ -317,6 +334,7 @@ fn a_plugin_of_the_status_bar_s_trigger_activates_as_the_bar_first_shows() {
     }
     .write(&lock)
     .unwrap();
+    grant_open(&folder, &["bar"]);
     let drawing = Drawing::new(FontConfig::default()).unwrap();
     let mut fake = Fake::default();
     fake.set_bar(28.0);

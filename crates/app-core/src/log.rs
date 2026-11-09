@@ -423,7 +423,7 @@ fn drain_stderr(_path: &Path) -> std::io::Result<()> {
 pub fn finish() {}
 
 /// `at` as RFC 3339's date and time in UTC, to the second.
-fn timestamp(at: SystemTime) -> String {
+pub(crate) fn timestamp(at: SystemTime) -> String {
     let seconds = at
         .duration_since(UNIX_EPOCH)
         .map_or(0, |since| since.as_secs());

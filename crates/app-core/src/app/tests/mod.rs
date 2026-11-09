@@ -21,6 +21,7 @@ mod access;
 mod asks;
 mod chrome;
 mod configs;
+mod consent;
 mod copy;
 mod folders;
 mod frame;

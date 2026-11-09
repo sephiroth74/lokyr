@@ -330,7 +330,7 @@ fn locked(
     };
     let mut capabilities = Vec::new();
     for text in &raw.capabilities {
-        let capability = capability(text.get_ref()).ok_or_else(|| {
+        let capability = crate::capability_of(text.get_ref()).ok_or_else(|| {
             fail(
                 text.span(),
                 format!("`{}` is no capability", text.get_ref()),
@@ -372,18 +372,6 @@ fn locked(
             place,
         ),
     ))
-}
-
-/// The capability of `text`, as its `Display` writes it: its name, of a
-/// parameter after a `:`, as `net:api.github.com`.
-fn capability(text: &str) -> Option<Capability> {
-    match text.split_once(':') {
-        Some((name, parameter)) if !parameter.is_empty() => {
-            Capability::of_parameter(name, parameter.to_owned())
-        }
-        Some(_) => None,
-        None => Capability::of_name(text),
-    }
 }
 
 #[cfg(test)]

@@ -23,11 +23,13 @@ use lokyr_plugin_host_luau::{Execution, LuauPlugin, Package};
 use super::App;
 use crate::drawing::Backend;
 
-/// Where the installed plugins are: the lockfile, and the store.
+/// Where the installed plugins are: the lockfile, the store, and the
+/// user's decisions on their capabilities, beside the lockfile.
 #[derive(Clone, Debug)]
 pub(super) struct Installed {
     pub(super) lock: PathBuf,
     pub(super) store: Store,
+    pub(super) permissions: PathBuf,
 }
 
 /// A plugin of the lockfile that loaded: its manifest, and the plugin.
@@ -156,10 +158,10 @@ impl<B: Backend> App<B> {
     /// of its own, to activate at its trigger; tells of each refused, and
     /// of a lockfile that does not read.
     pub(super) fn add_installed(&mut self, platform: &mut dyn Platform) {
-        let Some(installed) = &self.installed else {
+        let Some(installed) = self.installed.clone() else {
             return;
         };
-        let (loaded, refused) = match load(installed) {
+        let (loaded, refused) = match load(&installed) {
             Ok(found) => found,
             Err(error) => {
                 let text = self
@@ -172,11 +174,35 @@ impl<B: Backend> App<B> {
                 return;
             }
         };
+        // The user's decisions on their capabilities, whose changes the app
+        // watches.
+        self.decisions = self.permissions(platform);
+        let path = installed.permissions.clone();
+        let mut file = super::ConfigFile {
+            path,
+            watcher: None,
+            changed: std::sync::Arc::default(),
+            reading: None,
+        };
+        file.watch(platform);
+        self.permissions_file = Some(file);
         let mut refused = refused;
         for Loaded { manifest, plugin } in loaded {
             let name = manifest.name.clone();
-            if let Err(error) = self.plugins.add_installed(manifest, Box::new(plugin)) {
-                refused.push((name, Refusal::Other(error.message)));
+            let decisions = self
+                .decisions
+                .plugins
+                .get(&name)
+                .cloned()
+                .unwrap_or_default();
+            let added = self.plugins.add_installed(
+                manifest,
+                Box::new(plugin),
+                (&decisions.granted, &decisions.refused),
+            );
+            match added {
+                Ok(()) => self.installed_names.push(name),
+                Err(error) => refused.push((name, Refusal::Other(error.message))),
             }
         }
         for (name, refusal) in refused {

@@ -36,6 +36,39 @@ plugin-not-loaded = Il plugin { $name } non si carica: { $why }
 plugin-other-api = Il plugin { $name } usa l'API dei plugin { $api }, e questo Lokyr ha la { $version }: non si carica finché non si aggiorna il plugin o Lokyr.
 plugins-lock-unread = I plugin installati non si caricano, perché plugins.lock non si legge: { $error }
 
+# The question of the capabilities of a plugin that activates, which the user
+# allows or not: a line of each capability, what it allows and its risk.
+consent-message = Consentire a { $name } di usare queste capability?
+consent-detail = Lokyr lo chiede una volta sola: la risposta resta in permissions.toml, accanto al file di configurazione, dove si può cambiare.
+consent-allow = Consenti
+consent-refuse = Non consentire
+consent-line = • { $what }: { $risk }
+consent-risk-very-high = rischio molto alto
+consent-risk-high = rischio alto
+consent-risk-medium = rischio medio
+consent-risk-low = rischio basso
+consent-capability-terminal-read = leggere il testo dello schermo e dello scrollback, e la selezione
+consent-capability-pty-write = scrivere nei programmi dei pannelli, come nella shell
+consent-capability-clipboard-read = leggere gli appunti
+consent-capability-clipboard-write = scrivere negli appunti
+consent-capability-notifications = mostrare notifiche
+consent-capability-open = aprire pagine web e file con le loro app
+consent-capability-process-spawn = avviare programmi
+consent-capability-net = connettersi a { $parameter }
+consent-capability-fs-read = leggere { $parameter } e quello che contiene
+consent-capability-fs-write = scrivere in { $parameter } e in quello che contiene
+consent-capability-global-hotkey = prendere tasti in ogni app, e far scorrere finestre rapide sopra di esse
+consent-capability-env-read = leggere la variabile d'ambiente { $parameter }
+consent-capability-input-read = vedere i tasti premuti prima dei programmi
+consent-capability-history-read = leggere i comandi eseguiti dalla shell, e il loro output
+consent-capability-process-read = vedere i programmi dei pannelli, le loro righe di comando e cartelle
+consent-capability-user-commands = eseguire qualsiasi comando come faresti tu, anche scrivere nella shell
+consent-capability-workspace-write = aprire, chiudere e spostare finestre, tab e pannelli, e uscire dall'app
+consent-capability-pane-view = scorrere e selezionare nei pannelli, cancellarli, e cambiare titoli e colori dei tab
+consent-capability-decorate = disegnare sopra il testo dei pannelli
+consent-capability-pointer-read = vedere dove si trova il puntatore sui pannelli
+permissions-unread = Le decisioni sulle capability dei plugin non si leggono, e nessuna si applica: { $error }
+
 # The credits of the About panel, under the version and the copyright: the
 # license, and the links to the source code and to the licenses' notices of
 # the software that Lokyr includes.

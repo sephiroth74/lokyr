@@ -48,6 +48,10 @@ impl<B: Backend> App<B> {
         {
             self.close_part(platform, window, closing);
         }
+        // The capabilities granted to the plugin that activates, or refused.
+        if let Some(asked) = self.consent_asks.remove(&alert) {
+            self.consent_answered(platform, asked, button == 1);
+        }
         // The text given, to the plugin that asked, or none.
         if let Some((_, plugin, id)) = self.text_asks.remove(&alert) {
             let text = (button == 0).then(|| text.unwrap_or_default().to_owned());

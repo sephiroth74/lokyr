@@ -37,6 +37,39 @@ plugin-not-loaded = The plugin { $name } does not load: { $why }
 plugin-other-api = The plugin { $name } takes the plugin API { $api }, and this Lokyr has { $version }: it does not load until it or Lokyr is updated.
 plugins-lock-unread = The installed plugins do not load, as plugins.lock does not read: { $error }
 
+# The question of the capabilities of a plugin that activates, which the user
+# allows or not: a line of each capability, what it allows and its risk.
+consent-message = Allow { $name } to use these capabilities?
+consent-detail = Lokyr asks once: the answer is kept in permissions.toml, beside the config file, where it can be changed.
+consent-allow = Allow
+consent-refuse = Don't Allow
+consent-line = • { $what }: { $risk }
+consent-risk-very-high = very high risk
+consent-risk-high = high risk
+consent-risk-medium = medium risk
+consent-risk-low = low risk
+consent-capability-terminal-read = read the text of the screen and of the scrollback, and the selection
+consent-capability-pty-write = type into the panes' programs, as into the shell
+consent-capability-clipboard-read = read the clipboard
+consent-capability-clipboard-write = write to the clipboard
+consent-capability-notifications = show notifications
+consent-capability-open = open web pages and files with their apps
+consent-capability-process-spawn = start programs
+consent-capability-net = connect to { $parameter }
+consent-capability-fs-read = read { $parameter } and what it holds
+consent-capability-fs-write = write to { $parameter } and to what it holds
+consent-capability-global-hotkey = take keys in every app, and slide quick windows over them
+consent-capability-env-read = read the environment variable { $parameter }
+consent-capability-input-read = see the keys typed before the programs do
+consent-capability-history-read = read the commands that the shell ran, and their output
+consent-capability-process-read = see the panes' programs, their command lines and folders
+consent-capability-user-commands = run any command as you would, typing into the shell among them
+consent-capability-workspace-write = open, close and move windows, tabs and panes, and quit the app
+consent-capability-pane-view = scroll and select in the panes, clear them, and change the tabs' titles and colors
+consent-capability-decorate = draw over the panes' text
+consent-capability-pointer-read = see where the pointer is over the panes
+permissions-unread = The decisions on the plugins' capabilities do not read, and none applies: { $error }
+
 # The credits of the About panel, under the version and the copyright: the
 # license, and the links to the source code and to the licenses' notices of
 # the software that Lokyr includes.
