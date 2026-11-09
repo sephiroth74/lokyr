@@ -1,0 +1,79 @@
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=24117347)	100%; charged; 0:00 remaining present: true
+18:07  up 3 days,  2:27, 120 users, load averages: 3.82 3.35 3.30
+   56.8 /Library/SystemExtensions/C9BFD03F-BD4B-417E-888E-484BB51BD3A8/com.microsoft.wdav.epsext.systemextension/Contents/MacOS/epsext
+   44.1 /Applications/Xcode.app/Contents/Developer/Library/Frameworks/Python3.framework/Versions/3.9/Resources/Python.app/Contents/MacOS/Python
+   19.6 /Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon
+18:07:46 latency warm-up v070
+18:07:48 latency warm-up v080
+18:07:53 latency v070 1 place 1
+18:08:08 latency v080 1 place 2
+18:08:20 load { 3.02 3.21 3.25 }
+18:08:22 latency v080 2 place 1
+18:08:36 latency v070 2 place 2
+18:08:49 load { 2.47 3.07 3.20 }
+18:08:51 latency v080 3 place 1
+18:09:05 latency v070 3 place 2
+18:09:17 load { 1.91 2.87 3.12 }
+18:09:19 latency v070 4 place 1
+18:09:34 latency v080 4 place 2
+18:09:46 load { 2.94 3.01 3.16 }
+18:09:48 latency v070 5 place 1
+18:10:03 latency v080 5 place 2
+18:10:15 load { 2.26 2.83 3.09 }
+18:10:17 latency v080 6 place 1
+18:10:31 latency v070 6 place 2
+18:10:44 load { 2.75 2.88 3.10 }
+18:10:46 latency v080 7 place 1
+18:11:00 latency v070 7 place 2
+18:11:13 load { 2.13 2.72 3.03 }
+18:11:15 latency v070 8 place 1
+18:11:29 latency v080 8 place 2
+18:11:41 load { 2.03 2.63 2.99 }
+18:11:43 latency v070 9 place 1
+18:11:58 latency v080 9 place 2
+18:12:10 load { 1.72 2.51 2.93 }
+18:12:12 latency v080 10 place 1
+18:12:26 latency v070 10 place 2
+18:12:39 load { 1.66 2.43 2.89 }
+18:12:41 latency v080 11 place 1
+18:12:55 latency v070 11 place 2
+18:13:08 load { 1.64 2.34 2.84 }
+18:13:10 latency v070 12 place 1
+18:13:24 latency v080 12 place 2
+18:13:36 load { 1.83 2.32 2.82 }
+18:13:38 latency v070 13 place 1
+18:13:53 latency v080 13 place 2
+18:14:05 load { 1.71 2.25 2.77 }
+18:14:07 latency v080 14 place 1
+18:14:21 latency v070 14 place 2
+18:14:34 load { 1.52 2.16 2.72 }
+18:14:36 latency v080 15 place 1
+18:14:50 latency v070 15 place 2
+18:15:03 load { 1.22 2.03 2.66 }
+18:15:05 latency v070 16 place 1
+18:15:19 latency v080 16 place 2
+18:15:31 load { 1.30 1.98 2.61 }
+   26.1 /Library/SystemExtensions/CCD4BD4F-2A68-4214-8CBA-DA3177783C74/com.microsoft.wdav.netext.systemextension/Contents/MacOS/netext
+   20.4 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer
+    6.0 /Applications/Visual Studio Code.app/Contents/Frameworks/Code Helper (Renderer).app/Contents/MacOS/Code Helper (Renderer)
+18:15:33 startup v070 1
+18:15:51 startup v080 1
+18:16:08 startup floor 1
+18:16:23 load { 2.54 2.23 2.67 }
+18:16:25 startup v080 2
+18:16:43 startup v070 2
+18:17:00 startup floor 2
+18:17:15 load { 2.95 2.33 2.68 }
+18:17:17 startup v080 3
+18:17:34 startup v070 3
+18:17:51 startup floor 3
+18:18:07 load { 3.13 2.47 2.71 }
+18:18:09 startup v070 4
+18:18:26 startup v080 4
+18:18:43 startup floor 4
+18:18:58 load { 3.97 2.70 2.77 }
+   41.3 /Applications/Visual Studio Code.app/Contents/Frameworks/Code Helper (Renderer).app/Contents/MacOS/Code Helper (Renderer)
+   33.9 /Applications/Visual Studio Code.app/Contents/Frameworks/Code Helper (Renderer).app/Contents/MacOS/Code Helper (Renderer)
+    8.4 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer
+18:18:58 done
