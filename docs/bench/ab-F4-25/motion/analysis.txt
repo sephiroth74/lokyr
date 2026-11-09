@@ -1,0 +1,16 @@
+## drag: means of the two rounds
+| Configuration | Frames a second | Missed | Delay p50 | p95 | WindowServer CPU | App CPU | Farthest |
+|---|---|---|---|---|---|---|---|
+| v070-opaque | 22.8 | 262.0 | 13.10 | 20.98 | 20 % | 1 % | 206 |
+| v080-opaque | 28.2 | 211.5 | 13.51 | 14.20 | 16 % | 2 % | 206 |
+| v070-blur | 26.8 | 245.5 | 13.02 | 29.04 | 22 % | 2 % | 206 |
+| v080-blur | 28.3 | 281.0 | 12.96 | 13.73 | 21 % | 2 % | 206 |
+
+## resize: means of the two rounds
+| Configuration | Frames a second | Missed | Delay p50 | p95 | WindowServer CPU | App CPU | Farthest |
+|---|---|---|---|---|---|---|---|
+| v070-opaque | 28.2 | 218.5 | 12.58 | 20.90 | 23 % | 10 % | 114 |
+| v080-opaque | 27.1 | 211.5 | 12.29 | 13.18 | 23 % | 9 % | 114 |
+| v070-blur | 26.1 | 225.0 | 11.90 | 12.83 | 23 % | 8 % | 114 |
+| v080-blur | 25.1 | 245.0 | 12.00 | 12.87 | 23 % | 9 % | 114 |
+

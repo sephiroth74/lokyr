@@ -1,0 +1,51 @@
+## Startup, warm, first frame (ms): median, spread; floor's first window; gap
+round 1 v070: 239.4 ms, p90 253.6, spread 6.7%; floor 215.2; gap 24.2
+round 1 v080: 250.8 ms, p90 257.4, spread 7.2%; floor 215.2; gap 35.7
+round 2 v080: 248.4 ms, p90 266.3, spread 13.1%; floor 219.7; gap 28.7
+round 2 v070: 234.1 ms, p90 236.8, spread 2.6%; floor 219.7; gap 14.4
+round 3 v080: 233.8 ms, p90 250.8, spread 10.0%; floor 215.6; gap 18.2
+round 3 v070: 231.9 ms, p90 248.3, spread 13.8%; floor 215.6; gap 16.3
+round 4 v070: 232.7 ms, p90 251.5, spread 14.5%; floor 215.8; gap 16.8
+round 4 v080: 232.9 ms, p90 247.5, spread 6.5%; floor 215.8; gap 17.1
+## Latency (ms), and its histogram in refreshes
+round 1 place 1 v070: p50 20.99 p90 26.46 p99 36.55 max 42.56; refresh 16.67; {'1': 51, '2': 141, '3': 7}
+round 1 place 2 v080: p50 18.84 p90 28.02 p99 42.08 max 69.79; refresh 16.67; {'1': 63, '2': 129, '3': 6, '5': 1}
+round 2 place 1 v080: p50 19.46 p90 26.40 p99 45.33 max 50.66; refresh 16.67; {'1': 71, '2': 121, '3': 6, '4': 1}
+round 2 place 2 v070: p50 19.87 p90 26.20 p99 41.92 max 44.30; refresh 16.67; {'1': 62, '2': 132, '3': 5}
+round 3 place 1 v080: p50 18.26 p90 27.51 p99 50.71 max 55.72; refresh 16.67; {'1': 79, '2': 114, '3': 4, '4': 2}
+round 3 place 2 v070: p50 17.15 p90 23.98 p99 41.80 max 54.25; refresh 16.67; {'1': 91, '2': 103, '3': 4, '4': 1}
+round 4 place 1 v070: p50 19.48 p90 25.79 p99 37.21 max 38.23; refresh 16.67; {'1': 67, '2': 128, '3': 4}
+round 4 place 2 v080: p50 19.88 p90 27.63 p99 43.81 max 47.92; refresh 16.67; {'1': 53, '2': 139, '3': 7}
+round 5 place 1 v070: p50 20.21 p90 26.93 p99 35.24 max 39.67; refresh 16.67; {'1': 65, '2': 131, '3': 3}
+round 5 place 2 v080: p50 20.06 p90 27.04 p99 54.77 max 55.11; refresh 16.67; {'1': 60, '2': 130, '3': 6, '4': 3}
+round 6 place 1 v080: p50 19.77 p90 26.23 p99 43.45 max 46.82; refresh 16.67; {'1': 68, '2': 123, '3': 8}
+round 6 place 2 v070: p50 19.70 p90 27.08 p99 35.25 max 36.85; refresh 16.67; {'1': 47, '2': 149, '3': 3}
+round 7 place 1 v080: p50 20.35 p90 29.33 p99 36.49 max 36.78; refresh 16.67; {'1': 58, '2': 131, '3': 10}
+round 7 place 2 v070: p50 20.18 p90 26.68 p99 38.18 max 38.91; refresh 16.67; {'1': 60, '2': 135, '3': 4}
+round 8 place 1 v070: p50 18.86 p90 28.97 p99 53.40 max 56.31; refresh 16.67; {'1': 69, '2': 116, '3': 12, '4': 2}
+round 8 place 2 v080: p50 20.50 p90 28.60 p99 61.70 max 75.39; refresh 16.67; {'1': 46, '2': 144, '3': 6, '4': 2, '5': 1}
+v070: p50 mean 19.55 (sd 1.08), p99 mean 39.94 (sd 5.64), of 8 rounds; 3 of 1592 samples in the fourth refresh or later
+v080: p50 mean 19.64 (sd 0.71), p99 mean 47.29 (sd 7.50), of 8 rounds; 10 of 1592 samples in the fourth refresh or later
+place 1: p50 mean 19.67, p99 mean 42.30
+place 2: p50 mean 19.52, p99 mean 44.94
+## Idle (per s) and memory (MB)
+v070-1: package idle 0.000/s, interrupt 0.350/s; footprint w/o GPU 31.2 MB, GPU 30.1 MB; 15 threads
+v080-1: package idle 0.000/s, interrupt 0.333/s; footprint w/o GPU 27.1 MB, GPU 30.1 MB; 15 threads
+v080-2: package idle 0.000/s, interrupt 0.350/s; footprint w/o GPU 27.3 MB, GPU 30.1 MB; 16 threads
+v070-2: package idle 0.000/s, interrupt 2.850/s; footprint w/o GPU 27.6 MB, GPU 30.1 MB; 13 threads
+## Throughput on screen (MiB/s, median of the runs of both rounds) and frames (ms)
+ascii v070: 319.0 MiB/s (runs 309.8, 319.6, 318.4, 319.9); total p50 0.291 p99 0.404, total p50 0.279 p99 0.391
+ascii v080: 315.0 MiB/s (runs 320.5, 305.9, 311.3, 318.7); total p50 0.296 p99 0.438, total p50 0.296 p99 0.416
+seq v070: 214.9 MiB/s (runs 212.2, 223.7, 203.1, 217.6); total p50 0.282 p99 4.687, total p50 0.322 p99 4.670
+seq v080: 222.1 MiB/s (runs 218.2, 226.0, 214.6, 225.9); total p50 0.308 p99 4.485, total p50 0.292 p99 4.686
+sgr v070: 284.3 MiB/s (runs 280.5, 288.2, 277.2, 288.1); total p50 0.545 p99 4.679, total p50 0.557 p99 4.552
+sgr v080: 285.6 MiB/s (runs 282.0, 289.3, 278.0, 290.4); total p50 0.554 p99 4.603, total p50 0.580 p99 4.929
+cjk v070: 214.0 MiB/s (runs 211.5, 217.3, 209.9, 216.5); total p50 0.719 p99 4.442, total p50 0.739 p99 4.619
+cjk v080: 215.3 MiB/s (runs 214.8, 202.3, 215.8, 217.2); total p50 0.704 p99 4.652, total p50 0.728 p99 5.084
+## Ten Luau plugins active against none, 0.8.0
+plugins-0-1: package idle 0.000/s, interrupt 0.283/s; footprint w/o GPU 27.4 MB, GPU 30.1 MB; 15 threads
+plugins-10-1: package idle 0.000/s, interrupt 0.350/s; footprint w/o GPU 36.1 MB, GPU 30.1 MB; 36 threads
+round 1: 0.88 MB a plugin
+plugins-10-2: package idle 0.000/s, interrupt 0.350/s; footprint w/o GPU 35.8 MB, GPU 40.5 MB; 36 threads
+plugins-0-2: package idle 0.000/s, interrupt 0.317/s; footprint w/o GPU 27.4 MB, GPU 30.1 MB; 15 threads
+round 2: 0.85 MB a plugin
