@@ -404,6 +404,22 @@ fn the_windows_open_again_as_the_config_and_the_system_s_setting_say() {
             .map(|kept| kept.windows.len()),
         Some(2)
     );
+    // A bench of the user's keys, which ends as its last window closes,
+    // leaves them kept too, its measure's end whatever.
+    let mut fake = Fake::default();
+    let mut bench = app_of(restoring(), quiet())
+        .with_state(Some(state.clone()))
+        .with_latency_bench(0, false);
+    fake.start(&mut bench);
+    let window = fake.windows().next().unwrap();
+    bench.close(&mut fake, window);
+    assert!(fake.has_quit());
+    assert_eq!(
+        windows::read(&state)
+            .unwrap()
+            .map(|kept| kept.windows.len()),
+        Some(2)
+    );
     // The last window's close that quits, as the config says, forgets
     // them too.
     let mut config = restoring();

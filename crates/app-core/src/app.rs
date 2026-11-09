@@ -687,6 +687,11 @@ pub struct App<B: Backend> {
     startup_bench: Option<Arc<Mutex<StartupBench>>>,
     /// The latency's bench, with `--bench latency`.
     latency_bench: Option<LatencyBench>,
+    /// Whether the app was started as a bench, of its startup, its
+    /// latency or its output, whatever a bench's end empties: a bench's app
+    /// neither keeps nor restores the user's windows, takes no global key,
+    /// checks for no update, and quits as its last window closes.
+    benched: bool,
     /// The output's bench, with `--bench output`.
     output_bench: Option<OutputBench>,
     /// The size of the output bench's window's content, in points, that
@@ -849,6 +854,7 @@ impl<B: Backend> App<B> {
             global_keys: Vec::new(),
             startup_bench: None,
             latency_bench: None,
+            benched: false,
             output_bench: None,
             bench_size: None,
         }
@@ -866,6 +872,7 @@ impl<B: Backend> App<B> {
     /// quits.
     pub fn with_startup_bench(mut self) -> Self {
         self.startup_bench = Some(Arc::default());
+        self.benched = true;
         self
     }
 
@@ -881,6 +888,7 @@ impl<B: Backend> App<B> {
             flood,
             ..LatencyBench::default()
         });
+        self.benched = true;
         self
     }
 
@@ -892,6 +900,7 @@ impl<B: Backend> App<B> {
         self.program = program;
         self.output_bench = Some(OutputBench::default());
         self.bench_size = size;
+        self.benched = true;
         self
     }
 
@@ -1552,9 +1561,7 @@ impl<B: Backend> App<B> {
     /// cannot. The benches leave the updater alone, as its checks would
     /// reach the network while they measure.
     fn start_updates(&mut self, platform: &mut dyn Platform) {
-        let benched = self.startup_bench.is_some()
-            || self.latency_bench.is_some()
-            || self.output_bench.is_some();
+        let benched = self.benched;
         // Off where the config in force is the defaults of a file that did
         // not apply, which may have turned them off.
         self.update_checks = self.config.updates.check && !self.config_fell_back;
@@ -2190,10 +2197,7 @@ impl<B: Backend> App<B> {
     /// Whether the app quits as its last window closes: as the config
     /// says, and always for a bench, whose measure ends with the app.
     fn quits_without_windows(&self) -> bool {
-        self.config.app.quit_after_last_window_closed
-            || self.startup_bench.is_some()
-            || self.latency_bench.is_some()
-            || self.output_bench.is_some()
+        self.config.app.quit_after_last_window_closed || self.benched
     }
 
     /// Closes `window`, and quits with the last one, if the config says so.
@@ -2702,10 +2706,7 @@ impl<B: Backend> App<B> {
             self.set_menu(platform);
             // The plugins' global keys, which the benches leave to the
             // user's Lokyr.
-            if self.startup_bench.is_none()
-                && self.latency_bench.is_none()
-                && self.output_bench.is_none()
-            {
+            if !self.benched {
                 self.take_global_keys(platform);
             }
         }
@@ -3561,10 +3562,7 @@ impl<B: Backend> App<B> {
         platform.set_option_as_meta(left, right);
         self.show_icon(platform);
         // The benches leave the user's global keys to the user's Lokyr.
-        if self.startup_bench.is_none()
-            && self.latency_bench.is_none()
-            && self.output_bench.is_none()
-        {
+        if !self.benched {
             self.take_global_keys(platform);
         }
         self.environment.locale =
@@ -3582,11 +3580,8 @@ impl<B: Backend> App<B> {
         // where the system started the app to open files, folders or
         // links, whose events came before the start and follow it, which
         // open their own windows.
-        let bench = self.startup_bench.is_some()
-            || self.latency_bench.is_some()
-            || self.output_bench.is_some();
         if !self.restore_windows(platform) {
-            if platform.default_launch() || bench {
+            if platform.default_launch() || self.benched {
                 self.open_window(platform);
             } else {
                 self.untitled_timer = Some(platform.start_timer(Instant::now() + UNTITLED_WAIT));

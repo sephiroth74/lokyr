@@ -18,9 +18,7 @@ impl<B: Backend> App<B> {
     /// it quits: as the config says, of the system's setting; never for a
     /// bench, whose window is its own.
     fn restores_windows(&self, platform: &dyn Platform) -> bool {
-        self.startup_bench.is_none()
-            && self.latency_bench.is_none()
-            && self.output_bench.is_none()
+        !self.benched
             && self
                 .config
                 .app
@@ -36,10 +34,7 @@ impl<B: Backend> App<B> {
         let Some(state) = &self.state else {
             return;
         };
-        if self.startup_bench.is_some()
-            || self.latency_bench.is_some()
-            || self.output_bench.is_some()
-        {
+        if self.benched {
             return;
         }
         if self.restores_windows(platform) {
