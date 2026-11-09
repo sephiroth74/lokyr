@@ -1,0 +1,100 @@
+# 0.8.0's latency tail, startup and motion again, and `allow-jit` (F4-58)
+
+Measured on 2026-11-09, from 18:07 to 19:57, after [F4-25's A/B](ab-F4-25.md), whose latency's p99 was 7.4 ms longer than 0.7.0's in seven rounds of eight and whose startup's gap was 7 ms longer in its first two rounds. The sessions' scripts, reports and tables are in [rest-F4-58](rest-F4-58/); the micro-benchmarks' program in [`spikes/jit-entitlement`](../../spikes/jit-entitlement/).
+
+Each session ran of F4-25's config, Menlo at 13 points, 120 × 40 cells, an opaque window, on the Dell P2721Q at 60 Hz, of balanced orders, the same pause of 2 s before each run, each copy started before its measured rounds. Microsoft Defender's enterprise inventory scripts, its endpoint extension and its data loss prevention agent ran through all of them, 20 % to 140 % of a core, as they do on this managed Mac; no session could wait for them to end.
+
+## In short
+
+- **The code between 0.7.0 and 0.8.0 does not lengthen the latency's tail**: six builds between them, release binaries run outside a bundle, are alike.
+- **The startup at rest is 0.7.0's**: F4-25's 7 ms were a new copy's first starts.
+- **0.8.0's bundle has a longer tail in some sessions and not in others**, and so does `allow-jit`, its one entitlement that 0.7.0's lacks: three sessions of six found it longer, by 6.5 to 10.9 ms of the p99, in most rounds; three found nothing, the same copies among them. No mechanism of the system's shows a cost of the entitlement: a context switch, a wake under load, a page fault and a system call are alike of every signature.
+- **The window's motion was not measured**: Defender scans Instruments' recordings as they grow, which halves both apps' frames.
+
+## The sessions of 0.8.0 against 0.7.0 and of `allow-jit`
+
+| Session | When | Compared | p99, without the entitlement | p99, of `allow-jit` | Rounds where it is longer |
+|---|---|---|---|---|---|
+| [F4-25's A/B](ab-F4-25.md) | 15:55 | 0.7.0's DMG and 0.8.0's | 39.9 ms | 47.3 ms | 7 of 8 |
+| F4-25's second | 17:00 | the same, Defender scanning 36 GB of recordings | 68.3 ms | 70.4 ms | within the spread |
+| [At rest](rest-F4-58/analysis.txt) | 18:07 | the same | 44.9 ms | 55.8 ms | 13 of 16 |
+| [`allow-jit`](rest-F4-58/jit/analysis.txt) | 18:57 | 0.7.0 and 0.8.0, each also signed again, 0.7.0's with `allow-jit` and 0.8.0's without | 43.4 ms | 49.9 ms | both ways: 0.7.0 longer of it, 0.8.0 shorter without it |
+| [The phases](rest-F4-58/phases/analysis.txt) | 19:37 | a build of HEAD as signed, without `allow-jit`, and of `allow-unsigned-executable-memory` | 50.0 ms | 47.2 ms | none |
+| [`allow-jit` again](rest-F4-58/jit-again/analysis.txt) | 19:47 | the copies of 18:57, 12 rounds | 47.4 ms | 46.6 ms | none |
+
+The p50 is alike in every session, 19.2 to 20.6 ms but the second, loaded one's. Where the tail is longer, it is in most rounds, the sign of a cause and not of a round's chance; where it is not, it is not even of the same copies. What tells the sessions apart is not known: not the load average, which was alike, nor what the sparse records of the busiest processes show.
+
+## The builds between them
+
+[bisect](rest-F4-58/bisect/analysis.txt): six release binaries of `lokyr-app`, of 0.7.0, the fixes of the review after F3-207 (3bd0c75e), the host's hardening to F4-06 (d33fb27c), the Luau host, its review's fixes and the timers to F4-13 (64b1c1ec), the installed plugins, the consent and the reloads with their review's fixes to F4-56 (2104a617), and 0.8.0, each run outside a bundle, of no hardened runtime, in 12 rounds, each build twice in each place.
+
+| Build | p50 | p99 | In the fourth refresh or later |
+|---|---|---|---|
+| 0.7.0 | 19.76 ms | 48.30 ms | 17 of 2388 |
+| The review's fixes | 19.72 ms | 42.53 ms | 5 of 2388 |
+| To F4-06 | 19.43 ms | 45.19 ms | 13 of 2388 |
+| To F4-13 | 19.40 ms | 44.23 ms | 8 of 2387 |
+| To F4-56 | 19.53 ms | 48.54 ms | 14 of 2388 |
+| 0.8.0 | 19.66 ms | 47.34 ms | 28 of 2388 |
+
+The binary grows from 11.5 to 15.5 MB at F4-56, as the installed plugins reach Luau; its latency does not move.
+
+## The startup at rest
+
+Four rounds of the floor and both apps, each started many times before: the gap to the minimal app's first window 26.9 ms of 0.7.0's, 20.4 ms of 0.8.0's, their medians 237.5 and 231.0 ms. F4-25's 7 ms longer of 0.8.0 were of a new copy, as [F3-228](startup-F3-228.md) found.
+
+## What the entitlement changes, of a program of its own
+
+[`spikes/jit-entitlement`](../../spikes/jit-entitlement/) signs the same binary five ways: ad hoc of no hardened runtime, the hardened runtime alone, of `allow-jit`, of `allow-unsigned-executable-memory`, and of both.
+
+| Signature | Code of `MAP_JIT`, as Luau's code generator maps it | Code of a plain mapping |
+|---|---|---|
+| No hardened runtime | runs | runs |
+| The hardened runtime alone | refused, `EINVAL` | killed, `SIGKILL` |
+| `allow-jit` | runs | killed |
+| `allow-unsigned-executable-memory` | runs | runs |
+| Both | runs | runs |
+
+Luau maps its code of `MAP_JIT` and turns it executable with `mprotect`, never of `pthread_jit_write_protect_np`; `allow-unsigned-executable-memory` lets it do so too, a wider exception.
+
+The same program's measures, six rounds of each signature in turned orders, alike of all five within their spread ([micro](rest-F4-58/micro/analysis.txt)), and alike again with a region of `MAP_JIT` mapped first ([micro-region](rest-F4-58/micro-region/analysis.txt)):
+
+| Measure, p99 | No hardened runtime | The hardened runtime | `allow-jit` | `allow-unsigned-executable-memory` |
+|---|---|---|---|---|
+| A wake between two threads and back | 7.10 µs | 7.58 µs | 7.79 µs | 7.21 µs |
+| A sleep of 1 ms, late by, at rest | 280 µs | 280 µs | 281 µs | 279 µs |
+| The same beside a busy thread on each core | 3.89 ms | 3.84 ms | 3.78 ms | 3.99 ms |
+| A page's first touch | 2.75 µs | 2.75 µs | 2.71 µs | 2.75 µs |
+| `getppid` | 0.11 µs | 0.10 µs | 0.10 µs | 0.10 µs |
+
+## The latency's phases
+
+The bench tells each key's phases since this task: the press, as the system stamped it, to the app's handling of its key; that to the frame that shows its echo, ready to present; and that to the frame's presentation. Of the session of 19:37, alike of the three signatures:
+
+| Signature | Latency p99 | Handled p50 and p99 | Framed p50 and p99 | Presented p50 and p99 |
+|---|---|---|---|---|
+| `allow-jit` | 47.2 ms | 1.7 and 16.9 ms | 1.5 and 17.0 ms | 7.6 and 33.6 ms |
+| None | 50.0 ms | 2.1 and 16.9 ms | 2.3 and 17.1 ms | 8.3 and 36.1 ms |
+| `allow-unsigned-executable-memory` | 50.8 ms | 2.1 and 16.9 ms | 2.3 and 17.0 ms | 8.4 and 36.4 ms |
+
+The tail's keys wait a refresh in a phase, the most of them in the presentation's.
+
+## Luau's interpreter against its native code
+
+As the choice of the entitlement weighs it: a plugin's work of each kind, on the SDK's fake host, of a release build, the median of 30 calls, in both executions, of Luau 0.740.
+
+| Work | Interpreted | Native |
+|---|---|---|
+| A view of 200 rows rendered | 0.43 ms | 0.42 to 0.68 ms |
+| 2000 lines matched of `string`'s patterns | 0.49 ms | 0.65 ms |
+| A loop of `string.byte` over 100 KB | 3.2 ms | 3.3 ms |
+| A loop of `buffer.readu8` over 100 KB | 2.7 ms | 2.8 ms |
+| Arithmetic over a table, a million operations | 6.9 ms | 2.3 ms |
+| The template's activation | 0.17 ms | 0.27 ms |
+| The activation of 2017 lines | 1.27 ms | 4.27 ms |
+
+The interpreter is native code's speed but for arithmetic in Luau's own loops, three times slower, and activates faster, as it compiles nothing; F0-22's byte loops, two to five times slower interpreted of an older Luau, are alike in 0.740.
+
+## The window's motion
+
+Stopped after its first window, as F4-25's: Microsoft Defender scanned each recording of Instruments as it grew, about 80 % of a core, and 0.7.0's drag showed 29 frames a second and its resize 24, against 58 and 56 in [F3-77's session](ab-F3-77.md#the-windows-motion). A session of the motion needs Defender quiet, or recordings in a place that it does not scan.

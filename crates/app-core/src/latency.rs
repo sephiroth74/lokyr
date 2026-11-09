@@ -1,6 +1,8 @@
 //! The latency's bench: the time from each key press, as the system
 //! stamped it, to the presentation of the frame that shows what it typed,
-//! as a histogram, which the app prints as JSON as it quits.
+//! as a histogram, and its phases: the press to the app's handling of its
+//! key, that to the frame that shows its echo, ready to present, and that
+//! to its presentation; which the app prints as JSON as it quits.
 
 use std::fmt::Write as _;
 use std::sync::{Arc, Mutex};
@@ -23,11 +25,20 @@ pub(crate) struct LatencyBench {
     /// bench typed it, which it gives up a second after.
     pub(crate) pending: Option<Instant>,
     pub(crate) typed_at: Option<Instant>,
+    /// When the app handled the pending press's key.
+    pub(crate) handled: Option<Instant>,
     /// The latencies, which the display's thread adds to as frames show.
     pub(crate) samples: Arc<Mutex<Vec<Duration>>>,
+    /// Each latency's phases, as [`Phases`] tells them.
+    pub(crate) phases: Arc<Mutex<Vec<Phases>>>,
     /// The timer of the bench's next key.
     pub(crate) timer: Option<TimerId>,
 }
+
+/// A latency's phases: the press to the app's handling of its key, that to
+/// the frame that shows its echo, ready to present, and that to the frame's
+/// presentation.
+pub(crate) type Phases = [Duration; 3];
 
 /// How long a key waits for its frame before the bench gives it up.
 pub(crate) const GIVE_UP: Duration = Duration::from_secs(1);
@@ -77,9 +88,17 @@ pub(crate) fn pause(n: usize) -> Duration {
 
 /// The report of `samples`, as JSON: the latencies in milliseconds, their
 /// least, median, 90th and 99th percentiles and most, as nearest ranks; the
-/// median and the 99th percentile in frames of `refresh`; and how many
-/// samples took each number of frames, rounded up.
-pub(crate) fn report(samples: &[Duration], refresh: Duration, flood: bool, keys: usize) -> String {
+/// median and the 99th percentile of each of their `phases`, the handling,
+/// the echo's frame and the presentation; the median and the 99th
+/// percentile in frames of `refresh`; and how many samples took each number
+/// of frames, rounded up.
+pub(crate) fn report(
+    samples: &[Duration],
+    phases: &[Phases],
+    refresh: Duration,
+    flood: bool,
+    keys: usize,
+) -> String {
     let mut sorted: Vec<f64> = samples
         .iter()
         .map(|sample| sample.as_secs_f64() * 1000.0)
@@ -117,6 +136,29 @@ pub(crate) fn report(samples: &[Duration], refresh: Duration, flood: bool, keys:
         rank(0.99),
         sorted.last().copied().unwrap_or(0.0)
     );
+    text.push_str("\"phases_ms\":{");
+    for (at, name) in ["handled", "framed", "presented"].into_iter().enumerate() {
+        let mut phase: Vec<f64> = phases
+            .iter()
+            .map(|phases| phases[at].as_secs_f64() * 1000.0)
+            .collect();
+        phase.sort_by(f64::total_cmp);
+        let rank = |share: f64| -> f64 {
+            if phase.is_empty() {
+                return 0.0;
+            }
+            let at = (share * phase.len() as f64).ceil().max(1.0) as usize;
+            phase[at.min(phase.len()) - 1]
+        };
+        let comma = if at == 0 { "" } else { "," };
+        let _ = write!(
+            text,
+            "{comma}\"{name}\":{{\"p50\":{:.2},\"p99\":{:.2}}}",
+            rank(0.5),
+            rank(0.99)
+        );
+    }
+    text.push_str("},");
     let _ = write!(
         text,
         "\"frames\":{{\"p50\":{:.2},\"p99\":{:.2}}},\"histogram\":{{",
@@ -154,12 +196,25 @@ mod tests {
             .into_iter()
             .map(Duration::from_millis)
             .collect();
-        let report = report(&samples, Duration::from_micros(16_667), true, 10);
+        let phases: Vec<Phases> = (1..=10)
+            .map(|n| {
+                [
+                    Duration::from_millis(1),
+                    Duration::from_millis(n),
+                    Duration::from_millis(10 * n),
+                ]
+            })
+            .collect();
+        let report = report(&samples, &phases, Duration::from_micros(16_667), true, 10);
         assert!(
             report.starts_with("{\"refresh_ms\":16.67,\"flood\":true,\"keys\":10,\"samples\":10,"),
             "{report}"
         );
         assert!(report.contains("\"latency_ms\":{\"min\":10.00,\"p50\":18.00,\"p90\":30.00,\"p99\":40.00,\"max\":40.00}"), "{report}");
+        assert!(
+            report.contains("\"phases_ms\":{\"handled\":{\"p50\":1.00,\"p99\":1.00},\"framed\":{\"p50\":5.00,\"p99\":10.00},\"presented\":{\"p50\":50.00,\"p99\":100.00}},"),
+            "{report}"
+        );
         assert!(
             report.contains("\"frames\":{\"p50\":1.08,\"p99\":2.40}"),
             "{report}"
@@ -170,8 +225,8 @@ mod tests {
             "{report}"
         );
         assert_eq!(
-            super::report(&[], Duration::from_millis(16), false, 0),
-            "{\"refresh_ms\":16.00,\"flood\":false,\"keys\":0,\"samples\":0,\"latency_ms\":{\"min\":0.00,\"p50\":0.00,\"p90\":0.00,\"p99\":0.00,\"max\":0.00},\"frames\":{\"p50\":0.00,\"p99\":0.00},\"histogram\":{}}"
+            super::report(&[], &[], Duration::from_millis(16), false, 0),
+            "{\"refresh_ms\":16.00,\"flood\":false,\"keys\":0,\"samples\":0,\"latency_ms\":{\"min\":0.00,\"p50\":0.00,\"p90\":0.00,\"p99\":0.00,\"max\":0.00},\"phases_ms\":{\"handled\":{\"p50\":0.00,\"p99\":0.00},\"framed\":{\"p50\":0.00,\"p99\":0.00},\"presented\":{\"p50\":0.00,\"p99\":0.00}},\"frames\":{\"p50\":0.00,\"p99\":0.00},\"histogram\":{}}"
         );
     }
 }

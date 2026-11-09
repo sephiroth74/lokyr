@@ -675,10 +675,13 @@ impl<B: Backend> App<B> {
         let shown_key = match &mut self.latency_bench {
             Some(bench) if output && bench.window == Some(window) => {
                 bench.typed_at = None;
-                bench
-                    .pending
-                    .take()
-                    .map(|time| (time, Arc::clone(&bench.samples)))
+                let handled = bench.handled.take();
+                bench.pending.take().map(|time| {
+                    (
+                        (time, handled.unwrap_or(time)),
+                        (Arc::clone(&bench.samples), Arc::clone(&bench.phases)),
+                    )
+                })
             }
             _ => None,
         };
@@ -1316,13 +1319,19 @@ impl<B: Backend> App<B> {
                 && shown.background == list.background
                 && shown.items == list.items
         });
-        if !same && let Some((pressed, samples)) = shown_key {
+        if !same && let Some(((pressed, handled), (samples, phases))) = shown_key {
+            let framed = Instant::now();
             drawing.renderer.on_next_presented(move |ago| {
                 if let Some(shown) = ago.and_then(|ago| Instant::now().checked_sub(ago)) {
                     samples
                         .lock()
                         .unwrap_or_else(PoisonError::into_inner)
                         .push(shown.saturating_duration_since(pressed));
+                    phases.lock().unwrap_or_else(PoisonError::into_inner).push([
+                        handled.saturating_duration_since(pressed),
+                        framed.saturating_duration_since(handled),
+                        shown.saturating_duration_since(framed),
+                    ]);
                 }
             });
         }

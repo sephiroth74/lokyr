@@ -1,0 +1,6 @@
+{"binary":"plain","map_jit":"executable","map_plain":"executable","code_jit":"runs","code_plain":"runs"}
+{"measure":"pingpong","n":20000,"p50":2334,"p90":5375,"p99":7125,"p999":10917,"max":15333}
+{"measure":"wake-rest","n":1000,"p50":261417,"p90":272583,"p99":286417,"p999":312375,"max":317917}
+{"measure":"wake-busy","n":1000,"p50":258000,"p90":1575959,"p99":3716917,"p999":5462334,"max":6317459}
+{"measure":"faults","n":16384,"p50":667,"p90":875,"p99":2625,"p999":6750,"max":17292}
+{"measure":"syscall","n":10000,"p50":88,"p90":90,"p99":97,"p999":151,"max":297}

@@ -42,6 +42,7 @@ impl<B: Backend> App<B> {
             && !key.text.is_empty()
         {
             bench.pending = key.time;
+            bench.handled = Some(Instant::now());
         }
         // Command, down or up, with the pointer still: the plugins learn
         // where the pointer is, and its moves wake the app while it is held.

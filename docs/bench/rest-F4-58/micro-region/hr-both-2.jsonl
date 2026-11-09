@@ -1,0 +1,7 @@
+{"binary":"hr-both","map_jit":"executable","map_plain":"executable","code_jit":"runs","code_plain":"runs"}
+{"jit_region":true}
+{"measure":"pingpong","n":20000,"p50":2250,"p90":4708,"p99":6750,"p999":10667,"max":14416}
+{"measure":"wake-rest","n":1000,"p50":260791,"p90":270709,"p99":277375,"p999":303209,"max":363042}
+{"measure":"wake-busy","n":1000,"p50":258541,"p90":1633625,"p99":3891583,"p999":5681708,"max":6473833}
+{"measure":"faults","n":16384,"p50":667,"p90":875,"p99":3375,"p999":7625,"max":14625}
+{"measure":"syscall","n":10000,"p50":87,"p90":89,"p99":97,"p999":201,"max":282}

@@ -1047,12 +1047,17 @@ impl<B: Backend> App<B> {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone();
+        let phases = bench
+            .phases
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
         if bench.keys > 0 && samples.is_empty() {
             eprintln!("lokyr: no frame showed on the display, and so no latency to measure");
         }
         println!(
             "{}",
-            latency::report(&samples, refresh, bench.flood, bench.keys)
+            latency::report(&samples, &phases, refresh, bench.flood, bench.keys)
         );
     }
 
