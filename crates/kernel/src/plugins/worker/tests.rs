@@ -978,3 +978,62 @@ fn a_worker_s_render_that_tells_its_fault_after_it_faults_its_plugin() {
     let disabled = plugins.take_disabled();
     assert!(disabled[0].1.contains("past its deadline"), "{disabled:?}");
 }
+
+#[test]
+fn a_worker_s_failed_call_that_closes_a_panel_leaves_it_open_of_its_tree() {
+    use lokyr_plugin_sdk::ui::{Anchor, PanelId, PanelOptions, Role};
+
+    let mut app = App::default();
+    let shown = window(&mut app, "sleep 30");
+    app.focused = Some(shown);
+    let plugin = Threaded {
+        activate: Box::new(|cx| {
+            cx.register_command(command("busy.go"))?;
+            cx.register_command(command("busy.fails"))
+        }),
+        on_command: Box::new(|cx, name| {
+            if name == "busy.go" {
+                let window = cx.focused_window().unwrap();
+                return cx.open_panel(
+                    "p",
+                    PanelOptions {
+                        anchor: Anchor::Pointer(window),
+                        role: Role::Dialog,
+                        close_outside: false,
+                        close_escape: true,
+                        takes_keys: false,
+                    },
+                );
+            }
+            cx.close_panel("p")?;
+            Err(Error::new(Code::Failed, "on purpose"))
+        }),
+        render: Box::new(|_, _| Some(Node::text("p"))),
+        ..Threaded::default()
+    };
+    let (mut plugins, _) = started(&mut app, plugin);
+    plugins
+        .run("busy.go", Args::new(), &mut app.context())
+        .unwrap();
+    served(&mut plugins, &mut app);
+    plugins.take_requests();
+    let panel = ViewId::Panel(PanelId::from("p"));
+    plugins
+        .render("acme/busy", &panel, &mut app.context())
+        .unwrap();
+    served(&mut plugins, &mut app);
+    assert!(plugins.tree("acme/busy", &panel).is_some());
+    plugins
+        .run("busy.fails", Args::new(), &mut app.context())
+        .unwrap();
+    served(&mut plugins, &mut app);
+    assert!(plugins.take_requests().is_empty());
+    assert!(
+        !plugins
+            .out
+            .events
+            .iter()
+            .any(|(_, event)| matches!(event, Event::PanelClosed(_)))
+    );
+    assert!(plugins.tree("acme/busy", &panel).is_some());
+}

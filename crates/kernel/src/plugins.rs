@@ -2189,6 +2189,7 @@ impl Plugins {
             return true;
         }
         if result.is_ok() {
+            closed_panels(state, &mut sent, tally.closed);
             apply(writes, context, &mut sent, state);
         } else {
             // A call that failed leaves things as they were, as the main
@@ -2425,6 +2426,7 @@ fn call<T>(
     );
     match outcome {
         Ok(Ok(result)) => {
+            closed_panels(state, out, tally.closed);
             apply(writes, context, out, state);
             deepen(&mut out.requests[requests..], Chain::default());
             Ok(result)
@@ -3393,12 +3395,25 @@ struct Host<'h, 'c> {
     tally: &'h mut Tally,
 }
 
-/// What a call's requests asked of the app, which count with its writes,
-/// and the searches that they started, which a call that fails ends.
+/// What a call's requests asked of the app, which count with its writes;
+/// the searches that they started, which a call that fails ends; and the
+/// panels that they closed, whose trees go and whose plugin hears that
+/// they closed as the call returns, unless it fails.
 #[derive(Debug, Default)]
 pub(super) struct Tally {
     asked: usize,
     searches: Vec<u64>,
+    closed: Vec<PanelId>,
+}
+
+/// The panels that a call closed, of the plugin of `state`, as the call
+/// returns: their trees go, and the plugin hears that they closed.
+fn closed_panels(state: &mut State, out: &mut Outbox, closed: Vec<PanelId>) {
+    for id in closed {
+        state.views.remove(&ViewId::Panel(id.clone()));
+        out.events
+            .push((Some(state.name.clone()), Event::PanelClosed(id)));
+    }
 }
 
 impl Host<'_, '_> {
@@ -4479,14 +4494,10 @@ impl Host<'_, '_> {
                         format!("the plugin has no panel `{}` open", id.0),
                     ));
                 }
-                // Forgotten now, so that the same call can open it again: no
-                // tree of it stays, a render of it asked for keeps none, and
-                // its plugin hears that it closed.
-                self.state.views.remove(&ViewId::Panel(id.clone()));
-                self.out.events.push((
-                    Some(self.state.name.clone()),
-                    Event::PanelClosed(id.clone()),
-                ));
+                // Forgotten now, so that the same call can open it again; its
+                // tree goes, and its plugin hears that it closed, as the call
+                // returns, unless it fails.
+                self.tally.closed.push(id.clone());
                 Request::ClosePanel {
                     plugin: self.state.name.clone(),
                     id,

@@ -681,6 +681,8 @@ type Cx = {
     -- Opens a panel, by an id of the plugin's, which the host then renders; a "panel-closed" event tells as it closes.
     -- A dialog or a menu takes the keyboard as it opens, at its first field, or at its first node that takes it.
     open_panel: (id: string, options: PanelOptions) -> (boolean, Error?),
+    -- Closes it at once, so that the same call can open it again; its tree goes, and its plugin hears "panel-closed", as
+    -- the call returns: a call that fails, or a look of `applies`, leaves it open, of its tree.
     close_panel: (id: string) -> (boolean, Error?),
     -- Puts the plugin's tab bar, in the windows that show it, in the titlebar, below a titlebar of the window's title,
     -- at the bottom, or down a column on a side of 60 to 600 points; `tab_bar_place` reads it, a column's width as the

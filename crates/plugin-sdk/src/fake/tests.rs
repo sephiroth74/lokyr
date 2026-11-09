@@ -1155,3 +1155,67 @@ fn a_window_s_point_of_no_number_is_refused_as_the_app_s_host_refuses_it() {
     assert_eq!(refused.code, Code::WrongKind);
     assert!(refused.message.contains("finite"), "{refused}");
 }
+
+/// A plugin whose `closer.go` opens its panel `p`, whose other commands
+/// close it and fail, and whose look closes it.
+struct Closer;
+
+impl Plugin for Closer {
+    fn activate(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
+        for name in ["closer.go", "closer.fails"] {
+            cx.register_command(Command {
+                name: name.to_owned(),
+                title: name.to_owned(),
+                category: Category::View,
+                capabilities: Vec::new(),
+                params: Vec::new(),
+                when: None,
+            })?;
+        }
+        Ok(())
+    }
+
+    fn on_command(&mut self, cx: &mut Cx<'_>, name: &str, _: Args) -> Result<(), Error> {
+        if name == "closer.go" {
+            return cx.open_panel(
+                "p",
+                PanelOptions {
+                    anchor: Anchor::Pointer(WindowId(1)),
+                    role: Role::Dialog,
+                    close_outside: false,
+                    close_escape: true,
+                    takes_keys: false,
+                },
+            );
+        }
+        cx.close_panel("p")?;
+        Err(Error::new(Code::Failed, "on purpose"))
+    }
+
+    fn applies(&mut self, cx: &mut Cx<'_>, _: &str, _: &Args) -> bool {
+        cx.close_panel("p").is_ok()
+    }
+
+    fn render(&mut self, _: &mut Cx<'_>, _: &ViewId) -> Option<Node> {
+        Some(Node::text("p"))
+    }
+}
+
+#[test]
+fn a_failed_call_or_a_look_that_closes_a_panel_leaves_it_open_of_its_tree() {
+    let mut host = FakeHost::new("acme/closer");
+    // A pane of the window 1.
+    host.pane(PaneId(1));
+    let mut closer = Closer;
+    host.activate(&mut closer).unwrap();
+    host.command(&mut closer, "closer.go", Args::new()).unwrap();
+    let panel = ViewId::Panel(PanelId::from("p"));
+    host.render(&mut closer, &panel);
+    assert!(host.tree(&panel).is_some());
+    let failed = host.command(&mut closer, "closer.fails", Args::new());
+    assert_eq!(failed.unwrap_err().code, Code::Failed);
+    assert!(host.applies(&mut closer, "closer.go", &Args::new()));
+    assert!(host.panels().contains_key(&PanelId::from("p")));
+    assert!(host.tree(&panel).is_some());
+    assert!(host.owed.is_empty(), "{:?}", host.owed);
+}

@@ -265,3 +265,108 @@ fn a_declaration_made_already_changes_nothing_and_a_plugin_s_are_bounded() {
     );
     assert_eq!(state(&plugins).0, 1 + taken);
 }
+
+/// A plugin whose `panel.open` opens its panel `p`, whose `panel.close`
+/// closes it, whose `panel.fails` closes it and fails, and whose look
+/// closes it; its panels' closing logged.
+struct Panelist {
+    closed: Rc<RefCell<usize>>,
+}
+
+impl Plugin for Panelist {
+    fn activate(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
+        for name in ["panel.open", "panel.close", "panel.fails"] {
+            cx.register_command(command(name))?;
+        }
+        Ok(())
+    }
+
+    fn on_command(&mut self, cx: &mut Cx<'_>, name: &str, _: Args) -> Result<(), Error> {
+        match name {
+            "panel.open" => {
+                let window = cx.focused_window().unwrap();
+                cx.open_panel(
+                    "p",
+                    PanelOptions {
+                        anchor: Anchor::Pointer(window),
+                        role: lokyr_plugin_sdk::ui::Role::Dialog,
+                        close_outside: false,
+                        close_escape: true,
+                        takes_keys: false,
+                    },
+                )
+            }
+            "panel.close" => cx.close_panel("p"),
+            _ => {
+                cx.close_panel("p")?;
+                Err(Error::new(Code::Failed, "on purpose"))
+            }
+        }
+    }
+
+    fn applies(&mut self, cx: &mut Cx<'_>, _: &str, _: &Args) -> bool {
+        cx.close_panel("p").is_ok()
+    }
+
+    fn on_event(&mut self, _: &mut Cx<'_>, events: &[Event]) -> Result<(), Error> {
+        let closed = events
+            .iter()
+            .filter(|event| matches!(event, Event::PanelClosed(_)))
+            .count();
+        *self.closed.borrow_mut() += closed;
+        Ok(())
+    }
+
+    fn render(&mut self, _: &mut Cx<'_>, _: &ViewId) -> Option<Node> {
+        Some(Node::text("p"))
+    }
+}
+
+#[test]
+fn a_failed_call_or_a_look_that_closes_a_panel_leaves_it_open_of_its_tree() {
+    let mut app = App::default();
+    let shown = window(&mut app, "sleep 30");
+    app.focused = Some(shown);
+    let mut plugins = Plugins::new();
+    let closed = Rc::new(RefCell::new(0));
+    plugins
+        .add(
+            "panelist",
+            Box::new(Panelist {
+                closed: Rc::clone(&closed),
+            }),
+        )
+        .unwrap();
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    plugins
+        .run("panel.open", Args::new(), &mut app.context())
+        .unwrap();
+    plugins.take_requests();
+    let panel = ViewId::Panel(PanelId::from("p"));
+    plugins
+        .render("panelist", &panel, &mut app.context())
+        .unwrap();
+    assert!(plugins.tree("panelist", &panel).is_some());
+    // A failed call's close, and a look's: the panel open still, of its
+    // tree, and no close told.
+    let failed = plugins.run("panel.fails", Args::new(), &mut app.context());
+    assert_eq!(failed.unwrap_err().code, Code::Failed);
+    assert!(
+        plugins
+            .applies("panel.close", &Args::new(), &mut app.context())
+            .unwrap()
+    );
+    assert!(plugins.take_requests().is_empty());
+    assert!(plugins.deliver(&mut app.context()).is_empty());
+    assert_eq!(*closed.borrow(), 0);
+    assert!(plugins.tree("panelist", &panel).is_some());
+    let again = plugins.run("panel.open", Args::new(), &mut app.context());
+    assert_eq!(again.unwrap_err().code, Code::AlreadyRegistered);
+    // A call that closes it and returns: its tree goes, and it is told.
+    plugins
+        .run("panel.close", Args::new(), &mut app.context())
+        .unwrap();
+    assert!(plugins.deliver(&mut app.context()).is_empty());
+    assert_eq!(*closed.borrow(), 1);
+    assert!(plugins.tree("panelist", &panel).is_none());
+}

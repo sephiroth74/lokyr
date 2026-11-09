@@ -926,10 +926,11 @@ impl FakeHost {
             host: self,
             writes: Vec::new(),
             asked: Vec::new(),
+            closed: Vec::new(),
             looking: !apply,
         };
         let result = call(&mut Cx::new(&mut calling, &caller));
-        let (writes, asked) = (calling.writes, calling.asked);
+        let (writes, asked, closed) = (calling.writes, calling.asked, calling.closed);
         // A look, or a call that failed, leaves things as they were, as the
         // app's host leaves them: its writes and what it asked of the app
         // go, and what its requests took at once comes back; a look takes
@@ -946,6 +947,10 @@ impl FakeHost {
                 self.last_id = last_id;
             }
             return result;
+        }
+        for id in closed {
+            self.views.remove(&ViewId::Panel(id.clone()));
+            self.owed.push(Event::PanelClosed(id));
         }
         for (request, opened) in writes {
             self.apply(request, opened);
@@ -2011,6 +2016,8 @@ struct Calling<'h> {
     host: &'h mut FakeHost,
     writes: Vec<(Request, Opened)>,
     asked: Vec<Request>,
+    /// The panels that the call closed, whose trees go as it returns.
+    closed: Vec<PanelId>,
     /// Whether the call only looks, as `applies`, which declares nothing.
     looking: bool,
 }
@@ -2708,13 +2715,13 @@ impl Calling<'_> {
                         format!("the plugin has no panel `{}` open", id.0),
                     ));
                 }
-                // Forgotten now, so that the same call can open it again,
-                // of no tree kept.
+                // Forgotten now, so that the same call can open it again; its
+                // tree goes, and its plugin is owed that it closed, as the
+                // call returns, unless it fails.
                 self.host.panel_windows.remove(id);
                 let view = ViewId::Panel(id.clone());
-                self.host.views.remove(&view);
                 self.host.renders.retain(|asked| *asked != view);
-                self.host.owed.push(Event::PanelClosed(id.clone()));
+                self.closed.push(id.clone());
                 Response::Done
             }
             Request::Emit { name, schema, .. } => {
