@@ -36,6 +36,8 @@ insta = { version = "1.49.0", default-features = false }
 libc = "0.2.190"
 # Sleip's `dev`, which ends as the user interrupts it, its lockfile's entry taken back.
 signal-hook = "0.4.5"
+# Sleip's resolver, PubGrub, whose readable conflicts it tells.
+pubgrub = "0.4.0"
 # Literal search over the grid's text.
 memchr = "2.8.3"
 # The golden images of the renderer's tests.

@@ -24,6 +24,11 @@ pub enum Command {
     Test,
     /// The plugin of the current folder linked into the app's plugins.
     Dev,
+    /// A plugin added, of its name if given, from a folder or a git
+    /// repository.
+    Add(Option<String>, lokyr_pkg_model::list::Wanted),
+    /// The installed plugins updated, or the one of the name given.
+    Update(Option<String>),
     /// The installed plugins.
     List,
     /// A plugin removed, by its name.
@@ -56,6 +61,9 @@ Commands:
   check              Check the plugin of the current folder: its manifest, texts and types
   test               Run the tests of the plugin of the current folder, tests/*.luau
   dev                Link the plugin of the current folder into Lokyr, reloaded at each save
+  add [<plugin>] --path <folder> | --git <url> (--tag <tag> | --rev <commit>)
+                     Add a plugin from a folder or a git repository, and install it
+  update [<plugin>]  Fetch the installed plugins' folders and repositories again
   list               List the installed plugins, their versions and capabilities
   remove <plugin>    Remove a plugin, as owner/name; its package stays until `gc`
   gc                 Remove the packages of the store that no lockfile names
@@ -85,6 +93,12 @@ fn command_help(name: &str) -> Option<&'static str> {
         "dev" => {
             "Usage: sleip dev [options]\n\nChecks the plugin of the current folder and links it into Lokyr's plugins,\nan entry of plugins.lock of its folder, which Lokyr reloads at each save;\nchecks it again at each change, telling its problems. Ctrl-C ends it, the\nentry taken back, and an installed plugin of its name given back.\n"
         }
+        "add" => {
+            "Usage: sleip add [options] [<plugin>] --path <folder>\n       sleip add [options] [<plugin>] --git <url> (--tag <tag> | --rev <commit>)\n\nAdds a plugin to plugins.toml, of the folder or the git repository's tag or\ncommit given, as owner/name, its manifest's if left out; resolves every\nplugin of plugins.toml against Lokyr's plugin API; stores each package; and\nwrites plugins.lock, which Lokyr reloads. A failure changes nothing.\n"
+        }
+        "update" => {
+            "Usage: sleip update [options] [<plugin>]\n\nFetches the folders and the git repositories of the plugins of plugins.toml\nagain, or the one given, resolves them, stores their packages and writes\nplugins.lock. A failure changes nothing.\n"
+        }
         "list" => {
             "Usage: sleip list [options]\n\nLists the plugins of plugins.lock: each one's version, kind, source and\ncapabilities.\n"
         }
@@ -106,18 +120,39 @@ fn command_help(name: &str) -> Option<&'static str> {
 pub fn parse(args: &[String]) -> Result<Parsed, String> {
     let mut options = Options::default();
     let (mut words, mut help, mut version) = (Vec::new(), false, false);
-    for arg in args {
+    // The options of a value, by their names.
+    let mut valued: Vec<(&str, &str)> = Vec::new();
+    let mut args = args.iter();
+    while let Some(arg) = args.next() {
         match arg.as_str() {
             "--json" => options.json = true,
             "--offline" => options.offline = true,
             "--locked" => options.locked = true,
             "-h" | "--help" => help = true,
             "-V" | "--version" => version = true,
+            name @ ("--path" | "--git" | "--tag" | "--rev") => {
+                let value = args
+                    .next()
+                    .ok_or_else(|| format!("`{name}` takes a value\n\n{HELP}"))?;
+                valued.push((name, value));
+            }
             flag if flag.starts_with('-') => {
                 return Err(format!("`{flag}` is no option of Sleip's\n\n{HELP}"));
             }
             word => words.push(word),
         }
+    }
+    let value = |name: &str| {
+        valued
+            .iter()
+            .find(|(given, _)| *given == name)
+            .map(|(_, value)| (*value).to_owned())
+    };
+    if !valued.is_empty() && words.first() != Some(&"add") {
+        return Err(format!(
+            "`{}` is an option of `sleip add` alone\n\n{HELP}",
+            valued[0].0
+        ));
     }
     if version && words.is_empty() {
         return Ok(Parsed::Version);
@@ -143,6 +178,39 @@ pub fn parse(args: &[String]) -> Result<Parsed, String> {
         ["check"] => Ok(Parsed::Run(options, Command::Check)),
         ["test"] => Ok(Parsed::Run(options, Command::Test)),
         ["dev"] => Ok(Parsed::Run(options, Command::Dev)),
+        ["add", rest @ ..] if rest.len() <= 1 => {
+            use lokyr_pkg_model::list::{GitAt, Wanted};
+            let from = match (
+                value("--path"),
+                value("--git"),
+                value("--tag"),
+                value("--rev"),
+            ) {
+                (Some(path), None, None, None) => Wanted::Path(path),
+                (None, Some(url), Some(tag), None) => Wanted::Git {
+                    url,
+                    at: GitAt::Tag(tag),
+                },
+                (None, Some(url), None, Some(rev)) => Wanted::Git {
+                    url,
+                    at: GitAt::Rev(rev),
+                },
+                _ => {
+                    return Err(format!(
+                        "`sleip add` takes `--path <folder>`, or `--git <url>` and one of `--tag` and `--rev`\n\n{HELP}"
+                    ));
+                }
+            };
+            Ok(Parsed::Run(
+                options,
+                Command::Add(rest.first().map(|name| (*name).to_owned()), from),
+            ))
+        }
+        ["update"] => Ok(Parsed::Run(options, Command::Update(None))),
+        ["update", plugin] => Ok(Parsed::Run(
+            options,
+            Command::Update(Some((*plugin).to_owned())),
+        )),
         ["list"] => Ok(Parsed::Run(options, Command::List)),
         ["remove", plugin] => Ok(Parsed::Run(options, Command::Remove((*plugin).to_owned()))),
         ["gc"] => Ok(Parsed::Run(options, Command::Gc)),

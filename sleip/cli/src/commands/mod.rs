@@ -5,6 +5,7 @@ mod check;
 mod dev;
 mod doctor;
 mod gc;
+mod install;
 mod list;
 mod new;
 mod remove;
@@ -32,6 +33,8 @@ pub fn run(options: Options, command: &Command) -> ExitCode {
         Command::Check => check::check(out),
         Command::Test => test::test(out),
         Command::Dev => dev::dev(&paths, out),
+        Command::Add(plugin, from) => install::add(&paths, options, out, plugin.as_deref(), from),
+        Command::Update(plugin) => install::update(&paths, options, out, plugin.as_deref()),
         Command::List => list::list(&paths, out),
         Command::Remove(plugin) => remove::remove(&paths, options, out, plugin),
         Command::Gc => gc::gc(&paths, out),

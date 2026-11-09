@@ -978,3 +978,176 @@ fn dev_takes_away_the_lockfile_that_it_made_as_it_ends() {
     assert!(dev.wait().unwrap().success());
     assert!(!lock.exists());
 }
+
+/// Runs git of `args` in `folder`, of an author of the tests.
+fn git(folder: &Path, args: &[&str]) -> String {
+    let output = Command::new("git")
+        .args(["-c", "user.name=Tests", "-c", "user.email=tests@lokyr.dev"])
+        .args(args)
+        .current_dir(folder)
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "git {args:?}: {output:?}");
+    String::from_utf8_lossy(&output.stdout).trim().to_owned()
+}
+
+/// Sets the version of the plugin of `folder` to `version`.
+fn versioned(folder: &Path, version: &str) {
+    edit(folder, "plugin.toml", |text| {
+        let at = text.find("version = \"").unwrap() + "version = \"".len();
+        let end = at + text[at..].find('"').unwrap();
+        format!("{}{version}{}", &text[..at], &text[end..])
+    });
+}
+
+#[test]
+fn add_installs_a_plugin_of_a_folder_and_update_takes_its_changes() {
+    let sandbox = Sandbox::new("add-path");
+    let folder = made(&sandbox, "local");
+    let canonical = std::fs::canonicalize(&folder).unwrap();
+    let output = sandbox.sleip(&["--json", "add", "--path", &folder.display().to_string()]);
+    assert!(output.status.success(), "{output:?}");
+    let json = events(&output);
+    let installed = json
+        .iter()
+        .find(|event| event["event"] == "installed")
+        .unwrap();
+    assert_eq!(installed["name"], "acme/local");
+    assert_eq!(installed["version"], "0.1.0");
+    let entry = sandbox.locked().packages["acme/local"].clone();
+    assert_eq!(entry.source, Source::Path(canonical.display().to_string()));
+    let digest = entry.checksum.unwrap();
+    assert_eq!(sandbox.store().digests().unwrap(), [digest]);
+    let list = std::fs::read_to_string(sandbox.config().join("plugins.toml")).unwrap();
+    assert!(list.contains("\"acme/local\""), "{list}");
+    assert!(
+        list.contains(&format!("path = \"{}\"", folder.display())),
+        "{list}"
+    );
+    // Again, nothing changes.
+    assert_eq!(
+        stdout(&sandbox.sleip(&["add", "--path", &folder.display().to_string()])),
+        "Nothing changed.\n"
+    );
+    // A new version of its folder: `--locked` keeps the lockfile, `update`
+    // takes it.
+    versioned(&folder, "0.2.0");
+    let locked = sandbox.sleip(&["--locked", "update"]);
+    assert_eq!(locked.status.code(), Some(1));
+    assert_eq!(sandbox.locked().packages["acme/local"].version, "0.1.0");
+    let updated = sandbox.sleip(&["update", "acme/local"]);
+    assert!(updated.status.success(), "{updated:?}");
+    let entry = &sandbox.locked().packages["acme/local"];
+    assert_eq!(entry.version, "0.2.0");
+    assert_ne!(entry.checksum, Some(digest));
+    // A name that its folder does not hold.
+    let wrong = sandbox.sleip(&["add", "acme/other", "--path", &folder.display().to_string()]);
+    assert_eq!(wrong.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&wrong.stderr).contains("not `acme/other`"));
+}
+
+#[test]
+fn add_installs_a_plugin_of_a_git_repository_at_a_tag_or_a_commit() {
+    let sandbox = Sandbox::new("add-git");
+    let folder = made(&sandbox, "remote");
+    git(&folder, &["init", "--quiet"]);
+    git(&folder, &["add", "."]);
+    git(&folder, &["commit", "--quiet", "-m", "first"]);
+    git(&folder, &["tag", "v0.1.0"]);
+    let first = git(&folder, &["rev-parse", "HEAD"]);
+    let url = format!("file://{}", folder.display());
+    let output = sandbox.sleip(&["add", "--git", &url, "--tag", "v0.1.0"]);
+    assert!(output.status.success(), "{output:?}");
+    let entry = sandbox.locked().packages["acme/remote"].clone();
+    assert_eq!(
+        entry.source,
+        Source::Git {
+            url: url.clone(),
+            commit: first.clone()
+        }
+    );
+    // A later commit, by its short hash: its version.
+    versioned(&folder, "0.2.0");
+    git(&folder, &["commit", "--quiet", "-am", "second"]);
+    let second = git(&folder, &["rev-parse", "HEAD"]);
+    let output = sandbox.sleip(&["add", "--git", &url, "--rev", &second[..10]]);
+    assert!(output.status.success(), "{output:?}");
+    let entry = &sandbox.locked().packages["acme/remote"];
+    assert_eq!(entry.version, "0.2.0");
+    assert_eq!(
+        entry.source,
+        Source::Git {
+            url: url.clone(),
+            commit: second
+        }
+    );
+    // A tag that it lacks, and the clones gone from the cache.
+    let output = sandbox.sleip(&["add", "--git", &url, "--tag", "v9"]);
+    assert_eq!(output.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("has no tag `v9`"));
+    let clones = sandbox.home.join("Library/Caches/lokyr/sleip/git");
+    assert!(std::fs::read_dir(&clones).map_or(true, |mut entries| entries.next().is_none()));
+}
+
+#[test]
+fn a_conflict_tells_its_reason_and_a_failed_install_leaves_the_store_as_it_was() {
+    let sandbox = Sandbox::new("add-conflict");
+    // A plugin of another plugin API.
+    let newer = made(&sandbox, "newer");
+    edit(&newer, "plugin.toml", |text| {
+        text.replace("api = \"^0.1\"", "api = \"^0.9\"")
+    });
+    let output = sandbox.sleip(&["add", "--path", &newer.display().to_string()]);
+    assert_eq!(output.status.code(), Some(1));
+    let told = String::from_utf8_lossy(&output.stderr).into_owned();
+    assert!(
+        told.contains("acme/newer depends on Lokyr's plugin API >=0.9.0, <0.10.0"),
+        "{told}"
+    );
+    // A plugin that needs another of a version that none holds.
+    let base = made(&sandbox, "base");
+    assert!(
+        sandbox
+            .sleip(&["add", "--path", &base.display().to_string()])
+            .status
+            .success()
+    );
+    let top = made(&sandbox, "top");
+    edit(&top, "plugin.toml", |text| {
+        format!("{text}\n[dependencies]\n\"acme/base\" = \"^2\"\n")
+    });
+    let output = sandbox.sleip(&["add", "--path", &top.display().to_string()]);
+    assert_eq!(output.status.code(), Some(1));
+    let told = String::from_utf8_lossy(&output.stderr).into_owned();
+    assert!(
+        told.contains("acme/top depends on acme/base >=2.0.0, <3.0.0"),
+        "{told}"
+    );
+    // A failure after a package stored: a plugin of the list that the
+    // lockfile lacks, stored first, and one whose package does not pack.
+    let before = sandbox.store().digests().unwrap();
+    let lock_before = sandbox.locked();
+    let early = made(&sandbox, "aaa");
+    let list = sandbox.config().join("plugins.toml");
+    edit(&sandbox.config(), "plugins.toml", |text| {
+        format!(
+            "{text}\"acme/aaa\" = {{ path = \"{}\" }}\n",
+            early.display()
+        )
+    });
+    let list_before = std::fs::read_to_string(&list).unwrap();
+    let broken = made(&sandbox, "zzz");
+    std::fs::remove_file(broken.join("src/init.luau")).unwrap();
+    let output = sandbox.sleip(&["add", "--path", &broken.display().to_string()]);
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+    assert!(String::from_utf8_lossy(&output.stderr).contains("`acme/zzz`'s package"));
+    assert_eq!(sandbox.store().digests().unwrap(), before);
+    assert_eq!(sandbox.locked(), lock_before);
+    assert_eq!(std::fs::read_to_string(&list).unwrap(), list_before);
+    let leftovers = std::fs::read_dir(sandbox.store().root())
+        .unwrap()
+        .flatten()
+        .filter(|entry| entry.file_name().to_string_lossy().starts_with('.'))
+        .count();
+    assert_eq!(leftovers, 0);
+}

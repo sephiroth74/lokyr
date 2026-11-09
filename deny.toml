@@ -30,7 +30,15 @@ allow = [
 confidence-threshold = 0.9
 # The list already covers the licenses of the dependencies we expect to add.
 unused-allowed-license = "allow"
-exceptions = []
+# PubGrub, Sleip's resolver, and the two crates of its that share its
+# license, MPL-2.0, of each file alone: their sources stay on crates.io, and
+# their notice goes with Sleip; priority-queue is of LGPL-3.0 or MPL-2.0,
+# MPL-2.0 taken.
+exceptions = [
+    { allow = ["MPL-2.0"], crate = "pubgrub" },
+    { allow = ["MPL-2.0"], crate = "version-ranges" },
+    { allow = ["MPL-2.0"], crate = "priority-queue" },
+]
 
 [bans]
 multiple-versions = "warn"
