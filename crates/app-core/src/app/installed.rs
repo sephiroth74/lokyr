@@ -160,6 +160,11 @@ pub(super) struct Reloads {
     pub(super) dev: Vec<DevWatch>,
     /// The plugins loaded, by their names, each of its lockfile's entry.
     pub(super) loaded: BTreeMap<String, Locked>,
+    /// The plugins loaded of the folders that `sleip dev` links, by their
+    /// names, each of its manifest and its sources, which a reload compares
+    /// with the folder's, so that a change of no file of the package, as
+    /// an editor's swap file, makes no plugin anew.
+    dev_loaded: BTreeMap<String, (Manifest, Package)>,
     /// The plugins refused, by their names, each of why, told once.
     refused: BTreeMap<String, Refusal>,
     /// The timer of the reload, which waits for a burst of changes to
@@ -167,13 +172,12 @@ pub(super) struct Reloads {
     pub(super) timer: Option<TimerId>,
 }
 
-/// The watch of a folder that `sleip dev` links: its plugin, the folder,
-/// and whether it changed since the last reload.
+/// The watch of a folder that `sleip dev` links: its plugin and the
+/// folder.
 #[derive(Debug)]
 pub(super) struct DevWatch {
     name: String,
     folder: PathBuf,
-    pub(super) changed: Arc<AtomicBool>,
     _watch: FolderWatch,
 }
 
@@ -238,6 +242,14 @@ impl<B: Backend> App<B> {
         let Some(installed) = self.installed.clone() else {
             return;
         };
+        // The config's folder, of the lockfile and the decisions, made
+        // first, so that their watches start, as on a new account of none.
+        if let Err(error) = crate::watch::make_directory(&installed.lock) {
+            eprintln!(
+                "lokyr: the folder of the installed plugins' lockfile cannot be made, for {}: {error}",
+                installed.lock.display()
+            );
+        }
         // Of a file that does not read, none, which nothing writes over.
         self.decisions = self.permissions(platform).unwrap_or_default();
         let mut file = super::ConfigFile {
@@ -262,6 +274,7 @@ impl<B: Backend> App<B> {
         };
         // The decisions' own changes that their watch has not told yet,
         // applied to the plugins that stay, so that none is lost.
+        self.watch_permissions(platform);
         self.permissions_changed(platform);
         self.watch_installed(platform, &installed);
         self.apply_installed(platform, &installed);
@@ -270,6 +283,20 @@ impl<B: Backend> App<B> {
             eprintln!("lokyr: {error}");
         }
         self.after_plugins(platform);
+    }
+
+    /// Watches `permissions.toml` anew, as its watch is none or stale: its
+    /// folder came into being or went, or its link points elsewhere, as
+    /// GNU Stow makes it.
+    pub(super) fn watch_permissions(&mut self, platform: &dyn Platform) {
+        if let Some(file) = &mut self.permissions_file
+            && file
+                .watcher
+                .as_ref()
+                .is_none_or(|watcher| watcher.is_stale(&file.path))
+        {
+            file.watch(platform);
+        }
     }
 
     /// Watches the lockfile and the store, unless it watches them already:
@@ -313,18 +340,20 @@ impl<B: Backend> App<B> {
                 return;
             }
         };
-        let changed_folders: BTreeSet<String> = self
-            .reloads
-            .dev
-            .iter()
-            .filter(|watch| watch.changed.swap(false, Ordering::AcqRel))
-            .map(|watch| watch.name.clone())
-            .collect();
+        // A plugin of the lockfile's same entry stays; one of a folder
+        // that `sleip dev` links, of the same manifest and sources too.
         let (kept, fresh): (Vec<Loaded>, Vec<Loaded>) =
             found.loaded.into_iter().partition(|loaded| {
                 let name = &loaded.manifest.name;
                 self.reloads.loaded.get(name) == Some(&loaded.locked)
-                    && !changed_folders.contains(name)
+                    && (!matches!(loaded.locked.source, Source::Dev(_))
+                        || self
+                            .reloads
+                            .dev_loaded
+                            .get(name)
+                            .is_some_and(|(manifest, package)| {
+                                *manifest == loaded.manifest && *package == loaded.package
+                            }))
             });
         let kept: BTreeSet<String> = kept
             .into_iter()
@@ -341,6 +370,7 @@ impl<B: Backend> App<B> {
             self.with_plugins(platform, |plugins, context| plugins.remove(&name, context));
             self.forget_consent(platform, &name);
             self.reloads.loaded.remove(&name);
+            self.reloads.dev_loaded.remove(&name);
         }
         let mut refused = found.refused;
         for Loaded {
@@ -356,6 +386,8 @@ impl<B: Backend> App<B> {
                 .get(&name)
                 .cloned()
                 .unwrap_or_default();
+            let dev = matches!(locked.source, Source::Dev(_))
+                .then(|| (manifest.clone(), package.clone()));
             // A fresh VM of the package each time, as a fault's while
             // passes or the plugin is turned on again.
             let made = name.clone();
@@ -372,6 +404,9 @@ impl<B: Backend> App<B> {
             );
             match added {
                 Ok(()) => {
+                    if let Some(dev) = dev {
+                        self.reloads.dev_loaded.insert(name.clone(), dev);
+                    }
                     self.reloads.loaded.insert(name, locked);
                 }
                 Err(error) => refused.push((name, Refusal::Other(error.message))),
@@ -417,13 +452,11 @@ impl<B: Backend> App<B> {
             if reloads.dev.iter().any(|watch| watch.name == name) {
                 continue;
             }
-            let changed = Arc::new(AtomicBool::new(false));
-            let flags = vec![Arc::clone(&reloads.changed), Arc::clone(&changed)];
+            let flags = vec![Arc::clone(&reloads.changed)];
             match FolderWatch::new(&folder, on_change(platform, flags)) {
                 Ok(watch) => reloads.dev.push(DevWatch {
                     name,
                     folder,
-                    changed,
                     _watch: watch,
                 }),
                 Err(error) => eprintln!("lokyr: {error}"),

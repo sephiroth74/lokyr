@@ -3793,6 +3793,7 @@ impl<B: Backend> App<B> {
                 if let Some(file) = &mut self.permissions_file {
                     file.reading = None;
                 }
+                self.watch_permissions(platform);
                 self.permissions_changed(platform);
             }
             AppEvent::Timer(timer)

@@ -169,16 +169,13 @@ fn a_folder_that_sleip_dev_links_is_reloaded_as_it_is_saved_once_a_burst_settles
     assert_eq!(app.reloads.dev.len(), 1);
     // Saved, as its watch tells it: made anew.
     std::fs::write(&entry, opening("activate", "dev2", "")).unwrap();
-    app.reloads.dev[0].changed.store(true, Ordering::Release);
     changed(&mut fake, &mut app);
     settled(&mut fake, &mut app);
     run_until(&mut fake, &mut app, |fake, _| opens(fake, "dev2") == 1);
     // Saved twice within a burst: once made anew, as it settles.
     std::fs::write(&entry, opening("activate", "dev3", "")).unwrap();
-    app.reloads.dev[0].changed.store(true, Ordering::Release);
     changed(&mut fake, &mut app);
     std::fs::write(&entry, opening("activate", "dev4", "")).unwrap();
-    app.reloads.dev[0].changed.store(true, Ordering::Release);
     changed(&mut fake, &mut app);
     assert!(app.reloads.timer.is_some());
     settled(&mut fake, &mut app);
@@ -299,5 +296,145 @@ fn an_installed_plugin_turned_off_and_on_again_is_made_anew_of_its_package() {
         app.plugins.status("acme/toggled"),
         Some(plugins::Status::Active)
     );
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
+#[test]
+fn a_plugin_installed_after_a_start_of_no_config_folder_loads_without_a_restart() {
+    let _luau = LUAU.lock().unwrap_or_else(PoisonError::into_inner);
+    let folder = shelf("reloads-fresh");
+    // A new account's: neither the config's folder nor its parent.
+    let config = folder.join("home/.config/lokyr");
+    let store = Store::new(folder.join("store"));
+    let mut fake = Fake::default();
+    let links = Config::parse("[links]\nurls = \"open\"\n", Path::new("config.toml")).unwrap();
+    let mut app = app(links, quiet())
+        .with_installed(
+            config.join("plugins.lock"),
+            Store::new(folder.join("store")),
+        )
+        .with_state(Some(folder.join("state")));
+    fake.start(&mut app);
+    assert!(config.is_dir());
+    // Sleip installs a plugin as the app runs: its watches tell it.
+    grant_open(&config, &["fresh"]);
+    let fresh = manifest("fresh", &[], "^0.1", "");
+    lock(
+        &config,
+        BTreeMap::from([stored(
+            &store,
+            "fresh",
+            &fresh,
+            &opening("activate", "fresh", ""),
+        )]),
+    );
+    run_until(&mut fake, &mut app, |fake, _| opens(fake, "fresh") == 1);
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
+#[test]
+fn a_change_of_no_file_of_a_dev_folder_s_package_makes_no_plugin_anew() {
+    let _luau = LUAU.lock().unwrap_or_else(PoisonError::into_inner);
+    let folder = shelf("reloads-swap");
+    grant_open(&folder, &["swapped"]);
+    let swapped = folder.join("swapped");
+    std::fs::create_dir_all(swapped.join("src")).unwrap();
+    std::fs::write(
+        swapped.join("plugin.toml"),
+        manifest("swapped", &[], "^0.1", ""),
+    )
+    .unwrap();
+    let entry = swapped.join("src/init.luau");
+    std::fs::write(&entry, opening("activate", "swap1", "")).unwrap();
+    lock(
+        &folder,
+        BTreeMap::from([(
+            "acme/swapped".to_owned(),
+            Locked {
+                version: "1.0.0".to_owned(),
+                kind: Kind::Luau,
+                source: Source::Dev(swapped.display().to_string()),
+                checksum: None,
+                capabilities: Vec::new(),
+                dependencies: BTreeMap::new(),
+            },
+        )]),
+    );
+    let mut fake = Fake::default();
+    let mut app = reloading(&folder);
+    fake.start(&mut app);
+    run_until(&mut fake, &mut app, |fake, _| opens(fake, "swap1") == 1);
+    let before = lokyr_plugin_host_luau::vms_made();
+    // An editor's swap file, the Finder's, a repository's and a test's.
+    std::fs::write(swapped.join("src/.init.luau.swp"), "swap").unwrap();
+    std::fs::write(swapped.join(".DS_Store"), "finder").unwrap();
+    std::fs::create_dir_all(swapped.join("tests")).unwrap();
+    std::fs::write(swapped.join("tests/more.luau"), "return {}").unwrap();
+    changed(&mut fake, &mut app);
+    settled(&mut fake, &mut app);
+    assert_eq!(lokyr_plugin_host_luau::vms_made(), before);
+    // Its source saved: made anew.
+    std::fs::write(&entry, opening("activate", "swap2", "")).unwrap();
+    changed(&mut fake, &mut app);
+    settled(&mut fake, &mut app);
+    run_until(&mut fake, &mut app, |fake, _| opens(fake, "swap2") == 1);
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
+#[test]
+fn a_permissions_file_linked_elsewhere_after_the_start_is_watched_there() {
+    let _luau = LUAU.lock().unwrap_or_else(PoisonError::into_inner);
+    let folder = shelf("reloads-stowed");
+    let store = Store::new(folder.join("store"));
+    grant_open(&folder, &["stowed"]);
+    let stowed = manifest("stowed", &[], "^0.1", "");
+    lock(
+        &folder,
+        BTreeMap::from([stored(
+            &store,
+            "stowed",
+            &stowed,
+            &opening("activate", "stowed", ""),
+        )]),
+    );
+    let mut fake = Fake::default();
+    let mut app = reloading(&folder);
+    fake.start(&mut app);
+    run_until(&mut fake, &mut app, |fake, _| opens(fake, "stowed") == 1);
+    // GNU Stow links the file to a folder of dotfiles, of the same
+    // decisions.
+    let dotfiles = folder.join("dotfiles");
+    std::fs::create_dir_all(&dotfiles).unwrap();
+    let file = lokyr_pkg_model::permissions::FILE;
+    std::fs::rename(folder.join(file), dotfiles.join(file)).unwrap();
+    std::os::unix::fs::symlink(dotfiles.join(file), folder.join(file)).unwrap();
+    // Its watch reads it, and watches the folder of dotfiles from then.
+    std::thread::sleep(Duration::from_millis(300));
+    let start = Instant::now();
+    while start.elapsed() < Duration::from_millis(500) {
+        fake.deliver_wake(&mut app);
+        fake.fire_timers(&mut app, Instant::now() + Duration::from_secs(1));
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert_eq!(
+        app.plugins.status("acme/stowed"),
+        Some(plugins::Status::Active)
+    );
+    // The user revokes `open` in the dotfiles' copy: it stops.
+    let mut permissions =
+        lokyr_pkg_model::permissions::Permissions::read(&dotfiles.join(file)).unwrap();
+    permissions
+        .plugins
+        .get_mut("acme/stowed")
+        .unwrap()
+        .decide(&[lokyr_kernel::commands::Capability::Open], false);
+    std::fs::write(dotfiles.join(file), permissions.text()).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while app.plugins.status("acme/stowed") != Some(plugins::Status::Disabled) {
+        assert!(Instant::now() < deadline, "the revocation never came");
+        fake.deliver_wake(&mut app);
+        fake.fire_timers(&mut app, Instant::now() + Duration::from_secs(1));
+        std::thread::sleep(Duration::from_millis(20));
+    }
     let _ = std::fs::remove_dir_all(&folder);
 }
