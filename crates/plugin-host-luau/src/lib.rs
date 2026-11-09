@@ -240,6 +240,12 @@ impl LuauPlugin {
         self.vm.as_ref().is_some_and(vm::Vm::runs_native)
     }
 
+    /// The bytes of its VM's heap, of its bytecode, tables and strings,
+    /// which its memory's limit bounds; none before it activates.
+    pub fn memory(&self) -> Option<usize> {
+        self.vm.as_ref().map(vm::Vm::memory)
+    }
+
     /// The error of `failure` of a call of `callback`: `failed` of the
     /// plugin's code; a fault of a limit of its VM's, which the host takes
     /// as a fault of the plugin's.

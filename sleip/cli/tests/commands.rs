@@ -1064,11 +1064,24 @@ fn add_installs_a_plugin_of_a_folder_and_update_takes_its_changes() {
         list.contains(&format!("path = \"{}\"", folder.display())),
         "{list}"
     );
-    // Again, nothing changes.
+    // Again, nothing changes; of a relative path too, which the list
+    // takes of its whole path.
     assert_eq!(
         stdout(&sandbox.sleip(&["add", "--path", &folder.display().to_string()])),
         "Nothing changed.\n"
     );
+    let relative = sandbox
+        .command(&["add", "--path", "."])
+        .current_dir(&folder)
+        .output()
+        .unwrap();
+    assert!(relative.status.success(), "{relative:?}");
+    let list = std::fs::read_to_string(sandbox.config().join("plugins.toml")).unwrap();
+    assert!(
+        list.contains(&format!("path = \"{}\"", canonical.display())),
+        "{list}"
+    );
+    assert!(sandbox.sleip(&["list"]).status.success());
     // A new version of its folder: `--locked` keeps the lockfile, `update`
     // takes it.
     versioned(&folder, "0.2.0");

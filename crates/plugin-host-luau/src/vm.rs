@@ -271,6 +271,13 @@ impl Vm {
         self.watchdog.wakes()
     }
 
+    /// The bytes of its heap, which its memory's limit bounds: its code's
+    /// bytecode, its tables and strings, not the native code of its
+    /// functions nor its thread's stack.
+    pub(crate) fn memory(&self) -> usize {
+        self._lua.used_memory()
+    }
+
     /// The Lua state, as the tests reach its globals.
     #[cfg(any(test, feature = "testing"))]
     pub(crate) fn lua(&self) -> &Lua {

@@ -66,7 +66,16 @@ pub fn add(
     // holds it.
     let fetched = fetch(paths, options, plugin, from, &mut clones)?;
     let name = fetched.manifest.name.clone();
-    let edited = with_plugin(&text, &name, from)
+    // A folder of a relative path, as `.`, of its whole path, which the
+    // list takes; one from `~` as it is written, as it holds on another
+    // account.
+    let written = match from {
+        Wanted::Path(path) if !path.starts_with('/') && !path.starts_with('~') => {
+            Wanted::Path(fetched.folder.display().to_string())
+        }
+        _ => from.clone(),
+    };
+    let edited = with_plugin(&text, &name, &written)
         .map_err(|error| format!("{}: {error}", list_path.display()))?;
     let list = List::parse(&edited)
         .map_err(|error| format!("{} would not read: {error}", list_path.display()))?;

@@ -270,6 +270,10 @@ e2e *args: bundle
 bench-search:
     cargo test --locked --release -p lokyr-kernel --lib -- --ignored --nocapture the_search_of_100k_lines
 
+# Measure a Luau plugin's activation, its compilation within, and its VM's heap once active, of the template that `sleip new` makes and of a plugin of 2000 lines, in both executions, of a release build; on an idle machine.
+bench-luau:
+    cargo test --locked --release -p lokyr-plugin-host-luau --test budgets -- --ignored --nocapture
+
 # Fetch vtebench's scenarios from the pinned commit into target/vtebench (downloads it): their scripts, which nothing runs, and their data files.
 vtebench:
     #!/usr/bin/env bash
