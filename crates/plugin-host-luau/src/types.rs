@@ -664,6 +664,48 @@ fn ui_index(kind: &UiEventKind) -> usize {
     }
 }
 
+/// The host of a plugin's tests, which `sleip test` gives each test: its
+/// functions, of the types that the definitions declare.
+const TEST_HOST: &str = "
+-- The host of a plugin's tests, which `sleip test` gives each test of
+-- `tests/*.luau`: the plugin made anew, on a host of the tests, of a pane
+-- that has the focus. A call that the plugin fails raises its error, which
+-- fails the test.
+export type TestHost = {
+    -- Activates the plugin.
+    activate: () -> (),
+    -- Runs its command `name`, of `args`.
+    command: (name: string, args: Args?) -> (),
+    -- Whether its command `name`, of `args`, applies, as a menu asks.
+    applies: (name: string, args: Args?) -> boolean,
+    -- Gives it `events`, as the app posts them.
+    events: (events: { Event }) -> (),
+    -- Gives it the event of a node of one of its views.
+    ui_event: (event: UiEvent) -> (),
+    -- Its tree of `view`, as it renders it, if it renders one.
+    render: (view: ViewId) -> Node?,
+    -- The ids of its panels that show, in their order.
+    panels: () -> { PanelId },
+    -- Moves the host's time on by `milliseconds`, its timers' events given.
+    advance: (milliseconds: number) -> (),
+    -- The writes that its calls made since the last look, each a table of
+    -- its request's name, as `{ Notify = { ... } }`.
+    done: () -> { { [string]: any } },
+    -- The names of the commands that it registered.
+    commands: () -> { string },
+    -- The clipboard's text.
+    clipboard: () -> string?,
+    -- Sets the clipboard's text.
+    set_clipboard: (text: string?) -> (),
+    -- Gives its message `id` the text `text`, or takes it away.
+    set_message: (id: string, text: string?) -> (),
+    -- Its state, as it last wrote it.
+    state: () -> Data,
+    -- Sets its section of the config.
+    set_config: (config: Data) -> (),
+}
+";
+
 /// `lokyr.d.luau`, the plugin API's types for Luau's type checker, made of
 /// the SDK's types.
 pub fn definitions() -> String {
@@ -700,6 +742,8 @@ pub fn definitions() -> String {
         "\n-- A plugin's table of callbacks, which its entry returns.\nexport type Plugin = {{\n{}\n}}\n",
         callbacks.join("\n")
     );
+    // Of the types that `Cx` and the callbacks use, declared after.
+    out.push_str(TEST_HOST);
     // Every type that those use, and those that they use in turn, by name.
     let mut declared: BTreeMap<String, String> = BTreeMap::new();
     let mut done: BTreeSet<Named> = BTreeSet::new();

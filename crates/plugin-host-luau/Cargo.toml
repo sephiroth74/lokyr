@@ -13,6 +13,9 @@ publish = false
 # A helper of the tests of other crates, which make each request of the
 # plugin API through Luau.
 testing = []
+# The host of a plugin's own tests, which `sleip test` runs: the SDK's fake
+# host, of a `TestHost` in Luau.
+test-host = ["lokyr-plugin-sdk/fake"]
 
 [dependencies]
 lokyr-plugin-sdk = { workspace = true, features = ["unstable"] }

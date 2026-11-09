@@ -40,6 +40,8 @@ pub mod conformer;
 mod events;
 mod requests;
 mod shape;
+#[cfg(feature = "test-host")]
+pub mod test_host;
 mod tree;
 pub mod types;
 mod vm;
@@ -186,6 +188,11 @@ impl Package {
     /// The source at `path`, if the package holds it.
     pub fn source(&self, path: &str) -> Option<&str> {
         self.sources.get(path).map(String::as_str)
+    }
+
+    /// The paths of its sources, in their order.
+    pub fn paths(&self) -> impl Iterator<Item = &str> {
+        self.sources.keys().map(String::as_str)
     }
 }
 

@@ -80,7 +80,7 @@ pub(crate) struct Vm {
 /// The modules that a VM's `require` loaded, by their paths, and those that
 /// it is loading, which a cycle meets.
 #[derive(Default)]
-struct Modules {
+pub(crate) struct Modules {
     loaded: BTreeMap<String, Value>,
     loading: Vec<String>,
 }
@@ -320,6 +320,45 @@ fn watched<T>(
     })
 }
 
+/// The state of the VM of a plugin's tests, of the plugins' sandbox, run by
+/// the interpreter.
+#[cfg(feature = "test-host")]
+pub(crate) fn test_state() -> mlua::Result<Lua> {
+    Vm::state(Execution::Interpreter)
+}
+
+/// Runs `run` of `lua`, the state of the plugin `name`'s tests, within
+/// `deadline` from now, of a watchdog of its own: what it gives, or why
+/// it failed, as a text.
+#[cfg(feature = "test-host")]
+pub(crate) fn watched_of<T>(
+    lua: &Lua,
+    name: &str,
+    deadline: Duration,
+    run: impl FnOnce() -> mlua::Result<T>,
+) -> Result<T, String> {
+    let mut state = 0;
+    // SAFETY: the closure only keeps the state's address, which the
+    // watchdog, which ends at the end of this function, before the state,
+    // takes.
+    #[allow(unsafe_code)]
+    let watchdog = unsafe {
+        lua.exec_raw::<()>((), |raw| state = raw as usize)
+            .map_err(|error| error.to_string())?;
+        Watchdog::new(state, name).map_err(|error| error.to_string())?
+    };
+    watched(&watchdog, deadline, run).map_err(|failure| match failure {
+        Failure::PastDeadline => {
+            format!("the test ran past its deadline of {} s", deadline.as_secs())
+        }
+        Failure::OutOfMemory => format!(
+            "the test ran out of its {} MB of memory",
+            MOST_MEMORY / (1024 * 1024)
+        ),
+        Failure::Code(error) => error.to_string(),
+    })
+}
+
 /// Whether `error` is of the VM's memory's limit, of a callback's too.
 fn is_memory(error: &mlua::Error) -> bool {
     match error {
@@ -331,7 +370,7 @@ fn is_memory(error: &mlua::Error) -> bool {
 
 /// Runs the module at `path` of `package`, once, of a `require` of its own
 /// directory: what it returns, which later requires of it share.
-fn load(
+pub(crate) fn load(
     lua: &Lua,
     package: &Arc<Package>,
     modules: &Arc<Mutex<Modules>>,

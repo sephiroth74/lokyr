@@ -140,7 +140,7 @@ fn whole(number: f64) -> Option<i64> {
 
 /// The value of `T` of `value`, a plugin's: why not, of a value of
 /// another shape, too deep, or of too many values.
-#[cfg(any(test, feature = "testing"))]
+#[cfg(any(test, feature = "testing", feature = "test-host"))]
 pub(crate) fn from_lua<T: de::DeserializeOwned>(value: Value) -> Result<T, ShapeError> {
     let budget = Budget::default();
     T::deserialize(Taking::new(value, &budget))

@@ -211,6 +211,44 @@ export type Plugin = {
     on_ui_event: ((cx: Cx, event: UiEvent) -> ())?,
 }
 
+-- The host of a plugin's tests, which `sleip test` gives each test of
+-- `tests/*.luau`: the plugin made anew, on a host of the tests, of a pane
+-- that has the focus. A call that the plugin fails raises its error, which
+-- fails the test.
+export type TestHost = {
+    -- Activates the plugin.
+    activate: () -> (),
+    -- Runs its command `name`, of `args`.
+    command: (name: string, args: Args?) -> (),
+    -- Whether its command `name`, of `args`, applies, as a menu asks.
+    applies: (name: string, args: Args?) -> boolean,
+    -- Gives it `events`, as the app posts them.
+    events: (events: { Event }) -> (),
+    -- Gives it the event of a node of one of its views.
+    ui_event: (event: UiEvent) -> (),
+    -- Its tree of `view`, as it renders it, if it renders one.
+    render: (view: ViewId) -> Node?,
+    -- The ids of its panels that show, in their order.
+    panels: () -> { PanelId },
+    -- Moves the host's time on by `milliseconds`, its timers' events given.
+    advance: (milliseconds: number) -> (),
+    -- The writes that its calls made since the last look, each a table of
+    -- its request's name, as `{ Notify = { ... } }`.
+    done: () -> { { [string]: any } },
+    -- The names of the commands that it registered.
+    commands: () -> { string },
+    -- The clipboard's text.
+    clipboard: () -> string?,
+    -- Sets the clipboard's text.
+    set_clipboard: (text: string?) -> (),
+    -- Gives its message `id` the text `text`, or takes it away.
+    set_message: (id: string, text: string?) -> (),
+    -- Its state, as it last wrote it.
+    state: () -> Data,
+    -- Sets its section of the config.
+    set_config: (config: Data) -> (),
+}
+
 export type AgentState =
     | "working"
     | "waiting"

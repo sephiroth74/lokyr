@@ -341,11 +341,11 @@ fn one(value: Value, budget: &Budget) -> Result<(Node, Vec<Value>, Option<Value>
     Ok((node, children, row))
 }
 
-#[cfg(any(test, feature = "testing"))]
+#[cfg(any(test, feature = "testing", feature = "test-host"))]
 pub(crate) use giving::to_lua;
 
 /// A tree as Luau's tables, which the host gives the tests.
-#[cfg(any(test, feature = "testing"))]
+#[cfg(any(test, feature = "testing", feature = "test-host"))]
 mod giving {
     use lokyr_plugin_sdk::view::{Button, Field, Kind, Layout, List, Node, Style, Tabs, Toggle};
     use mlua::{Lua, Table};

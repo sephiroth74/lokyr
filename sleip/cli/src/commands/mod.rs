@@ -7,6 +7,7 @@ mod gc;
 mod list;
 mod new;
 mod remove;
+mod test;
 
 use std::process::ExitCode;
 
@@ -28,6 +29,7 @@ pub fn run(options: Options, command: &Command) -> ExitCode {
     let ran = match command {
         Command::New(plugin) => new::new(out, plugin),
         Command::Check => check::check(out),
+        Command::Test => test::test(out),
         Command::List => list::list(&paths, out),
         Command::Remove(plugin) => remove::remove(&paths, options, out, plugin),
         Command::Gc => gc::gc(&paths, out),
@@ -76,4 +78,52 @@ fn bytes_text(bytes: u64) -> String {
     } else {
         format!("{:.1} MB", bytes / (1024.0 * 1024.0))
     }
+}
+
+/// Files by their paths in a plugin's folder, each of its text or of why it
+/// cannot be read.
+type Files<T> = Vec<(String, T)>;
+
+/// The sources of Luau of the plugin in `folder`, `src/**/*.luau` and
+/// `tests/**/*.luau`, by their paths in it, of `/` between their folders, in
+/// their order, links left out, as its package leaves them; and those that
+/// cannot be read, each of why.
+pub(crate) fn luau_sources(folder: &std::path::Path) -> (Files<String>, Files<std::io::Error>) {
+    let (mut sources, mut unread) = (Vec::new(), Vec::new());
+    let mut left = vec![folder.join("src"), folder.join("tests")];
+    while let Some(at) = left.pop() {
+        let Ok(entries) = std::fs::read_dir(&at) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let Ok(kind) = entry.file_type() else {
+                continue;
+            };
+            if kind.is_dir() {
+                left.push(path);
+            } else if kind.is_file()
+                && path
+                    .extension()
+                    .is_some_and(|extension| extension == "luau")
+            {
+                let name = path
+                    .strip_prefix(folder)
+                    .map(|inner| {
+                        inner
+                            .iter()
+                            .map(|part| part.to_string_lossy().into_owned())
+                            .collect::<Vec<_>>()
+                            .join("/")
+                    })
+                    .unwrap_or_default();
+                match std::fs::read_to_string(&path) {
+                    Ok(text) => sources.push((name, text)),
+                    Err(error) => unread.push((name, error)),
+                }
+            }
+        }
+    }
+    sources.sort();
+    (sources, unread)
 }

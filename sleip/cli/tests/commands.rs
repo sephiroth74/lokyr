@@ -824,3 +824,61 @@ fn a_closed_standard_output_ends_no_command_in_a_panic() {
         assert!(output.stderr.is_empty(), "{args:?}: {output:?}");
     }
 }
+
+#[test]
+fn test_runs_the_tests_of_a_plugin_and_tells_a_failure_of_its_file_and_line() {
+    let sandbox = Sandbox::new("test");
+    let folder = made(&sandbox, "tested");
+    let tested = |args: &[&str]| {
+        let mut line = args.to_vec();
+        line.push("test");
+        sandbox
+            .command(&line)
+            .current_dir(&folder)
+            .output()
+            .unwrap()
+    };
+    // The template's test passes.
+    let output = tested(&[]);
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(
+        stdout(&output),
+        "ok      tests/tested.luau the_command_shows_its_notice_which_goes_by_itself\n1 passed.\n"
+    );
+    // A failing test, of its file and line, beside one that passes.
+    edit(&folder, "tests/more.luau", |_| {
+        "--!strict\nlocal test = {}\n\nfunction test.fails(host: TestHost)\n    host.activate()\n    assert(#host.panels() == 1, \"a panel at once\")\nend\n\nfunction test.passes(host: TestHost)\n    host.activate()\n    host.command(\"tested.say\")\n    assert(host.panels()[1] == \"notice\")\nend\n\nreturn test\n".to_owned()
+    });
+    let output = tested(&[]);
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+    let text = stdout(&output);
+    assert!(
+        text.contains("FAILED  tests/more.luau:6 fails: a panel at once\n"),
+        "{text}"
+    );
+    assert!(text.contains("ok      tests/more.luau passes\n"), "{text}");
+    assert!(text.ends_with("2 passed, 1 failed.\n"), "{text}");
+    let json = events(&tested(&["--json"]));
+    let failed = json
+        .iter()
+        .find(|event| event["event"] == "test" && event["ok"] == false)
+        .unwrap();
+    assert_eq!(failed["file"], "tests/more.luau");
+    assert_eq!(failed["line"], 6);
+    assert_eq!(failed["message"], "a panel at once");
+    assert_eq!(json.last().unwrap()["failed"], 1);
+    // Its tests' types checked too, of `TestHost`'s.
+    edit(&folder, "tests/more.luau", |text| {
+        text.replace(
+            "host.activate()\n    assert(#host",
+            "host.nope()\n    assert(#host",
+        )
+    });
+    let checked = checked(&sandbox, &folder, &[]);
+    assert_eq!(checked.status.code(), Some(1));
+    assert!(
+        stdout(&checked).contains("tests/more.luau:5:"),
+        "{}",
+        stdout(&checked)
+    );
+}

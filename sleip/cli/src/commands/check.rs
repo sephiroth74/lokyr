@@ -207,45 +207,18 @@ fn check_catalogs(folder: &Path, manifest: &Manifest, findings: &mut Findings) {
 }
 
 /// Checks the types of the sources of the plugin in `folder`, `src/**/*.luau`,
-/// against the plugin API's definitions.
+/// and of its tests, `tests/**/*.luau`, against the plugin API's
+/// definitions, of `TestHost` among them.
 fn check_sources(folder: &Path, findings: &mut Findings) {
-    let mut sources = Vec::new();
-    let mut left = vec![folder.join("src")];
-    while let Some(at) = left.pop() {
-        let Ok(entries) = std::fs::read_dir(&at) else {
-            continue;
-        };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                left.push(path);
-            } else if path
-                .extension()
-                .is_some_and(|extension| extension == "luau")
-            {
-                let name = path
-                    .strip_prefix(folder)
-                    .map(|inner| {
-                        inner
-                            .iter()
-                            .map(|part| part.to_string_lossy().into_owned())
-                            .collect::<Vec<_>>()
-                            .join("/")
-                    })
-                    .unwrap_or_default();
-                match std::fs::read_to_string(&path) {
-                    Ok(text) => sources.push((name, text)),
-                    Err(error) => findings.problem(
-                        &name,
-                        None,
-                        "Source",
-                        &format!("it cannot be read: {error}"),
-                    ),
-                }
-            }
-        }
+    let (sources, unread) = super::luau_sources(folder);
+    for (name, error) in unread {
+        findings.problem(
+            &name,
+            None,
+            "Source",
+            &format!("it cannot be read: {error}"),
+        );
     }
-    sources.sort();
     for problem in sleip_analyzer::check(&sources, DEFINITIONS) {
         let kind = match problem.kind {
             ProblemKind::Syntax => "SyntaxError",

@@ -97,11 +97,11 @@ pub(crate) fn ui_to_lua(lua: &Lua, event: &UiEvent) -> Result<Table, ShapeError>
     Ok(table)
 }
 
-#[cfg(any(test, feature = "testing"))]
+#[cfg(any(test, feature = "testing", feature = "test-host"))]
 pub(crate) use taking::{from_lua, ui_from_lua};
 
 /// The events of Luau's tables, which the tests take back.
-#[cfg(any(test, feature = "testing"))]
+#[cfg(any(test, feature = "testing", feature = "test-host"))]
 mod taking {
     use lokyr_plugin_sdk::event::WorkspaceEvent;
     use lokyr_plugin_sdk::message::Event;
