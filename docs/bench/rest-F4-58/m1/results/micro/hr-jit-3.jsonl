@@ -1,0 +1,6 @@
+{"binary":"hr-jit","map_jit":"executable","map_plain":"executable","code_jit":"runs","code_plain":"fails: signal: 9 (SIGKILL)"}
+{"measure":"pingpong","n":20000,"p50":2750,"p90":3166,"p99":6458,"p999":9750,"max":41625}
+{"measure":"wake-rest","n":1000,"p50":270625,"p90":277791,"p99":320208,"p999":549500,"max":2588792}
+{"measure":"wake-busy","n":1000,"p50":257666,"p90":2499417,"p99":9294041,"p999":9863000,"max":25513375}
+{"measure":"faults","n":16384,"p50":833,"p90":1291,"p99":4583,"p999":38458,"max":45584}
+{"measure":"syscall","n":10000,"p50":111,"p90":112,"p99":113,"p999":490,"max":522}

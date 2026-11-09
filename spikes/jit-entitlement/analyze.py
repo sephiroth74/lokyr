@@ -10,7 +10,7 @@ VARIANTS = ["plain", "hr", "hr-jit", "hr-unsigned", "hr-both"]
 MEASURES = ["pingpong", "wake-rest", "wake-busy", "faults", "syscall"]
 rows = {}
 for variant in VARIANTS:
-    for path in sorted(glob.glob(os.path.join(OUT, f"{variant}-*.jsonl"))):
+    for path in sorted(glob.glob(os.path.join(OUT, f"{variant}-[0-9]*.jsonl"))):
         for line in open(path):
             data = json.loads(line)
             if "measure" in data:

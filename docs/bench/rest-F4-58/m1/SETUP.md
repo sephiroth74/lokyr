@@ -32,8 +32,9 @@ The session also holds `caffeinate -dimsu` while it runs.
 
 ## 4. For the window's motion, optional
 
-- Xcode from the App Store, opened once to accept its license, as Instruments' `xctrace` comes with it alone.
-- `lokyr-bench motion` moves the mouse of synthetic events, which macOS asks Accessibility's permission for at its first run: System Settings › Privacy & Security › Accessibility, the binary that the session names allowed.
+- Xcode from the App Store, opened once to accept its license, as Instruments' `xctrace` comes with it alone; the session names it by `DEVELOPER_DIR`.
+- `sudo DevToolsSecurity -enable` in Terminal, so that Instruments records every process without asking for a password each time.
+- `lokyr-bench motion` moves the mouse of synthetic events, which take Accessibility's permission of the app that runs it; macOS gives none to a program of an SSH session, so that the motion runs in Terminal, `open -a Terminal ~/lokyr-bench/motion.sh`: System Settings › Privacy & Security › Accessibility, Terminal added and allowed.
 
 ## 5. During the measures
 
@@ -42,4 +43,5 @@ About 40 minutes, and 20 more for the motion: the Mac left alone, no key, no mou
 ## 6. After
 
 - The key's line taken out of `~/.ssh/authorized_keys`, and Remote Login off, if it is not wanted.
+- Terminal taken out of Accessibility, and `sudo DevToolsSecurity -disable`.
 - The copies of the apps and the measures in `~/lokyr-bench`, which the session copied there, removed.
