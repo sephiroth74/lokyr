@@ -332,6 +332,46 @@ fn doctor_tells_each_check_and_fails_of_a_problem() {
 }
 
 #[test]
+fn sleip_reads_the_api_of_the_bundle_that_it_is_in_through_a_link_to_it() {
+    let sandbox = Sandbox::new("bundled");
+    let contents = sandbox.home.join("Lokyr.app/Contents");
+    std::fs::create_dir_all(contents.join("MacOS")).unwrap();
+    std::fs::create_dir_all(contents.join("Resources")).unwrap();
+    std::fs::write(contents.join("Resources/api-version"), "0.1.0\n").unwrap();
+    let bundled = contents.join("MacOS/sleip");
+    std::fs::copy(env!("CARGO_BIN_EXE_sleip"), &bundled).unwrap();
+    // A folder of the `PATH` of a link to it, as a user makes one.
+    let bin = sandbox.home.join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    std::os::unix::fs::symlink(&bundled, bin.join("sleip")).unwrap();
+    for sleip in [bundled, bin.join("sleip")] {
+        let output = Command::new(&sleip)
+            .arg("doctor")
+            .env("HOME", &sandbox.home)
+            .env("XDG_CONFIG_HOME", sandbox.home.join(".config"))
+            .env("XDG_DATA_HOME", sandbox.home.join(".local/share"))
+            .env("XDG_CACHE_HOME", sandbox.home.join(".cache"))
+            .env_remove("SLEIP_LOKYR")
+            .env("PATH", "/usr/bin:/bin")
+            .output()
+            .unwrap();
+        let text = stdout(&output);
+        let resource = contents
+            .join("Resources/api-version")
+            .canonicalize()
+            .unwrap();
+        assert!(
+            text.contains(&format!(
+                "ok     app: the plugin API 0.1.0, of {}",
+                resource.display()
+            )),
+            "{}: {text}",
+            sleip.display()
+        );
+    }
+}
+
+#[test]
 fn two_sleips_at_once_wait_on_the_store_s_lock() {
     let sandbox = Sandbox::new("lock");
     sandbox.lock(BTreeMap::new());

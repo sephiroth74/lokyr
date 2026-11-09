@@ -77,14 +77,16 @@ impl Paths {
 
 /// The app's plugin API's version, and where it was read: the app that
 /// `SLEIP_LOKYR` names, a bundle, its resources' `api-version` file or its
-/// binary; the bundle that Sleip's binary is in; the app in the
-/// Applications folders; or `lokyr --api-version` of the `PATH`.
+/// binary; the bundle that Sleip's binary is in, through the links to it,
+/// as one in a folder of the `PATH`; the app in the Applications folders;
+/// or `lokyr --api-version` of the `PATH`.
 pub fn app_api() -> Option<(String, String)> {
     let mut places: Vec<PathBuf> = Vec::new();
     if let Some(named) = std::env::var_os("SLEIP_LOKYR") {
         places.push(PathBuf::from(named));
     }
-    if let Ok(executable) = std::env::current_exe()
+    // The system tells the path that the binary was started of, a link's.
+    if let Ok(executable) = std::env::current_exe().and_then(std::fs::canonicalize)
         && let Some(contents) = executable.parent().and_then(Path::parent)
     {
         places.push(contents.join("Resources/api-version"));

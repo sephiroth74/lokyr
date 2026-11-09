@@ -91,7 +91,7 @@ The MCP server lets AI agents drive the terminal ([ADR 0017](adr/0017-mcp-and-ag
 ## macOS environment
 
 - **Locale**: when the app is launched from the Dock, `LANG` is not set. In that case we set a UTF-8 locale that matches the system preferences, of the first of the user's languages that macOS has a UTF-8 locale of: the first of the user's regions of it that macOS has, as `it_CH.UTF-8`; otherwise the language's own region, as `it_IT`, and `en_US` for English; otherwise its first region that macOS has, as `ja_JP` for Japanese in Switzerland. A later language comes only after: English in Switzerland, then Italian in Switzerland, gives `en_US.UTF-8`, and English in Switzerland, then in the United Kingdom, `en_GB.UTF-8`. Without any, `en_US.UTF-8`.
-- **`PATH`**: the bundle's `Contents/MacOS`, the directory of the app's own executable, `lokyr`, at the end of the panes' `PATH`, unless it has it: the app's command line runs in a pane as `lokyr`, and no command of the user's is shadowed by it.
+- **`PATH`**: the bundle's `Contents/MacOS`, the directory of the app's own executable, `lokyr`, and of Sleip's, `sleip`, at the end of the panes' `PATH`, unless it has it: the app's command line runs in a pane as `lokyr`, Sleip as `sleip`, and no command of the user's is shadowed by them.
 - **Login shell**: started the way Terminal.app does, through `login` (`/usr/bin/login -flp $USER /bin/bash --noprofile --norc -c "exec -l -a <name> <shell>"`).
 - **TCC**:
   - Permissions requested by child processes (microphone, camera, Apple Events, protected folders, …) are attributed to the terminal.
@@ -102,12 +102,12 @@ The MCP server lets AI agents drive the terminal ([ADR 0017](adr/0017-mcp-and-ag
 - **Signing**:
   - Hardened Runtime and notarization.
   - The hardened runtime's entitlements of the resources that the child processes ask for, without which it refuses them with no prompt: `com.apple.security.automation.apple-events`, `com.apple.security.device.audio-input` and `com.apple.security.device.camera`, and `com.apple.security.personal-information.addressbook`, `.calendars`, `.location` and `.photos-library`. They let a program ask; macOS still asks the user, with the usage strings above.
-  - One hardened-runtime exception, `com.apple.security.cs.allow-jit`, for Luau's native code generator ([ADR 0012](adr/0012-luau-plugins.md)), which the bundle holds since the Luau host. Without it, plugins run in Luau's interpreter.
+  - One hardened-runtime exception, `com.apple.security.cs.allow-jit`, for Luau's native code generator ([ADR 0012](adr/0012-luau-plugins.md)), which the bundle holds since the Luau host. Without it, plugins run in Luau's interpreter. Sleip's binary, `Contents/MacOS/sleip`, is signed on its own before the bundle, of the hardened runtime and that exception alone, as `sleip test` runs a plugin's Luau, and notarized with the app.
   - No App Sandbox, which is incompatible with a terminal.
 
 ## Supply chain of our own code
 
 - `cargo-deny` checks advisories, allowed licenses, banned crates and allowed sources.
 - The toolchain is pinned in `rust-toolchain.toml`, and `Cargo.lock` is committed.
-- Release builds come from `just release`, on the maintainer's Mac, which holds the signing identities and the updates' key, from a commit that CI checked; each carries an SBOM (e.g. `cargo-cyclonedx`) and the notices of its third-party licenses.
+- Release builds come from `just release`, on the maintainer's Mac, which holds the signing identities and the updates' key, from a commit that CI checked; each carries an SBOM of CycloneDX, of the crates of the app's and Sleip's binaries, Sparkle, Luau's type checker and the font of symbols, and the bundle the notices of their licenses, each crate's source linked.
 - **Updates** ([ADR 0026](adr/0026-app-updates.md), [ADR 0029](adr/0029-update-feed-and-releases.md)): the feed, at `https://lokyr.dev/appcast.xml`, is signed with EdDSA, whose private key stays in the maintainer's keychain, with a copy offline; Sparkle checks that signature and Apple's of the new app before it replaces the old one, and reaches only the feed's and the releases' addresses. Each release's dSYMs are kept, to read its crashes.

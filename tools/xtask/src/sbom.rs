@@ -1,11 +1,12 @@
 //! The software bill of materials of the app's bundle, in CycloneDX's JSON
 //! (<https://cyclonedx.org/docs/1.6/json/>): the crates of other projects
-//! that the app's binary holds, as `cargo tree` gives them, of Cargo's own
-//! resolution of the app's default features for Apple Silicon, through
-//! normal dependencies and without the procedural macros, whose code runs
-//! as it builds; each with its version, its license and its package's URL,
-//! of `cargo metadata`; and what the bundle holds besides, Sparkle's
-//! framework and the symbols' font.
+//! that the bundle's binaries hold, the app's and Sleip's, as `cargo tree`
+//! gives them, of Cargo's own resolution of their default features for
+//! Apple Silicon, through normal dependencies and without the procedural
+//! macros, whose code runs as it builds; each with its version, its license
+//! and its package's URL, of `cargo metadata`; and what the bundle holds
+//! besides, Sparkle's framework, the symbols' font and Luau's type checker,
+//! whose sources Sleip holds.
 
 use std::collections::HashSet;
 use std::path::Path;
@@ -17,8 +18,12 @@ use serde_json::{Value, json};
 
 use crate::bundle;
 
-/// The package of the app's binary.
-const APP: &str = "lokyr-app";
+/// The packages of the bundle's binaries, the app's and Sleip's.
+const BINARIES: [&str; 2] = ["lokyr-app", "sleip-cli"];
+
+/// The release of Luau whose type checker, its `Analysis` library, Sleip's
+/// `sleip-analyzer` holds of its vendored sources.
+const LUAU_RELEASE: &str = "0.740";
 
 /// The platform that the bundle runs on.
 const PLATFORM: &str = "aarch64-apple-darwin";
@@ -51,13 +56,15 @@ pub(crate) struct Component {
     pub(crate) source: std::path::PathBuf,
 }
 
-/// The crates of other projects that the app's binary holds, by name and
-/// version: those of its normal dependencies, those of [`COMPILED_IN`] of
-/// its build-dependencies, and Rust's standard library, [`STD`].
+/// The crates of other projects that the bundle's binaries hold, by name
+/// and version: those of their normal dependencies, those of
+/// [`COMPILED_IN`] of their build-dependencies, and Rust's standard
+/// library, [`STD`].
 pub(crate) fn crates(root: &Path) -> Result<Vec<Component>> {
     let tree = |edges: &str| -> Result<String> {
         let tree = Command::new(env!("CARGO"))
-            .args(["tree", "--quiet", "--locked", "-p", APP])
+            .args(["tree", "--quiet", "--locked"])
+            .args(BINARIES.iter().flat_map(|binary| ["-p", binary]))
             .args(["-e", edges, "--target", PLATFORM])
             .args(["--prefix", "none", "--format", "{p}"])
             .current_dir(root)
@@ -149,8 +156,9 @@ fn built(tree: &str) -> HashSet<(String, String)> {
         .collect()
 }
 
-/// The bill of materials of the app at `version`, whose binary holds
-/// `crates`, and whose bundle holds Sparkle of `sparkle`.
+/// The bill of materials of the app at `version`, whose binaries, its own
+/// and Sleip's, hold `crates`, and whose bundle holds Sparkle of
+/// `sparkle`.
 pub(crate) fn bill(version: &str, crates: &[Component], sparkle: &str) -> Value {
     let mut components: Vec<Value> = crates
         .iter()
@@ -176,12 +184,29 @@ pub(crate) fn bill(version: &str, crates: &[Component], sparkle: &str) -> Value 
         })
         .collect();
     components.push(json!({
+        "type": "application",
+        "bom-ref": format!("{}.sleip@{version}", bundle::IDENTIFIER),
+        "name": "Sleip",
+        "version": version,
+        "description": "The plugin package manager, the bundle's Contents/MacOS/sleip.",
+        "licenses": [{ "expression": "MIT" }],
+    }));
+    components.push(json!({
         "type": "framework",
         "bom-ref": format!("pkg:github/sparkle-project/Sparkle@{sparkle}"),
         "name": "Sparkle",
         "version": sparkle,
         "purl": format!("pkg:github/sparkle-project/Sparkle@{sparkle}"),
         "description": "The updater, in the bundle's Contents/Frameworks.",
+        "licenses": [{ "license": { "id": "MIT" } }],
+    }));
+    components.push(json!({
+        "type": "library",
+        "bom-ref": format!("pkg:github/luau-lang/luau@{LUAU_RELEASE}#Analysis"),
+        "name": "Luau Analysis",
+        "version": LUAU_RELEASE,
+        "purl": format!("pkg:github/luau-lang/luau@{LUAU_RELEASE}"),
+        "description": "Luau's type checker, whose vendored sources Sleip's sleip-analyzer holds; its notice in the bundle's licenses/luau-analysis.",
         "licenses": [{ "license": { "id": "MIT" } }],
     }));
     components.push(json!({
@@ -234,6 +259,9 @@ mod tests {
         // Neither the workspace's own crates, nor a procedural macro, nor
         // a crate of the tests or of the build alone.
         assert!(!names.iter().any(|name| name.starts_with("lokyr-")));
+        assert!(!names.iter().any(|name| name.starts_with("sleip-")));
+        // Sleip's own, its resolver's among them.
+        assert!(names.contains(&"pubgrub"), "{names:?}");
         assert!(!names.contains(&"serde_derive"));
         assert!(!names.contains(&"insta"));
         assert!(!names.contains(&"cc"));
@@ -274,7 +302,7 @@ mod tests {
     }
 
     #[test]
-    fn the_bill_names_the_app_its_crates_sparkle_and_the_font() {
+    fn the_bill_names_the_app_its_crates_sleip_sparkle_luau_and_the_font() {
         let crates = vec![Component {
             name: "objc2".to_owned(),
             version: "0.6.5".to_owned(),
@@ -302,9 +330,24 @@ mod tests {
             bill_of_old["components"][0]["licenses"][0]["expression"],
             "Unlicense OR MIT"
         );
-        assert_eq!(components[1]["name"], "Sparkle");
-        assert_eq!(components[1]["version"], "2.10.1");
-        assert_eq!(components[2]["name"], "Symbols Nerd Font Mono");
+        assert_eq!(components[1]["name"], "Sleip");
+        assert_eq!(components[1]["version"], "0.3.0-rc.1");
+        assert_eq!(components[2]["name"], "Sparkle");
+        assert_eq!(components[2]["version"], "2.10.1");
+        assert_eq!(components[3]["name"], "Luau Analysis");
+        assert_eq!(components[3]["version"], LUAU_RELEASE);
+        assert_eq!(components[4]["name"], "Symbols Nerd Font Mono");
+    }
+
+    #[test]
+    fn luau_s_release_is_the_one_that_its_vendored_sources_tell() {
+        let readme = std::fs::read_to_string(root().join("sleip/analyzer/luau/README.md")).unwrap();
+        assert!(
+            readme.contains(&format!(
+                "Luau](https://github.com/luau-lang/luau) {LUAU_RELEASE}"
+            )),
+            "{readme}"
+        );
     }
 
     #[test]

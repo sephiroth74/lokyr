@@ -207,8 +207,9 @@ fn build(root: &Path, app: &Path, scratch: &Path, notarized: bool) -> Result<()>
         )?;
     }
     println!(
-        "dmg: {} built, {}",
+        "dmg: {} built, of {}, {}",
         dmg.display(),
+        bundle::megabytes(bundle::size_of(&dmg)),
         if notarized {
             "notarized, its ticket stapled"
         } else {

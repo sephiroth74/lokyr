@@ -43,6 +43,14 @@ pub const NAME: &str = "Lokyr";
 /// tells the case of names apart too.
 pub(crate) const EXECUTABLE: &str = "lokyr";
 
+/// The name of Sleip's executable, beside the app's in the bundle's
+/// `Contents/MacOS`.
+pub(crate) const SLEIP: &str = "sleip";
+
+/// The vendored sources of Luau's type checker, whose license and Lua's,
+/// of its VM's headers, the bundle carries, as Sleip holds them.
+const LUAU_ANALYSIS: &str = "sleip/analyzer/luau";
+
 /// The oldest macOS that the app runs on.
 const MINIMUM_SYSTEM: &str = "26.0";
 
@@ -244,6 +252,24 @@ pub fn run(mut args: impl Iterator<Item = String>) -> Result<ExitCode> {
     let binary = root.join("target/release").join(EXECUTABLE);
     fs::copy(&binary, macos.join(EXECUTABLE))
         .with_context(|| format!("copying {}", binary.display()))?;
+    // Sleip, which the app's plugin manager runs, of the app's plugin API
+    // that the bundle's resources tell.
+    run_command(
+        Command::new(env!("CARGO"))
+            .args(["build", "--release", "--locked", "-p", "sleip-cli"])
+            .env("SOURCE_DATE_EPOCH", moment.to_string())
+            .current_dir(&root),
+        "building Sleip",
+    )?;
+    let sleip = root.join("target/release").join(SLEIP);
+    fs::copy(&sleip, macos.join(SLEIP)).with_context(|| format!("copying {}", sleip.display()))?;
+    let analysis = resources.join("licenses/luau-analysis");
+    fs::create_dir_all(&analysis).with_context(|| format!("making {}", analysis.display()))?;
+    for name in ["LICENSE.txt", "lua_LICENSE.txt", "README.md"] {
+        let path = root.join(LUAU_ANALYSIS).join(name);
+        fs::copy(&path, analysis.join(name))
+            .with_context(|| format!("copying {}", path.display()))?;
+    }
     crate::terminfo::compile(
         &root.join(crate::terminfo::SOURCE),
         &resources.join("terminfo"),
@@ -304,7 +330,22 @@ pub fn run(mut args: impl Iterator<Item = String>) -> Result<ExitCode> {
     let sparkle = crate::sparkle::release(&root.join("target"))?;
     crate::sparkle::embed(&sparkle, &app, &identity)?;
     let entitlements = root.join("target").join(format!("{NAME}.entitlements"));
-    fs::write(&entitlements, entitlements_plist()).context("writing the entitlements")?;
+    fs::write(&entitlements, entitlements_plist(&ENTITLEMENTS))
+        .context("writing the entitlements")?;
+    // Sleip first, nested code that the bundle's signature seals, of
+    // `allow-jit` alone, as `sleip test` runs Luau's native code.
+    let sleip_entitlements = root.join("target/sleip.entitlements");
+    fs::write(
+        &sleip_entitlements,
+        entitlements_plist(&["com.apple.security.cs.allow-jit"]),
+    )
+    .context("writing Sleip's entitlements")?;
+    sign_code(
+        &macos.join(SLEIP),
+        &identity,
+        &sleip_entitlements,
+        "signing Sleip",
+    )?;
     sign(&app, &identity, &entitlements)?;
     println!(
         "bundle: {} signed {}",
@@ -315,7 +356,32 @@ pub fn run(mut args: impl Iterator<Item = String>) -> Result<ExitCode> {
             format!("by {identity}")
         }
     );
+    println!(
+        "bundle: {} of {} (the app's binary {}, Sleip's {})",
+        app.display(),
+        megabytes(size_of(&app)),
+        megabytes(size_of(&macos.join(EXECUTABLE))),
+        megabytes(size_of(&macos.join(SLEIP)))
+    );
     Ok(ExitCode::SUCCESS)
+}
+
+/// The bytes of the file or the folder at `path`, its files' whole.
+pub(crate) fn size_of(path: &Path) -> u64 {
+    let Ok(metadata) = fs::symlink_metadata(path) else {
+        return 0;
+    };
+    if !metadata.is_dir() {
+        return metadata.len();
+    }
+    fs::read_dir(path).map_or(0, |entries| {
+        entries.flatten().map(|entry| size_of(&entry.path())).sum()
+    })
+}
+
+/// `bytes` in megabytes, of a decimal, as a release's notes tell a size.
+pub(crate) fn megabytes(bytes: u64) -> String {
+    format!("{:.1} MB", bytes as f64 / 1_000_000.0)
 }
 
 /// Runs `command`, which `what` describes, and fails if it fails.
@@ -806,19 +872,35 @@ pub(crate) fn identity() -> Result<String> {
         .unwrap_or_else(|| "-".to_owned()))
 }
 
-/// The plist of [`ENTITLEMENTS`], each granted.
-fn entitlements_plist() -> String {
+/// The plist of `entitlements`, each granted, as [`ENTITLEMENTS`], the
+/// app's.
+fn entitlements_plist(entitlements: &[&str]) -> String {
     let mut plist = String::from(concat!(
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n",
         "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" ",
         "\"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n",
         "<plist version=\"1.0\">\n<dict>\n",
     ));
-    for key in ENTITLEMENTS {
+    for key in entitlements {
         plist.push_str(&format!("\t<key>{key}</key>\n\t<true/>\n"));
     }
     plist.push_str("</dict>\n</plist>\n");
     plist
+}
+
+/// Signs the code at `path`, a bundle or an executable, with `identity`, of
+/// the hardened runtime, the entitlements of the file `entitlements` and a
+/// secure timestamp unless ad hoc, as `what` tells the step.
+fn sign_code(path: &Path, identity: &str, entitlements: &Path, what: &str) -> Result<()> {
+    let mut command = Command::new("codesign");
+    command.args(["--force", "--options", "runtime", "--sign", identity]);
+    if identity != "-" {
+        command.arg("--timestamp");
+    }
+    run_command(
+        command.arg("--entitlements").arg(entitlements).arg(path),
+        what,
+    )
 }
 
 /// Signs `app` with `identity`, with the hardened runtime, the
@@ -826,15 +908,7 @@ fn entitlements_plist() -> String {
 /// hoc, over its frameworks signed already, and checks the signature, of
 /// the code that it holds too, as Gatekeeper does.
 fn sign(app: &Path, identity: &str, entitlements: &Path) -> Result<()> {
-    let mut command = Command::new("codesign");
-    command.args(["--force", "--options", "runtime", "--sign", identity]);
-    if identity != "-" {
-        command.arg("--timestamp");
-    }
-    run_command(
-        command.arg("--entitlements").arg(entitlements).arg(app),
-        "signing the bundle",
-    )?;
+    sign_code(app, identity, entitlements, "signing the bundle")?;
     run_command(
         Command::new("codesign")
             .args(["--verify", "--deep", "--strict", "--verbose=2"])
@@ -1033,7 +1107,7 @@ mod tests {
         let binary = directory.join("true");
         fs::copy("/usr/bin/true", &binary).unwrap();
         let entitlements = directory.join("test.entitlements");
-        fs::write(&entitlements, entitlements_plist()).unwrap();
+        fs::write(&entitlements, entitlements_plist(&ENTITLEMENTS)).unwrap();
         sign(&binary, "-", &entitlements).unwrap();
         let read = Command::new("codesign")
             .args(["-d", "--entitlements", "-", "--xml"])

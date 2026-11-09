@@ -1,9 +1,10 @@
 //! The notices of the licenses of the crates of other projects that the
-//! app's binary holds, which a distribution of the binary carries, in the
-//! bundle's `Contents/Resources/licenses/crates`, a directory a crate and
-//! an index: of each crate, the license that the app takes of its
-//! expression, the first of `deny.toml`'s allowed ones by [`PREFERENCE`]
-//! in each choice, and its own files of that license, and those of no
+//! app's and Sleip's binaries hold, which a distribution of the binaries
+//! carries, in the bundle's `Contents/Resources/licenses/crates`, a
+//! directory a crate and an index: of each crate, the license that the app
+//! takes of its expression, the first of `deny.toml`'s allowed ones by
+//! [`PREFERENCE`] in each choice, or of those that its exceptions there
+//! allow it, and its own files of that license, and those of no
 //! license's name, as its `COPYRIGHT` and its `NOTICE`; for a license that
 //! no file of the crate's tells, its text of SPDX's list, kept in
 //! `tools/xtask/licenses`, under its authors' copyright. A crate whose
@@ -44,6 +45,12 @@ const FILES: [&str; 6] = [
     "UNLICENSE",
 ];
 
+/// The files of a component's folder that are no notice of what the
+/// binaries hold, by the component's name: the toolchain's whole
+/// copyright, of the compiler, LLVM and Cargo, beside the standard
+/// library's own, `COPYRIGHT-library.html`.
+const LEFT_OUT: [(&str, &str); 1] = [(sbom::STD, "COPYRIGHT.html")];
+
 /// The licenses that a file's name tells, by a word of it, in capitals,
 /// and the start of the license's name: `UNLICENSE` first, whose name holds
 /// `LICENSE`.
@@ -60,19 +67,23 @@ const NAMED: [(&str, &str); 10] = [
     ("MPL", "MPL-"),
 ];
 
-/// Writes the notices of the crates that the app's binary holds into
-/// `out`, a directory a crate and `README.md`, the index; how many crates.
+/// Writes the notices of the crates that the app's and Sleip's binaries
+/// hold into `out`, a directory a crate and `README.md`, the index, of
+/// each crate's source on crates.io, as it is in them; how many crates.
 pub(crate) fn write(root: &Path, out: &Path) -> Result<usize> {
     let allowed = allowed(root)?;
+    let exceptions = exceptions(root)?;
     let crates = sbom::crates(root)?;
     if out.exists() {
         fs::remove_dir_all(out).with_context(|| format!("removing {}", out.display()))?;
     }
     let mut index = String::from(concat!(
-        "# The crates of other projects in Lokyr's binary\n\n",
+        "# The crates of other projects in Lokyr's and Sleip's binaries\n\n",
         "Each directory holds a crate's notices of the license that Lokyr takes of its own: ",
-        "its files, or the license's text under its authors' copyright where its package has none.\n\n",
-        "| Crate | Version | License | Lokyr takes |\n|---|---|---|---|\n",
+        "its files, or the license's text under its authors' copyright where its package has none. ",
+        "Each crate is in the binaries as its source, unchanged, which its row's link gives: ",
+        "of crates.io, or of Rust's repository for its standard library.\n\n",
+        "| Crate | Version | License | Lokyr takes | Source |\n|---|---|---|---|---|\n",
     ));
     for component in &crates {
         let expression = component.license.as_deref().with_context(|| {
@@ -81,7 +92,11 @@ pub(crate) fn write(root: &Path, out: &Path) -> Result<usize> {
                 component.name, component.version
             )
         })?;
-        let Some(taken) = chosen(expression, &allowed) else {
+        // `deny.toml`'s licenses, and those that its exceptions take of
+        // this crate alone.
+        let mut permitted = allowed.clone();
+        permitted.extend(exceptions.get(&component.name).cloned().unwrap_or_default());
+        let Some(taken) = chosen(expression, &permitted) else {
             bail!(
                 "{} {} is under `{expression}`, which allows none of deny.toml's licenses",
                 component.name,
@@ -94,10 +109,11 @@ pub(crate) fn write(root: &Path, out: &Path) -> Result<usize> {
         notices(root, component, &taken, &directory)?;
         let _ = writeln!(
             index,
-            "| {} | {} | {expression} | {} |",
+            "| {} | {} | {expression} | {} | {} |",
             component.name,
             component.version,
-            taken.join(" AND ")
+            taken.join(" AND "),
+            source_of(component),
         );
     }
     fs::write(out.join("README.md"), index).context("writing the index of the notices")?;
@@ -118,6 +134,7 @@ fn notices(root: &Path, component: &Component, taken: &[String], directory: &Pat
         .filter(|name| {
             let upper = name.to_uppercase();
             FILES.iter().any(|start| upper.starts_with(start))
+                && !LEFT_OUT.contains(&(component.name.as_str(), name.as_str()))
         })
         .collect();
     names.sort();
@@ -160,6 +177,23 @@ fn notices(root: &Path, component: &Component, taken: &[String], directory: &Pat
     Ok(())
 }
 
+/// The address of `component`'s source, as the binaries hold it: its
+/// version's page of crates.io, or the standard library's folder of
+/// Rust's repository at its release.
+fn source_of(component: &Component) -> String {
+    if component.name == sbom::STD {
+        format!(
+            "https://github.com/rust-lang/rust/tree/{}/library",
+            component.version
+        )
+    } else {
+        format!(
+            "https://crates.io/crates/{}/{}",
+            component.name, component.version
+        )
+    }
+}
+
 /// The license that the file `name` of a crate tells, by the start of the
 /// license's name, if its name tells one.
 fn named(name: &str) -> Option<&'static str> {
@@ -197,6 +231,40 @@ fn text(root: &Path, license: &str, holders: &str) -> Result<String> {
         text = text.replace(&line, &format!("Copyright (c) {holders}"));
     }
     Ok(text)
+}
+
+/// The licenses that `deny.toml`'s exceptions take, by the crates that
+/// each takes them of.
+fn exceptions(root: &Path) -> Result<std::collections::BTreeMap<String, Vec<String>>> {
+    let path = root.join("deny.toml");
+    let text = fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
+    let deny: toml::Value =
+        toml::from_str(&text).with_context(|| format!("reading {}", path.display()))?;
+    let mut taken = std::collections::BTreeMap::new();
+    let listed = deny
+        .get("licenses")
+        .and_then(|licenses| licenses.get("exceptions"))
+        .and_then(toml::Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    for exception in listed {
+        let name = exception
+            .get("crate")
+            .and_then(toml::Value::as_str)
+            .context("an exception of deny.toml names no crate")?;
+        let licenses: Vec<String> = exception
+            .get("allow")
+            .and_then(toml::Value::as_array)
+            .context("an exception of deny.toml allows no license")?
+            .iter()
+            .filter_map(|license| license.as_str().map(str::to_owned))
+            .collect();
+        taken
+            .entry(name.to_owned())
+            .or_insert_with(Vec::new)
+            .extend(licenses);
+    }
+    Ok(taken)
 }
 
 /// The licenses that `deny.toml` allows.
@@ -365,8 +433,25 @@ mod tests {
     }
 
     #[test]
+    fn an_exception_allows_its_license_of_its_crate_alone() {
+        let exceptions = exceptions(&root()).unwrap();
+        for name in ["pubgrub", "version-ranges", "priority-queue"] {
+            assert_eq!(exceptions[name], vec!["MPL-2.0".to_owned()], "{name}");
+        }
+        assert!(!allowed_list().contains(&"MPL-2.0".to_owned()));
+        let mut permitted = allowed_list();
+        permitted.extend(exceptions["priority-queue"].clone());
+        assert_eq!(
+            chosen("LGPL-3.0-or-later OR MPL-2.0", &permitted),
+            Some(vec!["MPL-2.0".to_owned()])
+        );
+        assert_eq!(chosen("MPL-2.0", &allowed_list()), None);
+    }
+
+    #[test]
     fn every_allowed_license_has_its_text_with_its_holders() {
-        for license in allowed_list() {
+        let excepted = exceptions(&root()).unwrap().into_values().flatten();
+        for license in allowed_list().into_iter().chain(excepted) {
             let text = text(&root(), &license, "Someone").unwrap();
             assert!(!text.contains("<year>"), "{license}");
             assert!(text.len() > 300, "{license}");
@@ -439,6 +524,20 @@ mod tests {
         assert!(!same_file.path().join("UNLICENSE").exists());
         let index = fs::read_to_string(out.join("README.md")).unwrap();
         assert!(index.contains("| objc2 |"));
+        assert!(index.contains("https://crates.io/crates/objc2/"), "{index}");
+        // The standard library's own notice, not the toolchain's whole,
+        // and its source of Rust's repository.
+        let std = directories
+            .iter()
+            .find(|entry| entry.file_name().to_string_lossy().starts_with("rust-std-"))
+            .expect("the standard library is in the binary");
+        assert!(std.path().join("COPYRIGHT-library.html").is_file());
+        assert!(!std.path().join("COPYRIGHT.html").exists());
+        assert!(
+            index.contains("https://github.com/rust-lang/rust/tree/1."),
+            "{index}"
+        );
+        assert!(!index.contains("crates.io/crates/rust-std"), "{index}");
         fs::remove_dir_all(out).unwrap();
     }
 }
