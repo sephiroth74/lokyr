@@ -15,7 +15,7 @@ The split is the same as cargo and rustc: the app runs plugins, and Sleip provid
 
 - **How it ships**:
   - Inside the app: `Lokyr.app/Contents/MacOS/sleip` on macOS, signed on its own and notarized with the app, its crates' licenses among the bundle's notices and in the release's bill of materials; next to the binary on Linux (F7).
-  - On the `PATH` of Lokyr's panes, whose end is the bundle's `Contents/MacOS`; elsewhere, of its path or of a link to it in a folder of the `PATH`, until an "Install command line tools" command puts it there ([B-645](tasks/BACKLOG.md)).
+  - On the `PATH` of Lokyr's panes, whose end is the bundle's `Contents/MacOS`; elsewhere, of its path or of a link to it in a folder of the `PATH`, until Lokyr › Install Command Line Tools… links it into `/usr/local/bin` ([F4-57](tasks/F4-plugin-ecosystem.md#f4-57--install-command-line-tools)).
   - It is also packaged on its own: Homebrew, and Linux packages from F7.
 - **In-app UI**: provided by the first-party `plugin-manager` plugin, which calls `sleip --json` underneath.
 
