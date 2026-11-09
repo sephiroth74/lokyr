@@ -526,8 +526,9 @@ pub struct App<B: Backend> {
     /// Where the plugins that Sleip installed are, which the app adds as it
     /// starts; none for an app of the built-in plugins alone.
     installed: Option<installed::Installed>,
-    /// The names of the installed plugins that the app added.
-    installed_names: Vec<String>,
+    /// What the app keeps of the installed plugins as they change: their
+    /// watches, those loaded and refused, and the reload's timer.
+    reloads: installed::Reloads,
     /// The user's decisions on their capabilities, as last read.
     decisions: lokyr_pkg_model::permissions::Permissions,
     /// The file of those decisions, and its watch.
@@ -802,7 +803,7 @@ impl<B: Backend> App<B> {
             untitled_timer: None,
             restart_timer: None,
             installed: None,
-            installed_names: Vec::new(),
+            reloads: installed::Reloads::default(),
             decisions: lokyr_pkg_model::permissions::Permissions::default(),
             permissions_file: None,
             consent_asks: BTreeMap::new(),
@@ -3696,6 +3697,13 @@ impl<B: Backend> App<B> {
                     }
                     file.reading = Some(platform.start_timer(Instant::now() + SETTLE));
                 }
+                if self.reloads.changed.swap(false, Ordering::AcqRel) {
+                    if let Some(timer) = self.reloads.timer.take() {
+                        platform.cancel_timer(timer);
+                    }
+                    self.reloads.timer =
+                        Some(platform.start_timer(Instant::now() + installed::RELOAD_SETTLE));
+                }
                 if let Some(file) = &mut self.permissions_file
                     && file.changed.swap(false, Ordering::AcqRel)
                 {
@@ -3769,6 +3777,10 @@ impl<B: Backend> App<B> {
             AppEvent::Timer(timer) if self.theme_files.reading == Some(timer) => {
                 self.theme_files.reading = None;
                 self.load_themes(platform);
+            }
+            AppEvent::Timer(timer) if self.reloads.timer == Some(timer) => {
+                self.reloads.timer = None;
+                self.reload_installed(platform);
             }
             AppEvent::Timer(timer)
                 if self

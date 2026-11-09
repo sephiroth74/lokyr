@@ -298,3 +298,45 @@ fn a_lazy_plugin_turned_off_and_on_again_waits_for_its_trigger_again() {
     assert!(plugins.owns("late.go"));
     assert!(did.borrow().is_empty());
 }
+
+#[test]
+fn a_plugin_removed_stops_and_is_forgotten() {
+    let mut app = App::default();
+    let mut plugins = Plugins::new();
+    let (plugin, did) = lazy("gone.go", &["tab-created"]);
+    plugins
+        .add_declared(manifest("gone", &[], ""), plugin)
+        .unwrap();
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    assert!(app.registry.get("gone.go").is_some());
+    // An event that waits for it goes with it.
+    plugins.post(Event::Workspace(WorkspaceEvent::TabCreated {
+        tab: host::TabId(1),
+        window: host::WindowId(1),
+        index: 0,
+    }));
+    assert!(plugins.remove("acme/gone", &mut app.context()));
+    assert!(!plugins.remove("acme/gone", &mut app.context()));
+    assert_eq!(plugins.status("acme/gone"), None);
+    assert!(!plugins.owns("gone.go"));
+    assert!(app.registry.get("gone.go").is_none());
+    assert!(plugins.take_declarations_changed());
+    assert!(plugins.deliver(&mut app.context()).is_empty());
+    assert_eq!(*did.borrow(), ["activate"]);
+    // Its namespace is free again, and a fault of the new one is told, as
+    // the old one's was.
+    for _ in 0..2 {
+        plugins
+            .add_declared(
+                manifest("gone", &[], ""),
+                scripted(
+                    |_| Err(Error::new(Code::Failed, "it fails")),
+                    |_, _, _| Ok(()),
+                ),
+            )
+            .unwrap();
+        assert_eq!(plugins.activate(&mut app.context()).len(), 1);
+        assert_eq!(plugins.take_disabled().len(), 1);
+        assert!(plugins.remove("acme/gone", &mut app.context()));
+    }
+}

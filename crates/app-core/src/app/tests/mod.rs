@@ -35,6 +35,7 @@ mod opens;
 mod panels;
 mod panes;
 mod parts;
+mod reloads;
 mod restore;
 mod scrollbars;
 mod surfaces;

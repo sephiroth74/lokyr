@@ -169,7 +169,7 @@ impl<B: Backend> App<B> {
         if permissions == self.decisions {
             return;
         }
-        let names = self.installed_names.clone();
+        let names: Vec<String> = self.reloads.loaded.keys().cloned().collect();
         for name in names {
             let decisions = permissions.plugins.get(&name).cloned().unwrap_or_default();
             let before = self

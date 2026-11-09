@@ -99,6 +99,38 @@ impl Watcher {
     }
 }
 
+/// A watch of a folder and of all that it holds, as the store of the
+/// installed plugins or a plugin's folder that `sleip dev` links, which
+/// calls back, from a thread of its own, at each change in it.
+pub struct FolderWatch {
+    _watcher: RecommendedWatcher,
+}
+
+impl std::fmt::Debug for FolderWatch {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FolderWatch").finish_non_exhaustive()
+    }
+}
+
+impl FolderWatch {
+    /// Watches `folder`, and calls `changed`, from the watch's thread, as a
+    /// file or a folder in it changes, comes or goes, its reads aside; the
+    /// error of a folder that cannot be watched, as one that is not there.
+    pub fn new(folder: &Path, changed: impl Fn() + Send + 'static) -> Result<Self, String> {
+        let mut watcher =
+            notify::recommended_watcher(move |event: notify::Result<notify::Event>| {
+                if event.is_ok_and(|event| !matches!(event.kind, EventKind::Access(_))) {
+                    changed();
+                }
+            })
+            .map_err(|error| format!("{} cannot be watched: {error}", folder.display()))?;
+        watcher
+            .watch(folder, RecursiveMode::Recursive)
+            .map_err(|error| format!("{} cannot be watched: {error}", folder.display()))?;
+        Ok(Self { _watcher: watcher })
+    }
+}
+
 /// Makes the directory of the config at `path`, empty, when it does not
 /// exist, so that a config written there later applies at once, as its
 /// directory's watch tells it.

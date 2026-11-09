@@ -985,6 +985,38 @@ impl Plugins {
         Ok(())
     }
 
+    /// Takes the plugin `name` away, as it was uninstalled, or to be made
+    /// anew of a new version or its folder's changes: it stops, as its
+    /// section turning it off stops it, its commands, keys, views, panels
+    /// and decorations going and its thread ending, and the host forgets
+    /// it. Whether it was there.
+    pub fn remove(&mut self, name: &str, context: &mut Context<'_>) -> bool {
+        let Some(at) = self
+            .entries
+            .iter()
+            .position(|entry| entry.state.name == name)
+        else {
+            return false;
+        };
+        let mut entry = self.entries.remove(at);
+        stop(
+            &mut entry,
+            context,
+            &mut self.out,
+            &mut self.declarations_changed,
+        );
+        // What waited for it goes with it, as its panels' closing goes to
+        // the app.
+        self.out
+            .events
+            .retain(|(to, _)| to.as_deref() != Some(name));
+        self.out.renders.retain(|(plugin, _)| plugin != name);
+        self.told_disabled.remove(name);
+        self.serve_from = 0;
+        self.out.written = true;
+        true
+    }
+
     /// Gives the installed plugin `name` the decisions of the user's, as
     /// they changed, as [`Plugins::add_installed`] takes them: one that
     /// held a capability that they no longer grant, as the user revoked
