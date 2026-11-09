@@ -50,30 +50,33 @@
 <line class="grid" x1="54.0" y1="124.0" x2="280.0" y2="124.0" stroke-width="1"/>
 <text class="muted tick" x="48.0" y="127.5" font-size="10" text-anchor="end">0.3</text>
 <text class="muted" x="54.0" y="229.0" font-size="10" text-anchor="middle">0.1.0</text>
-<text class="muted" x="82.2" y="229.0" font-size="10" text-anchor="middle">0.2.0</text>
-<text class="muted" x="110.5" y="229.0" font-size="10" text-anchor="middle">0.3.0</text>
-<text class="muted" x="138.8" y="229.0" font-size="10" text-anchor="middle">0.4.0</text>
-<text class="muted" x="167.0" y="229.0" font-size="10" text-anchor="middle">0.5.0</text>
-<text class="muted" x="195.2" y="229.0" font-size="10" text-anchor="middle" font-style="italic">F3-49</text>
-<text class="muted" x="223.5" y="229.0" font-size="10" text-anchor="middle">0.5.1</text>
-<text class="muted" x="251.8" y="229.0" font-size="10" text-anchor="middle" font-style="italic">F3-72</text>
-<text class="muted" x="280.0" y="229.0" font-size="10" text-anchor="middle">0.7.0</text>
-<line class="accent-line" x1="54.0" y1="136.0" x2="82.2" y2="135.7" stroke-width="2" stroke-linecap="round"/>
-<line class="accent-line" x1="82.2" y1="135.7" x2="110.5" y2="132.4" stroke-width="2" stroke-linecap="round"/>
-<line class="accent-line" x1="110.5" y1="132.4" x2="138.8" y2="137.5" stroke-width="2" stroke-linecap="round"/>
-<line class="accent-line" x1="138.8" y1="137.5" x2="167.0" y2="132.4" stroke-width="2" stroke-linecap="round"/>
-<line class="accent-line" x1="167.0" y1="132.4" x2="195.2" y2="133.0" stroke-width="2" stroke-linecap="round"/>
-<line class="accent-line" x1="195.2" y1="133.0" x2="223.5" y2="133.0" stroke-width="2" stroke-linecap="round"/>
-<line class="accent-line" x1="223.5" y1="133.0" x2="280.0" y2="129.1" stroke-width="2" stroke-linecap="round"/>
+<text class="muted" x="79.1" y="229.0" font-size="10" text-anchor="middle">0.2.0</text>
+<text class="muted" x="104.2" y="229.0" font-size="10" text-anchor="middle">0.3.0</text>
+<text class="muted" x="129.3" y="229.0" font-size="10" text-anchor="middle">0.4.0</text>
+<text class="muted" x="154.4" y="229.0" font-size="10" text-anchor="middle">0.5.0</text>
+<text class="muted" x="179.6" y="229.0" font-size="10" text-anchor="middle" font-style="italic">F3-49</text>
+<text class="muted" x="204.7" y="229.0" font-size="10" text-anchor="middle">0.5.1</text>
+<text class="muted" x="229.8" y="229.0" font-size="10" text-anchor="middle" font-style="italic">F3-72</text>
+<text class="muted" x="254.9" y="229.0" font-size="10" text-anchor="middle">0.7.0</text>
+<text class="muted" x="280.0" y="229.0" font-size="10" text-anchor="middle">0.8.0</text>
+<line class="accent-line" x1="54.0" y1="136.0" x2="79.1" y2="135.7" stroke-width="2" stroke-linecap="round"/>
+<line class="accent-line" x1="79.1" y1="135.7" x2="104.2" y2="132.4" stroke-width="2" stroke-linecap="round"/>
+<line class="accent-line" x1="104.2" y1="132.4" x2="129.3" y2="137.5" stroke-width="2" stroke-linecap="round"/>
+<line class="accent-line" x1="129.3" y1="137.5" x2="154.4" y2="132.4" stroke-width="2" stroke-linecap="round"/>
+<line class="accent-line" x1="154.4" y1="132.4" x2="179.6" y2="133.0" stroke-width="2" stroke-linecap="round"/>
+<line class="accent-line" x1="179.6" y1="133.0" x2="204.7" y2="133.0" stroke-width="2" stroke-linecap="round"/>
+<line class="accent-line" x1="204.7" y1="133.0" x2="254.9" y2="129.1" stroke-width="2" stroke-linecap="round"/>
+<line class="accent-line" x1="254.9" y1="129.1" x2="280.0" y2="125.2" stroke-width="2" stroke-linecap="round"/>
 <circle class="accent ring" cx="54.0" cy="136.0" r="4" stroke-width="2"><title>0.1.0: 0.260 ms</title></circle>
-<circle class="accent ring" cx="82.2" cy="135.7" r="4" stroke-width="2"><title>0.2.0: 0.261 ms</title></circle>
-<circle class="accent ring" cx="110.5" cy="132.4" r="4" stroke-width="2"><title>0.3.0: 0.272 ms</title></circle>
-<circle class="accent ring" cx="138.8" cy="137.5" r="4" stroke-width="2"><title>0.4.0: 0.255 ms</title></circle>
-<circle class="accent ring" cx="167.0" cy="132.4" r="4" stroke-width="2"><title>0.5.0: 0.272 ms</title></circle>
-<circle class="surface accent-line" cx="195.2" cy="133.0" r="4" stroke-width="2"><title>F3-49: 0.270 ms</title></circle>
-<circle class="accent ring" cx="223.5" cy="133.0" r="4" stroke-width="2"><title>0.5.1: 0.270 ms</title></circle>
-<circle class="accent ring" cx="280.0" cy="129.1" r="4" stroke-width="2"><title>0.7.0: 0.283 ms</title></circle>
-<text class="primary tick" x="289.0" y="133.1" font-size="11" font-weight="600">0.283</text>
+<circle class="accent ring" cx="79.1" cy="135.7" r="4" stroke-width="2"><title>0.2.0: 0.261 ms</title></circle>
+<circle class="accent ring" cx="104.2" cy="132.4" r="4" stroke-width="2"><title>0.3.0: 0.272 ms</title></circle>
+<circle class="accent ring" cx="129.3" cy="137.5" r="4" stroke-width="2"><title>0.4.0: 0.255 ms</title></circle>
+<circle class="accent ring" cx="154.4" cy="132.4" r="4" stroke-width="2"><title>0.5.0: 0.272 ms</title></circle>
+<circle class="surface accent-line" cx="179.6" cy="133.0" r="4" stroke-width="2"><title>F3-49: 0.270 ms</title></circle>
+<circle class="accent ring" cx="204.7" cy="133.0" r="4" stroke-width="2"><title>0.5.1: 0.270 ms</title></circle>
+<circle class="accent ring" cx="254.9" cy="129.1" r="4" stroke-width="2"><title>0.7.0: 0.283 ms</title></circle>
+<circle class="accent ring" cx="280.0" cy="125.2" r="4" stroke-width="2"><title>0.8.0: 0.296 ms</title></circle>
+<text class="primary tick" x="289.0" y="129.2" font-size="11" font-weight="600">0.296</text>
 <text class="primary" x="354.0" y="94" font-size="12" font-weight="600">ASCII, p99</text>
 <line class="grid" x1="392.0" y1="214.0" x2="618.0" y2="214.0" stroke-width="1"/>
 <text class="muted tick" x="386.0" y="217.5" font-size="10" text-anchor="end">0</text>
@@ -82,32 +85,35 @@
 <line class="grid" x1="392.0" y1="124.0" x2="618.0" y2="124.0" stroke-width="1"/>
 <text class="muted tick" x="386.0" y="127.5" font-size="10" text-anchor="end">2</text>
 <text class="muted" x="392.0" y="229.0" font-size="10" text-anchor="middle">0.1.0</text>
-<text class="muted" x="420.2" y="229.0" font-size="10" text-anchor="middle">0.2.0</text>
-<text class="muted" x="448.5" y="229.0" font-size="10" text-anchor="middle">0.3.0</text>
-<text class="muted" x="476.8" y="229.0" font-size="10" text-anchor="middle">0.4.0</text>
-<text class="muted" x="505.0" y="229.0" font-size="10" text-anchor="middle">0.5.0</text>
-<text class="muted" x="533.2" y="229.0" font-size="10" text-anchor="middle" font-style="italic">F3-49</text>
-<text class="muted" x="561.5" y="229.0" font-size="10" text-anchor="middle">0.5.1</text>
-<text class="muted" x="589.8" y="229.0" font-size="10" text-anchor="middle" font-style="italic">F3-72</text>
-<text class="muted" x="618.0" y="229.0" font-size="10" text-anchor="middle">0.7.0</text>
+<text class="muted" x="417.1" y="229.0" font-size="10" text-anchor="middle">0.2.0</text>
+<text class="muted" x="442.2" y="229.0" font-size="10" text-anchor="middle">0.3.0</text>
+<text class="muted" x="467.3" y="229.0" font-size="10" text-anchor="middle">0.4.0</text>
+<text class="muted" x="492.4" y="229.0" font-size="10" text-anchor="middle">0.5.0</text>
+<text class="muted" x="517.6" y="229.0" font-size="10" text-anchor="middle" font-style="italic">F3-49</text>
+<text class="muted" x="542.7" y="229.0" font-size="10" text-anchor="middle">0.5.1</text>
+<text class="muted" x="567.8" y="229.0" font-size="10" text-anchor="middle" font-style="italic">F3-72</text>
+<text class="muted" x="592.9" y="229.0" font-size="10" text-anchor="middle">0.7.0</text>
+<text class="muted" x="618.0" y="229.0" font-size="10" text-anchor="middle">0.8.0</text>
 <line class="budget" x1="392.0" y1="124.0" x2="618.0" y2="124.0" stroke-width="1.5" stroke-dasharray="4 3"><title>budget: 2 ms</title></line>
 <text class="secondary" x="618.0" y="119.0" font-size="10" text-anchor="end">budget 2</text>
-<line class="accent-line" x1="392.0" y1="198.7" x2="420.2" y2="198.5" stroke-width="2" stroke-linecap="round"/>
-<line class="accent-line" x1="420.2" y1="198.5" x2="448.5" y2="197.2" stroke-width="2" stroke-linecap="round"/>
-<line class="accent-line" x1="448.5" y1="197.2" x2="476.8" y2="198.7" stroke-width="2" stroke-linecap="round"/>
-<line class="accent-line" x1="476.8" y1="198.7" x2="505.0" y2="198.1" stroke-width="2" stroke-linecap="round"/>
-<line class="accent-line" x1="505.0" y1="198.1" x2="533.2" y2="196.7" stroke-width="2" stroke-linecap="round"/>
-<line class="accent-line" x1="533.2" y1="196.7" x2="561.5" y2="196.9" stroke-width="2" stroke-linecap="round"/>
-<line class="accent-line" x1="561.5" y1="196.9" x2="618.0" y2="196.0" stroke-width="2" stroke-linecap="round"/>
+<line class="accent-line" x1="392.0" y1="198.7" x2="417.1" y2="198.5" stroke-width="2" stroke-linecap="round"/>
+<line class="accent-line" x1="417.1" y1="198.5" x2="442.2" y2="197.2" stroke-width="2" stroke-linecap="round"/>
+<line class="accent-line" x1="442.2" y1="197.2" x2="467.3" y2="198.7" stroke-width="2" stroke-linecap="round"/>
+<line class="accent-line" x1="467.3" y1="198.7" x2="492.4" y2="198.1" stroke-width="2" stroke-linecap="round"/>
+<line class="accent-line" x1="492.4" y1="198.1" x2="517.6" y2="196.7" stroke-width="2" stroke-linecap="round"/>
+<line class="accent-line" x1="517.6" y1="196.7" x2="542.7" y2="196.9" stroke-width="2" stroke-linecap="round"/>
+<line class="accent-line" x1="542.7" y1="196.9" x2="592.9" y2="196.0" stroke-width="2" stroke-linecap="round"/>
+<line class="accent-line" x1="592.9" y1="196.0" x2="618.0" y2="194.8" stroke-width="2" stroke-linecap="round"/>
 <circle class="accent ring" cx="392.0" cy="198.7" r="4" stroke-width="2"><title>0.1.0: 0.339 ms</title></circle>
-<circle class="accent ring" cx="420.2" cy="198.5" r="4" stroke-width="2"><title>0.2.0: 0.344 ms</title></circle>
-<circle class="accent ring" cx="448.5" cy="197.2" r="4" stroke-width="2"><title>0.3.0: 0.373 ms</title></circle>
-<circle class="accent ring" cx="476.8" cy="198.7" r="4" stroke-width="2"><title>0.4.0: 0.340 ms</title></circle>
-<circle class="accent ring" cx="505.0" cy="198.1" r="4" stroke-width="2"><title>0.5.0: 0.354 ms</title></circle>
-<circle class="surface accent-line" cx="533.2" cy="196.7" r="4" stroke-width="2"><title>F3-49: 0.384 ms</title></circle>
-<circle class="accent ring" cx="561.5" cy="196.9" r="4" stroke-width="2"><title>0.5.1: 0.381 ms</title></circle>
-<circle class="accent ring" cx="618.0" cy="196.0" r="4" stroke-width="2"><title>0.7.0: 0.401 ms</title></circle>
-<text class="primary tick" x="627.0" y="200.0" font-size="11" font-weight="600">0.401</text>
+<circle class="accent ring" cx="417.1" cy="198.5" r="4" stroke-width="2"><title>0.2.0: 0.344 ms</title></circle>
+<circle class="accent ring" cx="442.2" cy="197.2" r="4" stroke-width="2"><title>0.3.0: 0.373 ms</title></circle>
+<circle class="accent ring" cx="467.3" cy="198.7" r="4" stroke-width="2"><title>0.4.0: 0.340 ms</title></circle>
+<circle class="accent ring" cx="492.4" cy="198.1" r="4" stroke-width="2"><title>0.5.0: 0.354 ms</title></circle>
+<circle class="surface accent-line" cx="517.6" cy="196.7" r="4" stroke-width="2"><title>F3-49: 0.384 ms</title></circle>
+<circle class="accent ring" cx="542.7" cy="196.9" r="4" stroke-width="2"><title>0.5.1: 0.381 ms</title></circle>
+<circle class="accent ring" cx="592.9" cy="196.0" r="4" stroke-width="2"><title>0.7.0: 0.401 ms</title></circle>
+<circle class="accent ring" cx="618.0" cy="194.8" r="4" stroke-width="2"><title>0.8.0: 0.427 ms</title></circle>
+<text class="primary tick" x="627.0" y="198.8" font-size="11" font-weight="600">0.427</text>
 <text class="primary" x="16.0" y="260" font-size="12" font-weight="600">CJK and emoji, p50</text>
 <line class="grid" x1="54.0" y1="380.0" x2="280.0" y2="380.0" stroke-width="1"/>
 <text class="muted tick" x="48.0" y="383.5" font-size="10" text-anchor="end">0</text>
@@ -118,20 +124,23 @@
 <line class="grid" x1="54.0" y1="290.0" x2="280.0" y2="290.0" stroke-width="1"/>
 <text class="muted tick" x="48.0" y="293.5" font-size="10" text-anchor="end">0.75</text>
 <text class="muted" x="54.0" y="395.0" font-size="10" text-anchor="middle">0.1.0</text>
-<text class="muted" x="82.2" y="395.0" font-size="10" text-anchor="middle">0.2.0</text>
-<text class="muted" x="110.5" y="395.0" font-size="10" text-anchor="middle">0.3.0</text>
-<text class="muted" x="138.8" y="395.0" font-size="10" text-anchor="middle">0.4.0</text>
-<text class="muted" x="167.0" y="395.0" font-size="10" text-anchor="middle">0.5.0</text>
-<text class="muted" x="195.2" y="395.0" font-size="10" text-anchor="middle" font-style="italic">F3-49</text>
-<text class="muted" x="223.5" y="395.0" font-size="10" text-anchor="middle">0.5.1</text>
-<text class="muted" x="251.8" y="395.0" font-size="10" text-anchor="middle" font-style="italic">F3-72</text>
-<text class="muted" x="280.0" y="395.0" font-size="10" text-anchor="middle">0.7.0</text>
-<line class="accent-line" x1="167.0" y1="326.0" x2="195.2" y2="294.8" stroke-width="2" stroke-linecap="round"/>
-<line class="accent-line" x1="195.2" y1="294.8" x2="223.5" y2="293.6" stroke-width="2" stroke-linecap="round"/>
-<line class="accent-line" x1="223.5" y1="293.6" x2="280.0" y2="294.8" stroke-width="2" stroke-linecap="round"/>
-<circle class="accent ring" cx="167.0" cy="326.0" r="4" stroke-width="2"><title>0.5.0: 0.45 ms</title></circle>
-<circle class="surface accent-line" cx="195.2" cy="294.8" r="4" stroke-width="2"><title>F3-49: 0.71 ms</title></circle>
-<circle class="accent ring" cx="223.5" cy="293.6" r="4" stroke-width="2"><title>0.5.1: 0.72 ms</title></circle>
-<circle class="accent ring" cx="280.0" cy="294.8" r="4" stroke-width="2"><title>0.7.0: 0.71 ms</title></circle>
-<text class="primary tick" x="289.0" y="298.8" font-size="11" font-weight="600">0.71</text>
+<text class="muted" x="79.1" y="395.0" font-size="10" text-anchor="middle">0.2.0</text>
+<text class="muted" x="104.2" y="395.0" font-size="10" text-anchor="middle">0.3.0</text>
+<text class="muted" x="129.3" y="395.0" font-size="10" text-anchor="middle">0.4.0</text>
+<text class="muted" x="154.4" y="395.0" font-size="10" text-anchor="middle">0.5.0</text>
+<text class="muted" x="179.6" y="395.0" font-size="10" text-anchor="middle" font-style="italic">F3-49</text>
+<text class="muted" x="204.7" y="395.0" font-size="10" text-anchor="middle">0.5.1</text>
+<text class="muted" x="229.8" y="395.0" font-size="10" text-anchor="middle" font-style="italic">F3-72</text>
+<text class="muted" x="254.9" y="395.0" font-size="10" text-anchor="middle">0.7.0</text>
+<text class="muted" x="280.0" y="395.0" font-size="10" text-anchor="middle">0.8.0</text>
+<line class="accent-line" x1="154.4" y1="326.0" x2="179.6" y2="294.8" stroke-width="2" stroke-linecap="round"/>
+<line class="accent-line" x1="179.6" y1="294.8" x2="204.7" y2="293.6" stroke-width="2" stroke-linecap="round"/>
+<line class="accent-line" x1="204.7" y1="293.6" x2="254.9" y2="294.8" stroke-width="2" stroke-linecap="round"/>
+<line class="accent-line" x1="254.9" y1="294.8" x2="280.0" y2="294.1" stroke-width="2" stroke-linecap="round"/>
+<circle class="accent ring" cx="154.4" cy="326.0" r="4" stroke-width="2"><title>0.5.0: 0.45 ms</title></circle>
+<circle class="surface accent-line" cx="179.6" cy="294.8" r="4" stroke-width="2"><title>F3-49: 0.71 ms</title></circle>
+<circle class="accent ring" cx="204.7" cy="293.6" r="4" stroke-width="2"><title>0.5.1: 0.72 ms</title></circle>
+<circle class="accent ring" cx="254.9" cy="294.8" r="4" stroke-width="2"><title>0.7.0: 0.71 ms</title></circle>
+<circle class="accent ring" cx="280.0" cy="294.1" r="4" stroke-width="2"><title>0.8.0: 0.72 ms</title></circle>
+<text class="primary tick" x="289.0" y="298.1" font-size="11" font-weight="600">0.72</text>
 </svg>
