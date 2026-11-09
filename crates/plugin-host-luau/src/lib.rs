@@ -258,6 +258,22 @@ impl LuauPlugin {
             .map_err(|failure| self.error(callback, failure))
     }
 
+    /// Calls its callback of `callback`, as [`LuauPlugin::call`] does, and
+    /// converts what it returns of `convert` within the call's deadline.
+    fn call_converting<R>(
+        &self,
+        callback: Callback,
+        cx: &mut Cx<'_>,
+        args: impl FnOnce(&Lua) -> Result<Vec<Value>, ShapeError>,
+        convert: impl FnOnce(MultiValue, &shape::Budget) -> Result<R, ShapeError>,
+    ) -> Result<Option<Result<R, ShapeError>>, Error> {
+        let Some(vm) = &self.vm else {
+            return Ok(None);
+        };
+        vm.call_converting(callback, cx, args, convert)
+            .map_err(|failure| self.error(callback, failure))
+    }
+
     /// The error of a value of the wrong shape that its callback of
     /// `callback` returned, as `wanted` tells the right one.
     fn returned(&self, callback: Callback, wanted: &str, error: &ShapeError) -> Error {
@@ -336,24 +352,26 @@ impl Plugin for LuauPlugin {
     /// Its tree of a table of a node, or nothing of `nil`, without its
     /// callback too.
     fn render(&mut self, cx: &mut Cx<'_>, view: &ViewId) -> Option<Node> {
-        match self.call(Callback::Render, cx, |lua| {
-            Ok(vec![shape::to_lua(lua, view)?])
-        }) {
-            Ok(None) => None,
-            Ok(Some(returned)) => match returned.into_iter().next().unwrap_or(Value::Nil) {
-                Value::Nil => None,
-                tree => match tree::from_lua(tree) {
-                    Ok(tree) => Some(tree),
-                    Err(error) => {
-                        self.failure = Some(self.returned(
-                            Callback::Render,
-                            "a view, a table of a node, or nil",
-                            &error,
-                        ));
-                        None
-                    }
-                },
+        let rendered = self.call_converting(
+            Callback::Render,
+            cx,
+            |lua| Ok(vec![shape::to_lua(lua, view)?]),
+            |returned, budget| match returned.into_iter().next().unwrap_or(Value::Nil) {
+                Value::Nil => Ok(None),
+                tree => tree::from_lua(tree, budget).map(Some),
             },
+        );
+        match rendered {
+            Ok(None) => None,
+            Ok(Some(Ok(tree))) => tree,
+            Ok(Some(Err(error))) => {
+                self.failure = Some(self.returned(
+                    Callback::Render,
+                    "a view, a table of a node, or nil",
+                    &error,
+                ));
+                None
+            }
             Err(error) => {
                 self.failure = Some(error);
                 None
@@ -476,7 +494,8 @@ pub fn ui_event_through_luau(event: &UiEvent) -> Result<(), String> {
 pub fn view_through_luau(view: &Node) -> Result<(), String> {
     let lua = Lua::new();
     let given = tree::to_lua(&lua, view).map_err(|error| error.to_string())?;
-    let back = tree::from_lua(Value::Table(given)).map_err(|error| error.to_string())?;
+    let back = tree::from_lua(Value::Table(given), &shape::Budget::default())
+        .map_err(|error| error.to_string())?;
     (back == *view)
         .then_some(())
         .ok_or_else(|| format!("{view:?} came back as {back:?}"))

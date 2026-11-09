@@ -237,3 +237,144 @@ fn a_render_past_its_deadline_is_a_fault() {
         "{failure}"
     );
 }
+
+#[test]
+fn a_view_s_conversion_stops_at_its_render_s_deadline() {
+    // 500 000 children of one table, which the render returns at once and
+    // the host would convert for long past its 16 ms.
+    let entry = r#"
+local nodes = {}
+return {
+    activate = function()
+        local node = { kind = "spacer" }
+        for i = 1, 500000 do nodes[i] = node end
+    end,
+    render = function() return { kind = "container", children = nodes } end,
+}
+"#;
+    let mut plugin = plugin(entry).with_deadlines(Deadlines {
+        activate: std::time::Duration::from_secs(10),
+        ..Deadlines::default()
+    });
+    let mut host = FakeHost::new("acme/test");
+    host.activate(&mut plugin).unwrap();
+    let view = ViewId::Panel(PanelId::from("x"));
+    let start = std::time::Instant::now();
+    assert_eq!(nowhere(|cx| plugin.render(cx, &view)), None);
+    let took = start.elapsed();
+    let failure = plugin.take_failure().unwrap();
+    assert_eq!(failure.code, Code::Fault, "{failure}");
+    assert!(failure.message.contains("past its deadline"), "{failure}");
+    assert!(took < std::time::Duration::from_millis(250), "{took:?}");
+    // A request's arguments alike, of a million values, at a command's
+    // deadline.
+    let entry = r#"
+local big = {}
+return {
+    activate = function(cx)
+        for i = 1, 1000000 do big[i] = i end
+        cx.register_command({ name = "acme.big", title = "Big", category = "view" })
+    end,
+    on_command = function(cx) cx.set_state(big) end,
+}
+"#;
+    let mut plugin = self::plugin(entry).with_deadlines(Deadlines {
+        activate: std::time::Duration::from_secs(10),
+        command: std::time::Duration::from_millis(20),
+        ..Deadlines::default()
+    });
+    host.activate(&mut plugin).unwrap();
+    let start = std::time::Instant::now();
+    let error = host
+        .command(&mut plugin, "acme.big", Args::new())
+        .unwrap_err();
+    let took = start.elapsed();
+    assert_eq!(error.code, Code::Fault, "{error}");
+    assert!(took < std::time::Duration::from_millis(250), "{took:?}");
+    // A common view as fast as before, well within its deadline.
+    let common = r#"
+return {
+    render = function()
+        local rows = {}
+        for i = 1, 200 do
+            rows[i] = { kind = "container", key = "row-" .. i, layout = { gap = 4 },
+                children = { { kind = "icon", icon = "file" }, { kind = "text", text = "row " .. i } } }
+        end
+        return { kind = "scroll", key = "rows", children = rows }
+    end,
+}
+"#;
+    let mut plugin = self::plugin(common);
+    host.activate(&mut plugin).unwrap();
+    let tree = nowhere(|cx| plugin.render(cx, &view)).unwrap();
+    assert_eq!(tree.children.len(), 200);
+    assert_eq!(plugin.take_failure(), None);
+}
+
+#[test]
+fn a_value_s_texts_are_bounded_by_their_bytes() {
+    // One text of 4 MiB, which the VM holds once, 8 times in a view and in
+    // a state: refused as they would copy 32 MiB, as a plugin's tables
+    // could hold it millions of times.
+    let entry = r#"
+local s = string.rep("x", 4 * 1024 * 1024)
+local t, nodes = {}, {}
+local node = { kind = "text", text = s }
+for i = 1, 8 do t[i] = s; nodes[i] = node end
+return {
+    activate = function(cx)
+        cx.register_command({ name = "acme.big", title = "Big", category = "view" })
+    end,
+    on_command = function(cx) cx.set_state({ big = t }) end,
+    render = function() return { kind = "container", children = nodes } end,
+}
+"#;
+    let mut plugin = plugin(entry).with_deadlines(Deadlines {
+        render: std::time::Duration::from_secs(5),
+        command: std::time::Duration::from_secs(5),
+        ..Deadlines::default()
+    });
+    let mut host = FakeHost::new("acme/test");
+    host.activate(&mut plugin).unwrap();
+    let view = ViewId::Panel(PanelId::from("x"));
+    assert_eq!(nowhere(|cx| plugin.render(cx, &view)), None);
+    let failure = plugin.take_failure().unwrap();
+    assert!(
+        failure.message.contains("16 MiB of texts at most"),
+        "{failure}"
+    );
+    let error = host
+        .command(&mut plugin, "acme.big", Args::new())
+        .unwrap_err();
+    assert!(error.message.contains("16 MiB of texts at most"), "{error}");
+}
+
+#[test]
+fn a_number_that_is_not_finite_is_refused_in_a_view_and_a_request() {
+    let entry = r#"
+return {
+    activate = function(cx)
+        cx.register_command({ name = "acme.nan", title = "NaN", category = "view" })
+    end,
+    on_command = function(cx) cx.set_font_size(0/0) end,
+    render = function() return { kind = "container", layout = { gap = 0/0 } } end,
+}
+"#;
+    let mut plugin = plugin(entry);
+    let mut host = FakeHost::new("acme/test");
+    host.activate(&mut plugin).unwrap();
+    let view = ViewId::Panel(PanelId::from("x"));
+    assert_eq!(nowhere(|cx| plugin.render(cx, &view)), None);
+    let failure = plugin.take_failure().unwrap();
+    assert!(
+        failure.message.contains("expected a finite number"),
+        "{failure}"
+    );
+    let error = host
+        .command(&mut plugin, "acme.nan", Args::new())
+        .unwrap_err();
+    assert!(
+        error.message.contains("expected a finite number"),
+        "{error}"
+    );
+}

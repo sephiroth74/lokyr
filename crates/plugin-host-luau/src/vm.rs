@@ -11,7 +11,7 @@ use lokyr_plugin_sdk::plugin::Cx;
 use mlua::chunk::ChunkMode;
 use mlua::{Function, Lua, LuaOptions, MultiValue, StdLib, Table, Value};
 
-use crate::shape::ShapeError;
+use crate::shape::{Budget, ShapeError};
 use crate::watchdog::Watchdog;
 use crate::{Callback, Deadlines, Execution, Package, requests};
 
@@ -182,6 +182,41 @@ impl Vm {
         cx: &mut Cx<'_>,
         args: impl FnOnce(&Lua) -> Result<Vec<Value>, ShapeError>,
     ) -> Result<Option<MultiValue>, Failure> {
+        self.invoke_then(name, deadline, cx, args, Ok)
+    }
+
+    /// Calls the plugin's callback of `callback`, as [`Vm::call`] does, and
+    /// converts what it returns of `convert` within the call's deadline,
+    /// as its code ran: what the conversion gives, or why it failed, of
+    /// the deadline passed as a failure of the call's.
+    pub(crate) fn call_converting<R>(
+        &self,
+        callback: Callback,
+        cx: &mut Cx<'_>,
+        args: impl FnOnce(&Lua) -> Result<Vec<Value>, ShapeError>,
+        convert: impl FnOnce(MultiValue, &Budget) -> Result<R, ShapeError>,
+    ) -> Result<Option<Result<R, ShapeError>>, Failure> {
+        let deadline = self.watchdog.deadline();
+        let then = |returned: MultiValue| {
+            let budget = Budget::within(deadline);
+            match convert(returned, &budget) {
+                Err(error) if budget.passed() => Err(mlua::Error::runtime(error)),
+                converted => Ok(converted),
+            }
+        };
+        self.invoke_then(callback.name(), self.deadlines.of(callback), cx, args, then)
+    }
+
+    /// Calls the plugin's function `name`, as [`Vm::invoke`] does, and
+    /// gives what it returns to `then`, within the call's deadline.
+    fn invoke_then<R>(
+        &self,
+        name: &str,
+        deadline: Duration,
+        cx: &mut Cx<'_>,
+        args: impl FnOnce(&Lua) -> Result<Vec<Value>, ShapeError>,
+        then: impl FnOnce(MultiValue) -> mlua::Result<R>,
+    ) -> Result<Option<R>, Failure> {
         let lua = &self._lua;
         // Raw, as a metamethod's code would run outside the call's watch.
         let function = match self
@@ -201,15 +236,20 @@ impl Vm {
         let mut all = vec![Value::Table(self.cx.clone())];
         all.extend(args(lua).map_err(|error| Failure::Code(mlua::Error::runtime(error)))?);
         let watchdog = &self.watchdog;
+        let converting = watchdog.deadline();
         watched(watchdog, deadline, || {
-            lua.scope(|scope| {
+            let returned = lua.scope(|scope| {
                 let host = scope.create_function_mut(|lua, (at, args): (usize, MultiValue)| {
                     let kind = requests::kinds()
                         .get(at)
                         .ok_or_else(|| mlua::Error::runtime("no such request"))?;
-                    let request = requests::request(kind, &args.into_vec()).map_err(|error| {
-                        mlua::Error::runtime(format!("bad argument to `cx.{}`: {error}", kind.name))
-                    })?;
+                    let request = requests::request(kind, &args.into_vec(), Some(&converting))
+                        .map_err(|error| {
+                            mlua::Error::runtime(format!(
+                                "bad argument to `cx.{}`: {error}",
+                                kind.name
+                            ))
+                        })?;
                     let left = watchdog.pause();
                     let response = cx.request(request);
                     watchdog.resume(left);
@@ -219,7 +259,8 @@ impl Vm {
                 let returned = function.call::<MultiValue>(MultiValue::from_vec(all));
                 lua.unset_named_registry_value(HOST)?;
                 returned
-            })
+            })?;
+            then(returned)
         })
         .map(Some)
     }

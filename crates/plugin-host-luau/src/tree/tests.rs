@@ -11,7 +11,10 @@ use crate::view_through_luau;
 /// The view of Luau's `source`, of a plugin's render.
 fn take(source: &str) -> Result<Node, ShapeError> {
     let lua = Lua::new();
-    from_lua(lua.load(format!("return {source}")).eval().unwrap())
+    from_lua(
+        lua.load(format!("return {source}")).eval().unwrap(),
+        &Budget::default(),
+    )
 }
 
 /// The error of the view of Luau's `source`.
@@ -245,7 +248,11 @@ fn a_view_past_its_depth_or_that_holds_itself_is_refused_without_recursion() {
             let deepest = take(&nested(Node::DEEPEST)).unwrap();
             assert!(deepest.nests_within_deepest());
             let lua = Lua::new();
-            let back = from_lua(Value::Table(to_lua(&lua, &deepest).unwrap())).unwrap();
+            let back = from_lua(
+                Value::Table(to_lua(&lua, &deepest).unwrap()),
+                &Budget::default(),
+            )
+            .unwrap();
             assert!(back == deepest);
             lokyr_plugin_sdk::view::dismantle(back);
             lokyr_plugin_sdk::view::dismantle(deepest);

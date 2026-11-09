@@ -16,6 +16,7 @@ use serde::de::{
 };
 
 use crate::shape::{self, Budget, ShapeError, Taking};
+use crate::watchdog::Deadline;
 
 /// What a request takes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -189,8 +190,13 @@ impl<'de> VariantAccess<'de> for Picking {
 
 /// The request of `kind` of a plugin's `args`, its call's: why not, of an
 /// argument of another shape or of more arguments than it takes, a `nil`
-/// of an optional one leaving it out.
-pub(crate) fn request(kind: &Kind, args: &[Value]) -> Result<Request, ShapeError> {
+/// of an optional one leaving it out, or of `deadline`, its call's, which
+/// passed as the arguments converted.
+pub(crate) fn request(
+    kind: &Kind,
+    args: &[Value],
+    deadline: Option<&Deadline>,
+) -> Result<Request, ShapeError> {
     let given = args
         .iter()
         .rposition(|arg| !arg.is_nil())
@@ -206,7 +212,8 @@ pub(crate) fn request(kind: &Kind, args: &[Value]) -> Result<Request, ShapeError
     // request lacks it then, as a plain value's, whose `nil` is its value.
     let mut kept = vec![false; args.len()];
     loop {
-        let budget = Budget::default();
+        let budget =
+            deadline.map_or_else(Budget::default, |deadline| Budget::within(deadline.clone()));
         let asked = Request::deserialize(Asking {
             kind,
             args: args.to_vec(),

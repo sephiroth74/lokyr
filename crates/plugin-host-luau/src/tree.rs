@@ -117,10 +117,10 @@ fn place(parents: &[Option<(usize, Slot)>], mut parent: Option<(usize, Slot)>) -
     path
 }
 
-/// The tree of `value`, a plugin's view: why not, of a node of another
-/// shape, a tree too deep, or too many values.
-pub(crate) fn from_lua(value: Value) -> Result<Node, ShapeError> {
-    let budget = Budget::default();
+/// The tree of `value`, a plugin's view, of `budget`: why not, of a node
+/// of another shape, a tree too deep, too many values or bytes, or its
+/// call's deadline passed.
+pub(crate) fn from_lua(value: Value, budget: &Budget) -> Result<Node, ShapeError> {
     // The nodes, each before those inside it, without their children and
     // their rows, and where each goes in its parent's.
     let mut nodes = Vec::new();
@@ -133,7 +133,7 @@ pub(crate) fn from_lua(value: Value) -> Result<Node, ShapeError> {
             return Err(too_deep().within(place(&parents, parent)));
         }
         let (node, children, row) =
-            one(value, &budget).map_err(|error| error.within(place(&parents, parent)))?;
+            one(value, budget).map_err(|error| error.within(place(&parents, parent)))?;
         let at = nodes.len();
         nodes.push(node);
         parents.push(parent);
@@ -202,7 +202,7 @@ fn one(value: Value, budget: &Budget) -> Result<(Node, Vec<Value>, Option<Value>
         )));
     };
     let mut fields = BTreeMap::new();
-    for (key, value) in shape::entries(&table, budget.room())? {
+    for (key, value) in shape::entries(&table, budget)? {
         let Value::String(key) = &key else {
             return Err(ShapeError(format!(
                 "a node's field is named by a text, not {}",
@@ -305,7 +305,7 @@ fn one(value: Value, budget: &Budget) -> Result<(Node, Vec<Value>, Option<Value>
     };
     let children = match take("children") {
         Value::Nil => Vec::new(),
-        Value::Table(list) => shape::sequence(&list, budget.room())?.ok_or_else(|| {
+        Value::Table(list) => shape::sequence(&list, budget)?.ok_or_else(|| {
             ShapeError(
                 "`children`: expected a list of nodes, a table of keys from 1 to its length alone"
                     .to_owned(),

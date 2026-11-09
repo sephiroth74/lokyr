@@ -110,7 +110,7 @@ mod taking {
     use mlua::{Lua, Table, Value};
 
     use super::{VALUES, WORKSPACE, value_field};
-    use crate::shape::{self, MOST_VALUES, ShapeError};
+    use crate::shape::{self, ShapeError};
 
     /// The fields of `table` but its `kind`, which it gives: why not, of a
     /// table of no `kind` of a text, or of too many values.
@@ -123,7 +123,7 @@ mod taking {
         };
         let rest = lua.create_table()?;
         let mut kind = None;
-        for (key, value) in shape::entries(&table, MOST_VALUES)? {
+        for (key, value) in shape::entries(&table, &shape::Budget::default())? {
             match (&key, value) {
                 (Value::String(name), Value::String(given)) if name.as_bytes() == b"kind" => {
                     kind = Some(given.to_str()?.to_owned());

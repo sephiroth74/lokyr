@@ -9,7 +9,7 @@
 //! aligned pointer, which a 64-bit CPU makes whole. The clock stops while
 //! the code waits for the host, whose time is not the plugin's.
 
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex, PoisonError};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
@@ -35,6 +35,30 @@ struct Shared {
     /// How many times the watchdog's thread woke, which a VM at rest does
     /// not make it.
     wakes: AtomicUsize,
+    /// Whether the call's deadline passed, as `Watch`'s `fired`, which the
+    /// host's conversions of the call's values read without the lock.
+    passed: AtomicBool,
+}
+
+/// The deadline of a VM's calls, as the host's conversions of a call's
+/// values read it, which stop as it passes: Luau's interrupt stops the
+/// plugin's code alone.
+#[derive(Clone)]
+pub(crate) struct Deadline(Arc<Shared>);
+
+impl Deadline {
+    /// Whether the deadline of the call under way passed.
+    pub(crate) fn passed(&self) -> bool {
+        self.0.passed.load(Ordering::Relaxed)
+    }
+
+    /// A deadline that passed, of no watchdog, for the tests.
+    #[cfg(test)]
+    pub(crate) fn gone() -> Self {
+        let shared = Shared::default();
+        shared.passed.store(true, Ordering::Relaxed);
+        Self(Arc::new(shared))
+    }
 }
 
 /// A VM's watchdog.
@@ -77,7 +101,13 @@ impl Watchdog {
         }
         watch.deadline = Some(deadline);
         watch.fired = false;
+        self.shared.passed.store(false, Ordering::Relaxed);
         self.shared.wake.notify_one();
+    }
+
+    /// The deadline of its calls, as the host's conversions read it.
+    pub(crate) fn deadline(&self) -> Deadline {
+        Deadline(Arc::clone(&self.shared))
     }
 
     /// Stops the clock of the call under way, as its code waits for the
@@ -158,6 +188,7 @@ fn watch(shared: &Shared, state: usize) {
                         set_interrupt(state, Some(stop));
                     }
                     watch.fired = true;
+                    shared.passed.store(true, Ordering::Relaxed);
                     continue;
                 }
                 shared

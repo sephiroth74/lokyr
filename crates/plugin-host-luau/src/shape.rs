@@ -14,11 +14,12 @@
 //! plain value [`Data::DEEPEST`], as the host takes it, a table that holds
 //! itself refused as one past them; one conversion takes [`MOST_VALUES`]
 //! values at most, those that it read out of their tables and holds until
-//! it converts them among them, so that a plugin's value can neither
-//! overflow the host's stack, nor hold it for long, nor take more of its
-//! memory, of a table that holds itself many times. Its tables are read
-//! raw, of no metamethod, as no code of the plugin's runs outside its
-//! calls.
+//! it converts them among them, and copies [`MOST_BYTES`] of texts, and it
+//! stops as its call's deadline passes, so that a plugin's value can
+//! neither overflow the host's stack, nor hold it for long, nor take more
+//! of its memory, of a table or a text that its tables hold many times. A
+//! number is finite. Its tables are read raw, of no metamethod, as no code
+//! of the plugin's runs outside its calls.
 
 use std::borrow::Cow;
 use std::cell::Cell;
@@ -33,12 +34,23 @@ use serde::de::{
 };
 use serde::ser::{self, Serialize};
 
+use crate::watchdog::Deadline;
+
 /// The most levels of tables that a plugin's value nests: twice those of
 /// the host's trees and more, as a tab's layout nests two a split.
 pub(crate) const MOST_LEVELS: usize = 2 * Node::DEEPEST + 16;
 
 /// The most values that one conversion of a plugin's value takes.
 pub(crate) const MOST_VALUES: usize = 1 << 20;
+
+/// The most bytes of texts and buffers that one conversion copies into the
+/// host's memory, as a plugin's VM holds one text however many times its
+/// tables hold it: sixteen times a state's.
+pub(crate) const MOST_BYTES: usize = 16 << 20;
+
+/// How many values a conversion takes between its looks at its call's
+/// deadline.
+const LOOK_EVERY: usize = 64;
 
 /// The types whose values are plain, as a Luau table is, rather than
 /// variants: the SDK's `Data` and a command's argument's `Value`.
@@ -130,43 +142,81 @@ pub(crate) fn from_lua<T: de::DeserializeOwned>(value: Value) -> Result<T, Shape
     T::deserialize(Taking::new(value, &budget))
 }
 
-/// The values that a conversion takes: those that it converted, and those
-/// that it read out of their tables and holds until it converts them, as
-/// a table's items wait for those before them, so that the host holds no
+/// What a conversion takes: the values that it converted, and those that
+/// it read out of their tables and holds until it converts them, as a
+/// table's items wait for those before them, so that the host holds no
 /// more of a plugin's values than it would convert, of tables that hold
-/// one table many times too.
-#[derive(Debug)]
+/// one table many times too; the bytes of the texts and buffers that it
+/// copied; and the time of its call, whose deadline stops it, as Luau's
+/// interrupt stops the plugin's code alone.
 pub(crate) struct Budget {
     /// The values left to convert.
     left: Cell<usize>,
     /// The values read, and not converted yet.
     held: Cell<usize>,
+    /// The bytes left to copy.
+    bytes: Cell<usize>,
+    /// The deadline of the call of the conversion, if it has one.
+    deadline: Option<Deadline>,
 }
 
 impl Default for Budget {
-    /// [`MOST_VALUES`] values.
+    /// [`MOST_VALUES`] values and [`MOST_BYTES`] bytes, of no deadline.
     fn default() -> Self {
         Self::of(MOST_VALUES)
     }
 }
 
 impl Budget {
-    /// A budget of `values`.
+    /// A budget of `values`, of no deadline.
     pub(crate) fn of(values: usize) -> Self {
         Self {
             left: Cell::new(values),
             held: Cell::new(0),
+            bytes: Cell::new(MOST_BYTES),
+            deadline: None,
         }
     }
 
-    /// Counts a value against it.
+    /// The default budget, within `deadline`, of the call of the
+    /// conversion.
+    pub(crate) fn within(deadline: Deadline) -> Self {
+        Self {
+            deadline: Some(deadline),
+            ..Self::default()
+        }
+    }
+
+    /// Counts a value against it, and looks at its call's deadline now and
+    /// then.
     pub(crate) fn count(&self) -> Result<(), ShapeError> {
         let left = self.left.get();
         if left == 0 {
             return Err(too_many());
         }
         self.left.set(left - 1);
+        if left.is_multiple_of(LOOK_EVERY) && self.passed() {
+            return Err(past());
+        }
         Ok(())
+    }
+
+    /// Counts `bytes` of a text or a buffer that it copies against it.
+    fn copy(&self, bytes: usize) -> Result<(), ShapeError> {
+        let left = self.bytes.get();
+        if bytes > left {
+            return Err(ShapeError(format!(
+                "a plugin's value holds {} MiB of texts at most",
+                MOST_BYTES >> 20
+            )));
+        }
+        self.bytes.set(left - bytes);
+        Ok(())
+    }
+
+    /// Whether the deadline of its call passed.
+    pub(crate) fn passed(&self) -> bool {
+        self.deadline.as_ref().is_some_and(Deadline::passed)
     }
 
     /// How many values a conversion can read out of a table still.
@@ -257,23 +307,29 @@ impl<'b> Taking<'b> {
             .map_err(|_| ShapeError(format!("expected a whole number {range}, not {integer}")))
     }
 
-    /// The number that it is.
+    /// The number that it is, finite, as JSON holds the host's numbers.
     fn number(&self) -> Result<f64, ShapeError> {
         match &self.value {
             #[allow(clippy::cast_precision_loss)]
             Value::Integer(integer) => Ok(*integer as f64),
-            Value::Number(number) => Ok(*number),
+            Value::Number(number) if number.is_finite() => Ok(*number),
+            Value::Number(number) => Err(ShapeError(format!(
+                "expected a finite number, not {number}"
+            ))),
             _ => Err(self.expected("a number")),
         }
     }
 
-    /// The text that it is.
+    /// The text that it is, its bytes counted.
     fn text(&self) -> Result<String, ShapeError> {
         match &self.value {
-            Value::String(text) => text
-                .to_str()
-                .map(|text| text.to_owned())
-                .map_err(|_| ShapeError("expected a text of UTF-8".to_owned())),
+            Value::String(text) => {
+                let text = text
+                    .to_str()
+                    .map_err(|_| ShapeError("expected a text of UTF-8".to_owned()))?;
+                self.budget.copy(text.len())?;
+                Ok(text.to_owned())
+            }
             _ => Err(self.expected("a text")),
         }
     }
@@ -297,45 +353,58 @@ fn too_many() -> ShapeError {
     ))
 }
 
+/// The error of a conversion whose call's deadline passed.
+fn past() -> ShapeError {
+    ShapeError("the call's deadline passed as its value converted".to_owned())
+}
+
 /// The items of `table`, if it is a sequence, of keys from 1 to its length
-/// alone, none an empty table's; refused past `most` items, the values left
-/// to a conversion, as no more are read.
-pub(crate) fn sequence(table: &Table, most: usize) -> Result<Option<Vec<Value>>, ShapeError> {
+/// alone, none an empty table's; refused past the values left to `budget`,
+/// as no more are read, or as its call's deadline passes as they are read.
+pub(crate) fn sequence(table: &Table, budget: &Budget) -> Result<Option<Vec<Value>>, ShapeError> {
     let length = table.raw_len();
-    if length > most {
+    if length > budget.room() {
         return Err(too_many());
     }
-    let mut count = 0;
+    // In one walk of its entries, each in its place.
+    let mut items = vec![Value::Nil; length];
+    let mut count: usize = 0;
     for pair in table.pairs::<Value, Value>() {
-        let (key, _) = pair?;
+        let (key, value) = pair?;
         let at = match key {
             Value::Integer(at) => Some(at),
             Value::Number(at) => whole(at),
             _ => None,
         };
-        if !at.is_some_and(|at| at >= 1 && usize::try_from(at).is_ok_and(|at| at <= length)) {
+        let Some(place) = at
+            .and_then(|at| usize::try_from(at).ok())
+            .filter(|at| (1..=length).contains(at))
+        else {
             return Ok(None);
-        }
+        };
+        items[place - 1] = value;
         count += 1;
+        if count.is_multiple_of(LOOK_EVERY) && budget.passed() {
+            return Err(past());
+        }
     }
-    if count != length {
-        return Ok(None);
-    }
-    (1..=length)
-        .map(|at| table.raw_get::<Value>(at).map_err(ShapeError::from))
-        .collect::<Result<Vec<_>, _>>()
-        .map(Some)
+    Ok((count == length).then_some(items))
 }
 
-/// The entries of `table`, in no order; refused past `most`, the values
-/// left to a conversion, as no more are read.
-pub(crate) fn entries(table: &Table, most: usize) -> Result<Vec<(Value, Value)>, ShapeError> {
+/// The entries of `table`, in no order; refused past the values left to
+/// `budget`, as no more are read, or as its call's deadline passes as they
+/// are read.
+pub(crate) fn entries(table: &Table, budget: &Budget) -> Result<Vec<(Value, Value)>, ShapeError> {
+    let most = budget.room();
     let mut entries = Vec::new();
     for pair in table.pairs::<Value, Value>() {
         if entries.len() == most {
             return Err(too_many());
         }
         entries.push(pair?);
+        if entries.len().is_multiple_of(LOOK_EVERY) && budget.passed() {
+            return Err(past());
+        }
     }
     Ok(entries)
 }
@@ -351,15 +420,15 @@ impl<'de> de::Deserializer<'de> for Taking<'_> {
             Value::Integer(integer) => visitor.visit_i64(*integer),
             Value::Number(number) => match whole(*number) {
                 Some(integer) => visitor.visit_i64(integer),
-                None => visitor.visit_f64(*number),
+                None => visitor.visit_f64(self.number()?),
             },
             Value::String(_) => visitor.visit_string(self.text()?),
             Value::Table(table) => {
                 self.enter()?;
-                match sequence(table, self.budget.room())? {
+                match sequence(table, self.budget)? {
                     Some(items) => visitor.visit_seq(Items::new(&self, items)?),
                     None => {
-                        let entries = entries(table, self.budget.room())?;
+                        let entries = entries(table, self.budget)?;
                         visitor.visit_map(Entries::new(&self, entries, None)?)
                     }
                 }
@@ -449,8 +518,14 @@ impl<'de> de::Deserializer<'de> for Taking<'_> {
     fn deserialize_bytes<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, ShapeError> {
         self.count()?;
         match &self.value {
-            Value::String(text) => visitor.visit_byte_buf(text.as_bytes().to_vec()),
-            Value::Buffer(buffer) => visitor.visit_byte_buf(buffer.to_vec()),
+            Value::String(text) => {
+                self.budget.copy(text.as_bytes().len())?;
+                visitor.visit_byte_buf(text.as_bytes().to_vec())
+            }
+            Value::Buffer(buffer) => {
+                self.budget.copy(buffer.len())?;
+                visitor.visit_byte_buf(buffer.to_vec())
+            }
             _ => Err(self.expected("a text or a buffer")),
         }
     }
@@ -496,7 +571,7 @@ impl<'de> de::Deserializer<'de> for Taking<'_> {
     fn deserialize_seq<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, ShapeError> {
         self.count()?;
         let table = self.table("a list")?;
-        let items = sequence(&table, self.budget.room())?.ok_or_else(|| {
+        let items = sequence(&table, self.budget)?.ok_or_else(|| {
             ShapeError("expected a list, a table of keys from 1 to its length alone".to_owned())
         })?;
         visitor.visit_seq(Items::new(&self, items)?)
@@ -509,7 +584,7 @@ impl<'de> de::Deserializer<'de> for Taking<'_> {
     ) -> Result<V::Value, ShapeError> {
         self.count()?;
         let table = self.table("a list")?;
-        match sequence(&table, self.budget.room())? {
+        match sequence(&table, self.budget)? {
             Some(items) if items.len() == length => visitor.visit_seq(Items::new(&self, items)?),
             _ => Err(ShapeError(format!("expected a list of {length}"))),
         }
@@ -527,7 +602,7 @@ impl<'de> de::Deserializer<'de> for Taking<'_> {
     fn deserialize_map<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, ShapeError> {
         self.count()?;
         let table = self.table("a table")?;
-        let entries = entries(&table, self.budget.room())?;
+        let entries = entries(&table, self.budget)?;
         visitor.visit_map(Entries::new(&self, entries, None)?)
     }
 
@@ -539,7 +614,7 @@ impl<'de> de::Deserializer<'de> for Taking<'_> {
     ) -> Result<V::Value, ShapeError> {
         self.count()?;
         let table = self.table("a table")?;
-        let entries = entries(&table, self.budget.room())?;
+        let entries = entries(&table, self.budget)?;
         visitor.visit_map(Entries::new(&self, entries, Some(fields))?)
     }
 
@@ -571,7 +646,7 @@ impl<'de> de::Deserializer<'de> for Taking<'_> {
             }
             Value::Table(table) => {
                 self.enter()?;
-                let mut entries = entries(table, self.budget.room())?;
+                let mut entries = entries(table, self.budget)?;
                 let (Some((Value::String(key), value)), None) = (entries.pop(), entries.pop())
                 else {
                     return Err(ShapeError(format!(
@@ -829,7 +904,7 @@ impl<'b> Plain<'b> {
                     )));
                 }
                 value.data += 1;
-                if sequence(table, value.budget.room())?.is_some_and(|items| !items.is_empty()) {
+                if sequence(table, value.budget)?.is_some_and(|items| !items.is_empty()) {
                     "list"
                 } else {
                     "map"

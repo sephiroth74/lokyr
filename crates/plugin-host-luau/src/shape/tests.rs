@@ -342,3 +342,28 @@ fn a_plugin_s_metamethods_run_no_code_as_its_value_converts() {
         )])))
     );
 }
+
+#[test]
+fn a_conversion_stops_as_its_call_s_deadline_passes() {
+    let lua = Lua::new();
+    let list = eval(
+        &lua,
+        "(function() local t = {} for i = 1, 1000 do t[i] = i end return t end)()",
+    );
+    let Value::Table(table) = list.clone() else {
+        panic!("a table");
+    };
+    let gone = || Budget::within(crate::watchdog::Deadline::gone());
+    let past = "the call's deadline passed";
+    // As a list is read, and as a map's entries are.
+    assert!(sequence(&table, &gone()).unwrap_err().0.contains(past));
+    assert!(entries(&table, &gone()).unwrap_err().0.contains(past));
+    assert!(sequence(&table, &Budget::default()).unwrap().is_some());
+    // As values convert, a few at a time.
+    let budget = gone();
+    let stopped = (0..2 * LOOK_EVERY).find_map(|_| budget.count().err());
+    assert!(stopped.is_some_and(|error| error.0.contains(past)));
+    // A value's conversion.
+    let error = Vec::<u64>::deserialize(Taking::new(list, &gone())).unwrap_err();
+    assert!(error.0.contains(past), "{error}");
+}
