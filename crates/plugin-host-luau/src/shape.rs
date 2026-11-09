@@ -10,27 +10,31 @@
 //! or `false`, a number, a text, or a table of them, a sequence a list and
 //! another table, an empty one too, a map.
 //!
-//! A plugin's value nests [`MOST_LEVELS`] levels of tables at most, a
-//! table that holds itself refused as one past them, and one conversion
-//! takes [`MOST_VALUES`] values at most, so that a plugin's value can
-//! neither overflow the host's stack nor hold it for long. Its tables are
-//! read raw, of no metamethod, as no code of the plugin's runs outside its
+//! A plugin's value nests [`MOST_LEVELS`] levels of tables at most, and a
+//! plain value [`Data::DEEPEST`], as the host takes it, a table that holds
+//! itself refused as one past them; one conversion takes [`MOST_VALUES`]
+//! values at most, those that it read out of their tables and holds until
+//! it converts them among them, so that a plugin's value can neither
+//! overflow the host's stack, nor hold it for long, nor take more of its
+//! memory, of a table that holds itself many times. Its tables are read
+//! raw, of no metamethod, as no code of the plugin's runs outside its
 //! calls.
 
 use std::borrow::Cow;
 use std::cell::Cell;
 use std::fmt;
 
+use lokyr_plugin_sdk::message::Data;
 use lokyr_plugin_sdk::view::Node;
 use mlua::{Lua, Table, Value};
 use serde::de::{
-    self, DeserializeOwned, DeserializeSeed, EnumAccess, IntoDeserializer, MapAccess, SeqAccess,
-    VariantAccess, Visitor,
+    self, DeserializeSeed, EnumAccess, IntoDeserializer, MapAccess, SeqAccess, VariantAccess,
+    Visitor,
 };
 use serde::ser::{self, Serialize};
 
-/// The most levels of tables that a plugin's value nests: a view's tree
-/// nests twice its own levels, its nodes and their lists of children.
+/// The most levels of tables that a plugin's value nests: twice those of
+/// the host's trees and more, as a tab's layout nests two a split.
 pub(crate) const MOST_LEVELS: usize = 2 * Node::DEEPEST + 16;
 
 /// The most values that one conversion of a plugin's value takes.
@@ -96,7 +100,7 @@ fn named(given: &str, names: &'static [&'static str]) -> Option<&'static str> {
 }
 
 /// What a Luau value is, as an error tells it.
-fn what(value: &Value) -> &'static str {
+pub(crate) fn what(value: &Value) -> &'static str {
     match value {
         Value::Nil => "nil",
         Value::Boolean(_) => "a boolean",
@@ -120,24 +124,88 @@ fn whole(number: f64) -> Option<i64> {
 
 /// The value of `T` of `value`, a plugin's: why not, of a value of
 /// another shape, too deep, or of too many values.
-pub(crate) fn from_lua<T: DeserializeOwned>(value: Value) -> Result<T, ShapeError> {
-    let budget = Cell::new(MOST_VALUES);
+#[cfg(any(test, feature = "testing"))]
+pub(crate) fn from_lua<T: de::DeserializeOwned>(value: Value) -> Result<T, ShapeError> {
+    let budget = Budget::default();
     T::deserialize(Taking::new(value, &budget))
+}
+
+/// The values that a conversion takes: those that it converted, and those
+/// that it read out of their tables and holds until it converts them, as
+/// a table's items wait for those before them, so that the host holds no
+/// more of a plugin's values than it would convert, of tables that hold
+/// one table many times too.
+#[derive(Debug)]
+pub(crate) struct Budget {
+    /// The values left to convert.
+    left: Cell<usize>,
+    /// The values read, and not converted yet.
+    held: Cell<usize>,
+}
+
+impl Default for Budget {
+    /// [`MOST_VALUES`] values.
+    fn default() -> Self {
+        Self::of(MOST_VALUES)
+    }
+}
+
+impl Budget {
+    /// A budget of `values`.
+    pub(crate) fn of(values: usize) -> Self {
+        Self {
+            left: Cell::new(values),
+            held: Cell::new(0),
+        }
+    }
+
+    /// Counts a value against it.
+    pub(crate) fn count(&self) -> Result<(), ShapeError> {
+        let left = self.left.get();
+        if left == 0 {
+            return Err(too_many());
+        }
+        self.left.set(left - 1);
+        Ok(())
+    }
+
+    /// How many values a conversion can read out of a table still.
+    pub(crate) fn room(&self) -> usize {
+        self.left.get().saturating_sub(self.held.get())
+    }
+
+    /// Holds `values` read out of a table.
+    pub(crate) fn hold(&self, values: usize) -> Result<(), ShapeError> {
+        if values > self.room() {
+            return Err(too_many());
+        }
+        self.held.set(self.held.get() + values);
+        Ok(())
+    }
+
+    /// Lets go of a value held, as it converts.
+    pub(crate) fn release(&self) {
+        self.held.set(self.held.get().saturating_sub(1));
+    }
 }
 
 /// A plugin's value as the SDK's types take it.
 pub(crate) struct Taking<'b> {
     value: Value,
     level: usize,
-    budget: &'b Cell<usize>,
+    /// How many tables of a plain value hold it, which nests
+    /// [`Data::DEEPEST`] levels at most, as the host takes it.
+    data: usize,
+    budget: &'b Budget,
 }
 
 impl<'b> Taking<'b> {
     /// The value `value`, at the top, of the values left of `budget`.
-    pub(crate) fn new(value: Value, budget: &'b Cell<usize>) -> Self {
+    pub(crate) fn new(value: Value, budget: &'b Budget) -> Self {
         Self {
             value,
             level: 0,
+            data: 0,
             budget,
         }
     }
@@ -147,6 +215,7 @@ impl<'b> Taking<'b> {
         Self {
             value,
             level: self.level + 1,
+            data: self.data,
             budget: self.budget,
         }
     }
@@ -164,14 +233,7 @@ impl<'b> Taking<'b> {
 
     /// Counts the value against the conversion's.
     fn count(&self) -> Result<(), ShapeError> {
-        let left = self.budget.get();
-        if left == 0 {
-            return Err(ShapeError(format!(
-                "a plugin's value holds {MOST_VALUES} values at most"
-            )));
-        }
-        self.budget.set(left - 1);
-        Ok(())
+        self.budget.count()
     }
 
     fn expected(&self, expected: &str) -> ShapeError {
@@ -228,10 +290,21 @@ impl<'b> Taking<'b> {
     }
 }
 
+/// The error of a value of more values than a conversion takes.
+fn too_many() -> ShapeError {
+    ShapeError(format!(
+        "a plugin's value holds {MOST_VALUES} values at most"
+    ))
+}
+
 /// The items of `table`, if it is a sequence, of keys from 1 to its length
-/// alone, none an empty table's.
-fn sequence(table: &Table) -> Result<Option<Vec<Value>>, ShapeError> {
+/// alone, none an empty table's; refused past `most` items, the values left
+/// to a conversion, as no more are read.
+pub(crate) fn sequence(table: &Table, most: usize) -> Result<Option<Vec<Value>>, ShapeError> {
     let length = table.raw_len();
+    if length > most {
+        return Err(too_many());
+    }
     let mut count = 0;
     for pair in table.pairs::<Value, Value>() {
         let (key, _) = pair?;
@@ -254,12 +327,17 @@ fn sequence(table: &Table) -> Result<Option<Vec<Value>>, ShapeError> {
         .map(Some)
 }
 
-/// The entries of `table`, in no order.
-fn entries(table: &Table) -> Result<Vec<(Value, Value)>, ShapeError> {
-    table
-        .pairs::<Value, Value>()
-        .collect::<mlua::Result<Vec<_>>>()
-        .map_err(ShapeError::from)
+/// The entries of `table`, in no order; refused past `most`, the values
+/// left to a conversion, as no more are read.
+pub(crate) fn entries(table: &Table, most: usize) -> Result<Vec<(Value, Value)>, ShapeError> {
+    let mut entries = Vec::new();
+    for pair in table.pairs::<Value, Value>() {
+        if entries.len() == most {
+            return Err(too_many());
+        }
+        entries.push(pair?);
+    }
+    Ok(entries)
 }
 
 impl<'de> de::Deserializer<'de> for Taking<'_> {
@@ -278,9 +356,12 @@ impl<'de> de::Deserializer<'de> for Taking<'_> {
             Value::String(_) => visitor.visit_string(self.text()?),
             Value::Table(table) => {
                 self.enter()?;
-                match sequence(table)? {
-                    Some(items) => visitor.visit_seq(Items::new(&self, items)),
-                    None => visitor.visit_map(Entries::new(&self, entries(table)?, None)),
+                match sequence(table, self.budget.room())? {
+                    Some(items) => visitor.visit_seq(Items::new(&self, items)?),
+                    None => {
+                        let entries = entries(table, self.budget.room())?;
+                        visitor.visit_map(Entries::new(&self, entries, None)?)
+                    }
                 }
             }
             _ => Err(self.expected("data")),
@@ -415,10 +496,10 @@ impl<'de> de::Deserializer<'de> for Taking<'_> {
     fn deserialize_seq<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, ShapeError> {
         self.count()?;
         let table = self.table("a list")?;
-        let items = sequence(&table)?.ok_or_else(|| {
+        let items = sequence(&table, self.budget.room())?.ok_or_else(|| {
             ShapeError("expected a list, a table of keys from 1 to its length alone".to_owned())
         })?;
-        visitor.visit_seq(Items::new(&self, items))
+        visitor.visit_seq(Items::new(&self, items)?)
     }
 
     fn deserialize_tuple<V: Visitor<'de>>(
@@ -428,8 +509,8 @@ impl<'de> de::Deserializer<'de> for Taking<'_> {
     ) -> Result<V::Value, ShapeError> {
         self.count()?;
         let table = self.table("a list")?;
-        match sequence(&table)? {
-            Some(items) if items.len() == length => visitor.visit_seq(Items::new(&self, items)),
+        match sequence(&table, self.budget.room())? {
+            Some(items) if items.len() == length => visitor.visit_seq(Items::new(&self, items)?),
             _ => Err(ShapeError(format!("expected a list of {length}"))),
         }
     }
@@ -446,8 +527,8 @@ impl<'de> de::Deserializer<'de> for Taking<'_> {
     fn deserialize_map<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, ShapeError> {
         self.count()?;
         let table = self.table("a table")?;
-        let entries = entries(&table)?;
-        visitor.visit_map(Entries::new(&self, entries, None))
+        let entries = entries(&table, self.budget.room())?;
+        visitor.visit_map(Entries::new(&self, entries, None)?)
     }
 
     fn deserialize_struct<V: Visitor<'de>>(
@@ -458,8 +539,8 @@ impl<'de> de::Deserializer<'de> for Taking<'_> {
     ) -> Result<V::Value, ShapeError> {
         self.count()?;
         let table = self.table("a table")?;
-        let entries = entries(&table)?;
-        visitor.visit_map(Entries::new(&self, entries, Some(fields)))
+        let entries = entries(&table, self.budget.room())?;
+        visitor.visit_map(Entries::new(&self, entries, Some(fields))?)
     }
 
     fn deserialize_enum<V: Visitor<'de>>(
@@ -490,7 +571,7 @@ impl<'de> de::Deserializer<'de> for Taking<'_> {
             }
             Value::Table(table) => {
                 self.enter()?;
-                let mut entries = entries(table)?;
+                let mut entries = entries(table, self.budget.room())?;
                 let (Some((Value::String(key), value)), None) = (entries.pop(), entries.pop())
                 else {
                     return Err(ShapeError(format!(
@@ -524,16 +605,28 @@ impl<'de> de::Deserializer<'de> for Taking<'_> {
 /// The items of a sequence.
 struct Items<'b> {
     items: std::vec::IntoIter<Value>,
-    level: usize,
-    budget: &'b Cell<usize>,
+    of: Taking<'b>,
 }
 
 impl<'b> Items<'b> {
-    fn new(of: &Taking<'b>, items: Vec<Value>) -> Self {
-        Self {
+    fn new(of: &Taking<'b>, items: Vec<Value>) -> Result<Self, ShapeError> {
+        of.budget.hold(items.len())?;
+        Ok(Self {
             items: items.into_iter(),
-            level: of.level,
-            budget: of.budget,
+            of: of.inner(Value::Nil),
+        })
+    }
+}
+
+impl<'b> Taking<'b> {
+    /// A value of the same place as this one, as the items of a table each
+    /// take its place.
+    fn at(&self, value: Value) -> Self {
+        Self {
+            value,
+            level: self.level,
+            data: self.data,
+            budget: self.budget,
         }
     }
 }
@@ -548,12 +641,8 @@ impl<'de> SeqAccess<'de> for Items<'_> {
         let Some(item) = self.items.next() else {
             return Ok(None);
         };
-        let of = Taking {
-            value: Value::Nil,
-            level: self.level,
-            budget: self.budget,
-        };
-        seed.deserialize(of.inner(item)).map(Some)
+        self.of.budget.release();
+        seed.deserialize(self.of.at(item)).map(Some)
     }
 
     fn size_hint(&self) -> Option<usize> {
@@ -567,8 +656,7 @@ struct Entries<'b> {
     entries: std::vec::IntoIter<(Value, Value)>,
     fields: Option<&'static [&'static str]>,
     value: Option<Value>,
-    level: usize,
-    budget: &'b Cell<usize>,
+    of: Taking<'b>,
 }
 
 impl<'b> Entries<'b> {
@@ -576,14 +664,14 @@ impl<'b> Entries<'b> {
         of: &Taking<'b>,
         entries: Vec<(Value, Value)>,
         fields: Option<&'static [&'static str]>,
-    ) -> Self {
-        Self {
+    ) -> Result<Self, ShapeError> {
+        of.budget.hold(entries.len())?;
+        Ok(Self {
             entries: entries.into_iter(),
             fields,
             value: None,
-            level: of.level,
-            budget: of.budget,
-        }
+            of: of.inner(Value::Nil),
+        })
     }
 }
 
@@ -597,14 +685,13 @@ impl<'de> MapAccess<'de> for Entries<'_> {
         let Some((key, value)) = self.entries.next() else {
             return Ok(None);
         };
+        self.of.budget.release();
         self.value = Some(value);
         let Some(fields) = self.fields else {
-            let of = Taking {
-                value: Value::Nil,
-                level: self.level,
-                budget: self.budget,
-            };
-            return seed.deserialize(of.inner(key)).map(Some);
+            return seed
+                .deserialize(self.of.at(key))
+                .map(Some)
+                .map_err(|error| error.within("a map's key"));
         };
         let Value::String(key) = key else {
             return Err(ShapeError(format!(
@@ -631,12 +718,7 @@ impl<'de> MapAccess<'de> for Entries<'_> {
         seed: V,
     ) -> Result<V::Value, ShapeError> {
         let value = self.value.take().unwrap_or(Value::Nil);
-        let of = Taking {
-            value: Value::Nil,
-            level: self.level,
-            budget: self.budget,
-        };
-        seed.deserialize(of.inner(value))
+        seed.deserialize(self.of.at(value))
     }
 
     fn size_hint(&self) -> Option<usize> {
@@ -727,7 +809,7 @@ struct Plain<'b> {
 
 impl<'b> Plain<'b> {
     /// The variant of `name`, `Data` or `Value`, of `value`.
-    fn of(name: &'static str, value: Taking<'b>) -> Result<Self, ShapeError> {
+    fn of(name: &'static str, mut value: Taking<'b>) -> Result<Self, ShapeError> {
         let data = name == "Data";
         let variant = match &value.value {
             Value::Nil if data => "nil",
@@ -740,7 +822,14 @@ impl<'b> Plain<'b> {
             // An empty table a map, as Lua's JSON libraries take it.
             Value::Table(table) if data => {
                 value.enter()?;
-                if sequence(table)?.is_some_and(|items| !items.is_empty()) {
+                if value.data >= Data::DEEPEST {
+                    return Err(ShapeError(format!(
+                        "a plain value nests {} levels of tables at most",
+                        Data::DEEPEST
+                    )));
+                }
+                value.data += 1;
+                if sequence(table, value.budget.room())?.is_some_and(|items| !items.is_empty()) {
                     "list"
                 } else {
                     "map"

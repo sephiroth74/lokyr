@@ -20,18 +20,24 @@
 //! `cx.line_text(pane, row, reach)`, read from the SDK's own type: a
 //! request of fields takes them in their order, a `nil` leaving an optional
 //! one out. It answers with the response's value, `true` of a write, or
-//! with `nil` and the error, a table of its `code`, its `kind` and its
-//! `message`, as Lua's standard library answers; an argument of another
-//! shape raises an error, as a Lua error raised by a callback ends its
-//! call, a failure of the plugin's.
+//! with `nil`, the error's message and its code, as Lua's standard library
+//! answers; an argument of another shape raises an error, as a Lua error
+//! raised by a callback ends its call, a failure of the plugin's.
+//!
+//! A view's nodes and the events cross as flat tables, of their `kind`
+//! beside their fields, as `{ kind = "text", text = "hi" }` and `{ kind =
+//! "tab-created", tab = 3, window = 1, index = 0 }`; a view converts
+//! without recursion, bounded at the host's depth as it converts.
 
 // `deny` rather than `forbid`: stopping a plugin at its deadline and reading
 // bulk results go through Lua's C API, which is `unsafe`, and each of those
 // call sites is allowed explicitly.
 #![deny(unsafe_code)]
 
+mod events;
 mod requests;
 mod shape;
+mod tree;
 mod vm;
 mod watchdog;
 
@@ -302,7 +308,7 @@ impl Plugin for LuauPlugin {
 
     fn on_event(&mut self, cx: &mut Cx<'_>, events: &[Event]) -> Result<(), Error> {
         self.call(Callback::Event, cx, |lua| {
-            Ok(vec![shape::to_lua(lua, events)?])
+            Ok(vec![Value::Table(events::list_to_lua(lua, events)?)])
         })
         .map(drop)
     }
@@ -336,7 +342,7 @@ impl Plugin for LuauPlugin {
             Ok(None) => None,
             Ok(Some(returned)) => match returned.into_iter().next().unwrap_or(Value::Nil) {
                 Value::Nil => None,
-                tree => match shape::from_lua::<Node>(tree) {
+                tree => match tree::from_lua(tree) {
                     Ok(tree) => Some(tree),
                     Err(error) => {
                         self.failure = Some(self.returned(
@@ -356,8 +362,10 @@ impl Plugin for LuauPlugin {
     }
 
     fn on_ui_event(&mut self, cx: &mut Cx<'_>, event: &UiEvent) -> Result<(), Error> {
-        self.call(Callback::Ui, cx, |lua| Ok(vec![shape::to_lua(lua, event)?]))
-            .map(drop)
+        self.call(Callback::Ui, cx, |lua| {
+            Ok(vec![Value::Table(events::ui_to_lua(lua, event)?)])
+        })
+        .map(drop)
     }
 
     fn take_failure(&mut self) -> Option<Error> {
@@ -424,6 +432,54 @@ pub fn through_luau(
         ));
     }
     requests::answered(vm.lua(), response, &answer).map_err(|error| format!("`cx.{name}`: {error}"))
+}
+
+/// Gives `events` to Luau, as a plugin's `on_event` takes them, and takes
+/// them back: why not, as they did not come back the same.
+#[cfg(any(test, feature = "testing"))]
+#[doc(hidden)]
+pub fn events_through_luau(events: &[Event]) -> Result<(), String> {
+    let lua = Lua::new();
+    let list = events::list_to_lua(&lua, events).map_err(|error| error.to_string())?;
+    let back = list
+        .sequence_values::<Value>()
+        .map(|event| {
+            event
+                .map_err(shape::ShapeError::from)
+                .and_then(|event| events::from_lua(&lua, event))
+        })
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())?;
+    (back == events)
+        .then_some(())
+        .ok_or_else(|| format!("{events:?} came back as {back:?}"))
+}
+
+/// Gives `event` to Luau, as a plugin's `on_ui_event` takes it, and takes
+/// it back: why not, as it did not come back the same.
+#[cfg(any(test, feature = "testing"))]
+#[doc(hidden)]
+pub fn ui_event_through_luau(event: &UiEvent) -> Result<(), String> {
+    let lua = Lua::new();
+    let given = events::ui_to_lua(&lua, event).map_err(|error| error.to_string())?;
+    let back = events::ui_from_lua(&lua, Value::Table(given)).map_err(|error| error.to_string())?;
+    (back == *event)
+        .then_some(())
+        .ok_or_else(|| format!("{event:?} came back as {back:?}"))
+}
+
+/// Gives `view` to Luau, as a plugin's tests read a view, and takes it
+/// back, as its render returns it: why not, as it did not come back the
+/// same.
+#[cfg(any(test, feature = "testing"))]
+#[doc(hidden)]
+pub fn view_through_luau(view: &Node) -> Result<(), String> {
+    let lua = Lua::new();
+    let given = tree::to_lua(&lua, view).map_err(|error| error.to_string())?;
+    let back = tree::from_lua(Value::Table(given)).map_err(|error| error.to_string())?;
+    (back == *view)
+        .then_some(())
+        .ok_or_else(|| format!("{view:?} came back as {back:?}"))
 }
 
 #[cfg(test)]

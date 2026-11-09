@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, VecDeque};
 use std::sync::Arc;
 
-use lokyr_plugin_sdk::command::{Args, Category, Code, Command, Value as Arg};
+use lokyr_plugin_sdk::command::{Args, Category, Code, Command, Error, Value as Arg};
 use lokyr_plugin_sdk::host::{
     Binding, Host, LineText, PaneId, Scroll, SelectionKind, TabId, WindowId,
 };
@@ -264,12 +264,18 @@ fn an_argument_of_another_shape_raises_an_error_that_names_it() {
     );
     let error = failure("cx.line_text(4)");
     assert!(error.contains("missing field `row`"), "{error}");
+    // A plain value deeper than the host takes.
+    let error = failure("local t = {} for _ = 1, 64 do t = { t } end cx.set_state(t)");
+    assert!(
+        error.contains("argument 1: a plain value nests 64 levels of tables at most"),
+        "{error}"
+    );
     // The host never took them.
     assert!(run("cx.line_text(4, 'x', 32)", Vec::new()).1.is_empty());
 }
 
 #[test]
-fn an_answer_is_the_response_s_value_true_or_nil_and_the_error() {
+fn an_answer_is_the_response_s_value_true_or_nil_the_message_and_the_code() {
     let answers = vec![
         Response::Done,
         Response::Pane(Some(PaneId(3))),
@@ -300,20 +306,14 @@ fn an_answer_is_the_response_s_value_true_or_nil_and_the_error() {
         assert(tab.tab == 5 and tab.pane == 6)
         local state = cx.state()
         assert(state.recent[1] == "a")
-        local none, err = cx.selection_text(9)
-        assert(none == nil)
-        assert(err.code == 101 and err.kind == "not-found" and err.message == "there is no pane 9")
-        assert(tostring(err) == "there is no pane 9")
-        -- An error raised of it tells its message.
+        local none, message, code = cx.selection_text(9)
+        assert(none == nil and message == "there is no pane 9" and code == 101)
+        -- `assert` raises its message, after the place of the call.
         local ok, raised = pcall(function()
-            local done, failed = cx.paste(1, "x")
-            if not done then
-                error(failed)
-            end
+            assert(cx.paste(1, "x"))
         end)
-        assert(not ok and tostring(raised) == "it lacks `pty-write`", tostring(raised))
-        -- The error's table is the plugin's to read alone.
-        assert(not pcall(setmetatable, err, {}))
+        local lacks = ": it lacks `pty-write`"
+        assert(not ok and raised:sub(-#lacks) == lacks, tostring(raised))
         "#,
         answers,
     );

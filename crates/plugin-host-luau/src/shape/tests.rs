@@ -4,8 +4,9 @@ use lokyr_plugin_sdk::command::{Args, Value as Arg};
 use lokyr_plugin_sdk::host::{Layout, PaneId, Scroll, WindowId};
 use lokyr_plugin_sdk::message::Data;
 use lokyr_plugin_sdk::ui::{Anchor, Corner, PanelOptions, Role, ViewId};
-use lokyr_plugin_sdk::view::{Kind, Length, Node, Style};
+use lokyr_plugin_sdk::view::{Length, Style};
 use serde::Deserialize;
+use serde::de::DeserializeOwned;
 
 use super::*;
 
@@ -211,56 +212,74 @@ fn nested(lua: &Lua, levels: usize) -> Value {
     lua.load(source).eval().unwrap()
 }
 
+/// A value of tables of any depth, each a list of the next.
+#[derive(Debug, Deserialize)]
+struct Deep(#[allow(dead_code)] Vec<Deep>);
+
 #[test]
 fn a_value_too_deep_or_that_holds_itself_is_refused_of_no_overflow() {
     let lua = Lua::new();
-    assert!(from_lua::<Data>(nested(&lua, MOST_LEVELS)).is_ok());
+    assert!(from_lua::<Deep>(nested(&lua, MOST_LEVELS)).is_ok());
     for value in [
         nested(&lua, MOST_LEVELS + 1),
         nested(&lua, 100_000),
-        eval(&lua, "(function() local t = {} t.again = t return t end)()"),
+        eval(&lua, "(function() local t = {} t[1] = t return t end)()"),
     ] {
-        let error = from_lua::<Data>(value).unwrap_err().0;
-        assert!(error.contains("levels of tables at most"), "{error}");
-    }
-    // A view's, of a node of its own children, or far too deep.
-    for source in [
-        r#"local node = { kind = "container" } node.children = { node } return node"#,
-        r#"local node = { kind = "spacer" }
-        for _ = 1, 100000 do node = { kind = "container", children = { node } } end
-        return node"#,
-    ] {
-        let error = from_lua::<Node>(lua.load(source).eval().unwrap())
-            .unwrap_err()
-            .0;
+        let error = from_lua::<Deep>(value).unwrap_err().0;
         assert!(error.contains("levels of tables at most"), "{error}");
     }
 }
 
 #[test]
-fn a_view_as_deep_as_the_host_takes_converts_on_a_worker_s_stack() {
-    // A view of `Node::DEEPEST` levels, its widest, on a thread of the
-    // stack of the host's workers.
-    let converted = std::thread::Builder::new()
-        .stack_size(2 * 1024 * 1024)
-        .spawn(|| {
-            let lua = Lua::new();
-            let source = format!(
-                r#"local node = {{ kind = {{ text = "x" }} }}
-                for _ = 2, {} do
-                    node = {{ kind = "container", key = "k", layout = {{ gap = 1 }},
-                        style = {{ radius = 2 }}, children = {{ node }} }}
-                end
-                return node"#,
-                Node::DEEPEST
-            );
-            let tree: Node = from_lua(lua.load(source).eval().unwrap()).unwrap();
-            tree.nests_within_deepest() && tree.kind == Kind::Container
-        })
-        .unwrap()
-        .join()
-        .unwrap();
-    assert!(converted);
+fn a_plain_value_nests_as_deep_as_the_host_takes_it_and_no_deeper() {
+    let lua = Lua::new();
+    // As deep as the host takes it, both ways.
+    let deep = from_lua::<Data>(nested(&lua, Data::DEEPEST)).unwrap();
+    assert!(deep.nests_within_deepest());
+    gives(
+        &deep,
+        &format!(
+            "{}{}",
+            "{ ".repeat(Data::DEEPEST),
+            " }".repeat(Data::DEEPEST)
+        ),
+    );
+    // A level more, inside a value of the SDK's too, and a value that holds
+    // itself.
+    let deeper = || nested(&lua, Data::DEEPEST + 1);
+    let state = lua.create_table().unwrap();
+    state.raw_set("value", deeper()).unwrap();
+    for error in [
+        from_lua::<Data>(deeper()).unwrap_err(),
+        from_lua::<BTreeMap<String, Data>>(Value::Table(state)).unwrap_err(),
+        from_lua::<Data>(eval(
+            &lua,
+            "(function() local t = {} t.again = t return t end)()",
+        ))
+        .unwrap_err(),
+    ] {
+        assert!(
+            error
+                .0
+                .contains("a plain value nests 64 levels of tables at most"),
+            "{error}"
+        );
+    }
+}
+
+#[test]
+fn a_map_s_key_of_another_kind_than_a_text_is_refused() {
+    for source in [
+        "{ [1] = 'a', [3] = 'b' }",
+        "{ 'a', x = 1 }",
+        "{ [true] = 1 }",
+    ] {
+        let error = take::<Data>(source).unwrap_err().0;
+        assert!(
+            error.contains("a map's key: expected a text"),
+            "{source}: {error}"
+        );
+    }
 }
 
 #[test]
@@ -270,16 +289,40 @@ fn a_conversion_takes_its_values_alone() {
         .load("local t = {} for i = 1, 2000 do t[i] = i end return t")
         .eval::<Value>()
         .unwrap();
-    let budget = Cell::new(1000);
+    let budget = Budget::of(1000);
     let error = Vec::<u64>::deserialize(Taking::new(wide.clone(), &budget)).unwrap_err();
     assert!(error.0.contains("values at most"), "{error}");
-    let budget = Cell::new(MOST_VALUES);
+    let budget = Budget::default();
     assert_eq!(
         Vec::<u64>::deserialize(Taking::new(wide, &budget))
             .unwrap()
             .len(),
         2000
     );
+}
+
+#[test]
+fn a_conversion_holds_no_more_values_read_out_of_tables_than_it_takes() {
+    // A table that holds itself, many times: each level's items wait for
+    // the first's, which a conversion would read anew at each level until
+    // its depth's bound, as many times the values that it takes.
+    let lua = Lua::new();
+    let wide = eval(
+        &lua,
+        "(function() local t = {} for i = 1, 2^18 do t[i] = t end return t end)()",
+    );
+    let error = from_lua::<Deep>(wide.clone()).unwrap_err().0;
+    assert!(error.contains("values at most"), "{error}");
+    let error = from_lua::<Data>(wide).unwrap_err().0;
+    assert!(error.contains("values at most"), "{error}");
+    // It lets go of them as it converts them: two lists of 400 000 values,
+    // each read as the one before converted.
+    let lists = eval(
+        &lua,
+        "(function() local t = {} for i = 1, 400000 do t[i] = i end return { t, t } end)()",
+    );
+    let converted = from_lua::<Vec<Vec<u64>>>(lists).unwrap();
+    assert_eq!(converted[1].len(), 400_000);
 }
 
 #[test]

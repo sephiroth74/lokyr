@@ -166,9 +166,11 @@ return Search
   - `require` resolves only the modules inside the plugin's own package.
 - **Types**: a definitions file declares the API's types (`Cx`, `Event`, `View`, …) for Luau's type checker. Sleip's templates include it, with a `luau-lsp` configuration that points to it. Plugins are written with `--!strict`.
 - **Calls**: `cx`, which each callback takes first, holds a function of each of the SDK's requests, by its Rust name, read from the SDK's own type, so that a new request reaches Luau at once. A request of fields takes them as arguments in their order, as `cx.line_text(pane, row, reach)` or `cx.new_tab(window, index, directory)`, a `nil` leaving an optional one out, its default or its none, and a plain value's `nil` being its value; a request of a value takes it, as `cx.selection_text(pane)`; a request of none takes nothing, as `cx.focused_pane()`. An argument of another shape, or more arguments than the request takes, raises an error that names it, as `bad argument to cx.line_text: argument 2 (row): expected a whole number, not a text`, and the host takes no request. `cx` is read-only, and reaches the host within the plugin's calls alone.
-- **Answers**: a call answers with the response's value, as a pane's id, a table of a line or `nil` of none; `true` of a write done, a declaration or a request of the app's taken; or, of a failure, `nil` and the error. A response of fields is a table of them, as a new tab's `{ tab = 3, pane = 7 }` and a grid's `{ columns = 80, rows = 24 }`.
-- **Errors**: the error of a failed request is a table of its `code`, its `kind` and its `message`, read-only, whose text is its message, so that `error(err)` raises it with its message; Luau's `assert` takes a text alone as its message, so `assert(cx.paste(pane, text))` of a failure raises an error of the table's type, not of its message. A Lua error raised by a callback ends the call, and counts as a plugin failure; a render's or a look's of `applies`, which return no error, the plugin tells after the call, through `Plugin::take_failure`, which the host takes as the error of a call that tells one: its writes go, a view's last tree stays, and a fault, as a deadline passed, faults the plugin.
-- **Shapes**: the SDK's types cross as tables of their Rust names: a struct is a table of its fields, as `close_escape` and `min_width`, a field of `nil` left out; a variant of a value is a table of one field, of its name, as `{ pane_corner = { pane = 3, corner = "top-right" } }` or `{ up = 3 }`, and a variant of none its name, a text, as `"page-up"` or `"dialog"`; a map's keys are as they are, a command's arguments' and a state's; a list is a sequence. A plain value, an event's, a state's, a config's or a command's argument, is as a Luau table is: `nil`, `true` or `false`, a number, a text, or a table of them, a sequence a list and another table, an empty one too, a map. A whole number is an integer. A plugin's value nests 144 levels of tables at most, twice a view's 64 and more, and holds a million values at most, refused past them, a table that holds itself too; its tables are read raw, of no metamethod, as no code of the plugin's runs outside its calls.
+- **Answers**: a call answers with the response's value, as a pane's id, a table of a line or `nil` of none; `true` of a write done, a declaration or a request of the app's taken; or, of a failure, `nil`, the error's message and its code. A response of fields is a table of them, as a new tab's `{ tab = 3, pane = 7 }` and a grid's `{ columns = 80, rows = 24 }`.
+- **Errors**: a failed request answers `nil`, its error's message and its code, as Lua's standard library answers, so that `assert(cx.paste(pane, text))` raises the message, after the place of the call, and `local done, message, code = cx.paste(pane, text)` reads them; the code's hundreds tell its category, as 101 of a pane that is not there. A Lua error raised by a callback ends the call, and counts as a plugin failure; a render's or a look's of `applies`, which return no error, the plugin tells after the call, through `Plugin::take_failure`, which the host takes as the error of a call that tells one: its writes go, a view's last tree stays, and a fault, as a deadline passed, faults the plugin.
+- **Shapes**: the SDK's types cross as tables of their Rust names: a struct is a table of its fields, as `close_escape` and `min_width`, a field of `nil` left out; a variant of a value is a table of one field, of its name, as `{ pane_corner = { pane = 3, corner = "top-right" } }` or `{ up = 3 }`, and a variant of none its name, a text, as `"page-up"` or `"dialog"`; a map's keys are as they are, a command's arguments' and a state's; a list is a sequence. A plain value, an event's, a state's, a config's or a command's argument, is as a Luau table is: `nil`, `true` or `false`, a number, a text, or a table of them, a sequence a list and another table, an empty one too, a map. A whole number is an integer. A plain value nests 64 levels of tables at most, as the host takes it, and another value 144, a tab's layout of many splits; a value holds a million values at most, those read out of its tables and not converted yet among them, so that a table that holds itself many times holds no more of the host's memory; a value past them is refused, a table that holds itself too; its tables are read raw, of no metamethod, as no code of the plugin's runs outside its calls.
+- **Views**: a view's node is a flat table of its fields, its `kind` a text, and its kind's own fields beside the node's, as `{ kind = "button", key = "go", text = "Go", icon = "play" }`: a text's text and a button's or a toggle's label are its `text`, an icon's name its `icon`, as the node's `label` is what accessibility calls it; its `children` a list of nodes, a list's `row` a node, and its `layout`, `style` and `progress` tables of their fields. A field of another kind than the node's, or of none, is refused, of its place in the tree, as `the node at children[2].row: no field on of a text node`. A view converts without recursion, a node at a time, and nests `Node::DEEPEST` levels at most as it converts, a list's row a level of its own, so that no tree deeper than the host takes is made: a deeper one, or a node that holds itself, is refused; a node that a list of children holds many times converts each time, and counts each time against the million values.
+- **Events**: an event is a flat table of its `kind`, its name, and its fields, as `{ kind = "tab-created", tab = 3, window = 1, index = 0 }`, `{ kind = "keys-changed" }` or a panel's closing `{ kind = "panel-closed", id = "find" }`; `on_event` takes a list of them. A view's event alike, of its `view`, its node's `key`, its `kind` and its fields, as `{ view = { panel = "find" }, key = "query", kind = "submit", text = "x", shift = false }`.
 - **Data**:
   - Small values are plain tables, possibly nested: command arguments, view trees, events.
   - The host stores view trees as a flat arena of nodes and diffs them between renders. A node that holds state, as a text field or a list, has a key, by which the host keeps its state, its text, caret, selection and composition, its scroll; the plugin learns of changes through events, and sets a field's text through a request. A large list is data, its items flat with a row's template, which the host instantiates for the rows that show: its plugin gives its count and a window of its items, those that the host asks for about the rows that show, by `list-range`, as they scroll past the window.
@@ -186,7 +188,7 @@ return Search
 
 ### Illustrative draft
 
-> The Luau front end of the API as `plugin-sdk` 0.1 has it: each of `Cx`'s requests by the Rust front end's name, of its arguments and its answer, and the Rust types' shapes as tables. F4 generates the definitions file from the Rust types, which settles the last details. The calls are as the [Luau API](#the-luau-api) above has them, a write answering `true`, or `nil` and the error: `(boolean, Error?)` below reads `(true?, Error?)`. A view's nodes and the events take the flat shapes shown here, as `{ kind = "text", text = "…" }` and `{ kind = "tab-created", … }`, with F4-10's conversion; until then they cross in the shapes of their Rust types, as `{ kind = { text = "…" } }` and `{ workspace = { kind = "tab-created", … } }`.
+> The Luau front end of the API as `plugin-sdk` 0.1 has it: each of `Cx`'s requests by the Rust front end's name, of its arguments and its answer, and the Rust types' shapes as tables. F4 generates the definitions file from the Rust types, which settles the last details. The calls are as the [Luau API](#the-luau-api) above has them, a write answering `true`, or `nil`, the error's message and its code: `(boolean, Error?)` below reads `(true?, string?, number?)`. A view's nodes and the events take the flat shapes shown here, as `{ kind = "text", text = "…" }` and `{ kind = "tab-created", … }`.
 
 ```luau
 -- lokyr.d.luau: the types of the plugin API, for the type checker.
@@ -208,13 +210,10 @@ type Direction = "horizontal" | "vertical"
 type Side = "first" | "second"
 type Edge = "left" | "right" | "top" | "bottom"
 
--- An error's code, whose hundreds tell its category: 1xx usage, 2xx
--- failure, 3xx security, 4xx fault (ADR 0019).
-type Error = {
-    code: number,
-    kind: "not-found" | "invalid-args" | "invalid" | "failed" | "denied" | "fault",
-    message: string,
-}
+-- A failed call's error: its message, then its code, whose hundreds tell
+-- its category: 1xx usage, 2xx failure, 3xx security, 4xx fault (ADR 0019).
+-- `(T?, Error?)` below reads `(T?, string?, number?)`.
+type Error = string
 
 type WindowInfo = {
     id: WindowId,
@@ -279,14 +278,20 @@ type Layout =
 -- full screen.
 type Length = "auto" | number | { fraction: number } | "titlebar" | "buttons"
 
-type Style = {
+-- A node's place and size among its siblings, and its children's, of flexbox's properties.
+type NodeLayout = {
     direction: ("row" | "column")?,
     gap: number?,
-    padding: number?,
+    padding: { top: number?, right: number?, bottom: number?, left: number? }?,
+    align: ("start" | "center" | "end" | "stretch")?,
+    justify: ("start" | "center" | "end" | "space-between")?,
     width: Length?,
     height: Length?,
     min_width: Length?, -- its least width, which it keeps as its siblings share less room, as a tab among many
     grow: number?,
+}
+
+type Style = {
     hides_indicator: boolean?, -- of a scroll area, no indicator of its scroll, as a bar of tabs
     holds_ring: boolean?, -- the ring of the keyboard's focus of a node inside it round its own box, as a search field's box round its text
     hides_ring: boolean?, -- no ring of the keyboard's focus round it, as a palette's field, whose caret alone tells it
@@ -321,8 +326,8 @@ type Node = {
     key: string?,
     kind: "container" | "text" | "icon" | "field" | "button" | "toggle" | "separator" | "list" | "scroll"
         | "progress" | "spacer" | "tabs",
-    text: string?, -- for text and icon nodes; a button's and a toggle's label
-    icon: string?, -- a button's and a toggle's icon, before its label
+    text: string?, -- for text nodes; a button's and a toggle's label
+    icon: string?, -- for icon nodes, by its name; a button's and a toggle's icon, before its label
     on: boolean?, -- for toggle nodes, the plugin's state
     disabled: boolean?, -- for button and toggle nodes: dimmed, and takes neither a click nor the focus
     placeholder: string?, -- for field nodes, shown while the field is empty
@@ -344,6 +349,7 @@ type Node = {
     tabs: { { label: string, icon: string?, disabled: boolean? } }?, -- for tabs nodes, in their order: a control of them over the box of its page, its child
     chosen: number?, -- for tabs nodes, the tab chosen, whose page is its child; a click or the arrows choose another, as "select" tells
     distribution: ("fit" | "fill" | "fill-equally" | "fill-proportionally")?, -- for tabs nodes, as macOS's segmented controls: each tab of its content's width, the control in the middle, by default; or the control of the view's width, each tab of its content's and an equal share of the room left, of equal widths, or of its content's share
+    layout: NodeLayout?,
     style: Style?,
     focusable: boolean?, -- takes the keyboard's focus, by its key
     -- Dragged among its siblings that are reorderable too, along its parent's direction, by its key, as a

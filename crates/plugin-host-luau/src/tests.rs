@@ -59,15 +59,16 @@ function Plugin.applies(cx, name, args)
 end
 
 function Plugin.on_event(cx, events)
-    assert(cx.set_state({ count = #events, first = events[1], value = events[2].custom.value }))
+    assert(events[2].kind == "custom" and events[2].name == "acme.done")
+    assert(cx.set_state({ count = #events, first = events[1].kind, value = events[2].value }))
 end
 
 function Plugin.render(cx, view)
-    return { key = "label", kind = { text = "hi " .. view.panel } }
+    return { key = "label", kind = "text", text = "hi " .. view.panel }
 end
 
 function Plugin.on_ui_event(cx, event)
-    assert(cx.set_state({ key = event.key, view = event.view.panel, kind = event.kind.kind }))
+    assert(cx.set_state({ key = event.key, view = event.view.panel, kind = event.kind }))
 end
 
 return Plugin
@@ -170,9 +171,9 @@ return {
         if renders == 2 then
             error("on purpose")
         elseif renders == 3 then
-            return { kind = { text = 3 } }
+            return { kind = "text", text = 3 }
         end
-        return { kind = { text = "fine" } }
+        return { kind = "text", text = "fine" }
     end,
     applies = function(cx, name)
         if name == "acme.fails" then

@@ -68,8 +68,6 @@ pub(crate) struct Vm {
     /// The table of the requests' functions, read-only, which each callback
     /// takes first.
     cx: Table,
-    /// The metatable of the requests' errors.
-    errors: Table,
     native: bool,
     deadlines: Deadlines,
     /// The state, which the VM owns as long as its plugin runs.
@@ -118,12 +116,10 @@ impl Vm {
                 entry.type_name()
             ))));
         };
-        let (cx, errors) = (cx(&lua), requests::errors(&lua));
         Ok(Self {
             watchdog,
             callbacks,
-            cx: cx.map_err(Failure::Code)?,
-            errors: errors.map_err(Failure::Code)?,
+            cx: cx(&lua).map_err(Failure::Code)?,
             native,
             deadlines,
             _lua: lua,
@@ -201,7 +197,7 @@ impl Vm {
         };
         let mut all = vec![Value::Table(self.cx.clone())];
         all.extend(args(lua).map_err(|error| Failure::Code(mlua::Error::runtime(error)))?);
-        let (watchdog, errors) = (&self.watchdog, &self.errors);
+        let watchdog = &self.watchdog;
         watched(watchdog, deadline, || {
             lua.scope(|scope| {
                 let host = scope.create_function_mut(|lua, (at, args): (usize, MultiValue)| {
@@ -214,7 +210,7 @@ impl Vm {
                     let left = watchdog.pause();
                     let response = cx.request(request);
                     watchdog.resume(left);
-                    requests::answer(lua, &response, errors).map_err(mlua::Error::runtime)
+                    requests::answer(lua, &response).map_err(mlua::Error::runtime)
                 })?;
                 lua.set_named_registry_value(HOST, host)?;
                 let returned = function.call::<MultiValue>(MultiValue::from_vec(all));

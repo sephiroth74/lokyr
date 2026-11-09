@@ -889,3 +889,24 @@ fn every_request_of_the_scenarios_reaches_the_host_through_its_luau_function() {
     }
     assert!(wrong.is_empty(), "{wrong:#?}");
 }
+
+#[test]
+fn every_event_of_the_scenarios_reaches_a_luau_plugin_as_its_table_and_back() {
+    // Each batch that a plugin hears, and each event that the host posts,
+    // as a Luau plugin's `on_event` takes them, back as the same events.
+    let world = Kernel::new().world;
+    let mut wrong = Vec::new();
+    let mut events = 0;
+    for scenario in scenarios::all(&world) {
+        for step in &scenario.steps {
+            for batch in [&step.posts, &step.heard] {
+                events += batch.len();
+                if let Err(error) = lokyr_plugin_host_luau::events_through_luau(batch) {
+                    wrong.push(format!("{}: {error}", scenario.name));
+                }
+            }
+        }
+    }
+    assert!(events > 0);
+    assert!(wrong.is_empty(), "{wrong:#?}");
+}

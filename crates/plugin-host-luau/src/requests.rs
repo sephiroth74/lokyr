@@ -2,22 +2,20 @@
 //! its Rust name, as `cx.line_text`, read from the SDK's own type, so that
 //! a new request reaches Luau at once; its arguments its fields in their
 //! order, its value, or none; its answer the response's value, `true` of a
-//! write, or `nil` and the error.
+//! write, or `nil`, the error's message and its code.
 
-use std::cell::Cell;
 use std::fmt;
 use std::sync::OnceLock;
 
-use lokyr_plugin_sdk::command::Error;
 use lokyr_plugin_sdk::message::{Request, Response};
-use mlua::{Lua, MultiValue, Table, Value};
+use mlua::{Lua, MultiValue, Value};
 use serde::Deserialize;
 use serde::de::{
     self, DeserializeSeed, EnumAccess, IntoDeserializer, MapAccess, SeqAccess, VariantAccess,
     Visitor,
 };
 
-use crate::shape::{self, MOST_VALUES, ShapeError, Taking};
+use crate::shape::{self, Budget, ShapeError, Taking};
 
 /// What a request takes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -82,7 +80,7 @@ pub(crate) fn kinds() -> &'static [Kind] {
 /// What tracing a type tells: its variants, a variant's params, or that it
 /// is none of an enum.
 #[derive(Debug)]
-enum Traced {
+pub(crate) enum Traced {
     Variants(&'static [&'static str]),
     Params(Params),
     Other,
@@ -103,7 +101,7 @@ impl de::Error for Traced {
 }
 
 /// What tells an enum's variants.
-struct Tracing;
+pub(crate) struct Tracing;
 
 impl<'de> de::Deserializer<'de> for Tracing {
     type Error = Traced;
@@ -208,7 +206,7 @@ pub(crate) fn request(kind: &Kind, args: &[Value]) -> Result<Request, ShapeError
     // request lacks it then, as a plain value's, whose `nil` is its value.
     let mut kept = vec![false; args.len()];
     loop {
-        let budget = Cell::new(MOST_VALUES);
+        let budget = Budget::default();
         let asked = Request::deserialize(Asking {
             kind,
             args: args.to_vec(),
@@ -237,7 +235,7 @@ struct Asking<'k, 'b> {
     kind: &'k Kind,
     args: Vec<Value>,
     kept: &'b [bool],
-    budget: &'b Cell<usize>,
+    budget: &'b Budget,
 }
 
 impl Asking<'_, '_> {
@@ -391,17 +389,17 @@ impl<'de> MapAccess<'de> for Positional<'_, '_> {
 
 /// The answer of `response` to a request, as its Luau function returns
 /// it: `true` of a write done, a declaration taken or a request of the
-/// app's taken; `nil` and the error, a table of its `code`, its `kind` and
-/// its `message`, of `errors`' metatable, of a failure; or the response's
-/// value, `nil` of none.
-pub(crate) fn answer(
-    lua: &Lua,
-    response: &Response,
-    errors: &Table,
-) -> Result<MultiValue, ShapeError> {
+/// app's taken; `nil`, the error's message and its code, of a failure, as
+/// Lua's standard library answers, so that `assert` raises the message; or
+/// the response's value, `nil` of none.
+pub(crate) fn answer(lua: &Lua, response: &Response) -> Result<MultiValue, ShapeError> {
     let values = match response {
         Response::Done => vec![Value::Boolean(true)],
-        Response::Failed(error) => vec![Value::Nil, Value::Table(error_of(lua, error, errors)?)],
+        Response::Failed(error) => vec![
+            Value::Nil,
+            Value::String(lua.create_string(&error.message)?),
+            Value::Integer(i64::from(u16::from(error.code))),
+        ],
         other => {
             // A variant of a value: a table of its one field, or of none as
             // its value is none.
@@ -419,30 +417,6 @@ pub(crate) fn answer(
         }
     };
     Ok(MultiValue::from_vec(values))
-}
-
-/// The table of `error`, of `errors`' metatable, which gives its message as
-/// a text, as an error raised of it tells.
-pub(crate) fn error_of(lua: &Lua, error: &Error, errors: &Table) -> Result<Table, ShapeError> {
-    let table = lua.create_table()?;
-    table.raw_set("code", u16::from(error.code))?;
-    table.raw_set("kind", error.code.kind())?;
-    table.raw_set("message", error.message.as_str())?;
-    table.set_metatable(Some(errors.clone()))?;
-    Ok(table)
-}
-
-/// The metatable of the errors' tables: their message as their text, and
-/// none for the plugin to change.
-pub(crate) fn errors(lua: &Lua) -> mlua::Result<Table> {
-    let metatable = lua.create_table()?;
-    metatable.raw_set(
-        "__tostring",
-        lua.create_function(|_, error: Table| error.raw_get::<Value>("message"))?,
-    )?;
-    metatable.raw_set("__metatable", false)?;
-    metatable.set_readonly(true);
-    Ok(metatable)
 }
 
 /// The function's name and the arguments of `request`'s call, as a plugin
@@ -487,9 +461,9 @@ pub(crate) fn call_of(lua: &Lua, request: &Request) -> Result<(String, Vec<Value
 }
 
 /// Whether `answer` is the answer of `response`, as it came back from a
-/// plugin's call: `true` of a write; `nil` and the error, its fields and
-/// its text, of a failure; or the response's value, which takes the
-/// response back; why not.
+/// plugin's call: `true` of a write; `nil`, the error's message and its
+/// code, of a failure; or the response's value, which takes the response
+/// back; why not.
 #[cfg(any(test, feature = "testing"))]
 pub(crate) fn answered(lua: &Lua, response: &Response, answer: &MultiValue) -> Result<(), String> {
     let first = answer.front().cloned().unwrap_or(Value::Nil);
@@ -497,20 +471,11 @@ pub(crate) fn answered(lua: &Lua, response: &Response, answer: &MultiValue) -> R
     match response {
         Response::Done => matches!(first, Value::Boolean(true)) && second.is_nil(),
         Response::Failed(error) => {
-            let Value::Table(table) = second else {
-                return Err(format!("{response:?} answered {answer:?}, of no error"));
-            };
-            let text = lua
-                .globals()
-                .get::<mlua::Function>("tostring")
-                .and_then(|tostring| tostring.call::<String>(&table))
-                .map_err(|error| error.to_string())?;
-            let field = |name: &str| table.raw_get::<Value>(name).unwrap_or(Value::Nil);
+            let third = answer.get(2).cloned().unwrap_or(Value::Nil);
             first.is_nil()
-                && field("code").as_u32() == Some(u32::from(u16::from(error.code)))
-                && field("kind").to_string().ok().as_deref() == Some(error.code.kind())
-                && field("message").to_string().ok() == Some(error.message.clone())
-                && text == error.message
+                && second.to_string().ok() == Some(error.message.clone())
+                && third.as_u32() == Some(u32::from(u16::from(error.code)))
+                && answer.len() == 3
         }
         other => {
             let Value::Table(variant) =
