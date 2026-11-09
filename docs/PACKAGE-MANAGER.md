@@ -24,15 +24,15 @@ The split is the same as cargo and rustc: the app runs plugins, and Sleip provid
 | Command | What it does |
 |---|---|
 | `sleip new <name>` | Scaffolds a plugin of Luau that works, as `owner/name`, in a folder of its name after the owner: its manifest, `src/init.luau` of a command that shows a notice, its texts in English, a test, the API's type definitions and luau-lsp's settings |
-| `sleip check` | Checks the plugin of the current folder as the registry's CI checks it: its manifest, of its capabilities, of the ones that the app refuses before 1.0.0, and its `[uses]`; the plugin API's version against Sleip's; its catalogs, each that parses, and its commands' titles in English; its package's layout and sizes; and its sources' types, `src/**/*.luau` in strict mode, against the API's definitions that Sleip holds, of Luau's own type checker, of the solver that luau-lsp takes by default; each problem of its file, line and column, and a failure of any |
+| `sleip check` | Checks the plugin of the current folder as the registry's CI checks it: its manifest, of its capabilities, of the ones that the app refuses before 1.0.0, and its `[uses]`; the plugin API's version against Sleip's; its catalogs, each that parses, and its commands' titles in English; its package's layout and sizes; and its sources' types, `src/**/*.luau` in strict mode, against the API's definitions that Sleip holds, of Luau's own type checker, of the solver that luau-lsp takes by default, without the globals that the app takes away, as `print` and `loadstring`; each problem of its file, line and column, and a failure of any |
 | `sleip test` | Runs the plugin in a headless host with simulated events |
 | `sleip dev` | Checks the plugin and links its folder into the app's plugins, a dev entry of `plugins.lock` that names the folder, of no hash, which the app watches and reloads at each change, and checks it again at each change; the entry goes as it ends ([ADR 0038](adr/0038-plugin-ecosystem-scope.md)) |
 | `sleip add <plugin>` | Adds a plugin to `plugins.toml` (from the registry, `--path` or `--git`), then resolves and installs |
-| `sleip remove <plugin>` / `sleip update [<plugin>]` | Removes or updates, always through the lockfile |
+| `sleip remove <plugin>` / `sleip update [<plugin>]` | Removes or updates, always through the lockfile; a plugin removed takes out the plugins that it needed and that no other plugin of `plugins.toml`, nor of a `sleip dev` folder, needs |
 | `sleip list` / `search <text>` / `info <plugin>` | Installed plugins, catalog, details (capabilities, compatibility, versions) |
 | `sleip publish` | Opens the registry's pull request of a plugin's tagged version |
 | `sleip login` / `logout` / `yank` / `owner` (registry v1) | Registry accounts, which registry v0, of GitHub's accounts and pull requests, has none of ([ADR 0038](adr/0038-plugin-ecosystem-scope.md)) |
-| `sleip gc` | Removes unreferenced packages from the store |
+| `sleip gc` | Removes unreferenced packages from the store; refused without a lockfile in the config's folder while the store holds packages, as every config folder shares the store |
 | `sleip doctor` | Diagnoses the installation, the cache, and compatibility with the app |
 | `sleip registry` (hidden) | The registry's index generated and signed, which the registry's CI runs, hidden from the help |
 | `sleip audit` (F7) | Checks installed plugins against security advisories |

@@ -59,7 +59,7 @@ use mlua::{IntoLua, Lua, MultiValue, Value};
 
 use crate::shape::ShapeError;
 
-pub use vm::{ENTRY, MOST_MEMORY};
+pub use vm::{ENTRY, MOST_MEMORY, TAKEN};
 
 /// A kind of call of a plugin's callbacks, which its deadline is of.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

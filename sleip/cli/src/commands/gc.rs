@@ -1,7 +1,8 @@
 //! `sleip gc`: the packages of the store that the lockfile does not name
 //! removed, and what an install that stopped left there, under the store's
 //! lock; refused of a lockfile that does not read, whose packages it could
-//! not tell.
+//! not tell, and of none while the store holds packages, as the store is
+//! every config folder's.
 
 use std::collections::BTreeSet;
 
@@ -28,6 +29,16 @@ pub fn gc(paths: &Paths, out: Out) -> Result<(), String> {
     let digests = store
         .digests()
         .map_err(|error| format!("{} cannot be read: {error}", store.root().display()))?;
+    // The store is every config folder's: of no lockfile here, as of
+    // another `XDG_CONFIG_HOME` than the one that installed, its packages
+    // may be another lockfile's.
+    if lock.is_none() && !digests.is_empty() {
+        return Err(format!(
+            "there is no lockfile at {}, and the store, which every config folder shares, holds {} packages that another one may name: nothing is removed",
+            paths.lock().display(),
+            digests.len()
+        ));
+    }
     for digest in digests.into_iter().filter(|digest| !named.contains(digest)) {
         let bytes = size_of(&store.folder(&digest));
         store
@@ -45,7 +56,8 @@ pub fn gc(paths: &Paths, out: Out) -> Result<(), String> {
     if let Ok(entries) = std::fs::read_dir(store.root()) {
         for entry in entries.flatten() {
             let name = entry.file_name().to_string_lossy().into_owned();
-            if name.starts_with(".unpack-") && entry.file_type().is_ok_and(|kind| kind.is_dir()) {
+            let left = name.starts_with(".unpack-") || name.starts_with(".stale-");
+            if left && entry.file_type().is_ok_and(|kind| kind.is_dir()) {
                 let bytes = size_of(&entry.path());
                 std::fs::remove_dir_all(entry.path())
                     .map_err(|error| format!("{name} cannot be removed: {error}"))?;

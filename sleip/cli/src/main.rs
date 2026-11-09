@@ -23,11 +23,11 @@ fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args::parse(&args) {
         Ok(Parsed::Help(text)) => {
-            print!("{text}");
+            output::print(text.strip_suffix('\n').unwrap_or(&text));
             ExitCode::SUCCESS
         }
         Ok(Parsed::Version) => {
-            println!("sleip {}", env!("CARGO_PKG_VERSION"));
+            output::print(&format!("sleip {}", env!("CARGO_PKG_VERSION")));
             ExitCode::SUCCESS
         }
         Ok(Parsed::Run(options, command)) => commands::run(options, &command),

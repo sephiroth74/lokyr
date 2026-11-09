@@ -504,7 +504,7 @@ fn check_tells_each_problem_of_its_file_and_line() {
     // Each case: what breaks the plugin, and the problems told, each its
     // place and its kind.
     type Case = (&'static str, fn(&Path), &'static [&'static str]);
-    let cases: [Case; 10] = [
+    let cases: [Case; 11] = [
         (
             "syntax",
             |folder| {
@@ -605,6 +605,15 @@ fn check_tells_each_problem_of_its_file_and_line() {
             &["plugin.toml:18:", ": Manifest: "],
         ),
         (
+            "taken",
+            |folder| {
+                edit(folder, "src/init.luau", |text| {
+                    text.replacen("--!strict\n", "--!strict\nprint(\"x\")\n", 1)
+                });
+            },
+            &["src/init.luau:2:", ": TypeError: Unknown global 'print'"],
+        ),
+        (
             "package",
             |folder| {
                 std::fs::rename(folder.join("src/init.luau"), folder.join("src/main.luau"))
@@ -697,4 +706,121 @@ fn check_notes_what_is_not_wrong_and_tells_json() {
     let output = checked(&sandbox, &empty, &[]);
     assert_eq!(output.status.code(), Some(1));
     assert!(stdout(&output).starts_with("plugin.toml: Manifest: it cannot be read"));
+}
+
+#[test]
+fn gc_of_a_config_folder_of_no_lockfile_removes_nothing_of_the_shared_store() {
+    let sandbox = Sandbox::new("gc-elsewhere");
+    let kept = sandbox.package("kept", "1.0.0", "^0.1");
+    sandbox.lock(BTreeMap::from([kept]));
+    // Another config folder, as a shell's `XDG_CONFIG_HOME` gives it.
+    let elsewhere = sandbox.home.join("elsewhere");
+    std::fs::create_dir_all(&elsewhere).unwrap();
+    let output = sandbox
+        .command(&["gc"])
+        .env("XDG_CONFIG_HOME", &elsewhere)
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+    assert!(String::from_utf8_lossy(&output.stderr).contains("there is no lockfile"));
+    assert_eq!(sandbox.store().digests().unwrap().len(), 1);
+}
+
+#[test]
+fn remove_takes_out_the_dependencies_that_no_other_plugin_needs() {
+    let sandbox = Sandbox::new("remove-needless");
+    let (base, locked_base) = sandbox.package("base", "1.0.0", "^0.1");
+    let (shared, locked_shared) = sandbox.package("shared", "1.0.0", "^0.1");
+    let (top, mut locked_top) = sandbox.package("top", "1.0.0", "^0.1");
+    let (other, mut locked_other) = sandbox.package("other", "1.0.0", "^0.1");
+    let (stray, locked_stray) = sandbox.package("stray", "1.0.0", "^0.1");
+    locked_top.dependencies.extend([
+        (base.clone(), "1.0.0".to_owned()),
+        (shared.clone(), "1.0.0".to_owned()),
+    ]);
+    locked_other
+        .dependencies
+        .insert(shared.clone(), "1.0.0".to_owned());
+    sandbox.lock(BTreeMap::from([
+        (base.clone(), locked_base),
+        (shared.clone(), locked_shared),
+        (top.clone(), locked_top),
+        (other.clone(), locked_other),
+        (stray.clone(), locked_stray),
+    ]));
+    std::fs::write(
+        sandbox.config().join("plugins.toml"),
+        "[plugins]\n\"acme/top\" = \"^1.0\"\n\"acme/other\" = \"^1.0\"\n",
+    )
+    .unwrap();
+    let removed = sandbox.sleip(&["--json", "remove", "acme/top"]);
+    assert!(removed.status.success(), "{removed:?}");
+    assert_eq!(
+        events(&removed),
+        [
+            serde_json::json!({ "event": "removed", "name": "acme/top" }),
+            serde_json::json!({ "event": "removed", "name": "acme/base", "needed": false }),
+        ]
+    );
+    // What another needs stays, and what the lockfile holds of no plugin's
+    // need, the user's own.
+    let left: Vec<String> = sandbox.locked().packages.keys().cloned().collect();
+    assert_eq!(left, [other, shared, stray]);
+}
+
+#[test]
+fn new_keeps_a_name_of_the_template_s_word_and_its_plugin_passes_its_check() {
+    let sandbox = Sandbox::new("new-names");
+    for (name, namespace) in [("hello/world", "world"), ("acme/say-hello", "say-hello")] {
+        let work = sandbox.home.join("names");
+        std::fs::create_dir_all(&work).unwrap();
+        let made = sandbox
+            .command(&["new", name])
+            .current_dir(&work)
+            .output()
+            .unwrap();
+        assert!(made.status.success(), "{made:?}");
+        let folder = work.join(namespace);
+        let manifest = lokyr_pkg_model::manifest::Manifest::parse(
+            &std::fs::read_to_string(folder.join("plugin.toml")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(manifest.name, name);
+        assert_eq!(
+            manifest.contributes.commands[0].name,
+            format!("{namespace}.say")
+        );
+        let checked = sandbox
+            .command(&["check"])
+            .current_dir(&folder)
+            .output()
+            .unwrap();
+        assert!(checked.status.success(), "{name}: {}", stdout(&checked));
+    }
+}
+
+#[test]
+fn a_closed_standard_output_ends_no_command_in_a_panic() {
+    let sandbox = Sandbox::new("closed-pipe");
+    let packages = (0..20)
+        .map(|at| sandbox.package(&format!("p{at}"), "1.0.0", "^0.1"))
+        .collect();
+    sandbox.lock(packages);
+    // A reader that stopped reading, as `head` does.
+    let (reader, writer) = std::io::pipe().unwrap();
+    drop(reader);
+    for args in [
+        &["list"][..],
+        &["--json", "list"],
+        &["--help"],
+        &["--version"],
+    ] {
+        let output = sandbox
+            .command(args)
+            .stdout(Stdio::from(writer.try_clone().unwrap()))
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(0), "{args:?}: {output:?}");
+        assert!(output.stderr.is_empty(), "{args:?}: {output:?}");
+    }
 }

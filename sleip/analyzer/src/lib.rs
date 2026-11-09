@@ -22,10 +22,25 @@ unsafe extern "C" {
         count: usize,
         definitions: *const c_char,
         definitions_size: usize,
+        taken: *const *const c_char,
+        taken_count: usize,
         problems: *mut usize,
     ) -> *mut c_char;
     fn sleip_luau_free(text: *mut c_char);
 }
+
+/// The globals of Luau's that the plugins' host takes away, which a check
+/// tells a call of as of an unknown global: code of text, a function's
+/// environment, the collector's control and `print`; `require` stays, each
+/// module's own, of its package.
+pub const TAKEN: [&str; 6] = [
+    "loadstring",
+    "getfenv",
+    "setfenv",
+    "collectgarbage",
+    "gcinfo",
+    "print",
+];
 
 /// What kind of problem a check found.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -77,12 +92,17 @@ pub fn check(sources: &[(String, String)], definitions: &str) -> Vec<Problem> {
             }),
         }
     }
+    let taken: Vec<CString> = TAKEN
+        .iter()
+        .filter_map(|name| CString::new(*name).ok())
+        .collect();
+    let taken_pointers: Vec<*const c_char> = taken.iter().map(|name| name.as_ptr()).collect();
     let name_pointers: Vec<*const c_char> = names.iter().map(|name| name.as_ptr()).collect();
     let text_pointers: Vec<*const c_char> = texts.iter().map(|text| text.as_ptr()).collect();
     let mut count = 0;
     // SAFETY: the pointers are of NUL-terminated texts that outlive the call,
-    // as many as `count`, and the definitions are of `definitions.len()`
-    // bytes; the result, a NUL-terminated text that the shim allocated or
+    // as many as their counts, and the definitions are of
+    // `definitions.len()` bytes; the result, a NUL-terminated text that the shim allocated or
     // none, is read once and freed by the shim.
     #[allow(unsafe_code)]
     let records = unsafe {
@@ -92,6 +112,8 @@ pub fn check(sources: &[(String, String)], definitions: &str) -> Vec<Problem> {
             name_pointers.len(),
             definitions.as_ptr().cast(),
             definitions.len(),
+            taken_pointers.as_ptr(),
+            taken_pointers.len(),
             &raw mut count,
         );
         if found.is_null() {

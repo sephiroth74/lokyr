@@ -13,7 +13,7 @@ pub fn list(paths: &Paths, out: Out) -> Result<(), String> {
     let lock = Lock::read(&paths.lock()).map_err(|error| error.to_string())?;
     let packages = lock.map(|lock| lock.packages).unwrap_or_default();
     if packages.is_empty() && !out.json() {
-        println!("No plugin is installed.");
+        crate::output::print("No plugin is installed.");
     }
     for (name, locked) in &packages {
         let capabilities: Vec<String> = locked

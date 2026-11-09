@@ -2,7 +2,29 @@
 //! NDJSON on the standard output, a JSON object a line, each of its
 //! `event`, as the app reads them.
 
+use std::io::Write as _;
+use std::sync::atomic::{AtomicBool, Ordering};
+
 use serde_json::{Map, Value, json};
+
+/// Whether the standard output closed, as a reader of a pipe that stopped
+/// reading, as `head`, closes it: what follows goes nowhere, and the
+/// command goes on to its end.
+static CLOSED: AtomicBool = AtomicBool::new(false);
+
+/// Writes `line` to the standard output, nothing once it closed.
+pub fn print(line: &str) {
+    if CLOSED.load(Ordering::Relaxed) {
+        return;
+    }
+    let mut stdout = std::io::stdout().lock();
+    if writeln!(stdout, "{line}")
+        .and_then(|()| stdout.flush())
+        .is_err()
+    {
+        CLOSED.store(true, Ordering::Relaxed);
+    }
+}
 
 /// Where a command tells what it does.
 #[derive(Clone, Copy, Debug)]
@@ -29,9 +51,9 @@ impl Out {
             if let Value::Object(fields) = fields {
                 object.extend(fields);
             }
-            println!("{}", Value::Object(object));
+            print(&Value::Object(object).to_string());
         } else if !text.is_empty() {
-            println!("{text}");
+            print(text);
         }
     }
 

@@ -112,12 +112,11 @@ pub fn new(out: Out, plugin: &str) -> Result<(), String> {
 }
 
 /// `text`, a template's file, of the plugin `plugin` of `namespace`: its
-/// name in place of the template's, its namespace in place of each word
-/// `hello`, and the plugin API's constraint of this Sleip's.
+/// namespace in place of each word `hello`, then its name in place of the
+/// template's, so that a name of the word `hello`, as `acme/say-hello`,
+/// stays as it is, and the plugin API's constraint of this Sleip's.
 fn of_name(text: &str, plugin: &str, namespace: &str) -> String {
-    let text = text
-        .replace(TEMPLATE_NAME, plugin)
-        .replace(TEMPLATE_API, &format!("api = \"^{}\"", api_major_minor()));
+    let text = text.replace(TEMPLATE_API, &format!("api = \"^{}\"", api_major_minor()));
     let mut named = String::with_capacity(text.len());
     let mut rest = text.as_str();
     let word =
@@ -135,7 +134,11 @@ fn of_name(text: &str, plugin: &str, namespace: &str) -> String {
         rest = &rest[at + TEMPLATE_NAMESPACE.len()..];
     }
     named.push_str(rest);
-    named
+    // The template's name, of the plugin's namespace now.
+    named.replace(
+        &TEMPLATE_NAME.replace(TEMPLATE_NAMESPACE, namespace),
+        plugin,
+    )
 }
 
 /// The plugin API's major and minor numbers, as `0.1`, of a constraint of

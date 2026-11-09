@@ -2046,6 +2046,7 @@ name = "sleip-analyzer"
 version = "0.7.0"
 dependencies = [
  "cc",
+ "lokyr-plugin-host-luau",
  "mlua",
 ]
 

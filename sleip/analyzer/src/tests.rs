@@ -92,3 +92,36 @@ fn a_source_that_does_not_parse_is_told_of_its_line_and_column() {
     );
     assert_eq!(zero[0].message, "the file holds a zero byte");
 }
+
+#[test]
+fn the_globals_that_the_host_takes_away_are_unknown_to_the_check() {
+    // The host's, but `require`, each module's own.
+    let host: Vec<&str> = lokyr_plugin_host_luau::TAKEN
+        .iter()
+        .copied()
+        .filter(|name| *name != "require")
+        .collect();
+    assert_eq!(TAKEN.as_slice(), host.as_slice());
+    let source = r#"--!strict
+print("x")
+local _ = loadstring("return 1")
+local _ = getfenv(1)
+setfenv(1, {})
+local _ = gcinfo()
+local _ = collectgarbage("count")
+local _ = math.floor(1.5)
+return {}
+"#;
+    let problems = check(
+        &[("src/init.luau".to_owned(), source.to_owned())],
+        DEFINITIONS,
+    );
+    let lines: Vec<u32> = problems.iter().map(|problem| problem.line).collect();
+    assert_eq!(lines, [2, 3, 4, 5, 6, 7], "{problems:#?}");
+    assert!(
+        problems
+            .iter()
+            .all(|problem| problem.kind == Kind::Type && problem.message.contains("Unknown global")),
+        "{problems:#?}"
+    );
+}

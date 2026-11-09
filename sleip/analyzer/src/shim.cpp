@@ -126,8 +126,9 @@ char* copy(const std::string& text)
 } // namespace
 
 // Checks the `count` modules of `names` and `texts` against the
-// definitions `definitions`, of `definitions_size` bytes: the records of
-// the problems found, which `sleip_luau_free` frees, and their count in
+// definitions `definitions`, of `definitions_size` bytes, without the
+// `taken_count` globals of `taken`, which the host takes away: the records
+// of the problems found, which `sleip_luau_free` frees, and their count in
 // `problems`.
 extern "C" char* sleip_luau_check(
     const char* const* names,
@@ -135,6 +136,8 @@ extern "C" char* sleip_luau_check(
     size_t count,
     const char* definitions,
     size_t definitions_size,
+    const char* const* taken,
+    size_t taken_count,
     size_t* problems
 )
 {
@@ -154,6 +157,14 @@ extern "C" char* sleip_luau_check(
         options.runLintChecks = false;
         Luau::Frontend frontend(Luau::SolverMode::Old, &sources, &config, options);
         Luau::registerBuiltinGlobals(frontend, frontend.globals);
+        // The globals that the host takes away, which a call of is an
+        // unknown global's.
+        for (size_t i = 0; i < taken_count; ++i)
+        {
+            Luau::AstName name = frontend.globals.globalNames.names->get(taken[i]);
+            if (name.value)
+                frontend.globals.globalScope->bindings.erase(name);
+        }
         Luau::LoadDefinitionFileResult loaded = frontend.loadDefinitionFile(
             frontend.globals, frontend.globals.globalScope, std::string_view(definitions, definitions_size), "@lokyr", false, false
         );

@@ -18,5 +18,9 @@ mlua.workspace = true
 [build-dependencies]
 cc.workspace = true
 
+[dev-dependencies]
+# The globals that the host takes away, which the check's must be.
+lokyr-plugin-host-luau.workspace = true
+
 [lints]
 workspace = true

@@ -43,7 +43,7 @@ pub const ENTRY: &str = "src/init.luau";
 /// Luau's base library; mlua's `require`, of the file system, as each
 /// module's environment holds the package's own; and the output of
 /// `print`, which goes nowhere a plugin's user sees.
-const TAKEN: [&str; 7] = [
+pub const TAKEN: [&str; 7] = [
     "loadstring",
     "getfenv",
     "setfenv",
