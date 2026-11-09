@@ -43,6 +43,14 @@ The split is the same as cargo and rustc: the app runs plugins, and Sleip provid
 - `--offline`: uses only the local cache and store.
 - `--registry <name>`: selects a registry.
 
+**Output, exit codes and places**
+- Text for a person by default; with `--json`, an event of NDJSON a line on the standard output, each a JSON object of its `event`: `plugin` of `list`, of `name`, `version`, `kind`, `source` and `capabilities`; `removed` of `remove`, of `name`; `collected` of `gc`, of a package's `digest`, or a `leftover` of an install that stopped, and its `bytes`, then `done` of `collected` and `bytes`; `check` of `doctor`, of `name`, `level`, `ok`, `note` or `error`, and `detail`, then `done` of `problems`; `waiting`, of what a command waits for, as the store's lock; and `error`, of its `message`.
+- Exit codes: 0, done; 1, a failure, as a plugin that another needs or a problem that `doctor` found; 2, a command line that is wrong, as the help tells.
+- The places are the app's: the config's folder, `~/.config/lokyr/` or `$XDG_CONFIG_HOME/lokyr/`, of `plugins.toml`, `plugins.lock` and `permissions.toml`; the store, `~/Library/Application Support/lokyr/store/` on macOS, `$XDG_DATA_HOME/lokyr/store/` elsewhere; the cache, `~/Library/Caches/lokyr/sleip/` on macOS, `$XDG_CACHE_HOME/lokyr/sleip/` elsewhere.
+- The app's plugin API, which the plugins are resolved against, of the app that `SLEIP_LOKYR` names, a bundle, its resources' `api-version` file or its binary; of the bundle that Sleip's binary is in; of `Lokyr.app` in the Applications folders; or of `lokyr --api-version` on the `PATH`.
+- **The store's lock**: a command that changes the store or the lockfile, `remove` and `gc` so far, takes `store.lock`, beside the store rather than in it, so that the app's watch of the store takes no lock for a change; a second Sleip waits for the first, as it tells.
+- `remove` takes the plugin out of `plugins.toml` in place, its comments and order kept, and out of `plugins.lock`, written whole; it refuses a plugin that another needs, and, of `--locked`, a change of the lockfile; the package stays until `gc`, the decisions on its capabilities in `permissions.toml`. `gc` refuses a lockfile that does not read, whose packages it could not tell.
+
 ## Package kinds
 
 | `kind` | Contents | Capabilities |

@@ -6,17 +6,34 @@
 
 #![forbid(unsafe_code)]
 
+mod args;
+mod commands;
+mod output;
+mod paths;
+mod store_lock;
+
 use std::process::ExitCode;
 
+use args::Parsed;
+
+/// The exit code of a command line that is wrong.
+const USAGE: u8 = 2;
+
 fn main() -> ExitCode {
-    match std::env::args().nth(1).as_deref() {
-        Some("--version" | "-V") => {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    match args::parse(&args) {
+        Ok(Parsed::Help(text)) => {
+            print!("{text}");
+            ExitCode::SUCCESS
+        }
+        Ok(Parsed::Version) => {
             println!("sleip {}", env!("CARGO_PKG_VERSION"));
             ExitCode::SUCCESS
         }
-        _ => {
-            eprintln!("Usage: sleip --version");
-            ExitCode::FAILURE
+        Ok(Parsed::Run(options, command)) => commands::run(options, &command),
+        Err(text) => {
+            eprintln!("sleip: {text}");
+            ExitCode::from(USAGE)
         }
     }
 }

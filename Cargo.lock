@@ -2046,8 +2046,10 @@ name = "sleip-cli"
 version = "0.7.0"
 dependencies = [
  "lokyr-pkg-model",
+ "serde_json",
  "sleip-index",
  "sleip-resolver",
+ "toml_edit",
 ]
 
 [[package]]

@@ -17,6 +17,13 @@ path = "src/main.rs"
 sleip-index.workspace = true
 sleip-resolver.workspace = true
 lokyr-pkg-model.workspace = true
+serde_json.workspace = true
+# The user's plugins.toml edited in place, of its comments and order.
+toml_edit = { workspace = true, features = ["display"] }
+
+[dev-dependencies]
+lokyr-pkg-model.workspace = true
+serde_json.workspace = true
 
 [lints]
 workspace = true
