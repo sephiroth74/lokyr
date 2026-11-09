@@ -59,7 +59,10 @@ fn asker(on: &[&str], more: &str) -> (Plugins, Did) {
     plugins
         .add_installed(
             manifest(on, more),
-            Box::new(Asking(Arc::clone(&did))),
+            {
+                let did = Arc::clone(&did);
+                Box::new(move || Box::new(Asking(Arc::clone(&did))))
+            },
             (&[], &[]),
         )
         .unwrap();
@@ -172,7 +175,10 @@ fn a_capability_revoked_stops_its_plugin_and_one_decided_is_not_asked() {
     plugins
         .add_installed(
             manifest(&[], ""),
-            Box::new(Asking(Arc::clone(&did))),
+            {
+                let did = Arc::clone(&did);
+                Box::new(move || Box::new(Asking(Arc::clone(&did))))
+            },
             (&granted, &[]),
         )
         .unwrap();
@@ -195,6 +201,10 @@ fn a_capability_revoked_stops_its_plugin_and_one_decided_is_not_asked() {
         "{disabled:?}"
     );
     assert!(!plugins.waiting());
+    // Not a fault of its own: it does not start again after a while, but
+    // as it is turned off and on again.
+    plugins.schedule_restarts(Instant::now());
+    assert_eq!(plugins.next_restart(), None);
 }
 
 #[test]

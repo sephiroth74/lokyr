@@ -227,7 +227,7 @@ impl Plugin for Barred {
 
 /// Tells the app that its file changed, as its watch does, and fires the
 /// reading's timer alone.
-fn reload(fake: &mut Fake, app: &mut App) {
+pub(super) fn reload(fake: &mut Fake, app: &mut App) {
     let file = app.config_file.as_ref().unwrap();
     file.changed.store(true, Ordering::Release);
     fake.send_app(app, AppEvent::Wake);

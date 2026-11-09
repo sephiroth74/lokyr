@@ -251,3 +251,53 @@ fn the_watches_of_the_installed_plugins_wake_nothing_while_nothing_changes() {
     assert!(told.iter().any(|text| text.contains("acme/still") && text.contains("changed since it was stored")), "{told:?}");
     let _ = std::fs::remove_dir_all(&folder);
 }
+
+#[test]
+fn an_installed_plugin_turned_off_and_on_again_is_made_anew_of_its_package() {
+    let _luau = LUAU.lock().unwrap_or_else(PoisonError::into_inner);
+    let folder = shelf("reloads-enabled");
+    let store = Store::new(folder.join("store"));
+    grant_open(&folder, &["toggled"]);
+    let toggled = manifest("toggled", &[], "^0.1", "");
+    lock(
+        &folder,
+        BTreeMap::from([stored(
+            &store,
+            "toggled",
+            &toggled,
+            &opening("activate", "on", ""),
+        )]),
+    );
+    let path = folder.join("config.toml");
+    let links = "[links]\nurls = \"open\"\n";
+    std::fs::write(&path, links).unwrap();
+    let mut fake = Fake::default();
+    let mut app = App::new(None, Config::read(&path).unwrap(), Some(path.clone()))
+        .with_program(quiet())
+        .with_installed(
+            folder.join("plugins.lock"),
+            Store::new(folder.join("store")),
+        )
+        .with_state(Some(folder.join("state")));
+    fake.start(&mut app);
+    run_until(&mut fake, &mut app, |fake, _| opens(fake, "on") == 1);
+    std::fs::write(
+        &path,
+        format!("{links}[plugins.toggled]\nenabled = false\n"),
+    )
+    .unwrap();
+    super::configs::reload(&mut fake, &mut app);
+    assert_eq!(
+        app.plugins.status("acme/toggled"),
+        Some(plugins::Status::Off)
+    );
+    // On again: a new VM of its package, which activates anew.
+    std::fs::write(&path, links).unwrap();
+    super::configs::reload(&mut fake, &mut app);
+    run_until(&mut fake, &mut app, |fake, _| opens(fake, "on") == 2);
+    assert_eq!(
+        app.plugins.status("acme/toggled"),
+        Some(plugins::Status::Active)
+    );
+    let _ = std::fs::remove_dir_all(&folder);
+}

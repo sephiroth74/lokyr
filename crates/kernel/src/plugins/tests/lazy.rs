@@ -232,7 +232,10 @@ fn a_plugin_of_a_thread_of_its_own_runs_its_trigger_s_command_after_its_activati
     plugins
         .add_installed(
             manifest("far", &["command:far.go"], more),
-            Box::new(Far(told)),
+            {
+                let told = Arc::clone(&told);
+                Box::new(move || Box::new(Far(Arc::clone(&told))))
+            },
             (&[], &[]),
         )
         .unwrap();

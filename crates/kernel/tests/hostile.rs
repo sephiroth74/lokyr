@@ -429,3 +429,104 @@ fn a_runaway_recursion_fails_its_call_and_the_plugin_goes_on() {
     let (again, _) = hostile_run(&mut plugins, &mut app);
     failed(&plugins, &again, "stack overflow");
 }
+
+/// Serves the plugins' threads, in `app`, until `done` holds of them.
+fn served_until(plugins: &mut Plugins, app: &mut App, done: impl Fn(&Plugins) -> bool) {
+    let start = Instant::now();
+    while !done(plugins) {
+        plugins.serve(&mut app.context());
+        assert!(start.elapsed() < Duration::from_secs(10), "a call hangs");
+        std::thread::sleep(Duration::from_millis(1));
+    }
+}
+
+#[test]
+fn an_installed_plugin_that_faults_starts_again_anew_and_turned_on_again_is_made_anew() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    let mut app = App::new();
+    let mut plugins = Plugins::new();
+    let manifest = Manifest::parse(&format!(
+        "[plugin]\nname = \"{HOSTILE}\"\nversion = \"1.0.0\"\nkind = \"luau\"\napi = \"^0.1\"\nlicense = \"MIT\"\n"
+    ))
+    .unwrap();
+    let package = Package::new([(ENTRY.to_owned(), commanded("while true do end"))]);
+    let made = Arc::new(AtomicUsize::new(0));
+    let counted = Arc::clone(&made);
+    plugins
+        .add_installed(
+            manifest,
+            Box::new(move || {
+                counted.fetch_add(1, Ordering::Relaxed);
+                Box::new(LuauPlugin::new(HOSTILE, package.clone(), Execution::Native))
+            }),
+            (&[], &[]),
+        )
+        .unwrap();
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    // Active, its activation on its thread done, its command registered.
+    let active = |plugins: &Plugins| {
+        plugins.status(HOSTILE) == Some(Status::Active) && plugins.owns("hostile.go")
+    };
+    served_until(&mut plugins, &mut app, active);
+    assert_eq!(made.load(Ordering::Relaxed), 1);
+    let start = Instant::now();
+    // Each fault, of its loop's deadline, on its thread, and what it tells.
+    let fault = |plugins: &mut Plugins, app: &mut App, at: Duration| {
+        plugins
+            .run("hostile.go", Args::new(), &mut app.context())
+            .unwrap();
+        served_until(plugins, app, |plugins| {
+            plugins.status(HOSTILE) == Some(Status::Disabled)
+        });
+        plugins.schedule_restarts(start + at);
+        let told = plugins.take_disabled();
+        assert_eq!(told.len(), 1, "{told:?}");
+        assert!(told[0].1.contains("past its deadline"), "{told:?}");
+        told[0].1.clone()
+    };
+    // Again in a second, a new VM of its package.
+    let told = fault(&mut plugins, &mut app, Duration::ZERO);
+    assert!(told.contains("starts again in 1 s"), "{told}");
+    assert_eq!(plugins.next_restart(), Some(start + Duration::from_secs(1)));
+    assert!(
+        plugins
+            .restart_due(start + Duration::from_secs(1), &mut app.context())
+            .is_empty()
+    );
+    served_until(&mut plugins, &mut app, active);
+    assert_eq!(made.load(Ordering::Relaxed), 2);
+    assert!(plugins.owns("hostile.go"));
+    // Twice as long, then off at the third within a minute.
+    let told = fault(&mut plugins, &mut app, Duration::from_secs(2));
+    assert!(told.contains("starts again in 2 s"), "{told}");
+    assert!(
+        plugins
+            .restart_due(start + Duration::from_secs(4), &mut app.context())
+            .is_empty()
+    );
+    served_until(&mut plugins, &mut app, active);
+    assert_eq!(made.load(Ordering::Relaxed), 3);
+    let told = fault(&mut plugins, &mut app, Duration::from_secs(5));
+    assert!(told.contains("turned off, after 3 faults"), "{told}");
+    assert_eq!(plugins.next_restart(), None);
+    // Its section turns it off, then on again: a new one of it.
+    let config = |text: &str| {
+        lokyr_kernel::config::Config::parse(text, std::path::Path::new("config.toml")).unwrap()
+    };
+    assert!(
+        plugins
+            .configure(&config("[plugins.hostile]\nenabled = false\n").plugins)
+            .is_empty()
+    );
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    assert_eq!(plugins.status(HOSTILE), Some(Status::Off));
+    assert!(plugins.configure(&config("").plugins).is_empty());
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    served_until(&mut plugins, &mut app, active);
+    assert_eq!(made.load(Ordering::Relaxed), 4);
+    // Its next fault counts again, of the faults within the minute.
+    let told = fault(&mut plugins, &mut app, Duration::from_secs(70));
+    assert!(told.contains("starts again in 1 s"), "{told}");
+}

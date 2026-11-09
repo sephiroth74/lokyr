@@ -47,11 +47,11 @@ pub(super) struct Installed {
     pub(super) permissions: PathBuf,
 }
 
-/// A plugin of the lockfile that loaded: its manifest, the plugin, and its
-/// lockfile's entry.
+/// A plugin of the lockfile that loaded: its manifest, its package, and
+/// its lockfile's entry.
 pub(super) struct Loaded {
     pub(super) manifest: Manifest,
-    pub(super) plugin: LuauPlugin,
+    pub(super) package: Package,
     pub(super) locked: Locked,
 }
 
@@ -114,9 +114,9 @@ pub(super) fn load(installed: &Installed) -> Result<Found, String> {
             }
         };
         match plugin(name, &folder) {
-            Ok((manifest, plugin)) => loaded.push(Loaded {
+            Ok((manifest, package)) => loaded.push(Loaded {
                 manifest,
-                plugin,
+                package,
                 locked: locked.clone(),
             }),
             Err(refusal) => refused.push((name.clone(), refusal)),
@@ -127,7 +127,7 @@ pub(super) fn load(installed: &Installed) -> Result<Found, String> {
 
 /// The plugin `name` of the package in `folder`: its manifest, which names
 /// it, of the app's plugin API, and its sources; or why not.
-fn plugin(name: &str, folder: &Path) -> Result<(Manifest, LuauPlugin), Refusal> {
+fn plugin(name: &str, folder: &Path) -> Result<(Manifest, Package), Refusal> {
     let other = Refusal::Other;
     let text = std::fs::read_to_string(folder.join("plugin.toml"))
         .map_err(|error| other(format!("its plugin.toml cannot be read: {error}")))?;
@@ -144,8 +144,7 @@ fn plugin(name: &str, folder: &Path) -> Result<(Manifest, LuauPlugin), Refusal> 
     }
     let sources =
         sources(folder).map_err(|error| other(format!("its sources cannot be read: {error}")))?;
-    let plugin = LuauPlugin::new(name, Package::new(sources), Execution::Native);
-    Ok((manifest, plugin))
+    Ok((manifest, Package::new(sources)))
 }
 
 /// What the app keeps of the installed plugins as they change: the watches
@@ -342,7 +341,7 @@ impl<B: Backend> App<B> {
         let mut refused = found.refused;
         for Loaded {
             manifest,
-            plugin,
+            package,
             locked,
         } in fresh
         {
@@ -353,9 +352,18 @@ impl<B: Backend> App<B> {
                 .get(&name)
                 .cloned()
                 .unwrap_or_default();
+            // A fresh VM of the package each time, as a fault's while
+            // passes or the plugin is turned on again.
+            let made = name.clone();
             let added = self.plugins.add_installed(
                 manifest,
-                Box::new(plugin),
+                Box::new(move || {
+                    Box::new(LuauPlugin::new(
+                        made.clone(),
+                        package.clone(),
+                        Execution::Native,
+                    ))
+                }),
                 (&decisions.granted, &decisions.refused),
             );
             match added {

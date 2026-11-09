@@ -317,12 +317,18 @@ pub enum Status {
     Off,
 }
 
+/// What makes a plugin anew, as a registration's function or an installed
+/// plugin's package does.
+pub type Make = Box<dyn Fn() -> Box<dyn Plugin + Send>>;
+
 /// A plugin, and what the host keeps of it: what makes it anew, as the
-/// config turns it on again, if it was registered.
+/// config turns it on again or a fault's while passes, if it was
+/// registered or installed, and whether the new one runs on a thread of
+/// its own.
 struct Entry {
     runner: Runner,
     state: State,
-    make: Option<fn() -> Box<dyn Plugin + Send>>,
+    make: Option<(Make, bool)>,
 }
 
 /// Where a plugin's calls run.
@@ -927,7 +933,12 @@ impl Plugins {
     pub fn add_registered(&mut self, registration: Registration) -> Result<(), Error> {
         self.add_builtin_send(registration.manifest, (registration.make)())?;
         if let Some(entry) = self.entries.last_mut() {
-            entry.make = Some(registration.make);
+            let worker = entry
+                .state
+                .manifest
+                .as_ref()
+                .is_some_and(|manifest| manifest.thread == Thread::Worker);
+            entry.make = Some((Box::new(registration.make), worker));
         }
         Ok(())
     }
@@ -965,22 +976,25 @@ impl Plugins {
         Ok(())
     }
 
-    /// Adds `plugin`, an installed one, which `manifest` describes, as
-    /// [`Plugins::add_declared`] does, on a thread of its own, which starts
-    /// as it activates: at the app's start, or at its trigger, as its
-    /// manifest's activation says, its commands showing before.
+    /// Adds the plugin that `make` makes, an installed one, which
+    /// `manifest` describes, as [`Plugins::add_declared`] does, on a thread
+    /// of its own, which starts as it activates: at the app's start, or at
+    /// its trigger, as its manifest's activation says, its commands showing
+    /// before. `make` makes it anew as a fault's while passes or its
+    /// section turns it on again, as a registration's function does.
     /// It holds the capabilities that the user's decisions grant, of
     /// `granted`; those that they neither grant nor refuse, of `refused`,
     /// its activation asks the user for first, as a [`Request::AskConsent`].
     pub fn add_installed(
         &mut self,
         manifest: Manifest,
-        plugin: Box<dyn Plugin + Send>,
+        make: Make,
         (granted, refused): (&[Capability], &[Capability]),
     ) -> Result<(), Error> {
-        self.add_declared_on(manifest, Runner::Unstarted(plugin))?;
+        self.add_declared_on(manifest, Runner::Unstarted(make()))?;
         if let Some(entry) = self.entries.last_mut() {
             decide(&mut entry.state, granted, refused);
+            entry.make = Some((make, true));
         }
         Ok(())
     }
@@ -1060,6 +1074,8 @@ impl Plugins {
         disable(state, context.registry, &mut self.declarations_changed);
         clear_leftovers(state, context, &mut self.out);
         state.fault = Some(error.message);
+        // Not a fault of its own, which would start it again after a while.
+        state.restarts.counted = true;
         if let Runner::Worker(_) = runner {
             *runner = Runner::Stopped;
         }
@@ -1437,7 +1453,7 @@ impl Plugins {
             }
             if entry.state.wanted && entry.state.status == Status::Off {
                 if entry.state.ran {
-                    let Some(make) = entry.make else {
+                    let Some((make, worker)) = &entry.make else {
                         errors.push(Error::new(
                             Code::Unavailable,
                             format!(
@@ -1447,18 +1463,14 @@ impl Plugins {
                         ));
                         continue;
                     };
-                    let worker = entry
-                        .state
-                        .manifest
-                        .as_ref()
-                        .is_some_and(|manifest| manifest.thread == Thread::Worker);
-                    entry.runner = if worker {
+                    entry.runner = if *worker {
                         Runner::Unstarted(make())
                     } else {
                         Runner::Main(make())
                     };
-                    // A fault of the new one is told again.
+                    // A fault of the new one is told again, and counted.
                     entry.state.fault = None;
+                    entry.state.restarts.counted = false;
                     self.told_disabled.remove(&entry.state.name);
                 }
                 entry.state.status = Status::Inactive;
@@ -2055,7 +2067,7 @@ impl Plugins {
 
     /// Counts the faults of the plugins that faults disabled since the last
     /// count, at `now`, of those that the host can make anew, as a
-    /// registration's: each starts again after a while, [`RESTART_AFTER`],
+    /// registration's or an installed plugin's: each starts again after a while, [`RESTART_AFTER`],
     /// twice as long at each fault, and three faults within a minute turn
     /// it off, past restarting; its fault tells which, as the app's notice
     /// of the plugins that stopped shows it.
