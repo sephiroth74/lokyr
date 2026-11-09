@@ -1306,7 +1306,10 @@ impl Plugins {
             context,
             (&mut self.out, &mut self.declarations_changed),
             "applies",
-            |plugin, cx| Ok(plugin.applies(cx, command, args)),
+            |plugin, cx| {
+                let applies = plugin.applies(cx, command, args);
+                plugin.take_failure().map_or(Ok(applies), Err)
+            },
         )
     }
 
@@ -1621,7 +1624,7 @@ impl Plugins {
                     &mut self.out,
                     &mut self.declarations_changed,
                     "render",
-                    |plugin, cx| tree_within_depth(plugin.render(cx, view)),
+                    |plugin, cx| rendered(plugin, cx, view),
                 )?;
                 state.views.insert(view.clone(), (new_id(), tree));
             }
@@ -2410,9 +2413,7 @@ fn call<T>(
             out.requests.truncate(requests);
             out.reads.truncate(reads);
             kept.restore(state);
-            disable(state, context.registry, declarations_changed);
-            state.fault = Some(format!("{}; it is disabled", error.message));
-            clear_leftovers(state, context, out);
+            fault(state, context, (out, declarations_changed), &error);
             Err(error)
         }
         // A call that failed leaves things as they were: its writes, its
@@ -2489,11 +2490,33 @@ fn look<T>(
         call,
     );
     kept.restore(state);
-    // A look that panicked disabled its plugin, whose leftovers go.
-    if outcome.is_err() {
-        clear_leftovers(state, context, outbox);
+    match outcome {
+        // A look that returns a fault, as a limit of its plugin's VM gives
+        // one, faults its plugin, as a panic does.
+        Ok(Err(error)) if error.code == Code::Fault => {
+            fault(state, context, (outbox, declarations_changed), &error);
+            Err(error)
+        }
+        Ok(result) => result,
+        // A look that panicked disabled its plugin, whose leftovers go.
+        Err(fault) => {
+            clear_leftovers(state, context, outbox);
+            fault
+        }
     }
-    outcome.unwrap_or_else(|fault| fault)
+}
+
+/// Faults the plugin of `state` of `error`, a fault that one of its calls
+/// returned: it is disabled, as a panic disables it, and its leftovers go.
+fn fault(
+    state: &mut State,
+    context: &mut Context<'_>,
+    (out, declarations_changed): (&mut Outbox, &mut bool),
+    error: &Error,
+) {
+    disable(state, context.registry, declarations_changed);
+    state.fault = Some(format!("{}; it is disabled", error.message));
+    clear_leftovers(state, context, out);
 }
 
 /// Calls `call` on a plugin of the main thread within `catch_unwind`, its
@@ -4602,7 +4625,25 @@ fn host_color(color: Option<lokyr_vt_core::page::Rgb>) -> Option<host::Color> {
 /// `tree`, a plugin's render, if it nests [`Node::DEEPEST`] levels at most,
 /// as the host takes it; `failed` otherwise, the tree dropped without
 /// recursion, where the render returned it, on the plugin's own thread.
-pub(super) fn tree_within_depth(tree: Option<Node>) -> Result<Option<Node>, Error> {
+/// The tree that `plugin` renders of `view`, as the host takes it: refused
+/// past its depth, or of the failure that the plugin tells after it, which
+/// leaves its last tree.
+fn rendered(
+    plugin: &mut dyn Plugin,
+    cx: &mut Cx<'_>,
+    view: &ViewId,
+) -> Result<Option<Node>, Error> {
+    let tree = plugin.render(cx, view);
+    if let Some(failure) = plugin.take_failure() {
+        if let Some(tree) = tree {
+            view::dismantle(tree);
+        }
+        return Err(failure);
+    }
+    tree_within_depth(tree)
+}
+
+fn tree_within_depth(tree: Option<Node>) -> Result<Option<Node>, Error> {
     match tree {
         Some(tree) if !tree.nests_within_deepest() => {
             view::dismantle(tree);

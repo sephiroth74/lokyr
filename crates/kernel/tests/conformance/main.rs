@@ -871,3 +871,21 @@ fn the_scenarios_hold_every_request_of_the_plugin_api() {
     let missing: Vec<usize> = (0..KINDS).filter(|&at| !held[at]).collect();
     assert!(missing.is_empty(), "the kinds of no scenario: {missing:?}");
 }
+
+#[test]
+fn every_request_of_the_scenarios_reaches_the_host_through_its_luau_function() {
+    // Each request as a Luau plugin makes it, `cx`'s function of its
+    // kind, with the answer that it takes in its scenario, back as the
+    // same response: of every kind of the plugin API's, as the scenarios
+    // hold them all.
+    let world = Kernel::new().world;
+    let mut wrong = Vec::new();
+    for scenario in scenarios::all(&world) {
+        for (request, response) in scenario.steps.iter().flat_map(|step| &step.asks) {
+            if let Err(error) = lokyr_plugin_host_luau::through_luau(request, response) {
+                wrong.push(format!("{}: {error}", scenario.name));
+            }
+        }
+    }
+    assert!(wrong.is_empty(), "{wrong:#?}");
+}

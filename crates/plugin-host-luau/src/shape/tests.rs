@@ -1,0 +1,301 @@
+use std::collections::BTreeMap;
+
+use lokyr_plugin_sdk::command::{Args, Value as Arg};
+use lokyr_plugin_sdk::host::{Layout, PaneId, Scroll, WindowId};
+use lokyr_plugin_sdk::message::Data;
+use lokyr_plugin_sdk::ui::{Anchor, Corner, PanelOptions, Role, ViewId};
+use lokyr_plugin_sdk::view::{Kind, Length, Node, Style};
+use serde::Deserialize;
+
+use super::*;
+
+/// The value of the Luau expression `source`, in `lua`.
+fn eval(lua: &Lua, source: &str) -> Value {
+    lua.load(format!("return {source}")).eval().unwrap()
+}
+
+/// The value of `T` of the Luau expression `source`.
+fn take<T: DeserializeOwned>(source: &str) -> Result<T, ShapeError> {
+    let lua = Lua::new();
+    from_lua(eval(&lua, source))
+}
+
+/// Whether `value` of the host's comes to Luau as `source` says, checked
+/// by Luau's own comparison of the two, and back the same.
+fn gives<T: Serialize + DeserializeOwned + PartialEq + fmt::Debug>(value: &T, source: &str) {
+    let lua = Lua::new();
+    let given = to_lua(&lua, value).unwrap();
+    let expected = eval(&lua, source);
+    assert!(
+        crate::same::value(&given, &expected, 0),
+        "{value:?} gave {given:?}, not {source}"
+    );
+    assert_eq!(&from_lua::<T>(given).unwrap(), value);
+}
+
+#[test]
+fn a_struct_s_fields_are_their_rust_names_and_a_variant_a_field_or_a_text() {
+    let options = PanelOptions {
+        anchor: Anchor::PaneCorner {
+            pane: PaneId(3),
+            corner: Corner::TopRight,
+        },
+        role: Role::Dialog,
+        close_outside: false,
+        close_escape: true,
+        takes_keys: false,
+    };
+    gives(
+        &options,
+        r#"{ anchor = { pane_corner = { pane = 3, corner = "top-right" } }, role = "dialog",
+             close_outside = false, close_escape = true, takes_keys = false }"#,
+    );
+    // The fields left out take their defaults.
+    assert_eq!(
+        take::<PanelOptions>(
+            r#"{ anchor = { pane_corner = { pane = 3, corner = "top-right" } }, role = "dialog",
+                 close_escape = true }"#
+        ),
+        Ok(options)
+    );
+    // A struct of fields that serde names in kebab case.
+    let style = Style {
+        font_size: Some(15.0),
+        hides_ring: true,
+        ..Style::default()
+    };
+    let lua = Lua::new();
+    let Value::Table(given) = to_lua(&lua, &style).unwrap() else {
+        panic!("a style is a table");
+    };
+    assert!(given.raw_get::<bool>("hides_ring").unwrap());
+    assert!(given.raw_get::<Value>("hides-ring").unwrap().is_nil());
+    assert_eq!(
+        take::<Style>("{ font_size = 15, hides_ring = true }"),
+        Ok(style.clone())
+    );
+    // serde's own names too.
+    assert_eq!(
+        take::<Style>(r#"{ ["font-size"] = 15, ["hides-ring"] = true }"#),
+        Ok(style)
+    );
+    gives(&ViewId::TabBar(WindowId(2)), "{ tab_bar = 2 }");
+    gives(&Scroll::PageUp, r#""page-up""#);
+    gives(&Scroll::Up(3), "{ up = 3 }");
+    gives(&Layout::Pane(PaneId(4)), "{ pane = 4 }");
+    let layout = lokyr_plugin_sdk::view::Layout {
+        min_width: Length::Points(40.0),
+        gap: 2.0,
+        ..lokyr_plugin_sdk::view::Layout::default()
+    };
+    assert_eq!(
+        take::<lokyr_plugin_sdk::view::Layout>("{ min_width = { points = 40 }, gap = 2 }"),
+        Ok(layout)
+    );
+}
+
+#[test]
+fn plain_values_are_as_a_luau_table_is() {
+    let data = Data::Map(BTreeMap::from([
+        ("count".to_owned(), Data::Integer(3)),
+        ("ratio".to_owned(), Data::Number(0.5)),
+        ("name".to_owned(), Data::Text("Ada".to_owned())),
+        ("on".to_owned(), Data::Boolean(true)),
+        (
+            "items".to_owned(),
+            Data::List(vec![Data::Text("a".to_owned()), Data::Integer(2)]),
+        ),
+        ("my-key".to_owned(), Data::Map(BTreeMap::new())),
+    ]));
+    // A map's keys as they are, kebab case's too; an empty table a map.
+    let lua = Lua::new();
+    let given = to_lua(&lua, &data).unwrap();
+    let expected = eval(
+        &lua,
+        r#"{ count = 3, ratio = 0.5, name = "Ada", on = true, items = { "a", 2 }, ["my-key"] = {} }"#,
+    );
+    assert!(crate::same::value(&given, &expected, 0), "{given:?}");
+    assert_eq!(from_lua::<Data>(given), Ok(data));
+    assert_eq!(take::<Data>("{}"), Ok(Data::Map(BTreeMap::new())));
+    // A list of no items comes as an empty table, and back as a map.
+    gives(&Data::Map(BTreeMap::new()), "{}");
+    assert_eq!(take::<Data>("nil"), Ok(Data::Nil));
+    assert_eq!(take::<Data>("2.0"), Ok(Data::Integer(2)));
+    // A command's arguments.
+    let args = Args::from([
+        ("n".to_owned(), Arg::Integer(3)),
+        ("text".to_owned(), Arg::String("x".to_owned())),
+        ("on".to_owned(), Arg::Boolean(false)),
+        ("ratio".to_owned(), Arg::Number(0.25)),
+    ]);
+    gives(&args, r#"{ n = 3, text = "x", on = false, ratio = 0.25 }"#);
+    assert!(
+        take::<Args>("{ n = {} }")
+            .unwrap_err()
+            .0
+            .contains("a text, a number or a boolean")
+    );
+    assert!(
+        take::<Data>("{ f = function() end }")
+            .unwrap_err()
+            .0
+            .contains("data")
+    );
+}
+
+#[test]
+fn a_value_of_another_shape_is_refused_of_what_it_is() {
+    let error = |source: &str| take::<PanelOptions>(source).unwrap_err().0;
+    let anchor = r#"anchor = { pane_corner = { pane = 3, corner = "top-right" } }"#;
+    assert!(
+        error(&format!(
+            "{{ {anchor}, role = \"dialog\", close_escpe = true }}"
+        ))
+        .contains("no field `close_escpe`, of anchor, role, close_outside, close_escape")
+    );
+    assert!(
+        error(&format!("{{ {anchor}, role = \"modal\" }}"))
+            .contains("`modal` is no variant of Role")
+    );
+    assert!(error(&format!("{{ {anchor}, role = 3 }}")).contains("a variant of Role"));
+    assert!(error(r#"{ role = "dialog" }"#).contains("missing field `anchor`"));
+    assert!(
+        error(r#"{ anchor = { pane_corner = { pane = 1.5, corner = "top" } }, role = "dialog" }"#)
+            .contains("whole number")
+    );
+    assert!(
+        error(r#"{ anchor = { pane_corner = { pane = -1, corner = "top" } }, role = "dialog" }"#)
+            .contains("from 0")
+    );
+    assert!(
+        take::<(u16, i64)>("{ 70000, 1 }")
+            .unwrap_err()
+            .0
+            .contains("from 0 to 65535")
+    );
+    assert!(
+        take::<(u16, i64)>("{ 1 }")
+            .unwrap_err()
+            .0
+            .contains("a list of 2")
+    );
+    assert!(
+        take::<Vec<u64>>("{ 1, 2, x = 3 }")
+            .unwrap_err()
+            .0
+            .contains("expected a list")
+    );
+    assert!(
+        take::<Vec<u64>>("{ [1] = 1, [3] = 3 }")
+            .unwrap_err()
+            .0
+            .contains("expected a list")
+    );
+    assert!(
+        take::<String>("true")
+            .unwrap_err()
+            .0
+            .contains("expected a text, not a boolean")
+    );
+    assert!(
+        take::<bool>("1")
+            .unwrap_err()
+            .0
+            .contains("a boolean, not a number")
+    );
+}
+
+/// A table nested `levels` deep, of lists, as Luau makes it.
+fn nested(lua: &Lua, levels: usize) -> Value {
+    let source = format!("local t = {{}} for _ = 2, {levels} do t = {{ t }} end return t");
+    lua.load(source).eval().unwrap()
+}
+
+#[test]
+fn a_value_too_deep_or_that_holds_itself_is_refused_of_no_overflow() {
+    let lua = Lua::new();
+    assert!(from_lua::<Data>(nested(&lua, MOST_LEVELS)).is_ok());
+    for value in [
+        nested(&lua, MOST_LEVELS + 1),
+        nested(&lua, 100_000),
+        eval(&lua, "(function() local t = {} t.again = t return t end)()"),
+    ] {
+        let error = from_lua::<Data>(value).unwrap_err().0;
+        assert!(error.contains("levels of tables at most"), "{error}");
+    }
+    // A view's, of a node of its own children, or far too deep.
+    for source in [
+        r#"local node = { kind = "container" } node.children = { node } return node"#,
+        r#"local node = { kind = "spacer" }
+        for _ = 1, 100000 do node = { kind = "container", children = { node } } end
+        return node"#,
+    ] {
+        let error = from_lua::<Node>(lua.load(source).eval().unwrap())
+            .unwrap_err()
+            .0;
+        assert!(error.contains("levels of tables at most"), "{error}");
+    }
+}
+
+#[test]
+fn a_view_as_deep_as_the_host_takes_converts_on_a_worker_s_stack() {
+    // A view of `Node::DEEPEST` levels, its widest, on a thread of the
+    // stack of the host's workers.
+    let converted = std::thread::Builder::new()
+        .stack_size(2 * 1024 * 1024)
+        .spawn(|| {
+            let lua = Lua::new();
+            let source = format!(
+                r#"local node = {{ kind = {{ text = "x" }} }}
+                for _ = 2, {} do
+                    node = {{ kind = "container", key = "k", layout = {{ gap = 1 }},
+                        style = {{ radius = 2 }}, children = {{ node }} }}
+                end
+                return node"#,
+                Node::DEEPEST
+            );
+            let tree: Node = from_lua(lua.load(source).eval().unwrap()).unwrap();
+            tree.nests_within_deepest() && tree.kind == Kind::Container
+        })
+        .unwrap()
+        .join()
+        .unwrap();
+    assert!(converted);
+}
+
+#[test]
+fn a_conversion_takes_its_values_alone() {
+    let lua = Lua::new();
+    let wide = lua
+        .load("local t = {} for i = 1, 2000 do t[i] = i end return t")
+        .eval::<Value>()
+        .unwrap();
+    let budget = Cell::new(1000);
+    let error = Vec::<u64>::deserialize(Taking::new(wide.clone(), &budget)).unwrap_err();
+    assert!(error.0.contains("values at most"), "{error}");
+    let budget = Cell::new(MOST_VALUES);
+    assert_eq!(
+        Vec::<u64>::deserialize(Taking::new(wide, &budget))
+            .unwrap()
+            .len(),
+        2000
+    );
+}
+
+#[test]
+fn a_plugin_s_metamethods_run_no_code_as_its_value_converts() {
+    let value = take::<Data>(
+        r#"setmetatable({ a = 1 }, {
+            __index = function() error("ran") end,
+            __len = function() error("ran") end,
+            __iter = function() error("ran") end,
+        })"#,
+    );
+    assert_eq!(
+        value,
+        Ok(Data::Map(BTreeMap::from([(
+            "a".to_owned(),
+            Data::Integer(1)
+        )])))
+    );
+}

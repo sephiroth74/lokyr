@@ -1,8 +1,33 @@
 use lokyr_plugin_sdk::command::Code;
 use lokyr_plugin_sdk::fake::FakeHost;
+use lokyr_plugin_sdk::host::Host;
+use lokyr_plugin_sdk::message::{Call, Response};
 
 use super::*;
 use crate::{LuauPlugin, vms_made};
+
+/// A host that answers each request as done, after `wait`.
+#[derive(Default)]
+struct Waiting {
+    wait: std::time::Duration,
+    asked: usize,
+}
+
+impl Host for Waiting {
+    fn handle(&mut self, _: Call) -> Response {
+        std::thread::sleep(self.wait);
+        self.asked += 1;
+        Response::Done
+    }
+}
+
+/// Calls `vm`'s callback of `callback`, of no argument but `cx`, on a host
+/// that answers each request as done.
+fn call(vm: &Vm, callback: Callback) -> Result<(), Failure> {
+    let mut host = Waiting::default();
+    let mut cx = Cx::new(&mut host, "acme/test");
+    vm.call(callback, &mut cx, |_| Ok(Vec::new())).map(drop)
+}
 
 /// A package of `modules`, by their paths.
 fn package(modules: &[(&str, &str)]) -> Package {
@@ -247,12 +272,12 @@ return {
         let made = vm(&[(ENTRY, rendering)], execution).unwrap();
         let start = std::time::Instant::now();
         assert!(matches!(
-            made.call(Callback::Render),
+            call(&made, Callback::Render),
             Err(Failure::PastDeadline)
         ));
         assert!(start.elapsed() >= std::time::Duration::from_millis(20));
-        assert!(made.call(Callback::Render).is_ok());
-        assert!(made.call(Callback::Render).is_ok());
+        assert!(call(&made, Callback::Render).is_ok());
+        assert!(call(&made, Callback::Render).is_ok());
     }
 }
 
@@ -273,10 +298,10 @@ return {
 }
 "#;
     let made = vm(&[(ENTRY, bomb)], Execution::Native).unwrap();
-    let failed = made.call(Callback::Activate);
+    let failed = call(&made, Callback::Activate);
     assert!(matches!(failed, Err(Failure::OutOfMemory)), "{failed:?}");
     // Its memory freed, it runs on.
-    assert!(made.call(Callback::Render).is_ok());
+    assert!(call(&made, Callback::Render).is_ok());
     let mut plugin = LuauPlugin::new("acme/test", package(&[(ENTRY, bomb)]), Execution::Native);
     let error = FakeHost::new("acme/test")
         .activate(&mut plugin)
@@ -302,7 +327,7 @@ return {
 "#;
     let made = vm(&[(ENTRY, quick)], Execution::Native).unwrap();
     for _ in 0..200 {
-        assert!(made.call(Callback::Render).is_ok());
+        assert!(call(&made, Callback::Render).is_ok());
     }
 }
 
@@ -311,11 +336,106 @@ fn the_watchdog_sleeps_while_no_call_runs() {
     let quick = "return { render = function() end }";
     let made = vm(&[(ENTRY, quick)], Execution::Native).unwrap();
     for _ in 0..10 {
-        assert!(made.call(Callback::Render).is_ok());
+        assert!(call(&made, Callback::Render).is_ok());
     }
     // Its last wakes, of the last call's end, settle; then none.
     std::thread::sleep(std::time::Duration::from_millis(50));
     let woke = made.watchdog_wakes();
     std::thread::sleep(std::time::Duration::from_millis(300));
     assert_eq!(made.watchdog_wakes(), woke);
+}
+
+#[test]
+fn a_pcall_does_not_keep_a_call_past_its_deadline() {
+    for looping in [
+        // Each loop of the outer one catches the error of the inner one.
+        "while true do pcall(function() while true do end end) end",
+        // A handler that loops too.
+        "xpcall(function() while true do end end, function() while true do end end)",
+        // A pcall's error caught, then a loop.
+        "pcall(function() while true do end end) while true do end",
+    ] {
+        let entry = format!("return {{ render = function() {looping} end }}");
+        let made = vm(&[(ENTRY, entry.as_str())], Execution::Native).unwrap();
+        let start = std::time::Instant::now();
+        assert!(
+            matches!(call(&made, Callback::Render), Err(Failure::PastDeadline)),
+            "{looping}"
+        );
+        assert!(
+            start.elapsed() < std::time::Duration::from_secs(5),
+            "{looping}"
+        );
+    }
+}
+
+#[test]
+fn the_host_s_time_is_not_the_plugin_s() {
+    // Three requests of 30 ms each, past a render's 20 ms, of the host's
+    // time alone.
+    let entry = r#"
+return {
+    render = function(cx)
+        for _ = 1, 3 do
+            assert(cx.request_render({ panel = "x" }))
+        end
+    end,
+}
+"#;
+    let made = vm(&[(ENTRY, entry)], Execution::Native).unwrap();
+    let mut host = Waiting {
+        wait: std::time::Duration::from_millis(30),
+        asked: 0,
+    };
+    let mut cx = Cx::new(&mut host, "acme/test");
+    let rendered = made.call(Callback::Render, &mut cx, |_| Ok(Vec::new()));
+    assert!(rendered.is_ok(), "{rendered:?}");
+    assert_eq!(host.asked, 3);
+    // A loop between them is still the plugin's.
+    let looping = r#"
+return {
+    render = function(cx)
+        cx.request_render({ panel = "x" })
+        while true do end
+    end,
+}
+"#;
+    let made = vm(&[(ENTRY, looping)], Execution::Native).unwrap();
+    let mut host = Waiting::default();
+    let mut cx = Cx::new(&mut host, "acme/test");
+    assert!(matches!(
+        made.call(Callback::Render, &mut cx, |_| Ok(Vec::new())),
+        Err(Failure::PastDeadline)
+    ));
+}
+
+#[test]
+fn a_callbacks_table_s_metamethods_run_no_code_outside_a_call() {
+    // Read raw, its `__index` is never called, which would loop unwatched.
+    let entry = "return setmetatable({}, { __index = function() while true do end end })";
+    let made = vm(&[(ENTRY, entry)], Execution::Native).unwrap();
+    let start = std::time::Instant::now();
+    assert!(call(&made, Callback::Render).is_ok());
+    assert!(start.elapsed() < std::time::Duration::from_secs(1));
+}
+
+#[test]
+fn cx_reaches_the_host_within_a_call_alone() {
+    let made = vm(&[(ENTRY, "return {}")], Execution::Native).unwrap();
+    let focused: Function = made.cx.raw_get("focused_pane").unwrap();
+    let error = focused.call::<Value>(()).unwrap_err().to_string();
+    assert!(error.contains("within a call"), "{error}");
+    // Read-only, as the plugin cannot change it.
+    let entry = r#"
+return {
+    activate = function(cx)
+        cx.focused_pane = function() return 1 end
+    end,
+}
+"#;
+    let made = vm(&[(ENTRY, entry)], Execution::Native).unwrap();
+    assert!(matches!(
+        call(&made, Callback::Activate),
+        Err(Failure::Code(_))
+    ));
 }

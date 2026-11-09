@@ -329,7 +329,8 @@ pub struct Binding {
     pub keys: String,
     /// The command's name.
     pub command: String,
-    /// Its arguments.
+    /// Its arguments, none if not given.
+    #[serde(default)]
     pub args: Args,
     /// The context in which it holds, as `pane.focused && !selection`;
     /// every context without one.

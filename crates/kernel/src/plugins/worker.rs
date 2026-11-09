@@ -308,12 +308,10 @@ fn run(
                 Job::Events(events) => Done::Returned(plugin.on_event(&mut cx, &events)),
                 // Checked here, so that the main thread neither takes nor
                 // drops a tree too deep.
-                Job::Render(view) => {
-                    match super::tree_within_depth(plugin.render(&mut cx, &view)) {
-                        Ok(tree) => Done::Rendered(tree.map(Box::new)),
-                        Err(error) => Done::Returned(Err(error)),
-                    }
-                }
+                Job::Render(view) => match super::rendered(plugin.as_mut(), &mut cx, &view) {
+                    Ok(tree) => Done::Rendered(tree.map(Box::new)),
+                    Err(error) => Done::Returned(Err(error)),
+                },
                 Job::Ui(event) => Done::Returned(plugin.on_ui_event(&mut cx, &event)),
             }
         }));

@@ -32,6 +32,7 @@ type Activate = Box<dyn FnMut(&mut Cx<'_>) -> Result<(), Error> + Send>;
 type OnCommand = Box<dyn FnMut(&mut Cx<'_>, &str) -> Result<(), Error> + Send>;
 type OnEvent = Box<dyn FnMut(&mut Cx<'_>, &[Event]) -> Result<(), Error> + Send>;
 type Render = Box<dyn FnMut(&mut Cx<'_>, &ViewId) -> Option<Node> + Send>;
+type TakeFailure = Box<dyn FnMut() -> Option<Error> + Send>;
 
 /// A plugin that can go to a thread, whose callbacks the test gives: by
 /// default, its activation registers `busy.go`.
@@ -40,6 +41,7 @@ struct Threaded {
     on_command: OnCommand,
     on_event: OnEvent,
     render: Render,
+    take_failure: TakeFailure,
 }
 
 impl Default for Threaded {
@@ -49,6 +51,7 @@ impl Default for Threaded {
             on_command: Box::new(|_, _| Ok(())),
             on_event: Box::new(|_, _| Ok(())),
             render: Box::new(|_, _| None),
+            take_failure: Box::new(|| None),
         }
     }
 }
@@ -68,6 +71,10 @@ impl Plugin for Threaded {
 
     fn render(&mut self, cx: &mut Cx<'_>, view: &ViewId) -> Option<Node> {
         (self.render)(cx, view)
+    }
+
+    fn take_failure(&mut self) -> Option<Error> {
+        (self.take_failure)()
     }
 }
 
@@ -190,6 +197,7 @@ fn the_main_thread_never_waits_for_a_worker_whose_calls_wait_their_turn() {
             let count = rendered.fetch_add(1, Ordering::Relaxed) + 1;
             Some(Node::text(format!("render {count}")))
         }),
+        take_failure: Box::new(|| None),
     };
     let (mut plugins, _) = started(&mut app, plugin);
     plugins
@@ -933,4 +941,40 @@ fn a_worker_s_call_that_fails_after_its_writes_leaves_the_workspace_as_it_was() 
     assert_eq!(app.workspace.tab(tab).unwrap().own_title(), None);
     assert_eq!(app.workspace.window(window).unwrap().tabs().len(), 1);
     assert_eq!(plugins.status("acme/busy"), Some(Status::Active));
+}
+
+#[test]
+fn a_worker_s_render_that_tells_its_fault_after_it_faults_its_plugin() {
+    let mut app = App::default();
+    let window = window(&mut app, "sleep 30");
+    let renders = Arc::new(AtomicUsize::new(0));
+    let (rendered, told) = (Arc::clone(&renders), Arc::clone(&renders));
+    let plugin = Threaded {
+        render: Box::new(move |_, _| {
+            rendered.fetch_add(1, Ordering::Relaxed);
+            Some(Node::text("fine"))
+        }),
+        // Its second render faults, as a Luau plugin's past its deadline.
+        take_failure: Box::new(move || {
+            (told.load(Ordering::Relaxed) == 2)
+                .then(|| Error::new(Code::Fault, "past its deadline"))
+        }),
+        ..Threaded::default()
+    };
+    let (mut plugins, _) = started(&mut app, plugin);
+    let view = ViewId::StatusBar(WindowHandle(window.get()));
+    plugins
+        .render("acme/busy", &view, &mut app.context())
+        .unwrap();
+    served(&mut plugins, &mut app);
+    assert_eq!(plugins.tree("acme/busy", &view), Some(&Node::text("fine")));
+    plugins
+        .render("acme/busy", &view, &mut app.context())
+        .unwrap();
+    served(&mut plugins, &mut app);
+    assert_eq!(renders.load(Ordering::Relaxed), 2);
+    assert_eq!(plugins.status("acme/busy"), Some(Status::Disabled));
+    assert_eq!(plugins.tree("acme/busy", &view), Some(&Node::text("fine")));
+    let disabled = plugins.take_disabled();
+    assert!(disabled[0].1.contains("past its deadline"), "{disabled:?}");
 }

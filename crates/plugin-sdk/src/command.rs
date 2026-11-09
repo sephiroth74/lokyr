@@ -25,9 +25,11 @@ pub struct Command {
     /// The group that it belongs to, for the user.
     pub category: Category,
     /// The capabilities that its action needs, which a plugin that runs it
-    /// must have.
+    /// must have; none if not given.
+    #[serde(default)]
     pub capabilities: Vec<Capability>,
-    /// Its parameters, in their order.
+    /// Its parameters, in their order; none if not given.
+    #[serde(default)]
     pub params: Vec<Param>,
     /// The context in which it can run, as a binding's `when` writes it, as
     /// `selection`; every context without one. The menus dim its item

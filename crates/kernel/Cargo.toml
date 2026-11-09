@@ -27,6 +27,7 @@ plist.workspace = true
 unic-langid.workspace = true
 
 [dev-dependencies]
+lokyr-plugin-host-luau = { workspace = true, features = ["testing"] }
 lokyr-plugin-sdk = { workspace = true, features = ["fake"] }
 proptest.workspace = true
 

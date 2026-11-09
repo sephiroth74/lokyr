@@ -7,16 +7,31 @@
 //! plugins send.
 //!
 //! A plugin's package holds its sources, its entry `src/init.luau`, which
-//! returns the table of its callbacks. Its VM is made as it first
-//! activates, so that an app of no plugin of Luau makes none, and runs in
-//! Luau's sandbox mode: the libraries `string`, `table`, `math`, `bit32`,
-//! `utf8` and `buffer`, and a `require` of the package's own modules alone.
+//! returns the table of its callbacks, each optional, as the SDK's
+//! `Plugin` has them: `activate(cx)`, `on_command(cx, name, args)`,
+//! `applies(cx, name, args)`, `on_event(cx, events)`, `render(cx, view)`
+//! and `on_ui_event(cx, event)`. Its VM is made as it first activates, so
+//! that an app of no plugin of Luau makes none, and runs in Luau's sandbox
+//! mode: the libraries `string`, `table`, `math`, `bit32`, `utf8` and
+//! `buffer`, and a `require` of the package's own modules alone.
+//!
+//! `cx`, which each callback takes first, holds a function of each of the
+//! SDK's requests, by its Rust name, as `cx.focused_pane()` or
+//! `cx.line_text(pane, row, reach)`, read from the SDK's own type: a
+//! request of fields takes them in their order, a `nil` leaving an optional
+//! one out. It answers with the response's value, `true` of a write, or
+//! with `nil` and the error, a table of its `code`, its `kind` and its
+//! `message`, as Lua's standard library answers; an argument of another
+//! shape raises an error, as a Lua error raised by a callback ends its
+//! call, a failure of the plugin's.
 
 // `deny` rather than `forbid`: stopping a plugin at its deadline and reading
 // bulk results go through Lua's C API, which is `unsafe`, and each of those
 // call sites is allowed explicitly.
 #![deny(unsafe_code)]
 
+mod requests;
+mod shape;
 mod vm;
 mod watchdog;
 
@@ -25,8 +40,14 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
-use lokyr_plugin_sdk::command::{Code, Error};
+use lokyr_plugin_sdk::command::{Args, Code, Error};
+use lokyr_plugin_sdk::message::Event;
 use lokyr_plugin_sdk::plugin::{Cx, Plugin};
+use lokyr_plugin_sdk::ui::{UiEvent, ViewId};
+use lokyr_plugin_sdk::view::Node;
+use mlua::{IntoLua, Lua, MultiValue, Value};
+
+use crate::shape::ShapeError;
 
 pub use vm::{ENTRY, MOST_MEMORY};
 
@@ -152,6 +173,8 @@ pub struct LuauPlugin {
     execution: Execution,
     deadlines: Deadlines,
     vm: Option<vm::Vm>,
+    /// The failure of its last render or look, which the host takes.
+    failure: Option<Error>,
 }
 
 impl LuauPlugin {
@@ -164,6 +187,7 @@ impl LuauPlugin {
             execution,
             deadlines: Deadlines::default(),
             vm: None,
+            failure: None,
         }
     }
 
@@ -212,22 +236,198 @@ impl LuauPlugin {
             ),
         }
     }
+
+    /// Calls its callback of `callback` of `cx` and the arguments that
+    /// `args` makes, if it has a VM and the callback: what it returns.
+    fn call(
+        &self,
+        callback: Callback,
+        cx: &mut Cx<'_>,
+        args: impl FnOnce(&Lua) -> Result<Vec<Value>, ShapeError>,
+    ) -> Result<Option<MultiValue>, Error> {
+        let Some(vm) = &self.vm else {
+            return Ok(None);
+        };
+        vm.call(callback, cx, args)
+            .map_err(|failure| self.error(callback, failure))
+    }
+
+    /// The error of a value of the wrong shape that its callback of
+    /// `callback` returned, as `wanted` tells the right one.
+    fn returned(&self, callback: Callback, wanted: &str, error: &ShapeError) -> Error {
+        Error::new(
+            Code::Failed,
+            format!(
+                "the plugin `{}`'s `{}` returns {wanted}: {error}",
+                self.name,
+                callback.name()
+            ),
+        )
+    }
+}
+
+/// The arguments of a command's callback: its name and its arguments.
+fn command_args(lua: &Lua, name: &str, args: &Args) -> Result<Vec<Value>, ShapeError> {
+    Ok(vec![name.into_lua(lua)?, shape::to_lua(lua, args)?])
 }
 
 impl Plugin for LuauPlugin {
     /// Makes its VM, runs its entry, and calls its callbacks' `activate`,
     /// if it has one: the error of an entry or a callback that fails.
-    fn activate(&mut self, _cx: &mut Cx<'_>) -> Result<(), Error> {
+    fn activate(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
         if self.vm.is_none() {
             let made = vm::Vm::new(&self.package, &self.name, self.execution, self.deadlines)
                 .map_err(|failure| self.error(Callback::Activate, failure))?;
             VMS.fetch_add(1, Ordering::Relaxed);
             self.vm = Some(made);
         }
-        let Some(vm) = &self.vm else {
-            return Ok(());
-        };
-        vm.call(Callback::Activate)
-            .map_err(|failure| self.error(Callback::Activate, failure))
+        self.call(Callback::Activate, cx, |_| Ok(Vec::new()))
+            .map(drop)
+    }
+
+    /// Without its callback, a command of its fails, as a plugin's of no
+    /// such command.
+    fn on_command(&mut self, cx: &mut Cx<'_>, name: &str, args: Args) -> Result<(), Error> {
+        match self.call(Callback::Command, cx, |lua| command_args(lua, name, &args))? {
+            Some(_) => Ok(()),
+            None => Err(Error::new(
+                Code::NotFound,
+                format!(
+                    "the plugin `{}` has no `on_command` for `{name}`",
+                    self.name
+                ),
+            )),
+        }
+    }
+
+    fn on_event(&mut self, cx: &mut Cx<'_>, events: &[Event]) -> Result<(), Error> {
+        self.call(Callback::Event, cx, |lua| {
+            Ok(vec![shape::to_lua(lua, events)?])
+        })
+        .map(drop)
+    }
+
+    /// Without its callback, every command would.
+    fn applies(&mut self, cx: &mut Cx<'_>, name: &str, args: &Args) -> bool {
+        match self.call(Callback::Applies, cx, |lua| command_args(lua, name, args)) {
+            Ok(None) => true,
+            Ok(Some(returned)) => match returned.front() {
+                Some(Value::Boolean(applies)) => *applies,
+                other => {
+                    let what = other.map_or("nothing", Value::type_name);
+                    let error = ShapeError(format!("it returned {what}"));
+                    self.failure = Some(self.returned(Callback::Applies, "true or false", &error));
+                    false
+                }
+            },
+            Err(error) => {
+                self.failure = Some(error);
+                false
+            }
+        }
+    }
+
+    /// Its tree of a table of a node, or nothing of `nil`, without its
+    /// callback too.
+    fn render(&mut self, cx: &mut Cx<'_>, view: &ViewId) -> Option<Node> {
+        match self.call(Callback::Render, cx, |lua| {
+            Ok(vec![shape::to_lua(lua, view)?])
+        }) {
+            Ok(None) => None,
+            Ok(Some(returned)) => match returned.into_iter().next().unwrap_or(Value::Nil) {
+                Value::Nil => None,
+                tree => match shape::from_lua::<Node>(tree) {
+                    Ok(tree) => Some(tree),
+                    Err(error) => {
+                        self.failure = Some(self.returned(
+                            Callback::Render,
+                            "a view, a table of a node, or nil",
+                            &error,
+                        ));
+                        None
+                    }
+                },
+            },
+            Err(error) => {
+                self.failure = Some(error);
+                None
+            }
+        }
+    }
+
+    fn on_ui_event(&mut self, cx: &mut Cx<'_>, event: &UiEvent) -> Result<(), Error> {
+        self.call(Callback::Ui, cx, |lua| Ok(vec![shape::to_lua(lua, event)?]))
+            .map(drop)
+    }
+
+    fn take_failure(&mut self) -> Option<Error> {
+        self.failure.take()
     }
 }
+
+/// Makes `request` through its function of `cx`, as a plugin of Luau
+/// calls it, on a host that answers with `response`: why not, as the host
+/// took another request, or the answer that came back is not the one of
+/// `response`, `nil` and the error of a failure.
+#[cfg(any(test, feature = "testing"))]
+#[doc(hidden)]
+pub fn through_luau(
+    request: &lokyr_plugin_sdk::message::Request,
+    response: &lokyr_plugin_sdk::message::Response,
+) -> Result<(), String> {
+    use lokyr_plugin_sdk::host::Host;
+    use lokyr_plugin_sdk::message::{Call, Request, Response};
+
+    /// A host that answers every request with its response, and keeps the
+    /// last that it took.
+    struct Scripted<'r> {
+        response: &'r Response,
+        asked: Option<Request>,
+    }
+
+    impl Host for Scripted<'_> {
+        fn handle(&mut self, call: Call) -> Response {
+            self.asked = Some(call.request);
+            self.response.clone()
+        }
+    }
+
+    let entry = "return { call = function(cx, name, ...) return cx[name](...) end }";
+    let package = Arc::new(Package::new([(ENTRY.to_owned(), entry.to_owned())]));
+    let vm = vm::Vm::new(
+        &package,
+        "acme/through",
+        Execution::Native,
+        Deadlines::default(),
+    )
+    .map_err(|failure| format!("{failure:?}"))?;
+    let (name, args) =
+        requests::call_of(vm.lua(), request).map_err(|error| format!("{request:?}: {error}"))?;
+    let mut host = Scripted {
+        response,
+        asked: None,
+    };
+    let answer = {
+        let mut cx = Cx::new(&mut host, "acme/through");
+        vm.invoke("call", Duration::from_secs(5), &mut cx, |lua| {
+            let mut all = vec![name.as_str().into_lua(lua)?];
+            all.extend(args);
+            Ok(all)
+        })
+        .map_err(|failure| format!("`cx.{name}` of {request:?}: {failure:?}"))?
+        .unwrap_or_default()
+    };
+    if host.asked.as_ref() != Some(request) {
+        return Err(format!(
+            "`cx.{name}` asked {:?}, not {request:?}",
+            host.asked
+        ));
+    }
+    requests::answered(vm.lua(), response, &answer).map_err(|error| format!("`cx.{name}`: {error}"))
+}
+
+#[cfg(test)]
+mod same;
+
+#[cfg(test)]
+mod tests;

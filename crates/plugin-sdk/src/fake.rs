@@ -834,13 +834,15 @@ impl FakeHost {
     /// Whether `plugin`'s command `name` would do something with `args`, as
     /// a menu asks: what the call asks is dropped, its decorations, its
     /// panels, the events that it would be owed and the ids that it took.
+    /// A look that fails, as the plugin tells after it, does not apply, as
+    /// a menu dims its item.
     pub fn applies(&mut self, plugin: &mut dyn Plugin, name: &str, args: &Args) -> bool {
         let mut applies = false;
-        let _ = self.call(false, |cx| {
+        let looked = self.call(false, |cx| {
             applies = plugin.applies(cx, name, args);
-            Ok(())
+            plugin.take_failure().map_or(Ok(()), Err)
         });
-        applies
+        applies && looked.is_ok()
     }
 
     /// Gives `plugin` `events`, as a batch.
@@ -878,17 +880,21 @@ impl FakeHost {
 
     /// Has `plugin` render `view`, whose tree the host keeps: one that
     /// nests past [`Node::DEEPEST`] levels it refuses, as the host does,
-    /// and gives the last.
+    /// and gives the last, as of a render that fails, as the plugin tells
+    /// after it, whose writes go.
     pub fn render(&mut self, plugin: &mut dyn Plugin, view: &ViewId) -> Option<Node> {
         let mut tree = None;
-        let _ = self.call(true, |cx| {
+        let rendered = self.call(true, |cx| {
             tree = plugin.render(cx, view);
-            Ok(())
+            plugin.take_failure().map_or(Ok(()), Err)
         });
         // A tree too deep the host refuses, the last staying, as it drops
         // it without recursion.
-        if let Some(deep) = tree.take_if(|tree| !tree.nests_within_deepest()) {
+        if let Some(deep) = tree.take_if(|tree| rendered.is_err() || !tree.nests_within_deepest()) {
             crate::view::dismantle(deep);
+            return self.views.get(view).cloned().flatten();
+        }
+        if rendered.is_err() {
             return self.views.get(view).cloned().flatten();
         }
         self.views.insert(view.clone(), tree.clone());

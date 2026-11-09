@@ -101,7 +101,8 @@ pub enum Request {
     RunCommand {
         /// The command's name.
         name: String,
-        /// Its arguments.
+        /// Its arguments, none if not given.
+        #[serde(default)]
         args: Args,
     },
     /// The clipboard's text.
@@ -483,7 +484,8 @@ pub enum Request {
     KeysOf {
         /// The command.
         command: String,
-        /// Its arguments.
+        /// Its arguments, none if not given.
+        #[serde(default)]
         args: Args,
     },
     /// The text of `id`, a message of the plugin's catalogs, of `args`, its
@@ -494,7 +496,8 @@ pub enum Request {
     Message {
         /// The message.
         id: String,
-        /// Its arguments, by their names.
+        /// Its arguments, by their names, none if not given.
+        #[serde(default)]
         args: BTreeMap<String, Data>,
     },
     /// Asks the user for a text, in an alert of `message` and `detail` on

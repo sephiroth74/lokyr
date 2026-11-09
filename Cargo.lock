@@ -896,6 +896,7 @@ dependencies = [
  "fluent-bundle",
  "fluent-syntax",
  "lokyr-pkg-model",
+ "lokyr-plugin-host-luau",
  "lokyr-plugin-sdk",
  "lokyr-pty",
  "lokyr-search",
@@ -970,6 +971,7 @@ version = "0.7.0"
 dependencies = [
  "lokyr-plugin-sdk",
  "mlua",
+ "serde",
 ]
 
 [[package]]

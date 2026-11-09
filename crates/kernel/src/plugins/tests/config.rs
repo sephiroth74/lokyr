@@ -788,3 +788,108 @@ fn a_plugin_that_faults_starts_again_after_a_while_until_three_faults_in_a_minut
     );
     assert_eq!(plugins.status("acme/faulty"), Some(Status::Disabled));
 }
+
+/// A plugin whose renders and looks fail as it tells after them, as a Luau
+/// plugin's code does, of what `next` holds, taken by each.
+struct Telling {
+    next: Rc<RefCell<Option<Error>>>,
+    failure: Option<Error>,
+}
+
+impl Plugin for Telling {
+    fn activate(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
+        cx.register_command(command("telling.go"))
+    }
+
+    fn applies(&mut self, cx: &mut Cx<'_>, _: &str, _: &Args) -> bool {
+        // A write of a look that fails goes, as every look's does.
+        let _ = cx.set_clipboard_text("looked");
+        self.failure = self.next.borrow_mut().take();
+        true
+    }
+
+    fn render(&mut self, cx: &mut Cx<'_>, _: &ViewId) -> Option<Node> {
+        self.failure = self.next.borrow_mut().take();
+        let _ = cx.set_clipboard_text("rendered");
+        Some(Node::text(if self.failure.is_some() {
+            "failed"
+        } else {
+            "fine"
+        }))
+    }
+
+    fn take_failure(&mut self) -> Option<Error> {
+        self.failure.take()
+    }
+}
+
+#[test]
+fn a_render_or_a_look_that_tells_its_failure_after_it_fails_and_a_fault_faults() {
+    let mut app = App::default();
+    let window = window(&mut app, "sleep 30");
+    let next = Rc::new(RefCell::new(None));
+    let mut plugins = Plugins::new();
+    plugins
+        .add_builtin(
+            concat!(
+                "[plugin]\nname = \"acme/telling\"\nkind = \"builtin\"\nlicense = \"MIT\"\n",
+                "[contributes]\nslots = [\"status-bar\"]\n",
+            ),
+            Box::new(Telling {
+                next: Rc::clone(&next),
+                failure: None,
+            }),
+        )
+        .unwrap();
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    let view = ViewId::StatusBar(host::WindowId(window.get()));
+    let fine = Node::text("fine");
+    plugins
+        .render("acme/telling", &view, &mut app.context())
+        .unwrap();
+    assert_eq!(plugins.tree("acme/telling", &view), Some(&fine));
+    // A look's failure: it applies not, and the plugin runs on.
+    *next.borrow_mut() = Some(Error::new(Code::Failed, "a look failed"));
+    let looked = plugins.applies("telling.go", &Args::new(), &mut app.context());
+    assert_eq!(looked.unwrap_err().message, "a look failed");
+    assert_eq!(plugins.status("acme/telling"), Some(Status::Active));
+    assert!(
+        plugins
+            .applies("telling.go", &Args::new(), &mut app.context())
+            .unwrap()
+    );
+    // A render's failure: its tree and its writes go, the last staying;
+    // the first render's write alone came, as the looks' go.
+    *next.borrow_mut() = Some(Error::new(Code::Failed, "a render failed"));
+    let rendered = plugins.render("acme/telling", &view, &mut app.context());
+    assert_eq!(rendered.unwrap_err().message, "a render failed");
+    assert_eq!(plugins.tree("acme/telling", &view), Some(&fine));
+    assert_eq!(plugins.status("acme/telling"), Some(Status::Active));
+    assert_eq!(app.clipboard.1, ["rendered"]);
+    // A fault of a render or of a look faults the plugin, as a panic does.
+    *next.borrow_mut() = Some(Error::new(Code::Fault, "past its deadline"));
+    let rendered = plugins.render("acme/telling", &view, &mut app.context());
+    assert_eq!(rendered.unwrap_err().code, Code::Fault);
+    assert_eq!(plugins.status("acme/telling"), Some(Status::Disabled));
+    assert_eq!(plugins.tree("acme/telling", &view), Some(&fine));
+    let told = plugins.take_disabled();
+    assert!(told[0].1.contains("past its deadline"), "{told:?}");
+    // A look's fault too.
+    let next = Rc::new(RefCell::new(None));
+    plugins
+        .add(
+            "acme/looking",
+            Box::new(Telling {
+                next: Rc::clone(&next),
+                failure: None,
+            }),
+        )
+        .unwrap();
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    *next.borrow_mut() = Some(Error::new(Code::Fault, "a look past its deadline"));
+    let looked = plugins.applies("telling.go", &Args::new(), &mut app.context());
+    assert_eq!(looked.unwrap_err().code, Code::Fault);
+    assert_eq!(plugins.status("acme/looking"), Some(Status::Disabled));
+    let told = plugins.take_disabled();
+    assert!(told[0].1.contains("a look past its deadline"), "{told:?}");
+}

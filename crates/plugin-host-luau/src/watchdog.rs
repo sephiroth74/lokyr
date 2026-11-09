@@ -6,12 +6,13 @@
 //! The interrupt is a field of the state's callbacks, which the watchdog
 //! writes from its thread while the code reads it, as Luau's own command
 //! line writes it from a signal's handler at a Control-C: a store of one
-//! aligned pointer, which a 64-bit CPU makes whole.
+//! aligned pointer, which a 64-bit CPU makes whole. The clock stops while
+//! the code waits for the host, whose time is not the plugin's.
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex, PoisonError};
 use std::thread::JoinHandle;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use mlua::ffi;
 
@@ -77,6 +78,31 @@ impl Watchdog {
         watch.deadline = Some(deadline);
         watch.fired = false;
         self.shared.wake.notify_one();
+    }
+
+    /// Stops the clock of the call under way, as its code waits for the
+    /// host, whose time is not the plugin's: what was left of its deadline,
+    /// if it had one.
+    pub(crate) fn pause(&self) -> Option<Duration> {
+        let mut watch = self.lock();
+        let left = watch
+            .deadline
+            .take()
+            .map(|deadline| deadline.saturating_duration_since(Instant::now()));
+        self.shared.wake.notify_one();
+        left
+    }
+
+    /// Starts the clock of the call under way again, of what was `left` of
+    /// its deadline, unless it passed.
+    pub(crate) fn resume(&self, left: Option<Duration>) {
+        let mut watch = self.lock();
+        if let Some(left) = left
+            && !watch.fired
+        {
+            watch.deadline = Some(Instant::now() + left);
+            self.shared.wake.notify_one();
+        }
     }
 
     /// Ends the call's watch: whether its deadline passed, which made its
@@ -166,9 +192,10 @@ unsafe fn set_interrupt(
     }
 }
 
-/// The interrupt of a call past its deadline: it goes, and the code fails,
-/// but in the collector, which calls it of a step, and where an error may
-/// not be raised.
+/// The interrupt of a call past its deadline: the code fails, at each of
+/// its loops and calls until the call ends, so that a `pcall` that catches
+/// the error ends at its own next loop or call; but in the collector, which
+/// calls it of a step, and where an error may not be raised.
 #[allow(unsafe_code)]
 unsafe extern "C-unwind" fn stop(state: *mut ffi::lua_State, gc: std::ffi::c_int) {
     if gc >= 0 {
@@ -177,7 +204,6 @@ unsafe extern "C-unwind" fn stop(state: *mut ffi::lua_State, gc: std::ffi::c_int
     // SAFETY: Luau calls the interrupt with a valid state, at a point where
     // it may raise an error.
     unsafe {
-        (*ffi::lua_callbacks(state)).interrupt = None;
         ffi::lua_rawcheckstack(state, 1);
         ffi::luaL_error(state, c"the call ran past its deadline".as_ptr());
     }

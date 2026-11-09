@@ -125,6 +125,16 @@ pub trait Plugin {
         Ok(())
     }
 
+    /// The error of its last call of no error of its own, a render or a
+    /// look of [`applies`](Plugin::applies), if that call failed: what a
+    /// plugin whose code can fail where the call tells no error, as a Luau
+    /// plugin's, tells, which the host takes after such a call as the error
+    /// of a call that tells one, its writes dropped, its last tree staying,
+    /// and a fault faulting it. By default, none.
+    fn take_failure(&mut self) -> Option<Error> {
+        None
+    }
+
     /// The text of the JSON Schema of its section of the config file,
     /// `[plugins.<namespace>]`, the file that its manifest names as
     /// `config-schema`, which a built-in plugin includes as it builds: an

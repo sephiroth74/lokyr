@@ -9,9 +9,15 @@ authors.workspace = true
 repository.workspace = true
 publish = false
 
+[features]
+# A helper of the tests of other crates, which make each request of the
+# plugin API through Luau.
+testing = []
+
 [dependencies]
 lokyr-plugin-sdk = { workspace = true, features = ["unstable"] }
 mlua.workspace = true
+serde.workspace = true
 
 [dev-dependencies]
 lokyr-plugin-sdk = { workspace = true, features = ["fake"] }

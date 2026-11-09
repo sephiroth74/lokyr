@@ -1,15 +1,22 @@
 //! A plugin's VM: Luau's state, set up as a sandbox, of the libraries that
-//! compute, its package's modules through its own `require`, and the table
-//! of the plugin's callbacks that its entry returns.
+//! compute, its package's modules through its own `require`, the table of
+//! the plugin's callbacks that its entry returns, and `cx`, the table of
+//! the requests' functions, which each callback takes first.
 
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, PoisonError};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
-use mlua::{Function, Lua, LuaOptions, StdLib, Table, Value};
+use lokyr_plugin_sdk::plugin::Cx;
+use mlua::{Function, Lua, LuaOptions, MultiValue, StdLib, Table, Value};
 
+use crate::shape::ShapeError;
 use crate::watchdog::Watchdog;
-use crate::{Callback, Deadlines, Execution, Package};
+use crate::{Callback, Deadlines, Execution, Package, requests};
+
+/// The registry's key of the host's function of the call under way, which
+/// `cx`'s functions reach it through.
+const HOST: &str = "lokyr.host";
 
 /// The most memory of a VM, of Luau's allocator, past which an allocation
 /// fails, which ends the call.
@@ -53,11 +60,16 @@ pub(crate) fn native_supported() -> bool {
     }
 }
 
-/// A plugin's VM, and the table of its callbacks.
+/// A plugin's VM, the table of its callbacks, and its `cx`.
 pub(crate) struct Vm {
     /// Its watchdog, which ends before the state.
     watchdog: Watchdog,
     callbacks: Table,
+    /// The table of the requests' functions, read-only, which each callback
+    /// takes first.
+    cx: Table,
+    /// The metatable of the requests' errors.
+    errors: Table,
     native: bool,
     deadlines: Deadlines,
     /// The state, which the VM owns as long as its plugin runs.
@@ -106,9 +118,12 @@ impl Vm {
                 entry.type_name()
             ))));
         };
+        let (cx, errors) = (cx(&lua), requests::errors(&lua));
         Ok(Self {
             watchdog,
             callbacks,
+            cx: cx.map_err(Failure::Code)?,
+            errors: errors.map_err(Failure::Code)?,
             native,
             deadlines,
             _lua: lua,
@@ -144,21 +159,70 @@ impl Vm {
     }
 
     /// Calls the plugin's callback of `callback`, if its table has one,
-    /// within the deadline of its kind.
-    pub(crate) fn call(&self, callback: Callback) -> Result<(), Failure> {
-        let name = callback.name();
-        match self.callbacks.get::<Value>(name).map_err(Failure::Code)? {
-            Value::Nil => Ok(()),
-            Value::Function(function) => {
-                watched(&self.watchdog, self.deadlines.of(callback), || {
-                    function.call::<()>(())
-                })
+    /// within the deadline of its kind, of `cx` and the arguments that
+    /// `args` makes: what it returns, or `None` of a table of no such
+    /// callback.
+    pub(crate) fn call(
+        &self,
+        callback: Callback,
+        cx: &mut Cx<'_>,
+        args: impl FnOnce(&Lua) -> Result<Vec<Value>, ShapeError>,
+    ) -> Result<Option<MultiValue>, Failure> {
+        self.invoke(callback.name(), self.deadlines.of(callback), cx, args)
+    }
+
+    /// Calls the plugin's function `name` of its callbacks' table, if it
+    /// has one, within `deadline`, its time in the host's requests left
+    /// out, of `cx`, the table of the requests' functions first, and the
+    /// arguments that `args` makes, its requests going to `cx` as the call
+    /// runs: what it returns.
+    pub(crate) fn invoke(
+        &self,
+        name: &str,
+        deadline: Duration,
+        cx: &mut Cx<'_>,
+        args: impl FnOnce(&Lua) -> Result<Vec<Value>, ShapeError>,
+    ) -> Result<Option<MultiValue>, Failure> {
+        let lua = &self._lua;
+        // Raw, as a metamethod's code would run outside the call's watch.
+        let function = match self
+            .callbacks
+            .raw_get::<Value>(name)
+            .map_err(Failure::Code)?
+        {
+            Value::Nil => return Ok(None),
+            Value::Function(function) => function,
+            other => {
+                return Err(Failure::Code(mlua::Error::runtime(format!(
+                    "the callback `{name}` is a function, not {}",
+                    other.type_name()
+                ))));
             }
-            other => Err(Failure::Code(mlua::Error::runtime(format!(
-                "the callback `{name}` is a function, not {}",
-                other.type_name()
-            )))),
-        }
+        };
+        let mut all = vec![Value::Table(self.cx.clone())];
+        all.extend(args(lua).map_err(|error| Failure::Code(mlua::Error::runtime(error)))?);
+        let (watchdog, errors) = (&self.watchdog, &self.errors);
+        watched(watchdog, deadline, || {
+            lua.scope(|scope| {
+                let host = scope.create_function_mut(|lua, (at, args): (usize, MultiValue)| {
+                    let kind = requests::kinds()
+                        .get(at)
+                        .ok_or_else(|| mlua::Error::runtime("no such request"))?;
+                    let request = requests::request(kind, &args.into_vec()).map_err(|error| {
+                        mlua::Error::runtime(format!("bad argument to `cx.{}`: {error}", kind.name))
+                    })?;
+                    let left = watchdog.pause();
+                    let response = cx.request(request);
+                    watchdog.resume(left);
+                    requests::answer(lua, &response, errors).map_err(mlua::Error::runtime)
+                })?;
+                lua.set_named_registry_value(HOST, host)?;
+                let returned = function.call::<MultiValue>(MultiValue::from_vec(all));
+                lua.unset_named_registry_value(HOST)?;
+                returned
+            })
+        })
+        .map(Some)
     }
 
     /// How many times its watchdog's thread woke.
@@ -168,10 +232,30 @@ impl Vm {
     }
 
     /// The Lua state, as the tests reach its globals.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "testing"))]
     pub(crate) fn lua(&self) -> &Lua {
         &self._lua
     }
+}
+
+/// The table of the requests' functions, one a kind of the SDK's requests,
+/// by its Rust name, read-only: each reaches the host of the call under
+/// way, and fails outside the plugin's calls.
+fn cx(lua: &Lua) -> mlua::Result<Table> {
+    let cx = lua.create_table()?;
+    for (at, kind) in requests::kinds().iter().enumerate() {
+        let function = lua.create_function(move |lua, args: MultiValue| {
+            let Value::Function(host) = lua.named_registry_value::<Value>(HOST)? else {
+                return Err(mlua::Error::runtime(
+                    "`cx` reaches the host within a call of the plugin's callbacks alone",
+                ));
+            };
+            host.call::<MultiValue>((at, args))
+        })?;
+        cx.raw_set(kind.name.as_str(), function)?;
+    }
+    cx.set_readonly(true);
+    Ok(cx)
 }
 
 /// Runs `run` within `deadline` from now, as `watchdog` watches it: what it
@@ -179,7 +263,7 @@ impl Vm {
 /// code's error.
 fn watched<T>(
     watchdog: &Watchdog,
-    deadline: std::time::Duration,
+    deadline: Duration,
     run: impl FnOnce() -> mlua::Result<T>,
 ) -> Result<T, Failure> {
     watchdog.arm(Instant::now() + deadline);
