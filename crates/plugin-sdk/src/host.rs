@@ -357,8 +357,17 @@ pub const MOST_LINES: usize = 100_000;
 
 /// The most writes of a call, which wait for its end, past which another
 /// fails, as a call of a plugin's thread that never returned would keep
-/// them all.
+/// them all; its requests of the app's count with them.
 pub const MOST_WRITES: usize = 10_000;
+
+/// The most searches that one call starts, each of a thread: as many panes
+/// as a window commonly shows, and more.
+pub const MOST_SEARCHES: usize = 16;
+
+/// The most commands, keys and menu items that a plugin declares, past
+/// which another is refused: the default keymap's plugin declares some
+/// 130.
+pub const MOST_DECLARED: usize = 4096;
 
 /// The most bytes of a plugin's state, as JSON.
 pub const MOST_STATE: usize = 1024 * 1024;

@@ -24,9 +24,9 @@ use lokyr_plugin_sdk::command::{Args, Capability, Category, Code, Command, Error
 use lokyr_plugin_sdk::event::WorkspaceEvent;
 use lokyr_plugin_sdk::host::{
     BarPlace, Binding, Color, CommandInfo, DecorationLook, Direction, Edge, LEAST_DELAY, Layout,
-    Line, LineText, MOST_DELAY, MOST_STATE, MOST_TIMERS, MenuItem, MenuPlace, PaneId, QuickLength,
-    QuickPlace, ScreenPoint, Scroll, SearchMatch, SearchQuery, SelectionKind, ShellCommand, Side,
-    TabId, TabInfo, Underline, Viewport, WindowId, WindowInfo,
+    Line, LineText, MOST_DELAY, MOST_SEARCHES, MOST_STATE, MOST_TIMERS, MOST_WRITES, MenuItem,
+    MenuPlace, PaneId, QuickLength, QuickPlace, ScreenPoint, Scroll, SearchMatch, SearchQuery,
+    SelectionKind, ShellCommand, Side, TabId, TabInfo, Underline, Viewport, WindowId, WindowInfo,
 };
 use lokyr_plugin_sdk::message::{
     DELAY_RANGE, DIM_RANGE, Data, Event, Mods, OWN_PANE, Request, Response, TIMERS_BOUND,
@@ -178,8 +178,136 @@ pub fn all(world: &World) -> Vec<Scenario> {
         copy_mode(world),
         workspace(world),
         tabs(world),
+        tab_changes(world, true),
+        tab_changes(world, false),
+        bounds(world),
         core_actions(world),
     ]
+}
+
+/// The changes of a tab that the plugin hears, of a plugin that reads the
+/// processes, `reads`, or not: each change of its title or its color one,
+/// as its look changes, none of a title given again; and to a plugin that
+/// does not read the processes, the changes of what it can read alone, two
+/// of one call one, as it learnt the tab as it activated.
+fn tab_changes(world: &World, reads: bool) -> Scenario {
+    let t = world.tab;
+    let title = |title: Option<&str>| Request::SetTabTitle {
+        tab: t,
+        title: title.map(str::to_owned),
+    };
+    let color = |color: Option<Color>| Request::SetTabColor { tab: t, color };
+    let changed = || Event::Workspace(WorkspaceEvent::TabChanged { tab: t });
+    let changes = |two: usize| -> Vec<Event> {
+        (0..if reads { two } else { 1 })
+            .map(|_| changed())
+            .collect()
+    };
+    let step = |asks: Vec<(Request, Response)>, heard: Vec<Event>| Step {
+        wait: 0,
+        asks,
+        posts: Vec::new(),
+        heard,
+    };
+    Scenario {
+        name: format!(
+            "a tab's changes, to a plugin that {} the processes",
+            if reads { "reads" } else { "does not read" }
+        ),
+        capabilities: (!reads).then(|| vec![Capability::PaneView]),
+        subscriptions: vec!["tab-changed".to_owned()],
+        steps: vec![
+            step(
+                vec![(title(Some("named")), Response::Done)],
+                vec![changed()],
+            ),
+            step(vec![(title(Some("named")), Response::Done)], Vec::new()),
+            step(
+                vec![
+                    (title(Some("other")), Response::Done),
+                    (color(Some(Color::Rgb(200, 30, 40))), Response::Done),
+                ],
+                changes(2),
+            ),
+            step(
+                vec![(title(None), Response::Done), (color(None), Response::Done)],
+                changes(2),
+            ),
+        ],
+    }
+}
+
+/// The bounds of a call: its searches, [`MOST_SEARCHES`] at most, each of
+/// the pane's ending the one before, whose event the plugin never hears;
+/// and its writes and its requests of the app's together,
+/// [`MOST_WRITES`] at most.
+fn bounds(world: &World) -> Scenario {
+    let search = || Request::Search {
+        pane: world.pane,
+        query: SearchQuery {
+            text: "now".to_owned(),
+            ..SearchQuery::default()
+        },
+    };
+    let mut searches: Vec<(Request, Response)> = (0..MOST_SEARCHES)
+        .map(|_| (search(), Response::Searching(0)))
+        .collect();
+    searches.push((
+        search(),
+        failed(
+            Code::Failed,
+            &format!("a call starts {MOST_SEARCHES} searches at most"),
+        ),
+    ));
+    let half = MOST_WRITES / 2;
+    let mut writes: Vec<(Request, Response)> = (0..half)
+        .map(|_| {
+            (
+                Request::SetTabTitle {
+                    tab: world.tab,
+                    title: None,
+                },
+                Response::Done,
+            )
+        })
+        .collect();
+    let open = || Request::Open("https://lokyr.dev/x".to_owned());
+    writes.extend((half..MOST_WRITES).map(|_| (open(), Response::Done)));
+    let past = format!(
+        "a call writes and asks the app {MOST_WRITES} times at most, which apply as it returns"
+    );
+    writes.push((open(), failed(Code::Failed, &past)));
+    writes.push((
+        Request::SetTabTitle {
+            tab: world.tab,
+            title: None,
+        },
+        failed(Code::Failed, &past),
+    ));
+    Scenario {
+        name: "a call's searches and its writes with its requests of the app's, bounded".to_owned(),
+        capabilities: None,
+        subscriptions: Vec::new(),
+        steps: vec![
+            Step {
+                wait: 0,
+                asks: searches,
+                posts: Vec::new(),
+                heard: vec![Event::Searched {
+                    id: 0,
+                    pane: world.pane,
+                    matches: vec![SearchMatch {
+                        first: (24, world.row),
+                        last: (26, world.row),
+                    }],
+                    count: 1,
+                    done: true,
+                }],
+            },
+            ask(writes),
+            ask(vec![(Request::EndSearch(NO_SEARCH), Response::Done)]),
+        ],
+    }
 }
 
 /// What a tab bar's plugin asks of a tab: a title and a color of its own,

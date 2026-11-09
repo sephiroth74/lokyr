@@ -7,8 +7,9 @@ use crate::command::Category;
 use crate::host::Edge;
 use crate::host::QuickPlace;
 use crate::host::Scroll;
+use crate::host::SearchQuery;
 use crate::ui::{Anchor, Role, Slot};
-use crate::view::{ProgressShape, ProgressState, Role as NodeRole, Tab};
+use crate::view::{ListItem, ProgressShape, ProgressState, Role as NodeRole, Tab};
 
 type Callback = Box<dyn FnMut(&mut Cx<'_>, &str) -> Result<(), Error>>;
 
@@ -509,8 +510,18 @@ fn a_read_of_commands_gives_those_that_meet_its_rows_and_the_view_its_screen() {
         prompt: prompt.map(|row| (0, row)),
         ..host::ShellCommand::default()
     };
-    // The first's prompt left the scrollback: it starts at its first row.
-    pane.commands = vec![command(1, None), command(2, Some(3)), command(3, Some(8))];
+    // A command whose rows all left, its end above those held, meets none;
+    // the next one's prompt left the scrollback: it starts at its first row
+    // held, its prompt read as none.
+    let gone = host::ShellCommand {
+        end: Some((0, -25)),
+        ..command(4, Some(-30))
+    };
+    let left = host::ShellCommand {
+        output: Some((0, -5)),
+        ..command(1, Some(-20))
+    };
+    pane.commands = vec![gone, left, command(2, Some(3)), command(3, Some(8))];
     let read = Rc::new(RefCell::new(Vec::new()));
     let mut probe = Probe::new({
         let read = Rc::clone(&read);
@@ -541,6 +552,29 @@ fn a_read_of_commands_gives_those_that_meet_its_rows_and_the_view_its_screen() {
         *read.borrow(),
         [vec![1], vec![1], vec![2, 3], vec![2, 3], vec![]]
     );
+    // A command of no prompt marked starts at its first mark.
+    host.pane(PaneId(1)).commands = vec![host::ShellCommand {
+        id: 5,
+        output: Some((0, 6)),
+        ..host::ShellCommand::default()
+    }];
+    let found = Rc::new(RefCell::new(Vec::new()));
+    let mut probe = Probe::new({
+        let found = Rc::clone(&found);
+        move |cx, _| {
+            for (top, bottom) in [(0, 6), (0, 7)] {
+                found
+                    .borrow_mut()
+                    .push(cx.shell_commands(PaneId(1), top, bottom)?);
+            }
+            Ok(())
+        }
+    });
+    host.command(&mut probe, "probe.go", Args::new()).unwrap();
+    let found = found.borrow();
+    assert!(found[0].is_empty());
+    assert_eq!(found[1][0].id, 5);
+    assert_eq!(found[1][0].prompt, None);
 }
 
 /// A plugin whose look decorates, opens a panel, reads rows and opens a
@@ -614,7 +648,17 @@ fn a_render_s_tree_stays_and_its_snapshot_tells_its_content() {
         Node::list(
             Node::container(vec![Node::text("row")]),
             100,
-            (10, Vec::new()),
+            (
+                10,
+                vec![
+                    ListItem {
+                        texts: vec!["ten".to_owned()],
+                    },
+                    ListItem {
+                        texts: vec!["eleven".to_owned(), "11".to_owned()],
+                    },
+                ],
+            ),
         )
         .key("results"),
         Node::tabs(
@@ -648,7 +692,9 @@ fn a_render_s_tree_stays_and_its_snapshot_tells_its_content() {
             "  separator\n",
             "  progress Bar Normal 0.5\n",
             "  progress Ring Indeterminate\n",
-            "  list of 100, 0 given from 10 key=results\n",
+            "  list of 100, 2 given from 10 key=results\n",
+            "    item 10 \"ten\"\n",
+            "    item 11 \"eleven\" | \"11\"\n",
             "    row:\n",
             "      container\n",
             "        text \"row\"\n",
@@ -1314,4 +1360,277 @@ fn the_fake_host_bounds_the_timers_and_starts_none_in_a_look() {
     host.command(&mut plugin, "looking.go", Args::new())
         .unwrap();
     assert_eq!(host.timers().len(), host::MOST_TIMERS);
+}
+
+#[test]
+fn a_look_starts_no_search_and_a_failed_call_s_search_ends_the_one_before_running_on() {
+    let mut host = FakeHost::new("acme/probe");
+    host.pane(PaneId(1))
+        .rows
+        .insert(0, ("find me".to_owned(), false));
+    host.focus(Some(PaneId(1)));
+    let query = || SearchQuery {
+        text: "find".to_owned(),
+        ..SearchQuery::default()
+    };
+    let started = Rc::new(RefCell::new(Vec::new()));
+    let seen = Rc::clone(&started);
+    let mut probe = Probe::new(move |cx, _| {
+        let id = cx.search(PaneId(1), query())?;
+        seen.borrow_mut().push(id);
+        Ok(())
+    });
+    host.activate(&mut probe).unwrap();
+    host.command(&mut probe, "probe.go", Args::new()).unwrap();
+    let first = started.borrow()[0];
+    assert_eq!(host.searches(), [first]);
+    // A call that fails: its search ends, of no event, and the one that it
+    // ended runs on.
+    let mut failing = Probe::new(move |cx, _| {
+        cx.search(PaneId(1), query())?;
+        Err(Error::new(Code::Failed, "on purpose"))
+    });
+    host.command(&mut failing, "probe.go", Args::new())
+        .unwrap_err();
+    assert_eq!(host.searches(), [first]);
+    // A look starts none, and ends none.
+    struct Looking(Option<Code>, Option<Code>);
+    impl Plugin for Looking {
+        fn applies(&mut self, cx: &mut Cx<'_>, _: &str, _: &Args) -> bool {
+            self.0 = cx
+                .search(PaneId(1), SearchQuery::default())
+                .err()
+                .map(|error| error.code);
+            self.1 = cx.end_search(1).err().map(|error| error.code);
+            true
+        }
+    }
+    let mut looking = Looking(None, None);
+    assert!(host.applies(&mut looking, "probe.go", &Args::new()));
+    assert_eq!(
+        (looking.0, looking.1),
+        (Some(Code::Failed), Some(Code::Failed))
+    );
+    assert_eq!(host.searches(), [first]);
+}
+
+#[test]
+fn a_declaration_made_already_changes_nothing_and_a_plugin_s_are_bounded() {
+    let mut host = FakeHost::new("acme/probe");
+    let mut probe = Probe::new(|cx, _| {
+        for _ in 0..2 {
+            cx.bind(Binding {
+                keys: "cmd+k".to_owned(),
+                command: "probe.go".to_owned(),
+                args: Args::new(),
+                when: None,
+            })?;
+        }
+        Ok(())
+    });
+    host.activate(&mut probe).unwrap();
+    host.command(&mut probe, "probe.go", Args::new()).unwrap();
+    assert_eq!(host.bindings().len(), 1);
+    // Past the most, refused.
+    let mut many = Probe::new(|cx, _| {
+        for at in 0..host::MOST_DECLARED {
+            cx.bind(Binding {
+                keys: format!("cmd+{}", ["a", "b", "c", "d"][at % 4]),
+                command: format!("probe.go{at}"),
+                args: Args::new(),
+                when: None,
+            })?;
+        }
+        Ok(())
+    });
+    let error = host
+        .command(&mut many, "probe.go", Args::new())
+        .unwrap_err();
+    assert!(
+        error
+            .message
+            .contains("4096 commands, keys and menu items at most"),
+        "{error:?}"
+    );
+}
+
+/// A plugin that hears the tabs' events, by their names, and runs the
+/// requests that `asks` makes as its command runs.
+struct TabListener {
+    heard: Rc<RefCell<Vec<String>>>,
+    asks: Callback,
+}
+
+impl Plugin for TabListener {
+    fn activate(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
+        cx.register_command(Command {
+            name: "listener.go".to_owned(),
+            title: "Go".to_owned(),
+            category: Category::View,
+            capabilities: Vec::new(),
+            params: Vec::new(),
+            when: None,
+        })?;
+        cx.subscribe(&["tab-changed", "tab-activated"])
+    }
+
+    fn on_command(&mut self, cx: &mut Cx<'_>, name: &str, _: Args) -> Result<(), Error> {
+        (self.asks)(cx, name)
+    }
+
+    fn on_event(&mut self, _: &mut Cx<'_>, events: &[Event]) -> Result<(), Error> {
+        self.heard
+            .borrow_mut()
+            .extend(events.iter().map(|event| event.name().to_owned()));
+        Ok(())
+    }
+}
+
+/// The listener of `asks`, and what it hears.
+fn listener(
+    asks: impl FnMut(&mut Cx<'_>, &str) -> Result<(), Error> + 'static,
+) -> (TabListener, Rc<RefCell<Vec<String>>>) {
+    let heard = Rc::new(RefCell::new(Vec::new()));
+    let plugin = TabListener {
+        heard: Rc::clone(&heard),
+        asks: Box::new(asks),
+    };
+    (plugin, heard)
+}
+
+#[test]
+fn a_tab_shown_loses_its_activity_and_its_bell_and_takes_its_pane_s_look() {
+    let mut host = FakeHost::new("acme/listener");
+    host.pane(PaneId(1)).title = Some("one".to_owned());
+    let second = host.pane(PaneId(2));
+    second.tab = TabId(2);
+    second.title = Some("two".to_owned());
+    host.focus(Some(PaneId(1)));
+    let (mut plugin, heard) = listener(|cx, _| cx.activate_tab(TabId(2)));
+    host.activate(&mut plugin).unwrap();
+    host.set_tab_marks(
+        TabId(2),
+        TabMarks {
+            activity: true,
+            bell: true,
+            ..TabMarks::default()
+        },
+    );
+    host.deliver(&mut plugin).unwrap();
+    heard.borrow_mut().clear();
+    host.command(&mut plugin, "listener.go", Args::new())
+        .unwrap();
+    host.deliver(&mut plugin).unwrap();
+    assert_eq!(*heard.borrow(), ["tab-activated", "tab-changed"]);
+    let mut probe = Probe::new(|cx, _| {
+        let tabs = cx.tabs(WindowId(1))?;
+        assert_eq!(tabs[1].title, "two");
+        assert!(!tabs[1].activity && !tabs[1].bell);
+        Ok(())
+    });
+    host.command(&mut probe, "probe.go", Args::new()).unwrap();
+}
+
+#[test]
+fn a_plugin_that_does_not_read_the_processes_reads_no_program_s_marks_nor_place() {
+    let mut host = FakeHost::new("acme/probe").with_capabilities(vec![Capability::PaneView]);
+    let pane = host.pane(PaneId(1));
+    pane.directory = Some("/Users/me/work".to_owned());
+    host.focus(Some(PaneId(1)));
+    host.keyboard();
+    host.set_tab_marks(
+        TabId(1),
+        TabMarks {
+            running: true,
+            alternate: true,
+            printing: true,
+            ..TabMarks::default()
+        },
+    );
+    let mut probe = Probe::new(|cx, _| {
+        let tab = &cx.tabs(WindowId(1))?[0];
+        assert!(!tab.running && !tab.alternate && !tab.printing);
+        assert_eq!(cx.pane_title(PaneId(1))?, None);
+        Ok(())
+    });
+    host.command(&mut probe, "probe.go", Args::new()).unwrap();
+    // One that reads them reads its marks, and its folder for a title.
+    let mut host = FakeHost::new("acme/probe");
+    host.pane(PaneId(1)).directory = Some("/Users/me/work".to_owned());
+    host.focus(Some(PaneId(1)));
+    host.keyboard();
+    host.set_tab_marks(
+        TabId(1),
+        TabMarks {
+            running: true,
+            ..TabMarks::default()
+        },
+    );
+    let mut probe = Probe::new(|cx, _| {
+        assert!(cx.tabs(WindowId(1))?[0].running);
+        assert_eq!(cx.pane_title(PaneId(1))?, Some("work".to_owned()));
+        Ok(())
+    });
+    host.command(&mut probe, "probe.go", Args::new()).unwrap();
+}
+
+#[test]
+fn a_swap_takes_a_pane_that_the_call_opened_and_holds_no_pane_twice() {
+    let mut host = FakeHost::new("acme/probe");
+    host.pane(PaneId(1));
+    host.focus(Some(PaneId(1)));
+    let mut probe = Probe::new(|cx, _| {
+        let opened = cx.split(PaneId(1), Direction::Vertical, Side::Second)?;
+        cx.swap_panes(PaneId(1), opened)
+    });
+    host.command(&mut probe, "probe.go", Args::new()).unwrap();
+    let layout = host.tab_layout(TabId(1)).unwrap();
+    let held = leaves(&layout);
+    assert_eq!(held.len(), 2);
+    assert_eq!(held[1], PaneId(1));
+    // A pane moved out of its tab earlier in the call is swapped of none.
+    let mut probe = Probe::new(|cx, _| {
+        let other = cx.layout(TabId(1))?;
+        let panes = leaves(&other);
+        cx.pane_to_new_window(panes[0])?;
+        cx.swap_panes(panes[0], panes[1])
+    });
+    host.command(&mut probe, "probe.go", Args::new()).unwrap();
+    let held = leaves(&host.tab_layout(TabId(1)).unwrap());
+    assert_eq!(held, [PaneId(1)]);
+    // Every pane in one tab alone.
+    let mut probe = Probe::new(|cx, _| {
+        let mut held = Vec::new();
+        for window in cx.windows()? {
+            for tab in window.tabs {
+                held.extend(leaves(&cx.layout(tab)?));
+            }
+        }
+        let mut unique = held.clone();
+        unique.sort_by_key(|pane| pane.0);
+        unique.dedup();
+        assert_eq!(unique.len(), held.len(), "{held:?}");
+        Ok(())
+    });
+    host.command(&mut probe, "probe.go", Args::new()).unwrap();
+}
+
+#[test]
+fn a_tab_into_a_pane_tells_its_tab_s_change_of_the_moved_pane_s_title() {
+    let mut host = FakeHost::new("acme/listener");
+    host.pane(PaneId(1)).title = Some("one".to_owned());
+    let second = host.pane(PaneId(2));
+    second.tab = TabId(2);
+    second.title = Some("two".to_owned());
+    host.focus(Some(PaneId(1)));
+    let (mut plugin, heard) = listener(|cx, _| cx.tab_into_pane(TabId(2), PaneId(1), Edge::Right));
+    host.activate(&mut plugin).unwrap();
+    host.command(&mut plugin, "listener.go", Args::new())
+        .unwrap();
+    host.deliver(&mut plugin).unwrap();
+    assert!(
+        heard.borrow().contains(&"tab-changed".to_owned()),
+        "{:?}",
+        heard.borrow()
+    );
 }

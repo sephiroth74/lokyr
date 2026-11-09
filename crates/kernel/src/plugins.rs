@@ -844,14 +844,7 @@ const READ_PART: usize = 256;
 /// past which another is refused until one ends.
 const MOST_READS: usize = 4;
 
-/// The most searches that one call starts, each of a thread: as many panes
-/// as a window commonly shows, and more.
-pub const MOST_SEARCHES: usize = 16;
-
-/// The most commands, keys and menu items that a plugin declares, past
-/// which another is refused: the default keymap's plugin declares some
-/// 130.
-pub const MOST_DECLARED: usize = 4096;
+pub use lokyr_plugin_sdk::host::{MOST_DECLARED, MOST_SEARCHES};
 
 /// How long a plugin that faulted waits before it starts again, its first
 /// time, which each fault within [`FAULTS_WITHIN`] doubles.

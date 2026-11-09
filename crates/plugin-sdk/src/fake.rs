@@ -96,8 +96,10 @@ pub struct FakePane {
     /// Its title, as a read of a pane's title gives it.
     pub title: Option<String>,
     /// The commands that its shell marked, oldest first, as a read of its
-    /// commands gives them: a command of no prompt starts at its first row
-    /// held, as one whose prompt left the scrollback does.
+    /// commands gives them: a mark at a row above those held left the
+    /// scrollback, as the read tells it of none; a command of no prompt
+    /// starts at its first mark, one whose prompt left at the first row
+    /// held, and one whose end left too meets no row.
     pub commands: Vec<host::ShellCommand>,
     /// The lines of its commands, by their ids, as a read of a command's
     /// line gives them.
@@ -118,20 +120,47 @@ impl FakePane {
     /// Its commands whose rows meet the rows numbered from `top` to before
     /// `bottom`, as the app's host gives them: the last whose first row is
     /// at `top` or above it, and those after it whose first rows are above
-    /// `bottom`.
+    /// `bottom`. A mark of a row above those held left the scrollback, and
+    /// reads as none. A command's first row is its prompt's, or, of none,
+    /// its first mark's; of a prompt that left, the first row held, but of
+    /// a command whose end left too, as every row of it did, none.
     fn commands_meeting(&self, top: i64, bottom: i64) -> Vec<host::ShellCommand> {
         if top >= bottom {
             return Vec::new();
         }
-        let first_row =
-            |command: &host::ShellCommand| command.prompt.map_or(self.held.start, |(_, row)| row);
+        let start = self.held.start;
+        let held = |mark: Option<(u16, i64)>| mark.filter(|&(_, row)| row >= start);
+        let first_row = |command: &host::ShellCommand| {
+            let marks = [command.prompt, command.input, command.output, command.end];
+            let found = match command.prompt {
+                Some(_) => held(command.prompt),
+                None => marks.into_iter().find_map(held),
+            };
+            if let Some((_, row)) = found {
+                return Some(row);
+            }
+            let ended = command.end.is_some_and(|(_, row)| row < start);
+            (!ended && marks.iter().any(Option::is_some)).then_some(start)
+        };
         let after = self
             .commands
-            .partition_point(|command| first_row(command) <= top);
-        self.commands[after.saturating_sub(1)..]
+            .partition_point(|command| first_row(command).is_none_or(|row| row <= top));
+        let begin = after
+            .checked_sub(1)
+            .filter(|&at| first_row(&self.commands[at]).is_some())
+            .unwrap_or(after);
+        self.commands[begin..]
             .iter()
-            .take_while(|command| first_row(command) < bottom)
-            .copied()
+            .map_while(|command| {
+                first_row(command).filter(|&row| row < bottom)?;
+                Some(host::ShellCommand {
+                    prompt: held(command.prompt),
+                    input: held(command.input),
+                    output: held(command.output),
+                    end: held(command.end),
+                    ..*command
+                })
+            })
             .collect()
     }
 
@@ -270,6 +299,10 @@ struct FakeTab {
     color: Option<Color>,
     marks: TabMarks,
 }
+
+/// What a tab bar shows of a tab, whose change `tab-changed` tells: its
+/// title, its color and its marks.
+type Look = (String, Option<Color>, TabMarks);
 
 /// What a tab bar marks a tab of, as a read of the tabs tells it, which a
 /// test gives a tab of the fake host.
@@ -410,6 +443,10 @@ pub struct FakeHost {
     /// opening asks for its own.
     renders: Vec<ViewId>,
     owed: Vec<Event>,
+    /// What a plugin that does not read the processes learnt of each tab,
+    /// as it activated, read the tabs or heard their changes, which a
+    /// change that it cannot read tells it nothing of.
+    told_tabs: BTreeMap<TabId, TabInfo>,
     /// The plugin's searches, by their ids: each's pane, its matches, and
     /// its current match, as the plugin showed it.
     searches: BTreeMap<u64, FakeSearch>,
@@ -481,6 +518,7 @@ impl FakeHost {
             views: BTreeMap::new(),
             renders: Vec::new(),
             owed: Vec::new(),
+            told_tabs: BTreeMap::new(),
             searches: BTreeMap::new(),
             timers: BTreeMap::new(),
             clock: 0,
@@ -590,13 +628,11 @@ impl FakeHost {
     /// Gives `tab` the `marks` that a read of the tabs tells, as the host
     /// finds them, which `tab-changed` tells as they change.
     pub fn set_tab_marks(&mut self, tab: TabId, marks: TabMarks) -> &mut Self {
-        let changed = self
-            .tabs
-            .get_mut(&tab)
-            .is_some_and(|found| std::mem::replace(&mut found.marks, marks) != marks);
-        if changed {
-            self.changed(WorkspaceEvent::TabChanged { tab });
+        let before = self.look(tab);
+        if let Some(found) = self.tabs.get_mut(&tab) {
+            found.marks = marks;
         }
+        self.looked(tab, &before);
         self
     }
 
@@ -871,6 +907,8 @@ impl FakeHost {
     /// Activates `plugin`.
     pub fn activate(&mut self, plugin: &mut dyn Plugin) -> Result<(), Error> {
         self.activated = true;
+        self.settle();
+        self.learn_tabs();
         self.call(true, |cx| plugin.activate(cx))
     }
 
@@ -912,21 +950,23 @@ impl FakeHost {
     /// the others go. Then those of its timers that fired, in their ids'
     /// order, a timer that does not repeat going with its event.
     pub fn deliver(&mut self, plugin: &mut dyn Plugin) -> Result<(), Error> {
+        self.settle();
         let owed = std::mem::take(&mut self.owed);
-        let mut batch: Vec<Event> = owed
-            .into_iter()
-            .filter(|event| {
-                matches!(
-                    event,
-                    Event::Lines { .. }
-                        | Event::Searched { .. }
-                        | Event::PanelClosed(_)
-                        | Event::ConfigChanged
-                        | Event::Answered { .. }
-                        | Event::TabBarResized { .. }
-                ) || self.subscribed.iter().any(|name| name == event.name())
-            })
-            .collect();
+        let mut batch = Vec::new();
+        for event in owed {
+            let taken = matches!(
+                event,
+                Event::Lines { .. }
+                    | Event::Searched { .. }
+                    | Event::PanelClosed(_)
+                    | Event::ConfigChanged
+                    | Event::Answered { .. }
+                    | Event::TabBarResized { .. }
+            ) || self.subscribed.iter().any(|name| name == event.name());
+            if taken && self.hears(&event) {
+                batch.push(event);
+            }
+        }
         self.timers.retain(|&id, timer| {
             if timer.due {
                 timer.due = false;
@@ -982,7 +1022,7 @@ impl FakeHost {
             (self.decorations.clone(), self.gutter_marks.clone()),
             (self.panels.clone(), self.panel_windows.clone()),
             (self.owed.len(), self.renders.len()),
-            (self.last_id, self.timers.clone()),
+            (self.last_id, self.timers.clone(), self.searches.clone()),
         );
         let mut calling = Calling {
             host: self,
@@ -990,6 +1030,7 @@ impl FakeHost {
             asked: Vec::new(),
             closed: Vec::new(),
             looking: !apply,
+            searched: 0,
         };
         let result = call(&mut Cx::new(&mut calling, &caller));
         let (writes, asked, closed) = (calling.writes, calling.asked, calling.closed);
@@ -998,15 +1039,22 @@ impl FakeHost {
         // go, and what its requests took at once comes back; a look takes
         // nothing at all, its ids and the renders that it asked for too.
         if !apply || result.is_err() {
-            let ((decorations, marks), (panels, windows), (owed, renders), (last_id, timers)) =
-                kept;
+            let (
+                (decorations, marks),
+                (panels, windows),
+                (owed, renders),
+                (last_id, timers, searches),
+            ) = kept;
             self.decorations = decorations;
             self.gutter_marks = marks;
             self.panels = panels;
             self.panel_windows = windows;
             self.timers = timers;
+            // Its searches end, of no event, and those that they ended run
+            // on; its reads' rows come to nothing.
+            self.searches = searches;
+            self.owed.truncate(owed);
             if !apply {
-                self.owed.truncate(owed);
                 self.renders.truncate(renders);
                 self.last_id = last_id;
             }
@@ -1021,6 +1069,14 @@ impl FakeHost {
         }
         self.done.extend(asked);
         result
+    }
+
+    /// Ends the search `id`, of its events that the plugin did not hear yet,
+    /// as the app's host ends one.
+    fn end_search(&mut self, id: u64) {
+        self.searches.remove(&id);
+        self.owed
+            .retain(|event| !matches!(event, Event::Searched { id: owed, .. } if *owed == id));
     }
 
     /// A new id of a window, a tab, a pane, a decoration or a read.
@@ -1187,12 +1243,11 @@ impl FakeHost {
             Request::CloseTab { tab, .. } => self.close_tab(*tab),
             Request::ClosePane { pane, .. } => self.close_pane(*pane),
             Request::SetTabTitle { tab: id, title } => {
-                if let Some(tab) = self.tabs.get_mut(id)
-                    && tab.title != *title
-                {
+                let before = self.look(*id);
+                if let Some(tab) = self.tabs.get_mut(id) {
                     tab.title.clone_from(title);
-                    self.changed(WorkspaceEvent::TabChanged { tab: *id });
                 }
+                self.looked(*id, &before);
             }
             Request::SetTabBarPlace(place) => self.bar_place = *place,
             Request::SetInactiveDim(dim) => self.inactive_dim = *dim,
@@ -1206,12 +1261,11 @@ impl FakeHost {
                 }
             },
             Request::SetTabColor { tab: id, color } => {
-                if let Some(tab) = self.tabs.get_mut(id)
-                    && tab.color != *color
-                {
+                let before = self.look(*id);
+                if let Some(tab) = self.tabs.get_mut(id) {
                     tab.color = *color;
-                    self.changed(WorkspaceEvent::TabChanged { tab: *id });
                 }
+                self.looked(*id, &before);
             }
             Request::ActivateTab(tab) => self.activate_tab(*tab),
             Request::FocusPane(pane) => self.focus_pane(*pane),
@@ -1227,7 +1281,10 @@ impl FakeHost {
             Request::Zoom { tab, pane } => self.zoom(*tab, *pane),
             Request::Equalize(tab) => self.relayout(*tab, equalize),
             Request::SwapPanes { pane, with } => {
-                if let Some(tab) = self.panes.get(pane).map(|pane| pane.tab) {
+                // Both of one tab still, as an earlier write may have moved
+                // one, which would hold the other twice.
+                let tab_of = |pane: &PaneId| self.panes.get(pane).map(|pane| pane.tab);
+                if let Some(tab) = tab_of(pane).filter(|tab| tab_of(with) == Some(*tab)) {
                     self.relayout(tab, |layout| swap_leaves(layout, *pane, *with));
                 }
             }
@@ -1283,6 +1340,108 @@ impl FakeHost {
     /// Owes the plugin the workspace's `event`.
     fn changed(&mut self, event: WorkspaceEvent) {
         self.owed.push(Event::Workspace(event));
+    }
+
+    /// Whether the plugin reads the processes, as a first-party one does.
+    fn reads_processes(&self) -> bool {
+        self.granted
+            .as_ref()
+            .is_none_or(|granted| granted.contains(&Capability::ProcessRead))
+    }
+
+    /// The title of `tab`: its own, or its active pane's program's.
+    fn tab_title(&self, tab: &FakeTab) -> String {
+        tab.title
+            .clone()
+            .or_else(|| {
+                self.panes
+                    .get(&tab.active)
+                    .and_then(|pane| pane.title.clone())
+            })
+            .unwrap_or_default()
+    }
+
+    /// What a tab bar shows of `id`, whose change `tab-changed` tells: its
+    /// title, its color and its marks.
+    fn look(&self, id: TabId) -> Option<Look> {
+        let tab = self.tabs.get(&id)?;
+        Some((self.tab_title(tab), tab.color, tab.marks))
+    }
+
+    /// Owes `tab-changed` of `id` if its look is another than `before`.
+    fn looked(&mut self, id: TabId, before: &Option<Look>) {
+        if before.is_some() && self.look(id) != *before {
+            self.changed(WorkspaceEvent::TabChanged { tab: id });
+        }
+    }
+
+    /// What a read of the tabs tells of `id`, of the plugin that reads the
+    /// processes or not, `reads`, which tells their programs' marks.
+    fn tab_info(&self, id: TabId, reads: bool) -> Option<TabInfo> {
+        let tab = self.tabs.get(&id)?;
+        let window = self.windows.get(&tab.window)?;
+        let marks = tab.marks;
+        Some(TabInfo {
+            id,
+            window: tab.window,
+            title: self.tab_title(tab),
+            color: tab.color,
+            active: window.active == id,
+            focused: tab.active,
+            panes: leaves(&tab.layout),
+            zoomed: tab.zoomed,
+            activity: marks.activity,
+            bell: marks.bell,
+            progress: marks.progress,
+            printing: marks.printing && reads,
+            running: marks.running && reads,
+            alternate: marks.alternate && reads,
+            secure: marks.secure,
+            agent: marks.agent,
+        })
+    }
+
+    /// Learns what it reads of every tab, as the plugin activates, of one
+    /// that does not read the processes.
+    fn learn_tabs(&mut self) {
+        self.told_tabs.clear();
+        if self.reads_processes() {
+            return;
+        }
+        let tabs: Vec<TabId> = self.tabs.keys().copied().collect();
+        for tab in tabs {
+            if let Some(info) = self.tab_info(tab, false) {
+                self.told_tabs.insert(tab, info);
+            }
+        }
+    }
+
+    /// Whether the plugin hears `event` as it is delivered: a tab's change
+    /// that a plugin that does not read the processes cannot read it does
+    /// not, as the app's host filters it, of what it learnt of each tab.
+    fn hears(&mut self, event: &Event) -> bool {
+        if self.reads_processes() {
+            return true;
+        }
+        match event {
+            Event::Workspace(WorkspaceEvent::TabCreated { tab, .. }) => {
+                if let Some(now) = self.tab_info(*tab, false) {
+                    self.told_tabs.insert(*tab, now);
+                }
+                true
+            }
+            Event::Workspace(WorkspaceEvent::TabClosed { tab, .. }) => {
+                self.told_tabs.remove(tab);
+                true
+            }
+            Event::Workspace(WorkspaceEvent::TabChanged { tab }) => {
+                match self.tab_info(*tab, false) {
+                    Some(now) => self.told_tabs.insert(*tab, now.clone()) != Some(now),
+                    None => true,
+                }
+            }
+            _ => true,
+        }
     }
 
     /// Opens `tab` of `pane` in `window`, at `index` of its tabs or at
@@ -1409,6 +1568,7 @@ impl FakeHost {
     /// that it leaves without panes leaves its window, what that did to it
     /// returned for the caller to tell after the tab's end.
     fn detach_pane(&mut self, pane: PaneId, id: TabId) -> Option<Left> {
+        let before = self.look(id);
         let tab = self.tabs.get_mut(&id)?;
         let Some(nearest) = remove(&mut tab.layout, pane) else {
             return Some(self.detach_tab(id));
@@ -1419,6 +1579,9 @@ impl FakeHost {
         }
         if tab.zoomed == Some(pane) {
             tab.zoomed = None;
+        }
+        if refocused {
+            self.looked(id, &before);
         }
         self.changed(WorkspaceEvent::LayoutChanged { tab: id });
         if refocused {
@@ -1434,11 +1597,13 @@ impl FakeHost {
     /// if it had it, to the sibling's pane nearest to it; a tab that it
     /// leaves without panes closes, and a window without tabs.
     fn close_pane(&mut self, pane: PaneId) {
-        let Some(tab) = self.panes.remove(&pane).map(|pane| pane.tab) else {
+        let Some(tab) = self.panes.get(&pane).map(|pane| pane.tab) else {
             return;
         };
         self.changed(WorkspaceEvent::PaneClosed { pane, tab });
-        if let Some(left) = self.detach_pane(pane, tab) {
+        let left = self.detach_pane(pane, tab);
+        self.panes.remove(&pane);
+        if let Some(left) = left {
             if let Some(gone) = self.tabs.remove(&tab) {
                 self.changed(WorkspaceEvent::TabClosed {
                     tab,
@@ -1467,6 +1632,7 @@ impl FakeHost {
         if !graft(&mut grafted, pane, edge, moving.layout.clone()) {
             return;
         }
+        let before = self.look(into);
         let left = self.detach_tab(tab);
         let Some(moved) = self.tabs.remove(&tab) else {
             return;
@@ -1496,6 +1662,8 @@ impl FakeHost {
             tab,
             window: moved.window,
         });
+        // It takes the moved active pane's title, as the app's.
+        self.looked(into, &before);
         self.changed(WorkspaceEvent::LayoutChanged { tab: into });
         self.changed(WorkspaceEvent::PaneFocused {
             pane: moved.active,
@@ -1515,6 +1683,13 @@ impl FakeHost {
         {
             shown.active = tab;
             self.changed(WorkspaceEvent::TabActivated { tab, window });
+            // Shown, it loses its activity and its bell, as the app's.
+            let before = self.look(tab);
+            if let Some(shown) = self.tabs.get_mut(&tab) {
+                shown.marks.activity = false;
+                shown.marks.bell = false;
+            }
+            self.looked(tab, &before);
         }
     }
 
@@ -1523,10 +1698,13 @@ impl FakeHost {
         let Some(id) = self.panes.get(&pane).map(|pane| pane.tab) else {
             return;
         };
-        if let Some(tab) = self.tabs.get_mut(&id)
-            && tab.active != pane
-        {
-            tab.active = pane;
+        if self.tabs.get(&id).is_some_and(|tab| tab.active != pane) {
+            let before = self.look(id);
+            if let Some(tab) = self.tabs.get_mut(&id) {
+                tab.active = pane;
+            }
+            // It takes its new active pane's title, as the app's.
+            self.looked(id, &before);
             self.changed(WorkspaceEvent::PaneFocused { pane, tab: id });
         }
     }
@@ -2084,6 +2262,8 @@ struct Calling<'h> {
     closed: Vec<PanelId>,
     /// Whether the call only looks, as `applies`, which declares nothing.
     looking: bool,
+    /// How many searches the call started.
+    searched: usize,
 }
 
 impl Calling<'_> {
@@ -2095,6 +2275,24 @@ impl Calling<'_> {
             // it after the call.
             Opened::Nothing | Opened::Quick(..) => false,
         })
+    }
+
+    /// The tab of `pane`, which the call's writes so far open, if they open
+    /// it: a new tab's, or that of the pane that a split of theirs splits.
+    fn opened_tab_of(&self, pane: PaneId) -> Option<TabId> {
+        self.writes
+            .iter()
+            .find_map(|(request, opened)| match (request, opened) {
+                (_, Opened::Tab(tab, opened)) if *opened == pane => Some(*tab),
+                (Request::Split { pane: split, .. }, Opened::Pane(opened)) if *opened == pane => {
+                    self.host
+                        .panes
+                        .get(split)
+                        .map(|split| split.tab)
+                        .or_else(|| self.opened_tab_of(*split))
+                }
+                _ => None,
+            })
     }
 
     /// The pane of the tab `tab` that the call's writes so far open, if
@@ -2157,13 +2355,35 @@ impl Calling<'_> {
                 Response::Styles(host.held(*pane)?.styles.get(row).cloned())
             }
             Request::Search { pane, query } => {
+                if self.looking {
+                    return Err(Error::new(
+                        Code::Failed,
+                        "a call that only looks, as `applies`, starts no search",
+                    ));
+                }
+                if self.searched >= host::MOST_SEARCHES {
+                    return Err(Error::new(
+                        Code::Failed,
+                        format!("a call starts {} searches at most", host::MOST_SEARCHES),
+                    ));
+                }
                 let held = host.held(*pane)?;
                 let matches = found_in(held, query)?;
                 let (pane, id) = (*pane, self.host.next_id());
-                // The plugin's search of the pane before ends.
-                self.host
+                self.searched += 1;
+                // The plugin's search of the pane before ends, of no event
+                // that it owes, and comes back of a call that fails, as the
+                // kept searches do.
+                let ended: Vec<u64> = self
+                    .host
                     .searches
-                    .retain(|_, searched| searched.pane != pane);
+                    .iter()
+                    .filter(|(_, searched)| searched.pane == pane)
+                    .map(|(&id, _)| id)
+                    .collect();
+                for id in ended {
+                    self.host.end_search(id);
+                }
                 self.host.owed.push(Event::Searched {
                     id,
                     pane,
@@ -2182,7 +2402,13 @@ impl Calling<'_> {
                 Response::Searching(id)
             }
             Request::EndSearch(search) => {
-                self.host.searches.remove(search);
+                if self.looking {
+                    return Err(Error::new(
+                        Code::Failed,
+                        "a call that only looks, as `applies`, ends no search",
+                    ));
+                }
+                self.host.end_search(*search);
                 Response::Done
             }
             Request::SearchMatches {
@@ -2313,40 +2539,43 @@ impl Calling<'_> {
                         format!("there is no window {}", window.0),
                     ));
                 };
-                Response::Tabs(
-                    found
-                        .tabs
-                        .iter()
-                        .filter_map(|&id| {
-                            let tab = host.tabs.get(&id)?;
-                            let marks = tab.marks;
-                            Some(TabInfo {
-                                id,
-                                window: *window,
-                                title: tab.title.clone().unwrap_or_default(),
-                                color: tab.color,
-                                active: id == found.active,
-                                focused: tab.active,
-                                panes: leaves(&tab.layout),
-                                zoomed: tab.zoomed,
-                                activity: marks.activity,
-                                bell: marks.bell,
-                                progress: marks.progress,
-                                printing: marks.printing,
-                                running: marks.running,
-                                alternate: marks.alternate,
-                                secure: marks.secure,
-                                agent: marks.agent,
-                            })
-                        })
-                        .collect(),
-                )
+                let reads = host.reads_processes();
+                let infos: Vec<TabInfo> = found
+                    .tabs
+                    .iter()
+                    .filter_map(|&id| host.tab_info(id, reads))
+                    .collect();
+                // What it learns of each tab, of which a change that it
+                // cannot read tells it nothing.
+                if !reads {
+                    for info in &infos {
+                        self.host.told_tabs.insert(info.id, info.clone());
+                    }
+                }
+                Response::Tabs(infos)
             }
             Request::PaneGrid(pane) => {
                 let (columns, rows) = host.held(*pane)?.grid;
                 Response::Grid { columns, rows }
             }
-            Request::PaneTitle(pane) => Response::Text(host.held(*pane)?.title.clone()),
+            Request::PaneTitle(pane) => {
+                // Its program's title, or, to a plugin that reads the
+                // processes, the name of its folder, as the app's.
+                let held = host.held(*pane)?;
+                let title = held.title.clone().filter(|title| !title.is_empty());
+                let place = || {
+                    held.directory.as_deref().map(|directory| {
+                        directory
+                            .trim_end_matches('/')
+                            .rsplit('/')
+                            .next()
+                            .filter(|name| !name.is_empty())
+                            .unwrap_or("/")
+                            .to_owned()
+                    })
+                };
+                Response::Text(title.or_else(|| host.reads_processes().then(place).flatten()))
+            }
             Request::CommandLine { pane, command } => {
                 Response::Text(host.held(*pane)?.command_lines.get(command).cloned())
             }
@@ -2377,11 +2606,11 @@ impl Calling<'_> {
     /// the call's writes so far open, or of a target that does not open,
     /// fails now, and so does one past the [`host::MOST_WRITES`] of a call.
     fn queue(&mut self, request: Request) -> Result<Response, Error> {
-        if request.effect() == Effect::Write && self.writes.len() >= host::MOST_WRITES {
+        if self.writes.len() + self.asked.len() >= host::MOST_WRITES {
             return Err(Error::new(
                 Code::Failed,
                 format!(
-                    "a call writes {} times at most, which apply as it returns",
+                    "a call writes and asks the app {} times at most, which apply as it returns",
                     host::MOST_WRITES
                 ),
             ));
@@ -2460,7 +2689,14 @@ impl Calling<'_> {
             Request::SwapPanes { pane, with } => {
                 self.known_pane(*pane)?;
                 self.known_pane(*with)?;
-                let tab_of = |pane: &PaneId| self.host.panes.get(pane).map(|pane| pane.tab);
+                // Of a pane that the call's writes opened too.
+                let tab_of = |pane: &PaneId| {
+                    self.host
+                        .panes
+                        .get(pane)
+                        .map(|pane| pane.tab)
+                        .or_else(|| self.opened_tab_of(*pane))
+                };
                 if tab_of(pane) != tab_of(with) {
                     return Err(Error::new(
                         Code::Failed,
@@ -2823,8 +3059,25 @@ impl Calling<'_> {
     }
 
     /// Checks `request`, a declaration, as the app's host does, and takes
-    /// it at once.
+    /// it at once: [`host::MOST_DECLARED`] commands, keys and menu items at
+    /// most, and a key or an item declared already changing nothing.
     fn declare(&mut self, request: Request) -> Result<Response, Error> {
+        if matches!(
+            request,
+            Request::RegisterCommand(_) | Request::Bind(_) | Request::AddMenuItem(_)
+        ) {
+            let host = &*self.host;
+            let declared = host.commands.len() + host.bindings.len() + host.menu_items.len();
+            if declared >= host::MOST_DECLARED {
+                return Err(Error::new(
+                    Code::Failed,
+                    format!(
+                        "a plugin declares {} commands, keys and menu items at most",
+                        host::MOST_DECLARED
+                    ),
+                ));
+            }
+        }
         match request {
             Request::RegisterCommand(command) => {
                 let host = &*self.host;
@@ -2879,7 +3132,9 @@ impl Calling<'_> {
                     )));
                 }
                 self.host.check_binding(&binding)?;
-                self.host.bindings.push(binding);
+                if !self.host.bindings.contains(&binding) {
+                    self.host.bindings.push(binding);
+                }
             }
             Request::Bind(binding) => {
                 let invalid = |message: String| Error::new(Code::InvalidBinding, message);
@@ -2894,7 +3149,9 @@ impl Calling<'_> {
                     When::parse(when).map_err(invalid)?;
                 }
                 self.host.check_binding(&binding)?;
-                self.host.bindings.push(binding);
+                if !self.host.bindings.contains(&binding) {
+                    self.host.bindings.push(binding);
+                }
             }
             Request::AddMenuItem(item) => {
                 if !is_name(&item.command) {
@@ -2907,7 +3164,9 @@ impl Calling<'_> {
                     ));
                 }
                 self.host.check_run(&item.command, &item.args)?;
-                self.host.menu_items.push(item);
+                if !self.host.menu_items.contains(&item) {
+                    self.host.menu_items.push(item);
+                }
             }
             Request::Subscribe(names) => {
                 if let Some(name) = names
@@ -3038,8 +3297,9 @@ fn opening(target: &str) -> Result<(), String> {
 
 /// `tree` as text: a line of each node, two spaces deeper for each level,
 /// of its kind, its text, and its key, label, role, tooltip and focus when
-/// it has them; a list of its count and its row's template, and a view of
-/// tabs of its tabs and the one chosen. Its layout and its style are not
+/// it has them; a list of its count, its items given, each of its index and
+/// its texts, and its row's template, and a view of tabs of its tabs and
+/// the one chosen. Its layout and its style are not
 /// told, as a snapshot tells the tree's content.
 pub fn snapshot(tree: &Node) -> String {
     let mut out = String::new();
@@ -3126,6 +3386,17 @@ fn write_node(out: &mut String, node: &Node, depth: usize) {
     }
     out.push('\n');
     if let Kind::List(list) = &node.kind {
+        // Its items given, each of its texts, from its first.
+        for (at, item) in list.items.iter().enumerate() {
+            let texts: Vec<String> = item.texts.iter().map(|text| quoted(text)).collect();
+            let _ = writeln!(
+                out,
+                "{}item {} {}",
+                "  ".repeat(depth + 1),
+                list.first + at,
+                texts.join(" | ")
+            );
+        }
         let _ = writeln!(out, "{}row:", "  ".repeat(depth + 1));
         write_node(out, &list.row, depth + 2);
     }

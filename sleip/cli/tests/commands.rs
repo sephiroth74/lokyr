@@ -5,7 +5,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use lokyr_pkg_model::lock::{Lock, Locked, Source};
 use lokyr_pkg_model::manifest::Kind;
@@ -340,21 +340,24 @@ fn two_sleips_at_once_wait_on_the_store_s_lock() {
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     let held = std::fs::File::create(&path).unwrap();
     held.lock().unwrap();
-    let start = Instant::now();
     let mut waiting = sandbox
         .command(&["--json", "gc"])
         .stdout(Stdio::piped())
         .spawn()
         .unwrap();
-    std::thread::sleep(Duration::from_millis(400));
+    // It tells that it waits, however long it takes to start, and waits.
+    let mut lines =
+        std::io::BufRead::lines(std::io::BufReader::new(waiting.stdout.take().unwrap()));
+    let first: Value = serde_json::from_str(&lines.next().unwrap().unwrap()).unwrap();
+    assert_eq!(first["event"], "waiting");
+    std::thread::sleep(Duration::from_millis(200));
     assert!(waiting.try_wait().unwrap().is_none(), "it did not wait");
     drop(held);
-    let output = waiting.wait_with_output().unwrap();
-    assert!(output.status.success());
-    assert!(start.elapsed() >= Duration::from_millis(400));
-    let json = events(&output);
-    assert_eq!(json[0]["event"], "waiting");
-    assert_eq!(json.last().unwrap()["event"], "done");
+    let rest: Vec<Value> = lines
+        .map(|line| serde_json::from_str(&line.unwrap()).unwrap())
+        .collect();
+    assert!(waiting.wait().unwrap().success());
+    assert_eq!(rest.last().unwrap()["event"], "done");
     // Free, it takes the lock at once, of no wait.
     let free = sandbox.sleip(&["--json", "gc"]);
     assert_eq!(events(&free)[0]["event"], "done");
