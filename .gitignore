@@ -21,9 +21,10 @@ target/
 # Python's bytecode, of the benches' scripts
 __pycache__/
 
-# Editors and IDEs
+# Editors and IDEs, but the settings of the Luau plugins' template
 .idea/
 .vscode/
+!/crates/plugin-host-luau/luau/template/.vscode/
 *.iml
 
 # Claude Code: local state and project instructions stay out of the repository
