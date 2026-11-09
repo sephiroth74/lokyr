@@ -78,6 +78,9 @@ pub(super) struct Busy {
     /// What its requests take at once of its plugin's state, as it was
     /// before its first, which a call that fails gives back.
     pub(super) kept: Option<super::Kept>,
+    /// What its requests asked of the app and searched, which its bounds
+    /// count.
+    pub(super) tally: super::Tally,
 }
 
 /// How a call ended on the plugin's thread.
@@ -209,6 +212,7 @@ impl Worker {
             chain,
             focused,
             kept: None,
+            tally: super::Tally::default(),
         });
     }
 

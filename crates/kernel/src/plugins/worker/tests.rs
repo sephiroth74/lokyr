@@ -745,7 +745,7 @@ fn the_commands_that_a_worker_s_command_runs_are_of_its_chain_whenever_its_call_
         }]
     );
     // Those of an event's call, or of a command that the user ran, start
-    // from the top.
+    // from the top, of a new chain.
     plugins
         .run("busy.go", Args::new(), &mut app.context())
         .unwrap();
@@ -753,9 +753,9 @@ fn the_commands_that_a_worker_s_command_runs_are_of_its_chain_whenever_its_call_
     assert!(matches!(
         &plugins.take_requests()[..],
         [Request::Run {
-            chain: Chain { id: 0, depth: 0 },
+            chain: Chain { id, depth: 0 },
             ..
-        }]
+        }] if *id != 0 && *id != 7
     ));
 }
 

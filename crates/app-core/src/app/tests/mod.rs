@@ -2358,6 +2358,67 @@ fn a_plugin_s_requests_change_the_app_after_its_call() {
     assert_eq!(runs.get(), COMMANDS_WIDE + 1);
 }
 
+/// A plugin whose activation runs its command `fan.twice` 8 times, which
+/// runs itself twice, its runs counted.
+struct Fanner {
+    runs: std::rc::Rc<std::cell::Cell<usize>>,
+}
+
+impl plugins::Plugin for Fanner {
+    fn activate(&mut self, cx: &mut plugins::Cx<'_>) -> Result<(), Error> {
+        cx.register_command(Command {
+            name: "fan.twice".to_owned(),
+            title: "Twice".to_owned(),
+            category: Category::View,
+            capabilities: Vec::new(),
+            params: Vec::new(),
+            when: None,
+        })?;
+        for _ in 0..8 {
+            cx.run_command("fan.twice", Args::new())?;
+        }
+        Ok(())
+    }
+
+    fn on_command(&mut self, cx: &mut plugins::Cx<'_>, _: &str, _: Args) -> Result<(), Error> {
+        self.runs.set(self.runs.get() + 1);
+        cx.run_command("fan.twice", Args::new())?;
+        cx.run_command("fan.twice", Args::new())
+    }
+}
+
+#[test]
+fn a_call_s_runs_are_one_chain_however_many_it_asks() {
+    // An activation's 8 runs run as many as one chain runs, not 8 times
+    // as many.
+    let runs = std::rc::Rc::default();
+    let fanner = Fanner {
+        runs: std::rc::Rc::clone(&runs),
+    };
+    let mut fake = Fake::default();
+    let mut app = app(unpadded(), reader("")).with_plugin("fanner", Box::new(fanner));
+    fake.start(&mut app);
+    assert_eq!(runs.get(), COMMANDS_WIDE);
+}
+
+#[test]
+fn a_chain_under_way_keeps_its_runs_however_many_chains_come_after_it() {
+    let (_fake, mut app, _, _) = with_tester();
+    let under_way = plugins::new_chain();
+    app.chains.1.push(under_way.id);
+    assert!(app.may_run(under_way, "test.twice"));
+    // Many chains after it, as calls within its commands' would start.
+    for _ in 0..4 * CHAINS_KEPT {
+        assert!(app.may_run(plugins::new_chain(), "test.twice"));
+    }
+    assert!(app.chains.0.len() <= CHAINS_KEPT);
+    // Its count went on: the rest of its runs, and no more.
+    for _ in 1..COMMANDS_WIDE {
+        assert!(app.may_run(under_way, "test.twice"));
+    }
+    assert!(!app.may_run(under_way, "test.twice"));
+}
+
 /// The press of Command and the key of `letter`.
 fn command_key(code: KeyCode, letter: &str) -> WindowEvent {
     key_event(code, letter, CMD, true)

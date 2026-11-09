@@ -202,7 +202,8 @@ const COMMANDS_DEEP: usize = 16;
 const COMMANDS_WIDE: usize = 256;
 
 /// How many chains of commands the app keeps the runs of, the newest, as a
-/// worker's chain goes on over turns.
+/// worker's chain goes on over turns; and those under way, whatever their
+/// age.
 const CHAINS_KEPT: usize = 64;
 
 /// The catalogs of the texts that the app shows, the kernel's and its own,
@@ -624,8 +625,9 @@ pub struct App<B: Backend> {
     performance: Option<Performance>,
     performance_chosen: Option<bool>,
     /// The runs of each chain of commands that ran commands, of the newest
-    /// chains, by their ids, and the last id given.
-    chains: (BTreeMap<u64, usize>, u64),
+    /// chains, by their ids, and the chains whose commands run now, one
+    /// within another.
+    chains: (BTreeMap<u64, usize>, Vec<u64>),
     /// Whether the cursors and the text that blinks blink as on layers of
     /// their own without them, as the tests' fake platform, which draws
     /// nothing, shows them.
@@ -806,7 +808,7 @@ impl<B: Backend> App<B> {
             appearance_chosen: None,
             performance: None,
             performance_chosen: None,
-            chains: (BTreeMap::new(), 0),
+            chains: (BTreeMap::new(), Vec::new()),
             layers: false,
             menu_contexts: Vec::new(),
             menu_enabled: BTreeMap::new(),
@@ -2415,23 +2417,7 @@ impl<B: Backend> App<B> {
         if self.field_command(platform, name) {
             return;
         }
-        let chain = self.new_chain();
-        self.run_deep(platform, name, args, chain);
-    }
-
-    /// A new chain of commands that ran commands, which a command that the
-    /// user ran, or that a call of no command's asked, starts.
-    fn new_chain(&mut self) -> plugins::Chain {
-        let (runs, last) = &mut self.chains;
-        *last += 1;
-        runs.insert(*last, 0);
-        while runs.len() > CHAINS_KEPT {
-            runs.pop_first();
-        }
-        plugins::Chain {
-            id: *last,
-            depth: 0,
-        }
+        self.run_deep(platform, name, args, plugins::new_chain());
     }
 
     /// Counts a run of `chain`, which commands asked: whether it may run,
@@ -2443,11 +2429,26 @@ impl<B: Backend> App<B> {
             );
             return false;
         }
-        let runs = self.chains.0.entry(chain.id).or_insert(0);
-        *runs += 1;
-        if *runs > COMMANDS_WIDE {
+        let (chains, under_way) = &mut self.chains;
+        let runs = *chains
+            .entry(chain.id)
+            .and_modify(|runs| *runs += 1)
+            .or_insert(1);
+        // The oldest go, but those under way, whose runs a chain's
+        // commands' calls go on asking, so that none counts anew.
+        while chains.len() > CHAINS_KEPT {
+            let Some(old) = chains
+                .keys()
+                .copied()
+                .find(|id| *id != chain.id && !under_way.contains(id))
+            else {
+                break;
+            };
+            chains.remove(&old);
+        }
+        if runs > COMMANDS_WIDE {
             // Told once a chain.
-            if *runs == COMMANDS_WIDE + 1 {
+            if runs == COMMANDS_WIDE + 1 {
                 eprintln!(
                     "lokyr: `{command}` does not run, as commands that ran commands ran {COMMANDS_WIDE} of one chain"
                 );
@@ -2706,9 +2707,10 @@ impl<B: Backend> App<B> {
         for request in self.plugins.take_requests() {
             match request {
                 Request::Run { invocation, chain } => {
-                    // A call of no command's starts a chain.
+                    // A call of no command's starts a chain, which the
+                    // kernel gives its runs.
                     let chain = match chain.id {
-                        0 => self.new_chain(),
+                        0 => plugins::new_chain(),
                         _ => chain,
                     };
                     if self.may_run(chain, &invocation.command) {
@@ -2716,7 +2718,9 @@ impl<B: Backend> App<B> {
                             depth: chain.depth + 1,
                             ..chain
                         };
+                        self.chains.1.push(chain.id);
                         self.run_deep(platform, &invocation.command, invocation.args, deeper);
+                        self.chains.1.pop();
                     }
                 }
                 Request::OpenWindow(None) => self.open_window(platform),

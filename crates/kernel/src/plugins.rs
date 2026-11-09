@@ -695,6 +695,10 @@ const READ_PART: usize = 256;
 /// past which another is refused until one ends.
 const MOST_READS: usize = 4;
 
+/// The most searches that one call starts, each of a thread: as many panes
+/// as a window commonly shows, and more.
+pub const MOST_SEARCHES: usize = 16;
+
 /// How long a plugin that faulted waits before it starts again, its first
 /// time, which each fault within [`FAULTS_WITHIN`] doubles.
 const RESTART_AFTER: Duration = Duration::from_secs(1);
@@ -723,6 +727,15 @@ static LAST_ID: AtomicU64 = AtomicU64::new(0);
 /// An id that no read nor decoration of the process took.
 fn new_id() -> u64 {
     LAST_ID.fetch_add(1, Ordering::Relaxed) + 1
+}
+
+/// A new chain of commands, of an id of its own among every chain's, which
+/// the commands that a call of no command's asks start.
+pub fn new_chain() -> Chain {
+    Chain {
+        id: new_id(),
+        depth: 0,
+    }
 }
 
 impl std::fmt::Debug for Plugins {
@@ -2078,6 +2091,7 @@ impl Plugins {
                                 writes: &mut busy.writes,
                                 declarations_changed: &mut *declarations_changed,
                                 looking: false,
+                                tally: &mut busy.tally,
                             };
                             host::Host::handle(&mut host, asked)
                         }));
@@ -2123,6 +2137,7 @@ impl Plugins {
             out: mut sent,
             chain,
             kept,
+            tally,
             ..
         } = busy;
         let result = match done {
@@ -2179,6 +2194,7 @@ impl Plugins {
             if let Some(kept) = kept {
                 kept.restore(state);
             }
+            end_searches(state, &tally.searches, context.workspace);
         }
         deepen(&mut sent.requests, chain);
         out.merge(sent);
@@ -2394,17 +2410,18 @@ fn call<T>(
 ) -> Result<T, Error> {
     let (requests, reads) = (out.requests.len(), out.reads.len());
     let kept = Kept::of(state);
-    let mut writes = Vec::new();
+    let (mut writes, mut tally) = (Vec::new(), Tally::default());
     let outcome = within(
         (plugin, state),
         context,
-        (&mut *out, &mut writes),
+        (&mut *out, &mut writes, &mut tally),
         (declarations_changed, callback, false),
         call,
     );
     match outcome {
         Ok(Ok(result)) => {
             apply(writes, context, out, state);
+            deepen(&mut out.requests[requests..], Chain::default());
             Ok(result)
         }
         // A call that returns a fault, as a limit of its plugin's VM gives
@@ -2417,12 +2434,13 @@ fn call<T>(
             Err(error)
         }
         // A call that failed leaves things as they were: its writes, its
-        // requests and its reads go, and what its requests took at once of
-        // its state comes back.
+        // requests and its reads go, what its requests took at once of its
+        // state comes back, and the searches that it started end.
         Ok(Err(error)) => {
             out.requests.truncate(requests);
             out.reads.truncate(reads);
             kept.restore(state);
+            end_searches(state, &tally.searches, context.workspace);
             Err(error)
         }
         // One that panicked too, and its plugin, disabled, leaves nothing.
@@ -2485,7 +2503,7 @@ fn look<T>(
     let outcome = within(
         (plugin, state),
         context,
-        (&mut out, &mut writes),
+        (&mut out, &mut writes, &mut Tally::default()),
         (declarations_changed, callback, true),
         call,
     );
@@ -2526,7 +2544,7 @@ fn fault(
 fn within<T>(
     (plugin, state): (&mut dyn Plugin, &mut State),
     context: &mut Context<'_>,
-    (out, writes): (&mut Outbox, &mut Vec<Write>),
+    (out, writes, tally): (&mut Outbox, &mut Vec<Write>, &mut Tally),
     (declarations_changed, callback, looking): (&mut bool, &'static str, bool),
     call: impl FnOnce(&mut dyn Plugin, &mut Cx<'_>) -> Result<T, Error>,
 ) -> Result<Result<T, Error>, Result<T, Error>> {
@@ -2540,6 +2558,7 @@ fn within<T>(
             writes: &mut *writes,
             declarations_changed: &mut *declarations_changed,
             looking,
+            tally: &mut *tally,
         };
         call(plugin, &mut Cx::new(&mut host, &name))
     }));
@@ -2668,6 +2687,21 @@ fn end_lingering(lingering: &mut Vec<search::Search>, pane: host::PaneId, worksp
     let mut terminal = workspace.pane(PaneId::of(pane.0)).and_then(Pane::terminal);
     for search in gone {
         search.end(terminal.as_deref_mut());
+    }
+}
+
+/// Ends the searches of `ids` of the plugin of `state`, which a call that
+/// failed started, of `workspace`: its ids name nothing, as the call left
+/// things as they were.
+fn end_searches(state: &mut State, ids: &[u64], workspace: &Workspace) {
+    for id in ids {
+        if let Some(at) = state.searches.iter().position(|kept| kept.id == *id) {
+            let ended = state.searches.remove(at);
+            let mut terminal = workspace
+                .pane(PaneId::of(ended.pane.0))
+                .and_then(Pane::terminal);
+            ended.end(terminal.as_deref_mut());
+        }
     }
 }
 
@@ -3275,8 +3309,11 @@ fn disable(state: &mut State, registry: &mut Registry, declarations_changed: &mu
 }
 
 /// Gives the commands that `requests` run the chain `chain`, of the
-/// command whose call asked them.
+/// command whose call asked them, or a new chain, one for all of them, of a
+/// call of no command's, as `chain`'s id of 0 tells: so that each call's
+/// runs count against one chain's bound, however many it asks.
 fn deepen(requests: &mut [Request], chain: Chain) {
+    let chain = if chain.id == 0 { new_chain() } else { chain };
     for request in requests {
         if let Request::Run { chain: asked, .. } = request {
             *asked = chain;
@@ -3347,6 +3384,16 @@ struct Host<'h, 'c> {
     declarations_changed: &'h mut bool,
     /// Whether the call only looks, as `applies`, which declares nothing.
     looking: bool,
+    /// What the call asked of the app and searched so far.
+    tally: &'h mut Tally,
+}
+
+/// What a call's requests asked of the app, which count with its writes,
+/// and the searches that they started, which a call that fails ends.
+#[derive(Debug, Default)]
+pub(super) struct Tally {
+    asked: usize,
+    searches: Vec<u64>,
 }
 
 impl Host<'_, '_> {
@@ -3590,6 +3637,24 @@ impl Host<'_, '_> {
     }
 
     /// Answers `request`, a read, with the state as it is now.
+    /// Whether the call may start a search: none of a call that only
+    /// looks, and [`MOST_SEARCHES`] at most of one.
+    fn searches_within(&self) -> Result<(), Error> {
+        if self.looking {
+            return Err(Error::new(
+                Code::Failed,
+                "a call that only looks, as `applies`, starts no search",
+            ));
+        }
+        if self.tally.searches.len() >= MOST_SEARCHES {
+            return Err(Error::new(
+                Code::Failed,
+                format!("a call starts {MOST_SEARCHES} searches at most"),
+            ));
+        }
+        Ok(())
+    }
+
     fn read(&mut self, request: Asked) -> Result<Response, Error> {
         Ok(match request {
             Asked::ClipboardText => Response::Text(self.context.clipboard.text()),
@@ -3659,6 +3724,7 @@ impl Host<'_, '_> {
                 Response::Reading(id)
             }
             Asked::Search { pane, query } => {
+                self.searches_within()?;
                 let found = self.pane(pane)?;
                 let reader = found.reader().ok_or_else(|| {
                     Error::new(
@@ -3691,9 +3757,16 @@ impl Host<'_, '_> {
                 self.state
                     .searches
                     .push(search::Search::start(id, pane, reader, query));
+                self.tally.searches.push(id);
                 Response::Searching(id)
             }
             Asked::EndSearch(id) => {
+                if self.looking {
+                    return Err(Error::new(
+                        Code::Failed,
+                        "a call that only looks, as `applies`, ends no search",
+                    ));
+                }
                 if let Some(at) = self.state.searches.iter().position(|kept| kept.id == id) {
                     let ended = self.state.searches.remove(at);
                     end_lingering(
@@ -3886,12 +3959,7 @@ impl Host<'_, '_> {
     /// does one past the [`MOST_WRITES`] of a call, which waits for its
     /// end.
     fn queue(&mut self, request: Asked) -> Result<Response, Error> {
-        if self.writes.len() >= MOST_WRITES {
-            return Err(Error::new(
-                Code::Failed,
-                format!("a call writes {MOST_WRITES} times at most, which apply as it returns"),
-            ));
-        }
+        self.within_writes()?;
         match &request {
             Asked::ShowMatches { search, .. } => {
                 if !self.state.searches.iter().any(|kept| kept.id == *search) {
@@ -4170,9 +4238,27 @@ impl Host<'_, '_> {
         Ok(Response::Done)
     }
 
+    /// Whether the call may write or ask the app once more: its writes and
+    /// its requests of the app's, [`MOST_WRITES`] at most, wait for its
+    /// end.
+    fn within_writes(&self) -> Result<(), Error> {
+        if self.writes.len() + self.tally.asked >= MOST_WRITES {
+            return Err(Error::new(
+                Code::Failed,
+                format!(
+                    "a call writes and asks the app {MOST_WRITES} times at most, \
+                     which apply as it returns"
+                ),
+            ));
+        }
+        Ok(())
+    }
+
     /// Checks `request`, of the app's, and passes it on, for the app to do
     /// once the call returns.
     fn ask_app(&mut self, request: Asked) -> Result<Response, Error> {
+        self.within_writes()?;
+        self.tally.asked += 1;
         let asked = match request {
             Asked::RunCommand { name, args } => {
                 let args = self.check_run(&name, args)?;

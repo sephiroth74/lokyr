@@ -19,6 +19,7 @@ use crate::keymap::{Context as Keys, Keymap, Pressed, Resolved, Resolver};
 use crate::l10n::Texts;
 use crate::workspace::{Environment, Grid, Settings};
 
+mod bounds;
 mod config;
 
 type Activate = Box<dyn FnMut(&mut Cx<'_>) -> Result<(), Error>>;
@@ -803,6 +804,13 @@ fn what_changes_the_app_waits_for_the_call_to_return() {
     plugins
         .run("app.go", Args::new(), &mut app.context())
         .unwrap();
+    let mut asked = plugins.take_requests();
+    // The run of the user's run's chain, a new one.
+    let Some(Request::Run { chain, .. }) = asked.last_mut() else {
+        panic!("the last request is a run");
+    };
+    assert!(chain.id != 0 && chain.depth == 0);
+    *chain = Chain::default();
     assert_eq!(
         *errors.borrow(),
         [
@@ -813,7 +821,7 @@ fn what_changes_the_app_waits_for_the_call_to_return() {
         ]
     );
     assert_eq!(
-        plugins.take_requests(),
+        asked,
         [
             Request::OpenWindow(None),
             Request::Quit,
@@ -1654,6 +1662,7 @@ fn a_call_is_its_own_plugin_s() {
         writes: &mut writes,
         declarations_changed: &mut changed,
         looking: false,
+        tally: &mut Tally::default(),
     };
     let call = |caller: &str| Call {
         caller: caller.to_owned(),
