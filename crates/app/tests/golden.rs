@@ -158,6 +158,7 @@ impl Drawing {
         let cursor = scene.cursor.map(|shape| CursorLook {
             shape,
             thickness: cell.underline_thickness.max(1),
+            length: 1.0,
         });
         let selected = snapshot.selection();
         let contains =

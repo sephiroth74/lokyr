@@ -1643,6 +1643,7 @@ mod tests {
                         columns: 1,
                         shape: CursorShape::Hollow,
                         thickness: 1,
+                        length: 1.0,
                         color: white,
                     }),
                     system_weight: false,

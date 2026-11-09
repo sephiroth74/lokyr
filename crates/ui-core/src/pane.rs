@@ -250,13 +250,16 @@ impl Default for TextLook {
 }
 
 /// How the cursor draws in a frame.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct CursorLook {
     /// Its shape.
     pub shape: CursorShape,
     /// The pixels of a bar's width and of an underline's height; a hollow
     /// block's edges take the face's underline thickness.
     pub thickness: u32,
+    /// The share of the cell of a bar's height and of an underline's
+    /// width, centered in it.
+    pub length: f32,
 }
 
 /// The text that an input method composes, which a pane shows at its
@@ -1292,6 +1295,7 @@ fn place_cursor(snapshot: &Snapshot, look: CursorLook, cell: &CellMetrics) -> Op
             CursorShape::Bar | CursorShape::Underline => look.thickness,
             CursorShape::Block | CursorShape::Hollow => cell.underline_thickness,
         },
+        length: look.length,
         color: color(snapshot.colors().cursor),
     })
 }
@@ -1581,6 +1585,7 @@ mod tests {
         let look = CursorLook {
             shape: CursorShape::Block,
             thickness: 1,
+            length: 1.0,
         };
         let mut runs = Runs::default();
         cells(&under, &cell(), 0, 0, None, Some(look), &mut runs);
@@ -1840,6 +1845,7 @@ mod tests {
         let block = CursorLook {
             shape: CursorShape::Block,
             thickness: 2,
+            length: 1.0,
         };
         let whole = cells(
             &shown,
@@ -1901,6 +1907,7 @@ mod tests {
         let bar = CursorLook {
             shape: CursorShape::Bar,
             thickness: 2,
+            length: 1.0,
         };
         let (_, _, apart) = cursor_cells(&grid, &shown, bar, &cell(), None).unwrap();
         assert!(apart.glyphs.is_empty() && apart.lines.is_empty());
@@ -1908,6 +1915,11 @@ mod tests {
             apart.cursor.map(|cursor| cursor.shape),
             Some(CursorShape::Bar)
         );
+        // Of a share of the cell, which its own layer draws as the grid
+        // would.
+        let short = CursorLook { length: 0.6, ..bar };
+        let (_, _, apart) = cursor_cells(&grid, &shown, short, &cell(), None).unwrap();
+        assert_eq!(apart.cursor.map(|cursor| cursor.length), Some(0.6));
         // A wide character's two cells, and none for a hidden cursor.
         let wide = snapshot(6, 1, "日\x1b[2D");
         let grid = cells(&wide, &cell(), 0, 0, None, None, &mut atlas(&mut first));
@@ -2148,6 +2160,7 @@ mod tests {
         let look = CursorLook {
             shape,
             thickness: 3,
+            length: 1.0,
         };
         let batch = cells(
             snapshot,
@@ -2188,6 +2201,7 @@ mod tests {
                     columns: 1,
                     shape,
                     thickness,
+                    length: 1.0,
                     color: color(colors.cursor),
                 })
             );
@@ -2253,6 +2267,7 @@ mod tests {
         let look = CursorLook {
             shape: CursorShape::Block,
             thickness: 1,
+            length: 1.0,
         };
         let batch = cells(&snapshot, &cell(), 0, 0, None, Some(look), &mut Marks);
         assert_eq!(batch.cursor.map(|cursor| cursor.column), Some(1));
@@ -2364,6 +2379,7 @@ mod tests {
         let look = CursorLook {
             shape: CursorShape::Bar,
             thickness: 2,
+            length: 1.0,
         };
         let mut batch = cells(
             &snapshot,
@@ -2414,6 +2430,7 @@ mod tests {
         let look = CursorLook {
             shape,
             thickness: 2,
+            length: 1.0,
         };
         cells(
             &snapshot(cols, 1, text),
@@ -2485,6 +2502,7 @@ mod tests {
         let look = CursorLook {
             shape: CursorShape::Block,
             thickness: 2,
+            length: 1.0,
         };
         let snapshot = snapshot(8, 1, "\x1b[4;9mabcd\x1b[2D");
         let mut asked = Vec::new();
@@ -2543,6 +2561,7 @@ mod tests {
         let look = CursorLook {
             shape: CursorShape::Block,
             thickness: 2,
+            length: 1.0,
         };
         let compose = |text: &str, composed: &str, cursor: usize| {
             let snapshot = snapshot(8, 1, text);
@@ -2591,6 +2610,7 @@ mod tests {
         let look = CursorLook {
             shape: CursorShape::Block,
             thickness: 2,
+            length: 1.0,
         };
         let compose = |columns: u16, text: &str, composed: &str, cursor: usize| {
             let snapshot = snapshot(columns, 1, text);

@@ -69,6 +69,7 @@ blink = false                        # true | false: text that programs make bli
 shape = "bar"                        # block | bar | underline | hollow
 blink = false                        # true | false
 thickness = 2                        # points, from 0.5 to 20
+length = 0.6                         # a bar's height, an underline's width, from 0.1 to 1
 blink-interval = 600                 # ms on, then off, from 100 to 5000
 blink-timeout = 30                   # seconds after a key or output; 0 never stops
 smooth-blink = "custom"              # off | breathing | linear | fast | slow | subtle | custom
@@ -483,6 +484,18 @@ The width of a bar and the height of an underline, in points, so that they keep 
 | from `0.5` to `20` | the font's underline thickness |
 
 A hollow block's edges always take the font's underline thickness.
+
+### `length`
+
+<sub>Platforms: macOS</sub>
+
+The height of a bar and the width of an underline, as a share of the cell, centered in it: `0.6` draws a bar of six tenths of the cell's height, with the rest above and below it, and an underline of six tenths of the cell's width, under the middle of the character; an underline under a wide character takes the share of its two cells. `thickness` stays the other side, a bar's width and an underline's height.
+
+| Values | Default |
+|---|---|
+| from `0.1` to `1` | `1`, the whole cell |
+
+A block and a hollow block always fill the cell. The shapes that programs ask for, as vim's bar in insert mode, take it too.
 
 ### `blink-interval`
 

@@ -8,6 +8,8 @@
 //! blink = true
 //! thickness = 2     # a bar's width and an underline's height, in points,
 //!                   # 0.5 to 20; the face's underline thickness when absent
+//! length = 0.6      # a bar's height and an underline's width, a share of
+//!                   # the cell, 0.1 to 1, centered in it
 //! blink-interval = 500         # on, then off, in ms, without smooth-blink
 //! blink-timeout = 15           # seconds after a key or output; 0 never stops
 //! smooth-blink = "breathing"   # off | breathing | linear | fast | slow | subtle | custom
@@ -46,6 +48,8 @@ pub struct CursorConfig {
     /// A bar's width and an underline's height; `None` for the face's
     /// underline thickness.
     pub thickness: Option<Thickness>,
+    /// A bar's height and an underline's width, of the cell's.
+    pub length: Share,
     /// How long it stays on, then off, without smooth blinking.
     pub blink_interval: Interval,
     /// How long it blinks after the last key or output: `None` for ever.
@@ -76,6 +80,7 @@ impl Default for CursorConfig {
             shape: Shape::Block,
             blink: true,
             thickness: None,
+            length: Share(1.0),
             blink_interval: Interval(500),
             blink_timeout: Timeout(15),
             smooth_blink: SmoothBlink::Off,
@@ -176,6 +181,47 @@ impl TryFrom<f64> for Thickness {
         } else {
             Err(format!(
                 "the cursor's thickness, in points, is from {} to {}, not {points}",
+                Self::MIN,
+                Self::MAX
+            ))
+        }
+    }
+}
+
+/// The share of the cell that a bar's height and an underline's width
+/// take.
+#[derive(Clone, Copy, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(try_from = "f64", into = "f64")]
+pub struct Share(f32);
+
+impl From<Share> for f64 {
+    fn from(share: Share) -> Self {
+        lokyr_text_core::as_written(share.0)
+    }
+}
+
+impl Share {
+    /// The shortest.
+    pub const MIN: f32 = 0.1;
+    /// The whole cell.
+    pub const MAX: f32 = 1.0;
+
+    /// The share, from 0.1 to 1.
+    pub fn value(self) -> f32 {
+        self.0
+    }
+}
+
+impl TryFrom<f64> for Share {
+    type Error = String;
+
+    fn try_from(share: f64) -> Result<Self, Self::Error> {
+        if (f64::from(Self::MIN)..=f64::from(Self::MAX)).contains(&share) {
+            // Within the range, the value fits an `f32`.
+            Ok(Self(share as f32))
+        } else {
+            Err(format!(
+                "the cursor's length, a share of the cell, is from {} to {}, not {share}",
                 Self::MIN,
                 Self::MAX
             ))

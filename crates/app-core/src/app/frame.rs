@@ -473,6 +473,7 @@ impl<B: Backend> App<B> {
         let hollow = CursorLook {
             shape: CursorShape::Hollow,
             thickness: thickness.thickness(&cell, size.scale as f32),
+            length: thickness.length.value(),
         };
         // Each pane at its room's corner, of the picture's.
         let panes: Vec<(&Pane, (i32, i32))> = rooms
@@ -862,6 +863,7 @@ impl<B: Backend> App<B> {
         let cursor = shown_cursor.map(|(shape, _)| CursorLook {
             shape,
             thickness: config.thickness(&cell, size.scale as f32),
+            length: config.length.value(),
         });
         // A cursor of a layer of its own, which blinks apart from the grid.
         let apart = state.cursor_layer.surface.is_some();
@@ -904,6 +906,7 @@ impl<B: Backend> App<B> {
         let hollow = CursorLook {
             shape: CursorShape::Hollow,
             thickness: config.thickness(&cell, size.scale as f32),
+            length: config.length.value(),
         };
         // How much the panes that have not the keyboard fade, as the plugins
         // ask.

@@ -2481,6 +2481,27 @@ long-command = 0
             )
         );
         assert_eq!(
+            parse("[cursor]\nlength = 0.6\n")
+                .unwrap()
+                .cursor
+                .length
+                .value(),
+            0.6
+        );
+        assert_eq!(CursorConfig::default().length.value(), 1.0);
+        assert_eq!(
+            error("[cursor]\nlength = 0\n"),
+            (
+                Some((2, 10)),
+                "the cursor's length, a share of the cell, is from 0.1 to 1, not 0".to_owned()
+            )
+        );
+        assert!(
+            error("[cursor]\nlength = 1.5\n")
+                .1
+                .contains("is from 0.1 to 1, not 1.5")
+        );
+        assert_eq!(
             error("[cursor]\nblnk = true\n").1,
             "unknown key `blnk` in `[cursor]`; did you mean `blink`?"
         );
@@ -2810,6 +2831,7 @@ long-command = 0
                 "shape",
                 "blink",
                 "thickness",
+                "length",
                 "blink-interval",
                 "blink-timeout",
                 "smooth-blink",

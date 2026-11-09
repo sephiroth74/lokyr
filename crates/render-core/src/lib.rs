@@ -224,6 +224,9 @@ pub struct CellCursor {
     pub shape: CursorShape,
     /// The pixels that a bar, an underline or a hollow block's edges take.
     pub thickness: u32,
+    /// The share of the cell that a bar's height and an underline's width
+    /// take, from above 0 to 1, the whole cell, centered in it.
+    pub length: f32,
     /// Its color.
     pub color: Color,
 }
@@ -242,15 +245,30 @@ impl CellCursor {
             width,
             height,
         };
+        // A bar's height or an underline's width of the share `length` of
+        // `whole`, a pixel at least, and the pixels before it that center
+        // it.
+        let share = |whole: u32| {
+            let length = self.length.clamp(0.0, 1.0);
+            // A cast from a float saturates.
+            let long = ((whole as f32 * length).round() as u32).clamp(1, whole.max(1));
+            (long, ((whole - long.min(whole)) / 2) as i32)
+        };
         match self.shape {
             CursorShape::Block => vec![rect(left, top, width, height)],
-            CursorShape::Bar => vec![rect(left, top, thickness, height)],
-            CursorShape::Underline => vec![rect(
-                left,
-                top + (height - thickness) as i32,
-                width,
-                thickness,
-            )],
+            CursorShape::Bar => {
+                let (tall, above) = share(height);
+                vec![rect(left, top + above, thickness, tall)]
+            }
+            CursorShape::Underline => {
+                let (wide, before) = share(width);
+                vec![rect(
+                    left + before,
+                    top + (height - thickness) as i32,
+                    wide,
+                    thickness,
+                )]
+            }
             CursorShape::Hollow => {
                 let inner = height.saturating_sub(thickness * 2);
                 vec![
@@ -576,6 +594,7 @@ mod tests {
             columns,
             shape,
             thickness: 2,
+            length: 1.0,
             color: Color::default(),
         }
     }
@@ -638,6 +657,32 @@ mod tests {
                 rect(26, 38, 2, 12),
                 rect(32, 38, 2, 12),
             ]
+        );
+    }
+
+    #[test]
+    fn a_bar_and_an_underline_of_a_share_of_the_cell_are_centered_in_it() {
+        // Cells of 8 by 16, from (10, 20): the third of the second row is
+        // at (26, 36).
+        let rects = |shape, columns, length| {
+            let mut short = cursor(shape, columns);
+            short.length = length;
+            short.rects(10, 20, 8, 16)
+        };
+        // A bar of 10 pixels of 16, 3 above and 3 below.
+        assert_eq!(rects(CursorShape::Bar, 1, 0.6), [rect(26, 39, 2, 10)]);
+        // An underline of 5 pixels of 8, 1 before it, and of a wide
+        // character, 10 of 16, 3 before it.
+        assert_eq!(rects(CursorShape::Underline, 1, 0.6), [rect(27, 50, 5, 2)]);
+        assert_eq!(rects(CursorShape::Underline, 2, 0.6), [rect(29, 50, 10, 2)]);
+        // A pixel at least, the whole cell at most; a block and a hollow
+        // one keep the whole cell.
+        assert_eq!(rects(CursorShape::Bar, 1, 0.0), [rect(26, 43, 2, 1)]);
+        assert_eq!(rects(CursorShape::Bar, 1, 3.0), [rect(26, 36, 2, 16)]);
+        assert_eq!(rects(CursorShape::Block, 1, 0.5), [rect(26, 36, 8, 16)]);
+        assert_eq!(
+            rects(CursorShape::Hollow, 1, 0.5),
+            rects(CursorShape::Hollow, 1, 1.0)
         );
     }
 
