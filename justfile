@@ -27,6 +27,13 @@ vttest_commit := "0229d7171a8574a2bf406c6ce14549f65d810e51"
 # The commit of vtebench (https://github.com/alacritty/vtebench) whose
 # scenarios `just bench` measures, rebuilt from its scripts, with its data
 # files: bump it in a dedicated commit.
+# The image of Linux's checks, which `just linux-image` makes.
+linux_image := "lokyr-linux"
+# The containers' resolver, the Mac's first of IPv4, as `container`'s own,
+# of its network's gateway, may answer nothing, as on a Mac of a resolver
+# of its local network: `--dns <address>`, or nothing of none.
+linux_dns := "scutil --dns | awk '/nameserver\\[[0-9]+\\] : [0-9.]+$/ { print \"--dns \" $3; exit }'"
+
 vtebench_commit := "ead80032e57dee2e75f0b51f2ea67528647d9944"
 
 # Platform-independent crates, the tools of the terminal's tests and
@@ -76,10 +83,39 @@ clippy:
 # Lint the codebase: formatting, then clippy.
 lint: fmt-check clippy
 
-# Check the platform-independent crates for Linux, from any host, with the tests of those whose tests build for it from macOS: the VT core's and the search's need a C compiler for Linux, as criterion builds C for its target.
-check-linux:
+# Check the platform-independent crates for x86_64 Linux, with the tests of those whose tests build for it from another system, in the container of Linux's checks, of Ubuntu's cross compilers: the VT core's and the search's need a C compiler for Linux, as criterion builds C for its target, and Luau's crates a C++ one.
+check-linux: (linux "check-linux-here")
+
+# `just check-linux`, on a Linux of the cross compilers for x86_64, as the container of Linux's checks is.
+check-linux-here:
     cargo check --locked --target x86_64-unknown-linux-gnu {{ portable }}
     cargo check --locked --target x86_64-unknown-linux-gnu --tests {{ portable_tests }}
+
+# The image of Linux's checks, of tools/linux/Containerfile, made anew, of the toolchain of rust-toolchain.toml (Apple's `container`, macOS 26 or later).
+linux-image:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    container build --tag {{ linux_image }} --file tools/linux/Containerfile $({{ linux_dns }}) \
+        --build-arg TOOLCHAIN=$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml) tools/linux
+
+# Run `recipes` in the container of Linux's checks, the checkout mounted, cargo's downloads and the build in volumes of their own, apart from the Mac's `target/`; the image made first if there is none.
+linux +recipes:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    container image inspect {{ linux_image }} >/dev/null 2>&1 || just linux-image
+    # Their sizes the most they grow to, of the disk's space as they fill.
+    container volume inspect lokyr-linux-registry >/dev/null 2>&1 \
+        || container volume create -s 8G lokyr-linux-registry >/dev/null
+    container volume inspect lokyr-linux-target >/dev/null 2>&1 \
+        || container volume create -s 64G lokyr-linux-target >/dev/null
+    container run --rm --cpus {{ num_cpus() }} --memory 8G $({{ linux_dns }}) \
+        --volume "$PWD:/lokyr" --workdir /lokyr \
+        --volume lokyr-linux-registry:/usr/local/cargo/registry \
+        --volume lokyr-linux-target:/target --env CARGO_TARGET_DIR=/target \
+        {{ linux_image }} just {{ recipes }}
+
+# CI's Linux job, in the container of Linux's checks, of no minute of CI's.
+test-linux: (linux "fmt-check" "check-deps" "check-comments" "check-links" "check-dist" "deny" "test-portable")
 
 # Test the platform-independent crates on the host (used by the Linux CI job), every suite even after one fails.
 test-portable:

@@ -613,7 +613,9 @@ fn line_text(line: &lokyr_vt_core::terminal::Line) -> String {
 #[test]
 fn a_renderer_that_falls_behind_draws_the_latest_state() {
     let (sender, woken) = mpsc::channel();
-    let script = r#"i=0; while [ $i -lt 3000 ]; do echo "n $i"; i=$((i+1)); done; echo done"#;
+    // Output of some 250 KB, past what a pseudo-terminal holds and past a
+    // slice, so that it comes in slices however fast the system reads it.
+    let script = r#"i=0; while [ $i -lt 30000 ]; do echo "n $i"; i=$((i+1)); done; echo done"#;
     let session = Arc::new(
         Session::spawn(&sh(script), move || {
             let _ = sender.send(());

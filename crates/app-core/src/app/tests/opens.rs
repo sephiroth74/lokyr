@@ -135,11 +135,18 @@ fn a_script_not_executable_runs_of_its_interpreter_never_asked_for_as_a_theme() 
     let mut app = app(Config::default(), quiet());
     fake.start(&mut app);
     // Of its extension's interpreter: zsh's `print`, and Python's, which
-    // `/bin/sh` reads otherwise.
-    let zsh = base.join("deploy.zsh");
-    std::fs::write(&zsh, "print -r -- \"zsh ${ZSH_VERSION:+ran}\"\n").unwrap();
-    let window = open_one(&mut fake, &mut app, vec![zsh]);
-    shows(&mut fake, &mut app, window, "zsh ran");
+    // `/bin/sh` reads otherwise; zsh's where the system has it, as macOS
+    // does and a Linux may not.
+    let has_zsh = std::process::Command::new("zsh")
+        .args(["-c", "true"])
+        .status()
+        .is_ok_and(|status| status.success());
+    if has_zsh {
+        let zsh = base.join("deploy.zsh");
+        std::fs::write(&zsh, "print -r -- \"zsh ${ZSH_VERSION:+ran}\"\n").unwrap();
+        let window = open_one(&mut fake, &mut app, vec![zsh]);
+        shows(&mut fake, &mut app, window, "zsh ran");
+    }
     let python = base.join("tool.py");
     std::fs::write(
         &python,
@@ -154,9 +161,17 @@ fn a_script_not_executable_runs_of_its_interpreter_never_asked_for_as_a_theme() 
     shows(&mut fake, &mut app, window, "sh ran");
     // Of its first line's, whatever its extension.
     let named = base.join("named.txt");
-    std::fs::write(&named, "#!/bin/zsh -f\nprint -r -- \"named ${ZSH_NAME}\"\n").unwrap();
+    let (first, told) = if has_zsh {
+        (
+            "#!/bin/zsh -f\nprint -r -- \"named ${ZSH_NAME}\"\n",
+            "named zsh",
+        )
+    } else {
+        ("#!/bin/sh\necho \"named sh\"\n", "named sh")
+    };
+    std::fs::write(&named, first).unwrap();
     let window = open_one(&mut fake, &mut app, vec![named]);
-    shows(&mut fake, &mut app, window, "named zsh");
+    shows(&mut fake, &mut app, window, told);
     // A path of `!`, which csh and tcsh read as history's even in quotes,
     // does not run, and a notice tells why.
     let bang = base.join("Install!.command");
