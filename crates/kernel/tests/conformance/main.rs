@@ -20,6 +20,7 @@ use lokyr_kernel::plugins::{
     Clipboard, Closing, Context, Cx, Event, Panes, Plugin, Plugins, Request as AppRequest,
 };
 use lokyr_kernel::workspace::{Environment, Grid, Pane, PaneId, Settings, Workspace};
+use lokyr_plugin_host_luau::conformer::{Conformer as LuauConformer, Ids, Taken};
 use lokyr_plugin_sdk::command::Capability;
 use lokyr_plugin_sdk::event::WorkspaceEvent;
 use lokyr_plugin_sdk::fake::FakeHost;
@@ -367,11 +368,37 @@ impl Symbols {
     }
 }
 
-/// The test plugin of `scenario`, in `world`, and its trace.
-fn conformer(scenario: &Scenario, world: &World) -> (Conformer, Rc<RefCell<Vec<Entry>>>) {
-    let trace = Rc::new(RefCell::new(Vec::new()));
-    let plugin = Conformer {
-        asks: scenario
+impl Ids for Symbols {
+    fn resolved(&self, request: &Request) -> Request {
+        Symbols::resolved(self, request)
+    }
+
+    fn response(&mut self, response: Response) -> Response {
+        Symbols::response(self, response)
+    }
+
+    fn event(&mut self, event: Event) -> Event {
+        Symbols::event(self, event)
+    }
+}
+
+/// The front end of a test plugin.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Front {
+    /// The SDK's, of Rust.
+    Rust,
+    /// Luau's, whose plugin takes the scenario as JSON.
+    Luau,
+}
+
+/// What a test plugin did and heard so far.
+type Trace = Box<dyn Fn() -> Vec<Entry>>;
+
+/// The test plugin of `scenario`, in `world`, of the front end `front`, and
+/// its trace.
+fn conformer(scenario: &Scenario, world: &World, front: Front) -> (Box<dyn Plugin>, Trace) {
+    let asks = |scenario: &Scenario| -> VecDeque<Vec<Request>> {
+        scenario
             .steps
             .iter()
             .filter(|step| !step.asks.is_empty())
@@ -381,12 +408,43 @@ fn conformer(scenario: &Scenario, world: &World) -> (Conformer, Rc<RefCell<Vec<E
                     .map(|(request, _)| request.clone())
                     .collect()
             })
-            .collect(),
-        subscriptions: scenario.subscriptions.clone(),
-        symbols: Symbols::new(world),
-        trace: Rc::clone(&trace),
+            .collect()
     };
-    (plugin, trace)
+    match front {
+        Front::Rust => {
+            let trace = Rc::new(RefCell::new(Vec::new()));
+            let plugin = Conformer {
+                asks: asks(scenario),
+                subscriptions: scenario.subscriptions.clone(),
+                symbols: Symbols::new(world),
+                trace: Rc::clone(&trace),
+            };
+            (Box::new(plugin), Box::new(move || trace.borrow().clone()))
+        }
+        Front::Luau => {
+            let given = scenarios::from_json(&scenarios::json(scenario));
+            let (plugin, trace) = LuauConformer::new(
+                name(scenario),
+                scenarios::ask_command(),
+                given.subscriptions.clone(),
+                asks(&given),
+                Box::new(Symbols::new(world)),
+            );
+            let entries = move || {
+                trace
+                    .borrow()
+                    .iter()
+                    .map(|taken| match taken {
+                        Taken::Asked(request, response) => {
+                            Entry::Asked(request.clone(), response.clone())
+                        }
+                        Taken::Heard(events) => Entry::Heard(events.clone()),
+                    })
+                    .collect()
+            };
+            (Box::new(plugin), Box::new(entries))
+        }
+    }
 }
 
 /// The trace that `scenario` asks for: each step's requests with their
@@ -607,19 +665,24 @@ fn name(scenario: &Scenario) -> &'static str {
 /// of a state directory of its own, `state`: the host's part of the app's,
 /// the workspace's changes posted to the plugins and the renders that
 /// their calls ask for made, after each step's call.
-fn on_kernel(scenario: &Scenario, kernel: &mut Kernel, state: &std::path::Path) -> Vec<Entry> {
+fn on_kernel(
+    scenario: &Scenario,
+    kernel: &mut Kernel,
+    state: &std::path::Path,
+    front: Front,
+) -> Vec<Entry> {
     // Each scenario's plugin registers its command anew.
     kernel.registry = Registry::default();
     let _ = kernel.workspace.take_events();
     let world = kernel.world.clone();
-    let (plugin, trace) = conformer(scenario, &world);
+    let (plugin, trace) = conformer(scenario, &world, front);
     let mut plugins = Plugins::new();
     match &scenario.capabilities {
-        None => plugins.add(name(scenario), Box::new(plugin)).unwrap(),
+        None => plugins.add(name(scenario), plugin).unwrap(),
         Some(capabilities) => {
             let manifest =
                 lokyr_pkg_model::manifest::Manifest::parse(&manifest(capabilities)).unwrap();
-            plugins.add_declared(manifest, Box::new(plugin)).unwrap();
+            plugins.add_declared(manifest, plugin).unwrap();
         }
     }
     plugins.set_state_directory(Some(state.to_path_buf()));
@@ -654,8 +717,10 @@ fn on_kernel(scenario: &Scenario, kernel: &mut Kernel, state: &std::path::Path) 
     };
     for step in &scenario.steps {
         if !step.asks.is_empty() {
-            // Its own failures are the requests' answers in the trace.
-            let _ = plugins.run(ASK, Args::new(), &mut kernel.context());
+            // Its requests' failures are their answers in the trace: the
+            // call itself fails of none.
+            let ran = plugins.run(ASK, Args::new(), &mut kernel.context());
+            assert!(ran.is_ok(), "`{}`, of {front:?}: {ran:?}", scenario.name);
         }
         for event in &step.posts {
             // An answer goes to its plugin alone.
@@ -670,13 +735,13 @@ fn on_kernel(scenario: &Scenario, kernel: &mut Kernel, state: &std::path::Path) 
         plugins.timers_due(kernel.clock);
         deliver(&mut plugins, kernel);
     }
-    trace.borrow().clone()
+    trace()
 }
 
 /// The trace of `scenario` on the SDK's fake host, of the same world as
 /// the kernel's host's.
-fn on_fake(scenario: &Scenario, world: &World) -> Vec<Entry> {
-    let (mut plugin, trace) = conformer(scenario, world);
+fn on_fake(scenario: &Scenario, world: &World, front: Front) -> Vec<Entry> {
+    let (mut plugin, trace) = conformer(scenario, world, front);
     // The plugin fills no slot, as a manifest of none.
     let mut host = FakeHost::new(name(scenario)).with_slots(Vec::new());
     if let Some(capabilities) = &scenario.capabilities {
@@ -701,21 +766,22 @@ fn on_fake(scenario: &Scenario, world: &World) -> Vec<Entry> {
     pane.viewport = Some(world.viewport);
     pane.cursor = world.cursor;
     host.set_keys("tabs.goto", goto_first(), Some("⌘1"));
-    host.activate(&mut plugin).unwrap();
+    host.activate(plugin.as_mut()).unwrap();
     for step in &scenario.steps {
         if !step.asks.is_empty() {
-            let _ = host.command(&mut plugin, ASK, Args::new());
+            let ran = host.command(plugin.as_mut(), ASK, Args::new());
+            assert!(ran.is_ok(), "`{}`, of {front:?}: {ran:?}", scenario.name);
         }
         for view in host.take_renders() {
-            host.render(&mut plugin, &view);
+            host.render(plugin.as_mut(), &view);
         }
         for event in &step.posts {
             host.post(event.clone());
         }
         host.advance(Duration::from_millis(step.wait));
-        host.deliver(&mut plugin).unwrap();
+        host.deliver(plugin.as_mut()).unwrap();
     }
-    trace.borrow().clone()
+    trace()
 }
 
 /// The manifest of a plugin of `capabilities` alone.
@@ -727,30 +793,63 @@ fn manifest(capabilities: &[Capability]) -> String {
     text
 }
 
-#[test]
-fn every_scenario_s_trace_is_the_same_on_the_kernel_s_host_and_on_the_fake() {
+/// Runs every scenario of a test plugin of `front` on the kernel's host and
+/// on the fake, each trace the scenario's.
+fn conforms(front: Front) {
     let mut kernel = Kernel::new();
     let world = kernel.world.clone();
     let scenarios = scenarios::all(&world);
     assert!(scenarios.len() >= 9);
-    let states = std::env::temp_dir().join(format!("lokyr-conformance-{}", std::process::id()));
+    let states = std::env::temp_dir().join(format!(
+        "lokyr-conformance-{front:?}-{}",
+        std::process::id()
+    ));
     for (at, scenario) in scenarios.iter().enumerate() {
         let wanted = expected(scenario);
         let state = states.join(at.to_string());
-        assert_eq!(
-            on_kernel(scenario, &mut kernel, &state),
-            wanted,
-            "the kernel's host, `{}`",
-            scenario.name
+        let what = |host: &str| format!("the {host}, `{}`, of {front:?}", scenario.name);
+        same(
+            &on_kernel(scenario, &mut kernel, &state, front),
+            &wanted,
+            &what("kernel's host"),
         );
-        assert_eq!(
-            on_fake(scenario, &world),
-            wanted,
-            "the fake host, `{}`",
-            scenario.name
+        same(
+            &on_fake(scenario, &world, front),
+            &wanted,
+            &what("fake host"),
         );
     }
     let _ = std::fs::remove_dir_all(&states);
+}
+
+/// Checks that the trace `got` is `wanted`, as `what` tells: of its first
+/// entry that differs, each cut to a few thousand characters, as a value
+/// of a mebibyte would fill the screen.
+fn same(got: &[Entry], wanted: &[Entry], what: &str) {
+    let cut = |entry: Option<&Entry>| {
+        let text = format!("{entry:?}");
+        text.chars().take(3000).collect::<String>()
+    };
+    if let Some(at) = (0..got.len().max(wanted.len())).find(|&at| got.get(at) != wanted.get(at)) {
+        panic!(
+            "{what}: the entry {at} differs\n   got: {}\nwanted: {}",
+            cut(got.get(at)),
+            cut(wanted.get(at))
+        );
+    }
+}
+
+#[test]
+fn every_scenario_s_trace_is_the_same_on_the_kernel_s_host_and_on_the_fake() {
+    conforms(Front::Rust);
+}
+
+#[test]
+fn every_scenario_s_trace_is_the_same_of_a_luau_plugin_on_both_hosts() {
+    // The scenarios as JSON, which a plugin of Luau makes through `cx`: the
+    // requests as they reached each host from Luau, and the answers and the
+    // events as Luau took them, back as the SDK's types.
+    conforms(Front::Luau);
 }
 
 #[test]

@@ -509,5 +509,130 @@ pub(crate) fn answered(lua: &Lua, response: &Response, answer: &MultiValue) -> R
     .ok_or_else(|| format!("{response:?} answered {answer:?}"))
 }
 
+/// The response that `answer` tells, as `request`'s function returned it
+/// to a plugin: a failure of `nil`, a message and a code; `done` of `true`;
+/// or the value of the variant that answers the request, `nil` of a value
+/// of none; why not, of an answer of another shape.
+#[cfg(any(test, feature = "testing"))]
+pub(crate) fn response_of(request: &Request, answer: &MultiValue) -> Result<Response, ShapeError> {
+    let first = answer.front().cloned().unwrap_or(Value::Nil);
+    let second = answer.get(1).cloned().unwrap_or(Value::Nil);
+    if answer.len() > 3 || (answer.len() > 1 && !first.is_nil()) {
+        return Err(ShapeError(format!("an answer of {answer:?}")));
+    }
+    if first.is_nil() && !second.is_nil() {
+        let message = second.to_string()?;
+        let number = answer
+            .get(2)
+            .and_then(Value::as_u32)
+            .and_then(|number| u16::try_from(number).ok())
+            .ok_or_else(|| ShapeError(format!("a failure of no code, {answer:?}")))?;
+        let code = lokyr_plugin_sdk::command::Code::try_from(number).map_err(ShapeError)?;
+        return Ok(Response::Failed(lokyr_plugin_sdk::command::Error::new(
+            code, message,
+        )));
+    }
+    let variant = request.answer();
+    if variant == "done" {
+        return match first {
+            Value::Boolean(true) => Ok(Response::Done),
+            other => Err(ShapeError(format!(
+                "`true` of a request done, not {other:?}"
+            ))),
+        };
+    }
+    let budget = Budget::default();
+    Response::deserialize(Answering {
+        variant,
+        value: first,
+        budget: &budget,
+    })
+}
+
+/// An answer's value as the response of the variant `variant`, its value
+/// of none of `nil`.
+#[cfg(any(test, feature = "testing"))]
+struct Answering<'b> {
+    variant: &'static str,
+    value: Value,
+    budget: &'b Budget,
+}
+
+#[cfg(any(test, feature = "testing"))]
+impl<'de> de::Deserializer<'de> for Answering<'_> {
+    type Error = ShapeError;
+
+    fn deserialize_any<V: Visitor<'de>>(self, _: V) -> Result<V::Value, ShapeError> {
+        Err(ShapeError("a response is a variant".to_owned()))
+    }
+
+    fn deserialize_enum<V: Visitor<'de>>(
+        self,
+        _: &'static str,
+        _: &'static [&'static str],
+        visitor: V,
+    ) -> Result<V::Value, ShapeError> {
+        visitor.visit_enum(self)
+    }
+
+    serde::forward_to_deserialize_any! {
+        bool i8 i16 i32 i64 i128 u8 u16 u32 u64 u128 f32 f64 char str string
+        bytes byte_buf option unit unit_struct newtype_struct seq tuple
+        tuple_struct map struct identifier ignored_any
+    }
+}
+
+#[cfg(any(test, feature = "testing"))]
+impl<'de> EnumAccess<'de> for Answering<'_> {
+    type Error = ShapeError;
+    type Variant = Self;
+
+    fn variant_seed<T: DeserializeSeed<'de>>(
+        self,
+        seed: T,
+    ) -> Result<(T::Value, Self), ShapeError> {
+        let name: de::value::StrDeserializer<ShapeError> = self.variant.into_deserializer();
+        let variant = seed.deserialize(name)?;
+        Ok((variant, self))
+    }
+}
+
+#[cfg(any(test, feature = "testing"))]
+impl<'de> VariantAccess<'de> for Answering<'_> {
+    type Error = ShapeError;
+
+    fn unit_variant(self) -> Result<(), ShapeError> {
+        Ok(())
+    }
+
+    fn newtype_variant_seed<T: DeserializeSeed<'de>>(
+        self,
+        seed: T,
+    ) -> Result<T::Value, ShapeError> {
+        seed.deserialize(Taking::new(self.value, self.budget))
+    }
+
+    fn tuple_variant<V: Visitor<'de>>(
+        self,
+        len: usize,
+        visitor: V,
+    ) -> Result<V::Value, ShapeError> {
+        de::Deserializer::deserialize_tuple(Taking::new(self.value, self.budget), len, visitor)
+    }
+
+    fn struct_variant<V: Visitor<'de>>(
+        self,
+        fields: &'static [&'static str],
+        visitor: V,
+    ) -> Result<V::Value, ShapeError> {
+        de::Deserializer::deserialize_struct(
+            Taking::new(self.value, self.budget),
+            self.variant,
+            fields,
+            visitor,
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests;

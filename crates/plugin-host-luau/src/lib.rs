@@ -34,6 +34,9 @@
 // call sites is allowed explicitly.
 #![deny(unsafe_code)]
 
+#[cfg(any(test, feature = "testing"))]
+#[doc(hidden)]
+pub mod conformer;
 mod events;
 mod requests;
 mod shape;
@@ -450,7 +453,27 @@ pub fn through_luau(
             host.asked
         ));
     }
-    requests::answered(vm.lua(), response, &answer).map_err(|error| format!("`cx.{name}`: {error}"))
+    requests::answered(vm.lua(), response, &answer)
+        .map_err(|error| format!("`cx.{name}`: {error}"))?;
+    // The answer tells the response back, as a trace of Luau's takes it,
+    // of the request's own variant or a failure, as a host answers.
+    let debug = format!("{response:?}");
+    let mut variant = String::new();
+    for char in debug.chars().take_while(char::is_ascii_alphanumeric) {
+        if char.is_ascii_uppercase() && !variant.is_empty() {
+            variant.push('-');
+        }
+        variant.push(char.to_ascii_lowercase());
+    }
+    if variant != "failed" && variant != request.answer() {
+        return Ok(());
+    }
+    match requests::response_of(request, &answer) {
+        Ok(back) if back == *response => Ok(()),
+        other => Err(format!(
+            "`cx.{name}`'s answer told {other:?}, not {response:?}"
+        )),
+    }
 }
 
 /// Gives `events` to Luau, as a plugin's `on_event` takes them, and takes
