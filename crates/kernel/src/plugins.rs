@@ -443,6 +443,10 @@ struct State {
     /// What its trigger brought as the user was asked, which comes once it
     /// activates.
     deferred: Deferred,
+    /// The runs of its commands that woke it, on a thread of its own, which
+    /// run as its activation ends, of their arguments checked by its own
+    /// commands.
+    woken: Vec<(String, Args, Chain)>,
 }
 
 /// What a plugin's trigger brought as its activation waited for the user's
@@ -470,16 +474,28 @@ enum Trigger {
 }
 
 impl Trigger {
-    /// The triggers of `on`, a manifest's activation; the app's start of
-    /// none; an error of one that the app does not take yet.
-    fn of(name: &str, on: &[String]) -> Result<Vec<Self>, Error> {
+    /// The triggers of `on`, a manifest's activation, of the plugin `name`
+    /// of `namespace`; the app's start of none; an error of one that the
+    /// app does not take yet, or of a command's of another namespace than
+    /// its own.
+    fn of(name: &str, namespace: &str, on: &[String]) -> Result<Vec<Self>, Error> {
         if on.is_empty() {
             return Ok(vec![Self::Startup]);
         }
         on.iter()
             .map(|on| match on.split_once(':') {
                 None if on == "startup" => Ok(Self::Startup),
-                Some(("command", pattern)) => Ok(Self::Command(pattern.to_owned())),
+                Some(("command", pattern))
+                    if lokyr_pkg_model::manifest::is_of_namespace(pattern, namespace) =>
+                {
+                    Ok(Self::Command(pattern.to_owned()))
+                }
+                Some(("command", _)) => Err(Error::new(
+                    Code::InvalidConfig,
+                    format!(
+                        "the plugin `{name}` activates at `{on}`, a command of another namespace than its own, `{namespace}`"
+                    ),
+                )),
                 Some(("event", event)) => Ok(Self::Event(event.to_owned())),
                 Some(("slot", slot)) => Ok(Self::Slot(slot.to_owned())),
                 Some(("osc", _)) => Err(Error::new(
@@ -1120,7 +1136,7 @@ impl Plugins {
             }
         }
         for (command, args, chain) in deferred.commands {
-            if let Err(error) = self.run_on(at, &command, args, chain, context) {
+            if let Err(error) = self.run_woken(at, &command, args, chain, context) {
                 errors.push(error);
             }
         }
@@ -1193,6 +1209,7 @@ impl Plugins {
         .unwrap_or(&[]);
         let triggers = Trigger::of(
             name,
+            &namespace,
             manifest
                 .as_ref()
                 .map_or(&[][..], |manifest| &manifest.activation),
@@ -1248,6 +1265,7 @@ impl Plugins {
                 undecided: Vec::new(),
                 asking: false,
                 deferred: Deferred::default(),
+                woken: Vec::new(),
             },
         });
         // A lazy plugin's commands, of its manifest, show in the menus and
@@ -1500,11 +1518,12 @@ impl Plugins {
     }
 
     /// The plugin that waits for its trigger that runs `command`, as its
-    /// manifest's commands or its `command:` activation say.
+    /// manifest's commands or its `command:` activation say, or that
+    /// activates on its thread, as such a run woke it.
     fn lazy_owner(&self, command: &str) -> Option<usize> {
         self.entries.iter().position(|entry| {
             let state = &entry.state;
-            state.waits()
+            (state.waits() || activating(&entry.runner))
                 && (state.triggers.iter().any(|trigger| {
                     matches!(trigger, Trigger::Command(pattern) if matches_pattern(pattern, command))
                 }) || state.manifest.as_ref().is_some_and(|manifest| {
@@ -1558,44 +1577,55 @@ impl Plugins {
         chain: Chain,
         context: &mut Context<'_>,
     ) -> Result<(), Error> {
-        let at = match self.owner(command) {
-            Some(at) => at,
-            // A plugin that waits for its trigger activates, of the main
-            // thread at once, or of a thread of its own, which runs the
-            // command after its activation.
-            None => {
-                let Some(at) = self.lazy_owner(command) else {
-                    return Err(Error::new(
-                        Code::NotFound,
-                        format!("no plugin runs `{command}`"),
-                    ));
-                };
-                self.waken(at, context)?;
-                // Its activation waits for the user's consent: the command
-                // runs after it.
-                let state = &mut self.entries[at].state;
-                if state.asking {
-                    state
-                        .deferred
-                        .commands
-                        .push((command.to_owned(), args, chain));
-                    return Ok(());
-                }
-                match (&self.entries[at].runner, self.owner(command)) {
-                    (_, Some(at)) => at,
-                    (Runner::Worker(_), None) => at,
-                    _ => {
-                        return Err(Error::new(
-                            Code::NotFound,
-                            format!(
-                                "the plugin `{}` activated, and registers no `{command}`",
-                                self.entries[at].state.name
-                            ),
-                        ));
-                    }
-                }
-            }
+        if let Some(at) = self.owner(command) {
+            return self.run_on(at, command, args, chain, context);
+        }
+        // A plugin that waits for its trigger activates, of the main thread
+        // at once, or of a thread of its own, which runs the command after
+        // its activation.
+        let Some(at) = self.lazy_owner(command) else {
+            return Err(Error::new(
+                Code::NotFound,
+                format!("no plugin runs `{command}`"),
+            ));
         };
+        if self.entries[at].state.waits() {
+            self.waken(at, context)?;
+        }
+        // Its activation waits for the user's consent: the command runs
+        // after it.
+        let state = &mut self.entries[at].state;
+        if state.asking {
+            state
+                .deferred
+                .commands
+                .push((command.to_owned(), args, chain));
+            return Ok(());
+        }
+        self.run_woken(at, command, args, chain, context)
+    }
+
+    /// Runs `command` with `args`, of the chain `chain`, on the plugin at
+    /// `at`, which its trigger woke: a plugin of the main thread, which
+    /// activated, of its own command, which checks the arguments, as the
+    /// command that its manifest gave, of none, took any; one of a thread
+    /// of its own as its activation ends, which [`Plugins::serve`] tells.
+    fn run_woken(
+        &mut self,
+        at: usize,
+        command: &str,
+        args: Args,
+        chain: Chain,
+        context: &mut Context<'_>,
+    ) -> Result<(), Error> {
+        let Entry { runner, state, .. } = &mut self.entries[at];
+        if let Runner::Worker(worker) = runner
+            && worker.activating()
+        {
+            state.woken.push((command.to_owned(), args, chain));
+            return Ok(());
+        }
+        let args = own_call(state, command, args)?;
         self.run_on(at, command, args, chain, context)
     }
 
@@ -1701,8 +1731,13 @@ impl Plugins {
     /// in `language` from their plugins' catalogs: by their messages, as
     /// [`title_message`] names them, the language's or English's; or by the
     /// titles that they registered; each with its plugin's name, which a
-    /// registry keeps as its owner.
-    pub fn commands_in(&self, language: &str) -> Vec<(Command, String)> {
+    /// registry keeps as its owner, and whether its plugin waits for its
+    /// trigger, which [`Registry::register_waiting`] takes: such a command,
+    /// of its manifest, has no parameters, its plugin checking a call's
+    /// arguments as it activates, and needs of another plugin's call every
+    /// capability that its plugin declares, which its own command's needs
+    /// cannot pass, as its action takes them.
+    pub fn commands_in(&self, language: &str) -> Vec<(Command, String, bool)> {
         let mut commands = Vec::new();
         for state in self.active() {
             let texts = Texts::new(language, state.catalogs);
@@ -1713,7 +1748,7 @@ impl Plugins {
                         .unwrap_or_else(|| command.title.clone()),
                     ..command.clone()
                 };
-                (titled, state.name.clone())
+                (titled, state.name.clone(), false)
             }));
         }
         // Those of the plugins that wait for their triggers, as their
@@ -1723,6 +1758,12 @@ impl Plugins {
                 continue;
             };
             let texts = Texts::new(language, state.catalogs);
+            let capabilities: Vec<Capability> = manifest
+                .capabilities
+                .iter()
+                .filter(|capability| !capability.is_withheld())
+                .cloned()
+                .collect();
             commands.extend(manifest.contributes.commands.iter().map(|contributed| {
                 let command = Command {
                     name: contributed.name.clone(),
@@ -1730,11 +1771,11 @@ impl Plugins {
                         .get(&title_message(&contributed.name))
                         .unwrap_or_else(|| contributed.title.clone()),
                     category: contributed.category.unwrap_or(commands::Category::View),
-                    capabilities: Vec::new(),
+                    capabilities: capabilities.clone(),
                     params: Vec::new(),
                     when: None,
                 };
-                (command, state.name.clone())
+                (command, state.name.clone(), true)
             }));
         }
         commands
@@ -2416,11 +2457,20 @@ impl Plugins {
         errors
     }
 
-    /// Whether an active plugin subscribed to the events of `name`, which
-    /// the app then tells, as the pointer's, whose moves cost wakeups.
+    /// Whether an active plugin subscribed to the events of `name`, or a
+    /// waiting plugin's trigger names them, which the app then tells, as
+    /// the pointer's, whose moves cost wakeups.
     pub fn subscribes(&self, name: &str) -> bool {
         self.active()
             .any(|state| state.subscribed.iter().any(|subscribed| subscribed == name))
+            || self.entries.iter().any(|entry| {
+                entry.state.waits()
+                    && entry
+                        .state
+                        .triggers
+                        .iter()
+                        .any(|trigger| matches!(trigger, Trigger::Event(event) if event == name))
+            })
     }
 
     /// Whether events wait for the next delivery: those of the reads of
@@ -2705,6 +2755,17 @@ impl Plugins {
         }
         if activated {
             worker.activated(&state.subscribed, context.focused);
+            // The runs that woke it, of its own commands now: a few, after
+            // a call of its first; a queue past its bound would fault it at
+            // its next call.
+            for (command, args, chain) in std::mem::take(&mut state.woken) {
+                match own_call(state, &command, args) {
+                    Ok(args) => {
+                        let _ = worker.ask(Job::Command(command, args, chain), context.focused);
+                    }
+                    Err(error) => served.commands.push(error),
+                }
+            }
         }
         worker.next();
         true
@@ -3939,6 +4000,7 @@ fn release_cursors(state: &mut State, workspace: &Workspace) {
 /// bindings and its menus' items go.
 fn disable(state: &mut State, registry: &mut Registry, declarations_changed: &mut bool) {
     state.status = Status::Disabled;
+    state.woken.clear();
     if !state.commands.is_empty()
         || !state.bindings.is_empty()
         || !state.global_bindings.is_empty()
@@ -3952,6 +4014,28 @@ fn disable(state: &mut State, registry: &mut Registry, declarations_changed: &mu
     state.bindings.clear();
     state.global_bindings.clear();
     state.menu_items.clear();
+}
+
+/// Whether the plugin of `runner` activates on its thread.
+fn activating(runner: &Runner) -> bool {
+    matches!(runner, Runner::Worker(worker) if worker.activating())
+}
+
+/// The arguments `args` of a call of `command`, which the plugin of `state`
+/// registered as its trigger woke it, checked by its command, with the
+/// defaults of those left out; or why the call fails, as the plugin
+/// registered no such command.
+fn own_call(state: &State, command: &str, args: Args) -> Result<Args, Error> {
+    let Some(own) = state.commands.iter().find(|own| own.name == command) else {
+        return Err(Error::new(
+            Code::NotFound,
+            format!(
+                "the plugin `{}` activated, and registers no `{command}`",
+                state.name
+            ),
+        ));
+    };
+    own.check_call(args)
 }
 
 /// Gives the commands that `requests` run the chain `chain`, of the

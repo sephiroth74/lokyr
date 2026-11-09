@@ -343,3 +343,251 @@ fn a_plugin_removed_stops_and_is_forgotten() {
         assert!(plugins.remove("acme/gone", &mut app.context()));
     }
 }
+
+/// A plugin that registers `argued.go`, of a required `path` and a
+/// `count` of 3 by default, and keeps the arguments of each of its calls.
+struct Argued(Arc<std::sync::Mutex<Vec<Args>>>);
+
+impl Plugin for Argued {
+    fn activate(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
+        cx.register_command(Command {
+            params: vec![
+                Param {
+                    name: "path".to_owned(),
+                    kind: Kind::String,
+                    default: None,
+                },
+                Param {
+                    name: "count".to_owned(),
+                    kind: Kind::Integer,
+                    default: Some(Value::Integer(3)),
+                },
+            ],
+            ..command("argued.go")
+        })
+    }
+
+    fn on_command(&mut self, _: &mut Cx<'_>, _: &str, args: Args) -> Result<(), Error> {
+        self.0.lock().unwrap().push(args);
+        Ok(())
+    }
+}
+
+/// The manifest of `acme/argued`, which waits for `argued.go`, of the
+/// capabilities `capabilities`.
+fn argued_manifest(capabilities: &str) -> Manifest {
+    manifest(
+        "argued",
+        &["command:argued.go"],
+        &format!(
+            "[capabilities]\n{capabilities}\n[contributes]\ncommands = [{{ name = \"argued.go\", title = \"Go\" }}]\n"
+        ),
+    )
+}
+
+/// The arguments of a `path`, and of `more`.
+fn path_args(more: &[(&str, Value)]) -> Args {
+    let mut args = Args::from([("path".to_owned(), Value::String("here".to_owned()))]);
+    args.extend(
+        more.iter()
+            .map(|(name, value)| ((*name).to_owned(), value.clone())),
+    );
+    args
+}
+
+/// Registers the plugins' commands in the app's registry, as the app does:
+/// those of the plugins that wait as theirs.
+fn registered(plugins: &Plugins, app: &mut App) {
+    for (command, plugin, waits) in plugins.commands_in("en") {
+        let _ = app.registry.unregister(&command.name);
+        if waits {
+            app.registry.register_waiting(command, &plugin).unwrap();
+        } else {
+            app.registry.register_for(command, &plugin).unwrap();
+        }
+    }
+}
+
+#[test]
+fn a_command_s_trigger_takes_its_plugin_s_namespace_alone() {
+    let mut plugins = Plugins::new();
+    for pattern in ["*", "window.*", "app.quit", "*.go", "other.go"] {
+        let mut taking = manifest("taker", &["command:taker.go"], "");
+        taking.activation = vec![format!("command:{pattern}")];
+        let (plugin, _) = lazy("", &[]);
+        let error = plugins.add_declared(taking, plugin).unwrap_err();
+        assert_eq!(error.code, Code::InvalidConfig, "{pattern}");
+        assert!(error.message.contains("another namespace"), "{error:?}");
+    }
+    assert_eq!(plugins.status("acme/taker"), None);
+    // A plugin's own, of its manifest's commands too, takes no other's.
+    let (plugin, _) = lazy("taker.go", &[]);
+    plugins
+        .add_declared(manifest("taker", &["command:taker.*"], ""), plugin)
+        .unwrap();
+    assert!(plugins.owns("taker.go"));
+    assert!(plugins.owns("taker.other"));
+    assert!(!plugins.owns("app.quit"));
+    assert!(!plugins.owns("window.new"));
+}
+
+#[test]
+fn a_waiting_plugin_s_command_takes_arguments_that_its_own_command_checks() {
+    let mut app = App::default();
+    let mut plugins = Plugins::new();
+    let calls = Arc::new(std::sync::Mutex::new(Vec::new()));
+    plugins
+        .add_declared(argued_manifest(""), Box::new(Argued(Arc::clone(&calls))))
+        .unwrap();
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    registered(&plugins, &mut app);
+    // The registry takes any arguments of its manifest's command, as a
+    // binding or a menu item gives them.
+    assert!(app.registry.is_waiting("argued.go"));
+    let args = app
+        .registry
+        .check("argued.go", path_args(&[("count", Value::Integer(5))]))
+        .unwrap();
+    plugins
+        .run("argued.go", path_args(&[]), &mut app.context())
+        .unwrap();
+    assert_eq!(plugins.status("acme/argued"), Some(Status::Active));
+    // Its own command's defaults, once it activated.
+    assert_eq!(
+        *calls.lock().unwrap(),
+        [path_args(&[("count", Value::Integer(3))])]
+    );
+    plugins.run("argued.go", args, &mut app.context()).unwrap();
+    assert_eq!(calls.lock().unwrap().len(), 2);
+    // Arguments that its own command refuses, as it activates.
+    for (args, code) in [
+        (
+            path_args(&[("nope", Value::Integer(1))]),
+            Code::UnknownArgument,
+        ),
+        (Args::new(), Code::MissingArgument),
+    ] {
+        let mut app = App::default();
+        let mut fresh = Plugins::new();
+        fresh
+            .add_declared(argued_manifest(""), Box::new(Argued(Arc::clone(&calls))))
+            .unwrap();
+        assert!(fresh.activate(&mut app.context()).is_empty());
+        let error = fresh
+            .run("argued.go", args, &mut app.context())
+            .unwrap_err();
+        assert_eq!(error.code, code, "{error:?}");
+        assert_eq!(fresh.status("acme/argued"), Some(Status::Active));
+    }
+    assert_eq!(calls.lock().unwrap().len(), 2);
+}
+
+#[test]
+fn a_waiting_plugin_on_its_thread_runs_the_command_that_woke_it_of_its_own_checks() {
+    let mut app = App::default();
+    let mut plugins = Plugins::new();
+    let calls = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let made = Arc::clone(&calls);
+    plugins
+        .add_installed(
+            argued_manifest(""),
+            Box::new(move || Box::new(Argued(Arc::clone(&made)))),
+            (&[], &[]),
+        )
+        .unwrap();
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    plugins
+        .run("argued.go", path_args(&[]), &mut app.context())
+        .unwrap();
+    plugins
+        .run(
+            "argued.go",
+            path_args(&[("nope", Value::Integer(1))]),
+            &mut app.context(),
+        )
+        .unwrap();
+    let start = Instant::now();
+    let mut failed = Vec::new();
+    while plugins.waiting() || calls.lock().unwrap().is_empty() {
+        failed.extend(plugins.serve(&mut app.context()).commands);
+        assert!(start.elapsed() < Duration::from_secs(10), "a call hangs");
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    assert_eq!(
+        *calls.lock().unwrap(),
+        [path_args(&[("count", Value::Integer(3))])]
+    );
+    assert_eq!(failed.len(), 1, "{failed:?}");
+    assert_eq!(failed[0].code, Code::UnknownArgument);
+}
+
+#[test]
+fn another_plugin_runs_a_waiting_plugin_s_command_of_its_plugin_s_capabilities() {
+    let mut app = App::default();
+    let mut plugins = Plugins::new();
+    let calls = Arc::new(std::sync::Mutex::new(Vec::new()));
+    plugins
+        .add_declared(
+            argued_manifest("clipboard-read = true"),
+            Box::new(Argued(Arc::clone(&calls))),
+        )
+        .unwrap();
+    // Two callers, of `[uses]` of it: one without `clipboard-read`.
+    let caller = |name: &str, capabilities: &str| {
+        manifest(
+            name,
+            &[],
+            &format!("[capabilities]\n{capabilities}\n[uses]\ncommands = [\"argued.go\"]\n"),
+        )
+    };
+    let ran = Rc::new(RefCell::new(Vec::new()));
+    for (name, capabilities) in [("bare", ""), ("reader", "clipboard-read = true")] {
+        let told = Rc::clone(&ran);
+        let named = name.to_owned();
+        let call = format!("{name}.call");
+        plugins
+            .add_declared(
+                caller(name, capabilities),
+                scripted(
+                    move |cx| cx.register_command(command(&call)),
+                    move |cx, _, _| {
+                        let asked = cx.run_command("argued.go", path_args(&[]));
+                        told.borrow_mut()
+                            .push((named.clone(), asked.map_err(|error| error.code)));
+                        Ok(())
+                    },
+                ),
+            )
+            .unwrap();
+    }
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    registered(&plugins, &mut app);
+    plugins
+        .run("bare.call", Args::new(), &mut app.context())
+        .unwrap();
+    plugins
+        .run("reader.call", Args::new(), &mut app.context())
+        .unwrap();
+    assert_eq!(
+        *ran.borrow(),
+        [
+            ("bare".to_owned(), Err(Code::MissingCapability)),
+            ("reader".to_owned(), Ok(())),
+        ]
+    );
+}
+
+#[test]
+fn a_waiting_plugin_s_event_trigger_tells_the_app_to_post_its_events() {
+    let mut app = App::default();
+    let mut plugins = Plugins::new();
+    let (plugin, did) = lazy("", &[POINTER]);
+    plugins
+        .add_declared(manifest("pointed", &["event:pointer"], ""), plugin)
+        .unwrap();
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    assert!(plugins.subscribes(POINTER));
+    assert!(!plugins.subscribes(VIEWPORT_CHANGED));
+    assert_eq!(plugins.status("acme/pointed"), Some(Status::Inactive));
+    assert!(did.borrow().is_empty());
+}

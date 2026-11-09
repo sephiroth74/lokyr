@@ -104,7 +104,7 @@ config-schema = "schema.json"
 | `plugin.description`, `repository`, `homepage`, `keywords`, `authors` | no | Metadata for the registry |
 | `plugin.platforms` | no | Restricts the OSes (e.g. `["macos"]`); all by default |
 | `plugin.thread` | no | `main`, by default, or `worker`, a thread of the host's for the plugin alone ([PLUGIN-SYSTEM.md](PLUGIN-SYSTEM.md#execution-model)) |
-| `activation.on` | for `luau` | Activation events: `startup`, `command:<glob>`, `event:<name>`, `slot:<name>`, `osc:<number>`; a `builtin` plugin's is `startup` by default |
+| `activation.on` | for `luau` | Activation events: `startup`, `command:<command>` or `command:<namespace>.*` of the plugin's own namespace, `event:<name>`, `slot:<name>`, `osc:<number>`; a `builtin` plugin's is `startup` by default |
 | `capabilities.*` | no | Requested capabilities, each `true` or `false`, but `net`, `fs-read`, `fs-write` and `env-read`, which list their hosts, paths and variables, as `net = ["api.github.com"]` |
 | `uses.commands` | no | The commands that the plugin runs, by name or namespace (`tabs.*`), which Sleip shows at install, by category, with the capabilities they need ([ADR 0019](adr/0019-commands-errors-and-permissions.md)) |
 | `contributes.*` | no | Static contributions (commands, keybindings, slots, themes, config schema), used by the palette, the registry and validation; a command's `name`, `title` and `category`, `view` if none, which the menus and the palette show before a plugin of a `command:` activation activates; `config-schema` names the JSON Schema file of the plugin's section of the config, `[plugins.<namespace>]`, of the keywords that the app checks ([ADR 0032](adr/0032-plugins-config-and-state.md)) |

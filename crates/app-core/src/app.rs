@@ -2515,7 +2515,9 @@ impl<B: Backend> App<B> {
     ) {
         let ran = match self.commands.check(name, args) {
             Err(error) => Err(error),
-            Ok(args) if self.plugins.owns(name) => {
+            // A command that the registry gives to a plugin, never the
+            // app's own, whatever a plugin's activation names.
+            Ok(args) if self.commands.owner(name).is_some() && self.plugins.owns(name) => {
                 let owner = self.plugins.owner_of(name).map(str::to_owned);
                 let ran = self.with_plugins(platform, |plugins, context| {
                     plugins.run_deep(name, args, chain, context)
@@ -4285,8 +4287,13 @@ fn commands(texts: &Texts, plugins: &Plugins) -> Registry {
         }
     }
     // Each of its plugin, which the plugins' reads of the commands tell.
-    for (command, plugin) in plugins.commands_in(texts.language()) {
-        if let Err(error) = registry.register_for(command, &plugin) {
+    for (command, plugin, waits) in plugins.commands_in(texts.language()) {
+        let registered = if waits {
+            registry.register_waiting(command, &plugin)
+        } else {
+            registry.register_for(command, &plugin)
+        };
+        if let Err(error) = registered {
             eprintln!("lokyr: {error}");
         }
     }

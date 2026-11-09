@@ -499,10 +499,10 @@ fn a_plugin_s_catalogs_title_its_commands_in_the_language_shown() {
         assert!(plugins.activate(&mut app.context()).is_empty());
         let commands = plugins.commands_in(language);
         // Each of its plugin.
-        assert!(commands.iter().all(|(_, plugin)| plugin == "titled"));
+        assert!(commands.iter().all(|(_, plugin, _)| plugin == "titled"));
         commands
             .into_iter()
-            .map(|(command, _)| command.title)
+            .map(|(command, _, _)| command.title)
             .collect()
     };
     let calm = || Titled { panics: false };
@@ -1675,6 +1675,7 @@ fn a_call_is_its_own_plugin_s() {
             undecided: Vec::new(),
             asking: false,
             deferred: Deferred::default(),
+            woken: Vec::new(),
         },
         Outbox::default(),
         Vec::new(),

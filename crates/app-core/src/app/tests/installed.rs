@@ -359,3 +359,46 @@ fn a_plugin_of_the_status_bar_s_trigger_activates_as_the_bar_first_shows() {
     );
     let _ = std::fs::remove_dir_all(&folder);
 }
+
+#[test]
+fn a_waiting_plugin_of_the_app_s_namespace_takes_none_of_its_commands() {
+    let _luau = LUAU.lock().unwrap_or_else(PoisonError::into_inner);
+    let folder = shelf("app-namespace");
+    let store = Store::new(folder.join("store"));
+    // A plugin `acme/app`, which waits for `app.*` and gives `app.quit`.
+    let taker = manifest(
+        "app",
+        &["command:app.*"],
+        "^0.1",
+        "[contributes]\ncommands = [{ name = \"app.quit\", title = \"Quit\" }]\n",
+    );
+    let lock = folder.join("plugins.lock");
+    Lock {
+        api: lokyr_kernel::plugins::API_VERSION.to_owned(),
+        packages: BTreeMap::from([stored(
+            &store,
+            "app",
+            &taker,
+            &opening("on_command", "taken", ""),
+        )]),
+    }
+    .write(&lock)
+    .unwrap();
+    grant_open(&folder, &["app"]);
+    let mut fake = Fake::default();
+    let mut app = app(Config::default(), idle()).with_installed(lock, store);
+    fake.start(&mut app);
+    assert_eq!(
+        app.plugins.status("acme/app"),
+        Some(plugins::Status::Inactive)
+    );
+    assert_eq!(app.commands.owner(QUIT), None);
+    // ⌘Q quits, of the app's own command, and wakes nothing.
+    fake.send_app(&mut app, AppEvent::Command(QUIT.to_owned()));
+    assert!(fake.has_quit());
+    assert_eq!(
+        app.plugins.status("acme/app"),
+        Some(plugins::Status::Inactive)
+    );
+    let _ = std::fs::remove_dir_all(&folder);
+}

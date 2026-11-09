@@ -4,7 +4,7 @@
 //! registered it. A plugin's call is checked against the commands that its
 //! manifest says it runs, and the capabilities that it has.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 pub use lokyr_plugin_sdk::command::{
     Args, Capability, Category, Code, Command, Error, ErrorCategory, Kind, Param, Uses, Value,
@@ -20,6 +20,10 @@ pub struct Registry {
     /// The plugins that registered commands, by the commands' names; the
     /// app's own commands have none.
     owners: BTreeMap<String, String>,
+    /// The commands of plugins that wait for their triggers, as their
+    /// manifests give them, whose arguments their plugins check as they
+    /// activate.
+    waiting: BTreeSet<String>,
 }
 
 impl Registry {
@@ -54,6 +58,23 @@ impl Registry {
         Ok(())
     }
 
+    /// Registers `command` of the plugin `plugin`, which waits for its
+    /// trigger, as [`Registry::register_for`] does: its manifest gives the
+    /// command without its parameters, so that a call of it takes any
+    /// arguments, which the plugin's own command checks as it activates.
+    pub fn register_waiting(&mut self, command: Command, plugin: &str) -> Result<(), Error> {
+        let name = command.name.clone();
+        self.register_for(command, plugin)?;
+        self.waiting.insert(name);
+        Ok(())
+    }
+
+    /// Whether the command `name` is of a plugin that waits for its
+    /// trigger, as [`Registry::register_waiting`] registers it.
+    pub fn is_waiting(&self, name: &str) -> bool {
+        self.waiting.contains(name)
+    }
+
     /// The plugin that registered the command `name`, by its name; `None`
     /// of the app's own commands.
     pub fn owner(&self, name: &str) -> Option<&str> {
@@ -70,6 +91,7 @@ impl Registry {
     pub fn unregister(&mut self, name: &str) -> Option<Command> {
         self.order.retain(|registered| registered != name);
         self.owners.remove(name);
+        self.waiting.remove(name);
         self.commands.remove(name)
     }
 
@@ -91,6 +113,10 @@ impl Registry {
         let Some(command) = self.commands.get(name) else {
             return Err(Error::new(Code::NotFound, format!("no command `{name}`")));
         };
+        // Its plugin's own command, as it activates, checks them.
+        if self.waiting.contains(name) {
+            return Ok(args);
+        }
         command.check_call(args)
     }
 

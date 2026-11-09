@@ -38,7 +38,8 @@ pub struct Manifest {
     pub platforms: Vec<String>,
     /// The thread that its calls run on.
     pub thread: Thread,
-    /// When it activates: `startup`, `command:<glob>`, `event:<name>`,
+    /// When it activates: `startup`, `command:<command>` or
+    /// `command:<namespace>.*` of its own namespace, `event:<name>`,
     /// `slot:<name>` or `osc:<number>`.
     pub activation: Vec<String>,
     /// The capabilities that it asks for.
@@ -254,12 +255,13 @@ impl Manifest {
                 ),
             ));
         }
+        let namespace = name.rsplit('/').next().unwrap_or(name);
         for on in &file.activation.on {
-            if !is_activation(on.get_ref()) {
+            if !is_activation(on.get_ref(), namespace) {
                 return Err(fail(
                     on.span(),
                     format!(
-                        "`{}` is not an activation: `startup`, `command:<glob>`, `event:<name>`, `slot:<name>` of a slot's name, or `osc:<number>`",
+                        "`{}` is not an activation: `startup`, `command:<command>` or `command:<namespace>.*` of the plugin's own namespace, `{namespace}`, `event:<name>`, `slot:<name>` of a slot's name, or `osc:<number>`",
                         on.get_ref()
                     ),
                 ));
@@ -583,19 +585,28 @@ pub(crate) fn is_requirement(constraint: &str) -> bool {
     }
 }
 
-/// Whether `on` is an activation event.
-fn is_activation(on: &str) -> bool {
+/// Whether `on` is an activation event of a plugin of `namespace`: a
+/// command's, of a command or a namespace's commands of its own, so that it
+/// takes no command of the app's or another plugin's.
+fn is_activation(on: &str, namespace: &str) -> bool {
     if on == "startup" {
         return true;
     }
     match on.split_once(':') {
-        Some(("command" | "event", rest)) => !rest.is_empty(),
+        Some(("command", pattern)) => is_of_namespace(pattern, namespace),
+        Some(("event", rest)) => !rest.is_empty(),
         Some(("slot", name)) => is_slot(name),
         Some(("osc", number)) => {
             !number.is_empty() && number.bytes().all(|byte| byte.is_ascii_digit())
         }
         _ => false,
     }
+}
+
+/// Whether `pattern` is a command's name or a namespace's, as
+/// [`is_pattern`] reads it, of the plugin's `namespace`.
+pub fn is_of_namespace(pattern: &str, namespace: &str) -> bool {
+    is_pattern(pattern) && pattern.split('.').next() == Some(namespace)
 }
 
 /// Whether `pattern` is a command's name, `namespace.action`, of as many
@@ -740,6 +751,22 @@ config-schema = "schema.json"
             wrong(&format!("{plugin}[activation]\non = [\"boot\"]\n"))
                 .starts_with("6:7: `boot` is not an activation")
         );
+        // A command's activation of the plugin's own namespace alone, so
+        // that it takes no command of the app's nor another plugin's.
+        let namespace = "x";
+        for pattern in ["*", "window.*", "app.quit", "*.go", "other.go", "x"] {
+            let told = wrong(&format!(
+                "{plugin}[activation]\non = [\"command:{pattern}\"]\n"
+            ));
+            assert!(
+                told.contains("of the plugin's own namespace"),
+                "{pattern}: {told}"
+            );
+        }
+        for pattern in [format!("{namespace}.go"), format!("{namespace}.*")] {
+            let text = format!("{plugin}[activation]\non = [\"command:{pattern}\"]\n");
+            assert!(Manifest::parse(&text).is_ok(), "{pattern}");
+        }
         assert!(
             wrong(&format!("{plugin}[uses]\ncommands = [\"copy\"]\n"))
                 .starts_with("6:13: `copy` is not a command's name")
