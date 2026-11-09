@@ -451,3 +451,250 @@ fn new_makes_a_plugin_that_reads_packs_and_runs() {
         assert_eq!(output.status.code(), Some(1), "{wrong}");
     }
 }
+
+/// The plugin `acme/<name>` that `sleip new` makes in the sandbox, its
+/// folder.
+fn made(sandbox: &Sandbox, name: &str) -> PathBuf {
+    let work = sandbox.home.join("work");
+    std::fs::create_dir_all(&work).unwrap();
+    let output = sandbox
+        .command(&["new", &format!("acme/{name}")])
+        .current_dir(&work)
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    work.join(name)
+}
+
+/// `sleip check` in `folder`, of `args` before it.
+fn checked(sandbox: &Sandbox, folder: &Path, args: &[&str]) -> Output {
+    let mut line = args.to_vec();
+    line.push("check");
+    sandbox.command(&line).current_dir(folder).output().unwrap()
+}
+
+/// Edits the file `path` of `folder`, its text of `edit`.
+fn edit(folder: &Path, path: &str, edit: impl FnOnce(String) -> String) {
+    let file = folder.join(path);
+    let text = std::fs::read_to_string(&file).unwrap_or_default();
+    if let Some(parent) = file.parent() {
+        std::fs::create_dir_all(parent).unwrap();
+    }
+    std::fs::write(&file, edit(text)).unwrap();
+}
+
+#[test]
+fn check_passes_the_plugin_that_new_makes() {
+    let sandbox = Sandbox::new("check-new");
+    let folder = made(&sandbox, "good");
+    let text = checked(&sandbox, &folder, &[]);
+    assert!(text.status.success(), "{text:?}");
+    assert_eq!(stdout(&text), "No problem found.\n");
+    let json = checked(&sandbox, &folder, &["--json"]);
+    assert!(json.status.success(), "{json:?}");
+    let json = events(&json);
+    assert_eq!(json.len(), 1, "{json:?}");
+    assert_eq!(json[0]["event"], "done");
+    assert_eq!(json[0]["problems"], 0);
+}
+
+#[test]
+fn check_tells_each_problem_of_its_file_and_line() {
+    let sandbox = Sandbox::new("check-problems");
+    // Each case: what breaks the plugin, and the problems told, each its
+    // place and its kind.
+    type Case = (&'static str, fn(&Path), &'static [&'static str]);
+    let cases: [Case; 10] = [
+        (
+            "syntax",
+            |folder| {
+                edit(folder, "plugin.toml", |text| {
+                    text.replacen("[plugin]", "[plugin", 1)
+                });
+            },
+            &["plugin.toml:1:"],
+        ),
+        (
+            "withheld",
+            |folder| {
+                edit(folder, "plugin.toml", |text| {
+                    format!(
+                        "{text}\n[capabilities]\nnet = [\"api.github.com\"]\nprocess-spawn = true\n"
+                    )
+                });
+            },
+            &[
+                "plugin.toml:18:1: Capability: ",
+                "plugin.toml:19:1: Capability: ",
+            ],
+        ),
+        (
+            "api",
+            |folder| {
+                edit(folder, "plugin.toml", |text| {
+                    text.replace("api = \"^0.1\"", "api = \"^9.0\"")
+                });
+            },
+            &["plugin.toml:5:1: Api: it asks for the plugin API `^9.0`"],
+        ),
+        (
+            "catalog",
+            |folder| {
+                edit(folder, "locales/en/catalog.ftl", |text| {
+                    format!("{text}broken\n")
+                });
+                edit(folder, "locales/it/catalog.ftl", |_| {
+                    "ok = Bene\n\noops =\n".to_owned()
+                });
+            },
+            &[
+                "locales/en/catalog.ftl:5:",
+                "locales/it/catalog.ftl:3:1: Catalog: ",
+            ],
+        ),
+        (
+            "types",
+            |folder| {
+                edit(folder, "src/init.luau", |text| {
+                    text.replacen(
+                        "--!strict\n",
+                        "--!strict\nlocal wrong: number = \"text\"\n",
+                        1,
+                    )
+                });
+            },
+            &["src/init.luau:", ": TypeError: "],
+        ),
+        (
+            "parse",
+            |folder| {
+                edit(folder, "src/init.luau", |text| {
+                    format!("{text}\nlocal = 1\n")
+                });
+            },
+            &["src/init.luau:", ": SyntaxError: "],
+        ),
+        (
+            "module",
+            |folder| {
+                edit(folder, "src/init.luau", |text| {
+                    format!("local view = require(\"./ui/view\")\nlocal _ = view\n{text}")
+                });
+                edit(folder, "src/ui/view.luau", |_| {
+                    "--!strict\nlocal count: number = 0\ncount = \"many\"\nreturn {}\n".to_owned()
+                });
+            },
+            &["src/ui/view.luau:3:", ": TypeError: "],
+        ),
+        (
+            "missing",
+            |folder| {
+                edit(folder, "src/init.luau", |text| {
+                    format!("local gone = require(\"./gone\")\nlocal _ = gone\n{text}")
+                });
+            },
+            &["src/init.luau:1:"],
+        ),
+        (
+            "uses",
+            |folder| {
+                edit(folder, "plugin.toml", |text| {
+                    format!("{text}\n[uses]\ncommands = [\"copy\"]\n")
+                });
+            },
+            &["plugin.toml:18:", ": Manifest: "],
+        ),
+        (
+            "package",
+            |folder| {
+                std::fs::rename(folder.join("src/init.luau"), folder.join("src/main.luau"))
+                    .unwrap();
+            },
+            &[".: Package: ", "`src/init.luau`"],
+        ),
+    ];
+    for (name, breaks, told) in cases {
+        let folder = made(&sandbox, name);
+        breaks(&folder);
+        let output = checked(&sandbox, &folder, &[]);
+        let text = stdout(&output);
+        assert_eq!(output.status.code(), Some(1), "{name}: {text}");
+        for each in told {
+            assert!(text.contains(each), "{name}: no `{each}` in\n{text}");
+        }
+        assert!(text.trim_end().ends_with("found."), "{name}: {text}");
+    }
+}
+
+#[test]
+fn check_notes_what_is_not_wrong_and_tells_json() {
+    let sandbox = Sandbox::new("check-notes");
+    // A command of no title in English, and the API's types not this
+    // Sleip's: notes, which fail nothing.
+    let folder = made(&sandbox, "noted");
+    edit(&folder, "locales/en/noted.ftl", |text| {
+        text.lines()
+            .filter(|line| !line.starts_with("command-noted-say"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    });
+    edit(&folder, "lokyr.d.luau", |text| {
+        format!("{text}\n-- edited\n")
+    });
+    let output = checked(&sandbox, &folder, &["--json"]);
+    assert!(output.status.success(), "{output:?}");
+    let json = events(&output);
+    let notes: Vec<_> = json
+        .iter()
+        .filter(|event| event["event"] == "note")
+        .collect();
+    assert_eq!(notes.len(), 2, "{json:?}");
+    assert_eq!(notes[0]["file"], "locales/en");
+    assert!(
+        notes[0]["message"]
+            .as_str()
+            .unwrap()
+            .contains("command-noted-say")
+    );
+    assert_eq!(notes[1]["file"], "lokyr.d.luau");
+    assert_eq!(json.last().unwrap()["problems"], 0);
+    // A problem, of JSON: its file, line, column, kind and message.
+    edit(&folder, "src/init.luau", |text| {
+        text.replacen(
+            "--!strict\n",
+            "--!strict\nlocal wrong: number = \"text\"\n",
+            1,
+        )
+    });
+    let output = checked(&sandbox, &folder, &["--json"]);
+    assert_eq!(output.status.code(), Some(1));
+    let json = events(&output);
+    let problem = json
+        .iter()
+        .find(|event| event["event"] == "problem")
+        .unwrap();
+    assert_eq!(problem["file"], "src/init.luau");
+    assert_eq!(problem["kind"], "TypeError");
+    assert!(problem["line"].as_u64().unwrap() > 1);
+    assert!(problem["column"].as_u64().unwrap() >= 1);
+    assert!(!problem["message"].as_str().unwrap().is_empty());
+    assert_eq!(json.last().unwrap()["event"], "done");
+    assert_eq!(json.last().unwrap()["problems"], 1);
+    // No catalog in English: a note, the commands' titles left alone.
+    let bare = made(&sandbox, "bare");
+    std::fs::remove_dir_all(bare.join("locales")).unwrap();
+    let output = checked(&sandbox, &bare, &[]);
+    assert!(output.status.success(), "{output:?}");
+    let text = stdout(&output);
+    assert!(
+        text.starts_with("locales: note: no catalog in English"),
+        "{text}"
+    );
+    assert_eq!(text.lines().count(), 2, "{text}");
+    // No plugin in the folder.
+    let empty = sandbox.home.join("empty");
+    std::fs::create_dir_all(&empty).unwrap();
+    let output = checked(&sandbox, &empty, &[]);
+    assert_eq!(output.status.code(), Some(1));
+    assert!(stdout(&output).starts_with("plugin.toml: Manifest: it cannot be read"));
+}

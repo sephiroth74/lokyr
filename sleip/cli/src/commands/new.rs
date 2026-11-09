@@ -51,11 +51,7 @@ const TEMPLATE: [(&str, &str, bool); 8] = [
         include_str!("../../../../crates/plugin-host-luau/luau/template/.vscode/settings.json"),
         false,
     ),
-    (
-        "lokyr.d.luau",
-        include_str!("../../../../crates/plugin-host-luau/luau/lokyr.d.luau"),
-        false,
-    ),
+    ("lokyr.d.luau", super::check::DEFINITIONS, false),
 ];
 
 /// The template's plugin's name.

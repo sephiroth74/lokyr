@@ -18,6 +18,8 @@ pub struct Options {
 pub enum Command {
     /// A plugin made, by its name.
     New(String),
+    /// The plugin of the current folder checked.
+    Check,
     /// The installed plugins.
     List,
     /// A plugin removed, by its name.
@@ -47,6 +49,7 @@ Usage: sleip [options] <command> [arguments]
 
 Commands:
   new <plugin>       Make a plugin of Luau, as owner/name, in a folder of its name
+  check              Check the plugin of the current folder: its manifest, texts and types
   list               List the installed plugins, their versions and capabilities
   remove <plugin>    Remove a plugin, as owner/name; its package stays until `gc`
   gc                 Remove the packages of the store that no lockfile names
@@ -66,6 +69,9 @@ fn command_help(name: &str) -> Option<&'static str> {
     Some(match name {
         "new" => {
             "Usage: sleip new [options] <plugin>\n\nMakes a plugin of Luau that works, as owner/name, in a folder of its name\nafter the owner in the current folder: its manifest, src/init.luau of a\ncommand that shows a notice, its texts in English, a test, the plugin API's\ntypes and luau-lsp's settings.\n"
+        }
+        "check" => {
+            "Usage: sleip check [options]\n\nChecks the plugin of the current folder: its manifest, the capabilities that\nthe app takes, the plugin API's version, its texts' catalogs, its package's\nlayout and sizes, and its sources' types against the plugin API's, as\nluau-lsp checks them, each problem of its file, line and column.\n"
         }
         "list" => {
             "Usage: sleip list [options]\n\nLists the plugins of plugins.lock: each one's version, kind, source and\ncapabilities.\n"
@@ -122,6 +128,7 @@ pub fn parse(args: &[String]) -> Result<Parsed, String> {
         ["help", name] => help_of(Some(name)),
         [name, ..] if help => help_of(Some(name)),
         ["new", plugin] => Ok(Parsed::Run(options, Command::New((*plugin).to_owned()))),
+        ["check"] => Ok(Parsed::Run(options, Command::Check)),
         ["list"] => Ok(Parsed::Run(options, Command::List)),
         ["remove", plugin] => Ok(Parsed::Run(options, Command::Remove((*plugin).to_owned()))),
         ["gc"] => Ok(Parsed::Run(options, Command::Gc)),

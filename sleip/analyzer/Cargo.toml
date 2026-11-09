@@ -1,0 +1,22 @@
+[package]
+name = "sleip-analyzer"
+description = "Luau's type checker for Sleip, of the plugin API's types"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+publish = false
+build = "build.rs"
+
+[dependencies]
+# Luau's VM, compiler, parser and config, of luau0-src, which the type checker
+# links: one Luau in a binary, the plugins' host's too.
+mlua.workspace = true
+
+[build-dependencies]
+cc.workspace = true
+
+[lints]
+workspace = true

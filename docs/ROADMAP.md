@@ -269,7 +269,6 @@ The plugin API has its own version, `plugin-sdk`'s, experimental until its 1.0 (
 
 | Question | When to decide |
 |---|---|
-| How `sleip check` type-checks Luau: Luau's analyzer is C++, to embed or to ship as `luau-analyze` ([ADR 0012](adr/0012-luau-plugins.md)) | F4 |
 | An atomic store for the watchdog's interrupt in the vendored Luau, or Luau's guarantee that the race is harmless ([ADR 0012](adr/0012-luau-plugins.md)) | F4 |
 | The buffers for bulk data between the host and Luau plugins, and how the Luau type definitions are generated from the Rust types ([ADR 0012](adr/0012-luau-plugins.md)) | F4 |
 | The threads of the Luau plugins' executor: one, a fixed pool, or a pool that grows, which the user asked on 5 November 2026 to consider for third-party plugins: a thread at the start, one more as all of them hold calls under way, up to a bound, and an idle one ending after a while; each plugin one call at a time, its VM on one thread at a time. First-party plugins on a thread of their own have one each, as the user chose the same day ([PLUGIN-SYSTEM](PLUGIN-SYSTEM.md#execution-model)) | F4, with the executor |

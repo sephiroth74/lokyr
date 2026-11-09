@@ -77,6 +77,8 @@ notify = { version = "8.2.1", default-features = false, features = ["macos_fseve
 toml_edit = { version = "0.25.17", default-features = false, features = ["parse", "serde"] }
 # The reader of the themes of `.itermcolors`, property lists.
 plist = { version = "1.10.3", default-features = false }
+# The C++ of Luau's type checker, which Sleip builds.
+cc = "1.8.0"
 # The constraints of the plugins' versions and of the plugin API that they
 # take, as Cargo reads them.
 semver = "1.0.28"
@@ -93,6 +95,7 @@ unic-langid = "0.9.6"
 vte = "0.15.0"
 
 # Internal crates
+sleip-analyzer = { path = "sleip/analyzer" }
 sleip-index = { path = "sleip/index" }
 sleip-resolver = { path = "sleip/resolver" }
 lokyr-app-core = { path = "crates/app-core", default-features = false }

@@ -51,8 +51,9 @@ deny = [
     { crate = "async-std", reason = "the only async runtime is tokio, in Sleip" },
     # Plugins and libraries reach the kernel only through the plugin SDK.
     { crate = "lokyr-kernel", wrappers = ["lokyr-app", "lokyr-app-core", "xtask"], reason = "only the app and its window controller may depend on the kernel, and xtask, which converts the bundle's themes and never ships" },
-    # Luau, a C++ runtime, stays behind the plugin host and its feature.
-    { crate = "mlua", wrappers = ["lokyr-plugin-host-luau"], reason = "only the plugin host may embed Luau" },
+    # Luau, a C++ runtime, stays behind the plugin host and its feature, and
+    # Sleip's analyzer, which links its libraries for Luau's type checker.
+    { crate = "mlua", wrappers = ["lokyr-plugin-host-luau", "sleip-analyzer"], reason = "only the plugin host may embed Luau, and Sleip's analyzer link it" },
     # Only the differential tests compare the VT core against alacritty_terminal:
     # no crate of the terminal uses it, not even in its own tests.
     { crate = "alacritty_terminal", wrappers = ["lokyr-differential"], reason = "only the differential tests use alacritty_terminal" },

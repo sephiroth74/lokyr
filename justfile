@@ -29,11 +29,12 @@ vttest_commit := "0229d7171a8574a2bf406c6ce14549f65d810e51"
 # files: bump it in a dedicated commit.
 vtebench_commit := "ead80032e57dee2e75f0b51f2ea67528647d9944"
 
-# Platform-independent crates, and the tools of the terminal's tests and
-# tasks, which must keep building, and passing their tests, on Linux.
-portable := "-p lokyr-vt-core -p lokyr-pty -p lokyr-session -p lokyr-search -p lokyr-kernel -p lokyr-app-core -p lokyr-text-core -p lokyr-render-core -p lokyr-ui-core -p lokyr-platform-core -p lokyr-replay -p lokyr-differential -p xtask"
+# Platform-independent crates, the tools of the terminal's tests and
+# tasks, and Sleip, whose checks the registry's CI runs on Linux, which must
+# keep building, and passing their tests, on Linux.
+portable := "-p lokyr-vt-core -p lokyr-pty -p lokyr-session -p lokyr-search -p lokyr-kernel -p lokyr-app-core -p lokyr-text-core -p lokyr-render-core -p lokyr-ui-core -p lokyr-platform-core -p lokyr-replay -p lokyr-differential -p xtask -p lokyr-pkg-model -p sleip-analyzer -p sleip-cli -p sleip-index -p sleip-resolver"
 # The platform-independent crates whose tests `check-linux` checks for Linux from any host.
-portable_tests := "-p lokyr-pty -p lokyr-session -p lokyr-kernel -p lokyr-app-core -p lokyr-text-core -p lokyr-render-core -p lokyr-ui-core -p lokyr-platform-core -p lokyr-replay -p lokyr-differential -p xtask"
+portable_tests := "-p lokyr-pty -p lokyr-session -p lokyr-kernel -p lokyr-app-core -p lokyr-text-core -p lokyr-render-core -p lokyr-ui-core -p lokyr-platform-core -p lokyr-replay -p lokyr-differential -p xtask -p lokyr-pkg-model -p sleip-analyzer -p sleip-cli -p sleip-index -p sleip-resolver"
 
 # List available commands.
 _default:

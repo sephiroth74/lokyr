@@ -131,7 +131,7 @@ lokyr/
 │   ├── font-coretext/     objc2-core-text (discovery, fallback, shaping, rasterization)
 │   ├── font-freetype/     (F7) fontconfig + freetype-rs + harfrust
 │   ├── plugin-sdk/        the plugin API (the HostApi's messages and their types, the view tree's data) and its Rust front end; no internal dependencies
-│   ├── plugin-host-luau/  Luau host (mlua): one VM per plugin, the Luau front end, capabilities, limits (behind a feature)
+│   ├── plugin-host-luau/  Luau host (mlua): one VM per plugin, the Luau front end, capabilities, limits (behind a feature); `luau/`: the API's types, `lokyr.d.luau`, and the template of `sleip new`
 │   ├── pkg-model/         plugin.toml, plugins.toml/.lock, the store, the archive, index format, dist (shared by app, sleip, registry)
 │   └── app/               the `lokyr` binary: `main`, the backends for the target, their wiring + distribution
 ├── plugins/               first-party: depend ONLY on plugin-sdk
@@ -140,9 +140,8 @@ lokyr/
 │   ├── plugin-manager/ (F4) keymap-linux/ (F7)
 │   └── (F5) blocks/ tmux-cc/ triggers/ images/ …
 ├── dist/                  default.toml, minimal.toml
-├── sleip/              cli/ (`sleip` binary) · resolver/ (pubgrub) · index/ (sparse index, verification)
+├── sleip/              cli/ (`sleip` binary) · resolver/ (pubgrub) · index/ (sparse index, verification) · analyzer/ (Luau's type checker, of Luau's vendored `Analysis`)
 ├── registry/              registry-server (v1) + index specification
-├── templates/             templates for `sleip new` (Luau)
 ├── tools/                 replay/ (`lokyr-replay`, `lokyr-record`) · differential/ (the VT core against `alacritty_terminal`) · bench/ · ui-gallery/ (`ui-core`'s widgets, to check by hand) · xtask/ (bundle, signing, gen-dist, UCD tables, terminfo)
 ├── fuzz/                  cargo-fuzz: parser, terminal, differential (against `alacritty_terminal`); later .itermcolors, manifest, archives
 └── docs/                  this documentation (later an mdBook)
@@ -178,7 +177,7 @@ sleip/* ─▶ pkg-model           registry/* ─▶ pkg-model
 | Only `app` and `app-core` depend on `kernel`, and `xtask`, which converts the themes that the bundle holds with the kernel's importer and never ships | Plugins must not be able to bypass the SDK | `cargo-deny` (`wrappers`) and `xtask check-deps` |
 | `plugins/*` depend only on `plugin-sdk`, plus a whitelist of utility crates | Proves the public API is sufficient | `xtask check-deps` |
 | First-party plugins use `#![forbid(unsafe_code)]`; clippy `disallowed-methods` forbids threads, blocking I/O and clocks | They follow the same rules as Luau plugins | clippy in CI |
-| Luau (`mlua`) only in `plugin-host-luau`, and Luau's analyzer only in `sleip-analyzer`, a crate of Sleip's that the app never links | The C++ runtime stays behind one crate and one feature, and the app holds no analyzer | `cargo-deny` (`wrappers`) |
+| Luau (`mlua`) only in `plugin-host-luau`, and Luau's analyzer only in `sleip-analyzer`, a crate of Sleip's that the app never links, which links the libraries of Luau that `mlua` builds, so that a binary holds one Luau | The C++ runtime stays behind one crate and one feature, and the app holds no analyzer | `cargo-deny` (`wrappers`) |
 | HTTP/TLS (`hyper`, `reqwest`, `rustls`, …) only in `sleip/*` | No networking code of the app's own; Sparkle's updater, a framework, is its one network client | `cargo-deny` (`bans` + `wrappers`) |
 | No async runtime (`tokio`, `async-std`, …) in the app | Fewer threads, less memory, fewer dependencies | `cargo-deny` |
 | Only `app` picks the backends, via `cfg(target_os)` | Core crates stay portable | `xtask check-deps` (`backends-only-in-app`) |
@@ -214,7 +213,7 @@ Versions and maturity must be rechecked when coding starts.
 - **Logging and errors**: `tracing` for logs and spans (with signposts on macOS); `thiserror` in libraries, `anyhow` only in binaries.
 - **Child processes** mark the descriptors that they inherit closed on exec, as the `pty` crate's do: on macOS, a child that does not can hold the pipe of a spawn made at the same moment until its program ends, and that spawn waits as long ([VT-CORE.md](VT-CORE.md#pty-and-processes-pty)). A program in a terminal starts through the `pty` crate; another child marks its descriptors between fork and exec, with `std::process::Command`'s `pre_exec`, which makes `std` fork and exec rather than spawn, or, on macOS, through a direct call of `posix_spawn` with Apple's `POSIX_SPAWN_CLOEXEC_DEFAULT`, which `std::process::Command` does not set. A dependency that spawns processes, or C code that calls `popen` or `system`, is looked at for the same before it comes in.
 - **Workspace config**: `[workspace.dependencies]` and `[workspace.lints]` are centralized; clippy runs with `-D warnings`.
-- **`unsafe`**: allowed only in the platform, render, font and `pty` crates, in `plugin-host-luau`, where the watchdog and the bulk readers use Lua's C API, in `app-core`'s log, which takes the standard error through a pipe and the abort's signal, in `tools/bench`, which reads other processes' statistics from the kernel, in `tools/e2e`, which reads another app's accessibility tree and posts its keys, and in the test allocators and handlers of signals that the tests need, outside library code. Always with a `// SAFETY:` comment. Every other crate uses `#![forbid(unsafe_code)]`; `plugin-host-luau`, `app-core`, `tools/bench` and `tools/e2e` use `#![deny(unsafe_code)]` and allow their call sites one by one.
+- **`unsafe`**: allowed only in the platform, render, font and `pty` crates, in `plugin-host-luau`, where the watchdog and the bulk readers use Lua's C API, in `app-core`'s log, which takes the standard error through a pipe and the abort's signal, in `tools/bench`, which reads other processes' statistics from the kernel, in `tools/e2e`, which reads another app's accessibility tree and posts its keys, in `sleip-analyzer`, which calls Luau's analyzer through C, and in the test allocators and handlers of signals that the tests need, outside library code. Always with a `// SAFETY:` comment. Every other crate uses `#![forbid(unsafe_code)]`; `plugin-host-luau`, `app-core`, `tools/bench`, `tools/e2e` and `sleip-analyzer` use `#![deny(unsafe_code)]` and allow their call sites one by one.
 - **Comments**: code comments and doc comments describe the code itself. They never reference the plan (roadmap phases, task IDs, ADR numbers, sections of these docs). Links to external specifications such as xterm, kitty or Unicode are fine.
 - **Common tasks** live in the `justfile`: `just ci` runs every check that CI runs, and `just --list` shows the other recipes.
 - **Language**: all documentation, comments and commit messages are in English.

@@ -14,9 +14,11 @@ name = "sleip"
 path = "src/main.rs"
 
 [dependencies]
+fluent-syntax.workspace = true
+sleip-analyzer.workspace = true
 sleip-index.workspace = true
 sleip-resolver.workspace = true
-lokyr-pkg-model.workspace = true
+lokyr-pkg-model = { workspace = true, features = ["archive"] }
 lokyr-plugin-sdk.workspace = true
 serde_json.workspace = true
 # The user's plugins.toml edited in place, of its comments and order.

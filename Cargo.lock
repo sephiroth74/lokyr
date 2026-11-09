@@ -2042,13 +2042,23 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bbbb5d9659141646ae647b42fe094daf6c6192d1620870b449d9557f748b2daa"
 
 [[package]]
+name = "sleip-analyzer"
+version = "0.7.0"
+dependencies = [
+ "cc",
+ "mlua",
+]
+
+[[package]]
 name = "sleip-cli"
 version = "0.7.0"
 dependencies = [
+ "fluent-syntax",
  "lokyr-pkg-model",
  "lokyr-plugin-host-luau",
  "lokyr-plugin-sdk",
  "serde_json",
+ "sleip-analyzer",
  "sleip-index",
  "sleip-resolver",
  "toml_edit",
