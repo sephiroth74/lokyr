@@ -25,6 +25,7 @@ mod copy;
 mod folders;
 mod frame;
 mod input;
+mod installed;
 mod marks;
 mod menus;
 mod notices;
@@ -54,6 +55,10 @@ fn settle(fake: &mut Fake, app: &mut App, window: WindowId) {
 }
 
 /// A program that runs until its terminal hangs up, and writes nothing.
+/// What a test that makes VMs of Luau, or that counts them, holds, so that
+/// the counts of one are not another's.
+static LUAU: Mutex<()> = Mutex::new(());
+
 fn quiet() -> Program {
     Program::command("/bin/cat", [] as [&str; 0])
 }

@@ -60,6 +60,7 @@ pub(crate) mod dividers;
 mod folders;
 pub(crate) mod frame;
 mod input;
+mod installed;
 mod installs;
 mod menus;
 mod notices;
@@ -520,6 +521,9 @@ pub struct App<B: Backend> {
     /// The timer of the next plugin that faulted to start again, and its
     /// time.
     restart_timer: Option<(TimerId, Instant)>,
+    /// Where the plugins that Sleip installed are, which the app adds as it
+    /// starts; none for an app of the built-in plugins alone.
+    installed: Option<installed::Installed>,
     /// The timer of the next of the plugins' timers to fire, and its time:
     /// none while no plugin's timer waits.
     plugin_timer: Option<(TimerId, Instant)>,
@@ -786,6 +790,7 @@ impl<B: Backend> App<B> {
             bench_deadline: None,
             untitled_timer: None,
             restart_timer: None,
+            installed: None,
             plugin_timer: None,
             scripts: BTreeSet::new(),
             script_asks: BTreeMap::new(),
@@ -1180,6 +1185,13 @@ impl<B: Backend> App<B> {
     /// `state`, its state's directory, for the next start.
     pub fn with_state(mut self, state: Option<PathBuf>) -> Self {
         self.state = state;
+        self
+    }
+
+    /// The app, which adds the plugins that Sleip installed as it starts:
+    /// those of the lockfile `lock`, of their packages in `store`.
+    pub fn with_installed(mut self, lock: PathBuf, store: lokyr_pkg_model::store::Store) -> Self {
+        self.installed = Some(installed::Installed { lock, store });
         self
     }
 
@@ -2609,8 +2621,9 @@ impl<B: Backend> App<B> {
         let waker = platform.waker();
         self.plugins.set_wake(move || waker.wake());
         // Their states and their sections of the config, which their
-        // activation reads.
+        // activation reads, the installed plugins' too.
         self.plugins.set_state_directory(self.state.clone());
+        self.add_installed(platform);
         self.configure_plugins(platform);
         // A plugin whose activation failed is disabled, which the notice of
         // the plugins that stopped tells.

@@ -32,6 +32,9 @@ command-pane-search-web = Cerca sul web
 # The notice of a plugin that a fault stopped, by its name.
 plugin-stopped = Il plugin { $name } si è fermato, e le sue viste restano com'erano, senza rispondere ai clic: { $fault }
 plugin-capability-withheld = Il plugin { $name } chiede { $capability }, che nessun plugin ha ancora: funziona senza.
+plugin-not-loaded = Il plugin { $name } non si carica: { $why }
+plugin-other-api = Il plugin { $name } usa l'API dei plugin { $api }, e questo Lokyr ha la { $version }: non si carica finché non si aggiorna il plugin o Lokyr.
+plugins-lock-unread = I plugin installati non si caricano, perché plugins.lock non si legge: { $error }
 
 # The credits of the About panel, under the version and the copyright: the
 # license, and the links to the source code and to the licenses' notices of

@@ -22,7 +22,7 @@ const VERSION: &str = env!("LOKYR_VERSION");
 
 /// How the app is started, which a wrong command line tells.
 const USAGE: &str = "\
-Usage: lokyr [--version]
+Usage: lokyr [--version | --api-version]
        lokyr --bench startup
        lokyr --bench latency [--keys <n>] [--flood]
        lokyr --bench output [--window <width>x<height>] -- <program> [args]
@@ -57,6 +57,12 @@ fn main() -> ExitCode {
         },
         ["--version" | "-V"] => {
             println!("lokyr {VERSION}");
+            ExitCode::SUCCESS
+        }
+        // The plugin API's version, which Sleip resolves the plugins
+        // against.
+        ["--api-version"] => {
+            println!("{}", lokyr_kernel::plugins::API_VERSION);
             ExitCode::SUCCESS
         }
         ["+show-config", flags @ ..] => show_config(flags),
@@ -320,6 +326,21 @@ fn run(bench: Bench) -> ExitCode {
         );
     }
     let (mut config, path, error) = config();
+    // The plugins that Sleip installed: of the lockfile beside the config
+    // file, of their packages in the user's store; none in a bench, which
+    // measures the app of its own plugins.
+    let installed = path
+        .as_ref()
+        .and_then(|path| path.parent())
+        .zip(std::env::home_dir())
+        .filter(|_| matches!(bench, Bench::None))
+        .map(|(folder, home)| {
+            let data = std::env::var_os("XDG_DATA_HOME").map(PathBuf::from);
+            (
+                folder.join(lokyr_pkg_model::lock::FILE),
+                lokyr_pkg_model::store::Store::of_user(&home, data.as_deref()),
+            )
+        });
     // The GPU and the font take tens of milliseconds the first time in a
     // process, the next nearly nothing: a thread makes them, and lets them
     // go, as AppKit launches, and the app makes its own once it has.
@@ -359,10 +380,13 @@ fn run(bench: Bench) -> ExitCode {
                 None
             }
         };
-        let app = App::new(drawing, config, path)
+        let mut app = App::new(drawing, config, path)
             .with_version(VERSION)
             .with_state(lokyr_kernel::state::directory())
             .with_diagnostics(diagnostics);
+        if let Some((lock, store)) = installed {
+            app = app.with_installed(lock, store);
+        }
         match bench {
             Bench::None => app,
             Bench::Startup => app.with_startup_bench(),

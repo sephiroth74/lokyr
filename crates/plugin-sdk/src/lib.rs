@@ -12,6 +12,10 @@
 
 #![forbid(unsafe_code)]
 
+/// The plugin API's version, this crate's, which a plugin's manifest's
+/// `api` takes, and which the app tells Sleip.
+pub const API_VERSION: &str = env!("CARGO_PKG_VERSION");
+
 pub mod command;
 #[cfg(feature = "unstable")]
 pub mod event;

@@ -6,7 +6,7 @@
 
 use std::collections::BTreeMap;
 
-use lokyr_plugin_sdk::command::{self, Capability};
+use lokyr_plugin_sdk::command::{self, Capability, Category};
 use lokyr_plugin_sdk::keys;
 use lokyr_plugin_sdk::ui::Slot;
 use serde::Deserialize;
@@ -116,6 +116,7 @@ struct RawContributes {
 struct RawContributed {
     name: toml::Spanned<String>,
     title: toml::Spanned<String>,
+    category: Option<Category>,
 }
 
 #[derive(Deserialize)]
@@ -185,6 +186,10 @@ pub struct Contributed {
     pub name: String,
     /// Its title.
     pub title: String,
+    /// Its category, of the menu bar's menu that lists it, `view` if none
+    /// is given.
+    #[serde(default)]
+    pub category: Option<Category>,
 }
 
 /// Keys that a plugin binds to a command.
@@ -341,6 +346,23 @@ impl Manifest {
     pub fn namespace(&self) -> &str {
         self.name.rsplit('/').next().unwrap_or(&self.name)
     }
+
+    /// Whether the plugin takes the plugin API of `version`, as its `api`
+    /// constrains it, as Cargo reads a constraint: `^0.1` takes `0.1.4`
+    /// and not `0.2.0`; a plugin of no `api`, as a package of themes, takes
+    /// every one.
+    pub fn takes_api(&self, version: &str) -> bool {
+        let Some(api) = &self.api else {
+            return true;
+        };
+        match (
+            semver::VersionReq::parse(api),
+            semver::Version::parse(version),
+        ) {
+            (Ok(constraint), Ok(version)) => constraint.matches(&version),
+            _ => false,
+        }
+    }
 }
 
 /// The capabilities of `key`, whose value is `value`: `true` for one that
@@ -411,6 +433,7 @@ fn contributed(
         contributes.commands.push(Contributed {
             name: command.name.into_inner(),
             title: command.title.into_inner(),
+            category: command.category,
         });
     }
     for binding in raw.keybindings {

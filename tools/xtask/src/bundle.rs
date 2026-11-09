@@ -90,6 +90,10 @@ const USAGES: [&str; 16] = [
 /// their names that start with a dot too, as zsh's `.zshenv`.
 const SHELL_INTEGRATION: &str = "crates/pty/shell-integration";
 
+/// The file of the bundle's resources that tells the plugin API's version,
+/// which Sleip reads.
+pub(crate) const API_VERSION_FILE: &str = "api-version";
+
 /// Copies the tree of `from` into `to`, its files and its folders.
 fn copy_tree(from: &Path, to: &Path) -> Result<()> {
     fs::create_dir_all(to).with_context(|| format!("making {}", to.display()))?;
@@ -251,6 +255,13 @@ pub fn run(mut args: impl Iterator<Item = String>) -> Result<ExitCode> {
     )?;
     copy_font_licenses(&root.join(SYMBOLS_FONT), &resources)?;
     crate::themes::write(&root, &resources)?;
+    // The plugin API's version, which Sleip resolves the plugins against,
+    // read without starting the app.
+    fs::write(
+        resources.join(API_VERSION_FILE),
+        format!("{}\n", lokyr_kernel::plugins::API_VERSION),
+    )
+    .context("writing the plugin API's version")?;
     crate::licenses::write(&root, &resources.join("licenses/crates"))?;
     let catalogs = usage_catalogs(&root.join(LOCALES))?;
     let source = &catalogs[SOURCE];

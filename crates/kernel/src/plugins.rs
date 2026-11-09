@@ -29,6 +29,7 @@ use std::time::{Duration, Instant};
 
 use lokyr_pkg_model::manifest::{Manifest, ManifestError, Thread};
 use lokyr_pkg_model::schema::Schema;
+pub use lokyr_plugin_sdk::API_VERSION;
 pub use lokyr_plugin_sdk::event::WorkspaceEvent;
 pub use lokyr_plugin_sdk::host;
 use lokyr_plugin_sdk::host::MOST_WRITES;
@@ -415,6 +416,71 @@ struct State {
     lingering: Vec<search::Search>,
     /// Its timers, by their ids, [`host::MOST_TIMERS`] at most.
     timers: BTreeMap<u64, Timer>,
+    /// What activates it, of its manifest's `activation.on`: the app's
+    /// start, as of none.
+    triggers: Vec<Trigger>,
+}
+
+/// What activates a plugin, of its manifest's `activation.on`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum Trigger {
+    /// The app's start.
+    Startup,
+    /// A run of a command whose name the pattern matches, of `*` for any
+    /// text.
+    Command(String),
+    /// An event of the name.
+    Event(String),
+    /// A render of a view of the slot of the name.
+    Slot(String),
+}
+
+impl Trigger {
+    /// The triggers of `on`, a manifest's activation; the app's start of
+    /// none; an error of one that the app does not take yet.
+    fn of(name: &str, on: &[String]) -> Result<Vec<Self>, Error> {
+        if on.is_empty() {
+            return Ok(vec![Self::Startup]);
+        }
+        on.iter()
+            .map(|on| match on.split_once(':') {
+                None if on == "startup" => Ok(Self::Startup),
+                Some(("command", pattern)) => Ok(Self::Command(pattern.to_owned())),
+                Some(("event", event)) => Ok(Self::Event(event.to_owned())),
+                Some(("slot", slot)) => Ok(Self::Slot(slot.to_owned())),
+                Some(("osc", _)) => Err(Error::new(
+                    Code::Unavailable,
+                    format!(
+                        "the plugin `{name}` activates at `{on}`, which comes with the handlers of OSC sequences, in a later Lokyr"
+                    ),
+                )),
+                _ => Err(Error::new(
+                    Code::InvalidConfig,
+                    format!("the plugin `{name}` activates at `{on}`, which is no activation"),
+                )),
+            })
+            .collect()
+    }
+}
+
+/// Whether `pattern`, of `*` for any text, matches `text` whole.
+fn matches_pattern(pattern: &str, text: &str) -> bool {
+    let mut parts = pattern.split('*');
+    let first = parts.next().unwrap_or_default();
+    let Some(mut rest) = text.strip_prefix(first) else {
+        return false;
+    };
+    let parts: Vec<&str> = parts.collect();
+    let Some((last, middle)) = parts.split_last() else {
+        return rest.is_empty();
+    };
+    for part in middle {
+        match rest.find(part) {
+            Some(at) => rest = &rest[at + part.len()..],
+            None => return false,
+        }
+    }
+    rest.len() >= last.len() && rest.ends_with(last)
 }
 
 /// A timer of a plugin's.
@@ -431,6 +497,18 @@ struct Timer {
 }
 
 impl State {
+    /// Whether it waits for a trigger other than the app's start to
+    /// activate.
+    fn lazy(&self) -> bool {
+        !self.triggers.contains(&Trigger::Startup)
+    }
+
+    /// Whether it waits for a trigger to activate, as it is: added, or
+    /// turned on again, and lazy.
+    fn waits(&self) -> bool {
+        self.status == Status::Inactive && self.wanted && self.lazy()
+    }
+
     /// Whether it reads the processes, whose folders and programs a tab's
     /// title tells it.
     fn reads_processes(&self) -> bool {
@@ -838,6 +916,11 @@ impl Plugins {
         manifest: Manifest,
         plugin: Box<dyn Plugin>,
     ) -> Result<(), Error> {
+        self.add_declared_on(manifest, Runner::Main(plugin))
+    }
+
+    /// Adds the plugin of `runner`, as [`Plugins::add_declared`] does.
+    fn add_declared_on(&mut self, manifest: Manifest, runner: Runner) -> Result<(), Error> {
         let name = manifest.name.clone();
         let (withheld, capabilities): (Vec<Capability>, Vec<Capability>) = manifest
             .capabilities
@@ -845,13 +928,25 @@ impl Plugins {
             .cloned()
             .partition(Capability::is_withheld);
         let granted = (capabilities, Uses::new(manifest.uses.clone()));
-        self.insert(&name, Some(manifest), Runner::Main(plugin), Some(granted))?;
+        self.insert(&name, Some(manifest), runner, Some(granted))?;
         self.withheld.extend(
             withheld
                 .into_iter()
                 .map(|capability| (name.clone(), capability)),
         );
         Ok(())
+    }
+
+    /// Adds `plugin`, an installed one, which `manifest` describes, as
+    /// [`Plugins::add_declared`] does, on a thread of its own, which starts
+    /// as it activates: at the app's start, or at its trigger, as its
+    /// manifest's activation says, its commands showing before.
+    pub fn add_installed(
+        &mut self,
+        manifest: Manifest,
+        plugin: Box<dyn Plugin + Send>,
+    ) -> Result<(), Error> {
+        self.add_declared_on(manifest, Runner::Unstarted(plugin))
     }
 
     /// Takes the capabilities that the host withheld from the declared
@@ -918,6 +1013,12 @@ impl Plugins {
             Runner::Worker(_) | Runner::Stopped => &[],
         }))
         .unwrap_or(&[]);
+        let triggers = Trigger::of(
+            name,
+            manifest
+                .as_ref()
+                .map_or(&[][..], |manifest| &manifest.activation),
+        )?;
         let schema = self::schema(name, manifest.as_ref(), &runner)?;
         let config = schema.as_ref().map_or_else(Map::new, Schema::defaults);
         let file = self
@@ -965,8 +1066,20 @@ impl Plugins {
                 restarts: Restarts::default(),
                 lingering: Vec::new(),
                 timers: BTreeMap::new(),
+                triggers,
             },
         });
+        // A lazy plugin's commands, of its manifest, show in the menus and
+        // the palette before it activates.
+        if let Some(state) = self.entries.last().map(|entry| &entry.state)
+            && state.lazy()
+            && state
+                .manifest
+                .as_ref()
+                .is_some_and(|manifest| !manifest.contributes.commands.is_empty())
+        {
+            self.declarations_changed = true;
+        }
         Ok(())
     }
 
@@ -1186,68 +1299,57 @@ impl Plugins {
                 entry.state.status = Status::Inactive;
                 self.out.written = true;
             }
-            if entry.state.status != Status::Inactive {
+            // A lazy plugin waits for its trigger.
+            if entry.state.status != Status::Inactive || entry.state.lazy() {
                 continue;
             }
-            entry.state.status = Status::Active;
-            entry.state.ran = true;
-            entry.state.learn_tabs(context.workspace);
-            let Entry { runner, state, .. } = entry;
-            let plugin = match runner {
-                Runner::Main(plugin) => plugin,
-                Runner::Unstarted(_) => {
-                    let Runner::Unstarted(plugin) = std::mem::replace(runner, Runner::Stopped)
-                    else {
-                        continue;
-                    };
-                    let wake = self.wake.clone().unwrap_or_else(|| Arc::new(|| {}));
-                    match Worker::start(&state.name, plugin, wake) {
-                        Ok(mut worker) => {
-                            // Its first call, of nothing waiting.
-                            let _ = worker.ask(Job::Activate, context.focused);
-                            *runner = Runner::Worker(Box::new(worker));
-                        }
-                        Err(error) => errors.push(failed_start(
-                            state,
-                            context.registry,
-                            &mut self.declarations_changed,
-                            &Error::new(
-                                Code::Unavailable,
-                                format!("its thread did not start: {error}"),
-                            ),
-                        )),
-                    }
-                    continue;
-                }
-                Runner::Worker(_) | Runner::Stopped => continue,
-            };
-            let activated = call(
-                (plugin.as_mut(), state),
+            if let Err(error) = start(
+                entry,
                 context,
-                &mut self.out,
-                &mut self.declarations_changed,
-                "activate",
-                |plugin, cx| plugin.activate(cx),
-            );
-            if let Err(error) = activated {
-                if state.status == Status::Active {
-                    errors.push(failed_start(
-                        state,
-                        context.registry,
-                        &mut self.declarations_changed,
-                        &error,
-                    ));
-                } else {
-                    errors.push(error);
-                }
+                (&mut self.out, &mut self.declarations_changed),
+                self.wake.as_ref(),
+            ) {
+                errors.push(error);
             }
         }
         errors
     }
 
-    /// Whether an active plugin registered `command`.
+    /// Whether an active plugin registered `command`, or a plugin that
+    /// waits for its trigger runs it, as its manifest's commands or its
+    /// `command:` activation say, which its run activates.
     pub fn owns(&self, command: &str) -> bool {
-        self.owner(command).is_some()
+        self.owner(command).is_some() || self.lazy_owner(command).is_some()
+    }
+
+    /// The plugin that waits for its trigger that runs `command`, as its
+    /// manifest's commands or its `command:` activation say.
+    fn lazy_owner(&self, command: &str) -> Option<usize> {
+        self.entries.iter().position(|entry| {
+            let state = &entry.state;
+            state.waits()
+                && (state.triggers.iter().any(|trigger| {
+                    matches!(trigger, Trigger::Command(pattern) if matches_pattern(pattern, command))
+                }) || state.manifest.as_ref().is_some_and(|manifest| {
+                    manifest
+                        .contributes
+                        .commands
+                        .iter()
+                        .any(|contributed| contributed.name == command)
+                }))
+        })
+    }
+
+    /// Activates the plugin at `at`, which waits for its trigger, which
+    /// came: its error, if its activation failed at once.
+    fn waken(&mut self, at: usize, context: &mut Context<'_>) -> Result<(), Error> {
+        let wake = self.wake.clone();
+        start(
+            &mut self.entries[at],
+            context,
+            (&mut self.out, &mut self.declarations_changed),
+            wake.as_ref(),
+        )
     }
 
     fn owner(&self, command: &str) -> Option<usize> {
@@ -1279,11 +1381,33 @@ impl Plugins {
         chain: Chain,
         context: &mut Context<'_>,
     ) -> Result<(), Error> {
-        let Some(at) = self.owner(command) else {
-            return Err(Error::new(
-                Code::NotFound,
-                format!("no plugin runs `{command}`"),
-            ));
+        let at = match self.owner(command) {
+            Some(at) => at,
+            // A plugin that waits for its trigger activates, of the main
+            // thread at once, or of a thread of its own, which runs the
+            // command after its activation.
+            None => {
+                let Some(at) = self.lazy_owner(command) else {
+                    return Err(Error::new(
+                        Code::NotFound,
+                        format!("no plugin runs `{command}`"),
+                    ));
+                };
+                self.waken(at, context)?;
+                match (&self.entries[at].runner, self.owner(command)) {
+                    (_, Some(at)) => at,
+                    (Runner::Worker(_), None) => at,
+                    _ => {
+                        return Err(Error::new(
+                            Code::NotFound,
+                            format!(
+                                "the plugin `{}` activated, and registers no `{command}`",
+                                self.entries[at].state.name
+                            ),
+                        ));
+                    }
+                }
+            }
         };
         let Entry { runner, state, .. } = &mut self.entries[at];
         match runner {
@@ -1329,6 +1453,11 @@ impl Plugins {
         context: &mut Context<'_>,
     ) -> Result<bool, Error> {
         let Some(at) = self.owner(command) else {
+            // A plugin that waits for its trigger is not activated for a
+            // menu's question: its commands apply.
+            if self.lazy_owner(command).is_some() {
+                return Ok(true);
+            }
             return Err(Error::new(
                 Code::NotFound,
                 format!("no plugin runs `{command}`"),
@@ -1385,6 +1514,27 @@ impl Plugins {
                     ..command.clone()
                 };
                 (titled, state.name.clone())
+            }));
+        }
+        // Those of the plugins that wait for their triggers, as their
+        // manifests give them, which a run of one activates.
+        for state in self.entries.iter().map(|entry| &entry.state) {
+            let Some(manifest) = state.manifest.as_ref().filter(|_| state.waits()) else {
+                continue;
+            };
+            let texts = Texts::new(language, state.catalogs);
+            commands.extend(manifest.contributes.commands.iter().map(|contributed| {
+                let command = Command {
+                    name: contributed.name.clone(),
+                    title: texts
+                        .get(&title_message(&contributed.name))
+                        .unwrap_or_else(|| contributed.title.clone()),
+                    category: contributed.category.unwrap_or(commands::Category::View),
+                    capabilities: Vec::new(),
+                    params: Vec::new(),
+                    when: None,
+                };
+                (command, state.name.clone())
             }));
         }
         commands
@@ -1609,7 +1759,12 @@ impl Plugins {
             .iter()
             .map(|entry| &entry.state)
             .filter(|state| {
-                !matches!(state.status, Status::Inactive | Status::Off) && state.fills(slot)
+                let shows = !matches!(state.status, Status::Inactive | Status::Off)
+                    || (state.waits()
+                        && state
+                            .triggers
+                            .contains(&Trigger::Slot(slot.name().to_owned())));
+                shows && state.fills(slot)
             })
             .map(|state| state.name.as_str())
             .collect()
@@ -1649,6 +1804,20 @@ impl Plugins {
                 format!("there is no plugin `{name}`"),
             ));
         };
+        // A plugin that waits for its slot's trigger activates as its view
+        // first shows, of the main thread at once, or of a thread of its
+        // own, which renders after its activation.
+        let state = &self.entries[at].state;
+        if state.waits()
+            && view_slot(view).is_some_and(|slot| {
+                state
+                    .triggers
+                    .contains(&Trigger::Slot(slot.name().to_owned()))
+            })
+            && shows(state, view, context.workspace)
+        {
+            self.waken(at, context)?;
+        }
         let Entry { runner, state, .. } = &mut self.entries[at];
         if state.status != Status::Active || !shows(state, view, context.workspace) {
             return Ok(());
@@ -1782,6 +1951,7 @@ impl Plugins {
     /// The plugin that runs `command`, if an active one registered it.
     pub fn owner_of(&self, command: &str) -> Option<&str> {
         self.owner(command)
+            .or_else(|| self.lazy_owner(command))
             .map(|at| self.entries[at].state.name.as_str())
     }
 
@@ -1933,6 +2103,24 @@ impl Plugins {
         let mut errors = Vec::new();
         if events.is_empty() && !self.timers_owed() {
             return errors;
+        }
+        // The plugins that wait for an event of the batch activate, and hear
+        // it as they subscribe to it: one of the main thread at once, one of
+        // a thread of its own as its activation's subscriptions come.
+        let names: BTreeSet<&str> = events
+            .iter()
+            .filter(|(to, _)| to.is_none())
+            .map(|(_, event)| event.name())
+            .collect();
+        for at in 0..self.entries.len() {
+            let state = &self.entries[at].state;
+            let wakes = state.waits()
+                && state.triggers.iter().any(
+                    |trigger| matches!(trigger, Trigger::Event(name) if names.contains(name.as_str())),
+                );
+            if wakes && let Err(error) = self.waken(at, context) {
+                errors.push(error);
+            }
         }
         for entry in &mut self.entries {
             if entry.state.status != Status::Active {
@@ -2670,6 +2858,78 @@ fn within<T>(
 /// The key of every plugin's section of the config that turns it off with
 /// `false`, the host's, which no schema can have.
 pub const ENABLED: &str = "enabled";
+
+/// Activates the plugin of `entry`, which is inactive: one of the main
+/// thread is called at once; one of a thread of its own starts it, and
+/// activates there, its failure coming through [`Plugins::serve`]. The
+/// error of an activation that failed at once, which disables it.
+fn start(
+    entry: &mut Entry,
+    context: &mut Context<'_>,
+    (out, declarations_changed): (&mut Outbox, &mut bool),
+    wake: Option<&worker::Wake>,
+) -> Result<(), Error> {
+    entry.state.status = Status::Active;
+    entry.state.ran = true;
+    entry.state.learn_tabs(context.workspace);
+    let Entry { runner, state, .. } = entry;
+    let plugin = match runner {
+        Runner::Main(plugin) => plugin,
+        Runner::Unstarted(_) => {
+            let Runner::Unstarted(plugin) = std::mem::replace(runner, Runner::Stopped) else {
+                return Ok(());
+            };
+            let wake = wake.cloned().unwrap_or_else(|| Arc::new(|| {}));
+            return match Worker::start(&state.name, plugin, wake) {
+                Ok(mut worker) => {
+                    // Its first call, of nothing waiting.
+                    let _ = worker.ask(Job::Activate, context.focused);
+                    *runner = Runner::Worker(Box::new(worker));
+                    Ok(())
+                }
+                Err(error) => Err(failed_start(
+                    state,
+                    context.registry,
+                    declarations_changed,
+                    &Error::new(
+                        Code::Unavailable,
+                        format!("its thread did not start: {error}"),
+                    ),
+                )),
+            };
+        }
+        Runner::Worker(_) | Runner::Stopped => return Ok(()),
+    };
+    let activated = call(
+        (plugin.as_mut(), state),
+        context,
+        out,
+        declarations_changed,
+        "activate",
+        |plugin, cx| plugin.activate(cx),
+    );
+    match activated {
+        Ok(()) => Ok(()),
+        Err(error) if state.status == Status::Active => Err(failed_start(
+            state,
+            context.registry,
+            declarations_changed,
+            &error,
+        )),
+        Err(error) => Err(error),
+    }
+}
+
+/// The slot that `view` is of, if it is one's, as a panel is not.
+fn view_slot(view: &ViewId) -> Option<Slot> {
+    Some(match view {
+        ViewId::TabBar(_) => Slot::TabBar,
+        ViewId::WindowStrip(_) => Slot::WindowStrip,
+        ViewId::StatusBar(_) => Slot::StatusBar,
+        ViewId::PaneHeader(_) => Slot::PaneHeader,
+        ViewId::Panel(_) => return None,
+    })
+}
 
 /// Stops the plugin of `entry`, which its section of the config turns off:
 /// its commands and its bindings go, as a disabled plugin's, its panels
@@ -3748,8 +4008,10 @@ impl Host<'_, '_> {
                 format!("`{name}` is not of the plugin's namespace, `{namespace}`"),
             ));
         }
-        let taken = self.context.registry.in_order().any(|command| {
+        let registry = &self.context.registry;
+        let taken = registry.in_order().any(|command| {
             command.name.starts_with(&prefix)
+                && registry.owner(&command.name) != Some(self.state.name.as_str())
                 && !self
                     .state
                     .commands
@@ -4681,6 +4943,17 @@ impl Host<'_, '_> {
             Asked::RegisterCommand(command) => {
                 if self.state.uses.is_some() {
                     self.of_its_namespace(&command.name)?;
+                }
+                // A command of its manifest, which showed as it waited for
+                // its trigger, takes its place.
+                if self.context.registry.owner(&command.name) == Some(self.state.name.as_str())
+                    && !self
+                        .state
+                        .commands
+                        .iter()
+                        .any(|own| own.name == command.name)
+                {
+                    self.context.registry.unregister(&command.name);
                 }
                 self.context
                     .registry

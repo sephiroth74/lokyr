@@ -398,11 +398,13 @@ fn a_capability_that_no_plugin_has_yet_is_refused_with_a_notice() {
 
 #[test]
 fn an_app_of_no_plugin_of_luau_makes_no_vm() {
+    let _luau = LUAU.lock().unwrap_or_else(PoisonError::into_inner);
+    let before = lokyr_plugin_host_luau::vms_made();
     let mut fake = Fake::default();
     let mut app = app(Config::default(), quiet());
     fake.start(&mut app);
     fake.send_app(&mut app, AppEvent::Command("window.new".to_owned()));
-    assert_eq!(lokyr_plugin_host_luau::vms_made(), 0);
+    assert_eq!(lokyr_plugin_host_luau::vms_made(), before);
 }
 
 /// How many times the faulting plugin of the app's test was made.

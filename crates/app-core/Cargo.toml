@@ -36,6 +36,7 @@ sample-worker = []
 [dependencies]
 accesskit.workspace = true
 lokyr-kernel.workspace = true
+lokyr-pkg-model.workspace = true
 lokyr-plugin-host-luau.workspace = true
 lokyr-platform-core.workspace = true
 lokyr-pty.workspace = true

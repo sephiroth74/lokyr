@@ -18,6 +18,7 @@ archive = ["dep:ruzstd", "dep:tar"]
 [dependencies]
 lokyr-plugin-sdk = { workspace = true, features = ["unstable"] }
 ruzstd = { workspace = true, optional = true }
+semver.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true

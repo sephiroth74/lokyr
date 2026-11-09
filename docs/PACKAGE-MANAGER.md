@@ -99,7 +99,7 @@ config-schema = "schema.json"
 | `activation.on` | for `luau` | Activation events: `startup`, `command:<glob>`, `event:<name>`, `slot:<name>`, `osc:<number>`; a `builtin` plugin's is `startup` by default |
 | `capabilities.*` | no | Requested capabilities, each `true` or `false`, but `net`, `fs-read`, `fs-write` and `env-read`, which list their hosts, paths and variables, as `net = ["api.github.com"]` |
 | `uses.commands` | no | The commands that the plugin runs, by name or namespace (`tabs.*`), which Sleip shows at install, by category, with the capabilities they need ([ADR 0019](adr/0019-commands-errors-and-permissions.md)) |
-| `contributes.*` | no | Static contributions (commands, keybindings, slots, themes, config schema), used by the palette, the registry and validation; `config-schema` names the JSON Schema file of the plugin's section of the config, `[plugins.<namespace>]`, of the keywords that the app checks ([ADR 0032](adr/0032-plugins-config-and-state.md)) |
+| `contributes.*` | no | Static contributions (commands, keybindings, slots, themes, config schema), used by the palette, the registry and validation; a command's `name`, `title` and `category`, `view` if none, which the menus and the palette show before a plugin of a `command:` activation activates; `config-schema` names the JSON Schema file of the plugin's section of the config, `[plugins.<namespace>]`, of the keywords that the app checks ([ADR 0032](adr/0032-plugins-config-and-state.md)) |
 | `dependencies` | no | Other plugins required at runtime; plugins talk through kernel commands, events and services |
 
 `pkg-model`'s `manifest::Manifest::parse` reads the manifest; one that does not read, as a capability misspelt or a field that the format lacks, tells its line and column. The first-party plugins' manifests, `plugins/*/plugin.toml`, of the kind `builtin`, sit beside their crates, which embed them; `app-core`'s build checks them, and fails with the file, the line and the column of one that does not read.
@@ -186,7 +186,7 @@ Archive rules:
 - **Algorithm**: PubGrub (`pubgrub` crate), for readable conflict messages.
 - **Versions**: [Semantic Versioning 2.0.0](https://semver.org/), of numbers of no leading zero, a pre-release after `-` and a build after `+`, which the manifest's check holds a version to.
 - **Constraints**: semver, caret by default, as in Cargo: an operator, `^`, `~`, `=`, `>=`, `<=`, `>` or `<`, of a version or its first numbers, as `^0.3`, or `*`.
-- **App compatibility**: each plugin's `api` constraint must include the installed app's API version. Sleip reads that version from `lokyr --api-version` or from the `api-version` file in the app's resources.
+- **App compatibility**: each plugin's `api` constraint must include the installed app's API version, as Cargo reads a constraint; the app refuses one that does not, as a notice tells. Sleip reads that version from `lokyr --api-version` or from the `api-version` file in the app's resources.
 - **One version per plugin**: at runtime each plugin is a single instance.
 - **Yanked versions** are excluded, unless they are already in the lockfile.
 

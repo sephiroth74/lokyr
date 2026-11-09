@@ -21,6 +21,7 @@ use crate::workspace::{Environment, Grid, Settings};
 
 mod bounds;
 mod config;
+mod lazy;
 mod timers;
 
 type Activate = Box<dyn FnMut(&mut Cx<'_>) -> Result<(), Error>>;
@@ -1669,6 +1670,7 @@ fn a_call_is_its_own_plugin_s() {
             restarts: Restarts::default(),
             lingering: Vec::new(),
             timers: BTreeMap::new(),
+            triggers: vec![Trigger::Startup],
         },
         Outbox::default(),
         Vec::new(),

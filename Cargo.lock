@@ -826,6 +826,7 @@ dependencies = [
  "lokyr-app-core",
  "lokyr-font-coretext",
  "lokyr-kernel",
+ "lokyr-pkg-model",
  "lokyr-platform-core",
  "lokyr-platform-macos",
  "lokyr-plugin-host-luau",
@@ -986,6 +987,7 @@ version = "0.7.0"
 dependencies = [
  "lokyr-plugin-sdk",
  "ruzstd",
+ "semver",
  "serde",
  "serde_json",
  "sha2",

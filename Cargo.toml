@@ -77,6 +77,9 @@ notify = { version = "8.2.1", default-features = false, features = ["macos_fseve
 toml_edit = { version = "0.25.17", default-features = false, features = ["parse", "serde"] }
 # The reader of the themes of `.itermcolors`, property lists.
 plist = { version = "1.10.3", default-features = false }
+# The constraints of the plugins' versions and of the plugin API that they
+# take, as Cargo reads them.
+semver = "1.0.28"
 # A plugin's package: its archive, a tar of zstd of Rust alone, which no C
 # compiler of the target builds, and the digest of its files.
 ruzstd = "0.9.1"

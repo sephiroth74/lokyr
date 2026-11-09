@@ -32,6 +32,7 @@ sample-worker = ["lokyr-app-core/sample-worker"]
 
 [dependencies]
 lokyr-app-core.workspace = true
+lokyr-pkg-model.workspace = true
 lokyr-kernel.workspace = true
 lokyr-platform-core.workspace = true
 lokyr-plugin-host-luau = { workspace = true, optional = true }
