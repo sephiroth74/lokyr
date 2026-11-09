@@ -58,7 +58,7 @@ pub fn dev(paths: &Paths, out: Out) -> Result<(), String> {
         json!({ "problems": problems }),
         &check::summary(problems),
     );
-    let replaced = link(paths, out, &manifest, &folder)?;
+    let (replaced, made) = link(paths, out, &manifest, &folder)?;
     let name = &manifest.name;
     let instead = replaced.as_ref().map_or_else(String::new, |locked| {
         format!(
@@ -93,7 +93,7 @@ pub fn dev(paths: &Paths, out: Out) -> Result<(), String> {
             &check::summary(problems),
         );
     }
-    unlink(paths, out, name, &folder, replaced)?;
+    unlink(paths, out, (name, &folder), replaced, made)?;
     out.tell(
         "unlinked",
         json!({ "name": name }),
@@ -104,22 +104,23 @@ pub fn dev(paths: &Paths, out: Out) -> Result<(), String> {
 
 /// Adds the entry of the plugin of `manifest`, of the folder `folder`, to
 /// the lockfile of `paths`, under the store's lock: the entry of its name
-/// that it takes the place of, if one was there.
+/// that it takes the place of, if one was there, and whether it made the
+/// lockfile, as none was there.
 fn link(
     paths: &Paths,
     out: Out,
     manifest: &Manifest,
     folder: &Path,
-) -> Result<Option<Locked>, String> {
+) -> Result<(Option<Locked>, bool), String> {
     let _held = store_lock::lock(paths, out)?;
     let path = paths.lock();
-    let mut lock = Lock::read(&path)
-        .map_err(|error| error.to_string())?
-        .unwrap_or_else(|| Lock {
-            api: paths::app_api()
-                .map_or_else(|| lokyr_plugin_sdk::API_VERSION.to_owned(), |(api, _)| api),
-            packages: BTreeMap::new(),
-        });
+    let read = Lock::read(&path).map_err(|error| error.to_string())?;
+    let made = read.is_none();
+    let mut lock = read.unwrap_or_else(|| Lock {
+        api: paths::app_api()
+            .map_or_else(|| lokyr_plugin_sdk::API_VERSION.to_owned(), |(api, _)| api),
+        packages: BTreeMap::new(),
+    });
     let entry = Locked {
         version: manifest
             .version
@@ -137,18 +138,19 @@ fn link(
     let replaced = replaced.filter(|locked| !matches!(locked.source, Source::Dev(_)));
     lock.write(&path)
         .map_err(|error| format!("{} cannot be written: {error}", path.display()))?;
-    Ok(replaced)
+    Ok((replaced, made))
 }
 
 /// Takes the entry of `name`, of the folder `folder`, out of the lockfile of
 /// `paths`, under the store's lock, `replaced` given back if it was one;
-/// an entry that another command changed since stays.
+/// an entry that another command changed since stays. A lockfile that the
+/// link `made`, of no plugin left, goes, as none was there.
 fn unlink(
     paths: &Paths,
     out: Out,
-    name: &str,
-    folder: &Path,
+    (name, folder): (&str, &Path),
     replaced: Option<Locked>,
+    made: bool,
 ) -> Result<(), String> {
     let _held = store_lock::lock(paths, out)?;
     let path = paths.lock();
@@ -168,6 +170,10 @@ fn unlink(
         None => {
             lock.packages.remove(name);
         }
+    }
+    if made && lock.packages.is_empty() {
+        return std::fs::remove_file(&path)
+            .map_err(|error| format!("{} cannot be removed: {error}", path.display()));
     }
     lock.write(&path)
         .map_err(|error| format!("{} cannot be written: {error}", path.display()))

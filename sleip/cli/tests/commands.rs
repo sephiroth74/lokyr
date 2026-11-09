@@ -944,3 +944,37 @@ fn dev_links_a_plugin_checks_it_at_each_save_and_gives_the_installed_one_back_as
     assert!(dev.wait().unwrap().success());
     assert_eq!(sandbox.locked().packages["acme/devved"], installed.1);
 }
+
+#[test]
+fn dev_takes_away_the_lockfile_that_it_made_as_it_ends() {
+    use std::io::BufRead;
+
+    let sandbox = Sandbox::new("dev-made");
+    let folder = made(&sandbox, "fresh");
+    let lock = sandbox.config().join("plugins.lock");
+    assert!(!lock.exists());
+    let mut dev = sandbox
+        .command(&["--json", "dev"])
+        .current_dir(&folder)
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut lines = std::io::BufReader::new(dev.stdout.take().unwrap()).lines();
+    let mut next = |wanted: &str| loop {
+        let line = lines.next().expect("its output ended").unwrap();
+        let event: Value = serde_json::from_str(&line).unwrap();
+        if event["event"] == wanted {
+            return event;
+        }
+    };
+    next("linked");
+    assert!(sandbox.locked().packages.contains_key("acme/fresh"));
+    let killed = Command::new("kill")
+        .args(["-INT", &dev.id().to_string()])
+        .status()
+        .unwrap();
+    assert!(killed.success());
+    next("unlinked");
+    assert!(dev.wait().unwrap().success());
+    assert!(!lock.exists());
+}
