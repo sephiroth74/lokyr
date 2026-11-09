@@ -177,8 +177,8 @@ test-bench-tools:
 ui-gallery *args:
     cargo run --locked -p lokyr-ui-gallery -- {{args}}
 
-# Run the CI checks locally. Linux is covered by `check-linux`.
-ci: lint build test check-linux deny check-deps check-comments check-links check-dist check-luau-types build-minimal bundle
+# Run the CI checks locally. Linux is covered by `test-linux`, CI's Linux job in the container of Linux's checks, and `check-linux`, the x86_64 check.
+ci: lint build test test-linux check-linux deny check-deps check-comments check-links check-dist check-luau-types build-minimal bundle
 
 # Build target/Lokyr.app from the release binary, signed with the identity that $LOKYR_SIGN_IDENTITY names, or ad hoc, with Sparkle's release and the themes' collection (downloads them the first time); `--features three-drawables` builds it of three drawables a window, and `--no-default-features --features dist-minimal` of the minimal distribution.
 bundle *args:
