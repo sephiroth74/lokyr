@@ -2419,6 +2419,81 @@ fn a_chain_under_way_keeps_its_runs_however_many_chains_come_after_it() {
     assert!(!app.may_run(under_way, "test.twice"));
 }
 
+/// A plugin that binds its key again each time that it hears that the
+/// keys changed, as one that binds a key where it is free would, and
+/// registers a command of no key, the times counted.
+struct Rebinder {
+    heard: std::rc::Rc<std::cell::Cell<usize>>,
+}
+
+impl Rebinder {
+    fn bind(cx: &mut plugins::Cx<'_>) -> Result<(), Error> {
+        cx.bind(plugins::host::Binding {
+            keys: "ctrl+r".to_owned(),
+            command: "rebind.go".to_owned(),
+            args: Args::new(),
+            when: None,
+        })
+    }
+}
+
+impl plugins::Plugin for Rebinder {
+    fn activate(&mut self, cx: &mut plugins::Cx<'_>) -> Result<(), Error> {
+        cx.register_command(Command {
+            name: "rebind.go".to_owned(),
+            title: "Go".to_owned(),
+            category: Category::View,
+            capabilities: Vec::new(),
+            params: Vec::new(),
+            when: None,
+        })?;
+        Self::bind(cx)?;
+        cx.subscribe(&["keys-changed"])
+    }
+
+    fn on_event(
+        &mut self,
+        cx: &mut plugins::Cx<'_>,
+        events: &[plugins::Event],
+    ) -> Result<(), Error> {
+        for _ in events.iter().filter(|event| event.name() == "keys-changed") {
+            self.heard.set(self.heard.get() + 1);
+            Self::bind(cx)?;
+            cx.register_command(Command {
+                name: format!("rebind.n{}", self.heard.get()),
+                title: "N".to_owned(),
+                category: Category::View,
+                capabilities: Vec::new(),
+                params: Vec::new(),
+                when: None,
+            })?;
+        }
+        Ok(())
+    }
+}
+
+#[test]
+fn a_plugin_that_binds_as_the_keys_change_hears_it_as_they_change_alone() {
+    let heard = std::rc::Rc::default();
+    let rebinder = Rebinder {
+        heard: std::rc::Rc::clone(&heard),
+    };
+    let mut fake = Fake::default();
+    let mut app = app(unpadded(), reader("")).with_plugin("rebinder", Box::new(rebinder));
+    fake.start(&mut app);
+    let pause = Instant::now() + Duration::from_millis(300);
+    run_until(&mut fake, &mut app, |_, _| Instant::now() > pause);
+    assert_eq!(heard.get(), 1);
+    assert_eq!(
+        app.keymap
+            .bindings()
+            .iter()
+            .filter(|binding| binding.invocation.command == "rebind.go")
+            .count(),
+        1
+    );
+}
+
 /// The press of Command and the key of `letter`.
 fn command_key(code: KeyCode, letter: &str) -> WindowEvent {
     key_event(code, letter, CMD, true)

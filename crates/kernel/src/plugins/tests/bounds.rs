@@ -170,3 +170,98 @@ fn a_call_s_searches_are_bounded_a_look_starts_none_and_a_failed_call_s_end() {
     assert_eq!(codes.borrow_mut().pop(), Some(None));
     assert_eq!(searches(&plugins), 0);
 }
+
+#[test]
+fn a_declaration_made_already_changes_nothing_and_a_plugin_s_are_bounded() {
+    let mut app = App::default();
+    let mut plugins = Plugins::new();
+    let codes = Rc::new(RefCell::new(Vec::new()));
+    let seen = Rc::clone(&codes);
+    plugins
+        .add(
+            "binder",
+            scripted(
+                |cx| {
+                    cx.register_command(Command {
+                        params: vec![Param {
+                            name: "n".to_owned(),
+                            kind: Kind::Integer,
+                            default: Some(Value::Integer(0)),
+                        }],
+                        ..command("binder.go")
+                    })?;
+                    cx.register_command(command("binder.same"))?;
+                    cx.register_command(command("binder.many"))
+                },
+                move |cx, name, _| {
+                    let n = |n: i64| Args::from([("n".to_owned(), Value::Integer(n))]);
+                    if name == "binder.many" {
+                        let mut seen = seen.borrow_mut();
+                        for at in 0..MOST_DECLARED {
+                            let bound = cx.bind(PluginBinding {
+                                keys: "ctrl+t".to_owned(),
+                                command: "binder.go".to_owned(),
+                                args: n(i64::try_from(at).unwrap() + 1),
+                                when: None,
+                            });
+                            seen.push(bound.err().map(|error| error.code));
+                        }
+                        return Ok(());
+                    }
+                    cx.bind(PluginBinding {
+                        keys: "ctrl+t".to_owned(),
+                        command: "binder.go".to_owned(),
+                        args: n(0),
+                        when: None,
+                    })?;
+                    cx.bind(PluginBinding {
+                        keys: "global:ctrl+alt+k".to_owned(),
+                        command: "binder.go".to_owned(),
+                        args: Args::new(),
+                        when: None,
+                    })?;
+                    cx.add_menu_item(host::MenuItem {
+                        place: host::MenuPlace::PaneContext,
+                        command: "binder.go".to_owned(),
+                        args: Args::new(),
+                        title: None,
+                    })
+                },
+            ),
+        )
+        .unwrap();
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    assert!(plugins.take_declarations_changed());
+    let state = |plugins: &Plugins| {
+        let state = &plugins.entries[0].state;
+        (
+            state.bindings.len(),
+            state.global_bindings.len(),
+            state.menu_items.len(),
+        )
+    };
+    plugins
+        .run("binder.same", Args::new(), &mut app.context())
+        .unwrap();
+    assert!(plugins.take_declarations_changed());
+    assert_eq!(state(&plugins), (1, 1, 1));
+    // The same again: nothing changes, and the keymap is not made anew.
+    plugins
+        .run("binder.same", Args::new(), &mut app.context())
+        .unwrap();
+    assert!(!plugins.take_declarations_changed());
+    assert_eq!(state(&plugins), (1, 1, 1));
+    // Past the bound, of its 3 commands and its 3 keys and items, refused.
+    plugins
+        .run("binder.many", Args::new(), &mut app.context())
+        .unwrap();
+    let codes = codes.borrow();
+    let taken = MOST_DECLARED - 6;
+    assert!(codes[..taken].iter().all(Option::is_none));
+    assert!(
+        codes[taken..]
+            .iter()
+            .all(|code| *code == Some(Code::Failed))
+    );
+    assert_eq!(state(&plugins).0, 1 + taken);
+}

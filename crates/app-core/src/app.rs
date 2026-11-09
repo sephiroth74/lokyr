@@ -607,6 +607,10 @@ pub struct App<B: Backend> {
     /// The plugins' items of the menus, titled, which the menus' items name
     /// by their places here.
     menu_items: Vec<lokyr_kernel::plugins::MenuEntry>,
+    /// The keymap that the plugins last heard of, as `keys-changed` told
+    /// them, which a keymap made anew of the same bindings does not tell
+    /// again.
+    keys_told: Option<Keymap>,
     /// The window that the last context menu opened on, whose pane marks
     /// the cell that it opened on, which its commands of a cell take.
     context_window: Option<WindowId>,
@@ -813,6 +817,7 @@ impl<B: Backend> App<B> {
             menu_contexts: Vec::new(),
             menu_enabled: BTreeMap::new(),
             menu_items: Vec::new(),
+            keys_told: None,
             context_window: None,
             acting: None,
             close_asks: BTreeMap::new(),

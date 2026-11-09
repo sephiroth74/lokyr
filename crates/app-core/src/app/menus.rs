@@ -421,9 +421,12 @@ impl<B: Backend> App<B> {
             &self.menu_items,
         ));
         // The windows' keys follow the keymap's too, and the plugins learn
-        // that the keys may be others.
+        // that the keys may be others, as they are.
         self.window_keys(platform);
-        self.plugins.post(lokyr_kernel::plugins::Event::KeysChanged);
+        if self.keys_told.as_ref() != Some(&self.keymap) {
+            self.keys_told = Some(self.keymap.clone());
+            self.plugins.post(lokyr_kernel::plugins::Event::KeysChanged);
+        }
         for (command, enabled) in std::mem::take(&mut self.menu_enabled) {
             if !enabled {
                 platform.set_command_enabled(&command, true);

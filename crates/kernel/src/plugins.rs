@@ -699,6 +699,11 @@ const MOST_READS: usize = 4;
 /// as a window commonly shows, and more.
 pub const MOST_SEARCHES: usize = 16;
 
+/// The most commands, keys and menu items that a plugin declares, past
+/// which another is refused: the default keymap's plugin declares some
+/// 130.
+pub const MOST_DECLARED: usize = 4096;
+
 /// How long a plugin that faulted waits before it starts again, its first
 /// time, which each fault within [`FAULTS_WITHIN`] doubles.
 const RESTART_AFTER: Duration = Duration::from_secs(1);
@@ -4523,9 +4528,29 @@ impl Host<'_, '_> {
         Ok(())
     }
 
+    /// Whether the plugin may declare once more, within [`MOST_DECLARED`].
+    fn within_declared(&self) -> Result<(), Error> {
+        let state = &self.state;
+        let declared = state.commands.len()
+            + state.bindings.len()
+            + state.global_bindings.len()
+            + state.menu_items.len();
+        if declared >= MOST_DECLARED {
+            return Err(Error::new(
+                Code::Failed,
+                format!("a plugin declares {MOST_DECLARED} commands, keys and menu items at most"),
+            ));
+        }
+        Ok(())
+    }
+
     /// Takes `request`, a declaration of the plugin's commands or keys, at
-    /// once.
+    /// once: one that the plugin made already changes nothing, so that the
+    /// keymap and the menus are not made anew for it.
     fn declare(&mut self, request: Asked) -> Result<Response, Error> {
+        if !matches!(request, Asked::Subscribe(_)) {
+            self.within_declared()?;
+        }
         match request {
             Asked::RegisterCommand(command) => {
                 if self.state.uses.is_some() {
@@ -4554,14 +4579,17 @@ impl Host<'_, '_> {
                     )));
                 }
                 self.check_binding(&binding)?;
-                self.state.global_bindings.push((
+                let global = (
                     combo,
                     Invocation {
                         command: binding.command,
                         args: binding.args,
                     },
-                ));
-                *self.declarations_changed = true;
+                );
+                if !self.state.global_bindings.contains(&global) {
+                    self.state.global_bindings.push(global);
+                    *self.declarations_changed = true;
+                }
             }
             Asked::Bind(binding) => {
                 let invalid = |message: String| Error::new(Code::InvalidBinding, message);
@@ -4579,15 +4607,18 @@ impl Host<'_, '_> {
                     .transpose()
                     .map_err(invalid)?;
                 self.check_binding(&binding)?;
-                self.state.bindings.push(Binding {
+                let binding = Binding {
                     keys,
                     invocation: Invocation {
                         command: binding.command,
                         args: binding.args,
                     },
                     when,
-                });
-                *self.declarations_changed = true;
+                };
+                if !self.state.bindings.contains(&binding) {
+                    self.state.bindings.push(binding);
+                    *self.declarations_changed = true;
+                }
             }
             Asked::AddMenuItem(item) => {
                 if !commands::is_name(&item.command) {
@@ -4602,8 +4633,10 @@ impl Host<'_, '_> {
                 // The item runs as the plugin would: its arguments make a
                 // whole call, which it may make.
                 self.check_run(&item.command, item.args.clone())?;
-                self.state.menu_items.push(item);
-                *self.declarations_changed = true;
+                if !self.state.menu_items.contains(&item) {
+                    self.state.menu_items.push(item);
+                    *self.declarations_changed = true;
+                }
             }
             Asked::Subscribe(names) => {
                 if let Some(name) = names
