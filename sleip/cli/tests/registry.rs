@@ -1058,6 +1058,14 @@ fn the_index_is_signed_of_the_released_versions_by_a_key_that_keys_json_lists() 
     let home = std::fs::read_to_string(site.join("index.html")).unwrap();
     assert!(home.contains("href=\"/plugins/acme/hello/\""), "{home}");
     assert!(site.join("style.css").is_file());
+    // Lokyr's icon, the tab's and the header's.
+    let icon = std::fs::read_to_string(site.join("icon.svg")).unwrap();
+    assert!(icon.starts_with("<svg"), "{icon}");
+    assert!(
+        home.contains("<link rel=\"icon\" href=\"/icon.svg\""),
+        "{home}"
+    );
+    assert!(page.contains("<img src=\"/icon.svg\""), "{page}");
     // A key that keys.json does not list, and none at all.
     let (stranger, _) = keygen("stranger.key");
     let output = indexed(&stranger);

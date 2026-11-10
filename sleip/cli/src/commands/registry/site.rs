@@ -100,6 +100,7 @@ pub(super) fn site(
         });
     }
     written(&into.join("style.css"), STYLE)?;
+    written(&into.join("icon.svg"), ICON)?;
     written(&into.join("index.html"), &home_page(&listed))?;
     out.tell(
         "site",
@@ -252,7 +253,7 @@ fn markdown(readme: &str, links: &Links) -> String {
 /// A page of `title`, of `main`, its body, and of what follows it, `end`.
 fn page(title: &str, main: &str, end: &str) -> String {
     format!(
-        "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>{}</title>\n<link rel=\"stylesheet\" href=\"/style.css\">\n</head>\n<body>\n<header><a class=\"home\" href=\"/\">Lokyr plugins</a></header>\n{main}\n<footer>The registry of <a href=\"https://lokyr.dev\">Lokyr</a>'s plugins; its index, signed, which Sleip reads, at <a href=\"/config.json\">config.json</a>.</footer>\n{end}</body>\n</html>\n",
+        "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>{}</title>\n<link rel=\"icon\" href=\"/icon.svg\" type=\"image/svg+xml\">\n<link rel=\"stylesheet\" href=\"/style.css\">\n</head>\n<body>\n<header><a class=\"home\" href=\"/\"><img src=\"/icon.svg\" alt=\"\" width=\"28\" height=\"28\">Lokyr plugins</a></header>\n{main}\n<footer>The registry of <a href=\"https://lokyr.dev\">Lokyr</a>'s plugins; its index, signed, which Sleip reads, at <a href=\"/config.json\">config.json</a>.</footer>\n{end}</body>\n</html>\n",
         escaped(title)
     )
 }
@@ -355,6 +356,9 @@ fn home_page(listed: &[Listed]) -> String {
     page("Lokyr plugins", &main, end)
 }
 
+/// Lokyr's icon, the app's own, of the site's tab and its header.
+const ICON: &str = include_str!("../../../../../crates/app/resources/icons/lokyr-jormungandr.svg");
+
 /// The site's style sheet: the system's font, of a light and a dark
 /// appearance.
 const STYLE: &str = r#":root { color-scheme: light dark; --bg: #ffffff; --fg: #1d1d1f; --muted: #6e6e73; --line: #d2d2d7; --accent: #b8860b; --code: #f5f5f7; }
@@ -363,7 +367,8 @@ body { font: 16px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui,
 a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
 header { margin-bottom: 2rem; }
-header .home { font-weight: 600; }
+header .home { display: inline-flex; align-items: center; gap: 10px; font-weight: 600; color: var(--fg); }
+header .home img { width: 28px; height: 28px; }
 footer { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--line); color: var(--muted); font-size: 0.875rem; }
 .description { color: var(--muted); font-size: 1.125rem; }
 code { font: 0.875em ui-monospace, "SF Mono", Menlo, monospace; background: var(--code); padding: 0.1em 0.35em; border-radius: 4px; }
@@ -450,7 +455,12 @@ mod tests {
             description: "<img src=x onerror=alert(1)>".to_owned(),
             yanked: false,
         }]);
-        assert!(!home.contains("<img"), "{home}");
+        // Its description's image as text, beside the header's icon.
+        assert!(!home.contains("<img src=x"), "{home}");
+        assert!(
+            home.contains("&lt;img src=x onerror=alert(1)&gt;"),
+            "{home}"
+        );
     }
 
     #[test]
