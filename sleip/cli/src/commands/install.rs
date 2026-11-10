@@ -94,7 +94,13 @@ pub fn add(
     let lock = read_lock(paths)?;
     let mut fresh = others(paths, options, &list, lock.as_ref(), &name, &mut clones)?;
     fresh.insert(name.clone(), fetched);
-    let offered = Offered::gather(paths, options, &list, unlocked(&list, lock.as_ref(), None))?;
+    let offered = Offered::gather(
+        paths,
+        options,
+        out,
+        &list,
+        unlocked(&list, lock.as_ref(), None),
+    )?;
     install(paths, options, out, &list, lock.as_ref(), &fresh, &offered)?;
     lokyr_pkg_model::write_whole(&list_path, &edited)
         .map_err(|error| format!("{} cannot be written: {error}", list_path.display()))
@@ -127,7 +133,7 @@ fn add_offered(
     let fresh = others(paths, options, &list, lock.as_ref(), name, clones)?;
     let mut names = unlocked(&list, lock.as_ref(), None);
     names.insert(name.to_owned());
-    let offered = Offered::gather(paths, options, &list, names)?;
+    let offered = Offered::gather(paths, options, out, &list, names)?;
     let new = install(paths, options, out, &list, lock.as_ref(), &fresh, &offered)?;
     // Of no constraint given, the version picked's, as `^0.1.8`.
     let written = if constraint.is_empty() {
@@ -225,6 +231,7 @@ pub fn update(
     let offered = Offered::gather(
         paths,
         options,
+        out,
         &list,
         unlocked(&list, lock.as_ref(), Some(plugin)),
     )?;

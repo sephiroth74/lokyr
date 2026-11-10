@@ -24,6 +24,27 @@ pub const ROOT_KEYS: &[&str] = &[
     "ed25519:HzUxRVZR5jhKTpoFB6Jd3mgLyB+SzAof93azSxSPg50=",
 ];
 
+/// A day, in seconds.
+pub const DAY: u64 = 86_400;
+
+/// The longest that an index file and the list hold, from their time, as
+/// Sleip reads them online: the registry signs them anew every few hours,
+/// so that an index older than the newest signed is refused, at a first
+/// contact too.
+pub const INDEX_LIFETIME: u64 = 7 * DAY;
+
+/// The longest that `keys.json` holds, from its time, as Sleip reads it
+/// online: the maintainer signs it anew once a year at least.
+pub const KEYS_LIFETIME: u64 = 365 * DAY;
+
+/// The most that a file's time may lie ahead of the machine's clock.
+pub const SKEW: u64 = DAY;
+
+/// The time of the `keys.json` that this Sleip was built with: one made
+/// before it is refused, so that an older one, of an index key since taken
+/// off, is never taken again. Of 10 November 2026, 09:42:30 UTC.
+pub const KEYS_NOT_BEFORE: Timestamp = Timestamp(1_794_303_750);
+
 /// The prefix of a public key and of a signature.
 const PUBLIC: &str = "ed25519:";
 
@@ -148,8 +169,16 @@ pub fn roots() -> Vec<PublicKey> {
 pub struct Timestamp(pub u64);
 
 impl Timestamp {
-    /// Now.
+    /// Now: of `SLEIP_TEST_NOW` in a build for debugging, as its tests
+    /// move the clock; a release never takes it.
     pub fn now() -> Self {
+        #[cfg(debug_assertions)]
+        if let Some(now) = std::env::var("SLEIP_TEST_NOW")
+            .ok()
+            .and_then(|text| Self::parse(&text).ok())
+        {
+            return now;
+        }
         Self(
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)

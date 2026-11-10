@@ -508,7 +508,9 @@ impl<'a> Deployed<'a> {
     fn of(url: &str, client: &'a Client, roots: Vec<PublicKey>) -> Result<Self, String> {
         let cache = std::env::temp_dir().join(format!("sleip-deployed-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&cache);
-        let remote = Remote::new(url, &cache, Some(client), roots);
+        // However old, as the index's lines are kept whatever became of
+        // the registry's runs.
+        let remote = Remote::new(url, &cache, Some(client), roots).never_expiring();
         let keys = remote
             .keys()
             .map_err(|error| format!("the index deployed at {url}: {error}"))?;

@@ -3,8 +3,14 @@
 //! index file, each checked against the index keys. Each file is kept in
 //! Sleip's cache once it is checked, of its ETag, so that the next request
 //! asks of it as not modified and a later file older than it is refused;
-//! offline, of the cache alone, which is checked as it is read.
+//! offline, of the cache alone, which is checked as it is read. A file of
+//! a time to come is refused; online, an index file or the list older
+//! than [`signing::INDEX_LIFETIME`], or a `keys.json` older than
+//! [`signing::KEYS_LIFETIME`], is refused as expired, and taken offline
+//! with a note; a `keys.json` made before [`signing::KEYS_NOT_BEFORE`] is
+//! refused.
 
+use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
@@ -28,6 +34,10 @@ pub struct Remote<'a> {
     cache: PathBuf,
     client: Option<&'a Client>,
     roots: Vec<PublicKey>,
+    /// Whether its files expire, as a person's Sleip reads them.
+    expiring: bool,
+    /// What it took that is worth telling, as an expired file offline.
+    notes: RefCell<Vec<String>>,
 }
 
 impl<'a> Remote<'a> {
@@ -42,7 +52,21 @@ impl<'a> Remote<'a> {
             cache,
             client,
             roots,
+            expiring: true,
+            notes: RefCell::new(Vec::new()),
         }
+    }
+
+    /// Of files that never expire, as the registry's own tools read the
+    /// index deployed, which they keep however old.
+    pub fn never_expiring(mut self) -> Self {
+        self.expiring = false;
+        self
+    }
+
+    /// What it took that is worth telling, since this was last asked.
+    pub fn notes(&self) -> Vec<String> {
+        std::mem::take(&mut self.notes.borrow_mut())
     }
 
     /// Its address.
@@ -52,12 +76,57 @@ impl<'a> Remote<'a> {
 
     /// The file `path` of the registry, checked of `check`, which takes
     /// the time of the one held, if any, and tells the time of its own of
-    /// `time`: kept in the cache once checked; `None` of no such file.
+    /// `time`, of `lifetime`, if it expires: kept in the cache once
+    /// checked; `None` of no such file.
     fn checked<T>(
         &self,
         path: &str,
         check: impl Fn(&str, Option<Timestamp>) -> Result<T, String>,
         time: impl Fn(&T) -> Timestamp,
+        lifetime: Option<u64>,
+    ) -> Result<Option<T>, String> {
+        let checked = self.fetched(path, &check, &time)?;
+        if let (Some(value), Some(lifetime)) = (&checked, lifetime) {
+            self.fresh(path, time(value), lifetime)?;
+        }
+        Ok(checked)
+    }
+
+    /// Whether the file `path`, of its time `generated`, is of no time to
+    /// come and, of a file that expires after `lifetime`, unexpired online;
+    /// expired offline, a note.
+    fn fresh(&self, path: &str, generated: Timestamp, lifetime: u64) -> Result<(), String> {
+        let now = Timestamp::now();
+        if generated.0 > now.0 + signing::SKEW {
+            return Err(format!(
+                "`{path}` of {} was made at {generated}, a time to come: the registry's clock or this machine's is wrong",
+                self.url
+            ));
+        }
+        let expiry = Timestamp(generated.0 + lifetime);
+        if !self.expiring || now <= expiry {
+            return Ok(());
+        }
+        if self.client.is_some() {
+            return Err(format!(
+                "`{path}` of {} expired at {expiry}: the registry signs its index anew every few hours, and one so old is refused, as it could be an old copy that hides a later change",
+                self.url
+            ));
+        }
+        self.notes.borrow_mut().push(format!(
+            "`{path}` of {}, as the cache holds it, expired at {expiry}: a run online fetches it anew",
+            self.url
+        ));
+        Ok(())
+    }
+
+    /// The file `path` of the registry, as [`Remote::checked`] reads it,
+    /// of no expiry.
+    fn fetched<T>(
+        &self,
+        path: &str,
+        check: &impl Fn(&str, Option<Timestamp>) -> Result<T, String>,
+        time: &impl Fn(&T) -> Timestamp,
     ) -> Result<Option<T>, String> {
         let file = self.cache.join(path);
         let etag_file = self.cache.join(format!("{path}.etag"));
@@ -126,6 +195,7 @@ impl<'a> Remote<'a> {
                 }
             },
             |_| Timestamp(0),
+            None,
         )?;
         config.ok_or_else(|| format!("{} holds no config.json", self.url))
     }
@@ -134,8 +204,19 @@ impl<'a> Remote<'a> {
     pub fn keys(&self) -> Result<Keys, String> {
         let keys = self.checked(
             "keys.json",
-            |text, held| signing::verify_keys(text, &self.roots, held),
+            |text, held| {
+                let keys = signing::verify_keys(text, &self.roots, held)?;
+                if keys.generated < signing::KEYS_NOT_BEFORE {
+                    return Err(format!(
+                        "keys.json was made at {}, before {}, the time of the one that this Sleip was built with: an older one could list an index key since taken off",
+                        keys.generated,
+                        signing::KEYS_NOT_BEFORE
+                    ));
+                }
+                Ok(keys)
+            },
             |keys| keys.generated,
+            Some(signing::KEYS_LIFETIME),
         )?;
         keys.ok_or_else(|| format!("{} holds no keys.json", self.url))
     }
@@ -146,6 +227,7 @@ impl<'a> Remote<'a> {
             "list",
             |text, held| signing::verify_list(text, keys, held),
             |list| list.generated,
+            Some(signing::INDEX_LIFETIME),
         )?;
         list.ok_or_else(|| format!("{} holds no list of its plugins", self.url))
     }
@@ -163,18 +245,19 @@ impl<'a> Remote<'a> {
             &format!("index/{owner}/{plugin}"),
             |text, held| signing::verify_index(text, name, keys, held),
             |index| index.generated,
+            Some(signing::INDEX_LIFETIME),
         )
     }
 }
 
-/// The cache's folder of the registry at `url`: its address of no scheme,
-/// each character but letters, digits, `.` and `-` a `_`.
+/// The cache's folder of the registry at `url`: its address, its scheme
+/// first and `://` a `_`, each character but letters, digits, `.` and `-`
+/// a `_`, so that two schemes of a host keep apart and no address makes
+/// `.` nor `..`.
 fn folder_of(url: &str) -> String {
-    let bare = ["https://", "http://", "file://"]
-        .iter()
-        .find_map(|scheme| url.strip_prefix(scheme))
-        .unwrap_or(url);
-    bare.chars()
+    let (scheme, bare) = url.split_once("://").unwrap_or(("", url));
+    format!("{scheme}_{bare}")
+        .chars()
         .map(|character| {
             if character.is_ascii_alphanumeric() || character == '.' || character == '-' {
                 character
@@ -191,8 +274,10 @@ mod tests {
 
     #[test]
     fn a_registry_s_cache_is_a_folder_of_its_address() {
-        assert_eq!(folder_of("https://pkg.lokyr.dev"), "pkg.lokyr.dev");
-        assert_eq!(folder_of("http://127.0.0.1:8123"), "127.0.0.1_8123");
-        assert_eq!(folder_of("file:///tmp/a b/../x"), "_tmp_a_b_.._x");
+        assert_eq!(folder_of("https://pkg.lokyr.dev"), "https_pkg.lokyr.dev");
+        assert_eq!(folder_of("http://pkg.lokyr.dev"), "http_pkg.lokyr.dev");
+        assert_eq!(folder_of("http://127.0.0.1:8123"), "http_127.0.0.1_8123");
+        assert_eq!(folder_of("file:///tmp/a b/../x"), "file__tmp_a_b_.._x");
+        assert_eq!(folder_of("file://.."), "file_..");
     }
 }

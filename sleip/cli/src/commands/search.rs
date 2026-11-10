@@ -33,6 +33,7 @@ pub fn search(paths: &Paths, options: Options, out: Out, words: &[String]) -> Re
     let remote = Remote::new(&url, &paths.cache, client.as_ref(), super::roots());
     let keys = remote.keys()?;
     let list = remote.list(&keys)?;
+    tell_notes(out, &remote);
     let words: Vec<String> = words.iter().map(|word| word.to_lowercase()).collect();
     let mut found = 0;
     for plugin in &list.plugins {
@@ -83,6 +84,7 @@ pub fn info(paths: &Paths, options: Options, out: Out, plugin: &str) -> Result<(
     let index = remote
         .index(plugin, &keys)?
         .ok_or_else(|| format!("{url} publishes no plugin `{plugin}`"))?;
+    tell_notes(out, &remote);
     let Some(shown) = index
         .entries
         .iter()
@@ -152,4 +154,16 @@ pub fn info(paths: &Paths, options: Options, out: Out, plugin: &str) -> Result<(
         &text,
     );
     Ok(())
+}
+
+/// Tells what `remote` took that is worth telling, as an expired file of
+/// the cache offline.
+fn tell_notes(out: Out, remote: &Remote) {
+    for note in remote.notes() {
+        out.tell(
+            "note",
+            json!({ "message": note }),
+            &format!("Note: {note}."),
+        );
+    }
 }

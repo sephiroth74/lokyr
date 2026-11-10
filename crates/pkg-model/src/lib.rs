@@ -11,6 +11,7 @@ use std::fmt;
 use std::io::{self, Write as _};
 use std::path::{Path, PathBuf};
 
+pub mod address;
 #[cfg(feature = "archive")]
 pub mod archive;
 pub mod list;

@@ -264,22 +264,10 @@ fn is_rev(rev: &str) -> bool {
 
 /// Whether `url` is a registry's address: `https://`, `file://` of a
 /// folder's, as a mirror, or `http://` of the machine itself, as the tests
-/// serve a registry; its files' signatures hold whatever carries them.
+/// serve a registry, of no user; its files' signatures hold whatever
+/// carries them.
 fn is_registry(url: &str) -> bool {
-    let loopback = url.strip_prefix("http://").is_some_and(|rest| {
-        let host = rest.split(['/', '?', '#']).next().unwrap_or_default();
-        ["127.0.0.1", "localhost", "[::1]"].iter().any(|loopback| {
-            host == *loopback
-                || host
-                    .strip_prefix(loopback)
-                    .is_some_and(|port| port.starts_with(':'))
-        })
-    });
-    loopback
-        || ["https://", "file://"]
-            .iter()
-            .find_map(|scheme| url.strip_prefix(scheme))
-            .is_some_and(|rest| !rest.is_empty() && !rest.contains(char::is_whitespace))
+    crate::address::Address::parse(url).is_some_and(|address| address.is_registry())
 }
 
 #[cfg(test)]

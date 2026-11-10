@@ -139,7 +139,8 @@ fn search_and_info_read_the_registry_s_signed_index_cached_and_offline() {
         SecretKey::generate().unwrap(),
         SecretKey::generate().unwrap(),
     );
-    let at = Timestamp::parse("2026-11-10T12:00:00Z").unwrap();
+    // A few hours ago, as the registry signs its index every few hours.
+    let at = Timestamp(Timestamp::now().0 - 4 * 3600);
     std::fs::write(
         site.join("keys.json"),
         signing::sign_keys(&root_key, &[index_key.public()], at),
@@ -185,18 +186,24 @@ fn search_and_info_read_the_registry_s_signed_index_cached_and_offline() {
         ),
     )
     .unwrap();
-    let sleip = |args: &[&str]| {
-        Command::new(env!("CARGO_BIN_EXE_sleip"))
+    // Sleip of `args`, of the clock of `now` if given, as a build for
+    // debugging takes it.
+    let sleip_at = |now: Option<Timestamp>, args: &[&str]| {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_sleip"));
+        command
             .args(args)
             .env("HOME", &home)
             .env("XDG_CONFIG_HOME", home.join(".config"))
             .env("XDG_CACHE_HOME", home.join(".cache"))
             .env("XDG_DATA_HOME", home.join(".local/share"))
             .env("SLEIP_TEST_ROOT_KEYS", root_key.public().to_string())
-            .env("PATH", "/usr/bin:/bin")
-            .output()
-            .unwrap()
+            .env("PATH", "/usr/bin:/bin");
+        if let Some(now) = now {
+            command.env("SLEIP_TEST_NOW", now.to_string());
+        }
+        command.output().unwrap()
     };
+    let sleip = |args: &[&str]| sleip_at(None, args);
     let found = |output: &Output| -> Vec<String> {
         events(output)
             .iter()
@@ -277,6 +284,94 @@ fn search_and_info_read_the_registry_s_signed_index_cached_and_offline() {
         String::from_utf8_lossy(&output.stderr).contains("the cache holds no"),
         "{output:?}"
     );
+    // A week and a day later, the list that the registry serves still the
+    // one held: expired online, refused; offline, taken with a note.
+    std::fs::write(site.join("list"), &original).unwrap();
+    let later = Some(Timestamp(at.0 + 8 * 86_400));
+    let output = sleip_at(later, &["search", "clock"]);
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("`list` of http://127.0.0.1"),
+        "{output:?}"
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("expired at"),
+        "{output:?}"
+    );
+    let output = sleip_at(later, &["--offline", "search", "clock"]);
+    assert!(output.status.success(), "{output:?}");
+    let text = String::from_utf8_lossy(&output.stdout).into_owned();
+    assert!(
+        text.contains("Note: `list` of") && text.contains("expired at"),
+        "{text}"
+    );
+    // A file of a time to come, as of a clock two days behind: refused.
+    let output = sleip_at(Some(Timestamp(at.0 - 2 * 86_400)), &["search", "clock"]);
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("a time to come"),
+        "{output:?}"
+    );
+    // A keys.json of a valid signature made before the one that this Sleip
+    // was built with, of a cache of none yet: refused.
+    let keys = std::fs::read_to_string(site.join("keys.json")).unwrap();
+    std::fs::write(
+        site.join("keys.json"),
+        signing::sign_keys(
+            &root_key,
+            &[index_key.public()],
+            Timestamp::parse("2026-01-01T00:00:00Z").unwrap(),
+        ),
+    )
+    .unwrap();
+    let fresh_home = root.join("fresh-home");
+    std::fs::create_dir_all(fresh_home.join(".config/lokyr")).unwrap();
+    std::fs::copy(
+        home.join(".config/lokyr/plugins.toml"),
+        fresh_home.join(".config/lokyr/plugins.toml"),
+    )
+    .unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_sleip"))
+        .args(["search", "clock"])
+        .env("HOME", &fresh_home)
+        .env("XDG_CONFIG_HOME", fresh_home.join(".config"))
+        .env("XDG_CACHE_HOME", fresh_home.join(".cache"))
+        .env("XDG_DATA_HOME", fresh_home.join(".local/share"))
+        .env("SLEIP_TEST_ROOT_KEYS", root_key.public().to_string())
+        .env("PATH", "/usr/bin:/bin")
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+    assert!(
+        String::from_utf8_lossy(&output.stderr)
+            .contains("the time of the one that this Sleip was built with"),
+        "{output:?}"
+    );
+    std::fs::write(site.join("keys.json"), keys).unwrap();
+    // A registry's address of a user, its host the one after its `@`.
+    let other_home = root.join("other-home");
+    std::fs::create_dir_all(other_home.join(".config/lokyr")).unwrap();
+    std::fs::write(
+        other_home.join(".config/lokyr/plugins.toml"),
+        format!(
+            "[registries]\ndefault = \"http://127.0.0.1:{}@evil.example\"\n",
+            served.port
+        ),
+    )
+    .unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_sleip"))
+        .args(["search", "clock"])
+        .env("HOME", &other_home)
+        .env("XDG_CONFIG_HOME", other_home.join(".config"))
+        .env("XDG_CACHE_HOME", other_home.join(".cache"))
+        .env("PATH", "/usr/bin:/bin")
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("evil.example"),
+        "{output:?}"
+    );
     // Of another root than the one that signed keys.json: refused.
     let output = Command::new(env!("CARGO_BIN_EXE_sleip"))
         .args(["search", "clock"])
@@ -336,7 +431,8 @@ fn add_and_update_install_the_registry_s_versions_checked_against_its_index() {
         SecretKey::generate().unwrap(),
         SecretKey::generate().unwrap(),
     );
-    let at = Timestamp::parse("2026-11-10T12:00:00Z").unwrap();
+    // A few hours ago, as the registry signs its index every few hours.
+    let at = Timestamp(Timestamp::now().0 - 4 * 3600);
     std::fs::write(
         site.join("keys.json"),
         signing::sign_keys(&root_key, &[index_key.public()], at),
@@ -458,6 +554,23 @@ fn add_and_update_install_the_registry_s_versions_checked_against_its_index() {
     let output = sleip(&["add", "acme/none"]);
     assert_eq!(output.status.code(), Some(1), "{output:?}");
     assert!(String::from_utf8_lossy(&output.stderr).contains("publishes no plugin `acme/none`"));
+    // A config.json, which no key signs, that names archives of another
+    // scheme than the registry's, as a device of the machine's: refused,
+    // nothing installed.
+    let config = std::fs::read_to_string(site.join("config.json")).unwrap();
+    std::fs::write(
+        site.join("config.json"),
+        "{\"v\":1,\"dl\":\"file:///dev/zero\"}\n",
+    )
+    .unwrap();
+    let output = sleip(&["update"]);
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("not of the registry's own scheme"),
+        "{output:?}"
+    );
+    assert_eq!(locked().packages["acme/hello"].version, "0.1.1");
+    std::fs::write(site.join("config.json"), config).unwrap();
     // Of no constraint: the newest that the plugin API takes, written as
     // `^<version>`.
     publish(

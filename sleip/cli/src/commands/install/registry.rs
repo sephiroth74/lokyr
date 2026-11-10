@@ -58,6 +58,7 @@ impl Offered {
     pub(super) fn gather(
         paths: &Paths,
         options: Options,
+        out: Out,
         list: &List,
         names: BTreeSet<String>,
     ) -> Result<Self, String> {
@@ -72,6 +73,7 @@ impl Offered {
         let remote = Remote::new(&url, &paths.cache, client.as_ref(), super::super::roots());
         let keys = remote.keys()?;
         let config = remote.config()?;
+        downloads_of(&url, &config.dl)?;
         let mut entries = BTreeMap::new();
         let mut left: Vec<String> = names.into_iter().collect();
         while let Some(name) = left.pop() {
@@ -93,6 +95,13 @@ impl Offered {
                 }
             }
             entries.insert(name, index.entries);
+        }
+        for note in remote.notes() {
+            out.tell(
+                "note",
+                json!({ "message": note }),
+                &format!("Note: {note}."),
+            );
         }
         Ok(Self {
             url,
@@ -192,5 +201,62 @@ impl Offered {
         let _ = std::fs::create_dir_all(&self.archives)
             .and_then(|()| lokyr_pkg_model::write_whole_bytes(&cached, &bytes));
         Ok(bytes)
+    }
+}
+
+/// Whether `dl`, the address of the archives that the `config.json` of the
+/// registry at `url` names, which no key signs, is of the registry's own
+/// scheme and of no user, of the machine's own `http://` alone, so that it
+/// leads to no file, device nor service of the machine's that the
+/// registry's does not: an archive is checked against the signed index's
+/// checksum wherever it comes from.
+fn downloads_of(url: &str, dl: &str) -> Result<(), String> {
+    use lokyr_pkg_model::address::Address;
+
+    let sample = dl
+        .replace("{owner}", "owner")
+        .replace("{name}", "name")
+        .replace("{version}", "0.0.0");
+    let (Some(registry), Some(downloads)) = (Address::parse(url), Address::parse(&sample)) else {
+        return Err(format!(
+            "{url}'s config.json names its archives at {dl}, which is no address of no user"
+        ));
+    };
+    let allowed = downloads.scheme == registry.scheme
+        && match downloads.scheme {
+            "https" => !downloads.host.is_empty(),
+            "http" => downloads.is_loopback(),
+            "file" => downloads.is_registry(),
+            _ => false,
+        };
+    if allowed {
+        Ok(())
+    } else {
+        Err(format!(
+            "{url}'s config.json names its archives at {dl}, which is not of the registry's own scheme, `{}://`",
+            registry.scheme
+        ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_archives_are_of_the_registry_s_own_scheme() {
+        let dl = "https://github.com/acme/registry/releases/download/{owner}.{name}.{version}/{name}-{version}.tar.zst";
+        assert!(downloads_of("https://pkg.lokyr.dev", dl).is_ok());
+        assert!(downloads_of("file:///srv/mirror", "file:///srv/mirror/{name}").is_ok());
+        assert!(downloads_of("http://127.0.0.1:8123", "http://127.0.0.1:8123/{name}").is_ok());
+        for (url, dl) in [
+            ("https://pkg.lokyr.dev", "file:///dev/zero"),
+            ("https://pkg.lokyr.dev", "http://127.0.0.1:22/{name}"),
+            ("http://127.0.0.1:8123", "http://intranet.example/{name}"),
+            ("http://127.0.0.1:8123", "file:///etc/{name}"),
+            ("https://pkg.lokyr.dev", "https://user@evil.example/{name}"),
+        ] {
+            assert!(downloads_of(url, dl).is_err(), "{url} {dl}");
+        }
     }
 }
