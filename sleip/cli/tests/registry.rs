@@ -1147,3 +1147,118 @@ fn the_index_is_signed_of_the_released_versions_by_a_key_that_keys_json_lists() 
     assert_eq!(output.status.code(), Some(1), "{output:?}");
     assert!(String::from_utf8_lossy(&output.stdout).contains("signed by no root key"));
 }
+
+#[test]
+fn publish_proposes_a_checked_version_of_its_tag_to_the_registry() {
+    let lab = Lab::new("publish");
+    // The registry, a bare repository of a commit of its README.
+    let bare = lab.root.join("registry.git");
+    git(
+        &lab.root,
+        &[
+            "init",
+            "--quiet",
+            "--bare",
+            "-b",
+            "main",
+            &bare.display().to_string(),
+        ],
+    );
+    let seed = lab.registry("seed", &[]);
+    git(
+        &seed,
+        &["push", "--quiet", &bare.display().to_string(), "main"],
+    );
+    let registry_url = format!("file://{}", bare.display());
+    // The plugin, its repository its own folder, its tag of its version.
+    let (folder, url) = lab.plugin("hello");
+    edit(&folder, "plugin.toml", |text| {
+        text.replacen(
+            "[plugin]\n",
+            &format!("[plugin]\nrepository = \"{url}\"\n"),
+            1,
+        )
+    });
+    git(&folder, &["commit", "--quiet", "-am", "repository"]);
+    git(&folder, &["tag", "-f", "v0.1.0"]);
+    let first = git(&folder, &["rev-parse", "HEAD"]);
+    let published =
+        |folder: &Path| lab.sleip(&["--json", "publish", "--registry", &registry_url], folder);
+    let output = published(&folder);
+    assert!(output.status.success(), "{output:?}");
+    let pushed = events(&output)
+        .into_iter()
+        .find(|event| event["event"] == "pushed")
+        .unwrap();
+    assert_eq!(pushed["branch"], "publish/acme-hello-0.1.0");
+    let file = git(
+        &bare,
+        &["show", "publish/acme-hello-0.1.0:plugins/acme/hello.toml"],
+    );
+    let read = sleip_index::registry::PluginFile::parse(&format!("{file}\n")).unwrap();
+    assert_eq!(read.repository, url);
+    assert_eq!(read.versions.len(), 1);
+    assert_eq!(read.versions[0].tag, "v0.1.0");
+    assert_eq!(read.versions[0].commit, first);
+    // Merged, a later version goes at the file's end.
+    let merger = lab.root.join("merger");
+    git(
+        &lab.root,
+        &[
+            "clone",
+            "--quiet",
+            &registry_url,
+            &merger.display().to_string(),
+        ],
+    );
+    git(
+        &merger,
+        &[
+            "merge",
+            "--quiet",
+            "--ff-only",
+            "origin/publish/acme-hello-0.1.0",
+        ],
+    );
+    git(&merger, &["push", "--quiet", "origin", "main"]);
+    let second = release(&folder, "0.1.1");
+    let output = published(&folder);
+    assert!(output.status.success(), "{output:?}");
+    let file = git(
+        &bare,
+        &["show", "publish/acme-hello-0.1.1:plugins/acme/hello.toml"],
+    );
+    let read = sleip_index::registry::PluginFile::parse(&format!("{file}\n")).unwrap();
+    assert_eq!(read.versions.len(), 2);
+    assert_eq!(read.versions[1].commit, second);
+    // No tag of the version.
+    edit(&folder, "plugin.toml", |text| {
+        text.replace("version = \"0.1.1\"", "version = \"0.1.2\"")
+    });
+    git(&folder, &["commit", "--quiet", "-am", "0.1.2"]);
+    let output = published(&folder);
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains("no tag `v0.1.2`"),
+        "{output:?}"
+    );
+    // A tag of another version's plugin.toml.
+    git(&folder, &["tag", "v0.1.2", &second]);
+    let output = published(&folder);
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+    assert!(
+        String::from_utf8_lossy(&output.stdout)
+            .contains("holds acme/hello 0.1.1, not acme/hello 0.1.2"),
+        "{output:?}"
+    );
+    // A plugin that `sleip check` refuses.
+    edit(&folder, "src/init.luau", |text| {
+        format!("{text}\nlocal wrong: number = \"text\"\n")
+    });
+    let output = published(&folder);
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains("`sleip check` finds"),
+        "{output:?}"
+    );
+}

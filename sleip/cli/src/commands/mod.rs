@@ -8,6 +8,7 @@ mod gc;
 mod install;
 mod list;
 mod new;
+mod publish;
 mod registry;
 mod remove;
 mod search;
@@ -44,6 +45,11 @@ pub fn run(options: Options, command: &Command) -> ExitCode {
         Command::Doctor => doctor::doctor(&paths, out),
         Command::Search(words) => search::search(&paths, options, out, words),
         Command::Info(plugin) => search::info(&paths, options, out, plugin),
+        Command::Publish {
+            tag,
+            registry,
+            link,
+        } => publish::publish(&paths, out, tag.as_deref(), registry.as_deref(), *link),
         Command::Registry(tool) => registry::run(out, tool),
     };
     match ran {

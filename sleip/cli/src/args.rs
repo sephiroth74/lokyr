@@ -41,6 +41,14 @@ pub enum Command {
     Search(Vec<String>),
     /// A plugin of the registry told, by its name.
     Info(String),
+    /// The version of the plugin of the current folder proposed to the
+    /// registry: of its tag, or `v<version>`; to the registry given, or
+    /// Lokyr's; of a link alone if asked.
+    Publish {
+        tag: Option<String>,
+        registry: Option<String>,
+        link: bool,
+    },
     /// One of the registry's tools, which its CI runs, hidden from the help.
     Registry(Registry),
 }
@@ -157,6 +165,7 @@ Commands:
   doctor             Diagnose the store, the lockfile, the cache and the app's plugin API
   search <words>     Search the registry's plugins, of their names and descriptions
   info <plugin>      Tell a plugin of the registry: its versions, capabilities and checksums
+  publish            Propose the version of the plugin of the current folder to the registry
   help [command]     Show this help, or a command's
 
 Options:
@@ -230,6 +239,9 @@ fn command_help(name: &str) -> Option<&'static str> {
         "update" => {
             "Usage: sleip update [options] [<plugin>]\n\nUpdates the plugins of plugins.toml, or the one given: the registry's to the\nnewest versions that their constraints and Lokyr's plugin API take, and the\nfolders and git repositories fetched again; resolves them, stores their\npackages and writes plugins.lock. A failure changes nothing.\n"
         }
+        "publish" => {
+            "Usage: sleip publish [options] [--tag <tag>] [--registry <owner/repository>] [--link]\n\nProposes the version of the plugin of the current folder to the registry:\nchecks and tests it as the registry's CI does, finds its tag, v<version> or\nthe one given, of plugin.toml's version at that commit, which the plugin's\nrepository holds; then opens the registry's pull request of the plugin's\nfile, of the version added at its end, through gh, of your fork; without gh\nor with --link, tells the link that proposes it on GitHub. Tells what the\nregistry's CI checks.\n"
+        }
         "search" => {
             "Usage: sleip search [options] <words>...\n\nSearches the registry's plugins: each that every word finds in its name or\nits description, of the registry's signed list, which Sleip checks and keeps\nin its cache; with --offline, of the cache alone.\n"
         }
@@ -257,7 +269,7 @@ fn command_help(name: &str) -> Option<&'static str> {
 /// text of why it is wrong.
 pub fn parse(args: &[String]) -> Result<Parsed, String> {
     let mut options = Options::default();
-    let (mut words, mut help, mut version) = (Vec::new(), false, false);
+    let (mut words, mut help, mut version, mut link) = (Vec::new(), false, false, false);
     // The options of a value, by their names.
     let mut valued: Vec<(&str, &str)> = Vec::new();
     let mut args = args.iter();
@@ -266,9 +278,10 @@ pub fn parse(args: &[String]) -> Result<Parsed, String> {
             "--json" => options.json = true,
             "--offline" => options.offline = true,
             "--locked" => options.locked = true,
+            "--link" => link = true,
             "-h" | "--help" => help = true,
             "-V" | "--version" => version = true,
-            name @ ("--path" | "--git" | "--tag" | "--rev") => {
+            name @ ("--path" | "--git" | "--tag" | "--rev" | "--registry") => {
                 let value = args
                     .next()
                     .ok_or_else(|| format!("`{name}` takes a value\n\n{HELP}"))?;
@@ -294,10 +307,25 @@ pub fn parse(args: &[String]) -> Result<Parsed, String> {
             .find(|(given, _)| *given == name)
             .map(|(_, value)| (*value).to_owned())
     };
-    if !valued.is_empty() && words.first() != Some(&"add") {
+    // Each command's options of a value, and `--link` of `publish` alone.
+    let command = words.first().copied().unwrap_or_default();
+    let taken: &[&str] = match command {
+        "add" => &["--path", "--git", "--tag", "--rev"],
+        "publish" => &["--tag", "--registry"],
+        _ => &[],
+    };
+    if let Some((name, _)) = valued.iter().find(|(name, _)| !taken.contains(name)) {
+        let of = match *name {
+            "--registry" => "publish",
+            _ => "add",
+        };
         return Err(format!(
-            "`{}` is an option of `sleip add` alone\n\n{HELP}",
-            valued[0].0
+            "`{name}` is an option of `sleip {of}` alone\n\n{HELP}"
+        ));
+    }
+    if link && command != "publish" {
+        return Err(format!(
+            "`--link` is an option of `sleip publish` alone\n\n{HELP}"
         ));
     }
     if version && words.is_empty() {
@@ -384,6 +412,14 @@ pub fn parse(args: &[String]) -> Result<Parsed, String> {
             Command::Search(words.iter().map(|word| (*word).to_owned()).collect()),
         )),
         ["info", plugin] => Ok(Parsed::Run(options, Command::Info((*plugin).to_owned()))),
+        ["publish"] => Ok(Parsed::Run(
+            options,
+            Command::Publish {
+                tag: value("--tag"),
+                registry: value("--registry"),
+                link,
+            },
+        )),
         [name, ..] => match command_help(name) {
             Some(text) => Err(format!("`{name}` takes other arguments\n\n{text}")),
             None => Err(format!("`{name}` is no command of Sleip's\n\n{HELP}")),

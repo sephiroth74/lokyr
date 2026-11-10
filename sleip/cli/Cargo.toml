@@ -14,6 +14,8 @@ name = "sleip"
 path = "src/main.rs"
 
 [dependencies]
+# A file's text for GitHub's API, of `sleip publish`.
+base64.workspace = true
 fluent-syntax.workspace = true
 sleip-analyzer.workspace = true
 sleip-index.workspace = true

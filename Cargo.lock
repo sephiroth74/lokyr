@@ -2416,6 +2416,7 @@ dependencies = [
 name = "sleip-cli"
 version = "0.8.0"
 dependencies = [
+ "base64 0.22.1",
  "fluent-syntax",
  "lokyr-pkg-model",
  "lokyr-plugin-host-luau",
