@@ -945,3 +945,241 @@ fn installs_keep_the_locked_versions_and_reproduce_a_lockfile() {
     assert_eq!(locked(&home).packages["acme/base"].version, "0.1.1");
     let _ = std::fs::remove_dir_all(&root);
 }
+
+/// A registry served on the machine, of its keys and its plugins, which
+/// the tests publish to, and the homes that install from it.
+struct TestRegistry {
+    root: PathBuf,
+    site: PathBuf,
+    served: Served,
+    root_key: SecretKey,
+    index_key: SecretKey,
+    at: Timestamp,
+    times: AtomicUsize,
+}
+
+impl TestRegistry {
+    fn new(name: &str) -> Self {
+        let root = std::env::temp_dir().join(format!("sleip-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let site = root.join("site");
+        std::fs::create_dir_all(site.join("index/acme")).unwrap();
+        std::fs::create_dir_all(site.join("archives")).unwrap();
+        let served = serve(&site);
+        let (root_key, index_key) = (
+            SecretKey::generate().unwrap(),
+            SecretKey::generate().unwrap(),
+        );
+        let at = recently();
+        std::fs::write(
+            site.join("keys.json"),
+            signing::sign_keys(&root_key, &[index_key.public()], at),
+        )
+        .unwrap();
+        std::fs::write(
+            site.join("config.json"),
+            format!(
+                "{{\"v\":1,\"dl\":\"http://127.0.0.1:{}/archives/{{owner}}.{{name}}.{{version}}.tar.zst\"}}\n",
+                served.port
+            ),
+        )
+        .unwrap();
+        Self {
+            root,
+            site,
+            served,
+            root_key,
+            index_key,
+            at,
+            times: AtomicUsize::new(0),
+        }
+    }
+
+    /// Publishes `plugins`, each its name and its versions, its index and
+    /// the list signed at a later time each publishing.
+    fn publish(&self, plugins: &[(&str, Versions)]) {
+        use lokyr_pkg_model::store::Digest;
+        use sleip_index::signing::Dependency;
+
+        let at = Timestamp(self.at.0 + 60 * self.times.fetch_add(1, Ordering::Relaxed) as u64);
+        let mut listed_all = Vec::new();
+        for (name, versions) in plugins {
+            let mut entries = Vec::new();
+            for (version, deps, yanked) in *versions {
+                let archive = packed_of(&self.root, name, version, deps);
+                let short = name.split_once('/').unwrap().1;
+                std::fs::write(
+                    self.site
+                        .join(format!("archives/acme.{short}.{version}.tar.zst")),
+                    &archive,
+                )
+                .unwrap();
+                let mut entry = entry(name, version, "A plugin", &[], *yanked);
+                entry.cksum = Digest::of_bytes(&archive).to_string();
+                entry.deps = deps
+                    .iter()
+                    .map(|(needed, req)| Dependency {
+                        name: (*needed).to_owned(),
+                        req: (*req).to_owned(),
+                    })
+                    .collect();
+                entries.push(entry);
+            }
+            std::fs::write(
+                self.site.join(format!("index/{name}")),
+                signing::sign_index(name, &entries, &self.index_key, at),
+            )
+            .unwrap();
+            listed_all.push(listed(entries.last().unwrap()));
+        }
+        std::fs::write(
+            self.site.join("list"),
+            signing::sign_list(&listed_all, &self.index_key, at),
+        )
+        .unwrap();
+    }
+
+    /// A home of the registry, of Lokyr's plugin API.
+    fn home(&self, name: &str) -> PathBuf {
+        let home = self.root.join(name);
+        std::fs::create_dir_all(home.join(".config/lokyr")).unwrap();
+        std::fs::write(home.join("api-version"), "0.1.0\n").unwrap();
+        std::fs::write(
+            home.join(".config/lokyr/plugins.toml"),
+            format!(
+                "[registries]\ndefault = \"http://127.0.0.1:{}\"\n",
+                self.served.port
+            ),
+        )
+        .unwrap();
+        home
+    }
+
+    fn sleip(&self, home: &Path, args: &[&str]) -> Output {
+        Command::new(env!("CARGO_BIN_EXE_sleip"))
+            .args(args)
+            .env("HOME", home)
+            .env("XDG_CONFIG_HOME", home.join(".config"))
+            .env("XDG_CACHE_HOME", home.join(".cache"))
+            .env("XDG_DATA_HOME", home.join(".local/share"))
+            .env("SLEIP_TEST_ROOT_KEYS", self.root_key.public().to_string())
+            .env("SLEIP_LOKYR", home.join("api-version"))
+            .env("PATH", "/usr/bin:/bin")
+            .output()
+            .unwrap()
+    }
+}
+
+impl Drop for TestRegistry {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.root);
+    }
+}
+
+#[test]
+fn installs_move_a_conflict_s_plugins_alone_keep_dev_folders_and_take_folders_needs() {
+    use lokyr_pkg_model::lock::{Lock, Source};
+
+    let registry = TestRegistry::new("moves");
+    let locked = |home: &Path| {
+        Lock::read(&home.join(".config/lokyr/plugins.lock"))
+            .unwrap()
+            .unwrap()
+    };
+    let needs_base: &[(&str, &str)] = &[("acme/base", "^0.1")];
+    let app: Versions = &[("1.0.0", needs_base, false)];
+    registry.publish(&[
+        ("acme/base", &[("0.1.0", &[], false)]),
+        ("acme/util", &[("1.0.0", &[], false)]),
+        ("acme/app", app),
+    ]);
+    // base and util locked at their versions of then.
+    let home = registry.home("conflict");
+    for plugin in ["acme/app", "acme/util"] {
+        let output = registry.sleip(&home, &["add", plugin]);
+        assert!(output.status.success(), "{output:?}");
+    }
+    assert_eq!(locked(&home).packages["acme/base"].version, "0.1.0");
+    assert_eq!(locked(&home).packages["acme/util"].version, "1.0.0");
+    // Later: base 0.1.1, util 1.4.0, and a plugin that needs util 1.4.
+    let needer: Versions = &[(
+        "1.0.0",
+        &[("acme/util", "^1.4"), ("acme/base", "^0.1")],
+        false,
+    )];
+    registry.publish(&[
+        ("acme/base", &[("0.1.0", &[], false), ("0.1.1", &[], false)]),
+        ("acme/util", &[("1.0.0", &[], false), ("1.4.0", &[], false)]),
+        ("acme/app", app),
+        ("acme/needer", needer),
+    ]);
+    // The conflict moves util alone; base stays as locked.
+    let output = registry.sleip(&home, &["add", "acme/needer"]);
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(locked(&home).packages["acme/util"].version, "1.4.0");
+    assert_eq!(locked(&home).packages["acme/base"].version, "0.1.0");
+    // A constraint edited by hand that the locked version no longer meets:
+    // resolved afresh, not a conflict.
+    let list_path = home.join(".config/lokyr/plugins.toml");
+    let list = std::fs::read_to_string(&list_path).unwrap();
+    std::fs::write(&list_path, format!("{list}\"acme/base\" = \"^0.1.1\"\n")).unwrap();
+    let output = registry.sleip(&home, &["update", "acme/needer"]);
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(locked(&home).packages["acme/base"].version, "0.1.1");
+    // A folder that `sleip dev` links, base 0.1.0, which app needs: kept as
+    // it is, the lockfile reading, as a plugin that needs base is added.
+    let dev = registry.home("dev");
+    let output = registry.sleip(&dev, &["add", "acme/app"]);
+    assert!(output.status.success(), "{output:?}");
+    packed_of(&registry.root, "acme/base", "0.1.0", &[]);
+    let folder = registry.root.join("work-base-0.1.0/base");
+    let mut lock = locked(&dev);
+    let base = lock.packages.get_mut("acme/base").unwrap();
+    base.version = "0.1.0".to_owned();
+    base.source = Source::Dev(folder.display().to_string());
+    base.checksum = None;
+    lock.packages
+        .get_mut("acme/app")
+        .unwrap()
+        .dependencies
+        .insert("acme/base".to_owned(), "0.1.0".to_owned());
+    lock.write(&dev.join(".config/lokyr/plugins.lock")).unwrap();
+    let output = registry.sleip(&dev, &["add", "acme/needer"]);
+    assert!(output.status.success(), "{output:?}");
+    let now = locked(&dev);
+    assert!(matches!(now.packages["acme/base"].source, Source::Dev(_)));
+    assert_eq!(
+        now.packages["acme/needer"].dependencies["acme/base"],
+        "0.1.0"
+    );
+    let output = registry.sleip(&dev, &["update"]);
+    assert!(output.status.success(), "{output:?}");
+    assert!(matches!(
+        locked(&dev).packages["acme/base"].source,
+        Source::Dev(_)
+    ));
+    // A folder's plugin that needs a plugin of the registry, which no list
+    // names yet: gathered and installed.
+    let mine = registry.root.join("mine-work");
+    std::fs::create_dir_all(&mine).unwrap();
+    let made = Command::new(env!("CARGO_BIN_EXE_sleip"))
+        .args(["new", "acme/mine"])
+        .current_dir(&mine)
+        .output()
+        .unwrap();
+    assert!(made.status.success(), "{made:?}");
+    let manifest = mine.join("mine/plugin.toml");
+    let text = std::fs::read_to_string(&manifest).unwrap();
+    std::fs::write(
+        &manifest,
+        format!("{text}\n[dependencies]\n\"acme/base\" = \"^0.1\"\n"),
+    )
+    .unwrap();
+    let fresh = registry.home("folder");
+    let output = registry.sleip(
+        &fresh,
+        &["add", "--path", &mine.join("mine").display().to_string()],
+    );
+    assert!(output.status.success(), "{output:?}");
+    assert!(locked(&fresh).packages.contains_key("acme/base"));
+}

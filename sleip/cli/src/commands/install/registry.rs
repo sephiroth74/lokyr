@@ -110,10 +110,14 @@ impl Offered {
                     continue;
                 }
                 for dependency in &entry.deps {
+                    // Of a folder, a repository, or a folder that `sleip
+                    // dev` links, as it is.
                     let elsewhere = matches!(
                         list.plugins.get(&dependency.name),
                         Some(Wanted::Path(_) | Wanted::Git { .. })
-                    );
+                    ) || lock
+                        .and_then(|lock| lock.packages.get(&dependency.name))
+                        .is_some_and(|locked| matches!(locked.source, Source::Dev(_)));
                     if !elsewhere && !entries.contains_key(&dependency.name) {
                         left.push(dependency.name.clone());
                     }
@@ -185,6 +189,25 @@ impl Offered {
             }
         }
         Ok(candidates)
+    }
+
+    /// The versions that `lock` holds of the registry of the plugins not
+    /// asked for, which the resolution prefers.
+    pub(super) fn preferred(&self, lock: Option<&Lock>) -> BTreeMap<String, Version> {
+        let Some(lock) = lock else {
+            return BTreeMap::new();
+        };
+        self.entries
+            .keys()
+            .filter(|name| !self.asked.contains(*name))
+            .filter_map(|name| {
+                let locked = lock.packages.get(name)?;
+                matches!(locked.source, Source::Registry(_))
+                    .then(|| Version::parse(&locked.version).ok())
+                    .flatten()
+                    .map(|version| (name.clone(), version))
+            })
+            .collect()
     }
 
     /// The archive of the version `version` of the plugin `name`, of

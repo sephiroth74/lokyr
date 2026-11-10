@@ -135,6 +135,10 @@ struct Provider {
     wanted: Vec<(String, Ranges<Version>)>,
     /// The app's plugin API's version.
     api: Version,
+    /// The versions preferred, by the plugins' names, as a lockfile holds
+    /// them: each taken while it holds, another of the newest only of a
+    /// conflict that needs it.
+    preferred: BTreeMap<String, Version>,
 }
 
 impl DependencyProvider for Provider {
@@ -170,10 +174,17 @@ impl DependencyProvider for Provider {
             ROOT => Some(version(0, 0, 0)),
             API => Some(self.api.clone()).filter(|api| range.contains(api)),
             _ => self.candidates.get(package).and_then(|versions| {
-                versions
-                    .keys()
-                    .rev()
-                    .find(|version| range.contains(version))
+                self.preferred
+                    .get(package)
+                    .filter(|preferred| {
+                        range.contains(preferred) && versions.contains_key(preferred)
+                    })
+                    .or_else(|| {
+                        versions
+                            .keys()
+                            .rev()
+                            .find(|version| range.contains(version))
+                    })
                     .cloned()
             }),
         })
@@ -230,6 +241,23 @@ pub fn resolve(
     wanted: &[(String, String)],
     candidates: &[Candidate],
 ) -> Result<BTreeMap<String, Version>, String> {
+    resolve_preferring(api, wanted, candidates, &BTreeMap::new())
+}
+
+/// One version of each plugin, as [`resolve`] picks them, of `preferred`,
+/// the versions that a lockfile holds, by the plugins' names: each taken
+/// while the others hold with it, so that a conflict moves the plugins of
+/// the conflict alone, to the newest of theirs that holds.
+///
+/// # Errors
+///
+/// As [`resolve`]'s.
+pub fn resolve_preferring(
+    api: &Version,
+    wanted: &[(String, String)],
+    candidates: &[Candidate],
+    preferred: &BTreeMap<String, Version>,
+) -> Result<BTreeMap<String, Version>, String> {
     let mut by_name: BTreeMap<String, BTreeMap<Version, Candidate>> = BTreeMap::new();
     for candidate in candidates {
         by_name
@@ -245,6 +273,7 @@ pub fn resolve(
         candidates: by_name,
         wanted: needs,
         api: api.clone(),
+        preferred: preferred.clone(),
     };
     match pubgrub::resolve(&provider, ROOT.to_owned(), version(0, 0, 0)) {
         Ok(selected) => Ok(selected

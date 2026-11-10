@@ -116,3 +116,37 @@ fn a_conflict_tells_its_reason() {
     assert!(error.contains("No source holds acme/gone."), "{error}");
     assert!(!error.contains("0.0.0") && !error.contains("-0"), "{error}");
 }
+
+#[test]
+fn a_preferred_version_holds_while_it_can_and_a_conflict_moves_its_plugins_alone() {
+    let api = Version::parse("0.1.0").unwrap();
+    let candidates = [
+        candidate("acme/base", "0.1.0", Some("^0.1"), &[]),
+        candidate("acme/base", "0.1.5", Some("^0.1"), &[]),
+        candidate("acme/util", "1.0.0", Some("^0.1"), &[]),
+        candidate("acme/util", "1.4.0", Some("^0.1"), &[]),
+        candidate(
+            "acme/new",
+            "1.0.0",
+            Some("^0.1"),
+            &[("acme/util", "^1.4"), ("acme/base", "^0.1")],
+        ),
+    ];
+    let wanted = [
+        ("acme/new".to_owned(), "*".to_owned()),
+        ("acme/util".to_owned(), "^1.0".to_owned()),
+    ];
+    let preferred: BTreeMap<String, Version> = [
+        ("acme/base".to_owned(), Version::parse("0.1.0").unwrap()),
+        ("acme/util".to_owned(), Version::parse("1.0.0").unwrap()),
+    ]
+    .into_iter()
+    .collect();
+    let picked = resolve_preferring(&api, &wanted, &candidates, &preferred).unwrap();
+    // util moves, as new needs it; base, of no conflict, stays.
+    assert_eq!(picked["acme/util"], Version::parse("1.4.0").unwrap());
+    assert_eq!(picked["acme/base"], Version::parse("0.1.0").unwrap());
+    // Of no preference, the newest of each.
+    let picked = resolve(&api, &wanted, &candidates).unwrap();
+    assert_eq!(picked["acme/base"], Version::parse("0.1.5").unwrap());
+}

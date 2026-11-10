@@ -108,7 +108,7 @@ pub fn add(
         &list,
         lock.as_ref(),
         unlocked(&list, lock.as_ref(), None),
-        &restored(paths, lock.as_ref()),
+        &also(paths, &list, lock.as_ref(), &fresh),
     )?;
     install(
         paths,
@@ -157,7 +157,7 @@ fn add_offered(
         &list,
         lock.as_ref(),
         names,
-        &restored(paths, lock.as_ref()),
+        &also(paths, &list, lock.as_ref(), &fresh),
     )?;
     install(
         paths,
@@ -185,18 +185,61 @@ fn add_offered(
     .map(|_| ())
 }
 
-/// The plugins that `lock` holds of the registry but the store of `paths`
-/// lacks, as of a lockfile copied to another machine: fetched again.
-fn restored(paths: &Paths, lock: Option<&Lock>) -> BTreeSet<String> {
-    lock.map(|lock| {
-        lock.packages
-            .iter()
-            .filter(|(_, locked)| matches!(locked.source, Source::Registry(_)))
-            .filter(|(name, locked)| !stored_as(paths, name, locked))
-            .map(|(name, _)| name.clone())
-            .collect()
-    })
-    .unwrap_or_default()
+/// The registry's plugins that an install gathers beside those asked
+/// for, of the versions that `lock` holds if it holds them: those that it
+/// holds of the registry but the store of `paths` lacks, as of a lockfile
+/// copied to another machine, fetched again, but those that `list` takes
+/// of a folder or a repository, and those of `fresh`; and those that the
+/// plugins of folders, repositories and `sleip dev` folders need, of
+/// `fresh` and of the lockfile, but those that `list` takes so.
+fn also(
+    paths: &Paths,
+    list: &List,
+    lock: Option<&Lock>,
+    fresh: &BTreeMap<String, Fetched>,
+) -> BTreeSet<String> {
+    let elsewhere = |name: &str| {
+        fresh.contains_key(name)
+            || matches!(
+                list.plugins.get(name),
+                Some(Wanted::Path(_) | Wanted::Git { .. })
+            )
+            || lock.is_some_and(|lock| linked(lock, name))
+    };
+    let mut also = BTreeSet::new();
+    if let Some(lock) = lock {
+        also.extend(
+            lock.packages
+                .iter()
+                .filter(|(_, locked)| matches!(locked.source, Source::Registry(_)))
+                .filter(|(name, locked)| !elsewhere(name) && !stored_as(paths, name, locked))
+                .map(|(name, _)| name.clone()),
+        );
+    }
+    let mut manifests: Vec<Manifest> = fresh
+        .values()
+        .map(|fetched| fetched.manifest.clone())
+        .collect();
+    if let Some(lock) = lock {
+        manifests.extend(
+            lock.packages
+                .iter()
+                .filter(|(name, locked)| {
+                    !fresh.contains_key(*name) && !matches!(locked.source, Source::Registry(_))
+                })
+                .filter_map(|(_, locked)| stored_manifest(paths, locked)),
+        );
+    }
+    for manifest in &manifests {
+        also.extend(
+            manifest
+                .dependencies
+                .keys()
+                .filter(|needed| !elsewhere(needed))
+                .cloned(),
+        );
+    }
+    also
 }
 
 /// The plugins of `list` of a folder or a git repository but `except`
@@ -214,8 +257,9 @@ fn others(
         if other == except || matches!(wanted, Wanted::Registry(_)) {
             continue;
         }
-        // The others of the list as the lockfile holds them, if it does.
-        if lock.is_some_and(|lock| lock.packages.contains_key(other)) {
+        // The others of the list as the lockfile holds them, if it holds
+        // them as the list asks.
+        if lock.is_some_and(|lock| held_as(lock, other, wanted)) {
             continue;
         }
         fresh.insert(
@@ -226,19 +270,63 @@ fn others(
     Ok(fresh)
 }
 
-/// The registry's plugins of `list` that `lock` lacks, and `asked`, of
-/// `update`, each of them if `Some(None)`, or the one named.
+/// The registry's plugins of `list` that `lock` does not hold as the list
+/// asks, and `asked`, of `update`, each of them if `Some(None)`, or the
+/// one named; none that `sleip dev` links, which stays as it is.
 fn unlocked(list: &List, lock: Option<&Lock>, asked: Option<Option<&str>>) -> BTreeSet<String> {
     list.plugins
         .iter()
         .filter(|(_, wanted)| matches!(wanted, Wanted::Registry(_)))
-        .filter(|(name, _)| {
-            let locked = lock.is_some_and(|lock| lock.packages.contains_key(*name));
+        .filter(|(name, _)| !lock.is_some_and(|lock| linked(lock, name)))
+        .filter(|(name, wanted)| {
+            let locked = lock.is_some_and(|lock| held_as(lock, name, wanted));
             let updated = asked.is_some_and(|asked| asked.is_none_or(|asked| asked == *name));
             !locked || updated
         })
         .map(|(name, _)| name.clone())
         .collect()
+}
+
+/// Whether `lock` holds `name` of a folder that `sleip dev` links.
+fn linked(lock: &Lock, name: &str) -> bool {
+    lock.packages
+        .get(name)
+        .is_some_and(|locked| matches!(locked.source, Source::Dev(_)))
+}
+
+/// Whether `lock` holds `name` as `wanted` asks: of the registry, of a
+/// version that its constraint takes; of the folder that it names; of the
+/// repository that it names, at a commit that its `rev` begins, a tag
+/// taken as it was locked; of a folder that `sleip dev` links, as it is.
+/// One that the list's entry, edited by hand, no longer asks for is
+/// resolved afresh.
+fn held_as(lock: &Lock, name: &str, wanted: &Wanted) -> bool {
+    let Some(locked) = lock.packages.get(name) else {
+        return false;
+    };
+    match (wanted, &locked.source) {
+        (_, Source::Dev(_)) => true,
+        (Wanted::Registry(constraint), Source::Registry(_)) => {
+            match (
+                sleip_resolver::ranges_of(constraint),
+                Version::parse(&locked.version),
+            ) {
+                (Ok(ranges), Ok(version)) => ranges.contains(&version),
+                _ => false,
+            }
+        }
+        (Wanted::Path(path), Source::Path(held)) => expand(path)
+            .and_then(|folder| std::fs::canonicalize(folder).ok())
+            .is_some_and(|folder| folder.display().to_string() == *held),
+        (Wanted::Git { url, at }, Source::Git { url: held, commit }) => {
+            url == held
+                && match at {
+                    GitAt::Rev(rev) => commit.starts_with(rev.as_str()),
+                    GitAt::Tag(_) => true,
+                }
+        }
+        _ => false,
+    }
 }
 
 /// Fetches the plugins of `plugins.toml` of `paths` again, or `plugin`
@@ -267,8 +355,10 @@ pub fn update(
         let asked = plugin.is_none_or(|plugin| plugin == name);
         let locked = lock
             .as_ref()
-            .is_some_and(|lock| lock.packages.contains_key(name));
-        if matches!(wanted, Wanted::Registry(_)) || (!asked && locked) {
+            .is_some_and(|lock| held_as(lock, name, wanted));
+        // One that `sleip dev` links stays as it is.
+        let dev = lock.as_ref().is_some_and(|lock| linked(lock, name));
+        if matches!(wanted, Wanted::Registry(_)) || (!asked && locked) || dev {
             continue;
         }
         fresh.insert(
@@ -302,7 +392,7 @@ pub fn update(
         &list,
         lock.as_ref(),
         asked,
-        &restored(paths, lock.as_ref()),
+        &also(paths, &list, lock.as_ref(), &fresh),
     )?;
     install(
         paths,
@@ -394,16 +484,17 @@ fn install(
     // The registry's plugins not asked for of the versions that the
     // lockfile holds, first; of any, if the resolution needs another, but
     // of `--locked`.
-    let resolved = |keep: bool| -> Result<_, String> {
-        let mut all = candidates.clone();
-        all.extend(offered.candidates(lock, keep)?);
-        sleip_resolver::resolve(&api_version, &wanted, &all)
+    // The registry's plugins not asked for of the versions that the
+    // lockfile holds, as long as they hold: a conflict moves its plugins
+    // alone; of `--locked`, of those versions alone.
+    candidates.extend(offered.candidates(lock, options.locked)?);
+    let preferred = if options.locked {
+        BTreeMap::new()
+    } else {
+        offered.preferred(lock)
     };
-    let picked = match resolved(true) {
-        Ok(picked) => picked,
-        Err(_) if !options.locked => resolved(false)?,
-        Err(error) => return Err(error),
-    };
+    let picked =
+        sleip_resolver::resolve_preferring(&api_version, &wanted, &candidates, &preferred)?;
     // The packages stored, those new to the store taken away of a failure.
     let mut stored: Vec<Digest> = Vec::new();
     let made = (|| {
@@ -504,10 +595,14 @@ fn install(
             };
             packages.insert(name.clone(), entry);
         }
-        // The folders that `sleip dev` links, which no list names.
+        // The folders that `sleip dev` links, which no list names, nor the
+        // resolution took, as it takes them as they are.
         if let Some(lock) = lock {
             for (name, locked) in &lock.packages {
-                if matches!(locked.source, Source::Dev(_)) && !list.plugins.contains_key(name) {
+                if matches!(locked.source, Source::Dev(_))
+                    && !list.plugins.contains_key(name)
+                    && !packages.contains_key(name)
+                {
                     packages.insert(name.clone(), locked.clone());
                 }
             }
