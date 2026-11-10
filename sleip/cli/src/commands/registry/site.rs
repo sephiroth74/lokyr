@@ -602,6 +602,7 @@ mod tests {
             uses: Vec::new(),
             cksum: format!("sha256:{}", "a".repeat(64)),
             yanked: false,
+            description: None,
         };
         let page = plugin_page(
             "acme/hello",
@@ -643,6 +644,7 @@ mod tests {
             uses: Vec::new(),
             cksum: format!("sha256:{}", "a".repeat(64)),
             yanked: false,
+            description: None,
         };
         let published = Published {
             owner: "acme".to_owned(),

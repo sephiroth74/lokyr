@@ -16,6 +16,7 @@ fn entry(vers: &str, yanked: bool) -> Entry {
         uses: vec!["pane.clear".to_owned()],
         cksum: format!("sha256:{}", "a".repeat(64)),
         yanked,
+        description: None,
     }
 }
 

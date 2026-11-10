@@ -7,5 +7,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod client;
 pub mod registry;
+pub mod remote;
 pub mod signing;

@@ -51,7 +51,8 @@ deny = [
     # on these (for example hyper-util) must be added to the wrappers.
     { crate = "reqwest", wrappers = ["sleip-index"], reason = "only Sleip may use the network" },
     { crate = "hyper", wrappers = ["sleip-index"], reason = "only Sleip may use the network" },
-    { crate = "rustls", wrappers = ["sleip-index"], reason = "only Sleip may use the network" },
+    { crate = "rustls", wrappers = ["sleip-index", "ureq", "rustls-platform-verifier"], reason = "only Sleip may use the network, of its client ureq and the system's verifier" },
+    { crate = "ureq", wrappers = ["sleip-index"], reason = "only Sleip may use the network" },
     { crate = "tokio", wrappers = ["sleip-cli", "sleip-index"], reason = "only Sleip may use an async runtime" },
     # Not used anywhere: TLS is rustls, and the only async runtime is tokio.
     { crate = "native-tls", reason = "TLS is provided by rustls" },

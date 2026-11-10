@@ -250,6 +250,7 @@ fn index(
     let config = json!({ "v": signing::VERSION, "dl": dl.unwrap_or(registry::DOWNLOADS) });
     made(&into.join("config.json"), &format!("{config}\n"))?;
     let generated = Timestamp::now();
+    let mut listed = Vec::new();
     for (path, bytes) in &files_of(registry)? {
         let Some((owner, name)) = registry::plugin_of_path(path) else {
             continue;
@@ -307,6 +308,7 @@ fn index(
                 uses: manifest.uses.clone(),
                 cksum: Digest::of_bytes(&archive_bytes).to_string(),
                 yanked: release.yanked,
+                description: manifest.description.clone(),
             });
         }
         let text = signing::sign_index(&plugin, &entries, &key, generated);
@@ -319,7 +321,28 @@ fn index(
             json!({ "name": plugin, "versions": entries.len() }),
             &format!("{plugin}: {} versions", entries.len()),
         );
+        // Of its version shown, the latest not yanked or the latest of all.
+        if let Some(shown) = entries
+            .iter()
+            .rev()
+            .find(|entry| !entry.yanked)
+            .or_else(|| entries.last())
+        {
+            listed.push(signing::Listed {
+                v: signing::VERSION,
+                name: plugin.clone(),
+                vers: shown.vers.clone(),
+                description: shown.description.clone(),
+                caps: shown.caps.clone(),
+                yanked: shown.yanked,
+            });
+        }
     }
+    // The list of the plugins, which Sleip searches.
+    let text = signing::sign_list(&listed, &key, generated);
+    signing::verify_list(&text, &keys, None)
+        .map_err(|error| format!("the list that this run signed does not check: {error}"))?;
+    made(&into.join("list"), &text)?;
     Ok(())
 }
 

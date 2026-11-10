@@ -350,6 +350,9 @@ pub struct Entry {
     pub cksum: String,
     /// Whether it is yanked.
     pub yanked: bool,
+    /// Its description, of its manifest, if it has one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
 }
 
 /// A plugin that a version depends on, of its constraint.
@@ -378,41 +381,51 @@ pub struct Index {
     pub generated: Timestamp,
 }
 
-/// What an index key signs of the index file of the plugin `name`: the
-/// plugin, its time, then its lines as they are, each of its line's end.
-fn index_message(name: &str, generated: &str, body: &str) -> Vec<u8> {
-    format!("sleip index v{VERSION}\n{name}\n{generated}\n{body}").into_bytes()
+/// What an index key signs of a file of `subject`, a plugin's name or
+/// [`LIST`]: its subject, its time, then its lines as they are, each of its
+/// line's end.
+fn index_message(subject: &str, generated: &str, body: &str) -> Vec<u8> {
+    format!("sleip index v{VERSION}\n{subject}\n{generated}\n{body}").into_bytes()
 }
 
-/// The text of the index file of the plugin `name`, of `entries`, made at
+/// The subject of the list of the registry's plugins, as its signature
+/// covers it: no plugin's name, of its `/`.
+pub const LIST: &str = "*";
+
+/// The text of a file of `subject` of the lines of `items`, made at
 /// `generated`, signed by the index key `key`.
-pub fn sign_index(name: &str, entries: &[Entry], key: &SecretKey, generated: Timestamp) -> String {
+fn sign_lines<T: Serialize>(
+    subject: &str,
+    items: &[T],
+    key: &SecretKey,
+    generated: Timestamp,
+) -> String {
     let mut body = String::new();
-    for entry in entries {
+    for item in items {
         // A struct of texts, numbers and lists serializes.
-        body.push_str(&serde_json::to_string(entry).unwrap_or_default());
+        body.push_str(&serde_json::to_string(item).unwrap_or_default());
         body.push('\n');
     }
     let generated = generated.to_string();
     let signed = Signed {
-        sig: key.sign(&index_message(name, &generated, &body)),
+        sig: key.sign(&index_message(subject, &generated, &body)),
         key: key.public().to_string(),
         generated,
     };
     body + &serde_json::to_string(&signed).unwrap_or_default() + "\n"
 }
 
-/// The versions of `text`, the index file of the plugin `name`, checked:
-/// signed whole by one of the index keys of `keys`, each line the
-/// plugin's, and not older than `held`, the time of the one that Sleip
-/// holds, if it holds one.
-pub fn verify_index(
-    text: &str,
-    name: &str,
+/// The lines of `text`, a file of `subject` that `file` names for a
+/// person, checked: signed whole by one of the index keys of `keys`, and
+/// not older than `held`, the time of the one that Sleip holds, if it
+/// holds one; and its time.
+fn checked_lines<'a>(
+    text: &'a str,
+    subject: &str,
+    file: &str,
     keys: &Keys,
     held: Option<Timestamp>,
-) -> Result<Index, String> {
-    let file = format!("the index of `{name}`");
+) -> Result<(&'a str, Timestamp), String> {
     let trimmed = text
         .strip_suffix('\n')
         .ok_or_else(|| format!("{file} does not end with a line's end"))?;
@@ -428,7 +441,10 @@ pub fn verify_index(
             "{file} is signed by {key}, which keys.json does not list"
         ));
     }
-    if !key.verifies(&index_message(name, &signed.generated, body), &signed.sig) {
+    if !key.verifies(
+        &index_message(subject, &signed.generated, body),
+        &signed.sig,
+    ) {
         return Err(format!("{file} is not as its signature says"));
     }
     let generated = Timestamp::parse(&signed.generated)?;
@@ -439,6 +455,27 @@ pub fn verify_index(
             "{file} was made at {generated}, before the one that this Sleip holds, of {held}"
         ));
     }
+    Ok((body, generated))
+}
+
+/// The text of the index file of the plugin `name`, of `entries`, made at
+/// `generated`, signed by the index key `key`.
+pub fn sign_index(name: &str, entries: &[Entry], key: &SecretKey, generated: Timestamp) -> String {
+    sign_lines(name, entries, key, generated)
+}
+
+/// The versions of `text`, the index file of the plugin `name`, checked:
+/// signed whole by one of the index keys of `keys`, each line the
+/// plugin's, and not older than `held`, the time of the one that Sleip
+/// holds, if it holds one.
+pub fn verify_index(
+    text: &str,
+    name: &str,
+    keys: &Keys,
+    held: Option<Timestamp>,
+) -> Result<Index, String> {
+    let file = format!("the index of `{name}`");
+    let (body, generated) = checked_lines(text, name, &file, keys, held)?;
     let mut entries = Vec::new();
     for line in body.lines() {
         let entry: Entry = serde_json::from_str(line)
@@ -455,6 +492,61 @@ pub fn verify_index(
         entries.push(entry);
     }
     Ok(Index { entries, generated })
+}
+
+/// A plugin of the list of the registry's plugins, of its version shown,
+/// the latest not yanked or the latest of all.
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+pub struct Listed {
+    /// The line's version.
+    pub v: u32,
+    /// The plugin, `owner/name`.
+    pub name: String,
+    /// Its version shown.
+    pub vers: String,
+    /// Its description, of its manifest, if it has one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// The capabilities that the version shown declares.
+    #[serde(default)]
+    pub caps: Vec<String>,
+    /// Whether the version shown is yanked, as every one of the plugin is.
+    pub yanked: bool,
+}
+
+/// The list of the registry's plugins checked, and its time.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct List {
+    /// Its plugins, in their names' order.
+    pub plugins: Vec<Listed>,
+    /// When it was made.
+    pub generated: Timestamp,
+}
+
+/// The text of the list of the registry's plugins, `listed`, made at
+/// `generated`, signed by the index key `key`.
+pub fn sign_list(listed: &[Listed], key: &SecretKey, generated: Timestamp) -> String {
+    sign_lines(LIST, listed, key, generated)
+}
+
+/// The plugins of `text`, the list of the registry's plugins, checked as
+/// an index file is, of [`LIST`].
+pub fn verify_list(text: &str, keys: &Keys, held: Option<Timestamp>) -> Result<List, String> {
+    let file = "the list of the registry's plugins";
+    let (body, generated) = checked_lines(text, LIST, file, keys, held)?;
+    let mut plugins = Vec::new();
+    for line in body.lines() {
+        let listed: Listed = serde_json::from_str(line)
+            .map_err(|error| format!("{file} has a line that does not read: {error}"))?;
+        if listed.v != VERSION {
+            return Err(format!(
+                "{file} is of version {}, which this Sleip does not read: a newer Sleip does",
+                listed.v
+            ));
+        }
+        plugins.push(listed);
+    }
+    Ok(List { plugins, generated })
 }
 
 #[cfg(test)]

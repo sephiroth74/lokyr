@@ -37,6 +37,10 @@ pub enum Command {
     Gc,
     /// The installation diagnosed.
     Doctor,
+    /// The registry's plugins that every word finds.
+    Search(Vec<String>),
+    /// A plugin of the registry told, by its name.
+    Info(String),
     /// One of the registry's tools, which its CI runs, hidden from the help.
     Registry(Registry),
 }
@@ -149,6 +153,8 @@ Commands:
   remove <plugin>    Remove a plugin, as owner/name; its package stays until `gc`
   gc                 Remove the packages of the store that no lockfile names
   doctor             Diagnose the store, the lockfile, the cache and the app's plugin API
+  search <words>     Search the registry's plugins, of their names and descriptions
+  info <plugin>      Tell a plugin of the registry: its versions, capabilities and checksums
   help [command]     Show this help, or a command's
 
 Options:
@@ -221,6 +227,12 @@ fn command_help(name: &str) -> Option<&'static str> {
         }
         "update" => {
             "Usage: sleip update [options] [<plugin>]\n\nFetches the folders and the git repositories of the plugins of plugins.toml\nagain, or the one given, resolves them, stores their packages and writes\nplugins.lock. A failure changes nothing.\n"
+        }
+        "search" => {
+            "Usage: sleip search [options] <words>...\n\nSearches the registry's plugins: each that every word finds in its name or\nits description, of the registry's signed list, which Sleip checks and keeps\nin its cache; with --offline, of the cache alone.\n"
+        }
+        "info" => {
+            "Usage: sleip info [options] <plugin>\n\nTells a plugin of the registry, as owner/name: its version, description,\ncapabilities, the commands it runs, its dependencies, and its versions with\ntheir checksums, of its signed index file; with --offline, of the cache.\n"
         }
         "list" => {
             "Usage: sleip list [options]\n\nLists the plugins of plugins.lock: each one's version, kind, source and\ncapabilities.\n"
@@ -347,6 +359,11 @@ pub fn parse(args: &[String]) -> Result<Parsed, String> {
         ["remove", plugin] => Ok(Parsed::Run(options, Command::Remove((*plugin).to_owned()))),
         ["gc"] => Ok(Parsed::Run(options, Command::Gc)),
         ["doctor"] => Ok(Parsed::Run(options, Command::Doctor)),
+        ["search", words @ ..] if !words.is_empty() => Ok(Parsed::Run(
+            options,
+            Command::Search(words.iter().map(|word| (*word).to_owned()).collect()),
+        )),
+        ["info", plugin] => Ok(Parsed::Run(options, Command::Info((*plugin).to_owned()))),
         [name, ..] => match command_help(name) {
             Some(text) => Err(format!("`{name}` takes other arguments\n\n{text}")),
             None => Err(format!("`{name}` is no command of Sleip's\n\n{HELP}")),
@@ -525,7 +542,12 @@ mod tests {
                 })
             ))
         );
-        assert!(!HELP.contains("registry"));
+        // The registry's tools hidden, no line of the help a command of them.
+        assert!(
+            !HELP
+                .lines()
+                .any(|line| line.trim_start().starts_with("registry"))
+        );
         assert!(
             matches!(parsed("help registry"), Ok(Parsed::Help(text)) if text.contains("registry verify"))
         );

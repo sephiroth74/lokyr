@@ -34,6 +34,8 @@ The split is the same as cargo and rustc: the app runs plugins, and Sleip provid
 | `sleip login` / `logout` / `yank` / `owner` (registry v1) | Registry accounts, which registry v0, of GitHub's accounts and pull requests, has none of ([ADR 0038](adr/0038-plugin-ecosystem-scope.md)) |
 | `sleip gc` | Removes unreferenced packages from the store; refused without a lockfile in the config's folder while the store holds packages, as every config folder shares the store |
 | `sleip doctor` | Diagnoses the installation, the cache, and compatibility with the app |
+| `sleip search <words>` | Searches the registry's plugins, each that every word finds in its name or its description, of the registry's list, `/list`, signed as an index file is; `--offline` of the cache |
+| `sleip info <plugin>` | Tells a plugin of the registry: its version shown, description, capabilities, the commands it runs, its dependencies, and its versions, newest first, of their checksums, of its index file; `--offline` of the cache |
 | `sleip registry` (hidden) | The registry's tools, which its CI runs, hidden from the help: `verify`, a pull request of the registry checked, as [below](#v0-static-end-of-f4); `build`, a version's archive packaged again from its commit, alike; `versions`, every version of the registry, of its release's tag and archive; `keygen` and `sign-keys`, the registry's keys and its `keys.json`, offline; `index`, the index generated and signed; `site`, the registry's site of it; and `readme`, the README's list of the plugins |
 | `sleip audit` (F7) | Checks installed plugins against security advisories |
 
@@ -129,7 +131,7 @@ default = "https://pkg.lokyr.dev"
 ```
 
 - **A plugin** is of a version's constraint of the registry, as `"^0.1"`; of a folder, `path`, absolute or from `~`; or of a git repository, `git`, of `https://`, `ssh://`, `git@host:path` or `file://`, never `http://` nor `git://`, which do not authenticate their server, at a `tag` or a commit, `rev`, of 7 to 40 hexadecimal digits, one of them.
-- **A registry** is of `https://`, or `file://` of a folder, as a mirror of the tests; `default` is `https://pkg.lokyr.dev` unless the file names another.
+- **A registry** is of `https://`, `file://` of a folder, as a mirror, or `http://` of the machine itself, as the tests serve one; `default` is `https://pkg.lokyr.dev` unless the file names another.
 - `pkg-model`'s `list::List` reads it, each mistake at its line and column, and writes it whole, the plugins in their names' order.
 
 ### `plugins.lock`
@@ -232,7 +234,16 @@ Registry v1 adds its API's address, `api`, beside `dl`.
 {"generated":"2026-11-04T10:00:00Z","key":"ed25519:…","sig":"ed25519:…"}
 ```
 
-Sleip refuses a file signed by a key that `keys.json` lacks, or older than the one that it holds. HTTP caching uses `ETag`/`If-None-Match`. Sleip keeps a local copy of the index for `--offline`.
+Sleip refuses a file signed by a key that `keys.json` lacks, or older than the one that it holds. HTTP caching uses `ETag`/`If-None-Match`. Sleip keeps a local copy of the index for `--offline`, in its cache's `index/<registry>/`, each file written once it checks, beside its ETag.
+
+`GET /list` returns the list of the registry's plugins, which `sleip search` reads, as NDJSON, a line of each plugin of its version shown, the latest not yanked, signed as an index file is, of the subject `*` in place of a plugin's name:
+
+```json
+{"v":1,"name":"sephiroth74/hello","vers":"0.1.8","description":"The registry's plugin of its tests.","caps":["clipboard-read"],"yanked":false}
+{"generated":"2026-11-10T10:16:46Z","key":"ed25519:…","sig":"ed25519:…"}
+```
+
+An index file's line holds its version's `description` too. Sleip speaks to a registry over HTTPS, of ureq and rustls of ring, the system's trust store through the platform's verifier; of `file://`, a mirror; and of `http://` of the machine itself alone, as the tests serve a registry. A build of Sleip for debugging takes the root keys of `SLEIP_TEST_ROOT_KEYS` too, as its tests sign their own registry; a release never does.
 
 The keys are ed25519, a key and a signature written `ed25519:` and the base64 of their bytes, a secret key in a file of its own, `ed25519-secret:` and the base64 of its seed. The root key signs `sleip keys.json v1`, the time and each index key, a line each; an index key signs `sleip index v1`, the plugin's name, the time, then the file's lines before its signature as they are, so that a host can neither serve a plugin's file for another's nor change a line. `sleip registry keygen` makes a key, its secret in a new file that no one else reads; `sleip registry sign-keys` writes `keys.json`, of the root key's file, offline; `sleip registry index`, which the CI of `main` runs in its environment of the index key, writes `config.json`, the registry's `keys.json`, checked against Sleip's root keys, and each plugin's file of the versions whose archives its releases hold, each file read back as Sleip reads it before it is written. `sleip registry site` writes the site beside the index: `index.html`, which lists every plugin and which Pagefind searches once the CI runs it over the pages, and `plugins/<owner>/<name>/`, a page of each plugin, of its versions, their capabilities and checksums, and of the README of the version shown, the latest that is not yanked: a plugin's texts as text alone, its Markdown's raw HTML shown as text, its links of the web or of mail alone, a relative one into its repository at the version's commit. The CI of `main` deploys both to GitHub Pages, at `pkg.lokyr.dev`, the index's files at their paths. `sleip registry readme` rewrites the registry's README between its marks `<!-- plugins:start -->` and `<!-- plugins:end -->`: a table of each plugin of the index, its name linked to its page, its version shown, its description and its capabilities, a plugin's texts as Markdown's text alone, their punctuation escaped, no HTML, an address of the web or of mail broken so that GitHub links it not, 200 characters at most. The CI of `main` writes it after the index and, of a list that changed, opens a pull request of its own and merges it, as `main` takes changes of pull requests alone; of a README that changed meanwhile on `main`, it leaves the list to the next run.
 

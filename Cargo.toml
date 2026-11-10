@@ -98,6 +98,10 @@ tar = { version = "0.4.46", default-features = false }
 ed25519-dalek = "3.0.0"
 base64 = "0.22.1"
 getrandom = "0.4.3"
+# Sleip's requests of the registry, over HTTPS: rustls of ring, the system's
+# trust store through the platform's verifier, no list of roots of its own.
+ureq = { version = "3.5.1", default-features = false, features = ["rustls-no-provider", "platform-verifier"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
 # The plugins' READMEs on the registry's site, its raw HTML shown as text.
 pulldown-cmark = { version = "0.13.6", default-features = false, features = ["html"] }
 tracing = "0.1.44"

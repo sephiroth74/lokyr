@@ -10,6 +10,7 @@ mod list;
 mod new;
 mod registry;
 mod remove;
+mod search;
 mod test;
 
 use std::path::Path;
@@ -41,6 +42,8 @@ pub fn run(options: Options, command: &Command) -> ExitCode {
         Command::Remove(plugin) => remove::remove(&paths, options, out, plugin),
         Command::Gc => gc::gc(&paths, out),
         Command::Doctor => doctor::doctor(&paths, out),
+        Command::Search(words) => search::search(&paths, options, out, words),
+        Command::Info(plugin) => search::info(&paths, options, out, plugin),
         Command::Registry(tool) => registry::run(out, tool),
     };
     match ran {
