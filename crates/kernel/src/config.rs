@@ -2489,6 +2489,18 @@ long-command = 0
             0.6
         );
         assert_eq!(CursorConfig::default().length.value(), 1.0);
+        // Its bounds, as the guide writes them.
+        for (written, value) in [("0.1", 0.1_f32), ("1", 1.0), ("1.0", 1.0)] {
+            assert_eq!(
+                parse(&format!("[cursor]\nlength = {written}\n"))
+                    .unwrap()
+                    .cursor
+                    .length
+                    .value(),
+                value,
+                "{written}"
+            );
+        }
         assert_eq!(
             error("[cursor]\nlength = 0\n"),
             (

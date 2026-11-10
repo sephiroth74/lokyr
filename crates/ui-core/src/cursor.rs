@@ -201,10 +201,11 @@ impl From<Share> for f64 {
 }
 
 impl Share {
-    /// The shortest.
-    pub const MIN: f32 = 0.1;
+    /// The shortest, as the config writes it: of `f64`, as `0.1` of `f32`
+    /// is above the config's `0.1`.
+    pub const MIN: f64 = 0.1;
     /// The whole cell.
-    pub const MAX: f32 = 1.0;
+    pub const MAX: f64 = 1.0;
 
     /// The share, from 0.1 to 1.
     pub fn value(self) -> f32 {
@@ -216,7 +217,7 @@ impl TryFrom<f64> for Share {
     type Error = String;
 
     fn try_from(share: f64) -> Result<Self, Self::Error> {
-        if (f64::from(Self::MIN)..=f64::from(Self::MAX)).contains(&share) {
+        if (Self::MIN..=Self::MAX).contains(&share) {
             // Within the range, the value fits an `f32`.
             Ok(Self(share as f32))
         } else {
