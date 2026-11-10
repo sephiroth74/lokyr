@@ -357,9 +357,9 @@ fn home_page(listed: &[Listed]) -> String {
 
 /// The site's style sheet: the system's font, of a light and a dark
 /// appearance.
-const STYLE: &str = r#":root { color-scheme: light dark; --fg: #1d1d1f; --muted: #6e6e73; --line: #d2d2d7; --accent: #b8860b; --code: #f5f5f7; }
-@media (prefers-color-scheme: dark) { :root { --fg: #f5f5f7; --muted: #a1a1a6; --line: #3a3a3c; --accent: #e0b84a; --code: #2c2c2e; } }
-body { font: 16px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; color: var(--fg); max-width: 52rem; margin: 0 auto; padding: 1.5rem; }
+const STYLE: &str = r#":root { color-scheme: light dark; --bg: #ffffff; --fg: #1d1d1f; --muted: #6e6e73; --line: #d2d2d7; --accent: #b8860b; --code: #f5f5f7; }
+@media (prefers-color-scheme: dark) { :root { --bg: #161618; --fg: #f5f5f7; --muted: #a1a1a6; --line: #3a3a3c; --accent: #e0b84a; --code: #2c2c2e; } }
+body { font: 16px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; background: var(--bg); color: var(--fg); max-width: 52rem; margin: 0 auto; padding: 1.5rem; }
 a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
 header { margin-bottom: 2rem; }
@@ -380,7 +380,7 @@ tr.yanked td { color: var(--muted); }
 .plugins li p { margin: 0.25rem 0 0; color: var(--muted); }
 .version { color: var(--muted); font-size: 0.875rem; }
 .readme img { max-width: 100%; }
-#search { margin: 1.5rem 0; }
+#search { margin: 1.5rem 0; --pagefind-ui-scale: 0.9; --pagefind-ui-primary: var(--accent); --pagefind-ui-text: var(--fg); --pagefind-ui-background: var(--bg); --pagefind-ui-border: var(--line); --pagefind-ui-tag: var(--code); --pagefind-ui-border-width: 1px; --pagefind-ui-border-radius: 8px; --pagefind-ui-font: inherit; }
 "#;
 
 #[cfg(test)]
@@ -451,5 +451,23 @@ mod tests {
             yanked: false,
         }]);
         assert!(!home.contains("<img"), "{home}");
+    }
+
+    #[test]
+    fn the_search_takes_the_site_s_colors_of_each_appearance() {
+        // Pagefind's own, of a white background whatever the appearance,
+        // given the site's, which its dark appearance changes.
+        for variable in [
+            "--pagefind-ui-background: var(--bg)",
+            "--pagefind-ui-text: var(--fg)",
+            "--pagefind-ui-border: var(--line)",
+        ] {
+            assert!(STYLE.contains(variable), "{variable}");
+        }
+        let dark = STYLE
+            .split("prefers-color-scheme: dark")
+            .nth(1)
+            .unwrap_or_default();
+        assert!(dark.contains("--bg:"), "{dark}");
     }
 }
