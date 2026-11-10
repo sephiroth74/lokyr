@@ -599,3 +599,294 @@ fn add_and_update_install_the_registry_s_versions_checked_against_its_index() {
     );
     let _ = std::fs::remove_dir_all(&root);
 }
+
+/// The archive of `name` `version`, a plugin that `sleip new` makes, of the
+/// dependencies `deps`, each its name and constraint.
+fn packed_of(root: &Path, name: &str, version: &str, deps: &[(&str, &str)]) -> Vec<u8> {
+    let short = name.split_once('/').unwrap().1;
+    let work = root.join(format!("work-{short}-{version}"));
+    let folder = work.join(short);
+    // Made anew, as alike as the first time.
+    let _ = std::fs::remove_dir_all(&work);
+    std::fs::create_dir_all(&work).unwrap();
+    let made = Command::new(env!("CARGO_BIN_EXE_sleip"))
+        .args(["new", name])
+        .current_dir(&work)
+        .output()
+        .unwrap();
+    assert!(made.status.success(), "{made:?}");
+    let mut manifest = std::fs::read_to_string(folder.join("plugin.toml"))
+        .unwrap()
+        .replace("version = \"0.1.0\"", &format!("version = \"{version}\""));
+    if !deps.is_empty() {
+        manifest.push_str("\n[dependencies]\n");
+        for (needed, req) in deps {
+            manifest.push_str(&format!("\"{needed}\" = \"{req}\"\n"));
+        }
+    }
+    std::fs::write(folder.join("plugin.toml"), manifest).unwrap();
+    lokyr_pkg_model::archive::pack(&folder).unwrap()
+}
+
+/// A plugin's versions, each its version, its dependencies, each its name
+/// and constraint, and whether it is yanked.
+type Versions<'a> = &'a [(&'a str, &'a [(&'a str, &'a str)], bool)];
+
+/// The folder of the archives that Sleip of `home` keeps.
+fn archives_of(home: &Path) -> Option<PathBuf> {
+    let mut left = vec![home.to_path_buf()];
+    while let Some(at) = left.pop() {
+        for entry in std::fs::read_dir(&at).ok()?.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                if path.ends_with("sleip/archives") {
+                    return Some(path);
+                }
+                left.push(path);
+            }
+        }
+    }
+    None
+}
+
+#[test]
+fn installs_keep_the_locked_versions_and_reproduce_a_lockfile() {
+    use lokyr_pkg_model::lock::Lock;
+    use lokyr_pkg_model::store::{Digest, Store};
+    use sleip_index::signing::Dependency;
+
+    let root = std::env::temp_dir().join(format!("sleip-locked-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    let site = root.join("site");
+    std::fs::create_dir_all(site.join("index/acme")).unwrap();
+    std::fs::create_dir_all(site.join("archives")).unwrap();
+    let served = serve(&site);
+    let (root_key, index_key) = (
+        SecretKey::generate().unwrap(),
+        SecretKey::generate().unwrap(),
+    );
+    let at = Timestamp(Timestamp::now().0 - 4 * 3600);
+    std::fs::write(
+        site.join("keys.json"),
+        signing::sign_keys(&root_key, &[index_key.public()], at),
+    )
+    .unwrap();
+    std::fs::write(
+        site.join("config.json"),
+        format!(
+            "{{\"v\":1,\"dl\":\"http://127.0.0.1:{}/archives/{{owner}}.{{name}}.{{version}}.tar.zst\"}}\n",
+            served.port
+        ),
+    )
+    .unwrap();
+    // The registry of `plugins`, each its name and its versions, of their
+    // dependencies and yanks; a plugin's index and the list signed at a
+    // later time at each publishing.
+    let times = AtomicUsize::new(0);
+    let publish = |plugins: &[(&str, Versions)]| {
+        let at = Timestamp(at.0 + 60 * times.fetch_add(1, Ordering::Relaxed) as u64);
+        let mut listed_all = Vec::new();
+        for (name, versions) in plugins {
+            let mut entries = Vec::new();
+            for (version, deps, yanked) in *versions {
+                let archive = packed_of(&root, name, version, deps);
+                let short = name.split_once('/').unwrap().1;
+                std::fs::write(
+                    site.join(format!("archives/acme.{short}.{version}.tar.zst")),
+                    &archive,
+                )
+                .unwrap();
+                let mut entry = entry(name, version, "A plugin", &[], *yanked);
+                entry.cksum = Digest::of_bytes(&archive).to_string();
+                entry.deps = deps
+                    .iter()
+                    .map(|(needed, req)| Dependency {
+                        name: (*needed).to_owned(),
+                        req: (*req).to_owned(),
+                    })
+                    .collect();
+                entries.push(entry);
+            }
+            std::fs::write(
+                site.join(format!("index/{name}")),
+                signing::sign_index(name, &entries, &index_key, at),
+            )
+            .unwrap();
+            listed_all.push(listed(entries.last().unwrap()));
+        }
+        std::fs::write(
+            site.join("list"),
+            signing::sign_list(&listed_all, &index_key, at),
+        )
+        .unwrap();
+    };
+    let base: Versions = &[("0.1.0", &[], false)];
+    let needs_base: &[(&str, &str)] = &[("acme/base", "^0.1")];
+    let app: Versions = &[("1.0.0", needs_base, false)];
+    let other: Versions = &[("1.0.0", needs_base, false)];
+    // Its yanked version of a dependency that the registry does not
+    // publish.
+    let hello: Versions = &[
+        ("0.1.0", &[("acme/gone", "^1")], true),
+        ("0.2.0", &[], false),
+    ];
+    publish(&[
+        ("acme/base", base),
+        ("acme/app", app),
+        ("acme/other", other),
+        ("acme/hello", hello),
+    ]);
+    // A home of the registry, of Lokyr's plugin API.
+    let home_of = |name: &str| {
+        let home = root.join(name);
+        std::fs::create_dir_all(home.join(".config/lokyr")).unwrap();
+        std::fs::write(home.join("api-version"), "0.1.0\n").unwrap();
+        std::fs::write(
+            home.join(".config/lokyr/plugins.toml"),
+            format!(
+                "[registries]\ndefault = \"http://127.0.0.1:{}\"\n",
+                served.port
+            ),
+        )
+        .unwrap();
+        home
+    };
+    let sleip = |home: &Path, args: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_sleip"))
+            .args(args)
+            .env("HOME", home)
+            .env("XDG_CONFIG_HOME", home.join(".config"))
+            .env("XDG_CACHE_HOME", home.join(".cache"))
+            .env("XDG_DATA_HOME", home.join(".local/share"))
+            .env("SLEIP_TEST_ROOT_KEYS", root_key.public().to_string())
+            .env("SLEIP_LOKYR", home.join("api-version"))
+            .env("PATH", "/usr/bin:/bin")
+            .output()
+            .unwrap()
+    };
+    let locked = |home: &Path| {
+        Lock::read(&home.join(".config/lokyr/plugins.lock"))
+            .unwrap()
+            .unwrap()
+    };
+    let home = home_of("home");
+    let output = sleip(&home, &["add", "acme/app"]);
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(locked(&home).packages["acme/base"].version, "0.1.0");
+    // base 0.1.1 published: a plugin added that depends on it too keeps
+    // the version locked.
+    let base: Versions = &[("0.1.0", &[], false), ("0.1.1", &[], false)];
+    publish(&[
+        ("acme/base", base),
+        ("acme/app", app),
+        ("acme/other", other),
+        ("acme/hello", hello),
+    ]);
+    let output = sleip(&home, &["add", "acme/other"]);
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(locked(&home).packages["acme/base"].version, "0.1.0");
+    assert_eq!(locked(&home).packages["acme/other"].version, "1.0.0");
+    // A plugin whose yanked version needs one that the registry does not
+    // publish: its version not yanked installs.
+    let output = sleip(&home, &["add", "acme/hello"]);
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(locked(&home).packages["acme/hello"].version, "0.2.0");
+    // Offline, of no archive cached, a plugin updated that changes nothing
+    // downloads nothing.
+    let archives = archives_of(&home).expect("Sleip's archives");
+    std::fs::remove_dir_all(&archives).unwrap();
+    let output = sleip(&home, &["--offline", "update", "acme/app"]);
+    assert!(output.status.success(), "{output:?}");
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains("Nothing changed."),
+        "{output:?}"
+    );
+    // The lockfile and the list copied to a machine of an empty store:
+    // `update --locked` fetches each package again, of the lockfile's
+    // digests, the lockfile as it was.
+    let copy = home_of("copy");
+    for file in ["plugins.toml", "plugins.lock"] {
+        std::fs::copy(
+            home.join(".config/lokyr").join(file),
+            copy.join(".config/lokyr").join(file),
+        )
+        .unwrap();
+    }
+    let output = sleip(&copy, &["--json", "update", "--locked"]);
+    assert!(output.status.success(), "{output:?}");
+    let restored: Vec<String> = events(&output)
+        .iter()
+        .filter(|event| event["event"] == "restored")
+        .map(|event| event["name"].as_str().unwrap().to_owned())
+        .collect();
+    assert_eq!(
+        restored,
+        ["acme/app", "acme/base", "acme/hello", "acme/other"],
+        "{output:?}"
+    );
+    assert_eq!(locked(&copy), locked(&home));
+    let store = Store::of_user(&copy, Some(&copy.join(".local/share")));
+    for package in locked(&copy).packages.values() {
+        assert!(store.folder(package.checksum.as_ref().unwrap()).is_dir());
+    }
+    // A lockfile of another digest than the registry's archive: refused,
+    // nothing written.
+    let forged = home_of("forged");
+    std::fs::copy(
+        home.join(".config/lokyr/plugins.toml"),
+        forged.join(".config/lokyr/plugins.toml"),
+    )
+    .unwrap();
+    let mut lock = locked(&home);
+    let base_digest = lock.packages["acme/base"].checksum.unwrap();
+    let other_digest = lock.packages["acme/app"].checksum.unwrap();
+    lock.packages.get_mut("acme/base").unwrap().checksum = Some(other_digest);
+    lock.write(&forged.join(".config/lokyr/plugins.lock"))
+        .unwrap();
+    let output = sleip(&forged, &["update", "--locked"]);
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("is not the one locked"),
+        "{output:?}"
+    );
+    assert_eq!(locked(&forged), lock);
+    assert_ne!(base_digest, other_digest);
+    // A lockfile that cannot be written, of a link into a folder of no
+    // writing: `plugins.toml` put back as it was, nothing installed.
+    let stuck = home_of("stuck");
+    let output = sleip(&stuck, &["add", "acme/app"]);
+    assert!(output.status.success(), "{output:?}");
+    let config = stuck.join(".config/lokyr");
+    let shut = root.join("shut");
+    std::fs::create_dir_all(&shut).unwrap();
+    std::fs::rename(config.join("plugins.lock"), shut.join("plugins.lock")).unwrap();
+    std::os::unix::fs::symlink(shut.join("plugins.lock"), config.join("plugins.lock")).unwrap();
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&shut, std::fs::Permissions::from_mode(0o555)).unwrap();
+    }
+    // Of an account that writes there all the same, as root: not told.
+    if std::fs::write(shut.join("probe"), "").is_err() {
+        let before = std::fs::read_to_string(config.join("plugins.toml")).unwrap();
+        let output = sleip(&stuck, &["add", "acme/other"]);
+        assert_eq!(output.status.code(), Some(1), "{output:?}");
+        assert!(
+            String::from_utf8_lossy(&output.stderr).contains("plugins.lock"),
+            "{output:?}"
+        );
+        assert_eq!(
+            std::fs::read_to_string(config.join("plugins.toml")).unwrap(),
+            before
+        );
+        assert!(!locked(&stuck).packages.contains_key("acme/other"));
+    }
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&shut, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    // `update` of every plugin moves the dependencies too.
+    let output = sleip(&home, &["update"]);
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(locked(&home).packages["acme/base"].version, "0.1.1");
+    let _ = std::fs::remove_dir_all(&root);
+}

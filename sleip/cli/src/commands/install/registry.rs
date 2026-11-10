@@ -3,6 +3,10 @@
 //! resolution, yanked ones left out but one that the lockfile holds; and
 //! the archives of the versions picked, downloaded or of Sleip's cache,
 //! each checked against the index's checksum before the store takes it.
+//! The plugins asked for are resolved afresh; the others gathered, the
+//! dependencies of those and the plugins that the lockfile holds but the
+//! store lacks, are of the version that the lockfile holds, if it holds
+//! one, unless the resolution needs another.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
@@ -35,6 +39,8 @@ pub(super) struct Offered {
     archives: PathBuf,
     /// The versions of each plugin, by its name.
     entries: BTreeMap<String, Vec<Entry>>,
+    /// The plugins asked for, resolved afresh.
+    asked: BTreeSet<String>,
 }
 
 impl Offered {
@@ -47,22 +53,29 @@ impl Offered {
             client: None,
             archives: PathBuf::new(),
             entries: BTreeMap::new(),
+            asked: BTreeSet::new(),
         }
     }
 
-    /// The versions of the registry's plugins `names` of the default
-    /// registry of `list`, and of the plugins that they depend on but those
-    /// that `list` takes of a folder or a git repository, of the index
-    /// fetched, checked against the root keys and cached, or of the cache
-    /// alone of `--offline`; none of no name.
+    /// The versions of the registry's plugins `asked`, resolved afresh,
+    /// and of `also`, of the version that `lock` holds if it can, of the
+    /// default registry of `list`, and of the plugins that they depend on
+    /// but those that `list` takes of a folder or a git repository: of the
+    /// index fetched, checked against the root keys and cached, or of the
+    /// cache alone of `--offline`; none of no name. A yanked version's
+    /// dependencies are gathered of the one that `lock` holds alone, and a
+    /// dependency that the registry does not publish has no version, which
+    /// fails the resolution alone if it needs it.
     pub(super) fn gather(
         paths: &Paths,
         options: Options,
         out: Out,
         list: &List,
-        names: BTreeSet<String>,
+        lock: Option<&Lock>,
+        asked: BTreeSet<String>,
+        also: &BTreeSet<String>,
     ) -> Result<Self, String> {
-        if names.is_empty() {
+        if asked.is_empty() && also.is_empty() {
             return Ok(Self::none());
         }
         let url = list
@@ -75,15 +88,27 @@ impl Offered {
         let config = remote.config()?;
         downloads_of(&url, &config.dl)?;
         let mut entries = BTreeMap::new();
-        let mut left: Vec<String> = names.into_iter().collect();
+        let mut left: Vec<String> = asked.iter().chain(also).cloned().collect();
         while let Some(name) = left.pop() {
             if entries.contains_key(&name) {
                 continue;
             }
-            let index = remote
-                .index(&name, &keys)?
-                .ok_or_else(|| format!("{url} publishes no plugin `{name}`"))?;
+            let Some(index) = remote.index(&name, &keys)? else {
+                if asked.contains(&name) || also.contains(&name) {
+                    return Err(format!("{url} publishes no plugin `{name}`"));
+                }
+                // A dependency that no version needs, unless the
+                // resolution says otherwise.
+                entries.insert(name, Vec::new());
+                continue;
+            };
+            let locked = lock
+                .and_then(|lock| lock.packages.get(&name))
+                .map(|locked| locked.version.as_str());
             for entry in &index.entries {
+                if entry.yanked && locked != Some(entry.vers.as_str()) {
+                    continue;
+                }
                 for dependency in &entry.deps {
                     let elsewhere = matches!(
                         list.plugins.get(&dependency.name),
@@ -109,6 +134,7 @@ impl Offered {
             client,
             archives: paths.cache.join("archives"),
             entries,
+            asked,
         })
     }
 
@@ -123,15 +149,26 @@ impl Offered {
     }
 
     /// The candidates of the resolution: each version not yanked, and a
-    /// yanked one that `lock` holds, as a yank keeps the installs of it.
-    pub(super) fn candidates(&self, lock: Option<&Lock>) -> Result<Vec<Candidate>, String> {
+    /// yanked one that `lock` holds, as a yank keeps the installs of it; of
+    /// `keep`, a plugin not asked for that `lock` holds of the registry, of
+    /// the version that it holds alone.
+    pub(super) fn candidates(
+        &self,
+        lock: Option<&Lock>,
+        keep: bool,
+    ) -> Result<Vec<Candidate>, String> {
         let mut candidates = Vec::new();
         for (name, entries) in &self.entries {
             let locked = lock
                 .and_then(|lock| lock.packages.get(name))
+                .filter(|locked| matches!(locked.source, Source::Registry(_)))
                 .map(|locked| locked.version.as_str());
+            let only = locked.filter(|_| keep && !self.asked.contains(name));
             for entry in entries {
                 if entry.yanked && locked != Some(entry.vers.as_str()) {
+                    continue;
+                }
+                if only.is_some_and(|only| only != entry.vers) {
                     continue;
                 }
                 candidates.push(Candidate {
