@@ -46,11 +46,15 @@ struct Published {
 }
 
 /// The plugins that the index in `index` publishes, checked against the
-/// root keys `roots`, of the registry in `registry` and of the archives of
-/// its releases in `archives`, in their paths' order.
+/// root keys `roots`, of the registry in `registry`, in their paths'
+/// order; of `archives`, each of its license and README, of the archive of
+/// its version shown, checked against the index's checksum: one that
+/// cannot be had or does not check told as failed, its page of the index
+/// alone.
 fn published(
+    out: Out,
     registry: &Path,
-    archives: &Path,
+    archives: Option<&super::Archives>,
     index: &Path,
     roots: &[signing::PublicKey],
 ) -> Result<Vec<Published>, String> {
@@ -80,13 +84,23 @@ fn published(
         else {
             continue;
         };
-        let archive = archives
-            .join(registry::release_tag(owner, name, &shown.vers))
-            .join(registry::archive_name(name, &shown.vers));
-        let archive_bytes = std::fs::read(&archive)
-            .map_err(|error| format!("{} cannot be read: {error}", archive.display()))?;
-        let (manifest, readme) = package_of(&archive_bytes)
-            .map_err(|error| format!("{}: {error}", archive.display()))?;
+        let (license, readme) = match archives {
+            Some(archives) => match package_of_shown(archives, owner, name, &shown) {
+                Ok((manifest, readme)) => (manifest.license, readme),
+                Err(error) => {
+                    out.tell(
+                        "failed",
+                        json!({ "name": plugin, "version": shown.vers, "message": error }),
+                        &format!(
+                            "{plugin} {}: its page has no README nor license, as {error}",
+                            shown.vers
+                        ),
+                    );
+                    (String::new(), None)
+                }
+            },
+            None => (String::new(), None),
+        };
         let commit = file
             .version(&shown.vers)
             .map(|release| release.commit.clone())
@@ -95,10 +109,10 @@ fn published(
             owner: owner.to_owned(),
             name: name.to_owned(),
             plugin,
+            description: shown.description.clone().unwrap_or_default(),
             entries,
             shown,
-            description: manifest.description.clone().unwrap_or_default(),
-            license: manifest.license.clone(),
+            license,
             readme,
             links: Links::of(&file.repository, &commit),
             repository: file.repository,
@@ -109,7 +123,8 @@ fn published(
 
 /// Writes the site of the registry in `registry` into `into`, which holds
 /// its index, checked against the root keys `roots`, of the archives of
-/// its releases in `archives`, as `out` tells.
+/// its releases in `archives` or downloaded of the index's address into
+/// it, as `out` tells.
 pub(super) fn site(
     out: Out,
     registry: &Path,
@@ -117,8 +132,25 @@ pub(super) fn site(
     into: &Path,
     roots: &[signing::PublicKey],
 ) -> Result<(), String> {
+    let config_path = into.join("config.json");
+    let config: serde_json::Value = std::fs::read_to_string(&config_path)
+        .map_err(|error| format!("{} cannot be read: {error}", config_path.display()))
+        .and_then(|text| {
+            serde_json::from_str(&text)
+                .map_err(|error| format!("{} does not read: {error}", config_path.display()))
+        })?;
+    let dl = config["dl"]
+        .as_str()
+        .unwrap_or(registry::DOWNLOADS)
+        .to_owned();
+    let client = sleip_index::client::Client::new();
+    let archives = super::Archives {
+        folder: archives,
+        dl: &dl,
+        client: &client,
+    };
     let mut listed = Vec::new();
-    for plugin in published(registry, archives, into, roots)? {
+    for plugin in published(out, registry, Some(&archives), into, roots)? {
         let page = plugin_page(
             &plugin.plugin,
             &plugin.description,
@@ -172,12 +204,10 @@ const LONGEST_DESCRIPTION: usize = 200;
 
 /// Rewrites the list of the plugins of the README `readme`, between its
 /// marks, of the index in `index`, checked against the root keys `roots`,
-/// of the registry in `registry` and of the archives of its releases in
-/// `archives`, as `out` tells whether it changed.
+/// and of the registry in `registry`, as `out` tells whether it changed.
 pub(super) fn readme(
     out: Out,
     registry: &Path,
-    archives: &Path,
     index: &Path,
     readme: &Path,
     roots: &[signing::PublicKey],
@@ -196,7 +226,7 @@ pub(super) fn readme(
             readme.display()
         ));
     }
-    let list = plugin_list(&published(registry, archives, index, roots)?);
+    let list = plugin_list(&published(out, registry, None, index, roots)?);
     let rewritten = format!("{}{LIST_START}\n{list}{}", &text[..start], &text[end..]);
     let changed = rewritten != text;
     if changed {
@@ -285,6 +315,27 @@ fn written(path: &Path, text: &str) -> Result<(), String> {
     }
     std::fs::write(path, text)
         .map_err(|error| format!("{} cannot be written: {error}", path.display()))
+}
+
+/// The manifest and README of the archive of the version `shown` of
+/// `owner/name`, of `archives`, which must be of the index's checksum.
+fn package_of_shown(
+    archives: &super::Archives,
+    owner: &str,
+    name: &str,
+    shown: &Entry,
+) -> Result<(lokyr_pkg_model::manifest::Manifest, Option<String>), String> {
+    let archive = archives
+        .get(owner, name, &shown.vers)?
+        .ok_or_else(|| "its archive has no release".to_owned())?;
+    let digest = lokyr_pkg_model::store::Digest::of_bytes(&archive).to_string();
+    if digest != shown.cksum {
+        return Err(format!(
+            "its archive is of {digest}, not of {}, which the index signed",
+            shown.cksum
+        ));
+    }
+    package_of(&archive)
 }
 
 /// The manifest and the README of the package of `archive`, unpacked into

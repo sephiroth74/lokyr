@@ -1105,6 +1105,12 @@ fn the_index_is_signed_of_the_released_versions_by_a_key_that_keys_json_lists() 
     let roots = lab.root.join("roots");
     std::fs::write(&roots, format!("{root_public}\n")).unwrap();
     let site = lab.root.join("site");
+    // The releases' address, of the folder of the archives, so that no
+    // test reaches the network.
+    let dl = format!(
+        "file://{}/{{owner}}.{{name}}.{{version}}/{{name}}-{{version}}.tar.zst",
+        archives.display()
+    );
     let indexed = |key: &Path| {
         let home = lab.root.join("home");
         Command::new(env!("CARGO_BIN_EXE_sleip"))
@@ -1120,6 +1126,8 @@ fn the_index_is_signed_of_the_released_versions_by_a_key_that_keys_json_lists() 
                 &site.display().to_string(),
                 "--roots",
                 &roots.display().to_string(),
+                "--dl",
+                &dl,
             ])
             .current_dir(&lab.root)
             .env("HOME", &home)
@@ -1215,8 +1223,6 @@ fn the_index_is_signed_of_the_released_versions_by_a_key_that_keys_json_lists() 
                 "readme",
                 "--registry",
                 &base.display().to_string(),
-                "--archives",
-                &archives.display().to_string(),
                 "--index",
                 &site.display().to_string(),
                 "--readme",
@@ -1287,6 +1293,272 @@ fn the_index_is_signed_of_the_released_versions_by_a_key_that_keys_json_lists() 
         .unwrap();
     assert_eq!(output.status.code(), Some(1), "{output:?}");
     assert!(String::from_utf8_lossy(&output.stdout).contains("signed by no root key"));
+}
+
+#[test]
+fn the_index_keeps_its_deployed_lines_and_a_version_that_fails_leaves_the_others() {
+    use sleip_index::signing::{self, Entry};
+
+    let lab = Lab::new("deployed");
+    let (folder, url) = lab.plugin("hello");
+    let first = git(&folder, &["rev-parse", "HEAD"]);
+    let second = release(&folder, "0.1.1");
+    let third = release(&folder, "0.1.2");
+    let keygen = |name: &str| {
+        let file = lab.root.join(name);
+        let output = lab.sleip(
+            &[
+                "--json",
+                "registry",
+                "keygen",
+                "--out",
+                &file.display().to_string(),
+            ],
+            &lab.root,
+        );
+        assert!(output.status.success(), "{output:?}");
+        let public = events(&output)[0]["public"].as_str().unwrap().to_owned();
+        (file, public)
+    };
+    let (root, root_public) = keygen("root.key");
+    let (index_key, index_public) = keygen("index.key");
+    let roots = lab.root.join("roots");
+    std::fs::write(&roots, format!("{root_public}\n")).unwrap();
+    // The registry of `text` as the plugin's file, of its keys.json.
+    let registry_of = |text: &str| {
+        let base = lab.registry("base", &[("plugins/acme/hello.toml", text)]);
+        let output = lab.sleip(
+            &[
+                "registry",
+                "sign-keys",
+                "--root",
+                &root.display().to_string(),
+                "--keys",
+                &index_public,
+                "--out",
+                &base.join("keys.json").display().to_string(),
+            ],
+            &lab.root,
+        );
+        assert!(output.status.success(), "{output:?}");
+        base
+    };
+    // The releases, a folder that stands for them, each version's archive
+    // built of its commit, as the CI of main makes it.
+    let releases = lab.root.join("releases");
+    let built = |base: &Path, version: &str| {
+        let output = lab.sleip(
+            &[
+                "--json",
+                "registry",
+                "build",
+                "acme/hello",
+                version,
+                "--registry",
+                &base.display().to_string(),
+                "--out",
+                &releases.display().to_string(),
+                "--local",
+            ],
+            &lab.root,
+        );
+        assert!(output.status.success(), "{output:?}");
+        events(&output)
+            .into_iter()
+            .find(|event| event["event"] == "built")
+            .unwrap()["cksum"]
+            .as_str()
+            .unwrap()
+            .to_owned()
+    };
+    let asset =
+        |version: &str| releases.join(format!("acme.hello.{version}/hello-{version}.tar.zst"));
+    let dl = format!(
+        "file://{}/{{owner}}.{{name}}.{{version}}/{{name}}-{{version}}.tar.zst",
+        releases.display()
+    );
+    // `index` into the folder `site`, of the archives at hand in `cache`,
+    // of the index deployed in `deployed`.
+    let indexed = |base: &Path, cache: &str, site: &str, deployed: Option<&str>| {
+        let mut args = vec![
+            "--json".to_owned(),
+            "registry".to_owned(),
+            "index".to_owned(),
+            "--registry".to_owned(),
+            base.display().to_string(),
+            "--archives".to_owned(),
+            lab.root.join(cache).display().to_string(),
+            "--out".to_owned(),
+            lab.root.join(site).display().to_string(),
+            "--roots".to_owned(),
+            roots.display().to_string(),
+            "--dl".to_owned(),
+            dl.clone(),
+        ];
+        if let Some(deployed) = deployed {
+            args.push("--deployed".to_owned());
+            args.push(format!("file://{}", lab.root.join(deployed).display()));
+        }
+        Command::new(env!("CARGO_BIN_EXE_sleip"))
+            .args(&args)
+            .current_dir(&lab.root)
+            .env("HOME", lab.root.join("home"))
+            .env("PATH", "/usr/bin:/bin")
+            .env(
+                "SLEIP_INDEX_KEY",
+                std::fs::read_to_string(&index_key).unwrap(),
+            )
+            .output()
+            .unwrap()
+    };
+    let lines = |site: &str| -> Vec<Entry> {
+        let keys = signing::verify_keys(
+            &std::fs::read_to_string(lab.root.join(site).join("keys.json")).unwrap(),
+            &[signing::PublicKey::parse(&root_public).unwrap()],
+            None,
+        )
+        .unwrap();
+        signing::verify_index(
+            &std::fs::read_to_string(lab.root.join(site).join("index/acme/hello")).unwrap(),
+            "acme/hello",
+            &keys,
+            None,
+        )
+        .unwrap()
+        .entries
+    };
+    let failed = |output: &Output| -> Vec<Value> {
+        events(output)
+            .into_iter()
+            .filter(|event| event["event"] == "failed")
+            .collect()
+    };
+    // The first index, of 0.1.0, its archive downloaded of its release.
+    let base = registry_of(&entry(&url, &[("0.1.0", "v0.1.0", &first, false)]));
+    let cksum0 = built(&base, "0.1.0");
+    let output = indexed(&base, "cache1", "site1", None);
+    assert!(output.status.success(), "{output:?}");
+    assert!(
+        lab.root
+            .join("cache1/acme.hello.0.1.0/hello-0.1.0.tar.zst")
+            .is_file()
+    );
+    assert_eq!(lines("site1")[0].cksum, cksum0);
+    // 0.1.0's asset replaced, 0.1.1 released and 0.1.2 of an archive that
+    // does not read: of the index deployed, 0.1.0's line as it was signed,
+    // its archive not downloaded; 0.1.1 added; 0.1.2 told as failed, the
+    // others written.
+    std::fs::write(asset("0.1.0"), "replaced").unwrap();
+    let base = registry_of(&entry(
+        &url,
+        &[
+            ("0.1.0", "v0.1.0", &first, false),
+            ("0.1.1", "v0.1.1", &second, false),
+            ("0.1.2", "v0.1.2", &third, false),
+        ],
+    ));
+    let cksum1 = built(&base, "0.1.1");
+    std::fs::create_dir_all(asset("0.1.2").parent().unwrap()).unwrap();
+    std::fs::write(asset("0.1.2"), "no archive").unwrap();
+    let output = indexed(&base, "cache2", "site2", Some("site1"));
+    assert!(output.status.success(), "{output:?}");
+    let told = failed(&output);
+    assert_eq!(told.len(), 1, "{output:?}");
+    assert_eq!(told[0]["version"], "0.1.2");
+    let held = lines("site2");
+    assert_eq!(
+        held.iter()
+            .map(|line| (line.vers.as_str(), line.cksum.as_str()))
+            .collect::<Vec<_>>(),
+        [("0.1.0", cksum0.as_str()), ("0.1.1", cksum1.as_str())]
+    );
+    assert!(!lab.root.join("cache2/acme.hello.0.1.0").exists());
+    // Of the index without the one deployed, the replaced asset would be
+    // signed: so it is not.
+    let output = indexed(&base, "cache2b", "site2b", None);
+    assert!(output.status.success(), "{output:?}");
+    assert!(
+        failed(&output)
+            .iter()
+            .any(|event| event["version"] == "0.1.0"),
+        "{output:?}"
+    );
+    // 0.1.0 yanked and 0.1.2 released anew: its yank the registry's, its
+    // checksum as signed; 0.1.2 added.
+    let base = registry_of(&entry(
+        &url,
+        &[
+            ("0.1.0", "v0.1.0", &first, true),
+            ("0.1.1", "v0.1.1", &second, false),
+            ("0.1.2", "v0.1.2", &third, false),
+        ],
+    ));
+    let cksum2 = built(&base, "0.1.2");
+    let output = indexed(&base, "cache3", "site3", Some("site2"));
+    assert!(output.status.success(), "{output:?}");
+    assert!(failed(&output).is_empty(), "{output:?}");
+    let held = lines("site3");
+    assert_eq!(
+        held.iter()
+            .map(|line| (line.vers.as_str(), line.cksum.as_str(), line.yanked))
+            .collect::<Vec<_>>(),
+        [
+            ("0.1.0", cksum0.as_str(), true),
+            ("0.1.1", cksum1.as_str(), false),
+            ("0.1.2", cksum2.as_str(), false)
+        ]
+    );
+    // The site, of the shown version's archive: one of another checksum
+    // told, its page of the index alone; one downloaded of its release.
+    let sited = |cache: &str, site: &str| {
+        lab.sleip(
+            &[
+                "--json",
+                "registry",
+                "site",
+                "--registry",
+                &base.display().to_string(),
+                "--archives",
+                &lab.root.join(cache).display().to_string(),
+                "--out",
+                &lab.root.join(site).display().to_string(),
+                "--roots",
+                &roots.display().to_string(),
+            ],
+            &lab.root,
+        )
+    };
+    let cached = lab.root.join("cache3/acme.hello.0.1.2/hello-0.1.2.tar.zst");
+    std::fs::copy(asset("0.1.1"), &cached).unwrap();
+    let output = sited("cache3", "site3");
+    assert!(output.status.success(), "{output:?}");
+    let told = failed(&output);
+    assert_eq!(told.len(), 1, "{output:?}");
+    assert!(
+        told[0]["message"]
+            .as_str()
+            .unwrap()
+            .contains("which the index signed"),
+        "{output:?}"
+    );
+    let page =
+        std::fs::read_to_string(lab.root.join("site3/plugins/acme/hello/index.html")).unwrap();
+    assert!(!page.contains("<h2>README</h2>"), "{page}");
+    std::fs::remove_file(&cached).unwrap();
+    let output = sited("cache3", "site3");
+    assert!(failed(&output).is_empty(), "{output:?}");
+    let page =
+        std::fs::read_to_string(lab.root.join("site3/plugins/acme/hello/index.html")).unwrap();
+    assert!(page.contains("<h2>README</h2>"), "{page}");
+    // A plugin's file that does not read keeps its lines as they were
+    // signed.
+    let base = registry_of("repository = [\n");
+    let output = indexed(&base, "cache4", "site4", Some("site3"));
+    assert!(output.status.success(), "{output:?}");
+    let told = failed(&output);
+    assert_eq!(told.len(), 1, "{output:?}");
+    assert_eq!(told[0]["version"], Value::Null);
+    assert_eq!(lines("site4"), lines("site3"));
 }
 
 #[test]

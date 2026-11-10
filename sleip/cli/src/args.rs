@@ -99,17 +99,19 @@ pub enum Registry {
         out: std::path::PathBuf,
     },
     /// The index of the registry in `registry`, of the archives of its
-    /// releases in `archives`, signed by the index key that
-    /// `SLEIP_INDEX_KEY` holds, written into `out` with `config.json` and
-    /// the registry's `keys.json`, which the root keys of the file `roots`
-    /// sign, or Sleip's own; its archives' address of `dl`, or the
-    /// registry's.
+    /// releases in `archives` or downloaded of `dl` into it, signed by the
+    /// index key that `SLEIP_INDEX_KEY` holds, written into `out` with
+    /// `config.json` and the registry's `keys.json`, which the root keys of
+    /// the file `roots` sign, or Sleip's own; its archives' address of
+    /// `dl`, or the registry's; of the index deployed at `deployed`, its
+    /// lines kept.
     Index {
         registry: std::path::PathBuf,
         archives: std::path::PathBuf,
         out: std::path::PathBuf,
         roots: Option<std::path::PathBuf>,
         dl: Option<String>,
+        deployed: Option<String>,
     },
     /// The registry's site of its index in `out`, which `index` wrote, of
     /// the registry in `registry` and of the archives of its releases in
@@ -122,13 +124,11 @@ pub enum Registry {
         roots: Option<std::path::PathBuf>,
     },
     /// The list of the plugins of the README `readme`, the registry's
-    /// `README.md` if none, of the index in `index`, of the registry in
-    /// `registry` and of the archives of its releases in `archives`, its
-    /// keys checked against the root keys of the file `roots`, or
-    /// Sleip's own.
+    /// `README.md` if none, of the index in `index` and of the registry in
+    /// `registry`, its keys checked against the root keys of the file
+    /// `roots`, or Sleip's own.
     Readme {
         registry: std::path::PathBuf,
-        archives: std::path::PathBuf,
         index: std::path::PathBuf,
         readme: Option<std::path::PathBuf>,
         roots: Option<std::path::PathBuf>,
@@ -186,9 +186,9 @@ Usage: sleip [options] registry verify <head> --base <folder> --author <login> [
        sleip [options] registry versions [--registry <folder>]
        sleip [options] registry keygen --out <file>
        sleip [options] registry sign-keys --root <file> --keys <key,...> --out <file>
-       sleip [options] registry index [--registry <folder>] --archives <folder> --out <folder> [--roots <file>] [--dl <address>]
+       sleip [options] registry index [--registry <folder>] --archives <folder> --out <folder> [--roots <file>] [--dl <address>] [--deployed <address>]
        sleip [options] registry site [--registry <folder>] --archives <folder> --out <folder> [--roots <file>]
-       sleip [options] registry readme [--registry <folder>] --archives <folder> --index <folder> [--readme <file>] [--roots <file>]
+       sleip [options] registry readme [--registry <folder>] --index <folder> [--readme <file>] [--roots <file>]
 
 The registry's tools, which its CI runs.
   verify    Checks a pull request of the registry, a git repository at its head in <head>,
@@ -212,11 +212,16 @@ The registry's tools, which its CI runs.
             whose secret the file <root> holds, kept offline.
   index     Writes the registry's index into <out>: config.json, the registry's keys.json,
             checked against Sleip's root keys or those of <roots>, a line each, and a file
-            of each plugin, index/<owner>/<name>, a line of each version whose archive is in
-            <archives>/<release>/, signed whole by the index key that SLEIP_INDEX_KEY holds.
+            of each plugin, index/<owner>/<name>, a line of each version released, signed
+            whole by the index key that SLEIP_INDEX_KEY holds. Of the index deployed at
+            --deployed, each of its lines is kept as it was signed, its yank the registry's,
+            and the new versions alone are read of their archives, those in
+            <archives>/<release>/ or downloaded of <dl> into it; a version that fails is
+            told, the others written.
   site      Writes the registry's site into <out>, beside the index that `index` wrote there:
             index.html of every plugin, which Pagefind searches, and plugins/<owner>/<name>/
-            of each, of its versions, capabilities, checksums and README.
+            of each, of its versions, capabilities, checksums and README, of the archive of
+            the version shown, in <archives> or downloaded, checked against the index.
   readme    Rewrites the list of the plugins of the registry's README.md, or of <readme>,
             between its marks <!-- plugins:start --> and <!-- plugins:end -->, of the index in
             <index>: each plugin's name, version, description and capabilities, as text alone.
@@ -446,7 +451,7 @@ fn registry(args: &[&String]) -> Result<Registry, String> {
             "--files-alone" => files_alone = true,
             name @ ("--base" | "--author" | "--sender" | "--orgs" | "--out" | "--report"
             | "--registry" | "--root" | "--keys" | "--archives" | "--roots" | "--dl"
-            | "--index" | "--readme") => {
+            | "--index" | "--readme" | "--deployed") => {
                 let value = args
                     .next()
                     .ok_or_else(|| format!("`{name}` takes a value\n\n{REGISTRY_HELP}"))?;
@@ -516,6 +521,7 @@ fn registry(args: &[&String]) -> Result<Registry, String> {
             out: PathBuf::from(needed("--out")?),
             roots: value("--roots").map(PathBuf::from),
             dl: value("--dl"),
+            deployed: value("--deployed"),
         }),
         ["site"] => Ok(Registry::Site {
             registry: registry(),
@@ -525,7 +531,6 @@ fn registry(args: &[&String]) -> Result<Registry, String> {
         }),
         ["readme"] => Ok(Registry::Readme {
             registry: registry(),
-            archives: PathBuf::from(needed("--archives")?),
             index: PathBuf::from(needed("--index")?),
             readme: value("--readme").map(PathBuf::from),
             roots: value("--roots").map(PathBuf::from),

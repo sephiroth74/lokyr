@@ -26,7 +26,9 @@ use std::path::Path;
 use lokyr_pkg_model::manifest::{Kind, Manifest};
 use lokyr_pkg_model::store::Digest;
 use serde_json::json;
+use sleip_index::client::{Client, Fetched};
 use sleip_index::registry::{self, PluginFile, Release};
+use sleip_index::remote::Remote;
 use sleip_index::signing::{self, Dependency, Entry, PublicKey, SecretKey, Timestamp};
 
 use super::{git, git_bytes};
@@ -82,13 +84,17 @@ pub fn run(out: Out, tool: &Registry) -> Result<(), String> {
             out: into,
             roots,
             dl,
+            deployed,
         } => index(
             out,
-            registry,
-            archives,
-            into,
-            roots.as_deref(),
-            dl.as_deref(),
+            &Indexed {
+                registry,
+                archives,
+                into,
+                roots: roots.as_deref(),
+                dl: dl.as_deref(),
+                deployed: deployed.as_deref(),
+            },
         ),
         Registry::Site {
             registry,
@@ -98,14 +104,12 @@ pub fn run(out: Out, tool: &Registry) -> Result<(), String> {
         } => site::site(out, registry, archives, into, &roots_of(roots.as_deref())?),
         Registry::Readme {
             registry,
-            archives,
             index,
             readme,
             roots,
         } => site::readme(
             out,
             registry,
-            archives,
             index,
             &readme.clone().unwrap_or_else(|| registry.join("README.md")),
             &roots_of(roots.as_deref())?,
@@ -206,28 +210,41 @@ fn kind_text(kind: Kind) -> &'static str {
     }
 }
 
-/// Writes the index of the registry in `registry` into `into`, of the
-/// archives of its releases in `archives`, `<release>/<archive>`, each
-/// version of an archive a line of its plugin's file, signed by the index
-/// key that `SLEIP_INDEX_KEY` holds, which the registry's `keys.json`
-/// lists, checked against the root keys of the file `roots`, a key a line,
-/// or Sleip's own; and `config.json`, of the archives' address `dl` or the
-/// registry's; as `out` tells.
-fn index(
-    out: Out,
-    registry: &Path,
-    archives: &Path,
-    into: &Path,
-    roots: Option<&Path>,
-    dl: Option<&str>,
-) -> Result<(), String> {
+/// What `index` writes, and of what.
+struct Indexed<'a> {
+    /// The registry's repository.
+    registry: &'a Path,
+    /// The archives at hand, `<release>/<archive>`, and those downloaded.
+    archives: &'a Path,
+    /// Where the index is written.
+    into: &'a Path,
+    /// The file of the root keys, a key a line, or Sleip's own.
+    roots: Option<&'a Path>,
+    /// The archives' address, or the registry's.
+    dl: Option<&'a str>,
+    /// The address of the index deployed, whose lines are kept.
+    deployed: Option<&'a str>,
+}
+
+/// Writes the index of the registry `indexed.registry` into
+/// `indexed.into`, each version of a release a line of its plugin's file,
+/// signed by the index key that `SLEIP_INDEX_KEY` holds, which the
+/// registry's `keys.json` lists, checked against the root keys; and
+/// `config.json`, of the archives' address. Of an index deployed, each of
+/// its lines is kept as it was, its yank the registry's, never dropped,
+/// and the new versions alone are read of their archives, those at hand
+/// or downloaded: an archive replaced in its release changes no line that
+/// was signed. A version whose archive does not read, or does not hold
+/// it, is told as failed and left for a later run, the others written; as
+/// `out` tells.
+fn index(out: Out, indexed: &Indexed) -> Result<(), String> {
     let key = std::env::var("SLEIP_INDEX_KEY")
         .map_err(|_| "SLEIP_INDEX_KEY holds no index key".to_owned())
         .and_then(|text| {
             SecretKey::parse(&text).map_err(|error| format!("SLEIP_INDEX_KEY: {error}"))
         })?;
-    let roots = roots_of(roots)?;
-    let keys_path = registry.join("keys.json");
+    let roots = roots_of(indexed.roots)?;
+    let keys_path = indexed.registry.join("keys.json");
     let keys_text = std::fs::read_to_string(&keys_path)
         .map_err(|error| format!("{} cannot be read: {error}", keys_path.display()))?;
     let keys = signing::verify_keys(&keys_text, &roots, None)?;
@@ -242,6 +259,7 @@ fn index(
                 .join(", ")
         ));
     }
+    let into = indexed.into;
     let made = |path: &Path, text: &str| {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)
@@ -250,70 +268,91 @@ fn index(
         std::fs::write(path, text)
             .map_err(|error| format!("{} cannot be written: {error}", path.display()))
     };
+    let dl = indexed.dl.unwrap_or(registry::DOWNLOADS);
+    let client = Client::new();
+    let archives = Archives {
+        folder: indexed.archives,
+        dl,
+        client: &client,
+    };
+    let deployed = match indexed.deployed {
+        Some(url) => Some(Deployed::of(url, &client, roots.clone())?),
+        None => None,
+    };
     made(&into.join("keys.json"), &keys_text)?;
-    let config = json!({ "v": signing::VERSION, "dl": dl.unwrap_or(registry::DOWNLOADS) });
+    let config = json!({ "v": signing::VERSION, "dl": dl });
     made(&into.join("config.json"), &format!("{config}\n"))?;
     let generated = Timestamp::now();
     let mut listed = Vec::new();
-    for (path, bytes) in &files_of(registry)? {
+    let mut failed = 0;
+    let mut fail = |plugin: &str, version: Option<&str>, message: String| {
+        failed += 1;
+        let what = match version {
+            Some(version) => format!("{plugin} {version}"),
+            None => plugin.to_owned(),
+        };
+        out.tell(
+            "failed",
+            json!({ "name": plugin, "version": version, "message": message }),
+            &format!("{what} is not indexed: {message}"),
+        );
+    };
+    for (path, bytes) in &files_of(indexed.registry)? {
         let Some((owner, name)) = registry::plugin_of_path(path) else {
             continue;
         };
         let plugin = format!("{owner}/{name}");
-        let file = PluginFile::parse(&String::from_utf8_lossy(bytes))
-            .map_err(|error| format!("{path}: {error}"))?;
-        let mut entries = Vec::new();
-        for release in &file.versions {
-            let tag = registry::release_tag(owner, name, &release.version);
-            let archive = archives
-                .join(&tag)
-                .join(registry::archive_name(name, &release.version));
-            // A version of no release yet, which a later run takes.
-            let Ok(archive_bytes) = std::fs::read(&archive) else {
-                out.tell(
-                    "note",
-                    json!({ "message": format!("{plugin} {} has no release yet", release.version) }),
-                    &format!("{plugin} {} has no release yet.", release.version),
-                );
-                continue;
-            };
-            let manifest = manifest_of_archive(&archive_bytes)
-                .map_err(|error| format!("{}: {error}", archive.display()))?;
-            if manifest.name != plugin
-                || manifest.version.as_deref() != Some(release.version.as_str())
-            {
-                return Err(format!(
-                    "{} holds {} {}, not {plugin} {}",
-                    archive.display(),
-                    manifest.name,
-                    manifest.version.as_deref().unwrap_or("of no version"),
-                    release.version
-                ));
+        let held = match &deployed {
+            Some(deployed) => deployed.entries_of(&plugin)?,
+            None => Vec::new(),
+        };
+        let entries = match PluginFile::parse(&String::from_utf8_lossy(bytes)) {
+            Ok(file) => {
+                let mut entries = Vec::new();
+                for release in &file.versions {
+                    // A line signed before, as it was, of its yank now.
+                    if let Some(kept) = held.iter().find(|entry| entry.vers == release.version) {
+                        entries.push(Entry {
+                            yanked: release.yanked,
+                            ..kept.clone()
+                        });
+                        continue;
+                    }
+                    match archives.get(owner, name, &release.version) {
+                        Ok(Some(archive)) => match entry_of(&plugin, release, &archive) {
+                            Ok(entry) => entries.push(entry),
+                            Err(error) => fail(&plugin, Some(&release.version), error),
+                        },
+                        // A version of no release yet, which a later run
+                        // takes.
+                        Ok(None) => out.tell(
+                            "note",
+                            json!({ "message": format!("{plugin} {} has no release yet", release.version) }),
+                            &format!("{plugin} {} has no release yet.", release.version),
+                        ),
+                        Err(error) => fail(&plugin, Some(&release.version), error),
+                    }
+                }
+                for kept in &held {
+                    if file.version(&kept.vers).is_none() {
+                        out.tell(
+                            "note",
+                            json!({ "message": format!("{plugin} {} is kept, which the registry's file no longer lists", kept.vers) }),
+                            &format!("{plugin} {} is kept, which the registry's file no longer lists.", kept.vers),
+                        );
+                        entries.push(kept.clone());
+                    }
+                }
+                entries
             }
-            entries.push(Entry {
-                v: signing::VERSION,
-                name: plugin.clone(),
-                vers: release.version.clone(),
-                kind: kind_text(manifest.kind).to_owned(),
-                api: manifest.api.clone(),
-                deps: manifest
-                    .dependencies
-                    .iter()
-                    .map(|(name, req)| Dependency {
-                        name: name.clone(),
-                        req: req.clone(),
-                    })
-                    .collect(),
-                caps: manifest
-                    .capabilities
-                    .iter()
-                    .map(ToString::to_string)
-                    .collect(),
-                uses: manifest.uses.clone(),
-                cksum: Digest::of_bytes(&archive_bytes).to_string(),
-                yanked: release.yanked,
-                description: manifest.description.clone(),
-            });
+            Err(error) => {
+                // Its lines signed before, as they were.
+                fail(&plugin, None, format!("{path}: {error}"));
+                held
+            }
+        };
+        if entries.is_empty() {
+            continue;
         }
         let text = signing::sign_index(&plugin, &entries, &key, generated);
         // Read back as Sleip reads it, of the keys that it checked.
@@ -347,7 +386,145 @@ fn index(
     signing::verify_list(&text, &keys, None)
         .map_err(|error| format!("the list that this run signed does not check: {error}"))?;
     made(&into.join("list"), &text)?;
+    out.tell(
+        "done",
+        json!({ "plugins": listed.len(), "failed": failed }),
+        &format!(
+            "The index lists {} plugins; {failed} versions failed.",
+            listed.len()
+        ),
+    );
     Ok(())
+}
+
+/// The line of the index of the version `release` of `plugin`, of its
+/// archive `archive`, which must hold it.
+fn entry_of(plugin: &str, release: &Release, archive: &[u8]) -> Result<Entry, String> {
+    let manifest = manifest_of_archive(archive)?;
+    if manifest.name != plugin || manifest.version.as_deref() != Some(release.version.as_str()) {
+        return Err(format!(
+            "its archive holds {} {}",
+            manifest.name,
+            manifest.version.as_deref().unwrap_or("of no version"),
+        ));
+    }
+    Ok(Entry {
+        v: signing::VERSION,
+        name: plugin.to_owned(),
+        vers: release.version.clone(),
+        kind: kind_text(manifest.kind).to_owned(),
+        api: manifest.api.clone(),
+        deps: manifest
+            .dependencies
+            .iter()
+            .map(|(name, req)| Dependency {
+                name: name.clone(),
+                req: req.clone(),
+            })
+            .collect(),
+        caps: manifest
+            .capabilities
+            .iter()
+            .map(ToString::to_string)
+            .collect(),
+        uses: manifest.uses.clone(),
+        cksum: Digest::of_bytes(archive).to_string(),
+        yanked: release.yanked,
+        description: manifest.description.clone(),
+    })
+}
+
+/// The archives of the registry's releases: those at hand in a folder,
+/// `<release>/<archive>`, else downloaded of their address and kept there.
+pub(super) struct Archives<'a> {
+    /// The folder of those at hand.
+    pub(super) folder: &'a Path,
+    /// Their address, of `{owner}`, `{name}` and `{version}`.
+    pub(super) dl: &'a str,
+    /// The requests' client.
+    pub(super) client: &'a Client,
+}
+
+impl Archives<'_> {
+    /// The archive of `version` of `owner/name`: the folder's, else
+    /// downloaded and kept in it; `None` of a version of no release.
+    pub(super) fn get(
+        &self,
+        owner: &str,
+        name: &str,
+        version: &str,
+    ) -> Result<Option<Vec<u8>>, String> {
+        let file = self
+            .folder
+            .join(registry::release_tag(owner, name, version))
+            .join(registry::archive_name(name, version));
+        if let Ok(bytes) = std::fs::read(&file) {
+            return Ok(Some(bytes));
+        }
+        let url = self
+            .dl
+            .replace("{owner}", owner)
+            .replace("{name}", name)
+            .replace("{version}", version);
+        match self
+            .client
+            .get_within(&url, None, lokyr_pkg_model::archive::MOST_COMPRESSED)?
+        {
+            Fetched::Body { bytes, .. } => {
+                if let Some(parent) = file.parent() {
+                    std::fs::create_dir_all(parent)
+                        .map_err(|error| format!("{} cannot be made: {error}", parent.display()))?;
+                }
+                lokyr_pkg_model::write_whole_bytes(&file, &bytes)
+                    .map_err(|error| format!("{} cannot be written: {error}", file.display()))?;
+                Ok(Some(bytes))
+            }
+            Fetched::NotModified | Fetched::Missing => Ok(None),
+        }
+    }
+}
+
+/// The index deployed, as Sleip reads it, checked against the root keys,
+/// of a cache of its own for the time it takes.
+struct Deployed<'a> {
+    remote: Remote<'a>,
+    keys: signing::Keys,
+    cache: std::path::PathBuf,
+}
+
+impl<'a> Deployed<'a> {
+    /// The index deployed at `url`, its `keys.json` checked against
+    /// `roots`.
+    fn of(url: &str, client: &'a Client, roots: Vec<PublicKey>) -> Result<Self, String> {
+        let cache = std::env::temp_dir().join(format!("sleip-deployed-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&cache);
+        let remote = Remote::new(url, &cache, Some(client), roots);
+        let keys = remote
+            .keys()
+            .map_err(|error| format!("the index deployed at {url}: {error}"))?;
+        Ok(Self {
+            remote,
+            keys,
+            cache,
+        })
+    }
+
+    /// The lines of the plugin `plugin` that the index deployed signed,
+    /// none of a plugin that it does not publish.
+    fn entries_of(&self, plugin: &str) -> Result<Vec<Entry>, String> {
+        Ok(self
+            .remote
+            .index(plugin, &self.keys)
+            .map_err(|error| format!("the index deployed at {}: {error}", self.remote.url()))?
+            .map(|index| index.entries)
+            .unwrap_or_default())
+    }
+}
+
+impl Drop for Deployed<'_> {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.cache);
+    }
 }
 
 /// The manifest of the package of `archive`, unpacked into a folder of its
@@ -1153,12 +1330,16 @@ fn told(change: &Change) -> String {
     }
 }
 
-/// The files of the registry in `folder`, its `.git` left out, by their
-/// paths in it, of `/` between their folders, in their order, each of its
-/// bytes.
+/// The files of the registry in `folder` under `plugins/`, the plugins'
+/// alone, by their paths in it, of `/` between their folders, in their
+/// order, each of its bytes: none of a registry of no plugin yet.
 fn files_of(folder: &Path) -> Result<Vec<(String, Vec<u8>)>, String> {
     let mut files = Vec::new();
-    let mut left = vec![folder.to_path_buf()];
+    let plugins = folder.join("plugins");
+    if !plugins.is_dir() {
+        return Ok(files);
+    }
+    let mut left = vec![plugins];
     while let Some(at) = left.pop() {
         let entries = std::fs::read_dir(&at)
             .map_err(|error| format!("{} cannot be read: {error}", at.display()))?;
