@@ -196,6 +196,8 @@ pub struct Fake {
     default_terminal_asks: usize,
     /// The links that the app asked for, each of the reason that it told.
     tool_links: Vec<(Vec<ToolLink>, String)>,
+    /// Whether every place is one that goes, as a test says.
+    temporary_place: bool,
     /// The screens' areas for windows, the menu bar's screen's first.
     screens: Vec<ScreenRect>,
     /// Whether it draws the progresses' fills, as a test says.
@@ -298,6 +300,7 @@ impl Fake {
             default_terminal: false,
             default_terminal_asks: 0,
             tool_links: Vec::new(),
+            temporary_place: false,
             screens: vec![SCREEN_AREA],
             draws_fills: false,
             windows: BTreeMap::new(),
@@ -378,6 +381,11 @@ impl Fake {
     /// Gives whether the app is the system's default terminal.
     pub fn set_default_terminal(&mut self, default: bool) {
         self.default_terminal = default;
+    }
+
+    /// Gives whether every place is one that goes, as a disk image's.
+    pub fn set_temporary_place(&mut self, temporary: bool) {
+        self.temporary_place = temporary;
     }
 
     /// How many times the app asked to be the system's default terminal.
@@ -835,6 +843,10 @@ impl Platform for Fake {
 
     fn link_tools(&mut self, links: Vec<ToolLink>, reason: &str) {
         self.tool_links.push((links, reason.to_owned()));
+    }
+
+    fn is_temporary_place(&self, _path: &Path) -> bool {
+        self.temporary_place
     }
 
     fn set_appearance(&mut self, appearance: Option<Appearance>) {

@@ -89,7 +89,9 @@ impl<B: Backend> App<B> {
     /// Links the command line tools into their folder: an alert tells that
     /// they are there already, as this app's; a question asks first where
     /// what is there is another program's; an alert refuses where a folder
-    /// stands in their way, or a binary is not beside the app.
+    /// stands in their way, a binary is not beside the app, or the app runs
+    /// from a place that goes, as its disk image, whose links would lead
+    /// nowhere once it goes.
     pub(super) fn install_tools(&mut self, platform: &mut dyn Platform) {
         let folder = self.tools_places.folder.clone();
         let source = self
@@ -98,6 +100,10 @@ impl<B: Backend> App<B> {
             .clone()
             .or_else(own_folder)
             .unwrap_or_default();
+        if platform.is_temporary_place(&source) {
+            self.tools_alert(platform, AlertStyle::Warning, "tools-temporary", "");
+            return;
+        }
         let links: Vec<ToolLink> = TOOLS
             .iter()
             .map(|name| ToolLink {

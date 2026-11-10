@@ -206,5 +206,7 @@ tools-folder-message = { $value } è una cartella
 tools-folder-detail = Lokyr la lascia com'è: spostala, poi installa di nuovo gli strumenti da riga di comando.
 tools-missing-message = Gli strumenti da riga di comando non sono accanto a Lokyr
 tools-missing-detail = { $value } non c'è, come quando Lokyr gira fuori dal suo bundle.
+tools-temporary-message = Prima sposta Lokyr nella cartella Applicazioni
+tools-temporary-detail = Lokyr è aperto dalla sua immagine disco, o da una copia che macOS tiene da parte finché non viene spostato: i collegamenti non porterebbero più a nulla quando sparisce. Sposta Lokyr nella cartella Applicazioni, aprilo da lì, poi installa gli strumenti da riga di comando.
 tools-failed-message = Non è stato possibile installare gli strumenti da riga di comando
 tools-failed-detail = { $value }

@@ -6,12 +6,15 @@
 //! is the system's own. The outcome waits in [`DONE`] until the main
 //! thread takes it at the wake that the thread gives.
 
+use std::ffi::{CString, c_void};
 use std::io;
+use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
 use std::process::Command;
 use std::sync::Mutex;
 
 use lokyr_platform_core::{AppEvent, LinkOutcome, ToolLink, Waker};
+use objc2_foundation::{NSString, NSURL};
 
 use crate::shared::{Pending, Shared};
 
@@ -20,6 +23,70 @@ static DONE: Mutex<Vec<LinkOutcome>> = Mutex::new(Vec::new());
 
 /// What `osascript` tells of a question that the user cancelled.
 const CANCELLED: &str = "(-128)";
+
+/// Whether `path` lies in a place that goes: a copy that Gatekeeper
+/// translocated, or a read-only volume under `/Volumes`, as a disk
+/// image's.
+pub(crate) fn is_temporary(path: &Path) -> bool {
+    translocated(path) || on_read_only_volume(path)
+}
+
+/// `SecTranslocateIsTranslocatedURL` of the Security framework, of macOS
+/// 10.12: whether its URL lies in a copy that Gatekeeper translocated.
+type IsTranslocated = unsafe extern "C" fn(*const c_void, *mut bool, *mut *mut c_void) -> u8;
+
+/// Whether `path` lies in a copy of an app that Gatekeeper translocated,
+/// as it runs a quarantined app that the user did not move: as the
+/// Security framework tells, whose function no header of the SDK declares,
+/// so that it is found as the app runs; else as its path's folder of the
+/// translocated copies tells.
+fn translocated(path: &Path) -> bool {
+    // SAFETY: the name is a text of a NUL at its end, and `RTLD_DEFAULT`
+    // looks in every image loaded, the Security framework among them.
+    let symbol = unsafe {
+        libc::dlsym(
+            libc::RTLD_DEFAULT,
+            c"SecTranslocateIsTranslocatedURL".as_ptr(),
+        )
+    };
+    if symbol.is_null() {
+        return path
+            .components()
+            .any(|part| part.as_os_str() == "AppTranslocation");
+    }
+    // SAFETY: the symbol is the function of that signature, as the
+    // Security framework's open sources declare it.
+    let is_translocated: IsTranslocated = unsafe { std::mem::transmute(symbol) };
+    let url = NSURL::fileURLWithPath(&NSString::from_str(&path.to_string_lossy()));
+    let mut translocated = false;
+    // SAFETY: an `NSURL` is a `CFURL`, as Core Foundation bridges them; the
+    // flag is written before the call returns; no error is asked for.
+    let told = unsafe {
+        is_translocated(
+            objc2::rc::Retained::as_ptr(&url).cast(),
+            &mut translocated,
+            std::ptr::null_mut(),
+        )
+    };
+    told != 0 && translocated
+}
+
+/// Whether `path` lies on a volume under `/Volumes` that is mounted
+/// read-only, as a disk image's.
+fn on_read_only_volume(path: &Path) -> bool {
+    if !path.starts_with("/Volumes") {
+        return false;
+    }
+    let Ok(text) = CString::new(path.as_os_str().as_bytes()) else {
+        return false;
+    };
+    // SAFETY: the struct is plain data, which zeros make valid, and
+    // `statfs` fills it in of a path of a NUL at its end.
+    let mut volume: libc::statfs = unsafe { std::mem::zeroed() };
+    // SAFETY: as above.
+    let read = unsafe { libc::statfs(text.as_ptr(), &mut volume) };
+    read == 0 && volume.f_flags & libc::MNT_RDONLY as u32 != 0
+}
 
 /// Makes `links` on a thread of its own, telling `reason` if the system
 /// asks for an administrator's password, and wakes the main thread of
@@ -195,5 +262,48 @@ mod tests {
         // Again, the same.
         assert_eq!(make(&links, "reason"), LinkOutcome::Linked);
         std::fs::remove_dir_all(&base).unwrap();
+    }
+
+    #[test]
+    fn a_disk_image_s_volume_is_a_place_that_goes_and_the_applications_folder_is_not() {
+        assert!(!is_temporary(Path::new("/Applications")));
+        assert!(!is_temporary(&std::env::temp_dir()));
+        // A read-only disk image, mounted under /Volumes as the Finder
+        // mounts the app's.
+        let base = std::env::temp_dir().join(format!("lokyr-dmg-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(base.join("content/Lokyr.app/Contents/MacOS")).unwrap();
+        let image = base.join("tools.dmg");
+        let volume = format!("LokyrTools{}", std::process::id());
+        let made = Command::new("hdiutil")
+            .args([
+                "create",
+                "-quiet",
+                "-format",
+                "UDZO",
+                "-volname",
+                &volume,
+                "-srcfolder",
+            ])
+            .arg(base.join("content"))
+            .arg(&image)
+            .status()
+            .unwrap();
+        assert!(made.success());
+        let attached = Command::new("hdiutil")
+            .args(["attach", "-quiet", "-nobrowse", "-readonly"])
+            .arg(&image)
+            .status()
+            .unwrap();
+        assert!(attached.success());
+        let mounted = Path::new("/Volumes").join(&volume);
+        let inside = mounted.join("Lokyr.app/Contents/MacOS");
+        let told = is_temporary(&inside);
+        let _ = Command::new("hdiutil")
+            .args(["detach", "-quiet", "-force"])
+            .arg(&mounted)
+            .status();
+        let _ = std::fs::remove_dir_all(&base);
+        assert!(told, "{} is a disk image's", inside.display());
     }
 }

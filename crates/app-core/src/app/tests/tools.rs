@@ -164,3 +164,23 @@ fn a_folder_in_the_way_or_a_tool_not_beside_the_app_is_refused() {
     );
     let _ = std::fs::remove_dir_all(base);
 }
+
+#[test]
+fn a_copy_of_the_app_in_a_place_that_goes_links_nothing_and_asks_to_move_it() {
+    let base = real_directory("tools-temporary");
+    let mut fake = Fake::default();
+    let mut app = tools_app(&mut fake, &base);
+    // Of its disk image, or translocated: an alert asks to move it first,
+    // and nothing is linked.
+    fake.set_temporary_place(true);
+    fake.send_app(&mut app, AppEvent::Command(INSTALL_TOOLS.to_owned()));
+    assert!(fake.tool_links().is_empty(), "{:?}", fake.tool_links());
+    let (message, detail) = last_alert(&fake);
+    assert_eq!(message, "Move Lokyr to the Applications folder first");
+    assert!(detail.contains("disk image"), "{detail}");
+    // Moved, it links.
+    fake.set_temporary_place(false);
+    fake.send_app(&mut app, AppEvent::Command(INSTALL_TOOLS.to_owned()));
+    assert_eq!(fake.tool_links().len(), 1);
+    let _ = std::fs::remove_dir_all(&base);
+}

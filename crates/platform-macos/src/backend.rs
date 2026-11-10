@@ -347,6 +347,10 @@ impl Platform for Backend {
         crate::tools::link(links, reason.to_owned(), self.waker.clone());
     }
 
+    fn is_temporary_place(&self, path: &std::path::Path) -> bool {
+        crate::tools::is_temporary(path)
+    }
+
     fn keeps_windows(&self) -> bool {
         // "Close windows when quitting an application" off, in the global
         // domain, which the standard defaults search; read at each call.

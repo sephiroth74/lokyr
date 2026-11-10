@@ -241,5 +241,7 @@ tools-folder-message = { $value } is a folder
 tools-folder-detail = Lokyr leaves it as it is: move it away, then install the command line tools again.
 tools-missing-message = The command line tools are not beside Lokyr
 tools-missing-detail = { $value } is not there, as when Lokyr runs outside its bundle.
+tools-temporary-message = Move Lokyr to the Applications folder first
+tools-temporary-detail = Lokyr runs from its disk image, or from a copy that macOS keeps aside until it is moved: the links would lead nowhere once it goes. Move Lokyr to the Applications folder, open it from there, then install the command line tools.
 tools-failed-message = The command line tools could not be installed
 tools-failed-detail = { $value }

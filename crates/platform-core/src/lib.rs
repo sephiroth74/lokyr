@@ -431,6 +431,13 @@ pub trait Platform {
     /// the user. [`AppEvent::ToolsLinked`] tells how it ended.
     fn link_tools(&mut self, links: Vec<ToolLink>, reason: &str);
 
+    /// Whether `path`, as the folder of the app's binaries, lies in a place
+    /// that goes: on the Mac, a copy that Gatekeeper translocated, which
+    /// runs from a folder of the system's until the app is moved, or a
+    /// read-only volume under `/Volumes`, as a disk image's; links to it
+    /// would lead nowhere once it goes.
+    fn is_temporary_place(&self, path: &Path) -> bool;
+
     /// Whether the system's settings have an app's windows open again as
     /// it starts, as they were as it quit: on the Mac, "Close windows when
     /// quitting an application" off.
