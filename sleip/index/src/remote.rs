@@ -85,11 +85,18 @@ impl<'a> Remote<'a> {
         time: impl Fn(&T) -> Timestamp,
         lifetime: Option<u64>,
     ) -> Result<Option<T>, String> {
-        let checked = self.fetched(path, &check, &time)?;
-        if let (Some(value), Some(lifetime)) = (&checked, lifetime) {
-            self.fresh(path, time(value), lifetime)?;
-        }
-        Ok(checked)
+        // Its time weighed with its signature, before the cache keeps it:
+        // a file of a time to come, or expired online, is never kept, and
+        // one that the cache holds so, as before this check, is no floor
+        // for the next.
+        let fresh = |text: &str, held: Option<Timestamp>| {
+            let value = check(text, held)?;
+            if let Some(lifetime) = lifetime {
+                self.fresh(path, time(&value), lifetime)?;
+            }
+            Ok(value)
+        };
+        self.fetched(path, &fresh, &time)
     }
 
     /// Whether the file `path`, of its time `generated`, is of no time to
@@ -121,7 +128,8 @@ impl<'a> Remote<'a> {
     }
 
     /// The file `path` of the registry, as [`Remote::checked`] reads it,
-    /// of no expiry.
+    /// of `check`, which weighs its time too: written to the cache once it
+    /// checks, never before.
     fn fetched<T>(
         &self,
         path: &str,
@@ -140,7 +148,7 @@ impl<'a> Remote<'a> {
                 )),
             };
         };
-        // The time of the one held, as it checks still.
+        // The time of the one held, as it checks still, of no time to come.
         let held = cached
             .as_deref()
             .and_then(|text| check(text, None).ok())

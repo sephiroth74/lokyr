@@ -90,6 +90,28 @@ fn serve(folder: &Path) -> Served {
     }
 }
 
+/// A few hours ago, as the registry signs its index every few hours, and
+/// not before the `keys.json` that this Sleip was built with.
+fn recently() -> Timestamp {
+    Timestamp((Timestamp::now().0 - 4 * 3600).max(signing::KEYS_NOT_BEFORE.0))
+}
+
+/// The file of Sleip's cache in `home` whose path ends with `tail`.
+fn cached(home: &Path, tail: &str) -> Option<PathBuf> {
+    let mut left = vec![home.to_path_buf()];
+    while let Some(at) = left.pop() {
+        for entry in std::fs::read_dir(&at).ok()?.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                left.push(path);
+            } else if path.to_string_lossy().ends_with(tail) {
+                return Some(path);
+            }
+        }
+    }
+    None
+}
+
 /// A version of `name`, of `vers`, its description and capabilities.
 fn entry(name: &str, vers: &str, description: &str, caps: &[&str], yanked: bool) -> Entry {
     Entry {
@@ -140,7 +162,7 @@ fn search_and_info_read_the_registry_s_signed_index_cached_and_offline() {
         SecretKey::generate().unwrap(),
     );
     // A few hours ago, as the registry signs its index every few hours.
-    let at = Timestamp(Timestamp::now().0 - 4 * 3600);
+    let at = recently();
     std::fs::write(
         site.join("keys.json"),
         signing::sign_keys(&root_key, &[index_key.public()], at),
@@ -312,6 +334,39 @@ fn search_and_info_read_the_registry_s_signed_index_cached_and_offline() {
         String::from_utf8_lossy(&output.stderr).contains("a time to come"),
         "{output:?}"
     );
+    // A list of a time to come that the registry serves, as of its clock
+    // ahead: refused, and never kept, so that the right one after it is
+    // taken.
+    let ahead = Timestamp(Timestamp::now().0 + 3 * 86_400);
+    std::fs::write(
+        site.join("list"),
+        signing::sign_list(&list, &index_key, ahead),
+    )
+    .unwrap();
+    let output = sleip(&["search", "clock"]);
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("a time to come"),
+        "{output:?}"
+    );
+    let now = Timestamp(Timestamp::now().0 - 60);
+    std::fs::write(
+        site.join("list"),
+        signing::sign_list(&list, &index_key, now),
+    )
+    .unwrap();
+    let output = sleip(&["--json", "search", "clock"]);
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(found(&output), ["acme/clock"]);
+    // A cache that holds one of a time to come, as a Sleip before this
+    // check kept it: no floor for the next, which is taken.
+    let held = cached(&home, &format!("index/http_127.0.0.1_{}/list", served.port))
+        .expect("the cache's list");
+    std::fs::write(&held, signing::sign_list(&list, &index_key, ahead)).unwrap();
+    let _ = std::fs::remove_file(held.with_file_name("list.etag"));
+    let output = sleip(&["--json", "search", "clock"]);
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(found(&output), ["acme/clock"]);
     // A keys.json of a valid signature made before the one that this Sleip
     // was built with, of a cache of none yet: refused.
     let keys = std::fs::read_to_string(site.join("keys.json")).unwrap();
@@ -432,7 +487,7 @@ fn add_and_update_install_the_registry_s_versions_checked_against_its_index() {
         SecretKey::generate().unwrap(),
     );
     // A few hours ago, as the registry signs its index every few hours.
-    let at = Timestamp(Timestamp::now().0 - 4 * 3600);
+    let at = recently();
     std::fs::write(
         site.join("keys.json"),
         signing::sign_keys(&root_key, &[index_key.public()], at),
@@ -665,7 +720,7 @@ fn installs_keep_the_locked_versions_and_reproduce_a_lockfile() {
         SecretKey::generate().unwrap(),
         SecretKey::generate().unwrap(),
     );
-    let at = Timestamp(Timestamp::now().0 - 4 * 3600);
+    let at = recently();
     std::fs::write(
         site.join("keys.json"),
         signing::sign_keys(&root_key, &[index_key.public()], at),
