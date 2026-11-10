@@ -174,7 +174,28 @@ fn sign_keys(out: Out, root: &Path, keys: &[String], file: &Path) -> Result<(), 
     if keys.is_empty() {
         return Err("keys.json lists an index key at least".to_owned());
     }
-    let signed = signing::sign_keys(&root_key, &keys, Timestamp::now());
+    // Of a clock behind, a time that the Sleips refuse, or older than the
+    // file's own, which they would keep.
+    let now = Timestamp::now();
+    if now < signing::KEYS_NOT_BEFORE {
+        return Err(format!(
+            "this machine's clock tells {now}, before {}, of the keys.json that the Sleips take: set the clock right",
+            signing::KEYS_NOT_BEFORE
+        ));
+    }
+    if let Ok(before) = std::fs::read_to_string(file)
+        && let Ok(written) = serde_json::from_str::<serde_json::Value>(&before)
+        && let Some(time) = written["generated"]
+            .as_str()
+            .and_then(|time| Timestamp::parse(time).ok())
+        && time > now
+    {
+        return Err(format!(
+            "{} was made at {time}, after this machine's clock, {now}: set the clock right",
+            file.display()
+        ));
+    }
+    let signed = signing::sign_keys(&root_key, &keys, now);
     lokyr_pkg_model::write_whole(file, &signed)
         .map_err(|error| format!("{} cannot be written: {error}", file.display()))?;
     let public = root_key.public();
@@ -248,6 +269,33 @@ fn index(out: Out, indexed: &Indexed) -> Result<(), String> {
     let keys_text = std::fs::read_to_string(&keys_path)
         .map_err(|error| format!("{} cannot be read: {error}", keys_path.display()))?;
     let keys = signing::verify_keys(&keys_text, &roots, None)?;
+    let now = Timestamp::now();
+    if keys.generated < signing::KEYS_NOT_BEFORE {
+        return Err(format!(
+            "keys.json was made at {}, before {}, which the Sleips refuse: sign it anew",
+            keys.generated,
+            signing::KEYS_NOT_BEFORE
+        ));
+    }
+    if keys.generated.0 > now.0 + signing::SKEW {
+        return Err(format!(
+            "keys.json was made at {}, a time to come, which the Sleips refuse: the clock of the machine that signed it was wrong",
+            keys.generated
+        ));
+    }
+    let expiry = Timestamp(keys.generated.0 + signing::KEYS_LIFETIME);
+    if now > expiry {
+        return Err(format!(
+            "keys.json expired at {expiry}, which the Sleips refuse online: sign it anew with the root key"
+        ));
+    }
+    if now.0 + 30 * signing::DAY > expiry.0 {
+        out.tell(
+            "note",
+            json!({ "message": format!("keys.json expires at {expiry}: sign it anew with the root key before then") }),
+            &format!("keys.json expires at {expiry}: sign it anew with the root key before then."),
+        );
+    }
     if !keys.keys.contains(&key.public()) {
         return Err(format!(
             "the index key {} is not in keys.json, whose index keys are {}",
@@ -275,10 +323,9 @@ fn index(out: Out, indexed: &Indexed) -> Result<(), String> {
         dl,
         client: &client,
     };
-    let deployed = match indexed.deployed {
-        Some(url) => Some(Deployed::of(url, &client, roots.clone())?),
-        None => None,
-    };
+    let deployed = indexed
+        .deployed
+        .map(|url| Deployed::of(url, &client, keys.clone()));
     made(&into.join("keys.json"), &keys_text)?;
     let config = json!({ "v": signing::VERSION, "dl": dl });
     made(&into.join("config.json"), &format!("{config}\n"))?;
@@ -304,8 +351,22 @@ fn index(out: Out, indexed: &Indexed) -> Result<(), String> {
             continue;
         };
         let plugin = format!("{owner}/{name}");
-        let held = match &deployed {
-            Some(deployed) => deployed.entries_of(&plugin)?,
+        // A deployed file that does not read or check, as of a key since
+        // taken off or a host's fault, rebuilt of the releases' assets,
+        // which stay as they were made.
+        let held = match deployed
+            .as_ref()
+            .map(|deployed| deployed.entries_of(&plugin))
+        {
+            Some(Ok(held)) => held,
+            Some(Err(error)) => {
+                fail(
+                    &plugin,
+                    None,
+                    format!("{error}: its lines are made anew of its releases"),
+                );
+                Vec::new()
+            }
             None => Vec::new(),
         };
         // Of a name that another owner holds too, as Lokyr knows a plugin
@@ -316,7 +377,7 @@ fn index(out: Out, indexed: &Indexed) -> Result<(), String> {
             PluginFile::parse(&String::from_utf8_lossy(bytes))
                 .map_err(|error| format!("{path}: {error}"))
         };
-        let entries = match file {
+        let mut entries = match file {
             Ok(file) => {
                 let mut entries = Vec::new();
                 for release in &file.versions {
@@ -364,6 +425,7 @@ fn index(out: Out, indexed: &Indexed) -> Result<(), String> {
         if entries.is_empty() {
             continue;
         }
+        sort_entries(&mut entries);
         let text = signing::sign_index(&plugin, &entries, &key, generated);
         // Read back as Sleip reads it, of the keys that it checked.
         signing::verify_index(&text, &plugin, &keys, None)
@@ -405,6 +467,21 @@ fn index(out: Out, indexed: &Indexed) -> Result<(), String> {
         ),
     );
     Ok(())
+}
+
+/// `entries`, in their versions' order, as Semantic Versioning orders them,
+/// so that a line kept of the index deployed, that the registry's file no
+/// longer lists, takes its place and is no later version than it is.
+fn sort_entries(entries: &mut [Entry]) {
+    entries.sort_by(|left, right| {
+        match (
+            semver::Version::parse(&left.vers),
+            semver::Version::parse(&right.vers),
+        ) {
+            (Ok(left), Ok(right)) => left.cmp(&right),
+            _ => left.vers.cmp(&right.vers),
+        }
+    });
 }
 
 /// The line of the index of the version `release` of `plugin`, of its
@@ -503,22 +580,20 @@ struct Deployed<'a> {
 }
 
 impl<'a> Deployed<'a> {
-    /// The index deployed at `url`, its `keys.json` checked against
-    /// `roots`.
-    fn of(url: &str, client: &'a Client, roots: Vec<PublicKey>) -> Result<Self, String> {
+    /// The index deployed at `url`, its files checked against `keys`, the
+    /// registry's own, which its root keys signed: a line of a key since
+    /// taken off is none of it, whatever the deployed `keys.json` says.
+    fn of(url: &str, client: &'a Client, keys: signing::Keys) -> Self {
         let cache = std::env::temp_dir().join(format!("sleip-deployed-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&cache);
-        // However old, as the index's lines are kept whatever became of
-        // the registry's runs.
-        let remote = Remote::new(url, &cache, Some(client), roots).never_expiring();
-        let keys = remote
-            .keys()
-            .map_err(|error| format!("the index deployed at {url}: {error}"))?;
-        Ok(Self {
+        // However old, or of whatever time, as the index's lines are kept
+        // whatever became of the registry's runs and clocks.
+        let remote = Remote::new(url, &cache, Some(client), Vec::new()).never_expiring();
+        Self {
             remote,
             keys,
             cache,
-        })
+        }
     }
 
     /// The lines of the plugin `plugin` that the index deployed signed,
@@ -1536,6 +1611,28 @@ fn whole_report_of(verdict: &Verdict, heading: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_index_s_lines_are_in_their_versions_order() {
+        let line = |vers: &str| Entry {
+            v: signing::VERSION,
+            name: "acme/x".to_owned(),
+            vers: vers.to_owned(),
+            kind: "luau".to_owned(),
+            api: None,
+            deps: Vec::new(),
+            caps: Vec::new(),
+            uses: Vec::new(),
+            cksum: String::new(),
+            yanked: false,
+            description: None,
+        };
+        // A line kept of the index deployed after the registry's own.
+        let mut entries = vec![line("0.1.0"), line("0.10.0"), line("0.2.0"), line("0.1.5")];
+        sort_entries(&mut entries);
+        let order: Vec<&str> = entries.iter().map(|entry| entry.vers.as_str()).collect();
+        assert_eq!(order, ["0.1.0", "0.1.5", "0.2.0", "0.10.0"]);
+    }
 
     #[test]
     fn a_text_of_a_pull_request_is_a_span_of_code_of_no_mention_nor_html_and_bounded() {

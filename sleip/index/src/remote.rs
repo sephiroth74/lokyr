@@ -57,8 +57,9 @@ impl<'a> Remote<'a> {
         }
     }
 
-    /// Of files that never expire, as the registry's own tools read the
-    /// index deployed, which they keep however old.
+    /// Of files that never expire nor come of a time to come, as the
+    /// registry's own tools read the index deployed, which they keep
+    /// however old, whatever its time.
     pub fn never_expiring(mut self) -> Self {
         self.expiring = false;
         self
@@ -103,6 +104,10 @@ impl<'a> Remote<'a> {
     /// come and, of a file that expires after `lifetime`, unexpired online;
     /// expired offline, a note.
     fn fresh(&self, path: &str, generated: Timestamp, lifetime: u64) -> Result<(), String> {
+        // The registry's own tools keep its index whatever its time.
+        if !self.expiring {
+            return Ok(());
+        }
         let now = Timestamp::now();
         if generated.0 > now.0 + signing::SKEW {
             return Err(format!(
@@ -111,7 +116,7 @@ impl<'a> Remote<'a> {
             ));
         }
         let expiry = Timestamp(generated.0 + lifetime);
-        if !self.expiring || now <= expiry {
+        if now <= expiry {
             return Ok(());
         }
         if self.client.is_some() {

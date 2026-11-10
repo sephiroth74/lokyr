@@ -1297,7 +1297,7 @@ fn the_index_is_signed_of_the_released_versions_by_a_key_that_keys_json_lists() 
 
 #[test]
 fn the_index_keeps_its_deployed_lines_and_a_version_that_fails_leaves_the_others() {
-    use sleip_index::signing::{self, Entry};
+    use sleip_index::signing::{self, Entry, Timestamp};
 
     let lab = Lab::new("deployed");
     let (folder, url) = lab.plugin("hello");
@@ -1381,7 +1381,14 @@ fn the_index_keeps_its_deployed_lines_and_a_version_that_fails_leaves_the_others
     );
     // `index` into the folder `site`, of the archives at hand in `cache`,
     // of the index deployed in `deployed`.
-    let indexed = |base: &Path, cache: &str, site: &str, deployed: Option<&str>| {
+    // `index` as above, of the index key in the file `key` and of the clock
+    // of `now`, if given, as a build for debugging takes it.
+    let indexed_with = |base: &Path,
+                        cache: &str,
+                        site: &str,
+                        deployed: Option<&str>,
+                        key: &Path,
+                        now: Option<Timestamp>| {
         let mut args = vec![
             "--json".to_owned(),
             "registry".to_owned(),
@@ -1401,17 +1408,20 @@ fn the_index_keeps_its_deployed_lines_and_a_version_that_fails_leaves_the_others
             args.push("--deployed".to_owned());
             args.push(format!("file://{}", lab.root.join(deployed).display()));
         }
-        Command::new(env!("CARGO_BIN_EXE_sleip"))
+        let mut command = Command::new(env!("CARGO_BIN_EXE_sleip"));
+        command
             .args(&args)
             .current_dir(&lab.root)
             .env("HOME", lab.root.join("home"))
             .env("PATH", "/usr/bin:/bin")
-            .env(
-                "SLEIP_INDEX_KEY",
-                std::fs::read_to_string(&index_key).unwrap(),
-            )
-            .output()
-            .unwrap()
+            .env("SLEIP_INDEX_KEY", std::fs::read_to_string(key).unwrap());
+        if let Some(now) = now {
+            command.env("SLEIP_TEST_NOW", now.to_string());
+        }
+        command.output().unwrap()
+    };
+    let indexed = |base: &Path, cache: &str, site: &str, deployed: Option<&str>| {
+        indexed_with(base, cache, site, deployed, &index_key, None)
     };
     let lines = |site: &str| -> Vec<Entry> {
         let keys = signing::verify_keys(
@@ -1607,6 +1617,133 @@ fn the_index_keeps_its_deployed_lines_and_a_version_that_fails_leaves_the_others
     assert_eq!(failed(&output).len(), 2, "{output:?}");
     assert_eq!(lines("site5"), lines("site3"));
     assert!(!lab.root.join("site5/index/bob/hello").exists());
+    // An index deployed of a time to come, as of the registry's clock
+    // ahead: its lines kept all the same, as the registry's own tools take
+    // its index whatever its time.
+    let base = registry_of(&published);
+    let ahead = Timestamp(Timestamp::now().0 + 3 * 86_400);
+    let output = indexed_with(
+        &base,
+        "cache6",
+        "site6",
+        Some("site3"),
+        &index_key,
+        Some(ahead),
+    );
+    assert!(output.status.success(), "{output:?}");
+    let output = indexed(&base, "cache7", "site7", Some("site6"));
+    assert!(output.status.success(), "{output:?}");
+    assert!(failed(&output).is_empty(), "{output:?}");
+    assert_eq!(lines("site7"), lines("site3"));
+    // No index deployed, as of a host that lost it: each plugin made anew
+    // of its releases, of nothing failed. 0.1.0's asset made anew first, as
+    // above it was replaced.
+    built(&base, "0.1.0");
+    std::fs::create_dir_all(lab.root.join("nothing")).unwrap();
+    let output = indexed(&base, "cache8", "site8", Some("nothing"));
+    assert!(output.status.success(), "{output:?}");
+    assert!(failed(&output).is_empty(), "{output:?}");
+    assert_eq!(
+        lines("site8")
+            .iter()
+            .map(|line| (line.vers.clone(), line.cksum.clone()))
+            .collect::<Vec<_>>(),
+        lines("site3")
+            .iter()
+            .map(|line| (line.vers.clone(), line.cksum.clone()))
+            .collect::<Vec<_>>()
+    );
+    // The index key replaced: the deployed lines, of the key taken off,
+    // checked against the registry's own keys.json, made anew of the
+    // releases and signed of the new key, the plugin told.
+    let (new_key, new_public) = keygen("new.key");
+    let rotated = lab.registry("rotated", &[("plugins/acme/hello.toml", &published)]);
+    let output = lab.sleip(
+        &[
+            "registry",
+            "sign-keys",
+            "--root",
+            &root.display().to_string(),
+            "--keys",
+            &new_public,
+            "--out",
+            &rotated.join("keys.json").display().to_string(),
+        ],
+        &lab.root,
+    );
+    assert!(output.status.success(), "{output:?}");
+    let output = indexed_with(&rotated, "cache9", "site9", Some("site3"), &new_key, None);
+    assert!(output.status.success(), "{output:?}");
+    let told = failed(&output);
+    assert_eq!(told.len(), 1, "{output:?}");
+    assert!(
+        told[0]["message"]
+            .as_str()
+            .unwrap()
+            .contains("made anew of its releases"),
+        "{output:?}"
+    );
+    assert_eq!(lines("site9").len(), 3);
+    // The registry's keys.json expired, refused; within its last 30 days,
+    // told.
+    let late = Timestamp(Timestamp::now().0 + 400 * 86_400);
+    let output = indexed_with(&base, "cache10", "site10", None, &index_key, Some(late));
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains("keys.json expired at"),
+        "{output:?}"
+    );
+    let near = Timestamp(Timestamp::now().0 + 350 * 86_400);
+    let output = indexed_with(
+        &base,
+        "cache11",
+        "site11",
+        Some("site3"),
+        &index_key,
+        Some(near),
+    );
+    assert!(output.status.success(), "{output:?}");
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains("keys.json expires at"),
+        "{output:?}"
+    );
+    // `sign-keys` of a clock behind the file's, or behind the keys.json
+    // that the Sleips take, refused.
+    let signed_at = |now: Timestamp, out: &Path| {
+        Command::new(env!("CARGO_BIN_EXE_sleip"))
+            .args([
+                "registry",
+                "sign-keys",
+                "--root",
+                &root.display().to_string(),
+                "--keys",
+                &index_public,
+                "--out",
+                &out.display().to_string(),
+            ])
+            .env("HOME", lab.root.join("home"))
+            .env("SLEIP_TEST_NOW", now.to_string())
+            .output()
+            .unwrap()
+    };
+    let keys_file = lab.root.join("keys-clock.json");
+    let output = signed_at(Timestamp(Timestamp::now().0 + 7200), &keys_file);
+    assert!(output.status.success(), "{output:?}");
+    let output = signed_at(Timestamp::now(), &keys_file);
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("after this machine's clock"),
+        "{output:?}"
+    );
+    let output = signed_at(
+        Timestamp::parse("2026-01-01T00:00:00Z").unwrap(),
+        &lab.root.join("keys-behind.json"),
+    );
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("set the clock right"),
+        "{output:?}"
+    );
 }
 
 #[test]
