@@ -898,7 +898,7 @@ type Plugin = {
 | `pointer-read` | The `pointer` event: the cell under the pointer over the panes, and the modifiers held | Low |
 | `user-commands` | Running any command as the user's, without declaring it, as the palette does; reading the whole registry, with each command's plugin, keys and context, and the plugins installed ([ADR 0024](adr/0024-user-commands.md)); previewing a theme and naming one in the config's `[theme]`, as the palette's picker does | Very high: `pane.send-text` types into the shell |
 
-A request takes every capability that it needs, as a subscription to `pointer` and to `command-started` takes `pointer-read` and `history-read`. The reads of the workspace, the plugin's own views, panels and questions, its declarations, its config and its state take none.
+A request takes every capability that it needs, as a subscription to `pointer` and to `command-started` takes `pointer-read` and `history-read`. The reads of the workspace, the plugin's own views, panels and questions, its declarations, its config and its state take none; neither does a file saved through the save panel, where the user chooses the place and the host writes it ([ADR 0041](adr/0041-save-panel-of-no-capability.md)), nor an image of the plugin's own cells.
 
 - **Commands** ([ADR 0019](adr/0019-commands-errors-and-permissions.md)): each has a category, `app`, `windows`, `tabs`, `panes`, `input`, `clipboard`, `edit`, `find` or `view` to start with, and the capabilities that its action needs, as `pane.paste` needs `clipboard-read` and `pty-write`. A plugin declares in its manifest the commands that it runs, `[uses] commands`, by name or by namespace, as `tabs.*`: one that it did not declare fails with `denied`, 301, and one whose capabilities it lacks with `denied`, 302. The commands that the user runs, through the keys, the menus or a plugin with `user-commands`, as the palette, and the plugin's own need no declaration. Without `user-commands`, a plugin reads the commands' names, titles, categories and parameters, not their plugins.
 - **Declaration and consent**:
@@ -1016,12 +1016,11 @@ Similar to VS Code's [CodeSnap](https://marketplace.visualstudio.com/items?itemN
 | `window-controls` | `true`, `false` | `true` | The window's three buttons |
 | `title` | `true`, `false` | `true` | The pane's title in the window's bar |
 | `target` | `container`, `window` | `container` | The image of the window with its background, or of the window alone |
-| `action` | `save`, `copy`, `both` | `copy` | What the shutter does |
-| `folder` | a path | `~/Pictures/Lokyr` | Where `save` writes the PNG |
+| `action` | `save`, `copy`, `both` | `copy` | What the shutter does: `save` shows the save panel, where the user chooses the PNG's folder and name |
 | `scale` | `1`, `2`, `3` | the display's | The pixels of a point |
 
-- **Capabilities**: `terminal-read`, for the cells; `clipboard-write`, for `copy`; `fs-write` of its folder, for `save`. Sleip shows them at install, and the app asks for each on first use.
-- **What the API needs for it**: the cells of the selection, of the screen and of a command, with their styles, not only their text; the `image` service; an image on the clipboard, not only text; a file's write of bytes; and a config of the plugin's own, its section of the config file ([ADR 0032](adr/0032-plugins-config-and-state.md)).
+- **Capabilities**: `terminal-read`, for the cells; `clipboard-write`, for `copy`. `save` takes none: the host shows the save panel and writes the file where the user chose ([ADR 0041](adr/0041-save-panel-of-no-capability.md)). Sleip shows them at install, and the app asks for each on first use.
+- **What the API needs for it**: the cells of the selection, of the screen and of a command, with their styles, not only their text; the `image` service; an image on the clipboard, not only text; a file saved through the user's save panel; and a config of the plugin's own, its section of the config file ([ADR 0032](adr/0032-plugins-config-and-state.md)).
 
 ### `awake`
 
