@@ -138,23 +138,13 @@ pub const LONGEST_AUTHOR: usize = 200;
 /// The most keywords, and the most authors, of a plugin.
 pub const MOST_LISTED: usize = 20;
 
-/// Whether `character` changes the direction of the text that follows it,
-/// as Unicode's bidirectional formatting characters do, which could show
-/// a text other than it is.
-pub fn is_direction_change(character: char) -> bool {
-    matches!(
-        character,
-        '\u{061C}' | '\u{200E}' | '\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}'
-    )
-}
-
 /// Why `text`, of a line, is not a plugin's plain text of `most` characters
 /// at most: a control character, C0 or C1, a line's end among them, or a
-/// change of direction; or none.
+/// hidden one, as [`crate::is_hidden`] tells; or none.
 fn plain_problem(text: &str, most: usize) -> Option<String> {
     if let Some(character) = text
         .chars()
-        .find(|&character| character.is_control() || is_direction_change(character))
+        .find(|&character| character.is_control() || crate::is_hidden(character))
     {
         return Some(format!(
             "holds the character U+{:04X}, which no plain text of a line holds",
@@ -471,16 +461,13 @@ fn capability(key: &str, value: &toml::Spanned<toml::Value>) -> Result<Vec<Capab
         toml::Value::Array(items) => items
             .iter()
             .map(|item| match item {
-                // A parameter of no control character, which the question
-                // of the user's consent shows as it is.
-                toml::Value::String(item)
-                    if !item.is_empty() && !item.chars().any(char::is_control) =>
-                {
-                    Ok(of(item.clone()))
-                }
-                _ => Err(format!(
-                    "`{key}` lists texts, none empty nor of a control character"
-                )),
+                // A parameter of its kind, which the question of the
+                // user's consent shows as it is.
+                toml::Value::String(item) => match crate::parameter_problem(key, item) {
+                    None => Ok(of(item.clone())),
+                    Some(problem) => Err(problem),
+                },
+                _ => Err(format!("`{key}` lists texts")),
             })
             .collect(),
         _ => Err(format!("`{key}` is a list, as `{key} = [\"…\"]`")),
@@ -843,8 +830,33 @@ config-schema = "schema.json"
         // would show as it is.
         assert_eq!(
             wrong(&format!("{plugin}[capabilities]\nenv-read = [\"A\\nB\"]\n")),
-            "6:12: `env-read` lists texts, none empty nor of a control character"
+            "6:12: `env-read` lists variables' names, of letters, digits, `_` and `*`, of 128 characters at most"
         );
+        // A parameter of its kind alone: a path of a line separator or of
+        // a change of direction, a host of a space, a path not rooted.
+        for (key, value) in [
+            ("fs-read", "~/a\\u2028reviewed by Lokyr"),
+            ("fs-write", "/tmp/\\u202Ecod.exe"),
+            ("fs-read", "Documents"),
+            ("fs-read", "~/../etc"),
+            ("net", "api.github.com evil"),
+            ("env-read", "PATH\\u200B"),
+        ] {
+            let told = wrong(&format!("{plugin}[capabilities]\n{key} = [\"{value}\"]\n"));
+            assert!(
+                told.contains(&format!("`{key}` lists")),
+                "{key} {value}: {told}"
+            );
+        }
+        for (key, value) in [
+            ("fs-read", "~/Documents"),
+            ("fs-write", "/tmp/lokyr"),
+            ("net", "*.github.com"),
+            ("env-read", "AWS_*"),
+        ] {
+            let text = format!("{plugin}[capabilities]\n{key} = [\"{value}\"]\n");
+            assert!(Manifest::parse(&text).is_ok(), "{key} {value}");
+        }
         assert_eq!(crate::capability_of("env-read:A\nB"), None);
         assert!(
             wrong(&format!("{plugin}color = \"red\"\n")).starts_with("5:1: unknown field `color`")
@@ -909,6 +921,16 @@ config-schema = "schema.json"
             wrong(&with("description = \"a\\u202Eb\"")).contains("U+202E"),
             "a change of direction"
         );
+        // Characters of no width and tags refused; the marks of direction
+        // and the joiners, which scripts take, kept.
+        for hidden in ["\\u200B", "\\uFEFF", "\\U000E0041", "\\u2028", "\\uFFF9"] {
+            assert!(
+                wrong(&with(&format!("description = \"a{hidden}b\"")))
+                    .contains("holds the character"),
+                "{hidden}"
+            );
+        }
+        assert!(Manifest::parse(&with("description = \"\\u200Fשלום \\u200Dx\\u061C\"")).is_ok());
         assert!(wrong(&with("description = \"a\\nb\"")).contains("U+000A"));
         assert!(wrong(&with("description = \"a\\u009Bb\"")).contains("U+009B"));
         assert!(

@@ -42,17 +42,91 @@ impl fmt::Display for FileError {
 impl std::error::Error for FileError {}
 
 /// The capability of `text`, as its `Display` writes it: its name, of a
-/// parameter after a `:`, as `net:api.github.com`.
+/// parameter after a `:`, as `net:api.github.com`, which its kind takes, as
+/// [`parameter_problem`] checks it.
 pub fn capability_of(text: &str) -> Option<lokyr_plugin_sdk::command::Capability> {
     use lokyr_plugin_sdk::command::Capability;
     match text.split_once(':') {
-        Some((name, parameter))
-            if !parameter.is_empty() && !parameter.chars().any(char::is_control) =>
-        {
+        Some((name, parameter)) if parameter_problem(name, parameter).is_none() => {
             Capability::of_parameter(name, parameter.to_owned())
         }
         Some(_) => None,
         None => Capability::of_name(text),
+    }
+}
+
+/// Whether `character` hides or moves the text around it, which a text that
+/// a person reads, as a consent's question or a terminal, would show
+/// otherwise than it is: a format character of Unicode (`Cf`), the changes
+/// of direction and the characters of no width among them, but the
+/// joiners, which scripts and emoji take, and the marks of direction,
+/// which override no strong character and Arabic and Hebrew texts take;
+/// and the separators of lines and paragraphs.
+pub fn is_hidden(character: char) -> bool {
+    if matches!(
+        character,
+        '\u{200C}' | '\u{200D}' | '\u{200E}' | '\u{200F}' | '\u{061C}'
+    ) {
+        return false;
+    }
+    matches!(
+        u32::from(character),
+        0x00AD
+            | 0x0600..=0x0605
+            | 0x06DD
+            | 0x070F
+            | 0x0890..=0x0891
+            | 0x08E2
+            | 0x180E
+            | 0x200B..=0x200F
+            | 0x2028..=0x202E
+            | 0x2060..=0x2064
+            | 0x2066..=0x206F
+            | 0xFEFF
+            | 0xFFF9..=0xFFFB
+            | 0x110BD
+            | 0x110CD
+            | 0x13430..=0x1343F
+            | 0x1BCA0..=0x1BCA3
+            | 0x1D173..=0x1D17A
+            | 0xE0001
+            | 0xE0020..=0xE007F
+    )
+}
+
+/// Why `parameter` is not one of the capability `kind`, `fs-read`,
+/// `fs-write`, `env-read` or `net`, as the consent's question shows it as
+/// it is: a path absolute or from `~`, of no `..`; a variable's name of
+/// letters, digits, `_` and `*`; a host's name of letters, digits, `.`,
+/// `-` and `*`; each of no control nor hidden character and bounded; none
+/// of a parameter that fits.
+pub fn parameter_problem(kind: &str, parameter: &str) -> Option<String> {
+    let count = parameter.chars().count();
+    let plain = !parameter
+        .chars()
+        .any(|character| character.is_control() || is_hidden(character));
+    let path = (parameter.starts_with('/') || parameter == "~" || parameter.starts_with("~/"))
+        && count <= 1024
+        && !parameter.split('/').any(|part| part == "..");
+    let variable = (1..=128).contains(&count)
+        && parameter
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || matches!(character, '_' | '*'));
+    let host = (1..=253).contains(&count)
+        && parameter.chars().all(|character| {
+            character.is_ascii_alphanumeric() || matches!(character, '.' | '-' | '*')
+        });
+    match kind {
+        "fs-read" | "fs-write" if !(path && plain) => Some(format!(
+            "`{kind}` lists paths, absolute or from `~`, of no `..` nor control or hidden character, of 1024 characters at most"
+        )),
+        "env-read" if !variable => Some(format!(
+            "`{kind}` lists variables' names, of letters, digits, `_` and `*`, of 128 characters at most"
+        )),
+        "net" if !host => Some(format!(
+            "`{kind}` lists hosts' names, of letters, digits, `.`, `-` and `*`, of 253 characters at most"
+        )),
+        _ => None,
     }
 }
 

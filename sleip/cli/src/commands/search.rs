@@ -11,7 +11,7 @@ use sleip_index::client::Client;
 use sleip_index::remote::Remote;
 
 use crate::args::Options;
-use crate::output::Out;
+use crate::output::{Out, one_line};
 use crate::paths::Paths;
 
 /// The site of Lokyr's registry, which searches its plugins too.
@@ -58,7 +58,12 @@ pub fn search(paths: &Paths, options: Options, out: Out, words: &[String]) -> Re
                 "capabilities": plugin.caps,
                 "yanked": plugin.yanked,
             }),
-            &format!("{} {}{yanked}  {description}", plugin.name, plugin.vers),
+            &format!(
+                "{} {}{yanked}  {}",
+                one_line(&plugin.name),
+                one_line(&plugin.vers),
+                one_line(description)
+            ),
         );
     }
     let more = if url.trim_end_matches('/') == SITE {
@@ -107,15 +112,21 @@ pub fn info(paths: &Paths, options: Options, out: Out, plugin: &str) -> Result<(
             })
         })
         .collect();
-    let mut text = format!("{plugin} {}", shown.vers);
+    // Each field of the index on a line of its own, as an index of another
+    // registry's could hold a line's end in it.
+    let mut text = format!("{plugin} {}", one_line(&shown.vers));
     if let Some(description) = &shown.description {
-        text.push_str(&format!("\n{description}"));
+        text.push_str(&format!("\n{}", one_line(description)));
     }
     let list = |items: &[String]| {
         if items.is_empty() {
             "none".to_owned()
         } else {
-            items.join(", ")
+            items
+                .iter()
+                .map(|item| one_line(item))
+                .collect::<Vec<_>>()
+                .join(", ")
         }
     };
     text.push_str(&format!("\nCapabilities: {}", list(&shown.caps)));
@@ -126,14 +137,24 @@ pub fn info(paths: &Paths, options: Options, out: Out, plugin: &str) -> Result<(
         let deps: Vec<String> = shown
             .deps
             .iter()
-            .map(|dependency| format!("{} {}", dependency.name, dependency.req))
+            .map(|dependency| {
+                format!(
+                    "{} {}",
+                    one_line(&dependency.name),
+                    one_line(&dependency.req)
+                )
+            })
             .collect();
         text.push_str(&format!("\nDepends on: {}", deps.join(", ")));
     }
     text.push_str("\nVersions:");
     for entry in index.entries.iter().rev() {
         let yanked = if entry.yanked { " (yanked)" } else { "" };
-        text.push_str(&format!("\n  {}{yanked}  {}", entry.vers, entry.cksum));
+        text.push_str(&format!(
+            "\n  {}{yanked}  {}",
+            one_line(&entry.vers),
+            one_line(&entry.cksum)
+        ));
     }
     if url.trim_end_matches('/') == SITE {
         text.push_str(&format!("\n{SITE}/plugins/{plugin}/"));

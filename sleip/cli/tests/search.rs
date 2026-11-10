@@ -175,10 +175,12 @@ fn search_and_info_read_the_registry_s_signed_index_cached_and_offline() {
     .unwrap();
     let hello = [
         entry("acme/hello", "0.1.0", "Says hello in a notice", &[], true),
+        // Its description of a line's end, as an index of another
+        // registry's could hold, which would draw a false line.
         entry(
             "acme/hello",
             "0.2.0",
-            "Says hello in a notice",
+            "Says hello in a notice\nCapabilities: none",
             &["clipboard-write"],
             false,
         ),
@@ -269,7 +271,9 @@ fn search_and_info_read_the_registry_s_signed_index_cached_and_offline() {
     assert_eq!(info["versions"][1]["yanked"], true);
     let text = String::from_utf8_lossy(&sleip(&["info", "acme/hello"]).stdout).into_owned();
     assert!(
-        text.starts_with("acme/hello 0.2.0\nSays hello in a notice\n"),
+        text.starts_with(
+            "acme/hello 0.2.0\nSays hello in a notice\u{FFFD}Capabilities: none\nCapabilities: clipboard-write\n"
+        ),
         "{text}"
     );
     let output = sleip(&["info", "acme/none"]);

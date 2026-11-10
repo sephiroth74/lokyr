@@ -78,14 +78,15 @@ impl Out {
 }
 
 /// `text` as a terminal shows it as text: each control character but a
-/// line's end and a tab, C0 and C1, an escape among them, and each change
-/// of direction, of a plugin's or a registry's text, a replacement
-/// character, so that no text that Sleip tells moves the cursor, colors
-/// the terminal, talks to it or hides what follows.
+/// line's end and a tab, C0 and C1, an escape among them, and each hidden
+/// one, a change of direction or a character of no width, of a plugin's
+/// or a registry's text, a replacement character, so that no text that
+/// Sleip tells moves the cursor, colors the terminal, talks to it or hides
+/// what follows.
 pub fn printable(text: &str) -> std::borrow::Cow<'_, str> {
     let shown = |character: char| {
         !(character.is_control() && character != '\n' && character != '\t')
-            && !lokyr_pkg_model::manifest::is_direction_change(character)
+            && !lokyr_pkg_model::is_hidden(character)
     };
     if text.chars().all(shown) {
         return std::borrow::Cow::Borrowed(text);
@@ -103,6 +104,23 @@ pub fn printable(text: &str) -> std::borrow::Cow<'_, str> {
     )
 }
 
+/// `text`, a field of a line, as a name, a version, a description or a
+/// capability of the index, as [`printable`] shows it, and its line's ends
+/// and tabs a replacement character too, so that it draws no line of its
+/// own beside those that Sleip tells.
+pub fn one_line(text: &str) -> String {
+    printable(text)
+        .chars()
+        .map(|character| {
+            if matches!(character, '\n' | '\t') {
+                '\u{FFFD}'
+            } else {
+                character
+            }
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -115,5 +133,13 @@ mod tests {
             "a\u{FFFD}[2J\u{FFFD}]52;c;eA==\u{FFFD}b\u{FFFD}c\u{FFFD}d"
         );
         assert_eq!(printable("x\u{202E}y\u{2066}z"), "x\u{FFFD}y\u{FFFD}z");
+        // Characters of no width and tags hidden; the marks and joiners of
+        // scripts kept.
+        assert_eq!(printable("a\u{200B}b\u{E0041}c"), "a\u{FFFD}b\u{FFFD}c");
+        assert_eq!(printable("\u{200F}שלום\u{200D}"), "\u{200F}שלום\u{200D}");
+        assert_eq!(
+            one_line("a\nCapabilities: none\tb"),
+            "a\u{FFFD}Capabilities: none\u{FFFD}b"
+        );
     }
 }
