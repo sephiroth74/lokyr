@@ -14,13 +14,15 @@ publish = false
 # plugin API through Luau.
 testing = []
 # The host of a plugin's own tests, which `sleip test` runs: the SDK's fake
-# host, of a `TestHost` in Luau.
-test-host = ["lokyr-plugin-sdk/fake"]
+# host, of a `TestHost` in Luau, and of the app's commands, which
+# `luau/commands.json` holds.
+test-host = ["lokyr-plugin-sdk/fake", "dep:serde_json"]
 
 [dependencies]
 lokyr-plugin-sdk = { workspace = true, features = ["unstable"] }
 mlua.workspace = true
 serde.workspace = true
+serde_json = { workspace = true, optional = true }
 
 [dev-dependencies]
 lokyr-plugin-sdk = { workspace = true, features = ["fake"] }

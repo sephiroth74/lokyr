@@ -1,15 +1,17 @@
 //! `sleip test`: the tests of the plugin of the current folder run, each
 //! function of the table that each file `tests/*.luau` returns, of a
-//! `TestHost` of its own, the plugin made anew on the SDK's fake host, of
-//! its manifest's capabilities and its English messages of no argument;
-//! each test told, a failure of its file, line and why; a failure of a
-//! test that failed.
+//! `TestHost` of its own, the plugin made anew on the SDK's fake host, as
+//! the app sets it up: of its manifest's capabilities, `[uses]` and slots,
+//! as the app reads them, of its package's `src/` alone and of its English
+//! messages of no argument; each test told, a failure of its file, line
+//! and why; a failure of a test that failed, or of a file of no test.
 
 use std::path::Path;
 
 use lokyr_pkg_model::manifest::{Kind, Manifest};
 use lokyr_plugin_host_luau::Package;
 use lokyr_plugin_host_luau::test_host::{self, Plugin};
+use lokyr_plugin_sdk::ui::Slot;
 use serde_json::json;
 
 use crate::output::Out;
@@ -49,9 +51,18 @@ pub(super) fn failures_of(folder: &Path, out: Out) -> Result<Vec<String>, String
     }
     let package = Package::new(sources);
     let messages = messages(folder);
+    // What its manifest declares, as the app reads it.
+    let slots: Vec<Slot> = parsed
+        .contributes
+        .slots
+        .iter()
+        .filter_map(|name| Slot::ALL.into_iter().find(|slot| slot.name() == name))
+        .collect();
     let outcomes = test_host::run(&Plugin {
         name: &parsed.name,
-        manifest: &manifest,
+        capabilities: &parsed.capabilities,
+        uses: &parsed.uses,
+        slots: &slots,
         package: &package,
         messages: &messages,
     });

@@ -870,6 +870,7 @@ dependencies = [
  "lokyr-ui-core",
  "lokyr-vt-core",
  "notify",
+ "serde_json",
 ]
 
 [[package]]
@@ -1031,6 +1032,7 @@ dependencies = [
  "lokyr-plugin-sdk",
  "mlua",
  "serde",
+ "serde_json",
 ]
 
 [[package]]

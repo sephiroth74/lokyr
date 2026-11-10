@@ -192,6 +192,10 @@ luau-types:
 check-luau-types:
     cargo xtask luau-types --check
 
+# Write luau/commands.json of lokyr-plugin-host-luau, the app's commands and its first-party plugins' that the host of a Luau plugin's tests holds, of the registry of an app of the default distribution; app-core's tests check it.
+luau-commands:
+    LOKYR_WRITE_COMMANDS=1 cargo test -p lokyr-app-core --lib -- luau_commands
+
 # Analyze the template's plugin, and one of wrong fields, against lokyr.d.luau with luau-lsp: the one that LUAU_LSP names, or the VS Code extension's.
 luau-lsp:
     #!/usr/bin/env bash

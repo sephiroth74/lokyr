@@ -3,21 +3,30 @@
 //! a test, which takes a `TestHost` of its own, the plugin made anew, of a
 //! fresh VM, on the SDK's fake host, of a pane that has the focus. A test
 //! fails at its first error, as `assert` raises it, of its file and line,
-//! and as one of the host's calls fails, as the plugin's error tells.
+//! and as one of the host's calls fails, as the plugin's error tells; a
+//! file of no test fails.
+//!
+//! The plugin is set up as the app sets it up: of its manifest's
+//! capabilities, commands and slots, of its package's `src/` alone, beside
+//! the app's commands and its first-party plugins', which
+//! `luau/commands.json` holds; its commands run as the registry runs them,
+//! their arguments checked, and the events reach it as the app delivers
+//! them, of its subscriptions.
 //!
 //! The tests run in a VM of their own, of the plugin's sandbox, its
 //! `require` within the package, so that a test reads the plugin's modules,
 //! and of a watchdog: a test runs [`DEADLINE`] at most.
 
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 use std::time::Duration;
 
-use lokyr_plugin_sdk::command::Args;
+use lokyr_plugin_sdk::command::{Args, Capability, Command};
 use lokyr_plugin_sdk::fake::FakeHost;
-use lokyr_plugin_sdk::host::PaneId;
+use lokyr_plugin_sdk::host::{CommandInfo, PaneId};
 use lokyr_plugin_sdk::message::Data;
-use lokyr_plugin_sdk::ui::ViewId;
+use lokyr_plugin_sdk::ui::{Slot, ViewId};
 use mlua::{Function, Lua, Table, Value};
+use serde::Deserialize;
 
 use crate::vm::{self, Modules};
 use crate::{Execution, LuauPlugin, Package, events, shape, tree};
@@ -45,15 +54,20 @@ pub struct Failure {
     pub message: String,
 }
 
-/// What a plugin's tests need: its name, its manifest and its package of
-/// its sources and its tests, and its messages in English, each its id and
-/// its text, which the plugin's calls read.
+/// What a plugin's tests need: its name, what its manifest declares, its
+/// package of its sources and its tests, and its messages in English, each
+/// its id and its text, which the plugin's calls read.
 pub struct Plugin<'a> {
     /// Its name, `owner/name`.
     pub name: &'a str,
-    /// Its `plugin.toml`.
-    pub manifest: &'a str,
-    /// Its package, `src/**/*.luau` and `tests/*.luau`.
+    /// The capabilities that its manifest declares.
+    pub capabilities: &'a [Capability],
+    /// The commands of others that its manifest's `[uses]` says it runs.
+    pub uses: &'a [String],
+    /// The slots that its manifest says it fills.
+    pub slots: &'a [Slot],
+    /// Its package, `src/**/*.luau` and `tests/**/*.luau`: the plugin's of
+    /// `src/` alone, the tests' whole.
     pub package: &'a Package,
     /// Its messages of no argument, in English.
     pub messages: &'a [(String, String)],
@@ -123,6 +137,12 @@ fn run_within(plugin: &Plugin<'_>, deadline: Duration) -> Vec<Outcome> {
             })
             .collect();
         named.sort_by(|left, right| left.0.cmp(&right.0));
+        if named.is_empty() {
+            outcomes.push(failed(
+                "it returns a table of no test, a function of a name".to_owned(),
+            ));
+            continue;
+        }
         for (name, test) in named {
             let ran = test_host(&lua, plugin).and_then(|host| {
                 vm::watched_of(&lua, plugin.name, deadline, || test.call::<()>(host))
@@ -171,19 +191,70 @@ struct Hosted {
     plugin: LuauPlugin,
 }
 
+/// A command of the app's registry, and the plugin that registered it, if
+/// one did, as `luau/commands.json` holds it.
+#[derive(Deserialize)]
+struct Registered {
+    #[serde(flatten)]
+    command: Command,
+    plugin: Option<String>,
+}
+
+/// The app's commands and its first-party plugins', as the registry of an
+/// app of the default distribution holds them, which `lokyr-app-core`'s
+/// tests write and check.
+fn registry() -> &'static [Registered] {
+    static REGISTRY: OnceLock<Vec<Registered>> = OnceLock::new();
+    REGISTRY.get_or_init(|| {
+        serde_json::from_str(include_str!("../luau/commands.json"))
+            .expect("luau/commands.json reads, as the app's tests wrote it")
+    })
+}
+
 /// The `TestHost` of a test of `plugin`, in `lua`: the plugin made anew, of
-/// a fresh VM, on a fake host of its manifest's capabilities and messages,
-/// of the pane 1, which has the focus.
+/// a fresh VM, of its package's `src/` alone, on a fake host of its
+/// manifest's capabilities, commands and slots, of the app's registry, and
+/// of its messages, of the pane 1, which has the focus.
 fn test_host(lua: &Lua, plugin: &Plugin<'_>) -> Result<Table, String> {
-    let mut host = FakeHost::new(plugin.name).with_manifest(plugin.manifest);
+    let mut host = FakeHost::new(plugin.name)
+        .with_capabilities(plugin.capabilities.to_vec())
+        .with_uses(plugin.uses.to_vec())
+        .with_slots(plugin.slots.to_vec());
+    host.set_registry(
+        registry()
+            .iter()
+            .map(|Registered { command, plugin }| CommandInfo {
+                name: command.name.clone(),
+                title: command.title.clone(),
+                category: command.category,
+                params: command.params.clone(),
+                plugin: plugin.clone(),
+                keys: None,
+                when: command.when.clone(),
+                enabled: Some(true),
+            })
+            .collect(),
+    );
+    // Of their capabilities, which a run of them needs.
+    let mut host = host.with_commands(
+        registry()
+            .iter()
+            .map(|registered| registered.command.clone())
+            .collect(),
+    );
     host.pane(PaneId(1));
     host.focus(Some(PaneId(1)));
     for (id, text) in plugin.messages {
         host.set_message(id, &[], Some(text));
     }
+    let package = Package::new(plugin.package.paths().filter_map(|path| {
+        let source = plugin.package.source(path)?;
+        path.starts_with("src/")
+            .then(|| (path.to_owned(), source.to_owned()))
+    }));
     let hosted = Arc::new(Mutex::new(Hosted {
         host,
-        plugin: LuauPlugin::new(plugin.name, plugin.package.clone(), Execution::Native),
+        plugin: LuauPlugin::new(plugin.name, package, Execution::Native),
     }));
     functions(lua, &hosted).map_err(|error| error.to_string())
 }
@@ -226,7 +297,7 @@ fn functions(lua: &Lua, hosted: &Arc<Mutex<Hosted>>) -> mlua::Result<Table> {
         lua.create_function(move |_, (name, args): (String, Option<Table>)| {
             let args = args_of(args)?;
             with(&hosted, |Hosted { host, plugin }| {
-                host.command(plugin, &name, args)
+                host.run_command(plugin, &name, args)
                     .map_err(|error| failed(&error))
             })
         })?,
@@ -237,7 +308,7 @@ fn functions(lua: &Lua, hosted: &Arc<Mutex<Hosted>>) -> mlua::Result<Table> {
         lua.create_function(move |_, (name, args): (String, Option<Table>)| {
             let args = args_of(args)?;
             Ok(with(&hosted, |Hosted { host, plugin }| {
-                host.applies(plugin, &name, &args)
+                host.command_applies(plugin, &name, &args)
             }))
         })?,
     )?;
@@ -249,8 +320,13 @@ fn functions(lua: &Lua, hosted: &Arc<Mutex<Hosted>>) -> mlua::Result<Table> {
             for event in list.sequence_values::<Value>() {
                 taken.push(events::from_lua(lua, event?).map_err(mlua::Error::runtime)?);
             }
+            // Delivered as the app delivers them: those that it subscribed
+            // to, and that it may read.
             with(&hosted, |Hosted { host, plugin }| {
-                host.events(plugin, &taken).map_err(|error| failed(&error))
+                for event in taken {
+                    host.post(event);
+                }
+                host.deliver(plugin).map_err(|error| failed(&error))
             })
         })?,
     )?;

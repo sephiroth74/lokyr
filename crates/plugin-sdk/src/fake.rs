@@ -547,10 +547,14 @@ impl FakeHost {
     /// [`FakeHost::with_capabilities`] gives them, and runs the commands of
     /// its `[uses]`, as the app's host gives a plugin of that manifest
     /// that is not a first-party one, so that a plugin's tests find a
-    /// request that its manifest does not cover. It reads the forms that a
-    /// manifest writes them in, `name = true` and lists of texts, a list
-    /// over lines too; a name that is no capability panics, as a manifest
-    /// that the app would refuse.
+    /// request that its manifest does not cover. It reads the forms that
+    /// the first-party plugins' manifests write them in, `name = true` and
+    /// lists of texts of double quotes, a list over lines too, of no
+    /// comment after them, and no slot; a name that is no capability
+    /// panics, as a manifest that the app would refuse. A manifest of
+    /// other forms, as a third party's, is read whole first, as the app
+    /// reads it, and given of [`FakeHost::with_capabilities`],
+    /// [`FakeHost::with_uses`] and [`FakeHost::with_slots`].
     pub fn with_manifest(self, manifest: &str) -> Self {
         let (capabilities, uses) = declared(manifest);
         let host = self.with_capabilities(capabilities);
@@ -912,8 +916,8 @@ impl FakeHost {
         self.call(true, |cx| plugin.activate(cx))
     }
 
-    /// Runs `plugin`'s command `name` with `args`, as the registry passes
-    /// them.
+    /// Runs `plugin`'s command `name` with `args`, as they are; as the
+    /// registry runs it, [`FakeHost::run_command`].
     pub fn command(
         &mut self,
         plugin: &mut dyn Plugin,
@@ -921,6 +925,31 @@ impl FakeHost {
         args: Args,
     ) -> Result<(), Error> {
         self.call(true, |cx| plugin.on_command(cx, name, args))
+    }
+
+    /// Runs `plugin`'s command `name` with `args` as the app's registry
+    /// runs it: of a command that the plugin registered, its arguments
+    /// checked and its defaults given; an error of another, or of
+    /// arguments that its registration refuses.
+    pub fn run_command(
+        &mut self,
+        plugin: &mut dyn Plugin,
+        name: &str,
+        args: Args,
+    ) -> Result<(), Error> {
+        let args = self.checked_own(name, args)?;
+        self.command(plugin, name, args)
+    }
+
+    /// Whether `plugin`'s command `name` would do something with `args`, as
+    /// [`FakeHost::applies`] asks, as the app's registry asks it: never of
+    /// a command that the plugin did not register, nor of arguments that
+    /// its registration refuses, its defaults given.
+    pub fn command_applies(&mut self, plugin: &mut dyn Plugin, name: &str, args: &Args) -> bool {
+        match self.checked_own(name, args.clone()) {
+            Ok(args) => self.applies(plugin, name, &args),
+            Err(_) => false,
+        }
     }
 
     /// Whether `plugin`'s command `name` would do something with `args`, as
@@ -1977,6 +2006,19 @@ impl FakeHost {
                 self.view_window(view)
             }
         }
+    }
+
+    /// The arguments `args` of the plugin's own command `name`, as the
+    /// registry checks a call of it, its defaults given; an error of a
+    /// command that the plugin did not register.
+    fn checked_own(&self, name: &str, args: Args) -> Result<Args, Error> {
+        let Some(command) = self.commands.iter().find(|command| command.name == name) else {
+            return Err(Error::new(
+                Code::NotFound,
+                format!("the plugin registers no command `{name}`"),
+            ));
+        };
+        command.check_call(args)
     }
 
     /// The command `name`, the plugin's or another's, if one is registered.

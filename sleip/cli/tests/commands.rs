@@ -1280,3 +1280,47 @@ fn check_and_test_read_nothing_of_a_plugin_of_a_link() {
     std::fs::rename(sandbox.home.join("locales"), &locales).unwrap();
     assert!(checked(&sandbox, &folder, &[]).status.success());
 }
+
+#[test]
+fn test_reads_the_manifest_as_the_app_reads_it() {
+    let sandbox = Sandbox::new("test-manifest");
+    let folder = made(&sandbox, "declared");
+    // A quoted key, comments and a text of single quotes, as TOML writes
+    // them.
+    edit(&folder, "plugin.toml", |text| {
+        format!(
+            "{text}\n[capabilities]\n\"clipboard-write\" = true # it copies 'hi'\n\n[uses]\ncommands = ['pane.clear'] # its key clears the pane\n"
+        )
+    });
+    edit(&folder, "src/init.luau", |text| {
+        text.replace(
+            "function Plugin.on_command(cx: Cx, name: string, args: Args)\n",
+            "function Plugin.on_command(cx: Cx, name: string, args: Args)\n    if name == \"declared.copy\" then\n        assert(cx.bind({ keys = \"cmd+shift+k\", command = \"pane.clear\" }))\n        assert(cx.set_clipboard_text(\"hi\"))\n        return\n    end\n",
+        )
+        .replace(
+            "    assert(cx.register_command({ name = \"declared.say\", title = \"Say Hello\", category = \"view\" }))\n",
+            "    assert(cx.register_command({ name = \"declared.say\", title = \"Say Hello\", category = \"view\" }))\n    assert(cx.register_command({ name = \"declared.copy\", title = \"Copy\", category = \"edit\" }))\n",
+        )
+    });
+    edit(&folder, "tests/manifest.luau", |_| {
+        "--!strict\nlocal test = {}\n\nfunction test.it_binds_the_app_s_command_and_copies(host: TestHost)\n    host.activate()\n    host.command(\"declared.copy\")\n    assert(host.clipboard() == \"hi\")\nend\n\nreturn test\n".to_owned()
+    });
+    let output = sandbox
+        .command(&["test"])
+        .current_dir(&folder)
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    assert!(stdout(&output).ends_with("2 passed.\n"), "{output:?}");
+    // Of no `[uses]`, the binding of another's command is refused.
+    edit(&folder, "plugin.toml", |text| {
+        text.replace("commands = ['pane.clear'] # its key clears the pane\n", "")
+    });
+    let output = sandbox
+        .command(&["test"])
+        .current_dir(&folder)
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+    assert!(stdout(&output).contains("pane.clear"), "{output:?}");
+}

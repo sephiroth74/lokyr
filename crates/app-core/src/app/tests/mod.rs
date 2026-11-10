@@ -27,6 +27,13 @@ mod folders;
 mod frame;
 mod input;
 mod installed;
+// The registry of the default distribution, and no other.
+#[cfg(all(
+    feature = "dist-default",
+    not(feature = "sample-slots"),
+    not(feature = "sample-worker")
+))]
+mod luau_commands;
 mod marks;
 mod menus;
 mod notices;

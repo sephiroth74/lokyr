@@ -1,0 +1,826 @@
+[
+  {
+    "capabilities": [],
+    "category": "app",
+    "name": "app.about",
+    "params": [],
+    "plugin": null,
+    "title": "About Lokyr",
+    "when": null
+  },
+  {
+    "capabilities": [],
+    "category": "view",
+    "name": "app.appearance-dark",
+    "params": [],
+    "plugin": null,
+    "title": "Dark Appearance",
+    "when": null
+  },
+  {
+    "capabilities": [],
+    "category": "view",
+    "name": "app.appearance-light",
+    "params": [],
+    "plugin": null,
+    "title": "Light Appearance",
+    "when": null
+  },
+  {
+    "capabilities": [],
+    "category": "view",
+    "name": "app.appearance-system",
+    "params": [],
+    "plugin": null,
+    "title": "Automatic Appearance",
+    "when": null
+  },
+  {
+    "capabilities": [],
+    "category": "app",
+    "name": "app.check-for-updates",
+    "params": [],
+    "plugin": null,
+    "title": "Check for Updates…",
+    "when": null
+  },
+  {
+    "capabilities": [],
+    "category": "app",
+    "name": "app.install-command-line-tools",
+    "params": [],
+    "plugin": null,
+    "title": "Install Command Line Tools…",
+    "when": null
+  },
+  {
+    "capabilities": [],
+    "category": "app",
+    "name": "app.make-default-terminal",
+    "params": [],
+    "plugin": null,
+    "title": "Make Lokyr the Default Terminal",
+    "when": null
+  },
+  {
+    "capabilities": [],
+    "category": "view",
+    "name": "app.performance",
+    "params": [],
+    "plugin": null,
+    "title": "Show Performance",
+    "when": null
+  },
+  {
+    "capabilities": [],
+    "category": "app",
+    "name": "app.quit",
+    "params": [],
+    "plugin": null,
+    "title": "Quit Lokyr",
+    "when": null
+  },
+  {
+    "capabilities": [],
+    "category": "app",
+    "name": "app.report-issue",
+    "params": [],
+    "plugin": null,
+    "title": "Report an Issue…",
+    "when": null
+  },
+  {
+    "capabilities": [],
+    "category": "app",
+    "name": "app.secure-keyboard-entry",
+    "params": [],
+    "plugin": null,
+    "title": "Secure Keyboard Entry",
+    "when": null
+  },
+  {
+    "capabilities": [],
+    "category": "app",
+    "name": "app.settings",
+    "params": [],
+    "plugin": null,
+    "title": "Settings…",
+    "when": null
+  },
+  {
+    "capabilities": [],
+    "category": "view",
+    "name": "command-palette.move",
+    "params": [
+      {
+        "default": null,
+        "kind": "integer",
+        "name": "delta"
+      }
+    ],
+    "plugin": "lokyr/command-palette",
+    "title": "Move in the Command Palette",
+    "when": "command-palette.focused"
+  },
+  {
+    "capabilities": [],
+    "category": "view",
+    "name": "command-palette.open",
+    "params": [],
+    "plugin": "lokyr/command-palette",
+    "title": "Command Palette…",
+    "when": null
+  },
+  {
+    "capabilities": [],
+    "category": "view",
+    "name": "command-palette.theme",
+    "params": [],
+    "plugin": "lokyr/command-palette",
+    "title": "Choose Theme…",
+    "when": null
+  },
+  {
+    "capabilities": [],
+    "category": "edit",
+    "name": "copy-mode.act",
+    "params": [
+      {
+        "default": null,
+        "kind": "string",
+        "name": "action"
+      }
+    ],
+    "plugin": "lokyr/copy-mode",
+    "title": "Act in Copy Mode",
+    "when": "copy-mode.open && pane.focused"
+  },
+  {
+    "capabilities": [],
+    "category": "edit",
+    "name": "copy-mode.count",
+    "params": [
+      {
+        "default": null,
+        "kind": "integer",
+        "name": "digit"
+      }
+    ],
+    "plugin": "lokyr/copy-mode",
+    "title": "Count in Copy Mode",
+    "when": "copy-mode.open && pane.focused"
+  },
+  {
+    "capabilities": [],
+    "category": "edit",
+    "name": "copy-mode.move",
+    "params": [
+      {
+        "default": null,
+        "kind": "string",
+        "name": "to"
+      }
+    ],
+    "plugin": "lokyr/copy-mode",
+    "title": "Move in Copy Mode",
+    "when": "copy-mode.open && pane.focused"
+  },
+  {
+    "capabilities": [],
+    "category": "edit",
+    "name": "copy-mode.select",
+    "params": [
+      {
+        "default": null,
+        "kind": "string",
+        "name": "kind"
+      }
+    ],
+    "plugin": "lokyr/copy-mode",
+    "title": "Select in Copy Mode",
+    "when": "copy-mode.open && pane.focused"
+  },
+  {
+    "capabilities": [],
+    "category": "edit",
+    "name": "copy-mode.toggle",
+    "params": [],
+    "plugin": "lokyr/copy-mode",
+    "title": "Copy Mode",
+    "when": null
+  },
+  {
+    "capabilities": [],
+    "category": "view",
+    "name": "font.bigger",
+    "params": [],
+    "plugin": "lokyr/core-actions",
+    "title": "Bigger",
+    "when": null
+  },
+  {
+    "capabilities": [],
+    "category": "view",
+    "name": "font.reset",
+    "params": [],
+    "plugin": "lokyr/core-actions",
+    "title": "Default Size",
+    "when": null
+  },
+  {
+    "capabilities": [],
+    "category": "view",
+    "name": "font.smaller",
+    "params": [],
+    "plugin": "lokyr/core-actions",
+    "title": "Smaller",
+    "when": null
+  },
+  {
+    "capabilities": [
+      "terminal-read",
+      "process-read",
+      "clipboard-write"
+    ],
+    "category": "clipboard",
+    "name": "links.copy",
+    "params": [
+      {
+        "default": null,
+        "kind": "integer",
+        "name": "column"
+      },
+      {
+        "default": null,
+        "kind": "integer",
+        "name": "row"
+      }
+    ],
+    "plugin": "lokyr/links",
+    "title": "Copy Link Address",
+    "when": null
+  },
+  {
+    "capabilities": [
+      "terminal-read",
+      "process-read"
+    ],
+    "category": "tabs",
+    "name": "links.new-tab",
+    "params": [
+      {
+        "default": null,
+        "kind": "integer",
+        "name": "column"
+      },
+      {
+        "default": null,
+        "kind": "integer",
+        "name": "row"
+      }
+    ],
+    "plugin": "lokyr/links",
+    "title": "New Tab at Folder",
+    "when": null
+  },
+  {
+    "capabilities": [
+      "terminal-read",
+      "process-read"
+    ],
+    "category": "windows",
+    "name": "links.new-window",
+    "params": [
+      {
+        "default": null,
+        "kind": "integer",
+        "name": "column"
+      },
+      {
+        "default": null,
+        "kind": "integer",
+        "name": "row"
+      }
+    ],
+    "plugin": "lokyr/links",
+    "title": "New Window at Folder",
+    "when": null
+  },
+  {
+    "capabilities": [
+      "terminal-read",
+      "process-read",
+      "open"
+    ],
+    "category": "view",
+    "name": "links.open",
+    "params": [
+      {
+        "default": null,
+        "kind": "integer",
+        "name": "column"
+      },
+      {
+        "default": null,
+        "kind": "integer",
+        "name": "row"
+      }
+    ],
+    "plugin": "lokyr/links",
+    "title": "Open Link",
+    "when": null
+  },
+  {
+    "capabilities": [],
+    "category": "edit",
+    "name": "pane.clear",
+    "params": [],
+    "plugin": "lokyr/core-actions",
+    "title": "Clear",
+    "when": null
+  },
+  {
+    "capabilities": [
+      "terminal-read",
+      "clipboard-write"
+    ],
+    "category": "clipboard",
+    "name": "pane.copy",
+    "params": [],
+    "plugin": "lokyr/core-actions",
+    "title": "Copy",
+    "when": "selection"
+  },
+  {
+    "capabilities": [],
+    "category": "edit",
+    "name": "pane.look-up",
+    "params": [],
+    "plugin": null,
+    "title": "Look Up",
+    "when": "selection"
+  },
+  {
+    "capabilities": [],
+    "category": "windows",
+    "name": "pane.man-page",
+    "params": [],
+    "plugin": null,
+    "title": "Open man Page",
+    "when": "selection"
+  },
+  {
+    "capabilities": [],
+    "category": "windows",
+    "name": "pane.man-search",
+    "params": [],
+    "plugin": null,
+    "title": "Search man Page Index",
+    "when": "selection"
+  },
+  {
+    "capabilities": [
+      "clipboard-read",
+      "pty-write"
+    ],
+    "category": "clipboard",
+    "name": "pane.paste",
+    "params": [],
+    "plugin": "lokyr/core-actions",
+    "title": "Paste",
+    "when": null
+  },
+  {
+    "capabilities": [],
+    "category": "view",
+    "name": "pane.prompt-next",
+    "params": [],
+    "plugin": "lokyr/core-actions",
+    "title": "Jump to Next Prompt",
+    "when": null
+  },
+  {
+    "capabilities": [],
+    "category": "view",
+    "name": "pane.prompt-previous",
+    "params": [],
+    "plugin": "lokyr/core-actions",
+    "title": "Jump to Previous Prompt",
+    "when": null
+  },
+  {
+    "capabilities": [],
+    "category": "view",
+    "name": "pane.scroll-bottom",
+    "params": [],
+    "plugin": "lokyr/core-actions",
+    "title": "Scroll to the Bottom",
+    "when": null
+  },
+  {
+    "capabilities": [],
+    "category": "view",
+    "name": "pane.scroll-line-down",
+    "params": [],
+    "plugin": "lokyr/core-actions",
+    "title": "Scroll Down a Line",
+    "when": null
+  },
+  {
+    "capabilities": [],
+    "category": "view",
+    "name": "pane.scroll-line-up",
+    "params": [],
+    "plugin": "lokyr/core-actions",
+    "title": "Scroll Up a Line",
+    "when": null
+  },
+  {
+    "capabilities": [],
+    "category": "view",
+    "name": "pane.scroll-page-down",
+    "params": [],
+    "plugin": "lokyr/core-actions",
+    "title": "Scroll Down a Page",
+    "when": null
+  },
+  {
+    "capabilities": [],
+    "category": "view",
+    "name": "pane.scroll-page-up",
+    "params": [],
+    "plugin": "lokyr/core-actions",
+    "title": "Scroll Up a Page",
+    "when": null
+  },
+  {
+    "capabilities": [],
+    "category": "view",
+    "name": "pane.scroll-top",
+    "params": [],
+    "plugin": "lokyr/core-actions",
+    "title": "Scroll to the Top",
+    "when": null
+  },
+  {
+    "capabilities": [],
+    "category": "edit",
+    "name": "pane.search-web",
+    "params": [],
+    "plugin": null,
+    "title": "Search the Web",
+    "when": "selection"
+  },
+  {
+    "capabilities": [],
+    "category": "edit",
+    "name": "pane.select-all",
+    "params": [],
+    "plugin": "lokyr/core-actions",
+    "title": "Select All",
+    "when": null
+  },
+  {
+    "capabilities": [
+      "pty-write"
+    ],
+    "category": "input",
+    "name": "pane.send-text",
+    "params": [
+      {
+        "default": null,
+        "kind": "string",
+        "name": "text"
+      }
+    ],
+    "plugin": "lokyr/core-actions",
+    "title": "Send Text",
+    "when": null
+  },
+  {
+    "capabilities": [],
+    "category": "find",
+    "name": "search.next",
+    "params": [],
+    "plugin": "lokyr/search",
+    "title": "Find Next",
+    "when": null
+  },
+  {
+    "capabilities": [],
+    "category": "find",
+    "name": "search.open",
+    "params": [],
+    "plugin": "lokyr/search",
+    "title": "Find…",
+    "when": null
+  },
+  {
+    "capabilities": [],
+    "category": "find",
+    "name": "search.previous",
+    "params": [],
+    "plugin": "lokyr/search",
+    "title": "Find Previous",
+    "when": null
+  },
+  {
+    "capabilities": [],
+    "category": "panes",
+    "name": "splits.close",
+    "params": [],
+    "plugin": "lokyr/splits",
+    "title": "Close Pane",
+    "when": null
+  },
+  {
+    "capabilities": [],
+    "category": "panes",
+    "name": "splits.equalize",
+    "params": [],
+    "plugin": "lokyr/splits",
+    "title": "Equalize Panes",
+    "when": null
+  },
+  {
+    "capabilities": [],
+    "category": "panes",
+    "name": "splits.focus",
+    "params": [
+      {
+        "default": null,
+        "kind": "string",
+        "name": "direction"
+      }
+    ],
+    "plugin": "lokyr/splits",
+    "title": "Select Pane",
+    "when": null
+  },
+  {
+    "capabilities": [],
+    "category": "panes",
+    "name": "splits.focus-next",
+    "params": [],
+    "plugin": "lokyr/splits",
+    "title": "Select Next Pane",
+    "when": null
+  },
+  {
+    "capabilities": [],
+    "category": "panes",
+    "name": "splits.focus-prev",
+    "params": [],
+    "plugin": "lokyr/splits",
+    "title": "Select Previous Pane",
+    "when": null
+  },
+  {
+    "capabilities": [],
+    "category": "panes",
+    "name": "splits.move-to-tab",
+    "params": [],
+    "plugin": "lokyr/splits",
+    "title": "Move Pane to New Tab",
+    "when": null
+  },
+  {
+    "capabilities": [],
+    "category": "panes",
+    "name": "splits.move-to-window",
+    "params": [],
+    "plugin": "lokyr/splits",
+    "title": "Move Pane to New Window",
+    "when": null
+  },
+  {
+    "capabilities": [],
+    "category": "panes",
+    "name": "splits.resize",
+    "params": [
+      {
+        "default": null,
+        "kind": "string",
+        "name": "direction"
+      },
+      {
+        "default": {
+          "integer": 1
+        },
+        "kind": "integer",
+        "name": "cells"
+      }
+    ],
+    "plugin": "lokyr/splits",
+    "title": "Resize Pane",
+    "when": null
+  },
+  {
+    "capabilities": [],
+    "category": "panes",
+    "name": "splits.split",
+    "params": [
+      {
+        "default": null,
+        "kind": "string",
+        "name": "direction"
+      }
+    ],
+    "plugin": "lokyr/splits",
+    "title": "Split Pane",
+    "when": null
+  },
+  {
+    "capabilities": [],
+    "category": "panes",
+    "name": "splits.swap",
+    "params": [
+      {
+        "default": null,
+        "kind": "string",
+        "name": "direction"
+      }
+    ],
+    "plugin": "lokyr/splits",
+    "title": "Swap Pane",
+    "when": null
+  },
+  {
+    "capabilities": [],
+    "category": "panes",
+    "name": "splits.zoom-toggle",
+    "params": [],
+    "plugin": "lokyr/splits",
+    "title": "Zoom Pane",
+    "when": null
+  },
+  {
+    "capabilities": [],
+    "category": "tabs",
+    "name": "tabs.close",
+    "params": [],
+    "plugin": "lokyr/tabs",
+    "title": "Close Tab",
+    "when": null
+  },
+  {
+    "capabilities": [],
+    "category": "tabs",
+    "name": "tabs.detach",
+    "params": [],
+    "plugin": "lokyr/tabs",
+    "title": "Move Tab to New Window",
+    "when": null
+  },
+  {
+    "capabilities": [],
+    "category": "tabs",
+    "name": "tabs.goto",
+    "params": [
+      {
+        "default": null,
+        "kind": "integer",
+        "name": "index"
+      }
+    ],
+    "plugin": "lokyr/tabs",
+    "title": "Select Tab",
+    "when": null
+  },
+  {
+    "capabilities": [],
+    "category": "tabs",
+    "name": "tabs.move",
+    "params": [
+      {
+        "default": null,
+        "kind": "integer",
+        "name": "delta"
+      }
+    ],
+    "plugin": "lokyr/tabs",
+    "title": "Move Tab",
+    "when": null
+  },
+  {
+    "capabilities": [],
+    "category": "tabs",
+    "name": "tabs.new",
+    "params": [],
+    "plugin": "lokyr/tabs",
+    "title": "New Tab",
+    "when": null
+  },
+  {
+    "capabilities": [],
+    "category": "tabs",
+    "name": "tabs.next",
+    "params": [],
+    "plugin": "lokyr/tabs",
+    "title": "Select Next Tab",
+    "when": null
+  },
+  {
+    "capabilities": [],
+    "category": "tabs",
+    "name": "tabs.prev",
+    "params": [],
+    "plugin": "lokyr/tabs",
+    "title": "Select Previous Tab",
+    "when": null
+  },
+  {
+    "capabilities": [],
+    "category": "tabs",
+    "name": "tabs.rename",
+    "params": [
+      {
+        "default": {
+          "string": ""
+        },
+        "kind": "string",
+        "name": "title"
+      }
+    ],
+    "plugin": "lokyr/tabs",
+    "title": "Rename Tab…",
+    "when": null
+  },
+  {
+    "capabilities": [],
+    "category": "tabs",
+    "name": "tabs.set-color",
+    "params": [
+      {
+        "default": null,
+        "kind": "string",
+        "name": "color"
+      }
+    ],
+    "plugin": "lokyr/tabs",
+    "title": "Set Tab Color",
+    "when": null
+  },
+  {
+    "capabilities": [],
+    "category": "windows",
+    "name": "window.close",
+    "params": [],
+    "plugin": null,
+    "title": "Close Window",
+    "when": null
+  },
+  {
+    "capabilities": [],
+    "category": "windows",
+    "name": "window.goto",
+    "params": [
+      {
+        "default": null,
+        "kind": "integer",
+        "name": "index"
+      }
+    ],
+    "plugin": null,
+    "title": "Go to Window",
+    "when": null
+  },
+  {
+    "capabilities": [],
+    "category": "windows",
+    "name": "window.new",
+    "params": [],
+    "plugin": null,
+    "title": "New Window",
+    "when": null
+  },
+  {
+    "capabilities": [],
+    "category": "windows",
+    "name": "window.set-title",
+    "params": [],
+    "plugin": null,
+    "title": "Set Title…",
+    "when": null
+  },
+  {
+    "capabilities": [],
+    "category": "windows",
+    "name": "window.toggle-float-on-top",
+    "params": [],
+    "plugin": null,
+    "title": "Float on Top",
+    "when": null
+  },
+  {
+    "capabilities": [
+      "global-hotkey"
+    ],
+    "category": "windows",
+    "name": "window.toggle-quick-terminal",
+    "params": [],
+    "plugin": "lokyr/quick-terminal",
+    "title": "Quick Terminal",
+    "when": null
+  }
+]
