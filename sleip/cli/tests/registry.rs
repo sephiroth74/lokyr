@@ -767,6 +767,43 @@ fn the_files_alone_are_judged_as_the_job_that_merges_checks_again() {
         ),
         "{verdict}"
     );
+    // After a yanked version that asked for it, a version that asks for
+    // the same capability again: weighed against the last one not yanked,
+    // the maintainer reviews it.
+    let again = release(&folder, "0.2.1");
+    let yanked_more = lab.registry(
+        "yanked-more",
+        &[(
+            "plugins/acme/hello.toml",
+            &entry(
+                &url,
+                &[
+                    ("0.1.0", "v0.1.0", &first, false),
+                    ("0.2.0", "v0.2.0", &more, true),
+                ],
+            ),
+        )],
+    );
+    let head = lab.head(
+        &yanked_more,
+        &[(
+            "plugins/acme/hello.toml",
+            &entry(
+                &url,
+                &[
+                    ("0.1.0", "v0.1.0", &first, false),
+                    ("0.2.0", "v0.2.0", &more, true),
+                    ("0.2.1", "v0.2.1", &again, false),
+                ],
+            ),
+        )],
+    );
+    let (_, verdict) = lab.verify_with(&head, &yanked_more, "acme", "", &["--files-alone"]);
+    assert_eq!(verdict["verdict"], "review", "{verdict}");
+    assert!(
+        reasons(&verdict, "review").contains("asks for more than 0.1.0 did"),
+        "{verdict}"
+    );
     // A commit that is not there, or of another version's manifest, or of
     // a manifest that is a link, refused.
     let gone = entry(

@@ -961,16 +961,26 @@ fn verify_plugin(
             }
         }
     }
-    // What the new versions ask for, against the version published last.
-    let Some(last) = published
-        .as_ref()
-        .and_then(|published| published.versions.last())
-    else {
+    // What the new versions ask for, against the version published last
+    // that is not yanked, of the pull request's yanks too, so that a
+    // capability of a version yanked for its use comes back to the
+    // maintainer.
+    let Some(published) = published.as_ref() else {
         return;
     };
     if new.is_empty() {
         return;
     }
+    let standing = file
+        .versions
+        .get(..published.versions.len())
+        .unwrap_or_default();
+    let Some(last) = standing.iter().rev().find(|release| !release.yanked) else {
+        verdict.review.push(format!(
+            "`{plugin}`'s versions published are all yanked, against none of which the new versions' capabilities are weighed: the maintainer reviews them"
+        ));
+        return;
+    };
     match manifest_at(&plugin, &file.repository, last, into) {
         Ok(had) => {
             let had_capabilities: BTreeSet<String> =
