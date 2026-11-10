@@ -1634,3 +1634,77 @@ fn a_tab_into_a_pane_tells_its_tab_s_change_of_the_moved_pane_s_title() {
         heard.borrow()
     );
 }
+
+/// A plugin that hears the panes' changes and closes, by their panes.
+struct PaneListener(Rc<RefCell<Vec<String>>>);
+
+impl Plugin for PaneListener {
+    fn activate(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
+        cx.subscribe(&["pane-changed", "pane-closed"])
+    }
+
+    fn on_command(&mut self, _: &mut Cx<'_>, _: &str, _: Args) -> Result<(), Error> {
+        Ok(())
+    }
+
+    fn on_event(&mut self, _: &mut Cx<'_>, events: &[Event]) -> Result<(), Error> {
+        self.0
+            .borrow_mut()
+            .extend(events.iter().map(|event| match event {
+                Event::Workspace(WorkspaceEvent::PaneChanged { pane, .. }) => {
+                    format!("pane-changed {}", pane.0)
+                }
+                event => event.name().to_owned(),
+            }));
+        Ok(())
+    }
+}
+
+#[test]
+fn a_pane_s_change_that_a_plugin_cannot_read_tells_it_nothing_as_the_app_s_host() {
+    // Of no `process-read`, as a third-party plugin that does not declare
+    // it: a change of a pane's folder or program, whose title it does not
+    // read, tells nothing; of its program's title, it does.
+    let mut host = FakeHost::new("acme/listener").with_manifest(
+        "[plugin]\nname = \"acme/listener\"\n[capabilities]\nnotifications = true\n",
+    );
+    host.pane(PaneId(1)).title = Some("vim".to_owned());
+    let heard = Rc::new(RefCell::new(Vec::new()));
+    let mut plugin = PaneListener(Rc::clone(&heard));
+    host.activate(&mut plugin).unwrap();
+    let changed = || {
+        Event::Workspace(WorkspaceEvent::PaneChanged {
+            pane: PaneId(1),
+            tab: TabId(1),
+        })
+    };
+    host.post(changed());
+    host.deliver(&mut plugin).unwrap();
+    assert_eq!(*heard.borrow(), ["pane-changed 1"]);
+    host.pane(PaneId(1)).directory = Some("/tmp".to_owned());
+    host.post(changed());
+    host.deliver(&mut plugin).unwrap();
+    assert_eq!(*heard.borrow(), ["pane-changed 1"]);
+    host.pane(PaneId(1)).title = Some("htop".to_owned());
+    host.post(changed());
+    host.deliver(&mut plugin).unwrap();
+    assert_eq!(*heard.borrow(), ["pane-changed 1", "pane-changed 1"]);
+    // Of `process-read`, every change.
+    let mut reading = FakeHost::new("acme/listener");
+    reading.pane(PaneId(1)).title = Some("vim".to_owned());
+    let heard = Rc::new(RefCell::new(Vec::new()));
+    let mut plugin = PaneListener(Rc::clone(&heard));
+    reading.activate(&mut plugin).unwrap();
+    for _ in 0..2 {
+        reading.post(changed());
+        reading.deliver(&mut plugin).unwrap();
+    }
+    assert_eq!(*heard.borrow(), ["pane-changed 1", "pane-changed 1"]);
+}
+
+#[test]
+#[should_panic(expected = "a timer's event is the host's")]
+fn a_timer_s_event_is_the_host_s_and_no_post_gives_it() {
+    let mut host = FakeHost::new("acme/probe");
+    host.post(Event::Timer { id: 1 });
+}

@@ -324,7 +324,14 @@ fn functions(lua: &Lua, hosted: &Arc<Mutex<Hosted>>) -> mlua::Result<Table> {
         lua.create_function(move |lua, list: Table| {
             let mut taken = Vec::new();
             for event in list.sequence_values::<Value>() {
-                taken.push(events::from_lua(lua, event?).map_err(mlua::Error::runtime)?);
+                let event = events::from_lua(lua, event?).map_err(mlua::Error::runtime)?;
+                // The host's own, as one of the plugin's timers fires.
+                if matches!(event, lokyr_plugin_sdk::message::Event::Timer { .. }) {
+                    return Err(mlua::Error::runtime(
+                        "a timer's event is the host's, as one of the plugin's timers fires: `host.advance` fires them",
+                    ));
+                }
+                taken.push(event);
             }
             // Delivered as the app delivers them: those that it subscribed
             // to, and that it may read.

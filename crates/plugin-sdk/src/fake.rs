@@ -447,6 +447,10 @@ pub struct FakeHost {
     /// as it activated, read the tabs or heard their changes, which a
     /// change that it cannot read tells it nothing of.
     told_tabs: BTreeMap<TabId, TabInfo>,
+    /// Of a plugin that does not read the processes, the title that it last
+    /// learnt of each pane, its program's, of none at first, which a change
+    /// of the pane's folder or program, that it cannot read, leaves.
+    told_panes: BTreeMap<PaneId, Option<String>>,
     /// The plugin's searches, by their ids: each's pane, its matches, and
     /// its current match, as the plugin showed it.
     searches: BTreeMap<u64, FakeSearch>,
@@ -519,6 +523,7 @@ impl FakeHost {
             renders: Vec::new(),
             owed: Vec::new(),
             told_tabs: BTreeMap::new(),
+            told_panes: BTreeMap::new(),
             searches: BTreeMap::new(),
             timers: BTreeMap::new(),
             clock: 0,
@@ -781,7 +786,16 @@ impl FakeHost {
     /// Owes the plugin `event`, which [`FakeHost::deliver`] gives it if it
     /// subscribed to its name, or if it is one of those of the plugin
     /// alone.
+    ///
+    /// # Panics
+    ///
+    /// Of a timer's event, which the host gives the plugin as one of its
+    /// timers fires, as [`FakeHost::advance`] makes it, and no post.
     pub fn post(&mut self, event: Event) -> &mut Self {
+        assert!(
+            !matches!(event, Event::Timer { .. }),
+            "a timer's event is the host's, as a timer fires: `advance` fires them"
+        );
         self.owed.push(event);
         self
     }
@@ -1445,9 +1459,11 @@ impl FakeHost {
         }
     }
 
-    /// Whether the plugin hears `event` as it is delivered: a tab's change
-    /// that a plugin that does not read the processes cannot read it does
-    /// not, as the app's host filters it, of what it learnt of each tab.
+    /// Whether the plugin hears `event` as it is delivered: a tab's or a
+    /// pane's change that a plugin that does not read the processes cannot
+    /// read it does not, as the app's host filters it, of what it learnt of
+    /// each tab, its title, its color and its marks, and of each pane, its
+    /// program's title.
     fn hears(&mut self, event: &Event) -> bool {
         if self.reads_processes() {
             return true;
@@ -1468,6 +1484,19 @@ impl FakeHost {
                     Some(now) => self.told_tabs.insert(*tab, now.clone()) != Some(now),
                     None => true,
                 }
+            }
+            Event::Workspace(WorkspaceEvent::PaneChanged { pane, .. }) => {
+                match self.panes.get(pane) {
+                    Some(found) => {
+                        let now = found.title.clone().filter(|title| !title.is_empty());
+                        self.told_panes.insert(*pane, now.clone()).flatten() != now
+                    }
+                    None => true,
+                }
+            }
+            Event::Workspace(WorkspaceEvent::PaneClosed { pane, .. }) => {
+                self.told_panes.remove(pane);
+                true
             }
             _ => true,
         }
@@ -2379,7 +2408,36 @@ impl Calling<'_> {
     }
 
     /// Answers `request`, a read, with what the host holds.
+    /// The title of `pane`: its program's, or, to a plugin that reads the
+    /// processes, the name of its folder, as the app's; what a plugin that
+    /// does not read them learns of it, of which a change that it cannot
+    /// read tells it nothing.
+    fn pane_title(&mut self, pane: PaneId) -> Result<Response, Error> {
+        let reads = self.host.reads_processes();
+        let held = self.host.held(pane)?;
+        let title = held.title.clone().filter(|title| !title.is_empty());
+        let place = || {
+            held.directory.as_deref().map(|directory| {
+                directory
+                    .trim_end_matches('/')
+                    .rsplit('/')
+                    .next()
+                    .filter(|name| !name.is_empty())
+                    .unwrap_or("/")
+                    .to_owned()
+            })
+        };
+        let told = title.or_else(|| reads.then(place).flatten());
+        if !reads {
+            self.host.told_panes.insert(pane, told.clone());
+        }
+        Ok(Response::Text(told))
+    }
+
     fn read(&mut self, request: &Request) -> Result<Response, Error> {
+        if let Request::PaneTitle(pane) = request {
+            return self.pane_title(*pane);
+        }
         let host = &*self.host;
         Ok(match request {
             Request::ClipboardText => Response::Text(host.clipboard.clone()),
@@ -2599,24 +2657,6 @@ impl Calling<'_> {
             Request::PaneGrid(pane) => {
                 let (columns, rows) = host.held(*pane)?.grid;
                 Response::Grid { columns, rows }
-            }
-            Request::PaneTitle(pane) => {
-                // Its program's title, or, to a plugin that reads the
-                // processes, the name of its folder, as the app's.
-                let held = host.held(*pane)?;
-                let title = held.title.clone().filter(|title| !title.is_empty());
-                let place = || {
-                    held.directory.as_deref().map(|directory| {
-                        directory
-                            .trim_end_matches('/')
-                            .rsplit('/')
-                            .next()
-                            .filter(|name| !name.is_empty())
-                            .unwrap_or("/")
-                            .to_owned()
-                    })
-                };
-                Response::Text(title.or_else(|| host.reads_processes().then(place).flatten()))
             }
             Request::CommandLine { pane, command } => {
                 Response::Text(host.held(*pane)?.command_lines.get(command).cloned())

@@ -547,7 +547,7 @@ fn check_tells_each_problem_of_its_file_and_line() {
     // Each case: what breaks the plugin, and the problems told, each its
     // place and its kind.
     type Case = (&'static str, fn(&Path), &'static [&'static str]);
-    let cases: [Case; 11] = [
+    let cases: [Case; 12] = [
         (
             "syntax",
             |folder| {
@@ -570,6 +570,15 @@ fn check_tells_each_problem_of_its_file_and_line() {
                 "plugin.toml:18:1: Capability: ",
                 "plugin.toml:19:1: Capability: ",
             ],
+        ),
+        (
+            "osc",
+            |folder| {
+                edit(folder, "plugin.toml", |text| {
+                    text.replacen("on = [", "on = [\"osc:1337\", ", 1)
+                });
+            },
+            &["plugin.toml:12:7: Activation: the app refuses `osc:1337`"],
         ),
         (
             "api",

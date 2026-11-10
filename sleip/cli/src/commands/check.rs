@@ -145,6 +145,22 @@ fn check_folder(folder: &Path, findings: &mut Findings) {
             &format!("the app refuses `{written}` before Lokyr 1.0.0, as plugins reach no network nor processes yet"),
         );
     }
+    // An activation of OSC sequences, which the app's handlers of them
+    // bring later: refused by every app yet.
+    for on in manifest
+        .activation
+        .iter()
+        .filter(|on| on.starts_with("osc:"))
+    {
+        findings.problem(
+            "plugin.toml",
+            line_of_text(&text, on),
+            "Activation",
+            &format!(
+                "the app refuses `{on}`, as the handlers of OSC sequences come in a later Lokyr"
+            ),
+        );
+    }
     let api = lokyr_plugin_sdk::API_VERSION;
     if !manifest.takes_api(api) {
         findings.problem(
@@ -278,6 +294,14 @@ fn line_of_key(text: &str, key: &str) -> Option<(u32, u32)> {
                 .is_some_and(|rest| rest.trim_start().starts_with('='))
         })
         .map(|line| (to_u32(line + 1), 1))
+}
+
+/// The line and the column, both from 1, of the first `"needle"` of
+/// `text`, a quoted text of the manifest's.
+fn line_of_text(text: &str, needle: &str) -> Option<(u32, u32)> {
+    let at = text.find(&format!("\"{needle}\""))?;
+    let (line, column) = line_and_column(text, at);
+    Some((line, column))
 }
 
 /// The line and the column, both from 1, of the byte `at` of `text`.

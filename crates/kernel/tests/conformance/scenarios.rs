@@ -180,6 +180,8 @@ pub fn all(world: &World) -> Vec<Scenario> {
         tabs(world),
         tab_changes(world, true),
         tab_changes(world, false),
+        pane_changes(world, true),
+        pane_changes(world, false),
         bounds(world),
         core_actions(world),
     ]
@@ -234,6 +236,34 @@ fn tab_changes(world: &World, reads: bool) -> Scenario {
                 changes(2),
             ),
         ],
+    }
+}
+
+/// The changes of a pane that the plugin hears, of a plugin that reads the
+/// processes, `reads`, or not: each one; and to a plugin that does not
+/// read them, none of a pane whose program's title, all that it reads of
+/// it, did not change, as of its folder or its program.
+fn pane_changes(world: &World, reads: bool) -> Scenario {
+    let changed = || {
+        Event::Workspace(WorkspaceEvent::PaneChanged {
+            pane: world.pane,
+            tab: world.tab,
+        })
+    };
+    let step = || Step {
+        wait: 0,
+        asks: Vec::new(),
+        posts: vec![changed()],
+        heard: if reads { vec![changed()] } else { Vec::new() },
+    };
+    Scenario {
+        name: format!(
+            "a pane's changes, to a plugin that {} the processes",
+            if reads { "reads" } else { "does not read" }
+        ),
+        capabilities: (!reads).then(|| vec![Capability::PaneView]),
+        subscriptions: vec!["pane-changed".to_owned()],
+        steps: vec![step(), step()],
     }
 }
 

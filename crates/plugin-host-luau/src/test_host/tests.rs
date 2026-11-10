@@ -344,3 +344,20 @@ fn the_app_s_commands_read() {
             .any(|registered| registered.plugin.as_deref() == Some("lokyr/core-actions"))
     );
 }
+
+#[test]
+fn a_timer_s_event_posted_fails_as_the_host_gives_it_alone() {
+    let ran = outcomes(
+        &[(
+            "tests/timer.luau",
+            "return { posted = function(host) host.events({ { kind = \"timer\", id = 1 } }) end }",
+        )],
+        DEADLINE,
+    );
+    assert_eq!(ran.len(), 1, "{ran:?}");
+    let failure = ran[0].failure.as_ref().expect("a failure");
+    assert!(
+        failure.message.contains("a timer's event is the host's"),
+        "{failure:?}"
+    );
+}
