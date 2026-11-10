@@ -40,6 +40,7 @@ pub fn run(out: Out, tool: &Registry) -> Result<(), String> {
             head,
             base,
             author,
+            sender,
             orgs,
             out: into,
             report,
@@ -51,6 +52,7 @@ pub fn run(out: Out, tool: &Registry) -> Result<(), String> {
                 head,
                 base,
                 author,
+                sender: sender.as_deref(),
                 orgs,
                 local: *local,
                 files_alone: *files_alone,
@@ -372,6 +374,10 @@ struct PullRequest<'a> {
     base: &'a Path,
     /// Its author's login on GitHub.
     author: &'a str,
+    /// The login of the account whose push or action started the check,
+    /// if told: as it is not the author's, the pull request is no longer
+    /// the author's alone, and the maintainer reviews it.
+    sender: Option<&'a str>,
     /// The organizations that its author is a public member of.
     orgs: &'a [String],
     /// Whether repositories of `file://` are taken.
@@ -495,6 +501,16 @@ fn verify(
         verdict
             .refused
             .push("it changes no file of the registry".to_owned());
+    }
+    if let Some(sender) = request
+        .sender
+        .filter(|sender| !sender.eq_ignore_ascii_case(request.author))
+    {
+        verdict.review.push(format!(
+            "its last push or event is {}'s, not {}'s, who opened it: the maintainer reviews it",
+            literal(sender),
+            literal(request.author)
+        ));
     }
     let (word, text) = if !verdict.refused.is_empty() {
         ("refused", "Refused")
@@ -748,7 +764,10 @@ fn package(
                 .into_iter()
                 .map(|problem| format!("check: {problem}")),
         );
-        match super::test::failures_of(&folder, out) {
+        // Of the interpreter alone, the smaller part of Luau, as the
+        // check runs another's code.
+        match super::test::failures_of(&folder, lokyr_plugin_host_luau::Execution::Interpreter, out)
+        {
             Ok(failures) => problems.extend(
                 failures
                     .into_iter()

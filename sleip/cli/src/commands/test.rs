@@ -9,8 +9,8 @@
 use std::path::Path;
 
 use lokyr_pkg_model::manifest::{Kind, Manifest};
-use lokyr_plugin_host_luau::Package;
 use lokyr_plugin_host_luau::test_host::{self, Plugin};
+use lokyr_plugin_host_luau::{Execution, Package};
 use lokyr_plugin_sdk::ui::Slot;
 use serde_json::json;
 
@@ -21,16 +21,21 @@ pub fn test(out: Out) -> Result<(), String> {
     let folder = std::env::current_dir()
         .map_err(|error| format!("the current folder cannot be read: {error}"))?;
     // The summary told the failures already.
-    if failures_of(&folder, out)?.is_empty() {
+    if failures_of(&folder, Execution::Native, out)?.is_empty() {
         Ok(())
     } else {
         Err(String::new())
     }
 }
 
-/// Runs the tests of the plugin in `folder`, each and their summary told as
-/// `out` tells: each failure, as a person reads it; or why they cannot run.
-pub(super) fn failures_of(folder: &Path, out: Out) -> Result<Vec<String>, String> {
+/// Runs the tests of the plugin in `folder`, its VM of `execution`, each
+/// and their summary told as `out` tells: each failure, as a person reads
+/// it; or why they cannot run.
+pub(super) fn failures_of(
+    folder: &Path,
+    execution: Execution,
+    out: Out,
+) -> Result<Vec<String>, String> {
     if let Some(link) = super::links_in(folder).first() {
         return Err(format!(
             "{link} is a link, which no package holds: no test runs while one is there"
@@ -65,6 +70,7 @@ pub(super) fn failures_of(folder: &Path, out: Out) -> Result<Vec<String>, String
         slots: &slots,
         package: &package,
         messages: &messages,
+        execution,
     });
     let mut failures = Vec::new();
     for outcome in &outcomes {

@@ -75,7 +75,8 @@ pub fn publish(
             problems.len()
         ));
     }
-    let failures = super::test::failures_of(&folder, out)?;
+    let failures =
+        super::test::failures_of(&folder, lokyr_plugin_host_luau::Execution::Interpreter, out)?;
     if !failures.is_empty() {
         return Err(format!(
             "{} tests fail, which the registry's CI would refuse",

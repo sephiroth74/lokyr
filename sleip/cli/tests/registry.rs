@@ -750,6 +750,29 @@ fn the_files_alone_are_judged_as_the_job_that_merges_checks_again() {
     let head = lab.head(&base, &[("plugins/acme/hello.toml", &added)]);
     let (_, verdict) = lab.verify_with(&head, &base, "bob", "", &["--files-alone"]);
     assert_eq!(verdict["verdict"], "refused", "{verdict}");
+    // Of a push of another account than the author's, the maintainer
+    // reviews it; of the author's own, of another case, it merges.
+    let (_, verdict) = lab.verify_with(
+        &head,
+        &base,
+        "acme",
+        "",
+        &["--files-alone", "--sender", "carol"],
+    );
+    assert_eq!(verdict["verdict"], "review", "{verdict}");
+    assert!(
+        reasons(&verdict, "review")
+            .contains("its last push or event is `carol`'s, not `acme`'s, who opened it"),
+        "{verdict}"
+    );
+    let (_, verdict) = lab.verify_with(
+        &head,
+        &base,
+        "acme",
+        "",
+        &["--files-alone", "--sender", "Acme"],
+    );
+    assert_eq!(verdict["verdict"], "merge", "{verdict}");
 }
 
 /// `build` of the version `version` of `acme/<name>` of the registry

@@ -8,6 +8,11 @@ const TEMPLATE_TEST: &str = include_str!("../../luau/template/tests/hello.luau")
 /// manifest of nothing more than its command, and of the test files of
 /// `tests`, within `deadline`.
 fn outcomes(tests: &[(&str, &str)], deadline: Duration) -> Vec<Outcome> {
+    outcomes_of(tests, deadline, Execution::Native)
+}
+
+/// The outcomes of [`outcomes`], the plugin's VM of `execution`.
+fn outcomes_of(tests: &[(&str, &str)], deadline: Duration, execution: Execution) -> Vec<Outcome> {
     let mut sources = vec![("src/init.luau".to_owned(), TEMPLATE_ENTRY.to_owned())];
     sources.extend(
         tests
@@ -27,21 +32,24 @@ fn outcomes(tests: &[(&str, &str)], deadline: Duration) -> Vec<Outcome> {
             slots: &[],
             package: &package,
             messages: &messages,
+            execution,
         },
         deadline,
     )
 }
 
 #[test]
-fn the_template_s_tests_pass() {
-    let ran = outcomes(&[("tests/hello.luau", TEMPLATE_TEST)], DEADLINE);
-    assert_eq!(ran.len(), 1, "{ran:?}");
-    assert_eq!(ran[0].file, "tests/hello.luau");
-    assert_eq!(
-        ran[0].name,
-        "the_command_shows_its_notice_which_goes_by_itself"
-    );
-    assert_eq!(ran[0].failure, None);
+fn the_template_s_tests_pass_of_the_native_code_generator_and_of_the_interpreter() {
+    for execution in [Execution::Native, Execution::Interpreter] {
+        let ran = outcomes_of(&[("tests/hello.luau", TEMPLATE_TEST)], DEADLINE, execution);
+        assert_eq!(ran.len(), 1, "{execution:?}: {ran:?}");
+        assert_eq!(ran[0].file, "tests/hello.luau");
+        assert_eq!(
+            ran[0].name,
+            "the_command_shows_its_notice_which_goes_by_itself"
+        );
+        assert_eq!(ran[0].failure, None, "{execution:?}");
+    }
 }
 
 #[test]
@@ -136,6 +144,7 @@ return {
         slots: &[],
         package: &package,
         messages: &[],
+        execution: Execution::Native,
     });
     let summary: Vec<(&str, &str, bool)> = ran
         .iter()
@@ -275,6 +284,7 @@ fn probed(uses: &[String], slots: &[Slot]) -> Vec<(String, Option<String>)> {
         slots,
         package: &package,
         messages: &[],
+        execution: Execution::Native,
     })
     .into_iter()
     .map(|outcome| (outcome.name, outcome.failure.map(|failure| failure.message)))

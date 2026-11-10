@@ -65,6 +65,8 @@ pub enum Registry {
         head: std::path::PathBuf,
         base: std::path::PathBuf,
         author: String,
+        /// The account whose push or action started the check, if told.
+        sender: Option<String>,
         orgs: Vec<String>,
         out: std::path::PathBuf,
         report: Option<std::path::PathBuf>,
@@ -178,7 +180,7 @@ Options:
 
 /// The help of `sleip registry`, which Sleip's own help leaves out.
 const REGISTRY_HELP: &str = "\
-Usage: sleip [options] registry verify <head> --base <folder> --author <login> [--orgs <org,...>] --out <folder> [--report <file>] [--files-alone]
+Usage: sleip [options] registry verify <head> --base <folder> --author <login> [--sender <login>] [--orgs <org,...>] --out <folder> [--report <file>] [--files-alone]
        sleip [options] registry build <owner/name> <version> [--registry <folder>] --out <folder>
        sleip [options] registry versions [--registry <folder>]
        sleip [options] registry keygen --out <file>
@@ -195,7 +197,8 @@ The registry's tools, which its CI runs.
             or one of its organizations, their names, the versions published left as they were,
             and each new version's tag, manifest, check and tests, its archive packaged into
             <out>; whether it merges by itself, or the maintainer reviews it, and a report of
-            Markdown in <report>. A failure of a pull request refused. Of --files-alone, the
+            Markdown in <report>; of a --sender not the author, whose push or action started the
+            check, the maintainer reviews it. A failure of a pull request refused. Of --files-alone, the
             files alone, no version cloned, checked, tested nor packaged, as the job that
             merges checks again.
   build     Packages the archive of a version of the registry's plugin into <out>, of the
@@ -439,9 +442,9 @@ fn registry(args: &[&String]) -> Result<Registry, String> {
         match arg.as_str() {
             "--local" => local = true,
             "--files-alone" => files_alone = true,
-            name @ ("--base" | "--author" | "--orgs" | "--out" | "--report" | "--registry"
-            | "--root" | "--keys" | "--archives" | "--roots" | "--dl" | "--index"
-            | "--readme") => {
+            name @ ("--base" | "--author" | "--sender" | "--orgs" | "--out" | "--report"
+            | "--registry" | "--root" | "--keys" | "--archives" | "--roots" | "--dl"
+            | "--index" | "--readme") => {
                 let value = args
                     .next()
                     .ok_or_else(|| format!("`{name}` takes a value\n\n{REGISTRY_HELP}"))?;
@@ -469,6 +472,7 @@ fn registry(args: &[&String]) -> Result<Registry, String> {
             head: PathBuf::from(head),
             base: PathBuf::from(needed("--base")?),
             author: needed("--author")?,
+            sender: value("--sender"),
             orgs: value("--orgs")
                 .unwrap_or_default()
                 .split(',')
@@ -566,7 +570,7 @@ mod tests {
         );
         assert_eq!(
             parsed(
-                "--json registry verify pr --base main --author ann --orgs acme,,bob --out dist --files-alone"
+                "--json registry verify pr --base main --author ann --sender bob --orgs acme,,bob --out dist --files-alone"
             ),
             Ok(Parsed::Run(
                 Options {
@@ -577,6 +581,7 @@ mod tests {
                     head: "pr".into(),
                     base: "main".into(),
                     author: "ann".to_owned(),
+                    sender: Some("bob".to_owned()),
                     orgs: vec!["acme".to_owned(), "bob".to_owned()],
                     out: "dist".into(),
                     report: None,

@@ -15,7 +15,9 @@
 //!
 //! The tests run in a VM of their own, of the plugin's sandbox, its
 //! `require` within the package, so that a test reads the plugin's modules,
-//! and of a watchdog: a test runs [`DEADLINE`] at most.
+//! and of a watchdog: a test runs [`DEADLINE`] at most. The tests' own VM
+//! is of the interpreter; the plugin's, of the native code generator as the
+//! app's, or of the interpreter as [`Plugin::execution`] says.
 
 use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 use std::time::Duration;
@@ -71,6 +73,10 @@ pub struct Plugin<'a> {
     pub package: &'a Package,
     /// Its messages of no argument, in English.
     pub messages: &'a [(String, String)],
+    /// How its VM runs its code: as the app runs it, of the native code
+    /// generator, or of the interpreter alone, the smaller part of Luau
+    /// that a check of another's plugin runs it on.
+    pub execution: Execution,
 }
 
 /// Runs the tests of `plugin`, of each of its files `tests/*.luau` in their
@@ -254,7 +260,7 @@ fn test_host(lua: &Lua, plugin: &Plugin<'_>) -> Result<Table, String> {
     }));
     let hosted = Arc::new(Mutex::new(Hosted {
         host,
-        plugin: LuauPlugin::new(plugin.name, package, Execution::Native),
+        plugin: LuauPlugin::new(plugin.name, package, plugin.execution),
     }));
     functions(lua, &hosted).map_err(|error| error.to_string())
 }
