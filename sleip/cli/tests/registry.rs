@@ -1027,6 +1027,37 @@ fn the_index_is_signed_of_the_released_versions_by_a_key_that_keys_json_lists() 
     assert!(
         String::from_utf8_lossy(&output.stdout).contains("acme/hello 0.1.1 has no release yet")
     );
+    // The site beside it: the plugin's page, of the version released, its
+    // README, and the home page that lists it.
+    let output = lab.sleip(
+        &[
+            "--json",
+            "registry",
+            "site",
+            "--registry",
+            &base.display().to_string(),
+            "--archives",
+            &archives.display().to_string(),
+            "--out",
+            &site.display().to_string(),
+            "--roots",
+            &roots.display().to_string(),
+        ],
+        &lab.root,
+    );
+    assert!(output.status.success(), "{output:?}");
+    let page = std::fs::read_to_string(site.join("plugins/acme/hello/index.html")).unwrap();
+    assert!(page.contains("<h1>acme/hello</h1>"), "{page}");
+    assert!(page.contains("data-pagefind-body"), "{page}");
+    assert!(page.contains(&cksum), "{page}");
+    assert!(page.contains("<h2>README</h2>"), "{page}");
+    assert!(
+        page.contains("<span class=\"badge\">yanked</span>"),
+        "{page}"
+    );
+    let home = std::fs::read_to_string(site.join("index.html")).unwrap();
+    assert!(home.contains("href=\"/plugins/acme/hello/\""), "{home}");
+    assert!(site.join("style.css").is_file());
     // A key that keys.json does not list, and none at all.
     let (stranger, _) = keygen("stranger.key");
     let output = indexed(&stranger);

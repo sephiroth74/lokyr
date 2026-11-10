@@ -29,6 +29,8 @@ use sleip_index::signing::{self, Dependency, Entry, PublicKey, SecretKey, Timest
 
 use super::{git, git_bytes};
 use crate::args::Registry;
+
+mod site;
 use crate::output::Out;
 
 /// Runs the registry's tool `tool`, as `out` tells.
@@ -84,6 +86,26 @@ pub fn run(out: Out, tool: &Registry) -> Result<(), String> {
             roots.as_deref(),
             dl.as_deref(),
         ),
+        Registry::Site {
+            registry,
+            archives,
+            out: into,
+            roots,
+        } => site::site(out, registry, archives, into, &roots_of(roots.as_deref())?),
+    }
+}
+
+/// The root keys of the file `roots`, a key a line, or Sleip's own.
+fn roots_of(roots: Option<&Path>) -> Result<Vec<PublicKey>, String> {
+    match roots {
+        Some(file) => std::fs::read_to_string(file)
+            .map_err(|error| format!("{} cannot be read: {error}", file.display()))?
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+            .map(PublicKey::parse)
+            .collect(),
+        None => Ok(signing::roots()),
     }
 }
 
@@ -186,16 +208,7 @@ fn index(
         .and_then(|text| {
             SecretKey::parse(&text).map_err(|error| format!("SLEIP_INDEX_KEY: {error}"))
         })?;
-    let roots = match roots {
-        Some(file) => std::fs::read_to_string(file)
-            .map_err(|error| format!("{} cannot be read: {error}", file.display()))?
-            .lines()
-            .map(str::trim)
-            .filter(|line| !line.is_empty())
-            .map(PublicKey::parse)
-            .collect::<Result<Vec<_>, _>>()?,
-        None => signing::roots(),
-    };
+    let roots = roots_of(roots)?;
     let keys_path = registry.join("keys.json");
     let keys_text = std::fs::read_to_string(&keys_path)
         .map_err(|error| format!("{} cannot be read: {error}", keys_path.display()))?;

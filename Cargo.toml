@@ -98,6 +98,8 @@ tar = { version = "0.4.46", default-features = false }
 ed25519-dalek = "3.0.0"
 base64 = "0.22.1"
 getrandom = "0.4.3"
+# The plugins' READMEs on the registry's site, its raw HTML shown as text.
+pulldown-cmark = { version = "0.13.6", default-features = false, features = ["html"] }
 tracing = "0.1.44"
 unicode-normalization = "0.1.25"
 # The language tags of the catalogs.

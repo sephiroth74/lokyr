@@ -96,6 +96,16 @@ pub enum Registry {
         roots: Option<std::path::PathBuf>,
         dl: Option<String>,
     },
+    /// The registry's site of its index in `out`, which `index` wrote, of
+    /// the registry in `registry` and of the archives of its releases in
+    /// `archives`, its keys checked against the root keys of the file
+    /// `roots`, or Sleip's own.
+    Site {
+        registry: std::path::PathBuf,
+        archives: std::path::PathBuf,
+        out: std::path::PathBuf,
+        roots: Option<std::path::PathBuf>,
+    },
 }
 
 /// What a command line asks.
@@ -145,6 +155,7 @@ Usage: sleip [options] registry verify <head> --base <folder> --author <login> [
        sleip [options] registry keygen --out <file>
        sleip [options] registry sign-keys --root <file> --keys <key,...> --out <file>
        sleip [options] registry index [--registry <folder>] --archives <folder> --out <folder> [--roots <file>] [--dl <address>]
+       sleip [options] registry site [--registry <folder>] --archives <folder> --out <folder> [--roots <file>]
 
 The registry's tools, which its CI runs.
   verify    Checks a pull request of the registry, a git repository at its head in <head>,
@@ -168,6 +179,9 @@ The registry's tools, which its CI runs.
             checked against Sleip's root keys or those of <roots>, a line each, and a file
             of each plugin, index/<owner>/<name>, a line of each version whose archive is in
             <archives>/<release>/, signed whole by the index key that SLEIP_INDEX_KEY holds.
+  site      Writes the registry's site into <out>, beside the index that `index` wrote there:
+            index.html of every plugin, which Pagefind searches, and plugins/<owner>/<name>/
+            of each, of its versions, capabilities, checksums and README.
   --local   Takes repositories of file://, as the tests' are.
 ";
 
@@ -407,8 +421,14 @@ fn registry(args: &[&String]) -> Result<Registry, String> {
             roots: value("--roots").map(PathBuf::from),
             dl: value("--dl"),
         }),
+        ["site"] => Ok(Registry::Site {
+            registry: registry(),
+            archives: PathBuf::from(needed("--archives")?),
+            out: PathBuf::from(needed("--out")?),
+            roots: value("--roots").map(PathBuf::from),
+        }),
         _ => Err(format!(
-            "`sleip registry` takes `verify`, `build`, `versions`, `keygen`, `sign-keys` or `index`, of their arguments\n\n{REGISTRY_HELP}"
+            "`sleip registry` takes `verify`, `build`, `versions`, `keygen`, `sign-keys`, `index` or `site`, of their arguments\n\n{REGISTRY_HELP}"
         )),
     }
 }
