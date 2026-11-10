@@ -28,6 +28,13 @@ fn home(test: &str, files: &[(&str, &str)]) -> PathBuf {
     std::fs::canonicalize(root).unwrap()
 }
 
+/// The variable `name` as the test's own environment has it, which the
+/// programs inherit as a user's terminal hands it on, as an editor's that
+/// integrates its own shell sets it; `none` if it is not there.
+fn inherited(name: &str, none: &str) -> String {
+    std::env::var(name).unwrap_or_else(|_| none.to_owned())
+}
+
 /// The first of `paths` that is there.
 fn found(paths: &[&str]) -> Option<PathBuf> {
     paths.iter().map(PathBuf::from).find(|path| path.is_file())
@@ -232,7 +239,7 @@ fn bash_reads_the_user_s_files_out_of_posix_mode_and_marks_its_prompts() {
     );
     let mut shell = Shell::start(&bash, &home);
     shell.until("bash> ");
-    shell.run("hello; set -o | grep '^posix'; echo ${ENV-unset} $USER_PROMPT; false");
+    shell.run("hello; set -o | grep '^posix'; echo \"${ENV-unset}\" $USER_PROMPT; false");
     shell.until("from-rc");
     let text = shell.until("\x1b]133;D;1").to_owned();
     // Out of POSIX mode, as the user's bash is.
@@ -241,7 +248,9 @@ fn bash_reads_the_user_s_files_out_of_posix_mode_and_marks_its_prompts() {
         .find(|line| line.starts_with("posix"))
         .unwrap_or_default();
     assert!(posix.ends_with("off"), "{text:?}");
-    assert!(text.contains("unset yes"), "{text:?}");
+    // The user's own `ENV`, if any, given back.
+    let env = inherited("ENV", "unset");
+    assert!(text.contains(&format!("{env} yes")), "{text:?}");
     let text = shell.until("bash> \x1b]133;B").to_owned();
     marks_in_order(&text, 1, &url_path(&home));
     shell.run("cd 'a b'");
@@ -422,9 +431,14 @@ fn macos_s_own_bash_loads_nothing() {
     let home = home("old-bash", &[(".bashrc", "PS1='old> '\n")]);
     let mut shell = Shell::start(Path::new("/bin/bash"), &home);
     shell.until("old> ");
-    shell.run("echo ${ENV-unset} ${LOKYR_BASH_INJECT-unset}");
+    shell.run("echo \"${ENV-unset}\" \"${LOKYR_BASH_INJECT-unset}\"");
     let text = shell.until("old> ").to_owned();
-    assert!(text.contains("unset unset"), "{text:?}");
+    let expected = format!(
+        "{} {}",
+        inherited("ENV", "unset"),
+        inherited("LOKYR_BASH_INJECT", "unset")
+    );
+    assert!(text.contains(&expected), "{text:?}");
     assert!(!shell.text.contains("\x1b]133;"), "{:?}", shell.text);
 }
 
@@ -457,7 +471,7 @@ fn another_shell_or_a_shell_of_arguments_loads_nothing() {
             "/bin/sh",
             [
                 "-c",
-                "echo ${ZDOTDIR-none} ${ENV-none} ${LOKYR_BASH_INJECT-none}",
+                r#"printf '%s|%s|%s\n' "${ZDOTDIR-none}" "${ENV-none}" "${LOKYR_BASH_INJECT-none}""#,
             ],
         ),
         "xterm-256color",
@@ -474,6 +488,13 @@ fn another_shell_or_a_shell_of_arguments_loads_nothing() {
             break;
         }
     }
-    assert!(text.starts_with("none none none"), "{text:?}");
+    // As the test's own environment has them: none of Lokyr's.
+    let expected = format!(
+        "{}|{}|{}",
+        inherited("ZDOTDIR", "none"),
+        inherited("ENV", "none"),
+        inherited("LOKYR_BASH_INJECT", "none")
+    );
+    assert!(text.starts_with(&expected), "{text:?}, not {expected:?}");
     let _ = (pty, Path::new(&home));
 }
