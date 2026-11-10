@@ -120,6 +120,51 @@ struct RawContributed {
     category: Option<Category>,
 }
 
+/// The most characters of a plugin's description.
+pub const LONGEST_DESCRIPTION: usize = 300;
+
+/// The most characters of a plugin's license, an SPDX expression.
+pub const LONGEST_LICENSE: usize = 100;
+
+/// The most characters of a plugin's repository's or homepage's address.
+pub const LONGEST_ADDRESS: usize = 2048;
+
+/// The most characters of a plugin's keyword.
+pub const LONGEST_KEYWORD: usize = 50;
+
+/// The most characters of a plugin's author.
+pub const LONGEST_AUTHOR: usize = 200;
+
+/// The most keywords, and the most authors, of a plugin.
+pub const MOST_LISTED: usize = 20;
+
+/// Whether `character` changes the direction of the text that follows it,
+/// as Unicode's bidirectional formatting characters do, which could show
+/// a text other than it is.
+pub fn is_direction_change(character: char) -> bool {
+    matches!(
+        character,
+        '\u{061C}' | '\u{200E}' | '\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}'
+    )
+}
+
+/// Why `text`, of a line, is not a plugin's plain text of `most` characters
+/// at most: a control character, C0 or C1, a line's end among them, or a
+/// change of direction; or none.
+fn plain_problem(text: &str, most: usize) -> Option<String> {
+    if let Some(character) = text
+        .chars()
+        .find(|&character| character.is_control() || is_direction_change(character))
+    {
+        return Some(format!(
+            "holds the character U+{:04X}, which no plain text of a line holds",
+            u32::from(character)
+        ));
+    }
+    let count = text.chars().count();
+    (count > most).then(|| format!("is of {count} characters, more than {most}"))
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RawKeybinding {
@@ -134,16 +179,16 @@ struct Plugin {
     version: Option<toml::Spanned<String>>,
     kind: toml::Spanned<Kind>,
     api: Option<toml::Spanned<String>>,
-    license: String,
+    license: toml::Spanned<String>,
     #[serde(default)]
     thread: Thread,
-    description: Option<String>,
-    repository: Option<String>,
-    homepage: Option<String>,
+    description: Option<toml::Spanned<String>>,
+    repository: Option<toml::Spanned<String>>,
+    homepage: Option<toml::Spanned<String>>,
     #[serde(default)]
-    keywords: Vec<String>,
+    keywords: Vec<toml::Spanned<String>>,
     #[serde(default)]
-    authors: Vec<String>,
+    authors: Vec<toml::Spanned<String>>,
     #[serde(default)]
     platforms: Vec<String>,
 }
@@ -255,6 +300,49 @@ impl Manifest {
                 ),
             ));
         }
+        // Its texts, which Sleip shows at a terminal and the registry on
+        // its pages: of no control character nor change of direction, each
+        // of its bound.
+        let texts = [(&plugin.license, "license", LONGEST_LICENSE)]
+            .into_iter()
+            .chain(
+                plugin
+                    .description
+                    .iter()
+                    .map(|text| (text, "description", LONGEST_DESCRIPTION)),
+            )
+            .chain(
+                plugin
+                    .repository
+                    .iter()
+                    .chain(&plugin.homepage)
+                    .map(|text| (text, "address", LONGEST_ADDRESS)),
+            )
+            .chain(
+                plugin
+                    .keywords
+                    .iter()
+                    .map(|text| (text, "keyword", LONGEST_KEYWORD)),
+            )
+            .chain(
+                plugin
+                    .authors
+                    .iter()
+                    .map(|text| (text, "author", LONGEST_AUTHOR)),
+            );
+        for (text, what, most) in texts {
+            if let Some(problem) = plain_problem(text.get_ref(), most) {
+                return Err(fail(text.span(), format!("its {what} {problem}")));
+            }
+        }
+        for (list, what) in [(&plugin.keywords, "keywords"), (&plugin.authors, "authors")] {
+            if list.len() > MOST_LISTED {
+                return Err(fail(
+                    list[MOST_LISTED].span(),
+                    format!("it names {} {what}, more than {MOST_LISTED}", list.len()),
+                ));
+            }
+        }
         let namespace = name.rsplit('/').next().unwrap_or(name);
         for on in &file.activation.on {
             if !is_activation(on.get_ref(), namespace) {
@@ -318,12 +406,20 @@ impl Manifest {
             kind,
             version: plugin.version.map(toml::Spanned::into_inner),
             api: plugin.api.map(toml::Spanned::into_inner),
-            license: plugin.license,
-            description: plugin.description,
-            repository: plugin.repository,
-            homepage: plugin.homepage,
-            keywords: plugin.keywords,
-            authors: plugin.authors,
+            license: plugin.license.into_inner(),
+            description: plugin.description.map(toml::Spanned::into_inner),
+            repository: plugin.repository.map(toml::Spanned::into_inner),
+            homepage: plugin.homepage.map(toml::Spanned::into_inner),
+            keywords: plugin
+                .keywords
+                .into_iter()
+                .map(toml::Spanned::into_inner)
+                .collect(),
+            authors: plugin
+                .authors
+                .into_iter()
+                .map(toml::Spanned::into_inner)
+                .collect(),
             platforms: plugin.platforms,
             thread: plugin.thread,
             activation: if activation.is_empty() && kind == Kind::Builtin {
@@ -797,6 +893,50 @@ config-schema = "schema.json"
         );
         // A text that is no TOML.
         assert!(wrong("[plugin\n").starts_with("1:8: "));
+        // Its texts: of no control character nor change of direction, of
+        // their bounds.
+        let with = |line: &str| {
+            plugin.replace(
+                "license = \"MIT\"\n",
+                &format!("license = \"MIT\"\n{line}\n"),
+            )
+        };
+        assert_eq!(
+            wrong(&with("description = \"Hi\\u001b[2Kthere\"")),
+            "5:15: its description holds the character U+001B, which no plain text of a line holds"
+        );
+        assert!(
+            wrong(&with("description = \"a\\u202Eb\"")).contains("U+202E"),
+            "a change of direction"
+        );
+        assert!(wrong(&with("description = \"a\\nb\"")).contains("U+000A"));
+        assert!(wrong(&with("description = \"a\\u009Bb\"")).contains("U+009B"));
+        assert!(
+            wrong(&with(&format!(
+                "description = \"{}\"",
+                "d".repeat(LONGEST_DESCRIPTION + 1)
+            )))
+            .contains("its description is of 301 characters, more than 300")
+        );
+        assert!(
+            wrong(&plugin.replace(
+                "\"MIT\"",
+                &format!("\"{}\"", "M".repeat(LONGEST_LICENSE + 1))
+            ))
+            .contains("its license is of 101 characters")
+        );
+        assert!(wrong(&with("authors = [\"Ann\\u0007\"]")).contains("its author holds"));
+        assert!(wrong(&with("keywords = [\"a\\tb\"]")).contains("its keyword holds"));
+        assert!(wrong(&with("homepage = \"https://x\\u001b\"")).contains("its address holds"));
+        let many = format!(
+            "keywords = [{}]",
+            (0..=MOST_LISTED)
+                .map(|at| format!("\"k{at}\""))
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+        assert!(wrong(&with(&many)).contains("21 keywords, more than 20"));
+        assert!(Manifest::parse(&with("description = \"Plain, «Unicode» ✓ text\"")).is_ok());
     }
 
     #[test]

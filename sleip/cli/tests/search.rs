@@ -160,10 +160,12 @@ fn search_and_info_read_the_registry_s_signed_index_cached_and_offline() {
             false,
         ),
     ];
+    // Its description of an escape that would clear the line before it,
+    // as an index that no registry of ours made could hold.
     let clock = entry(
         "acme/clock",
         "1.0.0",
-        "A clock in the status bar",
+        "A clock in the status bar\u{1b}[2K\u{202E}",
         &["pane-view"],
         false,
     );
@@ -208,6 +210,16 @@ fn search_and_info_read_the_registry_s_signed_index_cached_and_offline() {
     assert_eq!(found(&output), ["acme/hello"]);
     let output = sleip(&["--json", "search", "STATUS", "clock"]);
     assert_eq!(found(&output), ["acme/clock"]);
+    // At a terminal, as text.
+    let text = String::from_utf8_lossy(&sleip(&["search", "clock"]).stdout).into_owned();
+    assert!(
+        text.contains("A clock in the status bar\u{FFFD}[2K\u{FFFD}"),
+        "{text:?}"
+    );
+    assert!(
+        !text.contains('\u{1b}') && !text.contains('\u{202E}'),
+        "{text:?}"
+    );
     assert_eq!(
         found(&sleip(&["--json", "search", "nothing"])),
         Vec::<String>::new()
