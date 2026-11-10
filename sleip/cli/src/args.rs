@@ -58,6 +58,9 @@ pub enum Registry {
         report: Option<std::path::PathBuf>,
         /// Repositories of `file://` taken, as the tests' are.
         local: bool,
+        /// The files judged alone, no version cloned, checked, tested nor
+        /// packaged, as the job that merges checks again.
+        files_alone: bool,
     },
     /// The archive of the version `version` of the plugin `plugin`, of the
     /// registry in `registry`, packaged into `out`.
@@ -113,7 +116,7 @@ Options:
 
 /// The help of `sleip registry`, which Sleip's own help leaves out.
 const REGISTRY_HELP: &str = "\
-Usage: sleip [options] registry verify <head> --base <folder> --author <login> [--orgs <org,...>] --out <folder> [--report <file>]
+Usage: sleip [options] registry verify <head> --base <folder> --author <login> [--orgs <org,...>] --out <folder> [--report <file>] [--files-alone]
        sleip [options] registry build <owner/name> <version> [--registry <folder>] --out <folder>
        sleip [options] registry versions [--registry <folder>]
 
@@ -125,7 +128,9 @@ The registry's tools, which its CI runs.
             or one of its organizations, their names, the versions published left as they were,
             and each new version's tag, manifest, check and tests, its archive packaged into
             <out>; whether it merges by itself, or the maintainer reviews it, and a report of
-            Markdown in <report>. A failure of a pull request refused.
+            Markdown in <report>. A failure of a pull request refused. Of --files-alone, the
+            files alone, no version cloned, checked, tested nor packaged, as the job that
+            merges checks again.
   build     Packages the archive of a version of the registry's plugin into <out>.
   versions  Lists every version of the registry, of its release's tag and archive.
   --local   Takes repositories of file://, as the tests' are.
@@ -289,12 +294,13 @@ pub fn parse(args: &[String]) -> Result<Parsed, String> {
 fn registry(args: &[&String]) -> Result<Registry, String> {
     use std::path::PathBuf;
 
-    let (mut words, mut local) = (Vec::new(), false);
+    let (mut words, mut local, mut files_alone) = (Vec::new(), false, false);
     let mut valued: Vec<(&str, &str)> = Vec::new();
     let mut args = args.iter();
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--local" => local = true,
+            "--files-alone" => files_alone = true,
             name @ ("--base" | "--author" | "--orgs" | "--out" | "--report" | "--registry") => {
                 let value = args
                     .next()
@@ -333,6 +339,7 @@ fn registry(args: &[&String]) -> Result<Registry, String> {
             out: PathBuf::from(needed("--out")?),
             report: value("--report").map(PathBuf::from),
             local,
+            files_alone,
         }),
         ["build", plugin, version] => Ok(Registry::Build {
             plugin: (*plugin).to_owned(),
@@ -386,7 +393,7 @@ mod tests {
         );
         assert_eq!(
             parsed(
-                "--json registry verify pr --base main --author ann --orgs acme,,bob --out dist"
+                "--json registry verify pr --base main --author ann --orgs acme,,bob --out dist --files-alone"
             ),
             Ok(Parsed::Run(
                 Options {
@@ -401,6 +408,7 @@ mod tests {
                     out: "dist".into(),
                     report: None,
                     local: false,
+                    files_alone: true,
                 })
             ))
         );

@@ -122,6 +122,54 @@ fn bytes_text(bytes: u64) -> String {
 /// cannot be read.
 type Files<T> = Vec<(String, T)>;
 
+/// The links among the plugin's files in `folder`, its manifest and the
+/// entries of `src/`, `tests/` and `locales/`, those folders among them,
+/// by their paths in it, in their order: `check` and `test` read none of
+/// the plugin's files while one is there, as a link would read a file
+/// outside the plugin, and no package holds one.
+pub(crate) fn links_in(folder: &Path) -> Vec<String> {
+    let mut links = Vec::new();
+    let mut left = Vec::new();
+    for top in ["plugin.toml", "src", "tests", "locales"] {
+        let path = folder.join(top);
+        match std::fs::symlink_metadata(&path) {
+            Ok(meta) if meta.file_type().is_symlink() => links.push(top.to_owned()),
+            Ok(meta) if meta.is_dir() => left.push(path),
+            _ => {}
+        }
+    }
+    while let Some(at) = left.pop() {
+        let Ok(entries) = std::fs::read_dir(&at) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let Ok(kind) = entry.file_type() else {
+                continue;
+            };
+            if kind.is_symlink() {
+                links.push(name_in(folder, &entry.path()));
+            } else if kind.is_dir() {
+                left.push(entry.path());
+            }
+        }
+    }
+    links.sort();
+    links
+}
+
+/// The path of `path` in `folder`, of `/` between its folders.
+fn name_in(folder: &Path, path: &Path) -> String {
+    path.strip_prefix(folder)
+        .map(|inner| {
+            inner
+                .iter()
+                .map(|part| part.to_string_lossy().into_owned())
+                .collect::<Vec<_>>()
+                .join("/")
+        })
+        .unwrap_or_default()
+}
+
 /// The sources of Luau of the plugin in `folder`, `src/**/*.luau` and
 /// `tests/**/*.luau`, by their paths in it, of `/` between their folders, in
 /// their order, links left out, as its package leaves them; and those that

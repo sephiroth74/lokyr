@@ -24,9 +24,6 @@ esctest_commit := "2798f12149a19c3295e9b4853ab2da4b2eff1b2b"
 # commit.
 vttest_commit := "0229d7171a8574a2bf406c6ce14549f65d810e51"
 
-# The commit of vtebench (https://github.com/alacritty/vtebench) whose
-# scenarios `just bench` measures, rebuilt from its scripts, with its data
-# files: bump it in a dedicated commit.
 # The image of Linux's checks, which `just linux-image` makes.
 linux_image := "lokyr-linux"
 # The containers' resolver, the Mac's first of IPv4, as `container`'s own,
@@ -34,6 +31,9 @@ linux_image := "lokyr-linux"
 # of its local network: `--dns <address>`, or nothing of none.
 linux_dns := "scutil --dns | awk '/nameserver\\[[0-9]+\\] : [0-9.]+$/ { print \"--dns \" $3; exit }'"
 
+# The commit of vtebench (https://github.com/alacritty/vtebench) whose
+# scenarios `just bench` measures, rebuilt from its scripts, with its data
+# files: bump it in a dedicated commit.
 vtebench_commit := "ead80032e57dee2e75f0b51f2ea67528647d9944"
 
 # Platform-independent crates, the tools of the terminal's tests and
@@ -91,8 +91,22 @@ check-linux-here:
     cargo check --locked --target x86_64-unknown-linux-gnu {{ portable }}
     cargo check --locked --target x86_64-unknown-linux-gnu --tests {{ portable_tests }}
 
-# Build Sleip for the registry's CI, Linux on arm64, in the container of Linux's checks: target/registry/sleip-aarch64-linux, stripped, and its SHA-256.
-registry-sleip: (linux "registry-sleip-here")
+# Build Sleip for the registry's CI, Linux on arm64, in the container of Linux's checks, of a commit alone, the tree of no change: target/registry/sleip-aarch64-linux, stripped, the commit beside it in sleip-aarch64-linux.commit, and its SHA-256.
+registry-sleip:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [ -n "$(git status --porcelain)" ]; then
+        echo "The tree has changes: Sleip for the registry is built of a commit alone." >&2
+        exit 1
+    fi
+    commit=$(git rev-parse HEAD)
+    rm -f target/registry/sleip-aarch64-linux.commit
+    just linux registry-sleip-here
+    if [ "$(git rev-parse HEAD)" != "$commit" ] || [ -n "$(git status --porcelain)" ]; then
+        echo "The tree changed as Sleip was built: build it again." >&2
+        exit 1
+    fi
+    echo "$commit" > target/registry/sleip-aarch64-linux.commit
     shasum -a 256 target/registry/sleip-aarch64-linux
 
 # `just registry-sleip`, on the Linux of the container of Linux's checks.
@@ -102,16 +116,21 @@ registry-sleip-here:
     cp "${CARGO_TARGET_DIR:-target}/release/sleip" target/registry/sleip-aarch64-linux
     strip target/registry/sleip-aarch64-linux
 
-# Upload target/registry/sleip-aarch64-linux to a release of the registry's repository, `sleip-<commit>`, of the commit that it was built of, which the registry's `.github/actions/sleip/action.yml` pins by its address and SHA-256.
+# Upload target/registry/sleip-aarch64-linux to a release of the registry's repository, `sleip-<commit>`, of the commit that `just registry-sleip` built it of, which the registry's `.github/actions/sleip/action.yml` pins by its address and SHA-256.
 registry-sleip-release:
     #!/usr/bin/env bash
     set -euo pipefail
     file=target/registry/sleip-aarch64-linux
-    commit=$(git rev-parse --short=10 HEAD)
-    tag="sleip-$commit"
+    if [ ! -s "$file.commit" ]; then
+        echo "No commit beside $file: \`just registry-sleip\` builds it of one." >&2
+        exit 1
+    fi
+    commit=$(cat "$file.commit")
+    short=${commit:0:10}
+    tag="sleip-$short"
     gh release create "$tag" "$file" --repo sephiroth74/sleip-registry --prerelease \
         --title "Sleip for the registry's CI, $tag" \
-        --notes "Sleip $(git describe --tags --always) for Linux on arm64, of Lokyr's commit $commit, which the registry's checks run. SHA-256: $(shasum -a 256 "$file" | cut -d ' ' -f 1)."
+        --notes "Sleip $(git describe --tags --always "$commit") for Linux on arm64, of Lokyr's commit $commit, which the registry's checks run. SHA-256: $(shasum -a 256 "$file" | cut -d ' ' -f 1)."
     echo "URL: https://github.com/sephiroth74/sleip-registry/releases/download/$tag/sleip-aarch64-linux"
     shasum -a 256 "$file"
 

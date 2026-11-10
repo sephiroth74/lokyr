@@ -1241,3 +1241,42 @@ fn a_failed_update_keeps_the_packages_that_the_lockfile_still_names() {
     assert_eq!(sandbox.store().digests().unwrap(), digests_before);
     assert!(sandbox.sleip(&["doctor"]).status.success());
 }
+
+#[cfg(unix)]
+#[test]
+fn check_and_test_read_nothing_of_a_plugin_of_a_link() {
+    let sandbox = Sandbox::new("links");
+    let folder = made(&sandbox, "linked");
+    let outside = sandbox.home.join("outside.luau");
+    std::fs::write(&outside, "return 1\n").unwrap();
+    std::os::unix::fs::symlink(&outside, folder.join("src/extra.luau")).unwrap();
+    let output = checked(&sandbox, &folder, &[]);
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+    let text = stdout(&output);
+    assert!(
+        text.contains("src/extra.luau") && text.contains("it is a link, which no package holds"),
+        "{text}"
+    );
+    let output = sandbox
+        .command(&["test"])
+        .current_dir(&folder)
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+    assert!(
+        String::from_utf8_lossy(&output.stderr)
+            .contains("src/extra.luau is a link, which no package holds"),
+        "{output:?}"
+    );
+    // A folder of catalogs that is a link, alike.
+    std::fs::remove_file(folder.join("src/extra.luau")).unwrap();
+    let locales = folder.join("locales");
+    std::fs::rename(&locales, sandbox.home.join("locales")).unwrap();
+    std::os::unix::fs::symlink(sandbox.home.join("locales"), &locales).unwrap();
+    let output = checked(&sandbox, &folder, &[]);
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+    assert!(stdout(&output).contains("locales"), "{output:?}");
+    std::fs::remove_file(&locales).unwrap();
+    std::fs::rename(sandbox.home.join("locales"), &locales).unwrap();
+    assert!(checked(&sandbox, &folder, &[]).status.success());
+}

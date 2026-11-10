@@ -38,6 +38,7 @@ pub fn run(out: Out, tool: &Registry) -> Result<(), String> {
             out: into,
             report,
             local,
+            files_alone,
         } => verify(
             out,
             &PullRequest {
@@ -46,6 +47,7 @@ pub fn run(out: Out, tool: &Registry) -> Result<(), String> {
                 author,
                 orgs,
                 local: *local,
+                files_alone: *files_alone,
             },
             into,
             report.as_deref(),
@@ -73,6 +75,9 @@ struct PullRequest<'a> {
     orgs: &'a [String],
     /// Whether repositories of `file://` are taken.
     local: bool,
+    /// Whether its files are judged alone, no version cloned, checked,
+    /// tested nor packaged.
+    files_alone: bool,
 }
 
 /// What a pull request's check found.
@@ -138,7 +143,8 @@ fn verify(
             // main branch holds now.
             changed += 1;
             verdict.review.push(format!(
-                "it changes `{path}`{}, which is no plugin's file, `plugins/<owner>/<name>.toml`: the maintainer reviews it",
+                "it changes {}{}, which is no plugin's file, `plugins/<owner>/<name>.toml`: the maintainer reviews it",
+                literal(path),
                 told(change)
             ));
             continue;
@@ -148,7 +154,8 @@ fn verify(
             if before.is_some() {
                 changed += 1;
                 verdict.review.push(format!(
-                    "it takes `{owner}/{name}` out of the registry, which the maintainer reviews"
+                    "it takes {} out of the registry, which the maintainer reviews",
+                    literal(&format!("{owner}/{name}"))
                 ));
             }
             continue;
@@ -156,7 +163,8 @@ fn verify(
         if change.after != PLAIN_FILE {
             changed += 1;
             verdict.refused.push(format!(
-                "`{path}` is {}: a plugin's file is a plain file",
+                "{} is {}: a plugin's file is a plain file",
+                literal(path),
                 kind_of(&change.after)
             ));
             continue;
@@ -238,7 +246,8 @@ fn verify_plugin(
     let path = registry::path_of_plugin(owner, name);
     if !registry::is_part(owner) || !registry::is_part(name) {
         verdict.refused.push(format!(
-            "`{path}` names no plugin: its owner and its name are lowercase letters, digits and `-`, from a letter, of {} characters at most",
+            "{} names no plugin: its owner and its name are lowercase letters, digits and `-`, from a letter, of {} characters at most",
+            literal(&path),
             registry::LONGEST_PART
         ));
         return;
@@ -257,8 +266,8 @@ fn verify_plugin(
             .any(|org| org.eq_ignore_ascii_case(owner));
     if !owns {
         verdict.refused.push(format!(
-            "`{plugin}` is `{owner}`'s, and `{}`, who opened the pull request, is neither `{owner}` nor a public member of an organization `{owner}`",
-            request.author
+            "`{plugin}` is `{owner}`'s, and {}, who opened the pull request, is neither `{owner}` nor a public member of an organization `{owner}`",
+            literal(request.author)
         ));
     }
     if registry::RESERVED_NAMES.contains(&name) {
@@ -269,21 +278,24 @@ fn verify_plugin(
     for (holder, held) in names {
         if held == name && holder != owner {
             verdict.refused.push(format!(
-                "the name `{name}` is `{holder}/{name}`'s: a plugin's name is unique across owners, as Lokyr knows a plugin by its name alone"
+                "the name `{name}` is {}'s: a plugin's name is unique across owners, as Lokyr knows a plugin by its name alone",
+                literal(&format!("{holder}/{name}"))
             ));
         }
     }
     let file = match PluginFile::parse(after) {
         Ok(file) => file,
         Err(error) => {
-            verdict.refused.push(format!("`{path}`: {error}"));
+            verdict
+                .refused
+                .push(format!("`{path}`: {}", literal(&error)));
             return;
         }
     };
     if !request.local && !file.repository.starts_with("https://") {
         verdict.refused.push(format!(
-            "`{path}`: `repository` is the address of a git repository over HTTPS, not `{}`",
-            file.repository
+            "`{path}`: `repository` is the address of a git repository over HTTPS, not {}",
+            literal(&file.repository)
         ));
         return;
     }
@@ -299,7 +311,8 @@ fn verify_plugin(
             if published.repository != file.repository {
                 verdict.review.push(format!(
                     "`{plugin}`'s repository changes, from {} to {}",
-                    published.repository, file.repository
+                    literal(&published.repository),
+                    literal(&file.repository)
                 ));
             }
             for (at, release) in published.versions.iter().enumerate() {
@@ -327,6 +340,9 @@ fn verify_plugin(
                 .unwrap_or_default()
         }
     };
+    if request.files_alone {
+        return;
+    }
     let mut asked = (BTreeSet::new(), BTreeSet::new());
     for release in new {
         match package(out, &plugin, &file.repository, release, into, true) {
@@ -337,11 +353,11 @@ fn verify_plugin(
                 asked.1.extend(built.manifest.uses.iter().cloned());
                 verdict.built.push(built);
             }
-            Err(problems) => verdict.refused.extend(
-                problems
-                    .into_iter()
-                    .map(|problem| format!("`{plugin}` {}: {problem}", release.version)),
-            ),
+            Err(problems) => {
+                verdict.refused.extend(problems.into_iter().map(|problem| {
+                    format!("`{plugin}` {}: {}", release.version, literal(&problem))
+                }));
+            }
         }
     }
     // What the new versions ask for, against the version published last.
@@ -362,12 +378,12 @@ fn verify_plugin(
             let more: Vec<String> = asked
                 .0
                 .difference(&had_capabilities)
-                .map(|capability| format!("the capability `{capability}`"))
+                .map(|capability| format!("the capability {}", literal(capability)))
                 .chain(
                     asked
                         .1
                         .difference(&had_uses)
-                        .map(|command| format!("the command `{command}`")),
+                        .map(|command| format!("the command {}", literal(command))),
                 )
                 .collect();
             if !more.is_empty() {
@@ -379,8 +395,9 @@ fn verify_plugin(
             }
         }
         Err(error) => verdict.review.push(format!(
-            "`{plugin}` {}, published last, cannot be read, against which the new versions' capabilities are weighed: {error}",
-            last.version
+            "`{plugin}` {}, published last, cannot be read, against which the new versions' capabilities are weighed: {}",
+            last.version,
+            literal(&error)
         )),
     }
 }
@@ -763,9 +780,61 @@ fn find<'a>(files: &'a [(String, Vec<u8>)], path: &str) -> Option<&'a [u8]> {
         .map(|at| files[at].1.as_slice())
 }
 
+/// The most characters of a text of a pull request or of a plugin that the
+/// report shows.
+const LONGEST_LITERAL: usize = 500;
+
+/// The most bytes of the report, below the 65 536 characters of a comment
+/// of GitHub's.
+const LONGEST_REPORT: usize = 60_000;
+
+/// `text`, of a pull request or of a plugin, as a span of code in the
+/// report, which shows it as it is: of no backtick, which would end the
+/// span, a quote in its place; of no `@` nor `<`, which would mention
+/// someone or open HTML; a control character a space; and of
+/// [`LONGEST_LITERAL`] characters at most.
+fn literal(text: &str) -> String {
+    let mut kept = String::new();
+    for (count, character) in text
+        .chars()
+        .filter(|character| !matches!(character, '@' | '<'))
+        .enumerate()
+    {
+        if count == LONGEST_LITERAL {
+            kept.push('…');
+            break;
+        }
+        kept.push(match character {
+            '`' => '\'',
+            character if character.is_control() => ' ',
+            character => character,
+        });
+    }
+    if kept.trim().is_empty() {
+        return "an empty text".to_owned();
+    }
+    format!("`{kept}`")
+}
+
 /// The report of `verdict`, headed `heading`, in Markdown, as the pull
-/// request's comment shows it.
+/// request's comment shows it, of [`LONGEST_REPORT`] bytes at most: the
+/// lines past them left to the job's log, whose verdict holds them all.
 fn report_of(verdict: &Verdict, heading: &str) -> String {
+    let whole = whole_report_of(verdict, heading);
+    if whole.len() <= LONGEST_REPORT {
+        return whole;
+    }
+    let ending = "\n… The report is longer than a comment holds: the job's log has it whole.\n";
+    let mut cut = LONGEST_REPORT - ending.len();
+    while !whole.is_char_boundary(cut) {
+        cut -= 1;
+    }
+    let cut = whole[..cut].rfind('\n').map_or(cut, |at| at + 1);
+    format!("{}{ending}", &whole[..cut])
+}
+
+/// The report of `verdict`, headed `heading`, whole.
+fn whole_report_of(verdict: &Verdict, heading: &str) -> String {
     let mut text = format!("### Sleip's check: {heading}\n\n");
     for (title, lines) in [
         ("Refused", &verdict.refused),
@@ -798,4 +867,52 @@ fn report_of(verdict: &Verdict, heading: &str) -> String {
         text.push_str("It asks for nothing that the versions published before did not, and merges by itself.\n");
     }
     text
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_text_of_a_pull_request_is_a_span_of_code_of_no_mention_nor_html_and_bounded() {
+        assert_eq!(
+            literal("a `b` @all <img src=x>\nnext"),
+            "`a 'b' all img src=x> next`"
+        );
+        let shown = literal(&"x".repeat(LONGEST_LITERAL + 10));
+        assert_eq!(shown.chars().count(), LONGEST_LITERAL + 3);
+        assert!(shown.ends_with("x…`"), "{shown}");
+        assert_eq!(literal("\n"), "an empty text");
+    }
+
+    #[test]
+    fn a_report_longer_than_a_comment_holds_is_cut_at_a_line() {
+        let tail = "é".repeat(40);
+        let verdict = Verdict {
+            refused: (0..2000).map(|at| format!("reason {at} {tail}")).collect(),
+            ..Verdict::default()
+        };
+        let report = report_of(&verdict, "Refused");
+        assert!(report.len() <= LONGEST_REPORT, "{}", report.len());
+        assert!(report.starts_with("### Sleip's check: Refused\n"));
+        assert!(
+            report.ends_with("the job's log has it whole.\n"),
+            "{report}"
+        );
+        let reasons: Vec<&str> = report
+            .lines()
+            .filter(|line| line.starts_with("- reason"))
+            .collect();
+        assert!(reasons.len() > 100 && reasons.len() < 2000);
+        assert!(reasons.iter().all(|line| line.ends_with(&tail)));
+        // A short one, whole.
+        let short = Verdict {
+            refused: vec!["one".to_owned()],
+            ..Verdict::default()
+        };
+        assert_eq!(
+            report_of(&short, "Refused"),
+            whole_report_of(&short, "Refused")
+        );
+    }
 }

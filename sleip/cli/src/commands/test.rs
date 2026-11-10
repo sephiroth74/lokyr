@@ -29,6 +29,11 @@ pub fn test(out: Out) -> Result<(), String> {
 /// Runs the tests of the plugin in `folder`, each and their summary told as
 /// `out` tells: each failure, as a person reads it; or why they cannot run.
 pub(super) fn failures_of(folder: &Path, out: Out) -> Result<Vec<String>, String> {
+    if let Some(link) = super::links_in(folder).first() {
+        return Err(format!(
+            "{link} is a link, which no package holds: no test runs while one is there"
+        ));
+    }
     let manifest = std::fs::read_to_string(folder.join("plugin.toml"))
         .map_err(|error| format!("plugin.toml cannot be read, as no plugin is in this folder or the file is not there: {error}"))?;
     let parsed = Manifest::parse(&manifest).map_err(|error| format!("plugin.toml:{error}"))?;

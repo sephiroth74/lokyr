@@ -99,28 +99,32 @@ impl Lab {
     /// `verify` of the pull request `head` against `base`, of `author` and
     /// its organizations `orgs`: its output and its verdict's event.
     fn verify(&self, head: &Path, base: &Path, author: &str, orgs: &str) -> (Output, Value) {
+        self.verify_with(head, base, author, orgs, &[])
+    }
+
+    /// `verify`, as [`Lab::verify`] runs it, of the options `more`.
+    fn verify_with(
+        &self,
+        head: &Path,
+        base: &Path,
+        author: &str,
+        orgs: &str,
+        more: &[&str],
+    ) -> (Output, Value) {
         let out = self.root.join("dist");
         let _ = std::fs::remove_dir_all(&out);
-        let output = self.sleip(
-            &[
-                "--json",
-                "registry",
-                "verify",
-                &head.display().to_string(),
-                "--base",
-                &base.display().to_string(),
-                "--author",
-                author,
-                "--orgs",
-                orgs,
-                "--out",
-                &out.display().to_string(),
-                "--report",
-                &self.root.join("report.md").display().to_string(),
-                "--local",
-            ],
-            &self.root,
+        let (head, base, out, report) = (
+            head.display().to_string(),
+            base.display().to_string(),
+            out.display().to_string(),
+            self.root.join("report.md").display().to_string(),
         );
+        let mut args = vec![
+            "--json", "registry", "verify", &head, "--base", &base, "--author", author, "--orgs",
+            orgs, "--out", &out, "--report", &report, "--local",
+        ];
+        args.extend_from_slice(more);
+        let output = self.sleip(&args, &self.root);
         let verdict = events(&output)
             .into_iter()
             .find(|event| event["event"] == "verdict")
@@ -433,10 +437,10 @@ fn each_fault_refuses_the_pull_request_with_its_reason() {
             &entry(&url, &[("0.1.0", "v9", &first, false)]),
         )],
     );
-    assert!(refused(&head, &empty, "acme", "").contains("has no tag `v9`"));
+    assert!(refused(&head, &empty, "acme", "").contains("has no tag 'v9'"));
     // A manifest of another name, and of another version.
     let head = lab.head(&empty, &[("plugins/acme/other.toml", &good)]);
-    assert!(refused(&head, &empty, "acme", "").contains("its manifest names `acme/hello`"));
+    assert!(refused(&head, &empty, "acme", "").contains("its manifest names 'acme/hello'"));
     let head = lab.head(
         &empty,
         &[(
@@ -448,13 +452,13 @@ fn each_fault_refuses_the_pull_request_with_its_reason() {
     // A file that does not read, and a repository not of HTTPS outside the
     // tests.
     let head = lab.head(&empty, &[("plugins/acme/hello.toml", "repository = 1\n")]);
-    assert!(refused(&head, &empty, "acme", "").contains("`plugins/acme/hello.toml`: line 1"));
+    assert!(refused(&head, &empty, "acme", "").contains("`plugins/acme/hello.toml`: `line 1"));
     // A source that its check refuses, and a test that fails.
     edit(&folder, "src/init.luau", |text| {
         format!("{text}\nlocal wrong: number = \"text\"\n")
     });
     edit(&folder, "tests/broken.luau", |_| {
-        "local test = {}\nfunction test.fails(host: TestHost)\n    assert(false, \"it fails\")\nend\nreturn test\n".to_owned()
+        "local test = {}\nfunction test.fails(host: TestHost)\n    assert(false, \"it fails, @everyone <b>`see`</b>\")\nend\nreturn test\n".to_owned()
     });
     git(&folder, &["add", "."]);
     git(&folder, &["commit", "--quiet", "-m", "broken"]);
@@ -469,10 +473,13 @@ fn each_fault_refuses_the_pull_request_with_its_reason() {
     );
     let why = refused(&head, &empty, "acme", "");
     assert!(why.contains("check: src/init.luau:"), "{why}");
+    // The test's message in a span of code, of no mention nor HTML.
     assert!(
-        why.contains("test: tests/broken.luau:3 fails: it fails"),
+        why.contains("`test: tests/broken.luau:3 fails: it fails, everyone b>'see'/b>`"),
         "{why}"
     );
+    let report = std::fs::read_to_string(lab.root.join("report.md")).unwrap();
+    assert!(!report.contains('@') && !report.contains('<'), "{report}");
     // A published version that changes, and one that goes.
     let base = lab.registry("published", &[("plugins/acme/hello.toml", &good)]);
     let head = lab.head(
@@ -699,4 +706,48 @@ fn the_reserved_names_hold_the_first_party_plugins_and_the_app_s_own() {
     for namespace in ["app", "window", "pane"] {
         assert!(sleip_index::registry::RESERVED_NAMES.contains(&namespace));
     }
+}
+
+#[test]
+fn the_files_alone_are_judged_as_the_job_that_merges_checks_again() {
+    let lab = Lab::new("files-alone");
+    let (folder, url) = lab.plugin("hello");
+    let first = git(&folder, &["rev-parse", "HEAD"]);
+    let published = entry(&url, &[("0.1.0", "v0.1.0", &first, false)]);
+    let base = lab.registry("base", &[("plugins/acme/hello.toml", &published)]);
+    // A version added of a tag that is not there: refused of its clone,
+    // and of its file alone a version added, which merges.
+    let added = entry(
+        &url,
+        &[
+            ("0.1.0", "v0.1.0", &first, false),
+            ("0.1.1", "v0.1.1", &"d".repeat(40), false),
+        ],
+    );
+    let head = lab.head(&base, &[("plugins/acme/hello.toml", &added)]);
+    let (output, verdict) = lab.verify(&head, &base, "acme", "");
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+    assert!(reasons(&verdict, "refused").contains("has no tag 'v0.1.1'"));
+    let (output, verdict) = lab.verify_with(&head, &base, "acme", "", &["--files-alone"]);
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(verdict["verdict"], "merge", "{verdict}");
+    assert!(
+        !events(&output)
+            .iter()
+            .any(|event| event["event"] == "built"),
+        "{output:?}"
+    );
+    // Beside another file, or of another owner, it merges not.
+    let head = lab.head(
+        &base,
+        &[
+            ("plugins/acme/hello.toml", &added),
+            (".github/actions/sleip/action.yml", "runs: {}\n"),
+        ],
+    );
+    let (_, verdict) = lab.verify_with(&head, &base, "acme", "", &["--files-alone"]);
+    assert_eq!(verdict["verdict"], "review", "{verdict}");
+    let head = lab.head(&base, &[("plugins/acme/hello.toml", &added)]);
+    let (_, verdict) = lab.verify_with(&head, &base, "bob", "", &["--files-alone"]);
+    assert_eq!(verdict["verdict"], "refused", "{verdict}");
 }

@@ -96,6 +96,18 @@ pub(super) fn summary(problems: usize) -> String {
 
 /// Checks the plugin in `folder`, into `findings`.
 fn check_folder(folder: &Path, findings: &mut Findings) {
+    let links = super::links_in(folder);
+    if !links.is_empty() {
+        for link in &links {
+            findings.problem(
+                link,
+                None,
+                "Package",
+                "it is a link, which no package holds: the check reads none of the plugin's files while one is there",
+            );
+        }
+        return;
+    }
     let text = match std::fs::read_to_string(folder.join("plugin.toml")) {
         Ok(text) => text,
         Err(error) => {
