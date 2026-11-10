@@ -122,7 +122,9 @@ fn a_package_packs_alike_and_unpacks_into_the_store_of_its_digest() {
     assert_eq!(pack(&package).unwrap(), packed, "a package packs alike");
     let root = folder("store");
     let store = Store::new(&root);
-    let unpacked = store.add(packed.as_slice()).unwrap();
+    let stored = store.add(packed.as_slice()).unwrap();
+    assert!(stored.new, "the store held none of it");
+    let unpacked = stored.unpacked;
     assert_eq!(unpacked.manifest.name, "acme/hello");
     assert!(store.holds(&unpacked.digest));
     store.check(&unpacked.digest).unwrap();
@@ -139,8 +141,11 @@ fn a_package_packs_alike_and_unpacks_into_the_store_of_its_digest() {
             .mode();
         assert_eq!(mode & 0o777, 0o644);
     }
-    // Added again, it stays as it was, of nothing left beside it.
-    assert_eq!(store.add(packed.as_slice()).unwrap(), unpacked);
+    // Added again, it stays as it was, of nothing left beside it, and it
+    // is not new.
+    let again = store.add(packed.as_slice()).unwrap();
+    assert!(!again.new);
+    assert_eq!(again.unpacked, unpacked);
     assert_eq!(store.digests().unwrap(), [unpacked.digest]);
     assert_eq!(std::fs::read_dir(&root).unwrap().count(), 1);
     // A package of themes.
@@ -156,7 +161,10 @@ fn a_package_packs_alike_and_unpacks_into_the_store_of_its_digest() {
             ("themes/nord-light.itermcolors", b"<plist/>"),
         ],
     );
-    let unpacked = store.add(pack(&themes).unwrap().as_slice()).unwrap();
+    let unpacked = store
+        .add(pack(&themes).unwrap().as_slice())
+        .unwrap()
+        .unpacked;
     assert!(
         store
             .folder(&unpacked.digest)
@@ -400,13 +408,16 @@ fn a_store_s_package_changed_since_it_was_stored_is_made_anew_as_it_is_added_aga
     let packed = pack(&package).unwrap();
     let root = folder("repaired-store");
     let store = Store::new(root.join("store"));
-    let unpacked = store.add(packed.as_slice()).unwrap();
+    let unpacked = store.add(packed.as_slice()).unwrap().unpacked;
     let stored = store.folder(&unpacked.digest);
     // The Finder's file, and a file that a power cut left empty.
     std::fs::write(stored.join(".DS_Store"), b"finder").unwrap();
     std::fs::write(stored.join("src/init.luau"), b"").unwrap();
     assert!(store.check(&unpacked.digest).is_err());
-    assert_eq!(store.add(packed.as_slice()).unwrap(), unpacked);
+    // Made anew, it is not new: a failure that follows keeps it, sound.
+    let repaired = store.add(packed.as_slice()).unwrap();
+    assert!(!repaired.new);
+    assert_eq!(repaired.unpacked, unpacked);
     store.check(&unpacked.digest).unwrap();
     assert!(!stored.join(".DS_Store").exists());
     // Nothing left beside it.

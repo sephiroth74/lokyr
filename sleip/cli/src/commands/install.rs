@@ -6,7 +6,7 @@
 //! failure changes nothing: the packages that it stored go, and neither
 //! file is written.
 //!
-//! The registry's plugins come with the registry: one of `plugins.toml`
+//! The registry's plugins are not fetched yet: one of `plugins.toml`
 //! that the lockfile holds stays as the lockfile holds it.
 
 use std::collections::BTreeMap;
@@ -219,14 +219,12 @@ fn install(
                 (Some(fetched), _) => {
                     let archive = lokyr_pkg_model::archive::pack(&fetched.folder)
                         .map_err(|error| format!("`{name}`'s package: {error}"))?;
-                    let digest = lokyr_pkg_model::store::digest_of(&fetched.folder)
-                        .map_err(|error| format!("`{name}`'s package: {error}"))?;
-                    let held = paths.store.folder(&digest).is_dir();
-                    let unpacked = paths
+                    let added = paths
                         .store
                         .add(archive.as_slice())
                         .map_err(|error| format!("`{name}`'s package: {error}"))?;
-                    if !held {
+                    let unpacked = added.unpacked;
+                    if added.new {
                         stored.push(unpacked.digest);
                     }
                     let manifest = &fetched.manifest;
@@ -388,7 +386,7 @@ fn fetch(
         }
         Wanted::Registry(_) => {
             return Err(format!(
-                "`{}` is of the registry, whose plugins come with registry v0: add it from a folder or a git repository",
+                "`{}` is of the registry, whose plugins this Sleip cannot fetch yet: add it from a folder or a git repository",
                 name.unwrap_or_default()
             ));
         }

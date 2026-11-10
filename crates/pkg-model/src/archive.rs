@@ -113,6 +113,18 @@ pub struct Unpacked {
     pub digest: Digest,
 }
 
+/// A package added to the store: as it unpacked, and whether the store
+/// held none of its digest before, so that taking it away leaves the store
+/// as it was.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Stored {
+    /// The package, as it unpacked.
+    pub unpacked: Unpacked,
+    /// Whether the store held no package of its digest before, sound or
+    /// not.
+    pub new: bool,
+}
+
 /// The archive of the package in `folder`: the files of its layout, in
 /// their paths' order, each of the permissions and the time of none, so
 /// that a package packs alike wherever and whenever it is packed; the
@@ -335,8 +347,9 @@ impl Store {
     /// not at all; one that it held already stays as it was, unless its
     /// files are no longer those of its digest, as of a file that the
     /// Finder or a power cut left, which the new one takes the place of.
-    /// The store is made if it is not there.
-    pub fn add(&self, archive: impl Read) -> Result<Unpacked, ArchiveError> {
+    /// The store is made if it is not there. Whether it is new tells what
+    /// a failure that follows may take away.
+    pub fn add(&self, archive: impl Read) -> Result<Stored, ArchiveError> {
         static UNPACKS: AtomicUsize = AtomicUsize::new(0);
         std::fs::create_dir_all(self.root())?;
         let aside = |what: &str| {
@@ -351,30 +364,37 @@ impl Store {
         let placed = (|| {
             sync_folders(&temporary)?;
             let folder = self.folder(&unpacked.digest);
-            if folder.is_dir() {
+            let held = folder.is_dir();
+            if held {
                 if self.check(&unpacked.digest).is_ok() {
-                    return std::fs::remove_dir_all(&temporary);
+                    std::fs::remove_dir_all(&temporary)?;
+                    return Ok(false);
                 }
                 // Changed since it was stored: set aside, then gone.
                 let stale = aside("stale");
                 std::fs::rename(&folder, &stale)?;
                 let _ = std::fs::remove_dir_all(&stale);
             }
-            if std::fs::rename(&temporary, &folder).is_err() && !folder.is_dir() {
+            // Of another rename that placed the same package first, this
+            // one finds it there, and it is not new of this one.
+            let renamed = std::fs::rename(&temporary, &folder).is_ok();
+            if !renamed && !folder.is_dir() {
                 return Err(io::Error::other("its folder could not be renamed"));
             }
             let _ = std::fs::remove_dir_all(&temporary);
             sync_folder(self.root());
-            Ok(())
+            Ok(renamed && !held)
         })();
-        if let Err(error) = placed {
-            let _ = std::fs::remove_dir_all(&temporary);
-            return Err(refused(format!(
-                "the package {} could not take its place in the store: {error}",
-                unpacked.digest
-            )));
+        match placed {
+            Ok(new) => Ok(Stored { unpacked, new }),
+            Err(error) => {
+                let _ = std::fs::remove_dir_all(&temporary);
+                Err(refused(format!(
+                    "the package {} could not take its place in the store: {error}",
+                    unpacked.digest
+                )))
+            }
         }
-        Ok(unpacked)
     }
 }
 

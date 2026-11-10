@@ -1204,3 +1204,40 @@ fn a_conflict_tells_its_reason_and_a_failed_install_leaves_the_store_as_it_was()
         .count();
     assert_eq!(leftovers, 0);
 }
+
+#[test]
+fn a_failed_update_keeps_the_packages_that_the_lockfile_still_names() {
+    let sandbox = Sandbox::new("update-kept");
+    // Two plugins of folders, each of a README and tests beside their
+    // package, and one of a link outside its package's layout, as a
+    // folder of tools that links elsewhere, which installs.
+    let kept = made(&sandbox, "aaa");
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(sandbox.home.join("work"), kept.join("node_modules")).unwrap();
+    let failing = made(&sandbox, "zzz");
+    for folder in [&kept, &failing] {
+        let output = sandbox.sleip(&["add", "--path", &folder.display().to_string()]);
+        assert!(output.status.success(), "{output:?}");
+    }
+    let lock_before = sandbox.locked();
+    let digests_before = sandbox.store().digests().unwrap();
+    assert_eq!(digests_before.len(), 2);
+    // The update of both, the second's package of no entry: the first's,
+    // unchanged, found in the store, stays there.
+    std::fs::remove_file(failing.join("src/init.luau")).unwrap();
+    let output = sandbox.sleip(&["update"]);
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+    assert!(String::from_utf8_lossy(&output.stderr).contains("`acme/zzz`'s package"));
+    assert_eq!(sandbox.locked(), lock_before);
+    assert_eq!(sandbox.store().digests().unwrap(), digests_before);
+    let doctor = sandbox.sleip(&["doctor"]);
+    assert!(doctor.status.success(), "{}", stdout(&doctor));
+    // A new version of the first, which the store lacks, beside the
+    // second that fails: the new package goes, the old ones stay.
+    versioned(&kept, "0.2.0");
+    let output = sandbox.sleip(&["update"]);
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+    assert_eq!(sandbox.locked(), lock_before);
+    assert_eq!(sandbox.store().digests().unwrap(), digests_before);
+    assert!(sandbox.sleip(&["doctor"]).status.success());
+}
