@@ -8,7 +8,7 @@
 
 use std::path::Path;
 
-use pulldown_cmark::{CowStr, Event, Options, Parser, Tag};
+use pulldown_cmark::{CowStr, Event, LinkType, Options, Parser, Tag};
 use serde_json::json;
 use sleip_index::registry::{self, PluginFile};
 use sleip_index::signing::{self, Entry};
@@ -151,6 +151,23 @@ pub(super) fn site(
     };
     let mut listed = Vec::new();
     for plugin in published(out, registry, Some(&archives), into, roots)? {
+        // A README beyond its bounds, its page of none.
+        let readme = match plugin
+            .readme
+            .as_deref()
+            .map(|readme| markdown(readme, &plugin.links))
+        {
+            Some(Ok(html)) => Some(html),
+            Some(Err(error)) => {
+                out.tell(
+                    "failed",
+                    json!({ "name": plugin.plugin, "version": plugin.shown.vers, "message": error }),
+                    &format!("{} {}: its page has no README, as {error}", plugin.plugin, plugin.shown.vers),
+                );
+                None
+            }
+            None => None,
+        };
         let page = plugin_page(
             &plugin.plugin,
             &plugin.description,
@@ -158,10 +175,7 @@ pub(super) fn site(
             &plugin.repository,
             &plugin.entries,
             &plugin.shown,
-            plugin
-                .readme
-                .as_deref()
-                .map(|readme| markdown(readme, &plugin.links)),
+            readme,
         );
         let page_path = into
             .join("plugins")
@@ -182,6 +196,7 @@ pub(super) fn site(
         });
     }
     written(&into.join("style.css"), STYLE)?;
+    written(&into.join("search.js"), SEARCH)?;
     written(&into.join("icon.svg"), ICON)?;
     written(&into.join("index.html"), &home_page(&listed))?;
     out.tell(
@@ -214,9 +229,9 @@ pub(super) fn readme(
 ) -> Result<(), String> {
     let text = std::fs::read_to_string(readme)
         .map_err(|error| format!("{} cannot be read: {error}", readme.display()))?;
-    let (Some(start), Some(end)) = (text.find(LIST_START), text.find(LIST_END)) else {
+    let (Some(start), Some(end)) = (mark(&text, LIST_START), mark(&text, LIST_END)) else {
         return Err(format!(
-            "{} has no list of the plugins between `{LIST_START}` and `{LIST_END}`",
+            "{} has no list of the plugins between `{LIST_START}` and `{LIST_END}`, each once, on a line of its own",
             readme.display()
         ));
     };
@@ -243,6 +258,18 @@ pub(super) fn readme(
         },
     );
     Ok(())
+}
+
+/// The place of the mark `mark` in `text`, as it is there once, on a line
+/// of its own.
+fn mark(text: &str, mark: &str) -> Option<usize> {
+    if text.matches(mark).count() != 1 {
+        return None;
+    }
+    let at = text.find(mark)?;
+    let alone = text[..at].ends_with('\n') || at == 0;
+    let after = &text[at + mark.len()..];
+    (alone && (after.is_empty() || after.starts_with('\n'))).then_some(at)
 }
 
 /// The README's list of `published`, a table of Markdown, each plugin's
@@ -302,9 +329,42 @@ fn markdown_text(text: &str) -> String {
             character => out.push(character),
         }
     }
-    out.replace("://", ":\u{200B}//")
-        .replace("www.", "www\u{200B}.")
-        .replace("WWW.", "WWW\u{200B}.")
+    broken_www(&out.replace("://", ":\u{200B}//"))
+}
+
+/// `text`, each `www.`, whatever its case, broken by a space of no width
+/// before its `.`, which GitHub links no more.
+fn broken_www(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let bytes = text.as_bytes();
+    let mut from = 0;
+    let mut at = 0;
+    while at + 4 <= bytes.len() {
+        if bytes[at..at + 4].eq_ignore_ascii_case(b"www.") {
+            out.push_str(&text[from..at + 3]);
+            out.push('\u{200B}');
+            from = at + 3;
+            at += 4;
+        } else {
+            at += 1;
+        }
+    }
+    out.push_str(&text[from..]);
+    out
+}
+
+/// The most characters of a plugin's description that its pages show.
+const LONGEST_SHOWN_DESCRIPTION: usize = 300;
+
+/// The most characters of a plugin's license that its page shows.
+const LONGEST_LICENSE: usize = 100;
+
+/// `text` of `most` characters at most, an ellipsis after it if longer.
+fn bounded(text: &str, most: usize) -> String {
+    match text.char_indices().nth(most) {
+        Some((at, _)) => format!("{}…", &text[..at]),
+        None => text.to_owned(),
+    }
 }
 
 /// Writes `text` to `path`, its folders made.
@@ -430,15 +490,52 @@ impl Links {
     }
 }
 
+/// The most bytes of a README that a plugin's page shows.
+const LONGEST_README: usize = 512 * 1024;
+
+/// The most bytes of a README's HTML, which references to a link, or any
+/// other construct of Markdown, make larger than the README.
+const LONGEST_README_HTML: usize = 2 * 1024 * 1024;
+
+/// A text of `most` bytes at most, its writes past them refused.
+struct Bounded {
+    text: String,
+    most: usize,
+}
+
+impl std::fmt::Write for Bounded {
+    fn write_str(&mut self, text: &str) -> std::fmt::Result {
+        if self.text.len() + text.len() > self.most {
+            return Err(std::fmt::Error);
+        }
+        self.text.push_str(text);
+        Ok(())
+    }
+}
+
 /// The HTML of `readme`, of Markdown: its raw HTML shown as text, its
-/// links as [`Links::resolve`] takes them.
-fn markdown(readme: &str, links: &Links) -> String {
+/// links as [`Links::resolve`] takes them, an address of mail as it is,
+/// each of `rel="nofollow ugc noopener"`; written as it is read, stopped
+/// past [`LONGEST_README_HTML`] bytes; of a README of [`LONGEST_README`]
+/// bytes at most.
+fn markdown(readme: &str, links: &Links) -> Result<String, String> {
+    if readme.len() > LONGEST_README {
+        return Err(format!(
+            "its README is of {} bytes, more than {LONGEST_README}",
+            readme.len()
+        ));
+    }
     let options = Options::ENABLE_TABLES
         | Options::ENABLE_STRIKETHROUGH
         | Options::ENABLE_TASKLISTS
         | Options::ENABLE_FOOTNOTES;
     let events = Parser::new_ext(readme, options).map(|event| match event {
         Event::Html(html) | Event::InlineHtml(html) => Event::Text(html),
+        // An address of mail, to which the HTML gives its `mailto:`.
+        event @ Event::Start(Tag::Link {
+            link_type: LinkType::Email,
+            ..
+        }) => event,
         Event::Start(Tag::Link {
             link_type,
             dest_url,
@@ -463,15 +560,32 @@ fn markdown(readme: &str, links: &Links) -> String {
         }),
         other => other,
     });
-    let mut html = String::new();
-    pulldown_cmark::html::push_html(&mut html, events);
-    html
+    let mut html = Bounded {
+        text: String::new(),
+        most: LONGEST_README_HTML,
+    };
+    pulldown_cmark::html::write_html_fmt(&mut html, events)
+        .map_err(|_| format!("its README's HTML is of more than {LONGEST_README_HTML} bytes"))?;
+    // The links that the HTML writes, of no HTML of the README's, which
+    // shows as text.
+    Ok(html
+        .text
+        .replace("<a href=\"", "<a rel=\"nofollow ugc noopener\" href=\""))
 }
 
-/// A page of `title`, of `main`, its body, and of what follows it, `end`.
-fn page(title: &str, main: &str, end: &str) -> String {
+/// The policy of a plugin's page, of its README: no script, styles of the
+/// site's own, images of the site and of the web.
+const PLUGIN_POLICY: &str = "default-src 'none'; style-src 'self'; img-src 'self' https:; base-uri 'none'; form-action 'none'";
+
+/// The policy of the home page: the scripts of the site's own, Pagefind's,
+/// of WebAssembly, and the requests of its index.
+const HOME_POLICY: &str = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data:; object-src 'none'; base-uri 'none'; form-action 'none'";
+
+/// A page of `title`, of `main`, its body, and of what follows it, `end`,
+/// of the content's policy `policy`.
+fn page(title: &str, main: &str, end: &str, policy: &str) -> String {
     format!(
-        "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>{}</title>\n<link rel=\"icon\" href=\"/icon.svg\" type=\"image/svg+xml\">\n<link rel=\"stylesheet\" href=\"/style.css\">\n</head>\n<body>\n<header><a class=\"home\" href=\"/\"><img src=\"/icon.svg\" alt=\"\" width=\"28\" height=\"28\">Lokyr plugins</a></header>\n{main}\n<footer>The registry of <a href=\"https://lokyr.dev\">Lokyr</a>'s plugins; its index, signed, which Sleip reads, at <a href=\"/config.json\">config.json</a>.</footer>\n{end}</body>\n</html>\n",
+        "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<meta http-equiv=\"Content-Security-Policy\" content=\"{policy}\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>{}</title>\n<link rel=\"icon\" href=\"/icon.svg\" type=\"image/svg+xml\">\n<link rel=\"stylesheet\" href=\"/style.css\">\n</head>\n<body>\n<header><a class=\"home\" href=\"/\"><img src=\"/icon.svg\" alt=\"\" width=\"28\" height=\"28\">Lokyr plugins</a></header>\n{main}\n<footer>The registry of <a href=\"https://lokyr.dev\">Lokyr</a>'s plugins; its index, signed, which Sleip reads, at <a href=\"/config.json\">config.json</a>.</footer>\n{end}</body>\n</html>\n",
         escaped(title)
     )
 }
@@ -539,16 +653,16 @@ fn plugin_page(
         format!("<h2>README</h2>\n<article class=\"readme\">\n{readme}</article>\n")
     });
     let main = format!(
-        "<main data-pagefind-body>\n<h1>{name_text}</h1>\n<p class=\"description\">{description}</p>\n<dl class=\"facts\">\n<dt>Version</dt><dd>{version}{yanked}</dd>\n<dt>License</dt><dd>{license}</dd>\n<dt>Repository</dt><dd><a href=\"{repository_attribute}\">{repository_text}</a></dd>\n<dt>Install</dt><dd><code>sleip add {name_text}</code></dd>\n</dl>\n<h2>Capabilities</h2>\n<p>{capabilities}</p>\n{uses}<h2>Versions</h2>\n<table class=\"versions\">\n<thead><tr><th>Version</th><th>Capabilities</th><th>Checksum</th></tr></thead>\n<tbody>\n{versions}</tbody>\n</table>\n{readme}</main>",
+        "<main data-pagefind-body>\n<h1>{name_text}</h1>\n<p class=\"description\">{description}</p>\n<dl class=\"facts\">\n<dt>Version</dt><dd>{version}{yanked}</dd>\n<dt>License</dt><dd>{license}</dd>\n<dt>Repository</dt><dd><a rel=\"nofollow ugc noopener\" href=\"{repository_attribute}\">{repository_text}</a></dd>\n<dt>Install</dt><dd><code>sleip add {name_text}</code></dd>\n</dl>\n<h2>Capabilities</h2>\n<p>{capabilities}</p>\n{uses}<h2>Versions</h2>\n<table class=\"versions\">\n<thead><tr><th>Version</th><th>Capabilities</th><th>Checksum</th></tr></thead>\n<tbody>\n{versions}</tbody>\n</table>\n{readme}</main>",
         name_text = escaped(name),
-        description = escaped(description),
+        description = escaped(&bounded(description, LONGEST_SHOWN_DESCRIPTION)),
         version = escaped(&shown.vers),
-        license = escaped(license),
+        license = escaped(&bounded(license, LONGEST_LICENSE)),
         repository_attribute = escaped(repository),
         repository_text = escaped(repository),
         capabilities = capabilities(shown),
     );
-    page(&format!("{name} — Lokyr plugins"), &main, "")
+    page(&format!("{name} — Lokyr plugins"), &main, "", PLUGIN_POLICY)
 }
 
 /// The home page of the plugins `listed`, which Pagefind searches.
@@ -563,16 +677,20 @@ fn home_page(listed: &[Listed]) -> String {
         items.push_str(&format!(
             "<li><a href=\"/plugins/{name}/\">{name}</a> <span class=\"version\">{}</span>{badge}<p>{}</p></li>\n",
             escaped(&plugin.version),
-            escaped(&plugin.description),
+            escaped(&bounded(&plugin.description, LONGEST_SHOWN_DESCRIPTION)),
             name = escaped(&plugin.name),
         ));
     }
     let main = format!(
         "<main>\n<h1>Lokyr plugins</h1>\n<p class=\"description\">The plugins of Lokyr's registry, each built from its tagged sources, checked and tested; <code>sleip add owner/name</code> installs one.</p>\n<div id=\"search\"></div>\n<ul class=\"plugins\">\n{items}</ul>\n</main>"
     );
-    let end = "<link rel=\"stylesheet\" href=\"/pagefind/pagefind-ui.css\">\n<script src=\"/pagefind/pagefind-ui.js\"></script>\n<script>window.addEventListener(\"DOMContentLoaded\", () => { if (window.PagefindUI) { new PagefindUI({ element: \"#search\", showSubResults: false }); } });</script>\n";
-    page("Lokyr plugins", &main, end)
+    let end = "<link rel=\"stylesheet\" href=\"/pagefind/pagefind-ui.css\">\n<script src=\"/pagefind/pagefind-ui.js\"></script>\n<script src=\"/search.js\"></script>\n";
+    page("Lokyr plugins", &main, end, HOME_POLICY)
 }
+
+/// The home page's search, of Pagefind, a script of the site's own, as its
+/// policy takes no script of a page.
+const SEARCH: &str = "window.addEventListener(\"DOMContentLoaded\", () => { if (window.PagefindUI) { new PagefindUI({ element: \"#search\", showSubResults: false }); } });\n";
 
 /// Lokyr's icon, the app's own, of the site's tab and its header.
 const ICON: &str = include_str!("../../../../../crates/app/resources/icons/lokyr-jormungandr.svg");
@@ -603,6 +721,8 @@ tr.yanked td { color: var(--muted); }
 .plugins li p { margin: 0.25rem 0 0; color: var(--muted); }
 .version { color: var(--muted); font-size: 0.875rem; }
 .readme img { max-width: 100%; }
+.readme, .description, .facts dd, td, .plugins li p { overflow-wrap: anywhere; }
+.readme table { display: block; overflow-x: auto; }
 #search { margin: 1.5rem 0; --pagefind-ui-scale: 0.9; --pagefind-ui-primary: var(--accent); --pagefind-ui-text: var(--fg); --pagefind-ui-background: var(--bg); --pagefind-ui-border: var(--line); --pagefind-ui-tag: var(--code); --pagefind-ui-border-width: 1px; --pagefind-ui-border-radius: 8px; --pagefind-ui-font: inherit; }
 "#;
 
@@ -616,7 +736,8 @@ mod tests {
         let html = markdown(
             "# Hello\n\n<script>alert(1)</script>\n\nText <b>bold</b> [site](https://lokyr.dev) [bad](javascript:alert(1)) [doc](docs/a.md) [top](#hello) [net](//evil.example)\n\n![shot](./img/shot.png) ![remote](https://x.example/a.png)\n",
             &links,
-        );
+        )
+        .unwrap();
         assert!(!html.contains("<script>"), "{html}");
         assert!(html.contains("&lt;script&gt;"), "{html}");
         assert!(!html.contains("<b>"), "{html}");
@@ -638,6 +759,61 @@ mod tests {
         assert_eq!(other.resolve("docs/a.md", false), "#");
         assert_eq!(other.resolve("MAILTO:a@b.c", false), "MAILTO:a@b.c");
         assert_eq!(other.resolve("data:text/html,x", true), "#");
+        // An address of mail as it is, and every link of no follow.
+        let html = markdown(
+            "Write <me@example.com> or see <https://lokyr.dev>.\n",
+            &links,
+        )
+        .unwrap();
+        assert!(html.contains("href=\"mailto:me@example.com\""), "{html}");
+        assert!(!html.contains("mailto:https"), "{html}");
+        assert_eq!(
+            html.matches("<a rel=\"nofollow ugc noopener\" href=")
+                .count(),
+            2,
+            "{html}"
+        );
+    }
+
+    #[test]
+    fn a_readme_beyond_its_bounds_is_refused_as_it_is_written() {
+        let links = Links::of("https://github.com/acme/hello", "abc123");
+        let long = "x".repeat(LONGEST_README + 1);
+        assert!(markdown(&long, &links).unwrap_err().contains("more than"));
+        // A table of a header of many columns and of many rows, of its
+        // bounds, whose HTML is larger: stopped as it is written.
+        let mut table = format!("|{}\n|{}\n", "a|".repeat(60_000), "-|".repeat(60_000));
+        while table.len() < LONGEST_README - 2 {
+            table.push_str("x\n");
+        }
+        let started = std::time::Instant::now();
+        let error = markdown(&table, &links).unwrap_err();
+        assert!(error.contains("HTML is of more than"), "{error}");
+        assert!(started.elapsed() < std::time::Duration::from_secs(5));
+        // A reference to a long link, many times, which the parser expands
+        // within its own bound.
+        let mut readme = format!("[r]: https://example.com/{}\n\n", "a".repeat(200_000));
+        while readme.len() < LONGEST_README - 8 {
+            readme.push_str("[a][r] ");
+        }
+        let started = std::time::Instant::now();
+        if let Ok(html) = markdown(&readme, &links) {
+            assert!(html.len() <= LONGEST_README_HTML);
+        }
+        assert!(started.elapsed() < std::time::Duration::from_secs(5));
+    }
+
+    #[test]
+    fn the_readme_s_marks_are_each_once_on_a_line_of_their_own() {
+        let good = format!("# R\n{LIST_START}\nold\n{LIST_END}\nrest\n");
+        assert!(mark(&good, LIST_START).is_some() && mark(&good, LIST_END).is_some());
+        let twice = format!("{good}{LIST_START}\n");
+        assert_eq!(mark(&twice, LIST_START), None);
+        let inline = format!("# R\nsee {LIST_START}\n{LIST_END}\n");
+        assert_eq!(mark(&inline, LIST_START), None);
+        let after = format!("# R\n{LIST_START} x\n{LIST_END}\n");
+        assert_eq!(mark(&after, LIST_START), None);
+        assert!(mark(&format!("{LIST_START}\n"), LIST_START).is_some());
     }
 
     #[test]
@@ -668,14 +844,40 @@ mod tests {
         assert!(page.contains("It &lt;em&gt;greets&lt;/em&gt; &amp; &quot;quotes&quot;"));
         assert!(!page.contains("\" onclick=\""), "{page}");
         assert!(page.contains("<code>fs-read:~/&lt;x&gt;</code>"), "{page}");
+        // Of no script, its repository's link of no follow; its texts
+        // bounded.
+        assert!(page.contains(PLUGIN_POLICY), "{page}");
+        assert!(!page.contains("<script"), "{page}");
+        assert!(
+            page.contains("<a rel=\"nofollow ugc noopener\" href=\"https://github.com/acme/hello")
+        );
+        let long = plugin_page(
+            "acme/hello",
+            &"d".repeat(LONGEST_SHOWN_DESCRIPTION + 50),
+            &"l".repeat(LONGEST_LICENSE + 50),
+            "https://github.com/acme/hello",
+            std::slice::from_ref(&entry),
+            &entry,
+            None,
+        );
+        assert!(long.contains(&format!("{}…", "d".repeat(LONGEST_SHOWN_DESCRIPTION))));
+        assert!(!long.contains(&"d".repeat(LONGEST_SHOWN_DESCRIPTION + 1)));
+        assert!(long.contains(&format!("{}…", "l".repeat(LONGEST_LICENSE))));
         let home = home_page(&[Listed {
             name: "acme/hello".to_owned(),
             version: "0.1.0".to_owned(),
             description: "<img src=x onerror=alert(1)>".to_owned(),
             yanked: false,
         }]);
-        // Its description's image as text, beside the header's icon.
+        // Its description's image as text, beside the header's icon; its
+        // scripts of the site's own files alone.
         assert!(!home.contains("<img src=x"), "{home}");
+        assert!(home.contains(HOME_POLICY), "{home}");
+        assert!(!home.contains("<script>"), "{home}");
+        assert!(
+            home.contains("<script src=\"/search.js\"></script>"),
+            "{home}"
+        );
         assert!(
             home.contains("&lt;img src=x onerror=alert(1)&gt;"),
             "{home}"
@@ -740,6 +942,12 @@ mod tests {
             "{list}"
         );
         assert!(!list.contains("\nnext"), "{list}");
+        for www in ["www.evil.example", "wWW.evil.example", "WwW.evil.example"] {
+            let broken = markdown_text(www);
+            assert!(!broken.to_ascii_lowercase().contains("www."), "{broken}");
+            assert_eq!(broken.replace('\u{200B}', ""), www);
+        }
+        assert_eq!(broken_www("ünïcode www.x"), "ünïcode www\u{200B}.x");
         // Bounded.
         let long = markdown_text(&"x".repeat(LONGEST_DESCRIPTION + 5));
         assert_eq!(long.chars().count(), LONGEST_DESCRIPTION + 1);
