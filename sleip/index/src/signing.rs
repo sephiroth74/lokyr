@@ -19,7 +19,10 @@ use serde::{Deserialize, Serialize};
 
 /// The public parts of the root keys, which `keys.json`'s signature is
 /// checked against: a new root comes with a new Sleip.
-pub const ROOT_KEYS: &[&str] = &[];
+pub const ROOT_KEYS: &[&str] = &[
+    // The maintainer's, of 10 November 2026.
+    "ed25519:HzUxRVZR5jhKTpoFB6Jd3mgLyB+SzAof93azSxSPg50=",
+];
 
 /// The prefix of a public key and of a signature.
 const PUBLIC: &str = "ed25519:";

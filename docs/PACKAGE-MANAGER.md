@@ -245,6 +245,14 @@ The keys are ed25519, a key and a signature written `ed25519:` and the base64 of
   - A publisher is its GitHub account, which its pull request carries, as the user chose on 4 November 2026: the registry's CI builds each archive from its tag, so that no publisher could sign it, and a publisher's own signature comes with trusted publishing, in phase 2.
 - **Phase 2 (F7)**: trusted publishing via OIDC (GitHub Actions) and Sigstore signatures, as PyPI and crates.io do.
 
+### The registry's keys, kept
+
+- **The root key's secret** is made by `sleip registry keygen` straight onto a medium offline, a removable drive or an encrypted volume: never on the Mac's own disk, in a folder that a cloud service copies, in a repository, `private/` among them, nor on GitHub; a second copy on a second medium, kept apart.
+- It signs `keys.json` alone, of `sleip registry sign-keys`, as an index key is added, replaced or taken off; the medium goes back offline at once. Its public part is in Sleip's `ROOT_KEYS`.
+- **The index key's secret** is `SLEIP_INDEX_KEY`, a secret of the registry's environment `index`, which the branch `main` alone reaches; made by `keygen` into a file that goes to the secret and is deleted, its public part in `keys.json`.
+- **An index key stolen or lost**: a new one made and put in the secret, `keys.json` signed again of the new key alone, the old one off it; the Sleips installed follow `keys.json`.
+- **The root key lost or stolen**: a new root made, its public part in a new Sleip's `ROOT_KEYS`, the old one's taken off, and `keys.json` signed again of it; the Sleips before it read no `keys.json` of the new root, and their users take the new Sleip, as the app's update brings it.
+
 ## Registry
 
 ### v0: static (end of F4)
