@@ -355,3 +355,69 @@ fn every_kind_of_answer_comes_back_as_its_response() {
         .unwrap();
     }
 }
+
+#[test]
+fn an_image_is_asked_of_a_table_and_its_png_comes_back_as_a_string() {
+    use lokyr_plugin_sdk::host::{Color, StyleRun, TextStyle};
+    use lokyr_plugin_sdk::image::{CellRow, Image, ImageBackground, ImageSpec};
+    let answers = vec![Response::Image(Image::blank(2.0))];
+    let (ran, asked) = run(
+        r#"
+        local image = cx.render_image({
+            rows = {
+                { text = "ls", runs = {
+                    { first = 0, last = 1, style = {
+                        foreground = { palette = 2 }, bold = true, faint = false,
+                        italic = false, blink = false, inverse = false,
+                        invisible = false, strikethrough = false, overline = false,
+                    } },
+                } },
+                { text = "日本" },
+            },
+            title = "zsh",
+            buttons = true,
+            background = { rgb = { 1, 2, 3 } },
+            scale = 2,
+        })
+        assert(type(image.png) == "string", typeof(image.png))
+        assert(#image.png == 68 and image.png:sub(2, 4) == "PNG")
+        assert(image.width == 1 and image.height == 1 and image.scale == 2)
+        "#,
+        answers,
+    );
+    assert!(ran.is_ok(), "{ran:?}");
+    let style = TextStyle {
+        foreground: Some(Color::Palette(2)),
+        bold: true,
+        ..TextStyle::default()
+    };
+    assert_eq!(
+        asked,
+        [Request::RenderImage(ImageSpec {
+            rows: vec![
+                CellRow {
+                    text: "ls".to_owned(),
+                    runs: vec![StyleRun {
+                        first: 0,
+                        last: 1,
+                        style,
+                    }],
+                },
+                CellRow {
+                    text: "日本".to_owned(),
+                    runs: Vec::new(),
+                },
+            ],
+            title: Some("zsh".to_owned()),
+            buttons: true,
+            background: ImageBackground::Rgb(1, 2, 3),
+            scale: Some(2.0),
+            ..ImageSpec::default()
+        })]
+    );
+    through_luau(
+        &Request::RenderImage(ImageSpec::default()),
+        &Response::Image(Image::blank(1.0)),
+    )
+    .unwrap();
+}

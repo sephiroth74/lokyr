@@ -17,7 +17,8 @@ use std::time::{Duration, Instant};
 use lokyr_kernel::commands::{Args, Error, Registry};
 use lokyr_kernel::l10n::{KERNEL, Texts};
 use lokyr_kernel::plugins::{
-    Clipboard, Closing, Context, Cx, Event, Panes, Plugin, Plugins, Request as AppRequest,
+    Clipboard, Closing, Context, Cx, Event, Image, ImageSpec, Images, Panes, Plugin, Plugins,
+    Request as AppRequest,
 };
 use lokyr_kernel::workspace::{Environment, Grid, Pane, PaneId, Settings, Workspace};
 use lokyr_plugin_host_luau::conformer::{Conformer as LuauConformer, Ids, Taken};
@@ -478,6 +479,18 @@ impl Clipboard for Board {
     }
 }
 
+/// The images of the kernel's host: a clear pixel each, at the scale
+/// asked for or the fake's display's, as the fake host draws nothing.
+struct Blank;
+
+impl Images for Blank {
+    fn render(&mut self, image: &ImageSpec) -> Result<Image, String> {
+        Ok(Image::blank(
+            image.scale.unwrap_or(lokyr_plugin_sdk::fake::SCALE),
+        ))
+    }
+}
+
 /// The grid of the kernel's host's panes.
 const GRID: Grid = Grid {
     columns: 80,
@@ -513,6 +526,7 @@ struct Kernel {
     workspace: Workspace,
     spawner: Spawner,
     clipboard: Board,
+    images: Blank,
     world: World,
     /// The host's time, which the scenarios' steps move on.
     clock: Instant,
@@ -579,6 +593,7 @@ impl Kernel {
             workspace,
             spawner: Spawner,
             clipboard: Board(Some(scenarios::CLIPBOARD.to_owned())),
+            images: Blank,
             clock: Instant::now(),
             world: World {
                 window: host::WindowId(window.get()),
@@ -603,6 +618,7 @@ impl Kernel {
             workspace: &mut self.workspace,
             panes: &mut self.spawner,
             clipboard: &mut self.clipboard,
+            images: &mut self.images,
             focused: Some(lokyr_kernel::workspace::WindowId::of(self.world.window.0)),
             font_size: 13.0,
             confirm_paste: lokyr_kernel::config::ConfirmPaste::Auto,
@@ -959,11 +975,12 @@ fn kind(request: &Request) -> usize {
         Request::CommandLine { .. } => 91,
         Request::StartTimer { .. } => 92,
         Request::CancelTimer(_) => 93,
+        Request::RenderImage(_) => 94,
     }
 }
 
 /// How many kinds of requests the plugin API has.
-const KINDS: usize = 94;
+const KINDS: usize = 95;
 
 #[test]
 fn the_scenarios_hold_every_request_of_the_plugin_api() {

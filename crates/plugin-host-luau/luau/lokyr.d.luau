@@ -52,6 +52,7 @@ export type Cx = {
     command_line: (pane: PaneId, command: number) -> (string?, string?, number?),
     viewport: (pane: PaneId) -> (Viewport?, string?, number?),
     styles: (pane: PaneId, row: number) -> ({ StyleRun }?, string?, number?),
+    render_image: (image: ImageSpec) -> (Image?, string?, number?),
     decorate: (pane: PaneId, from: { number }, to: { number }, look: DecorationLook) -> (number?, string?, number?),
     undecorate: (pane: PaneId, id: number) -> (true?, string?, number?),
     mark_gutter: (pane: PaneId, row: number, color: { number }) -> (number?, string?, number?),
@@ -301,6 +302,11 @@ export type Category =
     | "find"
     | "view"
 
+export type CellRow = {
+    text: string,
+    runs: { StyleRun }?,
+}
+
 export type Color =
     | { palette: number }
     | { rgb: { number } }
@@ -396,6 +402,29 @@ export type Hover = {
     color: Token?,
     border: Border?,
     opacity: number?,
+}
+
+export type Image = {
+    png: string | buffer,
+    width: number,
+    height: number,
+    scale: number,
+}
+
+export type ImageBackground =
+    | "theme"
+    | "clear"
+    | { rgb: { number } }
+
+export type ImageSpec = {
+    rows: { CellRow },
+    title: string?,
+    buttons: boolean?,
+    rounded: boolean?,
+    shadow: boolean?,
+    padding: number?,
+    background: ImageBackground?,
+    scale: number?,
 }
 
 export type Justify =

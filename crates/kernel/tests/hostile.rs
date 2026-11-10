@@ -10,7 +10,9 @@ use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use lokyr_kernel::commands::{Args, Code, Error, Registry};
-use lokyr_kernel::plugins::{Clipboard, Context, Cx, Event, Panes, Plugin, Plugins, Status, host};
+use lokyr_kernel::plugins::{
+    Clipboard, Context, Cx, Event, Image, ImageSpec, Images, Panes, Plugin, Plugins, Status, host,
+};
 use lokyr_kernel::workspace::{Pane, PaneId, Workspace};
 use lokyr_pkg_model::manifest::Manifest;
 use lokyr_plugin_host_luau::{ENTRY, Execution, LuauPlugin, Package};
@@ -38,12 +40,22 @@ impl Panes for NoPanes {
     }
 }
 
+/// The images of the tests: a clear pixel each.
+struct Blank;
+
+impl Images for Blank {
+    fn render(&mut self, image: &ImageSpec) -> Result<Image, String> {
+        Ok(Image::blank(image.scale.unwrap_or(2.0)))
+    }
+}
+
 /// What the host of the tests reaches: no window.
 struct App {
     registry: Registry,
     workspace: Workspace,
     panes: NoPanes,
     clipboard: Board,
+    images: Blank,
 }
 
 impl App {
@@ -53,6 +65,7 @@ impl App {
             workspace: Workspace::new(),
             panes: NoPanes,
             clipboard: Board(Some("before".to_owned())),
+            images: Blank,
         }
     }
 
@@ -62,6 +75,7 @@ impl App {
             workspace: &mut self.workspace,
             panes: &mut self.panes,
             clipboard: &mut self.clipboard,
+            images: &mut self.images,
             focused: None,
             font_size: 13.0,
             confirm_paste: lokyr_kernel::config::ConfirmPaste::Auto,

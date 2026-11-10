@@ -1033,6 +1033,7 @@ dependencies = [
  "lokyr-ui-core",
  "lokyr-vt-core",
  "notify",
+ "png",
  "serde_json",
 ]
 

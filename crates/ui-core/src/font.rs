@@ -556,6 +556,11 @@ impl<B: FontBackend> Font<B> {
         &self.resolved.family
     }
 
+    /// The display's scale that it takes, which [`Font::set_scale`] gave.
+    pub fn scale(&self) -> f32 {
+        self.scale
+    }
+
     /// The font at a display's `scale`: the cell measured again, and the
     /// glyphs of the other sizes left in the atlas, which they leave as it
     /// fills.

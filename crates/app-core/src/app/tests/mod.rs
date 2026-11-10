@@ -25,6 +25,7 @@ mod consent;
 mod copy;
 mod folders;
 mod frame;
+mod images;
 mod input;
 mod installed;
 // The registry of the default distribution, and no other.

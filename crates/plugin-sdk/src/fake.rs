@@ -60,6 +60,10 @@ use crate::view::{Key, Kind, Node};
 /// tabs.
 pub const FIRST_ID: u64 = 1001;
 
+/// The pixels of a point of the fake's display, which an image takes when
+/// it asks for none.
+pub const SCALE: f32 = 2.0;
+
 /// The most levels of a tree that a look for a key goes down, as the app's
 /// host's.
 const DEEPEST: usize = 64;
@@ -1074,6 +1078,7 @@ impl FakeHost {
             closed: Vec::new(),
             looking: !apply,
             searched: 0,
+            imaged: 0,
         };
         let result = call(&mut Cx::new(&mut calling, &caller));
         let (writes, asked, closed) = (calling.writes, calling.asked, calling.closed);
@@ -2336,6 +2341,8 @@ struct Calling<'h> {
     looking: bool,
     /// How many searches the call started.
     searched: usize,
+    /// How many images the call rendered.
+    imaged: usize,
 }
 
 impl Calling<'_> {
@@ -2454,6 +2461,19 @@ impl Calling<'_> {
             Request::WorkingDirectory(pane) => Response::Text(host.held(*pane)?.directory.clone()),
             Request::Styles { pane, row } => {
                 Response::Styles(host.held(*pane)?.styles.get(row).cloned())
+            }
+            Request::RenderImage(image) => {
+                if self.looking {
+                    return Err(Error::new(Code::Failed, crate::image::LOOKING));
+                }
+                if self.imaged >= crate::image::MOST_IMAGES {
+                    return Err(Error::new(Code::Failed, crate::image::IMAGES_BOUND));
+                }
+                image.check()?;
+                self.imaged += 1;
+                // A clear pixel, as the fake draws nothing, at the scale
+                // asked for or of a display of 2.
+                Response::Image(crate::image::Image::blank(image.scale.unwrap_or(SCALE)))
             }
             Request::Search { pane, query } => {
                 if self.looking {

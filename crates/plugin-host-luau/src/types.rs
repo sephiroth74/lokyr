@@ -553,6 +553,7 @@ fn param_name(ty: &str, at: usize) -> String {
         "Command" => "command",
         "Binding" => "binding",
         "MenuItem" => "item",
+        "ImageSpec" => "image",
         "Data" => "value",
         "string" => "text",
         "number" => "number",

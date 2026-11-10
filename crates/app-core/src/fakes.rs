@@ -66,6 +66,16 @@ impl lokyr_render_core::Renderer for Renderer {
     fn drawing_from(&mut self) -> Option<u64> {
         None
     }
+
+    /// The pixels of a list drawn offscreen: clear ones.
+    fn read_back(
+        &mut self,
+        _list: &DisplayList,
+        width: u32,
+        height: u32,
+    ) -> Result<Option<Vec<u8>>, String> {
+        Ok(Some(vec![0; width as usize * height as usize * 4]))
+    }
 }
 
 /// A surface that shows nothing, and counts the frames drawn into it.

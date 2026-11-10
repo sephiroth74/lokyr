@@ -575,6 +575,19 @@ impl<'a> Cx<'a> {
         }
     }
 
+    /// An image of `image`'s cells, in the theme's colors and the
+    /// terminal's font, in a frame as a window's, which the host renders
+    /// offscreen: its PNG, of its size and its scale.
+    pub fn render_image(
+        &mut self,
+        image: crate::image::ImageSpec,
+    ) -> Result<crate::image::Image, Error> {
+        match self.request(Request::RenderImage(image)) {
+            Response::Image(image) => Ok(image),
+            other => Err(failed(other)),
+        }
+    }
+
     /// Decorates `pane`'s cells from `from` to `to`, in reading order, each
     /// by its column and its row's number, with `look`, as this call
     /// returns: returns the decoration's id. It keeps its text as output

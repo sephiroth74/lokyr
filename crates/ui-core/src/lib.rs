@@ -24,6 +24,7 @@ pub mod cursor;
 pub mod field;
 pub mod focus;
 pub mod font;
+pub mod image;
 pub mod interface;
 pub mod layout;
 pub mod list;

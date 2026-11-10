@@ -558,6 +558,21 @@ pub trait Renderer {
     fn drop_picture(&mut self, picture: PictureId) {
         let _ = picture;
     }
+
+    /// Draws `list` into a texture of its own, `width` by `height` pixels,
+    /// as a window's surface would show it, waits for the GPU, and reads
+    /// its pixels back: RGBA, 8 bits a component in sRGB, premultiplied by
+    /// their opacity, a row after the other from the top; `None` for a
+    /// backend that reads none back.
+    fn read_back(
+        &mut self,
+        list: &DisplayList,
+        width: u32,
+        height: u32,
+    ) -> Result<Option<Vec<u8>>, Self::Error> {
+        let _ = (list, width, height);
+        Ok(None)
+    }
 }
 
 /// What a renderer draws a window's frames into, or a layer's of it.

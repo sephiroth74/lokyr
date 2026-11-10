@@ -456,6 +456,15 @@ impl Renderer for MetalRenderer {
     fn drop_picture(&mut self, picture: PictureId) {
         self.held.remove(&picture.0);
     }
+
+    fn read_back(
+        &mut self,
+        list: &DisplayList,
+        width: u32,
+        height: u32,
+    ) -> Result<Option<Vec<u8>>, Error> {
+        self.draw_offscreen(list, width, height).map(Some)
+    }
 }
 
 impl MetalRenderer {

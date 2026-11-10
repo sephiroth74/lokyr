@@ -60,6 +60,8 @@ pub const DELAY_RANGE: &str = "a timer's delay is a day at most, 86400000 ms";
 /// gives alike.
 pub const TIMERS_BOUND: &str = "a plugin has 64 timers at most, until one fires or is cancelled";
 
+pub use crate::image::IMAGES_BOUND;
+
 /// What a plugin asks of the host.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -275,6 +277,13 @@ pub enum Request {
         /// The row's number.
         row: i64,
     },
+    /// Renders an image of cells, of their styles, in the theme's colors
+    /// and the terminal's font, as a window shows them, in a frame as a
+    /// window's, offscreen: the host answers with the PNG. It reads nothing
+    /// of the app's but the theme and the font, and takes no capability;
+    /// [`MOST_IMAGES`](crate::image::MOST_IMAGES) a call, and none of a call
+    /// that only looks.
+    RenderImage(crate::image::ImageSpec),
     /// Decorates a pane's cells, from one to another in reading order,
     /// each by its column and its row's number, with a look: the host
     /// answers with the decoration's id, and lays it as the call returns.
@@ -862,6 +871,7 @@ impl Request {
             | Self::SetState(_)
             | Self::Commands
             | Self::Themes
+            | Self::RenderImage(_)
             | Self::AddMenuItem(_)
             | Self::StartTimer { .. }
             | Self::CancelTimer(_) => None,
@@ -902,7 +912,8 @@ impl Request {
             | Self::KeysOf { .. }
             | Self::Message { .. }
             | Self::Commands
-            | Self::Themes => Effect::Read,
+            | Self::Themes
+            | Self::RenderImage(_) => Effect::Read,
             Self::SetClipboardText(_)
             | Self::SelectCells { .. }
             | Self::Deselect(_)
@@ -1001,6 +1012,8 @@ pub enum Response {
     Commands(Vec<CommandInfo>),
     /// The themes that the app can show.
     Themes(crate::host::Themes),
+    /// An image that the host rendered.
+    Image(crate::image::Image),
     /// A question's id, whose answer comes as an event.
     Asking(u64),
     /// A timer's id, whose firings come as events.
@@ -1402,6 +1415,7 @@ impl Request {
             Self::ShellCommands { .. } => "shell-commands",
             Self::Viewport { .. } => "viewport",
             Self::Styles { .. } => "styles",
+            Self::RenderImage { .. } => "image",
             Self::Decorate { .. } | Self::MarkGutter { .. } => "decoration",
             Self::Opens { .. } => "boolean",
             Self::FontSize { .. } => "font-size",
@@ -1452,7 +1466,7 @@ impl Request {
     }
 
     /// The numbers that the request carries of its own, a window's point, a
-    /// share, a size or a fade.
+    /// share, a size, a fade, or an image's room and scale.
     fn numbers(&self) -> Vec<f64> {
         match self {
             Self::TabToNewWindow { at: Some(at), .. } => vec![at.x, at.y],
@@ -1462,6 +1476,7 @@ impl Request {
             } => vec![*ratio],
             Self::SetFontSize(Some(size)) => vec![f64::from(*size)],
             Self::SetInactiveDim(dim) => vec![f64::from(*dim)],
+            Self::RenderImage(image) => image.numbers(),
             _ => Vec::new(),
         }
     }
@@ -1567,6 +1582,14 @@ mod tests {
             },
             Request::SetFontSize(Some(f32::NAN)),
             Request::SetInactiveDim(f32::INFINITY),
+            Request::RenderImage(crate::image::ImageSpec {
+                padding: f32::NAN,
+                ..crate::image::ImageSpec::default()
+            }),
+            Request::RenderImage(crate::image::ImageSpec {
+                scale: Some(f32::INFINITY),
+                ..crate::image::ImageSpec::default()
+            }),
         ] {
             assert_eq!(within_depth(request).unwrap_err().code, Code::WrongKind);
         }
@@ -1599,6 +1622,24 @@ mod tests {
                 scroll: Scroll::Up(3),
             },
             Request::SetFontSize(None),
+            Request::RenderImage(crate::image::ImageSpec {
+                rows: vec![crate::image::CellRow {
+                    text: "ls".to_owned(),
+                    runs: vec![StyleRun {
+                        first: 0,
+                        last: 1,
+                        style: crate::host::TextStyle {
+                            bold: true,
+                            ..crate::host::TextStyle::default()
+                        },
+                    }],
+                }],
+                title: Some("zsh".to_owned()),
+                buttons: true,
+                background: crate::image::ImageBackground::Rgb(1, 2, 3),
+                scale: Some(2.0),
+                ..crate::image::ImageSpec::default()
+            }),
             Request::Quit,
         ]
         .map(|request| Call {
@@ -1616,6 +1657,7 @@ mod tests {
                 cells: vec![(0, 7)],
             })),
             Response::Failed(Error::new(Code::NotFound, "there is no pane 4")),
+            Response::Image(crate::image::Image::blank(2.0)),
         ];
         for response in responses {
             let text = serde_json::to_string(&response).unwrap();
@@ -1652,6 +1694,11 @@ mod tests {
         assert_eq!(text, r#"{"timer":{"id":7}}"#);
         assert_eq!(serde_json::from_str::<Event>(&text).unwrap(), fired);
         assert_eq!(fired.name(), "timer");
+    }
+
+    #[test]
+    fn the_images_messages_tell_their_bounds() {
+        assert!(IMAGES_BOUND.contains(&format!(" {} ", crate::image::MOST_IMAGES)));
     }
 
     #[test]
@@ -1728,6 +1775,11 @@ mod tests {
         assert!(Request::Windows.capabilities().is_empty());
         assert!(Request::PaneTitle(pane).capabilities().is_empty());
         assert!(Request::Config.capabilities().is_empty());
+        // An image of the plugin's own cells, a read of none.
+        let image = Request::RenderImage(crate::image::ImageSpec::default());
+        assert!(image.capabilities().is_empty());
+        assert_eq!(image.effect(), Effect::Read);
+        assert_eq!(image.answer(), "image");
         // Timers, every plugin's, as declarations.
         let timer = Request::StartTimer {
             delay: 500,

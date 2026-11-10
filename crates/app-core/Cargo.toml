@@ -46,6 +46,7 @@ lokyr-ui-core.workspace = true
 lokyr-vt-core.workspace = true
 libc.workspace = true
 notify.workspace = true
+png.workspace = true
 # The distributions' plugins.
 # What `cargo xtask gen-dist` writes of dist/*.toml, which it rewrites.
 lokyr-core-actions = { workspace = true, optional = true }

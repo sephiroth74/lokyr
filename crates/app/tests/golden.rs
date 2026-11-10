@@ -1858,3 +1858,207 @@ fn a_pixel_differs_past_the_tolerance_alone() {
     assert_eq!(count, 1);
     assert_eq!(map, [255, 0, 0, 255, 0, 0, 0, 255]);
 }
+
+/// The drawing of the images' tests: Metal's GPU, and CoreText's fonts as
+/// the other golden images have them, smoothed, Han's characters of
+/// Simplified Chinese's faces.
+#[derive(Debug)]
+struct Images {
+    gpu: Gpu,
+}
+
+impl lokyr_app_core::Backend for Images {
+    type Fonts = CoreText;
+    type Surface = lokyr_render_metal::Surface;
+    type Renderer = MetalRenderer;
+
+    fn new() -> Result<Self, String> {
+        Gpu::new()
+            .map(|gpu| Self { gpu })
+            .map_err(|error| error.to_string())
+    }
+
+    fn fonts() -> CoreText {
+        CoreText::with_font_smoothing(true).with_language("zh-Hans")
+    }
+
+    fn renderer(&self, coverage: u32, color: u32) -> Result<MetalRenderer, String> {
+        MetalRenderer::new(&self.gpu, coverage, color).map_err(|error| error.to_string())
+    }
+
+    fn surface(
+        &self,
+        handle: lokyr_platform_core::WindowHandle<'_>,
+    ) -> Result<lokyr_render_metal::Surface, String> {
+        lokyr_render_metal::Surface::new(&self.gpu, handle).map_err(|error| error.to_string())
+    }
+}
+
+/// The rows of an image's tests: a prompt, a command's colored output of
+/// several styles, wide characters and a combining mark, and a status bar
+/// whose background runs past its text.
+fn image_rows() -> Vec<lokyr_plugin_sdk::image::CellRow> {
+    use lokyr_plugin_sdk::host::{StyleRun, TextStyle, Underline};
+    use lokyr_plugin_sdk::image::CellRow;
+    let style = |first: u16, last: u16, style: TextStyle| StyleRun { first, last, style };
+    let green = TextStyle {
+        foreground: Some(Color::Palette(2)),
+        bold: true,
+        ..TextStyle::default()
+    };
+    let blue = TextStyle {
+        foreground: Some(Color::Palette(4)),
+        ..TextStyle::default()
+    };
+    vec![
+        CellRow {
+            text: "~/lokyr ❯ ls -la src".to_owned(),
+            runs: vec![style(0, 6, blue), style(8, 8, green)],
+        },
+        CellRow {
+            text: "drwxr-xr-x  app.rs  日本語  e\u{301}tude".to_owned(),
+            runs: vec![
+                style(
+                    0,
+                    9,
+                    TextStyle {
+                        foreground: Some(Color::Palette(3)),
+                        faint: true,
+                        ..TextStyle::default()
+                    },
+                ),
+                style(
+                    12,
+                    17,
+                    TextStyle {
+                        italic: true,
+                        underline: Some(Underline::Curly),
+                        underline_color: Some(Color::Rgb(255, 80, 80)),
+                        ..TextStyle::default()
+                    },
+                ),
+                style(
+                    20,
+                    25,
+                    TextStyle {
+                        foreground: Some(Color::Rgb(255, 160, 0)),
+                        ..TextStyle::default()
+                    },
+                ),
+            ],
+        },
+        CellRow {
+            text: String::new(),
+            runs: Vec::new(),
+        },
+        CellRow {
+            text: " NORMAL  main.rs".to_owned(),
+            runs: vec![
+                style(
+                    0,
+                    7,
+                    TextStyle {
+                        foreground: Some(Color::Palette(0)),
+                        background: Some(Color::Palette(4)),
+                        bold: true,
+                        ..TextStyle::default()
+                    },
+                ),
+                style(
+                    8,
+                    39,
+                    TextStyle {
+                        background: Some(Color::Rgb(60, 64, 72)),
+                        ..TextStyle::default()
+                    },
+                ),
+            ],
+        },
+    ]
+}
+
+/// Renders `image` of the built-in theme's variant, light or dark, as the
+/// app renders a plugin's, and compares its PNG with its golden image.
+fn check_image(name: &str, image: &lokyr_plugin_sdk::image::ImageSpec, dark: bool) {
+    use lokyr_kernel::plugins::Images as _;
+    let Ok(mut drawing) = lokyr_app_core::Drawing::<Images>::new(FontConfig {
+        size: Size::try_from(POINTS).unwrap(),
+        ..FontConfig::default()
+    }) else {
+        eprintln!("no Metal device: the golden images are not compared");
+        return;
+    };
+    let theme = Theme::builtin();
+    let window = lokyr_kernel::config::WindowConfig::default();
+    let scale = image.scale.unwrap();
+    let mut painter = lokyr_app_core::ImagePainter {
+        drawing: Some(&mut drawing),
+        colors: &theme.variant(dark).colors,
+        widths: lokyr_vt_core::unicode::Widths::default(),
+        look: TextLook::default(),
+        padding: (window.padding_x, window.padding_y),
+        scale: 1.0,
+    };
+    let rendered = painter.render(image).unwrap();
+    assert_eq!(
+        (rendered.scale, &rendered.png.0[1..4]),
+        (scale, &b"PNG"[..])
+    );
+    let decoder = png::Decoder::new(std::io::Cursor::new(&rendered.png.0));
+    let mut reader = decoder.read_info().unwrap();
+    // Of the resolution of its scale, 72 points an inch.
+    let dims = reader.info().pixel_dims.unwrap();
+    assert_eq!(dims.xppu, (f64::from(scale) * 72.0 / 0.0254).round() as u32);
+    let mut pixels = vec![0; reader.output_buffer_size().unwrap()];
+    let info = reader.next_frame(&mut pixels).unwrap();
+    pixels.truncate(info.buffer_size());
+    assert_eq!((info.width, info.height), (rendered.width, rendered.height));
+    let most = (f64::from(info.width * info.height) * SHARE) as usize;
+    let name = format!("{name}-{}x", scale as u32);
+    compare(&name, (info.width, info.height, &pixels), most);
+}
+
+#[test]
+fn an_image_of_cells_renders_to_a_png_as_its_golden_images() {
+    use lokyr_plugin_sdk::image::{ImageBackground, ImageSpec};
+    for scale in [1.0, 2.0] {
+        // The window of its buttons, its title, rounded corners and a
+        // shadow, on the dark theme's background darker.
+        let framed = ImageSpec {
+            rows: image_rows(),
+            title: Some("~/lokyr — zsh".to_owned()),
+            buttons: true,
+            rounded: true,
+            shadow: true,
+            padding: 32.0,
+            background: ImageBackground::Theme,
+            scale: Some(scale),
+        };
+        check_image("image-framed-dark", &framed, true);
+        // The window alone, of square corners, no bar, no shadow, clear
+        // around it, in the light theme.
+        let alone = ImageSpec {
+            rows: image_rows(),
+            padding: 0.0,
+            background: ImageBackground::Clear,
+            scale: Some(scale),
+            ..ImageSpec::default()
+        };
+        check_image("image-alone-light", &alone, false);
+        // A title wider than the cells, of no buttons, on a color of its
+        // own, clear past its rounded corners.
+        let titled = ImageSpec {
+            rows: vec![lokyr_plugin_sdk::image::CellRow {
+                text: "ok".to_owned(),
+                runs: Vec::new(),
+            }],
+            title: Some("cargo test --workspace — a title wider than its cells".to_owned()),
+            rounded: true,
+            padding: 16.0,
+            background: ImageBackground::Rgb(171, 184, 195),
+            scale: Some(scale),
+            ..ImageSpec::default()
+        };
+        check_image("image-titled-dark", &titled, true);
+    }
+}

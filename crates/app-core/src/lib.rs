@@ -31,6 +31,7 @@ mod size_label;
 mod watch;
 mod window;
 
+pub use app::images::ImagePainter;
 pub use app::{App, check};
 pub use drawing::{Backend, Drawing};
 pub use environment::bundle_executable;

@@ -26,7 +26,11 @@ use lokyr_plugin_sdk::host::{
     BarPlace, Binding, Color, CommandInfo, DecorationLook, Direction, Edge, LEAST_DELAY, Layout,
     Line, LineText, MOST_DELAY, MOST_SEARCHES, MOST_STATE, MOST_TIMERS, MOST_WRITES, MenuItem,
     MenuPlace, PaneId, QuickLength, QuickPlace, ScreenPoint, Scroll, SearchMatch, SearchQuery,
-    SelectionKind, ShellCommand, Side, TabId, TabInfo, Underline, Viewport, WindowId, WindowInfo,
+    SelectionKind, ShellCommand, Side, StyleRun, TabId, TabInfo, TextStyle, Underline, Viewport,
+    WindowId, WindowInfo,
+};
+use lokyr_plugin_sdk::image::{
+    CellRow, IMAGES_BOUND, Image, ImageBackground, ImageSpec, MOST_IMAGES,
 };
 use lokyr_plugin_sdk::message::{
     DELAY_RANGE, DIM_RANGE, Data, Event, Mods, OWN_PANE, Request, Response, TIMERS_BOUND,
@@ -183,8 +187,84 @@ pub fn all(world: &World) -> Vec<Scenario> {
         pane_changes(world, true),
         pane_changes(world, false),
         bounds(world),
+        images(),
         core_actions(world),
     ]
+}
+
+/// The images of cells that a plugin asks for, of no capability: each at
+/// the scale asked for or the display's, [`MOST_IMAGES`] a call at most,
+/// and those out of their bounds refused, as every host checks them alike.
+fn images() -> Scenario {
+    let spec = |scale: Option<f32>| ImageSpec {
+        rows: vec![
+            CellRow {
+                text: "ls -la".to_owned(),
+                runs: vec![StyleRun {
+                    first: 0,
+                    last: 1,
+                    style: TextStyle {
+                        foreground: Some(Color::Palette(2)),
+                        bold: true,
+                        ..TextStyle::default()
+                    },
+                }],
+            },
+            CellRow {
+                text: "日本 é".to_owned(),
+                runs: Vec::new(),
+            },
+        ],
+        title: Some("~ — zsh".to_owned()),
+        buttons: true,
+        rounded: true,
+        shadow: true,
+        padding: 32.0,
+        background: ImageBackground::Rgb(40, 44, 52),
+        scale,
+    };
+    let rendered = |scale: Option<f32>| {
+        (
+            Request::RenderImage(spec(scale)),
+            Response::Image(Image::blank(scale.unwrap_or(2.0))),
+        )
+    };
+    let mut asks: Vec<(Request, Response)> = (0..MOST_IMAGES)
+        .map(|at| rendered((at == 1).then_some(3.0)))
+        .collect();
+    asks.push((
+        Request::RenderImage(spec(None)),
+        failed(Code::Failed, IMAGES_BOUND),
+    ));
+    let refused = |image: ImageSpec| {
+        let message = image.check().unwrap_err().message;
+        (Request::RenderImage(image), failed(Code::Failed, &message))
+    };
+    let wrong = vec![
+        refused(ImageSpec::default()),
+        refused(ImageSpec {
+            rows: vec![CellRow {
+                text: "a\u{1b}[31mb".to_owned(),
+                runs: Vec::new(),
+            }],
+            ..spec(None)
+        }),
+        refused(ImageSpec {
+            padding: 300.0,
+            ..spec(None)
+        }),
+        refused(ImageSpec {
+            scale: Some(8.0),
+            ..spec(None)
+        }),
+        rendered(Some(1.0)),
+    ];
+    Scenario {
+        name: "the images of cells, of no capability, bounded".to_owned(),
+        capabilities: Some(Vec::new()),
+        subscriptions: Vec::new(),
+        steps: vec![ask(asks), ask(wrong)],
+    }
 }
 
 /// The changes of a tab that the plugin hears, of a plugin that reads the

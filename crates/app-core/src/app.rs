@@ -36,6 +36,7 @@ use lokyr_platform_core::{
 use lokyr_pty::Program;
 use lokyr_render_core::{Renderer, Surface as _};
 use lokyr_text_core::FontConfig;
+use lokyr_ui_core::pane::TextLook;
 use lokyr_ui_core::theme::{self as ui_theme, Theme};
 use lokyr_vt_core::page::Budget;
 use lokyr_vt_core::terminal::{self as vt, ClipboardRequest, Scroll};
@@ -60,6 +61,7 @@ mod consent;
 pub(crate) mod dividers;
 mod folders;
 pub(crate) mod frame;
+pub(crate) mod images;
 mod input;
 mod installed;
 mod installs;
@@ -2694,11 +2696,24 @@ impl<B: Backend> App<B> {
         platform: &mut dyn Platform,
         call: impl FnOnce(&mut Plugins, &mut plugins::Context<'_>) -> T,
     ) -> T {
-        let focused = self
+        let shown = self
             .acting
             .or_else(|| platform.focused_window())
-            .and_then(|window| self.windows.get(&window))
-            .map(|state| state.window);
+            .and_then(|window| self.windows.get(&window));
+        let focused = shown.map(|state| state.window);
+        // The images of cells at the scale of the focused window's last
+        // frame, or else of the largest of the others', or of a Mac's own
+        // display, of no question to the platform.
+        let scale = shown
+            .and_then(|state| state.shown.as_ref())
+            .map(|drawn| drawn.scale)
+            .or_else(|| {
+                self.windows
+                    .values()
+                    .filter_map(|state| state.shown.as_ref().map(|drawn| drawn.scale))
+                    .reduce(f64::max)
+            })
+            .unwrap_or(2.0);
         let font_size = self.font_size.unwrap_or(self.config.font.size.points());
         let confirm_paste = if self.pastes_unconfirmed {
             ConfirmPaste::Never
@@ -2746,12 +2761,25 @@ impl<B: Backend> App<B> {
         // focused pane settled them.
         let menu_enabled = &self.menu_enabled;
         let enabled = |command: &str| menu_enabled.get(command).copied().unwrap_or(true);
+        let mut images = images::ImagePainter {
+            drawing: self.drawing.as_mut(),
+            colors: &self.theme.variant(dark).colors,
+            widths: self.config.terminal.widths(),
+            look: TextLook {
+                config: self.config.text,
+                blink_shown: true,
+                minimum_contrast: self.config.theme.minimum_contrast.value(),
+            },
+            padding: (self.config.window.padding_x, self.config.window.padding_y),
+            scale: scale as f32,
+        };
         let mut clipboard = PlatformClipboard(platform);
         let mut context = plugins::Context {
             registry: &mut self.commands,
             workspace: &mut self.workspace,
             panes: &mut panes,
             clipboard: &mut clipboard,
+            images: &mut images,
             focused,
             font_size,
             confirm_paste,

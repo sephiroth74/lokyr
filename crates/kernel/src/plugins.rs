@@ -33,6 +33,7 @@ pub use lokyr_plugin_sdk::API_VERSION;
 pub use lokyr_plugin_sdk::event::WorkspaceEvent;
 pub use lokyr_plugin_sdk::host;
 use lokyr_plugin_sdk::host::MOST_WRITES;
+pub use lokyr_plugin_sdk::image;
 pub use lokyr_plugin_sdk::message::Event;
 pub use lokyr_plugin_sdk::message::{
     COMMAND_ENDED, COMMAND_STARTED, Data, KEYS_CHANGED, Mods, POINTER, VIEWPORT_CHANGED,
@@ -258,6 +259,16 @@ pub trait Clipboard {
     fn set_text(&mut self, text: &str);
 }
 
+/// What renders the images of cells that plugins ask for, the app's own
+/// way, as its windows draw their panes.
+pub trait Images {
+    /// The image of `image`'s cells, checked already, as a PNG: in the
+    /// theme's colors and the terminal's font, in its frame, at its scale or
+    /// the display's of the focused window; the error that tells why it
+    /// cannot be, as of an app that does not draw, or of an image too large.
+    fn render(&mut self, image: &ImageSpec) -> Result<Image, String>;
+}
+
 /// What starts the programs of the panes that plugins open, the app's own
 /// way, as it starts a window's pane.
 pub trait Panes {
@@ -279,6 +290,8 @@ pub struct Context<'a> {
     pub panes: &'a mut dyn Panes,
     /// The clipboard.
     pub clipboard: &'a mut dyn Clipboard,
+    /// What renders the images of cells.
+    pub images: &'a mut dyn Images,
     /// The window that has the focus.
     pub focused: Option<WindowId>,
     /// The text's size, in points.
@@ -913,6 +926,7 @@ const READ_PART: usize = 256;
 const MOST_READS: usize = 4;
 
 pub use lokyr_plugin_sdk::host::{MOST_DECLARED, MOST_SEARCHES};
+pub use lokyr_plugin_sdk::image::{IMAGES_BOUND, Image, ImageSpec, MOST_IMAGES};
 
 /// How long a plugin that faulted waits before it starts again, its first
 /// time, which each fault within [`FAULTS_WITHIN`] doubles.
@@ -4284,13 +4298,15 @@ struct Host<'h, 'c> {
 }
 
 /// What a call's requests asked of the app, which count with its writes;
-/// the searches that they started, which a call that fails ends; and the
-/// panels that they closed, whose trees go and whose plugin hears that
+/// the searches that they started, which a call that fails ends; the images
+/// that they rendered; and the panels that they closed, whose trees go and whose plugin hears that
 /// they closed as the call returns, unless it fails.
 #[derive(Debug, Default)]
 pub(super) struct Tally {
     asked: usize,
     searches: Vec<u64>,
+    /// How many images the call rendered.
+    images: usize,
     closed: Vec<PanelId>,
 }
 
@@ -4808,6 +4824,22 @@ impl Host<'_, '_> {
                 }
             }
             Asked::Themes => Response::Themes((self.context.themes)()),
+            Asked::RenderImage(image) => {
+                if self.looking {
+                    return Err(Error::new(Code::Failed, lokyr_plugin_sdk::image::LOOKING));
+                }
+                if self.tally.images >= MOST_IMAGES {
+                    return Err(Error::new(Code::Failed, IMAGES_BOUND));
+                }
+                image.check()?;
+                self.tally.images += 1;
+                Response::Image(
+                    self.context
+                        .images
+                        .render(&image)
+                        .map_err(|message| Error::new(Code::Unavailable, message))?,
+                )
+            }
             Asked::Commands => {
                 // The rest of the registry to a plugin of `user-commands`
                 // alone, which tells the plugins installed and the user's

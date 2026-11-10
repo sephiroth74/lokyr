@@ -22,6 +22,7 @@ use crate::workspace::{Environment, Grid, Settings};
 mod bounds;
 mod config;
 mod consent;
+mod images;
 mod lazy;
 mod timers;
 
@@ -115,6 +116,24 @@ impl Clipboard for Board {
     }
 }
 
+/// The images of the tests' plugins: each asked, in order, answered by a
+/// clear pixel, or by the error that the test gives.
+#[derive(Default)]
+pub(super) struct Painter {
+    pub(super) asked: Vec<ImageSpec>,
+    pub(super) failure: Option<String>,
+}
+
+impl Images for Painter {
+    fn render(&mut self, image: &ImageSpec) -> Result<Image, String> {
+        self.asked.push(image.clone());
+        match &self.failure {
+            Some(failure) => Err(failure.clone()),
+            None => Ok(Image::blank(image.scale.unwrap_or(2.0))),
+        }
+    }
+}
+
 /// The panes of the tests' plugins: a shell that waits, and each pane
 /// asked, by its id, with the pane that it was beside.
 #[derive(Default)]
@@ -151,6 +170,7 @@ pub(super) struct App {
     pub(super) workspace: Workspace,
     panes: Spawner,
     clipboard: Board,
+    pub(super) images: Painter,
     pub(super) focused: Option<WindowId>,
     /// The language shown, English's of none.
     pub(super) language: Option<&'static str>,
@@ -188,6 +208,7 @@ impl App {
             workspace: &mut self.workspace,
             panes: &mut self.panes,
             clipboard: &mut self.clipboard,
+            images: &mut self.images,
             focused: self.focused,
             font_size: 13.0,
             confirm_paste: crate::config::ConfirmPaste::Auto,
