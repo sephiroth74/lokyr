@@ -371,13 +371,13 @@ impl Pane {
         options.terminal.widths = settings.widths;
         options.terminal.normalization = settings.normalization;
         options.terminal.scrollback = settings.scrollback.clone();
+        // The terminal of the theme's colors before the program runs: a
+        // change of them after it, as a program that turns the reports of
+        // the color scheme on at once would be told of, is the user's.
+        options.colors = Some(colors.clone());
+        options.cell_size = Some((grid.cell_width, grid.cell_height));
         match Session::spawn(&options, wake) {
             Ok(session) => {
-                {
-                    let mut terminal = session.lock();
-                    terminal.set_default_colors(colors.clone());
-                    terminal.set_cell_size(grid.cell_width, grid.cell_height);
-                }
                 pane.session = Some(session);
             }
             Err(error) => {

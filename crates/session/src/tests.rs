@@ -635,14 +635,20 @@ fn a_renderer_that_falls_behind_draws_the_latest_state() {
         frames.len()
     );
     // Each frame is one moment of the screen: its numbered rows follow
-    // each other, with no row from another moment between them.
+    // each other, with no row from another moment between them; the last,
+    // at the cursor, written in part as a slice ended in the middle of its
+    // line, the beginning of the number after the one before it.
     for rows in &frames {
         let numbers: Vec<u32> = rows
             .iter()
             .filter_map(|row| row.strip_prefix("n ")?.parse().ok())
             .collect();
+        let last = numbers.len().saturating_sub(2);
         assert!(
-            numbers.windows(2).all(|pair| pair[1] == pair[0] + 1),
+            numbers.windows(2).enumerate().all(|(at, pair)| {
+                pair[1] == pair[0] + 1
+                    || (at == last && (pair[0] + 1).to_string().starts_with(&pair[1].to_string()))
+            }),
             "{rows:?}"
         );
     }
@@ -869,5 +875,40 @@ fn a_new_theme_s_scheme_reaches_a_program_that_asked_in_silence() {
     session.set_default_colors(light);
     wait_for(&session, "the report", |terminal| {
         shows(terminal, "got:E[?997;2n")
+    });
+}
+
+#[test]
+fn a_session_holds_the_theme_s_colors_before_its_program_writes() {
+    // A program that turns the reports of the color scheme on at once,
+    // and reads the first one: told of no change but the user's.
+    let script = r#"stty raw -echo; printf '\033[?2031hwaiting\r\n'; r=$(dd bs=1 count=9 2>/dev/null); stty sane; printf 'got:%s\n' "$r" | tr '\033' E; exec sleep 10"#;
+    let light = Colors {
+        background: lokyr_vt_core::page::Rgb {
+            r: 250,
+            g: 250,
+            b: 250,
+        },
+        ..Colors::default()
+    };
+    let mut options = sh(script);
+    options.colors = Some(light.clone());
+    options.cell_size = Some((9, 18));
+    let session = Session::spawn(&options, || {}).unwrap();
+    // Of them from the start, before any call of the owner's.
+    assert_eq!(
+        session.lock().color_scheme(),
+        lokyr_vt_core::terminal::ColorScheme::Light
+    );
+    wait_for(&session, "the program waits", |terminal| {
+        shows(terminal, "waiting")
+    });
+    let dark = Colors {
+        background: lokyr_vt_core::page::Rgb { r: 0, g: 0, b: 0 },
+        ..light
+    };
+    session.set_default_colors(dark);
+    wait_for(&session, "the report of the dark scheme", |terminal| {
+        shows(terminal, "got:E[?997;1n")
     });
 }

@@ -47,6 +47,14 @@ pub struct Options {
     /// How long a synchronized update (mode 2026) may hold the screen
     /// before it is ended, from the moment it starts.
     pub sync_timeout: Duration,
+    /// The theme's colors, which the terminal holds before the program
+    /// writes anything, so that a program that turns the reports of the
+    /// color scheme on at once is told of no change; the terminal's own
+    /// if none.
+    pub colors: Option<Colors>,
+    /// The size of a cell in pixels, which CSI 14 t and 16 t report, held
+    /// alike from the start, if it is known.
+    pub cell_size: Option<(u16, u16)>,
 }
 
 impl Options {
@@ -57,6 +65,8 @@ impl Options {
             pty,
             terminal: terminal::Options::default(),
             sync_timeout: Duration::from_secs(1),
+            colors: None,
+            cell_size: None,
         }
     }
 }
@@ -210,12 +220,17 @@ impl Session {
             .and_then(|reader| reader.read_ahead(SLICE))
             .map_err(Error::Threads)?;
         let writer = pty.writer().map_err(Error::Threads)?;
+        // Of the theme's colors and the cell's size before the output's
+        // thread reads the program's first bytes.
+        let mut terminal = Terminal::new(size.cols, size.rows, options.terminal.clone());
+        if let Some(colors) = &options.colors {
+            terminal.set_default_colors(colors.clone());
+        }
+        if let Some((width, height)) = options.cell_size {
+            terminal.set_cell_size(width, height);
+        }
         let shared = Arc::new(Shared {
-            terminal: FairMutex::new(Terminal::new(
-                size.cols,
-                size.rows,
-                options.terminal.clone(),
-            )),
+            terminal: FairMutex::new(terminal),
             queue: Queue::default(),
             wake: Box::new(wake),
             grid_woken: AtomicBool::new(false),
