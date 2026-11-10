@@ -1571,6 +1571,60 @@ fn the_index_keeps_its_deployed_lines_and_a_version_that_fails_leaves_the_others
     assert_eq!(told.len(), 1, "{output:?}");
     assert_eq!(told[0]["version"], Value::Null);
     assert_eq!(lines("site4"), lines("site3"));
+    // The site and the README's list of it, as the index tolerates the
+    // file: each told, its page and its line of the index alone.
+    let output = lab.sleip(
+        &[
+            "--json",
+            "registry",
+            "site",
+            "--registry",
+            &base.display().to_string(),
+            "--archives",
+            &lab.root.join("cache4").display().to_string(),
+            "--out",
+            &lab.root.join("site4").display().to_string(),
+            "--roots",
+            &roots.display().to_string(),
+        ],
+        &lab.root,
+    );
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(failed(&output).len(), 1, "{output:?}");
+    assert!(
+        lab.root
+            .join("site4/plugins/acme/hello/index.html")
+            .is_file()
+    );
+    let readme = lab.root.join("README-unread.md");
+    std::fs::write(
+        &readme,
+        "# R\n<!-- plugins:start -->\n<!-- plugins:end -->\n",
+    )
+    .unwrap();
+    let output = lab.sleip(
+        &[
+            "--json",
+            "registry",
+            "readme",
+            "--registry",
+            &base.display().to_string(),
+            "--index",
+            &lab.root.join("site4").display().to_string(),
+            "--readme",
+            &readme.display().to_string(),
+            "--roots",
+            &roots.display().to_string(),
+        ],
+        &lab.root,
+    );
+    assert!(output.status.success(), "{output:?}");
+    assert!(
+        std::fs::read_to_string(&readme)
+            .unwrap()
+            .contains("acme/hello"),
+        "{output:?}"
+    );
     // A name that two owners hold, as no check of a pull request would
     // let it be: neither's versions listed for their releases; of the
     // index, the one deployed keeps its lines, the other not indexed.

@@ -68,8 +68,19 @@ fn published(
             continue;
         };
         let plugin = format!("{owner}/{name}");
-        let file = PluginFile::parse(&String::from_utf8_lossy(bytes))
-            .map_err(|error| format!("{path}: {error}"))?;
+        // A file that does not read, as the index tolerates it: told, its
+        // page of the index alone, of no repository.
+        let file = match PluginFile::parse(&String::from_utf8_lossy(bytes)) {
+            Ok(file) => Some(file),
+            Err(error) => {
+                out.tell(
+                    "failed",
+                    json!({ "name": plugin, "version": null, "message": format!("{path}: {error}") }),
+                    &format!("{plugin}: its page has no repository, as {path} does not read: {error}"),
+                );
+                None
+            }
+        };
         let index_path = index.join("index").join(owner).join(name);
         let Ok(text) = std::fs::read_to_string(&index_path) else {
             continue;
@@ -102,9 +113,11 @@ fn published(
             None => (String::new(), None),
         };
         let commit = file
-            .version(&shown.vers)
+            .as_ref()
+            .and_then(|file| file.version(&shown.vers))
             .map(|release| release.commit.clone())
             .unwrap_or_default();
+        let repository = file.map(|file| file.repository).unwrap_or_default();
         published.push(Published {
             owner: owner.to_owned(),
             name: name.to_owned(),
@@ -114,8 +127,8 @@ fn published(
             shown,
             license,
             readme,
-            links: Links::of(&file.repository, &commit),
-            repository: file.repository,
+            links: Links::of(&repository, &commit),
+            repository,
         });
     }
     Ok(published)
@@ -567,10 +580,16 @@ fn markdown(readme: &str, links: &Links) -> Result<String, String> {
     pulldown_cmark::html::write_html_fmt(&mut html, events)
         .map_err(|_| format!("its README's HTML is of more than {LONGEST_README_HTML} bytes"))?;
     // The links that the HTML writes, of no HTML of the README's, which
-    // shows as text.
-    Ok(html
+    // shows as text; the bound holding of them too.
+    let html = html
         .text
-        .replace("<a href=\"", "<a rel=\"nofollow ugc noopener\" href=\""))
+        .replace("<a href=\"", "<a rel=\"nofollow ugc noopener\" href=\"");
+    if html.len() > LONGEST_README_HTML {
+        return Err(format!(
+            "its README's HTML is of more than {LONGEST_README_HTML} bytes"
+        ));
+    }
+    Ok(html)
 }
 
 /// The policy of a plugin's page, of its README: no script, styles of the
@@ -690,7 +709,7 @@ fn home_page(listed: &[Listed]) -> String {
 
 /// The home page's search, of Pagefind, a script of the site's own, as its
 /// policy takes no script of a page.
-const SEARCH: &str = "window.addEventListener(\"DOMContentLoaded\", () => { if (window.PagefindUI) { new PagefindUI({ element: \"#search\", showSubResults: false }); } });\n";
+const SEARCH: &str = "window.addEventListener(\"DOMContentLoaded\", () => { if (window.PagefindUI) { new PagefindUI({ element: \"#search\", showSubResults: false, showImages: false }); } });\n";
 
 /// Lokyr's icon, the app's own, of the site's tab and its header.
 const ICON: &str = include_str!("../../../../../crates/app/resources/icons/lokyr-jormungandr.svg");
