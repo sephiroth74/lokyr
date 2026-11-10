@@ -97,9 +97,18 @@ pub(super) fn git_bytes(folder: Option<&Path>, args: &[&str]) -> Result<Vec<u8>,
     if let Some(folder) = folder {
         command.arg("-C").arg(folder);
     }
+    // A transfer slower than a kilobyte a second for a minute stops, and
+    // no file of Git LFS is fetched, as a package holds none.
     let output = command
+        .args([
+            "-c",
+            "http.lowSpeedLimit=1000",
+            "-c",
+            "http.lowSpeedTime=60",
+        ])
         .args(args)
         .env("GIT_TERMINAL_PROMPT", "0")
+        .env("GIT_LFS_SKIP_SMUDGE", "1")
         .output()
         .map_err(|error| format!("git cannot run: {error}"))?;
     if !output.status.success() {

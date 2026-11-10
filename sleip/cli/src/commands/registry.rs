@@ -297,7 +297,9 @@ fn index(out: Out, indexed: &Indexed) -> Result<(), String> {
             &format!("{what} is not indexed: {message}"),
         );
     };
-    for (path, bytes) in &files_of(indexed.registry)? {
+    let files = files_of(indexed.registry)?;
+    let shared = names_of_two_owners(&files);
+    for (path, bytes) in &files {
         let Some((owner, name)) = registry::plugin_of_path(path) else {
             continue;
         };
@@ -306,7 +308,15 @@ fn index(out: Out, indexed: &Indexed) -> Result<(), String> {
             Some(deployed) => deployed.entries_of(&plugin)?,
             None => Vec::new(),
         };
-        let entries = match PluginFile::parse(&String::from_utf8_lossy(bytes)) {
+        // Of a name that another owner holds too, as Lokyr knows a plugin
+        // by its name alone, neither's new versions taken.
+        let file = if shared.contains(name) {
+            Err(shared_name(name))
+        } else {
+            PluginFile::parse(&String::from_utf8_lossy(bytes))
+                .map_err(|error| format!("{path}: {error}"))
+        };
+        let entries = match file {
             Ok(file) => {
                 let mut entries = Vec::new();
                 for release in &file.versions {
@@ -347,7 +357,7 @@ fn index(out: Out, indexed: &Indexed) -> Result<(), String> {
             }
             Err(error) => {
                 // Its lines signed before, as they were.
-                fail(&plugin, None, format!("{path}: {error}"));
+                fail(&plugin, None, error);
                 held
             }
         };
@@ -1080,19 +1090,18 @@ fn manifest_of_commit(folder: &Path, commit: &str) -> Result<Manifest, String> {
     Manifest::parse(&text).map_err(|error| format!("its plugin.toml: {error}"))
 }
 
-/// What a clone of a version's repository is checked out at.
+/// What a version's commit is fetched of.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum At {
     /// Its commit, which its tag must name, as a pull request's version is
     /// checked.
     Tag,
     /// Its commit alone, which the registry's file pins, whatever became of
-    /// its tag: fetched by its hash if no branch nor tag of the clone holds
-    /// it.
+    /// its tag, fetched by its hash.
     Commit,
 }
 
-/// Clones `repository` into `folder` at the commit of `release`, as `at`
+/// Fetches the commit of `release` of `repository` into `folder`, as `at`
 /// says, checked out.
 fn clone_at(repository: &str, release: &Release, at: At, folder: &Path) -> Result<(), String> {
     fetched_at(repository, release, at, folder)?;
@@ -1102,66 +1111,68 @@ fn clone_at(repository: &str, release: &Release, at: At, folder: &Path) -> Resul
     Ok(())
 }
 
-/// Clones `repository` into `folder`, of no checkout, its commit of
-/// `release` held, as `at` says.
+/// Fetches the commit of `release` alone, of `repository`, into a new
+/// repository in `folder`, of no checkout and of no history but it: of
+/// `at`, its tag first read of the repository's own tags, which must name
+/// it.
 fn fetched_at(repository: &str, release: &Release, at: At, folder: &Path) -> Result<(), String> {
     let _ = std::fs::remove_dir_all(folder);
     if let Some(parent) = folder.parent() {
         std::fs::create_dir_all(parent)
             .map_err(|error| format!("{} cannot be made: {error}", parent.display()))?;
     }
-    git(
-        None,
+    let commit = &release.commit;
+    if at == At::Tag {
+        let tag = &release.tag;
+        let reference = format!("refs/tags/{tag}");
+        let listed = git_bytes(None, &["ls-remote", "--tags", "--", repository, &reference])
+            .map_err(|error| format!("{repository} cannot be read: {error}"))?;
+        let listed = String::from_utf8_lossy(&listed);
+        let named_by = |name: &str| {
+            listed.lines().find_map(|line| {
+                let (object, at) = line.split_once('\t')?;
+                (at == name).then(|| object.to_owned())
+            })
+        };
+        // An annotated tag's commit, else a light one's.
+        let named = named_by(&format!("{reference}^{{}}"))
+            .or_else(|| named_by(&reference))
+            .ok_or_else(|| format!("{repository} has no tag `{tag}`"))?;
+        if named != *commit {
+            return Err(format!(
+                "the tag `{tag}` of {repository} names the commit {named}, not {commit}"
+            ));
+        }
+    }
+    git(None, &["init", "--quiet", &folder.display().to_string()])
+        .map_err(|error| format!("{} cannot be made: {error}", folder.display()))?;
+    // A host gives a commit by its hash, a branch's or a tag's, or one that
+    // they left.
+    let fetched = git(
+        Some(folder),
         &[
-            "clone",
+            "fetch",
             "--quiet",
-            "--no-checkout",
+            "--depth",
+            "1",
+            "--no-tags",
             "--",
             repository,
-            &folder.display().to_string(),
+            commit,
         ],
+    );
+    let held = git(
+        Some(folder),
+        &["cat-file", "-e", &format!("{commit}^{{commit}}")],
     )
-    .map_err(|error| format!("{repository} cannot be cloned: {error}"))?;
-    let commit = &release.commit;
-    match at {
-        At::Tag => {
-            let tag = &release.tag;
-            let named = git(
-                Some(folder),
-                &[
-                    "rev-parse",
-                    "--verify",
-                    "--quiet",
-                    &format!("refs/tags/{tag}^{{commit}}"),
-                ],
-            )
-            .map_err(|_| format!("{repository} has no tag `{tag}`"))?;
-            if named != *commit {
-                return Err(format!(
-                    "the tag `{tag}` of {repository} names the commit {named}, not {commit}"
-                ));
+    .is_ok();
+    if !held {
+        return Err(match fetched {
+            Err(error) if !error.contains("not our ref") && !error.contains("unadvertised") => {
+                format!("{repository} cannot be fetched: {error}")
             }
-        }
-        At::Commit => {
-            let held = |folder: &Path| {
-                git(
-                    Some(folder),
-                    &["cat-file", "-e", &format!("{commit}^{{commit}}")],
-                )
-                .is_ok()
-            };
-            if !held(folder) {
-                // A commit that its branches and tags left, which a host
-                // may give still by its hash.
-                let _ = git(
-                    Some(folder),
-                    &["fetch", "--quiet", "--no-tags", "origin", commit],
-                );
-                if !held(folder) {
-                    return Err(format!("{repository} holds the commit {commit} no longer"));
-                }
-            }
-        }
+            _ => format!("{repository} holds the commit {commit} no longer"),
+        });
     }
     Ok(())
 }
@@ -1202,12 +1213,31 @@ fn build(
 /// Lists every version of the registry in `registry`, as `out` tells.
 fn versions(out: Out, registry: &Path) -> Result<(), String> {
     let files = files_of(registry)?;
+    let shared = names_of_two_owners(&files);
     for (path, bytes) in &files {
         let Some((owner, name)) = registry::plugin_of_path(path) else {
             continue;
         };
-        let file = PluginFile::parse(&String::from_utf8_lossy(bytes))
-            .map_err(|error| format!("{path}: {error}"))?;
+        let plugin = format!("{owner}/{name}");
+        // A plugin's file that does not read, or of a name that another
+        // owner holds too, told as failed, the others listed.
+        let file = if shared.contains(name) {
+            Err(shared_name(name))
+        } else {
+            PluginFile::parse(&String::from_utf8_lossy(bytes))
+                .map_err(|error| format!("{path}: {error}"))
+        };
+        let file = match file {
+            Ok(file) => file,
+            Err(message) => {
+                out.tell(
+                    "failed",
+                    json!({ "name": plugin, "version": null, "message": message }),
+                    &format!("{plugin} is not listed: {message}"),
+                );
+                continue;
+            }
+        };
         for release in &file.versions {
             let tag = registry::release_tag(owner, name, &release.version);
             out.tell(
@@ -1227,6 +1257,30 @@ fn versions(out: Out, registry: &Path) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+/// The plugins' names that more than one owner holds among the registry's
+/// files `files`.
+fn names_of_two_owners(files: &[(String, Vec<u8>)]) -> BTreeSet<String> {
+    let mut owners: std::collections::BTreeMap<&str, BTreeSet<&str>> =
+        std::collections::BTreeMap::new();
+    for (path, _) in files {
+        if let Some((owner, name)) = registry::plugin_of_path(path) {
+            owners.entry(name).or_default().insert(owner);
+        }
+    }
+    owners
+        .into_iter()
+        .filter(|(_, owners)| owners.len() > 1)
+        .map(|(name, _)| name.to_owned())
+        .collect()
+}
+
+/// Why a plugin of the name `name`, which two owners hold, is refused.
+fn shared_name(name: &str) -> String {
+    format!(
+        "the name `{name}` is held by more than one owner, which Lokyr cannot tell apart, as it knows a plugin by its name alone: the registry's maintainer takes one out"
+    )
 }
 
 /// The mode of no entry, of a file added or removed.

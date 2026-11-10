@@ -1324,9 +1324,9 @@ fn the_index_keeps_its_deployed_lines_and_a_version_that_fails_leaves_the_others
     let (index_key, index_public) = keygen("index.key");
     let roots = lab.root.join("roots");
     std::fs::write(&roots, format!("{root_public}\n")).unwrap();
-    // The registry of `text` as the plugin's file, of its keys.json.
-    let registry_of = |text: &str| {
-        let base = lab.registry("base", &[("plugins/acme/hello.toml", text)]);
+    // The registry of `files`, of its keys.json.
+    let registry_of_files = |files: &[(&str, &str)]| {
+        let base = lab.registry("base", files);
         let output = lab.sleip(
             &[
                 "registry",
@@ -1343,6 +1343,8 @@ fn the_index_keeps_its_deployed_lines_and_a_version_that_fails_leaves_the_others
         assert!(output.status.success(), "{output:?}");
         base
     };
+    // The registry of `text` as the plugin's file.
+    let registry_of = |text: &str| registry_of_files(&[("plugins/acme/hello.toml", text)]);
     // The releases, a folder that stands for them, each version's archive
     // built of its commit, as the CI of main makes it.
     let releases = lab.root.join("releases");
@@ -1559,6 +1561,52 @@ fn the_index_keeps_its_deployed_lines_and_a_version_that_fails_leaves_the_others
     assert_eq!(told.len(), 1, "{output:?}");
     assert_eq!(told[0]["version"], Value::Null);
     assert_eq!(lines("site4"), lines("site3"));
+    // A name that two owners hold, as no check of a pull request would
+    // let it be: neither's versions listed for their releases; of the
+    // index, the one deployed keeps its lines, the other not indexed.
+    let published = entry(
+        &url,
+        &[
+            ("0.1.0", "v0.1.0", &first, true),
+            ("0.1.1", "v0.1.1", &second, false),
+            ("0.1.2", "v0.1.2", &third, false),
+        ],
+    );
+    let base = registry_of_files(&[
+        ("plugins/acme/hello.toml", &published),
+        ("plugins/bob/hello.toml", &published),
+    ]);
+    let listed = lab.sleip(
+        &[
+            "--json",
+            "registry",
+            "versions",
+            "--registry",
+            &base.display().to_string(),
+        ],
+        &lab.root,
+    );
+    assert!(listed.status.success(), "{listed:?}");
+    assert!(
+        !events(&listed)
+            .iter()
+            .any(|event| event["event"] == "version"),
+        "{listed:?}"
+    );
+    let told = failed(&listed);
+    assert_eq!(told.len(), 2, "{listed:?}");
+    assert!(
+        told[0]["message"]
+            .as_str()
+            .unwrap()
+            .contains("held by more than one owner"),
+        "{listed:?}"
+    );
+    let output = indexed(&base, "cache5", "site5", Some("site3"));
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(failed(&output).len(), 2, "{output:?}");
+    assert_eq!(lines("site5"), lines("site3"));
+    assert!(!lab.root.join("site5/index/bob/hello").exists());
 }
 
 #[test]

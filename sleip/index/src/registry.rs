@@ -121,10 +121,7 @@ impl PluginFile {
                 ));
             }
             before = Some(version);
-            if release.tag.is_empty()
-                || release.tag.starts_with('-')
-                || release.tag.chars().any(char::is_whitespace)
-            {
+            if !is_tag(&release.tag) {
                 return Err(format!(
                     "the tag of version {} is not a tag's name: `{}`",
                     release.version, release.tag
@@ -176,6 +173,32 @@ pub fn path_of_plugin(owner: &str, name: &str) -> String {
 pub fn is_part(part: &str) -> bool {
     part.len() <= LONGEST_PART
         && lokyr_pkg_model::manifest::is_plugin_name(&format!("{part}/{part}"))
+}
+
+/// The most bytes of a version's tag.
+pub const LONGEST_TAG: usize = 128;
+
+/// Whether `tag` names a tag as git takes its name, `refs/tags/<tag>`, as
+/// `git check-ref-format` checks it, and as no option nor revision reads
+/// it: no part of `/` empty, from `.` or of `.lock`; no `..`, `@{`, `\`,
+/// control character, space, `~`, `^`, `:`, `?`, `*` nor `[`; not `@`, not
+/// from `-`, not of a `.` at its end; of [`LONGEST_TAG`] bytes at most.
+pub fn is_tag(tag: &str) -> bool {
+    !tag.is_empty()
+        && tag.len() <= LONGEST_TAG
+        && tag != "@"
+        && !tag.starts_with('-')
+        && !tag.ends_with('.')
+        && !tag.contains("..")
+        && !tag.contains("@{")
+        && tag
+            .split('/')
+            .all(|part| !part.is_empty() && !part.starts_with('.') && !part.ends_with(".lock"))
+        && !tag.chars().any(|character| {
+            character.is_control()
+                || character.is_whitespace()
+                || matches!(character, '~' | '^' | ':' | '?' | '*' | '[' | '\\')
+        })
 }
 
 /// The tag of the registry's release of `version` of `owner/name`, which
@@ -246,9 +269,45 @@ mod tests {
                 .contains("not lower")
         );
         assert!(wrong(&file(&release("0.1.0").replace(COMMIT, "abc123"))).contains("40 lowercase"));
-        assert!(
-            wrong(&file(&release("0.1.0").replace("v0.1.0", "-x"))).contains("not a tag's name")
-        );
+        for tag in [
+            "-x",
+            "v1 0",
+            "HEAD~1",
+            "v1^{tree}",
+            "v1@{0}",
+            "a..b",
+            "v1.lock",
+            ".v1",
+            "v1/",
+            "/v1",
+            "a//b",
+            "v1.",
+            "@",
+            "v*",
+            "v?",
+            "v[1]",
+            "a:b",
+            "a\\b",
+        ] {
+            assert!(
+                wrong(&file(
+                    &release("0.1.0").replace("\"v0.1.0\"", &format!("{tag:?}"))
+                ))
+                .contains("not a tag's name"),
+                "{tag}"
+            );
+        }
+        assert!(!is_tag(&"v".repeat(LONGEST_TAG + 1)));
+        assert!(!is_tag("v\u{7f}") && !is_tag("v\u{1b}[0m"));
+        for tag in [
+            "v0.1.0",
+            "release/0.1.0",
+            "0.1.0-rc.1",
+            "v1+build",
+            "hello_v1",
+        ] {
+            assert!(is_tag(tag), "{tag}");
+        }
         let unknown = wrong(&file(&format!("{}sha = \"x\"\n", release("0.1.0"))));
         assert!(unknown.starts_with("line 6:"), "{unknown}");
     }

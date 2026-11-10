@@ -111,6 +111,7 @@ registry-sleip:
 
 # `just registry-sleip`, on the Linux of the container of Linux's checks.
 registry-sleip-here:
+    rm -f target/registry/sleip-aarch64-linux.commit
     cargo build --locked --release -p sleip-cli
     mkdir -p target/registry
     cp "${CARGO_TARGET_DIR:-target}/release/sleip" target/registry/sleip-aarch64-linux
