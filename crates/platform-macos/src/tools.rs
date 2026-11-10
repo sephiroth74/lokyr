@@ -26,9 +26,10 @@ const CANCELLED: &str = "(-128)";
 
 /// Whether `path` lies in a place that goes: a copy that Gatekeeper
 /// translocated, or a read-only volume under `/Volumes`, as a disk
-/// image's.
+/// image's; none of a path that is empty or relative, of which no file's
+/// URL is made.
 pub(crate) fn is_temporary(path: &Path) -> bool {
-    translocated(path) || on_read_only_volume(path)
+    path.is_absolute() && (translocated(path) || on_read_only_volume(path))
 }
 
 /// `SecTranslocateIsTranslocatedURL` of the Security framework, of macOS
@@ -268,6 +269,9 @@ mod tests {
     fn a_disk_image_s_volume_is_a_place_that_goes_and_the_applications_folder_is_not() {
         assert!(!is_temporary(Path::new("/Applications")));
         assert!(!is_temporary(&std::env::temp_dir()));
+        // Of no folder, as of a bundle moved while the app runs: none.
+        assert!(!is_temporary(Path::new("")));
+        assert!(!is_temporary(Path::new("Contents/MacOS")));
         // A read-only disk image, mounted under /Volumes as the Finder
         // mounts the app's.
         let base = std::env::temp_dir().join(format!("lokyr-dmg-{}", std::process::id()));

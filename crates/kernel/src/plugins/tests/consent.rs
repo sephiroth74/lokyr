@@ -30,7 +30,16 @@ impl Plugin for Asking {
     }
 
     fn on_event(&mut self, _: &mut Cx<'_>, events: &[Event]) -> Result<(), Error> {
-        let names: Vec<&str> = events.iter().map(Event::name).collect();
+        // Each event's name, of the tab that a tab's creation tells.
+        let names: Vec<String> = events
+            .iter()
+            .map(|event| match event {
+                Event::Workspace(WorkspaceEvent::TabCreated { tab, .. }) => {
+                    format!("tab-created#{}", tab.0)
+                }
+                event => event.name().to_owned(),
+            })
+            .collect();
         self.0.lock().unwrap().push(names.join(" "));
         Ok(())
     }
@@ -170,10 +179,10 @@ fn the_events_and_the_views_of_a_trigger_come_once_the_user_answers() {
     assert_eq!(plugins.take_renders(), [("acme/asker".to_owned(), view)]);
     assert!(plugins.deliver(&mut app.context()).is_empty());
     served(&mut plugins, &mut app);
-    assert_eq!(
-        *did.lock().unwrap(),
-        ["activate opened=true", "tab-created"]
-    );
+    let told = did.lock().unwrap().clone();
+    assert_eq!(told.len(), 2, "{told:?}");
+    assert_eq!(told[0], "activate opened=true");
+    assert!(told[1].starts_with("tab-created#"), "{told:?}");
 }
 
 #[test]
@@ -282,13 +291,11 @@ fn an_answer_grants_the_capabilities_of_its_question_alone_and_the_others_are_as
 }
 
 #[test]
-fn a_question_held_through_more_events_than_a_thread_holds_gives_the_last_of_each_name() {
+fn a_question_held_through_many_events_gives_the_one_that_woke_it_and_the_last_of_each_subject() {
     let mut app = App::default();
     let window = window(&mut app, "sleep 10");
     let (mut plugins, did) = asker(&["event:tab-created"], "");
     assert!(plugins.activate(&mut app.context()).is_empty());
-    // More events of its trigger than a busy thread holds, as the user
-    // waits to answer.
     let created = |tab: u64| {
         Event::Workspace(WorkspaceEvent::TabCreated {
             tab: host::TabId(tab),
@@ -296,7 +303,49 @@ fn a_question_held_through_more_events_than_a_thread_holds_gives_the_last_of_eac
             index: 0,
         })
     };
-    for tab in 0..(super::worker::MOST_EVENTS as u64 * 2) {
+    // The event that wakes it, then, as the user waits to answer, the same
+    // tab's again, two other tabs', and the first of them again.
+    for tab in [1, 1, 2, 3, 2] {
+        plugins.post(created(tab));
+        assert!(plugins.deliver(&mut app.context()).is_empty());
+    }
+    assert_eq!(questions(&mut plugins).len(), 1);
+    assert!(
+        plugins
+            .consent("acme/asker", &[Capability::Open], true, &mut app.context())
+            .is_empty()
+    );
+    assert!(plugins.deliver(&mut app.context()).is_empty());
+    served(&mut plugins, &mut app);
+    assert!(plugins.deliver(&mut app.context()).is_empty());
+    served(&mut plugins, &mut app);
+    // The one that woke it, and the last of each tab after it.
+    assert_eq!(
+        *did.lock().unwrap(),
+        [
+            "activate opened=true",
+            "tab-created#1 tab-created#1 tab-created#3 tab-created#2"
+        ]
+    );
+}
+
+#[test]
+fn a_question_held_through_more_events_than_it_holds_keeps_the_first_and_the_latest() {
+    let mut app = App::default();
+    let window = window(&mut app, "sleep 10");
+    let (mut plugins, did) = asker(&["event:tab-created"], "");
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    let created = |tab: u64| {
+        Event::Workspace(WorkspaceEvent::TabCreated {
+            tab: host::TabId(tab),
+            window: host::WindowId(window.get()),
+            index: 0,
+        })
+    };
+    // More events of its trigger, each of a tab of its own, than a thread
+    // holds, as the user waits to answer.
+    let many = super::worker::MOST_EVENTS as u64 * 2;
+    for tab in 0..many {
         plugins.post(created(tab));
         if tab % 1000 == 0 {
             assert!(plugins.deliver(&mut app.context()).is_empty());
@@ -309,15 +358,40 @@ fn a_question_held_through_more_events_than_a_thread_holds_gives_the_last_of_eac
             .consent("acme/asker", &[Capability::Open], true, &mut app.context())
             .is_empty()
     );
-    // Delivered as its thread activates, which holds them until then.
     assert!(plugins.deliver(&mut app.context()).is_empty());
     served(&mut plugins, &mut app);
     assert!(plugins.deliver(&mut app.context()).is_empty());
     served(&mut plugins, &mut app);
-    // Active, of the last one alone.
+    // The first, which woke it, and the latest after it, bounded.
     assert!(plugins.activated("acme/asker"));
+    let told = did.lock().unwrap().clone();
+    assert_eq!(told.len(), 2, "{told:?}");
+    let delivered: Vec<&str> = told[1].split(' ').collect();
+    assert_eq!(delivered.len(), MOST_HELD_EVENTS);
+    assert_eq!(delivered[0], "tab-created#0");
     assert_eq!(
-        *did.lock().unwrap(),
-        ["activate opened=true", "tab-created"]
+        delivered.last().copied(),
+        Some(format!("tab-created#{}", many - 1).as_str())
     );
+}
+
+#[test]
+fn a_question_holds_its_commands_runs_within_a_bound() {
+    let mut app = App::default();
+    let (mut plugins, _did) = asker(
+        &["command:asker.go"],
+        "[contributes]\ncommands = [{ name = \"asker.go\", title = \"Go\" }]\n",
+    );
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    let mut refused = 0;
+    for _ in 0..(MOST_HELD_RUNS + 4) {
+        if plugins
+            .run("asker.go", Args::new(), &mut app.context())
+            .is_err()
+        {
+            refused += 1;
+        }
+    }
+    assert_eq!(questions(&mut plugins).len(), 1);
+    assert_eq!(refused, 4);
 }

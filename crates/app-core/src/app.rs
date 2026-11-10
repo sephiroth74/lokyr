@@ -546,6 +546,9 @@ pub struct App<B: Backend> {
     /// each its plugin, its capabilities and whether it allowed them,
     /// written there once it reads again.
     unwritten_answers: Vec<(String, Vec<lokyr_kernel::commands::Capability>, bool)>,
+    /// The errors told of the files about these that did not read, each
+    /// once, so that a notice closed stays closed through the reloads.
+    unread_told: Vec<(lokyr_kernel::diagnostics::About, String)>,
     /// The file of those decisions, and its watch.
     permissions_file: Option<ConfigFile>,
     /// The questions of the capabilities of the plugins that activate, each
@@ -821,6 +824,7 @@ impl<B: Backend> App<B> {
             reloads: installed::Reloads::default(),
             decisions: lokyr_pkg_model::permissions::Permissions::default(),
             unwritten_answers: Vec::new(),
+            unread_told: Vec::new(),
             permissions_file: None,
             consent_asks: BTreeMap::new(),
             plugin_timer: None,

@@ -517,7 +517,12 @@ fn a_lockfile_that_does_not_read_is_told_once_however_many_reloads_read_it() {
         1,
         "{told:?}"
     );
-    // Read again, its notice goes.
+    // Closed, it stays closed as the same error reads again; another error
+    // is told; read again, its notice goes.
+    changed(&mut fake, &mut app);
+    settled(&mut fake, &mut app);
+    assert!(!app.diagnostics.tells(&About::InstalledPlugins));
+    std::fs::write(folder.join("plugins.lock"), "api = {\n").unwrap();
     changed(&mut fake, &mut app);
     settled(&mut fake, &mut app);
     assert!(app.diagnostics.tells(&About::InstalledPlugins));

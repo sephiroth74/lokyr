@@ -5,7 +5,8 @@
 
 use std::time::{Duration, Instant};
 
-use lokyr_kernel::diagnostics::Diagnostic;
+use lokyr_kernel::commands::Code;
+use lokyr_kernel::diagnostics::{About, Diagnostic};
 use lokyr_kernel::l10n::Arg;
 use lokyr_kernel::plugins::ui::ViewId;
 use lokyr_kernel::workspace::PaneId;
@@ -22,6 +23,35 @@ impl<B: Backend> App<B> {
         if self.diagnostics.report(diagnostic) {
             self.request_frames(platform);
         }
+    }
+
+    /// Tells `text`, the error of a file about `about` that does not read,
+    /// as its notice, once: a read that finds the same error tells nothing
+    /// again, so that a notice that the user closed stays closed through
+    /// the reloads; a new error is told.
+    pub(super) fn report_unread(
+        &mut self,
+        platform: &mut dyn Platform,
+        about: About,
+        text: String,
+    ) {
+        if self
+            .unread_told
+            .iter()
+            .any(|(told, error)| *told == about && *error == text)
+        {
+            return;
+        }
+        self.unread_told.retain(|(told, _)| *told != about);
+        self.unread_told.push((about.clone(), text.clone()));
+        self.report(platform, Diagnostic::new(Code::Unavailable, text, about));
+    }
+
+    /// Takes away the notice of the file about `about` that did not read,
+    /// as it reads.
+    pub(super) fn resolve_unread(&mut self, platform: &mut dyn Platform, about: &About) {
+        self.unread_told.retain(|(told, _)| told != about);
+        self.resolve(platform, about);
     }
 
     /// Whether `position`, in points of `window`'s content, is on the bar

@@ -184,3 +184,20 @@ fn a_copy_of_the_app_in_a_place_that_goes_links_nothing_and_asks_to_move_it() {
     assert_eq!(fake.tool_links().len(), 1);
     let _ = std::fs::remove_dir_all(&base);
 }
+
+#[test]
+fn an_app_of_no_folder_of_its_own_tells_the_tools_missing_before_its_place() {
+    let base = real_directory("tools-no-folder");
+    let mut fake = Fake::default();
+    let mut app = tools_app(&mut fake, &base);
+    // Its bundle moved as it runs: no folder of its own, which the place's
+    // look would crash on.
+    app.tools_places.source = Some(std::path::PathBuf::new());
+    fake.set_temporary_place(true);
+    fake.send_app(&mut app, AppEvent::Command(INSTALL_TOOLS.to_owned()));
+    assert!(fake.tool_links().is_empty(), "{:?}", fake.tool_links());
+    let (message, detail) = last_alert(&fake);
+    assert!(!message.contains("Move Lokyr"), "{message}");
+    assert!(detail.contains("is not there"), "{detail}");
+    let _ = std::fs::remove_dir_all(&base);
+}

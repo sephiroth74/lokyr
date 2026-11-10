@@ -8,8 +8,8 @@
 
 use std::io::Write as _;
 
-use lokyr_kernel::commands::{Capability, Code};
-use lokyr_kernel::diagnostics::{About, Diagnostic};
+use lokyr_kernel::commands::Capability;
+use lokyr_kernel::diagnostics::About;
 use lokyr_kernel::l10n::{Arg, Texts};
 use lokyr_pkg_model::permissions::Permissions;
 use lokyr_platform_core::{Alert, AlertStyle, Platform};
@@ -101,7 +101,7 @@ impl<B: Backend> App<B> {
         };
         match Permissions::read(&path) {
             Ok(permissions) => {
-                self.resolve(platform, &About::Permissions);
+                self.resolve_unread(platform, &About::Permissions);
                 Some(permissions)
             }
             Err(error) => {
@@ -109,10 +109,7 @@ impl<B: Backend> App<B> {
                     "permissions-unread",
                     &[("error", Arg::Text(&error.to_string()))],
                 );
-                self.report(
-                    platform,
-                    Diagnostic::new(Code::Unavailable, text, About::Permissions),
-                );
+                self.report_unread(platform, About::Permissions, text);
                 None
             }
         }
@@ -177,6 +174,9 @@ impl<B: Backend> App<B> {
                 "lokyr: the decisions on the plugins' capabilities cannot be written to {}: {error}",
                 installed.permissions.display()
             );
+            // Waiting, in force, for the next write.
+            self.unwritten_answers
+                .push((plugin.clone(), capabilities.clone(), allowed));
         }
         self.audit(
             if allowed { "granted" } else { "refused" },
@@ -203,20 +203,39 @@ impl<B: Backend> App<B> {
         };
         let answers = std::mem::take(&mut self.unwritten_answers);
         if !answers.is_empty() {
-            for (plugin, capabilities, allowed) in answers {
-                permissions
-                    .plugins
-                    .entry(plugin)
-                    .or_default()
-                    .decide(&capabilities, allowed);
+            // Of the capabilities that the file leaves undecided alone: a
+            // question asked as it did not read, as at a start, asked of
+            // what it decided too, whose decision stays.
+            let decided = permissions.clone();
+            for (plugin, capabilities, allowed) in &answers {
+                let held = decided.plugins.get(plugin);
+                let undecided: Vec<Capability> = capabilities
+                    .iter()
+                    .filter(|capability| {
+                        !held.is_some_and(|held| {
+                            held.granted.contains(capability) || held.refused.contains(capability)
+                        })
+                    })
+                    .cloned()
+                    .collect();
+                if !undecided.is_empty() {
+                    permissions
+                        .plugins
+                        .entry(plugin.clone())
+                        .or_default()
+                        .decide(&undecided, *allowed);
+                }
             }
-            if let Some(installed) = &self.installed
+            if permissions != decided
+                && let Some(installed) = &self.installed
                 && let Err(error) = permissions.write(&installed.permissions)
             {
                 eprintln!(
                     "lokyr: the decisions on the plugins' capabilities cannot be written to {}: {error}",
                     installed.permissions.display()
                 );
+                // Waiting, in force, for the next write.
+                self.unwritten_answers = answers;
             }
         }
         if permissions == self.decisions {

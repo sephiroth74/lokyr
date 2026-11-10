@@ -100,10 +100,6 @@ impl<B: Backend> App<B> {
             .clone()
             .or_else(own_folder)
             .unwrap_or_default();
-        if platform.is_temporary_place(&source) {
-            self.tools_alert(platform, AlertStyle::Warning, "tools-temporary", "");
-            return;
-        }
         let links: Vec<ToolLink> = TOOLS
             .iter()
             .map(|name| ToolLink {
@@ -111,9 +107,18 @@ impl<B: Backend> App<B> {
                 target: source.join(name),
             })
             .collect();
-        if let Some(missing) = links.iter().find(|link| !link.target.is_file()) {
+        // Of no folder of its own, as of a bundle moved while the app runs,
+        // the tools are none: told before any look at the place.
+        if let Some(missing) = links
+            .iter()
+            .find(|link| !source.is_absolute() || !link.target.is_file())
+        {
             let path = missing.target.display().to_string();
             self.tools_alert(platform, AlertStyle::Warning, "tools-missing", &path);
+            return;
+        }
+        if platform.is_temporary_place(&source) {
+            self.tools_alert(platform, AlertStyle::Warning, "tools-temporary", "");
             return;
         }
         let found: Vec<Found> = links

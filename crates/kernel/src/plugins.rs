@@ -454,13 +454,74 @@ struct State {
 }
 
 /// What a plugin's trigger brought as its activation waited for the user's
-/// consent: the commands to run, the events to hear and the views to
-/// render.
+/// consent: the commands to run, [`MOST_HELD_RUNS`] at most, the events to
+/// hear, the first, which woke it, and the last of each name and subject
+/// after it, [`MOST_HELD_EVENTS`] at most, and the views to render.
 #[derive(Default)]
 struct Deferred {
     commands: Vec<(String, Args, Chain)>,
     events: Vec<Event>,
     renders: Vec<ViewId>,
+}
+
+/// The most events that a plugin's question holds, the one that woke it
+/// among them.
+pub const MOST_HELD_EVENTS: usize = 64;
+
+/// The most runs of its commands that a plugin's question holds.
+pub const MOST_HELD_RUNS: usize = 16;
+
+impl Deferred {
+    /// Holds `event`: the first kept, as it woke the plugin; a later one
+    /// in the place of the one before it of its name and subject, the
+    /// oldest after the first going past [`MOST_HELD_EVENTS`].
+    fn hold(&mut self, event: Event) {
+        if self.events.is_empty() {
+            self.events.push(event);
+            return;
+        }
+        let subject = subject_of(&event);
+        if let Some(at) = self.events[1..]
+            .iter()
+            .position(|kept| kept.name() == event.name() && subject_of(kept) == subject)
+        {
+            self.events.remove(at + 1);
+        }
+        self.events.push(event);
+        if self.events.len() > MOST_HELD_EVENTS {
+            self.events.remove(1);
+        }
+    }
+}
+
+/// The subject of `event`: the ids of the window, the tab, the pane, the
+/// panel and the view that it is about, as its fields name them, so that
+/// two events of a name about two panes are two.
+fn subject_of(event: &Event) -> Vec<(String, serde_json::Value)> {
+    fn gather(
+        value: &serde_json::Value,
+        depth: usize,
+        into: &mut Vec<(String, serde_json::Value)>,
+    ) {
+        let serde_json::Value::Object(fields) = value else {
+            return;
+        };
+        for (key, field) in fields {
+            if ["window", "tab", "pane", "panel", "view"].contains(&key.as_str())
+                && !field.is_object()
+            {
+                into.push((key.clone(), field.clone()));
+            } else if depth < 3 {
+                gather(field, depth + 1, into);
+            }
+        }
+    }
+    let mut subject = Vec::new();
+    if let Ok(value) = serde_json::to_value(event) {
+        gather(&value, 0, &mut subject);
+    }
+    subject.sort_by(|left, right| left.0.cmp(&right.0));
+    subject
 }
 
 /// What activates a plugin, of its manifest's `activation.on`.
@@ -1615,6 +1676,14 @@ impl Plugins {
         // after it.
         let state = &mut self.entries[at].state;
         if state.asking {
+            if state.deferred.commands.len() >= MOST_HELD_RUNS {
+                return Err(Error::new(
+                    Code::Unavailable,
+                    format!(
+                        "`{command}` waits for the user's consent to its plugin's capabilities, as {MOST_HELD_RUNS} runs do already"
+                    ),
+                ));
+            }
             state
                 .deferred
                 .commands
@@ -2402,8 +2471,9 @@ impl Plugins {
                 errors.push(error);
             }
             // Its activation waits for the user's consent: the events of
-            // its trigger come after it, the last of each name, so that a
-            // question held while a pane's view moves keeps one of them.
+            // its trigger come after it, the one that woke it and the last
+            // of each name and subject, so that a question held while a
+            // pane's view moves keeps one of each pane, bounded.
             let state = &mut self.entries[at].state;
             if state.asking {
                 let triggered = |name: &str| {
@@ -2418,11 +2488,7 @@ impl Plugins {
                     .map(|(_, event)| event.clone())
                     .collect();
                 for event in held {
-                    state
-                        .deferred
-                        .events
-                        .retain(|kept| kept.name() != event.name());
-                    state.deferred.events.push(event);
+                    state.deferred.hold(event);
                 }
             }
         }

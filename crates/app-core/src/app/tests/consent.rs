@@ -479,16 +479,28 @@ fn a_permissions_file_that_does_not_read_stops_no_plugin_and_is_never_written_ov
             .iter()
             .all(|line| !line.starts_with("revoked"))
     );
-    // Told once however many reloads read it, as each save of `sleip dev`.
+    // Closed, it stays closed however many reloads read the file, as each
+    // save of `sleip dev`; another error is told.
     for _ in 0..10 {
         reloaded(&mut fake, &mut app);
     }
     let told = notices(&mut app);
+    assert!(told.iter().all(|text| !text.contains("opne")), "{told:?}");
+    std::fs::write(folder.join(FILE), typo.replace("\"opne\"", "\"opnn\"")).unwrap();
+    permissions_told(&app);
+    fake.send_app(&mut app, AppEvent::Wake);
+    fake.fire_timers(&mut app, Instant::now() + Duration::from_secs(1));
+    reloaded(&mut fake, &mut app);
+    let told = notices(&mut app);
     assert_eq!(
-        told.iter().filter(|text| text.contains("opne")).count(),
+        told.iter().filter(|text| text.contains("opnn")).count(),
         1,
         "{told:?}"
     );
+    std::fs::write(folder.join(FILE), &typo).unwrap();
+    permissions_told(&app);
+    fake.send_app(&mut app, AppEvent::Wake);
+    fake.fire_timers(&mut app, Instant::now() + Duration::from_secs(1));
     // A question answered meanwhile holds for this run, and the file stays
     // the user's.
     fake.send_app(&mut app, AppEvent::Command("late.go".to_owned()));
@@ -634,5 +646,119 @@ fn a_revocation_that_an_answer_reads_first_reaches_its_plugin() {
     let now = kept(&folder);
     assert_eq!(now.plugins["acme/kept"].refused, [Capability::Open]);
     assert_eq!(now.plugins["acme/late"].granted, [Capability::Open]);
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
+#[test]
+fn a_refusal_at_a_start_of_an_unread_file_leaves_the_file_s_grants() {
+    let _luau = LUAU.lock().unwrap_or_else(PoisonError::into_inner);
+    let folder = shelf("consent-start-unread");
+    super::installed::grant_open(&folder, &["kept"]);
+    let good = std::fs::read_to_string(folder.join(FILE)).unwrap();
+    let typo = good.replace("\"open\"", "\"opne\"");
+    std::fs::write(folder.join(FILE), &typo).unwrap();
+    let packages = [(
+        "kept",
+        manifest("kept", &[], "^0.1", ""),
+        opening("activate", "kept", ""),
+    )];
+    let mut fake = Fake::default();
+    let mut app = installed(&folder, &packages, "en");
+    fake.start(&mut app);
+    // Of no decision read, asked at the start; refused, as the default
+    // button does.
+    let asked = question(&fake).expect("a question");
+    fake.answer_alert(&mut app, asked.id, 0);
+    // The file repaired: its grant stays, the refusal of no capability
+    // that it left undecided.
+    std::fs::write(folder.join(FILE), &good).unwrap();
+    permissions_told(&app);
+    fake.send_app(&mut app, AppEvent::Wake);
+    fake.fire_timers(&mut app, Instant::now() + Duration::from_secs(1));
+    let decisions = kept(&folder);
+    assert!(
+        decisions.plugins["acme/kept"]
+            .granted
+            .contains(&Capability::Open),
+        "{decisions:?}"
+    );
+    assert!(
+        !decisions.plugins["acme/kept"]
+            .refused
+            .contains(&Capability::Open),
+        "{decisions:?}"
+    );
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
+#[test]
+fn an_answer_that_cannot_be_written_waits_for_the_next_write() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let _luau = LUAU.lock().unwrap_or_else(PoisonError::into_inner);
+    let folder = shelf("consent-unwritten");
+    // The decisions' file a link into a folder of no writing.
+    let shut = folder.join("shut");
+    std::fs::create_dir_all(&shut).unwrap();
+    Permissions::default().write(&shut.join(FILE)).unwrap();
+    std::os::unix::fs::symlink(shut.join(FILE), folder.join(FILE)).unwrap();
+    std::fs::set_permissions(&shut, std::fs::Permissions::from_mode(0o555)).unwrap();
+    // Of an account that writes there all the same, as root: not told.
+    if std::fs::write(shut.join("probe"), "").is_ok() {
+        std::fs::set_permissions(&shut, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let _ = std::fs::remove_dir_all(&folder);
+        return;
+    }
+    let packages = [(
+        "late",
+        manifest(
+            "late",
+            &["command:late.go"],
+            "^0.1",
+            "[contributes]\ncommands = [{ name = \"late.go\", title = \"Go\" }]\n",
+        ),
+        opening(
+            "on_command",
+            "late",
+            r#"assert(cx.register_command({ name = "late.go", title = "Go", category = "view" }))"#,
+        ),
+    )];
+    let mut fake = Fake::default();
+    let mut app = installed(&folder, &packages, "en");
+    fake.start(&mut app);
+    fake.send_app(&mut app, AppEvent::Command("late.go".to_owned()));
+    let asked = question(&fake).expect("a question");
+    fake.answer_alert(&mut app, asked.id, 1);
+    run_until(&mut fake, &mut app, |fake, _| opened(fake, "late"));
+    assert!(
+        Permissions::read(&shut.join(FILE))
+            .unwrap()
+            .plugins
+            .is_empty()
+    );
+    // Writable again: the answer written at the next read, its plugin
+    // running on, nothing revoked.
+    std::fs::set_permissions(&shut, std::fs::Permissions::from_mode(0o755)).unwrap();
+    permissions_told(&app);
+    fake.send_app(&mut app, AppEvent::Wake);
+    fake.fire_timers(&mut app, Instant::now() + Duration::from_secs(1));
+    let decisions = kept(&folder);
+    assert!(
+        decisions.plugins["acme/late"]
+            .granted
+            .contains(&Capability::Open),
+        "{decisions:?}"
+    );
+    assert_eq!(
+        app.plugins.status("acme/late"),
+        Some(plugins::Status::Active)
+    );
+    assert!(
+        audited(&folder)
+            .iter()
+            .all(|line| !line.starts_with("revoked")),
+        "{:?}",
+        audited(&folder)
+    );
     let _ = std::fs::remove_dir_all(&folder);
 }
