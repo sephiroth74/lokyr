@@ -10,7 +10,9 @@
 //! which must name its commit, its manifest the file's, checked as
 //! `sleip check` checks it, tested as `sleip test` tests it, and packaged;
 //! then whether it merges by itself, of a version of a plugin published
-//! before that asks for nothing new, or the maintainer reviews it. `build`
+//! before that asks for nothing new, or the maintainer reviews it; of the
+//! files alone, as the job that merges checks them again, no version
+//! checked out nor run, its manifest read of git's objects. `build`
 //! packages a version's archive again, alike, of the commit that the file
 //! pins whatever became of its tag, which the CI of the registry's main
 //! branch publishes; `versions` lists every version, of
@@ -382,8 +384,9 @@ struct PullRequest<'a> {
     orgs: &'a [String],
     /// Whether repositories of `file://` are taken.
     local: bool,
-    /// Whether its files are judged alone, no version cloned, checked,
-    /// tested nor packaged.
+    /// Whether its files are judged alone, no version checked out,
+    /// checked, tested nor packaged, its new versions' manifests and the
+    /// last published one's read of git's objects and weighed.
     files_alone: bool,
 }
 
@@ -657,18 +660,35 @@ fn verify_plugin(
                 .unwrap_or_default()
         }
     };
-    if request.files_alone {
-        return;
-    }
     let mut asked = (BTreeSet::new(), BTreeSet::new());
     for release in new {
-        match package(out, &plugin, &file.repository, release, into, true) {
-            Ok(built) => {
+        // Of the files alone, its manifest of git's objects, no file of it
+        // checked out nor run, as the job that merges weighs it again;
+        // else cloned, checked, tested and packaged.
+        let manifest = if request.files_alone {
+            manifest_at(&plugin, &file.repository, release, into)
+                .map_err(|error| vec![error])
+                .and_then(|manifest| {
+                    let problems = problems_of_manifest(&manifest, &plugin, release);
+                    if problems.is_empty() {
+                        Ok(manifest)
+                    } else {
+                        Err(problems)
+                    }
+                })
+        } else {
+            package(out, &plugin, &file.repository, release, into, true).map(|built| {
+                let manifest = built.manifest.clone();
+                verdict.built.push(built);
+                manifest
+            })
+        };
+        match manifest {
+            Ok(manifest) => {
                 asked
                     .0
-                    .extend(built.manifest.capabilities.iter().map(ToString::to_string));
-                asked.1.extend(built.manifest.uses.iter().cloned());
-                verdict.built.push(built);
+                    .extend(manifest.capabilities.iter().map(ToString::to_string));
+                asked.1.extend(manifest.uses.iter().cloned());
             }
             Err(problems) => {
                 verdict.refused.extend(problems.into_iter().map(|problem| {
@@ -745,19 +765,7 @@ fn package(
             Manifest::parse(&text).map_err(|error| format!("its plugin.toml: {error}"))
         })
         .map_err(|error| vec![error])?;
-    let mut problems = Vec::new();
-    if manifest.name != plugin {
-        problems.push(format!("its manifest names `{}`", manifest.name));
-    }
-    if manifest.version.as_deref() != Some(release.version.as_str()) {
-        problems.push(format!(
-            "its manifest's version is {}",
-            manifest.version.as_deref().unwrap_or("none")
-        ));
-    }
-    if manifest.kind != Kind::Luau {
-        problems.push("it is no plugin of Luau, which the registry publishes alone".to_owned());
-    }
+    let mut problems = problems_of_manifest(&manifest, plugin, release);
     if checked && problems.is_empty() {
         problems.extend(
             super::check::problems_of(&folder, out)
@@ -816,9 +824,31 @@ fn package(
     })
 }
 
-/// The manifest of the version `release` of `plugin`, of `repository`,
-/// published before, of its commit, its clone in `into` for the time it
-/// takes.
+/// What is wrong of `manifest`, of the version `release` of `plugin`: its
+/// name, its version and its kind.
+fn problems_of_manifest(manifest: &Manifest, plugin: &str, release: &Release) -> Vec<String> {
+    let mut problems = Vec::new();
+    if manifest.name != plugin {
+        problems.push(format!("its manifest names `{}`", manifest.name));
+    }
+    if manifest.version.as_deref() != Some(release.version.as_str()) {
+        problems.push(format!(
+            "its manifest's version is {}",
+            manifest.version.as_deref().unwrap_or("none")
+        ));
+    }
+    if manifest.kind != Kind::Luau {
+        problems.push("it is no plugin of Luau, which the registry publishes alone".to_owned());
+    }
+    problems
+}
+
+/// The most bytes of a manifest read of git's objects.
+const LARGEST_MANIFEST: u64 = 1024 * 1024;
+
+/// The manifest of the version `release` of `plugin`, of `repository`, of
+/// its commit, read of git's objects in a clone of no checkout in `into`
+/// for the time it takes: no file of the plugin's written out nor run.
 fn manifest_at(
     plugin: &str,
     repository: &str,
@@ -826,14 +856,51 @@ fn manifest_at(
     into: &Path,
 ) -> Result<Manifest, String> {
     let folder =
-        into.join("published")
+        into.join("manifests")
             .join(format!("{}-{}", plugin.replace('/', "."), release.version));
-    clone_at(repository, release, At::Commit, &folder)?;
-    let manifest = std::fs::read_to_string(folder.join("plugin.toml"))
-        .map_err(|error| error.to_string())
-        .and_then(|text| Manifest::parse(&text).map_err(|error| error.to_string()));
+    fetched_at(repository, release, At::Commit, &folder)?;
+    let manifest = manifest_of_commit(&folder, &release.commit);
     let _ = std::fs::remove_dir_all(&folder);
     manifest
+}
+
+/// The manifest at the root of `commit`, of the repository in `folder`, of
+/// git's objects: a plain file, of [`LARGEST_MANIFEST`] at most, of UTF-8.
+fn manifest_of_commit(folder: &Path, commit: &str) -> Result<Manifest, String> {
+    let entry = git(
+        Some(folder),
+        &["ls-tree", "--full-tree", commit, "--", "plugin.toml"],
+    )
+    .map_err(|error| format!("its commit {commit} cannot be read: {error}"))?;
+    let Some((head, _)) = entry.split_once('\t') else {
+        return Err("its commit holds no plugin.toml at its root".to_owned());
+    };
+    let mut parts = head.split(' ');
+    let (mode, kind, object) = (
+        parts.next().unwrap_or_default(),
+        parts.next().unwrap_or_default(),
+        parts.next().unwrap_or_default(),
+    );
+    if mode == "120000" {
+        return Err("its plugin.toml is a link, which no package holds".to_owned());
+    }
+    if kind != "blob" || !matches!(mode, "100644" | "100755") {
+        return Err("its plugin.toml is no plain file".to_owned());
+    }
+    let size: u64 = git(Some(folder), &["cat-file", "-s", object])
+        .ok()
+        .and_then(|size| size.parse().ok())
+        .ok_or_else(|| "its plugin.toml cannot be read".to_owned())?;
+    if size > LARGEST_MANIFEST {
+        return Err(format!(
+            "its plugin.toml is of {size} bytes, more than {LARGEST_MANIFEST}"
+        ));
+    }
+    let bytes = git_bytes(Some(folder), &["cat-file", "blob", object])
+        .map_err(|error| format!("its plugin.toml cannot be read: {error}"))?;
+    let text =
+        String::from_utf8(bytes).map_err(|_| "its plugin.toml is not of UTF-8".to_owned())?;
+    Manifest::parse(&text).map_err(|error| format!("its plugin.toml: {error}"))
 }
 
 /// What a clone of a version's repository is checked out at.
@@ -849,8 +916,18 @@ enum At {
 }
 
 /// Clones `repository` into `folder` at the commit of `release`, as `at`
-/// says.
+/// says, checked out.
 fn clone_at(repository: &str, release: &Release, at: At, folder: &Path) -> Result<(), String> {
+    fetched_at(repository, release, at, folder)?;
+    let commit = &release.commit;
+    git(Some(folder), &["checkout", "--quiet", "--detach", commit])
+        .map_err(|error| format!("{repository} at {commit} cannot be checked out: {error}"))?;
+    Ok(())
+}
+
+/// Clones `repository` into `folder`, of no checkout, its commit of
+/// `release` held, as `at` says.
+fn fetched_at(repository: &str, release: &Release, at: At, folder: &Path) -> Result<(), String> {
     let _ = std::fs::remove_dir_all(folder);
     if let Some(parent) = folder.parent() {
         std::fs::create_dir_all(parent)
@@ -909,8 +986,6 @@ fn clone_at(repository: &str, release: &Release, at: At, folder: &Path) -> Resul
             }
         }
     }
-    git(Some(folder), &["checkout", "--quiet", "--detach", commit])
-        .map_err(|error| format!("{repository} at {commit} cannot be checked out: {error}"))?;
     Ok(())
 }
 

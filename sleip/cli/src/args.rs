@@ -72,8 +72,9 @@ pub enum Registry {
         report: Option<std::path::PathBuf>,
         /// Repositories of `file://` taken, as the tests' are.
         local: bool,
-        /// The files judged alone, no version cloned, checked, tested nor
-        /// packaged, as the job that merges checks again.
+        /// The files judged alone, no version checked out, checked, tested
+        /// nor packaged, the new versions' manifests weighed of git's
+        /// objects, as the job that merges checks again.
         files_alone: bool,
     },
     /// The archive of the version `version` of the plugin `plugin`, of the
@@ -199,8 +200,9 @@ The registry's tools, which its CI runs.
             <out>; whether it merges by itself, or the maintainer reviews it, and a report of
             Markdown in <report>; of a --sender not the author, whose push or action started the
             check, the maintainer reviews it. A failure of a pull request refused. Of --files-alone, the
-            files alone, no version cloned, checked, tested nor packaged, as the job that
-            merges checks again.
+            files alone, no version checked out, checked, tested nor packaged, each new
+            version's manifest and the last published one's read of git's objects and weighed,
+            as the job that merges checks again.
   build     Packages the archive of a version of the registry's plugin into <out>, of the
             commit that the registry's file pins, whatever became of its tag.
   versions  Lists every version of the registry, of its release's tag and archive.

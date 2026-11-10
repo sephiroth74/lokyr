@@ -715,28 +715,146 @@ fn the_files_alone_are_judged_as_the_job_that_merges_checks_again() {
     let first = git(&folder, &["rev-parse", "HEAD"]);
     let published = entry(&url, &[("0.1.0", "v0.1.0", &first, false)]);
     let base = lab.registry("base", &[("plugins/acme/hello.toml", &published)]);
-    // A version added of a tag that is not there: refused of its clone,
-    // and of its file alone a version added, which merges.
+    let alone = |head: &Path, author: &str| {
+        let (output, verdict) = lab.verify_with(head, &base, author, "", &["--files-alone"]);
+        assert!(
+            !events(&output)
+                .iter()
+                .any(|event| event["event"] == "built"),
+            "{output:?}"
+        );
+        verdict
+    };
+    // A version of nothing new, of a tag that is not there: refused of
+    // its clone, as the tag is the first check's; of its files alone, its
+    // manifest of its commit weighed, it merges.
+    let second = release(&folder, "0.1.1");
     let added = entry(
+        &url,
+        &[
+            ("0.1.0", "v0.1.0", &first, false),
+            ("0.1.1", "v9.9.9", &second, false),
+        ],
+    );
+    let head = lab.head(&base, &[("plugins/acme/hello.toml", &added)]);
+    let (output, verdict) = lab.verify(&head, &base, "acme", "");
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+    assert!(reasons(&verdict, "refused").contains("has no tag 'v9.9.9'"));
+    let verdict = alone(&head, "acme");
+    assert_eq!(verdict["verdict"], "merge", "{verdict}");
+    // A version that asks for a capability more, and runs a command: of
+    // its files alone, of git's objects, the maintainer reviews it.
+    edit(&folder, "plugin.toml", |text| {
+        format!(
+            "{text}\n[capabilities]\nclipboard-write = true\n\n[uses]\ncommands = [\"tabs.*\"]\n"
+        )
+    });
+    git(&folder, &["commit", "--quiet", "-am", "more"]);
+    let more = release(&folder, "0.2.0");
+    let asking = entry(
+        &url,
+        &[
+            ("0.1.0", "v0.1.0", &first, false),
+            ("0.2.0", "v0.2.0", &more, false),
+        ],
+    );
+    let head = lab.head(&base, &[("plugins/acme/hello.toml", &asking)]);
+    let verdict = alone(&head, "acme");
+    assert_eq!(verdict["verdict"], "review", "{verdict}");
+    assert!(
+        reasons(&verdict, "review").contains(
+            "asks for more than 0.1.0 did: the capability `clipboard-write`, the command `tabs.*`"
+        ),
+        "{verdict}"
+    );
+    // A commit that is not there, or of another version's manifest, or of
+    // a manifest that is a link, refused.
+    let gone = entry(
         &url,
         &[
             ("0.1.0", "v0.1.0", &first, false),
             ("0.1.1", "v0.1.1", &"d".repeat(40), false),
         ],
     );
-    let head = lab.head(&base, &[("plugins/acme/hello.toml", &added)]);
-    let (output, verdict) = lab.verify(&head, &base, "acme", "");
-    assert_eq!(output.status.code(), Some(1), "{output:?}");
-    assert!(reasons(&verdict, "refused").contains("has no tag 'v0.1.1'"));
-    let (output, verdict) = lab.verify_with(&head, &base, "acme", "", &["--files-alone"]);
-    assert!(output.status.success(), "{output:?}");
-    assert_eq!(verdict["verdict"], "merge", "{verdict}");
+    let head = lab.head(&base, &[("plugins/acme/hello.toml", &gone)]);
+    let verdict = alone(&head, "acme");
+    assert_eq!(verdict["verdict"], "refused", "{verdict}");
     assert!(
-        !events(&output)
-            .iter()
-            .any(|event| event["event"] == "built"),
-        "{output:?}"
+        reasons(&verdict, "refused").contains("holds the commit"),
+        "{verdict}"
     );
+    let other = entry(
+        &url,
+        &[
+            ("0.1.0", "v0.1.0", &first, false),
+            ("0.3.0", "v0.1.1", &second, false),
+        ],
+    );
+    let head = lab.head(&base, &[("plugins/acme/hello.toml", &other)]);
+    let verdict = alone(&head, "acme");
+    assert_eq!(verdict["verdict"], "refused", "{verdict}");
+    assert!(
+        reasons(&verdict, "refused").contains("its manifest's version is 0.1.1"),
+        "{verdict}"
+    );
+    std::fs::rename(folder.join("plugin.toml"), folder.join("real.toml")).unwrap();
+    std::os::unix::fs::symlink("real.toml", folder.join("plugin.toml")).unwrap();
+    git(&folder, &["add", "-A"]);
+    git(&folder, &["commit", "--quiet", "-m", "a link"]);
+    let link = git(&folder, &["rev-parse", "HEAD"]);
+    let linked = entry(
+        &url,
+        &[
+            ("0.1.0", "v0.1.0", &first, false),
+            ("0.2.1", "v0.2.1", &link, false),
+        ],
+    );
+    let head = lab.head(&base, &[("plugins/acme/hello.toml", &linked)]);
+    let verdict = alone(&head, "acme");
+    assert_eq!(verdict["verdict"], "refused", "{verdict}");
+    assert!(
+        reasons(&verdict, "refused").contains("its plugin.toml is a link"),
+        "{verdict}"
+    );
+    // A new plugin, a repository changed and a yank taken back, the
+    // maintainer reviews; a published version changed, refused.
+    let (other_folder, other_url) = lab.plugin("other");
+    let other_first = git(&other_folder, &["rev-parse", "HEAD"]);
+    let head = lab.head(
+        &base,
+        &[
+            ("plugins/acme/hello.toml", &published),
+            (
+                "plugins/acme/other.toml",
+                &entry(&other_url, &[("0.1.0", "v0.1.0", &other_first, false)]),
+            ),
+        ],
+    );
+    let verdict = alone(&head, "acme");
+    assert_eq!(verdict["verdict"], "review", "{verdict}");
+    assert!(reasons(&verdict, "review").contains("is a new plugin"));
+    let moved = format!("{url}-moved");
+    let head = lab.head(
+        &base,
+        &[(
+            "plugins/acme/hello.toml",
+            &entry(&moved, &[("0.1.0", "v0.1.0", &first, false)]),
+        )],
+    );
+    let verdict = alone(&head, "acme");
+    assert_eq!(verdict["verdict"], "review", "{verdict}");
+    assert!(reasons(&verdict, "review").contains("repository changes"));
+    let yanked = entry(&url, &[("0.1.0", "v0.1.0", &first, true)]);
+    let yanked_base = lab.registry("yanked", &[("plugins/acme/hello.toml", &yanked)]);
+    let head = lab.head(&yanked_base, &[("plugins/acme/hello.toml", &published)]);
+    let (_, verdict) = lab.verify_with(&head, &yanked_base, "acme", "", &["--files-alone"]);
+    assert_eq!(verdict["verdict"], "review", "{verdict}");
+    assert!(reasons(&verdict, "review").contains("comes back from its yank"));
+    let changed = entry(&url, &[("0.1.0", "v0.1.0", &second, false)]);
+    let head = lab.head(&base, &[("plugins/acme/hello.toml", &changed)]);
+    let verdict = alone(&head, "acme");
+    assert_eq!(verdict["verdict"], "refused", "{verdict}");
+    assert!(reasons(&verdict, "refused").contains("published, changes or goes"));
     // Beside another file, or of another owner, it merges not.
     let head = lab.head(
         &base,
@@ -745,10 +863,10 @@ fn the_files_alone_are_judged_as_the_job_that_merges_checks_again() {
             (".github/actions/sleip/action.yml", "runs: {}\n"),
         ],
     );
-    let (_, verdict) = lab.verify_with(&head, &base, "acme", "", &["--files-alone"]);
+    let verdict = alone(&head, "acme");
     assert_eq!(verdict["verdict"], "review", "{verdict}");
     let head = lab.head(&base, &[("plugins/acme/hello.toml", &added)]);
-    let (_, verdict) = lab.verify_with(&head, &base, "bob", "", &["--files-alone"]);
+    let verdict = alone(&head, "bob");
     assert_eq!(verdict["verdict"], "refused", "{verdict}");
     // Of a push of another account than the author's, the maintainer
     // reviews it; of the author's own, of another case, it merges.
