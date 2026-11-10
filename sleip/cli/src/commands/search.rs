@@ -9,7 +9,6 @@ use lokyr_pkg_model::list::List;
 use serde_json::json;
 use sleip_index::client::Client;
 use sleip_index::remote::Remote;
-use sleip_index::signing::{self, PublicKey};
 
 use crate::args::Options;
 use crate::output::Out;
@@ -17,22 +16,6 @@ use crate::paths::Paths;
 
 /// The site of Lokyr's registry, which searches its plugins too.
 const SITE: &str = "https://pkg.lokyr.dev";
-
-/// The root keys that Sleip trusts: its own; in a build for debugging
-/// alone, those of `SLEIP_TEST_ROOT_KEYS`, a key a line or a comma, which
-/// the tests take, as a release reads none of it.
-fn roots() -> Vec<PublicKey> {
-    #[cfg(debug_assertions)]
-    if let Ok(text) = std::env::var("SLEIP_TEST_ROOT_KEYS") {
-        return text
-            .split([',', '\n'])
-            .map(str::trim)
-            .filter(|key| !key.is_empty())
-            .filter_map(|key| PublicKey::parse(key).ok())
-            .collect();
-    }
-    signing::roots()
-}
 
 /// The registry of `plugins.toml` of `paths`, its `default`.
 fn registry_url(paths: &Paths) -> Result<String, String> {
@@ -47,7 +30,7 @@ fn registry_url(paths: &Paths) -> Result<String, String> {
 pub fn search(paths: &Paths, options: Options, out: Out, words: &[String]) -> Result<(), String> {
     let url = registry_url(paths)?;
     let client = (!options.offline).then(Client::new);
-    let remote = Remote::new(&url, &paths.cache, client.as_ref(), roots());
+    let remote = Remote::new(&url, &paths.cache, client.as_ref(), super::roots());
     let keys = remote.keys()?;
     let list = remote.list(&keys)?;
     let words: Vec<String> = words.iter().map(|word| word.to_lowercase()).collect();
@@ -95,7 +78,7 @@ pub fn search(paths: &Paths, options: Options, out: Out, words: &[String]) -> Re
 pub fn info(paths: &Paths, options: Options, out: Out, plugin: &str) -> Result<(), String> {
     let url = registry_url(paths)?;
     let client = (!options.offline).then(Client::new);
-    let remote = Remote::new(&url, &paths.cache, client.as_ref(), roots());
+    let remote = Remote::new(&url, &paths.cache, client.as_ref(), super::roots());
     let keys = remote.keys()?;
     let index = remote
         .index(plugin, &keys)?

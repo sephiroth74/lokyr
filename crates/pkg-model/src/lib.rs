@@ -96,6 +96,12 @@ pub fn link_target(path: &Path) -> PathBuf {
 /// the new one, never a part, whatever stops the write; its folder made if
 /// it is not there; a failure leaves no file of its own behind.
 pub fn write_whole(path: &Path, text: &str) -> io::Result<()> {
+    write_whole_bytes(path, text.as_bytes())
+}
+
+/// Writes `bytes` to the file that `path` leads to, whole, as
+/// [`write_whole`] writes a text.
+pub fn write_whole_bytes(path: &Path, bytes: &[u8]) -> io::Result<()> {
     let path = link_target(path);
     let folder = path
         .parent()
@@ -115,7 +121,7 @@ pub fn write_whole(path: &Path, text: &str) -> io::Result<()> {
     );
     let written = (|| {
         let mut file = std::fs::File::create(&temporary)?;
-        file.write_all(text.as_bytes())?;
+        file.write_all(bytes)?;
         if let Ok(metadata) = std::fs::metadata(&path) {
             file.set_permissions(metadata.permissions())?;
         }

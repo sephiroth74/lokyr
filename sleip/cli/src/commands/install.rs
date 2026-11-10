@@ -6,10 +6,12 @@
 //! failure changes nothing: the packages that it stored go, and neither
 //! file is written.
 //!
-//! The registry's plugins are not fetched yet: one of `plugins.toml`
-//! that the lockfile holds stays as the lockfile holds it.
+//! A plugin of the registry is of its versions in the registry's signed
+//! index, the archive of the version picked downloaded and checked
+//! against the index's checksum; one of `plugins.toml` that the lockfile
+//! holds stays as the lockfile holds it, unless `update` asks for it.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -23,9 +25,13 @@ use sleip_resolver::Candidate;
 
 use super::git;
 use crate::args::Options;
+
+mod registry;
+
 use crate::output::Out;
 use crate::paths::{self, Paths};
 use crate::store_lock;
+use registry::Offered;
 
 /// A plugin fetched of its folder or its repository: its manifest, the
 /// folder of its package, and its lockfile's source.
@@ -62,6 +68,12 @@ pub fn add(
         Err(error) => return Err(format!("{} cannot be read: {error}", list_path.display())),
     };
     let mut clones = Vec::new();
+    if let Wanted::Registry(constraint) = from {
+        let name = plugin.ok_or_else(|| {
+            "a plugin of the registry is added by its name, as owner/name".to_owned()
+        })?;
+        return add_offered(paths, options, out, &text, name, constraint, &mut clones);
+    }
     // The plugin's name, its manifest's, as the folder or the repository
     // holds it.
     let fetched = fetch(paths, options, plugin, from, &mut clones)?;
@@ -80,29 +92,99 @@ pub fn add(
     let list = List::parse(&edited)
         .map_err(|error| format!("{} would not read: {error}", list_path.display()))?;
     let lock = read_lock(paths)?;
-    let mut fresh = BTreeMap::from([(name.clone(), fetched)]);
+    let mut fresh = others(paths, options, &list, lock.as_ref(), &name, &mut clones)?;
+    fresh.insert(name.clone(), fetched);
+    let offered = Offered::gather(paths, options, &list, unlocked(&list, lock.as_ref(), None))?;
+    install(paths, options, out, &list, lock.as_ref(), &fresh, &offered)?;
+    lokyr_pkg_model::write_whole(&list_path, &edited)
+        .map_err(|error| format!("{} cannot be written: {error}", list_path.display()))
+}
+
+/// Adds the registry's plugin `name` of `constraint`, or of the version
+/// that the resolution picks if it is empty, which `plugins.toml` then
+/// takes as `^<version>`, to the list of `text`, as [`add`] does.
+fn add_offered(
+    paths: &Paths,
+    options: Options,
+    out: Out,
+    text: &str,
+    name: &str,
+    constraint: &str,
+    clones: &mut Vec<Clone>,
+) -> Result<(), String> {
+    let list_path = paths.list();
+    let resolved = if constraint.is_empty() {
+        "*"
+    } else {
+        sleip_resolver::ranges_of(constraint)?;
+        constraint
+    };
+    let edited = with_plugin(text, name, &Wanted::Registry(resolved.to_owned()))
+        .map_err(|error| format!("{}: {error}", list_path.display()))?;
+    let list = List::parse(&edited)
+        .map_err(|error| format!("{} would not read: {error}", list_path.display()))?;
+    let lock = read_lock(paths)?;
+    let fresh = others(paths, options, &list, lock.as_ref(), name, clones)?;
+    let mut names = unlocked(&list, lock.as_ref(), None);
+    names.insert(name.to_owned());
+    let offered = Offered::gather(paths, options, &list, names)?;
+    let new = install(paths, options, out, &list, lock.as_ref(), &fresh, &offered)?;
+    // Of no constraint given, the version picked's, as `^0.1.8`.
+    let written = if constraint.is_empty() {
+        let version = new
+            .packages
+            .get(name)
+            .map(|locked| locked.version.clone())
+            .ok_or_else(|| format!("`{name}` was resolved of no version"))?;
+        with_plugin(text, name, &Wanted::Registry(format!("^{version}")))
+            .map_err(|error| format!("{}: {error}", list_path.display()))?
+    } else {
+        edited
+    };
+    lokyr_pkg_model::write_whole(&list_path, &written)
+        .map_err(|error| format!("{} cannot be written: {error}", list_path.display()))
+}
+
+/// The plugins of `list` of a folder or a git repository but `except`
+/// that `lock` lacks, fetched, `clones` holding the clones.
+fn others(
+    paths: &Paths,
+    options: Options,
+    list: &List,
+    lock: Option<&Lock>,
+    except: &str,
+    clones: &mut Vec<Clone>,
+) -> Result<BTreeMap<String, Fetched>, String> {
+    let mut fresh = BTreeMap::new();
     for (other, wanted) in &list.plugins {
-        if *other == name || matches!(wanted, Wanted::Registry(_)) {
+        if other == except || matches!(wanted, Wanted::Registry(_)) {
             continue;
         }
         // The others of the list as the lockfile holds them, if it does.
-        if lock
-            .as_ref()
-            .is_some_and(|lock| lock.packages.contains_key(other))
-        {
+        if lock.is_some_and(|lock| lock.packages.contains_key(other)) {
             continue;
         }
         fresh.insert(
             other.clone(),
-            fetch(paths, options, Some(other), wanted, &mut clones)?,
+            fetch(paths, options, Some(other), wanted, clones)?,
         );
     }
-    let installed = install(paths, options, out, &list, lock.as_ref(), &fresh)?;
-    if !installed {
-        return Ok(());
-    }
-    lokyr_pkg_model::write_whole(&list_path, &edited)
-        .map_err(|error| format!("{} cannot be written: {error}", list_path.display()))
+    Ok(fresh)
+}
+
+/// The registry's plugins of `list` that `lock` lacks, and `asked`, of
+/// `update`, each of them if `Some(None)`, or the one named.
+fn unlocked(list: &List, lock: Option<&Lock>, asked: Option<Option<&str>>) -> BTreeSet<String> {
+    list.plugins
+        .iter()
+        .filter(|(_, wanted)| matches!(wanted, Wanted::Registry(_)))
+        .filter(|(name, _)| {
+            let locked = lock.is_some_and(|lock| lock.packages.contains_key(*name));
+            let updated = asked.is_some_and(|asked| asked.is_none_or(|asked| asked == *name));
+            !locked || updated
+        })
+        .map(|(name, _)| name.clone())
+        .collect()
 }
 
 /// Fetches the plugins of `plugins.toml` of `paths` again, or `plugin`
@@ -140,7 +222,13 @@ pub fn update(
             fetch(paths, options, Some(name), wanted, &mut clones)?,
         );
     }
-    install(paths, options, out, &list, lock.as_ref(), &fresh).map(|_| ())
+    let offered = Offered::gather(
+        paths,
+        options,
+        &list,
+        unlocked(&list, lock.as_ref(), Some(plugin)),
+    )?;
+    install(paths, options, out, &list, lock.as_ref(), &fresh, &offered).map(|_| ())
 }
 
 /// The lockfile of `paths`, if there is one.
@@ -151,8 +239,10 @@ fn read_lock(paths: &Paths) -> Result<Option<Lock>, String> {
 /// Resolves the plugins of `list`, of `fresh`, those fetched, and of the
 /// others as `lock` holds them, against the app's plugin API; stores the
 /// packages of `fresh`; and writes the lockfile of `paths`, the folders that
-/// `sleip dev` links kept: whether it wrote it, as `--locked` refuses a
-/// change. A failure takes the packages that it stored away.
+/// `sleip dev` links kept: the lockfile in force, as `--locked` refuses a
+/// change. The registry's plugins of `offered` are of their versions'
+/// candidates, the archive of the one picked downloaded. A failure takes
+/// the packages that it stored away.
 fn install(
     paths: &Paths,
     options: Options,
@@ -160,7 +250,8 @@ fn install(
     list: &List,
     lock: Option<&Lock>,
     fresh: &BTreeMap<String, Fetched>,
-) -> Result<bool, String> {
+    offered: &Offered,
+) -> Result<Lock, String> {
     let api = match paths::app_api() {
         Some((api, _)) => api,
         None => {
@@ -180,7 +271,7 @@ fn install(
         .map(|lock| {
             lock.packages
                 .iter()
-                .filter(|(name, _)| !fresh.contains_key(*name))
+                .filter(|(name, _)| !fresh.contains_key(*name) && !offered.holds(name))
                 .map(|(name, locked)| (name.clone(), locked.clone()))
                 .collect()
         })
@@ -189,6 +280,7 @@ fn install(
     for fetched in fresh.values() {
         candidates.push(candidate(&fetched.manifest)?);
     }
+    candidates.extend(offered.candidates(lock)?);
     for (name, locked) in &kept {
         if let Some(manifest) = stored_manifest(paths, locked) {
             candidates.push(candidate(&manifest)?);
@@ -246,6 +338,45 @@ fn install(
                         dependencies,
                     }
                 }
+                (None, _) if offered.holds(name) => {
+                    let version = version.to_string();
+                    let archive = offered.archive(name, &version, out)?;
+                    let added = paths
+                        .store
+                        .add(archive.as_slice())
+                        .map_err(|error| format!("`{name}` {version}'s package: {error}"))?;
+                    let unpacked = added.unpacked;
+                    if added.new {
+                        stored.push(unpacked.digest);
+                    }
+                    let manifest = &unpacked.manifest;
+                    if manifest.name != *name
+                        || manifest.version.as_deref() != Some(version.as_str())
+                    {
+                        return Err(format!(
+                            "the archive of `{name}` {version} holds `{}` {}",
+                            manifest.name,
+                            manifest.version.as_deref().unwrap_or("of no version")
+                        ));
+                    }
+                    let dependencies = manifest
+                        .dependencies
+                        .keys()
+                        .filter_map(|needed| {
+                            picked
+                                .get(needed)
+                                .map(|version| (needed.clone(), version.to_string()))
+                        })
+                        .collect();
+                    Locked {
+                        version,
+                        kind: manifest.kind,
+                        source: offered.source(),
+                        checksum: Some(unpacked.digest),
+                        capabilities: manifest.capabilities.clone(),
+                        dependencies,
+                    }
+                }
                 (None, Some(locked)) => locked.clone(),
                 (None, None) => return Err(format!("`{name}` was resolved of no package")),
             };
@@ -277,7 +408,7 @@ fn install(
     };
     if lock == Some(&new) {
         out.tell("done", json!({ "changed": false }), "Nothing changed.");
-        return Ok(true);
+        return Ok(new);
     }
     if let Err(error) = new.write(&paths.lock()) {
         undo(paths, &stored);
@@ -317,7 +448,7 @@ fn install(
         json!({ "changed": true }),
         "Lokyr loads them at once.",
     );
-    Ok(true)
+    Ok(new)
 }
 
 /// Takes the packages of `stored`, new to the store of `paths`, away.

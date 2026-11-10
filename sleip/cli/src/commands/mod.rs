@@ -56,6 +56,22 @@ pub fn run(options: Options, command: &Command) -> ExitCode {
     }
 }
 
+/// The root keys that Sleip trusts: its own; in a build for debugging
+/// alone, those of `SLEIP_TEST_ROOT_KEYS`, a key a line or a comma, which
+/// the tests take, as a release reads none of it.
+pub(super) fn roots() -> Vec<sleip_index::signing::PublicKey> {
+    #[cfg(debug_assertions)]
+    if let Ok(text) = std::env::var("SLEIP_TEST_ROOT_KEYS") {
+        return text
+            .split([',', '\n'])
+            .map(str::trim)
+            .filter(|key| !key.is_empty())
+            .filter_map(|key| sleip_index::signing::PublicKey::parse(key).ok())
+            .collect();
+    }
+    sleip_index::signing::roots()
+}
+
 /// Runs git of `args`, in `folder` if given, of no question at the
 /// terminal: its output's first line, or its error.
 pub(super) fn git(folder: Option<&Path>, args: &[&str]) -> Result<String, String> {

@@ -146,9 +146,11 @@ Commands:
   check              Check the plugin of the current folder: its manifest, texts and types
   test               Run the tests of the plugin of the current folder, tests/*.luau
   dev                Link the plugin of the current folder into Lokyr, reloaded at each save
+  add <plugin>[@<constraint>]
+                     Add a plugin of the registry, as owner/name, and install it
   add [<plugin>] --path <folder> | --git <url> (--tag <tag> | --rev <commit>)
                      Add a plugin from a folder or a git repository, and install it
-  update [<plugin>]  Fetch the installed plugins' folders and repositories again
+  update [<plugin>]  Update the installed plugins: the registry's, and their folders and repositories
   list               List the installed plugins, their versions and capabilities
   remove <plugin>    Remove a plugin, as owner/name; its package stays until `gc`
   gc                 Remove the packages of the store that no lockfile names
@@ -223,10 +225,10 @@ fn command_help(name: &str) -> Option<&'static str> {
             "Usage: sleip dev [options]\n\nChecks the plugin of the current folder and links it into Lokyr's plugins,\nan entry of plugins.lock of its folder, which Lokyr reloads at each save;\nchecks it again at each change, telling its problems. Ctrl-C ends it, the\nentry taken back, and an installed plugin of its name given back.\n"
         }
         "add" => {
-            "Usage: sleip add [options] [<plugin>] --path <folder>\n       sleip add [options] [<plugin>] --git <url> (--tag <tag> | --rev <commit>)\n\nAdds a plugin to plugins.toml, of the folder or the git repository's tag or\ncommit given, as owner/name, its manifest's if left out; resolves every\nplugin of plugins.toml against Lokyr's plugin API; stores each package; and\nwrites plugins.lock, which Lokyr reloads. A failure changes nothing.\n"
+            "Usage: sleip add [options] <plugin>[@<constraint>]\n       sleip add [options] [<plugin>] --path <folder>\n       sleip add [options] [<plugin>] --git <url> (--tag <tag> | --rev <commit>)\n\nAdds a plugin to plugins.toml: of the registry, as owner/name, of the\nconstraint given, as acme/hello@^0.2, or of the newest version that Lokyr's\nplugin API takes, written as ^<version>; or of the folder or the git\nrepository's tag or commit given, its name its manifest's if left out.\nResolves every plugin of plugins.toml against Lokyr's plugin API; downloads\nthe registry's archives, each checked against its signed index; stores each\npackage; and writes plugins.lock, which Lokyr reloads, telling the\ncapabilities that each plugin asks for. A failure changes nothing.\n"
         }
         "update" => {
-            "Usage: sleip update [options] [<plugin>]\n\nFetches the folders and the git repositories of the plugins of plugins.toml\nagain, or the one given, resolves them, stores their packages and writes\nplugins.lock. A failure changes nothing.\n"
+            "Usage: sleip update [options] [<plugin>]\n\nUpdates the plugins of plugins.toml, or the one given: the registry's to the\nnewest versions that their constraints and Lokyr's plugin API take, and the\nfolders and git repositories fetched again; resolves them, stores their\npackages and writes plugins.lock. A failure changes nothing.\n"
         }
         "search" => {
             "Usage: sleip search [options] <words>...\n\nSearches the registry's plugins: each that every word finds in its name or\nits description, of the registry's signed list, which Sleip checks and keeps\nin its cache; with --offline, of the cache alone.\n"
@@ -330,6 +332,24 @@ pub fn parse(args: &[String]) -> Result<Parsed, String> {
                 value("--tag"),
                 value("--rev"),
             ) {
+                // Of the registry, as owner/name, of a constraint after
+                // `@`, or of none, the version that the resolution picks.
+                (None, None, None, None) if rest.len() == 1 => {
+                    let (name, constraint) = rest[0].split_once('@').unwrap_or((rest[0], ""));
+                    if constraint.is_empty() && rest[0].ends_with('@') {
+                        return Err(format!(
+                            "`{}` names no constraint after `@`\n\n{HELP}",
+                            rest[0]
+                        ));
+                    }
+                    return Ok(Parsed::Run(
+                        options,
+                        Command::Add(
+                            Some(name.to_owned()),
+                            Wanted::Registry(constraint.to_owned()),
+                        ),
+                    ));
+                }
                 (Some(path), None, None, None) => Wanted::Path(path),
                 (None, Some(url), Some(tag), None) => Wanted::Git {
                     url,
@@ -341,7 +361,7 @@ pub fn parse(args: &[String]) -> Result<Parsed, String> {
                 },
                 _ => {
                     return Err(format!(
-                        "`sleip add` takes `--path <folder>`, or `--git <url>` and one of `--tag` and `--rev`\n\n{HELP}"
+                        "`sleip add` takes a plugin of the registry, as owner/name, `--path <folder>`, or `--git <url>` and one of `--tag` and `--rev`\n\n{HELP}"
                     ));
                 }
             };
@@ -551,6 +571,28 @@ mod tests {
         assert!(
             matches!(parsed("help registry"), Ok(Parsed::Help(text)) if text.contains("registry verify"))
         );
+        // A plugin of the registry, of a constraint or of none.
+        assert_eq!(
+            parsed("add acme/hello@^0.2"),
+            Ok(Parsed::Run(
+                Options::default(),
+                Command::Add(
+                    Some("acme/hello".to_owned()),
+                    lokyr_pkg_model::list::Wanted::Registry("^0.2".to_owned())
+                )
+            ))
+        );
+        assert_eq!(
+            parsed("add acme/hello"),
+            Ok(Parsed::Run(
+                Options::default(),
+                Command::Add(
+                    Some("acme/hello".to_owned()),
+                    lokyr_pkg_model::list::Wanted::Registry(String::new())
+                )
+            ))
+        );
+        assert!(parsed("add acme/hello@").is_err());
         for wrong in [
             "registry",
             "registry verify pr --author ann --out dist",

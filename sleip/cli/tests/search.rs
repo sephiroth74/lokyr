@@ -284,3 +284,193 @@ fn search_and_info_read_the_registry_s_signed_index_cached_and_offline() {
     );
     let _ = std::fs::remove_dir_all(&root);
 }
+
+/// The package of a plugin `acme/hello` of `version`, as `sleip new` makes
+/// it, packed: its archive's bytes.
+fn packed(root: &Path, version: &str) -> Vec<u8> {
+    let work = root.join(format!("work-{version}"));
+    let folder = work.join("hello");
+    if !folder.is_dir() {
+        std::fs::create_dir_all(&work).unwrap();
+        let made = Command::new(env!("CARGO_BIN_EXE_sleip"))
+            .args(["new", "acme/hello"])
+            .current_dir(&work)
+            .output()
+            .unwrap();
+        assert!(made.status.success(), "{made:?}");
+    }
+    let manifest = std::fs::read_to_string(folder.join("plugin.toml")).unwrap();
+    std::fs::write(
+        folder.join("plugin.toml"),
+        manifest.replace("version = \"0.1.0\"", &format!("version = \"{version}\"")),
+    )
+    .unwrap();
+    lokyr_pkg_model::archive::pack(&folder).unwrap()
+}
+
+#[test]
+fn add_and_update_install_the_registry_s_versions_checked_against_its_index() {
+    use lokyr_pkg_model::store::Digest;
+
+    let root = std::env::temp_dir().join(format!("sleip-install-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    let (home, site) = (root.join("home"), root.join("site"));
+    std::fs::create_dir_all(home.join(".config/lokyr")).unwrap();
+    std::fs::create_dir_all(site.join("index/acme")).unwrap();
+    std::fs::create_dir_all(site.join("archives")).unwrap();
+    std::fs::write(home.join("api-version"), "0.1.0\n").unwrap();
+    let served = serve(&site);
+    let (root_key, index_key) = (
+        SecretKey::generate().unwrap(),
+        SecretKey::generate().unwrap(),
+    );
+    let at = Timestamp::parse("2026-11-10T12:00:00Z").unwrap();
+    std::fs::write(
+        site.join("keys.json"),
+        signing::sign_keys(&root_key, &[index_key.public()], at),
+    )
+    .unwrap();
+    std::fs::write(
+        site.join("config.json"),
+        format!(
+            "{{\"v\":1,\"dl\":\"http://127.0.0.1:{}/archives/{{owner}}.{{name}}.{{version}}.tar.zst\"}}\n",
+            served.port
+        ),
+    )
+    .unwrap();
+    // The registry of the versions `versions`, each of its archive, its
+    // index and its list signed at `at`.
+    let publish = |versions: &[(&str, bool)], at: Timestamp| {
+        let mut entries = Vec::new();
+        for (version, yanked) in versions {
+            let archive = packed(&root, version);
+            std::fs::write(
+                site.join(format!("archives/acme.hello.{version}.tar.zst")),
+                &archive,
+            )
+            .unwrap();
+            let mut entry = entry("acme/hello", version, "Says hello", &[], *yanked);
+            entry.cksum = Digest::of_bytes(&archive).to_string();
+            entries.push(entry);
+        }
+        std::fs::write(
+            site.join("index/acme/hello"),
+            signing::sign_index("acme/hello", &entries, &index_key, at),
+        )
+        .unwrap();
+        let shown = entries.iter().rev().find(|entry| !entry.yanked).unwrap();
+        std::fs::write(
+            site.join("list"),
+            signing::sign_list(&[listed(shown)], &index_key, at),
+        )
+        .unwrap();
+    };
+    publish(&[("0.1.0", false), ("0.2.0", false)], at);
+    std::fs::write(
+        home.join(".config/lokyr/plugins.toml"),
+        format!(
+            "[registries]\ndefault = \"http://127.0.0.1:{}\"\n",
+            served.port
+        ),
+    )
+    .unwrap();
+    let sleip = |args: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_sleip"))
+            .args(args)
+            .env("HOME", &home)
+            .env("XDG_CONFIG_HOME", home.join(".config"))
+            .env("XDG_CACHE_HOME", home.join(".cache"))
+            .env("XDG_DATA_HOME", home.join(".local/share"))
+            .env("SLEIP_TEST_ROOT_KEYS", root_key.public().to_string())
+            .env("SLEIP_LOKYR", home.join("api-version"))
+            .env("PATH", "/usr/bin:/bin")
+            .output()
+            .unwrap()
+    };
+    let locked = || {
+        lokyr_pkg_model::lock::Lock::read(&home.join(".config/lokyr/plugins.lock"))
+            .unwrap()
+            .unwrap()
+    };
+    let list = || std::fs::read_to_string(home.join(".config/lokyr/plugins.toml")).unwrap();
+    // Of a constraint given: the newest version that it takes, written as
+    // given, the capabilities told.
+    let output = sleip(&["--json", "add", "acme/hello@^0.1"]);
+    assert!(output.status.success(), "{output:?}");
+    let installed = events(&output)
+        .into_iter()
+        .find(|event| event["event"] == "installed")
+        .unwrap();
+    assert_eq!(installed["version"], "0.1.0");
+    assert_eq!(
+        installed["source"],
+        format!("registry+http://127.0.0.1:{}", served.port)
+    );
+    assert!(list().contains("\"acme/hello\" = \"^0.1\""), "{}", list());
+    let entry = locked().packages["acme/hello"].clone();
+    assert_eq!(entry.version, "0.1.0");
+    let store = lokyr_pkg_model::store::Store::of_user(&home, Some(&home.join(".local/share")));
+    store.check(&entry.checksum.unwrap()).unwrap();
+    assert!(sleip(&["doctor"]).status.success());
+    // A version within the constraint, published since: update takes it.
+    publish(
+        &[("0.1.0", false), ("0.1.1", false), ("0.2.0", false)],
+        Timestamp(at.0 + 60),
+    );
+    let output = sleip(&["update"]);
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(locked().packages["acme/hello"].version, "0.1.1");
+    // An archive of another hash than its index's: refused, the lockfile
+    // as it was.
+    publish(
+        &[
+            ("0.1.0", false),
+            ("0.1.1", false),
+            ("0.1.2", false),
+            ("0.2.0", false),
+        ],
+        Timestamp(at.0 + 120),
+    );
+    let archive = site.join("archives/acme.hello.0.1.2.tar.zst");
+    let mut bytes = std::fs::read(&archive).unwrap();
+    bytes.extend(b"tampered");
+    std::fs::write(&archive, bytes).unwrap();
+    let output = sleip(&["update"]);
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("which the registry's signed index gives"),
+        "{output:?}"
+    );
+    assert_eq!(locked().packages["acme/hello"].version, "0.1.1");
+    // A plugin that it does not publish.
+    let output = sleip(&["add", "acme/none"]);
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+    assert!(String::from_utf8_lossy(&output.stderr).contains("publishes no plugin `acme/none`"));
+    // Of no constraint: the newest that the plugin API takes, written as
+    // `^<version>`.
+    publish(
+        &[("0.1.0", false), ("0.1.1", false), ("0.2.0", false)],
+        Timestamp(at.0 + 180),
+    );
+    std::fs::remove_file(home.join(".config/lokyr/plugins.lock")).unwrap();
+    std::fs::write(
+        home.join(".config/lokyr/plugins.toml"),
+        format!(
+            "[registries]\ndefault = \"http://127.0.0.1:{}\"\n",
+            served.port
+        ),
+    )
+    .unwrap();
+    let output = sleip(&["add", "acme/hello"]);
+    assert!(output.status.success(), "{output:?}");
+    assert!(list().contains("\"acme/hello\" = \"^0.2.0\""), "{}", list());
+    assert_eq!(locked().packages["acme/hello"].version, "0.2.0");
+    // Offline, of the cache of the index and of the archives: as it was.
+    let output = sleip(&["--offline", "update"]);
+    assert!(output.status.success(), "{output:?}");
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains("Nothing changed."),
+        "{output:?}"
+    );
+    let _ = std::fs::remove_dir_all(&root);
+}

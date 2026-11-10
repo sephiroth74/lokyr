@@ -64,10 +64,19 @@ impl Client {
 
     /// The file at `url`, of `https://`, `file://`, or `http://` of the
     /// machine itself; as not modified of `etag`, its ETag as Sleip last
-    /// took it, if the registry holds it so.
+    /// took it, if the registry holds it so; of [`MOST_BYTES`] at most.
     pub fn get(&self, url: &str, etag: Option<&str>) -> Result<Fetched, String> {
+        self.get_within(url, etag, MOST_BYTES)
+    }
+
+    /// The file at `url`, as [`Client::get`] fetches it, of `most` bytes at
+    /// most, as an archive's bound.
+    pub fn get_within(&self, url: &str, etag: Option<&str>, most: u64) -> Result<Fetched, String> {
         if let Some(path) = url.strip_prefix("file://") {
             return match std::fs::read(path) {
+                Ok(bytes) if bytes.len() as u64 > most => {
+                    Err(format!("{path} is more than {most} bytes"))
+                }
                 Ok(bytes) => Ok(Fetched::Body { bytes, etag: None }),
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Fetched::Missing),
                 Err(error) => Err(format!("{path} cannot be read: {error}")),
@@ -95,7 +104,7 @@ impl Client {
                 let bytes = response
                     .into_body()
                     .with_config()
-                    .limit(MOST_BYTES)
+                    .limit(most)
                     .read_to_vec()
                     .map_err(|error| format!("{url} cannot be read: {error}"))?;
                 Ok(Fetched::Body { bytes, etag })
