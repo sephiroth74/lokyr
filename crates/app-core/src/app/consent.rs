@@ -159,30 +159,45 @@ impl<B: Backend> App<B> {
         allowed: bool,
     ) {
         let readable = self.permissions_changed(platform);
-        self.decisions
-            .plugins
-            .entry(plugin.clone())
-            .or_default()
-            .decide(&capabilities, allowed);
-        if !readable {
-            self.unwritten_answers
-                .push((plugin.clone(), capabilities.clone(), allowed));
-        } else if let Some(installed) = &self.installed
-            && let Err(error) = self.decisions.write(&installed.permissions)
-        {
-            eprintln!(
-                "lokyr: the decisions on the plugins' capabilities cannot be written to {}: {error}",
-                installed.permissions.display()
+        // Of the capabilities that the decisions just read leave undecided
+        // alone: one that the file decided meanwhile, as it was fixed while
+        // the question showed, stays the file's.
+        let held = self.decisions.plugins.get(&plugin);
+        let answered: Vec<Capability> = capabilities
+            .iter()
+            .filter(|capability| {
+                !held.is_some_and(|held| {
+                    held.granted.contains(capability) || held.refused.contains(capability)
+                })
+            })
+            .cloned()
+            .collect();
+        if !answered.is_empty() {
+            self.decisions
+                .plugins
+                .entry(plugin.clone())
+                .or_default()
+                .decide(&answered, allowed);
+            if !readable {
+                self.unwritten_answers
+                    .push((plugin.clone(), answered.clone(), allowed));
+            } else if let Some(installed) = &self.installed
+                && let Err(error) = self.decisions.write(&installed.permissions)
+            {
+                eprintln!(
+                    "lokyr: the decisions on the plugins' capabilities cannot be written to {}: {error}",
+                    installed.permissions.display()
+                );
+                // Waiting, in force, for the next write.
+                self.unwritten_answers
+                    .push((plugin.clone(), answered.clone(), allowed));
+            }
+            self.audit(
+                if allowed { "granted" } else { "refused" },
+                &plugin,
+                &answered,
             );
-            // Waiting, in force, for the next write.
-            self.unwritten_answers
-                .push((plugin.clone(), capabilities.clone(), allowed));
         }
-        self.audit(
-            if allowed { "granted" } else { "refused" },
-            &plugin,
-            &capabilities,
-        );
         for error in self.with_plugins(platform, |plugins, context| {
             plugins.consent(&plugin, &capabilities, allowed, context)
         }) {

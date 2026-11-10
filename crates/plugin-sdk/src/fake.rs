@@ -1448,6 +1448,7 @@ impl FakeHost {
     /// that does not read the processes.
     fn learn_tabs(&mut self) {
         self.told_tabs.clear();
+        self.told_panes.clear();
         if self.reads_processes() {
             return;
         }
@@ -2407,7 +2408,6 @@ impl Calling<'_> {
         ))
     }
 
-    /// Answers `request`, a read, with what the host holds.
     /// The title of `pane`: its program's, or, to a plugin that reads the
     /// processes, the name of its folder, as the app's; what a plugin that
     /// does not read them learns of it, of which a change that it cannot
@@ -2434,6 +2434,7 @@ impl Calling<'_> {
         Ok(Response::Text(told))
     }
 
+    /// Answers `request`, a read, with what the host holds.
     fn read(&mut self, request: &Request) -> Result<Response, Error> {
         if let Request::PaneTitle(pane) = request {
             return self.pane_title(*pane);

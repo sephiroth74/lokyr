@@ -462,6 +462,9 @@ struct Deferred {
     commands: Vec<(String, Args, Chain)>,
     events: Vec<Event>,
     renders: Vec<ViewId>,
+    /// Whether the first of `events` woke the plugin, which nothing takes
+    /// the place of: none of a plugin that a command or a view woke.
+    waking: bool,
 }
 
 /// The most events that a plugin's question holds, the one that woke it
@@ -472,31 +475,35 @@ pub const MOST_HELD_EVENTS: usize = 64;
 pub const MOST_HELD_RUNS: usize = 16;
 
 impl Deferred {
-    /// Holds `event`: the first kept, as it woke the plugin; a later one
-    /// in the place of the one before it of its name and subject, the
-    /// oldest after the first going past [`MOST_HELD_EVENTS`].
+    /// Holds `event`: the first kept, if nothing else woke the plugin
+    /// before it, as it did; a later one in the place of the one before it
+    /// of its name and subject, the oldest after the first going past
+    /// [`MOST_HELD_EVENTS`].
     fn hold(&mut self, event: Event) {
-        if self.events.is_empty() {
+        if self.events.is_empty() && self.commands.is_empty() && self.renders.is_empty() {
+            self.waking = true;
             self.events.push(event);
             return;
         }
+        let first = usize::from(self.waking);
         let subject = subject_of(&event);
-        if let Some(at) = self.events[1..]
+        if let Some(at) = self.events[first..]
             .iter()
             .position(|kept| kept.name() == event.name() && subject_of(kept) == subject)
         {
-            self.events.remove(at + 1);
+            self.events.remove(at + first);
         }
         self.events.push(event);
         if self.events.len() > MOST_HELD_EVENTS {
-            self.events.remove(1);
+            self.events.remove(first);
         }
     }
 }
 
 /// The subject of `event`: the ids of the window, the tab, the pane, the
-/// panel and the view that it is about, as its fields name them, so that
-/// two events of a name about two panes are two.
+/// panel, the view and the command that it is about, as its fields name
+/// them, so that two events of a name about two panes, or two commands of
+/// a pane, are two.
 fn subject_of(event: &Event) -> Vec<(String, serde_json::Value)> {
     fn gather(
         value: &serde_json::Value,
@@ -507,7 +514,7 @@ fn subject_of(event: &Event) -> Vec<(String, serde_json::Value)> {
             return;
         };
         for (key, field) in fields {
-            if ["window", "tab", "pane", "panel", "view"].contains(&key.as_str())
+            if ["window", "tab", "pane", "panel", "view", "command", "id"].contains(&key.as_str())
                 && !field.is_object()
             {
                 into.push((key.clone(), field.clone()));
@@ -1184,8 +1191,12 @@ impl Plugins {
             std::mem::take(&mut state.undecided)
                 .into_iter()
                 .partition(|capability| answered.contains(capability));
-        if allowed && let Some(granted) = &mut state.granted {
-            granted.extend(decided);
+        if let Some(granted) = &mut state.granted {
+            if allowed {
+                granted.extend(decided);
+            } else {
+                granted.retain(|capability| !decided.contains(capability));
+            }
         }
         state.undecided = left;
         if state.status != Status::Inactive || !state.wanted {
@@ -1205,8 +1216,19 @@ impl Plugins {
             errors.push(error);
             return errors;
         }
+        // Of the events that the plugin may subscribe to, of the
+        // capabilities that it holds now, as a subscription takes them.
+        let granted = self.entries[at].state.granted.clone();
         for event in deferred.events {
-            self.out.events.push((Some(name.to_owned()), event));
+            let needed =
+                lokyr_plugin_sdk::message::Request::Subscribe(vec![event.name().to_owned()])
+                    .capabilities();
+            let may = granted
+                .as_ref()
+                .is_none_or(|granted| needed.iter().all(|capability| granted.contains(capability)));
+            if may {
+                self.out.events.push((Some(name.to_owned()), event));
+            }
         }
         for view in deferred.renders {
             let render = (name.to_owned(), view);
@@ -2496,21 +2518,29 @@ impl Plugins {
             if entry.state.status != Status::Active {
                 continue;
             }
-            let (name, subscribed) = (&entry.state.name, &entry.state.subscribed);
             // A plugin of a thread of its own that activates subscribes as
             // its requests come, after the activation began: it holds the
-            // events that may be its own until its subscriptions are known.
-            if let Runner::Worker(worker) = &mut entry.runner
+            // events that may be its own until its subscriptions are known,
+            // those that it hears, as a tab's change that it cannot read is
+            // none.
+            if let Entry {
+                runner: Runner::Worker(worker),
+                state,
+                ..
+            } = entry
                 && worker.activating()
             {
-                worker.hold(
-                    events
-                        .iter()
-                        .filter(|(to, _)| to.as_ref().is_none_or(|to| to == name))
-                        .cloned(),
-                );
+                let name = state.name.clone();
+                let held: Vec<(Option<String>, Event)> = events
+                    .iter()
+                    .filter(|(to, _)| to.as_ref().is_none_or(|to| *to == name))
+                    .filter(|(_, event)| state.hears(event, context.workspace))
+                    .cloned()
+                    .collect();
+                worker.hold(held);
                 continue;
             }
+            let (name, subscribed) = (&entry.state.name, &entry.state.subscribed);
             let batch: Vec<Event> = events
                 .iter()
                 .filter(|(to, event)| match to {
@@ -3348,7 +3378,13 @@ fn decide(state: &mut State, granted: &[Capability], refused: &[Capability]) {
             .cloned()
             .collect(),
     );
-    if !state.asking {
+    if state.asking {
+        // The question's capabilities that the user decided meanwhile, as
+        // of a file fixed, are its no longer: its answer leaves them.
+        state
+            .undecided
+            .retain(|capability| !granted.contains(capability) && !refused.contains(capability));
+    } else {
         state.undecided = declared
             .into_iter()
             .filter(|capability| !granted.contains(capability) && !refused.contains(capability))

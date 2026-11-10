@@ -395,3 +395,96 @@ fn a_question_holds_its_commands_runs_within_a_bound() {
     assert_eq!(questions(&mut plugins).len(), 1);
     assert_eq!(refused, 4);
 }
+
+/// The answer to the question of `acme/asker`, which allows `open` and
+/// what `more` names, then its activation served and its events delivered.
+fn answered(plugins: &mut Plugins, app: &mut App, more: &[Capability]) {
+    let mut capabilities = vec![Capability::Open];
+    capabilities.extend_from_slice(more);
+    assert!(
+        plugins
+            .consent("acme/asker", &capabilities, true, &mut app.context())
+            .is_empty()
+    );
+    assert!(plugins.deliver(&mut app.context()).is_empty());
+    served(plugins, app);
+    assert!(plugins.deliver(&mut app.context()).is_empty());
+    served(plugins, app);
+}
+
+#[test]
+fn a_held_event_of_a_capability_that_the_plugin_lacks_never_reaches_it() {
+    let mut app = App::default();
+    window(&mut app, "sleep 10");
+    let pane = host::PaneId(1);
+    // Woken by the commands' ends, of no `history-read`, which subscribing
+    // to them takes.
+    let (mut plugins, did) = asker(&["event:command-ended"], "");
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    plugins.post(Event::CommandEnded {
+        pane,
+        command: 1,
+        status: Some(0),
+    });
+    assert!(plugins.deliver(&mut app.context()).is_empty());
+    assert_eq!(questions(&mut plugins).len(), 1);
+    answered(&mut plugins, &mut app, &[]);
+    assert_eq!(*did.lock().unwrap(), ["activate opened=true"]);
+}
+
+#[test]
+fn two_commands_of_a_pane_held_are_two_and_a_view_s_wake_keeps_no_first_event() {
+    let mut app = App::default();
+    let window = window(&mut app, "sleep 10");
+    let pane = host::PaneId(1);
+    let (mut plugins, did) = asker(
+        &["event:command-started", "event:command-ended"],
+        "history-read = true\n",
+    );
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    for command in [5, 6] {
+        plugins.post(Event::CommandStarted { pane, command });
+        assert!(plugins.deliver(&mut app.context()).is_empty());
+        plugins.post(Event::CommandEnded {
+            pane,
+            command,
+            status: Some(0),
+        });
+        assert!(plugins.deliver(&mut app.context()).is_empty());
+    }
+    answered(&mut plugins, &mut app, &[Capability::HistoryRead]);
+    assert_eq!(
+        *did.lock().unwrap(),
+        [
+            "activate opened=true",
+            "command-started command-ended command-started command-ended"
+        ]
+    );
+    // Woken by a view: the events held after it, the last of each subject.
+    let (mut plugins, did) = asker(
+        &["slot:status-bar", "event:tab-created"],
+        "[contributes]\nslots = [\"status-bar\"]\n",
+    );
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    let view = ViewId::StatusBar(host::WindowId(window.get()));
+    plugins
+        .render("acme/asker", &view, &mut app.context())
+        .unwrap();
+    for _ in 0..2 {
+        plugins.post(Event::Workspace(WorkspaceEvent::TabCreated {
+            tab: host::TabId(1),
+            window: host::WindowId(window.get()),
+            index: 0,
+        }));
+        assert!(plugins.deliver(&mut app.context()).is_empty());
+    }
+    answered(&mut plugins, &mut app, &[]);
+    let told = did.lock().unwrap().clone();
+    assert!(told.contains(&"tab-created#1".to_owned()), "{told:?}");
+    assert!(
+        !told
+            .iter()
+            .any(|line| line.contains("tab-created#1 tab-created#1")),
+        "{told:?}"
+    );
+}

@@ -762,3 +762,45 @@ fn an_answer_that_cannot_be_written_waits_for_the_next_write() {
     );
     let _ = std::fs::remove_dir_all(&folder);
 }
+
+#[test]
+fn a_refusal_of_a_question_whose_file_was_fixed_meanwhile_leaves_the_file_s_grant() {
+    let _luau = LUAU.lock().unwrap_or_else(PoisonError::into_inner);
+    let folder = shelf("consent-fixed-meanwhile");
+    super::installed::grant_open(&folder, &["kept"]);
+    let good = std::fs::read_to_string(folder.join(FILE)).unwrap();
+    std::fs::write(folder.join(FILE), good.replace("\"open\"", "\"opne\"")).unwrap();
+    let packages = [(
+        "kept",
+        manifest("kept", &[], "^0.1", ""),
+        opening("activate", "kept", ""),
+    )];
+    let mut fake = Fake::default();
+    let mut app = installed(&folder, &packages, "en");
+    fake.start(&mut app);
+    let asked = question(&fake).expect("a question");
+    // The file fixed while the question shows, which grants `open`.
+    std::fs::write(folder.join(FILE), &good).unwrap();
+    permissions_told(&app);
+    fake.send_app(&mut app, AppEvent::Wake);
+    fake.fire_timers(&mut app, Instant::now() + Duration::from_secs(1));
+    // Refused, as the default button does: the file's grant stays, in the
+    // file and in the plugin, which holds it as the file says.
+    fake.answer_alert(&mut app, asked.id, 0);
+    run_until(&mut fake, &mut app, |fake, _| opened(fake, "kept"));
+    let decisions = kept(&folder);
+    assert!(
+        decisions.plugins["acme/kept"]
+            .granted
+            .contains(&Capability::Open),
+        "{decisions:?}"
+    );
+    assert!(
+        audited(&folder)
+            .iter()
+            .all(|line| !line.starts_with("refused")),
+        "{:?}",
+        audited(&folder)
+    );
+    let _ = std::fs::remove_dir_all(&folder);
+}
