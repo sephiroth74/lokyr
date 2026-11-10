@@ -333,13 +333,16 @@ impl<B: Backend> App<B> {
                 let text = self
                     .texts
                     .text_with("plugins-lock-unread", &[("error", Arg::Text(&error))]);
+                // One notice of it, which the next one replaces, however
+                // many reloads tell it.
                 self.report(
                     platform,
-                    Diagnostic::new(Code::Unavailable, text, About::Other),
+                    Diagnostic::new(Code::Unavailable, text, About::InstalledPlugins),
                 );
                 return;
             }
         };
+        self.resolve(platform, &About::InstalledPlugins);
         // A plugin of the lockfile's same entry stays; one of a folder
         // that `sleip dev` links, of the same manifest and sources too.
         let (kept, fresh): (Vec<Loaded>, Vec<Loaded>) =

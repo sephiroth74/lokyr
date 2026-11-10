@@ -1105,6 +1105,8 @@ impl<B: Backend> App<B> {
                 (About::Theme, _) => "notice-theme",
                 (About::PluginConfig(_), _) => "notice-plugin-config",
                 (About::KeptWindows, _) => "notice-kept-windows",
+                (About::Permissions, _) => "notice-permissions",
+                (About::InstalledPlugins, _) => "notice-installed-plugins",
                 (About::Other, ErrorCategory::Fault) => "notice-fault",
                 (About::Other, _) => "notice-failed",
             };

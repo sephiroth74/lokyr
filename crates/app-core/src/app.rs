@@ -542,6 +542,10 @@ pub struct App<B: Backend> {
     reloads: installed::Reloads,
     /// The user's decisions on their capabilities, as last read.
     decisions: lokyr_pkg_model::permissions::Permissions,
+    /// The answers given while the file of those decisions did not read,
+    /// each its plugin, its capabilities and whether it allowed them,
+    /// written there once it reads again.
+    unwritten_answers: Vec<(String, Vec<lokyr_kernel::commands::Capability>, bool)>,
     /// The file of those decisions, and its watch.
     permissions_file: Option<ConfigFile>,
     /// The questions of the capabilities of the plugins that activate, each
@@ -816,6 +820,7 @@ impl<B: Backend> App<B> {
             installed: None,
             reloads: installed::Reloads::default(),
             decisions: lokyr_pkg_model::permissions::Permissions::default(),
+            unwritten_answers: Vec::new(),
             permissions_file: None,
             consent_asks: BTreeMap::new(),
             plugin_timer: None,

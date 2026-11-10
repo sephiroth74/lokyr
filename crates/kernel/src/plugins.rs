@@ -1941,6 +1941,16 @@ impl Plugins {
             .map(|entry| entry.state.status)
     }
 
+    /// Whether the plugin `name` is active and its activation ended, of a
+    /// thread of its own too, which is active as its activation begins.
+    pub fn activated(&self, name: &str) -> bool {
+        self.entries.iter().any(|entry| {
+            entry.state.name == name
+                && entry.state.status == Status::Active
+                && !activating(&entry.runner)
+        })
+    }
+
     /// Takes what the plugins' calls asked of the app since the last take.
     pub fn take_requests(&mut self) -> Vec<Request> {
         std::mem::take(&mut self.out.requests)
@@ -2392,7 +2402,8 @@ impl Plugins {
                 errors.push(error);
             }
             // Its activation waits for the user's consent: the events of
-            // its trigger come after it.
+            // its trigger come after it, the last of each name, so that a
+            // question held while a pane's view moves keeps one of them.
             let state = &mut self.entries[at].state;
             if state.asking {
                 let triggered = |name: &str| {
@@ -2406,7 +2417,13 @@ impl Plugins {
                     .filter(|(to, event)| to.is_none() && triggered(event.name()))
                     .map(|(_, event)| event.clone())
                     .collect();
-                state.deferred.events.extend(held);
+                for event in held {
+                    state
+                        .deferred
+                        .events
+                        .retain(|kept| kept.name() != event.name());
+                    state.deferred.events.push(event);
+                }
             }
         }
         for entry in &mut self.entries {

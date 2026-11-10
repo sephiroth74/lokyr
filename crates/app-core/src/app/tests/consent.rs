@@ -479,6 +479,16 @@ fn a_permissions_file_that_does_not_read_stops_no_plugin_and_is_never_written_ov
             .iter()
             .all(|line| !line.starts_with("revoked"))
     );
+    // Told once however many reloads read it, as each save of `sleip dev`.
+    for _ in 0..10 {
+        reloaded(&mut fake, &mut app);
+    }
+    let told = notices(&mut app);
+    assert_eq!(
+        told.iter().filter(|text| text.contains("opne")).count(),
+        1,
+        "{told:?}"
+    );
     // A question answered meanwhile holds for this run, and the file stays
     // the user's.
     fake.send_app(&mut app, AppEvent::Command("late.go".to_owned()));
@@ -486,6 +496,37 @@ fn a_permissions_file_that_does_not_read_stops_no_plugin_and_is_never_written_ov
     fake.answer_alert(&mut app, asked.id, 1);
     run_until(&mut fake, &mut app, |fake, _| opened(fake, "late"));
     assert_eq!(std::fs::read_to_string(folder.join(FILE)).unwrap(), typo);
+    // The file repaired: the answer is written there, and nothing is
+    // revoked, its plugin running on.
+    std::fs::write(folder.join(FILE), typo.replace("\"opne\"", "\"open\"")).unwrap();
+    permissions_told(&app);
+    fake.send_app(&mut app, AppEvent::Wake);
+    fake.fire_timers(&mut app, Instant::now() + Duration::from_secs(1));
+    assert_eq!(
+        app.plugins.status("acme/late"),
+        Some(plugins::Status::Active)
+    );
+    let decisions = kept(&folder);
+    assert!(
+        decisions.plugins["acme/late"]
+            .granted
+            .contains(&Capability::Open),
+        "{decisions:?}"
+    );
+    assert!(
+        decisions.plugins["acme/kept"]
+            .granted
+            .contains(&Capability::Open),
+        "{decisions:?}"
+    );
+    assert!(
+        audited(&folder)
+            .iter()
+            .all(|line| !line.starts_with("revoked")),
+        "{:?}",
+        audited(&folder)
+    );
+    assert!(!app.diagnostics.tells(&About::Permissions));
     let _ = std::fs::remove_dir_all(&folder);
 }
 

@@ -27,6 +27,12 @@ pub enum About {
     /// The windows kept as the app last quit, whose file does not read,
     /// which the next quit's file takes the place of.
     KeptWindows,
+    /// The user's decisions on the plugins' capabilities,
+    /// `permissions.toml`, which a file that reads fixes.
+    Permissions,
+    /// The installed plugins' lockfile, `plugins.lock`, which a lockfile
+    /// that reads fixes.
+    InstalledPlugins,
     /// Anything else, as a plugin or a command, of which each diagnostic
     /// is its own.
     Other,

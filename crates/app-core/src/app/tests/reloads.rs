@@ -125,6 +125,11 @@ fn a_plugin_installed_updated_and_removed_is_reloaded_without_a_restart() {
     changed(&mut fake, &mut app);
     settled(&mut fake, &mut app);
     assert!(super::installed::notices(&mut app).is_empty());
+    // A plugin made anew would activate on its thread, of a VM of its own,
+    // after the reload: its activation waited for first.
+    run_until(&mut fake, &mut app, |_, app| {
+        app.plugins.activated("acme/grown")
+    });
     assert_eq!(lokyr_plugin_host_luau::vms_made(), before + 1);
     // Removed: it goes.
     lock(&folder, BTreeMap::new());
@@ -372,6 +377,11 @@ fn a_change_of_no_file_of_a_dev_folder_s_package_makes_no_plugin_anew() {
     std::fs::write(swapped.join("tests/more.luau"), "return {}").unwrap();
     changed(&mut fake, &mut app);
     settled(&mut fake, &mut app);
+    // A plugin made anew would activate on its thread, of a VM of its own,
+    // after the reload: its activation waited for first.
+    run_until(&mut fake, &mut app, |_, app| {
+        app.plugins.activated("acme/swapped")
+    });
     assert_eq!(lokyr_plugin_host_luau::vms_made(), before);
     // Its source saved: made anew.
     std::fs::write(&entry, opening("activate", "swap2", "")).unwrap();
@@ -484,5 +494,36 @@ fn a_plugin_saved_under_sleip_dev_runs_its_new_command_without_a_restart() {
     });
     fake.send_app(&mut app, AppEvent::Command("grown.new".to_owned()));
     run_until(&mut fake, &mut app, |fake, _| opens(fake, "new") == 1);
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
+#[test]
+fn a_lockfile_that_does_not_read_is_told_once_however_many_reloads_read_it() {
+    let folder = shelf("reloads-unread");
+    lock(&folder, BTreeMap::new());
+    let mut fake = Fake::default();
+    let mut app = reloading(&folder);
+    fake.start(&mut app);
+    std::fs::write(folder.join("plugins.lock"), "api = [\n").unwrap();
+    for _ in 0..10 {
+        changed(&mut fake, &mut app);
+        settled(&mut fake, &mut app);
+    }
+    let told = super::installed::notices(&mut app);
+    assert_eq!(
+        told.iter()
+            .filter(|text| text.contains("plugins.lock"))
+            .count(),
+        1,
+        "{told:?}"
+    );
+    // Read again, its notice goes.
+    changed(&mut fake, &mut app);
+    settled(&mut fake, &mut app);
+    assert!(app.diagnostics.tells(&About::InstalledPlugins));
+    lock(&folder, BTreeMap::new());
+    changed(&mut fake, &mut app);
+    settled(&mut fake, &mut app);
+    assert!(!app.diagnostics.tells(&About::InstalledPlugins));
     let _ = std::fs::remove_dir_all(&folder);
 }

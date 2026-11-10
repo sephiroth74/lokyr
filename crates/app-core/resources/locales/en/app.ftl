@@ -180,6 +180,8 @@ notice-term = The terminal type is unknown:
 notice-theme = A theme does not apply:
 notice-plugin-config = A plugin's section of the config:
 notice-kept-windows = The windows of the last run do not open again:
+notice-permissions = The plugins' permissions do not read:
+notice-installed-plugins = The installed plugins do not load:
 notice-failed = A command failed:
 notice-fault = A plugin stopped:
 

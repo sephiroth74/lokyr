@@ -156,6 +156,8 @@ notice-term = Il tipo di terminale è sconosciuto:
 notice-theme = Un tema non si applica:
 notice-plugin-config = La sezione di un plugin nella configurazione:
 notice-kept-windows = Le finestre dell'ultima sessione non si riaprono:
+notice-permissions = I permessi dei plugin non si leggono:
+notice-installed-plugins = I plugin installati non si caricano:
 notice-failed = Un comando non è riuscito:
 notice-fault = Un plugin si è fermato:
 

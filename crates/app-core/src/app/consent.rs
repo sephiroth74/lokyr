@@ -89,8 +89,8 @@ pub(super) fn question(texts: &Texts, plugin: &str, capabilities: &[Capability])
 impl<B: Backend> App<B> {
     /// The user's decisions, of `permissions.toml`: none of no installed
     /// plugins, or of no file; `None` of a file that does not read, as a
-    /// notice tells, whose decisions in force stay, as the config's do,
-    /// and which nothing writes over.
+    /// notice tells, one however many reads tell it, whose decisions in
+    /// force stay, as the config's do, and which nothing writes over.
     pub(super) fn permissions(&mut self, platform: &mut dyn Platform) -> Option<Permissions> {
         let Some(path) = self
             .installed
@@ -100,7 +100,10 @@ impl<B: Backend> App<B> {
             return Some(Permissions::default());
         };
         match Permissions::read(&path) {
-            Ok(permissions) => Some(permissions),
+            Ok(permissions) => {
+                self.resolve(platform, &About::Permissions);
+                Some(permissions)
+            }
             Err(error) => {
                 let text = self.texts.text_with(
                     "permissions-unread",
@@ -108,7 +111,7 @@ impl<B: Backend> App<B> {
                 );
                 self.report(
                     platform,
-                    Diagnostic::new(Code::Unavailable, text, About::Other),
+                    Diagnostic::new(Code::Unavailable, text, About::Permissions),
                 );
                 None
             }
@@ -150,7 +153,8 @@ impl<B: Backend> App<B> {
     /// file's own changes that its watch has not told yet apply, so that
     /// none is lost; the audit log told; and the plugin activated, of those
     /// of them that it asks for still, or without them. A file that does
-    /// not read keeps the answer for this run alone, never written over.
+    /// not read is never written over: the answer waits, in force, until
+    /// it reads again, when it is written there.
     pub(super) fn consent_answered(
         &mut self,
         platform: &mut dyn Platform,
@@ -163,8 +167,10 @@ impl<B: Backend> App<B> {
             .entry(plugin.clone())
             .or_default()
             .decide(&capabilities, allowed);
-        if readable
-            && let Some(installed) = &self.installed
+        if !readable {
+            self.unwritten_answers
+                .push((plugin.clone(), capabilities.clone(), allowed));
+        } else if let Some(installed) = &self.installed
             && let Err(error) = self.decisions.write(&installed.permissions)
         {
             eprintln!(
@@ -185,15 +191,34 @@ impl<B: Backend> App<B> {
         self.after_plugins(platform);
     }
 
-    /// Reads `permissions.toml` again, as it changed: each installed plugin
-    /// takes its decisions, one that lost a capability that it held, as
-    /// the user revoked it, stopping, as the audit log and the notice of
-    /// the plugins that stopped tell. A file that does not read changes
-    /// nothing, as a notice tells: whether it read.
+    /// Reads `permissions.toml` again, as it changed: the answers given
+    /// while it did not read merged over it and written, then each
+    /// installed plugin takes its decisions, one that lost a capability
+    /// that it held, as the user revoked it, stopping, as the audit log and
+    /// the notice of the plugins that stopped tell. A file that does not
+    /// read changes nothing, as a notice tells: whether it read.
     pub(super) fn permissions_changed(&mut self, platform: &mut dyn Platform) -> bool {
-        let Some(permissions) = self.permissions(platform) else {
+        let Some(mut permissions) = self.permissions(platform) else {
             return false;
         };
+        let answers = std::mem::take(&mut self.unwritten_answers);
+        if !answers.is_empty() {
+            for (plugin, capabilities, allowed) in answers {
+                permissions
+                    .plugins
+                    .entry(plugin)
+                    .or_default()
+                    .decide(&capabilities, allowed);
+            }
+            if let Some(installed) = &self.installed
+                && let Err(error) = permissions.write(&installed.permissions)
+            {
+                eprintln!(
+                    "lokyr: the decisions on the plugins' capabilities cannot be written to {}: {error}",
+                    installed.permissions.display()
+                );
+            }
+        }
         if permissions == self.decisions {
             return true;
         }

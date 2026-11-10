@@ -280,3 +280,44 @@ fn an_answer_grants_the_capabilities_of_its_question_alone_and_the_others_are_as
     assert_eq!(plugins.status("acme/asker"), Some(Status::Active));
     assert_eq!(*did.lock().unwrap(), ["activate opened=true"]);
 }
+
+#[test]
+fn a_question_held_through_more_events_than_a_thread_holds_gives_the_last_of_each_name() {
+    let mut app = App::default();
+    let window = window(&mut app, "sleep 10");
+    let (mut plugins, did) = asker(&["event:tab-created"], "");
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    // More events of its trigger than a busy thread holds, as the user
+    // waits to answer.
+    let created = |tab: u64| {
+        Event::Workspace(WorkspaceEvent::TabCreated {
+            tab: host::TabId(tab),
+            window: host::WindowId(window.get()),
+            index: 0,
+        })
+    };
+    for tab in 0..(super::worker::MOST_EVENTS as u64 * 2) {
+        plugins.post(created(tab));
+        if tab % 1000 == 0 {
+            assert!(plugins.deliver(&mut app.context()).is_empty());
+        }
+    }
+    assert!(plugins.deliver(&mut app.context()).is_empty());
+    assert_eq!(questions(&mut plugins).len(), 1);
+    assert!(
+        plugins
+            .consent("acme/asker", &[Capability::Open], true, &mut app.context())
+            .is_empty()
+    );
+    // Delivered as its thread activates, which holds them until then.
+    assert!(plugins.deliver(&mut app.context()).is_empty());
+    served(&mut plugins, &mut app);
+    assert!(plugins.deliver(&mut app.context()).is_empty());
+    served(&mut plugins, &mut app);
+    // Active, of the last one alone.
+    assert!(plugins.activated("acme/asker"));
+    assert_eq!(
+        *did.lock().unwrap(),
+        ["activate opened=true", "tab-created"]
+    );
+}
