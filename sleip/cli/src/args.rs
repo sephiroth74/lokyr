@@ -118,12 +118,14 @@ Usage: sleip [options] registry verify <head> --base <folder> --author <login> [
        sleip [options] registry versions [--registry <folder>]
 
 The registry's tools, which its CI runs.
-  verify    Checks a pull request of the registry, of its files in <head> against those of
-            the branch that it merges into in <base>: the plugins' files that it changes, their
-            owner the author or one of its organizations, their names, the versions published
-            left as they were, and each new version's tag, manifest, check and tests, its
-            archive packaged into <out>; whether it merges by itself, or the maintainer reviews
-            it, and a report of Markdown in <report>. A failure of a pull request refused.
+  verify    Checks a pull request of the registry, a git repository at its head in <head>,
+            against the branch that it merges into, one at its head in <base>, each of its whole
+            history: the changes of the pull request since the commit that both share, each
+            judged against <base>; the plugins' files that it changes, their owner the author
+            or one of its organizations, their names, the versions published left as they were,
+            and each new version's tag, manifest, check and tests, its archive packaged into
+            <out>; whether it merges by itself, or the maintainer reviews it, and a report of
+            Markdown in <report>. A failure of a pull request refused.
   build     Packages the archive of a version of the registry's plugin into <out>.
   versions  Lists every version of the registry, of its release's tag and archive.
   --local   Takes repositories of file://, as the tests' are.

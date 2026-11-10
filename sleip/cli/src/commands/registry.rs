@@ -1,9 +1,12 @@
 //! `sleip registry`, hidden from the help: the registry's tools, which its
 //! CI runs. `verify` checks a pull request of the registry's repository,
 //! which publishes a plugin's versions, a file of each plugin,
-//! `plugins/<owner>/<name>.toml`: its owner the author or one of the
-//! author's organizations, its name no other owner's, the versions
-//! published left as they were, and each new version cloned at its tag,
+//! `plugins/<owner>/<name>.toml`: the changes of the pull request alone,
+//! since the commit that it shares with the main branch, each judged
+//! against the main branch as it is now; a plugin's owner the author or
+//! one of the author's organizations, its name no other owner's nor one
+//! that Lokyr holds, the versions published left as they were, and each
+//! new version cloned at its tag,
 //! which must name its commit, its manifest the file's, checked as
 //! `sleip check` checks it, tested as `sleip test` tests it, and packaged;
 //! then whether it merges by itself, of a version of a plugin published
@@ -20,7 +23,7 @@ use lokyr_pkg_model::store::Digest;
 use serde_json::json;
 use sleip_index::registry::{self, PluginFile, Release};
 
-use super::git;
+use super::{git, git_bytes};
 use crate::args::Registry;
 use crate::output::Out;
 
@@ -60,9 +63,9 @@ pub fn run(out: Out, tool: &Registry) -> Result<(), String> {
 
 /// A pull request of the registry.
 struct PullRequest<'a> {
-    /// Its files.
+    /// Its git repository, at its head.
     head: &'a Path,
-    /// The files of the branch that it merges into.
+    /// The git repository of the branch that it merges into, at its head.
     base: &'a Path,
     /// Its author's login on GitHub.
     author: &'a str,
@@ -110,44 +113,74 @@ fn verify(
 ) -> Result<(), String> {
     std::fs::create_dir_all(into)
         .map_err(|error| format!("{} cannot be made: {error}", into.display()))?;
-    let head = files_of(request.head)?;
+    let changes = changes_of(request.head, request.base)?;
     let base = files_of(request.base)?;
     let mut verdict = Verdict::default();
-    let paths: BTreeSet<&String> = head
+    // The plugins' names, of the main branch's and of those that the pull
+    // request adds or changes.
+    let mut names: BTreeSet<(String, String)> = base
         .iter()
-        .chain(base.iter())
-        .map(|(path, _)| path)
+        .filter_map(|(path, _)| registry::plugin_of_path(path))
+        .map(|(owner, name)| (owner.to_owned(), name.to_owned()))
         .collect();
+    names.extend(
+        changes
+            .iter()
+            .filter(|change| change.after != NO_ENTRY)
+            .filter_map(|change| registry::plugin_of_path(&change.path))
+            .map(|(owner, name)| (owner.to_owned(), name.to_owned())),
+    );
     let mut changed = 0;
-    for path in paths {
-        let (before, after) = (find(&base, path), find(&head, path));
-        if before == after {
+    for change in &changes {
+        let path = &change.path;
+        let Some((owner, name)) = registry::plugin_of_path(path) else {
+            // Another file: the pull request's own change, whatever the
+            // main branch holds now.
+            changed += 1;
+            verdict.review.push(format!(
+                "it changes `{path}`{}, which is no plugin's file, `plugins/<owner>/<name>.toml`: the maintainer reviews it",
+                told(change)
+            ));
+            continue;
+        };
+        let before = find(&base, path);
+        if change.after == NO_ENTRY {
+            if before.is_some() {
+                changed += 1;
+                verdict.review.push(format!(
+                    "it takes `{owner}/{name}` out of the registry, which the maintainer reviews"
+                ));
+            }
+            continue;
+        }
+        if change.after != PLAIN_FILE {
+            changed += 1;
+            verdict.refused.push(format!(
+                "`{path}` is {}: a plugin's file is a plain file",
+                kind_of(&change.after)
+            ));
+            continue;
+        }
+        let after = git_bytes(Some(request.head), &["cat-file", "blob", &change.object])
+            .map_err(|error| format!("`{path}` of the pull request cannot be read: {error}"))?;
+        // As the main branch holds it already, it changes nothing.
+        if before == Some(after.as_slice()) {
             continue;
         }
         changed += 1;
-        match (registry::plugin_of_path(path), after) {
-            (Some((owner, name)), Some(after)) => {
-                let before = before.map(|bytes| String::from_utf8_lossy(bytes).into_owned());
-                let after = String::from_utf8_lossy(after).into_owned();
-                verify_plugin(
-                    out,
-                    request,
-                    &head,
-                    owner,
-                    name,
-                    before.as_deref(),
-                    &after,
-                    into,
-                    &mut verdict,
-                );
-            }
-            (Some((owner, name)), None) => verdict.review.push(format!(
-                "it takes `{owner}/{name}` out of the registry, which the maintainer reviews"
-            )),
-            (None, _) => verdict.review.push(format!(
-                "it changes `{path}`, which is no plugin's file, `plugins/<owner>/<name>.toml`: the maintainer reviews it"
-            )),
-        }
+        let before = before.map(|bytes| String::from_utf8_lossy(bytes).into_owned());
+        let after = String::from_utf8_lossy(&after).into_owned();
+        verify_plugin(
+            out,
+            request,
+            &names,
+            owner,
+            name,
+            before.as_deref(),
+            &after,
+            into,
+            &mut verdict,
+        );
     }
     if changed == 0 {
         verdict
@@ -186,13 +219,14 @@ fn verify(
 
 /// Checks the file of the plugin `owner/name` that the pull request
 /// `request` changes, `before` of the branch that it merges into, if there,
-/// and `after` of the pull request, of the pull request's files `head`:
-/// each version that it publishes packaged into `into`, into `verdict`.
+/// and `after` of the pull request, of the plugins' names `names`, each
+/// its owner and its name: each version that it publishes packaged into
+/// `into`, into `verdict`.
 #[allow(clippy::too_many_arguments)]
 fn verify_plugin(
     out: Out,
     request: &PullRequest,
-    head: &[(String, Vec<u8>)],
+    names: &BTreeSet<(String, String)>,
     owner: &str,
     name: &str,
     before: Option<&str>,
@@ -227,11 +261,13 @@ fn verify_plugin(
             request.author
         ));
     }
-    for (other, _) in head {
-        if let Some((holder, held)) = registry::plugin_of_path(other)
-            && held == name
-            && holder != owner
-        {
+    if registry::RESERVED_NAMES.contains(&name) {
+        verdict.refused.push(format!(
+            "the name `{name}` is Lokyr's own, of a first-party plugin or of the app's commands, as Lokyr knows a plugin by its name alone"
+        ));
+    }
+    for (holder, held) in names {
+        if held == name && holder != owner {
             verdict.refused.push(format!(
                 "the name `{name}` is `{holder}/{name}`'s: a plugin's name is unique across owners, as Lokyr knows a plugin by its name alone"
             ));
@@ -570,6 +606,107 @@ fn versions(out: Out, registry: &Path) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+/// The mode of no entry, of a file added or removed.
+const NO_ENTRY: &str = "000000";
+
+/// The mode of a plain file, as git keeps it.
+const PLAIN_FILE: &str = "100644";
+
+/// A change of a pull request, since the commit that it shares with the
+/// branch that it merges into, as git tells it.
+struct Change {
+    /// The path of its entry.
+    path: String,
+    /// The entry's mode before, `000000` of none.
+    before: String,
+    /// The entry's mode after, `000000` of none.
+    after: String,
+    /// The id of the entry's object after.
+    object: String,
+}
+
+/// The changes of the pull request of the git repository `head` since the
+/// commit that it shares with the branch of the git repository `base`,
+/// which it fetches into it, as `refs/sleip/base`: each entry of the
+/// trees, of its modes, so that a link, a submodule or a mode's change is
+/// told, a rename the removal of a path and the addition of another.
+fn changes_of(head: &Path, base: &Path) -> Result<Vec<Change>, String> {
+    let base = std::fs::canonicalize(base)
+        .map_err(|error| format!("{} cannot be read: {error}", base.display()))?;
+    git(
+        Some(head),
+        &[
+            "fetch",
+            "--quiet",
+            "--no-tags",
+            "--",
+            &base.display().to_string(),
+            "+HEAD:refs/sleip/base",
+        ],
+    )
+    .map_err(|error| {
+        format!(
+            "the branch of {} cannot be fetched into the pull request's repository: {error}",
+            base.display()
+        )
+    })?;
+    let since = git(Some(head), &["merge-base", "refs/sleip/base", "HEAD"]).map_err(|error| {
+        format!(
+            "the pull request shares no commit with the branch that it merges into, whose whole history is needed: {error}"
+        )
+    })?;
+    let raw = git_bytes(
+        Some(head),
+        &["diff-tree", "-r", "-z", "--no-renames", &since, "HEAD"],
+    )
+    .map_err(|error| format!("the pull request's changes cannot be read: {error}"))?;
+    // Each change, `:<mode> <mode> <object> <object> <status>` and its
+    // path, each of a NUL after it.
+    let mut changes = Vec::new();
+    let mut parts = raw.split(|byte| *byte == 0);
+    while let Some(meta) = parts.next() {
+        if meta.is_empty() {
+            continue;
+        }
+        let meta = String::from_utf8_lossy(meta);
+        let fields: Vec<&str> = meta.trim_start_matches(':').split(' ').collect();
+        let (Some(path), [before, after, _, object, _]) = (parts.next(), fields.as_slice()) else {
+            return Err(format!("git told a change that does not read: `{meta}`"));
+        };
+        changes.push(Change {
+            path: String::from_utf8_lossy(path).into_owned(),
+            before: (*before).to_owned(),
+            after: (*after).to_owned(),
+            object: (*object).to_owned(),
+        });
+    }
+    Ok(changes)
+}
+
+/// What an entry of `mode` is, in words.
+fn kind_of(mode: &str) -> String {
+    match mode {
+        PLAIN_FILE => "a file".to_owned(),
+        "100755" => "an executable file".to_owned(),
+        "120000" => "a link".to_owned(),
+        "160000" => "a submodule".to_owned(),
+        _ => format!("an entry of mode {mode}"),
+    }
+}
+
+/// What `change` makes of its entry beside its content, in words after its
+/// path: its removal, or what it adds or turns it into, of a mode other
+/// than a plain file's.
+fn told(change: &Change) -> String {
+    match (change.before.as_str(), change.after.as_str()) {
+        (_, NO_ENTRY) => ", which it removes".to_owned(),
+        (NO_ENTRY, PLAIN_FILE) => String::new(),
+        (NO_ENTRY, after) => format!(", {}", kind_of(after)),
+        (before, after) if before == after => String::new(),
+        (before, after) => format!(", from {} to {}", kind_of(before), kind_of(after)),
+    }
 }
 
 /// The files of the registry in `folder`, its `.git` left out, by their

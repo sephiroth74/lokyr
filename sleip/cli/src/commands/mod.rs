@@ -56,6 +56,18 @@ pub fn run(options: Options, command: &Command) -> ExitCode {
 /// Runs git of `args`, in `folder` if given, of no question at the
 /// terminal: its output's first line, or its error.
 pub(super) fn git(folder: Option<&Path>, args: &[&str]) -> Result<String, String> {
+    let output = git_bytes(folder, args)?;
+    Ok(String::from_utf8_lossy(&output)
+        .lines()
+        .next()
+        .unwrap_or_default()
+        .trim()
+        .to_owned())
+}
+
+/// Runs git of `args`, in `folder` if given, of no question at the
+/// terminal: its whole output, as bytes, or its error.
+pub(super) fn git_bytes(folder: Option<&Path>, args: &[&str]) -> Result<Vec<u8>, String> {
     let mut command = Process::new("git");
     if let Some(folder) = folder {
         command.arg("-C").arg(folder);
@@ -68,12 +80,7 @@ pub(super) fn git(folder: Option<&Path>, args: &[&str]) -> Result<String, String
     if !output.status.success() {
         return Err(String::from_utf8_lossy(&output.stderr).trim().to_owned());
     }
-    Ok(String::from_utf8_lossy(&output.stdout)
-        .lines()
-        .next()
-        .unwrap_or_default()
-        .trim()
-        .to_owned())
+    Ok(output.stdout)
 }
 
 /// The bytes of the files in `folder` and its folders, of a folder that

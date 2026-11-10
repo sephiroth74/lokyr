@@ -17,6 +17,31 @@ use serde::Deserialize;
 /// The owner that the first-party plugins hold, which no one publishes as.
 pub const RESERVED_OWNER: &str = "lokyr";
 
+/// The names that no plugin of the registry takes, whatever its owner, as
+/// Lokyr knows a plugin by its name alone: the first-party plugins', which
+/// the app bundles; the namespaces of the app's own commands and contexts,
+/// which the app refuses a plugin of; and the app's and Sleip's own.
+pub const RESERVED_NAMES: &[&str] = &[
+    "alternate-screen",
+    "app",
+    "command-header",
+    "command-palette",
+    "copy-mode",
+    "core-actions",
+    "keymap-macos",
+    "links",
+    "lokyr",
+    "pane",
+    "progress",
+    "quick-terminal",
+    "search",
+    "selection",
+    "sleip",
+    "splits",
+    "tabs",
+    "window",
+];
+
 /// The most characters of a name's part, its owner's or its own.
 pub const LONGEST_PART: usize = 64;
 
