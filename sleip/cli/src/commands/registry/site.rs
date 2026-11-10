@@ -23,21 +23,42 @@ struct Listed {
     yanked: bool,
 }
 
-/// Writes the site of the registry in `registry` into `into`, which holds
-/// its index, checked against the root keys `roots`, of the archives of
-/// its releases in `archives`, as `out` tells.
-pub(super) fn site(
-    out: Out,
+/// A plugin as the index publishes it, of the version shown, the latest
+/// not yanked or the latest of all.
+struct Published {
+    owner: String,
+    name: String,
+    /// `owner/name`.
+    plugin: String,
+    /// Its versions, as its index file holds them.
+    entries: Vec<Entry>,
+    /// The version shown.
+    shown: Entry,
+    /// Its manifest's description, license and README, of the version
+    /// shown.
+    description: String,
+    license: String,
+    readme: Option<String>,
+    /// Its repository, as the registry's file names it.
+    repository: String,
+    /// Where its README's relative links lead.
+    links: Links,
+}
+
+/// The plugins that the index in `index` publishes, checked against the
+/// root keys `roots`, of the registry in `registry` and of the archives of
+/// its releases in `archives`, in their paths' order.
+fn published(
     registry: &Path,
     archives: &Path,
-    into: &Path,
+    index: &Path,
     roots: &[signing::PublicKey],
-) -> Result<(), String> {
-    let keys_path = into.join("keys.json");
+) -> Result<Vec<Published>, String> {
+    let keys_path = index.join("keys.json");
     let keys_text = std::fs::read_to_string(&keys_path)
         .map_err(|error| format!("{} cannot be read: {error}", keys_path.display()))?;
     let keys = signing::verify_keys(&keys_text, roots, None)?;
-    let mut listed = Vec::new();
+    let mut published = Vec::new();
     for (path, bytes) in &super::files_of(registry)? {
         let Some((owner, name)) = registry::plugin_of_path(path) else {
             continue;
@@ -45,17 +66,17 @@ pub(super) fn site(
         let plugin = format!("{owner}/{name}");
         let file = PluginFile::parse(&String::from_utf8_lossy(bytes))
             .map_err(|error| format!("{path}: {error}"))?;
-        let index_path = into.join("index").join(owner).join(name);
+        let index_path = index.join("index").join(owner).join(name);
         let Ok(text) = std::fs::read_to_string(&index_path) else {
             continue;
         };
         let entries = signing::verify_index(&text, &plugin, &keys, None)?.entries;
-        // The latest version not yanked, or the latest of all.
         let Some(shown) = entries
             .iter()
             .rev()
             .find(|entry| !entry.yanked)
             .or_else(|| entries.last())
+            .cloned()
         else {
             continue;
         };
@@ -70,33 +91,62 @@ pub(super) fn site(
             .version(&shown.vers)
             .map(|release| release.commit.clone())
             .unwrap_or_default();
-        let links = Links::of(&file.repository, &commit);
-        let description = manifest.description.clone().unwrap_or_default();
-        let page = plugin_page(
-            &plugin,
-            &description,
-            &manifest.license,
-            &file.repository,
-            &entries,
+        published.push(Published {
+            owner: owner.to_owned(),
+            name: name.to_owned(),
+            plugin,
+            entries,
             shown,
-            readme.as_deref().map(|readme| markdown(readme, &links)),
+            description: manifest.description.clone().unwrap_or_default(),
+            license: manifest.license.clone(),
+            readme,
+            links: Links::of(&file.repository, &commit),
+            repository: file.repository,
+        });
+    }
+    Ok(published)
+}
+
+/// Writes the site of the registry in `registry` into `into`, which holds
+/// its index, checked against the root keys `roots`, of the archives of
+/// its releases in `archives`, as `out` tells.
+pub(super) fn site(
+    out: Out,
+    registry: &Path,
+    archives: &Path,
+    into: &Path,
+    roots: &[signing::PublicKey],
+) -> Result<(), String> {
+    let mut listed = Vec::new();
+    for plugin in published(registry, archives, into, roots)? {
+        let page = plugin_page(
+            &plugin.plugin,
+            &plugin.description,
+            &plugin.license,
+            &plugin.repository,
+            &plugin.entries,
+            &plugin.shown,
+            plugin
+                .readme
+                .as_deref()
+                .map(|readme| markdown(readme, &plugin.links)),
         );
         let page_path = into
             .join("plugins")
-            .join(owner)
-            .join(name)
+            .join(&plugin.owner)
+            .join(&plugin.name)
             .join("index.html");
         written(&page_path, &page)?;
         out.tell(
             "page",
-            json!({ "name": plugin, "version": shown.vers }),
-            &format!("{plugin}: its page, of {}", shown.vers),
+            json!({ "name": plugin.plugin, "version": plugin.shown.vers }),
+            &format!("{}: its page, of {}", plugin.plugin, plugin.shown.vers),
         );
         listed.push(Listed {
-            name: plugin,
-            version: shown.vers.clone(),
-            description,
-            yanked: shown.yanked,
+            name: plugin.plugin,
+            version: plugin.shown.vers.clone(),
+            description: plugin.description,
+            yanked: plugin.shown.yanked,
         });
     }
     written(&into.join("style.css"), STYLE)?;
@@ -108,6 +158,123 @@ pub(super) fn site(
         &format!("The site lists {} plugins.", listed.len()),
     );
     Ok(())
+}
+
+/// The mark of the README's list of the plugins, before it.
+const LIST_START: &str = "<!-- plugins:start -->";
+
+/// The mark of the README's list of the plugins, after it.
+const LIST_END: &str = "<!-- plugins:end -->";
+
+/// The most characters of a plugin's description that the README's list
+/// shows.
+const LONGEST_DESCRIPTION: usize = 200;
+
+/// Rewrites the list of the plugins of the README `readme`, between its
+/// marks, of the index in `index`, checked against the root keys `roots`,
+/// of the registry in `registry` and of the archives of its releases in
+/// `archives`, as `out` tells whether it changed.
+pub(super) fn readme(
+    out: Out,
+    registry: &Path,
+    archives: &Path,
+    index: &Path,
+    readme: &Path,
+    roots: &[signing::PublicKey],
+) -> Result<(), String> {
+    let text = std::fs::read_to_string(readme)
+        .map_err(|error| format!("{} cannot be read: {error}", readme.display()))?;
+    let (Some(start), Some(end)) = (text.find(LIST_START), text.find(LIST_END)) else {
+        return Err(format!(
+            "{} has no list of the plugins between `{LIST_START}` and `{LIST_END}`",
+            readme.display()
+        ));
+    };
+    if end < start {
+        return Err(format!(
+            "{}: `{LIST_END}` comes before `{LIST_START}`",
+            readme.display()
+        ));
+    }
+    let list = plugin_list(&published(registry, archives, index, roots)?);
+    let rewritten = format!("{}{LIST_START}\n{list}{}", &text[..start], &text[end..]);
+    let changed = rewritten != text;
+    if changed {
+        lokyr_pkg_model::write_whole(readme, &rewritten)
+            .map_err(|error| format!("{} cannot be written: {error}", readme.display()))?;
+    }
+    out.tell(
+        "readme",
+        json!({ "changed": changed }),
+        if changed {
+            "The README's list of the plugins changed."
+        } else {
+            "The README's list of the plugins is as it was."
+        },
+    );
+    Ok(())
+}
+
+/// The README's list of `published`, a table of Markdown, each plugin's
+/// texts as text alone.
+fn plugin_list(published: &[Published]) -> String {
+    if published.is_empty() {
+        return "No plugin is published yet.\n".to_owned();
+    }
+    let mut list =
+        "| Plugin | Version | Description | Capabilities |\n|---|---|---|---|\n".to_owned();
+    for plugin in published {
+        let yanked = if plugin.shown.yanked { " (yanked)" } else { "" };
+        let capabilities = if plugin.shown.caps.is_empty() {
+            "none".to_owned()
+        } else {
+            plugin
+                .shown
+                .caps
+                .iter()
+                .map(|capability| markdown_text(capability))
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        list.push_str(&format!(
+            "| [{name}](https://pkg.lokyr.dev/plugins/{name}/) | {}{yanked} | {} | {capabilities} |\n",
+            markdown_text(&plugin.shown.vers),
+            markdown_text(&plugin.description),
+            name = plugin.plugin,
+        ));
+    }
+    list
+}
+
+/// `text`, a plugin's, as Markdown's text alone, in a table's cell: no
+/// HTML, link, image, code nor emphasis of its own, its punctuation
+/// escaped, `<`, `>` and `&` as entities, an address of the web or of mail
+/// broken by a space of no width, which GitHub links no more; a control
+/// character a space; of [`LONGEST_DESCRIPTION`] characters at most.
+fn markdown_text(text: &str) -> String {
+    let mut out = String::new();
+    for (count, character) in text.chars().enumerate() {
+        if count == LONGEST_DESCRIPTION {
+            out.push('…');
+            break;
+        }
+        match character {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '\\' | '`' | '*' | '_' | '{' | '}' | '[' | ']' | '(' | ')' | '#' | '+' | '!' | '|'
+            | '~' => {
+                out.push('\\');
+                out.push(character);
+            }
+            '@' => out.push_str("@\u{200B}"),
+            character if character.is_control() => out.push(' '),
+            character => out.push(character),
+        }
+    }
+    out.replace("://", ":\u{200B}//")
+        .replace("www.", "www\u{200B}.")
+        .replace("WWW.", "WWW\u{200B}.")
 }
 
 /// Writes `text` to `path`, its folders made.
@@ -461,6 +628,69 @@ mod tests {
             home.contains("&lt;img src=x onerror=alert(1)&gt;"),
             "{home}"
         );
+    }
+
+    #[test]
+    fn the_readme_s_list_shows_a_plugin_s_texts_as_text() {
+        let shown = Entry {
+            v: signing::VERSION,
+            name: "acme/hello".to_owned(),
+            vers: "0.1.0".to_owned(),
+            kind: "luau".to_owned(),
+            api: None,
+            deps: Vec::new(),
+            caps: vec!["clipboard-write".to_owned(), "fs-read:~/a|b".to_owned()],
+            uses: Vec::new(),
+            cksum: format!("sha256:{}", "a".repeat(64)),
+            yanked: false,
+        };
+        let published = Published {
+            owner: "acme".to_owned(),
+            name: "hello".to_owned(),
+            plugin: "acme/hello".to_owned(),
+            entries: vec![shown.clone()],
+            shown,
+            description: "A | B <script>x</script> [x](y) `code` *em* see https://evil.example or me@evil.example\nnext".to_owned(),
+            license: "MIT".to_owned(),
+            readme: None,
+            repository: "https://github.com/acme/hello".to_owned(),
+            links: Links::of("https://github.com/acme/hello", "abc"),
+        };
+        let list = plugin_list(std::slice::from_ref(&published));
+        let html = {
+            let mut html = String::new();
+            pulldown_cmark::html::push_html(
+                &mut html,
+                Parser::new_ext(&list, Options::ENABLE_TABLES),
+            );
+            html
+        };
+        // One row of four cells, the plugin's own link alone.
+        let row = html.split("<tbody>").nth(1).unwrap_or_default();
+        assert_eq!(row.matches("<td>").count(), 4, "{html}");
+        assert_eq!(html.matches("<a href=").count(), 1, "{html}");
+        assert!(
+            html.contains("<a href=\"https://pkg.lokyr.dev/plugins/acme/hello/\">"),
+            "{html}"
+        );
+        assert!(
+            !html.contains("<script>") && !html.contains("<code>") && !html.contains("<em>"),
+            "{html}"
+        );
+        assert!(
+            html.contains("A | B &lt;script&gt;x&lt;/script&gt; [x](y) `code` *em*"),
+            "{html}"
+        );
+        // An address of the web or of mail broken, which GitHub links not.
+        assert!(
+            !list.contains("https://evil") && !list.contains("me@evil"),
+            "{list}"
+        );
+        assert!(!list.contains("\nnext"), "{list}");
+        // Bounded.
+        let long = markdown_text(&"x".repeat(LONGEST_DESCRIPTION + 5));
+        assert_eq!(long.chars().count(), LONGEST_DESCRIPTION + 1);
+        assert_eq!(plugin_list(&[]), "No plugin is published yet.\n");
     }
 
     #[test]

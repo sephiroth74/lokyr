@@ -106,6 +106,18 @@ pub enum Registry {
         out: std::path::PathBuf,
         roots: Option<std::path::PathBuf>,
     },
+    /// The list of the plugins of the README `readme`, the registry's
+    /// `README.md` if none, of the index in `index`, of the registry in
+    /// `registry` and of the archives of its releases in `archives`, its
+    /// keys checked against the root keys of the file `roots`, or
+    /// Sleip's own.
+    Readme {
+        registry: std::path::PathBuf,
+        archives: std::path::PathBuf,
+        index: std::path::PathBuf,
+        readme: Option<std::path::PathBuf>,
+        roots: Option<std::path::PathBuf>,
+    },
 }
 
 /// What a command line asks.
@@ -156,6 +168,7 @@ Usage: sleip [options] registry verify <head> --base <folder> --author <login> [
        sleip [options] registry sign-keys --root <file> --keys <key,...> --out <file>
        sleip [options] registry index [--registry <folder>] --archives <folder> --out <folder> [--roots <file>] [--dl <address>]
        sleip [options] registry site [--registry <folder>] --archives <folder> --out <folder> [--roots <file>]
+       sleip [options] registry readme [--registry <folder>] --archives <folder> --index <folder> [--readme <file>] [--roots <file>]
 
 The registry's tools, which its CI runs.
   verify    Checks a pull request of the registry, a git repository at its head in <head>,
@@ -182,6 +195,9 @@ The registry's tools, which its CI runs.
   site      Writes the registry's site into <out>, beside the index that `index` wrote there:
             index.html of every plugin, which Pagefind searches, and plugins/<owner>/<name>/
             of each, of its versions, capabilities, checksums and README.
+  readme    Rewrites the list of the plugins of the registry's README.md, or of <readme>,
+            between its marks <!-- plugins:start --> and <!-- plugins:end -->, of the index in
+            <index>: each plugin's name, version, description and capabilities, as text alone.
   --local   Takes repositories of file://, as the tests' are.
 ";
 
@@ -351,7 +367,8 @@ fn registry(args: &[&String]) -> Result<Registry, String> {
             "--local" => local = true,
             "--files-alone" => files_alone = true,
             name @ ("--base" | "--author" | "--orgs" | "--out" | "--report" | "--registry"
-            | "--root" | "--keys" | "--archives" | "--roots" | "--dl") => {
+            | "--root" | "--keys" | "--archives" | "--roots" | "--dl" | "--index"
+            | "--readme") => {
                 let value = args
                     .next()
                     .ok_or_else(|| format!("`{name}` takes a value\n\n{REGISTRY_HELP}"))?;
@@ -427,8 +444,15 @@ fn registry(args: &[&String]) -> Result<Registry, String> {
             out: PathBuf::from(needed("--out")?),
             roots: value("--roots").map(PathBuf::from),
         }),
+        ["readme"] => Ok(Registry::Readme {
+            registry: registry(),
+            archives: PathBuf::from(needed("--archives")?),
+            index: PathBuf::from(needed("--index")?),
+            readme: value("--readme").map(PathBuf::from),
+            roots: value("--roots").map(PathBuf::from),
+        }),
         _ => Err(format!(
-            "`sleip registry` takes `verify`, `build`, `versions`, `keygen`, `sign-keys`, `index` or `site`, of their arguments\n\n{REGISTRY_HELP}"
+            "`sleip registry` takes `verify`, `build`, `versions`, `keygen`, `sign-keys`, `index`, `site` or `readme`, of their arguments\n\n{REGISTRY_HELP}"
         )),
     }
 }

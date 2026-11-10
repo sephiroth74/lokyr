@@ -92,6 +92,20 @@ pub fn run(out: Out, tool: &Registry) -> Result<(), String> {
             out: into,
             roots,
         } => site::site(out, registry, archives, into, &roots_of(roots.as_deref())?),
+        Registry::Readme {
+            registry,
+            archives,
+            index,
+            readme,
+            roots,
+        } => site::readme(
+            out,
+            registry,
+            archives,
+            index,
+            &readme.clone().unwrap_or_else(|| registry.join("README.md")),
+            &roots_of(roots.as_deref())?,
+        ),
     }
 }
 

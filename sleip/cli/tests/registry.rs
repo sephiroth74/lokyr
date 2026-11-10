@@ -1058,6 +1058,56 @@ fn the_index_is_signed_of_the_released_versions_by_a_key_that_keys_json_lists() 
     let home = std::fs::read_to_string(site.join("index.html")).unwrap();
     assert!(home.contains("href=\"/plugins/acme/hello/\""), "{home}");
     assert!(site.join("style.css").is_file());
+    // The README's list of the plugins, between its marks, once: a run
+    // that changes nothing writes nothing; one of no marks is refused.
+    let readme = lab.root.join("README.md");
+    std::fs::write(
+        &readme,
+        "# Registry\n\n## Plugins\n\n<!-- plugins:start -->\nold\n<!-- plugins:end -->\n\nThe rest.\n",
+    )
+    .unwrap();
+    let listed = |file: &Path| {
+        lab.sleip(
+            &[
+                "--json",
+                "registry",
+                "readme",
+                "--registry",
+                &base.display().to_string(),
+                "--archives",
+                &archives.display().to_string(),
+                "--index",
+                &site.display().to_string(),
+                "--readme",
+                &file.display().to_string(),
+                "--roots",
+                &roots.display().to_string(),
+            ],
+            &lab.root,
+        )
+    };
+    let output = listed(&readme);
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(events(&output)[0]["changed"], true);
+    let text = std::fs::read_to_string(&readme).unwrap();
+    assert!(
+        text.contains(
+            "| [acme/hello](https://pkg.lokyr.dev/plugins/acme/hello/) | 0.1.0 (yanked) |"
+        ),
+        "{text}"
+    );
+    assert!(
+        !text.contains("old") && text.ends_with("<!-- plugins:end -->\n\nThe rest.\n"),
+        "{text}"
+    );
+    let output = listed(&readme);
+    assert_eq!(events(&output)[0]["changed"], false);
+    assert_eq!(std::fs::read_to_string(&readme).unwrap(), text);
+    let unmarked = lab.root.join("UNMARKED.md");
+    std::fs::write(&unmarked, "# Registry\n").unwrap();
+    let output = listed(&unmarked);
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+    assert!(String::from_utf8_lossy(&output.stdout).contains("has no list of the plugins"));
     // Lokyr's icon, the tab's and the header's.
     let icon = std::fs::read_to_string(site.join("icon.svg")).unwrap();
     assert!(icon.starts_with("<svg"), "{icon}");
