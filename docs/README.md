@@ -104,6 +104,7 @@ The phases (F0–F7) are described in the [ROADMAP](ROADMAP.md).
 | [0037](adr/0037-agents-on-their-tabs-before-1-0.md) | The agents on their tabs, F3-63, right after F4's third-party plugins, before 1.0.0, which shows them; 0.7 without them | Accepted; amends 0036 |
 | [0038](adr/0038-plugin-ecosystem-scope.md) | F4's scope: no network nor processes for plugins before 1.0.0, plugins reloaded at once by a watch of their files, Sleip's commands of registry v0, the registry public from 0.9 | Accepted; amends 0008, 0029 and 0036 |
 | [0039](adr/0039-workspace-view-decorate-pointer-capabilities.md) | The capabilities `workspace-write`, `pane-view`, `decorate` and `pointer-read`, of the requests that needed none; the capabilities of a parameter by what it covers; `net:` and `process-spawn` refused before 1.0.0 | Accepted; amends 0019 |
+| [0040](adr/0040-appearance-write-capability.md) | The capability `appearance-write`, of a medium risk: the themes' and the font's preview and choice in the config, the themes' moved from `user-commands`; the font picker a third-party plugin | Accepted; amends 0024 and 0039 |
 
 ## Glossary
 
