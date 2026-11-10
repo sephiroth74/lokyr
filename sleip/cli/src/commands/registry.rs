@@ -11,8 +11,9 @@
 //! `sleip check` checks it, tested as `sleip test` tests it, and packaged;
 //! then whether it merges by itself, of a version of a plugin published
 //! before that asks for nothing new, or the maintainer reviews it. `build`
-//! packages a version's archive again, alike, which the CI of the
-//! registry's main branch publishes; `versions` lists every version, of
+//! packages a version's archive again, alike, of the commit that the file
+//! pins whatever became of its tag, which the CI of the registry's main
+//! branch publishes; `versions` lists every version, of
 //! its release's names.
 
 use std::collections::BTreeSet;
@@ -403,9 +404,11 @@ fn verify_plugin(
 }
 
 /// Packages the version `release` of the plugin `plugin`, of its
-/// repository `repository`, into `into`: cloned at its tag, which must name
-/// its commit, its manifest of its name and version, and, of `checked`,
-/// checked and tested; or each problem found.
+/// repository `repository`, into `into`: of `checked`, cloned at its tag,
+/// which must name its commit, checked and tested, as a pull request's
+/// version is; else at its commit alone, which pins its files, whatever
+/// became of its tag since it merged; its manifest of its name and
+/// version; or each problem found.
 fn package(
     out: Out,
     plugin: &str,
@@ -418,7 +421,8 @@ fn package(
     let folder = into
         .join("sources")
         .join(registry::release_tag(owner, name, &release.version));
-    clone_at(repository, release, &folder).map_err(|error| vec![error])?;
+    let at = if checked { At::Tag } else { At::Commit };
+    clone_at(repository, release, at, &folder).map_err(|error| vec![error])?;
     let manifest = std::fs::read_to_string(folder.join("plugin.toml"))
         .map_err(|error| format!("its commit holds no plugin.toml at its root: {error}"))
         .and_then(|text| {
@@ -494,7 +498,8 @@ fn package(
 }
 
 /// The manifest of the version `release` of `plugin`, of `repository`,
-/// published before, its clone in `into` for the time it takes.
+/// published before, of its commit, its clone in `into` for the time it
+/// takes.
 fn manifest_at(
     plugin: &str,
     repository: &str,
@@ -504,7 +509,7 @@ fn manifest_at(
     let folder =
         into.join("published")
             .join(format!("{}-{}", plugin.replace('/', "."), release.version));
-    clone_at(repository, release, &folder)?;
+    clone_at(repository, release, At::Commit, &folder)?;
     let manifest = std::fs::read_to_string(folder.join("plugin.toml"))
         .map_err(|error| error.to_string())
         .and_then(|text| Manifest::parse(&text).map_err(|error| error.to_string()));
@@ -512,9 +517,21 @@ fn manifest_at(
     manifest
 }
 
-/// Clones `repository` into `folder` at the commit of `release`, which its
-/// tag must name.
-fn clone_at(repository: &str, release: &Release, folder: &Path) -> Result<(), String> {
+/// What a clone of a version's repository is checked out at.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum At {
+    /// Its commit, which its tag must name, as a pull request's version is
+    /// checked.
+    Tag,
+    /// Its commit alone, which the registry's file pins, whatever became of
+    /// its tag: fetched by its hash if no branch nor tag of the clone holds
+    /// it.
+    Commit,
+}
+
+/// Clones `repository` into `folder` at the commit of `release`, as `at`
+/// says.
+fn clone_at(repository: &str, release: &Release, at: At, folder: &Path) -> Result<(), String> {
     let _ = std::fs::remove_dir_all(folder);
     if let Some(parent) = folder.parent() {
         std::fs::create_dir_all(parent)
@@ -532,33 +549,49 @@ fn clone_at(repository: &str, release: &Release, folder: &Path) -> Result<(), St
         ],
     )
     .map_err(|error| format!("{repository} cannot be cloned: {error}"))?;
-    let tag = &release.tag;
-    let named = git(
-        Some(folder),
-        &[
-            "rev-parse",
-            "--verify",
-            "--quiet",
-            &format!("refs/tags/{tag}^{{commit}}"),
-        ],
-    )
-    .map_err(|_| format!("{repository} has no tag `{tag}`"))?;
-    if named != release.commit {
-        return Err(format!(
-            "the tag `{tag}` of {repository} names the commit {named}, not {}",
-            release.commit
-        ));
+    let commit = &release.commit;
+    match at {
+        At::Tag => {
+            let tag = &release.tag;
+            let named = git(
+                Some(folder),
+                &[
+                    "rev-parse",
+                    "--verify",
+                    "--quiet",
+                    &format!("refs/tags/{tag}^{{commit}}"),
+                ],
+            )
+            .map_err(|_| format!("{repository} has no tag `{tag}`"))?;
+            if named != *commit {
+                return Err(format!(
+                    "the tag `{tag}` of {repository} names the commit {named}, not {commit}"
+                ));
+            }
+        }
+        At::Commit => {
+            let held = |folder: &Path| {
+                git(
+                    Some(folder),
+                    &["cat-file", "-e", &format!("{commit}^{{commit}}")],
+                )
+                .is_ok()
+            };
+            if !held(folder) {
+                // A commit that its branches and tags left, which a host
+                // may give still by its hash.
+                let _ = git(
+                    Some(folder),
+                    &["fetch", "--quiet", "--no-tags", "origin", commit],
+                );
+                if !held(folder) {
+                    return Err(format!("{repository} holds the commit {commit} no longer"));
+                }
+            }
+        }
     }
-    git(
-        Some(folder),
-        &["checkout", "--quiet", "--detach", &release.commit],
-    )
-    .map_err(|error| {
-        format!(
-            "{repository} at {} cannot be checked out: {error}",
-            release.commit
-        )
-    })?;
+    git(Some(folder), &["checkout", "--quiet", "--detach", commit])
+        .map_err(|error| format!("{repository} at {commit} cannot be checked out: {error}"))?;
     Ok(())
 }
 

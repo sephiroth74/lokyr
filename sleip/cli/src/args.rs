@@ -131,7 +131,8 @@ The registry's tools, which its CI runs.
             Markdown in <report>. A failure of a pull request refused. Of --files-alone, the
             files alone, no version cloned, checked, tested nor packaged, as the job that
             merges checks again.
-  build     Packages the archive of a version of the registry's plugin into <out>.
+  build     Packages the archive of a version of the registry's plugin into <out>, of the
+            commit that the registry's file pins, whatever became of its tag.
   versions  Lists every version of the registry, of its release's tag and archive.
   --local   Takes repositories of file://, as the tests' are.
 ";

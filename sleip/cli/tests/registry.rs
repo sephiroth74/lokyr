@@ -751,3 +751,118 @@ fn the_files_alone_are_judged_as_the_job_that_merges_checks_again() {
     let (_, verdict) = lab.verify_with(&head, &base, "bob", "", &["--files-alone"]);
     assert_eq!(verdict["verdict"], "refused", "{verdict}");
 }
+
+/// `build` of the version `version` of `acme/<name>` of the registry
+/// `registry` into the lab's folder `again`: its output.
+fn build(lab: &Lab, registry: &Path, name: &str, version: &str) -> Output {
+    let again = lab.root.join("again");
+    let _ = std::fs::remove_dir_all(&again);
+    lab.sleip(
+        &[
+            "--json",
+            "registry",
+            "build",
+            &format!("acme/{name}"),
+            version,
+            "--registry",
+            &registry.display().to_string(),
+            "--out",
+            &again.display().to_string(),
+            "--local",
+        ],
+        &lab.root,
+    )
+}
+
+#[test]
+fn a_merged_version_is_built_of_its_commit_whatever_became_of_its_tag() {
+    let lab = Lab::new("commit");
+    let (folder, url) = lab.plugin("hello");
+    let first = git(&folder, &["rev-parse", "HEAD"]);
+    let second = release(&folder, "0.1.1");
+    let published = entry(
+        &url,
+        &[
+            ("0.1.0", "v0.1.0", &first, false),
+            ("0.1.1", "v0.1.1", &second, true),
+        ],
+    );
+    let base = lab.registry("base", &[]);
+    let head = lab.head(&base, &[("plugins/acme/hello.toml", &published)]);
+    let (output, _) = lab.verify(&head, &base, "acme", "");
+    assert!(output.status.success(), "{output:?}");
+    let checked =
+        std::fs::read(lab.root.join("dist/acme.hello.0.1.0/hello-0.1.0.tar.zst")).unwrap();
+    // Its tag moved since it merged: built of its commit, alike.
+    git(&folder, &["tag", "-f", "v0.1.0", &second]);
+    let output = build(&lab, &head, "hello", "0.1.0");
+    assert!(output.status.success(), "{output:?}");
+    let again = lab.root.join("again/acme.hello.0.1.0/hello-0.1.0.tar.zst");
+    assert_eq!(std::fs::read(&again).unwrap(), checked);
+    // The versions tell a yank, which the main branch's CI skips of no
+    // release.
+    let output = lab.sleip(
+        &[
+            "--json",
+            "registry",
+            "versions",
+            "--registry",
+            &head.display().to_string(),
+        ],
+        &lab.root,
+    );
+    let listed = events(&output);
+    assert_eq!(listed[0]["yanked"], false);
+    assert_eq!(listed[1]["version"], "0.1.1");
+    assert_eq!(listed[1]["yanked"], true);
+    // Its commit that no branch nor tag holds any more: fetched by its
+    // hash, as a host gives it still, and told once it is gone.
+    git(&folder, &["tag", "-d", "v0.1.0"]);
+    git(&folder, &["tag", "-d", "v0.1.1"]);
+    let branch = git(&folder, &["rev-parse", "--abbrev-ref", "HEAD"]);
+    git(&folder, &["checkout", "--quiet", "--orphan", "other"]);
+    git(&folder, &["commit", "--quiet", "-m", "anew"]);
+    git(&folder, &["branch", "-D", &branch]);
+    git(&folder, &["branch", "-m", &branch]);
+    let output = build(&lab, &head, "hello", "0.1.0");
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(std::fs::read(&again).unwrap(), checked);
+    git(&folder, &["reflog", "expire", "--expire=now", "--all"]);
+    git(&folder, &["gc", "--quiet", "--prune=now"]);
+    let output = build(&lab, &head, "hello", "0.1.0");
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+    assert!(
+        String::from_utf8_lossy(&output.stdout)
+            .contains(&format!("holds the commit {first} no longer")),
+        "{output:?}"
+    );
+}
+
+#[test]
+fn a_new_version_is_weighed_against_the_last_one_of_its_commit() {
+    let lab = Lab::new("weighed");
+    let (folder, url) = lab.plugin("hello");
+    let first = git(&folder, &["rev-parse", "HEAD"]);
+    let published = entry(&url, &[("0.1.0", "v0.1.0", &first, false)]);
+    let base = lab.registry("base", &[("plugins/acme/hello.toml", &published)]);
+    let second = release(&folder, "0.1.1");
+    // The published version's tag moved since: its manifest read of its
+    // commit, the new version of nothing more merging by itself.
+    git(&folder, &["tag", "-f", "v0.1.0", &second]);
+    let head = lab.head(
+        &base,
+        &[(
+            "plugins/acme/hello.toml",
+            &entry(
+                &url,
+                &[
+                    ("0.1.0", "v0.1.0", &first, false),
+                    ("0.1.1", "v0.1.1", &second, false),
+                ],
+            ),
+        )],
+    );
+    let (output, verdict) = lab.verify(&head, &base, "acme", "");
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(verdict["verdict"], "merge", "{verdict}");
+}
