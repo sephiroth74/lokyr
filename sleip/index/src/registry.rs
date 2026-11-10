@@ -17,6 +17,10 @@ use serde::Deserialize;
 /// The owner that the first-party plugins hold, which no one publishes as.
 pub const RESERVED_OWNER: &str = "lokyr";
 
+/// The address of a version's archive, of its owner, name and version, as
+/// the registry's releases hold them, which its `config.json` tells.
+pub const DOWNLOADS: &str = "https://github.com/sephiroth74/sleip-registry/releases/download/{owner}.{name}.{version}/{name}-{version}.tar.zst";
+
 /// The names that no plugin of the registry takes, whatever its owner, as
 /// Lokyr knows a plugin by its name alone: the first-party plugins', which
 /// the app bundles; the namespaces of the app's own commands and contexts,

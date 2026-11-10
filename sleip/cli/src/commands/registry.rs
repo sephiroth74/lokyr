@@ -14,7 +14,9 @@
 //! packages a version's archive again, alike, of the commit that the file
 //! pins whatever became of its tag, which the CI of the registry's main
 //! branch publishes; `versions` lists every version, of
-//! its release's names.
+//! its release's names. `keygen` and `sign-keys` make the registry's keys
+//! and its `keys.json`, offline; `index` writes its index, signed, of the
+//! archives of its releases, which the CI of the main branch runs.
 
 use std::collections::BTreeSet;
 use std::path::Path;
@@ -23,6 +25,7 @@ use lokyr_pkg_model::manifest::{Kind, Manifest};
 use lokyr_pkg_model::store::Digest;
 use serde_json::json;
 use sleip_index::registry::{self, PluginFile, Release};
+use sleip_index::signing::{self, Dependency, Entry, PublicKey, SecretKey, Timestamp};
 
 use super::{git, git_bytes};
 use crate::args::Registry;
@@ -61,7 +64,254 @@ pub fn run(out: Out, tool: &Registry) -> Result<(), String> {
             local,
         } => build(out, registry, plugin, version, into, *local),
         Registry::Versions { registry } => versions(out, registry),
+        Registry::Keygen { out: file } => keygen(out, file),
+        Registry::SignKeys {
+            root,
+            keys,
+            out: file,
+        } => sign_keys(out, root, keys, file),
+        Registry::Index {
+            registry,
+            archives,
+            out: into,
+            roots,
+            dl,
+        } => index(
+            out,
+            registry,
+            archives,
+            into,
+            roots.as_deref(),
+            dl.as_deref(),
+        ),
     }
+}
+
+/// Makes a key, its secret written to the new file `file`, which no one
+/// else reads, as `out` tells its public part.
+fn keygen(out: Out, file: &Path) -> Result<(), String> {
+    use std::io::Write as _;
+    use std::os::unix::fs::OpenOptionsExt as _;
+
+    let key = SecretKey::generate()?;
+    let mut written = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(file)
+        .map_err(|error| format!("{} cannot be made: {error}", file.display()))?;
+    written
+        .write_all(key.file_text().as_bytes())
+        .and_then(|()| written.sync_all())
+        .map_err(|error| format!("{} cannot be written: {error}", file.display()))?;
+    let public = key.public().to_string();
+    out.tell(
+        "key",
+        json!({ "public": public, "file": file.display().to_string() }),
+        &format!(
+            "The key's secret is in {}, which no one else reads: keep it as such.\nIts public part: {public}",
+            file.display()
+        ),
+    );
+    Ok(())
+}
+
+/// Writes `keys.json` to `file`, of the index keys `keys`, signed by the
+/// root key whose secret the file `root` holds, as `out` tells.
+fn sign_keys(out: Out, root: &Path, keys: &[String], file: &Path) -> Result<(), String> {
+    let text = std::fs::read_to_string(root)
+        .map_err(|error| format!("{} cannot be read: {error}", root.display()))?;
+    let root_key =
+        SecretKey::parse(&text).map_err(|error| format!("{}: {error}", root.display()))?;
+    let keys: Vec<PublicKey> = keys
+        .iter()
+        .map(|key| PublicKey::parse(key))
+        .collect::<Result<_, _>>()?;
+    if keys.is_empty() {
+        return Err("keys.json lists an index key at least".to_owned());
+    }
+    let signed = signing::sign_keys(&root_key, &keys, Timestamp::now());
+    lokyr_pkg_model::write_whole(file, &signed)
+        .map_err(|error| format!("{} cannot be written: {error}", file.display()))?;
+    let public = root_key.public();
+    if !signing::roots().contains(&public) {
+        out.tell(
+            "note",
+            json!({ "message": format!("{public} is no root key of this Sleip's, which reads none of its keys.json") }),
+            &format!("{public} is no root key of this Sleip's, which reads none of its keys.json."),
+        );
+    }
+    out.tell(
+        "signed",
+        json!({
+            "root": public.to_string(),
+            "keys": keys.iter().map(ToString::to_string).collect::<Vec<_>>(),
+            "file": file.display().to_string(),
+        }),
+        &format!(
+            "{} lists {} index keys, signed by {public}.",
+            file.display(),
+            keys.len()
+        ),
+    );
+    Ok(())
+}
+
+/// The kind of `kind`, as a manifest and the index write it.
+fn kind_text(kind: Kind) -> &'static str {
+    match kind {
+        Kind::Luau => "luau",
+        Kind::Themes => "themes",
+        Kind::Builtin => "builtin",
+    }
+}
+
+/// Writes the index of the registry in `registry` into `into`, of the
+/// archives of its releases in `archives`, `<release>/<archive>`, each
+/// version of an archive a line of its plugin's file, signed by the index
+/// key that `SLEIP_INDEX_KEY` holds, which the registry's `keys.json`
+/// lists, checked against the root keys of the file `roots`, a key a line,
+/// or Sleip's own; and `config.json`, of the archives' address `dl` or the
+/// registry's; as `out` tells.
+fn index(
+    out: Out,
+    registry: &Path,
+    archives: &Path,
+    into: &Path,
+    roots: Option<&Path>,
+    dl: Option<&str>,
+) -> Result<(), String> {
+    let key = std::env::var("SLEIP_INDEX_KEY")
+        .map_err(|_| "SLEIP_INDEX_KEY holds no index key".to_owned())
+        .and_then(|text| {
+            SecretKey::parse(&text).map_err(|error| format!("SLEIP_INDEX_KEY: {error}"))
+        })?;
+    let roots = match roots {
+        Some(file) => std::fs::read_to_string(file)
+            .map_err(|error| format!("{} cannot be read: {error}", file.display()))?
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+            .map(PublicKey::parse)
+            .collect::<Result<Vec<_>, _>>()?,
+        None => signing::roots(),
+    };
+    let keys_path = registry.join("keys.json");
+    let keys_text = std::fs::read_to_string(&keys_path)
+        .map_err(|error| format!("{} cannot be read: {error}", keys_path.display()))?;
+    let keys = signing::verify_keys(&keys_text, &roots, None)?;
+    if !keys.keys.contains(&key.public()) {
+        return Err(format!(
+            "the index key {} is not in keys.json, whose index keys are {}",
+            key.public(),
+            keys.keys
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+    }
+    let made = |path: &Path, text: &str| {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|error| format!("{} cannot be made: {error}", parent.display()))?;
+        }
+        std::fs::write(path, text)
+            .map_err(|error| format!("{} cannot be written: {error}", path.display()))
+    };
+    made(&into.join("keys.json"), &keys_text)?;
+    let config = json!({ "v": signing::VERSION, "dl": dl.unwrap_or(registry::DOWNLOADS) });
+    made(&into.join("config.json"), &format!("{config}\n"))?;
+    let generated = Timestamp::now();
+    for (path, bytes) in &files_of(registry)? {
+        let Some((owner, name)) = registry::plugin_of_path(path) else {
+            continue;
+        };
+        let plugin = format!("{owner}/{name}");
+        let file = PluginFile::parse(&String::from_utf8_lossy(bytes))
+            .map_err(|error| format!("{path}: {error}"))?;
+        let mut entries = Vec::new();
+        for release in &file.versions {
+            let tag = registry::release_tag(owner, name, &release.version);
+            let archive = archives
+                .join(&tag)
+                .join(registry::archive_name(name, &release.version));
+            // A version of no release yet, which a later run takes.
+            let Ok(archive_bytes) = std::fs::read(&archive) else {
+                out.tell(
+                    "note",
+                    json!({ "message": format!("{plugin} {} has no release yet", release.version) }),
+                    &format!("{plugin} {} has no release yet.", release.version),
+                );
+                continue;
+            };
+            let manifest = manifest_of_archive(&archive_bytes)
+                .map_err(|error| format!("{}: {error}", archive.display()))?;
+            if manifest.name != plugin
+                || manifest.version.as_deref() != Some(release.version.as_str())
+            {
+                return Err(format!(
+                    "{} holds {} {}, not {plugin} {}",
+                    archive.display(),
+                    manifest.name,
+                    manifest.version.as_deref().unwrap_or("of no version"),
+                    release.version
+                ));
+            }
+            entries.push(Entry {
+                v: signing::VERSION,
+                name: plugin.clone(),
+                vers: release.version.clone(),
+                kind: kind_text(manifest.kind).to_owned(),
+                api: manifest.api.clone(),
+                deps: manifest
+                    .dependencies
+                    .iter()
+                    .map(|(name, req)| Dependency {
+                        name: name.clone(),
+                        req: req.clone(),
+                    })
+                    .collect(),
+                caps: manifest
+                    .capabilities
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect(),
+                uses: manifest.uses.clone(),
+                cksum: Digest::of_bytes(&archive_bytes).to_string(),
+                yanked: release.yanked,
+            });
+        }
+        let text = signing::sign_index(&plugin, &entries, &key, generated);
+        // Read back as Sleip reads it, of the keys that it checked.
+        signing::verify_index(&text, &plugin, &keys, None)
+            .map_err(|error| format!("the index that this run signed does not check: {error}"))?;
+        made(&into.join("index").join(owner).join(name), &text)?;
+        out.tell(
+            "indexed",
+            json!({ "name": plugin, "versions": entries.len() }),
+            &format!("{plugin}: {} versions", entries.len()),
+        );
+    }
+    Ok(())
+}
+
+/// The manifest of the package of `archive`, unpacked into a folder of its
+/// own for the time it takes, as the store unpacks it.
+fn manifest_of_archive(archive: &[u8]) -> Result<Manifest, String> {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    static UNPACKS: AtomicUsize = AtomicUsize::new(0);
+    let folder = std::env::temp_dir().join(format!(
+        "sleip-index-{}-{}",
+        std::process::id(),
+        UNPACKS.fetch_add(1, Ordering::Relaxed)
+    ));
+    let unpacked = lokyr_pkg_model::archive::unpack(archive, &folder);
+    let _ = std::fs::remove_dir_all(&folder);
+    unpacked
+        .map(|unpacked| unpacked.manifest)
+        .map_err(|error| error.to_string())
 }
 
 /// A pull request of the registry.

@@ -866,3 +866,195 @@ fn a_new_version_is_weighed_against_the_last_one_of_its_commit() {
     assert!(output.status.success(), "{output:?}");
     assert_eq!(verdict["verdict"], "merge", "{verdict}");
 }
+
+#[test]
+fn the_index_is_signed_of_the_released_versions_by_a_key_that_keys_json_lists() {
+    use sleip_index::signing::{self, PublicKey};
+
+    let lab = Lab::new("index");
+    let (folder, url) = lab.plugin("hello");
+    let first = git(&folder, &["rev-parse", "HEAD"]);
+    let second = release(&folder, "0.1.1");
+    // The keys: the root's secret and the index key's, each a file of its
+    // own that no one else reads, which a second keygen does not write
+    // over.
+    let keygen = |name: &str| {
+        let file = lab.root.join(name);
+        let output = lab.sleip(
+            &[
+                "--json",
+                "registry",
+                "keygen",
+                "--out",
+                &file.display().to_string(),
+            ],
+            &lab.root,
+        );
+        assert!(output.status.success(), "{output:?}");
+        let public = events(&output)[0]["public"].as_str().unwrap().to_owned();
+        (file, public)
+    };
+    let (root, root_public) = keygen("root.key");
+    let (index_key, index_public) = keygen("index.key");
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = std::fs::metadata(&root).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o600);
+    }
+    let again = lab.sleip(
+        &["registry", "keygen", "--out", &root.display().to_string()],
+        &lab.root,
+    );
+    assert_eq!(again.status.code(), Some(1), "{again:?}");
+    // The registry, of a version released and one not yet, and its
+    // keys.json signed by the root.
+    let base = lab.registry(
+        "base",
+        &[(
+            "plugins/acme/hello.toml",
+            &entry(
+                &url,
+                &[
+                    ("0.1.0", "v0.1.0", &first, true),
+                    ("0.1.1", "v0.1.1", &second, false),
+                ],
+            ),
+        )],
+    );
+    let output = lab.sleip(
+        &[
+            "--json",
+            "registry",
+            "sign-keys",
+            "--root",
+            &root.display().to_string(),
+            "--keys",
+            &index_public,
+            "--out",
+            &base.join("keys.json").display().to_string(),
+        ],
+        &lab.root,
+    );
+    assert!(output.status.success(), "{output:?}");
+    // The release of 0.1.0's archive, as the CI of main makes it.
+    let archives = lab.root.join("archives");
+    let output = lab.sleip(
+        &[
+            "--json",
+            "registry",
+            "build",
+            "acme/hello",
+            "0.1.0",
+            "--registry",
+            &base.display().to_string(),
+            "--out",
+            &archives.display().to_string(),
+            "--local",
+        ],
+        &lab.root,
+    );
+    assert!(output.status.success(), "{output:?}");
+    let cksum = events(&output)
+        .into_iter()
+        .find(|event| event["event"] == "built")
+        .unwrap()["cksum"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let roots = lab.root.join("roots");
+    std::fs::write(&roots, format!("{root_public}\n")).unwrap();
+    let site = lab.root.join("site");
+    let indexed = |key: &Path| {
+        let home = lab.root.join("home");
+        Command::new(env!("CARGO_BIN_EXE_sleip"))
+            .args([
+                "--json",
+                "registry",
+                "index",
+                "--registry",
+                &base.display().to_string(),
+                "--archives",
+                &archives.display().to_string(),
+                "--out",
+                &site.display().to_string(),
+                "--roots",
+                &roots.display().to_string(),
+            ])
+            .current_dir(&lab.root)
+            .env("HOME", &home)
+            .env("PATH", "/usr/bin:/bin")
+            .env(
+                "SLEIP_INDEX_KEY",
+                std::fs::read_to_string(key).unwrap_or_default(),
+            )
+            .output()
+            .unwrap()
+    };
+    let output = indexed(&index_key);
+    assert!(output.status.success(), "{output:?}");
+    // Its files, as Sleip checks them.
+    let root_key = PublicKey::parse(&root_public).unwrap();
+    let keys = signing::verify_keys(
+        &std::fs::read_to_string(site.join("keys.json")).unwrap(),
+        &[root_key],
+        None,
+    )
+    .unwrap();
+    assert_eq!(keys.keys, [PublicKey::parse(&index_public).unwrap()]);
+    let index = signing::verify_index(
+        &std::fs::read_to_string(site.join("index/acme/hello")).unwrap(),
+        "acme/hello",
+        &keys,
+        None,
+    )
+    .unwrap();
+    let [only] = index.entries.as_slice() else {
+        panic!("one version released: {:?}", index.entries);
+    };
+    assert_eq!(only.vers, "0.1.0");
+    assert_eq!(only.cksum, cksum);
+    assert_eq!(only.kind, "luau");
+    assert_eq!(only.api.as_deref(), Some("^0.1"));
+    assert!(only.yanked);
+    let config: Value =
+        serde_json::from_str(&std::fs::read_to_string(site.join("config.json")).unwrap()).unwrap();
+    assert!(
+        config["dl"]
+            .as_str()
+            .unwrap()
+            .contains("{owner}.{name}.{version}")
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains("acme/hello 0.1.1 has no release yet")
+    );
+    // A key that keys.json does not list, and none at all.
+    let (stranger, _) = keygen("stranger.key");
+    let output = indexed(&stranger);
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+    assert!(String::from_utf8_lossy(&output.stdout).contains("is not in keys.json"));
+    let output = indexed(&lab.root.join("none.key"));
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+    assert!(String::from_utf8_lossy(&output.stdout).contains("SLEIP_INDEX_KEY"));
+    // Of keys.json of another root than Sleip's: refused.
+    let output = Command::new(env!("CARGO_BIN_EXE_sleip"))
+        .args([
+            "--json",
+            "registry",
+            "index",
+            "--registry",
+            &base.display().to_string(),
+            "--archives",
+            &archives.display().to_string(),
+            "--out",
+            &site.display().to_string(),
+        ])
+        .env(
+            "SLEIP_INDEX_KEY",
+            std::fs::read_to_string(&index_key).unwrap(),
+        )
+        .env("PATH", "/usr/bin:/bin")
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+    assert!(String::from_utf8_lossy(&output.stdout).contains("signed by no root key"));
+}

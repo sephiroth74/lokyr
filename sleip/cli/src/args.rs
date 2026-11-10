@@ -73,6 +73,29 @@ pub enum Registry {
     },
     /// Every version of the registry in `registry`, of its release's names.
     Versions { registry: std::path::PathBuf },
+    /// A new key of ed25519, its secret written to a new file `out` that no
+    /// one else reads, its public part told.
+    Keygen { out: std::path::PathBuf },
+    /// `keys.json` of the index keys `keys`, signed by the root key of the
+    /// file `root`, written to `out`.
+    SignKeys {
+        root: std::path::PathBuf,
+        keys: Vec<String>,
+        out: std::path::PathBuf,
+    },
+    /// The index of the registry in `registry`, of the archives of its
+    /// releases in `archives`, signed by the index key that
+    /// `SLEIP_INDEX_KEY` holds, written into `out` with `config.json` and
+    /// the registry's `keys.json`, which the root keys of the file `roots`
+    /// sign, or Sleip's own; its archives' address of `dl`, or the
+    /// registry's.
+    Index {
+        registry: std::path::PathBuf,
+        archives: std::path::PathBuf,
+        out: std::path::PathBuf,
+        roots: Option<std::path::PathBuf>,
+        dl: Option<String>,
+    },
 }
 
 /// What a command line asks.
@@ -119,6 +142,9 @@ const REGISTRY_HELP: &str = "\
 Usage: sleip [options] registry verify <head> --base <folder> --author <login> [--orgs <org,...>] --out <folder> [--report <file>] [--files-alone]
        sleip [options] registry build <owner/name> <version> [--registry <folder>] --out <folder>
        sleip [options] registry versions [--registry <folder>]
+       sleip [options] registry keygen --out <file>
+       sleip [options] registry sign-keys --root <file> --keys <key,...> --out <file>
+       sleip [options] registry index [--registry <folder>] --archives <folder> --out <folder> [--roots <file>] [--dl <address>]
 
 The registry's tools, which its CI runs.
   verify    Checks a pull request of the registry, a git repository at its head in <head>,
@@ -134,6 +160,14 @@ The registry's tools, which its CI runs.
   build     Packages the archive of a version of the registry's plugin into <out>, of the
             commit that the registry's file pins, whatever became of its tag.
   versions  Lists every version of the registry, of its release's tag and archive.
+  keygen    Makes a key of ed25519: its secret in the new file <out>, which no one else
+            reads, and its public part told.
+  sign-keys Writes keys.json to <out>, the index keys of --keys, signed by the root key
+            whose secret the file <root> holds, kept offline.
+  index     Writes the registry's index into <out>: config.json, the registry's keys.json,
+            checked against Sleip's root keys or those of <roots>, a line each, and a file
+            of each plugin, index/<owner>/<name>, a line of each version whose archive is in
+            <archives>/<release>/, signed whole by the index key that SLEIP_INDEX_KEY holds.
   --local   Takes repositories of file://, as the tests' are.
 ";
 
@@ -302,7 +336,8 @@ fn registry(args: &[&String]) -> Result<Registry, String> {
         match arg.as_str() {
             "--local" => local = true,
             "--files-alone" => files_alone = true,
-            name @ ("--base" | "--author" | "--orgs" | "--out" | "--report" | "--registry") => {
+            name @ ("--base" | "--author" | "--orgs" | "--out" | "--report" | "--registry"
+            | "--root" | "--keys" | "--archives" | "--roots" | "--dl") => {
                 let value = args
                     .next()
                     .ok_or_else(|| format!("`{name}` takes a value\n\n{REGISTRY_HELP}"))?;
@@ -352,8 +387,28 @@ fn registry(args: &[&String]) -> Result<Registry, String> {
         ["versions"] => Ok(Registry::Versions {
             registry: registry(),
         }),
+        ["keygen"] => Ok(Registry::Keygen {
+            out: PathBuf::from(needed("--out")?),
+        }),
+        ["sign-keys"] => Ok(Registry::SignKeys {
+            root: PathBuf::from(needed("--root")?),
+            keys: needed("--keys")?
+                .split(',')
+                .map(str::trim)
+                .filter(|key| !key.is_empty())
+                .map(str::to_owned)
+                .collect(),
+            out: PathBuf::from(needed("--out")?),
+        }),
+        ["index"] => Ok(Registry::Index {
+            registry: registry(),
+            archives: PathBuf::from(needed("--archives")?),
+            out: PathBuf::from(needed("--out")?),
+            roots: value("--roots").map(PathBuf::from),
+            dl: value("--dl"),
+        }),
         _ => Err(format!(
-            "`sleip registry` takes `verify`, `build` or `versions`, of their arguments\n\n{REGISTRY_HELP}"
+            "`sleip registry` takes `verify`, `build`, `versions`, `keygen`, `sign-keys` or `index`, of their arguments\n\n{REGISTRY_HELP}"
         )),
     }
 }

@@ -34,7 +34,7 @@ The split is the same as cargo and rustc: the app runs plugins, and Sleip provid
 | `sleip login` / `logout` / `yank` / `owner` (registry v1) | Registry accounts, which registry v0, of GitHub's accounts and pull requests, has none of ([ADR 0038](adr/0038-plugin-ecosystem-scope.md)) |
 | `sleip gc` | Removes unreferenced packages from the store; refused without a lockfile in the config's folder while the store holds packages, as every config folder shares the store |
 | `sleip doctor` | Diagnoses the installation, the cache, and compatibility with the app |
-| `sleip registry` (hidden) | The registry's tools, which its CI runs, hidden from the help: `verify`, a pull request of the registry checked, as [below](#v0-static-end-of-f4); `build`, a version's archive packaged again from its commit, alike; `versions`, every version of the registry, of its release's tag and archive; and the index generated and signed |
+| `sleip registry` (hidden) | The registry's tools, which its CI runs, hidden from the help: `verify`, a pull request of the registry checked, as [below](#v0-static-end-of-f4); `build`, a version's archive packaged again from its commit, alike; `versions`, every version of the registry, of its release's tag and archive; `keygen` and `sign-keys`, the registry's keys and its `keys.json`, offline; and `index`, the index generated and signed |
 | `sleip audit` (F7) | Checks installed plugins against security advisories |
 
 **Common flags**
@@ -214,11 +214,10 @@ Like the crates.io sparse index: one file per package, which plain static hostin
 `GET /config.json`:
 
 ```json
-{
-  "dl": "https://github.com/sephiroth74/sleip-registry/releases/download/{owner}.{name}.{version}/{name}-{version}.tar.zst",
-  "api": "https://pkg.lokyr.dev/api/v1"
-}
+{"v":1,"dl":"https://github.com/sephiroth74/sleip-registry/releases/download/{owner}.{name}.{version}/{name}-{version}.tar.zst"}
 ```
+
+Registry v1 adds its API's address, `api`, beside `dl`.
 
 `GET /keys.json` lists the index keys, which sign the index, signed by the registry's root key, whose public part Sleip holds in its binary:
 
@@ -234,6 +233,8 @@ Like the crates.io sparse index: one file per package, which plain static hostin
 ```
 
 Sleip refuses a file signed by a key that `keys.json` lacks, or older than the one that it holds. HTTP caching uses `ETag`/`If-None-Match`. Sleip keeps a local copy of the index for `--offline`.
+
+The keys are ed25519, a key and a signature written `ed25519:` and the base64 of their bytes, a secret key in a file of its own, `ed25519-secret:` and the base64 of its seed. The root key signs `sleip keys.json v1`, the time and each index key, a line each; an index key signs `sleip index v1`, the plugin's name, the time, then the file's lines before its signature as they are, so that a host can neither serve a plugin's file for another's nor change a line. `sleip registry keygen` makes a key, its secret in a new file that no one else reads; `sleip registry sign-keys` writes `keys.json`, of the root key's file, offline; `sleip registry index`, which the CI of `main` runs in its environment of the index key, writes `config.json`, the registry's `keys.json`, checked against Sleip's root keys, and each plugin's file of the versions whose archives its releases hold, each file read back as Sleip reads it before it is written.
 
 ## Signatures
 

@@ -92,6 +92,12 @@ semver = "1.0.28"
 ruzstd = "0.9.1"
 sha2 = "0.11.1"
 tar = { version = "0.4.46", default-features = false }
+# The registry's keys and the signatures of its index, which Sleip checks:
+# ed25519, its keys and signatures written in base64, a key made of the
+# system's randomness.
+ed25519-dalek = "3.0.0"
+base64 = "0.22.1"
+getrandom = "0.4.3"
 tracing = "0.1.44"
 unicode-normalization = "0.1.25"
 # The language tags of the catalogs.
