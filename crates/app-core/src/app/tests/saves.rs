@@ -10,12 +10,13 @@ use lokyr_kernel::plugins::{Cx, Event, Plugin};
 
 use super::*;
 
-/// What the plugin of [`Saver`] heard of its saves, and its requests'
-/// errors' codes.
+/// What the plugin of [`Saver`] heard of its saves and of its windows'
+/// focus, and its requests' errors' codes.
 #[derive(Default)]
 struct Heard {
     saved: Vec<Event>,
     codes: Vec<Code>,
+    focus: Vec<bool>,
 }
 
 /// A plugin whose `saver.save` saves a PNG through the panel, whose
@@ -29,7 +30,7 @@ const MANIFEST: &str = "[plugin]\nname = \"lokyr/saver\"\nkind = \"builtin\"\nli
 
 impl Plugin for Saver {
     fn activate(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
-        for name in ["saver.save", "saver.copy", "saver.script"] {
+        for name in ["saver.save", "saver.copy", "saver.script", "saver.fault"] {
             cx.register_command(Command {
                 name: name.to_owned(),
                 title: name.to_owned(),
@@ -39,10 +40,13 @@ impl Plugin for Saver {
                 when: None,
             })?;
         }
-        Ok(())
+        cx.subscribe(&["window-focus"])
     }
 
     fn on_command(&mut self, cx: &mut Cx<'_>, name: &str, _: Args) -> Result<(), Error> {
+        if name == "saver.fault" {
+            return Err(Error::new(Code::Fault, "the plugin broke"));
+        }
         let png = Image::blank(2.0).png.0;
         let done = match name {
             "saver.save" => cx.save_file(None, "Lokyr.png", png).map(drop),
@@ -58,11 +62,14 @@ impl Plugin for Saver {
     }
 
     fn on_event(&mut self, _: &mut Cx<'_>, events: &[Event]) -> Result<(), Error> {
-        let saved = events
-            .iter()
-            .filter(|event| matches!(event, Event::Saved { .. }))
-            .cloned();
-        self.heard.borrow_mut().saved.extend(saved);
+        let mut heard = self.heard.borrow_mut();
+        for event in events {
+            match event {
+                Event::Saved { .. } => heard.saved.push(event.clone()),
+                Event::WindowFocus { focused, .. } => heard.focus.push(*focused),
+                _ => {}
+            }
+        }
         Ok(())
     }
 }
@@ -106,7 +113,7 @@ fn a_save_shows_its_panel_on_the_window_and_writes_the_file_where_the_user_chose
     // hears its path.
     let path = folder.join("chosen.png");
     assert!(fake.close_save_panel(&mut app, panel, Some(path.clone())));
-    fake.send(&mut app, window, WindowEvent::Frame);
+    run_until(&mut fake, &mut app, |_, _| !heard.borrow().saved.is_empty());
     assert_eq!(std::fs::read(&path).unwrap(), Image::blank(2.0).png.0);
     assert!(
         lokyr_platform_core::fake::quarantined(&path),
@@ -144,11 +151,15 @@ fn a_save_shows_its_panel_on_the_window_and_writes_the_file_where_the_user_chose
     let file = folder.join("file");
     std::fs::write(&file, "x").unwrap();
     fake.close_save_panel(&mut app, panel, Some(file.join("under-a-file.png")));
-    fake.send(&mut app, window, WindowEvent::Frame);
+    run_until(&mut fake, &mut app, |_, _| !heard.borrow().saved.is_empty());
     assert!(matches!(
         &heard.borrow().saved[..],
         [Event::Saved { path: None, error: Some(error), .. }] if error.contains("cannot be written")
     ));
+    // The user hears it too, as the plugin may tell nothing.
+    let shown = app.diagnostics.shown().expect("a notice");
+    assert_eq!(shown.code, Code::Failed);
+    assert!(shown.text.contains("under-a-file.png"), "{}", shown.text);
     std::fs::remove_dir_all(&folder).unwrap();
 }
 
@@ -164,7 +175,7 @@ fn a_plugin_s_png_goes_on_the_platform_s_clipboard() {
 
 #[test]
 fn a_script_that_a_plugin_saved_asks_before_it_runs() {
-    let (mut fake, mut app, window, _) = saver();
+    let (mut fake, mut app, _, _) = saver();
     let folder = std::env::temp_dir().join(format!("lokyr-app-scripts-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&folder);
     std::fs::create_dir_all(&folder).unwrap();
@@ -172,8 +183,7 @@ fn a_script_that_a_plugin_saved_asks_before_it_runs() {
     let (panel, ..) = fake.save_panels()[0].clone();
     let path = folder.join("shot.png.command");
     fake.close_save_panel(&mut app, panel, Some(path.clone()));
-    fake.send(&mut app, window, WindowEvent::Frame);
-    assert!(path.exists());
+    run_until(&mut fake, &mut app, |_, _| path.exists());
     // Opened, as of a double click in the Finder: Lokyr asks first, as of a
     // download.
     let windows = fake.windows().count();
@@ -190,4 +200,86 @@ fn a_script_that_a_plugin_saved_asks_before_it_runs() {
         "nothing runs before the answer"
     );
     std::fs::remove_dir_all(&folder).unwrap();
+}
+
+#[test]
+fn a_save_panel_holds_its_window_s_focus_as_a_question_does() {
+    let (mut fake, mut app, window, heard) = saver();
+    heard.borrow_mut().focus.clear();
+    fake.send_app(&mut app, AppEvent::Command("saver.save".to_owned()));
+    // The sheet takes the keyboard: the plugins hear nothing of it, as a
+    // quick window that hides as it loses the focus would take the sheet
+    // with it.
+    fake.send(&mut app, window, WindowEvent::Focused(false));
+    fake.send(&mut app, window, WindowEvent::Frame);
+    assert!(
+        heard.borrow().focus.is_empty(),
+        "{:?}",
+        heard.borrow().focus
+    );
+    let (panel, ..) = fake.save_panels()[0].clone();
+    fake.close_save_panel(&mut app, panel, None);
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    fake.send(&mut app, window, WindowEvent::Frame);
+    assert_eq!(heard.borrow().focus, [true]);
+}
+
+#[test]
+fn a_second_panel_on_a_window_in_one_turn_ends_of_an_error() {
+    let (mut fake, mut app, window, heard) = saver();
+    let shown = app.windows[&window].window;
+    // Two plugins' threads, each of a save asked before the other's
+    // reached the app.
+    app.ask_save(
+        &mut fake,
+        ("lokyr/saver".to_owned(), 1),
+        shown,
+        "a.png",
+        vec![1],
+    );
+    app.ask_save(
+        &mut fake,
+        ("lokyr/saver".to_owned(), 2),
+        shown,
+        "b.png",
+        vec![2],
+    );
+    fake.send(&mut app, window, WindowEvent::Frame);
+    assert_eq!(fake.save_panels().len(), 1);
+    assert!(matches!(
+        &heard.borrow().saved[..],
+        [Event::Saved { id: 2, path: None, error: Some(error) }]
+            if error == lokyr_kernel::plugins::SAVING
+    ));
+}
+
+#[test]
+fn a_save_panel_goes_with_its_plugin_of_no_write() {
+    let (mut fake, mut app, window, _) = saver();
+    fake.send_app(&mut app, AppEvent::Command("saver.save".to_owned()));
+    let (panel, ..) = fake.save_panels()[0].clone();
+    fake.send_app(&mut app, AppEvent::Command("saver.fault".to_owned()));
+    fake.send(&mut app, window, WindowEvent::Frame);
+    assert!(fake.save_panels().is_empty(), "withdrawn");
+    assert!(!fake.close_save_panel(&mut app, panel, None));
+}
+
+#[test]
+fn a_window_that_closes_ends_its_save_of_no_path() {
+    let (mut fake, mut app, window, heard) = saver();
+    fake.send_app(&mut app, AppEvent::Command("saver.save".to_owned()));
+    fake.send(&mut app, window, WindowEvent::CloseRequested);
+    if let Some(close) = fake.alerts().last().map(|asked| asked.id) {
+        fake.answer_alert(&mut app, close, 0);
+    }
+    assert!(fake.windows().all(|open| open != window));
+    assert_eq!(fake.deliver_ended_saves(&mut app), 1);
+    assert!(matches!(
+        &heard.borrow().saved[..],
+        [Event::Saved {
+            path: None,
+            error: None,
+            ..
+        }]
+    ));
 }

@@ -36,7 +36,7 @@ use lokyr_plugin_sdk::host::MOST_WRITES;
 pub use lokyr_plugin_sdk::image;
 pub use lokyr_plugin_sdk::message::Event;
 pub use lokyr_plugin_sdk::message::{
-    COMMAND_ENDED, COMMAND_STARTED, Data, KEYS_CHANGED, Mods, POINTER, VIEWPORT_CHANGED,
+    COMMAND_ENDED, COMMAND_STARTED, Data, KEYS_CHANGED, Mods, POINTER, SAVING, VIEWPORT_CHANGED,
     WINDOW_FOCUS,
 };
 use lokyr_plugin_sdk::message::{Call, Effect, Request as Asked, Response, within_depth};

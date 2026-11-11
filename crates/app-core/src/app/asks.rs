@@ -2,7 +2,9 @@
 //! program runs, quitting, a window's title, a paste of several lines, a
 //! link to open, a program's read of the clipboard; and their answers.
 
+use lokyr_kernel::commands::Code;
 use lokyr_kernel::config::{ConfirmPaste, OpenFile, OpenUrl};
+use lokyr_kernel::diagnostics::{About, Diagnostic};
 use lokyr_kernel::l10n::Arg;
 use lokyr_kernel::plugins::Closing;
 use lokyr_kernel::workspace::{self, Pane, PaneId};
@@ -20,9 +22,20 @@ use crate::drawing::Backend;
 /// bytes.
 pub(super) struct Save {
     pub(super) window: workspace::WindowId,
-    plugin: String,
+    pub(super) plugin: String,
     id: u64,
     bytes: Vec<u8>,
+}
+
+/// A save's file that its thread wrote where the user chose, or failed to:
+/// the plugin, the question's id, the path, and the error of a write that
+/// failed.
+#[derive(Debug)]
+pub(super) struct Written {
+    plugin: String,
+    id: u64,
+    path: std::path::PathBuf,
+    error: Option<String>,
 }
 
 impl std::fmt::Debug for Save {
@@ -127,10 +140,13 @@ impl<B: Backend> App<B> {
         }
     }
 
-    /// Whether a question of the app's is open on `window`.
+    /// Whether a question of the app's is open on `window`, or a plugin's
+    /// save panel, which takes the keyboard as a sheet of the window.
     pub(super) fn asks_on(&self, window: WindowId) -> bool {
         let pane = self.focused(window);
-        self.close_asks.values().any(|&asked| asked == window)
+        let shown = self.windows.get(&window).map(|state| state.window);
+        self.saves.values().any(|save| Some(save.window) == shown)
+            || self.close_asks.values().any(|&asked| asked == window)
             || self.title_asks.values().any(|&asked| asked == window)
             || self.part_asks.values().any(|(asked, _)| *asked == window)
             || self.text_asks.values().any(|(asked, ..)| *asked == window)
@@ -616,6 +632,13 @@ impl<B: Backend> App<B> {
             self.plugins.saved(&plugin, id, None, None);
             return;
         };
+        // A window shows one panel at a time, though two plugins' threads
+        // asked for one each in a turn.
+        if self.saves.values().any(|save| save.window == window) {
+            let error = lokyr_kernel::plugins::SAVING.to_owned();
+            self.plugins.saved(&plugin, id, None, Some(error));
+            return;
+        }
         let message = self
             .texts
             .text_with("save-panel-message", &[("name", Arg::Text(&plugin))]);
@@ -632,10 +655,11 @@ impl<B: Backend> App<B> {
     }
 
     /// Writes the file of the save whose panel `panel` closed where the
-    /// user chose, `path`, whole, marked as come from elsewhere, as a
-    /// plugin chose its bytes and its type, so that the system asks before
-    /// it opens as a program, and tells its plugin the path, or the error
-    /// of a write that failed; of none, that the user cancelled.
+    /// user chose, `path`, whole, on a thread of its own, marked as come
+    /// from elsewhere, as a plugin chose its bytes and its type, so that
+    /// the system asks before it opens as a program; its end comes back as
+    /// [`App::take_written`] takes it. Of none, its plugin hears that the
+    /// user cancelled.
     pub(super) fn save_panel_closed(
         &mut self,
         platform: &mut dyn Platform,
@@ -649,15 +673,56 @@ impl<B: Backend> App<B> {
             self.plugins.saved(&save.plugin, save.id, None, None);
             return;
         };
-        match lokyr_pkg_model::write_whole_marked(&path, &save.bytes, platform.quarantine()) {
-            Ok(()) => {
-                let path = path.to_string_lossy().into_owned();
-                self.plugins.saved(&save.plugin, save.id, Some(path), None);
-            }
-            Err(error) => {
-                let error = format!("{} cannot be written: {error}", path.display());
-                eprintln!("lokyr: {error}");
-                self.plugins.saved(&save.plugin, save.id, None, Some(error));
+        let (written, waker, quarantine) = (
+            std::sync::Arc::clone(&self.written),
+            platform.waker(),
+            platform.quarantine(),
+        );
+        std::thread::spawn(move || {
+            let error = lokyr_pkg_model::write_whole_marked(&path, &save.bytes, quarantine)
+                .err()
+                .map(|error| error.to_string());
+            written
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .push(Written {
+                    plugin: save.plugin,
+                    id: save.id,
+                    path,
+                    error,
+                });
+            waker.wake();
+        });
+    }
+
+    /// Tells each plugin the end of its saves that their threads wrote: the
+    /// path, or the error of a write that failed, which the user hears in a
+    /// notice too, as the plugin may tell nothing of it.
+    pub(super) fn take_written(&mut self, platform: &mut dyn Platform) {
+        let written = std::mem::take(
+            &mut *self
+                .written
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
+        );
+        for written in written {
+            match written.error {
+                None => {
+                    let path = written.path.to_string_lossy().into_owned();
+                    self.plugins
+                        .saved(&written.plugin, written.id, Some(path), None);
+                }
+                Some(error) => {
+                    let shown = written.path.display().to_string();
+                    let told = self.texts.text_with(
+                        "save-failed",
+                        &[("path", Arg::Text(&shown)), ("error", Arg::Text(&error))],
+                    );
+                    self.report(platform, Diagnostic::new(Code::Failed, told, About::Other));
+                    let error = format!("{shown} cannot be written: {error}");
+                    self.plugins
+                        .saved(&written.plugin, written.id, None, Some(error));
+                }
             }
         }
     }

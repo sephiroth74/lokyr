@@ -103,6 +103,8 @@ menu-appearance-dark = Dark
 title-buttons-more = More
 # The message over the save panel that a plugin shows, which names the plugin that saves the file.
 save-panel-message = { $name } saves this file.
+# A notice: a file that a plugin saved could not be written where the user chose.
+save-failed = { $path } could not be saved: { $error }
 # The context menu's Look Up, which names the selection, shortened.
 menu-look-up = Look Up “{ $word }”
 # The context menu's man page, which names the page.

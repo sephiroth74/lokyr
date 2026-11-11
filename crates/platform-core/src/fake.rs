@@ -233,6 +233,8 @@ pub struct Fake {
     /// The save panels that are open: each its id, its window and its
     /// file's name.
     save_panels: Vec<(SavePanelId, WindowId, String, String)>,
+    /// The save panels whose windows closed, whose ends are to tell.
+    ended_saves: Vec<SavePanelId>,
     alerts: Vec<FakeAlert>,
     /// The timers that have not fired, with the time of each.
     timers: BTreeMap<TimerId, Instant>,
@@ -325,6 +327,7 @@ impl Fake {
             clipboard: None,
             clipboard_image: None,
             save_panels: Vec::new(),
+            ended_saves: Vec::new(),
             awake: (Awake::Off, String::new()),
             alerts: Vec::new(),
             timers: BTreeMap::new(),
@@ -559,6 +562,17 @@ impl Fake {
         };
         self.save_panels.remove(index);
         self.send_app(handler, AppEvent::SavePanelClosed { panel, path })
+    }
+
+    /// Tells `handler` the ends of the save panels whose windows closed,
+    /// of no path, as the platform ends a window's sheets with it: how
+    /// many it told.
+    pub fn deliver_ended_saves(&mut self, handler: &mut dyn Handler) -> usize {
+        let ended = std::mem::take(&mut self.ended_saves);
+        for &panel in &ended {
+            self.send_app(handler, AppEvent::SavePanelClosed { panel, path: None });
+        }
+        ended.len()
     }
 
     /// What the app keeps from idle sleep, and its assertion's name.
@@ -1087,8 +1101,15 @@ impl Platform for Fake {
         if self.focused == Some(window) {
             self.focused = None;
         }
-        // An alert on a window closes with it, unanswered.
+        // An alert on a window closes with it, unanswered; a save panel
+        // ends, of no path, as its turn comes.
         self.alerts.retain(|open| open.window != Some(window));
+        let (ended, kept) = std::mem::take(&mut self.save_panels)
+            .into_iter()
+            .partition::<Vec<_>, _>(|open| open.1 == window);
+        self.save_panels = kept;
+        self.ended_saves
+            .extend(ended.into_iter().map(|open| open.0));
     }
 
     fn set_title(&mut self, window: WindowId, title: &str) {
@@ -1299,6 +1320,11 @@ impl Platform for Fake {
         self.save_panels
             .push((id, window, name.to_owned(), message.to_owned()));
         id
+    }
+
+    fn dismiss_save_panel(&mut self, panel: SavePanelId) {
+        self.save_panels.retain(|open| open.0 != panel);
+        self.ended_saves.retain(|&ended| ended != panel);
     }
 
     fn show_alert(&mut self, window: Option<WindowId>, alert: &Alert) -> AlertId {

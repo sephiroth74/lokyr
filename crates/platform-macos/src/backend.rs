@@ -18,7 +18,7 @@ use objc2::{AnyThread, MainThreadMarker};
 use objc2_app_kit::{
     NSAlert, NSAppearanceCustomization, NSApplication, NSBeep, NSEvent, NSEventModifierFlags,
     NSEventType, NSImage, NSMenu, NSPasteboard, NSPasteboardTypePNG, NSPasteboardTypeString,
-    NSRequestUserAttentionType, NSScreen, NSView, NSWindow,
+    NSRequestUserAttentionType, NSSavePanel, NSScreen, NSView, NSWindow,
 };
 use objc2_foundation::{NSData, NSLocale, NSPoint, NSString, NSTimer};
 use raw_window_handle::{AppKitWindowHandle, RawWindowHandle};
@@ -60,6 +60,9 @@ pub(crate) struct Backend {
     waker: Waker,
     windows: BTreeMap<WindowId, Window>,
     alerts: HashMap<AlertId, OpenAlert>,
+    /// The save panels that are open, each of its window: none of a
+    /// window not there, whose end is queued already.
+    save_panels: HashMap<SavePanelId, Option<(Retained<NSSavePanel>, WindowId)>>,
     /// The timers that have not fired, or whose firing waits its turn.
     timers: HashMap<TimerId, Retained<NSTimer>>,
     /// Which Option keys act as Meta, which every window's view reads.
@@ -102,6 +105,7 @@ impl Backend {
             waker,
             windows: BTreeMap::new(),
             alerts: HashMap::new(),
+            save_panels: HashMap::new(),
             timers: HashMap::new(),
             option_as_meta: Rc::new(Cell::new((false, false))),
             menu_target: None,
@@ -141,6 +145,12 @@ impl Backend {
                 alert::text(&open.alert),
             )
         })
+    }
+
+    /// Forgets the save panel `panel`, which closed, and returns whether it
+    /// was open: one that the app withdrew is not.
+    pub(crate) fn take_save_panel(&mut self, panel: SavePanelId) -> bool {
+        self.save_panels.remove(&panel).is_some()
     }
 
     /// Forgets the timer `timer`, which fired, and returns whether it was
@@ -800,15 +810,19 @@ impl Platform for Backend {
     fn show_save_panel(&mut self, window: WindowId, name: &str, message: &str) -> SavePanelId {
         let id = SavePanelId::new(self.next_id());
         match self.windows.get(&window) {
-            Some(shown) => save::begin(
-                self.mtm,
-                shown.ns_window(),
-                (name, message),
-                self.shared.clone(),
-                id,
-            ),
+            Some(shown) => {
+                let panel = save::begin(
+                    self.mtm,
+                    shown.ns_window(),
+                    (name, message),
+                    self.shared.clone(),
+                    id,
+                );
+                self.save_panels.insert(id, Some((panel, window)));
+            }
             // Of a window not there, a panel that the user never saw.
             None => {
+                self.save_panels.insert(id, None);
                 if let Some(shared) = self.shared.upgrade() {
                     shared.enqueue(Pending::App(AppEvent::SavePanelClosed {
                         panel: id,
@@ -818,6 +832,16 @@ impl Platform for Backend {
             }
         }
         id
+    }
+
+    fn dismiss_save_panel(&mut self, panel: SavePanelId) {
+        // Forgotten first, so that its sheet's end tells nothing.
+        let Some(Some((panel, window))) = self.save_panels.remove(&panel) else {
+            return;
+        };
+        if let Some(window) = self.windows.get(&window) {
+            window.ns_window().endSheet(&panel);
+        }
     }
 
     fn show_alert(&mut self, window: Option<WindowId>, alert: &Alert) -> AlertId {

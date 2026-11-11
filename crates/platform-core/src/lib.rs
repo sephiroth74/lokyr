@@ -710,6 +710,10 @@ pub trait Platform {
     /// replaces a file; the app writes it.
     fn show_save_panel(&mut self, window: WindowId, name: &str, message: &str) -> SavePanelId;
 
+    /// Withdraws the open save panel `panel`, as who saves is gone: no
+    /// [`AppEvent::SavePanelClosed`] comes of it, and nothing is written.
+    fn dismiss_save_panel(&mut self, panel: SavePanelId);
+
     /// Keeps the system, or the system and the display, from idle sleep,
     /// of one power assertion named `reason`, which takes the place of the
     /// one before, or lets it sleep, of [`Awake::Off`]; the system releases

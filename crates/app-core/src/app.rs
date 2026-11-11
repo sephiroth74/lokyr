@@ -707,6 +707,9 @@ pub struct App<B: Backend> {
     text_asks: BTreeMap<AlertId, (WindowId, String, u64)>,
     /// The saves that plugins asked, whose panels show, by their panels.
     saves: BTreeMap<SavePanelId, asks::Save>,
+    /// The saves whose files their threads wrote, or failed to, for their
+    /// plugins.
+    written: std::sync::Arc<std::sync::Mutex<Vec<asks::Written>>>,
     /// The pictures of the images that the app keeps of each plugin's, which
     /// its views' nodes show, by the images' ids.
     pictures: BTreeMap<String, Pictures>,
@@ -911,6 +914,7 @@ impl<B: Backend> App<B> {
             part_asks: BTreeMap::new(),
             text_asks: BTreeMap::new(),
             saves: BTreeMap::new(),
+            written: std::sync::Arc::default(),
             pictures: BTreeMap::new(),
             last_image: 0,
             awake: (host::Awake::Off, String::new()),
@@ -3059,6 +3063,17 @@ impl<B: Backend> App<B> {
                 }
             }
         }
+        // The save panels of plugins that stopped go, of no write.
+        let ended: Vec<SavePanelId> = self
+            .saves
+            .iter()
+            .filter(|(_, save)| plugins.status(&save.plugin) != Some(plugins::Status::Active))
+            .map(|(&panel, _)| panel)
+            .collect();
+        for panel in ended {
+            self.saves.remove(&panel);
+            platform.dismiss_save_panel(panel);
+        }
         // A plugin's state that could not be written goes to the log.
         for fault in self.plugins.take_faults() {
             eprintln!("lokyr: {fault}");
@@ -3201,6 +3216,8 @@ impl<B: Backend> App<B> {
         self.events(platform);
         // The lines and the ends of the packages' jobs, for their plugins.
         self.take_packages();
+        // The saves' files written, for their plugins.
+        self.take_written(platform);
         let served = if self.plugins.waiting() {
             self.with_plugins(platform, Plugins::serve)
         } else {

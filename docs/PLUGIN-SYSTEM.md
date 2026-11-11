@@ -748,9 +748,11 @@ type Cx = {
     -- event. No capability, as the user chooses the place and the plugin never holds the disk (ADR 0041). The panel
     -- names the plugin over it and shows the whole name, its extension too; the file is marked as come from
     -- elsewhere, as a download is, macOS's quarantine, so that Lokyr and Gatekeeper ask before it opens as a program,
-    -- and a volume that keeps no such mark writes nothing. A window shows one panel at a time, a second refused while
-    -- one shows; a name of 1 to 255 bytes, of no `/`, `:`, control character, character that hides or moves the text
-    -- around it nor mark of direction; 256 MiB at most.
+    -- and a volume that keeps no such mark writes nothing. The host writes on a thread of its own; a write that fails
+    -- is a notice of the app's too. A window shows one panel at a time, a second refused while one shows, or ended of
+    -- an error as it reaches the app after another plugin's; the panel goes, of no write, as its plugin stops, and
+    -- ends of no path as its window closes. A name of 1 to 255 bytes, of no `/`, `:`, control character, character
+    -- that hides or moves the text around it nor mark of direction; 256 MiB at most.
     save_file: (window: WindowId?, name: string, bytes: string) -> (number?, Error?),
     -- The text of a message of the plugin's catalogs, of its arguments, a text or a number each, in the language
     -- shown, or English's where that one lacks it, as a view's texts, labels and tooltips take them: the id itself

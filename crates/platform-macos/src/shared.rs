@@ -253,6 +253,12 @@ impl Shared {
         let backend = &mut *backend;
         let outcome = panic::catch_unwind(AssertUnwindSafe(|| match pending {
             Pending::Started => handler.started(backend),
+            // A save panel that the app withdrew tells nothing of its end.
+            Pending::App(AppEvent::SavePanelClosed { panel, path }) => {
+                if backend.take_save_panel(panel) {
+                    handler.app_event(backend, AppEvent::SavePanelClosed { panel, path });
+                }
+            }
             Pending::App(event) => handler.app_event(backend, event),
             Pending::Window(window, event) => {
                 // A window that closed meanwhile has nothing more to tell.

@@ -7,6 +7,7 @@ use std::rc::Weak;
 use block2::RcBlock;
 use lokyr_platform_core::{AppEvent, SavePanelId};
 use objc2::MainThreadMarker;
+use objc2::rc::Retained;
 use objc2_app_kit::{NSModalResponse, NSModalResponseOK, NSSavePanel, NSWindow};
 use objc2_foundation::{NSArray, NSString};
 use objc2_uniform_type_identifiers::UTType;
@@ -15,14 +16,14 @@ use crate::shared::{Pending, Shared};
 
 /// Opens the save panel on `window`, of `name` suggested and of its
 /// extension's type, of `message` over it, whose end posts
-/// [`AppEvent::SavePanelClosed`] of `id`.
+/// [`AppEvent::SavePanelClosed`] of `id`; returns the panel.
 pub(crate) fn begin(
     mtm: MainThreadMarker,
     window: &NSWindow,
     (name, message): (&str, &str),
     shared: Weak<Shared>,
     id: SavePanelId,
-) {
+) -> Retained<NSSavePanel> {
     let panel = NSSavePanel::savePanel(mtm);
     panel.setNameFieldStringValue(&NSString::from_str(name));
     panel.setMessage(Some(&NSString::from_str(message)));
@@ -52,4 +53,5 @@ pub(crate) fn begin(
         }
     });
     panel.beginSheetModalForWindow_completionHandler(window, &completion);
+    panel
 }
