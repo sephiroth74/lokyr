@@ -15,7 +15,7 @@ Each phase is broken into tasks of one day or less in [tasks/](tasks/README.md).
 | F2 macOS, single pane | macOS platform, CoreText fonts, Metal rendering, minimal kernel, `core-actions` | Used as the main terminal for a week | 8–12 weeks |
 | F3 **macOS MVP** | Full kernel, native SDK, `ui-core` with the plugins' widgets and floating panels, `tabs`, `splits`, `search` plugins, iTerm2 themes, palette, the agents' state on the tabs; copy mode, the scrollbar, shell integration with prompt jumping and notifications, the command's sticky header, the programs' progress, windows restored with their directories, the Finder's service; a DMG, updates through Sparkle; after F4, the first public release, 1.0.0 | Every must-have requirement in place | 12–16 weeks |
 | F4 Plugin ecosystem | Before 1.0.0 ([ADR 0036](adr/0036-plugin-ecosystem-before-1-0.md)): Luau host, Luau API, Sleip, the `plugin-manager`, registry v0, `snap` and `awake` published | Publishing and installing work end to end; `snap` and `awake` in the registry; then 1.0.0 | 8–10 weeks |
-| F3b MCP and agents | After 1.0.0: IPC and the remote CLI, the MCP server `lokyr +mcp` and its tools, the agents' hooks; the settings' panel | Agents drive panes over MCP, within their scope; the settings' panel edits the config | 5–6 weeks |
+| F3b MCP and agents | After 1.0.0: IPC and the remote CLI, the MCP server `lokyr +mcp` and its tools, the agents' hooks; the settings' panel; themes in the registry | Agents drive panes over MCP, within their scope; the settings' panel edits the config; a theme published and installed with Sleip | 6–7 weeks |
 | F5a Shell integration and blocks | Warp-style blocks, the last command's output, ssh integration | Verified in zsh, bash and fish, including over ssh | 3–5 weeks |
 | F5b iTerm2 power features | tmux -CC, triggers, profiles, broadcast, the scrollback restored | tmux -CC workflows on par with iTerm2 | 8–11 weeks |
 | F5c Graphics and kitty protocols | kitty graphics, sixel, iTerm2 images, hints and URLs | `kitten icat`, `imgcat` and `chafa` work | 6–8 weeks |
@@ -137,7 +137,7 @@ Before 1.0.0, after F3's daily features, as 0.8 and 0.9, as the user chose on 7 
 - **`awake`**, a [reference third-party plugin](PLUGIN-SYSTEM.md#awake), in Luau, as the user asked on 6 November 2026: the Mac kept awake, always or while programs run, from a button beside the window's buttons; the host's request of a power assertion, its capability `keep-awake`, of an ADR, and a slot of the titlebar's buttons.
 - **Registry v0** (static), ed25519 signatures, templates, a guide for plugin authors, of a minimal practical example, a plugin that works, step by step, as the user asked on 7 November 2026: a repository of the index, publishing by pull request, the archives in its releases, the index and the site on GitHub Pages at `pkg.lokyr.dev`, and the keys that Sleip trusts ([ADR 0031](adr/0031-registry-v0.md)).
 
-**Not in F4** ([ADR 0038](adr/0038-plugin-ecosystem-scope.md)): the plugins' network and processes, refused until F6; a canvas of drawing primitives; packages of themes, as the app holds the collection ([ADR 0035](adr/0035-themes-are-the-hosts.md)).
+**Not in F4** ([ADR 0038](adr/0038-plugin-ecosystem-scope.md)): the plugins' network and processes, refused until F6; a canvas of drawing primitives; packages of themes, as the app holds the collection ([ADR 0035](adr/0035-themes-are-the-hosts.md)), which come in F3b ([ADR 0042](adr/0042-themes-in-the-registry.md)); the guide for theme authors is F4's, F4-89.
 
 **Exit**:
 - the `sleip new → check → dev` loop works;
@@ -154,9 +154,11 @@ After 1.0.0, as 1.1 ([ADR 0036](adr/0036-plugin-ecosystem-before-1-0.md)).
 - **An agent's scope**: its own pane and the panes that it opened; another pane after the user's confirmation; the `[mcp]` section of the config ([SECURITY.md](SECURITY.md#mcp)).
 - **The agents' hooks**: `lokyr +notify`, which they call for an exact state, and `lokyr +agent-hooks <agent>`, which prints the lines that their config takes.
 - **The settings' panel**, `settings`, a first-party plugin, generated from the config's keys and the guide's text, with the fonts, the colors, the keys' bindings and a file with an error, moved from F3 on 7 November 2026 ([ADR 0036](adr/0036-plugin-ecosystem-before-1-0.md)): F3-103 and F3-104 of F3's plan, which F3b's breakdown takes.
+- **Themes in the registry** ([ADR 0042](adr/0042-themes-in-the-registry.md)): packages of kind `themes` of `sephiroth74/sleip-registry`, of the same signed index and site at `pkg.lokyr.dev`; Sleip adds, updates, removes and publishes them as plugins; the registry's checks parse each theme with the app's own parser; the app reads the installed packages' themes beside the user's folder and those that it holds, which the palette's picker lists; each theme's page shows a preview that the site's build draws of the theme's colors, of each variant. The packages' examples of `PACKAGE-MANAGER.md`, which name a stale `lokyr/themes` dependency, made anew (B-583).
 
 **Exit**:
 - Claude Code and Codex open a pane over MCP, run a command in it, and read its output and its exit code;
+- a theme published by pull request, its page showing its preview, installed with `sleip add`, and chosen in the palette's picker;
 - an agent that reaches outside its scope gets the user's confirmation first;
 - `lokyr cli` lists and drives the panes;
 - budgets green.
