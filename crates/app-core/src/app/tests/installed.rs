@@ -473,6 +473,46 @@ fn an_installed_plugin_takes_its_package_s_config_schema_and_catalogs() {
 }
 
 #[test]
+fn an_installed_plugin_that_claims_to_be_built_in_is_refused() {
+    let _luau = LUAU.lock().unwrap_or_else(PoisonError::into_inner);
+    let folder = shelf("claims-builtin");
+    let devved = folder.join("claims");
+    // A folder of `sleip dev`, whose manifest says `builtin`, as one that
+    // would be offered `packages`.
+    let claimed = manifest("claims", &["startup"], "^0.1", "")
+        .replace("kind = \"luau\"", "kind = \"builtin\"");
+    package(&devved, &claimed, "return {}");
+    let lock = folder.join("plugins.lock");
+    Lock {
+        api: lokyr_kernel::plugins::API_VERSION.to_owned(),
+        packages: BTreeMap::from([(
+            "acme/claims".to_owned(),
+            Locked {
+                version: "1.0.0".to_owned(),
+                kind: Kind::Luau,
+                source: Source::Dev(devved.display().to_string()),
+                checksum: None,
+                capabilities: Vec::new(),
+                dependencies: BTreeMap::new(),
+            },
+        )]),
+    }
+    .write(&lock)
+    .unwrap();
+    let mut fake = Fake::default();
+    let mut app =
+        app(Config::default(), quiet()).with_installed(lock, Store::new(folder.join("store")));
+    fake.start(&mut app);
+    let told = notices(&mut app);
+    assert!(
+        told.iter()
+            .any(|text| text.contains("acme/claims") && text.contains("`luau`")),
+        "{told:?}"
+    );
+    assert_eq!(app.plugins.status("acme/claims"), None);
+}
+
+#[test]
 fn an_installed_plugin_of_a_schema_too_large_is_refused() {
     let _luau = LUAU.lock().unwrap_or_else(PoisonError::into_inner);
     let folder = shelf("large-schema");

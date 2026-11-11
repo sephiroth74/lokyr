@@ -1074,6 +1074,48 @@ fn versioned(folder: &Path, version: &str) {
 }
 
 #[test]
+fn a_plugin_of_a_folder_moved_away_stays_as_another_installs_and_updates() {
+    let sandbox = Sandbox::new("moved-path");
+    let one = made(&sandbox, "one");
+    let two = made(&sandbox, "two");
+    for folder in [&one, &two] {
+        let output = sandbox.sleip(&["add", "--path", &folder.display().to_string()]);
+        assert!(output.status.success(), "{output:?}");
+    }
+    let held = sandbox.locked().packages["acme/one"].clone();
+    // The first's folder moves: the second installs and updates all the
+    // same, the first kept as it was locked.
+    let moved = one.with_file_name("one-moved");
+    std::fs::rename(&one, &moved).unwrap();
+    versioned(&two, "0.2.0");
+    let updated = sandbox.sleip(&["update", "acme/two"]);
+    assert!(updated.status.success(), "{updated:?}");
+    let again = sandbox.sleip(&["add", "--path", &two.display().to_string()]);
+    assert!(again.status.success(), "{again:?}");
+    assert_eq!(sandbox.locked().packages["acme/one"], held);
+    assert_eq!(sandbox.locked().packages["acme/two"].version, "0.2.0");
+    // Asked for by name, its folder that is not there fails.
+    let asked = sandbox.sleip(&["update", "acme/one"]);
+    assert_eq!(asked.status.code(), Some(1), "{asked:?}");
+}
+
+#[test]
+fn check_refuses_a_package_of_a_plugin_built_into_the_app() {
+    let sandbox = Sandbox::new("check-builtin");
+    let folder = made(&sandbox, "builtin");
+    edit(&folder, "plugin.toml", |text| {
+        text.replace("kind = \"luau\"", "kind = \"builtin\"")
+    });
+    let output = sandbox
+        .command(&["check"])
+        .current_dir(&folder)
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+    assert!(stdout(&output).contains("`builtin`"), "{}", stdout(&output));
+}
+
+#[test]
 fn add_installs_a_plugin_of_a_folder_and_update_takes_its_changes() {
     let sandbox = Sandbox::new("add-path");
     let folder = made(&sandbox, "local");

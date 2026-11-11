@@ -297,7 +297,8 @@ fn linked(lock: &Lock, name: &str) -> bool {
 /// Whether `lock` holds `name` as `wanted` asks: of the registry, of a
 /// version that its constraint takes; of the folder that it names; of the
 /// repository that it names, at a commit that its `rev` begins, a tag
-/// taken as it was locked; of a folder that `sleip dev` links, as it is.
+/// taken as it was locked; of a folder that `sleip dev` links, as it is; of
+/// a folder that is no longer there, as it was locked.
 /// One that the list's entry, edited by hand, no longer asks for is
 /// resolved afresh.
 fn held_as(lock: &Lock, name: &str, wanted: &Wanted) -> bool {
@@ -315,9 +316,16 @@ fn held_as(lock: &Lock, name: &str, wanted: &Wanted) -> bool {
                 _ => false,
             }
         }
-        (Wanted::Path(path), Source::Path(held)) => expand(path)
-            .and_then(|folder| std::fs::canonicalize(folder).ok())
-            .is_some_and(|folder| folder.display().to_string() == *held),
+        (Wanted::Path(path), Source::Path(held)) => match expand(path) {
+            Some(folder) => match std::fs::canonicalize(folder) {
+                Ok(folder) => folder.display().to_string() == *held,
+                // A folder moved or removed since, of which nothing can be
+                // fetched: the lockfile's package stays, as the store
+                // holds it, until the plugin is asked for by name.
+                Err(_) => true,
+            },
+            None => false,
+        },
         (Wanted::Git { url, at }, Source::Git { url: held, commit }) => {
             url == held
                 && match at {

@@ -139,6 +139,13 @@ fn plugin(name: &str, folder: &Path) -> Result<(Manifest, Package), Refusal> {
             manifest.name
         )));
     }
+    // A package of Luau alone: Lokyr's own plugins alone are built in, of
+    // what they hold, which no package may claim.
+    if manifest.kind != lokyr_pkg_model::manifest::Kind::Luau {
+        return Err(other(
+            "an installed plugin is of `luau`, and its plugin.toml says otherwise".to_owned(),
+        ));
+    }
     if !manifest.takes_api(API_VERSION) {
         return Err(Refusal::Api(manifest.api.clone().unwrap_or_default()));
     }

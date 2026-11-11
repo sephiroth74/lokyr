@@ -159,6 +159,16 @@ fn check_folder(folder: &Path, findings: &mut Findings) {
             &format!("the app refuses `{written}`, which Lokyr's own plugins alone hold"),
         );
     }
+    // A plugin built into the app, which a package never is: the app
+    // refuses an installed one of another kind than Luau.
+    if manifest.kind == Kind::Builtin {
+        findings.problem(
+            "plugin.toml",
+            line_of_key(&text, "kind"),
+            "Kind",
+            "the app refuses an installed plugin of `builtin`, which Lokyr's own plugins alone are: a package is of `luau`",
+        );
+    }
     // An activation of OSC sequences, which the app's handlers of them
     // bring later: refused by every app yet.
     for on in manifest
