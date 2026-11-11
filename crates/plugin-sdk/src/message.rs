@@ -319,6 +319,10 @@ pub enum Request {
     /// [`MOST_IMAGES`](crate::image::MOST_IMAGES) a call, and none of a call
     /// that only looks.
     RenderImage(crate::image::ImageSpec),
+    /// Lets go an image that the host keeps, by its id, whose views' nodes
+    /// then show nothing, as the call returns; one that it does not keep
+    /// stays so.
+    DropImage(u64),
     /// Decorates a pane's cells, from one to another in reading order,
     /// each by its column and its row's number, with a look: the host
     /// answers with the decoration's id, and lays it as the call returns.
@@ -911,6 +915,7 @@ impl Request {
             | Self::Commands
             | Self::Themes
             | Self::RenderImage(_)
+            | Self::DropImage(_)
             | Self::SaveFile { .. }
             | Self::AddMenuItem(_)
             | Self::StartTimer { .. }
@@ -958,6 +963,7 @@ impl Request {
             | Self::ScreenCells(_) => Effect::Read,
             Self::SetClipboardText(_)
             | Self::SetClipboardImage(_)
+            | Self::DropImage(_)
             | Self::SelectCells { .. }
             | Self::Deselect(_)
             | Self::ShowCursor { .. }
@@ -1406,6 +1412,7 @@ impl Request {
             | Self::RunCommand { .. }
             | Self::SetClipboardText { .. }
             | Self::SetClipboardImage { .. }
+            | Self::DropImage { .. }
             | Self::EndSearch { .. }
             | Self::SelectCells { .. }
             | Self::Deselect { .. }
@@ -1844,6 +1851,12 @@ mod tests {
             assert_eq!(read.effect(), Effect::Read);
             assert_eq!(read.answer(), "cells");
         }
+        let dropped = Request::DropImage(3);
+        assert!(dropped.capabilities().is_empty());
+        assert_eq!(
+            (dropped.effect(), dropped.answer()),
+            (Effect::Write, "done")
+        );
         let copy = Request::SetClipboardImage(Bytes(Vec::new()));
         assert_eq!(copy.capabilities(), [Capability::ClipboardWrite]);
         assert_eq!((copy.effect(), copy.answer()), (Effect::Write, "done"));

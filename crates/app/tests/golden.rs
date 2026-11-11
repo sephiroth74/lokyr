@@ -870,6 +870,7 @@ fn check_tree(
             lists: &Lists::new(),
             motion: None,
             fills: Fills::All,
+            pictures: &lokyr_ui_core::paint::NO_PICTURES,
         },
     );
     // The tooltip, as the pointer rested at the middle of the node under
@@ -1771,6 +1772,7 @@ fn check_tab_bar((name, style, position, (width, height), shown): Bar, (dark, sc
             lists: &Lists::new(),
             motion: Some((&animations, now)),
             fills: Fills::All,
+            pictures: &lokyr_ui_core::paint::NO_PICTURES,
         },
     );
     let list = DisplayList {
@@ -1991,15 +1993,25 @@ fn check_image(name: &str, image: &lokyr_plugin_sdk::image::ImageSpec, dark: boo
     let theme = Theme::builtin();
     let window = lokyr_kernel::config::WindowConfig::default();
     let scale = image.scale.unwrap();
+    let (mut kept, mut last) = (std::collections::BTreeMap::new(), 0);
     let mut painter = lokyr_app_core::ImagePainter {
         drawing: Some(&mut drawing),
+        kept: (&mut kept, &mut last),
         colors: &theme.variant(dark).colors,
         widths: lokyr_vt_core::unicode::Widths::default(),
         look: TextLook::default(),
         padding: (window.padding_x, window.padding_y),
         scale: 1.0,
     };
-    let rendered = painter.render(image).unwrap();
+    let rendered = painter.render("acme/snap", image).unwrap();
+    // Kept as it asks, a picture of the renderer's of its size.
+    assert_eq!(rendered.id.is_some(), image.keep);
+    if let Some(id) = rendered.id {
+        assert_eq!(
+            kept["acme/snap"][&id].size,
+            (rendered.width, rendered.height)
+        );
+    }
     assert_eq!(
         (rendered.scale, &rendered.png.0[1..4]),
         (scale, &b"PNG"[..])
@@ -2033,6 +2045,7 @@ fn an_image_of_cells_renders_to_a_png_as_its_golden_images() {
             padding: 32.0,
             background: ImageBackground::Theme,
             scale: Some(scale),
+            keep: true,
         };
         check_image("image-framed-dark", &framed, true);
         // The window alone, of square corners, no bar, no shadow, clear

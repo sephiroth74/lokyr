@@ -177,6 +177,11 @@ pub enum Kind {
     /// an arrow while it has the focus, chooses one, which its plugin
     /// learns of by `select`, and gives in its next render with its page.
     Tabs(Tabs),
+    /// An image that the host keeps of the plugin's, by its id, as a render
+    /// of an image's answers it, drawn whole within the room that its
+    /// layout gives it, in the middle, of its own proportions; nothing of an
+    /// id that the host does not keep.
+    Image(u64),
 }
 
 /// A view of tabs' own properties.
@@ -396,7 +401,8 @@ impl Kind {
             | Self::Icon(_)
             | Self::Spacer
             | Self::Separator
-            | Self::Progress(_) => false,
+            | Self::Progress(_)
+            | Self::Image(_) => false,
             Self::Field(_)
             | Self::Button(_)
             | Self::Toggle(_)
@@ -1076,6 +1082,12 @@ impl Node {
     /// A line across its container.
     pub fn separator() -> Self {
         Self::new(Kind::Separator)
+    }
+
+    /// An image that the host keeps, by its id, within the room that its
+    /// layout gives it.
+    pub fn image(id: u64) -> Self {
+        Self::new(Kind::Image(id))
     }
 
     /// A list of `count` items, of rows of `row`'s template, which gives

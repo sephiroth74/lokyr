@@ -41,6 +41,10 @@ pub const MOST_PIXELS: u64 = 40_000_000;
 /// The most images that one call renders, each of the main thread's time.
 pub const MOST_IMAGES: usize = 4;
 
+/// The most images that the host keeps of a plugin's, for its views' nodes
+/// of them, past which it lets the oldest go.
+pub const MOST_KEPT: usize = 4;
+
 /// The message of the error of an image past [`MOST_IMAGES`] in a call,
 /// which every host gives alike.
 pub const IMAGES_BOUND: &str = "a call renders 4 images at most";
@@ -108,6 +112,11 @@ pub struct ImageSpec {
     /// display's of the focused window without.
     #[serde(default)]
     pub scale: Option<f32>,
+    /// Whether the host keeps the image, which a view's node shows by the
+    /// id that it answers, until the plugin lets it go, keeps
+    /// [`MOST_KEPT`] others after it, or stops.
+    #[serde(default)]
+    pub keep: bool,
 }
 
 impl ImageSpec {
@@ -194,6 +203,10 @@ pub struct Image {
     pub height: u32,
     /// The pixels of a point.
     pub scale: f32,
+    /// The id that a view's node shows it by, of an image that the host
+    /// keeps.
+    #[serde(default)]
+    pub id: Option<u64>,
 }
 
 impl Image {
@@ -205,6 +218,7 @@ impl Image {
             width: 1,
             height: 1,
             scale,
+            id: None,
         }
     }
 }

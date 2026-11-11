@@ -455,6 +455,9 @@ pub struct FakeHost {
     saves: BTreeMap<u64, (WindowId, String, Vec<u8>)>,
     /// The files that its saves wrote, by their paths.
     saved: BTreeMap<String, Vec<u8>>,
+    /// The ids of the images that the host keeps of the plugin's, the
+    /// oldest first.
+    kept: Vec<u64>,
     font_size: f32,
     missing: Vec<String>,
     config: Data,
@@ -540,6 +543,7 @@ impl FakeHost {
             clipboard_image: None,
             saves: BTreeMap::new(),
             saved: BTreeMap::new(),
+            kept: Vec::new(),
             font_size: 13.0,
             missing: Vec::new(),
             config: Data::Map(BTreeMap::new()),
@@ -817,6 +821,12 @@ impl FakeHost {
     /// The bytes of the file that a save wrote at `path`, if one did.
     pub fn saved_file(&self, path: &str) -> Option<&[u8]> {
         self.saved.get(path).map(Vec::as_slice)
+    }
+
+    /// The ids of the images that the host keeps of the plugin's, which
+    /// its views' nodes show, the oldest first.
+    pub fn kept_images(&self) -> &[u64] {
+        &self.kept
     }
 
     /// Gives the text `size`, in points, as its reads tell it.
@@ -1332,6 +1342,7 @@ impl FakeHost {
                 self.clipboard_image = Some(png.0.clone());
                 self.clipboard = None;
             }
+            Request::DropImage(id) => self.kept.retain(|kept| kept != id),
             Request::ShowCursor { pane, at } => {
                 if let Some(pane) = self.panes.get_mut(pane) {
                     pane.held_cursor = *at;
@@ -2566,8 +2577,18 @@ impl Calling<'_> {
                 image.check()?;
                 self.imaged += 1;
                 // A clear pixel, as the fake draws nothing, at the scale
-                // asked for or of a display of 2.
-                Response::Image(crate::image::Image::blank(image.scale.unwrap_or(SCALE)))
+                // asked for or of a display of 2; kept, as the app keeps
+                // its picture, the oldest let go past the most.
+                let mut rendered = crate::image::Image::blank(image.scale.unwrap_or(SCALE));
+                if image.keep {
+                    let id = self.host.next_id();
+                    self.host.kept.push(id);
+                    if self.host.kept.len() > crate::image::MOST_KEPT {
+                        self.host.kept.remove(0);
+                    }
+                    rendered.id = Some(id);
+                }
+                Response::Image(rendered)
             }
             Request::Search { pane, query } => {
                 if self.looking {
@@ -3590,6 +3611,9 @@ fn write_node(out: &mut String, node: &Node, depth: usize) {
         Kind::Tabs(tabs) => {
             let labels: Vec<String> = tabs.tabs.iter().map(|tab| quoted(&tab.label)).collect();
             let _ = write!(out, "tabs {} chosen {}", labels.join(" | "), tabs.chosen);
+        }
+        Kind::Image(id) => {
+            let _ = write!(out, "image {id}");
         }
     }
     if let Some(key) = &node.key {

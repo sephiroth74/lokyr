@@ -6,11 +6,11 @@
 //! over its siblings before it; and the ring of the keyboard's focus around
 //! the node that has it, over them all, within its ancestors' clips.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::time::Instant;
 
 use lokyr_plugin_sdk::view::{self, Hover, Kind, Style};
-use lokyr_render_core::{Arc, Color, Item, PlacedGlyph, Rect, Shadow, Shape};
+use lokyr_render_core::{Arc, Color, Item, PictureId, PlacedGlyph, Rect, Shadow, Shape};
 use lokyr_text_core::FontBackend;
 
 use crate::animation::Animations;
@@ -61,7 +61,25 @@ pub struct Shown<'a> {
     /// the indeterminate ones, which the platform's window server draws
     /// otherwise, as `progress::fills` and `progress::sweeps` give them.
     pub fills: Fills<'a>,
+    /// The pictures of its plugin's images, which its images' nodes draw.
+    pub pictures: &'a Pictures,
 }
+
+/// A picture that the renderer holds of an image that a view's node shows:
+/// its id, and its size in pixels.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Picture {
+    /// The renderer's picture.
+    pub id: PictureId,
+    /// Its width and its height, in pixels.
+    pub size: (u32, u32),
+}
+
+/// The pictures of a plugin's images, by the images' ids.
+pub type Pictures = BTreeMap<u64, Picture>;
+
+/// The pictures of a view that shows no image.
+pub static NO_PICTURES: Pictures = BTreeMap::new();
 
 /// Which fills of a tree's progresses that are not indeterminate a paint
 /// draws, and which moving parts of the indeterminate ones.
@@ -119,6 +137,7 @@ fn paint_of<B: FontBackend>(
         lists: shown.lists,
         motion: shown.motion,
         fills: shown.fills,
+        pictures: shown.pictures,
         group: 0.0,
         clip: None,
         ring: None,
@@ -255,6 +274,7 @@ struct Painter<'a, B> {
     lists: &'a Lists,
     motion: Option<(&'a Animations, Instant)>,
     fills: Fills<'a>,
+    pictures: &'a Pictures,
     /// How far the hover of the nearest node of a key around the node
     /// painted shows, from 0 to 1, which its parent's hover takes.
     group: f32,
@@ -420,6 +440,7 @@ impl<'a, B: FontBackend> Painter<'a, B> {
             Kind::List(list) => self.list(id, list, (frame, style), color),
             Kind::Progress(progress) => self.progress(id, progress, frame, given),
             Kind::Tabs(view) => self.tabs(id, view, frame, color),
+            Kind::Image(image) => self.image(*image, frame),
             Kind::Container | Kind::Spacer | Kind::Separator | Kind::Scroll => {}
         }
         let children = tree.children(id);
@@ -650,6 +671,7 @@ impl<'a, B: FontBackend> Painter<'a, B> {
                     lists: &lists,
                     motion: None,
                     fills: self.fills,
+                    pictures: self.pictures,
                 },
             );
             // On the accent's selection, every text of the row in its
@@ -1012,6 +1034,30 @@ impl<'a, B: FontBackend> Painter<'a, B> {
     }
 
     /// Adds `shape` to the shapes of the item before, if they are shapes.
+    /// The picture of the image `image` whole within `frame`, in its
+    /// middle, of its own proportions; nothing of an image that the
+    /// renderer holds no picture of.
+    fn image(&mut self, image: u64, frame: Frame) {
+        let Some(picture) = self.pictures.get(&image) else {
+            return;
+        };
+        let (width, height) = (picture.size.0 as f32, picture.size.1 as f32);
+        if width < 1.0 || height < 1.0 || frame.width < 1.0 || frame.height < 1.0 {
+            return;
+        }
+        let fit = (frame.width / width).min(frame.height / height);
+        let (shown_width, shown_height) = ((width * fit).round(), (height * fit).round());
+        self.items.push(Item::Picture {
+            rect: Rect {
+                x: (frame.x + (frame.width - shown_width) / 2.0).round() as i32,
+                y: (frame.y + (frame.height - shown_height) / 2.0).round() as i32,
+                width: shown_width as u32,
+                height: shown_height as u32,
+            },
+            picture: picture.id,
+        });
+    }
+
     fn push_shape(&mut self, shape: Shape) {
         match self.items.last_mut() {
             Some(Item::Shapes(shapes)) => shapes.push(shape),
@@ -1439,6 +1485,7 @@ mod tests {
             lists: Box::leak(Box::new(Lists::new())),
             motion: None,
             fills: Fills::All,
+            pictures: &crate::paint::NO_PICTURES,
         }
     }
 
@@ -1542,6 +1589,64 @@ mod tests {
 
     /// `root` laid out at `scale` in `width` points, and painted from
     /// `origin` in the dark variant's tokens.
+    #[test]
+    fn an_image_s_node_draws_its_picture_whole_in_its_middle_of_its_proportions() {
+        use lokyr_plugin_sdk::view::{Layout as Box, Length};
+        let sized = |id: u64| {
+            Node::image(id).layout(Box {
+                width: Length::Points(100.0),
+                height: Length::Points(100.0),
+                ..Box::default()
+            })
+        };
+        let root = Node::container(vec![sized(5), sized(6)]);
+        let mut font = Font::new(Blocks, FontConfig::default(), 2.0).unwrap();
+        let mut tree = Tree::new();
+        let changes = tree.update(&root).unwrap();
+        let mut layout = Layout::new(2.0);
+        layout.update(&tree, &changes);
+        layout.compute(&tree, Some(400.0), None, &mut font);
+        // The picture of 5, twice as wide as high; none of 6.
+        let pictures = Pictures::from([(
+            5,
+            Picture {
+                id: PictureId(9),
+                size: (400, 200),
+            },
+        )]);
+        let items = paint(
+            &tree,
+            &layout,
+            &mut font,
+            &Theme::builtin().dark.tokens,
+            (10.0, 0.0),
+            Shown {
+                pictures: &pictures,
+                ..shown(true, None)
+            },
+        );
+        let drawn: Vec<(Rect, PictureId)> = items
+            .iter()
+            .filter_map(|item| match item {
+                Item::Picture { rect, picture } => Some((*rect, *picture)),
+                _ => None,
+            })
+            .collect();
+        // Its box of 200 pixels a side, the picture 200 by 100 in its middle.
+        assert_eq!(
+            drawn,
+            [(
+                Rect {
+                    x: 10,
+                    y: 50,
+                    width: 200,
+                    height: 100
+                },
+                PictureId(9)
+            )]
+        );
+    }
+
     fn painted(
         root: &Node,
         scale: f32,
@@ -2303,6 +2408,7 @@ mod tests {
                     lists: &Lists::new(),
                     motion: None,
                     fills: Fills::All,
+                    pictures: &crate::paint::NO_PICTURES,
                 },
             )
         };
@@ -2469,6 +2575,7 @@ mod tests {
                     lists: &Lists::new(),
                     motion: None,
                     fills: Fills::All,
+                    pictures: &crate::paint::NO_PICTURES,
                 },
             )
         };
@@ -2547,6 +2654,7 @@ mod tests {
                     lists: &Lists::new(),
                     motion: None,
                     fills: Fills::All,
+                    pictures: &crate::paint::NO_PICTURES,
                 },
             )
         };
@@ -2648,6 +2756,7 @@ mod tests {
                     lists: &Lists::new(),
                     motion: None,
                     fills: Fills::All,
+                    pictures: &crate::paint::NO_PICTURES,
                 },
             );
             let mut fills = Vec::new();
@@ -2774,6 +2883,7 @@ mod tests {
                 lists: &Lists::new(),
                 motion: None,
                 fills: Fills::All,
+                pictures: &crate::paint::NO_PICTURES,
             },
         );
         (tree, layout, items)
@@ -2887,6 +2997,7 @@ mod tests {
                     lists,
                     motion: None,
                     fills: Fills::All,
+                    pictures: &crate::paint::NO_PICTURES,
                 },
             )
         };
@@ -3024,6 +3135,7 @@ mod tests {
                 lists: &lists,
                 motion: None,
                 fills: Fills::All,
+                pictures: &crate::paint::NO_PICTURES,
             },
         );
         let shapes: Vec<Shape> = items
@@ -3106,6 +3218,7 @@ mod tests {
                     lists: &lists,
                     motion: None,
                     fills: Fills::All,
+                    pictures: &crate::paint::NO_PICTURES,
                 },
             )
             .into_iter()
@@ -3548,6 +3661,7 @@ mod tests {
                 lists: &Lists::new(),
                 motion: Some((&animations, now)),
                 fills: Fills::All,
+                pictures: &crate::paint::NO_PICTURES,
             },
         );
         let xs: Vec<i32> = items
@@ -3628,6 +3742,7 @@ mod tests {
                     lists: &Lists::new(),
                     motion: Some((&animations, now)),
                     fills: Fills::All,
+                    pictures: &crate::paint::NO_PICTURES,
                 },
             )
         };
@@ -3730,6 +3845,7 @@ mod tests {
                     lists: &Lists::new(),
                     motion: Some((animations, start + Duration::from_millis(ms))),
                     fills: Fills::All,
+                    pictures: &crate::paint::NO_PICTURES,
                 },
             );
             items
@@ -3884,6 +4000,7 @@ mod tests {
                     lists: &Lists::new(),
                     motion: Some((animations, start + Duration::from_millis(ms))),
                     fills: Fills::All,
+                    pictures: &crate::paint::NO_PICTURES,
                 },
             );
             let mut shapes = Vec::new();
@@ -3990,6 +4107,7 @@ mod tests {
                 lists: &lists,
                 motion: None,
                 fills: Fills::All,
+                pictures: &crate::paint::NO_PICTURES,
             },
         );
         let glyphs: usize = items

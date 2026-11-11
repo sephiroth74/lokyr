@@ -1835,3 +1835,40 @@ fn a_save_shows_its_panel_one_at_a_time_of_a_window_and_its_end_is_heard() {
     assert!(host.command(&mut failing, "probe.go", Args::new()).is_err());
     assert!(host.saves().is_empty());
 }
+
+#[test]
+fn a_kept_image_s_id_is_kept_four_at_most_and_let_go_as_the_plugin_asks() {
+    let mut host = FakeHost::new("acme/probe").with_capabilities(Vec::new());
+    let ids = Rc::new(RefCell::new(Vec::new()));
+    let kept = Rc::clone(&ids);
+    let mut probe = Probe::new(move |cx, _| {
+        let image = cx.render_image(crate::image::ImageSpec {
+            rows: vec![crate::image::CellRow::default()],
+            keep: true,
+            ..crate::image::ImageSpec::default()
+        })?;
+        kept.borrow_mut().push(image.id.unwrap());
+        Ok(())
+    });
+    for _ in 0..5 {
+        host.command(&mut probe, "probe.go", Args::new()).unwrap();
+    }
+    let ids = ids.borrow().clone();
+    assert_eq!(host.kept_images(), &ids[1..]);
+    let last = ids[4];
+    let mut dropper = Probe::new(move |cx, _| cx.drop_image(last));
+    host.command(&mut dropper, "probe.go", Args::new()).unwrap();
+    assert_eq!(host.kept_images(), &ids[1..4]);
+    // Not kept, of no id.
+    let mut plain = Probe::new(|cx, _| {
+        let image = cx.render_image(crate::image::ImageSpec {
+            rows: vec![crate::image::CellRow::default()],
+            ..crate::image::ImageSpec::default()
+        })?;
+        assert_eq!(image.id, None);
+        Ok(())
+    });
+    host.command(&mut plain, "probe.go", Args::new()).unwrap();
+    // A node of one, as a snapshot writes it.
+    assert_eq!(snapshot(&Node::image(7)), "image 7\n");
+}

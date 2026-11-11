@@ -1085,6 +1085,7 @@ impl<B: Backend> App<B> {
             tokens,
             room,
             (chrome_dark, focused_node, now),
+            &self.pictures,
         );
         // Under an opaque titlebar, the chrome in its band goes over it, of
         // its colors' own opacity, rather than knocking it out to the

@@ -4,7 +4,7 @@
 //! chrome places them, and painted over the panes in the window's one
 //! drawable, of the theme's tokens.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::time::Instant;
 
@@ -22,6 +22,7 @@ use lokyr_ui_core::chrome::{self, Heights, Regions, TabBarPlace};
 use lokyr_ui_core::focus::Target;
 use lokyr_ui_core::font::Font;
 use lokyr_ui_core::layout::{Frame, Room};
+use lokyr_ui_core::paint::{NO_PICTURES, Pictures};
 use lokyr_ui_core::panel::{self, Panels};
 use lokyr_ui_core::pointer::NodeEvent;
 use lokyr_ui_core::progress::{self, FillArea, SweepArea};
@@ -598,6 +599,7 @@ pub(super) fn paint<F: FontBackend>(
     tokens: &Tokens,
     room: (f32, f32),
     (dark, focused, now): (bool, Option<(u32, NodeId)>, Instant),
+    pictures: &BTreeMap<String, Pictures>,
 ) -> Vec<Item> {
     chrome
         .iter()
@@ -609,6 +611,7 @@ pub(super) fn paint<F: FontBackend>(
                 tokens,
                 ((frame.x, frame.y), room),
                 (dark, focused, now),
+                pictures.get(&view.plugin).unwrap_or(&NO_PICTURES),
             )
         })
         .collect()

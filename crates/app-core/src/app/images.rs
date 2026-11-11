@@ -2,12 +2,15 @@
 //! a pane, in the theme's colors and the terminal's font, drawn offscreen
 //! by the windows' renderer, and written as a PNG.
 
+use std::collections::BTreeMap;
+
 use lokyr_kernel::config::Padding;
 use lokyr_kernel::plugins::host::Bytes;
-use lokyr_kernel::plugins::image::{MOST_PIXELS, MOST_SIDE};
+use lokyr_kernel::plugins::image::{MOST_KEPT, MOST_PIXELS, MOST_SIDE};
 use lokyr_kernel::plugins::{self, Image, ImageSpec};
 use lokyr_render_core::Renderer;
 use lokyr_ui_core::image::{compose, terminal};
+use lokyr_ui_core::paint::{Picture, Pictures};
 use lokyr_ui_core::pane::TextLook;
 use lokyr_vt_core::terminal::{Colors, Snapshot};
 use lokyr_vt_core::unicode::Widths;
@@ -19,6 +22,9 @@ use crate::drawing::{Backend, Drawing};
 pub struct ImagePainter<'a, B: Backend> {
     /// The app's drawing, if it draws.
     pub drawing: Option<&'a mut Drawing<B>>,
+    /// The pictures of the images that the app keeps of each plugin's, and
+    /// the id of the last that it kept.
+    pub kept: (&'a mut BTreeMap<String, Pictures>, &'a mut u64),
     /// The terminal's colors of the appearance in force.
     pub colors: &'a Colors,
     /// How the terminal counts the cells of text.
@@ -33,7 +39,7 @@ pub struct ImagePainter<'a, B: Backend> {
 }
 
 impl<B: Backend> plugins::Images for ImagePainter<'_, B> {
-    fn render(&mut self, image: &ImageSpec) -> Result<Image, String> {
+    fn render(&mut self, plugin: &str, image: &ImageSpec) -> Result<Image, String> {
         let drawing = self
             .drawing
             .as_deref_mut()
@@ -79,12 +85,50 @@ impl<B: Backend> plugins::Images for ImagePainter<'_, B> {
             .read_back(&composed.list, width, height)
             .map_err(|error| error.to_string())?
             .ok_or("the renderer reads no image back")?;
+        // A picture of it that the renderer keeps, for its plugin's views,
+        // the oldest of the plugin's let go past the most.
+        let id = if image.keep {
+            let picture = renderer
+                .make_picture(&composed.list, width, height)
+                .map_err(|error| error.to_string())?
+                .ok_or("the renderer keeps no picture")?;
+            let (kept, last) = &mut self.kept;
+            **last += 1;
+            let pictures = kept.entry(plugin.to_owned()).or_default();
+            pictures.insert(
+                **last,
+                Picture {
+                    id: picture,
+                    size: (width, height),
+                },
+            );
+            while pictures.len() > MOST_KEPT {
+                if let Some((_, oldest)) = pictures.pop_first() {
+                    renderer.drop_picture(oldest.id);
+                }
+            }
+            Some(**last)
+        } else {
+            None
+        };
         Ok(Image {
             png: Bytes(png(pixels, (width, height), scale)?),
             width,
             height,
             scale,
+            id,
         })
+    }
+
+    fn drop_image(&mut self, plugin: &str, id: u64) {
+        let dropped = self
+            .kept
+            .0
+            .get_mut(plugin)
+            .and_then(|pictures| pictures.remove(&id));
+        if let (Some(dropped), Some(drawing)) = (dropped, self.drawing.as_deref_mut()) {
+            drawing.renderer.drop_picture(dropped.id);
+        }
     }
 }
 

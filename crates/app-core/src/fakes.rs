@@ -47,6 +47,10 @@ impl Backend for Gpu {
 #[derive(Debug, Default)]
 pub(crate) struct Renderer {
     pub(crate) frames: usize,
+    /// How many pictures it made.
+    pub(crate) pictures: u64,
+    /// The pictures let go, in order.
+    pub(crate) dropped: Vec<lokyr_render_core::PictureId>,
 }
 
 impl lokyr_render_core::Renderer for Renderer {
@@ -65,6 +69,21 @@ impl lokyr_render_core::Renderer for Renderer {
 
     fn drawing_from(&mut self) -> Option<u64> {
         None
+    }
+
+    /// A picture of none of the list's pixels, of a number of its own.
+    fn make_picture(
+        &mut self,
+        _list: &DisplayList,
+        _width: u32,
+        _height: u32,
+    ) -> Result<Option<lokyr_render_core::PictureId>, String> {
+        self.pictures += 1;
+        Ok(Some(lokyr_render_core::PictureId(self.pictures)))
+    }
+
+    fn drop_picture(&mut self, picture: lokyr_render_core::PictureId) {
+        self.dropped.push(picture);
     }
 
     /// The pixels of a list drawn offscreen: clear ones.

@@ -224,6 +224,10 @@ impl Symbols {
             Response::Reading(_) => Response::Reading(0),
             Response::Searching(_) => Response::Searching(0),
             Response::Asking(_) => Response::Asking(0),
+            Response::Image(image) => Response::Image(lokyr_plugin_sdk::image::Image {
+                id: image.id.map(|_| 0),
+                ..image
+            }),
             Response::Timer(id) => Response::Timer(self.timer(id)),
             Response::Window(window) => Response::Window(window.map(|id| self.window(id))),
             Response::Pane(pane) => Response::Pane(pane.map(|id| self.pane(id))),
@@ -489,11 +493,14 @@ impl Clipboard for Board {
 struct Blank;
 
 impl Images for Blank {
-    fn render(&mut self, image: &ImageSpec) -> Result<Image, String> {
-        Ok(Image::blank(
-            image.scale.unwrap_or(lokyr_plugin_sdk::fake::SCALE),
-        ))
+    fn render(&mut self, _: &str, image: &ImageSpec) -> Result<Image, String> {
+        let mut rendered = Image::blank(image.scale.unwrap_or(lokyr_plugin_sdk::fake::SCALE));
+        // An id of its own, which the trace tells as 0, as the fake's.
+        rendered.id = image.keep.then_some(1);
+        Ok(rendered)
     }
+
+    fn drop_image(&mut self, _: &str, _: u64) {}
 }
 
 /// The grid of the kernel's host's panes.
@@ -1000,11 +1007,12 @@ fn kind(request: &Request) -> usize {
         Request::ScreenCells(_) => 96,
         Request::SetClipboardImage(_) => 97,
         Request::SaveFile { .. } => 98,
+        Request::DropImage(_) => 99,
     }
 }
 
 /// How many kinds of requests the plugin API has.
-const KINDS: usize = 99;
+const KINDS: usize = 100;
 
 #[test]
 fn the_scenarios_hold_every_request_of_the_plugin_api() {

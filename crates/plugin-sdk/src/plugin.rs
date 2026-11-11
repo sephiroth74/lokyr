@@ -602,6 +602,12 @@ impl<'a> Cx<'a> {
         }
     }
 
+    /// Lets go the image `id` that the host keeps, as this call returns,
+    /// whose views' nodes then show nothing.
+    pub fn drop_image(&mut self, id: u64) -> Result<(), Error> {
+        self.done(Request::DropImage(id))
+    }
+
     /// The cells of `pane`'s selection, if it has one, as an image draws
     /// them: of each row the columns that it takes.
     pub fn selection_cells(

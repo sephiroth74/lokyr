@@ -32,7 +32,7 @@ export type Cx = {
     run_command: (name: string, args: { [string]: Value }?) -> (true?, string?, number?),
     clipboard_text: () -> (string?, string?, number?),
     set_clipboard_text: (text: string) -> (true?, string?, number?),
-    set_clipboard_image: (bytes: string | buffer) -> (true?, string?, number?),
+    set_clipboard_image: (png: string | buffer) -> (true?, string?, number?),
     save_file: (window: WindowId?, name: string, bytes: string | buffer) -> (number?, string?, number?),
     focused_window: () -> (WindowId?, string?, number?),
     focused_pane: () -> (PaneId?, string?, number?),
@@ -57,6 +57,7 @@ export type Cx = {
     selection_cells: (pane: PaneId) -> ({ CellRow }?, string?, number?),
     screen_cells: (pane: PaneId) -> ({ CellRow }?, string?, number?),
     render_image: (image: ImageSpec) -> (Image?, string?, number?),
+    drop_image: (image: number) -> (true?, string?, number?),
     decorate: (pane: PaneId, from: { number }, to: { number }, look: DecorationLook) -> (number?, string?, number?),
     undecorate: (pane: PaneId, id: number) -> (true?, string?, number?),
     mark_gutter: (pane: PaneId, row: number, color: { number }) -> (number?, string?, number?),
@@ -178,7 +179,7 @@ export type UiEvent =
     | { view: ViewId, key: string, kind: "list-range", first: number, count: number }
 
 export type Node = {
-    kind: "container" | "text" | "icon" | "spacer" | "field" | "button" | "toggle" | "separator" | "list" | "scroll" | "progress" | "tabs",
+    kind: "container" | "text" | "icon" | "spacer" | "field" | "button" | "toggle" | "separator" | "list" | "scroll" | "progress" | "tabs" | "image",
     key: Key?,
     layout: NodeLayout?,
     style: Style?,
@@ -204,6 +205,7 @@ export type Node = {
     tabs: { Tab }?,
     chosen: number?,
     distribution: Distribution?,
+    image: number?,
 }
 export type View = Node
 
@@ -414,6 +416,7 @@ export type Image = {
     width: number,
     height: number,
     scale: number,
+    id: number?,
 }
 
 export type ImageBackground =
@@ -430,6 +433,7 @@ export type ImageSpec = {
     padding: number?,
     background: ImageBackground?,
     scale: number?,
+    keep: boolean?,
 }
 
 export type Justify =

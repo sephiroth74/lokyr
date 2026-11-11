@@ -112,6 +112,7 @@ fn every() -> Node {
         progress,
         tabs,
         tab,
+        Node::image(1001),
     ];
     root
 }
@@ -140,6 +141,7 @@ const EVERY: &str = r#"{
         { kind = "tabs", tabs = { { label = "General" }, { label = "Keys", icon = "keyboard", disabled = true } },
           chosen = 1, distribution = "fill-equally", children = { { kind = "text", text = "page" } } },
         { kind = "text", key = "tab-3", text = "src", reorderable = true, carries = 3 },
+        { kind = "image", image = 1001 },
     },
 }"#;
 
@@ -162,6 +164,7 @@ fn a_view_s_nodes_are_flat_tables_of_their_kinds_fields_both_ways() {
         assert(button.kind == "button" and button.text == "Go" and button.disabled == true)
         assert(view.children[8].row.children[2].icon == "file")
         assert(view.children[11].children[1].text == "page")
+        assert(view.children[13].kind == "image" and view.children[13].image == 1001)
         -- A field of its default left out.
         assert(view.children[3].layout == nil and view.children[3].focusable == nil)
         "#,

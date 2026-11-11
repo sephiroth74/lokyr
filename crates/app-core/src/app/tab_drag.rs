@@ -320,12 +320,17 @@ impl<B: Backend> App<B> {
                 width: laid.width.round() as u32,
                 height: laid.height.round() as u32,
             }));
-            items.extend(view.surface.paint(
-                &mut drawing.font,
-                tokens,
-                (origin, room),
-                (dark, None, now),
-            ));
+            items.extend(
+                view.surface.paint(
+                    &mut drawing.font,
+                    tokens,
+                    (origin, room),
+                    (dark, None, now),
+                    self.pictures
+                        .get(&view.plugin)
+                        .unwrap_or(&lokyr_ui_core::paint::NO_PICTURES),
+                ),
+            );
             items.push(Item::PopClip);
         }
         let mut list = DisplayList {

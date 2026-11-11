@@ -302,6 +302,7 @@ fn images() -> Scenario {
         padding: 32.0,
         background: ImageBackground::Rgb(40, 44, 52),
         scale,
+        keep: false,
     };
     let rendered = |scale: Option<f32>| {
         (
@@ -338,6 +339,19 @@ fn images() -> Scenario {
             ..spec(None)
         }),
         rendered(Some(1.0)),
+        // Kept, by an id that the trace tells as 0, and let go.
+        (
+            Request::RenderImage(ImageSpec {
+                keep: true,
+                ..spec(Some(2.0))
+            }),
+            Response::Image(Image {
+                id: Some(0),
+                ..Image::blank(2.0)
+            }),
+        ),
+        (Request::DropImage(1), Response::Done),
+        (Request::DropImage(999), Response::Done),
     ];
     Scenario {
         name: "the images of cells, of no capability, bounded".to_owned(),

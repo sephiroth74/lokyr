@@ -281,11 +281,17 @@ pub trait Clipboard {
 /// What renders the images of cells that plugins ask for, the app's own
 /// way, as its windows draw their panes.
 pub trait Images {
-    /// The image of `image`'s cells, checked already, as a PNG: in the
-    /// theme's colors and the terminal's font, in its frame, at its scale or
-    /// the display's of the focused window; the error that tells why it
-    /// cannot be, as of an app that does not draw, or of an image too large.
-    fn render(&mut self, image: &ImageSpec) -> Result<Image, String>;
+    /// The image of `image`'s cells that `plugin` asks for, checked
+    /// already, as a PNG: in the theme's colors and the terminal's font, in
+    /// its frame, at its scale or the display's of the focused window, kept
+    /// by an id of the app's as it asks, the oldest of the plugin's let go
+    /// past [`MOST_KEPT`](lokyr_plugin_sdk::image::MOST_KEPT); the error
+    /// that tells why it cannot be, as of an app that does not draw, or of
+    /// an image too large.
+    fn render(&mut self, plugin: &str, image: &ImageSpec) -> Result<Image, String>;
+
+    /// Lets go `plugin`'s image `id`, if the app keeps it.
+    fn drop_image(&mut self, plugin: &str, id: u64);
 }
 
 /// What starts the programs of the panes that plugins open, the app's own
@@ -3703,6 +3709,7 @@ fn apply(writes: Vec<Write>, context: &mut Context<'_>, out: &mut Outbox, state:
         match write {
             Asked::SetClipboardText(text) => context.clipboard.set_text(&text),
             Asked::SetClipboardImage(png) => context.clipboard.set_image(&png.0),
+            Asked::DropImage(id) => context.images.drop_image(&state.name, id),
             Asked::SelectAll(id) => {
                 if let Some(pane) = pane(id) {
                     pane.select_all();
@@ -4894,7 +4901,7 @@ impl Host<'_, '_> {
                 Response::Image(
                     self.context
                         .images
-                        .render(&image)
+                        .render(&self.state.name, &image)
                         .map_err(|message| Error::new(Code::Unavailable, message))?,
                 )
             }

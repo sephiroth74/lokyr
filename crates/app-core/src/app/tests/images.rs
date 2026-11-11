@@ -7,6 +7,7 @@ use std::rc::Rc;
 
 use lokyr_kernel::commands::{Category, Code, Command};
 use lokyr_kernel::plugins::image::{CellRow, ImageSpec, MOST_COLUMNS, MOST_ROWS};
+use lokyr_kernel::plugins::view::Node;
 use lokyr_kernel::plugins::{Cx, Plugin};
 use lokyr_text_core::FontConfig;
 
@@ -141,4 +142,136 @@ fn an_image_is_refused_of_an_app_that_draws_nothing_and_past_the_most_pixels() {
         got.borrow_mut().drain(..).collect::<Vec<_>>(),
         [Err(Code::Unavailable)]
     );
+}
+
+/// What the plugin of [`Keeper`] got of its kept images, their ids.
+type Kept = Rc<RefCell<Vec<u64>>>;
+
+/// A plugin whose `keeper.keep` renders an image that the host keeps and
+/// opens a panel of its node, whose `keeper.drop` lets its last image go.
+struct Keeper {
+    kept: Kept,
+}
+
+impl Plugin for Keeper {
+    fn activate(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
+        for name in ["keeper.keep", "keeper.drop"] {
+            cx.register_command(Command {
+                name: name.to_owned(),
+                title: name.to_owned(),
+                category: Category::View,
+                capabilities: Vec::new(),
+                params: Vec::new(),
+                when: None,
+            })?;
+        }
+        Ok(())
+    }
+
+    fn on_command(&mut self, cx: &mut Cx<'_>, name: &str, _: Args) -> Result<(), Error> {
+        use lokyr_kernel::plugins::ui::{Anchor, Corner, PanelOptions, Role};
+        if name == "keeper.drop" {
+            let last = self.kept.borrow().last().copied();
+            return last.map_or(Ok(()), |id| cx.drop_image(id));
+        }
+        let image = cx.render_image(ImageSpec {
+            rows: vec![CellRow {
+                text: "ls".to_owned(),
+                runs: Vec::new(),
+            }],
+            keep: true,
+            ..ImageSpec::default()
+        })?;
+        self.kept
+            .borrow_mut()
+            .push(image.id.expect("a kept image's id"));
+        let window = cx.focused_window().expect("a focused window");
+        cx.open_panel(
+            "preview",
+            PanelOptions {
+                anchor: Anchor::WindowCorner {
+                    window,
+                    corner: Corner::TopLeft,
+                },
+                role: Role::Dialog,
+                close_outside: false,
+                close_escape: true,
+                takes_keys: false,
+            },
+        )
+    }
+
+    fn render(&mut self, _: &mut Cx<'_>, _: &lokyr_kernel::plugins::ui::ViewId) -> Option<Node> {
+        use lokyr_kernel::plugins::view::{Layout as Box, Length};
+        let id = *self.kept.borrow().last()?;
+        Some(Node::image(id).layout(Box {
+            width: Length::Points(120.0),
+            height: Length::Points(60.0),
+            ..Box::default()
+        }))
+    }
+}
+
+#[test]
+fn a_kept_image_s_node_draws_its_picture_and_the_picture_goes_as_it_is_let_go() {
+    let kept = Kept::default();
+    let plugin = Keeper {
+        kept: Rc::clone(&kept),
+    };
+    let drawing = Drawing::new(FontConfig::default()).unwrap();
+    let mut fake = Fake::new(2.0);
+    let mut app = App::new(Some(drawing), unpadded(), None)
+        .with_program(quiet())
+        .with_builtin(
+            "[plugin]\nname = \"lokyr/keeper\"\nkind = \"builtin\"\nlicense = \"MIT\"\n",
+            Box::new(plugin),
+        );
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    app.windows.get_mut(&window).unwrap().surface = Some(fakes::Surface::default());
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    let frames = |fake: &mut Fake, app: &mut App| {
+        for _ in 0..4 {
+            fake.send(app, window, WindowEvent::Frame);
+        }
+    };
+    frames(&mut fake, &mut app);
+    fake.send_app(&mut app, AppEvent::Command("keeper.keep".to_owned()));
+    frames(&mut fake, &mut app);
+    let pictures = |app: &App| -> Vec<lokyr_render_core::PictureId> {
+        app.windows[&window]
+            .shown
+            .as_ref()
+            .map(|shown| {
+                shown
+                    .items
+                    .iter()
+                    .filter_map(|item| match item {
+                        Item::Picture { picture, .. } => Some(*picture),
+                        _ => None,
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    let first = app.pictures["lokyr/keeper"][&kept.borrow()[0]].id;
+    assert_eq!(pictures(&app), [first]);
+    // Four more: the oldest let go past the most.
+    for _ in 0..4 {
+        fake.send_app(&mut app, AppEvent::Command("keeper.keep".to_owned()));
+    }
+    assert_eq!(app.pictures["lokyr/keeper"].len(), 4);
+    let dropped = |app: &App| app.drawing.as_ref().unwrap().renderer.dropped.clone();
+    assert_eq!(dropped(&app), [first]);
+    // Let go, its node draws nothing.
+    fake.send_app(&mut app, AppEvent::Command("keeper.drop".to_owned()));
+    frames(&mut fake, &mut app);
+    assert_eq!(app.pictures["lokyr/keeper"].len(), 3);
+    assert_eq!(dropped(&app).len(), 2);
+    assert!(pictures(&app).is_empty());
+    // The plugin taken away, its images go.
+    assert!(app.with_plugins(&mut fake, |plugins, cx| plugins.remove("lokyr/keeper", cx)));
+    app.after_plugins(&mut fake);
+    assert!(!app.pictures.contains_key("lokyr/keeper"));
+    assert_eq!(dropped(&app).len(), 5);
 }

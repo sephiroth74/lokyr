@@ -36,6 +36,7 @@ use lokyr_platform_core::{
 use lokyr_pty::Program;
 use lokyr_render_core::{Renderer, Surface as _};
 use lokyr_text_core::FontConfig;
+use lokyr_ui_core::paint::Pictures;
 use lokyr_ui_core::pane::TextLook;
 use lokyr_ui_core::theme::{self as ui_theme, Theme};
 use lokyr_vt_core::page::Budget;
@@ -688,6 +689,11 @@ pub struct App<B: Backend> {
     text_asks: BTreeMap<AlertId, (WindowId, String, u64)>,
     /// The saves that plugins asked, whose panels show, by their panels.
     saves: BTreeMap<SavePanelId, asks::Save>,
+    /// The pictures of the images that the app keeps of each plugin's, which
+    /// its views' nodes show, by the images' ids.
+    pictures: BTreeMap<String, Pictures>,
+    /// The id of the last image that the app kept.
+    last_image: u64,
     /// Where the windows of the workspace that a plugin's move of a tab
     /// opened go on the screens, until they show in the platform's.
     placing: BTreeMap<workspace::WindowId, ScreenPoint>,
@@ -881,6 +887,8 @@ impl<B: Backend> App<B> {
             part_asks: BTreeMap::new(),
             text_asks: BTreeMap::new(),
             saves: BTreeMap::new(),
+            pictures: BTreeMap::new(),
+            last_image: 0,
             placing: BTreeMap::new(),
             placing_size: None,
             tab_drag: None,
@@ -2769,6 +2777,7 @@ impl<B: Backend> App<B> {
         let saving = |window: workspace::WindowId| saves.values().any(|save| save.window == window);
         let mut images = images::ImagePainter {
             drawing: self.drawing.as_mut(),
+            kept: (&mut self.pictures, &mut self.last_image),
             colors: &self.theme.variant(dark).colors,
             widths: self.config.terminal.widths(),
             look: TextLook {
@@ -2976,6 +2985,22 @@ impl<B: Backend> App<B> {
         }
         // A window that shows a view rendered anew draws it.
         self.frame_rendered(platform);
+        // The images that plugins that stopped kept go, of their pictures.
+        let plugins = &self.plugins;
+        let stopped: Vec<String> = self
+            .pictures
+            .keys()
+            .filter(|plugin| plugins.status(plugin) != Some(plugins::Status::Active))
+            .cloned()
+            .collect();
+        for plugin in stopped {
+            let gone = self.pictures.remove(&plugin).unwrap_or_default();
+            if let Some(drawing) = &mut self.drawing {
+                for picture in gone.values() {
+                    drawing.renderer.drop_picture(picture.id);
+                }
+            }
+        }
         // A plugin's state that could not be written goes to the log.
         for fault in self.plugins.take_faults() {
             eprintln!("lokyr: {fault}");

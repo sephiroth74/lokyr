@@ -483,13 +483,15 @@ impl Surface {
     /// The display list of the surface, from `origin` in the window's
     /// pixels, of `tokens`' colors, of the dark appearance or the light
     /// one, of the focus's ring around `focused`, of its transitions at
-    /// `now`: its nodes, then its tooltip, within the window's `room`.
+    /// `now`, of its plugin's `pictures`: its nodes, then its tooltip,
+    /// within the window's `room`.
     pub fn paint<B: FontBackend>(
         &self,
         font: &mut Font<B>,
         tokens: &Tokens,
         (origin, room): ((f32, f32), (f32, f32)),
         (dark, focused, now): (bool, Option<NodeId>, Instant),
+        pictures: &paint::Pictures,
     ) -> Vec<Item> {
         let mut items = paint::paint(
             &self.tree,
@@ -516,6 +518,7 @@ impl Surface {
                 } else {
                     paint::Fills::All
                 },
+                pictures,
             },
         );
         if let Some((text, at)) = self.tooltip.shown(&self.tree) {

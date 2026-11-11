@@ -702,7 +702,12 @@ fn leaf(kind: &Kind, typeset: Typeset) -> Option<Leaf> {
         },
         Kind::Separator => Content::Separator,
         Kind::Progress(progress) => Content::Progress(progress.shape),
-        Kind::Container | Kind::Spacer | Kind::List(_) | Kind::Scroll | Kind::Tabs(_) => {
+        Kind::Container
+        | Kind::Spacer
+        | Kind::List(_)
+        | Kind::Scroll
+        | Kind::Tabs(_)
+        | Kind::Image(_) => {
             return None;
         }
     };

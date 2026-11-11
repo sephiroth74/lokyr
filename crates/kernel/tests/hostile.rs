@@ -48,9 +48,11 @@ impl Panes for NoPanes {
 struct Blank;
 
 impl Images for Blank {
-    fn render(&mut self, image: &ImageSpec) -> Result<Image, String> {
+    fn render(&mut self, _: &str, image: &ImageSpec) -> Result<Image, String> {
         Ok(Image::blank(image.scale.unwrap_or(2.0)))
     }
+
+    fn drop_image(&mut self, _: &str, _: u64) {}
 }
 
 /// What the host of the tests reaches: no window.

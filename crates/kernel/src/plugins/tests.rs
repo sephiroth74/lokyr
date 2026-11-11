@@ -128,15 +128,27 @@ impl Clipboard for Board {
 pub(super) struct Painter {
     pub(super) asked: Vec<ImageSpec>,
     pub(super) failure: Option<String>,
+    /// The images kept, each its plugin and its id.
+    pub(super) kept: Vec<(String, u64)>,
 }
 
 impl Images for Painter {
-    fn render(&mut self, image: &ImageSpec) -> Result<Image, String> {
+    fn render(&mut self, plugin: &str, image: &ImageSpec) -> Result<Image, String> {
         self.asked.push(image.clone());
-        match &self.failure {
-            Some(failure) => Err(failure.clone()),
-            None => Ok(Image::blank(image.scale.unwrap_or(2.0))),
+        if let Some(failure) = &self.failure {
+            return Err(failure.clone());
         }
+        let mut rendered = Image::blank(image.scale.unwrap_or(2.0));
+        if image.keep {
+            let id = 900 + self.kept.len() as u64;
+            self.kept.push((plugin.to_owned(), id));
+            rendered.id = Some(id);
+        }
+        Ok(rendered)
+    }
+
+    fn drop_image(&mut self, plugin: &str, id: u64) {
+        self.kept.retain(|kept| *kept != (plugin.to_owned(), id));
     }
 }
 

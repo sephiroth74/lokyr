@@ -937,7 +937,13 @@ impl View {
         let mut items = Vec::new();
         for (id, surface, frame) in self.placed() {
             let at = (origin.0 + frame.x, origin.1 + frame.y);
-            items.extend(surface.paint(font, tokens, (at, room), (dark, focus_of(id), now)));
+            items.extend(surface.paint(
+                font,
+                tokens,
+                (at, room),
+                (dark, focus_of(id), now),
+                &lokyr_ui_core::paint::NO_PICTURES,
+            ));
         }
         for panel in self.panels.order() {
             let (Some(frame), Some(surface)) = (self.panels.frame(panel), self.surface(panel))
@@ -945,7 +951,13 @@ impl View {
                 continue;
             };
             let at = (origin.0 + frame.x, origin.1 + frame.y);
-            items.extend(surface.paint(font, tokens, (at, room), (dark, focus_of(panel), now)));
+            items.extend(surface.paint(
+                font,
+                tokens,
+                (at, room),
+                (dark, focus_of(panel), now),
+                &lokyr_ui_core::paint::NO_PICTURES,
+            ));
         }
         items
     }
