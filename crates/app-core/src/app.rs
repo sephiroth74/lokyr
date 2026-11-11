@@ -694,6 +694,9 @@ pub struct App<B: Backend> {
     pictures: BTreeMap<String, Pictures>,
     /// The id of the last image that the app kept.
     last_image: u64,
+    /// What the app keeps from idle sleep, as the platform last took it,
+    /// with its assertion's name.
+    awake: (host::Awake, String),
     /// Where the windows of the workspace that a plugin's move of a tab
     /// opened go on the screens, until they show in the platform's.
     placing: BTreeMap<workspace::WindowId, ScreenPoint>,
@@ -889,6 +892,7 @@ impl<B: Backend> App<B> {
             saves: BTreeMap::new(),
             pictures: BTreeMap::new(),
             last_image: 0,
+            awake: (host::Awake::Off, String::new()),
             placing: BTreeMap::new(),
             placing_size: None,
             tab_drag: None,
@@ -2985,6 +2989,26 @@ impl<B: Backend> App<B> {
         }
         // A window that shows a view rendered anew draws it.
         self.frame_rendered(platform);
+        // The Mac kept awake as the active plugins ask, the strongest of
+        // them, of an assertion that names them; let sleep as the last lets
+        // go or stops.
+        let (awake, asking) = self.plugins.keep_awake();
+        let reason = if asking.is_empty() {
+            String::new()
+        } else {
+            format!("Lokyr, kept awake by {}", asking.join(", "))
+        };
+        if (awake, &reason) != (self.awake.0, &self.awake.1) {
+            platform.keep_awake(
+                match awake {
+                    host::Awake::Off => lokyr_platform_core::Awake::Off,
+                    host::Awake::System => lokyr_platform_core::Awake::System,
+                    host::Awake::Display => lokyr_platform_core::Awake::Display,
+                },
+                &reason,
+            );
+            self.awake = (awake, reason);
+        }
         // The images that plugins that stopped kept go, of their pictures.
         let plugins = &self.plugins;
         let stopped: Vec<String> = self

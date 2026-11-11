@@ -33,6 +33,7 @@ export type Cx = {
     clipboard_text: () -> (string?, string?, number?),
     set_clipboard_text: (text: string) -> (true?, string?, number?),
     set_clipboard_image: (png: string | buffer) -> (true?, string?, number?),
+    keep_awake: (awake: Awake) -> (true?, string?, number?),
     save_file: (window: WindowId?, name: string, bytes: string | buffer) -> (number?, string?, number?),
     focused_window: () -> (WindowId?, string?, number?),
     focused_pane: () -> (PaneId?, string?, number?),
@@ -273,6 +274,8 @@ export type TestHost = {
     -- The ids of the images that the host keeps of the plugin's, the oldest
     -- first.
     kept_images: () -> { number },
+    -- What the plugin keeps from idle sleep.
+    awake: () -> Awake,
 }
 
 export type AgentState =
@@ -294,6 +297,11 @@ export type Anchor =
     | { pane_corner: { pane: PaneId, corner: Corner } }
     | { pane_top: PaneId }
     | { window_corner: { window: WindowId, corner: Corner } }
+
+export type Awake =
+    | "off"
+    | "system"
+    | "display"
 
 export type BarPlace =
     | "titlebar"

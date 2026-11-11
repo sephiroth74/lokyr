@@ -422,6 +422,8 @@ struct State {
     gutter_marks: BTreeMap<u64, host::PaneId>,
     /// The panes where it shows a cursor of its own.
     held_cursors: BTreeSet<host::PaneId>,
+    /// What it keeps from idle sleep, which the app holds as it is active.
+    awake: host::Awake,
     /// The quick windows that it opened, which close as it stops.
     quick_windows: Vec<WindowId>,
     /// Its calls on the main thread that took long, since the last look:
@@ -1384,6 +1386,7 @@ impl Plugins {
                 decorations: BTreeMap::new(),
                 gutter_marks: BTreeMap::new(),
                 held_cursors: BTreeSet::new(),
+                awake: host::Awake::Off,
                 quick_windows: Vec::new(),
                 slow: Vec::new(),
                 fault: None,
@@ -1956,6 +1959,28 @@ impl Plugins {
             }));
         }
         items
+    }
+
+    /// What the active plugins keep from idle sleep: the strongest that one
+    /// asks, and the names of those that ask anything, in their order.
+    pub fn keep_awake(&self) -> (host::Awake, Vec<&str>) {
+        let asking: Vec<&Entry> = self
+            .entries
+            .iter()
+            .filter(|entry| {
+                entry.state.status == Status::Active && entry.state.awake != host::Awake::Off
+            })
+            .collect();
+        let strongest = asking
+            .iter()
+            .map(|entry| entry.state.awake)
+            .max()
+            .unwrap_or_default();
+        let names = asking
+            .iter()
+            .map(|entry| entry.state.name.as_str())
+            .collect();
+        (strongest, names)
     }
 
     /// The fade of the panes that have not their tab's keyboard, toward their
@@ -3500,6 +3525,7 @@ fn clear_leftovers(state: &mut State, context: &mut Context<'_>, out: &mut Outbo
         }
     }
     release_cursors(state, context.workspace);
+    state.awake = host::Awake::Off;
     for id in std::mem::take(&mut state.panels).into_keys() {
         out.requests.push(Request::ClosePanel {
             plugin: state.name.clone(),
@@ -3709,6 +3735,7 @@ fn apply(writes: Vec<Write>, context: &mut Context<'_>, out: &mut Outbox, state:
         match write {
             Asked::SetClipboardText(text) => context.clipboard.set_text(&text),
             Asked::SetClipboardImage(png) => context.clipboard.set_image(&png.0),
+            Asked::KeepAwake(awake) => state.awake = awake,
             Asked::DropImage(id) => context.images.drop_image(&state.name, id),
             Asked::SelectAll(id) => {
                 if let Some(pane) = pane(id) {

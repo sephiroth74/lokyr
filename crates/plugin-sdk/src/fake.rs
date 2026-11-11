@@ -458,6 +458,8 @@ pub struct FakeHost {
     /// The ids of the images that the host keeps of the plugin's, the
     /// oldest first.
     kept: Vec<u64>,
+    /// What the plugin keeps from idle sleep.
+    awake: host::Awake,
     font_size: f32,
     missing: Vec<String>,
     config: Data,
@@ -544,6 +546,7 @@ impl FakeHost {
             saves: BTreeMap::new(),
             saved: BTreeMap::new(),
             kept: Vec::new(),
+            awake: host::Awake::Off,
             font_size: 13.0,
             missing: Vec::new(),
             config: Data::Map(BTreeMap::new()),
@@ -827,6 +830,11 @@ impl FakeHost {
     /// its views' nodes show, the oldest first.
     pub fn kept_images(&self) -> &[u64] {
         &self.kept
+    }
+
+    /// What the plugin keeps from idle sleep, as the host would hold it.
+    pub fn awake(&self) -> host::Awake {
+        self.awake
     }
 
     /// Gives the text `size`, in points, as its reads tell it.
@@ -1343,6 +1351,7 @@ impl FakeHost {
                 self.clipboard = None;
             }
             Request::DropImage(id) => self.kept.retain(|kept| kept != id),
+            Request::KeepAwake(awake) => self.awake = *awake,
             Request::ShowCursor { pane, at } => {
                 if let Some(pane) = self.panes.get_mut(pane) {
                     pane.held_cursor = *at;

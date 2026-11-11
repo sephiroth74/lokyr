@@ -7,8 +7,8 @@ use std::rc::{Rc, Weak};
 use std::time::{Duration, Instant, SystemTime};
 
 use lokyr_platform_core::{
-    AboutPanel, Alert, AlertId, AppEvent, Appearance, Backdrop, ContentRect, ContextMenu, Error,
-    Fill, GlobalKey, Layer, LayerPlace, MainMenu, MenuRole, Platform, Point, PointerArea,
+    AboutPanel, Alert, AlertId, AppEvent, Appearance, Awake, Backdrop, ContentRect, ContextMenu,
+    Error, Fill, GlobalKey, Layer, LayerPlace, MainMenu, MenuRole, Platform, Point, PointerArea,
     PointerShape, QuickPlace, SavePanelId, ScreenPoint, ScreenRect, Scrollers, Shortcut, Size,
     Sweep, Target, TimerId, Titlebar, Usage, Waker, WindowAttributes, WindowEvent, WindowHandle,
     WindowId, WindowSize,
@@ -23,6 +23,7 @@ use objc2_app_kit::{
 use objc2_foundation::{NSData, NSLocale, NSPoint, NSString, NSTimer};
 use raw_window_handle::{AppKitWindowHandle, RawWindowHandle};
 
+use crate::awake::KeptAwake;
 use crate::drag_image::DragImage;
 use crate::global_keys::GlobalKeys;
 use crate::menu::MenuTarget;
@@ -82,6 +83,8 @@ pub(crate) struct Backend {
     /// The secure entry of the keyboard, which turns off as the backend
     /// goes.
     secure: SecureInput,
+    /// The power assertion that keeps the Mac awake, as the app asks.
+    kept_awake: KeptAwake,
     /// The keys that the app takes from every app, which the system gets
     /// back as the backend goes.
     global_keys: GlobalKeys,
@@ -111,6 +114,7 @@ impl Backend {
             stopped: false,
             notifier: None,
             secure: SecureInput::default(),
+            kept_awake: KeptAwake::default(),
             global_keys: GlobalKeys::new(shared),
             updates: Updates::default(),
             drag_image: None,
@@ -783,6 +787,10 @@ impl Platform for Backend {
         let pasteboard = NSPasteboard::generalPasteboard();
         pasteboard.clearContents();
         pasteboard.setData_forType(Some(&NSData::with_bytes(png)), kind);
+    }
+
+    fn keep_awake(&mut self, awake: Awake, reason: &str) {
+        self.kept_awake.set(awake, reason);
     }
 
     fn show_save_panel(&mut self, window: WindowId, name: &str) -> SavePanelId {

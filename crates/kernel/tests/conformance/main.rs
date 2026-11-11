@@ -1008,11 +1008,12 @@ fn kind(request: &Request) -> usize {
         Request::SetClipboardImage(_) => 97,
         Request::SaveFile { .. } => 98,
         Request::DropImage(_) => 99,
+        Request::KeepAwake(_) => 100,
     }
 }
 
 /// How many kinds of requests the plugin API has.
-const KINDS: usize = 100;
+const KINDS: usize = 101;
 
 #[test]
 fn the_scenarios_hold_every_request_of_the_plugin_api() {

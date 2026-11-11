@@ -23,11 +23,11 @@ use std::collections::BTreeMap;
 use lokyr_plugin_sdk::command::{Args, Capability, Category, Code, Command, Error, Value};
 use lokyr_plugin_sdk::event::WorkspaceEvent;
 use lokyr_plugin_sdk::host::{
-    BarPlace, Binding, Bytes, Color, CommandInfo, DecorationLook, Direction, Edge, LEAST_DELAY,
-    Layout, Line, LineText, MOST_DELAY, MOST_SEARCHES, MOST_STATE, MOST_TIMERS, MOST_WRITES,
-    MenuItem, MenuPlace, PaneId, QuickLength, QuickPlace, ScreenPoint, Scroll, SearchMatch,
-    SearchQuery, SelectionKind, ShellCommand, Side, StyleRun, TabId, TabInfo, TextStyle, Underline,
-    Viewport, WindowId, WindowInfo, check_file_name,
+    Awake, BarPlace, Binding, Bytes, Color, CommandInfo, DecorationLook, Direction, Edge,
+    LEAST_DELAY, Layout, Line, LineText, MOST_DELAY, MOST_SEARCHES, MOST_STATE, MOST_TIMERS,
+    MOST_WRITES, MenuItem, MenuPlace, PaneId, QuickLength, QuickPlace, ScreenPoint, Scroll,
+    SearchMatch, SearchQuery, SelectionKind, ShellCommand, Side, StyleRun, TabId, TabInfo,
+    TextStyle, Underline, Viewport, WindowId, WindowInfo, check_file_name,
 };
 use lokyr_plugin_sdk::image::{
     CellRow, IMAGES_BOUND, Image, ImageBackground, ImageSpec, MOST_IMAGES,
@@ -191,8 +191,43 @@ pub fn all(world: &World) -> Vec<Scenario> {
         bounds(world),
         images(),
         cells_and_saves(world),
+        awake(true),
+        awake(false),
         core_actions(world),
     ]
+}
+
+/// The Mac kept awake, of `keep-awake`, when `allowed`: the system and the
+/// display, the system alone, and let sleep; refused of a plugin that
+/// lacks the capability.
+fn awake(allowed: bool) -> Scenario {
+    let answer = || {
+        if allowed {
+            Response::Done
+        } else {
+            failed(
+                Code::MissingCapability,
+                "the plugin `acme/conformer` lacks the capability `keep-awake`",
+            )
+        }
+    };
+    Scenario {
+        name: format!(
+            "the Mac kept awake, {} `keep-awake`",
+            if allowed { "of" } else { "without" }
+        ),
+        capabilities: Some(if allowed {
+            vec![Capability::KeepAwake]
+        } else {
+            Vec::new()
+        }),
+        subscriptions: Vec::new(),
+        steps: vec![ask(vec![
+            (Request::KeepAwake(Awake::Display), answer()),
+            (Request::KeepAwake(Awake::System), answer()),
+            (Request::KeepAwake(Awake::Off), answer()),
+        ])],
+    }
 }
 
 /// The cells of a pane, an image on the clipboard and a file's save: the

@@ -70,6 +70,7 @@ consent-capability-workspace-write = open, close and move windows, tabs and pane
 consent-capability-pane-view = scroll and select in the panes, clear them, and change the tabs' titles and colors
 consent-capability-decorate = draw over the panes' text
 consent-capability-pointer-read = see where the pointer is over the panes
+consent-capability-keep-awake = keep the Mac and its display awake, which keeps the screen from locking and uses the battery
 permissions-unread = The decisions on the plugins' capabilities do not read, and none applies: { $error }
 
 # The credits of the About panel, under the version and the copyright: the

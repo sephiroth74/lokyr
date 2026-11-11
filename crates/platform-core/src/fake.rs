@@ -9,8 +9,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant, SystemTime};
 
 use crate::{
-    AboutPanel, Alert, AlertId, AppEvent, Appearance, Backdrop, ContentRect, ContextMenu, Error,
-    Fill, GlobalKey, Handler, Layer, LayerPlace, MainMenu, Platform, Point, PointerArea,
+    AboutPanel, Alert, AlertId, AppEvent, Appearance, Awake, Backdrop, ContentRect, ContextMenu,
+    Error, Fill, GlobalKey, Handler, Layer, LayerPlace, MainMenu, Platform, Point, PointerArea,
     PointerShape, QuickPlace, SavePanelId, ScreenPoint, ScreenRect, Scrollers, Shortcut, Size,
     Sweep, Target, TargetKind, TimerId, Titlebar, ToolLink, Usage, Waker, WindowAttributes,
     WindowEvent, WindowHandle, WindowId, WindowSize,
@@ -228,6 +228,8 @@ pub struct Fake {
     clipboard: Option<String>,
     /// The image on the clipboard, a PNG, which takes its text's place.
     clipboard_image: Option<Vec<u8>>,
+    /// What the app keeps from idle sleep, and the assertion's name.
+    awake: (Awake, String),
     /// The save panels that are open: each its id, its window and its
     /// file's name.
     save_panels: Vec<(SavePanelId, WindowId, String)>,
@@ -323,6 +325,7 @@ impl Fake {
             clipboard: None,
             clipboard_image: None,
             save_panels: Vec::new(),
+            awake: (Awake::Off, String::new()),
             alerts: Vec::new(),
             timers: BTreeMap::new(),
             option_as_meta: (false, false),
@@ -556,6 +559,11 @@ impl Fake {
         };
         self.save_panels.remove(index);
         self.send_app(handler, AppEvent::SavePanelClosed { panel, path })
+    }
+
+    /// What the app keeps from idle sleep, and its assertion's name.
+    pub fn awake(&self) -> (Awake, &str) {
+        (self.awake.0, &self.awake.1)
     }
 
     /// The image on the clipboard, a PNG, if one is there.
@@ -1276,6 +1284,10 @@ impl Platform for Fake {
     fn set_clipboard_image(&mut self, png: &[u8]) {
         self.clipboard = None;
         self.clipboard_image = Some(png.to_vec());
+    }
+
+    fn keep_awake(&mut self, awake: Awake, reason: &str) {
+        self.awake = (awake, reason.to_owned());
     }
 
     fn show_save_panel(&mut self, window: WindowId, name: &str) -> SavePanelId {

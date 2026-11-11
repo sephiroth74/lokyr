@@ -19,6 +19,7 @@ use crate::{fakes, notice};
 
 mod access;
 mod asks;
+mod awake;
 mod chrome;
 mod configs;
 mod consent;

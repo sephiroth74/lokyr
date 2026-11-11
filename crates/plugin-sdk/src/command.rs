@@ -180,6 +180,8 @@ pub enum Capability {
     Decorate,
     /// The cell under the pointer over the panes, and the modifiers held.
     PointerRead,
+    /// Keeping the system, or the system and the display, from idle sleep.
+    KeepAwake,
 }
 
 impl Capability {
@@ -204,6 +206,7 @@ impl Capability {
             "pane-view" => Self::PaneView,
             "decorate" => Self::Decorate,
             "pointer-read" => Self::PointerRead,
+            "keep-awake" => Self::KeepAwake,
             _ => return None,
         })
     }
@@ -310,6 +313,7 @@ impl fmt::Display for Capability {
             Self::PaneView => f.write_str("pane-view"),
             Self::Decorate => f.write_str("decorate"),
             Self::PointerRead => f.write_str("pointer-read"),
+            Self::KeepAwake => f.write_str("keep-awake"),
         }
     }
 }
@@ -729,6 +733,11 @@ mod tests {
         assert_eq!(Capability::PaneView.to_string(), "pane-view");
         assert_eq!(Capability::Decorate.to_string(), "decorate");
         assert_eq!(Capability::PointerRead.to_string(), "pointer-read");
+        assert_eq!(Capability::KeepAwake.to_string(), "keep-awake");
+        assert_eq!(
+            Capability::of_name("keep-awake"),
+            Some(Capability::KeepAwake)
+        );
     }
 
     #[test]

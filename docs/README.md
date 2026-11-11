@@ -107,6 +107,7 @@ The phases (F0–F7) are described in the [ROADMAP](ROADMAP.md).
 | [0040](adr/0040-appearance-write-capability.md) | The capability `appearance-write`, of a medium risk: the themes' and the font's preview and choice in the config, the themes' moved from `user-commands`; the font picker a third-party plugin | Accepted; amends 0024 and 0039 |
 | [0041](adr/0041-save-panel-of-no-capability.md) | A file saved through the user's save panel, of no capability: the host shows the panel and writes the bytes, the plugin learning the path alone; `snap` without `fs-write` | Accepted |
 | [0042](adr/0042-themes-in-the-registry.md) | A guide for theme authors before 0.9, of every key, a full example and the install; themes in the registry in F3b, as 1.1: packages of kind `themes` of the same registry and site, Sleip's add and publish, each page's preview drawn of the theme's colors | Accepted; amends 0034 and 0038 |
+| [0043](adr/0043-keep-awake-title-buttons-ticked-items.md) | The capability `keep-awake`, of a high risk: the system, or the system and the display, kept from idle sleep, of one power assertion that the host holds and releases with its plugins; the slot `title-buttons`, right after the window's buttons; a plugin's menu items ticked | Accepted |
 
 ## Glossary
 

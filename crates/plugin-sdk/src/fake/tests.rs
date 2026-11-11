@@ -1872,3 +1872,26 @@ fn a_kept_image_s_id_is_kept_four_at_most_and_let_go_as_the_plugin_asks() {
     // A node of one, as a snapshot writes it.
     assert_eq!(snapshot(&Node::image(7)), "image 7\n");
 }
+
+#[test]
+fn a_plugin_keeps_the_mac_awake_of_its_capability_as_its_call_returns() {
+    use crate::host::Awake;
+    let mut host = FakeHost::new("acme/probe").with_capabilities(vec![Capability::KeepAwake]);
+    let mut probe = Probe::new(|cx, _| cx.keep_awake(Awake::Display));
+    host.command(&mut probe, "probe.go", Args::new()).unwrap();
+    assert_eq!(host.awake(), Awake::Display);
+    let mut off = Probe::new(|cx, _| cx.keep_awake(Awake::Off));
+    host.command(&mut off, "probe.go", Args::new()).unwrap();
+    assert_eq!(host.awake(), Awake::Off);
+    // A call that fails keeps nothing; a plugin without the capability is
+    // refused.
+    let mut failing = Probe::new(|cx, _| {
+        cx.keep_awake(Awake::System)?;
+        Err(Error::new(Code::Failed, "on purpose"))
+    });
+    assert!(host.command(&mut failing, "probe.go", Args::new()).is_err());
+    assert_eq!(host.awake(), Awake::Off);
+    let mut without = FakeHost::new("acme/probe").with_capabilities(Vec::new());
+    let refused = without.command(&mut probe, "probe.go", Args::new());
+    assert_eq!(refused.unwrap_err().code, Code::MissingCapability);
+}

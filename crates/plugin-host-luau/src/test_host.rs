@@ -554,6 +554,14 @@ fn functions(lua: &Lua, hosted: &Arc<Mutex<Hosted>>) -> mlua::Result<Table> {
             lua.create_sequence_from(kept)
         })?,
     )?;
+    let hosted = of();
+    table.raw_set(
+        "awake",
+        lua.create_function(move |lua, ()| {
+            let awake = with(&hosted, |Hosted { host, .. }| host.awake());
+            shape::to_lua(lua, &awake).map_err(mlua::Error::runtime)
+        })?,
+    )?;
     table.set_readonly(true);
     Ok(table)
 }

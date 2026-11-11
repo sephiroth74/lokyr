@@ -19,6 +19,7 @@ use crate::keymap::{Context as Keys, Keymap, Pressed, Resolved, Resolver};
 use crate::l10n::Texts;
 use crate::workspace::{Environment, Grid, Settings};
 
+mod awake;
 mod bounds;
 mod cells;
 mod config;
@@ -1698,6 +1699,7 @@ fn a_call_is_its_own_plugin_s() {
             decorations: BTreeMap::new(),
             gutter_marks: BTreeMap::new(),
             held_cursors: std::collections::BTreeSet::new(),
+            awake: host::Awake::Off,
             quick_windows: Vec::new(),
             slow: Vec::new(),
             fault: None,

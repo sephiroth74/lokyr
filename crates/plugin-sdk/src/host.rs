@@ -881,6 +881,24 @@ pub enum Scroll {
     Row(i64),
 }
 
+/// What a plugin keeps from idle sleep, which the host holds as a power
+/// assertion of the platform's, for every plugin together, the strongest
+/// that one asks.
+#[derive(
+    Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
+)]
+#[serde(rename_all = "kebab-case")]
+pub enum Awake {
+    /// Nothing: the system's rules of sleep.
+    #[default]
+    Off,
+    /// The system, which sleeps not while idle; the display may.
+    System,
+    /// The system and the display, which neither sleeps while idle, nor
+    /// the screen locks.
+    Display,
+}
+
 /// The most bytes that a plugin gives the host at once, of a file to save
 /// or of an image for the clipboard.
 pub const MOST_BYTES: usize = 256 * 1024 * 1024;

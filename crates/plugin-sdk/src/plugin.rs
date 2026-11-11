@@ -315,6 +315,12 @@ impl<'a> Cx<'a> {
         self.done(Request::SetClipboardText(text.to_owned()))
     }
 
+    /// Keeps the system, or the system and the display, from idle sleep,
+    /// or lets it sleep, as this call returns.
+    pub fn keep_awake(&mut self, awake: crate::host::Awake) -> Result<(), Error> {
+        self.done(Request::KeepAwake(awake))
+    }
+
     /// Puts the image of `png`, a PNG, on the clipboard, in place of what
     /// it held, as this call returns.
     pub fn set_clipboard_image(&mut self, png: Vec<u8>) -> Result<(), Error> {

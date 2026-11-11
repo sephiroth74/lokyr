@@ -43,6 +43,18 @@ pub use menu::{
     MenuRole, SavePanelId, Shortcut, ShortcutKey, StandardAction,
 };
 pub use quick::{GlobalKey, Length, QuickEdge, QuickPlace, QuickScreen};
+
+/// What the app keeps from idle sleep.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Awake {
+    /// Nothing: the system's rules of sleep.
+    #[default]
+    Off,
+    /// The system; the display may sleep.
+    System,
+    /// The system and the display.
+    Display,
+}
 pub use raw_window_handle::WindowHandle;
 pub use runs::{RUNS, runs_by_itself};
 pub use tools::{LinkOutcome, ToolLink};
@@ -684,6 +696,12 @@ pub trait Platform {
     /// user cancelled or the window closed. The panel asks before it
     /// replaces a file; the app writes it.
     fn show_save_panel(&mut self, window: WindowId, name: &str) -> SavePanelId;
+
+    /// Keeps the system, or the system and the display, from idle sleep,
+    /// of one power assertion named `reason`, which takes the place of the
+    /// one before, or lets it sleep, of [`Awake::Off`]; the system releases
+    /// it as the app ends.
+    fn keep_awake(&mut self, awake: Awake, reason: &str);
 
     /// Opens an alert, on `window` or on its own when `None`, and returns
     /// at once: [`AppEvent::AlertClosed`] tells which button closed it.

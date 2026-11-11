@@ -131,6 +131,11 @@ pub enum Request {
     SetClipboardText(String),
     /// Puts an image on the clipboard, a PNG, in place of what it held.
     SetClipboardImage(Bytes),
+    /// Keeps the system, or the system and the display, from idle sleep,
+    /// or lets it sleep, as the call returns: the host holds the strongest
+    /// that a plugin asks, until the plugin lets go, stops, faults or is
+    /// turned off.
+    KeepAwake(crate::host::Awake),
     /// Asks the user where to save bytes as a file, in the platform's save
     /// panel, a sheet on `window` or on the focused one, of the name `name`
     /// suggested: the host answers with the question's id, writes the bytes
@@ -814,6 +819,7 @@ impl Request {
             Self::SetClipboardText(_) | Self::SetClipboardImage(_) => {
                 Some(Capability::ClipboardWrite)
             }
+            Self::KeepAwake(_) => Some(Capability::KeepAwake),
             Self::SelectionText(_)
             | Self::LineText { .. }
             | Self::LinkAt { .. }
@@ -963,6 +969,7 @@ impl Request {
             | Self::ScreenCells(_) => Effect::Read,
             Self::SetClipboardText(_)
             | Self::SetClipboardImage(_)
+            | Self::KeepAwake(_)
             | Self::DropImage(_)
             | Self::SelectCells { .. }
             | Self::Deselect(_)
@@ -1412,6 +1419,7 @@ impl Request {
             | Self::RunCommand { .. }
             | Self::SetClipboardText { .. }
             | Self::SetClipboardImage { .. }
+            | Self::KeepAwake { .. }
             | Self::DropImage { .. }
             | Self::EndSearch { .. }
             | Self::SelectCells { .. }
@@ -1851,6 +1859,9 @@ mod tests {
             assert_eq!(read.effect(), Effect::Read);
             assert_eq!(read.answer(), "cells");
         }
+        let awake = Request::KeepAwake(crate::host::Awake::Display);
+        assert_eq!(awake.capabilities(), [Capability::KeepAwake]);
+        assert_eq!((awake.effect(), awake.answer()), (Effect::Write, "done"));
         let dropped = Request::DropImage(3);
         assert!(dropped.capabilities().is_empty());
         assert_eq!(

@@ -14,6 +14,7 @@ mod accessory;
 mod alert;
 mod app;
 mod appearance;
+mod awake;
 mod backend;
 mod default_terminal;
 mod definition;
