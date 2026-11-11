@@ -430,6 +430,11 @@ pub struct FakeHost {
     themes: host::Themes,
     /// The system's monospaced families that it gives.
     fonts: host::Fonts,
+    /// The system's day, whether a notice of the app's shows, and whether
+    /// the plugin's state lasts beyond the app's run.
+    day: u64,
+    notice: bool,
+    keeps_state: bool,
     /// Where the plugin's moves of tabs to windows of their own put those
     /// windows on the screens.
     places: BTreeMap<WindowId, ScreenPoint>,
@@ -527,6 +532,9 @@ impl FakeHost {
             keys: Vec::new(),
             registry: Vec::new(),
             fonts: fonts(),
+            day: DAY,
+            notice: false,
+            keeps_state: true,
             themes: host::Themes {
                 appearance: crate::theme::ThemeVariant::Dark,
                 current: "Lokyr Dark".to_owned(),
@@ -732,6 +740,27 @@ impl FakeHost {
     /// of [`fonts`]'.
     pub fn set_fonts(&mut self, fonts: host::Fonts) -> &mut Self {
         self.fonts = fonts;
+        self
+    }
+
+    /// Gives the system's day, in days since 1970-01-01, which a read of
+    /// the day gives, in place of [`DAY`].
+    pub fn set_day(&mut self, day: u64) -> &mut Self {
+        self.day = day;
+        self
+    }
+
+    /// Shows a notice of the app's, or none, which a read tells.
+    pub fn set_notice_shows(&mut self, shows: bool) -> &mut Self {
+        self.notice = shows;
+        self
+    }
+
+    /// Keeps the plugin's state between the app's runs, as by default, or
+    /// not, as the app without a state's folder, which a read tells; it
+    /// holds the state in memory all the same.
+    pub fn set_keeps_state(&mut self, keeps: bool) -> &mut Self {
+        self.keeps_state = keeps;
         self
     }
 
@@ -2843,6 +2872,9 @@ impl Calling<'_> {
             Request::TabBarPlace => Response::TabBarPlace(host.bar_place),
             Request::Themes => Response::Themes(host.themes.clone()),
             Request::Fonts => Response::Fonts(host.fonts.clone()),
+            Request::Day => Response::Day(host.day),
+            Request::NoticeShows => Response::Boolean(host.notice),
+            Request::KeepsState => Response::Boolean(host.keeps_state),
             Request::Commands => {
                 // The rest of the registry to a plugin of `user-commands`
                 // alone, as the app's host gives it.
@@ -3877,6 +3909,10 @@ fn declared(text: &str) -> (Vec<Capability>, Option<Vec<String>>, bool) {
     }
     (capabilities, uses, builtin)
 }
+
+/// The system's day that the fake host gives by default, in days since
+/// 1970-01-01: 11 November 2026.
+pub const DAY: u64 = 20_768;
 
 /// The system's monospaced families that the fake host gives by default:
 /// Menlo, Monaco and SF Mono, which is in force.

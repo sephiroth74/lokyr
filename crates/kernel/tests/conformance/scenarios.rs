@@ -1040,6 +1040,7 @@ fn events(world: &World) -> Scenario {
             close_outside: true,
             close_escape: true,
             takes_keys: false,
+            close_typing: false,
         },
     };
     let created = Event::Workspace(WorkspaceEvent::TabCreated {
@@ -1757,6 +1758,11 @@ fn app_requests(world: &World) -> Scenario {
                 ),
             ),
             (Request::SetFont("Monaco".to_owned()), Response::Done),
+            // The system's day, whether a notice shows, and whether the
+            // state lasts, as the harness gives the kernel's host a folder.
+            (Request::Day, Response::Day(lokyr_plugin_sdk::fake::DAY)),
+            (Request::NoticeShows, Response::Boolean(false)),
+            (Request::KeepsState, Response::Boolean(true)),
             (
                 Request::SetFont("Comic Sans".to_owned()),
                 failed(
@@ -2051,6 +2057,7 @@ fn views(world: &World) -> Scenario {
         close_outside: true,
         close_escape: true,
         takes_keys: false,
+        close_typing: false,
     };
     let set_text = |key: &str| Request::SetText {
         view: menu.clone(),
@@ -2110,6 +2117,7 @@ fn views(world: &World) -> Scenario {
                                 close_outside: false,
                                 close_escape: false,
                                 takes_keys: false,
+                                close_typing: false,
                             },
                         },
                         Response::Done,

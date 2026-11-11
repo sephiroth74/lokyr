@@ -253,11 +253,11 @@ A new version is a new `version` in the manifest, a new tag, and `sleip publish`
 | Drawing over a pane | `decorate`, `undecorate`, `mark_gutter`, `unmark_gutter` |
 | Windows, tabs and panes | `windows`, `tabs`, `layout`, `pane_grid`, `pane_title`, `open_window`, `close_window`, `new_tab`, `close_tab`, `split`, `close_pane`, `activate_tab`, `focus_pane`, `move_tab`, `swap_panes`, `zoom`, `resize_pane`, `set_ratio`, `equalize`, `set_tab_title`, `set_tab_color`, and the rest of their family |
 | Views and panels | `open_panel`, `close_panel`, `request_render`, `set_text`, `select`, `reveal`, `focus_node` |
-| The user | `ask_text`, `save_file`, `open`, `opens`, `message`, `keys_of` |
+| The user | `ask_text`, `save_file`, `open`, `opens`, `message`, `keys_of`, `notice_shows` |
 | The clipboard | `clipboard_text`, `set_clipboard_text`, `set_clipboard_image` |
 | Images | `render_image`, `drop_image` |
-| Settings and state | `config`, `state`, `set_state` |
-| Time | `start_timer`, `cancel_timer` |
+| Settings and state | `config`, `state`, `set_state`, `keeps_state` |
+| Time | `start_timer`, `cancel_timer`, `day` |
 | The Mac | `keep_awake` |
 | Themes and the font | `themes`, `preview_theme`, `set_theme`, `fonts`, `preview_font`, `set_font`, `font_size`, `set_font_size` |
 

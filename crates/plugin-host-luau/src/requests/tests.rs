@@ -164,6 +164,7 @@ fn a_call_makes_its_request_of_its_arguments_in_their_order() {
                     close_outside: false,
                     close_escape: true,
                     takes_keys: false,
+                    close_typing: false,
                 },
             },
             Request::Scroll {

@@ -38,6 +38,7 @@ pub const RESERVED_NAMES: &[&str] = &[
     "pane",
     "progress",
     "quick-terminal",
+    "quick-tips",
     "search",
     "selection",
     "sleip",

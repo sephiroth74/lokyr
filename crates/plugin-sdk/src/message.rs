@@ -113,6 +113,16 @@ pub enum Request {
     },
     /// The system's monospaced font families, and the family in force.
     Fonts,
+    /// The day of the system's clock, in days since 1970-01-01, in UTC, as
+    /// a plugin that shows something once in a while counts its days.
+    Day,
+    /// Whether a notice of the app's shows, as of a config that does not
+    /// read, which a plugin's card of its own yields to.
+    NoticeShows,
+    /// Whether the host keeps the plugin's state between the app's runs, in
+    /// a file of its own, which it does not without a state's folder: a
+    /// plugin that shows something once in a while shows nothing then.
+    KeepsState,
     /// Shows the monospaced family of a name in every pane in place of the
     /// config's, for a while, as a picker previews it, until the next
     /// preview, the family's choice, or `None`, which shows the config's
@@ -947,6 +957,9 @@ impl Request {
             | Self::Commands
             | Self::Themes
             | Self::Fonts
+            | Self::Day
+            | Self::NoticeShows
+            | Self::KeepsState
             | Self::RenderImage(_)
             | Self::DropImage(_)
             | Self::SaveFile { .. }
@@ -992,6 +1005,9 @@ impl Request {
             | Self::Commands
             | Self::Themes
             | Self::Fonts
+            | Self::Day
+            | Self::NoticeShows
+            | Self::KeepsState
             | Self::RenderImage(_)
             | Self::SelectionCells(_)
             | Self::ScreenCells(_) => Effect::Read,
@@ -1103,6 +1119,8 @@ pub enum Response {
     Themes(crate::host::Themes),
     /// The system's monospaced font families.
     Fonts(crate::host::Fonts),
+    /// A day of the system's clock, in days since 1970-01-01.
+    Day(u64),
     /// An image that the host rendered.
     Image(crate::image::Image),
     /// Rows of cells, as an image draws them, or none.
@@ -1529,6 +1547,7 @@ impl Request {
             Self::Commands { .. } => "commands",
             Self::Themes { .. } => "themes",
             Self::Fonts { .. } => "fonts",
+            Self::Day { .. } => "day",
             Self::ClipboardText { .. }
             | Self::SelectionText { .. }
             | Self::LinkAt { .. }
@@ -1551,7 +1570,7 @@ impl Request {
             Self::RenderImage { .. } => "image",
             Self::SelectionCells { .. } | Self::ScreenCells { .. } => "cells",
             Self::Decorate { .. } | Self::MarkGutter { .. } => "decoration",
-            Self::Opens { .. } => "boolean",
+            Self::Opens { .. } | Self::NoticeShows | Self::KeepsState => "boolean",
             Self::FontSize { .. } => "font-size",
             Self::Windows { .. } => "windows",
             Self::Tabs { .. } => "tabs",

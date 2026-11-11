@@ -106,6 +106,9 @@ impl<B: Backend> App<B> {
                 if keys.is_empty() || self.keys_held_back(window) {
                     return;
                 }
+                if pressed {
+                    self.close_typing_panels(platform, window);
+                }
                 let Some(pane) = self
                     .windows
                     .get(&window)
@@ -115,6 +118,28 @@ impl<B: Backend> App<B> {
                 };
                 give(pane, &keys, options);
             }
+        }
+    }
+
+    /// Closes `window`'s panels that a key typed into a pane closes, as
+    /// their plugins hear.
+    fn close_typing_panels(&mut self, platform: &mut dyn Platform, window: WindowId) {
+        let Some(state) = self.windows.get(&window) else {
+            return;
+        };
+        let typing: Vec<u32> = state
+            .chrome
+            .iter()
+            .filter(|shown| {
+                shown
+                    .placed
+                    .as_ref()
+                    .is_some_and(|placed| placed.options.close_typing)
+            })
+            .map(|shown| shown.id)
+            .collect();
+        for view in typing {
+            self.close_panel(platform, window, view, true);
         }
     }
 
@@ -169,6 +194,7 @@ impl<B: Backend> App<B> {
                 state.preedit = None;
                 pane.text(&text);
                 state.blink.restart(Instant::now());
+                self.close_typing_panels(platform, window);
             }
         }
         platform.request_frame(window);

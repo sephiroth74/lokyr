@@ -102,6 +102,10 @@ const CHECK_UPDATES: &str = "app.check-for-updates";
 /// The command that opens a new issue of the repository in the browser.
 const REPORT_ISSUE: &str = "app.report-issue";
 
+/// The quick tips' command that shows a tip at once, which the help's menu
+/// holds, before Report an Issue.
+const SHOW_TIP: &str = "quick-tips.show";
+
 /// The repository, whose issues take the reports of problems.
 const REPOSITORY: &str = "https://github.com/sephiroth74/lokyr";
 
@@ -2763,8 +2767,11 @@ impl<B: Backend> App<B> {
         let waker = platform.waker();
         self.plugins.set_wake(move || waker.wake());
         // Their states and their sections of the config, which their
-        // activation reads, the installed plugins' too.
-        self.plugins.set_state_directory(self.state.clone());
+        // activation reads, the installed plugins' too. A bench's plugins
+        // neither read nor keep theirs, so that a run leaves nothing to the
+        // next and no card that shows once in a while comes in a measure.
+        self.plugins
+            .set_state_directory(self.state.clone().filter(|_| !self.benched));
         self.add_installed(platform);
         self.configure_plugins(platform);
         // A plugin whose activation failed is disabled, which the notice of
@@ -2887,6 +2894,10 @@ impl<B: Backend> App<B> {
             enabled: &enabled,
             themes: &theme_list,
             fonts: &fonts,
+            day: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |since| since.as_secs() / 86_400),
+            notice: self.diagnostics.shown().is_some(),
             saving: &saving,
             language: self.texts.language(),
             now: Instant::now(),

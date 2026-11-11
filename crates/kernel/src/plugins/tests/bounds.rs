@@ -410,6 +410,7 @@ impl Plugin for Panelist {
                         close_outside: false,
                         close_escape: true,
                         takes_keys: false,
+                        close_typing: false,
                     },
                 )
             }

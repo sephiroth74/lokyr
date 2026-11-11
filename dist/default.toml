@@ -19,3 +19,4 @@ quick-terminal = { path = "../plugins/quick-terminal" }
 progress = { path = "../plugins/progress" }
 command-header = { path = "../plugins/command-header" }
 copy-mode = { path = "../plugins/copy-mode" }
+quick-tips = { path = "../plugins/quick-tips" }

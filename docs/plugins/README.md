@@ -15,6 +15,7 @@ Every feature that you see in Lokyr beyond the terminal itself comes from a plug
 | [`progress`](progress.md) | The programs' progress, in a thin bar across the window's top |
 | [`command-header`](command-header.md) | The command whose output you are looking at, at the pane's top |
 | [`copy-mode`](copy-mode.md) | The copy mode: a cursor that vi's keys move through the scrollback, to select and copy without the mouse |
+| [`quick-tips`](quick-tips.md) | A tip at the start, once a week at most, in a card at the window's bottom right |
 
 The order of the table is the order in which they start, which matters for the keys alone: a later plugin's key wins over an earlier one's, and your own `[keys]` win over all of them.
 

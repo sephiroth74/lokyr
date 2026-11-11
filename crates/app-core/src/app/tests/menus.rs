@@ -147,7 +147,7 @@ fn starting_opens_a_window_under_the_menus_of_the_commands() {
             "Bring All to Front"
         ]
     );
-    assert_eq!(menu_items(&fake, 5), ["Report an Issue…"]);
+    assert_eq!(menu_items(&fake, 5), ["Show a Tip", "Report an Issue…"]);
 }
 
 #[test]

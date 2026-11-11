@@ -544,6 +544,9 @@ type PanelOptions = {
     -- keyboard is its pane's, of an anchor of a pane, or any pane's, of another, the keys that no binding takes and the
     -- text typed go nowhere; the pane keeps the keyboard, and its cursor its look
     takes_keys: boolean?,
+    -- a key or a text typed into a pane of its window closes it, as a tip's card goes at the first key: the key goes to
+    -- the program still, and the plugin hears `panel-closed`
+    close_typing: boolean?,
 }
 
 type UiEvent = {
@@ -659,6 +662,16 @@ type Cx = {
     -- ending: one that `fonts` lists, else refused. The config's styles that it lacks, as `style = "Medium"`, are
     -- commented out where they were, as the config would refuse them, for the user to take back.
     set_font: (family: string) -> (boolean, Error?),
+
+    -- Today, in whole days since 1 January 1970, of the system's clock, of no capability, as a plugin that shows
+    -- something once a week counts its days.
+    day: () -> (number?, Error?),
+    -- Whether a notice of the app's shows, as an error of the config, of no capability, so that a plugin's card that
+    -- can wait gives way to it.
+    notice_shows: () -> (boolean?, Error?),
+    -- Whether the host keeps the plugin's state between the app's runs, of no capability: it does not without a state's
+    -- folder, where a plugin that shows something once in a while would show it at every start.
+    keeps_state: () -> (boolean?, Error?),
 
     -- The focus: the window that has it, and its pane that has the keyboard.
     focused_window: () -> WindowId?,

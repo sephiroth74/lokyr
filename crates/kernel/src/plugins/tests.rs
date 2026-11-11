@@ -238,6 +238,8 @@ impl App {
             enabled: &|_| true,
             themes: &no_themes,
             fonts: &lokyr_plugin_sdk::fake::fonts,
+            day: lokyr_plugin_sdk::fake::DAY,
+            notice: false,
             saving: match &self.saving {
                 Some(saving) => &**saving,
                 None => &|_| false,
@@ -3491,6 +3493,7 @@ fn a_plugin_opens_and_closes_a_panel_which_tells_it_as_it_closes() {
         close_outside: true,
         close_escape: true,
         takes_keys: false,
+        close_typing: false,
     };
     let answer: Answer = Rc::new(move |cx, view| {
         vec![
@@ -3622,6 +3625,7 @@ impl Plugin for Looker {
                 close_outside: true,
                 close_escape: true,
                 takes_keys: false,
+                close_typing: false,
             },
         )
         .is_ok()
@@ -3643,6 +3647,7 @@ fn a_panel_opens_once_of_its_id_and_no_tree_of_a_closed_panel_or_window_stays() 
         close_outside: true,
         close_escape: true,
         takes_keys: false,
+        close_typing: false,
     };
     // Opened twice, closed, and opened again, in one call.
     let answer: Answer = Rc::new(move |cx, _| {

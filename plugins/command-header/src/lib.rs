@@ -342,6 +342,7 @@ impl Header {
                         close_outside: false,
                         close_escape: false,
                         takes_keys: false,
+                        close_typing: false,
                     },
                 )?;
             }

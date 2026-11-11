@@ -108,6 +108,7 @@ impl plugins::Plugin for Button {
                     close_outside: true,
                     close_escape: true,
                     takes_keys: false,
+                    close_typing: false,
                 },
             )?;
         }

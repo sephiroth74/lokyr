@@ -29,6 +29,9 @@ export type Cx = {
     preview_theme: (name: string?) -> (true?, string?, number?),
     set_theme: (variant: ThemeVariant, name: string) -> (true?, string?, number?),
     fonts: () -> (Fonts?, string?, number?),
+    day: () -> (number?, string?, number?),
+    notice_shows: () -> (boolean?, string?, number?),
+    keeps_state: () -> (boolean?, string?, number?),
     preview_font: (family: string?) -> (true?, string?, number?),
     set_font: (family: string) -> (true?, string?, number?),
     add_menu_item: (item: MenuItem) -> (true?, string?, number?),
@@ -584,6 +587,7 @@ export type PanelOptions = {
     close_outside: boolean?,
     close_escape: boolean?,
     takes_keys: boolean?,
+    close_typing: boolean?,
 }
 
 export type PanelRole =

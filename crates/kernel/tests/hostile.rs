@@ -91,6 +91,8 @@ impl App {
             enabled: &|_| true,
             themes: &themes,
             fonts: &host::Fonts::default,
+            day: 0,
+            notice: false,
             saving: &|_| false,
             language: "en",
             now: Instant::now(),

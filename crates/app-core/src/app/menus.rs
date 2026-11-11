@@ -23,7 +23,7 @@ use lokyr_vt_core::terminal::{SelectionShape, SelectionUnit};
 use super::{
     ABOUT, APPEARANCES, App, CHECK_UPDATES, CONTEXT_ONLY, DEFAULT_TERMINAL, FLOAT_ON_TOP,
     INSTALL_TOOLS, LOOK_UP, LOOK_UP_TITLE, MAN_KEYWORDS, MAN_PAGE, MAN_PAGE_NAME, MAN_SEARCH,
-    MAN_SECTION, PERFORMANCE, REPORT_ISSUE, SEARCH_WEB, SECURE_INPUT, SETTINGS, context,
+    MAN_SECTION, PERFORMANCE, REPORT_ISSUE, SEARCH_WEB, SECURE_INPUT, SETTINGS, SHOW_TIP, context,
     show_selection, shown_top,
 };
 use crate::drawing::Backend;
@@ -762,12 +762,17 @@ pub(super) fn main_menu(
     ]);
     let app_commands: Vec<MenuItem> = items(&[Category::App])
         .into_iter()
-        .filter(|item| !first(item) && !of(item, &[REPORT_ISSUE]))
+        .filter(|item| !first(item) && !of(item, &[SHOW_TIP, REPORT_ISSUE]))
         .collect();
-    // Report an Issue… in the help's menu, whose search the system gives.
-    let help: Vec<MenuItem> = items(&[Category::App])
+    // Show a Tip and Report an Issue… in the help's menu, whose search the
+    // system gives.
+    let help: Vec<MenuItem> = [SHOW_TIP, REPORT_ISSUE]
         .into_iter()
-        .filter(|item| of(item, &[REPORT_ISSUE]))
+        .flat_map(|name| {
+            items(&[Category::App])
+                .into_iter()
+                .filter(move |item| of(item, &[name]))
+        })
         .collect();
     if !app_commands.is_empty() {
         application.push(MenuItem::Separator);

@@ -1002,6 +1002,7 @@ fn a_worker_s_failed_call_that_closes_a_panel_leaves_it_open_of_its_tree() {
                         close_outside: false,
                         close_escape: true,
                         takes_keys: false,
+                        close_typing: false,
                     },
                 );
             }

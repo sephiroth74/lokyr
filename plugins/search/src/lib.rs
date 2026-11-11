@@ -748,6 +748,7 @@ impl Plugin for Search {
                     close_outside: true,
                     close_escape: true,
                     takes_keys: false,
+                    close_typing: false,
                 },
             ),
             // Its closing, which the plugin hears, ends the search.
@@ -874,6 +875,7 @@ impl Search {
                 close_outside: false,
                 close_escape: true,
                 takes_keys: false,
+                close_typing: false,
             },
         )?;
         // Its field, of no revision yet, takes its text as it takes the

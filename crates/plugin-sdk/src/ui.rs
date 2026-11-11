@@ -233,6 +233,11 @@ pub struct PanelOptions {
     /// the program; the pane keeps the keyboard, and its cursor its look.
     #[serde(default)]
     pub takes_keys: bool,
+    /// Whether a key or a text typed into a pane of its window closes it,
+    /// as a tip's card goes at the first key: the key goes to the program
+    /// still, and the plugin hears `panel-closed`.
+    #[serde(default)]
+    pub close_typing: bool,
 }
 
 /// What happened to a node of a key of one of a plugin's views.

@@ -419,6 +419,7 @@ impl Plugin for Toggled {
                 close_outside: true,
                 close_escape: true,
                 takes_keys: false,
+                close_typing: false,
             },
         )
     }

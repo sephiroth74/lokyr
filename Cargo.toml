@@ -142,6 +142,7 @@ lokyr-search = { path = "crates/search" }
 lokyr-session = { path = "crates/session" }
 lokyr-progress = { path = "plugins/progress" }
 lokyr-quick-terminal = { path = "plugins/quick-terminal" }
+lokyr-quick-tips = { path = "plugins/quick-tips" }
 lokyr-search-plugin = { path = "plugins/search" }
 lokyr-splits = { path = "plugins/splits" }
 lokyr-tabs = { path = "plugins/tabs" }

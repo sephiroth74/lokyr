@@ -171,6 +171,7 @@ fn the_toggle_shows_a_cursor_at_the_terminal_s_and_a_badge_that_holds_the_keys()
             close_outside: false,
             close_escape: false,
             takes_keys: true,
+            close_typing: false,
         }
     );
     assert_eq!(badge_text(&mut host, &mut plugin).as_deref(), Some("Copy"));

@@ -499,6 +499,15 @@
   },
   {
     "capabilities": [],
+    "category": "app",
+    "name": "quick-tips.show",
+    "params": [],
+    "plugin": "lokyr/quick-tips",
+    "title": "Show a Tip",
+    "when": null
+  },
+  {
+    "capabilities": [],
     "category": "find",
     "name": "search.next",
     "params": [],

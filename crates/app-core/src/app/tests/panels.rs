@@ -48,7 +48,7 @@ const MANIFEST: &str = concat!(
     "[contributes]\nslots = [\"tab-bar\"]\n",
 );
 
-const COMMANDS: [&str; 12] = [
+const COMMANDS: [&str; 13] = [
     "paneler.dialog",
     "paneler.menu",
     "paneler.native",
@@ -61,6 +61,7 @@ const COMMANDS: [&str; 12] = [
     "paneler.close-commands",
     "paneler.both",
     "paneler.overlay",
+    "paneler.card",
 ];
 
 fn sized(node: Node, width: f32, height: f32) -> Node {
@@ -82,6 +83,7 @@ fn options(
         close_outside,
         close_escape,
         takes_keys: false,
+        close_typing: false,
     }
 }
 
@@ -169,6 +171,20 @@ impl plugins::Plugin for Paneler {
                 "overlay",
                 options(Anchor::PaneTop(pane), Role::Overlay, (false, false)),
             ),
+            "paneler.card" => (
+                "card",
+                PanelOptions {
+                    close_typing: true,
+                    ..options(
+                        Anchor::WindowCorner {
+                            window,
+                            corner: Corner::BottomRight,
+                        },
+                        Role::Overlay,
+                        (false, false),
+                    )
+                },
+            ),
             "paneler.corner" => (
                 "dialog",
                 options(
@@ -231,6 +247,7 @@ impl plugins::Plugin for Paneler {
                 Node::button("Item").key("item"),
             ]),
             "tip" => sized(Node::text("a tip"), 80.0, 20.0),
+            "card" => sized(Node::button("Dismiss").key("dismiss"), 80.0, 20.0),
             _ => Node::container(vec![sized(Node::field("Find"), 120.0, 20.0).key("find")]),
         })
     }
@@ -337,6 +354,26 @@ fn an_overlay_across_a_pane_s_top_takes_its_width_and_leaves_the_keys_to_the_pan
     run_until(&mut fake, &mut app, |_, app| {
         row(app, window, 1).trim() == "a"
     });
+}
+
+#[test]
+fn a_card_that_typing_closes_goes_at_the_first_key_which_reaches_the_pane() {
+    let (mut fake, mut app, window, heard) = paneler(reader(""));
+    command(&mut fake, &mut app, window, "paneler.card");
+    assert!(panel_frame(&app, window, "card").is_some());
+    assert!(!focused_in(&app, window, "card"));
+    fake.send(&mut app, window, key());
+    frames(&mut fake, &mut app, window);
+    assert!(panel_frame(&app, window, "card").is_none());
+    assert_eq!(heard.borrow().closed, ["card"]);
+    run_until(&mut fake, &mut app, |_, app| {
+        row(app, window, 1).trim() == "a"
+    });
+    // An overlay of no such option stays as keys go by.
+    command(&mut fake, &mut app, window, "paneler.overlay");
+    fake.send(&mut app, window, key());
+    frames(&mut fake, &mut app, window);
+    assert!(panel_frame(&app, window, "overlay").is_some());
 }
 
 #[test]

@@ -402,6 +402,7 @@ impl CopyMode {
                 close_outside: false,
                 close_escape: false,
                 takes_keys: true,
+                close_typing: false,
             },
         )
     }

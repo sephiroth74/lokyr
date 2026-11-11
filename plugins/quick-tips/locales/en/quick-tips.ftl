@@ -1,0 +1,39 @@
+# The quick tips' texts, in English, the source of the other languages.
+
+# The title of its command, which the menus and the palette show.
+command-quick-tips-show = Show a Tip
+
+# The card: its title, its button, and its checkbox, which stops the tips.
+card-title = Did you know?
+card-dismiss = Dismiss
+card-never = Don't show again
+
+# The tips of a command's keys, as the keymap binds them now: `$keys`.
+tip-palette = Press { $keys } for the command palette, which runs any command by its name.
+tip-search = Press { $keys } to find text in the pane, its scrollback with it.
+tip-split = Press { $keys } to split the pane; drag the divider to resize it, double-click it to even the halves.
+tip-prompts = Press { $keys } to jump back to the previous command's prompt.
+tip-copy-mode = Press { $keys } for copy mode: vi's keys move and select, without the mouse.
+tip-zoom = Press { $keys } to zoom the pane to the whole tab, and again to put it back.
+tip-focus-pane = Press { $keys }, or the same with another arrow, to move the keyboard to the pane beside.
+tip-goto-tab = Press { $keys } and the next numbers to go straight to a tab by its place.
+tip-quick-terminal = Press { $keys } from any app to slide the quick terminal down.
+tip-clear = Press { $keys } to clear the scrollback and the screen, the prompt kept.
+tip-font-size = Press { $keys } to make the text bigger, in every window.
+
+# The tips of features that need no keys.
+tip-links = Hold ⌘ over a link to underline it, then click to open it.
+tip-tab-drag = Drag a tab out of the bar for a window of its own, or onto a pane to split beside it.
+tip-tab-menu = Right-click a tab to give it a color, or double-click it to rename it.
+tip-themes = View › Choose Theme… previews each theme as you move through the list.
+tip-long-command = A long command tells you as it ends while Lokyr is in the background: [notifications] long-command in the config sets how long.
+tip-look-up = Right-click a word to look it up, or to search the web or the man pages for it.
+tip-services = In the Finder, right-click a folder and choose Services › New Lokyr Tab Here for a terminal there.
+tip-itermcolors = Double-click an .itermcolors file, or drop it on Lokyr's Dock icon, to install its theme.
+tip-float = Window › Float on Top keeps the window above every other app's.
+tip-sleip = Plugins come from the registry: sleip search lists them, and sleip add installs one.
+
+# The tips of an installed plugin's command, `$title`: of its keys, or of
+# none, of the command palette's.
+tip-plugin-keys = Press { $keys } for “{ $title }”, a command of an installed plugin.
+tip-plugin-palette = “{ $title }”, a command of an installed plugin, runs from the command palette: press { $keys } and type its name.

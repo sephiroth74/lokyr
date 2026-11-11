@@ -595,6 +595,32 @@ impl<'a> Cx<'a> {
         }
     }
 
+    /// The day of the system's clock, in days since 1970-01-01, in UTC.
+    pub fn day(&mut self) -> Result<u64, Error> {
+        match self.request(Request::Day) {
+            Response::Day(day) => Ok(day),
+            other => Err(failed(other)),
+        }
+    }
+
+    /// Whether a notice of the app's shows, which a plugin's card of its
+    /// own yields to.
+    pub fn notice_shows(&mut self) -> Result<bool, Error> {
+        match self.request(Request::NoticeShows) {
+            Response::Boolean(shows) => Ok(shows),
+            other => Err(failed(other)),
+        }
+    }
+
+    /// Whether the host keeps the plugin's state between the app's runs,
+    /// which it does not without a state's folder.
+    pub fn keeps_state(&mut self) -> Result<bool, Error> {
+        match self.request(Request::KeepsState) {
+            Response::Boolean(keeps) => Ok(keeps),
+            other => Err(failed(other)),
+        }
+    }
+
     /// Shows the monospaced family `family` in every pane in place of the
     /// config's, for a while, as a picker previews it; `None` shows the
     /// config's again.

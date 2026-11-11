@@ -45,11 +45,13 @@ fn a_struct_s_fields_are_their_rust_names_and_a_variant_a_field_or_a_text() {
         close_outside: false,
         close_escape: true,
         takes_keys: false,
+        close_typing: false,
     };
     gives(
         &options,
         r#"{ anchor = { pane_corner = { pane = 3, corner = "top-right" } }, role = "dialog",
-             close_outside = false, close_escape = true, takes_keys = false }"#,
+             close_outside = false, close_escape = true, takes_keys = false,
+             close_typing = false }"#,
     );
     // The fields left out take their defaults.
     assert_eq!(

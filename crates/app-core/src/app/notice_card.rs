@@ -293,6 +293,7 @@ impl<B: Backend> App<B> {
             close_outside: false,
             close_escape: false,
             takes_keys: false,
+            close_typing: false,
         };
         state.chrome.push(SlotView::panel(
             (view, access),

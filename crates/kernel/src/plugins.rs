@@ -358,6 +358,10 @@ pub struct Context<'a> {
     /// The system's monospaced font families, and the family in force, as
     /// the app reads them.
     pub fonts: &'a dyn Fn() -> host::Fonts,
+    /// The day of the system's clock, in days since 1970-01-01, in UTC.
+    pub day: u64,
+    /// Whether a notice of the app's shows.
+    pub notice: bool,
     /// Whether a window shows a save panel.
     pub saving: &'a dyn Fn(WindowId) -> bool,
     /// The language that the app shows, of its own catalogs, which the
@@ -4990,6 +4994,9 @@ impl Host<'_, '_> {
             }
             Asked::Themes => Response::Themes((self.context.themes)()),
             Asked::Fonts => Response::Fonts((self.context.fonts)()),
+            Asked::Day => Response::Day(self.context.day),
+            Asked::NoticeShows => Response::Boolean(self.context.notice),
+            Asked::KeepsState => Response::Boolean(self.state.stored.file.is_some()),
             Asked::SelectionCells(pane) => Response::Cells(
                 self.pane(pane)?
                     .selection_cells(image::MOST_ROWS)
