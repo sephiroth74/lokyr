@@ -162,6 +162,8 @@ return Search
 
 ## The Luau API
 
+The guide for plugin authors, [Writing a plugin](plugins/authoring.md), makes a plugin from `sleip new` to its publishing; this section tells how the API is made.
+
 - **Shape**:
   - A plugin is a package of Luau modules. Its entry point, `src/init.luau`, returns the table of callbacks shown above. Every callback is optional.
   - `require` resolves only the modules inside the plugin's own package: each module's environment holds the package's own, and the globals none, mlua's `require` of the file system taken from them.

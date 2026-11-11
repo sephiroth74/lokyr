@@ -114,9 +114,13 @@ pub fn new(out: Out, plugin: &str) -> Result<(), String> {
 /// `text`, a template's file, of the plugin `plugin` of `namespace`: its
 /// namespace in place of each word `hello`, then its name in place of the
 /// template's, so that a name of the word `hello`, as `acme/say-hello`,
-/// stays as it is, and the plugin API's constraint of this Sleip's.
+/// stays as it is, and the plugin API's constraint of this Sleip's whole
+/// version, as its types that the plugin is written against.
 fn of_name(text: &str, plugin: &str, namespace: &str) -> String {
-    let text = text.replace(TEMPLATE_API, &format!("api = \"^{}\"", api_major_minor()));
+    let text = text.replace(
+        TEMPLATE_API,
+        &format!("api = \"^{}\"", lokyr_plugin_sdk::API_VERSION),
+    );
     let mut named = String::with_capacity(text.len());
     let mut rest = text.as_str();
     let word =
@@ -139,15 +143,6 @@ fn of_name(text: &str, plugin: &str, namespace: &str) -> String {
         &TEMPLATE_NAME.replace(TEMPLATE_NAMESPACE, namespace),
         plugin,
     )
-}
-
-/// The plugin API's major and minor numbers, as `0.1`, of a constraint of
-/// a caret.
-fn api_major_minor() -> String {
-    let api = lokyr_plugin_sdk::API_VERSION;
-    api.rsplit_once('.')
-        .map_or(api, |(major_minor, _)| major_minor)
-        .to_owned()
 }
 
 /// Writes `text` to `path` in `folder`, its folders made.

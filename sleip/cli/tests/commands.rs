@@ -853,6 +853,11 @@ fn new_keeps_a_name_of_the_template_s_word_and_its_plugin_passes_its_check() {
             manifest.contributes.commands[0].name,
             format!("{namespace}.say")
         );
+        // Of the plugin API's whole version, whose types it is written of.
+        assert_eq!(
+            manifest.api.as_deref(),
+            Some(format!("^{}", lokyr_plugin_sdk::API_VERSION).as_str())
+        );
         let checked = sandbox
             .command(&["check"])
             .current_dir(&folder)
