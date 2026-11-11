@@ -217,9 +217,19 @@ impl<B: Backend> App<B> {
         if let Some(plugin) = one(Slot::TabBar, &slots.tab_bar) {
             views.push((plugin, ViewId::TabBar(shown)));
         }
-        // The titlebar's buttons, and the app's of those that find no room
-        // as they are more than the titlebar shows.
-        let buttons = self.plugins.providers(Slot::TitleButtons);
+        // The titlebar's buttons of the plugins that are not stopped, as a
+        // stopped plugin's button would show a state that no longer holds
+        // and take no click, those that wait for their slot among them,
+        // and the app's of those that find no room as they are more than
+        // the titlebar shows.
+        let buttons: Vec<&str> = self
+            .plugins
+            .providers(Slot::TitleButtons)
+            .into_iter()
+            .filter(|plugin| {
+                self.plugins.status(plugin) != Some(lokyr_kernel::plugins::Status::Disabled)
+            })
+            .collect();
         let more = buttons.len() > MOST_TITLE_BUTTONS;
         for plugin in buttons {
             views.push((plugin.to_owned(), ViewId::TitleButtons(shown)));
@@ -447,14 +457,28 @@ impl<B: Backend> App<B> {
             BarPlace::Sidebar { width } => TabBarPlace::Sidebar(width * size.scale as f32),
             BarPlace::Title => TabBarPlace::Title,
         };
+        // The titlebar's buttons that show, three at most, of the plugins'
+        // order: of more, two, and the app's button of the rest.
+        let scale = size.scale as f32;
+        let shown_buttons = title_buttons_shown(&state.chrome);
+        let room_across = (TITLE_BUTTON_ROOM * scale).round();
         // The views' lengths of the titlebar and of the window's buttons,
-        // as a sidebar leaves them their room.
+        // as a sidebar leaves them their room; a view through the titlebar,
+        // a sidebar's or a title's, leaves the plugins' buttons theirs too,
+        // which lie right after the window's.
         let room = Room {
             titlebar,
             buttons: (size.buttons * size.scale) as f32,
         };
+        let through = Room {
+            buttons: room.buttons + shown_buttons.len() as f32 * room_across,
+            ..room
+        };
+        let crosses = matches!(place, TabBarPlace::Sidebar(_) | TabBarPlace::Title);
         for view in &mut state.chrome {
-            view.surface.set_room(room);
+            let tab_bar = view.view.slot() == Some(Slot::TabBar);
+            view.surface
+                .set_room(if crosses && tab_bar { through } else { room });
         }
         // Each slot's height, of its views laid out across the window, or
         // its share of it for a slot of many.
@@ -487,10 +511,6 @@ impl<B: Backend> App<B> {
         };
         let window_strip = natural(Slot::WindowStrip);
         let status_bar = natural(Slot::StatusBar);
-        // The titlebar's buttons that show, three at most, of the plugins'
-        // order: of more, two, and the app's button of the rest.
-        let scale = size.scale as f32;
-        let shown_buttons = title_buttons_shown(&state.chrome);
         let heights = Heights {
             tab_bar,
             window_strip,
@@ -506,7 +526,6 @@ impl<B: Backend> App<B> {
         state.overlay = regions.window_overlay;
         // The buttons side by side, each a square in the middle of its room
         // and of the titlebar's height; the others hide.
-        let room_across = (TITLE_BUTTON_ROOM * scale).round();
         let side = (TITLE_BUTTON * scale).round();
         for view in state
             .chrome

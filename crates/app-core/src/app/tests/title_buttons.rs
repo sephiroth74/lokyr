@@ -19,13 +19,14 @@ use crate::fakes;
 /// A plugin of a button in the titlebar, of the name `name`, which keeps
 /// the clicks that its nodes take, by its name, and opens a menu's panel
 /// anchored to its button at the click; of a button of a text where
-/// `worded`; and of a tab bar of a text where `bar`, a title across the
-/// titlebar where `titled`.
+/// `worded`; and of a tab bar of a text where `bar`, at `place` where it
+/// gives one, as a title across the titlebar, of a room of the window's
+/// buttons first, its text keyed `t`.
 struct Button {
     name: &'static str,
     worded: bool,
     bar: bool,
-    titled: bool,
+    place: Option<plugins::host::BarPlace>,
     clicks: Rc<RefCell<Vec<String>>>,
 }
 
@@ -44,8 +45,8 @@ fn manifest(name: &str, bar: bool) -> String {
 
 impl plugins::Plugin for Button {
     fn activate(&mut self, cx: &mut plugins::Cx<'_>) -> Result<(), Error> {
-        if self.titled {
-            cx.set_tab_bar_place(plugins::host::BarPlace::Title)?;
+        if let Some(place) = self.place {
+            cx.set_tab_bar_place(place)?;
         }
         Ok(())
     }
@@ -69,6 +70,20 @@ impl plugins::Plugin for Button {
                         ..NodeLayout::default()
                     }),
             ),
+            Slot::TabBar if self.bar && self.place.is_some() => {
+                let room = Node::container(Vec::new()).layout(NodeLayout {
+                    width: Length::Buttons,
+                    min_width: Length::Buttons,
+                    height: Length::Points(10.0),
+                    ..NodeLayout::default()
+                });
+                Some(
+                    Node::container(vec![room, Node::text("tabs").key("t")]).layout(NodeLayout {
+                        grow: 1.0,
+                        ..NodeLayout::default()
+                    }),
+                )
+            }
             Slot::TabBar if self.bar => Some(Node::container(vec![Node::text("tabs")]).layout(
                 NodeLayout {
                     grow: 1.0,
@@ -113,6 +128,19 @@ fn app_titled(
     worded: bool,
     titled: bool,
 ) -> (Fake, App, WindowId, Rc<RefCell<Vec<String>>>) {
+    app_placed(
+        names,
+        worded,
+        titled.then_some(plugins::host::BarPlace::Title),
+    )
+}
+
+/// As [`app_of`], the tab bar at `place` where it gives one.
+fn app_placed(
+    names: &[&'static str],
+    worded: bool,
+    place: Option<plugins::host::BarPlace>,
+) -> (Fake, App, WindowId, Rc<RefCell<Vec<String>>>) {
     let clicks = Rc::new(RefCell::new(Vec::new()));
     let drawing = Drawing::new(FontConfig::default()).unwrap();
     let mut fake = Fake::default();
@@ -125,7 +153,7 @@ fn app_titled(
             name,
             worded,
             bar: at == 0,
-            titled,
+            place,
             clicks: Rc::clone(&clicks),
         };
         app = app.with_builtin(&manifest(name, at == 0), Box::new(plugin));
@@ -412,4 +440,108 @@ fn a_title_button_of_a_plugin_on_its_thread_shows_its_render_anew_of_no_other_fr
     run_until(&mut fake, &mut app, |_, app| {
         icon(app).as_deref() == Some("eye-closed")
     });
+}
+
+/// The frame of the tab bar's text, keyed `t`, in its view, of `window`.
+fn tab_text(app: &App, window: WindowId) -> Frame {
+    let view = app.windows[&window]
+        .chrome
+        .iter()
+        .find(|view| matches!(view.view, ViewId::TabBar(_)))
+        .expect("the tab bar");
+    let surface = &view.surface;
+    let node = surface
+        .tree
+        .by_key(&lokyr_kernel::plugins::view::Key::from("t"))
+        .expect("its text");
+    surface.layout.frame(&surface.tree, node).expect("a frame")
+}
+
+#[test]
+fn a_bar_through_the_titlebar_leaves_the_plugins_buttons_their_room() {
+    for place in [
+        plugins::host::BarPlace::Title,
+        plugins::host::BarPlace::Sidebar { width: 200.0 },
+    ] {
+        let (fake, app, window, _) = app_placed(&["first", "second"], false, Some(place));
+        let size = fake.window(window).unwrap().size;
+        let scale = size.scale as f32;
+        let shown = buttons(&app, window);
+        assert_eq!(shown.len(), 2, "{place:?}: {shown:?}");
+        // The bar's room of the window's buttons ends after the plugins'
+        // two, so that nothing of it lies under them, as the window's keys
+        // of a sidebar would.
+        let view = app.windows[&window]
+            .chrome
+            .iter()
+            .find(|view| matches!(view.view, ViewId::TabBar(_)))
+            .and_then(|view| view.frame)
+            .expect("the bar's frame");
+        let text = tab_text(&app, window);
+        let last = shown[1].1;
+        assert!(
+            view.x + text.x >= last.x + last.width,
+            "{place:?}: the text at {} under a button ending at {}",
+            view.x + text.x,
+            last.x + last.width
+        );
+        let after = (size.buttons * size.scale) as f32 + 2.0 * 28.0 * scale;
+        assert!(view.x + text.x >= after - 0.5, "{place:?}");
+    }
+}
+
+/// A plugin of a titlebar button whose click faults it.
+struct Breaker;
+
+impl plugins::Plugin for Breaker {
+    fn render(&mut self, _: &mut plugins::Cx<'_>, view: &ViewId) -> Option<Node> {
+        matches!(view.slot()?, Slot::TitleButtons)
+            .then(|| Node::icon_button("circle").key("b").tooltip("Breaker"))
+    }
+
+    fn on_ui_event(&mut self, _: &mut plugins::Cx<'_>, _: &UiEvent) -> Result<(), Error> {
+        Err(Error::new(
+            lokyr_kernel::commands::Code::Fault,
+            "the button broke",
+        ))
+    }
+}
+
+/// A new [`Breaker`], as the app makes it anew after its fault.
+fn make_breaker() -> Box<dyn plugins::Plugin + Send> {
+    Box::new(Breaker)
+}
+
+#[test]
+fn a_faulted_plugin_s_button_goes_and_comes_back_as_it_starts_again() {
+    let drawing = Drawing::new(FontConfig::default()).unwrap();
+    let mut fake = Fake::default();
+    fake.set_bar(28.0);
+    let mut app = App::new(Some(drawing), unpadded(), None)
+        .with_program(quiet())
+        .with_registration(plugins::Registration {
+            manifest: "[plugin]\nname = \"lokyr/breaker\"\nkind = \"builtin\"\nlicense = \"MIT\"\n[contributes]\nslots = [\"title-buttons\"]\n",
+            make: make_breaker,
+        });
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    app.windows.get_mut(&window).unwrap().surface = Some(fakes::Surface::default());
+    let frames = |fake: &mut Fake, app: &mut App| {
+        for _ in 0..4 {
+            fake.send(app, window, WindowEvent::Frame);
+        }
+    };
+    frames(&mut fake, &mut app);
+    let shown = buttons(&app, window);
+    assert_eq!(shown.len(), 1, "{shown:?}");
+    let scale = fake.window(window).unwrap().size.scale as f32;
+    // Its click faults it: its button goes, as it would show a state that
+    // no longer holds and take no click.
+    click_in(&mut fake, &mut app, window, shown[0].1, scale);
+    frames(&mut fake, &mut app);
+    assert!(buttons(&app, window).is_empty());
+    // A second later it starts again, and its button is back.
+    fake.fire_timers(&mut app, Instant::now() + Duration::from_millis(1100));
+    frames(&mut fake, &mut app);
+    assert_eq!(buttons(&app, window).len(), 1);
 }

@@ -1020,8 +1020,9 @@ pub enum Length {
     /// panel.
     Titlebar,
     /// The width of the room at the titlebar's left that the window's
-    /// buttons take, as the host gives it; 0 without them, as in full
-    /// screen, and in a panel.
+    /// buttons take, as the host gives it, and, to a tab bar through the
+    /// titlebar, a sidebar or a title, the plugins' titlebar buttons right
+    /// after them too; 0 without them, as in full screen, and in a panel.
     Buttons,
 }
 
