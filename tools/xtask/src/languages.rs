@@ -73,29 +73,19 @@ fn is_code(code: &str) -> bool {
     (2..=3).contains(&code.len()) && code.chars().all(|c| c.is_ascii_lowercase())
 }
 
-/// The `locales/en` folders of the workspace at `root`, in their paths'
-/// order.
+/// The `locales/en` folders of the workspace at `root` whose catalogs a
+/// list of catalogs holds, in their paths' order: Lokyr's own, not a
+/// template's of a plugin of an author's.
 fn english_folders(root: &Path) -> anyhow::Result<Vec<PathBuf>> {
     let mut found = Vec::new();
-    let mut left: Vec<PathBuf> = ROOTS.iter().map(|folder| root.join(folder)).collect();
-    while let Some(folder) = left.pop() {
-        let Ok(entries) = std::fs::read_dir(&folder) else {
-            continue;
-        };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if !path.is_dir() || path.file_name().is_some_and(|name| name == "target") {
-                continue;
-            }
-            if path.file_name().is_some_and(|name| name == "en")
-                && path
-                    .parent()
-                    .and_then(Path::file_name)
-                    .is_some_and(|name| name == "locales")
-            {
-                found.push(path);
-            } else {
-                left.push(path);
+    for list in catalog_lists(root)? {
+        let text = std::fs::read_to_string(&list)?;
+        let folder = list.parent().unwrap_or(root);
+        for (prefix, _) in text.lines().filter_map(english_entry) {
+            let english = folder.join(&prefix).join("locales/en");
+            let english = std::fs::canonicalize(&english).unwrap_or(english);
+            if !found.contains(&english) {
+                found.push(english);
             }
         }
     }
