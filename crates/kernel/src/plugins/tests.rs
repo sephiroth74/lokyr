@@ -526,6 +526,7 @@ impl Plugin for Titled {
                 command: command.to_owned(),
                 args: Args::new(),
                 title: title.map(str::to_owned),
+                ticked: false,
             })?;
         }
         Ok(())

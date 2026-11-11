@@ -189,6 +189,7 @@ impl Plugin for Splits {
                 command: command.to_owned(),
                 args: direction.map(towards).unwrap_or_default(),
                 title: title.map(str::to_owned),
+                ticked: false,
             })?;
         }
         Ok(())

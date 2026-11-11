@@ -3426,8 +3426,15 @@ impl Calling<'_> {
                     ));
                 }
                 self.host.check_run(&item.command, &item.args)?;
-                if !self.host.menu_items.contains(&item) {
-                    self.host.menu_items.push(item);
+                // The same item again, of another tick, changes its tick.
+                match self
+                    .host
+                    .menu_items
+                    .iter_mut()
+                    .find(|kept| kept.same_as(&item))
+                {
+                    Some(kept) => kept.ticked = item.ticked,
+                    None => self.host.menu_items.push(item),
                 }
             }
             Request::Subscribe(names) => {

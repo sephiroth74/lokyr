@@ -1955,6 +1955,7 @@ impl Plugins {
                         .title
                         .as_ref()
                         .map(|title| texts.get(title).unwrap_or_else(|| title.clone())),
+                    ticked: item.ticked,
                 }
             }));
         }
@@ -3148,6 +3149,8 @@ pub struct MenuEntry {
     pub invocation: Invocation,
     /// Its title, in the app's language.
     pub title: Option<String>,
+    /// Whether the menu bar shows it ticked.
+    pub ticked: bool,
 }
 
 /// The message of a plugin's catalogs that titles its command `name`:
@@ -5726,9 +5729,22 @@ impl Host<'_, '_> {
                 // The item runs as the plugin would: its arguments make a
                 // whole call, which it may make.
                 self.check_run(&item.command, item.args.clone())?;
-                if !self.state.menu_items.contains(&item) {
-                    self.state.menu_items.push(item);
-                    *self.declarations_changed = true;
+                // The same item again, of another tick, changes its tick.
+                match self
+                    .state
+                    .menu_items
+                    .iter_mut()
+                    .find(|kept| kept.same_as(&item))
+                {
+                    Some(kept) if kept.ticked != item.ticked => {
+                        kept.ticked = item.ticked;
+                        *self.declarations_changed = true;
+                    }
+                    Some(_) => {}
+                    None => {
+                        self.state.menu_items.push(item);
+                        *self.declarations_changed = true;
+                    }
                 }
             }
             Asked::Subscribe(names) => {

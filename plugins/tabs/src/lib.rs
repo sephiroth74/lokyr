@@ -232,6 +232,7 @@ impl Plugin for Tabs {
             command: RENAME.to_owned(),
             args: Args::new(),
             title: None,
+            ticked: false,
         })?;
         Ok(())
     }

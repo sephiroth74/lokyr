@@ -1472,6 +1472,7 @@ impl plugins::Plugin for Menuer {
                     lokyr_kernel::commands::Value::String(title.to_owned()),
                 )]),
                 title: Some(title.to_owned()),
+                ticked: false,
             })?;
         }
         Ok(())
@@ -1524,4 +1525,76 @@ fn a_plugin_s_menu_item_of_an_app_s_title_is_left_out_and_its_others_stand_apart
         titles(unique_titles(menu)),
         ["Copy", "Paste", "-", "Paste and Go"]
     );
+}
+
+/// A plugin of an item in the View menu that its command ticks and unticks
+/// in turn.
+#[derive(Default)]
+struct Ticker {
+    ticked: bool,
+}
+
+impl Ticker {
+    fn item(&self) -> plugins::host::MenuItem {
+        plugins::host::MenuItem {
+            place: plugins::host::MenuPlace::Bar(Category::View),
+            command: "ticker.go".to_owned(),
+            args: Args::new(),
+            title: Some("Keep Going".to_owned()),
+            ticked: self.ticked,
+        }
+    }
+}
+
+impl plugins::Plugin for Ticker {
+    fn activate(&mut self, cx: &mut plugins::Cx<'_>) -> Result<(), Error> {
+        cx.register_command(Command {
+            name: "ticker.go".to_owned(),
+            title: "Go".to_owned(),
+            category: Category::View,
+            capabilities: Vec::new(),
+            params: Vec::new(),
+            when: None,
+        })?;
+        cx.add_menu_item(self.item())
+    }
+
+    fn on_command(&mut self, cx: &mut plugins::Cx<'_>, _: &str, _: Args) -> Result<(), Error> {
+        self.ticked = !self.ticked;
+        cx.add_menu_item(self.item())
+    }
+}
+
+#[test]
+fn a_plugin_s_menu_bar_item_shows_the_tick_that_its_plugin_gives() {
+    let mut fake = Fake::default();
+    let mut app =
+        app(Config::default(), quiet()).with_plugin("ticker", Box::new(Ticker::default()));
+    fake.start(&mut app);
+    let item = |fake: &Fake| -> String {
+        fake.main_menu()
+            .unwrap()
+            .menus
+            .iter()
+            .flat_map(|menu| &menu.items)
+            .find_map(|item| match item {
+                MenuItem::Command { title, command, .. } if title == "Keep Going" => {
+                    Some(command.clone())
+                }
+                _ => None,
+            })
+            .expect("its item")
+    };
+    let id = item(&fake);
+    assert!(id.starts_with("menu-item:"), "{id}");
+    assert!(!fake.command_checked(&id));
+    fake.send_app(&mut app, AppEvent::Command(id));
+    run_until(&mut fake, &mut app, |fake, _| {
+        fake.command_checked(&item(fake))
+    });
+    // The menu made anew keeps it ticked, at its new place.
+    fake.send_app(&mut app, AppEvent::Command(item(&fake)));
+    run_until(&mut fake, &mut app, |fake, _| {
+        !fake.command_checked(&item(fake))
+    });
 }

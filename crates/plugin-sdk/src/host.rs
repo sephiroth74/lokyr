@@ -576,6 +576,20 @@ pub struct MenuItem {
     /// title without one.
     #[serde(default)]
     pub title: Option<String>,
+    /// Whether the menu bar shows it ticked, as a state in force that the
+    /// plugin keeps: the same item added again of another tick changes it.
+    #[serde(default)]
+    pub ticked: bool,
+}
+
+impl MenuItem {
+    /// Whether it is `other`'s item, whatever their ticks.
+    pub fn same_as(&self, other: &MenuItem) -> bool {
+        self.place == other.place
+            && self.command == other.command
+            && self.args == other.args
+            && self.title == other.title
+    }
 }
 
 /// Where a theme comes from.

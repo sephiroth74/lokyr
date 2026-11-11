@@ -434,6 +434,13 @@ impl<B: Backend> App<B> {
             }
         }
         self.menu_contexts = menu_contexts(&self.commands, &self.menu_items);
+        // The plugins' items of the menu bar ticked as their plugins say,
+        // each, as the items' places change with the menu.
+        for (at, entry) in self.menu_items.iter().enumerate() {
+            if matches!(entry.place, MenuPlace::Bar(_)) {
+                platform.set_command_checked(&item_id(at), entry.ticked);
+            }
+        }
     }
 
     /// What the plugins' item of the menus of `id` runs, if `id` names one.

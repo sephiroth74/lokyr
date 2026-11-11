@@ -1454,6 +1454,34 @@ fn a_declaration_made_already_changes_nothing_and_a_plugin_s_are_bounded() {
     );
 }
 
+#[test]
+fn a_menu_item_added_again_of_another_tick_changes_its_tick() {
+    let mut host = FakeHost::new("acme/probe");
+    let ticked = Rc::new(RefCell::new(false));
+    let tick = Rc::clone(&ticked);
+    let mut probe = Probe::new(move |cx, _| {
+        cx.add_menu_item(host::MenuItem {
+            place: host::MenuPlace::Bar(Category::View),
+            command: "probe.go".to_owned(),
+            args: Args::new(),
+            title: Some("Go On".to_owned()),
+            ticked: *tick.borrow(),
+        })
+    });
+    host.activate(&mut probe).unwrap();
+    host.command(&mut probe, "probe.go", Args::new()).unwrap();
+    let ticks = |host: &FakeHost| -> Vec<bool> {
+        host.menu_items().iter().map(|item| item.ticked).collect()
+    };
+    assert_eq!(ticks(&host), [false]);
+    *ticked.borrow_mut() = true;
+    host.command(&mut probe, "probe.go", Args::new()).unwrap();
+    assert_eq!(ticks(&host), [true]);
+    *ticked.borrow_mut() = false;
+    host.command(&mut probe, "probe.go", Args::new()).unwrap();
+    assert_eq!(ticks(&host), [false]);
+}
+
 /// A plugin that hears the tabs' events, by their names, and runs the
 /// requests that `asks` makes as its command runs.
 struct TabListener {

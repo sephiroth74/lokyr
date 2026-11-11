@@ -1488,14 +1488,16 @@ fn declarations() -> Scenario {
         })
     };
     let invalid = |message: &str| failed(Code::InvalidBinding, message);
-    let item = |command: &str, args: Args| {
+    let ticked = |command: &str, args: Args, ticked: bool| {
         Request::AddMenuItem(MenuItem {
             place: MenuPlace::Bar(Category::View),
             command: command.to_owned(),
             args,
             title: Some("menu-ask".to_owned()),
+            ticked,
         })
     };
+    let item = |command: &str, args: Args| ticked(command, args, false);
     let other = Command {
         name: "conformer.other".to_owned(),
         ..ask_command()
@@ -1557,6 +1559,8 @@ fn declarations() -> Scenario {
                 invalid("the expression ends early"),
             ),
             (item("conformer.ask", Args::new()), Response::Done),
+            // The same item ticked: its tick changed.
+            (ticked("conformer.ask", Args::new(), true), Response::Done),
             (
                 item("conformer.none", Args::new()),
                 failed(Code::NotFound, "no command `conformer.none`"),

@@ -228,6 +228,7 @@ fn a_declaration_made_already_changes_nothing_and_a_plugin_s_are_bounded() {
                         command: "binder.go".to_owned(),
                         args: Args::new(),
                         title: None,
+                        ticked: false,
                     })
                 },
             ),
@@ -267,6 +268,62 @@ fn a_declaration_made_already_changes_nothing_and_a_plugin_s_are_bounded() {
             .all(|code| *code == Some(Code::Failed))
     );
     assert_eq!(state(&plugins).0, 1 + taken);
+}
+
+#[test]
+fn a_menu_item_added_again_of_another_tick_changes_its_tick_alone() {
+    let mut app = App::default();
+    let mut plugins = Plugins::new();
+    let item = |ticked: bool| host::MenuItem {
+        place: host::MenuPlace::Bar(lokyr_plugin_sdk::command::Category::View),
+        command: "ticker.toggle".to_owned(),
+        args: Args::new(),
+        title: Some("Keep Going".to_owned()),
+        ticked,
+    };
+    plugins
+        .add(
+            "ticker",
+            scripted(
+                move |cx| {
+                    cx.register_command(command("ticker.toggle"))?;
+                    cx.register_command(command("ticker.on"))?;
+                    cx.add_menu_item(item(false))
+                },
+                move |cx, name, _| cx.add_menu_item(item(name == "ticker.on")),
+            ),
+        )
+        .unwrap();
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    assert!(plugins.take_declarations_changed());
+    let ticks = |plugins: &Plugins| -> Vec<bool> {
+        plugins
+            .menu_items_in("en")
+            .into_iter()
+            .map(|entry| entry.ticked)
+            .collect()
+    };
+    assert_eq!(ticks(&plugins), [false]);
+    // Ticked: the same item, its tick changed, the menus made anew.
+    plugins
+        .run("ticker.on", Args::new(), &mut app.context())
+        .unwrap();
+    assert!(plugins.take_declarations_changed());
+    assert_eq!(ticks(&plugins), [true]);
+    // The same tick again changes nothing.
+    plugins
+        .run("ticker.on", Args::new(), &mut app.context())
+        .unwrap();
+    assert!(!plugins.take_declarations_changed());
+    assert_eq!(ticks(&plugins), [true]);
+    // And back.
+    plugins
+        .run("ticker.toggle", Args::new(), &mut app.context())
+        .unwrap();
+    assert!(plugins.take_declarations_changed());
+    assert_eq!(ticks(&plugins), [false]);
+    // One item all along.
+    assert_eq!(plugins.entries[0].state.menu_items.len(), 1);
 }
 
 /// A plugin whose `panel.open` opens its panel `p`, whose `panel.close`

@@ -104,6 +104,7 @@ fn the_commands_register_with_their_parameters_and_their_titles() {
             command: RENAME.to_owned(),
             args: Args::new(),
             title: None,
+            ticked: false,
         }]
     );
 }

@@ -237,6 +237,8 @@ impl Plugin for SampleSlots {
                 };
                 Some(panel)
             }
+            // The titlebar's buttons are not the sample's.
+            ViewId::TitleButtons(_) => None,
         }
     }
 }

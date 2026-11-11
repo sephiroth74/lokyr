@@ -503,6 +503,7 @@ export type MenuItem = {
     command: string,
     args: { [string]: Value }?,
     title: string?,
+    ticked: boolean?,
 }
 
 export type MenuPlace =
