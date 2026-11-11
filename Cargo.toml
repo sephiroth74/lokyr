@@ -80,6 +80,11 @@ toml = "1.1.8"
 notify = { version = "8.2.1", default-features = false, features = ["macos_fsevent"] }
 # The config's reader, which keeps the place of each key and value.
 toml_edit = { version = "0.25.17", default-features = false, features = ["parse", "serde"] }
+# The terminal's width, of Sleip's tables, without code of its own of the
+# system's calls.
+terminal_size = "0.4.4"
+# The columns that a text takes at a terminal, of Sleip's tables.
+unicode-width = "0.2.2"
 # The reader of the themes of `.itermcolors`, property lists.
 plist = { version = "1.10.3", default-features = false }
 # The C++ of Luau's type checker, which Sleip builds.

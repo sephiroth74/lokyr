@@ -2,7 +2,8 @@
 //! NDJSON on the standard output, a JSON object a line, each of its
 //! `event`, as the app reads them.
 
-use std::io::Write as _;
+use std::io::{IsTerminal as _, Write as _};
+use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use serde_json::{Map, Value, json};
@@ -24,6 +25,27 @@ pub fn print(line: &str) {
     {
         CLOSED.store(true, Ordering::Relaxed);
     }
+}
+
+/// A part of a line that Sleip tells a person: plain, or bold, as a
+/// plugin's name in a list.
+#[derive(Clone, Copy, Debug)]
+pub enum Span<'a> {
+    /// Plain text.
+    Plain(&'a str),
+    /// Bold text, at a terminal that shows it.
+    Bold(&'a str),
+}
+
+/// Whether the standard output shows bold text: a terminal, of no
+/// `NO_COLOR` and no `TERM` of `dumb`, as [`Span::Bold`] takes it.
+fn emphasizes() -> bool {
+    static EMPHASIZES: OnceLock<bool> = OnceLock::new();
+    *EMPHASIZES.get_or_init(|| {
+        std::io::stdout().is_terminal()
+            && std::env::var_os("NO_COLOR").is_none_or(|value| value.is_empty())
+            && std::env::var("TERM").is_ok_and(|term| term != "dumb")
+    })
 }
 
 /// Where a command tells what it does.
@@ -54,6 +76,32 @@ impl Out {
             print(&Value::Object(object).to_string());
         } else if !text.is_empty() {
             print(&printable(text));
+        }
+    }
+
+    /// Tells the event `event`, of `fields`, or the line of `spans` to a
+    /// person, each made printable, the bold ones bold where the terminal
+    /// shows it.
+    pub fn tell_spans(self, event: &str, fields: Value, spans: &[Span<'_>]) {
+        if self.json {
+            self.tell(event, fields, "");
+            return;
+        }
+        let bold = emphasizes();
+        let mut line = String::new();
+        for span in spans {
+            match *span {
+                Span::Plain(text) => line.push_str(&printable(text)),
+                Span::Bold(text) if bold => {
+                    line.push_str("\u{1b}[1m");
+                    line.push_str(&printable(text));
+                    line.push_str("\u{1b}[22m");
+                }
+                Span::Bold(text) => line.push_str(&printable(text)),
+            }
+        }
+        if !line.is_empty() {
+            print(&line);
         }
     }
 

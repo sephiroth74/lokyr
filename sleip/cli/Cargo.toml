@@ -31,6 +31,10 @@ serde_json.workspace = true
 signal-hook.workspace = true
 # The user's plugins.toml edited in place, of its comments and order.
 toml_edit = { workspace = true, features = ["display"] }
+# The width of the terminal, and of the texts, of the tables that Sleip
+# lists.
+terminal_size.workspace = true
+unicode-width.workspace = true
 
 [dev-dependencies]
 lokyr-pkg-model = { workspace = true, features = ["archive"] }

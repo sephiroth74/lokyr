@@ -166,7 +166,7 @@ Commands:
   remove <plugin>    Remove a plugin, as owner/name; its package stays until `gc`
   gc                 Remove the packages of the store that no lockfile names
   doctor             Diagnose the store, the lockfile, the cache and the app's plugin API
-  search <words>     Search the registry's plugins, of their names and descriptions
+  search [<words>]   Search the registry's plugins, of their names and descriptions; every one of none
   info <plugin>      Tell a plugin of the registry: its versions, capabilities and checksums
   publish            Propose the version of the plugin of the current folder to the registry
   help [command]     Show this help, or a command's
@@ -417,7 +417,7 @@ pub fn parse(args: &[String]) -> Result<Parsed, String> {
         ["remove", plugin] => Ok(Parsed::Run(options, Command::Remove((*plugin).to_owned()))),
         ["gc"] => Ok(Parsed::Run(options, Command::Gc)),
         ["doctor"] => Ok(Parsed::Run(options, Command::Doctor)),
-        ["search", words @ ..] if !words.is_empty() => Ok(Parsed::Run(
+        ["search", words @ ..] => Ok(Parsed::Run(
             options,
             Command::Search(words.iter().map(|word| (*word).to_owned()).collect()),
         )),

@@ -138,6 +138,7 @@ fn listed(entry: &Entry) -> Listed {
         description: entry.description.clone(),
         caps: entry.caps.clone(),
         yanked: entry.yanked,
+        api: entry.api.clone(),
     }
 }
 
@@ -660,6 +661,58 @@ fn add_and_update_install_the_registry_s_versions_checked_against_its_index() {
         String::from_utf8_lossy(&output.stdout).contains("Nothing changed."),
         "{output:?}"
     );
+    // A Lokyr of an older plugin API than every version's, `^0.1`: the
+    // search marks the plugin, of no word, `info` its versions, and `add`
+    // tells what to do in plain words.
+    std::fs::write(home.join("api-version"), "0.0.9\n").unwrap();
+    let output = sleip(&["--json", "search"]);
+    let found: Vec<Value> = events(&output)
+        .into_iter()
+        .filter(|event| event["event"] == "found")
+        .collect();
+    assert_eq!(found.len(), 1, "{output:?}");
+    assert_eq!(found[0]["taken"], false);
+    assert_eq!(found[0]["api"], "^0.1");
+    let text = String::from_utf8_lossy(&sleip(&["search"]).stdout).into_owned();
+    assert!(text.starts_with("Plugin "), "{text}");
+    assert!(text.contains("\nacme/hello*  "), "{text}");
+    assert!(
+        text.contains("* This Lokyr, of the plugin API 0.0.9, does not take its version shown"),
+        "{text}"
+    );
+    let text = String::from_utf8_lossy(&sleip(&["info", "acme/hello"]).stdout).into_owned();
+    assert!(
+        text.contains("This Lokyr, of the plugin API 0.0.9, takes none of its versions."),
+        "{text}"
+    );
+    assert!(
+        text.contains("plugin API ^0.1")
+            && text.contains("(needs a newer Lokyr: the plugin API ^0.1, this one's 0.0.9)"),
+        "{text}"
+    );
+    let output = sleip(&["add", "acme/hello"]);
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+    let told = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        told.contains("`acme/hello` 0.2.0, its newest version, needs a newer Lokyr")
+            && told.contains("Check for Updates"),
+        "{told}"
+    );
+    // Of a newer one, made for an older Lokyr.
+    std::fs::write(home.join("api-version"), "0.2.0\n").unwrap();
+    let output = sleip(&["add", "acme/hello"]);
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("made for an older Lokyr"),
+        "{output:?}"
+    );
+    // Of this Sleip's, every version taken, of no mark.
+    std::fs::write(
+        home.join("api-version"),
+        format!("{}\n", lokyr_plugin_sdk::API_VERSION),
+    )
+    .unwrap();
+    let text = String::from_utf8_lossy(&sleip(&["search"]).stdout).into_owned();
+    assert!(!text.contains('*'), "{text}");
     let _ = std::fs::remove_dir_all(&root);
 }
 

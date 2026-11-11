@@ -541,6 +541,10 @@ pub struct Listed {
     pub caps: Vec<String>,
     /// Whether the version shown is yanked, as every one of the plugin is.
     pub yanked: bool,
+    /// The plugin API that the version shown takes, if it names one, which
+    /// a search tells this Lokyr's of; none of a list written before it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub api: Option<String>,
 }
 
 /// The list of the registry's plugins checked, and its time.

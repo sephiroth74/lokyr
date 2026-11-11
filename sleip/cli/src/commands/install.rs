@@ -501,6 +501,42 @@ fn install(
     } else {
         offered.preferred(lock)
     };
+    // A registry's plugin that this Lokyr takes no version of, told in
+    // plain words rather than the resolver's.
+    for (name, wanted) in &list.plugins {
+        if !matches!(wanted, Wanted::Registry(_)) {
+            continue;
+        }
+        let versions: Vec<&sleip_resolver::Candidate> = candidates
+            .iter()
+            .filter(|candidate| candidate.name == *name)
+            .collect();
+        let takes = |candidate: &&sleip_resolver::Candidate| {
+            super::search::taken(candidate.api.as_deref(), Some(&api_version)) != Some(false)
+        };
+        if versions.is_empty() || versions.iter().any(takes) {
+            continue;
+        }
+        if let Some(newest) = versions.iter().max_by(|a, b| a.version.cmp(&b.version))
+            && let Some(api) = &newest.api
+        {
+            let why = super::search::untaken(api, &api_version);
+            let what = if why.starts_with("needs a newer") {
+                "update Lokyr, as Lokyr › Check for Updates… does, then run this again"
+            } else {
+                "a newer version of the plugin may take this Lokyr's"
+            };
+            return Err(format!(
+                "`{name}` {}, {} {why}: {what}",
+                newest.version,
+                if versions.len() > 1 {
+                    "its newest version,"
+                } else {
+                    "its one version,"
+                }
+            ));
+        }
+    }
     let picked =
         sleip_resolver::resolve_preferring(&api_version, &wanted, &candidates, &preferred)?;
     // The packages stored, those new to the store taken away of a failure.

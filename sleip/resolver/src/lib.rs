@@ -23,7 +23,7 @@ use pubgrub::{
 use semver::{Comparator, Op, Prerelease, Version, VersionReq};
 
 /// The name of the root, the user's plugins, as a conflict tells it.
-const ROOT: &str = "your plugins";
+const ROOT: &str = "plugins.toml";
 
 /// The name of the app's plugin API, as a conflict tells it.
 const API: &str = "Lokyr's plugin API";
@@ -294,6 +294,10 @@ pub fn resolve_preferring(
 fn told(report: &str, provider: &Provider) -> String {
     let mut text = report
         .replace(&format!("{ROOT} 0.0.0"), ROOT)
+        .replace(
+            &format!("{ROOT} is forbidden"),
+            &format!("the plugins of {ROOT} cannot all be installed"),
+        )
         .replace("is forbidden", "cannot all be installed")
         .replace("-0,", ",")
         .replace("-0 ", " ");

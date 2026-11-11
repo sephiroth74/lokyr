@@ -450,6 +450,7 @@ fn index(out: Out, indexed: &Indexed) -> Result<(), String> {
                 description: shown.description.clone(),
                 caps: shown.caps.clone(),
                 yanked: shown.yanked,
+                api: shown.api.clone(),
             });
         }
     }
