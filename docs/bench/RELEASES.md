@@ -8,23 +8,23 @@ Measures of different sessions compare within a few percent alone: a session's l
 
 ## At a glance
 
-0.8.0 against 0.7.0, both measured in 0.8.0's session, [ab-F4-25](ab-F4-25.md), but a measure that names another: each measure's change, the share of its budget, the best of the other terminals, of [F2-134](compare-F2-134.md) and [F3-152](motion-F3-152.md), with Lokyr's own value of that session where its conditions differ, and whether it is as before, better, or worse beyond its rounds' spread.
+0.9.0 against 0.8.0, both measured in 0.9.0's session, [ab-F4-42](ab-F4-42.md), but a measure that names another: each measure's change, the share of its budget, the best of the other terminals, of [F2-134](compare-F2-134.md) and [F3-152](motion-F3-152.md), with Lokyr's own value of that session where its conditions differ, and whether it is as before, better, or worse beyond its rounds' spread.
 
-| Measure | 0.7.0 | 0.8.0 | Change | Budget | The best of the others | |
+| Measure | 0.8.0 | 0.9.0 | Change | Budget | The best of the others | |
 |---|---|---|---|---|---|---|
-| Startup, its gap to the minimal app's first window | 17.9 ms | 24.9 ms | +7.0 ms, +39 % | ≤ 35 ms, 71 % of it | — | ⚠️ Worse, within its budget |
-| Latency, a key to its echo, p50 | 19.6 ms | 19.6 ms | ±0.0 ms, ±0 % | ≤ 33.3 ms, 59 % of it | Alacritty 21.2, Lokyr 22.8 then | ✅ As before |
-| Latency, a key to its echo, p99 | 39.9 ms | 47.3 ms | +7.4 ms, +19 % | ≤ 75 ms, 63 % of it | Alacritty 47.9, Lokyr 50.3 then | ✅ As before |
-| Memory at rest, without the GPU's | 29.4 MB | 27.2 MB | −2.2 MB, −7 % | ≤ 35 MB, 78 % of it | Alacritty 31.3, Lokyr 25 then | ✅ Better |
-| Idle, interrupt wakeups | 0.35/s | 0.34/s | −0.01/s, −3 % | ≤ 0.5/s, 68 % of it | Alacritty 0.37, Lokyr 0.38 then | ✅ As before |
+| Startup, its gap to the minimal app's first window | 23.8 ms | 25.4 ms | +1.5 ms, +6 % | ≤ 35 ms, 72 % of it | — | ✅ As before |
+| Latency, a key to its echo, p50 | 20.8 ms | 20.6 ms | −0.2 ms, −1 % | ≤ 33.3 ms, 62 % of it | Alacritty 21.2, Lokyr 22.8 then | ✅ As before |
+| Latency, a key to its echo, p99 | 40.9 ms | 42.0 ms | +1.1 ms, +3 % | ≤ 75 ms, 56 % of it | Alacritty 47.9, Lokyr 50.3 then | ✅ As before |
+| Memory at rest, without the GPU's | 26.9 MB | 28.6 MB | +1.7 MB, +6 % | ≤ 35 MB, 82 % of it | Alacritty 31.3, Lokyr 25 then | ✅ As before |
+| Idle, interrupt wakeups | 0.35/s | 0.38/s | +0.03/s, +9 % | ≤ 0.5/s, 77 % of it | Alacritty 0.37, Lokyr 0.38 then | ✅ As before |
 | Idle, package idle wakeups | 0.00/s | 0.00/s | ±0.00/s | ≤ 0/s | — | ✅ As before |
-| `cat` of 1 GiB of ASCII on screen | 319.0 MiB/s | 315.0 MiB/s | −4.0 MiB/s, −1 % | ≥ 275.4 MiB/s | Ghostty 306, Lokyr 296 then | ✅ As before |
-| `seq 1 10000000` | 214.9 MiB/s | 222.1 MiB/s | +7.2 MiB/s, +3 % | — | — | ✅ As before |
-| Colored text, SGR | 284.3 MiB/s | 285.6 MiB/s | +1.3 MiB/s, +0 % | — | — | ✅ As before |
-| CJK and emoji | 214.0 MiB/s | 215.3 MiB/s | +1.3 MiB/s, +1 % | — | — | ✅ As before |
-| A frame on the CPU, ASCII, p50 | 0.285 ms | 0.296 ms | +0.011 ms, +4 % | — | — | ✅ As before |
-| A frame on the CPU, ASCII, p99 | 0.398 ms | 0.427 ms | +0.029 ms, +7 % | ≤ 2 ms, 21 % of it | — | ✅ As before |
-| A frame on the CPU, CJK and emoji, p50 | 0.73 ms | 0.72 ms | −0.01 ms, −2 % | — | — | ✅ As before |
+| `cat` of 1 GiB of ASCII on screen | 314.8 MiB/s | 311.9 MiB/s | −2.9 MiB/s, −1 % | ≥ 275.4 MiB/s | Ghostty 306, Lokyr 296 then | ✅ As before |
+| `seq 1 10000000` | 215.8 MiB/s | 223.8 MiB/s | +8.0 MiB/s, +4 % | — | — | ✅ As before |
+| Colored text, SGR | 284.7 MiB/s | 288.9 MiB/s | +4.2 MiB/s, +1 % | — | — | ✅ As before |
+| CJK and emoji | 217.2 MiB/s | 216.5 MiB/s | −0.7 MiB/s, −0 % | — | — | ✅ As before |
+| A frame on the CPU, ASCII, p50 | 0.285 ms | 0.288 ms | +0.003 ms, +1 % | — | — | ✅ As before |
+| A frame on the CPU, ASCII, p99 | 0.399 ms | 0.429 ms | +0.030 ms, +8 % | ≤ 2 ms, 21 % of it | — | ✅ As before |
+| A frame on the CPU, CJK and emoji, p50 | 0.73 ms | 0.73 ms | +0.00 ms, +1 % | — | — | ✅ As before |
 
 The latency's budgets, 2 refreshes at the p50 and 4.5 at the p99, set of a display at 120 Hz, are of these sessions' 60 Hz here: 33.3 and 75 ms. The throughput's of `cat` is the faster of Ghostty and Alacritty less 10 %, of [F2-134](compare-F2-134.md): Ghostty's 306 MiB/s.
 
@@ -46,30 +46,30 @@ Each measure over the releases, a dot of each release and a ring of a build betw
 
 ## Every measure
 
-| Measure | F2, 0.1.0 | 0.2.0 | 0.3.0 | 0.4.0 | 0.5.0 | After F3-49 | 0.5.1 | After F3-72 | 0.7.0 | 0.8.0 | Budget |
-|---|---|---|---|---|---|---|---|---|---|---|---|
-| Report | [ab-F3-13](ab-F3-13.md) | [ab-F3-13](ab-F3-13.md) | [ab-F3-83](ab-F3-83.md) | [ab-F3-29](ab-F3-29.md) | [ab-F3-40](ab-F3-40.md) | [ab-F3-49](ab-F3-49.md) | [ab-F3-190](ab-F3-190.md) | [movement-F3-72](movement-F3-72.md) | [ab-F3-77](ab-F3-77.md) | [ab-F4-25](ab-F4-25.md) | |
-| Startup, warm, first frame, median | 236.2, 234.8 ms | 220.1, 234.8 ms | 239.9, 237.1 ms | 230.3, 236.4 ms | 237.7, 236.9, 237.6, 238.1 ms | 236.7, 234.2, 239.8, 233.1 ms | 235.8, 234.8, 234.9, 235.8 ms | | 269.6, 272.1, 271.0, 253.2 ms | 250.8, 248.4, 233.8, 232.9 ms | |
-| Its gap to the minimal app's first window | 8.6, 10.1 ms | −7.5, 10.1 ms | 13.5, 13.7 ms | 19.0, 22.6 ms | 18.7 ms | 27.2 ms | 26.6 ms | | 18.8 ms at rest, [F3-228](startup-F3-228.md); 46.9 ms in the A/B, of a new copy | 24.9 ms, of a new copy started once before; 20.4 ms at rest against 0.7.0's 26.9, within the rounds' spread, [F4-58](rest-F4-58.md#the-startup-at-rest) | ≤ 35 ms |
-| Latency, p50 | 19.7 ms | 19.3 ms | 20.4 ms | 19.6 ms | 19.9 ms | 21.5 ms | 18.9 ms | 19.5 ms, `movement` instant | 20.2 ms | 19.6 ms | ≤ 2 refreshes, 33.3 ms at 60 Hz |
-| Latency, p99 | 43.6 ms | 51.2 ms | 48.2 ms | 48.3 ms | 50.6 ms | 35.6 ms | 48.6 ms | 44.8 ms | 44.0 ms | 47.3 ms | ≤ 4.5 refreshes, 75 ms at 60 Hz |
-| Its samples in the fourth refresh or later | | | | 10 of 1592 | 25 of 3184 | 0 of 1592 | 11 of 1592 | 6 of 1592 | 7 of 1592 | 10 of 1592 | |
-| Idle, package idle wakeups | 0/s | 0/s | 0, 0.02/s | 0/s | 0.017, 0/s | 0/s | 0/s | 0/s | 0/s | 0/s | 0/s |
-| Idle, interrupt wakeups | 0.35/s | 0.35/s | 0.35/s | 0.35/s | 0.32, 0.35/s | 0.33, 0.35/s | 0.35/s | 0.33, 0.35/s | 0.32, 0.35/s | 0.33, 0.35/s | ≤ 0.5/s |
-| Footprint without the GPU's, at rest | 24.7 MB | 24.4 MB | 24.8 MB | 25.1 MB | 25.6 MB | 26.4 MB | 26.1 MB | 26.7 MB | 26.6, 27.0 MB | 27.1, 27.3 MB | ≤ 35 MB |
-| GPU memory | 30.0 MB | 30.0 MB | 30.0 MB | 14.1 MB, of a scale of 1 | 30.5 MB | 30.5 MB | 30.3 MB | 30.1 MB | 30.1 MB | 30.1 MB | |
-| `cat` of 1 GiB of ASCII on screen | 321.0 MiB/s | 318.8 MiB/s | 310.1 MiB/s | 309.7 MiB/s | 318.7 MiB/s | 318.4 MiB/s | 318.6 MiB/s | | 314.3 MiB/s | 315.0 MiB/s | ≥ 275 MiB/s, Ghostty's of F2-134 less 10 % |
-| `seq 1 10000000` | 207.6 MiB/s | 219.2 MiB/s | 216.3 MiB/s | 216.5 MiB/s | 217.2 MiB/s | 219.8 MiB/s | 219.6 MiB/s | | 220.3 MiB/s | 222.1 MiB/s | |
-| Colored text, SGR | 285.7 MiB/s | 285.5 MiB/s | 277.7 MiB/s | 274.7 MiB/s | 284.5 MiB/s | 287.2 MiB/s | 287.4 MiB/s | | 285.5 MiB/s | 285.6 MiB/s | |
-| CJK and emoji | 218.1 MiB/s | 220.0 MiB/s | 221.7 MiB/s | 217.1 MiB/s | 215.7 MiB/s | 216.1 MiB/s | 213.7 MiB/s | | 217.4 MiB/s | 215.3 MiB/s | |
-| A frame on the CPU, ASCII, p50 | 0.260 ms | 0.261 ms | 0.272 ms | 0.255 ms, of a scale of 1 | 0.272 ms | 0.270 ms | 0.270 ms | | 0.283 ms | 0.296 ms | p99 ≤ 2 ms |
-| A frame on the CPU, CJK and emoji, p50 | | | | | 0.45 ms | 0.71 ms | 0.72 ms | | 0.71 ms | 0.72 ms | |
-| A drag of the window, frames a second shown, opaque and translucent with a blur | | | | | 57.3, 58.0 | 58.8, 58.0 | 58.0, 58.0 | | 58.0, 58.0 | not measured on this Mac, Defender scanning the recordings; 0.7.0's on an M1 Max at 120 Hz, [F4-58](rest-F4-58.md#the-windows-motion-on-the-m1) | |
-| Its refreshes missed of 600 | | | | | 15.0, 16.5 | 9.0, 16.0 | 15.5, 16.5 | | 16.0, 16.5 |  | |
-| A live resize, frames a second shown, opaque and translucent with a blur | | | | | 55.7, 55.6 | 55.3, 56.0 | 56.2, 56.5 | | 56.3, 55.6 | not measured on this Mac; 0.7.0's on the M1, as the drag | |
-| Its refreshes missed of 600 | | | | | 37.0, 38.5 | 42.5, 34.5 | 31.5, 30.0 | | 33.5, 39.5 |  | |
-| A live resize, the window server's CPU and the app's | | | | | 33 % and 18 %, 36 % and 18 % | 34 % and 19 %, 36 % and 17 % | 36 % and 18 %, 37 % and 18 % | | 39 % and 19 %, 42 % and 20 % |  | |
-| A live resize, the compositor's delay at the 95th percentile, opaque and a blur | | | | | 13.3, 28.7 ms | 21.0, 28.9 ms | 20.8, 28.3 ms | | 20.2, 19.7 ms |  | |
+| Measure | F2, 0.1.0 | 0.2.0 | 0.3.0 | 0.4.0 | 0.5.0 | After F3-49 | 0.5.1 | After F3-72 | 0.7.0 | 0.8.0 | 0.9.0 | Budget |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| Report | [ab-F3-13](ab-F3-13.md) | [ab-F3-13](ab-F3-13.md) | [ab-F3-83](ab-F3-83.md) | [ab-F3-29](ab-F3-29.md) | [ab-F3-40](ab-F3-40.md) | [ab-F3-49](ab-F3-49.md) | [ab-F3-190](ab-F3-190.md) | [movement-F3-72](movement-F3-72.md) | [ab-F3-77](ab-F3-77.md) | [ab-F4-25](ab-F4-25.md) | [ab-F4-42](ab-F4-42.md) | |
+| Startup, warm, first frame, median | 236.2, 234.8 ms | 220.1, 234.8 ms | 239.9, 237.1 ms | 230.3, 236.4 ms | 237.7, 236.9, 237.6, 238.1 ms | 236.7, 234.2, 239.8, 233.1 ms | 235.8, 234.8, 234.9, 235.8 ms | | 269.6, 272.1, 271.0, 253.2 ms | 250.8, 248.4, 233.8, 232.9 ms | 251.4, 249.8, 247.1, 247.2 ms | |
+| Its gap to the minimal app's first window | 8.6, 10.1 ms | −7.5, 10.1 ms | 13.5, 13.7 ms | 19.0, 22.6 ms | 18.7 ms | 27.2 ms | 26.6 ms | | 18.8 ms at rest, [F3-228](startup-F3-228.md); 46.9 ms in the A/B, of a new copy | 24.9 ms, of a new copy started once before; 20.4 ms at rest against 0.7.0's 26.9, within the rounds' spread, [F4-58](rest-F4-58.md#the-startup-at-rest) | 25.4 ms, of a copy new out of its build started once before, against 0.8.0's 23.8 in the session | ≤ 35 ms |
+| Latency, p50 | 19.7 ms | 19.3 ms | 20.4 ms | 19.6 ms | 19.9 ms | 21.5 ms | 18.9 ms | 19.5 ms, `movement` instant | 20.2 ms | 19.6 ms | 20.6 ms | ≤ 2 refreshes, 33.3 ms at 60 Hz |
+| Latency, p99 | 43.6 ms | 51.2 ms | 48.2 ms | 48.3 ms | 50.6 ms | 35.6 ms | 48.6 ms | 44.8 ms | 44.0 ms | 47.3 ms | 42.0 ms | ≤ 4.5 refreshes, 75 ms at 60 Hz |
+| Its samples in the fourth refresh or later | | | | 10 of 1592 | 25 of 3184 | 0 of 1592 | 11 of 1592 | 6 of 1592 | 7 of 1592 | 10 of 1592 | 3 of 1592 | |
+| Idle, package idle wakeups | 0/s | 0/s | 0, 0.02/s | 0/s | 0.017, 0/s | 0/s | 0/s | 0/s | 0/s | 0/s | 0/s | 0/s |
+| Idle, interrupt wakeups | 0.35/s | 0.35/s | 0.35/s | 0.35/s | 0.32, 0.35/s | 0.33, 0.35/s | 0.35/s | 0.33, 0.35/s | 0.32, 0.35/s | 0.33, 0.35/s | 0.38, 0.38/s | ≤ 0.5/s |
+| Footprint without the GPU's, at rest | 24.7 MB | 24.4 MB | 24.8 MB | 25.1 MB | 25.6 MB | 26.4 MB | 26.1 MB | 26.7 MB | 26.6, 27.0 MB | 27.1, 27.3 MB | 30.4, 26.9 MB | ≤ 35 MB |
+| GPU memory | 30.0 MB | 30.0 MB | 30.0 MB | 14.1 MB, of a scale of 1 | 30.5 MB | 30.5 MB | 30.3 MB | 30.1 MB | 30.1 MB | 30.1 MB | 30.1 MB | |
+| `cat` of 1 GiB of ASCII on screen | 321.0 MiB/s | 318.8 MiB/s | 310.1 MiB/s | 309.7 MiB/s | 318.7 MiB/s | 318.4 MiB/s | 318.6 MiB/s | | 314.3 MiB/s | 315.0 MiB/s | 311.9 MiB/s | ≥ 275 MiB/s, Ghostty's of F2-134 less 10 % |
+| `seq 1 10000000` | 207.6 MiB/s | 219.2 MiB/s | 216.3 MiB/s | 216.5 MiB/s | 217.2 MiB/s | 219.8 MiB/s | 219.6 MiB/s | | 220.3 MiB/s | 222.1 MiB/s | 223.8 MiB/s | |
+| Colored text, SGR | 285.7 MiB/s | 285.5 MiB/s | 277.7 MiB/s | 274.7 MiB/s | 284.5 MiB/s | 287.2 MiB/s | 287.4 MiB/s | | 285.5 MiB/s | 285.6 MiB/s | 288.9 MiB/s | |
+| CJK and emoji | 218.1 MiB/s | 220.0 MiB/s | 221.7 MiB/s | 217.1 MiB/s | 215.7 MiB/s | 216.1 MiB/s | 213.7 MiB/s | | 217.4 MiB/s | 215.3 MiB/s | 216.5 MiB/s | |
+| A frame on the CPU, ASCII, p50 | 0.260 ms | 0.261 ms | 0.272 ms | 0.255 ms, of a scale of 1 | 0.272 ms | 0.270 ms | 0.270 ms | | 0.283 ms | 0.296 ms | 0.288 ms | p99 ≤ 2 ms |
+| A frame on the CPU, CJK and emoji, p50 | | | | | 0.45 ms | 0.71 ms | 0.72 ms | | 0.71 ms | 0.72 ms | 0.73 ms | |
+| A drag of the window, frames a second shown, opaque and translucent with a blur | | | | | 57.3, 58.0 | 58.8, 58.0 | 58.0, 58.0 | | 58.0, 58.0 | not measured on this Mac, Defender scanning the recordings; 0.7.0's on an M1 Max at 120 Hz, [F4-58](rest-F4-58.md#the-windows-motion-on-the-m1) | not measured: the session's app had not the Accessibility permission that the mouse's synthetic events take | |
+| Its refreshes missed of 600 | | | | | 15.0, 16.5 | 9.0, 16.0 | 15.5, 16.5 | | 16.0, 16.5 |  | | |
+| A live resize, frames a second shown, opaque and translucent with a blur | | | | | 55.7, 55.6 | 55.3, 56.0 | 56.2, 56.5 | | 56.3, 55.6 | not measured on this Mac; 0.7.0's on the M1, as the drag | not measured, as the drag | |
+| Its refreshes missed of 600 | | | | | 37.0, 38.5 | 42.5, 34.5 | 31.5, 30.0 | | 33.5, 39.5 |  | | |
+| A live resize, the window server's CPU and the app's | | | | | 33 % and 18 %, 36 % and 18 % | 34 % and 19 %, 36 % and 17 % | 36 % and 18 %, 37 % and 18 % | | 39 % and 19 %, 42 % and 20 % |  | | |
+| A live resize, the compositor's delay at the 95th percentile, opaque and a blur | | | | | 13.3, 28.7 ms | 21.0, 28.9 ms | 20.8, 28.3 ms | | 20.2, 19.7 ms |  | | |
 
 The window's motion was first measured of 0.5.0 and the build after F3-49, in the [motion session after F3-49](ab-F3-49.md#the-windows-motion), of the means of two rounds; F3-152 measured it of the builds before 0.5.0, against Ghostty's. The latency's p50 and p99 are the means of the session's rounds: F2's and 0.2.0's of the first two rounds of F3-13, 0.3.0's of F3-83's two, 0.4.0's of F3-29's eight, 0.5.0's of F3-40's sixteen, the build after F3-49's of its eight, 0.5.1's of F3-190's eight. In F3-190's session, 0.5.0 measured 18.9 ms at the p50 and 46.6 ms at the p99, 9 samples in the fourth refresh or later, a startup's gap of 13.4 ms, 25.7 MB at rest, of the sessions' 25.6 and 25.7, 330.0 MiB/s of `cat` and a CJK frame of 0.44 ms, against which 0.5.1 is read; its motion, 57.4 and 57.2 frames a second of a drag, 55.8 and 56.2 of a resize, as 0.5.1's. In the session after F3-49, 0.5.0 measured 19.0 ms at the p50 and 47.8 ms at the p99, 10 samples in the fourth refresh or later, and a startup's gap of 21.9 ms, against which the build after F3-49 is read below.
 
@@ -85,3 +85,4 @@ The window's motion was first measured of 0.5.0 and the build after F3-49, in th
 - **After F3-72**, the daily features under way for 0.7.0: **the cursor's slide**, `[cursor] movement = "snappy"`, which the window server runs, costs 2.6 ms of the latency's median at 60 Hz, a key's echo shown in the first refresh about a sixth of the time against a third, and nothing at rest nor in the tail, against `"instant"`, the default, of the same build ([movement-F3-72](movement-F3-72.md)). Against the other terminals of F2-134, of the comparison's tool ([compare-F3-72](compare-F3-72.md)): the first window at 236 ms, the first of seven; 26.7 MB at rest, the first; 0.40 wakeups a second, the third; `cat` of 1 GiB at 315 MiB/s, the first, Ghostty's 306 the next; 16.0 J to show it, the first.
 - **0.7.0**, the plugins' block's end and the daily features: the themes and their picker, the command palette, the shells' integration with its marks, gutter, header and notifications, the copy mode, the scroll bar, the programs' progress, the cursor's slide, windows restored, the Finder's services, the default terminal, Float on Top and the color scheme's reports. Against 0.5.1 in [F3-77's session](ab-F3-77.md), every budget holds but the startup's gap: the latency's p50, idle, the memory, the throughput, the frames and the window's motion are 0.5.1's within their spread, the latency's p99 5.6 ms longer, within 0.7.0's spread, 7 samples in the fourth refresh against 1. The startup 30 ms longer in the session, its gap 46.9 ms past the budget of 35, of a copy freshly out of its DMG, which Microsoft Defender scanned at its starts; at rest, each copy started before, [F3-228](startup-F3-228.md) found its gap 18.8 ms against 0.5.1's 15.1, within the budget and the spread, which the summary and the charts take, and the default terminal's look, on a thread since F3-227, taking nothing of the start. The first draft's window, started from a shell, opened a second late and behind the app in front, which the motion's session found and F3-227 fixed before the release.
 - **0.8.0**, the Luau host's block: third-party plugins in Luau, each of a VM of its own and its sandbox, limits and watchdog, installed in a store and reloaded at once, the consent to their capabilities, and Sleip in the bundle, of `new`, `check`, `test`, `dev`, `add` and `update`. Against 0.7.0 in [F4-25's session](ab-F4-25.md), every budget holds: the latency's p50, idle, the memory, the throughput and the frames are 0.7.0's within their spread; the latency's p99 7.4 ms longer, in seven rounds of eight, and the startup's gap 7 ms, of its first two rounds, within their budgets. [F4-58](rest-F4-58.md) measured both again at rest: the startup 0.7.0's within its rounds' spread, the tail longer in some sessions of the managed Mac and not in others, of no code between the two, and of `allow-jit`, the entitlement of Luau's native code, not at all on a Mac of no management, an M1 Max, where the window's motion is 0.7.0's too; `allow-jit` stays. A Luau plugin active costs 0.9 MB, none without one; the app's code 2.6 MB larger, Luau's runtime 1.1 MB of it, the bundle 35.3 MB of Sleip's 13.1 and the DMG 14.7 MB.
+- **0.9.0**, the plugin ecosystem's block: the registry, pkg.lokyr.dev, of its signed index, Sleip's `search`, `info`, `add` and `publish` of it, `snap`, `awake` and the font picker published, the host's images, save panel, power assertion and titlebar's buttons, the notices as cards and the quick tips. Against 0.8.0 in [F4-42's session](ab-F4-42.md), every budget holds and no measure is worse beyond its spread: the latency's p50 0.2 ms shorter and its p99 1.1 ms longer, within the rounds' deviations; the startup's gap 1.5 ms longer, of its first round; the interrupt wakeups 0.38 a second against 0.35, of the user's home alone, 0.35 of a home of its own. `awake` active and `snap` installed cost 1.6 and 1.9 MB, none at rest; the quick tips no timer at a start of no tip due. The bundle 40.4 MB, Sleip's 16.1 of its registry's client, and a DMG of 18.0 MB. The window's motion waits for a session of the Accessibility permission that its synthetic events take.
