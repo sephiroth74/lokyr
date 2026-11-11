@@ -455,23 +455,27 @@ fn the_system_s_language_shows_unless_the_config_names_one() {
 
 #[test]
 fn the_app_s_catalogs_match_their_source() {
-    let pairs = [
-        (
-            include_str!("../../../resources/locales/en/app.ftl"),
-            include_str!("../../../resources/locales/it/app.ftl"),
-        ),
-        (
-            include_str!("../../../resources/locales/en/infoplist.ftl"),
-            include_str!("../../../resources/locales/it/infoplist.ftl"),
-        ),
-    ];
-    for (source, italian) in pairs {
-        assert_eq!(l10n::check(source, italian), Ok(()));
-    }
-    // Every command's title is a message of the catalogs.
-    let texts = Texts::new("it", &CATALOGS);
-    for command in commands(&texts, &Plugins::new()).commands() {
-        assert!(!command.title.starts_with("command-"), "{}", command.title);
+    // Each language's of the app's catalogs, and of the bundle's of macOS's
+    // own texts, which the build finds of their folders, against English's.
+    let locales = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("resources/locales");
+    let read = |language: &str, file: &str| {
+        std::fs::read_to_string(locales.join(language).join(file)).unwrap()
+    };
+    let languages = l10n::languages(&CATALOGS);
+    assert!(languages.contains(&"it"), "{languages:?}");
+    for &language in &languages {
+        for file in ["app.ftl", "infoplist.ftl"] {
+            assert_eq!(
+                l10n::check(&read(l10n::SOURCE, file), &read(language, file)),
+                Ok(()),
+                "{language}/{file}"
+            );
+        }
+        // Every command's title is a message of the catalogs.
+        let texts = Texts::new(language, &CATALOGS);
+        for command in commands(&texts, &Plugins::new()).commands() {
+            assert!(!command.title.starts_with("command-"), "{}", command.title);
+        }
     }
     // The built-in plugins' catalogs, each language's against English's,
     // whose titles are those that the commands register.

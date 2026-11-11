@@ -7,6 +7,7 @@ mod check_links;
 mod dmg;
 mod feed;
 mod gen_dist;
+mod languages;
 mod licenses;
 mod luau_types;
 mod notarize;
@@ -31,11 +32,13 @@ fn main() -> ExitCode {
         Some("bundle") => bundle::run(args),
         Some("check-comments") => check_comments::run(args),
         Some("check-deps") => check_deps::run(args),
+        Some("check-language") => languages::run_check(args),
         Some("check-links") => check_links::run(args),
         Some("dmg") => dmg::run(args),
         Some("feed") => feed::run(args),
         Some("gen-dist") => gen_dist::run(args),
         Some("luau-types") => luau_types::run(args),
+        Some("new-language") => languages::run_new(args),
         Some("notarize") => notarize::run(args),
         Some("release") => release::run(args),
         Some("symbolicate") => symbolicate::run(args),
@@ -61,6 +64,7 @@ fn print_help() {
          bundle                      build target/Lokyr.app from the release binary, signed\n  \
          check-comments              find the plan, tasks, phases and ADRs, in the code's comments\n  \
          check-deps [--print-graph]  check the dependency rules of the workspace\n  \
+         check-language <code>       check a language's catalogs against English's: missing, extra and untranslated messages\n  \
          check-links                 find the internal links of the Markdown files that do not resolve\n  \
          dmg [--no-notarize]         build target/Lokyr-<version>.dmg of the bundle, notarized first, signed, notarized and stapled\n  \
          dmg layout                  have the Finder lay out the image's window, and keep its .DS_Store\n  \
@@ -68,6 +72,7 @@ fn print_help() {
          feed serve                  have Lokyr on this Mac read the feed of tests, and serve it on 127.0.0.1:8123\n  \
          gen-dist [--check]          the app's distributions' features and plugins, of dist/*.toml, or check them\n  \
          luau-types [--check]        write the plugin API's types for Luau, lokyr.d.luau, of the SDK's, or check them\n  \
+         new-language <code>         make a language ready to translate: English's catalogs copied, and every list and guide of it\n  \
          notarize                    have Apple notarize target/Lokyr.app, and staple the ticket\n  \
          release <version> [--without-feed]  a candidate's or a release's bundle, DMG, dSYM and SBOM, to a draft on GitHub and the feed\n  \
          symbolicate <report.ips>    the crashed thread of a crash report, Lokyr's frames told by the release's dSYM\n  \

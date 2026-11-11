@@ -23,6 +23,8 @@ The catalogs, each in a folder of its language's code, `en` for English, `it` fo
 | [`plugins/command-palette/locales/en/command-palette.ftl`](plugins/command-palette/locales/en/command-palette.ftl) | The command palette |
 | [`plugins/quick-terminal/locales/en/quick-terminal.ftl`](plugins/quick-terminal/locales/en/quick-terminal.ftl) | The quick terminal |
 | [`plugins/progress/locales/en/progress.ftl`](plugins/progress/locales/en/progress.ftl) | The programs' progress |
+| [`plugins/command-header/locales/en/command-header.ftl`](plugins/command-header/locales/en/command-header.ftl) | The command at a pane's top |
+| [`plugins/copy-mode/locales/en/copy-mode.ftl`](plugins/copy-mode/locales/en/copy-mode.ftl) | The copy mode |
 
 The [`keymap-macos`](docs/plugins/keymap-macos.md) plugin has no texts of its own.
 
@@ -68,35 +70,25 @@ When English gains a message, every other catalog needs it too, or the tests fai
 
 Lokyr takes languages by their two- or three-letter code alone, as `fr`, `de` or `ja`, without a region: a system set to French of Canada reads `fr`. A language that needs two variants, as Portuguese of Brazil and of Portugal, is not possible yet; open an issue first.
 
-1. **Copy the catalogs.** For each folder of the table above, copy its `en` folder to one of your language's code, as `fr`, and translate the files in it:
+1. **Make it.** One command makes your language ready to translate, of its code, as `fr`:
 
    ```sh
-   for en in $(find crates plugins -path '*/locales/en' -type d); do
-       cp -R "$en" "$(dirname "$en")/fr"
-   done
+   just new-language fr
    ```
 
-2. **Register them.** Lokyr builds its catalogs into its binary, so each list of them needs a line of yours, beside the Italian one, and the size of its array one more:
+   It copies every English catalog, each `locales/en` folder of the table above, to one of your language's code, and adds your language to each list of catalogs that Lokyr builds into its binary and to the [configuration guide](docs/CONFIGURATION.md#language)'s `language` key. `infoplist.ftl` needs nothing more: building the app finds every language's folder. Without `just`, `cargo xtask new-language fr` does the same.
 
-   | File | The list |
-   |---|---|
-   | `crates/kernel/src/l10n.rs` | `KERNEL`, the kernel's |
-   | `crates/app-core/src/app.rs` | `CATALOGS`, the kernel's and the app's: `l10n::KERNEL[2]` and your `app.ftl` |
-   | `plugins/core-actions/src/lib.rs`, `plugins/links/src/lib.rs`, `plugins/tabs/src/lib.rs`, `plugins/splits/src/lib.rs`, `plugins/search/src/lib.rs`, `plugins/command-palette/src/lib.rs`, `plugins/quick-terminal/src/lib.rs`, `plugins/progress/src/lib.rs` | each plugin's `CATALOGS` |
+2. **Translate** the files of your language's folders, as the format and the style above tell.
 
-   ```rust
-   pub const KERNEL: [(&str, &str); 3] = [
-       ("en", include_str!("../locales/en/kernel.ftl")),
-       ("it", include_str!("../locales/it/kernel.ftl")),
-       ("fr", include_str!("../locales/fr/kernel.ftl")),
-   ];
+3. **Check it**, as you go and before your pull request:
+
+   ```sh
+   just check-language fr
    ```
 
-   `infoplist.ftl` needs no line: building the app finds every language's folder, and gives the bundle its language for macOS's own texts, as the menu items that the system adds.
+   It tells each catalog's messages that are missing, those that English has not, those whose variables are not English's, and those still as English has them; the first three fail it, which the tests fail too. A message can stay as English has it where your language says it so, as a name: the check tells it, and nothing fails.
 
-3. **Check it with the tests.** Two tests name the languages, and need yours: `the_app_s_catalogs_match_their_source`, in `crates/app-core/src/app/tests/mod.rs`, which checks the app's two catalogs against English's, and the test of the bundle's `Info.plist` in `tools/xtask/src/bundle.rs`, which lists its languages. The kernel's and the plugins' catalogs are checked by themselves.
-
-4. **Name it in the guide.** The [configuration guide](docs/CONFIGURATION.md#language)'s `language` key lists the languages that Lokyr has; add yours.
+4. **Run the tests**, `cargo test -p lokyr-kernel l10n` and `cargo test -p lokyr-app-core catalogs`, or `just ci`, which check every language's catalogs against English's.
 
 5. **Try it.** Set the language in your config, which applies as you save it, the menus too:
 

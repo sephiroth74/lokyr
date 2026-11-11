@@ -931,7 +931,10 @@ mod tests {
     fn the_catalogs_give_every_usage_string_in_every_language() {
         let catalogs = catalogs();
         let languages: Vec<&str> = catalogs.keys().map(String::as_str).collect();
-        assert_eq!(languages, ["en", "it"]);
+        assert!(
+            languages.contains(&"en") && languages.contains(&"it"),
+            "{languages:?}"
+        );
         for catalog in catalogs.values() {
             assert_eq!(catalog.usages.len(), USAGES.len());
             assert_eq!(catalog.types.len(), DOCUMENT_TYPES.len());

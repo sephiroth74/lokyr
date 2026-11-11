@@ -185,6 +185,14 @@ check-dist:
 build-minimal:
     cargo build --locked -p lokyr-app --no-default-features --features dist-minimal
 
+# Make a language ready to translate, as `just new-language fr`: English's catalogs copied to its folders, and every list of catalogs and the config guide's `language` key of it.
+new-language code:
+    cargo xtask new-language {{code}}
+
+# Check a language's catalogs against English's: the messages missing, not in English, of other variables, and those left as English has them.
+check-language code:
+    cargo xtask check-language {{code}}
+
 # Write the plugin API's types for Luau, lokyr.d.luau, of the SDK's types.
 luau-types:
     cargo xtask luau-types
