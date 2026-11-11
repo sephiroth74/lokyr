@@ -22,8 +22,13 @@ impl Sandbox {
         let home = std::env::temp_dir().join(format!("sleip-{}-{name}", std::process::id()));
         let _ = std::fs::remove_dir_all(&home);
         std::fs::create_dir_all(home.join(".config/lokyr")).unwrap();
-        // The app's plugin API, as its bundle's resource tells it.
-        std::fs::write(home.join("api-version"), "0.1.0\n").unwrap();
+        // The app's plugin API, as its bundle's resource tells it: this
+        // Sleip's, as `new` writes its plugins' constraint of it.
+        std::fs::write(
+            home.join("api-version"),
+            format!("{}\n", lokyr_plugin_sdk::API_VERSION),
+        )
+        .unwrap();
         Self { home }
     }
 
@@ -288,7 +293,10 @@ fn doctor_tells_each_check_and_fails_of_a_problem() {
         "{text}"
     );
     assert!(
-        text.contains("ok     app: the plugin API 0.1.0, of "),
+        text.contains(&format!(
+            "ok     app: the plugin API {}, of ",
+            lokyr_plugin_sdk::API_VERSION
+        )),
         "{text}"
     );
     assert!(
@@ -595,7 +603,7 @@ fn check_tells_each_problem_of_its_file_and_line() {
             "api",
             |folder| {
                 edit(folder, "plugin.toml", |text| {
-                    text.replace("api = \"^0.1\"", "api = \"^9.0\"")
+                    text.replace(&new_api(), "api = \"^9.0\"")
                 });
             },
             &["plugin.toml:5:1: Api: it asks for the plugin API `^9.0`"],
@@ -1173,7 +1181,7 @@ fn a_conflict_tells_its_reason_and_a_failed_install_leaves_the_store_as_it_was()
     // A plugin of another plugin API.
     let newer = made(&sandbox, "newer");
     edit(&newer, "plugin.toml", |text| {
-        text.replace("api = \"^0.1\"", "api = \"^0.9\"")
+        text.replace(&new_api(), "api = \"^0.9\"")
     });
     let output = sandbox.sleip(&["add", "--path", &newer.display().to_string()]);
     assert_eq!(output.status.code(), Some(1));
@@ -1348,4 +1356,9 @@ fn test_reads_the_manifest_as_the_app_reads_it() {
         .unwrap();
     assert_eq!(output.status.code(), Some(1), "{output:?}");
     assert!(stdout(&output).contains("pane.clear"), "{output:?}");
+}
+
+/// The plugin API's constraint that `sleip new` writes, of this Sleip's.
+fn new_api() -> String {
+    format!("api = \"^{}\"", lokyr_plugin_sdk::API_VERSION)
 }

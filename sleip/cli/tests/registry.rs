@@ -1217,7 +1217,11 @@ fn the_index_is_signed_of_the_released_versions_by_a_key_that_keys_json_lists() 
     assert_eq!(only.vers, "0.1.0");
     assert_eq!(only.cksum, cksum);
     assert_eq!(only.kind, "luau");
-    assert_eq!(only.api.as_deref(), Some("^0.1"));
+    // The plugin API's constraint of `sleip new`'s plugin.
+    assert_eq!(
+        only.api.as_deref(),
+        Some(format!("^{}", lokyr_plugin_sdk::API_VERSION).as_str())
+    );
     assert!(only.yanked);
     let config: Value =
         serde_json::from_str(&std::fs::read_to_string(site.join("config.json")).unwrap()).unwrap();

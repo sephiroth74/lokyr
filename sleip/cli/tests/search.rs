@@ -484,7 +484,11 @@ fn add_and_update_install_the_registry_s_versions_checked_against_its_index() {
     std::fs::create_dir_all(home.join(".config/lokyr")).unwrap();
     std::fs::create_dir_all(site.join("index/acme")).unwrap();
     std::fs::create_dir_all(site.join("archives")).unwrap();
-    std::fs::write(home.join("api-version"), "0.1.0\n").unwrap();
+    std::fs::write(
+        home.join("api-version"),
+        format!("{}\n", lokyr_plugin_sdk::API_VERSION),
+    )
+    .unwrap();
     let served = serve(&site);
     let (root_key, index_key) = (
         SecretKey::generate().unwrap(),
@@ -799,7 +803,11 @@ fn installs_keep_the_locked_versions_and_reproduce_a_lockfile() {
     let home_of = |name: &str| {
         let home = root.join(name);
         std::fs::create_dir_all(home.join(".config/lokyr")).unwrap();
-        std::fs::write(home.join("api-version"), "0.1.0\n").unwrap();
+        std::fs::write(
+            home.join("api-version"),
+            format!("{}\n", lokyr_plugin_sdk::API_VERSION),
+        )
+        .unwrap();
         std::fs::write(
             home.join(".config/lokyr/plugins.toml"),
             format!(
@@ -1047,7 +1055,11 @@ impl TestRegistry {
     fn home(&self, name: &str) -> PathBuf {
         let home = self.root.join(name);
         std::fs::create_dir_all(home.join(".config/lokyr")).unwrap();
-        std::fs::write(home.join("api-version"), "0.1.0\n").unwrap();
+        std::fs::write(
+            home.join("api-version"),
+            format!("{}\n", lokyr_plugin_sdk::API_VERSION),
+        )
+        .unwrap();
         std::fs::write(
             home.join(".config/lokyr/plugins.toml"),
             format!(
