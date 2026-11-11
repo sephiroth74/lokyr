@@ -19,11 +19,13 @@ use crate::fakes;
 /// A plugin of a button in the titlebar, of the name `name`, which keeps
 /// the clicks that its nodes take, by its name, and opens a menu's panel
 /// anchored to its button at the click; of a button of a text where
-/// `worded`; and of a tab bar of a text where `bar`.
+/// `worded`; and of a tab bar of a text where `bar`, a title across the
+/// titlebar where `titled`.
 struct Button {
     name: &'static str,
     worded: bool,
     bar: bool,
+    titled: bool,
     clicks: Rc<RefCell<Vec<String>>>,
 }
 
@@ -41,7 +43,10 @@ fn manifest(name: &str, bar: bool) -> String {
 }
 
 impl plugins::Plugin for Button {
-    fn activate(&mut self, _: &mut plugins::Cx<'_>) -> Result<(), Error> {
+    fn activate(&mut self, cx: &mut plugins::Cx<'_>) -> Result<(), Error> {
+        if self.titled {
+            cx.set_tab_bar_place(plugins::host::BarPlace::Title)?;
+        }
         Ok(())
     }
 
@@ -99,6 +104,15 @@ impl plugins::Plugin for Button {
 /// a text where `worded`, of a titlebar of 28 points, its window drawn:
 /// the fake, the app, its window and the clicks that the buttons took.
 fn app_of(names: &[&'static str], worded: bool) -> (Fake, App, WindowId, Rc<RefCell<Vec<String>>>) {
+    app_titled(names, worded, false)
+}
+
+/// As [`app_of`], the tab bar a title across the titlebar where `titled`.
+fn app_titled(
+    names: &[&'static str],
+    worded: bool,
+    titled: bool,
+) -> (Fake, App, WindowId, Rc<RefCell<Vec<String>>>) {
     let clicks = Rc::new(RefCell::new(Vec::new()));
     let drawing = Drawing::new(FontConfig::default()).unwrap();
     let mut fake = Fake::default();
@@ -111,6 +125,7 @@ fn app_of(names: &[&'static str], worded: bool) -> (Fake, App, WindowId, Rc<RefC
             name,
             worded,
             bar: at == 0,
+            titled,
             clicks: Rc::clone(&clicks),
         };
         app = app.with_builtin(&manifest(name, at == 0), Box::new(plugin));
@@ -257,4 +272,35 @@ fn a_title_button_of_a_text_shows_nothing() {
         .iter()
         .any(|view| matches!(view.view, ViewId::TitleButtons(_)) && view.shows());
     assert!(!shows);
+}
+
+#[test]
+fn a_title_button_over_a_title_across_the_titlebar_takes_its_hover_and_press() {
+    let (mut fake, mut app, window, clicks) = app_titled(&["over"], false, true);
+    let scale = fake.window(window).unwrap().size.scale as f32;
+    let button = buttons(&app, window)[0].1;
+    // The title's view across the whole titlebar, under the button.
+    let title = app.windows[&window]
+        .chrome
+        .iter()
+        .find(|view| matches!(view.view, ViewId::TabBar(_)))
+        .and_then(|view| view.frame)
+        .expect("the title's frame");
+    assert_eq!(title.x, 0.0);
+    assert!(title.x + title.width >= button.x + button.width);
+    // The pointer over the button is the button's.
+    let at = Point {
+        x: f64::from((button.x + button.width / 2.0) / scale),
+        y: f64::from((button.y + button.height / 2.0) / scale),
+    };
+    fake.send(&mut app, window, moved(at, Modifiers::NONE));
+    let over = app.windows[&window].over;
+    let button_id = app.windows[&window]
+        .chrome
+        .iter()
+        .find(|view| matches!(view.view, ViewId::TitleButtons(_)))
+        .map(|view| view.id);
+    assert_eq!(over, button_id);
+    click_in(&mut fake, &mut app, window, button, scale);
+    assert_eq!(*clicks.borrow(), ["over"]);
 }

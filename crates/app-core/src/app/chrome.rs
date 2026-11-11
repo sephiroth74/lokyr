@@ -178,8 +178,10 @@ impl<B: Backend> App<B> {
     /// The views that `window` shows in its slots, in the order that they
     /// draw: the headers of the panes that its active tab shows, of the
     /// config's plugin or the first that fills them; the strip's and the
-    /// status bar's of each plugin that fills them, in their order; and the
-    /// tab bar's, of the config's plugin or the first.
+    /// status bar's of each plugin that fills them, in their order; the tab
+    /// bar's, of the config's plugin or the first; and the titlebar's
+    /// buttons over it, as a title or a sidebar through the titlebar lies
+    /// under them.
     pub(super) fn slot_views(&self, window: WindowId) -> Vec<(String, ViewId)> {
         let Some(state) = self.windows.get(&window) else {
             return Vec::new();
@@ -212,6 +214,9 @@ impl<B: Backend> App<B> {
         for plugin in self.plugins.providers(Slot::StatusBar) {
             views.push((plugin.to_owned(), ViewId::StatusBar(shown)));
         }
+        if let Some(plugin) = one(Slot::TabBar, &slots.tab_bar) {
+            views.push((plugin, ViewId::TabBar(shown)));
+        }
         // The titlebar's buttons, and the app's of those that find no room
         // as they are more than the titlebar shows.
         let buttons = self.plugins.providers(Slot::TitleButtons);
@@ -221,9 +226,6 @@ impl<B: Backend> App<B> {
         }
         if more {
             views.push((OVERFLOW.to_owned(), ViewId::TitleButtons(shown)));
-        }
-        if let Some(plugin) = one(Slot::TabBar, &slots.tab_bar) {
-            views.push((plugin, ViewId::TabBar(shown)));
         }
         // The panels over them, from the lowest, a native menu's last.
         let panel = |id: u32| state.chrome.iter().find(|view| view.id == id);
