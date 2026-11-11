@@ -483,13 +483,13 @@ fn the_app_s_catalogs_match_their_source() {
         if catalogs.is_empty() {
             continue;
         }
-        let source = catalogs
+        let source = &catalogs
             .iter()
             .find(|(language, _)| *language == l10n::SOURCE)
             .expect("an English catalog")
             .1;
         assert!(catalogs.len() > 1, "{catalogs:?}");
-        for (_, other) in catalogs {
+        for (_, other) in &catalogs {
             assert_eq!(l10n::check(source, other), Ok(()));
         }
     }

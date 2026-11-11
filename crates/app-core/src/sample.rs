@@ -122,8 +122,8 @@ impl Plugin for SampleSlots {
         Ok(())
     }
 
-    fn config_schema(&self) -> Option<&'static str> {
-        Some(include_str!("sample.schema.json"))
+    fn config_schema(&self) -> Option<std::borrow::Cow<'static, str>> {
+        Some(include_str!("sample.schema.json").into())
     }
 
     fn on_ui_event(&mut self, cx: &mut Cx<'_>, event: &UiEvent) -> Result<(), Error> {

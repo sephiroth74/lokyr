@@ -201,8 +201,8 @@ impl Plugin for Palette {
         Ok(())
     }
 
-    fn catalogs(&self) -> &'static [(&'static str, &'static str)] {
-        &CATALOGS
+    fn catalogs(&self) -> lokyr_plugin_sdk::plugin::Catalogs {
+        lokyr_plugin_sdk::plugin::built_in(&CATALOGS)
     }
 
     fn on_command(&mut self, cx: &mut Cx<'_>, name: &str, args: Args) -> Result<(), Error> {

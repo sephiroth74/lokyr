@@ -202,12 +202,12 @@ impl Plugin for Header {
         ])
     }
 
-    fn catalogs(&self) -> &'static [(&'static str, &'static str)] {
-        &CATALOGS
+    fn catalogs(&self) -> lokyr_plugin_sdk::plugin::Catalogs {
+        lokyr_plugin_sdk::plugin::built_in(&CATALOGS)
     }
 
-    fn config_schema(&self) -> Option<&'static str> {
-        Some(include_str!("../command-header.schema.json"))
+    fn config_schema(&self) -> Option<std::borrow::Cow<'static, str>> {
+        Some(include_str!("../command-header.schema.json").into())
     }
 
     /// A pane's view, or its commands, changed: its header follows them. A

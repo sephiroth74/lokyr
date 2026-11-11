@@ -152,11 +152,11 @@ impl Plugin for Again {
         Ok(())
     }
 
-    fn catalogs(&self) -> &'static [(&'static str, &'static str)] {
-        &[
+    fn catalogs(&self) -> lokyr_kernel::plugins::Catalogs {
+        lokyr_kernel::plugins::built_in(&[
             ("en", "command-again-go = Again\n"),
             ("it", "command-again-go = Ancora\n"),
-        ]
+        ])
     }
 
     fn on_command(&mut self, cx: &mut Cx<'_>, name: &str, _: Args) -> Result<(), Error> {

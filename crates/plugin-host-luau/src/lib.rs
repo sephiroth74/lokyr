@@ -47,6 +47,7 @@ pub mod types;
 mod vm;
 mod watchdog;
 
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -54,7 +55,7 @@ use std::time::Duration;
 
 use lokyr_plugin_sdk::command::{Args, Code, Error};
 use lokyr_plugin_sdk::message::Event;
-use lokyr_plugin_sdk::plugin::{Cx, Plugin};
+use lokyr_plugin_sdk::plugin::{Catalogs, Cx, Plugin};
 use lokyr_plugin_sdk::ui::{UiEvent, ViewId};
 use lokyr_plugin_sdk::view::Node;
 use mlua::{IntoLua, Lua, MultiValue, Value};
@@ -194,6 +195,32 @@ impl Package {
     pub fn paths(&self) -> impl Iterator<Item = &str> {
         self.sources.keys().map(String::as_str)
     }
+
+    /// Its catalogs of Project Fluent, of its files `locales/<language>/
+    /// *.ftl`, each language's files one source, in their paths' order.
+    pub fn catalogs(&self) -> Catalogs {
+        let mut catalogs: BTreeMap<&str, String> = BTreeMap::new();
+        for (path, source) in &self.sources {
+            let Some((language, file)) = path
+                .strip_prefix("locales/")
+                .and_then(|rest| rest.split_once('/'))
+            else {
+                continue;
+            };
+            if file.contains('/') || !file.ends_with(".ftl") {
+                continue;
+            }
+            let catalog = catalogs.entry(language).or_default();
+            if !catalog.is_empty() {
+                catalog.push('\n');
+            }
+            catalog.push_str(source);
+        }
+        catalogs
+            .into_iter()
+            .map(|(language, source)| (Cow::Owned(language.to_owned()), Cow::Owned(source)))
+            .collect()
+    }
 }
 
 /// A plugin of Luau: its package, run in a VM of its own, made as it first
@@ -206,6 +233,8 @@ pub struct LuauPlugin {
     vm: Option<vm::Vm>,
     /// The failure of its last render or look, which the host takes.
     failure: Option<Error>,
+    /// The path of its config's schema in its package, if it has one.
+    schema: Option<String>,
 }
 
 impl LuauPlugin {
@@ -219,7 +248,16 @@ impl LuauPlugin {
             deadlines: Deadlines::default(),
             vm: None,
             failure: None,
+            schema: None,
         }
+    }
+
+    /// The plugin, the JSON Schema of its config the file of its package at
+    /// `path`, as its manifest's `config-schema` names it.
+    #[must_use]
+    pub fn with_config_schema(mut self, path: Option<String>) -> Self {
+        self.schema = path;
+        self
     }
 
     /// The plugin, its calls within `deadlines`.
@@ -423,6 +461,20 @@ impl Plugin for LuauPlugin {
 
     fn take_failure(&mut self) -> Option<Error> {
         self.failure.take()
+    }
+
+    /// Its package's catalogs, of its files `locales/<language>/*.ftl`.
+    fn catalogs(&self) -> Catalogs {
+        self.package.catalogs()
+    }
+
+    /// The file of its package that its manifest names as `config-schema`,
+    /// if the package holds it.
+    fn config_schema(&self) -> Option<Cow<'static, str>> {
+        let path = self.schema.as_deref()?;
+        self.package
+            .source(path)
+            .map(|text| Cow::Owned(text.to_owned()))
     }
 }
 

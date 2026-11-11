@@ -76,8 +76,8 @@ impl Plugin for Greeter {
         Ok(())
     }
 
-    fn config_schema(&self) -> Option<&'static str> {
-        self.schema
+    fn config_schema(&self) -> Option<std::borrow::Cow<'static, str>> {
+        self.schema.map(Into::into)
     }
 }
 

@@ -36,8 +36,8 @@ impl Plugin for Keyed {
         Ok(())
     }
 
-    fn config_schema(&self) -> Option<&'static str> {
-        Some(SCHEMA)
+    fn config_schema(&self) -> Option<std::borrow::Cow<'static, str>> {
+        Some(SCHEMA.into())
     }
 }
 

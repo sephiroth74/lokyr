@@ -42,8 +42,8 @@ impl Plugin for Strip {
         cx.subscribe(&WorkspaceEvent::NAMES)
     }
 
-    fn catalogs(&self) -> &'static [(&'static str, &'static str)] {
-        &CATALOGS
+    fn catalogs(&self) -> lokyr_plugin_sdk::plugin::Catalogs {
+        lokyr_plugin_sdk::plugin::built_in(&CATALOGS)
     }
 
     /// A window's bar: the progress of the tab that it shows, or none.

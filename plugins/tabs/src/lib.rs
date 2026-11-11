@@ -236,12 +236,12 @@ impl Plugin for Tabs {
         Ok(())
     }
 
-    fn catalogs(&self) -> &'static [(&'static str, &'static str)] {
-        &CATALOGS
+    fn catalogs(&self) -> lokyr_plugin_sdk::plugin::Catalogs {
+        lokyr_plugin_sdk::plugin::built_in(&CATALOGS)
     }
 
-    fn config_schema(&self) -> Option<&'static str> {
-        Some(include_str!("../tabs.schema.json"))
+    fn config_schema(&self) -> Option<std::borrow::Cow<'static, str>> {
+        Some(include_str!("../tabs.schema.json").into())
     }
 
     /// A window's tab bar, of its tabs, each of the keys that select it;

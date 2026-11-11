@@ -40,7 +40,7 @@ pub use lokyr_plugin_sdk::message::{
     WINDOW_FOCUS,
 };
 use lokyr_plugin_sdk::message::{Call, Effect, Request as Asked, Response, within_depth};
-pub use lokyr_plugin_sdk::plugin::{Cx, Plugin, Registration};
+pub use lokyr_plugin_sdk::plugin::{Catalogs, Cx, Plugin, Registration, built_in};
 use lokyr_plugin_sdk::ui::{Anchor, PanelId, PanelOptions, Slot, UiEvent, ViewId};
 use lokyr_plugin_sdk::view::{Key, Kind, Node};
 pub use lokyr_plugin_sdk::{ui, view};
@@ -407,8 +407,8 @@ struct State {
     global_bindings: Vec<(keymap::Combo, Invocation)>,
     /// Its items of the menus, in their order.
     menu_items: Vec<host::MenuItem>,
-    /// Its catalogs, of its commands' titles.
-    catalogs: &'static [(&'static str, &'static str)],
+    /// Its catalogs, of its commands' titles and its messages.
+    catalogs: lokyr_plugin_sdk::plugin::Catalogs,
     /// The last tree of each of its views that it rendered, `None` for a
     /// view that shows nothing, which stays as it is disabled, with the
     /// render's number, which no other render took.
@@ -1346,9 +1346,9 @@ impl Plugins {
         let catalogs = panic::catch_unwind(AssertUnwindSafe(|| match &runner {
             Runner::Main(plugin) => plugin.catalogs(),
             Runner::Unstarted(plugin) => plugin.catalogs(),
-            Runner::Worker(_) | Runner::Stopped => &[],
+            Runner::Worker(_) | Runner::Stopped => Vec::new(),
         }))
-        .unwrap_or(&[]);
+        .unwrap_or_default();
         let triggers = Trigger::of(
             name,
             &namespace,
@@ -1891,7 +1891,7 @@ impl Plugins {
     pub fn commands_in(&self, language: &str) -> Vec<(Command, String, bool)> {
         let mut commands = Vec::new();
         for state in self.active() {
-            let texts = Texts::new(language, state.catalogs);
+            let texts = Texts::new(language, &pairs(&state.catalogs));
             commands.extend(state.commands.iter().map(|command| {
                 let titled = Command {
                     title: texts
@@ -1908,7 +1908,7 @@ impl Plugins {
             let Some(manifest) = state.manifest.as_ref().filter(|_| state.waits()) else {
                 continue;
             };
-            let texts = Texts::new(language, state.catalogs);
+            let texts = Texts::new(language, &pairs(&state.catalogs));
             let capabilities: Vec<Capability> = manifest
                 .capabilities
                 .iter()
@@ -1939,7 +1939,7 @@ impl Plugins {
     pub fn menu_items_in(&self, language: &str) -> Vec<MenuEntry> {
         let mut items = Vec::new();
         for state in self.active() {
-            let texts = Texts::new(language, state.catalogs);
+            let texts = Texts::new(language, &pairs(&state.catalogs));
             items.extend(state.menu_items.iter().map(|item| {
                 MenuEntry {
                     plugin: state.name.clone(),
@@ -2041,7 +2041,7 @@ impl Plugins {
         self.entries
             .iter()
             .find(|entry| entry.state.name == plugin)
-            .and_then(|entry| Texts::new(language, entry.state.catalogs).get(text))
+            .and_then(|entry| Texts::new(language, &pairs(&entry.state.catalogs)).get(text))
             .unwrap_or_else(|| text.to_owned())
     }
 
@@ -3011,7 +3011,7 @@ fn schema(
     .unwrap_or(None);
     let invalid = |message: String| Error::new(Code::InvalidConfig, message);
     if let Some(manifest) = manifest {
-        match (&manifest.contributes.config_schema, text) {
+        match (&manifest.contributes.config_schema, &text) {
             (Some(file), None) => {
                 return Err(invalid(format!(
                     "the plugin `{name}`'s manifest names the config schema `{file}`, which the plugin does not give"
@@ -3028,7 +3028,7 @@ fn schema(
     let Some(text) = text else {
         return Ok(None);
     };
-    let schema = Schema::parse(text).map_err(|error| {
+    let schema = Schema::parse(&text).map_err(|error| {
         invalid(format!(
             "the config schema of the plugin `{name}` does not read: {error}"
         ))
@@ -4078,6 +4078,15 @@ fn text_style(style: &Style) -> host::TextStyle {
     }
 }
 
+/// The pairs of `catalogs`, each its language and its source, as the texts
+/// read them.
+fn pairs(catalogs: &lokyr_plugin_sdk::plugin::Catalogs) -> Vec<(&str, &str)> {
+    catalogs
+        .iter()
+        .map(|(language, source)| (language.as_ref(), source.as_ref()))
+        .collect()
+}
+
 /// The rows of `cells`, as an image draws them, of the plugins' styles.
 pub fn cell_rows(cells: Vec<lokyr_vt_core::terminal::RowCells>) -> Vec<image::CellRow> {
     cells
@@ -4821,7 +4830,8 @@ impl Host<'_, '_> {
                     })
                     .collect();
                 Response::Text(
-                    Texts::new(self.context.language, self.state.catalogs).get_with(&id, &args),
+                    Texts::new(self.context.language, &pairs(&self.state.catalogs))
+                        .get_with(&id, &args),
                 )
             }
             Asked::TabBarPlace => Response::TabBarPlace(self.state.bar_place),

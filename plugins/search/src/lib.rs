@@ -630,12 +630,12 @@ impl Plugin for Search {
         Ok(())
     }
 
-    fn catalogs(&self) -> &'static [(&'static str, &'static str)] {
-        &CATALOGS
+    fn catalogs(&self) -> lokyr_plugin_sdk::plugin::Catalogs {
+        lokyr_plugin_sdk::plugin::built_in(&CATALOGS)
     }
 
-    fn config_schema(&self) -> Option<&'static str> {
-        Some(include_str!("../search.schema.json"))
+    fn config_schema(&self) -> Option<std::borrow::Cow<'static, str>> {
+        Some(include_str!("../search.schema.json").into())
     }
 
     fn on_command(&mut self, cx: &mut Cx<'_>, name: &str, _: Args) -> Result<(), Error> {

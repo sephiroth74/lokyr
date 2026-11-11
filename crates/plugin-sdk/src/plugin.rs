@@ -45,6 +45,8 @@
 //! }
 //! ```
 
+use std::borrow::Cow;
+
 use crate::command::{Args, Code, Command, Error};
 use crate::host::{
     BarPlace, Binding, Color, CommandInfo, Current, DecorationLook, Direction, Edge, Found, Host,
@@ -95,9 +97,11 @@ pub trait Plugin {
     /// others: the host titles its commands in the language shown with
     /// their messages, `command-` and the command's name, with `-` for its
     /// `.`, as `command-pane-copy`; a title that they lack is the one that
-    /// the command registered. By default, none.
-    fn catalogs(&self) -> &'static [(&'static str, &'static str)] {
-        &[]
+    /// the command registered. A built-in plugin gives its own as it
+    /// builds them, [`built_in`]; an installed one, its package's. By
+    /// default, none.
+    fn catalogs(&self) -> Catalogs {
+        Catalogs::new()
     }
 
     /// Whether `name`, one of the commands that it registered, would do
@@ -137,12 +141,25 @@ pub trait Plugin {
 
     /// The text of the JSON Schema of its section of the config file,
     /// `[plugins.<namespace>]`, the file that its manifest names as
-    /// `config-schema`, which a built-in plugin includes as it builds: an
-    /// object of its keys, each with its `default`, of the keywords that
-    /// the host checks. By default, none: the plugin has no keys.
-    fn config_schema(&self) -> Option<&'static str> {
+    /// `config-schema`, which a built-in plugin includes as it builds, and
+    /// an installed one's package holds: an object of its keys, each with
+    /// its `default`, of the keywords that the host checks. By default,
+    /// none: the plugin has no keys.
+    fn config_schema(&self) -> Option<Cow<'static, str>> {
         None
     }
+}
+
+/// A plugin's catalogs of Project Fluent, each its language and its source.
+pub type Catalogs = Vec<(Cow<'static, str>, Cow<'static, str>)>;
+
+/// The catalogs of `pairs`, texts that a built-in plugin includes as it
+/// builds, which they borrow.
+pub fn built_in(pairs: &'static [(&'static str, &'static str)]) -> Catalogs {
+    pairs
+        .iter()
+        .map(|&(language, source)| (Cow::Borrowed(language), Cow::Borrowed(source)))
+        .collect()
 }
 
 /// A built-in plugin as the app takes it: the text of its manifest, its

@@ -464,3 +464,36 @@ return {
         );
     }
 }
+
+#[test]
+fn a_package_gives_its_catalogs_of_each_language_and_its_named_config_schema() {
+    let package = Package::new([
+        ("src/init.luau".to_owned(), "return {}".to_owned()),
+        ("locales/en/a.ftl".to_owned(), "a = A".to_owned()),
+        ("locales/en/b.ftl".to_owned(), "b = B".to_owned()),
+        ("locales/it/a.ftl".to_owned(), "a = Ah".to_owned()),
+        ("locales/it/deep/c.ftl".to_owned(), "c = C".to_owned()),
+        ("locales/it/notes.txt".to_owned(), "x".to_owned()),
+        ("snap.schema.json".to_owned(), "{}".to_owned()),
+    ]);
+    let catalogs: Vec<(String, String)> = package
+        .catalogs()
+        .into_iter()
+        .map(|(language, source)| (language.into_owned(), source.into_owned()))
+        .collect();
+    assert_eq!(
+        catalogs,
+        [
+            ("en".to_owned(), "a = A\nb = B".to_owned()),
+            ("it".to_owned(), "a = Ah".to_owned()),
+        ]
+    );
+    let plugin = LuauPlugin::new("acme/snap", package.clone(), Execution::Native);
+    assert_eq!(plugin.config_schema(), None);
+    assert_eq!(plugin.catalogs().len(), 2);
+    let named = plugin.with_config_schema(Some("snap.schema.json".to_owned()));
+    assert_eq!(named.config_schema().as_deref(), Some("{}"));
+    let missing = LuauPlugin::new("acme/snap", package, Execution::Native)
+        .with_config_schema(Some("other.json".to_owned()));
+    assert_eq!(missing.config_schema(), None);
+}

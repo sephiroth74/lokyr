@@ -530,9 +530,9 @@ impl Plugin for Titled {
         Ok(())
     }
 
-    fn catalogs(&self) -> &'static [(&'static str, &'static str)] {
+    fn catalogs(&self) -> lokyr_plugin_sdk::plugin::Catalogs {
         assert!(!self.panics, "on purpose");
-        &TITLED
+        lokyr_plugin_sdk::plugin::built_in(&TITLED)
     }
 }
 
@@ -681,8 +681,8 @@ impl Plugin for Speaker {
         cx.register_command(command("speaker.say"))
     }
 
-    fn catalogs(&self) -> &'static [(&'static str, &'static str)] {
-        &SPOKEN
+    fn catalogs(&self) -> lokyr_plugin_sdk::plugin::Catalogs {
+        lokyr_plugin_sdk::plugin::built_in(&SPOKEN)
     }
 
     fn on_command(&mut self, cx: &mut Cx<'_>, _: &str, _: Args) -> Result<(), Error> {
@@ -1692,7 +1692,7 @@ fn a_call_is_its_own_plugin_s() {
             bindings: Vec::new(),
             global_bindings: Vec::new(),
             menu_items: Vec::new(),
-            catalogs: &[],
+            catalogs: Vec::new(),
             views: BTreeMap::new(),
             panels: BTreeMap::new(),
             decorations: BTreeMap::new(),

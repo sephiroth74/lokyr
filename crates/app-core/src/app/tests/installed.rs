@@ -402,3 +402,122 @@ fn a_waiting_plugin_of_the_app_s_namespace_takes_none_of_its_commands() {
     );
     let _ = std::fs::remove_dir_all(&folder);
 }
+
+#[test]
+fn an_installed_plugin_takes_its_package_s_config_schema_and_catalogs() {
+    let _luau = LUAU.lock().unwrap_or_else(PoisonError::into_inner);
+    let folder = shelf("texts");
+    let store = Store::new(folder.join("store"));
+    let manifest = manifest(
+        "texts",
+        &["startup"],
+        "^0.1",
+        "[contributes]\ncommands = [{ name = \"texts.go\", title = \"Go\" }]\nconfig-schema = \"texts.schema.json\"\n",
+    );
+    // It opens its config's target and its message, as it activates.
+    let entry = r#"return { activate = function(cx)
+        assert(cx.register_command({ name = "texts.go", title = "Go", category = "view" }))
+        local config = assert(cx.config()) :: any
+        assert(cx.open("https://lokyr.dev/" .. config.target .. "-" .. assert(cx.message("texts-hello"))))
+    end }"#;
+    let (name, locked) = stored(&store, "texts", &manifest, entry);
+    let package = store.folder(locked.checksum.as_ref().unwrap());
+    // Its catalogs and its schema, beside its sources, of their digest.
+    std::fs::create_dir_all(package.join("locales/en")).unwrap();
+    std::fs::create_dir_all(package.join("locales/it")).unwrap();
+    std::fs::write(
+        package.join("locales/en/texts.ftl"),
+        "command-texts-go = Go Now\ntexts-hello = Hello\n",
+    )
+    .unwrap();
+    std::fs::write(
+        package.join("locales/it/texts.ftl"),
+        "command-texts-go = Vai ora\ntexts-hello = Ciao\n",
+    )
+    .unwrap();
+    std::fs::write(
+        package.join("texts.schema.json"),
+        r#"{ "type": "object", "properties": { "target": { "type": "string", "default": "x" } } }"#,
+    )
+    .unwrap();
+    let digest = digest_of(&package).unwrap();
+    let moved = store.folder(&digest);
+    std::fs::rename(&package, &moved).unwrap();
+    let locked = Locked {
+        checksum: Some(digest),
+        ..locked
+    };
+    let lock = folder.join("plugins.lock");
+    Lock {
+        api: lokyr_kernel::plugins::API_VERSION.to_owned(),
+        packages: BTreeMap::from([(name, locked)]),
+    }
+    .write(&lock)
+    .unwrap();
+    grant_open(&folder, &["texts"]);
+    let config = Config::parse(
+        "[app]\nlanguage = \"it\"\n[links]\nurls = \"open\"\n[plugins.texts]\ntarget = \"y\"\n",
+        Path::new("config.toml"),
+    )
+    .unwrap();
+    let mut fake = Fake::default();
+    let mut app = app(config, quiet()).with_installed(lock, store);
+    fake.start(&mut app);
+    // Its config of its schema, its message of its Italian catalog.
+    run_until(&mut fake, &mut app, |fake, _| opened(fake, "y-Ciao"));
+    assert_eq!(app.commands.get("texts.go").unwrap().title, "Vai ora");
+    assert!(
+        notices(&mut app).iter().all(|text| !text.contains("texts")),
+        "no notice of the plugin"
+    );
+}
+
+#[test]
+fn an_installed_plugin_of_a_schema_too_large_is_refused() {
+    let _luau = LUAU.lock().unwrap_or_else(PoisonError::into_inner);
+    let folder = shelf("large-schema");
+    let devved = folder.join("large");
+    package(
+        &devved,
+        &manifest(
+            "large",
+            &["startup"],
+            "^0.1",
+            "[contributes]\nconfig-schema = \"large.schema.json\"\n",
+        ),
+        "return {}",
+    );
+    let padding = " ".repeat(70 * 1024);
+    std::fs::write(
+        devved.join("large.schema.json"),
+        format!(r#"{{ "type": "object"{padding} }}"#),
+    )
+    .unwrap();
+    let lock = folder.join("plugins.lock");
+    Lock {
+        api: lokyr_kernel::plugins::API_VERSION.to_owned(),
+        packages: BTreeMap::from([(
+            "acme/large".to_owned(),
+            Locked {
+                version: "1.0.0".to_owned(),
+                kind: Kind::Luau,
+                source: Source::Dev(devved.display().to_string()),
+                checksum: None,
+                capabilities: Vec::new(),
+                dependencies: BTreeMap::new(),
+            },
+        )]),
+    }
+    .write(&lock)
+    .unwrap();
+    let mut fake = Fake::default();
+    let mut app =
+        app(Config::default(), quiet()).with_installed(lock, Store::new(folder.join("store")));
+    fake.start(&mut app);
+    let told = notices(&mut app);
+    assert!(
+        told.iter()
+            .any(|text| text.contains("acme/large") && text.contains("larger than")),
+        "{told:?}"
+    );
+}

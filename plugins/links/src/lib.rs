@@ -103,8 +103,8 @@ impl Plugin for Links {
         cx.subscribe(&[POINTER])
     }
 
-    fn catalogs(&self) -> &'static [(&'static str, &'static str)] {
-        &CATALOGS
+    fn catalogs(&self) -> lokyr_plugin_sdk::plugin::Catalogs {
+        lokyr_plugin_sdk::plugin::built_in(&CATALOGS)
     }
 
     /// The pointer over a link that opens, with Command held, underlines

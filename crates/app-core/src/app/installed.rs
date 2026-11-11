@@ -142,8 +142,8 @@ fn plugin(name: &str, folder: &Path) -> Result<(Manifest, Package), Refusal> {
     if !manifest.takes_api(API_VERSION) {
         return Err(Refusal::Api(manifest.api.clone().unwrap_or_default()));
     }
-    let sources =
-        sources(folder).map_err(|error| other(format!("its sources cannot be read: {error}")))?;
+    let sources = sources(folder, manifest.contributes.config_schema.as_deref())
+        .map_err(|error| other(format!("its sources cannot be read: {error}")))?;
     Ok((manifest, Package::new(sources)))
 }
 
@@ -192,10 +192,69 @@ fn on_change(platform: &dyn Platform, flags: Vec<Arc<AtomicBool>>) -> impl Fn() 
     }
 }
 
-/// The sources of the package in `folder`, `.luau` of its `src`, by their
-/// paths in the package, of `/` between their folders.
-fn sources(folder: &Path) -> std::io::Result<BTreeMap<String, String>> {
+/// The most bytes of an installed plugin's config's schema: a plugin's
+/// keys take a few thousand.
+const MOST_SCHEMA: u64 = 64 * 1024;
+
+/// The sources of the package in `folder`, by their paths in the package,
+/// of `/` between their folders: `.luau` of its `src`, its catalogs,
+/// `locales/<language>/*.ftl`, and its config's schema at `schema`, if its
+/// manifest names one and the package holds it.
+fn sources(folder: &Path, schema: Option<&str>) -> std::io::Result<BTreeMap<String, String>> {
     let mut sources = BTreeMap::new();
+    let utf8 = |name: std::ffi::OsString| {
+        name.into_string().map_err(|name| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("{} is not of a UTF-8 name", name.to_string_lossy()),
+            )
+        })
+    };
+    match std::fs::read_dir(folder.join("locales")) {
+        Ok(languages) => {
+            for language in languages {
+                let language = language?;
+                if !language.file_type()?.is_dir() {
+                    continue;
+                }
+                let name = utf8(language.file_name())?;
+                for file in std::fs::read_dir(language.path())? {
+                    let file = file?;
+                    let path = file.path();
+                    if file.file_type()?.is_file()
+                        && path.extension().is_some_and(|extension| extension == "ftl")
+                    {
+                        let file_name = utf8(file.file_name())?;
+                        sources.insert(
+                            format!("locales/{name}/{file_name}"),
+                            std::fs::read_to_string(&path)?,
+                        );
+                    }
+                }
+            }
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error),
+    }
+    // A schema that the package lacks, which the host then tells of; one
+    // larger than the most refused, as its defaults take some hundred
+    // times its size.
+    if let Some(schema) = schema {
+        let path = folder.join(schema);
+        match std::fs::metadata(&path) {
+            Ok(metadata) if metadata.len() > MOST_SCHEMA => {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("its config's schema, `{schema}`, is larger than {MOST_SCHEMA} bytes"),
+                ));
+            }
+            Ok(_) => {
+                sources.insert(schema.to_owned(), std::fs::read_to_string(&path)?);
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error),
+        }
+    }
     let mut left = vec![folder.join("src")];
     while let Some(at) = left.pop() {
         for entry in std::fs::read_dir(&at)? {
@@ -391,14 +450,14 @@ impl<B: Backend> App<B> {
             // A fresh VM of the package each time, as a fault's while
             // passes or the plugin is turned on again.
             let made = name.clone();
+            let schema = manifest.contributes.config_schema.clone();
             let added = self.plugins.add_installed(
                 manifest,
                 Box::new(move || {
-                    Box::new(LuauPlugin::new(
-                        made.clone(),
-                        package.clone(),
-                        Execution::Native,
-                    ))
+                    Box::new(
+                        LuauPlugin::new(made.clone(), package.clone(), Execution::Native)
+                            .with_config_schema(schema.clone()),
+                    )
                 }),
                 (&decisions.granted, &decisions.refused),
             );
