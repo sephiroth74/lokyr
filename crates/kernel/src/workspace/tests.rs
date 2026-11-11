@@ -1342,6 +1342,39 @@ fn a_shown_tab_s_output_marks_nothing_and_its_progress_marks_it() {
 }
 
 #[test]
+fn a_tab_runs_a_program_while_any_of_its_panes_does_whichever_has_the_keyboard() {
+    let mut workspace = Workspace::new();
+    let window = workspace.open_window(pane("read line"));
+    let tab = workspace.window(window).unwrap().active_tab();
+    let a = workspace.tab(tab).unwrap().active_pane();
+    let b = workspace
+        .split(a, Direction::Horizontal, pane("read line"), Side::Second)
+        .unwrap();
+    let marks = |workspace: &Workspace| workspace.tab(tab).unwrap().marks();
+    // A build in the first pane, full screen; the keyboard in the second's
+    // shell: the tab runs it, of the second's screen.
+    assert!(workspace.focus_pane(a));
+    assert!(workspace.set_pane_running(a, true, true));
+    assert!(marks(&workspace).running && marks(&workspace).alternate);
+    assert!(workspace.focus_pane(b));
+    assert!(workspace.set_pane_running(b, false, false));
+    assert!(marks(&workspace).running);
+    assert!(!marks(&workspace).alternate);
+    // Back to the first, its screen again; its build ends, the tab runs
+    // nothing.
+    assert!(workspace.focus_pane(a));
+    assert!(marks(&workspace).alternate);
+    assert!(workspace.set_pane_running(a, false, false));
+    assert!(!marks(&workspace).running);
+    // A pane of a program that goes takes it with it.
+    assert!(workspace.set_pane_running(b, true, false));
+    assert!(marks(&workspace).running);
+    assert!(workspace.close_pane(b));
+    assert!(!marks(&workspace).running);
+    assert!(!workspace.set_pane_running(b, true, false));
+}
+
+#[test]
 fn a_tab_is_marked_of_what_runs_its_protected_input_and_its_agent_each_told_once() {
     let mut workspace = Workspace::new();
     let window = workspace.open_window(pane("read line"));
@@ -1515,6 +1548,8 @@ fn a_tab_is_marked_of_the_printing_of_its_active_pane_alone() {
             Side::Second,
         )
         .unwrap();
+    // Its program, as the app finds it, runs too.
+    assert!(workspace.set_pane_running(printing, true, false));
     let start = Instant::now();
     while !workspace.pane(printing).unwrap().printing() {
         assert!(

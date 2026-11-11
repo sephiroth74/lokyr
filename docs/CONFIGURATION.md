@@ -938,7 +938,7 @@ Whether your shell loads Lokyr's integration, which has it tell the terminal whe
 - fish 4 and later tell the prompts and the folder themselves: the integration adds nothing to them.
 - macOS's own bash, `/bin/bash`, of version 3.2, reads your files and not `ENV` in POSIX mode, and gets no integration: a later bash, as Homebrew's, does. To have it in `/bin/bash`, add to your `.bashrc` `[ -n "$LOKYR_RESOURCES_DIR" ] && source "$LOKYR_RESOURCES_DIR/shell-integration/bash/lokyr.bash"`.
 - The marks are OSC 133's, the folder OSC 7's; a new pane starts in the folder that its shell told last, as [`new-directory`](#new-directory) says.
-- A command's start mark has Lokyr look for its program in the tab, as its title and its marks tell it, a few times within four seconds until the program shows, however late your shell starts it, as of a slow `preexec`. Without the marks, Lokyr looks a quarter of a second, a second and four seconds after a tab's last output.
+- A command's start mark has Lokyr look for its program in the pane, as its tab's title and marks tell it, a few times within four seconds until the program shows, however late your shell starts it, as of a slow `preexec`, whichever pane has the keyboard meanwhile. Without the marks, Lokyr looks a quarter of a second, a second and four seconds after a window's last output, and at every pane of a tab as the keyboard moves between them. A tab runs a program while any of its panes does.
 - It applies to the shells that start after the change; the open ones keep what they started with.
 
 ## `[scrollback]`

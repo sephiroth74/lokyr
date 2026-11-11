@@ -235,10 +235,6 @@ pub(crate) struct Window<B: Backend> {
     /// that came.
     pub(crate) output_at: Option<Instant>,
     pub(crate) output_looks: usize,
-    /// When its pane's shell marked a command's start, while the command
-    /// runs and its program is not yet in the foreground, and the looks
-    /// after it that came, for the titles' timer to look again.
-    pub(crate) command_at: Option<(Instant, usize)>,
     /// The title that the user gave it, which takes the place of its
     /// program's and of its own.
     pub(crate) user_title: Option<String>,
@@ -419,7 +415,6 @@ impl<B: Backend> Window<B> {
             title_shown: None,
             output_at: None,
             output_looks: 0,
-            command_at: None,
             user_title: None,
             own_appearance: None,
             chrome_tokens: None,

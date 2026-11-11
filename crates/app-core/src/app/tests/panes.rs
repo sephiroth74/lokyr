@@ -725,3 +725,46 @@ fn the_keyboard_follows_the_pointer_over_the_panes_as_the_config_asks() {
     assert!(moving(&fake).contains(&origin(&app, focused)));
     assert!(!moving(&fake).contains(&origin(&app, other)));
 }
+
+#[test]
+fn a_tab_runs_the_program_of_a_pane_that_has_not_the_keyboard() {
+    // The first pane's shell marks a command and starts it 0.7 s later, of
+    // no output, as the keyboard moves to the second pane, a shell: the
+    // looks after the mark find the first's program, and the tab runs it.
+    let mut fake = Fake::default();
+    let mut app = app(
+        unpadded(),
+        shell(concat!(
+            "cd /usr; stty raw -echo; printf ready-a; ",
+            "printf '\\033]133;A\\007$ \\033]133;B\\007\\033]133;C\\007'; ",
+            "sleep 0.7; exec cat",
+        )),
+    );
+    app.title_look = Some(TITLE_LOOK);
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    let a = app.focused(window).unwrap();
+    let grid = app.pane(window).grid();
+    let pane = app.spawn_pane(
+        &fake,
+        &shell("printf ready-b; exec sh"),
+        &Environment::default(),
+        grid,
+        &lokyr_vt_core::terminal::Colors::default(),
+    );
+    let b = app
+        .workspace
+        .split(a, Direction::Horizontal, pane, Side::Second)
+        .unwrap();
+    app.workspace.focus_pane(b);
+    fake.send(&mut app, window, WindowEvent::Frame);
+    assert_eq!(app.focused(window), Some(b));
+    let tab = app.workspace.tab_of(a).unwrap();
+    run_until(&mut fake, &mut app, |_, app| {
+        app.workspace.pane(a).is_some_and(Pane::runs_program)
+    });
+    assert_eq!(app.focused(window), Some(b), "the keyboard stayed");
+    assert!(app.workspace.tab(tab).unwrap().marks().running);
+    assert!(!app.workspace.pane(b).unwrap().runs_program());
+}

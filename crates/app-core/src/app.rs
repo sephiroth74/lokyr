@@ -637,6 +637,11 @@ pub struct App<B: Backend> {
     /// time that it is for; and how long after a window's last frame of
     /// output that look comes, `None` for none.
     title_timer: Option<(TimerId, Instant)>,
+    /// The panes whose shells marked a command's start, of a shell that
+    /// marks its commands, when, and how many of the looks after it came:
+    /// until its program shows, or the looks end, whichever pane has the
+    /// keyboard meanwhile.
+    command_looks: BTreeMap<PaneId, (Instant, usize)>,
     title_look: Option<Duration>,
     /// The icon's variants, where the app finds them.
     icons: Option<Icons>,
@@ -883,6 +888,7 @@ impl<B: Backend> App<B> {
             pointer_mods: lokyr_platform_core::Modifiers::NONE,
             pointer_text_changed: false,
             title_timer: None,
+            command_looks: BTreeMap::new(),
             title_look: Some(TITLE_LOOK),
             opened_one: false,
             state: None,
@@ -2424,6 +2430,21 @@ impl<B: Backend> App<B> {
         state.selecting = None;
         state.blink.restart(Instant::now());
         self.look_at_place(window);
+        // The tab's other panes' programs too, as the one that had the
+        // keyboard may run one that started without a word.
+        let others: Vec<PaneId> = self
+            .windows
+            .get(&window)
+            .and_then(|state| self.workspace.window(state.window))
+            .and_then(|shown| self.workspace.tab(shown.active_tab()))
+            .map(|tab| tab.layout().panes())
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|&pane| Some(pane) != now)
+            .collect();
+        for pane in others {
+            self.look_at_tab_place(pane);
+        }
         platform.request_frame(window);
         // The protected input is the pane's that has the keyboard now, as
         // another tab shows, and the lock its tab's.
@@ -3635,22 +3656,16 @@ impl<B: Backend> App<B> {
                 .is_some_and(Pane::tells_commands)
     }
 
-    /// The shell of `pane` marked a command's start: the window that it has
-    /// the keyboard of looks at its foreground program a few times after
-    /// it, until the program shows there.
+    /// The shell of `pane` marked a command's start: the app looks at its
+    /// foreground program a few times after it, until the program shows
+    /// there, whichever pane has the keyboard meanwhile.
     fn look_after_command(&mut self, platform: &mut dyn Platform, pane: PaneId) {
         if self.title_look.is_none() {
             return;
         }
         let now = Instant::now();
-        let window = self
-            .windows
-            .iter_mut()
-            .find(|(_, state)| self.workspace.active_pane(state.window) == Some(pane));
-        if let Some((_, state)) = window {
-            state.command_at = Some((now, 0));
-            self.arm_title_look(platform, now + COMMAND_LOOKS[0]);
-        }
+        self.command_looks.insert(pane, (now, 0));
+        self.arm_title_look(platform, now + COMMAND_LOOKS[0]);
     }
 
     /// Looks at the directory and the program in `window`'s foreground,
@@ -3675,6 +3690,7 @@ impl<B: Backend> App<B> {
         let (id, place) = (pane.id(), place_label(&state.place.0, &state.place.1));
         let running = runs_other_than_shell(&state.place.1);
         let alternate = pane.is_alternate_screen();
+        self.workspace.set_pane_running(id, running, alternate);
         if let Some(tab) = self.workspace.tab_of(id)
             && self
                 .workspace
@@ -3682,17 +3698,25 @@ impl<B: Backend> App<B> {
                 .is_some_and(|tab| tab.active_pane() == id)
         {
             self.workspace.set_tab_place(tab, Some(place));
-            self.workspace.set_tab_running(tab, running, alternate);
         }
         true
     }
 
-    /// Gives `pane`'s tab, while the pane has its keyboard, its folder and
-    /// its program in the foreground, which the tab's label takes without
-    /// a title: a look at the terminal's foreground group and its first
-    /// process's path and directory, some microseconds, as the pane's
-    /// output comes.
+    /// Looks at `pane`'s program in the foreground, whether it is one other
+    /// than a shell, which its tab's marks take, and gives its tab, while
+    /// the pane has its keyboard, its folder and that program, which the
+    /// tab's label takes without a title: a look at the terminal's
+    /// foreground group and its first process's path and directory, some
+    /// microseconds, as the pane's output comes.
     fn look_at_tab_place(&mut self, pane: PaneId) {
+        let Some(shown) = self.workspace.pane(pane).filter(|shown| !shown.is_kept()) else {
+            return;
+        };
+        let program = shown.foreground_program().unwrap_or_default();
+        let alternate = shown.is_alternate_screen();
+        let directory = shown.working_directory();
+        self.workspace
+            .set_pane_running(pane, runs_other_than_shell(&program), alternate);
         let Some(tab) = self.workspace.tab_of(pane) else {
             return;
         };
@@ -3703,20 +3727,12 @@ impl<B: Backend> App<B> {
         {
             return;
         }
-        let Some(shown) = self.workspace.pane(pane).filter(|shown| !shown.is_kept()) else {
+        let Some(directory) = directory else {
             return;
         };
-        let home = std::env::home_dir();
-        let Some(directory) = shown.working_directory() else {
-            return;
-        };
-        let name = directory_name(&directory, home.as_deref());
-        let program = shown.foreground_program().unwrap_or_default();
-        let alternate = shown.is_alternate_screen();
+        let name = directory_name(&directory, std::env::home_dir().as_deref());
         self.workspace
             .set_tab_place(tab, Some(place_label(&name, &program)));
-        self.workspace
-            .set_tab_running(tab, runs_other_than_shell(&program), alternate);
     }
 
     /// The titles' timer fired: the windows whose last frame of output came
@@ -3757,20 +3773,54 @@ impl<B: Backend> App<B> {
                     None => state.output_at = None,
                 }
             }
-            // After its command's start, while its program is not yet in
-            // the foreground.
-            if let Some((started, step)) = state.command_at {
-                match COMMAND_LOOKS.get(step) {
-                    Some(&after) if started + after <= at => {
-                        looks = true;
-                        state.command_at = Some((started, step + 1));
-                    }
-                    Some(&after) => sooner(started + after),
-                    None => state.command_at = None,
-                }
-            }
             if looks {
                 due.push(window);
+            }
+        }
+        // After a pane's command's start, while its program is not yet in
+        // the foreground, whichever pane has the keyboard.
+        let mut commands = Vec::new();
+        self.command_looks
+            .retain(|&pane, (started, step)| match COMMAND_LOOKS.get(*step) {
+                Some(&after) if *started + after <= at => {
+                    commands.push(pane);
+                    *step += 1;
+                    true
+                }
+                Some(&after) => {
+                    sooner(*started + after);
+                    true
+                }
+                None => false,
+            });
+        for pane in commands {
+            self.look_at_tab_place(pane);
+            self.workspace.look_at_headers(&[pane]);
+            // Its title too, of the window whose keyboard it has.
+            let window = self
+                .windows
+                .iter()
+                .find(|(_, state)| self.workspace.active_pane(state.window) == Some(pane))
+                .map(|(&window, _)| window);
+            if let Some(window) = window
+                && !due.contains(&window)
+            {
+                due.push(window);
+            }
+            // A command's looks end as its program shows, or as it ends.
+            let shows = self
+                .workspace
+                .pane(pane)
+                .is_none_or(|shown| !shown.runs_command() || shown.runs_program());
+            if shows {
+                self.command_looks.remove(&pane);
+            } else if let Some(&(started, step)) = self.command_looks.get(&pane) {
+                match COMMAND_LOOKS.get(step) {
+                    Some(&after) => sooner(started + after),
+                    None => {
+                        self.command_looks.remove(&pane);
+                    }
+                }
             }
         }
         for window in due {
@@ -3782,23 +3832,6 @@ impl<B: Backend> App<B> {
             // The panes' headers, of a program that started without a word.
             let panes = self.workspace.panes_of(shown);
             self.workspace.look_at_headers(&panes);
-            // A command's looks end as its program shows, or as it ends.
-            let runs = self
-                .workspace
-                .focused(shown)
-                .is_some_and(Pane::runs_command);
-            let Some(state) = self.windows.get_mut(&window) else {
-                continue;
-            };
-            if !runs || runs_other_than_shell(&state.place.1) {
-                state.command_at = None;
-            }
-            if let Some((started, step)) = state.command_at {
-                match COMMAND_LOOKS.get(step) {
-                    Some(&after) => sooner(started + after),
-                    None => state.command_at = None,
-                }
-            }
         }
         if let Some(next) = next {
             self.title_timer = Some((platform.start_timer(next), next));

@@ -217,12 +217,12 @@ pub struct Marks {
     /// The progress that a program of its panes tells, OSC 9;4's: its
     /// active pane's, or another's.
     pub progress: Option<terminal::Progress>,
-    /// Its active pane's program, other than a shell, as `running` tells,
-    /// prints of its own: output that no input asked for came within the
-    /// last few seconds, [`PRINTING`].
+    /// Its active pane's program, other than a shell, prints of its own:
+    /// output that no input asked for came within the last few seconds,
+    /// [`PRINTING`].
     pub printing: bool,
-    /// A program other than a shell runs in its active pane's foreground,
-    /// as the app finds it.
+    /// A program other than a shell runs in the foreground of one of its
+    /// panes, as the app finds it, whichever has the keyboard.
     pub running: bool,
     /// Its active pane's program shows the alternate screen, as the app
     /// finds it with `running`.
@@ -865,10 +865,16 @@ impl Workspace {
             shown.title.clone_from(&pane.title);
             shown.color = pane.tab_color;
         }
-        shown.marks.printing =
-            shown.marks.running && self.panes.get(&shown.active).is_some_and(Pane::printing);
         // Its place is the new pane's, which the app gives it anew.
         shown.place = None;
+        let programs = self.programs_of(tab);
+        if let Some(shown) = self.tabs.get_mut(&tab) {
+            (
+                shown.marks.running,
+                shown.marks.alternate,
+                shown.marks.printing,
+            ) = programs;
+        }
         self.tab_looked(tab, &before);
     }
 
@@ -1082,8 +1088,33 @@ impl Workspace {
     /// it is marked of one that runs, other than a shell: a shell's prompt
     /// tells nothing.
     fn tab_printing(&self, tab: TabId) -> bool {
-        self.tabs.get(&tab).is_some_and(|tab| {
-            tab.marks.running && self.panes.get(&tab.active).is_some_and(Pane::printing)
+        self.programs_of(tab).2
+    }
+
+    /// The marks of `tab`'s programs: whether one of its panes runs a
+    /// program other than a shell, whether its active pane's shows the
+    /// alternate screen, and whether it prints of its own.
+    fn programs_of(&self, tab: TabId) -> (bool, bool, bool) {
+        let Some(tab) = self.tabs.get(&tab) else {
+            return (false, false, false);
+        };
+        let running = tab
+            .layout
+            .panes()
+            .into_iter()
+            .any(|pane| self.panes.get(&pane).is_some_and(Pane::runs_program));
+        let active = self.panes.get(&tab.active);
+        let (runs, alternate) = active.map_or((false, false), |pane| pane.program);
+        let printing = runs && active.is_some_and(Pane::printing);
+        (running, runs && alternate, printing)
+    }
+
+    /// Takes `tab`'s programs' marks anew, as one of its panes' program, or
+    /// its panes, changed; whether it is open.
+    fn look_at_programs(&mut self, tab: TabId) -> bool {
+        let programs = self.programs_of(tab);
+        self.mark(tab, |marks| {
+            (marks.running, marks.alternate, marks.printing) = programs;
         })
     }
 
@@ -1108,21 +1139,31 @@ impl Workspace {
         });
     }
 
-    /// Marks `tab` of a program other than a shell running in its active
-    /// pane's foreground, or of none, and of whether that pane shows the
-    /// alternate screen, as the app finds them; whether it is open.
+    /// Marks `tab`'s active pane of a program other than a shell running
+    /// in its foreground, or of none, and of whether it shows the
+    /// alternate screen, as [`Workspace::set_pane_running`] does; whether
+    /// the tab is open.
     pub fn set_tab_running(&mut self, tab: TabId, running: bool, alternate: bool) -> bool {
-        let printing = running
-            && self
-                .tabs
-                .get(&tab)
-                .and_then(|tab| self.panes.get(&tab.active))
-                .is_some_and(Pane::printing);
-        self.mark(tab, |marks| {
-            marks.running = running;
-            marks.alternate = alternate;
-            marks.printing = printing;
-        })
+        let Some(active) = self.tabs.get(&tab).map(|tab| tab.active) else {
+            return false;
+        };
+        self.set_pane_running(active, running, alternate)
+    }
+
+    /// Marks `pane` of a program other than a shell running in its
+    /// foreground, or of none, and of whether it shows the alternate
+    /// screen, as the app finds them: its tab runs one while any of its
+    /// panes does, and takes the alternate screen of its active pane's;
+    /// whether the pane is open.
+    pub fn set_pane_running(&mut self, pane: PaneId, running: bool, alternate: bool) -> bool {
+        let Some(shown) = self.panes.get_mut(&pane) else {
+            return false;
+        };
+        shown.program = (running, alternate);
+        if let Some(tab) = self.tab_of.get(&pane).copied() {
+            self.look_at_programs(tab);
+        }
+        true
     }
 
     /// Marks `tab` of the keyboard's protected input, or of none, as the
@@ -1245,6 +1286,8 @@ impl Workspace {
         }
         if refocused {
             self.take_active_look(tab_id);
+        } else {
+            self.look_at_programs(tab_id);
         }
         self.changed(WorkspaceEvent::LayoutChanged { tab: tab_id.into() });
         if refocused {

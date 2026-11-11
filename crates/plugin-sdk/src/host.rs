@@ -225,8 +225,9 @@ pub struct TabInfo {
     /// `false` to the others.
     #[serde(default)]
     pub printing: bool,
-    /// Whether a program other than a shell runs in its active pane's
-    /// foreground, to a plugin of `process-read`; `false` to the others.
+    /// Whether a program other than a shell runs in the foreground of one
+    /// of its panes, whichever has the keyboard, to a plugin of
+    /// `process-read`; `false` to the others.
     #[serde(default)]
     pub running: bool,
     /// Whether the program of its active pane shows the alternate screen,

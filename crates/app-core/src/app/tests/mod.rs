@@ -1712,7 +1712,7 @@ fn a_command_that_its_shell_marks_is_found_as_its_program_starts_late() {
         app.windows[&window].place.1 == "cat"
     });
     // Its looks end as its program shows.
-    assert_eq!(app.windows[&window].command_at, None);
+    assert!(app.command_looks.is_empty());
 }
 
 #[test]
