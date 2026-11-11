@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+<title>Lokyr – Jörmungandr sticker</title>
+<defs>
+<linearGradient id="lb-bg" x1="140" y1="120" x2="884" y2="904" gradientUnits="userSpaceOnUse">
+<stop offset="0" stop-color="#4C3F7E"/>
+<stop offset="1" stop-color="#1F1938"/>
+</linearGradient>
+<linearGradient id="lb-ring" x1="242" y1="242" x2="782" y2="782" gradientUnits="userSpaceOnUse">
+<stop offset="0" stop-color="#A592FF"/>
+<stop offset="1" stop-color="#F27AC4"/>
+</linearGradient>
+<filter id="lb-sh" x="-20%" y="-20%" width="140%" height="150%">
+<feDropShadow dx="0" dy="14" stdDeviation="16" flood-color="#000000" flood-opacity="0.3"/>
+</filter>
+<filter id="lb-st" x="-20%" y="-20%" width="140%" height="140%">
+<feDropShadow dx="0" dy="10" stdDeviation="9" flood-color="#0A0614" flood-opacity="0.55"/>
+</filter>
+</defs>
+<rect x="100" y="100" width="824" height="824" rx="184" fill="url(#lb-bg)" filter="url(#lb-sh)"/>
+<g filter="url(#lb-st)">
+<path d="M685.6 305.2 A270 270 0 1 1 613.1 261.7" fill="none" stroke="#FFFFFF" stroke-width="106" stroke-linecap="round"/>
+<circle cx="685.6" cy="305.2" r="68" fill="#FFFFFF"/>
+</g>
+<path d="M685.6 305.2 A270 270 0 1 1 613.1 261.7" fill="none" stroke="url(#lb-ring)" stroke-width="70" stroke-linecap="round"/>
+<circle cx="685.6" cy="305.2" r="50" fill="url(#lb-ring)"/>
+<circle cx="679" cy="285" r="9" fill="#14111F"/>
+<path d="M430 450 L500 512 L430 574" fill="none" stroke="#F4F1FF" stroke-width="44" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="525" y="552" width="90" height="40" rx="9" fill="#F4F1FF"/>
+<rect x="101" y="101" width="822" height="822" rx="183" fill="none" stroke="#FFFFFF" stroke-width="2" stroke-opacity="0.12"/>
+</svg>

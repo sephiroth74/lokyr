@@ -146,7 +146,7 @@ dark = "Nightfall"                   # the dark appearance's theme
 minimum-contrast = 3.0               # 1 to 21: the least contrast of the terminal's text
 
 [app]
-icon = "laguz"                       # jormungandr | laguz
+icon = "laguz"                       # jormungandr | jormungandr-sticker | laguz
 language = "it"                      # system | en | it
 appearance = "dark"                  # system | light | dark
 quit-after-last-window-closed = true # true | false: Lokyr quits as its last window closes
@@ -1265,7 +1265,7 @@ The variant of Lokyr's icon that shows while Lokyr runs, in the Dock and the app
 
 | Values | Default |
 |---|---|
-| `"jormungandr"`, `"laguz"` | `"jormungandr"` |
+| `"jormungandr"`, `"jormungandr-sticker"`, `"laguz"` | `"jormungandr"` |
 
 - A new variant applies at once, as you save the file.
 - The Finder and the Apps launcher show `"jormungandr"` whatever the key says, as do the Dock and the app switcher while Lokyr does not run: they show the app's own icon, which an app cannot change without changing the app itself.
