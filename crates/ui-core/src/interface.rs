@@ -189,12 +189,14 @@ const ICONS: &[(&str, char)] = &[
     ("edit", '\u{ea73}'),
     ("ellipsis", '\u{ea7c}'),
     ("error", '\u{ea87}'),
+    ("eye-closed", '\u{eae7}'),
     ("filter", '\u{eaf1}'),
     ("folder", '\u{ea83}'),
     ("history", '\u{ea82}'),
     ("info", '\u{ea74}'),
     ("lock", '\u{ea75}'),
     ("pin", '\u{eb2b}'),
+    ("pulse", '\u{eb31}'),
     ("regex", '\u{eb38}'),
     ("replace", '\u{eb3d}'),
     ("search", '\u{ea6d}'),
@@ -232,8 +234,11 @@ mod tests {
         assert_eq!(icon("terminal"), Some('\u{ea85}'));
         assert_eq!(icon("whole-word"), Some('\u{eb7e}'));
         assert_eq!(icon("add"), Some('\u{ea60}'));
-        // A steaming cup, as of a Mac kept awake.
+        // A steaming cup, as of a Mac kept awake; a closed eye, as of one
+        // that sleeps as usual; a pulse, as of one awake while work goes on.
         assert_eq!(icon("coffee"), Some('\u{ec15}'));
+        assert_eq!(icon("eye-closed"), Some('\u{eae7}'));
+        assert_eq!(icon("pulse"), Some('\u{eb31}'));
         assert_eq!(icon("Terminal"), None);
         assert_eq!(icon(""), None);
         assert_eq!(icons().count(), ICONS.len());

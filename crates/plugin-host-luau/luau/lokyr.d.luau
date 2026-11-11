@@ -277,6 +277,17 @@ export type TestHost = {
     kept_images: () -> { number },
     -- What the plugin keeps from idle sleep.
     awake: () -> Awake,
+    -- The focused window, and the tab that it shows.
+    window: () -> WindowId,
+    tab: () -> TabId,
+    -- Opens a tab after the focused window's others, as the user opens one; the plugin hears of it.
+    open_tab: () -> TabId,
+    -- Gives the tab `tab`, or the focused window's, the marks `marks` that a read of the tabs tells, as of a
+    -- program that runs in it, `running`; the plugin hears `tab-changed` as they change.
+    set_tab_marks: (marks: { activity: boolean?, bell: boolean?, printing: boolean?, running: boolean?,
+        alternate: boolean?, secure: boolean? }, tab: TabId?) -> (),
+    -- Its items of the menus, in their order.
+    menu_items: () -> { MenuItem },
 }
 
 export type AgentState =

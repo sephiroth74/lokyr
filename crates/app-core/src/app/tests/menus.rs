@@ -1558,6 +1558,16 @@ impl plugins::Plugin for Ticker {
             params: Vec::new(),
             when: None,
         })?;
+        // An item of the app's Copy, of another title, which leaves the
+        // app's own.
+        cx.add_menu_item(plugins::host::MenuItem {
+            place: plugins::host::MenuPlace::Bar(Category::Clipboard),
+            command: "pane.copy".to_owned(),
+            args: Args::new(),
+            title: Some("Copy Again".to_owned()),
+            submenu: None,
+            ticked: false,
+        })?;
         cx.add_menu_item(self.item())
     }
 
@@ -1590,6 +1600,25 @@ fn a_plugin_s_menu_bar_item_shows_the_tick_that_its_plugin_gives() {
     let id = item(&fake);
     assert!(id.starts_with("menu-item:"), "{id}");
     assert!(!fake.command_checked(&id));
+    // Its own item takes its command's place: no Go of its own; the app's
+    // Copy stays beside the plugin's item of it.
+    let titles: Vec<String> = fake
+        .main_menu()
+        .unwrap()
+        .menus
+        .iter()
+        .flat_map(|menu| &menu.items)
+        .filter_map(|item| match item {
+            MenuItem::Command { title, .. } => Some(title.clone()),
+            _ => None,
+        })
+        .collect();
+    assert!(!titles.iter().any(|title| title == "Go"), "{titles:?}");
+    assert!(titles.iter().any(|title| title == "Copy"), "{titles:?}");
+    assert!(
+        titles.iter().any(|title| title == "Copy Again"),
+        "{titles:?}"
+    );
     fake.send_app(&mut app, AppEvent::Command(id));
     run_until(&mut fake, &mut app, |fake, _| {
         fake.command_checked(&item(fake))

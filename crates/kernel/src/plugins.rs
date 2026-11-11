@@ -1960,6 +1960,10 @@ impl Plugins {
                         .as_ref()
                         .map(|title| texts.get(title).unwrap_or_else(|| title.clone())),
                     ticked: item.ticked,
+                    own: state
+                        .commands
+                        .iter()
+                        .any(|command| command.name == item.command),
                 }
             }));
         }
@@ -3157,6 +3161,8 @@ pub struct MenuEntry {
     pub submenu: Option<String>,
     /// Whether the menu bar shows it ticked.
     pub ticked: bool,
+    /// Whether its command is its plugin's own, which it registered.
+    pub own: bool,
 }
 
 /// The message of a plugin's catalogs that titles its command `name`:

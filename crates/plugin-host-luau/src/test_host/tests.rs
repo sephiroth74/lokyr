@@ -429,3 +429,75 @@ fn a_test_gives_the_pane_s_cells_and_reads_the_clipboard_s_image_the_saves_and_t
     assert_eq!(ran.len(), 1, "{ran:?}");
     assert_eq!(ran[0].failure, None, "{ran:?}");
 }
+
+#[test]
+fn a_test_opens_tabs_marks_them_and_reads_the_menu_items() {
+    // A plugin that ticks its item as a tab runs a program, of the tabs'
+    // marks that it reads at each of their changes.
+    const ENTRY: &str = r#"
+    local function busy(cx)
+        for _, window in assert(cx.windows()) do
+            for _, tab in assert(cx.tabs(window.id)) do
+                if tab.running then
+                    return true
+                end
+            end
+        end
+        return false
+    end
+    local function item(cx, ticked)
+        assert(cx.add_menu_item({
+            place = { bar = "view" }, command = "marker.go", title = "Busy",
+            submenu = "Marker", ticked = ticked,
+        }))
+    end
+    return {
+        activate = function(cx)
+            assert(cx.register_command({ name = "marker.go", title = "Go", category = "view" }))
+            assert(cx.subscribe({ "tab-changed", "tab-created" }))
+            item(cx, false)
+        end,
+        on_event = function(cx, events)
+            item(cx, busy(cx))
+        end,
+    }
+    "#;
+    const TEST: &str = r#"
+    return {
+        a_running_tab_ticks_the_item = function(host)
+            host.activate()
+            assert(host.window() ~= nil and host.tab() ~= nil)
+            local first = host.tab()
+            local second = host.open_tab()
+            assert(second ~= first)
+            local items = host.menu_items()
+            assert(#items == 1 and items[1].submenu == "Marker" and not items[1].ticked)
+            host.set_tab_marks({ running = true }, second)
+            assert(host.menu_items()[1].ticked, "a program runs")
+            host.set_tab_marks({ running = true })
+            host.set_tab_marks({ running = false }, second)
+            assert(host.menu_items()[1].ticked, "the first tab's runs still")
+            host.set_tab_marks({})
+            assert(not host.menu_items()[1].ticked, "none runs")
+        end,
+    }
+    "#;
+    let package = Package::new([
+        ("src/init.luau".to_owned(), ENTRY.to_owned()),
+        ("tests/marker.luau".to_owned(), TEST.to_owned()),
+    ]);
+    let ran = run_within(
+        &Plugin {
+            name: "acme/marker",
+            capabilities: &[Capability::ProcessRead],
+            uses: &[],
+            slots: &[],
+            package: &package,
+            messages: &[],
+            execution: Execution::Native,
+        },
+        DEADLINE,
+    );
+    assert_eq!(ran.len(), 1, "{ran:?}");
+    assert_eq!(ran[0].failure, None, "{ran:?}");
+}

@@ -23,8 +23,8 @@ use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 use std::time::Duration;
 
 use lokyr_plugin_sdk::command::{Args, Capability, Command};
-use lokyr_plugin_sdk::fake::FakeHost;
-use lokyr_plugin_sdk::host::{CommandInfo, PaneId};
+use lokyr_plugin_sdk::fake::{FakeHost, TabMarks};
+use lokyr_plugin_sdk::host::{CommandInfo, PaneId, TabId};
 use lokyr_plugin_sdk::image::CellRow;
 use lokyr_plugin_sdk::message::Data;
 use lokyr_plugin_sdk::ui::{Slot, ViewId};
@@ -561,6 +561,75 @@ fn functions(lua: &Lua, hosted: &Arc<Mutex<Hosted>>) -> mlua::Result<Table> {
         lua.create_function(move |lua, ()| {
             let awake = with(&hosted, |Hosted { host, .. }| host.awake());
             shape::to_lua(lua, &awake).map_err(mlua::Error::runtime)
+        })?,
+    )?;
+    let hosted = of();
+    table.raw_set(
+        "window",
+        lua.create_function(move |_, ()| {
+            Ok(with(&hosted, |Hosted { host, .. }| {
+                host.focused_tab().map(|(window, _)| window.0)
+            }))
+        })?,
+    )?;
+    let hosted = of();
+    table.raw_set(
+        "tab",
+        lua.create_function(move |_, ()| {
+            Ok(with(&hosted, |Hosted { host, .. }| {
+                host.focused_tab().map(|(_, tab)| tab.0)
+            }))
+        })?,
+    )?;
+    let hosted = of();
+    table.raw_set(
+        "open_tab",
+        lua.create_function(move |_, ()| {
+            with(&hosted, |Hosted { host, plugin }| {
+                let Some((window, _)) = host.focused_tab() else {
+                    return Err(mlua::Error::runtime("no window has the focus"));
+                };
+                let (tab, _) = host.add_tab(window);
+                host.deliver(plugin).map_err(|error| failed(&error))?;
+                Ok(tab.0)
+            })
+        })?,
+    )?;
+    let hosted = of();
+    table.raw_set(
+        "set_tab_marks",
+        lua.create_function(move |_, (marks, tab): (Table, Option<u64>)| {
+            let mark = |name: &str| -> mlua::Result<bool> {
+                Ok(marks.get::<Option<bool>>(name)?.unwrap_or(false))
+            };
+            let marks = TabMarks {
+                activity: mark("activity")?,
+                bell: mark("bell")?,
+                printing: mark("printing")?,
+                running: mark("running")?,
+                alternate: mark("alternate")?,
+                secure: mark("secure")?,
+                ..TabMarks::default()
+            };
+            with(&hosted, |Hosted { host, plugin }| {
+                let tab = match tab {
+                    Some(tab) => TabId(tab),
+                    None => host
+                        .focused_tab()
+                        .map(|(_, tab)| tab)
+                        .ok_or_else(|| mlua::Error::runtime("no window has the focus"))?,
+                };
+                host.set_tab_marks(tab, marks);
+                host.deliver(plugin).map_err(|error| failed(&error))
+            })
+        })?,
+    )?;
+    let hosted = of();
+    table.raw_set(
+        "menu_items",
+        lua.create_function(move |lua, ()| {
+            let items = with(&hosted, |Hosted { host, .. }| host.menu_items().to_vec());
+            shape::to_lua(lua, &items).map_err(mlua::Error::runtime)
         })?,
     )?;
     table.set_readonly(true);

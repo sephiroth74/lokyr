@@ -669,6 +669,25 @@ impl FakeHost {
         self.focused_pane()
     }
 
+    /// The focused window and the tab that it shows, as the plugin's writes
+    /// left them.
+    pub fn focused_tab(&mut self) -> Option<(WindowId, TabId)> {
+        self.settle();
+        let pane = self.focused_pane()?;
+        let held = self.panes.get(&pane)?;
+        Some((held.window, held.tab))
+    }
+
+    /// Opens a tab of a pane of its own after `window`'s others, as the
+    /// user opens one, of new ids of the host's: the tab and its pane,
+    /// whose events the plugin hears at the next delivery.
+    pub fn add_tab(&mut self, window: WindowId) -> (TabId, PaneId) {
+        self.settle();
+        let (tab, pane) = (TabId(self.next_id()), PaneId(self.next_id()));
+        self.open_tab(window, usize::MAX, tab, pane);
+        (tab, pane)
+    }
+
     /// The layout of `tab`, as the plugin's writes left it.
     pub fn tab_layout(&mut self, tab: TabId) -> Option<Layout> {
         self.settle();

@@ -96,6 +96,7 @@ impl<B: Backend> App<B> {
             };
             (command.name.clone(), command.clone(), args)
         };
+        let taken = taken(&self.menu_items, |place| place == MenuPlace::PaneContext);
         let edits = |category: Category| -> Vec<(String, Command, Args)> {
             self.commands
                 .in_order()
@@ -104,6 +105,7 @@ impl<B: Backend> App<B> {
                         && command.params.iter().all(|param| param.default.is_some())
                         && !of_cell(command)
                         && !CONTEXT_ONLY.contains(&command.name.as_str())
+                        && !taken.contains(&command.name.as_str())
                 })
                 .map(of)
                 .collect()
@@ -595,6 +597,7 @@ pub(super) fn main_menu(
     texts: &Texts,
     plugins_items: &[MenuEntry],
 ) -> MainMenu {
+    let taken = taken(plugins_items, |place| matches!(place, MenuPlace::Bar(_)));
     let items = |categories: &[Category]| {
         let mut shown: Vec<Shown> = commands
             .in_order()
@@ -605,6 +608,7 @@ pub(super) fn main_menu(
                     && command.name != PERFORMANCE
                     && command.name != FLOAT_ON_TOP
                     && !CONTEXT_ONLY.contains(&command.name.as_str())
+                    && !taken.contains(&command.name.as_str())
             })
             .map(|command| Shown {
                 group: (command.category, namespace(&command.name), false),
@@ -948,6 +952,18 @@ fn nested(items: Vec<(MenuItem, Option<String>)>) -> Vec<MenuItem> {
         }
     }
     nested
+}
+
+/// The commands that the plugins' items of `items` of a place that `of`
+/// takes run of no arguments, each of its own plugin's: their items take
+/// the commands' own places in those menus, as a plugin's own item of a
+/// submenu, ticked.
+fn taken(items: &[MenuEntry], of: impl Fn(MenuPlace) -> bool) -> Vec<&str> {
+    items
+        .iter()
+        .filter(|entry| entry.own && entry.invocation.args.is_empty() && of(entry.place))
+        .map(|entry| entry.invocation.command.as_str())
+        .collect()
 }
 
 /// The namespace of the command `name`, before its `.`.
