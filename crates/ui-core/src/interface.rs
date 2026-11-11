@@ -184,6 +184,7 @@ const ICONS: &[(&str, char)] = &[
     ("circle", '\u{eabc}'),
     ("circle-filled", '\u{ea71}'),
     ("close", '\u{ea76}'),
+    ("coffee", '\u{ec15}'),
     ("copy", '\u{ebcc}'),
     ("edit", '\u{ea73}'),
     ("ellipsis", '\u{ea7c}'),
@@ -231,6 +232,8 @@ mod tests {
         assert_eq!(icon("terminal"), Some('\u{ea85}'));
         assert_eq!(icon("whole-word"), Some('\u{eb7e}'));
         assert_eq!(icon("add"), Some('\u{ea60}'));
+        // A steaming cup, as of a Mac kept awake.
+        assert_eq!(icon("coffee"), Some('\u{ec15}'));
         assert_eq!(icon("Terminal"), None);
         assert_eq!(icon(""), None);
         assert_eq!(icons().count(), ICONS.len());
