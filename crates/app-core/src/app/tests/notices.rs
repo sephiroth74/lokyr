@@ -124,8 +124,8 @@ fn a_font_that_is_not_installed_shows_its_notice_until_one_that_is() {
 }
 
 #[test]
-fn a_failure_shows_its_notice_and_a_click_on_the_bar_closes_it() {
-    let (mut fake, mut app, window, _) = with_tester();
+fn a_failure_shows_its_notice() {
+    let (mut fake, mut app, _, _) = with_tester();
     // A command that the caller named wrongly goes to the log alone.
     app.run(&mut fake, "test.nothing", Args::new());
     assert_eq!(app.diagnostics.shown(), None);
@@ -138,44 +138,170 @@ fn a_failure_shows_its_notice_and_a_click_on_the_bar_closes_it() {
         "{}",
         shown.text
     );
-    // Where the bar was drawn, a press on its close closes it; on the
-    // rest of it, nothing; neither reaches the program, nor starts a
-    // selection.
-    let rect = |x, width| Rect {
-        x,
-        y: 56,
-        width,
-        height: 40,
+}
+
+/// An app that draws, of a window of 28 points of titlebar, drawn.
+fn drawn() -> (Fake, App, WindowId) {
+    let drawing = Drawing::new(lokyr_text_core::FontConfig::default()).unwrap();
+    let mut fake = Fake::default();
+    fake.set_bar(28.0);
+    let mut app = App::new(Some(drawing), unpadded(), None).with_program(quiet());
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    app.windows.get_mut(&window).unwrap().surface = Some(crate::fakes::Surface::default());
+    for _ in 0..2 {
+        fake.send(&mut app, window, WindowEvent::Frame);
+    }
+    (fake, app, window)
+}
+
+/// The card of `window`'s notice, if it shows: its frame, and the frame of
+/// its node of `key`, in the window's pixels.
+fn card(app: &App, window: WindowId, key: &str) -> Option<(Rect, Rect)> {
+    let view = app.windows[&window]
+        .chrome
+        .iter()
+        .find(|view| view.view == super::super::notice_card::notice_view())?;
+    let frame = view.frame?;
+    let node = view
+        .surface
+        .tree
+        .by_key(&lokyr_kernel::plugins::view::Key::from(key))?;
+    let at = view.surface.layout.frame(&view.surface.tree, node)?;
+    let rect = |x: f32, y: f32, width: f32, height: f32| Rect {
+        x: x as i32,
+        y: y as i32,
+        width: width as u32,
+        height: height as u32,
     };
-    let rects = notice::Rects {
-        bar: rect(0, 800),
-        close: rect(780, 20),
+    Some((
+        rect(frame.x, frame.y, frame.width, frame.height),
+        rect(frame.x + at.x, frame.y + at.y, at.width, at.height),
+    ))
+}
+
+/// The texts of the card's nodes, in their order.
+fn card_texts(app: &App, window: WindowId) -> Vec<String> {
+    let Some(view) = app.windows[&window]
+        .chrome
+        .iter()
+        .find(|view| view.view == super::super::notice_card::notice_view())
+    else {
+        return Vec::new();
     };
-    app.windows.get_mut(&window).unwrap().notice = Some(rects);
+    let tree = &view.surface.tree;
+    let mut texts = Vec::new();
+    let mut left: Vec<_> = tree.root().into_iter().collect();
+    while let Some(node) = left.pop() {
+        if let Some(lokyr_kernel::plugins::view::Kind::Text(text)) = tree.kind(node) {
+            texts.push(text.clone());
+        }
+        left.extend(tree.children(node).iter().rev().copied());
+    }
+    texts
+}
+
+/// Clicks `window` in the middle of `rect`, in its pixels.
+fn click_rect(fake: &mut Fake, app: &mut App, window: WindowId, rect: Rect) {
     let scale = fake.window(window).unwrap().size.scale;
-    let at = |x: f64, y: f64| Point {
-        x: x / scale,
-        y: y / scale,
+    let at = Point {
+        x: (f64::from(rect.x) + f64::from(rect.width) / 2.0) / scale,
+        y: (f64::from(rect.y) + f64::from(rect.height) / 2.0) / scale,
     };
-    let press = |position| WindowEvent::MouseButton {
+    let press = |pressed| WindowEvent::MouseButton {
         button: lokyr_platform_core::MouseButton::Left,
-        pressed: true,
+        pressed,
         clicks: 1,
-        position,
+        position: at,
         mods: Modifiers::NONE,
     };
-    fake.send(&mut app, window, press(at(10.0, 70.0)));
-    assert!(app.diagnostics.shown().is_some());
-    assert!(app.windows[&window].selecting.is_none());
-    fake.send(&mut app, window, press(at(790.0, 70.0)));
+    fake.send(app, window, press(true));
+    fake.send(app, window, press(false));
+}
+
+#[test]
+fn a_notice_shows_as_a_card_at_the_panes_top_right_which_its_buttons_copy_and_close() {
+    let (mut fake, mut app, window) = drawn();
+    let size = fake.window(window).unwrap().size;
+    let width = size.pixels.width as i32;
+    let long = "unknown key `fonts` at line 12, column 1 of config.toml, which the config does not know, as no section of it holds such a key at all";
+    app.report(
+        &mut fake,
+        Diagnostic::new(Code::InvalidConfig, long, About::Config),
+    );
+    for _ in 0..3 {
+        fake.send(&mut app, window, WindowEvent::Frame);
+    }
+    let (frame, card_rect) = card(&app, window, "card").expect("a card");
+    // At the right, not as wide as the window, below the titlebar.
+    assert!(
+        card_rect.width < size.pixels.width / 2 + 400,
+        "{card_rect:?}"
+    );
+    assert!(
+        frame.x + frame.width as i32 <= width && frame.x > 0,
+        "{frame:?}"
+    );
+    assert!(frame.y as u32 >= size.bar_pixels(), "{frame:?}");
+    // Its title and its text, in two lines at most, the second cut.
+    let texts = card_texts(&app, window);
+    assert_eq!(texts[0], "The config file does not apply", "{texts:?}");
+    assert!(texts.len() <= 3, "{texts:?}");
+    assert!(texts[2].ends_with('…'), "{texts:?}");
+    // Its copy puts the whole notice on the clipboard, of its title.
+    let (_, copy) = card(&app, window, "copy").unwrap();
+    click_rect(&mut fake, &mut app, window, copy);
+    let copied = fake.clipboard_text().expect("copied");
+    assert!(
+        copied.starts_with("The config file does not apply\n\n"),
+        "{copied}"
+    );
+    assert!(copied.contains(long), "{copied}");
+    // A config's notice stays; its close closes it, and the card goes.
+    assert_eq!(app.notice.timer, None);
+    let (_, close) = card(&app, window, "close").unwrap();
+    click_rect(&mut fake, &mut app, window, close);
     assert_eq!(app.diagnostics.shown(), None);
-    assert!(app.windows[&window].selecting.is_none());
-    // A failure of a command shows too; a press below the bar leaves it.
-    let failed = Diagnostic::new(Code::Failed, "it failed", About::Other);
-    app.report(&mut fake, failed);
-    fake.send(&mut app, window, press(at(10.0, 120.0)));
+    fake.send(&mut app, window, WindowEvent::Frame);
+    assert!(card(&app, window, "card").is_none());
+    assert!(
+        app.windows[&window].selecting.is_none(),
+        "no selection under it"
+    );
+}
+
+#[test]
+fn a_failure_s_card_goes_by_itself_unless_the_pointer_rests_on_it() {
+    let (mut fake, mut app, window) = drawn();
+    app.report(
+        &mut fake,
+        Diagnostic::new(Code::Failed, "it failed", About::Other),
+    );
+    fake.send(&mut app, window, WindowEvent::Frame);
+    let (_, at) = app.notice.timer.expect("its going timed");
+    // The pointer rests on it: it stays past its time.
+    let card = super::super::notice_card::notice_view();
+    let hover = |kind| lokyr_kernel::plugins::ui::UiEvent {
+        view: card.clone(),
+        key: lokyr_kernel::plugins::view::Key::from("card"),
+        kind,
+    };
+    app.notice_event(
+        &mut fake,
+        &hover(lokyr_kernel::plugins::view::UiEventKind::HoverEnter),
+    );
+    assert_eq!(app.notice.timer, None);
+    fake.fire_timers(&mut app, at + Duration::from_secs(1));
     assert!(app.diagnostics.shown().is_some());
-    assert!(app.windows[&window].selecting.is_some());
+    // It leaves: the time starts again, and the card goes.
+    app.notice_event(
+        &mut fake,
+        &hover(lokyr_kernel::plugins::view::UiEventKind::HoverLeave),
+    );
+    let (_, again) = app.notice.timer.expect("timed again");
+    assert!(again >= at, "from the leave");
+    fake.fire_timers(&mut app, again + Duration::from_millis(10));
+    assert_eq!(app.diagnostics.shown(), None);
 }
 
 #[test]

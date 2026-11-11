@@ -1365,6 +1365,54 @@ impl<B: FontBackend> Font<B> {
         shortened
     }
 
+    /// `text` of the interface's face in lines of `room` points at most,
+    /// broken between its words, `most` lines at most, the last of the
+    /// rest shortened of an ellipsis, as [`Font::interface_shortened`]
+    /// shortens it, where the text goes on; a word longer than a line, on
+    /// a line of its own, shortened too. A text of no word is one empty
+    /// line.
+    pub fn interface_lines(&mut self, text: &str, room: f32, most: usize) -> Vec<String> {
+        let features = Features { ligatures: true };
+        let (size, face) = {
+            let interface = self.interface();
+            (interface.size(), interface.face())
+        };
+        let words: Vec<&str> = text.split_whitespace().collect();
+        let mut lines: Vec<String> = Vec::new();
+        let mut at = 0;
+        while at < words.len() && lines.len() < most.max(1) {
+            // The last line takes the rest, shortened where it is longer.
+            if lines.len() + 1 == most.max(1) {
+                let rest = words[at..].join(" ");
+                let fits = self.backend.width(face, size, &rest, features) <= room;
+                lines.push(if fits {
+                    rest
+                } else {
+                    self.interface_shortened(&rest, room).to_string()
+                });
+                return lines;
+            }
+            let mut line = words[at].to_owned();
+            at += 1;
+            while at < words.len() {
+                let longer = format!("{line} {}", words[at]);
+                if self.backend.width(face, size, &longer, features) > room {
+                    break;
+                }
+                line = longer;
+                at += 1;
+            }
+            if self.backend.width(face, size, &line, features) > room {
+                line = self.interface_shortened(&line, room).to_string();
+            }
+            lines.push(line);
+        }
+        if lines.is_empty() {
+            lines.push(String::new());
+        }
+        lines
+    }
+
     /// The places between the grapheme clusters of `text` in the
     /// interface's face, in points from its start, as
     /// [`Font::interface_text`] draws it: each cluster's first byte and the
@@ -3310,6 +3358,30 @@ mod tests {
         font.set_interface(&larger);
         font.set_text_size(TextSize::Small);
         assert_eq!(font.interface().size(), 22.0);
+    }
+
+    #[test]
+    fn a_text_goes_in_lines_of_its_room_broken_between_words_the_last_shortened() {
+        let mut font = Font::new(Squares::default(), FontConfig::default(), 1.0).unwrap();
+        let width = |font: &mut Font<Squares>, text: &str| Measure::text(font, text).0;
+        let room = width(&mut font, "unknown key at") + 0.5;
+        let text = "unknown key `fonts` at line 12, column 1 of config.toml";
+        let lines = font.interface_lines(text, room, 2);
+        assert_eq!(lines.len(), 2, "{lines:?}");
+        for line in &lines {
+            assert!(width(&mut font, line) <= room, "{line:?}");
+        }
+        assert!(text.starts_with(&lines[0]), "{lines:?}");
+        assert!(lines[1].ends_with('…'), "{lines:?}");
+        // A text that fits takes the lines that it needs, of no ellipsis.
+        assert_eq!(
+            font.interface_lines("unknown key", room, 2),
+            ["unknown key"]
+        );
+        assert_eq!(font.interface_lines("", room, 2), [""]);
+        // A word longer than a line, shortened on its own.
+        let long = font.interface_lines("averyveryveryverylongword short", room, 3);
+        assert!(long[0].ends_with('…') && long[1] == "short", "{long:?}");
     }
 
     #[test]

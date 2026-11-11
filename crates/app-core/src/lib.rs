@@ -19,7 +19,6 @@ mod keys;
 mod latency;
 pub mod log;
 mod mouse;
-mod notice;
 mod output_bench;
 mod performance;
 mod quick;

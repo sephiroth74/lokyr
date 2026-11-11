@@ -314,6 +314,15 @@ impl<B: Backend> App<B> {
     /// composition that a render took away ends.
     pub(super) fn take_trees(&mut self, window: WindowId, scale: f32) {
         let views = self.slot_views(window);
+        // The notice's card, of its revision, made where it changed.
+        let revision = self.notice.revision;
+        let card = super::notice_card::notice_view();
+        let due = self.windows.get(&window).is_some_and(|state| {
+            state.chrome.iter().any(|view| {
+                view.plugin == OVERFLOW && view.view == card && view.shown != Some(revision)
+            })
+        });
+        let notice = if due { self.notice_tree() } else { None };
         let Some(state) = self.windows.get_mut(&window) else {
             return;
         };
@@ -353,7 +362,7 @@ impl<B: Backend> App<B> {
             // The app's button of the titlebar's buttons that find no room
             // is of one tree, its first.
             let rendered = if plugin == OVERFLOW {
-                Some(0)
+                Some(if view == card { revision } else { 0 })
             } else {
                 self.plugins.rendered(&plugin, &view)
             };
@@ -362,7 +371,9 @@ impl<B: Backend> App<B> {
                 slot.shown = rendered;
                 state.views_changed = true;
                 let composing = slot.surface.fields.composing(&slot.surface.tree).is_some();
-                let tree = if plugin == OVERFLOW {
+                let tree = if plugin == OVERFLOW && view == card {
+                    notice.clone()
+                } else if plugin == OVERFLOW {
                     Some(overflow_button(self.texts.text("title-buttons-more")))
                 } else {
                     let tree = self.plugins.tree(&plugin, &view);

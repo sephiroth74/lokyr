@@ -15,7 +15,7 @@ use super::asks::{invisible, shown};
 use super::frame::{appearance_over, bar_item};
 use super::menus::{main_menu, man_keywords, man_page, man_program, shortened, unique_titles};
 use super::*;
-use crate::{fakes, notice};
+use crate::fakes;
 
 mod access;
 mod asks;

@@ -380,18 +380,6 @@ impl<B: Backend> App<B> {
         let Some(button) = mouse::button(button) else {
             return;
         };
-        // A press on the notice's close closes the notice; one on the rest
-        // of its bar does nothing, as the bar covers the text under it.
-        match self.on_notice(platform, window, position) {
-            Some(close) if pressed => {
-                if close {
-                    self.diagnostics.dismiss();
-                    self.request_frames(platform);
-                }
-                return;
-            }
-            _ => {}
-        }
         // A press at a column's edge drags it, which takes its release, as
         // a divider's drag takes its own.
         if self.column_button(platform, window, (platform_button, pressed), position) {

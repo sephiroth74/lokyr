@@ -156,17 +156,19 @@ open-cancel = Annulla
 open-url-dont-ask = Non chiedere più per i link
 open-file-dont-ask = Non chiedere più per i file
 
-notice-config = Il file di configurazione non si applica:
-notice-font = Manca un font:
-notice-global-keys = Un tasto globale non funziona:
-notice-term = Il tipo di terminale è sconosciuto:
-notice-theme = Un tema non si applica:
-notice-plugin-config = La sezione di un plugin nella configurazione:
-notice-kept-windows = Le finestre dell'ultima sessione non si riaprono:
-notice-permissions = I permessi dei plugin non si leggono:
-notice-installed-plugins = I plugin installati non si caricano:
-notice-failed = Un comando non è riuscito:
-notice-fault = Un plugin si è fermato:
+notice-config = Il file di configurazione non si applica
+notice-font = Manca un font
+notice-global-keys = Un tasto globale non funziona
+notice-term = Il tipo di terminale è sconosciuto
+notice-theme = Un tema non si applica
+notice-plugin-config = La sezione di un plugin nella configurazione non si applica
+notice-kept-windows = Le finestre dell'ultima sessione non si riaprono
+notice-permissions = I permessi dei plugin non si leggono
+notice-installed-plugins = I plugin installati non si caricano
+notice-failed = Un comando non è riuscito
+notice-fault = Un plugin si è fermato
+notice-copy = Copia i dettagli
+notice-close = Chiudi
 
 # What an accessibility client, as VoiceOver, calls a pane.
 access-pane = Terminale

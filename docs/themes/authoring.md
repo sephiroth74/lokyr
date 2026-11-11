@@ -27,7 +27,7 @@ Save it as `Harbor.toml` in Lokyr's themes folder, `~/.config/lokyr/themes/` (`$
 dark = "Harbor"
 ```
 
-Lokyr applies it as you save either file, in the windows that are open too. A file with an error tells it in a bar across the windows' top, of its line, and the theme in force stays.
+Lokyr applies it as you save either file, in the windows that are open too. A file with an error tells it in a card at the windows' top right, of its line, and the theme in force stays.
 
 [`example.toml`](example.toml) is a theme of every key and every color that this guide tells, of the values of Lokyr's own dark theme: copy it and change what you like.
 

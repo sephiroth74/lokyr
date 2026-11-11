@@ -21,7 +21,7 @@ Under each key's name, a small line tells the platforms where the key applies: m
   lokyr: error 109 (usage): /Users/you/.config/lokyr/config.toml:3:1: unknown key `sise` in `[font]`; did you mean `size`?; none of the config applies, and the one in force stays
   ```
 
-  The error shows in a bar across the top of every window, under the titlebar, until you save a file that reads, or click its ×; it goes to the log too: the terminal that started Lokyr, when you start it from one, or else, as from the Finder or the Dock, the file `~/Library/Logs/Lokyr/lokyr.log`, which the Console app shows. A font family that is not installed shows in the bar the same way, until the file names one that is.
+  The error shows in a card at the top right of every window's panes, its title and its text in two lines, the rest of it copied whole by the card's Copy button, until you save a file that reads, or click its ×; it goes to the log too: the terminal that started Lokyr, when you start it from one, or else, as from the Finder or the Dock, the file `~/Library/Logs/Lokyr/lokyr.log`, which the Console app shows. A font family that is not installed shows in the card the same way, until the file names one that is. A failure of a command or of a plugin shows in the card too, which goes by itself after eight seconds, unless the pointer rests on it.
 - **Every key at once**: `lokyr +show-config` prints the config with every key: the file's values, and the defaults of the keys that it leaves out.
   - `--default` prints the defaults alone, as an empty file gives them, and `--docs` puts the text of this guide over each key: what it does, its values and its default.
   - What it prints is a config file, which reads back as the same settings. A key whose default no value can write, as `family`'s, which is the system's font, shows as a comment.
@@ -244,7 +244,7 @@ The font family, by its name, as Font Book shows it on macOS, such as `"Menlo"` 
 - The case does not matter: `"menlo"` is Menlo.
 - `"SF Mono"` names the system's monospaced font, which macOS installs under another name.
 - A name that some faces of a family give themselves, as a font and its weight, such as `"CaskaydiaCove NFM SemiBold"`, names the whole family, and takes those faces as the regular text's.
-- A family that is not installed gives the default one, and the notice bar tells it, as the log does. The styles that the file names then do not apply, as they are the missing family's.
+- A family that is not installed gives the default one, and the notice's card tells it, as the log does. The styles that the file names then do not apply, as they are the missing family's.
 - `lokyr +list-fonts` lists the families that are installed, and `--monospace` those that are monospaced.
 
 ### `size`
@@ -289,7 +289,7 @@ The family of every character past ASCII, such as `"Hiragino Sans"` for Japanese
 - **Default**: the text's own family.
 - Its faces follow the weights of the text's: bold text takes its bold face. The styles that `style` and the other keys name are the text's family's, not this one's.
 - A character that this family lacks takes the text's own family, then, for an icon of the private use areas, Symbols Nerd Font Mono, which Lokyr holds, and then the font that macOS gives for it: the icons of a Nerd Font, such as those of a shell's prompt, stay the font's.
-- A family that is not installed leaves that text to the text's family, and the notice bar tells it, as the log does.
+- A family that is not installed leaves that text to the text's family, and the notice's card tells it, as the log does.
 
 ### `line-height`, `cell-width`
 
@@ -1219,7 +1219,7 @@ active = { bg = "#1e1e20", fg = "#ffffff" }
 - **A theme gives colors alone**: the tab bar's look, its place and the rest stay in the config, as [`[plugins.tabs]`](#pluginstabs) has them; the command's header names the theme's tokens that it takes, as [`[plugins.command-header]`](#pluginscommand-header) has them.
 - **`extends`** names a theme, a file's or a built-in one, whose colors this one takes where it gives none, eight deep at most.
 - **As you save** a theme's file, or the config, the theme applies at once, in the open windows too.
-- **A file with an error** tells it, with its line, in the bar across the windows' top, and the theme in force stays.
+- **A file with an error** tells it, with its line, in the notice's card at the windows' top right, and the theme in force stays.
 
 ### `light`
 
@@ -1415,7 +1415,7 @@ Each entry of the section is a binding: its name is the keys, in quotes, and its
   - It is one key with `cmd`, `ctrl` or `alt`, or a function key, alone or with any of them; no sequence, no step of the wheel, no click.
   - It goes by its place on the keyboard, the US layout's, whatever your layout types there: `` ` `` is the key left of 1, or right of the left Shift on some keyboards. A character is the one that its key types without Shift: `~` is ``shift+` ``; a character that the US layout types with Shift, or has no key for, as `è`, is an error.
   - Its value is a command, or a table without `when`, which holds everywhere; a global key has no default, nor a `false`.
-  - A key that another app holds as its own alone, or that the Mac's keyboards lack, as `f24`, shows in the bar across the windows' top, until the config takes it away. An app that took the key without holding it alone cannot be told, and the key then reaches one of the two.
+  - A key that another app holds as its own alone, or that the Mac's keyboards lack, as `f24`, shows in the notice's card at the windows' top right, until the config takes it away. An app that took the key without holding it alone cannot be told, and the key then reaches one of the two.
   - Lokyr stays open as its last window closes, as [`quit-after-last-window-closed`](#quit-after-last-window-closed) has it by default, so that the key still works. With `true`, Lokyr quits all the same, and the key with it.
 - **The value**:
   - a command, as `"window.new"`;
@@ -1527,7 +1527,7 @@ position = "top"
 ```
 
 - **Its keys** are those of the plugin's schema, the JSON Schema file that its manifest names, with their values and their defaults: a key left out takes its default, and a section left out gives all of them.
-- **A wrong value**, of another type or none of its choices, or a number that is not finite, as `nan` or `inf`, refuses that plugin's section alone: the plugin keeps the keys in force, its defaults at the start, and the rest of the file applies. The bar across the windows' top tells the error at its line, until you save a section that the plugin takes:
+- **A wrong value**, of another type or none of its choices, or a number that is not finite, as `nan` or `inf`, refuses that plugin's section alone: the plugin keeps the keys in force, its defaults at the start, and the rest of the file applies. The notice's card tells the error at its line, until you save a section that the plugin takes:
 
   ```text
   lokyr: error 109 (usage): /Users/you/.config/lokyr/config.toml:12:1: `position` is one of "top", "bottom", not "middle" in `[plugins.tabs]`; the plugin `lokyr/tabs` keeps its config in force

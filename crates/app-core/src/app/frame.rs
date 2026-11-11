@@ -8,8 +8,6 @@
 use std::sync::{Arc, PoisonError};
 use std::time::Instant;
 
-use lokyr_kernel::commands::ErrorCategory;
-use lokyr_kernel::diagnostics::About;
 use lokyr_kernel::plugins;
 use lokyr_kernel::plugins::host::BarPlace;
 use lokyr_kernel::workspace::{self, Direction, Grid, Layout, Pane, PaneId};
@@ -38,7 +36,7 @@ use super::{App, FLASH_OPACITY, GLYPHS_BUDGET, PointerTold, UNDRAWN_CELL};
 use crate::drawing::{Backend, Drawing};
 use crate::output_bench::Phases;
 use crate::window::{PaneView, Shown, WindowLayer};
-use crate::{notice, performance, size_label};
+use crate::{performance, size_label};
 
 /// The room between the two parts of a split, in points, which their
 /// divider takes.
@@ -559,6 +557,8 @@ impl<B: Backend> App<B> {
         // Each pane of the active tab in its room, around the slots' views,
         // under the panels; a menu's panel of menu items alone, the
         // platform's own.
+        // The notice's card, opened or closed as a notice shows or not.
+        self.settle_notice(platform, window);
         let views = self.lay_out_panes(window, size);
         self.keys_from_hidden(platform, window);
         self.show_native(platform, window, size);
@@ -1095,30 +1095,6 @@ impl<B: Backend> App<B> {
             over_opaque(&mut painted, band, opacity);
         }
         items.extend(painted);
-        // The notice, across the panes' top, under the titlebar and the tab
-        // bar.
-        state.notice = self.diagnostics.shown().map(|shown| {
-            let label = match (&shown.about, shown.category()) {
-                (About::Config, _) => "notice-config",
-                (About::Font, _) => "notice-font",
-                (About::GlobalKeys, _) => "notice-global-keys",
-                (About::Term, _) => "notice-term",
-                (About::Theme, _) => "notice-theme",
-                (About::PluginConfig(_), _) => "notice-plugin-config",
-                (About::KeptWindows, _) => "notice-kept-windows",
-                (About::Permissions, _) => "notice-permissions",
-                (About::InstalledPlugins, _) => "notice-installed-plugins",
-                (About::Other, ErrorCategory::Fault) => "notice-fault",
-                (About::Other, _) => "notice-failed",
-            };
-            let label = self.texts.text(label);
-            let fault = shown.category() == ErrorCategory::Fault;
-            let area = (size.pixels.width, state.panes_top.max(size.bar_pixels()));
-            let glyph = |text: &cells::CellText<'_>| weighed(font, text);
-            let (rects, drawn) = notice::bar((&label, &shown.text, fault), &cell, area, glyph);
-            items.extend(drawn);
-            rects
-        });
         // The hand over its close, the arrow over the rest of the bar,
         // which the platform shows without the app.
         let points = |rect: &Rect, shape| PointerArea {
@@ -1132,16 +1108,7 @@ impl<B: Backend> App<B> {
             },
             shape,
         };
-        let mut areas: Vec<PointerArea> = state
-            .notice
-            .iter()
-            .flat_map(|rects| {
-                [
-                    points(&rects.close, PointerShape::PointingHand),
-                    points(&rects.bar, PointerShape::Arrow),
-                ]
-            })
-            .collect();
+        let mut areas: Vec<PointerArea> = Vec::new();
         // A column's edge, which its drag resizes, then the slots' views,
         // under the notice and over the panes, the topmost first.
         if let Some((_, _, zone)) = chrome::column_edge(&state.chrome, &self.plugins, size.scale) {

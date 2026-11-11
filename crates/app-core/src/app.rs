@@ -67,6 +67,7 @@ mod input;
 mod installed;
 mod installs;
 mod menus;
+mod notice_card;
 mod notices;
 mod opens;
 mod packages;
@@ -489,6 +490,8 @@ pub struct App<B: Backend> {
     /// The theme that a plugin's picker previews in place of the
     /// appearance in force's, if one does.
     theme_preview: Option<String>,
+    /// The card of the notice that shows, in every window.
+    notice: notice_card::NoticeCard,
     /// The system's monospaced font families, as a picker lists them, when
     /// they were read, and the default family: read again past a while.
     font_list: std::cell::RefCell<Option<pickers::FontList>>,
@@ -842,6 +845,7 @@ impl<B: Backend> App<B> {
             held_themes: environment::resources().map(|resources| resources.join(HELD_THEMES)),
             held_theme_list: std::cell::OnceCell::new(),
             theme_preview: None,
+            notice: notice_card::NoticeCard::default(),
             font_list: std::cell::RefCell::new(None),
             font_preview: None,
             program: Program::LoginShell,
@@ -3287,7 +3291,11 @@ impl<B: Backend> App<B> {
         for (plugin, event) in &ui_events {
             // The app's button of the titlebar's buttons that find no room.
             if plugin == chrome::OVERFLOW {
-                self.overflow_event(platform, event);
+                if event.view == notice_card::notice_view() {
+                    self.notice_event(platform, event);
+                } else {
+                    self.overflow_event(platform, event);
+                }
                 continue;
             }
             let given = self.with_plugins(platform, |plugins, context| {
@@ -4071,6 +4079,12 @@ impl<B: Backend> App<B> {
                     .is_some_and(|bench| bench.timer == Some(timer)) =>
             {
                 self.latency_step(platform);
+            }
+            // The time of a failure's card came.
+            AppEvent::Timer(timer)
+                if self.notice.timer.is_some_and(|(armed, _)| armed == timer) =>
+            {
+                self.notice_timer_fired(platform);
             }
             AppEvent::Timer(timer) if self.bench_deadline == Some(timer) => {
                 self.bench_deadline = None;

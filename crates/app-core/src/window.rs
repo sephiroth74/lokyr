@@ -31,7 +31,6 @@ use crate::app::chrome::SlotView;
 pub(crate) type ChromeLook = (bool, Color, Color, f32);
 use crate::drawing::Backend;
 use crate::mouse::{Mouse, Spot};
-use crate::notice;
 
 /// The events of a native menu's items' choices, by their commands, each
 /// its node's key and its press's event.
@@ -223,9 +222,6 @@ pub(crate) struct Window<B: Backend> {
     pub(crate) drawn_at: Option<Instant>,
     pub(crate) grid_drawn: Option<(u16, u16)>,
     pub(crate) size_label: Option<Instant>,
-    /// Where its last frame drew the notice's bar and its close, in pixels,
-    /// and the pointer's areas that the platform has of them, in points.
-    pub(crate) notice: Option<notice::Rects>,
     pub(crate) pointer_areas: Vec<PointerArea>,
     /// The title that the platform shows, once the app gave one.
     pub(crate) title_shown: Option<String>,
@@ -406,7 +402,6 @@ impl<B: Backend> Window<B> {
             page: None,
             place: (String::new(), String::new()),
             directory: None,
-            notice: None,
             live_resize: false,
             drawn_at: None,
             grid_drawn: None,

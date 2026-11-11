@@ -181,19 +181,21 @@ open-cancel = Cancel
 open-url-dont-ask = Don't ask again for links
 open-file-dont-ask = Don't ask again for files
 
-# The notice's bar across a window's top: what it is about, before the
-# error's own text, which the log has too.
-notice-config = The config file does not apply:
-notice-font = A font is missing:
-notice-global-keys = A global key does not work:
-notice-term = The terminal type is unknown:
-notice-theme = A theme does not apply:
-notice-plugin-config = A plugin's section of the config:
-notice-kept-windows = The windows of the last run do not open again:
-notice-permissions = The plugins' permissions do not read:
-notice-installed-plugins = The installed plugins do not load:
-notice-failed = A command failed:
-notice-fault = A plugin stopped:
+# The notice's card at the panes' top right: its title, what it is about,
+# above the error's own text, which the log has too; its buttons' tooltips.
+notice-config = The config file does not apply
+notice-font = A font is missing
+notice-global-keys = A global key does not work
+notice-term = The terminal type is unknown
+notice-theme = A theme does not apply
+notice-plugin-config = A plugin's section of the config does not apply
+notice-kept-windows = The windows of the last run do not open again
+notice-permissions = The plugins' permissions do not read
+notice-installed-plugins = The installed plugins do not load
+notice-failed = A command failed
+notice-fault = A plugin stopped
+notice-copy = Copy the details
+notice-close = Close
 
 # What an accessibility client, as VoiceOver, calls a pane.
 access-pane = Terminal

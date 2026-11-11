@@ -10,11 +10,10 @@ use lokyr_kernel::diagnostics::{About, Diagnostic};
 use lokyr_kernel::l10n::Arg;
 use lokyr_kernel::plugins::ui::ViewId;
 use lokyr_kernel::workspace::PaneId;
-use lokyr_platform_core::{Platform, Point, WindowId};
+use lokyr_platform_core::{Platform, WindowId};
 
 use super::{App, BELL_PAUSE, FLASH, NOTIFICATION_BODY, NOTIFICATION_PAUSE, NOTIFICATION_TITLE};
 use crate::drawing::Backend;
-use crate::notice;
 
 impl<B: Backend> App<B> {
     /// Tells `diagnostic`, in the log and, where it is one, in the notice
@@ -52,23 +51,6 @@ impl<B: Backend> App<B> {
     pub(super) fn resolve_unread(&mut self, platform: &mut dyn Platform, about: &About) {
         self.unread_told.retain(|(told, _)| told != about);
         self.resolve(platform, about);
-    }
-
-    /// Whether `position`, in points of `window`'s content, is on the bar
-    /// of the notice that its last frame drew, and on its close; `None` off
-    /// the bar.
-    pub(super) fn on_notice(
-        &self,
-        platform: &dyn Platform,
-        window: WindowId,
-        position: Point,
-    ) -> Option<bool> {
-        let (state, size) = (self.windows.get(&window)?, platform.window_size(window)?);
-        let pixels = (position.x * size.scale, position.y * size.scale);
-        let rects = state
-            .notice
-            .filter(|rects| notice::contains(&rects.bar, pixels))?;
-        Some(notice::contains(&rects.close, pixels))
     }
 
     /// Rings `pane`'s bell, as `[bell]` says: the system's sound; a flash

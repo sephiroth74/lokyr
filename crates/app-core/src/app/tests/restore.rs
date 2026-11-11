@@ -337,7 +337,7 @@ fn a_newer_or_unreadable_file_is_left_aside_with_a_notice() {
         assert_eq!(notice.about, About::KeptWindows);
         assert_eq!(
             app.texts.text("notice-kept-windows"),
-            "The windows of the last run do not open again:"
+            "The windows of the last run do not open again"
         );
         // This version's own, as it quits.
         app.quit(&mut fake);
