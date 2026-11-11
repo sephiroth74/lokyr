@@ -801,6 +801,7 @@ export type ViewId =
     | { window_strip: WindowId }
     | { status_bar: WindowId }
     | { pane_header: PaneId }
+    | { title_buttons: WindowId }
     | { panel: PanelId }
 
 export type Viewport = {

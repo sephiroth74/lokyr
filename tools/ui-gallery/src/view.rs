@@ -447,6 +447,7 @@ impl View {
             tab_bar: tab_bar.unwrap_or(0.0),
             window_strip: natural(&mut self.slots, Slot::WindowStrip).unwrap_or(0.0),
             status_bar: natural(&mut self.slots, Slot::StatusBar).unwrap_or(0.0),
+            title_buttons: 0.0,
         };
         let header = self
             .slots

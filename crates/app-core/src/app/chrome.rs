@@ -187,6 +187,9 @@ impl<B: Backend> App<B> {
         for plugin in self.plugins.providers(Slot::StatusBar) {
             views.push((plugin.to_owned(), ViewId::StatusBar(shown)));
         }
+        for plugin in self.plugins.providers(Slot::TitleButtons) {
+            views.push((plugin.to_owned(), ViewId::TitleButtons(shown)));
+        }
         if let Some(plugin) = one(Slot::TabBar, &slots.tab_bar) {
             views.push((plugin, ViewId::TabBar(shown)));
         }
@@ -431,10 +434,30 @@ impl<B: Backend> App<B> {
             TabBarPlace::Left(_) | TabBarPlace::Right(_) | TabBarPlace::Sidebar(_) => 1.0,
             _ => natural(Slot::TabBar),
         };
+        let window_strip = natural(Slot::WindowStrip);
+        let status_bar = natural(Slot::StatusBar);
+        // The titlebar's small buttons, each view of its own width, of the
+        // titlebar's height, or of a tab bar's across the top in full
+        // screen.
+        let band = if titlebar > 0.0 { titlebar } else { tab_bar };
+        let mut buttons_widths = Vec::new();
+        for view in state
+            .chrome
+            .iter_mut()
+            .filter(|view| view.view.slot() == Some(Slot::TitleButtons) && view.shows())
+        {
+            let laid = view.surface.lay_out((None, Some(band)), font);
+            events.extend(
+                laid.into_iter()
+                    .map(|event| (view.plugin.clone(), view.view.clone(), event)),
+            );
+            buttons_widths.push(view.surface.size().map_or(0.0, |size| size.0.ceil()));
+        }
         let heights = Heights {
             tab_bar,
-            window_strip: natural(Slot::WindowStrip),
-            status_bar: natural(Slot::StatusBar),
+            window_strip,
+            status_bar,
+            title_buttons: buttons_widths.iter().sum(),
         };
         let shape = chrome::Window {
             size: (width, size.pixels.height as f32),
@@ -443,12 +466,39 @@ impl<B: Backend> App<B> {
         };
         let regions = chrome::regions(&shape, place, heights);
         state.overlay = regions.window_overlay;
+        // The small buttons' views side by side, each of its width.
+        let mut x = regions.title_buttons.map_or(0.0, |region| region.x);
+        let mut widths = buttons_widths.into_iter();
+        for view in state
+            .chrome
+            .iter_mut()
+            .filter(|view| view.view.slot() == Some(Slot::TitleButtons))
+        {
+            view.frame = None;
+            let (Some(region), true) = (regions.title_buttons, view.shows()) else {
+                continue;
+            };
+            let width = widths
+                .next()
+                .unwrap_or(0.0)
+                .min(region.x + region.width - x);
+            let frame = Frame { x, width, ..region };
+            x += width;
+            view.frame = Some(frame);
+            let laid = view
+                .surface
+                .lay_out((Some(frame.width), Some(frame.height)), font);
+            events.extend(
+                laid.into_iter()
+                    .map(|event| (view.plugin.clone(), view.view.clone(), event)),
+            );
+        }
         for slot in [Slot::TabBar, Slot::WindowStrip, Slot::StatusBar] {
             let region = match slot {
                 Slot::TabBar => regions.tab_bar,
                 Slot::WindowStrip => regions.window_strip,
                 Slot::StatusBar => regions.status_bar,
-                Slot::PaneHeader => None,
+                Slot::PaneHeader | Slot::TitleButtons => None,
             };
             let mut views: Vec<&mut SlotView> = state
                 .chrome

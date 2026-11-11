@@ -76,6 +76,8 @@ pub struct Heights {
     pub window_strip: f32,
     /// The status bar's.
     pub status_bar: f32,
+    /// The width of the titlebar's small buttons, their views side by side.
+    pub title_buttons: f32,
 }
 
 /// The regions of a window's slots, in pixels from its content's top left
@@ -84,6 +86,10 @@ pub struct Heights {
 pub struct Regions {
     /// The tab bar's, if it has a view.
     pub tab_bar: Option<Frame>,
+    /// The titlebar's small buttons', right after the window's buttons, if
+    /// they have views: in full screen, at the top's left, beside a tab
+    /// bar across the top, and nowhere without one.
+    pub title_buttons: Option<Frame>,
     /// The window's strip's, over the panes' top, if it has a view.
     pub window_strip: Option<Frame>,
     /// The status bar's, if it has a view.
@@ -130,10 +136,11 @@ pub fn regions(window: &Window, place: TabBarPlace, heights: Heights) -> Regions
         },
         TabBarPlace::Titlebar if titlebar > 0.0 => {
             let buttons = window.buttons.clamp(0.0, width);
+            let after = (buttons + heights.title_buttons.max(0.0)).min(width);
             Frame {
-                x: buttons,
+                x: after,
                 y: 0.0,
-                width: width - buttons,
+                width: width - after,
                 height: titlebar,
             }
         }
@@ -184,6 +191,35 @@ pub fn regions(window: &Window, place: TabBarPlace, heights: Heights) -> Regions
             }
         }
     });
+    // The titlebar's small buttons, right after the window's; in full
+    // screen, at the left of a tab bar across the top, which they push.
+    let small = heights.title_buttons.max(0.0);
+    let mut tab_bar = tab_bar;
+    let title_buttons = if small <= 0.0 {
+        None
+    } else if titlebar > 0.0 {
+        let buttons = window.buttons.clamp(0.0, width);
+        Some(Frame {
+            x: buttons,
+            y: 0.0,
+            width: small.min(width - buttons),
+            height: titlebar,
+        })
+    } else {
+        match (&mut tab_bar, place) {
+            (Some(bar), TabBarPlace::Titlebar | TabBarPlace::BelowTitlebar) => {
+                let taken = small.min(bar.width);
+                let frame = Frame {
+                    width: taken,
+                    ..*bar
+                };
+                bar.x += taken;
+                bar.width -= taken;
+                Some(frame)
+            }
+            _ => None,
+        }
+    };
     // The room that the tab bar leaves, which the status bar takes the
     // bottom of.
     let room_bottom = bottom;
@@ -209,6 +245,7 @@ pub fn regions(window: &Window, place: TabBarPlace, heights: Heights) -> Regions
     });
     Regions {
         tab_bar,
+        title_buttons,
         window_strip,
         status_bar,
         panes,
@@ -246,15 +283,16 @@ pub fn pane_regions(pane: Frame, header: f32) -> PaneRegions {
     }
 }
 
-/// The parts of a tab bar's view in the titlebar that are its own, from
-/// its corner: the boxes of the outermost nodes under its root that take a
-/// press, each within the clips around it, the root's too, where a press
-/// goes to the view. A node takes a press of its key, and of its kind, a
-/// button, a toggle, a field, a list or a view of tabs, or of a pointer, a
-/// hover or a press of its own style, as a tab: a node of a key that takes
-/// none, as a group of tabs that a transition needs, gives its children's
-/// parts. The rest of the bar, its root's own box too, is the window's,
-/// which a drag there moves and a double click zooms.
+/// The parts of a view in the titlebar that are its own, as a tab bar's or
+/// the small buttons', from its corner: the boxes of the outermost nodes
+/// under its root that take a press, each within the clips around it, the
+/// root's too, where a press goes to the view; or the root's whole box, if
+/// it takes one itself. A node takes a press of its key, and of its kind,
+/// a button, a toggle, a field, a list or a view of tabs, or of a pointer,
+/// a hover or a press of its own style, as a tab: a node of a key that
+/// takes none, as a group of tabs that a transition needs, gives its
+/// children's parts. The rest of the view, its root's own box too, is the
+/// window's, which a drag there moves and a double click zooms.
 pub fn titlebar_areas(tree: &Tree, layout: &Layout) -> Vec<Frame> {
     let mut areas = Vec::new();
     let Some(root) = tree.root() else {
@@ -263,6 +301,11 @@ pub fn titlebar_areas(tree: &Tree, layout: &Layout) -> Vec<Frame> {
     let Some(bounds) = layout.frame(tree, root) else {
         return areas;
     };
+    // A root that takes a press itself, as a view of one button, is whole.
+    if takes_press(tree, root) {
+        areas.push(bounds);
+        return areas;
+    }
     for &child in tree.children(root) {
         pressed(tree, layout, child, bounds, &mut areas);
     }
@@ -362,11 +405,59 @@ mod tests {
     };
 
     #[test]
+    fn the_title_buttons_go_after_the_window_s_and_push_a_tab_bar_in_the_titlebar() {
+        let heights = Heights {
+            tab_bar: 40.0,
+            title_buttons: 30.0,
+            ..Heights::default()
+        };
+        let laid = regions(&WINDOW, TabBarPlace::Titlebar, heights);
+        assert_eq!(laid.title_buttons, Some(frame(80.0, 0.0, 30.0, 40.0)));
+        assert_eq!(laid.tab_bar, Some(frame(110.0, 0.0, 690.0, 40.0)));
+        // Below a titled bar, the bar across the window, the buttons in the
+        // titlebar still.
+        let below = regions(&WINDOW, TabBarPlace::BelowTitlebar, heights);
+        assert_eq!(below.title_buttons, Some(frame(80.0, 0.0, 30.0, 40.0)));
+        assert_eq!(below.tab_bar, Some(frame(0.0, 40.0, 800.0, 40.0)));
+        // Of no view, none, the tab bar after the window's buttons.
+        let none = regions(
+            &WINDOW,
+            TabBarPlace::Titlebar,
+            Heights {
+                title_buttons: 0.0,
+                ..heights
+            },
+        );
+        assert_eq!(none.title_buttons, None);
+        assert_eq!(none.tab_bar, Some(frame(80.0, 0.0, 720.0, 40.0)));
+    }
+
+    #[test]
+    fn in_full_screen_the_title_buttons_go_beside_a_tab_bar_across_the_top_or_nowhere() {
+        let full = Window {
+            titlebar: 0.0,
+            buttons: 0.0,
+            ..WINDOW
+        };
+        let heights = Heights {
+            tab_bar: 30.0,
+            title_buttons: 40.0,
+            ..Heights::default()
+        };
+        let top = regions(&full, TabBarPlace::Titlebar, heights);
+        assert_eq!(top.title_buttons, Some(frame(0.0, 0.0, 40.0, 30.0)));
+        assert_eq!(top.tab_bar, Some(frame(40.0, 0.0, 760.0, 30.0)));
+        let bottom = regions(&full, TabBarPlace::Bottom, heights);
+        assert_eq!(bottom.title_buttons, None);
+    }
+
+    #[test]
     fn a_tab_bar_in_the_titlebar_takes_it_past_the_buttons_and_the_panes_the_rest() {
         let heights = Heights {
             tab_bar: 30.0,
             window_strip: 2.0,
             status_bar: 22.0,
+            title_buttons: 0.0,
         };
         let regions = regions(&WINDOW, TabBarPlace::Titlebar, heights);
         // The titlebar's height, not the view's.
@@ -436,6 +527,7 @@ mod tests {
             tab_bar: 30.0,
             window_strip: 20.0,
             status_bar: 22.0,
+            title_buttons: 0.0,
         };
         let regions = regions(&window, TabBarPlace::Titlebar, heights);
         // Past buttons wider than the window, nothing.
@@ -455,6 +547,7 @@ mod tests {
             tab_bar: 30.0,
             window_strip: 2.0,
             status_bar: 22.0,
+            title_buttons: 0.0,
         };
         let regions = regions(&WINDOW, TabBarPlace::Bottom, heights);
         assert_eq!(regions.tab_bar, Some(frame(0.0, 570.0, 800.0, 30.0)));
@@ -470,6 +563,7 @@ mod tests {
             tab_bar: 1.0,
             window_strip: 2.0,
             status_bar: 22.0,
+            title_buttons: 0.0,
         };
         let left = regions(&WINDOW, TabBarPlace::Left(200.0), heights);
         assert_eq!(left.tab_bar, Some(frame(0.0, 40.0, 200.0, 560.0)));
@@ -504,6 +598,7 @@ mod tests {
             tab_bar: 1.0,
             window_strip: 2.0,
             status_bar: 22.0,
+            title_buttons: 0.0,
         };
         let side = regions(&WINDOW, TabBarPlace::Sidebar(200.0), heights);
         assert_eq!(side.tab_bar, Some(frame(0.0, 0.0, 200.0, 600.0)));
@@ -531,6 +626,7 @@ mod tests {
             tab_bar: 30.0,
             window_strip: 2.0,
             status_bar: 22.0,
+            title_buttons: 0.0,
         };
         let left = regions(&window, TabBarPlace::Left(200.0), heights);
         assert_eq!(left.tab_bar, Some(frame(0.0, 40.0, 150.0, 20.0)));

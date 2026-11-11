@@ -26,15 +26,20 @@ pub enum Slot {
     StatusBar,
     /// A pane's header across its top, above its grid: one plugin's.
     PaneHeader,
+    /// Small buttons in the titlebar, right after the window's buttons, of
+    /// the titlebar's height and their views' widths, as a button that
+    /// keeps the Mac awake: many.
+    TitleButtons,
 }
 
 impl Slot {
     /// The slots, in the order that they draw.
-    pub const ALL: [Self; 4] = [
+    pub const ALL: [Self; 5] = [
         Self::PaneHeader,
         Self::WindowStrip,
         Self::StatusBar,
         Self::TabBar,
+        Self::TitleButtons,
     ];
 
     /// Its name, as a manifest's `contributes.slots` and the config write
@@ -45,6 +50,7 @@ impl Slot {
             Self::WindowStrip => "window-strip",
             Self::StatusBar => "status-bar",
             Self::PaneHeader => "pane-header",
+            Self::TitleButtons => "title-buttons",
         }
     }
 
@@ -56,7 +62,10 @@ impl Slot {
     /// Whether many plugins' views fill it, in their order, rather than one
     /// plugin's.
     pub fn of_many(self) -> bool {
-        matches!(self, Self::WindowStrip | Self::StatusBar)
+        matches!(
+            self,
+            Self::WindowStrip | Self::StatusBar | Self::TitleButtons
+        )
     }
 }
 
@@ -84,6 +93,8 @@ pub enum ViewId {
     StatusBar(WindowId),
     /// A pane's header.
     PaneHeader(PaneId),
+    /// A window's small buttons beside its own.
+    TitleButtons(WindowId),
     /// One of its panels.
     Panel(PanelId),
 }
@@ -96,6 +107,7 @@ impl ViewId {
             Slot::WindowStrip => Self::WindowStrip(window),
             Slot::StatusBar => Self::StatusBar(window),
             Slot::PaneHeader => Self::PaneHeader(pane),
+            Slot::TitleButtons => Self::TitleButtons(window),
         }
     }
 
@@ -106,6 +118,7 @@ impl ViewId {
             Self::WindowStrip(_) => Some(Slot::WindowStrip),
             Self::StatusBar(_) => Some(Slot::StatusBar),
             Self::PaneHeader(_) => Some(Slot::PaneHeader),
+            Self::TitleButtons(_) => Some(Slot::TitleButtons),
             Self::Panel(_) => None,
         }
     }

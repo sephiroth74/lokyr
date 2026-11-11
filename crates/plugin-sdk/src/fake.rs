@@ -2097,7 +2097,10 @@ impl FakeHost {
             return Err(not_found());
         }
         let window = match view {
-            ViewId::TabBar(window) | ViewId::WindowStrip(window) | ViewId::StatusBar(window) => {
+            ViewId::TabBar(window)
+            | ViewId::WindowStrip(window)
+            | ViewId::StatusBar(window)
+            | ViewId::TitleButtons(window) => {
                 Some(*window).filter(|window| self.windows.contains_key(window))
             }
             ViewId::PaneHeader(pane) => self.pane_window(*pane).ok(),

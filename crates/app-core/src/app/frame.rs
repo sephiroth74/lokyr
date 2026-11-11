@@ -1233,11 +1233,8 @@ impl<B: Backend> App<B> {
             platform.set_move_areas(window, &moving);
             state.move_areas = moving;
         }
-        let mut own = if state.titlebar == Titlebar::Tabs {
-            surfaces::titlebar_areas(&state.chrome, size.scale)
-        } else {
-            Vec::new()
-        };
+        let mut own =
+            surfaces::titlebar_areas(&state.chrome, size.scale, state.titlebar == Titlebar::Tabs);
         let band = (size.pixels.width as f32, size.bar_pixels() as f32);
         own.extend(surfaces::panel_titlebar_areas(state, band, size.scale));
         if own != state.titlebar_areas {

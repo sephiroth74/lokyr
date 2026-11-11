@@ -52,6 +52,7 @@ mod surfaces;
 #[cfg(feature = "plugin-tabs")]
 mod tabs;
 mod themes;
+mod title_buttons;
 mod tools;
 mod workers;
 

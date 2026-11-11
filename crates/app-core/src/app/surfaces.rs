@@ -947,26 +947,31 @@ pub(super) fn move_areas(chrome: &[SlotView], scale: f64) -> Vec<ContentRect> {
         .collect()
 }
 
-/// The parts of the titlebar that are the tab bar's own of `chrome`, in
-/// points of a display of `scale`.
-pub(super) fn titlebar_areas(chrome: &[SlotView], scale: f64) -> Vec<ContentRect> {
-    let Some((view, frame)) = chrome.iter().find_map(|view| {
-        let frame = view.frame?;
-        matches!(view.view, ViewId::TabBar(_)).then_some((view, frame))
-    }) else {
-        return Vec::new();
-    };
-    chrome::titlebar_areas(&view.surface.tree, &view.surface.layout)
-        .into_iter()
-        .map(|area| {
-            content_rect(
-                Frame {
-                    x: area.x + frame.x,
-                    y: area.y + frame.y,
-                    ..area
-                },
-                scale,
-            )
+/// The parts of the titlebar that are the views' own of `chrome`, in
+/// points of a display of `scale`: the tab bar's, when `tab_bar` says that
+/// it is in the titlebar, and the small buttons' beside the window's.
+pub(super) fn titlebar_areas(chrome: &[SlotView], scale: f64, tab_bar: bool) -> Vec<ContentRect> {
+    chrome
+        .iter()
+        .filter(|view| match view.view {
+            ViewId::TabBar(_) => tab_bar,
+            ViewId::TitleButtons(_) => true,
+            _ => false,
+        })
+        .filter_map(|view| Some((view, view.frame?)))
+        .flat_map(|(view, frame)| {
+            chrome::titlebar_areas(&view.surface.tree, &view.surface.layout)
+                .into_iter()
+                .map(move |area| {
+                    content_rect(
+                        Frame {
+                            x: area.x + frame.x,
+                            y: area.y + frame.y,
+                            ..area
+                        },
+                        scale,
+                    )
+                })
         })
         .collect()
 }

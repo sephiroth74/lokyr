@@ -103,7 +103,7 @@ impl plugins::Plugin for Bars {
             Slot::PaneHeader => HEADER,
             Slot::WindowStrip => STRIP,
             Slot::StatusBar => STATUS,
-            Slot::TabBar => 10.0,
+            Slot::TabBar | Slot::TitleButtons => 10.0,
         };
         let mut node = Node::container(vec![Node::text(slot.name())]);
         node.layout.height = Length::Points(height);

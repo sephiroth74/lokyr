@@ -2168,7 +2168,8 @@ impl Plugins {
                     state.views.retain(|view, _| match view {
                         ViewId::TabBar(shown)
                         | ViewId::WindowStrip(shown)
-                        | ViewId::StatusBar(shown) => shown != window,
+                        | ViewId::StatusBar(shown)
+                        | ViewId::TitleButtons(shown) => shown != window,
                         ViewId::PaneHeader(_) | ViewId::Panel(_) => true,
                     });
                 }
@@ -3474,6 +3475,7 @@ fn view_slot(view: &ViewId) -> Option<Slot> {
         ViewId::WindowStrip(_) => Slot::WindowStrip,
         ViewId::StatusBar(_) => Slot::StatusBar,
         ViewId::PaneHeader(_) => Slot::PaneHeader,
+        ViewId::TitleButtons(_) => Slot::TitleButtons,
         ViewId::Panel(_) => return None,
     })
 }
@@ -3549,9 +3551,10 @@ fn clear_leftovers(state: &mut State, context: &mut Context<'_>, out: &mut Outbo
 /// or a pane that is there, or one of its open panels.
 fn shows(state: &State, view: &ViewId, workspace: &Workspace) -> bool {
     match view {
-        ViewId::TabBar(window) | ViewId::WindowStrip(window) | ViewId::StatusBar(window) => {
-            workspace.window(WindowId::of(window.0)).is_some()
-        }
+        ViewId::TabBar(window)
+        | ViewId::WindowStrip(window)
+        | ViewId::StatusBar(window)
+        | ViewId::TitleButtons(window) => workspace.window(WindowId::of(window.0)).is_some(),
         ViewId::PaneHeader(pane) => workspace.pane(PaneId::of(pane.0)).is_some(),
         ViewId::Panel(id) => state.panels.contains_key(id),
     }
@@ -4543,7 +4546,10 @@ impl Host<'_, '_> {
         }
         let workspace = &self.context.workspace;
         let window = match view {
-            ViewId::TabBar(window) | ViewId::WindowStrip(window) | ViewId::StatusBar(window) => {
+            ViewId::TabBar(window)
+            | ViewId::WindowStrip(window)
+            | ViewId::StatusBar(window)
+            | ViewId::TitleButtons(window) => {
                 Some(WindowId::of(window.0)).filter(|&window| workspace.window(window).is_some())
             }
             ViewId::PaneHeader(pane) => workspace
