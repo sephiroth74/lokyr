@@ -41,16 +41,24 @@ launch() {
   XDG_CONFIG_HOME=$OUT/config-$look $(binary $1) > /dev/null 2>&1 &
   pid=$!
   tries=0
-  while ! $BENCH motion --pid "$pid" --kind drag --seconds 0 > /dev/null 2>&1; do
+  while ! $BENCH motion --pid "$pid" --kind drag --seconds 0 > /dev/null 2> $OUT/launch.err; do
     tries=$((tries + 1))
     if [ $tries -ge 100 ]; then
-      log "no window of $1"
+      log "no window of $1: $(cat $OUT/launch.err)"
+      kill "$pid"
       return 1
     fi
     sleep 0.1
   done
   sleep 2
 }
+# The mouse's synthetic events take the Accessibility permission of the
+# terminal that runs the script, which the bench checks before anything:
+# without it, nothing is measured.
+if $BENCH motion --pid $$ --kind drag --seconds 0 2>&1 | grep -q Accessibility; then
+  echo "grant the Accessibility permission to this terminal, in System Settings, Privacy & Security, Accessibility, then run again" >&2
+  exit 1
+fi
 measure() {
   name=$1 round=$2 kind=$3
   base=$OUT/$name-$kind-$round
