@@ -431,6 +431,10 @@ type ImageSpec = {
     -- Whether the host keeps it, as a picture of the renderer's, which an image node shows by the id that the answer
     -- gives, until `drop_image`, four more kept, or the plugin's stop.
     keep: boolean?,
+    -- The least columns and rows of the window's cells, 1000 at most: a narrower or shorter text leaves the cells at
+    -- its right and below it empty.
+    min_columns: number?,
+    min_rows: number?,
 }
 
 -- The image that the host rendered: a PNG, a string of its bytes, its size in pixels, its pixels a point, and the id

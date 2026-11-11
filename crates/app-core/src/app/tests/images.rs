@@ -28,7 +28,12 @@ const MANIFEST: &str = "[plugin]\nname = \"lokyr/imager\"\nkind = \"builtin\"\nl
 
 impl Plugin for Imager {
     fn activate(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
-        for name in ["imager.snap", "imager.retina", "imager.huge"] {
+        for name in [
+            "imager.snap",
+            "imager.retina",
+            "imager.huge",
+            "imager.least",
+        ] {
             cx.register_command(Command {
                 name: name.to_owned(),
                 title: name.to_owned(),
@@ -57,6 +62,8 @@ impl Plugin for Imager {
                 title: Some("zsh".to_owned()),
                 buttons: true,
                 scale: (name == "imager.retina").then_some(3.0),
+                min_columns: (name == "imager.least").then_some(80),
+                min_rows: (name == "imager.least").then_some(10),
                 ..ImageSpec::default()
             },
         };
@@ -105,17 +112,20 @@ fn png_size(header: &[u8]) -> (u32, u32) {
 fn a_plugin_s_image_is_rendered_by_the_windows_renderer_at_the_focused_window_s_scale() {
     let drawing = Drawing::new(FontConfig::default()).unwrap();
     let (mut fake, mut app, _, got) = imager(Some(drawing));
-    for name in ["imager.snap", "imager.retina"] {
+    for name in ["imager.snap", "imager.retina", "imager.least"] {
         fake.send_app(&mut app, AppEvent::Command(name.to_owned()));
     }
     let got: Vec<_> = got.borrow_mut().drain(..).collect();
     let [
         Ok((width, height, scale, header)),
         Ok((retina_width, _, retina, _)),
+        Ok((least_width, least_height, _, _)),
     ] = &got[..]
     else {
         panic!("{got:?}");
     };
+    // Of 80 columns and 10 rows at least, wider and taller than its text.
+    assert!(least_width > width && least_height > height, "{got:?}");
     // At the focused window's scale, a PNG of its size.
     assert_eq!(*scale, 2.0);
     assert_eq!(png_size(header), (*width, *height));

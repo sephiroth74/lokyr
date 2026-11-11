@@ -86,9 +86,15 @@ const DARKER: f32 = 0.65;
 /// The terminal of `rows`, in `colors`, its cells counted as `widths`
 /// counts them: as many columns as its widest row's cells, of its text and
 /// of its runs past the text that show something without a character, as
-/// a background, from two, as a wide character fits, to [`MOST_COLUMNS`],
-/// and a row of each.
-pub fn terminal(rows: &[CellRow], widths: Widths, colors: Colors) -> Terminal {
+/// a background, `least`'s columns at least, from two, as a wide character
+/// fits, to [`MOST_COLUMNS`]; and a row of each, `least`'s rows at least,
+/// empty below them.
+pub fn terminal(
+    rows: &[CellRow],
+    least: (Option<u16>, Option<u16>),
+    widths: Widths,
+    colors: Colors,
+) -> Terminal {
     let options = Options {
         widths,
         ..Options::default()
@@ -102,8 +108,12 @@ pub fn terminal(rows: &[CellRow], widths: Widths, colors: Colors) -> Terminal {
         .map(|row| write_row(&mut parser, &mut measure, 0, row, widths))
         .max()
         .unwrap_or(0)
-        .max(2);
-    let lines = u16::try_from(rows.len()).unwrap_or(u16::MAX).max(1);
+        .max(least.0.unwrap_or(0))
+        .clamp(2, MOST_COLUMNS);
+    let lines = u16::try_from(rows.len())
+        .unwrap_or(u16::MAX)
+        .max(least.1.unwrap_or(0))
+        .max(1);
     let mut terminal = Terminal::new(columns, lines, options);
     terminal.set_default_colors(colors);
     let mut parser = Parser::new();
@@ -489,7 +499,7 @@ mod tests {
     }
 
     fn made(rows: &[CellRow]) -> Terminal {
-        terminal(rows, Widths::default(), Colors::default())
+        terminal(rows, (None, None), Widths::default(), Colors::default())
     }
 
     /// The terminal's columns, and the text of each of its rows.
@@ -534,6 +544,28 @@ mod tests {
         // Past the widest an image draws, cut.
         let (columns, _) = texts(&[row(&"x".repeat(1200), Vec::new())]);
         assert_eq!(columns, MOST_COLUMNS);
+    }
+
+    #[test]
+    fn an_image_s_terminal_takes_its_least_columns_and_rows() {
+        let rows = [row("ls", Vec::new())];
+        let least = terminal(
+            &rows,
+            (Some(80), Some(10)),
+            Widths::default(),
+            Colors::default(),
+        );
+        assert_eq!((least.cols(), least.rows()), (80, 10));
+        assert_eq!(least.line_text(0, 0).unwrap().0.trim_end(), "ls");
+        // A wider text, or more rows, than the least, theirs.
+        let wide = [row("a long line", Vec::new()), row("b", Vec::new())];
+        let terminal = terminal(
+            &wide,
+            (Some(4), Some(1)),
+            Widths::default(),
+            Colors::default(),
+        );
+        assert_eq!((terminal.cols(), terminal.rows()), (11, 2));
     }
 
     #[test]

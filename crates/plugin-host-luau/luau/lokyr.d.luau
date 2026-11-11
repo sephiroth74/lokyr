@@ -452,6 +452,8 @@ export type ImageSpec = {
     background: ImageBackground?,
     scale: number?,
     keep: boolean?,
+    min_columns: number?,
+    min_rows: number?,
 }
 
 export type Justify =

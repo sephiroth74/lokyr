@@ -303,6 +303,8 @@ fn images() -> Scenario {
         background: ImageBackground::Rgb(40, 44, 52),
         scale,
         keep: false,
+        min_columns: Some(80),
+        min_rows: Some(4),
     };
     let rendered = |scale: Option<f32>| {
         (
@@ -336,6 +338,10 @@ fn images() -> Scenario {
         }),
         refused(ImageSpec {
             scale: Some(8.0),
+            ..spec(None)
+        }),
+        refused(ImageSpec {
+            min_columns: Some(2000),
             ..spec(None)
         }),
         rendered(Some(1.0)),

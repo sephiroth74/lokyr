@@ -117,6 +117,14 @@ pub struct ImageSpec {
     /// [`MOST_KEPT`] others after it, or stops.
     #[serde(default)]
     pub keep: bool,
+    /// The least columns of the window's cells, [`MOST_COLUMNS`] at most:
+    /// a narrower text leaves the cells at its right empty.
+    #[serde(default)]
+    pub min_columns: Option<u16>,
+    /// The least rows of the window's cells, [`MOST_ROWS`] at most: fewer
+    /// rows leave those below them empty.
+    #[serde(default)]
+    pub min_rows: Option<u16>,
 }
 
 impl ImageSpec {
@@ -166,6 +174,17 @@ impl ImageSpec {
             if title.chars().any(char::is_control) {
                 return refused("an image's title has no control character".to_owned());
             }
+        }
+        if self
+            .min_columns
+            .is_some_and(|columns| columns > MOST_COLUMNS)
+            || self
+                .min_rows
+                .is_some_and(|rows| usize::from(rows) > MOST_ROWS)
+        {
+            return refused(format!(
+                "an image's least size is {MOST_COLUMNS} columns and {MOST_ROWS} rows at most"
+            ));
         }
         if !(0.0..=MOST_PADDING).contains(&self.padding) {
             return refused(format!(
@@ -311,6 +330,22 @@ mod tests {
             };
             assert!(refused(padded).message.contains("padding"));
         }
+        let wide = ImageSpec {
+            min_columns: Some(MOST_COLUMNS + 1),
+            ..spec(&["a"])
+        };
+        assert!(refused(wide).message.contains("least size"));
+        let tall = ImageSpec {
+            min_rows: Some(1001),
+            ..spec(&["a"])
+        };
+        assert!(refused(tall).message.contains("least size"));
+        let least = ImageSpec {
+            min_columns: Some(MOST_COLUMNS),
+            min_rows: Some(1000),
+            ..spec(&["a"])
+        };
+        assert_eq!(least.check(), Ok(()));
         for scale in [0.5, MOST_SCALE + 0.5, f32::NAN] {
             let scaled = ImageSpec {
                 scale: Some(scale),

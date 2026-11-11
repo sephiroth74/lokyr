@@ -2046,6 +2046,8 @@ fn an_image_of_cells_renders_to_a_png_as_its_golden_images() {
             background: ImageBackground::Theme,
             scale: Some(scale),
             keep: true,
+            min_columns: None,
+            min_rows: None,
         };
         check_image("image-framed-dark", &framed, true);
         // The window alone, of square corners, no bar, no shadow, clear

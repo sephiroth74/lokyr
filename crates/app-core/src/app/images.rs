@@ -46,7 +46,13 @@ impl<B: Backend> plugins::Images for ImagePainter<'_, B> {
             .ok_or("the app draws no image, as it has no GPU")?;
         let scale = image.scale.unwrap_or(self.scale);
         let mut snapshot = Snapshot::default();
-        terminal(&image.rows, self.widths, self.colors.clone()).snapshot(&mut snapshot);
+        terminal(
+            &image.rows,
+            (image.min_columns, image.min_rows),
+            self.widths,
+            self.colors.clone(),
+        )
+        .snapshot(&mut snapshot);
         // Its cells alone past the most, refused before they are laid out.
         let before = drawing.font.scale();
         drawing.font.set_scale(scale);
