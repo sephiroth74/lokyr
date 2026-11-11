@@ -616,7 +616,10 @@ impl<B: Backend> App<B> {
             self.plugins.saved(&plugin, id, None, None);
             return;
         };
-        let panel = platform.show_save_panel(shown, name);
+        let message = self
+            .texts
+            .text_with("save-panel-message", &[("name", Arg::Text(&plugin))]);
+        let panel = platform.show_save_panel(shown, name, &message);
         self.saves.insert(
             panel,
             Save {
@@ -629,10 +632,13 @@ impl<B: Backend> App<B> {
     }
 
     /// Writes the file of the save whose panel `panel` closed where the
-    /// user chose, `path`, whole, and tells its plugin the path, or the
-    /// error of a write that failed; of none, that the user cancelled.
+    /// user chose, `path`, whole, marked as come from elsewhere, as a
+    /// plugin chose its bytes and its type, so that the system asks before
+    /// it opens as a program, and tells its plugin the path, or the error
+    /// of a write that failed; of none, that the user cancelled.
     pub(super) fn save_panel_closed(
         &mut self,
+        platform: &mut dyn Platform,
         panel: SavePanelId,
         path: Option<std::path::PathBuf>,
     ) {
@@ -643,7 +649,7 @@ impl<B: Backend> App<B> {
             self.plugins.saved(&save.plugin, save.id, None, None);
             return;
         };
-        match lokyr_pkg_model::write_whole_bytes(&path, &save.bytes) {
+        match lokyr_pkg_model::write_whole_marked(&path, &save.bytes, platform.quarantine()) {
             Ok(()) => {
                 let path = path.to_string_lossy().into_owned();
                 self.plugins.saved(&save.plugin, save.id, Some(path), None);

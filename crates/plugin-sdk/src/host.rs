@@ -1104,13 +1104,22 @@ impl Bytes {
 /// Whether `name` is a file's name that a save panel can suggest: of a
 /// character at least and [`LONGEST_FILE_NAME`] bytes at most, not `.` nor
 /// `..`, of no `/` nor `:`, which macOS's Finder shows as one another, nor
-/// control character; the error that tells it is not.
+/// control character, nor one that hides or moves the text around it, as
+/// [`crate::text::is_hidden`] tells, nor a mark of direction, which would
+/// show the name's end, its extension, otherwise than it is; the error that
+/// tells it is not.
 pub fn check_file_name(name: &str) -> Result<(), crate::command::Error> {
     let fine = !name.is_empty()
         && name.len() <= LONGEST_FILE_NAME
         && name != "."
         && name != ".."
-        && !name.chars().any(|c| c == '/' || c == ':' || c.is_control());
+        && !name.chars().any(|c| {
+            c == '/'
+                || c == ':'
+                || c.is_control()
+                || crate::text::is_hidden(c)
+                || matches!(c, '\u{200E}' | '\u{200F}' | '\u{061C}')
+        });
     if fine {
         return Ok(());
     }
@@ -1118,7 +1127,7 @@ pub fn check_file_name(name: &str) -> Result<(), crate::command::Error> {
         crate::command::Code::Failed,
         format!(
             "a file's name has 1 to {LONGEST_FILE_NAME} bytes, is not `.` nor `..`, and has no \
-             `/`, `:` nor control character"
+             `/`, `:`, control character, hidden character nor mark of direction"
         ),
     ))
 }
@@ -1208,11 +1217,26 @@ mod tests {
             ".hidden",
             "日本.png",
             "a b",
+            "👩\u{200D}💻.png",
         ] {
             assert_eq!(check_file_name(name), Ok(()), "{name}");
         }
         let long = "x".repeat(LONGEST_FILE_NAME + 1);
-        for name in ["", ".", "..", "a/b.png", "a:b", "a\nb", "a\u{7}", &long] {
+        for name in [
+            "",
+            ".",
+            "..",
+            "a/b.png",
+            "a:b",
+            "a\nb",
+            "a\u{7}",
+            &long,
+            "snap\u{202E}gnp.sh",
+            "shot\u{200B}.png",
+            "shot\u{2066}.png",
+            "shot\u{200F}.command",
+            "a\u{2028}b",
+        ] {
             assert!(check_file_name(name).is_err(), "{name:?}");
         }
         assert_eq!(check_file_name(&"x".repeat(LONGEST_FILE_NAME)), Ok(()));

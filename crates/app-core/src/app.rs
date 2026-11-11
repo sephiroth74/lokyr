@@ -4191,7 +4191,9 @@ impl<B: Backend> App<B> {
                 suppressed,
                 text,
             } => self.alert_closed(platform, alert, (button, suppressed), text.as_deref()),
-            AppEvent::SavePanelClosed { panel, path } => self.save_panel_closed(panel, path),
+            AppEvent::SavePanelClosed { panel, path } => {
+                self.save_panel_closed(platform, panel, path);
+            }
             AppEvent::AppearanceChanged(appearance) => {
                 self.appearance_changed(platform, appearance);
             }

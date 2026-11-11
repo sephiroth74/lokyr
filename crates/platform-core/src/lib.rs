@@ -13,6 +13,11 @@
 #![forbid(unsafe_code)]
 
 use std::path::Path;
+
+/// A function that marks the file at its path as come from elsewhere, as
+/// [`Platform::quarantine`] gives it: its error, of a volume that keeps no
+/// such mark, leaves the file unwritten.
+pub type Quarantine = fn(&Path) -> std::io::Result<()>;
 use std::time::{Duration, Instant, SystemTime};
 
 #[cfg(any(test, feature = "conformance"))]
@@ -421,6 +426,13 @@ pub trait Platform {
     /// no approval of Gatekeeper's.
     fn downloaded(&self, path: &Path) -> bool;
 
+    /// The function that marks a file that a plugin wrote, where the user
+    /// chose, as come from elsewhere, so that [`Platform::downloaded`] and
+    /// the system ask before they open it as a program: on the Mac, the
+    /// quarantine's attribute of a download, of no approval. A function,
+    /// which a thread may run as it writes the file.
+    fn quarantine(&self) -> Quarantine;
+
     /// Whether the app is the system's default terminal: the application
     /// that it opens shell scripts and executables in, and `ssh` and
     /// `x-man-page` URLs, as the system told it last: after the start and
@@ -691,11 +703,12 @@ pub trait Platform {
     fn set_clipboard_image(&mut self, png: &[u8]);
 
     /// Opens the save panel, a sheet on `window`, of the file's name `name`
-    /// suggested, of its extension's type, and returns at once:
+    /// suggested, of its extension's type, of `message` over it, which
+    /// names who saves, and returns at once:
     /// [`AppEvent::SavePanelClosed`] tells the path chosen, or none as the
     /// user cancelled or the window closed. The panel asks before it
     /// replaces a file; the app writes it.
-    fn show_save_panel(&mut self, window: WindowId, name: &str) -> SavePanelId;
+    fn show_save_panel(&mut self, window: WindowId, name: &str, message: &str) -> SavePanelId;
 
     /// Keeps the system, or the system and the display, from idle sleep,
     /// of one power assertion named `reason`, which takes the place of the

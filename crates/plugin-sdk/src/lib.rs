@@ -30,6 +30,7 @@ pub mod keys;
 pub mod message;
 #[cfg(feature = "unstable")]
 pub mod plugin;
+pub mod text;
 #[cfg(feature = "unstable")]
 pub mod theme;
 #[cfg(feature = "unstable")]

@@ -14,17 +14,22 @@ use objc2_uniform_type_identifiers::UTType;
 use crate::shared::{Pending, Shared};
 
 /// Opens the save panel on `window`, of `name` suggested and of its
-/// extension's type, whose end posts [`AppEvent::SavePanelClosed`] of
-/// `id`.
+/// extension's type, of `message` over it, whose end posts
+/// [`AppEvent::SavePanelClosed`] of `id`.
 pub(crate) fn begin(
     mtm: MainThreadMarker,
     window: &NSWindow,
-    name: &str,
+    (name, message): (&str, &str),
     shared: Weak<Shared>,
     id: SavePanelId,
 ) {
     let panel = NSSavePanel::savePanel(mtm);
     panel.setNameFieldStringValue(&NSString::from_str(name));
+    panel.setMessage(Some(&NSString::from_str(message)));
+    // The whole name, its extension shown, as the file's type is the
+    // plugin's choice.
+    panel.setExtensionHidden(false);
+    panel.setCanSelectHiddenExtension(false);
     panel.setCanCreateDirectories(true);
     // The file's type of its extension, which the panel keeps on the name
     // that the user types.

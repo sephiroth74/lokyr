@@ -57,44 +57,7 @@ pub fn capability_of(text: &str) -> Option<lokyr_plugin_sdk::command::Capability
     }
 }
 
-/// Whether `character` hides or moves the text around it, which a text that
-/// a person reads, as a consent's question or a terminal, would show
-/// otherwise than it is: a format character of Unicode (`Cf`), the changes
-/// of direction and the characters of no width among them, but the
-/// joiners, which scripts and emoji take, and the marks of direction,
-/// which override no strong character and Arabic and Hebrew texts take;
-/// and the separators of lines and paragraphs.
-pub fn is_hidden(character: char) -> bool {
-    if matches!(
-        character,
-        '\u{200C}' | '\u{200D}' | '\u{200E}' | '\u{200F}' | '\u{061C}'
-    ) {
-        return false;
-    }
-    matches!(
-        u32::from(character),
-        0x00AD
-            | 0x0600..=0x0605
-            | 0x06DD
-            | 0x070F
-            | 0x0890..=0x0891
-            | 0x08E2
-            | 0x180E
-            | 0x200B..=0x200F
-            | 0x2028..=0x202E
-            | 0x2060..=0x2064
-            | 0x2066..=0x206F
-            | 0xFEFF
-            | 0xFFF9..=0xFFFB
-            | 0x110BD
-            | 0x110CD
-            | 0x13430..=0x1343F
-            | 0x1BCA0..=0x1BCA3
-            | 0x1D173..=0x1D17A
-            | 0xE0001
-            | 0xE0020..=0xE007F
-    )
-}
+pub use lokyr_plugin_sdk::text::is_hidden;
 
 /// Why `parameter` is not one of the capability `kind`, `fs-read`,
 /// `fs-write`, `env-read` or `net`, as the consent's question shows it as
@@ -179,29 +142,72 @@ pub fn write_whole(path: &Path, text: &str) -> io::Result<()> {
 /// Writes `bytes` to the file that `path` leads to, whole, as
 /// [`write_whole`] writes a text.
 pub fn write_whole_bytes(path: &Path, bytes: &[u8]) -> io::Result<()> {
+    write_whole_marked(path, bytes, |_| Ok(()))
+}
+
+/// The temporary files that this process made, which tell one another
+/// apart.
+static TEMPORARIES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Writes `bytes` to the file that `path` leads to, whole, as
+/// [`write_whole`] writes a text, `mark` applied to the new file before it
+/// takes the old one's place, as an extended attribute that it keeps: of
+/// its error, nothing is written.
+///
+/// The new file is a temporary one beside it, of a short name of its own,
+/// whatever the file's name's length, which no other file nor link has: it
+/// is made anew, and a link planted at its name fails it rather than leads
+/// the bytes elsewhere.
+pub fn write_whole_marked(
+    path: &Path,
+    bytes: &[u8],
+    mark: impl FnOnce(&Path) -> io::Result<()>,
+) -> io::Result<()> {
+    /// The names tried before the write gives up, each taken already.
+    const TRIES: u32 = 16;
     let path = link_target(path);
     let folder = path
         .parent()
         .filter(|folder| !folder.as_os_str().is_empty());
-    let name = path
-        .file_name()
-        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "a file's path"))?;
+    if path.file_name().is_none() {
+        return Err(io::Error::new(io::ErrorKind::InvalidInput, "a file's path"));
+    }
     if let Some(folder) = folder {
         std::fs::create_dir_all(folder)?;
     }
-    let mut temporary = std::ffi::OsString::from(".");
-    temporary.push(name);
-    temporary.push(format!(".{}.tmp", std::process::id()));
-    let temporary = folder.map_or_else(
-        || temporary.clone().into(),
-        |folder| folder.join(&temporary),
-    );
+    let mut made = None;
+    for _ in 0..TRIES {
+        let name = format!(
+            ".lokyr-{}-{}.tmp",
+            std::process::id(),
+            TEMPORARIES.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        );
+        let temporary = folder.map_or_else(|| name.clone().into(), |folder| folder.join(&name));
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temporary)
+        {
+            Ok(file) => {
+                made = Some((file, temporary));
+                break;
+            }
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
+            Err(error) => return Err(error),
+        }
+    }
+    let Some((mut file, temporary)) = made else {
+        return Err(io::Error::new(
+            io::ErrorKind::AlreadyExists,
+            "no temporary file's name is free beside it",
+        ));
+    };
     let written = (|| {
-        let mut file = std::fs::File::create(&temporary)?;
         file.write_all(bytes)?;
         if let Ok(metadata) = std::fs::metadata(&path) {
             file.set_permissions(metadata.permissions())?;
         }
+        mark(&temporary)?;
         file.sync_all()?;
         std::fs::rename(&temporary, &path)
     })();
@@ -216,4 +222,77 @@ pub fn write_whole_bytes(path: &Path, bytes: &[u8]) -> io::Result<()> {
         let _ = folder.sync_all();
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::os::unix::fs::MetadataExt;
+
+    /// A folder of its own for the test `name`.
+    fn folder(name: &str) -> std::path::PathBuf {
+        let folder =
+            std::env::temp_dir().join(format!("lokyr-whole-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&folder);
+        std::fs::create_dir_all(&folder).unwrap();
+        folder
+    }
+
+    #[test]
+    fn a_file_of_the_longest_name_is_written_whole_of_a_temporary_file_of_a_short_one() {
+        let folder = folder("long");
+        let path = folder.join("x".repeat(255));
+        write_whole_bytes(&path, b"one").unwrap();
+        write_whole_bytes(&path, b"two").unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), b"two");
+        assert_eq!(
+            std::fs::read_dir(&folder).unwrap().count(),
+            1,
+            "no temporary file left"
+        );
+        std::fs::remove_dir_all(folder).unwrap();
+    }
+
+    #[test]
+    fn the_mark_is_the_new_file_s_before_it_takes_the_old_one_s_place() {
+        let folder = folder("mark");
+        let path = folder.join("shot.png");
+        std::fs::write(&path, b"old").unwrap();
+        let mut marked = None;
+        write_whole_marked(&path, b"new", |temporary| {
+            assert_eq!(std::fs::read(&path).unwrap(), b"old", "not in place yet");
+            marked = Some(std::fs::metadata(temporary)?.ino());
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(marked, Some(std::fs::metadata(&path).unwrap().ino()));
+        assert_eq!(std::fs::read(&path).unwrap(), b"new");
+        // A mark that fails writes nothing, and leaves no temporary file.
+        let failed = write_whole_marked(&path, b"newer", |_| {
+            Err(io::Error::new(io::ErrorKind::Unsupported, "no attributes"))
+        });
+        assert_eq!(failed.unwrap_err().kind(), io::ErrorKind::Unsupported);
+        assert_eq!(std::fs::read(&path).unwrap(), b"new");
+        assert_eq!(std::fs::read_dir(&folder).unwrap().count(), 1);
+        std::fs::remove_dir_all(folder).unwrap();
+    }
+
+    #[test]
+    fn a_link_planted_at_a_temporary_name_is_never_followed() {
+        let folder = folder("planted");
+        let elsewhere = folder.join("elsewhere");
+        std::fs::write(&elsewhere, b"kept").unwrap();
+        // Links at every name that the next writes would take, whatever
+        // the other tests write meanwhile.
+        let next = TEMPORARIES.load(std::sync::atomic::Ordering::Relaxed);
+        for made in next..next + 4096 {
+            let name = format!(".lokyr-{}-{made}.tmp", std::process::id());
+            std::os::unix::fs::symlink(&elsewhere, folder.join(name)).unwrap();
+        }
+        let path = folder.join("shot.png");
+        assert!(write_whole_bytes(&path, b"bytes").is_err());
+        assert_eq!(std::fs::read(&elsewhere).unwrap(), b"kept");
+        assert!(!path.exists());
+        std::fs::remove_dir_all(folder).unwrap();
+    }
 }

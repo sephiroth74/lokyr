@@ -232,7 +232,7 @@ pub struct Fake {
     awake: (Awake, String),
     /// The save panels that are open: each its id, its window and its
     /// file's name.
-    save_panels: Vec<(SavePanelId, WindowId, String)>,
+    save_panels: Vec<(SavePanelId, WindowId, String, String)>,
     alerts: Vec<FakeAlert>,
     /// The timers that have not fired, with the time of each.
     timers: BTreeMap<TimerId, Instant>,
@@ -541,8 +541,8 @@ impl Fake {
     }
 
     /// The save panels that are open, in the order that they opened: each
-    /// its id, its window and its file's name.
-    pub fn save_panels(&self) -> &[(SavePanelId, WindowId, String)] {
+    /// its id, its window, its file's name and its message.
+    pub fn save_panels(&self) -> &[(SavePanelId, WindowId, String, String)] {
         &self.save_panels
     }
 
@@ -870,7 +870,11 @@ impl Platform for Fake {
     }
 
     fn downloaded(&self, path: &Path) -> bool {
-        self.downloaded.iter().any(|marked| marked == path)
+        self.downloaded.iter().any(|marked| marked == path) || quarantined(path)
+    }
+
+    fn quarantine(&self) -> crate::Quarantine {
+        quarantine
     }
 
     fn is_default_terminal(&self) -> bool {
@@ -1290,9 +1294,10 @@ impl Platform for Fake {
         self.awake = (awake, reason.to_owned());
     }
 
-    fn show_save_panel(&mut self, window: WindowId, name: &str) -> SavePanelId {
+    fn show_save_panel(&mut self, window: WindowId, name: &str, message: &str) -> SavePanelId {
         let id = SavePanelId::new(self.next_id());
-        self.save_panels.push((id, window, name.to_owned()));
+        self.save_panels
+            .push((id, window, name.to_owned(), message.to_owned()));
         id
     }
 
@@ -1604,4 +1609,33 @@ fn decoded(text: &str) -> Option<String> {
         }
     }
     String::from_utf8(bytes).ok()
+}
+
+/// The files that the fake's [`Platform::quarantine`] marked, by their
+/// device and inode, which a rename keeps, as the Mac's attribute.
+static QUARANTINED: std::sync::Mutex<Vec<(u64, u64)>> = std::sync::Mutex::new(Vec::new());
+
+/// The fake's mark of a file come from elsewhere: its device and inode
+/// kept, which [`quarantined`] finds again.
+fn quarantine(path: &Path) -> std::io::Result<()> {
+    use std::os::unix::fs::MetadataExt;
+    let metadata = std::fs::metadata(path)?;
+    QUARANTINED
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .push((metadata.dev(), metadata.ino()));
+    Ok(())
+}
+
+/// Whether the fake's [`Platform::quarantine`] marked the file at `path`,
+/// whatever its name since.
+pub fn quarantined(path: &Path) -> bool {
+    use std::os::unix::fs::MetadataExt;
+    let Ok(metadata) = std::fs::metadata(path) else {
+        return false;
+    };
+    QUARANTINED
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .contains(&(metadata.dev(), metadata.ino()))
 }

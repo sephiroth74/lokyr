@@ -19,7 +19,8 @@ struct Heard {
 }
 
 /// A plugin whose `saver.save` saves a PNG through the panel, whose
-/// `saver.copy` puts it on the clipboard.
+/// `saver.copy` puts it on the clipboard, and whose `saver.script` saves a
+/// script of a name that ends as an image's.
 struct Saver {
     heard: Rc<RefCell<Heard>>,
 }
@@ -28,7 +29,7 @@ const MANIFEST: &str = "[plugin]\nname = \"lokyr/saver\"\nkind = \"builtin\"\nli
 
 impl Plugin for Saver {
     fn activate(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
-        for name in ["saver.save", "saver.copy"] {
+        for name in ["saver.save", "saver.copy", "saver.script"] {
             cx.register_command(Command {
                 name: name.to_owned(),
                 title: name.to_owned(),
@@ -45,6 +46,9 @@ impl Plugin for Saver {
         let png = Image::blank(2.0).png.0;
         let done = match name {
             "saver.save" => cx.save_file(None, "Lokyr.png", png).map(drop),
+            "saver.script" => cx
+                .save_file(None, "shot.png.command", b"#!/bin/sh\necho hi\n".to_vec())
+                .map(drop),
             _ => cx.set_clipboard_image(png),
         };
         if let Err(error) = done {
@@ -91,8 +95,9 @@ fn a_save_shows_its_panel_on_the_window_and_writes_the_file_where_the_user_chose
     command(&mut fake, &mut app, "saver.save");
     let panels = fake.save_panels().to_vec();
     assert_eq!(panels.len(), 1);
-    let (panel, shown, name) = panels[0].clone();
+    let (panel, shown, name, message) = panels[0].clone();
     assert_eq!((shown, name.as_str()), (window, "Lokyr.png"));
+    assert_eq!(message, "lokyr/saver saves this file.");
     // A second while it shows, refused.
     command(&mut fake, &mut app, "saver.save");
     assert_eq!(heard.borrow().codes, [Code::Failed]);
@@ -103,6 +108,10 @@ fn a_save_shows_its_panel_on_the_window_and_writes_the_file_where_the_user_chose
     assert!(fake.close_save_panel(&mut app, panel, Some(path.clone())));
     fake.send(&mut app, window, WindowEvent::Frame);
     assert_eq!(std::fs::read(&path).unwrap(), Image::blank(2.0).png.0);
+    assert!(
+        lokyr_platform_core::fake::quarantined(&path),
+        "marked as from elsewhere"
+    );
     assert_eq!(
         heard.borrow().saved,
         [Event::Saved {
@@ -117,7 +126,7 @@ fn a_save_shows_its_panel_on_the_window_and_writes_the_file_where_the_user_chose
     heard.borrow_mut().saved.clear();
     // Cancelled: no file, a save of none.
     command(&mut fake, &mut app, "saver.save");
-    let (panel, _, _) = fake.save_panels()[0].clone();
+    let (panel, ..) = fake.save_panels()[0].clone();
     fake.close_save_panel(&mut app, panel, None);
     fake.send(&mut app, window, WindowEvent::Frame);
     assert!(matches!(
@@ -131,7 +140,7 @@ fn a_save_shows_its_panel_on_the_window_and_writes_the_file_where_the_user_chose
     heard.borrow_mut().saved.clear();
     // A write that fails, told.
     command(&mut fake, &mut app, "saver.save");
-    let (panel, _, _) = fake.save_panels()[0].clone();
+    let (panel, ..) = fake.save_panels()[0].clone();
     let file = folder.join("file");
     std::fs::write(&file, "x").unwrap();
     fake.close_save_panel(&mut app, panel, Some(file.join("under-a-file.png")));
@@ -151,4 +160,34 @@ fn a_plugin_s_png_goes_on_the_platform_s_clipboard() {
     assert!(heard.borrow().codes.is_empty());
     assert_eq!(fake.clipboard_image(), Some(&Image::blank(2.0).png.0[..]));
     assert_eq!(fake.clipboard_text(), None);
+}
+
+#[test]
+fn a_script_that_a_plugin_saved_asks_before_it_runs() {
+    let (mut fake, mut app, window, _) = saver();
+    let folder = std::env::temp_dir().join(format!("lokyr-app-scripts-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&folder);
+    std::fs::create_dir_all(&folder).unwrap();
+    fake.send_app(&mut app, AppEvent::Command("saver.script".to_owned()));
+    let (panel, ..) = fake.save_panels()[0].clone();
+    let path = folder.join("shot.png.command");
+    fake.close_save_panel(&mut app, panel, Some(path.clone()));
+    fake.send(&mut app, window, WindowEvent::Frame);
+    assert!(path.exists());
+    // Opened, as of a double click in the Finder: Lokyr asks first, as of a
+    // download.
+    let windows = fake.windows().count();
+    fake.send_app(&mut app, AppEvent::OpenFiles(vec![path.clone()]));
+    let asked = fake.alerts().last().cloned().expect("a question");
+    assert!(
+        asked.alert.message.contains("shot.png.command"),
+        "{:?}",
+        asked.alert
+    );
+    assert_eq!(
+        fake.windows().count(),
+        windows,
+        "nothing runs before the answer"
+    );
+    std::fs::remove_dir_all(&folder).unwrap();
 }

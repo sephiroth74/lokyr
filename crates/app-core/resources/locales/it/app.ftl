@@ -98,6 +98,7 @@ menu-appearance-system = Automatico
 menu-appearance-light = Chiaro
 menu-appearance-dark = Scuro
 title-buttons-more = Altro
+save-panel-message = { $name } salva questo file.
 menu-look-up = Cerca info su “{ $word }”
 menu-man-page = Apri la pagina man per “{ $page }”
 menu-man-search = Cerca “{ $words }” nell'indice delle pagine man

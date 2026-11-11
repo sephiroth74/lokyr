@@ -101,6 +101,8 @@ menu-appearance-light = Light
 menu-appearance-dark = Dark
 # The titlebar button that lists, in a menu, the titlebar buttons that find no room.
 title-buttons-more = More
+# The message over the save panel that a plugin shows, which names the plugin that saves the file.
+save-panel-message = { $name } saves this file.
 # The context menu's Look Up, which names the selection, shortened.
 menu-look-up = Look Up “{ $word }”
 # The context menu's man page, which names the page.

@@ -341,6 +341,10 @@ impl Platform for Backend {
         downloaded(path)
     }
 
+    fn quarantine(&self) -> lokyr_platform_core::Quarantine {
+        quarantine
+    }
+
     fn is_default_terminal(&self) -> bool {
         crate::default_terminal::known()
     }
@@ -793,10 +797,16 @@ impl Platform for Backend {
         self.kept_awake.set(awake, reason);
     }
 
-    fn show_save_panel(&mut self, window: WindowId, name: &str) -> SavePanelId {
+    fn show_save_panel(&mut self, window: WindowId, name: &str, message: &str) -> SavePanelId {
         let id = SavePanelId::new(self.next_id());
         match self.windows.get(&window) {
-            Some(shown) => save::begin(self.mtm, shown.ns_window(), name, self.shared.clone(), id),
+            Some(shown) => save::begin(
+                self.mtm,
+                shown.ns_window(),
+                (name, message),
+                self.shared.clone(),
+                id,
+            ),
             // Of a window not there, a panel that the user never saw.
             None => {
                 if let Some(shared) = self.shared.upgrade() {
@@ -1131,9 +1141,53 @@ fn downloaded(path: &Path) -> bool {
     flags.is_none_or(|flags| flags & USER_APPROVED == 0)
 }
 
+/// Marks the file at `path` as a download that the user has not let open,
+/// as a browser marks it, of Lokyr the agent: Gatekeeper and [`downloaded`]
+/// ask before it opens as a program.
+fn quarantine(path: &Path) -> std::io::Result<()> {
+    use std::os::unix::ffi::OsStrExt;
+    /// The flag of a file that came from elsewhere, of no approval.
+    const FROM_ELSEWHERE: u32 = 0x0001;
+    let path = std::ffi::CString::new(path.as_os_str().as_bytes())
+        .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidInput, "a path of a NUL"))?;
+    let since = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |since| since.as_secs());
+    // `flags;time;agent;id`, its flags and time in hex.
+    let value = format!("{FROM_ELSEWHERE:04x};{since:08x};Lokyr;");
+    // SAFETY: both strings are NUL-terminated and `value`'s bytes live
+    // through the call, which reads `value.len()` of them.
+    let set = unsafe {
+        libc::setxattr(
+            path.as_ptr(),
+            c"com.apple.quarantine".as_ptr(),
+            value.as_ptr().cast(),
+            value.len(),
+            0,
+            0,
+        )
+    };
+    if set == 0 {
+        Ok(())
+    } else {
+        Err(std::io::Error::last_os_error())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_quarantined_file_is_downloaded_until_gatekeeper_approves_it() {
+        let path = std::env::temp_dir().join(format!("lokyr-quarantined-{}", std::process::id()));
+        std::fs::write(&path, b"#!/bin/sh\n").unwrap();
+        assert!(!downloaded(&path));
+        quarantine(&path).unwrap();
+        assert!(downloaded(&path));
+        std::fs::remove_file(&path).unwrap();
+        assert!(quarantine(&path).is_err(), "of no file");
+    }
 
     #[test]
     fn the_system_s_version_is_macos_s_with_its_build() {
