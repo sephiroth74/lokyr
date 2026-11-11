@@ -461,6 +461,9 @@ pub struct FakeHost {
     /// The ids of the images that the host keeps of the plugin's, the
     /// oldest first.
     kept: Vec<u64>,
+    /// What the plugin's images may still draw, and the host's time when
+    /// it last asked for one.
+    images: (crate::image::Budget, Option<u64>),
     /// What the plugin keeps from idle sleep.
     awake: host::Awake,
     font_size: f32,
@@ -550,6 +553,7 @@ impl FakeHost {
             jobs: BTreeMap::new(),
             saved: BTreeMap::new(),
             kept: Vec::new(),
+            images: (crate::image::Budget::default(), None),
             awake: host::Awake::Off,
             font_size: 13.0,
             missing: Vec::new(),
@@ -2678,12 +2682,24 @@ impl Calling<'_> {
                 if self.imaged >= crate::image::MOST_IMAGES {
                     return Err(Error::new(Code::Failed, crate::image::IMAGES_BOUND));
                 }
+                let image = image.clone().bounded();
                 image.check()?;
+                // Of the plugin's budget of pixels in time, as the app's.
+                let (budget, at) = &mut self.host.images;
+                let now = self.host.clock;
+                if let Some(at) = *at {
+                    budget.refill(std::time::Duration::from_millis(now.saturating_sub(at)));
+                }
+                *at = Some(now);
+                budget.check()?;
                 self.imaged += 1;
                 // A clear pixel, as the fake draws nothing, at the scale
-                // asked for or of a display of 2; kept, as the app keeps
-                // its picture, the oldest let go past the most.
-                let mut rendered = crate::image::Image::blank(image.scale.unwrap_or(SCALE));
+                // asked for or of a display of 2, lowered as the app lowers
+                // it past the most; kept, as the app keeps its picture, the
+                // oldest let go past the most.
+                let drawn = crate::image::nominal(&image, SCALE);
+                self.host.images.0.spend(&image, drawn.as_ref().ok());
+                let mut rendered = drawn?;
                 if image.keep {
                     let id = self.host.next_id();
                     self.host.kept.push(id);

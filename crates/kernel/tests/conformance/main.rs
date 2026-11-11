@@ -491,12 +491,14 @@ impl Clipboard for Board {
 }
 
 /// The images of the kernel's host: a clear pixel each, at the scale
-/// asked for or the fake's display's, as the fake host draws nothing.
+/// asked for or the fake's display's, lowered past the most, as the fake
+/// host draws nothing.
 struct Blank;
 
 impl Images for Blank {
     fn render(&mut self, _: &str, image: &ImageSpec) -> Result<Image, String> {
-        let mut rendered = Image::blank(image.scale.unwrap_or(lokyr_plugin_sdk::fake::SCALE));
+        let mut rendered = lokyr_plugin_sdk::image::nominal(image, lokyr_plugin_sdk::fake::SCALE)
+            .map_err(|error| error.message)?;
         // An id of its own, which the trace tells as 0, as the fake's.
         rendered.id = image.keep.then_some(1);
         Ok(rendered)

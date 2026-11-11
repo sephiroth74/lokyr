@@ -1033,7 +1033,6 @@ impl<'a, B: FontBackend> Painter<'a, B> {
         shape
     }
 
-    /// Adds `shape` to the shapes of the item before, if they are shapes.
     /// The picture of the image `image` whole within `frame`, in its
     /// middle, of its own proportions; nothing of an image that the
     /// renderer holds no picture of.
@@ -1058,6 +1057,7 @@ impl<'a, B: FontBackend> Painter<'a, B> {
         });
     }
 
+    /// Adds `shape` to the shapes of the item before, if they are shapes.
     fn push_shape(&mut self, shape: Shape) {
         match self.items.last_mut() {
             Some(Item::Shapes(shapes)) => shapes.push(shape),
@@ -1587,8 +1587,6 @@ mod tests {
         }
     }
 
-    /// `root` laid out at `scale` in `width` points, and painted from
-    /// `origin` in the dark variant's tokens.
     #[test]
     fn an_image_s_node_draws_its_picture_whole_in_its_middle_of_its_proportions() {
         use lokyr_plugin_sdk::view::{Layout as Box, Length};
@@ -1647,6 +1645,8 @@ mod tests {
         );
     }
 
+    /// `root` laid out at `scale` in `width` points, and painted from
+    /// `origin` in the dark variant's tokens.
     fn painted(
         root: &Node,
         scale: f32,

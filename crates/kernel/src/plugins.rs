@@ -442,6 +442,8 @@ struct State {
     held_cursors: BTreeSet<host::PaneId>,
     /// What it keeps from idle sleep, which the app holds as it is active.
     awake: host::Awake,
+    /// What its images may still draw, and when it last asked for one.
+    images: (image::Budget, Option<Instant>),
     /// The quick windows that it opened, which close as it stops.
     quick_windows: Vec<WindowId>,
     /// Its calls on the main thread that took long, since the last look:
@@ -1405,6 +1407,7 @@ impl Plugins {
                 gutter_marks: BTreeMap::new(),
                 held_cursors: BTreeSet::new(),
                 awake: host::Awake::Off,
+                images: (image::Budget::default(), None),
                 quick_windows: Vec::new(),
                 slow: Vec::new(),
                 fault: None,
@@ -4993,14 +4996,20 @@ impl Host<'_, '_> {
                 if self.tally.images >= MOST_IMAGES {
                     return Err(Error::new(Code::Failed, IMAGES_BOUND));
                 }
+                let image = image.bounded();
                 image.check()?;
+                // Of the plugin's budget of pixels in time, which each image
+                // takes, refused or drawn.
+                let (budget, at) = &mut self.state.images;
+                if let Some(at) = *at {
+                    budget.refill(self.context.now.saturating_duration_since(at));
+                }
+                *at = Some(self.context.now);
+                budget.check()?;
                 self.tally.images += 1;
-                Response::Image(
-                    self.context
-                        .images
-                        .render(&self.state.name, &image)
-                        .map_err(|message| Error::new(Code::Unavailable, message))?,
-                )
+                let drawn = self.context.images.render(&self.state.name, &image);
+                budget.spend(&image, drawn.as_ref().ok());
+                Response::Image(drawn.map_err(|message| Error::new(Code::Unavailable, message))?)
             }
             Asked::Commands => {
                 // The rest of the registry to a plugin of `user-commands`

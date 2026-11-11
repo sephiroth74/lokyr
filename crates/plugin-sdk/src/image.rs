@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use crate::command::{Code, Error};
 use crate::host::{Bytes, StyleRun};
 
-/// The most rows that an image draws.
+/// The most rows that an image draws: the rows past them are left out.
 pub const MOST_ROWS: usize = 1000;
 
 /// The most columns that an image draws: the cells of a row past them are
@@ -16,10 +16,11 @@ pub const MOST_ROWS: usize = 1000;
 pub const MOST_COLUMNS: u16 = 1000;
 
 /// The most characters of a row's text: a column's cell, its combining
-/// marks too.
+/// marks too; the characters past them are left out.
 pub const MOST_ROW_CHARS: usize = 4 * MOST_COLUMNS as usize;
 
-/// The most characters of an image's title.
+/// The most characters of an image's title: a longer one is shortened, of
+/// an ellipsis.
 pub const MOST_TITLE_CHARS: usize = 256;
 
 /// The most points of the room around an image's window.
@@ -31,12 +32,33 @@ pub const LEAST_SCALE: f32 = 1.0;
 /// The most pixels of a point of an image.
 pub const MOST_SCALE: f32 = 4.0;
 
+/// The least pixels of a point that an image is drawn at, of a scale
+/// lowered until it is within [`MOST_SIDE`] and [`MOST_PIXELS`]: an image
+/// past them even so is refused.
+pub const LEAST_FITTED_SCALE: f32 = 0.5;
+
 /// The most pixels of an image's side, as a GPU draws a texture.
 pub const MOST_SIDE: u32 = 16_384;
 
-/// The most pixels of an image, its width by its height: a screen of 8K
-/// whole, and more.
-pub const MOST_PIXELS: u64 = 40_000_000;
+/// The most pixels of an image, its width by its height: a screen of 5K
+/// whole, whose PNG of text a Luau plugin can still save and copy.
+pub const MOST_PIXELS: u64 = 16_000_000;
+
+/// The most pixels of the images that the host keeps of a plugin's, all
+/// together, past which it lets the oldest go.
+pub const MOST_KEPT_PIXELS: u64 = MOST_PIXELS;
+
+/// The pixels of the images that a plugin may have drawn at once, which
+/// [`IMAGE_RATE`] gives back in time.
+pub const IMAGE_BUDGET: u64 = 2 * MOST_PIXELS;
+
+/// The pixels a second given back to a plugin's [`IMAGE_BUDGET`].
+pub const IMAGE_RATE: u64 = 4_000_000;
+
+/// The pixels that an image of cells costs at the least, a cell of 8 by 16
+/// pixels, as the work of laying its cells out, though it is refused or
+/// drawn smaller.
+pub const NOMINAL_CELL: (u32, u32) = (8, 16);
 
 /// The most images that one call renders, each of the main thread's time.
 pub const MOST_IMAGES: usize = 4;
@@ -48,6 +70,10 @@ pub const MOST_KEPT: usize = 4;
 /// The message of the error of an image past [`MOST_IMAGES`] in a call,
 /// which every host gives alike.
 pub const IMAGES_BOUND: &str = "a call renders 4 images at most";
+
+/// The message of the error of an image that a plugin asks for past its
+/// [`IMAGE_BUDGET`], which every host gives alike.
+pub const IMAGES_BUSY: &str = "a plugin's images take 4 million pixels a second at most";
 
 /// The message of the error of an image that a call that only looks asks
 /// for, which every host gives alike.
@@ -88,7 +114,7 @@ pub enum ImageBackground {
 /// something, as a background, and its bar's buttons and title.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct ImageSpec {
-    /// The rows, from the top, [`MOST_ROWS`] at most, one at least.
+    /// The rows, from the top, one at least, of which [`MOST_ROWS`] show.
     pub rows: Vec<CellRow>,
     /// The title in the window's bar, if it shows one.
     #[serde(default)]
@@ -133,47 +159,57 @@ impl ImageSpec {
         self.buttons || self.title.is_some()
     }
 
-    /// The image as a host takes it, or the error that tells why it does
-    /// not: of no row or too many, of a text too long or of a control
-    /// character, of a run past the columns or backwards, of room or a
-    /// scale out of their ranges.
+    /// The image within its bounds, as a host draws it: the rows past
+    /// [`MOST_ROWS`], a row's characters past [`MOST_ROW_CHARS`] and its
+    /// runs from [`MOST_COLUMNS`] left out, a run that goes past them cut
+    /// there, and a title of more than [`MOST_TITLE_CHARS`] shortened, of
+    /// an ellipsis.
+    #[must_use]
+    pub fn bounded(mut self) -> Self {
+        self.rows.truncate(MOST_ROWS);
+        for row in &mut self.rows {
+            if let Some((cut, _)) = row.text.char_indices().nth(MOST_ROW_CHARS) {
+                row.text.truncate(cut);
+            }
+            row.runs.retain(|run| run.first < MOST_COLUMNS);
+            row.runs.truncate(usize::from(MOST_COLUMNS));
+            for run in &mut row.runs {
+                run.last = run.last.min(MOST_COLUMNS - 1);
+            }
+        }
+        if let Some(title) = &mut self.title
+            && let Some((cut, _)) = title.char_indices().nth(MOST_TITLE_CHARS - 1)
+            && title[cut..].chars().nth(1).is_some()
+        {
+            title.truncate(cut);
+            title.push('…');
+        }
+        self
+    }
+
+    /// The image as a host takes it, of [`ImageSpec::bounded`]'s bounds,
+    /// or the error that tells why it does not: of no row, of a control
+    /// character, of a run backwards, of a least size, room or a scale out
+    /// of their ranges.
     pub fn check(&self) -> Result<(), Error> {
         let refused = |message: String| Err(Error::new(Code::Failed, message));
-        if self.rows.is_empty() || self.rows.len() > MOST_ROWS {
-            return refused(format!("an image draws 1 to {MOST_ROWS} rows"));
+        if self.rows.is_empty() {
+            return refused("an image draws a row at least".to_owned());
         }
         for row in &self.rows {
-            if row.text.chars().count() > MOST_ROW_CHARS {
-                return refused(format!(
-                    "a row of an image has {MOST_ROW_CHARS} characters at most"
-                ));
-            }
             if row.text.chars().any(char::is_control) {
                 return refused("a row of an image has no control character".to_owned());
             }
-            if row.runs.len() > usize::from(MOST_COLUMNS) {
-                return refused(format!("a row of an image has {MOST_COLUMNS} runs at most"));
-            }
-            if row
-                .runs
-                .iter()
-                .any(|run| run.first > run.last || run.last >= MOST_COLUMNS)
-            {
-                return refused(format!(
-                    "a run of an image's cells goes from a column to one after it, \
-                     below {MOST_COLUMNS}"
-                ));
+            if row.runs.iter().any(|run| run.first > run.last) {
+                return refused(
+                    "a run of an image's cells goes from a column to one after it".to_owned(),
+                );
             }
         }
-        if let Some(title) = &self.title {
-            if title.chars().count() > MOST_TITLE_CHARS {
-                return refused(format!(
-                    "an image's title has {MOST_TITLE_CHARS} characters at most"
-                ));
-            }
-            if title.chars().any(char::is_control) {
-                return refused("an image's title has no control character".to_owned());
-            }
+        if let Some(title) = &self.title
+            && title.chars().any(char::is_control)
+        {
+            return refused("an image's title has no control character".to_owned());
         }
         if self
             .min_columns
@@ -202,6 +238,38 @@ impl ImageSpec {
         Ok(())
     }
 
+    /// The columns and the rows that it lays out at the most: its widest
+    /// row's columns, of its text's characters and its runs, and its rows,
+    /// of its least size too, within its bounds.
+    fn extent(&self) -> (usize, usize) {
+        let columns = self
+            .rows
+            .iter()
+            .map(|row| {
+                let text = row.text.chars().count().min(usize::from(MOST_COLUMNS));
+                let runs = row.runs.iter().map(|run| usize::from(run.last) + 1).max();
+                text.max(runs.unwrap_or(0))
+            })
+            .max()
+            .unwrap_or(0)
+            .max(usize::from(self.min_columns.unwrap_or(0)))
+            .min(usize::from(MOST_COLUMNS));
+        let rows = self
+            .rows
+            .len()
+            .max(usize::from(self.min_rows.unwrap_or(0)))
+            .min(MOST_ROWS);
+        (columns, rows)
+    }
+
+    /// The cells that it lays out at the most, of [`ImageSpec::extent`]:
+    /// what an image costs at the least, of [`NOMINAL_CELL`] each, though
+    /// it is refused.
+    pub fn cells(&self) -> u64 {
+        let (columns, rows) = self.extent();
+        (columns * rows) as u64
+    }
+
     /// The numbers that it carries of its own, its padding and its scale.
     pub(crate) fn numbers(&self) -> Vec<f64> {
         let mut numbers = vec![f64::from(self.padding)];
@@ -210,8 +278,92 @@ impl ImageSpec {
     }
 }
 
+/// What a plugin's images may still draw: of [`IMAGE_BUDGET`] pixels at
+/// once, given back at [`IMAGE_RATE`] a second, each image's cost taken
+/// after it is drawn, its pixels or its cells', which may leave it owing.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Budget {
+    /// The pixels left, below zero of a plugin that owes them.
+    left: f64,
+}
+
+impl Default for Budget {
+    fn default() -> Self {
+        Self {
+            left: IMAGE_BUDGET as f64,
+        }
+    }
+}
+
+impl Budget {
+    /// Gives back the pixels of `elapsed`, up to the whole budget.
+    pub fn refill(&mut self, elapsed: std::time::Duration) {
+        self.left =
+            (self.left + elapsed.as_secs_f64() * IMAGE_RATE as f64).min(IMAGE_BUDGET as f64);
+    }
+
+    /// Whether another image may be drawn, of pixels left; the error that
+    /// tells it may not.
+    pub fn check(&self) -> Result<(), Error> {
+        if self.left > 0.0 {
+            Ok(())
+        } else {
+            Err(Error::new(Code::Failed, IMAGES_BUSY))
+        }
+    }
+
+    /// Takes the cost of `image`, drawn as `drawn` or refused: its pixels,
+    /// or its cells' of [`NOMINAL_CELL`] where they are more.
+    pub fn spend(&mut self, image: &ImageSpec, drawn: Option<&Image>) {
+        let cells = image.cells() * u64::from(NOMINAL_CELL.0 * NOMINAL_CELL.1);
+        let pixels = drawn.map_or(0, |drawn| u64::from(drawn.width) * u64::from(drawn.height));
+        self.left -= pixels.max(cells) as f64;
+    }
+}
+
+/// The image that a host of no drawing gives of `image`, as the fake host
+/// does: a clear pixel, at the scale asked for, or `scale`, lowered as the
+/// app lowers it for an image past [`MOST_SIDE`] or [`MOST_PIXELS`], of
+/// cells of [`NOMINAL_CELL`] points and the window's frame; the error of
+/// one past them at [`LEAST_FITTED_SCALE`].
+pub fn nominal(image: &ImageSpec, scale: f32) -> Result<Image, Error> {
+    let asked = image.scale.unwrap_or(scale);
+    let (columns, rows) = image.extent();
+    let (columns, rows) = (columns as f64, rows as f64);
+    // The cells, the room around them and the bar, in points.
+    let frame = 2.0 * f64::from(image.padding) + 2.0 * 8.0;
+    let width = columns * f64::from(NOMINAL_CELL.0) + frame;
+    let height =
+        rows * f64::from(NOMINAL_CELL.1) + frame + if image.has_bar() { 28.0 } else { 0.0 };
+    let fits = |scale: f64| {
+        let (width, height) = ((width * scale).ceil(), (height * scale).ceil());
+        width <= f64::from(MOST_SIDE)
+            && height <= f64::from(MOST_SIDE)
+            && width * height <= MOST_PIXELS as f64
+    };
+    let mut drawn = f64::from(asked);
+    while !fits(drawn) {
+        if drawn <= f64::from(LEAST_FITTED_SCALE) {
+            return Err(Error::new(Code::Unavailable, past_the_most(width, height)));
+        }
+        drawn = (drawn * 0.9).max(f64::from(LEAST_FITTED_SCALE));
+    }
+    Ok(Image::blank(drawn as f32))
+}
+
+/// The error of an image of `width` by `height` points past the most at
+/// [`LEAST_FITTED_SCALE`].
+fn past_the_most(width: f64, height: f64) -> String {
+    format!(
+        "an image of {width:.0} by {height:.0} points is past the most, {MOST_SIDE} pixels a side \
+         and {MOST_PIXELS} pixels, at a scale of {LEAST_FITTED_SCALE}"
+    )
+}
+
 /// An image that the host rendered: a PNG, of its size in pixels, and the
-/// pixels of a point that it took, which its PNG tells as its resolution.
+/// pixels of a point that it took, which its PNG tells as its resolution:
+/// the scale asked for, or lower, of an image that would be past
+/// [`MOST_SIDE`] or [`MOST_PIXELS`] at it.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Image {
     /// The PNG's bytes, which cross to Luau as a string.
@@ -283,41 +435,129 @@ mod tests {
     }
 
     #[test]
-    fn an_image_out_of_its_bounds_is_refused() {
-        let refused = |image: ImageSpec| image.check().unwrap_err();
-        assert!(refused(spec(&[])).message.contains("1 to 1000 rows"));
-        assert!(refused(spec(&[""; MOST_ROWS + 1])).message.contains("rows"));
-        let long = "x".repeat(MOST_ROW_CHARS + 1);
-        assert!(refused(spec(&[&long])).message.contains("characters"));
-        for control in ["a\x1b[31mb", "a\nb", "a\u{9b}b", "a\u{7f}"] {
-            let error = refused(spec(&[control]));
-            assert_eq!(error.code, Code::Failed);
-            assert!(error.message.contains("control"), "{control:?}");
-        }
+    fn an_image_past_its_bounds_is_cut_to_them() {
         let run = |first, last| StyleRun {
             first,
             last,
             style: TextStyle::default(),
         };
-        for runs in [vec![run(3, 2)], vec![run(0, MOST_COLUMNS)]] {
-            let image = ImageSpec {
-                rows: vec![CellRow {
-                    text: "abc".to_owned(),
-                    runs,
-                }],
-                ..ImageSpec::default()
+        let long = "x".repeat(MOST_ROW_CHARS + 10);
+        let mut rows = vec![
+            CellRow {
+                text: long,
+                runs: vec![
+                    run(0, MOST_COLUMNS + 5),
+                    run(MOST_COLUMNS, MOST_COLUMNS + 1)
+                ],
             };
-            assert!(refused(image).message.contains("run"));
+            MOST_ROWS + 3
+        ];
+        rows[1].runs = vec![run(1, 2); usize::from(MOST_COLUMNS) + 1];
+        let image = ImageSpec {
+            rows,
+            title: Some("t".repeat(MOST_TITLE_CHARS + 40)),
+            ..ImageSpec::default()
         }
+        .bounded();
+        assert_eq!(image.check(), Ok(()));
+        assert_eq!(image.rows.len(), MOST_ROWS);
+        assert_eq!(image.rows[0].text.chars().count(), MOST_ROW_CHARS);
+        assert_eq!(image.rows[0].runs, [run(0, MOST_COLUMNS - 1)]);
+        assert_eq!(image.rows[1].runs.len(), usize::from(MOST_COLUMNS));
+        let title = image.title.unwrap();
+        assert_eq!(title.chars().count(), MOST_TITLE_CHARS);
+        assert!(title.ends_with('…'));
+        // A title of the most stays whole.
+        let whole = "t".repeat(MOST_TITLE_CHARS);
+        let titled = ImageSpec {
+            title: Some(whole.clone()),
+            ..spec(&["a"])
+        }
+        .bounded();
+        assert_eq!(titled.title, Some(whole));
+    }
+
+    #[test]
+    fn an_image_costs_its_pixels_or_its_cells_and_the_budget_comes_back_in_time() {
+        let mut budget = Budget::default();
+        assert_eq!(budget.check(), Ok(()));
+        let big = ImageSpec {
+            min_columns: Some(MOST_COLUMNS),
+            min_rows: Some(1000),
+            ..spec(&["a"])
+        };
+        assert_eq!(big.cells(), 1_000_000);
+        // Refused, its cells cost all the same: 128 million pixels.
+        budget.spend(&big, None);
+        let error = budget.check().unwrap_err();
+        assert_eq!(error.message, IMAGES_BUSY);
+        // 128 million owed less 32 million at once: 24 seconds and more.
+        budget.refill(std::time::Duration::from_secs(24));
+        assert!(budget.check().is_err());
+        budget.refill(std::time::Duration::from_secs(1));
+        assert_eq!(budget.check(), Ok(()));
+        // A small image costs its pixels, drawn bigger than its cells.
+        let mut budget = Budget::default();
+        let drawn = Image {
+            width: 4000,
+            height: 4000,
+            ..Image::blank(2.0)
+        };
+        budget.spend(&spec(&["a"]), Some(&drawn));
+        budget.spend(&spec(&["a"]), Some(&drawn));
+        assert!(budget.check().is_err(), "32 million spent");
+        budget.refill(std::time::Duration::from_secs(3600));
+        assert_eq!(budget, Budget::default(), "never more than the whole");
+    }
+
+    #[test]
+    fn a_host_of_no_drawing_lowers_the_scale_of_an_image_past_the_most() {
+        let tall = spec(&["x"; MOST_ROWS]);
+        // 1000 rows of 16 points at 2: 32 000 pixels, lowered.
+        let drawn = nominal(&tall, 2.0).unwrap();
+        assert!(
+            drawn.scale < 1.03 && drawn.scale >= LEAST_FITTED_SCALE,
+            "{}",
+            drawn.scale
+        );
+        assert_eq!(nominal(&spec(&["ls"]), 2.0).unwrap().scale, 2.0);
+        let huge = ImageSpec {
+            min_columns: Some(MOST_COLUMNS),
+            ..tall
+        };
+        assert!(
+            nominal(&huge, 2.0)
+                .unwrap_err()
+                .message
+                .contains("past the most")
+        );
+    }
+
+    #[test]
+    fn an_image_out_of_its_bounds_is_refused() {
+        let refused = |image: ImageSpec| image.check().unwrap_err();
+        assert!(refused(spec(&[])).message.contains("a row at least"));
+        for control in ["a\x1b[31mb", "a\nb", "a\u{9b}b", "a\u{7f}"] {
+            let error = refused(spec(&[control]));
+            assert_eq!(error.code, Code::Failed);
+            assert!(error.message.contains("control"), "{control:?}");
+        }
+        let backwards = ImageSpec {
+            rows: vec![CellRow {
+                text: "abc".to_owned(),
+                runs: vec![StyleRun {
+                    first: 3,
+                    last: 2,
+                    style: TextStyle::default(),
+                }],
+            }],
+            ..ImageSpec::default()
+        };
+        assert!(refused(backwards).message.contains("run"));
         let titled = |title: String| ImageSpec {
             title: Some(title),
             ..spec(&["a"])
         };
-        assert!(
-            refused(titled("t".repeat(MOST_TITLE_CHARS + 1)))
-                .message
-                .contains("title")
-        );
         assert!(
             refused(titled("a\tb".to_owned()))
                 .message

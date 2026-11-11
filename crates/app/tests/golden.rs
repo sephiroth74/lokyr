@@ -2077,3 +2077,68 @@ fn an_image_of_cells_renders_to_a_png_as_its_golden_images() {
         check_image("image-titled-dark", &titled, true);
     }
 }
+
+#[test]
+fn an_image_past_the_most_is_drawn_smaller_and_the_kept_pictures_are_bounded_in_pixels() {
+    use lokyr_kernel::plugins::Images as _;
+    use lokyr_plugin_sdk::image::{
+        CellRow, ImageSpec, LEAST_FITTED_SCALE, MOST_COLUMNS, MOST_KEPT_PIXELS, MOST_PIXELS,
+        MOST_SIDE,
+    };
+    let Ok(mut drawing) = lokyr_app_core::Drawing::<Images>::new(FontConfig {
+        size: Size::try_from(POINTS).unwrap(),
+        ..FontConfig::default()
+    }) else {
+        eprintln!("no Metal device: the images are not drawn");
+        return;
+    };
+    let theme = Theme::builtin();
+    let window = lokyr_kernel::config::WindowConfig::default();
+    let (mut kept, mut last) = (std::collections::BTreeMap::new(), 0);
+    let mut painter = lokyr_app_core::ImagePainter {
+        drawing: Some(&mut drawing),
+        kept: (&mut kept, &mut last),
+        colors: &theme.variant(true).colors,
+        widths: lokyr_vt_core::unicode::Widths::default(),
+        look: TextLook::default(),
+        padding: (window.padding_x, window.padding_y),
+        scale: 2.0,
+    };
+    let row = CellRow {
+        text: "cargo build --release".to_owned(),
+        runs: Vec::new(),
+    };
+    // A selection of 1000 rows, past a side at 2: drawn smaller, within
+    // the most, as its scale tells.
+    let tall = ImageSpec {
+        rows: vec![row.clone(); 1000],
+        title: Some("zsh".to_owned()),
+        buttons: true,
+        keep: true,
+        ..ImageSpec::default()
+    };
+    let rendered = painter.render("acme/snap", &tall).unwrap();
+    assert!(
+        rendered.scale < 2.0 && rendered.scale >= LEAST_FITTED_SCALE,
+        "{}",
+        rendered.scale
+    );
+    assert!(rendered.height <= MOST_SIDE && rendered.width <= MOST_SIDE);
+    assert!(u64::from(rendered.width) * u64::from(rendered.height) <= MOST_PIXELS);
+    // Kept again and again: the oldest let go past the pixels' most.
+    for _ in 0..3 {
+        painter.render("acme/snap", &tall).unwrap();
+    }
+    let pixels: u64 = painter.kept.0["acme/snap"]
+        .values()
+        .map(|picture| u64::from(picture.size.0) * u64::from(picture.size.1))
+        .sum();
+    assert!(pixels <= MOST_KEPT_PIXELS, "{pixels}");
+    // Past the most even at the least scale: refused.
+    let huge = ImageSpec {
+        min_columns: Some(MOST_COLUMNS),
+        ..tall
+    };
+    let error = painter.render("acme/snap", &huge).unwrap_err();
+    assert!(error.contains("past the most"), "{error}");
+}

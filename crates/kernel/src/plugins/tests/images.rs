@@ -174,3 +174,94 @@ fn a_plugin_on_its_thread_renders_its_images_through_the_main_thread() {
     assert_eq!(rendered[MOST_IMAGES], Err(Code::Failed));
     assert_eq!(app.images.asked.len(), MOST_IMAGES);
 }
+
+/// A plugin whose `painter.huge` renders an image of the most cells, and
+/// whose `painter.titled` one of a title past its bound.
+struct Huge {
+    got: Got,
+}
+
+impl Plugin for Huge {
+    fn activate(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
+        cx.register_command(command("painter.huge"))?;
+        cx.register_command(command("painter.titled"))
+    }
+
+    fn on_command(&mut self, cx: &mut Cx<'_>, name: &str, _: Args) -> Result<(), Error> {
+        let image = match name {
+            "painter.huge" => Spec {
+                min_columns: Some(lokyr_plugin_sdk::image::MOST_COLUMNS),
+                min_rows: Some(1000),
+                ..spec("x", None)
+            },
+            _ => Spec {
+                title: Some("t".repeat(300)),
+                ..spec("x", None)
+            },
+        };
+        let got = cx
+            .render_image(image)
+            .map(|image| (image.width, image.scale))
+            .map_err(|error| error.code);
+        self.got.lock().unwrap().push(got);
+        Ok(())
+    }
+}
+
+#[test]
+fn a_plugin_s_images_take_its_budget_of_pixels_which_comes_back_in_time() {
+    let mut app = App::default();
+    let mut plugins = Plugins::new();
+    let got = Got::default();
+    plugins
+        .add(
+            "painter",
+            Box::new(Huge {
+                got: Arc::clone(&got),
+            }),
+        )
+        .unwrap();
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    let huge = |plugins: &mut Plugins, app: &mut App| {
+        plugins
+            .run("painter.huge", Args::new(), &mut app.context())
+            .unwrap();
+        got.lock().unwrap().pop().unwrap()
+    };
+    // A million cells cost 128 million pixels, of a budget of 32: drawn,
+    // then owed.
+    assert!(huge(&mut plugins, &mut app).is_ok());
+    assert_eq!(huge(&mut plugins, &mut app), Err(Code::Failed));
+    assert_eq!(app.images.asked.len(), 1, "refused before the app draws it");
+    // Given back at 4 million a second: 24 seconds owe still, 25 do not.
+    app.wait(Duration::from_secs(24));
+    assert_eq!(huge(&mut plugins, &mut app), Err(Code::Failed));
+    app.wait(Duration::from_secs(1));
+    assert!(huge(&mut plugins, &mut app).is_ok());
+}
+
+#[test]
+fn an_image_past_its_bounds_reaches_the_app_cut_to_them() {
+    let mut app = App::default();
+    let mut plugins = Plugins::new();
+    let got = Got::default();
+    plugins
+        .add(
+            "painter",
+            Box::new(Huge {
+                got: Arc::clone(&got),
+            }),
+        )
+        .unwrap();
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    plugins
+        .run("painter.titled", Args::new(), &mut app.context())
+        .unwrap();
+    assert!(got.lock().unwrap()[0].is_ok());
+    let title = app.images.asked[0].title.clone().unwrap();
+    assert_eq!(
+        title.chars().count(),
+        lokyr_plugin_sdk::image::MOST_TITLE_CHARS
+    );
+    assert!(title.ends_with('…'));
+}

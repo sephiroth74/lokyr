@@ -811,8 +811,13 @@ type Cx = {
     -- window's, which the host renders offscreen with the terminal's own renderer: its PNG. The window is as wide as
     -- its widest row, of its text and of the cells past it that show something, as a background, and as its bar's
     -- buttons and title need. No capability, as it reads nothing of the app's but the theme and the font: the cells
-    -- are the plugin's, as `line_text` and `styles` read them. 1000 rows of 1000 columns at most, 16 384 pixels a side
-    -- and 40 million pixels; 4 a call, none of a look, as each takes the main thread some milliseconds.
+    -- are the plugin's, as `line_text` and `styles` read them, in the theme's colors and not those that a program set
+    -- of its own. 1000 rows of 1000 columns, a row's 4000 characters and a title's 256: the rest left out, the title
+    -- shortened. 16 384 pixels a side and 16 million pixels at most: an image past them at its scale drawn at a lower
+    -- one, down to 0.5, which `Image`'s `scale` tells, refused past them even there. 4 a call, none of a look, and of
+    -- the plugin's budget, 32 million pixels at once, given back at 4 million a second, which each image takes of its
+    -- pixels, or of 128 a cell where they are more, though it is refused: as each takes the main thread some
+    -- milliseconds. A Luau plugin carries 16 MiB of bytes back to the host, an image's PNG to save or copy among them.
     render_image: (image: ImageSpec) -> (Image?, Error?),
     -- Lets go an image that the host keeps, as the call returns, whose nodes then draw nothing; one that it does not
     -- keep stays so.
@@ -1006,13 +1011,13 @@ installed ──▶ resolved ──▶ consent ──▶ loaded ──▶ active
   - a call's writes and its requests of the app's, which apply as it returns, 10 000 at most together, past which another fails;
   - its reads of rows, each on a thread of the host's, four under way at most;
   - the searches that a call starts, each on a thread of the host's, 16 at most, a pane's ending the one before as the call returns; a look of `applies` starts and ends none, and a call that fails ends those that it started, the ones that they would have ended running on;
-  - the images of cells that a call renders, each on the main thread, of a GPU's texture and its PNG, 4 at most, of 1000 rows of 1000 columns, 16 384 pixels a side and 40 million pixels at most; a look of `applies` renders none; the images that the host keeps of a plugin's, for its views' nodes, each a picture of the renderer's, 4 at most, the oldest let go past them, and all as the plugin stops;
+  - the images of cells that a call renders, each on the main thread, of a GPU's texture and its PNG, 4 at most, of 1000 rows of 1000 columns, 16 384 pixels a side and 16 million pixels at most, of a scale lowered to fit, and of a plugin's budget of 32 million pixels at once, given back at 4 million a second, which each image takes, refused or drawn; a look of `applies` renders none; the images that the host keeps of a plugin's, for its views' nodes, each a picture of the renderer's, 4 and 16 million pixels at most together, the oldest let go past them, and all as the plugin stops;
   - a plugin's timers, 64 at most, past which another fails until one fires or is cancelled, of a delay of 10 ms at least, which a shorter one takes, so that a timer wakes the app 100 times a second at most, and a day at most; a timer that fired many times before its plugin heard of it owes it one event;
   - the calls that wait for a plugin's thread while it makes one, its commands, renders and its views' events, 256 at most, and 10 000 events: past them, its thread, which took none of them, is taken for stuck, and its plugin disabled, as a notice tells;
   - a chain of commands that run commands, 16 deep and 256 runs at most;
   - a plugin's commands, keys and menu items, 4096 at most together; a key or an item that it declared already changes nothing, so that the keymap and the menus are not made anew, and `keys-changed` comes as the keymap changes alone.
 - **Numbers**: a request's numbers are finite, as JSON holds them, its values', its arguments', a window's point, a share, a size, a fade, and an image's room and scale: a NaN or an infinity is refused, as `wrong-kind`; a text's points, from 4 to 200, go to a quarter of one, and the interface keeps 32 faces of other sizes at most, as a plugin's text of a new size at each frame would keep one each.
-- **Hostile plugins in CI**: plugins of Luau of a third party's manifest run on the plugins' host against every build, `lokyr-kernel`'s test `hostile`, each stopped as its limit says, what it asked gone, and a plugin beside it running its command and hearing its events: a loop, faulted at its deadline, on the main thread and on a thread of its own, which the main thread never waits for; an allocation and a string that doubles, faulted at the memory's limit; a table a hundred thousand levels deep and one that holds itself, refused as they convert; a flood of writes, refused past a call's 10 000, then faulted at the deadline; a capability not granted, refused; a `require` out of its package, which stops the activation; and a runaway recursion, whose call fails of a stack overflow. With the escape probes of [F0-22](tasks/F0-foundations.md#f0-22--spike-lua-plugin-runtimes), so the sandbox stays closed.
+- **Hostile plugins in CI**: plugins of Luau of a third party's manifest run on the plugins' host against every build, `lokyr-kernel`'s test `hostile`, each stopped as its limit says, what it asked gone, and a plugin beside it running its command and hearing its events: a flood of images, held to its budget of pixels; a loop, faulted at its deadline, on the main thread and on a thread of its own, which the main thread never waits for; an allocation and a string that doubles, faulted at the memory's limit; a table a hundred thousand levels deep and one that holds itself, refused as they convert; a flood of writes, refused past a call's 10 000, then faulted at the deadline; a capability not granted, refused; a `require` out of its package, which stops the activation; and a runaway recursion, whose call fails of a stack overflow. With the escape probes of [F0-22](tasks/F0-foundations.md#f0-22--spike-lua-plugin-runtimes), so the sandbox stays closed.
 
 ## Native code and the hardened runtime
 

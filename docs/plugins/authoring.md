@@ -269,7 +269,7 @@ A new version is a new `version` in the manifest, a new tag, and `sleip publish`
 
 **Capabilities** guard the calls that reach what is the user's: the panes' text, typing into them, the clipboard, the processes, the workspace, the notifications, the Mac's sleep. A call of a capability that the plugin lacks fails, of the code 302; [the capabilities](../PLUGIN-SYSTEM.md#capabilities) list them all.
 
-**Limits.** Each callback runs within its deadline, 16 ms for `render` and `applies`, 250 ms for a command, an event or a view's event, and a second for the activation; a plugin holds 64 MB at most; a callback writes 10 000 times at most; past them the host stops the plugin, starts it again after a while, and turns it off at its third fault within a minute. [The limits](../PLUGIN-SYSTEM.md#limits-and-isolation) tell them all.
+**Limits.** Each callback runs within its deadline, 16 ms for `render` and `applies`, 250 ms for a command, an event or a view's event, and a second for the activation; a plugin holds 64 MB at most: past them the plugin faults, and the host stops it, starts it again after a while, and turns it off at its third fault within a minute. A callback writes 10 000 times at most, a write past them failing; a value that the plugin gives the host carries 16 MiB of text or bytes at most; its images take 32 million pixels at once, given back at 4 million a second. [The limits](../PLUGIN-SYSTEM.md#limits-and-isolation) tell them all.
 
 **The sandbox.** Luau's `string`, `table`, `math`, `bit32`, `utf8` and `buffer`, and `require` of the plugin's own modules, as `require("./look")` of `src/look.luau`: no files, no network, no processes.
 
@@ -279,5 +279,6 @@ A new version is a new `version` in the manifest, a new tag, and `sleip publish`
 
 - **The plugin does not load**: Lokyr tells why in a notice, as a manifest that does not read, an API that it lacks, or a capability that it refuses. `sleip check` tells the same of the folder.
 - **A call fails**: its second answer is the message, its third the code, whose hundreds tell the kind: 1xx a wrong call, 2xx a failure, 3xx a capability missing, 4xx a fault.
-- **A callback errs**: Lokyr tells it in a notice, of the source's line; three faults within a minute turn the plugin off until Lokyr starts again or its section turns it on.
+- **A callback errs**: Lokyr tells it in a notice, of the source's line, and the plugin goes on, its call's writes dropped.
+- **A plugin faults**, past its deadline or its memory: Lokyr stops it and starts it again after a while; three faults within a minute turn it off until Lokyr starts again or its section turns it on.
 - **Sleip itself**: `sleip doctor` checks the config's folder, the lockfile, the store and Lokyr's plugin API.

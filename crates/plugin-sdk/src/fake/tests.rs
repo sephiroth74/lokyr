@@ -1934,6 +1934,55 @@ fn a_kept_image_s_id_is_kept_four_at_most_and_let_go_as_the_plugin_asks() {
 }
 
 #[test]
+fn the_fake_s_images_are_bounded_as_the_app_s_their_scale_lowered_past_the_most() {
+    use crate::image::{CellRow, IMAGES_BUSY, ImageSpec, LEAST_FITTED_SCALE, MOST_COLUMNS};
+    let mut host = FakeHost::new("acme/probe").with_capabilities(Vec::new());
+    let scales = Rc::new(RefCell::new(Vec::new()));
+    let told = Rc::clone(&scales);
+    let mut tall = Probe::new(move |cx, _| {
+        let image = cx.render_image(ImageSpec {
+            rows: vec![CellRow::default(); 1000],
+            scale: Some(2.0),
+            ..ImageSpec::default()
+        });
+        told.borrow_mut().push(
+            image
+                .map(|image| image.scale)
+                .map_err(|error| error.message),
+        );
+        Ok(())
+    });
+    // 1000 rows at 2 are past a side: drawn smaller.
+    host.command(&mut tall, "probe.go", Args::new()).unwrap();
+    let scale = scales.borrow()[0].clone().unwrap();
+    assert!((LEAST_FITTED_SCALE..2.0).contains(&scale), "{scale}");
+    // Past the most at the least scale, refused; the budget, owed then, is
+    // given back in time.
+    let mut huge = Probe::new(|cx, _| {
+        cx.render_image(ImageSpec {
+            rows: vec![CellRow::default()],
+            min_columns: Some(MOST_COLUMNS),
+            min_rows: Some(1000),
+            ..ImageSpec::default()
+        })
+        .map(drop)
+    });
+    let error = host
+        .command(&mut huge, "probe.go", Args::new())
+        .unwrap_err();
+    assert!(error.message.contains("past the most"), "{}", error.message);
+    let error = host
+        .command(&mut huge, "probe.go", Args::new())
+        .unwrap_err();
+    assert_eq!(error.message, IMAGES_BUSY);
+    host.advance(std::time::Duration::from_secs(40));
+    let error = host
+        .command(&mut huge, "probe.go", Args::new())
+        .unwrap_err();
+    assert!(error.message.contains("past the most"));
+}
+
+#[test]
 fn a_plugin_keeps_the_mac_awake_of_its_capability_as_its_call_returns() {
     use crate::host::Awake;
     let mut host = FakeHost::new("acme/probe").with_capabilities(vec![Capability::KeepAwake]);

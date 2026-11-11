@@ -6,10 +6,12 @@ use std::collections::BTreeMap;
 
 use lokyr_kernel::config::Padding;
 use lokyr_kernel::plugins::host::Bytes;
-use lokyr_kernel::plugins::image::{MOST_KEPT, MOST_PIXELS, MOST_SIDE};
+use lokyr_kernel::plugins::image::{
+    LEAST_FITTED_SCALE, MOST_KEPT, MOST_KEPT_PIXELS, MOST_PIXELS, MOST_SIDE,
+};
 use lokyr_kernel::plugins::{self, Image, ImageSpec};
 use lokyr_render_core::Renderer;
-use lokyr_ui_core::image::{compose, terminal};
+use lokyr_ui_core::image::{bound, compose, terminal};
 use lokyr_ui_core::paint::{Picture, Pictures};
 use lokyr_ui_core::pane::TextLook;
 use lokyr_vt_core::terminal::{Colors, Snapshot};
@@ -44,7 +46,6 @@ impl<B: Backend> plugins::Images for ImagePainter<'_, B> {
             .drawing
             .as_deref_mut()
             .ok_or("the app draws no image, as it has no GPU")?;
-        let scale = image.scale.unwrap_or(self.scale);
         let mut snapshot = Snapshot::default();
         terminal(
             &image.rows,
@@ -53,14 +54,13 @@ impl<B: Backend> plugins::Images for ImagePainter<'_, B> {
             self.colors.clone(),
         )
         .snapshot(&mut snapshot);
-        // Its cells alone past the most, refused before they are laid out.
-        let before = drawing.font.scale();
-        drawing.font.set_scale(scale);
-        let cell = *drawing.font.cell();
-        drawing.font.set_scale(before);
-        within(
-            u64::from(snapshot.cols()) * u64::from(cell.width),
-            u64::from(snapshot.rows()) * u64::from(cell.height),
+        // The scale asked for, lowered until the image is within the most,
+        // before its glyphs are laid out.
+        let scale = fitting(
+            drawing,
+            image,
+            &snapshot,
+            (image.scale.unwrap_or(self.scale), self.padding),
         )?;
         // The glyphs of the frames that the GPU still draws stay in the
         // atlas, as a window's frame keeps them.
@@ -92,7 +92,8 @@ impl<B: Backend> plugins::Images for ImagePainter<'_, B> {
             .map_err(|error| error.to_string())?
             .ok_or("the renderer reads no image back")?;
         // A picture of it that the renderer keeps, for its plugin's views,
-        // the oldest of the plugin's let go past the most.
+        // the oldest of the plugin's let go past the most, in number and in
+        // pixels together.
         let id = if image.keep {
             let picture = renderer
                 .make_picture(&composed.list, width, height)
@@ -108,7 +109,15 @@ impl<B: Backend> plugins::Images for ImagePainter<'_, B> {
                     size: (width, height),
                 },
             );
-            while pictures.len() > MOST_KEPT {
+            let pixels = |pictures: &Pictures| {
+                pictures
+                    .values()
+                    .map(|picture| u64::from(picture.size.0) * u64::from(picture.size.1))
+                    .sum::<u64>()
+            };
+            while pictures.len() > MOST_KEPT
+                || (pictures.len() > 1 && pixels(pictures) > MOST_KEPT_PIXELS)
+            {
                 if let Some((_, oldest)) = pictures.pop_first() {
                     renderer.drop_picture(oldest.id);
                 }
@@ -136,6 +145,52 @@ impl<B: Backend> plugins::Images for ImagePainter<'_, B> {
             drawing.renderer.drop_picture(dropped.id);
         }
     }
+}
+
+/// The scale that `image` of `snapshot`'s cells is drawn at, of `asked`,
+/// the one that it asks for or the display's, and the window's `padding`:
+/// lowered until the image is within the most, of [`LEAST_FITTED_SCALE`]
+/// at the least; the error of one past the most even there.
+fn fitting<B: Backend>(
+    drawing: &mut Drawing<B>,
+    image: &ImageSpec,
+    snapshot: &Snapshot,
+    (asked, padding): (f32, (Padding, Padding)),
+) -> Result<f32, String> {
+    /// The tries of a lower scale, as the cells' pixels round.
+    const TRIES: usize = 8;
+    let before = drawing.font.scale();
+    let mut scale = asked;
+    let mut fitted = Err(String::new());
+    for _ in 0..TRIES {
+        drawing.font.set_scale(scale);
+        let cell = *drawing.font.cell();
+        let padding = (
+            padding.0.pixels(f64::from(scale)),
+            padding.1.pixels(f64::from(scale)),
+        );
+        let (width, height) = bound(
+            image,
+            (snapshot.cols(), snapshot.rows()),
+            (cell.width, cell.height),
+            padding,
+            scale,
+        );
+        fitted = within(width, height).map(|()| scale);
+        if fitted.is_ok() || scale <= LEAST_FITTED_SCALE {
+            break;
+        }
+        // Down by what the image is past the most, a little more.
+        let (width, height) = (width as f64, height as f64);
+        let side = f64::from(MOST_SIDE);
+        let ratio = (side / width)
+            .min(side / height)
+            .min((MOST_PIXELS as f64 / (width * height)).sqrt())
+            .min(0.98);
+        scale = ((f64::from(scale) * ratio * 0.98) as f32).max(LEAST_FITTED_SCALE);
+    }
+    drawing.font.set_scale(before);
+    fitted
 }
 
 /// Whether an image of `width` by `height` pixels is within the most that
@@ -225,11 +280,11 @@ mod tests {
 
     #[test]
     fn an_image_is_within_its_sides_and_its_pixels() {
-        assert_eq!(within(16_384, 2441), Ok(()));
+        assert_eq!(within(16_384, 976), Ok(()));
         assert_eq!(within(1, 16_384), Ok(()));
         assert!(within(16_385, 1).unwrap_err().contains("16385 by 1"));
         assert!(within(1, 16_385).is_err());
-        assert!(within(10_000, 4001).is_err());
+        assert!(within(4000, 4001).is_err());
     }
 
     #[test]

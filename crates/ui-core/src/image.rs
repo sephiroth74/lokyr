@@ -315,6 +315,37 @@ pub struct Composed {
     pub height: u32,
 }
 
+/// The most pixels that [`compose`] makes of `image`, of `cells` columns
+/// and rows of `cell` pixels each, `padding` pixels across and down, at
+/// `scale`: its size, of the title's room whole.
+pub fn bound(
+    image: &ImageSpec,
+    cells: (u16, u16),
+    cell: (u32, u32),
+    padding: (u32, u32),
+    scale: f32,
+) -> (u64, u64) {
+    let whole = |points: f32| u64::from((points * scale).round() as u32);
+    let (padding_x, padding_y) = (
+        u64::from(padding.0).max(whole(LEAST_PADDING)),
+        u64::from(padding.1).max(whole(LEAST_PADDING)),
+    );
+    let cells_width = u64::from(cells.0) * u64::from(cell.0);
+    let cells_height = u64::from(cells.1) * u64::from(cell.1);
+    let bar = if image.has_bar() { whole(BAR) } else { 0 };
+    let buttons_end = BUTTONS_LEFT + 3.0 * BUTTON + 2.0 * BUTTON_GAP;
+    let bar_width = if image.has_bar() {
+        whole(2.0 * (buttons_end + TITLE_MARGIN) + TITLE_ROOM)
+    } else {
+        0
+    };
+    let outer = whole(image.padding);
+    (
+        (cells_width + 2 * padding_x).max(bar_width) + 2 * outer,
+        bar + cells_height + 2 * padding_y + 2 * outer,
+    )
+}
+
 /// The image that `image` asks for of `snapshot`'s cells, in `look`, at
 /// `scale`, of `font`, `padding` pixels across and down between the cells
 /// and the window's edges, as a window's own, of [`LEAST_PADDING`] at

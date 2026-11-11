@@ -1772,6 +1772,7 @@ fn a_call_is_its_own_plugin_s() {
             gutter_marks: BTreeMap::new(),
             held_cursors: std::collections::BTreeSet::new(),
             awake: host::Awake::Off,
+            images: (image::Budget::default(), None),
             quick_windows: Vec::new(),
             slow: Vec::new(),
             fault: None,

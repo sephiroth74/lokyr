@@ -1,7 +1,8 @@
 //! Hostile plugins of Luau, on the plugins' host, each a plugin of a third
 //! party's manifest: a loop, an allocation, a string's growth, a deep
-//! table and one that holds itself, a flood of calls, a capability not
-//! granted, a `require` out of its package and a runaway recursion. Each
+//! table and one that holds itself, a flood of calls, a flood of images, a
+//! capability not granted, a `require` out of its package and a runaway
+//! recursion. Each
 //! is stopped as its limit says, what it asked goes, and the app goes on:
 //! a well-behaved plugin beside it runs its command and hears its events.
 
@@ -44,12 +45,13 @@ impl Panes for NoPanes {
     }
 }
 
-/// The images of the tests: a clear pixel each.
-struct Blank;
+/// The images of the tests: a clear pixel each, counted.
+struct Blank(usize);
 
 impl Images for Blank {
     fn render(&mut self, _: &str, image: &ImageSpec) -> Result<Image, String> {
-        Ok(Image::blank(image.scale.unwrap_or(2.0)))
+        self.0 += 1;
+        lokyr_plugin_sdk::image::nominal(image, 2.0).map_err(|error| error.message)
     }
 
     fn drop_image(&mut self, _: &str, _: u64) {}
@@ -71,7 +73,7 @@ impl App {
             workspace: Workspace::new(),
             panes: NoPanes,
             clipboard: Board(Some("before".to_owned())),
-            images: Blank,
+            images: Blank(0),
         }
     }
 
@@ -401,6 +403,33 @@ fn a_loop_on_its_own_thread_never_holds_the_main_thread() {
     let errors = served(&mut plugins, &mut app);
     assert_eq!(errors.len(), 1, "{errors:?}");
     faulted(&plugins, &errors[0], "past its deadline of 250 ms");
+    goes_on(&mut plugins, &mut app, &heard);
+}
+
+#[test]
+fn a_flood_of_images_is_held_to_the_plugin_s_budget_of_pixels() {
+    let mut app = App::new();
+    // Four images of a million cells each call, as of a timer's firings.
+    let source = commanded(
+        r#"
+        for _ = 1, 4 do
+            cx.render_image({ rows = { { text = "x" } }, min_columns = 1000, min_rows = 1000 })
+        end
+        "#,
+    );
+    let (mut plugins, heard, errors) = plugins(&mut app, &source, "");
+    assert!(errors.is_empty(), "{errors:?}");
+    let start = Instant::now();
+    for _ in 0..50 {
+        plugins
+            .run("hostile.go", Args::new(), &mut app.context())
+            .unwrap();
+    }
+    // The first drawn, the rest refused before the app draws them, until
+    // the budget comes back, 24 seconds later.
+    assert!(start.elapsed() < Duration::from_secs(20));
+    assert_eq!(app.images.0, 1);
+    assert_eq!(plugins.status(HOSTILE), Some(Status::Active));
     goes_on(&mut plugins, &mut app, &heard);
 }
 
