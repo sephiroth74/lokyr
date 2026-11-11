@@ -20,6 +20,7 @@ use crate::l10n::Texts;
 use crate::workspace::{Environment, Grid, Settings};
 
 mod bounds;
+mod cells;
 mod config;
 mod consent;
 mod images;
@@ -100,10 +101,10 @@ pub(super) fn binding(keys: &str, command: &str, when: Option<&str>) -> PluginBi
     }
 }
 
-/// A clipboard of the test's own: its text, and every text put on it, in
-/// order.
+/// A clipboard of the test's own: its text, every text put on it, in
+/// order, and the image put on it last, which takes its text's place.
 #[derive(Default)]
-pub(super) struct Board(Option<String>, Vec<String>);
+pub(super) struct Board(Option<String>, Vec<String>, Option<Vec<u8>>);
 
 impl Clipboard for Board {
     fn text(&self) -> Option<String> {
@@ -113,6 +114,11 @@ impl Clipboard for Board {
     fn set_text(&mut self, text: &str) {
         self.0 = Some(text.to_owned());
         self.1.push(text.to_owned());
+    }
+
+    fn set_image(&mut self, png: &[u8]) {
+        self.0 = None;
+        self.2 = Some(png.to_vec());
     }
 }
 
@@ -171,6 +177,9 @@ pub(super) struct App {
     panes: Spawner,
     clipboard: Board,
     pub(super) images: Painter,
+    /// Whether a window shows a save panel, as the test says; none does
+    /// without.
+    pub(super) saving: Option<Box<dyn Fn(WindowId) -> bool>>,
     pub(super) focused: Option<WindowId>,
     /// The language shown, English's of none.
     pub(super) language: Option<&'static str>,
@@ -215,6 +224,10 @@ impl App {
             keys: &|_, _| None,
             enabled: &|_| true,
             themes: &no_themes,
+            saving: match &self.saving {
+                Some(saving) => &**saving,
+                None => &|_| false,
+            },
             language: self.language.unwrap_or("en"),
             now,
         }

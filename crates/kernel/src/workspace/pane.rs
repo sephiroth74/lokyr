@@ -12,8 +12,8 @@ use lokyr_vt_core::page::Style;
 use lokyr_vt_core::page::{Rgb, Scrollback};
 use lokyr_vt_core::parser::Parser;
 use lokyr_vt_core::terminal::{
-    self, ClipboardRequest, Colors, InputModes, KeyboardFlags, Look, Origin, Scroll, Selected,
-    SelectionShape, SelectionUnit, Snapshot, Terminal, WORD_SEPARATORS,
+    self, ClipboardRequest, Colors, InputModes, KeyboardFlags, Look, Origin, RowCells, Scroll,
+    Selected, SelectionShape, SelectionUnit, Snapshot, Terminal, WORD_SEPARATORS,
 };
 use lokyr_vt_core::unicode::{Normalization, Tables, Widths};
 
@@ -865,6 +865,23 @@ impl Pane {
         self.session
             .as_ref()
             .and_then(|session| session.lock().row_styles(row))
+    }
+
+    /// The cells of the rows that the view shows, as
+    /// [`Terminal::view_cells`] gives them; none without a terminal.
+    pub fn view_cells(&self) -> Vec<RowCells> {
+        self.session
+            .as_ref()
+            .map(|session| session.lock().view_cells())
+            .unwrap_or_default()
+    }
+
+    /// The cells of the selection, `most` rows at most, as
+    /// [`Terminal::selection_cells`] gives them.
+    pub fn selection_cells(&self, most: usize) -> Option<Vec<RowCells>> {
+        self.session
+            .as_ref()
+            .and_then(|session| session.lock().selection_cells(most))
     }
 
     /// Whether the terminal holds the rows numbered `rows`, of its active

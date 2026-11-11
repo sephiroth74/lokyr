@@ -95,6 +95,14 @@ pub enum AppEvent {
     Wake,
     /// An item of the main menu was chosen: its command.
     Command(String),
+    /// A save panel closed: the path that the user chose, or none as the
+    /// user cancelled or its window closed.
+    SavePanelClosed {
+        /// The panel.
+        panel: crate::SavePanelId,
+        /// The file's path, absolute.
+        path: Option<std::path::PathBuf>,
+    },
     /// An alert closed, with the index of the button that closed it.
     AlertClosed {
         /// The alert.

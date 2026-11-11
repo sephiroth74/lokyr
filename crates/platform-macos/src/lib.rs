@@ -27,6 +27,7 @@ mod menu;
 mod notify;
 mod open;
 mod quick;
+mod save;
 mod screens;
 mod secure;
 mod services;

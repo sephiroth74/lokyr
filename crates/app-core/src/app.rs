@@ -30,8 +30,8 @@ use lokyr_kernel::workspace::{
 use lokyr_platform_core::Layer;
 use lokyr_platform_core::{
     AboutLine, AboutPanel, Alert, AlertId, AlertStyle, AppEvent, Appearance, GlobalKey, Handler,
-    Platform, ScreenPoint, Size, TargetKind, TimerId, WindowAttributes, WindowEvent, WindowId,
-    WindowSize,
+    Platform, SavePanelId, ScreenPoint, Size, TargetKind, TimerId, WindowAttributes, WindowEvent,
+    WindowId, WindowSize,
 };
 use lokyr_pty::Program;
 use lokyr_render_core::{Renderer, Surface as _};
@@ -686,6 +686,8 @@ pub struct App<B: Backend> {
     /// The texts that plugins ask the user for, on their windows, with the
     /// plugin and the question's id, by their alerts.
     text_asks: BTreeMap<AlertId, (WindowId, String, u64)>,
+    /// The saves that plugins asked, whose panels show, by their panels.
+    saves: BTreeMap<SavePanelId, asks::Save>,
     /// Where the windows of the workspace that a plugin's move of a tab
     /// opened go on the screens, until they show in the platform's.
     placing: BTreeMap<workspace::WindowId, ScreenPoint>,
@@ -878,6 +880,7 @@ impl<B: Backend> App<B> {
             title_asks: BTreeMap::new(),
             part_asks: BTreeMap::new(),
             text_asks: BTreeMap::new(),
+            saves: BTreeMap::new(),
             placing: BTreeMap::new(),
             placing_size: None,
             tab_drag: None,
@@ -2761,6 +2764,9 @@ impl<B: Backend> App<B> {
         // focused pane settled them.
         let menu_enabled = &self.menu_enabled;
         let enabled = |command: &str| menu_enabled.get(command).copied().unwrap_or(true);
+        // Whether a window of the workspace shows a save panel.
+        let saves = &self.saves;
+        let saving = |window: workspace::WindowId| saves.values().any(|save| save.window == window);
         let mut images = images::ImagePainter {
             drawing: self.drawing.as_mut(),
             colors: &self.theme.variant(dark).colors,
@@ -2786,6 +2792,7 @@ impl<B: Backend> App<B> {
             keys: &keys,
             enabled: &enabled,
             themes: &theme_list,
+            saving: &saving,
             language: self.texts.language(),
             now: Instant::now(),
         };
@@ -2886,6 +2893,13 @@ impl<B: Backend> App<B> {
                     plugin,
                     capabilities,
                 } => self.ask_consent(platform, plugin, capabilities),
+                Request::SaveFile {
+                    plugin,
+                    id,
+                    window,
+                    name,
+                    bytes,
+                } => self.ask_save(platform, (plugin, id), window, &name, bytes),
                 Request::AskText {
                     plugin,
                     id,
@@ -3988,6 +4002,7 @@ impl<B: Backend> App<B> {
                 suppressed,
                 text,
             } => self.alert_closed(platform, alert, (button, suppressed), text.as_deref()),
+            AppEvent::SavePanelClosed { panel, path } => self.save_panel_closed(panel, path),
             AppEvent::AppearanceChanged(appearance) => {
                 self.appearance_changed(platform, appearance);
             }
@@ -4218,6 +4233,10 @@ impl plugins::Clipboard for PlatformClipboard<'_> {
 
     fn set_text(&mut self, text: &str) {
         self.0.set_clipboard_text(text);
+    }
+
+    fn set_image(&mut self, png: &[u8]) {
+        self.0.set_clipboard_image(png);
     }
 }
 

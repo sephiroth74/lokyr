@@ -9,7 +9,9 @@ use std::hash::{Hash, Hasher};
 use std::ops::Range;
 
 use super::Terminal;
-use crate::page::{Content, ListRow, PageList, PinId, Position, RowFlag, Style, StyleId, Width};
+use crate::page::{
+    Color, Content, ListRow, PageList, PinId, Position, RowFlag, Style, StyleId, Width,
+};
 
 /// The characters that end a word, besides spaces, by default: quotes,
 /// brackets and the punctuation that separates fields, so that a path or a
@@ -53,6 +55,20 @@ pub struct RowText {
     /// Whether it soft-wraps into the next row, its logical line going on
     /// there.
     pub wrapped: bool,
+}
+
+/// A row's cells, as a read of them gives them: its text, as a read of rows
+/// gives it, without the spaces that end it, and the styles of its cells,
+/// as runs of their columns from the first that the read takes, a
+/// background that an erase left of no style among them.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RowCells {
+    /// Its text: a cell without a character a space, a cluster whole, a
+    /// wide character once.
+    pub text: String,
+    /// The styles of its cells: each run the columns from the first to the
+    /// last of one style, with the style.
+    pub runs: Vec<(u16, u16, Style)>,
 }
 
 /// The selection, as a renderer shows it: its first and last cells, each
@@ -473,6 +489,63 @@ fn push_cells(text: &mut String, row: ListRow<'_>, columns: Range<u16>) {
     }
 }
 
+/// The style of `row`'s cell at `x`: its own, or, of a cell that an erase
+/// left of a background alone and no style, that background.
+fn style_at(row: ListRow<'_>, x: u16) -> Style {
+    let cell = row.cell(x);
+    match cell.content() {
+        Content::BgPalette(index) => Style {
+            bg: Color::Palette(index),
+            ..Style::default()
+        },
+        Content::BgRgb(rgb) => Style {
+            bg: Color::Rgb(rgb),
+            ..Style::default()
+        },
+        Content::Char(_) | Content::Grapheme(_) => *row.parts().0.styles().get(cell.style()),
+    }
+}
+
+/// The styles of `row`'s cells in `columns`, as runs of one style each,
+/// their columns from the first's.
+fn runs_of(row: ListRow<'_>, columns: Range<u16>) -> Vec<(u16, u16, Style)> {
+    let first = columns.start;
+    let mut runs: Vec<(u16, u16, Style)> = Vec::new();
+    for x in columns {
+        let style = style_at(row, x);
+        let at = x - first;
+        match runs.last_mut() {
+            Some((_, last, kept)) if *kept == style => *last = at,
+            _ => runs.push((at, at, style)),
+        }
+    }
+    runs
+}
+
+/// The cells of `row` in `columns`, wide characters whole: of none whose
+/// second half alone the columns start at, and of one whose first half
+/// alone they end at with its second.
+fn cells_of(row: ListRow<'_>, columns: Range<u16>) -> RowCells {
+    let cols = row.cols();
+    let mut columns = columns.start.min(cols)..columns.end.min(cols);
+    if columns.start < columns.end && row.cell(columns.start).width() == Width::SpacerTail {
+        columns.start += 1;
+    }
+    if columns.start < columns.end
+        && columns.end < cols
+        && row.cell(columns.end - 1).width() == Width::Wide
+    {
+        columns.end += 1;
+    }
+    let mut text = String::new();
+    push_cells(&mut text, row, columns.clone());
+    trim_line(&mut text);
+    RowCells {
+        text,
+        runs: runs_of(row, columns),
+    }
+}
+
 /// Drops the spaces that end `text`'s last line.
 fn trim_line(text: &mut String) {
     text.truncate(text.trim_end_matches(' ').len());
@@ -811,18 +884,33 @@ impl Terminal {
     /// a row that the list does not hold.
     pub fn row_styles(&self, row: i64) -> Option<Vec<(u16, u16, Style)>> {
         let list_row = row_at(&self.screen().rows, self.row_index(row)?)?;
-        let (page, _) = list_row.parts();
-        let mut runs: Vec<(u16, u16, StyleId)> = Vec::new();
-        for x in 0..list_row.cols() {
-            let style = list_row.cell(x).style();
-            match runs.last_mut() {
-                Some((_, last, id)) if *id == style => *last = x,
-                _ => runs.push((x, x, style)),
-            }
-        }
+        Some(runs_of(list_row, 0..list_row.cols()))
+    }
+
+    /// The cells of the rows that the view shows, from its top, as the
+    /// screen draws them.
+    pub fn view_cells(&self) -> Vec<RowCells> {
+        let rows = &self.screen().rows;
+        rows.rows_from(self.view_top())
+            .take(usize::from(self.rows))
+            .map(|row| cells_of(row, 0..row.cols()))
+            .collect()
+    }
+
+    /// The cells of the rows that the selection takes, if there is one,
+    /// `most` rows at most from its first: of each row the columns that it
+    /// takes, a rectangle's alike on every row.
+    pub fn selection_cells(&mut self, most: usize) -> Option<Vec<RowCells>> {
+        let bounds = self.settle_selection(None)?;
+        let selection = self.selection.as_ref()?;
+        let rows = &self.screen().rows;
+        let cols = rows.cols();
+        let (start, end) = bounds;
         Some(
-            runs.into_iter()
-                .map(|(first, last, id)| (first, last, *page.styles().get(id)))
+            (start.0..=end.0)
+                .zip(rows.rows_from(start.0))
+                .take(most)
+                .map(|(index, row)| cells_of(row, selection.columns(index, bounds, cols)))
                 .collect(),
         )
     }
@@ -1773,5 +1861,121 @@ mod tests {
         terminal.snapshot(&mut snapshot);
         assert_eq!(snapshot.selection(), None);
         assert_eq!(terminal.screen_rows().pins(), 0);
+    }
+
+    /// A run of cells, of its first and last columns, its bold, its
+    /// foreground and its background.
+    type Shown = (u16, u16, bool, Color, Color);
+
+    /// The text and the styles of `cells`.
+    fn shown(cells: &[RowCells]) -> Vec<(String, Vec<Shown>)> {
+        cells
+            .iter()
+            .map(|row| {
+                let runs = row
+                    .runs
+                    .iter()
+                    .map(|&(first, last, style)| (first, last, style.bold, style.fg, style.bg))
+                    .collect();
+                (row.text.clone(), runs)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_view_s_cells_are_its_rows_text_and_styles_an_erase_s_background_too() {
+        // `ls` bold, then a line whose background an erase to its end left.
+        let mut terminal = fed(8, 3, "\x1b[1mls\x1b[0m -l\r\n\x1b[44m\x1b[Kx\x1b[0m");
+        let cells = terminal.view_cells();
+        assert_eq!(cells.len(), 3);
+        let blue = Color::Palette(4);
+        assert_eq!(
+            shown(&cells),
+            [
+                (
+                    "ls -l".to_owned(),
+                    vec![
+                        (0, 1, true, Color::Default, Color::Default),
+                        (2, 7, false, Color::Default, Color::Default),
+                    ]
+                ),
+                ("x".to_owned(), vec![(0, 7, false, Color::Default, blue)]),
+                (
+                    String::new(),
+                    vec![(0, 7, false, Color::Default, Color::Default)]
+                ),
+            ]
+        );
+        // A row's styles tell the erase's background too.
+        let row = terminal.origin().row(1);
+        let styles = terminal.row_styles(row).unwrap();
+        assert!(styles.iter().all(|(_, _, style)| style.bg == blue));
+        // A view scrolled up shows rows of the scrollback.
+        feed(&mut terminal, "\r\nthree\r\nfour");
+        terminal.scroll_viewport(Scroll::Up(1));
+        assert_eq!(terminal.view_cells()[0].text, "ls -l");
+    }
+
+    #[test]
+    fn a_selection_s_cells_are_the_columns_that_it_takes_of_each_row() {
+        let mut terminal = fed(10, 3, "one two\r\n\x1b[31mthree\x1b[0m\r\nfour five");
+        let origin = terminal.origin();
+        let (first, last) = (origin.row(0), origin.row(2));
+        assert_eq!(terminal.selection_cells(10), None);
+        terminal.select(
+            (4, first),
+            (3, last),
+            SelectionShape::Cells,
+            SelectionUnit::Cell,
+            "",
+        );
+        let cells = terminal.selection_cells(10).unwrap();
+        let texts: Vec<&str> = cells.iter().map(|row| row.text.as_str()).collect();
+        assert_eq!(texts, ["two", "three", "four"]);
+        // The first row's from the column that it starts at.
+        assert_eq!(cells[0].runs[0].0, 0);
+        assert_eq!(cells[0].runs.last().unwrap().1, 5);
+        assert_eq!(cells[1].runs[0].2.fg, Color::Palette(1));
+        assert_eq!(terminal.selection_cells(2).unwrap().len(), 2);
+        // A rectangle's columns on every row.
+        terminal.select(
+            (1, first),
+            (3, last),
+            SelectionShape::Rectangle,
+            SelectionUnit::Cell,
+            "",
+        );
+        let texts: Vec<String> = terminal
+            .selection_cells(10)
+            .unwrap()
+            .into_iter()
+            .map(|row| row.text)
+            .collect();
+        assert_eq!(texts, ["ne", "hre", "our"]);
+    }
+
+    #[test]
+    fn a_selection_s_cells_take_wide_characters_whole() {
+        // `日本` at columns 0 to 3: a selection of the second half of `日`
+        // to the first half of `本`.
+        let mut terminal = fed(10, 1, "日本x");
+        let row = terminal.origin().row(0);
+        terminal.select(
+            (1, row),
+            (2, row),
+            SelectionShape::Rectangle,
+            SelectionUnit::Cell,
+            "",
+        );
+        let cells = terminal.selection_cells(10).unwrap();
+        assert_eq!(cells[0].text, "日本");
+        assert_eq!(cells[0].runs, [(0, 3, Style::default())]);
+        // Columns that start at a second half, and end at a first half.
+        let list_row = terminal.screen_rows().rows_from(0).next().unwrap();
+        let cells = cells_of(list_row, 1..3);
+        assert_eq!(cells.text, "本");
+        assert_eq!(cells.runs, [(0, 1, Style::default())]);
+        assert_eq!(cells_of(list_row, 0..1).text, "日");
+        assert_eq!(cells_of(list_row, 0..1).runs, [(0, 1, Style::default())]);
     }
 }

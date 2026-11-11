@@ -7,25 +7,27 @@ use std::rc::{Rc, Weak};
 use std::time::{Duration, Instant, SystemTime};
 
 use lokyr_platform_core::{
-    AboutPanel, Alert, AlertId, Appearance, Backdrop, ContentRect, ContextMenu, Error, Fill,
-    GlobalKey, Layer, LayerPlace, MainMenu, MenuRole, Platform, Point, PointerArea, PointerShape,
-    QuickPlace, ScreenPoint, ScreenRect, Scrollers, Shortcut, Size, Sweep, Target, TimerId,
-    Titlebar, Usage, Waker, WindowAttributes, WindowEvent, WindowHandle, WindowId, WindowSize,
+    AboutPanel, Alert, AlertId, AppEvent, Appearance, Backdrop, ContentRect, ContextMenu, Error,
+    Fill, GlobalKey, Layer, LayerPlace, MainMenu, MenuRole, Platform, Point, PointerArea,
+    PointerShape, QuickPlace, SavePanelId, ScreenPoint, ScreenRect, Scrollers, Shortcut, Size,
+    Sweep, Target, TimerId, Titlebar, Usage, Waker, WindowAttributes, WindowEvent, WindowHandle,
+    WindowId, WindowSize,
 };
 use objc2::rc::Retained;
 use objc2::{AnyThread, MainThreadMarker};
 use objc2_app_kit::{
     NSAlert, NSAppearanceCustomization, NSApplication, NSBeep, NSEvent, NSEventModifierFlags,
-    NSEventType, NSImage, NSMenu, NSPasteboard, NSPasteboardTypeString, NSRequestUserAttentionType,
-    NSScreen, NSView, NSWindow,
+    NSEventType, NSImage, NSMenu, NSPasteboard, NSPasteboardTypePNG, NSPasteboardTypeString,
+    NSRequestUserAttentionType, NSScreen, NSView, NSWindow,
 };
-use objc2_foundation::{NSLocale, NSPoint, NSString, NSTimer};
+use objc2_foundation::{NSData, NSLocale, NSPoint, NSString, NSTimer};
 use raw_window_handle::{AppKitWindowHandle, RawWindowHandle};
 
 use crate::drag_image::DragImage;
 use crate::global_keys::GlobalKeys;
 use crate::menu::MenuTarget;
 use crate::notify::Notifier;
+use crate::save;
 use crate::secure::SecureInput;
 use crate::shared::{Pending, Shared};
 use crate::updates::Updates;
@@ -773,6 +775,31 @@ impl Platform for Backend {
         let pasteboard = NSPasteboard::generalPasteboard();
         pasteboard.clearContents();
         pasteboard.setString_forType(&NSString::from_str(text), kind);
+    }
+
+    fn set_clipboard_image(&mut self, png: &[u8]) {
+        // SAFETY: the type is AppKit's constant.
+        let kind = unsafe { NSPasteboardTypePNG };
+        let pasteboard = NSPasteboard::generalPasteboard();
+        pasteboard.clearContents();
+        pasteboard.setData_forType(Some(&NSData::with_bytes(png)), kind);
+    }
+
+    fn show_save_panel(&mut self, window: WindowId, name: &str) -> SavePanelId {
+        let id = SavePanelId::new(self.next_id());
+        match self.windows.get(&window) {
+            Some(shown) => save::begin(self.mtm, shown.ns_window(), name, self.shared.clone(), id),
+            // Of a window not there, a panel that the user never saw.
+            None => {
+                if let Some(shared) = self.shared.upgrade() {
+                    shared.enqueue(Pending::App(AppEvent::SavePanelClosed {
+                        panel: id,
+                        path: None,
+                    }));
+                }
+            }
+        }
+        id
     }
 
     fn show_alert(&mut self, window: Option<WindowId>, alert: &Alert) -> AlertId {

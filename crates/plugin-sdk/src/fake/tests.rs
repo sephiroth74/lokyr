@@ -1708,3 +1708,130 @@ fn a_timer_s_event_is_the_host_s_and_no_post_gives_it() {
     let mut host = FakeHost::new("acme/probe");
     host.post(Event::Timer { id: 1 });
 }
+
+#[test]
+fn a_pane_s_cells_read_of_its_view_s_rows_and_its_selection_s_as_the_test_gives_them() {
+    use crate::image::CellRow;
+    let mut host = FakeHost::new("acme/probe");
+    host.focus(Some(PaneId(1)));
+    let bold = StyleRun {
+        first: 0,
+        last: 1,
+        style: crate::host::TextStyle {
+            bold: true,
+            ..crate::host::TextStyle::default()
+        },
+    };
+    let pane = host.pane(PaneId(1));
+    pane.grid = (80, 2);
+    pane.held = 0..2;
+    pane.rows.insert(0, ("ls -l   ".to_owned(), false));
+    pane.styles.insert(0, vec![bold]);
+    let selected = vec![CellRow {
+        text: "-l".to_owned(),
+        runs: Vec::new(),
+    }];
+    let read = Rc::new(RefCell::new(Vec::new()));
+    let kept = Rc::clone(&read);
+    let mut probe = Probe::new(move |cx, _| {
+        kept.borrow_mut()
+            .push((cx.screen_cells(PaneId(1))?, cx.selection_cells(PaneId(1))?));
+        Ok(())
+    });
+    host.command(&mut probe, "probe.go", Args::new()).unwrap();
+    host.pane(PaneId(1)).selected_cells = Some(selected.clone());
+    host.command(&mut probe, "probe.go", Args::new()).unwrap();
+    let read = read.borrow();
+    let row = |text: &str, runs: Vec<StyleRun>| CellRow {
+        text: text.to_owned(),
+        runs,
+    };
+    assert_eq!(read[0].0, [row("ls -l", vec![bold]), row("", Vec::new())]);
+    assert_eq!(read[0].1, None);
+    assert_eq!(read[1].1, Some(selected));
+    // A deselection takes the cells away, as the app's.
+    let mut deselect = Probe::new(|cx, _| cx.deselect(PaneId(1)));
+    host.command(&mut deselect, "probe.go", Args::new())
+        .unwrap();
+    assert_eq!(host.pane(PaneId(1)).selected_cells, None);
+    // Without `terminal-read`, refused.
+    let mut host = FakeHost::new("acme/probe").with_capabilities(Vec::new());
+    host.pane(PaneId(1));
+    let mut probe = Probe::new(|cx, _| cx.screen_cells(PaneId(1)).map(drop));
+    let refused = host.command(&mut probe, "probe.go", Args::new());
+    assert_eq!(refused.unwrap_err().code, Code::MissingCapability);
+}
+
+#[test]
+fn a_png_on_the_clipboard_takes_its_text_s_place_and_what_is_none_is_refused() {
+    let mut host = FakeHost::new("acme/probe");
+    host.set_clipboard(Some("old"));
+    let png = crate::image::Image::blank(1.0).png.0;
+    let given = png.clone();
+    let mut probe = Probe::new(move |cx, name| match name {
+        "probe.go" => cx.set_clipboard_image(given.clone()),
+        _ => Ok(()),
+    });
+    host.command(&mut probe, "probe.go", Args::new()).unwrap();
+    assert_eq!(host.clipboard_image(), Some(png.as_slice()));
+    assert_eq!(host.clipboard(), None);
+    let mut text = Probe::new(|cx, _| cx.set_clipboard_text("new"));
+    host.command(&mut text, "probe.go", Args::new()).unwrap();
+    assert_eq!(
+        (host.clipboard(), host.clipboard_image()),
+        (Some("new"), None)
+    );
+    let mut gif = Probe::new(|cx, _| cx.set_clipboard_image(b"GIF89a".to_vec()));
+    let refused = host.command(&mut gif, "probe.go", Args::new()).unwrap_err();
+    assert!(refused.message.contains("PNG"), "{refused:?}");
+}
+
+#[test]
+fn a_save_shows_its_panel_one_at_a_time_of_a_window_and_its_end_is_heard() {
+    let mut host = FakeHost::new("acme/probe").with_capabilities(Vec::new());
+    host.focus(Some(PaneId(1)));
+    let window = host.pane(PaneId(1)).window;
+    let ids = Rc::new(RefCell::new(Vec::new()));
+    let kept = Rc::clone(&ids);
+    let mut probe = Probe::new(move |cx, _| {
+        let id = cx.save_file(None, "Lokyr.png", b"bytes".to_vec());
+        let again = cx.save_file(Some(window), "again.png", b"x".to_vec());
+        kept.borrow_mut()
+            .push((id, again.map_err(|error| error.message)));
+        Ok(())
+    });
+    host.activate(&mut probe).unwrap();
+    host.command(&mut probe, "probe.go", Args::new()).unwrap();
+    let (id, again) = ids.borrow_mut().remove(0);
+    let id = id.unwrap();
+    assert_eq!(again, Err(crate::message::SAVING.to_owned()));
+    assert_eq!(host.saves(), [(id, window, "Lokyr.png".to_owned())]);
+    // While its panel shows, the next call's is refused too.
+    host.command(&mut probe, "probe.go", Args::new()).unwrap();
+    assert_eq!(
+        ids.borrow_mut().remove(0).0.unwrap_err().message,
+        crate::message::SAVING
+    );
+    // The user chooses a place: the file holds the bytes, and the plugin
+    // hears of it; then a new save shows, which the user cancels.
+    host.answer_save(id, Some("/Users/me/Pictures/Lokyr.png"));
+    assert_eq!(
+        host.saved_file("/Users/me/Pictures/Lokyr.png"),
+        Some(&b"bytes"[..])
+    );
+    host.deliver(&mut probe).unwrap();
+    assert_eq!(probe.heard.last().unwrap(), &["saved".to_owned()]);
+    host.command(&mut probe, "probe.go", Args::new()).unwrap();
+    let (next, _) = ids.borrow_mut().remove(0);
+    host.answer_save(next.unwrap(), None);
+    assert!(host.saves().is_empty());
+    // A name of a `/`, refused; a call that fails shows no panel.
+    let mut wrong = Probe::new(|cx, _| cx.save_file(None, "a/b.png", Vec::new()).map(drop));
+    assert!(host.command(&mut wrong, "probe.go", Args::new()).is_err());
+    let mut failing = Probe::new(|cx, _| {
+        cx.save_file(None, "x.png", Vec::new())?;
+        Err(Error::new(Code::Failed, "on purpose"))
+    });
+    assert!(host.command(&mut failing, "probe.go", Args::new()).is_err());
+    assert!(host.saves().is_empty());
+}

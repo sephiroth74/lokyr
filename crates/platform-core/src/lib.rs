@@ -40,7 +40,7 @@ pub use input::{
 };
 pub use menu::{
     AboutLine, AboutPanel, Alert, AlertId, AlertStyle, ContextMenu, MainMenu, Menu, MenuItem,
-    MenuRole, Shortcut, ShortcutKey, StandardAction,
+    MenuRole, SavePanelId, Shortcut, ShortcutKey, StandardAction,
 };
 pub use quick::{GlobalKey, Length, QuickEdge, QuickPlace, QuickScreen};
 pub use raw_window_handle::WindowHandle;
@@ -673,6 +673,17 @@ pub trait Platform {
 
     /// Puts text on the clipboard, in place of what it held.
     fn set_clipboard_text(&mut self, text: &str);
+
+    /// Puts the image of `png`, a PNG, on the clipboard, in place of what
+    /// it held.
+    fn set_clipboard_image(&mut self, png: &[u8]);
+
+    /// Opens the save panel, a sheet on `window`, of the file's name `name`
+    /// suggested, of its extension's type, and returns at once:
+    /// [`AppEvent::SavePanelClosed`] tells the path chosen, or none as the
+    /// user cancelled or the window closed. The panel asks before it
+    /// replaces a file; the app writes it.
+    fn show_save_panel(&mut self, window: WindowId, name: &str) -> SavePanelId;
 
     /// Opens an alert, on `window` or on its own when `None`, and returns
     /// at once: [`AppEvent::AlertClosed`] tells which button closed it.

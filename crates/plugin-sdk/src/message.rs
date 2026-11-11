@@ -26,8 +26,8 @@ use serde::{Deserialize, Serialize};
 use crate::command::{Args, Capability, Command, Error};
 use crate::event::WorkspaceEvent;
 use crate::host::{
-    BarPlace, Binding, Color, CommandInfo, Current, DecorationLook, Direction, Edge, Found, Layout,
-    Line, LineText, PaneId, ScreenPoint, Scroll, SearchMatch, SearchQuery, SelectionKind,
+    BarPlace, Binding, Bytes, Color, CommandInfo, Current, DecorationLook, Direction, Edge, Found,
+    Layout, Line, LineText, PaneId, ScreenPoint, Scroll, SearchMatch, SearchQuery, SelectionKind,
     ShellCommand, Side, StyleRun, TabId, TabInfo, Viewport, WindowId, WindowInfo,
 };
 use crate::ui::{PanelId, PanelOptions, ViewId};
@@ -61,6 +61,15 @@ pub const DELAY_RANGE: &str = "a timer's delay is a day at most, 86400000 ms";
 pub const TIMERS_BOUND: &str = "a plugin has 64 timers at most, until one fires or is cancelled";
 
 pub use crate::image::IMAGES_BOUND;
+
+/// The message of the error of [`Request::SaveFile`] on a window that shows
+/// a save panel, or that the call asked one of already, which every host
+/// gives alike.
+pub const SAVING: &str = "a window shows one save panel at a time";
+
+/// The message of the error of [`Request::SaveFile`] of no window given
+/// and none focused, which every host gives alike.
+pub const NO_WINDOW: &str = "a save panel shows on a window, and none has the focus";
 
 /// What a plugin asks of the host.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -120,6 +129,23 @@ pub enum Request {
     ClipboardText,
     /// Puts text on the clipboard.
     SetClipboardText(String),
+    /// Puts an image on the clipboard, a PNG, in place of what it held.
+    SetClipboardImage(Bytes),
+    /// Asks the user where to save bytes as a file, in the platform's save
+    /// panel, a sheet on `window` or on the focused one, of the name `name`
+    /// suggested: the host answers with the question's id, writes the bytes
+    /// where the user chose, replacing a file that the panel confirmed, and
+    /// tells the path, or none as the user cancelled, as an
+    /// [`Event::Saved`] of that id, to the plugin alone. A window shows one
+    /// panel at a time; no capability, as the user chooses the place.
+    SaveFile {
+        /// The window, or the focused one.
+        window: Option<WindowId>,
+        /// The file's name, as the panel suggests it.
+        name: String,
+        /// Its bytes, [`MOST_BYTES`](crate::host::MOST_BYTES) at most.
+        bytes: Bytes,
+    },
     /// The window that has the focus.
     FocusedWindow,
     /// The pane that has the focus: the active one of the focused window.
@@ -277,6 +303,15 @@ pub enum Request {
         /// The row's number.
         row: i64,
     },
+    /// The cells of a pane's selection, if it has one, as an image draws
+    /// them: of each row the columns that it takes, a rectangle's alike on
+    /// every row, their text and their styles, a background that an erase
+    /// left among them; [`MOST_ROWS`](crate::image::MOST_ROWS) rows at most,
+    /// from its first.
+    SelectionCells(PaneId),
+    /// The cells of the rows that a pane's view shows, from its top, as an
+    /// image draws them.
+    ScreenCells(PaneId),
     /// Renders an image of cells, of their styles, in the theme's colors
     /// and the terminal's font, as a window shows them, in a frame as a
     /// window's, offscreen: the host answers with the PNG. It reads nothing
@@ -772,7 +807,9 @@ impl Request {
     fn capability(&self) -> Option<Capability> {
         match self {
             Self::ClipboardText => Some(Capability::ClipboardRead),
-            Self::SetClipboardText(_) => Some(Capability::ClipboardWrite),
+            Self::SetClipboardText(_) | Self::SetClipboardImage(_) => {
+                Some(Capability::ClipboardWrite)
+            }
             Self::SelectionText(_)
             | Self::LineText { .. }
             | Self::LinkAt { .. }
@@ -780,7 +817,9 @@ impl Request {
             | Self::Search { .. }
             | Self::SearchMatches { .. }
             | Self::CurrentMatch(_)
-            | Self::Styles { .. } => Some(Capability::TerminalRead),
+            | Self::Styles { .. }
+            | Self::SelectionCells(_)
+            | Self::ScreenCells(_) => Some(Capability::TerminalRead),
             Self::WorkingDirectory(_) => Some(Capability::ProcessRead),
             // The commands that the shell ran, as their marks tell them.
             Self::ShellCommands { .. } | Self::CommandLine { .. } => Some(Capability::HistoryRead),
@@ -872,6 +911,7 @@ impl Request {
             | Self::Commands
             | Self::Themes
             | Self::RenderImage(_)
+            | Self::SaveFile { .. }
             | Self::AddMenuItem(_)
             | Self::StartTimer { .. }
             | Self::CancelTimer(_) => None,
@@ -913,8 +953,11 @@ impl Request {
             | Self::Message { .. }
             | Self::Commands
             | Self::Themes
-            | Self::RenderImage(_) => Effect::Read,
+            | Self::RenderImage(_)
+            | Self::SelectionCells(_)
+            | Self::ScreenCells(_) => Effect::Read,
             Self::SetClipboardText(_)
+            | Self::SetClipboardImage(_)
             | Self::SelectCells { .. }
             | Self::Deselect(_)
             | Self::ShowCursor { .. }
@@ -969,6 +1012,7 @@ impl Request {
             | Self::OpenPanel { .. }
             | Self::ClosePanel(_)
             | Self::AskText { .. }
+            | Self::SaveFile { .. }
             | Self::PreviewTheme(_)
             | Self::SetTheme { .. } => Effect::App,
             Self::RegisterCommand(_)
@@ -1014,6 +1058,8 @@ pub enum Response {
     Themes(crate::host::Themes),
     /// An image that the host rendered.
     Image(crate::image::Image),
+    /// Rows of cells, as an image draws them, or none.
+    Cells(Option<Vec<crate::image::CellRow>>),
     /// A question's id, whose answer comes as an event.
     Asking(u64),
     /// A timer's id, whose firings come as events.
@@ -1225,6 +1271,18 @@ pub enum Event {
         /// The text.
         text: Option<String>,
     },
+    /// The end of a save that the plugin asked, to it alone: the path of
+    /// the file that the host wrote where the user chose; none as the user
+    /// cancelled, or the panel's window closed; or the error of a write
+    /// that failed.
+    Saved {
+        /// The question's id.
+        id: u64,
+        /// The file's path, absolute.
+        path: Option<String>,
+        /// What failed, if the write did.
+        error: Option<String>,
+    },
     /// The plugin's config changed, as the config file reloaded, to it
     /// alone: its request of [`Request::Config`] reads the new one.
     ConfigChanged,
@@ -1257,6 +1315,7 @@ impl Event {
             Self::Searched { .. } => "searched",
             Self::PanelClosed(_) => "panel-closed",
             Self::Answered { .. } => "answered",
+            Self::Saved { .. } => "saved",
             Self::TabBarResized { .. } => "tab-bar-resized",
             Self::KeysChanged => KEYS_CHANGED,
             Self::WindowFocus { .. } => WINDOW_FOCUS,
@@ -1346,6 +1405,7 @@ impl Request {
             | Self::AddMenuItem { .. }
             | Self::RunCommand { .. }
             | Self::SetClipboardText { .. }
+            | Self::SetClipboardImage { .. }
             | Self::EndSearch { .. }
             | Self::SelectCells { .. }
             | Self::Deselect { .. }
@@ -1416,6 +1476,7 @@ impl Request {
             Self::Viewport { .. } => "viewport",
             Self::Styles { .. } => "styles",
             Self::RenderImage { .. } => "image",
+            Self::SelectionCells { .. } | Self::ScreenCells { .. } => "cells",
             Self::Decorate { .. } | Self::MarkGutter { .. } => "decoration",
             Self::Opens { .. } => "boolean",
             Self::FontSize { .. } => "font-size",
@@ -1424,7 +1485,7 @@ impl Request {
             Self::Layout { .. } => "layout",
             Self::NewTab { .. } => "tab",
             Self::TabBarPlace { .. } => "tab-bar-place",
-            Self::AskText { .. } => "asking",
+            Self::AskText { .. } | Self::SaveFile { .. } => "asking",
             Self::StartTimer { .. } => "timer",
             Self::PaneGrid { .. } => "grid",
             Self::Config { .. } | Self::State { .. } => "data",
@@ -1775,6 +1836,33 @@ mod tests {
         assert!(Request::Windows.capabilities().is_empty());
         assert!(Request::PaneTitle(pane).capabilities().is_empty());
         assert!(Request::Config.capabilities().is_empty());
+        // The cells of a pane, of `terminal-read`; an image on the
+        // clipboard, of `clipboard-write`; a save of none, as the user
+        // chooses the place.
+        for read in [Request::SelectionCells(pane), Request::ScreenCells(pane)] {
+            assert_eq!(read.capabilities(), [Capability::TerminalRead]);
+            assert_eq!(read.effect(), Effect::Read);
+            assert_eq!(read.answer(), "cells");
+        }
+        let copy = Request::SetClipboardImage(Bytes(Vec::new()));
+        assert_eq!(copy.capabilities(), [Capability::ClipboardWrite]);
+        assert_eq!((copy.effect(), copy.answer()), (Effect::Write, "done"));
+        let save = Request::SaveFile {
+            window: None,
+            name: "x.png".to_owned(),
+            bytes: Bytes(Vec::new()),
+        };
+        assert!(save.capabilities().is_empty());
+        assert_eq!((save.effect(), save.answer()), (Effect::App, "asking"));
+        assert_eq!(
+            Event::Saved {
+                id: 1,
+                path: None,
+                error: None
+            }
+            .name(),
+            "saved"
+        );
         // An image of the plugin's own cells, a read of none.
         let image = Request::RenderImage(crate::image::ImageSpec::default());
         assert!(image.capabilities().is_empty());

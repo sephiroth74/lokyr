@@ -421,3 +421,49 @@ fn an_image_is_asked_of_a_table_and_its_png_comes_back_as_a_string() {
     )
     .unwrap();
 }
+
+#[test]
+fn a_save_and_a_clipboard_image_take_their_bytes_of_a_string_and_cells_come_back_as_tables() {
+    use lokyr_plugin_sdk::host::{Bytes, StyleRun, TextStyle};
+    use lokyr_plugin_sdk::image::CellRow;
+    let cells = vec![CellRow {
+        text: "ls".to_owned(),
+        runs: vec![StyleRun {
+            first: 0,
+            last: 1,
+            style: TextStyle {
+                bold: true,
+                ..TextStyle::default()
+            },
+        }],
+    }];
+    let answers = vec![
+        Response::Cells(Some(cells)),
+        Response::Done,
+        Response::Asking(7),
+    ];
+    let (ran, asked) = run(
+        r#"
+        local rows = cx.selection_cells(1)
+        assert(rows[1].text == "ls" and rows[1].runs[1].style.bold == true)
+        local png = "\137PNG\r\n\26\n"
+        assert(cx.set_clipboard_image(png) == true)
+        assert(cx.save_file(nil, "Lokyr.png", png) == 7)
+        "#,
+        answers,
+    );
+    assert!(ran.is_ok(), "{ran:?}");
+    let png = Bytes(b"\x89PNG\r\n\x1a\n".to_vec());
+    assert_eq!(
+        asked,
+        [
+            Request::SelectionCells(PaneId(1)),
+            Request::SetClipboardImage(png.clone()),
+            Request::SaveFile {
+                window: None,
+                name: "Lokyr.png".to_owned(),
+                bytes: png,
+            },
+        ]
+    );
+}

@@ -32,6 +32,8 @@ export type Cx = {
     run_command: (name: string, args: { [string]: Value }?) -> (true?, string?, number?),
     clipboard_text: () -> (string?, string?, number?),
     set_clipboard_text: (text: string) -> (true?, string?, number?),
+    set_clipboard_image: (bytes: string | buffer) -> (true?, string?, number?),
+    save_file: (window: WindowId?, name: string, bytes: string | buffer) -> (number?, string?, number?),
     focused_window: () -> (WindowId?, string?, number?),
     focused_pane: () -> (PaneId?, string?, number?),
     selection_text: (pane: PaneId) -> (string?, string?, number?),
@@ -52,6 +54,8 @@ export type Cx = {
     command_line: (pane: PaneId, command: number) -> (string?, string?, number?),
     viewport: (pane: PaneId) -> (Viewport?, string?, number?),
     styles: (pane: PaneId, row: number) -> ({ StyleRun }?, string?, number?),
+    selection_cells: (pane: PaneId) -> ({ CellRow }?, string?, number?),
+    screen_cells: (pane: PaneId) -> ({ CellRow }?, string?, number?),
     render_image: (image: ImageSpec) -> (Image?, string?, number?),
     decorate: (pane: PaneId, from: { number }, to: { number }, look: DecorationLook) -> (number?, string?, number?),
     undecorate: (pane: PaneId, id: number) -> (true?, string?, number?),
@@ -142,6 +146,7 @@ export type Event =
     | { kind: "command-ended", pane: PaneId, command: number, status: number? }
     | { kind: "tab-bar-resized", width: number }
     | { kind: "answered", id: number, text: string? }
+    | { kind: "saved", id: number, path: string?, error: string? }
     | { kind: "config-changed" }
     | { kind: "timer", id: number }
     | { kind: "custom", name: string, schema: string, value: Data }

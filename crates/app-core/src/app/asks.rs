@@ -7,11 +7,35 @@ use lokyr_kernel::l10n::Arg;
 use lokyr_kernel::plugins::Closing;
 use lokyr_kernel::workspace::{self, Pane, PaneId};
 use lokyr_kernel::{config, paste};
-use lokyr_platform_core::{Alert, AlertId, AlertStyle, Platform, TargetKind, WindowId};
+use lokyr_platform_core::{
+    Alert, AlertId, AlertStyle, Platform, SavePanelId, TargetKind, WindowId,
+};
 use lokyr_vt_core::terminal::ClipboardRequest;
 
 use super::{App, PREVIEW};
 use crate::drawing::Backend;
+
+/// A save that a plugin asked, whose panel shows: the window of the
+/// workspace that shows it, the plugin, the question's id and the file's
+/// bytes.
+pub(super) struct Save {
+    pub(super) window: workspace::WindowId,
+    plugin: String,
+    id: u64,
+    bytes: Vec<u8>,
+}
+
+impl std::fmt::Debug for Save {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("Save")
+            .field("window", &self.window)
+            .field("plugin", &self.plugin)
+            .field("id", &self.id)
+            .field("bytes", &self.bytes.len())
+            .finish()
+    }
+}
 
 impl<B: Backend> App<B> {
     /// The answer to the question of `alert`: its `button`, from the first,
@@ -570,6 +594,66 @@ impl<B: Backend> App<B> {
         };
         let asked = platform.show_alert(Some(shown), alert);
         self.text_asks.insert(asked, (shown, plugin, id));
+    }
+
+    /// Shows the save panel of `plugin`'s save `id` on the platform's window
+    /// that shows `window`, of `name` suggested: without one, the save ends
+    /// of none, as a panel that the user cancelled.
+    pub(super) fn ask_save(
+        &mut self,
+        platform: &mut dyn Platform,
+        (plugin, id): (String, u64),
+        window: workspace::WindowId,
+        name: &str,
+        bytes: Vec<u8>,
+    ) {
+        let shown = self
+            .windows
+            .iter()
+            .find(|(_, state)| state.window == window)
+            .map(|(&shown, _)| shown);
+        let Some(shown) = shown else {
+            self.plugins.saved(&plugin, id, None, None);
+            return;
+        };
+        let panel = platform.show_save_panel(shown, name);
+        self.saves.insert(
+            panel,
+            Save {
+                window,
+                plugin,
+                id,
+                bytes,
+            },
+        );
+    }
+
+    /// Writes the file of the save whose panel `panel` closed where the
+    /// user chose, `path`, whole, and tells its plugin the path, or the
+    /// error of a write that failed; of none, that the user cancelled.
+    pub(super) fn save_panel_closed(
+        &mut self,
+        panel: SavePanelId,
+        path: Option<std::path::PathBuf>,
+    ) {
+        let Some(save) = self.saves.remove(&panel) else {
+            return;
+        };
+        let Some(path) = path else {
+            self.plugins.saved(&save.plugin, save.id, None, None);
+            return;
+        };
+        match lokyr_pkg_model::write_whole_bytes(&path, &save.bytes) {
+            Ok(()) => {
+                let path = path.to_string_lossy().into_owned();
+                self.plugins.saved(&save.plugin, save.id, Some(path), None);
+            }
+            Err(error) => {
+                let error = format!("{} cannot be written: {error}", path.display());
+                eprintln!("lokyr: {error}");
+                self.plugins.saved(&save.plugin, save.id, None, Some(error));
+            }
+        }
     }
 
     /// Quits, once the user confirms it while programs other than shells

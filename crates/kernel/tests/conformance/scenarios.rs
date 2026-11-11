@@ -23,17 +23,17 @@ use std::collections::BTreeMap;
 use lokyr_plugin_sdk::command::{Args, Capability, Category, Code, Command, Error, Value};
 use lokyr_plugin_sdk::event::WorkspaceEvent;
 use lokyr_plugin_sdk::host::{
-    BarPlace, Binding, Color, CommandInfo, DecorationLook, Direction, Edge, LEAST_DELAY, Layout,
-    Line, LineText, MOST_DELAY, MOST_SEARCHES, MOST_STATE, MOST_TIMERS, MOST_WRITES, MenuItem,
-    MenuPlace, PaneId, QuickLength, QuickPlace, ScreenPoint, Scroll, SearchMatch, SearchQuery,
-    SelectionKind, ShellCommand, Side, StyleRun, TabId, TabInfo, TextStyle, Underline, Viewport,
-    WindowId, WindowInfo,
+    BarPlace, Binding, Bytes, Color, CommandInfo, DecorationLook, Direction, Edge, LEAST_DELAY,
+    Layout, Line, LineText, MOST_DELAY, MOST_SEARCHES, MOST_STATE, MOST_TIMERS, MOST_WRITES,
+    MenuItem, MenuPlace, PaneId, QuickLength, QuickPlace, ScreenPoint, Scroll, SearchMatch,
+    SearchQuery, SelectionKind, ShellCommand, Side, StyleRun, TabId, TabInfo, TextStyle, Underline,
+    Viewport, WindowId, WindowInfo, check_file_name,
 };
 use lokyr_plugin_sdk::image::{
     CellRow, IMAGES_BOUND, Image, ImageBackground, ImageSpec, MOST_IMAGES,
 };
 use lokyr_plugin_sdk::message::{
-    DELAY_RANGE, DIM_RANGE, Data, Event, Mods, OWN_PANE, Request, Response, TIMERS_BOUND,
+    DELAY_RANGE, DIM_RANGE, Data, Event, Mods, OWN_PANE, Request, Response, SAVING, TIMERS_BOUND,
 };
 use lokyr_plugin_sdk::ui::{Anchor, PanelId, PanelOptions, Role, ViewId};
 use serde::{Deserialize, Serialize};
@@ -98,7 +98,7 @@ pub const fn timer(k: u64) -> u64 {
 /// The world of the scenarios, as the kernel's host made it: its window,
 /// its tab and its pane, and the pane's row of [`LINE`], with the line's
 /// text and cells as the pane reads them, the commands of [`COMMAND`], the
-/// pane's view and its terminal's cursor's cell.
+/// pane's view, its terminal's cursor's cell and its view's cells.
 #[derive(Clone, Debug, PartialEq)]
 pub struct World {
     pub window: WindowId,
@@ -111,6 +111,8 @@ pub struct World {
     pub command_lines: Vec<Option<String>>,
     pub viewport: Viewport,
     pub cursor: (u16, i64),
+    /// The cells of the rows that the pane's view shows.
+    pub screen: Vec<CellRow>,
 }
 
 /// A scenario: what the test plugin holds, and its steps.
@@ -188,8 +190,86 @@ pub fn all(world: &World) -> Vec<Scenario> {
         pane_changes(world, false),
         bounds(world),
         images(),
+        cells_and_saves(world),
         core_actions(world),
     ]
+}
+
+/// The cells of a pane, an image on the clipboard and a file's save: the
+/// selection's cells, of none, and the view's, of `terminal-read`; a PNG on
+/// the clipboard in place of its text, of `clipboard-write`, and what is no
+/// PNG refused; a save of no capability, on the focused window, a second on
+/// it while the first's panel shows refused, a name that is none and a
+/// window not there refused, and the save's end, to the plugin alone.
+fn cells_and_saves(world: &World) -> Scenario {
+    let png = || Bytes(Image::blank(1.0).png.0);
+    let save = |window: Option<WindowId>, name: &str| Request::SaveFile {
+        window,
+        name: name.to_owned(),
+        bytes: png(),
+    };
+    Scenario {
+        name: "the cells, an image on the clipboard and a save".to_owned(),
+        capabilities: Some(vec![
+            Capability::TerminalRead,
+            Capability::ClipboardRead,
+            Capability::ClipboardWrite,
+        ]),
+        subscriptions: Vec::new(),
+        steps: vec![
+            ask(vec![
+                (Request::SelectionCells(world.pane), Response::Cells(None)),
+                (
+                    Request::ScreenCells(world.pane),
+                    Response::Cells(Some(world.screen.clone())),
+                ),
+                (Request::SetClipboardImage(png()), Response::Done),
+                (
+                    Request::SetClipboardImage(Bytes(b"GIF89a".to_vec())),
+                    failed(Code::Failed, "an image is a PNG, of its signature"),
+                ),
+            ]),
+            ask(vec![
+                (Request::ClipboardText, Response::Text(None)),
+                (save(None, "Lokyr.png"), Response::Asking(0)),
+                (
+                    save(Some(world.window), "again.png"),
+                    failed(Code::Failed, SAVING),
+                ),
+                (
+                    save(None, "a/b.png"),
+                    failed(
+                        Code::Failed,
+                        &check_file_name("a/b.png").unwrap_err().message,
+                    ),
+                ),
+                (
+                    save(Some(NO_WINDOW), "x.png"),
+                    failed(Code::NotFound, "there is no window 999999"),
+                ),
+                // The world's clipboard back, as the scenarios after it find
+                // it.
+                (
+                    Request::SetClipboardText(CLIPBOARD.to_owned()),
+                    Response::Done,
+                ),
+            ]),
+            Step {
+                wait: 0,
+                asks: Vec::new(),
+                posts: vec![Event::Saved {
+                    id: 0,
+                    path: Some("/tmp/Lokyr.png".to_owned()),
+                    error: None,
+                }],
+                heard: vec![Event::Saved {
+                    id: 0,
+                    path: Some("/tmp/Lokyr.png".to_owned()),
+                    error: None,
+                }],
+            },
+        ],
+    }
 }
 
 /// The images of cells that a plugin asks for, of no capability: each at

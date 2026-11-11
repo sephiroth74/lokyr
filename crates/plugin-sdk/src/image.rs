@@ -3,11 +3,10 @@
 //! window's, which the host draws offscreen with the terminal's own
 //! renderer and gives back as a PNG.
 
-use serde::de::{self, SeqAccess, Visitor};
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 
 use crate::command::{Code, Error};
-use crate::host::StyleRun;
+use crate::host::{Bytes, StyleRun};
 
 /// The most rows that an image draws.
 pub const MOST_ROWS: usize = 1000;
@@ -188,7 +187,7 @@ impl ImageSpec {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Image {
     /// The PNG's bytes, which cross to Luau as a string.
-    pub png: Png,
+    pub png: Bytes,
     /// Its width, in pixels.
     pub width: u32,
     /// Its height, in pixels.
@@ -202,7 +201,7 @@ impl Image {
     /// as it draws nothing.
     pub fn blank(scale: f32) -> Self {
         Self {
-            png: Png(BLANK.to_vec()),
+            png: Bytes(BLANK.to_vec()),
             width: 1,
             height: 1,
             scale,
@@ -218,61 +217,6 @@ const BLANK: [u8; 68] = [
     0x00, 0x05, 0x00, 0x01, 0xe9, 0xfa, 0xdc, 0xd8, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44,
     0xae, 0x42, 0x60, 0x82,
 ];
-
-/// The bytes of a PNG, which serde carries as bytes, a string of Luau's,
-/// rather than as a list of numbers.
-#[derive(Clone, Default, PartialEq, Eq)]
-pub struct Png(pub Vec<u8>);
-
-impl std::fmt::Debug for Png {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(formatter, "Png({} bytes)", self.0.len())
-    }
-}
-
-impl Serialize for Png {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_bytes(&self.0)
-    }
-}
-
-impl<'de> Deserialize<'de> for Png {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        deserializer.deserialize_byte_buf(Bytes).map(Png)
-    }
-}
-
-/// What reads a PNG's bytes: of bytes, of a text as a string of Luau's, or
-/// of a list of numbers, as JSON writes bytes.
-struct Bytes;
-
-impl<'de> Visitor<'de> for Bytes {
-    type Value = Vec<u8>;
-
-    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str("bytes")
-    }
-
-    fn visit_bytes<E: de::Error>(self, bytes: &[u8]) -> Result<Self::Value, E> {
-        Ok(bytes.to_vec())
-    }
-
-    fn visit_byte_buf<E: de::Error>(self, bytes: Vec<u8>) -> Result<Self::Value, E> {
-        Ok(bytes)
-    }
-
-    fn visit_str<E: de::Error>(self, text: &str) -> Result<Self::Value, E> {
-        Ok(text.as_bytes().to_vec())
-    }
-
-    fn visit_seq<A: SeqAccess<'de>>(self, mut items: A) -> Result<Self::Value, A::Error> {
-        let mut bytes = Vec::with_capacity(items.size_hint().unwrap_or(0).min(1 << 16));
-        while let Some(byte) = items.next_element::<u8>()? {
-            bytes.push(byte);
-        }
-        Ok(bytes)
-    }
-}
 
 #[cfg(test)]
 mod tests {
@@ -368,9 +312,9 @@ mod tests {
         let json = serde_json::to_string(&image).unwrap();
         assert!(json.starts_with("{\"png\":[137,80,78,71,"), "{json}");
         assert_eq!(serde_json::from_str::<Image>(&json).unwrap(), image);
-        let png: Png = serde_json::from_str("\"PNG\"").unwrap();
+        let png: Bytes = serde_json::from_str("\"PNG\"").unwrap();
         assert_eq!(png.0, b"PNG");
-        assert_eq!(format!("{png:?}"), "Png(3 bytes)");
+        assert_eq!(format!("{png:?}"), "Bytes(3)");
     }
 
     #[test]

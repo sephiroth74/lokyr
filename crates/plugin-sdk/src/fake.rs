@@ -89,6 +89,8 @@ pub struct FakePane {
     pub styles: BTreeMap<i64, Vec<StyleRun>>,
     /// Its selection's text.
     pub selection: Option<String>,
+    /// Its selection's cells, as a read of them gives them.
+    pub selected_cells: Option<Vec<crate::image::CellRow>>,
     /// The working directory of its program in the foreground.
     pub directory: Option<String>,
     /// The numbers of the rows that it holds, of its scrollback and its
@@ -182,6 +184,23 @@ impl FakePane {
             }
         })
     }
+
+    /// The cells of the rows that its view shows, of their texts without
+    /// the spaces that end them and their styles, as a read of them gives
+    /// them.
+    fn view_cells(&self) -> Vec<crate::image::CellRow> {
+        let view = self.viewport();
+        (view.top..view.top + i64::from(view.rows))
+            .map(|row| crate::image::CellRow {
+                text: self
+                    .rows
+                    .get(&row)
+                    .map(|(text, _)| text.trim_end_matches(' ').to_owned())
+                    .unwrap_or_default(),
+                runs: self.styles.get(&row).cloned().unwrap_or_default(),
+            })
+            .collect()
+    }
 }
 
 impl Default for FakePane {
@@ -203,6 +222,7 @@ impl Default for FakePane {
             viewport: None,
             cursor: (0, 0),
             held_cursor: None,
+            selected_cells: None,
         }
     }
 }
@@ -428,6 +448,13 @@ pub struct FakeHost {
     /// panes takes, once the test gave them their tabs.
     given_focus: Option<Option<PaneId>>,
     clipboard: Option<String>,
+    /// The PNG on the clipboard, as the plugin put it there.
+    clipboard_image: Option<Vec<u8>>,
+    /// The saves that the plugin asked, whose panels show, by their ids:
+    /// each its window, its file's name and its bytes.
+    saves: BTreeMap<u64, (WindowId, String, Vec<u8>)>,
+    /// The files that its saves wrote, by their paths.
+    saved: BTreeMap<String, Vec<u8>>,
     font_size: f32,
     missing: Vec<String>,
     config: Data,
@@ -510,6 +537,9 @@ impl FakeHost {
             focused: None,
             given_focus: None,
             clipboard: None,
+            clipboard_image: None,
+            saves: BTreeMap::new(),
+            saved: BTreeMap::new(),
             font_size: 13.0,
             missing: Vec::new(),
             config: Data::Map(BTreeMap::new()),
@@ -749,6 +779,44 @@ impl FakeHost {
     /// The clipboard's text.
     pub fn clipboard(&self) -> Option<&str> {
         self.clipboard.as_deref()
+    }
+
+    /// The PNG on the clipboard, if the plugin put one there, which takes
+    /// the place of its text.
+    pub fn clipboard_image(&self) -> Option<&[u8]> {
+        self.clipboard_image.as_deref()
+    }
+
+    /// The saves that the plugin asked whose panels show, in the order of
+    /// their ids: each its id, its window and its file's name.
+    pub fn saves(&self) -> Vec<(u64, WindowId, String)> {
+        self.saves
+            .iter()
+            .map(|(&id, (window, name, _))| (id, *window, name.clone()))
+            .collect()
+    }
+
+    /// Closes the panel of the save `id`, as the user chose `path`, whose
+    /// file then holds its bytes, or cancelled, of none: the plugin hears
+    /// of it at the next delivery. A save that shows no panel takes
+    /// nothing.
+    pub fn answer_save(&mut self, id: u64, path: Option<&str>) {
+        let Some((_, _, bytes)) = self.saves.remove(&id) else {
+            return;
+        };
+        if let Some(path) = path {
+            self.saved.insert(path.to_owned(), bytes);
+        }
+        self.owed.push(Event::Saved {
+            id,
+            path: path.map(str::to_owned),
+            error: None,
+        });
+    }
+
+    /// The bytes of the file that a save wrote at `path`, if one did.
+    pub fn saved_file(&self, path: &str) -> Option<&[u8]> {
+        self.saved.get(path).map(Vec::as_slice)
     }
 
     /// Gives the text `size`, in points, as its reads tell it.
@@ -1008,6 +1076,7 @@ impl FakeHost {
                     | Event::PanelClosed(_)
                     | Event::ConfigChanged
                     | Event::Answered { .. }
+                    | Event::Saved { .. }
                     | Event::TabBarResized { .. }
             ) || self.subscribed.iter().any(|name| name == event.name());
             if taken && self.hears(&event) {
@@ -1079,9 +1148,11 @@ impl FakeHost {
             looking: !apply,
             searched: 0,
             imaged: 0,
+            saving: Vec::new(),
         };
         let result = call(&mut Cx::new(&mut calling, &caller));
         let (writes, asked, closed) = (calling.writes, calling.asked, calling.closed);
+        let saving = calling.saving;
         // A look, or a call that failed, leaves things as they were, as the
         // app's host leaves them: its writes and what it asked of the app
         // go, and what its requests took at once comes back; a look takes
@@ -1116,6 +1187,11 @@ impl FakeHost {
             self.apply(request, opened);
         }
         self.done.extend(asked);
+        // The saves' panels show, as the app shows them once the call
+        // returns.
+        for (id, window, name, bytes) in saving {
+            self.saves.insert(id, (window, name, bytes));
+        }
         result
     }
 
@@ -1248,7 +1324,14 @@ impl FakeHost {
     /// them, which owe the plugin their events.
     fn apply(&mut self, request: Request, opened: Opened) {
         match &request {
-            Request::SetClipboardText(text) => self.clipboard = Some(text.clone()),
+            Request::SetClipboardText(text) => {
+                self.clipboard = Some(text.clone());
+                self.clipboard_image = None;
+            }
+            Request::SetClipboardImage(png) => {
+                self.clipboard_image = Some(png.0.clone());
+                self.clipboard = None;
+            }
             Request::ShowCursor { pane, at } => {
                 if let Some(pane) = self.panes.get_mut(pane) {
                     pane.held_cursor = *at;
@@ -1257,6 +1340,7 @@ impl FakeHost {
             Request::Deselect(pane) => {
                 if let Some(pane) = self.panes.get_mut(pane) {
                     pane.selection = None;
+                    pane.selected_cells = None;
                 }
             }
             Request::Undecorate { id, .. } => self.decorations.retain(|laid| laid.id != *id),
@@ -2343,6 +2427,9 @@ struct Calling<'h> {
     searched: usize,
     /// How many images the call rendered.
     imaged: usize,
+    /// The saves that the call asked, which show their panels as it
+    /// returns: each its id, its window, its file's name and its bytes.
+    saving: Vec<(u64, WindowId, String, Vec<u8>)>,
 }
 
 impl Calling<'_> {
@@ -2462,6 +2549,13 @@ impl Calling<'_> {
             Request::Styles { pane, row } => {
                 Response::Styles(host.held(*pane)?.styles.get(row).cloned())
             }
+            Request::SelectionCells(pane) => Response::Cells(
+                host.held(*pane)?
+                    .selected_cells
+                    .as_ref()
+                    .map(|rows| rows.iter().take(crate::image::MOST_ROWS).cloned().collect()),
+            ),
+            Request::ScreenCells(pane) => Response::Cells(Some(host.held(*pane)?.view_cells())),
             Request::RenderImage(image) => {
                 if self.looking {
                     return Err(Error::new(Code::Failed, crate::image::LOOKING));
@@ -2739,6 +2833,10 @@ impl Calling<'_> {
                 self.known_tab(*tab)?;
                 Response::Done
             }
+            Request::SetClipboardImage(png) => {
+                png.check_png()?;
+                Response::Done
+            }
             Request::SetTabBarPlace(place) => {
                 place
                     .check()
@@ -2788,6 +2886,34 @@ impl Calling<'_> {
                     self.known_window(*window)?;
                 }
                 Response::Asking(self.host.next_id())
+            }
+            Request::SaveFile {
+                window,
+                name,
+                bytes,
+            } => {
+                crate::host::check_file_name(name)?;
+                bytes.check()?;
+                if let Some(window) = window {
+                    self.known_window(*window)?;
+                }
+                let Some(window) = window.or_else(|| self.host.focused_window()) else {
+                    return Err(Error::new(Code::Unavailable, crate::message::NO_WINDOW));
+                };
+                let showing = self
+                    .host
+                    .saves
+                    .values()
+                    .map(|(shown, _, _)| *shown)
+                    .chain(self.saving.iter().map(|(_, shown, _, _)| *shown))
+                    .any(|shown| shown == window);
+                if showing {
+                    return Err(Error::new(Code::Failed, crate::message::SAVING));
+                }
+                let id = self.host.next_id();
+                self.saving
+                    .push((id, window, name.clone(), bytes.0.clone()));
+                Response::Asking(id)
             }
             Request::SwapPanes { pane, with } => {
                 self.known_pane(*pane)?;

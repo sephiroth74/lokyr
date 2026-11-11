@@ -37,7 +37,9 @@ pub use keyboard::KeyboardFlags;
 pub use marks::{CommandMarks, MOST_COMMANDS};
 pub use matches::{Highlighted, MatchCells};
 pub use osc::{Event, Progress, WorkingDirectory};
-pub use selection::{CellPin, RowText, Selected, SelectionShape, SelectionUnit, WORD_SEPARATORS};
+pub use selection::{
+    CellPin, RowCells, RowText, Selected, SelectionShape, SelectionUnit, WORD_SEPARATORS,
+};
 pub use snapshot::{Line, Snapshot, SnapshotCursor};
 pub use viewport::{Origin, Scroll};
 pub use window::Window;

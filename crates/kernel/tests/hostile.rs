@@ -29,6 +29,10 @@ impl Clipboard for Board {
     fn set_text(&mut self, text: &str) {
         self.0 = Some(text.to_owned());
     }
+
+    fn set_image(&mut self, _: &[u8]) {
+        self.0 = None;
+    }
 }
 
 /// The panes of the tests, which no hostile plugin opens.
@@ -82,6 +86,7 @@ impl App {
             keys: &|_, _| None,
             enabled: &|_| true,
             themes: &themes,
+            saving: &|_| false,
             language: "en",
             now: Instant::now(),
         }

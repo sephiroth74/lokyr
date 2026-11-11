@@ -291,6 +291,7 @@ impl Symbols {
                 done,
             },
             Event::Answered { text, .. } => Event::Answered { id: 0, text },
+            Event::Saved { path, error, .. } => Event::Saved { id: 0, path, error },
             Event::Timer { id } => Event::Timer { id: self.timer(id) },
             Event::ViewportChanged { pane, viewport } => Event::ViewportChanged {
                 pane: self.pane(pane),
@@ -477,6 +478,10 @@ impl Clipboard for Board {
     fn set_text(&mut self, text: &str) {
         self.0 = Some(text.to_owned());
     }
+
+    fn set_image(&mut self, _: &[u8]) {
+        self.0 = None;
+    }
 }
 
 /// The images of the kernel's host: a clear pixel each, at the scale
@@ -588,6 +593,7 @@ impl Kernel {
             .collect();
         let viewport = pane.viewport().expect("the pane's view");
         let cursor = pane.cursor_cell().expect("the pane's cursor");
+        let screen = lokyr_kernel::plugins::cell_rows(pane.view_cells());
         Self {
             registry: Registry::default(),
             workspace,
@@ -608,6 +614,7 @@ impl Kernel {
                 command_lines,
                 viewport,
                 cursor,
+                screen,
             },
         }
     }
@@ -625,6 +632,7 @@ impl Kernel {
             keys: &keys,
             enabled: &|_| true,
             themes: &themes,
+            saving: &|_| false,
             language: "en",
             now: self.clock,
         }
@@ -742,6 +750,9 @@ fn on_kernel(
             // An answer goes to its plugin alone.
             match event {
                 Event::Answered { id, text } => plugins.answer(name(scenario), *id, text.clone()),
+                Event::Saved { id, path, error } => {
+                    plugins.saved(name(scenario), *id, path.clone(), error.clone());
+                }
                 Event::TabBarResized { width } => plugins.tab_bar_resized(name(scenario), *width),
                 event => plugins.post(event.clone()),
             }
@@ -781,6 +792,15 @@ fn on_fake(scenario: &Scenario, world: &World, front: Front) -> Vec<Entry> {
         .collect();
     pane.viewport = Some(world.viewport);
     pane.cursor = world.cursor;
+    // The rows that the view shows, their texts and their styles.
+    for (row, cells) in (world.viewport.top..).zip(&world.screen) {
+        let text = match pane.rows.get(&row) {
+            Some((text, _)) => text.clone(),
+            None => cells.text.clone(),
+        };
+        pane.rows.insert(row, (text, false));
+        pane.styles.insert(row, cells.runs.clone());
+    }
     host.set_keys("tabs.goto", goto_first(), Some("⌘1"));
     host.activate(plugin.as_mut()).unwrap();
     for step in &scenario.steps {
@@ -976,11 +996,15 @@ fn kind(request: &Request) -> usize {
         Request::StartTimer { .. } => 92,
         Request::CancelTimer(_) => 93,
         Request::RenderImage(_) => 94,
+        Request::SelectionCells(_) => 95,
+        Request::ScreenCells(_) => 96,
+        Request::SetClipboardImage(_) => 97,
+        Request::SaveFile { .. } => 98,
     }
 }
 
 /// How many kinds of requests the plugin API has.
-const KINDS: usize = 95;
+const KINDS: usize = 99;
 
 #[test]
 fn the_scenarios_hold_every_request_of_the_plugin_api() {
@@ -997,6 +1021,7 @@ fn the_scenarios_hold_every_request_of_the_plugin_api() {
         command_lines: vec![None; 2],
         viewport: host::Viewport::default(),
         cursor: (0, 0),
+        screen: Vec::new(),
     };
     let mut held = [false; KINDS];
     for scenario in scenarios::all(&world) {

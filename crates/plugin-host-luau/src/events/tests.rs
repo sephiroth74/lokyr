@@ -122,6 +122,16 @@ fn every() -> Vec<Event> {
             schema: "acme.done/1".to_owned(),
             value: Data::List(vec![Data::Integer(1), Data::Map(Default::default())]),
         },
+        Event::Saved {
+            id: 10,
+            path: Some("/Users/me/Lokyr.png".to_owned()),
+            error: None,
+        },
+        Event::Saved {
+            id: 11,
+            path: None,
+            error: Some("it cannot be written".to_owned()),
+        },
     ]);
     every
 }
@@ -165,6 +175,9 @@ fn every_event_is_a_flat_table_of_its_kind_and_its_fields_both_ways() {
         assert(events[29].kind == "timer" and events[29].id == 12)
         local custom = events[30]
         assert(custom.kind == "custom" and custom.name == "acme.done" and custom.value[1] == 1)
+        local saved, failed = events[31], events[32]
+        assert(saved.kind == "saved" and saved.path == "/Users/me/Lokyr.png" and saved.error == nil)
+        assert(failed.path == nil and failed.error == "it cannot be written")
         "#,
     )
     .exec()

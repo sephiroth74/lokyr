@@ -298,6 +298,33 @@ impl<'a> Cx<'a> {
         self.done(Request::SetClipboardText(text.to_owned()))
     }
 
+    /// Puts the image of `png`, a PNG, on the clipboard, in place of what
+    /// it held, as this call returns.
+    pub fn set_clipboard_image(&mut self, png: Vec<u8>) -> Result<(), Error> {
+        self.done(Request::SetClipboardImage(crate::host::Bytes(png)))
+    }
+
+    /// Asks the user where to save `bytes` as a file, in the save panel, a
+    /// sheet on `window` or on the focused one, of `name` suggested, which
+    /// shows once this call returns: returns the question's id, whose end
+    /// comes as [`Event::Saved`](crate::message::Event::Saved), the host
+    /// having written the file where the user chose.
+    pub fn save_file(
+        &mut self,
+        window: Option<WindowId>,
+        name: &str,
+        bytes: Vec<u8>,
+    ) -> Result<u64, Error> {
+        match self.request(Request::SaveFile {
+            window,
+            name: name.to_owned(),
+            bytes: crate::host::Bytes(bytes),
+        }) {
+            Response::Asking(id) => Ok(id),
+            other => Err(failed(other)),
+        }
+    }
+
     /// The window that has the focus.
     pub fn focused_window(&mut self) -> Option<WindowId> {
         match self.request(Request::FocusedWindow) {
@@ -571,6 +598,27 @@ impl<'a> Cx<'a> {
     pub fn styles(&mut self, pane: PaneId, row: i64) -> Result<Option<Vec<StyleRun>>, Error> {
         match self.request(Request::Styles { pane, row }) {
             Response::Styles(runs) => Ok(runs),
+            other => Err(failed(other)),
+        }
+    }
+
+    /// The cells of `pane`'s selection, if it has one, as an image draws
+    /// them: of each row the columns that it takes.
+    pub fn selection_cells(
+        &mut self,
+        pane: PaneId,
+    ) -> Result<Option<Vec<crate::image::CellRow>>, Error> {
+        match self.request(Request::SelectionCells(pane)) {
+            Response::Cells(rows) => Ok(rows),
+            other => Err(failed(other)),
+        }
+    }
+
+    /// The cells of the rows that `pane`'s view shows, from its top, as an
+    /// image draws them.
+    pub fn screen_cells(&mut self, pane: PaneId) -> Result<Vec<crate::image::CellRow>, Error> {
+        match self.request(Request::ScreenCells(pane)) {
+            Response::Cells(rows) => Ok(rows.unwrap_or_default()),
             other => Err(failed(other)),
         }
     }

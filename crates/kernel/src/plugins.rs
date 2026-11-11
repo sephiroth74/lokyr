@@ -223,6 +223,22 @@ pub enum Request {
         /// The capabilities, in their order.
         capabilities: Vec<Capability>,
     },
+    /// Ask the user where to save `bytes` as a file, in the save panel,
+    /// whose end [`Plugins::saved`] tells the plugin: the app writes the
+    /// file where the user chose.
+    SaveFile {
+        /// The plugin.
+        plugin: String,
+        /// The question's id.
+        id: u64,
+        /// The window that the panel shows on: the one given, or the focused
+        /// one as the plugin asked.
+        window: WindowId,
+        /// The file's name, as the panel suggests it.
+        name: String,
+        /// Its bytes.
+        bytes: Vec<u8>,
+    },
     /// Ask the user for a text, whose answer [`Plugins::answer`] gives the
     /// plugin.
     AskText {
@@ -257,6 +273,9 @@ pub trait Clipboard {
 
     /// Puts `text` on it.
     fn set_text(&mut self, text: &str);
+
+    /// Puts the image of `png`, a PNG, on it, in place of what it held.
+    fn set_image(&mut self, png: &[u8]);
 }
 
 /// What renders the images of cells that plugins ask for, the app's own
@@ -307,6 +326,8 @@ pub struct Context<'a> {
     /// The themes that the app can show, the appearance in force and its
     /// theme.
     pub themes: &'a dyn Fn() -> host::Themes,
+    /// Whether a window shows a save panel.
+    pub saving: &'a dyn Fn(WindowId) -> bool,
     /// The language that the app shows, of its own catalogs, which the
     /// plugins' messages take.
     pub language: &'a str,
@@ -2080,6 +2101,15 @@ impl Plugins {
             .push((Some(plugin.to_owned()), Event::Answered { id, text }));
     }
 
+    /// Tells `plugin` the end of its save `id`: the file's path, none as
+    /// the user cancelled, or the error of a write that failed, for the
+    /// next delivery, to it alone.
+    pub fn saved(&mut self, plugin: &str, id: u64, path: Option<String>, error: Option<String>) {
+        self.out
+            .events
+            .push((Some(plugin.to_owned()), Event::Saved { id, path, error }));
+    }
+
     /// Posts `event`, of the workspace's, for the next delivery.
     pub fn post(&mut self, event: Event) {
         // The views of a window or a pane that closed go with it, and the
@@ -3672,6 +3702,7 @@ fn apply(writes: Vec<Write>, context: &mut Context<'_>, out: &mut Outbox, state:
         };
         match write {
             Asked::SetClipboardText(text) => context.clipboard.set_text(&text),
+            Asked::SetClipboardImage(png) => context.clipboard.set_image(&png.0),
             Asked::SelectAll(id) => {
                 if let Some(pane) = pane(id) {
                     pane.select_all();
@@ -4038,6 +4069,25 @@ fn text_style(style: &Style) -> host::TextStyle {
         strikethrough: style.strikethrough,
         overline: style.overline,
     }
+}
+
+/// The rows of `cells`, as an image draws them, of the plugins' styles.
+pub fn cell_rows(cells: Vec<lokyr_vt_core::terminal::RowCells>) -> Vec<image::CellRow> {
+    cells
+        .into_iter()
+        .map(|row| image::CellRow {
+            text: row.text,
+            runs: row
+                .runs
+                .iter()
+                .map(|(first, last, style)| host::StyleRun {
+                    first: *first,
+                    last: *last,
+                    style: text_style(style),
+                })
+                .collect(),
+        })
+        .collect()
 }
 
 /// The bytes of the file at `path`, `most` of them at most: `None` of a
@@ -4824,6 +4874,14 @@ impl Host<'_, '_> {
                 }
             }
             Asked::Themes => Response::Themes((self.context.themes)()),
+            Asked::SelectionCells(pane) => Response::Cells(
+                self.pane(pane)?
+                    .selection_cells(image::MOST_ROWS)
+                    .map(cell_rows),
+            ),
+            Asked::ScreenCells(pane) => {
+                Response::Cells(Some(cell_rows(self.pane(pane)?.view_cells())))
+            }
             Asked::RenderImage(image) => {
                 if self.looking {
                     return Err(Error::new(Code::Failed, lokyr_plugin_sdk::image::LOOKING));
@@ -5028,6 +5086,7 @@ impl Host<'_, '_> {
                     ));
                 }
             }
+            Asked::SetClipboardImage(png) => png.check_png()?,
             Asked::SetWindowTabBarPlace { window, place } => {
                 self.window(*window)?;
                 if let Some(place) = place {
@@ -5282,6 +5341,46 @@ impl Host<'_, '_> {
                     .check(&name, variant)
                     .map_err(|message| Error::new(Code::NotFound, message))?;
                 Request::SetTheme { variant, name }
+            }
+            Asked::SaveFile {
+                window,
+                name,
+                bytes,
+            } => {
+                host::check_file_name(&name)?;
+                bytes.check()?;
+                let window = match window {
+                    Some(window) => {
+                        let window = WindowId::of(window.0);
+                        if self.context.workspace.window(window).is_none() {
+                            return Err(Error::new(
+                                Code::NotFound,
+                                format!("there is no window {}", window.get()),
+                            ));
+                        }
+                        window
+                    }
+                    None => self.context.focused.ok_or_else(|| {
+                        Error::new(Code::Unavailable, lokyr_plugin_sdk::message::NO_WINDOW)
+                    })?,
+                };
+                // A window shows one panel at a time, of any plugin's, the
+                // panels that this turn's calls asked for among them.
+                let queued = self.out.requests.iter().any(|request| {
+                    matches!(request, Request::SaveFile { window: asked, .. } if *asked == window)
+                });
+                if queued || (self.context.saving)(window) {
+                    return Err(Error::new(Code::Failed, lokyr_plugin_sdk::message::SAVING));
+                }
+                let id = new_id();
+                self.out.requests.push(Request::SaveFile {
+                    plugin: self.state.name.clone(),
+                    id,
+                    window,
+                    name,
+                    bytes: bytes.0,
+                });
+                return Ok(Response::Asking(id));
             }
             Asked::AskText {
                 window,

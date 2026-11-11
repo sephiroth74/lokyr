@@ -3,7 +3,8 @@
 //! by the windows' renderer, and written as a PNG.
 
 use lokyr_kernel::config::Padding;
-use lokyr_kernel::plugins::image::{MOST_PIXELS, MOST_SIDE, Png};
+use lokyr_kernel::plugins::host::Bytes;
+use lokyr_kernel::plugins::image::{MOST_PIXELS, MOST_SIDE};
 use lokyr_kernel::plugins::{self, Image, ImageSpec};
 use lokyr_render_core::Renderer;
 use lokyr_ui_core::image::{compose, terminal};
@@ -79,7 +80,7 @@ impl<B: Backend> plugins::Images for ImagePainter<'_, B> {
             .map_err(|error| error.to_string())?
             .ok_or("the renderer reads no image back")?;
         Ok(Image {
-            png: Png(png(pixels, (width, height), scale)?),
+            png: Bytes(png(pixels, (width, height), scale)?),
             width,
             height,
             scale,

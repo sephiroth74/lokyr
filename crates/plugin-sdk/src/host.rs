@@ -6,7 +6,8 @@
 //! changes, the kernel's state or the app, comes once the plugin's call
 //! returns, as the host never calls into a plugin that is running.
 
-use serde::{Deserialize, Serialize};
+use serde::de;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::command::{Args, Category, Param};
 use crate::message::{Call, Response};
@@ -880,6 +881,120 @@ pub enum Scroll {
     Row(i64),
 }
 
+/// The most bytes that a plugin gives the host at once, of a file to save
+/// or of an image for the clipboard.
+pub const MOST_BYTES: usize = 256 * 1024 * 1024;
+
+/// The most bytes of a file's name.
+pub const LONGEST_FILE_NAME: usize = 255;
+
+/// The first bytes of every PNG.
+const PNG_SIGNATURE: [u8; 8] = *b"\x89PNG\r\n\x1a\n";
+
+impl Bytes {
+    /// Whether they are within [`MOST_BYTES`], or the error that tells
+    /// they are not.
+    pub fn check(&self) -> Result<(), crate::command::Error> {
+        if self.0.len() > MOST_BYTES {
+            return Err(crate::command::Error::new(
+                crate::command::Code::Failed,
+                format!("a plugin gives {MOST_BYTES} bytes at most at once"),
+            ));
+        }
+        Ok(())
+    }
+
+    /// Whether they are a PNG, of its signature, within [`MOST_BYTES`]; the
+    /// error that tells they are not.
+    pub fn check_png(&self) -> Result<(), crate::command::Error> {
+        self.check()?;
+        if !self.0.starts_with(&PNG_SIGNATURE) {
+            return Err(crate::command::Error::new(
+                crate::command::Code::Failed,
+                "an image is a PNG, of its signature",
+            ));
+        }
+        Ok(())
+    }
+}
+
+/// Whether `name` is a file's name that a save panel can suggest: of a
+/// character at least and [`LONGEST_FILE_NAME`] bytes at most, not `.` nor
+/// `..`, of no `/` nor `:`, which macOS's Finder shows as one another, nor
+/// control character; the error that tells it is not.
+pub fn check_file_name(name: &str) -> Result<(), crate::command::Error> {
+    let fine = !name.is_empty()
+        && name.len() <= LONGEST_FILE_NAME
+        && name != "."
+        && name != ".."
+        && !name.chars().any(|c| c == '/' || c == ':' || c.is_control());
+    if fine {
+        return Ok(());
+    }
+    Err(crate::command::Error::new(
+        crate::command::Code::Failed,
+        format!(
+            "a file's name has 1 to {LONGEST_FILE_NAME} bytes, is not `.` nor `..`, and has no \
+             `/`, `:` nor control character"
+        ),
+    ))
+}
+
+/// Bytes, as a PNG's or a file's, which serde carries as bytes, a string of
+/// Luau's, rather than as a list of numbers.
+#[derive(Clone, Default, PartialEq, Eq)]
+pub struct Bytes(pub Vec<u8>);
+
+impl std::fmt::Debug for Bytes {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "Bytes({})", self.0.len())
+    }
+}
+
+impl Serialize for Bytes {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_bytes(&self.0)
+    }
+}
+
+impl<'de> Deserialize<'de> for Bytes {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        deserializer.deserialize_byte_buf(ByteVisitor).map(Bytes)
+    }
+}
+
+/// What reads bytes: of bytes, of a text as a string of Luau's, or of a
+/// list of numbers, as JSON writes bytes.
+struct ByteVisitor;
+
+impl<'de> de::Visitor<'de> for ByteVisitor {
+    type Value = Vec<u8>;
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("bytes")
+    }
+
+    fn visit_bytes<E: de::Error>(self, bytes: &[u8]) -> Result<Self::Value, E> {
+        Ok(bytes.to_vec())
+    }
+
+    fn visit_byte_buf<E: de::Error>(self, bytes: Vec<u8>) -> Result<Self::Value, E> {
+        Ok(bytes)
+    }
+
+    fn visit_str<E: de::Error>(self, text: &str) -> Result<Self::Value, E> {
+        Ok(text.as_bytes().to_vec())
+    }
+
+    fn visit_seq<A: de::SeqAccess<'de>>(self, mut items: A) -> Result<Self::Value, A::Error> {
+        let mut bytes = Vec::with_capacity(items.size_hint().unwrap_or(0).min(1 << 16));
+        while let Some(byte) = items.next_element::<u8>()? {
+            bytes.push(byte);
+        }
+        Ok(bytes)
+    }
+}
+
 /// What carries a plugin's calls to the host, and the host's answers
 /// back: the host itself, for a plugin on the main thread, or a channel's
 /// end, for one on a thread of its own or in a VM, whose calls cross as
@@ -895,6 +1010,30 @@ pub trait Host {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bytes_are_bounded_a_png_is_of_its_signature_and_a_file_s_name_is_plain() {
+        let png = Bytes(b"\x89PNG\r\n\x1a\nrest".to_vec());
+        assert_eq!(png.check_png(), Ok(()));
+        assert!(Bytes(b"GIF89a".to_vec()).check_png().is_err());
+        assert!(Bytes(Vec::new()).check_png().is_err());
+        assert_eq!(Bytes(vec![0; 16]).check(), Ok(()));
+        let huge = Bytes(vec![0; MOST_BYTES + 1]);
+        assert!(huge.check().unwrap_err().message.contains("bytes at most"));
+        for name in [
+            "Lokyr 2026-11-11 at 10.15.00.png",
+            ".hidden",
+            "日本.png",
+            "a b",
+        ] {
+            assert_eq!(check_file_name(name), Ok(()), "{name}");
+        }
+        let long = "x".repeat(LONGEST_FILE_NAME + 1);
+        for name in ["", ".", "..", "a/b.png", "a:b", "a\nb", "a\u{7}", &long] {
+            assert!(check_file_name(name).is_err(), "{name:?}");
+        }
+        assert_eq!(check_file_name(&"x".repeat(LONGEST_FILE_NAME)), Ok(()));
+    }
 
     #[test]
     fn a_file_url_s_host_is_this_machine_s_of_none_localhost_or_its_name() {

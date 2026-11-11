@@ -216,6 +216,25 @@ pub enum AlertStyle {
     Critical,
 }
 
+/// A save panel that is open, which
+/// [`AppEvent::SavePanelClosed`](crate::AppEvent::SavePanelClosed) names when
+/// it closes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct SavePanelId(u64);
+
+impl SavePanelId {
+    /// The panel of the platform's number `id`, which no other panel of the
+    /// process takes.
+    pub fn new(id: u64) -> Self {
+        Self(id)
+    }
+
+    /// The platform's number for the panel.
+    pub fn get(self) -> u64 {
+        self.0
+    }
+}
+
 /// An alert that is open, which [`AppEvent::AlertClosed`](crate::AppEvent::AlertClosed)
 /// names when it closes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]

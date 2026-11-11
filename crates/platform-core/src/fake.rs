@@ -11,9 +11,9 @@ use std::time::{Duration, Instant, SystemTime};
 use crate::{
     AboutPanel, Alert, AlertId, AppEvent, Appearance, Backdrop, ContentRect, ContextMenu, Error,
     Fill, GlobalKey, Handler, Layer, LayerPlace, MainMenu, Platform, Point, PointerArea,
-    PointerShape, QuickPlace, ScreenPoint, ScreenRect, Scrollers, Shortcut, Size, Sweep, Target,
-    TargetKind, TimerId, Titlebar, ToolLink, Usage, Waker, WindowAttributes, WindowEvent,
-    WindowHandle, WindowId, WindowSize,
+    PointerShape, QuickPlace, SavePanelId, ScreenPoint, ScreenRect, Scrollers, Shortcut, Size,
+    Sweep, Target, TargetKind, TimerId, Titlebar, ToolLink, Usage, Waker, WindowAttributes,
+    WindowEvent, WindowHandle, WindowId, WindowSize,
 };
 
 /// The scale of the fake's display when a test sets none: a Retina one.
@@ -226,6 +226,11 @@ pub struct Fake {
     /// The definitions that the app showed, from the first.
     definitions: Vec<FakeDefinition>,
     clipboard: Option<String>,
+    /// The image on the clipboard, a PNG, which takes its text's place.
+    clipboard_image: Option<Vec<u8>>,
+    /// The save panels that are open: each its id, its window and its
+    /// file's name.
+    save_panels: Vec<(SavePanelId, WindowId, String)>,
     alerts: Vec<FakeAlert>,
     /// The timers that have not fired, with the time of each.
     timers: BTreeMap<TimerId, Instant>,
@@ -316,6 +321,8 @@ impl Fake {
             bar: 0.0,
             definitions: Vec::new(),
             clipboard: None,
+            clipboard_image: None,
+            save_panels: Vec::new(),
             alerts: Vec::new(),
             timers: BTreeMap::new(),
             option_as_meta: (false, false),
@@ -528,6 +535,32 @@ impl Fake {
                 text,
             },
         )
+    }
+
+    /// The save panels that are open, in the order that they opened: each
+    /// its id, its window and its file's name.
+    pub fn save_panels(&self) -> &[(SavePanelId, WindowId, String)] {
+        &self.save_panels
+    }
+
+    /// Closes the save panel `panel` as the user chose `path`, or
+    /// cancelled, of none, and tells `handler`; false if it is not open.
+    pub fn close_save_panel(
+        &mut self,
+        handler: &mut dyn Handler,
+        panel: SavePanelId,
+        path: Option<PathBuf>,
+    ) -> bool {
+        let Some(index) = self.save_panels.iter().position(|open| open.0 == panel) else {
+            return false;
+        };
+        self.save_panels.remove(index);
+        self.send_app(handler, AppEvent::SavePanelClosed { panel, path })
+    }
+
+    /// The image on the clipboard, a PNG, if one is there.
+    pub fn clipboard_image(&self) -> Option<&[u8]> {
+        self.clipboard_image.as_deref()
     }
 
     /// Fires the timers whose time has come by `now`, from the earliest,
@@ -1237,6 +1270,18 @@ impl Platform for Fake {
 
     fn set_clipboard_text(&mut self, text: &str) {
         self.clipboard = Some(text.to_owned());
+        self.clipboard_image = None;
+    }
+
+    fn set_clipboard_image(&mut self, png: &[u8]) {
+        self.clipboard = None;
+        self.clipboard_image = Some(png.to_vec());
+    }
+
+    fn show_save_panel(&mut self, window: WindowId, name: &str) -> SavePanelId {
+        let id = SavePanelId::new(self.next_id());
+        self.save_panels.push((id, window, name.to_owned()));
+        id
     }
 
     fn show_alert(&mut self, window: Option<WindowId>, alert: &Alert) -> AlertId {
