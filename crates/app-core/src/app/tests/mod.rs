@@ -1672,6 +1672,49 @@ fn the_title_tells_the_directory_the_program_and_the_size() {
 }
 
 #[test]
+fn a_program_that_a_shell_of_no_marks_starts_late_is_found_by_the_later_looks() {
+    // The shell says nothing for 0.6 s after its output, then its program
+    // starts: the look after the output finds the shell, and the next, a
+    // second after the output, the program.
+    let mut fake = Fake::default();
+    let mut app = app(
+        unpadded(),
+        shell("cd /usr; stty raw -echo; echo ready; sleep 0.6; exec cat"),
+    );
+    app.title_look = Some(TITLE_LOOK);
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    run_until(&mut fake, &mut app, |_, app| {
+        app.windows[&window].place.1 == "cat"
+    });
+    assert!(!app.tells_commands(window));
+}
+
+#[test]
+fn a_command_that_its_shell_marks_is_found_as_its_program_starts_late() {
+    // A shell of the integration's marks starts its command 0.7 s after
+    // its mark, of no output: the looks after the mark find the program.
+    let mut fake = Fake::default();
+    let mut app = app(
+        unpadded(),
+        shell(concat!(
+            "cd /usr; stty raw -echo; ",
+            "printf '\\033]133;A\\007$ \\033]133;B\\007\\033]133;C\\007'; ",
+            "sleep 0.7; exec cat",
+        )),
+    );
+    app.title_look = Some(TITLE_LOOK);
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    run_until(&mut fake, &mut app, |_, app| app.tells_commands(window));
+    run_until(&mut fake, &mut app, |_, app| {
+        app.windows[&window].place.1 == "cat"
+    });
+    // Its looks end as its program shows.
+    assert_eq!(app.windows[&window].command_at, None);
+}
+
+#[test]
 fn the_cursor_s_blinking_takes_no_look_at_the_title() {
     let (mut fake, mut app, window) = focused();
     app.title_look = Some(TITLE_LOOK);
@@ -1707,6 +1750,18 @@ fn the_title_s_last_look_comes_after_the_window_s_last_output() {
     assert_eq!(app.title_timer.map(|(_, at)| at), Some(later + TITLE_LOOK));
     fake.fire_timers(&mut app, later + TITLE_LOOK);
     assert_eq!(app.windows[&window].place.1, "cat");
+    // Of a shell that marks no command, twice more, a second and four
+    // after the output, then none.
+    assert_eq!(
+        app.title_timer.map(|(_, at)| at),
+        Some(later + Duration::from_secs(1))
+    );
+    fake.fire_timers(&mut app, later + Duration::from_secs(1));
+    assert_eq!(
+        app.title_timer.map(|(_, at)| at),
+        Some(later + Duration::from_secs(4))
+    );
+    fake.fire_timers(&mut app, later + Duration::from_secs(4));
     assert!(app.title_timer.is_none());
     assert_eq!(app.windows[&window].output_at, None);
 }

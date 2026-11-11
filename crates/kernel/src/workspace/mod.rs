@@ -620,6 +620,7 @@ impl Workspace {
                 match *event {
                     terminal::Event::CommandStarted(command) => {
                         pane.command_started = Some((command, now));
+                        pane.commands_told = true;
                     }
                     terminal::Event::CommandEnded { id: command, .. } => {
                         if let Some((_, at)) = pane

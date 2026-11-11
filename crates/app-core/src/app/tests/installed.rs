@@ -521,3 +521,99 @@ fn an_installed_plugin_of_a_schema_too_large_is_refused() {
         "{told:?}"
     );
 }
+
+#[test]
+fn an_installed_plugin_s_titlebar_button_shows_its_render_after_a_tab_s_change() {
+    use lokyr_kernel::plugins::ui::Slot;
+    use lokyr_text_core::FontConfig;
+
+    let _luau = LUAU.lock().unwrap_or_else(PoisonError::into_inner);
+    let folder = shelf("button");
+    let store = Store::new(folder.join("store"));
+    let button = manifest(
+        "button",
+        &["slot:title-buttons"],
+        "^0.1",
+        "[contributes]\nslots = [\"title-buttons\"]\n",
+    );
+    // A button whose icon tells whether a tab is titled `flip`, which it
+    // reads at each tab's change, asking for its render.
+    let entry = r#"
+        local views = {}
+        local titled = false
+        local function flip(cx)
+            for _, window in assert(cx.windows()) do
+                for _, tab in assert(cx.tabs(window.id)) do
+                    if tab.title == "flip" then
+                        return true
+                    end
+                end
+            end
+            return false
+        end
+        return {
+            activate = function(cx)
+                assert(cx.subscribe({ "tab-changed" }))
+            end,
+            on_event = function(cx, events)
+                local now = flip(cx)
+                if now ~= titled then
+                    titled = now
+                    for _, view in views do
+                        assert(cx.request_render(view))
+                    end
+                end
+            end,
+            render = function(cx, view)
+                if #views == 0 then
+                    table.insert(views, view)
+                end
+                return {
+                    kind = "button", key = "b", tooltip = "Flip",
+                    icon = if titled then "coffee" else "eye-closed",
+                }
+            end,
+        }
+    "#;
+    let lock = folder.join("plugins.lock");
+    Lock {
+        api: lokyr_kernel::plugins::API_VERSION.to_owned(),
+        packages: BTreeMap::from([stored(&store, "button", &button, entry)]),
+    }
+    .write(&lock)
+    .unwrap();
+    grant_open(&folder, &["button"]);
+    let drawing = Drawing::new(FontConfig::default()).unwrap();
+    let mut fake = Fake::default();
+    fake.set_bar(28.0);
+    let mut app = App::new(Some(drawing), unpadded(), None)
+        .with_program(idle())
+        .with_installed(lock, store);
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    app.windows.get_mut(&window).unwrap().surface = Some(crate::fakes::Surface::default());
+    let icon = |app: &App| -> Option<String> {
+        let view = app.windows[&window]
+            .chrome
+            .iter()
+            .find(|view| view.view.slot() == Some(Slot::TitleButtons))?;
+        let tree = &view.surface.tree;
+        match tree.kind(tree.root()?)? {
+            lokyr_kernel::plugins::view::Kind::Button(button) => Some(button.icon.clone()),
+            _ => None,
+        }
+    };
+    fake.send(&mut app, window, WindowEvent::Frame);
+    run_until(&mut fake, &mut app, |_, app| {
+        icon(app).as_deref() == Some("eye-closed")
+    });
+    // A tab's change, in a turn of no frame of its own.
+    let shown = app.windows[&window].window;
+    let tab = app.workspace.window(shown).unwrap().active_tab();
+    app.workspace.set_tab_title(tab, Some("flip".to_owned()));
+    fake.send_app(&mut app, AppEvent::Wake);
+    run_until(&mut fake, &mut app, |_, app| {
+        icon(app).as_deref() == Some("coffee")
+    });
+    let _ = std::fs::remove_dir_all(&folder);
+}

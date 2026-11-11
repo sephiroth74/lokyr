@@ -335,3 +335,30 @@ fn a_tab_s_title_is_its_folder_and_its_program_and_a_plugin_reads_its_keys() {
     run(&mut fake, &mut app, "parts.read");
     assert_eq!(read.borrow().last().map(String::as_str), Some("⌃1"));
 }
+
+#[test]
+fn a_program_started_without_a_word_marks_its_tab_running_as_the_titles_look_again() {
+    let mut fake = Fake::default();
+    let mut app = app(
+        Config::default(),
+        Program::command("/bin/sh", [] as [&str; 0]),
+    );
+    app.title_look = Some(Duration::from_millis(100));
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    let pane = app.focused(window).unwrap();
+    let tab = app.workspace.tab_of(pane).unwrap();
+    let running = |app: &App| app.workspace.tab(tab).unwrap().marks().running;
+    run_until(&mut fake, &mut app, |_, app| {
+        app.workspace.pane(pane).and_then(Pane::running).is_none()
+    });
+    assert!(!running(&app));
+    // `sleep` echoes its command, then says nothing: the titles' look, a
+    // while after the echo, finds it.
+    fake.send(
+        &mut app,
+        window,
+        typed(lokyr_platform_core::KeyCode::KeyS, "sleep 3\r", false),
+    );
+    run_until(&mut fake, &mut app, |_, app| running(app));
+}

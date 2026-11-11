@@ -304,3 +304,112 @@ fn a_title_button_over_a_title_across_the_titlebar_takes_its_hover_and_press() {
     click_in(&mut fake, &mut app, window, button, scale);
     assert_eq!(*clicks.borrow(), ["over"]);
 }
+
+/// A plugin on a thread of its own of a titlebar button, whose icon its
+/// command flips, as a tab's title of `flip` does, of the event of its
+/// change, as of a mode and a state that change: each asks for its render.
+#[derive(Default)]
+struct Flipper {
+    flipped: bool,
+    titled: bool,
+    views: Vec<ViewId>,
+}
+
+impl Flipper {
+    fn render_again(&self, cx: &mut plugins::Cx<'_>) -> Result<(), Error> {
+        for view in &self.views {
+            cx.request_render(view.clone())?;
+        }
+        Ok(())
+    }
+}
+
+impl plugins::Plugin for Flipper {
+    fn activate(&mut self, cx: &mut plugins::Cx<'_>) -> Result<(), Error> {
+        cx.register_command(lokyr_kernel::commands::Command {
+            name: "flipper.flip".to_owned(),
+            title: "Flip".to_owned(),
+            category: lokyr_kernel::commands::Category::View,
+            capabilities: Vec::new(),
+            params: Vec::new(),
+            when: None,
+        })?;
+        cx.subscribe(&["tab-changed"])
+    }
+
+    fn on_command(&mut self, cx: &mut plugins::Cx<'_>, _: &str, _: Args) -> Result<(), Error> {
+        self.flipped = !self.flipped;
+        self.render_again(cx)
+    }
+
+    fn on_event(&mut self, cx: &mut plugins::Cx<'_>, _: &[plugins::Event]) -> Result<(), Error> {
+        let mut titled = false;
+        for window in cx.windows()? {
+            titled |= cx.tabs(window.id)?.iter().any(|tab| tab.title == "flip");
+        }
+        if titled != self.titled {
+            self.titled = titled;
+            self.render_again(cx)?;
+        }
+        Ok(())
+    }
+
+    fn render(&mut self, _: &mut plugins::Cx<'_>, view: &ViewId) -> Option<Node> {
+        if !self.views.contains(view) {
+            self.views.push(view.clone());
+        }
+        let icon = if self.flipped == self.titled {
+            "eye-closed"
+        } else {
+            "coffee"
+        };
+        Some(Node::icon_button(icon).key("b").tooltip("Flip"))
+    }
+}
+
+#[test]
+fn a_title_button_of_a_plugin_on_its_thread_shows_its_render_anew_of_no_other_frame() {
+    let drawing = Drawing::new(FontConfig::default()).unwrap();
+    let mut fake = Fake::default();
+    fake.set_bar(28.0);
+    let manifest = concat!(
+        "[plugin]\nname = \"lokyr/flipper\"\nkind = \"builtin\"\nlicense = \"MIT\"\n",
+        "[contributes]\nslots = [\"title-buttons\"]\n",
+    );
+    let mut app = App::new(Some(drawing), unpadded(), None)
+        .with_program(quiet())
+        .with_builtin_send(manifest, Box::new(Flipper::default()));
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    app.windows.get_mut(&window).unwrap().surface = Some(fakes::Surface::default());
+    let icon = |app: &App| -> Option<String> {
+        let view = app.windows[&window]
+            .chrome
+            .iter()
+            .find(|view| matches!(view.view, ViewId::TitleButtons(_)))?;
+        let tree = &view.surface.tree;
+        match tree.kind(tree.root()?)? {
+            lokyr_kernel::plugins::view::Kind::Button(button) => Some(button.icon.clone()),
+            _ => None,
+        }
+    };
+    fake.send(&mut app, window, WindowEvent::Frame);
+    run_until(&mut fake, &mut app, |_, app| {
+        icon(app).as_deref() == Some("eye-closed")
+    });
+    // The command's render, of the plugin's thread, asks for the frame that
+    // shows it, as no hover nor tab's change brings one.
+    fake.send_app(&mut app, AppEvent::Command("flipper.flip".to_owned()));
+    run_until(&mut fake, &mut app, |_, app| {
+        icon(app).as_deref() == Some("coffee")
+    });
+    // A tab's change, as of a program that starts in it, of a turn of no
+    // frame.
+    let shown = app.windows[&window].window;
+    let tab = app.workspace.window(shown).unwrap().active_tab();
+    app.workspace.set_tab_title(tab, Some("flip".to_owned()));
+    fake.send_app(&mut app, AppEvent::Wake);
+    run_until(&mut fake, &mut app, |_, app| {
+        icon(app).as_deref() == Some("eye-closed")
+    });
+}

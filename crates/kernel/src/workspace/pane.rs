@@ -221,6 +221,9 @@ pub struct Pane {
     /// The command that started last, of its id, and when the workspace's
     /// look found its start, until its end.
     pub(super) command_started: Option<(u64, Instant)>,
+    /// Whether its shell marked a command's start, as a shell of its
+    /// integration does.
+    pub(super) commands_told: bool,
 }
 
 impl std::fmt::Debug for Pane {
@@ -359,6 +362,7 @@ impl Pane {
             slices: 0,
             told_viewport: None,
             command_started: None,
+            commands_told: false,
         };
         let mut options = Options::new(pty);
         // The wheel scrolls programs of the alternate screen, as `less`, by
@@ -1008,6 +1012,18 @@ impl Pane {
             &name,
             &self.foreground_program().unwrap_or_default(),
         ))
+    }
+
+    /// Whether its shell marks its commands' starts, of OSC 133, as a shell
+    /// of its integration does, once it marked one.
+    pub fn tells_commands(&self) -> bool {
+        self.commands_told
+    }
+
+    /// Whether a command that its shell marked runs, from its start's mark
+    /// to its end's.
+    pub fn runs_command(&self) -> bool {
+        self.command_started.is_some()
     }
 
     /// The working directory that the shell told last, by OSC 7, if it is

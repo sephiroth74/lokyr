@@ -236,6 +236,23 @@ const WINDOW_SIZE: Size = Size {
 /// word.
 const TITLE_LOOK: Duration = Duration::from_millis(250);
 
+/// The looks at a window's foreground program after its last output, past
+/// the first, of a shell that marks no command's start: a program that
+/// starts without a word after its command's echo, which a slow shell, as
+/// of its first command, starts late.
+const OUTPUT_LOOKS: [Duration; 2] = [Duration::from_secs(1), Duration::from_secs(4)];
+
+/// The looks at a window's foreground program after its shell marked a
+/// command's start, from the mark, while the command runs and its program
+/// is not yet in the foreground.
+const COMMAND_LOOKS: [Duration; 5] = [
+    Duration::from_millis(250),
+    Duration::from_millis(500),
+    Duration::from_secs(1),
+    Duration::from_secs(2),
+    Duration::from_secs(4),
+];
+
 /// The columns and the rows of a man page's window: `man` lays its pages
 /// out for 80 columns.
 const MAN_PAGE_CELLS: (u32, u32) = (80, 48);
@@ -3247,10 +3264,13 @@ impl<B: Backend> App<B> {
                 Event::Terminal {
                     pane,
                     event: vt::Event::CommandStarted(command),
-                } => self.plugins.post(plugins::Event::CommandStarted {
-                    pane: host::PaneId(pane.get()),
-                    command,
-                }),
+                } => {
+                    self.plugins.post(plugins::Event::CommandStarted {
+                        pane: host::PaneId(pane.get()),
+                        command,
+                    });
+                    self.look_after_command(platform, pane);
+                }
                 Event::CommandEnded {
                     pane,
                     command,
@@ -3542,14 +3562,53 @@ impl<B: Backend> App<B> {
             let now = Instant::now();
             if let Some(state) = self.windows.get_mut(&window) {
                 state.output_at = Some(now);
+                state.output_looks = 0;
             }
-            if let Some(after) = self.title_look
-                && self.title_timer.is_none()
-            {
-                self.title_timer = Some((platform.start_timer(now + after), now + after));
+            if let Some(after) = self.title_look {
+                self.arm_title_look(platform, now + after);
             }
         }
         self.show_title(platform, window);
+    }
+
+    /// Starts the titles' timer for `due`, unless it comes before.
+    fn arm_title_look(&mut self, platform: &mut dyn Platform, due: Instant) {
+        if self.title_timer.is_some_and(|(_, at)| at <= due) {
+            return;
+        }
+        if let Some((timer, _)) = self.title_timer.take() {
+            platform.cancel_timer(timer);
+        }
+        self.title_timer = Some((platform.start_timer(due), due));
+    }
+
+    /// Whether `window`'s focused pane's shell marks its commands' starts,
+    /// of its integration, which the config loads.
+    fn tells_commands(&self, window: WindowId) -> bool {
+        self.config.terminal.shell_integration
+            && self
+                .windows
+                .get(&window)
+                .and_then(|state| self.workspace.focused(state.window))
+                .is_some_and(Pane::tells_commands)
+    }
+
+    /// The shell of `pane` marked a command's start: the window that it has
+    /// the keyboard of looks at its foreground program a few times after
+    /// it, until the program shows there.
+    fn look_after_command(&mut self, platform: &mut dyn Platform, pane: PaneId) {
+        if self.title_look.is_none() {
+            return;
+        }
+        let now = Instant::now();
+        let window = self
+            .windows
+            .iter_mut()
+            .find(|(_, state)| self.workspace.active_pane(state.window) == Some(pane));
+        if let Some((_, state)) = window {
+            state.command_at = Some((now, 0));
+            self.arm_title_look(platform, now + COMMAND_LOOKS[0]);
+        }
     }
 
     /// Looks at the directory and the program in `window`'s foreground,
@@ -3623,29 +3682,80 @@ impl<B: Backend> App<B> {
     /// more; the timer starts again for the others, at the first of their
     /// times.
     fn look_at_places_again(&mut self, platform: &mut dyn Platform) {
-        let (Some((_, at)), Some(after)) = (self.title_timer.take(), self.title_look) else {
+        let (Some((_, at)), Some(first)) = (self.title_timer.take(), self.title_look) else {
             return;
         };
         let mut next: Option<Instant> = None;
+        let mut sooner = |due: Instant| next = Some(next.map_or(due, |next| next.min(due)));
         let mut due = Vec::new();
-        for (&window, state) in &mut self.windows {
-            let Some(output) = state.output_at else {
+        let windows: Vec<WindowId> = self.windows.keys().copied().collect();
+        for window in windows {
+            let told = self.tells_commands(window);
+            let Some(state) = self.windows.get_mut(&window) else {
                 continue;
             };
-            if output + after <= at {
-                state.output_at = None;
+            let mut looks = false;
+            // After its last output: once, of a shell that marks its
+            // commands, whose marks bring their own looks; a few times
+            // otherwise.
+            if let Some(output) = state.output_at {
+                let delay = |step: usize| match step {
+                    0 => Some(first),
+                    step if !told => OUTPUT_LOOKS.get(step - 1).copied(),
+                    _ => None,
+                };
+                if let Some(after) = delay(state.output_looks)
+                    && output + after <= at
+                {
+                    looks = true;
+                    state.output_looks += 1;
+                }
+                match delay(state.output_looks) {
+                    Some(after) => sooner(output + after),
+                    None => state.output_at = None,
+                }
+            }
+            // After its command's start, while its program is not yet in
+            // the foreground.
+            if let Some((started, step)) = state.command_at {
+                match COMMAND_LOOKS.get(step) {
+                    Some(&after) if started + after <= at => {
+                        looks = true;
+                        state.command_at = Some((started, step + 1));
+                    }
+                    Some(&after) => sooner(started + after),
+                    None => state.command_at = None,
+                }
+            }
+            if looks {
                 due.push(window);
-            } else {
-                next = Some(next.map_or(output + after, |next| next.min(output + after)));
             }
         }
         for window in due {
             self.look_at_place(window);
             self.show_title(platform, window);
+            let Some(shown) = self.windows.get(&window).map(|state| state.window) else {
+                continue;
+            };
             // The panes' headers, of a program that started without a word.
-            if let Some(shown) = self.windows.get(&window).map(|state| state.window) {
-                let panes = self.workspace.panes_of(shown);
-                self.workspace.look_at_headers(&panes);
+            let panes = self.workspace.panes_of(shown);
+            self.workspace.look_at_headers(&panes);
+            // A command's looks end as its program shows, or as it ends.
+            let runs = self
+                .workspace
+                .focused(shown)
+                .is_some_and(Pane::runs_command);
+            let Some(state) = self.windows.get_mut(&window) else {
+                continue;
+            };
+            if !runs || runs_other_than_shell(&state.place.1) {
+                state.command_at = None;
+            }
+            if let Some((started, step)) = state.command_at {
+                match COMMAND_LOOKS.get(step) {
+                    Some(&after) => sooner(started + after),
+                    None => state.command_at = None,
+                }
             }
         }
         if let Some(next) = next {
