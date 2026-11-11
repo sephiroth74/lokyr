@@ -173,7 +173,11 @@ fn the_end_of_the_output_is_told_with_the_exit() {
         assert!(start.elapsed() < Duration::from_secs(10));
         thread::sleep(Duration::from_millis(10));
     }
-    assert!(wakes.load(Ordering::SeqCst) >= 1);
+    // The I/O thread marks the end, then wakes the main thread.
+    while wakes.load(Ordering::SeqCst) < 1 {
+        assert!(start.elapsed() < Duration::from_secs(10), "no wake came");
+        thread::sleep(Duration::from_millis(10));
+    }
     let start = Instant::now();
     loop {
         if let Some(exit) = session.exit().unwrap() {
