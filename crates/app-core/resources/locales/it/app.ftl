@@ -95,6 +95,7 @@ menu-appearance = Aspetto
 menu-appearance-system = Automatico
 menu-appearance-light = Chiaro
 menu-appearance-dark = Scuro
+title-buttons-more = Altro
 menu-look-up = Cerca info su “{ $word }”
 menu-man-page = Apri la pagina man per “{ $page }”
 menu-man-search = Cerca “{ $words }” nell'indice delle pagine man

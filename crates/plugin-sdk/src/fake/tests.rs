@@ -1483,6 +1483,36 @@ fn a_menu_item_added_again_of_another_tick_changes_its_tick() {
     assert_eq!(ticks(&host), [false]);
 }
 
+/// A plugin whose titlebar button is `button`.
+struct Titled {
+    button: Node,
+}
+
+impl Plugin for Titled {
+    fn render(&mut self, _: &mut Cx<'_>, _: &ViewId) -> Option<Node> {
+        Some(self.button.clone())
+    }
+}
+
+#[test]
+fn a_titlebar_button_that_is_none_is_refused_as_the_app_s_host_refuses_it() {
+    let mut host = FakeHost::new("acme/probe").with_slots(vec![Slot::TitleButtons]);
+    let view = ViewId::TitleButtons(WindowId(1));
+    let mut good = Titled {
+        button: Node::icon_button("circle").key("b").tooltip("Awake"),
+    };
+    host.activate(&mut good).unwrap();
+    assert!(host.try_render(&mut good, &view).unwrap().is_some());
+    // A text's button refused, the last staying.
+    let mut worded = Titled {
+        button: Node::button("Awake").key("b").tooltip("Awake"),
+    };
+    let error = host.try_render(&mut worded, &view).unwrap_err();
+    assert_eq!(error.code, Code::Failed);
+    assert!(error.message.contains("an icon alone"), "{error:?}");
+    assert_eq!(host.render(&mut worded, &view), Some(good.button.clone()));
+}
+
 /// A plugin that hears the tabs' events, by their names, and runs the
 /// requests that `asks` makes as its command runs.
 struct TabListener {

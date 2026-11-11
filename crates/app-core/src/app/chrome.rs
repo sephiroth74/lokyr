@@ -11,10 +11,14 @@ use std::time::Instant;
 use lokyr_kernel::plugins::Plugins;
 use lokyr_kernel::plugins::host::{self, BarPlace};
 use lokyr_kernel::plugins::ui::{PanelId, PanelOptions, Role, Slot, UiEvent, ViewId};
-use lokyr_kernel::plugins::view::Key as NodeKey;
+use lokyr_kernel::plugins::view::{
+    Align, Hover, Justify, Key as NodeKey, Layout as NodeLayout, Length, Node, Style, Token,
+    Transition, UiEventKind,
+};
 use lokyr_kernel::workspace::PaneId;
 use lokyr_platform_core::{
-    Fill, FillShape, Platform, Point, Size, Sweep, SweepShape, WindowId, WindowSize,
+    ContextMenu, Fill, FillShape, MenuItem, Platform, Point, Size, Sweep, SweepShape, WindowId,
+    WindowSize,
 };
 use lokyr_render_core::{Item, Rect};
 use lokyr_text_core::FontBackend;
@@ -33,6 +37,27 @@ use lokyr_ui_core::tree::NodeId;
 use super::App;
 use crate::Backend;
 use crate::window::NativeMenu;
+
+/// The most buttons that the titlebar shows beside the window's: past them,
+/// the last place's button lists the rest in a menu.
+pub(crate) const MOST_TITLE_BUTTONS: usize = 3;
+
+/// A titlebar button's side, in points.
+const TITLE_BUTTON: f32 = 24.0;
+
+/// The room that each titlebar button takes across, in points.
+const TITLE_BUTTON_ROOM: f32 = 28.0;
+
+/// The plugin's name of the button of the titlebar's buttons that find no
+/// room, the app's own, which no plugin's name is.
+pub(crate) const OVERFLOW: &str = "";
+
+/// The prefix of the ids of the items of the menu of the titlebar's
+/// buttons that find no room, before their views' ids.
+const OVERFLOWED: &str = "title-button:";
+
+/// How long a titlebar button's hover and press fade, in seconds.
+const FADE: f32 = 0.12;
 
 /// What a panel keeps of its opening: its plugin's options, and where the
 /// pointer was as it opened, in pixels, which an anchor at the pointer
@@ -187,8 +212,15 @@ impl<B: Backend> App<B> {
         for plugin in self.plugins.providers(Slot::StatusBar) {
             views.push((plugin.to_owned(), ViewId::StatusBar(shown)));
         }
-        for plugin in self.plugins.providers(Slot::TitleButtons) {
+        // The titlebar's buttons, and the app's of those that find no room
+        // as they are more than the titlebar shows.
+        let buttons = self.plugins.providers(Slot::TitleButtons);
+        let more = buttons.len() > MOST_TITLE_BUTTONS;
+        for plugin in buttons {
             views.push((plugin.to_owned(), ViewId::TitleButtons(shown)));
+        }
+        if more {
+            views.push((OVERFLOW.to_owned(), ViewId::TitleButtons(shown)));
         }
         if let Some(plugin) = one(Slot::TabBar, &slots.tab_bar) {
             views.push((plugin, ViewId::TabBar(shown)));
@@ -201,7 +233,7 @@ impl<B: Backend> App<B> {
             .iter()
             .filter_map(|menu| match menu {
                 NativeMenu::Panel(id, _) => Some(*id),
-                NativeMenu::Window | NativeMenu::Closed => None,
+                NativeMenu::Window | NativeMenu::Closed | NativeMenu::Overflow(_) => None,
             })
             .chain(state.native_due.iter().copied())
             .filter_map(panel)
@@ -219,7 +251,9 @@ impl<B: Backend> App<B> {
         let due: Vec<(String, ViewId)> = self
             .slot_views(window)
             .into_iter()
-            .filter(|(plugin, view)| self.plugins.rendered(plugin, view).is_none())
+            .filter(|(plugin, view)| {
+                plugin != OVERFLOW && self.plugins.rendered(plugin, view).is_none()
+            })
             .collect();
         let mut rendered = false;
         for (plugin, view) in &due {
@@ -249,10 +283,10 @@ impl<B: Backend> App<B> {
     /// rendered it anew since the window took its tree.
     pub(super) fn frame_rendered(&self, platform: &mut dyn Platform) {
         for (&window, state) in &self.windows {
-            let stale = state
-                .chrome
-                .iter()
-                .any(|view| self.plugins.rendered(&view.plugin, &view.view) != view.shown);
+            let stale = state.chrome.iter().any(|view| {
+                view.plugin != OVERFLOW
+                    && self.plugins.rendered(&view.plugin, &view.view) != view.shown
+            });
             if stale {
                 platform.request_frame(window);
             }
@@ -304,15 +338,30 @@ impl<B: Backend> App<B> {
             if (slot.surface.layout.scale() - scale).abs() > f32::EPSILON {
                 slot.surface.layout.set_scale(&slot.surface.tree, scale);
             }
-            let rendered = self.plugins.rendered(&plugin, &view);
+            // The app's button of the titlebar's buttons that find no room
+            // is of one tree, its first.
+            let rendered = if plugin == OVERFLOW {
+                Some(0)
+            } else {
+                self.plugins.rendered(&plugin, &view)
+            };
             if rendered != slot.shown {
                 let first = slot.shown.is_none();
                 slot.shown = rendered;
                 state.views_changed = true;
                 let composing = slot.surface.fields.composing(&slot.surface.tree).is_some();
-                match self.plugins.tree(&plugin, &view) {
+                let tree = if plugin == OVERFLOW {
+                    Some(overflow_button(self.texts.text("title-buttons-more")))
+                } else {
+                    let tree = self.plugins.tree(&plugin, &view);
+                    match view {
+                        ViewId::TitleButtons(_) => tree.cloned().map(sized_title_button),
+                        _ => tree.cloned(),
+                    }
+                };
+                match tree {
                     Some(tree) => {
-                        if let Err(error) = slot.surface.update(tree) {
+                        if let Err(error) = slot.surface.update(&tree) {
                             eprintln!(
                                 "lokyr: the view {view:?} of `{plugin}` keeps its last tree, as its new one is not one: {error:?}"
                             );
@@ -436,28 +485,15 @@ impl<B: Backend> App<B> {
         };
         let window_strip = natural(Slot::WindowStrip);
         let status_bar = natural(Slot::StatusBar);
-        // The titlebar's small buttons, each view of its own width, of the
-        // titlebar's height, or of a tab bar's across the top in full
-        // screen.
-        let band = if titlebar > 0.0 { titlebar } else { tab_bar };
-        let mut buttons_widths = Vec::new();
-        for view in state
-            .chrome
-            .iter_mut()
-            .filter(|view| view.view.slot() == Some(Slot::TitleButtons) && view.shows())
-        {
-            let laid = view.surface.lay_out((None, Some(band)), font);
-            events.extend(
-                laid.into_iter()
-                    .map(|event| (view.plugin.clone(), view.view.clone(), event)),
-            );
-            buttons_widths.push(view.surface.size().map_or(0.0, |size| size.0.ceil()));
-        }
+        // The titlebar's buttons that show, three at most, of the plugins'
+        // order: of more, two, and the app's button of the rest.
+        let scale = size.scale as f32;
+        let shown_buttons = title_buttons_shown(&state.chrome);
         let heights = Heights {
             tab_bar,
             window_strip,
             status_bar,
-            title_buttons: buttons_widths.iter().sum(),
+            title_buttons: shown_buttons.len() as f32 * (TITLE_BUTTON_ROOM * scale).round(),
         };
         let shape = chrome::Window {
             size: (width, size.pixels.height as f32),
@@ -466,24 +502,28 @@ impl<B: Backend> App<B> {
         };
         let regions = chrome::regions(&shape, place, heights);
         state.overlay = regions.window_overlay;
-        // The small buttons' views side by side, each of its width.
-        let mut x = regions.title_buttons.map_or(0.0, |region| region.x);
-        let mut widths = buttons_widths.into_iter();
+        // The buttons side by side, each a square in the middle of its room
+        // and of the titlebar's height; the others hide.
+        let room_across = (TITLE_BUTTON_ROOM * scale).round();
+        let side = (TITLE_BUTTON * scale).round();
         for view in state
             .chrome
             .iter_mut()
             .filter(|view| view.view.slot() == Some(Slot::TitleButtons))
         {
             view.frame = None;
-            let (Some(region), true) = (regions.title_buttons, view.shows()) else {
+            let (Some(region), Some(place)) = (
+                regions.title_buttons,
+                shown_buttons.iter().position(|id| *id == view.id),
+            ) else {
                 continue;
             };
-            let width = widths
-                .next()
-                .unwrap_or(0.0)
-                .min(region.x + region.width - x);
-            let frame = Frame { x, width, ..region };
-            x += width;
+            let frame = Frame {
+                x: region.x + room_across * place as f32 + ((room_across - side) / 2.0).round(),
+                y: region.y + ((region.height - side) / 2.0).round(),
+                width: side,
+                height: side,
+            };
             view.frame = Some(frame);
             let laid = view
                 .surface
@@ -975,5 +1015,186 @@ pub(super) fn rect_of(frame: Frame) -> Rect {
         y: top as i32,
         width: (right - left).max(0.0) as u32,
         height: (bottom - top).max(0.0) as u32,
+    }
+}
+
+/// The ids of the titlebar's buttons of `chrome` that show, in their order:
+/// every plugin's that has a tree, three at most, or of more, the first two
+/// and the app's button of the rest.
+fn title_buttons_shown(chrome: &[SlotView]) -> Vec<u32> {
+    let buttons = || {
+        chrome
+            .iter()
+            .filter(|view| view.view.slot() == Some(Slot::TitleButtons) && view.shows())
+    };
+    let plugins: Vec<u32> = buttons()
+        .filter(|view| view.plugin != OVERFLOW)
+        .map(|view| view.id)
+        .collect();
+    if plugins.len() <= MOST_TITLE_BUTTONS {
+        return plugins;
+    }
+    let mut shown = plugins[..MOST_TITLE_BUTTONS - 1].to_vec();
+    shown.extend(
+        buttons()
+            .filter(|view| view.plugin == OVERFLOW)
+            .map(|view| view.id),
+    );
+    shown
+}
+
+/// `button`, a plugin's titlebar button, of the host's size: a square of
+/// [`TITLE_BUTTON`] points, its icon in its middle.
+fn sized_title_button(mut button: Node) -> Node {
+    button.layout = NodeLayout {
+        width: Length::Points(TITLE_BUTTON),
+        min_width: Length::Points(TITLE_BUTTON),
+        height: Length::Points(TITLE_BUTTON),
+        justify: Justify::Center,
+        align: Align::Center,
+        ..NodeLayout::default()
+    };
+    button
+}
+
+/// The app's button of the titlebar's buttons that find no room, of the
+/// name `more`: an ellipsis, of no box at rest.
+fn overflow_button(more: String) -> Node {
+    sized_title_button(
+        Node::icon_button("ellipsis")
+            .key("overflow")
+            .label(more.clone())
+            .tooltip(more)
+            .style(Style {
+                background: Some(Token::from("transparent")),
+                radius: 5.0,
+                hover: Some(Hover {
+                    background: Some(Token::from("button.hover.bg")),
+                    ..Hover::default()
+                }),
+                pressed: Some(Hover {
+                    background: Some(Token::from("button.pressed.bg")),
+                    ..Hover::default()
+                }),
+                transition: Some(Transition {
+                    duration: FADE,
+                    ..Transition::default()
+                }),
+                ..Style::default()
+            }),
+    )
+}
+
+impl<B: Backend> App<B> {
+    /// Shows the menu of `window`'s titlebar buttons that find no room, below
+    /// the app's button of them: each by its name, dimmed where it is, whose
+    /// choice its plugin hears as its button's click.
+    pub(super) fn show_overflow(&mut self, platform: &mut dyn Platform, window: WindowId) {
+        self.release_capture(platform, window);
+        let Some(state) = self.windows.get_mut(&window) else {
+            return;
+        };
+        let Some((frame, scale)) = state
+            .chrome
+            .iter()
+            .find(|view| view.plugin == OVERFLOW && view.view.slot() == Some(Slot::TitleButtons))
+            .and_then(|view| Some((view.frame?, view.surface.layout.scale())))
+        else {
+            return;
+        };
+        let mut menu = ContextMenu::default();
+        let mut choices = BTreeMap::new();
+        let hidden = state.chrome.iter().filter(|view| {
+            view.view.slot() == Some(Slot::TitleButtons)
+                && view.plugin != OVERFLOW
+                && view.shows()
+                && view.frame.is_none()
+        });
+        for view in hidden {
+            let Some(button) = self.plugins.tree(&view.plugin, &view.view) else {
+                continue;
+            };
+            let title = [&button.tooltip, &button.label]
+                .into_iter()
+                .flatten()
+                .find(|name| !name.trim().is_empty())
+                .cloned()
+                .unwrap_or_default();
+            let id = format!("{OVERFLOWED}{}", view.id);
+            let disabled = matches!(
+                &button.kind,
+                lokyr_kernel::plugins::view::Kind::Button(button) if button.disabled
+            );
+            if disabled {
+                menu.dimmed.push(id.clone());
+            }
+            menu.items.push(MenuItem::Command {
+                title,
+                command: id.clone(),
+                shortcut: None,
+            });
+            choices.insert(id, view.id);
+        }
+        if menu.items.is_empty() {
+            return;
+        }
+        let position = Point {
+            x: f64::from(frame.x / scale),
+            y: f64::from((frame.y + frame.height) / scale),
+        };
+        platform.show_context_menu(window, position, &menu);
+        state.native.push_back(NativeMenu::Overflow(choices));
+    }
+
+    /// The event of the app's button of the titlebar's buttons that find no
+    /// room, of `view`: its click shows their menu.
+    pub(super) fn overflow_event(&mut self, platform: &mut dyn Platform, event: &UiEvent) {
+        let ViewId::TitleButtons(shown) = event.view else {
+            return;
+        };
+        if !matches!(event.kind, UiEventKind::Click) {
+            return;
+        }
+        let window = self
+            .windows
+            .iter()
+            .find(|(_, state)| host::WindowId::from(state.window) == shown)
+            .map(|(window, _)| *window);
+        if let Some(window) = window {
+            self.show_overflow(platform, window);
+        }
+    }
+
+    /// The item `command` of the menu of `window`'s titlebar buttons that
+    /// find no room, of `choices`: its button's click, which its plugin
+    /// hears.
+    pub(super) fn overflow_chosen(
+        &mut self,
+        window: WindowId,
+        choices: &BTreeMap<String, u32>,
+        command: &str,
+    ) {
+        let Some(state) = self.windows.get(&window) else {
+            return;
+        };
+        let chosen = choices
+            .get(command)
+            .and_then(|id| state.chrome.iter().find(|view| view.id == *id));
+        let Some(view) = chosen else {
+            return;
+        };
+        let Some(key) = self
+            .plugins
+            .tree(&view.plugin, &view.view)
+            .and_then(|button| button.key.clone())
+        else {
+            return;
+        };
+        let event = UiEvent {
+            view: view.view.clone(),
+            key,
+            kind: UiEventKind::Click,
+        };
+        self.ui_events.push((view.plugin.clone(), event));
     }
 }

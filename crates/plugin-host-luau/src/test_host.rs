@@ -361,8 +361,9 @@ fn functions(lua: &Lua, hosted: &Arc<Mutex<Hosted>>) -> mlua::Result<Table> {
         lua.create_function(move |lua, view: Value| {
             let view: ViewId = shape::from_lua(view).map_err(mlua::Error::runtime)?;
             let tree = with(&hosted, |Hosted { host, plugin }| {
-                host.render(plugin, &view)
-            });
+                host.try_render(plugin, &view)
+            })
+            .map_err(|error| mlua::Error::runtime(error.message))?;
             match tree {
                 Some(tree) => Ok(Value::Table(
                     tree::to_lua(lua, &tree).map_err(mlua::Error::runtime)?,

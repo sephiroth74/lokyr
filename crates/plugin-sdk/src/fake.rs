@@ -1115,26 +1115,55 @@ impl FakeHost {
     }
 
     /// Has `plugin` render `view`, whose tree the host keeps: one that
-    /// nests past [`Node::DEEPEST`] levels it refuses, as the host does,
-    /// and gives the last, as of a render that fails, as the plugin tells
-    /// after it, whose writes go.
+    /// nests past [`Node::DEEPEST`] levels, or a titlebar's button that is
+    /// none, it refuses, as the host does, and gives the last, as of a
+    /// render that fails, as the plugin tells after it, whose writes go.
     pub fn render(&mut self, plugin: &mut dyn Plugin, view: &ViewId) -> Option<Node> {
+        self.try_render(plugin, view)
+            .unwrap_or_else(|_| self.views.get(view).cloned().flatten())
+    }
+
+    /// As [`FakeHost::render`], but a render that fails, or a tree that the
+    /// host refuses, gives its error, the last tree kept.
+    pub fn try_render(
+        &mut self,
+        plugin: &mut dyn Plugin,
+        view: &ViewId,
+    ) -> Result<Option<Node>, Error> {
         let mut tree = None;
         let rendered = self.call(true, |cx| {
             tree = plugin.render(cx, view);
             plugin.take_failure().map_or(Ok(()), Err)
         });
-        // A tree too deep the host refuses, the last staying, as it drops
-        // it without recursion.
-        if let Some(deep) = tree.take_if(|tree| rendered.is_err() || !tree.nests_within_deepest()) {
-            crate::view::dismantle(deep);
-            return self.views.get(view).cloned().flatten();
-        }
-        if rendered.is_err() {
-            return self.views.get(view).cloned().flatten();
+        // A tree too deep the host refuses, as it drops it without
+        // recursion.
+        let refused = |tree: &Node| {
+            if !tree.nests_within_deepest() {
+                return Err(Error::new(
+                    Code::Failed,
+                    format!("a plugin's view nests {} levels at most", Node::DEEPEST),
+                ));
+            }
+            match view {
+                ViewId::TitleButtons(_) => tree
+                    .check_title_button()
+                    .map_err(|reason| Error::new(Code::Failed, reason)),
+                _ => Ok(()),
+            }
+        };
+        let checked = match (&rendered, &tree) {
+            (Err(error), _) => Err(error.clone()),
+            (Ok(()), Some(tree)) => refused(tree),
+            (Ok(()), None) => Ok(()),
+        };
+        if let Err(error) = checked {
+            if let Some(tree) = tree {
+                crate::view::dismantle(tree);
+            }
+            return Err(error);
         }
         self.views.insert(view.clone(), tree.clone());
-        tree
+        Ok(tree)
     }
 
     /// Gives `plugin` `event`, of a node of one of its views.

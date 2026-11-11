@@ -97,6 +97,8 @@ menu-appearance = Appearance
 menu-appearance-system = Automatic
 menu-appearance-light = Light
 menu-appearance-dark = Dark
+# The titlebar button that lists, in a menu, the titlebar buttons that find no room.
+title-buttons-more = More
 # The context menu's Look Up, which names the selection, shortened.
 menu-look-up = Look Up “{ $word }”
 # The context menu's man page, which names the page.

@@ -996,6 +996,29 @@ impl Node {
         true
     }
 
+    /// Whether the tree is a button of the titlebar's, as the host takes
+    /// one: a button of an icon alone, of no label nor children, of a key,
+    /// and named by its tooltip or its label, which VoiceOver and the menu
+    /// of the buttons that find no room tell; the reason where it is not.
+    pub fn check_title_button(&self) -> Result<(), String> {
+        let named =
+            |text: &Option<String>| text.as_deref().is_some_and(|text| !text.trim().is_empty());
+        match &self.kind {
+            Kind::Button(button) if button.label.is_empty() && !button.icon.is_empty() => {}
+            _ => return Err("a titlebar button's view is a button of an icon alone".to_owned()),
+        }
+        if !self.children.is_empty() {
+            return Err("a titlebar button has no children".to_owned());
+        }
+        if self.key.is_none() {
+            return Err("a titlebar button has a key".to_owned());
+        }
+        if !named(&self.tooltip) && !named(&self.label) {
+            return Err("a titlebar button has a tooltip or a label that names it".to_owned());
+        }
+        Ok(())
+    }
+
     /// A node of `kind`, without a key, of the default layout, and with no
     /// children.
     pub fn new(kind: Kind) -> Self {
@@ -1217,6 +1240,33 @@ mod tests {
         let deep = chain(1_000_000);
         assert!(!deep.nests_within_deepest());
         dismantle(deep);
+    }
+
+    #[test]
+    fn a_titlebar_button_is_a_named_button_of_an_icon_alone() {
+        let button = || Node::icon_button("circle").key("b");
+        assert!(button().tooltip("Stay awake").check_title_button().is_ok());
+        assert!(button().label("Stay awake").check_title_button().is_ok());
+        // Unnamed, or of a blank name.
+        assert!(button().check_title_button().is_err());
+        assert!(button().tooltip("  ").check_title_button().is_err());
+        // Of no key.
+        let keyless = Node::icon_button("circle").tooltip("Stay awake");
+        assert!(keyless.check_title_button().is_err());
+        // Of a text, or of no icon.
+        let worded = Node::button("Awake").key("b").tooltip("Stay awake");
+        assert!(worded.check_title_button().is_err());
+        let mut both = button().tooltip("Stay awake");
+        if let Kind::Button(inner) = &mut both.kind {
+            inner.label = "Awake".to_owned();
+        }
+        assert!(both.check_title_button().is_err());
+        // Another kind, or a button of children.
+        let icon = Node::icon("circle").key("b").tooltip("Stay awake");
+        assert!(icon.check_title_button().is_err());
+        let mut parent = button().tooltip("Stay awake");
+        parent.children.push(Node::text("x"));
+        assert!(parent.check_title_button().is_err());
     }
 
     #[test]

@@ -5884,12 +5884,9 @@ fn host_color(color: Option<lokyr_vt_core::page::Rgb>) -> Option<host::Color> {
     color.map(|color| host::Color::Rgb(color.r, color.g, color.b))
 }
 
-/// `tree`, a plugin's render, if it nests [`Node::DEEPEST`] levels at most,
-/// as the host takes it; `failed` otherwise, the tree dropped without
-/// recursion, where the render returned it, on the plugin's own thread.
 /// The tree that `plugin` renders of `view`, as the host takes it: refused
-/// past its depth, or of the failure that the plugin tells after it, which
-/// leaves its last tree.
+/// past its depth, or as a titlebar's button that is none, or of the
+/// failure that the plugin tells after it, which leaves its last tree.
 fn rendered(
     plugin: &mut dyn Plugin,
     cx: &mut Cx<'_>,
@@ -5902,9 +5899,18 @@ fn rendered(
         }
         return Err(failure);
     }
-    tree_within_depth(tree)
+    let tree = tree_within_depth(tree)?;
+    if let (ViewId::TitleButtons(_), Some(button)) = (view, &tree) {
+        button
+            .check_title_button()
+            .map_err(|reason| Error::new(Code::Failed, reason))?;
+    }
+    Ok(tree)
 }
 
+/// `tree`, a plugin's render, if it nests [`Node::DEEPEST`] levels at most,
+/// as the host takes it; `failed` otherwise, the tree dropped without
+/// recursion, where the render returned it, on the plugin's own thread.
 fn tree_within_depth(tree: Option<Node>) -> Result<Option<Node>, Error> {
     match tree {
         Some(tree) if !tree.nests_within_deepest() => {

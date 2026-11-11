@@ -687,7 +687,8 @@ export type TestHost = {
     events: (events: { Event }) -> (),
     -- Gives it the event of a node of one of its views.
     ui_event: (event: UiEvent) -> (),
-    -- Its tree of `view`, as it renders it, if it renders one.
+    -- Its tree of `view`, as it renders it, if it renders one; a render that fails, or a tree that the host
+    -- refuses, as a titlebar button that is none, raises its error.
     render: (view: ViewId) -> Node?,
     -- The ids of its panels that show, in their order.
     panels: () -> { PanelId },

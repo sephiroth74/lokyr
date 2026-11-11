@@ -3180,6 +3180,11 @@ impl<B: Backend> App<B> {
             return;
         }
         for (plugin, event) in &ui_events {
+            // The app's button of the titlebar's buttons that find no room.
+            if plugin == chrome::OVERFLOW {
+                self.overflow_event(platform, event);
+                continue;
+            }
             let given = self.with_plugins(platform, |plugins, context| {
                 plugins.ui_event(plugin, event, context)
             });

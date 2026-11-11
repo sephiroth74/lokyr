@@ -47,6 +47,10 @@ pub(crate) enum NativeMenu {
     /// commands, whose choice its plugin hears and whose closing closes
     /// the panel.
     Panel(u32, Choices),
+    /// The menu of the titlebar's buttons that find no room, of their
+    /// views' ids by their items' commands, whose choice is its button's
+    /// click.
+    Overflow(BTreeMap<String, u32>),
     /// A menu's panel that closed while the platform showed it, whose
     /// choice and closing do nothing.
     Closed,

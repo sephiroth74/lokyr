@@ -263,7 +263,8 @@ impl<B: Backend> App<B> {
                 state.chrome[at].frame = None;
                 continue;
             }
-            let anchor = anchor_of(&self.workspace, state, &placed, scale);
+            let plugin = state.chrome[at].plugin.clone();
+            let anchor = anchor_of(&self.workspace, state, (&plugin, &placed), scale);
             let view = &mut state.chrome[at];
             // A panel across a pane's top takes the pane's width.
             let across = match (&placed.options.anchor, anchor) {
@@ -324,7 +325,12 @@ impl<B: Backend> App<B> {
                 continue;
             };
             let scale = size.scale as f32;
-            let (x, y) = point(&anchor_of(&self.workspace, state, placed, scale));
+            let (x, y) = point(&anchor_of(
+                &self.workspace,
+                state,
+                (&view.plugin, placed),
+                scale,
+            ));
             let mut menu = ContextMenu::default();
             let mut choices = BTreeMap::new();
             menu.items = menu_items(&entries, &mut menu, &mut choices);
@@ -358,6 +364,11 @@ impl<B: Backend> App<B> {
                 }
                 true
             }
+            Some(NativeMenu::Overflow(choices)) => {
+                let choices = choices.clone();
+                self.overflow_chosen(window, &choices, command);
+                true
+            }
             Some(NativeMenu::Closed) => true,
             Some(NativeMenu::Window) | None => false,
         }
@@ -378,16 +389,17 @@ impl<B: Backend> App<B> {
     }
 }
 
-/// The anchor of a panel of `placed` in `state`'s window, in pixels, as its
-/// last layout placed the panes and the views, of `scale` pixels a point:
-/// below a cell of a pane, its cursor's, or a node of a view; at the
-/// pointer's place as it opened; in a corner of a pane, or of the window's
-/// room below its tab bar. An anchor gone, as of a pane that closed, is the
-/// pointer's.
+/// The anchor of a panel of `plugin`'s, of `placed`, in `state`'s window,
+/// in pixels, as its last layout placed the panes and the views, of `scale`
+/// pixels a point: below a cell of a pane, its cursor's, or a node of a
+/// view of the plugin's, the button of the titlebar's buttons that find no
+/// room for one of them; at the pointer's place as it opened; in a corner
+/// of a pane, or of the window's room below its tab bar. An anchor gone, as
+/// of a pane that closed, is the pointer's.
 fn anchor_of<B: Backend>(
     workspace: &Workspace,
     state: &Window<B>,
-    placed: &PanelPlace,
+    (plugin, placed): (&str, &PanelPlace),
     scale: f32,
 ) -> Anchor {
     let pointer = Anchor::At(placed.pointer);
@@ -424,11 +436,15 @@ fn anchor_of<B: Backend>(
             })
             .unwrap_or(pointer),
         PanelAnchor::Pointer(_) => pointer,
-        PanelAnchor::Node { view, key } => state
-            .chrome
-            .iter()
-            .find(|shown| &shown.view == view)
-            .and_then(|shown| {
+        PanelAnchor::Node { view, key } => {
+            let of = |plugin: &str| {
+                state
+                    .chrome
+                    .iter()
+                    .find(|shown| &shown.view == view && shown.plugin == plugin)
+            };
+            let shown = of(plugin);
+            let node = shown.and_then(|shown| {
                 let frame = shown.frame?;
                 let node = shown.surface.tree.by_key(key)?;
                 let at = shown.surface.layout.frame(&shown.surface.tree, node)?;
@@ -437,8 +453,17 @@ fn anchor_of<B: Backend>(
                     y: at.y + frame.y,
                     ..at
                 }))
-            })
-            .unwrap_or(pointer),
+            });
+            // A titlebar button that finds no room: below the button of
+            // those.
+            let hidden = || {
+                shown
+                    .filter(|shown| shown.frame.is_none())
+                    .and_then(|_| of(super::chrome::OVERFLOW)?.frame)
+                    .map(Anchor::Below)
+            };
+            node.or_else(hidden).unwrap_or(pointer)
+        }
         PanelAnchor::PaneCorner { pane, corner } => pane_view(*pane).map_or(pointer, |view| {
             let rect = view.rect;
             let frame = Frame {
