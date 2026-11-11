@@ -184,11 +184,22 @@ impl<B: Backend> App<B> {
             if !items.is_empty() {
                 items.push(MenuItem::Separator);
             }
-            items.extend(group.iter().map(|(id, command, _)| MenuItem::Command {
-                title: title(id, command),
-                command: id.clone(),
-                shortcut: None,
-            }));
+            items.extend(nested(
+                group
+                    .iter()
+                    .map(|(id, command, _)| {
+                        let item = MenuItem::Command {
+                            title: title(id, command),
+                            command: id.clone(),
+                            shortcut: None,
+                        };
+                        let submenu = self
+                            .menu_item_entry(id)
+                            .and_then(|entry| entry.submenu.clone());
+                        (item, submenu)
+                    })
+                    .collect(),
+            ));
         }
         let items = unique_titles(items);
         let menu = ContextMenu {
@@ -600,6 +611,7 @@ pub(super) fn main_menu(
                 title: command.title.clone(),
                 id: command.name.clone(),
                 shortcut: keymap.shortcut(&command.name).and_then(shortcut),
+                submenu: None,
             })
             .collect();
         // By the menu's categories, each of its commands in the order of
@@ -635,6 +647,7 @@ pub(super) fn main_menu(
                     title: entry.title.clone().unwrap_or_else(|| command.title.clone()),
                     id: item_id(at),
                     shortcut: keymap.shortcut_with(name, args).and_then(shortcut),
+                    submenu: entry.submenu.clone(),
                 },
             );
         }
@@ -809,9 +822,10 @@ pub(super) fn main_menu(
     main
 }
 
-/// `items`, a menu's, but the plugins' items whose titles are those of the
-/// app's items of the menu, as a plugin's "Copy" in the Edit menu, which
-/// the user would take for the app's; the lines that parted them go too.
+/// `items`, a menu's, but the plugins' items and submenus whose titles are
+/// those of the app's items of the menu, as a plugin's "Copy" in the Edit
+/// menu, which the user would take for the app's; the lines that parted
+/// them go too.
 pub(super) fn unique_titles(items: Vec<MenuItem>) -> Vec<MenuItem> {
     // A title as the user reads it: of no case, nor the dots of an item
     // that asks more.
@@ -823,21 +837,27 @@ pub(super) fn unique_titles(items: Vec<MenuItem>) -> Vec<MenuItem> {
             .trim()
             .to_lowercase()
     };
-    let of_plugin = |item: &MenuItem| matches!(item, MenuItem::Command { command, .. } if command.starts_with(ITEM));
+    let of_items = |item: &MenuItem| matches!(item, MenuItem::Command { command, .. } if command.starts_with(ITEM));
+    // A plugin's item, or its submenu, of its items alone.
+    let of_plugin = |item: &MenuItem| match item {
+        MenuItem::Submenu(menu) => !menu.items.is_empty() && menu.items.iter().all(of_items),
+        item => of_items(item),
+    };
+    let title_of = |item: &MenuItem| match item {
+        MenuItem::Command { title, .. } | MenuItem::Standard { title, .. } => Some(read(title)),
+        MenuItem::Submenu(menu) => Some(read(&menu.title)),
+        MenuItem::Separator => None,
+    };
     let apps: Vec<String> = items
         .iter()
         .filter(|item| !of_plugin(item))
-        .filter_map(|item| match item {
-            MenuItem::Command { title, .. } | MenuItem::Standard { title, .. } => Some(read(title)),
-            MenuItem::Submenu(menu) => Some(read(&menu.title)),
-            _ => None,
-        })
+        .filter_map(title_of)
         .collect();
     let mut kept: Vec<MenuItem> = Vec::with_capacity(items.len());
     for item in items {
-        if let MenuItem::Command { title, .. } = &item
-            && of_plugin(&item)
-            && apps.contains(&read(title))
+        if of_plugin(&item)
+            && let Some(title) = title_of(&item)
+            && apps.contains(&title)
         {
             eprintln!(
                 "lokyr: a plugin's menu item “{title}” is left out, as an item of the app's has its title"
@@ -866,32 +886,68 @@ pub(super) fn unique_titles(items: Vec<MenuItem>) -> Vec<MenuItem> {
 
 /// An item of the menu bar, of a command or of a plugin's item: its group,
 /// of its category, its command's namespace or the plugin that adds the
-/// item, and whether a plugin's item makes it, its title, its id and its
-/// keys.
+/// item, and whether a plugin's item makes it, its title, its id, its keys
+/// and the title of the submenu that it goes into.
 struct Shown {
     group: (Category, String, bool),
     title: String,
     id: String,
     shortcut: Option<Shortcut>,
+    submenu: Option<String>,
 }
 
-/// The items of `shown`, in their order: a line parts a group from the
-/// next.
+/// The items of `shown`, in their order, each group's of a submenu
+/// gathered into it: a line parts a group from the next.
 fn command_items(shown: Vec<Shown>) -> Vec<MenuItem> {
     let mut items = Vec::new();
+    let mut run = Vec::new();
     let mut group = None;
     for shown in shown {
         if group.as_ref().is_some_and(|group| *group != shown.group) {
+            items.extend(nested(std::mem::take(&mut run)));
             items.push(MenuItem::Separator);
         }
         group = Some(shown.group);
-        items.push(MenuItem::Command {
+        let item = MenuItem::Command {
             title: shown.title,
             command: shown.id,
             shortcut: shown.shortcut,
-        });
+        };
+        run.push((item, shown.submenu));
     }
+    items.extend(nested(run));
     items
+}
+
+/// `items`, each of the title of the submenu that it goes into, if one:
+/// those of a submenu gathered into it, in their order, the submenu where
+/// the first of them is.
+fn nested(items: Vec<(MenuItem, Option<String>)>) -> Vec<MenuItem> {
+    let mut nested: Vec<MenuItem> = Vec::with_capacity(items.len());
+    // Each submenu's title, and its place in `nested`.
+    let mut submenus: Vec<(String, usize)> = Vec::new();
+    for (item, submenu) in items {
+        let Some(title) = submenu else {
+            nested.push(item);
+            continue;
+        };
+        match submenus.iter().find(|(kept, _)| *kept == title) {
+            Some(&(_, at)) => {
+                if let Some(MenuItem::Submenu(menu)) = nested.get_mut(at) {
+                    menu.items.push(item);
+                }
+            }
+            None => {
+                submenus.push((title.clone(), nested.len()));
+                nested.push(MenuItem::Submenu(Menu {
+                    title,
+                    items: vec![item],
+                    role: None,
+                }));
+            }
+        }
+    }
+    nested
 }
 
 /// The namespace of the command `name`, before its `.`.

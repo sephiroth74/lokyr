@@ -496,7 +496,8 @@ fn a_plugin_tells_whether_its_command_applies_and_asks_nothing_meanwhile() {
 
 /// A plugin of three commands, of which its catalogs title the first in
 /// English and Italian, the second in English alone, and the third not,
-/// and of three menus' items, of a message, of a text and of none; or
+/// and of three menus' items, of a message, of a text and of none, the
+/// first in a submenu of a message and the second in one of a text; or
 /// whose catalogs panic.
 struct Titled {
     panics: bool,
@@ -526,6 +527,7 @@ impl Plugin for Titled {
                 command: command.to_owned(),
                 args: Args::new(),
                 title: title.map(str::to_owned),
+                submenu: title.map(|title| title.replace("Just This", "Just Here")),
                 ticked: false,
             })?;
         }
@@ -589,6 +591,16 @@ fn a_plugin_s_menu_items_take_their_titles_from_its_catalogs_or_their_own() {
     let item = &plugins.menu_items_in("en")[2];
     assert_eq!(item.place, host::MenuPlace::PaneContext);
     assert_eq!(item.invocation.command, "titled.third");
+    // Their submenus' titles alike.
+    let submenus: Vec<Option<String>> = plugins
+        .menu_items_in("it")
+        .into_iter()
+        .map(|item| item.submenu)
+        .collect();
+    assert_eq!(
+        submenus,
+        [Some("Primo".to_owned()), Some("Just Here".to_owned()), None]
+    );
 }
 
 #[test]

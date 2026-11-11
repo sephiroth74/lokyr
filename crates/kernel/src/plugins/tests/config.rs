@@ -390,6 +390,7 @@ impl Plugin for Toggled {
             command: "toggled.go".to_owned(),
             args: Args::new(),
             title: None,
+            submenu: None,
             ticked: false,
         })?;
         cx.subscribe(&["tab-created"])

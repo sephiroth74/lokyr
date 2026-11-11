@@ -1472,6 +1472,7 @@ impl plugins::Plugin for Menuer {
                     lokyr_kernel::commands::Value::String(title.to_owned()),
                 )]),
                 title: Some(title.to_owned()),
+                submenu: None,
                 ticked: false,
             })?;
         }
@@ -1541,6 +1542,7 @@ impl Ticker {
             command: "ticker.go".to_owned(),
             args: Args::new(),
             title: Some("Keep Going".to_owned()),
+            submenu: None,
             ticked: self.ticked,
         }
     }
@@ -1597,4 +1599,112 @@ fn a_plugin_s_menu_bar_item_shows_the_tick_that_its_plugin_gives() {
     run_until(&mut fake, &mut app, |fake, _| {
         !fake.command_checked(&item(fake))
     });
+}
+
+/// A plugin of items in submenus: in the View menu, First, Second, ticked,
+/// and Third in its submenu Nest, Loose between them out of it, and Hidden
+/// in a submenu of the app's Appearance; in the context menu, Left and
+/// Right in its submenu More.
+struct Nester;
+
+impl plugins::Plugin for Nester {
+    fn activate(&mut self, cx: &mut plugins::Cx<'_>) -> Result<(), Error> {
+        cx.register_command(Command {
+            name: "nester.go".to_owned(),
+            title: "Go".to_owned(),
+            category: Category::View,
+            capabilities: Vec::new(),
+            params: vec![lokyr_kernel::commands::Param {
+                name: "which".to_owned(),
+                kind: lokyr_kernel::commands::Kind::String,
+                default: None,
+            }],
+            when: None,
+        })?;
+        let bar = plugins::host::MenuPlace::Bar(Category::View);
+        let context = plugins::host::MenuPlace::PaneContext;
+        for (place, title, submenu) in [
+            (bar, "First", Some("Nest")),
+            (bar, "Loose", None),
+            (bar, "Second", Some("Nest")),
+            (bar, "Third", Some("Nest")),
+            (bar, "Hidden", Some("appearance…")),
+            (context, "Left", Some("More")),
+            (context, "Right", Some("More")),
+        ] {
+            cx.add_menu_item(plugins::host::MenuItem {
+                place,
+                command: "nester.go".to_owned(),
+                args: Args::from([(
+                    "which".to_owned(),
+                    lokyr_kernel::commands::Value::String(title.to_owned()),
+                )]),
+                title: Some(title.to_owned()),
+                submenu: submenu.map(str::to_owned),
+                ticked: title == "Second",
+            })?;
+        }
+        Ok(())
+    }
+}
+
+#[test]
+fn a_plugin_s_items_of_a_submenu_go_into_it_where_the_first_would_be() {
+    let mut fake = Fake::default();
+    let mut app = app(Config::default(), quiet()).with_plugin("nester", Box::new(Nester));
+    fake.start(&mut app);
+    let titles = |items: &[MenuItem]| -> Vec<String> {
+        items
+            .iter()
+            .map(|item| match item {
+                MenuItem::Command { title, .. } => title.clone(),
+                MenuItem::Submenu(menu) => format!("{} >", menu.title),
+                MenuItem::Separator => "-".to_owned(),
+                MenuItem::Standard { title, .. } => title.clone(),
+            })
+            .collect()
+    };
+    let main = fake.main_menu().unwrap();
+    let view = &main.menus[3].items;
+    let nest = view
+        .iter()
+        .position(|item| matches!(item, MenuItem::Submenu(menu) if menu.title == "Nest"))
+        .expect("its submenu");
+    // The submenu where First would be, Loose after it, then the app's
+    // Appearance alone, as the plugin's of its title is left out.
+    assert_eq!(
+        titles(&view[nest - 1..nest + 4]),
+        ["-", "Nest >", "Loose", "-", "Appearance >"],
+        "{:?}",
+        titles(view)
+    );
+    let MenuItem::Submenu(menu) = &view[nest] else {
+        unreachable!()
+    };
+    assert_eq!(titles(&menu.items), ["First", "Second", "Third"]);
+    // Second ticked, of its id within the submenu.
+    let ids: Vec<&str> = menu
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            MenuItem::Command { command, .. } => Some(command.as_str()),
+            _ => None,
+        })
+        .collect();
+    let ticked: Vec<bool> = ids.iter().map(|id| fake.command_checked(id)).collect();
+    assert_eq!(ticked, [false, true, false]);
+    // The context menu's submenu, of the plugin's group.
+    let window = fake.windows().next().unwrap();
+    right_click(&mut fake, &mut app, window, cell(8, 0), Modifiers::NONE);
+    let (_, _, context) = fake.context_menus().last().expect("a context menu");
+    let more = context
+        .items
+        .iter()
+        .find_map(|item| match item {
+            MenuItem::Submenu(menu) if menu.title == "More" => Some(menu),
+            _ => None,
+        })
+        .expect("its submenu");
+    assert_eq!(titles(&more.items), ["Left", "Right"]);
+    assert!(matches!(context.items.last(), Some(MenuItem::Submenu(_))));
 }

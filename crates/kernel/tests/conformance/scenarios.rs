@@ -1494,6 +1494,7 @@ fn declarations() -> Scenario {
             command: command.to_owned(),
             args,
             title: Some("menu-ask".to_owned()),
+            submenu: None,
             ticked,
         })
     };
@@ -1561,6 +1562,18 @@ fn declarations() -> Scenario {
             (item("conformer.ask", Args::new()), Response::Done),
             // The same item ticked: its tick changed.
             (ticked("conformer.ask", Args::new(), true), Response::Done),
+            // In a submenu, another item.
+            (
+                Request::AddMenuItem(MenuItem {
+                    place: MenuPlace::Bar(Category::View),
+                    command: "conformer.ask".to_owned(),
+                    args: Args::new(),
+                    title: Some("menu-ask".to_owned()),
+                    submenu: Some("menu-more".to_owned()),
+                    ticked: false,
+                }),
+                Response::Done,
+            ),
             (
                 item("conformer.none", Args::new()),
                 failed(Code::NotFound, "no command `conformer.none`"),

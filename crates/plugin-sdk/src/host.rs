@@ -576,6 +576,13 @@ pub struct MenuItem {
     /// title without one.
     #[serde(default)]
     pub title: Option<String>,
+    /// The message of the title of a submenu of the menu, in the plugin's
+    /// catalogs, or its text where they lack it, which the item goes into
+    /// with the plugin's other items of the same submenu, in their order,
+    /// the submenu where the first of them would be; in the menu itself
+    /// without one.
+    #[serde(default)]
+    pub submenu: Option<String>,
     /// Whether the menu bar shows it ticked, as a state in force that the
     /// plugin keeps: the same item added again of another tick changes it.
     #[serde(default)]
@@ -589,6 +596,7 @@ impl MenuItem {
             && self.command == other.command
             && self.args == other.args
             && self.title == other.title
+            && self.submenu == other.submenu
     }
 }
 

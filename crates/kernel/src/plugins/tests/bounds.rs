@@ -228,6 +228,7 @@ fn a_declaration_made_already_changes_nothing_and_a_plugin_s_are_bounded() {
                         command: "binder.go".to_owned(),
                         args: Args::new(),
                         title: None,
+                        submenu: None,
                         ticked: false,
                     })
                 },
@@ -279,6 +280,7 @@ fn a_menu_item_added_again_of_another_tick_changes_its_tick_alone() {
         command: "ticker.toggle".to_owned(),
         args: Args::new(),
         title: Some("Keep Going".to_owned()),
+        submenu: None,
         ticked,
     };
     plugins
@@ -288,9 +290,16 @@ fn a_menu_item_added_again_of_another_tick_changes_its_tick_alone() {
                 move |cx| {
                     cx.register_command(command("ticker.toggle"))?;
                     cx.register_command(command("ticker.on"))?;
+                    cx.register_command(command("ticker.elsewhere"))?;
                     cx.add_menu_item(item(false))
                 },
-                move |cx, name, _| cx.add_menu_item(item(name == "ticker.on")),
+                move |cx, name, _| {
+                    let mut added = item(name == "ticker.on");
+                    if name == "ticker.elsewhere" {
+                        added.submenu = Some("Elsewhere".to_owned());
+                    }
+                    cx.add_menu_item(added)
+                },
             ),
         )
         .unwrap();
@@ -322,8 +331,13 @@ fn a_menu_item_added_again_of_another_tick_changes_its_tick_alone() {
         .unwrap();
     assert!(plugins.take_declarations_changed());
     assert_eq!(ticks(&plugins), [false]);
-    // One item all along.
+    // One item all along; in another submenu, another.
     assert_eq!(plugins.entries[0].state.menu_items.len(), 1);
+    plugins
+        .run("ticker.elsewhere", Args::new(), &mut app.context())
+        .unwrap();
+    assert!(plugins.take_declarations_changed());
+    assert_eq!(ticks(&plugins), [false, false]);
 }
 
 /// A plugin whose `panel.open` opens its panel `p`, whose `panel.close`

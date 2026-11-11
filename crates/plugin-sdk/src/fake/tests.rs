@@ -1465,6 +1465,7 @@ fn a_menu_item_added_again_of_another_tick_changes_its_tick() {
             command: "probe.go".to_owned(),
             args: Args::new(),
             title: Some("Go On".to_owned()),
+            submenu: None,
             ticked: *tick.borrow(),
         })
     });

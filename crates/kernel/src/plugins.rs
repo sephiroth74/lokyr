@@ -1955,6 +1955,10 @@ impl Plugins {
                         .title
                         .as_ref()
                         .map(|title| texts.get(title).unwrap_or_else(|| title.clone())),
+                    submenu: item
+                        .submenu
+                        .as_ref()
+                        .map(|title| texts.get(title).unwrap_or_else(|| title.clone())),
                     ticked: item.ticked,
                 }
             }));
@@ -3149,6 +3153,8 @@ pub struct MenuEntry {
     pub invocation: Invocation,
     /// Its title, in the app's language.
     pub title: Option<String>,
+    /// The title of the submenu that it goes into, in the app's language.
+    pub submenu: Option<String>,
     /// Whether the menu bar shows it ticked.
     pub ticked: bool,
 }
