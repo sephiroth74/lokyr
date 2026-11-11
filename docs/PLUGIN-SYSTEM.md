@@ -1029,7 +1029,7 @@ installed ──▶ resolved ──▶ consent ──▶ loaded ──▶ active
 | `keymap-macos` | Default macOS shortcuts, as iTerm2's: the keys of the app's commands and of the other plugins', which bind none of their own | F3 |
 | `keymap-linux` | Default Linux shortcuts | F7 |
 | `command-palette` | Command palette and theme picker | F3 |
-| `plugin-manager` | UI for Sleip (calls `sleip --json`) | F4 |
+| `plugin-manager` | UI for Sleip, of the packages' service ([ADR 0045](adr/0045-packages-service.md)) | F3b ([ADR 0046](adr/0046-plugin-manager-after-1-0.md)) |
 | `blocks` | Command + output blocks, over the prompts' marks that the kernel keeps since F3 | F5a |
 | `quick-terminal` | The quick terminal: its command, which shows and hides its quick window, its autohide and its place, of `[plugins.quick-terminal]`, through the quick windows and the global keys of `global-hotkey` | F3 |
 | `progress` | The programs' progress (OSC 9;4), in the `window-strip` slot; the tab shows it with `tabs` | F3 |
@@ -1102,7 +1102,7 @@ tabs            = { path = "../plugins/tabs" }
 splits          = { path = "../plugins/splits" }
 search          = { path = "../plugins/search" }
 command-palette = { path = "../plugins/command-palette" }
-plugin-manager  = { path = "../plugins/plugin-manager" }   # from F4
+plugin-manager  = { path = "../plugins/plugin-manager" }   # from F3b
 ```
 
 - **Generation**: `cargo xtask gen-dist` reads every `dist/*.toml`, and writes, between its markers, each distribution as a feature of `lokyr-app-core` and of `lokyr-app`, `dist-<name>`, of a feature of each of its plugins, `plugin-<name>`, which takes the plugin's crate, a dependency of `lokyr-app-core` that is optional; and `crates/app-core/src/dist.rs`, the build's plugins' registrations, `export_plugin!`'s, in the files' order, `default` first. The default distribution is the crates' default; `just check-dist` checks that what it would write is written, and `just build-minimal` builds the minimal one, as CI does.

@@ -14,8 +14,8 @@ Each phase is broken into tasks of one day or less in [tasks/](tasks/README.md).
 | F1 Headless VT core | `vt-core`, `pty`, `session`, `search` engine, `lokyr-replay`, fuzzing and differential tests | Compatibility and throughput measured (see below) | 8–12 weeks |
 | F2 macOS, single pane | macOS platform, CoreText fonts, Metal rendering, minimal kernel, `core-actions` | Used as the main terminal for a week | 8–12 weeks |
 | F3 **macOS MVP** | Full kernel, native SDK, `ui-core` with the plugins' widgets and floating panels, `tabs`, `splits`, `search` plugins, iTerm2 themes, palette, the agents' state on the tabs; copy mode, the scrollbar, shell integration with prompt jumping and notifications, the command's sticky header, the programs' progress, windows restored with their directories, the Finder's service; a DMG, updates through Sparkle; after F4, the first public release, 1.0.0 | Every must-have requirement in place | 12–16 weeks |
-| F4 Plugin ecosystem | Before 1.0.0 ([ADR 0036](adr/0036-plugin-ecosystem-before-1-0.md)): Luau host, Luau API, Sleip, the `plugin-manager`, registry v0, `snap` and `awake` published | Publishing and installing work end to end; `snap` and `awake` in the registry; then 1.0.0 | 8–10 weeks |
-| F3b MCP and agents | After 1.0.0: IPC and the remote CLI, the MCP server `lokyr +mcp` and its tools, the agents' hooks; the settings' panel; themes in the registry | Agents drive panes over MCP, within their scope; the settings' panel edits the config; a theme published and installed with Sleip | 6–7 weeks |
+| F4 Plugin ecosystem | Before 1.0.0 ([ADR 0036](adr/0036-plugin-ecosystem-before-1-0.md)): Luau host, Luau API, Sleip, registry v0, `snap` and `awake` published | Publishing and installing work end to end; `snap` and `awake` in the registry; then 1.0.0 | 8–10 weeks |
+| F3b MCP and agents | After 1.0.0: IPC and the remote CLI, the MCP server `lokyr +mcp` and its tools, the agents' hooks; the settings' panel and the `plugin-manager`'s; themes in the registry | Agents drive panes over MCP, within their scope; the settings' panel edits the config; a theme published and installed with Sleip | 6–7 weeks |
 | F5a Shell integration and blocks | Warp-style blocks, the last command's output, ssh integration | Verified in zsh, bash and fish, including over ssh | 3–5 weeks |
 | F5b iTerm2 power features | tmux -CC, triggers, profiles, broadcast, the scrollback restored | tmux -CC workflows on par with iTerm2 | 8–11 weeks |
 | F5c Graphics and kitty protocols | kitty graphics, sixel, iTerm2 images, hints and URLs | `kitten icat`, `imgcat` and `chafa` work | 6–8 weeks |
@@ -132,7 +132,7 @@ Before 1.0.0, after F3's daily features, as 0.8 and 0.9, as the user chose on 7 
   - `remove`, `update`, `list`, `search`, `info`, `publish`, which opens the registry's pull request, `gc` and `doctor`, each of `--json`; the accounts' commands wait for registry v1 ([ADR 0038](adr/0038-plugin-ecosystem-scope.md));
   - the shared `pkg-model` formats.
 - **Plugins reloaded at once**, without IPC: the app watches the plugins installed and a `sleip dev` folder, and turns a plugin that changed off and on again, as `enabled` does ([ADR 0038](adr/0038-plugin-ecosystem-scope.md)).
-- **`plugin-manager` plugin**: the in-app UI for Sleip.
+- **The packages' service**, for Lokyr's own plugins, of Sleip's commands of `--json` ([ADR 0045](adr/0045-packages-service.md)); its panel, the `plugin-manager`, comes in F3b ([ADR 0046](adr/0046-plugin-manager-after-1-0.md)): until then Sleip's command line installs, updates, removes and lists the plugins.
 - **`snap`**, a [reference third-party plugin](PLUGIN-SYSTEM.md#reference-third-party-plugins), as VS Code's CodeSnap: an image of the selection, of the screen or of a command's output, in a window's frame; written in Luau as a third party would, published to the registry, with its own config, its capabilities, and the host's `image` service.
 - **`awake`**, a [reference third-party plugin](PLUGIN-SYSTEM.md#awake), in Luau, as the user asked on 6 November 2026: the Mac kept awake, always or while programs run, from a button beside the window's buttons; the host's request of a power assertion, its capability `keep-awake`, of an ADR, and a slot of the titlebar's buttons.
 - **Registry v0** (static), ed25519 signatures, templates, a guide for plugin authors, of a minimal practical example, a plugin that works, step by step, as the user asked on 7 November 2026: a repository of the index, publishing by pull request, the archives in its releases, the index and the site on GitHub Pages at `pkg.lokyr.dev`, and the keys that Sleip trusts ([ADR 0031](adr/0031-registry-v0.md)).
@@ -154,6 +154,7 @@ After 1.0.0, as 1.1 ([ADR 0036](adr/0036-plugin-ecosystem-before-1-0.md)).
 - **An agent's scope**: its own pane and the panes that it opened; another pane after the user's confirmation; the `[mcp]` section of the config ([SECURITY.md](SECURITY.md#mcp)).
 - **The agents' hooks**: `lokyr +notify`, which they call for an exact state, and `lokyr +agent-hooks <agent>`, which prints the lines that their config takes.
 - **The settings' panel**, `settings`, a first-party plugin, generated from the config's keys and the guide's text, with the fonts, the colors, the keys' bindings and a file with an error, moved from F3 on 7 November 2026 ([ADR 0036](adr/0036-plugin-ecosystem-before-1-0.md)): F3-103 and F3-104 of F3's plan, which F3b's breakdown takes.
+- **The `plugin-manager`'s panel**, a first-party plugin of the packages' service ([ADR 0045](adr/0045-packages-service.md)): the installed plugins, their capabilities and updates, and the registry's search, to install, update, turn off or remove, moved from F4 on 11 November 2026 ([ADR 0046](adr/0046-plugin-manager-after-1-0.md)), [B-692](tasks/BACKLOG.md).
 - **Themes in the registry** ([ADR 0042](adr/0042-themes-in-the-registry.md)): packages of kind `themes` of `sephiroth74/sleip-registry`, of the same signed index and site at `pkg.lokyr.dev`; Sleip adds, updates, removes and publishes them as plugins; the registry's checks parse each theme with the app's own parser; the app reads the installed packages' themes beside the user's folder and those that it holds, which the palette's picker lists; each theme's page shows a preview that the site's build draws of the theme's colors, of each variant. The packages' examples of `PACKAGE-MANAGER.md`, which name a stale `lokyr/themes` dependency, made anew (B-583).
 
 **Exit**:
@@ -228,9 +229,9 @@ As the user chose on 1 November 2026 ([ADR 0027](adr/0027-version-numbers.md)): 
 | Version | Contents |
 |---|---|
 | 0.2–0.7 | F3's blocks, on its branch: 0.2 the architecture, 0.3 the distribution, 0.4 `ui-core`, 0.5 the plugins' plumbing, 0.6 the plugins, 0.7 the daily features ([ADR 0029](adr/0029-update-feed-and-releases.md)); a fix takes the patch |
-| 0.8–0.9 | F4's blocks, before 1.0.0: 0.8 the Luau host and Sleip's own loop, 0.9 the registry, the `plugin-manager`, and `snap` and `awake` published ([ADR 0036](adr/0036-plugin-ecosystem-before-1-0.md)) |
+| 0.8–0.9 | F4's blocks, before 1.0.0: 0.8 the Luau host and Sleip's own loop, 0.9 the registry, and `snap` and `awake` published ([ADR 0036](adr/0036-plugin-ecosystem-before-1-0.md), [ADR 0046](adr/0046-plugin-manager-after-1-0.md)) |
 | 1.0.0 | macOS MVP (F3) and the plugin ecosystem (F4), the first public release, the repository made public, with the agents on their tabs, which come after F4 ([ADR 0037](adr/0037-agents-on-their-tabs-before-1-0.md)); semantic versioning from here: patch, minor and major |
-| 1.1 | MCP and agents, and the settings' panel (F3b) |
+| 1.1 | MCP and agents, the settings' panel and the `plugin-manager`'s (F3b) |
 | 1.x | F5a, F5b, F5c, and the plugin API 1.0 (F6): stable plugin API in both front ends, complete docs, no open critical bug for three months; a major only for a change that breaks what users have |
 | later | Linux (F7), registry v1 |
 
