@@ -75,9 +75,9 @@ const BORDER_OPACITY: f32 = 0.15;
 
 /// The window's shadow, in points: how far down it is moved, how far it
 /// blurs, and its opacity.
-const SHADOW_DOWN: f32 = 16.0;
-const SHADOW_BLUR: f32 = 48.0;
-const SHADOW_OPACITY: f32 = 0.5;
+const SHADOW_DOWN: f32 = 4.0;
+const SHADOW_BLUR: f32 = 12.0;
+const SHADOW_OPACITY: f32 = 0.35;
 
 /// How much of the theme's background the background around the window
 /// keeps, darker.
