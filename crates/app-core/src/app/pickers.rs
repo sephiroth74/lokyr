@@ -17,7 +17,7 @@ use lokyr_kernel::config::{self, ThemeConfig};
 use lokyr_kernel::plugins::host::{Fonts, ThemeInfo, ThemeOrigin, Themes};
 use lokyr_kernel::themes::{self, ThemeVariant};
 use lokyr_platform_core::{Appearance, Platform};
-use lokyr_text_core::{FontBackend, FontConfig, Name};
+use lokyr_text_core::{FontBackend, FontConfig, Name, styles_within};
 
 use super::{App, sized};
 use crate::drawing::Backend;
@@ -192,18 +192,22 @@ impl<B: Backend> App<B> {
     }
 
     /// The config's font, of the family that a picker previews in place of
-    /// its own, if one does.
+    /// its own, if one does, of the config's styles that it has, its own in
+    /// place of those that it lacks.
     pub(super) fn font_in_force(&self) -> FontConfig {
-        let preview = self
-            .font_preview
-            .clone()
-            .and_then(|family| Name::try_from(family).ok());
-        match preview {
-            Some(family) => FontConfig {
-                family: Some(family),
-                ..self.config.font.clone()
-            },
-            None => self.config.font.clone(),
+        let Some(preview) = self.font_preview.clone() else {
+            return self.config.font.clone();
+        };
+        let Ok(family) = Name::try_from(preview.clone()) else {
+            return self.config.font.clone();
+        };
+        let font = FontConfig {
+            family: Some(family),
+            ..self.config.font.clone()
+        };
+        match B::fonts().family(&preview) {
+            Some(faces) => styles_within(&font, &faces).0,
+            None => font,
         }
     }
 
@@ -222,13 +226,21 @@ impl<B: Backend> App<B> {
 
     /// Names the monospaced family `family` in the config's `[font]
     /// family`, as a plugin's picker chooses it, which shows at once, a
-    /// preview ending.
+    /// preview ending: the config's styles that it lacks commented out
+    /// where they were, as the config would refuse them, for the user to
+    /// take back.
     pub(super) fn set_font(&mut self, platform: &mut dyn Platform, family: &str) {
         self.font_preview = None;
+        let lacking = B::fonts()
+            .family(family)
+            .map(|faces| styles_within(&self.config.font, &faces).1)
+            .unwrap_or_default();
         let written = match &self.config_file {
-            Some(file) => config::set_string(&file.path, "font", "family", family)
-                .map(|()| file.path.clone())
-                .map_err(|error| error.to_string()),
+            Some(file) => {
+                config::set_string_hiding(&file.path, "font", ("family", family), &lacking)
+                    .map(|()| file.path.clone())
+                    .map_err(|error| error.to_string())
+            }
             None => Err("there is no config file".to_owned()),
         };
         match written {

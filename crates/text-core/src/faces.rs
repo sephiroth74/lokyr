@@ -344,6 +344,31 @@ fn nearest<'a>(faces: impl Iterator<Item = &'a FaceInfo>, weight: f32) -> Option
 }
 
 /// A style's name without case, spaces or hyphens.
+/// `config` of the styles that `faces`, of one family, have alone, as a
+/// family chosen in place of the config's takes them: a style that they
+/// lack is the family's own, as of a config that named none; and the keys
+/// of the config of the styles left out, as `style`.
+pub fn styles_within(config: &FontConfig, faces: &[FaceInfo]) -> (FontConfig, Vec<&'static str>) {
+    let mut within = config.clone();
+    let mut left = Vec::new();
+    let has = |style: &Name| {
+        let wanted = normalize(style.as_str());
+        faces.iter().any(|face| normalize(&face.style) == wanted)
+    };
+    for (key, style) in [
+        ("style", &mut within.style),
+        ("bold-style", &mut within.bold_style),
+        ("italic-style", &mut within.italic_style),
+        ("bold-italic-style", &mut within.bold_italic_style),
+    ] {
+        if style.as_ref().is_some_and(|style| !has(style)) {
+            *style = None;
+            left.push(key);
+        }
+    }
+    (within, left)
+}
+
 fn normalize(style: &str) -> String {
     style
         .chars()
@@ -704,6 +729,31 @@ mod tests {
         };
         assert_eq!(key, "style");
         assert_eq!(available, ["Regular", "Bold"]);
+    }
+
+    #[test]
+    fn a_family_chosen_in_place_of_the_config_s_keeps_the_styles_that_it_has() {
+        let faces = family(&[
+            ("Regular", 400.0, false),
+            ("Semi Bold", 600.0, false),
+            ("Bold", 700.0, false),
+        ]);
+        let config = FontConfig {
+            style: Some(Name::try_from("Medium".to_owned()).unwrap()),
+            bold_style: Some(Name::try_from("semi-bold".to_owned()).unwrap()),
+            italic_style: Some(Name::try_from("Italic".to_owned()).unwrap()),
+            ..FontConfig::default()
+        };
+        let (within, left) = styles_within(&config, &faces);
+        assert_eq!(left, ["style", "italic-style"]);
+        assert_eq!(within.style, None);
+        assert_eq!(within.italic_style, None);
+        assert_eq!(within.bold_style, config.bold_style);
+        assert!(choose("Test", &faces, &within).is_ok());
+        assert_eq!(
+            styles_within(&FontConfig::default(), &faces).1,
+            Vec::<&str>::new()
+        );
     }
 
     #[test]

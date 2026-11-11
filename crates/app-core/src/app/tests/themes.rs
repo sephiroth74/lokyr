@@ -568,6 +568,27 @@ fn a_picker_lists_the_monospaced_families_previews_one_and_names_the_chosen_one(
 }
 
 #[test]
+fn a_family_that_lacks_the_config_s_style_is_previewed_and_chosen_of_its_own() {
+    // The families of the tests have a Regular face alone.
+    let config = "[font]\nfamily = \"Mono\"\nstyle = \"Medium\"\nsize = 13\n";
+    let (mut fake, mut app, directory) = with_themes("font-style", config, &[]);
+    app.preview_font(&mut fake, Some("Menlo".to_owned()));
+    let shown = app.font_in_force();
+    assert_eq!(shown.family.unwrap().as_str(), "Menlo");
+    assert_eq!(shown.style, None, "its own regular face");
+    app.set_font(&mut fake, "Menlo");
+    let written = std::fs::read_to_string(directory.join("config.toml")).unwrap();
+    assert_eq!(
+        written,
+        "[font]\nfamily = \"Menlo\"\n# style = \"Medium\"\nsize = 13\n"
+    );
+    assert_eq!(app.config.font.family.as_ref().unwrap().as_str(), "Menlo");
+    assert_eq!(app.config.font.style, None);
+    assert_eq!(app.diagnostics.shown(), None, "no notice of a style");
+    let _ = std::fs::remove_dir_all(directory);
+}
+
+#[test]
 fn a_program_of_mode_2031_learns_of_the_appearance_s_scheme_as_it_switches() {
     // In raw mode, the reports of the color scheme on, and the report read
     // back, with ESC as E, once the program tells that it waits.

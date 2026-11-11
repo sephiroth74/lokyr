@@ -651,11 +651,13 @@ type Cx = {
     -- The system's monospaced font families, of no capability, read of the system's fonts at most every 30 s.
     fonts: () -> (Fonts?, Error?),
     -- Require `appearance-write`: shows a monospaced family, as `fonts` lists it, its case aside, in every pane in place
-    -- of the config's, for a while, as a picker previews it; nil shows the config's. A family changes the cell's size:
+    -- of the config's, for a while, as a picker previews it, of the config's styles that it has, its own in place of
+    -- those that it lacks; nil shows the config's. A family changes the cell's size:
     -- every pane takes its grid anew and its program the signal of it, so a picker previews once its selection rests.
     preview_font: (family: string?) -> (boolean, Error?),
     -- Names a monospaced family in the config's `[font] family`, edited in place, which shows at once, a preview
-    -- ending: one that `fonts` lists, else refused.
+    -- ending: one that `fonts` lists, else refused. The config's styles that it lacks, as `style = "Medium"`, are
+    -- commented out where they were, as the config would refuse them, for the user to take back.
     set_font: (family: string) -> (boolean, Error?),
 
     -- The focus: the window that has it, and its pane that has the keyboard.

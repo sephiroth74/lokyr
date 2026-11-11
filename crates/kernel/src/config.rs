@@ -1467,6 +1467,20 @@ fn path_in(config_home: Option<OsString>, home: Option<PathBuf>) -> Option<PathB
 /// file whose keys are all commented out. A file that does not read as a
 /// config is left as it is, and its error returned.
 pub fn set_string(path: &Path, section: &str, key: &str, value: &str) -> Result<(), Error> {
+    set_string_hiding(path, section, (key, value), &[])
+}
+
+/// Sets the key of the section `[section]` of the config file at `path` to
+/// its string, as [`set_string`] does, and comments out the section's keys
+/// `hidden`, each where its line was, its comments above it kept, as `#
+/// style = "Medium"`: a font family chosen in place of the config's
+/// leaves the styles that it lacks so, for the user to take back.
+pub fn set_string_hiding(
+    path: &Path,
+    section: &str,
+    (key, value): (&str, &str),
+    hidden: &[&str],
+) -> Result<(), Error> {
     let failed = |path: &Path, message: String| Error {
         path: path.to_owned(),
         position: None,
@@ -1506,6 +1520,42 @@ pub fn set_string(path: &Path, section: &str, key: &str, value: &str) -> Result<
         .or_insert_with(toml_edit::table)
         .as_table_like_mut()
         .ok_or_else(|| failed(&target, format!("`{section}` is a section, not a value")))?;
+    // Each key hidden, a comment of its line in its place: before the next
+    // key, of the comments above it, or after the section.
+    let mut after_section = String::new();
+    for &name in hidden {
+        let Some(shown) = table.get(name).and_then(toml_edit::Item::as_value) else {
+            continue;
+        };
+        let mut shown = shown.clone();
+        shown.decor_mut().clear();
+        let above = table
+            .key(name)
+            .and_then(|key| key.leaf_decor().prefix())
+            .and_then(toml_edit::RawString::as_str)
+            .unwrap_or("")
+            .to_owned();
+        let line = format!("{above}# {name} = {shown}\n");
+        let order: Vec<String> = table.iter().map(|(name, _)| name.to_owned()).collect();
+        let next = order
+            .iter()
+            .position(|other| other == name)
+            .and_then(|at| order.get(at + 1))
+            .cloned();
+        table.remove(name);
+        match next.and_then(|next| table.key_mut(&next)) {
+            Some(mut next) => {
+                let before = next
+                    .leaf_decor()
+                    .prefix()
+                    .and_then(toml_edit::RawString::as_str)
+                    .unwrap_or("")
+                    .to_owned();
+                next.leaf_decor_mut().set_prefix(format!("{line}{before}"));
+            }
+            None => after_section.push_str(&line),
+        }
+    }
     // A key that the file has keeps its comments, those above its line,
     // which are the key's, and the one after its value, which is the
     // value's.
@@ -1519,8 +1569,42 @@ pub fn set_string(path: &Path, section: &str, key: &str, value: &str) -> Result<
             table.insert(key, toml_edit::value(value));
         }
     }
+    if !after_section.is_empty() {
+        hide_after(&mut document, section, &after_section);
+    }
     write_whole(&target, &document.to_string())
         .map_err(|error| failed(&target, format!("it cannot be written: {error}")))
+}
+
+/// Puts `lines`, comments, right after the section `[section]` of
+/// `document`: before the next section's header, or at the file's end.
+fn hide_after(document: &mut DocumentMut, section: &str, lines: &str) {
+    let at = document
+        .get(section)
+        .and_then(toml_edit::Item::as_table)
+        .and_then(toml_edit::Table::position);
+    let next = document
+        .iter()
+        .filter_map(|(name, item)| {
+            let position = item.as_table()?.position()?;
+            (at.is_some_and(|at| position > at)).then(|| (position, name.to_owned()))
+        })
+        .min();
+    match next.and_then(|(_, name)| document.get_mut(&name)?.as_table_mut()) {
+        Some(table) => {
+            let before = table
+                .decor()
+                .prefix()
+                .and_then(toml_edit::RawString::as_str)
+                .unwrap_or("")
+                .to_owned();
+            table.decor_mut().set_prefix(format!("{lines}{before}"));
+        }
+        None => {
+            let trailing = document.trailing().as_str().unwrap_or("").to_owned();
+            document.set_trailing(format!("{lines}{trailing}"));
+        }
+    }
 }
 
 /// Makes the config file at `path`, in the file that a link points to,
@@ -2905,6 +2989,61 @@ long-command = 0
                 );
             }
         }
+    }
+
+    #[test]
+    fn a_family_set_comments_out_the_styles_that_it_lacks_where_they_were() {
+        let root = std::env::temp_dir().join(format!("lokyr-hide-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        let file = root.join("config.toml");
+        let text = concat!(
+            "[font]\n",
+            "family = \"GohuFont 11 Nerd Font Mono\"\n",
+            "# non-ascii-family = \"Hiragino Sans\"\n",
+            "style = \"Medium\"\n",
+            "# bold-style = \"Bold\"\n",
+            "size = 18\n",
+            "italic-style = \"Oblique\"\n",
+            "\n",
+            "[window]\n",
+            "padding-x = 4\n",
+        );
+        fs::write(&file, text).unwrap();
+        set_string_hiding(
+            &file,
+            "font",
+            ("family", "Menlo"),
+            &["style", "italic-style", "bold-style"],
+        )
+        .unwrap();
+        let written = fs::read_to_string(&file).unwrap();
+        assert_eq!(
+            written,
+            concat!(
+                "[font]\n",
+                "family = \"Menlo\"\n",
+                "# non-ascii-family = \"Hiragino Sans\"\n",
+                "# style = \"Medium\"\n",
+                "# bold-style = \"Bold\"\n",
+                "size = 18\n",
+                "# italic-style = \"Oblique\"\n",
+                "\n",
+                "[window]\n",
+                "padding-x = 4\n",
+            )
+        );
+        let config = Config::read(&file).unwrap();
+        assert_eq!(config.font.family.unwrap().as_str(), "Menlo");
+        assert_eq!(config.font.style, None);
+        // The last section's last key, at the file's end.
+        fs::write(&file, "[font]\nfamily = \"A\"\nstyle = \"Medium\"\n").unwrap();
+        set_string_hiding(&file, "font", ("family", "B"), &["style"]).unwrap();
+        assert_eq!(
+            fs::read_to_string(&file).unwrap(),
+            "[font]\nfamily = \"B\"\n# style = \"Medium\"\n"
+        );
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]
