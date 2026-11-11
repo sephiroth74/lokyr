@@ -132,6 +132,23 @@ fn every() -> Vec<Event> {
             path: None,
             error: Some("it cannot be written".to_owned()),
         },
+        Event::Package {
+            id: 12,
+            line: lokyr_plugin_sdk::message::Data::Map(
+                [
+                    (
+                        "event".to_owned(),
+                        lokyr_plugin_sdk::message::Data::Text("removed".to_owned()),
+                    ),
+                    (
+                        "name".to_owned(),
+                        lokyr_plugin_sdk::message::Data::Text("acme/hello".to_owned()),
+                    ),
+                ]
+                .into(),
+            ),
+        },
+        Event::PackagesEnded { id: 12, ok: true },
     ]);
     every
 }

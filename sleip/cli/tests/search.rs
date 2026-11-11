@@ -1187,3 +1187,154 @@ fn installs_move_a_conflict_s_plugins_alone_keep_dev_folders_and_take_folders_ne
     assert!(output.status.success(), "{output:?}");
     assert!(locked(&fresh).packages.contains_key("acme/base"));
 }
+
+/// The events of a job of the packages' service of `call`, the app's, of
+/// Sleip of `registry`'s `home`: its lines, and whether it succeeded.
+fn served(
+    registry: &TestRegistry,
+    home: &Path,
+    call: &lokyr_plugin_sdk::host::Packages,
+) -> (Vec<Value>, bool) {
+    use lokyr_pkg_model::service::Job;
+
+    let env: Vec<(String, String)> = [
+        ("HOME", home.to_path_buf()),
+        ("XDG_CONFIG_HOME", home.join(".config")),
+        ("XDG_CACHE_HOME", home.join(".cache")),
+        ("XDG_DATA_HOME", home.join(".local/share")),
+        ("SLEIP_LOKYR", home.join("api-version")),
+    ]
+    .into_iter()
+    .map(|(name, path)| (name.to_owned(), path.display().to_string()))
+    .chain([
+        (
+            "SLEIP_TEST_ROOT_KEYS".to_owned(),
+            registry.root_key.public().to_string(),
+        ),
+        ("PATH".to_owned(), "/usr/bin:/bin".to_owned()),
+    ])
+    .collect();
+    let mut job = Job::start(Path::new(env!("CARGO_BIN_EXE_sleip")), call, &env).unwrap();
+    let mut lines = Vec::new();
+    while let Some(line) = job.next_line() {
+        lines.push(line);
+    }
+    (lines, job.finish())
+}
+
+#[test]
+fn the_packages_service_runs_each_call_against_a_registry_served_on_the_machine() {
+    use lokyr_plugin_sdk::host::Packages;
+
+    let registry = TestRegistry::new("service");
+    registry.publish(&[(
+        "acme/hello",
+        &[("0.1.0", &[], false), ("0.2.0", &[], false)],
+    )]);
+    let home = registry.home("home");
+    let named = |lines: &[Value], event: &str| -> Vec<Value> {
+        lines
+            .iter()
+            .filter(|line| line["event"] == event)
+            .cloned()
+            .collect()
+    };
+    // The registry's search and a plugin's versions.
+    let (lines, ok) = served(
+        &registry,
+        &home,
+        &Packages::Search {
+            query: "hello".to_owned(),
+        },
+    );
+    assert!(ok, "{lines:?}");
+    let found = named(&lines, "found");
+    assert_eq!(found.len(), 1, "{lines:?}");
+    assert_eq!(
+        (&found[0]["name"], &found[0]["version"]),
+        (&Value::from("acme/hello"), &Value::from("0.2.0"))
+    );
+    assert_eq!(named(&lines, "done")[0]["found"], 1);
+    let (lines, ok) = served(
+        &registry,
+        &home,
+        &Packages::Info {
+            plugin: "acme/hello".to_owned(),
+        },
+    );
+    assert!(ok, "{lines:?}");
+    let info = named(&lines, "info");
+    assert_eq!(
+        info[0]["versions"].as_array().map(Vec::len),
+        Some(2),
+        "{lines:?}"
+    );
+    // An install of a constraint, then the installed plugins.
+    let (lines, ok) = served(
+        &registry,
+        &home,
+        &Packages::Add {
+            plugin: "acme/hello".to_owned(),
+            constraint: Some("^0.1".to_owned()),
+        },
+    );
+    assert!(ok, "{lines:?}");
+    assert_eq!(named(&lines, "downloading").len(), 1, "{lines:?}");
+    let installed = named(&lines, "installed");
+    assert_eq!(installed[0]["version"], "0.1.0", "{lines:?}");
+    assert_eq!(named(&lines, "done")[0]["changed"], true);
+    let (lines, ok) = served(&registry, &home, &Packages::List);
+    assert!(ok, "{lines:?}");
+    let plugins = named(&lines, "plugin");
+    assert_eq!(
+        (&plugins[0]["name"], &plugins[0]["version"]),
+        (&Value::from("acme/hello"), &Value::from("0.1.0"))
+    );
+    // An update within its constraint changes nothing; an install of no
+    // constraint takes the newest.
+    let (lines, ok) = served(
+        &registry,
+        &home,
+        &Packages::Update {
+            plugin: Some("acme/hello".to_owned()),
+        },
+    );
+    assert!(ok, "{lines:?}");
+    assert_eq!(named(&lines, "done")[0]["changed"], false, "{lines:?}");
+    let (lines, ok) = served(
+        &registry,
+        &home,
+        &Packages::Add {
+            plugin: "acme/hello".to_owned(),
+            constraint: None,
+        },
+    );
+    assert!(ok, "{lines:?}");
+    assert_eq!(
+        named(&lines, "installed")[0]["version"],
+        "0.2.0",
+        "{lines:?}"
+    );
+    // A removal, then none installed.
+    let (lines, ok) = served(
+        &registry,
+        &home,
+        &Packages::Remove {
+            plugin: "acme/hello".to_owned(),
+        },
+    );
+    assert!(ok, "{lines:?}");
+    assert_eq!(named(&lines, "removed")[0]["name"], "acme/hello");
+    let (lines, ok) = served(&registry, &home, &Packages::List);
+    assert!(ok && named(&lines, "plugin").is_empty(), "{lines:?}");
+    // A plugin that the registry has not fails, of its error.
+    let (lines, ok) = served(
+        &registry,
+        &home,
+        &Packages::Info {
+            plugin: "acme/none".to_owned(),
+        },
+    );
+    assert!(!ok);
+    assert_eq!(named(&lines, "error").len(), 1, "{lines:?}");
+}

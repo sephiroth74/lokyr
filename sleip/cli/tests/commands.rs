@@ -547,7 +547,7 @@ fn check_tells_each_problem_of_its_file_and_line() {
     // Each case: what breaks the plugin, and the problems told, each its
     // place and its kind.
     type Case = (&'static str, fn(&Path), &'static [&'static str]);
-    let cases: [Case; 12] = [
+    let cases: [Case; 13] = [
         (
             "syntax",
             |folder| {
@@ -569,6 +569,17 @@ fn check_tells_each_problem_of_its_file_and_line() {
             &[
                 "plugin.toml:18:1: Capability: ",
                 "plugin.toml:19:1: Capability: ",
+            ],
+        ),
+        (
+            "first-party",
+            |folder| {
+                edit(folder, "plugin.toml", |text| {
+                    format!("{text}\n[capabilities]\npackages = true\n")
+                });
+            },
+            &[
+                "plugin.toml:18:1: Capability: the app refuses `packages`, which Lokyr's own plugins alone hold",
             ],
         ),
         (

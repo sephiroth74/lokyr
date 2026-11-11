@@ -41,6 +41,7 @@ mod menus;
 mod notices;
 mod numbers;
 mod opens;
+mod packages;
 mod panels;
 mod panes;
 mod parts;

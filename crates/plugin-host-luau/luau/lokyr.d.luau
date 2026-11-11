@@ -35,6 +35,8 @@ export type Cx = {
     set_clipboard_image: (png: string | buffer) -> (true?, string?, number?),
     keep_awake: (awake: Awake) -> (true?, string?, number?),
     save_file: (window: WindowId?, name: string, bytes: string | buffer) -> (number?, string?, number?),
+    packages: (call: Packages) -> (number?, string?, number?),
+    cancel_packages: (job: number) -> (true?, string?, number?),
     focused_window: () -> (WindowId?, string?, number?),
     focused_pane: () -> (PaneId?, string?, number?),
     selection_text: (pane: PaneId) -> (string?, string?, number?),
@@ -149,6 +151,8 @@ export type Event =
     | { kind: "tab-bar-resized", width: number }
     | { kind: "answered", id: number, text: string? }
     | { kind: "saved", id: number, path: string?, error: string? }
+    | { kind: "package", id: number, line: Data }
+    | { kind: "packages-ended", id: number, ok: boolean }
     | { kind: "config-changed" }
     | { kind: "timer", id: number }
     | { kind: "custom", name: string, schema: string, value: Data }
@@ -553,6 +557,14 @@ export type NodeRole =
     | "alert"
     | "heading"
     | "image"
+
+export type Packages =
+    | "list"
+    | { search: { query: string } }
+    | { info: { plugin: string } }
+    | { add: { plugin: string, constraint: string? } }
+    | { update: { plugin: string? } }
+    | { remove: { plugin: string } }
 
 export type PaneId = number
 

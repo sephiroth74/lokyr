@@ -34,9 +34,11 @@ const RENAMES: [(&str, &str, &str); 6] = [
 
 /// The names of the parameters of the requests of a value, or of values,
 /// which have no fields' names, where their types' do not tell them.
-const PARAMS: [(&str, &[&str]); 14] = [
+const PARAMS: [(&str, &[&str]); 16] = [
     ("subscribe", &["names"]),
     ("keep_awake", &["awake"]),
+    ("packages", &["call"]),
+    ("cancel_packages", &["job"]),
     ("drop_image", &["image"]),
     ("set_clipboard_image", &["png"]),
     ("preview_theme", &["name"]),

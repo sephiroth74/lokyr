@@ -501,6 +501,10 @@ type Event =
     -- The end of a save of `save_file`, to it alone: the path of the file that the host wrote where the user chose; none
     -- as the user cancelled or the panel's window closed; or the error of a write that failed.
     | { kind: "saved", id: number, path: string?, error: string? }
+    -- A line of a job of `packages`, to it alone: Sleip's event, an object of its `event` and its fields, as
+    -- PACKAGE-MANAGER.md writes them down of each command; then the job's end, whether its command succeeded.
+    | { kind: "package", id: number, line: { event: string, [string]: any } }
+    | { kind: "packages-ended", id: number, ok: boolean }
     -- The user's drag of the edge of the plugin's tab bar's column ended, to it alone: its width since, in points,
     -- which the plugin keeps, as for its next start.
     | { kind: "tab-bar-resized", width: number }
@@ -857,6 +861,14 @@ type Cx = {
     -- strongest that one asks, which `pmset -g assertions` lists of the plugins' names, and releases it as the last
     -- lets go, stops, faults or is turned off.
     keep_awake: (awake: "off" | "system" | "display") -> (boolean, Error?),
+    -- Requires `packages`, Lokyr's own plugins' alone: a job of the packages' service, the bundle's Sleip of `--json`,
+    -- as the call returns, of its id, whose lines come as `package` events and whose end as `packages-ended`, to the
+    -- plugin alone; a name is `owner/name`, a search or a constraint 256 bytes at most, never starting with `-`.
+    packages: (call: "list" | { search: { query: string } } | { info: { plugin: string } }
+        | { add: { plugin: string, constraint: string? } } | { update: { plugin: string? } }
+        | { remove: { plugin: string } }) -> (number?, Error?),
+    -- Ends a job that runs, of no success.
+    cancel_packages: (job: number) -> (boolean, Error?),
 
     -- The plugin's config, its section's values with its schema's defaults; its state, of plain values,
     -- 1 MiB at most as JSON, kept for the next run, as the call returns.
@@ -937,6 +949,7 @@ type Plugin = {
 | `decorate` | Drawing over a pane: decorations, the gutter's marks, a search's matches and a held cursor | Medium: a drawing over the text can show what the terminal does not hold |
 | `pointer-read` | The `pointer` event: the cell under the pointer over the panes, and the modifiers held | Low |
 | `keep-awake` | Keeping the system, or the system and the display, from idle sleep, `keep_awake`, of a power assertion that the host holds for every plugin together, the strongest that one asks, and releases as the last lets go, stops, faults or is turned off ([ADR 0043](adr/0043-keep-awake-title-buttons-ticked-items.md)) | High: a display kept awake keeps the screen from locking, and of a battery's cost |
+| `packages` | The plugins themselves, through the bundle's Sleip: the installed ones, the registry's search and a plugin's versions, installs, updates and removals, `packages`, of their lines as events, and `cancel_packages`; Lokyr's own plugins' alone, refused to another's manifest with a notice and by `sleip check` ([ADR 0045](adr/0045-packages-service.md)) | Very high: a plugin that installs another runs code of its choice |
 | `user-commands` | Running any command as the user's, without declaring it, as the palette does; reading the whole registry, with each command's plugin, keys and context, and the plugins installed ([ADR 0024](adr/0024-user-commands.md)); previewing a theme and naming one in the config's `[theme]`, as the palette's picker does | Very high: `pane.send-text` types into the shell |
 
 A request takes every capability that it needs, as a subscription to `pointer` and to `command-started` takes `pointer-read` and `history-read`. The reads of the workspace, the plugin's own views, panels and questions, its declarations, its config and its state take none; neither does a file saved through the save panel, where the user chooses the place and the host writes it ([ADR 0041](adr/0041-save-panel-of-no-capability.md)), nor an image of the plugin's own cells.

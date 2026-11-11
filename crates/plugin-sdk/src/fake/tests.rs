@@ -1033,7 +1033,8 @@ fn a_host_of_a_manifest_holds_what_it_declares_but_the_network_s_and_the_process
                 Capability::EnvRead("AWS_*".to_owned()),
                 Capability::EnvRead("HOME".to_owned()),
             ],
-            Some(vec!["tabs.*".to_owned()])
+            Some(vec!["tabs.*".to_owned()]),
+            false,
         )
     );
 }

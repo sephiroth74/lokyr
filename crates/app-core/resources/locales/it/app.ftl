@@ -33,6 +33,7 @@ command-pane-search-web = Cerca sul web
 # The notice of a plugin that a fault stopped, by its name.
 plugin-stopped = Il plugin { $name } si è fermato, e le sue viste restano com'erano, senza rispondere ai clic: { $fault }
 plugin-capability-withheld = Il plugin { $name } chiede { $capability }, che nessun plugin ha ancora: funziona senza.
+plugin-capability-first-party = Il plugin { $name } chiede { $capability }, che hanno solo i plugin di Lokyr: funziona senza.
 plugin-not-loaded = Il plugin { $name } non si carica: { $why }
 plugin-other-api = Il plugin { $name } usa l'API dei plugin { $api }, e questo Lokyr ha la { $version }: non si carica finché non si aggiorna il plugin o Lokyr.
 plugins-lock-unread = I plugin installati non si caricano, perché plugins.lock non si legge: { $error }
@@ -70,6 +71,7 @@ consent-capability-pane-view = scorrere e selezionare nei pannelli, cancellarli,
 consent-capability-decorate = disegnare sopra il testo dei pannelli
 consent-capability-pointer-read = vedere dove si trova il puntatore sui pannelli
 consent-capability-keep-awake = tenere svegli il Mac e lo schermo, il che impedisce il blocco dello schermo e consuma la batteria
+consent-capability-packages = installare, aggiornare e rimuovere plugin, che eseguono codice proprio
 permissions-unread = Le decisioni sulle capability dei plugin non si leggono, e nessuna si applica: { $error }
 
 # The credits of the About panel, under the version and the copyright: the

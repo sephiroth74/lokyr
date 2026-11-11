@@ -69,6 +69,7 @@ mod installs;
 mod menus;
 mod notices;
 mod opens;
+mod packages;
 mod panels;
 mod pickers;
 mod restore;
@@ -714,6 +715,9 @@ pub struct App<B: Backend> {
     /// What the app keeps from idle sleep, as the platform last took it,
     /// with its assertion's name.
     awake: (host::Awake, String),
+    /// The jobs of the packages' service, Sleip's commands that Lokyr's own
+    /// plugins start.
+    packages: packages::Jobs,
     /// Where the windows of the workspace that a plugin's move of a tab
     /// opened go on the screens, until they show in the platform's.
     placing: BTreeMap<workspace::WindowId, ScreenPoint>,
@@ -910,6 +914,7 @@ impl<B: Backend> App<B> {
             pictures: BTreeMap::new(),
             last_image: 0,
             awake: (host::Awake::Off, String::new()),
+            packages: packages::Jobs::beside_the_app(),
             placing: BTreeMap::new(),
             placing_size: None,
             tab_drag: None,
@@ -1236,6 +1241,14 @@ impl<B: Backend> App<B> {
             eprintln!("lokyr: {error}");
         }
         self.take_tab_bar(&before);
+        self
+    }
+
+    /// The app, whose packages' service runs `sleip`, or none.
+    #[cfg(test)]
+    fn with_sleip(mut self, sleip: Option<PathBuf>) -> Self {
+        self.packages.sleip = sleip;
+        self.packages.env.clear();
         self
     }
 
@@ -2930,6 +2943,10 @@ impl<B: Backend> App<B> {
                     name,
                     bytes,
                 } => self.ask_save(platform, (plugin, id), window, &name, bytes),
+                Request::Packages { plugin, id, call } => {
+                    self.start_packages(platform, (plugin, id), &call);
+                }
+                Request::CancelPackages { plugin, id } => self.cancel_packages(&plugin, id),
                 Request::AskText {
                     plugin,
                     id,
@@ -3060,9 +3077,15 @@ impl<B: Backend> App<B> {
         // A capability that no plugin has yet, which a manifest declared,
         // refused: the plugin runs without it, as a notice tells.
         for (plugin, capability) in self.plugins.take_withheld() {
+            // Of Lokyr's own plugins alone, or of none yet.
+            let message = if capability.is_first_party_only() {
+                "plugin-capability-first-party"
+            } else {
+                "plugin-capability-withheld"
+            };
             let capability = capability.to_string();
             let text = self.texts.text_with(
-                "plugin-capability-withheld",
+                message,
                 &[
                     ("name", Arg::Text(&plugin)),
                     ("capability", Arg::Text(&capability)),
@@ -3176,6 +3199,8 @@ impl<B: Backend> App<B> {
     /// without events costs nothing.
     fn end_turn(&mut self, platform: &mut dyn Platform) {
         self.events(platform);
+        // The lines and the ends of the packages' jobs, for their plugins.
+        self.take_packages();
         let served = if self.plugins.waiting() {
             self.with_plugins(platform, Plugins::serve)
         } else {

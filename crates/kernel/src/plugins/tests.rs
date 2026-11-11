@@ -1645,6 +1645,65 @@ fn the_workspace_s_writes_the_views_the_decorations_and_the_pointer_take_their_c
 }
 
 #[test]
+fn the_packages_capability_is_lokyr_s_own_plugins_alone() {
+    let mut app = App::default();
+    let mut plugins = Plugins::new();
+    let asks = Rc::new(RefCell::new(Vec::new()));
+    for (name, kind) in [("acme/asker", "luau"), ("lokyr/manager", "builtin")] {
+        let manifest = Manifest::parse(&format!(
+            "[plugin]\nname = \"{name}\"\nversion = \"1.0.0\"\nkind = \"{kind}\"\napi = \"^0.1\"\nlicense = \"MIT\"\n[capabilities]\npackages = true\n"
+        ))
+        .unwrap();
+        let go = format!("{}.go", name.split_once('/').unwrap().1);
+        let seen = Rc::clone(&asks);
+        plugins
+            .add_declared(
+                manifest,
+                scripted(
+                    move |cx| cx.register_command(command(&go)),
+                    move |cx, _, _| {
+                        let asked = cx.packages(host::Packages::List);
+                        seen.borrow_mut().push(asked.map_err(|error| error.code));
+                        Ok(())
+                    },
+                ),
+            )
+            .unwrap();
+    }
+    // Refused to another's manifest, as a notice tells.
+    assert_eq!(
+        plugins.take_withheld(),
+        [("acme/asker".to_owned(), Capability::Packages)]
+    );
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    plugins
+        .run("asker.go", Args::new(), &mut app.context())
+        .unwrap();
+    assert_eq!(asks.borrow()[0], Err(Code::MissingCapability));
+    // Lokyr's own holds it: the job's id, and its request the app's.
+    let _ = plugins.take_requests();
+    plugins
+        .run("manager.go", Args::new(), &mut app.context())
+        .unwrap();
+    let Ok(id) = asks.borrow()[1] else {
+        panic!("{:?}", asks.borrow());
+    };
+    let started: Vec<Request> = plugins
+        .take_requests()
+        .into_iter()
+        .filter(|request| matches!(request, Request::Packages { .. }))
+        .collect();
+    assert!(
+        matches!(
+            started.as_slice(),
+            [Request::Packages { plugin, id: asked, call: host::Packages::List }]
+                if plugin == "lokyr/manager" && *asked == id
+        ),
+        "{started:?}"
+    );
+}
+
+#[test]
 fn the_network_s_and_the_processes_capabilities_are_withheld_and_told() {
     let mut app = App::default();
     window(&mut app, "sleep 10");

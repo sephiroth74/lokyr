@@ -921,6 +921,149 @@ pub enum Awake {
     Display,
 }
 
+/// A call of the packages' service, which the host runs as Sleip's
+/// command of `--json`, of the user's plugins: each line that the command
+/// tells comes as an event, then its end.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Packages {
+    /// The installed plugins, `sleip list`.
+    List,
+    /// The registry's plugins whose names, descriptions or keywords hold
+    /// `query`, `sleip search`.
+    Search {
+        /// What to look for.
+        query: String,
+    },
+    /// A plugin of the registry and its versions, `sleip info`.
+    Info {
+        /// The plugin, as `owner/name`.
+        plugin: String,
+    },
+    /// Installs a plugin of the registry, `sleip add`: of the versions of
+    /// `constraint`, as `^0.2`, or the newest that Lokyr takes.
+    Add {
+        /// The plugin, as `owner/name`.
+        plugin: String,
+        /// Its versions' constraint, of Cargo's grammar.
+        #[serde(default)]
+        constraint: Option<String>,
+    },
+    /// Updates a plugin, or every one, `sleip update`.
+    Update {
+        /// The plugin, as `owner/name`; every one without it.
+        #[serde(default)]
+        plugin: Option<String>,
+    },
+    /// Removes a plugin, `sleip remove`.
+    Remove {
+        /// The plugin, as `owner/name`.
+        plugin: String,
+    },
+}
+
+/// The longest text that a search of the packages' service looks for,
+/// or a constraint of a version, in bytes.
+pub const LONGEST_PACKAGES_TEXT: usize = 256;
+
+impl Packages {
+    /// Whether its names are plugins' names and its texts within
+    /// [`LONGEST_PACKAGES_TEXT`], of no control character, neither
+    /// starting with `-`, which Sleip would take for an option; the error
+    /// that tells why otherwise.
+    pub fn check(&self) -> Result<(), crate::command::Error> {
+        use crate::command::{Code, Error};
+        let named = |plugin: &str| {
+            if is_plugin_name(plugin) {
+                Ok(())
+            } else {
+                Err(Error::new(
+                    Code::InvalidName,
+                    format!("`{plugin}` is not a plugin's name, `owner/name`"),
+                ))
+            }
+        };
+        let text = |what: &str, text: &str| {
+            let fine = !text.is_empty()
+                && text.len() <= LONGEST_PACKAGES_TEXT
+                && !text.starts_with('-')
+                && !text.chars().any(char::is_control);
+            if fine {
+                Ok(())
+            } else {
+                Err(Error::new(
+                    Code::WrongKind,
+                    format!(
+                        "a {what} is a text of {LONGEST_PACKAGES_TEXT} bytes at most, of no control character, not starting with `-`"
+                    ),
+                ))
+            }
+        };
+        match self {
+            Self::List | Self::Update { plugin: None } => Ok(()),
+            Self::Search { query } => text("search", query),
+            Self::Info { plugin }
+            | Self::Remove { plugin }
+            | Self::Update {
+                plugin: Some(plugin),
+            } => named(plugin),
+            Self::Add { plugin, constraint } => {
+                named(plugin)?;
+                match constraint {
+                    Some(constraint) => text("constraint", constraint),
+                    None => Ok(()),
+                }
+            }
+        }
+    }
+
+    /// The arguments of Sleip's command of the call, of `--json`, as
+    /// `["add", "--json", "acme/hello@^0.2"]`.
+    pub fn args(&self) -> Vec<String> {
+        let mut args = vec![self.command().to_owned(), "--json".to_owned()];
+        match self {
+            Self::List | Self::Update { plugin: None } => {}
+            Self::Search { query } => args.push(query.clone()),
+            Self::Info { plugin }
+            | Self::Remove { plugin }
+            | Self::Update {
+                plugin: Some(plugin),
+            } => {
+                args.push(plugin.clone());
+            }
+            Self::Add { plugin, constraint } => args.push(match constraint {
+                Some(constraint) => format!("{plugin}@{constraint}"),
+                None => plugin.clone(),
+            }),
+        }
+        args
+    }
+
+    /// The name of Sleip's command of the call, as `add`.
+    pub fn command(&self) -> &'static str {
+        match self {
+            Self::List => "list",
+            Self::Search { .. } => "search",
+            Self::Info { .. } => "info",
+            Self::Add { .. } => "add",
+            Self::Update { .. } => "update",
+            Self::Remove { .. } => "remove",
+        }
+    }
+}
+
+/// Whether `name` is a plugin's name, `owner/name`, each part of lowercase
+/// letters, digits and `-`, from a letter.
+pub fn is_plugin_name(name: &str) -> bool {
+    let part = |part: &str| {
+        let mut bytes = part.bytes();
+        bytes.next().is_some_and(|first| first.is_ascii_lowercase())
+            && bytes.all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
+    };
+    name.split_once('/')
+        .is_some_and(|(owner, rest)| part(owner) && part(rest))
+}
+
 /// The most bytes that a plugin gives the host at once, of a file to save
 /// or of an image for the clipboard.
 pub const MOST_BYTES: usize = 256 * 1024 * 1024;

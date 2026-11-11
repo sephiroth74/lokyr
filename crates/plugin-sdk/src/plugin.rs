@@ -348,6 +348,24 @@ impl<'a> Cx<'a> {
         }
     }
 
+    /// Runs `call` of the packages' service, Sleip's command, which starts
+    /// once this call returns: returns the job's id, whose lines come as
+    /// [`Event::Package`](crate::message::Event::Package) and whose end as
+    /// [`Event::PackagesEnded`](crate::message::Event::PackagesEnded). Of
+    /// the capability `packages`, Lokyr's own plugins' alone.
+    pub fn packages(&mut self, call: crate::host::Packages) -> Result<u64, Error> {
+        match self.request(Request::Packages(call)) {
+            Response::Asking(id) => Ok(id),
+            other => Err(failed(other)),
+        }
+    }
+
+    /// Ends the job `id` of the packages' service, if it runs, whose end
+    /// comes of no success.
+    pub fn cancel_packages(&mut self, id: u64) -> Result<(), Error> {
+        self.done(Request::CancelPackages(id))
+    }
+
     /// The window that has the focus.
     pub fn focused_window(&mut self) -> Option<WindowId> {
         match self.request(Request::FocusedWindow) {

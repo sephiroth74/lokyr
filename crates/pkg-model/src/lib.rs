@@ -3,7 +3,8 @@
 //! Covers plugin manifests (`plugin.toml`), the user's plugin list
 //! (`plugins.toml`), the lockfile (`plugins.lock`), the store of the
 //! installed packages, the packages' archives, the registry index format
-//! and the distribution files that list the built-in plugins.
+//! and the distribution files that list the built-in plugins; and the
+//! packages' service, Sleip's commands of `--json`, which the app runs.
 
 #![forbid(unsafe_code)]
 
@@ -19,6 +20,7 @@ pub mod lock;
 pub mod manifest;
 pub mod permissions;
 pub mod schema;
+pub mod service;
 pub mod store;
 
 /// Why a file of the formats does not read: where, and what.

@@ -223,8 +223,15 @@ fn registry() -> &'static [Registered] {
 /// manifest's capabilities, commands and slots, of the app's registry, and
 /// of its messages, of the pane 1, which has the focus.
 fn test_host(lua: &Lua, plugin: &Plugin<'_>) -> Result<Table, String> {
+    // Lokyr's own plugins' alone, which a plugin of Luau never holds.
+    let capabilities = plugin
+        .capabilities
+        .iter()
+        .filter(|capability| !capability.is_first_party_only())
+        .cloned()
+        .collect();
     let mut host = FakeHost::new(plugin.name)
-        .with_capabilities(plugin.capabilities.to_vec())
+        .with_capabilities(capabilities)
         .with_uses(plugin.uses.to_vec())
         .with_slots(plugin.slots.to_vec());
     host.set_registry(

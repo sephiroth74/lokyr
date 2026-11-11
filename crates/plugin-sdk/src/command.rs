@@ -182,6 +182,10 @@ pub enum Capability {
     PointerRead,
     /// Keeping the system, or the system and the display, from idle sleep.
     KeepAwake,
+    /// The plugins themselves, through Sleip: the installed ones, the
+    /// registry's search, and installs, updates and removals; Lokyr's own
+    /// plugins' alone.
+    Packages,
 }
 
 impl Capability {
@@ -207,6 +211,7 @@ impl Capability {
             "decorate" => Self::Decorate,
             "pointer-read" => Self::PointerRead,
             "keep-awake" => Self::KeepAwake,
+            "packages" => Self::Packages,
             _ => return None,
         })
     }
@@ -248,6 +253,13 @@ impl Capability {
     /// notice, and its plugin runs without it.
     pub fn is_withheld(&self) -> bool {
         matches!(self, Self::Net(_) | Self::ProcessSpawn)
+    }
+
+    /// Whether Lokyr's own plugins alone, compiled into the app, may hold
+    /// it, which a manifest of another plugin has refused, with a notice:
+    /// the plugins' install and removal.
+    pub fn is_first_party_only(&self) -> bool {
+        matches!(self, Self::Packages)
     }
 }
 
@@ -314,6 +326,7 @@ impl fmt::Display for Capability {
             Self::Decorate => f.write_str("decorate"),
             Self::PointerRead => f.write_str("pointer-read"),
             Self::KeepAwake => f.write_str("keep-awake"),
+            Self::Packages => f.write_str("packages"),
         }
     }
 }
@@ -738,6 +751,11 @@ mod tests {
             Capability::of_name("keep-awake"),
             Some(Capability::KeepAwake)
         );
+        assert_eq!(Capability::Packages.to_string(), "packages");
+        assert_eq!(Capability::of_name("packages"), Some(Capability::Packages));
+        assert!(Capability::Packages.is_first_party_only());
+        assert!(!Capability::Packages.is_withheld());
+        assert!(!Capability::KeepAwake.is_first_party_only());
     }
 
     #[test]

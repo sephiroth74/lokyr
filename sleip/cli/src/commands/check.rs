@@ -145,6 +145,20 @@ fn check_folder(folder: &Path, findings: &mut Findings) {
             &format!("the app refuses `{written}` before Lokyr 1.0.0, as plugins reach no network nor processes yet"),
         );
     }
+    // What Lokyr's own plugins alone hold.
+    for capability in manifest
+        .capabilities
+        .iter()
+        .filter(|capability| capability.is_first_party_only())
+    {
+        let written = capability.to_string();
+        findings.problem(
+            "plugin.toml",
+            line_of_key(&text, &written),
+            "Capability",
+            &format!("the app refuses `{written}`, which Lokyr's own plugins alone hold"),
+        );
+    }
     // An activation of OSC sequences, which the app's handlers of them
     // bring later: refused by every app yet.
     for on in manifest

@@ -27,7 +27,8 @@ fn risk(capability: &Capability) -> &'static str {
         Capability::PtyWrite
         | Capability::ProcessSpawn
         | Capability::InputRead
-        | Capability::UserCommands => "consent-risk-very-high",
+        | Capability::UserCommands
+        | Capability::Packages => "consent-risk-very-high",
         Capability::TerminalRead
         | Capability::ClipboardRead
         | Capability::Net(_)

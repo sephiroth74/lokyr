@@ -27,7 +27,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
-use lokyr_pkg_model::manifest::{Manifest, ManifestError, Thread};
+use lokyr_pkg_model::manifest::{Kind as PackageKind, Manifest, ManifestError, Thread};
 use lokyr_pkg_model::schema::Schema;
 pub use lokyr_plugin_sdk::API_VERSION;
 pub use lokyr_plugin_sdk::event::WorkspaceEvent;
@@ -238,6 +238,24 @@ pub enum Request {
         name: String,
         /// Its bytes.
         bytes: Vec<u8>,
+    },
+    /// Run a call of the packages' service, Sleip's command, whose lines
+    /// and end [`Plugins::package_line`] and [`Plugins::packages_ended`]
+    /// tell the plugin.
+    Packages {
+        /// The plugin.
+        plugin: String,
+        /// The job's id.
+        id: u64,
+        /// The call.
+        call: host::Packages,
+    },
+    /// End the plugin's job `id` of the packages' service, if it runs.
+    CancelPackages {
+        /// The plugin.
+        plugin: String,
+        /// The job's id.
+        id: u64,
     },
     /// Ask the user for a text, whose answer [`Plugins::answer`] gives the
     /// plugin.
@@ -1089,7 +1107,7 @@ impl Plugins {
             .capabilities
             .iter()
             .cloned()
-            .partition(Capability::is_withheld);
+            .partition(|capability| withheld_from(&manifest, capability));
         let granted = (capabilities, Uses::new(manifest.uses.clone()));
         self.insert(&name, Some(manifest), runner, Some(granted))?;
         self.withheld.extend(
@@ -1915,7 +1933,7 @@ impl Plugins {
             let capabilities: Vec<Capability> = manifest
                 .capabilities
                 .iter()
-                .filter(|capability| !capability.is_withheld())
+                .filter(|capability| !withheld_from(manifest, capability))
                 .cloned()
                 .collect();
             commands.extend(manifest.contributes.commands.iter().map(|contributed| {
@@ -2148,6 +2166,27 @@ impl Plugins {
         self.out
             .events
             .push((Some(plugin.to_owned()), Event::Saved { id, path, error }));
+    }
+
+    /// Tells `plugin` a line of its job `id` of the packages' service,
+    /// Sleip's event of JSON, for the next delivery, to it alone.
+    pub fn package_line(&mut self, plugin: &str, id: u64, line: &serde_json::Value) {
+        self.out.events.push((
+            Some(plugin.to_owned()),
+            Event::Package {
+                id,
+                line: data(line),
+            },
+        ));
+    }
+
+    /// Tells `plugin` the end of its job `id` of the packages' service,
+    /// whether Sleip's command succeeded, for the next delivery, to it
+    /// alone.
+    pub fn packages_ended(&mut self, plugin: &str, id: u64, ok: bool) {
+        self.out
+            .events
+            .push((Some(plugin.to_owned()), Event::PackagesEnded { id, ok }));
     }
 
     /// Posts `event`, of the workspace's, for the next delivery.
@@ -3457,7 +3496,7 @@ fn decide(state: &mut State, granted: &[Capability], refused: &[Capability]) {
             manifest
                 .capabilities
                 .iter()
-                .filter(|capability| !capability.is_withheld())
+                .filter(|capability| !withheld_from(manifest, capability))
                 .cloned()
                 .collect()
         })
@@ -5583,6 +5622,20 @@ impl Host<'_, '_> {
                     id,
                 }
             }
+            Asked::Packages(call) => {
+                call.check()?;
+                let id = new_id();
+                self.out.requests.push(Request::Packages {
+                    plugin: self.state.name.clone(),
+                    id,
+                    call,
+                });
+                return Ok(Response::Asking(id));
+            }
+            Asked::CancelPackages(id) => Request::CancelPackages {
+                plugin: self.state.name.clone(),
+                id,
+            },
             other => {
                 return Err(Error::new(
                     Code::Fault,
@@ -5912,6 +5965,14 @@ fn rendered(
             .map_err(|reason| Error::new(Code::Failed, reason))?;
     }
     Ok(tree)
+}
+
+/// Whether the host refuses `capability` to the plugin of `manifest`,
+/// whatever it declares: one that it gives no plugin yet, or one of Lokyr's
+/// own plugins alone to another.
+fn withheld_from(manifest: &Manifest, capability: &Capability) -> bool {
+    capability.is_withheld()
+        || (capability.is_first_party_only() && manifest.kind != PackageKind::Builtin)
 }
 
 /// `tree`, a plugin's render, if it nests [`Node::DEEPEST`] levels at most,

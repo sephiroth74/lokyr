@@ -26,7 +26,7 @@ use lokyr_plugin_sdk::command::Capability;
 use lokyr_plugin_sdk::event::WorkspaceEvent;
 use lokyr_plugin_sdk::fake::FakeHost;
 use lokyr_plugin_sdk::host::{self, Layout, TabInfo, WindowInfo};
-use lokyr_plugin_sdk::message::{Request, Response};
+use lokyr_plugin_sdk::message::{Data, Request, Response};
 use lokyr_plugin_sdk::ui::ViewId;
 use lokyr_plugin_sdk::view::{ListItem, Node};
 use lokyr_pty::Program;
@@ -296,6 +296,8 @@ impl Symbols {
             },
             Event::Answered { text, .. } => Event::Answered { id: 0, text },
             Event::Saved { path, error, .. } => Event::Saved { id: 0, path, error },
+            Event::Package { line, .. } => Event::Package { id: 0, line },
+            Event::PackagesEnded { ok, .. } => Event::PackagesEnded { id: 0, ok },
             Event::Timer { id } => Event::Timer { id: self.timer(id) },
             Event::ViewportChanged { pane, viewport } => Event::ViewportChanged {
                 pane: self.pane(pane),
@@ -760,6 +762,10 @@ fn on_kernel(
                 Event::Saved { id, path, error } => {
                     plugins.saved(name(scenario), *id, path.clone(), error.clone());
                 }
+                Event::Package { id, line } => {
+                    plugins.package_line(name(scenario), *id, &plain(line));
+                }
+                Event::PackagesEnded { id, ok } => plugins.packages_ended(name(scenario), *id, *ok),
                 Event::TabBarResized { width } => plugins.tab_bar_resized(name(scenario), *width),
                 event => plugins.post(event.clone()),
             }
@@ -825,6 +831,24 @@ fn on_fake(scenario: &Scenario, world: &World, front: Front) -> Vec<Entry> {
         host.deliver(plugin.as_mut()).unwrap();
     }
     trace()
+}
+
+/// `data` as plain JSON, as Sleip tells a line.
+fn plain(data: &Data) -> serde_json::Value {
+    use serde_json::Value as Json;
+    match data {
+        Data::Nil => Json::Null,
+        Data::Boolean(boolean) => Json::Bool(*boolean),
+        Data::Integer(number) => Json::from(*number),
+        Data::Number(number) => Json::from(*number),
+        Data::Text(text) => Json::String(text.clone()),
+        Data::List(items) => Json::Array(items.iter().map(plain).collect()),
+        Data::Map(map) => Json::Object(
+            map.iter()
+                .map(|(key, value)| (key.clone(), plain(value)))
+                .collect(),
+        ),
+    }
 }
 
 /// The manifest of a plugin of `capabilities` alone.
@@ -1009,11 +1033,13 @@ fn kind(request: &Request) -> usize {
         Request::SaveFile { .. } => 98,
         Request::DropImage(_) => 99,
         Request::KeepAwake(_) => 100,
+        Request::Packages(_) => 101,
+        Request::CancelPackages(_) => 102,
     }
 }
 
 /// How many kinds of requests the plugin API has.
-const KINDS: usize = 101;
+const KINDS: usize = 103;
 
 #[test]
 fn the_scenarios_hold_every_request_of_the_plugin_api() {

@@ -453,6 +453,9 @@ pub struct FakeHost {
     /// The saves that the plugin asked, whose panels show, by their ids:
     /// each its window, its file's name and its bytes.
     saves: BTreeMap<u64, (WindowId, String, Vec<u8>)>,
+    /// The jobs of the packages' service that the plugin started, which
+    /// run, by their ids.
+    jobs: BTreeMap<u64, host::Packages>,
     /// The files that its saves wrote, by their paths.
     saved: BTreeMap<String, Vec<u8>>,
     /// The ids of the images that the host keeps of the plugin's, the
@@ -544,6 +547,7 @@ impl FakeHost {
             clipboard: None,
             clipboard_image: None,
             saves: BTreeMap::new(),
+            jobs: BTreeMap::new(),
             saved: BTreeMap::new(),
             kept: Vec::new(),
             awake: host::Awake::Off,
@@ -602,7 +606,11 @@ impl FakeHost {
     /// reads it, and given of [`FakeHost::with_capabilities`],
     /// [`FakeHost::with_uses`] and [`FakeHost::with_slots`].
     pub fn with_manifest(self, manifest: &str) -> Self {
-        let (capabilities, uses) = declared(manifest);
+        let (mut capabilities, uses, builtin) = declared(manifest);
+        // Lokyr's own plugins' alone, which another's manifest has refused.
+        if !builtin {
+            capabilities.retain(|capability| !capability.is_first_party_only());
+        }
         let host = self.with_capabilities(capabilities);
         match uses {
             Some(patterns) => host.with_uses(patterns),
@@ -838,6 +846,25 @@ impl FakeHost {
             path: path.map(str::to_owned),
             error: None,
         });
+    }
+
+    /// The jobs of the packages' service that the plugin started, which
+    /// run, by their ids.
+    pub fn packages_jobs(&self) -> &BTreeMap<u64, host::Packages> {
+        &self.jobs
+    }
+
+    /// Ends the job `id` of the packages' service, as Sleip's command
+    /// would, of its lines `lines` and whether it succeeded, `ok`, which
+    /// the plugin hears at the next delivery; a job that does not run is
+    /// left as it is.
+    pub fn answer_packages(&mut self, id: u64, lines: Vec<Data>, ok: bool) {
+        if self.jobs.remove(&id).is_none() {
+            return;
+        }
+        self.owed
+            .extend(lines.into_iter().map(|line| Event::Package { id, line }));
+        self.owed.push(Event::PackagesEnded { id, ok });
     }
 
     /// The bytes of the file that a save wrote at `path`, if one did.
@@ -1096,7 +1123,8 @@ impl FakeHost {
 
     /// Gives `plugin` the events that it is owed, as a batch, if it is owed
     /// any: those of the plugin alone, as a panel's closing, a read's rows,
-    /// a search's matches, a question's answer and its config's change, and
+    /// a search's matches, a question's answer, a job's lines and end and
+    /// its config's change, and
     /// those that it subscribed to, of the
     /// workspace's, its own writes' among them, and those that it emitted;
     /// the others go. Then those of its timers that fired, in their ids'
@@ -1114,6 +1142,8 @@ impl FakeHost {
                     | Event::ConfigChanged
                     | Event::Answered { .. }
                     | Event::Saved { .. }
+                    | Event::Package { .. }
+                    | Event::PackagesEnded { .. }
                     | Event::TabBarResized { .. }
             ) || self.subscribed.iter().any(|name| name == event.name());
             if taken && self.hears(&event) {
@@ -1215,10 +1245,12 @@ impl FakeHost {
             searched: 0,
             imaged: 0,
             saving: Vec::new(),
+            jobs: Vec::new(),
+            cancelled: Vec::new(),
         };
         let result = call(&mut Cx::new(&mut calling, &caller));
         let (writes, asked, closed) = (calling.writes, calling.asked, calling.closed);
-        let saving = calling.saving;
+        let (saving, jobs, cancelled) = (calling.saving, calling.jobs, calling.cancelled);
         // A look, or a call that failed, leaves things as they were, as the
         // app's host leaves them: its writes and what it asked of the app
         // go, and what its requests took at once comes back; a look takes
@@ -1257,6 +1289,14 @@ impl FakeHost {
         // returns.
         for (id, window, name, bytes) in saving {
             self.saves.insert(id, (window, name, bytes));
+        }
+        // The jobs of the packages' service start, and those cancelled end
+        // of no success, as the app's do once the call returns.
+        self.jobs.extend(jobs);
+        for id in cancelled {
+            if self.jobs.remove(&id).is_some() {
+                self.owed.push(Event::PackagesEnded { id, ok: false });
+            }
         }
         result
     }
@@ -2501,6 +2541,10 @@ struct Calling<'h> {
     /// The saves that the call asked, which show their panels as it
     /// returns: each its id, its window, its file's name and its bytes.
     saving: Vec<(u64, WindowId, String, Vec<u8>)>,
+    /// The jobs of the packages' service that the call started, which
+    /// start as it returns, and those that it cancelled.
+    jobs: Vec<(u64, host::Packages)>,
+    cancelled: Vec<u64>,
 }
 
 impl Calling<'_> {
@@ -2995,6 +3039,16 @@ impl Calling<'_> {
                 self.saving
                     .push((id, window, name.clone(), bytes.0.clone()));
                 Response::Asking(id)
+            }
+            Request::Packages(call) => {
+                call.check()?;
+                let id = self.host.next_id();
+                self.jobs.push((id, call.clone()));
+                Response::Asking(id)
+            }
+            Request::CancelPackages(id) => {
+                self.cancelled.push(*id);
+                Response::Done
             }
             Request::SwapPanes { pane, with } => {
                 self.known_pane(*pane)?;
@@ -3728,8 +3782,8 @@ fn write_node(out: &mut String, node: &Node, depth: usize) {
 /// The capabilities that the manifest `text` declares in its
 /// `[capabilities]`, and the commands of its `[uses]`, if it has them, as
 /// [`FakeHost::with_manifest`] reads them.
-fn declared(text: &str) -> (Vec<Capability>, Option<Vec<String>>) {
-    let (mut capabilities, mut uses) = (Vec::new(), None);
+fn declared(text: &str) -> (Vec<Capability>, Option<Vec<String>>, bool) {
+    let (mut capabilities, mut uses, mut builtin) = (Vec::new(), None, false);
     let mut section = "";
     let mut lines = text.lines();
     while let Some(line) = lines.next() {
@@ -3742,6 +3796,7 @@ fn declared(text: &str) -> (Vec<Capability>, Option<Vec<String>>) {
             .and_then(|line| line.strip_suffix(']'))
         {
             section = match name.trim() {
+                "plugin" => "plugin",
                 "capabilities" => "capabilities",
                 "uses" => "uses",
                 _ => "",
@@ -3779,10 +3834,11 @@ fn declared(text: &str) -> (Vec<Capability>, Option<Vec<String>>) {
                     .unwrap_or_else(|| panic!("`{key}` is no capability of a list"))
             })),
             "uses" if key == "commands" => uses = Some(texts()),
+            "plugin" if key == "kind" => builtin = value == "\"builtin\"",
             _ => {}
         }
     }
-    (capabilities, uses)
+    (capabilities, uses, builtin)
 }
 
 #[cfg(test)]

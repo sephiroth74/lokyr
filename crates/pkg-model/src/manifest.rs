@@ -600,8 +600,7 @@ pub fn is_plugin_name(name: &str) -> bool {
 /// Whether `name` is `owner/name`, each part of lowercase letters, digits
 /// and `-`, from a letter.
 pub(crate) fn is_name(name: &str) -> bool {
-    name.split_once('/')
-        .is_some_and(|(owner, rest)| is_part(owner) && is_part(rest))
+    lokyr_plugin_sdk::host::is_plugin_name(name)
 }
 
 /// Whether `part` is of lowercase letters, digits and `-`, from a letter.

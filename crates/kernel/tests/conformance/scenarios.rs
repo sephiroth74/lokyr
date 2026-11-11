@@ -25,8 +25,8 @@ use lokyr_plugin_sdk::event::WorkspaceEvent;
 use lokyr_plugin_sdk::host::{
     Awake, BarPlace, Binding, Bytes, Color, CommandInfo, DecorationLook, Direction, Edge,
     LEAST_DELAY, Layout, Line, LineText, MOST_DELAY, MOST_SEARCHES, MOST_STATE, MOST_TIMERS,
-    MOST_WRITES, MenuItem, MenuPlace, PaneId, QuickLength, QuickPlace, ScreenPoint, Scroll,
-    SearchMatch, SearchQuery, SelectionKind, ShellCommand, Side, StyleRun, TabId, TabInfo,
+    MOST_WRITES, MenuItem, MenuPlace, Packages, PaneId, QuickLength, QuickPlace, ScreenPoint,
+    Scroll, SearchMatch, SearchQuery, SelectionKind, ShellCommand, Side, StyleRun, TabId, TabInfo,
     TextStyle, Underline, Viewport, WindowId, WindowInfo, check_file_name,
 };
 use lokyr_plugin_sdk::image::{
@@ -66,6 +66,9 @@ const NO_TAB: TabId = TabId(999_999);
 
 /// A timer that no plugin started.
 const NO_TIMER: u64 = 999_999;
+
+/// The id of a job of the packages' service that is none.
+const NO_JOB: u64 = 999_999;
 
 /// The first of the symbols, past every id that a host gives: a window's
 /// are from it, a tab's from twice it, a pane's from three times it.
@@ -193,6 +196,8 @@ pub fn all(world: &World) -> Vec<Scenario> {
         cells_and_saves(world),
         awake(true),
         awake(false),
+        packages(true),
+        packages(false),
         core_actions(world),
     ]
 }
@@ -227,6 +232,97 @@ fn awake(allowed: bool) -> Scenario {
             (Request::KeepAwake(Awake::System), answer()),
             (Request::KeepAwake(Awake::Off), answer()),
         ])],
+    }
+}
+
+/// The packages' service, of `packages`, Lokyr's own plugins' capability,
+/// when `allowed`: a job of each call, of its id, a name that is none and a
+/// search that Sleip would take for an option refused, a job's cancel of
+/// any id done, and a job's lines and end to the plugin alone; each
+/// refused of a plugin that lacks the capability.
+fn packages(allowed: bool) -> Scenario {
+    let lacks = || {
+        failed(
+            Code::MissingCapability,
+            "the plugin `acme/conformer` lacks the capability `packages`",
+        )
+    };
+    let answer = |response: Response| if allowed { response } else { lacks() };
+    let refused = |code: Code, message: &str| {
+        if allowed {
+            failed(code, message)
+        } else {
+            lacks()
+        }
+    };
+    let line = Data::Map(BTreeMap::from([
+        ("event".to_owned(), Data::Text("installed".to_owned())),
+        ("name".to_owned(), Data::Text("sephiroth74/snap".to_owned())),
+        ("version".to_owned(), Data::Text("0.1.0".to_owned())),
+    ]));
+    let ended = vec![
+        Event::Package { id: 0, line },
+        Event::PackagesEnded { id: 0, ok: true },
+    ];
+    let mut steps = vec![ask(vec![
+        (
+            Request::Packages(Packages::List),
+            answer(Response::Asking(0)),
+        ),
+        (
+            Request::Packages(Packages::Search {
+                query: "snap".to_owned(),
+            }),
+            answer(Response::Asking(0)),
+        ),
+        (
+            Request::Packages(Packages::Add {
+                plugin: "sephiroth74/snap".to_owned(),
+                constraint: Some("^0.1".to_owned()),
+            }),
+            answer(Response::Asking(0)),
+        ),
+        (
+            Request::Packages(Packages::Add {
+                plugin: "Snap".to_owned(),
+                constraint: None,
+            }),
+            refused(
+                Code::InvalidName,
+                "`Snap` is not a plugin's name, `owner/name`",
+            ),
+        ),
+        (
+            Request::Packages(Packages::Search {
+                query: "--path".to_owned(),
+            }),
+            refused(
+                Code::WrongKind,
+                "a search is a text of 256 bytes at most, of no control character, not starting with `-`",
+            ),
+        ),
+        (Request::CancelPackages(NO_JOB), answer(Response::Done)),
+    ])];
+    if allowed {
+        steps.push(Step {
+            wait: 0,
+            asks: Vec::new(),
+            posts: ended.clone(),
+            heard: ended,
+        });
+    }
+    Scenario {
+        name: format!(
+            "the packages' service, {} `packages`",
+            if allowed { "of" } else { "without" }
+        ),
+        capabilities: Some(if allowed {
+            vec![Capability::Packages]
+        } else {
+            Vec::new()
+        }),
+        subscriptions: Vec::new(),
+        steps,
     }
 }
 

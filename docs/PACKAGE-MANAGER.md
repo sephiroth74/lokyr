@@ -47,12 +47,48 @@ The split is the same as cargo and rustc: the app runs plugins, and Sleip provid
 - `--offline`: uses only the local cache and store.
 - `--registry <name>`: selects a registry.
 
+**The events of `--json`**
+
+Each line is an object of its `event` and of the fields below; a field of no value is `null`, and a list may be empty. Every command may tell `waiting`, of `for`, what it waits for, as the store's lock, and, as it fails, `error`, of its `message`, before it ends of the exit code 1. The packages' service of the app, which Lokyr's own `plugin-manager` calls, runs `list`, `search`, `info`, `add`, `update` and `remove` so ([ADR 0045](adr/0045-packages-service.md)).
+
+| Command | Event | Fields |
+|---|---|---|
+| `list` | `plugin`, of each installed plugin | `name`, `version`, `kind` (`luau`, `themes`), `source` (`registry+<address>`, `path+<path>`, `git+<address>#<commit>`, `dev+<path>`), `capabilities`, a list of their manifest's texts |
+| `search` | `found`, of each plugin found | `name`, `version`, the one shown, `description`, `capabilities`, `yanked` |
+| | `note`, of what is worth knowing, as an expired cache offline | `message` |
+| | `done` | `found`, how many |
+| `info` | `info` | `name`, `version`, the one shown, `description`, `kind`, `api`, the plugin API's constraint, `capabilities`, `uses`, the commands that it runs, `dependencies`, each of `name` and `req`, and `versions`, newest first, each of `version`, `yanked`, `capabilities` and `cksum` |
+| | `note` | `message` |
+| `add`, `update` | `downloading`, of each archive of the registry's that it fetches | `name`, `version`, `url` |
+| | `restored`, of each package that the store lacked, fetched again as the lockfile holds it | `name`, `version` |
+| | `installed`, of each plugin that the lockfile holds anew | `name`, `version`, `source`, `capabilities` |
+| | `note`, as of no Lokyr found, whose plugin API is then Sleip's | `message` |
+| | `done` | `changed`, whether the lockfile changed |
+| `remove` | `removed`, of the plugin, then of each dependency that no plugin needs now | `name`, and `needed`, `false`, of such a dependency |
+| `gc` | `collected`, of each package or leftover taken away | `digest` of a package, or `leftover` of an install that stopped, and `bytes` |
+| | `done` | `collected`, how many, and `bytes` |
+| `doctor` | `check`, of each check | `name`, `level` (`ok`, `note`, `error`) and `detail` |
+| | `done` | `problems` |
+| `check` | `problem` | `file`, `line` and `column`, both 0 of a problem of a whole file, `kind` (`Manifest`, `Capability`, `Activation`, `Api`, `Catalog`, `Package`, `Source`, `SyntaxError`, `TypeError`, `InternalError`), `message` |
+| | `note`, of what is not wrong but worth knowing | `file`, `message` |
+| | `done` | `problems` |
+| `test` | `test`, of each test | `file`, `name`, `ok`, and a failure's `line` and `message` |
+| | `done` | `passed`, `failed` |
+| `dev` | `problem`, `note`, then `checked`, at its start and at each save | `checked` of `problems` |
+| | `linked` | `name`, `folder`, and the version that it `replaced`, if it took an installed plugin's place |
+| | `unlinked`, as it ends | `name` |
+| `new` | `created` | `name`, `folder`, `files` |
+| `publish` | `checked` | `name`, `version`, `tag`, `commit` |
+| | `pushed`, of a registry of git that is not GitHub's | `branch`, `registry` |
+| | `opened`, the pull request | `url`, `name`, `version` |
+| | `link`, without `gh` or of `--link` | `url`, `path`, `text` |
+
 **Output, exit codes and places**
-- Text for a person by default; with `--json`, an event of NDJSON a line on the standard output, each a JSON object of its `event`: `created` of `new`, of `name`, `folder` and `files`; `plugin` of `list`, of `name`, `version`, `kind`, `source` and `capabilities`; `removed` of `remove`, of `name`; `collected` of `gc`, of a package's `digest`, or a `leftover` of an install that stopped, and its `bytes`, then `done` of `collected` and `bytes`; `check` of `doctor`, of `name`, `level`, `ok`, `note` or `error`, and `detail`, then `done` of `problems`; `test` of `test`, of `file`, `name`, `ok`, and a failure's `line` and `message`, then `done` of `passed` and `failed`; `installed` of `add` and `update`, of `name`, `version`, `source` and `capabilities`, of each plugin that the lockfile holds anew, then `done` of `changed`, and `note` of no Lokyr found, whose plugin API is then Sleip's; `checked` of `dev`, of `problems`, after its `problem` and `note` events, at its start and at each save, `linked`, of `name`, `folder` and the version that it `replaced`, if it took an installed plugin's place, and `unlinked`, of `name`, as it ends; `problem` of `check`, of `file`, `line` and `column`, both 0 of a problem of a whole file, `kind`, as `Manifest`, `Capability`, `Api`, `Catalog`, `Package`, `Source`, `SyntaxError`, `TypeError` or `InternalError`, and `message`, and `note`, of `file` and `message`, of what is not wrong but worth knowing, then `done` of `problems`; `waiting`, of what a command waits for, as the store's lock; and `error`, of its `message`.
+- Text for a person by default; with `--json`, an event of NDJSON a line on the standard output, each a JSON object of its `event`, of the fields that the table of the events of `--json` above writes down of each command; the texts of a plugin or of the index as they are, of JSON's escapes.
 - Exit codes: 0, done; 1, a failure, as a plugin that another needs, a problem that `doctor` or `check` found, or a test that failed; 2, a command line that is wrong, as the help tells.
 - The places are the app's: the config's folder, `~/.config/lokyr/` or `$XDG_CONFIG_HOME/lokyr/`, of `plugins.toml`, `plugins.lock` and `permissions.toml`; the store, `~/Library/Application Support/lokyr/store/` on macOS, `$XDG_DATA_HOME/lokyr/store/` elsewhere; the cache, `~/Library/Caches/lokyr/sleip/` on macOS, `$XDG_CACHE_HOME/lokyr/sleip/` elsewhere.
 - The app's plugin API, which the plugins are resolved against, of the app that `SLEIP_LOKYR` names, a bundle, its resources' `api-version` file or its binary, alone where it names one; else of the bundle that Sleip's binary is in, through the links to it; of `Lokyr.app` in the Applications folders; or of `lokyr --api-version` on the `PATH`.
-- **The store's lock**: a command that changes the store or the lockfile, `remove` and `gc` so far, takes `store.lock`, beside the store rather than in it, so that the app's watch of the store takes no lock for a change; a second Sleip waits for the first, as it tells.
+- **The store's lock**: a command that changes the store or the lockfile, `add`, `update`, `remove`, `gc` and `dev`'s link and unlink, takes `store.lock`, beside the store rather than in it, so that the app's watch of the store takes no lock for a change; a second Sleip waits for the first, as it tells.
 - `remove` takes the plugin out of `plugins.toml` in place, its comments and order kept, and out of `plugins.lock`, written whole; it refuses a plugin that another needs, and, of `--locked`, a change of the lockfile; the package stays until `gc`, the decisions on its capabilities in `permissions.toml`. `gc` refuses a lockfile that does not read, whose packages it could not tell.
 
 ## Package kinds

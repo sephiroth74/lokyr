@@ -151,6 +151,18 @@ pub enum Request {
         /// Its bytes, [`MOST_BYTES`](crate::host::MOST_BYTES) at most.
         bytes: Bytes,
     },
+    /// Runs a call of the packages' service, Sleip's command of `--json`,
+    /// as the call returns: the host answers with the job's id, and tells
+    /// each line that the command tells as an [`Event::Package`] of that
+    /// id, then its end as an [`Event::PackagesEnded`], to the plugin
+    /// alone; Lokyr reloads the plugins that it installs, updates or
+    /// removes. Of the capability `packages`, Lokyr's own plugins' alone.
+    Packages(crate::host::Packages),
+    /// Ends a job of the packages' service that runs, as the user stops
+    /// it: its command ends, and its end comes as an
+    /// [`Event::PackagesEnded`] of no success; a job that ended already is
+    /// left as it is.
+    CancelPackages(u64),
     /// The window that has the focus.
     FocusedWindow,
     /// The pane that has the focus: the active one of the focused window.
@@ -820,6 +832,7 @@ impl Request {
                 Some(Capability::ClipboardWrite)
             }
             Self::KeepAwake(_) => Some(Capability::KeepAwake),
+            Self::Packages(_) | Self::CancelPackages(_) => Some(Capability::Packages),
             Self::SelectionText(_)
             | Self::LineText { .. }
             | Self::LinkAt { .. }
@@ -1026,6 +1039,8 @@ impl Request {
             | Self::ClosePanel(_)
             | Self::AskText { .. }
             | Self::SaveFile { .. }
+            | Self::Packages(_)
+            | Self::CancelPackages(_)
             | Self::PreviewTheme(_)
             | Self::SetTheme { .. } => Effect::App,
             Self::RegisterCommand(_)
@@ -1296,6 +1311,24 @@ pub enum Event {
         /// What failed, if the write did.
         error: Option<String>,
     },
+    /// A line of a job of the packages' service, to its plugin alone:
+    /// Sleip's event, an object of its `event`, as `installed`, and its
+    /// fields, as Sleip's guide writes them down of each command.
+    Package {
+        /// The job's id.
+        id: u64,
+        /// The event.
+        line: Data,
+    },
+    /// A job of the packages' service ended, to its plugin alone: whether
+    /// Sleip's command succeeded, as of a job cancelled or of a Sleip not
+    /// found, whose `error` line came before.
+    PackagesEnded {
+        /// The job's id.
+        id: u64,
+        /// Whether the command succeeded.
+        ok: bool,
+    },
     /// The plugin's config changed, as the config file reloaded, to it
     /// alone: its request of [`Request::Config`] reads the new one.
     ConfigChanged,
@@ -1329,6 +1362,8 @@ impl Event {
             Self::PanelClosed(_) => "panel-closed",
             Self::Answered { .. } => "answered",
             Self::Saved { .. } => "saved",
+            Self::Package { .. } => "package",
+            Self::PackagesEnded { .. } => "packages-ended",
             Self::TabBarResized { .. } => "tab-bar-resized",
             Self::KeysChanged => KEYS_CHANGED,
             Self::WindowFocus { .. } => WINDOW_FOCUS,
@@ -1420,6 +1455,7 @@ impl Request {
             | Self::SetClipboardText { .. }
             | Self::SetClipboardImage { .. }
             | Self::KeepAwake { .. }
+            | Self::CancelPackages { .. }
             | Self::DropImage { .. }
             | Self::EndSearch { .. }
             | Self::SelectCells { .. }
@@ -1500,7 +1536,7 @@ impl Request {
             Self::Layout { .. } => "layout",
             Self::NewTab { .. } => "tab",
             Self::TabBarPlace { .. } => "tab-bar-place",
-            Self::AskText { .. } | Self::SaveFile { .. } => "asking",
+            Self::AskText { .. } | Self::SaveFile { .. } | Self::Packages { .. } => "asking",
             Self::StartTimer { .. } => "timer",
             Self::PaneGrid { .. } => "grid",
             Self::Config { .. } | Self::State { .. } => "data",
