@@ -182,7 +182,7 @@ return Search
 
 ### Versioning
 
-- The API version is the version of `plugin-sdk` (`plugin-sdk 0.1.0` ↔ API 0.1).
+- The API version is the version of `plugin-sdk` (`plugin-sdk 0.1.1` ↔ API 0.1), which `lokyr --api-version` tells. A patch adds requests, events and the test host's functions: 0.1.1, of Lokyr 0.9, adds since 0.8.0's 0.1.0 the images of cells and the view's image node, the cells of the selection and of the screen, the clipboard's image, the save panel, `keep_awake`, the titlebar's buttons, the menus' ticks and submenus, the packages' service, and the test host's screen, selection, saves, tabs, marks and menu items; a plugin that needs them asks `api = "^0.1.1"`, which an older Lokyr refuses with its notice.
 - New APIs start as unstable: in Rust behind the `unstable` feature; in Luau every request is a function of `cx` by its Rust name, unprefixed, as the user chose on 9 November 2026, the whole API experimental while `plugin-sdk` is 0.x, until F6, so that a request that becomes stable keeps its name and no plugin breaks of a rename. They become stable in a minor release.
 - The manifest declares the API version it requires (`api = "^0.1"`). The host supports the current major version and, through adapters, the previous one.
 - Before 1.0, minor versions may break compatibility. After 1.0, semver is followed strictly.

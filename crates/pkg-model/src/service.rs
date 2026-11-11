@@ -170,7 +170,9 @@ exit 0"#,
         assert_eq!(job.next_line(), None);
         assert!(!job.finish());
         // Stopped as it waits, its lines end.
-        let waiting = script("waiting", "sleep 30");
+        // Of `exec`, so that the process stopped is the one that holds the
+        // output, as no shell's child is left holding it.
+        let waiting = script("waiting", "exec sleep 30");
         let mut job = Job::start(&waiting, &Packages::List, &[]).unwrap();
         let stop = job.stopper();
         let stopping = std::thread::spawn(move || stop.stop());

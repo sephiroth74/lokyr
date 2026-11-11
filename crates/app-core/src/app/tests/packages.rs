@@ -75,7 +75,7 @@ fn sleip(name: &str) -> PathBuf {
             "case \"$1\" in\n",
             "list) echo \"{\\\"event\\\":\\\"args\\\",\\\"args\\\":\\\"$*\\\"}\"\n",
             "  echo '{\"event\":\"plugin\",\"name\":\"acme/hello\",\"version\":\"0.1.0\"}' ;;\n",
-            "search) sleep 30 ;;\n",
+            "search) exec sleep 30 ;;\n",
             "esac\n",
         ),
     )
