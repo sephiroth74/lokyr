@@ -463,3 +463,80 @@ fn a_held_theme_comes_after_the_folder_s_and_before_the_built_in_ones() {
     let _ = fs::remove_dir_all(held);
     let _ = fs::remove_dir_all(directory);
 }
+
+#[test]
+fn the_guide_s_example_theme_holds_every_key_and_token() {
+    let text = include_str!("../../../../docs/themes/example.toml");
+    let file = parse(text, Path::new("docs/themes/example.toml")).unwrap();
+    let partial = &file.partial;
+    // Every key of `[theme]`, those that tell people too, which the
+    // parser keeps not.
+    let document: toml_edit::DocumentMut = text.parse().unwrap();
+    let theme = document["theme"].as_table().unwrap();
+    for key in THEME_KEYS {
+        assert!(theme.contains_key(key), "[theme] {key}");
+    }
+    assert_eq!(partial.variant, Some(ThemeVariant::Dark));
+    assert_eq!(
+        file.extends.as_ref().map(|(name, _)| name.as_str()),
+        Some(DARK)
+    );
+    // Every color of `[terminal]`, and its palette.
+    let terminal = document["terminal"].as_table().unwrap();
+    for key in TERMINAL_COLORS.iter().chain(&["palette"]) {
+        assert!(terminal.contains_key(key), "[terminal] {key}");
+    }
+    assert!(partial.palette.is_some());
+    // The search's, and every token of the host's.
+    for token in ["search.match", "search.match.current"]
+        .into_iter()
+        .chain(lokyr_plugin_sdk::theme::TOKENS)
+    {
+        assert!(partial.tokens.contains_key(token), "the token {token}");
+    }
+    // A plugin's, of a section of its own name.
+    assert!(partial.tokens.contains_key("command-header.pill"));
+    // And it resolves whole, of the theme that it extends.
+    let resolved = resolve(
+        "Example",
+        Some(&folder("example", &[("Example", text)])),
+        None,
+        &[builtin()],
+    );
+    assert!(resolved.is_ok(), "{resolved:?}");
+}
+
+#[test]
+fn the_guide_s_smallest_theme_and_its_extension_resolve() {
+    let guide = include_str!("../../../../docs/themes/authoring.md");
+    // The guide's blocks of TOML that make a theme, by their names.
+    let blocks: Vec<&str> = guide
+        .split("```toml\n")
+        .skip(1)
+        .filter_map(|rest| rest.split("```").next())
+        .filter(|block| block.starts_with("[theme]\nname = "))
+        .collect();
+    let named = |name: &str| {
+        blocks
+            .iter()
+            .find(|block| block.starts_with(&format!("[theme]\nname = \"{name}\"\n")))
+            .copied()
+            .unwrap_or_else(|| panic!("the guide's theme `{name}`"))
+    };
+    let directory = folder(
+        "guide",
+        &[
+            ("Harbor", named("Harbor")),
+            ("Harbor Bright", named("Harbor Bright")),
+        ],
+    );
+    let harbor = resolve("Harbor", Some(&directory), None, &[])
+        .unwrap()
+        .theme;
+    assert_eq!(harbor.variant, ThemeVariant::Dark);
+    let bright = resolve("Harbor Bright", Some(&directory), None, &[])
+        .unwrap()
+        .theme;
+    assert_eq!(bright.terminal.background, ThemeColor::hex(0x0b0e13));
+    assert_eq!(bright.terminal.palette, harbor.terminal.palette);
+}

@@ -832,6 +832,20 @@ mod tests {
     }
 
     #[test]
+    fn the_derived_tokens_are_the_sdk_s_and_the_built_in_themes_give_of_them() {
+        use std::collections::BTreeSet;
+        let sdk: BTreeSet<&str> = lokyr_plugin_sdk::theme::TOKENS.into_iter().collect();
+        for theme in terminal_themes() {
+            let derived = derived(&theme.terminal);
+            let names: BTreeSet<&str> = derived.0.keys().map(String::as_str).collect();
+            assert_eq!(names, sdk, "{}", theme.name);
+        }
+        for (name, ..) in LIGHT_TOKENS.iter().chain(DARK_TOKENS) {
+            assert!(sdk.contains(name), "{name}");
+        }
+    }
+
+    #[test]
     fn the_derived_interface_reads_on_its_backgrounds() {
         for theme in terminal_themes() {
             let variant = Variant::of(&theme);
