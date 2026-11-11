@@ -182,6 +182,9 @@ pub enum Capability {
     PointerRead,
     /// Keeping the system, or the system and the display, from idle sleep.
     KeepAwake,
+    /// The themes' and the font family's previews, and their choices named
+    /// in the config, `[theme]` and `[font] family`.
+    AppearanceWrite,
     /// The plugins themselves, through Sleip: the installed ones, the
     /// registry's search, and installs, updates and removals; Lokyr's own
     /// plugins' alone.
@@ -211,6 +214,7 @@ impl Capability {
             "decorate" => Self::Decorate,
             "pointer-read" => Self::PointerRead,
             "keep-awake" => Self::KeepAwake,
+            "appearance-write" => Self::AppearanceWrite,
             "packages" => Self::Packages,
             _ => return None,
         })
@@ -326,6 +330,7 @@ impl fmt::Display for Capability {
             Self::Decorate => f.write_str("decorate"),
             Self::PointerRead => f.write_str("pointer-read"),
             Self::KeepAwake => f.write_str("keep-awake"),
+            Self::AppearanceWrite => f.write_str("appearance-write"),
             Self::Packages => f.write_str("packages"),
         }
     }
@@ -768,6 +773,10 @@ mod tests {
         assert_eq!(Capability::Decorate.to_string(), "decorate");
         assert_eq!(Capability::PointerRead.to_string(), "pointer-read");
         assert_eq!(Capability::KeepAwake.to_string(), "keep-awake");
+        assert_eq!(
+            Capability::of_name("appearance-write"),
+            Some(Capability::AppearanceWrite)
+        );
         assert_eq!(
             Capability::of_name("keep-awake"),
             Some(Capability::KeepAwake)

@@ -1177,17 +1177,25 @@ fn capabilities(world: &World) -> Scenario {
                 }),
                 lacks("global-hotkey"),
             ),
-            // The theme that the user sees, and the config's.
+            // The theme and the font that the user sees, and the config's.
             (
                 Request::PreviewTheme(Some("Lokyr Light".to_owned())),
-                lacks("user-commands"),
+                lacks("appearance-write"),
             ),
             (
                 Request::SetTheme {
                     variant: lokyr_plugin_sdk::theme::ThemeVariant::Light,
                     name: "Lokyr Light".to_owned(),
                 },
-                lacks("user-commands"),
+                lacks("appearance-write"),
+            ),
+            (
+                Request::PreviewFont(Some("Menlo".to_owned())),
+                lacks("appearance-write"),
+            ),
+            (
+                Request::SetFont("Menlo".to_owned()),
+                lacks("appearance-write"),
             ),
             // The commands that the shell ran, and their events; the view,
             // which tells nothing of the text, to every plugin.
@@ -1726,6 +1734,36 @@ fn app_requests(world: &World) -> Scenario {
         subscriptions: Vec::new(),
         steps: vec![ask(vec![
             (Request::Themes, Response::Themes(super::themes())),
+            // The system's monospaced families, a preview and its end, the
+            // choice, and a family that is not there or not monospaced.
+            (
+                Request::Fonts,
+                Response::Fonts(lokyr_plugin_sdk::fake::fonts()),
+            ),
+            (
+                Request::PreviewFont(Some("Menlo".to_owned())),
+                Response::Done,
+            ),
+            (
+                Request::PreviewFont(Some("menlo".to_owned())),
+                Response::Done,
+            ),
+            (Request::PreviewFont(None), Response::Done),
+            (
+                Request::PreviewFont(Some("Helvetica".to_owned())),
+                failed(
+                    Code::NotFound,
+                    "there is no monospaced font family `Helvetica`",
+                ),
+            ),
+            (Request::SetFont("Monaco".to_owned()), Response::Done),
+            (
+                Request::SetFont("Comic Sans".to_owned()),
+                failed(
+                    Code::NotFound,
+                    "there is no monospaced font family `Comic Sans`",
+                ),
+            ),
             (
                 Request::PreviewTheme(Some("Dracula".to_owned())),
                 Response::Done,

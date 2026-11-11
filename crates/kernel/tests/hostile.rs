@@ -90,6 +90,7 @@ impl App {
             keys: &|_, _| None,
             enabled: &|_| true,
             themes: &themes,
+            fonts: &host::Fonts::default,
             saving: &|_| false,
             language: "en",
             now: Instant::now(),

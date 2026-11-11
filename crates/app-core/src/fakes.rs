@@ -127,6 +127,14 @@ impl FontBackend for Fonts {
         FAMILIES[0].to_owned()
     }
 
+    fn families(&mut self) -> Vec<String> {
+        FAMILIES.map(str::to_owned).to_vec()
+    }
+
+    fn monospaced(&mut self, _face: FaceId) -> bool {
+        true
+    }
+
     fn family(&mut self, name: &str) -> Option<Vec<FaceInfo>> {
         FAMILIES.contains(&name).then(|| {
             vec![FaceInfo {

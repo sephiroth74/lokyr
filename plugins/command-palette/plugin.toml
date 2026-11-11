@@ -7,3 +7,5 @@ description = "The command palette: the commands, ranked by a fuzzy search as yo
 
 [capabilities]
 user-commands = true
+# The theme picker's preview and choice.
+appearance-write = true

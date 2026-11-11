@@ -587,6 +587,27 @@ impl<'a> Cx<'a> {
         })
     }
 
+    /// The system's monospaced font families, and the family in force.
+    pub fn fonts(&mut self) -> Result<crate::host::Fonts, Error> {
+        match self.request(Request::Fonts) {
+            Response::Fonts(fonts) => Ok(fonts),
+            other => Err(failed(other)),
+        }
+    }
+
+    /// Shows the monospaced family `family` in every pane in place of the
+    /// config's, for a while, as a picker previews it; `None` shows the
+    /// config's again.
+    pub fn preview_font(&mut self, family: Option<&str>) -> Result<(), Error> {
+        self.done(Request::PreviewFont(family.map(str::to_owned)))
+    }
+
+    /// Names the monospaced family `family` in the config's `[font]
+    /// family`, which the app shows at once, a preview ending.
+    pub fn set_font(&mut self, family: &str) -> Result<(), Error> {
+        self.done(Request::SetFont(family.to_owned()))
+    }
+
     /// The current match of the plugin's search `search`, as its cells are
     /// now, and its place among the search's matches now; and how many of
     /// them the host keeps.

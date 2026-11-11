@@ -643,6 +643,7 @@ impl Kernel {
             keys: &keys,
             enabled: &|_| true,
             themes: &themes,
+            fonts: &lokyr_plugin_sdk::fake::fonts,
             saving: &|_| false,
             language: "en",
             now: self.clock,
@@ -1037,11 +1038,14 @@ fn kind(request: &Request) -> usize {
         Request::KeepAwake(_) => 100,
         Request::Packages(_) => 101,
         Request::CancelPackages(_) => 102,
+        Request::Fonts => 103,
+        Request::PreviewFont(_) => 104,
+        Request::SetFont(_) => 105,
     }
 }
 
 /// How many kinds of requests the plugin API has.
-const KINDS: usize = 103;
+const KINDS: usize = 106;
 
 #[test]
 fn the_scenarios_hold_every_request_of_the_plugin_api() {

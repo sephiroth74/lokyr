@@ -428,6 +428,8 @@ pub struct FakeHost {
     registry: Vec<host::CommandInfo>,
     /// The themes that the app can show, as the test gave them.
     themes: host::Themes,
+    /// The system's monospaced families that it gives.
+    fonts: host::Fonts,
     /// Where the plugin's moves of tabs to windows of their own put those
     /// windows on the screens.
     places: BTreeMap<WindowId, ScreenPoint>,
@@ -524,6 +526,7 @@ impl FakeHost {
             places: BTreeMap::new(),
             keys: Vec::new(),
             registry: Vec::new(),
+            fonts: fonts(),
             themes: host::Themes {
                 appearance: crate::theme::ThemeVariant::Dark,
                 current: "Lokyr Dark".to_owned(),
@@ -721,6 +724,14 @@ impl FakeHost {
     /// them gives; the built-in ones, dark in force, at first.
     pub fn set_themes(&mut self, themes: host::Themes) -> &mut Self {
         self.themes = themes;
+        self
+    }
+
+    /// Gives the system's monospaced families `fonts`, which a read of the
+    /// fonts gives and a preview and a choice of a family check, in place
+    /// of [`fonts`]'.
+    pub fn set_fonts(&mut self, fonts: host::Fonts) -> &mut Self {
+        self.fonts = fonts;
         self
     }
 
@@ -2831,6 +2842,7 @@ impl Calling<'_> {
             Request::FontSize => Response::FontSize(host.font_size),
             Request::TabBarPlace => Response::TabBarPlace(host.bar_place),
             Request::Themes => Response::Themes(host.themes.clone()),
+            Request::Fonts => Response::Fonts(host.fonts.clone()),
             Request::Commands => {
                 // The rest of the registry to a plugin of `user-commands`
                 // alone, as the app's host gives it.
@@ -3153,6 +3165,14 @@ impl Calling<'_> {
                     Code::Failed,
                     format!("`{name}` is no theme's name"),
                 ));
+            }
+            // A monospaced family that the system has, previewed or chosen.
+            Request::PreviewFont(Some(family)) | Request::SetFont(family) => {
+                self.host
+                    .fonts
+                    .check(family)
+                    .map_err(|message| Error::new(Code::NotFound, message))?;
+                Response::Done
             }
             // A choice that the config keeps, of a theme that is there.
             Request::SetTheme { variant, name } => {
@@ -3856,6 +3876,19 @@ fn declared(text: &str) -> (Vec<Capability>, Option<Vec<String>>, bool) {
         }
     }
     (capabilities, uses, builtin)
+}
+
+/// The system's monospaced families that the fake host gives by default:
+/// Menlo, Monaco and SF Mono, which is in force.
+pub fn fonts() -> host::Fonts {
+    host::Fonts {
+        current: "SF Mono".to_owned(),
+        families: vec![
+            "Menlo".to_owned(),
+            "Monaco".to_owned(),
+            "SF Mono".to_owned(),
+        ],
+    }
 }
 
 #[cfg(test)]

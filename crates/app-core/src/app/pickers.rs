@@ -4,19 +4,79 @@
 //! of the folder before one of its name that the app holds or builds in;
 //! a theme previewed in place of the appearance in force's until the next,
 //! the choice, or none; and the choice named in the config's `[theme]`.
+//! And the system's monospaced font families that a picker lists, a family
+//! previewed in every pane, and the one chosen, named in `[font] family`.
 
-use std::cell::OnceCell;
+use std::cell::{OnceCell, RefCell};
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;
+use std::time::{Duration, Instant};
 
 use lokyr_kernel::config::{self, ThemeConfig};
-use lokyr_kernel::plugins::host::{ThemeInfo, ThemeOrigin, Themes};
+use lokyr_kernel::plugins::host::{Fonts, ThemeInfo, ThemeOrigin, Themes};
 use lokyr_kernel::themes::{self, ThemeVariant};
 use lokyr_platform_core::{Appearance, Platform};
+use lokyr_text_core::{FontBackend, FontConfig, Name};
 
-use super::App;
+use super::{App, sized};
 use crate::drawing::Backend;
+
+/// How long the monospaced families that a picker lists stay as they were
+/// read, so that a plugin that asks for them again and again reads the
+/// system's fonts once in a while, some tens of milliseconds each.
+const FONTS_KEPT: Duration = Duration::from_secs(30);
+
+/// The system's monospaced font families as they were read: when, their
+/// names, and the default family's.
+#[derive(Debug)]
+pub(super) struct FontList {
+    read: Instant,
+    families: Vec<String>,
+    default: String,
+}
+
+/// The monospaced families that a picker lists, read of the system's fonts
+/// past [`FONTS_KEPT`] into `kept`, in their names' order, their case
+/// aside, and the family in force: `configured`, the config's, where the
+/// system has it, else the default one.
+pub(super) fn font_list<B: Backend>(
+    kept: &RefCell<Option<FontList>>,
+    configured: Option<&str>,
+) -> Fonts {
+    let mut kept = kept.borrow_mut();
+    let fresh = kept
+        .as_ref()
+        .is_some_and(|list| list.read.elapsed() < FONTS_KEPT);
+    if !fresh {
+        let mut backend = B::fonts();
+        let mut families = backend.monospaced_families();
+        families.sort_by_key(|name| name.to_lowercase());
+        families.dedup_by(|a, b| a.eq_ignore_ascii_case(b));
+        *kept = Some(FontList {
+            read: Instant::now(),
+            families,
+            default: backend.default_family(),
+        });
+    }
+    let Some(list) = kept.as_ref() else {
+        return Fonts::default();
+    };
+    let named = |name: &str| {
+        list.families
+            .iter()
+            .find(|family| family.eq_ignore_ascii_case(name))
+            .cloned()
+    };
+    let current = configured
+        .and_then(named)
+        .or_else(|| named(&list.default))
+        .unwrap_or_else(|| list.default.clone());
+    Fonts {
+        current,
+        families: list.families.clone(),
+    }
+}
 
 /// The themes of the files of `directory`, each of `origin`, as their
 /// files name them; none of a folder that is not there, nor of a file that
@@ -129,5 +189,70 @@ impl<B: Backend> App<B> {
             None => eprintln!("lokyr: the theme cannot be named, as there is no config file"),
         }
         self.load_themes(platform);
+    }
+
+    /// The config's font, of the family that a picker previews in place of
+    /// its own, if one does.
+    pub(super) fn font_in_force(&self) -> FontConfig {
+        let preview = self
+            .font_preview
+            .clone()
+            .and_then(|family| Name::try_from(family).ok());
+        match preview {
+            Some(family) => FontConfig {
+                family: Some(family),
+                ..self.config.font.clone()
+            },
+            None => self.config.font.clone(),
+        }
+    }
+
+    /// Shows the monospaced family `family` in every pane in place of the
+    /// config's, as a plugin's picker previews it; `None` shows the
+    /// config's again. A family changes the cell's size: every pane takes
+    /// its new grid, and its program the signal of it, as a picker
+    /// previews a family once its selection rests.
+    pub(super) fn preview_font(&mut self, platform: &mut dyn Platform, family: Option<String>) {
+        if self.font_preview == family {
+            return;
+        }
+        self.font_preview = family;
+        self.show_font(platform);
+    }
+
+    /// Names the monospaced family `family` in the config's `[font]
+    /// family`, as a plugin's picker chooses it, which shows at once, a
+    /// preview ending.
+    pub(super) fn set_font(&mut self, platform: &mut dyn Platform, family: &str) {
+        self.font_preview = None;
+        let written = match &self.config_file {
+            Some(file) => config::set_string(&file.path, "font", "family", family)
+                .map(|()| file.path.clone())
+                .map_err(|error| error.to_string()),
+            None => Err("there is no config file".to_owned()),
+        };
+        match written {
+            // The config read again, which takes the family that it names.
+            Ok(_) => self.reload(platform),
+            Err(error) => {
+                eprintln!("lokyr: the font family cannot be named in the config: {error}");
+                self.show_font(platform);
+            }
+        }
+    }
+
+    /// Shows the font in force, of the text's size in force, in every
+    /// window.
+    fn show_font(&mut self, platform: &mut dyn Platform) {
+        let font = sized(&self.font_in_force(), self.font_size);
+        if let Some(drawing) = &mut self.drawing
+            && let Err(error) = drawing.set_font(font)
+        {
+            eprintln!("lokyr: {error}");
+            return;
+        }
+        for &window in self.windows.keys() {
+            platform.request_frame(window);
+        }
     }
 }

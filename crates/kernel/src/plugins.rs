@@ -127,6 +127,11 @@ pub enum Request {
         /// The theme's name.
         name: String,
     },
+    /// Show the monospaced font family of a name in every pane in place of
+    /// the config's, for a while; with `None`, the config's again.
+    PreviewFont(Option<String>),
+    /// Name a monospaced font family in the config's `[font] family`.
+    SetFont(String),
     /// Open a URL, or an absolute path, with the system's handler.
     Open(String),
     /// Ask the user to confirm a paste of `text` into `pane`, whose
@@ -350,6 +355,9 @@ pub struct Context<'a> {
     /// The themes that the app can show, the appearance in force and its
     /// theme.
     pub themes: &'a dyn Fn() -> host::Themes,
+    /// The system's monospaced font families, and the family in force, as
+    /// the app reads them.
+    pub fonts: &'a dyn Fn() -> host::Fonts,
     /// Whether a window shows a save panel.
     pub saving: &'a dyn Fn(WindowId) -> bool,
     /// The language that the app shows, of its own catalogs, which the
@@ -4981,6 +4989,7 @@ impl Host<'_, '_> {
                 }
             }
             Asked::Themes => Response::Themes((self.context.themes)()),
+            Asked::Fonts => Response::Fonts((self.context.fonts)()),
             Asked::SelectionCells(pane) => Response::Cells(
                 self.pane(pane)?
                     .selection_cells(image::MOST_ROWS)
@@ -5454,6 +5463,21 @@ impl Host<'_, '_> {
                     .check(&name, variant)
                     .map_err(|message| Error::new(Code::NotFound, message))?;
                 Request::SetTheme { variant, name }
+            }
+            // A monospaced family that the system has, previewed or chosen.
+            Asked::PreviewFont(family) => {
+                if let Some(family) = &family {
+                    (self.context.fonts)()
+                        .check(family)
+                        .map_err(|message| Error::new(Code::NotFound, message))?;
+                }
+                Request::PreviewFont(family)
+            }
+            Asked::SetFont(family) => {
+                (self.context.fonts)()
+                    .check(&family)
+                    .map_err(|message| Error::new(Code::NotFound, message))?;
+                Request::SetFont(family)
             }
             Asked::SaveFile {
                 window,

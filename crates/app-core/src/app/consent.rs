@@ -43,7 +43,8 @@ fn risk(capability: &Capability) -> &'static str {
         | Capability::GlobalHotkey
         | Capability::ProcessRead
         | Capability::PaneView
-        | Capability::Decorate => "consent-risk-medium",
+        | Capability::Decorate
+        | Capability::AppearanceWrite => "consent-risk-medium",
         Capability::Notifications | Capability::PointerRead => "consent-risk-low",
     }
 }

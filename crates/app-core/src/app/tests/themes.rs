@@ -535,6 +535,39 @@ fn a_picker_lists_the_themes_previews_one_and_names_the_chosen_one() {
 }
 
 #[test]
+fn a_picker_lists_the_monospaced_families_previews_one_and_names_the_chosen_one() {
+    let (mut fake, mut app, directory) = with_themes("fonts", "[font]\nsize = 13\n", &[]);
+    let list = |app: &App, configured: Option<&str>| {
+        pickers::font_list::<fakes::Gpu>(&app.font_list, configured)
+    };
+    // The system's monospaced families, in order, the default one in force
+    // of a config of none.
+    let fonts = list(&app, None);
+    assert_eq!(fonts.families, ["Menlo", "Mono"]);
+    assert_eq!(fonts.current, "Mono");
+    // Of the config's family, whatever its case; of one that the system
+    // lacks, the default one.
+    assert_eq!(list(&app, Some("menlo")).current, "Menlo");
+    assert_eq!(list(&app, Some("Helvetica")).current, "Mono");
+    // Previewed in every pane, then the config's again.
+    app.preview_font(&mut fake, Some("Menlo".to_owned()));
+    assert_eq!(app.font_in_force().family.unwrap().as_str(), "Menlo");
+    app.preview_font(&mut fake, None);
+    assert_eq!(app.font_in_force().family, None);
+    // Chosen: named in the config, in place, which a restart keeps.
+    app.preview_font(&mut fake, Some("Mono".to_owned()));
+    app.set_font(&mut fake, "Menlo");
+    assert_eq!(app.font_preview, None);
+    let written = std::fs::read_to_string(directory.join("config.toml")).unwrap();
+    assert!(written.contains("family = \"Menlo\""), "{written}");
+    assert!(written.contains("size = 13"), "{written}");
+    assert_eq!(app.config.font.family.as_ref().unwrap().as_str(), "Menlo");
+    let again = Config::read(&directory.join("config.toml")).unwrap();
+    assert_eq!(again.font.family.unwrap().as_str(), "Menlo");
+    let _ = std::fs::remove_dir_all(directory);
+}
+
+#[test]
 fn a_program_of_mode_2031_learns_of_the_appearance_s_scheme_as_it_switches() {
     // In raw mode, the reports of the color scheme on, and the report read
     // back, with ESC as E, once the program tells that it waits.

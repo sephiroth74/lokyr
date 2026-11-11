@@ -184,7 +184,7 @@ The guide for plugin authors, [Writing a plugin](plugins/authoring.md), makes a 
 
 ### Versioning
 
-- The API version is the version of `plugin-sdk` (`plugin-sdk 0.1.1` ↔ API 0.1), which `lokyr --api-version` tells. A patch adds requests, events and the test host's functions: 0.1.1, of Lokyr 0.9, adds since 0.8.0's 0.1.0 the images of cells and the view's image node, the cells of the selection and of the screen, the clipboard's image, the save panel, `keep_awake`, the titlebar's buttons, the menus' ticks and submenus, the packages' service, and the test host's screen, selection, saves, tabs, marks and menu items; a plugin that needs them asks `api = "^0.1.1"`, which an older Lokyr refuses with its notice.
+- The API version is the version of `plugin-sdk` (`plugin-sdk 0.1.1` ↔ API 0.1), which `lokyr --api-version` tells. A patch adds requests, events and the test host's functions: 0.1.1, of Lokyr 0.9, adds since 0.8.0's 0.1.0 the images of cells and the view's image node, the cells of the selection and of the screen, the clipboard's image, the save panel, `keep_awake`, the titlebar's buttons, the menus' ticks and submenus, the packages' service, the font families' list, preview and choice and the capability `appearance-write`, which the themes' preview and choice take in place of `user-commands`, and the test host's screen, selection, saves, tabs, marks and menu items; a plugin that needs them asks `api = "^0.1.1"`, which an older Lokyr refuses with its notice.
 - New APIs start as unstable: in Rust behind the `unstable` feature; in Luau every request is a function of `cx` by its Rust name, unprefixed, as the user chose on 9 November 2026, the whole API experimental while `plugin-sdk` is 0.x, until F6, so that a request that becomes stable keeps its name and no plugin breaks of a rename. They become stable in a minor release.
 - The manifest declares the API version it requires (`api = "^0.1"`). The host supports the current major version and, through adapters, the previous one.
 - Before 1.0, minor versions may break compatibility. After 1.0, semver is followed strictly.
@@ -583,6 +583,10 @@ type Themes = {
     themes: { { name: string, variant: "light" | "dark", origin: "folder" | "held" | "built-in" } },
 }
 
+-- The system's monospaced font families, as a read of them gives them: the family in force, the config's `[font]
+-- family` where the system has it, else the default one, and every monospaced family by name, in their names' order.
+type Fonts = { current: string, families: { string } }
+
 -- A command, as a read of the registry gives it; `plugin`, `keys`, `when` and `enabled` to a plugin of `user-commands`
 -- alone: the plugin that registered it, nil of the app's own; its keys of no arguments, as "⌘T"; its context; and whether
 -- the menus enable it now.
@@ -638,12 +642,21 @@ type Cx = {
     -- The registered commands, in the order of their registrations, as the menus list them.
     commands: () -> ({ CommandInfo }?, Error?),
     themes: () -> (Themes?, Error?),
-    -- Require `user-commands`: shows a theme in place of the appearance in force's, for a while, as a picker
+    -- Require `appearance-write`: shows a theme in place of the appearance in force's, for a while, as a picker
     -- previews it; nil shows the config's.
     preview_theme: (name: string?) -> (boolean, Error?),
     -- Names a theme in the config's `[theme]` for an appearance, which shows at once, a preview ending: one of the
     -- appearance's themes, as `themes` lists them, else refused.
     set_theme: (variant: "light" | "dark", name: string) -> (boolean, Error?),
+    -- The system's monospaced font families, of no capability, read of the system's fonts at most every 30 s.
+    fonts: () -> (Fonts?, Error?),
+    -- Require `appearance-write`: shows a monospaced family, as `fonts` lists it, its case aside, in every pane in place
+    -- of the config's, for a while, as a picker previews it; nil shows the config's. A family changes the cell's size:
+    -- every pane takes its grid anew and its program the signal of it, so a picker previews once its selection rests.
+    preview_font: (family: string?) -> (boolean, Error?),
+    -- Names a monospaced family in the config's `[font] family`, edited in place, which shows at once, a preview
+    -- ending: one that `fonts` lists, else refused.
+    set_font: (family: string) -> (boolean, Error?),
 
     -- The focus: the window that has it, and its pane that has the keyboard.
     focused_window: () -> WindowId?,
@@ -962,7 +975,8 @@ type Plugin = {
 | `pointer-read` | The `pointer` event: the cell under the pointer over the panes, and the modifiers held | Low |
 | `keep-awake` | Keeping the system, or the system and the display, from idle sleep, `keep_awake`, of a power assertion that the host holds for every plugin together, the strongest that one asks, and releases as the last lets go, stops, faults or is turned off ([ADR 0043](adr/0043-keep-awake-title-buttons-ticked-items.md)) | High: a display kept awake keeps the screen from locking, and of a battery's cost |
 | `packages` | The plugins themselves, through the bundle's Sleip: the installed ones, the registry's search and a plugin's versions, installs, updates and removals, `packages`, of their lines as events, and `cancel_packages`; Lokyr's own plugins' alone, refused to another's manifest with a notice and by `sleip check` ([ADR 0045](adr/0045-packages-service.md)) | Very high: a plugin that installs another runs code of its choice |
-| `user-commands` | Running any command as the user's, without declaring it, as the palette does; reading the whole registry, with each command's plugin, keys and context, and the plugins installed ([ADR 0024](adr/0024-user-commands.md)); previewing a theme and naming one in the config's `[theme]`, as the palette's picker does | Very high: `pane.send-text` types into the shell |
+| `user-commands` | Running any command as the user's, without declaring it, as the palette does; reading the whole registry, with each command's plugin, keys and context, and the plugins installed ([ADR 0024](adr/0024-user-commands.md)) | Very high: `pane.send-text` types into the shell |
+| `appearance-write` | Previewing a theme and a monospaced font family, and naming the ones chosen in the config's `[theme]` and `[font] family`, edited in place, `preview_theme`, `set_theme`, `preview_font` and `set_font`, as the palette's theme picker and a font picker do ([ADR 0040](adr/0040-appearance-write-capability.md)) | Medium: the user's config changes, visibly and reversibly; no text of a pane, no command, no file but the config's two keys |
 
 A request takes every capability that it needs, as a subscription to `pointer` and to `command-started` takes `pointer-read` and `history-read`. The reads of the workspace, the plugin's own views, panels and questions, its declarations, its config and its state take none; neither does a file saved through the save panel, where the user chooses the place and the host writes it ([ADR 0041](adr/0041-save-panel-of-no-capability.md)), nor an image of the plugin's own cells.
 

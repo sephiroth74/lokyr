@@ -1085,3 +1085,36 @@ fn a_glyph_past_the_atlas_s_largest_side_rasterizes_as_none() {
     let drawn = glyph(&mut backend, "Menlo", 'M', 1000.0, Synthesis::default());
     assert!(drawn.width > 0 && drawn.width <= lokyr_text_core::GRAY_MAX);
 }
+
+#[test]
+fn the_monospaced_families_are_those_of_monospaced_faces_alone_read_at_once() {
+    let mut backend = CoreText::new();
+    let start = std::time::Instant::now();
+    let fast = backend.monospaced_families();
+    let took = start.elapsed();
+    let again = std::time::Instant::now();
+    let _ = CoreText::new().monospaced_families();
+    eprintln!("again in {:?}", again.elapsed());
+    let has = |name: &str| fast.iter().any(|family| family == name);
+    assert!(has("Menlo") && has("Monaco") && has(SF_MONO), "{fast:?}");
+    assert!(!has("Helvetica") && !has("Times"), "{fast:?}");
+    // The same families as each face's look, which takes far longer.
+    let mut slow = backend.families();
+    slow.push(backend.default_family());
+    slow.retain(|name| {
+        backend.family(name).is_some_and(|faces| {
+            !faces.is_empty() && faces.iter().all(|face| backend.monospaced(face.id))
+        })
+    });
+    let (mut fast, mut slow) = (fast, slow);
+    fast.sort();
+    slow.sort();
+    slow.dedup();
+    let missing: Vec<&String> = slow.iter().filter(|name| !fast.contains(name)).collect();
+    let more: Vec<&String> = fast.iter().filter(|name| !slow.contains(name)).collect();
+    eprintln!(
+        "{} monospaced families in {took:?}; missing {missing:?}, more {more:?}",
+        fast.len()
+    );
+    assert!(missing.is_empty() && more.is_empty());
+}

@@ -219,6 +219,21 @@ pub trait FontBackend {
         false
     }
 
+    /// The names of the families of [`FontBackend::families`] whose faces
+    /// are all monospaced, and the default family, in any order: by default
+    /// of each family's faces, which a backend that reads the system's
+    /// lists of its faces' traits tells sooner.
+    fn monospaced_families(&mut self) -> Vec<String> {
+        let mut names = self.families();
+        names.push(self.default_family());
+        names.retain(|name| {
+            self.family(name).is_some_and(|faces| {
+                !faces.is_empty() && faces.iter().all(|face| self.monospaced(face.id))
+            })
+        });
+        names
+    }
+
     /// The face of [`SYMBOLS_FONT`](crate::SYMBOLS_FONT), the icons that
     /// the configured font may lack, which the backend loads the first time:
     /// `None` when it cannot.

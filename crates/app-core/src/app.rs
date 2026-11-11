@@ -489,6 +489,12 @@ pub struct App<B: Backend> {
     /// The theme that a plugin's picker previews in place of the
     /// appearance in force's, if one does.
     theme_preview: Option<String>,
+    /// The system's monospaced font families, as a picker lists them, when
+    /// they were read, and the default family: read again past a while.
+    font_list: std::cell::RefCell<Option<pickers::FontList>>,
+    /// The font family that a plugin's picker previews in every pane in
+    /// place of the config's, if one does.
+    font_preview: Option<String>,
     /// The program that a new window runs.
     program: Program,
     /// The program that shows man pages, in place of the login shell's
@@ -836,6 +842,8 @@ impl<B: Backend> App<B> {
             held_themes: environment::resources().map(|resources| resources.join(HELD_THEMES)),
             held_theme_list: std::cell::OnceCell::new(),
             theme_preview: None,
+            font_list: std::cell::RefCell::new(None),
+            font_preview: None,
             program: Program::LoginShell,
             man: None,
             ssh: PathBuf::from("ssh"),
@@ -1517,6 +1525,10 @@ impl<B: Backend> App<B> {
             return;
         }
         let font_changed = config.font != self.config.font;
+        // A family that a picker previews ends as the config's font changes.
+        if font_changed {
+            self.font_preview = None;
+        }
         if font_changed
             && let Some(drawing) = &mut self.drawing
             && let Err(error) = drawing.set_font(sized(&config.font, self.font_size))
@@ -2827,6 +2839,16 @@ impl<B: Backend> App<B> {
                 theme_config,
             )
         };
+        // The monospaced families that a picker lists, of the config's
+        // family in force, read as a plugin asks, again past a while.
+        let font_list = &self.font_list;
+        let configured = self
+            .config
+            .font
+            .family
+            .as_ref()
+            .map(lokyr_text_core::Name::as_str);
+        let fonts = || pickers::font_list::<B>(font_list, configured);
         // Whether the menus enable a command, as the last frame of the
         // focused pane settled them.
         let menu_enabled = &self.menu_enabled;
@@ -2860,6 +2882,7 @@ impl<B: Backend> App<B> {
             keys: &keys,
             enabled: &enabled,
             themes: &theme_list,
+            fonts: &fonts,
             saving: &saving,
             language: self.texts.language(),
             now: Instant::now(),
@@ -2945,6 +2968,8 @@ impl<B: Backend> App<B> {
                 Request::FontSize(size) => self.set_font_size(platform, size),
                 Request::PreviewTheme(name) => self.preview_theme(platform, name),
                 Request::SetTheme { variant, name } => self.set_theme(platform, variant, &name),
+                Request::PreviewFont(family) => self.preview_font(platform, family),
+                Request::SetFont(family) => self.set_font(platform, &family),
                 Request::ConfirmPaste { pane, text } => self.ask_paste(platform, pane, text),
                 Request::Open(target) => self.open_target(platform, target),
                 // A plugin's panel over its window; one that its plugin
@@ -3191,7 +3216,7 @@ impl<B: Backend> App<B> {
     /// every window; a font that fails leaves the one in force, as the log
     /// tells.
     fn set_font_size(&mut self, platform: &mut dyn Platform, size: Option<f32>) {
-        let font = sized(&self.config.font, size);
+        let font = sized(&self.font_in_force(), size);
         if let Some(drawing) = &mut self.drawing
             && let Err(error) = drawing.set_font(font)
         {

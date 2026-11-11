@@ -27,7 +27,7 @@ use objc2_core_text::{
     CTFontTableOptions, CTFontUIFontType, CTLine, CTRun, CTRunStatus, kCTFontAttributeName,
     kCTFontFamilyNameAttribute, kCTFontFeatureSettingsAttribute, kCTFontOpenTypeFeatureTag,
     kCTFontOpenTypeFeatureValue, kCTFontOpticalSizeAttribute, kCTFontStyleNameKey,
-    kCTFontWeightTrait, kCTFontWidthTrait,
+    kCTFontSymbolicTrait, kCTFontTraitsAttribute, kCTFontWeightTrait, kCTFontWidthTrait,
 };
 
 pub use raster::system_smooths_fonts;
@@ -374,6 +374,71 @@ impl FontBackend for CoreText {
             // the system's own.
             .filter(|name| !name.is_empty() && !name.starts_with('.'))
             .collect()
+    }
+
+    fn monospaced_families(&mut self) -> Vec<String> {
+        // Each face's family and traits, of one read of the system's list of
+        // them, which makes no font: a family of monospaced faces alone.
+        // SAFETY: Core Text's constants, a set of two attributes' names that
+        // the callbacks retain, and a collection without options.
+        let attributes = unsafe {
+            let mut keys = [
+                std::ptr::from_ref::<CFString>(kCTFontFamilyNameAttribute).cast::<c_void>(),
+                std::ptr::from_ref::<CFString>(kCTFontTraitsAttribute).cast::<c_void>(),
+            ];
+            let Some(names) = CFSet::new(None, keys.as_mut_ptr(), 2, &kCFTypeSetCallBacks) else {
+                return vec![self.default_family()];
+            };
+            CTFontCollection::from_available_fonts(None)
+                .font_attributes(&names, CTFontCollectionCopyOptions::DefaultOptions)
+        };
+        // SAFETY: a dictionary of each face's attributes.
+        let attributes = unsafe { attributes.cast_unchecked::<CFDictionary>() };
+        let mut families: std::collections::BTreeMap<String, bool> =
+            std::collections::BTreeMap::new();
+        for face in attributes.iter() {
+            // SAFETY: Core Text's constants; the family a CFString, the
+            // traits a dictionary whose symbolic trait is a CFNumber, each
+            // living as long as `face`, within the block.
+            let (family, monospaced) = unsafe {
+                let family =
+                    face.value(std::ptr::from_ref::<CFString>(kCTFontFamilyNameAttribute).cast());
+                let Some(family) = NonNull::new(family.cast_mut()) else {
+                    continue;
+                };
+                let family = family.cast::<CFString>().as_ref().to_string();
+                let traits =
+                    face.value(std::ptr::from_ref::<CFString>(kCTFontTraitsAttribute).cast());
+                let symbolic = NonNull::new(traits.cast_mut()).and_then(|traits| {
+                    let value = traits
+                        .cast::<CFDictionary>()
+                        .as_ref()
+                        .value(std::ptr::from_ref::<CFString>(kCTFontSymbolicTrait).cast());
+                    NonNull::new(value.cast_mut())
+                        .and_then(|number| number.cast::<CFNumber>().as_ref().as_i64())
+                });
+                let bits = symbolic.unwrap_or(0) as u32;
+                (
+                    family,
+                    CTFontSymbolicTraits::from_bits_retain(bits)
+                        .contains(CTFontSymbolicTraits::TraitMonoSpace),
+                )
+            };
+            // macOS hides the families whose names start with a dot.
+            if family.is_empty() || family.starts_with('.') {
+                continue;
+            }
+            *families.entry(family).or_insert(true) &= monospaced;
+        }
+        let mut names: Vec<String> = families
+            .into_iter()
+            .filter_map(|(family, monospaced)| monospaced.then_some(family))
+            .collect();
+        let default = self.default_family();
+        if !names.iter().any(|name| name.eq_ignore_ascii_case(&default)) {
+            names.push(default);
+        }
+        names
     }
 
     fn symbols(&mut self) -> Option<FaceId> {

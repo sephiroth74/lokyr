@@ -111,6 +111,16 @@ pub enum Request {
         /// The theme's name.
         name: String,
     },
+    /// The system's monospaced font families, and the family in force.
+    Fonts,
+    /// Shows the monospaced family of a name in every pane in place of the
+    /// config's, for a while, as a picker previews it, until the next
+    /// preview, the family's choice, or `None`, which shows the config's
+    /// again.
+    PreviewFont(Option<String>),
+    /// Names a monospaced family in the config's `[font] family`, which
+    /// the app shows at once, a preview ending.
+    SetFont(String),
     /// Adds a menu item of a command of its arguments, registered, to the
     /// menu bar or to the pane's context menu, for as long as the plugin
     /// runs.
@@ -851,7 +861,10 @@ impl Request {
             }
             // The theme that the user sees, and the config's `[theme]` that
             // a choice writes, as the palette's picker shows and sets them.
-            Self::PreviewTheme(_) | Self::SetTheme { .. } => Some(Capability::UserCommands),
+            Self::PreviewTheme(_)
+            | Self::SetTheme { .. }
+            | Self::PreviewFont(_)
+            | Self::SetFont(_) => Some(Capability::AppearanceWrite),
             // A key taken from every app.
             Self::Bind(binding) if binding.keys.starts_with(crate::keys::GLOBAL) => {
                 Some(Capability::GlobalHotkey)
@@ -933,6 +946,7 @@ impl Request {
             | Self::SetState(_)
             | Self::Commands
             | Self::Themes
+            | Self::Fonts
             | Self::RenderImage(_)
             | Self::DropImage(_)
             | Self::SaveFile { .. }
@@ -977,6 +991,7 @@ impl Request {
             | Self::Message { .. }
             | Self::Commands
             | Self::Themes
+            | Self::Fonts
             | Self::RenderImage(_)
             | Self::SelectionCells(_)
             | Self::ScreenCells(_) => Effect::Read,
@@ -1042,7 +1057,9 @@ impl Request {
             | Self::Packages(_)
             | Self::CancelPackages(_)
             | Self::PreviewTheme(_)
-            | Self::SetTheme { .. } => Effect::App,
+            | Self::SetTheme { .. }
+            | Self::PreviewFont(_)
+            | Self::SetFont(_) => Effect::App,
             Self::RegisterCommand(_)
             | Self::Bind(_)
             | Self::Subscribe(_)
@@ -1084,6 +1101,8 @@ pub enum Response {
     Commands(Vec<CommandInfo>),
     /// The themes that the app can show.
     Themes(crate::host::Themes),
+    /// The system's monospaced font families.
+    Fonts(crate::host::Fonts),
     /// An image that the host rendered.
     Image(crate::image::Image),
     /// Rows of cells, as an image draws them, or none.
@@ -1450,6 +1469,8 @@ impl Request {
             | Self::Emit { .. }
             | Self::PreviewTheme { .. }
             | Self::SetTheme { .. }
+            | Self::PreviewFont { .. }
+            | Self::SetFont { .. }
             | Self::AddMenuItem { .. }
             | Self::RunCommand { .. }
             | Self::SetClipboardText { .. }
@@ -1507,6 +1528,7 @@ impl Request {
             | Self::CancelTimer { .. } => "done",
             Self::Commands { .. } => "commands",
             Self::Themes { .. } => "themes",
+            Self::Fonts { .. } => "fonts",
             Self::ClipboardText { .. }
             | Self::SelectionText { .. }
             | Self::LinkAt { .. }

@@ -28,6 +28,9 @@ export type Cx = {
     themes: () -> (Themes?, string?, number?),
     preview_theme: (name: string?) -> (true?, string?, number?),
     set_theme: (variant: ThemeVariant, name: string) -> (true?, string?, number?),
+    fonts: () -> (Fonts?, string?, number?),
+    preview_font: (family: string?) -> (true?, string?, number?),
+    set_font: (family: string) -> (true?, string?, number?),
     add_menu_item: (item: MenuItem) -> (true?, string?, number?),
     run_command: (name: string, args: { [string]: Value }?) -> (true?, string?, number?),
     clipboard_text: () -> (string?, string?, number?),
@@ -439,6 +442,11 @@ export type FontWeight =
     | "semibold"
     | "bold"
     | "heavy"
+
+export type Fonts = {
+    current: string,
+    families: { string },
+}
 
 export type Found = {
     matches: { SearchMatch },

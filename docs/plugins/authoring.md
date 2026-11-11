@@ -259,7 +259,7 @@ A new version is a new `version` in the manifest, a new tag, and `sleip publish`
 | Settings and state | `config`, `state`, `set_state` |
 | Time | `start_timer`, `cancel_timer` |
 | The Mac | `keep_awake` |
-| Themes and the font | `themes`, `preview_theme`, `set_theme`, `font_size`, `set_font_size` |
+| Themes and the font | `themes`, `preview_theme`, `set_theme`, `fonts`, `preview_font`, `set_font`, `font_size`, `set_font_size` |
 
 **Reads, writes and requests.** A read answers at once, of things as they are; a write applies as the callback returns, so that a later read of the same callback reads them as they were; a request of the app's, as a window to open or a command to run, comes after the writes. A callback that fails, or returns an error, drops its writes and its requests.
 
@@ -267,7 +267,7 @@ A new version is a new `version` in the manifest, a new tag, and `sleip publish`
 
 **Views** are data: a view is a tree of nodes, each a table of its `kind`, as `container`, `text`, `button`, `toggle`, `field`, `list`, `scroll`, `progress`, `tabs` and `image`, of a layout of flexbox's terms and a style whose colors are tokens of the user's theme, as `panel.bg` and `text.secondary`, never colors of the plugin's. The host draws them, keeps their state, as a field's text, of their keys, and makes them accessible to VoiceOver. A plugin's views fill the window's **slots**, as the tab bar, a strip across the top, the status bar, the panes' headers and the titlebar's buttons, which the manifest's `slots` declares, and its **panels**, which float over the window at a cell, the cursor, the pointer, a node, or a corner of a pane or of the window.
 
-**Capabilities** guard the calls that reach what is the user's: the panes' text, typing into them, the clipboard, the processes, the workspace, the notifications, the Mac's sleep. A call of a capability that the plugin lacks fails, of the code 302; [the capabilities](../PLUGIN-SYSTEM.md#capabilities) list them all.
+**Capabilities** guard the calls that reach what is the user's: the panes' text, typing into them, the clipboard, the processes, the workspace, the notifications, the Mac's sleep, the theme and the font in the config. A call of a capability that the plugin lacks fails, of the code 302; [the capabilities](../PLUGIN-SYSTEM.md#capabilities) list them all.
 
 **Limits.** Each callback runs within its deadline, 16 ms for `render` and `applies`, 250 ms for a command, an event or a view's event, and a second for the activation; a plugin holds 64 MB at most: past them the plugin faults, and the host stops it, starts it again after a while, and turns it off at its third fault within a minute. A callback writes 10 000 times at most, a write past them failing; a value that the plugin gives the host carries 16 MiB of text or bytes at most; its images take 32 million pixels at once, given back at 4 million a second. [The limits](../PLUGIN-SYSTEM.md#limits-and-isolation) tell them all.
 

@@ -237,6 +237,7 @@ impl App {
             keys: &|_, _| None,
             enabled: &|_| true,
             themes: &no_themes,
+            fonts: &lokyr_plugin_sdk::fake::fonts,
             saving: match &self.saving {
                 Some(saving) => &**saving,
                 None => &|_| false,

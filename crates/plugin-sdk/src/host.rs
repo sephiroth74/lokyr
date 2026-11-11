@@ -670,6 +670,32 @@ impl Themes {
     }
 }
 
+/// The system's monospaced font families, as a picker lists them, and the
+/// family in force, the config's or the default one.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Fonts {
+    /// The family in force, by its name.
+    pub current: String,
+    /// The monospaced families, by their names, in their names' order,
+    /// their case aside.
+    pub families: Vec<String>,
+}
+
+impl Fonts {
+    /// Whether `name` is one of the families, its case aside, or the error
+    /// that tells it is not, which a preview and a choice refuse.
+    pub fn check(&self, name: &str) -> Result<(), String> {
+        if self
+            .families
+            .iter()
+            .any(|family| family.eq_ignore_ascii_case(name))
+        {
+            return Ok(());
+        }
+        Err(format!("there is no monospaced font family `{name}`"))
+    }
+}
+
 /// The current match of a search, as a read of it gives it.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Current {
