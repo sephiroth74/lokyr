@@ -1212,8 +1212,14 @@ fn fetched_at(repository: &str, release: &Release, at: At, folder: &Path) -> Res
     if at == At::Tag {
         let tag = &release.tag;
         let reference = format!("refs/tags/{tag}");
-        let listed = git_bytes(None, &["ls-remote", "--tags", "--", repository, &reference])
-            .map_err(|error| format!("{repository} cannot be read: {error}"))?;
+        // An annotated tag's commit comes of its own name, which a pattern
+        // of the tag's alone leaves out.
+        let peeled = format!("{reference}^{{}}");
+        let listed = git_bytes(
+            None,
+            &["ls-remote", "--tags", "--", repository, &reference, &peeled],
+        )
+        .map_err(|error| format!("{repository} cannot be read: {error}"))?;
         let listed = String::from_utf8_lossy(&listed);
         let named_by = |name: &str| {
             listed.lines().find_map(|line| {

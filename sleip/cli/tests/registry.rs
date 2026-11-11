@@ -228,6 +228,23 @@ fn release(folder: &Path, version: &str) -> String {
 }
 
 #[test]
+fn a_version_of_an_annotated_tag_passes_of_its_commit() {
+    let lab = Lab::new("annotated");
+    let (folder, url) = lab.plugin("hello");
+    // An annotated tag, an object of its own that names the commit, as
+    // `git tag -a` makes one.
+    git(&folder, &["tag", "-f", "-a", "v0.1.0", "-m", "v0.1.0"]);
+    let commit = git(&folder, &["rev-parse", "HEAD"]);
+    assert_ne!(git(&folder, &["rev-parse", "v0.1.0"]), commit);
+    let file = entry(&url, &[("0.1.0", "v0.1.0", &commit, false)]);
+    let base = lab.registry("base", &[]);
+    let head = lab.head(&base, &[("plugins/acme/hello.toml", &file)]);
+    let (output, verdict) = lab.verify(&head, &base, "acme", "");
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(verdict["verdict"], "review", "{verdict}");
+}
+
+#[test]
 fn a_new_plugin_of_its_owner_passes_for_the_maintainer_s_review_its_archive_packaged_alike_again() {
     let lab = Lab::new("new");
     let (folder, url) = lab.plugin("hello");
