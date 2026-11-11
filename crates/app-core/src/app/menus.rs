@@ -11,6 +11,7 @@ use lokyr_kernel::l10n::{Arg, Texts};
 use lokyr_kernel::plugins::MenuEntry;
 use lokyr_kernel::plugins::host::MenuPlace;
 use lokyr_kernel::workspace::Pane;
+use lokyr_pkg_model::is_hidden;
 use lokyr_platform_core::{
     ContextMenu, KeyCode, MainMenu, Menu, MenuItem, MenuRole, Platform, Point, Shortcut,
     ShortcutKey, StandardAction, WindowId,
@@ -826,21 +827,71 @@ pub(super) fn main_menu(
     main
 }
 
+/// A menu item's title as the user reads it: of no case, nor the dots of
+/// an item that asks more, nor the characters that show nothing, its
+/// full-width letters and the letters of Cyrillic and Greek that look as
+/// Latin ones read as those, so that a plugin's title that only looks as
+/// one of the app's is taken for it.
+fn read_as_shown(title: &str) -> String {
+    title
+        .trim()
+        .trim_end_matches('…')
+        .trim_end_matches("...")
+        .trim()
+        .chars()
+        .filter(|&c| !c.is_control() && !is_hidden(c))
+        .map(as_latin)
+        .flat_map(char::to_lowercase)
+        .collect()
+}
+
+/// The Latin letter that `c` looks as, of the full-width forms and of
+/// Cyrillic's and Greek's letters that look as Latin ones; `c` itself
+/// otherwise.
+fn as_latin(c: char) -> char {
+    match c {
+        '\u{FF01}'..='\u{FF5E}' => char::from_u32(u32::from(c) - 0xFEE0).unwrap_or(c),
+        'а' | 'α' => 'a',
+        'А' | 'Α' => 'A',
+        'В' | 'Β' => 'B',
+        'с' | 'ϲ' => 'c',
+        'С' | 'Ϲ' => 'C',
+        'ԁ' => 'd',
+        'е' => 'e',
+        'Е' | 'Ε' => 'E',
+        'Н' | 'Η' => 'H',
+        'і' | 'ι' => 'i',
+        'І' | 'Ι' => 'I',
+        'ј' => 'j',
+        'Ј' => 'J',
+        'К' | 'Κ' => 'K',
+        'М' | 'Μ' => 'M',
+        'Ν' => 'N',
+        'о' | 'ο' => 'o',
+        'О' | 'Ο' => 'O',
+        'р' | 'ρ' => 'p',
+        'Р' | 'Ρ' => 'P',
+        'ԛ' => 'q',
+        'ѕ' => 's',
+        'Ѕ' => 'S',
+        'Т' | 'Τ' => 'T',
+        'ν' => 'v',
+        'ԝ' => 'w',
+        'х' | 'χ' => 'x',
+        'Х' | 'Χ' => 'X',
+        'у' | 'γ' => 'y',
+        'У' | 'Υ' => 'Y',
+        'Ζ' => 'Z',
+        _ => c,
+    }
+}
+
 /// `items`, a menu's, but the plugins' items and submenus whose titles are
 /// those of the app's items of the menu, as a plugin's "Copy" in the Edit
 /// menu, which the user would take for the app's; the lines that parted
 /// them go too.
 pub(super) fn unique_titles(items: Vec<MenuItem>) -> Vec<MenuItem> {
-    // A title as the user reads it: of no case, nor the dots of an item
-    // that asks more.
-    let read = |title: &str| {
-        title
-            .trim()
-            .trim_end_matches('…')
-            .trim_end_matches("...")
-            .trim()
-            .to_lowercase()
-    };
+    let read = |title: &str| read_as_shown(title);
     let of_items = |item: &MenuItem| matches!(item, MenuItem::Command { command, .. } if command.starts_with(ITEM));
     // A plugin's item, or its submenu, of its items alone.
     let of_plugin = |item: &MenuItem| match item {
@@ -866,6 +917,17 @@ pub(super) fn unique_titles(items: Vec<MenuItem>) -> Vec<MenuItem> {
             eprintln!(
                 "lokyr: a plugin's menu item “{title}” is left out, as an item of the app's has its title"
             );
+            continue;
+        }
+        // A plugin's title of its catalogs that hides what it says.
+        let hides = |title: &str| title.chars().any(|c| c.is_control() || is_hidden(c));
+        let shown = match &item {
+            MenuItem::Command { title, .. } => Some(title.as_str()),
+            MenuItem::Submenu(menu) => Some(menu.title.as_str()),
+            _ => None,
+        };
+        if of_plugin(&item) && shown.is_some_and(hides) {
+            eprintln!("lokyr: a plugin's menu item is left out, as its title hides characters");
             continue;
         }
         // No line first, after another, nor last.

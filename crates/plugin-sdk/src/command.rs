@@ -533,8 +533,9 @@ pub fn takes(kind: Kind, value: &Value) -> bool {
 
 impl Command {
     /// Checks the command as the host registers it: its name is
-    /// `namespace.action`, its parameters have names of their own and
-    /// defaults of their kinds, and its `when` is a context.
+    /// `namespace.action`, its title a label, as
+    /// [`crate::text::check_label`] tells, its parameters have names of
+    /// their own and defaults of their kinds, and its `when` is a context.
     pub fn check(&self) -> Result<(), Error> {
         let name = &self.name;
         if !is_name(name) {
@@ -543,6 +544,7 @@ impl Command {
                 format!("`{name}` is not a command's name, `namespace.action`"),
             ));
         }
+        crate::text::check_label(&self.title, &format!("the title of `{name}`"))?;
         for (at, param) in self.params.iter().enumerate() {
             if !is_part(&param.name) {
                 return Err(Error::new(
@@ -662,6 +664,25 @@ impl Uses {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_command_s_title_is_a_label() {
+        let command = |title: &str| Command {
+            name: "acme.go".to_owned(),
+            title: title.to_owned(),
+            category: Category::View,
+            capabilities: Vec::new(),
+            params: Vec::new(),
+            when: None,
+        };
+        assert_eq!(command("Go").check(), Ok(()));
+        let long = "x".repeat(crate::text::LONGEST_LABEL + 1);
+        for wrong in [long.as_str(), "C\u{200B}opy", "Go\n"] {
+            let error = command(wrong).check().unwrap_err();
+            assert_eq!(error.code, Code::InvalidSchema);
+            assert!(error.message.contains("`acme.go`"), "{}", error.message);
+        }
+    }
 
     #[test]
     fn a_code_s_hundreds_tell_its_category() {

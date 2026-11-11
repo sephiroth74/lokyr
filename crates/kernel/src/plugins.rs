@@ -5791,6 +5791,7 @@ impl Host<'_, '_> {
                 }
             }
             Asked::AddMenuItem(item) => {
+                item.check()?;
                 if !commands::is_name(&item.command) {
                     return Err(Error::new(
                         Code::InvalidName,

@@ -3534,6 +3534,7 @@ impl Calling<'_> {
                 }
             }
             Request::AddMenuItem(item) => {
+                item.check()?;
                 if !is_name(&item.command) {
                     return Err(Error::new(
                         Code::InvalidName,

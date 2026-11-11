@@ -1934,6 +1934,25 @@ fn a_kept_image_s_id_is_kept_four_at_most_and_let_go_as_the_plugin_asks() {
 }
 
 #[test]
+fn the_fake_refuses_a_declared_text_past_a_label_s_bounds_as_the_app() {
+    let mut host = FakeHost::new("acme/probe").with_capabilities(Vec::new());
+    let mut probe = Probe::new(|cx, _| {
+        cx.add_menu_item(crate::host::MenuItem {
+            place: crate::host::MenuPlace::PaneContext,
+            command: "probe.go".to_owned(),
+            args: Args::new(),
+            title: Some("x".repeat(7 * 1024 * 1024)),
+            submenu: None,
+            ticked: false,
+        })
+    });
+    let error = host
+        .command(&mut probe, "probe.go", Args::new())
+        .unwrap_err();
+    assert_eq!(error.code, Code::InvalidSchema);
+}
+
+#[test]
 fn the_fake_s_images_are_bounded_as_the_app_s_their_scale_lowered_past_the_most() {
     use crate::image::{CellRow, IMAGES_BUSY, ImageSpec, LEAST_FITTED_SCALE, MOST_COLUMNS};
     let mut host = FakeHost::new("acme/probe").with_capabilities(Vec::new());

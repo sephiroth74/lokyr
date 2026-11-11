@@ -46,6 +46,57 @@ pub fn dismantle(node: Node) {
     }
 }
 
+/// The names of the host's icons, in their order, which a node's icon
+/// names: the codicons of Symbols Nerd Font.
+pub const ICONS: [&str; 37] = [
+    "add",
+    "arrow-down",
+    "arrow-up",
+    "bell",
+    "case-sensitive",
+    "check",
+    "chevron-down",
+    "chevron-left",
+    "chevron-right",
+    "chevron-up",
+    "circle",
+    "circle-filled",
+    "close",
+    "coffee",
+    "copy",
+    "edit",
+    "ellipsis",
+    "error",
+    "eye-closed",
+    "filter",
+    "folder",
+    "history",
+    "info",
+    "lock",
+    "pin",
+    "pulse",
+    "regex",
+    "replace",
+    "search",
+    "settings",
+    "sparkle",
+    "split-horizontal",
+    "split-vertical",
+    "terminal",
+    "trash",
+    "warning",
+    "whole-word",
+];
+
+/// The icon of the host's own titlebar button, which lists the buttons
+/// that find no room: no plugin's button takes it.
+pub const ELLIPSIS: &str = "ellipsis";
+
+/// Whether `name` is one of the host's icons, [`ICONS`].
+pub fn is_icon(name: &str) -> bool {
+    ICONS.binary_search(&name).is_ok()
+}
+
 /// A node of a view tree.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Node {
@@ -997,15 +1048,31 @@ impl Node {
     }
 
     /// Whether the tree is a button of the titlebar's, as the host takes
-    /// one: a button of an icon alone, of no label nor children, of a key,
-    /// and named by its tooltip or its label, which VoiceOver and the menu
-    /// of the buttons that find no room tell; the reason where it is not.
+    /// one: a button of an icon alone, one of the host's, [`ICONS`], but
+    /// the ellipsis, the host's own button's, of no label nor children, of
+    /// a key, and named by its tooltip or its label, which VoiceOver and
+    /// the menu of the buttons that find no room tell, each a label, as
+    /// [`crate::text::check_label`] tells; the reason where it is not.
     pub fn check_title_button(&self) -> Result<(), String> {
         let named =
             |text: &Option<String>| text.as_deref().is_some_and(|text| !text.trim().is_empty());
         match &self.kind {
-            Kind::Button(button) if button.label.is_empty() && !button.icon.is_empty() => {}
+            Kind::Button(button) if button.label.is_empty() && !button.icon.is_empty() => {
+                if !is_icon(&button.icon) {
+                    return Err(format!(
+                        "a titlebar button's icon is one of the host's, not `{}`",
+                        button.icon
+                    ));
+                }
+                if button.icon == ELLIPSIS {
+                    return Err("the ellipsis is the host's own titlebar button's icon".to_owned());
+                }
+            }
             _ => return Err("a titlebar button's view is a button of an icon alone".to_owned()),
+        }
+        for text in [&self.tooltip, &self.label].into_iter().flatten() {
+            crate::text::check_label(text, "a titlebar button's name")
+                .map_err(|error| error.message)?;
         }
         if !self.children.is_empty() {
             return Err("a titlebar button has no children".to_owned());
@@ -1267,6 +1334,21 @@ mod tests {
         let mut parent = button().tooltip("Stay awake");
         parent.children.push(Node::text("x"));
         assert!(parent.check_title_button().is_err());
+        // An icon that the host has not, or the host's own ellipsis.
+        let unknown = Node::icon_button("zzz").key("b").tooltip("Stay awake");
+        assert!(unknown.check_title_button().unwrap_err().contains("`zzz`"));
+        let more = Node::icon_button(ELLIPSIS).key("b").tooltip("More");
+        assert!(more.check_title_button().unwrap_err().contains("ellipsis"));
+        // A name that hides characters, or too long.
+        assert!(
+            button()
+                .tooltip("Mo\u{200B}re")
+                .check_title_button()
+                .is_err()
+        );
+        let long = "x".repeat(crate::text::LONGEST_LABEL + 1);
+        assert!(button().label(long.as_str()).check_title_button().is_err());
+        assert!(ICONS.is_sorted() && is_icon("coffee") && !is_icon("Coffee"));
     }
 
     #[test]

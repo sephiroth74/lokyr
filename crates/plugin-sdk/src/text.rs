@@ -40,9 +40,51 @@ pub fn is_hidden(character: char) -> bool {
     )
 }
 
+/// The most characters of a text that a plugin declares for the menus or
+/// the titlebar, as a command's or a menu item's title.
+pub const LONGEST_LABEL: usize = 256;
+
+/// Whether `text`, `what` of a plugin's, as "a command's title", is a text
+/// that it may declare, which the app keeps and shows in its menus: of
+/// [`LONGEST_LABEL`] characters at most, of no control character nor one
+/// that hides or moves the text around it; the error that tells it is not.
+pub fn check_label(text: &str, what: &str) -> Result<(), crate::command::Error> {
+    let fine = text.chars().count() <= LONGEST_LABEL
+        && !text.chars().any(|c| c.is_control() || is_hidden(c));
+    if fine {
+        return Ok(());
+    }
+    Err(crate::command::Error::new(
+        crate::command::Code::InvalidSchema,
+        format!(
+            "{what} has {LONGEST_LABEL} characters at most, of no control character nor one that \
+             hides the text around it"
+        ),
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_label_is_short_and_shows_what_it_says() {
+        for fine in [
+            "Split Right",
+            "Spezza a destra…",
+            "مرحبا\u{200F}",
+            "👩\u{200D}💻",
+            "",
+        ] {
+            assert_eq!(check_label(fine, "a title"), Ok(()), "{fine:?}");
+        }
+        let long = "x".repeat(LONGEST_LABEL + 1);
+        for wrong in [long.as_str(), "Co\u{200B}py", "a\nb", "\u{202E}ypoC"] {
+            let error = check_label(wrong, "a title").unwrap_err();
+            assert!(error.message.starts_with("a title has"), "{wrong:?}");
+        }
+        assert_eq!(check_label(&"x".repeat(LONGEST_LABEL), "a title"), Ok(()));
+    }
 
     #[test]
     fn changes_of_direction_and_characters_of_no_width_hide_and_joiners_do_not() {

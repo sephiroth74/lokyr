@@ -229,6 +229,11 @@ mod tests {
     use super::*;
 
     #[test]
+    fn the_icons_are_the_sdk_s_which_plugins_name() {
+        assert!(icons().eq(lokyr_plugin_sdk::view::ICONS));
+    }
+
+    #[test]
     fn the_icons_are_named_in_order_and_found_by_their_names() {
         assert!(ICONS.windows(2).all(|pair| pair[0].0 < pair[1].0));
         assert_eq!(icon("terminal"), Some('\u{ea85}'));

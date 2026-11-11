@@ -590,6 +590,18 @@ pub struct MenuItem {
 }
 
 impl MenuItem {
+    /// Checks the item as the host declares it: its title and its
+    /// submenu's are labels, as [`crate::text::check_label`] tells.
+    pub fn check(&self) -> Result<(), crate::command::Error> {
+        if let Some(title) = &self.title {
+            crate::text::check_label(title, "a menu item's title")?;
+        }
+        if let Some(submenu) = &self.submenu {
+            crate::text::check_label(submenu, "a menu item's submenu")?;
+        }
+        Ok(())
+    }
+
     /// Whether it is `other`'s item, whatever their ticks.
     pub fn same_as(&self, other: &MenuItem) -> bool {
         self.place == other.place
@@ -1240,6 +1252,25 @@ mod tests {
             assert!(check_file_name(name).is_err(), "{name:?}");
         }
         assert_eq!(check_file_name(&"x".repeat(LONGEST_FILE_NAME)), Ok(()));
+    }
+
+    #[test]
+    fn a_menu_item_s_title_and_submenu_are_labels() {
+        let item = |title: Option<&str>, submenu: Option<&str>| MenuItem {
+            place: MenuPlace::PaneContext,
+            command: "acme.go".to_owned(),
+            args: crate::command::Args::new(),
+            title: title.map(str::to_owned),
+            submenu: submenu.map(str::to_owned),
+            ticked: false,
+        };
+        assert_eq!(item(Some("menu-go"), Some("Awake")).check(), Ok(()));
+        assert_eq!(item(None, None).check(), Ok(()));
+        let huge = "x".repeat(7 * 1024 * 1024);
+        assert!(item(Some(&huge), None).check().is_err());
+        assert!(item(None, Some(&huge)).check().is_err());
+        let error = item(Some("Co\u{200B}py"), None).check().unwrap_err();
+        assert_eq!(error.code, crate::command::Code::InvalidSchema);
     }
 
     #[test]

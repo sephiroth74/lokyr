@@ -1526,6 +1526,18 @@ fn a_plugin_s_menu_item_of_an_app_s_title_is_left_out_and_its_others_stand_apart
         titles(unique_titles(menu)),
         ["Copy", "Paste", "-", "Paste and Go"]
     );
+    // A title that only looks as the app's, of Cyrillic's letters or
+    // full-width ones, is taken for it; one that hides characters, of a
+    // plugin's catalogs, is left out, and a plugin's title in another
+    // script stays.
+    let menu = vec![
+        item("Copy", "pane.copy"),
+        item("Сору", "menu-item:0"),
+        item("Ｃｏｐｙ", "menu-item:1"),
+        item("Co\u{200B}py Link", "menu-item:2"),
+        item("Копировать ссылку", "menu-item:3"),
+    ];
+    assert_eq!(titles(unique_titles(menu)), ["Copy", "Копировать ссылку"]);
 }
 
 /// A plugin of an item in the View menu that its command ticks and unticks

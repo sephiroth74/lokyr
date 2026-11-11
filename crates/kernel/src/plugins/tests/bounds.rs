@@ -340,6 +340,49 @@ fn a_menu_item_added_again_of_another_tick_changes_its_tick_alone() {
     assert_eq!(ticks(&plugins), [false, false]);
 }
 
+#[test]
+fn a_declared_text_is_a_label_short_and_of_no_hidden_character() {
+    let mut app = App::default();
+    let mut plugins = Plugins::new();
+    let codes = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+    let told = std::rc::Rc::clone(&codes);
+    plugins
+        .add(
+            "texts",
+            scripted(
+                |cx| cx.register_command(command("texts.go")),
+                move |cx, _, _| {
+                    let huge = "x".repeat(7 * 1024 * 1024);
+                    let item = |title: &str| host::MenuItem {
+                        place: host::MenuPlace::PaneContext,
+                        command: "texts.go".to_owned(),
+                        args: Args::new(),
+                        title: Some(title.to_owned()),
+                        submenu: None,
+                        ticked: false,
+                    };
+                    let mut titled = command("texts.other");
+                    titled.title = "Co\u{200B}py".to_owned();
+                    for result in [
+                        cx.add_menu_item(item(&huge)),
+                        cx.add_menu_item(item("Co\u{202E}py")),
+                        cx.register_command(titled),
+                    ] {
+                        told.borrow_mut().push(result.map_err(|error| error.code));
+                    }
+                    Ok(())
+                },
+            ),
+        )
+        .unwrap();
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    plugins
+        .run("texts.go", Args::new(), &mut app.context())
+        .unwrap();
+    assert_eq!(*codes.borrow(), [Err(Code::InvalidSchema); 3]);
+    assert!(plugins.menu_items_in("en").is_empty());
+}
+
 /// A plugin whose `panel.open` opens its panel `p`, whose `panel.close`
 /// closes it, whose `panel.fails` closes it and fails, and whose look
 /// closes it; its panels' closing logged.
