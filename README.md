@@ -96,7 +96,7 @@ Lokyr against Ghostty, Alacritty, kitty, WezTerm, iTerm2 and Terminal.app, under
 
 ## Bundled plugins
 
-Every feature beyond the terminal itself is a plugin, and these come with the app, built into it, on the same API that third-party plugins will get. Each can be turned off with `enabled = false` in its section of the config, and has its own keys there.
+Every feature beyond the terminal itself is a plugin, and these come with the app, built into it, on the same API as third-party plugins. Each can be turned off with `enabled = false` in its section of the config, and has its own keys there.
 
 | Plugin | What it does |
 |---|---|
@@ -114,6 +114,8 @@ Every feature beyond the terminal itself is a plugin, and these come with the ap
 
 Each page tells the plugin's commands, their keys, its config and what turning it off takes away; [the plugins' index](docs/plugins/README.md) tells how they fit together.
 
+To write a plugin of your own, in Luau, and publish it on [pkg.lokyr.dev](https://pkg.lokyr.dev), follow [Writing a plugin](docs/plugins/authoring.md).
+
 ## Building
 
 Lokyr needs macOS 26 or later on Apple Silicon, Xcode 27 with its Metal toolchain, and [just](https://github.com/casey/just). `rust-toolchain.toml` pins Rust.
@@ -129,7 +131,7 @@ open target/Lokyr.app
 
 ## Configuration
 
-Lokyr reads `~/.config/lokyr/config.toml`, and applies it as you save it. `lokyr +show-config --default --docs` prints every key with its default; the [configuration guide](docs/CONFIGURATION.md) explains each.
+Lokyr reads `~/.config/lokyr/config.toml`, and applies it as you save it. `lokyr +show-config --default --docs` prints every key with its default; the [configuration guide](docs/CONFIGURATION.md) explains each, and [Making a theme](docs/themes/authoring.md) tells how to write a theme of your own colors.
 
 ```toml
 [font]
@@ -160,6 +162,7 @@ Lokyr shows the progress that a program reports with OSC 9;4 on the program's ta
 
 - [The documentation's index](docs/README.md), with the requirements and the decisions.
 - [Architecture](docs/ARCHITECTURE.md): the crates, the threads, the frame's way.
+- [Writing a plugin](docs/plugins/authoring.md) and [making a theme](docs/themes/authoring.md): the guides for their authors.
 - [The plugin system](docs/PLUGIN-SYSTEM.md) and [Sleip](docs/PACKAGE-MANAGER.md).
 - [Performance](docs/PERFORMANCE.md): the budgets, and the [measures](docs/bench/).
 - [The decisions](docs/adr/README.md), one record each.

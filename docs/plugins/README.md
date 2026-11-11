@@ -1,6 +1,6 @@
 # The bundled plugins
 
-Every feature that you see in Lokyr beyond the terminal itself comes from a plugin, and the plugins below come with the app. They are built into its binary, run on the same plugin API that third-party plugins will get, and each can be turned off in your config with `enabled = false` in its section, as [`[plugins.<namespace>]`](../CONFIGURATION.md#pluginsnamespace) tells.
+Every feature that you see in Lokyr beyond the terminal itself comes from a plugin, and the plugins below come with the app. They are built into its binary, run on the same plugin API as third-party plugins, and each can be turned off in your config with `enabled = false` in its section, as [`[plugins.<namespace>]`](../CONFIGURATION.md#pluginsnamespace) tells.
 
 | Plugin | What it gives you |
 |---|---|
