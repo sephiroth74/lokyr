@@ -25,6 +25,7 @@ use std::time::Duration;
 use lokyr_plugin_sdk::command::{Args, Capability, Command};
 use lokyr_plugin_sdk::fake::FakeHost;
 use lokyr_plugin_sdk::host::{CommandInfo, PaneId};
+use lokyr_plugin_sdk::image::CellRow;
 use lokyr_plugin_sdk::message::Data;
 use lokyr_plugin_sdk::ui::{Slot, ViewId};
 use mlua::{Function, Lua, Table, Value};
@@ -462,6 +463,95 @@ fn functions(lua: &Lua, hosted: &Arc<Mutex<Hosted>>) -> mlua::Result<Table> {
                 host.set_config(config);
             });
             Ok(())
+        })?,
+    )?;
+    let hosted = of();
+    table.raw_set(
+        "set_screen",
+        lua.create_function(move |_, rows: Value| {
+            let rows: Vec<CellRow> = shape::from_lua(rows).map_err(mlua::Error::runtime)?;
+            with(&hosted, |Hosted { host, .. }| {
+                let pane = host.pane(PaneId(1));
+                let top = pane.held.end - i64::from(pane.grid.1);
+                pane.rows.clear();
+                pane.styles.clear();
+                for (row, cells) in (top..).zip(rows) {
+                    pane.rows.insert(row, (cells.text, false));
+                    pane.styles.insert(row, cells.runs);
+                }
+            });
+            Ok(())
+        })?,
+    )?;
+    let hosted = of();
+    table.raw_set(
+        "set_selection",
+        lua.create_function(move |_, rows: Value| {
+            let rows: Option<Vec<CellRow>> = shape::from_lua(rows).map_err(mlua::Error::runtime)?;
+            with(&hosted, |Hosted { host, .. }| {
+                let pane = host.pane(PaneId(1));
+                pane.selection = rows.as_ref().map(|rows| {
+                    rows.iter()
+                        .map(|row| row.text.as_str())
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                });
+                pane.selected_cells = rows;
+            });
+            Ok(())
+        })?,
+    )?;
+    let hosted = of();
+    table.raw_set(
+        "clipboard_image",
+        lua.create_function(move |lua, ()| {
+            let image = with(&hosted, |Hosted { host, .. }| {
+                host.clipboard_image().map(<[u8]>::to_vec)
+            });
+            image.map(|png| lua.create_string(png)).transpose()
+        })?,
+    )?;
+    let hosted = of();
+    table.raw_set(
+        "saves",
+        lua.create_function(move |lua, ()| {
+            let saves = with(&hosted, |Hosted { host, .. }| host.saves());
+            let list = lua.create_table()?;
+            for (id, _, name) in saves {
+                let save = lua.create_table()?;
+                save.raw_set("id", id)?;
+                save.raw_set("name", name)?;
+                list.raw_push(save)?;
+            }
+            Ok(list)
+        })?,
+    )?;
+    let hosted = of();
+    table.raw_set(
+        "answer_save",
+        lua.create_function(move |_, (id, path): (u64, Option<String>)| {
+            with(&hosted, |Hosted { host, plugin }| {
+                host.answer_save(id, path.as_deref());
+                host.deliver(plugin).map_err(|error| failed(&error))
+            })
+        })?,
+    )?;
+    let hosted = of();
+    table.raw_set(
+        "saved_file",
+        lua.create_function(move |lua, path: String| {
+            let bytes = with(&hosted, |Hosted { host, .. }| {
+                host.saved_file(&path).map(<[u8]>::to_vec)
+            });
+            bytes.map(|bytes| lua.create_string(bytes)).transpose()
+        })?,
+    )?;
+    let hosted = of();
+    table.raw_set(
+        "kept_images",
+        lua.create_function(move |lua, ()| {
+            let kept = with(&hosted, |Hosted { host, .. }| host.kept_images().to_vec());
+            lua.create_sequence_from(kept)
         })?,
     )?;
     table.set_readonly(true);

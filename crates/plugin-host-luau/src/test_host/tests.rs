@@ -361,3 +361,71 @@ fn a_timer_s_event_posted_fails_as_the_host_gives_it_alone() {
         "{failure:?}"
     );
 }
+
+#[test]
+fn a_test_gives_the_pane_s_cells_and_reads_the_clipboard_s_image_the_saves_and_the_kept_images() {
+    // A plugin that snaps the selection's cells, or the screen's, keeps the
+    // image, copies its PNG and saves it.
+    const ENTRY: &str = r#"
+    local kept = nil
+    return {
+        activate = function(cx)
+            assert(cx.register_command({ name = "snapper.go", title = "Go", category = "view" }))
+        end,
+        on_command = function(cx, name, args)
+            local pane = assert(cx.focused_pane())
+            local rows = cx.selection_cells(pane) or assert(cx.screen_cells(pane))
+            local image = assert(cx.render_image({ rows = { rows[1] }, keep = true }))
+            kept = image.id
+            assert(cx.set_clipboard_image(image.png))
+            assert(cx.save_file(nil, rows[1].text .. ".png", image.png))
+        end,
+        on_event = function(cx, events)
+            for _, event in events do
+                if event.kind == "saved" and event.path then
+                    assert(cx.drop_image(kept))
+                end
+            end
+        end,
+    }
+    "#;
+    const TEST: &str = r#"
+    return {
+        snaps_the_screen_then_the_selection = function(host)
+            host.activate()
+            host.set_screen({ { text = "ls -la", runs = {} } })
+            host.command("snapper.go")
+            assert(host.clipboard_image():sub(2, 4) == "PNG")
+            local saves = host.saves()
+            assert(#saves == 1 and saves[1].name == "ls -la.png")
+            assert(#host.kept_images() == 1)
+            host.answer_save(saves[1].id, "/tmp/x.png")
+            assert(host.saved_file("/tmp/x.png"):sub(2, 4) == "PNG")
+            assert(#host.saves() == 0 and #host.kept_images() == 0)
+            host.set_selection({ { text = "selected" } })
+            host.command("snapper.go")
+            assert(host.saves()[1].name == "selected.png")
+            host.answer_save(host.saves()[1].id, nil)
+            assert(host.saved_file("/tmp/y.png") == nil)
+        end,
+    }
+    "#;
+    let package = Package::new([
+        ("src/init.luau".to_owned(), ENTRY.to_owned()),
+        ("tests/snapper.luau".to_owned(), TEST.to_owned()),
+    ]);
+    let ran = run_within(
+        &Plugin {
+            name: "acme/snapper",
+            capabilities: &[Capability::TerminalRead, Capability::ClipboardWrite],
+            uses: &[],
+            slots: &[],
+            package: &package,
+            messages: &[],
+            execution: Execution::Native,
+        },
+        DEADLINE,
+    );
+    assert_eq!(ran.len(), 1, "{ran:?}");
+    assert_eq!(ran[0].failure, None, "{ran:?}");
+}

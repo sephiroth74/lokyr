@@ -707,6 +707,24 @@ export type TestHost = {
     state: () -> Data,
     -- Sets its section of the config.
     set_config: (config: Data) -> (),
+    -- Gives the pane's view the rows `rows`, from its top, as a read of the
+    -- screen's cells gives them.
+    set_screen: (rows: { CellRow }) -> (),
+    -- Gives the pane a selection of the cells `rows`, or none.
+    set_selection: (rows: { CellRow }?) -> (),
+    -- The PNG on the clipboard, if the plugin put one there.
+    clipboard_image: () -> string?,
+    -- The saves whose panels show, in the order of their ids.
+    saves: () -> { { id: number, name: string } },
+    -- Closes the panel of the save `id` as the user chose `path`, whose
+    -- file then holds its bytes, or cancelled, of none; the plugin hears of
+    -- it.
+    answer_save: (id: number, path: string?) -> (),
+    -- The bytes of the file that a save wrote at `path`, if one did.
+    saved_file: (path: string) -> string?,
+    -- The ids of the images that the host keeps of the plugin's, the oldest
+    -- first.
+    kept_images: () -> { number },
 }
 ";
 
