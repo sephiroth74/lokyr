@@ -13,11 +13,17 @@ const NAME: &str = "lokyr/quick-tips";
 /// A host of one window of one pane, focused, of `day`, the palette's keys
 /// bound, the plugin's state `state`, and the plugin, activated.
 fn host(day: u64, state: Data) -> (FakeHost, Tips) {
+    configured(day, state, Data::Nil)
+}
+
+/// A host as [`host`]'s, of the plugin's config `config`.
+fn configured(day: u64, state: Data, config: Data) -> (FakeHost, Tips) {
     let mut host = FakeHost::new(NAME).with_manifest(crate::MANIFEST);
     host.pane(PaneId(1));
     host.focus(Some(PaneId(1)));
     host.set_day(day);
     host.set_state(state);
+    host.set_config(config);
     host.set_keys(PALETTE, Args::new(), Some("⇧⌘P"));
     let mut plugin = Tips::default();
     host.activate(&mut plugin).unwrap();
@@ -127,6 +133,63 @@ fn a_tip_shows_once_a_week_at_most() {
     let (mut host, mut plugin) = host(fake::DAY - 1, saved(fake::DAY, &[]));
     wait(&mut host, &mut plugin, DELAY);
     assert_eq!(shown(&mut host, &mut plugin), None);
+}
+
+#[test]
+fn the_config_sets_the_days_between_two_tips() {
+    let every = |days: i64| Data::Map(BTreeMap::from([("every".to_owned(), Data::Integer(days))]));
+    // Every start, of 0, the same day too.
+    let (mut each, mut plugin) = configured(fake::DAY, saved(fake::DAY, &["palette"]), every(0));
+    wait(&mut each, &mut plugin, DELAY);
+    assert!(shown(&mut each, &mut plugin).is_some());
+    // Three days.
+    for (days, shows) in [(2, false), (3, true)] {
+        let (mut three, mut plugin) =
+            configured(fake::DAY + days, saved(fake::DAY, &["palette"]), every(3));
+        wait(&mut three, &mut plugin, DELAY);
+        assert_eq!(shown(&mut three, &mut plugin).is_some(), shows, "{days}");
+    }
+    // A change of the config, for the next start.
+    let (mut host, mut plugin) = host(fake::DAY, saved(fake::DAY, &["palette"]));
+    assert_eq!(plugin.every, EVERY);
+    host.set_config(every(1));
+    host.deliver(&mut plugin).unwrap();
+    assert_eq!(plugin.every, 1);
+}
+
+#[test]
+fn a_long_text_takes_two_lines_and_shows_whole_by_more_or_a_click_on_the_card() {
+    let lines = |tree: &Node| find(tree, "text").unwrap().layout.lines;
+    let pointer = |tree: &Node| find(tree, "card").unwrap().style.pointer;
+    for clicked in ["more", "card", "text"] {
+        let (mut host, mut plugin) = host(fake::DAY, Data::Nil);
+        wait(&mut host, &mut plugin, DELAY);
+        let tree = host.render(&mut plugin, &view()).unwrap();
+        assert_eq!(lines(&tree), Some(LINES));
+        assert!(find(&tree, "more").is_none());
+        // A click on a text that fits shows nothing more.
+        host.ui_event(&mut plugin, &ui(UiEventKind::Click, "card"))
+            .unwrap();
+        assert_eq!(
+            lines(&host.render(&mut plugin, &view()).unwrap()),
+            Some(LINES)
+        );
+        // Cut, as the host tells: More, and a pointing hand over the card.
+        host.ui_event(&mut plugin, &ui(UiEventKind::Cut { cut: true }, "text"))
+            .unwrap();
+        let tree = host.render(&mut plugin, &view()).unwrap();
+        assert!(find(&tree, "more").is_some());
+        assert_eq!(pointer(&tree), Some(PointerShape::PointingHand));
+        // Whole, of as many lines as it needs.
+        host.ui_event(&mut plugin, &ui(UiEventKind::Click, clicked))
+            .unwrap();
+        let tree = host.render(&mut plugin, &view()).unwrap();
+        assert_eq!(lines(&tree), Some(0), "{clicked}");
+        assert!(find(&tree, "more").is_none(), "{clicked}");
+        assert_eq!(pointer(&tree), None, "{clicked}");
+        // The card stays.
+        assert!(shown(&mut host, &mut plugin).is_some());
+    }
 }
 
 #[test]
@@ -353,6 +416,7 @@ fn every_tip_has_its_message_in_every_catalog() {
         "tip-plugin-palette",
         "card-title",
         "card-dismiss",
+        "card-more",
         "card-never",
         "command-quick-tips-show",
     ]);

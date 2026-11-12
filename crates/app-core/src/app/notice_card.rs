@@ -6,6 +6,7 @@
 //! rests on it; one that a fix takes away, as a config's, stays until the
 //! fix or a click.
 
+use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use lokyr_kernel::commands::{Code, ErrorCategory};
@@ -212,7 +213,7 @@ impl<B: Backend> App<B> {
                 drawing.font.set_text_size(TextSize::Regular);
                 lines
             }
-            None => vec![shown.text.clone()],
+            None => Rc::from([shown.text.clone()]),
         };
         let fault = shown.category() == ErrorCategory::Fault;
         let (copy, close) = (

@@ -4,6 +4,7 @@ command-quick-tips-show = Mostra un suggerimento
 
 card-title = Lo sapevi?
 card-dismiss = Chiudi
+card-more = Altro
 card-never = Non mostrare più
 
 tip-palette = Premi { $keys } per la palette dei comandi, che esegue qualsiasi comando dal suo nome.

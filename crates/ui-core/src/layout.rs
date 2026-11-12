@@ -37,6 +37,32 @@ pub trait Measure {
     /// The size of `text`, on one line, in points, its width and height.
     fn text(&mut self, text: &str) -> (f32, f32);
 
+    /// The lines of `text` broken between its words within `room` points,
+    /// as many as it needs, each of the most words that fit, and whether a
+    /// word of it is wider than a line of its own, which its line cuts: as
+    /// [`crate::font::Font::interface_lines`] breaks it, of the widths that
+    /// [`Measure::text`] measures. A text of no word is one line.
+    fn lines(&mut self, text: &str, room: f32) -> (usize, bool) {
+        let words: Vec<&str> = text.split_whitespace().collect();
+        let (mut lines, mut wide) = (0, false);
+        let mut at = 0;
+        while at < words.len() {
+            let mut line = words[at].to_owned();
+            wide |= self.text(&line).0 > room;
+            at += 1;
+            while at < words.len() {
+                let longer = format!("{line} {}", words[at]);
+                if self.text(&longer).0 > room {
+                    break;
+                }
+                line = longer;
+                at += 1;
+            }
+            lines += 1;
+        }
+        (lines.max(1), wide)
+    }
+
     /// The size of the icon `name`, in points.
     fn icon(&mut self, name: &str) -> (f32, f32);
 
@@ -94,11 +120,16 @@ struct Leaf {
     /// The widths of its parts, in points, once measured: a control's
     /// segments'.
     parts: Vec<f32>,
+    /// A text's lines at the room of points whose bits it holds, once
+    /// counted, and whether a word of it is wider than a line, as
+    /// [`Measure::lines`] counts them.
+    wrapped: Option<(u32, (usize, bool))>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 enum Content {
-    Text(String),
+    /// A text, and the most lines that it takes, as its layout's `lines`.
+    Text(String, Option<u16>),
     Icon(String),
     Field,
     Button {
@@ -167,7 +198,7 @@ impl Layout {
                 continue;
             };
             let style = style_in(tree, id, style(kind, layout, self.scale, self.room));
-            let made = match leaf(kind, tree.typeset(id)) {
+            let made = match leaf(kind, layout, tree.typeset(id)) {
                 Some(leaf) => self.taffy.new_leaf_with_context(style, leaf),
                 None => self.taffy.new_leaf(style),
             };
@@ -186,7 +217,7 @@ impl Layout {
                 node,
                 style_in(tree, id, style(kind, layout, self.scale, self.room)),
             );
-            let leaf = leaf(kind, tree.typeset(id));
+            let leaf = leaf(kind, layout, tree.typeset(id));
             let kept = self
                 .taffy
                 .get_node_context(node)
@@ -245,6 +276,7 @@ impl Layout {
             {
                 leaf.typeset = typeset;
                 leaf.measured = None;
+                leaf.wrapped = None;
                 let _ = self.taffy.mark_dirty(node);
             }
         }
@@ -284,6 +316,7 @@ impl Layout {
                         typeset: Typeset::default(),
                         measured: None,
                         parts: Vec::new(),
+                        wrapped: None,
                     }),
                 );
             }
@@ -296,6 +329,7 @@ impl Layout {
             typeset: Typeset::default(),
             measured: None,
             parts: Vec::new(),
+            wrapped: None,
         };
         match self.taffy.new_leaf_with_context(style, leaf) {
             Ok(control) => {
@@ -361,6 +395,7 @@ impl Layout {
         for &node in self.nodes.values().chain(self.controls.values()) {
             if let Some(leaf) = self.taffy.get_node_context_mut(node) {
                 leaf.measured = None;
+                leaf.wrapped = None;
                 let _ = self.taffy.mark_dirty(node);
             }
         }
@@ -462,7 +497,12 @@ impl Layout {
                     inputs,
                     style,
                     |_, _| 0.0,
-                    |known, _| {
+                    |known, available| {
+                        // The room across that a text of lines breaks in.
+                        let room = known.width.or(match available.width {
+                            AvailableSpace::Definite(room) => Some(room),
+                            _ => None,
+                        });
                         let (width, height) = context.map_or((0.0, 0.0), |leaf| {
                             if leaf.measured.is_none() {
                                 measure.typeset(leaf.typeset);
@@ -471,7 +511,22 @@ impl Layout {
                                 leaf.measured = Some(size);
                                 leaf.parts = parts;
                             }
-                            leaf.measured.unwrap_or_default()
+                            let (width, height) = leaf.measured.unwrap_or_default();
+                            // A text of lines too long for its room breaks
+                            // into it; another keeps its line, which its
+                            // paint cuts.
+                            match (room, wrapping(&leaf.content)) {
+                                (Some(room), Some(most)) if width * scale > room => {
+                                    let (lines, _) = wrapped(leaf, measure, room / scale);
+                                    let shown = if most == 0 {
+                                        lines
+                                    } else {
+                                        lines.min(usize::from(most))
+                                    };
+                                    (room / scale, height * shown as f32)
+                                }
+                                _ => (width, height),
+                            }
                         });
                         Size {
                             width: known.width.unwrap_or(width * scale),
@@ -603,6 +658,31 @@ impl Layout {
         self.scroll_by(tree, area, wanted - scrolled)
     }
 
+    /// Whether each text of lines of the last layout, by its node, is cut,
+    /// of more lines than its most or of a word wider than its frame, its
+    /// lines counted by `measure` within its frame's width, and a pixel
+    /// more, as the layout's rounding of edges takes up to one from it, as
+    /// its paint breaks it.
+    pub fn cuts(&mut self, measure: &mut impl Measure) -> Vec<(NodeId, bool)> {
+        let scale = self.scale;
+        let mut cuts = Vec::new();
+        for (&id, &node) in &self.nodes {
+            let Some(width) = self.taffy.layout(node).ok().map(|laid| laid.size.width) else {
+                continue;
+            };
+            let Some(leaf) = self.taffy.get_node_context_mut(node) else {
+                continue;
+            };
+            let Content::Text(_, Some(most)) = leaf.content else {
+                continue;
+            };
+            let (lines, wide) = wrapped(leaf, measure, (width + 1.0) / scale);
+            cuts.push((id, wide || (most > 0 && lines > usize::from(most))));
+        }
+        cuts.sort_unstable_by_key(|&(id, _)| id);
+        cuts
+    }
+
     /// The size of `id`'s text or icon, in points, as the last layout
     /// measured it: its natural size, whatever room its frame takes.
     pub(crate) fn measured(&self, id: NodeId) -> Option<(f32, f32)> {
@@ -687,9 +767,9 @@ impl Layout {
 }
 
 /// What a node of `kind` holds to be measured, if its content sizes it.
-fn leaf(kind: &Kind, typeset: Typeset) -> Option<Leaf> {
+fn leaf(kind: &Kind, layout: &view::Layout, typeset: Typeset) -> Option<Leaf> {
     let content = match kind {
-        Kind::Text(text) => Content::Text(text.clone()),
+        Kind::Text(text) => Content::Text(text.clone(), layout.lines),
         Kind::Icon(name) => Content::Icon(name.clone()),
         Kind::Field(_) => Content::Field,
         Kind::Button(button) => Content::Button {
@@ -716,7 +796,37 @@ fn leaf(kind: &Kind, typeset: Typeset) -> Option<Leaf> {
         typeset,
         measured: None,
         parts: Vec::new(),
+        wrapped: None,
     })
+}
+
+/// The lines of `leaf`'s text, as [`Measure::lines`] counts them within
+/// `room` points, once for each room, and whether a word of it is wider
+/// than a line; one line of no text.
+fn wrapped(leaf: &mut Leaf, measure: &mut impl Measure, room: f32) -> (usize, bool) {
+    let Content::Text(text, _) = &leaf.content else {
+        return (1, false);
+    };
+    match leaf.wrapped {
+        Some((bits, counted)) if bits == room.to_bits() => counted,
+        _ => {
+            measure.typeset(leaf.typeset);
+            let counted = measure.lines(text, room);
+            measure.typeset(Typeset::default());
+            leaf.wrapped = Some((room.to_bits(), counted));
+            counted
+        }
+    }
+}
+
+/// The most lines of `content`, a text that breaks into lines, 0 for as
+/// many as it needs; `None` of a text of one line, as by default, and of
+/// another content.
+fn wrapping(content: &Content) -> Option<u16> {
+    match *content {
+        Content::Text(_, Some(most)) if most != 1 => Some(most),
+        _ => None,
+    }
 }
 
 /// The size of `content`, in points, as `measure` measures it, and the
@@ -724,7 +834,7 @@ fn leaf(kind: &Kind, typeset: Typeset) -> Option<Leaf> {
 /// button's of its tab's label and icon.
 fn measured(content: &Content, measure: &mut impl Measure) -> ((f32, f32), Vec<f32>) {
     let size = match content {
-        Content::Text(text) => measure.text(text),
+        Content::Text(text, _) => measure.text(text),
         Content::Icon(name) => measure.icon(name),
         Content::Field => measure.field(),
         Content::Button { label, icon } => measure.button(label, icon),
@@ -967,6 +1077,64 @@ mod tests {
             .iter()
             .map(|&child| layout.frame(tree, child).unwrap())
             .collect()
+    }
+
+    #[test]
+    fn a_text_of_lines_breaks_between_its_words_at_its_width_up_to_its_most_and_tells_its_cut() {
+        let text = |key: &str, words: &str, lines: Option<u16>| {
+            Node::text(words).key(key).layout(view::Layout {
+                lines,
+                ..view::Layout::default()
+            })
+        };
+        let words = "aaa bbb ccc ddd eee";
+        let root = Node::container(vec![
+            text("two", words, Some(2)),
+            text("all", words, Some(0)),
+            text("one", words, None),
+            text("single", words, Some(1)),
+            text("short", "aaa", Some(2)),
+            text("wide", "aaaaaaaaaaaa bb", Some(0)),
+        ])
+        .layout(view::Layout {
+            direction: Direction::Column,
+            ..view::Layout::default()
+        });
+        // 50 points at 2 pixels a point: three lines of 8 characters, "aaa
+        // bbb", "ccc ddd" and "eee", of 14 points each.
+        let (tree, mut layout, mut font) = laid(&root, 2.0, 100.0);
+        let node = |key: &str| tree.by_key(&view::Key::from(key)).unwrap();
+        let heights: Vec<f32> = ["two", "all", "one", "single", "short", "wide"]
+            .into_iter()
+            .map(|key| layout.frame(&tree, node(key)).unwrap().height)
+            .collect();
+        assert_eq!(heights, [56.0, 84.0, 28.0, 28.0, 28.0, 56.0]);
+        assert_eq!(layout.frame(&tree, node("two")).unwrap().width, 100.0);
+        // Cut of more lines than its most, or of a word wider than a line;
+        // a text of one line, as by default, of none.
+        let cuts: BTreeMap<String, bool> = layout
+            .cuts(&mut font)
+            .into_iter()
+            .map(|(id, cut)| (tree.key(id).unwrap().0.clone(), cut))
+            .collect();
+        let expected = [
+            ("two", true),
+            ("all", false),
+            ("single", true),
+            ("short", false),
+            ("wide", true),
+        ];
+        assert_eq!(
+            cuts,
+            expected
+                .into_iter()
+                .map(|(key, cut)| (key.to_owned(), cut))
+                .collect()
+        );
+        // Its lines counted once at a room.
+        font.measured.clear();
+        layout.cuts(&mut font);
+        assert!(font.measured.is_empty(), "{:?}", font.measured);
     }
 
     #[test]

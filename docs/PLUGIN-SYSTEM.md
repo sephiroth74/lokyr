@@ -292,6 +292,11 @@ type NodeLayout = {
     height: Length?,
     min_width: Length?, -- its least width, which it keeps as its siblings share less room, as a tab among many
     grow: number?,
+    -- of a text node, the most lines that its text takes, broken between its words at its width, the last cut of an
+    -- ellipsis where the text goes on; 0 for as many as it needs; none for one line, cut of an ellipsis where it is
+    -- too long; a text of a key and of lines hears "cut" as its layout first cuts it, and each time that changes; a
+    -- list's rows keep one line
+    lines: number?,
 }
 
 type Style = {
@@ -555,7 +560,7 @@ type UiEvent = {
     kind: "click" | "double-click" | "middle-click" | "hover-enter" | "hover-leave" | "context-menu"
         | "input-changed" | "submit" | "focus" | "blur" | "scroll"
         | "drag-start" | "drag-move" | "drag-end" | "drag-cancel" | "reorder" | "drop-on-bar"
-        | "drop-on-pane" | "drop-outside" | "set-value" | "toggle" | "select" | "activate" | "list-range",
+        | "drop-on-pane" | "drop-outside" | "set-value" | "toggle" | "select" | "activate" | "list-range" | "cut",
     text: string?, -- a field's text, as the host holds it: at each change, "input-changed", and as Return goes to it, "submit"
     revision: number?, -- an "input-changed" text's, one more at each edit, which `set_text` gives back
     shift: boolean?, -- a "submit"'s, whether Shift was held, as Shift-Return goes the other way
@@ -567,6 +572,7 @@ type UiEvent = {
     pane: PaneId?, edge: ("left" | "right" | "top" | "bottom")?, -- a "drop-on-pane"'s, the pane and its edge nearest the pointer
     value: string?, -- set by accessibility, as VoiceOver's; its press comes as a click, its focus as a focus
     on: boolean?, -- a toggle's state asked, the other than its render's, which the next render gives
+    cut: boolean?, -- a text of lines', whether it is cut, of more lines than its layout's or of a word wider than it, as a tip's More button shows
 }
 
 -- A command, as its registration describes it.

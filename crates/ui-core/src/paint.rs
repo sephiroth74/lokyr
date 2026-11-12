@@ -420,10 +420,13 @@ impl<'a, B: FontBackend> Painter<'a, B> {
             self.push_shape(shape);
         }
         match kind {
-            Kind::Text(text) => {
-                let natural = self.layout.measured(id).map(|(width, _)| width);
-                self.text(text, frame, natural, color);
-            }
+            Kind::Text(text) => match tree.layout(id).and_then(|layout| layout.lines) {
+                Some(most) if most != 1 => self.text_lines(text, frame, most, color),
+                _ => {
+                    let natural = self.layout.measured(id).map(|(width, _)| width);
+                    self.text(text, frame, natural, color);
+                }
+            },
             Kind::Icon(name) => self.icon(name, frame, color),
             Kind::Field(field) => self.field(id, field, (frame, style), color),
             Kind::Button(view::Button { label, icon, .. })
@@ -1187,6 +1190,35 @@ impl<'a, B: FontBackend> Painter<'a, B> {
         }
     }
 
+    /// `text` in lines from `frame`'s top, `most` of them at most, 0 for as
+    /// many as it needs, broken between its words within the frame's width
+    /// and a pixel more, as the layout's rounding of edges takes up to one
+    /// from it, the last of the rest cut of an ellipsis; the lines that the
+    /// frame has room for, the first at least.
+    fn text_lines(&mut self, text: &str, frame: Frame, most: u16, color: Color) {
+        let scale = self.layout.scale();
+        let face = self.font.interface();
+        let (line, ascent) = (face.line() * scale, face.ascent() * scale);
+        let most = if most == 0 {
+            usize::MAX
+        } else {
+            usize::from(most)
+        };
+        let room = (frame.width + 1.0) / scale;
+        let lines = self.font.interface_lines(text, room, most);
+        for (at, shown) in lines.iter().enumerate() {
+            let top = at as f32 * line;
+            if at > 0 && top + line > frame.height + 1.0 {
+                break;
+            }
+            let baseline = (frame.y + top + ascent).round();
+            let (glyphs, _) =
+                self.font
+                    .interface_text(shown, (frame.x, baseline), color, self.dark);
+            self.glyphs(glyphs);
+        }
+    }
+
     /// A button's or a toggle's content, of `label` and `icon`, either
     /// empty, side by side in the middle of `frame`, in `color`: its label
     /// clipped across where its frame is too narrow for it.
@@ -1812,6 +1844,57 @@ mod tests {
             [16, 31, 47]
         );
         assert_eq!(two[0].region.width, 2 * one[0].region.width + 1);
+    }
+
+    #[test]
+    fn a_text_of_lines_paints_them_from_its_top_within_its_width_up_to_its_most() {
+        let tip = |lines: u16| {
+            Node::container(vec![
+                Node::text("one two three four five six seven eight nine ten").layout(
+                    view::Layout {
+                        lines: Some(lines),
+                        ..view::Layout::default()
+                    },
+                ),
+            ])
+            .layout(view::Layout {
+                direction: view::Direction::Column,
+                ..view::Layout::default()
+            })
+        };
+        let rows = |items: &[Item]| {
+            let glyphs: Vec<&PlacedGlyph> = items
+                .iter()
+                .filter_map(|item| match item {
+                    Item::Glyphs(glyphs) => Some(glyphs),
+                    _ => None,
+                })
+                .flatten()
+                .collect();
+            assert!(
+                glyphs
+                    .iter()
+                    .all(|glyph| glyph.x + glyph.region.width as i32 <= 61),
+                "{glyphs:?}"
+            );
+            let mut rows: Vec<i32> = glyphs.iter().map(|glyph| glyph.y).collect();
+            rows.sort_unstable();
+            rows.dedup();
+            rows
+        };
+        // A column of 60 points.
+        let (tree, layout, two) = painted(&tip(2), 1.0, 60.0, (0.0, 0.0));
+        let text = tree.children(tree.root().unwrap())[0];
+        let frame = layout.frame(&tree, text).unwrap();
+        let two = rows(&two);
+        // Two lines, a line apart, within its frame of two.
+        assert_eq!(two.len(), 2, "{two:?}");
+        assert_eq!((two[1] - two[0]) as f32 * 2.0, frame.height);
+        // As many as it needs.
+        let (_, _, all) = painted(&tip(0), 1.0, 60.0, (0.0, 0.0));
+        let all = rows(&all);
+        assert!(all.len() > 2, "{all:?}");
+        assert_eq!(all[..2], two[..]);
     }
 
     #[test]

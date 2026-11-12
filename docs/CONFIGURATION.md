@@ -209,6 +209,9 @@ font-weight = "regular"              # light | regular | medium | semibold | bol
 padding-x = 8                        # points, 0 to 40, left and right of the text
 padding-y = 1                        # points, 0 to 20, above and below it
 align = "left"                       # left | center | right: where its pill sits along the line
+
+[plugins.quick-tips]
+every = 7                            # days, 0 to 365, between two tips as Lokyr starts; 0 for every start
 ```
 
 ## `config_version`
@@ -1902,3 +1905,24 @@ Where the header's pill sits along the line across the pane.
 
 - `left` and `right` keep it a little in from the pane's edge; `center` in the pane's middle.
 - It applies at once, as you save the file, to a header that shows too.
+
+## `[plugins.quick-tips]`
+
+<sub>Platforms: macOS</sub>
+
+The quick tips of the built-in plugin `lokyr/quick-tips`: as Lokyr starts, a card at the bottom right of the window in front tells a shortcut as your keymap binds it, a feature that shows in no menu, or a command of a plugin that you installed, each tip once before any comes again. Its text takes two lines; a longer one shows whole as you click the card or its More button. It goes after 12 seconds, held while the pointer rests on it, at the first key that you type, or by its Dismiss button; its Don't show again checkbox stops the tips for good. Help › Show a Tip shows the next one at once, whatever the days.
+
+### `every`
+
+<sub>Platforms: macOS</sub>
+
+The days between two tips as Lokyr starts.
+
+| Values | Default |
+|---|---|
+| a whole number of days, from `0` to `365` | `7` |
+
+- `0` shows a tip at every start, which helps to read them one after the other.
+- A tip shows at a start once that many days passed since the last one at a start, as Lokyr keeps its day, and none while a notice of Lokyr's shows; Help › Show a Tip does not count.
+- Don't show again stops them whatever the days; Help › Show a Tip still shows one.
+- It applies at the next start, as you save the file.

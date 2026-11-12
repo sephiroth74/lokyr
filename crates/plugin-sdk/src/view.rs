@@ -527,6 +527,13 @@ pub struct Layout {
     /// How much of the room left along its parent's direction it takes, in
     /// proportion to its siblings'.
     pub grow: f32,
+    /// Of a text node, the most lines that its text takes, broken between
+    /// its words at its width, the last cut of an ellipsis where the text
+    /// goes on; 0 for as many as it needs; `None` for one line, cut of an
+    /// ellipsis where it is too long, as by default. A text of a key and of
+    /// lines hears `cut` as its layout first cuts it, and each time that
+    /// changes. A list's rows keep one line.
+    pub lines: Option<u16>,
 }
 
 impl Default for Layout {
@@ -541,6 +548,7 @@ impl Default for Layout {
             height: Length::Auto,
             min_width: Length::Auto,
             grow: 0.0,
+            lines: None,
         }
     }
 }
@@ -899,6 +907,14 @@ pub enum UiEventKind {
         first: usize,
         /// How many.
         count: usize,
+    },
+    /// A text of lines, as its layout's `lines` gives them, was cut, of
+    /// more lines than they or of a word wider than its width, or shows
+    /// whole again: as its layout first cuts it, and each time that
+    /// changes.
+    Cut {
+        /// Whether it is cut.
+        cut: bool,
     },
 }
 
@@ -1580,6 +1596,7 @@ mod tests {
                 first: 10,
                 count: 105,
             },
+            UiEventKind::Cut { cut: true },
         ];
         let json = serde_json::to_string(&events).unwrap();
         assert_eq!(
@@ -1593,7 +1610,7 @@ mod tests {
                 r#"{"kind":"set-value","value":"main"},{"kind":"input-changed","text":"ma","revision":2},"#,
                 r#"{"kind":"submit","text":"main","shift":true},{"kind":"toggle","on":true},"#,
                 r#"{"kind":"select","item":3},{"kind":"activate","item":3},"#,
-                r#"{"kind":"list-range","first":10,"count":105}]"#
+                r#"{"kind":"list-range","first":10,"count":105},{"kind":"cut","cut":true}]"#
             )
         );
         assert_eq!(

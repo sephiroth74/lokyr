@@ -188,6 +188,7 @@ export type UiEvent =
     | { view: ViewId, key: string, kind: "select", item: number }
     | { view: ViewId, key: string, kind: "activate", item: number }
     | { view: ViewId, key: string, kind: "list-range", first: number, count: number }
+    | { view: ViewId, key: string, kind: "cut", cut: boolean }
 
 export type Node = {
     kind: "container" | "text" | "icon" | "spacer" | "field" | "button" | "toggle" | "separator" | "list" | "scroll" | "progress" | "tabs" | "image",
@@ -559,6 +560,7 @@ export type NodeLayout = {
     height: Length?,
     min_width: Length?,
     grow: number?,
+    lines: number?,
 }
 
 export type NodeRole =

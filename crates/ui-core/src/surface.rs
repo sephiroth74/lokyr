@@ -5,7 +5,7 @@
 //! the surfaces of a window, the clipboard and the platform's composition,
 //! which the surface tells it to end; the events go to the view's plugin.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::time::Instant;
 
 use lokyr_plugin_sdk::host::TabId;
@@ -55,6 +55,9 @@ pub struct Surface {
     /// Whether the pointer changed what shows without an event, as the row
     /// of a menu's list that it hovers, which a frame shows.
     repaint: bool,
+    /// Whether each text of lines was cut at the last layout, by its node,
+    /// as its plugin was told.
+    cuts: BTreeMap<NodeId, bool>,
 }
 
 /// What a press of the pointer did to a surface.
@@ -84,6 +87,7 @@ impl Surface {
             fills_apart: false,
             covered: BTreeSet::new(),
             repaint: false,
+            cuts: BTreeMap::new(),
         }
     }
 
@@ -113,14 +117,29 @@ impl Surface {
     /// Lays the tree out in `width` and `height` pixels, either as its
     /// content's where it is `None`, its texts measured by `measure`, and
     /// its lists' rows that show: the `list-range` events of the items that
-    /// they ask its plugin for.
+    /// they ask its plugin for, and the `cut` events of its texts of lines
+    /// of a key that the layout cut, or no longer cuts, as it first cuts
+    /// one and each time that changes.
     pub fn lay_out(
         &mut self,
         (width, height): (Option<f32>, Option<f32>),
         measure: &mut impl Measure,
     ) -> Vec<NodeEvent> {
         self.layout.compute(&self.tree, width, height, measure);
-        self.lists.lay_out(&self.tree, &self.layout, measure)
+        let mut events = self.lists.lay_out(&self.tree, &self.layout, measure);
+        let cuts: BTreeMap<NodeId, bool> = self.layout.cuts(measure).into_iter().collect();
+        for (&node, &cut) in &cuts {
+            let told = self.cuts.get(&node).copied().unwrap_or(false);
+            if let (true, Some(key)) = (told != cut, self.tree.key(node)) {
+                events.push(NodeEvent {
+                    node,
+                    key: key.clone(),
+                    kind: UiEventKind::Cut { cut },
+                });
+            }
+        }
+        self.cuts = cuts;
+        events
     }
 
     /// Its last layout, at `now`: its nodes of transitions that it moved
@@ -685,6 +704,47 @@ mod tests {
             })
             .map(|event| (event.key.0.clone(), event.kind.clone()))
             .collect()
+    }
+
+    #[test]
+    fn a_text_of_lines_tells_its_cut_as_its_layout_first_cuts_it_and_as_that_changes() {
+        let tip = |text: &str, lines: u16| {
+            Node::container(vec![Node::text(text).key("tip").layout(view::Layout {
+                lines: Some(lines),
+                ..view::Layout::default()
+            })])
+            .layout(view::Layout {
+                direction: Direction::Column,
+                ..view::Layout::default()
+            })
+        };
+        let long = "aaa bbb ccc ddd eee";
+        let mut surface = Surface::new(1.0);
+        surface.update(&tip(long, 2)).unwrap();
+        // 80 points, of 8 characters a line: cut of three lines in two.
+        let cut = |surface: &mut Surface| kinds(&surface.lay_out((Some(80.0), None), &mut Fixed));
+        assert_eq!(
+            cut(&mut surface),
+            [("tip".to_owned(), UiEventKind::Cut { cut: true })]
+        );
+        // Told once.
+        assert_eq!(cut(&mut surface), []);
+        // Whole of as many lines as it needs.
+        surface.update(&tip(long, 0)).unwrap();
+        assert_eq!(
+            cut(&mut surface),
+            [("tip".to_owned(), UiEventKind::Cut { cut: false })]
+        );
+        // A text that fits is not told as it first lays out.
+        let mut short = Surface::new(1.0);
+        short.update(&tip("aaa", 2)).unwrap();
+        assert_eq!(cut(&mut short), []);
+        // Its text longer.
+        short.update(&tip(long, 2)).unwrap();
+        assert_eq!(
+            cut(&mut short),
+            [("tip".to_owned(), UiEventKind::Cut { cut: true })]
+        );
     }
 
     #[test]

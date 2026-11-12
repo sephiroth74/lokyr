@@ -225,7 +225,7 @@ fn an_event_of_another_shape_is_refused() {
 }
 
 /// The number of `UiEventKind`'s kinds.
-const UI_KINDS: usize = 24;
+const UI_KINDS: usize = 25;
 
 /// The place of `kind`'s among `UiEventKind`'s kinds, from 0.
 fn ui_index(kind: &UiEventKind) -> usize {
@@ -254,6 +254,7 @@ fn ui_index(kind: &UiEventKind) -> usize {
         UiEventKind::Select { .. } => 21,
         UiEventKind::Activate { .. } => 22,
         UiEventKind::ListRange { .. } => 23,
+        UiEventKind::Cut { .. } => 24,
     }
 }
 
@@ -301,6 +302,7 @@ fn a_view_s_event_is_a_flat_table_of_its_view_its_key_its_kind_and_its_fields() 
             first: 10,
             count: 20,
         },
+        UiEventKind::Cut { cut: true },
     ];
     let mut seen = [false; UI_KINDS];
     for kind in kinds {

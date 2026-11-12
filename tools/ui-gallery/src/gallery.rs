@@ -453,6 +453,8 @@ impl Gallery {
             }
             UiEventKind::InputChanged { text, .. } => self.typed.0 = format!("`{key}`: {text}"),
             UiEventKind::Submit { text, .. } => self.typed.1 = format!("`{key}`: {text}"),
+            // The gallery's texts take one line each.
+            UiEventKind::Cut { .. } => {}
         }
     }
 

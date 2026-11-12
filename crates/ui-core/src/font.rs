@@ -50,6 +50,10 @@ const CARET_TEXTS: usize = 8;
 /// keeps, as each frame that draws the chrome shortens the same again.
 const SHORTENED_TEXTS: usize = 64;
 
+/// How many texts of the interface, broken into lines, the font keeps, as
+/// each frame that draws the chrome breaks the same again.
+const BROKEN_TEXTS: usize = 16;
+
 /// An icon's largest side, in pixels, past which it draws nothing: 512
 /// points at a scale of 2, a megabyte of the atlas.
 const ICON_LARGEST: f32 = 1024.0;
@@ -254,6 +258,9 @@ pub struct Font<B> {
     carets: Vec<KnownCarets>,
     /// The texts of the interface shortened lately, the newest first.
     shortened: Vec<KnownShortened>,
+    /// The texts of the interface broken into lines lately, the newest
+    /// first.
+    broken: Vec<KnownLines>,
     /// The region of each glyph drawn, with its key, for the tests.
     #[cfg(test)]
     drawn: Vec<(AtlasRegion, GlyphKey)>,
@@ -526,6 +533,7 @@ impl<B: FontBackend> Font<B> {
             icon_pixels: FastMap::default(),
             carets: Vec::new(),
             shortened: Vec::new(),
+            broken: Vec::new(),
             #[cfg(test)]
             drawn: Vec::new(),
             resolved,
@@ -1370,8 +1378,41 @@ impl<B: FontBackend> Font<B> {
     /// rest shortened of an ellipsis, as [`Font::interface_shortened`]
     /// shortens it, where the text goes on; a word longer than a line, on
     /// a line of its own, shortened too. A text of no word is one empty
-    /// line.
-    pub fn interface_lines(&mut self, text: &str, room: f32, most: usize) -> Vec<String> {
+    /// line. Found once for the last texts broken, which each frame of the
+    /// chrome breaks again.
+    pub fn interface_lines(&mut self, text: &str, room: f32, most: usize) -> Rc<[String]> {
+        let (size, face) = {
+            let interface = self.interface();
+            (interface.size(), interface.face())
+        };
+        let key = (face, size.to_bits(), room.to_bits(), most);
+        let known = self.broken.iter().position(|known| {
+            (known.face, known.size, known.room, known.most) == key && known.text == text
+        });
+        if let Some(at) = known {
+            let known = self.broken.remove(at);
+            let lines = Rc::clone(&known.lines);
+            self.broken.insert(0, known);
+            return lines;
+        }
+        let lines: Rc<[String]> = self.break_lines(text, room, most).into();
+        self.broken.truncate(BROKEN_TEXTS - 1);
+        self.broken.insert(
+            0,
+            KnownLines {
+                face,
+                size: size.to_bits(),
+                room: room.to_bits(),
+                most,
+                text: text.to_owned(),
+                lines: Rc::clone(&lines),
+            },
+        );
+        lines
+    }
+
+    /// `text` broken into lines, as [`Font::interface_lines`] tells.
+    fn break_lines(&mut self, text: &str, room: f32, most: usize) -> Vec<String> {
         let features = Features { ligatures: true };
         let (size, face) = {
             let interface = self.interface();
@@ -1834,6 +1875,19 @@ impl<B: FontBackend> Carets for Font<B> {
     fn typeset(&mut self, typeset: Typeset) {
         self.set_typeset(typeset);
     }
+}
+
+/// A text of the interface broken into lines within a room, which the next
+/// frames break again: of its face, its size's bits, the room's and its
+/// most lines.
+#[derive(Debug)]
+struct KnownLines {
+    face: FaceId,
+    size: u32,
+    room: u32,
+    most: usize,
+    text: String,
+    lines: Rc<[String]>,
 }
 
 /// A text of the interface shortened to a room, which the next frames
@@ -3368,17 +3422,17 @@ mod tests {
         let text = "unknown key `fonts` at line 12, column 1 of config.toml";
         let lines = font.interface_lines(text, room, 2);
         assert_eq!(lines.len(), 2, "{lines:?}");
-        for line in &lines {
+        for line in lines.iter() {
             assert!(width(&mut font, line) <= room, "{line:?}");
         }
         assert!(text.starts_with(&lines[0]), "{lines:?}");
         assert!(lines[1].ends_with('…'), "{lines:?}");
         // A text that fits takes the lines that it needs, of no ellipsis.
         assert_eq!(
-            font.interface_lines("unknown key", room, 2),
+            *font.interface_lines("unknown key", room, 2),
             ["unknown key"]
         );
-        assert_eq!(font.interface_lines("", room, 2), [""]);
+        assert_eq!(*font.interface_lines("", room, 2), [""]);
         // A word longer than a line, shortened on its own.
         let long = font.interface_lines("averyveryveryverylongword short", room, 3);
         assert!(long[0].ends_with('…') && long[1] == "short", "{long:?}");

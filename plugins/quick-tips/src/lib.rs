@@ -4,11 +4,13 @@
 //! command of an installed plugin, each once before any comes again.
 //!
 //! The card waits a moment after the start, so that the window and its
-//! prompt show first, and shows only while no notice of the app's does. It
-//! goes after a while, held while the pointer rests on it, at the first key
-//! typed into a pane, or by its button; its checkbox stops the tips for
-//! good, which its plugin's state keeps. Like every built-in plugin, it
-//! depends only on the plugin SDK.
+//! prompt show first, and shows only while no notice of the app's does. Its
+//! text takes two lines; a longer one shows whole as the card or its More
+//! button is clicked. It goes after a while, held while the pointer rests
+//! on it, at the first key typed into a pane, or by its button; its
+//! checkbox stops the tips for good, which its plugin's state keeps. The
+//! days between two tips at the start are its config's. Like every
+//! built-in plugin, it depends only on the plugin SDK.
 
 #![forbid(unsafe_code)]
 
@@ -23,8 +25,8 @@ use lokyr_plugin_sdk::ui::{
     Anchor, Corner, PanelId, PanelOptions, Role as PanelRole, UiEvent, ViewId,
 };
 use lokyr_plugin_sdk::view::{
-    Align, Border, Direction, Edges, FontWeight, Hover, Justify, Kind, Layout, Length, Node, Role,
-    Shadow, Style, TextSize, Toggle, Token, Transition, UiEventKind,
+    Align, Border, Direction, Edges, FontWeight, Hover, Justify, Kind, Layout, Length, Node,
+    PointerShape, Role, Shadow, Style, TextSize, Toggle, Token, Transition, UiEventKind,
 };
 
 lokyr_plugin_sdk::export_plugin!(Tips);
@@ -54,8 +56,11 @@ const SHOWS: Duration = Duration::from_secs(12);
 /// How long after its first render the card slides into place.
 const ENTERS: Duration = Duration::from_millis(50);
 
-/// The days between two tips at the start.
+/// The days between two tips at the start, unless the config gives others.
 const EVERY: u64 = 7;
+
+/// The lines of the card's text until it shows whole.
+const LINES: u16 = 2;
 
 /// The most commands of installed plugins that the tips name.
 const MOST_PLUGIN_TIPS: usize = 32;
@@ -246,25 +251,52 @@ impl Saved {
 }
 
 /// The card that shows: its tip's text, whether its checkbox is on, whether
-/// it is still to slide into place, and its timers, of its slide and of its
-/// going.
+/// it is still to slide into place, whether its text is cut and whether it
+/// shows whole, and its timers, of its slide and of its going.
 #[derive(Debug)]
 struct Card {
     text: String,
     never: bool,
     entering: bool,
+    cut: bool,
+    whole: bool,
     enters: Option<u64>,
     goes: Option<u64>,
 }
 
-/// The plugin of the quick tips: the timer of the start's tip until it
-/// fires, the card that shows, and the closings of the card that it asked
-/// for, whose events tell nothing more.
-#[derive(Debug, Default)]
+/// The plugin of the quick tips: the days between two tips at the start,
+/// of its config, the timer of the start's tip until it fires, the card
+/// that shows, and the closings of the card that it asked for, whose
+/// events tell nothing more.
+#[derive(Debug)]
 pub struct Tips {
+    every: u64,
     start: Option<u64>,
     card: Option<Card>,
     closing: usize,
+}
+
+impl Default for Tips {
+    fn default() -> Self {
+        Self {
+            every: EVERY,
+            start: None,
+            card: None,
+            closing: 0,
+        }
+    }
+}
+
+/// The days between two tips at the start of `config`, its section, which
+/// the host checked against the schema and gave its defaults.
+fn every(config: &Data) -> u64 {
+    match config {
+        Data::Map(config) => match config.get("every") {
+            Some(Data::Integer(days)) => u64::try_from(*days).unwrap_or(EVERY),
+            _ => EVERY,
+        },
+        _ => EVERY,
+    }
 }
 
 impl Plugin for Tips {
@@ -277,9 +309,10 @@ impl Plugin for Tips {
             params: Vec::new(),
             when: None,
         })?;
+        self.every = every(&cx.config()?);
         // A start of no tip due waits for nothing, and wakes the app for
         // nothing.
-        if due(cx).is_some() {
+        if due(cx, self.every).is_some() {
             self.start = Some(cx.start_timer(DELAY, false)?);
         }
         Ok(())
@@ -287,6 +320,10 @@ impl Plugin for Tips {
 
     fn catalogs(&self) -> lokyr_plugin_sdk::plugin::Catalogs {
         lokyr_plugin_sdk::plugin::built_in(&CATALOGS)
+    }
+
+    fn config_schema(&self) -> Option<std::borrow::Cow<'static, str>> {
+        Some(include_str!("../quick-tips.schema.json").into())
     }
 
     fn on_command(&mut self, cx: &mut Cx<'_>, name: &str, _args: Args) -> Result<(), Error> {
@@ -316,6 +353,7 @@ impl Plugin for Tips {
                         self.close(cx);
                     }
                 }
+                Event::ConfigChanged => self.every = every(&cx.config()?),
                 Event::PanelClosed(id) if id.0 == PANEL => {
                     if self.closing > 0 {
                         self.closing -= 1;
@@ -338,6 +376,7 @@ impl Plugin for Tips {
         let texts = Texts {
             title: cx.message("card-title", &[]).unwrap_or_default(),
             dismiss: cx.message("card-dismiss", &[]).unwrap_or_default(),
+            more: cx.message("card-more", &[]).unwrap_or_default(),
             never: cx.message("card-never", &[]).unwrap_or_default(),
         };
         Some(card_tree(&texts, card))
@@ -349,6 +388,25 @@ impl Plugin for Tips {
         }
         match (&event.kind, event.key.0.as_str()) {
             (UiEventKind::Click, "dismiss") => self.close(cx),
+            // Its text, cut or whole again, which its More button tells.
+            (UiEventKind::Cut { cut }, "text") => {
+                if let Some(card) = self.card.as_mut()
+                    && card.cut != *cut
+                {
+                    card.cut = *cut;
+                    cx.request_render(view())?;
+                }
+            }
+            // Its text whole, of as many lines as it needs.
+            (UiEventKind::Click, "more" | "card" | "text") => {
+                if let Some(card) = self.card.as_mut()
+                    && card.cut
+                    && !card.whole
+                {
+                    card.whole = true;
+                    cx.request_render(view())?;
+                }
+            }
             (UiEventKind::Toggle { on }, "never" | "never-label") => {
                 let Some(card) = self.card.as_mut() else {
                     return Ok(());
@@ -382,7 +440,7 @@ impl Plugin for Tips {
 impl Tips {
     /// The start's tip, if one is due and no notice of the app's shows.
     fn at_start(&mut self, cx: &mut Cx<'_>) {
-        let Some((saved, day)) = due(cx) else {
+        let Some((saved, day)) = due(cx, self.every) else {
             return;
         };
         if cx.notice_shows().unwrap_or(true) {
@@ -436,6 +494,8 @@ impl Tips {
             text,
             never: saved.never,
             entering: true,
+            cut: false,
+            whole: false,
             enters: cx.start_timer(ENTERS, false).ok(),
             goes: cx.start_timer(SHOWS, false).ok(),
         });
@@ -455,9 +515,9 @@ impl Tips {
 
 /// The state and the day of a tip due at the start: the host keeps the
 /// state, as it does not without a state's folder, where a tip would show
-/// at every start; the tips did not stop; and a week passed since the last
-/// one, or none showed yet.
-fn due(cx: &mut Cx<'_>) -> Option<(Saved, u64)> {
+/// at every start; the tips did not stop; and `every` days passed since
+/// the last one, or none showed yet, a tip at every start of 0.
+fn due(cx: &mut Cx<'_>, every: u64) -> Option<(Saved, u64)> {
     if !cx.keeps_state().unwrap_or(false) {
         return None;
     }
@@ -468,7 +528,7 @@ fn due(cx: &mut Cx<'_>) -> Option<(Saved, u64)> {
     let day = cx.day().ok()?;
     if saved
         .last
-        .is_some_and(|last| day < last.saturating_add(EVERY))
+        .is_some_and(|last| day < last.saturating_add(every))
     {
         return None;
     }
@@ -562,20 +622,27 @@ fn ready(cx: &mut Cx<'_>) -> Vec<Ready> {
 struct Texts {
     title: String,
     dismiss: String,
+    more: String,
     never: String,
 }
 
 /// The card of `card`'s tip: a lightbulb of the accent's color, its title
-/// of the same color and its text; below, the checkbox that stops the tips
-/// and the button that dismisses it. It rises into place from a little
-/// lower, faded, as it first shows.
+/// of the same color and its text, of two lines until it shows whole;
+/// below, the checkbox that stops the tips, the button that shows the
+/// whole text while it is cut, and the button that dismisses it. A click
+/// on a cut text's card shows it whole too, under a pointing hand. It
+/// rises into place from a little lower, faded, as it first shows.
 fn card_tree(texts: &Texts, card: &Card) -> Node {
+    let more = card.cut && !card.whole;
     let title = Node::text(texts.title.as_str()).style(Style {
         font_weight: Some(FontWeight::Semibold),
         color: Some(Token::from("accent")),
         ..Style::default()
     });
-    let text = Node::text(card.text.as_str());
+    let text = Node::text(card.text.as_str()).key("text").layout(Layout {
+        lines: Some(if card.whole { 0 } else { LINES }),
+        ..Layout::default()
+    });
     let words = Node::container(vec![title, text]).layout(Layout {
         direction: Direction::Column,
         gap: 4.0,
@@ -593,18 +660,24 @@ fn card_tree(texts: &Texts, card: &Card) -> Node {
         align: Align::Start,
         ..Layout::default()
     });
-    let bottom = Node::container(vec![
+    let small = || Style {
+        text_size: Some(TextSize::Small),
+        ..Style::default()
+    };
+    let mut buttons = vec![
         checkbox(card.never, &texts.never),
         never_label(card.never, &texts.never),
         Node::spacer(),
+    ];
+    if more {
+        buttons.push(Node::button(texts.more.as_str()).key("more").style(small()));
+    }
+    buttons.push(
         Node::button(texts.dismiss.as_str())
             .key("dismiss")
-            .style(Style {
-                text_size: Some(TextSize::Small),
-                ..Style::default()
-            }),
-    ])
-    .layout(Layout {
+            .style(small()),
+    );
+    let bottom = Node::container(buttons).layout(Layout {
         direction: Direction::Row,
         gap: 6.0,
         align: Align::Center,
@@ -636,6 +709,7 @@ fn card_tree(texts: &Texts, card: &Card) -> Node {
             opacity: Some(if card.entering { 0.0 } else { 1.0 }),
             transition: Some(Transition::default()),
             hover: Some(Hover::default()),
+            pointer: more.then_some(PointerShape::PointingHand),
             ..Style::default()
         });
     // The room below it, which it rises through as it shows.

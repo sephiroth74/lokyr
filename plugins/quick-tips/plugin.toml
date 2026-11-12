@@ -4,3 +4,6 @@ name = "lokyr/quick-tips"
 kind = "builtin"
 license = "MIT"
 description = "A tip at the app's start, once a week at most, of a shortcut as the keymap binds it or of a feature that shows nowhere, in a card at the window's bottom right"
+
+[contributes]
+config-schema = "quick-tips.schema.json"

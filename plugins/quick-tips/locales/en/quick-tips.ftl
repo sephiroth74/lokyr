@@ -3,9 +3,11 @@
 # The title of its command, which the menus and the palette show.
 command-quick-tips-show = Show a Tip
 
-# The card: its title, its button, and its checkbox, which stops the tips.
+# The card: its title, its buttons, the one that dismisses it and the one
+# that shows its whole text, and its checkbox, which stops the tips.
 card-title = Did you know?
 card-dismiss = Dismiss
+card-more = More
 card-never = Don't show again
 
 # The tips of a command's keys, as the keymap binds them now: `$keys`.
