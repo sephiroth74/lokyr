@@ -176,7 +176,7 @@ After 1.0.0, as 1.1 ([ADR 0036](adr/0036-plugin-ecosystem-before-1-0.md)).
 ### F5b — iTerm2 power features
 
 - **tmux -CC**: tmux windows and panes become native tabs and splits.
-- **Windows and sessions**: input broadcast; the scrollback restored with the windows, which F3 restores. The quick terminal came in F2.
+- **Windows and sessions**: input broadcast; the scrollback restored with the windows, which F3 restores, as the user chose on 12 November 2026, after 1.0.0: each pane's rows, their styles, wrapping and the commands' marks, saved at the quit beside `windows.json` in files of the user alone, a bound of rows a pane, the rows of the protected input left out, `[app] restore-scrollback` on by default, shown above the new shell's prompt under a line of the session's date; the processes themselves new, as their survival is F7's mux daemon (about three days). The quick terminal came in F2.
 - **Automation**: triggers; profiles with automatic switching (by host or directory).
 - **Search**: filter mode.
 - **The context menu**: broadcast, locked panes, annotations, triggers and snippets ([UI-AND-FEATURES](UI-AND-FEATURES.md#the-panes-context-menu)).
@@ -219,7 +219,7 @@ After 1.0.0, as 1.1 ([ADR 0036](adr/0036-plugin-ecosystem-before-1-0.md)).
 **Everything else**:
 - **Registry v1**, with a web UI and Sigstore.
 - **Windows**: ConPTY, Win32, DirectWrite, D3D11.
-- **Multiplexing**: a mux daemon and SSH domains.
+- **Multiplexing**: a mux daemon and SSH domains; the shells surviving the app's quit, a crash or an update, which F5b's restored scrollback does not give.
 - **Memory**: lz4 compression of the scrollback.
 - **Extensibility**: custom shaders; AI plugins, an assistant with an LLM among them ([ADR 0017](adr/0017-mcp-and-agents.md)), and a Warp-style input editor.
 
