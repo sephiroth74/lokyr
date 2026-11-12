@@ -6,9 +6,11 @@
 //! image's place can take; an image that no snapshot shows lets it go
 //! [`KEPT_FOR`] after the last frame that drew it; and the pictures' pixels
 //! stay within [`MOST_HELD`], the least recently drawn going first. A
-//! placement draws over its cells, under the text where its z is negative,
-//! over it otherwise, within its pane; nothing until its picture is made,
-//! the decoder's thread waking the app for a frame then.
+//! placement draws over its cells, within its pane, as kitty's protocol
+//! orders them: under the cells' backgrounds of a z below
+//! [`UNDER_BACKGROUNDS`], over them and under the text of a negative one,
+//! over the text otherwise; nothing until its picture is made, the
+//! decoder's thread waking the app for a frame then.
 
 use std::collections::HashMap;
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -18,6 +20,20 @@ use std::time::{Duration, Instant};
 use lokyr_platform_core::{ImageDecoder, Platform, Waker};
 use lokyr_render_core::{Item, PictureId, Rect, Renderer};
 use lokyr_vt_core::terminal::{Image, ImageFormat, Placed, Source};
+
+/// The z under which a placement draws under the cells' backgrounds, as
+/// kitty's protocol tells, rather than over them.
+const UNDER_BACKGROUNDS: i32 = -(1 << 30);
+
+/// The items that draw a pane's placements: those under its cells'
+/// backgrounds, those over them and under its text, and those over its
+/// text, each a list within its grid, empty of no placement.
+#[derive(Debug, Default)]
+pub(crate) struct Layers {
+    pub(crate) below: Vec<Item>,
+    pub(crate) under: Vec<Item>,
+    pub(crate) over: Vec<Item>,
+}
 
 /// How long a picture stays after the last frame that drew it, once no
 /// snapshot shows its image.
@@ -55,10 +71,12 @@ struct Kept {
     used: Instant,
 }
 
+/// Pixels, premultiplied RGBA, of their width and height.
+type Rgba = (Vec<u8>, u32, u32);
+
 /// What the decoder makes: a picture's key, the size asked, and its
-/// pixels, premultiplied RGBA, of their width and height, or none of an
-/// image that does not decode.
-type Made = (Key, (u32, u32), Option<(Vec<u8>, u32, u32)>);
+/// pixels, or none of an image that does not decode.
+type Made = (Key, (u32, u32), Option<Rgba>);
 
 /// A picture asked of the decoder: its key, its image, the rectangle of its
 /// pixels, and the size that it draws at.
@@ -106,7 +124,7 @@ fn decoding(
     made: &Mutex<Vec<Made>>,
     waker: &Waker,
 ) {
-    let mut last: Option<(Arc<Image>, Option<(Vec<u8>, u32, u32)>)> = None;
+    let mut last: Option<(Arc<Image>, Option<Rgba>)> = None;
     while let Ok(job) = jobs.recv() {
         if Arc::strong_count(&job.image) == 1 {
             continue;
@@ -165,9 +183,8 @@ pub(crate) struct Grid {
 
 impl InlineImages {
     /// The items that draw `placed`, a pane's placements as its view shows
-    /// them, over `grid`: those under the text, and those over it, each
-    /// within the grid; nothing of no placement, nor of a picture still
-    /// being made.
+    /// them, over `grid`, in their layers; nothing of no placement, nor of
+    /// a picture still being made.
     pub(crate) fn items<R: Renderer<Error: std::fmt::Display>>(
         &mut self,
         renderer: &mut R,
@@ -175,19 +192,19 @@ impl InlineImages {
         placed: &[Placed],
         grid: Grid,
         now: Instant,
-    ) -> (Vec<Item>, Vec<Item>) {
+    ) -> Layers {
         self.take_made(renderer, now);
-        let (mut under, mut over) = (Vec::new(), Vec::new());
+        let mut layers = Layers::default();
         for placement in placed {
             let rect = rect(placement, grid);
             let Some(picture) = self.picture(renderer, platform, placement, rect, now) else {
                 continue;
             };
             let item = Item::Picture { rect, picture };
-            if placement.z < 0 {
-                under.push(item);
-            } else {
-                over.push(item);
+            match placement.z {
+                z if z < UNDER_BACKGROUNDS => layers.below.push(item),
+                z if z < 0 => layers.under.push(item),
+                _ => layers.over.push(item),
             }
         }
         let clip = Rect {
@@ -205,7 +222,11 @@ impl InlineImages {
                 .chain(std::iter::once(Item::PopClip))
                 .collect()
         };
-        (clipped(under), clipped(over))
+        Layers {
+            below: clipped(layers.below),
+            under: clipped(layers.under),
+            over: clipped(layers.over),
+        }
     }
 
     /// Whether the decoder made pictures that the next frame takes.
@@ -436,7 +457,7 @@ fn rect(placement: &Placed, grid: Grid) -> Rect {
 fn whole_pixels(
     image: &Image,
     decode: impl FnOnce(&[u8]) -> Option<lokyr_platform_core::Pixels>,
-) -> Option<(Vec<u8>, u32, u32)> {
+) -> Option<Rgba> {
     let (rgba, width, height) = match image.format {
         ImageFormat::Png
         | ImageFormat::Jpeg
@@ -474,10 +495,10 @@ fn whole_pixels(
 /// cut to `source`, made no larger than `size` on either side; their width
 /// and height too; none of a rectangle outside them.
 fn shown_pixels(
-    (rgba, width, height): &(Vec<u8>, u32, u32),
+    (rgba, width, height): &Rgba,
     source: Option<Source>,
     size: (u32, u32),
-) -> Option<(Vec<u8>, u32, u32)> {
+) -> Option<Rgba> {
     match source {
         Some(source) => {
             let (cut, width, height) = cut(rgba, (*width, *height), source)?;
@@ -489,7 +510,7 @@ fn shown_pixels(
 
 /// The pixels of `source` within `rgba`, of `width` by `height`, its width
 /// and its height; none of a rectangle outside them.
-fn cut(rgba: &[u8], (width, height): (u32, u32), source: Source) -> Option<(Vec<u8>, u32, u32)> {
+fn cut(rgba: &[u8], (width, height): (u32, u32), source: Source) -> Option<Rgba> {
     let x = source.x.min(width);
     let y = source.y.min(height);
     let cut_width = source.width.min(width - x);
@@ -508,7 +529,7 @@ fn cut(rgba: &[u8], (width, height): (u32, u32), source: Source) -> Option<(Vec<
 /// `rgba`, of `width` by `height`, made no larger than `most` on either
 /// side, each pixel the mean of those whose place it takes, of a side at a
 /// time; as it is where it fits.
-fn scaled(rgba: &[u8], (width, height): (u32, u32), most: (u32, u32)) -> (Vec<u8>, u32, u32) {
+fn scaled(rgba: &[u8], (width, height): (u32, u32), most: (u32, u32)) -> Rgba {
     let (new_width, new_height) = (width.min(most.0.max(1)), height.min(most.1.max(1)));
     if (new_width, new_height) == (width, height) {
         return (rgba.to_vec(), width, height);
@@ -595,10 +616,12 @@ mod tests {
         now: Instant,
     ) -> Vec<PictureId> {
         let platform = lokyr_platform_core::fake::Fake::default();
-        let (under, over) = images.items(renderer, &platform, placed, grid((10, 20)), now);
-        under
+        let layers = images.items(renderer, &platform, placed, grid((10, 20)), now);
+        layers
+            .below
             .into_iter()
-            .chain(over)
+            .chain(layers.under)
+            .chain(layers.over)
             .filter_map(|item| match item {
                 Item::Picture { picture, .. } => Some(picture),
                 _ => None,
@@ -786,6 +809,35 @@ mod tests {
         assert_eq!(drawn(&mut images, &mut renderer, &slices, now).len(), 50);
         assert_eq!(decodes.load(Ordering::Relaxed), 1);
         assert!(!images.has_made());
+    }
+
+    #[test]
+    fn a_placement_s_z_tells_its_layer_as_kitty_s_protocol_does() {
+        let platform = lokyr_platform_core::fake::Fake::default();
+        let mut images = InlineImages::default();
+        let mut renderer = FakeRenderer::default();
+        let image = image(ImageFormat::Rgb, (1, 1), vec![0; 3]);
+        let at = |z: i32| Placed {
+            z,
+            ..placed(&image, None)
+        };
+        let layers = images.items(
+            &mut renderer,
+            &platform,
+            &[
+                at(UNDER_BACKGROUNDS - 1),
+                at(UNDER_BACKGROUNDS),
+                at(-1),
+                at(0),
+            ],
+            grid((10, 20)),
+            Instant::now(),
+        );
+        // Each layer within its pane's clip.
+        assert_eq!(
+            (layers.below.len(), layers.under.len(), layers.over.len()),
+            (3, 4, 3)
+        );
     }
 
     #[test]

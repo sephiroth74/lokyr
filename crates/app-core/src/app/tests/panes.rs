@@ -825,7 +825,7 @@ fn a_pane_whose_agent_waits_is_ringed_in_a_tab_of_several() {
 }
 
 #[test]
-fn a_program_s_inline_image_draws_under_its_text_within_its_pane() {
+fn a_program_s_inline_image_draws_over_its_cells_backgrounds_and_under_its_text_within_its_pane() {
     // A PNG of 20 by 40 pixels, as OSC 1337 sends it, then the line that
     // the panes wait for.
     let image = shell(concat!(
@@ -847,12 +847,23 @@ fn a_program_s_inline_image_draws_under_its_text_within_its_pane() {
         .iter()
         .position(|item| matches!(item, Item::Picture { .. }))
         .expect("the image's picture");
-    let cells = items
+    let backgrounds = items
         .iter()
         .position(|item| matches!(item, Item::Cells(_)))
         .expect("the cells");
-    // Under the text, within a clip of its pane, at its grid's top left.
-    assert!(picture < cells, "{items:?}");
+    let text = picture
+        + items[picture..]
+            .iter()
+            .position(|item| matches!(item, Item::Cells(_)))
+            .expect("the text");
+    // Over the pane's backgrounds alone and under its text, of no
+    // background, within a clip of its pane, at its grid's top left.
+    assert!(backgrounds < picture, "{items:?}");
+    let (Item::Cells(under), Item::Cells(over)) = (&items[backgrounds], &items[text]) else {
+        unreachable!()
+    };
+    assert!(under.glyphs.is_empty() && !under.backgrounds.is_empty());
+    assert!(over.backgrounds.is_empty() && !over.glyphs.is_empty());
     assert!(
         matches!(items[picture - 1], Item::PushClip(clip) if (clip.x, clip.y) == (room.x, room.y))
     );

@@ -992,8 +992,9 @@ impl<B: Backend> App<B> {
             .flatten()
             .into_iter()
             .collect();
-        // The panes' inline images, under their text where their z is
-        // negative, over it otherwise, each within its pane.
+        // The panes' cells and their inline images: those under the cells'
+        // backgrounds, the backgrounds, those under the text, the text, and
+        // those over it after every pane's, each within its pane.
         let mut over_text = Vec::new();
         {
             let renderer = &mut drawing.renderer;
@@ -1004,8 +1005,9 @@ impl<B: Backend> App<B> {
                     (pane.snapshot(), *corner, (size.columns, size.rows))
                 }),
             );
-            for (snapshot, corner, size) in shown {
-                let (under, over) = self.inline_images.items(
+            let batches = std::iter::once(batch).chain(other_batches);
+            for ((snapshot, corner, size), batch) in shown.zip(batches) {
+                let layers = self.inline_images.items(
                     renderer,
                     &*platform,
                     snapshot.images(),
@@ -1016,13 +1018,19 @@ impl<B: Backend> App<B> {
                     },
                     now,
                 );
-                items.extend(under);
-                over_text.extend(over);
+                items.extend(layers.below);
+                if layers.under.is_empty() {
+                    items.push(Item::Cells(batch));
+                } else {
+                    let (backgrounds, text) = backgrounds_apart(batch);
+                    items.push(Item::Cells(backgrounds));
+                    items.extend(layers.under);
+                    items.push(Item::Cells(text));
+                }
+                over_text.extend(layers.over);
             }
             self.inline_images.let_go(renderer, now);
         }
-        items.push(Item::Cells(batch));
-        items.extend(other_batches.into_iter().map(Item::Cells));
         items.extend(over_text);
         let bars = super::scrollbars::settle(
             &self.workspace,
@@ -1694,6 +1702,19 @@ pub(super) fn ring(room: Rect, width: u32) -> [Rect; 4] {
     ]
 }
 
+/// `batch` as two: its cells' backgrounds alone, and the rest of no
+/// background, so that what draws between them, as an image under the
+/// text, lies over the backgrounds and under the text and the cursor.
+fn backgrounds_apart(mut batch: CellBatch) -> (CellBatch, CellBatch) {
+    let backgrounds = CellBatch {
+        backgrounds: std::mem::take(&mut batch.backgrounds),
+        glyphs: Vec::new(),
+        lines: Vec::new(),
+        cursor: None,
+        ..batch
+    };
+    (backgrounds, batch)
+}
 /// The rooms of the grids of the panes of `layout` in `area`, in pixels: a
 /// split's first part takes its share of the area less `gap`, the divider's
 /// line and the panes' padding on either side of it, cut at a whole cell of

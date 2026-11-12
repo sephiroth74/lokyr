@@ -1263,6 +1263,75 @@ fn inline_images_draw_under_the_text_and_over_it_as_their_golden_images() {
 }
 
 #[test]
+fn an_image_under_the_text_draws_over_the_cells_backgrounds_as_its_golden_images() {
+    for scale in [1, 2] {
+        let Some(mut drawing) = Drawing::new(scale as f32) else {
+            return;
+        };
+        // The first row of a blue background, under the image.
+        let scene = Scene {
+            name: "inline-images-backgrounds",
+            columns: 10,
+            rows: 3,
+            text: "\x1b[44m Lokyr    \x1b[0m\r\n images".to_owned(),
+            cursor: None,
+            selection: None,
+            shapes: false,
+            fade: None,
+            highlights: None,
+        };
+        let origin = (MARGIN as i32, MARGIN as i32);
+        let (mut batch, background) = drawing.batch(&scene, origin);
+        let (cell_width, cell_height) = (batch.cell_width, batch.cell_height);
+        let under = drawing
+            .renderer
+            .picture_of_pixels(&IMAGE, 2, 2)
+            .unwrap()
+            .expect("a picture");
+        // The backgrounds alone, the image over the first two rows' first
+        // six cells, then the text of no background over it.
+        let backgrounds = lokyr_render_core::CellBatch {
+            backgrounds: std::mem::take(&mut batch.backgrounds),
+            glyphs: Vec::new(),
+            lines: Vec::new(),
+            cursor: None,
+            ..batch
+        };
+        let width = u32::from(scene.columns) * cell_width + 2 * MARGIN;
+        let height = u32::from(scene.rows) * cell_height + 2 * MARGIN;
+        let list = DisplayList {
+            background,
+            items: vec![
+                Item::Cells(backgrounds),
+                Item::Picture {
+                    rect: lokyr_render_core::Rect {
+                        x: origin.0,
+                        y: origin.1,
+                        width: 6 * cell_width,
+                        height: 2 * cell_height,
+                    },
+                    picture: under,
+                },
+                Item::Cells(batch),
+            ],
+            frame: drawing.font.atlas_frame(),
+        };
+        let updates = drawing.font.texture_updates();
+        drawing.renderer.update_textures(&updates).unwrap();
+        let pixels = drawing
+            .renderer
+            .draw_offscreen(&list, width, height)
+            .unwrap();
+        let most = (f64::from(width * height) * SHARE) as usize;
+        compare(
+            &format!("inline-images-backgrounds-{scale}x"),
+            (width, height, &pixels),
+            most,
+        );
+    }
+}
+
+#[test]
 fn a_pane_without_the_keyboard_draws_faded_as_its_golden_image() {
     for scale in [1, 2] {
         check(&dimmed(), scale);
