@@ -1,10 +1,10 @@
-# The start's gap at rest (F3-228)
+# The start's gap at rest
 
-Measured on 2026-11-08 between 17:26 and 17:33, the user away, as [0.7.0's A/B](ab-F3-77.md) found its startup 30 ms longer than 0.5.1's, its gap to the minimal app 46.9 ms past the budget of 35. The script, [`run.sh`](startup-F3-228/run.sh), its analysis, [`analyze.py`](startup-F3-228/analyze.py), and the reports are in [startup-F3-228](startup-F3-228/).
+Measured on 2026-11-08 between 17:26 and 17:33, unattended, as [0.7.0's A/B](ab-F3-77.md) found its startup 30 ms longer than 0.5.1's, its gap to the minimal app 46.9 ms past the budget of 35. The script, [`run.sh`](startup-F3-228/run.sh), its analysis, [`analyze.py`](startup-F3-228/analyze.py), and the reports are in [startup-F3-228](startup-F3-228/).
 
 ## Method
 
-The apps of 0.5.1's and 0.7.0's DMGs, notarized and stapled, and two builds of the same commit, 576b221, and the same signature, not notarized: one as 0.7.0, one whose look at the default terminal waits a second, so that its thread, which starts with the app since F3-227, is out of the start's way. First a round of each, unmeasured, so that every copy has started before: Microsoft Defender's real-time protection, on this Mac, scans a new executable at its first starts, and took about half a core as the session began, scanning the two builds just made. Then four rounds of rotated orders, warm, 10 runs after 2, to the first frame on the display, each of the minimal AppKit app of F0 as its floor, of 0.7.0's A/B's config, the same pause of 2 s before each run. The load average 4 to 7.
+The apps of 0.5.1's and 0.7.0's DMGs, notarized and stapled, and two builds of the same commit, 576b221, and the same signature, not notarized: one as 0.7.0, one whose look at the default terminal waits a second, so that its thread, which starts with the app since the first draft's fix, is out of the start's way. First a round of each, unmeasured, so that every copy has started before: Microsoft Defender's real-time protection, on this Mac, scans a new executable at its first starts, and took about half a core as the session began, scanning the two builds just made. Then four rounds of rotated orders, warm, 10 runs after 2, to the first frame on the display, each of the minimal AppKit app of F0 as its floor, of 0.7.0's A/B's config, the same pause of 2 s before each run. The load average 4 to 7.
 
 ## Results
 

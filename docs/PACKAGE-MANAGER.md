@@ -1,6 +1,6 @@
 # Sleip and the registry
 
-Sleip (`sleip`) is Lokyr's plugin package manager. The registry is the online service Sleip downloads from and that authors publish to ([ADR 0008](adr/0008-separate-package-manager.md)).
+Sleip (`sleip`) is Lokyr's plugin package manager. The registry is the online service Sleip downloads from and that authors publish to.
 
 ## Role
 
@@ -10,14 +10,14 @@ The split is the same as cargo and rustc: the app runs plugins, and Sleip provid
 |---|---|
 | Resolves versions, downloads, checks signatures and checksums, extracts | Reads `plugins.lock` and the store from disk |
 | Writes `plugins.lock` atomically | Watches the config directory and loads or unloads plugins |
-| Publishes to the registry, of a pull request in v0; its tokens and owners in v1 | Asks the user to confirm capabilities, compiles, activates |
+| Publishes to the registry, of a pull request in v0; its tokens and owners in v1 | Asks for consent to capabilities, compiles, activates |
 | Contains the HTTP/TLS clients | **Contains no networking code** |
 
 - **How it ships**:
   - Inside the app: `Lokyr.app/Contents/MacOS/sleip` on macOS, signed on its own and notarized with the app, its crates' licenses among the bundle's notices and in the release's bill of materials; next to the binary on Linux (F7).
-  - On the `PATH` of Lokyr's panes, whose end is the bundle's `Contents/MacOS`; elsewhere, once Lokyr › Install Command Line Tools… links it and `lokyr` into `/usr/local/bin`, asking for an administrator's password where the user may not write there ([UI-AND-FEATURES.md](UI-AND-FEATURES.md#the-command-line-tools)), or of its path or a link of the user's own.
+  - On the `PATH` of Lokyr's panes, whose end is the bundle's `Contents/MacOS`; elsewhere, once Lokyr › Install Command Line Tools… links it and `lokyr` into `/usr/local/bin`, asking for an administrator's password where you may not write there ([UI-AND-FEATURES.md](UI-AND-FEATURES.md#the-command-line-tools)), or of its path or a link of your own.
   - It is also packaged on its own: Homebrew, and Linux packages from F7.
-- **In-app UI**: the first-party `plugin-manager` plugin, after 1.0.0, in F3b ([ADR 0046](adr/0046-plugin-manager-after-1-0.md)), of the packages' service, which runs `sleip --json` underneath ([ADR 0045](adr/0045-packages-service.md)); until then Sleip's command line.
+- **In-app UI**: the first-party `plugin-manager` plugin, after 1.0.0, in F3b, of the packages' service, which runs `sleip --json` underneath; until then Sleip's command line.
 
 ## Commands
 
@@ -26,13 +26,13 @@ The split is the same as cargo and rustc: the app runs plugins, and Sleip provid
 | `sleip new <name>` | Scaffolds a plugin of Luau that works, as `owner/name`, in a folder of its name after the owner: its manifest, `src/init.luau` of a command that shows a notice, its texts in English, a test, the API's type definitions and luau-lsp's settings |
 | `sleip check` | Checks the plugin of the current folder as the registry's CI checks it: its manifest, of its capabilities, of the ones that the app refuses before 1.0.0, of its activations, an `osc:` one refused as the app refuses it until the handlers of OSC sequences come, and its `[uses]`; the plugin API's version against Sleip's; its catalogs, each that parses, and its commands' titles in English; its package's layout and sizes; and its sources' types, `src/**/*.luau` in strict mode, against the API's definitions that Sleip holds, of Luau's own type checker, of the solver that luau-lsp takes by default, without the globals that the app takes away, as `print` and `loadstring`; each problem of its file, line and column, and a failure of any |
 | `sleip test` | Runs the plugin's tests, each function of the table that each file `tests/*.luau` returns, of a `TestHost` of its own, the plugin made anew on the SDK's fake host as the app sets it up: of its manifest's capabilities, `[uses]` and slots, as the app reads them, of its package's `src/` alone, beside the app's commands and its first-party plugins' (`luau/commands.json`, which `just luau-commands` writes of the app's registry and its tests check); its commands run as the registry runs them, their arguments checked and their defaults given, and the events reach it of its subscriptions, as the app delivers them, a tab's or a pane's change that a plugin without `process-read` cannot read not, and a timer's event of `advance` alone, a posted one failing; a failure tells its file and line, and fails the command, as a file of no test does |
-| `sleip dev` | Checks the plugin and links its folder into the app's plugins, a dev entry of `plugins.lock` that names the folder, of no hash, which the app watches and reloads at each change, and checks it again at each change, telling its problems; Ctrl-C ends it, the entry taken back, the entry of an installed plugin of its name, whose place it took meanwhile, given back, and a lockfile that it made, of no plugin left, taken away ([ADR 0038](adr/0038-plugin-ecosystem-scope.md)) |
+| `sleip dev` | Checks the plugin and links its folder into the app's plugins, a dev entry of `plugins.lock` that names the folder, of no hash, which the app watches and reloads at each change, and checks it again at each change, telling its problems; Ctrl-C ends it, the entry taken back, the entry of an installed plugin of its name, whose place it took meanwhile, given back, and a lockfile that it made, of no plugin left, taken away |
 | `sleip add <plugin>[@<constraint>]` | Adds a plugin of the registry to `plugins.toml`, as owner/name, of the constraint given, as `acme/hello@^0.2`, or of the newest version that the app's plugin API takes, written as `^<version>`: its versions of the registry's signed index, yanked ones left out but one that the lockfile holds, resolved with the rest; the archive of each version picked downloaded, or of Sleip's cache, its SHA-256 checked against the index before the store takes it; the lockfile's source `registry+<address>`; the capabilities that it asks for told. A plugin that this Lokyr takes no version of is refused before anything is downloaded, in plain words, of its newest version's plugin API and this Lokyr's: a newer Lokyr to update to, as Lokyr › Check for Updates… does, or a version of the plugin to come for an older one. The plugins that it depends on keep the versions that the lockfile holds, a preference of the resolver, so that a conflict moves its plugins alone, to the newest of theirs that holds; a folder that `sleip dev` links stays as it is, the plugins that need it of its version; the registry's plugins that a folder's or a repository's plugin needs are gathered; an entry of `plugins.toml` edited by hand, of a constraint that the locked version no longer meets, another source, folder or repository, or a `rev` that the locked commit does not begin, is resolved afresh; a version that the store holds as the lockfile does is not downloaded again; `plugins.toml` is written before the lockfile, and put back if the lockfile cannot be |
 | `sleip add [<plugin>] --path <folder>` / `--git <url> (--tag <tag> \| --rev <commit>)` | Adds a plugin to `plugins.toml`, edited in place, of a folder or a git repository's tag or commit, its name its manifest's; fetches the list's plugins that the lockfile lacks, resolves them all against the app's plugin API, stores each package and writes the lockfile whole, which the app reloads; a failure changes nothing, the packages new to the store taken away and those that it held already kept. The registry's plugins come with registry v0 |
 | `sleip remove <plugin>` / `sleip update [<plugin>]` | Removes or updates, always through the lockfile, `update` taking the registry's plugins of the list and the ones that they depend on, or the one given alone, its dependencies kept as locked unless it needs others, to the newest versions that their constraints and the app's plugin API take, and fetching the folders and the repositories again; `update --locked` installs the lockfile as it is, as of a `plugins.lock` copied to another machine: each package of the registry that the store lacks fetched again at its version, its archive checked against the index and its package against the lockfile's digest, a `restored` event each, and refused if the lockfile would change; every install fetches so the registry's packages that the lockfile holds and the store lacks; a plugin removed takes out the plugins that it needed and that no other plugin of `plugins.toml`, nor of a `sleip dev` folder, needs |
 | `sleip list` / `search <text>` / `info <plugin>` | Installed plugins, catalog, details (capabilities, compatibility, versions) |
 | `sleip publish` | Opens the registry's pull request of a plugin's tagged version |
-| `sleip login` / `logout` / `yank` / `owner` (registry v1) | Registry accounts, which registry v0, of GitHub's accounts and pull requests, has none of ([ADR 0038](adr/0038-plugin-ecosystem-scope.md)) |
+| `sleip login` / `logout` / `yank` / `owner` (registry v1) | Registry accounts, which registry v0, of GitHub's accounts and pull requests, has none of |
 | `sleip gc` | Removes unreferenced packages from the store; refused without a lockfile in the config's folder while the store holds packages, as every config folder shares the store |
 | `sleip doctor` | Diagnoses the installation, the cache, and compatibility with the app |
 | `sleip search [<words>]` | Searches the registry's plugins, each that every word finds in its name or its description, every one of no word, of the registry's list, `/list`, signed as an index file is; as a table to a person, each plugin's name bold, its version and its description in columns, a description wrapped within the terminal's width, and an asterisk beside a name whose version shown this Lokyr does not take, of its plugin API, which a line after the table tells; `--offline` of the cache |
@@ -49,7 +49,7 @@ The split is the same as cargo and rustc: the app runs plugins, and Sleip provid
 
 **The events of `--json`**
 
-Each line is an object of its `event` and of the fields below; a field of no value is `null`, and a list may be empty. Every command may tell `waiting`, of `for`, what it waits for, as the store's lock, and, as it fails, `error`, of its `message`, before it ends of the exit code 1. The packages' service of the app, which Lokyr's own `plugin-manager` calls, runs `list`, `search`, `info`, `add`, `update` and `remove` so ([ADR 0045](adr/0045-packages-service.md)).
+Each line is an object of its `event` and of the fields below; a field of no value is `null`, and a list may be empty. Every command may tell `waiting`, of `for`, what it waits for, as the store's lock, and, as it fails, `error`, of its `message`, before it ends of the exit code 1. The packages' service of the app, which Lokyr's own `plugin-manager` calls, runs `list`, `search`, `info`, `add`, `update` and `remove` so.
 
 | Command | Event | Fields |
 |---|---|---|
@@ -146,15 +146,15 @@ config-schema = "schema.json"
 | `plugin.thread` | no | `main`, by default, or `worker`, a thread of the host's for the plugin alone ([PLUGIN-SYSTEM.md](PLUGIN-SYSTEM.md#execution-model)) |
 | `activation.on` | for `luau` | Activation events: `startup`, `command:<command>` or `command:<namespace>.*` of the plugin's own namespace, `event:<name>`, `slot:<name>`, `osc:<number>`; a `builtin` plugin's is `startup` by default |
 | `capabilities.*` | no | Requested capabilities, each `true` or `false`, but `net`, `fs-read`, `fs-write` and `env-read`, which list their hosts, paths and variables, as `net = ["api.github.com"]`: a path absolute or from `~`, of no `..`; a variable's name of letters, digits, `_` and `*`; a host's name of letters, digits, `.`, `-` and `*`; none of a control or hidden character, each bounded |
-| `uses.commands` | no | The commands that the plugin runs, by name or namespace (`tabs.*`), which Sleip shows at install, by category, with the capabilities they need ([ADR 0019](adr/0019-commands-errors-and-permissions.md)) |
-| `contributes.*` | no | Static contributions (commands, keybindings, slots, themes, config schema), used by the palette, the registry and validation; a command's `name`, `title` and `category`, `view` if none, which the menus and the palette show before a plugin of a `command:` activation activates; `config-schema` names the JSON Schema file of the plugin's section of the config, `[plugins.<namespace>]`, of the keywords that the app checks ([ADR 0032](adr/0032-plugins-config-and-state.md)) |
+| `uses.commands` | no | The commands that the plugin runs, by name or namespace (`tabs.*`), which Sleip shows at install, by category, with the capabilities they need |
+| `contributes.*` | no | Static contributions (commands, keybindings, slots, themes, config schema), used by the palette, the registry and validation; a command's `name`, `title` and `category`, `view` if none, which the menus and the palette show before a plugin of a `command:` activation activates; `config-schema` names the JSON Schema file of the plugin's section of the config, `[plugins.<namespace>]`, of the keywords that the app checks |
 | `dependencies` | no | Other plugins required at runtime; plugins talk through kernel commands, events and services |
 
 `pkg-model`'s `manifest::Manifest::parse` reads the manifest; one that does not read, as a capability misspelt or a field that the format lacks, tells its line and column. The first-party plugins' manifests, `plugins/*/plugin.toml`, of the kind `builtin`, sit beside their crates, which embed them; `app-core`'s build checks them, and fails with the file, the line and the column of one that does not read.
 
 ### `plugins.toml`
 
-The plugins the user has declared, like the dependencies in `Cargo.toml` or `pubspec.yaml`.
+The plugins that you have declared, like the dependencies in `Cargo.toml` or `pubspec.yaml`.
 
 ```toml
 # ~/.config/lokyr/plugins.toml
@@ -245,11 +245,11 @@ Archive rules:
 3. Verify the SHA-256 checksum, from the index, whose signature Sleip checked as it read it.
 4. Extract with the archive checks, then atomically rename into `store/<digest>/`, of the digest of its files. The store is **content-addressed**: an installed package never changes.
 5. Write the new `plugins.lock` to a temporary file, `fsync` it, and rename it atomically.
-6. The app, which watches the directory, sees the change and computes the diff. It re-checks the hash of each plugin it loads, asks the user to confirm new capabilities, then compiles and activates. No restart is needed.
+6. The app, which watches the directory, sees the change and computes the diff. It re-checks the hash of each plugin it loads, asks for consent to new capabilities, then compiles and activates. No restart is needed.
 
 ## Index (sparse protocol)
 
-Like the crates.io sparse index: one file per package, which plain static hosting can serve ([ADR 0031](adr/0031-registry-v0.md)).
+Like the crates.io sparse index: one file per package, which plain static hosting can serve.
 
 `GET /config.json`:
 
@@ -287,11 +287,11 @@ The keys are ed25519, a key and a signature written `ed25519:` and the base64 of
 
 ## Signatures
 
-- **Phase 1 (F4)**, as [ADR 0031](adr/0031-registry-v0.md) decided:
+- **Phase 1 (F4)**:
   - The registry's root key, offline, the maintainer's, whose public part Sleip holds in its binary, signs `keys.json`, the list of the index keys; a new root comes with a new Sleip.
   - An index key, which the registry's CI holds in a GitHub environment of `main` alone, signs each index file whole, after each merge; a stolen index key is taken off `keys.json`, which the Sleips already installed follow.
   - Sleip checks the index's signature, which covers each version's checksum.
-  - A publisher is its GitHub account, which its pull request carries, as the user chose on 4 November 2026: the registry's CI builds each archive from its tag, so that no publisher could sign it, and a publisher's own signature comes with trusted publishing, in phase 2.
+  - A publisher is its GitHub account, which its pull request carries: the registry's CI builds each archive from its tag, so that no publisher could sign it, and a publisher's own signature comes with trusted publishing, in phase 2.
 - **Phase 2 (F7)**: trusted publishing via OIDC (GitHub Actions) and Sigstore signatures, as PyPI and crates.io do.
 
 ### The registry's keys, kept
@@ -300,15 +300,14 @@ The keys are ed25519, a key and a signature written `ed25519:` and the base64 of
 - It signs `keys.json` alone, of `sleip registry sign-keys`, as an index key is added, replaced or taken off; the medium goes back offline at once. Its public part is in Sleip's `ROOT_KEYS`.
 - **The index key's secret** is `SLEIP_INDEX_KEY`, a secret of the registry's environment `index`, which the branch `main` alone reaches; made by `keygen` into a file that goes to the secret and is deleted, its public part in `keys.json`.
 - **An index key stolen or lost**: a new one made and put in the secret, `keys.json` signed again of the new key alone, the old one off it, and deployed by a run of the registry's CI; the Sleips installed follow `keys.json`; then, and only then, the next Sleip's `KEYS_NOT_BEFORE` takes the new `keys.json`'s time, so that it never takes the old one again, at a first contact either, and the registry pins that Sleip. The registry's index checks the deployed lines against its own `keys.json`, so that the lines of the key taken off are made anew of the releases' assets, signed of the new key.
-- **`keys.json` once a year**: Sleip refuses online a `keys.json` older than a year (`KEYS_LIFETIME`), so that the maintainer signs it anew, of the same keys, with the root key offline, before the current one's year ends: the one of 10 November 2026 before 10 November 2027.
+- **`keys.json` once a year**: Sleip refuses online a `keys.json` older than a year (`KEYS_LIFETIME`), so that it is signed anew, of the same keys, with the root key offline, before the current one's year ends: the one of 10 November 2026 before 10 November 2027.
 - **The index every few hours**: Sleip refuses online an index file or the list older than a week (`INDEX_LIFETIME`); the registry's CI signs them anew every six hours, and its scheduled runs turn the schedule on again, which GitHub turns off after 60 days of no activity of a public repository's.
-- **The root key lost or stolen**: a new root made, its public part in a new Sleip's `ROOT_KEYS`, the old one's taken off, and `keys.json` signed again of it; the Sleips before it read no `keys.json` of the new root, and their users take the new Sleip, as the app's update brings it.
+- **The root key lost or stolen**: a new root made, its public part in a new Sleip's `ROOT_KEYS`, the old one's taken off, and `keys.json` signed again of it; the Sleips before it read no `keys.json` of the new root, and the new Sleip comes with the app's update.
 
 ## Registry
 
 ### v0: static (end of F4)
 
-As [ADR 0031](adr/0031-registry-v0.md) decided, on 4 November 2026:
 - **Repo**: `sephiroth74/sleip-registry` holds a file of each plugin, `plugins/<owner>/<name>.toml`, of its repository's URL, over HTTPS, its manifest at its root, and of its versions, in their order, each greater than the one before, each of its tag, the tag's commit, its whole hash, and whether it is `yanked`; `sleip-index`'s `registry` reads it:
 
   ```toml

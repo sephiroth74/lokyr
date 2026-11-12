@@ -1,6 +1,6 @@
-# A Mac of no management for F4-58's measures
+# A Mac of no management for the measures at rest
 
-F4-58 found `allow-jit` lengthening Lokyr's latency's tail in some sessions and not in others, on a Mac that Microsoft Defender and Jamf manage, whose activity the sessions could not control ([rest-F4-58](../../rest-F4-58.md)). These steps prepare a MacBook Pro M1 of no management, as most of Lokyr's users have, so that the same measures run there, driven over SSH from the Mac of the repository: the latency of 0.7.0's and 0.8.0's apps, each also signed again, 0.7.0's with `allow-jit` and 0.8.0's without; the startup; the entitlement's micro-benchmarks; and, if Xcode is there, the window's motion, which Defender's scans of Instruments' recordings kept from the managed Mac.
+The measures at rest found `allow-jit` lengthening Lokyr's latency's tail in some sessions and not in others, on a Mac that Microsoft Defender and Jamf manage, whose activity the sessions could not control ([rest-F4-58](../../rest-F4-58.md)). These steps prepare a MacBook Pro M1 of no management, as most of Lokyr's users have, so that the same measures run there, driven over SSH from the Mac of the repository: the latency of 0.7.0's and 0.8.0's apps, each also signed again, 0.7.0's with `allow-jit` and 0.8.0's without; the startup; the entitlement's micro-benchmarks; and, if Xcode is there, the window's motion, which Defender's scans of Instruments' recordings kept from the managed Mac.
 
 ## 1. macOS
 

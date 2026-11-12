@@ -83,7 +83,7 @@ def summary(data):
         f"{last['title']} against {against['title']}, both measured in {last['title']}'s session, "
         f"[{last['report'][:-3]}]({last['report']}), but a measure that names another: each measure's "
         "change, the share of its budget, "
-        "the best of the other terminals, of [F2-134](compare-F2-134.md) and [F3-152](motion-F3-152.md), "
+        "the best of the other terminals, of [the comparison of 31 October 2026](compare-F2-134.md) and [the window's motion](motion-F3-152.md), "
         "with Lokyr's own value of that session where its conditions differ, and whether it is as before, "
         "better, or worse beyond its rounds' spread.",
         "",
@@ -106,17 +106,17 @@ def summary(data):
                      f"{verdict(measure, before, after)} |")
     lines += ["", "The latency's budgets, 2 refreshes at the p50 and 4.5 at the p99, set of a display at 120 Hz, "
               "are of these sessions' 60 Hz here: 33.3 and 75 ms. The throughput's of `cat` is the faster of "
-              "Ghostty and Alacritty less 10 %, of [F2-134](compare-F2-134.md): Ghostty's 306 MiB/s.",
+              "Ghostty and Alacritty less 10 %, of [the comparison of 31 October 2026](compare-F2-134.md): Ghostty's 306 MiB/s.",
               "", "## Over the releases", "",
               "Each measure over the releases, a dot of each release and a ring of a build between "
               "two, its budget a dashed line, and the best of the other terminals a dotted one, of "
-              "[F2-134](compare-F2-134.md), and of [F3-152](motion-F3-152.md) for the window's motion, "
+              "[the comparison of 31 October 2026](compare-F2-134.md), and of [the window's motion](motion-F3-152.md) for the window's motion, "
               "measured once of their versions then, Lokyr's own value of that session beside it where "
               "its conditions differ from the releases' sessions, the latency's by Typometer, of the "
               "screen; of the columns of [the table](#every-measure): different sessions, which compare "
               "within a few percent alone. A panel without a dashed line has no budget, as `seq`'s, SGR's, "
               "CJK's and the window's motion; without a dotted one, no other terminal was measured of it: "
-              "F2-134 timed no minimal app beside the others' first windows, which their startup's gap needs, "
+              "that comparison timed no minimal app beside the others' first windows, which their startup's gap needs, "
               "nor the four workloads but `cat`, nor a frame's CPU.", ""]
     for chart in data["charts"]:
         subtitle = chart["subtitle"][0].lower() + chart["subtitle"][1:]

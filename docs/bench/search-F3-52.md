@@ -1,4 +1,4 @@
-# The search of 100 000 lines through the app's service (F3-52)
+# The search of 100 000 lines through the app's service
 
 Measured on 7 November 2026 with `just bench-search`, on the machine of [the F0 baseline](baseline-F0.md): an Apple M5 Pro, macOS 27.2, on AC power, the load average 1.8 as the runs began. Rust 1.99.0, a release build of the kernel's tests.
 
@@ -18,6 +18,6 @@ Measured on 7 November 2026 with `just bench-search`, on the machine of [the F0 
 | 2 | 1.0 ms | 22.5 ms |
 | 3 | 1.0 ms | 28.1 ms |
 
-The search of 100 000 lines counts every match in a sixth of the 150 ms of F3's exit criterion, and shows its first within a millisecond, as the view's rows and the part above them come first. The engine alone takes 27.2 ms over 100 000 lines of 41 to 93 characters ([F1-54](search-F1-54.md)); the service's parts, its pins, its events and the plugin's requests add nothing that shows over these shorter, fuller lines.
+The search of 100 000 lines counts every match in a sixth of the 150 ms of F3's exit criterion, and shows its first within a millisecond, as the view's rows and the part above them come first. The engine alone takes 27.2 ms over 100 000 lines of 41 to 93 characters ([search-F1-54](search-F1-54.md)); the service's parts, its pins, its events and the plugin's requests add nothing that shows over these shorter, fuller lines.
 
-A debug build takes about 500 ms for all of them and 10.7 ms for the first. Before F3-52, the main thread took the terminal's lock as the search's thread did, in turn, so that a request of the plugin's could wait for the whole search: the first match then showed as late as the last.
+A debug build takes about 500 ms for all of them and 10.7 ms for the first. Before the build measured here, the main thread took the terminal's lock as the search's thread did, in turn, so that a request of the plugin's could wait for the whole search: the first match then showed as late as the last.

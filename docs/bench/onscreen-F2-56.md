@@ -1,6 +1,6 @@
-# CPU per frame and throughput on screen (F2-56)
+# CPU per frame and throughput on screen
 
-Measured on 2026-10-31, on the bundle of the commit after acf9679, against the [budgets](../PERFORMANCE.md#budgets): a frame's time on the CPU, p99 ≤ 2 ms at 4K, and the throughput within 10% of the faster of Ghostty and Alacritty, but for [ADR 0015](../adr/0015-vt-core-throughput-exception.md)'s exception. The raw results, one line a run, and each terminal's config are in [onscreen-F2-56/](onscreen-F2-56/).
+Measured on 2026-10-31, on the bundle of the commit after acf9679, against the [budgets](../PERFORMANCE.md#budgets): a frame's time on the CPU, p99 ≤ 2 ms at 4K, and the throughput within 10% of the faster of Ghostty and Alacritty, but for the exception of the bottom region. The raw results, one line a run, and each terminal's config are in [onscreen-F2-56/](onscreen-F2-56/).
 
 ## Method
 
@@ -50,11 +50,11 @@ Lokyr's frames as each workload's output draws, in ms, at 3840 × 2224 pixels: t
 
 ## The gaps
 
-- **The throughput**: [F2-145](../tasks/F2-macos-single-pane.md#f2-145--the-outputs-way-from-the-pty) takes the reader's loop, its reads' size and count, the `poll` before each, its thread's priority, and the lock's handovers.
-- **A frame's new glyphs**: [F2-146](../tasks/F2-macos-single-pane.md#f2-146--a-frames-new-glyphs) takes the first frames of glyphs that the atlas lacks.
+- **The throughput**: the next change takes the reader's loop, its reads' size and count, the `poll` before each, its thread's priority, and the lock's handovers.
+- **A frame's new glyphs**: [glyphs-F2-146](glyphs-F2-146.md) takes the first frames of glyphs that the atlas lacks.
 - **The instrumentation**: the phases are timed with the app's own clock in `--bench output`; `tracing` spans and the signposts that Instruments shows wait for the overlay's and IPC's measures, as no subscriber reads them yet.
 
-## After F2-145
+## After the output's way from the PTY
 
 Measured on 2026-10-31, on the bundle of the commit after ce85fd6, as above, of Lokyr, Ghostty and Alacritty alone, which the criterion names: the raw results are in [after-F2-145.jsonl](onscreen-F2-56/after-F2-145.jsonl).
 
@@ -65,26 +65,26 @@ Measured on 2026-10-31, on the bundle of the commit after ce85fd6, as above, of 
 | `sgr.txt` | **245.4** | 138.4 | 249.8 | 149.8 | −1.8% |
 | `cjk.txt` | **143.6** | 112.7 | 174.8 | 152.7 | −17.8% |
 
-- **The cause**: one thread read the PTY and parsed what it read, in turn. A macOS terminal queues 1 KiB of output, which every read takes, 98.5% of them 1024 bytes exactly: the program waited, each KiB, for the parse, and the reader for the program's refill, two wakeups a KiB. A reader of `cat`'s output that does nothing else takes 154 MiB/s as Lokyr read, a `poll` then a `read`; 174 reading first, and polling once the queue is empty; 182 with a blocking read; 313 with reads that never wait. With 1 to 3 µs of work a KiB between its reads, as a parse takes, each of the first three takes 134 to 176 MiB/s. The reader's thread at the user-interactive QoS changed nothing, 2.16 s for 256 MiB either way. Ghostty, as `sample` shows, reads on a thread and parses on another.
+- **The cause**: one thread read the PTY and parsed what it read, in turn. A macOS terminal queues 1 KiB of output, which every read takes, 98.5% of them 1024 bytes exactly: the program waited, each KiB, for the parse, and the reader for the program's refill, two wakeups a KiB. A reader of `cat`'s output that does nothing else takes 154 MiB/s as Lokyr read, a `poll` then a `read`; 174 reading first, and polling once the queue is empty; 182 with a blocking read; 313 with reads that never wait. With 1 to 3 µs of work a KiB between its reads, as a parse takes, each of the first three takes 134 to 176 MiB/s. The reader's thread at the QoS class user-interactive changed nothing, 2.16 s for 256 MiB either way. Ghostty, as `sample` shows, reads on a thread and parses on another.
 - **The fix**: a thread of the PTY's reads into a ring of four buffers of 64 KiB, ahead of the I/O thread's parse, and bridges the refills of a stream that fills the queue, as [ARCHITECTURE.md](../ARCHITECTURE.md#threads-and-data-flow) tells: ASCII, `seq` and SGR come within 3% of Ghostty, `seq` ahead.
 - **CJK is the parse's now**: the I/O thread parses in 98% of the samples, and the reader waits for a free buffer in 54%. The VT core alone, as `lokyr-throughput` feeds it, parses `cjk.txt` at 156.7 MiB/s, where `alacritty_terminal` parses it at 280, 0.56 of it, though vtebench's `unicode` scenario, without emoji of joiners, skin tones and variation selectors, keeps 1.04: the clusters take `print_chars`, the segmenter, `write_stretch` and `join_previous`, and an allocation each, `malloc` and `free` about a seventh of the core's samples.
 - **What it costs**: a thread more for each pane; four buffers where there was one, of which only the pages written are resident, all 256 KiB once a pane has had a flood; on a stream that fills the queue, up to 16 reads that do not wait for each refill, about 8 µs of CPU, where an idle or interactive pane never spins. A key's echo, which goes through both threads, takes as long: at 60 Hz, the median of 200 synthetic keys of `lokyr --bench latency`, 21.1 and 21.6 ms, against 22.6 and 20.8 at ce85fd6, in turn.
-- **A frame's time**, at 3840 × 2224 pixels, of the three runs: 548 frames of ASCII, p50 0.28 ms, p99 1.52 at most; 75 of `seq`, 0.27 and 2.30; 91 of SGR, 0.55 and 5.68; 142 of CJK, 0.57 and 17.41, whose first frames of new glyphs [F2-146](../tasks/F2-macos-single-pane.md#f2-146--a-frames-new-glyphs) takes.
+- **A frame's time**, at 3840 × 2224 pixels, of the three runs: 548 frames of ASCII, p50 0.28 ms, p99 1.52 at most; 75 of `seq`, 0.27 and 2.30; 91 of SGR, 0.55 and 5.68; 142 of CJK, 0.57 and 17.41, whose first frames of new glyphs [glyphs-F2-146](glyphs-F2-146.md) takes.
 - **The headless throughput of F1** holds: the VT core did not change.
 
-## After F2-147
+## After the core's print of clusters
 
 On screen, on the bundle of bc7c256, as above, of Lokyr, Ghostty and Alacritty; the raw results are in [after-F2-147.jsonl](onscreen-F2-56/after-F2-147.jsonl). The median of three runs, in MiB/s:
 
-| Workload | Lokyr | After F2-145 | Ghostty | Alacritty | Against the faster |
+| Workload | Lokyr | Lokyr before | Ghostty | Alacritty | Against the faster |
 |---|---|---|---|---|---|
 | `ascii.txt`, 1 GiB | 290.5 | 293.1 | 295.4 | 167.2 | −1.7% |
 | `seq.txt` | 180.0 | 183.0 | 171.8 | 82.8 | +4.8% |
 | `sgr.txt` | 240.5 | 245.4 | 249.9 | 150.9 | −3.8% |
 | `cjk.txt` | **185.5** | 143.6 | 168.4 | 152.6 | +10.2% |
 
-- **CJK is ahead of Ghostty** by a tenth, where it was 17.8% behind; the other workloads stay within 4% of it, as after F2-145, whose path this does not take.
-- **A frame's time**, at 3840 × 2224 pixels, of the three runs: 564 frames of ASCII, p50 0.28 ms, p99 1.50 at most; 74 of `seq`, 0.29 and 2.05; 89 of SGR, 0.52 and 6.62; 117 of CJK, 0.48 and 21.12, whose first frames of new glyphs [F2-146](../tasks/F2-macos-single-pane.md#f2-146--a-frames-new-glyphs) takes.
+- **CJK is ahead of Ghostty** by a tenth, where it was 17.8% behind; the other workloads stay within 4% of it, as after the output's change, whose path this does not take.
+- **A frame's time**, at 3840 × 2224 pixels, of the three runs: 564 frames of ASCII, p50 0.28 ms, p99 1.50 at most; 74 of `seq`, 0.29 and 2.05; 89 of SGR, 0.52 and 6.62; 117 of CJK, 0.48 and 21.12, whose first frames of new glyphs [glyphs-F2-146](glyphs-F2-146.md) takes.
 - **A first round**, with the display asleep and the screen locked, drew two frames a run, and was left out: a window that does not show draws nothing, and its terminal reads faster.
 
 Measured on 2026-10-31, on the commit after ab12125, against it, of the VT core alone: `lokyr-throughput`, and a harness that feeds a file to the terminal in reads of 64 KiB at 120 × 40, its line feeds after carriage returns as a terminal's ONLCR puts them, the median of five runs.
@@ -101,5 +101,5 @@ Measured on 2026-10-31, on the commit after ab12125, against it, of the VT core 
 
 - **The cause**: the codepoints that join a cluster, a ZWJ, a skin tone, a variation selector, the second of a flag's indicators, took 38% of the time of `cjk.txt`, which takes 0.761 s with them and 0.473 s without, as many lines: each ended the stretch of characters that the terminal writes at once, looked its properties, its width and its segmentation up again, and found the cluster's row in its page five to seven times. The allocations that a first sample of `lokyr-throughput` showed were `alacritty_terminal`'s, which runs in the same process.
 - **The fix**: a codepoint that joins a cluster of the stretch and leaves it as wide stays in the stretch, and goes into the page's grapheme table once the stretch is written; the stretch's buffers are the terminal's own, where each run filled 512 bytes of them anew; a join that changes a cluster's width finds its row once, and a widening too.
-- **Against `alacritty_terminal`**, as `lokyr-throughput` feeds both: `cjk.txt` from 0.58 of its rate to 0.75, 203.0 MiB/s against 271.2. vtebench's scenarios, twice each, keep their rates: `unicode` 408.6 and 406.1 MiB/s against 410.3 and 410.3 before, 1.03 and 1.02 of `alacritty_terminal`'s; the bottom region 0.71 and 0.68, above ADR 0015's 0.6.
+- **Against `alacritty_terminal`**, as `lokyr-throughput` feeds both: `cjk.txt` from 0.58 of its rate to 0.75, 203.0 MiB/s against 271.2. vtebench's scenarios, twice each, keep their rates: `unicode` 408.6 and 406.1 MiB/s against 410.3 and 410.3 before, 1.03 and 1.02 of `alacritty_terminal`'s; the bottom region 0.71 and 0.68, above the 0.6 that the criterion asks of it.
 - **The same states**: the terminal, fed whole and a byte at a time, holds the same cells, clusters, styles and cursor after each of 200 000 generated inputs, of emoji, joiners, selectors, flags, margins, insert mode and wraps, and each of the 83 004 of the fuzzers' corpora; and the same as before the change, after each of 182 851 of them. The fuzzers ran ten minutes each, `terminal` and `differential`, without a failure.

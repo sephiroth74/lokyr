@@ -1,6 +1,6 @@
 # Writing a plugin
 
-A plugin of Lokyr is a script in [Luau](https://luau.org), a small, fast language of Lua's family, that runs in a sandbox of its own: it adds commands, keys, menu items, bars and panels, and reads and changes the terminal through the host's API, asking for the capabilities that it needs, which the user grants. [Sleip](../PACKAGE-MANAGER.md), Lokyr's package manager, makes, checks, tests, installs and publishes plugins; the registry, [pkg.lokyr.dev](https://pkg.lokyr.dev), lists the published ones.
+A plugin of Lokyr is a script in [Luau](https://luau.org), a small, fast language of Lua's family, that runs in a sandbox of its own: it adds commands, keys, menu items, bars and panels, and reads and changes the terminal through the host's API, asking for the capabilities that it needs, which the person who runs it grants. [Sleip](../PACKAGE-MANAGER.md), Lokyr's package manager, makes, checks, tests, installs and publishes plugins; the registry, [pkg.lokyr.dev](https://pkg.lokyr.dev), lists the published ones.
 
 This guide makes a plugin from nothing, runs it in Lokyr as you edit it, gives it a setting and a capability, and publishes it. Its last part, [the API at a glance](#the-api-at-a-glance), tells where everything else is.
 
@@ -30,7 +30,7 @@ A plugin's name is `owner/name`, of lowercase letters, digits and `-`, from a le
 | `tests/hello.luau` | Its tests |
 | `lokyr.d.luau` | The API's types, the reference of every call, event and shape |
 | `.luaurc`, `.vscode/settings.json` | Luau's strict mode, and the language server's settings |
-| `README.md` | What the plugin does, for its users |
+| `README.md` | What the plugin does, for the people who install it |
 
 ## 2. Read it
 
@@ -83,7 +83,7 @@ end
 return Plugin
 ```
 
-Every call reaches the host through `cx`, which each callback gets, as `cx.open_panel` and `cx.start_timer`. A call answers its value, or `true`; or, as it fails, `nil`, the error's message and its code: `assert` turns a failure into an error of the plugin's, which the host tells. The texts come of the plugin's catalogs in the user's language, `cx.message("hello-notice")`, and a command's title of the message `command-hello-say`.
+Every call reaches the host through `cx`, which each callback gets, as `cx.open_panel` and `cx.start_timer`. A call answers its value, or `true`; or, as it fails, `nil`, the error's message and its code: `assert` turns a failure into an error of the plugin's, which the host tells. The texts come of the plugin's catalogs in the language that Lokyr shows, `cx.message("hello-notice")`, and a command's title of the message `command-hello-say`.
 
 ## 3. Check it and test it
 
@@ -120,9 +120,9 @@ sleip dev
 
 ## 5. Give it a setting and a capability
 
-Let the user choose the greeting, in Lokyr's config, and have it copied to the clipboard if they like.
+Let whoever uses the plugin choose the greeting, in Lokyr's config, and have it copied to the clipboard if they like.
 
-**The setting.** A plugin's settings are its section of the user's `config.toml`, which a [JSON Schema](https://json-schema.org) of the plugin's describes; Lokyr checks the section against it, and a wrong value refuses the section alone, with a notice at its line. Make `hello.schema.json`:
+**The setting.** A plugin's settings are its section of Lokyr's `config.toml`, which a [JSON Schema](https://json-schema.org) of the plugin's describes; Lokyr checks the section against it, and a wrong value refuses the section alone, with a notice at its line. Make `hello.schema.json`:
 
 ```json
 {
@@ -199,15 +199,15 @@ greeting = "Ciao!"
 copy = true
 ```
 
-The first time the plugin starts with a new capability, Lokyr asks the user whether it may hold it, of the capability's risk; its default button refuses, and a refused capability makes its calls fail, as the plugin then tells or not. The user's answers stay in `permissions.toml`, beside the config, where they can take one back. Ask for the least that the plugin needs: [the capabilities](../PLUGIN-SYSTEM.md#capabilities) list each one, what it allows and its risk.
+The first time the plugin starts with a new capability, Lokyr asks whether the plugin may hold it, of the capability's risk; its default button refuses, and a refused capability makes its calls fail, as the plugin then tells or not. The answers stay in `permissions.toml`, beside the config, where one can be taken back. Ask for the least that the plugin needs: [the capabilities](../PLUGIN-SYSTEM.md#capabilities) list each one, what it allows and its risk.
 
-## 6. Install it as your users will
+## 6. Install it as others will
 
 ```sh
 sleip add --path .
 ```
 
-installs the plugin of its folder, copied into Sleip's store, as a user's install of the registry would: `sleip list` shows it, and `sleip remove acme/hello` takes it away. `sleip add --git <url> --tag v0.1.0` installs it of a repository's tag.
+installs the plugin of its folder, copied into Sleip's store, as an install of the registry would: `sleip list` shows it, and `sleip remove acme/hello` takes it away. `sleip add --git <url> --tag v0.1.0` installs it of a repository's tag.
 
 ## 7. Publish it
 
@@ -253,7 +253,7 @@ A new version is a new `version` in the manifest, a new tag, and `sleip publish`
 | Drawing over a pane | `decorate`, `undecorate`, `mark_gutter`, `unmark_gutter` |
 | Windows, tabs and panes | `windows`, `tabs`, `agents`, `layout`, `pane_grid`, `pane_title`, `open_window`, `close_window`, `new_tab`, `close_tab`, `split`, `close_pane`, `activate_tab`, `focus_pane`, `move_tab`, `swap_panes`, `zoom`, `resize_pane`, `set_ratio`, `equalize`, `set_tab_title`, `set_tab_color`, and the rest of their family |
 | Views and panels | `open_panel`, `close_panel`, `request_render`, `set_text`, `select`, `reveal`, `focus_node` |
-| The user | `ask_text`, `save_file`, `open`, `open_at`, `opens`, `message`, `keys_of`, `notice_shows` |
+| Questions, opening and texts | `ask_text`, `save_file`, `open`, `open_at`, `opens`, `message`, `keys_of`, `notice_shows` |
 | The clipboard | `clipboard_text`, `set_clipboard_text`, `set_clipboard_image` |
 | Images | `render_image`, `drop_image` |
 | Settings and state | `config`, `state`, `set_state`, `keeps_state` |
@@ -265,9 +265,9 @@ A new version is a new `version` in the manifest, a new tag, and `sleip publish`
 
 **Events** come as a batch, each a table of its `kind`: the workspace's, as `tab-created`, `pane-focused` and `tab-changed`, which a plugin subscribes to; the pointer's, `pointer`; the commands that the shell marks, `command-started` and `command-ended`; and those of the plugin alone, as its timers', `timer`, its panels', `panel-closed`, its config's, `config-changed`, an answer, `answered`, a save, `saved`, and another plugin's of its own, `custom`.
 
-**Views** are data: a view is a tree of nodes, each a table of its `kind`, as `container`, `text`, `button`, `toggle`, `field`, `list`, `scroll`, `progress`, `tabs` and `image`, of a layout of flexbox's terms and a style whose colors are tokens of the user's theme, as `panel.bg` and `text.secondary`, never colors of the plugin's. The host draws them, keeps their state, as a field's text, of their keys, and makes them accessible to VoiceOver. A plugin's views fill the window's **slots**, as the tab bar, a strip across the top, the status bar, the panes' headers and the titlebar's buttons, which the manifest's `slots` declares, and its **panels**, which float over the window at a cell, the cursor, the pointer, a node, or a corner of a pane or of the window.
+**Views** are data: a view is a tree of nodes, each a table of its `kind`, as `container`, `text`, `button`, `toggle`, `field`, `list`, `scroll`, `progress`, `tabs` and `image`, of a layout of flexbox's terms and a style whose colors are tokens of the theme in force, as `panel.bg` and `text.secondary`, never colors of the plugin's. The host draws them, keeps their state, as a field's text, of their keys, and makes them accessible to VoiceOver. A plugin's views fill the window's **slots**, as the tab bar, a strip across the top, the status bar, the panes' headers and the titlebar's buttons, which the manifest's `slots` declares, and its **panels**, which float over the window at a cell, the cursor, the pointer, a node, or a corner of a pane or of the window.
 
-**Capabilities** guard the calls that reach what is the user's: the panes' text, typing into them, the clipboard, the processes, the workspace, the notifications, the Mac's sleep, the theme and the font in the config. A call of a capability that the plugin lacks fails, of the code 302; [the capabilities](../PLUGIN-SYSTEM.md#capabilities) list them all.
+**Capabilities** guard the calls that reach what belongs to the person who runs Lokyr: the panes' text, typing into them, the clipboard, the processes, the workspace, the notifications, the Mac's sleep, the theme and the font in the config. A call of a capability that the plugin lacks fails, of the code 302; [the capabilities](../PLUGIN-SYSTEM.md#capabilities) list them all.
 
 **Limits.** Each callback runs within its deadline, 16 ms for `render` and `applies`, 250 ms for a command, an event or a view's event, and a second for the activation; a plugin holds 64 MB at most: past them the plugin faults, and the host stops it, starts it again after a while, and turns it off at its third fault within a minute. A callback writes 10 000 times at most, a write past them failing; a value that the plugin gives the host carries 16 MiB of text or bytes at most; its images take 32 million pixels at once, given back at 4 million a second. [The limits](../PLUGIN-SYSTEM.md#limits-and-isolation) tell them all.
 

@@ -1,6 +1,6 @@
-# The first frame a refresh later than 0.2.0's (F3-105)
+# The first frame a refresh later than 0.2.0's
 
-[F3-83](ab-F3-83.md) found 0.3.0's warm startup a refresh at 60 Hz later than 0.2.0's, its runs on the next step of 16.7 ms. Measured on 2026-11-02 in two sessions of warm startups, in turns, three rounds of 10 runs after 2 each, `lokyr-bench startup --first-frame`, with F3-83's config, on the Mac of [F3-83](ab-F3-83.md#machine), on AC power. The scripts are in [startup-F3-105](startup-F3-105/), `run.sh` and `verify.sh`, the reports in `four` and `fixed`.
+[0.3.0's A/B](ab-F3-83.md) found 0.3.0's warm startup a refresh at 60 Hz later than 0.2.0's, its runs on the next step of 16.7 ms. Measured on 2026-11-02 in two sessions of warm startups, in turns, three rounds of 10 runs after 2 each, `lokyr-bench startup --first-frame`, with that A/B's config, on [its Mac](ab-F3-83.md#machine), on AC power. The scripts are in [startup-F3-105](startup-F3-105/), `run.sh` and `verify.sh`, the reports in `four` and `fixed`.
 
 ## Which part: four bundles
 

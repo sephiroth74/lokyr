@@ -6,7 +6,7 @@ Lokyr speaks English and Italian, and every other language is welcome. This guid
 
 Every text that Lokyr shows you: its menus, the titles of its commands, its alerts and notices, the line of a window whose program ended, the find bar and the tab bar, and the prompts that macOS shows when a program in the terminal asks for the camera, the microphone or a folder. The texts are in [Project Fluent](https://projectfluent.org) catalogs, `.ftl` files, a set for each language; English is the source, which every other language follows.
 
-Some texts stay in English, as the [decision on localization](docs/adr/0020-localization.md) says: the log, which reports of problems quote; the `sleip` command line; the documentation; and the config's keys and values, which are the same in every language.
+Some texts stay in English: the log, which reports of problems quote; the `sleip` command line; the documentation; and the config's keys and values, which are the same in every language.
 
 The catalogs, each in a folder of its language's code, `en` for English, `it` for Italian:
 
@@ -25,6 +25,7 @@ The catalogs, each in a folder of its language's code, `en` for English, `it` fo
 | [`plugins/progress/locales/en/progress.ftl`](plugins/progress/locales/en/progress.ftl) | The programs' progress |
 | [`plugins/command-header/locales/en/command-header.ftl`](plugins/command-header/locales/en/command-header.ftl) | The command at a pane's top |
 | [`plugins/copy-mode/locales/en/copy-mode.ftl`](plugins/copy-mode/locales/en/copy-mode.ftl) | The copy mode |
+| [`plugins/quick-tips/locales/en/quick-tips.ftl`](plugins/quick-tips/locales/en/quick-tips.ftl) | The quick tips |
 
 The [`keymap-macos`](docs/plugins/keymap-macos.md) plugin has no texts of its own.
 

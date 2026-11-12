@@ -33,8 +33,8 @@
     },
     {
       "id": "after-F3-49",
-      "label": "F3-49",
-      "title": "After F3-49",
+      "label": "6 Nov",
+      "title": "Build of 6 November",
       "report": "ab-F3-49.md",
       "build": true,
       "against": "0.5.0"
@@ -48,8 +48,8 @@
     },
     {
       "id": "after-F3-72",
-      "label": "F3-72",
-      "title": "After F3-72",
+      "label": "8 Nov",
+      "title": "Build of 8 November",
       "report": "movement-F3-72.md",
       "build": true,
       "against": "0.5.1"
@@ -106,7 +106,7 @@
       },
       "sessions": {
         "0.7.0": {
-          "title": "F3-228",
+          "title": "the startup at rest",
           "report": "startup-F3-228.md"
         }
       }

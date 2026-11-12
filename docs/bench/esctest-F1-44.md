@@ -1,6 +1,6 @@
-# esctest, before the compatibility fixes (F1-44)
+# esctest, before the compatibility fixes
 
-Measured on 2026-10-18 with `bolt-esctest`, the first run of [esctest](https://github.com/ThomasDickey/esctest2) in Bolt's headless terminal, to find what the [compatibility fixes](../tasks/F1-vt-core.md#f1-45--compatibility-fixes-part-1) have to do. The full report, every failure with its reason, is in [esctest-F1-44/report.txt](esctest-F1-44/report.txt).
+Measured on 2026-10-18 with `bolt-esctest`, the first run of [esctest](https://github.com/ThomasDickey/esctest2) in Bolt's headless terminal, to find what the compatibility fixes have to do. The full report, every failure with its reason, is in [esctest-F1-44/report.txt](esctest-F1-44/report.txt).
 
 To repeat the measurement, run `just esctest`. It downloads esctest2 at the pinned commit into `target/esctest2` and runs it in the harness; arguments go to esctest, as `just esctest --include=CUPTests`.
 

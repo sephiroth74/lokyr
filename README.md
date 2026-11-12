@@ -41,7 +41,7 @@
 - **Plugins you can trust.** A third-party plugin is Luau source, in a VM of its own, with a memory limit and a deadline. It reaches the screen, the clipboard, files or the network only through the capabilities that it declares, which Sleip shows at install and Lokyr asks for on first use. The app itself contains no networking code.
 - **Fast where you feel it.** Its own VT core, with 8-byte cells and a paged grid; a Metal renderer, one surface per window; a frame of steady output in about a quarter of a millisecond at 4K. It is measured against six other terminals, each change against the builds before it, and the numbers are [in the repository](docs/bench/).
 - **Native on macOS.** An AppKit window, CoreText shaping and font fallback, input methods, Secure Keyboard Entry, a quick terminal on a global key.
-- **Ready for agents.** A tab tells what the AI agent in it is doing, as Claude Code, Codex or Gemini CLI: at work, waiting for you, or done, of no setup, as [`[agents]`](docs/CONFIGURATION.md#agents) tells, with a notification and the Dock's badge while you look elsewhere, and ⌥⌘A to the next one that waits. Lokyr will be an [MCP server](docs/adr/0017-mcp-and-agents.md) too: an agent works in its own pane and the panes it opens.
+- **Ready for agents.** A tab tells what the AI agent in it is doing, as Claude Code, Codex or Gemini CLI: at work, waiting for you, or done, of no setup, as [`[agents]`](docs/CONFIGURATION.md#agents) tells, with a notification and the Dock's badge while you look elsewhere, and ⌥⌘A to the next one that waits. Lokyr will be an [MCP server](docs/ROADMAP.md#f3b--mcp-and-agents) too: an agent works in its own pane and the panes it opens.
 
 ## Status
 
@@ -163,13 +163,12 @@ Lokyr shows the progress that a program reports with OSC 9;4 on the program's ta
 
 ## Documentation
 
-- [The documentation's index](docs/README.md), with the requirements and the decisions.
+- [The documentation's index](docs/README.md), with the requirements and their solutions.
 - [The changelog](CHANGELOG.md): every release's changes.
 - [Architecture](docs/ARCHITECTURE.md): the crates, the threads, the frame's way.
 - [Writing a plugin](docs/plugins/authoring.md) and [making a theme](docs/themes/authoring.md): the guides for their authors.
 - [The plugin system](docs/PLUGIN-SYSTEM.md) and [Sleip](docs/PACKAGE-MANAGER.md).
 - [Performance](docs/PERFORMANCE.md): the budgets, and the [measures](docs/bench/).
-- [The decisions](docs/adr/README.md), one record each.
 
 ## Supporting Lokyr
 

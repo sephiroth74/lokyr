@@ -1,11 +1,11 @@
-# A frame's new glyphs (F2-146)
+# A frame's new glyphs
 
-Measured on 2026-10-31, on the commits before and after F2-146, 9826dc3 and 399a5d1, against the [budget](../PERFORMANCE.md#budgets) of a frame's time on the CPU, p99 ≤ 2 ms at 4K; and, once the task was done, every earlier measure of F2 again, on the bundle of 399a5d1 and on that of ce85fd6, before F2-145, F2-147 and F2-146. The raw results of that session are in [glyphs-F2-146/](glyphs-F2-146/).
+Measured on 2026-10-31, on the commits before and after the change, 9826dc3 and 399a5d1, against the [budget](../PERFORMANCE.md#budgets) of a frame's time on the CPU, p99 ≤ 2 ms at 4K; and, once the change was done, every earlier measure of F2 again, on the bundle of 399a5d1 and on that of ce85fd6, before the output's way from the PTY, the core's print of clusters and this change. The raw results of that session are in [glyphs-F2-146/](glyphs-F2-146/).
 
 ## Method
 
 - **A frame's layout**, outside the app: the font of the benches' config, Menlo at 13 points at a scale of 2, lays out a screen of 245 × 67 cells as a frame does, with the CoreText backend's calls timed: the faces' lookups, the shaping and the rasterization.
-- **On screen**: `lokyr --bench output --window 1920x1080` of a program that writes a file a screen at a time, 0.1 s apart: `cjk-all.txt`, the 32 164 CJK ideographs and Hangul syllables, 120 a line; `emoji-all.txt`, 1 178 emoji, 100 a line; `page.txt`, 60 lines of 110 characters of 600 ideographs, as a page of Chinese. The four workloads of [F2-56](onscreen-F2-56.md), with `onscreen.py`, three runs each.
+- **On screen**: `lokyr --bench output --window 1920x1080` of a program that writes a file a screen at a time, 0.1 s apart: `cjk-all.txt`, the 32 164 CJK ideographs and Hangul syllables, 120 a line; `emoji-all.txt`, 1 178 emoji, 100 a line; `page.txt`, 60 lines of 110 characters of 600 ideographs, as a page of Chinese. The four workloads of [onscreen-F2-56](onscreen-F2-56.md), with `onscreen.py`, three runs each.
 - **A screen's fill**: from the first frame that leaves glyphs for the frames after to the first that leaves none, as a build of the app that logs each frame told it.
 
 ## Where a frame of new glyphs went
@@ -32,7 +32,7 @@ On screen, a frame of a screen of new CJK took 160 to 197 ms, and of the emoji 2
 - After the first frame, a thread readies the fallback and its CJK and emoji faces.
 - An emoji takes the emoji face found before, when it has the character, rather than the cascade's 113 µs.
 
-The time that a frame gives to new glyphs, as the user chose on 31 October 2026 between these, measured with a build that took them from the environment:
+The time that a frame gives to new glyphs, chosen on 31 October 2026 between these, measured with a build that took them from the environment:
 
 | Lookups + drawing, a frame | A page of new Chinese shows whole in | Its frames | A screen of all-new CJK |
 |---|---|---|---|
@@ -40,7 +40,7 @@ The time that a frame gives to new glyphs, as the user chose on 31 October 2026 
 | 1 + 1 ms | 160 to 180 ms, 9 or 10 frames | p50 2.0 ms | about 0.5 s |
 | **2 + 2 ms** | **50 to 75 ms, 3 frames** | **p50 3.1 to 5.4 ms, the longest 5.4 to 8.7** | **about 0.22 s** |
 
-Before, the page took one frame of about 25 ms, and a 4K screen of all-new CJK one of 300 ms. The longest frames, up to 23 ms, came of the first frame of CJK, about 50 ms after the app's start, which waited for the thread that readied the fallback; text that comes later finds it ready. [PERFORMANCE.md](../PERFORMANCE.md#budgets) has the budget that the user chose with it: a frame that draws new glyphs, ≤ 10 ms.
+Before, the page took one frame of about 25 ms, and a 4K screen of all-new CJK one of 300 ms. The longest frames, up to 23 ms, came of the first frame of CJK, about 50 ms after the app's start, which waited for the thread that readied the fallback; text that comes later finds it ready. [PERFORMANCE.md](../PERFORMANCE.md#budgets) has the budget chosen with it: a frame that draws new glyphs, ≤ 10 ms.
 
 ## The four workloads
 
@@ -55,7 +55,7 @@ On screen, the bundle of 399a5d1 against ce85fd6's, three runs of each; a frame'
 
 - **CJK's and SGR's first frames** of new glyphs take 2 to 4 ms, from 15 to 16 and 5 to 6: within the budget of a frame of new glyphs.
 - **ASCII's p99** is its first frames now, whose glyphs are new: with three times the throughput, a run has 190 frames where it had 470, and its first frames, of 2.2 to 2.8 ms before too, no longer fall below the 99th percentile. Its p90 is 0.34 ms, from 0.27.
-- **CJK's median frame**, 0.49 ms from 0.29, waits longer for the grid's lock: the session parses the output in slices of up to 64 KiB since F2-145, where it read a KiB at a time, and a slice of CJK takes about 0.3 ms to parse.
+- **CJK's median frame**, 0.49 ms from 0.29, waits longer for the grid's lock: the session parses the output in slices of up to 64 KiB since the output's change, where it read a KiB at a time, and a slice of CJK takes about 0.3 ms to parse.
 
 ## Against the earlier measures
 
@@ -63,12 +63,12 @@ Every measure of F2 again, in one session, on the bundles of 399a5d1 and ce85fd6
 
 | Measure | 399a5d1 | ce85fd6 | Earlier |
 |---|---|---|---|
-| Warm startup, the first frame, median of 10 runs, twice | 273.9 and 265.1 ms | 274.8 and 273.3 ms | [F2-143](startup-F2-53.md#after-f2-143): the minimal AppKit app's first window plus 30 to 33 ms; today 257.2 ms, plus 8 to 17 |
-| A key's echo, 200 synthetic keys, twice: p50, p99 | 21.2 and 22.5 ms; 38.8 and 44.3 | 22.6 and 23.8 ms; 39.6 and 36.4 | [F2-144](latency-F2-54.md#after-f2-144), at 60 Hz: 21.2 ms at the median |
-| Idle, steady cursor: package idle and interrupt wakeups a second | 0, 0.38 | 0, 0.38 | [F2-55](idle-memory-F2-55.md): 0, 0.35 |
-| Footprint without the GPU, about 80 s after the start | 24.8 MB | 23.7 MB | [F2-55](idle-memory-F2-55.md): 24.0 MB three minutes after the start; budget 35 |
-| The VT core, `lokyr-throughput`, vtebench's scenarios | equal or faster in each; `unicode` 1.02 of `alacritty_terminal`'s rate, the bottom region 0.69 | `unicode` 1.03, the bottom region 0.70 | [F1-133](throughput-F1-133.md) |
-| The core, `cjk.txt` | 204.7 MiB/s, 0.75 | 154.4 MiB/s, 0.59 | [F2-147](onscreen-F2-56.md#after-f2-147) |
+| Warm startup, the first frame, median of 10 runs, twice | 273.9 and 265.1 ms | 274.8 and 273.3 ms | [startup-F2-53](startup-F2-53.md#after-the-drawing-made-beside-appkits-launch): the minimal AppKit app's first window plus 30 to 33 ms; today 257.2 ms, plus 8 to 17 |
+| A key's echo, 200 synthetic keys, twice: p50, p99 | 21.2 and 22.5 ms; 38.8 and 44.3 | 22.6 and 23.8 ms; 39.6 and 36.4 | [latency-F2-54](latency-F2-54.md#after-the-keys-frames-came-sooner), at 60 Hz: 21.2 ms at the median |
+| Idle, steady cursor: package idle and interrupt wakeups a second | 0, 0.38 | 0, 0.38 | [idle-memory-F2-55](idle-memory-F2-55.md): 0, 0.35 |
+| Footprint without the GPU, about 80 s after the start | 24.8 MB | 23.7 MB | [idle-memory-F2-55](idle-memory-F2-55.md): 24.0 MB three minutes after the start; budget 35 |
+| The VT core, `lokyr-throughput`, vtebench's scenarios | equal or faster in each; `unicode` 1.02 of `alacritty_terminal`'s rate, the bottom region 0.69 | `unicode` 1.03, the bottom region 0.70 | [throughput-F1-133](throughput-F1-133.md) |
+| The core, `cjk.txt` | 204.7 MiB/s, 0.75 | 154.4 MiB/s, 0.59 | [onscreen-F2-56](onscreen-F2-56.md#after-the-cores-print-of-clusters) |
 
 - **No measure fell back** but the steady frames of output, which wait a little longer for the grid's lock, as above.
 - **The footprint** grew by 1.1 MB, not the 4.3 that the fallback took in the layout outside the app: the shell's prompt, whose symbols the configured font lacks, looks the fallback up in both.

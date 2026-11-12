@@ -1,15 +1,15 @@
-# The cursor's movement's cost (F3-72)
+# The cursor's movement's cost
 
-Measured on 2026-11-08 in one session, between 11:20 and 11:31, the user away: one build, of commit 24aaaaa, the app of `just bundle`, of `[cursor] movement = "instant"` against `"snappy"`. The reports are in [movement-F3-72](movement-F3-72/), with the session's script, [`run.sh`](movement-F3-72/run.sh), its configs, its analysis, [`analyze.py`](movement-F3-72/analyze.py), and its tables, [`analysis.txt`](movement-F3-72/analysis.txt).
+Measured on 2026-11-08 in one session, between 11:20 and 11:31, unattended: one build, of commit 24aaaaa, the app of `just bundle`, of `[cursor] movement = "instant"` against `"snappy"`. The reports are in [movement-F3-72](movement-F3-72/), with the session's script, [`run.sh`](movement-F3-72/run.sh), its configs, its analysis, [`analyze.py`](movement-F3-72/analyze.py), and its tables, [`analysis.txt`](movement-F3-72/analysis.txt).
 
 ## Method
 
-As [F3-190's](ab-F3-190.md#method), of F2-134's config, Menlo at 13 points, 120 × 40 cells, an opaque window: the latency of 200 keys, eight rounds of balanced orders, AB BA BA AB, after a warm-up of 20 keys of each setting, the same pause of 2 s before each run; idle over 60 s and memory over 10 s of the app started with `open -n`, 20 s after its start, two rounds. The latency's program, `cat` in raw mode, echoes each key, so that each moves the cursor a cell, which slides under `"snappy"`.
+As in [0.5.1's A/B](ab-F3-190.md#method), of the config of [compare-F2-134](compare-F2-134.md), Menlo at 13 points, 120 × 40 cells, an opaque window: the latency of 200 keys, eight rounds of balanced orders, AB BA BA AB, after a warm-up of 20 keys of each setting, the same pause of 2 s before each run; idle over 60 s and memory over 10 s of the app started with `open -n`, 20 s after its start, two rounds. The latency's program, `cat` in raw mode, echoes each key, so that each moves the cursor a cell, which slides under `"snappy"`.
 
 ## Machine
 
 - Apple M5 Pro, macOS 27.2, on AC power, the main display a Dell P2721Q at 60 Hz, a scale of 2.
-- The load average 1.3 to 3.2, the user away.
+- The load average 1.3 to 3.2, unattended.
 
 ## Results
 

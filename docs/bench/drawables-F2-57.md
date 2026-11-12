@@ -1,6 +1,6 @@
-# Drawables at 60 Hz (F2-57)
+# Drawables at 60 Hz
 
-Measured on 2026-10-30 by the user, with the performance overlay of F2-122, on two bundles of the same code but the drawables' count: two and three per window. The overlay's display wait is how long a frame waited in `nextDrawable`, and its CPU the rest of the frame.
+Measured on 2026-10-30 by hand, with the performance overlay, on two bundles of the same code but the drawables' count: two and three per window. The overlay's display wait is how long a frame waited in `nextDrawable`, and its CPU the rest of the frame.
 
 ## Machine
 
@@ -21,7 +21,7 @@ On 2026-10-30, the MacBook's own display, ProMotion, at 120 Hz: each bundle star
 
 **At 120 Hz, two drawables never keep a frame waiting**: the third changes nothing.
 
-## At 60 Hz, as the user read the overlay
+## At 60 Hz, as read on the overlay
 
 | | Two drawables | Three drawables |
 |---|---|---|
@@ -29,4 +29,4 @@ On 2026-10-30, the MacBook's own display, ProMotion, at 120 Hz: each bundle star
 | A live resize, during the output | display wait 15 ms | display wait 15 ms |
 
 - **At 60 Hz, two drawables keep a frame waiting 1.5 ms**, and a third takes 0.25 ms of it away. The frame of 16.65 ms that the overlay's first version showed, on 29 October 2026, before it told the wait apart, is not seen again.
-- **A live resize waits about a frame** with either count, of 60 Hz as of 120 Hz, as the user saw it: 15 ms and 6 to 7 ms: the live resize presents each frame with its transaction, synchronously, so that the content follows the window's edge, which [F2-07](../tasks/F2-macos-single-pane.md#f2-07--live-resize) takes up.
+- **A live resize waits about a frame** with either count, of 60 Hz as of 120 Hz, as read on the overlay: 15 ms and 6 to 7 ms: the live resize presents each frame with its transaction, synchronously, so that the content follows the window's edge, which later work on the live resize takes up.
