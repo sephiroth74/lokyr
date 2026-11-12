@@ -29,6 +29,7 @@ tip-agents-list = Press { $keys } to list every AI agent of every window, the on
 # The tips of features that need no keys.
 tip-agents = A tab marks the AI agent in it, as Claude Code: a sparkle while it works, a dot while it waits for you, its request in the tab's tooltip, a tick once it is done.
 tip-links = Hold ⌘ over a link to underline it, then click to open it.
+tip-copy-output = Press { $keys } to copy the output of the last command, without its prompt; its context menu copies any command's.
 tip-editor-line = Set editor under [links] to "vscode", "cursor" or "zed", and ⌘-click on src/main.rs:42 opens your editor at line 42.
 tip-tab-drag = Drag a tab out of the bar for a window of its own, or onto a pane to split beside it.
 tip-tab-menu = Right-click a tab to give it a color, or double-click it to rename it.

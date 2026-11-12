@@ -20,6 +20,8 @@ from 1.0.0; before it, a minor version may change what a previous one did.
 
 - ⌘-click on a path's line, as `src/main.rs:42:7` that compilers, tests and AI agents print, opens the file at that line in the editor that `[links] editor` names: VS Code, Cursor, Windsurf, Zed, Sublime Text, TextMate or an address of your own.
 
+- Edit › Copy Command Output, ⌥⇧⌘C, and Select Command Output, ⇧⌘A, copy or select the output of the last command, or, from the pane's context menu, of the command under the pointer, without its prompt and its command line.
+
 ### Changed
 
 - The icon's variant that `[app] icon` chooses stays in the Dock after Lokyr quits, rather than going back to the default.

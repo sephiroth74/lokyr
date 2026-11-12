@@ -24,6 +24,7 @@ tip-clear = Premi { $keys } per pulire lo scrollback e lo schermo, tenendo il pr
 tip-font-size = Premi { $keys } per ingrandire il testo, in ogni finestra.
 
 tip-links = Tieni premuto ⌘ su un link per sottolinearlo, poi fai clic per aprirlo.
+tip-copy-output = Premi { $keys } per copiare l'output dell'ultimo comando, senza il prompt; il menu contestuale copia quello di qualsiasi comando.
 tip-editor-line = Imposta editor in [links] a "vscode", "cursor" o "zed", e ⌘-clic su src/main.rs:42 apre il tuo editor alla riga 42.
 tip-tab-drag = Trascina un tab fuori dalla barra per una finestra tutta sua, o su un pannello per affiancarlo.
 tip-tab-menu = Fai clic destro su un tab per dargli un colore, o doppio clic per rinominarlo.

@@ -90,9 +90,11 @@ fn starting_opens_a_window_under_the_menus_of_the_commands() {
         [
             "Copy cmd+c",
             "Paste cmd+v",
+            "Copy Command Output alt+shift+cmd+c",
             "-",
             "Select All cmd+a",
             "Clear cmd+k",
+            "Select Command Output shift+cmd+a",
             "-",
             "Copy Mode shift+cmd+c",
             "-",
@@ -203,9 +205,11 @@ fn the_menus_follow_the_keys_of_the_config() {
         [
             "Copy cmd+c",
             "Paste cmd+v",
+            "Copy Command Output alt+shift+cmd+c",
             "-",
             "Select All cmd+a",
             "Clear cmd+k",
+            "Select Command Output shift+cmd+a",
             "-",
             "Copy Mode shift+cmd+c",
             "-",
@@ -299,7 +303,7 @@ fn the_built_in_plugins_bind_the_commands_that_are_there_alone() {
         .filter(|command| app.commands.get(command).is_none())
         .collect();
     assert_eq!(missing, Vec::<&str>::new());
-    assert_eq!(app.keymap.bindings().len(), 125);
+    assert_eq!(app.keymap.bindings().len(), 127);
 }
 
 #[test]
@@ -441,9 +445,11 @@ fn the_menus_take_the_config_s_language_and_change_with_it() {
         [
             "Copia cmd+c",
             "Incolla cmd+v",
+            "Copia output del comando alt+shift+cmd+c",
             "-",
             "Seleziona tutto cmd+a",
             "Cancella cmd+k",
+            "Seleziona output del comando shift+cmd+a",
             "-",
             "Modalità copia shift+cmd+c",
             "-",
@@ -512,9 +518,11 @@ fn a_right_click_selects_and_opens_the_context_menu_at_the_pointer() {
             "-",
             "Copy",
             "Paste",
+            "Copy Command Output",
             "-",
             "Select All",
             "Clear",
+            "Select Command Output",
             "Copy Mode",
             "-",
             "Rename Tab…",
@@ -540,7 +548,9 @@ fn a_right_click_selects_and_opens_the_context_menu_at_the_pointer() {
         "links.new-window",
         "links.new-tab",
     ];
-    assert_eq!(dimmed[..], [&links[..], &alone].concat());
+    // A pane whose shell marked no command has no command's output.
+    let outputs = ["pane.copy-output", "pane.select-output"];
+    assert_eq!(dimmed[..], [&links[..], &outputs, &alone].concat());
     // Within the selection, which stays.
     select_drag(&mut fake, &mut app, window, (cell(0, 0), cell(3, 0)), none);
     right_click(&mut fake, &mut app, window, cell(1, 0), none);
@@ -1502,7 +1512,16 @@ fn a_plugin_s_menu_item_of_an_app_s_title_is_left_out_and_its_others_stand_apart
         .iter()
         .position(|item| item == "Copy as HTML")
         .expect("its item");
-    assert_eq!(edit[..at], ["Copy cmd+c", "Paste cmd+v", "-"], "{edit:?}");
+    assert_eq!(
+        edit[..at],
+        [
+            "Copy cmd+c",
+            "Paste cmd+v",
+            "Copy Command Output alt+shift+cmd+c",
+            "-"
+        ],
+        "{edit:?}"
+    );
     assert!(!edit.iter().any(|item| item == "copy…"), "{edit:?}");
     // Of the context menu, as of any menu: no line first, after another,
     // nor last.

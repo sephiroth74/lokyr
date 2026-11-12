@@ -370,6 +370,34 @@
     "when": "selection"
   },
   {
+    "capabilities": [
+      "history-read",
+      "terminal-read",
+      "clipboard-write"
+    ],
+    "category": "clipboard",
+    "name": "pane.copy-output",
+    "params": [
+      {
+        "default": {
+          "integer": -1
+        },
+        "kind": "integer",
+        "name": "column"
+      },
+      {
+        "default": {
+          "integer": -1
+        },
+        "kind": "integer",
+        "name": "row"
+      }
+    ],
+    "plugin": "lokyr/core-actions",
+    "title": "Copy Command Output",
+    "when": null
+  },
+  {
     "capabilities": [],
     "category": "edit",
     "name": "pane.look-up",
@@ -496,6 +524,32 @@
     "params": [],
     "plugin": "lokyr/core-actions",
     "title": "Select All",
+    "when": null
+  },
+  {
+    "capabilities": [
+      "history-read"
+    ],
+    "category": "edit",
+    "name": "pane.select-output",
+    "params": [
+      {
+        "default": {
+          "integer": -1
+        },
+        "kind": "integer",
+        "name": "column"
+      },
+      {
+        "default": {
+          "integer": -1
+        },
+        "kind": "integer",
+        "name": "row"
+      }
+    ],
+    "plugin": "lokyr/core-actions",
+    "title": "Select Command Output",
     "when": null
   },
   {

@@ -18,18 +18,22 @@ fn host(pane: Option<u64>) -> FakeHost {
 
 /// Runs `name` on `host`.
 fn run(host: &mut FakeHost, name: &str) -> Result<(), Error> {
-    host.command(&mut CoreActions, name, Args::new())
+    host.command(&mut CoreActions::default(), name, Args::new())
 }
 
 #[test]
 fn the_commands_register_without_keys() {
     let mut host = host(None);
-    host.activate(&mut CoreActions).unwrap();
+    host.activate(&mut CoreActions::default()).unwrap();
     let registered: Vec<(&str, Category, Vec<String>)> = host
         .commands()
         .iter()
         .map(|command| {
-            assert!(command.params.is_empty() || command.name == "pane.send-text");
+            assert!(
+                command.params.is_empty()
+                    || ["pane.send-text", COPY_OUTPUT, SELECT_OUTPUT]
+                        .contains(&command.name.as_str())
+            );
             let capabilities = command.capabilities.iter().map(ToString::to_string);
             (
                 command.name.as_str(),
@@ -68,6 +72,12 @@ fn the_commands_register_without_keys() {
             view("pane.prompt-previous"),
             view("pane.prompt-next"),
             ("pane.send-text", Category::Input, names(&["pty-write"])),
+            (
+                COPY_OUTPUT,
+                clipboard,
+                names(&["history-read", "terminal-read", "clipboard-write"])
+            ),
+            (SELECT_OUTPUT, Category::Edit, names(&["history-read"])),
         ]
     );
     // Copying takes a selection; the others run in any context.
@@ -79,7 +89,11 @@ fn the_commands_register_without_keys() {
         .collect();
     assert_eq!(whens, [("pane.copy", Some("selection"))]);
     // Sending text takes its text.
-    let send = host.commands().last().unwrap();
+    let send = host
+        .commands()
+        .iter()
+        .find(|command| command.name == SEND_TEXT)
+        .unwrap();
     assert_eq!(send.params.len(), 1);
     assert_eq!(
         (
@@ -213,7 +227,7 @@ fn the_view_scrolls_by_lines_pages_to_its_ends_and_to_the_prompts() {
 fn sending_text_sends_it_as_it_is() {
     let mut host = host(Some(9));
     let args = Args::from([("text".to_owned(), Value::String("\u{17}\u{1b}b".to_owned()))]);
-    host.command(&mut CoreActions, SEND_TEXT, args.clone())
+    host.command(&mut CoreActions::default(), SEND_TEXT, args.clone())
         .unwrap();
     assert_eq!(
         host.take_done(),
@@ -224,6 +238,98 @@ fn sending_text_sends_it_as_it_is() {
     );
     // Without a focused pane, nothing.
     let mut host = self::host(None);
-    host.command(&mut CoreActions, SEND_TEXT, args).unwrap();
+    host.command(&mut CoreActions::default(), SEND_TEXT, args)
+        .unwrap();
     assert!(host.take_done().is_empty());
+}
+
+/// A host of a focused pane 7, of 10 columns and rows 0 to 9 held, whose
+/// shell ran `ls`, its output on rows 2 to 4, the last wrapping into a row
+/// 5 of `x`, and then `false`, of no output, then a prompt at row 7.
+fn commands_host() -> FakeHost {
+    use lokyr_plugin_sdk::host::ShellCommand;
+    let mut host = host(Some(7));
+    let pane = host.pane(PaneId(7));
+    pane.held = 0..10;
+    pane.grid = (10, 10);
+    for (row, text, wrapped) in [
+        (0, "$ ls", false),
+        (1, "", false),
+        (2, "a.txt", false),
+        (3, "b.txt", false),
+        (4, "0123456789", true),
+        (5, "x", false),
+        (6, "$ false", false),
+        (7, "$ ", false),
+    ] {
+        pane.rows.insert(row, (text.to_owned(), wrapped));
+    }
+    let command = |id, prompt: i64, output: Option<i64>, end: i64| ShellCommand {
+        id,
+        prompt: Some((0, prompt)),
+        input: Some((2, prompt)),
+        output: output.map(|row| (0, row)),
+        end: Some((0, end)),
+        status: Some(0),
+    };
+    pane.commands = vec![command(1, 0, Some(1), 6), command(2, 6, Some(7), 7)];
+    host
+}
+
+/// Runs `name` of `args` on `host` with `plugin`, its events delivered.
+fn run_with(host: &mut FakeHost, plugin: &mut CoreActions, name: &str, args: Args) -> Vec<Request> {
+    host.take_done();
+    host.command(plugin, name, args).unwrap();
+    host.deliver(plugin).unwrap();
+    host.take_done()
+}
+
+/// The arguments of the cell of `column` and `row`.
+fn cell(column: i64, row: i64) -> Args {
+    Args::from([
+        ("column".to_owned(), Value::Integer(column)),
+        ("row".to_owned(), Value::Integer(row)),
+    ])
+}
+
+#[test]
+fn the_last_command_s_output_is_copied_and_selected_of_its_marks() {
+    let mut host = commands_host();
+    let mut plugin = CoreActions::default();
+    host.activate(&mut plugin).unwrap();
+    // The last command that ended of some output is `ls`: `false` printed
+    // nothing. Its rows from its output's mark to its end's, a wrapped row
+    // joined to the next, the blank rows around it left out.
+    assert!(host.applies(&mut plugin, COPY_OUTPUT, &Args::new()));
+    run_with(&mut host, &mut plugin, COPY_OUTPUT, Args::new());
+    assert_eq!(host.clipboard(), Some("a.txt\nb.txt\n0123456789x"));
+    let selected = run_with(&mut host, &mut plugin, SELECT_OUTPUT, Args::new());
+    assert!(
+        selected.contains(&Request::SelectCells {
+            pane: PaneId(7),
+            first: (0, 1),
+            last: (9, 5),
+            kind: lokyr_plugin_sdk::host::SelectionKind::Cells,
+        }),
+        "{selected:?}"
+    );
+}
+
+#[test]
+fn a_cell_s_command_is_the_one_whose_rows_hold_it() {
+    let mut host = commands_host();
+    let mut plugin = CoreActions::default();
+    host.activate(&mut plugin).unwrap();
+    // A cell of `ls`' prompt, or of its output: `ls`'.
+    for row in [0, 3] {
+        assert!(host.applies(&mut plugin, COPY_OUTPUT, &cell(1, row)));
+        host.set_clipboard(None);
+        run_with(&mut host, &mut plugin, COPY_OUTPUT, cell(1, row));
+        assert_eq!(host.clipboard(), Some("a.txt\nb.txt\n0123456789x"), "{row}");
+    }
+    // `false`'s, of no output, and a pane of no marks: nothing applies.
+    assert!(!host.applies(&mut plugin, COPY_OUTPUT, &cell(1, 6)));
+    host.pane(PaneId(7)).commands.clear();
+    assert!(!host.applies(&mut plugin, SELECT_OUTPUT, &Args::new()));
+    assert!(run_with(&mut host, &mut plugin, SELECT_OUTPUT, Args::new()).is_empty());
 }

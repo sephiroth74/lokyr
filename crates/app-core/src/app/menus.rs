@@ -104,7 +104,6 @@ impl<B: Backend> App<B> {
                 .filter(|command| {
                     command.category == category
                         && command.params.iter().all(|param| param.default.is_some())
-                        && !of_cell(command)
                         && !CONTEXT_ONLY.contains(&command.name.as_str())
                         && !taken.contains(&command.name.as_str())
                 })
@@ -113,11 +112,15 @@ impl<B: Backend> App<B> {
         };
         // As in Terminal: what opens, the man pages among it, then Look Up
         // and the web's search, then the clipboard's, then the editing's;
-        // the plugins' last, a group of each namespace of their commands.
+        // the plugins' last, a group of each namespace of their commands. A
+        // command of a cell that runs without one too, as a command's
+        // output, goes with its category's, of the cell.
         let mut groups: Vec<Vec<(String, Command, Args)>> = vec![
             self.commands
                 .in_order()
-                .filter(|command| of_cell(command))
+                .filter(|command| {
+                    of_cell(command) && !command.params.iter().all(|param| param.default.is_some())
+                })
                 .chain(self.commands.get(MAN_PAGE))
                 .chain(self.commands.get(MAN_SEARCH))
                 .map(of)

@@ -18,7 +18,7 @@ lokyr_plugin_sdk::export_plugin!(KeymapMacos);
 /// The bindings, each of its keys and of the command that they run, in
 /// their order: a menu's item shows the first of its command's keys that no
 /// later binding takes.
-pub const BINDINGS: [(&str, &str); 42] = [
+pub const BINDINGS: [(&str, &str); 44] = [
     // The application's.
     ("cmd+,", "app.settings"),
     ("cmd+q", "app.quit"),
@@ -30,6 +30,8 @@ pub const BINDINGS: [(&str, &str); 42] = [
     // The next AI agent that waits, near the windows' numbers.
     ("alt+cmd+a", "window.next-agent"),
     ("shift+alt+cmd+a", "command-palette.agents"),
+    ("shift+cmd+a", "pane.select-output"),
+    ("shift+alt+cmd+c", "pane.copy-output"),
     // The clipboard's and the editing's.
     ("cmd+c", "pane.copy"),
     ("cmd+v", "pane.paste"),

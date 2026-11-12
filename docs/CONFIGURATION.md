@@ -1571,6 +1571,8 @@ The defaults, of the built-in plugin `keymap-macos`, the shortcuts of macOS's ap
 | `cmd+c` | `pane.copy` | Copies the selection |
 | `cmd+v` | `pane.paste` | Pastes the clipboard's text, asking you first when [`confirm-paste`](#confirm-paste) says so |
 | `cmd+a` | `pane.select-all` | Selects the scrollback and the screen, to the last row that shows something |
+| `shift+cmd+a` | `pane.select-output` | Selects the output of the last command that ended, of the commands that the shell marks; Edit › Select Command Output, and the pane's context menu of the command under the pointer, run it too |
+| `shift+alt+cmd+c` | `pane.copy-output` | Copies the output of the last command that ended, its wrapped rows joined; Edit › Copy Command Output, and the context menu of the command under the pointer, run it too |
 | `cmd+k` | `pane.clear` | Clears the scrollback and the screen but the prompt, which goes to the top; on the screen of a program such as vim, it does nothing |
 | `cmd+=`, `cmd+shift+=`, `cmd++` | `font.bigger` | Makes the text a point larger, in every window, up to 200 |
 | `cmd+-` | `font.smaller` | Makes the text a point smaller, down to 4 |

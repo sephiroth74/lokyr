@@ -11,3 +11,5 @@ clipboard-read = true
 clipboard-write = true
 pty-write = true
 pane-view = true
+# A command's output, of the marks of the commands that the shell ran.
+history-read = true

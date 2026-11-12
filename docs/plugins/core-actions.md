@@ -2,7 +2,7 @@
 
 <sub>`lokyr/core-actions` · bundled · [source](../../plugins/core-actions)</sub>
 
-The terminal's everyday actions: copy and paste, select all, clear, the scrolling of the view through the scrollback, and the size of the text. Its keys are [`keymap-macos`](keymap-macos.md)'s.
+The terminal's everyday actions: copy and paste, select all, clear, a command's output copied or selected, the scrolling of the view through the scrollback, and the size of the text. Its keys are [`keymap-macos`](keymap-macos.md)'s.
 
 ## Commands
 
@@ -11,6 +11,8 @@ The terminal's everyday actions: copy and paste, select all, clear, the scrollin
 | `pane.copy` | Edit › Copy | ⌘C | Copies the selection |
 | `pane.paste` | Edit › Paste | ⌘V | Pastes the clipboard's text, asking you first when [`confirm-paste`](../CONFIGURATION.md#confirm-paste) says so |
 | `pane.select-all` | Edit › Select All | ⌘A | Selects the scrollback and the screen |
+| `pane.copy-output` | Edit › Copy Command Output | ⌥⇧⌘C | Copies the output of the last command that ended, or, from the pane's context menu, of the command under the pointer, without its prompt and its command line, its wrapped rows joined, 100 000 rows at most; of the commands that the shell marks, as [`shell-integration`](../CONFIGURATION.md#shell-integration) has it |
+| `pane.select-output` | Edit › Select Command Output | ⇧⌘A | Selects that output, as a drag would |
 | `pane.clear` | Edit › Clear | ⌘K | Clears the scrollback and the screen but the prompt, which goes to the top |
 | `font.bigger` | View › Bigger | ⌘=, ⌘+ | Makes the text a point larger, in every window |
 | `font.smaller` | View › Smaller | ⌘- | Makes the text a point smaller |
@@ -36,7 +38,7 @@ The terminal's everyday actions: copy and paste, select all, clear, the scrollin
 enabled = false
 ```
 
-Copy, paste, select all, clear, the scrolling commands and the text's size go, with their keys and their menu items. The selection with the mouse, and the scrolling with the wheel or the trackpad, stay: they are the terminal's own.
+Copy, paste, select all, clear, a command's output, the scrolling commands and the text's size go, with their keys and their menu items. The selection with the mouse, and the scrolling with the wheel or the trackpad, stay: they are the terminal's own.
 
 ## Permissions
 
