@@ -61,7 +61,7 @@ The phases (F0–F7) are described in the [ROADMAP](ROADMAP.md).
 | Integration with AI agents, the common ones included | The programs' notifications; an agent's presence from its process, and its state from its title and its sequences, on its tab; `lokyr +notify` and the agents' hooks with F3b's IPC | [UI-AND-FEATURES](UI-AND-FEATURES.md#agents), [ADR 0017](adr/0017-mcp-and-agents.md) | F2–F3b |
 | MCP: agents drive the terminal | `lokyr +mcp`, over stdio through the IPC socket; an agent's scope is its own pane and the panes it opened | [SECURITY](SECURITY.md#mcp), [ADR 0017](adr/0017-mcp-and-agents.md) | F3b |
 | Localized: menus, commands and notices in the user's language | Fluent catalogs, English and Italian first; the system's preferred language, or `[app] language`; the system's own texts made from the same catalogs | [ADR 0020](adr/0020-localization.md) | F2 |
-| The app installs from a DMG and updates itself | A signed, notarized DMG of `xtask dmg`; Sparkle 2, from a signed feed at `lokyr.dev`; the versions of ADR 0027, a build's number growing with each release | [ADR 0026](adr/0026-app-updates.md), [ADR 0027](adr/0027-version-numbers.md), [ADR 0029](adr/0029-update-feed-and-releases.md), [ADR 0030](adr/0030-release-notes-in-english.md) | F3 |
+| The app installs from a DMG, or a Homebrew cask, and updates itself | A signed, notarized DMG of `xtask dmg`, and a cask of the maintainer's tap ([ADR 0047](adr/0047-before-1-0-links-output-images-cask.md)); Sparkle 2, from a signed feed at `lokyr.dev`; the versions of ADR 0027, a build's number growing with each release | [ADR 0026](adr/0026-app-updates.md), [ADR 0027](adr/0027-version-numbers.md), [ADR 0029](adr/0029-update-feed-and-releases.md), [ADR 0030](adr/0030-release-notes-in-english.md) | F3 |
 
 ## Architecture decisions
 
@@ -113,6 +113,7 @@ The phases (F0–F7) are described in the [ROADMAP](ROADMAP.md).
 | [0044](adr/0044-titlebar-buttons-icons-and-overflow.md) | The titlebar's buttons beside the window's: one button of an icon alone a plugin, of the host's size, three at most, of more two and an ellipsis whose menu holds the rest | Accepted; amends 0043 |
 | [0045](adr/0045-packages-service.md) | The packages' service: the capability `packages`, of a very high risk, Lokyr's own plugins' alone; a job of the bundle's Sleip of `--json` a call, its lines and end as events to its plugin, and its cancel | Accepted |
 | [0046](adr/0046-plugin-manager-after-1-0.md) | The `plugin-manager`'s panel after 1.0.0, in F3b beside the settings' panel; Sleip's command line alone before it; the packages' service kept | Accepted; amends 0036 |
+| [0047](adr/0047-before-1-0-links-output-images-cask.md) | Before 1.0.0: ⌘-click on `path:line` opening the editor at the line, of its URL scheme; the last command's output copied or selected; inline images, OSC 1337 `File=` and a subset of kitty's graphics, under a memory quota; a Homebrew cask in the maintainer's tap | Accepted; amends 0036 |
 
 ## Glossary
 

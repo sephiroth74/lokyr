@@ -91,6 +91,7 @@ Each phase is broken into tasks of one day or less in [tasks/](tasks/README.md).
 - **The programs' progress** (OSC 9;4), as the user asked on 1 November 2026: the `progress` plugin, in a strip under the titlebar, and on the tab with the `tabs` plugin, in four states, normal, error, paused and indeterminate.
 - **The command's sticky header**, moved from F5a as the user asked on 1 November 2026, iTerm2's: the command whose output the view shows stays at the pane's top, and gives way to the one before it as the scroll reaches it; a click scrolls to the command. A plugin, over OSC 133's marks; the actions on a command's output stay F5a's.
 - **Distribution**, moved from F6 as the user asked on 1 November 2026: a DMG, signed, notarized and stapled, of `xtask dmg`; updates through Sparkle 2, from a signed feed at `lokyr.dev` ([ADR 0026](adr/0026-app-updates.md), [ADR 0029](adr/0029-update-feed-and-releases.md)); `just release`; a panic's backtrace in the log, the releases' dSYMs, Help › Report an Issue, and the third-party licenses' notices; the versions of [ADR 0027](adr/0027-version-numbers.md). It is F3's second block, after the architecture, so that each later block ends with a notarized DMG that updates itself through Sparkle. F3's last tasks, the repository made public and the first public release, 1.0.0, come after F4 ([ADR 0036](adr/0036-plugin-ecosystem-before-1-0.md)).
+- **Before 1.0.0**, as the user chose on 12 November 2026 ([ADR 0047](adr/0047-before-1-0-links-output-images-cask.md)): ⌘-click on `path:line` opening the editor at the line, of its URL scheme, from F5c; the last command's output copied or selected, from F5a; inline images, OSC 1337 `File=` and a subset of kitty's graphics protocol, under a memory quota, from F5c; a Homebrew cask in the maintainer's tap, from F6.
 - **Cursor options**: smooth movement, `snappy` ([UI-AND-FEATURES](UI-AND-FEATURES.md#cursor)); the shape, the blink interval and smooth blinking come in F2.
 
 - **What every terminal's users expect**, as a search of the major terminals' trackers found on 30 October 2026, which the user took:
@@ -166,7 +167,7 @@ After 1.0.0, as 1.1 ([ADR 0036](adr/0036-plugin-ecosystem-before-1-0.md)).
 
 ### F5a — Shell integration and blocks
 
-- **OSC 133 marks**, past F3's jumps and notices: select the output of the last command.
+- **OSC 133 marks**, past F3's jumps, notices and the last command's output copied or selected ([ADR 0047](adr/0047-before-1-0-links-output-images-cask.md)).
 - **Warp-style blocks**:
   - command and output grouped together, past F3's sticky header;
   - actions: copy, select, the command's details, rerun, collapse, share, from the sticky header's menu and the context menu, with the lines' marks ([UI-AND-FEATURES](UI-AND-FEATURES.md#the-panes-context-menu)).
@@ -184,11 +185,11 @@ After 1.0.0, as 1.1 ([ADR 0036](adr/0036-plugin-ecosystem-before-1-0.md)).
 
 ### F5c — Graphics and kitty protocols
 
-- **Images**: kitty graphics (with Unicode placeholders for tmux), sixel and iTerm2 images (OSC 1337 `File=`), all under a memory quota.
+- **Images**, past F3's OSC 1337 `File=` and kitty graphics' subset of direct transmission ([ADR 0047](adr/0047-before-1-0-links-output-images-cask.md)): sixel, kitty graphics' Unicode placeholders for tmux, its animation and relative placements, and the files of its transmission.
 - **Choosing a font**, as the user asked on 28 October 2026: `lokyr +list-fonts`, beside `+show-config` and `+validate-config`, which since [F2-149](tasks/F2-macos-single-pane.md#f2-149--list-fonts) lists the system's families and their styles as `[font]` names them, as text, with `--monospace` for the fixed-pitch families and `--family` for a family's styles alone, draws each family in its own face with a line of samples, as images that the terminal shows.
 - **Links and selection**, in the `links` plugin, which opens links, URLs and paths with ⌘-click since F2:
   - hints;
-  - semantic history: ⌘-click on `file:line` opens the editor;
+  - semantic history past F3's `file:line` in a graphical editor ([ADR 0047](adr/0047-before-1-0-links-output-images-cask.md)): a terminal editor, as `$EDITOR`, once plugins start processes;
   - smart selection, with its actions in the context menu, and Quick Look for a link ([UI-AND-FEATURES](UI-AND-FEATURES.md#the-panes-context-menu)).
 
 ### F6 — Plugin API 1.0 and hardening
@@ -197,7 +198,7 @@ After 1.0.0, as 1.1 ([ADR 0036](adr/0036-plugin-ecosystem-before-1-0.md)).
 - **The plugins' network and processes** ([ADR 0038](adr/0038-plugin-ecosystem-scope.md)): `net:<host>` through the app to the bundle's `sleip net-helper`, and `process-spawn`, of an ADR of their own.
 - Complete the docs: user guide, plugin author guide, reference.
 - Fix bugs and harden; reconfirm the license ([ADR 0010](adr/0010-mit-license.md)) and the final names.
-- **Distribution**, as the user asked on 29 October 2026: the menu's Install Command Line Tool…, which links `lokyr` to the bundle's executable in a directory of the `PATH`; and, if Lokyr goes through Homebrew, a cask whose `binary` stanza links it in Homebrew's `bin`. The DMG and the updates came in F3.
+- **Distribution**, as the user asked on 29 October 2026: the menu's Install Command Line Tool…, which links `lokyr` to the bundle's executable in a directory of the `PATH`; and Homebrew's own cask repository, once Lokyr meets its rules of notability. The DMG, the updates and the cask of the maintainer's tap came in F3 ([ADR 0047](adr/0047-before-1-0-links-output-images-cask.md)).
 
 ### F7 — After 1.0
 
@@ -230,7 +231,7 @@ As the user chose on 1 November 2026 ([ADR 0027](adr/0027-version-numbers.md)): 
 |---|---|
 | 0.2–0.7 | F3's blocks, on its branch: 0.2 the architecture, 0.3 the distribution, 0.4 `ui-core`, 0.5 the plugins' plumbing, 0.6 the plugins, 0.7 the daily features ([ADR 0029](adr/0029-update-feed-and-releases.md)); a fix takes the patch |
 | 0.8–0.9 | F4's blocks, before 1.0.0: 0.8 the Luau host and Sleip's own loop, 0.9 the registry, and `snap` and `awake` published ([ADR 0036](adr/0036-plugin-ecosystem-before-1-0.md), [ADR 0046](adr/0046-plugin-manager-after-1-0.md)) |
-| 1.0.0 | macOS MVP (F3) and the plugin ecosystem (F4), the first public release, the repository made public, with the agents on their tabs, which come after F4 ([ADR 0037](adr/0037-agents-on-their-tabs-before-1-0.md)); semantic versioning from here: patch, minor and major |
+| 1.0.0 | macOS MVP (F3) and the plugin ecosystem (F4), the first public release, the repository made public, with the agents on their tabs, which come after F4 ([ADR 0037](adr/0037-agents-on-their-tabs-before-1-0.md)), and a path's line in the editor, the last command's output, inline images and a Homebrew cask ([ADR 0047](adr/0047-before-1-0-links-output-images-cask.md)); semantic versioning from here: patch, minor and major |
 | 1.1 | MCP and agents, the settings' panel and the `plugin-manager`'s (F3b) |
 | 1.x | F5a, F5b, F5c, and the plugin API 1.0 (F6): stable plugin API in both front ends, complete docs, no open critical bug for three months; a major only for a change that breaks what users have |
 | later | Linux (F7), registry v1 |
