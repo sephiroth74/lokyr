@@ -1661,12 +1661,6 @@ impl Gap {
     }
 }
 
-/// The rooms of the grids of the panes of `layout` in `area`, in pixels: a
-/// split's first part takes its share of the area less `gap`, the divider's
-/// line and the panes' padding on either side of it, cut at a whole cell of
-/// `cell`, its width or its height, so that its grid fills it, and the
-/// second the rest, past the gap; `zoomed`, while one is, takes the whole
-/// area. In the layout's order.
 /// The width, in points, of the ring round a pane whose agent waits.
 const RING: f64 = 2.0;
 
@@ -1700,6 +1694,12 @@ pub(super) fn ring(room: Rect, width: u32) -> [Rect; 4] {
     ]
 }
 
+/// The rooms of the grids of the panes of `layout` in `area`, in pixels: a
+/// split's first part takes its share of the area less `gap`, the divider's
+/// line and the panes' padding on either side of it, cut at a whole cell of
+/// `cell`, its width or its height, so that its grid fills it, and the
+/// second the rest, past the gap; `zoomed`, while one is, takes the whole
+/// area. In the layout's order.
 pub(super) fn pane_rects(
     layout: &Layout,
     zoomed: Option<PaneId>,

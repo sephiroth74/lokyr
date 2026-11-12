@@ -343,7 +343,6 @@ fn nearest<'a>(faces: impl Iterator<Item = &'a FaceInfo>, weight: f32) -> Option
     })
 }
 
-/// A style's name without case, spaces or hyphens.
 /// `config` of the styles that `faces`, of one family, have alone, as a
 /// family chosen in place of the config's takes them: a style that they
 /// lack is the family's own, as of a config that named none; and the keys
@@ -369,6 +368,7 @@ pub fn styles_within(config: &FontConfig, faces: &[FaceInfo]) -> (FontConfig, Ve
     (within, left)
 }
 
+/// A style's name without case, spaces or hyphens.
 fn normalize(style: &str) -> String {
     style
         .chars()

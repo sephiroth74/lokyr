@@ -95,8 +95,8 @@ pub struct Placed {
     /// Under the text when negative, over it otherwise; the higher over the
     /// lower.
     pub z: i32,
-    /// Whether the image keeps its proportions within the rectangle,
-    /// centered, rather than filling it.
+    /// Whether the image keeps its proportions within the rectangle, from
+    /// its top left, rather than filling it.
     pub fit: bool,
     /// The rectangle of the image's pixels that shows, of none the whole.
     pub source: Option<Source>,
@@ -598,21 +598,62 @@ impl Terminal {
         let shown = source.map_or((image.width, image.height), |source| {
             (source.width, source.height)
         });
-        let (columns, rows) = cells(&placing, shown, cell, (self.cols, self.rows));
+        let (columns, mut rows) = cells(&placing, shown, cell, (self.cols, self.rows));
         let start = self.cursor();
+        let margins = self.margins;
+        // A scroll of the whole screen keeps each row's number as the row
+        // moves up, into the scrollback, or out of the list; a region's
+        // moves the rows' text within numbers that stay.
+        let whole =
+            margins.top == 0 && margins.bottom == self.rows - 1 && margins.is_full_width(self.cols);
+        let start_number = self.cursor_cell().1;
+        let mut scrolls: i64 = 0;
         if placing.move_cursor {
             for _ in 1..rows {
+                if self.cursor().y == margins.bottom && self.index_moves_on() {
+                    scrolls += 1;
+                }
                 self.index();
             }
         }
-        let cursor = self.cursor();
-        let top = if placing.move_cursor {
-            cursor.y.saturating_sub(rows - 1)
+        // The rows of the image's top that left the list, or went above
+        // the region, which its source loses.
+        let (number, cut) = if whole {
+            // A screen of no scrollback keeps the rows above it a while, as
+            // its pages go whole, but shows none of them.
+            let first = if self.alternate_active || self.scrollback_limit == 0 {
+                self.screen_top()
+            } else {
+                self.row_number(0)
+            };
+            (start_number.max(first), (first - start_number).max(0))
         } else {
-            start.y
+            let within = (margins.top..=margins.bottom).contains(&start.y);
+            let top = i64::from(start.y) - if within { scrolls } else { 0 };
+            let floor = i64::from(margins.top);
+            let index = self.screen().rows.scrollback_rows() as i64 + top.max(floor);
+            (self.row_number(index as usize), (floor - top).max(0))
         };
-        let index = self.screen().rows.scrollback_rows() + usize::from(top);
-        let number = self.row_number(index);
+        let mut source = source;
+        if cut > 0 {
+            if cut >= i64::from(rows) {
+                return false;
+            }
+            let whole_source = source.unwrap_or(Source {
+                x: 0,
+                y: 0,
+                width: image.width,
+                height: image.height,
+            });
+            // Fewer rows than a `u16` holds, and pixels than a `u32`.
+            let lost = (u64::from(whole_source.height) * cut as u64 / u64::from(rows)) as u32;
+            source = Some(Source {
+                y: whole_source.y + lost,
+                height: whole_source.height - lost,
+                ..whole_source
+            });
+            rows -= cut as u16;
+        }
         let Some(pin) = self.pin_cell((start.x, number)) else {
             return false;
         };
@@ -984,6 +1025,84 @@ mod tests {
         parser.advance(&mut terminal, b"\x1b[3J");
         shown(&mut terminal);
         assert_eq!(terminal.kept_images(), (Vec::new(), 0));
+    }
+
+    /// The rectangle of the image's pixels of the view's placements.
+    fn sources(terminal: &mut Terminal) -> Vec<Option<Source>> {
+        let mut snapshot = Snapshot::default();
+        terminal.snapshot(&mut snapshot);
+        snapshot
+            .images()
+            .iter()
+            .map(|placed| placed.source)
+            .collect()
+    }
+
+    #[test]
+    fn an_image_taller_than_the_screen_starts_up_in_the_scrollback() {
+        let (mut terminal, mut parser) = made(20, 6, IMAGE_MEMORY);
+        parser.advance(&mut terminal, b"$ imgcat\r\n");
+        // 30 by 200 pixels: 3 columns by 10 rows, of a screen of 6.
+        parser.advance(&mut terminal, &file("inline=1", &png(30, 200)));
+        let placed = shown(&mut terminal);
+        assert_eq!(placed.len(), 1);
+        let (_, column, row, columns, rows) = placed[0];
+        assert_eq!((column, row, columns, rows), (0, -4, 3, 10));
+        assert_eq!(sources(&mut terminal), [None]);
+        // The cursor on the image's last row, the screen's.
+        assert_eq!((terminal.cursor().x, terminal.cursor().y), (3, 5));
+    }
+
+    #[test]
+    fn an_image_taller_than_the_alternate_screen_loses_its_top() {
+        let (mut terminal, mut parser) = made(20, 6, IMAGE_MEMORY);
+        parser.advance(&mut terminal, b"\x1b[?1049h\r\n");
+        parser.advance(&mut terminal, &file("inline=1", &png(30, 200)));
+        let placed = shown(&mut terminal);
+        assert_eq!(placed.len(), 1);
+        let (_, column, row, columns, rows) = placed[0];
+        // Four of its ten rows scrolled off a screen of no scrollback.
+        assert_eq!((column, row, columns, rows), (0, 0, 3, 6));
+        assert_eq!(
+            sources(&mut terminal),
+            [Some(Source {
+                x: 0,
+                y: 80,
+                width: 30,
+                height: 120,
+            })]
+        );
+    }
+
+    #[test]
+    fn an_image_in_a_scroll_region_scrolls_the_region_alone() {
+        // Below the region, the last row stops the cursor: the image starts
+        // at the cursor, over no row above it.
+        let (mut terminal, mut parser) = made(20, 10, IMAGE_MEMORY);
+        parser.advance(&mut terminal, b"\x1b[1;4r\x1b[10;1H");
+        parser.advance(&mut terminal, &file("inline=1", &png(30, 60)));
+        assert_eq!(shown(&mut terminal)[0].2, 9);
+        // At the region's bottom, the region scrolls under the image.
+        let (mut terminal, mut parser) = made(20, 10, IMAGE_MEMORY);
+        parser.advance(&mut terminal, b"\x1b[1;4r\x1b[4;1H");
+        parser.advance(&mut terminal, &file("inline=1", &png(30, 60)));
+        assert_eq!(shown(&mut terminal)[0].2, 1);
+        assert_eq!(terminal.cursor().y, 3);
+        // Taller than the region, its top lost above the region's.
+        let (mut terminal, mut parser) = made(20, 10, IMAGE_MEMORY);
+        parser.advance(&mut terminal, b"\x1b[4;7r\x1b[7;1H");
+        parser.advance(&mut terminal, &file("inline=1", &png(30, 120)));
+        let (_, _, row, _, rows) = shown(&mut terminal)[0];
+        assert_eq!((row, rows), (3, 4));
+        assert_eq!(
+            sources(&mut terminal),
+            [Some(Source {
+                x: 0,
+                y: 40,
+                width: 30,
+                height: 80,
+            })]
+        );
     }
 
     #[test]
