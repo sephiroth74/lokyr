@@ -105,6 +105,14 @@
     letter-spacing: -0.01em;
   }
   .brand img { width: 28px; height: 28px; }
+  .top-links {
+    display: flex;
+    align-items: center;
+    gap: 22px;
+    font-size: 14px;
+  }
+  .top-links a { color: var(--muted); text-decoration: none; }
+  .top-links a:hover { color: var(--fg); }
   .pill {
     display: inline-flex;
     align-items: center;
@@ -508,7 +516,10 @@
     <img src="icon.svg" alt="" width="28" height="28">
     Lokyr
   </a>
-  <span class="pill"><span class="dot" aria-hidden="true"></span>In development</span>
+  <nav class="top-links">
+    <a href="docs/index.html">Docs</a>
+    <span class="pill"><span class="dot" aria-hidden="true"></span>In development</span>
+  </nav>
 </header>
 
 <main>

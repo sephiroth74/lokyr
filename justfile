@@ -256,6 +256,14 @@ dmg: bundle
 release version *args:
     cargo xtask release {{version}} {{args}}
 
+# Build the documentation's site, the public Markdown in the style of lokyr.dev's page, into target/site.
+site:
+    cargo xtask site
+
+# Serve target/site on 127.0.0.1:8124, as lokyr.dev would serve it, until Control-C.
+site-serve: site
+    python3 -m http.server --bind 127.0.0.1 --directory target/site 8124
+
 # Write the Homebrew cask of a release, X.Y.Z, of its DMG in target, into target/releases/<version>/lokyr.rb and the tap's folder, ../homebrew-tap or `--tap <dir>`; `just release` writes it too.
 cask version *args:
     cargo xtask cask {{version}} {{args}}

@@ -3029,6 +3029,7 @@ dependencies = [
  "lokyr-kernel",
  "lokyr-plugin-host-luau",
  "plist",
+ "pulldown-cmark",
  "regex",
  "rustc-demangle",
  "serde",

@@ -193,7 +193,7 @@ fn prose_lines_keeping_spans(text: &str) -> Vec<(usize, String)> {
 }
 
 /// A heading's anchor, as GitHub makes it.
-fn slug(heading: &str) -> String {
+pub(crate) fn slug(heading: &str) -> String {
     heading
         .chars()
         .flat_map(char::to_lowercase)

@@ -16,6 +16,7 @@ mod notarize;
 mod private;
 mod release;
 mod sbom;
+mod site;
 mod sparkle;
 mod symbolicate;
 mod terminfo;
@@ -45,6 +46,7 @@ fn main() -> ExitCode {
         Some("new-language") => languages::run_new(args),
         Some("notarize") => notarize::run(args),
         Some("release") => release::run(args),
+        Some("site") => site::run(args),
         Some("symbolicate") => symbolicate::run(args),
         Some("terminfo") => terminfo::run(args),
         Some("themes") => themes::run(args),
@@ -81,6 +83,7 @@ fn print_help() {
          new-language <code>         make a language ready to translate: English's catalogs copied, and every list and guide of it\n  \
          notarize                    have Apple notarize target/Lokyr.app, and staple the ticket\n  \
          release <version> [--without-feed]  a candidate's or a release's bundle, DMG, dSYM and SBOM, to a draft on GitHub and the feed\n  \
+         site [--out <dir>]          build the documentation's site of the public Markdown into target/site\n  \
          symbolicate <report.ips>    the crashed thread of a crash report, Lokyr's frames told by the release's dSYM\n  \
          terminfo [--out DIR]        compile the terminfo entry xterm-lokyr, into target/terminfo by default\n  \
          themes [--out DIR]          check the themes' collection and write the themes that the bundle holds, into target/themes by default\n  \

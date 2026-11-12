@@ -16,6 +16,7 @@ libc.workspace = true
 lokyr-kernel.workspace = true
 lokyr-plugin-host-luau.workspace = true
 plist.workspace = true
+pulldown-cmark.workspace = true
 regex.workspace = true
 rustc-demangle.workspace = true
 serde.workspace = true

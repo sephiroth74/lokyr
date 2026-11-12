@@ -1,0 +1,7 @@
+# The documentation's site's settings, which `cargo xtask site` reads.
+
+# The project's accounts, each linked from every page where it is set, as
+# "https://bsky.app/profile/<handle>"; none shown of an empty one.
+[social]
+bluesky = ""
+x = ""
