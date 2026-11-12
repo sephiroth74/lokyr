@@ -91,7 +91,7 @@ Each phase is broken into tasks of one day or less. A phase's breakdown is writt
 - **The programs' progress** (OSC 9;4): the `progress` plugin, in a strip under the titlebar, and on the tab with the `tabs` plugin, in four states, normal, error, paused and indeterminate.
 - **The command's sticky header**, moved from F5a on 1 November 2026, iTerm2's: the command whose output the view shows stays at the pane's top, and gives way to the one before it as the scroll reaches it; a click scrolls to the command. A plugin, over OSC 133's marks; the actions on a command's output stay F5a's.
 - **Distribution**, moved from F6 on 1 November 2026: a DMG, signed, notarized and stapled, of `xtask dmg`; updates through Sparkle 2, from a signed feed at `lokyr.dev`; `just release`; a panic's backtrace in the log, the releases' dSYMs, Help › Report an Issue, and the third-party licenses' notices; the [versions](#versions). It is F3's second block, after the architecture, so that each later block ends with a notarized DMG that updates itself through Sparkle. F3's last tasks, the repository made public and the first public release, 1.0.0, come after F4.
-- **Before 1.0.0**, moved there on 12 November 2026: ⌘-click on `path:line` opening the editor at the line, of its URL scheme, from F5c; the last command's output copied or selected, from F5a; inline images, OSC 1337 `File=` and a subset of kitty's graphics protocol, under a memory quota, from F5c; a Homebrew cask in the project's own tap, from F6.
+- **Before 1.0.0**, moved there on 12 November 2026: ⌘-click on `path:line` opening the editor at the line, of its URL scheme, from F5c; the last command's output copied or selected, from F5a; inline images, OSC 1337 `File=` and a subset of kitty's graphics protocol, under a memory quota, from F5c; a Homebrew cask in the project's own tap, from F6; the documentation as a site at `lokyr.dev`, on GitHub Pages, in the style of its page, the updates' feed there too.
 - **Cursor options**: smooth movement, `snappy` ([UI-AND-FEATURES](UI-AND-FEATURES.md#cursor)); the shape, the blink interval and smooth blinking come in F2.
 
 - **What people expect of every terminal**, as a search of the major terminals' trackers found on 30 October 2026:
@@ -147,7 +147,7 @@ Before 1.0.0, after F3's daily features, as 0.8 and 0.9, so that the first publi
 
 ### F3b — MCP and agents
 
-After 1.0.0, as 1.1.
+After 1.0.0, as 1.1 to 1.3: IPC and MCP, then the plugins' panels, then themes in the registry.
 
 - **IPC and the remote CLI** (`lokyr cli …`), moved from F5b: the socket and its checks of [SECURITY.md](SECURITY.md#ipc).
 - **The MCP server**: `lokyr +mcp`, over stdio, which the agent starts and which talks to the app through the socket; the app opens no port.
@@ -231,8 +231,10 @@ Releases are `X.Y.Z`, nightly and beta builds `X.Y.Z-YYYYMMDD`, release candidat
 |---|---|
 | 0.2–0.7 | F3's blocks, on its branch: 0.2 the architecture, 0.3 the distribution, 0.4 `ui-core`, 0.5 the plugins' plumbing, 0.6 the plugins, 0.7 the daily features; a fix takes the patch |
 | 0.8–0.9 | F4's blocks, before 1.0.0: 0.8 the Luau host and Sleip's own loop, 0.9 the registry, and `snap` and `awake` published |
-| 1.0.0 | macOS MVP (F3) and the plugin ecosystem (F4), the first public release, the repository made public, under the MIT license, with the agents on their tabs, which come after F4, and a path's line in the editor, the last command's output, inline images and a Homebrew cask; semantic versioning from here: patch, minor and major |
-| 1.1 | MCP and agents, the settings' panel and the `plugin-manager`'s (F3b) |
+| 1.0.0 | macOS MVP (F3) and the plugin ecosystem (F4), the first public release, the repository made public, under the MIT license, with the agents on their tabs, which come after F4, and a path's line in the editor, the last command's output, inline images, a Homebrew cask, and the documentation's site at `lokyr.dev`, on GitHub Pages, with the updates' feed; semantic versioning from here: patch, minor and major |
+| 1.1 | IPC, the remote CLI, the MCP server and the agents' hooks (F3b's first block) |
+| 1.2 | The `plugin-manager`'s panel and the settings' (F3b's second block) |
+| 1.3 | Themes in the registry (F3b's third block) |
 | 1.x | F5a, F5b, F5c, and the plugin API 1.0 (F6): stable plugin API in both front ends, complete docs, no open critical bug for three months; a major only for a change that breaks what people rely on |
 | later | Linux (F7), registry v1 |
 
