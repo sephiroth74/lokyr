@@ -4,7 +4,7 @@ Measured on 2026-11-05, between 06:22 and 06:25, of the scripts and the analysis
 
 ## Method
 
-- **Two bundles** of 846e519, the work that put plugins on threads of their own, built as releases of the build's version, `0.4.0-20261105`, and signed with the Developer ID, not notarized: `h`, the app as it ships; `w`, the same with `--features sample-worker`, `lokyr/sample-worker`, a plugin on its thread whose status bar renders without pause, each render reading 24 rows of the focused pane, a request each, and asking for the next render as it returns. Each request costs a turn of the main thread, its wake included.
+- **Two bundles** of 0330ba7, the work that put plugins on threads of their own, built as releases of the build's version, `0.4.0-20261105`, and signed with the Developer ID, not notarized: `h`, the app as it ships; `w`, the same with `--features sample-worker`, `lokyr/sample-worker`, a plugin on its thread whose status bar renders without pause, each render reading 24 rows of the focused pane, a request each, and asking for the next render as it returns. Each request costs a turn of the main thread, its wake included.
 - **The regime first**, as [latency-F3-135](latency-F3-135.md)'s sessions: a short run of `h`, 50 keys, until its p50 is under 21 ms; it was at the first, 18.6 ms.
 - **Six rounds** of the config of [0.4.0's A/B](ab-F3-29.md), 200 keys a run, each bundle first in three of them; the process's CPU sampled with `ps` six seconds into each run.
 

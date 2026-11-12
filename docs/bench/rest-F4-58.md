@@ -31,7 +31,7 @@ A sign test of the rounds, the two-sided chance of as many rounds longer one way
 
 ## The builds between them
 
-[bisect](rest-F4-58/bisect/analysis.txt): six release binaries of `lokyr-app`, of 0.7.0, a review's fixes (3bd0c75e), the host's hardening (d33fb27c), the Luau host, its review's fixes and the timers (64b1c1ec), the installed plugins, the consent and the reloads with their review's fixes (2104a617), and 0.8.0, each run outside a bundle, of no hardened runtime, in 12 rounds, each build twice in each place.
+[bisect](rest-F4-58/bisect/analysis.txt): six release binaries of `lokyr-app`, of 0.7.0, a review's fixes (d4082d94), the host's hardening (5ffaed2d), the Luau host, its review's fixes and the timers (13b7d6f0), the installed plugins, the consent and the reloads with their review's fixes (1806ada0), and 0.8.0, each run outside a bundle, of no hardened runtime, in 12 rounds, each build twice in each place.
 
 | Build | p50 | p99 | In the fourth refresh or later |
 |---|---|---|---|
@@ -42,7 +42,7 @@ A sign test of the rounds, the two-sided chance of as many rounds longer one way
 | The installed plugins | 19.53 ms | 48.54 ms | 14 of 2388 |
 | 0.8.0 | 19.66 ms | 47.34 ms | 28 of 2388 |
 
-The binary grows from 11.5 to 15.5 MB at 2104a617, as the installed plugins reach Luau; its latency does not move.
+The binary grows from 11.5 to 15.5 MB at 1806ada0, as the installed plugins reach Luau; its latency does not move.
 
 ## The startup at rest
 

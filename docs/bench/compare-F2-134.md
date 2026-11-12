@@ -1,6 +1,6 @@
 # Lokyr against the other terminals
 
-Measured on 2026-10-31, in five sessions between 14:54 and 22:30, on the bundle of commit e2f9e85, with the change of `lokyr --bench output` made for this comparison, which takes the config's columns and rows without `--window` and through which `compare.py` runs each measure's program in Lokyr, against Ghostty, Alacritty, kitty, WezTerm, iTerm2 and Terminal.app, under the same conditions. The raw results, the configs and each terminal's reports are in [compare-F2-134/](compare-F2-134/); `python3 tools/bench/compare.py` takes the measures again, and `python3 tools/bench/report_charts.py compare` draws the charts from the raw results. The measures made by hand came on 2026-11-01, on the bundle of commit e070548, after the fix of vtebench's top region: the latency with Typometer, `powermetrics`, the smoothness by eye and vttest's screens.
+Measured on 2026-10-31, in five sessions between 14:54 and 22:30, on the bundle of commit 920028a, with the change of `lokyr --bench output` made for this comparison, which takes the config's columns and rows without `--window` and through which `compare.py` runs each measure's program in Lokyr, against Ghostty, Alacritty, kitty, WezTerm, iTerm2 and Terminal.app, under the same conditions. The raw results, the configs and each terminal's reports are in [compare-F2-134/](compare-F2-134/); `python3 tools/bench/compare.py` takes the measures again, and `python3 tools/bench/report_charts.py compare` draws the charts from the raw results. The measures made by hand came on 2026-11-01, on the bundle of commit 26f0ac9, after the fix of vtebench's top region: the latency with Typometer, `powermetrics`, the smoothness by eye and vttest's screens.
 
 Lokyr alone was measured again on 2026-11-08, of the build of 8 November, of this tool and these conditions, [compare-F3-72](compare-F3-72.md), whose figures the README's charts show beside the other terminals' of this report, which are not measured again of the same versions.
 
@@ -42,7 +42,7 @@ Lokyr alone was measured again on 2026-11-08, of the build of 8 November, of thi
 
 | Terminal | Version |
 |---|---|
-| Lokyr | e2f9e85 |
+| Lokyr | 920028a |
 | Ghostty | 1.3.2-main+62fa23bfa, a build of its tip |
 | Alacritty | 0.18.0-dev, bbb2cbf of 26 October 2026, built here |
 | kitty | 0.49.2 |
@@ -167,7 +167,7 @@ Typometer, built from its maintained fork, typed 200 keys into each terminal, wh
 - **At 120 Hz**, Lokyr has the lowest median of the five, and its p99, 32.2 ms, comes third, after Alacritty's and kitty's: 24 of its 200 keys took more than three frames, 25 ms, where 5 of Alacritty's and 11 of kitty's did, 41 of iTerm2's and 94 of Ghostty's.
 - **At 60 Hz, alone**, a third of Lokyr's keys took a frame more than Alacritty's: 69 of 200 past two frames, 33.3 ms, where 14 of Alacritty's did, and 98 of kitty's and of Ghostty's, 148 of iTerm2's; hence its p90 of 49.1 ms, against Alacritty's 29.4.
 - **Next to a flood**, every terminal's keys came sooner, at both rates, likely as the window server, which composes the screen at each refresh for the flooded window, has no rest to wake from.
-- **Lokyr's own measure** of [latency-F2-54](latency-F2-54.md#after-the-keys-frames-came-sooner), from the key's event to the frame's presentation, gave 21.2 ms at the median and 41.5 at p99 at 60 Hz, 14.5 and 34.2 at 120 Hz, on commit 7796b52. Typometer's medians of Lokyr are 1.6 ms longer at 60 Hz and 6.7 ms at 120 Hz: its keys go through the system's queue of events, and its end is its capture of the screen, a path that bounds every terminal alike, as four of the five medians at 120 Hz fall between 21.2 and 21.8 ms. The budget is that measure's, p50 ≤ 2 frames and p99 ≤ 4.5 at 120 Hz, which Lokyr keeps; by Typometer too, its p99 at 120 Hz is 3.9 frames.
+- **Lokyr's own measure** of [latency-F2-54](latency-F2-54.md#after-the-keys-frames-came-sooner), from the key's event to the frame's presentation, gave 21.2 ms at the median and 41.5 at p99 at 60 Hz, 14.5 and 34.2 at 120 Hz, on commit e5ecaaf. Typometer's medians of Lokyr are 1.6 ms longer at 60 Hz and 6.7 ms at 120 Hz: its keys go through the system's queue of events, and its end is its capture of the screen, a path that bounds every terminal alike, as four of the five medians at 120 Hz fall between 21.2 and 21.8 ms. The budget is that measure's, p50 ≤ 2 frames and p99 ≤ 4.5 at 120 Hz, which Lokyr keeps; by Typometer too, its p99 at 120 Hz is 3.9 frames.
 - **Is It Snappy**, of a camera at 240 frames a second, needs an iPhone, which was not at hand: not measured.
 
 ## Energy
@@ -224,7 +224,7 @@ Under `cat` of 256 MiB, the sums over the whole samples that overlap its start t
 
 ### The window server and the cursor's fades
 
-The window server's CPU, in a core's percent, by `top` every 2 s, as a Lokyr window of commit e070548 was in front, at rest at its prompt, 4 to 16 s after its start, the mean of the samples while the cursor blinked; the configs and every sample are in [window-server/top.json](compare-F2-134/window-server/top.json). `top`'s percent counts otherwise than `powermetrics`' milliseconds a second: the two do not compare.
+The window server's CPU, in a core's percent, by `top` every 2 s, as a Lokyr window of commit 26f0ac9 was in front, at rest at its prompt, 4 to 16 s after its start, the mean of the samples while the cursor blinked; the configs and every sample are in [window-server/top.json](compare-F2-134/window-server/top.json). `top`'s percent counts otherwise than `powermetrics`' milliseconds a second: the two do not compare.
 
 | The window in front | Opaque | `background-opacity = 0.9`, `background-blur = 10` |
 |---|---|---|

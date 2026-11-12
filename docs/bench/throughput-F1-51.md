@@ -1,6 +1,6 @@
 # Throughput after the performance fixes
 
-Measured on 2026-10-23, from 00:54 to 00:59, with `just bench` on the code of dc61be7, on the machine of [the F0 baseline](baseline-F0.md): an Apple M5 Pro, macOS 27.0.1, on AC power, at night, with no sleep during the run and the fuzzing started after it. Rust 1.99.0, release builds, `alacritty_terminal` 0.26.0.
+Measured on 2026-10-23, from 00:54 to 00:59, with `just bench` on the code of 1124d46, on the machine of [the F0 baseline](baseline-F0.md): an Apple M5 Pro, macOS 27.0.1, on AC power, at night, with no sleep during the run and the fuzzing started after it. Rust 1.99.0, release builds, `alacritty_terminal` 0.26.0.
 
 ## Method
 

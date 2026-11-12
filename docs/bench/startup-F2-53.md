@@ -1,6 +1,6 @@
 # Startup
 
-Measured on 2026-10-31 with `lokyr-bench startup`, on the bundle of commit 65839bd, against the [budgets](../PERFORMANCE.md#budgets). The raw reports are in [startup-F2-53/](startup-F2-53/).
+Measured on 2026-10-31 with `lokyr-bench startup`, on the bundle of commit 2697989, against the [budgets](../PERFORMANCE.md#budgets). The raw reports are in [startup-F2-53/](startup-F2-53/).
 
 ## Method
 

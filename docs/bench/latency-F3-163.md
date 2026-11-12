@@ -5,7 +5,7 @@ Measured on 2026-11-05, between 14:47 and 15:45, in four sessions, of the script
 ## Method
 
 - **The machine** of [0.5.0's A/B](ab-F3-40.md#machine): the Dell P2721Q at 60 Hz the main display and the only one, the A/Bs' config.
-- **The bundles**: `o`, the app of 0.4.0's DMG; `k`, 0acf7fd, the head that the third session of [latency-F3-135](latency-F3-135.md) found of 0.3.0's tail, the slots in the windows, the live resize's pace and a review's fixes in it; `m2`, 8661a20, and `m3`, 7ae3d41, that session's midpoints within it, the slots in the windows and then the live resize's pace and a new size's wait for its own drawing; `m`, 282fdc7, `k` with the plugins' panels and their accessibility, the plugins' threads, their config and state, the distributions, the fake host and the conformance suite, built of `build.sh`; `h`, the app of 0.5.0's DMG, `m` with the window's motion's work and a later review's fixes; `h0`, 0.5.0's head as a local release; and `l`, `h0` finding the interface's face as its first text needs it.
+- **The bundles**: `o`, the app of 0.4.0's DMG; `k`, 3bbfefa, the head that the third session of [latency-F3-135](latency-F3-135.md) found of 0.3.0's tail, the slots in the windows, the live resize's pace and a review's fixes in it; `m2`, 541bc9b, and `m3`, 3256cca, that session's midpoints within it, the slots in the windows and then the live resize's pace and a new size's wait for its own drawing; `m`, 422cd41, `k` with the plugins' panels and their accessibility, the plugins' threads, their config and state, the distributions, the fake host and the conformance suite, built of `build.sh`; `h`, the app of 0.5.0's DMG, `m` with the window's motion's work and a later review's fixes; `h0`, 0.5.0's head as a local release; and `l`, `h0` finding the interface's face as its first text needs it.
 - **The latency**, `run.sh`: eight rounds of 200 keys, a Williams design of `o`, `k`, `m` and `h` twice, each bundle once in each place of four rounds and after each other once, after a warm-up of each.
 - **The startup**: of `o`, `k`, `m` and `h`, `startup.sh`, and of `o`, `m2`, `m3` and `k`, `startup2.sh`, four rounds each of a Williams design; of `o`, `h0` and `l`, `startup3.sh`, six rounds of a Williams design of three; 10 runs after 2 a bundle a round, each round of the minimal app's floor.
 - **The load average** was 0.9 to 5.2 in the latency's session, falling as it went, 2.0 to 9.3 in the startup's, of other work on the machine.
@@ -15,8 +15,8 @@ Measured on 2026-11-05, between 14:47 and 15:45, in four sessions, of the script
 | Bundle | p50, mean of 8 | p99, mean of 8 | Its standard deviation | Its range | Samples in the third refresh or later, of 1592 | In the fourth or later |
 |---|---|---|---|---|---|---|
 | `o`, 0.4.0 | 20.1 ms | 45.6 ms | 5.7 ms | 35.9 to 55.1 ms | 59 | 7 |
-| `k`, 0acf7fd | 20.4 ms | 42.6 ms | 6.4 ms | 37.0 to 56.4 ms | 54 | 6 |
-| `m`, 282fdc7 | 20.1 ms | 44.7 ms | 2.4 ms | 40.2 to 48.5 ms | 61 | 6 |
+| `k`, 3bbfefa | 20.4 ms | 42.6 ms | 6.4 ms | 37.0 to 56.4 ms | 54 | 6 |
+| `m`, 422cd41 | 20.1 ms | 44.7 ms | 2.4 ms | 40.2 to 48.5 ms | 61 | 6 |
 | `h`, 0.5.0 | 20.1 ms | 44.5 ms | 3.6 ms | 39.3 to 49.9 ms | 65 | 6 |
 
 - **0.5.0's tail is 0.4.0's here**, 44.5 against 45.6 ms, and no part of the work since 0.4.0 lengthens it: every bundle's p99 within the rounds' spread of the others', its samples past the third refresh alike. The place in a round moved the p99's mean by 1.7 ms, 44.9, 45.0, 43.3 and 44.1 ms from the first place to the fourth.

@@ -1,10 +1,10 @@
 # The latency's tail of 0.4.0: a first session
 
-Measured on 2026-11-04, between 14:50 and 14:58: whether the windows' accessibility trees, new in 0.4.0, lengthen the latency's tail that [0.4.0's A/B](ab-F3-29.md) found, 0.4.0's p99 higher than 0.3.0's in 7 rounds of 8. The reports are in [latency-F3-135](latency-F3-135/), with the session's script, `run.sh`, its analysis, `analyze.py`, and the patches of the two variants, `b.patch` and `c.patch`, over 0.4.0's commit, ba5508c. The work was put off the same day: a second session, in the regime of 0.4.0's A/B, is left to do.
+Measured on 2026-11-04, between 14:50 and 14:58: whether the windows' accessibility trees, new in 0.4.0, lengthen the latency's tail that [0.4.0's A/B](ab-F3-29.md) found, 0.4.0's p99 higher than 0.3.0's in 7 rounds of 8. The reports are in [latency-F3-135](latency-F3-135/), with the session's script, `run.sh`, its analysis, `analyze.py`, and the patches of the two variants, `b.patch` and `c.patch`, over 0.4.0's commit, 288822f. The work was put off the same day: a second session, in the regime of 0.4.0's A/B, is left to do.
 
 ## Method
 
-- **Three bundles**, each built of ba5508c in a worktree with `LOKYR_RELEASE=0.4.0` and signed with the Developer ID, not notarized, as [startup-F3-105](startup-F3-105.md) found that the notarization does not move the measures: `a`, 0.4.0 as it is; `b`, the same but for the trees, which it gives a client that asks, once, and builds again as the screens change no more, `b.patch`; and `o`, the app of 0.3.0's DMG.
+- **Three bundles**, each built of 288822f in a worktree with `LOKYR_RELEASE=0.4.0` and signed with the Developer ID, not notarized, as [startup-F3-105](startup-F3-105.md) found that the notarization does not move the measures: `a`, 0.4.0 as it is; `b`, the same but for the trees, which it gives a client that asks, once, and builds again as the screens change no more, `b.patch`; and `o`, the app of 0.3.0's DMG.
 - **A probe** first, `c.patch`: 0.4.0 that writes to the standard error each tree it gives and its time, built and run once, 200 keys of `lokyr --bench latency`.
 - **The session**: the config of 0.4.0's A/B, 200 keys a run; a short run of each bundle first, as the system checks a new bundle at its first launch; then six rounds, whose orders put each bundle first, second and third twice, as 0.4.0's A/B found the second of a pair the slower.
 
@@ -34,7 +34,7 @@ Measured on 2026-11-04, between 21:13 and 21:17, of the script and the analysis 
 
 ## Method
 
-- **Three bundles**: `o`, the app of 0.3.0's DMG; `a`, 0.4.0, the first session's; `h`, the head of the work since 0.4.0, 0acf7fd, built as a release of the plain features, `0.4.0-20261104`, the slots and their input, the live resize's pace, and a review's fixes in it.
+- **Three bundles**: `o`, the app of 0.3.0's DMG; `a`, 0.4.0, the first session's; `h`, the head of the work since 0.4.0, 3bbfefa, built as a release of the plain features, `0.4.0-20261104`, the slots and their input, the live resize's pace, and a review's fixes in it.
 - **The regime first**: a short run of `o`, 50 keys, until its p50 is under 21 ms, ten tries at most; it was at the first, 19.1 ms.
 - **Six rounds** of the A/B's config, 200 keys a run, whose orders put each bundle first, second and third twice.
 
@@ -59,7 +59,7 @@ Measured on 2026-11-04, between 21:51 and 21:59, of the scripts and the analysis
 ## Method
 
 - **A probe first**, of the head, `second/probe.patch`, 200 keys: each turn of the main thread, of its kind and its time, the slots' layout in each frame, and the timers by their names. A key's turn took 17 µs at the median, a frame's 384 µs, as two frames a key; the slots' layout 5 µs a frame; the plugins' turn of their events never started; the accessibility trees 47, of 0.6 ms each, as 0.4.0's; the titles' look 48, of 29 µs. Nothing on the main thread costs more than before.
-- **Six bundles**: `o`, 0.3.0; `a`, 0.4.0; `m2`, 8661a20, the slots in the windows; `m3`, 7ae3d41, the live resize's pace and the view's contents placement at its top left corner; `h`, the head, the second session's; `t`, the head but for that placement, as a frame's drawn at another size than the view's would have stretched; each a release of its commit, built in a worktree.
+- **Six bundles**: `o`, 0.3.0; `a`, 0.4.0; `m2`, 541bc9b, the slots in the windows; `m3`, 3256cca, the live resize's pace and the view's contents placement at its top left corner; `h`, the head, the second session's; `t`, the head but for that placement, as a frame's drawn at another size than the view's would have stretched; each a release of its commit, built in a worktree.
 - **The faster regime first**, at the first try, 20.4 ms; then six rounds of a Williams design, each bundle once in each place of a round and after each other once.
 
 ## Results

@@ -1,6 +1,6 @@
 # Latency
 
-Measured on 2026-10-31 with `lokyr --bench latency`, on the bundle of commit c121058, against the [budget](../PERFORMANCE.md#budgets) of a key to its presented frame: at 120 Hz, p50 ≤ 2 frames and p99 ≤ 3, a frame more next to a pane that floods its output. The raw reports are in [latency-F2-54/](latency-F2-54/).
+Measured on 2026-10-31 with `lokyr --bench latency`, on the bundle of commit 57482dd, against the [budget](../PERFORMANCE.md#budgets) of a key to its presented frame: at 120 Hz, p50 ≤ 2 frames and p99 ≤ 3, a frame more next to a pane that floods its output. The raw reports are in [latency-F2-54/](latency-F2-54/).
 
 ## Method
 
@@ -47,7 +47,7 @@ A build that marked the commit of the frame that shows the key, outside the meas
 
 ## After the keys' frames came sooner
 
-The Metal layers present without the display's sync, and a key that the bench posts wakes the main run loop, as the keyboard's does. On commit 7796b52, synthetic keys, the window on the main display:
+The Metal layers present without the display's sync, and a key that the bench posts wakes the main run loop, as the keyboard's does. On commit e5ecaaf, synthetic keys, the window on the main display:
 
 | Rate | Flood | p50 | p99 | p50, frames | p99, frames | Budget |
 |---|---|---|---|---|---|---|

@@ -47,7 +47,7 @@ The means of the two rounds; 9.4 s of motion a run.
 
 ## The prompt's flicker
 
-A slow-motion recording, 240 frames a second, showed the powerline prompt's line gone for about 190 ms at a time through a resize in Lokyr, and never in Ghostty. zsh draws the prompt again in one write within a millisecond of each signal, 40 of 40 sizes told in a second. A log of the pane's steps through a resize of that shell found the cause: the screen waited for output from the first size that the program had not answered, so that the program's answer to one size, which no frame had copied yet, ended the wait of the next, whose step had cleared the prompt; 30 of 71 copies of the screen showed it cleared. Each size now waits for output after its own signal, 1e55431; of the next resize, no copy showed it cleared, 45 of 45, and the flicker was gone.
+A slow-motion recording, 240 frames a second, showed the powerline prompt's line gone for about 190 ms at a time through a resize in Lokyr, and never in Ghostty. zsh draws the prompt again in one write within a millisecond of each signal, 40 of 40 sizes told in a second. A log of the pane's steps through a resize of that shell found the cause: the screen waited for output from the first size that the program had not answered, so that the program's answer to one size, which no frame had copied yet, ended the wait of the next, whose step had cleared the prompt; 30 of 71 copies of the screen showed it cleared. Each size now waits for output after its own signal, 4d12d0b; of the next resize, no copy showed it cleared, 45 of 45, and the flicker was gone.
 
 ## After the live resize at the display's rate, and at 120 Hz
 

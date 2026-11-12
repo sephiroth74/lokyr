@@ -1,14 +1,14 @@
 # Throughput on the code that F1 ends with
 
-Measured on 2026-10-25 at about 08:50, with `bolt-throughput` alone, on the code of 29048e6, whose VT core is 7959169's, on the machine of [the F0 baseline](baseline-F0.md): an Apple M5 Pro, macOS 27.0.1, on AC power, after the fuzzing of the 24 hours had ended, with no build running. Rust 1.99.0, release builds. [The figures of the review fixes](throughput-F1-133.md) were measured on 840cee6, before two later review fixes changed how a wrap from the screen's last column treats the rows' soft-wrap marks, on the path of a wide character that does not fit there.
+Measured on 2026-10-25 at about 08:50, with `bolt-throughput` alone, on the code of 4110151, whose VT core is 7959169's, on the machine of [the F0 baseline](baseline-F0.md): an Apple M5 Pro, macOS 27.0.1, on AC power, after the fuzzing of the 24 hours had ended, with no build running. Rust 1.99.0, release builds. [The figures of the review fixes](throughput-F1-133.md) were measured on cad61bc, before two later review fixes changed how a wrap from the screen's last column treats the rows' soft-wrap marks, on the path of a wide character that does not fit there.
 
 ## Method
 
-The same as [throughput-F1-51's](throughput-F1-51.md#method) for both cores: the same bytes fed to each in reads of 64 KiB, at 120 by 40, the median of 5 runs taken in turn; vtebench's scenarios at commit `ead8003`; and `cat` of 1 GiB. The criterion benchmarks were not run again: reflow's code has not changed since its measure on 840cee6.
+The same as [throughput-F1-51's](throughput-F1-51.md#method) for both cores: the same bytes fed to each in reads of 64 KiB, at 120 by 40, the median of 5 runs taken in turn; vtebench's scenarios at commit `ead8003`; and `cat` of 1 GiB. The criterion benchmarks were not run again: reflow's code has not changed since its measure on cad61bc.
 
 ## Both cores
 
-| Scenario | Bytes timed | VT core | `alacritty_terminal` | Ratio | Ratio on 840cee6 |
+| Scenario | Bytes timed | VT core | `alacritty_terminal` | Ratio | Ratio on cad61bc |
 |---|---|---|---|---|---|
 | cursor_motion | 8.5 MiB | 472.0 MiB/s | 380.4 MiB/s | 1.24 | 1.24 |
 | dense_cells | 25.7 MiB | 545.3 MiB/s | 432.8 MiB/s | 1.26 | 1.36 |
@@ -24,4 +24,4 @@ The same as [throughput-F1-51's](throughput-F1-51.md#method) for both cores: the
 | unicode | 8.4 MiB | 413.7 MiB/s | 397.0 MiB/s | 1.04 | 1.04 |
 | `cat` of 1 GiB | 1024 MiB | 981.0 MiB/s | 225.0 MiB/s | 4.36 | 4.81 |
 
-Every scenario keeps at least `alacritty_terminal`'s rate but the bottom region, at 0.68 of it, above the 0.6 that the criterion asks of it: F1's throughput criterion holds on its final code. The VT core's own rates are 840cee6's within about 6%, but scrolling_fullscreen's, 23% higher, and `cat`'s, 9% higher; the ratios that moved most, dense_cells and `cat`, did so with `alacritty_terminal`'s rate, 6% and 20% higher than in 840cee6's run, as the machine's load varies between runs.
+Every scenario keeps at least `alacritty_terminal`'s rate but the bottom region, at 0.68 of it, above the 0.6 that the criterion asks of it: F1's throughput criterion holds on its final code. The VT core's own rates are cad61bc's within about 6%, but scrolling_fullscreen's, 23% higher, and `cat`'s, 9% higher; the ratios that moved most, dense_cells and `cat`, did so with `alacritty_terminal`'s rate, 6% and 20% higher than in cad61bc's run, as the machine's load varies between runs.

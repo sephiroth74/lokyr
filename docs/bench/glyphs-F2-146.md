@@ -1,6 +1,6 @@
 # A frame's new glyphs
 
-Measured on 2026-10-31, on the commits before and after the change, 9826dc3 and 399a5d1, against the [budget](../PERFORMANCE.md#budgets) of a frame's time on the CPU, p99 ≤ 2 ms at 4K; and, once the change was done, every earlier measure of F2 again, on the bundle of 399a5d1 and on that of ce85fd6, before the output's way from the PTY, the core's print of clusters and this change. The raw results of that session are in [glyphs-F2-146/](glyphs-F2-146/).
+Measured on 2026-10-31, on the commits before and after the change, c56eeda and ba9fabc, against the [budget](../PERFORMANCE.md#budgets) of a frame's time on the CPU, p99 ≤ 2 ms at 4K; and, once the change was done, every earlier measure of F2 again, on the bundle of ba9fabc and on that of 105dc42, before the output's way from the PTY, the core's print of clusters and this change. The raw results of that session are in [glyphs-F2-146/](glyphs-F2-146/).
 
 ## Method
 
@@ -44,7 +44,7 @@ Before, the page took one frame of about 25 ms, and a 4K screen of all-new CJK o
 
 ## The four workloads
 
-On screen, the bundle of 399a5d1 against ce85fd6's, three runs of each; a frame's time, at 3840 × 2224 pixels:
+On screen, the bundle of ba9fabc against 105dc42's, three runs of each; a frame's time, at 3840 × 2224 pixels:
 
 | Workload | MiB/s | Frames a run | p50 | p99, by run | p99 before, by run |
 |---|---|---|---|---|---|
@@ -59,9 +59,9 @@ On screen, the bundle of 399a5d1 against ce85fd6's, three runs of each; a frame'
 
 ## Against the earlier measures
 
-Every measure of F2 again, in one session, on the bundles of 399a5d1 and ce85fd6 in turn, on AC power, at 60 Hz, with nobody at the Mac:
+Every measure of F2 again, in one session, on the bundles of ba9fabc and 105dc42 in turn, on AC power, at 60 Hz, with nobody at the Mac:
 
-| Measure | 399a5d1 | ce85fd6 | Earlier |
+| Measure | ba9fabc | 105dc42 | Earlier |
 |---|---|---|---|
 | Warm startup, the first frame, median of 10 runs, twice | 273.9 and 265.1 ms | 274.8 and 273.3 ms | [startup-F2-53](startup-F2-53.md#after-the-drawing-made-beside-appkits-launch): the minimal AppKit app's first window plus 30 to 33 ms; today 257.2 ms, plus 8 to 17 |
 | A key's echo, 200 synthetic keys, twice: p50, p99 | 21.2 and 22.5 ms; 38.8 and 44.3 | 22.6 and 23.8 ms; 39.6 and 36.4 | [latency-F2-54](latency-F2-54.md#after-the-keys-frames-came-sooner), at 60 Hz: 21.2 ms at the median |

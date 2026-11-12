@@ -199,13 +199,11 @@ mod tests {
 
     #[test]
     fn the_notary_s_answer_gives_its_id_and_status() {
-        let answer = r#"{"message":"Processing complete","id":"the submission's id","status":"Accepted"}"#;
+        let answer =
+            r#"{"message":"Processing complete","id":"the submission's id","status":"Accepted"}"#;
         assert_eq!(
             submission(answer),
-            Some((
-                "the submission's id".to_owned(),
-                "Accepted".to_owned()
-            ))
+            Some(("the submission's id".to_owned(), "Accepted".to_owned()))
         );
         assert_eq!(submission(r#"{"status":"Invalid"}"#), None);
     }

@@ -1,6 +1,6 @@
 # Idle, memory and GPU memory
 
-Measured on 2026-10-29 with `lokyr-bench`, on the bundle of commit 9e0212d, against the [budgets](../PERFORMANCE.md#budgets). The raw reports are in [idle-memory-F2-55/](idle-memory-F2-55/).
+Measured on 2026-10-29 with `lokyr-bench`, on the bundle of commit 1592dda, against the [budgets](../PERFORMANCE.md#budgets). The raw reports are in [idle-memory-F2-55/](idle-memory-F2-55/).
 
 ## Method
 
@@ -26,7 +26,7 @@ Measured on 2026-10-29 with `lokyr-bench`, on the bundle of commit 9e0212d, agai
 | Output, `yes`, at 60 Hz | 0 | 130.6 | none: output draws frames |
 
 - **The blinking costs nothing more** than a steady cursor, faded or not: the window server blinks the cursor's layer. Before the cursor had its layer, a blink took a frame, and 22 wakeups a second, as measured on the debug build.
-- **Blinking text takes a frame at each blink**, about 11 wakeups each, as the cursor did: past the budget, which blinking text on a layer of its own brings within it. On the bundle of that commit, 42ebf13, on 30 October 2026, with the blinking text on its layer, steady cursor and `blink-timeout = 0`, the window takes 0.02 package idle wakeups and 0.37 interrupt wakeups a second, as with a steady cursor alone: [idle-blinking-text-layer.json](idle-memory-F2-55/idle-blinking-text-layer.json).
+- **Blinking text takes a frame at each blink**, about 11 wakeups each, as the cursor did: past the budget, which blinking text on a layer of its own brings within it. On the bundle of that commit, 1fdeb92, on 30 October 2026, with the blinking text on its layer, steady cursor and `blink-timeout = 0`, the window takes 0.02 package idle wakeups and 0.37 interrupt wakeups a second, as with a steady cursor alone: [idle-blinking-text-layer.json](idle-memory-F2-55/idle-blinking-text-layer.json).
 - **Output**: about two wakeups a frame; the sample shows the work where it belongs, the parser and the grid's scrolling.
 - **What wakes it, about once every 3 s**, while nothing changes: in a sample of 10 s, the main thread woke once, for a query of an accessibility client's, `_XCopyAttributeValue`, from outside Lokyr; the other threads waited, the session's reader in `poll`, its writer on its condition, and the config's watch in its run loop. The minimal AppKit app of F0 took 0.02 a second, likely without that client; the frame pacing's measures found the same 0.33 a second.
 

@@ -4,7 +4,7 @@ Measured on 2026-11-08 between 17:26 and 17:33, unattended, as [0.7.0's A/B](ab-
 
 ## Method
 
-The apps of 0.5.1's and 0.7.0's DMGs, notarized and stapled, and two builds of the same commit, 576b221, and the same signature, not notarized: one as 0.7.0, one whose look at the default terminal waits a second, so that its thread, which starts with the app since the first draft's fix, is out of the start's way. First a round of each, unmeasured, so that every copy has started before: Microsoft Defender's real-time protection, on this Mac, scans a new executable at its first starts, and took about half a core as the session began, scanning the two builds just made. Then four rounds of rotated orders, warm, 10 runs after 2, to the first frame on the display, each of the minimal AppKit app of F0 as its floor, of 0.7.0's A/B's config, the same pause of 2 s before each run. The load average 4 to 7.
+The apps of 0.5.1's and 0.7.0's DMGs, notarized and stapled, and two builds of the same commit, 88e8b26, and the same signature, not notarized: one as 0.7.0, one whose look at the default terminal waits a second, so that its thread, which starts with the app since the first draft's fix, is out of the start's way. First a round of each, unmeasured, so that every copy has started before: Microsoft Defender's real-time protection, on this Mac, scans a new executable at its first starts, and took about half a core as the session began, scanning the two builds just made. Then four rounds of rotated orders, warm, 10 runs after 2, to the first frame on the display, each of the minimal AppKit app of F0 as its floor, of 0.7.0's A/B's config, the same pause of 2 s before each run. The load average 4 to 7.
 
 ## Results
 

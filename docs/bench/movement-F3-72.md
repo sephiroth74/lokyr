@@ -1,6 +1,6 @@
 # The cursor's movement's cost
 
-Measured on 2026-11-08 in one session, between 11:20 and 11:31, unattended: one build, of commit 24aaaaa, the app of `just bundle`, of `[cursor] movement = "instant"` against `"snappy"`. The reports are in [movement-F3-72](movement-F3-72/), with the session's script, [`run.sh`](movement-F3-72/run.sh), its configs, its analysis, [`analyze.py`](movement-F3-72/analyze.py), and its tables, [`analysis.txt`](movement-F3-72/analysis.txt).
+Measured on 2026-11-08 in one session, between 11:20 and 11:31, unattended: one build, of commit 883c868, the app of `just bundle`, of `[cursor] movement = "instant"` against `"snappy"`. The reports are in [movement-F3-72](movement-F3-72/), with the session's script, [`run.sh`](movement-F3-72/run.sh), its configs, its analysis, [`analyze.py`](movement-F3-72/analyze.py), and its tables, [`analysis.txt`](movement-F3-72/analysis.txt).
 
 ## Method
 

@@ -1,5 +1,5 @@
 {
-  "what": "WindowServer's CPU, in a core's percent, as `top -l <n> -s 2 -pid <WindowServer> -stats pid,cpu` gives it every 2 s, the first sample left out, while a Lokyr window of the bundle of commit e070548 is in front, 4 s after its start, at rest at its prompt or in `lokyr --bench output -- /bin/sleep 30`; Menlo 13, 120 x 40 cells, on the 60 Hz main display, on 1 November 2026 between 11:00 and 11:10. Each case's last sample of a cursor that blinks comes after its `blink-timeout` of 15 s, when it stopped.",
+  "what": "WindowServer's CPU, in a core's percent, as `top -l <n> -s 2 -pid <WindowServer> -stats pid,cpu` gives it every 2 s, the first sample left out, while a Lokyr window of the bundle of commit 26f0ac9 is in front, 4 s after its start, at rest at its prompt or in `lokyr --bench output -- /bin/sleep 30`; Menlo 13, 120 x 40 cells, on the 60 Hz main display, on 1 November 2026 between 11:00 and 11:10. Each case's last sample of a cursor that blinks comes after its `blink-timeout` of 15 s, when it stopped.",
   "config": "[font]\nfamily = \"Menlo\"\nsize = 13\n[window]\ncolumns = 120\nrows = 40\nremember-frame = false\n",
   "smooth": "smooth-blink = \"custom\"\nfade-in = 100\nfade-in-curve = \"ease-in\"\nvisible = 500\nfade-out = 500\nfade-out-curve = \"ease-out\"\nhidden = 100\n",
   "cases": [
