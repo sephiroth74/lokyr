@@ -47,6 +47,15 @@ pub(crate) const EXECUTABLE: &str = "lokyr";
 /// `Contents/MacOS`.
 pub(crate) const SLEIP: &str = "sleip";
 
+/// The Dock tile plug-in, in the bundle's `Contents/PlugIns`, which the Dock
+/// loads while the app is kept in it and not running, so that the icon's
+/// variant that the app showed stays: its bundle's name, its executable's,
+/// the crate that builds it and the library that the build makes.
+const DOCK_TILE: &str = "LokyrDockTile.docktileplugin";
+const DOCK_TILE_EXECUTABLE: &str = "LokyrDockTile";
+const DOCK_TILE_CRATE: &str = "lokyr-platform-macos-docktile";
+const DOCK_TILE_LIBRARY: &str = "liblokyr_platform_macos_docktile.dylib";
+
 /// The vendored sources of Luau's type checker, whose license and Lua's,
 /// of its VM's headers, the bundle carries, as Sleip holds them.
 const LUAU_ANALYSIS: &str = "sleip/analyzer/luau";
@@ -263,6 +272,13 @@ pub fn run(mut args: impl Iterator<Item = String>) -> Result<ExitCode> {
     )?;
     let sleip = root.join("target/release").join(SLEIP);
     fs::copy(&sleip, macos.join(SLEIP)).with_context(|| format!("copying {}", sleip.display()))?;
+    run_command(
+        Command::new(env!("CARGO"))
+            .args(["build", "--release", "--locked", "-p", DOCK_TILE_CRATE])
+            .env("SOURCE_DATE_EPOCH", moment.to_string())
+            .current_dir(&root),
+        "building the Dock tile plug-in",
+    )?;
     let analysis = resources.join("licenses/luau-analysis");
     fs::create_dir_all(&analysis).with_context(|| format!("making {}", analysis.display()))?;
     for name in ["LICENSE.txt", "lua_LICENSE.txt", "README.md"] {
@@ -326,6 +342,18 @@ pub fn run(mut args: impl Iterator<Item = String>) -> Result<ExitCode> {
         info_plist(&version, moment, &copyright(&license)?, &catalogs)?,
     )
     .context("writing the Info.plist")?;
+    let dock_tile = app.join("Contents/PlugIns").join(DOCK_TILE);
+    let dock_tile_binary = dock_tile.join("Contents/MacOS");
+    fs::create_dir_all(&dock_tile_binary)
+        .with_context(|| format!("making {}", dock_tile_binary.display()))?;
+    let library = root.join("target/release").join(DOCK_TILE_LIBRARY);
+    fs::copy(&library, dock_tile_binary.join(DOCK_TILE_EXECUTABLE))
+        .with_context(|| format!("copying {}", library.display()))?;
+    fs::write(
+        dock_tile.join("Contents/Info.plist"),
+        dock_tile_plist(&version, moment)?,
+    )
+    .context("writing the Dock tile plug-in's Info.plist")?;
     let identity = identity()?;
     let sparkle = crate::sparkle::release(&root.join("target"))?;
     crate::sparkle::embed(&sparkle, &app, &identity)?;
@@ -345,6 +373,17 @@ pub fn run(mut args: impl Iterator<Item = String>) -> Result<ExitCode> {
         &identity,
         &sleip_entitlements,
         "signing Sleip",
+    )?;
+    // The Dock tile plug-in, of no entitlement, which runs in the Dock's
+    // process.
+    let bare_entitlements = root.join("target/docktile.entitlements");
+    fs::write(&bare_entitlements, entitlements_plist(&[]))
+        .context("writing the Dock tile plug-in's entitlements")?;
+    sign_code(
+        &dock_tile,
+        &identity,
+        &bare_entitlements,
+        "signing the Dock tile plug-in",
     )?;
     sign(&app, &identity, &entitlements)?;
     println!(
@@ -611,6 +650,7 @@ fn info_plist(
         ("LSMinimumSystemVersion", MINIMUM_SYSTEM.to_owned()),
         ("NSHumanReadableCopyright", copyright.to_owned()),
         ("NSPrincipalClass", "NSApplication".to_owned()),
+        ("NSDockTilePlugIn", DOCK_TILE.to_owned()),
     ];
     keys.push(("CFBundleIconFile", "AppIcon".to_owned()));
     let mut pairs: Vec<(String, String)> = keys
@@ -639,6 +679,28 @@ fn info_plist(
         ),
     );
     Ok(plist)
+}
+
+/// The `Info.plist` of the Dock tile plug-in of the app at `version`, built
+/// at `moment`: a loadable bundle whose principal class the Dock makes.
+fn dock_tile_plist(version: &str, moment: u64) -> Result<String> {
+    let (short, number) = bundle_versions(version, moment)?;
+    let pairs: Vec<(String, String)> = [
+        ("CFBundleDevelopmentRegion", "en".to_owned()),
+        ("CFBundleExecutable", DOCK_TILE_EXECUTABLE.to_owned()),
+        ("CFBundleIdentifier", format!("{IDENTIFIER}.docktile")),
+        ("CFBundleInfoDictionaryVersion", "6.0".to_owned()),
+        ("CFBundleName", DOCK_TILE_EXECUTABLE.to_owned()),
+        ("CFBundlePackageType", "BNDL".to_owned()),
+        ("CFBundleShortVersionString", short.to_owned()),
+        ("CFBundleVersion", number),
+        ("LSMinimumSystemVersion", MINIMUM_SYSTEM.to_owned()),
+        ("NSPrincipalClass", "LokyrDockTilePlugIn".to_owned()),
+    ]
+    .into_iter()
+    .map(|(key, value)| (key.to_owned(), value))
+    .collect();
+    Ok(plist(&pairs, false))
 }
 
 /// The entries of `Info.plist` of the files and the links that the app
@@ -1063,6 +1125,23 @@ mod tests {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         let own = fs::read_to_string(root.join(LICENSE)).unwrap();
         assert!(copyright(&own).unwrap().starts_with("Copyright © 2026 "));
+    }
+
+    #[test]
+    fn the_dock_tile_plug_in_is_a_bundle_of_its_principal_class() {
+        let plist = dock_tile_plist("1.2.3", 1_793_000_000).unwrap();
+        for key in [
+            "<key>CFBundlePackageType</key>\n\t<string>BNDL</string>",
+            "<key>NSPrincipalClass</key>\n\t<string>LokyrDockTilePlugIn</string>",
+            "<key>CFBundleExecutable</key>\n\t<string>LokyrDockTile</string>",
+            "<key>CFBundleIdentifier</key>\n\t<string>io.github.sephiroth74.lokyr.docktile</string>",
+        ] {
+            assert!(plist.contains(key), "{key} in {plist}");
+        }
+        let app = info_plist("1.2.3", 1_793_000_000, "©", &catalogs()).unwrap();
+        assert!(app.contains(
+            "<key>NSDockTilePlugIn</key>\n\t<string>LokyrDockTile.docktileplugin</string>"
+        ));
     }
 
     #[test]

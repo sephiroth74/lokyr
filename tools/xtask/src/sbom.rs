@@ -18,8 +18,9 @@ use serde_json::{Value, json};
 
 use crate::bundle;
 
-/// The packages of the bundle's binaries, the app's and Sleip's.
-const BINARIES: [&str; 2] = ["lokyr-app", "sleip-cli"];
+/// The packages of the bundle's binaries, the app's, Sleip's and the Dock
+/// tile plug-in's.
+const BINARIES: [&str; 3] = ["lokyr-app", "sleip-cli", "lokyr-platform-macos-docktile"];
 
 /// The release of Luau whose type checker, its `Analysis` library, Sleip's
 /// `sleip-analyzer` holds of its vendored sources.

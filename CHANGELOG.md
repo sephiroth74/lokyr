@@ -20,6 +20,7 @@ from 1.0.0; before it, a minor version may change what a previous one did.
 
 ### Changed
 
+- The icon's variant that `[app] icon` chooses stays in the Dock after Lokyr quits, rather than going back to the default.
 - A click on a notification, a program's, an agent's or a long command's, brings forward the pane that sent it, with its tab and its window, rather than the window alone.
 
 ## [0.9.0] - 2026-11-12

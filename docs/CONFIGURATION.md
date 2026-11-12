@@ -1340,14 +1340,14 @@ The least contrast of the terminal's text to its background, as the ratio of WCA
 
 <sub>Platforms: macOS</sub>
 
-The variant of Lokyr's icon that shows while Lokyr runs, in the Dock and the app switcher, by its name.
+The variant of Lokyr's icon that shows in the Dock and the app switcher while Lokyr runs, and in the Dock after it quits, by its name.
 
 | Values | Default |
 |---|---|
 | `"jormungandr"`, `"jormungandr-sticker"`, `"laguz"` | `"jormungandr"` |
 
 - A new variant applies at once, as you save the file.
-- The Finder and the Apps launcher show `"jormungandr"` whatever the key says, as do the Dock and the app switcher while Lokyr does not run: they show the app's own icon, which an app cannot change without changing the app itself.
+- Kept in the Dock, Lokyr shows the variant there after it quits too, through a Dock tile plug-in in the app; the Finder and the Apps launcher show `"jormungandr"` whatever the key says: they show the app's own icon, which an app cannot change without changing the app itself, which would break its signature.
 - A name that is not one of Lokyr's variants keeps the default, and the log names the variants; the rest of the file applies.
 
 ### `language`

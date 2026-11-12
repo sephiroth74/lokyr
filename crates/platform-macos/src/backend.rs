@@ -1079,6 +1079,7 @@ impl Platform for Backend {
         // SAFETY: AppKit takes an image, or nil, which gives the bundle's
         // own icon back, as its documentation says.
         unsafe { app.setApplicationIconImage(image.as_deref()) };
+        keep_dock_tile_icon(icon);
         Ok(())
     }
 
@@ -1262,5 +1263,42 @@ mod tests {
         assert!(!downloaded(&file("made.command", None)));
         assert!(!downloaded(&directory.join("gone")));
         let _ = std::fs::remove_dir_all(directory);
+    }
+}
+
+/// The key of the app's defaults that holds the path of the image of the
+/// icon's variant shown, which the bundle's Dock tile plug-in draws while
+/// the app is not running.
+const DOCK_TILE_ICON: &str = "DockTileIcon";
+
+/// The distributed notification by which the plug-in learns that the icon
+/// changed.
+const DOCK_TILE_ICON_CHANGED: &str = "io.github.sephiroth74.lokyr.DockTileIconChanged";
+
+/// Keeps the icon's variant of the image at `icon`, or the bundle's own of
+/// none, for the Dock tile plug-in: its path in the app's defaults, written
+/// to the disk at once, as the app may quit next, and the plug-in told.
+fn keep_dock_tile_icon(icon: Option<&Path>) {
+    let defaults = objc2_foundation::NSUserDefaults::standardUserDefaults();
+    let key = NSString::from_str(DOCK_TILE_ICON);
+    match icon {
+        Some(path) => {
+            let path = NSString::from_str(&path.to_string_lossy());
+            // SAFETY: a string is a property list's value, which the
+            // defaults take.
+            unsafe { defaults.setObject_forKey(Some(&path), &key) };
+        }
+        None => defaults.removeObjectForKey(&key),
+    }
+    defaults.synchronize();
+    let center = objc2_foundation::NSDistributedNotificationCenter::defaultCenter();
+    // SAFETY: a notification of a name alone, of no object nor user info.
+    unsafe {
+        center.postNotificationName_object_userInfo_deliverImmediately(
+            &NSString::from_str(DOCK_TILE_ICON_CHANGED),
+            None,
+            None,
+            true,
+        );
     }
 }
