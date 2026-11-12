@@ -93,11 +93,12 @@ pub fn run(mut args: impl Iterator<Item = String>) -> Result<ExitCode> {
     Ok(ExitCode::SUCCESS)
 }
 
-/// Pagefind: `target/tools/pagefind/pagefind`, as `just pagefind` fetches
-/// it, or the `PATH`'s.
+/// Pagefind: `target/tools/pagefind/pagefind`, the Mac's release that `just
+/// pagefind` fetches, on a Mac alone, as a container sharing the folder runs
+/// another system; or the `PATH`'s.
 fn pagefind(root: &Path) -> Option<PathBuf> {
     let fetched = root.join("target/tools/pagefind/pagefind");
-    if fetched.is_file() {
+    if cfg!(target_os = "macos") && fetched.is_file() {
         return Some(fetched);
     }
     std::env::var_os("PATH").and_then(|path| {
