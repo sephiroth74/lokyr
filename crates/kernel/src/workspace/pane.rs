@@ -139,6 +139,8 @@ pub struct Settings {
     /// The limits of its scrollback, the budget that the panes share
     /// among them.
     pub scrollback: Scrollback,
+    /// The memory that its inline images take at most, none of 0.
+    pub image_memory: usize,
 }
 
 impl Default for Settings {
@@ -148,6 +150,7 @@ impl Default for Settings {
             widths: Widths::default(),
             normalization: Normalization::default(),
             scrollback: Scrollback::default(),
+            image_memory: lokyr_vt_core::terminal::IMAGE_MEMORY,
         }
     }
 }
@@ -383,6 +386,7 @@ impl Pane {
             .clone_into(&mut options.terminal.version);
         options.terminal.widths = settings.widths;
         options.terminal.normalization = settings.normalization;
+        options.terminal.image_memory = settings.image_memory;
         options.terminal.scrollback = settings.scrollback.clone();
         // The terminal of the theme's colors before the program runs: a
         // change of them after it, as a program that turns the reports of

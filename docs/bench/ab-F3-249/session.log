@@ -1,0 +1,38 @@
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=37683299)	100%; charged; 0:00 remaining present: true
+15:15  up  3:52, 10 users, load averages: 4.40 3.69 3.04
+Graphics/Displays:
+    Apple M5 Pro:
+      Displays:
+        DELL P2721Q:
+          Resolution: 5120 x 2880 (5K/UHD+ - Ultra High Definition Plus)
+          Main Display: Yes
+15:15:03 first start v090
+15:15:19 first start next
+15:15:35 idle v090-1
+15:17:12 idle next-1
+15:18:50 load { 1.61 2.62 2.72 }
+15:18:50 idle next-2
+15:20:27 idle v090-2
+15:22:05 load { 1.18 1.93 2.40 }
+15:22:05 throughput ascii v090 1
+15:22:11 throughput ascii next 1
+15:22:18 throughput ascii next 2
+15:22:25 throughput ascii v090 2
+15:22:32 load { 2.00 2.05 2.43 }
+15:22:32 throughput seq v090 1
+15:22:33 throughput seq next 1
+15:22:34 throughput seq next 2
+15:22:35 throughput seq v090 2
+15:22:36 load { 2.08 2.07 2.43 }
+15:22:36 throughput sgr v090 1
+15:22:37 throughput sgr next 1
+15:22:39 throughput sgr next 2
+15:22:40 throughput sgr v090 2
+15:22:41 load { 3.52 2.37 2.54 }
+15:22:41 throughput cjk v090 1
+15:22:43 throughput cjk next 1
+15:22:44 throughput cjk next 2
+15:22:46 throughput cjk v090 2
+15:22:47 load { 3.48 2.38 2.54 }
+15:22:47 done

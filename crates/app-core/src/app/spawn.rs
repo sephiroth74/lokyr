@@ -44,6 +44,7 @@ pub(super) fn settings(
             limit: config.scrollback.limit.bytes(),
             budget: Some(Arc::clone(budget)),
         },
+        image_memory: terminal.image_memory.bytes(),
     }
 }
 

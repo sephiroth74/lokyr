@@ -356,6 +356,53 @@ pub struct TerminalConfig {
     /// Whether the user's shell, zsh, bash or fish, loads the shells'
     /// integration, which tells the prompts' marks and the folder.
     pub shell_integration: bool,
+    /// The memory that a pane's inline images take at most, none showing
+    /// of 0.
+    pub image_memory: ImageMemory,
+}
+
+/// The memory that a pane's inline images take at most, in MiB, from 0,
+/// which shows none, to 1,024, whole or not; 64 by default.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(try_from = "f64", into = "f64")]
+pub struct ImageMemory(usize);
+
+impl ImageMemory {
+    /// The most, in MiB.
+    pub const MAX: f64 = 1024.0;
+
+    /// The memory in bytes.
+    pub fn bytes(self) -> usize {
+        self.0
+    }
+}
+
+impl Default for ImageMemory {
+    fn default() -> Self {
+        Self(64 * MIB)
+    }
+}
+
+/// In MiB, as the file writes it.
+impl From<ImageMemory> for f64 {
+    fn from(memory: ImageMemory) -> Self {
+        memory.0 as f64 / MIB as f64
+    }
+}
+
+impl TryFrom<f64> for ImageMemory {
+    type Error = String;
+
+    fn try_from(mebibytes: f64) -> Result<Self, Self::Error> {
+        if (0.0..=Self::MAX).contains(&mebibytes) {
+            Ok(Self((mebibytes * MIB as f64) as usize))
+        } else {
+            Err(format!(
+                "the inline images' memory, in MiB, is from 0 to {}, not {mebibytes}",
+                Self::MAX
+            ))
+        }
+    }
 }
 
 impl Default for TerminalConfig {
@@ -366,6 +413,7 @@ impl Default for TerminalConfig {
             ambiguous_width: AmbiguousWidth::default(),
             normalization: TextNormalization::default(),
             shell_integration: true,
+            image_memory: ImageMemory::default(),
         }
     }
 }
@@ -2326,6 +2374,22 @@ mod tests {
     }
 
     #[test]
+    fn the_inline_images_memory_is_from_none_to_a_gib() {
+        let memory = |text: &str| {
+            parse(&format!("[terminal]\n{text}\n")).map(|config| config.terminal.image_memory)
+        };
+        assert_eq!(memory("").unwrap().bytes(), 64 * MIB);
+        assert_eq!(memory("image-memory = 0").unwrap().bytes(), 0);
+        assert_eq!(memory("image-memory = 1.5").unwrap().bytes(), MIB * 3 / 2);
+        assert_eq!(f64::from(memory("image-memory = 256").unwrap()), 256.0);
+        for wrong in ["-1", "1025"] {
+            let (at, message) = error(&format!("[terminal]\nimage-memory = {wrong}\n"));
+            assert_eq!(at.map(|(line, _)| line), Some(2));
+            assert!(message.contains("the inline images' memory"), "{message}");
+        }
+    }
+
+    #[test]
     fn an_empty_file_is_the_defaults() {
         assert_eq!(parse(""), Ok(Config::default()));
         assert_eq!(parse("# nothing\n\n[font]\n"), Ok(Config::default()));
@@ -3171,7 +3235,8 @@ long-command = 0
                 "unicode-widths",
                 "ambiguous-width",
                 "normalization",
-                "shell-integration"
+                "shell-integration",
+                "image-memory"
             ]
         );
         assert_eq!(

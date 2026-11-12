@@ -87,6 +87,8 @@ Lokyr against Ghostty, Alacritty, kitty, WezTerm, iTerm2 and Terminal.app, under
 - ✅ Fonts through CoreText: fallback, ligatures, bold and italic faces or their synthesis, emoji, box drawing and powerline symbols drawn to the cell.
 - ✅ xterm's sequences, the kitty keyboard protocol, synchronized output, OSC 8 links, OSC 52 with consent, Unicode 18's grapheme clusters and widths.
 - ✅ Input methods, Secure Keyboard Entry, Option as Meta, chords and leaders in the keys.
+- ✅ Inline images, of iTerm2's protocol and of kitty's graphics protocol, as `imgcat`, `kitten icat`, `chafa`, `timg` and `yazi` send them, within 64 MiB a pane.
+- ✅ AI agents on their tabs, working, waiting for you or done, Claude Code's of its hooks, and ⌘-click on a path's line in your editor.
 - ✅ Selection, copy on select, a copy mode of vi's keys through the scrollback, paste with a check of what it holds, drag and drop of files.
 - ✅ A quick terminal on a global key, from any edge of the screen.
 - ✅ Windows, tabs and splits that open again as Lokyr starts, each pane in its folder; New Lokyr Window Here and New Lokyr Tab Here in the Finder, and a folder dropped on the Dock's icon; Lokyr as the default terminal of scripts, `ssh` and man pages' links.

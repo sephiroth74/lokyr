@@ -223,6 +223,8 @@ impl Terminal {
     /// its reply tells.
     fn run_graphics(&mut self, control: &Control, data: Vec<u8>) -> Result<(), Failure> {
         match control.action {
+            // A terminal of no memory for images tells that it shows none.
+            b'q' if self.images.limit() == 0 => Err("ENOSPC:the terminal keeps no images"),
             b'q' => decoded(control, data, self.images.limit()).map(drop),
             b't' | b'T' => {
                 let id = self.transmit(control, data)?;
@@ -570,6 +572,17 @@ mod tests {
             "\x1b_Gi=31;EINVAL:the data is not a PNG\x1b\\"
         );
         assert!(terminal.kept_images().0.is_empty());
+        // A terminal of no memory for images shows none.
+        let options = Options {
+            image_memory: 0,
+            ..Options::default()
+        };
+        let mut none = Terminal::new(20, 6, options);
+        parser.advance(&mut none, &command("a=q,f=100,i=31", &png(2, 2)));
+        assert_eq!(
+            replies(&mut none),
+            "\x1b_Gi=31;ENOSPC:the terminal keeps no images\x1b\\"
+        );
     }
 
     #[test]

@@ -112,6 +112,7 @@ unicode-widths = "8"                 # current | 8: the width tables
 ambiguous-width = 2                  # 1 | 2: the cells of an ambiguous character
 normalization = "nfc"                # none | nfc | nfd | hfs+
 shell-integration = false            # true | false: the shell tells its prompts and its folder
+image-memory = 128                   # MiB of a pane's inline images, 0 showing none
 
 [scrollback]
 scroll-on-output = true              # true | false: output brings the view back down
@@ -953,6 +954,22 @@ Whether your shell loads Lokyr's integration, which has it tell the terminal whe
 - The marks are OSC 133's, the folder OSC 7's; a new pane starts in the folder that its shell told last, as [`new-directory`](#new-directory) says.
 - A command's start mark has Lokyr look for its program in the pane, as its tab's title and marks tell it, a few times within four seconds until the program shows, however late your shell starts it, as of a slow `preexec`, whichever pane has the keyboard meanwhile. Without the marks, Lokyr looks a quarter of a second, a second and four seconds after a window's last output, and at every pane of a tab as the keyboard moves between them. A tab runs a program while any of its panes does.
 - It applies to the shells that start after the change; the open ones keep what they started with.
+
+### `image-memory`
+
+<sub>Platforms: macOS</sub>
+
+The memory, in MiB, that the inline images of a pane take at most: the pictures that programs show in the terminal, as `imgcat` sends them through iTerm2's protocol and as `kitten icat`, `chafa`, `timg` and file managers' previews send them through kitty's graphics protocol, the images sent in the output itself.
+
+| Values | Default |
+|---|---|
+| from `0` to `1024`, whole or not | `64` |
+
+- Past it, the oldest images go, those that show nowhere first.
+- An image counts as its program sent it, as a PNG or a JPEG is compressed; the drawing takes its own memory of the graphics card, for the images that show, made smaller past 4096 pixels a side.
+- An image of more than 16 million pixels shows nothing; kitty's images read from files, temporary files or shared memory are refused, as a program's way to read your files through the terminal.
+- `0` shows no image: the programs that ask whether the terminal shows them are told it does not.
+- It applies to the panes that open after the change.
 
 ## `[scrollback]`
 
