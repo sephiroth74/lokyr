@@ -1068,6 +1068,14 @@ impl Platform for Backend {
         decoded(data)
     }
 
+    fn image_decoder(&self) -> Option<lokyr_platform_core::ImageDecoder> {
+        // A thread of no run loop drains no pool of its own: each decode
+        // drains its own.
+        Some(std::sync::Arc::new(|data: &[u8]| {
+            objc2::rc::autoreleasepool(|_| decoded(data))
+        }))
+    }
+
     fn set_app_icon(&mut self, icon: Option<&Path>) -> Result<(), Error> {
         let image = match icon {
             Some(path) => {
@@ -1208,68 +1216,6 @@ fn quarantine(path: &Path) -> std::io::Result<()> {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_quarantined_file_is_downloaded_until_gatekeeper_approves_it() {
-        let path = std::env::temp_dir().join(format!("lokyr-quarantined-{}", std::process::id()));
-        std::fs::write(&path, b"#!/bin/sh\n").unwrap();
-        assert!(!downloaded(&path));
-        quarantine(&path).unwrap();
-        assert!(downloaded(&path));
-        std::fs::remove_file(&path).unwrap();
-        assert!(quarantine(&path).is_err(), "of no file");
-    }
-
-    #[test]
-    fn the_system_s_version_is_macos_s_with_its_build() {
-        let version = sysctl_string(c"kern.osproductversion").unwrap();
-        assert!(
-            version.split('.').all(|part| part.parse::<u32>().is_ok()),
-            "{version}"
-        );
-        assert!(sysctl_string(c"kern.osversion").is_some_and(|build| !build.is_empty()));
-        assert_eq!(sysctl_string(c"kern.no-such-control"), None);
-    }
-
-    #[test]
-    fn a_file_is_downloaded_of_its_quarantine_until_gatekeeper_approves_it() {
-        let directory =
-            std::env::temp_dir().join(format!("lokyr-quarantine-{}", std::process::id()));
-        std::fs::create_dir_all(&directory).unwrap();
-        let file = |name: &str, quarantine: Option<&str>| {
-            let path = directory.join(name);
-            std::fs::write(&path, "echo\n").unwrap();
-            if let Some(value) = quarantine {
-                let status = std::process::Command::new("/usr/bin/xattr")
-                    .args(["-w", "com.apple.quarantine", value])
-                    .arg(&path)
-                    .status()
-                    .unwrap();
-                assert!(status.success());
-            }
-            path
-        };
-        assert!(downloaded(&file(
-            "safari.command",
-            Some("0083;6720a000;Safari;")
-        )));
-        assert!(!downloaded(&file(
-            "approved.command",
-            Some("00c3;6720a000;Safari;")
-        )));
-        assert!(downloaded(&file(
-            "unreadable.command",
-            Some("zz;6720a000;Safari;")
-        )));
-        assert!(!downloaded(&file("made.command", None)));
-        assert!(!downloaded(&directory.join("gone")));
-        let _ = std::fs::remove_dir_all(directory);
-    }
-}
-
 /// The key of the app's defaults that holds the path of the image of the
 /// icon's variant shown, which the bundle's Dock tile plug-in draws while
 /// the app is not running.
@@ -1356,4 +1302,66 @@ fn decoded(data: &[u8]) -> Option<lokyr_platform_core::Pixels> {
         height: u32::try_from(height).ok()?,
         rgba,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_quarantined_file_is_downloaded_until_gatekeeper_approves_it() {
+        let path = std::env::temp_dir().join(format!("lokyr-quarantined-{}", std::process::id()));
+        std::fs::write(&path, b"#!/bin/sh\n").unwrap();
+        assert!(!downloaded(&path));
+        quarantine(&path).unwrap();
+        assert!(downloaded(&path));
+        std::fs::remove_file(&path).unwrap();
+        assert!(quarantine(&path).is_err(), "of no file");
+    }
+
+    #[test]
+    fn the_system_s_version_is_macos_s_with_its_build() {
+        let version = sysctl_string(c"kern.osproductversion").unwrap();
+        assert!(
+            version.split('.').all(|part| part.parse::<u32>().is_ok()),
+            "{version}"
+        );
+        assert!(sysctl_string(c"kern.osversion").is_some_and(|build| !build.is_empty()));
+        assert_eq!(sysctl_string(c"kern.no-such-control"), None);
+    }
+
+    #[test]
+    fn a_file_is_downloaded_of_its_quarantine_until_gatekeeper_approves_it() {
+        let directory =
+            std::env::temp_dir().join(format!("lokyr-quarantine-{}", std::process::id()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let file = |name: &str, quarantine: Option<&str>| {
+            let path = directory.join(name);
+            std::fs::write(&path, "echo\n").unwrap();
+            if let Some(value) = quarantine {
+                let status = std::process::Command::new("/usr/bin/xattr")
+                    .args(["-w", "com.apple.quarantine", value])
+                    .arg(&path)
+                    .status()
+                    .unwrap();
+                assert!(status.success());
+            }
+            path
+        };
+        assert!(downloaded(&file(
+            "safari.command",
+            Some("0083;6720a000;Safari;")
+        )));
+        assert!(!downloaded(&file(
+            "approved.command",
+            Some("00c3;6720a000;Safari;")
+        )));
+        assert!(downloaded(&file(
+            "unreadable.command",
+            Some("zz;6720a000;Safari;")
+        )));
+        assert!(!downloaded(&file("made.command", None)));
+        assert!(!downloaded(&directory.join("gone")));
+        let _ = std::fs::remove_dir_all(directory);
+    }
 }

@@ -4158,6 +4158,10 @@ impl<B: Backend> App<B> {
                         platform.request_frame(window);
                     }
                 }
+                // The inline images' pictures that their thread made.
+                if self.inline_images.has_made() {
+                    self.request_frames(platform);
+                }
             }
             AppEvent::Timer(timer)
                 if self

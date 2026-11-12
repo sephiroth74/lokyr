@@ -380,6 +380,11 @@ pub struct Pixels {
     pub rgba: Vec<u8>,
 }
 
+/// A decoder of images that any thread calls, as
+/// [`Platform::image_decoder`] gives it, of [`Platform::decode_image`]'s
+/// pixels.
+pub type ImageDecoder = std::sync::Arc<dyn Fn(&[u8]) -> Option<Pixels> + Send + Sync>;
+
 /// A target that opens, as [`Platform::resolve_target`] tells it: what it
 /// is, by which the app decides what to do, and where it leads, which is
 /// what opens.
@@ -870,6 +875,13 @@ pub trait Platform {
     /// does not decode, or of a platform that decodes none.
     fn decode_image(&self, data: &[u8]) -> Option<Pixels> {
         let _ = data;
+        None
+    }
+
+    /// [`Platform::decode_image`] for any thread, so that images decode off
+    /// the main thread; none of a platform that decodes on the main thread
+    /// alone, through `decode_image`.
+    fn image_decoder(&self) -> Option<ImageDecoder> {
         None
     }
 
