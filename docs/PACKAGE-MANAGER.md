@@ -54,10 +54,10 @@ Each line is an object of its `event` and of the fields below; a field of no val
 | Command | Event | Fields |
 |---|---|---|
 | `list` | `plugin`, of each installed plugin | `name`, `version`, `kind` (`luau`, `themes`), `source` (`registry+<address>`, `path+<path>`, `git+<address>#<commit>`, `dev+<path>`), `capabilities`, a list of their manifest's texts |
-| `search` | `found`, of each plugin found | `name`, `version`, the one shown, `description`, `capabilities`, `yanked` |
+| `search` | `found`, of each plugin found | `name`, `version`, the one shown, `description`, `capabilities`, `yanked`, `api`, the plugin API's constraint, and `taken`, whether this Lokyr takes it, `null` of no Lokyr found |
 | | `note`, of what is worth knowing, as an expired cache offline | `message` |
 | | `done` | `found`, how many |
-| `info` | `info` | `name`, `version`, the one shown, `description`, `kind`, `api`, the plugin API's constraint, `capabilities`, `uses`, the commands that it runs, `dependencies`, each of `name` and `req`, and `versions`, newest first, each of `version`, `yanked`, `capabilities` and `cksum` |
+| `info` | `info` | `name`, `version`, the one shown, `description`, `kind`, `api`, the plugin API's constraint, `capabilities`, `uses`, the commands that it runs, `dependencies`, each of `name` and `req`, and `versions`, newest first, each of `version`, `yanked`, `capabilities`, `cksum`, `api` and `taken` |
 | | `note` | `message` |
 | `add`, `update` | `downloading`, of each archive of the registry's that it fetches | `name`, `version`, `url` |
 | | `restored`, of each package that the store lacked, fetched again as the lockfile holds it | `name`, `version` |

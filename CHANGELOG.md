@@ -29,6 +29,11 @@ from 1.0.0; before it, a minor version may change what a previous one did.
 - The icon's variant that `[app] icon` chooses stays in the Dock after Lokyr quits, rather than going back to the default.
 - A click on a notification, a program's, an agent's or a long command's, brings forward the pane that sent it, with its tab and its window, rather than the window alone.
 
+### Fixed
+
+- `sleip add` of a plugin no longer fails telling that another plugin has "one version" made for an older Lokyr when the other is kept at the version that `plugins.lock` holds: Sleip says so, and that `sleip update` of it takes a newer version.
+- `sleip info` no longer counts a yanked version when it tells that this Lokyr takes none of a plugin's versions.
+
 ## [0.9.0] - 2026-11-12
 
 ### Added

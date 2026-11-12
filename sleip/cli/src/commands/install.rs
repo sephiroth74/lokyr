@@ -521,7 +521,25 @@ fn install(
             && let Some(api) = &newest.api
         {
             let why = super::search::untaken(api, &api_version);
-            let what = if why.starts_with("needs a newer") {
+            let newer_lokyr = why.starts_with("needs a newer");
+            // A plugin that the lockfile holds of its one version, as one
+            // not asked for is kept: of the registry's versions, another
+            // may take this Lokyr's, which its update looks for.
+            if !offered.offers_all(name, lock, options.locked) {
+                let what = if newer_lokyr {
+                    "update Lokyr, as Lokyr › Check for Updates… does, then run this again"
+                        .to_owned()
+                } else {
+                    format!(
+                        "`sleip update {name}` takes a version of this Lokyr's, if the registry has one"
+                    )
+                };
+                return Err(format!(
+                    "`{name}` {}, as plugins.lock holds it, {why}: {what}",
+                    newest.version
+                ));
+            }
+            let what = if newer_lokyr {
                 "update Lokyr, as Lokyr › Check for Updates… does, then run this again"
             } else {
                 "a newer version of the plugin may take this Lokyr's"

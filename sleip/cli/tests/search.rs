@@ -705,6 +705,26 @@ fn add_and_update_install_the_registry_s_versions_checked_against_its_index() {
         String::from_utf8_lossy(&output.stderr).contains("made for an older Lokyr"),
         "{output:?}"
     );
+    // Another plugin's add, of the one that the lockfile holds made for an
+    // older Lokyr: the lockfile's version told, and its update.
+    let local = root.join("local");
+    std::fs::create_dir_all(&local).unwrap();
+    let made = Command::new(env!("CARGO_BIN_EXE_sleip"))
+        .args(["new", "acme/local"])
+        .current_dir(&local)
+        .output()
+        .unwrap();
+    assert!(made.status.success(), "{made:?}");
+    let folder = local.join("local").display().to_string();
+    let output = sleip(&["add", "--path", &folder]);
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+    let told = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        told.contains("`acme/hello` 0.2.0, as plugins.lock holds it, made for an older Lokyr")
+            && told.contains("`sleip update acme/hello`")
+            && !told.contains("its one version"),
+        "{told}"
+    );
     // Of this Sleip's, every version taken, of no mark.
     std::fs::write(
         home.join("api-version"),

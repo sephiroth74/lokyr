@@ -253,7 +253,7 @@ fn command_help(name: &str) -> Option<&'static str> {
             "Usage: sleip publish [options] [--tag <tag>] [--registry <owner/repository>] [--link]\n\nProposes the version of the plugin of the current folder to the registry:\nchecks and tests it as the registry's CI does, finds its tag, v<version> or\nthe one given, of plugin.toml's version at that commit, which the plugin's\nrepository holds; then opens the registry's pull request of the plugin's\nfile, of the version added at its end, through gh, of your fork; without gh\nor with --link, tells the link that proposes it on GitHub. Tells what the\nregistry's CI checks.\n"
         }
         "search" => {
-            "Usage: sleip search [options] <words>...\n\nSearches the registry's plugins: each that every word finds in its name or\nits description, of the registry's signed list, which Sleip checks and keeps\nin its cache; with --offline, of the cache alone.\n"
+            "Usage: sleip search [options] [<words>...]\n\nSearches the registry's plugins: each that every word finds in its name or\nits description, or, of no word, every one, as a table, an asterisk marking\na version that this Lokyr does not take; of the registry's signed list,\nwhich Sleip checks and keeps in its cache; with --offline, of the cache\nalone.\n"
         }
         "info" => {
             "Usage: sleip info [options] <plugin>\n\nTells a plugin of the registry, as owner/name: its version, description,\ncapabilities, the commands it runs, its dependencies, and its versions with\ntheir checksums, of its signed index file; with --offline, of the cache.\n"

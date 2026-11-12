@@ -304,12 +304,9 @@ pub fn info(paths: &Paths, options: Options, out: Out, plugin: &str) -> Result<(
     }
     // Each version of its plugin API, marked where this Lokyr does not take
     // it; of none that it takes, a line that tells it.
-    let takes_none = this.as_ref().is_some_and(|this| {
-        index
-            .entries
-            .iter()
-            .all(|entry| taken(entry.api.as_deref(), Some(this)) == Some(false))
-    });
+    let takes_none = this
+        .as_ref()
+        .is_some_and(|this| takes_none(&index.entries, this));
     if let (true, Some(this)) = (takes_none, &this) {
         text.push_str(&format!(
             "\nThis Lokyr, of the plugin API {this}, takes none of its versions."
@@ -369,9 +366,42 @@ fn tell_notes(out: Out, remote: &Remote) {
     }
 }
 
+/// Whether a Lokyr of the plugin API `this` takes none of the versions of
+/// `entries` that an install takes, those not yanked, of one at least.
+fn takes_none(entries: &[sleip_index::signing::Entry], this: &Version) -> bool {
+    let mut live = entries.iter().filter(|entry| !entry.yanked).peekable();
+    live.peek().is_some()
+        && live.all(|entry| taken(entry.api.as_deref(), Some(this)) == Some(false))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_lokyr_takes_none_of_a_plugin_of_its_versions_not_yanked() {
+        let entry = |vers: &str, api: &str, yanked: bool| sleip_index::signing::Entry {
+            v: 1,
+            name: "acme/hello".to_owned(),
+            vers: vers.to_owned(),
+            kind: "luau".to_owned(),
+            api: Some(api.to_owned()),
+            deps: Vec::new(),
+            caps: Vec::new(),
+            uses: Vec::new(),
+            cksum: String::new(),
+            yanked,
+            description: None,
+        };
+        let this = Version::new(0, 2, 0);
+        // A yanked version that it takes counts for nothing.
+        let entries = [entry("0.1.0", "^0.1", false), entry("0.2.0", "^0.2", true)];
+        assert!(takes_none(&entries, &this));
+        let entries = [entry("0.1.0", "^0.1", false), entry("0.2.0", "^0.2", false)];
+        assert!(!takes_none(&entries, &this));
+        // Of every version yanked, nothing told.
+        assert!(!takes_none(&[entry("0.1.0", "^0.1", true)], &this));
+    }
 
     #[test]
     fn a_description_wraps_between_its_words_within_its_column() {

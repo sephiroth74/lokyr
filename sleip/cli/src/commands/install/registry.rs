@@ -191,6 +191,17 @@ impl Offered {
         Ok(candidates)
     }
 
+    /// Whether the candidates of the plugin `name` are every version of
+    /// the registry's, rather than the one that `lock` holds, which `keep`
+    /// keeps of a plugin not asked for, as [`Offered::candidates`] gives
+    /// them.
+    pub(super) fn offers_all(&self, name: &str, lock: Option<&Lock>, keep: bool) -> bool {
+        let held = lock
+            .and_then(|lock| lock.packages.get(name))
+            .is_some_and(|locked| matches!(locked.source, Source::Registry(_)));
+        self.entries.contains_key(name) && !(keep && held && !self.asked.contains(name))
+    }
+
     /// The versions that `lock` holds of the registry of the plugins not
     /// asked for, which the resolution prefers.
     pub(super) fn preferred(&self, lock: Option<&Lock>) -> BTreeMap<String, Version> {
