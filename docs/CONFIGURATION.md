@@ -1187,6 +1187,8 @@ The AI agents that run in your panes, as Claude Code, Codex, Gemini CLI or Aider
 
 A tab of several agents shows the one that waits before one at work, and one at work before one done. Window › Go to Next Agent, `alt+cmd+a`, goes to the next tab whose agent waits for you, or, of none, is done, in every window; Window › Show Agents…, `shift+alt+cmd+a`, lists them all in the palette, the most urgent first. An agent that tells nothing of its own, of no notification nor bell, waits without a dot: some agents tell their requests to the terminals that they know alone, and an option of theirs turns their notifications or their bell on, as Claude Code's `preferredNotifChannel`.
 
+**Claude Code's exact state**: Lokyr › Install Claude Code Integration… adds hooks to Claude Code's settings, `settings.json` of `~/.claude` and of each `~/.claude-*` folder beside it, as a `CLAUDE_CONFIG_DIR` makes, asking of each in turn and keeping a copy of the file as `settings.json.lokyr-backup`. Claude Code then tells Lokyr when you submit a request, when it asks for a permission, when it ends its answer, and when an error ends it, a red mark of its own: its state no longer guesses from its output and its quiet, and `done-after` no longer applies to it. The hooks write nothing in another terminal. To take them away, remove the groups whose commands hold `lokyr-agent:` from the file's `hooks`.
+
 ### `programs`
 
 <sub>Platforms: macOS</sub>

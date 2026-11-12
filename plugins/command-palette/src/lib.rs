@@ -78,7 +78,7 @@ static CATALOGS: [(&str, &str); 2] = [
 ];
 
 /// The palette's texts, in English, where the host gives none.
-const ENGLISH: [(&str, &str); 13] = [
+const ENGLISH: [(&str, &str); 14] = [
     ("palette-placeholder", "Execute Command…"),
     ("palette-none", "No commands"),
     ("palette-commands", "Commands"),
@@ -89,6 +89,7 @@ const ENGLISH: [(&str, &str); 13] = [
     ("palette-agents-none", "No agents"),
     ("palette-agents", "Agents"),
     ("palette-agent-waiting", "Waiting"),
+    ("palette-agent-error", "Failed"),
     ("palette-agent-done", "Done"),
     ("palette-agent-working", "Working"),
     ("palette-agent-idle", "Idle"),
@@ -408,6 +409,7 @@ impl Palette {
         }
         let states = [
             message(cx, "palette-agent-waiting"),
+            message(cx, "palette-agent-error"),
             message(cx, "palette-agent-done"),
             message(cx, "palette-agent-working"),
             message(cx, "palette-agent-idle"),
@@ -532,13 +534,14 @@ impl Palette {
 }
 
 /// The place of an agent of `state` in the list: waiting first, then
-/// done, at work, and of no state last.
+/// failed, done, at work, and of no state last.
 fn urgency(state: Option<AgentState>) -> usize {
     match state {
         Some(AgentState::Waiting) => 0,
-        Some(AgentState::Done) => 1,
-        Some(AgentState::Working) => 2,
-        None => 3,
+        Some(AgentState::Error) => 1,
+        Some(AgentState::Done) => 2,
+        Some(AgentState::Working) => 3,
+        None => 4,
     }
 }
 

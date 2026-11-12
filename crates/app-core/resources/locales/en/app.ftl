@@ -15,6 +15,7 @@ command-app-report-issue = Report an Issue…
 command-app-secure-keyboard-entry = Secure Keyboard Entry
 command-app-make-default-terminal = Make Lokyr the Default Terminal
 command-app-install-command-line-tools = Install Command Line Tools…
+command-app-install-claude-code-integration = Install Claude Code Integration…
 command-app-performance = Show Performance
 performance-measuring = Measuring…
 performance-frames = { $rate } FPS
@@ -237,6 +238,21 @@ command-took-hours = { $hours } h { $minutes } min
 # name, as `claude`, waits for the user, or is done with what it was asked.
 agent-waiting = { $agent } is waiting for you
 agent-done = { $agent } is done
+agent-failed = { $agent } stopped on an error
+
+# Claude Code's integration: the question of each of its configurations,
+# the file that does not read or write, and what was done.
+claude-code-ask = Add Lokyr's hooks to { $path }?
+claude-code-ask-detail = Claude Code then tells Lokyr exactly when it works, waits for you, is done or stops on an error, while it runs in Lokyr; in another terminal they do nothing. The rest of the file stays as it is, and a copy of it is kept beside it, as settings.json.lokyr-backup.
+claude-code-add = Add Hooks
+claude-code-skip = Skip
+claude-code-unreadable = { $path } is not Claude Code's settings as Lokyr reads them
+claude-code-failed = Lokyr could not write { $path }
+claude-code-added-message = Claude Code's integration is installed
+claude-code-added-detail = The Claude Code sessions that start from now on tell Lokyr their state, of the hooks in:
+    { $places }
+claude-code-none-message = No settings changed
+claude-code-none-detail = Claude Code's settings have Lokyr's hooks already, or you skipped them.
 
 script-downloaded-message = “{ $name }” was downloaded from the internet.
 script-downloaded-detail = Running a script from the internet can harm your Mac. Run it only if you trust where it came from.

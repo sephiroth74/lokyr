@@ -273,6 +273,8 @@ pub enum AgentState {
     Waiting,
     /// Done with what it was asked.
     Done,
+    /// Stopped by an error, as its service's, which its hooks tell.
+    Error,
 }
 
 /// An AI agent that runs in a pane, as a read of the agents tells it.

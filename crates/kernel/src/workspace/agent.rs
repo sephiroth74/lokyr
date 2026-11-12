@@ -15,6 +15,11 @@
 //!   user asked it something: its first output, as it starts, asked for
 //!   nothing. It stays done until it works again, the user types into its
 //!   pane, or its tab shows anew, as seen.
+//!
+//! An agent whose hooks tell its state, as notifications of OSC 777 of a
+//! title of [`HOOKED`], is told exactly instead: at work from the user's
+//! request to its end, done or failed at its end, waiting as it asks; its
+//! output no longer tells its work, nor its quiet its end.
 
 use std::time::{Duration, Instant};
 
@@ -23,6 +28,38 @@ use lokyr_plugin_sdk::host::AgentState;
 /// How long after its last sign of work an agent that asked for nothing
 /// is done, unless the config gives another.
 pub const DONE_AFTER: Duration = Duration::from_secs(3);
+
+/// The start of the title of a notification of OSC 777 by which an agent's
+/// hooks tell its state, as `lokyr-agent:done`, of which the app shows no
+/// notification.
+pub const HOOKED: &str = "lokyr-agent:";
+
+/// A state that an agent's hooks tell.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Hooked {
+    /// The user asked it something, at its request's submission.
+    Working,
+    /// It asks for the user, as for a permission.
+    Waiting,
+    /// It ended its answer.
+    Done,
+    /// Its answer ended on an error, as its service's.
+    Error,
+}
+
+impl Hooked {
+    /// The state of a notification's `title`, `lokyr-agent:<state>`, if it
+    /// is one of an agent's hooks.
+    pub fn of(title: &str) -> Option<Self> {
+        match title.strip_prefix(HOOKED)? {
+            "working" => Some(Self::Working),
+            "waiting" => Some(Self::Waiting),
+            "done" => Some(Self::Done),
+            "error" => Some(Self::Error),
+            _ => None,
+        }
+    }
+}
 
 /// The characters of an agent's message that it keeps, its start.
 pub const MESSAGE: usize = 200;
@@ -57,6 +94,8 @@ pub struct Agent {
     message: Option<String>,
     /// When its state last changed, or it started.
     since: Instant,
+    /// Whether its hooks tell its state.
+    hooked: bool,
 }
 
 impl Agent {
@@ -70,6 +109,7 @@ impl Agent {
             asked: false,
             message: None,
             since: Instant::now(),
+            hooked: false,
         }
     }
 
@@ -105,7 +145,9 @@ impl Agent {
     /// runs, its title's spinner; one no later than the latest tells
     /// nothing new. Waiting holds until the user answers.
     pub fn worked(&mut self, at: Instant) {
-        if self.state == Some(AgentState::Waiting) || self.latest.is_some_and(|latest| at <= latest)
+        if self.hooked
+            || self.state == Some(AgentState::Waiting)
+            || self.latest.is_some_and(|latest| at <= latest)
         {
             return;
         }
@@ -127,14 +169,47 @@ impl Agent {
         }
     }
 
+    /// Its hooks told `state`, of `message`, its request's or its error's:
+    /// from now on they alone tell its work and its end.
+    pub fn hooked(&mut self, state: Hooked, message: Option<&str>) {
+        self.hooked = true;
+        self.latest = None;
+        match state {
+            Hooked::Working => {
+                self.asked = true;
+                self.message = None;
+                self.state = Some(AgentState::Working);
+            }
+            Hooked::Waiting => self.asked_for_user(message),
+            Hooked::Done => {
+                self.message = None;
+                self.state = Some(AgentState::Done);
+            }
+            Hooked::Error => {
+                self.message = None;
+                self.asked_for_user(message);
+                self.state = Some(AgentState::Error);
+            }
+        }
+    }
+
+    /// Whether its hooks tell its state.
+    pub fn is_hooked(&self) -> bool {
+        self.hooked
+    }
+
     /// The user typed into its pane: what it waited for is answered, and
     /// what it did is seen; it works on.
     pub fn typed(&mut self) {
         self.asked = true;
         self.message = None;
-        if matches!(self.state, Some(AgentState::Waiting | AgentState::Done)) {
-            self.state = None;
-        }
+        self.state = match self.state {
+            // Answered, it works on, as its hooks tell no work of their
+            // own until its end.
+            Some(AgentState::Waiting) if self.hooked => Some(AgentState::Working),
+            Some(AgentState::Waiting | AgentState::Done | AgentState::Error) => None,
+            state => state,
+        };
     }
 
     /// Its tab showed anew: what it did is seen.
@@ -149,7 +224,7 @@ impl Agent {
     pub fn due(&self, settings: AgentSettings) -> Option<Instant> {
         let latest = self
             .latest
-            .filter(|_| self.state == Some(AgentState::Working))?;
+            .filter(|_| !self.hooked && self.state == Some(AgentState::Working))?;
         Some(latest + settings.done_after)
     }
 
@@ -195,10 +270,11 @@ pub fn spins(before: &str, after: &str) -> bool {
 }
 
 /// The state that a tab shows of its panes' agents' `states`: waiting
-/// before work, and work before done.
+/// before an error, an error before work, and work before done.
 pub fn most_urgent(states: impl IntoIterator<Item = Option<AgentState>>) -> Option<AgentState> {
     let rank = |state: AgentState| match state {
-        AgentState::Waiting => 3,
+        AgentState::Waiting => 4,
+        AgentState::Error => 3,
         AgentState::Working => 2,
         AgentState::Done => 1,
     };
@@ -301,6 +377,50 @@ mod tests {
     }
 
     #[test]
+    fn an_agent_s_hooks_tell_its_state_alone() {
+        assert_eq!(Hooked::of("lokyr-agent:done"), Some(Hooked::Done));
+        assert_eq!(Hooked::of("lokyr-agent:waiting"), Some(Hooked::Waiting));
+        assert_eq!(Hooked::of("lokyr-agent:other"), None);
+        assert_eq!(Hooked::of("Claude Code"), None);
+        let start = Instant::now();
+        let mut agent = Agent::new("claude");
+        agent.hooked(Hooked::Working, None);
+        assert!(agent.is_hooked());
+        assert_eq!(agent.state(), Some(AgentState::Working));
+        // No quiet ends it, nor output tells its work.
+        assert_eq!(agent.due(SETTINGS), None);
+        agent.look(start + Duration::from_secs(60), SETTINGS, false);
+        assert_eq!(agent.state(), Some(AgentState::Working));
+        // A permission: waiting, of its message; answered, it works on.
+        agent.hooked(
+            Hooked::Waiting,
+            Some("Claude needs your permission to use Bash"),
+        );
+        assert_eq!(agent.state(), Some(AgentState::Waiting));
+        assert!(agent.message().is_some());
+        agent.typed();
+        assert_eq!(
+            (agent.state(), agent.message()),
+            (Some(AgentState::Working), None)
+        );
+        // Its end, after which its prompt's redraw tells nothing.
+        agent.hooked(Hooked::Done, None);
+        agent.worked(start + Duration::from_secs(70));
+        assert_eq!(agent.state(), Some(AgentState::Done));
+        // A new request, then an error, which a key clears.
+        agent.typed();
+        assert_eq!(agent.state(), None);
+        agent.hooked(Hooked::Working, None);
+        agent.hooked(Hooked::Error, Some("rate_limit"));
+        assert_eq!(
+            (agent.state(), agent.message()),
+            (Some(AgentState::Error), Some("rate_limit"))
+        );
+        agent.typed();
+        assert_eq!(agent.state(), None);
+    }
+
+    #[test]
     fn a_progress_that_runs_keeps_an_agent_at_work() {
         let start = Instant::now();
         let mut agent = Agent::new("gemini");
@@ -347,6 +467,10 @@ mod tests {
         );
         assert_eq!(most_urgent([Some(Waiting), Some(Working)]), Some(Waiting));
         assert_eq!(most_urgent([Some(Done)]), Some(Done));
+        assert_eq!(
+            most_urgent([Some(AgentState::Error), Some(Working)]),
+            Some(AgentState::Error)
+        );
         assert_eq!(most_urgent([None, None]), None);
     }
 }

@@ -316,6 +316,7 @@ export type AgentState =
     | "working"
     | "waiting"
     | "done"
+    | "error"
 
 export type Align =
     | "start"

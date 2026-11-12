@@ -34,4 +34,5 @@ bar-mark-running = In esecuzione
 bar-mark-secure = Inserimento sicuro da tastiera
 bar-mark-working = Agente al lavoro
 bar-mark-waiting = Agente in attesa
+bar-mark-error = Agente in errore
 bar-mark-done = Agente: fatto

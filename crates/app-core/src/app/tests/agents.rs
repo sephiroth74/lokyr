@@ -1,6 +1,7 @@
 //! The tests of the AI agents in the panes: found by their programs'
 //! names, their notifications and the Dock's badge.
 
+use super::super::INSTALL_CLAUDE_CODE;
 use super::*;
 
 /// An agent of the program `perl`, in raw mode: ready; at a key, it works a
@@ -182,4 +183,109 @@ fn an_agent_s_request_shows_one_notification_whose_click_shows_its_pane() {
         assert_eq!(app.workspace.focused(shown).map(Pane::id), Some(agent));
         assert_eq!(fake.focus_requests(), [window]);
     }
+}
+
+#[test]
+fn claude_code_s_integration_asks_of_each_configuration_and_adds_the_hooks() {
+    let home = real_directory("claude-home");
+    let work = home.join(".claude-work");
+    std::fs::create_dir_all(&work).unwrap();
+    std::fs::write(work.join("settings.json"), "{\"model\": \"opus\"}").unwrap();
+    let mut fake = Fake::default();
+    let mut app = app(Config::default(), quiet());
+    app.claude_home = Some(home.clone());
+    fake.start(&mut app);
+    // In the app's menu, after the command line tools.
+    let items = menu_items(&fake, 0);
+    let at = |title: &str| items.iter().position(|item| item == title);
+    assert_eq!(
+        at("Install Claude Code Integration…"),
+        at("Install Command Line Tools…").map(|tools| tools + 1),
+        "{items:?}"
+    );
+    let answer = |fake: &mut Fake, app: &mut App, button: usize| {
+        let alert = fake.alerts().last().expect("a question").id;
+        fake.send_app(
+            app,
+            AppEvent::AlertClosed {
+                alert,
+                button,
+                suppressed: false,
+                text: None,
+            },
+        );
+    };
+    let message = |fake: &Fake| fake.alerts().last().unwrap().alert.message.clone();
+    fake.send_app(&mut app, AppEvent::Command(INSTALL_CLAUDE_CODE.to_owned()));
+    // The default configuration's first, which is not there: skipped.
+    assert!(
+        message(&fake).ends_with(".claude/settings.json?"),
+        "{}",
+        message(&fake)
+    );
+    answer(&mut fake, &mut app, 1);
+    assert!(!home.join(".claude").exists());
+    // Then the other one's, whose hooks go in, its file copied.
+    assert!(
+        message(&fake).ends_with(".claude-work/settings.json?"),
+        "{}",
+        message(&fake)
+    );
+    answer(&mut fake, &mut app, 0);
+    let text = std::fs::read_to_string(work.join("settings.json")).unwrap();
+    assert!(lokyr_kernel::claude_code::has_hooks(&text), "{text}");
+    assert!(text.contains("\"model\": \"opus\""));
+    assert!(work.join("settings.json.lokyr-backup").is_file());
+    // What was done, told; asked again, nothing to add there.
+    assert_eq!(message(&fake), "Claude Code's integration is installed");
+    let before = fake.alerts().len();
+    fake.send_app(&mut app, AppEvent::Command(INSTALL_CLAUDE_CODE.to_owned()));
+    assert!(message(&fake).ends_with(".claude/settings.json?"));
+    answer(&mut fake, &mut app, 1);
+    assert_eq!(message(&fake), "No settings changed");
+    assert_eq!(fake.alerts().len(), before + 2);
+}
+
+#[test]
+fn an_agent_s_hooks_tell_its_state_and_show_no_notification() {
+    use lokyr_kernel::plugins::host::AgentState::{Done, Waiting, Working};
+    // An agent whose hooks tell its request, a permission, then its end.
+    let agent = shell(concat!(
+        "exec perl -e '$| = 1; system(\"stty raw -echo\"); print \"ready\\n\"; ",
+        "sysread(STDIN, $c, 1); print \"\\e]777;notify;lokyr-agent:working;\\a\"; ",
+        "sysread(STDIN, $c, 1); print \"\\e]777;notify;lokyr-agent:waiting;Claude needs your permission\\a\"; ",
+        "sysread(STDIN, $c, 1); print \"\\e]777;notify;lokyr-agent:done;\\a\"; sleep 30'",
+    ));
+    let (mut fake, mut app, window) = configured("[agents]\nprograms = [\"perl\"]\n", agent);
+    run_until(&mut fake, &mut app, |_, app| {
+        agent_of(app, window).is_some_and(|(name, _)| name == "perl")
+    });
+    fake.send(&mut app, window, WindowEvent::Focused(false));
+    let state = |app: &App| agent_of(app, window).unwrap().1;
+    fake.send(&mut app, window, key());
+    run_until(&mut fake, &mut app, |_, app| state(app) == Some(Working));
+    // A permission: waiting, answered by the third key; then done at once,
+    // of no quiet.
+    fake.send(&mut app, window, key());
+    run_until(&mut fake, &mut app, |_, app| state(app) == Some(Waiting));
+    fake.send(&mut app, window, key());
+    run_until(&mut fake, &mut app, |_, app| state(app) == Some(Done));
+    // The app's own notifications alone: none of the hooks' titles.
+    let titles: Vec<&str> = fake
+        .notifications()
+        .iter()
+        .map(|told| told.title.as_str())
+        .collect();
+    assert!(
+        titles
+            .iter()
+            .all(|title| !title.starts_with("lokyr-agent:")),
+        "{titles:?}"
+    );
+    let bodies: Vec<&str> = fake
+        .notifications()
+        .iter()
+        .map(|told| told.body.as_str())
+        .collect();
+    assert!(bodies.contains(&"perl is waiting for you"), "{bodies:?}");
 }

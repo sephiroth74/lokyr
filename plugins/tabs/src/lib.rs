@@ -95,7 +95,7 @@ const CLOSE_TAB: &str = "bar-close-tab";
 const UNTITLED: &str = "bar-untitled";
 
 /// The messages of what accessibility calls a tab's marks.
-const MARKS: [&str; 7] = [
+const MARKS: [&str; 8] = [
     "bar-mark-activity",
     "bar-mark-bell",
     "bar-mark-running",
@@ -103,6 +103,7 @@ const MARKS: [&str; 7] = [
     "bar-mark-working",
     "bar-mark-waiting",
     "bar-mark-done",
+    "bar-mark-error",
 ];
 
 static CATALOGS: [(&str, &str); 2] = [
@@ -536,6 +537,7 @@ impl Tabs {
             working: marked(cx, 4, marks.working),
             waiting: marked(cx, 5, marks.waiting),
             done: marked(cx, 6, marks.done),
+            error: marked(cx, 7, marks.error),
         };
         let texts = bar::BarTexts {
             marks,

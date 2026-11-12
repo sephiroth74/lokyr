@@ -105,6 +105,7 @@ impl<B: Backend> App<B> {
                 "agent-waiting"
             }
             Some(AgentState::Done) => "agent-done",
+            Some(AgentState::Error) => "agent-failed",
             _ => return,
         };
         let Some(window) = self.window_of(pane) else {
@@ -125,8 +126,9 @@ impl<B: Backend> App<B> {
 
     /// Brings forward the next pane after the one that has the keyboard, in
     /// the windows' order, as their numbers go, their tabs' and their
-    /// panes', whose agent waits for the user; or, of none, is done; or, of
-    /// none, works: its window, its tab and its pane; nothing of no agent.
+    /// panes', whose agent waits for the user; or, of none, failed; or is
+    /// done; or works: its window, its tab and its pane; nothing of no
+    /// agent.
     pub(super) fn next_agent(&mut self, platform: &mut dyn Platform) {
         // Every pane, from the one after the focused one, round.
         let mut windows: Vec<(WindowId, workspace::WindowId)> = self
@@ -172,13 +174,18 @@ impl<B: Backend> App<B> {
                 .and_then(workspace::Pane::agent)
                 .and_then(workspace::Agent::state)
         };
-        let found = [AgentState::Waiting, AgentState::Done, AgentState::Working]
-            .into_iter()
-            .find_map(|wanted| {
-                (0..panes.len())
-                    .map(|step| panes[(start + step) % panes.len()])
-                    .find(|&(_, _, pane)| state_of(pane) == Some(wanted))
-            });
+        let found = [
+            AgentState::Waiting,
+            AgentState::Error,
+            AgentState::Done,
+            AgentState::Working,
+        ]
+        .into_iter()
+        .find_map(|wanted| {
+            (0..panes.len())
+                .map(|step| panes[(start + step) % panes.len()])
+                .find(|&(_, _, pane)| state_of(pane) == Some(wanted))
+        });
         let Some((window, tab, pane)) = found else {
             return;
         };

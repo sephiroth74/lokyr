@@ -279,6 +279,7 @@ pub(crate) struct MarkTexts {
     pub(crate) secure: String,
     pub(crate) working: String,
     pub(crate) waiting: String,
+    pub(crate) error: String,
     pub(crate) done: String,
 }
 
@@ -291,6 +292,7 @@ impl Default for MarkTexts {
             secure: "Secure Keyboard Entry".to_owned(),
             working: "Agent Working".to_owned(),
             waiting: "Agent Waiting".to_owned(),
+            error: "Agent Failed".to_owned(),
             done: "Agent Done".to_owned(),
         }
     }
@@ -978,12 +980,12 @@ enum ProgressAt {
     Ring,
 }
 
-/// The message by which `tab`'s agent that waits asked for the user, if
-/// it told one.
+/// The message by which `tab`'s agent that waits asked for the user, or
+/// of its error, if it told one.
 fn waiting_message(tab: &TabInfo) -> Option<&str> {
     tab.agent_message
         .as_deref()
-        .filter(|_| tab.agent == Some(AgentState::Waiting))
+        .filter(|_| matches!(tab.agent, Some(AgentState::Waiting | AgentState::Error)))
 }
 
 /// `node`, of `tab`, of the message of its agent that waits as its
@@ -1010,6 +1012,7 @@ fn marks(tab: &TabInfo, texts: &MarkTexts, at: ProgressAt) -> Vec<Node> {
         let (icon, color, label) = match agent {
             AgentState::Working => ("sparkle", "accent", &texts.working),
             AgentState::Waiting => ("info", "progress.paused", &texts.waiting),
+            AgentState::Error => ("error", "progress.error", &texts.error),
             AgentState::Done => ("check", "text.secondary", &texts.done),
         };
         let label = match waiting_message(tab) {

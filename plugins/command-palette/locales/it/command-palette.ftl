@@ -17,6 +17,7 @@ palette-agents-placeholder = Cerca un agente…
 palette-agents-none = Nessun agente
 palette-agents = Agenti
 palette-agent-waiting = Ti aspetta
+palette-agent-error = Errore
 palette-agent-done = Ha finito
 palette-agent-working = Al lavoro
 palette-agent-idle = Inattivo

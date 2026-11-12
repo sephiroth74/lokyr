@@ -65,6 +65,9 @@ impl<B: Backend> App<B> {
         if let Some(ask) = self.theme_asks.remove(&alert) {
             self.theme_answered(platform, &ask, (button, suppressed));
         }
+        if self.claude_code_answered(platform, alert, button) {
+            return;
+        }
         if let Some(script) = self.script_asks.remove(&alert) {
             self.script_answered(platform, &script, button);
         }

@@ -11,6 +11,7 @@ tip-palette = Premi { $keys } per la palette dei comandi, che esegue qualsiasi c
 tip-search = Premi { $keys } per cercare un testo nel pannello, anche nello scrollback.
 tip-split = Premi { $keys } per dividere il pannello; trascina il divisore per ridimensionarlo, fai doppio clic per pareggiare le metà.
 tip-next-agent = Premi { $keys } per andare al prossimo agente AI che ti aspetta, in qualsiasi finestra.
+tip-claude-code = Lokyr › Installa l'integrazione con Claude Code… fa dire a Claude Code alla sua scheda esattamente quando lavora, ti aspetta o ha finito.
 tip-agents-list = Premi { $keys } per vedere tutti gli agenti AI di tutte le finestre, prima quelli che ti aspettano.
 tip-agents = Una scheda segna l'agente AI che contiene, come Claude Code: una scintilla mentre lavora, un punto mentre ti aspetta, con la sua richiesta nel tooltip della scheda, una spunta quando ha finito.
 tip-prompts = Premi { $keys } per tornare al prompt del comando precedente.

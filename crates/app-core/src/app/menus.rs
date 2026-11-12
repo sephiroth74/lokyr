@@ -22,9 +22,9 @@ use lokyr_vt_core::terminal::{SelectionShape, SelectionUnit};
 
 use super::{
     ABOUT, APPEARANCES, App, CHECK_UPDATES, CONTEXT_ONLY, DEFAULT_TERMINAL, FLOAT_ON_TOP,
-    INSTALL_TOOLS, LOOK_UP, LOOK_UP_TITLE, MAN_KEYWORDS, MAN_PAGE, MAN_PAGE_NAME, MAN_SEARCH,
-    MAN_SECTION, NEXT_AGENT, PERFORMANCE, REPORT_ISSUE, SEARCH_WEB, SECURE_INPUT, SETTINGS,
-    SHOW_TIP, context, show_selection, shown_top,
+    INSTALL_CLAUDE_CODE, INSTALL_TOOLS, LOOK_UP, LOOK_UP_TITLE, MAN_KEYWORDS, MAN_PAGE,
+    MAN_PAGE_NAME, MAN_SEARCH, MAN_SECTION, NEXT_AGENT, PERFORMANCE, REPORT_ISSUE, SEARCH_WEB,
+    SECURE_INPUT, SETTINGS, SHOW_TIP, context, show_selection, shown_top,
 };
 use crate::drawing::Backend;
 use crate::mouse;
@@ -739,13 +739,20 @@ pub(super) fn main_menu(
                 SECURE_INPUT,
                 DEFAULT_TERMINAL,
                 INSTALL_TOOLS,
+                INSTALL_CLAUDE_CODE,
             ],
         )
     };
     let mut application = Vec::new();
     for group in [
         &[ABOUT, CHECK_UPDATES][..],
-        &[SETTINGS, SECURE_INPUT, DEFAULT_TERMINAL, INSTALL_TOOLS],
+        &[
+            SETTINGS,
+            SECURE_INPUT,
+            DEFAULT_TERMINAL,
+            INSTALL_TOOLS,
+            INSTALL_CLAUDE_CODE,
+        ],
     ] {
         let group: Vec<MenuItem> = items(&[Category::App])
             .into_iter()

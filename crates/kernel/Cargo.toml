@@ -21,7 +21,7 @@ lokyr-text-core.workspace = true
 lokyr-ui-core.workspace = true
 lokyr-vt-core.workspace = true
 serde.workspace = true
-serde_json.workspace = true
+serde_json = { workspace = true, features = ["raw_value"] }
 toml_edit = { workspace = true, features = ["display"] }
 plist.workspace = true
 unic-langid.workspace = true

@@ -15,7 +15,8 @@ from 1.0.0; before it, a minor version may change what a previous one did.
 - An agent that waits for you tells what it asked in its tab's tooltip, as "Claude needs your permission to use Bash", and in a tab of several panes a ring goes round the pane that waits.
 - Window › Go to Next Agent, ⌥⌘A, brings forward the next agent that waits for you, or is done, or works, across every window.
 - Window › Show Agents…, ⇧⌥⌘A, lists the agents of every window in the palette, the most urgent first, each with what it asked or its tab, its state and how long it has been in it; Return brings it forward.
-- Quick tips for the agents, Go to Next Agent and Show Agents.
+- Lokyr › Install Claude Code Integration… adds hooks to Claude Code's settings, asking of each of its configurations and keeping a copy of the file, so that Claude Code tells its tab exactly when it works, waits for you, is done, or stops on an error, a red mark of its own.
+- Quick tips for the agents, Go to Next Agent, Show Agents and Claude Code's integration.
 
 ### Changed
 

@@ -44,4 +44,5 @@ bar-mark-running = Running
 bar-mark-secure = Secure Keyboard Entry
 bar-mark-working = Agent Working
 bar-mark-waiting = Agent Waiting
+bar-mark-error = Agent Failed
 bar-mark-done = Agent Done

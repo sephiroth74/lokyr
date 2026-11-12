@@ -14,6 +14,7 @@ command-app-report-issue = Segnala un problema…
 command-app-secure-keyboard-entry = Immissione protetta da tastiera
 command-app-make-default-terminal = Rendi Lokyr il terminale predefinito
 command-app-install-command-line-tools = Installa gli strumenti da riga di comando…
+command-app-install-claude-code-integration = Installa l'integrazione con Claude Code…
 command-app-performance = Mostra prestazioni
 performance-measuring = Misurazione…
 performance-frames = { $rate } FPS
@@ -201,6 +202,19 @@ command-took-hours = { $hours } h { $minutes } min
 
 agent-waiting = { $agent } ti aspetta
 agent-done = { $agent } ha finito
+agent-failed = { $agent } si è fermato per un errore
+
+claude-code-ask = Aggiungere gli hook di Lokyr a { $path }?
+claude-code-ask-detail = Claude Code dirà a Lokyr con esattezza quando lavora, ti aspetta, ha finito o si ferma per un errore, mentre gira in Lokyr; in un altro terminale non fanno nulla. Il resto del file resta com'è, e una sua copia resta accanto, come settings.json.lokyr-backup.
+claude-code-add = Aggiungi hook
+claude-code-skip = Salta
+claude-code-unreadable = { $path } non è un file di impostazioni di Claude Code che Lokyr sappia leggere
+claude-code-failed = Lokyr non è riuscito a scrivere { $path }
+claude-code-added-message = L'integrazione con Claude Code è installata
+claude-code-added-detail = Le sessioni di Claude Code avviate da ora diranno a Lokyr il loro stato, con gli hook in:
+    { $places }
+claude-code-none-message = Nessuna impostazione modificata
+claude-code-none-detail = Le impostazioni di Claude Code hanno già gli hook di Lokyr, oppure le hai saltate.
 
 script-downloaded-message = “{ $name }” è stato scaricato da internet.
 script-downloaded-detail = Eseguire uno script scaricato da internet può danneggiare il Mac. Eseguilo solo se ti fidi della sua provenienza.

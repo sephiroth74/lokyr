@@ -33,7 +33,7 @@ use lokyr_plugin_sdk::host as sdk;
 use lokyr_vt_core::page::Rgb;
 use lokyr_vt_core::terminal::{self, ClipboardTarget};
 
-pub use agent::{Agent, AgentSettings};
+pub use agent::{Agent, AgentSettings, Hooked};
 pub use layout::{Direction, Edge, Layout, Ratio, Side};
 pub use pane::{
     ANSWER_WAIT, Environment, Exited, Grid, PRINTING, Pane, RESIZE_PACE, Settings, TITLE_DASH,
@@ -652,11 +652,22 @@ impl Workspace {
             // by a notification or its bell.
             let printed = pane.printing().then(|| pane.printed_at()).flatten();
             let busy = pane.progress_runs();
-            // The last notification's message, its text or its title.
+            // The last notification's message, its text or its title, but
+            // those of an agent's hooks, which tell its state, the last of
+            // them and its message.
             let told = happened.events.iter().rev().find_map(|event| match event {
-                terminal::Event::Notification { title, body } => {
+                terminal::Event::Notification { title, body } if Hooked::of(title).is_none() => {
                     Some(if body.trim().is_empty() { title } else { body })
                 }
+                _ => None,
+            });
+            let hooked = happened.events.iter().rev().find_map(|event| match event {
+                terminal::Event::Notification { title, body } => Hooked::of(title).map(|state| {
+                    (
+                        state,
+                        Some(body.trim().to_owned()).filter(|body| !body.is_empty()),
+                    )
+                }),
                 _ => None,
             });
             let asked = happened.bell || told.is_some();
@@ -726,6 +737,11 @@ impl Workspace {
                             .find(|(ended, _)| *ended == command)
                             .map(|&(_, took)| took),
                     },
+                    // An agent's hooks' notification, which tells its state
+                    // and shows nothing.
+                    terminal::Event::Notification { title, .. } if Hooked::of(&title).is_some() => {
+                        continue;
+                    }
                     event => Event::Terminal { pane: id, event },
                 };
                 self.events.push(event);
@@ -746,6 +762,9 @@ impl Workspace {
                 }
                 if asked {
                     agent.asked_for_user(told.as_deref());
+                }
+                if let Some((state, message)) = &hooked {
+                    agent.hooked(*state, message.as_deref());
                 }
             });
             // Its tab's marks: its progress, whether its program prints,

@@ -138,12 +138,13 @@ fn settings_opens_the_config_in_the_text_editor_made_first() {
     // The application's menu has it first after About and the updates, of
     // its key.
     assert_eq!(
-        menu_items(&fake, 0)[3..8],
+        menu_items(&fake, 0)[3..9],
         [
             "Settings… cmd+,",
             "Secure Keyboard Entry",
             "Make Lokyr the Default Terminal",
             "Install Command Line Tools…",
+            "Install Claude Code Integration…",
             "-"
         ]
     );

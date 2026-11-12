@@ -59,6 +59,7 @@ pub(crate) use access::TreeCursor;
 mod agents;
 mod asks;
 pub(crate) mod chrome;
+mod claude_code;
 mod consent;
 pub(crate) mod dividers;
 mod folders;
@@ -125,6 +126,10 @@ const DEFAULT_TERMINAL: &str = "app.make-default-terminal";
 /// The command that links the command line tools, `lokyr` and `sleip`,
 /// into a folder of the shells' `PATH`.
 const INSTALL_TOOLS: &str = "app.install-command-line-tools";
+
+/// Adds the hooks by which Claude Code tells an agent's state to its
+/// settings, of the user's yes for each.
+const INSTALL_CLAUDE_CODE: &str = "app.install-claude-code-integration";
 
 /// What stands before the title of the window whose keys Secure Keyboard
 /// Entry keeps from other apps.
@@ -563,6 +568,11 @@ pub struct App<B: Backend> {
     /// Where the command line tools' links go, and where their binaries
     /// are.
     tools_places: tools::Places,
+    /// The home whose Claude Code's settings take the hooks; the user's
+    /// where none.
+    claude_home: Option<PathBuf>,
+    /// Claude Code's integration under way.
+    claude_install: Option<claude_code::Install>,
     /// The panes of the scripts that the system opened with the app, which
     /// keep their screens as their programs end, whatever `close-on-exit`
     /// says.
@@ -907,6 +917,8 @@ impl<B: Backend> App<B> {
             script_asks: BTreeMap::new(),
             tools_ask: None,
             tools_places: tools::Places::default(),
+            claude_home: None,
+            claude_install: None,
             told_timer: None,
             pane_wakes: BTreeMap::new(),
             ui_events: Vec::new(),
@@ -2715,6 +2727,10 @@ impl<B: Backend> App<B> {
                 }
                 INSTALL_TOOLS => {
                     self.install_tools(platform);
+                    Ok(())
+                }
+                INSTALL_CLAUDE_CODE => {
+                    self.install_claude_code(platform);
                     Ok(())
                 }
                 FLOAT_ON_TOP => {
@@ -4666,6 +4682,11 @@ fn commands(texts: &Texts, plugins: &Plugins) -> Registry {
         (
             INSTALL_TOOLS,
             "app-install-command-line-tools",
+            Category::App,
+        ),
+        (
+            INSTALL_CLAUDE_CODE,
+            "app-install-claude-code-integration",
             Category::App,
         ),
         (PERFORMANCE, "app-performance", Category::View),

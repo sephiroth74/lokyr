@@ -47,6 +47,15 @@
   {
     "capabilities": [],
     "category": "app",
+    "name": "app.install-claude-code-integration",
+    "params": [],
+    "plugin": null,
+    "title": "Install Claude Code Integration…",
+    "when": null
+  },
+  {
+    "capabilities": [],
+    "category": "app",
     "name": "app.install-command-line-tools",
     "params": [],
     "plugin": null,
