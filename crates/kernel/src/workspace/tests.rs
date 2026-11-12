@@ -1560,7 +1560,7 @@ fn an_agent_works_is_done_and_waits_as_its_program_and_the_user_tell() {
     assert!(
         events.iter().any(|event| matches!(
             event,
-            Event::Agent { pane, name, before: None, now: Some(Working) } if *pane == id && name == "claude"
+            Event::Agent { pane, name, before: None, now: Some(Working), told: false } if *pane == id && name == "claude"
         )),
         "{events:?}"
     );
@@ -1574,7 +1574,18 @@ fn an_agent_works_is_done_and_waits_as_its_program_and_the_user_tell() {
     workspace.typed(id);
     assert_eq!(workspace.tab(tab).unwrap().marks().agent, None);
     workspace.pane(id).unwrap().text("go on\n");
-    collect_marks(&mut workspace, tab, |marks| marks.agent == Some(Waiting));
+    let events = collect_marks(&mut workspace, tab, |marks| marks.agent == Some(Waiting));
+    assert!(
+        events.iter().any(|event| matches!(
+            event,
+            Event::Agent {
+                now: Some(Waiting),
+                told: true,
+                ..
+            }
+        )),
+        "{events:?}"
+    );
     assert_eq!(workspace.agents_waiting(), 1);
     // Waiting holds, past any time, until the user answers.
     workspace.collect(&[], Instant::now() + Duration::from_secs(60));
@@ -1619,8 +1630,16 @@ fn a_tab_shows_its_most_urgent_agent_and_its_done_agents_are_seen_as_it_shows() 
         workspace.typed(id);
         workspace.pane(id).unwrap().text("x\n");
     }
-    // One waits, of its bell, and one is done: the tab shows the first.
-    collect_marks(&mut workspace, tab, |marks| marks.agent == Some(Waiting));
+    // One waits, of its bell, which it does not tell of its own, and one
+    // is done: the tab shows the first.
+    let events = collect_marks(&mut workspace, tab, |marks| marks.agent == Some(Waiting));
+    assert!(
+        events.iter().any(|event| matches!(
+            event,
+            Event::Agent { pane, now: Some(Waiting), told: false, .. } if *pane == first_id
+        )),
+        "{events:?}"
+    );
     std::thread::sleep(Duration::from_millis(1200));
     workspace.collect(&workspace.pane_ids(), Instant::now());
     workspace.collect(&[], Instant::now() + Duration::from_secs(4));

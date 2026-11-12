@@ -127,7 +127,8 @@ impl<B: Backend> App<B> {
     /// empty, of the title that the user gave its window, or its window's
     /// name, and `body`, as the system's, while its window has no focus:
     /// one within [`NOTIFICATION_PAUSE`] of the last of the window shows
-    /// nothing, and a long title or text shows its start.
+    /// nothing, and a long title or text shows its start. A click on it
+    /// brings `pane` forward.
     pub(super) fn notify(
         &mut self,
         platform: &mut dyn Platform,
@@ -161,6 +162,7 @@ impl<B: Backend> App<B> {
         let title: String = title.chars().take(NOTIFICATION_TITLE).collect();
         let body: String = body.chars().take(NOTIFICATION_BODY).collect();
         platform.notify(window, &title, &body);
+        self.notified.insert(window, pane);
     }
 
     /// Tells the end of `pane`'s command `command`, of `status`, that ran
@@ -229,10 +231,25 @@ impl<B: Backend> App<B> {
         }
     }
 
-    /// A click on a notification of `window`: the quick terminal, hidden,
-    /// shows at its place; another window takes the focus.
+    /// A click on a notification of `window`: the pane that told it, if it
+    /// is still open, wherever it went since, its tab and its window, comes
+    /// forward; the quick terminal, hidden, shows at its place; another
+    /// window takes the focus.
     pub(super) fn notification_clicked(&mut self, platform: &mut dyn Platform, window: WindowId) {
-        self.show_notified_agent(window);
+        let told = self
+            .notified
+            .remove(&window)
+            .filter(|&pane| self.workspace.pane(pane).is_some());
+        let window = match told {
+            Some(pane) => {
+                if let Some(tab) = self.workspace.tab_of(pane) {
+                    self.workspace.activate_tab(tab);
+                }
+                self.workspace.focus_pane(pane);
+                self.window_of(pane).unwrap_or(window)
+            }
+            None => window,
+        };
         if let Some(&(place, _)) = self.quick.get(&window) {
             self.show_quick(platform, window, Some(place));
         } else if self.windows.contains_key(&window) {

@@ -666,9 +666,9 @@ pub struct App<B: Backend> {
     agent_groups: BTreeMap<PaneId, (Option<u32>, String)>,
     /// The count of the agents that wait, as the Dock's badge shows it.
     badge: usize,
-    /// The tab of the agent whose notification each window showed last,
-    /// which a click on it brings forward.
-    agent_notified: BTreeMap<WindowId, workspace::TabId>,
+    /// The pane whose notification each window showed last, a program's
+    /// or the app's of it, which a click on it brings forward.
+    notified: BTreeMap<WindowId, PaneId>,
     /// The icon's variants, where the app finds them.
     icons: Option<Icons>,
     /// The variant that the app made the icon, once it made one.
@@ -925,7 +925,7 @@ impl<B: Backend> App<B> {
             title_look: Some(TITLE_LOOK),
             agent_groups: BTreeMap::new(),
             badge: 0,
-            agent_notified: BTreeMap::new(),
+            notified: BTreeMap::new(),
             opened_one: false,
             state: None,
             front: None,
@@ -2384,6 +2384,7 @@ impl<B: Backend> App<B> {
                 .retain(|_, (asked, _)| *asked != Some(window));
             self.close_asks.retain(|_, asked| *asked != window);
             self.title_asks.retain(|_, asked| *asked != window);
+            self.notified.remove(&window);
             self.part_asks.retain(|_, (asked, _)| *asked != window);
             // A question whose window closed has no answer.
             let unanswered: Vec<AlertId> = self
@@ -3438,7 +3439,8 @@ impl<B: Backend> App<B> {
                     name,
                     before,
                     now,
-                } => self.agent_changed(platform, pane, &name, (before, now)),
+                    told,
+                } => self.agent_changed(platform, pane, &name, (before, now), told),
                 Event::Ended(_) | Event::Terminal { .. } => {}
             }
         }

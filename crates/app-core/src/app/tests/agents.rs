@@ -84,21 +84,19 @@ fn the_agents_programs_and_badge_follow_the_config() {
     assert!(agent_of(&app, window).is_some());
 }
 
-#[test]
-fn the_next_agent_is_the_one_that_waits_in_another_tab() {
-    let (mut fake, mut app, window) = configured(
-        "[agents]\nprograms = [\"perl\"]\n",
-        shell("echo ready; read line"),
-    );
-    // Nothing to go to.
-    fake.send(&mut app, window, WindowEvent::Focused(true));
-    app.next_agent(&mut fake);
-    assert!(fake.focus_requests().is_empty());
-    // An agent behind, in a second tab, that asks for the user at once.
+/// Opens a second tab behind `window`'s, of an agent of the program `perl`
+/// that runs `script` and asks for the user at once, and collects its
+/// output until it waits, as its session wakes no one: the tab and the
+/// pane.
+fn waiting_behind(
+    fake: &mut Fake,
+    app: &mut App,
+    window: WindowId,
+    script: &str,
+) -> (lokyr_kernel::workspace::TabId, PaneId) {
     let shown = app.windows[&window].window;
-    let first = app.workspace.window(shown).unwrap().active_tab();
     let waiting = Pane::spawn(
-        &shell("exec perl -e '$| = 1; print \"\\e]9;need you\\a\"; sleep 30'"),
+        &shell(&format!("exec perl -e '$| = 1; {script}; sleep 30'")),
         &Environment::default(),
         &Settings::default(),
         Grid {
@@ -112,8 +110,7 @@ fn the_next_agent_is_the_one_that_waits_in_another_tab() {
         || {},
     );
     let agent = waiting.id();
-    let second = app.workspace.open_tab(shown, waiting, 1).unwrap();
-    // Its session wakes no one: its output collected by hand.
+    let tab = app.workspace.open_tab(shown, waiting, 1).unwrap();
     let deadline = Instant::now() + Duration::from_secs(10);
     while app
         .workspace
@@ -123,9 +120,26 @@ fn the_next_agent_is_the_one_that_waits_in_another_tab() {
         != Some(lokyr_kernel::plugins::host::AgentState::Waiting)
     {
         assert!(Instant::now() < deadline, "no agent waits");
-        app.collect(&mut fake, &[agent]);
+        app.collect(fake, &[agent]);
         std::thread::sleep(Duration::from_millis(10));
     }
+    (tab, agent)
+}
+
+#[test]
+fn the_next_agent_is_the_one_that_waits_in_another_tab() {
+    let (mut fake, mut app, window) = configured(
+        "[agents]\nprograms = [\"perl\"]\n",
+        shell("echo ready; read line"),
+    );
+    // Nothing to go to.
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    app.next_agent(&mut fake);
+    assert!(fake.focus_requests().is_empty());
+    // An agent behind, in a second tab, that asks for the user at once.
+    let shown = app.windows[&window].window;
+    let first = app.workspace.window(shown).unwrap().active_tab();
+    let (second, _) = waiting_behind(&mut fake, &mut app, window, r#"print "\e]9;need you\a""#);
     assert_eq!(app.workspace.window(shown).unwrap().active_tab(), first);
     // Its tab shows, its window forward.
     app.next_agent(&mut fake);
@@ -133,4 +147,39 @@ fn the_next_agent_is_the_one_that_waits_in_another_tab() {
     assert_eq!(fake.focus_requests(), [window]);
     // It runs as a command too, which its menu and its keys name.
     assert!(app.commands.get("window.next-agent").is_some());
+}
+
+#[test]
+fn an_agent_s_request_shows_one_notification_whose_click_shows_its_pane() {
+    // Of its own notification, the program's alone; of its bell, the
+    // app's.
+    for (script, body) in [
+        (r#"print "\e]9;need you\a""#, "need you"),
+        (
+            r#"print "\e]777;notify;Claude Code;need you\a""#,
+            "need you",
+        ),
+        (r#"print "\a""#, "perl is waiting for you"),
+    ] {
+        let (mut fake, mut app, window) = configured(
+            "[agents]\nprograms = [\"perl\"]\n",
+            shell("echo ready; read line"),
+        );
+        fake.send(&mut app, window, WindowEvent::Focused(false));
+        let shown = app.windows[&window].window;
+        let first = app.workspace.window(shown).unwrap().active_tab();
+        let (second, agent) = waiting_behind(&mut fake, &mut app, window, script);
+        let told: Vec<&str> = fake
+            .notifications()
+            .iter()
+            .map(|told| told.body.as_str())
+            .collect();
+        assert_eq!(told, [body], "{script}");
+        assert_eq!(app.workspace.window(shown).unwrap().active_tab(), first);
+        // Its click brings the agent's tab and pane forward.
+        fake.send_app(&mut app, AppEvent::NotificationClicked(window));
+        assert_eq!(app.workspace.window(shown).unwrap().active_tab(), second);
+        assert_eq!(app.workspace.focused(shown).map(Pane::id), Some(agent));
+        assert_eq!(fake.focus_requests(), [window]);
+    }
 }

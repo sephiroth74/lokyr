@@ -3,7 +3,8 @@
 //! lists them, once a look finds another group in its foreground; tells
 //! the workspace of the keys typed into a pane, which answer an agent that
 //! waits; and tells what an agent's state brings, a notification while its
-//! window has no focus and the Dock's badge of the agents that wait.
+//! window has no focus, unless the agent's own told it, and the Dock's
+//! badge of the agents that wait.
 
 use lokyr_kernel::config::AgentsConfig;
 use lokyr_kernel::l10n::Arg;
@@ -78,20 +79,24 @@ impl<B: Backend> App<B> {
     /// badge counts the agents that wait, and one that starts waiting, or
     /// is done, tells it in a notification while its window has no focus,
     /// as `[agents]` says, of its tab's title, which a click brings
-    /// forward.
+    /// forward; one that asked for the user by a notification of its own,
+    /// `told`, which shows as a program's, is not told twice.
     pub(super) fn agent_changed(
         &mut self,
         platform: &mut dyn Platform,
         pane: PaneId,
         name: &str,
         (before, now): (Option<AgentState>, Option<AgentState>),
+        told: bool,
     ) {
         self.show_badge(platform);
         if !self.config.agents.notify {
             return;
         }
         let message = match now {
-            Some(AgentState::Waiting) if before != Some(AgentState::Waiting) => "agent-waiting",
+            Some(AgentState::Waiting) if before != Some(AgentState::Waiting) && !told => {
+                "agent-waiting"
+            }
             Some(AgentState::Done) => "agent-done",
             _ => return,
         };
@@ -101,30 +106,14 @@ impl<B: Backend> App<B> {
         if self.windows.get(&window).is_none_or(|state| state.focused) {
             return;
         }
-        let tab = self.workspace.tab_of(pane);
-        let title = tab
+        let title = self
+            .workspace
+            .tab_of(pane)
             .and_then(|tab| self.workspace.tab(tab))
             .map(|tab| unspun(tab.title()).to_owned())
             .unwrap_or_default();
         let body = self.texts.text_with(message, &[("agent", Arg::Text(name))]);
-        if let Some(tab) = tab {
-            self.agent_notified.insert(window, tab);
-        }
         self.notify(platform, pane, &title, &body);
-    }
-
-    /// A click on a notification of `window` that an agent told: its tab
-    /// shows, if it is still the window's; whether one did.
-    pub(super) fn show_notified_agent(&mut self, window: WindowId) -> bool {
-        let Some(tab) = self.agent_notified.remove(&window) else {
-            return false;
-        };
-        let shown = self.windows.get(&window).map(|state| state.window);
-        let in_window = self
-            .workspace
-            .tab(tab)
-            .is_some_and(|open| Some(open.window()) == shown);
-        in_window && self.workspace.activate_tab(tab)
     }
 
     /// Brings forward the next pane after the one that has the keyboard, in

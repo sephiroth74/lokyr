@@ -1161,7 +1161,7 @@ Whether a window without the focus whose bell rang shows 🔔 before its title, 
 
 ## `[notifications]`
 
-What Lokyr tells you of its own in a notification of the system's, while the window has no focus. A notification within two seconds of the last one of the window shows nothing, and a click on one brings its window forward.
+What Lokyr tells you of its own in a notification of the system's, while the window has no focus. A notification within two seconds of the last one of the window shows nothing, and a click on one brings forward the pane that told it, with its tab and its window.
 
 ### `long-command`
 
@@ -1224,7 +1224,7 @@ Whether an agent tells, in a notification of the system's, that it waits for you
 |---|---|
 | `true`, `false` | `true` |
 
-- The notification tells the agent's program and its tab's title; a click on it brings its window forward, at the agent's tab. An agent that notifies of its own shows its own notification alone, as [`[notifications]`](#notifications) shows one notification of a window within two seconds.
+- The notification tells the agent's program and its tab's title; a click on it brings forward the agent's pane, its tab and its window. An agent that asks for you by a notification of its own (OSC 9 or OSC 777, as Claude Code's iTerm2 and Ghostty channels send) shows that notification alone, whose click brings its pane forward too; Lokyr tells "is waiting for you" of an agent that rings its bell.
 - It applies as you save the file.
 
 ### `dock-badge`

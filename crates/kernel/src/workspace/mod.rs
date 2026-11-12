@@ -358,6 +358,10 @@ pub enum Event {
         before: Option<sdk::AgentState>,
         /// Its state now.
         now: Option<sdk::AgentState>,
+        /// Whether it asked for the user by a notification of its own, of
+        /// OSC 9 or 777, which shows as a program's, rather than by its
+        /// bell.
+        told: bool,
     },
     /// A command that a pane's shell marked ended, as its terminal tells
     /// it, of its exit status, if the shell told one, and of its time, from
@@ -644,11 +648,11 @@ impl Workspace {
             // by a notification or its bell.
             let printed = pane.printing().then(|| pane.printed_at()).flatten();
             let busy = pane.progress_runs();
-            let asked = happened.bell
-                || happened
-                    .events
-                    .iter()
-                    .any(|event| matches!(event, terminal::Event::Notification { .. }));
+            let told = happened
+                .events
+                .iter()
+                .any(|event| matches!(event, terminal::Event::Notification { .. }));
+            let asked = happened.bell || told;
             // The commands' times, from the look that found a command's
             // start to the one that finds its end, without a timer.
             let mut took = Vec::new();
@@ -725,7 +729,7 @@ impl Workspace {
             if retitled {
                 self.look_at_headers(&[id]);
             }
-            self.change_agent(id, |agent| {
+            self.change_agent(id, told, |agent| {
                 if let Some(at) = printed {
                     agent.worked(at);
                 }
@@ -796,7 +800,7 @@ impl Workspace {
                 continue;
             };
             let (printed, busy) = (pane.printed_at(), pane.progress_runs());
-            self.change_agent(id, |agent| {
+            self.change_agent(id, false, |agent| {
                 if let Some(at) = printed {
                     agent.worked(at);
                 }
@@ -1216,7 +1220,7 @@ impl Workspace {
             .map(|shown| shown.layout.panes())
             .unwrap_or_default();
         for pane in panes {
-            self.change_agent(pane, Agent::seen);
+            self.change_agent(pane, false, Agent::seen);
         }
         let agent = self.tab_agent(tab);
         self.mark(tab, |marks| {
@@ -1238,8 +1242,9 @@ impl Workspace {
     }
 
     /// Changes the agent of `pane`, if it has one, as `change` does: a
-    /// change of its state is told, and its tab takes it.
-    fn change_agent(&mut self, pane: PaneId, change: impl FnOnce(&mut Agent)) {
+    /// change of its state is told, of whether it asked for the user by a
+    /// notification of its own, `told`, and its tab takes it.
+    fn change_agent(&mut self, pane: PaneId, told: bool, change: impl FnOnce(&mut Agent)) {
         let Some(agent) = self
             .panes
             .get_mut(&pane)
@@ -1259,6 +1264,7 @@ impl Workspace {
             name,
             before,
             now,
+            told: told && now == Some(sdk::AgentState::Waiting),
         });
         if let Some(tab) = self.tab_of.get(&pane).copied() {
             let agent = self.tab_agent(tab);
@@ -1290,6 +1296,7 @@ impl Workspace {
                 name: gone.name().to_owned(),
                 before: Some(before),
                 now: None,
+                told: false,
             });
         }
         if let Some(tab) = self.tab_of.get(&pane).copied() {
@@ -1302,7 +1309,7 @@ impl Workspace {
     /// The user typed into `pane`, keys, a text or a paste: what its agent
     /// waited for is answered, and what it did is seen.
     pub fn typed(&mut self, pane: PaneId) {
-        self.change_agent(pane, Agent::typed);
+        self.change_agent(pane, false, Agent::typed);
     }
 
     /// How many agents wait for the user, of every pane.

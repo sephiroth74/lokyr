@@ -199,7 +199,7 @@ Each pane's, drawn by the host, as the dividers and a search's matches are, over
 
 ## A long command's end
 
-A command that the shell marks with OSC 133 and that runs for `[notifications] long-command` seconds at least, 10 by default, tells its end in a notification of the system's while its window has no focus: the command as it was typed, whether it succeeded or its exit status, and how long it ran. Its time runs from its output's mark to its end's, as the workspace finds them in the pane's output, a frame's pace apart at most, without a timer meanwhile; a click on the notification brings its window forward.
+A command that the shell marks with OSC 133 and that runs for `[notifications] long-command` seconds at least, 10 by default, tells its end in a notification of the system's while its window has no focus: the command as it was typed, whether it succeeded or its exit status, and how long it ran. Its time runs from its output's mark to its end's, as the workspace finds them in the pane's output, a frame's pace apart at most, without a timer meanwhile; a click on the notification brings forward the pane that told it, with its tab and its window, as a click on any program's notification does.
 
 ## The command's sticky header
 
