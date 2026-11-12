@@ -129,7 +129,8 @@ struct Curated {
     command: Option<(&'static str, Arg)>,
 }
 
-/// The curated tips, the most useful first.
+/// The curated tips, the most useful first: a new action, feature or
+/// shortcut of the app adds its own, its message in every catalog.
 const CURATED: [Curated; 21] = [
     command("palette", "tip-palette", PALETTE, Arg::None),
     command("search", "tip-search", "search.open", Arg::None),

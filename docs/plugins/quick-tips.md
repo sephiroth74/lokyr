@@ -14,6 +14,16 @@ A tip as Lokyr starts, once a week at most, or as often as [`every`](#config) sa
 - **It goes** after 12 seconds, held while the pointer rests on it, at the first key that you type into a pane, which still goes to the program, or by its Dismiss button.
 - **Don't show again** stops the tips for good; the plugin keeps your choice in its state, `plugins/quick-tips.json` in the state's folder.
 
+## Adding a tip
+
+Each action, feature or shortcut that Lokyr gains has its tip, in the same change:
+
+1. Its text in [`locales/en/quick-tips.ftl`](../../plugins/quick-tips/locales/en/quick-tips.ftl), the source, and in each other language's catalog: a message `tip-<name>`, of `{ $keys }` where it names a command's keys, one or two sentences, as two lines of the card show them before More.
+2. Its entry in `CURATED`, in [`src/lib.rs`](../../plugins/quick-tips/src/lib.rs), the most useful first: `command(id, message, command, argument)` for a command's keys, which shows only while a key is bound to it, or `plain(id, message)` for a feature that needs no keys; the id, which the plugin's state keeps, never reused.
+3. The plugin's tests check that every tip has its message in every catalog and that the ids are unique.
+
+A plugin's own commands of no parameters have their tips by themselves, of their titles.
+
 ## Commands
 
 | Command | Title | Keys | What it does |
