@@ -1,0 +1,694 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lokyr — a fast terminal for macOS</title>
+<meta name="description" content="A fast terminal for macOS, written in Rust, where every visible feature is a plugin. In development.">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#0b0911">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://lokyr.dev/">
+<meta property="og:title" content="Lokyr">
+<meta property="og:description" content="A fast terminal for macOS, written in Rust, where every visible feature is a plugin.">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="preload" href="lokyr-y.woff2" as="font" type="font/woff2" crossorigin>
+<style>
+  /* Playfair Display's y, for the title: the glyph alone, at weight 400, and
+     renamed, as its licence asks of a modified version (lokyr-y-OFL.txt). */
+  @font-face {
+    font-family: "Lokyr Y";
+    src: url("lokyr-y.woff2") format("woff2");
+    font-weight: 400;
+    font-display: swap;
+    unicode-range: U+79;
+  }
+
+  :root {
+    --bg: #0b0911;
+    --bg-raised: #13101d;
+    --fg: #f4f1ff;
+    --muted: #a7a1bd;
+    --dim: #6f6987;
+    --line: rgba(244, 241, 255, 0.08);
+    --line-strong: rgba(244, 241, 255, 0.14);
+    --violet: #a592ff;
+    --pink: #f27ac4;
+    --gradient: linear-gradient(120deg, var(--violet), var(--pink));
+    --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Segoe UI", Roboto, sans-serif;
+    --display: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Inter", "Segoe UI", Roboto, sans-serif;
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; }
+
+  html { background: var(--bg); }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    color: var(--fg);
+    font: 16px/1.6 var(--sans);
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+    position: relative;
+  }
+
+  /* The light behind the page: a violet glow from above, a pink one lower down,
+     and a faint grid of dots, like a terminal's cells. */
+  .backdrop {
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    overflow: hidden;
+  }
+  .backdrop::before {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: -320px;
+    width: 1200px;
+    height: 900px;
+    transform: translateX(-50%);
+    background:
+      radial-gradient(closest-side, rgba(165, 146, 255, 0.22), transparent 70%),
+      radial-gradient(closest-side at 70% 60%, rgba(242, 122, 196, 0.10), transparent 70%);
+  }
+  .backdrop::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-image: radial-gradient(rgba(244, 241, 255, 0.07) 1px, transparent 1.2px);
+    background-size: 22px 22px;
+    -webkit-mask-image: radial-gradient(ellipse 80% 55% at 50% 0%, #000 30%, transparent 75%);
+            mask-image: radial-gradient(ellipse 80% 55% at 50% 0%, #000 30%, transparent 75%);
+  }
+
+  .wrap {
+    width: min(1080px, 100% - 48px);
+    margin-inline: auto;
+  }
+
+  /* Top bar */
+  .top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 28px 0;
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+  .brand img { width: 28px; height: 28px; }
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    border: 1px solid var(--line-strong);
+    border-radius: 999px;
+    font-size: 13px;
+    color: var(--muted);
+    background: rgba(19, 16, 29, 0.6);
+    -webkit-backdrop-filter: blur(8px);
+            backdrop-filter: blur(8px);
+  }
+  .pill .dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--pink);
+    box-shadow: 0 0 0 0 rgba(242, 122, 196, 0.6);
+    animation: pulse 2.4s ease-out infinite;
+  }
+
+  /* Hero */
+  .hero {
+    text-align: center;
+    padding: 48px 0 72px;
+  }
+  .mark {
+    display: block;
+    width: 168px;
+    height: 168px;
+    margin: 0 auto 36px;
+    overflow: visible;
+  }
+  .serpent {
+    transform-box: fill-box;
+    transform-origin: 50% 50%;
+    animation: spin 80s linear infinite;
+  }
+
+  h1 {
+    margin: 0;
+    font: 700 clamp(64px, 11vw, 128px)/0.95 var(--display);
+    letter-spacing: -0.045em;
+    /* The text takes the background's colours, and the background ends at the
+       padding: 0.3em below the line, taken back by the margin, so the y's
+       descender has colour. The stops are those of the line alone, 0.95em. */
+    padding-bottom: 0.3em;
+    margin-bottom: -0.3em;
+    background: linear-gradient(180deg, #fff 0.285em, #c9bfff 0.95em);
+    -webkit-background-clip: text;
+            background-clip: text;
+    color: transparent;
+  }
+  /* The y of the name, in Playfair Display (Lokyr Y) among the sans. Georgia stands in
+     while the font loads. Its taller metrics would grow the line by 4px, and
+     move the page when the font arrives: line-height 0 keeps the line as is. */
+  .h1-y {
+    font-family: "Lokyr Y", Georgia, serif;
+    font-weight: 400;
+    line-height: 0;
+    margin-inline: 0.04em;
+  }
+  /* A cursor after the name, the icon's underscore, blinking as Lokyr's
+     smooth-blink = "fast" does. Its right margin takes back its width, so
+     the name stays centred. */
+  .h1-cursor {
+    display: inline-block;
+    width: 0.5em;
+    height: 0.11em;
+    margin-left: 0.08em;
+    margin-right: -0.58em;
+    border-radius: 0.03em;
+    background: linear-gradient(180deg, #fff 30%, #c9bfff);
+    animation: smooth-blink 1.3s ease-in-out infinite;
+  }
+  .tagline {
+    margin: 24px auto 0;
+    max-width: 30ch;
+    font-size: clamp(19px, 2.4vw, 23px);
+    line-height: 1.45;
+    color: var(--muted);
+    text-wrap: balance;
+  }
+  .tagline strong { color: var(--fg); font-weight: 500; }
+  .facts {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px 22px;
+    margin: 32px 0 0;
+    padding: 0;
+    list-style: none;
+    font: 13px/1.4 var(--mono);
+    color: var(--dim);
+  }
+  .facts li::before {
+    content: "";
+    display: inline-block;
+    width: 5px;
+    height: 5px;
+    margin-right: 9px;
+    border-radius: 50%;
+    background: var(--gradient);
+    vertical-align: 2px;
+  }
+
+  /* The terminal */
+  .terminal {
+    max-width: 760px;
+    margin: 0 auto;
+    border: 1px solid var(--line-strong);
+    border-radius: 14px;
+    background: rgba(19, 16, 29, 0.78);
+    -webkit-backdrop-filter: blur(20px);
+            backdrop-filter: blur(20px);
+    box-shadow:
+      0 0 0 1px rgba(0, 0, 0, 0.4),
+      0 30px 80px -20px rgba(0, 0, 0, 0.8),
+      0 0 120px -40px rgba(165, 146, 255, 0.35);
+    overflow: hidden;
+  }
+  .terminal-bar {
+    position: relative;
+    display: flex;
+    align-items: center;
+    height: 40px;
+    padding: 0 14px;
+    border-bottom: 1px solid var(--line);
+  }
+  .lights { display: flex; gap: 8px; }
+  .lights span {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #3a3548;
+  }
+  .lights span:nth-child(1) { background: #ff5f57; }
+  .lights span:nth-child(2) { background: #febc2e; }
+  .lights span:nth-child(3) { background: #28c840; }
+  .terminal-title {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--dim);
+    pointer-events: none;
+  }
+  .terminal pre {
+    margin: 0;
+    padding: 20px 22px 24px;
+    font: 14px/1.65 var(--mono);
+    color: #e6e1f7;
+    overflow-x: auto;
+    white-space: pre;
+  }
+  .t-path { color: #7cb0ff; }
+  .t-arrow { color: var(--violet); }
+  .t-section { color: var(--violet); }
+  .t-key { color: #d8d2ee; }
+  .t-op { color: var(--dim); }
+  .t-str { color: #f4a3d6; }
+  .t-num { color: #c3b7ff; }
+  .t-cursor {
+    display: inline-block;
+    width: 0.6em;
+    height: 1.2em;
+    margin-left: 1px;
+    vertical-align: -0.22em;
+    background: #e6e1f7;
+    border-radius: 1px;
+    animation: breathe 1.8s ease-in-out infinite;
+  }
+  /* While the script types, the lines wait hidden. */
+  .terminal.typing .t-line { visibility: hidden; }
+  .terminal.typing .t-line.shown { visibility: visible; }
+
+  /* Sections */
+  section { padding: 96px 0 0; }
+  .eyebrow {
+    margin: 0 0 14px;
+    font: 500 12px/1 var(--mono);
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    background: var(--gradient);
+    -webkit-background-clip: text;
+            background-clip: text;
+    color: transparent;
+  }
+  h2 {
+    margin: 0 0 40px;
+    max-width: 22ch;
+    font: 600 clamp(28px, 4vw, 40px)/1.15 var(--display);
+    letter-spacing: -0.03em;
+    text-wrap: balance;
+  }
+
+  /* Features */
+  .features {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    overflow: hidden;
+    background: var(--line);
+  }
+  .features li {
+    position: relative;
+    padding: 28px 26px 30px;
+    background: var(--bg);
+    transition: background 0.3s ease;
+  }
+  .features li:hover { background: var(--bg-raised); }
+  .features .n {
+    display: block;
+    margin-bottom: 18px;
+    font: 12px/1 var(--mono);
+    color: var(--dim);
+  }
+  .features h3 {
+    margin: 0 0 8px;
+    font-size: 17px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+  .features p {
+    margin: 0;
+    font-size: 15px;
+    line-height: 1.55;
+    color: var(--muted);
+  }
+
+  /* Numbers */
+  .numbers {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 24px;
+    margin: 0;
+  }
+  .numbers div { border-top: 1px solid var(--line-strong); padding-top: 20px; }
+  .numbers dt {
+    font-size: 14px;
+    color: var(--muted);
+  }
+  .numbers dd {
+    margin: 6px 0 0;
+    font: 600 clamp(36px, 4.6vw, 52px)/1 var(--display);
+    letter-spacing: -0.04em;
+    background: var(--gradient);
+    -webkit-background-clip: text;
+            background-clip: text;
+    color: transparent;
+  }
+  .numbers dd small {
+    margin-left: 4px;
+    font-size: 0.42em;
+    font-weight: 500;
+    letter-spacing: 0;
+  }
+  .numbers dd + dd {
+    margin-top: 8px;
+    font: 13px/1.4 var(--sans);
+    letter-spacing: 0;
+    background: none;
+    color: var(--dim);
+  }
+  .footnote {
+    margin: 28px 0 0;
+    font-size: 13px;
+    color: var(--dim);
+  }
+
+  /* Road */
+  .road {
+    position: relative;
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 16px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .road::before {
+    content: "";
+    position: absolute;
+    top: 7px;
+    left: 7px;
+    right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, var(--violet), var(--pink) 50%, var(--line-strong) 58%);
+  }
+  .road li { position: relative; padding-top: 32px; }
+  .road li::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 15px;
+    height: 15px;
+    border-radius: 50%;
+    border: 1px solid var(--line-strong);
+    background: var(--bg);
+  }
+  .road .done::before { background: var(--gradient); border-color: transparent; }
+  .road .now::before {
+    border: 2px solid var(--pink);
+    box-shadow: 0 0 0 0 rgba(242, 122, 196, 0.5);
+    animation: pulse 2.4s ease-out infinite;
+  }
+  .road strong {
+    display: block;
+    font-size: 15px;
+    font-weight: 600;
+  }
+  .road span {
+    display: block;
+    margin-top: 4px;
+    font-size: 13.5px;
+    line-height: 1.45;
+    color: var(--muted);
+  }
+  .road em {
+    display: block;
+    margin-top: 6px;
+    font: normal 12px/1 var(--mono);
+    color: var(--dim);
+  }
+  .road .now em { color: var(--pink); }
+
+  /* Footer */
+  footer {
+    margin-top: 120px;
+    padding: 32px 0 48px;
+    border-top: 1px solid var(--line);
+    font-size: 13px;
+    color: var(--dim);
+  }
+  footer .wrap {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 12px 32px;
+  }
+  footer p { margin: 0; }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes breathe {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.15; }
+  }
+  /* Lokyr's smooth-blink = "fast": on 700 ms, a fade out of 200, off 200, a
+     fade in of 200, the fades eased in and out; 1.3 s in all. */
+  @keyframes smooth-blink {
+    0%, 53.846% { opacity: 1; }
+    69.231%, 84.615% { opacity: 0; }
+    100% { opacity: 1; }
+  }
+  @keyframes pulse {
+    0% { box-shadow: 0 0 0 0 rgba(242, 122, 196, 0.55); }
+    70%, 100% { box-shadow: 0 0 0 9px rgba(242, 122, 196, 0); }
+  }
+
+  @media (max-width: 900px) {
+    .features { grid-template-columns: repeat(2, 1fr); }
+    .numbers { grid-template-columns: repeat(2, 1fr); row-gap: 36px; }
+    .road { grid-template-columns: 1fr; gap: 26px; padding-left: 34px; }
+    .road::before {
+      top: 0;
+      bottom: 0;
+      left: 7px;
+      right: auto;
+      width: 1px;
+      height: auto;
+      background: linear-gradient(180deg, var(--violet), var(--pink) 50%, var(--line-strong) 58%);
+    }
+    .road li { padding-top: 0; }
+    .road li::before { left: -34px; top: 3px; }
+  }
+  @media (max-width: 600px) {
+    .features { grid-template-columns: 1fr; }
+    .terminal pre { font-size: 12.5px; padding: 16px; }
+    .hero { padding-top: 24px; }
+    section { padding-top: 72px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+  }
+</style>
+</head>
+<body>
+<div class="backdrop" aria-hidden="true"></div>
+
+<header class="wrap top">
+  <a class="brand" href="/" style="color: inherit; text-decoration: none;">
+    <img src="icon.svg" alt="" width="28" height="28">
+    Lokyr
+  </a>
+  <span class="pill"><span class="dot" aria-hidden="true"></span>In development</span>
+</header>
+
+<main>
+  <div class="wrap hero">
+    <svg class="mark" viewBox="200 200 624 624" aria-hidden="true">
+      <defs>
+        <linearGradient id="ring" x1="242" y1="242" x2="782" y2="782" gradientUnits="userSpaceOnUse">
+          <stop offset="0" stop-color="#A592FF"/>
+          <stop offset="1" stop-color="#F27AC4"/>
+        </linearGradient>
+        <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+          <feGaussianBlur stdDeviation="30"/>
+        </filter>
+      </defs>
+      <g class="serpent">
+        <path d="M685.6 305.2 A270 270 0 1 1 613.1 261.7" fill="none" stroke="url(#ring)" stroke-width="70" stroke-linecap="round" filter="url(#glow)" opacity="0.6"/>
+        <path d="M685.6 305.2 A270 270 0 1 1 613.1 261.7" fill="none" stroke="url(#ring)" stroke-width="70" stroke-linecap="round"/>
+        <circle cx="685.6" cy="305.2" r="50" fill="url(#ring)"/>
+        <circle cx="679" cy="285" r="9" fill="#0b0911"/>
+      </g>
+      <path d="M430 450 L500 512 L430 574" fill="none" stroke="#F4F1FF" stroke-width="44" stroke-linecap="round" stroke-linejoin="round"/>
+      <rect x="525" y="552" width="90" height="40" rx="9" fill="#F4F1FF"/>
+    </svg>
+
+    <h1>Lok<span class="h1-y">y</span>r<span class="h1-cursor" aria-hidden="true"></span></h1>
+    <p class="tagline">A fast terminal for macOS, written in Rust, where <strong>every visible feature is a plugin</strong>.</p>
+    <ul class="facts">
+      <li>macOS 26 or later</li>
+      <li>Apple Silicon</li>
+      <li>MIT, open source at 1.0</li>
+    </ul>
+  </div>
+
+  <div class="wrap">
+    <div class="terminal" id="terminal" aria-label="A Lokyr window showing its config file">
+      <div class="terminal-bar">
+        <div class="lights" aria-hidden="true"><span></span><span></span><span></span></div>
+        <div class="terminal-title">lokyr — zsh — 80×24</div>
+      </div>
+<pre><span class="t-line"><span class="t-path">~</span> <span class="t-arrow">❯</span> <span class="t-cmd">cat ~/.config/lokyr/config.toml</span></span>
+<span class="t-line"><span class="t-section">[font]</span></span>
+<span class="t-line"><span class="t-key">family</span> <span class="t-op">=</span> <span class="t-str">"SF Mono"</span></span>
+<span class="t-line"><span class="t-key">size</span> <span class="t-op">=</span> <span class="t-num">13</span></span>
+<span class="t-line"> </span>
+<span class="t-line"><span class="t-section">[cursor]</span></span>
+<span class="t-line"><span class="t-key">shape</span> <span class="t-op">=</span> <span class="t-str">"bar"</span></span>
+<span class="t-line"><span class="t-key">smooth-blink</span> <span class="t-op">=</span> <span class="t-str">"breathing"</span></span>
+<span class="t-line"> </span>
+<span class="t-line"><span class="t-section">[quick-terminal]</span></span>
+<span class="t-line"><span class="t-key">position</span> <span class="t-op">=</span> <span class="t-str">"top"</span></span>
+<span class="t-line"> </span>
+<span class="t-line"><span class="t-section">[keys]</span></span>
+<span class="t-line"><span class="t-str">"global:ctrl+`"</span> <span class="t-op">=</span> <span class="t-str">"window.toggle-quick-terminal"</span></span>
+<span class="t-line"><span class="t-path">~</span> <span class="t-arrow">❯</span> <span class="t-cursor" aria-hidden="true"></span></span></pre>
+    </div>
+  </div>
+
+  <section class="wrap" aria-labelledby="why">
+    <p class="eyebrow">Why Lokyr</p>
+    <h2 id="why">A small core, and plugins for everything you see.</h2>
+    <ul class="features">
+      <li>
+        <span class="n">01</span>
+        <h3>Plugins all the way</h3>
+        <p>Tabs, splits, search, themes and the command palette are plugins, on the same API that everyone else gets. The core keeps the terminal itself.</p>
+      </li>
+      <li>
+        <span class="n">02</span>
+        <h3>Plugins you can trust</h3>
+        <p>A third-party plugin is a Luau script in a sandbox of its own. It reaches only what it declares, and Sleip, Lokyr's package manager, shows you that before it installs.</p>
+      </li>
+      <li>
+        <span class="n">03</span>
+        <h3>Fast where you feel it</h3>
+        <p>Its own VT core, with 8-byte cells, and a Metal renderer: a frame of steady output in about a quarter of a millisecond at 4K.</p>
+      </li>
+      <li>
+        <span class="n">04</span>
+        <h3>Native on macOS</h3>
+        <p>An AppKit window, CoreText shaping and font fallback, input methods, Secure Keyboard Entry, and a quick terminal on a global key.</p>
+      </li>
+      <li>
+        <span class="n">05</span>
+        <h3>Ready for agents</h3>
+        <p>Lokyr will be an MCP server: an agent works in its own pane and the panes it opens, and the tabs show what each agent is doing.</p>
+      </li>
+      <li>
+        <span class="n">06</span>
+        <h3>One plain file</h3>
+        <p>Every setting lives in one TOML file that can sit with your dotfiles, checked before Lokyr applies it.</p>
+      </li>
+    </ul>
+  </section>
+
+  <section class="wrap" aria-labelledby="numbers">
+    <p class="eyebrow">Measured, not assumed</p>
+    <h2 id="numbers">Light at rest, quick under load.</h2>
+    <dl class="numbers">
+      <div>
+        <dt>Startup</dt>
+        <dd>256<small>ms</small></dd>
+        <dd>to the first window</dd>
+      </div>
+      <div>
+        <dt>Memory</dt>
+        <dd>25<small>MB</small></dd>
+        <dd>at rest, without the GPU's</dd>
+      </div>
+      <div>
+        <dt>Wakeups</dt>
+        <dd>0.38<small>/s</small></dd>
+        <dd>at rest</dd>
+      </div>
+      <div>
+        <dt>Throughput</dt>
+        <dd>296<small>MiB/s</small></dd>
+        <dd>cat of 1 GiB on screen</dd>
+      </div>
+    </dl>
+    <p class="footnote">A release build on an M5 Pro, Menlo 13 in 120 × 40 cells. Every measure, its method and its limits will be published with the source.</p>
+  </section>
+
+  <section class="wrap" aria-labelledby="road">
+    <p class="eyebrow">The road</p>
+    <h2 id="road">Built in phases, each with criteria that are measured.</h2>
+    <ol class="road">
+      <li class="done"><strong>Foundations</strong><span>Workspace, CI, the measuring tools</span><em>done</em></li>
+      <li class="done"><strong>Terminal core</strong><span>Checked against xterm and fuzzers</span><em>done</em></li>
+      <li class="done"><strong>The macOS app</strong><span>A window of one pane</span><em>in daily use</em></li>
+      <li class="now"><strong>1.0</strong><span>Tabs, splits, search, themes, the palette, updates</span><em>now</em></li>
+      <li><strong>1.1</strong><span>MCP and agents</span><em>next</em></li>
+      <li><strong>2.0</strong><span>Third-party plugins and Sleip</span><em>later</em></li>
+    </ol>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <p>© 2026 Alessandro Crugnola · Lokyr and Sleip are under the MIT License.</p>
+    <p>This page sets no cookies and loads nothing from elsewhere.</p>
+  </div>
+</footer>
+
+<script>
+  // Types the command, then shows the file a line at a time. Without the
+  // script, or with reduced motion, the window shows everything at once.
+  (function () {
+    var term = document.getElementById("terminal");
+    if (!term || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    var lines = term.querySelectorAll(".t-line");
+    var cmd = term.querySelector(".t-cmd");
+    var text = cmd.textContent;
+    var caret = document.createElement("span");
+    caret.className = "t-cursor";
+    caret.setAttribute("aria-hidden", "true");
+
+    term.classList.add("typing");
+    cmd.textContent = "";
+    lines[0].classList.add("shown");
+    lines[0].appendChild(caret);
+
+    var i = 0;
+    function type() {
+      if (i < text.length) {
+        cmd.textContent += text[i++];
+        setTimeout(type, 28 + Math.random() * 60);
+      } else {
+        setTimeout(reveal, 380);
+      }
+    }
+    var n = 1;
+    function reveal() {
+      if (caret.parentNode) caret.remove();
+      if (n < lines.length) {
+        lines[n++].classList.add("shown");
+        setTimeout(reveal, 45);
+      }
+    }
+    setTimeout(type, 900);
+  })();
+</script>
+</body>
+</html>
