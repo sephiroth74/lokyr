@@ -125,8 +125,8 @@ impl Drop for WakeSource {
 unsafe extern "C-unwind" fn perform(_info: *mut c_void) {
     let shared = TARGET.with(|target| target.borrow().upgrade());
     if let Some(shared) = shared {
-        for window in crate::notify::take_clicked() {
-            shared.post(Pending::App(AppEvent::NotificationClicked(window)));
+        for (window, id) in crate::notify::take_clicked() {
+            shared.post(Pending::App(AppEvent::NotificationClicked(window, id)));
         }
         for (target, error) in crate::open::take_failed() {
             shared.post(Pending::App(AppEvent::OpenFailed { target, error }));

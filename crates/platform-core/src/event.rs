@@ -126,8 +126,8 @@ pub enum AppEvent {
     /// A timer that the app started fired.
     Timer(TimerId),
     /// The user clicked a notification that the app showed for a window,
-    /// with [`Platform::notify`](crate::Platform::notify).
-    NotificationClicked(WindowId),
+    /// of the app's number, with [`Platform::notify`](crate::Platform::notify).
+    NotificationClicked(WindowId, u64),
     /// A key that the app takes from every app, with
     /// [`Platform::set_global_keys`](crate::Platform::set_global_keys),
     /// was pressed: its index.

@@ -1057,10 +1057,10 @@ impl Platform for Backend {
         open::in_text_editor(path, self.waker.clone())
     }
 
-    fn notify(&mut self, window: WindowId, title: &str, body: &str) {
+    fn notify(&mut self, window: WindowId, id: u64, title: &str, body: &str) {
         let waker = self.waker.clone();
         if let Some(notifier) = self.notifier.get_or_insert_with(|| Notifier::new(waker)) {
-            notifier.notify(window, title, body);
+            notifier.notify(window, id, title, body);
         }
     }
 

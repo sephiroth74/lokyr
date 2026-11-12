@@ -151,6 +151,8 @@ pub struct FakeAlert {
 pub struct FakeNotification {
     /// The window that it is for.
     pub window: WindowId,
+    /// The app's number of it.
+    pub id: u64,
     /// Its title.
     pub title: String,
     /// Its text.
@@ -1502,9 +1504,10 @@ impl Platform for Fake {
         self.alert_sounds += 1;
     }
 
-    fn notify(&mut self, window: WindowId, title: &str, body: &str) {
+    fn notify(&mut self, window: WindowId, id: u64, title: &str, body: &str) {
         self.notifications.push(FakeNotification {
             window,
+            id,
             title: title.to_owned(),
             body: body.to_owned(),
         });

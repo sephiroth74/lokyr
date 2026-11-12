@@ -3140,7 +3140,7 @@ fn the_config_s_quit_takes_the_hidden_quick_terminal_with_the_last_window() {
     toggle(&mut fake, &mut app);
     assert_eq!(fake.window(quick).unwrap().quick, Some(None));
     // A notification's click shows it, rather than focusing it hidden.
-    fake.send_app(&mut app, AppEvent::NotificationClicked(quick));
+    fake.send_app(&mut app, AppEvent::NotificationClicked(quick, 0));
     assert!(fake.window(quick).unwrap().quick.unwrap().is_some());
     assert!(fake.focus_requests().is_empty());
     fake.send(&mut app, quick, WindowEvent::Focused(false));
@@ -3595,7 +3595,7 @@ fn a_plugin_s_quick_window_shows_and_hides_and_its_global_key_is_taken() {
     app.run(&mut fake, "slider.hide", Args::new());
     assert_eq!(fake.window(quick).unwrap().quick, Some(None));
     assert_eq!(state(&app), (true, true));
-    fake.send_app(&mut app, AppEvent::NotificationClicked(quick));
+    fake.send_app(&mut app, AppEvent::NotificationClicked(quick, 0));
     let place = fake.window(quick).unwrap().quick.unwrap().unwrap();
     assert_eq!(place.edge, lokyr_platform_core::QuickEdge::Bottom);
     assert_eq!(state(&app), (true, false));

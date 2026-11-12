@@ -386,10 +386,14 @@ fn a_notification_shows_for_a_window_without_the_focus() {
         (window, "agent", "waiting")
     );
     // A click brings the window forward.
-    fake.send_app(&mut app, AppEvent::NotificationClicked(window));
+    let id = shown[0].id;
+    fake.send_app(&mut app, AppEvent::NotificationClicked(window, id));
     assert_eq!(fake.focus_requests(), [window]);
     // A window that closed is not asked for.
-    fake.send_app(&mut app, AppEvent::NotificationClicked(WindowId::new(999)));
+    fake.send_app(
+        &mut app,
+        AppEvent::NotificationClicked(WindowId::new(999), 999),
+    );
     assert_eq!(fake.focus_requests(), [window]);
 }
 

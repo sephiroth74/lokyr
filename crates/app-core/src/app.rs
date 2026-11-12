@@ -307,6 +307,9 @@ const BELL_PAUSE: Duration = Duration::from_millis(200);
 /// shows nothing, as a program can send many at once.
 const NOTIFICATION_PAUSE: Duration = Duration::from_secs(2);
 
+/// The latest notifications whose panes a click on one brings forward.
+const MOST_NOTIFIED: usize = 64;
+
 /// The characters of a notification's title and of its text that show.
 const NOTIFICATION_TITLE: usize = 256;
 const NOTIFICATION_BODY: usize = 2048;
@@ -679,9 +682,12 @@ pub struct App<B: Backend> {
     agent_groups: BTreeMap<PaneId, (Option<u32>, String)>,
     /// The count of the agents that wait, as the Dock's badge shows it.
     badge: usize,
-    /// The pane whose notification each window showed last, a program's
-    /// or the app's of it, which a click on it brings forward.
-    notified: BTreeMap<WindowId, PaneId>,
+    /// The panes of the latest notifications, a program's or the app's of
+    /// it, by the app's numbers of them, which a click on one brings
+    /// forward: [`MOST_NOTIFIED`] at most, the oldest first.
+    notified: std::collections::VecDeque<(u64, PaneId)>,
+    /// The number of the last notification shown.
+    notified_last: u64,
     /// The icon's variants, where the app finds them.
     icons: Option<Icons>,
     /// The variant that the app made the icon, once it made one.
@@ -941,7 +947,8 @@ impl<B: Backend> App<B> {
             title_look: Some(TITLE_LOOK),
             agent_groups: BTreeMap::new(),
             badge: 0,
-            notified: BTreeMap::new(),
+            notified: std::collections::VecDeque::new(),
+            notified_last: 0,
             opened_one: false,
             state: None,
             front: None,
@@ -2400,7 +2407,6 @@ impl<B: Backend> App<B> {
                 .retain(|_, (asked, _)| *asked != Some(window));
             self.close_asks.retain(|_, asked| *asked != window);
             self.title_asks.retain(|_, asked| *asked != window);
-            self.notified.remove(&window);
             self.part_asks.retain(|_, (asked, _)| *asked != window);
             // A question whose window closed has no answer.
             let unanswered: Vec<AlertId> = self
@@ -3303,15 +3309,20 @@ impl<B: Backend> App<B> {
     /// that wait still.
     fn collect(&mut self, platform: &mut dyn Platform, panes: &[PaneId]) {
         // Their agents first, so that what their output tells counts, as
-        // an agent's first request: a look at each foreground's group and
-        // program, some microseconds.
+        // an agent's first request: a look at each foreground's group, and
+        // at its program's path as the group changes alone.
         for &pane in panes {
-            let program = self
-                .workspace
-                .pane(pane)
-                .filter(|shown| !shown.is_kept())
-                .and_then(Pane::foreground_program)
-                .unwrap_or_default();
+            let shown = self.workspace.pane(pane).filter(|shown| !shown.is_kept());
+            let group = shown.and_then(Pane::foreground_group);
+            if shown.is_some()
+                && self
+                    .agent_groups
+                    .get(&pane)
+                    .is_some_and(|(seen, _)| *seen == group)
+            {
+                continue;
+            }
+            let program = shown.and_then(Pane::foreground_program).unwrap_or_default();
             self.look_at_agent(pane, &program);
         }
         let due = self.workspace.collect(panes, Instant::now());
@@ -4364,7 +4375,9 @@ impl<B: Backend> App<B> {
                     eprintln!("lokyr: {error}");
                 }
             }
-            AppEvent::NotificationClicked(window) => self.notification_clicked(platform, window),
+            AppEvent::NotificationClicked(window, id) => {
+                self.notification_clicked(platform, window, id);
+            }
             AppEvent::AlertClosed {
                 alert,
                 button,

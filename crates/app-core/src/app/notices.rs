@@ -12,7 +12,10 @@ use lokyr_kernel::plugins::ui::ViewId;
 use lokyr_kernel::workspace::PaneId;
 use lokyr_platform_core::{Platform, WindowId};
 
-use super::{App, BELL_PAUSE, FLASH, NOTIFICATION_BODY, NOTIFICATION_PAUSE, NOTIFICATION_TITLE};
+use super::{
+    App, BELL_PAUSE, FLASH, MOST_NOTIFIED, NOTIFICATION_BODY, NOTIFICATION_PAUSE,
+    NOTIFICATION_TITLE,
+};
 use crate::drawing::Backend;
 
 impl<B: Backend> App<B> {
@@ -161,8 +164,12 @@ impl<B: Backend> App<B> {
         state.notified_at = Some(now);
         let title: String = title.chars().take(NOTIFICATION_TITLE).collect();
         let body: String = body.chars().take(NOTIFICATION_BODY).collect();
-        platform.notify(window, &title, &body);
-        self.notified.insert(window, pane);
+        self.notified_last += 1;
+        platform.notify(window, self.notified_last, &title, &body);
+        if self.notified.len() >= MOST_NOTIFIED {
+            self.notified.pop_front();
+        }
+        self.notified.push_back((self.notified_last, pane));
     }
 
     /// Tells the end of `pane`'s command `command`, of `status`, that ran
@@ -231,14 +238,21 @@ impl<B: Backend> App<B> {
         }
     }
 
-    /// A click on a notification of `window`: the pane that told it, if it
-    /// is still open, wherever it went since, its tab and its window, comes
-    /// forward; the quick terminal, hidden, shows at its place; another
-    /// window takes the focus.
-    pub(super) fn notification_clicked(&mut self, platform: &mut dyn Platform, window: WindowId) {
+    /// A click on the notification `id` of `window`: the pane that told it,
+    /// if it is still open, wherever it went since, its tab and its window,
+    /// comes forward; the quick terminal, hidden, shows at its place;
+    /// another window takes the focus.
+    pub(super) fn notification_clicked(
+        &mut self,
+        platform: &mut dyn Platform,
+        window: WindowId,
+        id: u64,
+    ) {
         let told = self
             .notified
-            .remove(&window)
+            .iter()
+            .find(|&&(shown, _)| shown == id)
+            .map(|&(_, pane)| pane)
             .filter(|&pane| self.workspace.pane(pane).is_some());
         let window = match told {
             Some(pane) => {

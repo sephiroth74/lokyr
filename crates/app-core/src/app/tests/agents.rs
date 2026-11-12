@@ -178,7 +178,8 @@ fn an_agent_s_request_shows_one_notification_whose_click_shows_its_pane() {
         assert_eq!(told, [body], "{script}");
         assert_eq!(app.workspace.window(shown).unwrap().active_tab(), first);
         // Its click brings the agent's tab and pane forward.
-        fake.send_app(&mut app, AppEvent::NotificationClicked(window));
+        let id = fake.notifications()[0].id;
+        fake.send_app(&mut app, AppEvent::NotificationClicked(window, id));
         assert_eq!(app.workspace.window(shown).unwrap().active_tab(), second);
         assert_eq!(app.workspace.focused(shown).map(Pane::id), Some(agent));
         assert_eq!(fake.focus_requests(), [window]);

@@ -905,11 +905,12 @@ pub trait Platform {
     fn play_alert_sound(&mut self);
 
     /// Shows a notification of the system's, of `title` and `body`, for
-    /// `window`: a click on it comes as [`AppEvent::NotificationClicked`].
+    /// `window`, of the app's number `id`: a click on it comes as
+    /// [`AppEvent::NotificationClicked`] of both.
     /// The first asks the user for the permission to show them, which the
     /// system keeps; without it, nothing shows. On the Mac, the application
     /// needs its bundle's identifier: from outside its bundle, nothing shows.
-    fn notify(&mut self, window: WindowId, title: &str, body: &str);
+    fn notify(&mut self, window: WindowId, id: u64, title: &str, body: &str);
 
     /// What `target`, a URL or an absolute path, is, and where it leads: a
     /// `file` URL is its path's, if it names this machine; a path's links

@@ -873,3 +873,21 @@ fn a_program_s_inline_image_draws_over_its_cells_backgrounds_and_under_its_text_
     assert_eq!((rect.x, rect.y), (room.x, room.y));
     assert_eq!(app.inline_images.held(), 1);
 }
+
+#[test]
+fn a_click_on_an_older_notification_brings_its_own_pane_forward() {
+    let (mut fake, mut app, window, a, b) = two_panes(echoing("a"), &echoing("b"));
+    let shown = app.windows[&window].window;
+    fake.send(&mut app, window, WindowEvent::Focused(false));
+    // Two panes' notifications of one window, past the pause between them.
+    app.notify(&mut fake, a, "a", "first");
+    app.windows.get_mut(&window).unwrap().notified_at = None;
+    app.notify(&mut fake, b, "b", "second");
+    let told: Vec<u64> = fake.notifications().iter().map(|told| told.id).collect();
+    assert_eq!(told.len(), 2);
+    // Each click its own pane, in either order, as often as it comes.
+    for (id, pane) in [(told[0], a), (told[1], b), (told[0], a)] {
+        fake.send_app(&mut app, AppEvent::NotificationClicked(window, id));
+        assert_eq!(app.workspace.focused(shown).map(Pane::id), Some(pane));
+    }
+}

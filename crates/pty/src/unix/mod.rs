@@ -304,9 +304,14 @@ impl Pty {
         let mut names: Vec<String> = Vec::new();
         for process in processes.into_iter().take(MOST_NAMED) {
             let arguments = arguments(process.id);
-            let script = is_interpreter(&process.name)
-                .then(|| script_of(&arguments))
-                .flatten();
+            // An interpreter by its executable's name, or its first
+            // argument's, as Python's framework runs `Python.app`'s `Python`.
+            let interpreter = is_interpreter(&process.name)
+                || arguments
+                    .first()
+                    .and_then(|first| file_name(first))
+                    .is_some_and(|first| is_interpreter(&first));
+            let script = interpreter.then(|| script_of(&arguments)).flatten();
             let candidates = [
                 Some(process.name.as_str()),
                 arguments.first().map(String::as_str),
@@ -338,9 +343,10 @@ fn file_name(path: &str) -> Option<String> {
 }
 
 /// Whether the program `name` runs a script that names what runs, as
-/// `node` or `python3.12`.
+/// `node`, `python3.12` or `Python`, whatever its case.
 fn is_interpreter(name: &str) -> bool {
     const INTERPRETERS: [&str; 7] = ["node", "nodejs", "bun", "deno", "python", "ruby", "perl"];
+    let name = name.to_ascii_lowercase();
     INTERPRETERS.iter().any(|interpreter| {
         name.strip_prefix(interpreter).is_some_and(|rest| {
             rest.chars()
@@ -350,15 +356,33 @@ fn is_interpreter(name: &str) -> bool {
 }
 
 /// The script, or the module after `-m`, that an interpreter's `arguments`
-/// run, its own name first: the first argument that is not an option, as
-/// `node --no-warnings /opt/homebrew/bin/gemini` runs the last; a runtime
-/// of subcommands, as `deno run` or `bun run`, the argument after them.
+/// run, its own name first: the first argument that is not an option nor
+/// an option's value, as `node -r dotenv/config agent.js` runs the last; a
+/// runtime of subcommands, as `deno run` or `bun run`, the argument after
+/// them; none of code given inline, as `python -c` takes.
 fn script_of(arguments: &[String]) -> Option<&str> {
+    // The options of the interpreters whose value follows them.
+    const VALUED: [&str; 8] = [
+        "-r",
+        "--require",
+        "--import",
+        "--loader",
+        "--experimental-loader",
+        "--env-file",
+        "-W",
+        "-X",
+    ];
+    // Those of code given inline, of no script.
+    const INLINE: [&str; 5] = ["-c", "-e", "--eval", "-p", "--print"];
     let mut rest = arguments.iter().skip(1).map(String::as_str);
     while let Some(argument) = rest.next() {
         match argument {
             "-m" => return rest.next(),
             "run" | "x" => continue,
+            inline if INLINE.contains(&inline) => return None,
+            valued if VALUED.contains(&valued) => {
+                rest.next();
+            }
             option if option.starts_with('-') => continue,
             script => return Some(script),
         }
@@ -1476,6 +1500,8 @@ mod tests {
             "python3",
             "python3.12",
             "perl5.34",
+            "Python",
+            "Python3",
         ] {
             assert!(is_interpreter(name), "{name}");
         }
@@ -1505,6 +1531,19 @@ mod tests {
             Some("agent.ts")
         );
         assert_eq!(script_of(&arguments(&["node"])), None);
+        // An option's value is not the script; code given inline, none.
+        assert_eq!(
+            script_of(&arguments(&["node", "-r", "dotenv/config", "agent.js"])),
+            Some("agent.js")
+        );
+        assert_eq!(
+            script_of(&arguments(&["python3", "-W", "ignore", "-m", "aider"])),
+            Some("aider")
+        );
+        assert_eq!(
+            script_of(&arguments(&["python3", "-c", "import x", "y"])),
+            None
+        );
         assert_eq!(
             file_name("/opt/homebrew/bin/gemini").as_deref(),
             Some("gemini")
