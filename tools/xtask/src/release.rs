@@ -15,7 +15,8 @@
 //! 4. the DMG, the bundle and the image notarized and stapled;
 //! 5. the draft, `v<version>`, of the commit, a candidate's a pre-release,
 //!    with the DMG, the dSYM and the bill, its notes
-//!    `docs/releases/<X.Y.Z>.md`;
+//!    `docs/releases/<X.Y.Z>.md`, and `CHANGELOG.md` its section, of the
+//!    format that `check-changelog` checks;
 //! 6. the DMG in the feed of tests.
 
 use std::fs;
@@ -60,6 +61,14 @@ pub fn run(mut args: impl Iterator<Item = String>) -> Result<ExitCode> {
         "{} is not there: write the release's notes first",
         notes.display()
     );
+    let release = feed::release_of(&version);
+    let changelog =
+        fs::read_to_string(root.join("CHANGELOG.md")).context("reading CHANGELOG.md")?;
+    ensure!(
+        crate::changelog::has_release(&changelog, release),
+        "CHANGELOG.md has no `## [{release}] - YYYY-MM-DD`: move its Unreleased entries there first"
+    );
+    crate::changelog::check(&changelog).map_err(anyhow::Error::msg)?;
     let changed = output(
         Command::new("git").args(["status", "--porcelain"]),
         "reading the checkout's state",

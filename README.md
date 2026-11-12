@@ -162,6 +162,7 @@ Lokyr shows the progress that a program reports with OSC 9;4 on the program's ta
 ## Documentation
 
 - [The documentation's index](docs/README.md), with the requirements and the decisions.
+- [The changelog](CHANGELOG.md): every release's changes.
 - [Architecture](docs/ARCHITECTURE.md): the crates, the threads, the frame's way.
 - [Writing a plugin](docs/plugins/authoring.md) and [making a theme](docs/themes/authoring.md): the guides for their authors.
 - [The plugin system](docs/PLUGIN-SYSTEM.md) and [Sleip](docs/PACKAGE-MANAGER.md).
