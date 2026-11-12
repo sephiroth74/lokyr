@@ -26,10 +26,16 @@ pub(super) struct Install {
     added: Vec<PathBuf>,
 }
 
+/// What a folder of Claude Code's configuration holds, one at least, which
+/// tells it from another tool's folder of a name of `.claude-`, as
+/// `~/.claude-squad`.
+const CONFIGURATION: [&str; 4] = ["settings.json", ".claude.json", "projects", "history.jsonl"];
+
 /// The `settings.json` of each of Claude Code's configurations in `home`:
-/// its folders `.claude` and `.claude-*`, and `configured`, the folder of
-/// `CLAUDE_CONFIG_DIR` where the app's start gives one; `.claude`'s
-/// whether it is there or not, as Claude Code makes it.
+/// its folders `.claude` and `.claude-*` that hold a configuration's
+/// files, and `configured`, the folder of `CLAUDE_CONFIG_DIR` where the
+/// app's start gives one; `.claude`'s whether it is there or not, as Claude
+/// Code makes it.
 pub(super) fn settings_in(home: &Path, configured: Option<&Path>) -> Vec<PathBuf> {
     let mut folders: Vec<PathBuf> = std::fs::read_dir(home)
         .into_iter()
@@ -38,7 +44,12 @@ pub(super) fn settings_in(home: &Path, configured: Option<&Path>) -> Vec<PathBuf
         .filter(|entry| {
             let name = entry.file_name();
             let name = name.to_string_lossy();
-            (name == ".claude" || name.starts_with(".claude-")) && entry.path().is_dir()
+            let path = entry.path();
+            (name == ".claude" || name.starts_with(".claude-"))
+                && path.is_dir()
+                && CONFIGURATION
+                    .iter()
+                    .any(|file| path.join(file).symlink_metadata().is_ok())
         })
         .map(|entry| entry.path())
         .collect();
@@ -195,8 +206,11 @@ impl<B: Backend> App<B> {
 }
 
 /// Adds the hooks to the settings at `path`, a copy of the file as it was
-/// kept beside it, `settings.json.lokyr-backup`; the error of a failure,
-/// which leaves the file as it was.
+/// kept beside it, `settings.json.lokyr-backup`, of the file's permissions,
+/// as it may hold tokens: of a file of no hooks of Lokyr's, or where there
+/// is none yet, so that an install over an earlier one keeps the copy of
+/// the file before either; the error of a failure, which leaves the file as
+/// it was.
 pub(super) fn add_hooks(path: &Path) -> Result<(), String> {
     let text = match std::fs::read_to_string(path) {
         Ok(text) => Some(text),
@@ -208,8 +222,11 @@ pub(super) fn add_hooks(path: &Path) -> Result<(), String> {
         let mut backup = path.as_os_str().to_owned();
         backup.push(".");
         backup.push(BACKUP);
-        lokyr_pkg_model::write_whole(Path::new(&backup), text)
-            .map_err(|error| error.to_string())?;
+        let backup = Path::new(&backup);
+        if !text.contains(claude_code::HOOKED) || !backup.exists() {
+            // A copy made of the file's permissions, never wider.
+            std::fs::copy(path, backup).map_err(|error| error.to_string())?;
+        }
     }
     lokyr_pkg_model::write_whole(path, &merged).map_err(|error| error.to_string())
 }
@@ -230,8 +247,13 @@ mod tests {
     #[test]
     fn the_settings_are_each_configuration_s_and_the_default_one_s() {
         let home = folder("home");
-        std::fs::create_dir_all(home.join(".claude-work")).unwrap();
+        std::fs::create_dir_all(home.join(".claude-work/projects")).unwrap();
         std::fs::create_dir_all(home.join(".claude-personal")).unwrap();
+        std::fs::write(home.join(".claude-personal/settings.json"), "{}").unwrap();
+        // Another tool's folder of the same start, and an empty one.
+        std::fs::create_dir_all(home.join(".claude-squad")).unwrap();
+        std::fs::write(home.join(".claude-squad/config.json"), "{}").unwrap();
+        std::fs::create_dir_all(home.join(".claude-empty")).unwrap();
         std::fs::create_dir_all(home.join(".cache")).unwrap();
         std::fs::write(home.join(".claude-file"), "not a folder").unwrap();
         let elsewhere = home.join("elsewhere");
@@ -270,6 +292,22 @@ mod tests {
         );
         let text = std::fs::read_to_string(&path).unwrap();
         assert!(text.contains("\"model\": \"opus\"") && claude_code::has_hooks(&text));
+        // An install over the hooks keeps the copy of the file before them.
+        let earlier = text.replace("lokyr-agent:waiting", "lokyr-agent:waiting ");
+        std::fs::write(&path, &earlier).unwrap();
+        add_hooks(&path).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&backup).unwrap(),
+            "{\"model\": \"opus\"}"
+        );
+        // A file that only its owner reads, of a copy alike.
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::remove_file(&backup).unwrap();
+        std::fs::write(&path, "{\"env\": {}}").unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+        add_hooks(&path).unwrap();
+        let mode = std::fs::metadata(&backup).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o600);
         // Not JSON: told, and left as it is.
         std::fs::write(&path, "{ broken").unwrap();
         assert!(add_hooks(&path).is_err());

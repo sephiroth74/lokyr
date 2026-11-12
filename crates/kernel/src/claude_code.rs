@@ -17,6 +17,7 @@ use serde_json::Value;
 use serde_json::value::RawValue;
 
 pub use crate::workspace::agent::HOOKED;
+use crate::workspace::agent::MESSAGE;
 
 /// The events of Claude Code's hooks that tell a state, the matcher of
 /// each, and the state that it tells.
@@ -53,13 +54,15 @@ impl std::error::Error for Error {}
 
 /// The shell's command of the hook that tells `state`: nothing outside
 /// Lokyr; of a waiting state, the message of Claude Code's notification,
-/// which `jq` reads of the hook's input, or none where `jq` is missing.
+/// which `jq` reads of the hook's input, of no control character, C0, DEL
+/// or C1, which would end the sequence and run the rest as the terminal's,
+/// and of [`MESSAGE`] characters at most; or none where `jq` is missing.
 fn command(state: &str) -> String {
     let plain =
         format!(r#"printf '{{"terminalSequence":"\\u001b]777;notify;{HOOKED}{state};\\u0007"}}'"#);
     let told = if state == "waiting" {
         format!(
-            r#"/usr/bin/jq -c '{{terminalSequence: ("\u001b]777;notify;{HOOKED}{state};" + (.message // "") + "\u0007")}}' 2>/dev/null || {plain}"#
+            r#"/usr/bin/jq -c '{{terminalSequence: ("\u001b]777;notify;{HOOKED}{state};" + ((.message // "") | tostring | explode | map(select(. >= 32 and (. < 127 or . > 159))) | .[0:{MESSAGE}] | implode) + "\u0007")}}' 2>/dev/null || {plain}"#
         )
     } else {
         plain
@@ -240,7 +243,44 @@ pub fn has_hooks(settings: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
     use super::*;
+
+    #[test]
+    fn the_waiting_hook_s_message_keeps_no_control_character() {
+        let command = command("waiting");
+        // A message of a bell, an escape and a C1 control, as the hook's
+        // input gives it, through the shell, in Lokyr.
+        let input = r#"{"message":"ok\u0007\u001b]52;c;eA==\u0007 done\u009b è"}"#;
+        let mut child = std::process::Command::new("/bin/sh")
+            .args(["-c", &command])
+            .env("TERM_PROGRAM", "lokyr")
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        use std::io::Write;
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(input.as_bytes())
+            .unwrap();
+        let output = child.wait_with_output().unwrap();
+        let told: Value = serde_json::from_slice(&output.stdout).unwrap();
+        let sequence = told["terminalSequence"].as_str().unwrap();
+        let body = sequence
+            .strip_prefix(&format!("\u{1b}]777;notify;{HOOKED}waiting;"))
+            .and_then(|rest| rest.strip_suffix('\u{7}'))
+            .unwrap();
+        assert!(!body.chars().any(|c| c.is_control()), "{body:?}");
+        // Where jq is, the message's printable rest; where not, none.
+        if Path::new("/usr/bin/jq").exists() {
+            assert_eq!(body, "ok]52;c;eA== done è");
+        }
+        assert!(command.contains(&format!(".[0:{MESSAGE}]")));
+    }
 
     #[test]
     fn a_new_file_takes_the_hooks_alone() {
