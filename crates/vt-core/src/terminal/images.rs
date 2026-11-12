@@ -795,6 +795,35 @@ impl Terminal {
         }
     }
 
+    /// The rows of the screen, from its top, down to the last that a
+    /// placement of the primary screen covers: 0 of none.
+    pub(super) fn rows_under_images(&self) -> u16 {
+        if self.alternate_active {
+            return 0;
+        }
+        let top = self.screen_top();
+        let last = i64::from(self.rows);
+        self.images
+            .placements
+            .iter()
+            .filter(|placement| !placement.pin.is_alternate())
+            .filter_map(|placement| {
+                let (_, row) = self.pinned_cell(&placement.pin)?;
+                let end = row - top + i64::from(placement.rows);
+                (end > 0).then(|| end.min(last) as u16)
+            })
+            .max()
+            .unwrap_or(0)
+    }
+
+    /// Lets the placements go that start on the active screen, as an
+    /// erase of it in place takes their text.
+    pub(super) fn drop_screen_images(&mut self) {
+        let top = self.screen_top();
+        let bottom = top + i64::from(self.rows);
+        self.drop_placements(|seen| (top..bottom).contains(&seen.row), false);
+    }
+
     /// The number of the active screen's first row.
     pub(super) fn screen_top(&self) -> i64 {
         self.row_number(self.screen().rows.scrollback_rows())
@@ -1103,6 +1132,29 @@ mod tests {
                 height: 80,
             })]
         );
+    }
+
+    #[test]
+    fn a_clear_takes_the_screen_s_images_with_its_rows() {
+        let (mut terminal, mut parser) = made(20, 6, IMAGE_MEMORY);
+        // `clear; imgcat` in a loop: each image, of no text after it, goes
+        // to the scrollback with the screen.
+        for _ in 0..3 {
+            parser.advance(&mut terminal, b"\x1b[H\x1b[2J");
+            parser.advance(&mut terminal, &file("inline=1", &png(30, 40)));
+            parser.advance(&mut terminal, b"\n");
+        }
+        let placed = shown(&mut terminal);
+        assert_eq!(placed.len(), 1);
+        assert_eq!(placed[0].2, 0);
+        // Of ED 3 too, the others go with the scrollback.
+        parser.advance(&mut terminal, b"\x1b[H\x1b[2J\x1b[3J");
+        assert!(shown(&mut terminal).is_empty());
+        // A selective erase, in place, takes the screen's images.
+        parser.advance(&mut terminal, &file("inline=1", &png(30, 40)));
+        assert_eq!(shown(&mut terminal).len(), 1);
+        parser.advance(&mut terminal, b"\x1b[?2J");
+        assert!(shown(&mut terminal).is_empty());
     }
 
     #[test]

@@ -40,13 +40,18 @@ impl Terminal {
             2 => {
                 // The screen goes to the scrollback but when ISO's
                 // protection keeps some of its cells there.
-                if !selective && !self.alternate_active && !(keep && self.screen_protects()) {
+                let into_scrollback =
+                    !selective && !self.alternate_active && !(keep && self.screen_protects());
+                if into_scrollback {
                     self.scroll_into_scrollback();
                 }
                 // The alternate screen, which keeps nothing, loses its
-                // images; the primary's went to the scrollback.
+                // images; the primary's went to the scrollback, unless the
+                // erase takes them in place.
                 if self.alternate_active {
                     self.drop_alternate_images();
+                } else if !into_scrollback {
+                    self.drop_screen_images();
                 }
                 for y in 0..rows {
                     self.erase_in_row(y, 0..cols, keep);
@@ -137,8 +142,10 @@ impl Terminal {
     }
 
     /// Moves the rows of the screen, up to the last one that holds
-    /// something, into the scrollback, and empty rows in at the bottom.
+    /// something, text or an image, into the scrollback, and empty rows in
+    /// at the bottom.
     fn scroll_into_scrollback(&mut self) {
+        let imaged = self.rows_under_images();
         let rows = &mut self.screen_mut().rows;
         let holding = (0..rows.rows())
             .rev()
@@ -146,7 +153,8 @@ impl Terminal {
                 let (page, row) = rows.screen_row(y);
                 page.cells(row).iter().any(|cell| !cell.is_empty())
             })
-            .map_or(0, |y| y + 1);
+            .map_or(0, |y| y + 1)
+            .max(imaged);
         for _ in 0..holding {
             rows.scroll_up();
         }
