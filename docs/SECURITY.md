@@ -75,7 +75,7 @@ The MCP server lets AI agents drive the terminal.
   - `lokyr +mcp` names its pane from `LOKYR_PANE_ID`, and the app checks it: the socket's peer process must descend from that pane's program;
   - reading or typing into another pane asks first, a pane at a time, with the agent's name, as MCP's `initialize` gives it, and the pane's.
 - **The config**: the `[mcp]` section widens the scope, or turns the server off.
-- **The agents' files**: the app never writes them. The lines that their hooks need are in the documents, and `lokyr +agent-hooks <agent>` prints them.
+- **The agents' files**: the app writes none of them on its own. Lokyr › Install Claude Code Integration… adds Lokyr's hooks to the `settings.json` of each of Claude Code's configurations, asking of each first and keeping a copy of the file, of its permissions, as it was before; with F3b's IPC, `lokyr +agent-hooks <agent>` prints the lines that the other agents' configs take.
 
 ## Robustness
 
