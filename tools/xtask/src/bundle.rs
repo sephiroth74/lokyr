@@ -50,11 +50,13 @@ pub(crate) const SLEIP: &str = "sleip";
 /// The Dock tile plug-in, in the bundle's `Contents/PlugIns`, which the Dock
 /// loads while the app is kept in it and not running, so that the icon's
 /// variant that the app showed stays: its bundle's name, its executable's,
-/// the crate that builds it and the library that the build makes.
+/// the crate that builds it, the library that the build makes and its
+/// principal class, which the crate registers.
 const DOCK_TILE: &str = "LokyrDockTile.docktileplugin";
 const DOCK_TILE_EXECUTABLE: &str = "LokyrDockTile";
 const DOCK_TILE_CRATE: &str = "lokyr-platform-macos-docktile";
 const DOCK_TILE_LIBRARY: &str = "liblokyr_platform_macos_docktile.dylib";
+const DOCK_TILE_CLASS: &str = "LokyrDockTilePlugIn";
 
 /// The vendored sources of Luau's type checker, whose license and Lua's,
 /// of its VM's headers, the bundle carries, as Sleip holds them.
@@ -695,7 +697,7 @@ fn dock_tile_plist(version: &str, moment: u64) -> Result<String> {
         ("CFBundleShortVersionString", short.to_owned()),
         ("CFBundleVersion", number),
         ("LSMinimumSystemVersion", MINIMUM_SYSTEM.to_owned()),
-        ("NSPrincipalClass", "LokyrDockTilePlugIn".to_owned()),
+        ("NSPrincipalClass", DOCK_TILE_CLASS.to_owned()),
     ]
     .into_iter()
     .map(|(key, value)| (key.to_owned(), value))
@@ -987,6 +989,47 @@ mod tests {
     fn catalogs() -> BTreeMap<String, Catalog> {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         usage_catalogs(&root.join(LOCALES)).unwrap()
+    }
+
+    #[test]
+    fn the_dock_tile_s_names_are_its_crate_s() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let read = |path: &str| fs::read_to_string(root.join(path)).unwrap();
+        let manifest = read("crates/platform-macos-docktile/Cargo.toml");
+        assert!(
+            manifest.contains(&format!("name = \"{DOCK_TILE_CRATE}\"")),
+            "{manifest}"
+        );
+        assert_eq!(
+            DOCK_TILE_LIBRARY,
+            format!("lib{}.dylib", DOCK_TILE_CRATE.replace('-', "_"))
+        );
+        let source = read("crates/platform-macos-docktile/src/lib.rs");
+        for registered in [
+            format!("pub const CLASS: &str = \"{DOCK_TILE_CLASS}\";"),
+            format!("#[name = \"{DOCK_TILE_CLASS}\"]"),
+            format!("c\"{DOCK_TILE_CLASS}\""),
+        ] {
+            assert!(source.contains(&registered), "{registered}");
+        }
+        // The app's defaults and notification, as the plug-in reads them.
+        let backend = read("crates/platform-macos/src/backend.rs");
+        for (plugin, app) in [
+            (
+                "pub const ICON_KEY: &str = ",
+                "const DOCK_TILE_ICON: &str = ",
+            ),
+            (
+                "pub const ICON_CHANGED: &str = ",
+                "const DOCK_TILE_ICON_CHANGED: &str = ",
+            ),
+        ] {
+            let value = |text: &str, start: &str| {
+                let at = text.find(start).unwrap() + start.len();
+                text[at..].lines().next().unwrap().to_owned()
+            };
+            assert_eq!(value(&source, plugin), value(&backend, app));
+        }
     }
 
     #[test]

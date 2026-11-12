@@ -1216,8 +1216,8 @@ fn quarantine(path: &Path) -> std::io::Result<()> {
     }
 }
 
-/// The key of the app's defaults that holds the path of the image of the
-/// icon's variant shown, which the bundle's Dock tile plug-in draws while
+/// The key of the app's defaults that holds the name of the icon's variant
+/// shown, which the bundle's Dock tile plug-in draws of its own bundle while
 /// the app is not running.
 const DOCK_TILE_ICON: &str = "DockTileIcon";
 
@@ -1226,17 +1226,17 @@ const DOCK_TILE_ICON: &str = "DockTileIcon";
 const DOCK_TILE_ICON_CHANGED: &str = "io.github.sephiroth74.lokyr.DockTileIconChanged";
 
 /// Keeps the icon's variant of the image at `icon`, or the bundle's own of
-/// none, for the Dock tile plug-in: its path in the app's defaults, written
+/// none, for the Dock tile plug-in: its name in the app's defaults, written
 /// to the disk at once, as the app may quit next, and the plug-in told.
 fn keep_dock_tile_icon(icon: Option<&Path>) {
     let defaults = objc2_foundation::NSUserDefaults::standardUserDefaults();
     let key = NSString::from_str(DOCK_TILE_ICON);
-    match icon {
-        Some(path) => {
-            let path = NSString::from_str(&path.to_string_lossy());
+    match icon.and_then(variant_of) {
+        Some(name) => {
+            let name = NSString::from_str(&name);
             // SAFETY: a string is a property list's value, which the
             // defaults take.
-            unsafe { defaults.setObject_forKey(Some(&path), &key) };
+            unsafe { defaults.setObject_forKey(Some(&name), &key) };
         }
         None => defaults.removeObjectForKey(&key),
     }
@@ -1251,6 +1251,13 @@ fn keep_dock_tile_icon(icon: Option<&Path>) {
             true,
         );
     }
+}
+
+/// The variant's name of an icon's file, `lokyr-<name>.icns`.
+fn variant_of(icon: &Path) -> Option<String> {
+    let name = icon.file_name()?.to_str()?;
+    let variant = name.strip_prefix("lokyr-")?.strip_suffix(".icns")?;
+    (!variant.is_empty()).then(|| variant.to_owned())
 }
 
 /// The most pixels of an image that the platform decodes.
