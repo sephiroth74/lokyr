@@ -806,6 +806,15 @@
   {
     "capabilities": [],
     "category": "windows",
+    "name": "window.next-agent",
+    "params": [],
+    "plugin": null,
+    "title": "Go to Next Agent",
+    "when": null
+  },
+  {
+    "capabilities": [],
+    "category": "windows",
     "name": "window.set-title",
     "params": [],
     "plugin": null,

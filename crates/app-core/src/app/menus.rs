@@ -23,8 +23,8 @@ use lokyr_vt_core::terminal::{SelectionShape, SelectionUnit};
 use super::{
     ABOUT, APPEARANCES, App, CHECK_UPDATES, CONTEXT_ONLY, DEFAULT_TERMINAL, FLOAT_ON_TOP,
     INSTALL_TOOLS, LOOK_UP, LOOK_UP_TITLE, MAN_KEYWORDS, MAN_PAGE, MAN_PAGE_NAME, MAN_SEARCH,
-    MAN_SECTION, PERFORMANCE, REPORT_ISSUE, SEARCH_WEB, SECURE_INPUT, SETTINGS, SHOW_TIP, context,
-    show_selection, shown_top,
+    MAN_SECTION, NEXT_AGENT, PERFORMANCE, REPORT_ISSUE, SEARCH_WEB, SECURE_INPUT, SETTINGS,
+    SHOW_TIP, context, show_selection, shown_top,
 };
 use crate::drawing::Backend;
 use crate::mouse;
@@ -608,6 +608,7 @@ pub(super) fn main_menu(
                     && APPEARANCES.iter().all(|(name, ..)| *name != command.name)
                     && command.name != PERFORMANCE
                     && command.name != FLOAT_ON_TOP
+                    && command.name != NEXT_AGENT
                     && !CONTEXT_ONLY.contains(&command.name.as_str())
                     && !taken.contains(&command.name.as_str())
             })
@@ -809,10 +810,13 @@ pub(super) fn main_menu(
                     MenuItem::Separator,
                 ]
                 .into_iter()
-                .chain(commands.get(FLOAT_ON_TOP).map(|command| MenuItem::Command {
-                    title: command.title.clone(),
-                    command: FLOAT_ON_TOP.to_owned(),
-                    shortcut: keymap.shortcut(FLOAT_ON_TOP).and_then(shortcut),
+                // Float on Top, and the next agent, in the windows' menu.
+                .chain([FLOAT_ON_TOP, NEXT_AGENT].into_iter().filter_map(|name| {
+                    commands.get(name).map(|command| MenuItem::Command {
+                        title: command.title.clone(),
+                        command: name.to_owned(),
+                        shortcut: keymap.shortcut(name).and_then(shortcut),
+                    })
                 }))
                 .chain(commands.get(FLOAT_ON_TOP).map(|_| MenuItem::Separator))
                 .chain([standard(

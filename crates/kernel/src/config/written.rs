@@ -688,7 +688,9 @@ mod tests {
         assert!(written.contains("\n# Opens a window.\n# \"cmd+n\" = \"window.new\"\n"));
         assert!(!written.contains("<sub>"));
         assert!(!written.contains("**"));
-        for line in written.lines() {
+        // The text wraps; a key's line stays whole, as taking its `#` away
+        // alone gives its value, as a long list's.
+        for line in written.lines().filter(|line| line.starts_with('#')) {
             assert!(
                 line.chars().count() <= WIDTH || !line.contains(' '),
                 "a line too long: {line}"

@@ -128,11 +128,12 @@ impl<B: Backend> App<B> {
         if let Some((pane, text)) = self.paste_asks.remove(&alert)
             && button < 2
         {
-            if let Some(pane) = self.workspace.pane(pane) {
+            if let Some(shown) = self.workspace.pane(pane) {
                 match button {
-                    0 => pane.paste(&text),
-                    _ => pane.paste(&paste::one_line(&text)),
+                    0 => shown.paste(&text),
+                    _ => shown.paste(&paste::one_line(&text)),
                 }
+                self.workspace.typed(pane);
             }
             if suppressed {
                 self.stop_confirming_pastes();
@@ -223,7 +224,10 @@ impl<B: Backend> App<B> {
             self.config.clipboard.confirm_paste
         };
         match paste::decide(&text, bracketed, confirm) {
-            paste::Paste::Now(text) => pane.paste(&text),
+            paste::Paste::Now(text) => {
+                pane.paste(&text);
+                self.workspace.typed(id);
+            }
             paste::Paste::Ask => self.ask_paste(platform, id, text),
         }
     }

@@ -862,6 +862,10 @@ pub trait Platform {
     /// while it is.
     fn request_attention(&mut self);
 
+    /// Shows `badge`, a short text, as a count, on the application's icon,
+    /// as the Dock's badge on the Mac, or takes it away, of `None`.
+    fn set_badge(&mut self, badge: Option<&str>);
+
     /// Plays the system's alert sound, as the user chose it.
     fn play_alert_sound(&mut self);
 

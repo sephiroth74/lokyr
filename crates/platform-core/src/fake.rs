@@ -247,6 +247,8 @@ pub struct Fake {
     /// How many times the app asked for the user's attention, and played
     /// the alert sound.
     attention_requests: usize,
+    /// The badge on the application's icon.
+    badge: Option<String>,
     alert_sounds: usize,
     /// The notifications that the app showed, from the first.
     notifications: Vec<FakeNotification>,
@@ -335,6 +337,7 @@ impl Fake {
             app_icons: Vec::new(),
             locales: Vec::new(),
             attention_requests: 0,
+            badge: None,
             alert_sounds: 0,
             notifications: Vec::new(),
             focus_requests: Vec::new(),
@@ -740,6 +743,11 @@ impl Fake {
     /// How many times the app asked for the user's attention.
     pub fn attention_requests(&self) -> usize {
         self.attention_requests
+    }
+
+    /// The badge on the application's icon, if one shows.
+    pub fn badge(&self) -> Option<&str> {
+        self.badge.as_deref()
     }
 
     /// How many times the app played the alert sound.
@@ -1465,6 +1473,10 @@ impl Platform for Fake {
 
     fn request_attention(&mut self) {
         self.attention_requests += 1;
+    }
+
+    fn set_badge(&mut self, badge: Option<&str>) {
+        self.badge = badge.map(str::to_owned);
     }
 
     fn play_alert_sound(&mut self) {

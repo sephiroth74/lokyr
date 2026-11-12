@@ -232,6 +232,7 @@ impl<B: Backend> App<B> {
     /// A click on a notification of `window`: the quick terminal, hidden,
     /// shows at its place; another window takes the focus.
     pub(super) fn notification_clicked(&mut self, platform: &mut dyn Platform, window: WindowId) {
+        self.show_notified_agent(window);
         if let Some(&(place, _)) = self.quick.get(&window) {
             self.show_quick(platform, window, Some(place));
         } else if self.windows.contains_key(&window) {

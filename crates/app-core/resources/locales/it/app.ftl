@@ -4,6 +4,7 @@ command-window-new = Nuova finestra
 command-window-close = Chiudi finestra
 command-window-set-title = Imposta titolo…
 command-window-goto = Vai alla finestra
+command-window-next-agent = Vai al prossimo agente
 command-window-toggle-float-on-top = Sempre in primo piano
 command-app-about = Informazioni su Lokyr
 command-app-quit = Esci da Lokyr
@@ -197,6 +198,9 @@ command-ended = Terminato dopo { $took }
 command-took-seconds = { $seconds } s
 command-took-minutes = { $minutes } min { $seconds } s
 command-took-hours = { $hours } h { $minutes } min
+
+agent-waiting = { $agent } ti aspetta
+agent-done = { $agent } ha finito
 
 script-downloaded-message = “{ $name }” è stato scaricato da internet.
 script-downloaded-detail = Eseguire uno script scaricato da internet può danneggiare il Mac. Eseguilo solo se ti fidi della sua provenienza.

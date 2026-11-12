@@ -120,6 +120,7 @@ fn float_on_top_keeps_each_window_above_the_others_and_ticks_the_front_one_s() {
             "Zoom",
             "-",
             "Float on Top",
+            "Go to Next Agent alt+cmd+a",
             "-",
             "Bring All to Front"
         ]

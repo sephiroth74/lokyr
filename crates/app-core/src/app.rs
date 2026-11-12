@@ -56,6 +56,7 @@ use crate::window::{Surfaces, Window};
 
 mod access;
 pub(crate) use access::TreeCursor;
+mod agents;
 mod asks;
 pub(crate) mod chrome;
 mod consent;
@@ -140,6 +141,10 @@ const SET_TITLE: &str = "window.set-title";
 
 /// Brings forward the window whose number is its `index`, from 1.
 const GOTO_WINDOW: &str = "window.goto";
+
+/// Brings forward the next pane whose AI agent waits for the user, or, of
+/// none, is done, or, of none, works, in every window.
+const NEXT_AGENT: &str = "window.next-agent";
 
 /// The command that keeps the window above the other applications'
 /// windows, or puts it back among them, which the Window menu's item ticks.
@@ -656,6 +661,14 @@ pub struct App<B: Backend> {
     /// keyboard meanwhile.
     command_looks: BTreeMap<PaneId, (Instant, usize)>,
     title_look: Option<Duration>,
+    /// The foreground's group of each pane, and its program, at the last
+    /// look at its agent, which looks again once another runs there.
+    agent_groups: BTreeMap<PaneId, (Option<u32>, String)>,
+    /// The count of the agents that wait, as the Dock's badge shows it.
+    badge: usize,
+    /// The tab of the agent whose notification each window showed last,
+    /// which a click on it brings forward.
+    agent_notified: BTreeMap<WindowId, workspace::TabId>,
     /// The icon's variants, where the app finds them.
     icons: Option<Icons>,
     /// The variant that the app made the icon, once it made one.
@@ -814,6 +827,10 @@ impl<B: Backend> App<B> {
             drawing.set_interface(&config.interface);
         }
         let integrated = config.terminal.shell_integration;
+        let mut workspace = Workspace::new();
+        workspace.set_agent_settings(workspace::AgentSettings {
+            done_after: config.agents.done_after.duration(),
+        });
         let mut plugins = Plugins::new();
         // The distribution's plugins, whose manifests read, as the build
         // checked them.
@@ -868,7 +885,7 @@ impl<B: Backend> App<B> {
             plugins,
             keymap,
             font_size: None,
-            workspace: Workspace::new(),
+            workspace,
             windows: BTreeMap::new(),
             blink_timer: None,
             label_timer: None,
@@ -906,6 +923,9 @@ impl<B: Backend> App<B> {
             title_timer: None,
             command_looks: BTreeMap::new(),
             title_look: Some(TITLE_LOOK),
+            agent_groups: BTreeMap::new(),
+            badge: 0,
+            agent_notified: BTreeMap::new(),
             opened_one: false,
             state: None,
             front: None,
@@ -1585,7 +1605,10 @@ impl<B: Backend> App<B> {
                 .then(|| environment::shell_integration(self.environment.resources.as_deref()))
                 .flatten();
         }
-        self.config = config;
+        let agents = std::mem::replace(&mut self.config, config).agents;
+        if self.config.agents != agents {
+            self.apply_agents(platform, &agents);
+        }
         // The plugins take their sections, and hear of their changes; those
         // that their sections turn off stop, and those turned on again
         // start.
@@ -2502,6 +2525,7 @@ impl<B: Backend> App<B> {
         self.clipboard_asks
             .retain(|_, (pane, _)| !panes.contains(pane));
         self.paste_asks.retain(|_, (pane, _)| !panes.contains(pane));
+        self.forget_agents(panes);
         for &pane in panes {
             self.pane_wakes.remove(&pane);
             self.scripts.remove(&pane);
@@ -2721,6 +2745,10 @@ impl<B: Backend> App<B> {
                 }
                 GOTO_WINDOW => {
                     self.goto_window(platform, &args);
+                    Ok(())
+                }
+                NEXT_AGENT => {
+                    self.next_agent(platform);
                     Ok(())
                 }
                 LOOK_UP => {
@@ -3248,6 +3276,18 @@ impl<B: Backend> App<B> {
     /// for their turn, and acts on it; a timer brings the turn of those
     /// that wait still.
     fn collect(&mut self, platform: &mut dyn Platform, panes: &[PaneId]) {
+        // Their agents first, so that what their output tells counts, as
+        // an agent's first request: a look at each foreground's group and
+        // program, some microseconds.
+        for &pane in panes {
+            let program = self
+                .workspace
+                .pane(pane)
+                .filter(|shown| !shown.is_kept())
+                .and_then(Pane::foreground_program)
+                .unwrap_or_default();
+            self.look_at_agent(pane, &program);
+        }
         let due = self.workspace.collect(panes, Instant::now());
         // The tabs of the panes whose output came take their places anew,
         // and their headers.
@@ -3393,6 +3433,12 @@ impl<B: Backend> App<B> {
                         self.long_command_ended(platform, pane, command, status, took);
                     }
                 }
+                Event::Agent {
+                    pane,
+                    name,
+                    before,
+                    now,
+                } => self.agent_changed(platform, pane, &name, (before, now)),
                 Event::Ended(_) | Event::Terminal { .. } => {}
             }
         }
@@ -3734,7 +3780,9 @@ impl<B: Backend> App<B> {
         let (id, place) = (pane.id(), place_label(&state.place.0, &state.place.1));
         let running = runs_other_than_shell(&state.place.1);
         let alternate = pane.is_alternate_screen();
+        let program = state.place.1.clone();
         self.workspace.set_pane_running(id, running, alternate);
+        self.look_at_agent(id, &program);
         if let Some(tab) = self.workspace.tab_of(id)
             && self
                 .workspace
@@ -3761,6 +3809,7 @@ impl<B: Backend> App<B> {
         let directory = shown.working_directory();
         self.workspace
             .set_pane_running(pane, runs_other_than_shell(&program), alternate);
+        self.look_at_agent(pane, &program);
         let Some(tab) = self.workspace.tab_of(pane) else {
             return;
         };
@@ -4622,6 +4671,7 @@ fn commands(texts: &Texts, plugins: &Plugins) -> Registry {
         (CLOSE_WINDOW, "window-close", Category::Windows),
         (SET_TITLE, "window-set-title", Category::Windows),
         (GOTO_WINDOW, "window-goto", Category::Windows),
+        (NEXT_AGENT, "window-next-agent", Category::Windows),
         (
             FLOAT_ON_TOP,
             "window-toggle-float-on-top",

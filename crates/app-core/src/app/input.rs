@@ -108,6 +108,7 @@ impl<B: Backend> App<B> {
                 }
                 if pressed {
                     self.close_typing_panels(platform, window);
+                    self.typed_into(window);
                 }
                 let Some(pane) = self
                     .windows
@@ -195,6 +196,7 @@ impl<B: Backend> App<B> {
                 pane.text(&text);
                 state.blink.restart(Instant::now());
                 self.close_typing_panels(platform, window);
+                self.typed_into(window);
             }
         }
         platform.request_frame(window);

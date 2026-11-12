@@ -1028,6 +1028,11 @@ impl Platform for Backend {
         NSBeep();
     }
 
+    fn set_badge(&mut self, badge: Option<&str>) {
+        let tile = NSApplication::sharedApplication(self.mtm).dockTile();
+        tile.setBadgeLabel(badge.map(NSString::from_str).as_deref());
+    }
+
     fn resolve_target(&self, target: &str) -> Result<Target, Error> {
         open::resolve(target)
     }

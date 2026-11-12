@@ -267,7 +267,7 @@ type TabInfo = {
     running: boolean, -- of `process-read`: a program other than a shell runs in the foreground of one of its panes, whichever has the keyboard
     alternate: boolean, -- of `process-read`: its active pane's program shows the alternate screen, as vim's or htop's
     secure: boolean, -- the keyboard's protected input is on for it, as its window has the focus and shows it
-    agent: ("working" | "waiting" | "done")?, -- the state of an AI agent that runs in it
+    agent: ("working" | "waiting" | "done")?, -- of `process-read`: the state of an AI agent that runs in one of its panes, the most urgent of theirs: working while it prints, tells a progress or turns its title's spinner; waiting once it asks for the user, by a notification or its bell, until the user types into its pane; done once quiet after a request
 }
 
 -- A tab's layout: a pane, or a split of two layouts, whose ratio is the

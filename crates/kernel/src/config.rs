@@ -156,6 +156,8 @@ pub struct Config {
     pub bell: BellConfig,
     /// The `[notifications]` section.
     pub notifications: NotificationsConfig,
+    /// The `[agents]` section.
+    pub agents: AgentsConfig,
     /// The `[theme]` section.
     pub theme: ThemeConfig,
     /// The `[app]` section.
@@ -841,6 +843,109 @@ impl TryFrom<u32> for LongCommand {
         } else {
             Err(format!(
                 "a long command's time, in seconds, is from 0 to {}, not {seconds}",
+                Self::MAX
+            ))
+        }
+    }
+}
+
+/// The `[agents]` section: the AI agents that run in the panes, by their
+/// programs' names, which their tabs mark of their states, and what the
+/// app tells of them.
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(default, deny_unknown_fields, rename_all = "kebab-case")]
+pub struct AgentsConfig {
+    /// The names of the agents' programs, as the foreground's processes
+    /// go by them.
+    pub programs: Vec<String>,
+    /// How long after its last sign of work an agent is done.
+    pub done_after: DoneAfter,
+    /// Whether an agent that waits for the user, or is done, tells it in a
+    /// notification while its window has no focus.
+    pub notify: bool,
+    /// Whether the Dock's icon counts the agents that wait for the user.
+    pub dock_badge: bool,
+}
+
+impl AgentsConfig {
+    /// The agents' programs that Lokyr knows by default.
+    pub const PROGRAMS: [&str; 12] = [
+        "claude",
+        "codex",
+        "gemini",
+        "opencode",
+        "aider",
+        "cursor-agent",
+        "copilot",
+        "amp",
+        "goose",
+        "qwen",
+        "crush",
+        "droid",
+    ];
+
+    /// The agent's program among `names`, those that the foreground's
+    /// processes go by, the first that the list holds.
+    pub fn agent_of<'n>(&self, names: &'n [String]) -> Option<&'n str> {
+        names
+            .iter()
+            .map(String::as_str)
+            .find(|name| self.programs.iter().any(|program| program == name))
+    }
+}
+
+impl Default for AgentsConfig {
+    fn default() -> Self {
+        Self {
+            programs: Self::PROGRAMS.map(str::to_owned).to_vec(),
+            done_after: DoneAfter::default(),
+            notify: true,
+            dock_badge: true,
+        }
+    }
+}
+
+/// How long after its last sign of work an agent is done, in seconds, from
+/// half a second to a minute.
+#[derive(Clone, Copy, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(try_from = "f64", into = "f64")]
+pub struct DoneAfter(f32);
+
+impl DoneAfter {
+    /// The least, in seconds.
+    pub const MIN: f32 = 0.5;
+    /// The most, in seconds.
+    pub const MAX: f32 = 60.0;
+
+    /// The time.
+    pub fn duration(self) -> Duration {
+        Duration::from_secs_f32(self.0)
+    }
+}
+
+impl Default for DoneAfter {
+    fn default() -> Self {
+        Self(3.0)
+    }
+}
+
+impl From<DoneAfter> for f64 {
+    fn from(value: DoneAfter) -> Self {
+        as_written(value.0)
+    }
+}
+
+impl TryFrom<f64> for DoneAfter {
+    type Error = String;
+
+    fn try_from(seconds: f64) -> Result<Self, Self::Error> {
+        if (f64::from(Self::MIN)..=f64::from(Self::MAX)).contains(&seconds) {
+            // Within the range, the value fits an `f32`.
+            Ok(Self(seconds as f32))
+        } else {
+            Err(format!(
+                "an agent's time before it is done, in seconds, is from {} to {}, not {seconds}",
+                Self::MIN,
                 Self::MAX
             ))
         }
@@ -1673,7 +1778,7 @@ impl Position {
 }
 
 /// The sections of the file, with the keys of each.
-fn sections() -> [(&'static str, &'static [&'static str]); 17] {
+fn sections() -> [(&'static str, &'static [&'static str]); 18] {
     [
         ("font", keys::<FontConfig>()),
         ("text", keys::<TextConfig>()),
@@ -1688,6 +1793,7 @@ fn sections() -> [(&'static str, &'static [&'static str]); 17] {
         ("links", keys::<LinksConfig>()),
         ("bell", keys::<BellConfig>()),
         ("notifications", keys::<NotificationsConfig>()),
+        ("agents", keys::<AgentsConfig>()),
         ("theme", keys::<ThemeConfig>()),
         ("app", keys::<AppConfig>()),
         ("updates", keys::<UpdatesConfig>()),
@@ -2836,6 +2942,35 @@ long-command = 0
     }
 
     #[test]
+    fn the_agents_are_known_by_their_programs_names_and_done_after_a_while() {
+        let config =
+            parse("[agents]\nprograms = [\"claude\", \"my-agent\"]\ndone-after = 1.5\n").unwrap();
+        let names = |list: &[&str]| list.iter().map(|&name| name.to_owned()).collect::<Vec<_>>();
+        // The first of the foreground's names that the list holds.
+        assert_eq!(
+            config.agents.agent_of(&names(&["node", "my-agent"])),
+            Some("my-agent")
+        );
+        assert_eq!(config.agents.agent_of(&names(&["claude"])), Some("claude"));
+        assert_eq!(config.agents.agent_of(&names(&["codex", "zsh"])), None);
+        assert_eq!(
+            config.agents.done_after.duration(),
+            Duration::from_millis(1500)
+        );
+        assert!(config.agents.notify && config.agents.dock_badge);
+        // The defaults, and a time out of its bounds.
+        let default = AgentsConfig::default();
+        assert_eq!(default.agent_of(&names(&["gemini"])), Some("gemini"));
+        assert_eq!(default.done_after.duration(), Duration::from_secs(3));
+        for wrong in ["0.1", "61", "nan"] {
+            let error = parse(&format!("[agents]\ndone-after = {wrong}\n"))
+                .unwrap_err()
+                .to_string();
+            assert!(error.contains("done"), "{wrong}: {error}");
+        }
+    }
+
+    #[test]
     fn the_sections_keys_are_serde_s() {
         assert_eq!(
             keys::<Config>(),
@@ -2855,6 +2990,7 @@ long-command = 0
                 "links",
                 "bell",
                 "notifications",
+                "agents",
                 "theme",
                 "app",
                 "updates",
@@ -2862,6 +2998,10 @@ long-command = 0
                 "keys",
                 "plugins"
             ]
+        );
+        assert_eq!(
+            keys::<AgentsConfig>(),
+            ["programs", "done-after", "notify", "dock-badge"]
         );
         assert_eq!(keys::<ThemeConfig>(), ["light", "dark", "minimum-contrast"]);
         assert_eq!(keys::<LinksConfig>(), ["urls", "files", "search-engine"]);

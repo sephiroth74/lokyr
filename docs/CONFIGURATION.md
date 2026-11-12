@@ -140,6 +140,15 @@ mark-title = false                   # true | false: 🔔 in its title until it 
 [notifications]
 long-command = 30                    # seconds, from 1 to 86400, or 0 for none: a notification as a command this long ends
 
+[agents]
+programs = [                         # the agents' programs, by the names that they go by
+    "claude", "codex", "gemini", "opencode", "aider", "cursor-agent",
+    "copilot", "amp", "goose", "qwen", "crush", "droid",
+]
+done-after = 3                       # seconds, 0.5 to 60, without work before an agent asked something is done
+notify = true                        # true | false: a notification as an agent waits for you or is done
+dock-badge = true                    # true | false: the Dock's icon counts the agents that wait for you
+
 [theme]
 light = "Lokyr Light"                # the light appearance's theme, a file of themes/, held or built in
 dark = "Nightfall"                   # the dark appearance's theme
@@ -1168,6 +1177,69 @@ How long a command runs, at least, in seconds, for a notification as it ends whi
 - The notification's title is the command as you typed it, or the window's, once its line has left the scrollback. zsh, and fish 4 or later, tell the line itself, which leaves a right prompt out, as zsh's `RPROMPT`; bash's, and an older fish's, is the text of its row.
 - It applies as you save the file, to the commands that end after.
 
+## `[agents]`
+
+The AI agents that run in your panes, as Claude Code, Codex, Gemini CLI or Aider. Lokyr knows an agent by its program in the pane's foreground, and tells its state on its tab, of what the agent does, with no setup of its own:
+
+- **At work**, a sparkle: while it prints of its own, apart from the echo of your keys, while it tells a progress, as OSC 9;4, or while its title's spinner turns.
+- **Waiting for you**, a dot of its own: once it asks for you, by a notification of its own, OSC 9 or OSC 777, or its bell, as an agent asks for a permission; until you type into its pane, whatever it draws meanwhile.
+- **Done**, a tick: once it showed no work for a while, [`done-after`](#done-after), after you asked it something; until it works again, you type into its pane, or you switch to its tab, as seen. Its first output, as it starts, asks for nothing, and shows nothing.
+
+A tab of several agents shows the one that waits before one at work, and one at work before one done. Window › Go to Next Agent, `alt+cmd+a`, goes to the next tab whose agent waits for you, or, of none, is done, in every window. An agent that tells nothing of its own, of no notification nor bell, waits without a dot: some agents tell their requests to the terminals that they know alone, and an option of theirs turns their notifications or their bell on, as Claude Code's `preferredNotifChannel`.
+
+### `programs`
+
+<sub>Platforms: macOS</sub>
+
+The names of the agents' programs, as the processes in a pane's foreground go by them.
+
+| Values | Default |
+|---|---|
+| a list of names | `["claude", "codex", "gemini", "opencode", "aider", "cursor-agent", "copilot", "amp", "goose", "qwen", "crush", "droid"]` |
+
+- A program goes by its executable's name, by the name that started it, as a link's, and, run by `node`, `python`, `bun`, `deno`, `ruby` or `perl`, by its script's or its module's, as `node /opt/homebrew/bin/gemini` goes by `gemini` and `python3 -m aider` by `aider`; each process of the foreground's group counts, as a launcher's program.
+- An empty list turns the agents off: no tab marks one, and no notification nor badge comes.
+- It applies to the programs that start after you save the file, and to those that run as their pane shows output again.
+
+### `done-after`
+
+<sub>Platforms: macOS</sub>
+
+How long an agent shows no work, in seconds, before it is done, once you asked it something.
+
+| Values | Default |
+|---|---|
+| from `0.5` to `60` | `3` |
+
+- An agent that thinks a long while without printing, of no spinner, may show done before it prints again: a longer time keeps it at work.
+- It applies as you save the file.
+
+### `notify`
+
+<sub>Platforms: macOS</sub>
+
+Whether an agent tells, in a notification of the system's, that it waits for you or is done, while its window has no focus.
+
+| Values | Default |
+|---|---|
+| `true`, `false` | `true` |
+
+- The notification tells the agent's program and its tab's title; a click on it brings its window forward, at the agent's tab. An agent that notifies of its own shows its own notification alone, as [`[notifications]`](#notifications) shows one notification of a window within two seconds.
+- It applies as you save the file.
+
+### `dock-badge`
+
+<sub>Platforms: macOS</sub>
+
+Whether the Dock's icon counts the agents that wait for you, in every window, in a badge.
+
+| Values | Default |
+|---|---|
+| `true`, `false` | `true` |
+
+- The badge goes once none waits.
+- It applies as you save the file.
+
 ## `[theme]`
 
 The colors of the terminal and of Lokyr's own interface: a theme for the light appearance and one for the dark one, which follow the system's appearance, or the one that View › Appearance chooses, and switch at once.
@@ -1472,6 +1544,7 @@ The defaults, of the built-in plugin `keymap-macos`, the shortcuts of macOS's ap
 | `cmd+w`, `cmd+shift+w` | `window.close` | Closes the window, of all its tabs, `cmd+w` closing the tab instead while the tabs' plugin runs; while a program other than a shell runs in it, as vim or ssh, it asks you first, as closing ends the program: a job that the shell runs counts too, stopped with Control-Z or in the background, and a program that started a shell, as vim's `:sh`. tmux and screen, whose sessions go on, do not ask, nor a shell at its prompt, nor one that a shell started |
 | `cmd+shift+i` | `window.set-title` | Asks for a title of the window's, which takes the place of the program's and of the window's own until you empty it; the grid's size stays after it, as [`title-size`](#title-size) says |
 | `alt+cmd+1`, `alt+cmd+2`, `alt+cmd+3`, `alt+cmd+4`, `alt+cmd+5`, `alt+cmd+6`, `alt+cmd+7`, `alt+cmd+8`, `alt+cmd+9` | `window.goto` | Brings forward the window of that number, `index`, from 1: each window takes, as it opens, the lowest number that no other open window has, which its titlebar shows, as [`title-shortcut`](#title-shortcut) says; the quick terminal has none. Bound by you, as `{ command = "window.goto", args = { index = 10 } }`, it reaches past the ninth |
+| `alt+cmd+a` | `window.next-agent` | Brings forward the next tab, in any window, whose AI agent waits for you; or, of none, whose agent is done; or, of none, at work, as [`[agents]`](#agents) tells; Window › Go to Next Agent runs it too |
 | `cmd+q` | `app.quit` | Quits Lokyr, asking you first while programs other than shells run in its windows; so does Quit in the Dock, and a logout waits for your answer |
 | `cmd+c` | `pane.copy` | Copies the selection |
 | `cmd+v` | `pane.paste` | Pastes the clipboard's text, asking you first when [`confirm-paste`](#confirm-paste) says so |

@@ -499,9 +499,9 @@ Left out: downloads with scp (i), as the app has no networking code ([ADR 0008](
 
 AI agents that run in a pane, such as Claude Code, Codex, Gemini CLI, OpenCode or Aider, are recognized, and can drive the terminal ([ADR 0017](adr/0017-mcp-and-agents.md)).
 
-- **Presence**: the pane's foreground program, by its name, from a list in the config.
-- **State**: working, waiting or done, from the agent's notifications (OSC 9 and 777), the bell and its progress (OSC 9;4). For an exact state, from F3b, through its IPC, its hooks call `lokyr +notify`, and `lokyr +agent-hooks <agent>` prints the lines that its config takes, which the app never writes itself.
-- **Where it shows**: on the pane's tab (F3), and as a notification while the window has no focus (F2).
+- **Presence**: the pane's foreground program, by the names that its processes go by, from a list in the config, `[agents] programs`: its executable's, the name that started it, and an interpreter's script's or module's, as `node …/gemini` runs `gemini` (F3-63).
+- **State**: working while it prints of its own, tells a progress (OSC 9;4) or turns its title's spinner; waiting once it asks for the user, by a notification (OSC 9 and 777) or its bell, until the user types into its pane; done once quiet for `[agents] done-after` after a request, until it works again, the user types or its tab shows anew. For an exact state, from F3b, through its IPC, its hooks call `lokyr +notify`, and `lokyr +agent-hooks <agent>` prints the lines that its config takes, which the app never writes itself.
+- **Where it shows**: on the pane's tab, the most urgent of a tab's agents, Window › Go to Next Agent (⌥⌘A) going to the next that waits, the Dock's badge counting those that wait, and a notification as one waits or is done while its window has no focus (F3-63).
 - **MCP** (F3b): `lokyr +mcp` gives agents tools to list the panes, read them, open tabs and splits, run commands and wait for their exit codes, and type, within the scope of [SECURITY.md](SECURITY.md#mcp).
 
 ## Cursor

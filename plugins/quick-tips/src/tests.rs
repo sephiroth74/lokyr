@@ -245,19 +245,22 @@ fn each_tip_shows_once_before_any_comes_again_those_of_unbound_keys_left_out() {
         host.deliver(&mut plugin).unwrap();
         assert_eq!(shown(&mut host, &mut plugin), None);
     }
-    // The palette's and the find bar's of their keys, then the plain ones;
-    // the commands of no keys are left out.
-    let plain: Vec<&str> = CURATED
+    // In their order, the palette's and the find bar's of their keys and
+    // the plain ones; the commands of no keys are left out.
+    let ready: Vec<&str> = CURATED
         .iter()
-        .filter(|tip| tip.command.is_none())
+        .filter(|tip| match tip.command {
+            None => true,
+            Some((name, _)) => [PALETTE, "search.open"].contains(&name),
+        })
         .map(|tip| tip.message)
         .collect();
     assert_eq!(seen[0], "tip-palette");
-    assert_eq!(seen[1], "tip-search");
-    assert_eq!(seen[2..2 + plain.len()], plain[..]);
+    assert!(ready.contains(&"tip-search"));
+    assert_eq!(seen[..ready.len()], ready[..]);
     // All shown, the round starts again.
-    assert_eq!(seen[2 + plain.len()], "tip-palette");
-    assert!(seen.len() > 2 + plain.len());
+    assert_eq!(seen[ready.len()], "tip-palette");
+    assert!(seen.len() > ready.len());
     // The command shows a tip whatever the week, and keeps no day.
     assert_eq!(state_of(&host, STATE_LAST), None);
 }

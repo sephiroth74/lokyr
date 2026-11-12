@@ -5,6 +5,7 @@ command-window-new = New Window
 command-window-close = Close Window
 command-window-set-title = Set Title…
 command-window-goto = Go to Window
+command-window-next-agent = Go to Next Agent
 command-window-toggle-float-on-top = Float on Top
 command-app-about = About Lokyr
 command-app-quit = Quit Lokyr
@@ -231,6 +232,11 @@ command-ended = Ended after { $took }
 command-took-seconds = { $seconds } s
 command-took-minutes = { $minutes } min { $seconds } s
 command-took-hours = { $hours } h { $minutes } min
+
+# The notification of an AI agent, under its tab's title: its program's
+# name, as `claude`, waits for the user, or is done with what it was asked.
+agent-waiting = { $agent } is waiting for you
+agent-done = { $agent } is done
 
 script-downloaded-message = “{ $name }” was downloaded from the internet.
 script-downloaded-detail = Running a script from the internet can harm your Mac. Run it only if you trust where it came from.

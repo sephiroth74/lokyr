@@ -41,7 +41,7 @@
 - **Plugins you can trust.** A third-party plugin is Luau source, in a VM of its own, with a memory limit and a deadline. It reaches the screen, the clipboard, files or the network only through the capabilities that it declares, which Sleip shows at install and Lokyr asks for on first use. The app itself contains no networking code.
 - **Fast where you feel it.** Its own VT core, with 8-byte cells and a paged grid; a Metal renderer, one surface per window; a frame of steady output in about a quarter of a millisecond at 4K. It is measured against six other terminals, each change against the builds before it, and the numbers are [in the repository](docs/bench/).
 - **Native on macOS.** An AppKit window, CoreText shaping and font fallback, input methods, Secure Keyboard Entry, a quick terminal on a global key.
-- **Ready for agents.** Lokyr will be an [MCP server](docs/adr/0017-mcp-and-agents.md): an agent works in its own pane and the panes it opens, and the tabs show what each agent is doing.
+- **Ready for agents.** A tab tells what the AI agent in it is doing, as Claude Code, Codex or Gemini CLI: at work, waiting for you, or done, of no setup, as [`[agents]`](docs/CONFIGURATION.md#agents) tells, with a notification and the Dock's badge while you look elsewhere, and ⌥⌘A to the next one that waits. Lokyr will be an [MCP server](docs/adr/0017-mcp-and-agents.md) too: an agent works in its own pane and the panes it opens.
 
 ## Status
 

@@ -18,6 +18,7 @@ use super::*;
 use crate::fakes;
 
 mod access;
+mod agents;
 mod asks;
 mod awake;
 mod chrome;
