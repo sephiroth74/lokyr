@@ -301,13 +301,13 @@ fn a_file_s_line_opens_in_the_config_s_editor_or_as_the_file() {
     let mut app = super::app(with("system"), quiet());
     fake.start(&mut app);
     app.open_target_at(&mut fake, path.clone(), Some((42, Some(7))));
-    assert_eq!(fake.opened(), [path.clone()]);
+    assert_eq!(fake.opened(), std::slice::from_ref(&path));
     let mut fake = Fake::default();
     fake.leave_unhandled("zed");
     let mut app = super::app(with("zed"), quiet());
     fake.start(&mut app);
     app.open_target_at(&mut fake, path.clone(), Some((42, Some(7))));
-    assert_eq!(fake.opened(), [path.clone()]);
+    assert_eq!(fake.opened(), std::slice::from_ref(&path));
     // A folder opens as before, whatever the line.
     let mut fake = Fake::default();
     let mut app = super::app(with("vscode"), quiet());
