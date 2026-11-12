@@ -17,7 +17,10 @@
 //!    with the DMG, the dSYM and the bill, its notes
 //!    `docs/releases/<X.Y.Z>.md`, and `CHANGELOG.md` its section, of the
 //!    format that `check-changelog` checks;
-//! 6. the DMG in the feed of tests.
+//! 6. the DMG in the feed of tests;
+//! 7. a release's Homebrew cask, of the DMG's SHA-256, in
+//!    `target/releases/<version>` and the tap's folder beside the workspace,
+//!    to commit and push once the release is published.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -25,7 +28,7 @@ use std::process::{Command, ExitCode};
 
 use anyhow::{Context, Result, bail, ensure};
 
-use crate::{bundle, feed, sbom, sparkle};
+use crate::{bundle, cask, feed, sbom, sparkle};
 
 /// The repository of the releases.
 const REPOSITORY: &str = "sephiroth74/lokyr";
@@ -175,8 +178,14 @@ pub fn run(mut args: impl Iterator<Item = String>) -> Result<ExitCode> {
             .current_dir(&root),
         "adding the DMG to the feed of tests",
     )?;
+    // A candidate has no cask: Homebrew takes the releases alone.
+    if !version.contains('-') {
+        for written in cask::write(&root, &version, None)? {
+            println!("release: the cask, {}", written.display());
+        }
+    }
     println!(
-        "release: {tag}'s draft is on GitHub, of {commit}; publish it, then `git fetch --tags`"
+        "release: {tag}'s draft is on GitHub, of {commit}; publish it, then `git fetch --tags`, and push the tap's cask"
     );
     Ok(ExitCode::SUCCESS)
 }

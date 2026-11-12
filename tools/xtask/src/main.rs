@@ -1,6 +1,7 @@
 //! Build automation for the Lokyr workspace, run as `cargo xtask <task>`.
 
 mod bundle;
+mod cask;
 mod changelog;
 mod check_comments;
 mod check_deps;
@@ -31,6 +32,7 @@ fn main() -> ExitCode {
             return ExitCode::SUCCESS;
         }
         Some("bundle") => bundle::run(args),
+        Some("cask") => cask::run(args),
         Some("check-changelog") => changelog::run(args),
         Some("check-comments") => check_comments::run(args),
         Some("check-deps") => check_deps::run(args),
@@ -64,6 +66,7 @@ fn print_help() {
         "Usage: cargo xtask <task>\n\n\
          Tasks:\n  \
          bundle                      build target/Lokyr.app from the release binary, signed\n  \
+         cask <version> [--tap <dir>] write the Homebrew cask of a release, of its DMG's SHA-256\n  \
          check-changelog             check CHANGELOG.md against Keep a Changelog's format\n  \
          check-comments              find the plan, tasks, phases and ADRs, in the code's comments\n  \
          check-deps [--print-graph]  check the dependency rules of the workspace\n  \

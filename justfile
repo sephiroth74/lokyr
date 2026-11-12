@@ -256,6 +256,10 @@ dmg: bundle
 release version *args:
     cargo xtask release {{version}} {{args}}
 
+# Write the Homebrew cask of a release, X.Y.Z, of its DMG in target, into target/releases/<version>/lokyr.rb and the tap's folder, ../homebrew-tap or `--tap <dir>`; `just release` writes it too.
+cask version *args:
+    cargo xtask cask {{version}} {{args}}
+
 # Have Lokyr on this Mac read the feed of tests in private/feed, which `cargo xtask feed add <dmg>` writes, and serve it on 127.0.0.1:8123 until Control-C.
 feed-serve:
     cargo xtask feed serve

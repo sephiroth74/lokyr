@@ -54,7 +54,7 @@ Lokyr is built in phases, each with exit criteria that are measured, not assumed
 | F2 | The macOS app, a window of one pane | 🚧 |
 | F3 | The macOS MVP: tabs, splits, search, themes, the command palette | 🚧 |
 | F3b | MCP and agents | |
-| F4 | Third-party plugins in Luau, Sleip and its registry | 🚧 |
+| F4 | Third-party plugins in Luau, Sleip and its registry | ✅ |
 | F5 | Shell integration, iTerm2's power features, images | |
 | F6 | 1.0 | |
 | F7 | Linux | |
@@ -118,6 +118,16 @@ Every feature beyond the terminal itself is a plugin, and these come with the ap
 Each page tells the plugin's commands, their keys, its config and what turning it off takes away; [the plugins' index](docs/plugins/README.md) tells how they fit together.
 
 To write a plugin of your own, in Luau, and publish it on [pkg.lokyr.dev](https://pkg.lokyr.dev), follow [Writing a plugin](docs/plugins/authoring.md).
+
+## Install
+
+Lokyr runs on macOS 26 or later, on Apple Silicon. Download the DMG of the latest release from [the releases](https://github.com/sephiroth74/lokyr/releases), or install it with Homebrew:
+
+```sh
+brew install --cask sephiroth74/tap/lokyr
+```
+
+The cask links `lokyr` and `sleip` into Homebrew's `bin`, and leaves Lokyr's updates to Lokyr, which takes them through Sparkle. `brew uninstall --zap --cask lokyr` takes away the app, its config, its plugins and its caches.
 
 ## Building
 
