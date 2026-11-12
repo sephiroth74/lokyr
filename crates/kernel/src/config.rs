@@ -776,6 +776,14 @@ impl TryFrom<String> for Editor {
                         .chars()
                         .all(|c| c.is_ascii_alphanumeric() || "+.-".contains(c))
             });
+        // An address of the `file` scheme opens a file, which would run a
+        // program's path that Lokyr otherwise refuses to run.
+        if scheme.is_some_and(|scheme| scheme.eq_ignore_ascii_case("file")) {
+            return Err(format!(
+                "`{text}` opens a file rather than an editor: an address of an editor's scheme \
+                 holds `{{path}}`"
+            ));
+        }
         if scheme.is_some() && text.contains("{path}") && !text.chars().any(char::is_control) {
             return Ok(Self::Template(text));
         }
@@ -2370,6 +2378,13 @@ mod tests {
             let (at, message) = error(&format!("[links]\neditor = \"{wrong}\"\n"));
             assert_eq!(at.map(|(line, _)| line), Some(2));
             assert!(message.contains("is no editor"), "{message}");
+        }
+        // An address of the `file` scheme, which would open a program's path
+        // as a program, whatever its case.
+        for file in ["file://{path}", "FILE:{path}"] {
+            let (at, message) = error(&format!("[links]\neditor = \"{file}\"\n"));
+            assert_eq!(at.map(|(line, _)| line), Some(2));
+            assert!(message.contains("opens a file"), "{message}");
         }
     }
 

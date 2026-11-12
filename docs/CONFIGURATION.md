@@ -1145,7 +1145,7 @@ The editor that a path's line opens in, as compilers, tests and AI agents print 
 
 - `"system"` opens the file in its application, as the Finder would, at no line.
 - A name opens the file at its line and column in that editor, through the address that the editor answers to, as `vscode://file/<path>:<line>:<column>`; the first column where the text gives none.
-- An address of your own, of a scheme, takes the file's path in place of its `{path}`, escaped as a URL's path takes it, its line in place of `{line}` and its column in place of `{column}`, as `"jetbrains://idea/navigate/reference?path={path}&line={line}"`.
+- An address of your own, of a scheme, takes the file's path in place of its `{path}`, escaped as a URL's path takes it, its line in place of `{line}` and its column in place of `{column}`, as `"jetbrains://idea/navigate/reference?path={path}&line={line}"`. An address of the `file` scheme is refused, as it would open a program's path as the program.
 - [`files`](#files) still decides first: `"ask"` asks before the editor opens, and `"reveal"` shows the file in the Finder.
 - A file whose own application is a terminal, as a source file that a terminal claims, or a script, opens in the editor too, as text, since nothing runs; with `"system"` it shows in the Finder, never running.
 - Where the editor is not installed, the file opens in its application, as `"system"` does; a folder always opens in the Finder.
