@@ -34,7 +34,7 @@ tip-look-up = Fai clic destro su una parola per cercarla nel dizionario, sul web
 tip-services = Nel Finder, fai clic destro su una cartella e scegli Servizi › Nuovo tab Lokyr qui per un terminale lì.
 tip-itermcolors = Fai doppio clic su un file .itermcolors, o trascinalo sull'icona di Lokyr nel Dock, per installarne il tema.
 tip-float = Finestra › Sempre in primo piano tiene la finestra sopra quelle di ogni altra app.
-tip-sleip = I plugin vengono dal registro: sleip search li elenca, e sleip add ne installa uno.
+tip-sleip = I plugin vengono dal registro: `sleip search` li elenca, e `sleip add` ne installa uno.
 
 tip-plugin-keys = Premi { $keys } per «{ $title }», un comando di un plugin installato.
 tip-plugin-palette = «{ $title }», un comando di un plugin installato, si esegue dalla palette dei comandi: premi { $keys } e scrivine il nome.

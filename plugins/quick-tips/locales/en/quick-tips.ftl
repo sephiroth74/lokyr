@@ -39,7 +39,7 @@ tip-look-up = Right-click a word to look it up, or to search the web or the man 
 tip-services = In the Finder, right-click a folder and choose Services › New Lokyr Tab Here for a terminal there.
 tip-itermcolors = Double-click an .itermcolors file, or drop it on Lokyr's Dock icon, to install its theme.
 tip-float = Window › Float on Top keeps the window above every other app's.
-tip-sleip = Plugins come from the registry: sleip search lists them, and sleip add installs one.
+tip-sleip = Plugins come from the registry: `sleip search` lists them, and `sleip add` installs one.
 
 # The tips of an installed plugin's command, `$title`: of its keys, or of
 # none, of the command palette's.

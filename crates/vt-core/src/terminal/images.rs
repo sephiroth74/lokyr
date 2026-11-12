@@ -94,6 +94,22 @@ pub struct Placed {
     /// Whether the image keeps its proportions within the rectangle,
     /// centered, rather than filling it.
     pub fit: bool,
+    /// The rectangle of the image's pixels that shows, of none the whole.
+    pub source: Option<Source>,
+}
+
+/// A rectangle of an image's pixels: its left, its top, its width and its
+/// height.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Source {
+    /// Its left.
+    pub x: u32,
+    /// Its top.
+    pub y: u32,
+    /// Its width.
+    pub width: u32,
+    /// Its height.
+    pub height: u32,
 }
 
 /// A size that a program gives an image, of a side.
@@ -124,6 +140,12 @@ pub struct Placing {
     pub move_cursor: bool,
     /// Under the text when negative, over it otherwise.
     pub z: i32,
+    /// The rectangle of the image's pixels that shows, whose size its
+    /// sides' sizing takes; of none the whole.
+    pub source: Option<Source>,
+    /// The placement's number, the program's, in place of its image's
+    /// placement of that number; of none another.
+    pub number: Option<u32>,
 }
 
 impl Default for Placing {
@@ -134,7 +156,33 @@ impl Default for Placing {
             preserve: true,
             move_cursor: true,
             z: -1,
+            source: None,
+            number: None,
         }
+    }
+}
+
+/// A placement as a deletion looks at it: its image, its number, its
+/// cells, from its top left column and row's number, and its z.
+#[derive(Clone, Copy, Debug)]
+pub(super) struct Seen {
+    pub(super) image: u32,
+    pub(super) number: Option<u32>,
+    pub(super) column: u16,
+    pub(super) row: i64,
+    pub(super) columns: u16,
+    pub(super) rows: u16,
+    pub(super) z: i32,
+}
+
+impl Seen {
+    /// Whether it covers the cell of `column` and the row numbered `row`;
+    /// either alone of none of the other.
+    pub(super) fn covers(&self, column: Option<u16>, row: Option<i64>) -> bool {
+        let columns = u32::from(self.column)..u32::from(self.column) + u32::from(self.columns);
+        let rows = self.row..self.row + i64::from(self.rows);
+        column.is_none_or(|column| columns.contains(&u32::from(column)))
+            && row.is_none_or(|row| rows.contains(&row))
     }
 }
 
@@ -142,11 +190,13 @@ impl Default for Placing {
 #[derive(Debug)]
 struct Placement {
     image: u32,
+    number: Option<u32>,
     pin: CellPin,
     columns: u16,
     rows: u16,
     z: i32,
     fit: bool,
+    source: Option<Source>,
 }
 
 /// An image that a terminal keeps, the order in which it came, and whether
@@ -157,6 +207,8 @@ struct Kept {
     image: Arc<Image>,
     order: u64,
     lasting: bool,
+    /// The number that the program gave it, which it finds it again by.
+    number: Option<u32>,
 }
 
 /// A terminal's images and their placements.
@@ -405,6 +457,7 @@ impl Terminal {
                 image,
                 order: images.order,
                 lasting,
+                number: None,
             },
         );
         Some(id)
@@ -471,12 +524,16 @@ impl Terminal {
             .cell_size
             .filter(|&(w, h)| w > 0 && h > 0)
             .unwrap_or(CELL);
-        let (columns, rows) = cells(
-            &placing,
-            (image.width, image.height),
-            cell,
-            (self.cols, self.rows),
-        );
+        let source = placing
+            .source
+            .map(|source| clipped(source, (image.width, image.height)));
+        if source.is_some_and(|source| source.width == 0 || source.height == 0) {
+            return false;
+        }
+        let shown = source.map_or((image.width, image.height), |source| {
+            (source.width, source.height)
+        });
+        let (columns, rows) = cells(&placing, shown, cell, (self.cols, self.rows));
         let start = self.cursor();
         if placing.move_cursor {
             for _ in 1..rows {
@@ -494,6 +551,13 @@ impl Terminal {
         let Some(pin) = self.pin_cell((start.x, number)) else {
             return false;
         };
+        // A placement of the image's number goes before this one.
+        if let Some(number) = placing.number {
+            self.drop_placements(
+                |seen| seen.image == id && seen.number == Some(number),
+                false,
+            );
+        }
         while self.images.placements.len() >= MOST_PLACEMENTS {
             let oldest = self.images.placements.remove(0);
             self.unpin_cell(&oldest.pin);
@@ -501,11 +565,13 @@ impl Terminal {
         }
         self.images.placements.push(Placement {
             image: id,
+            number: placing.number,
             pin,
             columns,
             rows,
             z: placing.z,
             fit: placing.preserve,
+            source,
         });
         if placing.move_cursor {
             let x = u32::from(start.x) + u32::from(columns);
@@ -551,6 +617,81 @@ impl Terminal {
             self.unpin_cell(&placement.pin);
             self.drop_unplaced(placement.image);
         }
+    }
+
+    /// Gives the kept image `id` the program's `number`, which finds it
+    /// again.
+    pub(super) fn number_image(&mut self, id: u32, number: u32) {
+        if let Some(kept) = self.images.kept.get_mut(&id) {
+            kept.number = Some(number);
+        }
+    }
+
+    /// The id of the newest kept image of the program's `number`.
+    pub(super) fn numbered_image(&self, number: u32) -> Option<u32> {
+        self.images
+            .kept
+            .iter()
+            .filter(|(_, kept)| kept.number == Some(number))
+            .max_by_key(|(_, kept)| kept.order)
+            .map(|(&id, _)| id)
+    }
+
+    /// Whether the terminal keeps the image `id`.
+    pub(super) fn keeps_image(&self, id: u32) -> bool {
+        self.images.kept.contains_key(&id)
+    }
+
+    /// Lets the active screen's placements go that `which` takes, as their
+    /// cells are now, and, `free`, the images that they leave of no
+    /// placement; the placements whose text left go too.
+    pub(super) fn drop_placements(&mut self, which: impl Fn(&Seen) -> bool, free: bool) {
+        let seen: Vec<Option<Seen>> = self
+            .images
+            .placements
+            .iter()
+            .map(|placement| {
+                let (column, row) = self.pinned_cell(&placement.pin)?;
+                Some(Seen {
+                    image: placement.image,
+                    number: placement.number,
+                    column,
+                    row,
+                    columns: placement.columns,
+                    rows: placement.rows,
+                    z: placement.z,
+                })
+            })
+            .collect();
+        let mut gone = Vec::new();
+        for at in (0..seen.len()).rev() {
+            let alternate = self.images.placements[at].pin.is_alternate();
+            let lost = self.is_lost(&self.images.placements[at].pin);
+            let taken = seen[at].as_ref().is_some_and(&which);
+            if lost || (taken && alternate == self.alternate_active) {
+                gone.push(self.images.placements.remove(at));
+            }
+        }
+        for placement in gone {
+            self.unpin_cell(&placement.pin);
+            if free {
+                let placed = self
+                    .images
+                    .placements
+                    .iter()
+                    .any(|other| other.image == placement.image);
+                if !placed {
+                    self.drop_image(placement.image);
+                }
+            } else {
+                self.drop_unplaced(placement.image);
+            }
+        }
+    }
+
+    /// The number of the active screen's first row.
+    pub(super) fn screen_top(&self) -> i64 {
+        self.row_number(self.screen().rows.scrollback_rows())
     }
 
     /// The kept images, by their ids, and the bytes that they take.
@@ -603,11 +744,25 @@ impl Terminal {
                     rows: placement.rows,
                     z: placement.z,
                     fit: placement.fit,
+                    source: placement.source,
                 })
             })
             .collect();
         placed.sort_by_key(|placed| placed.z);
         placed
+    }
+}
+
+/// `source` within an image of `width` by `height` pixels.
+fn clipped(source: Source, (width, height): (u32, u32)) -> Source {
+    let x = source.x.min(width);
+    let y = source.y.min(height);
+    let wide = |asked: u32, room: u32| if asked == 0 { room } else { asked.min(room) };
+    Source {
+        x,
+        y,
+        width: wide(source.width, width - x),
+        height: wide(source.height, height - y),
     }
 }
 

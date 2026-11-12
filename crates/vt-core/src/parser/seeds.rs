@@ -9,12 +9,16 @@ use super::reference::{CORPUS, PREFIXES, PROBE};
 
 const KUHN: &[u8] = include_bytes!("../../testdata/UTF-8-test.txt");
 
-/// Inline images' sequences, of headers of PNG, GIF and JPEG, which
-/// arbitrary bytes would hardly make.
-const IMAGES: [&[u8]; 3] = [
+/// Inline images' sequences, iTerm2's of headers of PNG, GIF and JPEG, and
+/// kitty's of chunks, compression, placements, a query and deletions,
+/// which arbitrary bytes would hardly make.
+const IMAGES: [&[u8]; 6] = [
     b"\x1b]1337;File=inline=1;width=3;height=2:iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAAA=\x07",
     b"\x1b]1337;File=inline=1;doNotMoveCursor=1;preserveAspectRatio=0;width=50%;height=40px:R0lGODlhCgAKAA==\x1b\\",
     b"\x1b]1337;File=name=eA==;size=20;inline=1:/9j/4AAEAAD/wAARCAAKAAw=\x07",
+    b"\x1b_Ga=T,f=100,i=1,m=1;iVBORw0KGgoAAAAN\x1b\\\x1b_Gm=0;SUhEUgAAAAoAAAAKCAYAAAA=\x1b\\",
+    b"\x1b_Ga=t,f=24,s=4,v=4,o=z,I=7,q=1;eJzj4iINAAAuIAHh\x1b\\\x1b_Ga=p,I=7,c=3,r=2,C=1,z=-1,x=1,y=1,w=2,h=2\x1b\\",
+    b"\x1b_Ga=q,f=32,s=1,v=1,i=31;AAAAAA==\x1b\\\x1b_Ga=d,d=A\x1b\\\x1b_Ga=t,t=f,i=2;L3RtcC94\x1b\\",
 ];
 
 /// Every seed.

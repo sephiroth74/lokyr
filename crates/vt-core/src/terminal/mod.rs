@@ -15,6 +15,7 @@ mod events;
 mod gutter;
 mod images;
 mod keyboard;
+mod kitty;
 mod marks;
 mod matches;
 mod modes;
@@ -35,7 +36,7 @@ pub use colors::{ColorScheme, Colors, SPECIAL_COLORS};
 pub use decorations::{Decorated, Look, MOST_DECORATIONS};
 pub use gutter::{GutterKind, GutterMark, MOST_GUTTER_MARKS};
 pub use images::{
-    IMAGE_MEMORY, Image, ImageFormat, MOST_PIXELS, MOST_PLACEMENTS, Placed, Placing, Side,
+    IMAGE_MEMORY, Image, ImageFormat, MOST_PIXELS, MOST_PLACEMENTS, Placed, Placing, Side, Source,
     dimensions,
 };
 pub use keyboard::KeyboardFlags;
@@ -516,6 +517,8 @@ pub struct Terminal {
     matches: Vec<matches::Matches>,
     /// The inline images that programs sent, and their placements.
     images: images::Images,
+    /// kitty's graphics protocol's APC string and transmission under way.
+    graphics: kitty::Graphics,
 }
 
 impl Terminal {
@@ -628,6 +631,7 @@ impl Terminal {
             gutter: Vec::new(),
             matches: Vec::new(),
             images: images::Images::new(options.image_memory),
+            graphics: kitty::Graphics::default(),
         }
     }
 
@@ -1333,6 +1337,18 @@ impl Handler for Terminal {
 
     fn dcs_end(&mut self, end: StringEnd) {
         self.end_query(end);
+    }
+
+    fn apc_start(&mut self) {
+        self.start_apc();
+    }
+
+    fn apc_put(&mut self, data: &[u8]) {
+        self.read_apc(data);
+    }
+
+    fn apc_end(&mut self, end: StringEnd) {
+        self.end_apc(end);
     }
 }
 

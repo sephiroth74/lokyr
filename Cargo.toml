@@ -34,6 +34,8 @@ gungraun = "0.20.0"
 # Golden snapshots of the screen, from recorded sessions.
 insta = { version = "1.49.0", default-features = false }
 libc = "0.2.190"
+# zlib's inflation of kitty's compressed images in the VT core, of pure Rust.
+miniz_oxide = "0.9.1"
 # Sleip's `dev`, which ends as the user interrupts it, its lockfile's entry taken back.
 signal-hook = "0.4.5"
 # Sleip's resolver, PubGrub, whose readable conflicts it tells.
