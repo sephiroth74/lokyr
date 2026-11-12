@@ -260,6 +260,19 @@ release version *args:
 site:
     cargo xtask site
 
+# Fetch Pagefind, the site's search, of the release that the site pins for the Mac, checked against its SHA-256, into target/tools/pagefind, which `just site` finds.
+pagefind:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    url=https://github.com/Pagefind/pagefind/releases/download/v1.6.0/pagefind-v1.6.0-aarch64-apple-darwin.tar.gz
+    sha256=43f17bec7ad55947f06c8f9689a1ac2c5d1ea7c96294bceaa3cc4e7152c1cf55
+    mkdir -p target/tools/pagefind
+    curl --fail --silent --show-error --location --retry 3 "$url" --output target/tools/pagefind.tar.gz
+    echo "$sha256  target/tools/pagefind.tar.gz" | shasum -a 256 --check --quiet
+    tar -xzf target/tools/pagefind.tar.gz -C target/tools/pagefind pagefind
+    rm target/tools/pagefind.tar.gz
+    target/tools/pagefind/pagefind --version
+
 # Serve target/site on 127.0.0.1:8124, as lokyr.dev would serve it, until Control-C.
 site-serve: site
     python3 -m http.server --bind 127.0.0.1 --directory target/site 8124

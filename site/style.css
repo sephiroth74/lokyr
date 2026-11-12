@@ -205,3 +205,16 @@ footer a:hover { color: var(--fg); }
   .doc h2 { font-size: 24px; }
   .doc pre code { font-size: 12.5px; }
 }
+
+/* Pagefind's interface, in the site's colours. */
+#search {
+  --pagefind-ui-scale: 0.9;
+  --pagefind-ui-primary: var(--violet);
+  --pagefind-ui-text: var(--fg);
+  --pagefind-ui-background: var(--bg-raised);
+  --pagefind-ui-border: var(--line-strong);
+  --pagefind-ui-tag: var(--bg-raised);
+  --pagefind-ui-border-width: 1px;
+  --pagefind-ui-border-radius: 10px;
+  --pagefind-ui-font: var(--sans);
+}

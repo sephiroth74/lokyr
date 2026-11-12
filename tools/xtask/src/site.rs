@@ -7,7 +7,11 @@
 //! its page, of its anchor, which the page's headings give as GitHub gives
 //! them; a link to another file of the repository goes to it on GitHub. The
 //! site's settings, `site/site.toml`, name the project's accounts, which
-//! every page links. Into `target/site` by default.
+//! every page links. Every link of the pages, the home's too, is checked
+//! as the site is built, to a file and an anchor that it holds; and, where
+//! Pagefind is there, on the `PATH` or as `just pagefind` fetches it into
+//! `target/tools`, it indexes the documents' pages for the search's page.
+//! Into `target/site` by default.
 
 use std::collections::HashMap;
 use std::fmt::Write as _;
@@ -62,8 +66,125 @@ pub fn run(mut args: impl Iterator<Item = String>) -> Result<ExitCode> {
         .context("the workspace's root")?;
     let out = out.unwrap_or_else(|| root.join("target/site"));
     let pages = build(&root, &out)?;
+    let broken = broken_links(&out)?;
+    if !broken.is_empty() {
+        for link in &broken {
+            eprintln!("site: {link}");
+        }
+        bail!("{} links of the site do not resolve", broken.len());
+    }
+    match pagefind(&root) {
+        Some(pagefind) => {
+            let indexed = Command::new(&pagefind)
+                .arg("--site")
+                .arg(&out)
+                .output()
+                .with_context(|| format!("running {}", pagefind.display()))?;
+            ensure!(
+                indexed.status.success(),
+                "Pagefind failed: {}",
+                String::from_utf8_lossy(&indexed.stderr)
+            );
+            println!("site: the search's index of Pagefind");
+        }
+        None => println!("site: no search, as Pagefind is not there: `just pagefind` fetches it"),
+    }
     println!("site: {pages} pages in {}", out.display());
     Ok(ExitCode::SUCCESS)
+}
+
+/// Pagefind: `target/tools/pagefind/pagefind`, as `just pagefind` fetches
+/// it, or the `PATH`'s.
+fn pagefind(root: &Path) -> Option<PathBuf> {
+    let fetched = root.join("target/tools/pagefind/pagefind");
+    if fetched.is_file() {
+        return Some(fetched);
+    }
+    std::env::var_os("PATH").and_then(|path| {
+        std::env::split_paths(&path)
+            .map(|folder| folder.join("pagefind"))
+            .find(|file| file.is_file())
+    })
+}
+
+/// The links of the pages of the site in `out` that do not resolve: to a
+/// file that is not there, or to an anchor that the page does not hold;
+/// those to the web, by mail or of data left out, and Pagefind's own.
+pub(crate) fn broken_links(out: &Path) -> Result<Vec<String>> {
+    let link = regex::Regex::new(r#"(?:href|src)="([^"]*)""#)?;
+    let mut pages = Vec::new();
+    collect_pages(out, &mut pages)?;
+    let mut held: HashMap<PathBuf, String> = HashMap::new();
+    let mut broken = Vec::new();
+    for page in &pages {
+        let text =
+            fs::read_to_string(page).with_context(|| format!("reading {}", page.display()))?;
+        let name = page.strip_prefix(out).unwrap_or(page).display().to_string();
+        for found in link.captures_iter(&text) {
+            let target = found[1].replace("&amp;", "&");
+            if target.is_empty()
+                || target.contains("://")
+                || target.starts_with("mailto:")
+                || target.starts_with("data:")
+                || target.starts_with("pagefind/")
+                || target.contains("/pagefind/")
+            {
+                continue;
+            }
+            let (path, anchor) = target.split_once('#').unwrap_or((&target, ""));
+            let path = path.split('?').next().unwrap_or_default();
+            // A path from the root is the site's, as `lokyr.dev` serves it.
+            let mut file = if path.is_empty() {
+                page.clone()
+            } else if let Some(rooted) = path.strip_prefix('/') {
+                out.join(rooted)
+            } else {
+                page.parent().unwrap_or(out).join(path)
+            };
+            if file.is_dir() {
+                file = file.join("index.html");
+            }
+            if !file.is_file() {
+                broken.push(format!("{name}: `{target}`: no such file"));
+                continue;
+            }
+            if anchor.is_empty() || file.extension().is_none_or(|extension| extension != "html") {
+                continue;
+            }
+            let content = match held.get(&file) {
+                Some(content) => content,
+                None => {
+                    let content = fs::read_to_string(&file).unwrap_or_default();
+                    held.entry(file.clone()).or_insert(content)
+                }
+            };
+            if !content.contains(&format!("id=\"{anchor}\""))
+                && !content.contains(&format!("name=\"{anchor}\""))
+            {
+                broken.push(format!("{name}: `{target}`: no such anchor"));
+            }
+        }
+    }
+    Ok(broken)
+}
+
+/// The HTML pages under `folder`.
+fn collect_pages(folder: &Path, pages: &mut Vec<PathBuf>) -> Result<()> {
+    for entry in fs::read_dir(folder).with_context(|| format!("reading {}", folder.display()))? {
+        let path = entry?.path();
+        if path.is_dir() {
+            if path.file_name().is_some_and(|name| name == "pagefind") {
+                continue;
+            }
+            collect_pages(&path, pages)?;
+        } else if path
+            .extension()
+            .is_some_and(|extension| extension == "html")
+        {
+            pages.push(path);
+        }
+    }
+    Ok(())
 }
 
 /// Builds the site of the documents of `root` into `out`, made anew: how
@@ -76,7 +197,12 @@ pub(crate) fn build(root: &Path, out: &Path) -> Result<usize> {
     }
     fs::create_dir_all(out).with_context(|| format!("making {}", out.display()))?;
     copy_folder(&root.join("site/public"), out, &|name| name != ".htaccess")?;
-    fs::copy(root.join("site/style.css"), out.join("style.css")).context("copying the style")?;
+    for file in ["style.css", "search.js"] {
+        fs::copy(root.join("site").join(file), out.join(file))
+            .with_context(|| format!("copying {file}"))?;
+    }
+    fs::write(out.join("search.html"), search_page(&settings))
+        .context("writing the search's page")?;
     for document in &documents {
         let text = fs::read_to_string(root.join(document))
             .with_context(|| format!("reading {}", document.display()))?;
@@ -154,11 +280,50 @@ pub(crate) fn page_path(document: &Path) -> PathBuf {
     }
 }
 
-/// The page of `document`, of its Markdown `text`, in the site's template.
+/// The page of `document`, of its Markdown `text`, in the site's template:
+/// the search indexes its body.
 fn page(document: &Path, text: &str, settings: &Settings) -> String {
     let (body, title) = html(document, text);
     let depth = document.components().count().saturating_sub(1);
-    let up = "../".repeat(depth);
+    let source = format!(
+        r#"<a href="{BLOB}/{}">This page's source</a>"#,
+        document.display()
+    );
+    template(
+        &title,
+        &"../".repeat(depth),
+        settings,
+        &format!("<main class=\"wrap doc\" data-pagefind-body>\n{body}</main>"),
+        &source,
+        "",
+    )
+}
+
+/// The search's page, of Pagefind's interface, which a query of `?q=` fills.
+fn search_page(settings: &Settings) -> String {
+    template(
+        "Search",
+        "",
+        settings,
+        "<main class=\"wrap doc\">\n<h1>Search</h1>\n<div id=\"search\"></div>\n</main>",
+        "",
+        r#"<link rel="stylesheet" href="pagefind/pagefind-ui.css">
+<script src="pagefind/pagefind-ui.js" defer></script>
+<script src="search.js" defer></script>
+"#,
+    )
+}
+
+/// A page of the site, of its `title`, the way `up` to the site's root, its
+/// `main` and its footer's `extra` link, and `head` in its head.
+fn template(
+    title: &str,
+    up: &str,
+    settings: &Settings,
+    main: &str,
+    extra: &str,
+    head: &str,
+) -> String {
     let mut social = String::new();
     for (name, address) in [
         ("Bluesky", &settings.social.bluesky),
@@ -179,7 +344,7 @@ fn page(document: &Path, text: &str, settings: &Settings) -> String {
 <meta name="theme-color" content="#0b0911">
 <link rel="icon" href="{up}icon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="{up}style.css">
-</head>
+{head}</head>
 <body>
 <div class="backdrop" aria-hidden="true"></div>
 <header class="wrap top">
@@ -190,22 +355,21 @@ fn page(document: &Path, text: &str, settings: &Settings) -> String {
     <a href="{up}docs/plugins/index.html">Plugins</a>
     <a href="{up}docs/themes/authoring.html">Themes</a>
     <a href="{up}changelog.html">Changelog</a>
+    <a href="{up}search.html">Search</a>
     <a href="https://github.com/sephiroth74/lokyr">GitHub</a>{social}
   </nav>
 </header>
-<main class="wrap doc">
-{body}</main>
+{main}
 <footer>
   <div class="wrap">
     <p>© 2026 Alessandro Crugnola · Lokyr and Sleip are under the MIT License.</p>
-    <p><a href="{BLOB}/{source}">This page's source</a></p>
+    <p>{extra}</p>
   </div>
 </footer>
 </body>
 </html>
 "##,
-        title = escaped(&title),
-        source = document.display(),
+        title = escaped(title),
     )
 }
 
@@ -420,6 +584,30 @@ mod tests {
     }
 
     #[test]
+    fn a_link_to_no_file_or_no_anchor_is_told() {
+        let out = std::env::temp_dir().join(format!("lokyr-site-links-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&out);
+        fs::create_dir_all(out.join("docs")).unwrap();
+        fs::write(out.join("index.html"), r#"<a href="docs/b.html#y">b</a>"#).unwrap();
+        fs::write(
+            out.join("docs/a.html"),
+            r##"<a href="b.html#x">a</a> <a href="c.html">c</a> <a href="/">home</a> <a href="https://x.dev">web</a> <a href="#here">here</a> <h2 id="here">Here</h2>"##,
+        )
+        .unwrap();
+        fs::write(out.join("docs/b.html"), r#"<h2 id="y">Y</h2>"#).unwrap();
+        let mut broken = broken_links(&out).unwrap();
+        broken.sort();
+        assert_eq!(
+            broken,
+            [
+                "docs/a.html: `b.html#x`: no such anchor",
+                "docs/a.html: `c.html`: no such file"
+            ]
+        );
+        let _ = fs::remove_dir_all(out);
+    }
+
+    #[test]
     fn a_page_s_headings_take_github_s_anchors_and_its_first_its_title() {
         let (body, title) = html(
             Path::new("docs/x.md"),
@@ -462,6 +650,36 @@ mod tests {
         assert!(!out.join(".htaccess").exists());
         let configuration = fs::read_to_string(out.join("docs/CONFIGURATION.html")).unwrap();
         assert!(configuration.contains(r#"id="font""#));
+        // Every link of the pages resolves, the home's too.
+        let broken = broken_links(&out).unwrap();
+        assert!(broken.is_empty(), "{broken:?}");
+        // The search, where Pagefind is there: the configuration's page among
+        // those that hold a key of the config.
+        if let Some(pagefind) = pagefind(&root) {
+            let indexed = Command::new(pagefind)
+                .arg("--site")
+                .arg(&out)
+                .output()
+                .unwrap();
+            assert!(indexed.status.success());
+            let holding: Vec<String> = fs::read_dir(out.join("pagefind/fragment"))
+                .unwrap()
+                .filter_map(|entry| {
+                    let unpacked = Command::new("gzip")
+                        .arg("-dc")
+                        .arg(entry.ok()?.path())
+                        .output()
+                        .ok()?;
+                    let text = String::from_utf8_lossy(&unpacked.stdout).into_owned();
+                    text.contains("scrollback").then_some(text)
+                })
+                .collect();
+            assert!(
+                holding
+                    .iter()
+                    .any(|text| text.contains("/docs/CONFIGURATION.html"))
+            );
+        }
         // The accounts, none of none, each of its address.
         let settings = Settings {
             social: Social {
