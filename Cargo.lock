@@ -1076,6 +1076,7 @@ name = "lokyr-core-actions"
 version = "0.9.0"
 dependencies = [
  "lokyr-plugin-sdk",
+ "unicode-width",
 ]
 
 [[package]]

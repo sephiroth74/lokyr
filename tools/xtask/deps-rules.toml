@@ -51,7 +51,9 @@ name = "plugins-use-the-sdk"
 kind = "allow-only"
 description = "Built-in plugins depend only on the plugin SDK (plus the utility crates listed here), which proves the public API is enough to build them."
 crates = ["plugins/*"]
-allowed = ["crates/plugin-sdk"]
+# `unicode-width`: the cells that a text takes, as a command's output is cut
+# at its cells.
+allowed = ["crates/plugin-sdk", "unicode-width"]
 
 [[rule]]
 name = "kernel-only-in-app"

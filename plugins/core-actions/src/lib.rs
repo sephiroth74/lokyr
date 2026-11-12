@@ -14,6 +14,7 @@ use lokyr_plugin_sdk::command::{
 use lokyr_plugin_sdk::host::{Line, PaneId, Scroll, ShellCommand};
 use lokyr_plugin_sdk::message::Event;
 use lokyr_plugin_sdk::plugin::{Cx, Plugin};
+use unicode_width::UnicodeWidthStr;
 
 lokyr_plugin_sdk::export_plugin!(CoreActions);
 
@@ -65,6 +66,14 @@ const SELECT_OUTPUT: &str = "pane.select-output";
 /// takes them.
 const MOST_OUTPUT_ROWS: usize = lokyr_plugin_sdk::host::MOST_LINES;
 
+/// The rows back from the screen whose commands a look for the last
+/// command's output reads first, before every command's.
+const RECENT_ROWS: i64 = 10_000;
+
+/// The marks that a shell prints of output that ends without a line's end,
+/// before its prompt: zsh's `%` of a user, `#` of root, and fish's.
+const MISSING_NEWLINE: [char; 4] = ['%', '#', '⏎', '¶'];
+
 /// The first and the last cells of an output, each by its column and its
 /// row's number.
 type Span = ((u16, i64), (u16, i64));
@@ -115,11 +124,20 @@ const COMMANDS: [Spec; 15] = [
     (PROMPT_NEXT, "Jump to Next Prompt", Category::View, &[]),
 ];
 
-/// The plugin of the basic terminal actions, and the copy of an output
-/// whose rows it reads: the read's id, its pane, and the output's cells.
+/// What a read of a command's output's rows is for: its copy, or its
+/// selection, which its last row's end tells.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Reading {
+    Copy,
+    Select,
+}
+
+/// The plugin of the basic terminal actions, and the read of an output's
+/// rows under way: the read's id, its pane, the output's cells and what it
+/// is for.
 #[derive(Debug, Default)]
 pub struct CoreActions {
-    copying: Option<(u64, PaneId, Span)>,
+    reading: Option<(u64, PaneId, Span, Reading)>,
 }
 
 impl Plugin for CoreActions {
@@ -202,14 +220,24 @@ impl Plugin for CoreActions {
             if let Event::Lines {
                 id, pane, lines, ..
             } = event
-                && let Some((asked, of, span)) = self.copying
+                && let Some((asked, of, span, reading)) = self.reading
                 && asked == *id
                 && of == *pane
             {
-                self.copying = None;
-                let text = output_text(lines, span);
-                if !text.is_empty() {
-                    cx.set_clipboard_text(&text)?;
+                self.reading = None;
+                match reading {
+                    Reading::Copy => {
+                        let text = output_text(lines, span);
+                        if !text.is_empty() {
+                            cx.set_clipboard_text(&text)?;
+                        }
+                    }
+                    Reading::Select => {
+                        let (columns, _) = cx.pane_grid(*pane)?;
+                        if let Some((first, last)) = selected(lines, span, columns) {
+                            cx.select_cells(*pane, first, last)?;
+                        }
+                    }
                 }
             }
         }
@@ -258,15 +286,19 @@ impl Plugin for CoreActions {
             let Some(span) = output(cx, pane, &args)? else {
                 return Ok(());
             };
-            if name == SELECT_OUTPUT {
-                return cx.select_cells(pane, span.0, span.1);
-            }
             let ((_, first), (_, last)) = span;
-            let rows = usize::try_from(last - first + 1)
-                .unwrap_or(0)
-                .min(MOST_OUTPUT_ROWS);
-            let id = cx.read_lines(pane, first, rows)?;
-            self.copying = Some((id, pane, span));
+            // A selection reads its last row alone, whose end may hold a
+            // shell's mark of a missing newline.
+            let (from, rows, reading) = if name == SELECT_OUTPUT {
+                (last, 1, Reading::Select)
+            } else {
+                let rows = usize::try_from(last - first + 1)
+                    .unwrap_or(0)
+                    .min(MOST_OUTPUT_ROWS);
+                (first, rows, Reading::Copy)
+            };
+            let id = cx.read_lines(pane, from, rows)?;
+            self.reading = Some((id, pane, span, reading));
             return Ok(());
         }
         if name == SEND_TEXT {
@@ -312,21 +344,30 @@ fn output(cx: &mut Cx<'_>, pane: PaneId, args: &Args) -> Result<Option<Span>, Er
         Some(&Value::Integer(value)) if value >= 0 => Some(value),
         _ => None,
     };
+    // The commands' rows are the primary screen's, which the alternate one,
+    // as vim's or less's, hides.
+    let view = cx.viewport(pane)?;
+    if view.alternate {
+        return Ok(None);
+    }
     let row = number("column").and(number("row"));
     let (columns, _) = cx.pane_grid(pane)?;
-    let commands = match row {
-        Some(row) => cx.shell_commands(pane, row, row.saturating_add(1))?,
-        None => cx.shell_commands(pane, i64::MIN / 2, i64::MAX / 2)?,
-    };
     let span = |command: &ShellCommand| output_span(command, columns);
-    Ok(match row {
-        Some(row) => commands
+    if let Some(row) = row {
+        let commands = cx.shell_commands(pane, row, row.saturating_add(1))?;
+        return Ok(commands
             .iter()
             .rev()
             .find(|command| holds(command, row))
-            .and_then(span),
-        None => commands.iter().rev().find_map(span),
-    })
+            .and_then(span));
+    }
+    // The recent commands first, as the menus ask at each look.
+    let recent = cx.shell_commands(pane, view.screen.saturating_sub(RECENT_ROWS), i64::MAX / 2)?;
+    if let Some(found) = recent.iter().rev().find_map(span) {
+        return Ok(Some(found));
+    }
+    let commands = cx.shell_commands(pane, i64::MIN / 2, i64::MAX / 2)?;
+    Ok(commands.iter().rev().find_map(span))
 }
 
 /// Whether `command`'s rows hold the row numbered `row`: from its first
@@ -358,31 +399,82 @@ fn output_span(command: &ShellCommand, columns: u16) -> Option<Span> {
 
 /// The text of the output of `span` that `lines`, its rows' texts, hold:
 /// from its first cell to its last, a row that wraps joined to the next,
-/// without the blank rows that start and end it.
+/// without the blank rows that start and end it, nor the mark of a missing
+/// newline that a shell printed at its end.
 fn output_text(lines: &[Line], ((first_column, first), (last_column, last)): Span) -> String {
     let mut text = String::new();
     for line in lines
         .iter()
         .filter(|line| line.row >= first && line.row <= last)
     {
-        let chars: Vec<char> = line.text.chars().collect();
+        let shown = if line.row == last {
+            unmarked(line)
+        } else {
+            &line.text
+        };
         let start = if line.row == first {
-            usize::from(first_column).min(chars.len())
+            within(shown, usize::from(first_column))
         } else {
             0
         };
         let end = if line.row == last {
-            (usize::from(last_column) + 1).min(chars.len())
+            within(shown, usize::from(last_column) + 1)
         } else {
-            chars.len()
+            shown.len()
         };
-        text.extend(&chars[start.min(end)..end]);
+        text.push_str(&shown[start.min(end)..end]);
         if !line.wrapped || line.row == last {
             text.push('\n');
         }
     }
     let trimmed = text.trim_end().trim_start_matches(['\n', '\r']);
     trimmed.to_owned()
+}
+
+/// The text of `line`, the last row of a command's output, without the
+/// mark of a missing newline: a row that wraps into the end's row ends in
+/// the shell's mark and the spaces that took the prompt to a row of its
+/// own, as zsh's `PROMPT_SP` prints them.
+fn unmarked(line: &Line) -> &str {
+    if !line.wrapped {
+        return &line.text;
+    }
+    let text = line.text.trim_end_matches(' ');
+    text.strip_suffix(MISSING_NEWLINE).unwrap_or(text)
+}
+
+/// The end, in bytes, of the longest start of `text` that takes `cells`
+/// cells at most, as wide characters take two and the characters of a
+/// cluster share theirs.
+fn within(text: &str, cells: usize) -> usize {
+    let mut end = 0;
+    for (at, character) in text.char_indices() {
+        let next = at + character.len_utf8();
+        if UnicodeWidthStr::width(&text[..next]) > cells {
+            break;
+        }
+        end = next;
+    }
+    end
+}
+
+/// The first and last cells of a selection of the output of `span`, of a
+/// grid of `columns`, as `lines`, its last row's text, tells its end: its
+/// last row's cells but the mark of a missing newline, or, of none left,
+/// the row before's; none of an output left empty.
+fn selected(lines: &[Line], (first, last): Span, columns: u16) -> Option<Span> {
+    let Some(line) = lines.iter().find(|line| line.row == last.1) else {
+        return Some((first, last));
+    };
+    if !line.wrapped {
+        return Some((first, last));
+    }
+    let cells = UnicodeWidthStr::width(unmarked(line));
+    let end = match u16::try_from(cells) {
+        Ok(cells) if cells > 0 => (cells.min(columns) - 1, last.1),
+        _ => (columns.saturating_sub(1), last.1 - 1),
+    };
+    (end.1 > first.1 || (end.1 == first.1 && end.0 >= first.0)).then_some((first, end))
 }
 
 #[cfg(test)]

@@ -333,3 +333,118 @@ fn a_cell_s_command_is_the_one_whose_rows_hold_it() {
     assert!(!host.applies(&mut plugin, SELECT_OUTPUT, &Args::new()));
     assert!(run_with(&mut host, &mut plugin, SELECT_OUTPUT, Args::new()).is_empty());
 }
+
+/// A host of a focused pane 7, of 10 columns, whose shell ran a command of
+/// `rows`, each its text and whether it wraps, its output from `output`
+/// to its end at `end`.
+fn output_host(rows: &[(&str, bool)], output: (u16, i64), end: (u16, i64)) -> FakeHost {
+    use lokyr_plugin_sdk::host::ShellCommand;
+    let mut host = host(Some(7));
+    let pane = host.pane(PaneId(7));
+    pane.held = 0..10;
+    pane.grid = (10, 10);
+    for (row, &(text, wrapped)) in rows.iter().enumerate() {
+        pane.rows.insert(row as i64, (text.to_owned(), wrapped));
+    }
+    pane.commands = vec![ShellCommand {
+        id: 1,
+        prompt: Some((0, 0)),
+        input: Some((2, 0)),
+        output: Some(output),
+        end: Some(end),
+        status: Some(0),
+    }];
+    host
+}
+
+/// What a copy of the last command's output gives, and the cells that its
+/// selection takes.
+fn copied_and_selected(host: &mut FakeHost) -> (Option<String>, Vec<Request>) {
+    let mut plugin = CoreActions::default();
+    host.activate(&mut plugin).unwrap();
+    run_with(host, &mut plugin, COPY_OUTPUT, Args::new());
+    let copied = host.clipboard().map(str::to_owned);
+    let selected = run_with(host, &mut plugin, SELECT_OUTPUT, Args::new())
+        .into_iter()
+        .filter(|request| matches!(request, Request::SelectCells { .. }))
+        .collect();
+    (copied, selected)
+}
+
+/// A selection of the cells from `first` to `last` of pane 7.
+fn selection(first: (u16, i64), last: (u16, i64)) -> Request {
+    Request::SelectCells {
+        pane: PaneId(7),
+        first,
+        last,
+        kind: lokyr_plugin_sdk::host::SelectionKind::Cells,
+    }
+}
+
+#[test]
+fn zsh_s_mark_of_a_missing_newline_is_neither_copied_nor_selected() {
+    // `printf foo` in zsh: the mark and the spaces that wrap the prompt to
+    // a row of its own, before the command's end.
+    let mut host = output_host(
+        &[("$ printf foo", false), ("foo%      ", true), ("$ ", false)],
+        (0, 1),
+        (0, 2),
+    );
+    assert_eq!(
+        copied_and_selected(&mut host),
+        (Some("foo".to_owned()), vec![selection((0, 1), (2, 1))])
+    );
+    // An output that fills its row: the mark alone on the next.
+    let mut host = output_host(
+        &[
+            ("$ printf", false),
+            ("0123456789", true),
+            ("%         ", true),
+            ("$ ", false),
+        ],
+        (0, 1),
+        (0, 3),
+    );
+    assert_eq!(
+        copied_and_selected(&mut host),
+        (
+            Some("0123456789".to_owned()),
+            vec![selection((0, 1), (9, 1))]
+        )
+    );
+}
+
+#[test]
+fn an_output_s_rows_are_cut_at_their_cells_of_wide_characters_and_clusters() {
+    // A woman technologist, of three characters in two cells, and the end
+    // past the row's tenth cell.
+    let row = "ok 👩\u{200d}💻 done";
+    let mut host = output_host(&[("$ say", false), (row, false)], (0, 1), (10, 1));
+    assert_eq!(copied_and_selected(&mut host).0.as_deref(), Some(row));
+    // Of an output that starts past the emoji's cells.
+    let mut host = output_host(&[("$ say", false), (row, false)], (5, 1), (10, 1));
+    assert_eq!(copied_and_selected(&mut host).0.as_deref(), Some(" done"));
+    let mut host = output_host(&[("$ say", false), (row, false)], (3, 1), (5, 1));
+    assert_eq!(
+        copied_and_selected(&mut host).0.as_deref(),
+        Some("👩\u{200d}💻")
+    );
+}
+
+#[test]
+fn no_output_applies_while_the_alternate_screen_shows() {
+    let mut host = output_host(&[("$ ls", false), ("a", false)], (0, 1), (0, 2));
+    let mut plugin = CoreActions::default();
+    host.activate(&mut plugin).unwrap();
+    assert!(host.applies(&mut plugin, COPY_OUTPUT, &Args::new()));
+    host.pane(PaneId(7)).viewport = Some(lokyr_plugin_sdk::host::Viewport {
+        top: 0,
+        rows: 10,
+        screen: 0,
+        oldest: 0,
+        epoch: 0,
+        alternate: true,
+    });
+    assert!(!host.applies(&mut plugin, COPY_OUTPUT, &Args::new()));
+    assert!(!host.applies(&mut plugin, SELECT_OUTPUT, &cell(0, 1)));
+}
