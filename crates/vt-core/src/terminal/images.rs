@@ -29,6 +29,14 @@ pub const MOST_PIXELS: u64 = 16_000_000;
 /// snapshot looks at every one, which costs with their number.
 pub const MOST_PLACEMENTS: usize = 1024;
 
+/// The most images that a terminal keeps, placed or not, past which the
+/// oldest go, so that a stream of tiny ones cannot keep millions.
+pub const MOST_IMAGES: usize = 4096;
+
+/// The least that an image counts against the images' memory, its own
+/// keeping's, whatever its bytes.
+pub(super) const LEAST_CHARGE: usize = 1024;
+
 /// The most rows that a placement takes.
 const MOST_ROWS: u16 = 1000;
 
@@ -213,15 +221,26 @@ struct Kept {
     lasting: bool,
     /// The number that the program gave it, which it finds it again by.
     number: Option<u32>,
+    /// Its placements.
+    placed: usize,
 }
 
 /// A terminal's images and their placements.
 #[derive(Debug)]
 pub(super) struct Images {
     kept: BTreeMap<u32, Kept>,
+    /// The kept images of no placement, and those of some, by their order,
+    /// the oldest first.
+    unplaced: BTreeMap<u64, u32>,
+    placed: BTreeMap<u64, u32>,
+    /// The kept images of a program's number, by the number and their
+    /// order.
+    numbers: BTreeMap<(u32, u64), u32>,
     placements: Vec<Placement>,
     /// The bytes that the kept images take.
     bytes: usize,
+    /// What they count against the memory, each [`LEAST_CHARGE`] at least.
+    charged: usize,
     /// The bytes that they may take.
     limit: usize,
     order: u64,
@@ -233,8 +252,12 @@ impl Images {
     pub(super) fn new(limit: usize) -> Self {
         Self {
             kept: BTreeMap::new(),
+            unplaced: BTreeMap::new(),
+            placed: BTreeMap::new(),
+            numbers: BTreeMap::new(),
             placements: Vec::new(),
             bytes: 0,
+            charged: 0,
             limit,
             order: 0,
             next_anonymous: ANONYMOUS,
@@ -245,6 +268,64 @@ impl Images {
     pub(super) fn limit(&self) -> usize {
         self.limit
     }
+
+    /// Keeps `kept` as `id`, of no placement yet.
+    fn insert(&mut self, id: u32, kept: Kept) {
+        self.bytes += kept.image.data.len();
+        self.charged += charge(kept.image.data.len());
+        self.unplaced.insert(kept.order, id);
+        if let Some(number) = kept.number {
+            self.numbers.insert((number, kept.order), id);
+        }
+        self.kept.insert(id, kept);
+    }
+
+    /// Lets the kept image `id` go, but not its placements.
+    fn remove(&mut self, id: u32) {
+        let Some(kept) = self.kept.remove(&id) else {
+            return;
+        };
+        self.bytes -= kept.image.data.len();
+        self.charged -= charge(kept.image.data.len());
+        self.unplaced.remove(&kept.order);
+        self.placed.remove(&kept.order);
+        if let Some(number) = kept.number {
+            self.numbers.remove(&(number, kept.order));
+        }
+    }
+
+    /// Adds `placement`, which its image counts.
+    fn add_placement(&mut self, placement: Placement) {
+        if let Some(kept) = self.kept.get_mut(&placement.image) {
+            kept.placed += 1;
+            if kept.placed == 1 {
+                self.unplaced.remove(&kept.order);
+                self.placed.insert(kept.order, placement.image);
+            }
+        }
+        self.placements.push(placement);
+    }
+
+    /// Counts a placement of the image `id` gone from the placements.
+    fn removed_placement(&mut self, id: u32) {
+        if let Some(kept) = self.kept.get_mut(&id) {
+            kept.placed = kept.placed.saturating_sub(1);
+            if kept.placed == 0 {
+                self.placed.remove(&kept.order);
+                self.unplaced.insert(kept.order, id);
+            }
+        }
+    }
+
+    /// Whether the image `id` has a placement.
+    fn is_placed(&self, id: u32) -> bool {
+        self.kept.get(&id).is_some_and(|kept| kept.placed > 0)
+    }
+}
+
+/// What an image of `bytes` counts against the images' memory.
+fn charge(bytes: usize) -> usize {
+    bytes.max(LEAST_CHARGE)
 }
 
 /// The bytes that `text`, base64 of the standard alphabet, stands for, its
@@ -487,28 +568,36 @@ impl Terminal {
         if width == 0
             || height == 0
             || u64::from(width) * u64::from(height) > MOST_PIXELS
-            || data.len() > images.limit
+            || charge(data.len()) > images.limit
         {
             return None;
         }
         let id = match id {
             Some(id) => id,
             None => {
+                // Past the ids that a program's images hold, which fewer
+                // than all keep.
                 let images = &mut self.images;
-                let id = images.next_anonymous;
-                images.next_anonymous = images.next_anonymous.checked_add(1).unwrap_or(ANONYMOUS);
-                id
+                loop {
+                    let id = images.next_anonymous;
+                    images.next_anonymous =
+                        images.next_anonymous.checked_add(1).unwrap_or(ANONYMOUS);
+                    if !images.kept.contains_key(&id) {
+                        break id;
+                    }
+                }
             }
         };
         self.drop_image(id);
-        while self.images.bytes + data.len() > self.images.limit {
+        while self.images.charged + charge(data.len()) > self.images.limit
+            || self.images.kept.len() >= MOST_IMAGES
+        {
             if !self.drop_oldest_image() {
                 return None;
             }
         }
         let images = &mut self.images;
         images.order += 1;
-        images.bytes += data.len();
         let image = Arc::new(Image {
             id,
             format,
@@ -516,13 +605,15 @@ impl Terminal {
             height,
             data: Arc::from(data),
         });
-        images.kept.insert(
+        let order = images.order;
+        images.insert(
             id,
             Kept {
                 image,
-                order: images.order,
+                order,
                 lasting,
                 number: None,
+                placed: 0,
             },
         );
         Some(id)
@@ -536,9 +627,7 @@ impl Terminal {
                 .into_iter()
                 .partition(|placement| placement.image == id);
             images.placements = kept;
-            if let Some(kept) = images.kept.remove(&id) {
-                images.bytes -= kept.image.data.len();
-            }
+            images.remove(id);
             gone
         };
         for placement in gone {
@@ -550,17 +639,11 @@ impl Terminal {
     /// whether there was one.
     fn drop_oldest_image(&mut self) -> bool {
         let images = &self.images;
-        let placed = |id: u32| {
-            images
-                .placements
-                .iter()
-                .any(|placement| placement.image == id)
-        };
         let oldest = images
-            .kept
-            .iter()
-            .min_by_key(|(id, kept)| (placed(**id), kept.order))
-            .map(|(&id, _)| id);
+            .unplaced
+            .first_key_value()
+            .or_else(|| images.placed.first_key_value())
+            .map(|(_, &id)| id);
         match oldest {
             Some(id) => {
                 self.drop_image(id);
@@ -666,10 +749,11 @@ impl Terminal {
         }
         while self.images.placements.len() >= MOST_PLACEMENTS {
             let oldest = self.images.placements.remove(0);
+            self.images.removed_placement(oldest.image);
             self.unpin_cell(&oldest.pin);
             self.drop_unplaced(oldest.image);
         }
-        self.images.placements.push(Placement {
+        self.images.add_placement(Placement {
             image: id,
             number: placing.number,
             pin,
@@ -699,11 +783,7 @@ impl Terminal {
     fn drop_unplaced(&mut self, id: u32) {
         let images = &self.images;
         let lasting = images.kept.get(&id).is_none_or(|kept| kept.lasting);
-        let placed = images
-            .placements
-            .iter()
-            .any(|placement| placement.image == id);
-        if !lasting && !placed {
+        if !lasting && !images.is_placed(id) {
             self.drop_image(id);
         }
     }
@@ -720,6 +800,7 @@ impl Terminal {
             gone
         };
         for placement in gone {
+            self.images.removed_placement(placement.image);
             self.unpin_cell(&placement.pin);
             self.drop_unplaced(placement.image);
         }
@@ -728,19 +809,22 @@ impl Terminal {
     /// Gives the kept image `id` the program's `number`, which finds it
     /// again.
     pub(super) fn number_image(&mut self, id: u32, number: u32) {
-        if let Some(kept) = self.images.kept.get_mut(&id) {
-            kept.number = Some(number);
+        let images = &mut self.images;
+        if let Some(kept) = images.kept.get_mut(&id) {
+            if let Some(old) = kept.number.replace(number) {
+                images.numbers.remove(&(old, kept.order));
+            }
+            images.numbers.insert((number, kept.order), id);
         }
     }
 
     /// The id of the newest kept image of the program's `number`.
     pub(super) fn numbered_image(&self, number: u32) -> Option<u32> {
         self.images
-            .kept
-            .iter()
-            .filter(|(_, kept)| kept.number == Some(number))
-            .max_by_key(|(_, kept)| kept.order)
-            .map(|(&id, _)| id)
+            .numbers
+            .range((number, 0)..=(number, u64::MAX))
+            .next_back()
+            .map(|(_, &id)| id)
     }
 
     /// Whether the terminal keeps the image `id`.
@@ -775,18 +859,15 @@ impl Terminal {
             let lost = self.is_lost(&self.images.placements[at].pin);
             let taken = seen[at].as_ref().is_some_and(&which);
             if lost || (taken && alternate == self.alternate_active) {
-                gone.push(self.images.placements.remove(at));
+                let placement = self.images.placements.remove(at);
+                self.images.removed_placement(placement.image);
+                gone.push(placement);
             }
         }
         for placement in gone {
             self.unpin_cell(&placement.pin);
             if free {
-                let placed = self
-                    .images
-                    .placements
-                    .iter()
-                    .any(|other| other.image == placement.image);
-                if !placed {
+                if !self.images.is_placed(placement.image) {
                     self.drop_image(placement.image);
                 }
             } else {
@@ -855,6 +936,7 @@ impl Terminal {
             .collect();
         for at in lost.into_iter().rev() {
             let placement = self.images.placements.remove(at);
+            self.images.removed_placement(placement.image);
             self.unpin_cell(&placement.pin);
             self.drop_unplaced(placement.image);
         }
@@ -1177,8 +1259,9 @@ mod tests {
     #[test]
     fn the_images_stay_within_their_memory_and_their_pixels() {
         let image = png(10, 10);
-        // Room for two: the third takes the first's place.
-        let (mut terminal, mut parser) = made(20, 6, image.len() * 2);
+        // Room for two, each of the least charge: the third takes the
+        // first's place.
+        let (mut terminal, mut parser) = made(20, 6, LEAST_CHARGE * 2);
         for _ in 0..3 {
             parser.advance(&mut terminal, &file("inline=1", &image));
         }
@@ -1193,6 +1276,43 @@ mod tests {
         let (mut terminal, mut parser) = made(20, 6, 0);
         parser.advance(&mut terminal, &file("inline=1", &png(10, 10)));
         assert_eq!(terminal.kept_images().0.len(), 0);
+    }
+
+    #[test]
+    fn the_images_are_bounded_in_number_and_the_oldest_go_quickly() {
+        let (mut terminal, _) = made(20, 6, IMAGE_MEMORY);
+        let started = std::time::Instant::now();
+        for _ in 0..MOST_IMAGES + 1000 {
+            let kept = terminal.keep_image(None, (ImageFormat::Rgb, 1, 1), vec![0; 3], true);
+            assert!(kept.is_some());
+        }
+        let (ids, bytes) = terminal.kept_images();
+        assert_eq!((ids.len(), bytes), (MOST_IMAGES, MOST_IMAGES * 3));
+        assert!(started.elapsed() < std::time::Duration::from_secs(2));
+        // Each counts the least charge against the memory.
+        let (mut terminal, _) = made(20, 6, 8 * LEAST_CHARGE);
+        for _ in 0..20 {
+            terminal.keep_image(None, (ImageFormat::Rgb, 1, 1), vec![0; 3], true);
+        }
+        assert_eq!(terminal.kept_images().0.len(), 8);
+        // A placed image goes after those of none.
+        let (mut terminal, mut parser) = made(20, 6, 2 * LEAST_CHARGE);
+        parser.advance(&mut terminal, &file("inline=1", &png(10, 10)));
+        let placed = terminal.kept_images().0[0];
+        terminal.keep_image(None, (ImageFormat::Rgb, 1, 1), vec![0; 3], true);
+        terminal.keep_image(None, (ImageFormat::Rgb, 1, 1), vec![0; 3], true);
+        assert!(terminal.kept_images().0.contains(&placed));
+    }
+
+    #[test]
+    fn an_anonymous_image_never_takes_a_program_s_id() {
+        let (mut terminal, _) = made(20, 6, IMAGE_MEMORY);
+        let program =
+            terminal.keep_image(Some(ANONYMOUS), (ImageFormat::Rgb, 1, 1), vec![0; 3], true);
+        let anonymous = terminal.keep_image(None, (ImageFormat::Rgb, 1, 1), vec![0; 3], true);
+        assert_eq!(program, Some(ANONYMOUS));
+        assert_eq!(anonymous, Some(ANONYMOUS + 1));
+        assert_eq!(terminal.kept_images().0.len(), 2);
     }
 
     #[test]

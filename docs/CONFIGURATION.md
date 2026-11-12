@@ -965,8 +965,8 @@ The memory, in MiB, that the inline images of a pane take at most: the pictures 
 |---|---|
 | from `0` to `1024`, whole or not | `64` |
 
-- Past it, the oldest images go, those that show nowhere first.
-- An image counts as its program sent it, as a PNG or a JPEG is compressed; the drawing takes its own memory of the graphics card, for the images that show, made smaller past 4096 pixels a side.
+- Past it, or past 4096 images, the oldest go, those that show nowhere first.
+- An image counts as its program sent it, 1 KiB at least, as a PNG or a JPEG is compressed; the drawing takes its own memory of the graphics card, for the images that show, made smaller past 4096 pixels a side.
 - An image of more than 16 million pixels shows nothing; kitty's images read from files, temporary files or shared memory are refused, as a program's way to read your files through the terminal.
 - `0` shows no image: the programs that ask whether the terminal shows them are told it does not.
 - It applies to the panes that open after the change.

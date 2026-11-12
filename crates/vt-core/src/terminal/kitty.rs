@@ -12,7 +12,7 @@
 //! nothing.
 
 use super::Terminal;
-use super::images::{ImageFormat, Placing, Side, Source, base64, dimensions};
+use super::images::{ImageFormat, MOST_PIXELS, Placing, Side, Source, base64, dimensions};
 use crate::parser::StringEnd;
 
 /// The bytes that the APC strings of a transmission's chunks keep at most,
@@ -42,6 +42,9 @@ struct Control {
     z: i32,
     delete: u8,
     cell: (u32, u32),
+    /// Whether its keys are a chunk's alone, `m` and `q`, which go on with
+    /// a transmission under way.
+    chunk: bool,
 }
 
 impl Default for Control {
@@ -65,6 +68,7 @@ impl Default for Control {
             z: 0,
             delete: b'a',
             cell: (0, 0),
+            chunk: true,
         }
     }
 }
@@ -78,6 +82,9 @@ fn control(text: &[u8]) -> Control {
             continue;
         };
         let (key, value) = (&pair[..at], &pair[at + 1..]);
+        if key != b"m" && key != b"q" {
+            control.chunk = false;
+        }
         let number = || std::str::from_utf8(value).ok()?.parse::<u32>().ok();
         let letter = || (value.len() == 1).then(|| value[0]);
         let unsigned = |field: &mut u32| {
@@ -171,14 +178,18 @@ impl Terminal {
     }
 
     /// A graphics command: its control data, `;`, and its payload in
-    /// base64. A chunk after a first of `m=1` takes that first's keys; the
-    /// last runs the command.
+    /// base64. A chunk after a first of `m=1`, of the keys `m` and `q`
+    /// alone, takes that first's keys; the last runs the command. A command
+    /// of other keys ends the transmission under way, which it drops.
     fn graphics_command(&mut self, command: &[u8]) {
         let (keys, payload) = match command.iter().position(|&byte| byte == b';') {
             Some(at) => (&command[..at], &command[at + 1..]),
             None => (command, &[][..]),
         };
         let keys = control(keys);
+        if !keys.chunk {
+            self.graphics.transmission = None;
+        }
         let limit = self.images.limit();
         let Some(chunk) = base64(payload) else {
             let mut control = self
@@ -225,7 +236,13 @@ impl Terminal {
         match control.action {
             // A terminal of no memory for images tells that it shows none.
             b'q' if self.images.limit() == 0 => Err("ENOSPC:the terminal keeps no images"),
-            b'q' => decoded(control, data, self.images.limit()).map(drop),
+            b'q' => decoded(control, data, self.images.limit()).and_then(|(_, data)| {
+                if data.len().max(super::images::LEAST_CHARGE) > self.images.limit() {
+                    Err("EFBIG:the image is too large")
+                } else {
+                    Ok(())
+                }
+            }),
             b't' | b'T' => {
                 let id = self.transmit(control, data)?;
                 if control.action == b'T' {
@@ -394,30 +411,45 @@ impl Terminal {
 }
 
 /// The format, the size in pixels and the bytes of the image that
-/// `control` transmits as `data`: of the stream alone, inflated by zlib of
-/// `limit` bytes at most where it is compressed; PNG of its header's size,
-/// or pixels of RGB or RGBA of `control`'s, as many bytes as they take.
+/// `control` transmits as `data`: of the stream alone, inflated by zlib,
+/// where it is compressed, of `limit` bytes at most, or of the bytes that
+/// its pixels take; PNG of its header's size, or pixels of RGB or RGBA of
+/// `control`'s, as many bytes as they take; of [`MOST_PIXELS`] at most.
 fn decoded(control: &Control, data: Vec<u8>, limit: usize) -> Result<Decoded, Failure> {
     if control.medium != b'd' {
         return Err("EINVAL:only a transmission in the stream is supported");
     }
+    let (width, height) = (control.width, control.height);
+    let pixels = u64::from(width) * u64::from(height);
+    let depth: u64 = if control.format == 24 { 3 } else { 4 };
+    let raw = matches!(control.format, 24 | 32);
+    if raw && pixels > MOST_PIXELS {
+        return Err("EINVAL:the image has too many pixels");
+    }
     let data = if control.compressed {
-        miniz_oxide::inflate::decompress_to_vec_zlib_with_limit(&data, limit)
-            .map_err(|_| "EINVAL:the zlib data does not inflate within the terminal's memory")?
+        // Of a byte more than its pixels take, which tells too many.
+        let most = if raw {
+            usize::try_from(pixels * depth + 1).map_or(limit, |most| most.min(limit))
+        } else {
+            limit
+        };
+        miniz_oxide::inflate::decompress_to_vec_zlib_with_limit(&data, most)
+            .map_err(|_| "EINVAL:the zlib data does not inflate within the image's size")?
     } else {
         data
     };
     match control.format {
         100 => match dimensions(&data) {
-            Some((ImageFormat::Png, width, height)) => {
+            Some((ImageFormat::Png, width, height))
+                if u64::from(width) * u64::from(height) <= MOST_PIXELS =>
+            {
                 Ok(((ImageFormat::Png, width, height), data))
             }
+            Some((ImageFormat::Png, ..)) => Err("EINVAL:the image has too many pixels"),
             _ => Err("EINVAL:the data is not a PNG"),
         },
         24 | 32 => {
-            let (width, height) = (control.width, control.height);
-            let depth = if control.format == 24 { 3 } else { 4 };
-            let wanted = u64::from(width) * u64::from(height) * depth;
+            let wanted = pixels * depth;
             if width == 0 || height == 0 || wanted != data.len() as u64 {
                 return Err("EINVAL:the pixels do not match their width and height");
             }
@@ -513,6 +545,48 @@ mod tests {
         assert_eq!(
             replies(&mut terminal),
             "\x1b_Gi=9;ENOENT:no such image\x1b\\"
+        );
+    }
+
+    #[test]
+    fn a_command_during_a_transmission_ends_it_and_runs() {
+        let (mut terminal, mut parser) = made();
+        parser.advance(&mut terminal, &command("a=T,f=24,s=1,v=1,i=5,q=2", &[0; 3]));
+        assert_eq!(shown(&mut terminal).len(), 1);
+        // A transmission cut off after its first chunk.
+        parser.advance(&mut terminal, &command("a=t,f=24,s=2,v=1,i=6,m=1", &[0; 3]));
+        // A query names its own image and is answered.
+        parser.advance(&mut terminal, &command("a=q,f=24,s=1,v=1,i=31", &[0; 3]));
+        assert_eq!(replies(&mut terminal), "\x1b_Gi=31;OK\x1b\\");
+        // The next transmission's chunks go on from its own first.
+        parser.advance(&mut terminal, &command("a=t,f=24,s=2,v=1,i=7,m=1", &[0; 3]));
+        parser.advance(&mut terminal, &command("m=1", &[]));
+        parser.advance(&mut terminal, &command("m=0", &[0; 3]));
+        assert_eq!(replies(&mut terminal), "\x1b_Gi=7;OK\x1b\\");
+        // A deletion during a transmission deletes.
+        parser.advance(&mut terminal, &command("a=t,f=24,s=2,v=1,i=8,m=1", &[0; 3]));
+        parser.advance(&mut terminal, b"\x1b_Ga=d,d=A\x1b\\");
+        assert!(shown(&mut terminal).is_empty());
+    }
+
+    #[test]
+    fn an_inflation_stops_at_its_image_s_size_and_a_query_at_its_pixels() {
+        let (mut terminal, mut parser) = made();
+        // 1000 bytes inflated for a pixel of 3.
+        let packed = miniz_oxide::deflate::compress_to_vec_zlib(&[0; 1000], 6);
+        parser.advance(&mut terminal, &command("a=t,f=24,s=1,v=1,o=z,i=2", &packed));
+        assert_eq!(
+            replies(&mut terminal),
+            "\x1b_Gi=2;EINVAL:the zlib data does not inflate within the image's size\x1b\\"
+        );
+        // A query of more pixels than a transmission takes fails as it would.
+        parser.advance(
+            &mut terminal,
+            &command("a=q,f=24,s=5000,v=5000,o=z,i=3", &packed),
+        );
+        assert_eq!(
+            replies(&mut terminal),
+            "\x1b_Gi=3;EINVAL:the image has too many pixels\x1b\\"
         );
     }
 
