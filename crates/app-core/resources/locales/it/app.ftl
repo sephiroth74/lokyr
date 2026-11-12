@@ -80,6 +80,7 @@ permissions-unread = Le decisioni sulle capability dei plugin non si leggono, e 
 # The credits of the About panel, under the version and the copyright: the
 # license, and the links to the source code and to the licenses' notices of
 # the software that Lokyr includes.
+about-site = lokyr.dev
 about-license = Distribuito con licenza MIT.
 about-repository = Codice sorgente su GitHub
 about-licenses = Licenze del software incluso

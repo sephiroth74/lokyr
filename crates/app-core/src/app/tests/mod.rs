@@ -583,7 +583,7 @@ fn the_updates_start_with_the_config_s_checks_and_the_menu_checks_now() {
 }
 
 #[test]
-fn about_opens_the_panel_of_the_license_the_repository_and_the_notices() {
+fn about_opens_the_panel_of_the_site_the_license_the_repository_and_the_notices() {
     let (mut fake, mut app) = started();
     fake.send_app(&mut app, AppEvent::Command(ABOUT.to_owned()));
     let [about] = fake.abouts() else {
@@ -602,11 +602,13 @@ fn about_opens_the_panel_of_the_license_the_repository_and_the_notices() {
     assert_eq!(
         lines,
         [
+            ("lokyr.dev", Some(TargetKind::Url)),
             ("Released under the MIT License.", None),
             ("Source code on GitHub", Some(TargetKind::Url)),
         ]
     );
-    assert_eq!(about.credits[1].link.as_ref().unwrap().location, REPOSITORY);
+    assert_eq!(about.credits[0].link.as_ref().unwrap().location, SITE);
+    assert_eq!(about.credits[2].link.as_ref().unwrap().location, REPOSITORY);
     // In a bundle, the notices of the licenses of what it includes, the
     // directory of its resources, which a click opens.
     let directory = std::env::temp_dir().join(format!("lokyr-about-{}", std::process::id()));
@@ -614,7 +616,7 @@ fn about_opens_the_panel_of_the_license_the_repository_and_the_notices() {
     std::fs::create_dir_all(directory.join("licenses")).unwrap();
     app.environment.resources = Some(directory.clone());
     fake.send_app(&mut app, AppEvent::Command(ABOUT.to_owned()));
-    let licenses = &fake.abouts()[1].credits[2];
+    let licenses = &fake.abouts()[1].credits[3];
     assert_eq!(licenses.text, "Licenses of the included software");
     let target = licenses.link.as_ref().unwrap();
     assert_eq!(target.kind, TargetKind::Directory);

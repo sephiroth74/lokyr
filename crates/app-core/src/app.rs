@@ -112,6 +112,9 @@ const SHOW_TIP: &str = "quick-tips.show";
 /// The repository, whose issues take the reports of problems.
 const REPOSITORY: &str = "https://github.com/sephiroth74/lokyr";
 
+/// The project's site, which the About panel links.
+const SITE: &str = "https://lokyr.dev";
+
 /// The command that shows the performance's panel over the windows, or
 /// hides it.
 const PERFORMANCE: &str = "app.performance";
@@ -1702,10 +1705,15 @@ impl<B: Backend> App<B> {
     }
 
     /// Opens the About panel, the platform's own of the app's version, build
-    /// and copyright, with its credits: the license, the repository, and,
-    /// in a bundle, the notices of the licenses of what it includes.
+    /// and copyright, with its credits: the project's site, the license, the
+    /// repository, and, in a bundle, the notices of the licenses of what it
+    /// includes.
     fn show_about(&mut self, platform: &mut dyn Platform) {
         let mut credits = vec![
+            AboutLine {
+                text: self.texts.text("about-site"),
+                link: platform.resolve_target(SITE).ok(),
+            },
             AboutLine {
                 text: self.texts.text("about-license"),
                 link: None,
