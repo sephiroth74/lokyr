@@ -8,7 +8,7 @@ A ⌘-click on text opens what the text points to: the link that the program gav
 
 - **A program's link**, as GNU's `ls --hyperlink` writes one for each file: its target, whatever its text says.
 - **A URL** of `http`, `https`, `mailto` or `file`, which ends at a space.
-- **A path**: from `/`, from `~`, or from the folder of the program in the pane's foreground, as `ls` lists files. A line and a column after it, as compilers and `grep -n` write them, as `src/main.rs:42:7`, belong to the path. Between quotes, a path that exists can hold spaces, as `git status` and Python write them.
+- **A path**: from `/`, from `~`, or from the folder of the program in the pane's foreground, as `ls` lists files. A line and a column after it, as compilers, tests, `grep -n` and AI agents write them, as `src/main.rs:42:7`, `src/app.ts(42,7)` or `src/main.rs#L42`, are underlined with the path, and open the file at that line in the editor that [`[links] editor`](../CONFIGURATION.md#editor) names, VS Code, Cursor, Zed or Sublime Text among them; `"system"`, by default, opens the file in its application. Between quotes, a path that exists can hold spaces, as `git status` and Python write them.
 
 A URL or a file asks you first, as [`[links]`](../CONFIGURATION.md#links) says, and its checkbox can stop asking; a folder opens in the Finder at once. A program, an application or a script that would run never runs: it shows in the Finder, selected.
 

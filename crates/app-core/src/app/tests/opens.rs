@@ -266,3 +266,53 @@ fn an_ssh_link_runs_ssh_to_its_host_and_a_man_page_s_link_its_page() {
 fn app_of(config: Config, program: Program) -> App {
     app(config, program)
 }
+
+#[test]
+fn a_file_s_line_opens_in_the_config_s_editor_or_as_the_file() {
+    let base = real_directory("editor-line");
+    let file = base.join("My File.rs");
+    std::fs::write(&file, "fn main() {}\n").unwrap();
+    let path = std::fs::canonicalize(&file).unwrap().display().to_string();
+    let with = |editor: &str| {
+        let mut config = Config::default();
+        config.links.files = lokyr_kernel::config::OpenFile::Open;
+        config.links.editor = editor.to_owned().try_into().unwrap();
+        config
+    };
+    // VS Code's address, of the path escaped, the line and the column.
+    let mut fake = Fake::default();
+    let mut app = super::app(with("vscode"), quiet());
+    fake.start(&mut app);
+    app.open_target_at(&mut fake, path.clone(), Some((42, Some(7))));
+    let escaped = path.replace(' ', "%20");
+    assert_eq!(fake.opened(), [format!("vscode://file{escaped}:42:7")]);
+    // Of no column, the first; Sublime Text's of its query.
+    let mut fake = Fake::default();
+    let mut app = super::app(with("sublime"), quiet());
+    fake.start(&mut app);
+    app.open_target_at(&mut fake, path.clone(), Some((3, None)));
+    assert_eq!(
+        fake.opened(),
+        [format!("subl://open?url=file://{escaped}&line=3&column=1")]
+    );
+    // The system's application, of no line; an editor not installed, the
+    // file as the system opens it.
+    let mut fake = Fake::default();
+    let mut app = super::app(with("system"), quiet());
+    fake.start(&mut app);
+    app.open_target_at(&mut fake, path.clone(), Some((42, Some(7))));
+    assert_eq!(fake.opened(), [path.clone()]);
+    let mut fake = Fake::default();
+    fake.leave_unhandled("zed");
+    let mut app = super::app(with("zed"), quiet());
+    fake.start(&mut app);
+    app.open_target_at(&mut fake, path.clone(), Some((42, Some(7))));
+    assert_eq!(fake.opened(), [path.clone()]);
+    // A folder opens as before, whatever the line.
+    let mut fake = Fake::default();
+    let mut app = super::app(with("vscode"), quiet());
+    fake.start(&mut app);
+    let folder = std::fs::canonicalize(&base).unwrap().display().to_string();
+    app.open_target_at(&mut fake, folder.clone(), Some((1, None)));
+    assert_eq!(fake.opened(), [folder]);
+}

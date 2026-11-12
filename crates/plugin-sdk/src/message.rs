@@ -408,6 +408,19 @@ pub enum Request {
     /// Opens a URL, or a path, absolute or from `~`, with the system's
     /// handler, as the user's config says.
     Open(String),
+    /// Opens a file, a path absolute or from `~` or a `file` URL, at its
+    /// `line`, from 1, and `column`, from 1, in the editor that the user's
+    /// config names, of the editor's own address; as [`Request::Open`]
+    /// does where it names none, or the editor does not open.
+    OpenAt {
+        /// The file.
+        target: String,
+        /// Its line, from 1.
+        line: u32,
+        /// Its column, from 1, if one is known.
+        #[serde(default)]
+        column: Option<u32>,
+    },
     /// Whether [`Request::Open`] would open the target.
     Opens(String),
     /// Selects everything of a pane: its scrollback and its screen.
@@ -883,7 +896,7 @@ impl Request {
             Self::Bind(binding) if binding.keys.starts_with(crate::keys::GLOBAL) => {
                 Some(Capability::GlobalHotkey)
             }
-            Self::Open(_) | Self::Opens(_) => Some(Capability::Open),
+            Self::Open(_) | Self::OpenAt { .. } | Self::Opens(_) => Some(Capability::Open),
             Self::Paste { .. } | Self::SendText { .. } => Some(Capability::PtyWrite),
             // The windows, the tabs and the panes, and where the keys go.
             Self::OpenWindow { .. }
@@ -1061,6 +1074,7 @@ impl Request {
             | Self::SetState(_) => Effect::Write,
             Self::RunCommand { .. }
             | Self::Open(_)
+            | Self::OpenAt { .. }
             | Self::SetFontSize(_)
             | Self::OpenWindow { .. }
             | Self::OpenQuickWindow { .. }
@@ -1511,6 +1525,7 @@ impl Request {
             | Self::Undecorate { .. }
             | Self::UnmarkGutter { .. }
             | Self::Open { .. }
+            | Self::OpenAt { .. }
             | Self::SelectAll { .. }
             | Self::ClearScrollback { .. }
             | Self::Clear { .. }

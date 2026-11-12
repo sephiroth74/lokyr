@@ -73,6 +73,7 @@ export type Cx = {
     mark_gutter: (pane: PaneId, row: number, color: { number }) -> (number?, string?, number?),
     unmark_gutter: (pane: PaneId, id: number) -> (true?, string?, number?),
     open: (target: string) -> (true?, string?, number?),
+    open_at: (target: string, line: number, column: number?) -> (true?, string?, number?),
     opens: (target: string) -> (boolean?, string?, number?),
     select_all: (pane: PaneId) -> (true?, string?, number?),
     clear_scrollback: (pane: PaneId) -> (true?, string?, number?),

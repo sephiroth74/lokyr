@@ -134,6 +134,17 @@ pub enum Request {
     SetFont(String),
     /// Open a URL, or an absolute path, with the system's handler.
     Open(String),
+    /// Open the file `target`, an absolute path or a `file` URL, at its
+    /// `line` and `column`, from 1, in the config's editor, or as
+    /// [`Request::Open`] does.
+    OpenAt {
+        /// The file.
+        target: String,
+        /// Its line, from 1.
+        line: u32,
+        /// Its column, from 1, if one is known.
+        column: Option<u32>,
+    },
     /// Ask the user to confirm a paste of `text` into `pane`, whose
     /// program takes its line breaks as Return.
     ConfirmPaste {
@@ -5428,6 +5439,28 @@ impl Host<'_, '_> {
             Asked::Open(target) => Request::Open(
                 opening(&target).map_err(|message| Error::new(Code::Failed, message))?,
             ),
+            Asked::OpenAt {
+                target,
+                line,
+                column,
+            } => {
+                let file = target.starts_with('/')
+                    || target == "~"
+                    || target.starts_with("~/")
+                    || host::file_host(&target).is_some();
+                if !file || line == 0 {
+                    return Err(Error::new(
+                        Code::Failed,
+                        format!("`{target}` at line {line} is no file's line, which counts from 1"),
+                    ));
+                }
+                Request::OpenAt {
+                    target: opening(&target)
+                        .map_err(|message| Error::new(Code::Failed, message))?,
+                    line,
+                    column,
+                }
+            }
             Asked::SetFontSize(size) => {
                 if let Some(size) = size {
                     Size::try_from(f64::from(size))

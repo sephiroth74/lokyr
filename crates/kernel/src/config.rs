@@ -628,6 +628,118 @@ pub struct LinksConfig {
     pub files: OpenFile,
     /// The engine that searches the web.
     pub search_engine: SearchEngine,
+    /// The editor that a file's line opens in.
+    pub editor: Editor,
+}
+
+/// The editor that a path's line, as `src/main.rs:42:7`, opens in, of its
+/// own address: the system's application for the file, of no line, or one
+/// of a name, or an address of one's own.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(try_from = "String", into = "String")]
+pub enum Editor {
+    /// The file's application, as the Finder opens it, at no line.
+    #[default]
+    System,
+    /// An editor of a name, of [`EDITORS`]' place.
+    Named(usize),
+    /// An address of one's own, of a scheme, whose `{path}`, `{line}` and
+    /// `{column}` the file's take.
+    Template(String),
+}
+
+/// The editors of a name, each of its address of the file's `{path}`, its
+/// `{line}` and its `{column}`, as each editor documents it.
+pub const EDITORS: [(&str, &str); 7] = [
+    ("vscode", "vscode://file{path}:{line}:{column}"),
+    (
+        "vscode-insiders",
+        "vscode-insiders://file{path}:{line}:{column}",
+    ),
+    ("cursor", "cursor://file{path}:{line}:{column}"),
+    ("windsurf", "windsurf://file{path}:{line}:{column}"),
+    ("zed", "zed://file{path}:{line}:{column}"),
+    (
+        "sublime",
+        "subl://open?url=file://{path}&line={line}&column={column}",
+    ),
+    (
+        "textmate",
+        "txmt://open?url=file://{path}&line={line}&column={column}",
+    ),
+];
+
+impl Editor {
+    /// The address that opens the file at the absolute `path` at its
+    /// `line` and `column`, from 1, the first column of none; none of the
+    /// system's application. The path's characters but letters, digits,
+    /// `/` and `-._~` are escaped, as a URL's path takes them.
+    pub fn url(&self, path: &str, line: u32, column: Option<u32>) -> Option<String> {
+        let template = match self {
+            Self::System => return None,
+            Self::Named(at) => EDITORS.get(*at)?.1,
+            Self::Template(template) => template.as_str(),
+        };
+        let mut escaped = String::new();
+        for byte in path.bytes() {
+            if byte.is_ascii_alphanumeric() || b"/-._~".contains(&byte) {
+                escaped.push(char::from(byte));
+            } else {
+                escaped.push_str(&format!("%{byte:02X}"));
+            }
+        }
+        Some(
+            template
+                .replace("{path}", &escaped)
+                .replace("{line}", &line.to_string())
+                .replace("{column}", &column.unwrap_or(1).to_string()),
+        )
+    }
+}
+
+impl From<Editor> for String {
+    fn from(editor: Editor) -> Self {
+        match editor {
+            Editor::System => "system".to_owned(),
+            Editor::Named(at) => EDITORS
+                .get(at)
+                .map_or_else(String::new, |(name, _)| (*name).to_owned()),
+            Editor::Template(template) => template,
+        }
+    }
+}
+
+impl TryFrom<String> for Editor {
+    type Error = String;
+
+    fn try_from(text: String) -> Result<Self, Self::Error> {
+        if text == "system" {
+            return Ok(Self::System);
+        }
+        if let Some(at) = EDITORS.iter().position(|(name, _)| *name == text) {
+            return Ok(Self::Named(at));
+        }
+        let scheme = text
+            .split_once(':')
+            .map(|(scheme, _)| scheme)
+            .filter(|scheme| {
+                scheme.starts_with(|c: char| c.is_ascii_alphabetic())
+                    && scheme
+                        .chars()
+                        .all(|c| c.is_ascii_alphanumeric() || "+.-".contains(c))
+            });
+        if scheme.is_some() && text.contains("{path}") && !text.chars().any(char::is_control) {
+            return Ok(Self::Template(text));
+        }
+        let names: Vec<String> = std::iter::once("system")
+            .chain(EDITORS.iter().map(|(name, _)| *name))
+            .map(|name| format!("`\"{name}\"`"))
+            .collect();
+        Err(format!(
+            "`{text}` is no editor: {}, or an address of a scheme that holds `{{path}}`",
+            names.join(", ")
+        ))
+    }
 }
 
 /// The engine that searches the web for a text: one of a name, or a URL
@@ -2174,6 +2286,46 @@ mod tests {
     }
 
     #[test]
+    fn a_file_s_line_opens_in_an_editor_of_a_name_or_an_address_of_one_s_own() {
+        let links = |text: &str| parse(&format!("[links]\n{text}\n")).map(|config| config.links);
+        // The system's application by default, of no address.
+        let system = links("").unwrap().editor;
+        assert_eq!(system, Editor::System);
+        assert_eq!(system.url("/a/b.rs", 4, Some(2)), None);
+        assert_eq!(String::from(system), "system");
+        // Each editor of a name, read and written back.
+        for (name, template) in EDITORS {
+            let editor = links(&format!("editor = \"{name}\"")).unwrap().editor;
+            assert_eq!(String::from(editor.clone()), name);
+            let url = editor.url("/My Files/ß.rs", 12, None).unwrap();
+            assert!(url.contains("/My%20Files/%C3%9F.rs"), "{url}");
+            assert!(url.contains("12"), "{url}");
+            assert_eq!(url.split(':').next(), template.split(':').next());
+        }
+        assert_eq!(
+            links("editor = \"vscode\"")
+                .unwrap()
+                .editor
+                .url("/a/b.rs", 4, Some(2)),
+            Some("vscode://file/a/b.rs:4:2".to_owned())
+        );
+        // An address of one's own, of a scheme and its path.
+        let own = "jetbrains://idea/navigate?path={path}&line={line}";
+        let read = links(&format!("editor = \"{own}\"")).unwrap().editor;
+        assert_eq!(
+            read.url("/x.rs", 7, None),
+            Some("jetbrains://idea/navigate?path=/x.rs&line=7".to_owned())
+        );
+        assert_eq!(String::from(read), own);
+        // Of no path, of no scheme, and another word.
+        for wrong in ["vscode://file", "{path}:{line}", "notepad"] {
+            let (at, message) = error(&format!("[links]\neditor = \"{wrong}\"\n"));
+            assert_eq!(at.map(|(line, _)| line), Some(2));
+            assert!(message.contains("is no editor"), "{message}");
+        }
+    }
+
+    #[test]
     fn an_empty_file_is_the_defaults() {
         assert_eq!(parse(""), Ok(Config::default()));
         assert_eq!(parse("# nothing\n\n[font]\n"), Ok(Config::default()));
@@ -3004,7 +3156,10 @@ long-command = 0
             ["programs", "done-after", "notify", "dock-badge"]
         );
         assert_eq!(keys::<ThemeConfig>(), ["light", "dark", "minimum-contrast"]);
-        assert_eq!(keys::<LinksConfig>(), ["urls", "files", "search-engine"]);
+        assert_eq!(
+            keys::<LinksConfig>(),
+            ["urls", "files", "search-engine", "editor"]
+        );
         assert_eq!(
             keys::<ScrollbackConfig>(),
             ["scroll-on-output", "limit", "budget"]

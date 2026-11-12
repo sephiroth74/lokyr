@@ -902,6 +902,9 @@ type Cx = {
     open: (target: string) -> (boolean, Error?),
     -- Whether `open` would open `target`: a URL of its schemes, or a path that is there.
     opens: (target: string) -> (boolean, Error?),
+    -- Opens the file `target`, a path or a `file` URL, at its `line` and `column`, from 1, in the editor that the user's
+    -- `[links] editor` names, of the editor's address, or as `open` does where it names none; of `open`.
+    open_at: (target: string, line: number, column: number?) -> (boolean, Error?),
     -- Require `clipboard-read` and `clipboard-write`.
     clipboard_text: () -> (string?, Error?),
     set_clipboard_text: (text: string) -> (boolean, Error?),

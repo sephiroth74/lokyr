@@ -3419,6 +3419,10 @@ impl Calling<'_> {
                 opening(target).map_err(|message| Error::new(Code::Failed, message))?;
                 Response::Done
             }
+            Request::OpenAt { target, line, .. } => {
+                opening_at(target, *line).map_err(|message| Error::new(Code::Failed, message))?;
+                Response::Done
+            }
             Request::NewTab {
                 window, directory, ..
             } => {
@@ -3746,6 +3750,21 @@ fn opening(target: &str) -> Result<(), String> {
             "`{target}` is neither a URL nor a path that is absolute or from `~`"
         )),
     }
+}
+
+/// Whether a plugin may open `target` at `line`, as the app's host checks
+/// it: a file of this machine, a path or a `file` URL, at a line from 1.
+fn opening_at(target: &str, line: u32) -> Result<(), String> {
+    let file = target.starts_with('/')
+        || target == "~"
+        || target.starts_with("~/")
+        || crate::host::file_host(target).is_some();
+    if !file || line == 0 {
+        return Err(format!(
+            "`{target}` at line {line} is no file's line, which counts from 1"
+        ));
+    }
+    opening(target)
 }
 
 /// `tree` as text: a line of each node, two spaces deeper for each level,

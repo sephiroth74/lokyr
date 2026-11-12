@@ -20,7 +20,7 @@ use lokyr_plugin_sdk::host::{DecorationLook, PaneId, Underline, file_host};
 use lokyr_plugin_sdk::message::{Event, POINTER};
 use lokyr_plugin_sdk::plugin::{Cx, Plugin};
 
-pub use scan::{Found, find};
+pub use scan::{Found, Place, find};
 
 lokyr_plugin_sdk::export_plugin!(Links);
 
@@ -63,6 +63,10 @@ const MOST_LINK_CELLS: usize = 512;
 /// The cells of a link's text, its first and its last, each by its column
 /// and its row's number.
 type Span = ((u16, i64), (u16, i64));
+
+/// What a click could open: its target, the cells of its text where the
+/// line holds it, and the line and the column after a path.
+type Candidate = (String, Option<Span>, Option<Place>);
 
 /// The plugin of the links, and the link that it underlines, while
 /// Command is held over it: its pane, its cells and its decoration.
@@ -136,8 +140,10 @@ impl Plugin for Links {
 
     fn on_command(&mut self, cx: &mut Cx<'_>, name: &str, args: Args) -> Result<(), Error> {
         match name {
+            // A path's line opens in the editor at it.
             OPEN => match target(cx, &args)? {
-                Some(target) => cx.open(&target),
+                Some((target, Some(place))) => cx.open_at(&target, place.line, place.column),
+                Some((target, None)) => cx.open(&target),
                 None => Ok(()),
             },
             COPY => match opening(cx, &args)? {
@@ -176,10 +182,10 @@ impl Plugin for Links {
 
 /// What a click on the cell of `args`' `column` and `row` opens, in the
 /// focused pane: the cell's link, or the URL or the path around it, with
-/// the working directory before a relative one; of the text between quotes
-/// and the word around it, the first that is there, else the word's;
-/// `None` for nothing.
-fn target(cx: &mut Cx<'_>, args: &Args) -> Result<Option<String>, Error> {
+/// the working directory before a relative one, and the line and the
+/// column after a path; of the text between quotes and the word around
+/// it, the first that is there, else the word's; `None` for nothing.
+fn target(cx: &mut Cx<'_>, args: &Args) -> Result<Option<(String, Option<Place>)>, Error> {
     // The registry checked that both are there, whole numbers; a row that
     // the pane no longer holds finds nothing.
     let number = |name| match args.get(name) {
@@ -197,18 +203,18 @@ fn target(cx: &mut Cx<'_>, args: &Args) -> Result<Option<String>, Error> {
     // An OSC 8 link, alone; else the word's, the last, which a click tries
     // even when it is not there.
     let last = candidates.pop();
-    for (target, _) in candidates {
+    for (target, _, place) in candidates {
         if cx.opens(&target).unwrap_or(false) {
-            return Ok(Some(target));
+            return Ok(Some((target, place)));
         }
     }
-    Ok(last.map(|(target, _)| target))
+    Ok(last.map(|(target, _, place)| (target, place)))
 }
 
 /// What the cell of `args` holds that opens, as [`target`] finds it, if
 /// it opens.
 fn opening(cx: &mut Cx<'_>, args: &Args) -> Result<Option<String>, Error> {
-    let target = target(cx, args)?;
+    let target = target(cx, args)?.map(|(target, _)| target);
     Ok(target.filter(|target| cx.opens(target).unwrap_or(false)))
 }
 
@@ -261,7 +267,7 @@ fn decoded(text: &str) -> Option<String> {
 /// The link that the cell `at` of `pane` holds and that opens, which
 /// Command underlines: the cells of its text; `None` for none.
 fn hovered(cx: &mut Cx<'_>, pane: PaneId, at: (u16, i64)) -> Result<Option<Span>, Error> {
-    for (target, span) in candidates(cx, pane, at)? {
+    for (target, span, _) in candidates(cx, pane, at)? {
         if cx.opens(&target)? {
             return Ok(span);
         }
@@ -270,15 +276,12 @@ fn hovered(cx: &mut Cx<'_>, pane: PaneId, at: (u16, i64)) -> Result<Option<Span>
 }
 
 /// What the cell `at` of `pane` holds that a click could open, each with
-/// the cells of its text, where the line holds its text: the cell's OSC 8
-/// link alone; else the URLs and the paths around it, of the text between
-/// quotes and of the word, the word's last, with the working directory
-/// before a relative one.
-fn candidates(
-    cx: &mut Cx<'_>,
-    pane: PaneId,
-    at: (u16, i64),
-) -> Result<Vec<(String, Option<Span>)>, Error> {
+/// the cells of its text, where the line holds its text, its place's too,
+/// and the line and the column after a path: the cell's OSC 8 link alone;
+/// else the URLs and the paths around it, of the text between quotes and
+/// of the word, the word's last, with the working directory before a
+/// relative one.
+fn candidates(cx: &mut Cx<'_>, pane: PaneId, at: (u16, i64)) -> Result<Vec<Candidate>, Error> {
     let (column, row) = at;
     let Some(line) = cx.line_text(pane, row, REACH)? else {
         return Ok(Vec::new());
@@ -294,13 +297,13 @@ fn candidates(
     };
     if let Some(link) = cx.link_at(pane, column, row)? {
         let span = link_span(cx, pane, &line.cells, index, &link)?;
-        return Ok(vec![(link, Some(span))]);
+        return Ok(vec![(link, Some(span), None)]);
     }
     let found = find(&line.text, index);
     let relative = |path: &str| !(path.starts_with('/') || path == "~" || path.starts_with("~/"));
     let directory = if found
         .iter()
-        .any(|found| matches!(found, Found::Path(path) if relative(path)))
+        .any(|found| matches!(found, Found::Path(path, _) if relative(path)))
     {
         cx.working_directory(pane)?
     } else {
@@ -309,24 +312,28 @@ fn candidates(
     Ok(found
         .into_iter()
         .filter_map(|found| {
-            let (text, target) = match found {
-                Found::Url(url) => (url.clone(), url),
-                Found::Path(path) if relative(&path) => {
+            let (text, target, place) = match found {
+                Found::Url(url) => (url.clone(), url, None),
+                Found::Path(path, place) if relative(&path) => {
                     let directory = directory.as_ref()?;
                     let target = normal(&format!("{directory}/{path}"));
-                    (path, target)
+                    (path, target, place)
                 }
-                Found::Path(path) => {
+                Found::Path(path, place) => {
                     let target = normal(&path);
-                    (path, target)
+                    (path, target, place)
                 }
             };
-            // A path of escaped spaces, as a shell's completion writes it,
-            // is found without its backslashes, which the line holds.
-            let span = span_of(&line.text, &text, index)
+            // A path's place underlined with it; a path of escaped spaces,
+            // as a shell's completion writes it, is found without its
+            // backslashes, which the line holds.
+            let placed = place.as_ref().map(|place| format!("{text}{}", place.text));
+            let span = placed
+                .and_then(|placed| span_of(&line.text, &placed, index))
+                .or_else(|| span_of(&line.text, &text, index))
                 .or_else(|| span_of(&line.text, &text.replace(' ', "\\ "), index))
                 .map(|(first, end)| cells_of(&line.cells, first, end));
-            Some((target, span))
+            Some((target, span, place))
         })
         .collect())
 }

@@ -80,12 +80,21 @@ fn applies(host: &mut FakeHost, column: i64, row: i64) -> bool {
     applies
 }
 
-/// The targets that `host`'s plugin opened since the last look.
+/// The targets that `host`'s plugin opened since the last look, a file's
+/// line and column after it, as `path:42:7`.
 fn opened(host: &mut FakeHost) -> Vec<String> {
     host.take_done()
         .into_iter()
         .filter_map(|request| match request {
             Request::Open(target) => Some(target),
+            Request::OpenAt {
+                target,
+                line,
+                column,
+            } => Some(match column {
+                Some(column) => format!("{target}:{line}:{column}"),
+                None => format!("{target}:{line}"),
+            }),
             _ => None,
         })
         .collect()
@@ -349,7 +358,7 @@ fn command_underlines_the_link_under_the_pointer_while_both_stay() {
 }
 
 #[test]
-fn command_underlines_an_osc_8_link_s_cells_and_a_path_without_its_line() {
+fn command_underlines_an_osc_8_link_s_cells_and_a_path_with_its_line() {
     // An OSC 8 link over the whole line, as the host gives one.
     let mut host = linked(focused("the docs"), "https://lokyr.dev/osc8");
     let mut links = Links::default();
@@ -357,12 +366,12 @@ fn command_underlines_an_osc_8_link_s_cells_and_a_path_without_its_line() {
         .unwrap();
     assert_eq!(underlined(&host), [((0, 1), (7, 1))]);
     // A path with its line and column, as `grep -n` writes it: the path
-    // alone.
+    // and its place, which open in the editor at them.
     let mut host = focused("at src/main.rs:42:7 now");
     let mut links = Links::default();
     host.events(&mut links, &[pointer(Some((5, 1)), true)])
         .unwrap();
-    assert_eq!(underlined(&host), [((3, 1), (3, 2))]);
+    assert_eq!(underlined(&host), [((3, 1), (8, 2))]);
 }
 
 #[test]
@@ -407,7 +416,18 @@ fn a_click_opens_the_url_or_the_path_around_it() {
         // The paths: absolute, from `~`, and relative to the directory.
         ("cat /etc/hosts", (6, 1), "/etc/hosts"),
         ("ls ~/notes", (4, 1), "~/notes"),
-        ("--> src/main.rs:42:7", (8, 1), "/work/lokyr/src/main.rs"),
+        // A path's line and column, which open in the editor at them.
+        (
+            "--> src/main.rs:42:7",
+            (8, 1),
+            "/work/lokyr/src/main.rs:42:7",
+        ),
+        (
+            "src/app.ts(12,3): error",
+            (4, 1),
+            "/work/lokyr/src/app.ts:12:3",
+        ),
+        ("see src/main.rs#L9", (6, 1), "/work/lokyr/src/main.rs:9"),
         ("cd ../other/./x", (5, 1), "/work/other/x"),
         ("open .", (5, 1), "/work/lokyr"),
     ] {

@@ -806,6 +806,17 @@ impl<'a> Cx<'a> {
         self.done(Request::Open(target.to_owned()))
     }
 
+    /// Opens the file `target`, a path absolute or from `~` or a `file`
+    /// URL, at its `line` and `column`, from 1, in the editor that the
+    /// user's config names, or as [`open`](Self::open) does.
+    pub fn open_at(&mut self, target: &str, line: u32, column: Option<u32>) -> Result<(), Error> {
+        self.done(Request::OpenAt {
+            target: target.to_owned(),
+            line,
+            column,
+        })
+    }
+
     /// Whether [`open`](Self::open) would open `target`: a URL of its
     /// schemes, or a path, absolute or from `~`, that is there.
     pub fn opens(&mut self, target: &str) -> Result<bool, Error> {

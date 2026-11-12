@@ -5,7 +5,7 @@ use lokyr_platform_core::{
     Dropped, Ime, KeyCode, KeyEvent, KeyState, MenuItem, MenuRole, Modifiers, MouseButton,
     ScrollDelta, Shortcut, ShortcutKey,
 };
-use lokyr_platform_core::{Easing, Point, PointerShape};
+use lokyr_platform_core::{Easing, Point, PointerShape, TargetKind};
 use lokyr_render_core::{Color, CursorShape, Item, Rect};
 use lokyr_ui_core::cursor;
 use lokyr_ui_core::cursor::CursorConfig;

@@ -916,6 +916,38 @@ fn links(world: &World) -> Scenario {
                     Request::WorkingDirectory(pane),
                     Response::Text(Some("/".to_owned())),
                 ),
+                // A file's line, which the app opens in the editor; none of
+                // a URL, nor of a line 0.
+                (
+                    Request::OpenAt {
+                        target: "/".to_owned(),
+                        line: 3,
+                        column: Some(2),
+                    },
+                    Response::Done,
+                ),
+                (
+                    Request::OpenAt {
+                        target: "https://lokyr.dev".to_owned(),
+                        line: 1,
+                        column: None,
+                    },
+                    failed(
+                        Code::Failed,
+                        "`https://lokyr.dev` at line 1 is no file's line, which counts from 1",
+                    ),
+                ),
+                (
+                    Request::OpenAt {
+                        target: "/".to_owned(),
+                        line: 0,
+                        column: None,
+                    },
+                    failed(
+                        Code::Failed,
+                        "`/` at line 0 is no file's line, which counts from 1",
+                    ),
+                ),
                 (
                     Request::Opens("https://lokyr.dev/x".to_owned()),
                     Response::Boolean(true),

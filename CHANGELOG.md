@@ -18,6 +18,8 @@ from 1.0.0; before it, a minor version may change what a previous one did.
 - Lokyr › Install Claude Code Integration… adds hooks to Claude Code's settings, asking of each of its configurations and keeping a copy of the file, so that Claude Code tells its tab exactly when it works, waits for you, is done, or stops on an error, a red mark of its own.
 - Quick tips for the agents, Go to Next Agent, Show Agents and Claude Code's integration.
 
+- ⌘-click on a path's line, as `src/main.rs:42:7` that compilers, tests and AI agents print, opens the file at that line in the editor that `[links] editor` names: VS Code, Cursor, Windsurf, Zed, Sublime Text, TextMate or an address of your own.
+
 ### Changed
 
 - The icon's variant that `[app] icon` chooses stays in the Dock after Lokyr quits, rather than going back to the default.

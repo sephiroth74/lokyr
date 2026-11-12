@@ -30,8 +30,8 @@ use lokyr_kernel::workspace::{
 use lokyr_platform_core::Layer;
 use lokyr_platform_core::{
     AboutLine, AboutPanel, Alert, AlertId, AlertStyle, AppEvent, Appearance, GlobalKey, Handler,
-    Platform, SavePanelId, ScreenPoint, Size, TargetKind, TimerId, WindowAttributes, WindowEvent,
-    WindowId, WindowSize,
+    Platform, SavePanelId, ScreenPoint, Size, TimerId, WindowAttributes, WindowEvent, WindowId,
+    WindowSize,
 };
 use lokyr_pty::Program;
 use lokyr_render_core::{Renderer, Surface as _};
@@ -694,7 +694,7 @@ pub struct App<B: Backend> {
     /// The links that the user is asked about before they open, by their
     /// alerts: the window that the question is on, the URL or the path,
     /// and what it is.
-    open_asks: BTreeMap<AlertId, (Option<WindowId>, (String, TargetKind))>,
+    open_asks: BTreeMap<AlertId, (Option<WindowId>, asks::Asked)>,
     /// The themes' files that the user is asked to install, by their
     /// alerts.
     theme_asks: BTreeMap<AlertId, installs::ThemeInstall>,
@@ -3032,6 +3032,11 @@ impl<B: Backend> App<B> {
                 Request::SetFont(family) => self.set_font(platform, &family),
                 Request::ConfirmPaste { pane, text } => self.ask_paste(platform, pane, text),
                 Request::Open(target) => self.open_target(platform, target),
+                Request::OpenAt {
+                    target,
+                    line,
+                    column,
+                } => self.open_target_at(platform, target, Some((line, column))),
                 // A plugin's panel over its window; one that its plugin
                 // closed, the plugins' host forgot already.
                 Request::OpenPanel {

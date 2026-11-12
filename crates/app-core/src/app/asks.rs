@@ -10,12 +10,20 @@ use lokyr_kernel::plugins::Closing;
 use lokyr_kernel::workspace::{self, Pane, PaneId};
 use lokyr_kernel::{config, paste};
 use lokyr_platform_core::{
-    Alert, AlertId, AlertStyle, Platform, SavePanelId, TargetKind, WindowId,
+    Alert, AlertId, AlertStyle, Platform, SavePanelId, Target, TargetKind, WindowId,
 };
 use lokyr_vt_core::terminal::ClipboardRequest;
 
 use super::{App, PREVIEW};
 use crate::drawing::Backend;
+
+/// The line and the column, from 1, at which a file opens in the config's
+/// editor.
+pub(super) type Place = (u32, Option<u32>);
+
+/// What a question before an opening asks of: the target, what it is, and
+/// the place at which a file opens.
+pub(super) type Asked = (String, TargetKind, Option<Place>);
 
 /// A save that a plugin asked, whose panel shows: the window of the
 /// workspace that shows it, the plugin, the question's id and the file's
@@ -276,6 +284,18 @@ impl<B: Backend> App<B> {
     /// directory opens, and a program shows in the file manager, never
     /// running.
     pub(super) fn open_target(&mut self, platform: &mut dyn Platform, target: String) {
+        self.open_target_at(platform, target, None);
+    }
+
+    /// Opens `target` as [`open_target`](Self::open_target) does, a file
+    /// that opens at `place`, its line and column, in the config's editor,
+    /// where it names one.
+    pub(super) fn open_target_at(
+        &mut self,
+        platform: &mut dyn Platform,
+        target: String,
+        place: Option<Place>,
+    ) {
         let resolved = match platform.resolve_target(&target) {
             Ok(resolved) => resolved,
             Err(error) => {
@@ -285,11 +305,11 @@ impl<B: Backend> App<B> {
         };
         let done = match opening(resolved.kind, self.links()) {
             Opening::Ask => {
-                self.ask_open(platform, target, resolved.kind);
+                self.ask_open(platform, target, resolved.kind, place);
                 return;
             }
             Opening::Reveal => platform.reveal(&resolved),
-            Opening::Open => platform.open(&resolved),
+            Opening::Open => self.open_resolved(platform, &resolved, place),
         };
         if let Err(error) = done {
             eprintln!("lokyr: {error}");
@@ -309,7 +329,13 @@ impl<B: Backend> App<B> {
     /// Asks the user whether to open `target`, a URL or a file, of `kind`,
     /// on the window that the commands run in, or the one that has the
     /// focus: a file can show in the file manager instead.
-    fn ask_open(&mut self, platform: &mut dyn Platform, target: String, kind: TargetKind) {
+    fn ask_open(
+        &mut self,
+        platform: &mut dyn Platform,
+        target: String,
+        kind: TargetKind,
+        place: Option<Place>,
+    ) {
         let file = kind == TargetKind::File;
         let (message, dont_ask) = if file {
             ("open-file-message", "open-file-dont-ask")
@@ -331,7 +357,8 @@ impl<B: Backend> App<B> {
         };
         let window = self.acting.or_else(|| platform.focused_window());
         let alert = platform.show_alert(window, &alert);
-        self.open_asks.insert(alert, (window, (target, kind)));
+        self.open_asks
+            .insert(alert, (window, (target, kind, place)));
     }
 
     /// The user answered the question before opening `target`, of `kind`,
@@ -343,7 +370,7 @@ impl<B: Backend> App<B> {
     fn answer_open(
         &mut self,
         platform: &mut dyn Platform,
-        (target, kind): (String, TargetKind),
+        (target, kind, place): Asked,
         button: usize,
         suppressed: bool,
     ) {
@@ -357,7 +384,7 @@ impl<B: Backend> App<B> {
             if resolved.kind == TargetKind::Program || chosen == Chosen::File(OpenFile::Reveal) {
                 platform.reveal(&resolved)
             } else {
-                platform.open(&resolved)
+                self.open_resolved(platform, &resolved, place)
             }
         });
         if let Err(error) = done {
@@ -366,6 +393,37 @@ impl<B: Backend> App<B> {
         if suppressed {
             self.remember_opening(chosen);
         }
+    }
+
+    /// Opens `resolved`: a file of a `place` in the config's editor, of its
+    /// address, where it names one, and as the system opens it where it
+    /// names none or the editor does not open, as one not installed; the
+    /// rest as the system opens it.
+    fn open_resolved(
+        &mut self,
+        platform: &mut dyn Platform,
+        resolved: &Target,
+        place: Option<Place>,
+    ) -> Result<(), lokyr_platform_core::Error> {
+        let address = place
+            .filter(|_| resolved.kind == TargetKind::File)
+            .and_then(|(line, column)| {
+                self.config
+                    .links
+                    .editor
+                    .url(&resolved.location, line, column)
+            });
+        if let Some(address) = address {
+            let editor = Target {
+                kind: TargetKind::Url,
+                location: address,
+            };
+            match platform.open(&editor) {
+                Ok(()) => return Ok(()),
+                Err(error) => eprintln!("lokyr: the editor did not open: {error}"),
+            }
+        }
+        platform.open(resolved)
     }
 
     /// Keeps `chosen`, what links do, as the user answered without wanting

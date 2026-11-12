@@ -257,6 +257,9 @@ pub struct Fake {
     /// The URLs and the paths that the app opened, and those that it
     /// showed in the file manager, from the first.
     opened: Vec<String>,
+    /// The URLs' schemes of no application, whose opening fails, as of an
+    /// editor not installed.
+    unhandled: Vec<String>,
     edited: Vec<PathBuf>,
     /// Why the text editor opens nothing, as the next open fails.
     editor_fails: Option<String>,
@@ -342,6 +345,7 @@ impl Fake {
             notifications: Vec::new(),
             focus_requests: Vec::new(),
             opened: Vec::new(),
+            unhandled: Vec::new(),
             edited: Vec::new(),
             editor_fails: None,
             secure_input: (false, 0),
@@ -770,6 +774,12 @@ impl Fake {
     /// targets' locations tell them.
     pub fn opened(&self) -> &[String] {
         &self.opened
+    }
+
+    /// Has no application open the URLs of `scheme`, as of an editor that
+    /// is not installed: their opening fails.
+    pub fn leave_unhandled(&mut self, scheme: &str) {
+        self.unhandled.push(scheme.to_owned());
     }
 
     /// The paths that the app showed in the file manager, from the first,
@@ -1552,6 +1562,17 @@ impl Platform for Fake {
             return Err(Error::Open(
                 target.location.clone(),
                 "it would run".to_owned(),
+            ));
+        }
+        if target.kind == TargetKind::Url
+            && target
+                .location
+                .split_once(':')
+                .is_some_and(|(scheme, _)| self.unhandled.iter().any(|kept| kept == scheme))
+        {
+            return Err(Error::Open(
+                target.location.clone(),
+                "no application opens it".to_owned(),
             ));
         }
         self.opened.push(target.location.clone());
