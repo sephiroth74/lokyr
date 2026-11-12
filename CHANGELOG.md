@@ -22,6 +22,8 @@ from 1.0.0; before it, a minor version may change what a previous one did.
 
 - Edit › Copy Command Output, ⌥⇧⌘C, and Select Command Output, ⇧⌘A, copy or select the output of the last command, or, from the pane's context menu, of the command under the pointer, without its prompt and its command line.
 
+- Inline images: programs show pictures in the terminal, as `imgcat` sends them (iTerm2's protocol) and as `kitten icat`, `chafa`, `timg` and file managers' previews send them (kitty's graphics protocol, images sent in the output itself); the images scroll with their lines and stay within 64 MiB of memory.
+
 ### Changed
 
 - The icon's variant that `[app] icon` chooses stays in the Dock after Lokyr quits, rather than going back to the default.

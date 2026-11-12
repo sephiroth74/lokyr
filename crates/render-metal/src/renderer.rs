@@ -452,6 +452,70 @@ impl Renderer for MetalRenderer {
         Ok(Some(PictureId(self.last_picture)))
     }
 
+    /// Uploads the pixels into a texture of its own, BGRA as the pictures'
+    /// are, of its smaller copies, which the GPU makes after it.
+    fn picture_of_pixels(
+        &mut self,
+        pixels: &[u8],
+        width: u32,
+        height: u32,
+    ) -> Result<Option<PictureId>, Error> {
+        let (width, height) = (width as usize, height as usize);
+        if width == 0 || height == 0 || pixels.len() != width * height * 4 {
+            return Ok(None);
+        }
+        // SAFETY: a two-dimensional texture of a valid format and size.
+        let descriptor = unsafe {
+            MTLTextureDescriptor::texture2DDescriptorWithPixelFormat_width_height_mipmapped(
+                MTLPixelFormat::BGRA8Unorm,
+                width,
+                height,
+                true,
+            )
+        };
+        descriptor.setUsage(MTLTextureUsage::ShaderRead);
+        descriptor.setStorageMode(MTLStorageMode::Shared);
+        let texture = self
+            .device
+            .newTextureWithDescriptor(&descriptor)
+            .ok_or(Error::Device("texture"))?;
+        let mut bgra = pixels.to_vec();
+        for pixel in bgra.as_chunks_mut::<4>().0 {
+            pixel.swap(0, 2);
+        }
+        let region = MTLRegion {
+            origin: MTLOrigin { x: 0, y: 0, z: 0 },
+            size: MTLSize {
+                width,
+                height,
+                depth: 1,
+            },
+        };
+        // SAFETY: the pixels of the whole region, four bytes each, a row of
+        // `width` after the other.
+        unsafe {
+            texture.replaceRegion_mipmapLevel_withBytes_bytesPerRow(
+                region,
+                0,
+                NonNull::new_unchecked(bgra.as_mut_ptr().cast()),
+                width * 4,
+            );
+        }
+        let commands = self
+            .queue
+            .commandBuffer()
+            .ok_or(Error::Device("command buffer"))?;
+        let blit = commands
+            .blitCommandEncoder()
+            .ok_or(Error::Device("blit command encoder"))?;
+        blit.generateMipmapsForTexture(&texture);
+        blit.endEncoding();
+        commands.commit();
+        self.last_picture += 1;
+        self.held.insert(self.last_picture, texture);
+        Ok(Some(PictureId(self.last_picture)))
+    }
+
     /// The frames that draw it keep its texture until the GPU is done.
     fn drop_picture(&mut self, picture: PictureId) {
         self.held.remove(&picture.0);

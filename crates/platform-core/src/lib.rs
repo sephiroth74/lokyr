@@ -367,6 +367,19 @@ pub enum TargetKind {
     Program,
 }
 
+/// The pixels of a decoded image, as [`Platform::decode_image`] gives
+/// them.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Pixels {
+    /// Its width.
+    pub width: u32,
+    /// Its height.
+    pub height: u32,
+    /// Its pixels, RGBA, premultiplied, a row after the other from the
+    /// top.
+    pub rgba: Vec<u8>,
+}
+
 /// A target that opens, as [`Platform::resolve_target`] tells it: what it
 /// is, by which the app decides what to do, and where it leads, which is
 /// what opens.
@@ -849,6 +862,15 @@ pub trait Platform {
     /// platform's own, of the application's name, icon, version, build and
     /// copyright, with `about`'s credits.
     fn show_about(&mut self, about: &AboutPanel);
+
+    /// The pixels of the image that `data` encodes, PNG, JPEG or GIF, its
+    /// first frame: RGBA, 8 bits a component in sRGB, premultiplied by
+    /// their opacity, a row after the other from the top; none of data that
+    /// does not decode, or of a platform that decodes none.
+    fn decode_image(&self, data: &[u8]) -> Option<Pixels> {
+        let _ = data;
+        None
+    }
 
     /// Shows the image of the file at `icon` as the application's icon
     /// while it runs, where the system shows running applications, as the

@@ -65,6 +65,7 @@ pub(crate) mod dividers;
 mod folders;
 pub(crate) mod frame;
 pub(crate) mod images;
+mod inline_images;
 mod input;
 mod installed;
 mod installs;
@@ -568,6 +569,8 @@ pub struct App<B: Backend> {
     /// Where the command line tools' links go, and where their binaries
     /// are.
     tools_places: tools::Places,
+    /// The pictures of the panes' inline images.
+    inline_images: inline_images::InlineImages,
     /// The home whose Claude Code's settings take the hooks; the user's
     /// where none.
     claude_home: Option<PathBuf>,
@@ -917,6 +920,7 @@ impl<B: Backend> App<B> {
             script_asks: BTreeMap::new(),
             tools_ask: None,
             tools_places: tools::Places::default(),
+            inline_images: inline_images::InlineImages::default(),
             claude_home: None,
             claude_install: None,
             told_timer: None,

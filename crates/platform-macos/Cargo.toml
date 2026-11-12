@@ -23,6 +23,7 @@ objc2-app-kit = { workspace = true, features = [
     "std",
     "block2",
     "objc2-core-foundation",
+    "objc2-core-graphics",
     "objc2-quartz-core",
     "objc2-uniform-type-identifiers",
     "NSAccessibility",
@@ -44,7 +45,9 @@ objc2-app-kit = { workspace = true, features = [
     "NSFontManager",
     "NSGraphics",
     "NSGraphicsContext",
+    "NSBitmapImageRep",
     "NSImage",
+    "NSImageRep",
     "NSMenu",
     "NSMenuItem",
     "NSDragging",
@@ -84,7 +87,15 @@ objc2-quartz-core = { workspace = true, features = [
     "CAShapeLayer",
     "CATransaction",
 ] }
-objc2-core-graphics = { workspace = true, features = ["std", "CGColor", "CGPath"] }
+objc2-core-graphics = { workspace = true, features = [
+    "std",
+    "CGBitmapContext",
+    "CGColor",
+    "CGColorSpace",
+    "CGContext",
+    "CGImage",
+    "CGPath",
+] }
 objc2-foundation = { workspace = true, features = [
     "std",
     "block2",

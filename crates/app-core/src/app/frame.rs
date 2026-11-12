@@ -992,8 +992,38 @@ impl<B: Backend> App<B> {
             .flatten()
             .into_iter()
             .collect();
+        // The panes' inline images, under their text where their z is
+        // negative, over it otherwise, each within its pane.
+        let mut over_text = Vec::new();
+        {
+            let renderer = &mut drawing.renderer;
+            let cell_size = (cell.width, cell.height);
+            let shown = std::iter::once((snapshot, (x, y), (grid.columns, grid.rows))).chain(
+                others.iter().map(|(pane, corner)| {
+                    let size = pane.grid();
+                    (pane.snapshot(), *corner, (size.columns, size.rows))
+                }),
+            );
+            for (snapshot, corner, size) in shown {
+                let (under, over) = self.inline_images.items(
+                    renderer,
+                    &*platform,
+                    snapshot.images(),
+                    super::inline_images::Grid {
+                        corner,
+                        cell: cell_size,
+                        size,
+                    },
+                    now,
+                );
+                items.extend(under);
+                over_text.extend(over);
+            }
+            self.inline_images.let_go(renderer, now);
+        }
         items.push(Item::Cells(batch));
         items.extend(other_batches.into_iter().map(Item::Cells));
+        items.extend(over_text);
         let bars = super::scrollbars::settle(
             &self.workspace,
             state,

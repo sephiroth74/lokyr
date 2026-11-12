@@ -554,6 +554,22 @@ pub trait Renderer {
         Ok(None)
     }
 
+    /// Makes a picture of `pixels`, `width` by `height`: RGBA, 8 bits a
+    /// component in sRGB, premultiplied by their opacity, a row after the
+    /// other from the top, of its smaller copies, which lists draw as
+    /// [`Item::Picture`] until [`Renderer::drop_picture`] lets it go, as an
+    /// image that a program shows in its cells; `None` for a backend that
+    /// keeps none, or pixels that are not `width` by `height`.
+    fn picture_of_pixels(
+        &mut self,
+        pixels: &[u8],
+        width: u32,
+        height: u32,
+    ) -> Result<Option<PictureId>, Self::Error> {
+        let _ = (pixels, width, height);
+        Ok(None)
+    }
+
     /// Lets `picture` go, once the frames that draw it are drawn.
     fn drop_picture(&mut self, picture: PictureId) {
         let _ = picture;

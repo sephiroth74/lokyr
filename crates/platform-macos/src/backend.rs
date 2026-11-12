@@ -1064,6 +1064,10 @@ impl Platform for Backend {
         }
     }
 
+    fn decode_image(&self, data: &[u8]) -> Option<lokyr_platform_core::Pixels> {
+        decoded(data)
+    }
+
     fn set_app_icon(&mut self, icon: Option<&Path>) -> Result<(), Error> {
         let image = match icon {
             Some(path) => {
@@ -1301,4 +1305,54 @@ fn keep_dock_tile_icon(icon: Option<&Path>) {
             true,
         );
     }
+}
+
+/// The most pixels of an image that the platform decodes.
+const MOST_DECODED: usize = 16_000_000;
+
+/// The pixels of the image that `data` encodes, PNG, JPEG or GIF of its
+/// first frame, as AppKit decodes it, drawn into a bitmap of sRGB of
+/// premultiplied RGBA; none of data that does not decode, or of an image
+/// of more pixels than [`MOST_DECODED`].
+fn decoded(data: &[u8]) -> Option<lokyr_platform_core::Pixels> {
+    use objc2_core_foundation::{CGPoint, CGRect, CGSize};
+    use objc2_core_graphics::{
+        CGBitmapContextCreate, CGColorSpace, CGContext, CGImage, CGImageAlphaInfo,
+        CGImageByteOrderInfo, kCGColorSpaceSRGB,
+    };
+    let data = NSData::with_bytes(data);
+    let rep = objc2_app_kit::NSBitmapImageRep::imageRepWithData(&data)?;
+    let image = rep.CGImage()?;
+    let (width, height) = (CGImage::width(Some(&image)), CGImage::height(Some(&image)));
+    if width == 0 || height == 0 || width.saturating_mul(height) > MOST_DECODED {
+        return None;
+    }
+    let mut rgba = vec![0_u8; width * height * 4];
+    // SAFETY: the framework's constant, a name that it keeps.
+    let space = CGColorSpace::with_name(Some(unsafe { kCGColorSpaceSRGB }))?;
+    let info = CGImageAlphaInfo::PremultipliedLast.0 | CGImageByteOrderInfo::Order32Big.0;
+    // SAFETY: the buffer holds `height` rows of `width` pixels of four
+    // bytes, which the context writes while it lives, within this function.
+    let context = unsafe {
+        CGBitmapContextCreate(
+            rgba.as_mut_ptr().cast(),
+            width,
+            height,
+            8,
+            width * 4,
+            Some(&space),
+            info,
+        )
+    }?;
+    let whole = CGRect::new(
+        CGPoint::new(0.0, 0.0),
+        CGSize::new(width as f64, height as f64),
+    );
+    CGContext::draw_image(Some(&context), whole, Some(&image));
+    drop(context);
+    Some(lokyr_platform_core::Pixels {
+        width: u32::try_from(width).ok()?,
+        height: u32::try_from(height).ok()?,
+        rgba,
+    })
 }

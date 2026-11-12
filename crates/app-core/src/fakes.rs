@@ -82,6 +82,21 @@ impl lokyr_render_core::Renderer for Renderer {
         Ok(Some(lokyr_render_core::PictureId(self.pictures)))
     }
 
+    /// A picture of the pixels, of a number of its own, as many as they
+    /// should be.
+    fn picture_of_pixels(
+        &mut self,
+        pixels: &[u8],
+        width: u32,
+        height: u32,
+    ) -> Result<Option<lokyr_render_core::PictureId>, String> {
+        if pixels.len() != width as usize * height as usize * 4 {
+            return Ok(None);
+        }
+        self.pictures += 1;
+        Ok(Some(lokyr_render_core::PictureId(self.pictures)))
+    }
+
     fn drop_picture(&mut self, picture: lokyr_render_core::PictureId) {
         self.dropped.push(picture);
     }

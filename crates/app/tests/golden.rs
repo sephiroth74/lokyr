@@ -1185,6 +1185,83 @@ fn the_shapes_draw_as_their_golden_image() {
     }
 }
 
+/// An image of 2 by 2 pixels, red, green, blue and white, opaque, and one
+/// of a pixel of white of half an opacity, premultiplied.
+const IMAGE: [u8; 16] = [
+    255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 255, 255,
+];
+const VEIL: [u8; 4] = [128, 128, 128, 128];
+
+#[test]
+fn inline_images_draw_under_the_text_and_over_it_as_their_golden_images() {
+    for scale in [1, 2] {
+        let Some(mut drawing) = Drawing::new(scale as f32) else {
+            return;
+        };
+        let scene = Scene {
+            name: "inline-images",
+            columns: 10,
+            rows: 3,
+            text: " Lokyr\r\n images".to_owned(),
+            cursor: None,
+            selection: None,
+            shapes: false,
+            fade: None,
+            highlights: None,
+        };
+        let origin = (MARGIN as i32, MARGIN as i32);
+        let (batch, background) = drawing.batch(&scene, origin);
+        let (cell_width, cell_height) = (batch.cell_width, batch.cell_height);
+        let under = drawing
+            .renderer
+            .picture_of_pixels(&IMAGE, 2, 2)
+            .unwrap()
+            .expect("a picture");
+        let over = drawing
+            .renderer
+            .picture_of_pixels(&VEIL, 1, 1)
+            .unwrap()
+            .expect("a picture");
+        // The image over the first two rows' first six cells, under the
+        // text; the veil over the last row's last four, over it.
+        let rect = |column: u32, row: u32, columns: u32, rows: u32| lokyr_render_core::Rect {
+            x: origin.0 + (column * cell_width) as i32,
+            y: origin.1 + (row * cell_height) as i32,
+            width: columns * cell_width,
+            height: rows * cell_height,
+        };
+        let width = u32::from(scene.columns) * cell_width + 2 * MARGIN;
+        let height = u32::from(scene.rows) * cell_height + 2 * MARGIN;
+        let list = DisplayList {
+            background,
+            items: vec![
+                Item::Picture {
+                    rect: rect(0, 0, 6, 2),
+                    picture: under,
+                },
+                Item::Cells(batch),
+                Item::Picture {
+                    rect: rect(6, 1, 4, 2),
+                    picture: over,
+                },
+            ],
+            frame: drawing.font.atlas_frame(),
+        };
+        let updates = drawing.font.texture_updates();
+        drawing.renderer.update_textures(&updates).unwrap();
+        let pixels = drawing
+            .renderer
+            .draw_offscreen(&list, width, height)
+            .unwrap();
+        let most = (f64::from(width * height) * SHARE) as usize;
+        compare(
+            &format!("inline-images-{scale}x"),
+            (width, height, &pixels),
+            most,
+        );
+    }
+}
+
 #[test]
 fn a_pane_without_the_keyboard_draws_faded_as_its_golden_image() {
     for scale in [1, 2] {

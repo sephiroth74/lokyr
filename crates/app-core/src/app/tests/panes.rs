@@ -823,3 +823,42 @@ fn a_pane_whose_agent_waits_is_ringed_in_a_tab_of_several() {
     fake.send(&mut app, window, WindowEvent::Frame);
     assert!(!ringed(&app, b));
 }
+
+#[test]
+fn a_program_s_inline_image_draws_under_its_text_within_its_pane() {
+    // A PNG of 20 by 40 pixels, as OSC 1337 sends it, then the line that
+    // the panes wait for.
+    let image = shell(concat!(
+        "printf '\\033]1337;File=inline=1:iVBORw0KGgoAAAANSUhEUgAAABQAAAAoCAYAAAA=\\007'; ",
+        "echo; echo ready-a; read line",
+    ));
+    let (mut fake, mut app, window, a, _) =
+        two_panes_of(Config::default(), image, &echoing("b"), true);
+    fake.send(&mut app, window, WindowEvent::Frame);
+    let state = &app.windows[&window];
+    let room = state
+        .views
+        .iter()
+        .find(|view| view.pane == a)
+        .map(|view| view.rect)
+        .unwrap();
+    let items = &state.shown.as_ref().expect("a frame").items;
+    let picture = items
+        .iter()
+        .position(|item| matches!(item, Item::Picture { .. }))
+        .expect("the image's picture");
+    let cells = items
+        .iter()
+        .position(|item| matches!(item, Item::Cells(_)))
+        .expect("the cells");
+    // Under the text, within a clip of its pane, at its grid's top left.
+    assert!(picture < cells, "{items:?}");
+    assert!(
+        matches!(items[picture - 1], Item::PushClip(clip) if (clip.x, clip.y) == (room.x, room.y))
+    );
+    let Item::Picture { rect, .. } = items[picture] else {
+        unreachable!()
+    };
+    assert_eq!((rect.x, rect.y), (room.x, room.y));
+    assert_eq!(app.inline_images.held(), 1);
+}

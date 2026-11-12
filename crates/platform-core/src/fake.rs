@@ -1471,6 +1471,15 @@ impl Platform for Fake {
     }
 
     /// Fails for a file that does not exist, as a backend fails to read it.
+    /// Two by two opaque white pixels of any data but none.
+    fn decode_image(&self, data: &[u8]) -> Option<crate::Pixels> {
+        (!data.is_empty()).then(|| crate::Pixels {
+            width: 2,
+            height: 2,
+            rgba: vec![255; 16],
+        })
+    }
+
     fn set_app_icon(&mut self, icon: Option<&Path>) -> Result<(), Error> {
         if let Some(path) = icon
             && !path.is_file()
