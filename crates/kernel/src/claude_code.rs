@@ -274,7 +274,7 @@ mod tests {
             .strip_prefix(&format!("\u{1b}]777;notify;{HOOKED}waiting;"))
             .and_then(|rest| rest.strip_suffix('\u{7}'))
             .unwrap();
-        assert!(!body.chars().any(|c| c.is_control()), "{body:?}");
+        assert!(!body.chars().any(char::is_control), "{body:?}");
         // Where jq is, the message's printable rest; where not, none.
         if Path::new("/usr/bin/jq").exists() {
             assert_eq!(body, "ok]52;c;eA== done è");

@@ -33,6 +33,7 @@ use lokyr_plugin_sdk::host as sdk;
 use lokyr_vt_core::page::Rgb;
 use lokyr_vt_core::terminal::{self, ClipboardTarget};
 
+use agent::HOOKED;
 pub use agent::{Agent, AgentSettings, Hooked};
 pub use layout::{Direction, Edge, Layout, Ratio, Side};
 pub use pane::{
@@ -470,7 +471,8 @@ impl Workspace {
         };
         for pane in dropped.layout.panes() {
             self.tab_of.remove(&pane);
-            self.panes.remove(&pane);
+            let gone = self.panes.remove(&pane);
+            self.agent_gone(pane, gone);
             self.waiting.remove(&pane);
             self.changed(WorkspaceEvent::PaneClosed {
                 pane: pane.into(),
@@ -656,7 +658,7 @@ impl Workspace {
             // those of an agent's hooks, which tell its state, the last of
             // them and its message.
             let told = happened.events.iter().rev().find_map(|event| match event {
-                terminal::Event::Notification { title, body } if Hooked::of(title).is_none() => {
+                terminal::Event::Notification { title, body } if !title.starts_with(HOOKED) => {
                     Some(if body.trim().is_empty() { title } else { body })
                 }
                 _ => None,
@@ -737,9 +739,10 @@ impl Workspace {
                             .find(|(ended, _)| *ended == command)
                             .map(|&(_, took)| took),
                     },
-                    // An agent's hooks' notification, which tells its state
-                    // and shows nothing.
-                    terminal::Event::Notification { title, .. } if Hooked::of(&title).is_some() => {
+                    // An agent's hooks' notification, which tells its state,
+                    // or one of a state that this version does not know, and
+                    // shows nothing.
+                    terminal::Event::Notification { title, .. } if title.starts_with(HOOKED) => {
                         continue;
                     }
                     event => Event::Terminal { pane: id, event },
@@ -760,7 +763,10 @@ impl Workspace {
                 if spun || busy {
                     agent.worked(now);
                 }
-                if asked {
+                // An agent whose hooks tell its state asks by them alone:
+                // its bell and plain notifications, as its idle prompt's,
+                // tell nothing, whatever their order in the batch.
+                if asked && hooked.is_none() && !agent.is_hooked() {
                     agent.asked_for_user(told.as_deref());
                 }
                 if let Some((state, message)) = &hooked {
@@ -1325,6 +1331,23 @@ impl Workspace {
         }
     }
 
+    /// Tells that the agent of `pane`, which `gone` held as it closed, is
+    /// gone, if it showed a state, as the Dock's badge counts it.
+    fn agent_gone(&mut self, pane: PaneId, gone: Option<Pane>) {
+        let Some(agent) = gone.and_then(|gone| gone.agent) else {
+            return;
+        };
+        if let Some(before) = agent.state() {
+            self.events.push(Event::Agent {
+                pane,
+                name: agent.name().to_owned(),
+                before: Some(before),
+                now: None,
+                told: false,
+            });
+        }
+    }
+
     /// Takes the agents' `settings`, as the config gives them.
     pub fn set_agent_settings(&mut self, settings: AgentSettings) {
         self.agents = settings;
@@ -1361,7 +1384,8 @@ impl Workspace {
     /// The user typed into `pane`, keys, a text or a paste: what its agent
     /// waited for is answered, and what it did is seen.
     pub fn typed(&mut self, pane: PaneId) {
-        self.change_agent(pane, false, Agent::typed);
+        let now = Instant::now();
+        self.change_agent(pane, false, |agent| agent.typed(now));
     }
 
     /// How many agents wait for the user, of every pane.
@@ -1540,7 +1564,8 @@ impl Workspace {
         let Some(&tab) = self.tab_of.get(&pane) else {
             return false;
         };
-        self.panes.remove(&pane);
+        let gone = self.panes.remove(&pane);
+        self.agent_gone(pane, gone);
         self.waiting.remove(&pane);
         self.changed(WorkspaceEvent::PaneClosed {
             pane: pane.into(),

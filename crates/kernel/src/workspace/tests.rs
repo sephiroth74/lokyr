@@ -1658,9 +1658,70 @@ fn a_tab_shows_its_most_urgent_agent_and_its_done_agents_are_seen_as_it_shows() 
     workspace.activate_tab(tab);
     assert_eq!(state(&workspace, second), None);
     assert_eq!(state(&workspace, first_id), Some(Waiting));
-    // Out of the tab, its agent goes with its pane.
+    // Out of the tab, its agent goes with its pane, told gone, as the
+    // Dock's badge counts it.
+    workspace.take_events();
     assert!(workspace.close_pane(first_id));
     assert_eq!(workspace.tab(tab).unwrap().marks().agent, None);
+    assert!(workspace.take_events().iter().any(|event| matches!(
+        event,
+        Event::Agent { pane, before: Some(Waiting), now: None, .. } if *pane == first_id
+    )));
+    assert_eq!(workspace.agents_waiting(), 0);
+}
+
+#[test]
+fn a_hooked_agent_asks_by_its_hooks_alone_and_an_unknown_hook_shows_nothing() {
+    use sdk::AgentState::{Done, Working};
+    let mut workspace = Workspace::new();
+    let window = workspace.open_window(pane(concat!(
+        r"read line; printf '\033]777;notify;lokyr-agent:working;\007'; read line; ",
+        r"printf '\033]777;notify;lokyr-agent:done;\007'; read line; ",
+        r"printf '\a\033]9;Claude is waiting for your input\007\033]2;asked\007'; read line; ",
+        r"printf '\033]777;notify;lokyr-agent:other;x\007\033]2;told\007'; read line",
+    )));
+    let tab = workspace.window(window).unwrap().active_tab();
+    let id = workspace.tab(tab).unwrap().active_pane();
+    assert!(workspace.set_pane_agent(id, Some("claude")));
+    workspace.typed(id);
+    workspace.pane(id).unwrap().text("go\n");
+    collect_marks(&mut workspace, tab, |marks| marks.agent == Some(Working));
+    workspace.pane(id).unwrap().text("x\n");
+    collect_marks(&mut workspace, tab, |marks| marks.agent == Some(Done));
+    // The events up to the next title's change, of the pane's next line.
+    let until_titled = |workspace: &mut Workspace, line: &str| {
+        workspace.take_events();
+        workspace.pane(id).unwrap().text(line);
+        let start = Instant::now();
+        let mut events = Vec::new();
+        while !events
+            .iter()
+            .any(|event| matches!(event, Event::TitleChanged(pane) if *pane == id))
+        {
+            assert!(start.elapsed() < Duration::from_secs(10), "{events:?}");
+            workspace.collect(&workspace.pane_ids(), Instant::now());
+            events.extend(workspace.take_events());
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        events
+    };
+    // Its idle prompt's bell and notification, later: done still, as its
+    // hooks alone tell its asking.
+    until_titled(&mut workspace, "y\n");
+    assert_eq!(workspace.tab(tab).unwrap().marks().agent, Some(Done));
+    assert_eq!(workspace.agents_waiting(), 0);
+    // A hook of a state that this version does not know: no notification.
+    let events = until_titled(&mut workspace, "z\n");
+    assert!(
+        !events.iter().any(|event| matches!(
+            event,
+            Event::Terminal {
+                event: terminal::Event::Notification { .. },
+                ..
+            }
+        )),
+        "{events:?}"
+    );
 }
 
 #[test]
