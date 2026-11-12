@@ -1310,7 +1310,8 @@ fn keep_dock_tile_icon(icon: Option<&Path>) {
 /// The most pixels of an image that the platform decodes.
 const MOST_DECODED: usize = 16_000_000;
 
-/// The pixels of the image that `data` encodes, PNG, JPEG or GIF of its
+/// The pixels of the image that `data` encodes, PNG, JPEG, GIF, TIFF or
+/// BMP of its
 /// first frame, as AppKit decodes it, drawn into a bitmap of sRGB of
 /// premultiplied RGBA; none of data that does not decode, or of an image
 /// of more pixels than [`MOST_DECODED`].

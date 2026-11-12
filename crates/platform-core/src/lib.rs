@@ -863,7 +863,8 @@ pub trait Platform {
     /// copyright, with `about`'s credits.
     fn show_about(&mut self, about: &AboutPanel);
 
-    /// The pixels of the image that `data` encodes, PNG, JPEG or GIF, its
+    /// The pixels of the image that `data` encodes, PNG, JPEG, GIF, TIFF
+    /// or BMP, its
     /// first frame: RGBA, 8 bits a component in sRGB, premultiplied by
     /// their opacity, a row after the other from the top; none of data that
     /// does not decode, or of a platform that decodes none.

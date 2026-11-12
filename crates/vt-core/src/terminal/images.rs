@@ -49,6 +49,10 @@ pub enum ImageFormat {
     Jpeg,
     /// GIF, its first frame.
     Gif,
+    /// TIFF, its first image, as `chafa` sends iTerm2's images.
+    Tiff,
+    /// BMP.
+    Bmp,
     /// Pixels of four bytes, red, green, blue and alpha, row by row.
     Rgba,
     /// Pixels of three bytes, red, green and blue, row by row.
@@ -299,8 +303,18 @@ fn side(text: &[u8]) -> Option<Side> {
 }
 
 /// The format, the width and the height in pixels of an image of `data`,
-/// as its header tells them: PNG, JPEG or GIF; none of another format.
+/// as its header tells them: PNG, JPEG, GIF, TIFF or BMP; none of another
+/// format.
 pub fn dimensions(data: &[u8]) -> Option<(ImageFormat, u32, u32)> {
+    if let Some(found) = tiff(data) {
+        return Some(found);
+    }
+    if data.starts_with(b"BM") && data.len() >= 26 {
+        let le32 =
+            |at: usize| i32::from_le_bytes([data[at], data[at + 1], data[at + 2], data[at + 3]]);
+        let (width, height) = (le32(18), le32(22).unsigned_abs());
+        return (width > 0).then(|| (ImageFormat::Bmp, width.unsigned_abs(), height));
+    }
     let be16 = |at: usize| {
         Some(u32::from(u16::from_be_bytes([
             *data.get(at)?,
@@ -353,6 +367,57 @@ pub fn dimensions(data: &[u8]) -> Option<(ImageFormat, u32, u32)> {
         }
     }
     None
+}
+
+/// The size of a TIFF of `data`, of its first directory's width and
+/// length, of either byte order; none of another format.
+fn tiff(data: &[u8]) -> Option<(ImageFormat, u32, u32)> {
+    let little = match data.get(..4)? {
+        [b'I', b'I', 42, 0] => true,
+        [b'M', b'M', 0, 42] => false,
+        _ => return None,
+    };
+    let u16_at = |at: usize| -> Option<u32> {
+        let bytes = [*data.get(at)?, *data.get(at + 1)?];
+        Some(u32::from(if little {
+            u16::from_le_bytes(bytes)
+        } else {
+            u16::from_be_bytes(bytes)
+        }))
+    };
+    let u32_at = |at: usize| -> Option<u32> {
+        let bytes = [
+            *data.get(at)?,
+            *data.get(at + 1)?,
+            *data.get(at + 2)?,
+            *data.get(at + 3)?,
+        ];
+        Some(if little {
+            u32::from_le_bytes(bytes)
+        } else {
+            u32::from_be_bytes(bytes)
+        })
+    };
+    let directory = usize::try_from(u32_at(4)?).ok()?;
+    let entries = u16_at(directory)?;
+    let (mut width, mut height) = (None, None);
+    for entry in 0..entries as usize {
+        let at = directory + 2 + entry * 12;
+        let tag = u16_at(at)?;
+        // A SHORT's value in the field's first two bytes, a LONG's in its
+        // four.
+        let value = match u16_at(at + 2)? {
+            3 => u16_at(at + 8)?,
+            4 => u32_at(at + 8)?,
+            _ => continue,
+        };
+        match tag {
+            256 => width = Some(value),
+            257 => height = Some(value),
+            _ => {}
+        }
+    }
+    Some((ImageFormat::Tiff, width?, height?))
 }
 
 impl Terminal {
@@ -982,8 +1047,25 @@ mod tests {
         jpeg.extend(600_u16.to_be_bytes());
         jpeg.extend(800_u16.to_be_bytes());
         assert_eq!(dimensions(&jpeg), Some((ImageFormat::Jpeg, 800, 600)));
+        // A TIFF of either byte order, as `chafa` sends one: a directory of
+        // a SHORT width and a LONG length.
+        let mut tiff = b"II*\0\x08\0\0\0\x02\0".to_vec();
+        tiff.extend([0x00, 0x01, 3, 0, 1, 0, 0, 0, 0x40, 0x01, 0, 0]);
+        tiff.extend([0x01, 0x01, 4, 0, 1, 0, 0, 0, 0xc8, 0, 0, 0]);
+        assert_eq!(dimensions(&tiff), Some((ImageFormat::Tiff, 320, 200)));
+        let mut big = b"MM\0*\0\0\0\x08\0\x02".to_vec();
+        big.extend([0x01, 0x00, 0, 3, 0, 0, 0, 1, 0x01, 0x40, 0, 0]);
+        big.extend([0x01, 0x01, 0, 4, 0, 0, 0, 1, 0, 0, 0, 0xc8]);
+        assert_eq!(dimensions(&big), Some((ImageFormat::Tiff, 320, 200)));
+        // A BMP, top-down of a negative height.
+        let mut bmp = b"BM".to_vec();
+        bmp.extend([0; 16]);
+        bmp.extend(40_i32.to_le_bytes());
+        bmp.extend((-30_i32).to_le_bytes());
+        assert_eq!(dimensions(&bmp), Some((ImageFormat::Bmp, 40, 30)));
         // Another format, a header cut short, and nothing.
         assert_eq!(dimensions(b"BM\0\0"), None);
+        assert_eq!(dimensions(b"II*\0\xff\xff\0\0"), None);
         assert_eq!(dimensions(&png(1, 1)[..18]), None);
         assert_eq!(dimensions(&[0xff, 0xd8, 0xff]), None);
         assert_eq!(dimensions(b""), None);

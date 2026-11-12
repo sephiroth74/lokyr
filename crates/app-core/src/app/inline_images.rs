@@ -192,7 +192,11 @@ fn pixels(
     source: Option<Source>,
 ) -> Option<(Vec<u8>, u32, u32)> {
     let (rgba, width, height) = match image.format {
-        ImageFormat::Png | ImageFormat::Jpeg | ImageFormat::Gif => {
+        ImageFormat::Png
+        | ImageFormat::Jpeg
+        | ImageFormat::Gif
+        | ImageFormat::Tiff
+        | ImageFormat::Bmp => {
             let decoded = platform.decode_image(&image.data)?;
             (decoded.rgba, decoded.width, decoded.height)
         }
