@@ -13,6 +13,7 @@ mod erase;
 mod escape;
 mod events;
 mod gutter;
+mod images;
 mod keyboard;
 mod marks;
 mod matches;
@@ -33,6 +34,10 @@ pub use clipboard::{ClipboardRequest, ClipboardTarget};
 pub use colors::{ColorScheme, Colors, SPECIAL_COLORS};
 pub use decorations::{Decorated, Look, MOST_DECORATIONS};
 pub use gutter::{GutterKind, GutterMark, MOST_GUTTER_MARKS};
+pub use images::{
+    IMAGE_MEMORY, Image, ImageFormat, MOST_PIXELS, MOST_PLACEMENTS, Placed, Placing, Side,
+    dimensions,
+};
 pub use keyboard::KeyboardFlags;
 pub use marks::{CommandMarks, MOST_COMMANDS};
 pub use matches::{Highlighted, MatchCells};
@@ -101,6 +106,10 @@ pub struct Options {
     /// and as a full reset makes it again: off by default, as xterm's
     /// `alternateScroll` is.
     pub alternate_scroll: bool,
+    /// The memory that the inline images that programs send take at most,
+    /// in bytes, past which the oldest go: [`IMAGE_MEMORY`] by default, and
+    /// none for 0, which shows no image.
+    pub image_memory: usize,
 }
 
 impl Default for Options {
@@ -120,6 +129,7 @@ impl Default for Options {
             window_ops: false,
             scroll_on_output: false,
             alternate_scroll: false,
+            image_memory: IMAGE_MEMORY,
         }
     }
 }
@@ -504,6 +514,8 @@ pub struct Terminal {
     gutter: Vec<gutter::Laid>,
     /// The matches of the searches that the embedder keeps, few at once.
     matches: Vec<matches::Matches>,
+    /// The inline images that programs sent, and their placements.
+    images: images::Images,
 }
 
 impl Terminal {
@@ -615,6 +627,7 @@ impl Terminal {
             decorations: Vec::new(),
             gutter: Vec::new(),
             matches: Vec::new(),
+            images: images::Images::new(options.image_memory),
         }
     }
 

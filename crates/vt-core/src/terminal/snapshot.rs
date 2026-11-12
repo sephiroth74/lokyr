@@ -53,6 +53,8 @@ pub struct Snapshot {
     /// Whether a search shows its matches, or its current one, wherever
     /// they are.
     matches_shown: bool,
+    /// The images' placements that the view shows, the lowest first.
+    images: Vec<super::Placed>,
 }
 
 /// The cursor, as a renderer draws it.
@@ -122,6 +124,12 @@ impl Snapshot {
     /// update found them, row by row.
     pub fn decorations(&self) -> &[Decorated] {
         &self.decorations
+    }
+
+    /// The images' placements that the view shows, as the last update
+    /// found them, the lowest first: those under the text before it.
+    pub fn images(&self) -> &[super::Placed] {
+        &self.images
     }
 
     /// The gutter's marks that the view shows, as the last update found
@@ -440,6 +448,7 @@ impl Terminal {
         self.drop_rewritten_matches();
         snapshot.highlights = self.highlighted_view();
         snapshot.matches_shown = self.matches_shown();
+        snapshot.images = self.images_view();
         copied
     }
 }
@@ -490,6 +499,7 @@ pub(super) fn copy_of(terminal: &Terminal) -> Snapshot {
         gutter: Vec::new(),
         highlights: Vec::new(),
         matches_shown: terminal.matches_shown(),
+        images: Vec::new(),
     }
 }
 

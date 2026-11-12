@@ -9,6 +9,14 @@ use super::reference::{CORPUS, PREFIXES, PROBE};
 
 const KUHN: &[u8] = include_bytes!("../../testdata/UTF-8-test.txt");
 
+/// Inline images' sequences, of headers of PNG, GIF and JPEG, which
+/// arbitrary bytes would hardly make.
+const IMAGES: [&[u8]; 3] = [
+    b"\x1b]1337;File=inline=1;width=3;height=2:iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAAA=\x07",
+    b"\x1b]1337;File=inline=1;doNotMoveCursor=1;preserveAspectRatio=0;width=50%;height=40px:R0lGODlhCgAKAA==\x1b\\",
+    b"\x1b]1337;File=name=eA==;size=20;inline=1:/9j/4AAEAAD/wAARCAAKAAw=\x07",
+];
+
 /// Every seed.
 fn seeds() -> Vec<Vec<u8>> {
     let corpus = CORPUS.iter().map(|input| input.to_vec());
@@ -17,7 +25,8 @@ fn seeds() -> Vec<Vec<u8>> {
         .split(|&byte| byte == b'\n')
         .filter(|line| !line.is_ascii())
         .map(<[u8]>::to_vec);
-    corpus.chain(prefixes).chain(kuhn).collect()
+    let images = IMAGES.iter().map(|input| input.to_vec());
+    corpus.chain(prefixes).chain(kuhn).chain(images).collect()
 }
 
 #[test]

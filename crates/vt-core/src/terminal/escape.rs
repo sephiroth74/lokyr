@@ -188,6 +188,7 @@ impl Terminal {
             window_ops: self.window_ops,
             scroll_on_output: self.scroll_on_output,
             alternate_scroll: self.configured_alternate_scroll,
+            image_memory: self.images.limit(),
         };
         let (bells, updates, replies, reply_bytes, cell_size) = (
             self.bells,

@@ -135,6 +135,13 @@ pub struct CellPin {
     alternate: bool,
 }
 
+impl CellPin {
+    /// Whether it is of the alternate screen.
+    pub(super) fn is_alternate(&self) -> bool {
+        self.alternate
+    }
+}
+
 impl Selection {
     /// Where the selection's first and last cells are now, if neither
     /// left the list, and the last does not come before the first, as a

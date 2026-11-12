@@ -43,6 +43,11 @@ impl Terminal {
                 if !selective && !self.alternate_active && !(keep && self.screen_protects()) {
                     self.scroll_into_scrollback();
                 }
+                // The alternate screen, which keeps nothing, loses its
+                // images; the primary's went to the scrollback.
+                if self.alternate_active {
+                    self.drop_alternate_images();
+                }
                 for y in 0..rows {
                     self.erase_in_row(y, 0..cols, keep);
                 }

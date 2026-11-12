@@ -162,6 +162,7 @@ impl Terminal {
                 Some([] | [b';', ..]) => self.report_progress(rest),
                 _ => self.notify(String::new(), text(rest)),
             },
+            b"1337" => self.osc_1337(rest),
             b"777" => {
                 let mut fields = rest.splitn(3, |&byte| byte == b';');
                 if fields.next() == Some(b"notify") {
