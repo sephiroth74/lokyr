@@ -245,6 +245,9 @@ pub(super) struct Images {
     limit: usize,
     order: u64,
     next_anonymous: u32,
+    /// A file that comes in parts, as iTerm2's `MultipartFile=` sends it:
+    /// its arguments, and its base64 so far.
+    parts: Option<(Vec<u8>, Vec<u8>)>,
 }
 
 impl Images {
@@ -261,6 +264,7 @@ impl Images {
             limit,
             order: 0,
             next_anonymous: ANONYMOUS,
+            parts: None,
         }
     }
 
@@ -509,14 +513,46 @@ impl Terminal {
     /// proportions kept unless `preserveAspectRatio=0`, and the cursor past
     /// it unless `doNotMoveCursor=1`. A file to download, another format, or
     /// a terminal of no memory for images, shows nothing.
+    ///
+    /// A file in parts, as iTerm2's `imgcat` sends it by default: its
+    /// arguments of `MultipartFile=`, its base64 in the `FilePart=` that
+    /// follow, as much as the images' memory takes, and `FileEnd`, which
+    /// shows it as `File=` would. Another `MultipartFile=` drops one under
+    /// way.
     pub(super) fn osc_1337(&mut self, rest: &[u8]) {
+        if let Some(arguments) = rest.strip_prefix(b"MultipartFile=") {
+            self.images.parts = Some((arguments.to_vec(), Vec::new()));
+            return;
+        }
+        if let Some(part) = rest.strip_prefix(b"FilePart=") {
+            // The base64 of the memory's bytes, and a little more.
+            let most = self.images.limit / 3 * 4 + 8;
+            if let Some((_, payload)) = &mut self.images.parts {
+                if payload.len() + part.len() > most {
+                    self.images.parts = None;
+                } else {
+                    payload.extend_from_slice(part);
+                }
+            }
+            return;
+        }
+        if rest == b"FileEnd" {
+            if let Some((arguments, payload)) = self.images.parts.take() {
+                self.file(&arguments, &payload);
+            }
+            return;
+        }
         let Some(rest) = rest.strip_prefix(b"File=") else {
             return;
         };
         let Some(colon) = rest.iter().position(|&byte| byte == b':') else {
             return;
         };
-        let (arguments, payload) = (&rest[..colon], &rest[colon + 1..]);
+        self.file(&rest[..colon], &rest[colon + 1..]);
+    }
+
+    /// The file of OSC 1337's `arguments` and `payload`, in base64.
+    fn file(&mut self, arguments: &[u8], payload: &[u8]) {
         let mut placing = Placing::default();
         let mut inline = false;
         for argument in arguments.split(|&byte| byte == b';') {
@@ -1147,6 +1183,47 @@ mod tests {
             .iter()
             .map(|placed| placed.source)
             .collect()
+    }
+
+    /// A file in parts as iTerm2's `imgcat` sends it: `MultipartFile=` of
+    /// `arguments`, the base64 of `data` in parts of 200 characters, and
+    /// `FileEnd`.
+    fn multipart(arguments: &str, data: &[u8]) -> Vec<u8> {
+        let mut sequence = format!("\x1b]1337;MultipartFile={arguments}\x1b\\").into_bytes();
+        let encoded = super::super::clipboard::tests_encode(data);
+        for part in encoded.as_bytes().chunks(200) {
+            sequence.extend(b"\x1b]1337;FilePart=");
+            sequence.extend(part);
+            sequence.extend(b"\x1b\\");
+        }
+        sequence.extend(b"\x1b]1337;FileEnd\x1b\\");
+        sequence
+    }
+
+    #[test]
+    fn a_file_in_parts_shows_at_its_end() {
+        let (mut terminal, mut parser) = made(20, 6, IMAGE_MEMORY);
+        // A header padded past one part.
+        let mut data = png(50, 40);
+        data.resize(1000, 0);
+        let sequence = multipart(&format!("inline=1;size={}", data.len()), &data);
+        let end = sequence.len() - b"\x1b]1337;FileEnd\x1b\\".len();
+        parser.advance(&mut terminal, &sequence[..end]);
+        assert!(shown(&mut terminal).is_empty());
+        parser.advance(&mut terminal, &sequence[end..]);
+        assert_eq!(shown(&mut terminal), [(ANONYMOUS, 0, 0, 5, 2)]);
+        // A part of no start, and an end of none, show nothing.
+        parser.advance(
+            &mut terminal,
+            b"\x1b]1337;FilePart=AAAA\x1b\\\x1b]1337;FileEnd\x1b\\",
+        );
+        assert_eq!(shown(&mut terminal).len(), 1);
+        // Past the memory, the parts are dropped.
+        let (mut terminal, mut parser) = made(20, 6, 2 * LEAST_CHARGE);
+        let mut data = png(50, 40);
+        data.resize(4 * LEAST_CHARGE, 0);
+        parser.advance(&mut terminal, &multipart("inline=1", &data));
+        assert!(shown(&mut terminal).is_empty());
     }
 
     #[test]

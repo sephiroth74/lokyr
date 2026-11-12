@@ -215,7 +215,7 @@ The metadata fits in one byte.
 
 ### Inline images
 
-The pictures that programs send, as iTerm2's OSC 1337 `File=` and kitty's graphics protocol send them, before 1.0.0 ([ADR 0047](adr/0047-before-1-0-links-output-images-cask.md)), in one store.
+The pictures that programs send, as iTerm2's OSC 1337 `File=`, or its file in parts (`MultipartFile=`, `FilePart=` and `FileEnd`, as iTerm2's `imgcat` sends it by default, gathered within the images' memory), and kitty's graphics protocol send them, before 1.0.0 ([ADR 0047](adr/0047-before-1-0-links-output-images-cask.md)), in one store.
 
 - **The store**, `Terminal::keep_image`: each image's bytes as they came, PNG, JPEG, GIF, TIFF, as `chafa` sends iTerm2's, BMP, or pixels of RGB or RGBA, with its size in pixels, read from its header (`terminal::dimensions`), by an id, the program's or the terminal's of an image that it does not number, from 2³¹ up, past the ids that a program's images hold. The embedder decodes them as it draws, so that the terminal holds no decoded pixels.
 - **Its bounds**: the bytes of every image within `Options::image_memory`, 64 MiB by default, none for 0, which shows no image, each counting 1 KiB at least, of its own keeping; 4096 images at most, `MOST_IMAGES`; past either, the oldest go, those of no placement first, found by an index of their order, as each image counts its placements; an image of more than 16 million pixels is refused, as a small file of a huge size would take the memory of its decoding; OSC 1337 strings 16 MiB at most, of the parser's limits, its base64 decoded once whole, its spaces and line breaks skipped.
