@@ -1764,6 +1764,8 @@ fn app_requests(world: &World) -> Scenario {
             (Request::Day, Response::Day(lokyr_plugin_sdk::fake::DAY)),
             (Request::NoticeShows, Response::Boolean(false)),
             (Request::KeepsState, Response::Boolean(true)),
+            // No agent runs in the scenarios' panes.
+            (Request::Agents, Response::Agents(Vec::new())),
             (
                 Request::SetFont("Comic Sans".to_owned()),
                 failed(

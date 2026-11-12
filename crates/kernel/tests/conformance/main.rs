@@ -1046,11 +1046,12 @@ fn kind(request: &Request) -> usize {
         Request::Day => 106,
         Request::NoticeShows => 107,
         Request::KeepsState => 108,
+        Request::Agents => 109,
     }
 }
 
 /// How many kinds of requests the plugin API has.
-const KINDS: usize = 109;
+const KINDS: usize = 110;
 
 #[test]
 fn the_scenarios_hold_every_request_of_the_plugin_api() {

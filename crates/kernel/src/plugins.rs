@@ -4995,6 +4995,37 @@ impl Host<'_, '_> {
             Asked::Themes => Response::Themes((self.context.themes)()),
             Asked::Fonts => Response::Fonts((self.context.fonts)()),
             Asked::Day => Response::Day(self.context.day),
+            Asked::Agents => {
+                let workspace = &self.context.workspace;
+                let now = Instant::now();
+                let agents = workspace
+                    .windows()
+                    .flat_map(|window| window.tabs().iter().copied())
+                    .filter_map(|tab| workspace.tab(tab))
+                    .flat_map(|tab| {
+                        tab.layout()
+                            .panes()
+                            .into_iter()
+                            .map(move |pane| (tab, pane))
+                    })
+                    .filter_map(|(tab, pane)| {
+                        let agent = workspace.pane(pane)?.agent()?;
+                        Some(host::AgentInfo {
+                            pane: pane.into(),
+                            tab: tab.id().into(),
+                            window: tab.window().into(),
+                            name: agent.name().to_owned(),
+                            state: agent.state(),
+                            message: agent.message().map(str::to_owned),
+                            since: u64::try_from(
+                                now.saturating_duration_since(agent.since()).as_millis(),
+                            )
+                            .unwrap_or(u64::MAX),
+                        })
+                    })
+                    .collect();
+                Response::Agents(agents)
+            }
             Asked::NoticeShows => Response::Boolean(self.context.notice),
             Asked::KeepsState => Response::Boolean(self.state.stored.file.is_some()),
             Asked::SelectionCells(pane) => Response::Cells(

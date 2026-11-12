@@ -1590,6 +1590,69 @@ fn a_request_needs_its_capability() {
     assert!(plugins.take_requests().is_empty());
 }
 
+#[test]
+fn a_read_of_the_agents_tells_each_pane_s_agent_to_a_plugin_that_reads_the_processes() {
+    use lokyr_plugin_sdk::host::{AgentInfo, AgentState};
+    let mut app = App::default();
+    let shown = window(&mut app, "sleep 10");
+    let tab = app.workspace.window(shown).unwrap().active_tab();
+    let pane = app.workspace.tab(tab).unwrap().active_pane();
+    assert!(app.workspace.set_pane_agent(pane, Some("claude")));
+    let mut plugins = Plugins::new();
+    type Read = Result<Vec<AgentInfo>, Code>;
+    let read: Rc<RefCell<Vec<Read>>> = Rc::default();
+    for (name, capabilities) in [("acme/seer", "process-read = true\n"), ("acme/blind", "")] {
+        let manifest = Manifest::parse(&format!(
+            "[plugin]\nname = \"{name}\"\nversion = \"1.0.0\"\nkind = \"luau\"\n\
+             api = \"^0.1\"\nlicense = \"MIT\"\n[capabilities]\n{capabilities}"
+        ))
+        .unwrap();
+        let command_name = format!("{}.read", &name[5..]);
+        let seen = Rc::clone(&read);
+        let registered = command_name.clone();
+        plugins
+            .add_declared(
+                manifest,
+                scripted(
+                    move |cx| cx.register_command(command(&registered)),
+                    move |cx, _, _| {
+                        seen.borrow_mut()
+                            .push(cx.agents().map_err(|error| error.code));
+                        Ok(())
+                    },
+                ),
+            )
+            .unwrap();
+        assert!(plugins.activate(&mut app.context()).is_empty());
+        plugins
+            .run(&command_name, Args::new(), &mut app.context())
+            .unwrap();
+    }
+    let read = read.borrow();
+    let agents = read[0].as_ref().expect("the agents");
+    assert_eq!(agents.len(), 1);
+    assert_eq!(
+        (
+            agents[0].pane,
+            agents[0].tab,
+            agents[0].window,
+            agents[0].name.as_str(),
+            agents[0].state,
+            agents[0].message.as_deref(),
+        ),
+        (
+            pane.into(),
+            tab.into(),
+            shown.into(),
+            "claude",
+            None::<AgentState>,
+            None
+        )
+    );
+    assert!(agents[0].since < 10_000);
+    assert_eq!(read[1], Err(Code::MissingCapability));
+}
+
 /// Whether the host refused a plugin's calls of each group of requests
 /// that take `workspace-write`, `pane-view`, `decorate` and
 /// `pointer-read`, for a capability that it lacks, of the manifest's

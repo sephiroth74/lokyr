@@ -251,7 +251,7 @@ A new version is a new `version` in the manifest, a new tag, and `sleip publish`
 | Search | `search`, `end_search`, `search_matches`, `current_match`, `show_matches` |
 | Writing to a pane | `paste`, `send_text`, `clear`, `clear_scrollback`, `scroll`, `select_all`, `select_cells`, `deselect`, `show_cursor`, `cursor_cell` |
 | Drawing over a pane | `decorate`, `undecorate`, `mark_gutter`, `unmark_gutter` |
-| Windows, tabs and panes | `windows`, `tabs`, `layout`, `pane_grid`, `pane_title`, `open_window`, `close_window`, `new_tab`, `close_tab`, `split`, `close_pane`, `activate_tab`, `focus_pane`, `move_tab`, `swap_panes`, `zoom`, `resize_pane`, `set_ratio`, `equalize`, `set_tab_title`, `set_tab_color`, and the rest of their family |
+| Windows, tabs and panes | `windows`, `tabs`, `agents`, `layout`, `pane_grid`, `pane_title`, `open_window`, `close_window`, `new_tab`, `close_tab`, `split`, `close_pane`, `activate_tab`, `focus_pane`, `move_tab`, `swap_panes`, `zoom`, `resize_pane`, `set_ratio`, `equalize`, `set_tab_title`, `set_tab_color`, and the rest of their family |
 | Views and panels | `open_panel`, `close_panel`, `request_render`, `set_text`, `select`, `reveal`, `focus_node` |
 | The user | `ask_text`, `save_file`, `open`, `opens`, `message`, `keys_of`, `notice_shows` |
 | The clipboard | `clipboard_text`, `set_clipboard_text`, `set_clipboard_image` |

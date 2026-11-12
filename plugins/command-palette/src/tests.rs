@@ -2,7 +2,7 @@
 
 use lokyr_plugin_sdk::command::{Capability, Code};
 use lokyr_plugin_sdk::fake::FakeHost;
-use lokyr_plugin_sdk::host::PaneId;
+use lokyr_plugin_sdk::host::{PaneId, TabId, WindowId};
 use lokyr_plugin_sdk::message::Request;
 use lokyr_plugin_sdk::view::Key;
 
@@ -136,7 +136,7 @@ fn ran(requests: &[Request]) -> Vec<String> {
 fn the_palette_opens_at_the_window_s_top_of_the_commands_that_run_without_arguments() {
     let (mut host, mut plugin) = host();
     let commands: Vec<&str> = host.commands().iter().map(|c| c.name.as_str()).collect();
-    assert_eq!(commands, [OPEN, THEME, MOVE]);
+    assert_eq!(commands, [OPEN, THEME, AGENTS, MOVE]);
     run(&mut host, &mut plugin, OPEN, Args::new());
     let options = host
         .panels()
@@ -155,10 +155,18 @@ fn the_palette_opens_at_the_window_s_top_of_the_commands_that_run_without_argume
     );
     assert!(options.close_escape && options.close_outside);
     // In the registry's order, but those of an argument, the dimmed ones
-    // and its own opening; its theme picker last, its own.
+    // and its own opening; its theme picker and its agents' list last,
+    // its own.
     assert_eq!(
         shown(&mut host, &mut plugin),
-        ["New Window", "Copy", "Paste", "New Tab", "Choose Theme…"]
+        [
+            "New Window",
+            "Copy",
+            "Paste",
+            "New Tab",
+            "Choose Theme…",
+            "Show Agents…"
+        ]
     );
 }
 
@@ -203,7 +211,7 @@ fn the_arrows_move_the_selection_and_a_double_click_runs_its_command() {
     );
     // Not past the ends.
     run(&mut host, &mut plugin, MOVE, delta(10));
-    assert_eq!(plugin.open.as_ref().unwrap().selected, 4);
+    assert_eq!(plugin.open.as_ref().unwrap().selected, 5);
     run(&mut host, &mut plugin, MOVE, delta(-10));
     assert_eq!(plugin.open.as_ref().unwrap().selected, 0);
     run(&mut host, &mut plugin, MOVE, delta(2));
@@ -295,7 +303,14 @@ fn the_recent_commands_come_first_and_the_state_keeps_them() {
     run(&mut host, &mut plugin, OPEN, Args::new());
     assert_eq!(
         shown(&mut host, &mut plugin),
-        ["Copy", "Paste", "New Window", "New Tab", "Choose Theme…"]
+        [
+            "Copy",
+            "Paste",
+            "New Window",
+            "New Tab",
+            "Choose Theme…",
+            "Show Agents…"
+        ]
     );
     let Data::Map(state) = host.state() else {
         panic!("a state: {:?}", host.state());
@@ -447,4 +462,110 @@ fn the_theme_picker_previews_the_selected_theme_and_names_the_chosen_one() {
     host.deliver(&mut plugin).unwrap();
     assert_eq!(previewed(&host.take_done()), [None]);
     assert!(plugin.recent.is_empty());
+}
+
+/// An agent of `name`, of `tab` and `pane` of `window`, of `state`, its
+/// message, and how long it has been in its state, in milliseconds.
+fn agent(
+    name: &str,
+    (window, tab, pane): (WindowId, TabId, PaneId),
+    state: Option<AgentState>,
+    message: Option<&str>,
+    since: u64,
+) -> AgentInfo {
+    AgentInfo {
+        pane,
+        tab,
+        window,
+        name: name.to_owned(),
+        state,
+        message: message.map(str::to_owned),
+        since,
+    }
+}
+
+#[test]
+fn the_agents_list_shows_the_most_urgent_first_and_brings_the_chosen_one_forward() {
+    let (mut host, mut plugin) = host();
+    let (window, tab) = host.focused_tab().expect("a focused tab");
+    let (second, behind) = host.add_tab(window);
+    let here = (window, tab, PANE);
+    let there = (window, second, behind);
+    host.set_agents(vec![
+        agent("codex", here, Some(AgentState::Working), None, 5_000),
+        agent("aider", there, None, None, 1_000),
+        agent(
+            "claude",
+            there,
+            Some(AgentState::Waiting),
+            Some("Claude needs your permission to use Bash"),
+            125_000,
+        ),
+        agent("gemini", here, Some(AgentState::Done), None, 7_200_000),
+    ]);
+    let requests = run(&mut host, &mut plugin, AGENTS, Args::new());
+    assert!(
+        requests
+            .iter()
+            .any(|request| matches!(request, Request::OpenPanel { .. })),
+        "{requests:?}"
+    );
+    // Waiting, done, at work, of no state; each of its state and its time.
+    let titles = shown(&mut host, &mut plugin);
+    assert_eq!(titles.len(), 4);
+    assert_eq!(
+        titles[0],
+        "claude: Claude needs your permission to use Bash"
+    );
+    // The fake's tabs, of no title, leave the program's name alone.
+    assert_eq!(titles[1..], ["gemini", "codex", "aider"]);
+    let keys: Vec<Option<String>> = plugin
+        .open
+        .as_ref()
+        .unwrap()
+        .ranked
+        .iter()
+        .map(|&at| plugin.open.as_ref().unwrap().commands[at].keys.clone())
+        .collect();
+    assert_eq!(
+        keys,
+        [
+            Some("Waiting · 2 min".to_owned()),
+            Some("Done · 2 h".to_owned()),
+            Some("Working · 5 s".to_owned()),
+            Some("Idle · 1 s".to_owned()),
+        ]
+    );
+    // Found by its program's name.
+    typed(&mut host, &mut plugin, "codex");
+    assert_eq!(shown(&mut host, &mut plugin).len(), 1);
+    typed(&mut host, &mut plugin, "");
+    // Return brings the waiting one's tab and pane forward, in the window
+    // that has the focus already.
+    let requests = on_panel(
+        &mut host,
+        &mut plugin,
+        FIELD,
+        UiEventKind::Submit {
+            text: String::new(),
+            shift: false,
+        },
+    );
+    assert!(
+        requests.contains(&Request::ActivateTab(second)),
+        "{requests:?}"
+    );
+    assert!(
+        requests.contains(&Request::FocusPane(behind)),
+        "{requests:?}"
+    );
+    assert!(ran(&requests).is_empty(), "{requests:?}");
+    assert!(plugin.open.is_none());
+}
+
+#[test]
+fn the_agents_list_is_one_of_the_palette_s_commands() {
+    let (host, _) = host();
+    let commands: Vec<&str> = host.commands().iter().map(|c| c.name.as_str()).collect();
+    assert!(commands.contains(&AGENTS));
 }

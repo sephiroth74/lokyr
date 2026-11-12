@@ -595,6 +595,15 @@ impl<'a> Cx<'a> {
         }
     }
 
+    /// The AI agents that run in the panes, of every window, in the
+    /// windows', tabs' and panes' order, of `process-read`.
+    pub fn agents(&mut self) -> Result<Vec<crate::host::AgentInfo>, Error> {
+        match self.request(Request::Agents) {
+            Response::Agents(agents) => Ok(agents),
+            other => Err(failed(other)),
+        }
+    }
+
     /// The day of the system's clock, in days since 1970-01-01, in UTC.
     pub fn day(&mut self) -> Result<u64, Error> {
         match self.request(Request::Day) {

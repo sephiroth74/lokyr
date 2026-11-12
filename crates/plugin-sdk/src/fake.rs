@@ -437,6 +437,8 @@ pub struct FakeHost {
     day: u64,
     notice: bool,
     keeps_state: bool,
+    /// The AI agents that a read of the agents gives, as the test gave them.
+    agents: Vec<host::AgentInfo>,
     /// Where the plugin's moves of tabs to windows of their own put those
     /// windows on the screens.
     places: BTreeMap<WindowId, ScreenPoint>,
@@ -535,6 +537,7 @@ impl FakeHost {
             registry: Vec::new(),
             fonts: fonts(),
             day: DAY,
+            agents: Vec::new(),
             notice: false,
             keeps_state: true,
             themes: host::Themes {
@@ -749,6 +752,12 @@ impl FakeHost {
     /// the day gives, in place of [`DAY`].
     pub fn set_day(&mut self, day: u64) -> &mut Self {
         self.day = day;
+        self
+    }
+
+    /// Gives the AI agents that a read of the agents gives.
+    pub fn set_agents(&mut self, agents: Vec<host::AgentInfo>) -> &mut Self {
+        self.agents = agents;
         self
     }
 
@@ -2876,6 +2885,7 @@ impl Calling<'_> {
             Request::Themes => Response::Themes(host.themes.clone()),
             Request::Fonts => Response::Fonts(host.fonts.clone()),
             Request::Day => Response::Day(host.day),
+            Request::Agents => Response::Agents(host.agents.clone()),
             Request::NoticeShows => Response::Boolean(host.notice),
             Request::KeepsState => Response::Boolean(host.keeps_state),
             Request::Commands => {

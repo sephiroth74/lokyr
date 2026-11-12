@@ -19,12 +19,19 @@ A panel near the top of the window that lists Lokyr's commands, the plugins' too
 - **As you move** through the list, or type, the selected theme shows at once, in place of the one in force.
 - **Return**, or a click, names it in your config's `[theme]`, `light` or `dark` as the appearance is; **Escape** shows the theme in force again. To choose the other appearance's theme, switch the appearance first, in View › Appearance.
 
+## The agents' list
+
+- **Window › Show Agents…**, ⇧⌥⌘A, opens the palette of the AI agents of every window, as [`[agents]`](../CONFIGURATION.md#agents) finds them: those that wait for you first, the longest waiting at the top, then those done, those at work, and those that have shown nothing yet.
+- **Each** shows its program and what it asked, as "claude: Claude needs your permission to use Bash", or its tab's title, and at its end its state and how long it has been in it.
+- **As you type**, it finds them by their programs, their messages and their tabs' titles; **Return**, or a click, brings the chosen agent's pane forward, with its tab and its window.
+
 ## Commands
 
 | Command | Menu | Default keys | What it does |
 |---|---|---|---|
 | `command-palette.open` | View › Command Palette… | ⇧⌘P | Opens the palette in the window that has the focus |
 | `command-palette.theme` | View › Choose Theme… | — | Opens the theme picker, of the themes of the appearance in force |
+| `command-palette.agents` | Window › Show Agents… | ⇧⌥⌘A | Opens the agents' list, of every window's AI agents, the most urgent first |
 | `command-palette.move` | — | ↑ and ↓ in the palette | Moves the list's selection, by its argument `delta`, a whole number of items |
 
 ## Turning it off
@@ -38,4 +45,4 @@ The palette and its commands go, with their keys: ⇧⌘P then does nothing in L
 
 ## Permissions
 
-It runs any command as yours, as the menus and the keys do, and reads the whole list of the commands, with each one's plugin, keys and context: the capability `user-commands`, of a very high risk, as running any command can type into the shell. A palette of a third party would ask for it when you install it. Its theme picker reads the themes' names and names one in `[theme]`, as every plugin may.
+It runs any command as yours, as the menus and the keys do, and reads the whole list of the commands, with each one's plugin, keys and context: the capability `user-commands`, of a very high risk, as running any command can type into the shell. A palette of a third party would ask for it when you install it. Its theme picker previews and names a theme, of `appearance-write`. Its agents' list reads the agents of the panes, which tell the programs that run, of `process-read`, and brings a pane, its tab and its window forward, of `workspace-write`.

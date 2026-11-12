@@ -144,6 +144,7 @@ fn starting_opens_a_window_under_the_menus_of_the_commands() {
             "-",
             "Float on Top",
             "Go to Next Agent alt+cmd+a",
+            "Show Agents… alt+shift+cmd+a",
             "-",
             "Bring All to Front"
         ]
@@ -297,7 +298,7 @@ fn the_built_in_plugins_bind_the_commands_that_are_there_alone() {
         .filter(|command| app.commands.get(command).is_none())
         .collect();
     assert_eq!(missing, Vec::<&str>::new());
-    assert_eq!(app.keymap.bindings().len(), 124);
+    assert_eq!(app.keymap.bindings().len(), 125);
 }
 
 #[test]

@@ -23,6 +23,7 @@ tip-quick-terminal = Press { $keys } from any app to slide the quick terminal do
 tip-clear = Press { $keys } to clear the scrollback and the screen, the prompt kept.
 tip-font-size = Press { $keys } to make the text bigger, in every window.
 tip-next-agent = Press { $keys } to go to the next AI agent that waits for you, in any window.
+tip-agents-list = Press { $keys } to list every AI agent of every window, the ones that wait for you first.
 
 # The tips of features that need no keys.
 tip-agents = A tab marks the AI agent in it, as Claude Code: a sparkle while it works, a dot while it waits for you, its request in the tab's tooltip, a tick once it is done.

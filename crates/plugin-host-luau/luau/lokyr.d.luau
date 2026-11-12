@@ -32,6 +32,7 @@ export type Cx = {
     day: () -> (number?, string?, number?),
     notice_shows: () -> (boolean?, string?, number?),
     keeps_state: () -> (boolean?, string?, number?),
+    agents: () -> ({ AgentInfo }?, string?, number?),
     preview_font: (family: string?) -> (true?, string?, number?),
     set_font: (family: string) -> (true?, string?, number?),
     add_menu_item: (item: MenuItem) -> (true?, string?, number?),
@@ -299,6 +300,16 @@ export type TestHost = {
         alternate: boolean?, secure: boolean? }, tab: TabId?) -> (),
     -- Its items of the menus, in their order.
     menu_items: () -> { MenuItem },
+}
+
+export type AgentInfo = {
+    pane: PaneId,
+    tab: TabId,
+    window: WindowId,
+    name: string,
+    state: AgentState?,
+    message: string?,
+    since: number?,
 }
 
 export type AgentState =

@@ -275,6 +275,30 @@ pub enum AgentState {
     Done,
 }
 
+/// An AI agent that runs in a pane, as a read of the agents tells it.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct AgentInfo {
+    /// Its pane.
+    pub pane: PaneId,
+    /// Its pane's tab.
+    pub tab: TabId,
+    /// Its tab's window.
+    pub window: WindowId,
+    /// Its program's name, as `[agents] programs` lists it.
+    pub name: String,
+    /// Its state, none before it works or asks, and once what it did or
+    /// asked was seen.
+    #[serde(default)]
+    pub state: Option<AgentState>,
+    /// The message of the notification by which it asked for the user,
+    /// while it waits, 200 characters at most.
+    #[serde(default)]
+    pub message: Option<String>,
+    /// How long it has been in its state, in milliseconds.
+    #[serde(default)]
+    pub since: u64,
+}
+
 /// How a split lays its two parts out.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]

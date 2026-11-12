@@ -14,7 +14,8 @@ from 1.0.0; before it, a minor version may change what a previous one did.
 - A notification tells when an agent waits for you or is done while its window has no focus, and the Dock's icon counts the agents that wait, as `[agents] notify` and `dock-badge` say.
 - An agent that waits for you tells what it asked in its tab's tooltip, as "Claude needs your permission to use Bash", and in a tab of several panes a ring goes round the pane that waits.
 - Window › Go to Next Agent, ⌥⌘A, brings forward the next agent that waits for you, or is done, or works, across every window.
-- Quick tips for the agents and for Go to Next Agent.
+- Window › Show Agents…, ⇧⌥⌘A, lists the agents of every window in the palette, the most urgent first, each with what it asked or its tab, its state and how long it has been in it; Return brings it forward.
+- Quick tips for the agents, Go to Next Agent and Show Agents.
 
 ### Changed
 

@@ -55,6 +55,8 @@ pub struct Agent {
     /// The message of the notification by which it asked for the user,
     /// while it waits.
     message: Option<String>,
+    /// When its state last changed, or it started.
+    since: Instant,
 }
 
 impl Agent {
@@ -67,6 +69,7 @@ impl Agent {
             latest: None,
             asked: false,
             message: None,
+            since: Instant::now(),
         }
     }
 
@@ -79,6 +82,16 @@ impl Agent {
     /// asked was seen.
     pub fn state(&self) -> Option<AgentState> {
         self.state
+    }
+
+    /// When its state last changed, or, of none since, it started.
+    pub fn since(&self) -> Instant {
+        self.since
+    }
+
+    /// Its state changed at `at`.
+    pub(super) fn changed_at(&mut self, at: Instant) {
+        self.since = at;
     }
 
     /// The message of the notification by which it asked for the user, as

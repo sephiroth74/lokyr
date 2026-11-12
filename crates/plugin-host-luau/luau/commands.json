@@ -109,6 +109,15 @@
   },
   {
     "capabilities": [],
+    "category": "windows",
+    "name": "command-palette.agents",
+    "params": [],
+    "plugin": "lokyr/command-palette",
+    "title": "Show Agents…",
+    "when": null
+  },
+  {
+    "capabilities": [],
     "category": "view",
     "name": "command-palette.move",
     "params": [

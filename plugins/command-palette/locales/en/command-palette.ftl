@@ -5,6 +5,7 @@
 command-command-palette-open = Command Palette…
 command-command-palette-theme = Choose Theme…
 command-command-palette-move = Move in the Command Palette
+command-command-palette-agents = Show Agents…
 
 # The palette: its field's placeholder, the line of no command, and what
 # an accessibility client calls its list.
@@ -17,3 +18,13 @@ palette-commands = Commands
 palette-theme-placeholder = Choose a Theme…
 palette-themes = Themes
 palette-current = Current
+
+# The agents' list: its field's placeholder, the line of no agent, what an
+# accessibility client calls its list, and an agent's states.
+palette-agents-placeholder = Find an Agent…
+palette-agents-none = No agents
+palette-agents = Agents
+palette-agent-waiting = Waiting
+palette-agent-done = Done
+palette-agent-working = Working
+palette-agent-idle = Idle

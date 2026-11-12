@@ -679,6 +679,10 @@ type Cx = {
     -- Whether the host keeps the plugin's state between the app's runs, of no capability: it does not without a state's
     -- folder, where a plugin that shows something once in a while would show it at every start.
     keeps_state: () -> (boolean?, Error?),
+    -- The AI agents that run in the panes, of every window, in the windows', tabs' and panes' order, of
+    -- `process-read`: each one's pane, tab, window, program's name, state, message while it waits, and `since`, how
+    -- long it has been in its state, in milliseconds.
+    agents: () -> ({ AgentInfo }?, Error?),
 
     -- The focus: the window that has it, and its pane that has the keyboard.
     focused_window: () -> WindowId?,

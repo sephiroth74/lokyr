@@ -1292,6 +1292,7 @@ impl Workspace {
             }
             return;
         }
+        agent.changed_at(Instant::now());
         let name = agent.name().to_owned();
         self.events.push(Event::Agent {
             pane,

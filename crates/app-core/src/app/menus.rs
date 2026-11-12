@@ -483,6 +483,9 @@ impl<B: Backend> App<B> {
     }
 }
 
+/// The palette's list of the agents, which the windows' menu holds beside
+/// the next agent.
+const SHOW_AGENTS: &str = "command-palette.agents";
 /// The arguments of `man` for the page that `text` names: its name, and
 /// its section before it when `text` ends with one in brackets, as
 /// `ls(1)`, after `--`; `None` for a text that is no page's name, which
@@ -609,6 +612,7 @@ pub(super) fn main_menu(
                     && command.name != PERFORMANCE
                     && command.name != FLOAT_ON_TOP
                     && command.name != NEXT_AGENT
+                    && command.name != SHOW_AGENTS
                     && !CONTEXT_ONLY.contains(&command.name.as_str())
                     && !taken.contains(&command.name.as_str())
             })
@@ -810,14 +814,18 @@ pub(super) fn main_menu(
                     MenuItem::Separator,
                 ]
                 .into_iter()
-                // Float on Top, and the next agent, in the windows' menu.
-                .chain([FLOAT_ON_TOP, NEXT_AGENT].into_iter().filter_map(|name| {
-                    commands.get(name).map(|command| MenuItem::Command {
-                        title: command.title.clone(),
-                        command: name.to_owned(),
-                        shortcut: keymap.shortcut(name).and_then(shortcut),
-                    })
-                }))
+                // Float on Top, and the agents, in the windows' menu.
+                .chain(
+                    [FLOAT_ON_TOP, NEXT_AGENT, SHOW_AGENTS]
+                        .into_iter()
+                        .filter_map(|name| {
+                            commands.get(name).map(|command| MenuItem::Command {
+                                title: command.title.clone(),
+                                command: name.to_owned(),
+                                shortcut: keymap.shortcut(name).and_then(shortcut),
+                            })
+                        }),
+                )
                 .chain(commands.get(FLOAT_ON_TOP).map(|_| MenuItem::Separator))
                 .chain([standard(
                     "menu-bring-all-to-front",

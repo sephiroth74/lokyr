@@ -9,15 +9,19 @@
 //! the palette; Escape, or a click outside it, closes it. Its theme picker
 //! lists the themes of the appearance in force, previews each as it is
 //! selected, and names the one chosen in the config's `[theme]` for that
-//! appearance, Escape showing the config's again. Like every built-in
-//! plugin, it depends only on the plugin SDK.
+//! appearance, Escape showing the config's again. Its agents' list shows
+//! the AI agents of every window, the most urgent first, those that wait
+//! for the user, then those done, then those at work, each of its program,
+//! its message or its tab's title, its state and how long it has been in
+//! it; Return brings the agent's pane, its tab and its window forward.
+//! Like every built-in plugin, it depends only on the plugin SDK.
 
 #![forbid(unsafe_code)]
 
 mod rank;
 
 use lokyr_plugin_sdk::command::{Args, Category, Command, Error, Kind, Param, Value};
-use lokyr_plugin_sdk::host::CommandInfo;
+use lokyr_plugin_sdk::host::{AgentInfo, AgentState, CommandInfo};
 use lokyr_plugin_sdk::message::{Data, Event};
 use lokyr_plugin_sdk::plugin::{Cx, Plugin};
 use lokyr_plugin_sdk::theme::ThemeVariant;
@@ -38,6 +42,12 @@ const OPEN: &str = "command-palette.open";
 /// Opens the palette's theme picker, of the themes of the appearance in
 /// force.
 const THEME: &str = "command-palette.theme";
+
+/// Opens the palette's list of the AI agents of every window.
+const AGENTS: &str = "command-palette.agents";
+
+/// The app's command that brings a window forward by its number.
+const GOTO_WINDOW: &str = "window.goto";
 
 /// Moves the list's selection by `delta` items, as the keymap's arrows do
 /// while the palette has the keyboard: of an argument that it needs, the
@@ -68,13 +78,20 @@ static CATALOGS: [(&str, &str); 2] = [
 ];
 
 /// The palette's texts, in English, where the host gives none.
-const ENGLISH: [(&str, &str); 6] = [
+const ENGLISH: [(&str, &str); 13] = [
     ("palette-placeholder", "Execute Command…"),
     ("palette-none", "No commands"),
     ("palette-commands", "Commands"),
     ("palette-theme-placeholder", "Choose a Theme…"),
     ("palette-themes", "Themes"),
     ("palette-current", "Current"),
+    ("palette-agents-placeholder", "Find an Agent…"),
+    ("palette-agents-none", "No agents"),
+    ("palette-agents", "Agents"),
+    ("palette-agent-waiting", "Waiting"),
+    ("palette-agent-done", "Done"),
+    ("palette-agent-working", "Working"),
+    ("palette-agent-idle", "Idle"),
 ];
 
 /// The text of the message `id`, in the language shown, or English's where
@@ -114,6 +131,7 @@ pub struct Palette {
 enum Mode {
     Commands,
     Themes(ThemeVariant),
+    Agents,
 }
 
 /// An open palette: its commands, as the registry gave them as it opened,
@@ -123,6 +141,8 @@ enum Mode {
 struct Open {
     mode: Mode,
     commands: Vec<Entry>,
+    /// The agents of the agents' list, each of its entry's place.
+    agents: Vec<AgentInfo>,
     query: String,
     ranked: Vec<usize>,
     selected: usize,
@@ -136,6 +156,7 @@ impl Open {
         Self {
             mode,
             commands,
+            agents: Vec::new(),
             query: String::new(),
             ranked,
             selected: 0,
@@ -187,6 +208,14 @@ impl Plugin for Palette {
             when: None,
         })?;
         cx.register_command(Command {
+            name: AGENTS.to_owned(),
+            title: "Show Agents…".to_owned(),
+            category: Category::Windows,
+            capabilities: Vec::new(),
+            params: Vec::new(),
+            when: None,
+        })?;
+        cx.register_command(Command {
             name: MOVE.to_owned(),
             title: "Move in the Command Palette".to_owned(),
             category: Category::View,
@@ -209,6 +238,7 @@ impl Plugin for Palette {
         match name {
             OPEN => self.open(cx),
             THEME => self.open_themes(cx),
+            AGENTS => self.open_agents(cx),
             MOVE => {
                 let delta = match args.get("delta") {
                     Some(Value::Integer(delta)) => *delta,
@@ -236,6 +266,11 @@ impl Plugin for Palette {
                 none: message(cx, "palette-none"),
                 commands: message(cx, "palette-themes"),
             },
+            Mode::Agents => Texts {
+                placeholder: message(cx, "palette-agents-placeholder"),
+                none: message(cx, "palette-agents-none"),
+                commands: message(cx, "palette-agents"),
+            },
         };
         Some(palette(open, &texts))
     }
@@ -255,7 +290,7 @@ impl Plugin for Palette {
                 open.query.clone_from(text);
                 let recent: &[String] = match open.mode {
                     Mode::Commands => &self.recent,
-                    Mode::Themes(_) => &[],
+                    Mode::Themes(_) | Mode::Agents => &[],
                 };
                 open.ranked = rank::rank(&open.commands, text, recent);
                 open.selected = 0;
@@ -356,6 +391,52 @@ impl Palette {
         self.show(cx, Mode::Themes(themes.appearance), entries)
     }
 
+    /// Opens the palette's list of the AI agents of every window, the most
+    /// urgent first; open, its field takes the keys again.
+    fn open_agents(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
+        if self.open.is_some() {
+            return cx.focus_node(panel(), FIELD);
+        }
+        let mut agents = cx.agents()?;
+        agents.sort_by_key(|agent| (urgency(agent.state), std::cmp::Reverse(agent.since)));
+        // Each agent's tab's title, by which it is found too.
+        let mut titles = std::collections::BTreeMap::new();
+        for window in cx.windows()? {
+            for tab in cx.tabs(window.id)? {
+                titles.insert(tab.id, tab.title);
+            }
+        }
+        let states = [
+            message(cx, "palette-agent-waiting"),
+            message(cx, "palette-agent-done"),
+            message(cx, "palette-agent-working"),
+            message(cx, "palette-agent-idle"),
+        ];
+        let entries = agents
+            .iter()
+            .enumerate()
+            .map(|(at, agent)| {
+                let tab = titles.get(&agent.tab).cloned().unwrap_or_default();
+                let state = &states[urgency(agent.state)];
+                Entry {
+                    name: at.to_string(),
+                    title: match &agent.message {
+                        Some(message) => format!("{}: {message}", agent.name),
+                        None if tab.is_empty() => agent.name.clone(),
+                        None => format!("{} — {tab}", agent.name),
+                    },
+                    keys: Some(format!("{state} · {}", elapsed(agent.since))),
+                    plugin: Some(tab),
+                }
+            })
+            .collect();
+        self.show(cx, Mode::Agents, entries)?;
+        if let Some(open) = &mut self.open {
+            open.agents = agents;
+        }
+        Ok(())
+    }
+
     /// Opens the palette's panel in the focused window, of `mode` and
     /// `entries`.
     fn show(&mut self, cx: &mut Cx<'_>, mode: Mode, entries: Vec<Entry>) -> Result<(), Error> {
@@ -378,7 +459,7 @@ impl Palette {
         )?;
         let recent: &[String] = match mode {
             Mode::Commands => &self.recent,
-            Mode::Themes(_) => &[],
+            Mode::Themes(_) | Mode::Agents => &[],
         };
         self.open = Some(Open::new(mode, entries, recent));
         Ok(())
@@ -424,7 +505,16 @@ impl Palette {
         };
         cx.close_panel(PANEL)?;
         self.closing += 1;
-        self.open = None;
+        let open = self.open.take();
+        // Of the agents' list, the agent's pane, its tab and its window.
+        if mode == Mode::Agents {
+            let agent =
+                open.and_then(|open| open.agents.into_iter().nth(name.parse::<usize>().ok()?));
+            return match agent {
+                Some(agent) => bring_forward(cx, &agent),
+                None => Ok(()),
+            };
+        }
         // Of the theme picker, the theme named for its appearance.
         if let Mode::Themes(variant) = mode {
             return cx.set_theme(variant, &name);
@@ -439,6 +529,48 @@ impl Palette {
         ));
         cx.run_command(&name, Args::new())
     }
+}
+
+/// The place of an agent of `state` in the list: waiting first, then
+/// done, at work, and of no state last.
+fn urgency(state: Option<AgentState>) -> usize {
+    match state {
+        Some(AgentState::Waiting) => 0,
+        Some(AgentState::Done) => 1,
+        Some(AgentState::Working) => 2,
+        None => 3,
+    }
+}
+
+/// How long `since` milliseconds are, short: seconds, minutes, hours.
+fn elapsed(since: u64) -> String {
+    let seconds = since / 1000;
+    match seconds {
+        0..60 => format!("{seconds} s"),
+        60..3600 => format!("{} min", seconds / 60),
+        _ => format!("{} h", seconds / 3600),
+    }
+}
+
+/// Brings `agent`'s pane forward: its tab, the pane, and its window,
+/// unless it has the focus.
+fn bring_forward(cx: &mut Cx<'_>, agent: &AgentInfo) -> Result<(), Error> {
+    cx.activate_tab(agent.tab)?;
+    cx.focus_pane(agent.pane)?;
+    if cx.focused_window() == Some(agent.window) {
+        return Ok(());
+    }
+    let number = cx
+        .windows()?
+        .into_iter()
+        .find(|window| window.id == agent.window)
+        .and_then(|window| window.number);
+    if let Some(number) = number {
+        let mut args = Args::new();
+        args.insert("index".to_owned(), Value::Integer(i64::from(number)));
+        cx.run_command(GOTO_WINDOW, args)?;
+    }
+    Ok(())
 }
 
 /// The palette's texts, in the language shown.

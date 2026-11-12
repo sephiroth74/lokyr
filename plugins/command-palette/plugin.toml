@@ -9,3 +9,7 @@ description = "The command palette: the commands, ranked by a fuzzy search as yo
 user-commands = true
 # The theme picker's preview and choice.
 appearance-write = true
+# The agents' list: the agents of the panes, as they tell the programs
+# that run, and the pane of the one chosen brought forward.
+process-read = true
+workspace-write = true

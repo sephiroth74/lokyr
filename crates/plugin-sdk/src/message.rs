@@ -123,6 +123,10 @@ pub enum Request {
     /// a file of its own, which it does not without a state's folder: a
     /// plugin that shows something once in a while shows nothing then.
     KeepsState,
+    /// The AI agents that run in the panes, of every window, in the
+    /// windows', tabs' and panes' order, of `process-read`, as they tell
+    /// the programs that run.
+    Agents,
     /// Shows the monospaced family of a name in every pane in place of the
     /// config's, for a while, as a picker previews it, until the next
     /// preview, the family's choice, or `None`, which shows the config's
@@ -863,7 +867,7 @@ impl Request {
             | Self::Styles { .. }
             | Self::SelectionCells(_)
             | Self::ScreenCells(_) => Some(Capability::TerminalRead),
-            Self::WorkingDirectory(_) => Some(Capability::ProcessRead),
+            Self::WorkingDirectory(_) | Self::Agents => Some(Capability::ProcessRead),
             // The commands that the shell ran, as their marks tell them.
             Self::ShellCommands { .. } | Self::CommandLine { .. } => Some(Capability::HistoryRead),
             Self::OpenQuickWindow { .. } | Self::ShowQuickWindow { .. } => {
@@ -1008,6 +1012,7 @@ impl Request {
             | Self::Day
             | Self::NoticeShows
             | Self::KeepsState
+            | Self::Agents
             | Self::RenderImage(_)
             | Self::SelectionCells(_)
             | Self::ScreenCells(_) => Effect::Read,
@@ -1121,6 +1126,8 @@ pub enum Response {
     Fonts(crate::host::Fonts),
     /// A day of the system's clock, in days since 1970-01-01.
     Day(u64),
+    /// The AI agents that run in the panes.
+    Agents(Vec<crate::host::AgentInfo>),
     /// An image that the host rendered.
     Image(crate::image::Image),
     /// Rows of cells, as an image draws them, or none.
@@ -1548,6 +1555,7 @@ impl Request {
             Self::Themes { .. } => "themes",
             Self::Fonts { .. } => "fonts",
             Self::Day { .. } => "day",
+            Self::Agents { .. } => "agents",
             Self::ClipboardText { .. }
             | Self::SelectionText { .. }
             | Self::LinkAt { .. }
