@@ -35,6 +35,7 @@ from 1.0.0; before it, a minor version may change what a previous one did.
 
 - `sleip add` of a plugin no longer fails telling that another plugin has "one version" made for an older Lokyr when the other is kept at the version that `plugins.lock` holds: Sleip says so, and that `sleip update` of it takes a newer version.
 - `sleip info` no longer counts a yanked version when it tells that this Lokyr takes none of a plugin's versions.
+- `sleip dev` checks again a plugin saved while it was linking it.
 
 ## [0.9.0] - 2026-11-12
 

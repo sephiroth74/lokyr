@@ -959,6 +959,27 @@ fn test_runs_the_tests_of_a_plugin_and_tells_a_failure_of_its_file_and_line() {
     );
 }
 
+/// Kills `sleip dev`, the process `pid`, if it still runs after a minute,
+/// so that a test reading its output fails, its output ended, rather than
+/// waiting for it forever; unless `done` is set, as the test ends.
+fn deadline(pid: u32, done: std::sync::Arc<std::sync::atomic::AtomicBool>) {
+    use std::sync::atomic::Ordering;
+    std::thread::spawn(move || {
+        let until = std::time::Instant::now() + Duration::from_secs(60);
+        while std::time::Instant::now() < until {
+            if done.load(Ordering::Relaxed) {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        if !done.load(Ordering::Relaxed) {
+            let _ = Command::new("kill")
+                .args(["-KILL", &pid.to_string()])
+                .status();
+        }
+    });
+}
+
 #[test]
 fn dev_links_a_plugin_checks_it_at_each_save_and_gives_the_installed_one_back_as_it_ends() {
     use std::io::BufRead;
@@ -974,6 +995,8 @@ fn dev_links_a_plugin_checks_it_at_each_save_and_gives_the_installed_one_back_as
         .stdout(Stdio::piped())
         .spawn()
         .unwrap();
+    let done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    deadline(dev.id(), std::sync::Arc::clone(&done));
     let mut lines = std::io::BufReader::new(dev.stdout.take().unwrap()).lines();
     let mut next = |wanted: &str| -> Value {
         loop {
@@ -1015,6 +1038,7 @@ fn dev_links_a_plugin_checks_it_at_each_save_and_gives_the_installed_one_back_as
     assert!(killed.success());
     assert_eq!(next("unlinked")["name"], "acme/devved");
     assert!(dev.wait().unwrap().success());
+    done.store(true, std::sync::atomic::Ordering::Relaxed);
     assert_eq!(sandbox.locked().packages["acme/devved"], installed.1);
 }
 
@@ -1032,6 +1056,8 @@ fn dev_takes_away_the_lockfile_that_it_made_as_it_ends() {
         .stdout(Stdio::piped())
         .spawn()
         .unwrap();
+    let done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    deadline(dev.id(), std::sync::Arc::clone(&done));
     let mut lines = std::io::BufReader::new(dev.stdout.take().unwrap()).lines();
     let mut next = |wanted: &str| loop {
         let line = lines.next().expect("its output ended").unwrap();
@@ -1049,6 +1075,7 @@ fn dev_takes_away_the_lockfile_that_it_made_as_it_ends() {
     assert!(killed.success());
     next("unlinked");
     assert!(dev.wait().unwrap().success());
+    done.store(true, std::sync::atomic::Ordering::Relaxed);
     assert!(!lock.exists());
 }
 

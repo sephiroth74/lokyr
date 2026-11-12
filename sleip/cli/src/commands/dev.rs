@@ -52,6 +52,9 @@ pub fn dev(paths: &Paths, out: Out) -> Result<(), String> {
             .and_then(|_| signal_hook::flag::register(signal, Arc::clone(&stop)))
             .map_err(|error| format!("the interruption cannot be caught: {error}"))?;
     }
+    // The files as they are before the first check, so that a save during
+    // the check or the link, or right after it is told, is checked again.
+    let mut seen = fingerprint(&folder);
     let problems = check::problems_in(&folder, out);
     out.tell(
         "checked",
@@ -78,7 +81,6 @@ pub fn dev(paths: &Paths, out: Out) -> Result<(), String> {
             folder.display()
         ),
     );
-    let mut seen = fingerprint(&folder);
     while !stop.load(Ordering::Relaxed) {
         std::thread::sleep(LOOK_EVERY);
         let now = fingerprint(&folder);
