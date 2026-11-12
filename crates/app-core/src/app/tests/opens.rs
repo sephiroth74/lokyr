@@ -308,6 +308,33 @@ fn a_file_s_line_opens_in_the_config_s_editor_or_as_the_file() {
     fake.start(&mut app);
     app.open_target_at(&mut fake, path.clone(), Some((42, Some(7))));
     assert_eq!(fake.opened(), std::slice::from_ref(&path));
+    // A file that its own application would run, as a script, or a
+    // source file that a terminal claims: the editor's, as nothing runs;
+    // of the system's editor, the Finder, as before.
+    let script_file = base.join("build.sh");
+    script(&script_file, "#!/bin/sh\necho hi\n");
+    let script_path = std::fs::canonicalize(&script_file)
+        .unwrap()
+        .display()
+        .to_string();
+    let mut fake = Fake::default();
+    let mut app = super::app(with("vscode"), quiet());
+    fake.start(&mut app);
+    app.open_target_at(&mut fake, script_path.clone(), Some((2, None)));
+    assert_eq!(fake.opened(), [format!("vscode://file{script_path}:2:1")]);
+    let mut fake = Fake::default();
+    let mut app = super::app(with("system"), quiet());
+    fake.start(&mut app);
+    app.open_target_at(&mut fake, script_path.clone(), Some((2, None)));
+    assert!(fake.opened().is_empty());
+    assert_eq!(fake.revealed(), std::slice::from_ref(&script_path));
+    // Not installed, the Finder too.
+    let mut fake = Fake::default();
+    fake.leave_unhandled("vscode");
+    let mut app = super::app(with("vscode"), quiet());
+    fake.start(&mut app);
+    app.open_target_at(&mut fake, script_path.clone(), Some((2, None)));
+    assert_eq!(fake.revealed(), std::slice::from_ref(&script_path));
     // A folder opens as before, whatever the line.
     let mut fake = Fake::default();
     let mut app = super::app(with("vscode"), quiet());

@@ -303,9 +303,17 @@ impl<B: Backend> App<B> {
                 return;
             }
         };
-        let done = match opening(resolved.kind, self.links()) {
+        // A file that opens in the config's editor at its line is a file
+        // to edit, whatever its own application, as a terminal that claims
+        // source files: nothing runs.
+        let kind = if self.editor_address(&resolved, place).is_some() {
+            TargetKind::File
+        } else {
+            resolved.kind
+        };
+        let done = match opening(kind, self.links()) {
             Opening::Ask => {
-                self.ask_open(platform, target, resolved.kind, place);
+                self.ask_open(platform, target, kind, place);
                 return;
             }
             Opening::Reveal => platform.reveal(&resolved),
@@ -381,7 +389,9 @@ impl<B: Backend> App<B> {
             _ => return,
         };
         let done = platform.resolve_target(&target).and_then(|resolved| {
-            if resolved.kind == TargetKind::Program || chosen == Chosen::File(OpenFile::Reveal) {
+            let program = resolved.kind == TargetKind::Program
+                && self.editor_address(&resolved, place).is_none();
+            if program || chosen == Chosen::File(OpenFile::Reveal) {
                 platform.reveal(&resolved)
             } else {
                 self.open_resolved(platform, &resolved, place)
@@ -405,15 +415,7 @@ impl<B: Backend> App<B> {
         resolved: &Target,
         place: Option<Place>,
     ) -> Result<(), lokyr_platform_core::Error> {
-        let address = place
-            .filter(|_| resolved.kind == TargetKind::File)
-            .and_then(|(line, column)| {
-                self.config
-                    .links
-                    .editor
-                    .url(&resolved.location, line, column)
-            });
-        if let Some(address) = address {
+        if let Some(address) = self.editor_address(resolved, place) {
             let editor = Target {
                 kind: TargetKind::Url,
                 location: address,
@@ -423,7 +425,28 @@ impl<B: Backend> App<B> {
                 Err(error) => eprintln!("lokyr: the editor did not open: {error}"),
             }
         }
+        // A file that would run shows in the Finder, never running.
+        if resolved.kind == TargetKind::Program {
+            return platform.reveal(resolved);
+        }
         platform.open(resolved)
+    }
+
+    /// The config's editor's address of `resolved` at `place`: of a file
+    /// that is no folder, whether its own application would open it or run
+    /// it, as a terminal that claims source files, or a script, which the
+    /// editor shows as text; none of no place, or of the system's editor.
+    fn editor_address(&self, resolved: &Target, place: Option<Place>) -> Option<String> {
+        let (line, column) = place?;
+        let file = matches!(resolved.kind, TargetKind::File | TargetKind::Program)
+            && !std::path::Path::new(&resolved.location).is_dir();
+        if !file {
+            return None;
+        }
+        self.config
+            .links
+            .editor
+            .url(&resolved.location, line, column)
     }
 
     /// Keeps `chosen`, what links do, as the user answered without wanting
