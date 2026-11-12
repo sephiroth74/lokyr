@@ -271,13 +271,13 @@ The plugin API has its own version, `plugin-sdk`'s, experimental until its 1.0 (
 
 ## Open questions
 
+Closed before 1.0.0: the license, MIT; the domains, `lokyr.dev` alone, of the updates' feed and of the registry's `pkg.lokyr.dev`; the names, which neither Homebrew's formulae and casks nor crates.io, npm or PyPI held on 12 November 2026.
+
 | Question | When to decide |
 |---|---|
 | An atomic store for the watchdog's interrupt in the vendored Luau, or Luau's guarantee that the race is harmless | F4 |
 | The buffers for bulk data between the host and Luau plugins, and how the Luau type definitions are generated from the Rust types | F4 |
 | The threads of the Luau plugins' executor: one, a fixed pool, or, for third-party plugins, a pool that grows: a thread at the start, one more as all of them hold calls under way, up to a bound, and an idle one ending after a while; each plugin one call at a time, its VM on one thread at a time. First-party plugins on a thread of their own have one each ([PLUGIN-SYSTEM](PLUGIN-SYSTEM.md#execution-model)) | F4, with the executor |
-| The domains: `lokyr.dev`, of the updates' feed and of the registry's `pkg.lokyr.dev`, is the project's; `lokyr.sh` and `lokyr.app` are left to buy | Before F4 |
 | Lokyr's and Sleip's marks, in the US, Europe and elsewhere, checked by hand | Before the first public release, 1.0.0 |
-| The names in Homebrew and other registries | Before the first public release, 1.0.0 |
-| Branch protection on `main`: a ruleset that requires the `macos` and `linux` CI checks | When the repository goes public |
+| Branch protection on `main`: CI enabled again, of the free minutes of a public repository, and a ruleset that requires its `macos` and `linux` checks | When the repository goes public |
 | Flatpak for Linux, where the sandbox makes launching host shells awkward | F7 |
