@@ -19,6 +19,6 @@ Every feature that you see in Lokyr beyond the terminal itself comes from a plug
 
 The order of the table is the order in which they start, which matters for the keys alone: a later plugin's key wins over an earlier one's, and your own `[keys]` win over all of them.
 
-To write a plugin of your own, in Luau, and publish it on [pkg.lokyr.dev](https://pkg.lokyr.dev), follow [Writing a plugin](authoring.md).
+To write a plugin of your own, in Luau, and publish it on [pkg.lokyr.dev](https://pkg.lokyr.dev), follow [Writing a plugin](authoring.md), and look up the capabilities, the slots, the events and the limits in [the plugin reference](reference.md).
 
 Turning a plugin off takes away its commands, its keys, its bars and its panels at once, as you save the file; `true` turns it on again. Without `tabs`, no tab bar shows and no key opens a tab; without `keymap-macos`, the commands keep working from the menus and from your own `[keys]`, but none has a key by default.

@@ -237,7 +237,7 @@ A new version is a new `version` in the manifest, a new tag, and `sleip publish`
 
 ## The API at a glance
 
-`lokyr.d.luau` is the reference: every call of `cx`, its arguments and its answer, every event and every shape, of a comment each. [The plugin system](../PLUGIN-SYSTEM.md#illustrative-draft) tells what they mean, at more length. An overview:
+`lokyr.d.luau` is the reference: every call of `cx`, its arguments and its answer, every event and every shape, of a comment each. [The plugin reference](reference.md) lists the capabilities and their risks, the slots, the events, the limits and the errors; [the plugin system](../PLUGIN-SYSTEM.md#illustrative-draft) tells what the calls mean, at more length. An overview:
 
 **The callbacks** of the plugin's table, each one optional: `activate`, as the plugin starts; `on_command`, a command of its own ran; `applies`, whether a command would do something now, as a menu asks before it enables an item; `on_event`, a batch of events; `render`, the tree of one of its views; `on_ui_event`, a click, a key or a change of a node of its views.
 
@@ -267,7 +267,7 @@ A new version is a new `version` in the manifest, a new tag, and `sleip publish`
 
 **Views** are data: a view is a tree of nodes, each a table of its `kind`, as `container`, `text`, `button`, `toggle`, `field`, `list`, `scroll`, `progress`, `tabs` and `image`, of a layout of flexbox's terms and a style whose colors are tokens of the theme in force, as `panel.bg` and `text.secondary`, never colors of the plugin's. The host draws them, keeps their state, as a field's text, of their keys, and makes them accessible to VoiceOver. A plugin's views fill the window's **slots**, as the tab bar, a strip across the top, the status bar, the panes' headers and the titlebar's buttons, which the manifest's `slots` declares, and its **panels**, which float over the window at a cell, the cursor, the pointer, a node, or a corner of a pane or of the window.
 
-**Capabilities** guard the calls that reach what belongs to the person who runs Lokyr: the panes' text, typing into them, the clipboard, the processes, the workspace, the notifications, the Mac's sleep, the theme and the font in the config. A call of a capability that the plugin lacks fails, of the code 302; [the capabilities](../PLUGIN-SYSTEM.md#capabilities) list them all.
+**Capabilities** guard the calls that reach what belongs to the person who runs Lokyr: the panes' text, typing into them, the clipboard, the processes, the workspace, the notifications, the Mac's sleep, the theme and the font in the config. A call of a capability that the plugin lacks fails, of the code 302; [the capabilities](../PLUGIN-SYSTEM.md#capabilities) list them all. Each capability and its risk are in [the reference](reference.md#capabilities).
 
 **Limits.** Each callback runs within its deadline, 16 ms for `render` and `applies`, 250 ms for a command, an event or a view's event, and a second for the activation; a plugin holds 64 MB at most: past them the plugin faults, and the host stops it, starts it again after a while, and turns it off at its third fault within a minute. A callback writes 10 000 times at most, a write past them failing; a value that the plugin gives the host carries 16 MiB of text or bytes at most; its images take 32 million pixels at once, given back at 4 million a second. [The limits](../PLUGIN-SYSTEM.md#limits-and-isolation) tell them all.
 

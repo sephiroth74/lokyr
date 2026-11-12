@@ -671,6 +671,76 @@ mod tests {
     use super::*;
 
     #[test]
+    fn the_authors_reference_names_every_capability_slot_and_code() {
+        let reference = include_str!("../../../docs/plugins/reference.md");
+        // Each capability's name in the manifest, of a match that a new one
+        // fails to build until it is listed.
+        let name = |capability: &Capability| match capability {
+            Capability::Net(_) => "net:<host>".to_owned(),
+            Capability::FsRead(_) => "fs-read:<path>".to_owned(),
+            Capability::FsWrite(_) => "fs-write:<path>".to_owned(),
+            Capability::EnvRead(_) => "env-read:<name>".to_owned(),
+            Capability::TerminalRead
+            | Capability::PtyWrite
+            | Capability::ClipboardRead
+            | Capability::ClipboardWrite
+            | Capability::Notifications
+            | Capability::Open
+            | Capability::ProcessSpawn
+            | Capability::GlobalHotkey
+            | Capability::InputRead
+            | Capability::HistoryRead
+            | Capability::ProcessRead
+            | Capability::UserCommands
+            | Capability::WorkspaceWrite
+            | Capability::PaneView
+            | Capability::Decorate
+            | Capability::PointerRead
+            | Capability::KeepAwake
+            | Capability::AppearanceWrite
+            | Capability::Packages => capability.to_string(),
+        };
+        let every = [
+            Capability::TerminalRead,
+            Capability::PtyWrite,
+            Capability::ClipboardRead,
+            Capability::ClipboardWrite,
+            Capability::Notifications,
+            Capability::Open,
+            Capability::ProcessSpawn,
+            Capability::Net(String::new()),
+            Capability::FsRead(String::new()),
+            Capability::FsWrite(String::new()),
+            Capability::GlobalHotkey,
+            Capability::EnvRead(String::new()),
+            Capability::InputRead,
+            Capability::HistoryRead,
+            Capability::ProcessRead,
+            Capability::UserCommands,
+            Capability::WorkspaceWrite,
+            Capability::PaneView,
+            Capability::Decorate,
+            Capability::PointerRead,
+            Capability::KeepAwake,
+            Capability::AppearanceWrite,
+            Capability::Packages,
+        ];
+        for capability in &every {
+            let shown = format!("`{}`", name(capability));
+            assert!(reference.contains(&shown), "{shown}");
+        }
+        #[cfg(feature = "unstable")]
+        for slot in crate::ui::Slot::ALL {
+            let shown = format!("| `{}` |", slot.name());
+            assert!(reference.contains(&shown), "{shown}");
+        }
+        for code in Code::ALL {
+            let shown = format!("| {} | `{}` |", code.number(), code.kind());
+            assert!(reference.contains(&shown), "{shown}");
+        }
+    }
+
+    #[test]
     fn a_command_s_title_is_a_label() {
         let command = |title: &str| Command {
             name: "acme.go".to_owned(),
