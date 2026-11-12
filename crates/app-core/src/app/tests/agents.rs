@@ -95,9 +95,47 @@ fn waiting_behind(
     window: WindowId,
     script: &str,
 ) -> (lokyr_kernel::workspace::TabId, PaneId) {
+    waiting_behind_of(
+        fake,
+        app,
+        window,
+        &format!("exec perl -e '$| = 1; {script}; sleep 30'"),
+    )
+}
+
+/// [`waiting_behind`], of the shell's `command`.
+fn waiting_behind_of(
+    fake: &mut Fake,
+    app: &mut App,
+    window: WindowId,
+    command: &str,
+) -> (lokyr_kernel::workspace::TabId, PaneId) {
+    let (tab, agent) = behind(app, window, command);
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while app
+        .workspace
+        .pane(agent)
+        .and_then(Pane::agent)
+        .and_then(lokyr_kernel::workspace::Agent::state)
+        != Some(lokyr_kernel::plugins::host::AgentState::Waiting)
+    {
+        assert!(Instant::now() < deadline, "no agent waits");
+        app.collect(fake, &[agent]);
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    (tab, agent)
+}
+
+/// Opens a second tab behind `window`'s, of the shell's `command`: the
+/// tab and the pane.
+fn behind(
+    app: &mut App,
+    window: WindowId,
+    command: &str,
+) -> (lokyr_kernel::workspace::TabId, PaneId) {
     let shown = app.windows[&window].window;
     let waiting = Pane::spawn(
-        &shell(&format!("exec perl -e '$| = 1; {script}; sleep 30'")),
+        &shell(command),
         &Environment::default(),
         &Settings::default(),
         Grid {
@@ -112,19 +150,43 @@ fn waiting_behind(
     );
     let agent = waiting.id();
     let tab = app.workspace.open_tab(shown, waiting, 1).unwrap();
+    (tab, agent)
+}
+
+#[test]
+fn an_agent_that_a_shell_s_exec_starts_counts_its_first_request() {
+    // The shell looked at first, as it sleeps; then the agent of the same
+    // group, whose first output asks for the user.
+    let (mut fake, mut app, window) = configured(
+        "[agents]\nprograms = [\"perl\"]\n",
+        shell("echo ready; read line"),
+    );
+    let (_, agent) = behind(
+        &mut app,
+        window,
+        r#"sleep 1; exec perl -e '$| = 1; print "\e]9;need you\a"; sleep 30'"#,
+    );
     let deadline = Instant::now() + Duration::from_secs(10);
     while app
         .workspace
         .pane(agent)
-        .and_then(Pane::agent)
-        .and_then(lokyr_kernel::workspace::Agent::state)
-        != Some(lokyr_kernel::plugins::host::AgentState::Waiting)
+        .and_then(Pane::foreground_group)
+        .is_none()
     {
-        assert!(Instant::now() < deadline, "no agent waits");
-        app.collect(fake, &[agent]);
+        assert!(Instant::now() < deadline, "the shell does not run");
         std::thread::sleep(Duration::from_millis(10));
     }
-    (tab, agent)
+    app.collect(&mut fake, &[agent]);
+    // The agent started and asked, between two looks.
+    std::thread::sleep(Duration::from_secs(2));
+    app.collect(&mut fake, &[agent]);
+    assert_eq!(
+        app.workspace
+            .pane(agent)
+            .and_then(Pane::agent)
+            .and_then(lokyr_kernel::workspace::Agent::state),
+        Some(lokyr_kernel::plugins::host::AgentState::Waiting)
+    );
 }
 
 #[test]

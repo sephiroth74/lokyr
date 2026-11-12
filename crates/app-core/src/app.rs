@@ -3317,20 +3317,17 @@ impl<B: Backend> App<B> {
     /// that wait still.
     fn collect(&mut self, platform: &mut dyn Platform, panes: &[PaneId]) {
         // Their agents first, so that what their output tells counts, as
-        // an agent's first request: a look at each foreground's group, and
-        // at its program's path as the group changes alone.
+        // an agent's first request: a look at each foreground's group and
+        // its program's path, as a shell's `exec` changes the program of
+        // the same group, some microseconds, which the tab's place takes
+        // again below.
         for &pane in panes {
-            let shown = self.workspace.pane(pane).filter(|shown| !shown.is_kept());
-            let group = shown.and_then(Pane::foreground_group);
-            if shown.is_some()
-                && self
-                    .agent_groups
-                    .get(&pane)
-                    .is_some_and(|(seen, _)| *seen == group)
-            {
-                continue;
-            }
-            let program = shown.and_then(Pane::foreground_program).unwrap_or_default();
+            let program = self
+                .workspace
+                .pane(pane)
+                .filter(|shown| !shown.is_kept())
+                .and_then(Pane::foreground_program)
+                .unwrap_or_default();
             self.look_at_agent(pane, &program);
         }
         let due = self.workspace.collect(panes, Instant::now());
