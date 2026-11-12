@@ -7,7 +7,8 @@ use std::hash::{Hash, Hasher};
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
-use lokyr_render_core::{AtlasRegion, Texture, TextureUpdate};
+use lokyr_plugin_sdk::view::{FontFamily, FontWeight, TextSize};
+use lokyr_render_core::{AtlasRegion, Color, PlacedGlyph, Texture, TextureUpdate};
 use lokyr_text_core::{
     Atlas, BitmapFormat, CellMetrics, Change, Face, FaceError, FaceId, Faces, FastMap, Features,
     FontBackend, FontConfig, GlyphId, Raster, Rendering, Resolved, ShapedGlyph, Synthesis,
@@ -15,8 +16,12 @@ use lokyr_text_core::{
 };
 use lokyr_vt_core::unicode;
 
+use crate::field::{self, Carets};
+use crate::interface::{self, InterfaceConfig, InterfaceFace};
+use crate::layout::Measure;
 use crate::pane::{AtlasGlyph, CellText, Glyphs as GlyphSource, Run, RunGlyph};
 use crate::text::TextConfig;
+use crate::tree::Typeset;
 
 /// The face of the glyphs that the terminal draws itself, of box drawing
 /// and of the powerline symbols, whose glyph is their character's code.
@@ -37,8 +42,51 @@ const SHAPED_RUNS: usize = 4096;
 /// run each, do not grow it without end.
 const SHAPED_GLYPHS: usize = 1 << 17;
 
+/// The texts whose caret's places the interface keeps, as a window's
+/// fields and their compositions ask for them each frame.
+const CARET_TEXTS: usize = 8;
+
+/// How many texts of the interface, shortened to their room, the font
+/// keeps, as each frame that draws the chrome shortens the same again.
+const SHORTENED_TEXTS: usize = 64;
+
+/// How many texts of the interface, broken into lines, the font keeps, as
+/// each frame that draws the chrome breaks the same again.
+const BROKEN_TEXTS: usize = 16;
+
+/// An icon's largest side, in pixels, past which it draws nothing: 512
+/// points at a scale of 2, a megabyte of the atlas.
+const ICON_LARGEST: f32 = 1024.0;
+
 /// The slots of the glyphs that a frame drew, a power of two.
 const DRAWN_SLOTS: usize = 512;
+
+/// The share of an icon's square, a line of the interface's text, that its
+/// ink takes, where the symbols' font takes it an em wide: three quarters,
+/// 12 points of a line of 16, as the system's symbols beside text of 13
+/// points.
+const ICON_INK: f32 = 0.75;
+
+/// The share of the interface's size that its small text takes: eleven
+/// points of thirteen, as macOS's small controls' text of its regular
+/// ones'.
+pub const SMALL: f32 = 11.0 / 13.0;
+
+/// The share of the interface's size that its large text takes: eighteen
+/// points of thirteen, as a palette's field.
+pub const LARGE: f32 = 18.0 / 13.0;
+
+/// The fewest points of a node's text, as the interface's font's are.
+pub const MOST_SMALL: f32 = 4.0;
+
+/// The most points of a node's text.
+pub const MOST_LARGE: f32 = 200.0;
+
+/// The most faces of the interface's other sizes and weights that the font
+/// keeps, past which it lets them all go, to find those that the texts ask
+/// for again, as a plugin's text of a new size at each frame would keep a
+/// face of each.
+const MOST_INTERFACES: usize = 32;
 
 /// VARIATION SELECTOR-16, which asks for a character's emoji.
 const EMOJI_PRESENTATION: char = '\u{FE0F}';
@@ -95,13 +143,21 @@ pub struct GlyphKey {
     pub synthesis: Synthesis,
     /// Whether it is drawn of thin strokes.
     pub thin: bool,
+    /// Whether it spans two columns: a drawing of the terminal's in a wide
+    /// cell, which takes both; no other glyph.
+    pub wide: bool,
+    /// How far its origin is past its pixel's left edge, in thirds of a
+    /// pixel: 0 for the cells' glyphs, which take whole pixels.
+    pub phase: u8,
 }
 
 /// A key hashes as two words rather than a word a field, as every glyph of
 /// a frame looks one up.
 impl Hash for GlyphKey {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        let flags = u64::from(self.synthesis.bold) << 2
+        let flags = u64::from(self.phase) << 4
+            | u64::from(self.wide) << 3
+            | u64::from(self.synthesis.bold) << 2
             | u64::from(self.synthesis.italic) << 1
             | u64::from(self.thin);
         state.write_u64(u64::from(self.face.0) << 32 | u64::from(self.glyph.0) << 16 | flags);
@@ -114,6 +170,9 @@ impl Hash for GlyphKey {
 #[derive(Debug)]
 pub struct Font<B> {
     backend: B,
+    /// Whether the backend draws its glyphs of coverage of the system's
+    /// font smoothing.
+    smooths: bool,
     config: FontConfig,
     resolved: Resolved,
     /// The faces of the text past ASCII, when the configuration names an
@@ -170,6 +229,38 @@ pub struct Font<B> {
     /// The glyphs that [`Font::draw_pending`] left, as the frame's time for
     /// glyphs ran out, which the frame shows without.
     deferred: FastMap<GlyphKey, ()>,
+    /// The configuration of the interface's face, which its first text
+    /// finds.
+    interface_config: InterfaceConfig,
+    /// The face of the interface's text, once found: the first text of the
+    /// interface finds it, so that a window without them, and the app's
+    /// start, do not pay for it.
+    interface: Option<InterfaceFace>,
+    /// The terminal's regular face at its size, as an interface's text of
+    /// its family takes it, once one asks for it.
+    terminal_text: Option<InterfaceFace>,
+    /// The interface's faces of other sizes and weights, of its family or
+    /// the terminal's, by their families, their points' bits and their
+    /// weights, once a text of theirs asks for one.
+    interfaces: FastMap<(FontFamily, u32, FontWeight), InterfaceFace>,
+    /// How the interface's texts are set, as the node that they are
+    /// measured or drawn for has it.
+    typeset: Typeset,
+    /// The glyph of each icon's character in the symbols' font, once
+    /// asked for.
+    icons: FastMap<char, Option<GlyphId>>,
+    /// The size in pixels at which the symbols' font's advance is an icon's
+    /// ink, by its square's side's bits, once asked for.
+    icon_pixels: FastMap<u32, f32>,
+    /// The places of the caret in the last texts of the interface asked
+    /// for, the newest first, of their face and size, so that a field's
+    /// frames find them once.
+    carets: Vec<KnownCarets>,
+    /// The texts of the interface shortened lately, the newest first.
+    shortened: Vec<KnownShortened>,
+    /// The texts of the interface broken into lines lately, the newest
+    /// first.
+    broken: Vec<KnownLines>,
     /// The region of each glyph drawn, with its key, for the tests.
     #[cfg(test)]
     drawn: Vec<(AtlasRegion, GlyphKey)>,
@@ -196,6 +287,8 @@ impl DrawnGlyph {
                 italic: false,
             },
             thin: false,
+            wide: false,
+            phase: 0,
         },
         glyph: AtlasGlyph {
             region: AtlasRegion {
@@ -207,12 +300,16 @@ impl DrawnGlyph {
             },
             left: 0,
             top: 0,
+            smoothed: false,
         },
     };
 
     /// The slot of `key`.
     fn slot(key: &GlyphKey) -> usize {
-        (usize::from(key.glyph.0) ^ (key.face.0 as usize).wrapping_mul(0x9E37)) & (DRAWN_SLOTS - 1)
+        // A glyph's phases, as `lll` draws them, in slots of their own.
+        let phase = usize::from(key.phase).wrapping_mul(0x51);
+        (usize::from(key.glyph.0) ^ (key.face.0 as usize).wrapping_mul(0x9E37) ^ phase)
+            & (DRAWN_SLOTS - 1)
     }
 }
 
@@ -402,7 +499,9 @@ impl<B: FontBackend> Font<B> {
         }
         let pixels = config.size.points() * scale;
         let cell = CellMetrics::new(&backend.metrics(resolved.faces.regular.id, pixels), &config);
+        let smooths = backend.smooths();
         Ok(Self {
+            smooths,
             backend,
             config,
             pixels,
@@ -425,6 +524,16 @@ impl<B: FontBackend> Font<B> {
             pending: Vec::new(),
             pending_keys: FastMap::default(),
             deferred: FastMap::default(),
+            interface_config: InterfaceConfig::default(),
+            interface: None,
+            terminal_text: None,
+            interfaces: FastMap::default(),
+            typeset: Typeset::default(),
+            icons: FastMap::default(),
+            icon_pixels: FastMap::default(),
+            carets: Vec::new(),
+            shortened: Vec::new(),
+            broken: Vec::new(),
             #[cfg(test)]
             drawn: Vec::new(),
             resolved,
@@ -453,6 +562,11 @@ impl<B: FontBackend> Font<B> {
     /// The family that the text takes.
     pub fn family(&self) -> &str {
         &self.resolved.family
+    }
+
+    /// The display's scale that it takes, which [`Font::set_scale`] gave.
+    pub fn scale(&self) -> f32 {
+        self.scale
     }
 
     /// The font at a display's `scale`: the cell measured again, and the
@@ -491,7 +605,8 @@ impl<B: FontBackend> Font<B> {
 
     /// The glyph of `region` in the middle of its cell, of two columns when
     /// `wide`, across and down.
-    fn in_the_middle(&self, region: AtlasRegion, wide: bool) -> AtlasGlyph {
+    fn in_the_middle(&self, glyph: AtlasGlyph, wide: bool) -> AtlasGlyph {
+        let region = glyph.region;
         let half = |cell: u32, glyph: u32| (i64::from(cell) - i64::from(glyph)) / 2;
         let left = half(self.cell.width * if wide { 2 } else { 1 }, region.width);
         let below_top = half(self.cell.height, region.height);
@@ -500,6 +615,7 @@ impl<B: FontBackend> Font<B> {
             left: i32::try_from(left).unwrap_or(0),
             // The top edge's rows above the baseline.
             top: i32::try_from(i64::from(self.cell.baseline) - below_top).unwrap_or(0),
+            smoothed: glyph.smoothed,
         }
     }
 
@@ -699,23 +815,40 @@ impl<B: FontBackend> Font<B> {
     /// to fit the cell, in its middle.
     fn draw(&mut self, found: Found, thin: bool, wide: bool) -> Option<AtlasGlyph> {
         if !found.fitted {
-            return self.draw_at(found, self.pixels, thin);
+            // The terminal's drawings take a wide cell's two columns.
+            let spans = wide && found.face == SPRITES;
+            return self.draw_at(found, self.pixels, thin, spans);
         }
         let size = self.fitted_pixels(found.face, wide);
-        let glyph = self.draw_at(found, size, thin)?;
-        Some(self.in_the_middle(glyph.region, wide))
+        let glyph = self.draw_at(found, size, thin, false)?;
+        Some(self.in_the_middle(glyph, wide))
     }
 
     /// The glyph `found` at `size` in the atlas, of thin strokes when
-    /// `thin`, drawn into it the first time, antialiased as the
+    /// `thin`, across two columns when `wide`, which the terminal's drawings
+    /// alone take, drawn into it the first time, antialiased as the
     /// configuration says.
-    fn draw_at(&mut self, found: Found, size: f32, thin: bool) -> Option<AtlasGlyph> {
+    fn draw_at(&mut self, found: Found, size: f32, thin: bool, wide: bool) -> Option<AtlasGlyph> {
+        self.draw_at_phase(found, size, (thin, wide), 0)
+    }
+
+    /// The glyph of `found` at `size` pixels, as [`Font::draw_at`] gives
+    /// it, its origin `phase` thirds of a pixel past its pixel's left edge.
+    fn draw_at_phase(
+        &mut self,
+        found: Found,
+        size: f32,
+        (thin, wide): (bool, bool),
+        phase: u8,
+    ) -> Option<AtlasGlyph> {
         let key = GlyphKey {
             face: found.face,
             glyph: found.glyph,
             size: size.to_bits(),
             synthesis: found.synthesis,
             thin,
+            wide,
+            phase,
         };
         let slot = DrawnGlyph::slot(&key);
         let drawn = self.this_frame[slot];
@@ -733,7 +866,11 @@ impl<B: FontBackend> Font<B> {
                     return None;
                 }
                 let antialias = self.config.antialias;
-                let rendering = Rendering { antialias, thin };
+                let rendering = Rendering {
+                    antialias,
+                    thin,
+                    phase,
+                };
                 if found.face != SPRITES {
                     if self.deferred.contains_key(&key) {
                         return None;
@@ -754,7 +891,11 @@ impl<B: FontBackend> Font<B> {
                 }
                 let bitmap = if found.face == SPRITES {
                     let character = char::from_u32(u32::from(found.glyph.0))?;
-                    sprite::draw(character, &self.cell, antialias)?
+                    let cell = CellMetrics {
+                        width: self.cell.width * if wide { 2 } else { 1 },
+                        ..self.cell
+                    };
+                    sprite::draw(character, &cell, antialias)?
                 } else {
                     self.backend.rasterize(
                         found.face,
@@ -782,10 +923,18 @@ impl<B: FontBackend> Font<B> {
         if !self.drawn.contains(&(region, key)) {
             self.drawn.push((region, key));
         }
+        // The glyphs of coverage that the backend drew of its font
+        // smoothing: not the terminal's drawings, nor the thin ones.
+        let smoothed = self.smooths
+            && key.face != SPRITES
+            && !key.thin
+            && self.config.antialias
+            && region.texture == Texture::Coverage;
         let glyph = AtlasGlyph {
             region,
             left: placement.left,
             top: placement.top,
+            smoothed,
         };
         self.this_frame[slot] = DrawnGlyph {
             frame: Some(self.frame),
@@ -991,6 +1140,419 @@ impl<B: FontBackend> Font<B> {
                 },
             })
             .collect()
+    }
+
+    /// Takes `config` for the interface's face, which the interface's next
+    /// text finds, as [`Font::interface`] tells.
+    pub fn set_interface(&mut self, config: &InterfaceConfig) {
+        self.interface_config = config.clone();
+        self.interface = None;
+        self.terminal_text = None;
+        self.interfaces.clear();
+    }
+
+    /// Takes `typeset` for the interface's texts that it measures and draws
+    /// next, until another one.
+    pub fn set_typeset(&mut self, typeset: Typeset) {
+        self.typeset = typeset;
+    }
+
+    /// Takes `size` for the interface's texts that it measures and draws
+    /// next, of the regular weight, until another size.
+    pub fn set_text_size(&mut self, size: TextSize) {
+        self.typeset = Typeset {
+            size,
+            ..Typeset::default()
+        };
+    }
+
+    /// The face of the interface's text, found the first time: the one that
+    /// [`Font::set_interface`]'s configuration names; the default one where
+    /// that fails, as the log tells; the terminal's face where the system
+    /// has no interface family; of [`SMALL`] or [`LARGE`] of its size where
+    /// [`Font::set_typeset`] took the small one or the large one, or of the
+    /// points that it took, from 4 to 200, to a quarter of a point, a
+    /// number that is not one taking the regular size, and of the family's
+    /// face nearest to the weight that it took. A typeset of the terminal's family takes
+    /// its regular face and its size, as `[font]` names them, in the place
+    /// of the interface's.
+    pub fn interface(&mut self) -> &InterfaceFace {
+        let (backend, resolved, config, interfaces, typeset) = (
+            &mut self.backend,
+            &self.resolved,
+            &self.interface_config,
+            &mut self.interfaces,
+            self.typeset,
+        );
+        let terminal_points = self.config.size.points();
+        let regular = match typeset.family {
+            FontFamily::Terminal => self.terminal_text.get_or_insert_with(|| {
+                InterfaceFace::of(
+                    backend,
+                    resolved.family.clone(),
+                    None,
+                    resolved.faces.regular.id,
+                    terminal_points,
+                )
+            }),
+            FontFamily::Interface => self.interface.get_or_insert_with(|| {
+                InterfaceFace::new(backend, config)
+                    .or_else(|error| {
+                        eprintln!("lokyr: the interface's font is the default one, {error}");
+                        let default = InterfaceConfig {
+                            font_family: None,
+                            ..config.clone()
+                        };
+                        InterfaceFace::new(backend, &default)
+                    })
+                    .unwrap_or_else(|_| {
+                        InterfaceFace::of(
+                            backend,
+                            resolved.family.clone(),
+                            None,
+                            resolved.faces.regular.id,
+                            config.font_size.points(),
+                        )
+                    })
+            }),
+        };
+        let points = typeset.points.map_or_else(
+            || match typeset.size {
+                TextSize::Regular => regular.size(),
+                TextSize::Small => regular.size() * SMALL,
+                TextSize::Large => regular.size() * LARGE,
+            },
+            |points| {
+                if points.is_nan() {
+                    regular.size()
+                } else {
+                    (points.clamp(MOST_SMALL, MOST_LARGE) * 4.0).round() / 4.0
+                }
+            },
+        );
+        if typeset.weight == FontWeight::Regular && points == regular.size() {
+            return regular;
+        }
+        let key = (typeset.family, points.to_bits(), typeset.weight);
+        if !interfaces.contains_key(&key) && interfaces.len() >= MOST_INTERFACES {
+            interfaces.clear();
+        }
+        interfaces.entry(key).or_insert_with(|| {
+            regular
+                .weighted(backend, typeset.weight)
+                .sized(backend, points)
+        })
+    }
+
+    /// The glyphs of `text` on one line in the interface's face, at the
+    /// display's scale, from the pen at `x` on the baseline at `baseline`,
+    /// in pixels, in `color`, drawn into the atlas the first time, of thin
+    /// strokes as the configuration has them for a background darker than
+    /// the text when `dark`, each where the shaping puts it to a third of a
+    /// pixel, as a glyph drawn past its pixel's edge by the thirds left; and
+    /// where the last one's ink ends, rightwards.
+    pub fn interface_text(
+        &mut self,
+        text: &str,
+        (x, baseline): (f32, f32),
+        color: Color,
+        dark: bool,
+    ) -> (Vec<PlacedGlyph>, f32) {
+        let (size, face) = {
+            let interface = self.interface();
+            (interface.size(), interface.face())
+        };
+        let pixels = size * self.scale;
+        let features = Features { ligatures: true };
+        let shaped = self
+            .shaped
+            .shape(&mut self.backend, face, pixels, features, text);
+        let thin = self.thin(dark);
+        let mut placed = Vec::with_capacity(shaped.len());
+        let mut end = x;
+        for glyph in shaped.iter() {
+            let found = Found {
+                face: glyph.face,
+                synthesis: Synthesis::default(),
+                glyph: glyph.glyph,
+                emoji: false,
+                fitted: false,
+            };
+            // The pen at a third of a pixel: its whole pixel, and the
+            // glyph drawn past it by the thirds left.
+            let thirds = ((x + glyph.x) * f32::from(Rendering::PHASES)).round() as i32;
+            let phases = i32::from(Rendering::PHASES);
+            let (pixel, phase) = (thirds.div_euclid(phases), thirds.rem_euclid(phases) as u8);
+            // A glyph without ink, as a space, draws nothing.
+            let Some(drawn) = self
+                .draw_at_phase(found, pixels, (thin, false), phase)
+                .filter(|drawn| drawn.region.width > 0 && drawn.region.height > 0)
+            else {
+                continue;
+            };
+            let left = pixel + drawn.left;
+            end = end.max((left + drawn.region.width as i32) as f32);
+            // A glyph of its own colors, as an emoji, of an opaque color,
+            // whose opacity a fade takes alone, and not the text's.
+            let color = match drawn.region.texture {
+                Texture::Color => Color::WHITE,
+                Texture::Coverage => color,
+            };
+            placed.push(PlacedGlyph {
+                region: drawn.region,
+                x: left,
+                y: (baseline - glyph.y).round() as i32 - drawn.top,
+                color,
+                weight: drawn.smoothed,
+            });
+        }
+        (placed, end)
+    }
+
+    /// `text` of the interface's face cut at a grapheme cluster's end, of
+    /// an ellipsis after it, within `room` points: the most clusters whose
+    /// prefix fits with the ellipsis, measured of its own, as a text from
+    /// right to left or of both directions lays out its prefix apart, the
+    /// spaces before the ellipsis left out; the ellipsis alone where none
+    /// fits. Found once for the last texts shortened, which each frame of
+    /// the chrome shortens again.
+    pub fn interface_shortened(&mut self, text: &str, room: f32) -> Rc<str> {
+        const ELLIPSIS: &str = "…";
+        let (size, face) = {
+            let interface = self.interface();
+            (interface.size(), interface.face())
+        };
+        let key = (face, size.to_bits(), room.to_bits());
+        let known = self
+            .shortened
+            .iter()
+            .position(|known| (known.face, known.size, known.room) == key && known.text == text);
+        if let Some(at) = known {
+            let known = self.shortened.remove(at);
+            let shortened = Rc::clone(&known.shortened);
+            self.shortened.insert(0, known);
+            return shortened;
+        }
+        let features = Features { ligatures: true };
+        let ellipsis = self.backend.width(face, size, ELLIPSIS, features);
+        // The clusters' boundaries, from the text's start.
+        let mut bounds: Vec<usize> = self
+            .interface_carets(text)
+            .iter()
+            .map(|&(byte, _)| byte)
+            .filter(|&byte| byte > 0 && byte < text.len())
+            .collect();
+        bounds.sort_unstable();
+        bounds.dedup();
+        // The most clusters whose prefix, of its own width, which a text
+        // from right to left or of both directions lays out apart, fits
+        // with the ellipsis.
+        let (mut fit, mut over) = (0, bounds.len());
+        while fit < over {
+            let mid = (fit + over).div_ceil(2);
+            let prefix = text[..bounds[mid - 1]].trim_end();
+            if self.backend.width(face, size, prefix, features) + ellipsis <= room {
+                fit = mid;
+            } else {
+                over = mid - 1;
+            }
+        }
+        let cut = fit.checked_sub(1).map_or(0, |at| bounds[at]);
+        let shortened: Rc<str> = format!("{}{ELLIPSIS}", text[..cut].trim_end()).into();
+        self.shortened.truncate(SHORTENED_TEXTS - 1);
+        self.shortened.insert(
+            0,
+            KnownShortened {
+                face,
+                size: size.to_bits(),
+                room: room.to_bits(),
+                text: text.to_owned(),
+                shortened: Rc::clone(&shortened),
+            },
+        );
+        shortened
+    }
+
+    /// `text` of the interface's face in lines of `room` points at most,
+    /// broken between its words, `most` lines at most, the last of the
+    /// rest shortened of an ellipsis, as [`Font::interface_shortened`]
+    /// shortens it, where the text goes on; a word longer than a line, on
+    /// a line of its own, shortened too. A text of no word is one empty
+    /// line. Found once for the last texts broken, which each frame of the
+    /// chrome breaks again.
+    pub fn interface_lines(&mut self, text: &str, room: f32, most: usize) -> Rc<[String]> {
+        let (size, face) = {
+            let interface = self.interface();
+            (interface.size(), interface.face())
+        };
+        let key = (face, size.to_bits(), room.to_bits(), most);
+        let known = self.broken.iter().position(|known| {
+            (known.face, known.size, known.room, known.most) == key && known.text == text
+        });
+        if let Some(at) = known {
+            let known = self.broken.remove(at);
+            let lines = Rc::clone(&known.lines);
+            self.broken.insert(0, known);
+            return lines;
+        }
+        let lines: Rc<[String]> = self.break_lines(text, room, most).into();
+        self.broken.truncate(BROKEN_TEXTS - 1);
+        self.broken.insert(
+            0,
+            KnownLines {
+                face,
+                size: size.to_bits(),
+                room: room.to_bits(),
+                most,
+                text: text.to_owned(),
+                lines: Rc::clone(&lines),
+            },
+        );
+        lines
+    }
+
+    /// `text` broken into lines, as [`Font::interface_lines`] tells.
+    fn break_lines(&mut self, text: &str, room: f32, most: usize) -> Vec<String> {
+        let features = Features { ligatures: true };
+        let (size, face) = {
+            let interface = self.interface();
+            (interface.size(), interface.face())
+        };
+        let words: Vec<&str> = text.split_whitespace().collect();
+        let mut lines: Vec<String> = Vec::new();
+        let mut at = 0;
+        while at < words.len() && lines.len() < most.max(1) {
+            // The last line takes the rest, shortened where it is longer.
+            if lines.len() + 1 == most.max(1) {
+                let rest = words[at..].join(" ");
+                let fits = self.backend.width(face, size, &rest, features) <= room;
+                lines.push(if fits {
+                    rest
+                } else {
+                    self.interface_shortened(&rest, room).to_string()
+                });
+                return lines;
+            }
+            let mut line = words[at].to_owned();
+            at += 1;
+            while at < words.len() {
+                let longer = format!("{line} {}", words[at]);
+                if self.backend.width(face, size, &longer, features) > room {
+                    break;
+                }
+                line = longer;
+                at += 1;
+            }
+            if self.backend.width(face, size, &line, features) > room {
+                line = self.interface_shortened(&line, room).to_string();
+            }
+            lines.push(line);
+        }
+        if lines.is_empty() {
+            lines.push(String::new());
+        }
+        lines
+    }
+
+    /// The places between the grapheme clusters of `text` in the
+    /// interface's face, in points from its start, as
+    /// [`Font::interface_text`] draws it: each cluster's first byte and the
+    /// caret's place before it, then the text's end and the caret's place
+    /// after its last cluster, as [`carets_of`] finds them; found once for
+    /// the last texts asked for.
+    pub fn interface_carets(&mut self, text: &str) -> Rc<[(usize, f32)]> {
+        let (size, face) = {
+            let interface = self.interface();
+            (interface.size(), interface.face())
+        };
+        let known = self.carets.iter().position(|known| {
+            (known.face, known.size) == (face, size.to_bits()) && known.text == text
+        });
+        if let Some(at) = known {
+            let known = self.carets.remove(at);
+            let places = Rc::clone(&known.places);
+            self.carets.insert(0, known);
+            return places;
+        }
+        let features = Features { ligatures: true };
+        let width = self.backend.width(face, size, text, features);
+        let shaped = self
+            .shaped
+            .shape(&mut self.backend, face, size, features, text);
+        let places: Rc<[(usize, f32)]> = carets_of(text, &shaped, width).into();
+        self.carets.truncate(CARET_TEXTS - 1);
+        self.carets.insert(
+            0,
+            KnownCarets {
+                face,
+                size: size.to_bits(),
+                text: text.to_owned(),
+                places: Rc::clone(&places),
+            },
+        );
+        places
+    }
+
+    /// The glyph of the icon `name`, in the middle of the square of `side`
+    /// pixels whose top left corner is `(x, y)`, in `color`: the symbols'
+    /// font's, at the size whose advance, an em, is the icon's ink, most of
+    /// the side. `None` for an icon that the host lacks, or that its font
+    /// cannot draw.
+    pub fn interface_icon(
+        &mut self,
+        name: &str,
+        (x, y): (f32, f32),
+        side: f32,
+        color: Color,
+        dark: bool,
+    ) -> Option<PlacedGlyph> {
+        // A square of less than a pixel draws nothing, where a font of no
+        // size would draw at the system's default; and one past the largest,
+        // whose glyph would take much of the atlas, or more memory than the
+        // app has.
+        if side.is_nan() || !(1.0..=ICON_LARGEST).contains(&side) {
+            return None;
+        }
+        let character = interface::icon(name)?;
+        let face = self.backend.symbols()?;
+        let glyph = match self.icons.get(&character) {
+            Some(&known) => known,
+            None => {
+                let glyph = self.backend.glyph(face, character);
+                self.icons.insert(character, glyph);
+                glyph
+            }
+        }?;
+        let pixels = match self.icon_pixels.get(&side.to_bits()) {
+            Some(&pixels) => pixels,
+            None => {
+                let ink = side * ICON_INK;
+                let advance = self.backend.metrics(face, ink).advance;
+                let pixels = if advance > 0.0 {
+                    ink * ink / advance
+                } else {
+                    ink
+                };
+                self.icon_pixels.insert(side.to_bits(), pixels);
+                pixels
+            }
+        };
+        let found = Found {
+            face,
+            synthesis: Synthesis::default(),
+            glyph,
+            emoji: false,
+            fitted: false,
+        };
+        let drawn = self.draw_at(found, pixels, self.thin(dark), false)?;
+        let middle = |start: f32, size: u32| (start + (side - size as f32) / 2.0).round() as i32;
+        Some(PlacedGlyph {
+            region: drawn.region,
+            x: middle(x, drawn.region.width),
+            y: middle(y, drawn.region.height),
+            color,
+            weight: drawn.smoothed,
+        })
     }
 
     /// Where `style` finds `character`, in the presentation that `asked`
@@ -1234,6 +1796,10 @@ impl<B: FontBackend> GlyphSource for Font<B> {
         Font::glyph(self, shown)
     }
 
+    fn system_weight(&self) -> bool {
+        self.config.system_weight
+    }
+
     fn run(&mut self, run: &Run<'_>, out: &mut Vec<RunGlyph>) {
         self.lay_out(run, out);
     }
@@ -1277,6 +1843,159 @@ fn texture(format: BitmapFormat) -> Texture {
         BitmapFormat::Gray => Texture::Coverage,
         BitmapFormat::Rgba => Texture::Color,
     }
+}
+
+/// The interface's texts and icons measured in its face, in points, for a
+/// view tree's layout: a text of its advances, as its run draws them at
+/// the display's scale, and an icon a square of a line.
+impl<B: FontBackend> Measure for Font<B> {
+    fn typeset(&mut self, typeset: Typeset) {
+        self.set_typeset(typeset);
+    }
+
+    fn text(&mut self, text: &str) -> (f32, f32) {
+        let features = Features { ligatures: true };
+        let interface = self.interface();
+        let (face, size, line) = (interface.face(), interface.size(), interface.line());
+        let width = self.backend.width(face, size, text, features);
+        (width, line)
+    }
+
+    fn icon(&mut self, _name: &str) -> (f32, f32) {
+        let line = self.interface().line();
+        (line, line)
+    }
+}
+
+impl<B: FontBackend> Carets for Font<B> {
+    fn carets(&mut self, text: &str) -> Rc<[(usize, f32)]> {
+        self.interface_carets(text)
+    }
+
+    fn typeset(&mut self, typeset: Typeset) {
+        self.set_typeset(typeset);
+    }
+}
+
+/// A text of the interface broken into lines within a room, which the next
+/// frames break again: of its face, its size's bits, the room's and its
+/// most lines.
+#[derive(Debug)]
+struct KnownLines {
+    face: FaceId,
+    size: u32,
+    room: u32,
+    most: usize,
+    text: String,
+    lines: Rc<[String]>,
+}
+
+/// A text of the interface shortened to a room, which the next frames
+/// shorten again: of its face, its size's bits and the room's.
+#[derive(Debug)]
+struct KnownShortened {
+    face: FaceId,
+    size: u32,
+    room: u32,
+    text: String,
+    shortened: Rc<str>,
+}
+
+/// The places of the caret in a text of the interface, which a field's
+/// frames ask for again.
+#[derive(Debug)]
+struct KnownCarets {
+    face: FaceId,
+    /// The size's bits.
+    size: u32,
+    text: String,
+    places: Rc<[(usize, f32)]>,
+}
+
+/// The places of the caret in `text`, which `glyphs` draw, `width` wide, in
+/// their unit from its start: each grapheme cluster's first byte and its
+/// leading edge, the left of a cluster of a run from left to right and the
+/// right of one from right to left, then the text's end and its last
+/// cluster's trailing edge, so that typing at the end of Hebrew goes on at
+/// its left. A cluster's edges are its glyphs' leftmost place and the next
+/// cluster's leftmost place past it, or the text's end; the clusters that a
+/// glyph draws together, as a ligature, share its width in equal parts, in
+/// its run's direction. One pass over the clusters and the glyphs, and a
+/// sort of the edges.
+pub fn carets_of(text: &str, glyphs: &[ShapedGlyph], width: f32) -> Vec<(usize, f32)> {
+    let starts = field::boundaries(text);
+    let clusters = starts.len() - 1;
+    // Each cluster's leftmost glyph, and its run's direction.
+    let mut left = vec![f32::INFINITY; clusters];
+    let mut backward = vec![false; clusters];
+    for glyph in glyphs {
+        let byte = glyph.cluster as usize;
+        let Some(at) = starts
+            .partition_point(|&start| start <= byte)
+            .checked_sub(1)
+        else {
+            continue;
+        };
+        if at < clusters && glyph.x.is_finite() {
+            left[at] = left[at].min(glyph.x);
+            backward[at] |= glyph.right_to_left;
+        }
+    }
+    let mut edges: Vec<f32> = left.iter().copied().filter(|x| x.is_finite()).collect();
+    edges.sort_by(f32::total_cmp);
+    let right = |x: f32| {
+        let past = edges.partition_point(|&edge| edge <= x);
+        edges.get(past).copied().unwrap_or(width).max(x)
+    };
+    // Each cluster's span, left and right, and whether its run goes from
+    // right to left: of its own glyphs, or its share of the glyphs of the
+    // cluster before, which drew it with theirs; before the first of
+    // glyphs, at that one's leading edge.
+    let mut spans = vec![(0.0, 0.0, false); clusters];
+    let first = left.iter().position(|x| x.is_finite());
+    let mut at = 0;
+    while at < clusters {
+        let mut end = at + 1;
+        while end < clusters && !left[end].is_finite() {
+            end += 1;
+        }
+        let Some(own) = (left[at].is_finite()).then_some(at).or(first) else {
+            // No glyph at all: every place at the start.
+            break;
+        };
+        let (from, to, back) = (left[own], right(left[own]), backward[own]);
+        if own != at {
+            // The clusters before the first of glyphs.
+            let edge = if back { to } else { from };
+            for span in &mut spans[at..end.min(own)] {
+                *span = (edge, edge, back);
+            }
+            at = own;
+            continue;
+        }
+        let share = (to - from) / (end - at) as f32;
+        for (part, span) in spans[at..end].iter_mut().enumerate() {
+            let near = part as f32 * share;
+            *span = if back {
+                (to - near - share, to - near, true)
+            } else {
+                (from + near, from + near + share, false)
+            };
+        }
+        at = end;
+    }
+    let mut places: Vec<(usize, f32)> = starts[..clusters]
+        .iter()
+        .zip(&spans)
+        .map(|(&start, &(from, to, back))| (start, if back { to } else { from }))
+        .collect();
+    let end = match spans.last() {
+        Some(&(from, _, true)) => from,
+        Some(&(_, to, false)) if first.is_some() => to,
+        _ => width,
+    };
+    places.push((text.len(), end));
+    places
 }
 
 #[cfg(test)]
@@ -1334,6 +2053,8 @@ mod tests {
         rendered: Vec<(FaceId, u16, Rendering)>,
         /// The faces asked whether they substitute glyphs in context.
         substituting: Vec<FaceId>,
+        /// Whether it draws its glyphs of the font smoothing.
+        smoothing: bool,
     }
 
     fn is_cjk(character: char) -> bool {
@@ -1479,6 +2200,7 @@ mod tests {
                 cluster: cluster as u32,
                 x,
                 y: 0.0,
+                right_to_left: false,
             };
             let code = |character: char| u16::try_from(u32::from(character)).unwrap_or(0);
             if face == EMOJI && text.contains('\u{200D}') {
@@ -1522,6 +2244,10 @@ mod tests {
             }
         }
 
+        fn smooths(&mut self) -> bool {
+            self.smoothing
+        }
+
         fn rasterize(
             &mut self,
             face: FaceId,
@@ -1552,6 +2278,99 @@ mod tests {
             wide: false,
             dark: false,
         }
+    }
+
+    #[test]
+    fn a_glyph_s_phases_take_slots_of_their_own_in_a_frame() {
+        let key = |phase| GlyphKey {
+            phase,
+            ..DrawnGlyph::EMPTY.key
+        };
+        let slots: Vec<usize> = (0..3).map(|phase| DrawnGlyph::slot(&key(phase))).collect();
+        assert!(slots[0] != slots[1] && slots[1] != slots[2] && slots[0] != slots[2]);
+    }
+
+    #[test]
+    fn the_system_s_weight_is_of_smoothed_glyphs_alone() {
+        let font = |smoothing: bool, config: FontConfig| {
+            let backend = Squares {
+                smoothing,
+                ..Squares::default()
+            };
+            Font::new(backend, config, 1.0).unwrap()
+        };
+        let color = Color::from_rgb8(10, 20, 30);
+        let weights = |font: &mut Font<Squares>| {
+            let (glyphs, _) = font.interface_text("ab", (0.0, 20.0), color, false);
+            let cell = font.glyph(&shown("a", &Style::DEFAULT)).unwrap();
+            let sprite = font.glyph(&shown("\u{2500}", &Style::DEFAULT)).unwrap();
+            (
+                glyphs.iter().map(|glyph| glyph.weight).collect::<Vec<_>>(),
+                cell.smoothed,
+                sprite.smoothed,
+            )
+        };
+        // Smoothed: the text and the cell's glyph; never the terminal's own
+        // drawing.
+        let mut smoothed = font(true, FontConfig::default());
+        assert_eq!(weights(&mut smoothed), (vec![true, true], true, false));
+        // Without the backend's smoothing, of thin strokes, or without
+        // antialiasing: none.
+        let thin = FontConfig {
+            thin_strokes: ThinStrokes::Always,
+            ..FontConfig::default()
+        };
+        let aliased = FontConfig {
+            antialias: false,
+            ..FontConfig::default()
+        };
+        for (smoothing, config) in [
+            (false, FontConfig::default()),
+            (true, thin),
+            (true, aliased),
+        ] {
+            assert_eq!(
+                weights(&mut font(smoothing, config)),
+                (vec![false, false], false, false)
+            );
+        }
+    }
+
+    #[test]
+    fn the_interface_s_glyphs_fall_at_thirds_of_a_pixel() {
+        // 13 pixels at a scale of 1: glyphs 7.8 pixels apart, drawn a pixel
+        // past their pen.
+        let mut font = Font::new(Squares::default(), FontConfig::default(), 1.0).unwrap();
+        let color = Color::from_rgb8(10, 20, 30);
+        let (glyphs, _) = font.interface_text("abcd", (0.5, 20.0), color, false);
+        // Pens at 0.5, 8.3, 16.1 and 23.9: whole pixels and thirds past
+        // them, 0 and 2, 8 and 1, 16 and 0, 24 and 0.
+        let xs: Vec<i32> = glyphs.iter().map(|glyph| glyph.x).collect();
+        assert_eq!(xs, [1, 9, 17, 25]);
+        let phases: Vec<(u16, u8)> = font
+            .backend
+            .rendered
+            .iter()
+            .map(|&(_, glyph, rendering)| (glyph, rendering.phase))
+            .collect();
+        assert_eq!(phases, [(97, 2), (98, 1), (99, 0), (100, 0)]);
+        // Each pen within a sixth of a pixel of where its glyph draws.
+        for (index, glyph) in glyphs.iter().enumerate() {
+            let pen = 0.5 + 7.8 * index as f32;
+            let (_, _, rendering) = font.backend.rendered[index];
+            let drawn = (glyph.x - 1) as f32 + f32::from(rendering.phase) / 3.0;
+            assert!((drawn - pen).abs() <= 1.0 / 6.0 + 1e-4, "{drawn} {pen}");
+        }
+        // A glyph at another third is drawn again; at the same, kept.
+        let drawn = |font: &Font<Squares>| font.backend.drawn[&(FaceId(0), 97)];
+        font.interface_text("aaa", (0.0, 20.0), color, false);
+        // Pens at 0, 7.8 and 15.6: thirds 0, 2 and 2, the first of `abcd`'s
+        // phase 2 kept.
+        assert_eq!(drawn(&font), 2);
+        // The cells' glyphs keep whole pixels.
+        font.glyph(&shown("a", &Style::DEFAULT)).unwrap();
+        let (_, _, rendering) = *font.backend.rendered.last().unwrap();
+        assert_eq!(rendering.phase, 0);
     }
 
     #[test]
@@ -2184,6 +3003,38 @@ mod tests {
         );
     }
 
+    #[test]
+    fn the_terminal_s_drawings_of_a_wide_cell_take_both_columns() {
+        // As `ambiguous-width = 2` gives box drawing, blocks and the
+        // powerline's symbols.
+        let mut font = Font::new(Squares::default(), FontConfig::default(), 1.0).unwrap();
+        let cell = font.cell;
+        for character in ["\u{2500}", "\u{2588}", "\u{E0B0}"] {
+            let narrow = font.glyph(&shown(character, &Style::DEFAULT)).unwrap();
+            assert_eq!(narrow.region.width, cell.width, "{character}");
+            let two = CellText {
+                wide: true,
+                ..shown(character, &Style::DEFAULT)
+            };
+            let wide = font.glyph(&two).unwrap();
+            assert_eq!(wide.region.width, 2 * cell.width, "{character}");
+            assert_eq!(wide.left, narrow.left, "{character}");
+        }
+        // In a run, each cell's own.
+        let cells =
+            [(0, false), (3, true)].map(|(start, wide)| crate::pane::RunCell { start, wide });
+        let run = Run {
+            text: "\u{2500}\u{2500}",
+            cells: &cells,
+            style: &Style::DEFAULT,
+            dark: false,
+        };
+        let mut out = Vec::new();
+        font.lay_out(&run, &mut out);
+        let widths: Vec<_> = out.iter().map(|placed| placed.glyph.region.width).collect();
+        assert_eq!(widths, [cell.width, 2 * cell.width]);
+    }
+
     /// Whether the fake backend drew `glyph` of `face` thin, at its last
     /// drawing.
     fn drawn_thin(font: &Font<Squares>, face: FaceId, glyph: u16) -> Option<bool> {
@@ -2242,7 +3093,7 @@ mod tests {
             rendering,
             Rendering {
                 antialias: false,
-                thin: false
+                ..Rendering::default()
             }
         );
         // An arc, which the terminal draws with its edges antialiased.
@@ -2425,6 +3276,279 @@ mod tests {
         assert_ne!(small.region, large.region);
         assert_eq!(font.texture_sizes(), (1024, 1024));
     }
+
+    /// The glyphs of `text` at `places`, each a glyph of the cluster at
+    /// that byte, of a run from right to left where `backward`.
+    fn glyphs_at(places: &[(usize, f32)], backward: bool) -> Vec<ShapedGlyph> {
+        places
+            .iter()
+            .map(|&(cluster, x)| ShapedGlyph {
+                face: FaceId(0),
+                glyph: GlyphId(1),
+                cluster: cluster as u32,
+                x,
+                y: 0.0,
+                right_to_left: backward,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_caret_s_places_are_each_cluster_s_leading_edge() {
+        // From left to right, the end at the last cluster's right.
+        let glyphs = glyphs_at(&[(0, 0.0), (1, 10.0), (2, 20.0)], false);
+        assert_eq!(
+            carets_of("abc", &glyphs, 30.0),
+            [(0, 0.0), (1, 10.0), (2, 20.0), (3, 30.0)]
+        );
+        // From right to left, as CoreText gives a run of Hebrew, in its
+        // order on the line: each cluster's right, the end at the last
+        // cluster's left.
+        let glyphs = glyphs_at(&[(4, 0.0), (2, 10.0), (0, 20.0)], true);
+        assert_eq!(
+            carets_of("אבג", &glyphs, 30.0),
+            [(0, 30.0), (2, 20.0), (4, 10.0), (6, 0.0)]
+        );
+        // Hebrew after Latin text: typing at the end goes on at the Hebrew's
+        // left, after the space.
+        let mut glyphs = glyphs_at(&[(0, 0.0), (1, 10.0), (2, 20.0)], false);
+        glyphs.extend(glyphs_at(&[(5, 30.0), (3, 40.0)], true));
+        assert_eq!(
+            carets_of("ab אב", &glyphs, 50.0),
+            [
+                (0, 0.0),
+                (1, 10.0),
+                (2, 20.0),
+                (3, 50.0),
+                (5, 40.0),
+                (7, 30.0)
+            ]
+        );
+    }
+
+    #[test]
+    fn a_ligature_s_clusters_share_it_and_a_mark_is_its_letter_s() {
+        // One glyph of two clusters, each half of it, in its direction.
+        let glyphs = glyphs_at(&[(0, 0.0), (2, 20.0)], false);
+        assert_eq!(
+            carets_of("fix", &glyphs, 30.0),
+            [(0, 0.0), (1, 10.0), (2, 20.0), (3, 30.0)]
+        );
+        let glyphs = glyphs_at(&[(0, 0.0)], true);
+        assert_eq!(
+            carets_of("לא", &glyphs, 20.0),
+            [(0, 20.0), (2, 10.0), (4, 0.0)]
+        );
+        // A mark drawn over its letter, its glyph within the letter's.
+        let glyphs = glyphs_at(&[(0, 0.0), (1, 2.0), (3, 10.0)], false);
+        assert_eq!(
+            carets_of("e\u{301}x", &glyphs, 20.0),
+            [(0, 0.0), (3, 10.0), (4, 20.0)]
+        );
+        // No glyph, every place at the start and the end at the width.
+        assert_eq!(carets_of("ab", &[], 5.0), [(0, 0.0), (1, 0.0), (2, 5.0)]);
+        // A cluster before the first of glyphs, at that one's leading edge.
+        let glyphs = glyphs_at(&[(1, 10.0), (2, 20.0)], false);
+        assert_eq!(
+            carets_of("abc", &glyphs, 30.0),
+            [(0, 10.0), (1, 10.0), (2, 20.0), (3, 30.0)]
+        );
+        let glyphs = glyphs_at(&[(2, 0.0)], true);
+        assert_eq!(
+            carets_of("אב", &glyphs, 10.0),
+            [(0, 10.0), (2, 10.0), (4, 0.0)]
+        );
+        // A glyph past the text's width, of no width, not one that ends
+        // before it starts.
+        let glyphs = glyphs_at(&[(0, 0.0), (1, 25.0)], false);
+        assert_eq!(
+            carets_of("ab", &glyphs, 20.0),
+            [(0, 0.0), (1, 25.0), (2, 25.0)]
+        );
+        assert_eq!(carets_of("", &[], 0.0), [(0, 0.0)]);
+    }
+
+    #[test]
+    fn the_caret_s_places_of_a_long_text_cost_about_its_length() {
+        // A cost of the square of the length would take a hundred times
+        // as long of ten times the text.
+        let cost = |length: usize| {
+            let text = "ab ".repeat(length / 3);
+            let places: Vec<(usize, f32)> = (0..text.len()).map(|at| (at, at as f32)).collect();
+            let glyphs = glyphs_at(&places, false);
+            (0..5)
+                .map(|_| {
+                    let start = Instant::now();
+                    let carets = carets_of(&text, &glyphs, text.len() as f32);
+                    assert_eq!(carets.len(), text.len() + 1);
+                    start.elapsed()
+                })
+                .min()
+                .unwrap()
+        };
+        let (short, long) = (cost(10_000), cost(100_000));
+        assert!(long < short * 40, "{short:?} {long:?}");
+    }
+
+    #[test]
+    fn the_small_size_takes_its_share_of_the_interface_s_until_the_regular_one_again() {
+        let mut font = Font::new(Squares::default(), FontConfig::default(), 1.0).unwrap();
+        let regular = font.interface().clone();
+        let wide = Measure::text(&mut font, "find").0;
+        let places = font.interface_carets("find");
+        font.set_text_size(TextSize::Small);
+        let small = font.interface().clone();
+        assert_eq!(small.size(), regular.size() * SMALL);
+        assert_eq!(small.family(), regular.family());
+        assert!(Measure::text(&mut font, "find").0 < wide);
+        assert_ne!(*font.interface_carets("find"), *places);
+        font.set_text_size(TextSize::Regular);
+        assert_eq!(font.interface().size(), regular.size());
+        // A new config takes a new small face too.
+        let larger = InterfaceConfig {
+            font_size: lokyr_text_core::Size::try_from(26.0).unwrap(),
+            ..InterfaceConfig::default()
+        };
+        font.set_interface(&larger);
+        font.set_text_size(TextSize::Small);
+        assert_eq!(font.interface().size(), 22.0);
+    }
+
+    #[test]
+    fn a_text_goes_in_lines_of_its_room_broken_between_words_the_last_shortened() {
+        let mut font = Font::new(Squares::default(), FontConfig::default(), 1.0).unwrap();
+        let width = |font: &mut Font<Squares>, text: &str| Measure::text(font, text).0;
+        let room = width(&mut font, "unknown key at") + 0.5;
+        let text = "unknown key `fonts` at line 12, column 1 of config.toml";
+        let lines = font.interface_lines(text, room, 2);
+        assert_eq!(lines.len(), 2, "{lines:?}");
+        for line in lines.iter() {
+            assert!(width(&mut font, line) <= room, "{line:?}");
+        }
+        assert!(text.starts_with(&lines[0]), "{lines:?}");
+        assert!(lines[1].ends_with('…'), "{lines:?}");
+        // A text that fits takes the lines that it needs, of no ellipsis.
+        assert_eq!(
+            *font.interface_lines("unknown key", room, 2),
+            ["unknown key"]
+        );
+        assert_eq!(*font.interface_lines("", room, 2), [""]);
+        // A word longer than a line, shortened on its own.
+        let long = font.interface_lines("averyveryveryverylongword short", room, 3);
+        assert!(long[0].ends_with('…') && long[1] == "short", "{long:?}");
+    }
+
+    #[test]
+    fn a_typeset_takes_its_points_its_weight_s_nearest_face_and_the_terminal_s_family() {
+        let mut font = Font::new(Squares::default(), FontConfig::default(), 1.0).unwrap();
+        let regular = font.interface().clone();
+        // Points in place of the interface's size, within their bounds.
+        font.set_typeset(Typeset {
+            points: Some(30.0),
+            ..Typeset::default()
+        });
+        assert_eq!(font.interface().size(), 30.0);
+        font.set_typeset(Typeset {
+            points: Some(1000.0),
+            size: TextSize::Small,
+            ..Typeset::default()
+        });
+        assert_eq!(font.interface().size(), MOST_LARGE);
+        // A number that is not one takes the regular size, and points go to
+        // a quarter of one.
+        font.set_typeset(Typeset {
+            points: Some(f32::NAN),
+            ..Typeset::default()
+        });
+        assert_eq!(font.interface().size(), regular.size());
+        font.set_typeset(Typeset {
+            points: Some(f32::INFINITY),
+            ..Typeset::default()
+        });
+        assert_eq!(font.interface().size(), MOST_LARGE);
+        font.set_typeset(Typeset {
+            points: Some(12.3),
+            ..Typeset::default()
+        });
+        assert_eq!(font.interface().size(), 12.25);
+        // A size at each frame keeps a few faces at most.
+        for step in 0..1000_u16 {
+            font.set_typeset(Typeset {
+                points: Some(8.0 + f32::from(step) * 0.1),
+                ..Typeset::default()
+            });
+            font.interface();
+            assert!(font.interfaces.len() <= MOST_INTERFACES);
+        }
+        // The family's face nearest to a weight, upright.
+        font.set_typeset(Typeset {
+            weight: FontWeight::Semibold,
+            ..Typeset::default()
+        });
+        let bold = font.interface().clone();
+        assert_eq!(
+            (bold.face(), bold.size(), bold.family()),
+            (FaceId(1), regular.size(), regular.family())
+        );
+        // The terminal's family, of its regular face and its size; its
+        // weights of its own faces.
+        font.set_typeset(Typeset {
+            family: FontFamily::Terminal,
+            ..Typeset::default()
+        });
+        let terminal = font.interface().clone();
+        assert_eq!(
+            (terminal.face(), terminal.size(), terminal.family()),
+            (FaceId(0), font.config.size.points(), "Mono")
+        );
+        font.set_typeset(Typeset {
+            family: FontFamily::Terminal,
+            weight: FontWeight::Bold,
+            points: Some(9.0),
+            ..Typeset::default()
+        });
+        assert_eq!(
+            (font.interface().face(), font.interface().size()),
+            (FaceId(1), 9.0)
+        );
+        // The regular typeset again.
+        font.set_typeset(Typeset::default());
+        assert_eq!(*font.interface(), regular);
+    }
+
+    #[test]
+    fn a_text_s_places_are_found_once() {
+        let mut font = Font::new(Squares::default(), FontConfig::default(), 1.0).unwrap();
+        let first = font.interface_carets("find");
+        let shapings = font.shaped.shapings;
+        let again = font.interface_carets("find");
+        assert!(Rc::ptr_eq(&first, &again));
+        assert_eq!(font.shaped.shapings, shapings);
+        // Of another size, found anew.
+        let larger = InterfaceConfig {
+            font_size: lokyr_text_core::Size::try_from(20.0).unwrap(),
+            ..InterfaceConfig::default()
+        };
+        font.set_interface(&larger);
+        // Its face is found as its first text needs it, not as it is set.
+        assert!(font.interface.is_none());
+        assert_ne!(*font.interface_carets("find"), *first);
+        assert!(font.interface.is_some());
+        font.set_interface(&InterfaceConfig::default());
+        assert!(Rc::ptr_eq(&first, &font.interface_carets("find")));
+        // The last texts asked for kept, a text asked for again the newest,
+        // the oldest past them found anew.
+        for text in 1..CARET_TEXTS {
+            font.interface_carets(&text.to_string());
+        }
+        assert!(Rc::ptr_eq(&first, &font.interface_carets("find")));
+        font.interface_carets("0");
+        assert!(Rc::ptr_eq(&first, &font.interface_carets("find")));
+        for text in 0..CARET_TEXTS {
+            font.interface_carets(&format!("new {text}"));
+        }
+        assert!(!Rc::ptr_eq(&first, &font.interface_carets("find")));
+    }
 }
 
 /// The presentations as macOS's fonts give them: SF Mono, the default, and
@@ -2445,6 +3569,123 @@ mod system {
             dark: false,
         };
         font.glyph(&shown).map(|glyph| glyph.region.texture)
+    }
+
+    #[test]
+    fn the_caret_s_places_in_hebrew_go_from_its_right() {
+        let mut font = Font::new(CoreText::new(), FontConfig::default(), 2.0).unwrap();
+        // Each cluster left of the one before, the end at the line's left.
+        let places = font.interface_carets("שלום");
+        assert_eq!(places.len(), 5);
+        assert!(
+            places.windows(2).all(|pair| pair[1].1 < pair[0].1),
+            "{places:?}"
+        );
+        assert!(places[4].1.abs() < 0.5, "{places:?}");
+        // After Latin text, the Hebrew's start at the line's right, and its
+        // end after the space, where typing goes on.
+        let mixed = font.interface_carets("ab שלום");
+        let (space, hebrew, end) = (mixed[2].1, &mixed[3..7], mixed[7].1);
+        assert!(
+            hebrew.windows(2).all(|pair| pair[1].1 < pair[0].1),
+            "{mixed:?}"
+        );
+        assert!(space < end && end < hebrew[3].1, "{mixed:?}");
+        assert!(mixed.iter().all(|&(_, x)| x <= hebrew[0].1), "{mixed:?}");
+    }
+
+    #[test]
+    fn the_interface_s_face_is_the_system_s_of_the_optical_size_of_its_points() {
+        let mut font = Font::new(CoreText::new(), FontConfig::default(), 2.0).unwrap();
+        // Found as the interface first asks for it.
+        assert!(font.interface.is_none());
+        let mut backend = CoreText::new();
+        assert_eq!(font.interface().family(), backend.interface_family());
+        assert_eq!(font.interface().missing_family(), None);
+        assert_eq!(font.interface().size(), 13.0);
+        // A line of 13 points is about 16 high.
+        let line = font.interface().line();
+        assert!((14.0..18.0).contains(&line), "{line}");
+        // As AppKit lays out "Hello, world" at 13 points, about 71.5.
+        let (width, height) = font.text("Hello, world");
+        assert!((width - 71.5).abs() < 1.5, "{width}");
+        assert_eq!(height, line);
+        let (narrow, _) = font.text("iiii");
+        let (wide, _) = font.text("mmmm");
+        assert!(narrow * 2.0 < wide, "{narrow} {wide}");
+        assert_eq!(font.icon("terminal"), (line, line));
+        // Its run at 2 pixels a point: a glyph of each letter, of coverage,
+        // the space none, its ink ending near twice the points.
+        let color = Color::from_rgb8(10, 20, 30);
+        let (glyphs, end) = font.interface_text("Hello, world", (4.0, 30.0), color, false);
+        assert_eq!(glyphs.len(), 11);
+        assert!((end - 4.0 - 2.0 * width).abs() < 4.0, "{end} {width}");
+        assert!(glyphs.iter().all(|glyph| glyph.color == color));
+        assert!(glyphs.windows(2).all(|pair| pair[0].x < pair[1].x));
+        // An `H` on the baseline: its top about the cap height above it.
+        assert!((10..=20).contains(&(30 - glyphs[0].y)), "{}", glyphs[0].y);
+        // An icon in the middle of its square, of most of it.
+        let icon = font
+            .interface_icon("terminal", (0.0, 0.0), 32.0, color, false)
+            .unwrap();
+        let (width, height) = (icon.region.width, icon.region.height);
+        assert!(
+            (20..=32).contains(&width) && (16..=32).contains(&height),
+            "{icon:?}"
+        );
+        assert!(icon.x.abs_diff((32 - width as i32) / 2) <= 1, "{icon:?}");
+        assert!(
+            font.interface_icon("no-such-icon", (0.0, 0.0), 32.0, color, false)
+                .is_none()
+        );
+        // A square of no size, or of less than a pixel, draws nothing, where
+        // CoreText's font of no size is of 12 points.
+        for side in [0.0, 0.5, -3.0, f32::NAN] {
+            assert!(
+                font.interface_icon("close", (100.0, 100.0), side, color, false)
+                    .is_none(),
+                "{side}"
+            );
+        }
+        // An emoji of an opaque white, whose opacity a fade takes alone,
+        // a letter of the text's color.
+        let (glyphs, _) = font.interface_text("a🦀", (0.0, 30.0), color.with_alpha(0.5), false);
+        let of = |texture| {
+            glyphs
+                .iter()
+                .find(|glyph| glyph.region.texture == texture)
+                .unwrap()
+                .color
+        };
+        assert_eq!(of(Texture::Color), Color::WHITE);
+        assert_eq!(of(Texture::Coverage), color.with_alpha(0.5));
+        // Nor one past the largest, of 10⁹ pixels, which aborted the app
+        // out of memory; the largest draws.
+        for side in [ICON_LARGEST + 1.0, 1e9, f32::INFINITY] {
+            assert!(
+                font.interface_icon("close", (0.0, 0.0), side, color, false)
+                    .is_none(),
+                "{side}"
+            );
+        }
+        assert!(
+            font.interface_icon("close", (0.0, 0.0), ICON_LARGEST, color, false)
+                .is_some()
+        );
+        // A family that is not installed: the system's, which tells it.
+        let named = |name: &str| InterfaceConfig {
+            font_family: Some(lokyr_text_core::Name::try_from(name.to_owned()).unwrap()),
+            ..InterfaceConfig::default()
+        };
+        font.set_interface(&named("No Such Family Here"));
+        assert_eq!(
+            font.interface().missing_family(),
+            Some("No Such Family Here")
+        );
+        assert_eq!(font.interface().family(), backend.interface_family());
+        font.set_interface(&named("Helvetica"));
+        assert_eq!(font.interface().family(), "Helvetica");
+        assert_eq!(font.interface().missing_family(), None);
     }
 
     /// The frames, of a frame's budgets, that show a screen of 30 icons of a

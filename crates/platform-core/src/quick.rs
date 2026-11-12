@@ -4,7 +4,7 @@
 
 use std::time::Duration;
 
-use crate::KeyCode;
+use crate::{KeyCode, ScreenRect};
 
 /// A key that the app takes from every app, as the system gives it: by its
 /// place on the keyboard, with the modifiers held, of either side.
@@ -102,31 +102,6 @@ impl Default for QuickPlace {
             animation: Duration::from_millis(200),
             every_space: true,
         }
-    }
-}
-
-/// A rectangle on the screens, in points: its origin is its top left
-/// corner, from the top left corner of the menu bar's screen, rightwards
-/// and downwards.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct ScreenRect {
-    /// From the left, rightwards.
-    pub x: f64,
-    /// From the top, downwards.
-    pub y: f64,
-    /// Its width.
-    pub width: f64,
-    /// Its height.
-    pub height: f64,
-}
-
-impl ScreenRect {
-    /// Whether it and `other` share some area, more than an edge.
-    pub fn overlaps(&self, other: &ScreenRect) -> bool {
-        self.x < other.x + other.width
-            && other.x < self.x + self.width
-            && self.y < other.y + other.height
-            && other.y < self.y + self.height
     }
 }
 

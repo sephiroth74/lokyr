@@ -1,0 +1,22 @@
+21:13  up 8 days, 15:14, 62 users, load averages: 2.06 3.26 3.72
+21:13:51 gate 1: p50 19.12
+21:13:51 latency o 1
+21:14:03 latency a 1
+21:14:16 latency h 1
+21:14:28 latency a 2
+21:14:40 latency h 2
+21:14:53 latency o 2
+21:15:05 latency h 3
+21:15:18 latency o 3
+21:15:30 latency a 3
+21:15:42 latency h 4
+21:15:55 latency a 4
+21:16:07 latency o 4
+21:16:19 latency a 5
+21:16:32 latency o 5
+21:16:44 latency h 5
+21:16:56 latency o 6
+21:17:09 latency h 6
+21:17:21 latency a 6
+21:17  up 8 days, 15:18, 62 users, load averages: 1.47 2.42 3.24
+21:17:33 done

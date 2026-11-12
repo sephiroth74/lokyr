@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "lokyr/search",
+  "type": "object",
+  "properties": {
+    "case": {
+      "description": "Whether case counts while the find bar's case toggle is off: smart, of a text of a capital letter alone; or insensitive, never.",
+      "type": "string",
+      "enum": ["smart", "insensitive"],
+      "default": "smart"
+    },
+    "highlight-all": {
+      "description": "Whether every match that shows is highlighted, besides the current one.",
+      "type": "boolean",
+      "default": true
+    },
+    "wrap-around": {
+      "description": "Whether a step past the last match goes on from the first, and past the first from the last.",
+      "type": "boolean",
+      "default": true
+    }
+  }
+}

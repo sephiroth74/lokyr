@@ -1,0 +1,41 @@
+14:16  up 9 days,  8:17, 70 users, load averages: 1.68 2.06 2.68
+14:16:08 startup v040 1
+14:16:24 startup v050 1
+14:16:39 startup floor 1
+14:16:54 startup v050 2
+14:17:09 startup v040 2
+14:17:24 startup floor 2
+14:17:39 startup v050 3
+14:17:55 startup v040 3
+14:18:10 startup floor 3
+14:18:25 startup v040 4
+14:18:40 startup v050 4
+14:18:55 startup floor 4
+14:19  up 9 days,  8:20, 70 users, load averages: 1.89 2.42 2.76
+14:19:10 latency warm-up v040
+14:19:13 latency warm-up v050
+14:19:16 latency v040 1 place 1
+14:19:28 latency v050 1 place 2
+14:19  up 9 days,  8:20, 70 users, load averages: 2.34 2.47 2.77
+14:19:40 latency v050 2 place 1
+14:19:53 latency v040 2 place 2
+14:20  up 9 days,  8:21, 70 users, load averages: 3.15 2.65 2.82
+14:20:05 latency v050 3 place 1
+14:20:17 latency v040 3 place 2
+14:20  up 9 days,  8:21, 70 users, load averages: 2.58 2.56 2.78
+14:20:30 latency v040 4 place 1
+14:20:42 latency v050 4 place 2
+14:20  up 9 days,  8:21, 70 users, load averages: 2.28 2.48 2.75
+14:20:54 latency v040 5 place 1
+14:21:07 latency v050 5 place 2
+14:21  up 9 days,  8:22, 70 users, load averages: 2.15 2.44 2.73
+14:21:19 latency v050 6 place 1
+14:21:31 latency v040 6 place 2
+14:21  up 9 days,  8:22, 70 users, load averages: 5.09 3.11 2.96
+14:21:44 latency v050 7 place 1
+14:21:56 latency v040 7 place 2
+14:22  up 9 days,  8:23, 70 users, load averages: 4.25 3.06 2.94
+14:22:08 latency v040 8 place 1
+14:22:21 latency v050 8 place 2
+14:22  up 9 days,  8:23, 70 users, load averages: 3.53 2.97 2.91
+14:22:33 done

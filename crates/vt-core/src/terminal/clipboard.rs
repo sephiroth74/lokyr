@@ -155,6 +155,12 @@ fn target(letters: &[u8]) -> Option<ClipboardTarget> {
 
 const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
+/// `data` in base64, padded, for the images' tests.
+#[cfg(test)]
+pub(super) fn tests_encode(data: &[u8]) -> String {
+    encode(data)
+}
+
 /// `data` in base64, padded.
 fn encode(data: &[u8]) -> String {
     let mut text = String::with_capacity(data.len().div_ceil(3) * 4);

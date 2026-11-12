@@ -1,0 +1,137 @@
+22:05  up  1:04, 2 users, load averages: 7.55 4.74 3.59
+   30.1 /System/Library/PrivateFrameworks/XprotectFramework.framework/Versions/A/XPCServices/XprotectService.xpc/Contents/MacOS/XprotectService
+    7.9 /usr/libexec/trustd
+    5.5 /usr/libexec/syspolicyd
+22:05:35 latency warm-up v070
+22:05:38 latency warm-up v070-jit
+22:05:42 latency warm-up v080
+22:05:45 latency warm-up v080-nojit
+22:05:50 latency v070 1 place 1
+22:06:05 latency v070-jit 1 place 2
+22:06:19 latency v080 1 place 3
+22:06:34 latency v080-nojit 1 place 4
+22:06:46 load { 3.40 4.10 3.44 }
+   16.0 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer
+    0.6 /usr/libexec/logd
+    0.3 /usr/sbin/bluetoothd
+22:06:48 latency v070-jit 2 place 1
+22:07:03 latency v080 2 place 2
+22:07:17 latency v080-nojit 2 place 3
+22:07:32 latency v070 2 place 4
+22:07:44 load { 1.93 3.58 3.29 }
+   14.9 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer
+    1.5 /System/Library/CoreServices/WindowManager.app/Contents/MacOS/WindowManager
+    0.7 /System/Library/DriverExtensions/com.apple.DriverKit-AppleBCMWLAN.dext/com.apple.DriverKit-AppleBCMWLAN
+22:07:46 latency v080 3 place 1
+22:08:01 latency v080-nojit 3 place 2
+22:08:15 latency v070 3 place 3
+22:08:30 latency v070-jit 3 place 4
+22:08:42 load { 1.76 3.25 3.18 }
+   21.5 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer
+    2.9 /System/Library/CoreServices/launchservicesd
+    2.7 /usr/libexec/runningboardd
+22:08:44 latency v080-nojit 4 place 1
+22:08:59 latency v070 4 place 2
+22:09:13 latency v070-jit 4 place 3
+22:09:28 latency v080 4 place 4
+22:09:40 load { 1.53 2.95 3.07 }
+   21.4 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer
+    8.8 /System/Library/CoreServices/NotificationCenter.app/Contents/MacOS/NotificationCenter
+    5.2 /System/Library/PrivateFrameworks/TextInputUIMacHelper.framework/Versions/A/XPCServices/CursorUIViewService.xpc/Contents/MacOS/CursorUIViewService
+22:09:42 latency v080-nojit 5 place 1
+22:09:57 latency v080 5 place 2
+22:10:11 latency v070-jit 5 place 3
+22:10:26 latency v070 5 place 4
+22:10:38 load { 2.27 2.95 3.07 }
+   24.7 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer
+    3.9 /System/Library/CoreServices/launchservicesd
+    2.5 /usr/libexec/runningboardd
+22:10:40 latency v070 6 place 1
+22:10:55 latency v080-nojit 6 place 2
+22:11:09 latency v080 6 place 3
+22:11:24 latency v070-jit 6 place 4
+22:11:36 load { 2.94 3.02 3.08 }
+   17.8 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer
+    0.5 /usr/libexec/airportd
+    0.4 /usr/libexec/logd
+22:11:38 latency v070-jit 7 place 1
+22:11:53 latency v070 7 place 2
+22:12:07 latency v080-nojit 7 place 3
+22:12:22 latency v080 7 place 4
+22:12:34 load { 3.85 3.28 3.17 }
+   22.9 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer
+    9.2 /System/Library/CoreServices/NotificationCenter.app/Contents/MacOS/NotificationCenter
+    8.6 /System/Library/PrivateFrameworks/TextInputUIMacHelper.framework/Versions/A/XPCServices/CursorUIViewService.xpc/Contents/MacOS/CursorUIViewService
+22:12:36 latency v080 8 place 1
+22:12:51 latency v070-jit 8 place 2
+22:13:05 latency v070 8 place 3
+22:13:20 latency v080-nojit 8 place 4
+22:13:32 load { 3.57 3.29 3.18 }
+   20.9 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer
+    2.6 /System/Library/CoreServices/launchservicesd
+    2.5 /System/Library/CoreServices/WindowManager.app/Contents/MacOS/WindowManager
+22:13:34 latency v070 9 place 1
+22:13:49 latency v070-jit 9 place 2
+22:14:03 latency v080 9 place 3
+22:14:18 latency v080-nojit 9 place 4
+22:14:30 load { 2.39 2.99 3.08 }
+   14.3 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer
+    1.2 /System/Library/CoreServices/launchservicesd
+    1.2 /System/Library/CoreServices/WindowManager.app/Contents/MacOS/WindowManager
+22:14:32 latency v070-jit 10 place 1
+22:14:47 latency v080 10 place 2
+22:15:01 latency v080-nojit 10 place 3
+22:15:16 latency v070 10 place 4
+22:15:28 load { 2.48 2.91 3.04 }
+   21.4 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer
+    8.1 /System/Library/CoreServices/NotificationCenter.app/Contents/MacOS/NotificationCenter
+    3.7 /System/Library/PrivateFrameworks/TextInputUIMacHelper.framework/Versions/A/XPCServices/CursorUIViewService.xpc/Contents/MacOS/CursorUIViewService
+22:15:30 latency v080 11 place 1
+22:15:45 latency v080-nojit 11 place 2
+22:15:59 latency v070 11 place 3
+22:16:14 latency v070-jit 11 place 4
+22:16:26 load { 1.95 2.69 2.95 }
+   20.4 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer
+    7.8 /System/Library/CoreServices/NotificationCenter.app/Contents/MacOS/NotificationCenter
+    5.3 /System/Library/PrivateFrameworks/TextInputUIMacHelper.framework/Versions/A/XPCServices/CursorUIViewService.xpc/Contents/MacOS/CursorUIViewService
+22:16:28 latency v080-nojit 12 place 1
+22:16:43 latency v070 12 place 2
+22:16:57 latency v070-jit 12 place 3
+22:17:12 latency v080 12 place 4
+22:17:24 load { 1.42 2.41 2.82 }
+   21.3 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer
+    6.0 /System/Library/CoreServices/NotificationCenter.app/Contents/MacOS/NotificationCenter
+    3.4 /System/Library/CoreServices/launchservicesd
+22:17:26 latency v080-nojit 13 place 1
+22:17:41 latency v080 13 place 2
+22:17:55 latency v070-jit 13 place 3
+22:18:10 latency v070 13 place 4
+22:18:22 load { 1.14 2.13 2.69 }
+   19.1 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer
+    6.0 /System/Library/CoreServices/NotificationCenter.app/Contents/MacOS/NotificationCenter
+    2.6 /System/Library/CoreServices/launchservicesd
+22:18:24 latency v070 14 place 1
+22:18:39 latency v080-nojit 14 place 2
+22:18:53 latency v080 14 place 3
+22:19:08 latency v070-jit 14 place 4
+22:19:20 load { 1.68 2.09 2.63 }
+   21.7 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer
+   11.2 /System/Library/CoreServices/NotificationCenter.app/Contents/MacOS/NotificationCenter
+    7.3 /System/Library/PrivateFrameworks/TextInputUIMacHelper.framework/Versions/A/XPCServices/CursorUIViewService.xpc/Contents/MacOS/CursorUIViewService
+22:19:22 latency v070-jit 15 place 1
+22:19:37 latency v070 15 place 2
+22:19:51 latency v080-nojit 15 place 3
+22:20:06 latency v080 15 place 4
+22:20:18 load { 1.94 2.06 2.58 }
+   13.1 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer
+    0.3 /usr/libexec/logd
+    0.2 /usr/libexec/corebrightnessd
+22:20:20 latency v080 16 place 1
+22:20:35 latency v070-jit 16 place 2
+22:20:49 latency v070 16 place 3
+22:21:04 latency v080-nojit 16 place 4
+22:21:16 load { 2.01 2.05 2.54 }
+   20.2 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer
+    4.8 /System/Library/CoreServices/NotificationCenter.app/Contents/MacOS/NotificationCenter
+    3.2 /System/Library/CoreServices/WindowManager.app/Contents/MacOS/WindowManager
+22:21:16 done

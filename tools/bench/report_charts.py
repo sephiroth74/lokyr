@@ -67,11 +67,25 @@ def median(values):
     return values[middle] if len(values) % 2 else (values[middle - 1] + values[middle]) / 2
 
 
+# The other terminals are measured once of their versions, in the
+# comparison's first session, of 31 October 2026, `OTHERS`; Lokyr again,
+# of the same tool and conditions, in the latest session of its own, of
+# 8 November 2026, `LOKYR`, whose figures take the place of its first.
+OTHERS = "compare-F2-134"
+LOKYR = "compare-F3-72"
+OTHERS_DATE = "31 October 2026"
+LOKYR_DATE = "8 November 2026"
+# Typometer's keys, of every terminal, the user's part of the first
+# session, the next morning.
+TYPOMETER_DATE = "1 November 2026"
+
+
 def compare_figures():
-    """Each terminal's figures in the comparison, from its raw results."""
-    root = "compare-F2-134"
+    """Each terminal's figures in the comparison, from its raw results:
+    Lokyr's of its latest session, the others' of the first."""
     figures = {}
     for key, _ in TERMINALS:
+        root = LOKYR if key == "lokyr" else OTHERS
         runs = [run["from_start_ms"] for round_ in (1, 2)
                 for run in load(f"{root}/startup/startup-{key}-{round_}.json")["runs"]]
         idle = load(f"{root}/idle/idle-{key}.json")
@@ -117,36 +131,48 @@ def nearest_rank(values, percent):
 
 
 def compare():
-    """Lokyr against the other terminals of macOS."""
+    """Lokyr against the other terminals of macOS: Lokyr of its latest
+    session, the others of the first, which the subtitles tell, as the
+    latency's do of their one session, Typometer's, of every terminal, which
+    Lokyr's latest session did not measure again. The README shows the
+    charts one under another, of one height, the tallest's."""
     figures = compare_figures()
     rows = lambda measure: [(name, figures[key][measure], key == "lokyr")
                             for key, name in TERMINALS]
-    root = "compare-F2-134/charts"
-    save(f"{root}/startup.svg", charts.bars(
-        "Startup", "From the process's start to its first window, median of 10 runs; "
-        "less is better", rows("startup"), "ms"))
-    save(f"{root}/memory.svg", charts.bars(
-        "Memory at rest", "Footprint without the GPU's, a window of 120 × 40 cells; "
-        "less is better", rows("footprint"), "MB", digits=1))
-    save(f"{root}/wakeups.svg", charts.bars(
-        "Wakeups at rest", "Interrupt wakeups a second, over 60 s with a steady cursor; "
-        "less is better", rows("wakeups"), "a second", digits=2))
-    save(f"{root}/throughput.svg", charts.bars(
-        "Throughput", "cat of 1 GiB of ASCII lines, on screen, median of 5 runs; "
-        "more is better", rows("cat"), "MiB/s", order="descending"))
-    save(f"{root}/energy.svg", charts.bars(
-        "CPU energy", "Joules that the terminal's CPU spends to show cat of 1 GiB; "
-        "less is better",
-        rows("energy"), "J", digits=1))
+    of = f"; Lokyr measured on {LOKYR_DATE}, the others on {OTHERS_DATE}"
+    bars = [
+        ("startup", "Startup", "From the process's start to its first window, median of 10 runs; "
+         "less is better" + of, rows("startup"), "ms", {}),
+        ("memory", "Memory at rest", "Footprint without the GPU's, a window of 120 × 40 cells; "
+         "less is better" + of, rows("footprint"), "MB", {"digits": 1}),
+        ("wakeups", "Wakeups at rest", "Interrupt wakeups a second, over 60 s with a steady cursor; "
+         "less is better" + of, rows("wakeups"), "a second", {"digits": 2}),
+        ("throughput", "Throughput", "cat of 1 GiB of ASCII lines, on screen, median of 5 runs; "
+         "more is better" + of, rows("cat"), "MiB/s", {"order": "descending"}),
+        ("energy", "CPU energy", "Joules that the terminal's CPU spends to show cat of 1 GiB; "
+         "less is better" + of, rows("energy"), "J", {"digits": 1}),
+    ]
     cases = typometer()
-    for rate in ("60", "120"):
-        save(f"{root}/latency-{rate}hz.svg", charts.ranges(
-            f"Latency at {rate} Hz",
-            "A key to its echo on screen, in ms, of 200 keys of Typometer's, the window alone; "
-            "less is better",
-            [(name, statistics.median(cases[rate][key]),
-              nearest_rank(cases[rate][key], 99), key == "lokyr")
-             for key, name in TERMINALS if key in cases[rate]], "ms"))
+    latency = [
+        (rate, f"Latency at {rate} Hz",
+         "A key to its echo on screen, in ms, of 200 keys of Typometer's, the window alone; "
+         f"less is better; every terminal measured on {TYPOMETER_DATE}",
+         [(name, statistics.median(cases[rate][key]),
+           nearest_rank(cases[rate][key], 99), key == "lokyr")
+          for key, name in TERMINALS if key in cases[rate]])
+        for rate in ("60", "120")
+    ]
+    height = max(
+        [charts.top_of(subtitle) + charts.BAND * len(data) + 34
+         for _, _, subtitle, data, _, _ in bars]
+        + [charts.top_of(subtitle) + 22 + charts.BAND * len(data) + 34
+           for _, _, subtitle, data in latency])
+    for name, title, subtitle, data, unit, options in bars:
+        save(f"{LOKYR}/charts/{name}.svg",
+             charts.bars(title, subtitle, data, unit, height=height, **options))
+    for rate, title, subtitle, data in latency:
+        save(f"{OTHERS}/charts/latency-{rate}hz.svg",
+             charts.ranges(title, subtitle, data, "ms", height=height))
 
 
 REPORTS = {"latency": latency, "compare": compare}

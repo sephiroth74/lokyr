@@ -1,7 +1,8 @@
 //! Golden images of the screen: a terminal's snapshot laid out in cells, as
-//! a window's frame lays it out, drawn by the GPU into an offscreen
-//! texture, and compared with the image in `tests/golden/`, within a
-//! tolerance for the GPU's and the rasterizer's rounding.
+//! a window's frame lays it out, and a view tree of the interface, laid out
+//! and painted in the theme's light and dark tokens, drawn by the GPU into
+//! an offscreen texture, and compared with the image in `tests/golden/`,
+//! within a tolerance for the GPU's and the rasterizer's rounding.
 //!
 //! `LOKYR_GOLDEN_UPDATE=1 cargo test -p lokyr-app --test golden` writes the
 //! images afresh, to look at before they are committed. An image that
@@ -10,19 +11,35 @@
 
 #![cfg(target_os = "macos")]
 
+use std::collections::BTreeMap;
 use std::fs::{self, File};
 use std::io::BufWriter;
 use std::path::{Path, PathBuf};
+use std::time::Instant;
 
 use lokyr_font_coretext::CoreText;
-use lokyr_render_core::{CellBatch, CursorShape, DisplayList, Item, Renderer};
+use lokyr_plugin_sdk::host::{Color, PaneId, TabId, TabInfo, WindowId};
+use lokyr_plugin_sdk::message::Data;
+use lokyr_plugin_sdk::view::{
+    self, Align, Border, Direction, Edges, Kind, Layout as Box, Length, Node, Shadow, Style,
+};
+use lokyr_render_core::{CellBatch, CursorShape, DisplayList, Item, Rect, Renderer};
 use lokyr_render_metal::{Gpu, MetalRenderer};
 use lokyr_text_core::{FontConfig, Size};
+use lokyr_ui_core::animation::Animations;
+use lokyr_ui_core::field::Fields;
 use lokyr_ui_core::font::Font;
+use lokyr_ui_core::layout::{Layout, Measure, Room};
+use lokyr_ui_core::list::Lists;
+use lokyr_ui_core::paint::{Fills, Shown, paint, tooltip};
 use lokyr_ui_core::pane::{self as cells, CursorLook, Selection, TextLook};
+use lokyr_ui_core::scrollbar::{self, Look, Mark, Rows};
 use lokyr_ui_core::theme::Theme;
+use lokyr_ui_core::tree::{NodeId, Tree};
 use lokyr_vt_core::parser::Parser;
-use lokyr_vt_core::terminal::{Options, SelectionShape, SelectionUnit, Snapshot, Terminal};
+use lokyr_vt_core::terminal::{
+    MatchCells, Options, SelectionShape, SelectionUnit, Snapshot, Terminal,
+};
 
 /// The pixels around the cells, as a window's padding.
 const MARGIN: u32 = 4;
@@ -57,6 +74,19 @@ struct Scene {
     /// Whether it draws shapes alone, without text, which the GPU draws
     /// the same wherever it runs.
     shapes: bool,
+    /// The share by which its colors fade toward its background, as a pane's
+    /// that has not the keyboard.
+    fade: Option<f32>,
+    /// A search's matches that it highlights, if any.
+    highlights: Option<Highlights>,
+}
+
+/// A search's matches highlighted over a scene's cells, of the theme's
+/// variant of the light appearance or of the dark one.
+struct Highlights {
+    matches: Vec<MatchCells>,
+    current: Option<MatchCells>,
+    light: bool,
 }
 
 /// The GPU, its renderer and a font of `POINTS` at `scale`, as a window of
@@ -77,8 +107,11 @@ impl Drawing {
             size: Size::try_from(POINTS).unwrap(),
             ..FontConfig::default()
         };
-        // The system's default, which smooths fonts.
-        let font = Font::new(CoreText::with_font_smoothing(true), config, scale).unwrap();
+        // The system's default, which smooths fonts; Han's characters in
+        // Simplified Chinese's faces, as the images have them, whatever the
+        // system's languages, which choose Japanese's or Chinese's.
+        let fonts = CoreText::with_font_smoothing(true).with_language("zh-Hans");
+        let font = Font::new(fonts, config, scale).unwrap();
         let (coverage, color) = font.texture_sizes();
         let renderer = MetalRenderer::new(&gpu, coverage, color).unwrap();
         Some(Self {
@@ -96,12 +129,27 @@ impl Drawing {
         (x, y): (i32, i32),
     ) -> (CellBatch, lokyr_render_core::Color) {
         let theme = Theme::builtin();
-        let variant = theme.variant(true);
+        let light = scene.highlights.as_ref().is_some_and(|shown| shown.light);
+        let variant = theme.variant(!light);
         let mut terminal = Terminal::new(scene.columns, scene.rows, Options::default());
         terminal.set_default_colors(variant.colors.clone());
         Parser::new().advance(&mut terminal, scene.text.as_bytes());
         if let Some((from, to)) = scene.selection {
             terminal.select(from, to, SelectionShape::Cells, SelectionUnit::Cell, "");
+        }
+        if let Some(shown) = &scene.highlights {
+            let pins = shown
+                .matches
+                .iter()
+                .map(|&(from, to)| {
+                    (
+                        terminal.pin_cell(from).unwrap(),
+                        terminal.pin_cell(to).unwrap(),
+                    )
+                })
+                .collect();
+            terminal.add_matches(1, 0, pins);
+            assert!(terminal.show_matches(1, true, shown.current));
         }
         let mut snapshot = Snapshot::default();
         terminal.snapshot(&mut snapshot);
@@ -110,6 +158,7 @@ impl Drawing {
         let cursor = scene.cursor.map(|shape| CursorLook {
             shape,
             thickness: cell.underline_thickness.max(1),
+            length: 1.0,
         });
         let selected = snapshot.selection();
         let contains =
@@ -118,7 +167,7 @@ impl Drawing {
             colors: variant.selection,
             contains: &contains,
         });
-        let batch = cells::cells_with(
+        let mut batch = cells::cells_with(
             &snapshot,
             &cell,
             (x, y),
@@ -127,6 +176,7 @@ impl Drawing {
             TextLook::default(),
             &mut self.font,
         );
+        cells::highlight(&mut batch, &snapshot, variant.match_colors());
         (batch, cells::background(&snapshot))
     }
 
@@ -138,7 +188,10 @@ impl Drawing {
         let mut y = MARGIN;
         let mut width = 0;
         for scene in scenes {
-            let (batch, color) = self.batch(scene, (MARGIN as i32, y as i32));
+            let (mut batch, color) = self.batch(scene, (MARGIN as i32, y as i32));
+            if let Some(share) = scene.fade {
+                cells::fade(&mut batch, color, share);
+            }
             width = width.max(u32::from(scene.columns) * batch.cell_width);
             y += u32::from(scene.rows) * batch.cell_height;
             background.get_or_insert(color);
@@ -178,6 +231,8 @@ fn text() -> Vec<Scene> {
         cursor: None,
         selection: None,
         shapes: false,
+        fade: None,
+        highlights: None,
     }]
 }
 
@@ -214,6 +269,8 @@ fn colors() -> Vec<Scene> {
         cursor: None,
         selection: None,
         shapes: false,
+        fade: None,
+        highlights: None,
     }]
 }
 
@@ -234,6 +291,8 @@ fn decorations() -> Vec<Scene> {
         cursor: None,
         selection: None,
         shapes: false,
+        fade: None,
+        highlights: None,
     }]
 }
 
@@ -256,8 +315,45 @@ fn cursors() -> Vec<Scene> {
         cursor: Some(shape),
         selection: None,
         shapes: false,
+        fade: None,
+        highlights: None,
     })
     .collect()
+}
+
+/// A search's matches highlighted, the current one apart: over the default
+/// background, over a cell's own color, under a selection, and around wide
+/// characters, of the dark variant or the light one.
+fn highlights(light: bool) -> Vec<Scene> {
+    vec![Scene {
+        name: if light {
+            "highlights-light"
+        } else {
+            "highlights-dark"
+        },
+        columns: 32,
+        rows: 3,
+        text: concat!(
+            "find the needle in the stack\r\n",
+            "\x1b[42mneedle\x1b[0m on green, needle again\r\n",
+            "日本 needle 日本",
+        )
+        .to_owned(),
+        cursor: None,
+        selection: Some(((10, 0), (12, 0))),
+        shapes: false,
+        fade: None,
+        highlights: Some(Highlights {
+            matches: vec![
+                ((9, 0), (14, 0)),
+                ((0, 1), (5, 1)),
+                ((17, 1), (22, 1)),
+                ((5, 2), (10, 2)),
+            ],
+            current: Some(((17, 1), (22, 1))),
+            light,
+        }),
+    }]
 }
 
 /// A selection across two rows, over colored text and a wide character.
@@ -271,7 +367,30 @@ fn selection() -> Vec<Scene> {
         cursor: None,
         selection: Some(((2, 0), (5, 1))),
         shapes: false,
+        fade: None,
+        highlights: None,
     }]
+}
+
+/// A pane's text, and the same faded toward its background, as a pane's
+/// that has not the keyboard, of the splits' default fade: an emoji of its
+/// own colors too, faded as an opacity over its cell.
+fn dimmed() -> Vec<Scene> {
+    let text = "plain \x1b[31mred\x1b[0m \x1b[1;32mbold green\x1b[0m \x1b[44m on blue \x1b[0m 🍎";
+    [None, Some(0.15)]
+        .into_iter()
+        .map(|fade| Scene {
+            name: "dim",
+            columns: 36,
+            rows: 1,
+            text: text.to_owned(),
+            cursor: None,
+            selection: None,
+            shapes: false,
+            fade,
+            highlights: None,
+        })
+        .collect()
 }
 
 /// The shapes that the renderer draws itself, without text: the cursor's
@@ -295,6 +414,8 @@ fn shapes() -> Vec<Scene> {
         cursor: Some(shape),
         selection: None,
         shapes: true,
+        fade: None,
+        highlights: None,
     })
     .collect();
     let lines = ["4", "4:2", "4:3", "4:4", "4:5", "9", "53"]
@@ -308,8 +429,485 @@ fn shapes() -> Vec<Scene> {
         cursor: None,
         selection: None,
         shapes: true,
+        fade: None,
+        highlights: None,
     });
     scenes
+}
+
+/// The width of the view tree's image, in points.
+const VIEW_WIDTH: f32 = 480.0;
+
+/// A tab of the bar, of a terminal's icon, its title and its close button,
+/// in its colors of the active tab or of another.
+fn tab(title: &str, active: bool) -> Node {
+    let (background, color) = if active {
+        ("tabs.active.bg", "tabs.active.fg")
+    } else {
+        ("tabs.inactive.bg", "tabs.inactive.fg")
+    };
+    Node::container(vec![
+        Node::icon("terminal"),
+        Node::text(title),
+        Node::icon("close").style(Style {
+            color: Some("text.secondary".into()),
+            ..Style::default()
+        }),
+    ])
+    .key(title)
+    .layout(Box {
+        gap: 6.0,
+        padding: Edges {
+            top: 4.0,
+            right: 8.0,
+            bottom: 4.0,
+            left: 10.0,
+        },
+        align: Align::Center,
+        ..Box::default()
+    })
+    .style(Style {
+        background: Some(background.into()),
+        radius: 6.0,
+        color: Some(color.into()),
+        ..Style::default()
+    })
+}
+
+/// A toggle of a find bar, of its icon, its background shown when `on`.
+fn toggle(icon: &str, on: bool) -> Node {
+    Node::container(vec![Node::icon(icon)])
+        .key(icon)
+        .layout(Box {
+            padding: Edges::all(2.0),
+            ..Box::default()
+        })
+        .style(Style {
+            background: on.then(|| "button.bg".into()),
+            radius: 4.0,
+            ..Style::default()
+        })
+}
+
+/// A text marked as a match of a search, the current one or another.
+fn mark(text: &str, token: &str) -> Node {
+    Node::container(vec![Node::text(text)]).style(Style {
+        background: Some(token.into()),
+        radius: 2.0,
+        ..Style::default()
+    })
+}
+
+/// The view tree of the images: a tab bar of two tabs and a button; a find
+/// bar floating in its panel, of a border, rounded corners and a shadow, of
+/// a field of the focus's border that clips its text, its count and its
+/// toggles; a line of the search's matches; and a box that clips a title
+/// too long, beside a badge of the accent's color, whose corners show
+/// apart from the background.
+fn view_tree() -> Node {
+    let secondary = || Style {
+        color: Some("text.secondary".into()),
+        ..Style::default()
+    };
+    let bar = Node::container(vec![
+        tab("~/lokyr", true),
+        tab("cargo test", false),
+        Node::spacer(),
+        Node::icon("add").style(secondary()),
+    ])
+    .layout(Box {
+        gap: 4.0,
+        padding: Edges::all(4.0),
+        align: Align::Center,
+        ..Box::default()
+    })
+    .style(Style {
+        background: Some("tabs.bar.bg".into()),
+        ..Style::default()
+    });
+    let field = Node::container(vec![Node::text("fn main\\(")])
+        .layout(Box {
+            padding: Edges {
+                top: 3.0,
+                right: 6.0,
+                bottom: 3.0,
+                left: 6.0,
+            },
+            width: Length::Points(160.0),
+            ..Box::default()
+        })
+        .style(Style {
+            background: Some("field.bg".into()),
+            border: Some(Border {
+                color: "field.focus".into(),
+                width: 2.0,
+            }),
+            radius: 5.0,
+            clip: true,
+            ..Style::default()
+        });
+    let find = Node::container(vec![
+        Node::icon("search").style(secondary()),
+        field,
+        Node::text("3 of 12").style(secondary()),
+        toggle("case-sensitive", false),
+        toggle("regex", true),
+        toggle("whole-word", false),
+        Node::icon("chevron-up"),
+        Node::icon("chevron-down"),
+        Node::icon("close"),
+    ])
+    .layout(Box {
+        gap: 6.0,
+        padding: Edges::all(8.0),
+        align: Align::Center,
+        ..Box::default()
+    })
+    .style(Style {
+        background: Some("panel.bg".into()),
+        border: Some(Border {
+            color: "panel.border".into(),
+            width: 1.0,
+        }),
+        radius: 8.0,
+        shadow: Some(Shadow::default()),
+        ..Style::default()
+    });
+    let line = Node::container(vec![
+        Node::text("let"),
+        mark("main", "search.match"),
+        Node::text("= run(||"),
+        mark("main", "search.match.current"),
+        Node::text(")"),
+    ])
+    .layout(Box {
+        gap: 4.0,
+        ..Box::default()
+    });
+    let clipped = Node::container(vec![Node::text("a title that its box clips at its edge")])
+        .layout(Box {
+            width: Length::Points(150.0),
+            padding: Edges::all(4.0),
+            ..Box::default()
+        })
+        .style(Style {
+            border: Some(Border {
+                color: "separator".into(),
+                width: 1.0,
+            }),
+            radius: 4.0,
+            clip: true,
+            ..Style::default()
+        });
+    let badge = Node::container(vec![Node::text("beta")])
+        .layout(Box {
+            padding: Edges {
+                top: 2.0,
+                right: 8.0,
+                bottom: 2.0,
+                left: 8.0,
+            },
+            ..Box::default()
+        })
+        .style(Style {
+            background: Some("accent".into()),
+            radius: 9.0,
+            color: Some("panel.bg".into()),
+            ..Style::default()
+        });
+    let last = Node::container(vec![clipped, badge]).layout(Box {
+        gap: 12.0,
+        align: Align::Center,
+        ..Box::default()
+    });
+    Node::container(vec![bar, find, line, last]).layout(Box {
+        direction: Direction::Column,
+        gap: 14.0,
+        padding: Edges::all(16.0),
+        ..Box::default()
+    })
+}
+
+/// The buttons, the toggles and the separators of the images, in their
+/// states: a button at rest, one pressed, one disabled, one of an icon
+/// alone, which has the focus, one of an icon and a label; a toggle of an
+/// icon off, one on, one off under the pointer, a disabled one on, one of
+/// a label off; upright separators between the groups, and a flat one
+/// under them; room below for the tooltip of the toggle under the pointer.
+fn widgets_tree() -> Node {
+    let button = |key: &str, label: &str, icon: &str, disabled: bool| {
+        Node::new(Kind::Button(view::Button {
+            label: label.to_owned(),
+            icon: icon.to_owned(),
+            disabled,
+        }))
+        .key(key)
+    };
+    let toggle = |key: &str, label: &str, icon: &str, (on, disabled): (bool, bool)| {
+        Node::new(Kind::Toggle(view::Toggle {
+            label: label.to_owned(),
+            icon: icon.to_owned(),
+            on,
+            disabled,
+        }))
+        .key(key)
+    };
+    let row = |children| {
+        Node::container(children).layout(Box {
+            gap: 8.0,
+            align: Align::Center,
+            ..Box::default()
+        })
+    };
+    let buttons = row(vec![
+        button("replace", "Replace", "", false),
+        button("pressed", "Replace", "", false),
+        button("all", "Replace All", "", true),
+        Node::separator(),
+        button("add", "", "add", false),
+        button("settings", "Settings", "settings", false),
+    ]);
+    let toggles = row(vec![
+        toggle("case", "", "case-sensitive", (false, false)),
+        toggle("regex", "", "regex", (true, false)),
+        toggle("word", "", "whole-word", (false, false)).tooltip("Whole Word"),
+        Node::separator(),
+        toggle("pin", "", "pin", (true, true)),
+        toggle("wrap", "Wrap Around", "", (false, false)),
+    ]);
+    let panel = Node::container(vec![buttons, toggles, Node::separator()])
+        .layout(Box {
+            direction: Direction::Column,
+            gap: 10.0,
+            padding: Edges::all(12.0),
+            ..Box::default()
+        })
+        .style(Style {
+            background: Some("panel.bg".into()),
+            border: Some(Border {
+                color: "panel.border".into(),
+                width: 1.0,
+            }),
+            radius: 8.0,
+            ..Style::default()
+        });
+    Node::container(vec![panel]).layout(Box {
+        direction: Direction::Column,
+        padding: Edges {
+            top: 16.0,
+            right: 16.0,
+            bottom: 48.0,
+            left: 16.0,
+        },
+        ..Box::default()
+    })
+}
+
+/// The progresses of the images, of the states that the GPU draws, the
+/// indeterminate one's moving part the window server's: bars normal, in
+/// error and paused, of their pills, and one of its own colors, square and
+/// 10 points high; rings of each, of lines 2, 3 and 4 points thick.
+fn progress_tree() -> Node {
+    use lokyr_plugin_sdk::view::{Progress, ProgressShape, ProgressState};
+    let states = [
+        (ProgressState::Normal, 0.4),
+        (ProgressState::Error, 0.7),
+        (ProgressState::Paused, 0.55),
+    ];
+    let mut bars: Vec<Node> = states
+        .into_iter()
+        .map(|(state, value)| {
+            Node::new(Kind::Progress(Progress {
+                state,
+                value,
+                ..Progress::default()
+            }))
+        })
+        .collect();
+    bars.push(
+        Node::new(Kind::Progress(Progress {
+            value: 0.65,
+            radius: Some(0.0),
+            ..Progress::default()
+        }))
+        .layout(Box {
+            height: Length::Points(10.0),
+            ..Box::default()
+        })
+        .style(Style {
+            background: Some("field.border".into()),
+            color: Some("accent".into()),
+            ..Style::default()
+        }),
+    );
+    let rings: Vec<Node> = states
+        .into_iter()
+        .zip([(16.0, 2.0), (24.0, 3.0), (32.0, 4.0)])
+        .map(|((state, value), (side, thickness))| {
+            Node::new(Kind::Progress(Progress {
+                state,
+                value,
+                shape: ProgressShape::Ring,
+                thickness,
+                ..Progress::default()
+            }))
+            .layout(Box {
+                width: Length::Points(side),
+                height: Length::Points(side),
+                ..Box::default()
+            })
+        })
+        .collect();
+    let rings = Node::container(rings).layout(Box {
+        gap: 16.0,
+        align: Align::Center,
+        ..Box::default()
+    });
+    bars.push(rings);
+    // Dots of the states' values, and an indeterminate one's track.
+    let dots: Vec<Node> = states
+        .into_iter()
+        .chain([(ProgressState::Indeterminate, 0.0)])
+        .zip([10.0, 16.0, 24.0, 16.0])
+        .map(|((state, value), side)| {
+            Node::new(Kind::Progress(Progress {
+                state,
+                value,
+                shape: ProgressShape::Dots,
+                ..Progress::default()
+            }))
+            .layout(Box {
+                width: Length::Points(side),
+                height: Length::Points(side),
+                ..Box::default()
+            })
+        })
+        .collect();
+    bars.push(Node::container(dots).layout(Box {
+        gap: 16.0,
+        align: Align::Center,
+        ..Box::default()
+    }));
+    Node::container(bars).layout(Box {
+        direction: Direction::Column,
+        gap: 12.0,
+        padding: Edges::all(16.0),
+        ..Box::default()
+    })
+}
+
+/// The node of `key` in `tree`.
+fn find(tree: &Tree, key: &str) -> NodeId {
+    tree.by_key(&key.into()).unwrap()
+}
+
+/// Draws the view tree at `scale`, in the dark variant or the light one,
+/// and compares the image with its golden one.
+fn check_view(dark: bool, scale: u32) {
+    check_tree("view", &view_tree(), (dark, scale), |_| {
+        (None, None, None, None)
+    });
+}
+
+/// Draws the widgets' tree at `scale`, in the dark variant or the light
+/// one, of the focus on the button of an icon, the pointer over the
+/// toggle off and pressing a button, and the toggle's tooltip, and
+/// compares the image with its golden one.
+fn check_widgets(dark: bool, scale: u32) {
+    check_tree("widgets", &widgets_tree(), (dark, scale), |tree| {
+        (
+            Some(find(tree, "add")),
+            Some(find(tree, "word")),
+            Some(find(tree, "pressed")),
+            Some("Whole Word"),
+        )
+    });
+}
+
+/// Draws `root` at `scale`, in the dark variant or the light one, of the
+/// node with the focus, the one under the pointer, the one pressed and a
+/// tooltip under that one, as `states` gives them of the tree, and
+/// compares the image with its golden one, `{name}-{appearance}-{scale}x`.
+fn check_tree(
+    name: &str,
+    root: &Node,
+    (dark, scale): (bool, u32),
+    states: impl Fn(
+        &Tree,
+    ) -> (
+        Option<NodeId>,
+        Option<NodeId>,
+        Option<NodeId>,
+        Option<&'static str>,
+    ),
+) {
+    let Some(mut drawing) = Drawing::new(scale as f32) else {
+        return;
+    };
+    let variant = Theme::builtin().variant(dark).clone();
+    let mut tree = Tree::new();
+    let changes = tree.update(root).unwrap();
+    let mut layout = Layout::new(scale as f32);
+    layout.update(&tree, &changes);
+    let width = VIEW_WIDTH * scale as f32;
+    layout.compute(&tree, Some(width), None, &mut drawing.font);
+    let frame = layout.frame(&tree, tree.root().unwrap()).unwrap();
+    let (width, height) = (frame.width as u32, frame.height as u32);
+    let (focused, hovered, pressed, tip) = states(&tree);
+    drawing.font.begin_frame();
+    let mut items = paint(
+        &tree,
+        &layout,
+        &mut drawing.font,
+        &variant.tokens,
+        (0.0, 0.0),
+        Shown {
+            dark,
+            focused,
+            fields: &Fields::new(),
+            hovered,
+            pressed,
+            lists: &Lists::new(),
+            motion: None,
+            fills: Fills::All,
+            pictures: &lokyr_ui_core::paint::NO_PICTURES,
+        },
+    );
+    // The tooltip, as the pointer rested at the middle of the node under
+    // it.
+    if let (Some(text), Some(node)) = (tip, hovered) {
+        let over = layout.frame(&tree, node).unwrap();
+        let at = (over.x + over.width / 2.0, over.y + over.height / 2.0);
+        items.extend(tooltip(
+            &mut drawing.font,
+            &variant.tokens,
+            text,
+            (at, (frame.width, frame.height)),
+            (scale as f32, dark),
+        ));
+    }
+    let list = DisplayList {
+        background: lokyr_render_core::Color::from_rgb8(
+            variant.colors.background.r,
+            variant.colors.background.g,
+            variant.colors.background.b,
+        ),
+        items,
+        frame: drawing.font.atlas_frame(),
+    };
+    let updates = drawing.font.texture_updates();
+    drawing.renderer.update_textures(&updates).unwrap();
+    let pixels = drawing
+        .renderer
+        .draw_offscreen(&list, width, height)
+        .unwrap();
+    let appearance = if dark { "dark" } else { "light" };
+    let most = (f64::from(width * height) * SHARE) as usize;
+    compare(
+        &format!("{name}-{appearance}-{scale}x"),
+        (width, height, &pixels),
+        most,
+    );
 }
 
 /// The directory of the golden images.
@@ -374,16 +972,28 @@ fn check(scenes: &[Scene], scale: u32) {
         return;
     };
     let (width, height, pixels) = drawing.draw(scenes);
+    let most = if scenes[0].shapes {
+        SHAPES * (scale * scale) as usize
+    } else {
+        (f64::from(width * height) * SHARE) as usize
+    };
     let name = format!("{}-{scale}x", scenes[0].name);
+    compare(&name, (width, height, &pixels), most);
+}
+
+/// Compares the image `name` drawn, its width, its height and its pixels,
+/// with its golden one, of which `most` pixels can differ; or writes it as
+/// the golden one, when asked.
+fn compare(name: &str, (width, height, pixels): (u32, u32, &[u8]), most: usize) {
     let path = golden().join(format!("{name}.png"));
     if std::env::var_os("LOKYR_GOLDEN_UPDATE").is_some() {
-        write_png(&path, width, height, &pixels);
+        write_png(&path, width, height, pixels);
         return;
     }
     let failed = Path::new(env!("CARGO_TARGET_TMPDIR")).join("golden");
     let actual = failed.join(format!("{name}.png"));
     let Some((want_width, want_height, expected)) = read_png(&path) else {
-        write_png(&actual, width, height, &pixels);
+        write_png(&actual, width, height, pixels);
         panic!(
             "{} is not there, or is not an RGBA image: the image drawn is {}; \
              LOKYR_GOLDEN_UPDATE=1 writes the golden images",
@@ -392,7 +1002,7 @@ fn check(scenes: &[Scene], scale: u32) {
         );
     };
     if (want_width, want_height) != (width, height) {
-        write_png(&actual, width, height, &pixels);
+        write_png(&actual, width, height, pixels);
         panic!(
             "{name} is {width} by {height} pixels, where {} is {want_width} by {want_height}: \
              the image drawn is {}",
@@ -400,14 +1010,9 @@ fn check(scenes: &[Scene], scale: u32) {
             actual.display()
         );
     }
-    let (count, map) = differences(&expected, &pixels);
-    let most = if scenes[0].shapes {
-        SHAPES * (scale * scale) as usize
-    } else {
-        (f64::from(width * height) * SHARE) as usize
-    };
+    let (count, map) = differences(&expected, pixels);
     if count > most {
-        write_png(&actual, width, height, &pixels);
+        write_png(&actual, width, height, pixels);
         let map_path = failed.join(format!("{name}-differences.png"));
         write_png(&map_path, width, height, &map);
         panic!(
@@ -441,6 +1046,131 @@ fn decorations_draw_as_their_golden_image() {
     }
 }
 
+/// The scroll bars over a pane of text, in the light variant or the dark
+/// one, at `scale`, one under the other: thin, as the view scrolls; wide
+/// over its track, as the pointer is over it, of a search's marks, the
+/// current one apart; and pressed, as a drag holds it, at the screen.
+fn check_bars(light: bool, scale: u32) {
+    let Some(mut drawing) = Drawing::new(scale as f32) else {
+        return;
+    };
+    let lines: Vec<String> = (1..=8).map(|n| format!("line {n} of the output")).collect();
+    let scene = Scene {
+        name: if light {
+            "scrollbar-light"
+        } else {
+            "scrollbar-dark"
+        },
+        columns: 32,
+        rows: 8,
+        text: lines.join("\r\n"),
+        cursor: None,
+        selection: None,
+        shapes: false,
+        fade: None,
+        highlights: Some(Highlights {
+            matches: Vec::new(),
+            current: None,
+            light,
+        }),
+    };
+    let tokens = Theme::builtin().variant(!light).tokens.clone();
+    let rows = |top: u64| Rows {
+        total: 400,
+        top,
+        shown: 8,
+    };
+    let mark = |at: f32, current: bool| Mark { at, current };
+    let bars = [
+        (
+            rows(120),
+            Look {
+                opacity: 1.0,
+                wide: false,
+                pressed: false,
+            },
+            Vec::new(),
+        ),
+        (
+            rows(300),
+            Look {
+                opacity: 1.0,
+                wide: true,
+                pressed: false,
+            },
+            vec![mark(0.1, false), mark(0.35, false), mark(0.8, true)],
+        ),
+        (
+            rows(392),
+            Look {
+                opacity: 1.0,
+                wide: true,
+                pressed: true,
+            },
+            Vec::new(),
+        ),
+    ];
+    let (mut items, mut background, mut y, mut width) = (Vec::new(), None, MARGIN, 0);
+    for (rows, look, marks) in &bars {
+        let (batch, color) = drawing.batch(&scene, (MARGIN as i32, y as i32));
+        let pane = Rect {
+            x: MARGIN as i32,
+            y: y as i32,
+            width: u32::from(scene.columns) * batch.cell_width,
+            height: u32::from(scene.rows) * batch.cell_height,
+        };
+        width = width.max(pane.width);
+        y += pane.height;
+        background.get_or_insert(color);
+        items.push(Item::Cells(batch));
+        let area = scrollbar::area(pane, scale as f32);
+        items.push(Item::Shapes(scrollbar::shapes(
+            area,
+            *rows,
+            *look,
+            marks,
+            &tokens,
+            scale as f32,
+        )));
+    }
+    let (width, height) = (width + 2 * MARGIN, y + MARGIN);
+    let list = DisplayList {
+        background: background.unwrap_or_default(),
+        items,
+        frame: drawing.font.atlas_frame(),
+    };
+    let updates = drawing.font.texture_updates();
+    drawing.renderer.update_textures(&updates).unwrap();
+    let pixels = drawing
+        .renderer
+        .draw_offscreen(&list, width, height)
+        .unwrap();
+    let most = (f64::from(width * height) * SHARE) as usize;
+    compare(
+        &format!("{}-{scale}x", scene.name),
+        (width, height, &pixels),
+        most,
+    );
+}
+
+#[test]
+fn the_scroll_bars_draw_as_their_golden_images() {
+    for light in [false, true] {
+        for scale in [1, 2] {
+            check_bars(light, scale);
+        }
+    }
+}
+
+#[test]
+fn a_search_s_matches_draw_highlighted_as_their_golden_images() {
+    for light in [false, true] {
+        for scale in [1, 2] {
+            check(&highlights(light), scale);
+        }
+    }
+}
+
 #[test]
 fn the_cursor_s_shapes_draw_as_their_golden_image() {
     for scale in [1, 2] {
@@ -455,10 +1185,816 @@ fn the_shapes_draw_as_their_golden_image() {
     }
 }
 
+/// An image of 2 by 2 pixels, red, green, blue and white, opaque, and one
+/// of a pixel of white of half an opacity, premultiplied.
+const IMAGE: [u8; 16] = [
+    255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 255, 255,
+];
+const VEIL: [u8; 4] = [128, 128, 128, 128];
+
+#[test]
+fn inline_images_draw_under_the_text_and_over_it_as_their_golden_images() {
+    for scale in [1, 2] {
+        let Some(mut drawing) = Drawing::new(scale as f32) else {
+            return;
+        };
+        let scene = Scene {
+            name: "inline-images",
+            columns: 10,
+            rows: 3,
+            text: " Lokyr\r\n images".to_owned(),
+            cursor: None,
+            selection: None,
+            shapes: false,
+            fade: None,
+            highlights: None,
+        };
+        let origin = (MARGIN as i32, MARGIN as i32);
+        let (batch, background) = drawing.batch(&scene, origin);
+        let (cell_width, cell_height) = (batch.cell_width, batch.cell_height);
+        let under = drawing
+            .renderer
+            .picture_of_pixels(&IMAGE, 2, 2)
+            .unwrap()
+            .expect("a picture");
+        let over = drawing
+            .renderer
+            .picture_of_pixels(&VEIL, 1, 1)
+            .unwrap()
+            .expect("a picture");
+        // The image over the first two rows' first six cells, under the
+        // text; the veil over the last row's last four, over it.
+        let rect = |column: u32, row: u32, columns: u32, rows: u32| lokyr_render_core::Rect {
+            x: origin.0 + (column * cell_width) as i32,
+            y: origin.1 + (row * cell_height) as i32,
+            width: columns * cell_width,
+            height: rows * cell_height,
+        };
+        let width = u32::from(scene.columns) * cell_width + 2 * MARGIN;
+        let height = u32::from(scene.rows) * cell_height + 2 * MARGIN;
+        let list = DisplayList {
+            background,
+            items: vec![
+                Item::Picture {
+                    rect: rect(0, 0, 6, 2),
+                    picture: under,
+                },
+                Item::Cells(batch),
+                Item::Picture {
+                    rect: rect(6, 1, 4, 2),
+                    picture: over,
+                },
+            ],
+            frame: drawing.font.atlas_frame(),
+        };
+        let updates = drawing.font.texture_updates();
+        drawing.renderer.update_textures(&updates).unwrap();
+        let pixels = drawing
+            .renderer
+            .draw_offscreen(&list, width, height)
+            .unwrap();
+        let most = (f64::from(width * height) * SHARE) as usize;
+        compare(
+            &format!("inline-images-{scale}x"),
+            (width, height, &pixels),
+            most,
+        );
+    }
+}
+
+#[test]
+fn an_image_under_the_text_draws_over_the_cells_backgrounds_as_its_golden_images() {
+    for scale in [1, 2] {
+        let Some(mut drawing) = Drawing::new(scale as f32) else {
+            return;
+        };
+        // The first row of a blue background, under the image.
+        let scene = Scene {
+            name: "inline-images-backgrounds",
+            columns: 10,
+            rows: 3,
+            text: "\x1b[44m Lokyr    \x1b[0m\r\n images".to_owned(),
+            cursor: None,
+            selection: None,
+            shapes: false,
+            fade: None,
+            highlights: None,
+        };
+        let origin = (MARGIN as i32, MARGIN as i32);
+        let (mut batch, background) = drawing.batch(&scene, origin);
+        let (cell_width, cell_height) = (batch.cell_width, batch.cell_height);
+        let under = drawing
+            .renderer
+            .picture_of_pixels(&IMAGE, 2, 2)
+            .unwrap()
+            .expect("a picture");
+        // The backgrounds alone, the image over the first two rows' first
+        // six cells, then the text of no background over it.
+        let backgrounds = lokyr_render_core::CellBatch {
+            backgrounds: std::mem::take(&mut batch.backgrounds),
+            glyphs: Vec::new(),
+            lines: Vec::new(),
+            cursor: None,
+            ..batch
+        };
+        let width = u32::from(scene.columns) * cell_width + 2 * MARGIN;
+        let height = u32::from(scene.rows) * cell_height + 2 * MARGIN;
+        let list = DisplayList {
+            background,
+            items: vec![
+                Item::Cells(backgrounds),
+                Item::Picture {
+                    rect: lokyr_render_core::Rect {
+                        x: origin.0,
+                        y: origin.1,
+                        width: 6 * cell_width,
+                        height: 2 * cell_height,
+                    },
+                    picture: under,
+                },
+                Item::Cells(batch),
+            ],
+            frame: drawing.font.atlas_frame(),
+        };
+        let updates = drawing.font.texture_updates();
+        drawing.renderer.update_textures(&updates).unwrap();
+        let pixels = drawing
+            .renderer
+            .draw_offscreen(&list, width, height)
+            .unwrap();
+        let most = (f64::from(width * height) * SHARE) as usize;
+        compare(
+            &format!("inline-images-backgrounds-{scale}x"),
+            (width, height, &pixels),
+            most,
+        );
+    }
+}
+
+#[test]
+fn a_pane_without_the_keyboard_draws_faded_as_its_golden_image() {
+    for scale in [1, 2] {
+        check(&dimmed(), scale);
+    }
+}
+
+#[test]
+fn panes_headers_draw_as_their_golden_images() {
+    // The header of the pane that has the keyboard, then another's.
+    let root = Node::container(vec![
+        lokyr_splits::title_header("src — vim", true),
+        lokyr_splits::title_header("~ — cargo test", false),
+    ])
+    .layout(Box {
+        direction: Direction::Column,
+        width: Length::Points(320.0),
+        gap: 8.0,
+        padding: Edges::all(8.0),
+        ..Box::default()
+    });
+    for dark in [false, true] {
+        for scale in [1, 2] {
+            check_tree("pane-headers", &root, (dark, scale), |_| {
+                (None, None, None, None)
+            });
+        }
+    }
+}
+
+#[test]
+fn the_find_bar_draws_as_its_golden_images() {
+    use lokyr_search_plugin::{BarTexts, BarView, Options, find_bar};
+    // Of no option, of no result, its field's placeholder showing; then
+    // of case and regex, a count, the pointer over the up arrow.
+    let quiet = find_bar(
+        &BarView {
+            count: "No results".to_owned(),
+            ..BarView::default()
+        },
+        &BarTexts::default(),
+    );
+    let busy = find_bar(
+        &BarView {
+            options: Options {
+                sensitive: true,
+                regex: true,
+                whole_word: false,
+            },
+            count: "3 of 12".to_owned(),
+        },
+        &BarTexts::default(),
+    );
+    let room = |bar: Node| {
+        Node::container(vec![bar]).layout(Box {
+            width: Length::Points(470.0),
+            padding: Edges::all(8.0),
+            ..Box::default()
+        })
+    };
+    for dark in [false, true] {
+        for scale in [1, 2] {
+            check_tree("find-bar", &room(quiet.clone()), (dark, scale), |_| {
+                (None, None, None, None)
+            });
+            check_tree(
+                "find-bar-options",
+                &room(busy.clone()),
+                (dark, scale),
+                |tree| (None, tree.by_key(&"up".into()), None, None),
+            );
+        }
+    }
+}
+
 #[test]
 fn a_selection_draws_as_its_golden_image() {
     for scale in [1, 2] {
         check(&selection(), scale);
+    }
+}
+
+#[test]
+fn a_view_tree_draws_as_its_golden_images_light_and_dark() {
+    for dark in [false, true] {
+        for scale in [1, 2] {
+            check_view(dark, scale);
+        }
+    }
+}
+
+#[test]
+fn buttons_toggles_separators_and_a_tooltip_draw_as_their_golden_images() {
+    for dark in [false, true] {
+        for scale in [1, 2] {
+            check_widgets(dark, scale);
+        }
+    }
+}
+
+#[test]
+fn progresses_draw_as_their_golden_images() {
+    for dark in [false, true] {
+        for scale in [1, 2] {
+            check_tree("progress", &progress_tree(), (dark, scale), |_| {
+                (None, None, None, None)
+            });
+        }
+    }
+}
+
+/// The tabs of a tab bar's images: a tab of its program's color, the
+/// active one, and one of a title too long for its room.
+fn bar_tabs() -> Vec<TabInfo> {
+    let tab = |id: u64, title: &str, active: bool| TabInfo {
+        id: TabId(id),
+        window: WindowId(1),
+        title: title.to_owned(),
+        color: None,
+        active,
+        panes: vec![PaneId(id)],
+        focused: PaneId(id),
+        zoomed: None,
+        activity: false,
+        bell: false,
+        progress: None,
+        printing: false,
+        running: false,
+        alternate: false,
+        secure: false,
+        agent: None,
+        agent_message: None,
+    };
+    let mut colored = tab(1, "lokyr — vim", false);
+    colored.color = Some(Color::Rgb(0x3a, 0x7b, 0xe6));
+    vec![
+        colored,
+        tab(2, "-zsh", true),
+        tab(
+            3,
+            "~/Documents/git/sephiroth74/rust/lokyr — cargo test",
+            false,
+        ),
+    ]
+}
+
+/// The room of a titlebar of tabs over a sidebar's top, its height and
+/// the width of the window's buttons, in points.
+const SIDEBAR_ROOM: (f32, f32) = (40.0, 84.0);
+
+/// The tabs of a bar's image: the three of [`bar_tabs`], of the keys of
+/// the default bindings; one alone, which the config shows a bar for;
+/// twelve, more than the keys' nine; the three, of keys of the user's
+/// bindings, one of none; four of their marks; or one alone, whose bar
+/// hides, of its title in the titlebar.
+#[derive(Clone, Copy)]
+enum BarTabs {
+    Three,
+    One,
+    Many,
+    Bound,
+    Marked,
+    Title,
+    TitleProgress,
+}
+
+/// A bar's tabs, the keys of each, and the config's keys past the look's.
+type ShownTabs = (Vec<TabInfo>, Vec<Option<String>>, Vec<(&'static str, Data)>);
+
+impl BarTabs {
+    /// The tabs, the keys of each, and the config's keys past the look's.
+    fn shown(self) -> ShownTabs {
+        let keys = |keys: &[&str]| keys.iter().map(|keys| Some((*keys).to_owned())).collect();
+        match self {
+            Self::Three => (bar_tabs(), keys(&["⌘1", "⌘2", "⌘3"]), Vec::new()),
+            // A single tab whose bar hides, of its title in the titlebar,
+            // of the protected input and a program that runs and prints.
+            Self::Title => {
+                let mut tab = bar_tabs().swap_remove(1);
+                tab.id = TabId(1);
+                tab.secure = true;
+                tab.running = true;
+                tab.printing = true;
+                (vec![tab], keys(&["⌘1"]), Vec::new())
+            }
+            // A single tab's title of its program's progress, 40 percent,
+            // in a ring.
+            Self::TitleProgress => {
+                use lokyr_plugin_sdk::host::TabProgress;
+                use lokyr_plugin_sdk::view::ProgressState;
+                let mut tab = bar_tabs().swap_remove(1);
+                tab.id = TabId(1);
+                tab.running = true;
+                tab.printing = true;
+                tab.progress = Some(TabProgress {
+                    state: ProgressState::Normal,
+                    value: Some(0.4),
+                });
+                (vec![tab], keys(&["⌘1"]), Vec::new())
+            }
+            Self::One => {
+                let mut tab = bar_tabs().swap_remove(1);
+                tab.id = TabId(1);
+                (
+                    vec![tab],
+                    keys(&["⌘1"]),
+                    vec![("hide-when-single", Data::Boolean(false))],
+                )
+            }
+            Self::Many => {
+                let titles = [
+                    "-zsh",
+                    "vim",
+                    "htop",
+                    "lokyr — cargo test",
+                    "ssh pi",
+                    "-zsh",
+                    "man ls",
+                    "git log",
+                    "~/Downloads",
+                    "python3",
+                    "-zsh",
+                    "tail -f lokyr.log",
+                ];
+                let tabs = titles
+                    .iter()
+                    .enumerate()
+                    .map(|(at, title)| {
+                        let id = at as u64 + 1;
+                        TabInfo {
+                            id: TabId(id),
+                            window: WindowId(1),
+                            title: (*title).to_owned(),
+                            color: (id == 2).then_some(Color::Rgb(0xd9, 0x4a, 0x38)),
+                            active: id == 5,
+                            panes: vec![PaneId(id)],
+                            focused: PaneId(id),
+                            zoomed: None,
+                            activity: false,
+                            bell: false,
+                            progress: None,
+                            printing: false,
+                            running: false,
+                            alternate: false,
+                            secure: false,
+                            agent: None,
+                            agent_message: None,
+                        }
+                    })
+                    .collect();
+                let keys = (1..=titles.len())
+                    .map(|at| (at <= 9).then(|| format!("⌘{at}")))
+                    .collect();
+                (tabs, keys, Vec::new())
+            }
+            Self::Bound => {
+                let keys = vec![Some("⌃1".to_owned()), Some("⌥⌘2".to_owned()), None];
+                (bar_tabs(), keys, Vec::new())
+            }
+            Self::Marked => {
+                use lokyr_plugin_sdk::host::{AgentState, TabProgress};
+                use lokyr_plugin_sdk::view::ProgressState;
+                let mut tabs = bar_tabs();
+                // The first: output and a bell while it did not show, and
+                // its program's progress, 40 percent.
+                tabs[0].activity = true;
+                tabs[0].bell = true;
+                tabs[0].progress = Some(TabProgress {
+                    state: ProgressState::Normal,
+                    value: Some(0.4),
+                });
+                // The active one: the protected input, of a program that
+                // runs and prints.
+                tabs[1].secure = true;
+                tabs[1].running = true;
+                tabs[1].printing = true;
+                // The third: an agent that waits, whose task failed.
+                tabs[2].agent = Some(AgentState::Waiting);
+                tabs[2].progress = Some(TabProgress {
+                    state: ProgressState::Error,
+                    value: Some(0.7),
+                });
+                // A fourth: an agent at work, of no known end.
+                let mut working = bar_tabs().swap_remove(1);
+                working.id = TabId(4);
+                working.title = "claude".to_owned();
+                working.active = false;
+                working.agent = Some(AgentState::Working);
+                working.progress = Some(TabProgress {
+                    state: ProgressState::Paused,
+                    value: Some(0.55),
+                });
+                tabs.push(working);
+                let keys = vec![
+                    Some("⌘1".to_owned()),
+                    Some("⌘2".to_owned()),
+                    Some("⌘3".to_owned()),
+                    Some("⌘4".to_owned()),
+                ];
+                (tabs, keys, Vec::new())
+            }
+        }
+    }
+}
+
+/// A tab bar's image: its name, its config's `style` and `position`, the
+/// room that a window gives it, its width and its height, in points, its
+/// height its own without one, and its tabs.
+type Bar = (
+    &'static str,
+    &'static str,
+    &'static str,
+    (f32, Option<f32>),
+    BarTabs,
+);
+
+/// The images of the tab bar: each of its looks at each of its places, as
+/// `[plugins.tabs]` asks for them, of their width and, in the titlebar and
+/// down a column, of their height, in points, the pointer over the third
+/// tab; a single tab, many, and the keys of the user's bindings.
+const BARS: [Bar; 25] = [
+    (
+        "standard-top",
+        "standard",
+        "top",
+        (640.0, None),
+        BarTabs::Three,
+    ),
+    (
+        "standard-bottom",
+        "standard",
+        "bottom",
+        (640.0, None),
+        BarTabs::Three,
+    ),
+    (
+        "unified",
+        "unified",
+        "top",
+        (640.0, Some(40.0)),
+        BarTabs::Three,
+    ),
+    (
+        "seamless-top",
+        "seamless",
+        "top",
+        (640.0, Some(40.0)),
+        BarTabs::Three,
+    ),
+    (
+        "seamless-bottom",
+        "seamless",
+        "bottom",
+        (640.0, None),
+        BarTabs::Three,
+    ),
+    (
+        "standard-left",
+        "standard",
+        "left",
+        (200.0, Some(180.0)),
+        BarTabs::Three,
+    ),
+    (
+        "unified-left",
+        "unified",
+        "left",
+        (200.0, Some(180.0)),
+        BarTabs::Three,
+    ),
+    (
+        "seamless-left",
+        "seamless",
+        "left",
+        (200.0, Some(180.0)),
+        BarTabs::Three,
+    ),
+    (
+        "unified-single",
+        "unified",
+        "top",
+        (640.0, Some(40.0)),
+        BarTabs::One,
+    ),
+    (
+        "seamless-left-single",
+        "seamless",
+        "left",
+        (200.0, Some(120.0)),
+        BarTabs::One,
+    ),
+    (
+        "unified-many",
+        "unified",
+        "top",
+        (640.0, Some(40.0)),
+        BarTabs::Many,
+    ),
+    (
+        "seamless-many",
+        "seamless",
+        "top",
+        (640.0, Some(40.0)),
+        BarTabs::Many,
+    ),
+    (
+        "standard-many",
+        "standard",
+        "top",
+        (640.0, None),
+        BarTabs::Many,
+    ),
+    (
+        "unified-left-many",
+        "unified",
+        "left",
+        (200.0, Some(420.0)),
+        BarTabs::Many,
+    ),
+    (
+        "unified-bound",
+        "unified",
+        "top",
+        (640.0, Some(40.0)),
+        BarTabs::Bound,
+    ),
+    (
+        "unified-bottom",
+        "unified",
+        "bottom",
+        (640.0, None),
+        BarTabs::Three,
+    ),
+    (
+        "unified-right",
+        "unified",
+        "right",
+        (200.0, Some(180.0)),
+        BarTabs::Three,
+    ),
+    (
+        "seamless-right",
+        "seamless",
+        "right",
+        (200.0, Some(180.0)),
+        BarTabs::Three,
+    ),
+    // At the top with no titlebar, as in full screen, of its own height.
+    (
+        "seamless-full-screen",
+        "seamless",
+        "top",
+        (640.0, None),
+        BarTabs::Three,
+    ),
+    // The tabs' marks: what came while they did not show, what runs, the
+    // protected input, agents' states and programs' progress.
+    (
+        "unified-marks",
+        "unified",
+        "top",
+        (640.0, Some(40.0)),
+        BarTabs::Marked,
+    ),
+    (
+        "seamless-marks",
+        "seamless",
+        "top",
+        (640.0, Some(40.0)),
+        BarTabs::Marked,
+    ),
+    (
+        "unified-left-marks",
+        "unified",
+        "left",
+        (200.0, Some(200.0)),
+        BarTabs::Marked,
+    ),
+    // A single tab's title, across a titlebar of the system's height; of
+    // its program's progress.
+    (
+        "unified-title",
+        "unified",
+        "top",
+        (640.0, Some(28.0)),
+        BarTabs::Title,
+    ),
+    (
+        "unified-title-progress",
+        "unified",
+        "top",
+        (640.0, Some(28.0)),
+        BarTabs::TitleProgress,
+    ),
+    // More rows than the column holds, which scroll.
+    (
+        "standard-left-scrolled",
+        "standard",
+        "left",
+        (200.0, Some(200.0)),
+        BarTabs::Many,
+    ),
+];
+
+/// Draws the tab bar of `style` at `position`, laid out as a window lays
+/// it out in a room of `size` points, its height its own without one, at
+/// `scale`, in the dark variant or the light one, the pointer over the
+/// third tab, which shows its close button, and compares the image with
+/// its golden one, `tabs-{name}-{appearance}-{scale}x`.
+fn check_tab_bar((name, style, position, (width, height), shown): Bar, (dark, scale): (bool, u32)) {
+    let Some(mut drawing) = Drawing::new(scale as f32) else {
+        return;
+    };
+    let variant = Theme::builtin().variant(dark).clone();
+    let (tabs, keys, more) = shown.shown();
+    let mut config = BTreeMap::from([
+        ("style".to_owned(), Data::Text(style.to_owned())),
+        ("position".to_owned(), Data::Text(position.to_owned())),
+    ]);
+    config.extend(more.into_iter().map(|(key, value)| (key.to_owned(), value)));
+    let config = Data::Map(config);
+    let (root, place) = lokyr_tabs::tab_bar(&tabs, &keys, Some("⌥⌘1"), &config);
+    let mut tree = Tree::new();
+    let changes = tree.update(&root.unwrap()).unwrap();
+    let pixels = scale as f32;
+    let mut layout = Layout::new(pixels);
+    layout.update(&tree, &changes);
+    // A sidebar under a titlebar of tabs, and the window's buttons at its
+    // left, as macOS's are; a title between their room on either side.
+    if matches!(
+        place,
+        lokyr_plugin_sdk::host::BarPlace::Sidebar { .. } | lokyr_plugin_sdk::host::BarPlace::Title
+    ) {
+        let room = Room {
+            titlebar: SIDEBAR_ROOM.0 * pixels,
+            buttons: SIDEBAR_ROOM.1 * pixels,
+        };
+        layout.set_room(&tree, room);
+    }
+    layout.compute(
+        &tree,
+        Some(width * pixels),
+        height.map(|height| height * pixels),
+        &mut drawing.font,
+    );
+    let frame = layout.frame(&tree, tree.root().unwrap()).unwrap();
+    // Down a column, each row of its height, however many.
+    if matches!(position, "left" | "right") {
+        for tab in &tabs {
+            let key = view::Key::from(format!("tab-{}", tab.id.0).as_str());
+            let row = tree.by_key(&key).and_then(|id| layout.frame(&tree, id));
+            assert_eq!(row.map(|row| row.height), Some(28.0 * pixels), "{name}");
+        }
+    }
+    // In the titlebar, the tabs and the button of a new tab take its
+    // presses, the window's keys and the room around them the window's.
+    if place == lokyr_plugin_sdk::host::BarPlace::Titlebar && height.is_some() {
+        let areas = lokyr_ui_core::chrome::titlebar_areas(&tree, &layout);
+        // Of many tabs, those that the bar's scroll shows alone.
+        if matches!(shown, BarTabs::Many) {
+            assert!(areas.len() < tabs.len() + 1, "{name}: {areas:?}");
+        } else {
+            assert_eq!(areas.len(), tabs.len() + 1, "{name}: {areas:?}");
+        }
+        assert!(areas.iter().all(|area| area.x > 0.0), "{name}: {areas:?}");
+    }
+    let (width, height) = (frame.width as u32, frame.height as u32);
+    // The pointer over the third tab, its hover shown whole.
+    let now = Instant::now();
+    let mut animations = Animations::new();
+    animations.laid_out(&tree, &layout, now, true);
+    let hovered = view::Key::from("tab-3");
+    animations.hovered([&hovered], now);
+    drawing.font.begin_frame();
+    let items = paint(
+        &tree,
+        &layout,
+        &mut drawing.font,
+        &variant.tokens,
+        (0.0, 0.0),
+        Shown {
+            dark,
+            focused: None,
+            fields: &Fields::new(),
+            hovered: tree.by_key(&hovered),
+            pressed: None,
+            lists: &Lists::new(),
+            motion: Some((&animations, now)),
+            fills: Fills::All,
+            pictures: &lokyr_ui_core::paint::NO_PICTURES,
+        },
+    );
+    let list = DisplayList {
+        background: lokyr_render_core::Color::from_rgb8(
+            variant.colors.background.r,
+            variant.colors.background.g,
+            variant.colors.background.b,
+        ),
+        items,
+        frame: drawing.font.atlas_frame(),
+    };
+    let updates = drawing.font.texture_updates();
+    drawing.renderer.update_textures(&updates).unwrap();
+    let pixels = drawing
+        .renderer
+        .draw_offscreen(&list, width, height)
+        .unwrap();
+    let appearance = if dark { "dark" } else { "light" };
+    // Twelve tabs cut each title near a cluster's end, which a release of
+    // macOS's fonts measures a little apart: a cut a cluster sooner or
+    // later moves a glyph, of a share of their own.
+    let share = if matches!(shown, BarTabs::Many) {
+        4.0 * SHARE
+    } else {
+        SHARE
+    };
+    let most = (f64::from(width * height) * share) as usize;
+    compare(
+        &format!("tabs-{name}-{appearance}-{scale}x"),
+        (width, height, &pixels),
+        most,
+    );
+}
+
+#[test]
+fn a_title_of_either_direction_is_shortened_within_its_room() {
+    let Some(mut drawing) = Drawing::new(2.0) else {
+        return;
+    };
+    let font = &mut drawing.font;
+    let room = 80.0;
+    for text in [
+        "~/Documents/git/sephiroth74/rust/lokyr — cargo test",
+        "שלום עולם, זוהי כותרת ארוכה מאוד של לשונית",
+        "ab שלום עולם cd ef gh ij kl mn",
+        "🇮🇹 👨‍👩‍👧 a family 🧑🏽‍💻 at work, of flags",
+    ] {
+        let shortened = font.interface_shortened(text, room);
+        // Of an ellipsis, after a prefix of the text that ends at a
+        // cluster's end, within the room.
+        let prefix = shortened.strip_suffix('…').expect("an ellipsis");
+        assert!(
+            text.starts_with(prefix) && prefix.len() < text.len(),
+            "{text}: {shortened}"
+        );
+        let width = Measure::text(font, &shortened).0;
+        assert!(width <= room + 0.5, "{text}: {shortened}, {width}");
+        assert!(!prefix.is_empty(), "{text}: {shortened}");
+        // The next frame's is the same, of no shaping again.
+        assert!(std::rc::Rc::ptr_eq(
+            &shortened,
+            &font.interface_shortened(text, room)
+        ));
+    }
+}
+
+#[test]
+fn the_tab_bar_draws_as_its_golden_images_of_each_look_and_place() {
+    for bar in BARS {
+        for dark in [false, true] {
+            for scale in [1, 2] {
+                check_tab_bar(bar, (dark, scale));
+            }
+        }
     }
 }
 
@@ -471,4 +2007,286 @@ fn a_pixel_differs_past_the_tolerance_alone() {
     let (count, map) = differences(&expected, &far);
     assert_eq!(count, 1);
     assert_eq!(map, [255, 0, 0, 255, 0, 0, 0, 255]);
+}
+
+/// The drawing of the images' tests: Metal's GPU, and CoreText's fonts as
+/// the other golden images have them, smoothed, Han's characters of
+/// Simplified Chinese's faces.
+#[derive(Debug)]
+struct Images {
+    gpu: Gpu,
+}
+
+impl lokyr_app_core::Backend for Images {
+    type Fonts = CoreText;
+    type Surface = lokyr_render_metal::Surface;
+    type Renderer = MetalRenderer;
+
+    fn new() -> Result<Self, String> {
+        Gpu::new()
+            .map(|gpu| Self { gpu })
+            .map_err(|error| error.to_string())
+    }
+
+    fn fonts() -> CoreText {
+        CoreText::with_font_smoothing(true).with_language("zh-Hans")
+    }
+
+    fn renderer(&self, coverage: u32, color: u32) -> Result<MetalRenderer, String> {
+        MetalRenderer::new(&self.gpu, coverage, color).map_err(|error| error.to_string())
+    }
+
+    fn surface(
+        &self,
+        handle: lokyr_platform_core::WindowHandle<'_>,
+    ) -> Result<lokyr_render_metal::Surface, String> {
+        lokyr_render_metal::Surface::new(&self.gpu, handle).map_err(|error| error.to_string())
+    }
+}
+
+/// The rows of an image's tests: a prompt, a command's colored output of
+/// several styles, wide characters and a combining mark, and a status bar
+/// whose background runs past its text.
+fn image_rows() -> Vec<lokyr_plugin_sdk::image::CellRow> {
+    use lokyr_plugin_sdk::host::{StyleRun, TextStyle, Underline};
+    use lokyr_plugin_sdk::image::CellRow;
+    let style = |first: u16, last: u16, style: TextStyle| StyleRun { first, last, style };
+    let green = TextStyle {
+        foreground: Some(Color::Palette(2)),
+        bold: true,
+        ..TextStyle::default()
+    };
+    let blue = TextStyle {
+        foreground: Some(Color::Palette(4)),
+        ..TextStyle::default()
+    };
+    vec![
+        CellRow {
+            text: "~/lokyr ❯ ls -la src".to_owned(),
+            runs: vec![style(0, 6, blue), style(8, 8, green)],
+        },
+        CellRow {
+            text: "drwxr-xr-x  app.rs  日本語  e\u{301}tude".to_owned(),
+            runs: vec![
+                style(
+                    0,
+                    9,
+                    TextStyle {
+                        foreground: Some(Color::Palette(3)),
+                        faint: true,
+                        ..TextStyle::default()
+                    },
+                ),
+                style(
+                    12,
+                    17,
+                    TextStyle {
+                        italic: true,
+                        underline: Some(Underline::Curly),
+                        underline_color: Some(Color::Rgb(255, 80, 80)),
+                        ..TextStyle::default()
+                    },
+                ),
+                style(
+                    20,
+                    25,
+                    TextStyle {
+                        foreground: Some(Color::Rgb(255, 160, 0)),
+                        ..TextStyle::default()
+                    },
+                ),
+            ],
+        },
+        CellRow {
+            text: String::new(),
+            runs: Vec::new(),
+        },
+        CellRow {
+            text: " NORMAL  main.rs".to_owned(),
+            runs: vec![
+                style(
+                    0,
+                    7,
+                    TextStyle {
+                        foreground: Some(Color::Palette(0)),
+                        background: Some(Color::Palette(4)),
+                        bold: true,
+                        ..TextStyle::default()
+                    },
+                ),
+                style(
+                    8,
+                    39,
+                    TextStyle {
+                        background: Some(Color::Rgb(60, 64, 72)),
+                        ..TextStyle::default()
+                    },
+                ),
+            ],
+        },
+    ]
+}
+
+/// Renders `image` of the built-in theme's variant, light or dark, as the
+/// app renders a plugin's, and compares its PNG with its golden image.
+fn check_image(name: &str, image: &lokyr_plugin_sdk::image::ImageSpec, dark: bool) {
+    use lokyr_kernel::plugins::Images as _;
+    let Ok(mut drawing) = lokyr_app_core::Drawing::<Images>::new(FontConfig {
+        size: Size::try_from(POINTS).unwrap(),
+        ..FontConfig::default()
+    }) else {
+        eprintln!("no Metal device: the golden images are not compared");
+        return;
+    };
+    let theme = Theme::builtin();
+    let window = lokyr_kernel::config::WindowConfig::default();
+    let scale = image.scale.unwrap();
+    let (mut kept, mut last) = (std::collections::BTreeMap::new(), 0);
+    let mut painter = lokyr_app_core::ImagePainter {
+        drawing: Some(&mut drawing),
+        kept: (&mut kept, &mut last),
+        colors: &theme.variant(dark).colors,
+        widths: lokyr_vt_core::unicode::Widths::default(),
+        look: TextLook::default(),
+        padding: (window.padding_x, window.padding_y),
+        scale: 1.0,
+    };
+    let rendered = painter.render("acme/snap", image).unwrap();
+    // Kept as it asks, a picture of the renderer's of its size.
+    assert_eq!(rendered.id.is_some(), image.keep);
+    if let Some(id) = rendered.id {
+        assert_eq!(
+            kept["acme/snap"][&id].size,
+            (rendered.width, rendered.height)
+        );
+    }
+    assert_eq!(
+        (rendered.scale, &rendered.png.0[1..4]),
+        (scale, &b"PNG"[..])
+    );
+    let decoder = png::Decoder::new(std::io::Cursor::new(&rendered.png.0));
+    let mut reader = decoder.read_info().unwrap();
+    // Of the resolution of its scale, 72 points an inch.
+    let dims = reader.info().pixel_dims.unwrap();
+    assert_eq!(dims.xppu, (f64::from(scale) * 72.0 / 0.0254).round() as u32);
+    let mut pixels = vec![0; reader.output_buffer_size().unwrap()];
+    let info = reader.next_frame(&mut pixels).unwrap();
+    pixels.truncate(info.buffer_size());
+    assert_eq!((info.width, info.height), (rendered.width, rendered.height));
+    let most = (f64::from(info.width * info.height) * SHARE) as usize;
+    let name = format!("{name}-{}x", scale as u32);
+    compare(&name, (info.width, info.height, &pixels), most);
+}
+
+#[test]
+fn an_image_of_cells_renders_to_a_png_as_its_golden_images() {
+    use lokyr_plugin_sdk::image::{ImageBackground, ImageSpec};
+    for scale in [1.0, 2.0] {
+        // The window of its buttons, its title, rounded corners and a
+        // shadow, on the dark theme's background darker.
+        let framed = ImageSpec {
+            rows: image_rows(),
+            title: Some("~/lokyr — zsh".to_owned()),
+            buttons: true,
+            rounded: true,
+            shadow: true,
+            padding: 32.0,
+            background: ImageBackground::Theme,
+            scale: Some(scale),
+            keep: true,
+            min_columns: None,
+            min_rows: None,
+        };
+        check_image("image-framed-dark", &framed, true);
+        // The window alone, of square corners, no bar, no shadow, clear
+        // around it, in the light theme.
+        let alone = ImageSpec {
+            rows: image_rows(),
+            padding: 0.0,
+            background: ImageBackground::Clear,
+            scale: Some(scale),
+            ..ImageSpec::default()
+        };
+        check_image("image-alone-light", &alone, false);
+        // A title wider than the cells, of no buttons, on a color of its
+        // own, clear past its rounded corners.
+        let titled = ImageSpec {
+            rows: vec![lokyr_plugin_sdk::image::CellRow {
+                text: "ok".to_owned(),
+                runs: Vec::new(),
+            }],
+            title: Some("cargo test --workspace — a title wider than its cells".to_owned()),
+            rounded: true,
+            padding: 16.0,
+            background: ImageBackground::Rgb(171, 184, 195),
+            scale: Some(scale),
+            ..ImageSpec::default()
+        };
+        check_image("image-titled-dark", &titled, true);
+    }
+}
+
+#[test]
+fn an_image_past_the_most_is_drawn_smaller_and_the_kept_pictures_are_bounded_in_pixels() {
+    use lokyr_kernel::plugins::Images as _;
+    use lokyr_plugin_sdk::image::{
+        CellRow, ImageSpec, LEAST_FITTED_SCALE, MOST_COLUMNS, MOST_KEPT_PIXELS, MOST_PIXELS,
+        MOST_SIDE,
+    };
+    let Ok(mut drawing) = lokyr_app_core::Drawing::<Images>::new(FontConfig {
+        size: Size::try_from(POINTS).unwrap(),
+        ..FontConfig::default()
+    }) else {
+        eprintln!("no Metal device: the images are not drawn");
+        return;
+    };
+    let theme = Theme::builtin();
+    let window = lokyr_kernel::config::WindowConfig::default();
+    let (mut kept, mut last) = (std::collections::BTreeMap::new(), 0);
+    let mut painter = lokyr_app_core::ImagePainter {
+        drawing: Some(&mut drawing),
+        kept: (&mut kept, &mut last),
+        colors: &theme.variant(true).colors,
+        widths: lokyr_vt_core::unicode::Widths::default(),
+        look: TextLook::default(),
+        padding: (window.padding_x, window.padding_y),
+        scale: 2.0,
+    };
+    let row = CellRow {
+        text: "cargo build --release".to_owned(),
+        runs: Vec::new(),
+    };
+    // A selection of 1000 rows, past a side at 2: drawn smaller, within
+    // the most, as its scale tells.
+    let tall = ImageSpec {
+        rows: vec![row.clone(); 1000],
+        title: Some("zsh".to_owned()),
+        buttons: true,
+        keep: true,
+        ..ImageSpec::default()
+    };
+    let rendered = painter.render("acme/snap", &tall).unwrap();
+    assert!(
+        rendered.scale < 2.0 && rendered.scale >= LEAST_FITTED_SCALE,
+        "{}",
+        rendered.scale
+    );
+    assert!(rendered.height <= MOST_SIDE && rendered.width <= MOST_SIDE);
+    assert!(u64::from(rendered.width) * u64::from(rendered.height) <= MOST_PIXELS);
+    // Kept again and again: the oldest let go past the pixels' most.
+    for _ in 0..3 {
+        painter.render("acme/snap", &tall).unwrap();
+    }
+    let pixels: u64 = painter.kept.0["acme/snap"]
+        .values()
+        .map(|picture| u64::from(picture.size.0) * u64::from(picture.size.1))
+        .sum();
+    assert!(pixels <= MOST_KEPT_PIXELS, "{pixels}");
+    // Past the most even at the least scale: refused.
+    let huge = ImageSpec {
+        min_columns: Some(MOST_COLUMNS),
+        ..tall
+    };
+    let error = painter.render("acme/snap", &huge).unwrap_err();
+    assert!(error.contains("past the most"), "{error}");
 }

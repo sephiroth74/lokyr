@@ -1,4 +1,4 @@
-# Search over the scrollback (F1-54)
+# Search over the scrollback
 
 Measured on 2026-10-19 with `cargo bench -p bolt-search`, which `just bench` runs, on the machine of [the F0 baseline](baseline-F0.md): an Apple M5 Pro, macOS 27.0.1, on AC power, idle but for the run. Rust 1.99.0, a release build; criterion's median of 10 samples, which its baseline in `target/criterion` keeps for the runs after.
 

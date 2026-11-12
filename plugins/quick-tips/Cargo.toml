@@ -1,0 +1,19 @@
+[package]
+name = "lokyr-quick-tips"
+description = "Built-in plugin of the quick tips, a card at the app's start"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+lokyr-plugin-sdk = { workspace = true, features = ["unstable"] }
+
+[dev-dependencies]
+lokyr-plugin-sdk = { workspace = true, features = ["fake"] }
+
+[lints]
+workspace = true

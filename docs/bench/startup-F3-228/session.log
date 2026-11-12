@@ -1,0 +1,31 @@
+17:26  up 2 days,  1:46, 43 users, load averages: 4.11 3.67 4.84
+17:26:17 warm-up v051
+17:26:32 warm-up v070
+17:26:47 warm-up head
+17:27:03 warm-up delay
+17:27:20 startup v051 1
+17:27:38 startup v070 1
+17:27:55 startup head 1
+17:28:13 startup delay 1
+17:28:30 startup floor 1
+17:28:46 load { 6.71 5.49 5.43 }
+17:28:48 startup delay 2
+17:29:06 startup head 2
+17:29:23 startup v070 2
+17:29:40 startup v051 2
+17:29:58 startup floor 2
+17:30:13 load { 4.88 5.23 5.34 }
+17:30:15 startup v070 3
+17:30:33 startup delay 3
+17:30:50 startup v051 3
+17:31:08 startup head 3
+17:31:25 startup floor 3
+17:31:41 load { 4.29 4.94 5.21 }
+17:31:43 startup head 4
+17:32:00 startup v051 4
+17:32:17 startup delay 4
+17:32:35 startup v070 4
+17:32:52 startup floor 4
+17:33:07 load { 6.98 5.63 5.45 }
+17:33  up 2 days,  1:53, 43 users, load averages: 6.98 5.63 5.45
+17:33:08 done

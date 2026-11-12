@@ -1,0 +1,478 @@
+//! A plugin's VM: Luau's state, set up as a sandbox, of the libraries that
+//! compute, its package's modules through its own `require`, the table of
+//! the plugin's callbacks that its entry returns, and `cx`, the table of
+//! the requests' functions, which each callback takes first.
+
+use std::collections::BTreeMap;
+use std::sync::{Arc, Mutex, PoisonError};
+use std::time::{Duration, Instant};
+
+use lokyr_plugin_sdk::plugin::Cx;
+use mlua::chunk::ChunkMode;
+use mlua::{Function, Lua, LuaOptions, MultiValue, StdLib, Table, Value};
+
+use crate::shape::{Budget, ShapeError};
+use crate::watchdog::Watchdog;
+use crate::{Callback, Deadlines, Execution, Package, requests};
+
+/// The registry's key of the host's function of the call under way, which
+/// `cx`'s functions reach it through.
+const HOST: &str = "lokyr.host";
+
+/// The most memory of a VM, of Luau's allocator, past which an allocation
+/// fails, which ends the call.
+pub const MOST_MEMORY: usize = 64 * 1024 * 1024;
+
+/// Why a call of a VM failed: the plugin's code, or a limit of the VM's,
+/// which faults the plugin.
+#[derive(Debug)]
+pub(crate) enum Failure {
+    /// The code failed, of its error.
+    Code(mlua::Error),
+    /// The call ran past its deadline.
+    PastDeadline,
+    /// The VM ran out of its memory.
+    OutOfMemory,
+}
+
+/// The path of a package's entry, which returns its callbacks' table.
+pub const ENTRY: &str = "src/init.luau";
+
+/// The globals that reach past the computation, or past the sandbox: code
+/// of text, a function's environment, and the collector's control, of
+/// Luau's base library; mlua's `require`, of the file system, as each
+/// module's environment holds the package's own; and the output of
+/// `print`, which goes nowhere a plugin's user sees.
+pub const TAKEN: [&str; 7] = [
+    "loadstring",
+    "getfenv",
+    "setfenv",
+    "collectgarbage",
+    "gcinfo",
+    "require",
+    "print",
+];
+
+/// Whether Luau's native code generator runs on this system and CPU.
+pub(crate) fn native_supported() -> bool {
+    // SAFETY: a query of Luau's of no argument, which reads the CPU's
+    // features.
+    #[allow(unsafe_code)]
+    unsafe {
+        mlua::ffi::luau_codegen_supported() != 0
+    }
+}
+
+/// A plugin's VM, the table of its callbacks, and its `cx`.
+pub(crate) struct Vm {
+    /// Its watchdog, which ends before the state.
+    watchdog: Watchdog,
+    callbacks: Table,
+    /// The table of the requests' functions, read-only, which each callback
+    /// takes first.
+    cx: Table,
+    native: bool,
+    deadlines: Deadlines,
+    /// The state, which the VM owns as long as its plugin runs.
+    _lua: Lua,
+}
+
+/// The modules that a VM's `require` loaded, by their paths, and those that
+/// it is loading, which a cycle meets.
+#[derive(Default)]
+pub(crate) struct Modules {
+    loaded: BTreeMap<String, Value>,
+    loading: Vec<String>,
+}
+
+impl Vm {
+    /// The VM of `package`, of the plugin `name`, run as `execution` says,
+    /// its calls within `deadlines`: its sandbox, its memory's limit, its
+    /// `require`, and its entry run, within the activation's deadline,
+    /// which returns the table of its callbacks; why it failed, of an entry
+    /// that fails or returns none.
+    pub(crate) fn new(
+        package: &Arc<Package>,
+        name: &str,
+        execution: Execution,
+        deadlines: Deadlines,
+    ) -> Result<Self, Failure> {
+        let lua = Self::state(execution).map_err(Failure::Code)?;
+        let native = execution == Execution::Native && native_supported();
+        let mut state = 0;
+        // SAFETY: the closure only keeps the state's address, which the
+        // watchdog, which the VM drops before the state, takes.
+        #[allow(unsafe_code)]
+        let watchdog = unsafe {
+            lua.exec_raw::<()>((), |raw| state = raw as usize)
+                .map_err(Failure::Code)?;
+            Watchdog::new(state, name)
+                .map_err(|error| Failure::Code(mlua::Error::external(error)))?
+        };
+        let modules = Arc::new(Mutex::new(Modules::default()));
+        let entry = watched(&watchdog, deadlines.of(Callback::Activate), || {
+            load(&lua, package, &modules, ENTRY)
+        })?;
+        let Value::Table(callbacks) = entry else {
+            return Err(Failure::Code(mlua::Error::runtime(format!(
+                "{ENTRY} returns the table of the plugin's callbacks, not {}",
+                entry.type_name()
+            ))));
+        };
+        Ok(Self {
+            watchdog,
+            callbacks,
+            cx: cx(&lua).map_err(Failure::Code)?,
+            native,
+            deadlines,
+            _lua: lua,
+        })
+    }
+
+    /// The state of a VM run as `execution` says: of the libraries that
+    /// compute, the others taken away, its memory's limit, and Luau's
+    /// sandbox mode.
+    fn state(execution: Execution) -> mlua::Result<Lua> {
+        let libraries = StdLib::STRING
+            | StdLib::TABLE
+            | StdLib::MATH
+            | StdLib::BIT
+            | StdLib::UTF8
+            | StdLib::BUFFER;
+        let lua = Lua::new_with(libraries, LuaOptions::default())?;
+        lua.enable_jit(execution == Execution::Native && native_supported());
+        lua.set_memory_limit(MOST_MEMORY)?;
+        let globals = lua.globals();
+        for name in TAKEN {
+            globals.raw_set(name, Value::Nil)?;
+        }
+        // The libraries and the globals read-only from here, each thread of
+        // an environment of its own.
+        lua.sandbox(true)?;
+        Ok(lua)
+    }
+
+    /// Whether it runs its code of the native code generator.
+    pub(crate) fn runs_native(&self) -> bool {
+        self.native
+    }
+
+    /// Calls the plugin's callback of `callback`, if its table has one,
+    /// within the deadline of its kind, of `cx` and the arguments that
+    /// `args` makes: what it returns, or `None` of a table of no such
+    /// callback.
+    pub(crate) fn call(
+        &self,
+        callback: Callback,
+        cx: &mut Cx<'_>,
+        args: impl FnOnce(&Lua) -> Result<Vec<Value>, ShapeError>,
+    ) -> Result<Option<MultiValue>, Failure> {
+        self.invoke(callback.name(), self.deadlines.of(callback), cx, args)
+    }
+
+    /// Calls the plugin's function `name` of its callbacks' table, if it
+    /// has one, within `deadline`, its time in the host's requests left
+    /// out, of `cx`, the table of the requests' functions first, and the
+    /// arguments that `args` makes, its requests going to `cx` as the call
+    /// runs: what it returns.
+    pub(crate) fn invoke(
+        &self,
+        name: &str,
+        deadline: Duration,
+        cx: &mut Cx<'_>,
+        args: impl FnOnce(&Lua) -> Result<Vec<Value>, ShapeError>,
+    ) -> Result<Option<MultiValue>, Failure> {
+        self.invoke_then(name, deadline, cx, args, Ok)
+    }
+
+    /// Calls the plugin's callback of `callback`, as [`Vm::call`] does, and
+    /// converts what it returns of `convert` within the call's deadline,
+    /// as its code ran: what the conversion gives, or why it failed, of
+    /// the deadline passed as a failure of the call's.
+    pub(crate) fn call_converting<R>(
+        &self,
+        callback: Callback,
+        cx: &mut Cx<'_>,
+        args: impl FnOnce(&Lua) -> Result<Vec<Value>, ShapeError>,
+        convert: impl FnOnce(MultiValue, &Budget) -> Result<R, ShapeError>,
+    ) -> Result<Option<Result<R, ShapeError>>, Failure> {
+        let deadline = self.watchdog.deadline();
+        let then = |returned: MultiValue| {
+            let budget = Budget::within(deadline);
+            match convert(returned, &budget) {
+                Err(error) if budget.passed() => Err(mlua::Error::runtime(error)),
+                converted => Ok(converted),
+            }
+        };
+        self.invoke_then(callback.name(), self.deadlines.of(callback), cx, args, then)
+    }
+
+    /// Calls the plugin's function `name`, as [`Vm::invoke`] does, and
+    /// gives what it returns to `then`, within the call's deadline.
+    fn invoke_then<R>(
+        &self,
+        name: &str,
+        deadline: Duration,
+        cx: &mut Cx<'_>,
+        args: impl FnOnce(&Lua) -> Result<Vec<Value>, ShapeError>,
+        then: impl FnOnce(MultiValue) -> mlua::Result<R>,
+    ) -> Result<Option<R>, Failure> {
+        let lua = &self._lua;
+        // Raw, as a metamethod's code would run outside the call's watch.
+        let function = match self
+            .callbacks
+            .raw_get::<Value>(name)
+            .map_err(Failure::Code)?
+        {
+            Value::Nil => return Ok(None),
+            Value::Function(function) => function,
+            other => {
+                return Err(Failure::Code(mlua::Error::runtime(format!(
+                    "the callback `{name}` is a function, not {}",
+                    other.type_name()
+                ))));
+            }
+        };
+        let mut all = vec![Value::Table(self.cx.clone())];
+        all.extend(args(lua).map_err(|error| Failure::Code(mlua::Error::runtime(error)))?);
+        let watchdog = &self.watchdog;
+        let converting = watchdog.deadline();
+        watched(watchdog, deadline, || {
+            let returned = lua.scope(|scope| {
+                let host = scope.create_function_mut(|lua, (at, args): (usize, MultiValue)| {
+                    let kind = requests::kinds()
+                        .get(at)
+                        .ok_or_else(|| mlua::Error::runtime("no such request"))?;
+                    let request = requests::request(kind, &args.into_vec(), Some(&converting))
+                        .map_err(|error| {
+                            mlua::Error::runtime(format!(
+                                "bad argument to `cx.{}`: {error}",
+                                kind.name
+                            ))
+                        })?;
+                    let left = watchdog.pause();
+                    let response = cx.request(request);
+                    watchdog.resume(left);
+                    requests::answer(lua, &response).map_err(mlua::Error::runtime)
+                })?;
+                lua.set_named_registry_value(HOST, host)?;
+                let returned = function.call::<MultiValue>(MultiValue::from_vec(all));
+                lua.unset_named_registry_value(HOST)?;
+                returned
+            })?;
+            then(returned)
+        })
+        .map(Some)
+    }
+
+    /// How many times its watchdog's thread woke.
+    #[cfg(test)]
+    pub(crate) fn watchdog_wakes(&self) -> usize {
+        self.watchdog.wakes()
+    }
+
+    /// The bytes of its heap, which its memory's limit bounds: its code's
+    /// bytecode, its tables and strings, not the native code of its
+    /// functions nor its thread's stack.
+    pub(crate) fn memory(&self) -> usize {
+        self._lua.used_memory()
+    }
+
+    /// The Lua state, as the tests reach its globals.
+    #[cfg(any(test, feature = "testing"))]
+    pub(crate) fn lua(&self) -> &Lua {
+        &self._lua
+    }
+}
+
+/// The table of the requests' functions, one a kind of the SDK's requests,
+/// by its Rust name, read-only: each reaches the host of the call under
+/// way, and fails outside the plugin's calls.
+fn cx(lua: &Lua) -> mlua::Result<Table> {
+    let cx = lua.create_table()?;
+    for (at, kind) in requests::kinds().iter().enumerate() {
+        let function = lua.create_function(move |lua, args: MultiValue| {
+            let Value::Function(host) = lua.named_registry_value::<Value>(HOST)? else {
+                return Err(mlua::Error::runtime(
+                    "`cx` reaches the host within a call of the plugin's callbacks alone",
+                ));
+            };
+            host.call::<MultiValue>((at, args))
+        })?;
+        cx.raw_set(kind.name.as_str(), function)?;
+    }
+    cx.set_readonly(true);
+    Ok(cx)
+}
+
+/// Runs `run` within `deadline` from now, as `watchdog` watches it: what it
+/// gives, or why it failed, past its deadline, out of memory, or of its
+/// code's error.
+fn watched<T>(
+    watchdog: &Watchdog,
+    deadline: Duration,
+    run: impl FnOnce() -> mlua::Result<T>,
+) -> Result<T, Failure> {
+    watchdog.arm(Instant::now() + deadline);
+    let ran = run();
+    let fired = watchdog.disarm();
+    ran.map_err(|error| {
+        if fired {
+            Failure::PastDeadline
+        } else if is_memory(&error) {
+            Failure::OutOfMemory
+        } else {
+            Failure::Code(error)
+        }
+    })
+}
+
+/// The state of the VM of a plugin's tests, of the plugins' sandbox, run by
+/// the interpreter.
+#[cfg(feature = "test-host")]
+pub(crate) fn test_state() -> mlua::Result<Lua> {
+    Vm::state(Execution::Interpreter)
+}
+
+/// Runs `run` of `lua`, the state of the plugin `name`'s tests, within
+/// `deadline` from now, of a watchdog of its own: what it gives, or why
+/// it failed, as a text.
+#[cfg(feature = "test-host")]
+pub(crate) fn watched_of<T>(
+    lua: &Lua,
+    name: &str,
+    deadline: Duration,
+    run: impl FnOnce() -> mlua::Result<T>,
+) -> Result<T, String> {
+    let mut state = 0;
+    // SAFETY: the closure only keeps the state's address, which the
+    // watchdog, which ends at the end of this function, before the state,
+    // takes.
+    #[allow(unsafe_code)]
+    let watchdog = unsafe {
+        lua.exec_raw::<()>((), |raw| state = raw as usize)
+            .map_err(|error| error.to_string())?;
+        Watchdog::new(state, name).map_err(|error| error.to_string())?
+    };
+    watched(&watchdog, deadline, run).map_err(|failure| match failure {
+        Failure::PastDeadline => {
+            format!("the test ran past its deadline of {} s", deadline.as_secs())
+        }
+        Failure::OutOfMemory => format!(
+            "the test ran out of its {} MB of memory",
+            MOST_MEMORY / (1024 * 1024)
+        ),
+        Failure::Code(error) => error.to_string(),
+    })
+}
+
+/// Whether `error` is of the VM's memory's limit, of a callback's too.
+fn is_memory(error: &mlua::Error) -> bool {
+    match error {
+        mlua::Error::MemoryError(_) => true,
+        mlua::Error::CallbackError { cause, .. } => is_memory(cause),
+        _ => false,
+    }
+}
+
+/// Runs the module at `path` of `package`, once, of a `require` of its own
+/// directory: what it returns, which later requires of it share.
+pub(crate) fn load(
+    lua: &Lua,
+    package: &Arc<Package>,
+    modules: &Arc<Mutex<Modules>>,
+    path: &str,
+) -> mlua::Result<Value> {
+    {
+        let mut held = modules.lock().unwrap_or_else(PoisonError::into_inner);
+        if let Some(value) = held.loaded.get(path) {
+            return Ok(value.clone());
+        }
+        if held.loading.iter().any(|loading| loading == path) {
+            return Err(mlua::Error::runtime(format!(
+                "{path} requires itself, through {}",
+                held.loading.join(" → ")
+            )));
+        }
+        held.loading.push(path.to_owned());
+    }
+    let ran = run(lua, package, modules, path);
+    let mut held = modules.lock().unwrap_or_else(PoisonError::into_inner);
+    held.loading.retain(|loading| loading != path);
+    let value = ran?;
+    held.loaded.insert(path.to_owned(), value.clone());
+    Ok(value)
+}
+
+/// Runs the module at `path`, of an environment of its own over the
+/// globals, which holds its `require`.
+fn run(
+    lua: &Lua,
+    package: &Arc<Package>,
+    modules: &Arc<Mutex<Modules>>,
+    path: &str,
+) -> mlua::Result<Value> {
+    let source = package
+        .source(path)
+        .ok_or_else(|| mlua::Error::runtime(format!("the package holds no {path}")))?;
+    let environment = lua.create_table()?;
+    let lookup = lua.create_table()?;
+    lookup.raw_set("__index", lua.globals())?;
+    environment.set_metatable(Some(lookup))?;
+    environment.raw_set("require", requirer(lua, package, modules, path)?)?;
+    // Its source as text alone, as Luau takes a chunk that starts as its
+    // bytecode does for bytecode, never compiled.
+    lua.load(source)
+        .set_name(format!("@{path}"))
+        .set_mode(ChunkMode::Text)
+        .set_environment(environment)
+        .into_function()?
+        .call::<Value>(())
+}
+
+/// The `require` of the module at `from`: a module of the package, of a
+/// path from `from`'s directory that starts with `./` or `../` and stays
+/// within the package, its `.luau` left out, or a directory's `init.luau`.
+fn requirer(
+    lua: &Lua,
+    package: &Arc<Package>,
+    modules: &Arc<Mutex<Modules>>,
+    from: &str,
+) -> mlua::Result<Function> {
+    let (package, modules, from) = (Arc::clone(package), Arc::clone(modules), from.to_owned());
+    lua.create_function(move |lua, name: String| {
+        let path = resolve(&from, &name, &package).map_err(mlua::Error::runtime)?;
+        load(lua, &package, &modules, &path)
+    })
+}
+
+/// The path in `package` of the module `name` that the module at `from`
+/// requires, or why none.
+pub(crate) fn resolve(from: &str, name: &str, package: &Package) -> Result<String, String> {
+    if !(name.starts_with("./") || name.starts_with("../")) {
+        return Err(format!(
+            "`{name}` is not a module of the package, of a path from `./` or `../`"
+        ));
+    }
+    let mut parts: Vec<&str> = from.split('/').collect();
+    parts.pop();
+    for part in name.split('/') {
+        match part {
+            "." | "" => {}
+            ".." => {
+                if parts.pop().is_none() {
+                    return Err(format!("`{name}` leaves the package"));
+                }
+            }
+            part => parts.push(part),
+        }
+    }
+    let path = parts.join("/");
+    [format!("{path}.luau"), format!("{path}/init.luau")]
+        .into_iter()
+        .find(|candidate| package.source(candidate).is_some())
+        .ok_or_else(|| format!("the package holds no module `{name}` of {from}"))
+}
+
+#[cfg(test)]
+mod tests;

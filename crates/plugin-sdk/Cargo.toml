@@ -1,7 +1,8 @@
 [package]
 name = "lokyr-plugin-sdk"
 description = "The Lokyr plugin API and its Rust SDK"
-version.workspace = true
+# The plugin API's own version, apart from the app's.
+version = "0.1.1"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -9,9 +10,18 @@ authors.workspace = true
 repository.workspace = true
 publish = false
 
+[dependencies]
+serde.workspace = true
+serde_json = { workspace = true, optional = true }
+
+[dev-dependencies]
+serde_json.workspace = true
+
 [features]
 # The host's API and the plugins' trait, which may change in a minor release.
 unstable = []
+# A host of the tests' own, for the plugins' unit tests.
+fake = ["unstable", "dep:serde_json"]
 
 [lints]
 workspace = true

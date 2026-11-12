@@ -1,0 +1,54 @@
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=37421155)	100%; charged; 0:00 remaining present: true
+14:01  up 9 days,  8:02, 70 users, load averages: 6.56 5.31 4.01
+Graphics/Displays:
+    Apple M5 Pro:
+      Displays:
+        DELL P2721Q:
+          Resolution: 5120 x 2880 (5K/UHD+ - Ultra High Definition Plus)
+          Main Display: Yes
+14:01:49 startup v040 1
+14:02:04 startup v050 1
+14:02:20 startup floor 1
+14:02:35 startup v050 2
+14:02:50 startup v040 2
+14:03:05 startup floor 2
+14:03:20 latency warm-up v040
+14:03:23 latency warm-up v050
+14:03:26 latency v040 1 place 1
+14:03:38 latency v050 1 place 2
+14:03:50 latency v050 2 place 1
+14:04:03 latency v040 2 place 2
+14:04:15 latency v050 3 place 1
+14:04:27 latency v040 3 place 2
+14:04:40 latency v040 4 place 1
+14:04:52 latency v050 4 place 2
+14:05:04 latency v040 5 place 1
+14:05:17 latency v050 5 place 2
+14:05:29 latency v050 6 place 1
+14:05:41 latency v040 6 place 2
+14:05:54 latency v050 7 place 1
+14:06:06 latency v040 7 place 2
+14:06:18 latency v040 8 place 1
+14:06:30 latency v050 8 place 2
+14:06:43 idle v040 1
+14:08:20 idle v050 1
+14:09:58 idle v050 2
+14:11:35 idle v040 2
+14:13:13 throughput ascii v040 1
+14:13:20 throughput ascii v050 1
+14:13:27 throughput ascii v050 2
+14:13:34 throughput ascii v040 2
+14:13:40 throughput seq v040 1
+14:13:42 throughput seq v050 1
+14:13:43 throughput seq v050 2
+14:13:44 throughput seq v040 2
+14:13:45 throughput sgr v040 1
+14:13:46 throughput sgr v050 1
+14:13:47 throughput sgr v050 2
+14:13:48 throughput sgr v040 2
+14:13:50 throughput cjk v040 1
+14:13:51 throughput cjk v050 1
+14:13:53 throughput cjk v050 2
+14:13:54 throughput cjk v040 2
+14:13:56 done

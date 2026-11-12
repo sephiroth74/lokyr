@@ -29,6 +29,28 @@ class Executables(unittest.TestCase):
         self.assertLess(len(missing), len(listed) / 20, sorted(missing))
 
 
+class Restore(unittest.TestCase):
+    def test_a_setting_goes_back_once_its_app_quit_and_keeps_its_copy_until(self):
+        with tempfile.TemporaryDirectory() as directory:
+            saved = os.path.join(directory, "com.apple.Terminal.plist")
+            put = []
+            back = lambda path: put.append(path) or True
+            # The app still runs: nothing goes back, the copy stays.
+            open(saved, "w").close()
+            self.assertFalse(compare.restore_one(saved, lambda: False, back))
+            self.assertEqual(put, [])
+            self.assertTrue(os.path.exists(saved))
+            # It could not be put back: the copy stays.
+            self.assertFalse(compare.restore_one(saved, lambda: True, lambda path: False))
+            self.assertTrue(os.path.exists(saved))
+            # The app quit, and the setting went back: the copy goes.
+            self.assertTrue(compare.restore_one(saved, lambda: True, back))
+            self.assertEqual(put, [saved])
+            self.assertFalse(os.path.exists(saved))
+            # Nothing saved: nothing to do.
+            self.assertTrue(compare.restore_one(saved, lambda: False, back))
+
+
 HEADER = "*** Sampled system activity ({}) ({}ms elapsed) ***\n"
 
 

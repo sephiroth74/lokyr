@@ -100,6 +100,12 @@ impl Texts {
     /// language's, or the source's where the language has none, or the id
     /// itself where neither has it.
     pub fn text_with(&self, id: &str, args: &[(&str, Arg<'_>)]) -> String {
+        self.get_with(id, args).unwrap_or_else(|| id.to_owned())
+    }
+
+    /// The message `id`, with the values of its variables, `args`, the
+    /// language's or the source's, if either has it.
+    pub fn get_with(&self, id: &str, args: &[(&str, Arg<'_>)]) -> Option<String> {
         let mut values = FluentArgs::new();
         for (name, arg) in args {
             let value = match arg {
@@ -108,15 +114,15 @@ impl Texts {
             };
             values.set(*name, value);
         }
-        for bundle in [&self.bundle, &self.source] {
-            if let Some(pattern) = bundle.get_message(id).and_then(|message| message.value()) {
-                let mut errors = Vec::new();
-                return bundle
+        [&self.bundle, &self.source].into_iter().find_map(|bundle| {
+            let pattern = bundle.get_message(id)?.value()?;
+            let mut errors = Vec::new();
+            Some(
+                bundle
                     .format_pattern(pattern, Some(&values), &mut errors)
-                    .into_owned();
-            }
-        }
-        id.to_owned()
+                    .into_owned(),
+            )
+        })
     }
 }
 
@@ -252,9 +258,92 @@ pub fn check(source: &str, other: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// How the catalog of a language stands against its source: the messages
+/// that it lacks, those that the source has not, those of other variables,
+/// and those left as the source has them, each by its id.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Comparison {
+    /// The source's messages that it lacks.
+    pub missing: Vec<String>,
+    /// Its messages that the source has not.
+    pub extra: Vec<String>,
+    /// Its messages of other variables than the source's.
+    pub variables: Vec<String>,
+    /// Its messages of the source's very text, as a catalog copied from it
+    /// and not translated yet has them.
+    pub untranslated: Vec<String>,
+}
+
+impl Comparison {
+    /// Whether the catalog takes its source's place: every message there,
+    /// of its variables, and no other; untranslated ones aside.
+    pub fn holds(&self) -> bool {
+        self.missing.is_empty() && self.extra.is_empty() && self.variables.is_empty()
+    }
+}
+
+/// How the catalog `other` stands against `source`, message by message.
+///
+/// # Errors
+///
+/// A catalog that does not read.
+pub fn compare(source: &str, other: &str) -> Result<Comparison, String> {
+    let (theirs, ours) = (messages(source)?, messages(other)?);
+    let parse =
+        |text| fluent_syntax::parser::parse(text).map_err(|_| "a catalog does not read".to_owned());
+    let (source_ast, other_ast) = (parse(source)?, parse(other)?);
+    // Each message's value and attributes, as their syntax holds them,
+    // its comment aside: two alike are the same text.
+    let bodies = |resource: &ast::Resource<&str>| -> BTreeMap<String, String> {
+        resource
+            .body
+            .iter()
+            .filter_map(|entry| match entry {
+                ast::Entry::Message(message) => Some((
+                    message.id.name.to_owned(),
+                    format!("{:?} {:?}", message.value, message.attributes),
+                )),
+                _ => None,
+            })
+            .collect()
+    };
+    let (source_bodies, other_bodies) = (bodies(&source_ast), bodies(&other_ast));
+    let mut comparison = Comparison::default();
+    for (id, variables) in &theirs {
+        match ours.get(id) {
+            None => comparison.missing.push(id.clone()),
+            Some(mine) if mine != variables => comparison.variables.push(id.clone()),
+            Some(_) => {
+                if source_bodies.get(id) == other_bodies.get(id) {
+                    comparison.untranslated.push(id.clone());
+                }
+            }
+        }
+    }
+    comparison.extra = ours
+        .keys()
+        .filter(|id| !theirs.contains_key(*id))
+        .cloned()
+        .collect();
+    Ok(comparison)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_catalog_compares_to_its_source_message_by_message() {
+        let source = "hello = Hello, { $name }\nbye = Bye\nsame = Lokyr\nonly = Only\n";
+        let other = "hello = Ciao, { $who }\nbye = Bye\nsame = Lokyr\nmore = Di più\n";
+        let comparison = compare(source, other).unwrap();
+        assert_eq!(comparison.missing, ["only"]);
+        assert_eq!(comparison.extra, ["more"]);
+        assert_eq!(comparison.variables, ["hello"]);
+        assert_eq!(comparison.untranslated, ["bye", "same"]);
+        assert!(!comparison.holds());
+        assert!(compare(source, source).unwrap().holds());
+    }
 
     #[test]
     fn a_text_takes_its_language_s_message_or_the_source_s() {

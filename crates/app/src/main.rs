@@ -6,48 +6,23 @@
 #![forbid(unsafe_code)]
 
 #[cfg(target_os = "macos")]
-mod app;
-#[cfg(target_os = "macos")]
-mod environment;
-#[cfg(target_os = "macos")]
-mod icon;
-#[cfg(target_os = "macos")]
-mod keys;
-#[cfg(target_os = "macos")]
-mod latency;
-#[cfg(target_os = "macos")]
-mod mouse;
-#[cfg(target_os = "macos")]
-mod notice;
-#[cfg(target_os = "macos")]
-mod output_bench;
-#[cfg(target_os = "macos")]
-mod performance;
-#[cfg(target_os = "macos")]
-mod quick;
-#[cfg(target_os = "macos")]
-mod size_label;
-#[cfg(target_os = "macos")]
-mod watch;
+mod mac;
 
 use std::path::PathBuf;
 use std::process::ExitCode;
-use std::sync::atomic::{AtomicBool, Ordering};
+#[cfg(target_os = "macos")]
+use std::sync::atomic::Ordering;
 
 use lokyr_kernel::config::{self, Config};
 use lokyr_text_core::catalog::{self, Filter};
 
 /// Lokyr's version: the crate's, with the date of the commit that it was
-/// built from, as `0.1.0-20261101`.
+/// built from, as `0.2.0-20261101`.
 const VERSION: &str = env!("LOKYR_VERSION");
-
-/// Whether the output bench could not start its program, which the exit
-/// code tells; the other benches that give up tell it on stderr alone.
-static BENCH_FAILED: AtomicBool = AtomicBool::new(false);
 
 /// How the app is started, which a wrong command line tells.
 const USAGE: &str = "\
-Usage: lokyr [--version]
+Usage: lokyr [--version | --api-version]
        lokyr --bench startup
        lokyr --bench latency [--keys <n>] [--flood]
        lokyr --bench output [--window <width>x<height>] -- <program> [args]
@@ -82,6 +57,12 @@ fn main() -> ExitCode {
         },
         ["--version" | "-V"] => {
             println!("lokyr {VERSION}");
+            ExitCode::SUCCESS
+        }
+        // The plugin API's version, which Sleip resolves the plugins
+        // against.
+        ["--api-version"] => {
+            println!("{}", lokyr_kernel::plugins::API_VERSION);
             ExitCode::SUCCESS
         }
         ["+show-config", flags @ ..] => show_config(flags),
@@ -302,7 +283,7 @@ fn fonts(_: Option<&str>, _: &Filter<'_>) -> Option<Vec<catalog::Family>> {
 /// Checks `config` as the app takes it.
 #[cfg(target_os = "macos")]
 fn check(config: &Config) -> Result<(), String> {
-    app::check(config)
+    lokyr_app_core::check::<mac::Mac>(config)
 }
 
 /// Checks nothing more than the file's reading, without a platform.
@@ -318,7 +299,7 @@ fn check(_: &Config) -> Result<(), String> {
 fn run(bench: Bench) -> ExitCode {
     use std::os::unix::process::CommandExt;
 
-    if let Some(executable) = environment::bundle_executable() {
+    if let Some(executable) = lokyr_app_core::bundle_executable() {
         // Returns only if the binary does not start.
         let error = std::process::Command::new(&executable)
             .args(std::env::args_os().skip(1))
@@ -328,10 +309,38 @@ fn run(bench: Bench) -> ExitCode {
             executable.display()
         );
     }
+    use lokyr_app_core::{App, Drawing};
     use lokyr_kernel::commands::Code;
     use lokyr_kernel::diagnostics::{About, Diagnostic, Diagnostics};
 
+    // The app's log, where a panic writes its backtrace, and the standard
+    // error when no terminal reads it, as from the Finder; the benches keep
+    // theirs.
+    if matches!(bench, Bench::None)
+        && let Some(log) = lokyr_app_core::log::file()
+        && let Err(error) = lokyr_app_core::log::start(&log, VERSION, true)
+    {
+        eprintln!(
+            "lokyr: the log at {} does not start, {error}",
+            log.display()
+        );
+    }
     let (mut config, path, error) = config();
+    // The plugins that Sleip installed: of the lockfile beside the config
+    // file, of their packages in the user's store; none in a bench, which
+    // measures the app of its own plugins.
+    let installed = path
+        .as_ref()
+        .and_then(|path| path.parent())
+        .zip(std::env::home_dir())
+        .filter(|_| matches!(bench, Bench::None))
+        .map(|(folder, home)| {
+            let data = std::env::var_os("XDG_DATA_HOME").map(PathBuf::from);
+            (
+                folder.join(lokyr_pkg_model::lock::FILE),
+                lokyr_pkg_model::store::Store::of_user(&home, data.as_deref()),
+            )
+        });
     // The GPU and the font take tens of milliseconds the first time in a
     // process, the next nearly nothing: a thread makes them, and lets them
     // go, as AppKit launches, and the app makes its own once it has.
@@ -339,7 +348,7 @@ fn run(bench: Bench) -> ExitCode {
         let font = config.font.clone();
         std::thread::Builder::new()
             .name("drawing-warmup".into())
-            .spawn(move || drop(app::Drawing::new(font)))
+            .spawn(move || drop(Drawing::<mac::Mac>::new(font)))
             .ok()
     };
     let make = move || {
@@ -355,14 +364,14 @@ fn run(bench: Bench) -> ExitCode {
         if let Some(error) = error {
             diagnostics.report(invalid(&error));
         }
-        let drawing = match app::Drawing::new(config.font.clone()) {
+        let drawing = match Drawing::<mac::Mac>::new(config.font.clone()) {
             Ok(drawing) => Some(drawing),
             // A config whose font fails is as invalid as one that does not
             // read.
             Err(error) if config.font != Config::default().font => {
                 diagnostics.report(invalid(&error));
                 config = Config::default();
-                app::Drawing::new(config.font.clone())
+                Drawing::new(config.font.clone())
                     .inspect_err(|error| eprintln!("lokyr: {error}"))
                     .ok()
             }
@@ -371,9 +380,13 @@ fn run(bench: Bench) -> ExitCode {
                 None
             }
         };
-        let app = app::App::new(drawing, config, path)
+        let mut app = App::new(drawing, config, path)
+            .with_version(VERSION)
             .with_state(lokyr_kernel::state::directory())
             .with_diagnostics(diagnostics);
+        if let Some((lock, store)) = installed {
+            app = app.with_installed(lock, store);
+        }
         match bench {
             Bench::None => app,
             Bench::Startup => app.with_startup_bench(),
@@ -388,7 +401,7 @@ fn run(bench: Bench) -> ExitCode {
         }
     };
     match lokyr_platform_macos::run_with(make) {
-        Ok(()) if BENCH_FAILED.load(Ordering::Relaxed) => ExitCode::FAILURE,
+        Ok(()) if lokyr_app_core::BENCH_FAILED.load(Ordering::Relaxed) => ExitCode::FAILURE,
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("lokyr: {error}");

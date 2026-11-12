@@ -1,0 +1,52 @@
+17:00  up 3 days,  1:20, 120 users, load averages: 7.40 6.28 5.62
+17:00:44 latency warm-up v070
+17:00:47 latency warm-up v080
+17:00:52 latency v070 1 place 1
+17:01:06 latency v080 1 place 2
+17:01:19 load { 5.54 5.93 5.51 }
+17:01:21 latency v080 2 place 1
+17:01:35 latency v070 2 place 2
+17:01:47 load { 4.26 5.60 5.41 }
+17:01:49 latency v080 3 place 1
+17:02:04 latency v070 3 place 2
+17:02:16 load { 3.65 5.34 5.32 }
+17:02:18 latency v070 4 place 1
+17:02:32 latency v080 4 place 2
+17:02:45 load { 2.96 5.01 5.20 }
+17:02:47 latency v070 5 place 1
+17:03:01 latency v080 5 place 2
+17:03:13 load { 2.41 4.67 5.07 }
+17:03:15 latency v080 6 place 1
+17:03:30 latency v070 6 place 2
+17:03:42 load { 2.20 4.40 4.95 }
+17:03:44 latency v080 7 place 1
+17:03:58 latency v070 7 place 2
+17:04:11 load { 2.31 4.25 4.89 }
+17:04:13 latency v070 8 place 1
+17:04:27 latency v080 8 place 2
+17:04:39 load { 2.27 4.07 4.79 }
+17:04:41 latency v070 9 place 1
+17:04:56 latency v080 9 place 2
+17:05:08 load { 2.41 3.93 4.72 }
+17:05:10 latency v080 10 place 1
+17:05:24 latency v070 10 place 2
+17:05:37 load { 2.24 3.77 4.64 }
+17:05:39 latency v080 11 place 1
+17:05:53 latency v070 11 place 2
+17:06:06 load { 2.85 3.78 4.61 }
+17:06:08 latency v070 12 place 1
+17:06:22 latency v080 12 place 2
+17:06:34 load { 2.47 3.60 4.52 }
+17:06:36 latency v070 13 place 1
+17:06:51 latency v080 13 place 2
+17:07:03 load { 3.02 3.64 4.50 }
+17:07:05 latency v080 14 place 1
+17:07:19 latency v070 14 place 2
+17:07:32 load { 2.86 3.55 4.44 }
+17:07:34 latency v080 15 place 1
+17:07:48 latency v070 15 place 2
+17:08:01 load { 2.69 3.45 4.37 }
+17:08:03 latency v070 16 place 1
+17:08:17 latency v080 16 place 2
+17:08:29 load { 2.64 3.36 4.31 }
+17:08:29 done

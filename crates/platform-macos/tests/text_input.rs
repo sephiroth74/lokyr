@@ -61,6 +61,7 @@ mod probe {
                     remember: false,
                     restore: false,
                     restore_size: false,
+                    frame: None,
                 })
                 .expect("the window opens");
             // The app steps back at once, so that the keys of someone typing

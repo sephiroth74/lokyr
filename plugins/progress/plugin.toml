@@ -1,0 +1,9 @@
+# The manifest of the built-in plugin of the programs' progress.
+[plugin]
+name = "lokyr/progress"
+kind = "builtin"
+license = "MIT"
+description = "The programs' progress, of OSC 9;4, in a thin bar across the window's top"
+
+[contributes]
+slots = ["window-strip"]

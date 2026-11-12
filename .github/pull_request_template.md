@@ -1,6 +1,6 @@
 ## What this changes
 
-<!-- What the pull request changes, and why. Link the issue or the task, as "Closes #12" or "F2-71". -->
+<!-- What the pull request changes, and why. Link the issue, as "Closes #12". -->
 
 ## How it was checked
 

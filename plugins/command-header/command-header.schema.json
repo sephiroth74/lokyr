@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "lokyr/command-header",
+  "type": "object",
+  "properties": {
+    "background": {
+      "description": "The theme's token of the pill's background, by its name, as \"panel.bg\" or \"accent\".",
+      "type": "string",
+      "minLength": 1,
+      "default": "panel.bg"
+    },
+    "text": {
+      "description": "The theme's token of the pill's text, by its name.",
+      "type": "string",
+      "minLength": 1,
+      "default": "text"
+    },
+    "border": {
+      "description": "The theme's token of the pill's border, by its name.",
+      "type": "string",
+      "minLength": 1,
+      "default": "panel.border"
+    },
+    "line": {
+      "description": "The theme's token of the hairline across the pane, by its name.",
+      "type": "string",
+      "minLength": 1,
+      "default": "panel.border"
+    },
+    "hover": {
+      "description": "The theme's token of the pill's background under the pointer, over its own, by its name.",
+      "type": "string",
+      "minLength": 1,
+      "default": "button.hover.bg"
+    },
+    "font-size": {
+      "description": "The size of the header's text, in the terminal's font, in points; 0, or none, for the terminal's own size.",
+      "type": "number",
+      "minimum": 0,
+      "maximum": 200
+    },
+    "font-weight": {
+      "description": "The weight of the header's text, of the terminal's font's faces, the nearest that it has; regular is the terminal's own face.",
+      "type": "string",
+      "enum": ["light", "regular", "medium", "semibold", "bold", "heavy"],
+      "default": "regular"
+    },
+    "padding-x": {
+      "description": "The room left and right of the text in the pill, in points.",
+      "type": "number",
+      "minimum": 0,
+      "maximum": 40,
+      "default": 8
+    },
+    "padding-y": {
+      "description": "The room above and below the text in the pill, in points.",
+      "type": "number",
+      "minimum": 0,
+      "maximum": 20,
+      "default": 1
+    },
+    "align": {
+      "description": "Where the header's pill sits along the hairline across the pane: a little in from its left, in its middle, or a little in from its right.",
+      "type": "string",
+      "enum": ["left", "center", "right"],
+      "default": "left"
+    }
+  }
+}

@@ -1,0 +1,131 @@
+18:34  up 3 days,  2:54, 120 users, load averages: 3.12 3.30 3.34
+   20.9 /Users/taacral1/.vscode/extensions/anthropic.claude-code-2.1.319-darwin-arm64/resources/native-binary/claude
+   20.4 /Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged
+   18.3 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer
+18:34:49 latency warm-up v070
+18:34:52 latency warm-up a-F3fixes
+18:34:54 latency warm-up b-F4-06
+18:34:57 latency warm-up c-F4-13
+18:35:00 latency warm-up d-F4-56
+18:35:03 latency warm-up v080
+18:35:08 latency v070 1 place 1
+18:35:22 latency a-F3fixes 1 place 2
+18:35:37 latency b-F4-06 1 place 3
+18:35:51 latency c-F4-13 1 place 4
+18:36:05 latency d-F4-56 1 place 5
+18:36:20 latency v080 1 place 6
+18:36:32 load { 2.47 3.09 3.25 }
+   20.5 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer
+   14.2 /System/Library/CoreServices/MenuBarAgent.app/Contents/MacOS/MenuBarAgent
+    8.7 /Library/Application Support/Logitech.localized/LogiOptionsPlus/logioptionsplus_agent.app/Contents/MacOS/logioptionsplus_agent
+18:36:34 latency a-F3fixes 2 place 1
+18:36:48 latency b-F4-06 2 place 2
+18:37:03 latency c-F4-13 2 place 3
+18:37:17 latency d-F4-56 2 place 4
+18:37:31 latency v080 2 place 5
+18:37:46 latency v070 2 place 6
+18:37:58 load { 1.63 2.69 3.08 }
+   11.4 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd
+   10.2 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer
+    9.5 /Library/SystemExtensions/CCD4BD4F-2A68-4214-8CBA-DA3177783C74/com.microsoft.wdav.netext.systemextension/Contents/MacOS/netext
+18:38:00 latency b-F4-06 3 place 1
+18:38:14 latency c-F4-13 3 place 2
+18:38:29 latency d-F4-56 3 place 3
+18:38:43 latency v080 3 place 4
+18:38:58 latency v070 3 place 5
+18:39:12 latency a-F3fixes 3 place 6
+18:39:24 load { 1.72 2.40 2.93 }
+   26.2 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer
+   19.9 /Library/SystemExtensions/CCD4BD4F-2A68-4214-8CBA-DA3177783C74/com.microsoft.wdav.netext.systemextension/Contents/MacOS/netext
+   14.5 /System/Library/CoreServices/MenuBarAgent.app/Contents/MacOS/MenuBarAgent
+18:39:26 latency c-F4-13 4 place 1
+18:39:41 latency d-F4-56 4 place 2
+18:39:55 latency v080 4 place 3
+18:40:09 latency v070 4 place 4
+18:40:24 latency a-F3fixes 4 place 5
+18:40:38 latency b-F4-06 4 place 6
+18:40:50 load { 3.59 2.76 3.01 }
+   15.1 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer
+    6.0 /System/Library/CoreServices/MenuBarAgent.app/Contents/MacOS/MenuBarAgent
+    5.1 /Applications/Visual Studio Code.app/Contents/Frameworks/Code Helper (Renderer).app/Contents/MacOS/Code Helper (Renderer)
+18:40:53 latency d-F4-56 5 place 1
+18:41:07 latency v080 5 place 2
+18:41:21 latency v070 5 place 3
+18:41:36 latency a-F3fixes 5 place 4
+18:41:50 latency b-F4-06 5 place 5
+18:42:04 latency c-F4-13 5 place 6
+18:42:17 load { 3.27 2.80 2.99 }
+   17.7 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer
+    6.8 /Library/Application Support/Logitech.localized/LogiOptionsPlus/logioptionsplus_agent.app/Contents/MacOS/logioptionsplus_agent
+    6.4 /System/Library/CoreServices/MenuBarAgent.app/Contents/MacOS/MenuBarAgent
+18:42:19 latency v080 6 place 1
+18:42:33 latency v070 6 place 2
+18:42:47 latency a-F3fixes 6 place 3
+18:43:02 latency b-F4-06 6 place 4
+18:43:16 latency c-F4-13 6 place 5
+18:43:31 latency d-F4-56 6 place 6
+18:43:43 load { 2.15 2.58 2.89 }
+   18.3 /sbin/launchd
+   13.8 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer
+    1.4 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+18:43:45 latency v080 7 place 1
+18:43:59 latency d-F4-56 7 place 2
+18:44:14 latency c-F4-13 7 place 3
+18:44:28 latency b-F4-06 7 place 4
+18:44:42 latency a-F3fixes 7 place 5
+18:44:57 latency v070 7 place 6
+18:45:09 load { 3.01 2.64 2.88 }
+   23.4 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer
+   14.0 /System/Library/CoreServices/MenuBarAgent.app/Contents/MacOS/MenuBarAgent
+   12.4 /Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged
+18:45:11 latency v070 8 place 1
+18:45:26 latency v080 8 place 2
+18:45:40 latency d-F4-56 8 place 3
+18:45:54 latency c-F4-13 8 place 4
+18:46:09 latency b-F4-06 8 place 5
+18:46:23 latency a-F3fixes 8 place 6
+18:46:36 load { 3.09 2.72 2.88 }
+   28.0 /Library/SystemExtensions/CCD4BD4F-2A68-4214-8CBA-DA3177783C74/com.microsoft.wdav.netext.systemextension/Contents/MacOS/netext
+   12.2 /Applications/Microsoft Defender.app/Contents/MacOS/dlp_agent.app/Contents/MacOS/dlp_agent
+   11.2 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer
+18:46:38 latency a-F3fixes 9 place 1
+18:46:52 latency v070 9 place 2
+18:47:06 latency v080 9 place 3
+18:47:21 latency d-F4-56 9 place 4
+18:47:35 latency c-F4-13 9 place 5
+18:47:50 latency b-F4-06 9 place 6
+18:48:02 load { 2.06 2.51 2.79 }
+   24.1 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer
+   17.5 /System/Library/CoreServices/MenuBarAgent.app/Contents/MacOS/MenuBarAgent
+    7.5 /System/Library/PrivateFrameworks/TextInputUIMacHelper.framework/Versions/A/XPCServices/CursorUIViewService.xpc/Contents/MacOS/CursorUIViewService
+18:48:04 latency b-F4-06 10 place 1
+18:48:18 latency a-F3fixes 10 place 2
+18:48:33 latency v070 10 place 3
+18:48:47 latency v080 10 place 4
+18:49:02 latency d-F4-56 10 place 5
+18:49:16 latency c-F4-13 10 place 6
+18:49:28 load { 1.87 2.33 2.69 }
+   14.0 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer
+   12.0 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd
+    6.2 /System/Library/PrivateFrameworks/RemoteManagement.framework/XPCServices/BackgroundTaskManagementSubscriber.xpc/Contents/MacOS/BackgroundTaskManagementSubscriber
+18:49:31 latency c-F4-13 11 place 1
+18:49:45 latency b-F4-06 11 place 2
+18:49:59 latency a-F3fixes 11 place 3
+18:50:14 latency v070 11 place 4
+18:50:28 latency v080 11 place 5
+18:50:42 latency d-F4-56 11 place 6
+18:50:55 load { 1.66 2.15 2.58 }
+   34.4 /Library/SystemExtensions/CCD4BD4F-2A68-4214-8CBA-DA3177783C74/com.microsoft.wdav.netext.systemextension/Contents/MacOS/netext
+   16.7 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer
+   12.3 /System/Library/CoreServices/MenuBarAgent.app/Contents/MacOS/MenuBarAgent
+18:50:57 latency d-F4-56 12 place 1
+18:51:11 latency c-F4-13 12 place 2
+18:51:26 latency b-F4-06 12 place 3
+18:51:40 latency a-F3fixes 12 place 4
+18:51:54 latency v070 12 place 5
+18:52:09 latency v080 12 place 6
+18:52:21 load { 2.63 2.29 2.59 }
+   27.7 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer
+    9.6 /System/Library/PrivateFrameworks/UniversalAccess.framework/Versions/A/Resources/AXVisualSupportAgent.app/Contents/MacOS/AXVisualSupportAgent
+    6.8 /System/Library/CoreServices/launchservicesd
+18:52:21 done

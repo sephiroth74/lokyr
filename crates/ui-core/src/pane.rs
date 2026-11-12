@@ -2,15 +2,16 @@
 //! its terminal.
 
 use lokyr_render_core::{
-    AtlasRegion, CellBatch, CellCursor, CellGlyph, CellLine, Color, CursorShape, LineStyle,
+    AtlasRegion, CellBatch, CellCursor, CellGlyph, CellLine, Color, CursorShape, LineStyle, Texture,
 };
 use lokyr_text_core::CellMetrics;
 use lokyr_vt_core::page::{self, Content, Rgb, Style, Width};
 use lokyr_vt_core::terminal::{Colors, Snapshot};
 use lokyr_vt_core::unicode::Widths;
 
+use crate::paint;
 use crate::text::TextConfig;
-use crate::theme::SelectionColors;
+use crate::theme::{self, MatchColors, SelectionColors};
 
 /// A glyph as the atlas holds it: its pixels, and where they go from the pen
 /// on the baseline.
@@ -22,6 +23,10 @@ pub struct AtlasGlyph {
     pub left: i32,
     /// How far its top edge is from the baseline, upwards.
     pub top: i32,
+    /// Whether its coverage was drawn of the system's font smoothing, which
+    /// the system's weight is of: not a thin glyph's, nor the terminal's own
+    /// drawings'.
+    pub smoothed: bool,
 }
 
 /// What a cell shows, for the caller to find its glyph.
@@ -90,6 +95,12 @@ pub struct RunGlyph {
 pub trait Glyphs {
     /// The glyph of one cell's text.
     fn glyph(&mut self, shown: &CellText<'_>) -> Option<AtlasGlyph>;
+
+    /// Whether the glyphs take the weight of the system's text: not by
+    /// default.
+    fn system_weight(&self) -> bool {
+        false
+    }
 
     /// Appends the glyphs of `run` to `out`: by default, each cell's own.
     fn run(&mut self, run: &Run<'_>, out: &mut Vec<RunGlyph>) {
@@ -203,6 +214,7 @@ impl RunBuilder {
                 // glyph above it.
                 y: baseline - placed.glyph.top - placed.y,
                 color: self.colors[placed.cell],
+                smoothed: placed.glyph.smoothed,
             });
         }
         self.text.clear();
@@ -214,13 +226,17 @@ impl RunBuilder {
 
 /// How the text draws in a frame: its section of the configuration, and
 /// whether the text that blinks shows.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct TextLook {
     /// The configuration's `[text]` section.
     pub config: TextConfig,
     /// Whether the text that blinks shows in this frame, which hides it half
     /// of the time.
     pub blink_shown: bool,
+    /// The least contrast ratio of a cell's text to its background, from 1,
+    /// none, to 21: a text of less moves toward white or black, as the
+    /// theme's `minimum-contrast` asks.
+    pub minimum_contrast: f32,
 }
 
 impl Default for TextLook {
@@ -228,18 +244,22 @@ impl Default for TextLook {
         Self {
             config: TextConfig::default(),
             blink_shown: true,
+            minimum_contrast: 1.0,
         }
     }
 }
 
 /// How the cursor draws in a frame.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct CursorLook {
     /// Its shape.
     pub shape: CursorShape,
     /// The pixels of a bar's width and of an underline's height; a hollow
     /// block's edges take the face's underline thickness.
     pub thickness: u32,
+    /// The share of the cell of a bar's height and of an underline's
+    /// width, centered in it.
+    pub length: f32,
 }
 
 /// The text that an input method composes, which a pane shows at its
@@ -265,6 +285,12 @@ pub struct Selection<'a> {
 /// the default foreground in reverse video.
 pub fn background(snapshot: &Snapshot) -> Color {
     defaults(snapshot).1
+}
+
+/// The default text's color of `snapshot`, as [`background`] is its
+/// background's: of the program's colors, swapped by reverse video.
+pub fn foreground(snapshot: &Snapshot) -> Color {
+    defaults(snapshot).0
 }
 
 /// The grid of `snapshot`, of cells of `cell`, with its top left corner at
@@ -300,6 +326,67 @@ pub fn cells(
         TextLook::default(),
         glyphs,
     )
+}
+
+/// Lays `snapshot`'s decorations over `batch`, its grid as [`cells_with`]
+/// laid it out: each span's background in place of its cells' own, and
+/// its underline under them, of its own color or the default text's.
+pub fn decorate(batch: &mut CellBatch, snapshot: &Snapshot, cell: &CellMetrics) {
+    let text = defaults(snapshot).0;
+    for span in snapshot.decorations() {
+        if span.row >= batch.rows || span.first >= batch.columns || span.first > span.last {
+            continue;
+        }
+        let last = span.last.min(batch.columns - 1);
+        if let Some(background) = span.look.background {
+            let start = usize::from(span.row) * usize::from(batch.columns);
+            for column in span.first..=last {
+                batch.backgrounds[start + usize::from(column)] = color(background);
+            }
+        }
+        let style = match span.look.underline {
+            page::Underline::None => continue,
+            page::Underline::Single => LineStyle::Single,
+            page::Underline::Double => LineStyle::Double,
+            page::Underline::Curly => LineStyle::Curly,
+            page::Underline::Dotted => LineStyle::Dotted,
+            page::Underline::Dashed => LineStyle::Dashed,
+        };
+        batch.lines.push(CellLine {
+            column: span.first,
+            row: span.row,
+            columns: last - span.first + 1,
+            style,
+            top: cell.underline_top,
+            thickness: cell.underline_thickness,
+            color: span.look.underline_color.map_or(text, color),
+        });
+    }
+}
+
+/// Lays the highlights of `snapshot`'s searches' matches over `batch`, its
+/// grid as [`cells_with`] laid it out: `colors`' match's over each
+/// highlighted cell's background, and its current one's over the current
+/// match's, translucent, so that a cell's own color shows through, and a
+/// cell of the default background, clear, stays translucent over a
+/// translucent window.
+pub fn highlight(batch: &mut CellBatch, snapshot: &Snapshot, colors: MatchColors) {
+    for span in snapshot.highlights() {
+        if span.row >= batch.rows || span.first >= batch.columns || span.first > span.last {
+            continue;
+        }
+        let last = span.last.min(batch.columns - 1);
+        let color = if span.current {
+            colors.current
+        } else {
+            colors.matched
+        };
+        let start = usize::from(span.row) * usize::from(batch.columns);
+        for column in span.first..=last {
+            let cell = &mut batch.backgrounds[start + usize::from(column)];
+            *cell = paint::over(color, *cell);
+        }
+    }
 }
 
 /// Whether `snapshot` shows text that blinks, as SGR 5 and 6 make it: some
@@ -341,21 +428,21 @@ pub fn cells_with(
 /// rows from the first that shows them to the last, with the cells'
 /// backgrounds clear, as the grid shows them; none where the composition
 /// of `preedit` covers it. With the first of its rows in the grid; `None`
-/// without text that blinks, or when `text` keeps it steady.
+/// without text that blinks, or when `text`'s config keeps it steady.
 pub fn blinking_cells(
     snapshot: &Snapshot,
     cell: &CellMetrics,
     selection: Option<&Selection<'_>>,
-    text: TextConfig,
+    text: TextLook,
     preedit: Option<&Preedit>,
     glyphs: &mut dyn Glyphs,
 ) -> Option<(u16, CellBatch)> {
-    if !text.blink || !has_blinking_text(snapshot) {
+    if !text.config.blink || !has_blinking_text(snapshot) {
         return None;
     }
     let look = TextLook {
-        config: text,
         blink_shown: true,
+        ..text
     };
     let shown = Shown::Blinking;
     let mut batch = cells_of(
@@ -427,6 +514,11 @@ fn cells_of(
     // No color has the bits of a NaN, which start it.
     let mut readables = [([u32::MAX; 4], Color::default()); 4];
     let mut readable_next = 0;
+    // The text's colors of the theme's least contrast, by the bits of each
+    // pair of a text's color and the background under it: a frame has few
+    // such pairs, and a contrast is dear for each cell.
+    let mut contrasted = [([u32::MAX; 8], Color::default()); CONTRASTED];
+    let mut contrasted_next = 0;
     let area = usize::from(columns) * usize::from(rows);
     let mut batch = CellBatch {
         x,
@@ -439,6 +531,7 @@ fn cells_of(
         glyphs: Vec::with_capacity(area),
         lines: Vec::new(),
         cursor: cursor.and_then(|look| place_cursor(snapshot, look, cell)),
+        system_weight: glyphs.system_weight(),
     };
     let selected = |column: u16, row: u16| {
         selection
@@ -465,6 +558,28 @@ fn cells_of(
             let (mut foreground, mut background) =
                 style_colors(&style, colors, defaults, text.config);
             let own_background = text.config.ansi_colors && style.bg != page::Color::Default;
+            // The text of the contrast that the theme asks, over the
+            // background that shows under it.
+            if text.minimum_contrast > 1.0 {
+                let under = if own_background || style.inverse {
+                    background
+                } else {
+                    defaults.1
+                };
+                let (text_bits, under_bits) = (bits(foreground), bits(under));
+                let mut key = [0; 8];
+                key[..4].copy_from_slice(&text_bits);
+                key[4..].copy_from_slice(&under_bits);
+                foreground = match contrasted.iter().find(|(known, _)| *known == key) {
+                    Some(&(_, shown)) => shown,
+                    None => {
+                        let shown = theme::with_contrast(foreground, under, text.minimum_contrast);
+                        contrasted[contrasted_next] = (key, shown);
+                        contrasted_next = (contrasted_next + 1) % CONTRASTED;
+                        shown
+                    }
+                };
+            }
             if !own_background && !style.inverse {
                 background = background.with_alpha(0.0);
             }
@@ -848,6 +963,10 @@ fn readable(text: Color, background: Color, (fg, bg): (Color, Color)) -> Color {
 }
 
 /// The bits of `color`'s components, which compare as one.
+/// How many pairs of a text's color and its background a frame keeps the
+/// colors of the least contrast of: the palette's sixteen, and the default.
+const CONTRASTED: usize = 17;
+
 fn bits(color: Color) -> [u32; 4] {
     [
         color.red.to_bits(),
@@ -919,6 +1038,7 @@ pub fn preedit(
                 x: found.left,
                 y: i32::try_from(cell.baseline).unwrap_or(i32::MAX) - found.top,
                 color: foreground,
+                smoothed: found.smoothed,
             });
         }
         column += width;
@@ -1128,6 +1248,7 @@ pub fn cursor_cells(
             row: 0,
             ..cursor
         }),
+        system_weight: batch.system_weight,
     };
     settle_cursor(&mut cells, snapshot);
     // The grid shows its cells' backgrounds, and their text but under a
@@ -1174,6 +1295,7 @@ fn place_cursor(snapshot: &Snapshot, look: CursorLook, cell: &CellMetrics) -> Op
             CursorShape::Bar | CursorShape::Underline => look.thickness,
             CursorShape::Block | CursorShape::Hollow => cell.underline_thickness,
         },
+        length: look.length,
         color: color(snapshot.colors().cursor),
     })
 }
@@ -1218,6 +1340,41 @@ fn style_colors(
         (background, foreground)
     } else {
         (foreground, background)
+    }
+}
+
+/// Fades `batch`, of a pane that has not the keyboard, toward its default
+/// background `toward` by `share`, from 0, not at all, to 1: its text, its
+/// lines, its cursor and its cells' own backgrounds, each of its own
+/// opacity, so that the cells of the default background stay clear over a
+/// translucent window, as a rectangle over them would not; a glyph of its
+/// own colors, as an emoji, whose color the renderer takes the opacity of
+/// alone, takes the fade as an opacity over its faded cell.
+pub fn fade(batch: &mut CellBatch, toward: Color, share: f32) {
+    let share = share.clamp(0.0, 1.0);
+    if share <= 0.0 {
+        return;
+    }
+    let faded = |color: Color| Color {
+        red: color.red + (toward.red - color.red) * share,
+        green: color.green + (toward.green - color.green) * share,
+        blue: color.blue + (toward.blue - color.blue) * share,
+        alpha: color.alpha,
+    };
+    for background in &mut batch.backgrounds {
+        *background = faded(*background);
+    }
+    for glyph in &mut batch.glyphs {
+        glyph.color = faded(glyph.color);
+        if glyph.region.texture == Texture::Color {
+            glyph.color.alpha *= 1.0 - share;
+        }
+    }
+    for line in &mut batch.lines {
+        line.color = faded(line.color);
+    }
+    if let Some(cursor) = &mut batch.cursor {
+        cursor.color = faded(cursor.color);
     }
 }
 
@@ -1287,6 +1444,7 @@ mod tests {
                 },
                 left: 1,
                 top: 10,
+                smoothed: true,
             })
         }
     }
@@ -1427,6 +1585,7 @@ mod tests {
         let look = CursorLook {
             shape: CursorShape::Block,
             thickness: 1,
+            length: 1.0,
         };
         let mut runs = Runs::default();
         cells(&under, &cell(), 0, 0, None, Some(look), &mut runs);
@@ -1469,6 +1628,7 @@ mod tests {
         let look = TextLook {
             config,
             blink_shown: shown,
+            ..TextLook::default()
         };
         cells_with(
             &snapshot,
@@ -1589,6 +1749,7 @@ mod tests {
         let look = |blink_shown| TextLook {
             config: TextConfig::default(),
             blink_shown,
+            ..TextLook::default()
         };
         let draw = |look, asked: &mut Vec<_>| {
             let glyphs = &mut atlas(asked);
@@ -1608,7 +1769,7 @@ mod tests {
             &shown,
             &cell(),
             Some(&selection),
-            TextConfig::default(),
+            TextLook::default(),
             None,
             &mut atlas(&mut first),
         )
@@ -1645,14 +1806,17 @@ mod tests {
         assert_eq!(lines, [(0, 1, 2)]);
         assert!(grid.lines.is_empty());
         // Nothing without text that blinks, or when it shows steadily.
-        let steady = TextConfig {
-            blink: false,
-            ..TextConfig::default()
+        let steady = TextLook {
+            config: TextConfig {
+                blink: false,
+                ..TextConfig::default()
+            },
+            ..TextLook::default()
         };
         let glyphs = &mut atlas(&mut first);
         assert!(blinking_cells(&shown, &cell(), None, steady, None, glyphs).is_none());
         let plain = snapshot(8, 2, "abc");
-        let default = TextConfig::default();
+        let default = TextLook::default();
         assert!(blinking_cells(&plain, &cell(), None, default, None, glyphs).is_none());
         // A composition at the cursor covers the text under it, and its
         // lines, a strikeout's.
@@ -1681,6 +1845,7 @@ mod tests {
         let block = CursorLook {
             shape: CursorShape::Block,
             thickness: 2,
+            length: 1.0,
         };
         let whole = cells(
             &shown,
@@ -1742,6 +1907,7 @@ mod tests {
         let bar = CursorLook {
             shape: CursorShape::Bar,
             thickness: 2,
+            length: 1.0,
         };
         let (_, _, apart) = cursor_cells(&grid, &shown, bar, &cell(), None).unwrap();
         assert!(apart.glyphs.is_empty() && apart.lines.is_empty());
@@ -1749,6 +1915,11 @@ mod tests {
             apart.cursor.map(|cursor| cursor.shape),
             Some(CursorShape::Bar)
         );
+        // Of a share of the cell, which its own layer draws as the grid
+        // would.
+        let short = CursorLook { length: 0.6, ..bar };
+        let (_, _, apart) = cursor_cells(&grid, &shown, short, &cell(), None).unwrap();
+        assert_eq!(apart.cursor.map(|cursor| cursor.length), Some(0.6));
         // A wide character's two cells, and none for a hidden cursor.
         let wide = snapshot(6, 1, "日\x1b[2D");
         let grid = cells(&wide, &cell(), 0, 0, None, None, &mut atlas(&mut first));
@@ -1864,6 +2035,86 @@ mod tests {
     }
 
     #[test]
+    fn a_text_of_too_little_contrast_takes_the_theme_s_least() {
+        // A dark gray on the dark background, and white on its own blue.
+        let snapshot = snapshot(
+            4,
+            1,
+            "\x1b]11;#1e1e20\x07\x1b]4;8;#3a3a40\x07\x1b[90ma\x1b[0m\x1b[97;44mb",
+        );
+        let mut asked = Vec::new();
+        let draw = |minimum_contrast, asked: &mut Vec<_>| {
+            let look = TextLook {
+                minimum_contrast,
+                ..TextLook::default()
+            };
+            cells_with(
+                &snapshot,
+                &cell(),
+                (0, 0),
+                None,
+                None,
+                look,
+                &mut atlas(asked),
+            )
+        };
+        let dark = rgb(0x1e, 0x1e, 0x20);
+        let plain = draw(1.0, &mut asked);
+        assert_eq!(plain.glyphs[0].color, rgb(0x3a, 0x3a, 0x40));
+        let raised = draw(4.5, &mut asked);
+        assert!(theme::contrast(raised.glyphs[0].color, dark) >= 4.5);
+        // The text that reads on its own background stays as it is.
+        assert_eq!(raised.glyphs[1].color, plain.glyphs[1].color);
+    }
+
+    /// The frame's time of 200 by 60 cells of a theme of a low contrast,
+    /// at a least contrast of 1 and of 4.5, which `cargo test --release
+    /// -- --ignored` measures.
+    #[test]
+    #[ignore = "a measure, of a release build"]
+    fn the_least_contrast_costs_a_frame_little() {
+        let line: String = "the quick brown fox jumps over the lazy dog "
+            .chars()
+            .cycle()
+            .take(200)
+            .collect();
+        let text = format!(
+            "\x1b]10;#657b83\x07\x1b]11;#fdf6e3\x07{}",
+            vec![line; 60].join("\r\n")
+        );
+        let snapshot = snapshot(200, 60, &text);
+        let mut asked = Vec::new();
+        let mut time = |minimum_contrast| {
+            let look = TextLook {
+                minimum_contrast,
+                ..TextLook::default()
+            };
+            let mut atlas = atlas(&mut asked);
+            let mut best = std::time::Duration::MAX;
+            for _ in 0..20 {
+                let start = std::time::Instant::now();
+                std::hint::black_box(cells_with(
+                    &snapshot,
+                    &cell(),
+                    (0, 0),
+                    None,
+                    None,
+                    look,
+                    &mut atlas,
+                ));
+                best = best.min(start.elapsed());
+            }
+            best
+        };
+        let (plain, raised) = (time(1.0), time(4.5));
+        eprintln!("a frame at 1: {plain:?}; at 4.5: {raised:?}");
+        assert!(
+            raised < plain + std::time::Duration::from_micros(500),
+            "{plain:?} and {raised:?}"
+        );
+    }
+
+    #[test]
     fn reverse_video_swaps_the_default_colors() {
         // DECSCNM: the default colors swap; a color that a program sets
         // stays.
@@ -1909,6 +2160,7 @@ mod tests {
         let look = CursorLook {
             shape,
             thickness: 3,
+            length: 1.0,
         };
         let batch = cells(
             snapshot,
@@ -1949,6 +2201,7 @@ mod tests {
                     columns: 1,
                     shape,
                     thickness,
+                    length: 1.0,
                     color: color(colors.cursor),
                 })
             );
@@ -1997,6 +2250,7 @@ mod tests {
                             region,
                             left: 0,
                             top: 10,
+                            smoothed: true,
                         },
                         x: 0,
                         y: 0,
@@ -2013,6 +2267,7 @@ mod tests {
         let look = CursorLook {
             shape: CursorShape::Block,
             thickness: 1,
+            length: 1.0,
         };
         let batch = cells(&snapshot, &cell(), 0, 0, None, Some(look), &mut Marks);
         assert_eq!(batch.cursor.map(|cursor| cursor.column), Some(1));
@@ -2075,6 +2330,48 @@ mod tests {
     }
 
     #[test]
+    fn decorations_lay_their_lines_and_backgrounds_over_the_grid() {
+        use lokyr_vt_core::parser::Parser;
+        use lokyr_vt_core::terminal::{Look, Options, Snapshot, Terminal};
+
+        let mut terminal = Terminal::new(8, 2, Options::default());
+        Parser::new().advance(&mut terminal, b"abcdefgh\r\nxyz");
+        let red = Rgb { r: 255, g: 0, b: 0 };
+        let underline = Look {
+            underline: page::Underline::Curly,
+            ..Look::default()
+        };
+        let lit = Look {
+            background: Some(red),
+            ..Look::default()
+        };
+        // Across both rows, then two cells lit.
+        assert!(terminal.decorate(1, (6, 0), (1, 1), underline));
+        assert!(terminal.decorate(2, (2, 1), (2, 1), lit));
+        let mut shown = Snapshot::default();
+        terminal.snapshot(&mut shown);
+        let mut asked = Vec::new();
+        let mut batch = cells(&shown, &cell(), 0, 0, None, None, &mut atlas(&mut asked));
+        let lines = batch.lines.len();
+        decorate(&mut batch, &shown, &cell());
+        let laid: Vec<(u16, u16, u16, LineStyle)> = batch.lines[lines..]
+            .iter()
+            .map(|line| (line.row, line.column, line.columns, line.style))
+            .collect();
+        assert_eq!(
+            laid,
+            [(0, 6, 2, LineStyle::Curly), (1, 0, 2, LineStyle::Curly)]
+        );
+        assert!(
+            batch.lines[lines..]
+                .iter()
+                .all(|line| line.color == color(Colors::default().foreground))
+        );
+        assert_eq!(batch.backgrounds[8 + 2], color(red));
+        assert_ne!(batch.backgrounds[8 + 3], color(red));
+    }
+
+    #[test]
     fn the_composed_text_shows_at_the_cursor_underlined() {
         // The cursor back on `c`, in a grid of 8 columns.
         let snapshot = snapshot(8, 2, "abcdef\x1b[4D");
@@ -2082,6 +2379,7 @@ mod tests {
         let look = CursorLook {
             shape: CursorShape::Bar,
             thickness: 2,
+            length: 1.0,
         };
         let mut batch = cells(
             &snapshot,
@@ -2132,6 +2430,7 @@ mod tests {
         let look = CursorLook {
             shape,
             thickness: 2,
+            length: 1.0,
         };
         cells(
             &snapshot(cols, 1, text),
@@ -2203,6 +2502,7 @@ mod tests {
         let look = CursorLook {
             shape: CursorShape::Block,
             thickness: 2,
+            length: 1.0,
         };
         let snapshot = snapshot(8, 1, "\x1b[4;9mabcd\x1b[2D");
         let mut asked = Vec::new();
@@ -2261,6 +2561,7 @@ mod tests {
         let look = CursorLook {
             shape: CursorShape::Block,
             thickness: 2,
+            length: 1.0,
         };
         let compose = |text: &str, composed: &str, cursor: usize| {
             let snapshot = snapshot(8, 1, text);
@@ -2309,6 +2610,7 @@ mod tests {
         let look = CursorLook {
             shape: CursorShape::Block,
             thickness: 2,
+            length: 1.0,
         };
         let compose = |columns: u16, text: &str, composed: &str, cursor: usize| {
             let snapshot = snapshot(columns, 1, text);

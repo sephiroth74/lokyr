@@ -1,0 +1,27 @@
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=24117347)	100%; charged; 0:00 remaining present: true
+11:49  up 1 day, 20:09, 19 users, load averages: 1.63 1.84 2.16
+Graphics/Displays:
+    Apple M5 Pro:
+      Displays:
+        DELL P2721Q:
+          Resolution: 5120 x 2880 (5K/UHD+ - Ultra High Definition Plus)
+          Main Display: Yes
+11:49:07 check, load { 1.63 1.84 2.16 }
+11:49:07 check lokyr
+11:49:11 lokyr 40 120 | /tmp/lokyr/compare-zdotdir /tmp/lokyr/compare-xdg xterm-256color | 
+11:49:11 done check
+11:49:11 startup, load { 1.58 1.82 2.15 }
+11:49:12 startup lokyr 1
+11:49:27 startup lokyr 2
+11:49:42 done startup
+11:49:42 idle, load { 1.65 1.81 2.13 }
+11:49:43 idle lokyr
+11:51:00 done idle
+11:51:00 throughput, load { 2.11 1.87 2.12 }
+11:51:00 throughput lokyr
+11:55:03 done throughput
+11:55:03 energycat, load { 2.87 2.48 2.33 }
+11:55:04 energycat lokyr
+11:55:13 done energycat
+11:55:13 done, load { 2.81 2.48 2.33 }

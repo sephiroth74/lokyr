@@ -13,9 +13,16 @@ publish = false
 anyhow.workspace = true
 cargo_metadata.workspace = true
 libc.workspace = true
+lokyr-kernel.workspace = true
+lokyr-plugin-host-luau.workspace = true
+plist.workspace = true
+pulldown-cmark.workspace = true
 regex.workspace = true
+rustc-demangle.workspace = true
 serde.workspace = true
+serde_json.workspace = true
 toml.workspace = true
+toml_edit.workspace = true
 
 [lints]
 workspace = true

@@ -2,16 +2,23 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    # A phase's branch too, whose pushes run the Linux jobs alone: the
+    # macOS job runs on main's, as the next job tells.
+    branches: [main, f3]
   pull_request:
+  # Every job, the macOS one too, of any branch, as `gh workflow run CI
+  # --ref f3` asks.
+  workflow_dispatch:
 
 permissions:
   contents: read
 
-# A newer push to the same branch or pull request cancels the older run.
+# A newer push to the same branch or pull request cancels the older run,
+# but on main, whose every run goes to its end, so that no push of code
+# goes untested on macOS; a run asked by hand is a group of its own.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.event_name != 'workflow_dispatch' }}
 
 env:
   CARGO_TERM_COLOR: always
@@ -19,10 +26,77 @@ env:
 # Actions are pinned by commit SHA; the comment after each one names its tag.
 # Every job runs the same `just` recipes used locally.
 jobs:
+  changes:
+    # Whether the push or the pull request changes more than documents,
+    # Markdown files and docs/, which the macOS job needs to check: of a
+    # push to main, since the last commit whose macOS job passed, so that a
+    # push of documents after one of code whose job failed, or did not
+    # run, checks it again.
+    name: changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      code: ${{ steps.diff.outputs.code }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - id: diff
+        env:
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          NEW_BRANCH: ${{ github.event.created }}
+          FORCED: ${{ github.event.forced }}
+          RUN: ${{ github.run_id }}
+          GH_TOKEN: ${{ github.token }}
+        # A run asked by hand, a branch's first push, a forced one, a base
+        # that the history lacks, or a push to main of no passed macOS job
+        # among the last runs, checks everything. Renames count as two
+        # paths, so that a file moved into docs/ counts its old place.
+        run: |
+          if [ "$EVENT" = push ] && [ "$REF" = refs/heads/main ]; then
+            passed=""
+            runs="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?branch=main&event=push&per_page=30" \
+              --jq ".workflow_runs[] | select(.id != $RUN) | \"\(.id) \(.head_sha)\"")" || runs=""
+            while read -r id sha; do
+              [ -n "$id" ] || continue
+              job="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$id/jobs" \
+                --jq '.jobs[] | select(.name == "macos") | .conclusion')" || job=""
+              if [ "$job" = success ]; then
+                passed="$sha"
+                break
+              fi
+            done <<< "$runs"
+            BASE="$passed"
+          fi
+          code=true
+          if [ "$EVENT" != workflow_dispatch ] && [ "$NEW_BRANCH" != true ] && [ "$FORCED" != true ] \
+            && [ -n "$BASE" ] && git cat-file -e "$BASE^{commit}" 2>/dev/null \
+            && ! git diff --no-renames --name-only "$BASE" HEAD | grep -qvE '^docs/|\.md$'; then
+            code=false
+          fi
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+
   macos:
     # Only the checks that need macOS run here, because macOS runners are the
-    # most expensive ones.
+    # most expensive ones: GitHub bills a macOS runner's minute as ten of the
+    # account's. So the job runs on main's pushes, on pull requests and on
+    # the runs asked by hand, of changes beyond documents; a phase's branch,
+    # as f3, runs it by hand, `just ci` running its checks on the Mac before
+    # each push.
     name: macos
+    needs: changes
+    # Of a `changes` job that failed too, which would leave the code
+    # unchecked, as a required check takes a skipped job as passed.
+    if: >-
+      !cancelled()
+      && (needs.changes.result != 'success' || needs.changes.outputs.code == 'true')
+      && (github.event_name != 'push' || github.ref == 'refs/heads/main')
     # The oldest macOS that Lokyr supports, pinned so that the job does not
     # move along with macos-latest.
     runs-on: macos-26
@@ -59,6 +133,7 @@ jobs:
           fi
       - run: just clippy
       - run: just build
+      - run: just build-minimal
       - run: just test
         timeout-minutes: 8
       # Signed ad hoc, as the runner has no Developer ID.
@@ -87,6 +162,7 @@ jobs:
       - run: just check-deps
       - run: just check-comments
       - run: just check-links
+      - run: just check-dist
       - run: just deny
       - run: just test-portable
 
@@ -117,5 +193,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install --yes valgrind
       - name: Count the instructions against the base commit's
         env:
-          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          # A branch's first push, which has no commit before it, and a
+          # forced one, whose commit before no ref reaches, against main.
+          BASE: ${{ github.event.pull_request.base.sha || ((github.event.created || github.event.forced) && 'origin/main') || github.event.before }}
         run: just instructions "$BASE"

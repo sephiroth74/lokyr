@@ -1,8 +1,9 @@
 //! A context menu over a window: it opens once the handler's call has
 //! returned, and runs its own loop, while timers fire and the window draws;
-//! its dimmed items are disabled; its chosen item's command comes as the
-//! window's event. A menu that is open closes with its window, and as the
-//! app quits, so that `run` returns.
+//! its dimmed items are disabled, its ticked ones on; its chosen item's
+//! command comes as the
+//! window's event, then its closing. A menu that is open closes with its
+//! window, and as the app quits, so that `run` returns.
 
 #[cfg(target_os = "macos")]
 mod common;
@@ -22,7 +23,7 @@ mod probe {
     use objc2::MainThreadMarker;
     use objc2::rc::Retained;
     use objc2_app_kit::{
-        NSApplication, NSMenu, NSMenuDidBeginTrackingNotification,
+        NSApplication, NSControlStateValueOn, NSMenu, NSMenuDidBeginTrackingNotification,
         NSMenuDidEndTrackingNotification, NSPopUpMenuWindowLevel,
     };
     use objc2_foundation::{NSNotification, NSNotificationCenter, NSPoint};
@@ -44,14 +45,18 @@ mod probe {
         step: usize,
         /// Whether each step's timer fired within a menu's loop.
         in_menu: Vec<bool>,
-        /// Whether the menu's items were enabled, as it showed them.
+        /// Whether the menu's items were enabled, and ticked, as it showed
+        /// them.
         enabled: Vec<bool>,
+        ticked: Vec<bool>,
         /// The frames that came while the first menu was open.
         frames_in_menu: usize,
         /// Whether a menu's window had its top left corner at the point
         /// that the app asked for.
         at_point: bool,
         commands: Vec<(WindowId, String)>,
+        /// The menus' closings, each of whether a command came before it.
+        closed: Vec<bool>,
         /// How many times the first menu opened again.
         retries: usize,
     }
@@ -72,6 +77,7 @@ mod probe {
                 remember: false,
                 restore: false,
                 restore_size: false,
+                frame: None,
             })
             .expect("a window")
     }
@@ -85,6 +91,7 @@ mod probe {
         ContextMenu {
             items: vec![item("test.first"), MenuItem::Separator, item("test.dimmed")],
             dimmed: vec!["test.dimmed".to_owned()],
+            ticked: vec!["test.first".to_owned()],
         }
     }
 
@@ -143,6 +150,7 @@ mod probe {
                     for index in [0, 2] {
                         let item = menu.itemAtIndex(index).expect("an item");
                         seen.enabled.push(item.isEnabled());
+                        seen.ticked.push(item.state() == NSControlStateValueOn);
                     }
                     TRACKED.with(|tracked| tracked.borrow_mut().take());
                     menu.performActionForItemAtIndex(0);
@@ -189,6 +197,10 @@ mod probe {
             match event {
                 WindowEvent::Frame if seen.step == 1 && tracked().is_some() => {
                     seen.frames_in_menu += 1;
+                }
+                WindowEvent::ContextMenuClosed => {
+                    let chosen = !seen.commands.is_empty();
+                    seen.closed.push(chosen);
                 }
                 WindowEvent::ContextCommand(command) => {
                     seen.commands.push((window, command));
@@ -254,12 +266,15 @@ mod probe {
         assert!(seen.frames_in_menu >= 1, "{seen:?}");
         assert!(seen.at_point, "{seen:?}");
         assert_eq!(seen.enabled, [true, false], "{seen:?}");
+        assert_eq!(seen.ticked, [true, false], "{seen:?}");
         let commands: Vec<&str> = seen
             .commands
             .iter()
             .map(|(_, command)| command.as_str())
             .collect();
         assert_eq!(commands, ["test.first"], "{seen:?}");
+        // The first menu's closing, after its choice.
+        assert_eq!(seen.closed.first(), Some(&true), "{seen:?}");
         println!("context_menu: ok");
     }
 }

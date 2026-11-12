@@ -4,10 +4,11 @@
 //! registered it. A plugin's call is checked against the commands that its
 //! manifest says it runs, and the capabilities that it has.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 pub use lokyr_plugin_sdk::command::{
-    Args, Capability, Category, Code, Command, Error, ErrorCategory, Kind, Param, Value,
+    Args, Capability, Category, Code, Command, Error, ErrorCategory, Kind, Param, Uses, Value,
+    is_name, is_part,
 };
 
 /// The commands, by name.
@@ -16,47 +17,13 @@ pub struct Registry {
     commands: BTreeMap<String, Command>,
     /// The commands' names, in the order of their registrations.
     order: Vec<String>,
-}
-
-/// The commands that a plugin's manifest says it runs: names, and
-/// namespaces, as `tabs.*`.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct Uses {
-    patterns: Vec<String>,
-}
-
-impl Uses {
-    /// The commands of `patterns`.
-    pub fn new(patterns: impl IntoIterator<Item = impl Into<String>>) -> Self {
-        Self {
-            patterns: patterns.into_iter().map(Into::into).collect(),
-        }
-    }
-
-    /// Whether the command `name` is among them.
-    pub fn allows(&self, name: &str) -> bool {
-        self.patterns
-            .iter()
-            .any(|pattern| match pattern.strip_suffix('*') {
-                // `tabs.*` takes `tabs.new`, not `tabs` nor `tabsx.new`.
-                Some(prefix) => prefix.ends_with('.') && name.starts_with(prefix),
-                None => pattern == name,
-            })
-    }
-}
-
-/// Whether `name` is a name of a part: lowercase letters, digits and `-`,
-/// from a letter.
-fn is_part(name: &str) -> bool {
-    let mut bytes = name.bytes();
-    bytes.next().is_some_and(|first| first.is_ascii_lowercase())
-        && bytes.all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
-}
-
-/// Whether `name` is a command's name, `namespace.action`, each part of
-/// lowercase letters, digits and `-`, from a letter.
-pub fn is_name(name: &str) -> bool {
-    name.contains('.') && name.split('.').all(is_part)
+    /// The plugins that registered commands, by the commands' names; the
+    /// app's own commands have none.
+    owners: BTreeMap<String, String>,
+    /// The commands of plugins that wait for their triggers, as their
+    /// manifests give them, whose arguments their plugins check as they
+    /// activate.
+    waiting: BTreeSet<String>,
 }
 
 impl Registry {
@@ -70,57 +37,48 @@ impl Registry {
     /// defaults of their kinds.
     pub fn register(&mut self, command: Command) -> Result<(), Error> {
         let name = &command.name;
-        if !is_name(name) {
-            return Err(Error::new(
-                Code::InvalidName,
-                format!("`{name}` is not a command's name, `namespace.action`"),
-            ));
-        }
         if self.commands.contains_key(name) {
             return Err(Error::new(
                 Code::AlreadyRegistered,
                 format!("`{name}` is registered already"),
             ));
         }
-        for (at, param) in command.params.iter().enumerate() {
-            if !is_part(&param.name) {
-                return Err(Error::new(
-                    Code::InvalidName,
-                    format!("`{}` of `{name}` is not a parameter's name", param.name),
-                ));
-            }
-            if command.params[..at]
-                .iter()
-                .any(|other| other.name == param.name)
-            {
-                return Err(Error::new(
-                    Code::InvalidSchema,
-                    format!("`{name}` has two parameters `{}`", param.name),
-                ));
-            }
-            if let Some(default) = &param.default
-                && !takes(param.kind, default)
-            {
-                return Err(Error::new(
-                    Code::InvalidSchema,
-                    format!(
-                        "the default of `{}` of `{name}` is not {}",
-                        param.name, param.kind
-                    ),
-                ));
-            }
-        }
-        if let Some(when) = &command.when
-            && let Err(error) = crate::keymap::When::parse(when)
-        {
-            return Err(Error::new(
-                Code::InvalidSchema,
-                format!("the context of `{name}`, `{when}`, is not one: {error}"),
-            ));
-        }
+        command.check()?;
         self.order.push(name.clone());
         self.commands.insert(name.clone(), command);
         Ok(())
+    }
+
+    /// Registers `command` of the plugin `plugin`, as
+    /// [`Registry::register`] does, which [`Registry::owner`] then tells.
+    pub fn register_for(&mut self, command: Command, plugin: &str) -> Result<(), Error> {
+        let name = command.name.clone();
+        self.register(command)?;
+        self.owners.insert(name, plugin.to_owned());
+        Ok(())
+    }
+
+    /// Registers `command` of the plugin `plugin`, which waits for its
+    /// trigger, as [`Registry::register_for`] does: its manifest gives the
+    /// command without its parameters, so that a call of it takes any
+    /// arguments, which the plugin's own command checks as it activates.
+    pub fn register_waiting(&mut self, command: Command, plugin: &str) -> Result<(), Error> {
+        let name = command.name.clone();
+        self.register_for(command, plugin)?;
+        self.waiting.insert(name);
+        Ok(())
+    }
+
+    /// Whether the command `name` is of a plugin that waits for its
+    /// trigger, as [`Registry::register_waiting`] registers it.
+    pub fn is_waiting(&self, name: &str) -> bool {
+        self.waiting.contains(name)
+    }
+
+    /// The plugin that registered the command `name`, by its name; `None`
+    /// of the app's own commands.
+    pub fn owner(&self, name: &str) -> Option<&str> {
+        self.owners.get(name).map(String::as_str)
     }
 
     /// The command `name`, if it is registered.
@@ -132,6 +90,8 @@ impl Registry {
     /// registered.
     pub fn unregister(&mut self, name: &str) -> Option<Command> {
         self.order.retain(|registered| registered != name);
+        self.owners.remove(name);
+        self.waiting.remove(name);
         self.commands.remove(name)
     }
 
@@ -149,71 +109,31 @@ impl Registry {
     /// Checks a call of `name` with `args`, and returns its arguments, with
     /// the defaults of those that it leaves out: an integer for a number
     /// becomes a number.
-    pub fn check(&self, name: &str, mut args: Args) -> Result<Args, Error> {
+    pub fn check(&self, name: &str, args: Args) -> Result<Args, Error> {
         let Some(command) = self.commands.get(name) else {
             return Err(Error::new(Code::NotFound, format!("no command `{name}`")));
         };
-        if let Some(unknown) = args
-            .keys()
-            .find(|arg| !command.params.iter().any(|param| &param.name == *arg))
-        {
-            return Err(Error::new(
-                Code::UnknownArgument,
-                format!("`{name}` takes no argument `{unknown}`"),
-            ));
+        // Its plugin's own command, as it activates, checks them.
+        if self.waiting.contains(name) {
+            return Ok(args);
         }
-        for param in &command.params {
-            match args.get_mut(&param.name) {
-                Some(value) if !takes(param.kind, value) => {
-                    return Err(Error::new(
-                        Code::WrongKind,
-                        format!(
-                            "the argument `{}` of `{name}` is {}, not {}",
-                            param.name,
-                            param.kind,
-                            value.kind()
-                        ),
-                    ));
-                }
-                Some(value) => {
-                    if let (Kind::Number, Value::Integer(whole)) = (param.kind, &*value) {
-                        // An integer of more than 53 bits rounds.
-                        *value = Value::Number(*whole as f64);
-                    }
-                }
-                None => match &param.default {
-                    Some(default) => {
-                        args.insert(param.name.clone(), default.clone());
-                    }
-                    None => {
-                        return Err(Error::new(
-                            Code::MissingArgument,
-                            format!("`{name}` needs the argument `{}`", param.name),
-                        ));
-                    }
-                },
-            }
-        }
-        Ok(args)
+        command.check_call(args)
     }
 
     /// Checks a call of `name` with `args` that a plugin makes, which
     /// `uses` says it runs, with the capabilities `granted`, as
-    /// [`Registry::check`] does; the plugin's own commands, whose namespace
-    /// is `own`, need neither.
+    /// [`Registry::check`] does; the commands that the plugin registered,
+    /// `own`, need neither, whatever their names.
     pub fn check_for_plugin(
         &self,
         name: &str,
         args: Args,
-        own: &str,
+        own: &[Command],
         uses: &Uses,
         granted: &[Capability],
     ) -> Result<Args, Error> {
         let args = self.check(name, args)?;
-        let theirs = name
-            .strip_prefix(own)
-            .is_some_and(|rest| rest.starts_with('.'));
-        if theirs {
+        if own.iter().any(|command| command.name == name) {
             return Ok(args);
         }
         if !uses.allows(name) {
@@ -226,7 +146,7 @@ impl Registry {
         if let Some(missing) = command
             .capabilities
             .iter()
-            .find(|capability| !granted.contains(capability))
+            .find(|capability| !lokyr_plugin_sdk::command::grants(granted, capability))
         {
             return Err(Error::new(
                 Code::MissingCapability,
@@ -235,12 +155,6 @@ impl Registry {
         }
         Ok(args)
     }
-}
-
-/// Whether a parameter of `kind` takes `value`: a number takes an integer
-/// too.
-fn takes(kind: Kind, value: &Value) -> bool {
-    value.kind() == kind || (kind == Kind::Number && value.kind() == Kind::Integer)
 }
 
 #[cfg(test)]
@@ -430,19 +344,28 @@ mod tests {
         let mut paste = command("pane.paste", Vec::new());
         paste.capabilities = vec![Capability::ClipboardRead, Capability::PtyWrite];
         registry.register(paste).unwrap();
-        registry
-            .register(command("search.open", Vec::new()))
-            .unwrap();
+        for name in ["search.open", "search.other"] {
+            registry.register(command(name, Vec::new())).unwrap();
+        }
+        let mut note = command("notes.write", Vec::new());
+        note.capabilities = vec![Capability::FsWrite("/Users/ada/notes/today.md".to_owned())];
+        registry.register(note).unwrap();
         let goto = || args(&[("index", Value::Integer(1))]);
         let uses = Uses::new(["tabs.*", "pane.paste"]);
         let granted = [Capability::ClipboardRead, Capability::PtyWrite];
+        let own = [command("search.open", Vec::new())];
         let check = |name: &str, args, uses: &Uses, granted: &[Capability]| {
-            registry.check_for_plugin(name, args, "search", uses, granted)
+            registry.check_for_plugin(name, args, &own, uses, granted)
         };
         assert!(check("tabs.goto", goto(), &uses, &[]).is_ok());
         assert!(check("pane.paste", Args::new(), &uses, &granted).is_ok());
-        // Its own commands need no declaration.
+        // Its own commands need no declaration; another of their prefix
+        // does.
         assert!(check("search.open", Args::new(), &Uses::default(), &[]).is_ok());
+        assert_eq!(
+            code(check("search.other", Args::new(), &Uses::default(), &[])),
+            301
+        );
         // One that it did not declare, and one whose capability it lacks.
         assert_eq!(code(check("tabs.goto", goto(), &Uses::default(), &[])), 301);
         let partly = [Capability::ClipboardRead];
@@ -451,6 +374,15 @@ mod tests {
         assert!(error.message.contains("pty-write"), "{error}");
         // The call's own errors come first.
         assert_eq!(code(check("tabs.goto", Args::new(), &uses, &[])), 103);
+        // A capability of a parameter, of what its parameter covers: a
+        // folder of the path that the command writes, not another.
+        let uses = Uses::new(["notes.*"]);
+        let folder = [Capability::FsWrite("/Users/ada/notes".to_owned())];
+        assert!(check("notes.write", Args::new(), &uses, &folder).is_ok());
+        let other = [Capability::FsWrite("/Users/ada/notes-old".to_owned())];
+        assert_eq!(code(check("notes.write", Args::new(), &uses, &other)), 302);
+        let read = [Capability::FsRead("/Users/ada/notes".to_owned())];
+        assert_eq!(code(check("notes.write", Args::new(), &uses, &read)), 302);
     }
 
     #[test]

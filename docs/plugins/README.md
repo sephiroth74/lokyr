@@ -1,0 +1,24 @@
+# The bundled plugins
+
+Every feature that you see in Lokyr beyond the terminal itself comes from a plugin, and the plugins below come with the app. They are built into its binary, run on the same plugin API as third-party plugins, and each can be turned off in your config with `enabled = false` in its section, as [`[plugins.<namespace>]`](../CONFIGURATION.md#pluginsnamespace) tells.
+
+| Plugin | What it gives you |
+|---|---|
+| [`keymap-macos`](keymap-macos.md) | The default shortcuts of macOS's apps: ⌘N, ⌘C, ⌘V, ⌘T, ⌘F and the rest |
+| [`core-actions`](core-actions.md) | Copy and paste, select all, clear, scrolling, and the text's size |
+| [`links`](links.md) | ⌘-click opens a link, a URL or a path |
+| [`tabs`](tabs.md) | The tab bar, and the tabs' commands |
+| [`splits`](splits.md) | Split panes, and the commands that move between them, resize and zoom them |
+| [`search`](search.md) | The find bar: a pane's search, its matches highlighted |
+| [`command-palette`](command-palette.md) | The command palette: every command, ranked as you type |
+| [`quick-terminal`](quick-terminal.md) | The quick terminal: a window that a global key slides in over every app |
+| [`progress`](progress.md) | The programs' progress, in a thin bar across the window's top |
+| [`command-header`](command-header.md) | The command whose output you are looking at, at the pane's top |
+| [`copy-mode`](copy-mode.md) | The copy mode: a cursor that vi's keys move through the scrollback, to select and copy without the mouse |
+| [`quick-tips`](quick-tips.md) | A tip at the start, once a week at most, in a card at the window's bottom right |
+
+The order of the table is the order in which they start, which matters for the keys alone: a later plugin's key wins over an earlier one's, and your own `[keys]` win over all of them.
+
+To write a plugin of your own, in Luau, and publish it on [pkg.lokyr.dev](https://pkg.lokyr.dev), follow [Writing a plugin](authoring.md), and look up the capabilities, the slots, the events and the limits in [the plugin reference](reference.md).
+
+Turning a plugin off takes away its commands, its keys, its bars and its panels at once, as you save the file; `true` turns it on again. Without `tabs`, no tab bar shows and no key opens a tab; without `keymap-macos`, the commands keep working from the menus and from your own `[keys]`, but none has a key by default.

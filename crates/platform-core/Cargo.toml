@@ -13,8 +13,11 @@ publish = false
 # The fake platform of `fake`, for the tests of the crates that drive a
 # platform.
 fake = []
+# The checks that every platform passes, for the backends' tests.
+conformance = []
 
 [dependencies]
+accesskit.workspace = true
 raw-window-handle.workspace = true
 thiserror.workspace = true
 

@@ -58,6 +58,7 @@ impl App {
                 remember: false,
                 restore: false,
                 restore_size: false,
+                frame: None,
             })
             .unwrap();
         self.windows.push(window);
@@ -523,42 +524,52 @@ fn a_size_in_pixels_rounds_to_the_nearest() {
 }
 
 #[test]
-fn the_fake_tells_targets_apart_as_a_backend_does() {
+fn the_fake_passes_the_platforms_checks() {
+    let directory =
+        std::env::temp_dir().join(format!("lokyr-fake-conformance-{}", std::process::id()));
+    let failed = crate::conformance::check(&mut Fake::default(), &directory);
+    assert!(failed.is_empty(), "{failed:#?}");
+    assert!(!directory.exists());
+}
+
+#[test]
+fn the_fake_reads_targets_as_a_backend_does() {
     let directory = std::env::temp_dir().join(format!("lokyr-fake-targets-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&directory);
     std::fs::create_dir_all(&directory).unwrap();
-    std::fs::write(directory.join("my notes.txt"), "").unwrap();
     std::fs::write(directory.join("x.jar"), "").unwrap();
     #[cfg(unix)]
     std::os::unix::fs::symlink(directory.join("x.jar"), directory.join("link.txt")).unwrap();
-    let path = directory.display().to_string();
-    let fake = Fake::default();
-    for (target, kind) in [
-        ("https://lokyr.dev".to_owned(), TargetKind::Url),
-        ("mailto:me@lokyr.dev".to_owned(), TargetKind::Url),
-        (path.clone(), TargetKind::Directory),
-        (format!("{path}/my notes.txt"), TargetKind::File),
-        (
-            format!("FILE://localhost{path}/my%20notes.txt"),
-            TargetKind::File,
-        ),
-        (format!("file://{path}/x.jar"), TargetKind::Program),
-    ] {
-        assert_eq!(fake.target_kind(&target).ok(), Some(kind), "{target}");
-    }
+    let path = std::fs::canonicalize(&directory)
+        .unwrap()
+        .display()
+        .to_string();
+    let mut fake = Fake::default();
+    // A file of an extension that runs, by its URL and through a link.
+    let jar = fake
+        .resolve_target(&format!("file://{path}/x.jar"))
+        .unwrap();
+    assert_eq!(jar.kind, TargetKind::Program);
+    assert_eq!(jar.location, format!("{path}/x.jar"));
     #[cfg(unix)]
     assert_eq!(
-        fake.target_kind(&format!("{path}/link.txt")).ok(),
-        Some(TargetKind::Program)
+        fake.resolve_target(&format!("{path}/link.txt")).unwrap(),
+        jar
     );
-    for target in [
-        "not a url".to_owned(),
-        format!("file://elsewhere{path}/my%20notes.txt"),
-        format!("{path}/none"),
-        "file://localhost/%ZZ".to_owned(),
-    ] {
-        assert!(fake.target_kind(&target).is_err(), "{target}");
-    }
+    // A URL's case of `file`, and an escape that is no UTF-8's.
+    assert_eq!(
+        fake.resolve_target(&format!("FILE://localhost{path}/x.jar"))
+            .unwrap(),
+        jar
+    );
+    assert!(fake.resolve_target("file://localhost/%ZZ").is_err());
+    // What opens is recorded by its location; a program is not.
+    assert!(fake.open(&jar).is_err());
+    fake.reveal(&jar).unwrap();
+    let folder = fake.resolve_target(&path).unwrap();
+    fake.open(&folder).unwrap();
+    assert_eq!(fake.opened(), std::slice::from_ref(&path));
+    assert_eq!(fake.revealed(), [format!("{path}/x.jar")]);
     std::fs::remove_dir_all(&directory).unwrap();
 }
 
@@ -610,6 +621,7 @@ fn a_quick_window_opens_hidden_and_takes_its_place_s_size_as_it_shows() {
             remember: false,
             restore: false,
             restore_size: false,
+            frame: None,
         })
         .unwrap();
     fake.show_quick_window(window, Some(&place));
@@ -632,4 +644,305 @@ fn the_global_keys_that_another_app_takes_are_refused() {
     assert_eq!(fake.global_keys(), keys);
     assert_eq!(fake.set_global_keys(&[]), Vec::<usize>::new());
     assert!(fake.global_keys().is_empty());
+}
+
+#[test]
+fn a_shortcut_is_written_as_the_mac_s_menus_write_it() {
+    let shortcut = |key, command, shift, alt, control| Shortcut {
+        key,
+        command,
+        shift,
+        alt,
+        control,
+    };
+    let cases = [
+        (
+            shortcut(ShortcutKey::Char('1'), true, false, true, false),
+            "⌥⌘1",
+        ),
+        (
+            shortcut(ShortcutKey::Char('k'), true, true, false, false),
+            "⇧⌘K",
+        ),
+        (
+            shortcut(ShortcutKey::Char(' '), true, false, false, true),
+            "⌃⌘Space",
+        ),
+        (
+            shortcut(
+                ShortcutKey::Code(KeyCode::ArrowUp),
+                true,
+                false,
+                false,
+                false,
+            ),
+            "⌘↑",
+        ),
+        (
+            shortcut(ShortcutKey::Code(KeyCode::F(5)), false, false, false, false),
+            "F5",
+        ),
+        (
+            shortcut(ShortcutKey::Code(KeyCode::PageDown), true, true, true, true),
+            "⌃⌥⇧⌘⇟",
+        ),
+    ];
+    for (shortcut, text) in cases {
+        assert_eq!(shortcut.mac_text(), text);
+    }
+}
+
+#[test]
+fn the_fake_s_windows_cascade_and_show_on_top_where_they_came_forward() {
+    let mut fake = Fake::new(2.0);
+    let attributes = WindowAttributes {
+        title: "shell".to_owned(),
+        size: SIZE,
+        remember: false,
+        restore: false,
+        restore_size: false,
+        frame: None,
+    };
+    let first = fake.create_window(&attributes).unwrap();
+    let second = fake.create_window(&attributes).unwrap();
+    let frame = |fake: &Fake, window| fake.window_frame(window).unwrap();
+    assert_eq!(
+        frame(&fake, first),
+        ScreenRect {
+            x: 100.0,
+            y: 100.0,
+            width: 800.0,
+            height: 600.0,
+        }
+    );
+    assert_eq!(
+        frame(&fake, second).origin(),
+        ScreenPoint { x: 122.0, y: 122.0 }
+    );
+    // Where both show, the last one opened is in front, until the first
+    // comes forward.
+    let both = ScreenPoint { x: 200.0, y: 200.0 };
+    assert_eq!(fake.window_at(both), Some(second));
+    fake.focus_window(first);
+    assert_eq!(fake.window_at(both), Some(first));
+    fake.raise(second);
+    assert_eq!(fake.window_at(both), Some(second));
+    // Where the first alone shows, and where none does.
+    assert_eq!(
+        fake.window_at(ScreenPoint { x: 110.0, y: 110.0 }),
+        Some(first)
+    );
+    assert_eq!(fake.window_at(ScreenPoint { x: 50.0, y: 50.0 }), None);
+    fake.set_window_origin(first, ScreenPoint { x: 900.0, y: 300.0 });
+    assert_eq!(
+        frame(&fake, first).origin(),
+        ScreenPoint { x: 900.0, y: 300.0 }
+    );
+    assert_eq!(
+        fake.window_at(ScreenPoint {
+            x: 1000.0,
+            y: 400.0
+        }),
+        Some(first)
+    );
+    // A hidden quick window shows nowhere.
+    let quick = fake.create_quick_window("Lokyr").unwrap();
+    fake.set_window_origin(quick, ScreenPoint { x: 0.0, y: 0.0 });
+    assert_eq!(fake.window_at(ScreenPoint { x: 50.0, y: 50.0 }), None);
+    fake.close_window(second);
+    assert_eq!(fake.window_at(both), None);
+}
+
+#[test]
+fn the_fake_s_drag_image_shows_moves_and_hides() {
+    let mut fake = Fake::new(2.0);
+    assert_eq!(fake.drag_image(), None);
+    let frame = ScreenRect {
+        x: 10.0,
+        y: 20.0,
+        width: 320.0,
+        height: 200.0,
+    };
+    fake.show_drag_image(frame);
+    assert_eq!(fake.drag_image(), Some(frame));
+    let moved = ScreenRect { x: 30.0, ..frame };
+    fake.show_drag_image(moved);
+    assert_eq!(fake.drag_image(), Some(moved));
+    let back = ScreenRect {
+        x: 0.0,
+        y: 0.0,
+        width: 160.0,
+        height: 28.0,
+    };
+    fake.hide_drag_image(Some(back));
+    assert_eq!(fake.drag_image(), None);
+    // Hidden, a hide does nothing.
+    fake.hide_drag_image(None);
+    assert_eq!(fake.drag_image_hides(), [Some(back)]);
+}
+
+#[test]
+fn the_fake_draws_the_fills_as_a_test_says_and_keeps_them() {
+    let (mut fake, _, window) = started();
+    assert!(!fake.draws_fills());
+    fake.set_draws_fills(true);
+    assert!(fake.draws_fills());
+    let fill = Fill {
+        id: 3,
+        origin: Point { x: 10.0, y: 20.0 },
+        size: Size {
+            width: 100.0,
+            height: 4.0,
+        },
+        within: (
+            Point { x: 10.0, y: 20.0 },
+            Size {
+                width: 100.0,
+                height: 4.0,
+            },
+        ),
+        radius: 2.0,
+        shape: FillShape::Outline { thickness: 2.0 },
+        color: [0.0, 0.5, 1.0, 1.0],
+        value: 0.4,
+    };
+    fake.set_fills(window, &[fill]);
+    let state = fake.window(window).unwrap();
+    assert_eq!(
+        (state.fills.as_slice(), state.fills_shown),
+        (&[fill][..], 1)
+    );
+}
+
+#[test]
+fn a_frame_on_no_screen_goes_onto_the_nearest_within_its_area() {
+    let main = ScreenRect {
+        x: 0.0,
+        y: 25.0,
+        width: 1440.0,
+        height: 875.0,
+    };
+    let right = ScreenRect {
+        x: 1440.0,
+        y: 0.0,
+        width: 1920.0,
+        height: 1080.0,
+    };
+    let frame = ScreenRect {
+        x: 2000.0,
+        y: 100.0,
+        width: 800.0,
+        height: 600.0,
+    };
+    // On a screen that is there, it stays.
+    assert_eq!(frame.onto(&[main, right]), frame);
+    // As that screen goes, to the main one's right edge, at its height.
+    assert_eq!(frame.onto(&[main]), ScreenRect { x: 640.0, ..frame });
+    // Larger than the area, of its size within it.
+    let large = ScreenRect {
+        x: 1500.0,
+        y: -50.0,
+        width: 1900.0,
+        height: 1100.0,
+    };
+    assert_eq!(large.onto(&[main]), main);
+    // The nearest of two.
+    let left = ScreenRect {
+        x: -1280.0,
+        y: 0.0,
+        width: 1280.0,
+        height: 800.0,
+    };
+    let far_left = ScreenRect {
+        x: -3000.0,
+        y: 200.0,
+        width: 400.0,
+        height: 300.0,
+    };
+    assert_eq!(
+        far_left.onto(&[main, left]),
+        ScreenRect {
+            x: -1280.0,
+            ..far_left
+        }
+    );
+    // Without screens, here.
+    assert_eq!(frame.onto(&[]), frame);
+    // Mostly on a screen that went, its titlebar's middle off the main
+    // one: within the main one, whole.
+    let mostly_off = ScreenRect { x: 1400.0, ..frame };
+    assert_eq!(mostly_off.onto(&[main]), ScreenRect { x: 640.0, ..frame });
+    // Its titlebar on the main screen but past its edges: within it.
+    let past = ScreenRect {
+        x: 1000.0,
+        y: 600.0,
+        width: 800.0,
+        height: 600.0,
+    };
+    assert_eq!(
+        past.onto(&[main]),
+        ScreenRect {
+            x: 640.0,
+            y: 300.0,
+            width: 800.0,
+            height: 600.0,
+        }
+    );
+    // Of a size that no screen has: the main one's, whole.
+    let huge = ScreenRect {
+        x: -1.0e308,
+        y: 100.0,
+        width: 1.7e308,
+        height: 1.0e300,
+    };
+    assert_eq!(huge.onto(&[main]), main);
+    // Within a screen, it stays.
+    let inside = ScreenRect {
+        x: 100.0,
+        y: 100.0,
+        width: 640.0,
+        height: 480.0,
+    };
+    assert_eq!(inside.onto(&[main, right]), inside);
+}
+
+#[test]
+fn the_fake_s_window_opens_at_its_frame_on_a_screen_that_is_there() {
+    let mut fake = Fake::new(2.0);
+    let second = ScreenRect {
+        x: 1440.0,
+        y: 0.0,
+        width: 1920.0,
+        height: 1080.0,
+    };
+    fake.set_screens(vec![crate::fake::SCREEN_AREA, second]);
+    let frame = ScreenRect {
+        x: 2000.0,
+        y: 100.0,
+        width: 800.0,
+        height: 600.0,
+    };
+    let attributes = WindowAttributes {
+        title: "shell".to_owned(),
+        size: SIZE,
+        remember: false,
+        restore: false,
+        restore_size: false,
+        frame: Some(frame),
+    };
+    let window = fake.create_window(&attributes).unwrap();
+    assert_eq!(fake.window_frame(window), Some(frame));
+    assert_eq!(fake.windowed_frame(window), Some(frame));
+    assert_eq!(fake.window_size(window).unwrap().points.width, 800.0);
+    // The second screen gone.
+    fake.set_screens(vec![crate::fake::SCREEN_AREA]);
+    let window = fake.create_window(&attributes).unwrap();
+    assert_eq!(
+        fake.window_frame(window),
+        Some(ScreenRect { x: 640.0, ..frame })
+    );
+    // The system's setting of the windows kept.
+    assert!(!fake.keeps_windows());
+    fake.set_keeps_windows(true);
+    assert!(fake.keeps_windows());
 }

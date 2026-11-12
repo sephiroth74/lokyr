@@ -11,9 +11,10 @@ use objc2_app_kit::{
     NSApplication, NSApplicationActivationPolicy, NSApplicationDelegate,
     NSApplicationTerminateReply, NSWindow,
 };
-use objc2_foundation::{NSNotification, NSObject, NSObjectProtocol};
+use objc2_foundation::{NSArray, NSNotification, NSObject, NSObjectProtocol, NSURL};
 
 use crate::appearance::AppearanceObserver;
+use crate::services::ServicesProvider;
 use crate::shared::{Pending, Shared};
 use crate::wake::WakeSource;
 
@@ -49,11 +50,18 @@ pub fn run_with<H: Handler + 'static>(make: impl FnOnce() -> H + 'static) -> Res
     wake.set_target(&shared);
     let delegate = AppDelegate::new(mtm, Rc::downgrade(&shared));
     app.setDelegate(Some(ProtocolObject::from_ref(&*delegate)));
+    // Before the launch, so that a service that starts the app reaches it.
+    let services = ServicesProvider::new(mtm, Rc::downgrade(&shared));
+    // SAFETY: the provider answers the messages of the bundle's services,
+    // of their signatures, and lives until it is taken away below.
+    unsafe { app.setServicesProvider(Some(&services)) };
     let appearance = AppearanceObserver::start(mtm, Rc::downgrade(&shared));
 
     app.run();
 
     appearance.stop();
+    // SAFETY: none takes its place.
+    unsafe { app.setServicesProvider(None) };
     app.setDelegate(None);
     drop(wake);
     if let Some(payload) = shared.finish() {
@@ -87,6 +95,13 @@ define_class!(
             self.post(Pending::Started);
         }
 
+        #[unsafe(method(applicationDidBecomeActive:))]
+        fn application_did_become_active(&self, _notification: &NSNotification) {
+            // Another app may have taken the default terminal while the app
+            // was in the background.
+            crate::default_terminal::look_again();
+        }
+
         #[unsafe(method(applicationShouldHandleReopen:hasVisibleWindows:))]
         fn application_should_handle_reopen(
             &self,
@@ -103,6 +118,30 @@ define_class!(
             }
             self.post(Pending::App(AppEvent::Reopen));
             Bool::NO
+        }
+
+        #[unsafe(method(application:openURLs:))]
+        fn application_open_urls(&self, _sender: &NSApplication, urls: &NSArray<NSURL>) {
+            // The files that the Finder opens with the app, or that the user
+            // drops on its icon, of the types that its bundle declares; and
+            // the links of its schemes.
+            let urls: Vec<_> = (0..urls.count()).map(|index| urls.objectAtIndex(index)).collect();
+            let paths: Vec<std::path::PathBuf> = urls
+                .iter()
+                .filter(|url| url.isFileURL())
+                .filter_map(|url| url.path().map(|path| std::path::PathBuf::from(path.to_string())))
+                .collect();
+            let links: Vec<String> = urls
+                .iter()
+                .filter(|url| !url.isFileURL())
+                .filter_map(|url| url.absoluteString().map(|text| text.to_string()))
+                .collect();
+            if !paths.is_empty() {
+                self.post(Pending::App(AppEvent::OpenFiles(paths)));
+            }
+            if !links.is_empty() {
+                self.post(Pending::App(AppEvent::OpenUrls(links)));
+            }
         }
 
         #[unsafe(method(applicationShouldTerminate:))]

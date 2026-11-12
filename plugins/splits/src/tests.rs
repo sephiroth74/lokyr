@@ -1,0 +1,582 @@
+//! The plugin against the SDK's fake host, which records what it does and
+//! keeps the tabs' layouts as its writes change them.
+
+use lokyr_plugin_sdk::fake::FakeHost;
+use lokyr_plugin_sdk::host::{Layout, TabId};
+use lokyr_plugin_sdk::message::{Effect, Request};
+
+use super::*;
+use crate::geometry::Towards;
+
+/// The plugin's name, as its calls give it.
+const NAME: &str = "lokyr/splits";
+
+/// The tab of the tests.
+const TAB: TabId = TabId(1);
+
+/// A host of one window of one tab of pane 1, which has the keyboard, and
+/// the plugin, activated.
+fn host() -> (FakeHost, Splits) {
+    let mut host = FakeHost::new(NAME).with_manifest(crate::MANIFEST);
+    host.pane(PaneId(1)).tab = TAB;
+    host.focus(Some(PaneId(1)));
+    let mut plugin = Splits::default();
+    host.activate(&mut plugin).unwrap();
+    (host, plugin)
+}
+
+/// Runs `name` of `args`, and returns the writes that it made.
+fn run(host: &mut FakeHost, plugin: &mut Splits, name: &str, args: Args) -> Vec<Request> {
+    host.take_done();
+    host.command(plugin, name, args).unwrap();
+    host.take_done()
+        .into_iter()
+        .filter(|request| request.effect() == Effect::Write)
+        .collect()
+}
+
+/// The arguments of a direction, and of `cells` cells, if given.
+fn towards(direction: &str, cells: Option<i64>) -> Args {
+    let mut args = Args::from([("direction".to_owned(), Value::String(direction.to_owned()))]);
+    if let Some(cells) = cells {
+        args.insert("cells".to_owned(), Value::Integer(cells));
+    }
+    args
+}
+
+/// The tab's layout, as the host keeps it.
+fn layout(host: &mut FakeHost, _: &mut Splits) -> Layout {
+    host.tab_layout(TAB).expect("the tab")
+}
+
+/// The pane that has the keyboard, as the host keeps it.
+fn focused(host: &mut FakeHost, _: &mut Splits) -> PaneId {
+    host.keyboard().expect("a pane with the keyboard")
+}
+
+/// A tab of three panes, 1 on the left, and 2 over 3 on the right, made by
+/// the plugin's splits, 3 of the keyboard.
+fn three() -> (FakeHost, Splits, [PaneId; 3]) {
+    let (mut host, mut plugin) = host();
+    run(&mut host, &mut plugin, SPLIT, towards("right", None));
+    let second = focused(&mut host, &mut plugin);
+    run(&mut host, &mut plugin, SPLIT, towards("down", None));
+    let third = focused(&mut host, &mut plugin);
+    (host, plugin, [PaneId(1), second, third])
+}
+
+#[test]
+fn the_commands_register_with_their_parameters_and_their_titles() {
+    let (host, _) = host();
+    let registered: Vec<(&str, Vec<&str>)> = host
+        .commands()
+        .iter()
+        .map(|command| {
+            assert_eq!(command.category, Category::Panes);
+            (
+                command.name.as_str(),
+                command
+                    .params
+                    .iter()
+                    .map(|param| param.name.as_str())
+                    .collect(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        registered,
+        [
+            (SPLIT, vec!["direction"]),
+            (FOCUS, vec!["direction"]),
+            (FOCUS_NEXT, vec![]),
+            (FOCUS_PREV, vec![]),
+            (RESIZE, vec!["direction", "cells"]),
+            (ZOOM, vec![]),
+            (EQUALIZE, vec![]),
+            (SWAP, vec!["direction"]),
+            (MOVE_TO_TAB, vec![]),
+            (MOVE_TO_WINDOW, vec![]),
+            (CLOSE, vec![]),
+        ]
+    );
+    // Every title in both languages, the items' too.
+    for (_, catalog) in CATALOGS {
+        for (name, ..) in COMMANDS {
+            let message = format!("command-{} =", name.replace('.', "-"));
+            assert!(catalog.contains(&message), "{message}");
+        }
+        for (.., title) in ITEMS {
+            if let Some(title) = title {
+                assert!(catalog.contains(&format!("{title} =")), "{title}");
+            }
+        }
+    }
+}
+
+#[test]
+fn the_menus_items_split_and_select_by_direction_and_the_context_moves_and_closes() {
+    let (host, _) = host();
+    let items: Vec<(MenuPlace, &str, Option<&Value>, Option<&str>)> = host
+        .menu_items()
+        .iter()
+        .map(|item| {
+            (
+                item.place,
+                item.command.as_str(),
+                item.args.get("direction"),
+                item.title.as_deref(),
+            )
+        })
+        .collect();
+    let to = |name: &str| Value::String(name.to_owned());
+    let (right, left, down, up) = (to("right"), to("left"), to("down"), to("up"));
+    assert_eq!(
+        items,
+        [
+            (BAR, SPLIT, Some(&right), Some("menu-split-right")),
+            (BAR, SPLIT, Some(&left), Some("menu-split-left")),
+            (BAR, SPLIT, Some(&down), Some("menu-split-down")),
+            (BAR, SPLIT, Some(&up), Some("menu-split-up")),
+            (BAR, FOCUS, Some(&left), Some("menu-select-left")),
+            (BAR, FOCUS, Some(&right), Some("menu-select-right")),
+            (BAR, FOCUS, Some(&up), Some("menu-select-up")),
+            (BAR, FOCUS, Some(&down), Some("menu-select-down")),
+            (CONTEXT, SPLIT, Some(&right), Some("menu-split-right")),
+            (CONTEXT, SPLIT, Some(&left), Some("menu-split-left")),
+            (CONTEXT, SPLIT, Some(&down), Some("menu-split-down")),
+            (CONTEXT, SPLIT, Some(&up), Some("menu-split-up")),
+            (CONTEXT, MOVE_TO_TAB, None, None),
+            (CONTEXT, MOVE_TO_WINDOW, None, None),
+            (CONTEXT, CLOSE, None, None),
+        ]
+    );
+}
+
+#[test]
+fn a_split_left_or_up_puts_the_new_pane_first() {
+    let (mut host, mut plugin) = host();
+    run(&mut host, &mut plugin, SPLIT, towards("left", None));
+    let second = focused(&mut host, &mut plugin);
+    run(&mut host, &mut plugin, SPLIT, towards("up", None));
+    let third = focused(&mut host, &mut plugin);
+    assert_eq!(
+        layout(&mut host, &mut plugin),
+        Layout::Split {
+            direction: Lie::Horizontal,
+            ratio: None,
+            first: Box::new(Layout::Split {
+                direction: Lie::Vertical,
+                ratio: None,
+                first: Box::new(Layout::Pane(third)),
+                second: Box::new(Layout::Pane(second)),
+            }),
+            second: Box::new(Layout::Pane(PaneId(1))),
+        }
+    );
+}
+
+#[test]
+fn close_pane_closes_the_focused_pane_of_a_tab_of_more_than_one() {
+    let (mut host, mut plugin, [.., third]) = three();
+    assert_eq!(
+        run(&mut host, &mut plugin, CLOSE, Args::new()),
+        [Request::ClosePane {
+            pane: third,
+            ask: true,
+        }]
+    );
+    let (mut host, mut plugin) = self::host();
+    assert_eq!(run(&mut host, &mut plugin, CLOSE, Args::new()), []);
+}
+
+#[test]
+fn a_command_applies_where_it_would_change_the_tab() {
+    let (mut host, mut plugin) = host();
+    let applies = |host: &mut FakeHost, plugin: &mut Splits, name: &str, args: Args| {
+        host.applies(plugin, name, &args)
+    };
+    // A pane alone: a split, a resize, nothing else.
+    assert!(applies(&mut host, &mut plugin, SPLIT, towards("up", None)));
+    assert!(applies(&mut host, &mut plugin, RESIZE, towards("up", None)));
+    for name in [
+        FOCUS_NEXT,
+        FOCUS_PREV,
+        ZOOM,
+        EQUALIZE,
+        MOVE_TO_TAB,
+        MOVE_TO_WINDOW,
+        CLOSE,
+    ] {
+        assert!(
+            !applies(&mut host, &mut plugin, name, Args::new()),
+            "{name}"
+        );
+    }
+    assert!(!applies(
+        &mut host,
+        &mut plugin,
+        FOCUS,
+        towards("left", None)
+    ));
+    // 1 on the left, 2 over 3 on the right, 3 of the keyboard.
+    let (mut host, mut plugin, _) = three();
+    for name in [
+        FOCUS_NEXT,
+        FOCUS_PREV,
+        ZOOM,
+        EQUALIZE,
+        MOVE_TO_TAB,
+        MOVE_TO_WINDOW,
+        CLOSE,
+    ] {
+        assert!(applies(&mut host, &mut plugin, name, Args::new()), "{name}");
+    }
+    assert!(applies(
+        &mut host,
+        &mut plugin,
+        FOCUS,
+        towards("left", None)
+    ));
+    assert!(applies(&mut host, &mut plugin, SWAP, towards("up", None)));
+    assert!(!applies(
+        &mut host,
+        &mut plugin,
+        FOCUS,
+        towards("right", None)
+    ));
+    assert!(!applies(
+        &mut host,
+        &mut plugin,
+        SWAP,
+        towards("down", None)
+    ));
+    // Zoomed, nothing beside, nor a next pane; the zoom ends.
+    run(&mut host, &mut plugin, ZOOM, Args::new());
+    assert!(!applies(
+        &mut host,
+        &mut plugin,
+        FOCUS,
+        towards("left", None)
+    ));
+    assert!(!applies(&mut host, &mut plugin, FOCUS_NEXT, Args::new()));
+    assert!(applies(&mut host, &mut plugin, ZOOM, Args::new()));
+}
+
+#[test]
+fn a_split_right_or_down_gives_the_new_pane_the_keyboard() {
+    let (mut host, mut plugin, [first, second, third]) = three();
+    assert_eq!(
+        layout(&mut host, &mut plugin),
+        Layout::Split {
+            direction: Lie::Horizontal,
+            ratio: None,
+            first: Box::new(Layout::Pane(first)),
+            second: Box::new(Layout::Split {
+                direction: Lie::Vertical,
+                ratio: None,
+                first: Box::new(Layout::Pane(second)),
+                second: Box::new(Layout::Pane(third)),
+            }),
+        }
+    );
+    assert_eq!(focused(&mut host, &mut plugin), third);
+    // Of no direction, which the host's registry refuses first.
+    let error = host.command(&mut plugin, SPLIT, Args::new()).unwrap_err();
+    assert_eq!(error.code, Code::Failed);
+}
+
+#[test]
+fn the_keyboard_goes_to_the_pane_beside_it_or_to_the_next_round_the_tab() {
+    let (mut host, mut plugin, [first, second, third]) = three();
+    // From 3, at the bottom right: up to 2, left to 1, none down or right.
+    let mut goes = |host: &mut FakeHost, direction: &str| {
+        run(host, &mut plugin, FOCUS, towards(direction, None))
+    };
+    assert_eq!(goes(&mut host, "down"), []);
+    assert_eq!(goes(&mut host, "right"), []);
+    assert_eq!(goes(&mut host, "up"), [Request::FocusPane(second)]);
+    assert_eq!(goes(&mut host, "left"), [Request::FocusPane(first)]);
+    // From 1, right to the one of the most room shared, the first of a tie.
+    assert_eq!(goes(&mut host, "right"), [Request::FocusPane(second)]);
+    // Next and previous, round.
+    assert_eq!(
+        run(&mut host, &mut plugin, FOCUS_NEXT, Args::new()),
+        [Request::FocusPane(third)]
+    );
+    assert_eq!(
+        run(&mut host, &mut plugin, FOCUS_NEXT, Args::new()),
+        [Request::FocusPane(first)]
+    );
+    assert_eq!(
+        run(&mut host, &mut plugin, FOCUS_PREV, Args::new()),
+        [Request::FocusPane(third)]
+    );
+    // A pane alone goes nowhere.
+    let (mut host, mut plugin) = self::host();
+    assert_eq!(run(&mut host, &mut plugin, FOCUS_NEXT, Args::new()), []);
+    assert_eq!(
+        run(&mut host, &mut plugin, FOCUS, towards("left", None)),
+        []
+    );
+}
+
+#[test]
+fn a_resize_moves_the_divider_by_cells_of_its_split_s_room() {
+    let (mut host, mut plugin, [first, second, third]) = three();
+    // 3 is 40 columns of the half on the right, a split of 80 columns: 4
+    // cells right move the divider on its left, as it has none on its
+    // right, a twentieth.
+    for pane in [first, second, third] {
+        host.pane(pane).grid = (40, 12);
+    }
+    assert_eq!(
+        run(&mut host, &mut plugin, RESIZE, towards("right", Some(4))),
+        [Request::ResizePane {
+            pane: third,
+            edge: Edge::Left,
+            by: 0.05,
+        }]
+    );
+    // Up: the divider over it, 12 rows of the right half's 24, one cell.
+    assert_eq!(
+        run(&mut host, &mut plugin, RESIZE, towards("up", None)),
+        [Request::ResizePane {
+            pane: third,
+            edge: Edge::Top,
+            by: -1.0 / 24.0,
+        }]
+    );
+    // From 1, left: the divider on its right, which it has.
+    run(&mut host, &mut plugin, FOCUS, towards("left", None));
+    let moves = run(&mut host, &mut plugin, RESIZE, towards("left", Some(2)));
+    assert_eq!(
+        moves,
+        [Request::ResizePane {
+            pane: first,
+            edge: Edge::Right,
+            by: -0.025,
+        }]
+    );
+    // Of no divider along it, nothing.
+    assert_eq!(run(&mut host, &mut plugin, RESIZE, towards("up", None)), []);
+}
+
+#[test]
+fn a_zoom_toggles_and_equalize_swap_and_moves_change_the_tab() {
+    let (mut host, mut plugin, [first, second, third]) = three();
+    assert_eq!(
+        run(&mut host, &mut plugin, ZOOM, Args::new()),
+        [Request::Zoom {
+            tab: TAB,
+            pane: Some(third),
+        }]
+    );
+    // Zoomed, the keyboard goes nowhere, by direction, to the next or to
+    // the previous pane, and the zoom ends.
+    assert_eq!(run(&mut host, &mut plugin, FOCUS, towards("up", None)), []);
+    assert_eq!(run(&mut host, &mut plugin, FOCUS_NEXT, Args::new()), []);
+    assert_eq!(run(&mut host, &mut plugin, FOCUS_PREV, Args::new()), []);
+    assert_eq!(
+        run(&mut host, &mut plugin, ZOOM, Args::new()),
+        [Request::Zoom {
+            tab: TAB,
+            pane: None,
+        }]
+    );
+    assert_eq!(
+        run(&mut host, &mut plugin, EQUALIZE, Args::new()),
+        [Request::Equalize(TAB)]
+    );
+    assert_eq!(
+        run(&mut host, &mut plugin, SWAP, towards("up", None)),
+        [Request::SwapPanes {
+            pane: third,
+            with: second,
+        }]
+    );
+    let rooms = crate::geometry::rects(&layout(&mut host, &mut plugin));
+    assert_eq!(
+        rooms.iter().map(|&(pane, _)| pane).collect::<Vec<_>>(),
+        [first, third, second]
+    );
+    assert_eq!(
+        crate::geometry::beside(&rooms, third, Towards::Down),
+        Some(second)
+    );
+    let window = host.pane(third).window;
+    assert_eq!(
+        run(&mut host, &mut plugin, MOVE_TO_TAB, Args::new()),
+        [Request::PaneToNewTab {
+            pane: third,
+            window,
+            index: 1,
+        }]
+    );
+    // A pane alone in its window's one tab moves nowhere.
+    let (mut host, mut plugin) = self::host();
+    assert_eq!(run(&mut host, &mut plugin, MOVE_TO_TAB, Args::new()), []);
+    assert_eq!(run(&mut host, &mut plugin, MOVE_TO_WINDOW, Args::new()), []);
+    assert_eq!(run(&mut host, &mut plugin, ZOOM, Args::new()), []);
+}
+
+#[test]
+fn a_tab_s_rooms_follow_its_splits_ratios_and_their_panes() {
+    // 1 on the left, then 2 over 3, then 4 beside them, by their panes'
+    // shares; then a ratio of the user's.
+    let leaf = |id| Box::new(Layout::Pane(PaneId(id)));
+    let column = Layout::Split {
+        direction: Lie::Vertical,
+        ratio: None,
+        first: leaf(2),
+        second: leaf(3),
+    };
+    let layout = Layout::Split {
+        direction: Lie::Horizontal,
+        ratio: None,
+        first: leaf(1),
+        second: Box::new(Layout::Split {
+            direction: Lie::Horizontal,
+            ratio: None,
+            first: Box::new(column),
+            second: leaf(4),
+        }),
+    };
+    let rooms = crate::geometry::rects(&layout);
+    let widths: Vec<f64> = rooms.iter().map(|(_, room)| room.width).collect();
+    assert!(
+        widths
+            .iter()
+            .zip([1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0])
+            .all(|(width, wanted)| (width - wanted).abs() < 1e-9),
+        "{widths:?}"
+    );
+    assert_eq!(
+        crate::geometry::beside(&rooms, PaneId(4), Towards::Left),
+        Some(PaneId(2))
+    );
+    let width = crate::geometry::split_of(&layout, PaneId(3), Edge::Right).map(|room| room.width);
+    assert!(
+        width.is_some_and(|width| (width - 2.0 / 3.0).abs() < 1e-9),
+        "{width:?}"
+    );
+    assert_eq!(
+        crate::geometry::split_of(&layout, PaneId(4), Edge::Right),
+        None
+    );
+}
+
+/// The config of `pairs`.
+fn config(pairs: &[(&str, Data)]) -> Data {
+    Data::Map(
+        pairs
+            .iter()
+            .map(|(key, value)| ((*key).to_owned(), value.clone()))
+            .collect(),
+    )
+}
+
+#[test]
+fn the_config_fades_the_panes_and_has_the_keyboard_follow_the_pointer() {
+    // Of the defaults: a fade of 0.15, the keyboard where the clicks put it.
+    let (host, _) = host();
+    assert_eq!(host.pane_looks(), (0.15, false));
+    // Of the config's, at a start, and as it changes.
+    let mut host = FakeHost::new(NAME).with_manifest(crate::MANIFEST);
+    host.pane(PaneId(1)).tab = TAB;
+    host.set_config(config(&[
+        ("dim-inactive", Data::Number(0.3)),
+        ("focus-follows-mouse", Data::Boolean(true)),
+    ]));
+    let mut plugin = Splits::default();
+    host.activate(&mut plugin).unwrap();
+    assert_eq!(host.pane_looks(), (0.3, true));
+    host.set_config(config(&[("dim-inactive", Data::Integer(0))]));
+    host.deliver(&mut plugin).unwrap();
+    assert_eq!(host.pane_looks(), (0.0, false));
+}
+
+#[test]
+fn each_pane_of_a_tab_of_splits_shows_its_title_while_the_config_asks() {
+    use lokyr_plugin_sdk::ui::ViewId;
+    let (mut host, mut plugin, [first, second, _]) = three();
+    host.pane(first).title = Some("vim".to_owned());
+    let header = |host: &mut FakeHost, plugin: &mut Splits, pane| {
+        host.render(plugin, &ViewId::PaneHeader(pane))
+    };
+    // None by default.
+    assert_eq!(header(&mut host, &mut plugin, first), None);
+    host.set_config(config(&[("pane-titles", Data::Boolean(true))]));
+    host.deliver(&mut plugin).unwrap();
+    // Its title, faint but in the pane of the keyboard, the third; none of
+    // a pane whose program set none.
+    assert_eq!(
+        header(&mut host, &mut plugin, first),
+        Some(title_header("vim", false))
+    );
+    assert_eq!(
+        header(&mut host, &mut plugin, second),
+        Some(title_header("", false))
+    );
+    // The keyboard there, and a title's change, render it again.
+    host.take_done();
+    host.focus(Some(first));
+    host.post(Event::Workspace(WorkspaceEvent::PaneFocused {
+        pane: first,
+        tab: TAB,
+    }));
+    host.deliver(&mut plugin).unwrap();
+    let rendered: Vec<Request> = host
+        .take_done()
+        .into_iter()
+        .filter(|request| matches!(request, Request::RequestRender(_)))
+        .collect();
+    assert_eq!(
+        rendered,
+        [Request::RequestRender(ViewId::PaneHeader(first))]
+    );
+    assert_eq!(
+        header(&mut host, &mut plugin, first),
+        Some(title_header("vim", true))
+    );
+    // A tab of one pane, or a zoomed one, has none.
+    let (mut single, mut plugin) = self::host();
+    single.set_config(config(&[("pane-titles", Data::Boolean(true))]));
+    single.deliver(&mut plugin).unwrap();
+    assert_eq!(header(&mut single, &mut plugin, PaneId(1)), None);
+}
+
+#[test]
+fn the_guide_tells_every_key_of_the_schema_in_its_example_and_its_section() {
+    let guide = include_str!("../../../docs/CONFIGURATION.md");
+    let schema = include_str!("../splits.schema.json");
+    let keys: Vec<&str> = schema
+        .lines()
+        .filter_map(|line| line.strip_prefix("    \"")?.split_once("\": {"))
+        .map(|(key, _)| key)
+        .collect();
+    assert_eq!(keys, ["dim-inactive", "pane-titles", "focus-follows-mouse"]);
+    let example = guide
+        .split_once("\n[plugins.splits]\n")
+        .and_then(|(_, rest)| rest.split_once("```"))
+        .map(|(example, _)| example)
+        .expect("the complete example's section");
+    let section = guide
+        .split_once("\n## `[plugins.splits]`\n")
+        .map(|(_, rest)| {
+            rest.split_once("\n## ")
+                .map_or(rest, |(section, _)| section)
+        })
+        .expect("the guide's section");
+    for key in keys {
+        assert!(
+            example
+                .lines()
+                .any(|line| line.starts_with(&format!("{key} = "))),
+            "`{key}` in the example"
+        );
+        assert!(
+            section.contains(&format!("\n### `{key}`\n")),
+            "`{key}` in the section"
+        );
+    }
+}

@@ -19,7 +19,7 @@ use std::time::{Duration, Instant};
 use lokyr_pty::{Exit, Next, Pty, PtyWriter, ReadAhead, Size};
 use lokyr_vt_core::input::{self, KeyEvent, KeyOptions, MouseEvent};
 use lokyr_vt_core::parser::Parser;
-use lokyr_vt_core::terminal::{self, ClipboardRequest, Scroll, Snapshot, Terminal};
+use lokyr_vt_core::terminal::{self, ClipboardRequest, Colors, Scroll, Snapshot, Terminal};
 
 use lock::FairMutex;
 use queue::Queue;
@@ -29,6 +29,12 @@ const SLICE: usize = 64 * 1024;
 
 /// The most bytes that the writer writes at a time.
 const PASTE_CHUNK: usize = 4 * 1024;
+
+/// How long after the owner's last input, or a new size, the program's
+/// output is taken for its answer, the echo of keys or a redraw, rather
+/// than for output of its own: the round trip of a remote shell's echo
+/// over a slow link, with room to spare.
+pub const ECHO: Duration = Duration::from_millis(500);
 
 /// How to start a session.
 #[derive(Clone, Debug)]
@@ -41,6 +47,14 @@ pub struct Options {
     /// How long a synchronized update (mode 2026) may hold the screen
     /// before it is ended, from the moment it starts.
     pub sync_timeout: Duration,
+    /// The theme's colors, which the terminal holds before the program
+    /// writes anything, so that a program that turns the reports of the
+    /// color scheme on at once is told of no change; the terminal's own
+    /// if none.
+    pub colors: Option<Colors>,
+    /// The size of a cell in pixels, which CSI 14 t and 16 t report, held
+    /// alike from the start, if it is known.
+    pub cell_size: Option<(u16, u16)>,
 }
 
 impl Options {
@@ -51,6 +65,8 @@ impl Options {
             pty,
             terminal: terminal::Options::default(),
             sync_timeout: Duration::from_secs(1),
+            colors: None,
+            cell_size: None,
         }
     }
 }
@@ -91,9 +107,39 @@ struct Shared {
     bytes: AtomicU64,
     /// How many times the session's owner locked the terminal.
     locks: AtomicU64,
+    /// The moment that the times below count from.
+    born: Instant,
+    /// When the owner's input last reached the program, or the program was
+    /// last told a new size, as [`Shared::stamp`] gives it; 0 before.
+    asked: AtomicU64,
+    /// When the last slice of output of the program's own came, as
+    /// [`Shared::stamp`] gives it; 0 before.
+    printed: AtomicU64,
+    /// Whether a slice of the program's own woke the main thread, which
+    /// [`Session::clear_printed`] lets wake again.
+    printed_woken: AtomicBool,
 }
 
 impl Shared {
+    /// `at`, as the stamps of the times above keep it: past 0, which is
+    /// none.
+    fn stamp(&self, at: Instant) -> u64 {
+        u64::try_from(at.saturating_duration_since(self.born).as_nanos()).unwrap_or(u64::MAX - 1)
+            + 1
+    }
+
+    /// The moment of `stamp`, as [`Shared::stamp`] gave it, if any.
+    fn instant(&self, stamp: u64) -> Option<Instant> {
+        (stamp != 0).then(|| self.born + Duration::from_nanos(stamp - 1))
+    }
+
+    /// Notes that the program is asked something now: input, or a new
+    /// size.
+    fn asked_now(&self) {
+        self.asked
+            .store(self.stamp(Instant::now()), Ordering::SeqCst);
+    }
+
     /// Tells the main thread of a change of the grid, unless it has one to
     /// look at already; and of something `told`, unless something told
     /// waits for it already.
@@ -103,6 +149,37 @@ impl Shared {
         if grid || told {
             (self.wake)();
         }
+    }
+}
+
+/// A handle on a session's terminal for a thread of its owner's, as
+/// [`Session::reader`] gives it, which outlives neither the terminal's
+/// state nor its program: the session that it came from hangs the program
+/// up as it goes.
+#[derive(Clone)]
+pub struct Reader {
+    shared: Arc<Shared>,
+}
+
+impl Reader {
+    /// Locks the terminal for a part of a read, once the threads that
+    /// asked for it before, as a frame's copy, have had it, as the I/O
+    /// thread takes its slices: a read takes it again and again, a part at
+    /// a time, which the lock of `std`, unfair, would let keep a frame
+    /// waiting for many parts.
+    pub fn lock(&self) -> MutexGuard<'_, Terminal> {
+        self.shared.terminal.lock_in_turn()
+    }
+
+    /// Wakes the main thread, as a change of the terminal does.
+    pub fn wake(&self) {
+        (self.shared.wake)();
+    }
+}
+
+impl std::fmt::Debug for Reader {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Reader").finish_non_exhaustive()
     }
 }
 
@@ -130,7 +207,8 @@ impl Session {
     /// thread has looked at the last change, as [`Session::snapshot`] does;
     /// when the terminal tells something, an event or a bell, and the main
     /// thread has taken what it told last, as [`Session::clear_told`] lets
-    /// it; and when the output ends.
+    /// it; when the program prints of its own, the first time and the
+    /// first after [`Session::clear_printed`]; and when the output ends.
     pub fn spawn(
         options: &Options,
         wake: impl Fn() + Send + Sync + 'static,
@@ -142,12 +220,17 @@ impl Session {
             .and_then(|reader| reader.read_ahead(SLICE))
             .map_err(Error::Threads)?;
         let writer = pty.writer().map_err(Error::Threads)?;
+        // Of the theme's colors and the cell's size before the output's
+        // thread reads the program's first bytes.
+        let mut terminal = Terminal::new(size.cols, size.rows, options.terminal.clone());
+        if let Some(colors) = &options.colors {
+            terminal.set_default_colors(colors.clone());
+        }
+        if let Some((width, height)) = options.cell_size {
+            terminal.set_cell_size(width, height);
+        }
         let shared = Arc::new(Shared {
-            terminal: FairMutex::new(Terminal::new(
-                size.cols,
-                size.rows,
-                options.terminal.clone(),
-            )),
+            terminal: FairMutex::new(terminal),
             queue: Queue::default(),
             wake: Box::new(wake),
             grid_woken: AtomicBool::new(false),
@@ -156,6 +239,10 @@ impl Session {
             slices: AtomicU64::new(0),
             bytes: AtomicU64::new(0),
             locks: AtomicU64::new(0),
+            born: Instant::now(),
+            asked: AtomicU64::new(0),
+            printed: AtomicU64::new(0),
+            printed_woken: AtomicBool::new(false),
         });
         let sync_timeout = options.sync_timeout;
         {
@@ -179,6 +266,15 @@ impl Session {
     pub fn lock(&self) -> MutexGuard<'_, Terminal> {
         self.shared.locks.fetch_add(1, Ordering::Relaxed);
         self.shared.terminal.lock()
+    }
+
+    /// A handle on the terminal for a thread of the owner's, as one that
+    /// reads much of its text, under the lock a part at a time, apart from
+    /// the main thread, which it wakes once it is done.
+    pub fn reader(&self) -> Reader {
+        Reader {
+            shared: Arc::clone(&self.shared),
+        }
     }
 
     /// How many times the session's owner locked the terminal, as each
@@ -218,6 +314,24 @@ impl Session {
         self.shared.told_woken.store(false, Ordering::Release);
     }
 
+    /// When the program last printed of its own: the last slice of output
+    /// that came [`ECHO`] or more after the owner's input last reached it,
+    /// or it was last told a new size, rather than as its answer; `None`
+    /// before the first. The first slice of its own calls `wake`, as one
+    /// told does, and the next after [`Session::clear_printed`].
+    pub fn printed_at(&self) -> Option<Instant> {
+        self.shared
+            .instant(self.shared.printed.load(Ordering::SeqCst))
+    }
+
+    /// Lets the program's next slice of its own call `wake` again, as the
+    /// owner, having found it quiet, waits for it to print: it calls it
+    /// before it looks at [`Session::printed_at`], so that a slice that
+    /// came after its look calls `wake`.
+    pub fn clear_printed(&self) {
+        self.shared.printed_woken.store(false, Ordering::SeqCst);
+    }
+
     /// Whether the program's output has ended: the program, and every
     /// process that it left, have closed the terminal; or the session can
     /// no longer read it, as when its I/O thread panicked, with the program
@@ -248,6 +362,18 @@ impl Session {
     /// jobs', as [`Pty::programs`] gives them.
     pub fn programs(&self) -> Vec<String> {
         self.pty.programs()
+    }
+
+    /// The process group in the terminal's foreground, as
+    /// [`Pty::foreground_process_group`] gives it.
+    pub fn foreground_group(&self) -> Option<u32> {
+        self.pty.foreground_process_group()
+    }
+
+    /// The names that the programs in the terminal's foreground go by, as
+    /// [`Pty::foreground_names`] gives them.
+    pub fn foreground_names(&self) -> Vec<String> {
+        self.pty.foreground_names()
     }
 
     /// The working directory of the program in the terminal's foreground,
@@ -308,6 +434,19 @@ impl Session {
         self.write(bytes);
     }
 
+    /// Gives the terminal the theme's `colors`: a program that asked is told
+    /// their scheme at once, as their change's report waits for no output.
+    pub fn set_default_colors(&self, colors: Colors) {
+        let replies = {
+            let mut terminal = self.lock();
+            terminal.set_default_colors(colors);
+            terminal.take_replies()
+        };
+        if !replies.is_empty() {
+            self.shared.queue.push_replies(replies);
+        }
+    }
+
     /// Answers `request`, a program's read of the clipboard that the user
     /// allowed, with `data`, what the clipboard holds: the answer goes to
     /// the program at once, whole, as keys do, as a program can wait for it
@@ -356,6 +495,7 @@ impl Session {
     /// the program redraws, on SIGWINCH, at the new size.
     pub fn resize(&self, size: Size) -> io::Result<()> {
         self.lock().resize(size.cols, size.rows);
+        self.shared.asked_now();
         self.pty.resize(size)
     }
 
@@ -364,6 +504,7 @@ impl Session {
     /// the size that the program was told last, which the program must
     /// draw again, as the grid's prompt or screen changed meanwhile.
     pub fn signal_resize(&self) -> io::Result<()> {
+        self.shared.asked_now();
         self.pty.signal_resize()
     }
 
@@ -372,12 +513,13 @@ impl Session {
     /// step of a live resize tells the program at its own pace, so that it
     /// redraws a few times a second rather than at each step.
     pub fn resize_pty(&self, size: Size) -> io::Result<()> {
+        self.shared.asked_now();
         self.pty.resize(size)
     }
 
-    /// How many slices of output the I/O thread has parsed.
-    #[cfg(test)]
-    fn slices(&self) -> u64 {
+    /// How many slices of output the I/O thread has parsed, as an embedder
+    /// that waits for the program's answer to its new size counts them.
+    pub fn slices(&self) -> u64 {
         self.shared.slices.load(Ordering::Acquire)
     }
 }
@@ -426,14 +568,25 @@ fn read_output(shared: &Shared, mut output: ReadAhead, sync_timeout: Duration) {
             Next::TimedOut => continue,
             Next::End => break,
         };
+        // Output of the program's own, rather than its answer to input or
+        // to a new size; its first since the main thread found it quiet
+        // tells it.
+        let came = Instant::now();
+        let own = shared
+            .instant(shared.asked.load(Ordering::SeqCst))
+            .is_none_or(|asked| came.saturating_duration_since(asked) >= ECHO);
+        let started = own && {
+            shared.printed.store(shared.stamp(came), Ordering::SeqCst);
+            !shared.printed_woken.swap(true, Ordering::SeqCst)
+        };
         let n = slice.len();
         let mut terminal = shared.terminal.lock_in_turn();
         let bells = terminal.bells();
         parser.advance(&mut *terminal, &slice);
         // Its buffer goes back to the reader.
         drop(slice);
-        let told = terminal.has_events() || terminal.bells() != bells;
-        if terminal.scroll_on_output() {
+        let told = started || terminal.has_events() || terminal.bells() != bells;
+        if terminal.output_scrolls_view() {
             terminal.scroll_viewport(Scroll::Bottom);
         }
         let replies = terminal.take_replies();
@@ -480,16 +633,26 @@ impl Drop for Ending<'_> {
 /// writes of [`PASTE_CHUNK`] bytes at most, so that it stops between two
 /// of them once the session closes.
 fn write_input(shared: &Shared, mut writer: PtyWriter) {
-    while let Some(bytes) = shared.queue.next() {
+    while let Some((bytes, reply)) = shared.queue.next() {
         for chunk in bytes.chunks(PASTE_CHUNK) {
             if shared.queue.is_closed() {
                 return;
+            }
+            // The owner's input, whose echo, which the terminal's line
+            // discipline may give as it is written, is not the program's
+            // own output; the replies to the program's queries are not
+            // asked.
+            if !reply {
+                shared.asked_now();
             }
             // The program has gone, or the PTY has: what follows has no one
             // to read it.
             if writer.write_all(chunk).is_err() {
                 shared.queue.close();
                 return;
+            }
+            if !reply {
+                shared.asked_now();
             }
         }
     }

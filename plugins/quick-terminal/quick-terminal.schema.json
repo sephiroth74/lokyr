@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "lokyr/quick-terminal",
+  "type": "object",
+  "properties": {
+    "position": {
+      "description": "The edge of the screen that the quick terminal comes from, or its centre, where it fades in and out.",
+      "enum": ["top", "bottom", "left", "right", "center"],
+      "default": "top"
+    },
+    "size": {
+      "description": "How far it reaches into the screen from its edge, a percentage from 1% to 100% or points, as 300px; then, after a comma, its length along the edge.",
+      "type": "string",
+      "minLength": 2,
+      "maxLength": 40,
+      "default": "50%"
+    },
+    "screen": {
+      "description": "The screen that it shows on: the main one, the pointer's, or the menu bar's.",
+      "enum": ["main", "mouse", "menu-bar"],
+      "default": "main"
+    },
+    "animation": {
+      "description": "How long it slides in and out, in milliseconds; 0 shows and hides it at once.",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 2000,
+      "default": 200
+    },
+    "autohide": {
+      "description": "Whether it hides as it loses the focus.",
+      "type": "boolean",
+      "default": true
+    },
+    "spaces": {
+      "description": "Whether it follows to the Space in front, or stays on the one that it showed on.",
+      "enum": ["move", "remain"],
+      "default": "move"
+    }
+  }
+}

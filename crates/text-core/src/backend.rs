@@ -89,6 +89,9 @@ pub struct ShapedGlyph {
     pub x: f32,
     /// Where the glyph is from the baseline, upwards, in pixels.
     pub y: f32,
+    /// Whether the glyph's run goes from right to left, as Hebrew's and
+    /// Arabic's do, its clusters' bytes falling as `x` rises.
+    pub right_to_left: bool,
 }
 
 /// What a face that a family lacks is drawn from: another of its faces,
@@ -110,6 +113,15 @@ pub struct Rendering {
     /// Whether it is drawn without the darkening that the system's font
     /// smoothing adds, of thinner strokes.
     pub thin: bool,
+    /// How far its origin is past its pixel's left edge, in thirds of a
+    /// pixel, from 0 to 2: of text placed at fractions of a pixel, as the
+    /// interface's, rather than of the cells' whole pixels.
+    pub phase: u8,
+}
+
+impl Rendering {
+    /// The phases of a pixel, its thirds.
+    pub const PHASES: u8 = 3;
 }
 
 impl Default for Rendering {
@@ -117,6 +129,7 @@ impl Default for Rendering {
         Self {
             antialias: true,
             thin: false,
+            phase: 0,
         }
     }
 }
@@ -206,11 +219,33 @@ pub trait FontBackend {
         false
     }
 
+    /// The names of the families of [`FontBackend::families`] whose faces
+    /// are all monospaced, and the default family, in any order: by default
+    /// of each family's faces, which a backend that reads the system's
+    /// lists of its faces' traits tells sooner.
+    fn monospaced_families(&mut self) -> Vec<String> {
+        let mut names = self.families();
+        names.push(self.default_family());
+        names.retain(|name| {
+            self.family(name).is_some_and(|faces| {
+                !faces.is_empty() && faces.iter().all(|face| self.monospaced(face.id))
+            })
+        });
+        names
+    }
+
     /// The face of [`SYMBOLS_FONT`](crate::SYMBOLS_FONT), the icons that
     /// the configured font may lack, which the backend loads the first time:
     /// `None` when it cannot.
     fn symbols(&mut self) -> Option<FaceId> {
         None
+    }
+
+    /// Whether the glyphs that it draws of coverage take the system's font
+    /// smoothing, the darkening of their strokes that a thin glyph goes
+    /// without: `false` by default.
+    fn smooths(&mut self) -> bool {
+        false
     }
 
     /// Whether `face` is the system's last resort, which draws a box of its
@@ -223,6 +258,38 @@ pub trait FontBackend {
 
     /// What `face` measures at `size` pixels.
     fn metrics(&mut self, face: FaceId, size: f32) -> FaceMetrics;
+
+    /// `face` of the design of `points`, whatever the size it is made at,
+    /// as a family of optical sizes draws each size of its own: at 26
+    /// pixels, the text of 13 points on a display of twice the pixels, its
+    /// 13 points' forms and advances, twice as large. A face of its own,
+    /// which the backend keeps; `face` itself by default.
+    fn optical(&mut self, face: FaceId, points: f32) -> FaceId {
+        let _ = points;
+        face
+    }
+
+    /// The name of the family of the text of the app's own interface, as
+    /// its tab bar and its panels: the system's, as its menus and windows
+    /// show it; [`FontBackend::default_family`] by default.
+    fn interface_family(&mut self) -> String {
+        self.default_family()
+    }
+
+    /// How wide `text` is in `face` at `size` pixels, on one line, with
+    /// `features`, its glyphs' advances: by default, its last glyph's place
+    /// and the face's advance, which a face of one advance gives exactly.
+    fn width(&mut self, face: FaceId, size: f32, text: &str, features: Features) -> f32 {
+        let mut glyphs = Vec::new();
+        self.shape(face, size, text, features, &mut glyphs);
+        glyphs
+            .iter()
+            .map(|glyph| glyph.x)
+            .fold(None, |last: Option<f32>, x| {
+                Some(last.map_or(x, |last| last.max(x)))
+            })
+            .map_or(0.0, |last| last + self.metrics(face, size).advance)
+    }
 
     /// The glyph of `character` in `face`, or `None` if the face lacks it.
     fn glyph(&mut self, face: FaceId, character: char) -> Option<GlyphId>;

@@ -21,8 +21,8 @@ pub struct Menu {
     pub role: Option<MenuRole>,
 }
 
-/// A menu that opens at the pointer over a window, as a right click opens
-/// it.
+/// A menu that opens over a window, at the pointer as a right click opens
+/// it, or at a menu panel's anchor.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ContextMenu {
     /// Its items, from the top: a command's comes as
@@ -32,6 +32,8 @@ pub struct ContextMenu {
     /// The commands whose items are dimmed: the others' are enabled, as the
     /// main menu's dimmed ones are not.
     pub dimmed: Vec<String>,
+    /// The commands whose items are ticked, as a toggle's that is on.
+    pub ticked: Vec<String>,
 }
 
 /// The part that a menu plays for the system.
@@ -88,6 +90,10 @@ pub enum StandardAction {
     Zoom,
     /// Brings every window of the application to the front.
     BringAllToFront,
+    /// Opens the system's palette of emoji and symbols, whose character
+    /// comes to the window that has the focus as an input method's
+    /// [`Ime::Commit`](crate::Ime::Commit).
+    CharacterPalette,
 }
 
 /// The keys that choose a menu item.
@@ -103,6 +109,51 @@ pub struct Shortcut {
     pub alt: bool,
     /// Control.
     pub control: bool,
+}
+
+impl Shortcut {
+    /// The shortcut as the Mac's menus write it: Control, Option, Shift and
+    /// Command, `⌃⌥⇧⌘`, then the key, a letter in its capital, as `⌥⌘1` and
+    /// `⇧⌘K`, and a named key in its symbol, as `⌘↑`.
+    pub fn mac_text(&self) -> String {
+        let mut text: String = [
+            (self.control, '⌃'),
+            (self.alt, '⌥'),
+            (self.shift, '⇧'),
+            (self.command, '⌘'),
+        ]
+        .into_iter()
+        .filter_map(|(held, symbol)| held.then_some(symbol))
+        .collect();
+        let named = |code: KeyCode| -> String {
+            let symbol = match code {
+                KeyCode::Enter => "↩",
+                KeyCode::Tab => "⇥",
+                KeyCode::Backspace => "⌫",
+                KeyCode::Delete => "⌦",
+                KeyCode::Escape => "⎋",
+                KeyCode::Space => "Space",
+                KeyCode::Insert => "Help",
+                KeyCode::Home => "↖",
+                KeyCode::End => "↘",
+                KeyCode::PageUp => "⇞",
+                KeyCode::PageDown => "⇟",
+                KeyCode::ArrowUp => "↑",
+                KeyCode::ArrowDown => "↓",
+                KeyCode::ArrowLeft => "←",
+                KeyCode::ArrowRight => "→",
+                KeyCode::F(number) => return format!("F{number}"),
+                other => return format!("{other:?}"),
+            };
+            symbol.to_owned()
+        };
+        match self.key {
+            ShortcutKey::Char(' ') => text.push_str("Space"),
+            ShortcutKey::Char(key) => text.extend(key.to_uppercase()),
+            ShortcutKey::Code(code) => text.push_str(&named(code)),
+        }
+        text
+    }
 }
 
 /// The key of a [`Shortcut`].
@@ -135,6 +186,24 @@ pub struct Alert {
     pub input: Option<String>,
 }
 
+/// What the application's About panel shows beside what the platform takes
+/// of the application itself: its name, icon, version, build and copyright.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AboutPanel {
+    /// The credits under the version, a line each, in their order.
+    pub credits: Vec<AboutLine>,
+}
+
+/// A line of the credits of an [`AboutPanel`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AboutLine {
+    /// What it says.
+    pub text: String,
+    /// What a click on it opens, as [`Platform::resolve_target`](crate::Platform::resolve_target)
+    /// gives it; `None` for a line of text alone.
+    pub link: Option<crate::Target>,
+}
+
 /// How serious an alert is.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum AlertStyle {
@@ -145,6 +214,25 @@ pub enum AlertStyle {
     Warning,
     /// It warns of something that cannot be undone.
     Critical,
+}
+
+/// A save panel that is open, which
+/// [`AppEvent::SavePanelClosed`](crate::AppEvent::SavePanelClosed) names when
+/// it closes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct SavePanelId(u64);
+
+impl SavePanelId {
+    /// The panel of the platform's number `id`, which no other panel of the
+    /// process takes.
+    pub fn new(id: u64) -> Self {
+        Self(id)
+    }
+
+    /// The platform's number for the panel.
+    pub fn get(self) -> u64 {
+        self.0
+    }
 }
 
 /// An alert that is open, which [`AppEvent::AlertClosed`](crate::AppEvent::AlertClosed)

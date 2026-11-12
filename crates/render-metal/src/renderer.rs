@@ -2,15 +2,15 @@
 //! and a frame drawn from a display list.
 
 use std::cell::RefCell;
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::ffi::c_void;
 use std::ptr::NonNull;
 use std::time::{Duration, Instant};
 
 use dispatch2::DispatchData;
 use lokyr_render_core::{
-    AtlasRegion, CellBatch, Color, CursorShape, DisplayList, GpuTimes, Item, LineStyle, Rect,
-    Renderer, Texture, TextureUpdate,
+    AtlasRegion, CellBatch, Color, CursorShape, DisplayList, GpuTimes, Item, LineStyle, PictureId,
+    Rect, Renderer, Shape, Texture, TextureUpdate,
 };
 use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
@@ -51,7 +51,8 @@ struct GlyphInstance {
     atlas: [u32; 2],
     /// The atlas: 0 for coverage's, 1 for colors'.
     texture: u32,
-    _padding: u32,
+    /// Whether its coverage takes the weight of the system's text: 1, or 0.
+    weight: u32,
     color: [f32; 4],
 }
 
@@ -68,6 +69,36 @@ struct LineInstance {
     thickness: f32,
     period: f32,
     origin: f32,
+}
+
+/// A shape, or its shadow, as the shaders take it: the quad that it covers,
+/// its outline's centre and half its size, its corners' radius, its
+/// border's width, its blur's deviation, negative for the shape itself, what
+/// fills it, and its border's color.
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct ShapeInstance {
+    position: [f32; 2],
+    size: [f32; 2],
+    center: [f32; 2],
+    extent: [f32; 2],
+    radius: f32,
+    border: f32,
+    sigma: f32,
+    _padding: f32,
+    fill: [f32; 4],
+    border_color: [f32; 4],
+    /// An arc's start and span, in turns, its thickness, and 1, or 0 for a
+    /// shape of no arc.
+    arc: [f32; 4],
+}
+
+/// A picture's rectangle, as the shaders take it.
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct PictureInstance {
+    position: [f32; 2],
+    size: [f32; 2],
 }
 
 /// A grid, as the shaders take it.
@@ -92,8 +123,16 @@ pub struct MetalRenderer {
     background: Pipeline,
     lines: Pipeline,
     glyphs: Pipeline,
+    shapes: Pipeline,
+    /// The shapes' fills that take the place of what is under them.
+    knockouts: Pipeline,
+    pictures: Pipeline,
     coverage: MetalTexture,
     color: MetalTexture,
+    /// The pictures that it holds, by their ids, and the last id that it
+    /// gave.
+    held: HashMap<u64, MetalTexture>,
+    last_picture: u64,
     /// The commands of the frames that the GPU may still draw, by their
     /// lists' frames, from the oldest.
     drawing: VecDeque<Drawing>,
@@ -141,15 +180,26 @@ impl MetalRenderer {
         let library = device
             .newLibraryWithData_error(&data)
             .map_err(|error| Error::Shaders(error.to_string()))?;
-        let pipeline =
-            |vertex: &str, fragment: &str| make_pipeline(&device, &library, vertex, fragment);
+        let pipeline = |vertex: &str, fragment: &str| {
+            make_pipeline(&device, &library, (vertex, fragment), Blend::Over)
+        };
         Ok(Self {
             solid: pipeline("rect_vertex", "solid_fragment")?,
             background: pipeline("background_vertex", "solid_fragment")?,
             lines: pipeline("line_vertex", "line_fragment")?,
             glyphs: pipeline("glyph_vertex", "glyph_fragment")?,
+            shapes: pipeline("shape_vertex", "shape_fragment")?,
+            knockouts: make_pipeline(
+                &device,
+                &library,
+                ("shape_vertex", "shape_knockout_fragment"),
+                Blend::Knockout,
+            )?,
+            pictures: pipeline("picture_vertex", "picture_fragment")?,
             coverage: make_texture(&device, Texture::Coverage, coverage)?,
             color: make_texture(&device, Texture::Color, color)?,
+            held: HashMap::new(),
+            last_picture: 0,
             queue: gpu.queue.clone(),
             device,
             drawing: VecDeque::new(),
@@ -344,29 +394,144 @@ impl Renderer for MetalRenderer {
     fn drawable_wait(&self) -> Duration {
         self.drawable_wait
     }
-}
 
-impl MetalRenderer {
-    /// Draws `list` into `target`, as [`Renderer::draw`] does, but for its
-    /// GPU's time, which [`Renderer::take_gpu_times`] leaves out: a layer's
-    /// frame, of a few cells, apart from the windows' frames.
-    pub fn draw_untimed(&mut self, target: &Surface, list: &DisplayList) -> Result<bool, Error> {
+    fn draw_untimed(&mut self, target: &Surface, list: &DisplayList) -> Result<bool, Error> {
         self.present(target, list, false)
     }
 
-    /// Calls `presented` as the next drawable that the renderer draws, of
-    /// any surface, shows on the display, from the display's thread, with
-    /// how long ago it showed, or `None` if the display skipped it.
-    pub fn on_next_presented(&mut self, presented: impl FnOnce(Option<Duration>) + Send + 'static) {
+    /// Calls `presented` from the display's thread, as the next drawable
+    /// that the renderer draws, of any surface, shows.
+    fn on_next_presented(&mut self, presented: impl FnOnce(Option<Duration>) + Send + 'static) {
         self.on_presented = Some(OnPresented(Box::new(presented)));
     }
 
-    /// Forgets the call that [`Renderer::on_next_presented`] left, as a
-    /// frame that drew nothing leaves it to no other surface's drawable.
-    pub fn forget_next_presented(&mut self) {
+    fn forget_next_presented(&mut self) {
         self.on_presented = None;
     }
 
+    /// Draws `list` into a texture of its own, of its smaller copies, each
+    /// half the one before, which the GPU makes after it, so that a picture
+    /// drawn much smaller keeps its text's strokes whole.
+    fn make_picture(
+        &mut self,
+        list: &DisplayList,
+        width: u32,
+        height: u32,
+    ) -> Result<Option<PictureId>, Error> {
+        let (width, height) = (width.max(1) as usize, height.max(1) as usize);
+        // SAFETY: a two-dimensional texture of a valid format and size.
+        let descriptor = unsafe {
+            MTLTextureDescriptor::texture2DDescriptorWithPixelFormat_width_height_mipmapped(
+                MTLPixelFormat::BGRA8Unorm,
+                width,
+                height,
+                true,
+            )
+        };
+        descriptor.setUsage(MTLTextureUsage::RenderTarget | MTLTextureUsage::ShaderRead);
+        descriptor.setStorageMode(MTLStorageMode::Private);
+        let texture = self
+            .device
+            .newTextureWithDescriptor(&descriptor)
+            .ok_or(Error::Device("texture"))?;
+        let (commands, buffers) = self.encode(&texture, list)?;
+        let blit = commands
+            .blitCommandEncoder()
+            .ok_or(Error::Device("blit command encoder"))?;
+        blit.generateMipmapsForTexture(&texture);
+        blit.endEncoding();
+        commands.commit();
+        self.drawing.push_back(Drawing {
+            frame: list.frame,
+            commands,
+            buffers,
+            timed: false,
+        });
+        self.last_picture += 1;
+        self.held.insert(self.last_picture, texture);
+        Ok(Some(PictureId(self.last_picture)))
+    }
+
+    /// Uploads the pixels into a texture of its own, BGRA as the pictures'
+    /// are, of its smaller copies, which the GPU makes after it.
+    fn picture_of_pixels(
+        &mut self,
+        pixels: &[u8],
+        width: u32,
+        height: u32,
+    ) -> Result<Option<PictureId>, Error> {
+        let (width, height) = (width as usize, height as usize);
+        if width == 0 || height == 0 || pixels.len() != width * height * 4 {
+            return Ok(None);
+        }
+        // SAFETY: a two-dimensional texture of a valid format and size.
+        let descriptor = unsafe {
+            MTLTextureDescriptor::texture2DDescriptorWithPixelFormat_width_height_mipmapped(
+                MTLPixelFormat::BGRA8Unorm,
+                width,
+                height,
+                true,
+            )
+        };
+        descriptor.setUsage(MTLTextureUsage::ShaderRead);
+        descriptor.setStorageMode(MTLStorageMode::Shared);
+        let texture = self
+            .device
+            .newTextureWithDescriptor(&descriptor)
+            .ok_or(Error::Device("texture"))?;
+        let mut bgra = pixels.to_vec();
+        for pixel in bgra.as_chunks_mut::<4>().0 {
+            pixel.swap(0, 2);
+        }
+        let region = MTLRegion {
+            origin: MTLOrigin { x: 0, y: 0, z: 0 },
+            size: MTLSize {
+                width,
+                height,
+                depth: 1,
+            },
+        };
+        // SAFETY: the pixels of the whole region, four bytes each, a row of
+        // `width` after the other.
+        unsafe {
+            texture.replaceRegion_mipmapLevel_withBytes_bytesPerRow(
+                region,
+                0,
+                NonNull::new_unchecked(bgra.as_mut_ptr().cast()),
+                width * 4,
+            );
+        }
+        let commands = self
+            .queue
+            .commandBuffer()
+            .ok_or(Error::Device("command buffer"))?;
+        let blit = commands
+            .blitCommandEncoder()
+            .ok_or(Error::Device("blit command encoder"))?;
+        blit.generateMipmapsForTexture(&texture);
+        blit.endEncoding();
+        commands.commit();
+        self.last_picture += 1;
+        self.held.insert(self.last_picture, texture);
+        Ok(Some(PictureId(self.last_picture)))
+    }
+
+    /// The frames that draw it keep its texture until the GPU is done.
+    fn drop_picture(&mut self, picture: PictureId) {
+        self.held.remove(&picture.0);
+    }
+
+    fn read_back(
+        &mut self,
+        list: &DisplayList,
+        width: u32,
+        height: u32,
+    ) -> Result<Option<Vec<u8>>, Error> {
+        self.draw_offscreen(list, width, height).map(Some)
+    }
+}
+
+impl MetalRenderer {
     /// Draws `list` into the next drawable of `target`, and presents it,
     /// its GPU's time counted when `timed`. Whether it drew: no drawable
     /// comes from a layer that was never sized, nor when every drawable is
@@ -410,7 +575,8 @@ impl MetalRenderer {
     /// Draws `list` into a texture of its own, `width` by `height` pixels,
     /// as a window's surface would show it, waits for the GPU, and reads
     /// its pixels back: RGBA, 8 bits a component in sRGB, a row after the
-    /// other from the top, as tests compare them with images.
+    /// other from the top, as tests compare them with images. Its time on
+    /// the GPU counts among [`Renderer::take_gpu_times`]'s.
     pub fn draw_offscreen(
         &mut self,
         list: &DisplayList,
@@ -436,6 +602,10 @@ impl MetalRenderer {
         let (commands, buffers) = self.encode(&texture, list)?;
         commands.commit();
         commands.waitUntilCompleted();
+        let time = commands.GPUEndTime() - commands.GPUStartTime();
+        if commands.status() == MTLCommandBufferStatus::Completed && time > 0.0 {
+            self.gpu_times.add(Duration::from_secs_f64(time));
+        }
         self.take_back(buffers);
         let mut pixels = vec![0_u8; width * height * 4];
         let region = MTLRegion {
@@ -738,12 +908,23 @@ impl Frame<'_> {
                     .iter()
                     .map(|glyph| {
                         let position = [glyph.x as f32, glyph.y as f32];
-                        glyph_instance(position, &glyph.region, glyph.color)
+                        glyph_instance(position, &glyph.region, glyph.color, glyph.weight)
                     })
                     .collect();
                 self.glyphs(&instances);
             }
             Item::Cells(batch) => self.cells(batch),
+            Item::Picture { rect, picture } => self.picture(rect, *picture),
+            Item::Shapes(shapes) => {
+                // Each run of the instances of one pipeline, in their order.
+                let instances: Vec<(Blend, ShapeInstance)> =
+                    shapes.iter().flat_map(shape_instances).collect();
+                for run in instances.chunk_by(|a, b| a.0 == b.0) {
+                    let blend = run[0].0;
+                    let run: Vec<ShapeInstance> = run.iter().map(|&(_, shape)| shape).collect();
+                    self.shapes(&run, blend);
+                }
+            }
         }
     }
 
@@ -774,6 +955,60 @@ impl Frame<'_> {
                     0,
                     QUAD,
                     rects.len(),
+                );
+        }
+    }
+
+    /// Draws `picture` into `rect`, sampled of its smaller copies as it
+    /// shrinks; nothing of one that the renderer does not hold.
+    fn picture(&self, rect: &Rect, picture: PictureId) {
+        let Some(texture) = self.renderer.held.get(&picture.0) else {
+            return;
+        };
+        let instance = PictureInstance {
+            position: [rect.x as f32, rect.y as f32],
+            size: [rect.width as f32, rect.height as f32],
+        };
+        self.encoder.setRenderPipelineState(&self.renderer.pictures);
+        // SAFETY: the bytes and the texture that the picture's shaders take,
+        // at their indices.
+        unsafe {
+            self.encoder.setVertexBytes_length_atIndex(
+                NonNull::from(&instance).cast(),
+                size_of::<PictureInstance>(),
+                0,
+            );
+            self.set_viewport();
+            self.encoder.setFragmentTexture_atIndex(Some(texture), 0);
+            self.encoder.drawPrimitives_vertexStart_vertexCount(
+                MTLPrimitiveType::TriangleStrip,
+                0,
+                QUAD,
+            );
+        }
+    }
+
+    fn shapes(&self, shapes: &[ShapeInstance], blend: Blend) {
+        let Some((buffer, offset)) = self.arena.borrow_mut().put(shapes) else {
+            return;
+        };
+        let pipeline = match blend {
+            Blend::Over => &self.renderer.shapes,
+            Blend::Knockout => &self.renderer.knockouts,
+        };
+        self.encoder.setRenderPipelineState(pipeline);
+        // SAFETY: the buffers and bytes that the shapes' shaders take, at
+        // their indices.
+        unsafe {
+            self.encoder
+                .setVertexBuffer_offset_atIndex(Some(&buffer), offset, 0);
+            self.set_viewport();
+            self.encoder
+                .drawPrimitives_vertexStart_vertexCount_instanceCount(
+                    MTLPrimitiveType::TriangleStrip,
+                    0,
+                    QUAD,
+                    shapes.len(),
                 );
         }
     }
@@ -887,7 +1122,8 @@ impl Frame<'_> {
             .map(|glyph| {
                 let (x, y) = cell_origin(glyph.column, glyph.row);
                 let position = [(x + glyph.x) as f32, (y + glyph.y) as f32];
-                glyph_instance(position, &glyph.region, glyph.color)
+                let weight = batch.system_weight && glyph.smoothed;
+                glyph_instance(position, &glyph.region, glyph.color, weight)
             })
             .collect();
         self.glyphs(&glyphs);
@@ -972,7 +1208,90 @@ fn rect_instance(rect: &Rect, color: Color) -> RectInstance {
     }
 }
 
-fn glyph_instance(position: [f32; 2], region: &AtlasRegion, color: Color) -> GlyphInstance {
+/// The instances of `shape`, each of its pipeline's blend: its shadow's, if
+/// it casts one, under its own; a fill that knocks out what is under it of
+/// its own, then its border over it.
+fn shape_instances(shape: &Shape) -> impl Iterator<Item = (Blend, ShapeInstance)> {
+    let rect = shape.rect;
+    // A shape of no width or height draws nothing, nor casts a shadow.
+    let drawn = rect.width > 0 && rect.height > 0;
+    let size = [rect.width as f32, rect.height as f32];
+    let extent = [size[0] / 2.0, size[1] / 2.0];
+    let center = [rect.x as f32 + extent[0], rect.y as f32 + extent[1]];
+    let shadow = shape.shadow.map(|shadow| {
+        let sigma = shadow.blur.max(0.0) / 2.0;
+        // Three deviations cover all but a thousandth of the blur.
+        let reach = (3.0 * sigma).ceil() + 1.0;
+        let position = [
+            rect.x as f32 + shadow.x - reach,
+            rect.y as f32 + shadow.y - reach,
+        ];
+        ShapeInstance {
+            position,
+            size: [size[0] + 2.0 * reach, size[1] + 2.0 * reach],
+            center: [center[0] + shadow.x, center[1] + shadow.y],
+            extent,
+            radius: shape.radius,
+            border: 0.0,
+            sigma,
+            _padding: 0.0,
+            fill: rgba(shadow.color),
+            border_color: [0.0; 4],
+            arc: [0.0; 4],
+        }
+    });
+    let own = ShapeInstance {
+        position: [rect.x as f32, rect.y as f32],
+        size,
+        center,
+        extent,
+        radius: shape.radius.max(0.0),
+        border: shape.border.max(0.0),
+        sigma: -1.0,
+        _padding: 0.0,
+        fill: rgba(shape.fill),
+        border_color: rgba(shape.border_color),
+        arc: shape.arc.map_or([0.0; 4], |arc| {
+            [
+                arc.start.rem_euclid(1.0),
+                arc.span.clamp(0.0, 1.0),
+                arc.thickness.max(0.0),
+                1.0,
+            ]
+        }),
+    };
+    // An arc casts no shadow.
+    let shadow = shadow.filter(|_| shape.arc.is_none());
+    let knockout = shape.knockout && shape.arc.is_none();
+    let own: Vec<(Blend, ShapeInstance)> = if knockout {
+        let fill = ShapeInstance {
+            border: 0.0,
+            border_color: [0.0; 4],
+            ..own
+        };
+        let border = (own.border > 0.0).then_some(ShapeInstance {
+            fill: [0.0; 4],
+            ..own
+        });
+        std::iter::once((Blend::Knockout, fill))
+            .chain(border.map(|border| (Blend::Over, border)))
+            .collect()
+    } else {
+        vec![(Blend::Over, own)]
+    };
+    shadow
+        .map(|shadow| (Blend::Over, shadow))
+        .into_iter()
+        .chain(own)
+        .filter(move |_| drawn)
+}
+
+fn glyph_instance(
+    position: [f32; 2],
+    region: &AtlasRegion,
+    color: Color,
+    system_weight: bool,
+) -> GlyphInstance {
     GlyphInstance {
         position,
         size: [region.width as f32, region.height as f32],
@@ -981,7 +1300,7 @@ fn glyph_instance(position: [f32; 2], region: &AtlasRegion, color: Color) -> Gly
             Texture::Coverage => 0,
             Texture::Color => 1,
         },
-        _padding: 0,
+        weight: u32::from(system_weight),
         color: rgba(color),
     }
 }
@@ -1000,11 +1319,21 @@ fn intersect(clip: MTLScissorRect, rect: Rect) -> Option<MTLScissorRect> {
     })
 }
 
+/// How a pipeline's fragments go onto what is under them.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Blend {
+    /// Over it, by their opacity, as premultiplied colors go.
+    Over,
+    /// In its place, by the part of the pixel that they cover, which their
+    /// second source gives.
+    Knockout,
+}
+
 fn make_pipeline(
     device: &ProtocolObject<dyn MTLDevice>,
     library: &ProtocolObject<dyn MTLLibrary>,
-    vertex: &str,
-    fragment: &str,
+    (vertex, fragment): (&str, &str),
+    blend: Blend,
 ) -> Result<Pipeline, Error> {
     let function = |name: &str| {
         library
@@ -1023,8 +1352,18 @@ fn make_pipeline(
     attachment.setBlendingEnabled(true);
     attachment.setSourceRGBBlendFactor(MTLBlendFactor::One);
     attachment.setSourceAlphaBlendFactor(MTLBlendFactor::One);
-    attachment.setDestinationRGBBlendFactor(MTLBlendFactor::OneMinusSourceAlpha);
-    attachment.setDestinationAlphaBlendFactor(MTLBlendFactor::OneMinusSourceAlpha);
+    let (rgb, alpha) = match blend {
+        Blend::Over => (
+            MTLBlendFactor::OneMinusSourceAlpha,
+            MTLBlendFactor::OneMinusSourceAlpha,
+        ),
+        Blend::Knockout => (
+            MTLBlendFactor::OneMinusSource1Color,
+            MTLBlendFactor::OneMinusSource1Alpha,
+        ),
+    };
+    attachment.setDestinationRGBBlendFactor(rgb);
+    attachment.setDestinationAlphaBlendFactor(alpha);
     device
         .newRenderPipelineStateWithDescriptor_error(&descriptor)
         .map_err(|error| Error::Shaders(error.to_string()))
@@ -1055,7 +1394,8 @@ fn make_texture(
 
 #[cfg(test)]
 mod tests {
-    use lokyr_render_core::{CellCursor, CellGlyph, CellLine, LineStyle, PlacedGlyph};
+    use lokyr_render_core::Surface as _;
+    use lokyr_render_core::{Arc, CellCursor, CellGlyph, CellLine, LineStyle, PlacedGlyph, Shadow};
     use objc2_quartz_core::CAMetalLayer;
 
     use super::*;
@@ -1113,6 +1453,134 @@ mod tests {
             width,
             height,
         }
+    }
+
+    /// The GPU's time of a frame of a screen full of text, `width` by
+    /// `height` pixels, of cells of `cell` pixels and glyphs of `glyph`, of
+    /// light text on a dark background, its coverage as drawn and of the
+    /// system's weight, in turns, by the median of rounds of frames.
+    fn time_screen(width: u32, height: u32, cell: (u32, u32), glyph: (u32, u32)) {
+        let Ok(gpu) = Gpu::new() else {
+            return;
+        };
+        let mut renderer = MetalRenderer::new(&gpu, 1024, 32).expect("the shaders load");
+        // 95 glyphs of a coverage that has the mid-tones of antialiased
+        // text: a third of their pixels inked, of every value.
+        let mut seed = 7_u32;
+        let mut next = || {
+            seed = seed.wrapping_mul(1_103_515_245).wrapping_add(12_345);
+            seed >> 16
+        };
+        let (glyph_width, glyph_height) = glyph;
+        let per_row = 1024 / glyph_width;
+        let regions: Vec<AtlasRegion> = (0..95)
+            .map(|index| {
+                region(
+                    Texture::Coverage,
+                    (index % per_row) * glyph_width,
+                    (index / per_row) * glyph_height,
+                    glyph_width,
+                    glyph_height,
+                )
+            })
+            .collect();
+        let uploads: Vec<TextureUpdate> = regions
+            .iter()
+            .map(|region| TextureUpdate::Upload {
+                region: *region,
+                data: (0..region.width * region.height)
+                    .map(|_| {
+                        if next() % 3 == 0 {
+                            (next() % 256) as u8
+                        } else {
+                            0
+                        }
+                    })
+                    .collect(),
+            })
+            .collect();
+        renderer.update_textures(&uploads).unwrap();
+        finish(&renderer);
+        let (columns, rows) = ((width / cell.0) as u16, (height / cell.1) as u16);
+        let light = Color::from_rgb8(0xe6, 0xe6, 0xe6);
+        let list = |system_weight: bool| DisplayList {
+            frame: 1,
+            background: Color::from_rgb8(0x1e, 0x1e, 0x20),
+            items: vec![Item::Cells(CellBatch {
+                x: 0,
+                y: 0,
+                columns,
+                rows,
+                cell_width: cell.0,
+                cell_height: cell.1,
+                backgrounds: vec![
+                    Color::from_rgb8(0x1e, 0x1e, 0x20);
+                    usize::from(columns) * usize::from(rows)
+                ],
+                glyphs: (0..rows)
+                    .flat_map(|row| (0..columns).map(move |column| (column, row)))
+                    .enumerate()
+                    .map(|(index, (column, row))| CellGlyph {
+                        column,
+                        row,
+                        region: regions[index % regions.len()],
+                        x: 0,
+                        y: 1,
+                        color: light,
+                        smoothed: true,
+                    })
+                    .collect(),
+                lines: Vec::new(),
+                cursor: None,
+                system_weight,
+            })],
+        };
+        let (plain, system) = (list(false), list(true));
+        let mut frame = |list: &DisplayList, frames: u32| {
+            renderer.take_gpu_times();
+            for _ in 0..frames {
+                renderer.draw_offscreen(list, width, height).unwrap();
+            }
+            let times = renderer.take_gpu_times();
+            times.total.as_secs_f64() * 1e6 / f64::from(times.frames.max(1))
+        };
+        frame(&plain, 30);
+        frame(&system, 30);
+        // Pairs of rounds, each of the two first in turn, compared within
+        // the pair, as the GPU's clock drifts between them.
+        let (mut plains, mut ratios) = (Vec::new(), Vec::new());
+        for round in 0..40 {
+            let (first, second) = if round % 2 == 0 {
+                let plain = frame(&plain, 10);
+                (plain, frame(&system, 10))
+            } else {
+                let system = frame(&system, 10);
+                (frame(&plain, 10), system)
+            };
+            plains.push(first);
+            ratios.push(second / first);
+        }
+        let quartiles = |values: &mut Vec<f64>| {
+            values.sort_by(f64::total_cmp);
+            let at = |share: f64| values[((values.len() - 1) as f64 * share) as usize];
+            (at(0.25), at(0.5), at(0.75))
+        };
+        let (_, plain, _) = quartiles(&mut plains);
+        let (low, ratio, high) = quartiles(&mut ratios);
+        let percent = |ratio: f64| (ratio - 1.0) * 100.0;
+        println!(
+            "{width}x{height}, {columns}x{rows} cells: as drawn {plain:.0} µs a frame; of the system's weight {:+.1}% (quartiles {:+.1}% to {:+.1}%)",
+            percent(ratio),
+            percent(low),
+            percent(high)
+        );
+    }
+
+    #[test]
+    #[ignore = "a measure of the GPU's time, which `-- --ignored --nocapture` prints"]
+    fn a_screen_of_text_takes_the_gpu_s_time_of_either_weight() {
+        time_screen(3440, 1440, (8, 17), (8, 14));
+        time_screen(3456, 2234, (16, 34), (16, 28));
     }
 
     #[test]
@@ -1221,6 +1689,7 @@ mod tests {
                             x: 1,
                             y: 3,
                             color: white,
+                            smoothed: false,
                         },
                         CellGlyph {
                             column: 2,
@@ -1229,6 +1698,7 @@ mod tests {
                             x: 1,
                             y: 1,
                             color: white,
+                            smoothed: false,
                         },
                     ],
                     lines: vec![CellLine {
@@ -1246,8 +1716,10 @@ mod tests {
                         columns: 1,
                         shape: CursorShape::Hollow,
                         thickness: 1,
+                        length: 1.0,
                         color: white,
                     }),
+                    system_weight: false,
                 }),
                 // A clip outside the drawable leaves nothing to draw.
                 Item::PushClip(Rect {
@@ -1261,6 +1733,7 @@ mod tests {
                     x: 50,
                     y: 10,
                     color: white,
+                    weight: false,
                 }]),
                 Item::PopClip,
                 Item::PopClip,
@@ -1323,6 +1796,7 @@ mod tests {
                 x: 0,
                 y: 0,
                 color: Color::from_rgb8(255, 255, 255),
+                weight: false,
             };
             SMALLEST
         ]));
@@ -1401,6 +1875,60 @@ mod tests {
     }
 
     #[test]
+    fn a_picture_shrinks_of_its_smaller_copies_and_goes_once_dropped() {
+        let Some((_, mut renderer)) = renderer() else {
+            return;
+        };
+        // White and black rows a pixel high, 64 by 64: drawn a quarter of
+        // its size, each pixel the mean of its rows, a gray, where a sample
+        // of the whole picture would take a row's white or black.
+        let rows: Vec<Item> = (0..32)
+            .map(|row| Item::Rect {
+                rect: Rect {
+                    x: 0,
+                    y: row * 2,
+                    width: 64,
+                    height: 1,
+                },
+                color: Color::WHITE,
+            })
+            .collect();
+        let striped = DisplayList {
+            frame: 1,
+            background: Color::from_rgb8(0, 0, 0),
+            items: rows,
+        };
+        let picture = renderer
+            .make_picture(&striped, 64, 64)
+            .unwrap()
+            .expect("a picture of Metal's");
+        let shown = DisplayList {
+            frame: 2,
+            background: Color::from_rgb8(255, 0, 0),
+            items: vec![Item::Picture {
+                rect: Rect {
+                    x: 0,
+                    y: 0,
+                    width: 16,
+                    height: 16,
+                },
+                picture,
+            }],
+        };
+        let pixels = renderer.draw_offscreen(&shown, 16, 16).unwrap();
+        for pixel in pixels.chunks(4) {
+            assert!(
+                (100..=155).contains(&pixel[0]) && pixel[0] == pixel[1] && pixel[1] == pixel[2],
+                "{pixel:?}"
+            );
+        }
+        // Dropped, it draws nothing, the background alone.
+        renderer.drop_picture(picture);
+        let pixels = renderer.draw_offscreen(&shown, 16, 16).unwrap();
+        assert_eq!(&pixels[..4], [255, 0, 0, 255]);
+    }
+
+    #[test]
     fn glyphs_of_either_atlas_draw_in_their_order() {
         let Some((_, mut renderer)) = renderer() else {
             return;
@@ -1424,6 +1952,7 @@ mod tests {
             x: 0,
             y: 0,
             color: red,
+            weight: false,
         };
         let drawn = |renderer: &mut MetalRenderer, glyphs: Vec<PlacedGlyph>| {
             let list = DisplayList {
@@ -1443,6 +1972,20 @@ mod tests {
             vec![glyph(Texture::Coverage), glyph(Texture::Color)],
         );
         assert_eq!(coverage_then_color, [0, 255, 0, 255]);
+        // A glyph of its own colors takes its color's opacity, as a fade
+        // gives it: none, the blue alone; half, the green over the blue,
+        // each of half.
+        let faded = |opacity| PlacedGlyph {
+            color: Color::WHITE.with_alpha(opacity),
+            ..glyph(Texture::Color)
+        };
+        assert_eq!(drawn(&mut renderer, vec![faded(0.0)]), [0, 0, 255, 255]);
+        let half = drawn(&mut renderer, vec![faded(0.5)]);
+        assert_eq!(half[0], 0);
+        assert!(
+            half[1].abs_diff(half[2]) <= 2 && (100..=200).contains(&half[1]),
+            "{half:?}"
+        );
     }
 
     #[test]
@@ -1475,6 +2018,280 @@ mod tests {
         assert_eq!(renderer.draw_offscreen(&list, 0, 0).unwrap().len(), 4);
     }
 
+    fn rect(x: i32, y: i32, width: u32, height: u32) -> Rect {
+        Rect {
+            x,
+            y,
+            width,
+            height,
+        }
+    }
+
+    #[test]
+    fn a_shape_fills_within_its_border_and_its_rounded_corners() {
+        let Some((_, mut renderer)) = renderer() else {
+            return;
+        };
+        let (white, red, blue) = (
+            Color::from_rgb8(255, 255, 255),
+            Color::from_rgb8(255, 0, 0),
+            Color::from_rgb8(0, 0, 255),
+        );
+        let square = Shape {
+            border: 2.0,
+            border_color: blue,
+            ..Shape::filled(rect(2, 2, 16, 12), red)
+        };
+        let round = Shape {
+            radius: 8.0,
+            ..Shape::filled(rect(20, 2, 16, 16), red)
+        };
+        let list = DisplayList {
+            frame: 1,
+            background: white,
+            items: vec![Item::Shapes(vec![square, round])],
+        };
+        let rows = drawn(&mut renderer, &list, 40, 20);
+        let pixel = |x: usize, y: usize| rows[y][x * 4..][..3].to_vec();
+        // The square: its border's two pixels, then its fill; nothing past
+        // its edges.
+        assert_eq!(pixel(1, 5), [255, 255, 255]);
+        assert_eq!(pixel(2, 5), [0, 0, 255]);
+        assert_eq!(pixel(3, 5), [0, 0, 255]);
+        assert_eq!(pixel(4, 5), [255, 0, 0]);
+        assert_eq!(pixel(17, 13), [0, 0, 255]);
+        assert_eq!(pixel(15, 11), [255, 0, 0]);
+        assert_eq!(pixel(18, 13), [255, 255, 255]);
+        // The circle: its corners left out, its middle and its edges'
+        // middles filled, its outline's pixels between.
+        assert_eq!(pixel(20, 2), [255, 255, 255]);
+        assert_eq!(pixel(35, 17), [255, 255, 255]);
+        assert_eq!(pixel(28, 10), [255, 0, 0]);
+        assert_eq!(pixel(21, 10), [255, 0, 0]);
+        assert_eq!(pixel(28, 3), [255, 0, 0]);
+        let edge = pixel(22, 4);
+        assert!(edge[1] > 0 && edge[1] < 255, "{edge:?}");
+    }
+
+    #[test]
+    fn a_knocked_out_fill_takes_the_place_of_what_is_under_it() {
+        let Some((_, mut renderer)) = renderer() else {
+            return;
+        };
+        // A translucent window's background, of half its opacity, and
+        // fills of half theirs: one over it, one in its place, of round
+        // corners, and one in its place of a border that goes over.
+        let background = Color::from_rgb8(0, 0, 0).with_alpha(0.5);
+        let white = Color::from_rgb8(255, 255, 255).with_alpha(0.5);
+        let over = Shape::filled(rect(2, 2, 16, 16), white);
+        let knockout = Shape {
+            radius: 8.0,
+            knockout: true,
+            ..Shape::filled(rect(20, 2, 16, 16), white)
+        };
+        let bordered = Shape {
+            border: 1.0,
+            border_color: Color::from_rgb8(255, 0, 0),
+            knockout: true,
+            ..Shape::filled(rect(38, 2, 10, 10), white)
+        };
+        let list = DisplayList {
+            frame: 1,
+            background,
+            items: vec![Item::Shapes(vec![over, knockout, bordered])],
+        };
+        let rows = drawn(&mut renderer, &list, 50, 20);
+        let pixel = |x: usize, y: usize| rows[y][x * 4..][..4].to_vec();
+        let near = |got: u8, wanted: u8| got.abs_diff(wanted) <= 2;
+        // Over: three quarters opaque; in its place: half, as the window.
+        let o = pixel(10, 10);
+        assert!(near(o[3], 191), "{o:?}");
+        let k = pixel(28, 10);
+        assert!(near(k[3], 128) && near(k[0], 128), "{k:?}");
+        // Its edge, between the fill and the background, half opaque still.
+        let edge = pixel(22, 5);
+        assert!(near(edge[3], 128), "{edge:?}");
+        // A border over its fill, of its color, opaque.
+        let border = pixel(38, 6);
+        assert!(
+            border[0] > 250 && border[1] < 5 && border[3] > 250,
+            "{border:?}"
+        );
+        assert!(near(pixel(43, 6)[3], 128));
+        // Past it, the background.
+        assert!(near(pixel(19, 10)[3], 128));
+    }
+
+    #[test]
+    fn an_arc_draws_its_part_of_the_ring_inside_its_shape() {
+        let Some((_, mut renderer)) = renderer() else {
+            return;
+        };
+        let (white, red) = (Color::from_rgb8(255, 255, 255), Color::from_rgb8(255, 0, 0));
+        let arc = |x, start, span| Shape {
+            arc: Some(Arc {
+                start,
+                span,
+                thickness: 4.0,
+            }),
+            // An arc takes neither a border nor a shadow.
+            border: 3.0,
+            border_color: Color::from_rgb8(0, 0, 255),
+            shadow: Some(Shadow {
+                x: 0.0,
+                y: 0.0,
+                blur: 0.0,
+                color: Color::BLACK,
+            }),
+            ..Shape::filled(rect(x, 0, 20, 20), red)
+        };
+        // A quarter from the top, round to the right; a whole ring; a
+        // quarter from three quarters, round from the left to the top.
+        let list = DisplayList {
+            frame: 1,
+            background: white,
+            items: vec![Item::Shapes(vec![
+                arc(0, 0.0, 0.25),
+                arc(24, 0.0, 1.0),
+                arc(48, 0.75, 0.25),
+            ])],
+        };
+        let rows = drawn(&mut renderer, &list, 72, 20);
+        let pixel = |x: usize, y: usize| rows[y][x * 4..][..3].to_vec();
+        let red = [255, 0, 0];
+        let white = [255, 255, 255];
+        // The first: its line 4 pixels in, at the top right; not at the
+        // left, the bottom, its middle or its corner.
+        assert_eq!(pixel(14, 2), red);
+        assert_eq!(pixel(17, 6), red);
+        assert_eq!(pixel(5, 2), white);
+        assert_eq!(pixel(2, 10), white);
+        assert_eq!(pixel(10, 17), white);
+        assert_eq!(pixel(10, 10), white);
+        assert_eq!(pixel(0, 0), white);
+        // The ring: all round, its middle open.
+        for (x, y) in [(34, 1), (42, 10), (34, 18), (25, 10)] {
+            assert_eq!(pixel(x, y), red, "{x}, {y}");
+        }
+        assert_eq!(pixel(34, 10), white);
+        assert_eq!(pixel(24, 0), white);
+        // The last: at the top left, not at the right.
+        assert_eq!(pixel(53, 2), red);
+        assert_eq!(pixel(62, 2), white);
+        // Its ends cut across the line: the first's start between the top's
+        // two middle pixels.
+        assert!(pixel(9, 1)[1] > 240, "{:?}", pixel(9, 1));
+        assert!(pixel(10, 1)[1] < 15, "{:?}", pixel(10, 1));
+    }
+
+    #[test]
+    fn a_border_not_opaque_shows_the_fill_under_it_and_a_shape_of_no_size_draws_nothing() {
+        let Some((_, mut renderer)) = renderer() else {
+            return;
+        };
+        let (dark, panel) = (
+            Color::from_rgb8(30, 30, 32),
+            Color::from_rgb8(246, 246, 246),
+        );
+        let (red, blue, white) = (
+            Color::from_rgb8(255, 0, 0),
+            Color::from_rgb8(0, 0, 255),
+            Color::from_rgb8(255, 255, 255),
+        );
+        // A light panel of a border of black at 0.14, over a dark
+        // background; a red circle of a blue border; a shadowed shape of no
+        // width.
+        let bordered = Shape {
+            border: 2.0,
+            border_color: Color::BLACK.with_alpha(0.14),
+            ..Shape::filled(rect(2, 2, 16, 12), panel)
+        };
+        let round = Shape {
+            radius: 8.0,
+            border: 2.0,
+            border_color: blue,
+            ..Shape::filled(rect(20, 2, 16, 16), red)
+        };
+        let empty = Shape {
+            shadow: Some(Shadow {
+                x: 0.0,
+                y: 0.0,
+                blur: 8.0,
+                color: Color::BLACK.with_alpha(0.5),
+            }),
+            ..Shape::filled(rect(4, 18, 0, 0), panel)
+        };
+        let list = |background| DisplayList {
+            frame: 1,
+            background,
+            items: vec![Item::Shapes(vec![bordered, round, empty])],
+        };
+        let rows = drawn(&mut renderer, &list(dark), 40, 24);
+        let pixel = |rows: &[Vec<u8>], x: usize, y: usize| rows[y][x * 4..][..3].to_vec();
+        // The border over the panel's fill, 246 of 0.86, not over the dark
+        // background behind it, 30 of 0.86; the fill inside it.
+        let ring = pixel(&rows, 2, 6);
+        assert!(
+            ring.iter().all(|&value| value.abs_diff(212) <= 2),
+            "{ring:?}"
+        );
+        assert_eq!(pixel(&rows, 8, 8), [246, 246, 246]);
+        // Nothing of the shape of no width, nor of its shadow.
+        assert_eq!(pixel(&rows, 4, 18), [30, 30, 32]);
+        assert_eq!(pixel(&rows, 6, 20), [30, 30, 32]);
+        // At the circle's edge, on white, its border's blue over the white
+        // alone, none of the red fill under it.
+        let rows = drawn(&mut renderer, &list(white), 40, 24);
+        let edge = pixel(&rows, 22, 4);
+        assert!(edge[0] < 250 && edge[0].abs_diff(edge[1]) <= 1, "{edge:?}");
+    }
+
+    #[test]
+    fn a_shadow_darkens_under_its_shape_alone_and_fades() {
+        let Some((_, mut renderer)) = renderer() else {
+            return;
+        };
+        let white = Color::from_rgb8(255, 255, 255);
+        let shadowed = |blur: f32| DisplayList {
+            frame: 1,
+            background: white,
+            items: vec![Item::Shapes(vec![Shape {
+                shadow: Some(Shadow {
+                    x: 0.0,
+                    y: 4.0,
+                    blur,
+                    color: Color::BLACK.with_alpha(0.5),
+                }),
+                ..Shape::filled(rect(10, 10, 20, 20), white)
+            }])],
+        };
+        let rows = drawn(&mut renderer, &shadowed(0.0), 40, 44);
+        let gray = |rows: &[Vec<u8>], x: usize, y: usize| rows[y][x * 4];
+        // Sharp: half black under the shape's bottom, moved 4 down, and
+        // nothing above it or past it.
+        assert_eq!(gray(&rows, 20, 20), 255);
+        assert!(
+            gray(&rows, 20, 31).abs_diff(128) <= 1,
+            "{}",
+            gray(&rows, 20, 31)
+        );
+        assert!(gray(&rows, 20, 33).abs_diff(128) <= 1);
+        assert_eq!(gray(&rows, 20, 34), 255);
+        assert_eq!(gray(&rows, 20, 8), 255);
+        // Blurred: darkest at the edge, fading below it, half as dark at
+        // the moved edge, and nothing a blur's three deviations past it.
+        let rows = drawn(&mut renderer, &shadowed(8.0), 40, 50);
+        let column: Vec<u8> = (30..50).map(|y| gray(&rows, 20, y)).collect();
+        assert!(
+            column.windows(2).all(|pair| pair[0] <= pair[1]),
+            "{column:?}"
+        );
+        assert!(gray(&rows, 20, 33).abs_diff(185) <= 2, "{column:?}");
+        assert!(gray(&rows, 20, 43) >= 253, "{column:?}");
+        assert_eq!(gray(&rows, 20, 48), 255);
+        assert_eq!(gray(&rows, 20, 20), 255);
+    }
+
     #[test]
     fn the_frames_that_the_gpu_draws_are_told_until_it_finishes() {
         let Some((gpu, mut renderer)) = renderer() else {
@@ -1497,6 +2314,110 @@ mod tests {
         last.waitUntilCompleted();
         assert_eq!(renderer.drawing_from(), None);
         assert!(renderer.drawing.is_empty());
+    }
+
+    #[test]
+    fn a_glyph_of_the_system_s_weight_thins_dark_text_alone() {
+        let Some((_, mut renderer)) = renderer() else {
+            return;
+        };
+        // A glyph of four pixels, of no, a quarter, half and whole coverage.
+        let coverage = region(Texture::Coverage, 0, 0, 4, 1);
+        renderer
+            .update_textures(&[TextureUpdate::Upload {
+                region: coverage,
+                data: vec![0, 64, 128, 255],
+            }])
+            .unwrap();
+        finish(&renderer);
+        let (black, white) = (Color::from_rgb8(0, 0, 0), Color::from_rgb8(255, 255, 255));
+        let row = |renderer: &mut MetalRenderer, item: Item, background: Color| {
+            let list = DisplayList {
+                frame: 1,
+                background,
+                items: vec![item],
+            };
+            let pixels = drawn(renderer, &list, 4, 1);
+            pixels[0]
+                .chunks(4)
+                .map(|pixel| pixel[1])
+                .collect::<Vec<u8>>()
+        };
+        let cells = |system_weight, color| {
+            Item::Cells(CellBatch {
+                columns: 1,
+                rows: 1,
+                cell_width: 4,
+                cell_height: 1,
+                backgrounds: vec![Color::CLEAR],
+                glyphs: vec![CellGlyph {
+                    column: 0,
+                    row: 0,
+                    region: coverage,
+                    x: 0,
+                    y: 0,
+                    color,
+                    smoothed: true,
+                }],
+                system_weight,
+                ..CellBatch::default()
+            })
+        };
+        let placed = |color| {
+            Item::Glyphs(vec![PlacedGlyph {
+                region: coverage,
+                x: 0,
+                y: 0,
+                color,
+                weight: true,
+            }])
+        };
+        let near = |row: Vec<u8>, expected: [u8; 4]| {
+            assert!(
+                row.iter()
+                    .zip(expected)
+                    .all(|(&got, want)| got.abs_diff(want) <= 2),
+                "{row:?} against {expected:?}"
+            );
+        };
+        // Black on white: the coverage as drawn, then squared, as black's
+        // luminance is 0.
+        near(
+            row(&mut renderer, cells(false, black), white),
+            [255, 191, 127, 0],
+        );
+        near(
+            row(&mut renderer, cells(true, black), white),
+            [255, 239, 191, 0],
+        );
+        near(row(&mut renderer, placed(black), white), [255, 239, 191, 0]);
+        // A glyph that was drawn without the font smoothing keeps its
+        // coverage, of the batch's weight or the glyph's.
+        let unsmoothed = |item: Item| match item {
+            Item::Cells(mut batch) => {
+                batch.glyphs[0].smoothed = false;
+                Item::Cells(batch)
+            }
+            Item::Glyphs(mut glyphs) => {
+                glyphs[0].weight = false;
+                Item::Glyphs(glyphs)
+            }
+            other => other,
+        };
+        near(
+            row(&mut renderer, unsmoothed(cells(true, black)), white),
+            [255, 191, 127, 0],
+        );
+        near(
+            row(&mut renderer, unsmoothed(placed(black)), white),
+            [255, 191, 127, 0],
+        );
+        // White on black, of luminance 1: as drawn either way.
+        near(
+            row(&mut renderer, cells(true, white), black),
+            [0, 64, 128, 255],
+        );
+        near(row(&mut renderer, placed(white), black), [0, 64, 128, 255]);
     }
 
     /// `list` drawn into a texture of `width` by `height` pixels, read
@@ -1557,6 +2478,7 @@ mod tests {
                 glyphs: Vec::new(),
                 lines,
                 cursor: None,
+                system_weight: false,
             })],
             frame: 1,
         };

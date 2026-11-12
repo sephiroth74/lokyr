@@ -1,0 +1,60 @@
+22:01:46 round 1 plain 
+22:01:49 round 1 hr 
+22:01:52 round 1 hr-jit 
+22:01:56 round 1 hr-unsigned 
+22:01:59 round 1 hr-both 
+22:02:03 round 2 hr 
+22:02:07 round 2 hr-jit 
+22:02:10 round 2 hr-unsigned 
+22:02:14 round 2 hr-both 
+22:02:17 round 2 plain 
+22:02:21 round 3 hr-jit 
+22:02:24 round 3 hr-unsigned 
+22:02:28 round 3 hr-both 
+22:02:31 round 3 plain 
+22:02:35 round 3 hr 
+22:02:39 round 4 hr-unsigned 
+22:02:42 round 4 hr-both 
+22:02:46 round 4 plain 
+22:02:49 round 4 hr 
+22:02:53 round 4 hr-jit 
+22:02:56 round 5 hr-both 
+22:03:00 round 5 plain 
+22:03:03 round 5 hr 
+22:03:07 round 5 hr-jit 
+22:03:10 round 5 hr-unsigned 
+22:03:14 round 6 plain 
+22:03:17 round 6 hr 
+22:03:21 round 6 hr-jit 
+22:03:24 round 6 hr-unsigned 
+22:03:28 round 6 hr-both 
+22:03:50 round 1 plain --jit-region
+22:03:53 round 1 hr --jit-region
+22:03:57 round 1 hr-jit --jit-region
+22:04:00 round 1 hr-unsigned --jit-region
+22:04:04 round 1 hr-both --jit-region
+22:04:07 round 2 hr --jit-region
+22:04:11 round 2 hr-jit --jit-region
+22:04:14 round 2 hr-unsigned --jit-region
+22:04:17 round 2 hr-both --jit-region
+22:04:21 round 2 plain --jit-region
+22:04:25 round 3 hr-jit --jit-region
+22:04:28 round 3 hr-unsigned --jit-region
+22:04:32 round 3 hr-both --jit-region
+22:04:35 round 3 plain --jit-region
+22:04:39 round 3 hr --jit-region
+22:04:43 round 4 hr-unsigned --jit-region
+22:04:46 round 4 hr-both --jit-region
+22:04:49 round 4 plain --jit-region
+22:04:53 round 4 hr --jit-region
+22:04:56 round 4 hr-jit --jit-region
+22:05:00 round 5 hr-both --jit-region
+22:05:03 round 5 plain --jit-region
+22:05:06 round 5 hr --jit-region
+22:05:10 round 5 hr-jit --jit-region
+22:05:13 round 5 hr-unsigned --jit-region
+22:05:17 round 6 plain --jit-region
+22:05:20 round 6 hr --jit-region
+22:05:24 round 6 hr-jit --jit-region
+22:05:27 round 6 hr-unsigned --jit-region
+22:05:31 round 6 hr-both --jit-region

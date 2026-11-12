@@ -13,16 +13,19 @@ use objc2::rc::Retained;
 use objc2::runtime::AnyObject;
 use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send};
 use objc2_app_kit::{NSAutoresizingMaskOptions, NSResponder, NSView, NSWorkspace};
-use objc2_foundation::{NSArray, NSNumber, NSObject, NSPoint, NSRect, NSSize, NSString};
+use objc2_foundation::{NSArray, NSNumber, NSObject, NSPoint, NSRect, NSSize, NSString, NSValue};
 use objc2_quartz_core::{
-    CACurrentMediaTime, CAKeyframeAnimation, CALayer, CAMediaTiming, CAMediaTimingFunction,
-    CAMetalLayer, kCAAnimationDiscrete, kCAMediaTimingFunctionEaseIn,
+    CABasicAnimation, CACurrentMediaTime, CAKeyframeAnimation, CALayer, CAMediaTiming,
+    CAMediaTimingFunction, CAMetalLayer, kCAAnimationDiscrete, kCAMediaTimingFunctionEaseIn,
     kCAMediaTimingFunctionEaseInEaseOut, kCAMediaTimingFunctionEaseOut,
     kCAMediaTimingFunctionLinear,
 };
 
 /// The key of the blinking's animation on the layer.
 const BLINK: &str = "blink";
+
+/// The key of the slide's animation on the layer.
+const SLIDE: &str = "slide";
 
 /// The shortest cycle that blinks: a shorter one, as of nothing but zeros,
 /// leaves the layer on.
@@ -97,6 +100,22 @@ impl LayerView {
         view
     }
 
+    /// A view of a layer that fills its window, as its content view, and
+    /// shows, which the window's whole content is.
+    pub(crate) fn filling(mtm: MainThreadMarker, frame: NSRect) -> Retained<Self> {
+        let this = Self::alloc(mtm).set_ivars(LayerViewIvars {
+            blink: Cell::new(None),
+        });
+        // SAFETY: `NSView`'s `initWithFrame:` has this signature.
+        let view: Retained<Self> = unsafe { msg_send![super(this), initWithFrame: frame] };
+        view.setWantsLayer(true);
+        view.setAutoresizingMask(
+            NSAutoresizingMaskOptions::ViewWidthSizable
+                | NSAutoresizingMaskOptions::ViewHeightSizable,
+        );
+        view
+    }
+
     /// The view, by its address, for a renderer: it lives as long as the
     /// window.
     pub(crate) fn address(&self) -> NonNull<c_void> {
@@ -116,8 +135,39 @@ impl LayerView {
             NSPoint::new(place.origin.x, height - place.origin.y - place.size.height),
             NSSize::new(place.size.width, place.size.height),
         );
-        if self.frame() != frame {
+        let before = self.frame();
+        let moved = before.origin != frame.origin;
+        // A slide of a view that shows, of its size, from where it shows,
+        // in the middle of a slide too.
+        let slide = place
+            .slide
+            .filter(|_| moved && !self.isHidden() && before.size == frame.size);
+        let layer = self.layer();
+        let from = layer.as_ref().map(|layer| {
+            // SAFETY: the layer's presentation copy, read on the main thread.
+            unsafe { layer.presentationLayer() }
+                .map_or_else(|| layer.position(), |shown| shown.position())
+        });
+        if before != frame {
             self.setFrame(frame);
+        }
+        if let Some(layer) = &layer
+            && moved
+        {
+            layer.removeAnimationForKey(&NSString::from_str(SLIDE));
+            if let (Some(slide), Some(from)) = (slide, from) {
+                let animation =
+                    CABasicAnimation::animationWithKeyPath(Some(&NSString::from_str("position")));
+                // SAFETY: a value of a point, as an animation of the position
+                // takes.
+                unsafe {
+                    let from = NSValue::valueWithPoint(from);
+                    animation.setFromValue(Some(&from));
+                }
+                animation.setDuration(slide.duration.as_secs_f64());
+                animation.setTimingFunction(Some(&timing(slide.easing)));
+                layer.addAnimation_forKey(&animation, Some(&NSString::from_str(SLIDE)));
+            }
         }
         self.setHidden(false);
         self.blink(place.blink);
@@ -195,7 +245,7 @@ fn animation(blink: &Blink, reduced: bool) -> Option<Retained<CAKeyframeAnimatio
 }
 
 /// The keyframes' values of `opacities`, as objects.
-fn opacities(opacities: &[f64]) -> Retained<NSArray> {
+pub(crate) fn opacities(opacities: &[f64]) -> Retained<NSArray> {
     let values: Vec<Retained<AnyObject>> = opacities
         .iter()
         .map(|&opacity| {

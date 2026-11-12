@@ -1,0 +1,89 @@
+diff --git a/crates/app-core/src/app.rs b/crates/app-core/src/app.rs
+index 0ec1c99..651a0e6 100644
+--- a/crates/app-core/src/app.rs
++++ b/crates/app-core/src/app.rs
+@@ -2125,6 +2125,9 @@ impl<B: Backend> App<B> {
+         self.events(platform);
+         let ui_events = std::mem::take(&mut self.ui_events);
+         let delivers = self.plugins.has_events();
++        if delivers {
++            eprintln!("probe delivers {} ui", ui_events.len());
++        }
+         let rendered = std::mem::take(&mut self.rendered_slots);
+         if ui_events.is_empty() && !delivers && !rendered {
+             return;
+@@ -2962,16 +2965,54 @@ impl<B: Backend> Handler for App<B> {
+     }
+ 
+     fn app_event(&mut self, platform: &mut dyn Platform, event: AppEvent) {
++        let kind = match &event {
++            AppEvent::Wake => "wake",
++            AppEvent::Timer(timer) if self.deliver_timer == Some(*timer) => "deliver-timer",
++            AppEvent::Timer(timer) if self.blink_timer.is_some_and(|(t, _)| t == *timer) => "blink-timer",
++            AppEvent::Timer(timer) if self.label_timer.is_some_and(|(t, _)| t == *timer) => "label-timer",
++            AppEvent::Timer(timer) if self.tooltip_timer.is_some_and(|(t, _)| t == *timer) => "tooltip-timer",
++            AppEvent::Timer(timer) if self.exit_timer == Some(*timer) => "exit-timer",
++            AppEvent::Timer(timer) if self.told_timer.is_some_and(|(t, _)| t == *timer) => "told-timer",
++            AppEvent::Timer(timer) if self.resize_timer.is_some_and(|(t, _)| t == *timer) => "resize-timer",
++            AppEvent::Timer(timer) if self.flash_timer == Some(*timer) => "flash-timer",
++            AppEvent::Timer(timer) if self.access_timer == Some(*timer) => "access-timer",
++            AppEvent::Timer(timer) if self.scroll_timer == Some(*timer) => "scroll-timer",
++            AppEvent::Timer(timer) if self.title_timer.is_some_and(|(t, _)| t == *timer) => "title-timer",
++            AppEvent::Timer(_) => "timer",
++            _ => "app",
++        };
++        let start = Instant::now();
+         self.take_app_event(platform, event);
++        let took = start.elapsed();
+         self.end_turn(platform);
++        probe_turn(kind, took, start.elapsed() - took, self.deliver_timer.is_some());
+     }
+ 
+     fn window_event(&mut self, platform: &mut dyn Platform, window: WindowId, event: WindowEvent) {
++        let kind = match &event {
++            WindowEvent::Frame => "frame",
++            WindowEvent::Key(_) => "key",
++            WindowEvent::Resized(_) => "resized",
++            _ => "window",
++        };
++        let start = Instant::now();
+         self.take_window_event(platform, window, event);
++        let took = start.elapsed();
+         self.end_turn(platform);
++        probe_turn(kind, took, start.elapsed() - took, self.deliver_timer.is_some());
+     }
+ }
+ 
++/// The probe's line of a turn.
++fn probe_turn(kind: &str, took: Duration, ended: Duration, deliver: bool) {
++    eprintln!(
++        "probe turn {kind} {} {} {}",
++        took.as_micros(),
++        ended.as_micros(),
++        u8::from(deliver)
++    );
++}
++
+ /// A title's name of `directory`: its last part, `~` for `home`, and `/`
+ /// for the root.
+ fn directory_name(directory: &std::path::Path, home: Option<&std::path::Path>) -> String {
+diff --git a/crates/app-core/src/app/frame.rs b/crates/app-core/src/app/frame.rs
+index 2af60dc..4e3e5ff 100644
+--- a/crates/app-core/src/app/frame.rs
++++ b/crates/app-core/src/app/frame.rs
+@@ -162,6 +162,7 @@ impl<B: Backend> App<B> {
+     /// one is.
+     pub(super) fn lay_out_panes(&mut self, window: WindowId, size: WindowSize) -> Vec<PaneView> {
+         // The slots' views take their regions, and the panes the rest.
++        let probe = Instant::now();
+         self.take_trees(window, size.scale as f32);
+         let content = match self.lay_out_chrome(window, size) {
+             Some(regions) => {
+@@ -198,6 +199,7 @@ impl<B: Backend> App<B> {
+         let mut rooms = rooms;
+         self.lay_out_headers(window, &mut rooms);
+         self.settle_views(window);
++        eprintln!("probe chrome {}", probe.elapsed().as_micros());
+         let pixels = |cell: u32| u16::try_from(cell).unwrap_or(u16::MAX);
+         let views: Vec<PaneView> = rooms
+             .into_iter()

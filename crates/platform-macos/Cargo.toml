@@ -14,6 +14,8 @@ lokyr-platform-core.workspace = true
 raw-window-handle.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
+accesskit.workspace = true
+accesskit_macos.workspace = true
 block2.workspace = true
 libc.workspace = true
 objc2.workspace = true
@@ -21,6 +23,7 @@ objc2-app-kit = { workspace = true, features = [
     "std",
     "block2",
     "objc2-core-foundation",
+    "objc2-core-graphics",
     "objc2-quartz-core",
     "objc2-uniform-type-identifiers",
     "NSAccessibility",
@@ -36,32 +39,44 @@ objc2-app-kit = { workspace = true, features = [
     "NSColor",
     "NSControl",
     "NSCursor",
+    "NSDockTile",
     "NSEvent",
     "NSFont",
     "NSFontManager",
     "NSGraphics",
     "NSGraphicsContext",
+    "NSBitmapImageRep",
     "NSImage",
+    "NSImageRep",
     "NSMenu",
     "NSMenuItem",
     "NSDragging",
     "NSPanel",
+    "NSParagraphStyle",
     "NSPasteboard",
     "NSResponder",
+    "NSSavePanel",
     "NSScreen",
+    "NSScroller",
     "NSText",
     "NSTextField",
     "NSTextInputClient",
     "NSTextInputContext",
+    "NSTitlebarAccessoryViewController",
+    "NSToolbar",
+    "NSTrackingArea",
     "NSRunningApplication",
     "NSView",
+    "NSViewController",
+    "NSLayoutConstraint",
     "NSWindow",
     "NSWorkspace",
 ] }
-objc2-core-foundation = { workspace = true, features = ["std", "CFRunLoop"] }
+objc2-core-foundation = { workspace = true, features = ["std", "block2", "CFRunLoop"] }
 objc2-quartz-core = { workspace = true, features = [
     "std",
     "objc2-core-foundation",
+    "objc2-core-graphics",
     "CAAnimation",
     "CABase",
     "CADisplayLink",
@@ -69,6 +84,17 @@ objc2-quartz-core = { workspace = true, features = [
     "CAMediaTiming",
     "CAMediaTimingFunction",
     "CAMetalLayer",
+    "CAShapeLayer",
+    "CATransaction",
+] }
+objc2-core-graphics = { workspace = true, features = [
+    "std",
+    "CGBitmapContext",
+    "CGColor",
+    "CGColorSpace",
+    "CGContext",
+    "CGImage",
+    "CGPath",
 ] }
 objc2-foundation = { workspace = true, features = [
     "std",
@@ -76,9 +102,11 @@ objc2-foundation = { workspace = true, features = [
     "NSArray",
     "NSAttributedString",
     "NSBundle",
+    "NSData",
     "NSError",
     "NSDate",
     "NSDictionary",
+    "NSDistributedNotificationCenter",
     "NSGeometry",
     "NSKeyValueObserving",
     "NSLocale",
@@ -105,7 +133,11 @@ objc2-user-notifications = { workspace = true, features = [
     "UNUserNotificationCenter",
 ] }
 
+[dev-dependencies]
+lokyr-platform-core = { workspace = true, features = ["conformance"] }
+
 [target.'cfg(target_os = "macos")'.dev-dependencies]
+accesskit.workspace = true
 objc2-app-kit = { workspace = true, features = ["NSPasteboardItem", "NSTextView"] }
 objc2-foundation = { workspace = true, features = ["NSOperation", "NSUserDefaults"] }
 
@@ -113,6 +145,18 @@ objc2-foundation = { workspace = true, features = ["NSOperation", "NSUserDefault
 # for itself.
 [[test]]
 name = "run_loop"
+harness = false
+
+[[test]]
+name = "opened_frame"
+harness = false
+
+[[test]]
+name = "screen_places"
+harness = false
+
+[[test]]
+name = "services"
 harness = false
 
 [[test]]
@@ -208,6 +252,10 @@ name = "titlebar"
 harness = false
 
 [[test]]
+name = "accessibility"
+harness = false
+
+[[test]]
 name = "window_frame"
 harness = false
 
@@ -223,5 +271,13 @@ harness = false
 name = "posted_keys"
 harness = false
 
+[[test]]
+name = "conformance"
+harness = false
+
 [lints]
 workspace = true
+
+[[test]]
+name = "alert_dismiss"
+harness = false

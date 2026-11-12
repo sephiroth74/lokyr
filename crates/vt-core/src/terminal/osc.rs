@@ -2,6 +2,7 @@
 //! embedder, besides text: titles, the working directory, notifications,
 //! progress and the tab's color.
 
+use super::marks::Mark;
 use super::{ClipboardRequest, ClipboardTarget, Redraw, Terminal};
 use crate::page::{Rgb, RowFlag, Semantic};
 use crate::parser::StringEnd;
@@ -67,6 +68,18 @@ pub enum Event {
     /// what it can, and tells the terminal how the window ended with
     /// [`Terminal::set_window`].
     WindowChanged,
+    /// A command that the shell marked started, as its output's mark came
+    /// (OSC 133 `C`), of its id among the terminal's commands, as
+    /// [`Terminal::commands`] gives them.
+    CommandStarted(u64),
+    /// A command that started ended, as its end's mark came (OSC 133 `D`),
+    /// of its id and the exit status that the shell told, if it told one.
+    CommandEnded {
+        /// Its id.
+        id: u64,
+        /// Its exit status.
+        status: Option<i32>,
+    },
     /// A program asks to read the clipboards (OSC 52), which the
     /// configuration allows. An embedder with a session answers with the
     /// session's `reply_clipboard`; one without, with
@@ -149,6 +162,7 @@ impl Terminal {
                 Some([] | [b';', ..]) => self.report_progress(rest),
                 _ => self.notify(String::new(), text(rest)),
             },
+            b"1337" => self.osc_1337(rest),
             b"777" => {
                 let mut fields = rest.splitn(3, |&byte| byte == b';');
                 if fields.next() == Some(b"notify") {
@@ -204,21 +218,46 @@ impl Terminal {
 
     /// OSC 133, FinalTerm's semantic prompts: `A` starts a prompt, which
     /// also marks its row, `B` the command that the user types, and `C`
-    /// its output, as `D` ends the command, with its status when a number
-    /// follows. The text printed next is in that zone. `A`'s `redraw`
+    /// its output, of the command's line, percent-encoded, after
+    /// `cmdline_url=`, as fish and kitty's shells tell it, as `D` ends the
+    /// command, with its status when a number follows. The text printed next is in that zone. `A`'s `redraw`
     /// option tells what the shell draws again of its prompt on a resize,
     /// until another `A` tells otherwise: `1`, the whole prompt, as by
     /// default; `last`, its last line; `0`, nothing.
     fn mark_prompt(&mut self, fields: &[u8]) {
         let mut fields = fields.split(|&byte| byte == b';');
         let kind = fields.next().unwrap_or_default();
+        let mut status = None;
         if kind == b"D"
-            && let Some(status) = fields
+            && let Some(told) = fields
                 .next()
                 .and_then(|status| std::str::from_utf8(status).ok())
                 .and_then(|status| status.parse().ok())
         {
-            self.command_status = Some(status);
+            self.command_status = Some(told);
+            status = Some(told);
+        }
+        // The line of the command that `C` starts, as the shell tells it.
+        let line = (kind == b"C")
+            .then(|| {
+                fields
+                    .clone()
+                    .find_map(|field| field.strip_prefix(b"cmdline_url="))
+            })
+            .flatten();
+        // The command's mark, of the cursor's cell, before the zone's.
+        let mark = match kind {
+            b"A" => Some(Mark::Prompt),
+            b"B" => Some(Mark::Input),
+            b"C" => Some(Mark::Output),
+            b"D" => Some(Mark::End(status)),
+            _ => None,
+        };
+        if let Some(mark) = mark {
+            self.mark_command(mark);
+        }
+        if let Some(line) = line {
+            self.tell_command_line(line);
         }
         self.zone = match kind {
             b"A" => {

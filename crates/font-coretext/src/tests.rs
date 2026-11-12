@@ -297,6 +297,21 @@ fn the_cascade_draws_what_a_face_lacks() {
 }
 
 #[test]
+fn the_fallback_takes_the_faces_of_the_language_given() {
+    // Han's characters: Simplified Chinese's PingFang, Japanese's Hiragino,
+    // whatever the system's languages.
+    for (language, family) in [("zh-Hans", "PingFangSC"), ("ja", "HiraginoSans")] {
+        let mut backend = CoreText::new().with_language(language);
+        let face = regular(&mut backend, "Menlo");
+        let found = backend.fallback(face, "日").expect("a face of Han");
+        let font = backend.font(found, PROBE_SIZE).unwrap();
+        // SAFETY: a font that CoreText made.
+        let name = unsafe { font.post_script_name() }.to_string();
+        assert!(name.starts_with(family), "{language}: {name}");
+    }
+}
+
+#[test]
 fn a_missing_family_falls_back_to_sf_mono() {
     let mut backend = CoreText::new();
     let resolved = resolve_faces(
@@ -709,10 +724,7 @@ fn a_run_in_another_font_takes_that_font_s_face() {
             glyph.glyph,
             26.0,
             Synthesis::default(),
-            Rendering {
-                antialias: true,
-                thin: false,
-            },
+            Rendering::default(),
         );
         assert!(bitmap.width > 0, "{glyph:?}");
     }
@@ -833,10 +845,45 @@ fn menlo_m(rendering: Rendering) -> Vec<u8> {
 }
 
 #[test]
+fn a_glyph_s_phase_moves_its_ink_by_thirds_of_a_pixel() {
+    let mut backend = CoreText::with_font_smoothing(true);
+    let face = regular(&mut backend, "Menlo");
+    let glyph = backend.glyph(face, 'l').unwrap();
+    // The ink's centre across, from the pen, in pixels, of the glyph at
+    // `size` pixels.
+    let mut centre = |phase: u8, size: f32| {
+        let rendering = Rendering {
+            phase,
+            ..Rendering::default()
+        };
+        let bitmap = backend.rasterize(face, glyph, size, Synthesis::default(), rendering);
+        let width = bitmap.width as usize;
+        let (mut ink, mut moment) = (0.0, 0.0);
+        for (index, &pixel) in bitmap.data.iter().enumerate() {
+            let x = (index % width) as f64 + 0.5 + f64::from(bitmap.left);
+            ink += f64::from(pixel);
+            moment += f64::from(pixel) * x;
+        }
+        moment / ink
+    };
+    // 13 pixels, and 26, the 13 points at a scale of 2, of which Core
+    // Graphics would put the origin at half a pixel.
+    for size in [13.0, 26.0] {
+        let (first, second, third) = (centre(0, size), centre(1, size), centre(2, size));
+        for (from, to) in [(first, second), (second, third)] {
+            assert!(
+                ((to - from) - 1.0 / 3.0).abs() < 0.08,
+                "{size}: {from} to {to}"
+            );
+        }
+    }
+}
+
+#[test]
 fn without_antialiasing_each_pixel_is_covered_or_not() {
     let aliased = menlo_m(Rendering {
         antialias: false,
-        thin: false,
+        ..Rendering::default()
     });
     assert!(aliased.contains(&255));
     assert!(aliased.iter().all(|&pixel| pixel == 0 || pixel == 255));
@@ -849,8 +896,8 @@ fn a_thin_glyph_covers_less_than_a_smoothed_one() {
     let total = |pixels: Vec<u8>| pixels.iter().map(|&pixel| u32::from(pixel)).sum::<u32>();
     let smoothed = total(menlo_m(Rendering::default()));
     let thin = total(menlo_m(Rendering {
-        antialias: true,
         thin: true,
+        ..Rendering::default()
     }));
     // Font smoothing adds about a third of coverage.
     assert!(thin * 5 < smoothed * 4, "thin {thin}, smoothed {smoothed}");
@@ -953,4 +1000,121 @@ fn the_system_s_families_leave_out_the_hidden_ones() {
         "{families:?}"
     );
     assert!(!families.iter().any(|family| family.starts_with('.')));
+}
+
+#[test]
+fn the_interface_s_family_is_the_system_s_and_its_text_has_its_width() {
+    let mut backend = CoreText::new();
+    let family = backend.interface_family();
+    let faces = backend
+        .family(&family)
+        .expect("the system's interface font");
+    let regular = faces
+        .iter()
+        .find(|face| face.style == "Regular")
+        .expect("a regular face");
+    // As AppKit lays out "Hello, world" at 13 points, about 71.5.
+    let width = backend.width(
+        regular.id,
+        13.0,
+        "Hello, world",
+        Features { ligatures: true },
+    );
+    assert!((width - 71.5).abs() < 1.5, "{width}");
+    // Of a proportional face: an `i` narrower than an `m`.
+    let narrow = backend.width(regular.id, 13.0, "iiii", Features { ligatures: true });
+    let wide = backend.width(regular.id, 13.0, "mmmm", Features { ligatures: true });
+    assert!(narrow < wide / 2.0, "{narrow} {wide}");
+    // Twice the size is narrower than twice the width, as the system's
+    // font draws its larger sizes of its own optical size, tighter.
+    let double = backend.width(
+        regular.id,
+        26.0,
+        "Hello, world",
+        Features { ligatures: true },
+    );
+    assert!(double < 2.0 * width - 4.0, "{double}");
+    assert_eq!(
+        backend.width(regular.id, 13.0, "", Features { ligatures: true }),
+        0.0
+    );
+    // Of the optical size of 13 points, twice the size is twice the width,
+    // as a display of twice the pixels draws 13 points.
+    let optical = backend.optical(regular.id, 13.0);
+    assert_ne!(optical, regular.id);
+    assert_eq!(backend.optical(regular.id, 13.0), optical);
+    let at = |backend: &mut CoreText, size| {
+        backend.width(optical, size, "Hello, world", Features { ligatures: true })
+    };
+    let (one, two) = (at(&mut backend, 13.0), at(&mut backend, 26.0));
+    assert!((one - width).abs() < 0.01, "{one} {width}");
+    assert!((two - 2.0 * one).abs() < 0.5, "{one} {two}");
+    let metrics = backend.metrics(optical, 26.0);
+    assert!((metrics.ascent - 2.0 * backend.metrics(optical, 13.0).ascent).abs() < 0.5);
+    // A face of another family's keeps its own forms.
+    let mono = backend.family("SF Mono").unwrap()[0].id;
+    let mono_optical = backend.optical(mono, 13.0);
+    assert!(
+        (backend.width(mono_optical, 26.0, "abc", Features { ligatures: true })
+            - backend.width(mono, 26.0, "abc", Features { ligatures: true }))
+        .abs()
+            < 0.01
+    );
+}
+
+#[test]
+fn a_glyph_past_the_atlas_s_largest_side_rasterizes_as_none() {
+    let mut backend = CoreText::new();
+    // Of a side of 10⁹ pixels, a buffer past the memory, refused.
+    let huge = glyph(&mut backend, "Menlo", 'M', 1e9, Synthesis::default());
+    assert_eq!((huge.width, huge.height), (0, 0));
+    assert!(huge.data.is_empty());
+    // An emoji of 10 000 pixels, past the atlas's side too.
+    let menlo = regular(&mut backend, "Menlo");
+    let emoji = backend.fallback(menlo, "🦀").unwrap();
+    let crab = backend.glyph(emoji, '🦀').unwrap();
+    let large = backend.rasterize(
+        emoji,
+        crab,
+        10_000.0,
+        Synthesis::default(),
+        Rendering::default(),
+    );
+    assert_eq!((large.width, large.height), (0, 0));
+    // One within it, drawn.
+    let drawn = glyph(&mut backend, "Menlo", 'M', 1000.0, Synthesis::default());
+    assert!(drawn.width > 0 && drawn.width <= lokyr_text_core::GRAY_MAX);
+}
+
+#[test]
+fn the_monospaced_families_are_those_of_monospaced_faces_alone_read_at_once() {
+    let mut backend = CoreText::new();
+    let start = std::time::Instant::now();
+    let fast = backend.monospaced_families();
+    let took = start.elapsed();
+    let again = std::time::Instant::now();
+    let _ = CoreText::new().monospaced_families();
+    eprintln!("again in {:?}", again.elapsed());
+    let has = |name: &str| fast.iter().any(|family| family == name);
+    assert!(has("Menlo") && has("Monaco") && has(SF_MONO), "{fast:?}");
+    assert!(!has("Helvetica") && !has("Times"), "{fast:?}");
+    // The same families as each face's look, which takes far longer.
+    let mut slow = backend.families();
+    slow.push(backend.default_family());
+    slow.retain(|name| {
+        backend.family(name).is_some_and(|faces| {
+            !faces.is_empty() && faces.iter().all(|face| backend.monospaced(face.id))
+        })
+    });
+    let (mut fast, mut slow) = (fast, slow);
+    fast.sort();
+    slow.sort();
+    slow.dedup();
+    let missing: Vec<&String> = slow.iter().filter(|name| !fast.contains(name)).collect();
+    let more: Vec<&String> = fast.iter().filter(|name| !slow.contains(name)).collect();
+    eprintln!(
+        "{} monospaced families in {took:?}; missing {missing:?}, more {more:?}",
+        fast.len()
+    );
+    assert!(missing.is_empty() && more.is_empty());
 }

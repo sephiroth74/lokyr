@@ -1,0 +1,21 @@
+14:53  up 8 days,  8:54, 44 users, load averages: 1.55 3.41 3.85
+14:54:21 latency a 1
+14:54:33 latency b 1
+14:54:45 latency o 1
+14:54:58 latency b 2
+14:55:10 latency o 2
+14:55:22 latency a 2
+14:55:35 latency o 3
+14:55:47 latency a 3
+14:55:59 latency b 3
+14:56:12 latency o 4
+14:56:24 latency b 4
+14:56:36 latency a 4
+14:56:49 latency b 5
+14:57:01 latency a 5
+14:57:13 latency o 5
+14:57:26 latency a 6
+14:57:38 latency o 6
+14:57:50 latency b 6
+14:58  up 8 days,  8:59, 44 users, load averages: 2.55 2.71 3.40
+14:58:03 done

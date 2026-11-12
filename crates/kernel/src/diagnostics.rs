@@ -16,6 +16,23 @@ pub enum About {
     /// The global keys, which the system gives once no other app takes
     /// them, or the config takes others.
     GlobalKeys,
+    /// The `TERM` that the programs take, which a name of a terminfo entry
+    /// fixes.
+    Term,
+    /// The themes of `[theme]`, which themes that resolve fix.
+    Theme,
+    /// A plugin's section of the config, `[plugins.<namespace>]`, by the
+    /// namespace, which a section that its plugin takes fixes.
+    PluginConfig(String),
+    /// The windows kept as the app last quit, whose file does not read,
+    /// which the next quit's file takes the place of.
+    KeptWindows,
+    /// The user's decisions on the plugins' capabilities,
+    /// `permissions.toml`, which a file that reads fixes.
+    Permissions,
+    /// The installed plugins' lockfile, `plugins.lock`, which a lockfile
+    /// that reads fixes.
+    InstalledPlugins,
     /// Anything else, as a plugin or a command, of which each diagnostic
     /// is its own.
     Other,
@@ -99,6 +116,20 @@ impl Diagnostics {
         let before = self.notices.len();
         self.notices.retain(|shown| shown.about != *about);
         self.notices.len() != before
+    }
+
+    /// Takes away the notices about what `of` holds for, as the plugins'
+    /// sections that a config's reload checks again. Whether there were
+    /// any.
+    pub fn resolve_all(&mut self, of: impl Fn(&About) -> bool) -> bool {
+        let before = self.notices.len();
+        self.notices.retain(|shown| !of(&shown.about));
+        self.notices.len() != before
+    }
+
+    /// Whether a notice tells about `about`.
+    pub fn tells(&self, about: &About) -> bool {
+        self.notices.iter().any(|shown| shown.about == *about)
     }
 
     /// The notice that shows: the latest.

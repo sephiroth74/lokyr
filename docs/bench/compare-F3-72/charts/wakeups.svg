@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="680" height="322" viewBox="0 0 680 322" role="img" aria-label="Wakeups at rest">
+
+<style>
+  .surface { fill: #fcfcfb; }
+  .primary { fill: #0b0b0b; }
+  .secondary { fill: #52514e; }
+  .muted { fill: #898781; }
+  .grid { stroke: #e1e0d9; }
+  .base { stroke: #c3c2b7; }
+  .accent { fill: #2a78d6; }
+  .context { fill: #898781; }
+  .accent-line { stroke: #2a78d6; }
+  .context-line { stroke: #898781; }
+  .second { fill: #eb6834; }
+  .second-line { stroke: #eb6834; }
+  .ring { stroke: #fcfcfb; }
+  .budget { stroke: #52514e; }
+  text { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+  .tick { font-variant-numeric: tabular-nums; }
+  @media (prefers-color-scheme: dark) {
+    .surface { fill: #1a1a19; }
+    .primary { fill: #f0efec; }
+    .secondary { fill: #c3c2b7; }
+    .muted { fill: #898781; }
+    .grid { stroke: #2c2c2a; }
+    .base { stroke: #383835; }
+    .accent { fill: #3987e5; }
+    .context { fill: #6f6e69; }
+    .accent-line { stroke: #3987e5; }
+    .context-line { stroke: #6f6e69; }
+    .second { fill: #d95926; }
+    .second-line { stroke: #d95926; }
+    .ring { stroke: #1a1a19; }
+    .budget { stroke: #c3c2b7; }
+  }
+</style>
+
+<rect class="surface" width="680" height="322" rx="8"/>
+<text class="primary" x="16" y="26" font-size="15" font-weight="600">Wakeups at rest</text>
+<text class="secondary" x="16" y="45" font-size="12">Interrupt wakeups a second, over 60 s with a steady cursor; less is better; Lokyr measured on 8 November</text>
+<text class="secondary" x="16" y="61" font-size="12">2026, the others on 31 October 2026</text>
+<line class="grid" x1="118.0" y1="72" x2="118.0" y2="282.0" stroke-width="1"/>
+<text class="muted tick" x="118.0" y="297.0" font-size="11" text-anchor="middle">0</text>
+<line class="grid" x1="216.4" y1="72" x2="216.4" y2="282.0" stroke-width="1"/>
+<text class="muted tick" x="216.4" y="297.0" font-size="11" text-anchor="middle">5</text>
+<line class="grid" x1="314.8" y1="72" x2="314.8" y2="282.0" stroke-width="1"/>
+<text class="muted tick" x="314.8" y="297.0" font-size="11" text-anchor="middle">10</text>
+<line class="grid" x1="413.2" y1="72" x2="413.2" y2="282.0" stroke-width="1"/>
+<text class="muted tick" x="413.2" y="297.0" font-size="11" text-anchor="middle">15</text>
+<line class="grid" x1="511.6" y1="72" x2="511.6" y2="282.0" stroke-width="1"/>
+<text class="muted tick" x="511.6" y="297.0" font-size="11" text-anchor="middle">20</text>
+<line class="grid" x1="610.0" y1="72" x2="610.0" y2="282.0" stroke-width="1"/>
+<text class="muted tick" x="610.0" y="297.0" font-size="11" text-anchor="middle">25</text>
+<line class="base" x1="118" y1="72" x2="118" y2="282.0" stroke-width="1"/>
+<text class="secondary" x="108" y="91.0" font-size="12" text-anchor="end">Alacritty</text>
+<path class="context" d="M118.0,78.0 h3.6 a3.608,3.608 0 0 1 3.608,3.608 v10.8 a3.608,3.608 0 0 1 -3.608,3.608 h-3.6 z"><title>Alacritty: 0.37 a second</title></path>
+<text class="secondary tick" x="131.2" y="91.0" font-size="12">0.37</text>
+<text class="secondary" x="108" y="121.0" font-size="12" text-anchor="end">Terminal.app</text>
+<path class="context" d="M118.0,108.0 h3.8 a3.7720000000000002,3.7720000000000002 0 0 1 3.7720000000000002,3.7720000000000002 v10.5 a3.7720000000000002,3.7720000000000002 0 0 1 -3.7720000000000002,3.7720000000000002 h-3.8 z"><title>Terminal.app: 0.38 a second</title></path>
+<text class="secondary tick" x="131.5" y="121.0" font-size="12">0.38</text>
+<text class="primary" x="108" y="151.0" font-size="12" text-anchor="end" font-weight="600">Lokyr</text>
+<path class="accent" d="M118.0,138.0 h3.9 a3.936,3.936 0 0 1 3.936,3.936 v10.1 a3.936,3.936 0 0 1 -3.936,3.936 h-3.9 z"><title>Lokyr: 0.40 a second</title></path>
+<text class="primary tick" x="131.9" y="151.0" font-size="12" font-weight="600">0.40</text>
+<text class="secondary" x="108" y="181.0" font-size="12" text-anchor="end">WezTerm</text>
+<path class="context" d="M118.0,168.0 h22.6 a4,4 0 0 1 4,4 v10.0 a4,4 0 0 1 -4,4 h-22.6 z"><title>WezTerm: 1.35 a second</title></path>
+<text class="secondary tick" x="150.6" y="181.0" font-size="12">1.35</text>
+<text class="secondary" x="108" y="211.0" font-size="12" text-anchor="end">iTerm2</text>
+<path class="context" d="M118.0,198.0 h157.0 a4,4 0 0 1 4,4 v10.0 a4,4 0 0 1 -4,4 h-157.0 z"><title>iTerm2: 8.18 a second</title></path>
+<text class="secondary tick" x="285.0" y="211.0" font-size="12">8.18</text>
+<text class="secondary" x="108" y="241.0" font-size="12" text-anchor="end">Ghostty</text>
+<path class="context" d="M118.0,228.0 h322.0 a4,4 0 0 1 4,4 v10.0 a4,4 0 0 1 -4,4 h-322.0 z"><title>Ghostty: 16.57 a second</title></path>
+<text class="secondary tick" x="450.0" y="241.0" font-size="12">16.57</text>
+<text class="secondary" x="108" y="271.0" font-size="12" text-anchor="end">kitty</text>
+<path class="context" d="M118.0,258.0 h391.2 a4,4 0 0 1 4,4 v10.0 a4,4 0 0 1 -4,4 h-391.2 z"><title>kitty: 20.08 a second</title></path>
+<text class="secondary tick" x="519.2" y="271.0" font-size="12">20.08</text>
+</svg>

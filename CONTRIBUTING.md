@@ -7,8 +7,8 @@ Lokyr is young: its first version is under way, for macOS 26 or later on Apple S
 ## Before you start
 
 - **A large change starts as an issue.** Open one before you write a new feature, a new dependency or a change of design, so that we can agree on its shape first. A small fix, a typo or a test can go straight to a pull request.
-- **Read the documents of the part that you change.** Start with [docs/README.md](docs/README.md), then [ARCHITECTURE.md](docs/ARCHITECTURE.md), and the document of the area, such as [VT-CORE.md](docs/VT-CORE.md) for the terminal core. The work is planned in [docs/tasks](docs/tasks/README.md), one file per phase of the [roadmap](docs/ROADMAP.md).
-- **The decisions are in [docs/adr](docs/adr/README.md).** A change that goes against one needs a new ADR first, which an issue discusses.
+- **Read the documents of the part that you change.** Start with [docs/README.md](docs/README.md), then [ARCHITECTURE.md](docs/ARCHITECTURE.md), and the document of the area, such as [VT-CORE.md](docs/VT-CORE.md) for the terminal core. The work is planned in phases, as the [roadmap](docs/ROADMAP.md) tells.
+- **The decisions are in the documents of each area.** A change that goes against one is discussed in an issue first.
 
 ## Setting up
 
@@ -29,7 +29,17 @@ just ci                 # the checks of CI, as the next section tells
 
 Fuzzing uses a nightly Rust, which the `justfile` pins, and `cargo-fuzz`; you need it only to work on the fuzzers.
 
-The bundle, `target/Lokyr.app`, which `just bundle` builds, is signed with the identity that `LOKYR_SIGN_IDENTITY` names, as `codesign --sign` takes it, and ad hoc without it. `just` reads the variables of the untracked `private/lokyr.env`, where the maintainer names the Developer ID, so that no signing identity, team or credential is in the repository; a variable of the environment wins over the file's. `just notarize` has Apple notarize the bundle and staples the ticket, for the maintainer: it needs the Developer ID and the notary's credentials in the keychain, the profile `lokyr-notary` that `xcrun notarytool store-credentials` makes, or the one that `LOKYR_NOTARY_PROFILE` names; it sends the bundle to Apple's notary service.
+The bundle, `target/Lokyr.app`, which `just bundle` builds, is signed with the identity that `LOKYR_SIGN_IDENTITY` names, as `codesign --sign` takes it, and ad hoc without it. `just` and `cargo xtask` read the variables of the untracked `private/lokyr.env`, which names the Developer ID and the notary's profile, so that no signing identity, team or credential is in the repository; a variable of the environment wins over the file's. `just notarize` has Apple notarize the bundle and staples the ticket: it needs the Developer ID and the notary's credentials in the keychain, the profile `lokyr-notary` that `xcrun notarytool store-credentials` makes, or the one that `LOKYR_NOTARY_PROFILE` names; it sends the bundle to Apple's notary service.
+
+The bundle carries the notices of the licenses of what it holds of other projects, in `Contents/Resources/licenses`: the symbols' font's, Sparkle's, and in `crates` every crate's of the binary, with an index, which `cargo xtask bundle` writes from `cargo metadata`, of the license that Lokyr takes of each crate's expression among those that `deny.toml` allows, its own files, or the license's text of SPDX's list, in `tools/xtask/licenses`, under its authors' copyright where its package has none; a crate that allows none of them fails the bundle, and a license that `deny.toml` comes to allow needs its text there.
+
+The bundle holds Sparkle's updater, of the release that `tools/xtask/src/sparkle.rs` pins with its digest, which `cargo xtask bundle` downloads once into `target/sparkle`, and signs with the bundle's identity; the app loads it after its first window, and `cargo run` runs without it. The private EdDSA key that signs the updates is the maintainer's, in the login keychain under the account `lokyr` of Sparkle's `generate_keys`, with a copy in the untracked `private/`; the public one is in `sparkle.rs`.
+
+`just dmg` builds `target/Lokyr-<version>.dmg` of the bundle, the app and a link to Applications over a background, after it has Apple notarize the bundle if it has no ticket yet, and has Apple notarize the image too; `cargo xtask dmg --no-notarize` builds it of the bundle as it is, to look at it. The window's look is the Finder's own `.DS_Store`, kept in `crates/app/resources/dmg`, which `cargo xtask dmg layout` has the Finder write again, with the background rendered from its SVG by `rsvg-convert`, when the window's size or the icons' places change; it needs the terminal's permission to control the Finder.
+
+The updates' feed of tests, until the repository is public, is on the maintainer's Mac, in the untracked `private/feed`: `cargo xtask feed add target/Lokyr-<version>.dmg` puts a DMG there with its notes, `docs/releases/<X.Y.Z>.md` or the file that `--notes` names, and has Sparkle's `generate_appcast` write the appcast, each DMG and the appcast signed with the EdDSA key, the keychain's or the file that `LOKYR_SPARKLE_KEY_FILE` names; `--channel <name>` puts the version in a channel, as a beta's. `just feed-serve` has Lokyr on that Mac read the feed, through the updater's `SUFeedURL` in its defaults, and serves it on `127.0.0.1:8123` until Control-C; `defaults delete io.github.sephiroth74.lokyr SUFeedURL` gives the builds their own feed back.
+
+`just release <version>` releases a candidate, `X.Y.Z-rc.N`, or a release, `X.Y.Z`, of the workspace's version, from the commit checked out, without changes, once GitHub has it: the bundle built as that version, its build's number above the feed's latest, which it refuses to release without, unless `--without-feed`, as a feed's first release, and with `SOURCE_DATE_EPOCH` set, which would give the number, the binary's dSYM, which the release profile makes beside it, and the bill of materials, CycloneDX's JSON of the crates that the binary holds, Sparkle and the symbols' font, kept in `target/releases/<version>`; the DMG, the bundle and the image notarized; a draft of the GitHub release, `v<version>`, a candidate's a pre-release, with the DMG, the dSYM and the bill, its notes `docs/releases/<X.Y.Z>.md`; and the DMG in the feed of tests. Publishing the draft makes its tag. `cargo xtask symbolicate <report.ips>` reads a crash report of macOS, from `~/Library/Logs/DiagnosticReports`: its crashed thread and the main thread, Lokyr's frames told by their functions, files and lines through the dSYM of the binary's UUID, which `target/releases` keeps, or the one that `--dsym` names. The app's own log, which a panic writes its backtrace to, is `~/Library/Logs/Lokyr/lokyr.log`.
 
 ## The gate: `just ci`
 
@@ -39,8 +49,11 @@ The bundle, `target/Lokyr.app`, which `just bundle` builds, is signed with the i
 - `cargo deny`: the dependencies' licenses, advisories and sources;
 - `cargo xtask check-deps`: the [dependency rules](tools/xtask/deps-rules.toml), such as no networking in the app and no macOS crate in the platform-independent ones;
 - `cargo xtask check-comments`: no comment names a task, a phase or an ADR;
+- `cargo xtask check-changelog`: `CHANGELOG.md` keeps the format of [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/);
 - `cargo xtask check-links`: the internal links and anchors of the Markdown files resolve;
 - `cargo xtask bundle`: the app's bundle, `target/Lokyr.app`, signed with the identity that `LOKYR_SIGN_IDENTITY` names, or ad hoc without it.
+
+CI's macOS job, whose minutes GitHub bills ten times a Linux job's, runs on `main`'s pushes, on pull requests and on the runs that `gh workflow run CI --ref <branch>` asks for, and only of changes beyond documents, Markdown files and `docs/`; a phase's branch, as `f3`, runs its Linux jobs at each push, and the macOS job by hand, as before a release, `just ci` on the Mac covering it meanwhile.
 
 Two checks of CI are not in it, and run on Linux: the tests of the platform-independent crates, which `just ci` builds for Linux without running; and the count of the instructions that the terminal's core takes for a set of scenarios, which fails a pull request that raises one by more than 3% over its base, with `just instructions <base>` where Valgrind runs.
 
@@ -60,25 +73,30 @@ The [conventions](docs/ARCHITECTURE.md#conventions) are the full list. The ones 
 - **New code has tests**, and a fix has the test that would have caught the bug.
 - **The platform's tests** in `crates/platform-macos/tests` run without the test harness, on the main thread, as AppKit needs: each is a program that starts the application, opens its windows and quits. They hide their app at once, but keys typed while they start can still reach their window, and a click or a key while a context menu of theirs is open closes it: run them again if one fails with keys that it did not send, or with a menu that closed before its time. `alert_keys` pastes and copies through the system's clipboard, whose items it puts back as it ends.
 - **The golden images** in `crates/app/tests/golden` are what the GPU draws of text, colors, decorations, the cursor and the selection, at scales of 1 and 2, in SF Mono, and of the shapes that the renderer draws itself, without text: `crates/app/tests/golden.rs` compares a drawing with them, and a pixel can differ by a little, as the GPU and the rasterizer round; a few pixels of the shapes alone. A test that fails writes the drawing, and a map of the pixels that differ, under `target/tmp/golden`. A change that is meant to change the drawing comes with new images: `LOKYR_GOLDEN_UPDATE=1 cargo test -p lokyr-app --test golden` writes them, which you look at before you commit them; a new release of macOS that draws a font otherwise can need them too. They are drawn on a system whose preferred languages hold none of Chinese, Japanese and Korean: CoreText's fallback for CJK text takes its font from the first of them in the list, so that a Mac that has one there, as an input method's setup can add, draws the scenes of CJK text in another font, and fails them, as CI's runner does not.
+- **The changelog**: a change that someone using Lokyr can notice, a feature, a shortcut, a key of the config, a fix, adds its line under `## [Unreleased]` in [CHANGELOG.md](CHANGELOG.md), of the kind `Added`, `Changed`, `Deprecated`, `Removed`, `Fixed` or `Security`, in the same pull request, told as they meet it.
 - **Checks by hand**: what no test can check, such as an input method, a drawing next to another terminal's or a measure, is told in the pull request, with what you saw.
 
 ## The documents
 
-- **A changed decision** gets a new ADR, which supersedes the old one, whose status line says so; an accepted ADR is never rewritten. The tables of [docs/README.md](docs/README.md) and [docs/adr/README.md](docs/adr/README.md) follow.
-- **A key of the config** that a change adds, changes or removes is in [docs/CONFIGURATION.md](docs/CONFIGURATION.md), the users' guide: the platforms where it applies, in a small line under its name, `<sub>Platforms: macOS</sub>`; its values, its default, what it does, and whether it applies yet. The guide's complete example holds every key, which a test of the kernel checks. The guide names no other terminal emulator; it can name the tools that help, such as vim, Font Book on macOS or GNU Stow.
+- **A changed decision** changes the documents that tell it, and its row of the requirements' table in [docs/README.md](docs/README.md), if it has one.
+- **A key of the config** that a change adds, changes or removes is in [docs/CONFIGURATION.md](docs/CONFIGURATION.md), the guide to the config: the platforms where it applies, in a small line under its name, `<sub>Platforms: macOS</sub>`; its values, its default, what it does, and whether it applies yet. The guide's complete example holds every key, which a test of the kernel checks. The guide names no other terminal emulator; it can name the tools that help, such as vim, Font Book on macOS or GNU Stow.
 - **A changed behavior** changes the documents that describe it.
 - **Links resolve**, which `just check-links` checks.
 
 ## Commits
 
 - **One logical change a commit**, which builds and passes its tests on its own.
-- **The message**: a summary line, then a blank line, then a body that tells what changed and why, in English. A planned task's commit starts with its identifier, as `F2-71: review fixes, the cursor's colors`.
+- **The message**: a summary line, then a blank line, then a body that tells what changed and why, in English.
 
 ## Pull requests
 
 - Open it from a branch of your fork, against `main`, and fill in the [template](.github/pull_request_template.md).
 - Keep it to one subject: a smaller pull request is reviewed sooner.
 - CI must be green. A reviewer may ask for changes; push them as new commits, which are squashed or kept as the review decides.
+
+## Translations
+
+A translation, a new language or a better one, follows [TRANSLATING.md](TRANSLATING.md): the catalogs, their format, and the steps of a new language.
 
 ## Reporting a bug
 

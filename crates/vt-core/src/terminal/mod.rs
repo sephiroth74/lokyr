@@ -7,11 +7,17 @@ mod colors;
 mod control;
 mod csi;
 mod cursor;
+mod decorations;
 mod edit;
 mod erase;
 mod escape;
 mod events;
+mod gutter;
+mod images;
 mod keyboard;
+mod kitty;
+mod marks;
+mod matches;
 mod modes;
 mod osc;
 mod print;
@@ -26,12 +32,22 @@ mod window;
 
 pub use charsets::{Charset, Charsets, Shift};
 pub use clipboard::{ClipboardRequest, ClipboardTarget};
-pub use colors::{Colors, SPECIAL_COLORS};
+pub use colors::{ColorScheme, Colors, SPECIAL_COLORS};
+pub use decorations::{Decorated, Look, MOST_DECORATIONS};
+pub use gutter::{GutterKind, GutterMark, MOST_GUTTER_MARKS};
+pub use images::{
+    IMAGE_MEMORY, Image, ImageFormat, MOST_PIXELS, MOST_PLACEMENTS, Placed, Placing, Side, Source,
+    dimensions,
+};
 pub use keyboard::KeyboardFlags;
+pub use marks::{CommandMarks, MOST_COMMANDS};
+pub use matches::{Highlighted, MatchCells};
 pub use osc::{Event, Progress, WorkingDirectory};
-pub use selection::{Selected, SelectionShape, SelectionUnit, WORD_SEPARATORS};
+pub use selection::{
+    CellPin, RowCells, RowText, Selected, SelectionShape, SelectionUnit, WORD_SEPARATORS,
+};
 pub use snapshot::{Line, Snapshot, SnapshotCursor};
-pub use viewport::Scroll;
+pub use viewport::{Origin, Scroll};
 pub use window::Window;
 
 use std::ops::Range;
@@ -91,6 +107,10 @@ pub struct Options {
     /// and as a full reset makes it again: off by default, as xterm's
     /// `alternateScroll` is.
     pub alternate_scroll: bool,
+    /// The memory that the inline images that programs send take at most,
+    /// in bytes, past which the oldest go: [`IMAGE_MEMORY`] by default, and
+    /// none for 0, which shows no image.
+    pub image_memory: usize,
 }
 
 impl Default for Options {
@@ -110,6 +130,7 @@ impl Default for Options {
             window_ops: false,
             scroll_on_output: false,
             alternate_scroll: false,
+            image_memory: IMAGE_MEMORY,
         }
     }
 }
@@ -382,6 +403,9 @@ pub struct Terminal {
     /// Synchronized output (mode 2026): the screen should not be drawn
     /// until the program ends the update.
     synchronized_output: bool,
+    /// The reports of the color scheme (mode 2031): as the theme's colors
+    /// change, the program is told their scheme, as `CSI ? 996 n` answers.
+    color_scheme_reports: bool,
     /// How many synchronized updates programs started.
     synchronized_updates: u64,
     /// The widths the terminal was made with, which RIS brings back after
@@ -422,6 +446,8 @@ pub struct Terminal {
     /// The status of the last command that ended, as OSC 133's `D` tells
     /// it.
     command_status: Option<i32>,
+    /// The commands that the shell marked, of the primary screen.
+    commands: marks::Commands,
     /// The theme's colors, which the resets bring back, and the colors
     /// now, which programs can change.
     default_colors: Colors,
@@ -476,10 +502,23 @@ pub struct Terminal {
     selection: Option<selection::Selection>,
     /// The cell that a selection by the mouse grows from, if one was
     /// anchored.
-    selection_anchor: Option<selection::Anchor>,
+    selection_anchor: Option<selection::CellPin>,
     /// The cell that the embedder marked, as the one that a menu opened
     /// on, if one was.
-    cell_mark: Option<selection::Anchor>,
+    cell_mark: Option<selection::CellPin>,
+    /// A cursor of the embedder's, which takes the place of the terminal's
+    /// in the snapshots, as [`Terminal::hold_cursor`] pins it.
+    held_cursor: Option<selection::CellPin>,
+    /// The decorations that the embedder laid over the text.
+    decorations: Vec<decorations::Decoration>,
+    /// The gutter's marks that the embedder laid.
+    gutter: Vec<gutter::Laid>,
+    /// The matches of the searches that the embedder keeps, few at once.
+    matches: Vec<matches::Matches>,
+    /// The inline images that programs sent, and their placements.
+    images: images::Images,
+    /// kitty's graphics protocol's APC string and transmission under way.
+    graphics: kitty::Graphics,
 }
 
 impl Terminal {
@@ -540,6 +579,7 @@ impl Terminal {
             reverse_wrap: false,
             reverse_wrap_extended: false,
             synchronized_output: false,
+            color_scheme_reports: false,
             synchronized_updates: 0,
             configured_widths: options.widths,
             configured_alternate_scroll: options.alternate_scroll,
@@ -558,6 +598,7 @@ impl Terminal {
             zone: Semantic::Output,
             redraw: Redraw::Whole,
             command_status: None,
+            commands: marks::Commands::default(),
             default_colors: Colors::default(),
             colors: Colors::default(),
             cell_size: None,
@@ -585,6 +626,12 @@ impl Terminal {
             selection: None,
             selection_anchor: None,
             cell_mark: None,
+            held_cursor: None,
+            decorations: Vec::new(),
+            gutter: Vec::new(),
+            matches: Vec::new(),
+            images: images::Images::new(options.image_memory),
+            graphics: kitty::Graphics::default(),
         }
     }
 
@@ -1124,10 +1171,21 @@ impl Terminal {
     }
 
     /// Sets the theme's colors, which become the colors to draw with, and
-    /// those that the resets bring back.
+    /// those that the resets bring back: of other colors than the theme's
+    /// before, a program that set mode 2031 is told their scheme.
     pub fn set_default_colors(&mut self, colors: Colors) {
+        let changed = colors != self.default_colors;
         self.colors.clone_from(&colors);
         self.default_colors = colors;
+        if changed && self.color_scheme_reports {
+            self.report_color_scheme();
+        }
+    }
+
+    /// The scheme of the theme's colors, dark or light, as programs learn
+    /// of it, whatever colors they set.
+    pub fn color_scheme(&self) -> ColorScheme {
+        self.default_colors.scheme()
     }
 
     /// Takes what the embedder has to act on, oldest first.
@@ -1279,6 +1337,18 @@ impl Handler for Terminal {
 
     fn dcs_end(&mut self, end: StringEnd) {
         self.end_query(end);
+    }
+
+    fn apc_start(&mut self) {
+        self.start_apc();
+    }
+
+    fn apc_put(&mut self, data: &[u8]) {
+        self.read_apc(data);
+    }
+
+    fn apc_end(&mut self, end: StringEnd) {
+        self.end_apc(end);
     }
 }
 

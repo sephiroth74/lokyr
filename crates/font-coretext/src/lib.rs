@@ -2,7 +2,8 @@
 //!
 //! Font discovery, fallback, shaping and rasterization, on CoreText: the
 //! [`CoreText`] backend finds a family's faces with font descriptors,
-//! measures them, and draws their glyphs.
+//! measures them, and draws their glyphs; and [`system_text`] draws a line
+//! as the system does, which Lokyr's text is measured against.
 
 #![cfg(target_os = "macos")]
 
@@ -23,10 +24,14 @@ use objc2_core_foundation::{
 use objc2_core_text::{
     CTFont, CTFontCollection, CTFontCollectionCopyOptions, CTFontDescriptor,
     CTFontManagerCreateFontDescriptorFromData, CTFontOrientation, CTFontSymbolicTraits,
-    CTFontTableOptions, CTLine, CTRun, kCTFontAttributeName, kCTFontFamilyNameAttribute,
-    kCTFontFeatureSettingsAttribute, kCTFontOpenTypeFeatureTag, kCTFontOpenTypeFeatureValue,
-    kCTFontStyleNameKey, kCTFontWeightTrait, kCTFontWidthTrait,
+    CTFontTableOptions, CTFontUIFontType, CTLine, CTRun, CTRunStatus, kCTFontAttributeName,
+    kCTFontFamilyNameAttribute, kCTFontFeatureSettingsAttribute, kCTFontOpenTypeFeatureTag,
+    kCTFontOpenTypeFeatureValue, kCTFontOpticalSizeAttribute, kCTFontStyleNameKey,
+    kCTFontSymbolicTrait, kCTFontTraitsAttribute, kCTFontWeightTrait, kCTFontWidthTrait,
 };
+
+pub use raster::system_smooths_fonts;
+pub use system::{SystemText, system_text};
 
 /// The size at which the backend makes a face to read what does not depend
 /// on its size: its style, slant and weight.
@@ -73,10 +78,16 @@ pub struct CoreText {
     unjoined: HashMap<(FaceId, u64), CFRetained<CTFont>>,
     /// Whether each face substitutes glyphs in context, as it was found.
     substitutes: HashMap<FaceId, bool>,
+    /// The faces of an optical size, by the face and the bits of the size.
+    optical: HashMap<(FaceId, u32), FaceId>,
     /// Whether glyphs are drawn with macOS's font smoothing.
     smoothing: bool,
     /// The face of the symbols' font, once loaded, if it loads.
     symbols: Option<Option<FaceId>>,
+    /// The language whose faces the fallback takes, where languages that
+    /// share a script draw it differently; `None` for the system's
+    /// preferred languages.
+    language: Option<CFRetained<CFString>>,
 }
 
 impl Default for CoreText {
@@ -100,9 +111,21 @@ impl CoreText {
             fonts: HashMap::new(),
             unjoined: HashMap::new(),
             substitutes: HashMap::new(),
+            optical: HashMap::new(),
             smoothing,
             symbols: None,
+            language: None,
         }
+    }
+
+    /// The backend whose fallback takes the faces of `language`, a BCP 47
+    /// tag, as `zh-Hans`, rather than those of the system's preferred
+    /// languages, which choose the faces of Han's characters, Chinese's or
+    /// Japanese's, whatever the text's own language.
+    #[must_use]
+    pub fn with_language(mut self, language: &str) -> Self {
+        self.language = Some(CFString::from_str(language));
+        self
     }
 
     /// The face `face` at `size`, if the backend found it.
@@ -246,6 +269,59 @@ impl FontBackend for CoreText {
         SF_MONO.to_owned()
     }
 
+    fn optical(&mut self, face: FaceId, points: f32) -> FaceId {
+        if let Some(&optical) = self.optical.get(&(face, points.to_bits())) {
+            return optical;
+        }
+        let Some(descriptor) = usize::try_from(face.0)
+            .ok()
+            .and_then(|index| self.faces.get(index))
+        else {
+            return face;
+        };
+        // SAFETY: Core Text's constant.
+        let key = unsafe { kCTFontOpticalSizeAttribute };
+        let size = CFNumber::new_f64(f64::from(points));
+        let attributes = CFDictionary::<CFString, CFType>::from_slices(&[key], &[size.as_ref()]);
+        // SAFETY: a descriptor that CoreText matched, and a dictionary of
+        // descriptor attributes.
+        let sized = unsafe { descriptor.copy_with_attributes(attributes.as_opaque()) };
+        let optical =
+            FaceId(u32::try_from(self.faces.len()).expect("fewer faces than an id counts"));
+        self.faces.push(sized);
+        self.optical.insert((face, points.to_bits()), optical);
+        optical
+    }
+
+    fn interface_family(&mut self) -> String {
+        // SAFETY: a type of the UI's fonts, and its default language.
+        let font =
+            unsafe { CTFont::new_ui_font_for_language(CTFontUIFontType::System, 13.0, None) };
+        font.map_or_else(
+            || self.default_family(),
+            // SAFETY: a font that CoreText made.
+            |font| unsafe { font.family_name() }.to_string(),
+        )
+    }
+
+    fn width(&mut self, face: FaceId, size: f32, text: &str, features: Features) -> f32 {
+        let Some(font) = self.shaping_font(face, f64::from(size), features) else {
+            return 0.0;
+        };
+        line(&font, text).map_or(0.0, |line| {
+            // SAFETY: a line that CoreText made; the other bounds are not
+            // asked for.
+            let width = unsafe {
+                line.typographic_bounds(
+                    std::ptr::null_mut(),
+                    std::ptr::null_mut(),
+                    std::ptr::null_mut(),
+                )
+            };
+            width as f32
+        })
+    }
+
     fn family(&mut self, name: &str) -> Option<Vec<FaceInfo>> {
         let descriptors = matching(name).or_else(|| {
             name.eq_ignore_ascii_case(SF_MONO)
@@ -298,6 +374,71 @@ impl FontBackend for CoreText {
             // the system's own.
             .filter(|name| !name.is_empty() && !name.starts_with('.'))
             .collect()
+    }
+
+    fn monospaced_families(&mut self) -> Vec<String> {
+        // Each face's family and traits, of one read of the system's list of
+        // them, which makes no font: a family of monospaced faces alone.
+        // SAFETY: Core Text's constants, a set of two attributes' names that
+        // the callbacks retain, and a collection without options.
+        let attributes = unsafe {
+            let mut keys = [
+                std::ptr::from_ref::<CFString>(kCTFontFamilyNameAttribute).cast::<c_void>(),
+                std::ptr::from_ref::<CFString>(kCTFontTraitsAttribute).cast::<c_void>(),
+            ];
+            let Some(names) = CFSet::new(None, keys.as_mut_ptr(), 2, &kCFTypeSetCallBacks) else {
+                return vec![self.default_family()];
+            };
+            CTFontCollection::from_available_fonts(None)
+                .font_attributes(&names, CTFontCollectionCopyOptions::DefaultOptions)
+        };
+        // SAFETY: a dictionary of each face's attributes.
+        let attributes = unsafe { attributes.cast_unchecked::<CFDictionary>() };
+        let mut families: std::collections::BTreeMap<String, bool> =
+            std::collections::BTreeMap::new();
+        for face in attributes.iter() {
+            // SAFETY: Core Text's constants; the family a CFString, the
+            // traits a dictionary whose symbolic trait is a CFNumber, each
+            // living as long as `face`, within the block.
+            let (family, monospaced) = unsafe {
+                let family =
+                    face.value(std::ptr::from_ref::<CFString>(kCTFontFamilyNameAttribute).cast());
+                let Some(family) = NonNull::new(family.cast_mut()) else {
+                    continue;
+                };
+                let family = family.cast::<CFString>().as_ref().to_string();
+                let traits =
+                    face.value(std::ptr::from_ref::<CFString>(kCTFontTraitsAttribute).cast());
+                let symbolic = NonNull::new(traits.cast_mut()).and_then(|traits| {
+                    let value = traits
+                        .cast::<CFDictionary>()
+                        .as_ref()
+                        .value(std::ptr::from_ref::<CFString>(kCTFontSymbolicTrait).cast());
+                    NonNull::new(value.cast_mut())
+                        .and_then(|number| number.cast::<CFNumber>().as_ref().as_i64())
+                });
+                let bits = symbolic.unwrap_or(0) as u32;
+                (
+                    family,
+                    CTFontSymbolicTraits::from_bits_retain(bits)
+                        .contains(CTFontSymbolicTraits::TraitMonoSpace),
+                )
+            };
+            // macOS hides the families whose names start with a dot.
+            if family.is_empty() || family.starts_with('.') {
+                continue;
+            }
+            *families.entry(family).or_insert(true) &= monospaced;
+        }
+        let mut names: Vec<String> = families
+            .into_iter()
+            .filter_map(|(family, monospaced)| monospaced.then_some(family))
+            .collect();
+        let default = self.default_family();
+        if !names.iter().any(|name| name.eq_ignore_ascii_case(&default)) {
+            names.push(default);
+        }
+        names
     }
 
     fn symbols(&mut self) -> Option<FaceId> {
@@ -376,8 +517,10 @@ impl FontBackend for CoreText {
         };
         // SAFETY: a font that CoreText made, and a range of the string's
         // own length. CoreText gives the font of its cascade that draws the
-        // most of the string, the font itself when no other does.
-        let found = unsafe { font.for_string(&string, range) };
+        // most of the string, the font itself when no other does, of the
+        // language given or of the system's.
+        let found =
+            unsafe { font.for_string_with_language(&string, range, self.language.as_deref()) };
         // SAFETY: fonts that CoreText made.
         let (name, own) = unsafe { (found.post_script_name(), font.post_script_name()) };
         if name.to_string() == own.to_string() {
@@ -429,6 +572,10 @@ impl FontBackend for CoreText {
         });
         self.substitutes.insert(face, substitutes);
         substitutes
+    }
+
+    fn smooths(&mut self) -> bool {
+        self.smoothing
     }
 
     fn rasterize(
@@ -691,6 +838,20 @@ fn widest_digit(font: &CTFont) -> f64 {
         .fold(0.0, f64::max)
 }
 
+/// The line of `text` in `font`, as CoreText lays it out.
+fn line(font: &CTFont, text: &str) -> Option<CFRetained<CTLine>> {
+    let string = CFString::from_str(text);
+    // SAFETY: Core Text's constant.
+    let key = unsafe { kCTFontAttributeName };
+    let attributes = CFDictionary::<CFString, CFType>::from_slices(&[key], &[font.as_ref()]);
+    // SAFETY: a string and a dictionary of its attributes, which the call
+    // copies.
+    let attributed =
+        unsafe { CFAttributedString::new(None, Some(&string), Some(attributes.as_opaque())) }?;
+    // SAFETY: an attributed string, which the line copies.
+    Some(unsafe { CTLine::with_attributed_string(&attributed) })
+}
+
 /// Shapes `text` in `font`, through a line of CoreText's, and appends its
 /// glyphs to `glyphs`, each at its place from the line's start; returns
 /// the fonts of the runs: `None` for `font`'s own, and the font that
@@ -709,19 +870,9 @@ fn shape(
         let at = u32::try_from(at).unwrap_or(u32::MAX);
         bytes.extend(std::iter::repeat_n(at, character.len_utf16()));
     }
-    let string = CFString::from_str(text);
-    // SAFETY: Core Text's constant.
-    let key = unsafe { kCTFontAttributeName };
-    let attributes = CFDictionary::<CFString, CFType>::from_slices(&[key], &[font.as_ref()]);
-    // SAFETY: a string and a dictionary of its attributes, which the call
-    // copies.
-    let Some(attributed) =
-        (unsafe { CFAttributedString::new(None, Some(&string), Some(attributes.as_opaque())) })
-    else {
+    let Some(line) = line(font, text) else {
         return fonts;
     };
-    // SAFETY: an attributed string, which the line copies.
-    let line = unsafe { CTLine::with_attributed_string(&attributed) };
     // SAFETY: a line that CoreText made.
     let runs = unsafe { line.glyph_runs() };
     // SAFETY: the runs of a line are `CTRun`s.
@@ -756,6 +907,8 @@ fn shape(
         });
         let index = u32::try_from(fonts.len()).unwrap_or(u32::MAX);
         fonts.push(if ours { None } else { run_font });
+        // SAFETY: a run that CoreText made.
+        let right_to_left = unsafe { run.status() }.contains(CTRunStatus::RightToLeft);
         for at in 0..count {
             let unit = usize::try_from(indices[at]).unwrap_or(0);
             glyphs.push(ShapedGlyph {
@@ -765,6 +918,7 @@ fn shape(
                 // The positions are from the line's origin.
                 x: positions[at].x as f32,
                 y: positions[at].y as f32,
+                right_to_left,
             });
         }
     }
@@ -849,5 +1003,6 @@ fn be_i16(bytes: &[u8], at: usize) -> Option<i16> {
 }
 
 mod raster;
+mod system;
 #[cfg(test)]
 mod tests;

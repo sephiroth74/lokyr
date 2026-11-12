@@ -1,19 +1,19 @@
 # Lokyr — project documentation
 
-> **Lokyr** is the terminal, and **Sleip** its plugin package manager, as the user named them on 27 October 2026 ([ADR 0018](adr/0018-names-lokyr-and-sleip.md)). They replaced the working names Bolt and Crossbow ([ADR 0014](adr/0014-names-bolt-and-crossbow.md), [ADR 0016](adr/0016-new-names.md)), which had replaced the provisional Saetta and Faretra.
+> **Lokyr** is the terminal, and **Sleip** its plugin package manager, their names since 27 October 2026. They replaced the working names Bolt and Crossbow, which had replaced the provisional Saetta and Faretra.
 
-Lokyr is a terminal emulator for macOS. Version 1.0 targets macOS only ([ADR 0011](adr/0011-macos-only-1-0.md)). The architecture keeps the door open for Linux, planned after 1.0, and later for Windows. Goals:
+Lokyr is a terminal emulator for macOS. Version 1.0 targets macOS only. The architecture keeps the door open for Linux, planned after 1.0, and later for Windows. Goals:
 
 - **Fast and light on memory**, with budgets measured in CI ([PERFORMANCE.md](PERFORMANCE.md)).
 - **The best of existing terminals**: the speed and protocols of Ghostty and kitty; the tabs, tmux -CC and triggers of iTerm2; the restraint of Alacritty; the blocks of Warp.
-- **Everything is a plugin**: tabs, splits, search and themes are all plugins. The terminal itself is a small kernel plus a list of plugins.
+- **Everything is a plugin**: tabs, splits and search are all plugins; themes are the host's, as it draws them, of files that anyone writes. The terminal itself is a small kernel plus a list of plugins.
 - **An open ecosystem**: third-party plugins are Luau scripts that run in a sandbox, installed by **Sleip**. Sleip is a separate program from the app, the same way cargo is separate from rustc.
 
-**Status**: F1, the headless terminal core, done on 25 October 2026; F2, macOS with a single pane, is under way: the review of its breakdown with the user, on 26 October 2026, brought the MCP server and the AI agents into the plan ([ADR 0017](adr/0017-mcp-and-agents.md)), with phase F3b after F3. F0 built the workspace skeleton, CI, the dependency rules and the measurement tools; F1 has the parser, the paged grid with its scrollback and reflow, the terminal state, Unicode, the input encoders, the PTY, the session and the search, and the tools that check them: the recorded sessions and their replay, the headless harness with esctest and vttest, the differential tests against `alacritty_terminal`, fuzzing, the benchmarks and the Linux job; its exit criteria are met, and its known issues are listed in its tasks' file. This folder holds the architecture, the decisions and the roadmap.
+**Status**: F0 to F2 are done: the workspace, CI and the measurement tools; the headless terminal core, its parser, paged grid, scrollback and reflow, Unicode, input, PTY, session and search, with the recorded sessions, esctest and vttest, the differential tests, fuzzing and the benchmarks; and the macOS app of a single pane. F3, the macOS MVP, of tabs, splits, the plugins' API, themes, the command palette, the agents on their tabs and inline images, and F4, the plugin ecosystem, of Luau plugins, Sleip and the registry, came out in releases from 0.2.0 to 0.9.0; 1.0.0, the first public release, comes next, then F3b, the MCP server. This folder holds the architecture, the roadmap and the guides.
 
 ## Documents
 
-Start with [ARCHITECTURE.md](ARCHITECTURE.md), then read the [ROADMAP.md](ROADMAP.md). Each of the other documents covers one subsystem. The reasons behind each choice are in the [ADRs](adr/).
+Start with [ARCHITECTURE.md](ARCHITECTURE.md), then read the [ROADMAP.md](ROADMAP.md). Each of the other documents covers one subsystem.
 
 | Document | Contents |
 |---|---|
@@ -24,11 +24,14 @@ Start with [ARCHITECTURE.md](ARCHITECTURE.md), then read the [ROADMAP.md](ROADMA
 | [UI-AND-FEATURES.md](UI-AND-FEATURES.md) | UI engine, tabs, splits, search, iTerm2 themes, command palette |
 | [SECURITY.md](SECURITY.md) | Threat model, security defaults, IPC, packages, robustness, macOS environment |
 | [PERFORMANCE.md](PERFORMANCE.md) | Budgets, how to measure them, benchmarks and CI |
-| [CONFIGURATION.md](CONFIGURATION.md) | The user's guide to the config file: where it is, how it reloads, and every key, with its values and its default |
+| [CONFIGURATION.md](CONFIGURATION.md) | The guide to the config file: where it is, how it reloads, and every key, with its values and its default |
+| [plugins/](plugins/README.md) | The bundled plugins, a page each: their commands, keys, config and what turning one off takes away |
+| [plugins/authoring.md](plugins/authoring.md) | Writing a plugin: from `sleip new` to its tests, `sleip dev` and its publishing, and the API at a glance, for plugins' authors |
+| [plugins/reference.md](plugins/reference.md) | The plugin reference: the capabilities and their risks, the slots, the events, the limits and the errors, for plugins' authors |
+| [themes/authoring.md](themes/authoring.md) | Making a theme: the format, every key and color token, `extends` and `.itermcolors`, for themes' authors |
+| [TRANSLATING.md](../TRANSLATING.md) | How to translate Lokyr: the catalogs, their format, and the steps of a new language |
 | [ROADMAP.md](ROADMAP.md) | Phases, exit criteria, first code files, open questions |
-| [tasks/](tasks/README.md) | Each phase broken into tasks of one day or less, one file per phase |
-| [bench/](bench/baseline-F0.md) | Measurements: of existing terminals, starting with the F0 baseline, of Lokyr's compatibility, starting with [esctest](bench/esctest-F1-44.md), [then](bench/esctest-F1-45.md) and [then](bench/esctest-F1-46.md), and of the VT core's [throughput](bench/throughput-F1-50.md) against `alacritty_terminal`'s, [then](bench/throughput-F1-51.md), of [search](bench/search-F1-54.md), and of the [instructions](bench/instructions-F1-52.md) that CI counts |
-| [adr/](adr/) | Architecture decision records, one per file |
+| [bench/](bench/baseline-F0.md) | Measurements: of existing terminals, starting with the F0 baseline, of Lokyr's compatibility, starting with [esctest](bench/esctest-F1-44.md), [then](bench/esctest-F1-45.md) and [then](bench/esctest-F1-46.md), and of the VT core's [throughput](bench/throughput-F1-50.md) against `alacritty_terminal`'s, [then](bench/throughput-F1-51.md), of [search](bench/search-F1-54.md), [then through the app's service](bench/search-F3-52.md), and of the [instructions](bench/instructions-F1-52.md) that CI counts |
 
 ## Requirements → solution
 
@@ -36,57 +39,25 @@ The phases (F0–F7) are described in the [ROADMAP](ROADMAP.md).
 
 | Requirement | Solution | Where | Phase |
 |---|---|---|---|
-| Fast and light on memory | 8-byte cells in pages; one GPU surface per window; native backends; no frames when idle | [VT-CORE](VT-CORE.md#paged-grid), [PERFORMANCE](PERFORMANCE.md), [ADR 0015](adr/0015-vt-core-throughput-exception.md) | F1–F2 |
+| Fast and light on memory | 8-byte cells in pages; one GPU surface per window; native backends; no frames when idle | [VT-CORE](VT-CORE.md#paged-grid), [PERFORMANCE](PERFORMANCE.md) | F1–F2 |
 | Split panes | `splits` plugin; the layout tree lives in the kernel | [UI-AND-FEATURES](UI-AND-FEATURES.md#splits) | F3 |
 | Search the buffer | Kernel `search` service for the engine, `search` plugin for the UI | [UI-AND-FEATURES](UI-AND-FEATURES.md#search) | F3 |
-| Configurable cursor: blink interval, smooth blinking, block shape, smooth movement (snappy, gliding) | `[cursor]` options, drawn by `render-metal`; the blinking and its fades on the cursor's own layer, which the window server animates, as it blinks text on a layer of its own, and the movement only while it is in progress | [UI-AND-FEATURES](UI-AND-FEATURES.md#cursor), [ADR 0021](adr/0021-drawables-and-the-cursor-layer.md), [ADR 0023](adr/0023-blinking-text-layer.md) | F2–F3 |
+| Configurable cursor: blink interval, smooth blinking, block shape, smooth movement (snappy) | `[cursor]` options, drawn by `render-metal`; the blinking and its fades on the cursor's own layer, which the window server animates, as it blinks text on a layer of its own, and the movement only while it is in progress | [UI-AND-FEATURES](UI-AND-FEATURES.md#cursor) | F2–F3 |
 | Widths and terminal type that match the programs': the reported `TERM`, Unicode 8 or current width tables, ambiguous-width characters | `[terminal]` options, which the width computation of `vt-core` and the PTY's environment follow | [VT-CORE](VT-CORE.md#settings) | F1–F2 |
 | iTerm2's text options: Unicode normalization (NFC, NFD, HFS+), a separate font for non-ASCII text | The `normalization` option of `[terminal]`; the non-ASCII font in `[font]` | [VT-CORE](VT-CORE.md#unicode), [ROADMAP](ROADMAP.md#f2--macos-single-pane) | F1–F2 |
-| The Nerd Fonts' icons, of prompts and tools, with any font | Symbols Nerd Font Mono in the binary, which draws the private use areas' characters that the configured font lacks, before the system's fallback | [ADR 0025](adr/0025-symbols-font.md) | F2 |
+| The Nerd Fonts' icons, of prompts and tools, with any font | Symbols Nerd Font Mono in the binary, which draws the private use areas' characters that the configured font lacks, before the system's fallback | [CONFIGURATION](CONFIGURATION.md#font) | F2 |
 | Encodings other than UTF-8 | UTF-8 only in the MVP; other encodings per profile, as a conversion in the session | [VT-CORE](VT-CORE.md#session-session) | F5b |
-| iTerm2 theme compatibility | `theme-iterm2` plugin: `.itermcolors`, light/dark variants, color spaces | [UI-AND-FEATURES](UI-AND-FEATURES.md#iterm2-themes) | F3 |
+| iTerm2 theme compatibility | The host's: `.itermcolors`, the one format imported, read as iTerm2 reads it, its color spaces and its light/dark keys; a native format of TOML, a file a variant; the themes of permissive licenses held | [UI-AND-FEATURES](UI-AND-FEATURES.md#iterm2-themes) | F3 |
 | Customizable iTerm2-style tabs | `tabs` plugin, drawn in the titlebar by our UI engine; native tabs disabled | [UI-AND-FEATURES](UI-AND-FEATURES.md#tabs) | F3 |
-| Powerful plugin system | Native first-party plugins and sandboxed Luau third-party plugins share one API; the commands that a plugin runs are declared in its manifest, and checked against its capabilities, but those that the user runs through a plugin with `user-commands`, as the palette | [PLUGIN-SYSTEM](PLUGIN-SYSTEM.md), [ADR 0019](adr/0019-commands-errors-and-permissions.md), [ADR 0024](adr/0024-user-commands.md) | F3–F4 |
-| Terminal built from its own plugins | Micro-kernel; the distribution is generated from `dist/default.toml` | [PLUGIN-SYSTEM](PLUGIN-SYSTEM.md#distribution) | F3 |
-| Sub-projects per OS and engine | `platform-*`, `render-*` and `font-*` crates behind thin traits; macOS backends first, Linux after 1.0 | [ARCHITECTURE](ARCHITECTURE.md#workspace-layout), [ADR 0011](adr/0011-macos-only-1-0.md) | F2 / F7 |
-| Central package manager and online registry | Sleip, plus a registry that starts static and later becomes a service | [PACKAGE-MANAGER](PACKAGE-MANAGER.md) | F4 / F7 |
-| Plugin fetching separate from the app | The `lokyr` binary contains no networking code of its own, enforced in CI; Sparkle's updater is its one network client ([ADR 0026](adr/0026-app-updates.md)) | [PACKAGE-MANAGER](PACKAGE-MANAGER.md#role) | F0+ |
-| Integration with AI agents, the common ones included | The programs' notifications; an agent's presence from its process, and its state from its sequences and `lokyr +notify`, on its tab | [UI-AND-FEATURES](UI-AND-FEATURES.md#agents), [ADR 0017](adr/0017-mcp-and-agents.md) | F2–F3 |
-| MCP: agents drive the terminal | `lokyr +mcp`, over stdio through the IPC socket; an agent's scope is its own pane and the panes it opened | [SECURITY](SECURITY.md#mcp), [ADR 0017](adr/0017-mcp-and-agents.md) | F3b |
-| Localized: menus, commands and notices in the user's language | Fluent catalogs, English and Italian first; the system's preferred language, or `[app] language`; the system's own texts made from the same catalogs | [ADR 0020](adr/0020-localization.md) | F2 |
-| The app installs from a DMG and updates itself | A signed, notarized DMG of `xtask dmg`; Sparkle 2, from a signed feed on the repository's GitHub releases; the versions of ADR 0027 | [ADR 0026](adr/0026-app-updates.md), [ADR 0027](adr/0027-version-numbers.md) | F3 |
-
-## Architecture decisions
-
-| ADR | Decision | Status |
-|---|---|---|
-| [0001](adr/0001-language-rust.md) | Rust for the app, the CLI and the registry | Accepted; its wasmtime reasons outdated by 0012 |
-| [0002](adr/0002-micro-kernel-and-plugins.md) | Micro-kernel: mechanism in the core, policy in plugins | Accepted |
-| [0003](adr/0003-native-and-wasm-plugins.md) | Two tiers of plugins (native and Wasm) with one API | Accepted; third-party tier superseded by 0012 |
-| [0004](adr/0004-native-shell-and-gpu-chrome.md) | Native shell per OS, our own GPU-drawn chrome | Accepted |
-| [0005](adr/0005-native-renderers.md) | Native renderers (Metal, OpenGL), one surface per window | Accepted; OpenGL in F7, per 0011; the cursor's layer, per 0021; two drawables, per 0022; blinking text's layer, per 0023 |
-| [0006](adr/0006-text-pipeline.md) | Text pipeline: font backends, procedural sprites, UCD width tables | Accepted; shaping superseded by 0011; a font of symbols before the system's fallback, per 0025 |
-| [0007](adr/0007-own-vt-core.md) | Our own VT core: table-driven parser, paged grid | Accepted |
-| [0008](adr/0008-separate-package-manager.md) | Sleip as a separate program; no networking code in the app | Accepted; plugin builds became checks, per 0012; the app's updates through Sparkle, its one network client, per 0026 |
-| [0009](adr/0009-toml-config.md) | TOML config with schemas, all-or-nothing reload and migrations | Accepted |
-| [0010](adr/0010-mit-license.md) | MIT license | Accepted; to be reconfirmed before the first public release, 1.0.0, per 0027 |
-| [0011](adr/0011-macos-only-1-0.md) | Version 1.0 targets macOS only; Linux after 1.0; CoreText shaping on macOS | Accepted; Intel question settled by 0013 |
-| [0012](adr/0012-luau-plugins.md) | Third-party plugins in Luau, with its native code generator | Accepted |
-| [0013](adr/0013-platform-baseline.md) | Platform baseline: macOS 26 or later, Apple Silicon only | Accepted |
-| [0014](adr/0014-names-bolt-and-crossbow.md) | Names: Bolt for the terminal, Crossbow for the package manager | Superseded by 0018 |
-| [0015](adr/0015-vt-core-throughput-exception.md) | Throughput of the VT core: vtebench's bottom region, with its lines of one character, is an exception | Accepted |
-| [0016](adr/0016-new-names.md) | New names: Shard for the package manager; the terminal's still to choose, by the end of F2 | Superseded by 0018, never accepted |
-| [0017](adr/0017-mcp-and-agents.md) | An MCP server, and the AI agents that run in the terminal; phase F3b | Accepted |
-| [0018](adr/0018-names-lokyr-and-sleip.md) | Names: Lokyr for the terminal, Sleip for the package manager | Accepted |
-| [0019](adr/0019-commands-errors-and-permissions.md) | Commands: a flat schema of arguments, errors with codes and categories, and the commands that plugins run, declared and checked; four new capabilities | Accepted; the commands that the user runs through a plugin, per 0024 |
-| [0020](adr/0020-localization.md) | Localization: every text that Lokyr shows, in Fluent catalogs, English and Italian first; the system's preferred language, or the config's | Accepted |
-| [0021](adr/0021-drawables-and-the-cursor-layer.md) | Three drawables per window, of which a hidden window keeps one; the cursor's cell on a layer of its own, which the window server blinks | Accepted; amends 0005; its drawables superseded by 0022; blinking text on a layer, per 0023 |
-| [0022](adr/0022-two-drawables.md) | Two drawables per window, as measured at 60 and 120 Hz; three as a build's feature | Accepted; supersedes 0021's drawables |
-| [0023](adr/0023-blinking-text-layer.md) | Blinking text on a layer of its own, which the window server blinks, as it blinks the cursor's | Accepted; amends 0021 |
-| [0024](adr/0024-user-commands.md) | The commands that the user runs through a plugin, as the palette's: the capability `user-commands`, which also reads the whole registry | Accepted; amends 0019 |
-| [0025](adr/0025-symbols-font.md) | A font of symbols in the binary, Symbols Nerd Font Mono, for the icons of the private use areas that the configured font lacks | Accepted; amends 0006 |
-| [0026](adr/0026-app-updates.md) | The app updates itself through Sparkle 2, from a signed feed on the repository's GitHub releases | Accepted; amends 0008 |
-| [0027](adr/0027-version-numbers.md) | Version numbers: releases, builds of a date and candidates; F3 from 0.2 to the first public release, 1.0.0; the plugin API's own version | Accepted; replaces the roadmap's versions |
+| Powerful plugin system | Native first-party plugins and sandboxed Luau third-party plugins share one API; the commands that a plugin runs are declared in its manifest, and checked against its capabilities, but those that a person runs through a plugin with `user-commands`, as the palette; the calls are messages, and the plugins' UI is data that the host draws; each plugin's keys in its section of the config file, of its JSON Schema | [PLUGIN-SYSTEM](PLUGIN-SYSTEM.md) | F3–F4 |
+| Terminal built from its own plugins | Micro-kernel; the distributions, `dist/*.toml`, are the app's features, which `xtask gen-dist` writes; a plugin turned off by `enabled = false` in its section | [PLUGIN-SYSTEM](PLUGIN-SYSTEM.md#distribution) | F3 |
+| Sub-projects per OS and engine | `platform-*`, `render-*` and `font-*` crates behind thin traits; macOS backends first, Linux after 1.0 | [ARCHITECTURE](ARCHITECTURE.md#workspace-layout) | F2 / F7 |
+| Central package manager and online registry | Sleip, plus a registry that starts static, a repository of the index on GitHub with publishing by pull request, its index and site on GitHub Pages at `pkg.lokyr.dev`, signed by keys that a root key in Sleip vouches for, and later becomes a service; Lokyr's own `plugin-manager` of Sleip's commands, through the app | [PACKAGE-MANAGER](PACKAGE-MANAGER.md) | F4 / F7 |
+| Plugin fetching separate from the app | The `lokyr` binary contains no networking code of its own, enforced in CI; Sparkle's updater is its one network client; the plugins' network goes through the app, which checks it, to Sleip's helper, after 1.0.0 | [PACKAGE-MANAGER](PACKAGE-MANAGER.md#role) | F0+, the plugins' network F6 |
+| Integration with AI agents, the common ones included | The programs' notifications; an agent's presence from its process, and its state from its title and its sequences, on its tab; `lokyr +notify` and the agents' hooks with F3b's IPC | [UI-AND-FEATURES](UI-AND-FEATURES.md#agents) | F2–F3b |
+| MCP: agents drive the terminal | `lokyr +mcp`, over stdio through the IPC socket; an agent's scope is its own pane and the panes it opened | [SECURITY](SECURITY.md#mcp) | F3b |
+| Localized: menus, commands and notices in each person's language | Fluent catalogs, English and Italian first; the system's preferred language, or `[app] language`; the system's own texts made from the same catalogs | [TRANSLATING](../TRANSLATING.md) | F2 |
+| The app installs from a DMG, or a Homebrew cask, and updates itself | A signed, notarized DMG of `xtask dmg`, and a cask of the project's Homebrew tap; Sparkle 2, from a signed feed at `lokyr.dev`; the versions `X.Y.Z` of releases, `X.Y.Z-rc.N` of candidates and `X.Y.Z-YYYYMMDD` of builds, a build's number growing with each release | [SECURITY](SECURITY.md#supply-chain-of-our-own-code), [ROADMAP](ROADMAP.md#versions), [releases](releases/README.md) | F3 |
 
 ## Glossary
 
@@ -100,9 +71,9 @@ The phases (F0–F7) are described in the [ROADMAP](ROADMAP.md).
 | **Pane** | An area that shows one terminal. A tab holds one or more panes, arranged by the layout tree |
 | **Session** | The PTY, the child process and the VT state of a pane |
 | **Pin** | A stable reference to a position in the grid. It stays valid across scrolling and reflow |
-| **Capability** | A permission that a third-party plugin must declare and the user must grant (e.g. `terminal-read`) |
+| **Capability** | A permission that a third-party plugin must declare and that must be granted to it (e.g. `terminal-read`) |
 | **Slot** | A place in the UI where a plugin can render a view tree (e.g. `tab-bar`) |
-| **HostApi** | The Rust trait the kernel implements. Both front ends of the plugin API, Rust and Luau, call into it |
+| **HostApi** | The plugin API: the requests, responses and events of `plugin-sdk`'s `message` module, which the kernel serves through `host::Host`. Both front ends, Rust's `Cx` and Luau's bindings, make its requests |
 
 ## References worth studying
 

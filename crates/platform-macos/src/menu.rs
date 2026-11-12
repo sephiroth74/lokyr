@@ -136,7 +136,8 @@ pub(crate) fn context(
     let mut commands = Vec::new();
     collect(&menu.items, &mut commands);
     let dimmed = Rc::new(RefCell::new(menu.dimmed.iter().cloned().collect()));
-    let target = target(mtm, shared, Some(window), commands, (dimmed, Rc::default()));
+    let ticked = Rc::new(RefCell::new(menu.ticked.iter().cloned().collect()));
+    let target = target(mtm, shared, Some(window), commands, (dimmed, ticked));
     let menu = Menu {
         title: String::new(),
         items: menu.items.clone(),
@@ -259,6 +260,7 @@ fn selector(action: StandardAction) -> Sel {
         StandardAction::Minimize => sel!(performMiniaturize:),
         StandardAction::Zoom => sel!(performZoom:),
         StandardAction::BringAllToFront => sel!(arrangeInFront:),
+        StandardAction::CharacterPalette => sel!(orderFrontCharacterPalette:),
     }
 }
 
@@ -329,6 +331,37 @@ mod tests {
         );
         assert_eq!(key_equivalent(ShortcutKey::Code(KeyCode::F(36))), None);
         assert_eq!(key_equivalent(ShortcutKey::Code(KeyCode::CapsLock)), None);
+    }
+
+    #[test]
+    fn each_standard_item_sends_an_action_that_appkit_answers() {
+        use objc2::ClassType;
+        use objc2_app_kit::{NSApplication, NSWindow};
+        let answers = |class: &objc2::runtime::AnyClass, action: Sel| -> bool {
+            // SAFETY: `instancesRespondToSelector:` of `NSObject`'s class,
+            // which takes a selector.
+            unsafe { msg_send![class, instancesRespondToSelector: action] }
+        };
+        // The application's, and the window's that has the focus.
+        for action in [
+            StandardAction::Hide,
+            StandardAction::HideOthers,
+            StandardAction::ShowAll,
+            StandardAction::BringAllToFront,
+            StandardAction::CharacterPalette,
+        ] {
+            assert!(
+                answers(NSApplication::class(), selector(action)),
+                "{action:?}"
+            );
+        }
+        for action in [StandardAction::Minimize, StandardAction::Zoom] {
+            assert!(answers(NSWindow::class(), selector(action)), "{action:?}");
+        }
+        assert!(!answers(
+            NSApplication::class(),
+            sel!(orderFrontCharacterPalettes:)
+        ));
     }
 
     #[test]

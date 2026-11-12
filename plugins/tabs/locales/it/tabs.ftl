@@ -1,0 +1,38 @@
+# I testi dei tab, in italiano.
+
+command-tabs-new = Nuovo tab
+command-tabs-close = Chiudi tab
+command-tabs-next = Seleziona tab successivo
+command-tabs-prev = Seleziona tab precedente
+command-tabs-goto = Seleziona tab
+command-tabs-move = Sposta tab
+command-tabs-rename = Rinomina tab…
+command-tabs-set-color = Imposta colore del tab
+command-tabs-detach = Sposta tab in una nuova finestra
+
+rename-message = Il titolo del tab
+rename-detail = Lascialo vuoto per quello del tab: il titolo del suo programma, o la sua cartella.
+
+bar-new-tab = Nuovo tab
+bar-close-tab = Chiudi tab
+bar-untitled = Tab { $index }
+bar-close-others = Chiudi gli altri tab
+
+menu-color = Colore
+menu-color-red = Rosso
+menu-color-orange = Arancione
+menu-color-yellow = Giallo
+menu-color-green = Verde
+menu-color-blue = Blu
+menu-color-purple = Viola
+menu-color-gray = Grigio
+menu-color-none = Nessun colore
+
+bar-mark-activity = Nuovo output
+bar-mark-bell = Campanello
+bar-mark-running = In esecuzione
+bar-mark-secure = Inserimento sicuro da tastiera
+bar-mark-working = Agente al lavoro
+bar-mark-waiting = Agente in attesa
+bar-mark-error = Agente in errore
+bar-mark-done = Agente: fatto

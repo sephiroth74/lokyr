@@ -1,9 +1,10 @@
 //! Rendering interface shared by the GPU backends.
 //!
 //! Defines the [`Renderer`] trait that each backend implements, and the
-//! [`DisplayList`] that it draws: a window's frame as rectangles, glyphs
-//! placed anywhere for the chrome, and panes' grids of cells, each with its
-//! background, its glyphs from the atlas and the lines that decorate it.
+//! [`DisplayList`] that it draws: a window's frame as rectangles, shapes of
+//! rounded corners, borders and shadows, and glyphs placed anywhere for the
+//! chrome, and panes' grids of cells, each with its background, its glyphs
+//! from the atlas and the lines that decorate it.
 //! Positions and sizes are in the pixels of the window's content, from its
 //! top left corner.
 
@@ -45,6 +46,12 @@ impl Color {
 
     /// Opaque black.
     pub const BLACK: Self = Self::from_rgb8(0, 0, 0);
+
+    /// Opaque white.
+    pub const WHITE: Self = Self::from_rgb8(255, 255, 255);
+
+    /// Nothing: black, of no opacity.
+    pub const CLEAR: Self = Self::BLACK.with_alpha(0.0);
 
     /// The color, with the opacity `alpha`.
     #[must_use]
@@ -128,6 +135,9 @@ pub struct CellGlyph {
     /// The color that fills a glyph of coverage; a glyph of its own colors
     /// ignores it.
     pub color: Color,
+    /// Whether its coverage was drawn of the system's font smoothing, which
+    /// takes the system's weight where its batch asks for it.
+    pub smoothed: bool,
 }
 
 /// How a line across cells is drawn.
@@ -214,6 +224,9 @@ pub struct CellCursor {
     pub shape: CursorShape,
     /// The pixels that a bar, an underline or a hollow block's edges take.
     pub thickness: u32,
+    /// The share of the cell that a bar's height and an underline's width
+    /// take, from above 0 to 1, the whole cell, centered in it.
+    pub length: f32,
     /// Its color.
     pub color: Color,
 }
@@ -232,15 +245,30 @@ impl CellCursor {
             width,
             height,
         };
+        // A bar's height or an underline's width of the share `length` of
+        // `whole`, a pixel at least, and the pixels before it that center
+        // it.
+        let share = |whole: u32| {
+            let length = self.length.clamp(0.0, 1.0);
+            // A cast from a float saturates.
+            let long = ((whole as f32 * length).round() as u32).clamp(1, whole.max(1));
+            (long, ((whole - long.min(whole)) / 2) as i32)
+        };
         match self.shape {
             CursorShape::Block => vec![rect(left, top, width, height)],
-            CursorShape::Bar => vec![rect(left, top, thickness, height)],
-            CursorShape::Underline => vec![rect(
-                left,
-                top + (height - thickness) as i32,
-                width,
-                thickness,
-            )],
+            CursorShape::Bar => {
+                let (tall, above) = share(height);
+                vec![rect(left, top + above, thickness, tall)]
+            }
+            CursorShape::Underline => {
+                let (wide, before) = share(width);
+                vec![rect(
+                    left + before,
+                    top + (height - thickness) as i32,
+                    wide,
+                    thickness,
+                )]
+            }
             CursorShape::Hollow => {
                 let inner = height.saturating_sub(thickness * 2);
                 vec![
@@ -284,6 +312,10 @@ pub struct CellBatch {
     /// The cursor, when it shows: a block goes over the backgrounds and
     /// under the glyphs, the other shapes over the glyphs.
     pub cursor: Option<CellCursor>,
+    /// Whether its glyphs of coverage drawn of the font smoothing take the
+    /// weight of the system's text: dark text on a light background
+    /// thinner than its coverage blended as it is drawn.
+    pub system_weight: bool,
 }
 
 /// A glyph placed anywhere, such as the chrome's text.
@@ -295,7 +327,88 @@ pub struct PlacedGlyph {
     pub x: i32,
     /// Where its top edge goes.
     pub y: i32,
-    /// The color that fills a glyph of coverage.
+    /// The color that fills a glyph of coverage; of a glyph of its own
+    /// colors, its opacity alone, which a fade takes.
+    pub color: Color,
+    /// Whether its coverage takes the weight of the system's text: of a
+    /// glyph drawn of the font smoothing, of text that takes the weight, as
+    /// the interface's always does.
+    pub weight: bool,
+}
+
+/// A shape of the interface: a rectangle of rounded corners, filled to its
+/// edges under its border, over its shadow, as a panel or a button; or an
+/// arc of the ring inscribed in its rectangle, as a progress's; none of no
+/// width or height.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Shape {
+    /// Its rectangle, the border's outer edges.
+    pub rect: Rect,
+    /// The radius of its corners, in pixels: 0 for square ones, and at most
+    /// half its shorter side.
+    pub radius: f32,
+    /// What fills it, under its border too; [`Color::CLEAR`] for nothing.
+    pub fill: Color,
+    /// Its border's width, in pixels, inside its edges: 0 for none.
+    pub border: f32,
+    /// Its border's color.
+    pub border_color: Color,
+    /// Its shadow, if it casts one.
+    pub shadow: Option<Shadow>,
+    /// The arc of the ring inscribed in its rectangle that it draws, of its
+    /// fill, in place of the rectangle, its border and its shadow.
+    pub arc: Option<Arc>,
+    /// Whether its fill takes the place of what is under it, by the part of
+    /// each pixel that it covers, rather than going over it: a background
+    /// that shows a translucent window's opacity over what the window
+    /// draws of it, rather than its own over that. Its border and its
+    /// shadow go over, and an arc's fill too.
+    pub knockout: bool,
+}
+
+/// An arc of a ring: a line along the circle inscribed in a shape's
+/// rectangle, inside it, from a place of the turn clockwise.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Arc {
+    /// Where it starts, in turns clockwise from the top: 0 at the top, a
+    /// quarter at the right.
+    pub start: f32,
+    /// How much of the turn it takes, clockwise: 1 for the whole ring, 0
+    /// for nothing.
+    pub span: f32,
+    /// How thick its line is, in pixels, inwards from the circle.
+    pub thickness: f32,
+}
+
+impl Shape {
+    /// A shape of `rect`, filled with `fill`, of square corners, without a
+    /// border or a shadow.
+    pub fn filled(rect: Rect, fill: Color) -> Self {
+        Self {
+            rect,
+            radius: 0.0,
+            fill,
+            border: 0.0,
+            border_color: Color::CLEAR,
+            shadow: None,
+            arc: None,
+            knockout: false,
+        }
+    }
+}
+
+/// The shadow of a shape: the shape's outline moved, blurred, and filled
+/// with its color, under the shape.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Shadow {
+    /// How far right it is moved, in pixels.
+    pub x: f32,
+    /// How far down it is moved, in pixels.
+    pub y: f32,
+    /// How far its edge blurs, in pixels, twice the deviation of a Gaussian
+    /// blur: 0 for a sharp edge.
+    pub blur: f32,
+    /// Its color, which its opacity makes lighter.
     pub color: Color,
 }
 
@@ -311,14 +424,29 @@ pub enum Item {
     },
     /// A pane's grid of cells.
     Cells(CellBatch),
-    /// Glyphs placed anywhere.
+    /// Glyphs placed anywhere, as the interface's text.
     Glyphs(Vec<PlacedGlyph>),
+    /// Shapes, each over those before it, its shadow under itself alone.
+    Shapes(Vec<Shape>),
+    /// A picture that the renderer holds, filling the rectangle, scaled to
+    /// it smoothly, of its smaller copies where it shrinks.
+    Picture {
+        /// Where.
+        rect: Rect,
+        /// The picture.
+        picture: PictureId,
+    },
     /// The drawings that follow, up to the matching [`Item::PopClip`], keep
     /// within the rectangle, and within the clips that hold it.
     PushClip(Rect),
     /// The end of the latest clip.
     PopClip,
 }
+
+/// A picture that a renderer holds, which [`Renderer::make_picture`] drew
+/// once of a display list, and which lists draw as [`Item::Picture`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct PictureId(pub u64);
 
 /// A window's frame: its background, and what is drawn over it, in order.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -387,6 +515,103 @@ pub trait Renderer {
     fn drawable_wait(&self) -> Duration {
         Duration::ZERO
     }
+
+    /// Draws `list` into `target`, as [`Renderer::draw`] does, but for its
+    /// GPU's time, which [`Renderer::take_gpu_times`] leaves out: a layer's
+    /// frame, of a few cells, apart from the windows' frames.
+    fn draw_untimed(
+        &mut self,
+        target: &Self::Target,
+        list: &DisplayList,
+    ) -> Result<bool, Self::Error> {
+        self.draw(target, list)
+    }
+
+    /// Calls `presented` as the next frame that the renderer draws, into
+    /// any target, shows on the display, from any thread, with how long ago
+    /// it showed, or `None` if the display skipped it; a backend that does
+    /// not learn when its frames show never calls it.
+    fn on_next_presented(&mut self, presented: impl FnOnce(Option<Duration>) + Send + 'static) {
+        let _ = presented;
+    }
+
+    /// Forgets the call that [`Renderer::on_next_presented`] left, as a
+    /// frame that drew nothing leaves it to no other target.
+    fn forget_next_presented(&mut self) {}
+
+    /// Draws `list` once into a picture of its own, `width` by `height`
+    /// pixels, which lists then draw, scaled, as [`Item::Picture`], until
+    /// [`Renderer::drop_picture`] lets it go, as a drag's image draws a
+    /// tab's panes as they showed; `None` for a backend that keeps none,
+    /// whose lists then draw nothing of it.
+    fn make_picture(
+        &mut self,
+        list: &DisplayList,
+        width: u32,
+        height: u32,
+    ) -> Result<Option<PictureId>, Self::Error> {
+        let _ = (list, width, height);
+        Ok(None)
+    }
+
+    /// Makes a picture of `pixels`, `width` by `height`: RGBA, 8 bits a
+    /// component in sRGB, premultiplied by their opacity, a row after the
+    /// other from the top, of its smaller copies, which lists draw as
+    /// [`Item::Picture`] until [`Renderer::drop_picture`] lets it go, as an
+    /// image that a program shows in its cells; `None` for a backend that
+    /// keeps none, or pixels that are not `width` by `height`.
+    fn picture_of_pixels(
+        &mut self,
+        pixels: &[u8],
+        width: u32,
+        height: u32,
+    ) -> Result<Option<PictureId>, Self::Error> {
+        let _ = (pixels, width, height);
+        Ok(None)
+    }
+
+    /// Lets `picture` go, once the frames that draw it are drawn.
+    fn drop_picture(&mut self, picture: PictureId) {
+        let _ = picture;
+    }
+
+    /// Draws `list` into a texture of its own, `width` by `height` pixels,
+    /// as a window's surface would show it, waits for the GPU, and reads
+    /// its pixels back: RGBA, 8 bits a component in sRGB, premultiplied by
+    /// their opacity, a row after the other from the top; `None` for a
+    /// backend that reads none back.
+    fn read_back(
+        &mut self,
+        list: &DisplayList,
+        width: u32,
+        height: u32,
+    ) -> Result<Option<Vec<u8>>, Self::Error> {
+        let _ = (list, width, height);
+        Ok(None)
+    }
+}
+
+/// What a renderer draws a window's frames into, or a layer's of it.
+pub trait Surface {
+    /// What can fail.
+    type Error;
+
+    /// Sizes it to the window's content, `width` by `height` pixels at
+    /// `scale`.
+    fn resize(&self, width: u32, height: u32, scale: f64);
+
+    /// Has the frames to come show with the window's own changes of size, as
+    /// the user resizes it, so that the content follows its edge, rather
+    /// than as the GPU finishes them.
+    fn set_presents_with_transaction(&self, with: bool);
+
+    /// Lets the memory of its frames go, as for a window that does not
+    /// show, but the frame that shows, until the next
+    /// [`Surface::resize`].
+    fn release(&self);
+
+    /// Draws a frame of one color, and presents it. Returns whether it did.
+    fn clear(&self, color: Color) -> Result<bool, Self::Error>;
 }
 
 #[cfg(test)]
@@ -400,6 +625,7 @@ mod tests {
             columns,
             shape,
             thickness: 2,
+            length: 1.0,
             color: Color::default(),
         }
     }
@@ -462,6 +688,32 @@ mod tests {
                 rect(26, 38, 2, 12),
                 rect(32, 38, 2, 12),
             ]
+        );
+    }
+
+    #[test]
+    fn a_bar_and_an_underline_of_a_share_of_the_cell_are_centered_in_it() {
+        // Cells of 8 by 16, from (10, 20): the third of the second row is
+        // at (26, 36).
+        let rects = |shape, columns, length| {
+            let mut short = cursor(shape, columns);
+            short.length = length;
+            short.rects(10, 20, 8, 16)
+        };
+        // A bar of 10 pixels of 16, 3 above and 3 below.
+        assert_eq!(rects(CursorShape::Bar, 1, 0.6), [rect(26, 39, 2, 10)]);
+        // An underline of 5 pixels of 8, 1 before it, and of a wide
+        // character, 10 of 16, 3 before it.
+        assert_eq!(rects(CursorShape::Underline, 1, 0.6), [rect(27, 50, 5, 2)]);
+        assert_eq!(rects(CursorShape::Underline, 2, 0.6), [rect(29, 50, 10, 2)]);
+        // A pixel at least, the whole cell at most; a block and a hollow
+        // one keep the whole cell.
+        assert_eq!(rects(CursorShape::Bar, 1, 0.0), [rect(26, 43, 2, 1)]);
+        assert_eq!(rects(CursorShape::Bar, 1, 3.0), [rect(26, 36, 2, 16)]);
+        assert_eq!(rects(CursorShape::Block, 1, 0.5), [rect(26, 36, 8, 16)]);
+        assert_eq!(
+            rects(CursorShape::Hollow, 1, 0.5),
+            rects(CursorShape::Hollow, 1, 1.0)
         );
     }
 

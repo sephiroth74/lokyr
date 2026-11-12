@@ -1,15 +1,44 @@
 //! Platform-independent UI engine.
 //!
-//! Lays out view trees, provides the widgets the chrome needs (text fields
-//! with IME support, lists, menus), handles hit testing and accessibility,
-//! and turns a window's chrome and panes into a single display list: a
-//! pane's grid of cells comes from a snapshot of its terminal, in [`pane`],
-//! with the glyphs of its [`font`].
+//! Keeps the plugins' view trees, as a flat arena that a new render
+//! updates by a diff, in [`tree`]; lays them out, with `taffy`, in
+//! [`layout`], their texts measured in the [`interface`]'s face; paints
+//! them into display list items, of the [`theme`]'s tokens, in [`paint`];
+//! places a window's slots around and over its panes, in [`chrome`];
+//! finds the nodes under the pointer, and tells them what it did and how it
+//! looks over them, in [`pointer`](mod@pointer); keeps the keyboard's focus
+//! on a pane or a panel's node, in [`focus`]; does what accessibility asks
+//! of a node, in [`action`]; provides the widgets the chrome needs (text
+//! fields with IME support, lists, menus), handles accessibility, and turns
+//! a window's chrome and panes into a single display list: a pane's grid of
+//! cells comes from a snapshot of its terminal, in [`pane`], with the
+//! glyphs of its [`font`].
 
 #![forbid(unsafe_code)]
 
+pub mod access;
+pub mod action;
+pub mod animation;
+pub mod chrome;
 pub mod cursor;
+pub mod field;
+pub mod focus;
 pub mod font;
+pub mod image;
+pub mod interface;
+pub mod layout;
+pub mod list;
+pub mod paint;
 pub mod pane;
+pub mod panel;
+pub mod pointer;
+pub mod progress;
+pub mod reorder;
+pub mod scrollbar;
+pub mod surface;
+pub mod tabs;
 pub mod text;
 pub mod theme;
+pub mod tooltip;
+pub mod tree;
+pub mod widget;

@@ -1,0 +1,1696 @@
+//! `sleip registry`, hidden from the help: the registry's tools, which its
+//! CI runs. `verify` checks a pull request of the registry's repository,
+//! which publishes a plugin's versions, a file of each plugin,
+//! `plugins/<owner>/<name>.toml`: the changes of the pull request alone,
+//! since the commit that it shares with the main branch, each judged
+//! against the main branch as it is now; a plugin's owner the author or
+//! one of the author's organizations, its name no other owner's nor one
+//! that Lokyr holds, the versions published left as they were, and each
+//! new version cloned at its tag,
+//! which must name its commit, its manifest the file's, checked as
+//! `sleip check` checks it, tested as `sleip test` tests it, and packaged;
+//! then whether it merges by itself, of a version of a plugin published
+//! before that asks for nothing new, or the maintainer reviews it; of the
+//! files alone, as the job that merges checks them again, no version
+//! checked out nor run, its manifest read of git's objects. `build`
+//! packages a version's archive again, alike, of the commit that the file
+//! pins whatever became of its tag, which the CI of the registry's main
+//! branch publishes; `versions` lists every version, of
+//! its release's names. `keygen` and `sign-keys` make the registry's keys
+//! and its `keys.json`, offline; `index` writes its index, signed, of the
+//! archives of its releases, which the CI of the main branch runs.
+
+use std::collections::BTreeSet;
+use std::path::Path;
+
+use lokyr_pkg_model::manifest::{Kind, Manifest};
+use lokyr_pkg_model::store::Digest;
+use serde_json::json;
+use sleip_index::client::{Client, Fetched};
+use sleip_index::registry::{self, PluginFile, Release};
+use sleip_index::remote::Remote;
+use sleip_index::signing::{self, Dependency, Entry, PublicKey, SecretKey, Timestamp};
+
+use super::{git, git_bytes};
+use crate::args::Registry;
+
+mod site;
+use crate::output::Out;
+
+/// Runs the registry's tool `tool`, as `out` tells.
+pub fn run(out: Out, tool: &Registry) -> Result<(), String> {
+    match tool {
+        Registry::Verify {
+            head,
+            base,
+            author,
+            sender,
+            orgs,
+            out: into,
+            report,
+            local,
+            files_alone,
+        } => verify(
+            out,
+            &PullRequest {
+                head,
+                base,
+                author,
+                sender: sender.as_deref(),
+                orgs,
+                local: *local,
+                files_alone: *files_alone,
+            },
+            into,
+            report.as_deref(),
+        ),
+        Registry::Build {
+            plugin,
+            version,
+            registry,
+            out: into,
+            local,
+        } => build(out, registry, plugin, version, into, *local),
+        Registry::Versions { registry } => versions(out, registry),
+        Registry::Keygen { out: file } => keygen(out, file),
+        Registry::SignKeys {
+            root,
+            keys,
+            out: file,
+        } => sign_keys(out, root, keys, file),
+        Registry::Index {
+            registry,
+            archives,
+            out: into,
+            roots,
+            dl,
+            deployed,
+        } => index(
+            out,
+            &Indexed {
+                registry,
+                archives,
+                into,
+                roots: roots.as_deref(),
+                dl: dl.as_deref(),
+                deployed: deployed.as_deref(),
+            },
+        ),
+        Registry::Site {
+            registry,
+            archives,
+            out: into,
+            roots,
+        } => site::site(out, registry, archives, into, &roots_of(roots.as_deref())?),
+        Registry::Readme {
+            registry,
+            index,
+            readme,
+            roots,
+        } => site::readme(
+            out,
+            registry,
+            index,
+            &readme.clone().unwrap_or_else(|| registry.join("README.md")),
+            &roots_of(roots.as_deref())?,
+        ),
+    }
+}
+
+/// The root keys of the file `roots`, a key a line, or Sleip's own.
+fn roots_of(roots: Option<&Path>) -> Result<Vec<PublicKey>, String> {
+    match roots {
+        Some(file) => std::fs::read_to_string(file)
+            .map_err(|error| format!("{} cannot be read: {error}", file.display()))?
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+            .map(PublicKey::parse)
+            .collect(),
+        None => Ok(signing::roots()),
+    }
+}
+
+/// Makes a key, its secret written to the new file `file`, which no one
+/// else reads, as `out` tells its public part.
+fn keygen(out: Out, file: &Path) -> Result<(), String> {
+    use std::io::Write as _;
+    use std::os::unix::fs::OpenOptionsExt as _;
+
+    let key = SecretKey::generate()?;
+    let mut written = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(file)
+        .map_err(|error| format!("{} cannot be made: {error}", file.display()))?;
+    written
+        .write_all(key.file_text().as_bytes())
+        .and_then(|()| written.sync_all())
+        .map_err(|error| format!("{} cannot be written: {error}", file.display()))?;
+    let public = key.public().to_string();
+    out.tell(
+        "key",
+        json!({ "public": public, "file": file.display().to_string() }),
+        &format!(
+            "The key's secret is in {}, which no one else reads: keep it as such.\nIts public part: {public}",
+            file.display()
+        ),
+    );
+    Ok(())
+}
+
+/// Writes `keys.json` to `file`, of the index keys `keys`, signed by the
+/// root key whose secret the file `root` holds, as `out` tells.
+fn sign_keys(out: Out, root: &Path, keys: &[String], file: &Path) -> Result<(), String> {
+    let text = std::fs::read_to_string(root)
+        .map_err(|error| format!("{} cannot be read: {error}", root.display()))?;
+    let root_key =
+        SecretKey::parse(&text).map_err(|error| format!("{}: {error}", root.display()))?;
+    let keys: Vec<PublicKey> = keys
+        .iter()
+        .map(|key| PublicKey::parse(key))
+        .collect::<Result<_, _>>()?;
+    if keys.is_empty() {
+        return Err("keys.json lists an index key at least".to_owned());
+    }
+    // Of a clock behind, a time that the Sleips refuse, or older than the
+    // file's own, which they would keep.
+    let now = Timestamp::now();
+    if now < signing::KEYS_NOT_BEFORE {
+        return Err(format!(
+            "this machine's clock tells {now}, before {}, of the keys.json that the Sleips take: set the clock right",
+            signing::KEYS_NOT_BEFORE
+        ));
+    }
+    if let Ok(before) = std::fs::read_to_string(file)
+        && let Ok(written) = serde_json::from_str::<serde_json::Value>(&before)
+        && let Some(time) = written["generated"]
+            .as_str()
+            .and_then(|time| Timestamp::parse(time).ok())
+        && time > now
+    {
+        return Err(format!(
+            "{} was made at {time}, after this machine's clock, {now}: set the clock right",
+            file.display()
+        ));
+    }
+    let signed = signing::sign_keys(&root_key, &keys, now);
+    lokyr_pkg_model::write_whole(file, &signed)
+        .map_err(|error| format!("{} cannot be written: {error}", file.display()))?;
+    let public = root_key.public();
+    if !signing::roots().contains(&public) {
+        out.tell(
+            "note",
+            json!({ "message": format!("{public} is no root key of this Sleip's, which reads none of its keys.json") }),
+            &format!("{public} is no root key of this Sleip's, which reads none of its keys.json."),
+        );
+    }
+    out.tell(
+        "signed",
+        json!({
+            "root": public.to_string(),
+            "keys": keys.iter().map(ToString::to_string).collect::<Vec<_>>(),
+            "file": file.display().to_string(),
+        }),
+        &format!(
+            "{} lists {} index keys, signed by {public}.",
+            file.display(),
+            keys.len()
+        ),
+    );
+    Ok(())
+}
+
+/// The kind of `kind`, as a manifest and the index write it.
+fn kind_text(kind: Kind) -> &'static str {
+    match kind {
+        Kind::Luau => "luau",
+        Kind::Themes => "themes",
+        Kind::Builtin => "builtin",
+    }
+}
+
+/// What `index` writes, and of what.
+struct Indexed<'a> {
+    /// The registry's repository.
+    registry: &'a Path,
+    /// The archives at hand, `<release>/<archive>`, and those downloaded.
+    archives: &'a Path,
+    /// Where the index is written.
+    into: &'a Path,
+    /// The file of the root keys, a key a line, or Sleip's own.
+    roots: Option<&'a Path>,
+    /// The archives' address, or the registry's.
+    dl: Option<&'a str>,
+    /// The address of the index deployed, whose lines are kept.
+    deployed: Option<&'a str>,
+}
+
+/// Writes the index of the registry `indexed.registry` into
+/// `indexed.into`, each version of a release a line of its plugin's file,
+/// signed by the index key that `SLEIP_INDEX_KEY` holds, which the
+/// registry's `keys.json` lists, checked against the root keys; and
+/// `config.json`, of the archives' address. Of an index deployed, each of
+/// its lines is kept as it was, its yank the registry's, never dropped,
+/// and the new versions alone are read of their archives, those at hand
+/// or downloaded: an archive replaced in its release changes no line that
+/// was signed. A version whose archive does not read, or does not hold
+/// it, is told as failed and left for a later run, the others written; as
+/// `out` tells.
+fn index(out: Out, indexed: &Indexed) -> Result<(), String> {
+    let key = std::env::var("SLEIP_INDEX_KEY")
+        .map_err(|_| "SLEIP_INDEX_KEY holds no index key".to_owned())
+        .and_then(|text| {
+            SecretKey::parse(&text).map_err(|error| format!("SLEIP_INDEX_KEY: {error}"))
+        })?;
+    let roots = roots_of(indexed.roots)?;
+    let keys_path = indexed.registry.join("keys.json");
+    let keys_text = std::fs::read_to_string(&keys_path)
+        .map_err(|error| format!("{} cannot be read: {error}", keys_path.display()))?;
+    let keys = signing::verify_keys(&keys_text, &roots, None)?;
+    let now = Timestamp::now();
+    if keys.generated < signing::KEYS_NOT_BEFORE {
+        return Err(format!(
+            "keys.json was made at {}, before {}, which the Sleips refuse: sign it anew",
+            keys.generated,
+            signing::KEYS_NOT_BEFORE
+        ));
+    }
+    if keys.generated.0 > now.0 + signing::SKEW {
+        return Err(format!(
+            "keys.json was made at {}, a time to come, which the Sleips refuse: the clock of the machine that signed it was wrong",
+            keys.generated
+        ));
+    }
+    let expiry = Timestamp(keys.generated.0 + signing::KEYS_LIFETIME);
+    if now > expiry {
+        return Err(format!(
+            "keys.json expired at {expiry}, which the Sleips refuse online: sign it anew with the root key"
+        ));
+    }
+    if now.0 + 30 * signing::DAY > expiry.0 {
+        out.tell(
+            "note",
+            json!({ "message": format!("keys.json expires at {expiry}: sign it anew with the root key before then") }),
+            &format!("keys.json expires at {expiry}: sign it anew with the root key before then."),
+        );
+    }
+    if !keys.keys.contains(&key.public()) {
+        return Err(format!(
+            "the index key {} is not in keys.json, whose index keys are {}",
+            key.public(),
+            keys.keys
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+    }
+    let into = indexed.into;
+    let made = |path: &Path, text: &str| {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|error| format!("{} cannot be made: {error}", parent.display()))?;
+        }
+        std::fs::write(path, text)
+            .map_err(|error| format!("{} cannot be written: {error}", path.display()))
+    };
+    let dl = indexed.dl.unwrap_or(registry::DOWNLOADS);
+    let client = Client::new();
+    let archives = Archives {
+        folder: indexed.archives,
+        dl,
+        client: &client,
+    };
+    let deployed = indexed
+        .deployed
+        .map(|url| Deployed::of(url, &client, keys.clone()));
+    made(&into.join("keys.json"), &keys_text)?;
+    let config = json!({ "v": signing::VERSION, "dl": dl });
+    made(&into.join("config.json"), &format!("{config}\n"))?;
+    let generated = Timestamp::now();
+    let mut listed = Vec::new();
+    let mut failed = 0;
+    let mut fail = |plugin: &str, version: Option<&str>, message: String| {
+        failed += 1;
+        let what = match version {
+            Some(version) => format!("{plugin} {version}"),
+            None => plugin.to_owned(),
+        };
+        out.tell(
+            "failed",
+            json!({ "name": plugin, "version": version, "message": message }),
+            &format!("{what} is not indexed: {message}"),
+        );
+    };
+    let files = files_of(indexed.registry)?;
+    let shared = names_of_two_owners(&files);
+    for (path, bytes) in &files {
+        let Some((owner, name)) = registry::plugin_of_path(path) else {
+            continue;
+        };
+        let plugin = format!("{owner}/{name}");
+        // A deployed file that does not read or check, as of a key since
+        // taken off or a host's fault, rebuilt of the releases' assets,
+        // which stay as they were made.
+        let held = match deployed
+            .as_ref()
+            .map(|deployed| deployed.entries_of(&plugin))
+        {
+            Some(Ok(held)) => held,
+            Some(Err(error)) => {
+                fail(
+                    &plugin,
+                    None,
+                    format!("{error}: its lines are made anew of its releases"),
+                );
+                Vec::new()
+            }
+            None => Vec::new(),
+        };
+        // Of a name that another owner holds too, as Lokyr knows a plugin
+        // by its name alone, neither's new versions taken.
+        let file = if shared.contains(name) {
+            Err(shared_name(name))
+        } else {
+            PluginFile::parse(&String::from_utf8_lossy(bytes))
+                .map_err(|error| format!("{path}: {error}"))
+        };
+        let mut entries = match file {
+            Ok(file) => {
+                let mut entries = Vec::new();
+                for release in &file.versions {
+                    // A line signed before, as it was, of its yank now.
+                    if let Some(kept) = held.iter().find(|entry| entry.vers == release.version) {
+                        entries.push(Entry {
+                            yanked: release.yanked,
+                            ..kept.clone()
+                        });
+                        continue;
+                    }
+                    match archives.get(owner, name, &release.version) {
+                        Ok(Some(archive)) => match entry_of(&plugin, release, &archive) {
+                            Ok(entry) => entries.push(entry),
+                            Err(error) => fail(&plugin, Some(&release.version), error),
+                        },
+                        // A version of no release yet, which a later run
+                        // takes.
+                        Ok(None) => out.tell(
+                            "note",
+                            json!({ "message": format!("{plugin} {} has no release yet", release.version) }),
+                            &format!("{plugin} {} has no release yet.", release.version),
+                        ),
+                        Err(error) => fail(&plugin, Some(&release.version), error),
+                    }
+                }
+                for kept in &held {
+                    if file.version(&kept.vers).is_none() {
+                        out.tell(
+                            "note",
+                            json!({ "message": format!("{plugin} {} is kept, which the registry's file no longer lists", kept.vers) }),
+                            &format!("{plugin} {} is kept, which the registry's file no longer lists.", kept.vers),
+                        );
+                        entries.push(kept.clone());
+                    }
+                }
+                entries
+            }
+            Err(error) => {
+                // Its lines signed before, as they were.
+                fail(&plugin, None, error);
+                held
+            }
+        };
+        if entries.is_empty() {
+            continue;
+        }
+        sort_entries(&mut entries);
+        let text = signing::sign_index(&plugin, &entries, &key, generated);
+        // Read back as Sleip reads it, of the keys that it checked.
+        signing::verify_index(&text, &plugin, &keys, None)
+            .map_err(|error| format!("the index that this run signed does not check: {error}"))?;
+        made(&into.join("index").join(owner).join(name), &text)?;
+        out.tell(
+            "indexed",
+            json!({ "name": plugin, "versions": entries.len() }),
+            &format!("{plugin}: {} versions", entries.len()),
+        );
+        // Of its version shown, the latest not yanked or the latest of all.
+        if let Some(shown) = entries
+            .iter()
+            .rev()
+            .find(|entry| !entry.yanked)
+            .or_else(|| entries.last())
+        {
+            listed.push(signing::Listed {
+                v: signing::VERSION,
+                name: plugin.clone(),
+                vers: shown.vers.clone(),
+                description: shown.description.clone(),
+                caps: shown.caps.clone(),
+                yanked: shown.yanked,
+                api: shown.api.clone(),
+            });
+        }
+    }
+    // The list of the plugins, which Sleip searches.
+    let text = signing::sign_list(&listed, &key, generated);
+    signing::verify_list(&text, &keys, None)
+        .map_err(|error| format!("the list that this run signed does not check: {error}"))?;
+    made(&into.join("list"), &text)?;
+    out.tell(
+        "done",
+        json!({ "plugins": listed.len(), "failed": failed }),
+        &format!(
+            "The index lists {} plugins; {failed} versions failed.",
+            listed.len()
+        ),
+    );
+    Ok(())
+}
+
+/// `entries`, in their versions' order, as Semantic Versioning orders them,
+/// so that a line kept of the index deployed, that the registry's file no
+/// longer lists, takes its place and is no later version than it is.
+fn sort_entries(entries: &mut [Entry]) {
+    entries.sort_by(|left, right| {
+        match (
+            semver::Version::parse(&left.vers),
+            semver::Version::parse(&right.vers),
+        ) {
+            (Ok(left), Ok(right)) => left.cmp(&right),
+            _ => left.vers.cmp(&right.vers),
+        }
+    });
+}
+
+/// The line of the index of the version `release` of `plugin`, of its
+/// archive `archive`, which must hold it.
+fn entry_of(plugin: &str, release: &Release, archive: &[u8]) -> Result<Entry, String> {
+    let manifest = manifest_of_archive(archive)?;
+    if manifest.name != plugin || manifest.version.as_deref() != Some(release.version.as_str()) {
+        return Err(format!(
+            "its archive holds {} {}",
+            manifest.name,
+            manifest.version.as_deref().unwrap_or("of no version"),
+        ));
+    }
+    Ok(Entry {
+        v: signing::VERSION,
+        name: plugin.to_owned(),
+        vers: release.version.clone(),
+        kind: kind_text(manifest.kind).to_owned(),
+        api: manifest.api.clone(),
+        deps: manifest
+            .dependencies
+            .iter()
+            .map(|(name, req)| Dependency {
+                name: name.clone(),
+                req: req.clone(),
+            })
+            .collect(),
+        caps: manifest
+            .capabilities
+            .iter()
+            .map(ToString::to_string)
+            .collect(),
+        uses: manifest.uses.clone(),
+        cksum: Digest::of_bytes(archive).to_string(),
+        yanked: release.yanked,
+        description: manifest.description.clone(),
+    })
+}
+
+/// The archives of the registry's releases: those at hand in a folder,
+/// `<release>/<archive>`, else downloaded of their address and kept there.
+pub(super) struct Archives<'a> {
+    /// The folder of those at hand.
+    pub(super) folder: &'a Path,
+    /// Their address, of `{owner}`, `{name}` and `{version}`.
+    pub(super) dl: &'a str,
+    /// The requests' client.
+    pub(super) client: &'a Client,
+}
+
+impl Archives<'_> {
+    /// The archive of `version` of `owner/name`: the folder's, else
+    /// downloaded and kept in it; `None` of a version of no release.
+    pub(super) fn get(
+        &self,
+        owner: &str,
+        name: &str,
+        version: &str,
+    ) -> Result<Option<Vec<u8>>, String> {
+        let file = self
+            .folder
+            .join(registry::release_tag(owner, name, version))
+            .join(registry::archive_name(name, version));
+        if let Ok(bytes) = std::fs::read(&file) {
+            return Ok(Some(bytes));
+        }
+        let url = self
+            .dl
+            .replace("{owner}", owner)
+            .replace("{name}", name)
+            .replace("{version}", version);
+        match self
+            .client
+            .get_within(&url, None, lokyr_pkg_model::archive::MOST_COMPRESSED)?
+        {
+            Fetched::Body { bytes, .. } => {
+                if let Some(parent) = file.parent() {
+                    std::fs::create_dir_all(parent)
+                        .map_err(|error| format!("{} cannot be made: {error}", parent.display()))?;
+                }
+                lokyr_pkg_model::write_whole_bytes(&file, &bytes)
+                    .map_err(|error| format!("{} cannot be written: {error}", file.display()))?;
+                Ok(Some(bytes))
+            }
+            Fetched::NotModified | Fetched::Missing => Ok(None),
+        }
+    }
+}
+
+/// The index deployed, as Sleip reads it, checked against the root keys,
+/// of a cache of its own for the time it takes.
+struct Deployed<'a> {
+    remote: Remote<'a>,
+    keys: signing::Keys,
+    cache: std::path::PathBuf,
+}
+
+impl<'a> Deployed<'a> {
+    /// The index deployed at `url`, its files checked against `keys`, the
+    /// registry's own, which its root keys signed: a line of a key since
+    /// taken off is none of it, whatever the deployed `keys.json` says.
+    fn of(url: &str, client: &'a Client, keys: signing::Keys) -> Self {
+        let cache = std::env::temp_dir().join(format!("sleip-deployed-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&cache);
+        // However old, or of whatever time, as the index's lines are kept
+        // whatever became of the registry's runs and clocks.
+        let remote = Remote::new(url, &cache, Some(client), Vec::new()).never_expiring();
+        Self {
+            remote,
+            keys,
+            cache,
+        }
+    }
+
+    /// The lines of the plugin `plugin` that the index deployed signed,
+    /// none of a plugin that it does not publish.
+    fn entries_of(&self, plugin: &str) -> Result<Vec<Entry>, String> {
+        Ok(self
+            .remote
+            .index(plugin, &self.keys)
+            .map_err(|error| format!("the index deployed at {}: {error}", self.remote.url()))?
+            .map(|index| index.entries)
+            .unwrap_or_default())
+    }
+}
+
+impl Drop for Deployed<'_> {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.cache);
+    }
+}
+
+/// The manifest of the package of `archive`, unpacked into a folder of its
+/// own for the time it takes, as the store unpacks it.
+fn manifest_of_archive(archive: &[u8]) -> Result<Manifest, String> {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    static UNPACKS: AtomicUsize = AtomicUsize::new(0);
+    let folder = std::env::temp_dir().join(format!(
+        "sleip-index-{}-{}",
+        std::process::id(),
+        UNPACKS.fetch_add(1, Ordering::Relaxed)
+    ));
+    let unpacked = lokyr_pkg_model::archive::unpack(archive, &folder);
+    let _ = std::fs::remove_dir_all(&folder);
+    unpacked
+        .map(|unpacked| unpacked.manifest)
+        .map_err(|error| error.to_string())
+}
+
+/// A pull request of the registry.
+struct PullRequest<'a> {
+    /// Its git repository, at its head.
+    head: &'a Path,
+    /// The git repository of the branch that it merges into, at its head.
+    base: &'a Path,
+    /// Its author's login on GitHub.
+    author: &'a str,
+    /// The login of the account whose push or action started the check,
+    /// if told: as it is not the author's, the pull request is no longer
+    /// the author's alone, and the maintainer reviews it.
+    sender: Option<&'a str>,
+    /// The organizations that its author is a public member of.
+    orgs: &'a [String],
+    /// Whether repositories of `file://` are taken.
+    local: bool,
+    /// Whether its files are judged alone, no version checked out,
+    /// checked, tested nor packaged, its new versions' manifests and the
+    /// last published one's read of git's objects and weighed.
+    files_alone: bool,
+}
+
+/// What a pull request's check found.
+#[derive(Default)]
+struct Verdict {
+    /// Why it is refused, if it is.
+    refused: Vec<String>,
+    /// Why the maintainer reviews it, if they do.
+    review: Vec<String>,
+    /// What else is worth telling.
+    notes: Vec<String>,
+    /// The archives of the versions that it publishes.
+    built: Vec<Built>,
+}
+
+/// A version's archive, packaged.
+struct Built {
+    /// `owner/name`.
+    plugin: String,
+    /// Its version.
+    version: String,
+    /// The tag of its release in the registry.
+    release: String,
+    /// The archive's SHA-256.
+    digest: Digest,
+    /// Its manifest.
+    manifest: Manifest,
+}
+
+/// Checks the pull request `request`, its archives packaged into `into`,
+/// its report of Markdown written to `report`: a failure of a pull request
+/// refused, as `out` tells.
+fn verify(
+    out: Out,
+    request: &PullRequest,
+    into: &Path,
+    report: Option<&Path>,
+) -> Result<(), String> {
+    std::fs::create_dir_all(into)
+        .map_err(|error| format!("{} cannot be made: {error}", into.display()))?;
+    let changes = changes_of(request.head, request.base)?;
+    let base = files_of(request.base)?;
+    let mut verdict = Verdict::default();
+    // The plugins' names, of the main branch's and of those that the pull
+    // request adds or changes.
+    let mut names: BTreeSet<(String, String)> = base
+        .iter()
+        .filter_map(|(path, _)| registry::plugin_of_path(path))
+        .map(|(owner, name)| (owner.to_owned(), name.to_owned()))
+        .collect();
+    names.extend(
+        changes
+            .iter()
+            .filter(|change| change.after != NO_ENTRY)
+            .filter_map(|change| registry::plugin_of_path(&change.path))
+            .map(|(owner, name)| (owner.to_owned(), name.to_owned())),
+    );
+    let mut changed = 0;
+    for change in &changes {
+        let path = &change.path;
+        let Some((owner, name)) = registry::plugin_of_path(path) else {
+            // Another file: the pull request's own change, whatever the
+            // main branch holds now.
+            changed += 1;
+            verdict.review.push(format!(
+                "it changes {}{}, which is no plugin's file, `plugins/<owner>/<name>.toml`: the maintainer reviews it",
+                literal(path),
+                told(change)
+            ));
+            continue;
+        };
+        let before = find(&base, path);
+        if change.after == NO_ENTRY {
+            if before.is_some() {
+                changed += 1;
+                verdict.review.push(format!(
+                    "it takes {} out of the registry, which the maintainer reviews",
+                    literal(&format!("{owner}/{name}"))
+                ));
+            }
+            continue;
+        }
+        if change.after != PLAIN_FILE {
+            changed += 1;
+            verdict.refused.push(format!(
+                "{} is {}: a plugin's file is a plain file",
+                literal(path),
+                kind_of(&change.after)
+            ));
+            continue;
+        }
+        let after = git_bytes(Some(request.head), &["cat-file", "blob", &change.object])
+            .map_err(|error| format!("`{path}` of the pull request cannot be read: {error}"))?;
+        // As the main branch holds it already, it changes nothing.
+        if before == Some(after.as_slice()) {
+            continue;
+        }
+        changed += 1;
+        let before = before.map(|bytes| String::from_utf8_lossy(bytes).into_owned());
+        let after = String::from_utf8_lossy(&after).into_owned();
+        verify_plugin(
+            out,
+            request,
+            &names,
+            owner,
+            name,
+            before.as_deref(),
+            &after,
+            into,
+            &mut verdict,
+        );
+    }
+    if changed == 0 {
+        verdict
+            .refused
+            .push("it changes no file of the registry".to_owned());
+    }
+    if let Some(sender) = request
+        .sender
+        .filter(|sender| !sender.eq_ignore_ascii_case(request.author))
+    {
+        verdict.review.push(format!(
+            "its last push or event is {}'s, not {}'s, who opened it: the maintainer reviews it",
+            literal(sender),
+            literal(request.author)
+        ));
+    }
+    let (word, text) = if !verdict.refused.is_empty() {
+        ("refused", "Refused")
+    } else if !verdict.review.is_empty() {
+        ("review", "For the maintainer's review")
+    } else {
+        ("merge", "Merges by itself")
+    };
+    let markdown = report_of(&verdict, text);
+    if let Some(report) = report {
+        std::fs::write(report, &markdown)
+            .map_err(|error| format!("{} cannot be written: {error}", report.display()))?;
+    }
+    out.tell(
+        "verdict",
+        json!({
+            "verdict": word,
+            "refused": verdict.refused,
+            "review": verdict.review,
+            "notes": verdict.notes,
+        }),
+        &markdown,
+    );
+    if verdict.refused.is_empty() {
+        Ok(())
+    } else {
+        // The verdict told why.
+        Err(String::new())
+    }
+}
+
+/// Checks the file of the plugin `owner/name` that the pull request
+/// `request` changes, `before` of the branch that it merges into, if there,
+/// and `after` of the pull request, of the plugins' names `names`, each
+/// its owner and its name: each version that it publishes packaged into
+/// `into`, into `verdict`.
+#[allow(clippy::too_many_arguments)]
+fn verify_plugin(
+    out: Out,
+    request: &PullRequest,
+    names: &BTreeSet<(String, String)>,
+    owner: &str,
+    name: &str,
+    before: Option<&str>,
+    after: &str,
+    into: &Path,
+    verdict: &mut Verdict,
+) {
+    let plugin = format!("{owner}/{name}");
+    let path = registry::path_of_plugin(owner, name);
+    if !registry::is_part(owner) || !registry::is_part(name) {
+        verdict.refused.push(format!(
+            "{} names no plugin: its owner and its name are lowercase letters, digits and `-`, from a letter, of {} characters at most",
+            literal(&path),
+            registry::LONGEST_PART
+        ));
+        return;
+    }
+    if owner == registry::RESERVED_OWNER {
+        verdict.refused.push(format!(
+            "`{}/*` belongs to Lokyr's first-party plugins",
+            registry::RESERVED_OWNER
+        ));
+        return;
+    }
+    let owns = request.author.eq_ignore_ascii_case(owner)
+        || request
+            .orgs
+            .iter()
+            .any(|org| org.eq_ignore_ascii_case(owner));
+    if !owns {
+        verdict.refused.push(format!(
+            "`{plugin}` is `{owner}`'s, and {}, who opened the pull request, is neither `{owner}` nor a public member of an organization `{owner}`",
+            literal(request.author)
+        ));
+    }
+    if registry::RESERVED_NAMES.contains(&name) {
+        verdict.refused.push(format!(
+            "the name `{name}` is Lokyr's own, of a first-party plugin or of the app's commands, as Lokyr knows a plugin by its name alone"
+        ));
+    }
+    for (holder, held) in names {
+        if held == name && holder != owner {
+            verdict.refused.push(format!(
+                "the name `{name}` is {}'s: a plugin's name is unique across owners, as Lokyr knows a plugin by its name alone",
+                literal(&format!("{holder}/{name}"))
+            ));
+        }
+    }
+    let file = match PluginFile::parse(after) {
+        Ok(file) => file,
+        Err(error) => {
+            verdict
+                .refused
+                .push(format!("`{path}`: {}", literal(&error)));
+            return;
+        }
+    };
+    if !request.local && !file.repository.starts_with("https://") {
+        verdict.refused.push(format!(
+            "`{path}`: `repository` is the address of a git repository over HTTPS, not {}",
+            literal(&file.repository)
+        ));
+        return;
+    }
+    let published = before.and_then(|text| PluginFile::parse(text).ok());
+    let new: &[Release] = match &published {
+        None => {
+            verdict.review.push(format!(
+                "`{plugin}` is a new plugin, which the maintainer reviews"
+            ));
+            &file.versions
+        }
+        Some(published) => {
+            if published.repository != file.repository {
+                verdict.review.push(format!(
+                    "`{plugin}`'s repository changes, from {} to {}",
+                    literal(&published.repository),
+                    literal(&file.repository)
+                ));
+            }
+            for (at, release) in published.versions.iter().enumerate() {
+                match file.versions.get(at) {
+                    Some(now) if now.version == release.version && now.tag == release.tag && now.commit == release.commit => {
+                        if now.yanked && !release.yanked {
+                            verdict
+                                .notes
+                                .push(format!("`{plugin}` {} is yanked", release.version));
+                        } else if !now.yanked && release.yanked {
+                            verdict.review.push(format!(
+                                "`{plugin}` {} comes back from its yank",
+                                release.version
+                            ));
+                        }
+                    }
+                    _ => verdict.refused.push(format!(
+                        "`{plugin}` {}, published, changes or goes: a published version stays as it was, and a later one, or its yank, takes its place",
+                        release.version
+                    )),
+                }
+            }
+            file.versions
+                .get(published.versions.len()..)
+                .unwrap_or_default()
+        }
+    };
+    let mut asked = (BTreeSet::new(), BTreeSet::new());
+    for release in new {
+        // Of the files alone, its manifest of git's objects, no file of it
+        // checked out nor run, as the job that merges weighs it again;
+        // else cloned, checked, tested and packaged.
+        let manifest = if request.files_alone {
+            manifest_at(&plugin, &file.repository, release, into)
+                .map_err(|error| vec![error])
+                .and_then(|manifest| {
+                    let problems = problems_of_manifest(&manifest, &plugin, release);
+                    if problems.is_empty() {
+                        Ok(manifest)
+                    } else {
+                        Err(problems)
+                    }
+                })
+        } else {
+            package(out, &plugin, &file.repository, release, into, true).map(|built| {
+                let manifest = built.manifest.clone();
+                verdict.built.push(built);
+                manifest
+            })
+        };
+        match manifest {
+            Ok(manifest) => {
+                asked
+                    .0
+                    .extend(manifest.capabilities.iter().map(ToString::to_string));
+                asked.1.extend(manifest.uses.iter().cloned());
+            }
+            Err(problems) => {
+                verdict.refused.extend(problems.into_iter().map(|problem| {
+                    format!("`{plugin}` {}: {}", release.version, literal(&problem))
+                }));
+            }
+        }
+    }
+    // What the new versions ask for, against the version published last
+    // that is not yanked, of the pull request's yanks too, so that a
+    // capability of a version yanked for its use comes back to the
+    // maintainer.
+    let Some(published) = published.as_ref() else {
+        return;
+    };
+    if new.is_empty() {
+        return;
+    }
+    let standing = file
+        .versions
+        .get(..published.versions.len())
+        .unwrap_or_default();
+    let Some(last) = standing.iter().rev().find(|release| !release.yanked) else {
+        verdict.review.push(format!(
+            "`{plugin}`'s versions published are all yanked, against none of which the new versions' capabilities are weighed: the maintainer reviews them"
+        ));
+        return;
+    };
+    match manifest_at(&plugin, &file.repository, last, into) {
+        Ok(had) => {
+            let had_capabilities: BTreeSet<String> =
+                had.capabilities.iter().map(ToString::to_string).collect();
+            let had_uses: BTreeSet<String> = had.uses.iter().cloned().collect();
+            let more: Vec<String> = asked
+                .0
+                .difference(&had_capabilities)
+                .map(|capability| format!("the capability {}", literal(capability)))
+                .chain(
+                    asked
+                        .1
+                        .difference(&had_uses)
+                        .map(|command| format!("the command {}", literal(command))),
+                )
+                .collect();
+            if !more.is_empty() {
+                verdict.review.push(format!(
+                    "`{plugin}` asks for more than {} did: {}",
+                    last.version,
+                    more.join(", ")
+                ));
+            }
+        }
+        Err(error) => verdict.review.push(format!(
+            "`{plugin}` {}, published last, cannot be read, against which the new versions' capabilities are weighed: {}",
+            last.version,
+            literal(&error)
+        )),
+    }
+}
+
+/// Packages the version `release` of the plugin `plugin`, of its
+/// repository `repository`, into `into`: of `checked`, cloned at its tag,
+/// which must name its commit, checked and tested, as a pull request's
+/// version is; else at its commit alone, which pins its files, whatever
+/// became of its tag since it merged; its manifest of its name and
+/// version; or each problem found.
+fn package(
+    out: Out,
+    plugin: &str,
+    repository: &str,
+    release: &Release,
+    into: &Path,
+    checked: bool,
+) -> Result<Built, Vec<String>> {
+    let (owner, name) = plugin.split_once('/').unwrap_or_default();
+    let folder = into
+        .join("sources")
+        .join(registry::release_tag(owner, name, &release.version));
+    let at = if checked { At::Tag } else { At::Commit };
+    clone_at(repository, release, at, &folder).map_err(|error| vec![error])?;
+    let manifest = std::fs::read_to_string(folder.join("plugin.toml"))
+        .map_err(|error| format!("its commit holds no plugin.toml at its root: {error}"))
+        .and_then(|text| {
+            Manifest::parse(&text).map_err(|error| format!("its plugin.toml: {error}"))
+        })
+        .map_err(|error| vec![error])?;
+    let mut problems = problems_of_manifest(&manifest, plugin, release);
+    if checked && problems.is_empty() {
+        problems.extend(
+            super::check::problems_of(&folder, out)
+                .into_iter()
+                .map(|problem| format!("check: {problem}")),
+        );
+        // Of the interpreter alone, the smaller part of Luau, as the
+        // check runs another's code.
+        match super::test::failures_of(&folder, lokyr_plugin_host_luau::Execution::Interpreter, out)
+        {
+            Ok(failures) => problems.extend(
+                failures
+                    .into_iter()
+                    .map(|failure| format!("test: {failure}")),
+            ),
+            Err(error) => problems.push(format!("test: {error}")),
+        }
+    }
+    if !problems.is_empty() {
+        return Err(problems);
+    }
+    let bytes = lokyr_pkg_model::archive::pack(&folder).map_err(|error| vec![error.to_string()])?;
+    let release_tag = registry::release_tag(owner, name, &release.version);
+    let archive = into
+        .join(&release_tag)
+        .join(registry::archive_name(name, &release.version));
+    if let Some(parent) = archive.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|error| vec![format!("{} cannot be made: {error}", parent.display())])?;
+    }
+    std::fs::write(&archive, &bytes)
+        .map_err(|error| vec![format!("{} cannot be written: {error}", archive.display())])?;
+    let digest = Digest::of_bytes(&bytes);
+    let _ = std::fs::remove_dir_all(&folder);
+    out.tell(
+        "built",
+        json!({
+            "name": plugin,
+            "version": release.version,
+            "release": release_tag,
+            "archive": archive.display().to_string(),
+            "cksum": digest.to_string(),
+        }),
+        &format!(
+            "{plugin} {}: {} ({digest})",
+            release.version,
+            archive.display()
+        ),
+    );
+    Ok(Built {
+        plugin: plugin.to_owned(),
+        version: release.version.clone(),
+        release: release_tag,
+        digest,
+        manifest,
+    })
+}
+
+/// What is wrong of `manifest`, of the version `release` of `plugin`: its
+/// name, its version and its kind.
+fn problems_of_manifest(manifest: &Manifest, plugin: &str, release: &Release) -> Vec<String> {
+    let mut problems = Vec::new();
+    if manifest.name != plugin {
+        problems.push(format!("its manifest names `{}`", manifest.name));
+    }
+    if manifest.version.as_deref() != Some(release.version.as_str()) {
+        problems.push(format!(
+            "its manifest's version is {}",
+            manifest.version.as_deref().unwrap_or("none")
+        ));
+    }
+    if manifest.kind != Kind::Luau {
+        problems.push("it is no plugin of Luau, which the registry publishes alone".to_owned());
+    }
+    problems
+}
+
+/// The most bytes of a manifest read of git's objects.
+const LARGEST_MANIFEST: u64 = 1024 * 1024;
+
+/// The manifest of the version `release` of `plugin`, of `repository`, of
+/// its commit, read of git's objects in a clone of no checkout in `into`
+/// for the time it takes: no file of the plugin's written out nor run.
+fn manifest_at(
+    plugin: &str,
+    repository: &str,
+    release: &Release,
+    into: &Path,
+) -> Result<Manifest, String> {
+    let folder =
+        into.join("manifests")
+            .join(format!("{}-{}", plugin.replace('/', "."), release.version));
+    fetched_at(repository, release, At::Commit, &folder)?;
+    let manifest = manifest_of_commit(&folder, &release.commit);
+    let _ = std::fs::remove_dir_all(&folder);
+    manifest
+}
+
+/// The manifest at the root of `commit`, of the repository in `folder`, of
+/// git's objects: a plain file, of [`LARGEST_MANIFEST`] at most, of UTF-8.
+fn manifest_of_commit(folder: &Path, commit: &str) -> Result<Manifest, String> {
+    let entry = git(
+        Some(folder),
+        &["ls-tree", "--full-tree", commit, "--", "plugin.toml"],
+    )
+    .map_err(|error| format!("its commit {commit} cannot be read: {error}"))?;
+    let Some((head, _)) = entry.split_once('\t') else {
+        return Err("its commit holds no plugin.toml at its root".to_owned());
+    };
+    let mut parts = head.split(' ');
+    let (mode, kind, object) = (
+        parts.next().unwrap_or_default(),
+        parts.next().unwrap_or_default(),
+        parts.next().unwrap_or_default(),
+    );
+    if mode == "120000" {
+        return Err("its plugin.toml is a link, which no package holds".to_owned());
+    }
+    if kind != "blob" || !matches!(mode, "100644" | "100755") {
+        return Err("its plugin.toml is no plain file".to_owned());
+    }
+    let size: u64 = git(Some(folder), &["cat-file", "-s", object])
+        .ok()
+        .and_then(|size| size.parse().ok())
+        .ok_or_else(|| "its plugin.toml cannot be read".to_owned())?;
+    if size > LARGEST_MANIFEST {
+        return Err(format!(
+            "its plugin.toml is of {size} bytes, more than {LARGEST_MANIFEST}"
+        ));
+    }
+    let bytes = git_bytes(Some(folder), &["cat-file", "blob", object])
+        .map_err(|error| format!("its plugin.toml cannot be read: {error}"))?;
+    let text =
+        String::from_utf8(bytes).map_err(|_| "its plugin.toml is not of UTF-8".to_owned())?;
+    Manifest::parse(&text).map_err(|error| format!("its plugin.toml: {error}"))
+}
+
+/// What a version's commit is fetched of.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum At {
+    /// Its commit, which its tag must name, as a pull request's version is
+    /// checked.
+    Tag,
+    /// Its commit alone, which the registry's file pins, whatever became of
+    /// its tag, fetched by its hash.
+    Commit,
+}
+
+/// Fetches the commit of `release` of `repository` into `folder`, as `at`
+/// says, checked out.
+fn clone_at(repository: &str, release: &Release, at: At, folder: &Path) -> Result<(), String> {
+    fetched_at(repository, release, at, folder)?;
+    let commit = &release.commit;
+    git(Some(folder), &["checkout", "--quiet", "--detach", commit])
+        .map_err(|error| format!("{repository} at {commit} cannot be checked out: {error}"))?;
+    Ok(())
+}
+
+/// Fetches the commit of `release` alone, of `repository`, into a new
+/// repository in `folder`, of no checkout and of no history but it: of
+/// `at`, its tag first read of the repository's own tags, which must name
+/// it.
+fn fetched_at(repository: &str, release: &Release, at: At, folder: &Path) -> Result<(), String> {
+    let _ = std::fs::remove_dir_all(folder);
+    if let Some(parent) = folder.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|error| format!("{} cannot be made: {error}", parent.display()))?;
+    }
+    let commit = &release.commit;
+    if at == At::Tag {
+        let tag = &release.tag;
+        let reference = format!("refs/tags/{tag}");
+        // An annotated tag's commit comes of its own name, which a pattern
+        // of the tag's alone leaves out.
+        let peeled = format!("{reference}^{{}}");
+        let listed = git_bytes(
+            None,
+            &["ls-remote", "--tags", "--", repository, &reference, &peeled],
+        )
+        .map_err(|error| format!("{repository} cannot be read: {error}"))?;
+        let listed = String::from_utf8_lossy(&listed);
+        let named_by = |name: &str| {
+            listed.lines().find_map(|line| {
+                let (object, at) = line.split_once('\t')?;
+                (at == name).then(|| object.to_owned())
+            })
+        };
+        // An annotated tag's commit, else a light one's.
+        let named = named_by(&format!("{reference}^{{}}"))
+            .or_else(|| named_by(&reference))
+            .ok_or_else(|| format!("{repository} has no tag `{tag}`"))?;
+        if named != *commit {
+            return Err(format!(
+                "the tag `{tag}` of {repository} names the commit {named}, not {commit}"
+            ));
+        }
+    }
+    git(None, &["init", "--quiet", &folder.display().to_string()])
+        .map_err(|error| format!("{} cannot be made: {error}", folder.display()))?;
+    // A host gives a commit by its hash, a branch's or a tag's, or one that
+    // they left.
+    let fetched = git(
+        Some(folder),
+        &[
+            "fetch",
+            "--quiet",
+            "--depth",
+            "1",
+            "--no-tags",
+            "--",
+            repository,
+            commit,
+        ],
+    );
+    let held = git(
+        Some(folder),
+        &["cat-file", "-e", &format!("{commit}^{{commit}}")],
+    )
+    .is_ok();
+    if !held {
+        return Err(match fetched {
+            Err(error) if !error.contains("not our ref") && !error.contains("unadvertised") => {
+                format!("{repository} cannot be fetched: {error}")
+            }
+            _ => format!("{repository} holds the commit {commit} no longer"),
+        });
+    }
+    Ok(())
+}
+
+/// Packages the archive of the version `version` of the plugin `plugin`
+/// of the registry in `registry` into `into`, as `out` tells.
+fn build(
+    out: Out,
+    registry: &Path,
+    plugin: &str,
+    version: &str,
+    into: &Path,
+    local: bool,
+) -> Result<(), String> {
+    let (owner, name) = plugin
+        .split_once('/')
+        .ok_or_else(|| format!("`{plugin}` is not `owner/name`"))?;
+    let path = registry::path_of_plugin(owner, name);
+    let text = std::fs::read_to_string(registry.join(&path))
+        .map_err(|error| format!("{path} cannot be read: {error}"))?;
+    let file = PluginFile::parse(&text).map_err(|error| format!("{path}: {error}"))?;
+    if !local && !file.repository.starts_with("https://") {
+        return Err(format!(
+            "{path}: `repository` is the address of a git repository over HTTPS, not `{}`",
+            file.repository
+        ));
+    }
+    let release = file
+        .version(version)
+        .ok_or_else(|| format!("{path} publishes no version {version}"))?;
+    std::fs::create_dir_all(into)
+        .map_err(|error| format!("{} cannot be made: {error}", into.display()))?;
+    package(out, plugin, &file.repository, release, into, false)
+        .map(|_| ())
+        .map_err(|problems| problems.join("; "))
+}
+
+/// Lists every version of the registry in `registry`, as `out` tells.
+fn versions(out: Out, registry: &Path) -> Result<(), String> {
+    let files = files_of(registry)?;
+    let shared = names_of_two_owners(&files);
+    for (path, bytes) in &files {
+        let Some((owner, name)) = registry::plugin_of_path(path) else {
+            continue;
+        };
+        let plugin = format!("{owner}/{name}");
+        // A plugin's file that does not read, or of a name that another
+        // owner holds too, told as failed, the others listed.
+        let file = if shared.contains(name) {
+            Err(shared_name(name))
+        } else {
+            PluginFile::parse(&String::from_utf8_lossy(bytes))
+                .map_err(|error| format!("{path}: {error}"))
+        };
+        let file = match file {
+            Ok(file) => file,
+            Err(message) => {
+                out.tell(
+                    "failed",
+                    json!({ "name": plugin, "version": null, "message": message }),
+                    &format!("{plugin} is not listed: {message}"),
+                );
+                continue;
+            }
+        };
+        for release in &file.versions {
+            let tag = registry::release_tag(owner, name, &release.version);
+            out.tell(
+                "version",
+                json!({
+                    "name": format!("{owner}/{name}"),
+                    "version": release.version,
+                    "tag": release.tag,
+                    "commit": release.commit,
+                    "repository": file.repository,
+                    "release": tag,
+                    "archive": registry::archive_name(name, &release.version),
+                    "yanked": release.yanked,
+                }),
+                &format!("{owner}/{name} {} {tag}", release.version),
+            );
+        }
+    }
+    Ok(())
+}
+
+/// The plugins' names that more than one owner holds among the registry's
+/// files `files`.
+fn names_of_two_owners(files: &[(String, Vec<u8>)]) -> BTreeSet<String> {
+    let mut owners: std::collections::BTreeMap<&str, BTreeSet<&str>> =
+        std::collections::BTreeMap::new();
+    for (path, _) in files {
+        if let Some((owner, name)) = registry::plugin_of_path(path) {
+            owners.entry(name).or_default().insert(owner);
+        }
+    }
+    owners
+        .into_iter()
+        .filter(|(_, owners)| owners.len() > 1)
+        .map(|(name, _)| name.to_owned())
+        .collect()
+}
+
+/// Why a plugin of the name `name`, which two owners hold, is refused.
+fn shared_name(name: &str) -> String {
+    format!(
+        "the name `{name}` is held by more than one owner, which Lokyr cannot tell apart, as it knows a plugin by its name alone: the registry's maintainer takes one out"
+    )
+}
+
+/// The mode of no entry, of a file added or removed.
+const NO_ENTRY: &str = "000000";
+
+/// The mode of a plain file, as git keeps it.
+const PLAIN_FILE: &str = "100644";
+
+/// A change of a pull request, since the commit that it shares with the
+/// branch that it merges into, as git tells it.
+struct Change {
+    /// The path of its entry.
+    path: String,
+    /// The entry's mode before, `000000` of none.
+    before: String,
+    /// The entry's mode after, `000000` of none.
+    after: String,
+    /// The id of the entry's object after.
+    object: String,
+}
+
+/// The changes of the pull request of the git repository `head` since the
+/// commit that it shares with the branch of the git repository `base`,
+/// which it fetches into it, as `refs/sleip/base`: each entry of the
+/// trees, of its modes, so that a link, a submodule or a mode's change is
+/// told, a rename the removal of a path and the addition of another.
+fn changes_of(head: &Path, base: &Path) -> Result<Vec<Change>, String> {
+    let base = std::fs::canonicalize(base)
+        .map_err(|error| format!("{} cannot be read: {error}", base.display()))?;
+    git(
+        Some(head),
+        &[
+            "fetch",
+            "--quiet",
+            "--no-tags",
+            "--",
+            &base.display().to_string(),
+            "+HEAD:refs/sleip/base",
+        ],
+    )
+    .map_err(|error| {
+        format!(
+            "the branch of {} cannot be fetched into the pull request's repository: {error}",
+            base.display()
+        )
+    })?;
+    let since = git(Some(head), &["merge-base", "refs/sleip/base", "HEAD"]).map_err(|error| {
+        format!(
+            "the pull request shares no commit with the branch that it merges into, whose whole history is needed: {error}"
+        )
+    })?;
+    let raw = git_bytes(
+        Some(head),
+        &["diff-tree", "-r", "-z", "--no-renames", &since, "HEAD"],
+    )
+    .map_err(|error| format!("the pull request's changes cannot be read: {error}"))?;
+    // Each change, `:<mode> <mode> <object> <object> <status>` and its
+    // path, each of a NUL after it.
+    let mut changes = Vec::new();
+    let mut parts = raw.split(|byte| *byte == 0);
+    while let Some(meta) = parts.next() {
+        if meta.is_empty() {
+            continue;
+        }
+        let meta = String::from_utf8_lossy(meta);
+        let fields: Vec<&str> = meta.trim_start_matches(':').split(' ').collect();
+        let (Some(path), [before, after, _, object, _]) = (parts.next(), fields.as_slice()) else {
+            return Err(format!("git told a change that does not read: `{meta}`"));
+        };
+        changes.push(Change {
+            path: String::from_utf8_lossy(path).into_owned(),
+            before: (*before).to_owned(),
+            after: (*after).to_owned(),
+            object: (*object).to_owned(),
+        });
+    }
+    Ok(changes)
+}
+
+/// What an entry of `mode` is, in words.
+fn kind_of(mode: &str) -> String {
+    match mode {
+        PLAIN_FILE => "a file".to_owned(),
+        "100755" => "an executable file".to_owned(),
+        "120000" => "a link".to_owned(),
+        "160000" => "a submodule".to_owned(),
+        _ => format!("an entry of mode {mode}"),
+    }
+}
+
+/// What `change` makes of its entry beside its content, in words after its
+/// path: its removal, or what it adds or turns it into, of a mode other
+/// than a plain file's.
+fn told(change: &Change) -> String {
+    match (change.before.as_str(), change.after.as_str()) {
+        (_, NO_ENTRY) => ", which it removes".to_owned(),
+        (NO_ENTRY, PLAIN_FILE) => String::new(),
+        (NO_ENTRY, after) => format!(", {}", kind_of(after)),
+        (before, after) if before == after => String::new(),
+        (before, after) => format!(", from {} to {}", kind_of(before), kind_of(after)),
+    }
+}
+
+/// The files of the registry in `folder` under `plugins/`, the plugins'
+/// alone, by their paths in it, of `/` between their folders, in their
+/// order, each of its bytes: none of a registry of no plugin yet.
+fn files_of(folder: &Path) -> Result<Vec<(String, Vec<u8>)>, String> {
+    let mut files = Vec::new();
+    let plugins = folder.join("plugins");
+    if !plugins.is_dir() {
+        return Ok(files);
+    }
+    let mut left = vec![plugins];
+    while let Some(at) = left.pop() {
+        let entries = std::fs::read_dir(&at)
+            .map_err(|error| format!("{} cannot be read: {error}", at.display()))?;
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if entry.file_name() == ".git" {
+                continue;
+            }
+            let Ok(kind) = entry.file_type() else {
+                continue;
+            };
+            if kind.is_dir() {
+                left.push(path);
+            } else {
+                let name = path
+                    .strip_prefix(folder)
+                    .map(|inner| {
+                        inner
+                            .iter()
+                            .map(|part| part.to_string_lossy().into_owned())
+                            .collect::<Vec<_>>()
+                            .join("/")
+                    })
+                    .unwrap_or_default();
+                // A link counts by its target's path, as git keeps it.
+                let bytes = if kind.is_symlink() {
+                    std::fs::read_link(&path)
+                        .map(|target| target.to_string_lossy().into_owned().into_bytes())
+                } else {
+                    std::fs::read(&path)
+                }
+                .map_err(|error| format!("{} cannot be read: {error}", path.display()))?;
+                files.push((name, bytes));
+            }
+        }
+    }
+    files.sort();
+    Ok(files)
+}
+
+/// The bytes of the file `path` of `files`, if there.
+fn find<'a>(files: &'a [(String, Vec<u8>)], path: &str) -> Option<&'a [u8]> {
+    files
+        .binary_search_by(|(at, _)| at.as_str().cmp(path))
+        .ok()
+        .map(|at| files[at].1.as_slice())
+}
+
+/// The most characters of a text of a pull request or of a plugin that the
+/// report shows.
+const LONGEST_LITERAL: usize = 500;
+
+/// The most bytes of the report, below the 65 536 characters of a comment
+/// of GitHub's.
+const LONGEST_REPORT: usize = 60_000;
+
+/// `text`, of a pull request or of a plugin, as a span of code in the
+/// report, which shows it as it is: of no backtick, which would end the
+/// span, a quote in its place; of no `@` nor `<`, which would mention
+/// someone or open HTML; a control character a space; and of
+/// [`LONGEST_LITERAL`] characters at most.
+fn literal(text: &str) -> String {
+    let mut kept = String::new();
+    for (count, character) in text
+        .chars()
+        .filter(|character| !matches!(character, '@' | '<'))
+        .enumerate()
+    {
+        if count == LONGEST_LITERAL {
+            kept.push('…');
+            break;
+        }
+        kept.push(match character {
+            '`' => '\'',
+            character if character.is_control() => ' ',
+            character => character,
+        });
+    }
+    if kept.trim().is_empty() {
+        return "an empty text".to_owned();
+    }
+    format!("`{kept}`")
+}
+
+/// The report of `verdict`, headed `heading`, in Markdown, as the pull
+/// request's comment shows it, of [`LONGEST_REPORT`] bytes at most: the
+/// lines past them left to the job's log, whose verdict holds them all.
+fn report_of(verdict: &Verdict, heading: &str) -> String {
+    let whole = whole_report_of(verdict, heading);
+    if whole.len() <= LONGEST_REPORT {
+        return whole;
+    }
+    let ending = "\n… The report is longer than a comment holds: the job's log has it whole.\n";
+    let mut cut = LONGEST_REPORT - ending.len();
+    while !whole.is_char_boundary(cut) {
+        cut -= 1;
+    }
+    let cut = whole[..cut].rfind('\n').map_or(cut, |at| at + 1);
+    format!("{}{ending}", &whole[..cut])
+}
+
+/// The report of `verdict`, headed `heading`, whole.
+fn whole_report_of(verdict: &Verdict, heading: &str) -> String {
+    let mut text = format!("### Sleip's check: {heading}\n\n");
+    for (title, lines) in [
+        ("Refused", &verdict.refused),
+        ("For the maintainer's review", &verdict.review),
+        ("Notes", &verdict.notes),
+    ] {
+        if lines.is_empty() {
+            continue;
+        }
+        text.push_str(&format!("**{title}**\n\n"));
+        for line in lines {
+            text.push_str(&format!("- {line}\n"));
+        }
+        text.push('\n');
+    }
+    if !verdict.built.is_empty() {
+        text.push_str("| Plugin | Version | Release | Archive's SHA-256 |\n|---|---|---|---|\n");
+        for built in &verdict.built {
+            text.push_str(&format!(
+                "| `{}` | {} | `{}` | `{}` |\n",
+                built.plugin,
+                built.version,
+                built.release,
+                built.digest.hex()
+            ));
+        }
+        text.push('\n');
+    }
+    if verdict.refused.is_empty() && verdict.review.is_empty() {
+        text.push_str("It asks for nothing that the versions published before did not, and merges by itself.\n");
+    }
+    text
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_index_s_lines_are_in_their_versions_order() {
+        let line = |vers: &str| Entry {
+            v: signing::VERSION,
+            name: "acme/x".to_owned(),
+            vers: vers.to_owned(),
+            kind: "luau".to_owned(),
+            api: None,
+            deps: Vec::new(),
+            caps: Vec::new(),
+            uses: Vec::new(),
+            cksum: String::new(),
+            yanked: false,
+            description: None,
+        };
+        // A line kept of the index deployed after the registry's own.
+        let mut entries = vec![line("0.1.0"), line("0.10.0"), line("0.2.0"), line("0.1.5")];
+        sort_entries(&mut entries);
+        let order: Vec<&str> = entries.iter().map(|entry| entry.vers.as_str()).collect();
+        assert_eq!(order, ["0.1.0", "0.1.5", "0.2.0", "0.10.0"]);
+    }
+
+    #[test]
+    fn a_text_of_a_pull_request_is_a_span_of_code_of_no_mention_nor_html_and_bounded() {
+        assert_eq!(
+            literal("a `b` @all <img src=x>\nnext"),
+            "`a 'b' all img src=x> next`"
+        );
+        let shown = literal(&"x".repeat(LONGEST_LITERAL + 10));
+        assert_eq!(shown.chars().count(), LONGEST_LITERAL + 3);
+        assert!(shown.ends_with("x…`"), "{shown}");
+        assert_eq!(literal("\n"), "an empty text");
+    }
+
+    #[test]
+    fn a_report_longer_than_a_comment_holds_is_cut_at_a_line() {
+        let tail = "é".repeat(40);
+        let verdict = Verdict {
+            refused: (0..2000).map(|at| format!("reason {at} {tail}")).collect(),
+            ..Verdict::default()
+        };
+        let report = report_of(&verdict, "Refused");
+        assert!(report.len() <= LONGEST_REPORT, "{}", report.len());
+        assert!(report.starts_with("### Sleip's check: Refused\n"));
+        assert!(
+            report.ends_with("the job's log has it whole.\n"),
+            "{report}"
+        );
+        let reasons: Vec<&str> = report
+            .lines()
+            .filter(|line| line.starts_with("- reason"))
+            .collect();
+        assert!(reasons.len() > 100 && reasons.len() < 2000);
+        assert!(reasons.iter().all(|line| line.ends_with(&tail)));
+        // A short one, whole.
+        let short = Verdict {
+            refused: vec!["one".to_owned()],
+            ..Verdict::default()
+        };
+        assert_eq!(
+            report_of(&short, "Refused"),
+            whole_report_of(&short, "Refused")
+        );
+    }
+}

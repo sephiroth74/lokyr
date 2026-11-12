@@ -526,6 +526,13 @@ impl PageList {
         }
     }
 
+    /// Row `row` of the page with `id`, warm or cold, if the page is in the
+    /// list and has that row, found without a walk of the list.
+    pub fn row_of(&self, id: PageId, row: u16) -> Option<ListRow<'_>> {
+        let node = self.node_of(id)?;
+        (row < self.node_len(node)).then(|| self.list_row(node, row))
+    }
+
     /// The index in the list, oldest first, of row `row` of the page with
     /// `id`, if the page is in the list and has that row.
     pub fn row_index(&self, id: PageId, row: u16) -> Option<usize> {
@@ -540,6 +547,24 @@ impl PageList {
             node = self.nodes[node as usize].next;
         }
         Some(start + usize::from(row))
+    }
+
+    /// The index in the list, oldest first, of a row by its page's id and
+    /// its row in the page, as [`PageList::row_index`] gives it, of one
+    /// walk of the list for every row that it finds, where that walks the
+    /// list for each.
+    pub fn row_indexes(&self) -> impl Fn(PageId, u16) -> Option<usize> + '_ {
+        let mut starts = vec![0; self.nodes.len()];
+        let (mut node, mut start) = (self.head, 0);
+        while node != NONE {
+            starts[node as usize] = start;
+            start += usize::from(self.node_len(node));
+            node = self.nodes[node as usize].next;
+        }
+        move |id, row| {
+            let node = self.node_of(id)?;
+            (row < self.node_len(node)).then(|| starts[node as usize] + usize::from(row))
+        }
     }
 
     /// Pins the cell at `position`, if it is in the list.

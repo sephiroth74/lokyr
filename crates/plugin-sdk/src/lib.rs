@@ -1,17 +1,39 @@
 //! The Lokyr plugin API and its Rust SDK.
 //!
-//! Defines the `HostApi` trait that the host implements, with its types, and
-//! the Rust front end that built-in plugins use. Third-party plugins reach the
-//! same API from Luau. Both follow the same rules: plugins receive owned data,
-//! are never re-entered, and neither spawn threads nor block.
+//! Defines the plugin API as messages, the requests of the plugins, the
+//! host's responses and its events, with their types, the view tree of
+//! their UI as data, and the Rust front end that built-in plugins use. Third-party plugins reach the same
+//! messages from Luau. Both follow the same rules: plugins receive owned
+//! data, are never re-entered, and neither spawn threads nor block.
 //!
 //! The host's API and the plugins' trait come with the `unstable` feature,
-//! as they can change in a minor release.
+//! as they can change in a minor release; a host of the tests' own, for
+//! the plugins' unit tests, with the `fake` feature.
 
 #![forbid(unsafe_code)]
 
+/// The plugin API's version, this crate's, which a plugin's manifest's
+/// `api` takes, and which the app tells Sleip.
+pub const API_VERSION: &str = env!("CARGO_PKG_VERSION");
+
 pub mod command;
+#[cfg(feature = "unstable")]
+pub mod event;
+#[cfg(feature = "fake")]
+pub mod fake;
 #[cfg(feature = "unstable")]
 pub mod host;
 #[cfg(feature = "unstable")]
+pub mod image;
+pub mod keys;
+#[cfg(feature = "unstable")]
+pub mod message;
+#[cfg(feature = "unstable")]
 pub mod plugin;
+pub mod text;
+#[cfg(feature = "unstable")]
+pub mod theme;
+#[cfg(feature = "unstable")]
+pub mod ui;
+#[cfg(feature = "unstable")]
+pub mod view;

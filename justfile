@@ -7,7 +7,8 @@ alias t := test
 
 # The maintainer's signing identity, `LOKYR_SIGN_IDENTITY`, and other
 # variables that stay out of the repository, from the untracked
-# private/lokyr.env when it is there; a variable of the environment wins.
+# private/lokyr.env when it is there, which `cargo xtask` reads too; a
+# variable of the environment wins.
 set dotenv-path := "private/lokyr.env"
 
 # The nightly toolchain that cargo-fuzz needs, pinned like the main one:
@@ -23,16 +24,24 @@ esctest_commit := "2798f12149a19c3295e9b4853ab2da4b2eff1b2b"
 # commit.
 vttest_commit := "0229d7171a8574a2bf406c6ce14549f65d810e51"
 
+# The image of Linux's checks, which `just linux-image` makes.
+linux_image := "lokyr-linux"
+# The containers' resolver, the Mac's first of IPv4, as `container`'s own,
+# of its network's gateway, may answer nothing, as on a Mac of a resolver
+# of its local network: `--dns <address>`, or nothing of none.
+linux_dns := "scutil --dns | awk '/nameserver\\[[0-9]+\\] : [0-9.]+$/ { print \"--dns \" $3; exit }'"
+
 # The commit of vtebench (https://github.com/alacritty/vtebench) whose
 # scenarios `just bench` measures, rebuilt from its scripts, with its data
 # files: bump it in a dedicated commit.
 vtebench_commit := "ead80032e57dee2e75f0b51f2ea67528647d9944"
 
-# Platform-independent crates, and the tools of the terminal's tests and
-# tasks, which must keep building, and passing their tests, on Linux.
-portable := "-p lokyr-vt-core -p lokyr-pty -p lokyr-session -p lokyr-search -p lokyr-kernel -p lokyr-text-core -p lokyr-render-core -p lokyr-ui-core -p lokyr-platform-core -p lokyr-replay -p lokyr-differential -p xtask"
+# Platform-independent crates, the tools of the terminal's tests and
+# tasks, and Sleip, whose checks the registry's CI runs on Linux, which must
+# keep building, and passing their tests, on Linux.
+portable := "-p lokyr-vt-core -p lokyr-pty -p lokyr-session -p lokyr-search -p lokyr-kernel -p lokyr-app-core -p lokyr-text-core -p lokyr-render-core -p lokyr-ui-core -p lokyr-platform-core -p lokyr-replay -p lokyr-differential -p xtask -p lokyr-pkg-model -p sleip-analyzer -p sleip-cli -p sleip-index -p sleip-resolver"
 # The platform-independent crates whose tests `check-linux` checks for Linux from any host.
-portable_tests := "-p lokyr-pty -p lokyr-session -p lokyr-kernel -p lokyr-text-core -p lokyr-render-core -p lokyr-ui-core -p lokyr-platform-core -p lokyr-replay -p lokyr-differential -p xtask"
+portable_tests := "-p lokyr-pty -p lokyr-session -p lokyr-kernel -p lokyr-app-core -p lokyr-text-core -p lokyr-render-core -p lokyr-ui-core -p lokyr-platform-core -p lokyr-replay -p lokyr-differential -p xtask -p lokyr-pkg-model -p sleip-analyzer -p sleip-cli -p sleip-index -p sleip-resolver"
 
 # List available commands.
 _default:
@@ -45,6 +54,19 @@ build:
 # Test the workspace, every suite even after one fails.
 test:
     cargo test --locked --workspace --no-fail-fast
+
+# Clean the workspace's own packages out of target/, the external dependencies kept built, once target/debug/deps holds more than 100 000 files: each rebuild leaves its object files there, and the macOS probes hang over a directory of hundreds of thousands, which AppKit reads as the app starts.
+clean-deps:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    count=$(ls -f target/debug/deps 2>/dev/null | wc -l | tr -d ' ')
+    if [ "${count:-0}" -gt 100000 ]; then
+        cargo metadata --no-deps --format-version 1 \
+            | python3 -c 'import json, sys; [print("-p\n" + p["name"]) for p in json.load(sys.stdin)["packages"]]' \
+            | xargs cargo clean
+    else
+        echo "clean-deps: target/debug/deps holds ${count:-0} files"
+    fi
 
 # Format the codebase.
 fmt:
@@ -61,10 +83,83 @@ clippy:
 # Lint the codebase: formatting, then clippy.
 lint: fmt-check clippy
 
-# Check the platform-independent crates for Linux, from any host, with the tests of those whose tests build for it from macOS: the VT core's and the search's need a C compiler for Linux, as criterion builds C for its target.
-check-linux:
+# Check the platform-independent crates for x86_64 Linux, with the tests of those whose tests build for it from another system, in the container of Linux's checks, of Ubuntu's cross compilers: the VT core's and the search's need a C compiler for Linux, as criterion builds C for its target, and Luau's crates a C++ one.
+check-linux: (linux "check-linux-here")
+
+# `just check-linux`, on a Linux of the cross compilers for x86_64, as the container of Linux's checks is.
+check-linux-here:
     cargo check --locked --target x86_64-unknown-linux-gnu {{ portable }}
     cargo check --locked --target x86_64-unknown-linux-gnu --tests {{ portable_tests }}
+
+# Build Sleip for the registry's CI, Linux on arm64, in the container of Linux's checks, of a commit alone, the tree of no change: target/registry/sleip-aarch64-linux, stripped, the commit beside it in sleip-aarch64-linux.commit, and its SHA-256.
+registry-sleip:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [ -n "$(git status --porcelain)" ]; then
+        echo "The tree has changes: Sleip for the registry is built of a commit alone." >&2
+        exit 1
+    fi
+    commit=$(git rev-parse HEAD)
+    rm -f target/registry/sleip-aarch64-linux.commit
+    just linux registry-sleip-here
+    if [ "$(git rev-parse HEAD)" != "$commit" ] || [ -n "$(git status --porcelain)" ]; then
+        echo "The tree changed as Sleip was built: build it again." >&2
+        exit 1
+    fi
+    echo "$commit" > target/registry/sleip-aarch64-linux.commit
+    shasum -a 256 target/registry/sleip-aarch64-linux
+
+# `just registry-sleip`, on the Linux of the container of Linux's checks.
+registry-sleip-here:
+    rm -f target/registry/sleip-aarch64-linux.commit
+    cargo build --locked --release -p sleip-cli
+    mkdir -p target/registry
+    cp "${CARGO_TARGET_DIR:-target}/release/sleip" target/registry/sleip-aarch64-linux
+    strip target/registry/sleip-aarch64-linux
+
+# Upload target/registry/sleip-aarch64-linux to a release of the registry's repository, `sleip-<commit>`, of the commit that `just registry-sleip` built it of, which the registry's `.github/actions/sleip/action.yml` pins by its address and SHA-256.
+registry-sleip-release:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    file=target/registry/sleip-aarch64-linux
+    if [ ! -s "$file.commit" ]; then
+        echo "No commit beside $file: \`just registry-sleip\` builds it of one." >&2
+        exit 1
+    fi
+    commit=$(cat "$file.commit")
+    short=${commit:0:10}
+    tag="sleip-$short"
+    gh release create "$tag" "$file" --repo sephiroth74/sleip-registry --prerelease \
+        --title "Sleip for the registry's CI, $tag" \
+        --notes "Sleip $(git describe --tags --always "$commit") for Linux on arm64, of Lokyr's commit $commit, which the registry's checks run. SHA-256: $(shasum -a 256 "$file" | cut -d ' ' -f 1)."
+    echo "URL: https://github.com/sephiroth74/sleip-registry/releases/download/$tag/sleip-aarch64-linux"
+    shasum -a 256 "$file"
+
+# The image of Linux's checks, of tools/linux/Containerfile, made anew, of the toolchain of rust-toolchain.toml (Apple's `container`, macOS 26 or later).
+linux-image:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    container build --tag {{ linux_image }} --file tools/linux/Containerfile $({{ linux_dns }}) \
+        --build-arg TOOLCHAIN=$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml) tools/linux
+
+# Run `recipes` in the container of Linux's checks, the checkout mounted, cargo's downloads and the build in volumes of their own, apart from the Mac's `target/`; the image made first if there is none.
+linux +recipes:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    container image inspect {{ linux_image }} >/dev/null 2>&1 || just linux-image
+    # Their sizes the most they grow to, of the disk's space as they fill.
+    container volume inspect lokyr-linux-registry >/dev/null 2>&1 \
+        || container volume create -s 8G lokyr-linux-registry >/dev/null
+    container volume inspect lokyr-linux-target >/dev/null 2>&1 \
+        || container volume create -s 64G lokyr-linux-target >/dev/null
+    container run --rm --cpus {{ num_cpus() }} --memory 8G $({{ linux_dns }}) \
+        --volume "$PWD:/lokyr" --workdir /lokyr \
+        --volume lokyr-linux-registry:/usr/local/cargo/registry \
+        --volume lokyr-linux-target:/target --env CARGO_TARGET_DIR=/target \
+        {{ linux_image }} just {{ recipes }}
+
+# CI's Linux job, in the container of Linux's checks, of no minute of CI's.
+test-linux: (linux "fmt-check" "check-deps" "check-comments" "check-changelog" "check-links" "check-dist" "deny" "test-portable")
 
 # Test the platform-independent crates on the host (used by the Linux CI job), every suite even after one fails.
 test-portable:
@@ -78,6 +173,50 @@ deny:
 check-deps:
     cargo xtask check-deps
 
+# Write the app's distributions' features and plugins, of dist/*.toml.
+gen-dist:
+    cargo xtask gen-dist
+
+# Check that the app's distributions' features and plugins are those of dist/*.toml.
+check-dist:
+    cargo xtask gen-dist --check
+
+# Build the app of the minimal distribution, the terminal's own actions alone.
+build-minimal:
+    cargo build --locked -p lokyr-app --no-default-features --features dist-minimal
+
+# Make a language ready to translate, as `just new-language fr`: English's catalogs copied to its folders, and every list of catalogs and the config guide's `language` key of it.
+new-language code:
+    cargo xtask new-language {{code}}
+
+# Check a language's catalogs against English's: the messages missing, not in English, of other variables, and those left as English has them.
+check-language code:
+    cargo xtask check-language {{code}}
+
+# Write the plugin API's types for Luau, lokyr.d.luau, of the SDK's types.
+luau-types:
+    cargo xtask luau-types
+
+# Check that lokyr.d.luau is the SDK's.
+check-luau-types:
+    cargo xtask luau-types --check
+
+# Write luau/commands.json of lokyr-plugin-host-luau, the app's commands and its first-party plugins' that the host of a Luau plugin's tests holds, of the registry of an app of the default distribution; app-core's tests check it.
+luau-commands:
+    LOKYR_WRITE_COMMANDS=1 cargo test -p lokyr-app-core --lib -- luau_commands
+
+# Analyze the template's plugin, and one of wrong fields, against lokyr.d.luau with luau-lsp: the one that LUAU_LSP names, or the VS Code extension's.
+luau-lsp:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    lsp="${LUAU_LSP:-$(ls -d "$HOME"/.vscode/extensions/johnnymorganz.luau-lsp-*/bin/server 2>/dev/null | sort -V | tail -1)}"
+    if [ -z "$lsp" ] || [ ! -x "$lsp" ]; then
+        echo "luau-lsp not found: install the VS Code extension Luau Language Server, or name it in LUAU_LSP" >&2
+        exit 1
+    fi
+    echo "luau-lsp: $lsp ($("$lsp" --version))"
+    LUAU_LSP="$lsp" cargo test --locked -p lokyr-plugin-host-luau --test luau_lsp -- --ignored
+
 # Check that the code's comments name no task, phase or ADR.
 check-comments:
     cargo xtask check-comments
@@ -86,20 +225,65 @@ check-comments:
 check-links:
     cargo xtask check-links
 
+# Check CHANGELOG.md against Keep a Changelog's format.
+check-changelog:
+    cargo xtask check-changelog
+
 # Test the measuring tools of tools/bench, which compare the terminals and read powermetrics' recordings (macOS).
 test-bench-tools:
     python3 -m unittest discover -s tools/bench
 
-# Run the CI checks locally. Linux is covered by `check-linux`.
-ci: lint build test check-linux deny check-deps check-comments check-links bundle
+# Open the gallery of ui-core's nodes and widgets, each in its states, to check them by hand (macOS); `just ui-gallery --images <directory>` draws it, light and dark, into PNGs.
+ui-gallery *args:
+    cargo run --locked -p lokyr-ui-gallery -- {{args}}
 
-# Build target/Lokyr.app from the release binary, signed with the identity that $LOKYR_SIGN_IDENTITY names, or ad hoc; `--features three-drawables` builds it of three drawables a window.
+# Run the CI checks locally. Linux is covered by `test-linux`, CI's Linux job in the container of Linux's checks, and `check-linux`, the x86_64 check.
+ci: lint build test test-linux check-linux deny check-deps check-comments check-changelog check-links check-dist check-luau-types build-minimal bundle
+
+# Build target/Lokyr.app from the release binary, signed with the identity that $LOKYR_SIGN_IDENTITY names, or ad hoc, with Sparkle's release and the themes' collection (downloads them the first time); `--features three-drawables` builds it of three drawables a window, and `--no-default-features --features dist-minimal` of the minimal distribution.
 bundle *args:
     cargo xtask bundle {{args}}
 
 # Build target/Lokyr.app, have Apple notarize it, and staple the ticket: the keychain's profile lokyr-notary, or $LOKYR_NOTARY_PROFILE, has the credentials. It sends the bundle to Apple's notary service.
 notarize: bundle
     cargo xtask notarize
+
+# Build target/Lokyr.app, then target/Lokyr-<version>.dmg of it, the bundle and the image each notarized by Apple and stapled. It sends both to Apple's notary service.
+dmg: bundle
+    cargo xtask dmg
+
+# Release a candidate, X.Y.Z-rc.N, or a release, X.Y.Z, of the commit checked out, which GitHub has, its build's number above the feed's latest, or `--without-feed` for a feed's first release: the bundle and its DMG, notarized, its dSYM and its SBOM, to a draft of its GitHub release, which you publish, and to the feed of tests. It sends the bundle and the DMG to Apple's notary service.
+release version *args:
+    cargo xtask release {{version}} {{args}}
+
+# Build the documentation's site, the public Markdown in the style of lokyr.dev's page, into target/site.
+site:
+    cargo xtask site
+
+# Fetch Pagefind, the site's search, of the release that the site pins for the Mac, checked against its SHA-256, into target/tools/pagefind, which `just site` finds.
+pagefind:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    url=https://github.com/Pagefind/pagefind/releases/download/v1.6.0/pagefind-v1.6.0-aarch64-apple-darwin.tar.gz
+    sha256=43f17bec7ad55947f06c8f9689a1ac2c5d1ea7c96294bceaa3cc4e7152c1cf55
+    mkdir -p target/tools/pagefind
+    curl --fail --silent --show-error --location --retry 3 "$url" --output target/tools/pagefind.tar.gz
+    echo "$sha256  target/tools/pagefind.tar.gz" | shasum -a 256 --check --quiet
+    tar -xzf target/tools/pagefind.tar.gz -C target/tools/pagefind pagefind
+    rm target/tools/pagefind.tar.gz
+    target/tools/pagefind/pagefind --version
+
+# Serve target/site on 127.0.0.1:8124, as lokyr.dev would serve it, until Control-C.
+site-serve: site
+    python3 -m http.server --bind 127.0.0.1 --directory target/site 8124
+
+# Write the Homebrew cask of a release, X.Y.Z, of its DMG in target, into target/releases/<version>/lokyr.rb and the tap's folder, ../homebrew-tap or `--tap <dir>`; `just release` writes it too.
+cask version *args:
+    cargo xtask cask {{version}} {{args}}
+
+# Have Lokyr on this Mac read the feed of tests in private/feed, which `cargo xtask feed add <dmg>` writes, and serve it on 127.0.0.1:8123 until Control-C.
+feed-serve:
+    cargo xtask feed serve
 
 # Compile the terminfo entry xterm-lokyr into target/terminfo, with the tic on the PATH or $TIC.
 terminfo:
@@ -158,6 +342,22 @@ bench: vtebench
     if [ ! -f target/cat-1g.txt ] || [ -n "$(find crates tools -name '*.rs' -newer target/cat-1g.txt -print -quit)" ]; then target/release/lokyr-throughput --write-cat target/cat-1g.txt; fi
     target/release/lokyr-throughput --vtebench target/vtebench --runs 5 target/cat-1g.txt
     target/release/lokyr-replay --bench --cols 120 --rows 40 target/cat-1g.txt
+
+# Write docs/bench/RELEASES.md's summary and the releases' charts, docs/bench/releases/*.svg, from docs/bench/releases.json, as a release's session adds its values there.
+release-charts:
+    python3 tools/bench/releases.py
+
+# Check target/Lokyr.app end to end, built first, as a hand would use it: windows, tabs, splits, keys and the find bar, through the system's synthetic events and the app's accessibility tree; it takes the Accessibility permission of the app that runs it, and the keyboard's focus for about a minute, so leave the Mac alone meanwhile. `just e2e --dump` prints the app's tree.
+e2e *args: bundle
+    cargo run --locked -p lokyr-e2e -- {{args}}
+
+# Measure the search of 100 000 lines of 80 columns through the search service, as the find bar asks for it: until its first match shows, and until it counted them all, the median of five, of a release build; on an idle machine.
+bench-search:
+    cargo test --locked --release -p lokyr-kernel --lib -- --ignored --nocapture the_search_of_100k_lines
+
+# Measure a Luau plugin's activation, its compilation within, and its VM's heap once active, of the template that `sleip new` makes and of a plugin of 2000 lines, in both executions, of a release build; on an idle machine.
+bench-luau:
+    cargo test --locked --release -p lokyr-plugin-host-luau --test budgets -- --ignored --nocapture
 
 # Fetch vtebench's scenarios from the pinned commit into target/vtebench (downloads it): their scripts, which nothing runs, and their data files.
 vtebench:

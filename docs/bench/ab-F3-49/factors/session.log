@@ -1,0 +1,30 @@
+23:15  up  7:35, 6 users, load averages: 1.35 1.82 1.72
+23:15:46 latency T0 1
+23:15:58 latency T1 1
+23:16:11 latency T2 1
+23:16:23 latency T3 1
+23:16:35 load { 1.93 1.87 1.74 }
+23:16:35 latency T1 2
+23:16:48 latency T3 2
+23:17:00 latency T0 2
+23:17:12 latency T2 2
+23:17:25 load { 2.45 2.00 1.80 }
+23:17:25 latency T2 3
+23:17:37 latency T0 3
+23:17:49 latency T3 3
+23:18:02 latency T1 3
+23:18:14 load { 2.16 1.98 1.80 }
+23:18:14 latency T3 4
+23:18:26 latency T2 4
+23:18:39 latency T1 4
+23:18:51 latency T0 4
+23:19:03 load { 1.69 1.88 1.77 }
+23:19:03 startup T0 1
+23:19:18 startup T1 1
+23:19:33 startup T2 1
+23:19:49 startup T3 1
+23:20:04 startup T3 2
+23:20:19 startup T2 2
+23:20:34 startup T1 2
+23:20:49 startup T0 2
+23:21:04 done

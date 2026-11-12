@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 660 420" width="660" height="420">
+  <title>Lokyr – the disk image's window</title>
+  <!-- The window of the disk image: Lokyr.app at (170, 200), Applications
+       at (490, 200), icons of 128 points; an arrow between them, of the
+       icon's ring, and no text, which no language would translate. -->
+  <defs>
+    <linearGradient id="window" x1="0" y1="0" x2="0" y2="420" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#F7F5FF"/>
+      <stop offset="1" stop-color="#E9E5F8"/>
+    </linearGradient>
+    <linearGradient id="arrow" x1="262" y1="0" x2="398" y2="0" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#A592FF"/>
+      <stop offset="1" stop-color="#F27AC4"/>
+    </linearGradient>
+  </defs>
+  <rect width="660" height="420" fill="url(#window)"/>
+  <g fill="none" stroke="url(#arrow)" stroke-width="7" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M 266 200 H 390"/>
+    <path d="M 368 178 L 392 200 L 368 222"/>
+  </g>
+</svg>

@@ -1,0 +1,1 @@
+{"kind": "drag", "farthest": 206.15528128088303, "seconds": 6.95, "display": "Built-In Display", "frames_per_second": 25.3, "refresh_ms": 16.67, "missed": 200, "delay_p50_ms": 12.78, "delay_p95_ms": 13.51, "windowserver_cpu": 20.1, "app_cpu": 1.3}

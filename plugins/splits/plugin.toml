@@ -1,0 +1,15 @@
+# The manifest of the built-in plugin of the splits.
+[plugin]
+name = "lokyr/splits"
+kind = "builtin"
+license = "MIT"
+description = "The panes' commands: split, focus by direction, next and previous, resize, zoom, equalize, swap, and out to a tab or a window"
+
+[capabilities]
+process-read = true
+workspace-write = true
+pane-view = true
+
+[contributes]
+slots = ["pane-header"]
+config-schema = "splits.schema.json"

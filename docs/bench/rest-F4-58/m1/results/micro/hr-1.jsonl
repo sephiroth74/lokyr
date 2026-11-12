@@ -1,0 +1,6 @@
+{"binary":"hr","map_jit":"mmap: Invalid argument (os error 22)","map_plain":"executable","code_jit":"fails: exit status: 101","code_plain":"fails: signal: 9 (SIGKILL)"}
+{"measure":"pingpong","n":20000,"p50":2791,"p90":3208,"p99":6541,"p999":10250,"max":33208}
+{"measure":"wake-rest","n":1000,"p50":270708,"p90":281459,"p99":414416,"p999":6796333,"max":9078208}
+{"measure":"wake-busy","n":1000,"p50":259750,"p90":2818750,"p99":7801666,"p999":10040292,"max":17134500}
+{"measure":"faults","n":16384,"p50":709,"p90":1000,"p99":3208,"p999":8084,"max":13166}
+{"measure":"syscall","n":10000,"p50":111,"p90":111,"p99":112,"p999":164,"max":507}

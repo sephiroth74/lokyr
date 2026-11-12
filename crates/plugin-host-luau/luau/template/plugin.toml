@@ -1,0 +1,15 @@
+[plugin]
+name = "acme/hello"
+version = "0.1.0"
+kind = "luau"
+api = "^0.1"
+license = "MIT"
+description = "A plugin of Lokyr, made by `sleip new`."
+
+# It activates as its command first runs, which the menus and the palette
+# show before.
+[activation]
+on = ["command:hello.say"]
+
+[contributes]
+commands = [{ name = "hello.say", title = "Say Hello", category = "view" }]

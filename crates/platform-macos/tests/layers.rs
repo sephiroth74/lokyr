@@ -1,7 +1,10 @@
 //! The layers of a window, of the text that blinks and of the cursor: views
 //! over the content's, the cursor's over the text's, where the app places
 //! them, whose opacity the window server animates as the blink says, faded
-//! or switched, and which clicks go through.
+//! or switched, and which clicks go through; the sweeps of its
+//! progresses, under them, which keep their distance from the top as the
+//! window resizes; and the fills of its progresses, under the sweeps, which
+//! keep their layers as their values change and slide to them.
 
 #[cfg(target_os = "macos")]
 mod common;
@@ -13,8 +16,8 @@ mod probe {
     use std::time::{Duration, Instant};
 
     use lokyr_platform_core::{
-        AppEvent, Blink, Easing, Handler, Layer, LayerPlace, Platform, Point, Size,
-        WindowAttributes, WindowEvent, WindowId,
+        AppEvent, Blink, Easing, Fill, FillShape, Handler, Layer, LayerPlace, Platform, Point,
+        Size, Slide, Sweep, SweepShape, WindowAttributes, WindowEvent, WindowId,
     };
     use objc2::MainThreadMarker;
     use objc2::rc::Retained;
@@ -42,12 +45,32 @@ mod probe {
         /// animation, placed, then hidden; and the cursor's frame then.
         text: Vec<(NSRect, bool, Option<Animation>)>,
         cursor_then: Option<(NSRect, bool)>,
+        /// A slide's duration, the frame's left edge at its end, and whether
+        /// a move at once took it away.
+        slid: Option<(Option<f64>, f64, bool)>,
         /// The cursor's distance from the content's top, and its frame's
         /// size, before and after the window grows, and shrinks.
         resized: Vec<(f64, NSSize)>,
+        /// A sweep's distance from the content's top, and its frame's size,
+        /// as the cursor's.
+        swept: Vec<(f64, NSSize)>,
         /// The content view's height, in points.
         height: f64,
+        /// A fill's layers as it showed, of a bar's width, and as its value
+        /// changed: whether it kept its layer, the bar's width, and whether
+        /// it slides; then how many fills show once another took its place.
+        filled: Option<f64>,
+        refilled: Option<(bool, f64, bool)>,
+        replaced: usize,
+        /// The dots of a sweep: their centers from its square's top left
+        /// corner, how many of them light of an animation of their own, and
+        /// whether their group pulses.
+        dots: Option<Dots>,
     }
+
+    /// The dots' centers, how many light of their own, and whether their
+    /// group pulses.
+    type Dots = (Vec<(f64, f64)>, usize, bool);
 
     struct Probe(Rc<RefCell<Seen>>);
 
@@ -61,9 +84,10 @@ mod probe {
             .expect("the window");
         let content = window.contentView().expect("the content view");
         let subviews = content.subviews();
-        assert_eq!(subviews.count(), 2, "the layers' views");
-        let text = subviews.objectAtIndex(0);
-        let cursor = subviews.objectAtIndex(1);
+        // The fills' view first, the sweeps' over it, under the layers'.
+        assert_eq!(subviews.count(), 4, "the layers' views");
+        let text = subviews.objectAtIndex(2);
+        let cursor = subviews.objectAtIndex(3);
         (content, text, cursor)
     }
 
@@ -120,6 +144,7 @@ mod probe {
                     remember: false,
                     restore: false,
                     restore_size: false,
+                    frame: None,
                 })
                 .expect("the window opens");
             let mut seen = self.0.borrow_mut();
@@ -143,6 +168,7 @@ mod probe {
                     height: 16.0,
                 },
                 blink,
+                slide: None,
             };
             // Faded, then switched, then steady, then hidden.
             let cursor = Layer::Cursor;
@@ -157,6 +183,27 @@ mod probe {
             look(&mut seen);
             platform.place_layer(window, cursor, Some(&place(None)));
             look(&mut seen);
+            // A slide to the next cell, which the window server runs, then a
+            // move back at once, which takes the slide away.
+            let next = LayerPlace {
+                origin: Point { x: 28.0, y: 50.0 },
+                slide: Some(Slide {
+                    duration: millis(80),
+                    easing: Easing::EaseOut,
+                }),
+                ..place(None)
+            };
+            platform.place_layer(window, cursor, Some(&next));
+            let (_, _, view) = views();
+            let layer = view.layer().expect("the cursor's layer");
+            let key = NSString::from_str("slide");
+            // SAFETY: the key that the backend gives its slide.
+            let slid = unsafe { layer.animationForKey(&key) }.map(|found| found.duration());
+            let at = view.frame().origin.x;
+            platform.place_layer(window, cursor, Some(&place(None)));
+            // SAFETY: as above.
+            let gone = unsafe { layer.animationForKey(&key) }.is_none();
+            seen.slid = Some((slid, at, gone));
             // The text's, rows of it, switched, under the cursor's, which it
             // leaves where it is; then hidden.
             let rows = LayerPlace {
@@ -166,6 +213,7 @@ mod probe {
                     height: 48.0,
                 },
                 blink: Some(switched),
+                slide: None,
             };
             platform.place_layer(window, Layer::BlinkingText, Some(&rows));
             look_at_text(&mut seen);
@@ -188,14 +236,147 @@ mod probe {
                 (top, frame.size)
             };
             seen.resized.push(from_top(&content, &cursor));
+            // A bar's sweep 40 points from the top, which no call places
+            // again as the window resizes.
+            let bar = (
+                Point { x: 10.0, y: 40.0 },
+                Size {
+                    width: 100.0,
+                    height: 4.0,
+                },
+            );
+            platform.set_sweeps(
+                window,
+                &[Sweep {
+                    origin: bar.0,
+                    size: bar.1,
+                    within: bar,
+                    radius: 2.0,
+                    shape: SweepShape::Bar { width: 25.0 },
+                    color: [0.0, 0.5, 1.0, 1.0],
+                    period: Duration::from_secs(1),
+                    start: Instant::now(),
+                }],
+            );
+            let sweep_from_top = |content: &NSView| {
+                let sweeps = content.subviews().objectAtIndex(1);
+                let layer = sweeps.layer().expect("the sweeps' layer");
+                // SAFETY: the layer's sublayers, its sweeps'.
+                let within = unsafe { layer.sublayers() }
+                    .expect("a sweep's layer")
+                    .objectAtIndex(0)
+                    .frame();
+                let top = content.bounds().size.height - within.origin.y - within.size.height;
+                (top, within.size)
+            };
+            seen.swept.push(sweep_from_top(&content));
             let ns_window = content.window().expect("the window");
             for height in [420.0, 200.0] {
                 ns_window.setContentSize(NSSize::new(400.0, height));
                 let (content, _, cursor) = views();
                 seen.resized.push(from_top(&content, &cursor));
+                seen.swept.push(sweep_from_top(&content));
+            }
+            // Three dots in a square of 10 points, 60 from the top.
+            let square = (
+                Point { x: 20.0, y: 60.0 },
+                Size {
+                    width: 10.0,
+                    height: 10.0,
+                },
+            );
+            platform.set_sweeps(
+                window,
+                &[Sweep {
+                    origin: square.0,
+                    size: square.1,
+                    within: square,
+                    radius: 0.0,
+                    shape: SweepShape::Dots {
+                        diameter: 3.0,
+                        centers: [(5.0, 2.0), (8.5, 8.0), (1.5, 8.0)],
+                    },
+                    color: [0.5, 0.5, 0.5, 1.0],
+                    period: Duration::from_millis(1200),
+                    start: Instant::now(),
+                }],
+            );
+            {
+                let (content, _, _) = views();
+                let sweeps = content.subviews().objectAtIndex(1);
+                let layer = sweeps.layer().expect("the sweeps' layer");
+                let under = |layer: &objc2_quartz_core::CALayer| {
+                    // SAFETY: the layer's sublayers, of the sweep's parts.
+                    unsafe { layer.sublayers() }
+                        .expect("a part")
+                        .objectAtIndex(0)
+                };
+                // The part of the window, the square, the dots' group.
+                let group = under(&under(&under(&layer)));
+                // SAFETY: the group's sublayers, its dots.
+                let dots = unsafe { group.sublayers() }.expect("the dots");
+                let key = NSString::from_str("sweep");
+                let mut centers = Vec::new();
+                let mut lit = 0;
+                for at in 0..dots.count() {
+                    let dot = dots.objectAtIndex(at);
+                    let position = dot.position();
+                    centers.push((position.x, 10.0 - position.y));
+                    // SAFETY: the key that the backend gives its sweeps.
+                    lit += usize::from(unsafe { dot.animationForKey(&key) }.is_some());
+                }
+                // SAFETY: as of the dots.
+                let pulses = unsafe { group.animationForKey(&key) }.is_some();
+                seen.dots = Some((centers, lit, pulses));
             }
             platform.place_layer(window, Layer::Cursor, None);
             look(&mut seen);
+            // A bar's fill, a quarter of 100 points; then a half, of the
+            // same id, which keeps its layers and slides; then another's.
+            let fill = Fill {
+                id: 7,
+                origin: bar.0,
+                size: bar.1,
+                within: bar,
+                radius: 2.0,
+                shape: FillShape::Bar,
+                color: [0.0, 0.5, 1.0, 1.0],
+                value: 0.25,
+            };
+            let fill_layers = |content: &NSView| {
+                let fills = content.subviews().objectAtIndex(0);
+                let layer = fills.layer().expect("the fills' layer");
+                // SAFETY: the layer's sublayers, its fills'.
+                unsafe { layer.sublayers() }
+            };
+            // The bar's layer, within its box's, within the part of the
+            // window where it shows.
+            let bar_of = |within: &objc2_quartz_core::CALayer| {
+                // SAFETY: the layer's sublayers, its fill's box.
+                let boxed = unsafe { within.sublayers() }
+                    .expect("the box")
+                    .objectAtIndex(0);
+                // SAFETY: the box's sublayers, its bar.
+                unsafe { boxed.sublayers() }
+                    .expect("the bar")
+                    .objectAtIndex(0)
+            };
+            let (content, _, _) = views();
+            platform.set_fills(window, &[fill]);
+            let first = fill_layers(&content)
+                .expect("a fill's layer")
+                .objectAtIndex(0);
+            seen.filled = Some(bar_of(&first).bounds().size.width);
+            platform.set_fills(window, &[Fill { value: 0.5, ..fill }]);
+            let again = fill_layers(&content)
+                .expect("a fill's layer")
+                .objectAtIndex(0);
+            let moved = bar_of(&again);
+            // SAFETY: the key that the backend gives its slide.
+            let slides = unsafe { moved.animationForKey(&NSString::from_str("slide")) }.is_some();
+            seen.refilled = Some((again == first, moved.bounds().size.width, slides));
+            platform.set_fills(window, &[Fill { id: 8, ..fill }]);
+            seen.replaced = fill_layers(&content).map_or(0, |layers| layers.count());
             common::wake_after(platform.waker(), 100);
         }
 
@@ -256,10 +437,17 @@ mod probe {
         assert!((duration - 1.0).abs() < 1e-9 && switched, "{seen:?}");
         // Steady, then hidden.
         assert_eq!(seen.animations[2], None, "{seen:?}");
+        // A slide to the next cell, of its duration, the frame there at once.
+        let (slid, at, gone) = seen.slid.expect("a slide");
+        assert!(
+            slid.is_some_and(|duration| (duration - 0.08).abs() < 1e-9) && at == 28.0 && gone,
+            "{seen:?}"
+        );
         assert!(!seen.frames[2].1 && seen.frames[3].1, "{seen:?}");
         assert!(seen.through, "{seen:?}");
         let placed = (50.0, NSSize::new(8.0, 16.0));
         assert_eq!(seen.resized, [placed; 3], "{seen:?}");
+        assert_eq!(seen.swept, [(40.0, NSSize::new(100.0, 4.0)); 3], "{seen:?}");
         // The text's rows, switched, then hidden; the cursor's as it was.
         let (frame, hidden, ref animation) = seen.text[0];
         assert_eq!(
@@ -277,6 +465,19 @@ mod probe {
         assert!(values == [1.0, 0.0, 1.0] && switched, "{seen:?}");
         assert!(seen.text[1].1, "{seen:?}");
         assert_eq!(seen.cursor_then, Some(seen.frames[2]), "{seen:?}");
+        // The fill as far as its value, its layers kept as it changes, which
+        // slides there, but where the system reduces motion.
+        assert_eq!(seen.filled, Some(25.0), "{seen:?}");
+        assert_eq!(seen.refilled, Some((true, 50.0, !reduced)), "{seen:?}");
+        assert_eq!(seen.replaced, 1, "{seen:?}");
+        // The dots at their centers, each lit of its own animation, or all
+        // pulsing together where the system reduces motion.
+        let lit = if reduced { 0 } else { 3 };
+        assert_eq!(
+            seen.dots,
+            Some((vec![(5.0, 2.0), (8.5, 8.0), (1.5, 8.0)], lit, reduced)),
+            "{seen:?}"
+        );
         println!("layers: ok");
     }
 }

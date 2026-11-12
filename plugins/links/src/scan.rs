@@ -9,8 +9,89 @@ pub enum Found {
     /// A URL of one of the schemes that open.
     Url(String),
     /// A path, absolute, from `~`, or relative, without the line and the
-    /// column after it, as `src/main.rs:42:7` has them.
-    Path(String),
+    /// column after it, as `src/main.rs:42:7` has them, and that place, if
+    /// it has one.
+    Path(String, Option<Place>),
+}
+
+/// The line, from 1, and the column, from 1, that a path has after it, as
+/// `:42:7`, `(42,7)` or `#L42`, and the text that writes them.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Place {
+    /// The line.
+    pub line: u32,
+    /// The column, if it has one.
+    pub column: Option<u32>,
+    /// The text after the path that writes them, as `:42:7`.
+    pub text: String,
+}
+
+/// The place that `rest`, the text right after a path, writes: `:line`,
+/// `:line:column`, `(line)`, `(line,column)`, `#Lline` or `#Lline-Lend`;
+/// none of a line 0, nor of a number past `u32`.
+fn place(rest: &[char]) -> Option<Place> {
+    let number = |digits: &[char]| -> Option<u32> {
+        let text: String = digits.iter().collect();
+        text.parse::<u32>().ok().filter(|&n| n > 0)
+    };
+    let digits_at = |from: usize| -> usize {
+        rest[from..]
+            .iter()
+            .take_while(|c| c.is_ascii_digit())
+            .count()
+    };
+    let (line, column, len) = match rest.first()? {
+        ':' => {
+            let line_len = digits_at(1);
+            let line = number(&rest[1..1 + line_len])?;
+            let after = 1 + line_len;
+            let column_len = if rest.get(after) == Some(&':') {
+                digits_at(after + 1)
+            } else {
+                0
+            };
+            let column = (column_len > 0)
+                .then(|| number(&rest[after + 1..after + 1 + column_len]))
+                .flatten();
+            let len = if column.is_some() {
+                after + 1 + column_len
+            } else {
+                after
+            };
+            (line, column, len)
+        }
+        '(' => {
+            let line_len = digits_at(1);
+            let line = number(&rest[1..1 + line_len])?;
+            let mut at = 1 + line_len;
+            let mut column = None;
+            if rest.get(at) == Some(&',') {
+                let column_len = digits_at(at + 1);
+                column = number(&rest[at + 1..at + 1 + column_len]);
+                at += 1 + column_len;
+            }
+            if rest.get(at) != Some(&')') {
+                return None;
+            }
+            (line, column, at + 1)
+        }
+        '#' if rest.get(1) == Some(&'L') => {
+            let line_len = digits_at(2);
+            let line = number(&rest[2..2 + line_len])?;
+            let mut len = 2 + line_len;
+            // A range's end, which the place leaves out.
+            if rest.get(len) == Some(&'-') && rest.get(len + 1) == Some(&'L') {
+                len += 2 + digits_at(len + 2);
+            }
+            (line, None, len)
+        }
+        _ => return None,
+    };
+    Some(Place {
+        line,
+        column,
+        text: rest[..len].iter().collect(),
+    })
 }
 
 /// The URLs' beginnings, their schemes with what follows them.
@@ -91,7 +172,7 @@ pub fn find(text: &str, at: usize) -> Vec<Found> {
 fn in_word(word: &[char], at: usize) -> Option<Found> {
     url(word, at)
         .map(Found::Url)
-        .or_else(|| path(word, at).map(Found::Path))
+        .or_else(|| path(word, at).map(|(path, place)| Found::Path(path, place)))
 }
 
 /// The text between the quotes, `"` or `'`, around `chars`' character `at`,
@@ -198,7 +279,7 @@ fn without_punctuation(word: &[char], begin: usize, mut end: usize, trailing: &[
 /// a list of paths with `:` between them, the one at `at`, as `$PATH` has
 /// them; neither a path of another machine, as `user@host:/etc/hosts`,
 /// nor what follows another scheme.
-fn path(word: &[char], at: usize) -> Option<String> {
+fn path(word: &[char], at: usize) -> Option<(String, Option<Place>)> {
     // A click on a place in brackets takes the path before them.
     let at = place_in_brackets(word, at).unwrap_or(at);
     if PATH_ENDS.contains(&word[at]) {
@@ -257,7 +338,7 @@ fn path(word: &[char], at: usize) -> Option<String> {
     }
     let path: String = word[begin..end].iter().collect();
     let path = path.replace("\\ ", " ");
-    is_path(&path).then_some(path)
+    is_path(&path).then(|| (path, place(&word[end..])))
 }
 
 /// The character before the brackets of a place, as `(42,7)` after a path,
@@ -341,7 +422,19 @@ mod tests {
     }
 
     fn path(text: &str) -> Option<Found> {
-        Some(Found::Path(text.to_owned()))
+        Some(Found::Path(text.to_owned(), None))
+    }
+
+    /// A path of the place of `line`, `column` and `text`.
+    fn placed(path: &str, line: u32, column: Option<u32>, text: &str) -> Option<Found> {
+        Some(Found::Path(
+            path.to_owned(),
+            Some(Place {
+                line,
+                column,
+                text: text.to_owned(),
+            }),
+        ))
     }
 
     #[test]
@@ -376,9 +469,18 @@ mod tests {
 
     #[test]
     fn a_path_ends_before_its_line_and_column() {
-        assert_eq!(at("--> src/^main.rs:42:7"), path("src/main.rs"));
-        assert_eq!(at("src/main.rs:4^2:7: error"), path("src/main.rs"));
-        assert_eq!(at("src/main.rs:42^:"), path("src/main.rs"));
+        assert_eq!(
+            at("--> src/^main.rs:42:7"),
+            placed("src/main.rs", 42, Some(7), ":42:7")
+        );
+        assert_eq!(
+            at("src/main.rs:4^2:7: error"),
+            placed("src/main.rs", 42, Some(7), ":42:7")
+        );
+        assert_eq!(
+            at("src/main.rs:42^:"),
+            placed("src/main.rs", 42, None, ":42")
+        );
         assert_eq!(at("README.^md,"), path("README.md"));
         assert_eq!(at("see ^README.md."), path("README.md"));
         assert_eq!(at("~/^notes.txt"), path("~/notes.txt"));
@@ -501,13 +603,13 @@ mod tests {
             ),
             (r#"?? "My ^File.txt""#, "My File.txt", "File.txt"),
         ] {
-            let paths = [quoted, word].map(|path| Found::Path(path.to_owned()));
+            let paths = [quoted, word].map(|path| Found::Path(path.to_owned(), None));
             assert_eq!(found(marked), paths, "{marked}");
         }
         // A word of the text between quotes that is no path.
         assert_eq!(
             found(r#""see https://a.b/c ^for details""#),
-            [Found::Path("for".to_owned())]
+            [Found::Path("for".to_owned(), None)]
         );
     }
 
@@ -515,10 +617,25 @@ mod tests {
     fn a_path_leaves_its_marks_and_its_places_out() {
         assert_eq!(at("^link@"), path("link"));
         assert_eq!(at("pro^g*"), path("prog"));
-        assert_eq!(at("src/app.ts(4^2,7)"), path("src/app.ts"));
-        assert_eq!(at("src/^app.ts(42,7)"), path("src/app.ts"));
-        assert_eq!(at("src/^main.rs#L42"), path("src/main.rs"));
-        assert_eq!(at("src/main.rs#L4^2-L50"), path("src/main.rs"));
+        assert_eq!(
+            at("src/app.ts(4^2,7)"),
+            placed("src/app.ts", 42, Some(7), "(42,7)")
+        );
+        assert_eq!(
+            at("src/^app.ts(42,7)"),
+            placed("src/app.ts", 42, Some(7), "(42,7)")
+        );
+        assert_eq!(
+            at("src/^main.rs#L42"),
+            placed("src/main.rs", 42, None, "#L42")
+        );
+        assert_eq!(
+            at("src/main.rs#L4^2-L50"),
+            placed("src/main.rs", 42, None, "#L42-L50")
+        );
+        // No line 0, nor a place of no number.
+        assert_eq!(at("src/^main.rs:0"), path("src/main.rs"));
+        assert_eq!(at("src/^main.rs:x"), path("src/main.rs"));
         // A path of another machine is none of this one.
         assert_eq!(at("user@host:/etc/^passwd"), None);
         assert_eq!(at("PATH=/usr/^bin:/bin"), path("/usr/bin"));
@@ -534,11 +651,11 @@ mod tests {
     fn trailing_dots_after_a_path_take_linear_time() {
         let text = format!("x{}", ".".repeat(200_000));
         for at in [0, 100_000] {
-            assert_eq!(find(&text, at), [Found::Path("x".to_owned())]);
+            assert_eq!(find(&text, at), [Found::Path("x".to_owned(), None)]);
         }
         // A last part of dots alone keeps them.
         let dots = format!("a/{}", ".".repeat(200_000));
-        assert_eq!(find(&dots, 3), [Found::Path(dots.clone())]);
+        assert_eq!(find(&dots, 3), [Found::Path(dots.clone(), None)]);
     }
 
     #[test]

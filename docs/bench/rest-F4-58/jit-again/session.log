@@ -1,0 +1,105 @@
+19:45  up 3 days,  4:05, 120 users, load averages: 2.20 3.03 3.83
+   15.3 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer
+    5.9 /Applications/Visual Studio Code.app/Contents/Frameworks/Code Helper (Renderer).app/Contents/MacOS/Code Helper (Renderer)
+    4.6 /Library/SystemExtensions/CCD4BD4F-2A68-4214-8CBA-DA3177783C74/com.microsoft.wdav.netext.systemextension/Contents/MacOS/netext
+19:45:07 latency warm-up v070
+19:45:10 latency warm-up v070-jit
+19:45:13 latency warm-up v080
+19:45:16 latency warm-up v080-nojit
+19:45:21 latency v070 1 place 1
+19:45:35 latency v070-jit 1 place 2
+19:45:49 latency v080 1 place 3
+19:46:04 latency v080-nojit 1 place 4
+19:46:16 load { 2.13 2.88 3.71 }
+   10.2 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer
+    1.3 /Library/Application Support/Logitech.localized/LogiOptionsPlus/logioptionsplus_agent.app/Contents/MacOS/logioptionsplus_agent
+    1.3 /System/Library/CoreServices/launchservicesd
+19:46:18 latency v070-jit 2 place 1
+19:46:32 latency v080 2 place 2
+19:46:47 latency v080-nojit 2 place 3
+19:47:01 latency v070 2 place 4
+19:47:14 load { 1.79 2.65 3.57 }
+   10.1 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer
+    9.7 /Library/SystemExtensions/CCD4BD4F-2A68-4214-8CBA-DA3177783C74/com.microsoft.wdav.netext.systemextension/Contents/MacOS/netext
+    2.2 /Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged
+19:47:16 latency v080 3 place 1
+19:47:30 latency v080-nojit 3 place 2
+19:47:44 latency v070 3 place 3
+19:47:59 latency v070-jit 3 place 4
+19:48:11 load { 1.85 2.51 3.46 }
+   28.9 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer
+   12.4 /System/Library/CoreServices/MenuBarAgent.app/Contents/MacOS/MenuBarAgent
+    8.5 /Library/Application Support/Logitech.localized/LogiOptionsPlus/logioptionsplus_agent.app/Contents/MacOS/logioptionsplus_agent
+19:48:13 latency v080-nojit 4 place 1
+19:48:28 latency v070 4 place 2
+19:48:42 latency v070-jit 4 place 3
+19:48:56 latency v080 4 place 4
+19:49:09 load { 1.97 2.42 3.36 }
+   29.0 /Library/SystemExtensions/CCD4BD4F-2A68-4214-8CBA-DA3177783C74/com.microsoft.wdav.netext.systemextension/Contents/MacOS/netext
+   12.1 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer
+    5.7 /Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged
+19:49:11 latency v080-nojit 5 place 1
+19:49:25 latency v080 5 place 2
+19:49:40 latency v070-jit 5 place 3
+19:49:54 latency v070 5 place 4
+19:50:06 load { 2.62 2.48 3.32 }
+   25.2 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer
+   18.1 /Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged
+   16.2 /System/Library/CoreServices/MenuBarAgent.app/Contents/MacOS/MenuBarAgent
+19:50:08 latency v070 6 place 1
+19:50:23 latency v080-nojit 6 place 2
+19:50:37 latency v080 6 place 3
+19:50:52 latency v070-jit 6 place 4
+19:51:04 load { 1.70 2.22 3.16 }
+   11.6 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer
+    2.7 /Library/SystemExtensions/CCD4BD4F-2A68-4214-8CBA-DA3177783C74/com.microsoft.wdav.netext.systemextension/Contents/MacOS/netext
+    0.6 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd
+19:51:06 latency v070-jit 7 place 1
+19:51:20 latency v070 7 place 2
+19:51:35 latency v080-nojit 7 place 3
+19:51:49 latency v080 7 place 4
+19:52:01 load { 5.08 3.11 3.44 }
+   27.6 /Applications/JetBrains Toolbox.app/Contents/MacOS/jetbrains-toolbox
+   11.5 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer
+    3.1 /Library/SystemExtensions/CCD4BD4F-2A68-4214-8CBA-DA3177783C74/com.microsoft.wdav.netext.systemextension/Contents/MacOS/netext
+19:52:03 latency v080 8 place 1
+19:52:18 latency v070-jit 8 place 2
+19:52:32 latency v070 8 place 3
+19:52:47 latency v080-nojit 8 place 4
+19:52:59 load { 3.01 2.88 3.32 }
+   11.6 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer
+    7.5 /Library/SystemExtensions/CCD4BD4F-2A68-4214-8CBA-DA3177783C74/com.microsoft.wdav.netext.systemextension/Contents/MacOS/netext
+    3.4 /Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged
+19:53:01 latency v080-nojit 9 place 1
+19:53:15 latency v080 9 place 2
+19:53:30 latency v070-jit 9 place 3
+19:53:44 latency v070 9 place 4
+19:53:56 load { 1.56 2.50 3.15 }
+   21.2 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer
+   12.8 /System/Library/CoreServices/MenuBarAgent.app/Contents/MacOS/MenuBarAgent
+   12.0 /Library/SystemExtensions/CCD4BD4F-2A68-4214-8CBA-DA3177783C74/com.microsoft.wdav.netext.systemextension/Contents/MacOS/netext
+19:53:58 latency v070 10 place 1
+19:54:13 latency v080-nojit 10 place 2
+19:54:27 latency v080 10 place 3
+19:54:42 latency v070-jit 10 place 4
+19:54:54 load { 1.38 2.32 3.04 }
+   16.6 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer
+    9.6 /System/Library/CoreServices/MenuBarAgent.app/Contents/MacOS/MenuBarAgent
+    7.2 /Users/taacral1/.vscode/extensions/anthropic.claude-code-2.1.319-darwin-arm64/resources/native-binary/claude
+19:54:56 latency v070-jit 11 place 1
+19:55:10 latency v070 11 place 2
+19:55:25 latency v080-nojit 11 place 3
+19:55:39 latency v080 11 place 4
+19:55:52 load { 1.72 2.26 2.97 }
+   24.6 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer
+   13.8 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd
+    9.6 /Library/SystemExtensions/CCD4BD4F-2A68-4214-8CBA-DA3177783C74/com.microsoft.wdav.netext.systemextension/Contents/MacOS/netext
+19:55:54 latency v080 12 place 1
+19:56:08 latency v070-jit 12 place 2
+19:56:22 latency v070 12 place 3
+19:56:37 latency v080-nojit 12 place 4
+19:56:49 load { 1.76 2.17 2.89 }
+   33.3 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer
+    7.0 /Applications/Visual Studio Code.app/Contents/Frameworks/Code Helper (Renderer).app/Contents/MacOS/Code Helper (Renderer)
+    5.3 /System/Library/CoreServices/launchservicesd
+19:56:49 done

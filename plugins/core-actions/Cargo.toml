@@ -11,6 +11,10 @@ publish = false
 
 [dependencies]
 lokyr-plugin-sdk = { workspace = true, features = ["unstable"] }
+unicode-width.workspace = true
+
+[dev-dependencies]
+lokyr-plugin-sdk = { workspace = true, features = ["fake"] }
 
 [lints]
 workspace = true

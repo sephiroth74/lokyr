@@ -1,0 +1,12 @@
+diff --git a/crates/app-core/src/app/frame.rs b/crates/app-core/src/app/frame.rs
+index ebe3306..763b0b3 100644
+--- a/crates/app-core/src/app/frame.rs
++++ b/crates/app-core/src/app/frame.rs
+@@ -442,6 +442,7 @@ impl<B: Backend> App<B> {
+         // The panes' screens, or the keyboard's pane, changed: the window's
+         // accessibility tree goes within its rate, once a client asked.
+         if (output || others || state.access_focus != focused)
++            && false
+             && platform.accessibility_asked(window)
+         {
+             state.access_changed = true;

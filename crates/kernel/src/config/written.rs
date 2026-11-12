@@ -30,6 +30,9 @@ const EXAMPLES: &[(&str, &str, &str)] = &[
     ("font", "bold-italic-style", "\"Bold Italic\""),
     ("font", "non-ascii-family", "\"Hiragino Sans\""),
     ("cursor", "thickness", "2"),
+    ("interface", "font-family", "\"Helvetica Neue\""),
+    ("slots", "tab-bar", "\"lokyr/tabs\""),
+    ("slots", "pane-header", "\"lokyr/command-header\""),
 ];
 
 /// What a heading of the guide is about.
@@ -458,6 +461,7 @@ impl Config {
                 let _ = writeln!(out, "{} = {value}", Key::new(keys));
             }
         }
+        self.plugins.write(&mut out);
         out
     }
 }
@@ -600,7 +604,7 @@ mod tests {
         assert!(written.contains("\nlimit = 10\nbudget = 100\n"));
         assert!(
             written.ends_with(
-                "\n[app]\nicon = \"jormungandr\"\nlanguage = \"system\"\nappearance = \"system\"\n\n[debug]\nperformance-overlay = false\nperformance-corner = \"top-right\"\n\n[keys]\n"
+                "\n[app]\nicon = \"jormungandr\"\nlanguage = \"system\"\nappearance = \"system\"\nquit-after-last-window-closed = false\nrestore-windows = \"system\"\n\n[updates]\ncheck = true\n\n[debug]\nperformance-overlay = false\nperformance-corner = \"top-right\"\n\n[keys]\n"
             )
         );
         // Without the docs, the only comments are of the keys left unset.
@@ -684,7 +688,9 @@ mod tests {
         assert!(written.contains("\n# Opens a window.\n# \"cmd+n\" = \"window.new\"\n"));
         assert!(!written.contains("<sub>"));
         assert!(!written.contains("**"));
-        for line in written.lines() {
+        // The text wraps; a key's line stays whole, as taking its `#` away
+        // alone gives its value, as a long list's.
+        for line in written.lines().filter(|line| line.starts_with('#')) {
             assert!(
                 line.chars().count() <= WIDTH || !line.contains(' '),
                 "a line too long: {line}"

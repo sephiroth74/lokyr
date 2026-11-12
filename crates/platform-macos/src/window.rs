@@ -7,9 +7,9 @@ use std::ptr::NonNull;
 use std::rc::{Rc, Weak};
 
 use lokyr_platform_core::{
-    Backdrop, Dropped, Ime, Layer, LayerPlace, MouseButton, PixelSize, Point, PointerArea,
-    PointerShape, QuickPlace, ScrollDelta, ScrollPhase, Size, WindowAttributes, WindowEvent,
-    WindowId, WindowSize,
+    Backdrop, ContentRect, Dropped, Fill, Ime, Layer, LayerPlace, MouseButton, PixelSize, Point,
+    PointerArea, PointerShape, QuickPlace, ScreenPoint, ScreenRect, ScrollDelta, ScrollPhase, Size,
+    Sweep, Titlebar, WindowAttributes, WindowEvent, WindowId, WindowSize,
 };
 use std::path::PathBuf;
 
@@ -17,11 +17,14 @@ use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, Bool, ProtocolObject, Sel};
 use objc2::{ClassType, DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send};
 use objc2_app_kit::{
-    NSBackingStoreType, NSColor, NSCursor, NSDragOperation, NSDraggingDestination, NSDraggingInfo,
-    NSEvent, NSEventPhase, NSEventType, NSPasteboard, NSPasteboardTypeFileURL,
+    NSApplicationPresentationOptions, NSBackingStoreType, NSColor, NSCursor, NSDragOperation,
+    NSDraggingDestination, NSDraggingInfo, NSEvent, NSEventPhase, NSEventType,
+    NSFloatingWindowLevel, NSNormalWindowLevel, NSPasteboard, NSPasteboardTypeFileURL,
     NSPasteboardTypeString, NSPasteboardURLReadingFileURLsOnlyKey, NSResponder, NSScreen,
-    NSTextInputClient, NSTitlebarSeparatorStyle, NSView, NSWindow, NSWindowDelegate,
-    NSWindowOcclusionState, NSWindowStyleMask, NSWindowTabbingMode,
+    NSTextInputClient, NSTitlebarSeparatorStyle, NSToolbar, NSTrackingArea, NSTrackingAreaOptions,
+    NSView, NSViewLayerContentsPlacement, NSWindow, NSWindowButton, NSWindowDelegate,
+    NSWindowOcclusionState, NSWindowStyleMask, NSWindowTabbingMode, NSWindowTitleVisibility,
+    NSWindowToolbarStyle,
 };
 use objc2_foundation::{
     NSArray, NSAttributedString, NSAttributedStringKey, NSDictionary, NSNotFound, NSNotification,
@@ -31,19 +34,28 @@ use objc2_foundation::{
 
 use objc2_quartz_core::{CALayer, CAMetalLayer};
 
+use crate::access::Access;
+use crate::accessory::TitleAccessory;
+use crate::fill::FillsView;
 use crate::frame::Pacer;
 use crate::keys;
 use crate::layer::LayerView;
 use crate::quick::{self, Quick};
+use crate::screens;
 use crate::shared::{Pending, Shared};
+use crate::sweep::SweepsView;
 use crate::text_input::{self, Handled, Step, TextInput};
 
 /// A window that the app opened.
 pub(crate) struct Window {
     ns_window: Retained<NSWindow>,
     view: Retained<ContentView>,
-    /// The view of the text that blinks, over the content's, and of the
-    /// cursor's cells, over everything.
+    /// The view of the indeterminate progresses' sweeps, over the
+    /// content's; of the text that blinks, over it; and of the cursor's
+    /// cells, over everything.
+    sweeps: Retained<SweepsView>,
+    /// The view of the progresses' fills, under the sweeps'.
+    fills: Retained<FillsView>,
     blinking_text: Retained<LayerView>,
     cursor: Retained<LayerView>,
     pacer: Pacer,
@@ -60,6 +72,8 @@ pub(crate) struct Window {
     /// What its events go to, and its number.
     shared: Weak<Shared>,
     id: WindowId,
+    /// The text at its titlebar's right, while it shows one.
+    accessory: RefCell<Option<TitleAccessory>>,
 }
 
 impl Window {
@@ -117,11 +131,16 @@ impl Window {
             option_as_meta,
             None,
         );
-        // The frame that a window kept, on a screen that is still there,
-        // rather than the size asked for.
-        window.restored = attributes.restore && restore_frame(&window.ns_window);
-        if !window.restored && attributes.restore_size {
-            restore_size(&window.ns_window);
+        // The frame asked for, or that a window kept, on a screen that is
+        // still there, rather than the size asked for.
+        if let Some(frame) = attributes.frame {
+            window.open_at(frame);
+            window.restored = true;
+        } else {
+            window.restored = attributes.restore && restore_frame(&window.ns_window);
+            if !window.restored && attributes.restore_size {
+                restore_size(&window.ns_window);
+            }
         }
         window
     }
@@ -162,6 +181,8 @@ impl Window {
         ns_window.setTabbingMode(NSWindowTabbingMode::Disallowed);
         let view = ContentView::new(mtm, content, shared.clone(), id, option_as_meta);
         ns_window.setContentView(Some(&view));
+        let fills = FillsView::new(mtm, &view);
+        let sweeps = SweepsView::new(mtm, &view);
         let blinking_text = LayerView::new(mtm, &view);
         let cursor = LayerView::new(mtm, &view);
         // The keys go to the view.
@@ -178,6 +199,8 @@ impl Window {
         Self {
             ns_window,
             view,
+            sweeps,
+            fills,
             blinking_text,
             cursor,
             pacer,
@@ -188,6 +211,7 @@ impl Window {
             quick,
             shared,
             id,
+            accessory: RefCell::new(None),
         }
     }
 
@@ -215,6 +239,17 @@ impl Window {
     pub(crate) fn place_layer(&self, layer: Layer, place: Option<&LayerPlace>) {
         self.layer(layer)
             .place(place, self.view.bounds().size.height);
+    }
+
+    /// Shows `sweeps`, in place of those that it showed.
+    pub(crate) fn set_sweeps(&self, sweeps: &[Sweep]) {
+        self.sweeps.set(sweeps);
+    }
+
+    /// Shows `fills`, in place of those that it showed, a value that
+    /// changed sliding.
+    pub(crate) fn set_fills(&self, fills: &[Fill]) {
+        self.fills.set(fills);
     }
 
     /// The shortest time between two refreshes of the display that the
@@ -256,6 +291,123 @@ impl Window {
     }
 
     /// The window's content view.
+    /// Where the pointer is now, from the top left corner of the content,
+    /// in points, over it or out of it.
+    pub(crate) fn pointer(&self) -> Point {
+        let at = self.ns_window.mouseLocationOutsideOfEventStream();
+        let local = self.view.convertPoint_fromView(at, None);
+        Point {
+            x: local.x,
+            // The view's own coordinates go up from its bottom edge.
+            y: self.view.bounds().size.height - local.y,
+        }
+    }
+
+    /// The frame of the content, under the titlebar too, in AppKit's
+    /// coordinates of the screens.
+    pub(crate) fn content_on_screen(&self) -> NSRect {
+        let content = self.view.convertRect_toView(self.view.bounds(), None);
+        self.ns_window.convertRectToScreen(content)
+    }
+
+    /// Keeps the window above the other applications' windows, or puts it
+    /// back among them; in full screen, from when it leaves it.
+    pub(crate) fn set_floating(&self, floating: bool) {
+        self.delegate.ivars().floating.set(floating);
+        let full_screen = self
+            .ns_window
+            .styleMask()
+            .contains(NSWindowStyleMask::FullScreen);
+        if !full_screen {
+            self.ns_window.setLevel(if floating {
+                NSFloatingWindowLevel
+            } else {
+                NSNormalWindowLevel
+            });
+        }
+    }
+
+    /// The frame of the content as [`Window::content_on_screen`] gives it,
+    /// but, in full screen, the one that it had before.
+    pub(crate) fn windowed_frame(&self) -> NSRect {
+        let full_screen = self
+            .ns_window
+            .styleMask()
+            .contains(NSWindowStyleMask::FullScreen);
+        match self.delegate.ivars().windowed.get() {
+            Some(windowed) if full_screen => windowed,
+            _ => self.content_on_screen(),
+        }
+    }
+
+    /// Gives the window the frame whose content is `frame` on the screens,
+    /// moved onto the nearest screen, within its area for windows, if it
+    /// lies on none.
+    fn open_at(&self, frame: ScreenRect) {
+        let mtm = self.ns_window.mtm();
+        let top = screens::top(mtm);
+        let all = NSScreen::screens(mtm);
+        let areas: Vec<ScreenRect> = (0..all.count())
+            .map(|index| screens::on_screens(all.objectAtIndex(index).visibleFrame(), top))
+            .collect();
+        let content = screens::in_appkit(frame.onto(&areas), top);
+        // The frame around the content, as far from it as the window's is
+        // from its content now.
+        let now = self.ns_window.frame();
+        let shown = self.content_on_screen();
+        let frame = NSRect::new(
+            NSPoint::new(
+                content.origin.x - (shown.origin.x - now.origin.x),
+                content.origin.y - (shown.origin.y - now.origin.y),
+            ),
+            NSSize::new(
+                content.size.width + (now.size.width - shown.size.width),
+                content.size.height + (now.size.height - shown.size.height),
+            ),
+        );
+        self.ns_window.setFrame_display(frame, false);
+    }
+
+    /// Moves the window so that its content's top left corner is at
+    /// `origin` on the screens, its titlebar kept on the screen of the
+    /// pointer, as AppKit keeps it on one; a window in full screen stays.
+    pub(crate) fn set_content_origin(&self, origin: ScreenPoint) {
+        if self
+            .ns_window
+            .styleMask()
+            .contains(NSWindowStyleMask::FullScreen)
+        {
+            return;
+        }
+        let mtm = self.ns_window.mtm();
+        let frame = self.ns_window.frame();
+        let content = self.content_on_screen();
+        // How far the content's top left corner is from the frame's.
+        let left = content.origin.x - frame.origin.x;
+        let below = frame.origin.y + frame.size.height - content.origin.y - content.size.height;
+        let top_left = screens::point_in_appkit(origin, screens::top(mtm));
+        let moved = NSRect::new(
+            NSPoint::new(top_left.x - left, top_left.y + below - frame.size.height),
+            frame.size,
+        );
+        let pointer = NSEvent::mouseLocation();
+        let screens = NSScreen::screens(mtm);
+        let screen = (0..screens.count())
+            .map(|index| screens.objectAtIndex(index))
+            .find(|screen| {
+                let area = screen.frame();
+                pointer.x >= area.origin.x
+                    && pointer.x < area.origin.x + area.size.width
+                    && pointer.y >= area.origin.y
+                    && pointer.y < area.origin.y + area.size.height
+            })
+            .or_else(|| self.ns_window.screen());
+        let moved = self
+            .ns_window
+            .constrainFrameRect_toScreen(moved, screen.as_deref());
+        self.ns_window.setFrame_display(moved, true);
+    }
+
     pub(crate) fn view(&self) -> Retained<NSView> {
         Retained::into_super(self.view.clone())
     }
@@ -366,6 +518,21 @@ impl Window {
         }
     }
 
+    /// Ends the input method's composition, whose text the app keeps:
+    /// the view forgets it, and the text typed before it, as the caret
+    /// moved, before the input method is told to discard it, so that what
+    /// the input method calls back as it does finds nothing to type.
+    pub(crate) fn end_composition(&self) {
+        let composed = {
+            let mut input = self.view.ivars().input.borrow_mut();
+            input.typed.clear();
+            input.marked.take().is_some()
+        };
+        if composed && let Some(context) = self.view.inputContext() {
+            context.discardMarkedText();
+        }
+    }
+
     /// Whether the pointer's moves without a button come to the view.
     pub(crate) fn track_mouse_moves(&self, track: bool) {
         self.ns_window.setAcceptsMouseMovedEvents(track);
@@ -379,6 +546,117 @@ impl Window {
         }
     }
 
+    /// Gives the window the titlebar `titlebar`: of the window's title, of
+    /// none, which the content draws, or an empty compact toolbar's, of no
+    /// title, on which the window's buttons stand centred; the content's
+    /// size comes anew, of the titlebar's height and of the buttons' room,
+    /// as the toolbar comes or goes. A quick window has no titlebar.
+    pub(crate) fn set_titlebar(&self, titlebar: Titlebar) {
+        if self.quick.is_some() {
+            return;
+        }
+        let before = self.view.ivars().titlebar.replace(titlebar);
+        if before == titlebar {
+            return;
+        }
+        match titlebar {
+            Titlebar::Tabs => {
+                let toolbar = NSToolbar::initWithIdentifier(
+                    NSToolbar::alloc(self.ns_window.mtm()),
+                    &NSString::from_str("titlebar"),
+                );
+                self.ns_window.setToolbar(Some(&toolbar));
+                self.ns_window
+                    .setToolbarStyle(NSWindowToolbarStyle::UnifiedCompact);
+                self.ns_window
+                    .setTitleVisibility(NSWindowTitleVisibility::Hidden);
+            }
+            Titlebar::Titled | Titlebar::Untitled => {
+                self.ns_window.setToolbar(None);
+                self.ns_window
+                    .setToolbarStyle(NSWindowToolbarStyle::Automatic);
+                self.ns_window
+                    .setTitleVisibility(if titlebar == Titlebar::Titled {
+                        NSWindowTitleVisibility::Visible
+                    } else {
+                        NSWindowTitleVisibility::Hidden
+                    });
+            }
+        }
+        self.ns_window.invalidateCursorRectsForView(&self.view);
+        // The system's titlebar of its title and of none are alike, of no
+        // new size.
+        if (before == Titlebar::Tabs) != (titlebar == Titlebar::Tabs) {
+            self.view
+                .post(WindowEvent::Resized(size_of(&self.ns_window)));
+        }
+    }
+
+    /// Shows `text` at the titlebar's right, or nothing with `None`; a
+    /// quick window has no titlebar.
+    pub(crate) fn set_title_accessory(&self, text: Option<&str>) {
+        if self.quick.is_some() {
+            return;
+        }
+        let mut accessory = self.accessory.borrow_mut();
+        match (text, accessory.as_ref()) {
+            (Some(text), Some(shown)) => shown.set_text(text),
+            (Some(text), None) => {
+                *accessory = Some(TitleAccessory::add(
+                    &self.ns_window,
+                    text,
+                    self.ns_window.mtm(),
+                ));
+            }
+            (None, Some(shown)) => {
+                shown.remove();
+                *accessory = None;
+            }
+            (None, None) => {}
+        }
+    }
+
+    /// Gives the parts of the content where the pointer's moves come, and
+    /// its leaving them.
+    pub(crate) fn set_move_areas(&self, areas: &[ContentRect]) {
+        if self.view.ivars().move_areas.borrow().0 == areas {
+            return;
+        }
+        self.view.ivars().move_areas.borrow_mut().0 = areas.to_vec();
+        self.view.track_moves();
+    }
+
+    /// The parts of the titlebar that are the content's, in place of those
+    /// before, whose pointer is the content's areas' too.
+    pub(crate) fn set_titlebar_areas(&self, areas: &[ContentRect]) {
+        if *self.view.ivars().titlebar_areas.borrow() != areas {
+            *self.view.ivars().titlebar_areas.borrow_mut() = areas.to_vec();
+            self.ns_window.invalidateCursorRectsForView(&self.view);
+        }
+    }
+
+    /// Whether an accessibility client asked for the window's tree.
+    pub(crate) fn accessibility_asked(&self) -> bool {
+        self.view.access(Access::asked).unwrap_or(false)
+    }
+
+    /// Gives the window's accessibility tree `update`, once a client asked.
+    pub(crate) fn update_accessibility(&self, update: accesskit::TreeUpdate) {
+        self.view.access(|access| access.update(update));
+    }
+
+    /// Holds the pointer over the view at `shape`, at once, whatever its
+    /// areas; `None` gives them the pointer back.
+    pub(crate) fn hold_pointer(&self, shape: Option<PointerShape>) {
+        if self.view.ivars().held.replace(shape) == shape {
+            return;
+        }
+        if let Some(shape) = shape {
+            ns_cursor(shape).set();
+        }
+        self.ns_window.invalidateCursorRectsForView(&self.view);
+    }
+
     /// Gives the areas of `areas` their own pointers, over the rest's.
     pub(crate) fn set_pointer_areas(&self, areas: &[PointerArea]) {
         if *self.view.ivars().areas.borrow() != areas {
@@ -389,7 +667,8 @@ impl Window {
 
     /// Makes the window translucent over `backdrop`, its background, which
     /// fills its whole shape, the titlebar and the rounded corners too,
-    /// under the content that the renderer draws clear; or, with `None`,
+    /// under the content that the renderer draws clear, of an opacity of
+    /// [`LEAST_OPACITY`] at least; or, with `None`,
     /// keeps it opaque. The window, its view and the view's layer turn
     /// non-opaque together, as the window server composes the window with
     /// what is behind it only then.
@@ -404,7 +683,12 @@ impl Window {
             Some(Backdrop {
                 color: [red, green, blue, alpha],
                 ..
-            }) => NSColor::colorWithSRGBRed_green_blue_alpha(red, green, blue, alpha),
+            }) => NSColor::colorWithSRGBRed_green_blue_alpha(
+                red,
+                green,
+                blue,
+                alpha.max(LEAST_OPACITY),
+            ),
             None => NSColor::windowBackgroundColor(),
         };
         self.ns_window.setBackgroundColor(Some(&background));
@@ -424,6 +708,12 @@ impl Window {
         self.ns_window.invalidateShadow();
     }
 }
+
+/// The least opacity of a translucent window's background, which shows
+/// nothing: a clear one, which macOS takes apart, leaves the blur behind
+/// the window its own shape at the corners, of a smaller radius than the
+/// window's, so that what is behind shows bare between the two.
+const LEAST_OPACITY: f64 = 0.001;
 
 // The window server's calls of the blur behind a window, private ones of
 // Core Graphics, which the terminals of macOS that blur make too: there is
@@ -473,7 +763,26 @@ fn size_of(window: &NSWindow) -> WindowSize {
         },
         scale,
         bar,
+        buttons: buttons_of(window, &view),
     }
+}
+
+/// The room at the titlebar's left that `window`'s buttons take in its
+/// `view`, with a margin after them as wide as the one before them: none in
+/// full screen, whose titlebar slides over the content, nor without them.
+fn buttons_of(window: &NSWindow, view: &NSView) -> f64 {
+    if window.styleMask().contains(NSWindowStyleMask::FullScreen) {
+        return 0.0;
+    }
+    let (Some(close), Some(zoom)) = (
+        window.standardWindowButton(NSWindowButton::CloseButton),
+        window.standardWindowButton(NSWindowButton::ZoomButton),
+    ) else {
+        return 0.0;
+    };
+    let close = close.convertRect_toView(close.bounds(), Some(view));
+    let zoom = zoom.convertRect_toView(zoom.bounds(), Some(view));
+    (zoom.origin.x + zoom.size.width + close.origin.x).max(0.0)
 }
 
 fn points(size: NSSize) -> Size {
@@ -497,9 +806,23 @@ pub(crate) struct ContentViewIvars {
     /// their own.
     pointer: Cell<PointerShape>,
     areas: RefCell<Vec<PointerArea>>,
+    /// The shape that the app holds the pointer at over the whole view, as
+    /// a drag under way, while it holds it.
+    held: Cell<Option<PointerShape>>,
     /// Whether the buttons held went down over the titlebar, whose drags
     /// and releases are the window's, not the content's.
     over_bar: Cell<bool>,
+    /// What the titlebar holds, and the parts of it that are the
+    /// content's, in points from the view's top left corner.
+    titlebar: Cell<Titlebar>,
+    titlebar_areas: RefCell<Vec<ContentRect>>,
+    /// The parts of the content where the pointer's moves come, in points
+    /// from the view's top left corner, and their tracking areas, made
+    /// anew as the view's size changes, as its own coordinates go up from
+    /// its bottom edge.
+    move_areas: RefCell<(Vec<ContentRect>, Vec<Retained<NSTrackingArea>>)>,
+    /// The view's accessibility, of the window's tree, once the view is.
+    access: RefCell<Option<Access>>,
 }
 
 define_class!(
@@ -521,20 +844,22 @@ define_class!(
         // rectangle that the pointer is in, in the key window.
         #[unsafe(method(resetCursorRects))]
         fn reset_cursor_rects(&self) {
-            // Below the titlebar, whose pointer is the arrow.
+            // A shape that the app holds, over the whole view.
+            if let Some(held) = self.ivars().held.get() {
+                self.addCursorRect_cursor(self.bounds(), &ns_cursor(held));
+                return;
+            }
+            // Below the titlebar, and over its parts that are the content's,
+            // whose pointer is the arrow but over the content's areas.
+            let height = self.bounds().size.height;
             let rects = cursor_rects(
-                self.below_bar(),
-                self.bounds().size.height,
+                (self.below_bar(), &self.ivars().titlebar_areas.borrow()),
+                height,
                 &self.ivars().areas.borrow(),
                 self.ivars().pointer.get(),
             );
             for (rect, shape) in rects {
-                let cursor = match shape {
-                    PointerShape::Arrow => NSCursor::arrowCursor(),
-                    PointerShape::Text => NSCursor::IBeamCursor(),
-                    PointerShape::PointingHand => NSCursor::pointingHandCursor(),
-                };
-                self.addCursorRect_cursor(rect, &cursor);
+                self.addCursorRect_cursor(rect, &ns_cursor(shape));
             }
         }
 
@@ -560,6 +885,34 @@ define_class!(
                 context.handleEvent(event);
             }
             self.post_key(event);
+        }
+
+        // SAFETY: AppKit's signature. The first click on a part of the
+        // titlebar that is the content's, as a tab's, acts in a window that
+        // was not key too, as the system's toolbars do; elsewhere it makes
+        // the window key alone.
+        #[unsafe(method(acceptsFirstMouse:))]
+        fn accepts_first_mouse(&self, event: Option<&NSEvent>) -> bool {
+            event.is_some_and(|event| self.is_over_bar(event) && self.is_over_titlebar_area(event))
+        }
+
+        // SAFETY: AppKit's signatures, of `NSAccessibility`: the view's
+        // children, its element of the keyboard's focus and its element at
+        // a point, which AccessKit's adapter gives of the window's tree,
+        // autoreleased; none while the adapter answers another call.
+        #[unsafe(method(accessibilityChildren))]
+        fn accessibility_children(&self) -> *mut AnyObject {
+            self.with_access(Access::children)
+        }
+
+        #[unsafe(method(accessibilityFocusedUIElement))]
+        fn accessibility_focused_ui_element(&self) -> *mut AnyObject {
+            self.with_access(Access::focus)
+        }
+
+        #[unsafe(method(accessibilityHitTest:))]
+        fn accessibility_hit_test(&self, point: NSPoint) -> *mut AnyObject {
+            self.with_access(|access| access.hit_test((point.x, point.y)))
         }
 
         // SAFETY: AppKit's signature, for each of the mouse's buttons. A
@@ -604,12 +957,36 @@ define_class!(
 
         // SAFETY: AppKit's signature, for a move with no button held, which
         // comes while the window accepts them; one over the titlebar is
-        // the window's.
+        // the window's, but over a titlebar of the content's tabs.
         #[unsafe(method(mouseMoved:))]
         fn mouse_moved(&self, event: &NSEvent) {
-            if !self.is_over_bar(event) {
+            if !self.is_over_bar(event) || self.ivars().titlebar.get() == Titlebar::Tabs {
                 self.post_moved(event);
             }
+        }
+
+        // SAFETY: AppKit's signature, of the pointer that goes into one of
+        // the areas where its moves come: a move there.
+        #[unsafe(method(mouseEntered:))]
+        fn mouse_entered(&self, event: &NSEvent) {
+            self.post_moved(event);
+        }
+
+        // SAFETY: AppKit's signature, of the pointer that leaves one of the
+        // areas where its moves come.
+        #[unsafe(method(mouseExited:))]
+        fn mouse_exited(&self, _event: &NSEvent) {
+            self.post(WindowEvent::MouseExited);
+        }
+
+        // SAFETY: AppKit's signature, as the view's geometry changes: the
+        // areas where the pointer's moves come, made anew of their places
+        // from the view's top.
+        #[unsafe(method(updateTrackingAreas))]
+        fn update_tracking_areas(&self) {
+            self.track_moves();
+            // SAFETY: `NSView`'s method, of this signature.
+            let _: () = unsafe { msg_send![super(self), updateTrackingAreas] };
         }
 
         // SAFETY: AppKit's signature, for each button held.
@@ -668,6 +1045,16 @@ define_class!(
         #[unsafe(method(isOpaque))]
         fn is_opaque(&self) -> bool {
             self.ivars().opaque.get()
+        }
+
+        // SAFETY: AppKit's signature. AppKit would drag the window from
+        // anywhere over the titlebar where a view that is not opaque lies,
+        // as a translucent window's, a tab's drag too: the view drags it
+        // itself, from the titlebar's parts that are not the content's, as
+        // an opaque one's does.
+        #[unsafe(method(mouseDownCanMoveWindow))]
+        fn mouse_down_can_move_window(&self) -> bool {
+            false
         }
     }
 
@@ -827,12 +1214,32 @@ impl ContentView {
             option_as_meta,
             opaque: Cell::new(true),
             pointer: Cell::new(PointerShape::Arrow),
+            held: Cell::new(None),
             areas: RefCell::new(Vec::new()),
             over_bar: Cell::new(false),
+            titlebar: Cell::new(Titlebar::Titled),
+            titlebar_areas: RefCell::new(Vec::new()),
+            move_areas: RefCell::new((Vec::new(), Vec::new())),
+            access: RefCell::new(None),
         });
         // SAFETY: `NSView`'s `initWithFrame:` has this signature.
         let view: Retained<Self> = unsafe { msg_send![super(this), initWithFrame: frame] };
         view.setWantsLayer(true);
+        // A frame of another size than the view's, as a step of a live
+        // resize's until the frame of its size comes, stays at the top left
+        // corner, as the grid's cells are, rather than stretched to the
+        // view's edges.
+        view.setLayerContentsPlacement(NSViewLayerContentsPlacement::TopLeft);
+        // SAFETY: the view, alive for the call, of which the adapter keeps a
+        // weak reference.
+        let access = unsafe {
+            Access::new(
+                Retained::as_ptr(&view).cast_mut().cast(),
+                view.ivars().shared.clone(),
+                id,
+            )
+        };
+        *view.ivars().access.borrow_mut() = Some(access);
         // Files and text, which a drop pastes.
         // SAFETY: AppKit's constants of the pasteboard's types.
         let types = unsafe { [NSPasteboardTypeFileURL, NSPasteboardTypeString] };
@@ -845,6 +1252,22 @@ impl ContentView {
         if let Some(shared) = ivars.shared.upgrade() {
             shared.post(Pending::Window(ivars.id, event));
         }
+    }
+
+    /// The answer of `ask` of the view's accessibility, a raw pointer of the
+    /// adapter's, or none.
+    fn with_access(&self, ask: impl FnOnce(&Access) -> Option<*mut c_void>) -> *mut AnyObject {
+        self.ivars()
+            .access
+            .borrow()
+            .as_ref()
+            .and_then(ask)
+            .map_or(std::ptr::null_mut(), <*mut c_void>::cast)
+    }
+
+    /// Runs `with` of the view's accessibility, once the view has one.
+    pub(crate) fn access<T>(&self, with: impl FnOnce(&Access) -> T) -> Option<T> {
+        self.ivars().access.borrow().as_ref().map(with)
     }
 
     fn post_key(&self, event: &NSEvent) {
@@ -911,12 +1334,23 @@ impl ContentView {
         local.y >= below.origin.y + below.size.height
     }
 
-    /// A button went down: over the titlebar, the window's, which the
-    /// content learns nothing of, with the drags and the releases that
-    /// follow; otherwise the content's. As the titlebar's drag can keep its
-    /// release, each press tells anew.
+    /// Whether `event` is over a part of the titlebar that is the
+    /// content's.
+    fn is_over_titlebar_area(&self, event: &NSEvent) -> bool {
+        let at = self.position(event);
+        self.ivars()
+            .titlebar_areas
+            .borrow()
+            .iter()
+            .any(|area| area.contains(at))
+    }
+
+    /// A button went down: over the titlebar, but over its parts that are
+    /// the content's, the window's, which the content learns nothing of,
+    /// with the drags and the releases that follow; otherwise the content's.
+    /// As the titlebar's drag can keep its release, each press tells anew.
     fn press(&self, event: &NSEvent) {
-        let over = self.is_over_bar(event);
+        let over = self.is_over_bar(event) && !self.is_over_titlebar_area(event);
         self.ivars().over_bar.set(over);
         if !over {
             self.post_button(event, true);
@@ -959,6 +1393,47 @@ impl ContentView {
         if !self.ivars().over_bar.get() {
             self.post_moved(event);
         }
+    }
+
+    /// Makes the view's tracking areas anew, one of each part of the
+    /// content where the pointer's moves come, at its place from the view's
+    /// bottom edge as its height now puts it, while the app is active.
+    fn track_moves(&self) {
+        let mut areas = self.ivars().move_areas.borrow_mut();
+        for area in areas.1.drain(..) {
+            self.removeTrackingArea(&area);
+        }
+        let height = self.bounds().size.height;
+        let options = NSTrackingAreaOptions::MouseMoved
+            | NSTrackingAreaOptions::MouseEnteredAndExited
+            | NSTrackingAreaOptions::ActiveInActiveApp;
+        let made: Vec<Retained<NSTrackingArea>> = areas
+            .0
+            .iter()
+            .map(|rect| {
+                let frame = NSRect::new(
+                    NSPoint::new(rect.origin.x, height - rect.origin.y - rect.size.height),
+                    NSSize::new(rect.size.width, rect.size.height),
+                );
+                // SAFETY: `NSTrackingArea`'s initializer, of a rectangle in
+                // the view's coordinates and the view as its owner, which it
+                // keeps no strong reference to; the view removes it before it
+                // goes.
+                unsafe {
+                    NSTrackingArea::initWithRect_options_owner_userInfo(
+                        self.mtm().alloc::<NSTrackingArea>(),
+                        frame,
+                        options,
+                        Some(self),
+                        None,
+                    )
+                }
+            })
+            .collect();
+        for area in &made {
+            self.addTrackingArea(area);
+        }
+        areas.1 = made;
     }
 
     fn post_moved(&self, event: &NSEvent) {
@@ -1100,6 +1575,12 @@ pub(crate) struct WindowDelegateIvars {
     remember: Cell<bool>,
     /// Whether the window is hidden or covered, which the backend reads.
     occluded: Rc<Cell<bool>>,
+    /// The frame of the window's content before it went into full screen,
+    /// in AppKit's coordinates, while it is there.
+    windowed: Cell<Option<NSRect>>,
+    /// Whether the window floats above the other applications' windows,
+    /// out of full screen.
+    floating: Cell<bool>,
 }
 
 /// The name under which the windows keep their frame, in the app's
@@ -1133,6 +1614,44 @@ define_class!(
                 self.keep_frame(&window);
                 self.post(WindowEvent::Resized(size_of(&window)));
                 invalidate_text_area_of(&window);
+                // AppKit asks for the tracking areas again in its own time,
+                // which a resize of no move of the pointer can leave for
+                // long.
+                track_moves_of(&window);
+            }
+        }
+
+        // In full screen, an empty toolbar hides with the menu bar, and
+        // slides down over the content with it, as the titlebar does.
+        #[unsafe(method(window:willUseFullScreenPresentationOptions:))]
+        fn window_will_use_full_screen_presentation_options(
+            &self,
+            _window: &NSWindow,
+            proposed: NSApplicationPresentationOptions,
+        ) -> NSApplicationPresentationOptions {
+            proposed | NSApplicationPresentationOptions::AutoHideToolbar
+        }
+
+        #[unsafe(method(windowWillEnterFullScreen:))]
+        fn window_will_enter_full_screen(&self, notification: &NSNotification) {
+            if let Some(window) = window_of(notification) {
+                let content = window.contentView().map_or_else(
+                    || window.frame(),
+                    |view| window.convertRectToScreen(view.convertRect_toView(view.bounds(), None)),
+                );
+                self.ivars().windowed.set(Some(content));
+                // Full screen is a space of its own, of no level.
+                window.setLevel(NSNormalWindowLevel);
+            }
+        }
+
+        #[unsafe(method(windowDidExitFullScreen:))]
+        fn window_did_exit_full_screen(&self, notification: &NSNotification) {
+            self.ivars().windowed.set(None);
+            if let Some(window) = window_of(notification)
+                && self.ivars().floating.get()
+            {
+                window.setLevel(NSFloatingWindowLevel);
             }
         }
 
@@ -1168,12 +1687,18 @@ define_class!(
         }
 
         #[unsafe(method(windowDidBecomeKey:))]
-        fn window_did_become_key(&self, _notification: &NSNotification) {
+        fn window_did_become_key(&self, notification: &NSNotification) {
+            if let Some(window) = window_of(notification) {
+                access_focused_of(&window, true);
+            }
             self.post(WindowEvent::Focused(true));
         }
 
         #[unsafe(method(windowDidResignKey:))]
-        fn window_did_resign_key(&self, _notification: &NSNotification) {
+        fn window_did_resign_key(&self, notification: &NSNotification) {
+            if let Some(window) = window_of(notification) {
+                access_focused_of(&window, false);
+            }
             self.post(WindowEvent::Focused(false));
         }
 
@@ -1203,6 +1728,8 @@ impl WindowDelegate {
             scale: Cell::new(scale),
             remember: Cell::new(false),
             occluded,
+            windowed: Cell::new(None),
+            floating: Cell::new(false),
         });
         // SAFETY: `NSObject`'s `init` has this signature.
         unsafe { msg_send![super(this), init] }
@@ -1271,39 +1798,74 @@ fn restore_size(window: &NSWindow) {
 }
 
 /// The cursor's rectangles of a view of `height` points, of its content
-/// `below`, the titlebar's bottom: each of `areas` of its own pointer,
-/// within the content, but where an area before it lies, and the rest of
-/// the content of `pointer`. None overlap, as AppKit leaves the cursor of
-/// rectangles that overlap undefined.
+/// `below`, the titlebar's bottom, and of the titlebar's parts that are the
+/// content's, `titlebar`, in points from the view's top left corner: each
+/// of `areas` of its own pointer, within them, but where an area before it
+/// lies, and the rest of the content of `pointer`, and of the titlebar's
+/// parts of the arrow, the titlebar's. None overlap, as AppKit leaves the
+/// cursor of rectangles that overlap undefined.
 fn cursor_rects(
-    below: NSRect,
+    (below, titlebar): (NSRect, &[ContentRect]),
     height: f64,
     areas: &[PointerArea],
     pointer: PointerShape,
 ) -> Vec<(NSRect, PointerShape)> {
+    // The view's origin is its bottom left corner.
+    let flipped = |x: f64, y: f64, width: f64, tall: f64| {
+        NSRect::new(NSPoint::new(x, height - y - tall), NSSize::new(width, tall))
+    };
+    let bar = NSRect::new(
+        NSPoint::new(below.origin.x, below.origin.y + below.size.height),
+        NSSize::new(
+            below.size.width,
+            (height - below.origin.y - below.size.height).max(0.0),
+        ),
+    );
+    let mut rooms = vec![(below, pointer)];
+    let mut held = vec![below];
+    for part in titlebar {
+        let rect = flipped(
+            part.origin.x,
+            part.origin.y,
+            part.size.width,
+            part.size.height,
+        );
+        let Some(rect) = intersection(rect, bar) else {
+            continue;
+        };
+        for piece in without(rect, &held) {
+            rooms.push((piece, PointerShape::Arrow));
+            held.push(piece);
+        }
+    }
     let mut rects = Vec::new();
     let mut taken: Vec<NSRect> = Vec::new();
     for area in areas {
-        // The view's origin is its bottom left corner.
-        let rect = NSRect::new(
-            NSPoint::new(area.origin.x, height - area.origin.y - area.size.height),
-            NSSize::new(area.size.width, area.size.height),
+        let rect = flipped(
+            area.origin.x,
+            area.origin.y,
+            area.size.width,
+            area.size.height,
         );
-        let Some(rect) = intersection(rect, below) else {
-            continue;
-        };
-        rects.extend(
-            without(rect, &taken)
-                .into_iter()
-                .map(|piece| (piece, area.shape)),
-        );
-        taken.push(rect);
+        for &(room, _) in &rooms {
+            let Some(rect) = intersection(rect, room) else {
+                continue;
+            };
+            rects.extend(
+                without(rect, &taken)
+                    .into_iter()
+                    .map(|piece| (piece, area.shape)),
+            );
+            taken.push(rect);
+        }
     }
-    rects.extend(
-        without(below, &taken)
-            .into_iter()
-            .map(|piece| (piece, pointer)),
-    );
+    for (room, shape) in rooms {
+        rects.extend(
+            without(room, &taken)
+                .into_iter()
+                .map(|piece| (piece, shape)),
+        );
+    }
     rects
 }
 
@@ -1365,6 +1927,28 @@ fn without(rect: NSRect, holes: &[NSRect]) -> Vec<NSRect> {
             .collect();
     }
     pieces
+}
+
+/// Tells the accessibility of `window`'s content view that the window took
+/// the keyboard's focus, or lost it.
+fn access_focused_of(window: &NSWindow, focused: bool) {
+    if let Some(view) = window
+        .contentView()
+        .and_then(|view| view.downcast::<ContentView>().ok())
+    {
+        view.access(|access| access.focused(focused));
+    }
+}
+
+/// Makes the tracking areas of `window`'s content view anew, at their places
+/// from its top as its height now puts them.
+fn track_moves_of(window: &NSWindow) {
+    if let Some(view) = window
+        .contentView()
+        .and_then(|view| view.downcast::<ContentView>().ok())
+    {
+        view.track_moves();
+    }
 }
 
 /// Tells the input method of `window`'s content view that the text's place
@@ -1447,6 +2031,17 @@ fn window_of(notification: &NSNotification) -> Option<Retained<NSWindow>> {
     notification.object()?.downcast::<NSWindow>().ok()
 }
 
+/// AppKit's cursor of `shape`.
+fn ns_cursor(shape: PointerShape) -> Retained<NSCursor> {
+    match shape {
+        PointerShape::Arrow => NSCursor::arrowCursor(),
+        PointerShape::Text => NSCursor::IBeamCursor(),
+        PointerShape::PointingHand => NSCursor::pointingHandCursor(),
+        PointerShape::ResizeColumn => NSCursor::columnResizeCursor(),
+        PointerShape::ResizeRow => NSCursor::rowResizeCursor(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1470,7 +2065,7 @@ mod tests {
             area(90.0, 10.0, 10.0, 8.0, PointerShape::PointingHand),
             area(0.0, 10.0, 100.0, 8.0, PointerShape::Arrow),
         ];
-        let rects = cursor_rects(below, 50.0, &areas, PointerShape::Text);
+        let rects = cursor_rects((below, &[]), 50.0, &areas, PointerShape::Text);
         assert_eq!(
             rects,
             [
@@ -1482,8 +2077,27 @@ mod tests {
         // Without areas, the content alone; an area outside it, nothing.
         let outside = [area(0.0, 0.0, 100.0, 5.0, PointerShape::Arrow)];
         assert_eq!(
-            cursor_rects(below, 50.0, &outside, PointerShape::Arrow),
+            cursor_rects((below, &[]), 50.0, &outside, PointerShape::Arrow),
             [(below, PointerShape::Arrow)]
+        );
+        // A part of the titlebar that is the content's, of the arrow but
+        // under an area of the content's, as the panes' beside a sidebar,
+        // and within the titlebar alone.
+        let part = ContentRect {
+            origin: Point { x: 20.0, y: 0.0 },
+            size: Size {
+                width: 80.0,
+                height: 20.0,
+            },
+        };
+        let beside = [area(50.0, 0.0, 50.0, 10.0, PointerShape::Text)];
+        assert_eq!(
+            cursor_rects((below, &[part]), 50.0, &beside, PointerShape::Text),
+            [
+                (rect(50.0, 40.0, 50.0, 10.0), PointerShape::Text),
+                (below, PointerShape::Text),
+                (rect(20.0, 40.0, 30.0, 10.0), PointerShape::Arrow),
+            ]
         );
         // A hole in the middle leaves four parts.
         assert_eq!(

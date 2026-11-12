@@ -21,23 +21,24 @@ use objc2_user_notifications::{
 /// number and its own.
 const PREFIX: &str = "lokyr-";
 
-/// The windows of the notifications that the user clicked, which the main
-/// thread takes once the delegate wakes it, as the center calls the delegate
-/// from a thread of its own.
-static CLICKED: Mutex<Vec<WindowId>> = Mutex::new(Vec::new());
+/// The windows and the app's numbers of the notifications that the user
+/// clicked, which the main thread takes once the delegate wakes it, as the
+/// center calls the delegate from a thread of its own.
+static CLICKED: Mutex<Vec<(WindowId, u64)>> = Mutex::new(Vec::new());
 
-/// Takes the windows of the notifications clicked since the last take.
-pub(crate) fn take_clicked() -> Vec<WindowId> {
+/// Takes the notifications clicked since the last take.
+pub(crate) fn take_clicked() -> Vec<(WindowId, u64)> {
     CLICKED
         .lock()
         .map(|mut clicked| std::mem::take(&mut *clicked))
         .unwrap_or_default()
 }
 
-/// The window that the notification of `identifier` is for.
-fn window_of(identifier: &str) -> Option<WindowId> {
-    let (window, _) = identifier.strip_prefix(PREFIX)?.split_once('-')?;
-    window.parse().ok().map(WindowId::new)
+/// The window that the notification of `identifier` is for, and the app's
+/// number of it.
+fn window_of(identifier: &str) -> Option<(WindowId, u64)> {
+    let (window, id) = identifier.strip_prefix(PREFIX)?.split_once('-')?;
+    Some((WindowId::new(window.parse().ok()?), id.parse().ok()?))
 }
 
 /// The notifications of the application.
@@ -45,8 +46,6 @@ pub(crate) struct Notifier {
     center: Retained<UNUserNotificationCenter>,
     /// The center's delegate, which the center does not keep.
     _delegate: Retained<NotificationDelegate>,
-    /// The last notification's number.
-    last: u64,
 }
 
 impl Notifier {
@@ -61,19 +60,17 @@ impl Notifier {
         Some(Self {
             center,
             _delegate: delegate,
-            last: 0,
         })
     }
 
-    /// Shows a notification of `title` and `body` for `window`, once the
-    /// user allows them: the center asks the first time, and answers at
-    /// once after.
-    pub(crate) fn notify(&mut self, window: WindowId, title: &str, body: &str) {
+    /// Shows a notification of `title` and `body` for `window`, of the
+    /// app's number `id`, once the user allows them: the center asks the
+    /// first time, and answers at once after.
+    pub(crate) fn notify(&mut self, window: WindowId, id: u64, title: &str, body: &str) {
         let content = UNMutableNotificationContent::new();
         content.setTitle(&NSString::from_str(title));
         content.setBody(&NSString::from_str(body));
-        self.last += 1;
-        let identifier = NSString::from_str(&format!("{PREFIX}{}-{}", window.get(), self.last));
+        let identifier = NSString::from_str(&format!("{PREFIX}{}-{id}", window.get()));
         let request = UNNotificationRequest::requestWithIdentifier_content_trigger(
             &identifier,
             &content,
@@ -126,10 +123,10 @@ define_class!(
             completion: &block2::DynBlock<dyn Fn()>,
         ) {
             let identifier = response.notification().request().identifier().to_string();
-            if let Some(window) = window_of(&identifier)
+            if let Some(clicked_one) = window_of(&identifier)
                 && let Ok(mut clicked) = CLICKED.lock()
             {
-                clicked.push(window);
+                clicked.push(clicked_one);
                 self.ivars().wake();
             }
             completion.call(());
@@ -151,7 +148,7 @@ mod tests {
 
     #[test]
     fn a_notification_s_identifier_tells_its_window() {
-        assert_eq!(window_of("lokyr-42-7"), Some(WindowId::new(42)));
+        assert_eq!(window_of("lokyr-42-7"), Some((WindowId::new(42), 7)));
         assert_eq!(window_of("lokyr-42"), None);
         assert_eq!(window_of("other-42-7"), None);
         assert_eq!(window_of("lokyr-x-7"), None);

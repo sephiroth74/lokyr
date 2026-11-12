@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::thread;
 use std::time::Instant;
 
-use lokyr_text_core::{Bitmap, BitmapFormat, GlyphId, Raster, Rendering, Synthesis};
+use lokyr_text_core::{Bitmap, BitmapFormat, GRAY_MAX, GlyphId, Raster, Rendering, Synthesis};
 use objc2_core_foundation::CFRetained;
 use objc2_core_foundation::{CFString, CGFloat, CGPoint, CGRect, kCFPreferencesCurrentApplication};
 use objc2_core_graphics::{
@@ -120,7 +120,7 @@ pub(crate) fn rasterize_many(
 /// value is read as Core Foundation's preferences read an integer, from the
 /// application's domain or the global one, a string of digits too, as
 /// `defaults write -g AppleFontSmoothing 0` writes one.
-pub(crate) fn system_smooths_fonts() -> bool {
+pub fn system_smooths_fonts() -> bool {
     let key = CFString::from_static_str("AppleFontSmoothing");
     // SAFETY: Core Foundation's constant.
     let domain = unsafe { kCFPreferencesCurrentApplication };
@@ -147,7 +147,8 @@ fn bold_stroke(size: CGFloat) -> CGFloat {
 /// `glyph` of `font`, drawn as `synthesis` says, into a bitmap: of coverage,
 /// antialiased as `rendering` says and smoothed when `smoothing` is on but
 /// for a thin glyph, or of color, when the font's glyphs have colors of
-/// their own, which keep their antialiasing.
+/// their own, which keep their antialiasing; its origin past the bitmap's
+/// pixel by the thirds of a pixel of `rendering`'s phase.
 pub(crate) fn rasterize(
     font: &CTFont,
     glyph: GlyphId,
@@ -184,15 +185,28 @@ pub(crate) fn rasterize(
         0.0
     };
     let margin = MARGIN + stroke / 2.0;
+    let offset = CGFloat::from(rendering.phase.min(Rendering::PHASES - 1))
+        / CGFloat::from(Rendering::PHASES);
     let left = (bounds.origin.x - margin).floor();
-    let right = (bounds.origin.x + bounds.size.width + margin).ceil();
+    let right = (bounds.origin.x + bounds.size.width + margin + offset).ceil();
     let bottom = (bounds.origin.y - margin).floor();
     let top = (bounds.origin.y + bounds.size.height + margin).ceil();
-    // A cast from a float saturates, and takes NaN to 0.
+    // A cast from a float saturates, and takes NaN to 0. A bitmap past the
+    // atlas's largest side, which the atlas would refuse, is none, as one
+    // of a side of 10⁹ pixels would ask for more memory than there is, or,
+    // its size wrapping, a buffer smaller than its context is told.
     let width = (right - left) as usize;
     let height = (top - bottom) as usize;
     let bytes = if color { 4 } else { 1 };
-    let mut data = vec![0_u8; width * height * bytes];
+    let largest = GRAY_MAX as usize;
+    let Some(length) = width
+        .checked_mul(height)
+        .and_then(|area| area.checked_mul(bytes))
+        .filter(|_| width <= largest && height <= largest)
+    else {
+        return Bitmap::empty(format);
+    };
+    let mut data = vec![0_u8; length];
 
     let (space, info) = if color {
         // SAFETY: Core Graphics' constant.
@@ -223,6 +237,12 @@ pub(crate) fn rasterize(
     let antialias = rendering.antialias || color;
     CGContext::set_should_antialias(drawing, antialias);
     CGContext::set_allows_font_smoothing(drawing, true);
+    // The glyph at the fraction of a pixel that its origin asks, which Core
+    // Graphics would put to the half pixel past about 20 pixels.
+    CGContext::set_allows_font_subpixel_positioning(drawing, true);
+    CGContext::set_should_subpixel_position_fonts(drawing, true);
+    CGContext::set_allows_font_subpixel_quantization(drawing, false);
+    CGContext::set_should_subpixel_quantize_fonts(drawing, false);
     CGContext::set_should_smooth_fonts(
         drawing,
         smoothing && antialias && !color && !rendering.thin,
@@ -236,7 +256,7 @@ pub(crate) fn rasterize(
         // `M` or `^`, would leave the bitmap.
         CGContext::set_line_join(drawing, CGLineJoin::Round);
     }
-    let mut origin = CGPoint::new(-left, -bottom);
+    let mut origin = CGPoint::new(offset - left, -bottom);
     // SAFETY: one glyph at one position, into the context, which is alive.
     unsafe {
         font.draw_glyphs(

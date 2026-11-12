@@ -94,6 +94,7 @@ impl Terminal {
                 self.widths.mode = if on { Mode::Unicode } else { Mode::Legacy };
                 self.moved();
             }
+            2031 => self.color_scheme_reports = on,
             _ => {}
         }
     }
@@ -196,6 +197,7 @@ impl Terminal {
             2004 => input.bracketed_paste,
             2026 => self.synchronized_output,
             2027 => self.widths.mode == Mode::Unicode,
+            2031 => self.color_scheme_reports,
             _ => return None,
         })
     }
@@ -215,12 +217,21 @@ impl Terminal {
             return;
         }
         let cursor = self.cursor();
+        // The alternate screen's images go with the screen that its
+        // program left.
+        if !alternate {
+            self.drop_alternate_images();
+        }
         self.set_alternate_screen(alternate);
         self.screen_mut().cursor = cursor;
     }
 
-    /// Erases every row of the active screen.
+    /// Erases every row of the active screen, and the alternate screen's
+    /// images with them.
     fn erase_screen(&mut self) {
+        if self.alternate_active {
+            self.drop_alternate_images();
+        }
         for y in 0..self.rows {
             self.erase_in_row(y, 0..self.cols, false);
         }

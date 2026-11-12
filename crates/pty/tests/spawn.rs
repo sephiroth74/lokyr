@@ -430,6 +430,34 @@ fn the_program_in_the_foreground_has_its_name() {
 }
 
 #[test]
+fn the_programs_in_the_foreground_go_by_their_links_and_their_scripts_names() {
+    let folder = std::env::temp_dir().join(format!("lokyr-names-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&folder);
+    std::fs::create_dir_all(&folder).unwrap();
+    // A link of another name, and a script of an interpreter's.
+    std::os::unix::fs::symlink("/bin/sleep", folder.join("agentish")).unwrap();
+    let script = folder.join("scripted");
+    std::fs::write(&script, "#!/usr/bin/perl\nsleep 30;\n").unwrap();
+    std::fs::set_permissions(&script, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    for (command, name) in [("agentish 30", "agentish"), ("scripted", "scripted")] {
+        let line = format!("PATH={}:$PATH; set -m; {command}", folder.display());
+        let bash = Program::command("/bin/bash", ["-c", line.as_str()]);
+        let pty = spawn(&Options::new(bash, "xterm-256color")).unwrap();
+        let _idle = pty.reader().unwrap();
+        let start = std::time::Instant::now();
+        while !pty.foreground_names().iter().any(|known| known == name) {
+            assert!(
+                start.elapsed() < Duration::from_secs(10),
+                "{:?}",
+                pty.foreground_names()
+            );
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    }
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
+#[test]
 fn the_program_in_the_foreground_has_its_directory() {
     // The shell, and then, after a line, a job of its own group, in
     // another directory.

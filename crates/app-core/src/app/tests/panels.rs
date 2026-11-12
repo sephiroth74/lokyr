@@ -1,0 +1,1445 @@
+//! The tests of the plugins' panels in the windows: their anchors, their
+//! roles' focus and pointer, what closes them, and the menus that the
+//! platform shows as its own.
+
+use std::cell::RefCell;
+use std::rc::Rc;
+
+use lokyr_kernel::plugins::ui::{
+    Anchor, Corner, PanelId, PanelOptions, Role, Slot, UiEvent, ViewId,
+};
+use lokyr_kernel::plugins::view::{
+    Layout as NodeLayout, Length, Node, ProgressShape, ProgressState, UiEventKind,
+};
+use lokyr_platform_core::Ime;
+use lokyr_text_core::FontConfig;
+
+use super::*;
+use crate::fakes;
+use crate::window::NativeMenu;
+
+/// What the plugin of [`Paneler`] heard: its nodes' events, and its panels'
+/// closings, by their ids.
+#[derive(Default)]
+struct Heard {
+    events: Vec<UiEvent>,
+    closed: Vec<String>,
+}
+
+/// A plugin of a tab bar of a button `open`, whose commands open its
+/// panels: `paneler.dialog`, a dialog below the button, of a field `find`,
+/// which Escape closes; `paneler.menu`, a menu at the pointer, of a field
+/// and a button, which a click outside or Escape closes; `paneler.native`,
+/// a menu of two buttons alone, which the platform shows as its own;
+/// `paneler.tip`, a tooltip in the window's bottom right corner;
+/// `paneler.cell`, `paneler.cursor` and `paneler.corner`, dialogs below the
+/// pane's cell of its first row's third column, below its cursor, and in
+/// its top right corner; `paneler.close` closes the dialog;
+/// `paneler.commands`, a menu of two buttons alone keyed `window.new` and
+/// `third`, which `paneler.close-commands` closes; `paneler.both` opens
+/// `native` and `commands` in one call; `paneler.overlay`, an overlay
+/// across the pane's top, of a field.
+struct Paneler {
+    heard: Rc<RefCell<Heard>>,
+}
+
+const MANIFEST: &str = concat!(
+    "[plugin]\nname = \"lokyr/paneler\"\nkind = \"builtin\"\nlicense = \"MIT\"\n",
+    "[contributes]\nslots = [\"tab-bar\"]\n",
+);
+
+const COMMANDS: [&str; 13] = [
+    "paneler.dialog",
+    "paneler.menu",
+    "paneler.native",
+    "paneler.tip",
+    "paneler.cell",
+    "paneler.cursor",
+    "paneler.corner",
+    "paneler.close",
+    "paneler.commands",
+    "paneler.close-commands",
+    "paneler.both",
+    "paneler.overlay",
+    "paneler.card",
+];
+
+fn sized(node: Node, width: f32, height: f32) -> Node {
+    node.layout(NodeLayout {
+        width: Length::Points(width),
+        height: Length::Points(height),
+        ..NodeLayout::default()
+    })
+}
+
+fn options(
+    anchor: Anchor,
+    role: Role,
+    (close_outside, close_escape): (bool, bool),
+) -> PanelOptions {
+    PanelOptions {
+        anchor,
+        role,
+        close_outside,
+        close_escape,
+        takes_keys: false,
+        close_typing: false,
+    }
+}
+
+impl plugins::Plugin for Paneler {
+    fn activate(&mut self, cx: &mut plugins::Cx<'_>) -> Result<(), Error> {
+        for name in COMMANDS {
+            cx.register_command(Command {
+                name: name.to_owned(),
+                title: name.to_owned(),
+                category: Category::View,
+                capabilities: Vec::new(),
+                params: Vec::new(),
+                when: None,
+            })?;
+        }
+        Ok(())
+    }
+
+    fn on_command(&mut self, cx: &mut plugins::Cx<'_>, name: &str, _: Args) -> Result<(), Error> {
+        let window = cx.focused_window().unwrap();
+        let pane = cx.focused_pane().unwrap();
+        let bar = ViewId::TabBar(window);
+        let (id, options) = match name {
+            "paneler.dialog" => (
+                "dialog",
+                options(
+                    Anchor::Node {
+                        view: bar,
+                        key: "open".into(),
+                    },
+                    Role::Dialog,
+                    (false, true),
+                ),
+            ),
+            "paneler.menu" => (
+                "menu",
+                options(Anchor::Pointer(window), Role::Menu, (true, true)),
+            ),
+            "paneler.native" => (
+                "native",
+                options(Anchor::Pointer(window), Role::Menu, (true, true)),
+            ),
+            "paneler.commands" => (
+                "commands",
+                options(Anchor::Pointer(window), Role::Menu, (true, true)),
+            ),
+            "paneler.close-commands" => return cx.close_panel("commands"),
+            "paneler.both" => {
+                for id in ["native", "commands"] {
+                    cx.open_panel(
+                        id,
+                        options(Anchor::Pointer(window), Role::Menu, (true, true)),
+                    )?;
+                }
+                return Ok(());
+            }
+            "paneler.tip" => (
+                "tip",
+                options(
+                    Anchor::WindowCorner {
+                        window,
+                        corner: Corner::BottomRight,
+                    },
+                    Role::Tooltip,
+                    (false, false),
+                ),
+            ),
+            "paneler.cell" => (
+                "dialog",
+                options(
+                    Anchor::Cell {
+                        pane,
+                        column: 2,
+                        row: 0,
+                    },
+                    Role::Dialog,
+                    (false, true),
+                ),
+            ),
+            "paneler.cursor" => (
+                "dialog",
+                options(Anchor::Cursor(pane), Role::Dialog, (false, true)),
+            ),
+            "paneler.overlay" => (
+                "overlay",
+                options(Anchor::PaneTop(pane), Role::Overlay, (false, false)),
+            ),
+            "paneler.card" => (
+                "card",
+                PanelOptions {
+                    close_typing: true,
+                    ..options(
+                        Anchor::WindowCorner {
+                            window,
+                            corner: Corner::BottomRight,
+                        },
+                        Role::Overlay,
+                        (false, false),
+                    )
+                },
+            ),
+            "paneler.corner" => (
+                "dialog",
+                options(
+                    Anchor::PaneCorner {
+                        pane,
+                        corner: Corner::TopRight,
+                    },
+                    Role::Dialog,
+                    (false, true),
+                ),
+            ),
+            _ => return cx.close_panel("dialog"),
+        };
+        cx.open_panel(id, options)
+    }
+
+    fn on_event(
+        &mut self,
+        _: &mut plugins::Cx<'_>,
+        events: &[plugins::Event],
+    ) -> Result<(), Error> {
+        for event in events {
+            if let plugins::Event::PanelClosed(id) = event {
+                self.heard.borrow_mut().closed.push(id.0.clone());
+            }
+        }
+        Ok(())
+    }
+
+    fn on_ui_event(&mut self, _: &mut plugins::Cx<'_>, event: &UiEvent) -> Result<(), Error> {
+        self.heard.borrow_mut().events.push(event.clone());
+        Ok(())
+    }
+
+    fn render(&mut self, _: &mut plugins::Cx<'_>, view: &ViewId) -> Option<Node> {
+        let ViewId::Panel(PanelId(id)) = view else {
+            let mut bar = Node::container(vec![
+                sized(Node::button("Open"), 60.0, 20.0).key("open"),
+                sized(
+                    Node::progress(ProgressShape::Bar, ProgressState::Normal, 0.5),
+                    100.0,
+                    4.0,
+                )
+                .key("progress"),
+            ]);
+            bar.layout.grow = 1.0;
+            return Some(bar);
+        };
+        Some(match id.as_str() {
+            "native" => Node::container(vec![
+                Node::button("First").key("first"),
+                Node::button("Second").key("second"),
+            ]),
+            "commands" => Node::container(vec![
+                Node::button("New Window").key("window.new"),
+                Node::button("Third").key("third"),
+            ]),
+            "menu" => Node::container(vec![
+                sized(Node::field("Filter"), 100.0, 20.0).key("filter"),
+                Node::button("Item").key("item"),
+            ]),
+            "tip" => sized(Node::text("a tip"), 80.0, 20.0),
+            "card" => sized(Node::button("Dismiss").key("dismiss"), 80.0, 20.0),
+            _ => Node::container(vec![sized(Node::field("Find"), 120.0, 20.0).key("find")]),
+        })
+    }
+}
+
+/// The app without padding, of a titlebar of 28 points, its window
+/// focused, the plugin of [`Paneler`] filling its tab bar, its pane running
+/// `program` until it shows `ready`.
+fn paneler(program: Program) -> (Fake, App, WindowId, Rc<RefCell<Heard>>) {
+    let heard = Rc::new(RefCell::new(Heard::default()));
+    let plugin = Paneler {
+        heard: Rc::clone(&heard),
+    };
+    let drawing = Drawing::new(FontConfig::default()).unwrap();
+    let mut fake = Fake::default();
+    fake.set_bar(28.0);
+    let mut app = App::new(Some(drawing), unpadded(), None)
+        .with_program(program)
+        .with_builtin(MANIFEST, Box::new(plugin));
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    app.windows.get_mut(&window).unwrap().surface = Some(fakes::Surface::default());
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    run_until(&mut fake, &mut app, |_, app| shows(app, window, "ready"));
+    frames(&mut fake, &mut app, window);
+    (fake, app, window, heard)
+}
+
+/// The frames that `window` asks for, until it asks for none.
+pub(super) fn frames(fake: &mut Fake, app: &mut App, window: WindowId) {
+    for _ in 0..4 {
+        fake.send(app, window, WindowEvent::Frame);
+    }
+}
+
+/// Runs `command`, as its menu would, and draws.
+fn command(fake: &mut Fake, app: &mut App, window: WindowId, command: &str) {
+    fake.send_app(app, AppEvent::Command(command.to_owned()));
+    frames(fake, app, window);
+}
+
+/// The frame, in pixels, of the panel `id` of `window`, if it shows.
+fn panel_frame(app: &App, window: WindowId, id: &str) -> Option<lokyr_ui_core::layout::Frame> {
+    app.windows[&window]
+        .chrome
+        .iter()
+        .find(|view| view.view == ViewId::Panel(PanelId::from(id)))
+        .and_then(|view| view.frame)
+}
+
+/// The frame, in pixels, of the node of `key` of a slot's view or panel of
+/// `window`, in the window.
+fn node_frame(app: &App, window: WindowId, key: &str) -> lokyr_ui_core::layout::Frame {
+    for view in &app.windows[&window].chrome {
+        let (Some(frame), Some(node)) = (view.frame, view.surface.tree.by_key(&key.into())) else {
+            continue;
+        };
+        let at = view.surface.layout.frame(&view.surface.tree, node).unwrap();
+        return lokyr_ui_core::layout::Frame {
+            x: at.x + frame.x,
+            y: at.y + frame.y,
+            ..at
+        };
+    }
+    panic!("no node `{key}`");
+}
+
+/// The middle of `frame`, of pixels, in points of a display of `scale`.
+fn middle(frame: lokyr_ui_core::layout::Frame, scale: f64) -> Point {
+    Point {
+        x: f64::from(frame.x + frame.width / 2.0) / scale,
+        y: f64::from(frame.y + frame.height / 2.0) / scale,
+    }
+}
+
+/// Whether a node of `window`'s panel `id` has the keyboard's focus.
+fn focused_in(app: &App, window: WindowId, id: &str) -> bool {
+    let state = &app.windows[&window];
+    match state.focus.target() {
+        lokyr_ui_core::focus::Target::Node { panel, .. } => state
+            .chrome
+            .iter()
+            .any(|view| view.id == panel && view.view == ViewId::Panel(PanelId::from(id))),
+        lokyr_ui_core::focus::Target::Pane => false,
+    }
+}
+
+/// A point over the pane, below the titlebar's tab bar.
+const OVER_PANE: Point = Point { x: 9.0, y: 60.0 };
+
+#[test]
+fn an_overlay_across_a_pane_s_top_takes_its_width_and_leaves_the_keys_to_the_pane() {
+    let (mut fake, mut app, window, _) = paneler(reader(""));
+    command(&mut fake, &mut app, window, "paneler.overlay");
+    let frame = panel_frame(&app, window, "overlay").expect("the overlay");
+    let rect = app.windows[&window].views[0].rect;
+    assert_eq!(
+        (frame.x, frame.y, frame.width),
+        (rect.x as f32, rect.y as f32, rect.width as f32)
+    );
+    // Its field takes no keys as it opens, as a dialog's would.
+    assert!(!focused_in(&app, window, "overlay"));
+    fake.send(&mut app, window, key());
+    run_until(&mut fake, &mut app, |_, app| {
+        row(app, window, 1).trim() == "a"
+    });
+}
+
+#[test]
+fn a_card_that_typing_closes_goes_at_the_first_key_which_reaches_the_pane() {
+    let (mut fake, mut app, window, heard) = paneler(reader(""));
+    command(&mut fake, &mut app, window, "paneler.card");
+    assert!(panel_frame(&app, window, "card").is_some());
+    assert!(!focused_in(&app, window, "card"));
+    fake.send(&mut app, window, key());
+    frames(&mut fake, &mut app, window);
+    assert!(panel_frame(&app, window, "card").is_none());
+    assert_eq!(heard.borrow().closed, ["card"]);
+    run_until(&mut fake, &mut app, |_, app| {
+        row(app, window, 1).trim() == "a"
+    });
+    // An overlay of no such option stays as keys go by.
+    command(&mut fake, &mut app, window, "paneler.overlay");
+    fake.send(&mut app, window, key());
+    frames(&mut fake, &mut app, window);
+    assert!(panel_frame(&app, window, "overlay").is_some());
+}
+
+#[test]
+fn a_dialog_below_a_node_takes_the_keys_and_escape_closes_it_back_to_the_pane() {
+    let (mut fake, mut app, window, heard) = paneler(reader(""));
+    command(&mut fake, &mut app, window, "paneler.dialog");
+    // Below the bar's button, of its tree's size, its field focused.
+    let open = node_frame(&app, window, "open");
+    let frame = panel_frame(&app, window, "dialog").expect("the dialog");
+    assert_eq!((frame.x, frame.y), (open.x, open.y + open.height));
+    assert!(focused_in(&app, window, "dialog"));
+    // Its field takes the keys, the program none.
+    fake.send(
+        &mut app,
+        window,
+        key_event(KeyCode::KeyA, "a", Modifiers::NONE, true),
+    );
+    let typed = heard.borrow().events.iter().any(|event| {
+        event.key.0 == "find"
+            && matches!(&event.kind, UiEventKind::InputChanged { text, .. } if text == "a")
+    });
+    assert!(typed);
+    // Escape closes it, as its plugin hears, and gives the pane the keys.
+    fake.send(
+        &mut app,
+        window,
+        key_event(KeyCode::Escape, "\u{1b}", Modifiers::NONE, true),
+    );
+    frames(&mut fake, &mut app, window);
+    assert!(panel_frame(&app, window, "dialog").is_none());
+    assert!(app.windows[&window].pane_has_focus());
+    assert_eq!(heard.borrow().closed, ["dialog"]);
+    fake.send(
+        &mut app,
+        window,
+        key_event(KeyCode::KeyZ, "z", Modifiers::NONE, true),
+    );
+    run_until(&mut fake, &mut app, |_, app| shows(app, window, "z"));
+    assert!(!shows(&app, window, "az"), "{:?}", screen(&app, window));
+}
+
+#[test]
+fn a_menu_at_the_pointer_closes_as_a_click_outside_takes_the_press() {
+    // A program of the mouse's clicks.
+    let (mut fake, mut app, window, heard) = paneler(reader("\\033[?1000h"));
+    let scale = fake.window(window).unwrap().size.scale;
+    fake.set_pointer(window, Point { x: 40.0, y: 80.0 });
+    command(&mut fake, &mut app, window, "paneler.menu");
+    let frame = panel_frame(&app, window, "menu").expect("the menu");
+    let pixels = |points: f64| (points * scale) as f32;
+    assert_eq!((frame.x, frame.y), (pixels(40.0), pixels(80.0)));
+    assert!(focused_in(&app, window, "menu"));
+    // A click on its button, its own.
+    let item = middle(node_frame(&app, window, "item"), scale);
+    fake.send(&mut app, window, click(true, item, Modifiers::NONE, 1));
+    fake.send(&mut app, window, click(false, item, Modifiers::NONE, 1));
+    assert!(
+        heard
+            .borrow()
+            .events
+            .iter()
+            .any(|event| event.key.0 == "item" && event.kind == UiEventKind::Click)
+    );
+    // A click outside, over the pane, closes it, and goes no further.
+    fake.send(&mut app, window, click(true, OVER_PANE, Modifiers::NONE, 1));
+    fake.send(
+        &mut app,
+        window,
+        click(false, OVER_PANE, Modifiers::NONE, 1),
+    );
+    frames(&mut fake, &mut app, window);
+    assert!(panel_frame(&app, window, "menu").is_none());
+    assert_eq!(heard.borrow().closed, ["menu"]);
+    assert!(app.windows[&window].pane_has_focus());
+    fake.send(
+        &mut app,
+        window,
+        key_event(KeyCode::KeyX, "x", Modifiers::NONE, true),
+    );
+    run_until(&mut fake, &mut app, |_, app| shows(app, window, "x"));
+    assert!(!shows(&app, window, "^["), "{:?}", screen(&app, window));
+}
+
+#[test]
+fn a_fill_that_a_panel_covers_is_the_frame_s_to_draw_under_the_panel() {
+    let (mut fake, mut app, window, _) = paneler(reader(""));
+    fake.set_draws_fills(true);
+    frames(&mut fake, &mut app, window);
+    let fills = |fake: &Fake| fake.window(window).unwrap().fills.len();
+    let covered = |app: &App| {
+        app.windows[&window]
+            .chrome
+            .iter()
+            .find(|view| view.view.slot() == Some(Slot::TabBar))
+            .map(|view| view.surface.covered.len())
+    };
+    // The bar's progress, which the window server fills.
+    assert_eq!((fills(&fake), covered(&app)), (1, Some(0)));
+    // A menu at the pointer over it: the frame fills it, under the menu.
+    let scale = fake.window(window).unwrap().size.scale;
+    let over = middle(node_frame(&app, window, "progress"), scale);
+    fake.set_pointer(window, over);
+    command(&mut fake, &mut app, window, "paneler.menu");
+    assert!(panel_frame(&app, window, "menu").is_some());
+    assert_eq!((fills(&fake), covered(&app)), (0, Some(1)));
+    // Closed, the window server fills it again.
+    fake.send(
+        &mut app,
+        window,
+        key_event(KeyCode::Escape, "\u{1b}", Modifiers::NONE, true),
+    );
+    frames(&mut fake, &mut app, window);
+    assert!(panel_frame(&app, window, "menu").is_none());
+    assert_eq!((fills(&fake), covered(&app)), (1, Some(0)));
+}
+
+#[test]
+fn a_menu_of_menu_items_alone_is_the_platform_s_own_whose_choice_and_closing_its_plugin_hears() {
+    let (mut fake, mut app, window, heard) = paneler(reader(""));
+    command(&mut fake, &mut app, window, "paneler.native");
+    // The platform shows it, of its two items, and the window draws none.
+    let (shown, _, menu) = fake.context_menus().last().cloned().expect("a menu");
+    assert_eq!(shown, window);
+    let commands: Vec<&str> = menu
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            lokyr_platform_core::MenuItem::Command { command, .. } => Some(command.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(commands, ["first", "second"]);
+    assert!(panel_frame(&app, window, "native").is_none());
+    // Its choice, then its closing.
+    fake.send(
+        &mut app,
+        window,
+        WindowEvent::ContextCommand("second".to_owned()),
+    );
+    fake.send(&mut app, window, WindowEvent::ContextMenuClosed);
+    frames(&mut fake, &mut app, window);
+    assert!(
+        heard
+            .borrow()
+            .events
+            .iter()
+            .any(|event| event.key.0 == "second" && event.kind == UiEventKind::Click)
+    );
+    assert_eq!(heard.borrow().closed, ["native"]);
+    // Closed without a choice, its plugin hears it as well.
+    command(&mut fake, &mut app, window, "paneler.native");
+    fake.send(&mut app, window, WindowEvent::ContextMenuClosed);
+    frames(&mut fake, &mut app, window);
+    assert_eq!(heard.borrow().closed, ["native", "native"]);
+    assert!(app.windows[&window].native.is_empty());
+}
+
+/// The commands of the items of the platform's last menu.
+fn last_menu(fake: &Fake) -> Vec<String> {
+    let (_, _, menu) = fake.context_menus().last().cloned().expect("a menu");
+    menu.items
+        .iter()
+        .filter_map(|item| match item {
+            lokyr_platform_core::MenuItem::Command { command, .. } => Some(command.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn a_native_menu_whose_panel_its_plugin_closes_closes_and_its_choice_runs_no_command() {
+    let (mut fake, mut app, window, heard) = paneler(reader(""));
+    command(&mut fake, &mut app, window, "paneler.commands");
+    assert_eq!(last_menu(&fake), ["window.new", "third"]);
+    command(&mut fake, &mut app, window, "paneler.close-commands");
+    assert_eq!(fake.closed_context_menus(), [window]);
+    assert_eq!(heard.borrow().closed, ["commands"]);
+    // A choice that came before the platform's menu closed runs nothing,
+    // though its item's key is an app's command.
+    fake.send(
+        &mut app,
+        window,
+        WindowEvent::ContextCommand("window.new".to_owned()),
+    );
+    fake.send(&mut app, window, WindowEvent::ContextMenuClosed);
+    frames(&mut fake, &mut app, window);
+    assert_eq!(fake.windows().count(), 1);
+    assert!(heard.borrow().events.is_empty());
+    assert!(app.windows[&window].native.is_empty());
+    // The window's own context menu runs its commands still.
+    right_click(&mut fake, &mut app, window, OVER_PANE, Modifiers::NONE);
+    assert_eq!(fake.context_menus().len(), 2);
+    assert_eq!(app.windows[&window].native, [NativeMenu::Window]);
+    fake.send(
+        &mut app,
+        window,
+        WindowEvent::ContextCommand("window.new".to_owned()),
+    );
+    fake.send(&mut app, window, WindowEvent::ContextMenuClosed);
+    assert_eq!(fake.windows().count(), 2);
+}
+
+#[test]
+fn native_menus_shown_one_after_another_close_in_their_order_each_told() {
+    let (mut fake, mut app, window, heard) = paneler(reader(""));
+    command(&mut fake, &mut app, window, "paneler.native");
+    command(&mut fake, &mut app, window, "paneler.commands");
+    assert_eq!(fake.context_menus().len(), 2);
+    // The first's closing, as the second's showing closed it, closes the
+    // first's panel alone.
+    fake.send(&mut app, window, WindowEvent::ContextMenuClosed);
+    frames(&mut fake, &mut app, window);
+    assert_eq!(heard.borrow().closed, ["native"]);
+    assert_eq!(app.windows[&window].native.len(), 1);
+    // The second's choice is its own.
+    fake.send(
+        &mut app,
+        window,
+        WindowEvent::ContextCommand("third".to_owned()),
+    );
+    fake.send(&mut app, window, WindowEvent::ContextMenuClosed);
+    frames(&mut fake, &mut app, window);
+    assert!(
+        heard
+            .borrow()
+            .events
+            .iter()
+            .any(|event| event.key.0 == "third" && event.kind == UiEventKind::Click)
+    );
+    assert_eq!(heard.borrow().closed, ["native", "commands"]);
+    // Two of one call show in their order, and the first opens again.
+    command(&mut fake, &mut app, window, "paneler.both");
+    assert_eq!(fake.context_menus().len(), 4);
+    assert_eq!(last_menu(&fake), ["window.new", "third"]);
+    fake.send(&mut app, window, WindowEvent::ContextMenuClosed);
+    fake.send(&mut app, window, WindowEvent::ContextMenuClosed);
+    frames(&mut fake, &mut app, window);
+    assert_eq!(
+        heard.borrow().closed,
+        ["native", "commands", "native", "commands"]
+    );
+    command(&mut fake, &mut app, window, "paneler.native");
+    assert_eq!(fake.context_menus().len(), 5);
+}
+
+#[test]
+fn a_dialog_that_takes_the_focus_as_it_opens_ends_the_pane_s_composition() {
+    let (mut fake, mut app, window, _) = paneler(reader(""));
+    let composing = Ime::Preedit {
+        text: "にほ".to_owned(),
+        selection: 6..6,
+    };
+    fake.send(&mut app, window, WindowEvent::Ime(composing));
+    assert!(app.windows[&window].preedit.is_some());
+    let ended = fake.window(window).unwrap().compositions_ended;
+    command(&mut fake, &mut app, window, "paneler.dialog");
+    let state = &app.windows[&window];
+    assert!(!state.pane_has_focus());
+    // The pane's composition ended as the dialog's field took the keys,
+    // which the input method forgot.
+    assert!(state.preedit.is_none());
+    assert_eq!(fake.window(window).unwrap().compositions_ended, ended + 1);
+}
+
+/// Whether the titlebar's own areas of `window` hold `at`, in points.
+fn titlebar_holds(fake: &Fake, window: WindowId, at: Point) -> bool {
+    fake.window(window)
+        .unwrap()
+        .titlebar_areas
+        .iter()
+        .any(|area| area.contains(at))
+}
+
+#[test]
+fn a_panel_over_the_titlebar_takes_its_presses_there_and_a_menu_the_whole_bar() {
+    let (mut fake, mut app, window, heard) = paneler(reader(""));
+    let scale = fake.window(window).unwrap().size.scale;
+    // Far right on the titlebar, the window's own until a menu shows.
+    let bar_end = Point { x: 380.0, y: 10.0 };
+    assert!(!titlebar_holds(&fake, window, bar_end));
+    // A menu at the pointer over the titlebar takes its presses, and the
+    // bar's too, whose press closes it, of no further use.
+    fake.send(
+        &mut app,
+        window,
+        moved(Point { x: 120.0, y: 6.0 }, Modifiers::NONE),
+    );
+    command(&mut fake, &mut app, window, "paneler.menu");
+    let frame = panel_frame(&app, window, "menu").expect("the menu");
+    let on_menu = Point {
+        x: f64::from(frame.x) / scale + 4.0,
+        y: f64::from(frame.y) / scale + 2.0,
+    };
+    assert!(on_menu.y < 28.0);
+    assert!(titlebar_holds(&fake, window, on_menu));
+    assert!(titlebar_holds(&fake, window, bar_end));
+    fake.send(&mut app, window, click(true, bar_end, Modifiers::NONE, 1));
+    fake.send(&mut app, window, click(false, bar_end, Modifiers::NONE, 1));
+    frames(&mut fake, &mut app, window);
+    assert_eq!(heard.borrow().closed, ["menu"]);
+    assert!(!titlebar_holds(&fake, window, bar_end));
+    // A dialog below the bar's button takes the presses of its part over
+    // the titlebar alone.
+    command(&mut fake, &mut app, window, "paneler.dialog");
+    let frame = panel_frame(&app, window, "dialog").expect("the dialog");
+    let top = f64::from(frame.y) / scale;
+    assert!(top < 28.0, "{frame:?}");
+    let on_dialog = Point {
+        x: f64::from(frame.x) / scale + 4.0,
+        y: (top + 28.0) / 2.0,
+    };
+    assert!(titlebar_holds(&fake, window, on_dialog));
+    assert!(!titlebar_holds(&fake, window, bar_end));
+}
+
+#[test]
+fn a_tooltip_in_the_window_s_corner_takes_neither_the_keys_nor_the_pointer() {
+    let (mut fake, mut app, window, _) = paneler(reader(""));
+    command(&mut fake, &mut app, window, "paneler.tip");
+    let state = &app.windows[&window];
+    let frame = panel_frame(&app, window, "tip").expect("the tooltip");
+    let scale = fake.window(window).unwrap().size.scale as f32;
+    let room = state.overlay;
+    let margin = 12.0 * scale;
+    assert_eq!(frame.x + frame.width, room.x + room.width - margin);
+    assert_eq!(frame.y + frame.height, room.y + room.height - margin);
+    assert!(state.pane_has_focus());
+    // No pointer's area of its own.
+    let shown = fake.window(window).unwrap();
+    let over = middle(frame, f64::from(scale));
+    assert!(!shown.pointer_areas.iter().any(|area| {
+        lokyr_platform_core::ContentRect {
+            origin: area.origin,
+            size: area.size,
+        }
+        .contains(over)
+    }));
+}
+
+#[test]
+fn dialogs_below_a_cell_below_the_cursor_and_in_the_pane_s_corner() {
+    let (mut fake, mut app, window, _) = paneler(reader(""));
+    let state = &app.windows[&window];
+    let view = state.views[0];
+    let (width, height) = (
+        f32::from(view.grid.cell_width),
+        f32::from(view.grid.cell_height),
+    );
+    let (left, top) = (view.rect.x as f32, view.rect.y as f32);
+    // Below the first row's third cell.
+    command(&mut fake, &mut app, window, "paneler.cell");
+    let frame = panel_frame(&app, window, "dialog").expect("the cell's dialog");
+    assert_eq!((frame.x, frame.y), (left + 2.0 * width, top + height));
+    command(&mut fake, &mut app, window, "paneler.close");
+    // Below the cursor's cell.
+    command(&mut fake, &mut app, window, "paneler.cursor");
+    let cursor = app.pane(window).snapshot().cursor().position;
+    let frame = panel_frame(&app, window, "dialog").expect("the cursor's dialog");
+    assert_eq!(
+        (frame.x, frame.y),
+        (
+            left + f32::from(cursor.x) * width,
+            top + f32::from(cursor.y + 1) * height
+        )
+    );
+    command(&mut fake, &mut app, window, "paneler.close");
+    // In the pane's top right corner.
+    command(&mut fake, &mut app, window, "paneler.corner");
+    let scale = fake.window(window).unwrap().size.scale as f32;
+    let frame = panel_frame(&app, window, "dialog").expect("the corner's dialog");
+    let rect = app.windows[&window].views[0].rect;
+    assert_eq!(
+        (frame.x + frame.width, frame.y),
+        (
+            rect.x as f32 + rect.width as f32 - 12.0 * scale,
+            rect.y as f32 + 12.0 * scale
+        )
+    );
+}
+
+#[test]
+fn a_dialog_that_its_plugin_closes_ends_its_field_s_composition_and_gives_the_keys_back() {
+    let (mut fake, mut app, window, heard) = paneler(reader(""));
+    command(&mut fake, &mut app, window, "paneler.dialog");
+    assert!(focused_in(&app, window, "dialog"));
+    let composing = WindowEvent::Ime(Ime::Preedit {
+        text: "にほ".to_owned(),
+        selection: 6..6,
+    });
+    fake.send(&mut app, window, composing);
+    let ended = fake.window(window).unwrap().compositions_ended;
+    command(&mut fake, &mut app, window, "paneler.close");
+    assert!(panel_frame(&app, window, "dialog").is_none());
+    assert_eq!(fake.window(window).unwrap().compositions_ended, ended + 1);
+    assert!(app.windows[&window].pane_has_focus());
+    // The plugin heard its closing once, as it asked for it.
+    assert_eq!(heard.borrow().closed, ["dialog"]);
+}
+
+#[test]
+fn a_panel_is_in_the_window_s_tree_over_the_slots_and_its_field_has_the_focus() {
+    let (mut fake, mut app, window, _) = paneler(reader(""));
+    assert!(fake.ask_accessibility(&mut app, window));
+    command(&mut fake, &mut app, window, "paneler.dialog");
+    fake.fire_timers(&mut app, Instant::now() + Duration::from_secs(1));
+    let tree = fake
+        .window(window)
+        .unwrap()
+        .accessibility
+        .last()
+        .unwrap()
+        .clone();
+    let id_of = |named: &dyn Fn(&accesskit::Node) -> bool| {
+        tree.nodes
+            .iter()
+            .find(|(_, node)| named(node))
+            .map(|(id, _)| *id)
+    };
+    let (open, find) = (
+        id_of(&|node| node.label() == Some("Open")).expect("the bar's button"),
+        id_of(&|node| node.placeholder() == Some("Find")).expect("the dialog's field"),
+    );
+    // The dialog after the bar, of its field's focus.
+    let (_, root) = tree
+        .nodes
+        .iter()
+        .find(|(id, _)| *id == lokyr_ui_core::access::WINDOW)
+        .unwrap();
+    let surfaces: Vec<u8> = root
+        .children()
+        .iter()
+        .filter_map(|&id| lokyr_ui_core::access::view::surface_of(id))
+        .collect();
+    let (bar, dialog) = (
+        lokyr_ui_core::access::view::surface_of(open).unwrap(),
+        lokyr_ui_core::access::view::surface_of(find).unwrap(),
+    );
+    let place = |number| surfaces.iter().position(|&at| at == number);
+    assert!(place(bar) < place(dialog), "{surfaces:?}");
+    assert_eq!(tree.focus, find);
+}
+
+/// The text of the find bar's count, as `window` shows it.
+fn find_count(app: &App, window: WindowId) -> Option<String> {
+    let view = app.windows[&window]
+        .chrome
+        .iter()
+        .find(|view| view.view == ViewId::Panel(PanelId::from("find")))?;
+    let tree = &view.surface.tree;
+    let node = tree.by_key(&"count".into())?;
+    match tree.kind(node)? {
+        lokyr_kernel::plugins::view::Kind::Text(text) => Some(text.clone()),
+        _ => None,
+    }
+}
+
+/// The highlights of the matches that `window`'s pane shows now, as
+/// `(row, first, last, current)`, of the rows' numbers.
+fn highlights(app: &App, window: WindowId) -> Vec<(i64, u16, u16, bool)> {
+    let reader = app.pane(window).reader().unwrap();
+    let mut terminal = reader.lock();
+    let mut snapshot = lokyr_vt_core::terminal::Snapshot::default();
+    terminal.snapshot(&mut snapshot);
+    let top = terminal.origin().top;
+    snapshot
+        .highlights()
+        .iter()
+        .map(|span| {
+            (
+                top + i64::from(span.row),
+                span.first,
+                span.last,
+                span.current,
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn the_find_bar_searches_its_pane_steps_and_leaves_its_match_selected_as_it_closes() {
+    let none = Modifiers::NONE;
+    let drawing = Drawing::new(FontConfig::default()).unwrap();
+    let mut fake = Fake::default();
+    fake.set_bar(28.0);
+    let program = shell("printf 'a needle\\nnothing\\nneedle 日本 two\\n'; echo ready; read line");
+    let mut app = App::new(Some(drawing), unpadded(), None).with_program(program);
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    app.windows.get_mut(&window).unwrap().surface = Some(fakes::Surface::default());
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    run_until(&mut fake, &mut app, |_, app| shows(app, window, "ready"));
+    frames(&mut fake, &mut app, window);
+    command(&mut fake, &mut app, window, "search.open");
+    assert!(panel_frame(&app, window, "find").is_some());
+    // Its field takes the keys as it opens, though Tab reached every
+    // control.
+    assert!(focused_in(&app, window, "find"));
+    assert!(matches!(
+        app.windows[&window].focus.target(),
+        lokyr_ui_core::focus::Target::Node { node, .. }
+            if app.windows[&window].chrome.iter().any(|view| {
+                view.surface.tree.key(node).is_some_and(|key| key.0 == "query")
+            })
+    ));
+    // The I-beam over its field's whole box, its edge above the text too,
+    // but over its toggles.
+    let scale = fake.window(window).unwrap().size.scale;
+    let shape = |fake: &Fake, point: Point| {
+        fake.window(window)
+            .unwrap()
+            .pointer_areas
+            .iter()
+            .find(|area| {
+                lokyr_platform_core::ContentRect {
+                    origin: area.origin,
+                    size: area.size,
+                }
+                .contains(point)
+            })
+            .map(|area| area.shape)
+    };
+    let text = node_frame(&app, window, "query");
+    let over = middle(text, scale);
+    let edge = Point {
+        x: over.x,
+        y: f64::from(text.y) / scale - 1.0,
+    };
+    assert_eq!(shape(&fake, over), Some(PointerShape::Text));
+    assert_eq!(shape(&fake, edge), Some(PointerShape::Text));
+    let toggle = middle(node_frame(&app, window, "case"), scale);
+    assert_ne!(shape(&fake, toggle), Some(PointerShape::Text));
+    // Typed, as an input method commits it: both matches highlighted, the
+    // last, the nearest to the bottom, the current one, nothing selected.
+    fake.send(
+        &mut app,
+        window,
+        WindowEvent::Ime(Ime::Commit("needle".to_owned())),
+    );
+    run_until(&mut fake, &mut app, |_, app| {
+        find_count(app, window).as_deref() == Some("2 of 2")
+    });
+    assert_eq!(
+        highlights(&app, window),
+        [(0, 2, 7, false), (2, 0, 5, true)]
+    );
+    assert_eq!(selected_text(&app, window), None);
+    // Return, up, the other.
+    fake.send(
+        &mut app,
+        window,
+        key_event(KeyCode::Enter, "\r", none, true),
+    );
+    run_until(&mut fake, &mut app, |_, app| {
+        find_count(app, window).as_deref() == Some("1 of 2")
+    });
+    assert_eq!(
+        highlights(&app, window),
+        [(2, 0, 5, false), (0, 2, 7, true)]
+    );
+    // Japanese, as its input method commits it, in place of the text.
+    fake.send(&mut app, window, key_event(KeyCode::KeyA, "a", CMD, true));
+    fake.send(
+        &mut app,
+        window,
+        WindowEvent::Ime(Ime::Commit("日本".to_owned())),
+    );
+    run_until(&mut fake, &mut app, |_, app| {
+        find_count(app, window).as_deref() == Some("1 of 1")
+    });
+    let japanese = highlights(&app, window);
+    assert!(matches!(japanese[..], [(2, 7, _, true)]), "{japanese:?}");
+    // The pane given the keys, Command-F gives them back to its field,
+    // the bar as it was.
+    let view = |app: &App| {
+        app.windows[&window]
+            .chrome
+            .iter()
+            .find(|view| view.view == ViewId::Panel(PanelId::from("find")))
+            .map(|view| view.id)
+    };
+    let bar = view(&app);
+    fake.send(&mut app, window, click(true, OVER_PANE, none, 1));
+    fake.send(&mut app, window, click(false, OVER_PANE, none, 1));
+    frames(&mut fake, &mut app, window);
+    assert!(app.windows[&window].pane_has_focus());
+    command(&mut fake, &mut app, window, "search.open");
+    assert!(focused_in(&app, window, "find"));
+    assert_eq!(view(&app), bar);
+    // Its text selected, which typing replaces.
+    let field = app.windows[&window]
+        .chrome
+        .iter()
+        .find(|view| view.view == ViewId::Panel(PanelId::from("find")))
+        .and_then(|view| view.surface.fields.state(&"query".into()))
+        .cloned()
+        .unwrap();
+    assert_eq!(field.text(), "日本");
+    assert_eq!(field.selection(), 0.."日本".len());
+    // Return steps around to the one again.
+    fake.send(
+        &mut app,
+        window,
+        key_event(KeyCode::Enter, "\r", none, true),
+    );
+    frames(&mut fake, &mut app, window);
+    assert_eq!(highlights(&app, window), japanese);
+    // Escape closes it: its highlights go, its match selected.
+    fake.send(
+        &mut app,
+        window,
+        key_event(KeyCode::Escape, "\u{1b}", none, true),
+    );
+    frames(&mut fake, &mut app, window);
+    assert!(panel_frame(&app, window, "find").is_none());
+    assert!(highlights(&app, window).is_empty());
+    assert_eq!(selected_text(&app, window).as_deref(), Some("日本"));
+}
+
+#[test]
+fn the_command_palette_opens_at_the_window_s_top_ranks_as_it_is_typed_and_runs_its_choice() {
+    let none = Modifiers::NONE;
+    let drawing = Drawing::new(FontConfig::default()).unwrap();
+    let mut fake = Fake::default();
+    let program = shell("echo ready; read line");
+    let mut app = App::new(Some(drawing), unpadded(), None).with_program(program);
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    app.windows.get_mut(&window).unwrap().surface = Some(fakes::Surface::default());
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    run_until(&mut fake, &mut app, |_, app| shows(app, window, "ready"));
+    frames(&mut fake, &mut app, window);
+    // Command-Shift-P, the keymap's.
+    let shifted = Modifiers { shift: true, ..CMD };
+    fake.send(
+        &mut app,
+        window,
+        key_event(KeyCode::KeyP, "P", shifted, true),
+    );
+    frames(&mut fake, &mut app, window);
+    let frame = panel_frame(&app, window, "command-palette").expect("the palette");
+    assert!(focused_in(&app, window, "command-palette"));
+    // Its first command selected as it opens, which ↓ moves from.
+    let selected = |app: &App| {
+        app.windows[&window]
+            .chrome
+            .iter()
+            .find(|view| view.view == ViewId::Panel(PanelId::from("command-palette")))
+            .and_then(|view| view.surface.lists.state(&"commands".into()))
+            .and_then(lokyr_ui_core::list::ListState::selected)
+    };
+    assert_eq!(selected(&app), Some(0));
+    fake.send(
+        &mut app,
+        window,
+        key_event(KeyCode::ArrowDown, "", none, true),
+    );
+    frames(&mut fake, &mut app, window);
+    assert_eq!(selected(&app), Some(1));
+    fake.send(
+        &mut app,
+        window,
+        key_event(KeyCode::ArrowUp, "", none, true),
+    );
+    frames(&mut fake, &mut app, window);
+    assert_eq!(selected(&app), Some(0));
+    // At the middle of the window's top.
+    let width = fake.window(window).unwrap().size.pixels.width as f32;
+    assert!(
+        (frame.x + frame.width / 2.0 - width / 2.0).abs() <= 1.0,
+        "{frame:?} in {width}"
+    );
+    // Typed: New Window first, of the app, then New Tab, of the tabs.
+    fake.send(
+        &mut app,
+        window,
+        WindowEvent::Ime(Ime::Commit("new".to_owned())),
+    );
+    frames(&mut fake, &mut app, window);
+    // The arrows move the selection while the field takes the keys: down
+    // twice, up once, to New Tab.
+    for code in [KeyCode::ArrowDown, KeyCode::ArrowDown, KeyCode::ArrowUp] {
+        fake.send(&mut app, window, key_event(code, "", none, true));
+    }
+    frames(&mut fake, &mut app, window);
+    assert!(focused_in(&app, window, "command-palette"));
+    assert_eq!(selected(&app), Some(1));
+    // Return runs it, the palette closed.
+    let tabs = |app: &App| {
+        app.workspace
+            .window(app.windows[&window].window)
+            .unwrap()
+            .tabs()
+            .len()
+    };
+    assert_eq!(tabs(&app), 1);
+    fake.send(
+        &mut app,
+        window,
+        key_event(KeyCode::Enter, "\r", none, true),
+    );
+    run_until(&mut fake, &mut app, |_, app| tabs(app) == 2);
+    assert!(panel_frame(&app, window, "command-palette").is_none());
+    assert_eq!(fake.windows().count(), 1);
+}
+
+/// The shapes that `window`'s last frame drew.
+fn drawn_shapes(app: &App, window: WindowId) -> Vec<lokyr_render_core::Shape> {
+    app.windows[&window]
+        .shown
+        .as_ref()
+        .expect("a frame")
+        .items
+        .iter()
+        .flat_map(|item| match item {
+            Item::Shapes(shapes) => shapes.clone(),
+            _ => Vec::new(),
+        })
+        .collect()
+}
+
+#[test]
+fn a_translucent_window_s_chrome_shows_its_opacity_in_place_of_its_background() {
+    let of_opacity = |opacity: f32| {
+        let mut config = unpadded();
+        config.window.background_opacity = f64::from(opacity).try_into().unwrap();
+        let drawing = Drawing::new(FontConfig::default()).unwrap();
+        let mut fake = Fake::default();
+        let program = shell("echo ready; read line");
+        let mut app = App::new(Some(drawing), config, None).with_program(program);
+        fake.start(&mut app);
+        let window = fake.windows().next().unwrap();
+        app.windows.get_mut(&window).unwrap().surface = Some(fakes::Surface::default());
+        fake.send(&mut app, window, WindowEvent::Focused(true));
+        run_until(&mut fake, &mut app, |_, app| shows(app, window, "ready"));
+        // Two tabs, which the bar shows.
+        command(&mut fake, &mut app, window, "tabs.new");
+        frames(&mut fake, &mut app, window);
+        (fake, app, window)
+    };
+    let (fake, app, window) = of_opacity(0.5);
+    // The frame draws the window's background, of its opacity, under the
+    // whole window, over a clear backdrop of the platform's.
+    let background = lokyr_ui_core::pane::background(app.pane(window).snapshot());
+    let shown = app.windows[&window].shown.as_ref().unwrap().background;
+    assert_eq!(shown, background.with_alpha(0.5));
+    assert_eq!(
+        fake.window(window)
+            .unwrap()
+            .translucent
+            .map(|backdrop| backdrop.color),
+        Some([0.0; 4])
+    );
+    // The bar's and the active tab's backgrounds take its place, of the
+    // window's opacity at most, rather than going over it.
+    let shapes = drawn_shapes(&app, window);
+    let knocked: Vec<_> = shapes.iter().filter(|shape| shape.knockout).collect();
+    assert!(!knocked.is_empty(), "{shapes:?}");
+    assert!(
+        knocked.iter().all(|shape| shape.fill.alpha <= 0.5 + 1e-6),
+        "{knocked:?}"
+    );
+    // An opaque window's go over, as ever.
+    let (_, app, window) = of_opacity(1.0);
+    assert!(
+        drawn_shapes(&app, window)
+            .iter()
+            .all(|shape| !shape.knockout)
+    );
+}
+
+#[test]
+fn a_click_on_the_palette_s_selected_row_runs_it() {
+    let drawing = Drawing::new(FontConfig::default()).unwrap();
+    let mut fake = Fake::default();
+    let program = shell("echo ready; read line");
+    let mut app = App::new(Some(drawing), unpadded(), None).with_program(program);
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    app.windows.get_mut(&window).unwrap().surface = Some(fakes::Surface::default());
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    run_until(&mut fake, &mut app, |_, app| shows(app, window, "ready"));
+    let shifted = Modifiers { shift: true, ..CMD };
+    fake.send(
+        &mut app,
+        window,
+        key_event(KeyCode::KeyP, "P", shifted, true),
+    );
+    frames(&mut fake, &mut app, window);
+    fake.send(
+        &mut app,
+        window,
+        WindowEvent::Ime(Ime::Commit("new tab".to_owned())),
+    );
+    frames(&mut fake, &mut app, window);
+    // A click at the list's first row, New Tab, which the typing selected.
+    let scale = fake.window(window).unwrap().size.scale;
+    let list = node_frame(&app, window, "commands");
+    let at = Point {
+        x: f64::from(list.x + list.width / 2.0) / scale,
+        y: f64::from(list.y) / scale + 8.0,
+    };
+    let tabs = |app: &App| {
+        app.workspace
+            .window(app.windows[&window].window)
+            .unwrap()
+            .tabs()
+            .len()
+    };
+    assert_eq!(tabs(&app), 1);
+    fake.send(&mut app, window, click(true, at, Modifiers::NONE, 1));
+    fake.send(&mut app, window, click(false, at, Modifiers::NONE, 1));
+    run_until(&mut fake, &mut app, |_, app| tabs(app) == 2);
+    assert!(panel_frame(&app, window, "command-palette").is_none());
+}
+
+#[test]
+fn the_app_s_commands_keep_their_plugins_which_the_palette_finds_them_by() {
+    let none = Modifiers::NONE;
+    let drawing = Drawing::new(FontConfig::default()).unwrap();
+    let mut fake = Fake::default();
+    let program = shell("echo ready; read line");
+    let mut app = App::new(Some(drawing), unpadded(), None).with_program(program);
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    app.windows.get_mut(&window).unwrap().surface = Some(fakes::Surface::default());
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    run_until(&mut fake, &mut app, |_, app| shows(app, window, "ready"));
+    // A plugin's command of its plugin, the app's of none, in the registry
+    // that the app made of the plugins' commands.
+    assert_eq!(app.commands.owner("tabs.new"), Some("lokyr/tabs"));
+    assert_eq!(app.commands.owner("pane.copy"), Some("lokyr/core-actions"));
+    assert_eq!(app.commands.owner("window.new"), None);
+    // The palette finds the core actions by their plugin's name, which no
+    // title nor name of theirs holds.
+    let shifted = Modifiers { shift: true, ..CMD };
+    fake.send(
+        &mut app,
+        window,
+        key_event(KeyCode::KeyP, "P", shifted, true),
+    );
+    frames(&mut fake, &mut app, window);
+    fake.send(
+        &mut app,
+        window,
+        WindowEvent::Ime(Ime::Commit("core-actions".to_owned())),
+    );
+    frames(&mut fake, &mut app, window);
+    // Its note of no command missing, as the list holds some.
+    let palette = app.windows[&window]
+        .chrome
+        .iter()
+        .find(|view| view.view == ViewId::Panel(PanelId::from("command-palette")))
+        .expect("the palette");
+    assert!(palette.surface.tree.by_key(&"commands".into()).is_some());
+    assert!(
+        palette.surface.tree.by_key(&"none".into()).is_none(),
+        "no command of core-actions"
+    );
+    fake.send(
+        &mut app,
+        window,
+        key_event(KeyCode::Escape, "\u{1b}", none, true),
+    );
+}
+
+#[test]
+fn the_palette_s_theme_picker_previews_a_theme_and_names_the_chosen_one() {
+    let none = Modifiers::NONE;
+    let directory = std::env::temp_dir().join(format!("lokyr-app-picker-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&directory);
+    std::fs::create_dir_all(directory.join("themes")).unwrap();
+    let palette: Vec<String> = (0..16).map(|_| "\"#808080\"".to_owned()).collect();
+    std::fs::write(
+        directory.join("themes/Paper.toml"),
+        format!(
+            "[terminal]\nbackground = \"#ffffff\"\nforeground = \"#202020\"\npalette = [{}]\n",
+            palette.join(", ")
+        ),
+    )
+    .unwrap();
+    let path = directory.join("config.toml");
+    std::fs::write(&path, "[theme]\nlight = \"Lokyr Light\"\n").unwrap();
+    let drawing = Drawing::new(FontConfig::default()).unwrap();
+    let mut fake = Fake::default();
+    let mut config = Config::read(&path).unwrap();
+    config.window = unpadded().window;
+    let mut app = App::new(Some(drawing), config, Some(path.clone())).with_program(quiet());
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    app.windows.get_mut(&window).unwrap().surface = Some(fakes::Surface::default());
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    frames(&mut fake, &mut app, window);
+    command(&mut fake, &mut app, window, "command-palette.theme");
+    assert!(panel_frame(&app, window, "command-palette").is_some());
+    // Lokyr Light, in force, then Paper, which ↓ previews.
+    fake.send(
+        &mut app,
+        window,
+        key_event(KeyCode::ArrowDown, "", none, true),
+    );
+    frames(&mut fake, &mut app, window);
+    assert_eq!(app.theme_preview.as_deref(), Some("Paper"));
+    let white = lokyr_vt_core::page::Rgb {
+        r: 255,
+        g: 255,
+        b: 255,
+    };
+    assert_eq!(app.theme.light.colors.background, white);
+    // Return names it in the config.
+    fake.send(
+        &mut app,
+        window,
+        key_event(KeyCode::Enter, "\r", none, true),
+    );
+    frames(&mut fake, &mut app, window);
+    assert!(panel_frame(&app, window, "command-palette").is_none());
+    assert_eq!(app.theme_preview, None);
+    let written = std::fs::read_to_string(&path).unwrap();
+    assert!(written.contains("light = \"Paper\""), "{written}");
+    assert_eq!(app.theme.light.colors.background, white);
+    let _ = std::fs::remove_dir_all(directory);
+}
+
+/// The app that draws its panels, of a window, focused, running a program
+/// that reads a line and tells it, once it shows its prompt.
+fn reading_with_panels() -> (Fake, App, WindowId) {
+    let drawing = Drawing::new(FontConfig::default()).unwrap();
+    let mut fake = Fake::default();
+    let program = shell("printf 'ready $ '; read line; echo \"got:$line\"; sleep 30");
+    let mut app = App::new(Some(drawing), unpadded(), None).with_program(program);
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    app.windows.get_mut(&window).unwrap().surface = Some(fakes::Surface::default());
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    run_until(&mut fake, &mut app, |_, app| shows(app, window, "ready $"));
+    frames(&mut fake, &mut app, window);
+    (fake, app, window)
+}
+
+#[test]
+fn a_find_bar_behind_another_tab_gives_the_keyboard_back_to_the_tab_in_front() {
+    let (mut fake, mut app, window) = reading_with_panels();
+    command(&mut fake, &mut app, window, "search.open");
+    assert!(focused_in(&app, window, "find"));
+    let first = app.windows[&window].views[0].pane;
+    command(&mut fake, &mut app, window, "tabs.new");
+    run_until(&mut fake, &mut app, |_, app| {
+        app.windows[&window].views[0].pane != first && shows(app, window, "ready $")
+    });
+    frames(&mut fake, &mut app, window);
+    // The bar hides with its tab, and the keyboard is the new tab's pane's.
+    assert_eq!(panel_frame(&app, window, "find"), None);
+    assert_eq!(
+        app.windows[&window].focus.target(),
+        lokyr_ui_core::focus::Target::Pane
+    );
+    fake.send(&mut app, window, typed(KeyCode::KeyJ, "j", false));
+    fake.send(&mut app, window, typed(KeyCode::Enter, "\r", false));
+    run_until(&mut fake, &mut app, |_, app| shows(app, window, "got:j"));
+}
+
+#[test]
+fn a_find_bar_of_a_pane_that_a_zoom_hides_gives_the_keyboard_back() {
+    let (mut fake, mut app, window) = reading_with_panels();
+    let first = app.windows[&window].views[0].pane;
+    let right = Args::from([("direction".to_owned(), Value::String("right".to_owned()))]);
+    app.run(&mut fake, "splits.split", right);
+    run_until(&mut fake, &mut app, |_, app| {
+        app.windows[&window].views.len() == 2 && shows(app, window, "ready $")
+    });
+    frames(&mut fake, &mut app, window);
+    // The bar of the new pane, then the first pane zoomed.
+    command(&mut fake, &mut app, window, "search.open");
+    assert!(focused_in(&app, window, "find"));
+    app.focus_pane(&mut fake, window, first);
+    command(&mut fake, &mut app, window, "splits.zoom-toggle");
+    run_until(&mut fake, &mut app, |_, app| {
+        app.windows[&window].views.len() == 1
+    });
+    frames(&mut fake, &mut app, window);
+    assert_eq!(panel_frame(&app, window, "find"), None);
+    assert_eq!(
+        app.windows[&window].focus.target(),
+        lokyr_ui_core::focus::Target::Pane
+    );
+    fake.send(&mut app, window, typed(KeyCode::KeyJ, "j", false));
+    fake.send(&mut app, window, typed(KeyCode::Enter, "\r", false));
+    run_until(&mut fake, &mut app, |_, app| shows(app, window, "got:j"));
+}
+
+/// The first text of the tab bar of `window`, and its frame, in pixels.
+fn tab_text(app: &App, window: WindowId) -> Option<(String, lokyr_ui_core::layout::Frame)> {
+    let view = app.windows[&window]
+        .chrome
+        .iter()
+        .find(|view| matches!(view.view, ViewId::TabBar(_)))?;
+    let tree = &view.surface.tree;
+    let mut nodes = vec![tree.root()?];
+    while let Some(node) = nodes.pop() {
+        if let Some(lokyr_kernel::plugins::view::Kind::Text(text)) = tree.kind(node)
+            && !text.is_empty()
+        {
+            return Some((text.clone(), view.surface.layout.frame(tree, node)?));
+        }
+        nodes.extend(tree.children(node).iter().rev());
+    }
+    None
+}
+
+#[test]
+fn the_tabs_labels_take_the_interface_s_new_size() {
+    let (mut fake, mut app, window) = reading_with_panels();
+    command(&mut fake, &mut app, window, "tabs.new");
+    run_until(&mut fake, &mut app, |_, app| {
+        tab_text(app, window).is_some()
+    });
+    frames(&mut fake, &mut app, window);
+    let (label, before) = tab_text(&app, window).unwrap();
+    // As a reload of `[interface] font-size` gives it.
+    let interface = lokyr_ui_core::interface::InterfaceConfig {
+        font_size: lokyr_text_core::Size::try_from(20.0).unwrap(),
+        ..lokyr_ui_core::interface::InterfaceConfig::default()
+    };
+    app.drawing.as_mut().unwrap().set_interface(&interface);
+    frames(&mut fake, &mut app, window);
+    let (again, after) = tab_text(&app, window).unwrap();
+    assert_eq!(again, label);
+    assert!(after.height > before.height, "{before:?} {after:?}");
+}
+
+#[test]
+fn an_opaque_titlebar_s_tabs_go_over_it_of_their_own_opacity() {
+    let mut config = unpadded();
+    config.window.background_opacity = 0.5_f64.try_into().unwrap();
+    config.window.opaque_titlebar = true;
+    let drawing = Drawing::new(FontConfig::default()).unwrap();
+    let mut fake = Fake::default();
+    fake.set_bar(28.0);
+    let program = shell("echo ready; read line");
+    let mut app = App::new(Some(drawing), config, None).with_program(program);
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    app.windows.get_mut(&window).unwrap().surface = Some(fakes::Surface::default());
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    run_until(&mut fake, &mut app, |_, app| shows(app, window, "ready"));
+    // Two tabs, of the unified look, in the titlebar.
+    command(&mut fake, &mut app, window, "tabs.new");
+    frames(&mut fake, &mut app, window);
+    let band = fake.window(window).unwrap().size.bar_pixels();
+    let shapes = drawn_shapes(&app, window);
+    let in_band: Vec<_> = shapes
+        .iter()
+        .filter(|shape| shape.rect.y < i32::try_from(band).unwrap())
+        .collect();
+    assert!(!in_band.is_empty(), "{shapes:?}");
+    // None knocks the opaque titlebar out, the active tab of its own
+    // color, opaque.
+    assert!(in_band.iter().all(|shape| !shape.knockout), "{in_band:?}");
+    let active = app
+        .theme
+        .variant(false)
+        .tokens
+        .get("tabs.active.bg")
+        .unwrap();
+    assert!(
+        in_band.iter().any(|shape| shape.fill == active),
+        "{in_band:?}"
+    );
+}

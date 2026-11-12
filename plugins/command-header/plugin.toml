@@ -1,0 +1,14 @@
+# The manifest of the built-in plugin of the command's header.
+[plugin]
+name = "lokyr/command-header"
+kind = "builtin"
+license = "MIT"
+description = "The command whose output a pane's view shows, at the pane's top while its line is above the view, which a click scrolls to"
+
+[capabilities]
+terminal-read = true
+history-read = true
+pane-view = true
+
+[contributes]
+config-schema = "command-header.schema.json"

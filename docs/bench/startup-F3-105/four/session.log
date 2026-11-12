@@ -1,0 +1,18 @@
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=37421155)	100%; charged; 0:00 remaining present: true
+16:46:58 startup A 1
+16:47:13 startup B 1
+16:47:29 startup C 1
+16:47:44 startup D 1
+16:47:59 startup floor 1
+16:48:15 startup A 2
+16:48:30 startup B 2
+16:48:45 startup C 2
+16:49:01 startup D 2
+16:49:16 startup floor 2
+16:49:31 startup A 3
+16:49:46 startup B 3
+16:50:02 startup C 3
+16:50:17 startup D 3
+16:50:32 startup floor 3
+16:50:47 done

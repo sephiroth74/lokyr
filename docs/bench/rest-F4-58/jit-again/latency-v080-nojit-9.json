@@ -1,0 +1,1 @@
+{"refresh_ms":16.67,"flood":false,"keys":200,"samples":199,"latency_ms":{"min":6.88,"p50":19.22,"p90":26.30,"p99":36.15,"max":44.08},"frames":{"p50":1.15,"p99":2.17},"histogram":{"1":66,"2":129,"3":4}}

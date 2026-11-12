@@ -30,7 +30,15 @@ allow = [
 confidence-threshold = 0.9
 # The list already covers the licenses of the dependencies we expect to add.
 unused-allowed-license = "allow"
-exceptions = []
+# PubGrub, Sleip's resolver, and the two crates of its that share its
+# license, MPL-2.0, of each file alone: their sources stay on crates.io, and
+# their notice goes with Sleip; priority-queue is of LGPL-3.0 or MPL-2.0,
+# MPL-2.0 taken.
+exceptions = [
+    { allow = ["MPL-2.0"], crate = "pubgrub" },
+    { allow = ["MPL-2.0"], crate = "version-ranges" },
+    { allow = ["MPL-2.0"], crate = "priority-queue" },
+]
 
 [bans]
 multiple-versions = "warn"
@@ -43,16 +51,18 @@ deny = [
     # on these (for example hyper-util) must be added to the wrappers.
     { crate = "reqwest", wrappers = ["sleip-index"], reason = "only Sleip may use the network" },
     { crate = "hyper", wrappers = ["sleip-index"], reason = "only Sleip may use the network" },
-    { crate = "rustls", wrappers = ["sleip-index"], reason = "only Sleip may use the network" },
+    { crate = "rustls", wrappers = ["sleip-index", "ureq", "rustls-platform-verifier"], reason = "only Sleip may use the network, of its client ureq and the system's verifier" },
+    { crate = "ureq", wrappers = ["sleip-index"], reason = "only Sleip may use the network" },
     { crate = "tokio", wrappers = ["sleip-cli", "sleip-index"], reason = "only Sleip may use an async runtime" },
     # Not used anywhere: TLS is rustls, and the only async runtime is tokio.
     { crate = "native-tls", reason = "TLS is provided by rustls" },
     { crate = "openssl", reason = "TLS is provided by rustls" },
     { crate = "async-std", reason = "the only async runtime is tokio, in Sleip" },
     # Plugins and libraries reach the kernel only through the plugin SDK.
-    { crate = "lokyr-kernel", wrappers = ["lokyr-app"], reason = "only the app may depend on the kernel" },
-    # Luau, a C++ runtime, stays behind the plugin host and its feature.
-    { crate = "mlua", wrappers = ["lokyr-plugin-host-luau"], reason = "only the plugin host may embed Luau" },
+    { crate = "lokyr-kernel", wrappers = ["lokyr-app", "lokyr-app-core", "xtask"], reason = "only the app and its window controller may depend on the kernel, and xtask, which converts the bundle's themes and never ships" },
+    # Luau, a C++ runtime, stays behind the plugin host and its feature, and
+    # Sleip's analyzer, which links its libraries for Luau's type checker.
+    { crate = "mlua", wrappers = ["lokyr-plugin-host-luau", "sleip-analyzer"], reason = "only the plugin host may embed Luau, and Sleip's analyzer link it" },
     # Only the differential tests compare the VT core against alacritty_terminal:
     # no crate of the terminal uses it, not even in its own tests.
     { crate = "alacritty_terminal", wrappers = ["lokyr-differential"], reason = "only the differential tests use alacritty_terminal" },

@@ -1,0 +1,13 @@
+# The manifest of the built-in plugin of the quick terminal.
+[plugin]
+name = "lokyr/quick-terminal"
+kind = "builtin"
+license = "MIT"
+description = "The quick terminal: a window that a global key slides in from an edge of the screen, over every app, and out again"
+
+[capabilities]
+global-hotkey = true
+
+[contributes]
+commands = [{ name = "window.toggle-quick-terminal", title = "Quick Terminal" }]
+config-schema = "quick-terminal.schema.json"

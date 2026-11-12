@@ -1,14 +1,14 @@
-//! Opening URLs and paths with the system's handlers, through
-//! `NSWorkspace`: a file that would run rather than open shows in the
-//! Finder, selected. A path's symbolic links and the Finder's aliases are
-//! resolved first, so that what is checked is what opens.
+//! What URLs and paths are, and opening them with the system's handlers,
+//! through `NSWorkspace`: a path's symbolic links and the Finder's aliases
+//! are resolved first, so that what the app decides by is what opens; a
+//! file that would run rather than open does not open.
 
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use block2::RcBlock;
-use lokyr_platform_core::{Error, TargetKind, Waker, runs_by_itself};
+use lokyr_platform_core::{Error, Target, TargetKind, Waker, runs_by_itself};
 use objc2::rc::Retained;
 use objc2::runtime::AnyObject;
 use objc2_app_kit::{NSRunningApplication, NSWorkspace, NSWorkspaceOpenConfiguration};
@@ -44,17 +44,11 @@ pub(crate) fn take_failed() -> Vec<(String, String)> {
 /// How many aliases a path can lead through, each to the next.
 const ALIASES: usize = 8;
 
-/// A target that opens: a URL of another scheme than `file`, or the file
-/// that a path of this machine leads to, with its kind.
-enum Resolved {
-    Url(Retained<NSURL>),
-    Path(Retained<NSURL>, TargetKind),
-}
-
-/// What `target`, a URL or an absolute path, is, as
-/// [`Platform::target_kind`](lokyr_platform_core::Platform::target_kind)
+/// What `target`, a URL or an absolute path, is, and where it leads, as
+/// [`Platform::resolve_target`](lokyr_platform_core::Platform::resolve_target)
 /// tells.
-fn resolve(workspace: &NSWorkspace, target: &str) -> Result<Resolved, Error> {
+pub(crate) fn resolve(target: &str) -> Result<Target, Error> {
+    let workspace = NSWorkspace::sharedWorkspace();
     let failed = |why: &str| Error::Open(target.to_owned(), why.to_owned());
     let path = if target.starts_with('/') {
         PathBuf::from(target)
@@ -64,19 +58,28 @@ fn resolve(workspace: &NSWorkspace, target: &str) -> Result<Resolved, Error> {
             .filter(|url| url.scheme().is_some())
             .ok_or_else(|| failed("it is not a URL"))?;
         if !url.isFileURL() {
-            return Ok(Resolved::Url(url));
+            return Ok(Target {
+                kind: TargetKind::Url,
+                location: target.to_owned(),
+            });
         }
         if let Some(host) = url.host()
             && !is_local(&host.to_string(), &host_name())
         {
             return Err(failed("it is on another machine"));
         }
-        let path = url.path().ok_or_else(|| failed("it has no path"))?;
-        PathBuf::from(path.to_string())
+        // A URL of this machine without a path, as `file://localhost`, has
+        // an empty one.
+        let path = url
+            .path()
+            .map(|path| path.to_string())
+            .filter(|path| !path.is_empty())
+            .ok_or_else(|| failed("it has no path"))?;
+        PathBuf::from(path)
     };
     let path = resolved(&path).map_err(|why| failed(&why))?;
     let metadata = fs::metadata(&path).map_err(|error| failed(&error.to_string()))?;
-    let file = file_url(&path);
+    let file = file_url(&path).ok_or_else(|| failed("it has no path"))?;
     let opener = workspace
         .URLForApplicationToOpenURL(&file)
         .and_then(|application| NSBundle::bundleWithURL(&application));
@@ -88,7 +91,10 @@ fn resolve(workspace: &NSWorkspace, target: &str) -> Result<Resolved, Error> {
     } else {
         TargetKind::File
     };
-    Ok(Resolved::Path(file, kind))
+    Ok(Target {
+        kind,
+        location: path.display().to_string(),
+    })
 }
 
 /// `path` with its symbolic links and the Finder's aliases resolved, each
@@ -99,10 +105,11 @@ fn resolved(path: &Path) -> Result<PathBuf, String> {
     for _ in 0..ALIASES {
         let options = NSURLBookmarkResolutionOptions::WithoutUI
             | NSURLBookmarkResolutionOptions::WithoutMounting;
-        let target = NSURL::URLByResolvingAliasFileAtURL_options_error(&file_url(&path), options)
-            .map_err(|error| {
-            format!("its alias leads nowhere: {}", error.localizedDescription())
-        })?;
+        let file = file_url(&path).ok_or("its path is not absolute")?;
+        let target =
+            NSURL::URLByResolvingAliasFileAtURL_options_error(&file, options).map_err(|error| {
+                format!("its alias leads nowhere: {}", error.localizedDescription())
+            })?;
         let target = target
             .path()
             .map(|target| PathBuf::from(target.to_string()))
@@ -115,9 +122,11 @@ fn resolved(path: &Path) -> Result<PathBuf, String> {
     Err("its aliases lead to aliases".to_owned())
 }
 
-/// The `file` URL of `path`.
-fn file_url(path: &Path) -> Retained<NSURL> {
-    NSURL::fileURLWithPath(&NSString::from_str(&path.to_string_lossy()))
+/// The `file` URL of `path`, an absolute one; none of another, as
+/// Foundation gives none of an empty path, which would panic.
+fn file_url(path: &Path) -> Option<Retained<NSURL>> {
+    path.is_absolute()
+        .then(|| NSURL::fileURLWithPath(&NSString::from_str(&path.to_string_lossy())))
 }
 
 /// Whether the application of `bundle` runs the documents that it opens:
@@ -146,49 +155,52 @@ fn runs_documents(bundle: &NSBundle) -> bool {
     })
 }
 
-/// What `target` is, as
-/// [`Platform::target_kind`](lokyr_platform_core::Platform::target_kind)
-/// tells.
-pub(crate) fn kind(target: &str) -> Result<TargetKind, Error> {
-    Ok(match resolve(&NSWorkspace::sharedWorkspace(), target)? {
-        Resolved::Url(_) => TargetKind::Url,
-        Resolved::Path(_, kind) => kind,
-    })
+/// The URL that opens `target`: its own, or its path's.
+pub(crate) fn url_of(target: &Target) -> Result<Retained<NSURL>, Error> {
+    if target.kind != TargetKind::Url {
+        return file_url(Path::new(&target.location))
+            .ok_or_else(|| Error::Open(target.location.clone(), "it has no path".to_owned()));
+    }
+    NSURL::URLWithString(&NSString::from_str(&target.location))
+        .ok_or_else(|| Error::Open(target.location.clone(), "it is not a URL".to_owned()))
 }
 
 /// Opens `target`, as [`Platform::open`](lokyr_platform_core::Platform::open)
-/// does: the file that its links and aliases lead to.
-pub(crate) fn open(target: &str) -> Result<(), Error> {
-    let workspace = NSWorkspace::sharedWorkspace();
-    let url = match resolve(&workspace, target)? {
-        Resolved::Path(file, TargetKind::Program) => {
-            workspace.activateFileViewerSelectingURLs(&NSArray::from_retained_slice(&[file]));
-            return Ok(());
-        }
-        Resolved::Url(url) | Resolved::Path(url, _) => url,
-    };
-    if workspace.openURL(&url) {
+/// does: at its location, which a program's fails before the system is
+/// asked.
+pub(crate) fn open(target: &Target) -> Result<(), Error> {
+    if target.kind == TargetKind::Program {
+        return Err(Error::Open(
+            target.location.clone(),
+            "it would run".to_owned(),
+        ));
+    }
+    let url = url_of(target)?;
+    if NSWorkspace::sharedWorkspace().openURL(&url) {
         Ok(())
     } else {
         Err(Error::Open(
-            target.to_owned(),
+            target.location.clone(),
             "no application opens it".to_owned(),
         ))
     }
 }
 
 /// Shows `target` in the Finder, as
-/// [`Platform::reveal`](lokyr_platform_core::Platform::reveal) does: the
-/// file that its links and aliases lead to.
-pub(crate) fn reveal(target: &str) -> Result<(), Error> {
-    let workspace = NSWorkspace::sharedWorkspace();
-    match resolve(&workspace, target)? {
-        Resolved::Path(file, _) => {
-            workspace.activateFileViewerSelectingURLs(&NSArray::from_retained_slice(&[file]));
-            Ok(())
-        }
-        Resolved::Url(_) => Err(Error::Open(target.to_owned(), "it is no file".to_owned())),
+/// [`Platform::reveal`](lokyr_platform_core::Platform::reveal) does: at its
+/// location; a URL's fails.
+pub(crate) fn reveal(target: &Target) -> Result<(), Error> {
+    if target.kind == TargetKind::Url {
+        return Err(Error::Open(
+            target.location.clone(),
+            "it is no file".to_owned(),
+        ));
     }
+    let file = file_url(Path::new(&target.location))
+        .ok_or_else(|| Error::Open(target.location.clone(), "it has no path".to_owned()))?;
+    NSWorkspace::sharedWorkspace()
+        .activateFileViewerSelectingURLs(&NSArray::from_retained_slice(&[file]));
+    Ok(())
 }
 
 /// Opens the file `path` in the application that opens plain text, as
@@ -271,6 +283,11 @@ fn host_name() -> String {
 mod tests {
     use super::*;
 
+    /// What `target` is, as [`resolve`] tells.
+    fn kind(target: &str) -> Result<TargetKind, Error> {
+        resolve(target).map(|target| target.kind)
+    }
+
     /// A directory of the test's own, made afresh.
     fn directory(name: &str) -> PathBuf {
         let directory = std::env::temp_dir().join(format!("lokyr-{name}-{}", std::process::id()));
@@ -315,6 +332,7 @@ mod tests {
     /// Makes `alias` a Finder's alias of `original`.
     fn make_alias(original: &Path, alias: &Path) {
         let bookmark = file_url(original)
+            .unwrap()
             .bookmarkDataWithOptions_includingResourceValuesForKeys_relativeToURL_error(
                 objc2_foundation::NSURLBookmarkCreationOptions::SuitableForBookmarkFile,
                 None,
@@ -323,7 +341,7 @@ mod tests {
             .unwrap();
         NSURL::writeBookmarkData_toURL_options_error(
             &bookmark,
-            &file_url(alias),
+            &file_url(alias).unwrap(),
             objc2_foundation::NSURLBookmarkCreationOptions::SuitableForBookmarkFile.0,
         )
         .unwrap();
@@ -431,34 +449,46 @@ mod tests {
     }
 
     #[test]
-    fn a_target_is_a_url_a_directory_a_file_or_a_program() {
-        let directory = std::env::temp_dir().join(format!("lokyr-kind-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&directory);
-        fs::create_dir_all(&directory).unwrap();
-        let (file, program) = (directory.join("a.txt"), directory.join("b.command"));
-        fs::write(&file, "").unwrap();
+    fn a_file_of_an_extension_that_runs_is_a_program_and_an_alias_leads_to_its_original() {
+        let directory = directory("kind");
+        let (notes, program) = (directory.join("a.txt"), directory.join("b.command"));
+        fs::write(&notes, "").unwrap();
         fs::write(&program, "").unwrap();
-        let path = |path: &Path| path.to_str().unwrap().to_owned();
-        for (target, wanted) in [
-            ("https://lokyr.dev".to_owned(), TargetKind::Url),
-            ("mailto:me@lokyr.dev".to_owned(), TargetKind::Url),
-            (path(&directory), TargetKind::Directory),
-            (path(&file), TargetKind::File),
-            (format!("file://{}", path(&file)), TargetKind::File),
-            (format!("file://localhost{}", path(&file)), TargetKind::File),
-            (path(&program), TargetKind::Program),
-        ] {
-            assert_eq!(kind(&target).ok(), Some(wanted), "{target}");
-        }
-        for target in [
-            path(&directory.join("none")),
-            format!("file://elsewhere.example{}", path(&file)),
-            "not a url".to_owned(),
-        ] {
-            assert!(kind(&target).is_err(), "{target}");
-        }
-        assert!(reveal("https://lokyr.dev").is_err());
+        assert_eq!(
+            kind(program.to_str().unwrap()).ok(),
+            Some(TargetKind::Program)
+        );
+        make_alias(&notes, &directory.join("alias"));
+        let original = resolve(directory.join("alias").to_str().unwrap()).unwrap();
+        assert_eq!(original.kind, TargetKind::File);
+        assert_eq!(
+            fs::canonicalize(&original.location).unwrap(),
+            fs::canonicalize(&notes).unwrap()
+        );
+        // A program's target does not open.
+        assert!(open(&resolve(program.to_str().unwrap()).unwrap()).is_err());
         fs::remove_dir_all(&directory).unwrap();
+    }
+
+    #[test]
+    fn a_file_url_without_a_path_resolves_to_nothing_and_does_not_panic() {
+        let host = host_name();
+        for target in [
+            "file://localhost".to_owned(),
+            "file://localhost?x".to_owned(),
+            "file://localhost#x".to_owned(),
+            format!("file://{host}"),
+            "file:".to_owned(),
+        ] {
+            assert!(resolve(&target).is_err(), "{target}");
+        }
+        // A target of no path, whoever made it, opens nothing.
+        let empty = |kind| Target {
+            kind,
+            location: String::new(),
+        };
+        assert!(open(&empty(TargetKind::File)).is_err());
+        assert!(reveal(&empty(TargetKind::Directory)).is_err());
     }
 
     #[test]

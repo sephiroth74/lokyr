@@ -1,0 +1,28 @@
+ 6:22  up 9 days, 23 mins, 67 users, load averages: 3.45 3.38 3.01
+06:22:36 gate 1: p50 18.55
+06:22:36 latency h 1
+06:22:42 cpu h 1: 5.0
+06:22:48 latency w 1
+06:22:55 cpu w 1: 105.6
+06:23:01 latency w 2
+06:23:07 cpu w 2: 105.4
+06:23:13 latency h 2
+06:23:19 cpu h 2: 4.9
+06:23:26 latency w 3
+06:23:32 cpu w 3: 105.2
+06:23:38 latency h 3
+06:23:44 cpu h 3: 5.8
+06:23:50 latency h 4
+06:23:56 cpu h 4: 4.5
+06:24:03 latency w 4
+06:24:09 cpu w 4: 104.9
+06:24:15 latency h 5
+06:24:21 cpu h 5: 4.5
+06:24:27 latency w 5
+06:24:33 cpu w 5: 105.1
+06:24:39 latency w 6
+06:24:46 cpu w 6: 105.2
+06:24:52 latency h 6
+06:24:58 cpu h 6: 4.2
+ 6:25  up 9 days, 26 mins, 67 users, load averages: 4.64 3.65 3.16
+06:25:04 done

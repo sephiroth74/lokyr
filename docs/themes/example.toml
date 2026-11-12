@@ -1,0 +1,124 @@
+# A theme of Lokyr of every key of the native format, its values those of
+# the built-in "Lokyr Dark". A theme needs none of them but its terminal's
+# background, foreground and 16 colors, which it can take of the theme
+# that it extends too: Lokyr derives what it leaves out of them.
+#
+# Install it: copy it into ~/.config/lokyr/themes/, as "Example.toml", and
+# name it in your config: [theme] dark = "Example".
+
+[theme]
+name = "Example"                     # its name, for people: Lokyr knows it by its file's
+author = "Your Name"                 # who made it, which the picker may tell
+license = "MIT"                      # its license, an SPDX expression
+source = "https://github.com/you/example-theme"   # where it comes from
+variant = "dark"                     # "light" or "dark": the appearance that it is for
+extends = "Lokyr Dark"               # the theme whose colors it takes where it gives none
+
+[terminal]
+background = "#1e1e20"            # the default background
+foreground = "#e6e6e6"            # the default text
+palette = [                          # black, red, green, yellow, blue, magenta, cyan, white, then their bright ones
+    "#45454b", "#f25d62", "#58c672", "#e3bd4c", "#5aa2f7", "#c983de", "#4cc4cf", "#c4c4ca",
+    "#75757d", "#ff8488", "#7edb94", "#f5d47a", "#86bcff", "#dca3ec", "#7adce4", "#f4f4f6",
+]
+cursor = "#e6e6e6"                # the cursor; the text's color without
+cursor-text = "#1e1e20"           # the text under a block cursor: read, not applied yet
+selection = "#34445f"             # the selection's background; the token field.selection without
+selection-text = "#e6e6e6"        # the selected text; its own color without
+bold = "#f4f4f6"                  # bold text of the default color; its own color without
+link = "#4c9bff"                  # a link's color: read, not applied yet
+underline = "#e6e6e6"             # an underline; the text's color without
+
+[search]                             # the find bar's highlights
+match = "#ffd60a4c"                  # every match
+current = "#ff7a0080"                # the match that the find bar is at
+
+[interface]                         # Lokyr's own colors, by their whole names
+"text" = "#e6e6e6"
+"text.secondary" = "#9a9aa0"
+"text.disabled" = "#5e5e64"
+"accent" = "#4c9bff"
+"separator" = "#ffffff1a"
+"shadow" = "#00000080"
+"scrollbar" = "#ffffff59"
+"terminal.bg" = "#1e1e20"
+"terminal.fg" = "#e6e6e6"
+
+[panel]                             # the panels: the find bar, the palette, the menus
+bg = "#2a2a2d"
+border = "#ffffff1f"
+
+[field]                             # the text fields
+bg = "#1e1e20"
+border = "#ffffff29"
+focus = "#4c9bff99"
+selection = "#3f638b"
+
+[focus]                             # the keyboard's focus
+ring = "#4c9bff99"
+
+[button]                            # the buttons
+bg = "#ffffff14"
+hover.bg = "#ffffff1f"
+pressed.bg = "#ffffff2e"
+
+[toggle]                            # the toggles that are on
+on.bg = "#4c9bff33"
+on.fg = "#7ab6ff"
+
+[tooltip]                           # the tooltips
+bg = "#323235"
+fg = "#e6e6e6"
+border = "#ffffff26"
+
+[list]                              # the lists' selected rows
+selection.bg = "#2462c4"
+selection.fg = "#ffffff"
+selection.inactive.bg = "#ffffff1f"
+
+[scrollbar]                         # the scroll bar, past its own color in [interface]
+hover = "#ffffff8c"
+track = "#ffffff12"
+mark = "#ffd60a"
+"mark.current" = "#ff9f0a"           # quoted, as `mark` has a color of its own
+
+[pane]                              # the panes
+divider = "#ffffff29"
+drop = "#4c9bff4c"
+
+[progress]                          # the programs' progress
+track = "#ffffff24"
+normal = "#4c9bff"
+error = "#ff5f57"
+paused = "#ffbd2e"
+
+[tabs]                              # the tab bar
+bar.bg = "#232326"
+track.bg = "#0000004c"
+active.bg = "#404044"
+active.fg = "#f4f4f6"
+active.border = "#ffffff1f"
+active.shadow = "#00000066"
+inactive.bg = "#00000000"
+inactive.fg = "#9a9aa0"
+hover.bg = "#ffffff0f"
+seamless.line = "#ffffff1f"
+seamless.veil = "#00000045"
+
+[segments]                          # the segmented controls
+bg = "#ffffff14"
+chosen.bg = "#2462c4"
+chosen.fg = "#ffffff"
+box.bg = "#ffffff08"
+box.border = "#ffffff1a"
+
+[gutter]                            # the bar beside each prompt of a command that ran
+running = "#4c9bff"
+succeeded = "#ffffff40"
+failed = "#ff5f57"
+
+# A plugin's tokens, of a section of its own name: [command-header]'s
+# "pill" is the token "command-header.pill", which the plugin's config
+# names, as [plugins.command-header] background = "command-header.pill".
+[command-header]
+pill = "#2a2a2d"

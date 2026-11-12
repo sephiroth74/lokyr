@@ -28,17 +28,17 @@ A minimal AppKit app, the F0 spike's `Spike.app`, is measured the same way. It o
 
 | Terminal | Version | Font | Settings | Window (points) |
 |---|---|---|---|---|
-| Terminal.app | 2.15 (488) | SF Mono Terminal 12 | The user's "Clear Dark" profile, 120 × 30 | 877 × 499 |
-| iTerm2 | 3.7.4 | BlexMono Nerd Font Mono 22 | The user's profile: 80 × 25, blur on, 10% transparency. It restored two of the user's windows | 987 × 717, twice |
-| Ghostty | Development build 62fa23bfa (18019) | Agave Nerd Font Mono 20 | The user's config: ligatures and blur on, 90% opacity | 1521 × 925 |
+| Terminal.app | 2.15 (488) | SF Mono Terminal 12 | The installed "Clear Dark" profile, 120 × 30 | 877 × 499 |
+| iTerm2 | 3.7.4 | BlexMono Nerd Font Mono 22 | The installed profile: 80 × 25, blur on, 10% transparency. It restored two earlier windows | 987 × 717, twice |
+| Ghostty | Development build 62fa23bfa (18019) | Agave Nerd Font Mono 20 | The installed config: ligatures and blur on, 90% opacity | 1521 × 925 |
 | kitty | 0.49.2 | Default: `monospace` 11 | Defaults | 889 × 612 |
 | WezTerm | 20240203-110809-5046fc22 | Default: JetBrains Mono 12 | Defaults | 574 × 453 |
 | Alacritty | 0.17.0, built from source | Default: Menlo 11.25 | Defaults | 800 × 632 |
 | Minimal AppKit app | The F0 spike's `Spike.app` | — | One empty window | 640 × 432 |
 
 - **Deviations from the [comparison method](../PERFORMANCE.md#comparing-with-other-terminals)**:
-  - Fonts, font sizes and window sizes differ, and some terminals have blur or ligatures on. Matching them would have meant changing the user's own settings for Terminal, iTerm2 and Ghostty.
-  - The shell is the user's zsh, with its prompt.
+  - Fonts, font sizes and window sizes differ, and some terminals have blur or ligatures on. Matching them would have meant changing the machine's own settings for Terminal, iTerm2 and Ghostty.
+  - The shell is the machine's zsh, with its prompt.
   - iTerm2 ran with the two windows it restored.
 - **Sources**: kitty and WezTerm come from Homebrew. Homebrew disabled the Alacritty cask on 2026-09-01, because the app does not pass Gatekeeper, so Alacritty was built from source with the steps of its `make app`.
 

@@ -592,3 +592,31 @@ fn a_row_that_soft_wraps_joins_only_its_continuation() {
         Some(((2, 0), (2, 2)))
     );
 }
+
+#[test]
+fn text_of_a_case_that_does_not_count_folds_unicode_and_escapes_the_regex_syntax() {
+    let mut terminal = printed(30, 2, "Hello Été xzé (é)");
+    let from = at(&terminal, 0, 0);
+    let found = |terminal: &mut Terminal, text: &str, case: Case| {
+        let query = Query::text(text, case).unwrap();
+        let found = find(terminal.screen_rows_mut(), &query, from, Direction::Forward)?;
+        let places = (place(terminal, found.start)?, place(terminal, found.end)?);
+        found.release(terminal.screen_rows_mut());
+        Some(places)
+    };
+    // Unicode's simple case, through the regex engine.
+    assert_eq!(
+        found(&mut terminal, "été", Case::Insensitive),
+        Some(((0, 6), (0, 8)))
+    );
+    assert_eq!(found(&mut terminal, "été", Case::Sensitive), None);
+    // The regex syntax's characters, as they are: a dot, not any
+    // character; parentheses, not a group.
+    assert_eq!(found(&mut terminal, "X.É", Case::Insensitive), None);
+    assert_eq!(
+        found(&mut terminal, "(É)", Case::Insensitive),
+        Some(((0, 14), (0, 16)))
+    );
+    assert!(Query::text("", Case::Insensitive).is_none());
+    assert!(Query::text("", Case::Sensitive).is_none());
+}

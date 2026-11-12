@@ -1,6 +1,6 @@
-# esctest, after the second compatibility fixes (F1-46)
+# esctest, after the second compatibility fixes
 
-Measured on 2026-10-18 with `just esctest`, after F1-46, against [the run after F1-45](esctest-F1-45.md). The full report, every failure with its reason, is in [esctest-F1-46/report.txt](esctest-F1-46/report.txt).
+Measured on 2026-10-18 with `just esctest`, after the second compatibility fixes, against [the run after the first](esctest-F1-45.md). The full report, every failure with its reason, is in [esctest-F1-46/report.txt](esctest-F1-46/report.txt).
 
 ## What changed in the method
 
@@ -14,7 +14,7 @@ The whole run takes 40 seconds.
 
 ## Result
 
-**496 of 533 applicable tests pass (93.1%)**, against 402 of 528 (76.1%) after F1-45's review fixes, with 34 known bugs of xterm left out.
+**496 of 533 applicable tests pass (93.1%)**, against 402 of 528 (76.1%) after the first fixes and the fixes of their review, with 34 known bugs of xterm left out.
 
 | Step | Tests it took |
 |---|---|

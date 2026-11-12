@@ -49,6 +49,9 @@ fn golden(name: &str) {
     let (cols, rows) = recording.size.expect("a recording has its size");
     let options = Options {
         window_ops: recording.window_ops,
+        // A version of the snapshots' own, which their replies to XTVERSION
+        // hold, whatever the crate's.
+        version: "0.1.0".to_owned(),
         ..Options::default()
     };
     let mut terminal = Terminal::new(cols, rows, options);

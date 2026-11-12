@@ -1,7 +1,10 @@
 //! Snapshots: what a renderer draws, copied from the terminal under the
 //! lock, so that it can draw without the lock.
 
-use super::{Colors, Cursor, CursorStyle, InputModes, KeyboardFlags, Selected, Terminal};
+use super::{
+    Colors, Cursor, CursorStyle, Decorated, GutterMark, Highlighted, InputModes, KeyboardFlags,
+    Origin, Selected, Terminal,
+};
 use crate::page::{Cell, Content, ListRow, Page, RowFlag, Style, StyleId};
 
 /// The view as a renderer draws it: its rows, the screen's or, when the
@@ -15,10 +18,8 @@ use crate::page::{Cell, Content, ListRow, Page, RowFlag, Style, StyleId};
 /// the latest state, never the ones in between.
 #[derive(Clone, Debug, Default)]
 pub struct Snapshot {
-    /// The epoch of the screen's rows, and the view's first row, counted
-    /// as the screen's top row is by the times that the screen scrolled,
-    /// at the last update.
-    origin: Option<(u64, i128)>,
+    /// Where the rows were at the last update.
+    origin: Option<Origin>,
     cols: u16,
     lines: Vec<Line>,
     /// Which rows the last update copied.
@@ -28,6 +29,8 @@ pub struct Snapshot {
     scrolled: i32,
     /// How many rows the view is above the screen's top.
     offset: usize,
+    /// How many rows the scrollback holds, above the screen.
+    scrollback: usize,
     /// Whether the last update found other colors, or reverse video.
     colors_changed: bool,
     cursor: SnapshotCursor,
@@ -41,6 +44,17 @@ pub struct Snapshot {
     colors: Colors,
     /// The selection, as the view shows it.
     selection: Option<Selected>,
+    /// The decorations' spans that the view shows.
+    decorations: Vec<Decorated>,
+    /// The gutter's marks that the view shows.
+    gutter: Vec<GutterMark>,
+    /// The spans of the searches' matches that the view shows.
+    highlights: Vec<Highlighted>,
+    /// Whether a search shows its matches, or its current one, wherever
+    /// they are.
+    matches_shown: bool,
+    /// The images' placements that the view shows, the lowest first.
+    images: Vec<super::Placed>,
 }
 
 /// The cursor, as a renderer draws it.
@@ -95,9 +109,46 @@ impl Snapshot {
         self.offset
     }
 
+    /// How many rows the active screen's scrollback held at the last
+    /// update, above the screen: none on the alternate screen.
+    pub fn scrollback(&self) -> usize {
+        self.scrollback
+    }
+
     /// The selection, as the view shows it, if there is one.
     pub fn selection(&self) -> Option<Selected> {
         self.selection
+    }
+
+    /// The spans of the decorations that the view shows, as the last
+    /// update found them, row by row.
+    pub fn decorations(&self) -> &[Decorated] {
+        &self.decorations
+    }
+
+    /// The images' placements that the view shows, as the last update
+    /// found them, the lowest first: those under the text before it.
+    pub fn images(&self) -> &[super::Placed] {
+        &self.images
+    }
+
+    /// The gutter's marks that the view shows, as the last update found
+    /// them, by their rows.
+    pub fn gutter(&self) -> &[GutterMark] {
+        &self.gutter
+    }
+
+    /// The spans of the searches' matches that the view shows, as the last
+    /// update found them, each search's, its current match's last.
+    pub fn highlights(&self) -> &[Highlighted] {
+        &self.highlights
+    }
+
+    /// Whether a search showed its matches, or its current one, at the last
+    /// update, wherever they are, as [`Terminal::match_marks`] then marks
+    /// them.
+    pub fn matches_shown(&self) -> bool {
+        self.matches_shown
     }
 
     /// Whether the last update copied row `y`, which the renderer then has
@@ -114,6 +165,13 @@ impl Snapshot {
     /// the rows outside it are marked changed, and drawn again.
     pub fn scrolled(&self) -> i32 {
         self.scrolled
+    }
+
+    /// Where the rows were at the last update, the drawn frame's: their
+    /// epoch, and the number of the view's first row, which the lines
+    /// start at; `None` before the first.
+    pub fn origin(&self) -> Option<Origin> {
+        self.origin
     }
 
     /// The cursor, in the view: below the screen's row, by the view's
@@ -290,6 +348,20 @@ impl Terminal {
             style: self.cursor_style(),
             blink: self.cursor_blink(),
         };
+        // An embedder's cursor in its place, still, of the program's shape.
+        if let Some(held) = self.held_cursor_in_view() {
+            let (x, y) = held.unwrap_or((cursor.x, 0));
+            snapshot.cursor = SnapshotCursor {
+                position: Cursor {
+                    x,
+                    y,
+                    pending_wrap: false,
+                },
+                visible: held.is_some(),
+                style: self.cursor_style(),
+                blink: false,
+            };
+        }
         let reverse_video = self.reverse_video();
         snapshot.colors_changed =
             snapshot.reverse_video != reverse_video || snapshot.colors != self.colors;
@@ -301,31 +373,32 @@ impl Terminal {
         if snapshot.colors != self.colors {
             snapshot.colors.clone_from(&self.colors);
         }
+        let origin = self.origin();
         let rows = &mut self.screen_mut().rows;
         let (cols, height) = (rows.cols(), rows.rows());
         let lines = usize::from(height);
         let scrollback = rows.scrollback_rows();
-        // The scrollback holds fewer rows than `i128` counts.
-        let top = i128::from(rows.scrolled()) - offset as i128;
-        let origin = (rows.epoch(), top);
         // How far the view's first row moved down since the last update,
         // as the lines that the snapshot has move up; up when negative.
         let moved = match snapshot.origin {
-            Some((epoch, before))
-                if epoch == origin.0 && snapshot.cols == cols && snapshot.lines.len() == lines =>
+            Some(before)
+                if before.epoch == origin.epoch
+                    && snapshot.cols == cols
+                    && snapshot.lines.len() == lines =>
             {
-                top - before
+                origin.top.saturating_sub(before.top)
             }
-            _ => i128::try_from(lines).unwrap_or(i128::MAX),
+            _ => i64::try_from(lines).unwrap_or(i64::MAX),
         };
         snapshot.origin = Some(origin);
         snapshot.offset = offset;
+        snapshot.scrollback = scrollback;
         snapshot.cols = cols;
         snapshot.lines.resize_with(lines, Line::default);
         snapshot.changed.clear();
         snapshot.changed.resize(lines, false);
         // At most the view's rows.
-        let shift = moved.unsigned_abs().min(lines as u128) as usize;
+        let shift = moved.unsigned_abs().min(lines as u64) as usize;
         let down = moved < 0;
         if down {
             snapshot.lines.rotate_right(shift);
@@ -370,6 +443,12 @@ impl Terminal {
             }
         }
         snapshot.selection = self.selection_in_snapshot(&snapshot.changed);
+        snapshot.decorations = self.decorated_view();
+        snapshot.gutter = self.gutter_view();
+        self.drop_rewritten_matches();
+        snapshot.highlights = self.highlighted_view();
+        snapshot.matches_shown = self.matches_shown();
+        snapshot.images = self.images_view();
         copied
     }
 }
@@ -392,11 +471,12 @@ pub(super) fn copy_of(terminal: &Terminal) -> Snapshot {
     let cursor = terminal.cursor();
     let y = usize::from(cursor.y) + offset;
     Snapshot {
-        origin: None,
+        origin: Some(terminal.origin()),
         cols: rows.cols(),
         changed: vec![true; lines.len()],
         scrolled: 0,
         offset,
+        scrollback: rows.scrollback_rows(),
         colors_changed: false,
         cursor: SnapshotCursor {
             position: Cursor {
@@ -415,6 +495,11 @@ pub(super) fn copy_of(terminal: &Terminal) -> Snapshot {
         keyboard_flags: terminal.keyboard_flags(),
         colors: terminal.colors().clone(),
         selection: None,
+        decorations: Vec::new(),
+        gutter: Vec::new(),
+        highlights: Vec::new(),
+        matches_shown: terminal.matches_shown(),
+        images: Vec::new(),
     }
 }
 

@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "lokyr/splits",
+  "type": "object",
+  "properties": {
+    "dim-inactive": {
+      "description": "How much the panes that have not the keyboard fade into their background, from 0, not at all, to 1.",
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "default": 0.15
+    },
+    "pane-titles": {
+      "description": "Whether each pane of a tab of more than one shows its title across its top.",
+      "type": "boolean",
+      "default": false
+    },
+    "focus-follows-mouse": {
+      "description": "Whether the keyboard goes to the pane that the pointer comes over.",
+      "type": "boolean",
+      "default": false
+    }
+  }
+}

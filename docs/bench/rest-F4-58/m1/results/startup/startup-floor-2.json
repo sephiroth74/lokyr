@@ -1,0 +1,74 @@
+{
+  "app": "/Users/alessandro/lokyr-bench/floor/Spike.app",
+  "executable": "/Users/alessandro/lokyr-bench/floor/Spike.app/Contents/MacOS/spike",
+  "warmup": 2,
+  "runs": [
+    {
+      "pid": 6285,
+      "from_start_ms": 220.0,
+      "from_request_ms": 267.6
+    },
+    {
+      "pid": 6287,
+      "from_start_ms": 228.2,
+      "from_request_ms": 274.2
+    },
+    {
+      "pid": 6289,
+      "from_start_ms": 220.7,
+      "from_request_ms": 267.1
+    },
+    {
+      "pid": 6291,
+      "from_start_ms": 237.2,
+      "from_request_ms": 283.2
+    },
+    {
+      "pid": 6293,
+      "from_start_ms": 228.9,
+      "from_request_ms": 274.4
+    },
+    {
+      "pid": 6295,
+      "from_start_ms": 220.7,
+      "from_request_ms": 267.1
+    },
+    {
+      "pid": 6297,
+      "from_start_ms": 233.1,
+      "from_request_ms": 284.2
+    },
+    {
+      "pid": 6299,
+      "from_start_ms": 227.8,
+      "from_request_ms": 273.9
+    },
+    {
+      "pid": 6301,
+      "from_start_ms": 219.5,
+      "from_request_ms": 265.9
+    },
+    {
+      "pid": 6303,
+      "from_start_ms": 240.9,
+      "from_request_ms": 286.6
+    }
+  ],
+  "summary": {
+    "from_start_ms": {
+      "min": 219.5,
+      "p10": 220.0,
+      "median": 228.0,
+      "p90": 237.2,
+      "max": 240.9
+    },
+    "from_request_ms": {
+      "min": 265.9,
+      "p10": 267.1,
+      "median": 274.05,
+      "p90": 284.2,
+      "max": 286.6
+    },
+    "spread": 0.075
+  }
+}

@@ -1,0 +1,96 @@
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=24117347)	100%; charged; 0:00 remaining present: true
+15:51  up 3 days, 11 mins, 120 users, load averages: 3.32 5.27 5.35
+Graphics/Displays:
+    Apple M5 Pro:
+      Displays:
+        DELL P2721Q:
+          Resolution: 5120 x 2880 (5K/UHD+ - Ultra High Definition Plus)
+          Main Display: Yes
+acme/hello0 0.1.0 (path)
+acme/hello1 0.1.0 (path)
+acme/hello2 0.1.0 (path)
+acme/hello3 0.1.0 (path)
+acme/hello4 0.1.0 (path)
+acme/hello5 0.1.0 (path)
+acme/hello6 0.1.0 (path)
+acme/hello7 0.1.0 (path)
+acme/hello8 0.1.0 (path)
+acme/hello9 0.1.0 (path)
+15:51:20 first start v070
+15:51:35 first start v080
+15:51:53 startup v070 1
+15:52:10 startup v080 1
+15:52:27 startup floor 1
+15:52:43 load { 3.71 4.89 5.20 }
+15:52:45 startup v080 2
+15:53:02 startup v070 2
+15:53:19 startup floor 2
+15:53:35 load { 5.53 5.06 5.23 }
+15:53:37 startup v080 3
+15:53:54 startup v070 3
+15:54:11 startup floor 3
+15:54:26 load { 3.18 4.49 5.01 }
+15:54:28 startup v070 4
+15:54:46 startup v080 4
+15:55:03 startup floor 4
+15:55:18 load { 3.50 4.46 4.97 }
+15:55:18 latency warm-up v070
+15:55:21 latency warm-up v080
+15:55:26 latency v070 1 place 1
+15:55:40 latency v080 1 place 2
+15:55:52 load { 2.89 4.22 4.87 }
+15:55:54 latency v080 2 place 1
+15:56:09 latency v070 2 place 2
+15:56:21 load { 2.52 4.00 4.76 }
+15:56:23 latency v080 3 place 1
+15:56:38 latency v070 3 place 2
+15:56:50 load { 2.82 3.93 4.71 }
+15:56:52 latency v070 4 place 1
+15:57:06 latency v080 4 place 2
+15:57:19 load { 1.93 3.61 4.57 }
+15:57:21 latency v070 5 place 1
+15:57:35 latency v080 5 place 2
+15:57:47 load { 1.75 3.43 4.47 }
+15:57:49 latency v080 6 place 1
+15:58:04 latency v070 6 place 2
+15:58:16 load { 2.11 3.36 4.41 }
+15:58:18 latency v080 7 place 1
+15:58:32 latency v070 7 place 2
+15:58:45 load { 2.06 3.23 4.32 }
+15:58:47 latency v070 8 place 1
+15:59:01 latency v080 8 place 2
+15:59:14 load { 1.82 3.08 4.24 }
+15:59:14 idle v070-1
+16:00:51 idle v080-1
+16:02:29 load { 1.58 2.62 3.83 }
+16:02:29 idle v080-2
+16:04:06 idle v070-2
+16:05:44 load { 1.65 2.05 3.33 }
+16:05:44 throughput ascii v070 1
+16:05:51 throughput ascii v080 1
+16:05:58 throughput ascii v080 2
+16:06:05 throughput ascii v070 2
+16:06:12 load { 2.49 2.22 3.35 }
+16:06:12 throughput seq v070 1
+16:06:13 throughput seq v080 1
+16:06:14 throughput seq v080 2
+16:06:15 throughput seq v070 2
+16:06:16 load { 2.53 2.23 3.35 }
+16:06:16 throughput sgr v070 1
+16:06:18 throughput sgr v080 1
+16:06:19 throughput sgr v080 2
+16:06:20 throughput sgr v070 2
+16:06:22 load { 2.73 2.28 3.36 }
+16:06:22 throughput cjk v070 1
+16:06:23 throughput cjk v080 1
+16:06:25 throughput cjk v080 2
+16:06:26 throughput cjk v070 2
+16:06:28 load { 2.77 2.30 3.35 }
+16:06:28 idle plugins-0-1
+16:08:06 idle plugins-10-1
+16:09:43 load { 1.71 1.88 2.95 }
+16:09:43 idle plugins-10-2
+16:11:21 idle plugins-0-2
+16:12:58 load { 1.37 1.66 2.64 }
+16:12:58 done

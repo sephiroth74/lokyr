@@ -1,11 +1,14 @@
 //! What Lokyr keeps between its runs that is not the user's config: the
 //! directory of the last window that closed, which the first window of the
-//! next run starts in when the config says so.
+//! next run starts in when the config says so, and the windows that were
+//! open as it quit, which it opens again.
 
 use std::ffi::OsString;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+
+pub mod windows;
 
 /// The file of the last window's directory, in the state's directory.
 const LAST_DIRECTORY: &str = "last-directory";
@@ -35,10 +38,18 @@ pub fn last_directory(state: &Path) -> Option<PathBuf> {
 /// Keeps `directory` as the last window's, in `state`, which it makes: a
 /// file written whole, so that a write cut short leaves the one before.
 pub fn keep_last_directory(state: &Path, directory: &Path) -> io::Result<()> {
-    fs::create_dir_all(state)?;
-    let temporary = state.join(format!(".{LAST_DIRECTORY}.{}.new", std::process::id()));
-    let written = fs::write(&temporary, bytes(directory))
-        .and_then(|()| fs::rename(&temporary, state.join(LAST_DIRECTORY)));
+    write_whole(&state.join(LAST_DIRECTORY), &bytes(directory))
+}
+
+/// Writes `contents` to the file at `path`, whose directory it makes,
+/// whole: into a file of its own beside it, renamed over it, so that a
+/// write cut short leaves the one before, and no file of its own.
+pub fn write_whole(path: &Path, contents: &[u8]) -> io::Result<()> {
+    let directory = path.parent().unwrap_or(Path::new("."));
+    fs::create_dir_all(directory)?;
+    let name = path.file_name().unwrap_or_default().to_string_lossy();
+    let temporary = directory.join(format!(".{name}.{}.new", std::process::id()));
+    let written = fs::write(&temporary, contents).and_then(|()| fs::rename(&temporary, path));
     if written.is_err() {
         let _ = fs::remove_file(&temporary);
     }

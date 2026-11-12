@@ -1,0 +1,94 @@
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=24117347)	100%; charged; 0:00 remaining present: true
+22:55  up 5 days,  7:15, 186 users, load averages: 1.60 4.39 4.74
+Graphics/Displays:
+    Apple M5 Pro:
+      Displays:
+        DELL P2721Q:
+          Resolution: 5120 x 2880 (5K/UHD+ - Ultra High Definition Plus)
+          Main Display: Yes
+Downloading sephiroth74/snap 0.1.0…
+Installed sephiroth74/snap 0.1.0, which asks for clipboard-write, process-read, terminal-read.
+Lokyr loads them at once.
+Downloading sephiroth74/awake 0.1.0…
+Installed sephiroth74/awake 0.1.0, which asks for keep-awake, process-read.
+Lokyr loads them at once.
+sephiroth74/awake 0.1.0 (registry): process-read, keep-awake
+sephiroth74/snap 0.1.0 (registry): terminal-read, clipboard-write, process-read
+22:55:48 first start v080
+22:56:04 first start v090
+22:56:21 startup v080 1
+22:56:39 startup v090 1
+22:56:56 startup floor 1
+22:57:12 load { 2.16 3.87 4.50 }
+22:57:14 startup v090 2
+22:57:31 startup v080 2
+22:57:49 startup floor 2
+22:58:04 load { 2.81 3.74 4.41 }
+22:58:06 startup v090 3
+22:58:23 startup v080 3
+22:58:41 startup floor 3
+22:58:56 load { 2.41 3.50 4.28 }
+22:58:58 startup v080 4
+22:59:15 startup v090 4
+22:59:33 startup floor 4
+22:59:48 load { 2.52 3.35 4.18 }
+22:59:48 latency warm-up v080
+22:59:51 latency warm-up v090
+22:59:56 latency v080 1 place 1
+23:00:10 latency v090 1 place 2
+23:00:22 load { 2.11 3.15 4.07 }
+23:00:24 latency v090 2 place 1
+23:00:39 latency v080 2 place 2
+23:00:51 load { 2.33 3.11 4.03 }
+23:00:53 latency v090 3 place 1
+23:01:08 latency v080 3 place 2
+23:01:20 load { 3.06 3.22 4.04 }
+23:01:22 latency v080 4 place 1
+23:01:37 latency v090 4 place 2
+23:01:49 load { 2.31 3.02 3.94 }
+23:01:51 latency v080 5 place 1
+23:02:05 latency v090 5 place 2
+23:02:18 load { 2.26 2.96 3.88 }
+23:02:20 latency v090 6 place 1
+23:02:34 latency v080 6 place 2
+23:02:47 load { 2.36 2.92 3.83 }
+23:02:49 latency v090 7 place 1
+23:03:03 latency v080 7 place 2
+23:03:15 load { 2.32 2.87 3.79 }
+23:03:17 latency v080 8 place 1
+23:03:32 latency v090 8 place 2
+23:03:44 load { 2.03 2.75 3.72 }
+23:03:44 idle v080-1
+23:05:22 idle v090-1
+23:07:00 load { 1.47 2.16 3.26 }
+23:07:00 idle v090-2
+23:08:37 idle v080-2
+23:10:15 load { 1.92 1.96 2.94 }
+23:10:15 throughput ascii v080 1
+23:10:22 throughput ascii v090 1
+23:10:29 throughput ascii v090 2
+23:10:36 throughput ascii v080 2
+23:10:43 load { 2.38 2.06 2.94 }
+23:10:43 throughput seq v080 1
+23:10:44 throughput seq v090 1
+23:10:46 throughput seq v090 2
+23:10:47 throughput seq v080 2
+23:10:48 load { 2.91 2.17 2.98 }
+23:10:48 throughput sgr v080 1
+23:10:49 throughput sgr v090 1
+23:10:51 throughput sgr v090 2
+23:10:52 throughput sgr v080 2
+23:10:54 load { 3.00 2.20 2.99 }
+23:10:54 throughput cjk v080 1
+23:10:55 throughput cjk v090 1
+23:10:57 throughput cjk v090 2
+23:10:59 throughput cjk v080 2
+23:11:00 load { 3.00 2.23 2.99 }
+23:11:00 idle plugins-none-1
+23:12:38 idle plugins-two-1
+23:14:16 load { 2.75 2.28 2.84 }
+23:14:16 idle plugins-two-2
+23:15:53 idle plugins-none-2
+23:17:31 load { 1.42 1.99 2.60 }
+23:17:31 done

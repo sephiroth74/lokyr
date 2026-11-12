@@ -14,35 +14,44 @@ name = "lokyr"
 path = "src/main.rs"
 
 [features]
-default = ["luau-plugins"]
+default = ["luau-plugins", "dist-default"]
+# The distributions, each of the first-party plugins that its build holds.
+# What `cargo xtask gen-dist` writes of dist/*.toml, which it rewrites.
+dist-default = ["lokyr-app-core/dist-default"]
+dist-minimal = ["lokyr-app-core/dist-minimal"]
+# The end of what `cargo xtask gen-dist` writes.
 # Support for third-party plugins written in Luau.
 luau-plugins = ["dep:lokyr-plugin-host-luau"]
 # Three drawables a window, rather than two, to measure against them.
 three-drawables = ["lokyr-render-metal/three-drawables"]
+# A plugin of a view in every slot of the windows, for a build of tests.
+sample-slots = ["lokyr-app-core/sample-slots"]
+# A plugin on a thread of its own that renders the status bar without pause,
+# reading the focused pane, for a build of tests.
+sample-worker = ["lokyr-app-core/sample-worker"]
 
 [dependencies]
-lokyr-core-actions.workspace = true
+lokyr-app-core.workspace = true
+lokyr-pkg-model.workspace = true
 lokyr-kernel.workspace = true
-lokyr-links.workspace = true
 lokyr-platform-core.workspace = true
 lokyr-plugin-host-luau = { workspace = true, optional = true }
 lokyr-pty.workspace = true
-lokyr-render-core.workspace = true
-lokyr-session.workspace = true
 lokyr-text-core.workspace = true
-lokyr-ui-core.workspace = true
-lokyr-vt-core.workspace = true
-notify.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
 lokyr-font-coretext.workspace = true
 lokyr-platform-macos.workspace = true
+lokyr-render-core.workspace = true
 lokyr-render-metal.workspace = true
 
-[dev-dependencies]
-lokyr-platform-core = { workspace = true, features = ["fake"] }
-
 [target.'cfg(target_os = "macos")'.dev-dependencies]
+lokyr-plugin-sdk = { workspace = true, features = ["unstable"] }
+lokyr-search-plugin.workspace = true
+lokyr-splits.workspace = true
+lokyr-tabs.workspace = true
+lokyr-ui-core.workspace = true
+lokyr-vt-core.workspace = true
 png.workspace = true
 
 [lints]

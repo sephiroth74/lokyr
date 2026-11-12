@@ -8,11 +8,18 @@
 
 #![cfg(target_os = "macos")]
 
+mod about;
+mod access;
+mod accessory;
 mod alert;
 mod app;
 mod appearance;
+mod awake;
 mod backend;
+mod default_terminal;
 mod definition;
+mod drag_image;
+mod fill;
 mod frame;
 mod global_keys;
 mod keys;
@@ -21,10 +28,16 @@ mod menu;
 mod notify;
 mod open;
 mod quick;
+mod save;
+mod screens;
 mod secure;
+mod services;
 mod shared;
+mod sweep;
 mod text_input;
 mod timer;
+mod tools;
+mod updates;
 mod wake;
 mod window;
 

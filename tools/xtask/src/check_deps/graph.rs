@@ -32,14 +32,18 @@ pub struct Graph {
 
 impl Graph {
     /// Loads the graph of the workspace this tool belongs to, with every
-    /// feature enabled and dependencies for every target platform.
-    pub fn load_workspace() -> Result<Self> {
+    /// feature enabled and the dependencies of `platform`, a target's
+    /// triple, or of every target platform without one.
+    pub fn load_workspace(platform: Option<&str>) -> Result<Self> {
         let manifest = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../Cargo.toml");
-        let metadata = MetadataCommand::new()
+        let mut command = MetadataCommand::new();
+        command
             .manifest_path(manifest)
-            .features(CargoOpt::AllFeatures)
-            .exec()
-            .context("running `cargo metadata`")?;
+            .features(CargoOpt::AllFeatures);
+        if let Some(platform) = platform {
+            command.other_options(vec!["--filter-platform".to_owned(), platform.to_owned()]);
+        }
+        let metadata = command.exec().context("running `cargo metadata`")?;
         Self::from_metadata(&metadata)
     }
 

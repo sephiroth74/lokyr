@@ -1,14 +1,14 @@
-# Throughput after the performance fixes (F1-51)
+# Throughput after the performance fixes
 
-Measured on 2026-10-23, from 00:54 to 00:59, with `just bench` on the code of dc61be7, on the machine of [the F0 baseline](baseline-F0.md): an Apple M5 Pro, macOS 27.0.1, on AC power, at night, with no sleep during the run and the fuzzing started after it. Rust 1.99.0, release builds, `alacritty_terminal` 0.26.0.
+Measured on 2026-10-23, from 00:54 to 00:59, with `just bench` on the code of 1124d46, on the machine of [the F0 baseline](baseline-F0.md): an Apple M5 Pro, macOS 27.0.1, on AC power, at night, with no sleep during the run and the fuzzing started after it. Rust 1.99.0, release builds, `alacritty_terminal` 0.26.0.
 
 ## Method
 
-The same as [F1-50's](throughput-F1-50.md#method): both cores fed the same bytes in reads of 64 KiB by `bolt-throughput`, at 120 by 40, the median of 5 runs taken in turn; vtebench's scenarios at commit `ead8003`; `cat` of 1 GiB; and criterion for the VT core alone.
+The same as [throughput-F1-50's](throughput-F1-50.md#method): both cores fed the same bytes in reads of 64 KiB by `bolt-throughput`, at 120 by 40, the median of 5 runs taken in turn; vtebench's scenarios at commit `ead8003`; `cat` of 1 GiB; and criterion for the VT core alone.
 
 ## Both cores
 
-| Scenario | Bytes timed | VT core | `alacritty_terminal` | Ratio | Ratio in F1-50 |
+| Scenario | Bytes timed | VT core | `alacritty_terminal` | Ratio | Ratio before the fixes |
 |---|---|---|---|---|---|
 | cursor_motion | 8.5 MiB | 462.2 MiB/s | 378.8 MiB/s | 1.22 | 0.83 |
 | dense_cells | 25.7 MiB | 536.3 MiB/s | 416.6 MiB/s | 1.29 | 0.94 |
@@ -24,11 +24,11 @@ The same as [F1-50's](throughput-F1-50.md#method): both cores fed the same bytes
 | unicode | 8.4 MiB | 400.5 MiB/s | 387.2 MiB/s | 1.03 | 0.39 |
 | `cat` of 1 GiB | 1024 MiB | 940.2 MiB/s | 214.7 MiB/s | 4.38 | 3.33 |
 
-`bolt-replay --bench` replays the same file at 959.5 MiB/s, the median of 5 runs, against 489.5 MiB/s in F1-50.
+`bolt-replay --bench` replays the same file at 959.5 MiB/s, the median of 5 runs, against 489.5 MiB/s before the fixes.
 
 ## The VT core alone
 
-| Benchmark | Throughput | In F1-50 |
+| Benchmark | Throughput | Before the fixes |
 |---|---|---|
 | parser, plain ASCII | 12.8 GiB/s | 12.6 GiB/s |
 | parser, colored output | 1.15 GiB/s | 887 MiB/s |
@@ -44,10 +44,10 @@ The same as [F1-50's](throughput-F1-50.md#method): both cores fed the same bytes
 
 ## Against the budget
 
-The budget is at least `alacritty_terminal`'s throughput in every scenario, but the bottom region, for which [ADR 0015](../adr/0015-vt-core-throughput-exception.md) asks for 0.6 of it at least. Every scenario passes: the twelve others at 1.03 to 14.16, the bottom region at 0.68. `unicode` passes by the least, 3%.
+The budget is at least `alacritty_terminal`'s throughput in every scenario, but the bottom region, for which the criterion asks for 0.6 of it at least. Every scenario passes: the twelve others at 1.03 to 14.16, the bottom region at 0.68. `unicode` passes by the least, 3%.
 
-Taken at rest, the ratios are above those of the measures taken while the fuzzing ran, which the notes of F1-51 and F1-113 give: the bottom region 0.68 against 0.65 and 0.66 after F1-113, `cursor_motion` 1.22 against 1.07 to 1.18.
+Taken at rest, the ratios are above those of the measures taken while the fuzzing ran, as the fixes and the bottom scroll region's own work were made: the bottom region 0.68 against 0.65, and 0.66 after that work, `cursor_motion` 1.22 against 1.07 to 1.18.
 
 ## The search
 
-The same run measured the search, whose report is [F1-54's](search-F1-54.md). It was 14% to 18% slower than there: 31.1 ms over 100 000 lines against 27.2, 2.96 ms over a line of 1 000 000 cells against 2.5. The loop over a row's cells counts their columns with `(0..=u16::MAX).zip(…)`, so that a row of 65 535 columns does not overflow the count, and the inclusive range does not optimize as the open one did: with an open counter of `u32`, the search over 100 000 lines takes 25.9 ms, 16.7% less than the 31.1 above. [F1-126](../tasks/F1-vt-core.md#f1-126--the-loops-over-a-rows-cells) takes it, and the same loop in three other places.
+The same run measured the search, whose report is [search-F1-54](search-F1-54.md). It was 14% to 18% slower than there: 31.1 ms over 100 000 lines against 27.2, 2.96 ms over a line of 1 000 000 cells against 2.5. The loop over a row's cells counts their columns with `(0..=u16::MAX).zip(…)`, so that a row of 65 535 columns does not overflow the count, and the inclusive range does not optimize as the open one did: with an open counter of `u32`, the search over 100 000 lines takes 25.9 ms, 16.7% less than the 31.1 above. A later change takes it, and the same loop in three other places.

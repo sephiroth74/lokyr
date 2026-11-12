@@ -6584,3 +6584,629 @@ fn alternate_scroll_starts_as_the_options_say_and_again_after_a_full_reset() {
         assert_eq!(term.terminal.input_modes().alternate_scroll, on, "RIS");
     }
 }
+
+/// A command of a prompt `$ `, its input `line`, its output `output`, of
+/// its lines, and its end of `status`.
+fn marked_command(line: &str, output: &[&str], status: i32) -> String {
+    let mut text = format!("\x1b]133;A\x07$ \x1b]133;B\x07{line}\r\n\x1b]133;C\x07");
+    for row in output {
+        text.push_str(row);
+        text.push_str("\r\n");
+    }
+    text.push_str(&format!("\x1b]133;D;{status}\x07"));
+    text
+}
+
+#[test]
+fn the_commands_marks_keep_their_rows_through_output_and_the_scrollback() {
+    let mut term = Term::new(20, 4);
+    term.feed(marked_command("ls", &["a", "b"], 0));
+    term.feed(marked_command("false", &[], 1));
+    term.feed("\x1b]133;A\x07$ \x1b]133;B\x07");
+    let commands = term.terminal.commands();
+    assert_eq!(
+        commands,
+        [
+            CommandMarks {
+                id: 1,
+                prompt: Some((0, 0)),
+                input: Some((2, 0)),
+                output: Some((0, 1)),
+                end: Some((0, 3)),
+                status: Some(0),
+            },
+            CommandMarks {
+                id: 2,
+                prompt: Some((0, 3)),
+                input: Some((2, 3)),
+                output: Some((0, 4)),
+                end: Some((0, 4)),
+                status: Some(1),
+            },
+            CommandMarks {
+                id: 3,
+                prompt: Some((0, 4)),
+                input: Some((2, 4)),
+                output: None,
+                end: None,
+                status: None,
+            },
+        ]
+    );
+    // Output that scrolls them into the scrollback leaves their numbers.
+    for _ in 0..30 {
+        term.feed("line\r\n");
+    }
+    assert_eq!(term.terminal.commands(), commands);
+    // A reflowing resize renumbers the rows, but the marks follow their
+    // cells.
+    term.terminal.resize(10, 4);
+    let after = term.terminal.commands();
+    assert_eq!(after.len(), 3);
+    assert_eq!(after[0].status, Some(0));
+    assert_eq!(after[1].status, Some(1));
+    let rows: Vec<i64> = after
+        .iter()
+        .filter_map(|command| command.prompt)
+        .map(|(_, row)| row)
+        .collect();
+    assert!(rows.windows(2).all(|pair| pair[0] < pair[1]), "{after:?}");
+}
+
+#[test]
+fn a_command_whose_rows_leave_the_scrollback_goes() {
+    let mut term = Term::with(
+        20,
+        3,
+        Options {
+            scrollback: Scrollback {
+                limit: 0,
+                ..Scrollback::default()
+            },
+            ..Options::default()
+        },
+    );
+    term.feed(marked_command("one", &[], 0));
+    term.feed(marked_command("two", &[], 0));
+    assert_eq!(term.terminal.commands().len(), 2);
+    // Past the list's first pages, which the limit drops.
+    for _ in 0..20_000 {
+        term.feed("line\r\n");
+    }
+    assert!(term.terminal.commands().is_empty());
+    // ED 3 too, of the scrollback's rows.
+    let mut cleared = Term::new(20, 3);
+    cleared.feed(marked_command("one", &[], 0));
+    cleared.feed("\r\n\r\n\r\n\x1b[3J");
+    assert!(cleared.terminal.commands().is_empty());
+    // A new prompt lets go of the pins of those gone.
+    term.feed("\x1b]133;A\x07$ ");
+    assert_eq!(term.terminal.commands().len(), 1);
+}
+
+#[test]
+fn the_alternate_screen_s_prompts_mark_no_command_and_a_reset_forgets_them() {
+    let mut term = Term::new(20, 4);
+    term.feed(marked_command("vim", &[], 0));
+    term.feed("\x1b[?1049h\x1b]133;A\x07> \x1b]133;D;3\x07\x1b[?1049l");
+    let commands = term.terminal.commands();
+    assert_eq!(commands.len(), 1);
+    assert_eq!(commands[0].status, Some(0));
+    term.feed("\x1bc");
+    assert!(term.terminal.commands().is_empty());
+}
+
+#[test]
+fn the_commands_kept_are_the_last_of_the_most() {
+    let mut term = Term::new(20, 4);
+    for _ in 0..MOST_COMMANDS + 5 {
+        term.feed("\x1b]133;A\x07\x1b]133;C\x07\r\n");
+    }
+    assert_eq!(term.terminal.commands().len(), MOST_COMMANDS);
+}
+
+#[test]
+fn a_prompt_drawn_again_takes_the_place_of_its_command() {
+    let mut term = Term::new(20, 6);
+    term.feed(marked_command("ls", &["a"], 0));
+    // The prompt drawn again on its row, as a theme's redraw does, then
+    // below, after a key's command printed a line, as bash's widget does.
+    term.feed("\x1b]133;A\x07$ \x1b]133;B\x07");
+    term.feed("\r\x1b]133;A\x07$ \x1b]133;B\x07");
+    term.feed("\r\nwidget\r\n\x1b]133;A\x07$ \x1b]133;B\x07");
+    let commands = term.terminal.commands();
+    assert_eq!(commands.len(), 2, "{commands:?}");
+    assert_eq!(commands[1].prompt, Some((0, 4)));
+    assert_eq!(commands[1].output, None);
+    // The command typed then marks its output and ends of its own.
+    term.feed("false\r\n\x1b]133;C\x07\x1b]133;D;1\x07");
+    let commands = term.terminal.commands();
+    assert_eq!(commands.len(), 2);
+    assert_eq!(
+        (commands[1].output, commands[1].status),
+        (Some((0, 5)), Some(1))
+    );
+}
+
+#[test]
+fn a_screen_cleared_in_place_lets_go_of_the_commands_on_its_rows() {
+    let mut term = Term::new(20, 10);
+    for status in [0, 1, 0] {
+        term.feed(marked_command("run", &["out"], status));
+    }
+    assert_eq!(term.terminal.commands().len(), 3);
+    // A clear from the top, without the scrollback, as `tput clear` of an
+    // older terminal's entry does, then a new prompt at the top.
+    term.feed("\x1b[H\x1b[J\x1b]133;A\x07$ \x1b]133;B\x07");
+    let commands = term.terminal.commands();
+    assert_eq!(commands.len(), 1, "{commands:?}");
+    assert_eq!(commands[0].prompt, Some((0, 0)));
+    // Its command shows its own state alone.
+    term.feed("true\r\n\x1b]133;C\x07\x1b]133;D;0\x07\x1b]133;A\x07$ ");
+    let mut snapshot = Snapshot::default();
+    term.terminal.snapshot(&mut snapshot);
+    let kinds: Vec<(u16, GutterKind)> = snapshot
+        .gutter()
+        .iter()
+        .map(|mark| (mark.row, mark.kind))
+        .collect();
+    assert_eq!(kinds, [(0, GutterKind::Succeeded)]);
+}
+
+/// The events of the commands' starts and ends that `term` owes, which it
+/// takes.
+fn command_events(term: &mut Term) -> Vec<Event> {
+    term.terminal
+        .take_events()
+        .into_iter()
+        .filter(|event| matches!(event, Event::CommandStarted(_) | Event::CommandEnded { .. }))
+        .collect()
+}
+
+#[test]
+fn a_command_tells_its_start_and_its_end_once_of_its_id() {
+    let mut term = Term::new(20, 6);
+    term.feed(marked_command("ls", &["a"], 0));
+    term.feed(marked_command("false", &[], 1));
+    assert_eq!(
+        command_events(&mut term),
+        [
+            Event::CommandStarted(1),
+            Event::CommandEnded {
+                id: 1,
+                status: Some(0)
+            },
+            Event::CommandStarted(2),
+            Event::CommandEnded {
+                id: 2,
+                status: Some(1)
+            },
+        ]
+    );
+    // A line of no command, whose end comes at once, tells nothing; marks
+    // given again tell nothing again; an end of no status tells none.
+    term.feed("\x1b]133;A\x07$ \x1b]133;B\x07\r\n\x1b]133;D\x07");
+    term.feed("\x1b]133;A\x07$ \x1b]133;B\x07x\r\n\x1b]133;C\x07\x1b]133;C\x07");
+    term.feed("\x1b]133;D\x07\x1b]133;D;3\x07");
+    assert_eq!(
+        command_events(&mut term),
+        [
+            Event::CommandStarted(4),
+            Event::CommandEnded {
+                id: 4,
+                status: None
+            },
+        ]
+    );
+    // The alternate screen's marks tell nothing.
+    term.feed("\x1b[?1049h\x1b]133;A\x07\x1b]133;C\x07\x1b]133;D;0\x07\x1b[?1049l");
+    assert_eq!(command_events(&mut term), []);
+}
+
+#[test]
+fn a_command_let_go_of_before_its_end_ends_and_a_reset_keeps_the_ids_going() {
+    let mut term = Term::new(20, 6);
+    // A command that runs, then a clear from the top and a prompt there,
+    // which lets go of it.
+    term.feed("\x1b]133;A\x07$ \x1b]133;B\x07sleep\r\n\x1b]133;C\x07");
+    term.feed("\x1b[H\x1b[J\x1b]133;A\x07$ ");
+    assert_eq!(
+        command_events(&mut term),
+        [
+            Event::CommandStarted(1),
+            Event::CommandEnded {
+                id: 1,
+                status: None
+            },
+        ]
+    );
+    // A reset forgets a command that runs, which ends, and the next one's
+    // id follows.
+    term.feed("\x1b]133;B\x07reset\r\n\x1b]133;C\x07\x1bc");
+    assert_eq!(
+        command_events(&mut term),
+        [
+            Event::CommandStarted(2),
+            Event::CommandEnded {
+                id: 2,
+                status: None
+            },
+        ]
+    );
+    assert!(term.terminal.commands().is_empty());
+    term.feed(marked_command("ls", &[], 0));
+    assert_eq!(term.terminal.commands()[0].id, 3);
+}
+
+#[test]
+fn the_commands_that_meet_rows_are_the_one_over_the_first_and_those_below() {
+    let mut term = Term::new(20, 4);
+    // Prompts on rows 0, 4 and 8, each of three lines of output, then a
+    // prompt on row 12.
+    for _ in 0..3 {
+        term.feed(marked_command("run", &["a", "b", "c"], 0));
+    }
+    term.feed("\x1b]133;A\x07$ ");
+    let ids = |term: &Term, top: i64, bottom: i64| -> Vec<u64> {
+        term.terminal
+            .commands_meeting(top, bottom)
+            .iter()
+            .map(|command| command.id)
+            .collect()
+    };
+    assert_eq!(ids(&term, 0, 1), [1]);
+    // The output of the first, then its last row and the second's prompt.
+    assert_eq!(ids(&term, 2, 4), [1]);
+    assert_eq!(ids(&term, 3, 5), [1, 2]);
+    // A first row at the top: the one before it does not meet them.
+    assert_eq!(ids(&term, 4, 9), [2, 3]);
+    assert_eq!(ids(&term, 6, 100), [2, 3, 4]);
+    assert_eq!(ids(&term, -100, 0), []);
+    assert_eq!(ids(&term, 5, 5), []);
+    assert_eq!(
+        term.terminal.commands_meeting(i64::MIN, i64::MAX),
+        term.terminal.commands()
+    );
+    // A command whose prompt left the scrollback starts at its first mark
+    // that is in it still.
+    let mut short = Term::with(
+        20,
+        3,
+        Options {
+            scrollback: Scrollback {
+                limit: 0,
+                ..Scrollback::default()
+            },
+            ..Options::default()
+        },
+    );
+    short.feed(marked_command("seq", &[], 0));
+    short.feed("\x1b]133;A\x07$ \x1b]133;B\x07seq\r\n\x1b]133;C\x07");
+    for at in 0..20_000 {
+        short.feed(format!("{at}\r\n"));
+    }
+    let running = short.terminal.commands_meeting(i64::MIN, i64::MAX);
+    assert_eq!(running.len(), 1, "{running:?}");
+    assert_eq!(
+        (running[0].id, running[0].prompt, running[0].end),
+        (2, None, None)
+    );
+    let oldest = short.terminal.row_number(0);
+    assert_eq!(ids(&short, oldest, oldest + 1), [2]);
+}
+
+#[test]
+fn a_command_whose_end_stays_in_the_scrollback_stays_past_the_next_prompt() {
+    let mut term = Term::with(
+        20,
+        3,
+        Options {
+            scrollback: Scrollback {
+                limit: 0,
+                ..Scrollback::default()
+            },
+            ..Options::default()
+        },
+    );
+    term.feed("\x1b]133;A\x07$ \x1b]133;B\x07seq\r\n\x1b]133;C\x07");
+    for at in 0..20_000 {
+        term.feed(format!("{at}\r\n"));
+    }
+    term.feed("\x1b]133;D;2\x07\x1b]133;A\x07$ ");
+    let end = 1 + 20_000;
+    assert_eq!(
+        term.terminal.commands(),
+        [
+            CommandMarks {
+                id: 1,
+                end: Some((0, end)),
+                status: Some(2),
+                ..CommandMarks::default()
+            },
+            CommandMarks {
+                id: 2,
+                prompt: Some((0, end)),
+                ..CommandMarks::default()
+            },
+        ]
+    );
+    // It goes once its end does.
+    for _ in 0..20_000 {
+        term.feed("line\r\n");
+    }
+    term.feed("\x1b]133;A\x07$ ");
+    let ids: Vec<u64> = term
+        .terminal
+        .commands()
+        .iter()
+        .map(|command| command.id)
+        .collect();
+    assert_eq!(ids, [3]);
+}
+
+#[test]
+fn a_command_s_line_is_its_input_to_its_output() {
+    let mut term = Term::new(12, 6);
+    term.feed(marked_command("ls -l", &["a"], 0));
+    // A command typed past the row's end, which wraps.
+    term.feed(marked_command("echo 1234567890", &[], 0));
+    term.feed("\x1b]133;A\x07$ \x1b]133;B\x07typing");
+    assert_eq!(term.terminal.command_line(1).as_deref(), Some("ls -l"));
+    assert_eq!(
+        term.terminal.command_line(2).as_deref(),
+        Some("echo 1234567890")
+    );
+    // Typed so far, before its output's mark.
+    assert_eq!(term.terminal.command_line(3).as_deref(), Some("typing"));
+    assert_eq!(term.terminal.command_line(4), None);
+    assert_eq!(
+        term.terminal.command(2).map(|command| command.status),
+        Some(Some(0))
+    );
+    // None while the alternate screen shows.
+    term.feed("\x1b[?1049h");
+    assert_eq!(term.terminal.command_line(1), None);
+}
+
+#[test]
+fn a_command_s_line_as_the_shell_tells_it_leaves_a_right_prompt_out() {
+    let mut term = Term::new(40, 6);
+    // zsh's right prompt, drawn at the row's end as the line is typed, and
+    // left there as the command runs.
+    let right = "\x1b7\x1b[1;30H~/src 10:32\x1b8";
+    term.feed(format!("\x1b]133;A\x07$ \x1b]133;B\x07sleep 5{right}\r\n"));
+    term.feed("\x1b]133;C\x07\x1b]133;D;0\x07");
+    // Read of the row, the right prompt is in it.
+    let read = term.terminal.command_line(1).unwrap();
+    assert!(read.ends_with("10:32"), "{read:?}");
+    // Told, as the zsh integration and fish tell it: decoded, its control
+    // characters as spaces, its characters past ASCII whole.
+    term.feed(format!("\x1b]133;A\x07$ \x1b]133;B\x07sleep 5{right}\r\n"));
+    term.feed("\x1b]133;C;cmdline_url=sleep%205%20%C3%A9%0Ax%25\x07");
+    assert_eq!(
+        term.terminal.command_line(2).as_deref(),
+        Some("sleep 5 é x%")
+    );
+    // A bad escape, as it is; told past the output's mark, nothing.
+    term.feed("\x1b]133;D;0\x07");
+    term.feed("\x1b]133;A\x07$ \x1b]133;B\x07ls\r\n");
+    term.feed("\x1b]133;C;aid=1;cmdline_url=ls%2G%\x07");
+    assert_eq!(term.terminal.command_line(3).as_deref(), Some("ls%2G%"));
+    term.feed("\x1b]133;D;0\x07\x1b]133;C;cmdline_url=other\x07");
+    assert_eq!(term.terminal.command_line(3).as_deref(), Some("ls%2G%"));
+    // Told, it shows on the alternate screen too.
+    term.feed("\x1b[?1049h");
+    assert_eq!(
+        term.terminal.command_line(2).as_deref(),
+        Some("sleep 5 é x%")
+    );
+}
+
+#[test]
+fn a_snapshot_tells_the_scrollback_s_rows() {
+    let mut term = Term::new(20, 4);
+    let mut snapshot = Snapshot::default();
+    term.terminal.snapshot(&mut snapshot);
+    assert_eq!(snapshot.scrollback(), 0);
+    for _ in 0..10 {
+        term.feed("line\r\n");
+    }
+    term.terminal.snapshot(&mut snapshot);
+    assert_eq!(snapshot.scrollback(), 7);
+    assert_eq!(term.terminal.scrollback_rows(), 7);
+    // The alternate screen has none.
+    term.feed("\x1b[?1049h");
+    term.terminal.snapshot(&mut snapshot);
+    assert_eq!(snapshot.scrollback(), 0);
+}
+
+#[test]
+fn a_held_cursor_takes_the_terminal_s_place_in_the_snapshot_and_keeps_its_text() {
+    let mut term = Term::new(10, 4);
+    for at in 0..10 {
+        term.feed(format!("{at}\r\n"));
+    }
+    term.feed("$ ");
+    // The terminal's own cursor, by its row's number.
+    assert_eq!(term.terminal.cursor_cell(), (2, 10));
+    let mut snapshot = Snapshot::default();
+    term.terminal.snapshot(&mut snapshot);
+    let cursor = snapshot.cursor();
+    assert_eq!(
+        (cursor.position.x, cursor.position.y, cursor.visible),
+        (2, 3, true)
+    );
+    // Held on the screen's first row, still, in the terminal's place.
+    term.terminal.hold_cursor(Some((1, 7)));
+    term.terminal.snapshot(&mut snapshot);
+    let held = snapshot.cursor();
+    assert_eq!(
+        (held.position.x, held.position.y, held.visible, held.blink),
+        (1, 0, true, false)
+    );
+    assert_eq!(term.terminal.held_cursor(), Some((1, 7)));
+    // Output scrolls its row up and out of the view, which hides it, and
+    // the terminal's cursor with it; the view on its row shows it again.
+    term.feed("\r\nx\r\ny");
+    term.terminal.snapshot(&mut snapshot);
+    assert!(!snapshot.cursor().visible);
+    assert_eq!(term.terminal.held_cursor(), Some((1, 7)));
+    term.terminal.scroll_viewport(Scroll::Row(6));
+    term.terminal.snapshot(&mut snapshot);
+    let shown = snapshot.cursor();
+    assert_eq!(
+        (shown.position.x, shown.position.y, shown.visible),
+        (1, 1, true)
+    );
+    // None gives the terminal's back; a row past the list's end, its last.
+    term.terminal.scroll_viewport(Scroll::Bottom);
+    term.terminal.hold_cursor(None);
+    term.terminal.snapshot(&mut snapshot);
+    let back = snapshot.cursor();
+    assert_eq!(
+        (back.position.x, back.position.y, back.visible),
+        (1, 3, true)
+    );
+    term.terminal.hold_cursor(Some((50, 1000)));
+    assert_eq!(term.terminal.held_cursor(), Some((9, 12)));
+    // The alternate screen shows none of the primary's.
+    term.feed("\x1b[?1049h");
+    term.terminal.snapshot(&mut snapshot);
+    assert_eq!(term.terminal.held_cursor(), None);
+    assert!(snapshot.cursor().visible);
+}
+
+#[test]
+fn the_view_scrolls_to_a_row_at_its_top_within_the_list() {
+    let mut term = Term::new(10, 4);
+    for at in 0..20 {
+        term.feed(format!("{at}\r\n"));
+    }
+    // 17 rows of scrollback above the screen's 4, numbered from 0.
+    term.terminal.scroll_viewport(Scroll::Row(5));
+    assert_eq!(term.terminal.origin().top, 5);
+    // A row of the screen brings the view to it, as do those past the
+    // list's ends, at its nearer one.
+    term.terminal.scroll_viewport(Scroll::Row(18));
+    assert_eq!(term.terminal.viewport_offset(), 0);
+    term.terminal.scroll_viewport(Scroll::Row(-50));
+    assert_eq!(term.terminal.origin().top, 0);
+    term.terminal.scroll_viewport(Scroll::Row(1000));
+    assert_eq!(term.terminal.viewport_offset(), 0);
+}
+
+#[test]
+fn the_view_jumps_from_prompt_to_prompt() {
+    let mut term = Term::new(20, 4);
+    // Three commands of ten lines each, then a prompt.
+    let mut lines = Vec::new();
+    for at in 0..10 {
+        lines.push(format!("out {at}"));
+    }
+    let output: Vec<&str> = lines.iter().map(String::as_str).collect();
+    for name in ["one", "two", "three"] {
+        term.feed(marked_command(name, &output, 0));
+    }
+    term.feed("\x1b]133;A\x07$ ");
+    let prompts: Vec<i64> = term
+        .terminal
+        .commands()
+        .iter()
+        .filter_map(|command| command.prompt)
+        .map(|(_, row)| row)
+        .collect();
+    assert_eq!(prompts, [0, 11, 22, 33]);
+    let top = |term: &Term| term.terminal.origin().top;
+    // From the screen, up to the last prompt above the view's top, then the
+    // one before; the first stays.
+    term.terminal.scroll_viewport(Scroll::PreviousPrompt);
+    assert_eq!(top(&term), 22);
+    term.terminal.scroll_viewport(Scroll::PreviousPrompt);
+    assert_eq!(top(&term), 11);
+    term.terminal.scroll_viewport(Scroll::PreviousPrompt);
+    assert_eq!(top(&term), 0);
+    term.terminal.scroll_viewport(Scroll::PreviousPrompt);
+    assert_eq!(top(&term), 0);
+    // Down again, past the scrollback's last prompt to the screen.
+    term.terminal.scroll_viewport(Scroll::NextPrompt);
+    assert_eq!(top(&term), 11);
+    term.terminal.scroll_viewport(Scroll::NextPrompt);
+    assert_eq!(top(&term), 22);
+    term.terminal.scroll_viewport(Scroll::NextPrompt);
+    assert_eq!(term.terminal.viewport_offset(), 0);
+    // A terminal of no prompts moves nowhere up, and to the screen down.
+    let mut bare = Term::new(20, 4);
+    for _ in 0..10 {
+        bare.feed("x\r\n");
+    }
+    bare.terminal.scroll_viewport(Scroll::Up(3));
+    bare.terminal.scroll_viewport(Scroll::PreviousPrompt);
+    assert_eq!(bare.terminal.viewport_offset(), 3);
+    bare.terminal.scroll_viewport(Scroll::NextPrompt);
+    assert_eq!(bare.terminal.viewport_offset(), 0);
+}
+
+/// Colors of the background `background`, the rest xterm's.
+fn of_background(r: u8, g: u8, b: u8) -> Colors {
+    Colors {
+        background: Rgb { r, g, b },
+        ..Colors::default()
+    }
+}
+
+#[test]
+fn a_background_s_luminance_tells_its_scheme() {
+    for (background, scheme) in [
+        ((0, 0, 0), ColorScheme::Dark),
+        ((0x00, 0x2b, 0x36), ColorScheme::Dark),
+        ((0x75, 0x75, 0x75), ColorScheme::Dark),
+        ((0x77, 0x77, 0x77), ColorScheme::Light),
+        ((0xfd, 0xf6, 0xe3), ColorScheme::Light),
+        ((0xff, 0xff, 0xff), ColorScheme::Light),
+    ] {
+        let (r, g, b) = background;
+        assert_eq!(of_background(r, g, b).scheme(), scheme, "{background:?}");
+    }
+}
+
+#[test]
+fn the_color_scheme_answers_its_query_and_its_changes_reach_mode_2031() {
+    let mut term = Term::new(10, 2);
+    let dark = of_background(0x1e, 0x1e, 0x2e);
+    let light = of_background(0xfd, 0xf6, 0xe3);
+    term.terminal.set_default_colors(dark.clone());
+    assert_eq!(term.terminal.color_scheme(), ColorScheme::Dark);
+    // The query, whatever the mode.
+    term.feed("\x1b[?996n");
+    assert_eq!(replies(&mut term), "\x1b[?997;1n");
+    // Without the mode, a change tells nothing.
+    term.terminal.set_default_colors(light.clone());
+    assert_eq!(replies(&mut term), "");
+    term.feed("\x1b[?996n");
+    assert_eq!(replies(&mut term), "\x1b[?997;2n");
+    // The mode, which DECRQM tells; each change of the theme's colors
+    // tells their scheme, the same colors nothing.
+    term.feed("\x1b[?2031$p");
+    assert_eq!(replies(&mut term), "\x1b[?2031;2$y");
+    term.feed("\x1b[?2031h\x1b[?2031$p");
+    assert_eq!(replies(&mut term), "\x1b[?2031;1$y");
+    term.terminal.set_default_colors(dark.clone());
+    assert_eq!(replies(&mut term), "\x1b[?997;1n");
+    term.terminal.set_default_colors(dark.clone());
+    assert_eq!(replies(&mut term), "");
+    let darker = of_background(0, 0, 0);
+    term.terminal.set_default_colors(darker);
+    assert_eq!(replies(&mut term), "\x1b[?997;1n");
+    // A program's own background is not the theme's.
+    term.feed("\x1b]11;rgb:ffff/ffff/ffff\x07\x1b[?996n");
+    assert_eq!(replies(&mut term), "\x1b[?997;1n");
+    // Off, and RIS takes it off too.
+    term.feed("\x1b[?2031l");
+    term.terminal.set_default_colors(light.clone());
+    assert_eq!(replies(&mut term), "");
+    term.feed("\x1b[?2031h\x1bc");
+    term.terminal.set_default_colors(dark);
+    assert_eq!(replies(&mut term), "");
+    term.feed("\x1b[?2031$p");
+    assert_eq!(replies(&mut term), "\x1b[?2031;2$y");
+}

@@ -6,6 +6,7 @@
 mod graph;
 mod rules;
 
+use std::collections::BTreeMap;
 use std::process::ExitCode;
 
 use anyhow::{Result, bail};
@@ -25,15 +26,27 @@ pub fn run(args: impl Iterator<Item = String>) -> Result<ExitCode> {
         }
     }
 
-    let graph = Graph::load_workspace()?;
+    let graph = Graph::load_workspace(None)?;
     if print_graph {
         print!("{}", graph.render_members());
     }
 
     let rules = rules::parse(RULES)?;
+    // The graphs of the platforms that rules name, each loaded once.
+    let mut platforms = BTreeMap::new();
+    for platform in rules.iter().filter_map(|rule| rule.platform.as_deref()) {
+        if !platforms.contains_key(platform) {
+            platforms.insert(platform, Graph::load_workspace(Some(platform))?);
+        }
+    }
     let mut failed = false;
     for rule in &rules {
-        let unmatched = rule.unmatched_selectors(&graph);
+        let graph = rule
+            .platform
+            .as_deref()
+            .and_then(|platform| platforms.get(platform))
+            .unwrap_or(&graph);
+        let unmatched = rule.unmatched_selectors(graph);
         if !unmatched.is_empty() {
             failed = true;
             eprintln!(
@@ -42,7 +55,7 @@ pub fn run(args: impl Iterator<Item = String>) -> Result<ExitCode> {
                 unmatched.join(", "),
             );
         }
-        for violation in rule.check(&graph) {
+        for violation in rule.check(graph) {
             failed = true;
             eprintln!("error[{}]: {}", violation.rule, violation.message);
             eprintln!("  = rule: {}", rule.description);

@@ -1,6 +1,6 @@
-# esctest, after the first compatibility fixes (F1-45)
+# esctest, after the first compatibility fixes
 
-Measured on 2026-10-18 with `just esctest`, after F1-45, against [the first run](esctest-F1-44.md). The full report is in [esctest-F1-45/report.txt](esctest-F1-45/report.txt). The runner of then cut a failure's traceback at its first blank line, which a checksum's message holds, so that the report names the checksums' failures by a line of the screen that the message prints, such as `YZ6789!@`; the runner now names them by the exception, `ChecksumException`.
+Measured on 2026-10-18 with `just esctest`, after the first compatibility fixes, against [the first run](esctest-F1-44.md). The full report is in [esctest-F1-45/report.txt](esctest-F1-45/report.txt). The runner of then cut a failure's traceback at its first blank line, which a checksum's message holds, so that the report names the checksums' failures by a line of the screen that the message prints, such as `YZ6789!@`; the runner now names them by the exception, `ChecksumException`.
 
 ## What changed in the method
 

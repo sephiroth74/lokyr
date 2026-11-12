@@ -1,0 +1,17 @@
+name,kind,round,farthest,seconds,display,frames_per_second,refresh_ms,missed,delay_p50_ms,delay_p95_ms,windowserver_cpu,app_cpu
+v050-opaque,drag,1,206.15528128088303,4.77,Built-In Display,57.8,16.67,5,13.6,28.72,28.8,3.4
+v050-opaque,drag,2,206.15528128088303,9.39,Built-In Display,57.0,16.67,24,13.58,14.28,23.9,2.7
+v050-opaque,resize,1,114.03946685248927,9.31,Built-In Display,55.3,16.67,41,12.27,13.51,35.3,18.9
+v050-opaque,resize,2,114.03946685248927,9.51,Built-In Display,56.4,16.67,32,12.24,15.09,36.4,17.7
+v051-opaque,drag,1,206.15528128088303,8.84,Built-In Display,57.1,16.67,22,13.51,14.07,28.4,3.4
+v051-opaque,drag,2,206.15528128088303,9.36,Built-In Display,58.8,16.67,9,13.41,14.07,29.3,3.0
+v051-opaque,resize,1,114.03946685248927,9.37,Built-In Display,56.2,16.67,31,12.36,28.27,35.6,18.5
+v051-opaque,resize,2,114.03946685248927,9.32,Built-In Display,56.1,16.67,32,12.39,13.37,35.5,18.1
+v050-blur,drag,1,206.15528128088303,9.39,Built-In Display,57.2,16.67,24,13.41,14.12,26.6,2.8
+v050-blur,drag,2,206.15528128088303,9.38,Built-In Display,57.3,16.67,23,13.12,13.8,29.5,3.8
+v050-blur,resize,1,114.03946685248927,9.55,Built-In Display,56.0,16.67,34,11.85,12.83,38.2,18.1
+v050-blur,resize,2,114.03946685248927,9.53,Built-In Display,56.5,16.67,30,11.92,13.13,39.2,17.8
+v051-blur,drag,1,206.15528128088303,9.15,Built-In Display,58.9,16.67,8,13.14,13.77,31.8,3.7
+v051-blur,drag,2,206.15528128088303,9.34,Built-In Display,57.1,16.67,25,13.43,14.04,25.8,3.1
+v051-blur,resize,1,114.03946685248927,9.52,Built-In Display,56.5,16.67,30,12.01,28.25,37.6,18.3
+v051-blur,resize,2,114.03946685248927,9.5,Built-In Display,56.6,16.67,30,12.0,28.3,37.3,18.0

@@ -1,0 +1,42 @@
+diff --git a/crates/app-core/src/app.rs b/crates/app-core/src/app.rs
+index e650e75..8803a0e 100644
+--- a/crates/app-core/src/app.rs
++++ b/crates/app-core/src/app.rs
+@@ -2592,7 +2592,10 @@ impl<B: Backend> App<B> {
+             WindowEvent::CloseRequested => self.ask_close(platform, window),
+             // An accessibility client asked for the window's tree, or for
+             // an action on one of its nodes.
+-            WindowEvent::AccessibilityAsked => self.give_accessibility(platform, window),
++            WindowEvent::AccessibilityAsked => {
++                eprintln!("probe access-asked {window:?}");
++                self.give_accessibility(platform, window);
++            }
+             WindowEvent::AccessibilityAction(request) => {
+                 self.accessibility_action(platform, window, &request);
+             }
+diff --git a/crates/app-core/src/app/access.rs b/crates/app-core/src/app/access.rs
+index 1dc0836..d69ef95 100644
+--- a/crates/app-core/src/app/access.rs
++++ b/crates/app-core/src/app/access.rs
+@@ -23,6 +23,7 @@ impl<B: Backend> App<B> {
+     /// Gives the platform the tree of `window`, whole, as a client asked
+     /// for it, or as its time came.
+     pub(super) fn give_accessibility(&mut self, platform: &mut dyn Platform, window: WindowId) {
++        let probe_started = std::time::Instant::now();
+         let Some(size) = platform.window_size(window) else {
+             return;
+         };
+@@ -51,7 +52,13 @@ impl<B: Backend> App<B> {
+             })
+             .collect();
+         let update = access::window(&title, &panes, focused.and_then(number));
++        let probe_built = probe_started.elapsed();
+         platform.update_accessibility(window, update);
++        eprintln!(
++            "probe access-tree {window:?} built {:.3} ms, given {:.3} ms",
++            probe_built.as_secs_f64() * 1e3,
++            probe_started.elapsed().as_secs_f64() * 1e3
++        );
+     }
+ 
+     /// The time of the windows' trees came: those whose panes changed go.

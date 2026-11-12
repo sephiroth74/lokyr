@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "lokyr/quick-tips",
+  "type": "object",
+  "properties": {
+    "every": {
+      "description": "The days between two tips as Lokyr starts; 0 for a tip at every start.",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 365,
+      "default": 7
+    }
+  }
+}

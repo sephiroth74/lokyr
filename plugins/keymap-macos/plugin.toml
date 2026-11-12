@@ -1,0 +1,6 @@
+# The manifest of the built-in plugin of macOS's default shortcuts.
+[plugin]
+name = "lokyr/keymap-macos"
+kind = "builtin"
+license = "MIT"
+description = "The default shortcuts of macOS: ⌘N, ⌘C, ⌘V, ⌘-click and the others"

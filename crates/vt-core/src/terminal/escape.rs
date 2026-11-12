@@ -167,7 +167,8 @@ impl Terminal {
     /// The bells that rang and the synchronized updates stay counted, and
     /// the replies and events not yet taken stay queued, with events for
     /// the titles, the tab color, the colors and the size that RIS
-    /// changed.
+    /// changed, and the end of a command that ran, which it forgets; the
+    /// next command's id follows the last's.
     fn full_reset(&mut self) {
         let options = Options {
             // The limit as it was configured, rather than as a program's
@@ -187,6 +188,7 @@ impl Terminal {
             window_ops: self.window_ops,
             scroll_on_output: self.scroll_on_output,
             alternate_scroll: self.configured_alternate_scroll,
+            image_memory: self.images.limit(),
         };
         let (bells, updates, replies, reply_bytes, cell_size) = (
             self.bells,
@@ -198,6 +200,8 @@ impl Terminal {
         let (window, display_size) = (self.window, self.display_size);
         let given_cols = self.given_cols;
         let working_directory = self.working_directory.take();
+        // The commands go, and the next one's id follows the last's.
+        let last_command = self.forget_commands();
         let mut events = std::mem::take(&mut self.events);
         if !self.title.is_empty() || !self.icon_title.is_empty() {
             events.push(Event::TitleChanged);
@@ -221,6 +225,7 @@ impl Terminal {
         self.given_cols = given_cols;
         self.synchronized_updates = updates;
         self.working_directory = working_directory;
+        self.commands.last = last_command;
         self.events = events;
         self.set_default_colors(colors);
     }

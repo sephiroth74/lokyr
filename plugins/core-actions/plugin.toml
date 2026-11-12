@@ -1,0 +1,15 @@
+# The manifest of the built-in plugin of the basic terminal actions.
+[plugin]
+name = "lokyr/core-actions"
+kind = "builtin"
+license = "MIT"
+description = "Copy and paste, select all, clear, scrolling and the font's size"
+
+[capabilities]
+terminal-read = true
+clipboard-read = true
+clipboard-write = true
+pty-write = true
+pane-view = true
+# A command's output, of the marks of the commands that the shell ran.
+history-read = true

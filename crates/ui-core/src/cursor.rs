@@ -8,6 +8,8 @@
 //! blink = true
 //! thickness = 2     # a bar's width and an underline's height, in points,
 //!                   # 0.5 to 20; the face's underline thickness when absent
+//! length = 0.6      # a bar's height and an underline's width, a share of
+//!                   # the cell, 0.1 to 1, centered in it
 //! blink-interval = 500         # on, then off, in ms, without smooth-blink
 //! blink-timeout = 15           # seconds after a key or output; 0 never stops
 //! smooth-blink = "breathing"   # off | breathing | linear | fast | slow | subtle | custom
@@ -17,6 +19,7 @@
 //! fade-out = 900
 //! fade-out-curve = "ease-in-out"
 //! hidden = 500
+//! movement = "instant"         # instant | snappy
 //! ```
 
 use std::time::{Duration, Instant};
@@ -45,6 +48,8 @@ pub struct CursorConfig {
     /// A bar's width and an underline's height; `None` for the face's
     /// underline thickness.
     pub thickness: Option<Thickness>,
+    /// A bar's height and an underline's width, of the cell's.
+    pub length: Share,
     /// How long it stays on, then off, without smooth blinking.
     pub blink_interval: Interval,
     /// How long it blinks after the last key or output: `None` for ever.
@@ -64,6 +69,8 @@ pub struct CursorConfig {
     pub fade_out_curve: Curve,
     /// With [`SmoothBlink::Custom`]: how long it holds hidden.
     pub hidden: Span,
+    /// How it moves to a new cell.
+    pub movement: Movement,
 }
 
 impl Default for CursorConfig {
@@ -73,6 +80,7 @@ impl Default for CursorConfig {
             shape: Shape::Block,
             blink: true,
             thickness: None,
+            length: Share(1.0),
             blink_interval: Interval(500),
             blink_timeout: Timeout(15),
             smooth_blink: SmoothBlink::Off,
@@ -82,6 +90,7 @@ impl Default for CursorConfig {
             fade_out: Span(breathing.fade_out),
             fade_out_curve: breathing.fade_out_curve,
             hidden: Span(breathing.hidden),
+            movement: Movement::Instant,
         }
     }
 }
@@ -172,6 +181,48 @@ impl TryFrom<f64> for Thickness {
         } else {
             Err(format!(
                 "the cursor's thickness, in points, is from {} to {}, not {points}",
+                Self::MIN,
+                Self::MAX
+            ))
+        }
+    }
+}
+
+/// The share of the cell that a bar's height and an underline's width
+/// take.
+#[derive(Clone, Copy, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(try_from = "f64", into = "f64")]
+pub struct Share(f32);
+
+impl From<Share> for f64 {
+    fn from(share: Share) -> Self {
+        lokyr_text_core::as_written(share.0)
+    }
+}
+
+impl Share {
+    /// The shortest, as the config writes it: of `f64`, as `0.1` of `f32`
+    /// is above the config's `0.1`.
+    pub const MIN: f64 = 0.1;
+    /// The whole cell.
+    pub const MAX: f64 = 1.0;
+
+    /// The share, from 0.1 to 1.
+    pub fn value(self) -> f32 {
+        self.0
+    }
+}
+
+impl TryFrom<f64> for Share {
+    type Error = String;
+
+    fn try_from(share: f64) -> Result<Self, Self::Error> {
+        if (Self::MIN..=Self::MAX).contains(&share) {
+            // Within the range, the value fits an `f32`.
+            Ok(Self(share as f32))
+        } else {
+            Err(format!(
+                "the cursor's length, a share of the cell, is from {} to {}, not {share}",
                 Self::MIN,
                 Self::MAX
             ))
@@ -319,6 +370,28 @@ impl SmoothBlink {
             Self::Slow => eased(500, 1000, 750, 200),
             Self::Subtle => eased(150, 900, 150, 200),
             Self::Off | Self::Breathing | Self::Custom => Self::BREATHING,
+        }
+    }
+}
+
+/// How the cursor moves to a new cell: at once, or eased there, the
+/// window server sliding its layer, the text at its next frame still.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Movement {
+    /// At once.
+    #[default]
+    Instant,
+    /// Eased there quickly, slowing as it comes.
+    Snappy,
+}
+
+impl Movement {
+    /// How long its slide takes, and its curve; `None` of none.
+    pub fn slide(self) -> Option<(Duration, Curve)> {
+        match self {
+            Self::Instant => None,
+            Self::Snappy => Some((Duration::from_millis(80), Curve::EaseOut)),
         }
     }
 }

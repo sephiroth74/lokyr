@@ -1,0 +1,17 @@
+# The A/B of F4-25, as F3-77's, F3-40's, F3-29's, F3-83's and F3-13's: F2-134's conditions, Menlo 13,
+# 120 × 40 cells, no ligatures, an opaque window, about 10 000 rows of
+# scrollback; the cursor blinks, as by default, and stops 15 s after the
+# last key or output.
+[font]
+family = "Menlo"
+size = 13
+ligatures = false
+
+[window]
+columns = 120
+rows = 40
+remember-frame = false
+background-opacity = 1
+
+[scrollback]
+limit = 10

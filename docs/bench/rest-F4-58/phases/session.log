@@ -1,0 +1,71 @@
+19:37  up 3 days,  3:57, 120 users, load averages: 4.69 5.80 5.01
+   35.8 /Library/SystemExtensions/CCD4BD4F-2A68-4214-8CBA-DA3177783C74/com.microsoft.wdav.netext.systemextension/Contents/MacOS/netext
+   22.4 /Applications/Visual Studio Code.app/Contents/Frameworks/Code Helper (Renderer).app/Contents/MacOS/Code Helper (Renderer)
+   18.6 /Users/taacral1/.vscode/extensions/anthropic.claude-code-2.1.319-darwin-arm64/resources/native-binary/claude
+19:37:18 latency warm-up jit
+19:37:21 latency warm-up nojit
+19:37:24 latency warm-up unsigned
+19:37:30 latency jit 1 place 1
+19:37:44 latency nojit 1 place 2
+19:37:58 latency unsigned 1 place 3
+19:38:11 load { 3.08 5.19 4.83 }
+   29.7 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer
+   17.6 /Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged
+   15.4 /Library/SystemExtensions/CCD4BD4F-2A68-4214-8CBA-DA3177783C74/com.microsoft.wdav.netext.systemextension/Contents/MacOS/netext
+19:38:13 latency nojit 2 place 1
+19:38:27 latency unsigned 2 place 2
+19:38:42 latency jit 2 place 3
+19:38:54 load { 2.41 4.75 4.69 }
+   16.1 /Library/SystemExtensions/CCD4BD4F-2A68-4214-8CBA-DA3177783C74/com.microsoft.wdav.netext.systemextension/Contents/MacOS/netext
+   15.6 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer
+    6.2 /System/Library/CoreServices/MenuBarAgent.app/Contents/MacOS/MenuBarAgent
+19:38:56 latency unsigned 3 place 1
+19:39:10 latency jit 3 place 2
+19:39:25 latency nojit 3 place 3
+19:39:37 load { 2.01 4.36 4.55 }
+   25.5 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer
+   18.7 /Library/SystemExtensions/CCD4BD4F-2A68-4214-8CBA-DA3177783C74/com.microsoft.wdav.netext.systemextension/Contents/MacOS/netext
+   18.1 /System/Library/CoreServices/MenuBarAgent.app/Contents/MacOS/MenuBarAgent
+19:39:39 latency jit 4 place 1
+19:39:54 latency nojit 4 place 2
+19:40:08 latency unsigned 4 place 3
+19:40:20 load { 1.77 3.96 4.39 }
+   30.8 /Library/SystemExtensions/CCD4BD4F-2A68-4214-8CBA-DA3177783C74/com.microsoft.wdav.netext.systemextension/Contents/MacOS/netext
+   22.9 /Applications/Microsoft Defender.app/Contents/MacOS/dlp_agent.app/Contents/MacOS/dlp_agent
+   16.1 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer
+19:40:22 latency nojit 5 place 1
+19:40:37 latency unsigned 5 place 2
+19:40:51 latency jit 5 place 3
+19:41:03 load { 1.79 3.69 4.27 }
+   24.4 /Library/SystemExtensions/CCD4BD4F-2A68-4214-8CBA-DA3177783C74/com.microsoft.wdav.netext.systemextension/Contents/MacOS/netext
+   20.9 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer
+   19.4 /Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged
+19:41:05 latency unsigned 6 place 1
+19:41:20 latency jit 6 place 2
+19:41:34 latency nojit 6 place 3
+19:41:47 load { 2.78 3.64 4.22 }
+   17.8 /Library/SystemExtensions/CCD4BD4F-2A68-4214-8CBA-DA3177783C74/com.microsoft.wdav.netext.systemextension/Contents/MacOS/netext
+   10.5 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer
+    1.9 /System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/mdworker_shared
+19:41:49 latency jit 7 place 1
+19:42:03 latency nojit 7 place 2
+19:42:17 latency unsigned 7 place 3
+19:42:30 load { 2.21 3.39 4.10 }
+   20.9 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer
+   14.1 /System/Library/CoreServices/MenuBarAgent.app/Contents/MacOS/MenuBarAgent
+    7.9 /Library/Application Support/Logitech.localized/LogiOptionsPlus/logioptionsplus_agent.app/Contents/MacOS/logioptionsplus_agent
+19:42:32 latency nojit 8 place 1
+19:42:46 latency unsigned 8 place 2
+19:43:00 latency jit 8 place 3
+19:43:13 load { 2.38 3.31 4.03 }
+   27.7 /Users/taacral1/.vscode/extensions/anthropic.claude-code-2.1.319-darwin-arm64/resources/native-binary/claude
+   26.3 /Library/SystemExtensions/CCD4BD4F-2A68-4214-8CBA-DA3177783C74/com.microsoft.wdav.netext.systemextension/Contents/MacOS/netext
+   22.6 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer
+19:43:15 latency unsigned 9 place 1
+19:43:29 latency jit 9 place 2
+19:43:44 latency nojit 9 place 3
+19:43:56 load { 2.50 3.23 3.96 }
+   23.7 /Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged
+   22.1 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer
+    8.3 /Library/Application Support/Microsoft/DLP/com.microsoft.dlp.daemon.app/Contents/MacOS/dlpdaemon
+19:43:56 done

@@ -3,12 +3,13 @@ resolver = "3"
 # Cargo rejects member globs that match no directory, so a glob is added
 # only once its directory exists.
 members = ["crates/*", "sleip/*", "plugins/*", "tools/*"]
-# Spikes are throwaway experiments with their own manifests, and the fuzz
-# targets build only with nightly.
-exclude = ["fuzz", "spikes"]
+# Spikes are throwaway experiments with their own manifests, the fuzz
+# targets build only with nightly, and tools/linux holds the image of
+# Linux's checks, of no crate.
+exclude = ["fuzz", "spikes", "tools/linux"]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.9.0"
 edition = "2024"
 rust-version = "1.99"
 license = "MIT"
@@ -33,17 +34,31 @@ gungraun = "0.20.0"
 # Golden snapshots of the screen, from recorded sessions.
 insta = { version = "1.49.0", default-features = false }
 libc = "0.2.190"
+# zlib's inflation of kitty's compressed images in the VT core, of pure Rust.
+miniz_oxide = "0.9.1"
+# Sleip's `dev`, which ends as the user interrupts it, its lockfile's entry taken back.
+signal-hook = "0.4.5"
+# Sleip's resolver, PubGrub, whose readable conflicts it tells.
+pubgrub = "0.4.0"
 # Literal search over the grid's text.
 memchr = "2.8.3"
 # The golden images of the renderer's tests.
 png = "0.18.1"
 # Regex search over the grid's text.
+rustc-demangle = "0.1.28"
 regex = "1.13.1"
 regex-automata = "0.4.18"
 # objc2 crates move together, with block2: keep their versions aligned. Each
 # member enables the classes and functions that it uses.
+accesskit = "0.25.2"
+# Of objc2 0.5, beside the app's 0.6, in `platform-macos` alone, which
+# hands it the view as a raw pointer, until it moves to the app's.
+accesskit_macos = "0.27.2"
 block2 = "0.6.2"
 dispatch2 = { version = "0.3.1", default-features = false }
+# Luau, of its vendored sources, pinned with mlua's release, its native code
+# generator, and a state that a plugin's thread takes.
+mlua = { version = "=0.12.2", features = ["luau", "luau-jit", "vendored", "send"] }
 objc2 = "0.6.5"
 objc2-app-kit = { version = "0.3.2", default-features = false }
 objc2-core-foundation = { version = "0.3.2", default-features = false }
@@ -61,11 +76,41 @@ raw-window-handle = "0.6.2"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 thiserror = "2.0.21"
+taffy = { version = "0.15.1", default-features = false, features = ["std", "flexbox", "taffy_tree"] }
 toml = "1.1.8"
 # The config's watcher, on FSEvents on macOS and inotify on Linux.
 notify = { version = "8.2.1", default-features = false, features = ["macos_fsevent"] }
 # The config's reader, which keeps the place of each key and value.
 toml_edit = { version = "0.25.17", default-features = false, features = ["parse", "serde"] }
+# The terminal's width, of Sleip's tables, without code of its own of the
+# system's calls.
+terminal_size = "0.4.4"
+# The columns that a text takes at a terminal, of Sleip's tables.
+unicode-width = "0.2.2"
+# The reader of the themes of `.itermcolors`, property lists.
+plist = { version = "1.10.3", default-features = false }
+# The C++ of Luau's type checker, which Sleip builds.
+cc = "1.8.0"
+# The constraints of the plugins' versions and of the plugin API that they
+# take, as Cargo reads them.
+semver = "1.0.28"
+# A plugin's package: its archive, a tar of zstd of Rust alone, which no C
+# compiler of the target builds, and the digest of its files.
+ruzstd = "0.9.1"
+sha2 = "0.11.1"
+tar = { version = "0.4.46", default-features = false }
+# The registry's keys and the signatures of its index, which Sleip checks:
+# ed25519, its keys and signatures written in base64, a key made of the
+# system's randomness.
+ed25519-dalek = "3.0.0"
+base64 = "0.22.1"
+getrandom = "0.4.3"
+# Sleip's requests of the registry, over HTTPS: rustls of ring, the system's
+# trust store through the platform's verifier, no list of roots of its own.
+ureq = { version = "3.5.1", default-features = false, features = ["rustls-no-provider", "platform-verifier"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+# The plugins' READMEs on the registry's site, its raw HTML shown as text.
+pulldown-cmark = { version = "0.13.6", default-features = false, features = ["html"] }
 tracing = "0.1.44"
 unicode-normalization = "0.1.25"
 # The language tags of the catalogs.
@@ -74,11 +119,17 @@ unic-langid = "0.9.6"
 vte = "0.15.0"
 
 # Internal crates
+sleip-analyzer = { path = "sleip/analyzer" }
 sleip-index = { path = "sleip/index" }
 sleip-resolver = { path = "sleip/resolver" }
+lokyr-app-core = { path = "crates/app-core", default-features = false }
+lokyr-command-header = { path = "plugins/command-header" }
+lokyr-command-palette = { path = "plugins/command-palette" }
+lokyr-copy-mode = { path = "plugins/copy-mode" }
 lokyr-core-actions = { path = "plugins/core-actions" }
 lokyr-font-coretext = { path = "crates/font-coretext" }
 lokyr-kernel = { path = "crates/kernel" }
+lokyr-keymap-macos = { path = "plugins/keymap-macos" }
 lokyr-links = { path = "plugins/links" }
 lokyr-pkg-model = { path = "crates/pkg-model" }
 lokyr-platform-core = { path = "crates/platform-core" }
@@ -91,6 +142,12 @@ lokyr-render-metal = { path = "crates/render-metal" }
 lokyr-replay = { path = "tools/replay" }
 lokyr-search = { path = "crates/search" }
 lokyr-session = { path = "crates/session" }
+lokyr-progress = { path = "plugins/progress" }
+lokyr-quick-terminal = { path = "plugins/quick-terminal" }
+lokyr-quick-tips = { path = "plugins/quick-tips" }
+lokyr-search-plugin = { path = "plugins/search" }
+lokyr-splits = { path = "plugins/splits" }
+lokyr-tabs = { path = "plugins/tabs" }
 lokyr-text-core = { path = "crates/text-core" }
 lokyr-ui-core = { path = "crates/ui-core" }
 lokyr-vt-core = { path = "crates/vt-core" }
@@ -128,6 +185,10 @@ codegen-units = 1
 # only works when panics unwind.
 panic = "unwind"
 debug = "line-tables-only"
+# The debug info in a dSYM beside the binary, which rustc's dsymutil makes
+# as it links, of the code that fat LTO made, so that a release's crash
+# report symbolicates.
+split-debuginfo = "packed"
 
 # Release build with full debug info, for Instruments and other profilers.
 [profile.profiling]

@@ -135,19 +135,31 @@ fn keys_make_a_sequence_with_the_wheel_alone() {
 fn a_when_holds_in_its_contexts() {
     let context = |names: &[&str]| Context::new(names.iter().copied());
     let when = When::parse("pane.focused && !selection").unwrap();
-    assert!(when.holds(&context(&["pane.focused"])));
-    assert!(!when.holds(&context(&["pane.focused", "selection"])));
+    assert!((context(&["pane.focused"])).holds_when(&when));
+    assert!(!(context(&["pane.focused", "selection"])).holds_when(&when));
     let when = When::parse("selection || pane.focused && alternate-screen").unwrap();
-    assert!(when.holds(&context(&["selection"])));
+    assert!((context(&["selection"])).holds_when(&when));
     assert!(
-        !when.holds(&context(&["pane.focused"])),
+        !(context(&["pane.focused"])).holds_when(&when),
         "`&&` binds tighter"
     );
     let when = When::parse("!(selection || alternate-screen)").unwrap();
-    assert!(when.holds(&context(&[])));
-    assert!(!when.holds(&context(&["alternate-screen"])));
+    assert!((context(&[])).holds_when(&when));
+    assert!(!(context(&["alternate-screen"])).holds_when(&when));
+    // The plugins' panels' contexts, of their namespaces.
+    let when = When::parse("pane.focused && !search.open || search-plus.focused").unwrap();
+    assert!((context(&["pane.focused"])).holds_when(&when));
+    assert!(!(context(&["pane.focused", "search.open"])).holds_when(&when));
+    assert!((context(&["search.open", "search-plus.focused"])).holds_when(&when));
     for text in [
         "focus",
+        "pane.open",
+        "pane.focsued",
+        "search.shown",
+        "search.open.now",
+        "search",
+        "9search.open",
+        "selection.open",
         "selection & pane.focused",
         "(selection",
         "selection &&",
@@ -431,11 +443,21 @@ fn a_menu_shows_a_command_s_first_key_that_no_later_binding_takes() {
     let keymap = Keymap::new(vec![Binding {
         invocation: Invocation {
             command: "pane.send-text".to_owned(),
-            args,
+            args: args.clone(),
         },
         ..binding("cmd+e", "pane.send-text", None)
     }]);
     assert_eq!(keymap.shortcut("pane.send-text"), None);
+    // But the keys of its arguments.
+    assert_eq!(
+        keymap
+            .shortcut_with("pane.send-text", &args)
+            .map(|combo| combo.to_string())
+            .as_deref(),
+        Some("cmd+e")
+    );
+    args.insert("text".to_owned(), Value::String("y".to_owned()));
+    assert_eq!(keymap.shortcut_with("pane.send-text", &args), None);
 }
 
 #[test]

@@ -9,10 +9,11 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant, SystemTime};
 
 use crate::{
-    Alert, AlertId, AppEvent, Appearance, Backdrop, ContextMenu, Error, GlobalKey, Handler, Layer,
-    LayerPlace, MainMenu, Platform, Point, PointerArea, PointerShape, QuickPlace, ScreenRect, Size,
-    TargetKind, TimerId, Usage, Waker, WindowAttributes, WindowEvent, WindowHandle, WindowId,
-    WindowSize,
+    AboutPanel, Alert, AlertId, AppEvent, Appearance, Awake, Backdrop, ContentRect, ContextMenu,
+    Error, Fill, GlobalKey, Handler, Layer, LayerPlace, MainMenu, Platform, Point, PointerArea,
+    PointerShape, QuickPlace, SavePanelId, ScreenPoint, ScreenRect, Scrollers, Shortcut, Size,
+    Sweep, Target, TargetKind, TimerId, Titlebar, ToolLink, Usage, Waker, WindowAttributes,
+    WindowEvent, WindowHandle, WindowId, WindowSize,
 };
 
 /// The scale of the fake's display when a test sets none: a Retina one.
@@ -40,11 +41,21 @@ const QUICK_SIZE: Size = Size {
     height: 400.0,
 };
 
+/// Where the fake puts the first window's content's top left corner on the
+/// screen, and how far down and to the right of it each next one goes.
+const FIRST_ORIGIN: ScreenPoint = ScreenPoint { x: 100.0, y: 100.0 };
+const CASCADE: f64 = 22.0;
+
 /// A window that the app opened, as the fake keeps it.
 #[derive(Clone, Debug, PartialEq)]
 pub struct FakeWindow {
     /// Its title.
     pub title: String,
+    /// The text at its titlebar's right, as the keys that bring it forward.
+    pub title_accessory: Option<String>,
+    /// Where the pointer is over its content, as the events sent to it
+    /// last told.
+    pub pointer_at: Point,
     /// The size of its content.
     pub size: WindowSize,
     /// Whether it is hidden or covered.
@@ -52,8 +63,12 @@ pub struct FakeWindow {
     /// Whether the app asked for a frame, which the next
     /// [`WindowEvent::Frame`] that a test sends gives.
     pub frame_requested: bool,
+    /// How many times the app asked for a frame.
+    pub frames_asked: usize,
     /// Where the app said that the typed text goes, if it said.
     pub text_area: Option<(Point, Size)>,
+    /// How many times the app ended the input method's composition.
+    pub compositions_ended: usize,
     /// Its backdrop, when it is translucent.
     pub translucent: Option<Backdrop>,
     /// Whether it asked for a frame while it was hidden or covered, which
@@ -66,6 +81,12 @@ pub struct FakeWindow {
     pub layers: HashMap<Layer, LayerPlace>,
     /// How many times the app placed a layer, or hid it.
     pub layer_places: usize,
+    /// The sweeps that the app showed last.
+    pub sweeps: Vec<Sweep>,
+    /// The fills that the app showed last.
+    pub fills: Vec<Fill>,
+    /// How many times the app showed fills.
+    pub fills_shown: usize,
     /// Whether it opened at the frame kept last.
     pub restore: bool,
     /// Whether it opened of the size of the frame kept last.
@@ -77,10 +98,41 @@ pub struct FakeWindow {
     /// The areas of its content of their own pointers, as the app gave
     /// them.
     pub pointer_areas: Vec<PointerArea>,
+    /// The shape that the app holds the pointer at, while it holds it.
+    pub held_pointer: Option<PointerShape>,
     /// Its own appearance, if the app gave it one.
     pub appearance: Option<Appearance>,
     /// Whether it is a quick window, and its place while it shows.
     pub quick: Option<Option<QuickPlace>>,
+    /// Its titlebar, as the app gave it, which changes no size of the fake
+    /// one's.
+    pub titlebar: Titlebar,
+    /// The parts of its titlebar that the app gave as its content's.
+    pub titlebar_areas: Vec<ContentRect>,
+    /// The parts of the content where the pointer's moves come, as the app
+    /// gave them last.
+    pub move_areas: Vec<ContentRect>,
+    /// Whether an accessibility client asked for its tree, as a test says.
+    pub accessibility_asked: bool,
+    /// The updates of its accessibility tree that the app gave, once a
+    /// client asked, in their order.
+    pub accessibility: Vec<accesskit::TreeUpdate>,
+    /// Where its content's top left corner is on the screen.
+    pub origin: ScreenPoint,
+    /// Whether it floats above the other applications' windows.
+    pub floating: bool,
+}
+
+impl FakeWindow {
+    /// Its content's frame on the screen.
+    pub fn frame(&self) -> ScreenRect {
+        ScreenRect {
+            x: self.origin.x,
+            y: self.origin.y,
+            width: self.size.points.width,
+            height: self.size.points.height,
+        }
+    }
 }
 
 /// An alert that is open, until a test answers it.
@@ -99,6 +151,8 @@ pub struct FakeAlert {
 pub struct FakeNotification {
     /// The window that it is for.
     pub window: WindowId,
+    /// The app's number of it.
+    pub id: u64,
     /// Its title.
     pub title: String,
     /// Its text.
@@ -127,7 +181,37 @@ pub struct Fake {
     /// The system's appearance, and the app's own.
     appearance: Appearance,
     own_appearance: Option<Appearance>,
+    /// Whether the system's keyboard navigation reaches every control.
+    keyboard_navigation: bool,
+    /// Whether the system reduces motion.
+    reduce_motion: bool,
+    scrollers: Scrollers,
+    /// Whether the system's settings have an app's windows open again.
+    keeps_windows: bool,
+    /// Whether the system started the app of its own.
+    default_launch: bool,
+    /// The files that came from the internet, as a test says.
+    downloaded: Vec<PathBuf>,
+    /// Whether the app is the system's default terminal, and how many
+    /// times it asked to be.
+    default_terminal: bool,
+    default_terminal_asks: usize,
+    /// The links that the app asked for, each of the reason that it told.
+    tool_links: Vec<(Vec<ToolLink>, String)>,
+    /// Whether every place is one that goes, as a test says.
+    temporary_place: bool,
+    /// The screens' areas for windows, the menu bar's screen's first.
+    screens: Vec<ScreenRect>,
+    /// Whether it draws the progresses' fills, as a test says.
+    draws_fills: bool,
     windows: BTreeMap<WindowId, FakeWindow>,
+    /// The windows from the front one back, as they opened and came
+    /// forward.
+    order: Vec<WindowId>,
+    /// The drag's image, while it shows, and the places that it slid back
+    /// to as it hid, from the first, `None` of one hidden at once.
+    drag_image: Option<ScreenRect>,
+    drag_image_hides: Vec<Option<ScreenRect>>,
     focused: Option<WindowId>,
     menu: Option<MainMenu>,
     /// The commands whose menu items are dimmed, and those whose items are
@@ -137,12 +221,22 @@ pub struct Fake {
     /// The context menus that the app opened, from the first, each over its
     /// window at its position.
     context_menus: Vec<(WindowId, Point, ContextMenu)>,
+    closed_context_menus: Vec<WindowId>,
     /// The height of the titlebar of the windows that open, which their
     /// content runs under.
     bar: f64,
     /// The definitions that the app showed, from the first.
     definitions: Vec<FakeDefinition>,
     clipboard: Option<String>,
+    /// The image on the clipboard, a PNG, which takes its text's place.
+    clipboard_image: Option<Vec<u8>>,
+    /// What the app keeps from idle sleep, and the assertion's name.
+    awake: (Awake, String),
+    /// The save panels that are open: each its id, its window and its
+    /// file's name.
+    save_panels: Vec<(SavePanelId, WindowId, String, String)>,
+    /// The save panels whose windows closed, whose ends are to tell.
+    ended_saves: Vec<SavePanelId>,
     alerts: Vec<FakeAlert>,
     /// The timers that have not fired, with the time of each.
     timers: BTreeMap<TimerId, Instant>,
@@ -155,6 +249,8 @@ pub struct Fake {
     /// How many times the app asked for the user's attention, and played
     /// the alert sound.
     attention_requests: usize,
+    /// The badge on the application's icon.
+    badge: Option<String>,
     alert_sounds: usize,
     /// The notifications that the app showed, from the first.
     notifications: Vec<FakeNotification>,
@@ -163,12 +259,22 @@ pub struct Fake {
     /// The URLs and the paths that the app opened, and those that it
     /// showed in the file manager, from the first.
     opened: Vec<String>,
+    /// The URLs' schemes of no application, whose opening fails, as of an
+    /// editor not installed.
+    unhandled: Vec<String>,
     edited: Vec<PathBuf>,
     /// Why the text editor opens nothing, as the next open fails.
     editor_fails: Option<String>,
     /// Whether the secure entry of the keyboard is on, and how many times
     /// it changed.
     secure_input: (bool, usize),
+    /// Whether the app can update itself, as a test says.
+    can_update: bool,
+    /// The updates' checks now and then, on or off, once started.
+    update_checks: Option<bool>,
+    /// The checks for updates that the app asked.
+    updates_checked: usize,
+    abouts: Vec<AboutPanel>,
     usage: Option<Usage>,
     /// When the fake was made, as the process's start.
     started: SystemTime,
@@ -201,28 +307,54 @@ impl Fake {
             scale,
             appearance: Appearance::Light,
             own_appearance: None,
+            keyboard_navigation: false,
+            reduce_motion: false,
+            scrollers: Scrollers::default(),
+            keeps_windows: false,
+            default_launch: true,
+            downloaded: Vec::new(),
+            default_terminal: false,
+            default_terminal_asks: 0,
+            tool_links: Vec::new(),
+            temporary_place: false,
+            screens: vec![SCREEN_AREA],
+            draws_fills: false,
             windows: BTreeMap::new(),
+            order: Vec::new(),
+            drag_image: None,
+            drag_image_hides: Vec::new(),
             focused: None,
             menu: None,
             disabled: std::collections::BTreeSet::new(),
             checked: std::collections::BTreeSet::new(),
             context_menus: Vec::new(),
+            closed_context_menus: Vec::new(),
             bar: 0.0,
             definitions: Vec::new(),
             clipboard: None,
+            clipboard_image: None,
+            save_panels: Vec::new(),
+            ended_saves: Vec::new(),
+            awake: (Awake::Off, String::new()),
             alerts: Vec::new(),
             timers: BTreeMap::new(),
             option_as_meta: (false, false),
             app_icons: Vec::new(),
             locales: Vec::new(),
             attention_requests: 0,
+            badge: None,
             alert_sounds: 0,
             notifications: Vec::new(),
             focus_requests: Vec::new(),
             opened: Vec::new(),
+            unhandled: Vec::new(),
             edited: Vec::new(),
             editor_fails: None,
             secure_input: (false, 0),
+            can_update: false,
+            update_checks: None,
+            updates_checked: 0,
+            abouts: Vec::new(),
             usage: None,
             started: SystemTime::now(),
             posted_keys: Vec::new(),
@@ -234,6 +366,65 @@ impl Fake {
             quit: false,
             quit_refusals: 0,
         }
+    }
+
+    /// Turns the system's keyboard navigation, of every control, on or off.
+    pub fn set_keyboard_navigation(&mut self, on: bool) {
+        self.keyboard_navigation = on;
+    }
+
+    /// Turns the system's reduced motion on or off.
+    pub fn set_reduce_motion(&mut self, on: bool) {
+        self.reduce_motion = on;
+    }
+
+    /// Gives the system's settings of its scroll bars.
+    pub fn set_scrollers(&mut self, scrollers: Scrollers) {
+        self.scrollers = scrollers;
+    }
+
+    /// Gives whether the system's settings have an app's windows open
+    /// again as it starts.
+    pub fn set_keeps_windows(&mut self, keeps: bool) {
+        self.keeps_windows = keeps;
+    }
+
+    /// Gives whether the system started the app of its own, rather than to
+    /// open files or for a service.
+    pub fn set_default_launch(&mut self, default: bool) {
+        self.default_launch = default;
+    }
+
+    /// Marks the file at `path` as one that came from the internet.
+    pub fn set_downloaded(&mut self, path: &Path) {
+        self.downloaded.push(path.to_path_buf());
+    }
+
+    /// Gives whether the app is the system's default terminal.
+    pub fn set_default_terminal(&mut self, default: bool) {
+        self.default_terminal = default;
+    }
+
+    /// Gives whether every place is one that goes, as a disk image's.
+    pub fn set_temporary_place(&mut self, temporary: bool) {
+        self.temporary_place = temporary;
+    }
+
+    /// How many times the app asked to be the system's default terminal.
+    pub fn default_terminal_asks(&self) -> usize {
+        self.default_terminal_asks
+    }
+
+    /// The links of the command line tools that the app asked for, each of
+    /// the reason that it told, which the fake does not make.
+    pub fn tool_links(&self) -> &[(Vec<ToolLink>, String)] {
+        &self.tool_links
+    }
+
+    /// Gives the screens' areas for windows, the menu bar's screen's
+    /// first, in place of [`SCREEN_AREA`] alone, as a screen comes or goes.
+    pub fn set_screens(&mut self, areas: Vec<ScreenRect>) {
+        self.screens = areas;
     }
 
     /// Starts the application, as a backend's `run` does.
@@ -267,6 +458,9 @@ impl Fake {
                 }
             }
             WindowEvent::Frame => state.frame_requested = false,
+            WindowEvent::MouseMoved { position, .. }
+            | WindowEvent::MouseButton { position, .. }
+            | WindowEvent::Scroll { position, .. } => state.pointer_at = *position,
             WindowEvent::Focused(true) => self.focused = Some(window),
             WindowEvent::Focused(false) if self.focused == Some(window) => self.focused = None,
             _ => {}
@@ -358,6 +552,48 @@ impl Fake {
         )
     }
 
+    /// The save panels that are open, in the order that they opened: each
+    /// its id, its window, its file's name and its message.
+    pub fn save_panels(&self) -> &[(SavePanelId, WindowId, String, String)] {
+        &self.save_panels
+    }
+
+    /// Closes the save panel `panel` as the user chose `path`, or
+    /// cancelled, of none, and tells `handler`; false if it is not open.
+    pub fn close_save_panel(
+        &mut self,
+        handler: &mut dyn Handler,
+        panel: SavePanelId,
+        path: Option<PathBuf>,
+    ) -> bool {
+        let Some(index) = self.save_panels.iter().position(|open| open.0 == panel) else {
+            return false;
+        };
+        self.save_panels.remove(index);
+        self.send_app(handler, AppEvent::SavePanelClosed { panel, path })
+    }
+
+    /// Tells `handler` the ends of the save panels whose windows closed,
+    /// of no path, as the platform ends a window's sheets with it: how
+    /// many it told.
+    pub fn deliver_ended_saves(&mut self, handler: &mut dyn Handler) -> usize {
+        let ended = std::mem::take(&mut self.ended_saves);
+        for &panel in &ended {
+            self.send_app(handler, AppEvent::SavePanelClosed { panel, path: None });
+        }
+        ended.len()
+    }
+
+    /// What the app keeps from idle sleep, and its assertion's name.
+    pub fn awake(&self) -> (Awake, &str) {
+        (self.awake.0, &self.awake.1)
+    }
+
+    /// The image on the clipboard, a PNG, if one is there.
+    pub fn clipboard_image(&self) -> Option<&[u8]> {
+        self.clipboard_image.as_deref()
+    }
+
     /// Fires the timers whose time has come by `now`, from the earliest,
     /// as the clock reaches it: those that the app starts meanwhile fire
     /// too, if their time has come. Returns how many fired.
@@ -392,9 +628,54 @@ impl Fake {
         self.windows.get(&window)
     }
 
+    /// Moves the pointer to `at` over `window` with no event, as the
+    /// system's pointer goes where the app takes no moves.
+    pub fn set_pointer(&mut self, window: WindowId, at: Point) {
+        if let Some(state) = self.windows.get_mut(&window) {
+            state.pointer_at = at;
+        }
+    }
+
+    /// An accessibility client asks for the tree of `window`, as a
+    /// platform tells it: from then on, the updates of its tree come; and
+    /// whether `handler` was told.
+    pub fn ask_accessibility(&mut self, handler: &mut dyn Handler, window: WindowId) -> bool {
+        match self.windows.get_mut(&window) {
+            Some(state) => state.accessibility_asked = true,
+            None => return false,
+        }
+        self.send(handler, window, WindowEvent::AccessibilityAsked)
+    }
+
     /// The windows that are open, from the first opened.
     pub fn windows(&self) -> impl Iterator<Item = WindowId> + '_ {
         self.windows.keys().copied()
+    }
+
+    /// Has the fake draw the progresses' fills, as a window server would,
+    /// or leave them to the app, as by default.
+    pub fn set_draws_fills(&mut self, draws: bool) {
+        self.draws_fills = draws;
+    }
+
+    /// Brings `window` in front of the others with no event, as the user
+    /// clicks it.
+    pub fn raise(&mut self, window: WindowId) {
+        if self.windows.contains_key(&window) {
+            self.order.retain(|&open| open != window);
+            self.order.insert(0, window);
+        }
+    }
+
+    /// The drag's image's frame on the screen, while it shows.
+    pub fn drag_image(&self) -> Option<ScreenRect> {
+        self.drag_image
+    }
+
+    /// Where the drag's image slid as it hid, each time, from the first:
+    /// `None` of one hidden at once.
+    pub fn drag_image_hides(&self) -> &[Option<ScreenRect>] {
+        &self.drag_image_hides
     }
 
     /// The main menu that the app set, if it set one.
@@ -431,6 +712,12 @@ impl Fake {
         &self.context_menus
     }
 
+    /// The windows whose context menus the app closed, from the first,
+    /// whose closings the tests send.
+    pub fn closed_context_menus(&self) -> &[WindowId] {
+        &self.closed_context_menus
+    }
+
     /// The definitions that the app showed, from the first.
     pub fn definitions(&self) -> &[FakeDefinition] {
         &self.definitions
@@ -464,6 +751,11 @@ impl Fake {
         self.attention_requests
     }
 
+    /// The badge on the application's icon, if one shows.
+    pub fn badge(&self) -> Option<&str> {
+        self.badge.as_deref()
+    }
+
     /// How many times the app played the alert sound.
     pub fn alert_sounds(&self) -> usize {
         self.alert_sounds
@@ -480,12 +772,20 @@ impl Fake {
         &self.focus_requests
     }
 
-    /// The URLs and the paths that the app opened, from the first.
+    /// The URLs and the paths that the app opened, from the first, as the
+    /// targets' locations tell them.
     pub fn opened(&self) -> &[String] {
         &self.opened
     }
 
-    /// The paths that the app showed in the file manager, from the first.
+    /// Has no application open the URLs of `scheme`, as of an editor that
+    /// is not installed: their opening fails.
+    pub fn leave_unhandled(&mut self, scheme: &str) {
+        self.unhandled.push(scheme.to_owned());
+    }
+
+    /// The paths that the app showed in the file manager, from the first,
+    /// as the targets' locations tell them.
     pub fn revealed(&self) -> &[String] {
         &self.revealed
     }
@@ -504,6 +804,28 @@ impl Fake {
     /// it, and how many times it changed.
     pub fn secure_input(&self) -> (bool, usize) {
         self.secure_input
+    }
+
+    /// Has the app able to update itself, or not, as it is by default.
+    pub fn set_can_update(&mut self, can: bool) {
+        self.can_update = can;
+    }
+
+    /// The updates' checks now and then, on or off, as the app last set
+    /// them; `None` before it started them, or where it cannot update
+    /// itself.
+    pub fn update_checks(&self) -> Option<bool> {
+        self.update_checks
+    }
+
+    /// How many checks for updates the app asked.
+    pub fn updates_checked(&self) -> usize {
+        self.updates_checked
+    }
+
+    /// The About panels that the app opened, in their order.
+    pub fn abouts(&self) -> &[AboutPanel] {
+        &self.abouts
     }
 
     /// Has the text editor open nothing, for `why`, until it is `None`.
@@ -561,6 +883,51 @@ impl Platform for Fake {
         self.own_appearance.unwrap_or(self.appearance)
     }
 
+    fn keyboard_navigation(&self) -> bool {
+        self.keyboard_navigation
+    }
+
+    fn reduce_motion(&self) -> bool {
+        self.reduce_motion
+    }
+
+    fn scrollers(&self) -> Scrollers {
+        self.scrollers
+    }
+
+    fn keeps_windows(&self) -> bool {
+        self.keeps_windows
+    }
+
+    fn default_launch(&self) -> bool {
+        self.default_launch
+    }
+
+    fn downloaded(&self, path: &Path) -> bool {
+        self.downloaded.iter().any(|marked| marked == path) || quarantined(path)
+    }
+
+    fn quarantine(&self) -> crate::Quarantine {
+        quarantine
+    }
+
+    fn is_default_terminal(&self) -> bool {
+        self.default_terminal
+    }
+
+    fn make_default_terminal(&mut self) -> bool {
+        self.default_terminal_asks += 1;
+        true
+    }
+
+    fn link_tools(&mut self, links: Vec<ToolLink>, reason: &str) {
+        self.tool_links.push((links, reason.to_owned()));
+    }
+
+    fn is_temporary_place(&self, _path: &Path) -> bool {
+        self.temporary_place
+    }
+
     fn set_appearance(&mut self, appearance: Option<Appearance>) {
         self.own_appearance = appearance;
     }
@@ -587,35 +954,71 @@ impl Platform for Fake {
 
     fn create_window(&mut self, attributes: &WindowAttributes) -> Result<WindowId, Error> {
         let id = WindowId::new(self.next_id());
+        // Down and to the right of the front window, as the system cascades
+        // them.
+        let origin = self
+            .order
+            .iter()
+            .find_map(|window| {
+                self.windows
+                    .get(window)
+                    .filter(|state| state.quick.is_none())
+            })
+            .map_or(FIRST_ORIGIN, |front| ScreenPoint {
+                x: front.origin.x + CASCADE,
+                y: front.origin.y + CASCADE,
+            });
+        // Or at the frame asked for, on a screen that is there.
+        let frame = attributes.frame.map(|frame| frame.onto(&self.screens));
+        let origin = frame.map_or(origin, |frame| frame.origin());
+        let points = frame.map_or(
+            Size {
+                width: attributes.size.width,
+                height: attributes.size.height + self.bar,
+            },
+            |frame| Size {
+                width: frame.width,
+                height: frame.height,
+            },
+        );
         self.windows.insert(
             id,
             FakeWindow {
                 title: attributes.title.clone(),
-                size: WindowSize::new(
-                    Size {
-                        width: attributes.size.width,
-                        height: attributes.size.height + self.bar,
-                    },
-                    self.scale,
-                )
-                .with_bar(self.bar),
+                title_accessory: None,
+                size: WindowSize::new(points, self.scale).with_bar(self.bar),
                 occluded: false,
                 frame_requested: false,
+                frames_asked: 0,
                 text_area: None,
+                compositions_ended: 0,
                 translucent: None,
                 frame_held: false,
                 remember: attributes.remember,
                 layers: HashMap::new(),
                 layer_places: 0,
+                sweeps: Vec::new(),
+                fills: Vec::new(),
+                fills_shown: 0,
                 restore: attributes.restore,
                 restore_size: attributes.restore_size,
                 mouse_moves: false,
                 pointer: PointerShape::Arrow,
+                pointer_at: Point::default(),
                 pointer_areas: Vec::new(),
+                held_pointer: None,
                 appearance: None,
                 quick: None,
+                titlebar: Titlebar::default(),
+                titlebar_areas: Vec::new(),
+                move_areas: Vec::new(),
+                accessibility_asked: false,
+                accessibility: Vec::new(),
+                origin,
+                floating: false,
             },
         );
+        self.order.insert(0, id);
         Ok(id)
     }
 
@@ -625,24 +1028,40 @@ impl Platform for Fake {
             id,
             FakeWindow {
                 title: title.to_owned(),
+                title_accessory: None,
                 size: WindowSize::new(QUICK_SIZE, self.scale),
                 occluded: true,
                 frame_requested: false,
+                frames_asked: 0,
                 text_area: None,
+                compositions_ended: 0,
                 translucent: None,
                 frame_held: false,
                 remember: false,
                 layers: HashMap::new(),
                 layer_places: 0,
+                sweeps: Vec::new(),
+                fills: Vec::new(),
+                fills_shown: 0,
                 restore: false,
                 restore_size: false,
                 mouse_moves: false,
                 pointer: PointerShape::Arrow,
+                pointer_at: Point::default(),
                 pointer_areas: Vec::new(),
+                held_pointer: None,
                 appearance: None,
                 quick: Some(None),
+                titlebar: Titlebar::default(),
+                titlebar_areas: Vec::new(),
+                move_areas: Vec::new(),
+                accessibility_asked: false,
+                accessibility: Vec::new(),
+                origin: ScreenPoint::default(),
+                floating: false,
             },
         );
+        self.order.push(id);
         Ok(id)
     }
 
@@ -672,11 +1091,16 @@ impl Platform for Fake {
                     },
                     self.scale,
                 );
+                state.origin = frame.origin();
             }
             // Shown already, it keeps its place until it hides.
-            Some(_) => {}
-            None => *shown = None,
+            Some(_) => return,
+            None => {
+                *shown = None;
+                return;
+            }
         }
+        self.raise(window);
     }
 
     fn set_global_keys(&mut self, keys: &[GlobalKey]) -> Vec<usize> {
@@ -693,17 +1117,35 @@ impl Platform for Fake {
 
     fn close_window(&mut self, window: WindowId) {
         self.windows.remove(&window);
+        self.order.retain(|&open| open != window);
         if self.focused == Some(window) {
             self.focused = None;
         }
-        // An alert on a window closes with it, unanswered.
+        // An alert on a window closes with it, unanswered; a save panel
+        // ends, of no path, as its turn comes.
         self.alerts.retain(|open| open.window != Some(window));
+        let (ended, kept) = std::mem::take(&mut self.save_panels)
+            .into_iter()
+            .partition::<Vec<_>, _>(|open| open.1 == window);
+        self.save_panels = kept;
+        self.ended_saves
+            .extend(ended.into_iter().map(|open| open.0));
     }
 
     fn set_title(&mut self, window: WindowId, title: &str) {
         if let Some(state) = self.windows.get_mut(&window) {
             title.clone_into(&mut state.title);
         }
+    }
+
+    fn set_title_accessory(&mut self, window: WindowId, text: Option<&str>) {
+        if let Some(state) = self.windows.get_mut(&window) {
+            state.title_accessory = text.map(str::to_owned);
+        }
+    }
+
+    fn shortcut_writer(&self) -> fn(Shortcut) -> String {
+        |shortcut| shortcut.mac_text()
     }
 
     fn set_window_remember(&mut self, window: WindowId, remember: bool) {
@@ -742,8 +1184,26 @@ impl Platform for Fake {
         }
     }
 
+    fn set_sweeps(&mut self, window: WindowId, sweeps: &[Sweep]) {
+        if let Some(state) = self.windows.get_mut(&window) {
+            state.sweeps = sweeps.to_vec();
+        }
+    }
+
+    fn draws_fills(&self) -> bool {
+        self.draws_fills
+    }
+
+    fn set_fills(&mut self, window: WindowId, fills: &[Fill]) {
+        if let Some(state) = self.windows.get_mut(&window) {
+            state.fills = fills.to_vec();
+            state.fills_shown += 1;
+        }
+    }
+
     fn request_frame(&mut self, window: WindowId) {
         if let Some(state) = self.windows.get_mut(&window) {
+            state.frames_asked += 1;
             if state.occluded {
                 state.frame_held = true;
             } else {
@@ -759,11 +1219,59 @@ impl Platform for Fake {
             .is_some_and(|state| state.quick == Some(None));
         if !hidden_quick {
             self.focus_requests.push(window);
+            self.raise(window);
         }
     }
 
     fn focused_window(&self) -> Option<WindowId> {
         self.focused
+    }
+
+    fn pointer_position(&self, window: WindowId) -> Option<Point> {
+        self.windows.get(&window).map(|state| state.pointer_at)
+    }
+
+    fn window_frame(&self, window: WindowId) -> Option<ScreenRect> {
+        self.windows.get(&window).map(FakeWindow::frame)
+    }
+
+    fn windowed_frame(&self, window: WindowId) -> Option<ScreenRect> {
+        self.window_frame(window)
+    }
+
+    fn set_window_floating(&mut self, window: WindowId, floating: bool) {
+        if let Some(state) = self.windows.get_mut(&window) {
+            state.floating = floating;
+        }
+    }
+
+    fn set_window_origin(&mut self, window: WindowId, origin: ScreenPoint) {
+        if let Some(state) = self.windows.get_mut(&window) {
+            state.origin = origin;
+        }
+    }
+
+    fn window_at(&self, at: ScreenPoint) -> Option<WindowId> {
+        self.order.iter().copied().find(|window| {
+            self.windows
+                .get(window)
+                .is_some_and(|state| state.quick != Some(None) && state.frame().contains(at))
+        })
+    }
+
+    fn show_drag_image(&mut self, frame: ScreenRect) {
+        self.drag_image = Some(frame);
+    }
+
+    fn drag_image_handle(&self) -> Option<WindowHandle<'_>> {
+        // Nothing draws into the fake's images.
+        None
+    }
+
+    fn hide_drag_image(&mut self, to: Option<ScreenRect>) {
+        if self.drag_image.take().is_some() {
+            self.drag_image_hides.push(to);
+        }
     }
 
     fn set_main_menu(&mut self, menu: &MainMenu) {
@@ -790,6 +1298,10 @@ impl Platform for Fake {
         self.context_menus.push((window, position, menu.clone()));
     }
 
+    fn close_context_menu(&mut self, window: WindowId) {
+        self.closed_context_menus.push(window);
+    }
+
     fn show_definition(
         &mut self,
         window: WindowId,
@@ -811,6 +1323,28 @@ impl Platform for Fake {
 
     fn set_clipboard_text(&mut self, text: &str) {
         self.clipboard = Some(text.to_owned());
+        self.clipboard_image = None;
+    }
+
+    fn set_clipboard_image(&mut self, png: &[u8]) {
+        self.clipboard = None;
+        self.clipboard_image = Some(png.to_vec());
+    }
+
+    fn keep_awake(&mut self, awake: Awake, reason: &str) {
+        self.awake = (awake, reason.to_owned());
+    }
+
+    fn show_save_panel(&mut self, window: WindowId, name: &str, message: &str) -> SavePanelId {
+        let id = SavePanelId::new(self.next_id());
+        self.save_panels
+            .push((id, window, name.to_owned(), message.to_owned()));
+        id
+    }
+
+    fn dismiss_save_panel(&mut self, panel: SavePanelId) {
+        self.save_panels.retain(|open| open.0 != panel);
+        self.ended_saves.retain(|&ended| ended != panel);
     }
 
     fn show_alert(&mut self, window: Option<WindowId>, alert: &Alert) -> AlertId {
@@ -821,6 +1355,10 @@ impl Platform for Fake {
             alert: alert.clone(),
         });
         id
+    }
+
+    fn dismiss_alert(&mut self, alert: AlertId) {
+        self.alerts.retain(|open| open.id != alert);
     }
 
     fn start_timer(&mut self, at: Instant) -> TimerId {
@@ -839,6 +1377,12 @@ impl Platform for Fake {
         }
     }
 
+    fn end_composition(&mut self, window: WindowId) {
+        if let Some(state) = self.windows.get_mut(&window) {
+            state.compositions_ended += 1;
+        }
+    }
+
     fn set_option_as_meta(&mut self, left: bool, right: bool) {
         self.option_as_meta = (left, right);
     }
@@ -849,9 +1393,47 @@ impl Platform for Fake {
         }
     }
 
+    fn hold_pointer(&mut self, window: WindowId, shape: Option<PointerShape>) {
+        if let Some(state) = self.windows.get_mut(&window) {
+            state.held_pointer = shape;
+        }
+    }
+
     fn set_pointer_areas(&mut self, window: WindowId, areas: &[PointerArea]) {
         if let Some(state) = self.windows.get_mut(&window) {
             state.pointer_areas = areas.to_vec();
+        }
+    }
+
+    fn set_titlebar(&mut self, window: WindowId, titlebar: Titlebar) {
+        if let Some(state) = self.windows.get_mut(&window) {
+            state.titlebar = titlebar;
+        }
+    }
+
+    fn set_move_areas(&mut self, window: WindowId, areas: &[ContentRect]) {
+        if let Some(state) = self.windows.get_mut(&window) {
+            state.move_areas = areas.to_vec();
+        }
+    }
+
+    fn set_titlebar_areas(&mut self, window: WindowId, areas: &[ContentRect]) {
+        if let Some(state) = self.windows.get_mut(&window) {
+            state.titlebar_areas = areas.to_vec();
+        }
+    }
+
+    fn accessibility_asked(&self, window: WindowId) -> bool {
+        self.windows
+            .get(&window)
+            .is_some_and(|state| state.accessibility_asked)
+    }
+
+    fn update_accessibility(&mut self, window: WindowId, update: accesskit::TreeUpdate) {
+        if let Some(state) = self.windows.get_mut(&window)
+            && state.accessibility_asked
+        {
+            state.accessibility.push(update);
         }
     }
 
@@ -861,10 +1443,42 @@ impl Platform for Fake {
         }
     }
 
+    fn start_updates(&mut self, check: bool) -> bool {
+        if self.can_update && self.update_checks.is_none() {
+            self.update_checks = Some(check);
+        }
+        self.can_update
+    }
+
+    fn set_update_checks(&mut self, check: bool) {
+        if self.update_checks.is_some() {
+            self.update_checks = Some(check);
+        }
+    }
+
+    fn check_for_updates(&mut self) {
+        if self.can_update {
+            self.updates_checked += 1;
+        }
+    }
+
+    fn show_about(&mut self, about: &AboutPanel) {
+        self.abouts.push(about.clone());
+    }
+
     fn set_pointer_shape(&mut self, window: WindowId, shape: PointerShape) {
         if let Some(state) = self.windows.get_mut(&window) {
             state.pointer = shape;
         }
+    }
+
+    /// Two by two opaque white pixels of any data but none.
+    fn decode_image(&self, data: &[u8]) -> Option<crate::Pixels> {
+        (!data.is_empty()).then(|| crate::Pixels {
+            width: 2,
+            height: 2,
+            rgba: vec![255; 16],
+        })
     }
 
     /// Fails for a file that does not exist, as a backend fails to read it.
@@ -882,13 +1496,18 @@ impl Platform for Fake {
         self.attention_requests += 1;
     }
 
+    fn set_badge(&mut self, badge: Option<&str>) {
+        self.badge = badge.map(str::to_owned);
+    }
+
     fn play_alert_sound(&mut self) {
         self.alert_sounds += 1;
     }
 
-    fn notify(&mut self, window: WindowId, title: &str, body: &str) {
+    fn notify(&mut self, window: WindowId, id: u64, title: &str, body: &str) {
         self.notifications.push(FakeNotification {
             window,
+            id,
             title: title.to_owned(),
             body: body.to_owned(),
         });
@@ -907,43 +1526,87 @@ impl Platform for Fake {
     }
 
     /// A URL, unless of `file`; a directory, a program, as the shared rule
-    /// tells of the file that the target's links lead to, or a file; a
-    /// path that does not exist, a `file` URL of another machine and a text
-    /// that is no URL fail, as a backend's do.
-    fn target_kind(&self, target: &str) -> Result<TargetKind, Error> {
+    /// tells of the file that the target's links lead to, or a file, at the
+    /// path that its links lead to; a path that leads nowhere, a `file` URL
+    /// of another machine and a text that is no URL fail, as a backend's
+    /// do.
+    fn resolve_target(&self, target: &str) -> Result<Target, Error> {
         let failed = |why: String| Error::Open(target.to_owned(), why);
-        let path = match fake_path(target) {
-            Target::Url => return Ok(TargetKind::Url),
-            Target::Path(path) => path,
-            Target::Neither(why) => return Err(failed(why.to_owned())),
+        let path = match given(target) {
+            Given::Url => {
+                return Ok(Target {
+                    kind: TargetKind::Url,
+                    location: target.to_owned(),
+                });
+            }
+            Given::Path(path) => path,
+            Given::Neither(why) => return Err(failed(why.to_owned())),
         };
         let path = std::fs::canonicalize(path).map_err(|error| failed(error.to_string()))?;
         let metadata = std::fs::metadata(&path).map_err(|error| failed(error.to_string()))?;
-        Ok(if crate::runs_by_itself(&path, &metadata) {
+        let kind = if crate::runs_by_itself(&path, &metadata) {
             TargetKind::Program
         } else if metadata.is_dir() {
             TargetKind::Directory
         } else {
             TargetKind::File
+        };
+        Ok(Target {
+            kind,
+            location: path.display().to_string(),
         })
     }
 
-    /// Opens nothing, and records `target`, or, for a program, reveals it.
-    fn open(&mut self, target: &str) -> Result<(), Error> {
-        if self.target_kind(target)? == TargetKind::Program {
-            return self.reveal(target);
+    /// Opens nothing, and records `target`'s location; a program, and a
+    /// file or a directory of no absolute path, fail.
+    fn system_version(&self) -> String {
+        "Fake 1.0".to_owned()
+    }
+
+    fn open(&mut self, target: &Target) -> Result<(), Error> {
+        if target.kind != TargetKind::Url && !Path::new(&target.location).is_absolute() {
+            return Err(Error::Open(
+                target.location.clone(),
+                "it has no path".to_owned(),
+            ));
         }
-        self.opened.push(target.to_owned());
+        if target.kind == TargetKind::Program {
+            return Err(Error::Open(
+                target.location.clone(),
+                "it would run".to_owned(),
+            ));
+        }
+        if target.kind == TargetKind::Url
+            && target
+                .location
+                .split_once(':')
+                .is_some_and(|(scheme, _)| self.unhandled.iter().any(|kept| kept == scheme))
+        {
+            return Err(Error::Open(
+                target.location.clone(),
+                "no application opens it".to_owned(),
+            ));
+        }
+        self.opened.push(target.location.clone());
         Ok(())
     }
 
-    /// Shows nothing, and records `target`; a URL that is not of `file`
-    /// fails.
-    fn reveal(&mut self, target: &str) -> Result<(), Error> {
-        if self.target_kind(target)? == TargetKind::Url {
-            return Err(Error::Open(target.to_owned(), "not a file".to_owned()));
+    /// Shows nothing, and records `target`'s location; a URL, and a target
+    /// of no absolute path, fail.
+    fn reveal(&mut self, target: &Target) -> Result<(), Error> {
+        if target.kind != TargetKind::Url && !Path::new(&target.location).is_absolute() {
+            return Err(Error::Open(
+                target.location.clone(),
+                "it has no path".to_owned(),
+            ));
         }
-        self.revealed.push(target.to_owned());
+        if target.kind == TargetKind::Url {
+            return Err(Error::Open(
+                target.location.clone(),
+                "it is no file".to_owned(),
+            ));
+        }
+        self.revealed.push(target.location.clone());
         Ok(())
     }
 
@@ -957,7 +1620,7 @@ impl Platform for Fake {
 }
 
 /// What a target is, as the fake reads it.
-enum Target {
+enum Given {
     /// A URL of another scheme than `file`.
     Url,
     /// The path of an absolute path, or of a `file` URL of this machine.
@@ -969,36 +1632,36 @@ enum Target {
 /// What `target` is: an absolute path; a `file` URL, of any case, with no
 /// host or `localhost`, its escapes decoded; or another URL, of a scheme
 /// that starts with a letter.
-fn fake_path(target: &str) -> Target {
+fn given(target: &str) -> Given {
     if target.starts_with('/') {
-        return Target::Path(PathBuf::from(target));
+        return Given::Path(PathBuf::from(target));
     }
     let Some((scheme, rest)) = target.split_once(':') else {
-        return Target::Neither("it is not a URL");
+        return Given::Neither("it is not a URL");
     };
     let scheme_ok = scheme.starts_with(|c: char| c.is_ascii_alphabetic())
         && scheme
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || "+.-".contains(c));
     if !scheme_ok {
-        return Target::Neither("it is not a URL");
+        return Given::Neither("it is not a URL");
     }
     if !scheme.eq_ignore_ascii_case("file") {
-        return Target::Url;
+        return Given::Url;
     }
     let path = match rest.strip_prefix("//") {
         Some(rest) => {
             let (host, path) = rest.split_at(rest.find('/').unwrap_or(rest.len()));
             if !host.is_empty() && !host.eq_ignore_ascii_case("localhost") {
-                return Target::Neither("it is on another machine");
+                return Given::Neither("it is on another machine");
             }
             path
         }
         None => rest,
     };
     match decoded(path) {
-        Some(path) if path.starts_with('/') => Target::Path(PathBuf::from(path)),
-        _ => Target::Neither("it has no path"),
+        Some(path) if path.starts_with('/') => Given::Path(PathBuf::from(path)),
+        _ => Given::Neither("it has no path"),
     }
 }
 
@@ -1017,4 +1680,33 @@ fn decoded(text: &str) -> Option<String> {
         }
     }
     String::from_utf8(bytes).ok()
+}
+
+/// The files that the fake's [`Platform::quarantine`] marked, by their
+/// device and inode, which a rename keeps, as the Mac's attribute.
+static QUARANTINED: std::sync::Mutex<Vec<(u64, u64)>> = std::sync::Mutex::new(Vec::new());
+
+/// The fake's mark of a file come from elsewhere: its device and inode
+/// kept, which [`quarantined`] finds again.
+fn quarantine(path: &Path) -> std::io::Result<()> {
+    use std::os::unix::fs::MetadataExt;
+    let metadata = std::fs::metadata(path)?;
+    QUARANTINED
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .push((metadata.dev(), metadata.ino()));
+    Ok(())
+}
+
+/// Whether the fake's [`Platform::quarantine`] marked the file at `path`,
+/// whatever its name since.
+pub fn quarantined(path: &Path) -> bool {
+    use std::os::unix::fs::MetadataExt;
+    let Ok(metadata) = std::fs::metadata(path) else {
+        return false;
+    };
+    QUARANTINED
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .contains(&(metadata.dev(), metadata.ino()))
 }

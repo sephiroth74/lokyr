@@ -12,7 +12,7 @@ use std::fmt::Write as _;
 use super::osc::hex_byte;
 use super::rectangles::Area;
 use super::terminfo::{self, Capability};
-use super::{CursorShape, Event, Terminal};
+use super::{ColorScheme, CursorShape, Event, Terminal};
 use crate::page::{Color, Content, Style, Underline, Width};
 use crate::parser::{Params, StringEnd};
 
@@ -164,9 +164,22 @@ impl Terminal {
             75 => "\x1b[?70n".to_owned(),
             // Not made for several sessions.
             85 => "\x1b[?83n".to_owned(),
+            // The color scheme, as mode 2031 tells its changes.
+            996 => return self.report_color_scheme(),
             _ => return,
         };
         self.reply(reply.as_bytes());
+    }
+
+    /// The report of the theme's color scheme, `CSI ? 997 ; 1 n` for a dark
+    /// one and `CSI ? 997 ; 2 n` for a light one, as Contour's extension
+    /// has it: the answer to `CSI ? 996 n`, and what mode 2031 tells.
+    pub(super) fn report_color_scheme(&mut self) {
+        let reply = match self.color_scheme() {
+            ColorScheme::Dark => b"\x1b[?997;1n",
+            ColorScheme::Light => b"\x1b[?997;2n",
+        };
+        self.reply(reply);
     }
 
     /// XTVERSION: the terminal's name and version.

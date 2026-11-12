@@ -192,31 +192,73 @@ def setup_terminal():
 def restore():
     """Puts the user's settings back, and removes those that `setup` saved
     once they are back, so that a later `setup` saves the settings of that
-    day."""
-    guid = os.path.join(SAVED, "iterm2-default-guid")
-    if os.path.exists(guid):
-        with open(guid) as file:
-            value = file.read().strip()
-        # A default that iTerm2 did not have is none again.
-        command = (["defaults", "write", "com.googlecode.iterm2", "Default Bookmark Guid", value]
-                   if value else
-                   ["defaults", "delete", "com.googlecode.iterm2", "Default Bookmark Guid"])
-        if run(command).returncode == 0:
-            os.remove(guid)
+    day: Terminal.app's once it quit, as it writes its own over them as it
+    quits; iTerm2's once nothing of it runs, as it may run this very
+    script. A setting that cannot go back yet keeps its copy, for the next
+    `restore`."""
+    terminal_app = app_of("terminal")
+    iterm_app = app_of("iterm2")
+    restore_one(os.path.join(SAVED, "iterm2-default-guid"),
+                lambda: not processes_of(iterm_app), put_iterm_default)
     if os.path.exists(ITERM_DYNAMIC):
         os.remove(ITERM_DYNAMIC)
-    terminal = os.path.join(SAVED, "com.apple.Terminal.plist")
-    if os.path.exists(terminal):
-        run(["osascript", "-e", 'quit app "Terminal"'])
-        time.sleep(2)
-        if run(["defaults", "import", "com.apple.Terminal", terminal]).returncode == 0:
-            os.remove(terminal)
+    restore_one(os.path.join(SAVED, "com.apple.Terminal.plist"),
+                lambda: quit_waiting(terminal_app, "Terminal"),
+                lambda path: run(["defaults", "import", "com.apple.Terminal", path]).returncode == 0)
     left = os.listdir(SAVED) if os.path.isdir(SAVED) else []
     if left:
-        sys.exit(f"compare.py: {', '.join(left)} not put back, in {SAVED}")
+        sys.exit(f"compare.py: {', '.join(left)} not put back, in {SAVED}: run `restore` "
+                 "again once iTerm2 and Terminal.app quit")
     if os.path.isdir(SAVED):
         os.rmdir(SAVED)
     log("restored iTerm2's and Terminal.app's settings")
+
+
+def restore_one(saved, quitted, put_back):
+    """Puts the setting saved in the file `saved` back, with `put_back`,
+    once `quitted` tells that its app does not run, and removes the file
+    once it is back; keeps it, telling why, otherwise. Whether it went."""
+    if not os.path.exists(saved):
+        return True
+    name = os.path.basename(saved)
+    if not quitted():
+        log(f"{name} kept: its app still runs, which would write its own settings over it")
+        return False
+    if not put_back(saved):
+        log(f"{name} kept: it could not be put back")
+        return False
+    os.remove(saved)
+    return True
+
+
+def put_iterm_default(saved):
+    """Puts iTerm2's default profile back, as the file `saved` holds it: a
+    default that iTerm2 did not have is none again. Whether it went."""
+    with open(saved) as file:
+        value = file.read().strip()
+    command = (["defaults", "write", "com.googlecode.iterm2", "Default Bookmark Guid", value]
+               if value else
+               ["defaults", "delete", "com.googlecode.iterm2", "Default Bookmark Guid"])
+    return run(command).returncode == 0
+
+
+def quit_waiting(app, name):
+    """Asks the app `name`, of the bundle `app`, to quit, and waits up to
+    10 s for its processes to end, as one that asks the user first may take
+    a moment: whether they did."""
+    if not processes_of(app):
+        return True
+    run(["osascript", "-e", f'quit app "{name}"'])
+    for _ in range(50):
+        if not processes_of(app):
+            return True
+        time.sleep(0.2)
+    return False
+
+
+def app_of(key):
+    """The bundle of the terminal of `key`, as `TERMINALS` has it."""
+    return next(app for name, app, _ in TERMINALS if name == key)
 
 
 # The processes of a terminal.

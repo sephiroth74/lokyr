@@ -21,6 +21,7 @@ use objc2_app_kit::NSModalResponse;
 
 use crate::alert;
 use crate::backend::Backend;
+use crate::wake;
 
 /// What makes the application's handler, as it starts.
 pub(crate) type MakeHandler = Box<dyn FnOnce() -> Box<dyn Handler>>;
@@ -70,6 +71,14 @@ pub(crate) struct Shared {
     /// Whether the system asked the application to quit and waits for its
     /// answer, as AppKit's `NSTerminateLater` has it.
     terminating: Cell<bool>,
+    /// The events of windows that wait for the run loop's next turn, as an
+    /// accessibility client's asks, which come within AppKit's calls that
+    /// the app's answers would come back into.
+    later: RefCell<Vec<(WindowId, WindowEvent)>>,
+    /// The application's events that came before it launched, as the files
+    /// that the system opens with it as it starts, which the handler takes
+    /// once it has started.
+    early: RefCell<Vec<AppEvent>>,
 }
 
 impl Shared {
@@ -85,7 +94,28 @@ impl Shared {
             terminating: Cell::new(false),
             modal_aborted: Cell::new(false),
             menu_open: Cell::new(false),
+            later: RefCell::new(Vec::new()),
+            early: RefCell::new(Vec::new()),
         })
+    }
+
+    /// Hands the window `id` `event` on the run loop's next turn, as the
+    /// call in progress, of AppKit's, may hold what the app's answer would
+    /// take.
+    pub(crate) fn post_later(&self, id: WindowId, event: WindowEvent) {
+        let first = {
+            let mut later = self.later.borrow_mut();
+            later.push((id, event));
+            later.len() == 1
+        };
+        if first {
+            wake::post_later();
+        }
+    }
+
+    /// The events of windows that waited for this turn, in their order.
+    pub(crate) fn take_later(&self) -> Vec<(WindowId, WindowEvent)> {
+        std::mem::take(&mut *self.later.borrow_mut())
     }
 
     /// Queues `pending`, and hands it on now unless a dispatch is in
@@ -178,9 +208,34 @@ impl Shared {
     /// Hands `pending` to the handler, whose panic ends the application:
     /// the one made as the application starts.
     fn call(&self, pending: Pending) {
+        let pending = match pending {
+            Pending::App(event) if self.make.borrow().is_some() => {
+                self.early.borrow_mut().push(event);
+                return;
+            }
+            pending => pending,
+        };
         if matches!(pending, Pending::Started)
             && let Some(make) = self.make.borrow_mut().take()
         {
+            // What came before, right after the start: files, folders or
+            // links that the system started the app to open, which open
+            // their own windows. AppKit's own key of the launch tells a
+            // start from a shell as no default one too, which opens none.
+            let early = self.early.take();
+            let opens = early.iter().any(|event| {
+                matches!(
+                    event,
+                    AppEvent::OpenFiles(_) | AppEvent::OpenUrls(_) | AppEvent::OpenFolders { .. }
+                )
+            });
+            self.backend.borrow_mut().set_default_launch(!opens);
+            self.backend.borrow().look_at_default_terminal();
+            let mut queue = self.queue.borrow_mut();
+            for event in early.into_iter().rev() {
+                queue.push_front(Pending::App(event));
+            }
+            drop(queue);
             match panic::catch_unwind(AssertUnwindSafe(make)) {
                 Ok(handler) => *self.handler.borrow_mut() = Some(handler),
                 Err(payload) => {
@@ -198,6 +253,12 @@ impl Shared {
         let backend = &mut *backend;
         let outcome = panic::catch_unwind(AssertUnwindSafe(|| match pending {
             Pending::Started => handler.started(backend),
+            // A save panel that the app withdrew tells nothing of its end.
+            Pending::App(AppEvent::SavePanelClosed { panel, path }) => {
+                if backend.take_save_panel(panel) {
+                    handler.app_event(backend, AppEvent::SavePanelClosed { panel, path });
+                }
+            }
             Pending::App(event) => handler.app_event(backend, event),
             Pending::Window(window, event) => {
                 // A window that closed meanwhile has nothing more to tell.
@@ -266,13 +327,17 @@ impl Shared {
             return;
         }
         loop {
-            let Some((menu, view, location)) = self.backend.borrow_mut().open_context_menu() else {
+            let Some((menu, view, location, window)) =
+                self.backend.borrow_mut().open_context_menu()
+            else {
                 break;
             };
             self.dispatching.set(false);
             menu.popUpMenuPositioningItem_atLocation_inView(None, location, Some(&view));
             self.dispatching.set(true);
             self.backend.borrow_mut().context_menu_closed();
+            // Its closing, after its choice, which came as it was made.
+            self.enqueue(Pending::Window(window, WindowEvent::ContextMenuClosed));
         }
         self.menu_open.set(false);
     }

@@ -1,0 +1,26 @@
+## Latency (ms), and its histogram in refreshes
+round 1 place 1 instant: p50 19.76 p90 27.60 p99 48.09 max 52.27; refresh 16.67; {'1': 64, '2': 128, '3': 6, '4': 1}
+round 1 place 2 snappy: p50 22.04 p90 30.58 p99 49.13 max 66.52; refresh 16.67; {'1': 25, '2': 160, '3': 13, '4': 1}
+round 2 place 1 snappy: p50 21.55 p90 29.66 p99 36.43 max 38.36; refresh 16.67; {'1': 35, '2': 160, '3': 4}
+round 2 place 2 instant: p50 20.68 p90 29.85 p99 52.24 max 54.63; refresh 16.67; {'1': 54, '2': 132, '3': 10, '4': 3}
+round 3 place 1 snappy: p50 22.15 p90 30.40 p99 40.11 max 43.21; refresh 16.67; {'1': 36, '2': 153, '3': 10}
+round 3 place 2 instant: p50 20.31 p90 26.83 p99 49.56 max 68.08; refresh 16.67; {'1': 53, '2': 135, '3': 10, '5': 1}
+round 4 place 1 instant: p50 18.34 p90 26.70 p99 44.24 max 44.87; refresh 16.67; {'1': 85, '2': 109, '3': 5}
+round 4 place 2 snappy: p50 22.11 p90 30.07 p99 42.62 max 45.71; refresh 16.67; {'1': 35, '2': 155, '3': 9}
+round 5 place 1 instant: p50 19.11 p90 29.68 p99 49.66 max 53.82; refresh 16.67; {'1': 67, '2': 123, '3': 8, '4': 1}
+round 5 place 2 snappy: p50 22.61 p90 30.53 p99 40.20 max 46.94; refresh 16.67; {'1': 29, '2': 160, '3': 10}
+round 6 place 1 snappy: p50 22.04 p90 29.59 p99 35.76 max 39.12; refresh 16.67; {'1': 31, '2': 161, '3': 6}
+round 6 place 2 instant: p50 20.14 p90 28.27 p99 38.11 max 47.11; refresh 16.67; {'1': 54, '2': 135, '3': 10}
+round 7 place 1 snappy: p50 22.82 p90 30.00 p99 34.71 max 38.69; refresh 16.67; {'1': 23, '2': 170, '3': 6}
+round 7 place 2 instant: p50 20.00 p90 27.10 p99 37.03 max 42.09; refresh 16.67; {'1': 61, '2': 129, '3': 9}
+round 8 place 1 instant: p50 17.99 p90 25.31 p99 39.39 max 39.70; refresh 16.67; {'1': 87, '2': 108, '3': 4}
+round 8 place 2 snappy: p50 22.00 p90 30.03 p99 37.75 max 39.57; refresh 16.67; {'1': 35, '2': 159, '3': 5}
+instant: p50 mean 19.54 (sd 0.90), p99 mean 44.79 (sd 5.56), of 8 rounds; 6 of 1592 samples in the fourth refresh or later
+snappy: p50 mean 22.16 (sd 0.37), p99 mean 39.59 (sd 4.37), of 8 rounds; 1 of 1591 samples in the fourth refresh or later
+place 1: p50 mean 20.47, p99 mean 41.05
+place 2: p50 mean 21.24, p99 mean 43.33
+## Idle (per s) and memory (MB)
+round 1 instant: package idle 0.000/s, interrupt 0.333/s; footprint w/o GPU 26.7 MB, GPU 30.1 MB
+round 1 snappy: package idle 0.000/s, interrupt 0.350/s; footprint w/o GPU 26.7 MB, GPU 30.1 MB
+round 2 snappy: package idle 0.000/s, interrupt 0.350/s; footprint w/o GPU 26.7 MB, GPU 30.1 MB
+round 2 instant: package idle 0.000/s, interrupt 0.350/s; footprint w/o GPU 26.7 MB, GPU 30.1 MB

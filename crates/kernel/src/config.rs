@@ -21,9 +21,12 @@
 //! close-on-exit = "clean"   # clean | always | never
 //! padding-x = 4             # points, at the left and the right
 //! padding-y = 4             # points, at the top and the bottom
+//! gutter = true             # the marks at the panes' left, as a command's end
+//! scrollbar = "system"      # system | always | never
 //! background-opacity = 1    # from 0 to 1
 //! background-blur = 0       # points
 //! title-size = true         # the grid's size in the title
+//! title-shortcut = true     # ⌥⌘1 at the titlebar's right
 //! opaque-titlebar = false   # the titlebar opaque over a translucent window
 //!
 //! [terminal]
@@ -53,9 +56,14 @@
 //! bounce = true             # the Dock's icon bounces for one in the background
 //! mark-title = true         # 🔔 in its title, until it takes the focus
 //!
+//! [notifications]
+//! long-command = 10         # seconds; a notification as one this long ends
+//!
 //! [app]
 //! icon = "jormungandr"      # the icon's variant
 //! appearance = "system"     # system | light | dark
+//! quit-after-last-window-closed = false  # stays open without windows
+//! restore-windows = "system"  # system | always | never
 //!
 //! [keys]
 //! "cmd+shift+]" = "tabs.next"                    # a command
@@ -65,11 +73,13 @@
 //!
 //! Each section documents its keys: `[font]` is [`FontConfig`], `[text]`
 //! [`TextConfig`], `[cursor]` [`CursorConfig`], `[window]` [`WindowConfig`],
-//! `[terminal]` [`TerminalConfig`], `[scrollback]` [`ScrollbackConfig`],
+//! `[interface]` [`InterfaceConfig`], `[slots]` [`SlotsConfig`], `[terminal]` [`TerminalConfig`], `[scrollback]` [`ScrollbackConfig`],
 //! `[keyboard]` [`KeyboardConfig`],
 //! `[clipboard]` [`ClipboardConfig`], `[links]` [`LinksConfig`], `[bell]`
-//! [`BellConfig`], `[app]`
-//! [`AppConfig`], and `[keys]` [`KeysConfig`]. Every key and every section can be
+//! [`BellConfig`], `[notifications]` [`NotificationsConfig`], `[theme]` [`ThemeConfig`], `[app]`
+//! [`AppConfig`], `[updates]` [`UpdatesConfig`], `[keys]` [`KeysConfig`],
+//! and the plugins' own, `[plugins.<namespace>]`, [`PluginsConfig`], which
+//! their schemas check. Every key and every section can be
 //! left out, for its default. An error, of the
 //! syntax, of a key or of a value, tells its place in the file, and a key
 //! that no section has tells the nearest that it has.
@@ -80,17 +90,23 @@ use std::fmt;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
+use lokyr_pkg_model::{link_target, write_whole};
 use lokyr_text_core::FontConfig;
 use lokyr_text_core::as_written;
 use lokyr_ui_core::cursor::CursorConfig;
+use lokyr_ui_core::interface::InterfaceConfig;
 use lokyr_ui_core::text::TextConfig;
 use lokyr_vt_core::unicode::{Normalization, Tables, Widths};
 use serde::de::{self, Visitor};
 use serde::{Deserialize, Serialize};
 use toml_edit::{Document, DocumentMut, Item, TableLike};
 
+mod plugins;
 mod written;
+
+pub use plugins::{PluginSection, PluginsConfig};
 
 /// The version of the file's format that the app reads.
 pub const VERSION: i64 = 1;
@@ -117,8 +133,15 @@ pub struct Config {
     pub cursor: CursorConfig,
     /// The `[window]` section.
     pub window: WindowConfig,
-    /// The `[quick-terminal]` section.
-    pub quick_terminal: QuickTerminalConfig,
+    /// The quick terminal's section before it was its plugin's,
+    /// `[quick-terminal]`, whose keys the file's reading ignores, telling
+    /// it in [`Config::moved`].
+    #[serde(rename = "quick-terminal", skip_serializing)]
+    old_quick_terminal: Ignored,
+    /// The `[interface]` section.
+    pub interface: InterfaceConfig,
+    /// The `[slots]` section.
+    pub slots: SlotsConfig,
     /// The `[terminal]` section.
     pub terminal: TerminalConfig,
     /// The `[scrollback]` section.
@@ -131,13 +154,45 @@ pub struct Config {
     pub links: LinksConfig,
     /// The `[bell]` section.
     pub bell: BellConfig,
+    /// The `[notifications]` section.
+    pub notifications: NotificationsConfig,
+    /// The `[agents]` section.
+    pub agents: AgentsConfig,
+    /// The `[theme]` section.
+    pub theme: ThemeConfig,
     /// The `[app]` section.
     pub app: AppConfig,
+    /// The `[updates]` section.
+    pub updates: UpdatesConfig,
     /// The `[debug]` section.
     pub debug: DebugConfig,
     /// The `[keys]` section.
     pub keys: KeysConfig,
+    /// The plugins' sections, `[plugins.<namespace>]`, which their schemas
+    /// check once the plugins are there.
+    #[serde(skip_serializing)]
+    pub plugins: PluginsConfig,
+    /// The sections of the file that are plugins' now, each with the
+    /// namespace of the plugin whose section it is, and what tells it, at
+    /// its place: their keys are ignored.
+    #[serde(skip)]
+    pub moved: Vec<(String, Error)>,
 }
+
+/// A section that the file's reading ignores, whatever it holds.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct Ignored;
+
+impl<'de> Deserialize<'de> for Ignored {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        serde::de::IgnoredAny::deserialize(deserializer)?;
+        Ok(Self)
+    }
+}
+
+/// The sections that are the built-in plugins' now, each with the
+/// namespace of its plugin.
+const MOVED: [(&str, &str); 1] = [("quick-terminal", "quick-terminal")];
 
 /// The `[keys]` section: bindings of keys to commands over the defaults, by
 /// their keys, as [`crate::keymap`] writes them.
@@ -191,7 +246,9 @@ pub enum ArgValue {
     String(String),
 }
 
-/// The `[app]` section: the application's own looks and language.
+/// The `[app]` section: the application's own looks and language, whether
+/// it quits as its last window closes, and whether its windows open again
+/// as it starts.
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields, rename_all = "kebab-case")]
 pub struct AppConfig {
@@ -205,6 +262,39 @@ pub struct AppConfig {
     /// The appearance of the app and of its theme: the system's, or light
     /// or dark, whatever the system's is.
     pub appearance: AppearanceMode,
+    /// Whether the app quits as its last window closes, the hidden quick
+    /// terminal's aside, which goes with it: otherwise it stays open
+    /// without windows, until its icon in the Dock or a command opens one.
+    pub quit_after_last_window_closed: bool,
+    /// Whether the windows open again as the app starts, as they were as
+    /// it quit: their frames, tabs, splits and directories.
+    pub restore_windows: RestoreWindows,
+}
+
+/// Whether the windows that were open as the app quit open again as it
+/// starts.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum RestoreWindows {
+    /// As the system restores an app's windows, as its settings say.
+    #[default]
+    System,
+    /// Always.
+    Always,
+    /// Never.
+    Never,
+}
+
+impl RestoreWindows {
+    /// Whether the windows open again, of `system`, whether the system's
+    /// settings restore an app's windows.
+    pub fn restores(self, system: bool) -> bool {
+        match self {
+            Self::System => system,
+            Self::Always => true,
+            Self::Never => false,
+        }
+    }
 }
 
 /// The appearance that the app takes.
@@ -243,13 +333,15 @@ impl Default for AppConfig {
             icon: Self::DEFAULT_ICON.to_owned(),
             language: "system".to_owned(),
             appearance: AppearanceMode::System,
+            quit_after_last_window_closed: false,
+            restore_windows: RestoreWindows::System,
         }
     }
 }
 
 /// The `[terminal]` section: what programs are told of the terminal, and
 /// how it counts and keeps their text, which must match how they count it.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields, rename_all = "kebab-case")]
 pub struct TerminalConfig {
     /// The `TERM` that programs see, which changes only what they are
@@ -261,6 +353,69 @@ pub struct TerminalConfig {
     pub ambiguous_width: AmbiguousWidth,
     /// The normal form that printed text takes.
     pub normalization: TextNormalization,
+    /// Whether the user's shell, zsh, bash or fish, loads the shells'
+    /// integration, which tells the prompts' marks and the folder.
+    pub shell_integration: bool,
+    /// The memory that a pane's inline images take at most, none showing
+    /// of 0.
+    pub image_memory: ImageMemory,
+}
+
+/// The memory that a pane's inline images take at most, in MiB, from 0,
+/// which shows none, to 1,024, whole or not; 64 by default.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(try_from = "f64", into = "f64")]
+pub struct ImageMemory(usize);
+
+impl ImageMemory {
+    /// The most, in MiB.
+    pub const MAX: f64 = 1024.0;
+
+    /// The memory in bytes.
+    pub fn bytes(self) -> usize {
+        self.0
+    }
+}
+
+impl Default for ImageMemory {
+    fn default() -> Self {
+        Self(64 * MIB)
+    }
+}
+
+/// In MiB, as the file writes it.
+impl From<ImageMemory> for f64 {
+    fn from(memory: ImageMemory) -> Self {
+        memory.0 as f64 / MIB as f64
+    }
+}
+
+impl TryFrom<f64> for ImageMemory {
+    type Error = String;
+
+    fn try_from(mebibytes: f64) -> Result<Self, Self::Error> {
+        if (0.0..=Self::MAX).contains(&mebibytes) {
+            Ok(Self((mebibytes * MIB as f64) as usize))
+        } else {
+            Err(format!(
+                "the inline images' memory, in MiB, is from 0 to {}, not {mebibytes}",
+                Self::MAX
+            ))
+        }
+    }
+}
+
+impl Default for TerminalConfig {
+    fn default() -> Self {
+        Self {
+            term: Term::default(),
+            unicode_widths: UnicodeWidths::default(),
+            ambiguous_width: AmbiguousWidth::default(),
+            normalization: TextNormalization::default(),
+            shell_integration: true,
+            image_memory: ImageMemory::default(),
+        }
+    }
 }
 
 impl TerminalConfig {
@@ -510,14 +665,236 @@ pub enum ConfirmPaste {
 }
 
 /// The `[links]` section: what a click on a link does, as the links'
-/// plugin opens it, or another plugin; a directory always opens.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
+/// plugin opens it, or another plugin; a directory always opens. And the
+/// engine that searches the web for the selection.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields, rename_all = "kebab-case")]
 pub struct LinksConfig {
     /// What a URL does.
     pub urls: OpenUrl,
     /// What a file does.
     pub files: OpenFile,
+    /// The engine that searches the web.
+    pub search_engine: SearchEngine,
+    /// The editor that a file's line opens in.
+    pub editor: Editor,
+}
+
+/// The editor that a path's line, as `src/main.rs:42:7`, opens in, of its
+/// own address: the system's application for the file, of no line, or one
+/// of a name, or an address of one's own.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(try_from = "String", into = "String")]
+pub enum Editor {
+    /// The file's application, as the Finder opens it, at no line.
+    #[default]
+    System,
+    /// An editor of a name, of [`EDITORS`]' place.
+    Named(usize),
+    /// An address of one's own, of a scheme, whose `{path}`, `{line}` and
+    /// `{column}` the file's take.
+    Template(String),
+}
+
+/// The editors of a name, each of its address of the file's `{path}`, its
+/// `{line}` and its `{column}`, as each editor documents it.
+pub const EDITORS: [(&str, &str); 7] = [
+    ("vscode", "vscode://file{path}:{line}:{column}"),
+    (
+        "vscode-insiders",
+        "vscode-insiders://file{path}:{line}:{column}",
+    ),
+    ("cursor", "cursor://file{path}:{line}:{column}"),
+    ("windsurf", "windsurf://file{path}:{line}:{column}"),
+    ("zed", "zed://file{path}:{line}:{column}"),
+    (
+        "sublime",
+        "subl://open?url=file://{path}&line={line}&column={column}",
+    ),
+    (
+        "textmate",
+        "txmt://open?url=file://{path}&line={line}&column={column}",
+    ),
+];
+
+impl Editor {
+    /// The address that opens the file at the absolute `path` at its
+    /// `line` and `column`, from 1, the first column of none; none of the
+    /// system's application. The path's characters but letters, digits,
+    /// `/` and `-._~` are escaped, as a URL's path takes them.
+    pub fn url(&self, path: &str, line: u32, column: Option<u32>) -> Option<String> {
+        let template = match self {
+            Self::System => return None,
+            Self::Named(at) => EDITORS.get(*at)?.1,
+            Self::Template(template) => template.as_str(),
+        };
+        let mut escaped = String::new();
+        for byte in path.bytes() {
+            if byte.is_ascii_alphanumeric() || b"/-._~".contains(&byte) {
+                escaped.push(char::from(byte));
+            } else {
+                escaped.push_str(&format!("%{byte:02X}"));
+            }
+        }
+        Some(
+            template
+                .replace("{path}", &escaped)
+                .replace("{line}", &line.to_string())
+                .replace("{column}", &column.unwrap_or(1).to_string()),
+        )
+    }
+}
+
+impl From<Editor> for String {
+    fn from(editor: Editor) -> Self {
+        match editor {
+            Editor::System => "system".to_owned(),
+            Editor::Named(at) => EDITORS
+                .get(at)
+                .map_or_else(String::new, |(name, _)| (*name).to_owned()),
+            Editor::Template(template) => template,
+        }
+    }
+}
+
+impl TryFrom<String> for Editor {
+    type Error = String;
+
+    fn try_from(text: String) -> Result<Self, Self::Error> {
+        if text == "system" {
+            return Ok(Self::System);
+        }
+        if let Some(at) = EDITORS.iter().position(|(name, _)| *name == text) {
+            return Ok(Self::Named(at));
+        }
+        let scheme = text
+            .split_once(':')
+            .map(|(scheme, _)| scheme)
+            .filter(|scheme| {
+                scheme.starts_with(|c: char| c.is_ascii_alphabetic())
+                    && scheme
+                        .chars()
+                        .all(|c| c.is_ascii_alphanumeric() || "+.-".contains(c))
+            });
+        // An address of the `file` scheme opens a file, which would run a
+        // program's path that Lokyr otherwise refuses to run.
+        if scheme.is_some_and(|scheme| scheme.eq_ignore_ascii_case("file")) {
+            return Err(format!(
+                "`{text}` opens a file rather than an editor: an address of an editor's scheme \
+                 holds `{{path}}`"
+            ));
+        }
+        if scheme.is_some() && text.contains("{path}") && !text.chars().any(char::is_control) {
+            return Ok(Self::Template(text));
+        }
+        let names: Vec<String> = std::iter::once("system")
+            .chain(EDITORS.iter().map(|(name, _)| *name))
+            .map(|name| format!("`\"{name}\"`"))
+            .collect();
+        Err(format!(
+            "`{text}` is no editor: {}, or an address of a scheme that holds `{{path}}`",
+            names.join(", ")
+        ))
+    }
+}
+
+/// The engine that searches the web for a text: one of a name, or a URL
+/// of its own.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(try_from = "String", into = "String")]
+pub enum SearchEngine {
+    /// Google's, `google`.
+    #[default]
+    Google,
+    /// DuckDuckGo's, `duckduckgo`.
+    DuckDuckGo,
+    /// Bing's, `bing`.
+    Bing,
+    /// Ecosia's, `ecosia`.
+    Ecosia,
+    /// Kagi's, `kagi`.
+    Kagi,
+    /// Startpage's, `startpage`.
+    Startpage,
+    /// A URL from `https://` or `http://`, whose `{query}` the text takes.
+    Url(String),
+}
+
+/// The engines of a name, each with its URL of the text's `{query}`.
+const SEARCH_ENGINES: [(&str, &str); 6] = [
+    ("google", "https://www.google.com/search?q={query}"),
+    ("duckduckgo", "https://duckduckgo.com/?q={query}"),
+    ("bing", "https://www.bing.com/search?q={query}"),
+    ("ecosia", "https://www.ecosia.org/search?q={query}"),
+    ("kagi", "https://kagi.com/search?q={query}"),
+    ("startpage", "https://www.startpage.com/do/search?q={query}"),
+];
+
+impl SearchEngine {
+    /// The engines of a name, in the order of [`SEARCH_ENGINES`].
+    const NAMED: [Self; 6] = [
+        Self::Google,
+        Self::DuckDuckGo,
+        Self::Bing,
+        Self::Ecosia,
+        Self::Kagi,
+        Self::Startpage,
+    ];
+
+    /// The URL that searches for `text`, its characters but letters,
+    /// digits and `-._~` escaped, as a URL's query takes them.
+    pub fn url(&self, text: &str) -> String {
+        let template = match self {
+            Self::Url(url) => url.as_str(),
+            named => Self::NAMED
+                .iter()
+                .position(|engine| engine == named)
+                .map_or(SEARCH_ENGINES[0].1, |at| SEARCH_ENGINES[at].1),
+        };
+        let mut query = String::new();
+        for byte in text.bytes() {
+            if byte.is_ascii_alphanumeric() || b"-._~".contains(&byte) {
+                query.push(char::from(byte));
+            } else {
+                query.push_str(&format!("%{byte:02X}"));
+            }
+        }
+        template.replace("{query}", &query)
+    }
+}
+
+impl From<SearchEngine> for String {
+    fn from(engine: SearchEngine) -> Self {
+        match engine {
+            SearchEngine::Url(url) => url,
+            named => SearchEngine::NAMED
+                .iter()
+                .position(|engine| *engine == named)
+                .map_or_else(String::new, |at| SEARCH_ENGINES[at].0.to_owned()),
+        }
+    }
+}
+
+impl TryFrom<String> for SearchEngine {
+    type Error = String;
+
+    fn try_from(text: String) -> Result<Self, Self::Error> {
+        if let Some(at) = SEARCH_ENGINES.iter().position(|(name, _)| *name == text) {
+            return Ok(Self::NAMED[at].clone());
+        }
+        let web = text.starts_with("https://") || text.starts_with("http://");
+        if web && text.contains("{query}") {
+            return Ok(Self::Url(text));
+        }
+        let names: Vec<String> = SEARCH_ENGINES
+            .iter()
+            .map(|(name, _)| format!("`\"{name}\"`"))
+            .collect();
+        Err(format!(
+            "`{text}` is no search engine: {}, or a URL from `https://` or `http://` that holds `{{query}}`",
+            names.join(", ")
+        ))
+    }
 }
 
 /// What opening a URL does.
@@ -586,200 +963,250 @@ impl Default for BellConfig {
     }
 }
 
-/// The `[quick-terminal]` section: the window that a global key slides in
-/// from an edge of the screen, and out again.
-#[derive(Clone, Copy, Debug, PartialEq, Deserialize, Serialize)]
+/// The `[notifications]` section: the notifications that the app shows of
+/// its own, as the system's, while a window has no focus.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields, rename_all = "kebab-case")]
-pub struct QuickTerminalConfig {
-    /// The edge that it comes from, or the centre.
-    pub position: QuickPosition,
-    /// Its size into the screen, and along its edge.
-    pub size: QuickSize,
-    /// The screen that it shows on.
-    pub screen: QuickScreen,
-    /// How long it slides in and out, in milliseconds.
-    pub animation: AnimationTime,
-    /// Whether it hides as it loses the focus.
-    pub autohide: bool,
-    /// Whether it follows to the Space in front, or stays on its own.
-    pub spaces: QuickSpaces,
+pub struct NotificationsConfig {
+    /// How long a command that the shell marks runs, at least, for a
+    /// notification as it ends.
+    pub long_command: LongCommand,
 }
 
-impl Default for QuickTerminalConfig {
-    fn default() -> Self {
-        Self {
-            position: QuickPosition::default(),
-            size: QuickSize::default(),
-            screen: QuickScreen::default(),
-            animation: AnimationTime(200),
-            autohide: true,
-            spaces: QuickSpaces::default(),
-        }
-    }
-}
-
-/// Where the quick terminal comes from.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum QuickPosition {
-    /// The screen's top edge.
-    #[default]
-    Top,
-    /// Its bottom edge.
-    Bottom,
-    /// Its left edge.
-    Left,
-    /// Its right edge.
-    Right,
-    /// Its centre.
-    Center,
-}
-
-/// The screen that the quick terminal shows on.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum QuickScreen {
-    /// The system's main screen, of the window in front.
-    #[default]
-    Main,
-    /// The screen that the pointer is on.
-    Mouse,
-    /// The screen of the menu bar, the first.
-    MenuBar,
-}
-
-/// Whether the quick terminal follows to the Space in front.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum QuickSpaces {
-    /// It shows on every Space, the one in front.
-    #[default]
-    Move,
-    /// It stays on the Space that it showed on.
-    Remain,
-}
-
-/// A length of the quick terminal: a share of the screen's, or points.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum Extent {
-    /// A percentage of the screen's, from 1 to 100.
-    Percent(f32),
-    /// Points, as macOS lays windows out.
-    Points(f32),
-}
-
-impl Extent {
-    fn parse(text: &str) -> Option<Self> {
-        let text = text.trim();
-        if let Some(percent) = text.strip_suffix('%') {
-            let percent: f32 = percent.trim().parse().ok()?;
-            (percent > 0.0 && percent <= 100.0).then_some(Self::Percent(percent))
-        } else {
-            let points: f32 = text.strip_suffix("px")?.trim().parse().ok()?;
-            (1.0..=100_000.0)
-                .contains(&points)
-                .then_some(Self::Points(points))
-        }
-    }
-}
-
-impl fmt::Display for Extent {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Percent(percent) => write!(f, "{}%", as_written(*percent)),
-            Self::Points(points) => write!(f, "{}px", as_written(*points)),
-        }
-    }
-}
-
-/// The quick terminal's size: first, how far it reaches into the screen
-/// from its edge, its height at the top or the bottom, its width at the
-/// left or the right, and its width at the centre; then, if it is given,
-/// its length along the edge, its width at the top or the bottom and its
-/// height elsewhere, else the screen's whole, or, at the centre, the
-/// first's share of the screen's height.
-#[derive(Clone, Copy, Debug, PartialEq, Deserialize, Serialize)]
-#[serde(try_from = "String", into = "String")]
-pub struct QuickSize {
-    /// Into the screen.
-    pub primary: Extent,
-    /// Along the edge, if it is given.
-    pub secondary: Option<Extent>,
-}
-
-impl Default for QuickSize {
-    fn default() -> Self {
-        Self {
-            primary: Extent::Percent(50.0),
-            secondary: None,
-        }
-    }
-}
-
-impl From<QuickSize> for String {
-    fn from(size: QuickSize) -> Self {
-        match size.secondary {
-            Some(secondary) => format!("{},{secondary}", size.primary),
-            None => size.primary.to_string(),
-        }
-    }
-}
-
-impl TryFrom<String> for QuickSize {
-    type Error = String;
-
-    fn try_from(text: String) -> Result<Self, Self::Error> {
-        let wrong = || {
-            format!(
-                "`{text}` is no size of the quick terminal: a percentage from 1% to 100%, or points, as `300px`, and another after a comma, along its edge"
-            )
-        };
-        let (primary, secondary) = match text.split_once(',') {
-            Some((primary, secondary)) => (primary, Some(secondary)),
-            None => (text.as_str(), None),
-        };
-        let primary = Extent::parse(primary).ok_or_else(wrong)?;
-        let secondary = match secondary {
-            Some(secondary) => Some(Extent::parse(secondary).ok_or_else(wrong)?),
-            None => None,
-        };
-        Ok(Self { primary, secondary })
-    }
-}
-
-/// How long an animation takes, in milliseconds, from 0, none, to 2000.
+/// How long a command runs, at least, in seconds, for a notification as it
+/// ends, from 1 to a day; 0 for none.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(try_from = "u32", into = "u32")]
-pub struct AnimationTime(u32);
+pub struct LongCommand(u32);
 
-impl From<AnimationTime> for u32 {
-    fn from(time: AnimationTime) -> Self {
-        time.0
+impl LongCommand {
+    /// The most seconds, a day's.
+    pub const MAX: u32 = 86_400;
+
+    /// How long a command runs, at least, for a notification; `None` for
+    /// none.
+    pub fn duration(self) -> Option<Duration> {
+        (self.0 > 0).then(|| Duration::from_secs(u64::from(self.0)))
     }
 }
 
-impl AnimationTime {
-    /// The most.
-    pub const MAX: u32 = 2000;
-
-    /// Its duration.
-    pub fn duration(self) -> std::time::Duration {
-        std::time::Duration::from_millis(u64::from(self.0))
+impl Default for LongCommand {
+    fn default() -> Self {
+        Self(10)
     }
 }
 
-impl TryFrom<u32> for AnimationTime {
+impl From<LongCommand> for u32 {
+    fn from(seconds: LongCommand) -> Self {
+        seconds.0
+    }
+}
+
+impl TryFrom<u32> for LongCommand {
     type Error = String;
 
-    fn try_from(millis: u32) -> Result<Self, Self::Error> {
-        if millis <= Self::MAX {
-            Ok(Self(millis))
+    fn try_from(seconds: u32) -> Result<Self, Self::Error> {
+        if seconds <= Self::MAX {
+            Ok(Self(seconds))
         } else {
             Err(format!(
-                "an animation takes from 0 to {} milliseconds, not {millis}",
+                "a long command's time, in seconds, is from 0 to {}, not {seconds}",
                 Self::MAX
             ))
         }
+    }
+}
+
+/// The `[agents]` section: the AI agents that run in the panes, by their
+/// programs' names, which their tabs mark of their states, and what the
+/// app tells of them.
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(default, deny_unknown_fields, rename_all = "kebab-case")]
+pub struct AgentsConfig {
+    /// The names of the agents' programs, as the foreground's processes
+    /// go by them.
+    pub programs: Vec<String>,
+    /// How long after its last sign of work an agent is done.
+    pub done_after: DoneAfter,
+    /// Whether an agent that waits for the user, or is done, tells it in a
+    /// notification while its window has no focus.
+    pub notify: bool,
+    /// Whether the Dock's icon counts the agents that wait for the user.
+    pub dock_badge: bool,
+}
+
+impl AgentsConfig {
+    /// The agents' programs that Lokyr knows by default.
+    pub const PROGRAMS: [&str; 12] = [
+        "claude",
+        "codex",
+        "gemini",
+        "opencode",
+        "aider",
+        "cursor-agent",
+        "copilot",
+        "amp",
+        "goose",
+        "qwen",
+        "crush",
+        "droid",
+    ];
+
+    /// The agent's program among `names`, those that the foreground's
+    /// processes go by, the first that the list holds.
+    pub fn agent_of<'n>(&self, names: &'n [String]) -> Option<&'n str> {
+        names
+            .iter()
+            .map(String::as_str)
+            .find(|name| self.programs.iter().any(|program| program == name))
+    }
+}
+
+impl Default for AgentsConfig {
+    fn default() -> Self {
+        Self {
+            programs: Self::PROGRAMS.map(str::to_owned).to_vec(),
+            done_after: DoneAfter::default(),
+            notify: true,
+            dock_badge: true,
+        }
+    }
+}
+
+/// How long after its last sign of work an agent is done, in seconds, from
+/// half a second to a minute.
+#[derive(Clone, Copy, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(try_from = "f64", into = "f64")]
+pub struct DoneAfter(f32);
+
+impl DoneAfter {
+    /// The least, in seconds.
+    pub const MIN: f32 = 0.5;
+    /// The most, in seconds.
+    pub const MAX: f32 = 60.0;
+
+    /// The time.
+    pub fn duration(self) -> Duration {
+        Duration::from_secs_f32(self.0)
+    }
+}
+
+impl Default for DoneAfter {
+    fn default() -> Self {
+        Self(3.0)
+    }
+}
+
+impl From<DoneAfter> for f64 {
+    fn from(value: DoneAfter) -> Self {
+        as_written(value.0)
+    }
+}
+
+impl TryFrom<f64> for DoneAfter {
+    type Error = String;
+
+    fn try_from(seconds: f64) -> Result<Self, Self::Error> {
+        if (f64::from(Self::MIN)..=f64::from(Self::MAX)).contains(&seconds) {
+            // Within the range, the value fits an `f32`.
+            Ok(Self(seconds as f32))
+        } else {
+            Err(format!(
+                "an agent's time before it is done, in seconds, is from {} to {}, not {seconds}",
+                Self::MIN,
+                Self::MAX
+            ))
+        }
+    }
+}
+
+/// The `[theme]` section: the themes of the light and the dark appearance,
+/// by their names, a file's of the themes' folder or a built-in one's, and
+/// the least contrast of the terminal's text to its background.
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(default, deny_unknown_fields, rename_all = "kebab-case")]
+pub struct ThemeConfig {
+    /// The light appearance's theme.
+    pub light: String,
+    /// The dark appearance's theme.
+    pub dark: String,
+    /// The least contrast ratio of the terminal's text to its background.
+    pub minimum_contrast: Contrast,
+}
+
+impl Default for ThemeConfig {
+    fn default() -> Self {
+        Self {
+            light: crate::themes::LIGHT.to_owned(),
+            dark: crate::themes::DARK.to_owned(),
+            minimum_contrast: Contrast::default(),
+        }
+    }
+}
+
+/// A contrast ratio, as WCAG 2 defines it, from 1, none, to 21, black on
+/// white.
+#[derive(Clone, Copy, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(try_from = "f64", into = "f64")]
+pub struct Contrast(f32);
+
+impl Contrast {
+    /// The ratio.
+    pub fn value(self) -> f32 {
+        self.0
+    }
+}
+
+impl Default for Contrast {
+    fn default() -> Self {
+        Self(1.0)
+    }
+}
+
+impl From<Contrast> for f64 {
+    fn from(value: Contrast) -> Self {
+        as_written(value.0)
+    }
+}
+
+impl TryFrom<f64> for Contrast {
+    type Error = String;
+
+    fn try_from(ratio: f64) -> Result<Self, Self::Error> {
+        if (1.0..=21.0).contains(&ratio) {
+            // Within the range, the value fits an `f32`.
+            Ok(Self(ratio as f32))
+        } else {
+            Err(format!("a contrast ratio is from 1 to 21, not {ratio}"))
+        }
+    }
+}
+
+/// The `[slots]` section: the plugin whose view fills each slot of one
+/// plugin's, by its name, as `lokyr/tabs`; without one, or of a plugin that
+/// does not fill it, the first of those that fill it.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(default, deny_unknown_fields, rename_all = "kebab-case")]
+pub struct SlotsConfig {
+    /// The tab bar's.
+    pub tab_bar: Option<String>,
+    /// The panes' headers'.
+    pub pane_header: Option<String>,
+}
+
+/// The `[updates]` section: the app's own updates, where it can update
+/// itself, as its bundle holds an updater on the Mac.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(default, deny_unknown_fields, rename_all = "kebab-case")]
+pub struct UpdatesConfig {
+    /// Whether the app checks for a newer version now and then, a day
+    /// apart at least; the menu's item checks whatever it says.
+    pub check: bool,
+}
+
+impl Default for UpdatesConfig {
+    fn default() -> Self {
+        Self { check: true }
     }
 }
 
@@ -860,12 +1287,21 @@ pub struct WindowConfig {
     pub padding_x: Padding,
     /// The room between the grid and the window's top and bottom edges.
     pub padding_y: Padding,
+    /// Whether each pane shows a gutter at the left of its cells, of the
+    /// marks of its commands' ends and the plugins' marks, in its padding,
+    /// which it widens as far as it needs.
+    pub gutter: bool,
+    /// When each pane shows its scroll bar, over its right edge.
+    pub scrollbar: Scrollbar,
     /// The opacity of the default background.
     pub background_opacity: Opacity,
     /// The blur of what shows through the default background.
     pub background_blur: Blur,
     /// Whether the title ends with the grid's size, as `100×33`.
     pub title_size: bool,
+    /// Whether the titlebar shows the keys that bring the window forward,
+    /// as `⌥⌘1`, at its right.
+    pub title_shortcut: bool,
     /// Whether the titlebar stays opaque over a translucent window, in the
     /// default background's color.
     pub opaque_titlebar: bool,
@@ -882,9 +1318,12 @@ impl Default for WindowConfig {
             new_directory: NewDirectory::default(),
             padding_x: Padding::default(),
             padding_y: Padding::default(),
+            gutter: true,
+            scrollbar: Scrollbar::default(),
             background_opacity: Opacity::default(),
             background_blur: Blur::default(),
             title_size: true,
+            title_shortcut: true,
             opaque_titlebar: false,
         }
     }
@@ -1165,6 +1604,21 @@ pub fn expanded(path: &str, home: Option<&Path>) -> Option<PathBuf> {
     })
 }
 
+/// When a pane's scroll bar shows, over its right edge, of a view that has
+/// a scrollback to move through: it never takes a column of the grid.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Scrollbar {
+    /// As the system shows its own: as the view scrolls and as the pointer
+    /// comes over it, or always, as its settings say.
+    #[default]
+    System,
+    /// Always.
+    Always,
+    /// Never.
+    Never,
+}
+
 /// What a window does when its program ends.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -1241,8 +1695,23 @@ impl Config {
         let document = Document::parse(text).map_err(|e| error(e.span(), e.message()))?;
         check_keys(document.as_table()).map_err(|(span, message)| error(span, &message))?;
         check_bindings(document.as_table()).map_err(|(span, message)| error(span, &message))?;
-        Self::deserialize(toml_edit::de::Deserializer::from(document))
-            .map_err(|e| error(e.span(), e.message()))
+        let plugins = PluginsConfig::read(document.as_table(), text, path)
+            .map_err(|(span, message)| error(span, &message))?;
+        let moved: Vec<(String, Error)> = MOVED
+            .iter()
+            .filter_map(|&(section, namespace)| {
+                let key = document.as_table().key(section)?;
+                let message = format!(
+                    "`[{section}]` is now `[plugins.{namespace}]`, its plugin's section: move its keys there; here they are ignored"
+                );
+                Some((namespace.to_owned(), error(key.span(), &message)))
+            })
+            .collect();
+        let mut config = Self::deserialize(toml_edit::de::Deserializer::from(document))
+            .map_err(|e| error(e.span(), e.message()))?;
+        config.plugins = plugins;
+        config.moved = moved;
+        Ok(config)
     }
 }
 
@@ -1271,6 +1740,20 @@ fn path_in(config_home: Option<OsString>, home: Option<PathBuf>) -> Option<PathB
 /// file whose keys are all commented out. A file that does not read as a
 /// config is left as it is, and its error returned.
 pub fn set_string(path: &Path, section: &str, key: &str, value: &str) -> Result<(), Error> {
+    set_string_hiding(path, section, (key, value), &[])
+}
+
+/// Sets the key of the section `[section]` of the config file at `path` to
+/// its string, as [`set_string`] does, and comments out the section's keys
+/// `hidden`, each where its line was, its comments above it kept, as `#
+/// style = "Medium"`: a font family chosen in place of the config's
+/// leaves the styles that it lacks so, for the user to take back.
+pub fn set_string_hiding(
+    path: &Path,
+    section: &str,
+    (key, value): (&str, &str),
+    hidden: &[&str],
+) -> Result<(), Error> {
     let failed = |path: &Path, message: String| Error {
         path: path.to_owned(),
         position: None,
@@ -1310,6 +1793,42 @@ pub fn set_string(path: &Path, section: &str, key: &str, value: &str) -> Result<
         .or_insert_with(toml_edit::table)
         .as_table_like_mut()
         .ok_or_else(|| failed(&target, format!("`{section}` is a section, not a value")))?;
+    // Each key hidden, a comment of its line in its place: before the next
+    // key, of the comments above it, or after the section.
+    let mut after_section = String::new();
+    for &name in hidden {
+        let Some(shown) = table.get(name).and_then(toml_edit::Item::as_value) else {
+            continue;
+        };
+        let mut shown = shown.clone();
+        shown.decor_mut().clear();
+        let above = table
+            .key(name)
+            .and_then(|key| key.leaf_decor().prefix())
+            .and_then(toml_edit::RawString::as_str)
+            .unwrap_or("")
+            .to_owned();
+        let line = format!("{above}# {name} = {shown}\n");
+        let order: Vec<String> = table.iter().map(|(name, _)| name.to_owned()).collect();
+        let next = order
+            .iter()
+            .position(|other| other == name)
+            .and_then(|at| order.get(at + 1))
+            .cloned();
+        table.remove(name);
+        match next.and_then(|next| table.key_mut(&next)) {
+            Some(mut next) => {
+                let before = next
+                    .leaf_decor()
+                    .prefix()
+                    .and_then(toml_edit::RawString::as_str)
+                    .unwrap_or("")
+                    .to_owned();
+                next.leaf_decor_mut().set_prefix(format!("{line}{before}"));
+            }
+            None => after_section.push_str(&line),
+        }
+    }
     // A key that the file has keeps its comments, those above its line,
     // which are the key's, and the one after its value, which is the
     // value's.
@@ -1323,8 +1842,42 @@ pub fn set_string(path: &Path, section: &str, key: &str, value: &str) -> Result<
             table.insert(key, toml_edit::value(value));
         }
     }
+    if !after_section.is_empty() {
+        hide_after(&mut document, section, &after_section);
+    }
     write_whole(&target, &document.to_string())
         .map_err(|error| failed(&target, format!("it cannot be written: {error}")))
+}
+
+/// Puts `lines`, comments, right after the section `[section]` of
+/// `document`: before the next section's header, or at the file's end.
+fn hide_after(document: &mut DocumentMut, section: &str, lines: &str) {
+    let at = document
+        .get(section)
+        .and_then(toml_edit::Item::as_table)
+        .and_then(toml_edit::Table::position);
+    let next = document
+        .iter()
+        .filter_map(|(name, item)| {
+            let position = item.as_table()?.position()?;
+            (at.is_some_and(|at| position > at)).then(|| (position, name.to_owned()))
+        })
+        .min();
+    match next.and_then(|(_, name)| document.get_mut(&name)?.as_table_mut()) {
+        Some(table) => {
+            let before = table
+                .decor()
+                .prefix()
+                .and_then(toml_edit::RawString::as_str)
+                .unwrap_or("")
+                .to_owned();
+            table.decor_mut().set_prefix(format!("{lines}{before}"));
+        }
+        None => {
+            let trailing = document.trailing().as_str().unwrap_or("").to_owned();
+            document.set_trailing(format!("{lines}{trailing}"));
+        }
+    }
 }
 
 /// Makes the config file at `path`, in the file that a link points to,
@@ -1342,55 +1895,6 @@ pub fn make(path: &Path) -> Result<bool, Error> {
         message: format!("it cannot be written: {error}"),
     })?;
     Ok(true)
-}
-
-/// How many links a config's path can lead through, each to the next.
-const LINKS: usize = 32;
-
-/// The file that `path` leads to, through its symbolic links: its target
-/// when it is one that exists, and otherwise the last link's target, which
-/// a write makes, so that a link stays a link.
-fn link_target(path: &Path) -> PathBuf {
-    if let Ok(target) = fs::canonicalize(path) {
-        return target;
-    }
-    let mut path = path.to_owned();
-    for _ in 0..LINKS {
-        let Ok(target) = fs::read_link(&path) else {
-            break;
-        };
-        // A relative target is the link's directory's.
-        path = match path.parent() {
-            Some(directory) => directory.join(target),
-            None => target,
-        };
-    }
-    path
-}
-
-/// Writes `text` to `path` whole: into a file of its own beside it, with
-/// its permissions, on the disk, renamed over it, so that a reader never
-/// sees half of it; a failure leaves no file of its own behind.
-fn write_whole(path: &Path, text: &str) -> io::Result<()> {
-    use std::io::Write;
-
-    let directory = path.parent().unwrap_or(Path::new("."));
-    fs::create_dir_all(directory)?;
-    let name = path.file_name().unwrap_or_default().to_string_lossy();
-    let temporary = directory.join(format!(".{name}.{}.new", std::process::id()));
-    let written = (|| {
-        let mut file = fs::File::create(&temporary)?;
-        file.write_all(text.as_bytes())?;
-        if let Ok(metadata) = fs::metadata(path) {
-            file.set_permissions(metadata.permissions())?;
-        }
-        file.sync_all()?;
-        fs::rename(&temporary, path)
-    })();
-    if written.is_err() {
-        let _ = fs::remove_file(&temporary);
-    }
-    written
 }
 
 /// An error of the config file, at its place in the file when it has one.
@@ -1427,7 +1931,7 @@ pub struct Position {
 
 impl Position {
     /// The place of the byte at `offset` in `text`.
-    fn at(text: &str, offset: usize) -> Self {
+    pub(crate) fn at(text: &str, offset: usize) -> Self {
         let mut offset = offset.min(text.len());
         while !text.is_char_boundary(offset) {
             offset -= 1;
@@ -1442,20 +1946,25 @@ impl Position {
 }
 
 /// The sections of the file, with the keys of each.
-fn sections() -> [(&'static str, &'static [&'static str]); 13] {
+fn sections() -> [(&'static str, &'static [&'static str]); 18] {
     [
         ("font", keys::<FontConfig>()),
         ("text", keys::<TextConfig>()),
         ("cursor", keys::<CursorConfig>()),
         ("window", keys::<WindowConfig>()),
-        ("quick-terminal", keys::<QuickTerminalConfig>()),
+        ("interface", keys::<InterfaceConfig>()),
+        ("slots", keys::<SlotsConfig>()),
         ("terminal", keys::<TerminalConfig>()),
         ("scrollback", keys::<ScrollbackConfig>()),
         ("keyboard", keys::<KeyboardConfig>()),
         ("clipboard", keys::<ClipboardConfig>()),
         ("links", keys::<LinksConfig>()),
         ("bell", keys::<BellConfig>()),
+        ("notifications", keys::<NotificationsConfig>()),
+        ("agents", keys::<AgentsConfig>()),
+        ("theme", keys::<ThemeConfig>()),
         ("app", keys::<AppConfig>()),
+        ("updates", keys::<UpdatesConfig>()),
         ("debug", keys::<DebugConfig>()),
     ]
 }
@@ -1645,7 +2154,7 @@ fn check_keys(root: &dyn TableLike) -> Result<(), (Option<std::ops::Range<usize>
 
 /// `; did you mean …?`, with the known name nearest to `name`, when one is
 /// near enough to be a typing error; nothing otherwise.
-fn nearest(name: &str, known: &[&str], open: &str, close: &str) -> String {
+pub(crate) fn nearest(name: &str, known: &[&str], open: &str, close: &str) -> String {
     let limit = (name.chars().count() / 3).max(2);
     known
         .iter()
@@ -1733,60 +2242,24 @@ mod tests {
     }
 
     #[test]
-    fn the_quick_terminal_takes_its_edge_size_screen_and_times() {
-        let quick = |text: &str| {
-            parse(&format!("[quick-terminal]\n{text}\n"))
-                .unwrap()
-                .quick_terminal
+    fn the_quick_terminal_s_old_section_is_ignored_and_told_at_its_line() {
+        let config =
+            parse("[font]\nsize = 14\n\n[quick-terminal]\nposition = \"left\"\nwhatever = 1\n")
+                .unwrap();
+        assert_eq!(config.font.size.points(), 14.0);
+        let [(namespace, told)] = &config.moved[..] else {
+            panic!("{:?}", config.moved);
         };
-        let default = QuickTerminalConfig::default();
-        assert_eq!(
-            (default.position, default.screen, default.spaces),
-            (QuickPosition::Top, QuickScreen::Main, QuickSpaces::Move)
+        assert_eq!(namespace, "quick-terminal");
+        assert_eq!(told.position.map(|at| at.line), Some(4));
+        assert!(
+            told.message
+                .contains("`[quick-terminal]` is now `[plugins.quick-terminal]`"),
+            "{}",
+            told.message
         );
-        assert_eq!(default.size, QuickSize::try_from("50%".to_owned()).unwrap());
-        assert!(default.autohide);
-        assert_eq!(
-            default.animation.duration(),
-            std::time::Duration::from_millis(200)
-        );
-        assert_eq!(
-            keys::<QuickTerminalConfig>(),
-            [
-                "position",
-                "size",
-                "screen",
-                "animation",
-                "autohide",
-                "spaces"
-            ]
-        );
-        let read = quick("position = \"left\"\nsize = \"300px, 80%\"\nscreen = \"menu-bar\"");
-        assert_eq!(
-            (read.position, read.screen),
-            (QuickPosition::Left, QuickScreen::MenuBar)
-        );
-        assert_eq!(
-            (read.size.primary, read.size.secondary),
-            (Extent::Points(300.0), Some(Extent::Percent(80.0)))
-        );
-        // Written back as it read.
-        assert_eq!(String::from(read.size), "300px,80%");
-        // Neither a bare number, nor a share past the whole, nor a long
-        // animation.
-        for wrong in [
-            "size = \"50\"",
-            "size = \"120%\"",
-            "size = \"0%\"",
-            "animation = 2001",
-        ] {
-            let (_, message) = error(&format!("[quick-terminal]\n{wrong}\n"));
-            assert!(
-                message.contains("no size of the quick terminal")
-                    || message.contains("from 0 to 2000 milliseconds"),
-                "{wrong}: {message}"
-            );
-        }
+        // A config without it tells nothing.
+        assert!(parse("[font]\nsize = 14\n").unwrap().moved.is_empty());
     }
 
     #[test]
@@ -1826,6 +2299,112 @@ mod tests {
     }
 
     #[test]
+    fn the_web_s_search_engine_is_a_name_or_a_url_of_the_query() {
+        let links = |text: &str| parse(&format!("[links]\n{text}\n")).map(|config| config.links);
+        assert_eq!(
+            links("").unwrap().search_engine.url("a b"),
+            "https://www.google.com/search?q=a%20b"
+        );
+        let engine = links("search-engine = \"duckduckgo\"")
+            .unwrap()
+            .search_engine;
+        assert_eq!(engine, SearchEngine::DuckDuckGo);
+        // Every byte but a letter's, a digit's and `-._~`, escaped.
+        assert_eq!(
+            engine.url("ß & c++/x?~"),
+            "https://duckduckgo.com/?q=%C3%9F%20%26%20c%2B%2B%2Fx%3F~"
+        );
+        for (name, engine) in ["google", "bing", "ecosia", "kagi", "startpage"]
+            .into_iter()
+            .zip(
+                SearchEngine::NAMED
+                    .into_iter()
+                    .filter(|e| *e != SearchEngine::DuckDuckGo),
+            )
+        {
+            let read = links(&format!("search-engine = \"{name}\"")).unwrap();
+            assert_eq!(read.search_engine, engine);
+            assert_eq!(String::from(engine), name);
+        }
+        let own = "https://example.org/find?q={query}&safe=1";
+        let read = links(&format!("search-engine = \"{own}\"")).unwrap();
+        assert_eq!(
+            read.search_engine.url("x y"),
+            "https://example.org/find?q=x%20y&safe=1"
+        );
+        assert_eq!(String::from(read.search_engine), own);
+        // A URL without its query, of another scheme, and another word.
+        for wrong in ["https://example.org/", "ftp://x/{query}", "yahoo"] {
+            let (at, message) = error(&format!("[links]\nsearch-engine = \"{wrong}\"\n"));
+            assert_eq!(at.map(|(line, _)| line), Some(2));
+            assert!(message.contains("is no search engine"), "{message}");
+        }
+    }
+
+    #[test]
+    fn a_file_s_line_opens_in_an_editor_of_a_name_or_an_address_of_one_s_own() {
+        let links = |text: &str| parse(&format!("[links]\n{text}\n")).map(|config| config.links);
+        // The system's application by default, of no address.
+        let system = links("").unwrap().editor;
+        assert_eq!(system, Editor::System);
+        assert_eq!(system.url("/a/b.rs", 4, Some(2)), None);
+        assert_eq!(String::from(system), "system");
+        // Each editor of a name, read and written back.
+        for (name, template) in EDITORS {
+            let editor = links(&format!("editor = \"{name}\"")).unwrap().editor;
+            assert_eq!(String::from(editor.clone()), name);
+            let url = editor.url("/My Files/ß.rs", 12, None).unwrap();
+            assert!(url.contains("/My%20Files/%C3%9F.rs"), "{url}");
+            assert!(url.contains("12"), "{url}");
+            assert_eq!(url.split(':').next(), template.split(':').next());
+        }
+        assert_eq!(
+            links("editor = \"vscode\"")
+                .unwrap()
+                .editor
+                .url("/a/b.rs", 4, Some(2)),
+            Some("vscode://file/a/b.rs:4:2".to_owned())
+        );
+        // An address of one's own, of a scheme and its path.
+        let own = "jetbrains://idea/navigate?path={path}&line={line}";
+        let read = links(&format!("editor = \"{own}\"")).unwrap().editor;
+        assert_eq!(
+            read.url("/x.rs", 7, None),
+            Some("jetbrains://idea/navigate?path=/x.rs&line=7".to_owned())
+        );
+        assert_eq!(String::from(read), own);
+        // Of no path, of no scheme, and another word.
+        for wrong in ["vscode://file", "{path}:{line}", "notepad"] {
+            let (at, message) = error(&format!("[links]\neditor = \"{wrong}\"\n"));
+            assert_eq!(at.map(|(line, _)| line), Some(2));
+            assert!(message.contains("is no editor"), "{message}");
+        }
+        // An address of the `file` scheme, which would open a program's path
+        // as a program, whatever its case.
+        for file in ["file://{path}", "FILE:{path}"] {
+            let (at, message) = error(&format!("[links]\neditor = \"{file}\"\n"));
+            assert_eq!(at.map(|(line, _)| line), Some(2));
+            assert!(message.contains("opens a file"), "{message}");
+        }
+    }
+
+    #[test]
+    fn the_inline_images_memory_is_from_none_to_a_gib() {
+        let memory = |text: &str| {
+            parse(&format!("[terminal]\n{text}\n")).map(|config| config.terminal.image_memory)
+        };
+        assert_eq!(memory("").unwrap().bytes(), 64 * MIB);
+        assert_eq!(memory("image-memory = 0").unwrap().bytes(), 0);
+        assert_eq!(memory("image-memory = 1.5").unwrap().bytes(), MIB * 3 / 2);
+        assert_eq!(f64::from(memory("image-memory = 256").unwrap()), 256.0);
+        for wrong in ["-1", "1025"] {
+            let (at, message) = error(&format!("[terminal]\nimage-memory = {wrong}\n"));
+            assert_eq!(at.map(|(line, _)| line), Some(2));
+            assert!(message.contains("the inline images' memory"), "{message}");
+        }
+    }
+
+    #[test]
     fn an_empty_file_is_the_defaults() {
         assert_eq!(parse(""), Ok(Config::default()));
         assert_eq!(parse("# nothing\n\n[font]\n"), Ok(Config::default()));
@@ -1861,10 +2440,17 @@ mod tests {
             close-on-exit = "never"
             padding-x = 10
             padding-y = 2.5
+            gutter = false
+            scrollbar = "never"
             background-opacity = 0.85
             background-blur = 20
             title-size = false
+            title-shortcut = false
             opaque-titlebar = true
+
+            [interface]
+            font-family = "Helvetica Neue"
+            font-size = 15
 
             [terminal]
             term = "xterm-lokyr"
@@ -1887,14 +2473,32 @@ mod tests {
             sound = true
             mark-title = false
 
+            [notifications]
+            long-command = 30
+
             [app]
             icon = "laguz"
             language = "it"
             appearance = "dark"
+            quit-after-last-window-closed = true
+            restore-windows = "always"
             "#,
         )
         .unwrap();
         assert_eq!(config.clipboard.read, ClipboardRead::Ask);
+        assert_eq!(config.interface.font_family, name("Helvetica Neue"));
+        assert_eq!(config.interface.font_size, Size::try_from(15.0).unwrap());
+        assert_eq!(Config::default().interface.font_family, None);
+        assert_eq!(Config::default().interface.font_size, Size::DEFAULT);
+        let message = error("[interface]\nfont-size = 300\n").1;
+        assert!(message.contains("from 4 to 200, not 300"), "{message}");
+        // The slots' plugins, by their names, or none for the first.
+        let slots = parse("[slots]\ntab-bar = \"lokyr/tabs\"\n").unwrap().slots;
+        assert_eq!(slots.tab_bar.as_deref(), Some("lokyr/tabs"));
+        assert_eq!(slots.pane_header, None);
+        assert_eq!(Config::default().slots, SlotsConfig::default());
+        let message = error("[slots]\ntab-bars = \"lokyr/tabs\"\n").1;
+        assert!(message.contains("tab-bar"), "{message}");
         let terminal = &config.terminal;
         assert_eq!(terminal.term.as_str(), "xterm-lokyr");
         assert_eq!(
@@ -1926,11 +2530,47 @@ mod tests {
         );
         let bell = Config::default().bell;
         assert!(!bell.sound && bell.flash && bell.bounce && bell.mark_title);
+        // A long command's time, of 0 for none.
+        assert_eq!(
+            config.notifications.long_command.duration(),
+            Some(std::time::Duration::from_secs(30))
+        );
+        assert_eq!(
+            Config::default().notifications.long_command.duration(),
+            Some(std::time::Duration::from_secs(10))
+        );
+        let none = parse(
+            "[notifications]
+long-command = 0
+",
+        )
+        .unwrap();
+        assert_eq!(none.notifications.long_command.duration(), None);
+        for (text, wanted) in [
+            ("long-command = 86401", "from 0 to 86400, not 86401"),
+            ("long-command = -1", "-1"),
+            ("long-commands = 5", "long-command"),
+        ] {
+            let message = error(&format!("[notifications]\n{text}\n")).1;
+            assert!(message.contains(wanted), "{text}: {message}");
+        }
         assert_eq!(Config::default().clipboard.read, ClipboardRead::Never);
         assert_eq!(config.app.language, "it");
         assert_eq!(Config::default().app.language, "system");
         assert_eq!(config.app.appearance, AppearanceMode::Dark);
         assert_eq!(Config::default().app.appearance, AppearanceMode::System);
+        assert!(config.app.quit_after_last_window_closed);
+        assert!(!Config::default().app.quit_after_last_window_closed);
+        assert_eq!(config.app.restore_windows, RestoreWindows::Always);
+        assert_eq!(
+            Config::default().app.restore_windows,
+            RestoreWindows::System
+        );
+        for system in [false, true] {
+            assert_eq!(RestoreWindows::System.restores(system), system);
+            assert!(RestoreWindows::Always.restores(system));
+            assert!(!RestoreWindows::Never.restores(system));
+        }
         for mode in [
             AppearanceMode::System,
             AppearanceMode::Light,
@@ -1950,13 +2590,17 @@ mod tests {
         assert_eq!(config.window.background_opacity.value(), 0.85);
         assert_eq!(config.window.background_blur.points(), 20.0);
         assert!(!config.window.title_size && config.window.opaque_titlebar);
+        assert!(!config.window.title_shortcut && !config.window.gutter);
+        assert_eq!(config.window.scrollbar, Scrollbar::Never);
         assert_eq!(
             (config.window.columns.count(), config.window.rows.count()),
             (80, 24)
         );
         assert!(!config.window.remember_frame);
         let window = Config::default().window;
-        assert!(window.title_size && !window.opaque_titlebar);
+        assert!(window.title_size && window.title_shortcut && !window.opaque_titlebar);
+        assert!(window.gutter);
+        assert_eq!(window.scrollbar, Scrollbar::System);
         assert_eq!((window.columns.count(), window.rows.count()), (100, 30));
         assert!(window.remember_frame);
         for (text, wanted) in [
@@ -2258,6 +2902,39 @@ mod tests {
             )
         );
         assert_eq!(
+            parse("[cursor]\nlength = 0.6\n")
+                .unwrap()
+                .cursor
+                .length
+                .value(),
+            0.6
+        );
+        assert_eq!(CursorConfig::default().length.value(), 1.0);
+        // Its bounds, as the guide writes them.
+        for (written, value) in [("0.1", 0.1_f32), ("1", 1.0), ("1.0", 1.0)] {
+            assert_eq!(
+                parse(&format!("[cursor]\nlength = {written}\n"))
+                    .unwrap()
+                    .cursor
+                    .length
+                    .value(),
+                value,
+                "{written}"
+            );
+        }
+        assert_eq!(
+            error("[cursor]\nlength = 0\n"),
+            (
+                Some((2, 10)),
+                "the cursor's length, a share of the cell, is from 0.1 to 1, not 0".to_owned()
+            )
+        );
+        assert!(
+            error("[cursor]\nlength = 1.5\n")
+                .1
+                .contains("is from 0.1 to 1, not 1.5")
+        );
+        assert_eq!(
             error("[cursor]\nblnk = true\n").1,
             "unknown key `blnk` in `[cursor]`; did you mean `blink`?"
         );
@@ -2411,6 +3088,120 @@ mod tests {
     }
 
     #[test]
+    fn the_plugins_sections_read_with_their_places_and_write_back() {
+        let text = "[font]\nsize = 14\n\n[plugins.tabs]\nposition = \"top\"\ncolors = { active = \"red\", sizes = [1, 2.5] }\nwhen = 1979-05-27\n\n[plugins.links.look]\nunderline = true\n\n[[plugins.other.rows]]\nname = \"a\"\n";
+        let config = parse(text).unwrap();
+        let sections: Vec<(&str, serde_json::Value)> = config
+            .plugins
+            .sections()
+            .map(|(namespace, section)| {
+                (
+                    namespace,
+                    serde_json::Value::Object(section.values().clone()),
+                )
+            })
+            .collect();
+        assert_eq!(
+            sections,
+            [
+                (
+                    "links",
+                    serde_json::json!({ "look": { "underline": true } })
+                ),
+                ("other", serde_json::json!({ "rows": [{ "name": "a" }] })),
+                (
+                    "tabs",
+                    serde_json::json!({
+                        "position": "top",
+                        "colors": { "active": "red", "sizes": [1, 2.5] },
+                        "when": "1979-05-27",
+                    })
+                ),
+            ]
+        );
+        let tabs = config.plugins.get("tabs").unwrap();
+        let place = |path: &[&str]| {
+            let path: Vec<String> = path.iter().map(|&key| key.to_owned()).collect();
+            tabs.place(&path).map(|place| (place.line, place.column))
+        };
+        assert_eq!(place(&[]), Some((4, 1)));
+        assert_eq!(place(&["position"]), Some((5, 1)));
+        assert_eq!(place(&["colors", "active"]), Some((6, 12)));
+        assert_eq!(place(&["colors", "sizes", "1"]), Some((6, 40)));
+        // A value without a place of its own tells its nearest key's.
+        assert_eq!(place(&["colors", "missing"]), Some((6, 1)));
+        assert_eq!(tabs.at(&["position".to_owned()]), "config.toml:5:1");
+        // Written whole, the sections read back as the same, of other
+        // places.
+        let written = config.written(false);
+        assert!(written.ends_with("\n[plugins.tabs]\ncolors = { active = \"red\", sizes = [1, 2.5] }\nposition = \"top\"\nwhen = \"1979-05-27\"\n"), "{written}");
+        let again = parse(&written).unwrap();
+        assert_eq!(again, config);
+        assert_ne!(
+            again.plugins.get("tabs").unwrap().place(&[]),
+            tabs.place(&[])
+        );
+    }
+
+    #[test]
+    fn the_plugins_sections_are_tables_of_values_that_json_holds() {
+        for (text, message) in [
+            (
+                "plugins = 1\n",
+                "config.toml:1:11: `plugins` is a section, not a value",
+            ),
+            (
+                "[plugins]\ntabs = 1\n",
+                "config.toml:2:8: `plugins.tabs` is a plugin's section, of its keys, not a value",
+            ),
+        ] {
+            assert_eq!(parse(text).unwrap_err().to_string(), message, "{text}");
+        }
+        // A value that JSON does not hold refuses its section alone, as
+        // the plugin's check tells at its place; the file reads, and so do
+        // the other sections.
+        let config = parse(
+            "[font]\nsize = 14\n[plugins.tabs]\nfade = nan\nsizes = [1, inf]\n[plugins.other]\nx = 1\n",
+        )
+        .unwrap();
+        assert_eq!(config.font.size.points(), 14.0);
+        let tabs = config.plugins.get("tabs").unwrap();
+        let (path, message) = tabs.unread().unwrap();
+        assert_eq!(message, "`fade` is not a finite number");
+        assert_eq!(tabs.at(path), "config.toml:4:1");
+        assert!(config.plugins.get("other").unwrap().unread().is_none());
+    }
+
+    #[test]
+    fn the_agents_are_known_by_their_programs_names_and_done_after_a_while() {
+        let config =
+            parse("[agents]\nprograms = [\"claude\", \"my-agent\"]\ndone-after = 1.5\n").unwrap();
+        let names = |list: &[&str]| list.iter().map(|&name| name.to_owned()).collect::<Vec<_>>();
+        // The first of the foreground's names that the list holds.
+        assert_eq!(
+            config.agents.agent_of(&names(&["node", "my-agent"])),
+            Some("my-agent")
+        );
+        assert_eq!(config.agents.agent_of(&names(&["claude"])), Some("claude"));
+        assert_eq!(config.agents.agent_of(&names(&["codex", "zsh"])), None);
+        assert_eq!(
+            config.agents.done_after.duration(),
+            Duration::from_millis(1500)
+        );
+        assert!(config.agents.notify && config.agents.dock_badge);
+        // The defaults, and a time out of its bounds.
+        let default = AgentsConfig::default();
+        assert_eq!(default.agent_of(&names(&["gemini"])), Some("gemini"));
+        assert_eq!(default.done_after.duration(), Duration::from_secs(3));
+        for wrong in ["0.1", "61", "nan"] {
+            let error = parse(&format!("[agents]\ndone-after = {wrong}\n"))
+                .unwrap_err()
+                .to_string();
+            assert!(error.contains("done"), "{wrong}: {error}");
+        }
+    }
+
+    #[test]
     fn the_sections_keys_are_serde_s() {
         assert_eq!(
             keys::<Config>(),
@@ -2421,25 +3212,47 @@ mod tests {
                 "cursor",
                 "window",
                 "quick-terminal",
+                "interface",
+                "slots",
                 "terminal",
                 "scrollback",
                 "keyboard",
                 "clipboard",
                 "links",
                 "bell",
+                "notifications",
+                "agents",
+                "theme",
                 "app",
+                "updates",
                 "debug",
-                "keys"
+                "keys",
+                "plugins"
             ]
         );
-        assert_eq!(keys::<LinksConfig>(), ["urls", "files"]);
+        assert_eq!(
+            keys::<AgentsConfig>(),
+            ["programs", "done-after", "notify", "dock-badge"]
+        );
+        assert_eq!(keys::<ThemeConfig>(), ["light", "dark", "minimum-contrast"]);
+        assert_eq!(
+            keys::<LinksConfig>(),
+            ["urls", "files", "search-engine", "editor"]
+        );
         assert_eq!(
             keys::<ScrollbackConfig>(),
             ["scroll-on-output", "limit", "budget"]
         );
         assert_eq!(
             keys::<TerminalConfig>(),
-            ["term", "unicode-widths", "ambiguous-width", "normalization"]
+            [
+                "term",
+                "unicode-widths",
+                "ambiguous-width",
+                "normalization",
+                "shell-integration",
+                "image-memory"
+            ]
         );
         assert_eq!(
             keys::<ClipboardConfig>(),
@@ -2449,8 +3262,18 @@ mod tests {
             keys::<BellConfig>(),
             ["sound", "flash", "bounce", "mark-title"]
         );
+        assert_eq!(keys::<NotificationsConfig>(), ["long-command"]);
         assert_eq!(keys::<KeyboardConfig>(), ["option-as-meta"]);
-        assert_eq!(keys::<AppConfig>(), ["icon", "language", "appearance"]);
+        assert_eq!(
+            keys::<AppConfig>(),
+            [
+                "icon",
+                "language",
+                "appearance",
+                "quit-after-last-window-closed",
+                "restore-windows"
+            ]
+        );
         assert_eq!(OptionAsMeta::default().sides(), (false, false));
         assert_eq!(OptionAsMeta::Both.sides(), (true, true));
         assert_eq!(
@@ -2464,9 +3287,12 @@ mod tests {
                 "new-directory",
                 "padding-x",
                 "padding-y",
+                "gutter",
+                "scrollbar",
                 "background-opacity",
                 "background-blur",
                 "title-size",
+                "title-shortcut",
                 "opaque-titlebar"
             ]
         );
@@ -2476,6 +3302,7 @@ mod tests {
                 "shape",
                 "blink",
                 "thickness",
+                "length",
                 "blink-interval",
                 "blink-timeout",
                 "smooth-blink",
@@ -2484,18 +3311,21 @@ mod tests {
                 "visible",
                 "fade-out",
                 "fade-out-curve",
-                "hidden"
+                "hidden",
+                "movement"
             ]
         );
         let font = keys::<FontConfig>();
-        assert_eq!(font.len(), 14);
+        assert_eq!(font.len(), 15);
         assert_eq!(
             keys::<TextConfig>(),
             ["bold", "italic", "ansi-colors", "bold-is-bright", "blink"]
         );
+        assert_eq!(keys::<InterfaceConfig>(), ["font-family", "font-size"]);
         assert!(font.contains(&"bold-italic-style"));
         assert!(font.contains(&"non-ascii-family"));
         assert!(font.contains(&"builtin-powerline"));
+        assert!(font.contains(&"system-weight"));
     }
 
     /// The complete example of the configuration's guide reads, and holds
@@ -2513,9 +3343,18 @@ mod tests {
         parse(example).expect("the complete example reads");
         let document: Document<String> = example.parse().unwrap();
         let root = document.as_table();
-        for key in keys::<Config>() {
+        // The plugins' sections hold their plugins' keys, which no built-in
+        // plugin has yet: the example shows their form in a comment.
+        // The sections that are plugins' now, which the example has in
+        // theirs.
+        let moved = |key: &str| MOVED.iter().any(|(section, _)| *section == key);
+        for key in keys::<Config>()
+            .iter()
+            .filter(|key| **key != "plugins" && !moved(key))
+        {
             assert!(root.contains_key(key), "`{key}` is in the complete example");
         }
+        assert!(example.contains("\n# [plugins.<namespace>]\n"));
         for (section, keys) in sections() {
             let table = root[section].as_table().expect("a section");
             for key in keys {
@@ -2525,6 +3364,61 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn a_family_set_comments_out_the_styles_that_it_lacks_where_they_were() {
+        let root = std::env::temp_dir().join(format!("lokyr-hide-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        let file = root.join("config.toml");
+        let text = concat!(
+            "[font]\n",
+            "family = \"GohuFont 11 Nerd Font Mono\"\n",
+            "# non-ascii-family = \"Hiragino Sans\"\n",
+            "style = \"Medium\"\n",
+            "# bold-style = \"Bold\"\n",
+            "size = 18\n",
+            "italic-style = \"Oblique\"\n",
+            "\n",
+            "[window]\n",
+            "padding-x = 4\n",
+        );
+        fs::write(&file, text).unwrap();
+        set_string_hiding(
+            &file,
+            "font",
+            ("family", "Menlo"),
+            &["style", "italic-style", "bold-style"],
+        )
+        .unwrap();
+        let written = fs::read_to_string(&file).unwrap();
+        assert_eq!(
+            written,
+            concat!(
+                "[font]\n",
+                "family = \"Menlo\"\n",
+                "# non-ascii-family = \"Hiragino Sans\"\n",
+                "# style = \"Medium\"\n",
+                "# bold-style = \"Bold\"\n",
+                "size = 18\n",
+                "# italic-style = \"Oblique\"\n",
+                "\n",
+                "[window]\n",
+                "padding-x = 4\n",
+            )
+        );
+        let config = Config::read(&file).unwrap();
+        assert_eq!(config.font.family.unwrap().as_str(), "Menlo");
+        assert_eq!(config.font.style, None);
+        // The last section's last key, at the file's end.
+        fs::write(&file, "[font]\nfamily = \"A\"\nstyle = \"Medium\"\n").unwrap();
+        set_string_hiding(&file, "font", ("family", "B"), &["style"]).unwrap();
+        assert_eq!(
+            fs::read_to_string(&file).unwrap(),
+            "[font]\nfamily = \"B\"\n# style = \"Medium\"\n"
+        );
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]

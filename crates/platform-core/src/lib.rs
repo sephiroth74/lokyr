@@ -13,8 +13,15 @@
 #![forbid(unsafe_code)]
 
 use std::path::Path;
+
+/// A function that marks the file at its path as come from elsewhere, as
+/// [`Platform::quarantine`] gives it: its error, of a volume that keeps no
+/// such mark, leaves the file unwritten.
+pub type Quarantine = fn(&Path) -> std::io::Result<()>;
 use std::time::{Duration, Instant, SystemTime};
 
+#[cfg(any(test, feature = "conformance"))]
+pub mod conformance;
 mod event;
 #[cfg(any(test, feature = "fake"))]
 pub mod fake;
@@ -25,21 +32,37 @@ mod quick;
 mod runs;
 #[cfg(test)]
 mod tests;
+mod tools;
 mod waker;
 
 pub use event::{AppEvent, Appearance, Dropped, WindowEvent};
-pub use geometry::{PixelSize, Point, Size, WindowSize};
+pub use geometry::{
+    ContentRect, PixelSize, Point, ScreenPoint, ScreenRect, Size, Titlebar, WindowSize,
+};
 pub use input::{
     Ime, KeyCode, KeyEvent, KeyState, Modifiers, MouseButton, PointerArea, PointerShape,
     ScrollDelta, ScrollPhase,
 };
 pub use menu::{
-    Alert, AlertId, AlertStyle, ContextMenu, MainMenu, Menu, MenuItem, MenuRole, Shortcut,
-    ShortcutKey, StandardAction,
+    AboutLine, AboutPanel, Alert, AlertId, AlertStyle, ContextMenu, MainMenu, Menu, MenuItem,
+    MenuRole, SavePanelId, Shortcut, ShortcutKey, StandardAction,
 };
-pub use quick::{GlobalKey, Length, QuickEdge, QuickPlace, QuickScreen, ScreenRect};
+pub use quick::{GlobalKey, Length, QuickEdge, QuickPlace, QuickScreen};
+
+/// What the app keeps from idle sleep.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Awake {
+    /// Nothing: the system's rules of sleep.
+    #[default]
+    Off,
+    /// The system; the display may sleep.
+    System,
+    /// The system and the display.
+    Display,
+}
 pub use raw_window_handle::WindowHandle;
 pub use runs::{RUNS, runs_by_itself};
+pub use tools::{LinkOutcome, ToolLink};
 pub use waker::Waker;
 
 /// A window, which no other window of the process takes, even once it is
@@ -97,6 +120,11 @@ pub struct WindowAttributes {
     /// if one did and it does not restore it, rather than of `size`, where
     /// the platform places it, cascaded or centred; within the screen.
     pub restore_size: bool,
+    /// The frame that its content opens at, under the titlebar too, on the
+    /// screens, rather than `size` where the platform places it, or a frame
+    /// that a window kept: moved onto the nearest screen, within its area
+    /// for windows, if it lies on none, as a screen that held it went.
+    pub frame: Option<ScreenRect>,
 }
 
 /// A layer of a window over its content, which the window server blinks
@@ -118,6 +146,19 @@ pub struct LayerPlace {
     pub size: Size,
     /// How it blinks; `None` to show it, steady.
     pub blink: Option<Blink>,
+    /// How it slides there from where it shows, of the same size; `None`
+    /// to go there at once.
+    pub slide: Option<Slide>,
+}
+
+/// A layer's slide from where it shows, in the middle of a slide too, to
+/// its new place, which the window server runs without the app.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Slide {
+    /// How long it takes.
+    pub duration: Duration,
+    /// Its curve.
+    pub easing: Easing,
 }
 
 /// A blink of a layer, which the window server runs without the app: from `start`, on, it holds visible, fades out, holds hidden, and
@@ -140,6 +181,116 @@ pub struct Blink {
     pub fade_in_curve: Easing,
 }
 
+/// The part of an indeterminate progress that the window server moves
+/// without the app's frames: a segment across a bar, from out of its left
+/// edge to out of its right one, an arc round a ring, clockwise, round
+/// again, or three dots lit in turn, within the bar, the ring or the dots'
+/// square and the part of the window where it shows; where the system
+/// reduces motion, held still, its opacity pulsing.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Sweep {
+    /// The bar's top left corner, or the ring's square's, in points from
+    /// the content's.
+    pub origin: Point,
+    /// Its size, in points.
+    pub size: Size,
+    /// The part of the window where it shows, its top left corner and its
+    /// size, in points, which clips it.
+    pub within: (Point, Size),
+    /// The radius of the bar's corners and of the segment's, in points.
+    pub radius: f64,
+    /// What moves.
+    pub shape: SweepShape,
+    /// The segment's color: sRGB's encoded components, from 0 to 1, and its
+    /// opacity.
+    pub color: [f64; 4],
+    /// How long a sweep takes, from one edge to the other.
+    pub period: Duration,
+    /// When the sweeps started, at the bar's left, so that a sweep placed
+    /// again goes on where it was.
+    pub start: Instant,
+}
+
+/// What a sweep moves.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum SweepShape {
+    /// A segment of a bar, across it.
+    Bar {
+        /// Its width, in points.
+        width: f64,
+    },
+    /// An arc of a ring, round it, from its top.
+    Ring {
+        /// The part of the turn that it takes, from 0 to 1.
+        span: f64,
+        /// Its line's thickness, in points.
+        thickness: f64,
+    },
+    /// A segment of an outline, a line along the box's edges, inside them,
+    /// of its corners' radius, clockwise round it.
+    Outline {
+        /// The part of the outline's length that it takes, from 0 to 1.
+        span: f64,
+        /// Its line's thickness, in points.
+        thickness: f64,
+    },
+    /// Three dots of its color, each lit in turn and fading as the next
+    /// lights, a third of the period apart, the first first.
+    Dots {
+        /// A dot's diameter, in points.
+        diameter: f64,
+        /// The dots' centers, in points from the square's top left corner,
+        /// in the order in which they light.
+        centers: [(f64, f64); 3],
+    },
+}
+
+/// The fill of a progress that is not indeterminate, as far as its value,
+/// which the window server draws, so that a change of its value slides from
+/// the value that it showed, eased, about 0.2 s, with no frame of the app's;
+/// at once where the system reduces motion.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Fill {
+    /// The progress, as the app tells it apart from the others of its
+    /// window, from one placing to the next: a fill of the same id and box
+    /// slides to its new value.
+    pub id: u64,
+    /// The bar's box, the ring's square or the outline's box: its top left
+    /// corner, in points from the content's.
+    pub origin: Point,
+    /// Its size, in points.
+    pub size: Size,
+    /// The part of the window where it shows, its top left corner and its
+    /// size, in points, which clips it.
+    pub within: (Point, Size),
+    /// The radius of the bar's corners, or of the outline's, in points.
+    pub radius: f64,
+    /// What it fills.
+    pub shape: FillShape,
+    /// Its color: sRGB's encoded components, from 0 to 1, and its opacity.
+    pub color: [f64; 4],
+    /// How far it fills, from 0 to 1.
+    pub value: f64,
+}
+
+/// What a fill fills, as far as its value.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum FillShape {
+    /// A bar, from its left, of its corners' radius.
+    Bar,
+    /// A ring, clockwise from its top.
+    Ring {
+        /// Its line's thickness, in points.
+        thickness: f64,
+    },
+    /// An outline, a line along the box's edges, inside them, of its
+    /// corners' radius, from its left along its top and its bottom at once.
+    Outline {
+        /// Its line's thickness, in points.
+        thickness: f64,
+    },
+}
+
 /// How a fade goes, from its start to its end.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Easing {
@@ -152,6 +303,28 @@ pub enum Easing {
     EaseOut,
     /// Slow at its start and at its end.
     EaseInOut,
+}
+
+/// How the system shows its scroll bars, as its settings say.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Scrollers {
+    /// Whether they show as the content scrolls and as the pointer comes
+    /// over them alone, over the content, rather than always: Show scroll
+    /// bars in macOS's settings, as a trackpad has it, or When scrolling.
+    pub overlay: bool,
+    /// Whether a click in a bar's track jumps to the spot clicked, rather
+    /// than a page toward it: Click in the scroll bar to, in macOS's
+    /// settings.
+    pub jump_to_spot: bool,
+}
+
+impl Default for Scrollers {
+    fn default() -> Self {
+        Self {
+            overlay: true,
+            jump_to_spot: false,
+        }
+    }
 }
 
 /// What the process has used of the machine, as the system counts it.
@@ -180,7 +353,7 @@ pub struct Backdrop {
     pub blur: f64,
 }
 
-/// What a target that opens is, as [`Platform::open`] takes it.
+/// What a target that opens is, as [`Platform::resolve_target`] tells.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TargetKind {
     /// A URL of another scheme than `file`, which its application opens.
@@ -190,9 +363,39 @@ pub enum TargetKind {
     /// A file, which its application opens.
     File,
     /// A file that would run rather than open, as a program, an
-    /// application or a script that a terminal runs, which the file manager
-    /// shows instead.
+    /// application or a script that a terminal runs.
     Program,
+}
+
+/// The pixels of a decoded image, as [`Platform::decode_image`] gives
+/// them.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Pixels {
+    /// Its width.
+    pub width: u32,
+    /// Its height.
+    pub height: u32,
+    /// Its pixels, RGBA, premultiplied, a row after the other from the
+    /// top.
+    pub rgba: Vec<u8>,
+}
+
+/// A decoder of images that any thread calls, as
+/// [`Platform::image_decoder`] gives it, of [`Platform::decode_image`]'s
+/// pixels.
+pub type ImageDecoder = std::sync::Arc<dyn Fn(&[u8]) -> Option<Pixels> + Send + Sync>;
+
+/// A target that opens, as [`Platform::resolve_target`] tells it: what it
+/// is, by which the app decides what to do, and where it leads, which is
+/// what opens.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Target {
+    /// What it is.
+    pub kind: TargetKind,
+    /// A URL, as it was given, or the absolute path of the file that a
+    /// path, or a `file` URL, leads to through its links and the system's
+    /// aliases.
+    pub location: String,
 }
 
 /// What the app asks of the platform, from the main thread.
@@ -216,6 +419,71 @@ pub trait Platform {
 
     /// The appearance that the app has: its own, or the system's.
     fn appearance(&self) -> Appearance;
+
+    /// Whether the system's keyboard navigation reaches every control, as
+    /// Tab moves the focus, the buttons too: Keyboard navigation in macOS's
+    /// settings. Without it, Tab reaches the fields and the lists alone.
+    fn keyboard_navigation(&self) -> bool;
+
+    /// Whether the system reduces motion, Reduce motion in macOS's
+    /// accessibility settings: the interface's transitions end at once.
+    fn reduce_motion(&self) -> bool;
+
+    /// How the system shows its scroll bars, as its settings say now.
+    fn scrollers(&self) -> Scrollers;
+
+    /// Whether the system started the app of its own, as from its icon, a
+    /// command, a shell or a service: not to open files, folders or links,
+    /// whose events come before the start, which the platform hands the
+    /// app right after it, and which open its windows.
+    fn default_launch(&self) -> bool;
+
+    /// Whether the file at `path` came from the internet, as the system
+    /// marks the files that a browser or a mail downloads, and the user has
+    /// not let it open yet: on the Mac, their quarantine's attribute, of
+    /// no approval of Gatekeeper's.
+    fn downloaded(&self, path: &Path) -> bool;
+
+    /// The function that marks a file that a plugin wrote, where the user
+    /// chose, as come from elsewhere, so that [`Platform::downloaded`] and
+    /// the system ask before they open it as a program: on the Mac, the
+    /// quarantine's attribute of a download, of no approval. A function,
+    /// which a thread may run as it writes the file.
+    fn quarantine(&self) -> Quarantine;
+
+    /// Whether the app is the system's default terminal: the application
+    /// that it opens shell scripts and executables in, and `ssh` and
+    /// `x-man-page` URLs, as the system told it last: after the start and
+    /// as the app becomes active, as [`AppEvent::DefaultTerminalKnown`]
+    /// tells of a new answer, and as the app's ask to be it ends; `false`
+    /// before.
+    fn is_default_terminal(&self) -> bool;
+
+    /// Asks the system to make the app its default terminal, which it asks
+    /// the user to confirm, change by change: whether it asked, as an app
+    /// outside its bundle cannot be one. [`AppEvent::DefaultTerminalMade`]
+    /// tells the answers, once they all came.
+    fn make_default_terminal(&mut self) -> bool;
+
+    /// Makes `links`, each a symbolic link at its path to its target, of
+    /// what was there replaced, their folders made where they are not
+    /// there: of the app's own rights where they are enough, else of an
+    /// administrator's, which the system asks the user's password for,
+    /// telling `reason`; on a thread of its own, as the question waits for
+    /// the user. [`AppEvent::ToolsLinked`] tells how it ended.
+    fn link_tools(&mut self, links: Vec<ToolLink>, reason: &str);
+
+    /// Whether `path`, as the folder of the app's binaries, lies in a place
+    /// that goes: on the Mac, a copy that Gatekeeper translocated, which
+    /// runs from a folder of the system's until the app is moved, or a
+    /// read-only volume under `/Volumes`, as a disk image's; links to it
+    /// would lead nowhere once it goes.
+    fn is_temporary_place(&self, path: &Path) -> bool;
+
+    /// Whether the system's settings have an app's windows open again as
+    /// it starts, as they were as it quit: on the Mac, "Close windows when
+    /// quitting an application" off.
+    fn keeps_windows(&self) -> bool;
 
     /// Gives the app the appearance `appearance`, its windows' and its
     /// menus' too, whatever the system's is, or the system's again with
@@ -282,6 +550,22 @@ pub trait Platform {
     /// Sets the title of a window.
     fn set_title(&mut self, window: WindowId, title: &str);
 
+    /// Shows `text` at the right of `window`'s titlebar, as the keys that
+    /// bring it forward, in the secondary label's color, while its titlebar
+    /// is the system's, of its title; nothing with `None`.
+    fn set_title_accessory(&mut self, window: WindowId, text: Option<&str>);
+
+    /// How the platform writes a shortcut, as its menus show it: on the
+    /// Mac, `⌥⌘1`; a function that holds nothing of the platform, as the
+    /// plugins' reads take it.
+    fn shortcut_writer(&self) -> fn(Shortcut) -> String;
+
+    /// `shortcut` as the platform writes it, as [`Platform::shortcut_writer`]
+    /// does.
+    fn shortcut_text(&self, shortcut: Shortcut) -> String {
+        (self.shortcut_writer())(shortcut)
+    }
+
     /// The size of a window's content.
     fn window_size(&self, window: WindowId) -> Option<WindowSize>;
 
@@ -307,6 +591,22 @@ pub trait Platform {
     /// it, blinking as the place says; `None` hides it.
     fn place_layer(&mut self, window: WindowId, layer: Layer, place: Option<&LayerPlace>);
 
+    /// Shows `sweeps` over `window`'s content, under its layers, in place of
+    /// those that it showed: none hides them. Those as they were go on
+    /// unchanged.
+    fn set_sweeps(&mut self, window: WindowId, sweeps: &[Sweep]);
+
+    /// Whether the window server draws the fills of the progresses that
+    /// are not indeterminate, as [`Platform::set_fills`] gives them, which
+    /// the app then leaves out of its frames; the app draws them otherwise.
+    fn draws_fills(&self) -> bool;
+
+    /// Shows `fills` over `window`'s content, under the layers of the text
+    /// that blinks and of the cursor, in place of those that it showed: a
+    /// fill of an id and a box that it showed slides from the value that it
+    /// shows to its new one, at once where the system reduces motion.
+    fn set_fills(&mut self, window: WindowId, fills: &[Fill]);
+
     /// Asks for one [`WindowEvent::Frame`] of a window: at once, once the
     /// current call returns, if the window drew no frame since its display's
     /// last refresh, as after a while without one; otherwise at the next
@@ -326,6 +626,53 @@ pub trait Platform {
     /// application's has it.
     fn focused_window(&self) -> Option<WindowId>;
 
+    /// Where the pointer is now, over `window`'s content or out of it, in
+    /// points from the content's top left corner, as a press of a modifier
+    /// asks without a move; `None` for a window that is not open.
+    fn pointer_position(&self, window: WindowId) -> Option<Point>;
+
+    /// The frame of `window`'s content on the screens, the part under its
+    /// titlebar too, where the content runs under it; `None` for a window
+    /// that is not open.
+    fn window_frame(&self, window: WindowId) -> Option<ScreenRect>;
+
+    /// The frame of `window`'s content as [`Platform::window_frame`] tells
+    /// it, but out of full screen: for a window in full screen, the frame
+    /// that it had before, which it takes back as it leaves it.
+    fn windowed_frame(&self, window: WindowId) -> Option<ScreenRect>;
+
+    /// Keeps `window` above the other applications' windows, or puts it
+    /// back among them: in full screen, from when it leaves it.
+    fn set_window_floating(&mut self, window: WindowId, floating: bool);
+
+    /// Moves `window` so that its content's top left corner is at `origin`
+    /// on the screens, or as near as keeps its titlebar on a screen, as a
+    /// window opened for a tab dropped there goes under the pointer.
+    fn set_window_origin(&mut self, window: WindowId, origin: ScreenPoint);
+
+    /// The application's window that shows at `at` on the screens, over
+    /// the others: `None` where another application's window, the menu bar
+    /// or the Dock shows, or no window, as a tab dropped there opens a
+    /// window of its own. The drag's image, which the pointer goes through,
+    /// is none of them.
+    fn window_at(&self, at: ScreenPoint) -> Option<WindowId>;
+
+    /// Shows the image of a drag at `frame` on the screens, over every
+    /// window, the pointer going through it to what is under: a layer that
+    /// the renderer draws, through [`Platform::drag_image_handle`], clear
+    /// where it draws nothing. An image that shows already moves there, of
+    /// the size of `frame`, its layer keeping what it drew.
+    fn show_drag_image(&mut self, frame: ScreenRect);
+
+    /// The handle of the drag's image's layer, while the image shows, which
+    /// the renderer draws into.
+    fn drag_image_handle(&self) -> Option<WindowHandle<'_>>;
+
+    /// Hides the drag's image, at once; or, of `to`, sliding there on the
+    /// screens, of its size, as a dragged tab goes back to its place, and
+    /// fading out as it goes, which the window server animates.
+    fn hide_drag_image(&mut self, to: Option<ScreenRect>);
+
     /// Sets the main menu, in place of the one before it.
     fn set_main_menu(&mut self, menu: &MainMenu);
 
@@ -342,8 +689,14 @@ pub trait Platform {
     /// Opens `menu` at `position` of `window`'s content, once the call in
     /// progress has returned, so that the windows go on drawing while it is
     /// open: its chosen item comes as [`WindowEvent::ContextCommand`]. A
-    /// menu that is open closes first.
+    /// menu that is open, or that waits to open, closes first: each menu
+    /// that the app asks for gets its [`WindowEvent::ContextMenuClosed`],
+    /// in their order.
     fn show_context_menu(&mut self, window: WindowId, position: Point, menu: &ContextMenu);
+
+    /// Closes `window`'s context menu, open or waiting to open, without a
+    /// choice, which its [`WindowEvent::ContextMenuClosed`] tells.
+    fn close_context_menu(&mut self, window: WindowId);
 
     /// Shows the system's definition of `text`, in its dictionary's panel,
     /// over `window`, where the text is: the left end of its baseline at
@@ -363,9 +716,37 @@ pub trait Platform {
     /// Puts text on the clipboard, in place of what it held.
     fn set_clipboard_text(&mut self, text: &str);
 
+    /// Puts the image of `png`, a PNG, on the clipboard, in place of what
+    /// it held.
+    fn set_clipboard_image(&mut self, png: &[u8]);
+
+    /// Opens the save panel, a sheet on `window`, of the file's name `name`
+    /// suggested, of its extension's type, of `message` over it, which
+    /// names who saves, and returns at once:
+    /// [`AppEvent::SavePanelClosed`] tells the path chosen, or none as the
+    /// user cancelled or the window closed. The panel asks before it
+    /// replaces a file; the app writes it.
+    fn show_save_panel(&mut self, window: WindowId, name: &str, message: &str) -> SavePanelId;
+
+    /// Withdraws the open save panel `panel`, as who saves is gone: no
+    /// [`AppEvent::SavePanelClosed`] comes of it, and nothing is written.
+    fn dismiss_save_panel(&mut self, panel: SavePanelId);
+
+    /// Keeps the system, or the system and the display, from idle sleep,
+    /// of one power assertion named `reason`, which takes the place of the
+    /// one before, or lets it sleep, of [`Awake::Off`]; the system releases
+    /// it as the app ends.
+    fn keep_awake(&mut self, awake: Awake, reason: &str);
+
     /// Opens an alert, on `window` or on its own when `None`, and returns
     /// at once: [`AppEvent::AlertClosed`] tells which button closed it.
     fn show_alert(&mut self, window: Option<WindowId>, alert: &Alert) -> AlertId;
+
+    /// Withdraws the open alert `alert`, a window's sheet, or one on its
+    /// own before its loop runs, as what it asks about is gone: no
+    /// [`AppEvent::AlertClosed`] comes of it. One on its own that runs
+    /// already stays until it is answered, of no answer then either.
+    fn dismiss_alert(&mut self, alert: AlertId);
 
     /// Starts a timer that fires once, at `at` or a little after, as the
     /// system groups its wakeups, with an [`AppEvent::Timer`]; a time
@@ -381,6 +762,11 @@ pub trait Platform {
     /// cell, from the top left corner of its content, in points, by which
     /// the input method places its candidates.
     fn set_text_area(&mut self, window: WindowId, origin: Point, size: Size);
+
+    /// Ends the input method's composition in `window`, whose text the app
+    /// keeps as it stands, as a click elsewhere keeps it: the input method
+    /// forgets it, and types nothing of it.
+    fn end_composition(&mut self, window: WindowId);
 
     /// Makes `window` translucent, over `backdrop`, which covers its whole
     /// frame, the titlebar too, under what the app draws: what is behind
@@ -398,6 +784,14 @@ pub trait Platform {
     /// wake the app. Moves with a button held always come.
     fn track_mouse_moves(&mut self, window: WindowId, track: bool);
 
+    /// Gives `window` the parts of its content, in points from its top
+    /// left corner, where the pointer's moves with no button held come as
+    /// [`WindowEvent::MouseMoved`] whether the window tracks them all or
+    /// not, and its leaving them as [`WindowEvent::MouseExited`], as the
+    /// chrome's views take the hover; the moves over the rest wake the app
+    /// no more than before. None until the app gives them.
+    fn set_move_areas(&mut self, window: WindowId, areas: &[ContentRect]);
+
     /// Gives the pointer over `window`'s content `shape`; the arrow until
     /// the app asks for another.
     fn set_pointer_shape(&mut self, window: WindowId, shape: PointerShape);
@@ -414,10 +808,82 @@ pub trait Platform {
     /// The pointer changes as it moves, without waking the app.
     fn set_pointer_areas(&mut self, window: WindowId, areas: &[PointerArea]);
 
+    /// Holds the pointer over `window` at `shape`, wherever it goes over
+    /// the window and whatever its areas, as a drag under way keeps the
+    /// shape that it started of; `None` gives the areas and the content's
+    /// shape the pointer back.
+    fn hold_pointer(&mut self, window: WindowId, shape: Option<PointerShape>);
+
+    /// Gives `window` the titlebar `titlebar`, of the system's title by
+    /// default: its content's size then comes anew as
+    /// [`WindowEvent::Resized`], of the titlebar's height and of the room
+    /// of the window's buttons, as a titlebar of [`Titlebar::Tabs`] comes
+    /// or goes; the system's of its title and of none are of one size.
+    fn set_titlebar(&mut self, window: WindowId, titlebar: Titlebar);
+
+    /// The parts of `window`'s titlebar that are its content's, as the tabs
+    /// of a bar that it draws there, in place of those before: a press
+    /// there, its drags and its release come to the app, and the pointer's
+    /// moves over the titlebar too while the window's titlebar is of
+    /// [`Titlebar::Tabs`]. A press elsewhere on the titlebar is the
+    /// window's, which a drag moves and a double click zooms or minimizes,
+    /// as the system's settings say. None until the app gives them.
+    fn set_titlebar_areas(&mut self, window: WindowId, areas: &[ContentRect]);
+
+    /// Whether an accessibility client asked for the tree of `window`,
+    /// which [`WindowEvent::AccessibilityAsked`] told: its changes go to
+    /// [`Platform::update_accessibility`] from then on.
+    fn accessibility_asked(&self, window: WindowId) -> bool;
+
+    /// Gives the accessibility tree of `window` `update`: whole the first
+    /// time after [`WindowEvent::AccessibilityAsked`], its nodes changed
+    /// after; nothing before a client asked.
+    fn update_accessibility(&mut self, window: WindowId, update: accesskit::TreeUpdate);
+
     /// Which Option keys act as Meta, the left one and the right one: their
     /// keys come as they are, never through the input method, so that a
     /// dead key that Option makes does not compose.
     fn set_option_as_meta(&mut self, left: bool, right: bool);
+
+    /// Starts the application's updates, where it can update itself, as
+    /// its bundle holds an updater on the Mac: a check for a newer version
+    /// now and then, a day apart at least, while `check` holds, and those
+    /// that [`Platform::check_for_updates`] asks. Whether the application
+    /// can update itself; the updater may still be loading, out of the
+    /// main thread, as the call returns. A second call changes nothing.
+    fn start_updates(&mut self, check: bool) -> bool;
+
+    /// Turns the updates' checks now and then on or off, once
+    /// [`Platform::start_updates`] has started them.
+    fn set_update_checks(&mut self, check: bool);
+
+    /// Checks for a newer version now, and shows what it finds, a newer
+    /// version to install or none, in the updater's own window; once the
+    /// updater has loaded, for a check asked before. Nothing where the
+    /// application cannot update itself.
+    fn check_for_updates(&mut self);
+
+    /// Opens the application's About panel, or brings it to the front: the
+    /// platform's own, of the application's name, icon, version, build and
+    /// copyright, with `about`'s credits.
+    fn show_about(&mut self, about: &AboutPanel);
+
+    /// The pixels of the image that `data` encodes, PNG, JPEG, GIF, TIFF
+    /// or BMP, its
+    /// first frame: RGBA, 8 bits a component in sRGB, premultiplied by
+    /// their opacity, a row after the other from the top; none of data that
+    /// does not decode, or of a platform that decodes none.
+    fn decode_image(&self, data: &[u8]) -> Option<Pixels> {
+        let _ = data;
+        None
+    }
+
+    /// [`Platform::decode_image`] for any thread, so that images decode off
+    /// the main thread; none of a platform that decodes on the main thread
+    /// alone, through `decode_image`.
+    fn image_decoder(&self) -> Option<ImageDecoder> {
+        None
+    }
 
     /// Shows the image of the file at `icon` as the application's icon
     /// while it runs, where the system shows running applications, as the
@@ -431,31 +897,42 @@ pub trait Platform {
     /// while it is.
     fn request_attention(&mut self);
 
+    /// Shows `badge`, a short text, as a count, on the application's icon,
+    /// as the Dock's badge on the Mac, or takes it away, of `None`.
+    fn set_badge(&mut self, badge: Option<&str>);
+
     /// Plays the system's alert sound, as the user chose it.
     fn play_alert_sound(&mut self);
 
     /// Shows a notification of the system's, of `title` and `body`, for
-    /// `window`: a click on it comes as [`AppEvent::NotificationClicked`].
+    /// `window`, of the app's number `id`: a click on it comes as
+    /// [`AppEvent::NotificationClicked`] of both.
     /// The first asks the user for the permission to show them, which the
     /// system keeps; without it, nothing shows. On the Mac, the application
     /// needs its bundle's identifier: from outside its bundle, nothing shows.
-    fn notify(&mut self, window: WindowId, title: &str, body: &str);
+    fn notify(&mut self, window: WindowId, id: u64, title: &str, body: &str);
 
-    /// What `target`, a URL or an absolute path, is, as [`Platform::open`]
-    /// takes it: a `file` URL is its path's, if it names this machine; a
-    /// path that does not exist fails.
-    fn target_kind(&self, target: &str) -> Result<TargetKind, Error>;
+    /// What `target`, a URL or an absolute path, is, and where it leads: a
+    /// `file` URL is its path's, if it names this machine; a path's links
+    /// and the system's aliases are followed, so that what the app decides
+    /// by is what opens. A path that leads nowhere, a `file` URL of another
+    /// machine and a text that is no URL fail. The platform tells the
+    /// facts, and decides nothing: the app decides what opens, and how.
+    fn resolve_target(&self, target: &str) -> Result<Target, Error>;
 
-    /// Opens `target`, a URL or an absolute path, with the system's handler:
-    /// a URL in its application, as the browser; a file in its
-    /// application, and a directory in the file manager. A file that would
-    /// run rather than open, a [`TargetKind::Program`], shows in the file
-    /// manager, selected, and does not run.
-    fn open(&mut self, target: &str) -> Result<(), Error>;
+    /// Opens `target`, as [`Platform::resolve_target`] told it, with the
+    /// system's handler: a URL in its application, as the browser; a file
+    /// in its application, and a directory in the file manager. A
+    /// [`TargetKind::Program`] fails, and nothing runs.
+    fn open(&mut self, target: &Target) -> Result<(), Error>;
 
-    /// Shows `target`, an absolute path or a `file` URL, in the file
-    /// manager, selected; another URL fails.
-    fn reveal(&mut self, target: &str) -> Result<(), Error>;
+    /// The system's name and version, as a report of a problem tells
+    /// them: `macOS 27.2 (27C5032e)` on the Mac, its build in brackets.
+    fn system_version(&self) -> String;
+
+    /// Shows `target`, as [`Platform::resolve_target`] told it, a file, a
+    /// directory or a program, in the file manager, selected; a URL fails.
+    fn reveal(&mut self, target: &Target) -> Result<(), Error>;
 
     /// Opens `path`, a file, in the system's text editor: the application
     /// that opens plain text, whatever the file's own type opens in. What

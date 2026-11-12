@@ -1,14 +1,14 @@
 # Architecture
 
-This document describes Lokyr as a whole. Each subsystem has its own document with the details, and the reasons behind each choice are in the [ADRs](adr/).
+This document describes Lokyr as a whole. Each subsystem has its own document with the details.
 
 ## Principles
 
-1. **Mechanism in the core, policy in plugins.** The kernel provides data models and fast services. Plugins decide *what* is shown and *how* users interact with it ([ADR 0002](adr/0002-micro-kernel-and-plugins.md)).
-2. **One API for every plugin.** First-party plugins use the same interfaces as third-party ones, through a Rust front end instead of a Luau one. If one of our own features cannot be written with the public SDK, the SDK is what's missing something ([ADR 0003](adr/0003-native-and-wasm-plugins.md), [ADR 0012](adr/0012-luau-plugins.md)).
+1. **Mechanism in the core, policy in plugins.** The kernel provides data models and fast services. Plugins decide *what* is shown and *how* people interact with it.
+2. **One API for every plugin.** First-party plugins use the same interfaces as third-party ones, through a Rust front end instead of a Luau one. If one of our own features cannot be written with the public SDK, the SDK is what's missing something.
 3. **No wasted work.** When nothing changes there are no frames, timers or wakeups. Anything that is not visible or not installed costs nothing, and that includes the Luau runtime.
-4. **Native where it matters, our own where we need control.** Windows, menus, IME and accessibility are native on each OS. The chrome and the rendering are ours, and identical everywhere ([ADR 0004](adr/0004-native-shell-and-gpu-chrome.md)).
-5. **No networking in the app.** Downloading and installing is Sleip's job ([ADR 0008](adr/0008-separate-package-manager.md)). The MCP server speaks over stdio, through the IPC socket ([ADR 0017](adr/0017-mcp-and-agents.md)).
+4. **Native where it matters, our own where we need control.** Windows, menus, IME and accessibility are native on each OS. The chrome and the rendering are ours, and identical everywhere.
+5. **No networking code of the app's own.** Downloading and installing is Sleip's job. The plugins' network goes through the app, which checks it, to Sleip's helper, so that no response from the network is parsed in the process that sees what is typed; Sparkle's updater is the app's one network client. The MCP server speaks over stdio, through the IPC socket.
 6. **Budgets are requirements.** Timings and memory have numeric targets that CI checks ([PERFORMANCE.md](PERFORMANCE.md)).
 
 ## Layers
@@ -20,10 +20,10 @@ This document describes Lokyr as a whole. Each subsystem has its own document wi
                                         │ writes to disk: store + plugins.lock
 ┌───────────────────────────────────────▼────────── lokyr (app) ────────────────────────────┐
 │ First-party plugins (static)            │ Third-party plugins (Luau, sandboxed)          │
-│ tabs · splits · search · themes ·       │ read from disk, activated only when needed     │
-│ theme-iterm2 · core-actions · palette   │                                                │
+│ tabs · splits · search · links ·        │ read from disk, activated only when needed     │
+│ core-actions · palette                  │                                                │
 ├─────────────────────────────────────────┴────────────────────────────────────────────────┤
-│ plugin-sdk ── HostApi (kernel, native)  │  plugin-host-luau (Luau VMs → same HostApi)   │
+│ plugin-sdk ── HostApi messages (native) │  plugin-host-luau (Luau VMs → same messages)  │
 ├──────────────────────────────────────────────────────────────────────────────────────────┤
 │ KERNEL: workspace + layout tree · commands · keymap · event bus · config                 │
 │         services: search · decorations · triggers                                        │
@@ -49,19 +49,20 @@ This document describes Lokyr as a whole. Each subsystem has its own document wi
 ```
 Workspace
 └── Window (id, screen, size, appearance)
-    └── Tab (id, title, color, active pane)
+    └── Tab (id, title, color, active pane, zoomed pane)
         └── LayoutTree
-            ├── Split { direction, ratio, a, b }
+            ├── Split { direction, ratio, first, second }
             └── Leaf(PaneId)
                 └── Pane (id, profile, cwd) ──▶ Session (pty + process + VT state)
 ```
 
-- **Where it is**: `kernel::workspace`. A `Workspace` holds the windows, the tabs and the panes, each pane with its session; a tab's layout is a tree whose leaves are panes, a single leaf until splits come. The app keeps, for each window of the platform, what is the platform's and the drawing's (its surface, the input method's composition, the cursor's blinking, the mouse), and the ids of its window and pane in the workspace. The sessions' events, the titles, which the tabs of their active panes take, the bells, the writes to the clipboards, the ends of the output and the terminals' others, come in on the main thread, as `Workspace::collect` gathers them once a session woke it, and wait as the workspace's `Event`s until the app takes them.
+- **Where it is**: `kernel::workspace`. A `Workspace` holds the windows, the tabs and the panes, each pane with its session; a tab's layout is a binary tree whose leaves are panes. A split shares its room by its ratio, which a divider's drag gives, or, without one, by its parts' panes along its direction, so that panes split alike take a part each, three of them a third. The workspace's operations are mechanisms, which plugins call: tabs opened, closed, shown, reordered and moved between windows; panes split, closed, focused, resized, equalized, zoomed, and moved to a tab or a window of their own; a tab that loses its last pane closes, and a window its last tab. The app keeps, for each window of the platform, what is the platform's and the drawing's (its surface, the input method's composition, the cursor's blinking, the mouse), and the ids of its window and pane in the workspace. The sessions' events, the titles, which the tabs of their active panes take, the bells, the writes to the clipboards, the ends of the output and the terminals' others, come in on the main thread, as `Workspace::collect` gathers them once a session woke it, and wait as the workspace's `Event`s until the app takes them, beside the changes of its windows, tabs, layouts and panes, which its operations record.
 - **Serializable**: the whole model can be serialized. Session restore, IPC, tmux -CC and the E2E tests all use the same model. Its types are plain data, apart from the sessions; they take serde's derives with the first that serializes them, IPC in F3b.
-- **Changes go through commands**: every change is a kernel command, and each one emits an event (`tab-created`, `pane-focused`, `layout-changed`, …). Plugins never mutate state directly.
+- **Changes go through commands**: every change of the windows, the tabs, their layouts and their panes is one of the workspace's operations, which the commands call, and which records it as an event of `plugin-sdk`'s `WorkspaceEvent`: `window-opened`, `window-closed`, `tab-created`, `tab-closed`, `tab-activated`, `tab-moved`, `pane-created`, `pane-closed`, `pane-focused`, `pane-moved` and `layout-changed`, each with its ids. An operation records what it changed, and nothing for what it left as it was, as a tab already shown or a layout already equal; a closing comes before what follows from it, the tab that its window shows instead or the window that closes with it, and a window's or a tab's closing after its tabs' and panes'. The plugins' bus, MCP and the restore of sessions take these events. Plugins never mutate state directly: their changes are requests, which the host applies in order as their calls return.
 - **Identifiers** are opaque `u64` values, never reused during the life of the process: windows, tabs and panes take theirs from one counter of the process.
-- **Diagnostics**: `kernel::diagnostics`. What goes wrong that the user is to learn of, a config that does not read, a font that is not installed, a plugin that is disabled or a command that fails, is a diagnostic of a code, whose hundreds tell its category ([ADR 0019](adr/0019-commands-errors-and-permissions.md)), and of a text. The sink writes each to the log, and keeps those that the user can act on, the config's and the font's, the failures and the faults, for the notice bar across the top of the windows, the latest first, until a fix or a click takes it away; later the audit log and MCP take them too.
-- **Mechanism vs. policy for splits**: the kernel provides the tree operations (split, resize, zoom). The `splits` plugin decides **when and how** to use them: commands, dividers, mouse interaction. Without that plugin every tab has exactly one pane.
+- **Text's coordinates**: a row of a pane's screen or scrollback is named by its number, which output, the view's scrolling and the scrollback's limit leave it, until the row leaves the list; a resize, which lays the rows out again, numbers them anew, and a pin of a cell keeps its text through it, for decorations, search, MCP and the prompts' marks ([VT-CORE.md](VT-CORE.md#page-list-and-scrollback)). Input computes its cells with the drawn frame's origin, the number of the view's first row as the frame showed it, so that a click names what was shown though output scrolled the view since; reads of a line take a bounded range of its rows.
+- **Diagnostics**: `kernel::diagnostics`. What goes wrong that is to be told, a config that does not read, a font that is not installed, a plugin that is disabled or a command that fails, is a diagnostic of a code, whose hundreds tell its category, and of a text. The sink writes each to the log, and keeps those that can be acted on, the config's and the font's, the failures and the faults, for the notice's card at the top right of the windows' panes, the latest first, until a fix or a click takes it away, a failure's going by itself after a while; later the audit log and MCP take them too.
+- **Mechanism vs. policy for splits**: the kernel provides the tree operations (split, resize, zoom). The `splits` plugin decides **when and how** to use them, through its commands; the host draws the dividers and takes their drags, a split's ratio of the workspace's, as the window's live resize is the host's. Without that plugin every tab has exactly one pane.
 
 ## Threads and data flow
 
@@ -75,7 +76,7 @@ Workspace
 | Drawing warm-up, once, as the app launches | Making the GPU's pipelines and the font, and letting them go, while AppKit launches, so that the app's own take nearly nothing | Outlive the launch |
 | Font warm-up, once, after the first frame | Readying the system's font fallback and its CJK and emoji faces, about 20 ms | Hold anything of the app's; a frame's first lookup of a CJK face, within those 20 ms, can wait for CoreText's cascade, which the thread fills |
 | Plugin executor | Calls into third-party plugins, with a deadline per call; its watchdog runs only while a plugin executes | Sit on the output path |
-| Plugin workers, one per native plugin that asks for one (F3) | Every call of that plugin, its renders too, by copies and messages, as the executor's | Hold a lock of the kernel's, or a pane's |
+| Plugin workers, one per native plugin that asks for one (F3) | Every call of that plugin, its renders too, by messages, as the executor's | Hold a lock of the kernel's, or a pane's: a read of much text runs on a host worker |
 | Workers | Search, reflow of very large scrollbacks | Hold the grid lock for long |
 
 **From program output to the screen**
@@ -83,7 +84,7 @@ Workspace
 2. The I/O thread parses a batch while holding the pane's grid lock, then releases the lock fairly so the renderer never starves.
 3. It marks the rows that changed and, unless it already has, wakes the main thread (a `CFRunLoopSource` on macOS, an `eventfd` on Linux), marking its pane as woken: the main thread looks at the woken panes alone, and asks for their windows' frames alone. A bell or a terminal's event wakes it too, once a frame's time at most: the main thread takes what a pane told no more often, and a timer brings the turn of one that told within it, so that a stream of bells wakes it 60 times a second, not 100 000.
 4. On the display-link tick, the main thread takes the lock, copies only the visible rows that changed (8-byte cells plus the styles they use) and releases it. A frame whose display list is the one that the window shows already presents nothing. The copy carries the program's input modes, its keyboard's flags and the alternate screen, which the frame reads from it, and a key's contexts too, so that a frame takes a pane's lock once, and a key once more to write; a paste, the mouse and a selection that the app just changed read the terminal under the lock.
-5. Shaping, display-list construction and GPU command encoding then run without the lock. The grid's layout collects the glyphs that the atlas lacks rather than drawing each as it comes: CoreText draws them together, on the main thread and three others, for 2 ms at most, and the layout is done again with them. The faces of characters that no frame met before, which the system's fallback gives, are looked up while the frame has spent less than 2 ms on them: a lookup that started goes on. The icons of the private use areas that the configured font lacks take the symbols' font that the binary holds, Symbols Nerd Font Mono, before the system's fallback, which searches every installed font for them, 22 to 29 ms each ([ADR 0025](adr/0025-symbols-font.md)). What is left, of a screen of hundreds of new glyphs, shows as empty cells, and the frames after, which the frame asks for, draw it: a page of new Chinese shows whole in about three frames, where the first frame of it took about 25 ms, and a 4K screen of all-new glyphs in about 0.2 s, where it took 300. After the first frame, a thread readies the fallback, whose first looks take over a millisecond each, and the CJK and emoji faces: up to about 4 MB of the footprint, most of which a shell's prompt of symbols that the font lacks takes anyway, 1.1 MB more as measured.
+5. Shaping, display-list construction and GPU command encoding then run without the lock. The grid's layout collects the glyphs that the atlas lacks rather than drawing each as it comes: CoreText draws them together, on the main thread and three others, for 2 ms at most, and the layout is done again with them. The faces of characters that no frame met before, which the system's fallback gives, are looked up while the frame has spent less than 2 ms on them: a lookup that started goes on. The icons of the private use areas that the configured font lacks take the symbols' font that the binary holds, Symbols Nerd Font Mono, before the system's fallback, which searches every installed font for them, 22 to 29 ms each. What is left, of a screen of hundreds of new glyphs, shows as empty cells, and the frames after, which the frame asks for, draw it: a page of new Chinese shows whole in about three frames, where the first frame of it took about 25 ms, and a 4K screen of all-new glyphs in about 0.2 s, where it took 300. After the first frame, a thread readies the fallback, whose first looks take over a millisecond each, and the CJK and emoji faces: up to about 4 MB of the footprint, most of which a shell's prompt of symbols that the font lacks takes anyway, 1.1 MB more as measured.
 6. If the pane has synchronized output (mode 2026) enabled, the frame waits for the update to finish or for a timeout.
 
 **From a key press to the program**
@@ -100,8 +101,8 @@ Workspace
 - **Live resize**: `presentsWithTransaction = true` plus synchronous drawing, so the content follows the window edge without tearing; once a refresh, as a second draw within one would wait a refresh for a drawable, which the display link's next frame draws instead.
 - **Presentation**: the Metal layers present without the display's sync (`displaySyncEnabled = false`), so that a frame goes to the window server as soon as it is drawn, which composes it at its next refresh, where it waited for the layer's own refresh first: a key's echo shows about 20 ms sooner, at 60 Hz as at 120. The window server's composition keeps each frame whole, in a window and in full screen.
 - **No partial present**: CAMetalLayer redraws the whole drawable every frame. Dirty-row tracking therefore saves CPU time (snapshot, shaping), not GPU time. GPU cost stays low thanks to instanced rendering.
-- **Drawables**: 2 per window (`maximumDrawableCount = 2`), BGRA8, `framebufferOnly = true`, which keep no frame waiting at 60 Hz nor at 120 Hz; 3 with the build's feature `three-drawables` ([ADR 0022](adr/0022-two-drawables.md)); a hidden window keeps the one that shows its last frame.
-- **The layers**: the cursor's cell goes into a layer of its own over the window's surface, which the window server blinks and fades without a frame of the app's ([ADR 0021](adr/0021-drawables-and-the-cursor-layer.md)); the text that blinks, into another, under the cursor's, over the rows that hold it, which the window server switches as the grid draws that text hidden ([ADR 0023](adr/0023-blinking-text-layer.md)).
+- **Drawables**: 2 per window (`maximumDrawableCount = 2`), BGRA8, `framebufferOnly = true`, which keep no frame waiting at 60 Hz nor at 120 Hz; 3 with the build's feature `three-drawables`; a hidden window keeps the one that shows its last frame.
+- **The layers**: the cursor's cell goes into a layer of its own over the window's surface, which the window server blinks and fades without a frame of the app's; the text that blinks, into another, under the cursor's, over the rows that hold it, which the window server switches as the grid draws that text hidden.
 - **Translucency**: the frame's colors are premultiplied by their opacity, and the cells of the default background are clear. Below an opacity of 1 `[window] background-opacity` the window, its content view and the view's layer turn non-opaque, and the window's own background takes the terminal's default background with that opacity, under its whole shape, the titlebar and the rounded corners too, while the frame clears to nothing over it and the titlebar turns transparent, without its separator; the blur behind the window takes `CGSSetWindowBackgroundBlurRadius`, a private call of the window server, the only one of the app, as macOS has no public one. The app ships with a Developer ID, outside the App Store, which private calls would keep it from.
 
 **Linux** (F7): the same scheme, using Wayland frame callbacks (`wl_surface.frame`) or the Present extension on X11, and `wp_presentation` for measurement.
@@ -113,15 +114,15 @@ lokyr/
 ├── Cargo.toml · justfile · deny.toml · rust-toolchain.toml · .github/workflows/
 ├── crates/
 │   ├── vt-core/           parser, state, paged grid, scrollback, reflow, input encoding (pure)
-│   ├── pty/               fork+exec, resize; no RawFd in the API (ConPTY later)
+│   ├── pty/               fork+exec, resize, the shells' integration's scripts and their injection; no RawFd in the API (ConPTY later)
 │   ├── session/           pty + vt-core + I/O thread, snapshots for the renderer
 │   ├── search/            literal and regex search over the grid
-│   ├── kernel/            modules: workspace and layout tree, commands, keymap, events, config, texts (l10n), services; implements HostApi
-│   ├── app-core/          (F3) the window's controller: windows' and panes' state, input's routing, gestures, confirmations, layout geometry, frame composition; generic over Renderer and FontBackend
-│   ├── ui-core/           view tree, layout (taffy), widgets (IME text field, lists, menus), hit testing, AccessKit, display list
+│   ├── kernel/            modules: workspace and layout tree, commands, keymap, events, config, texts (l10n), services, shell integration's marks; serves the HostApi's messages
+│   ├── app-core/          the window's controller: windows' and panes' state, input's routing, gestures, confirmations, layout geometry, frame composition; generic over a `Backend`, its GPU's Renderer and Surface and its FontBackend; tested with the fake platform and a fake drawing
+│   ├── ui-core/           view tree, layout (taffy), widgets (IME text field, lists, menus), surfaces and floating panels, the chrome's regions, hit testing, AccessKit, display list
 │   ├── text-core/         FontBackend trait (discovery, fallback, shaping, rasterization), shaping cache, glyph atlas, box-drawing sprites, UCD tables, the symbols' font
-│   ├── render-core/       Renderer trait, display-list types, shaders
-│   ├── platform-core/     traits: app, windows, quick windows, global keys, events, IME, clipboard, menus, notifications, appearance
+│   ├── render-core/       Renderer and Surface traits, display-list types, shaders
+│   ├── platform-core/     traits: app, windows, quick windows, global keys, events, IME, clipboard, menus, notifications, appearance, targets that open; the fake platform and the conformance suite
 │   ├── platform-macos/    AppKit via objc2 (NSWindow, NSPanel, NSView + CAMetalLayer, NSTextInputClient, NSMenu), Carbon's hot keys
 │   ├── platform-wayland/  (F7) smithay-client-toolkit + calloop, our own CSD
 │   ├── platform-x11/      (F7) x11rb + xkbcommon + xim
@@ -129,19 +130,19 @@ lokyr/
 │   ├── render-gl/         (F7) glow + khronos-egl (GL 3.3 / GLES 3)
 │   ├── font-coretext/     objc2-core-text (discovery, fallback, shaping, rasterization)
 │   ├── font-freetype/     (F7) fontconfig + freetype-rs + harfrust
-│   ├── plugin-sdk/        the plugin API (HostApi and its types) and its Rust front end; no internal dependencies
-│   ├── plugin-host-luau/  Luau host (mlua): one VM per plugin, the Luau front end, capabilities, limits (behind a feature)
-│   ├── pkg-model/         plugin.toml, plugins.toml/.lock, index format, dist (shared by app, sleip, registry)
+│   ├── plugin-sdk/        the plugin API (the HostApi's messages and their types, the view tree's data) and its Rust front end; no internal dependencies
+│   ├── plugin-host-luau/  Luau host (mlua): one VM per plugin, the Luau front end, capabilities, limits (behind a feature); `luau/`: the API's types, `lokyr.d.luau`, and the template of `sleip new`
+│   ├── pkg-model/         plugin.toml, plugins.toml/.lock, the store, the archive, index format, dist (shared by app, sleip, registry)
 │   └── app/               the `lokyr` binary: `main`, the backends for the target, their wiring + distribution
 ├── plugins/               first-party: depend ONLY on plugin-sdk
-│   ├── core-actions/ links/ tabs/ splits/ search/ themes/ theme-iterm2/ quick-terminal/
-│   ├── keymap-macos/ command-palette/ plugin-manager/ keymap-linux/ (F7)
-│   └── (F5) shell-integration/ blocks/ tmux-cc/ triggers/ images/ …
+│   ├── core-actions/ links/ tabs/ splits/ search/ quick-terminal/
+│   ├── keymap-macos/ command-palette/ progress/ command-header/ copy-mode/
+│   ├── plugin-manager/ (F4) keymap-linux/ (F7)
+│   └── (F5) blocks/ tmux-cc/ triggers/ images/ …
 ├── dist/                  default.toml, minimal.toml
-├── sleip/              cli/ (`sleip` binary) · resolver/ (pubgrub) · index/ (sparse index, verification)
+├── sleip/              cli/ (`sleip` binary) · resolver/ (pubgrub) · index/ (sparse index, verification) · analyzer/ (Luau's type checker, of Luau's vendored `Analysis`)
 ├── registry/              registry-server (v1) + index specification
-├── templates/             templates for `sleip new` (Luau)
-├── tools/                 replay/ (`lokyr-replay`, `lokyr-record`) · differential/ (the VT core against `alacritty_terminal`) · bench/ · xtask/ (bundle, signing, gen-dist, UCD tables, terminfo)
+├── tools/                 replay/ (`lokyr-replay`, `lokyr-record`) · differential/ (the VT core against `alacritty_terminal`) · bench/ · ui-gallery/ (`ui-core`'s widgets, to check by hand) · xtask/ (bundle, signing, gen-dist, UCD tables, terminfo)
 ├── fuzz/                  cargo-fuzz: parser, terminal, differential (against `alacritty_terminal`); later .itermcolors, manifest, archives
 └── docs/                  this documentation (later an mdBook)
 ```
@@ -149,13 +150,14 @@ lokyr/
 ### Crate dependencies
 
 ```
-app ─┬─▶ app-core ─▶ kernel                         (F3)
+app ─┬─▶ app-core ─▶ kernel
      ├─▶ kernel ─┬─▶ session ─┬─▶ vt-core
      │           │            └─▶ pty
      │           ├─▶ search ───▶ vt-core
      │           ├─▶ ui-core ──┬─▶ text-core
-     │           │             └─▶ render-core
-     │           ├─▶ plugin-sdk                      (the kernel implements HostApi)
+     │           │             ├─▶ render-core
+     │           │             └─▶ plugin-sdk          (the view tree's types, which it keeps)
+     │           ├─▶ plugin-sdk                      (the kernel serves the HostApi's messages)
      │           └─▶ pkg-model
      ├─▶ platform-{macos|wayland|x11} ─▶ platform-core
      ├─▶ render-{metal|gl} ─▶ render-core
@@ -172,16 +174,18 @@ sleip/* ─▶ pkg-model           registry/* ─▶ pkg-model
 |---|---|---|
 | `vt-core` and `search` do not depend on UI, platform or plugins | Headless tests, fuzzing, reuse | `xtask check-deps` |
 | `plugin-sdk` depends on no other workspace crate | The SDK must be publishable and usable on its own | `xtask check-deps` |
-| Only `app` and `app-core` depend on `kernel` | Plugins must not be able to bypass the SDK | `cargo-deny` (`wrappers`) |
+| Only `app` and `app-core` depend on `kernel`, and `xtask`, which converts the themes that the bundle holds with the kernel's importer and never ships | Plugins must not be able to bypass the SDK | `cargo-deny` (`wrappers`) and `xtask check-deps` |
 | `plugins/*` depend only on `plugin-sdk`, plus a whitelist of utility crates | Proves the public API is sufficient | `xtask check-deps` |
 | First-party plugins use `#![forbid(unsafe_code)]`; clippy `disallowed-methods` forbids threads, blocking I/O and clocks | They follow the same rules as Luau plugins | clippy in CI |
-| Luau (`mlua`) only in `plugin-host-luau` | The C++ runtime stays behind one crate and one feature | `cargo-deny` (`wrappers`) |
-| HTTP/TLS (`hyper`, `reqwest`, `rustls`, …) only in `sleip/*` | No networking code in the app | `cargo-deny` (`bans` + `wrappers`) |
+| Luau (`mlua`) only in `plugin-host-luau`, and Luau's analyzer only in `sleip-analyzer`, a crate of Sleip's that the app never links, which links the libraries of Luau that `mlua` builds, so that a binary holds one Luau | The C++ runtime stays behind one crate and one feature, and the app holds no analyzer | `cargo-deny` (`wrappers`) |
+| HTTP/TLS (`hyper`, `reqwest`, `rustls`, …) only in `sleip/*` | No networking code of the app's own; Sparkle's updater, a framework, is its one network client | `cargo-deny` (`bans` + `wrappers`) |
 | No async runtime (`tokio`, `async-std`, …) in the app | Fewer threads, less memory, fewer dependencies | `cargo-deny` |
-| Only `app` picks the backends, via `cfg(target_os)` | Core crates stay portable | review and `xtask check-deps` |
-| Platform-independent crates (`vt-core`, `pty`, `session`, `search`, `kernel`, `*-core`) build and pass their tests on Linux, and expose no macOS types | Keeps Linux possible after 1.0 ([ADR 0011](adr/0011-macos-only-1-0.md)) | Linux CI job |
+| Only `app` picks the backends, via `cfg(target_os)` | Core crates stay portable | `xtask check-deps` (`backends-only-in-app`) |
+| Platform-independent crates (`vt-core`, `pty`, `session`, `search`, `kernel`, `*-core`) build and pass their tests on Linux, and expose no macOS types | Keeps Linux possible after 1.0 | Linux CI job, and `xtask check-deps` on Linux's dependencies |
 
 The platform, render and font traits are deliberately thin. They describe what the macOS backend needs rather than a lowest common denominator, and the Linux backends will extend them in F7.
+
+The platform tells facts and does what it is asked; the decisions are `app-core`'s, once for every platform. A target that opens, a link's or a path's, is resolved by the platform, `Platform::resolve_target`: what it is, a URL, a directory, a file or a program that would run rather than open, and the file that its links and the system's aliases lead to; `app-core` decides whether it opens, shows in the file manager or asks first, as `[links]` says, a program never opening, and resolves it again once its question is answered. The platform's `open` refuses a program too, and opens what was resolved. A conformance suite, `platform-core`'s `conformance::check`, behind its feature `conformance`, checks what every platform tells alike, the targets and the windows that are not there; the fake passes it in `platform-core`'s tests and the macOS backend in an integration test of its own, and the Linux backends will in F7.
 
 ## Main libraries
 
@@ -203,17 +207,17 @@ Versions and maturity must be rechecked when coding starts.
 ## Conventions
 
 - **Toolchain**: stable Rust, pinned in `rust-toolchain.toml`; edition 2024. Targets:
-  - `aarch64-apple-darwin` only, with macOS 26 as the deployment target ([ADR 0013](adr/0013-platform-baseline.md));
+  - `aarch64-apple-darwin` only, with macOS 26 as the deployment target;
   - `x86_64-unknown-linux-gnu`, for the CI job that builds the platform-independent crates.
 - **Fuzzing** alone uses nightly Rust, which cargo-fuzz needs. That toolchain is pinned too, in the `justfile`, and `fuzz/` is a workspace of its own so that the main one never needs nightly.
 - **Logging and errors**: `tracing` for logs and spans (with signposts on macOS); `thiserror` in libraries, `anyhow` only in binaries.
 - **Child processes** mark the descriptors that they inherit closed on exec, as the `pty` crate's do: on macOS, a child that does not can hold the pipe of a spawn made at the same moment until its program ends, and that spawn waits as long ([VT-CORE.md](VT-CORE.md#pty-and-processes-pty)). A program in a terminal starts through the `pty` crate; another child marks its descriptors between fork and exec, with `std::process::Command`'s `pre_exec`, which makes `std` fork and exec rather than spawn, or, on macOS, through a direct call of `posix_spawn` with Apple's `POSIX_SPAWN_CLOEXEC_DEFAULT`, which `std::process::Command` does not set. A dependency that spawns processes, or C code that calls `popen` or `system`, is looked at for the same before it comes in.
 - **Workspace config**: `[workspace.dependencies]` and `[workspace.lints]` are centralized; clippy runs with `-D warnings`.
-- **`unsafe`**: allowed only in the platform, render, font and `pty` crates, in `plugin-host-luau`, where the watchdog and the bulk readers use Lua's C API, in `tools/bench`, which reads other processes' statistics from the kernel, and in the test allocators that count allocations, outside library code. Always with a `// SAFETY:` comment. Every other crate uses `#![forbid(unsafe_code)]`; `plugin-host-luau` and `tools/bench` use `#![deny(unsafe_code)]` and allow their call sites one by one.
+- **`unsafe`**: allowed only in the platform, render, font and `pty` crates, in `plugin-host-luau`, where the watchdog and the bulk readers use Lua's C API, in `app-core`'s log, which takes the standard error through a pipe and the abort's signal, in `tools/bench`, which reads other processes' statistics from the kernel, in `tools/e2e`, which reads another app's accessibility tree and posts its keys, in `sleip-analyzer`, which calls Luau's analyzer through C, and in the test allocators and handlers of signals that the tests need, outside library code. Always with a `// SAFETY:` comment. Every other crate uses `#![forbid(unsafe_code)]`; `plugin-host-luau`, `app-core`, `tools/bench`, `tools/e2e` and `sleip-analyzer` use `#![deny(unsafe_code)]` and allow their call sites one by one.
 - **Comments**: code comments and doc comments describe the code itself. They never reference the plan (roadmap phases, task IDs, ADR numbers, sections of these docs). Links to external specifications such as xterm, kitty or Unicode are fine.
 - **Common tasks** live in the `justfile`: `just ci` runs every check that CI runs, and `just --list` shows the other recipes.
 - **Language**: all documentation, comments and commit messages are in English.
-- **License**: MIT ([ADR 0010](adr/0010-mit-license.md)).
+- **License**: MIT.
 
 ## On-disk paths
 
@@ -222,7 +226,7 @@ Versions and maturity must be rechecked when coding starts.
 | Config (`config.toml`, `plugins.toml`, `plugins.lock`, `permissions.toml`, `themes/`) | `~/.config/lokyr/` (or `$XDG_CONFIG_HOME/lokyr/` if set) | `$XDG_CONFIG_HOME/lokyr/` |
 | Installed packages | `~/Library/Application Support/lokyr/store/` | `$XDG_DATA_HOME/lokyr/store/` |
 | Caches (fonts, compiled plugins) | `~/Library/Caches/lokyr/` | `$XDG_CACHE_HOME/lokyr/` |
-| State (the last window's directory; later, saved sessions and search history) | `~/Library/Application Support/lokyr/state/` | `$XDG_STATE_HOME/lokyr/` |
+| State (the last window's directory, the windows kept as Lokyr quits; later, search history) | `~/Library/Application Support/lokyr/state/` | `$XDG_STATE_HOME/lokyr/` |
 | IPC socket | `$TMPDIR/lokyr-<uid>/` | `$XDG_RUNTIME_DIR/lokyr/` |
 
 On macOS too the config lives in `~/.config`, so it can be versioned with dotfiles, as Ghostty, Alacritty and kitty do.

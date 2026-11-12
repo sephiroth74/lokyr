@@ -173,7 +173,11 @@ fn the_end_of_the_output_is_told_with_the_exit() {
         assert!(start.elapsed() < Duration::from_secs(10));
         thread::sleep(Duration::from_millis(10));
     }
-    assert!(wakes.load(Ordering::SeqCst) >= 1);
+    // The I/O thread marks the end, then wakes the main thread.
+    while wakes.load(Ordering::SeqCst) < 1 {
+        assert!(start.elapsed() < Duration::from_secs(10), "no wake came");
+        thread::sleep(Duration::from_millis(10));
+    }
     let start = Instant::now();
     loop {
         if let Some(exit) = session.exit().unwrap() {
@@ -224,6 +228,74 @@ fn keys_pastes_and_resizes_reach_the_program() {
     wait_for(&session, "the new size", |terminal| {
         shows(terminal, "size:30 100")
     });
+}
+
+#[test]
+fn the_program_s_own_output_wakes_the_main_thread_again_once_found_quiet() {
+    let wakes = Arc::new(AtomicUsize::new(0));
+    let session = {
+        let wakes = Arc::clone(&wakes);
+        let script = "echo one; sleep 0.3; echo two; sleep 0.3; echo three; sleep 30";
+        Session::spawn(&sh(script), move || {
+            wakes.fetch_add(1, Ordering::SeqCst);
+        })
+        .unwrap()
+    };
+    let wait_wakes = |count: usize| {
+        let start = Instant::now();
+        while wakes.load(Ordering::SeqCst) < count {
+            assert!(start.elapsed() < Duration::from_secs(10), "no wake");
+            thread::sleep(Duration::from_millis(10));
+        }
+    };
+    // Its output of its own, as nothing asked it.
+    wait_for(&session, "one", |terminal| shows(terminal, "one"));
+    wait_wakes(1);
+    let first = session.printed_at().expect("the first output's time");
+    // The main thread takes what was told, and draws nothing; the program
+    // prints on, of its own, which wakes no one while the main thread
+    // has not found it quiet.
+    session.clear_told();
+    wait_for(&session, "two", |terminal| shows(terminal, "two"));
+    thread::sleep(Duration::from_millis(50));
+    assert_eq!(wakes.load(Ordering::SeqCst), 1);
+    let second = session.printed_at().expect("the second output's time");
+    assert!(second > first, "{second:?} after {first:?}");
+    // Found quiet, its next output wakes it.
+    session.clear_told();
+    session.clear_printed();
+    wait_for(&session, "three", |terminal| shows(terminal, "three"));
+    wait_wakes(2);
+    assert!(session.printed_at().is_some_and(|third| third > second));
+}
+
+#[test]
+fn the_echo_of_input_and_the_answer_to_a_new_size_are_not_the_program_s_own() {
+    let script = r#"trap 'echo resized' WINCH; read line; echo "got $line"; sleep 0.8; echo late; while :; do sleep 0.05; done"#;
+    let session = Session::spawn(&sh(script), || {}).unwrap();
+    // The line discipline's echo of the line, and the program's answer to
+    // it.
+    session.write("hello\n");
+    wait_for(&session, "the answer", |terminal| {
+        shows(terminal, "got hello")
+    });
+    assert_eq!(session.printed_at(), None);
+    // What it prints a while after is its own.
+    wait_for(&session, "late", |terminal| shows(terminal, "late"));
+    let late = session.printed_at().expect("the late output's time");
+    // Its redraw at a new size is not.
+    session
+        .resize(Size {
+            cols: 100,
+            rows: 30,
+            width: 0,
+            height: 0,
+        })
+        .unwrap();
+    wait_for(&session, "the redraw", |terminal| {
+        shows(terminal, "resized")
+    });
+    assert_eq!(session.printed_at(), Some(late));
 }
 
 /// A session whose program prints 60 lines, then `ready`, and waits for a
@@ -545,7 +617,9 @@ fn line_text(line: &lokyr_vt_core::terminal::Line) -> String {
 #[test]
 fn a_renderer_that_falls_behind_draws_the_latest_state() {
     let (sender, woken) = mpsc::channel();
-    let script = r#"i=0; while [ $i -lt 3000 ]; do echo "n $i"; i=$((i+1)); done; echo done"#;
+    // Output of some 250 KB, past what a pseudo-terminal holds and past a
+    // slice, so that it comes in slices however fast the system reads it.
+    let script = r#"i=0; while [ $i -lt 30000 ]; do echo "n $i"; i=$((i+1)); done; echo done"#;
     let session = Arc::new(
         Session::spawn(&sh(script), move || {
             let _ = sender.send(());
@@ -565,14 +639,20 @@ fn a_renderer_that_falls_behind_draws_the_latest_state() {
         frames.len()
     );
     // Each frame is one moment of the screen: its numbered rows follow
-    // each other, with no row from another moment between them.
+    // each other, with no row from another moment between them; the last,
+    // at the cursor, written in part as a slice ended in the middle of its
+    // line, the beginning of the number after the one before it.
     for rows in &frames {
         let numbers: Vec<u32> = rows
             .iter()
             .filter_map(|row| row.strip_prefix("n ")?.parse().ok())
             .collect();
+        let last = numbers.len().saturating_sub(2);
         assert!(
-            numbers.windows(2).all(|pair| pair[1] == pair[0] + 1),
+            numbers.windows(2).enumerate().all(|(at, pair)| {
+                pair[1] == pair[0] + 1
+                    || (at == last && (pair[0] + 1).to_string().starts_with(&pair[1].to_string()))
+            }),
             "{rows:?}"
         );
     }
@@ -776,4 +856,63 @@ fn errors_leave_their_causes_to_their_sources() {
     assert_eq!(error.to_string(), "cannot open a pseudo-terminal");
     let source = std::error::Error::source(&error).map(ToString::to_string);
     assert_eq!(source.as_deref(), Some("no terminals"));
+}
+
+#[test]
+fn a_new_theme_s_scheme_reaches_a_program_that_asked_in_silence() {
+    // In raw mode, the reports of the color scheme on, and the report read
+    // back, with ESC as E, once the program tells that it waits.
+    let script = r#"stty raw -echo; printf '\033[?2031hwaiting\r\n'; r=$(dd bs=1 count=9 2>/dev/null); stty sane; printf 'got:%s\n' "$r" | tr '\033' E"#;
+    let session = Session::spawn(&sh(script), || {}).unwrap();
+    wait_for(&session, "the program's wait", |terminal| {
+        shows(terminal, "waiting")
+    });
+    // A light theme, as its background tells.
+    let light = Colors {
+        background: lokyr_vt_core::page::Rgb {
+            r: 0xfd,
+            g: 0xf6,
+            b: 0xe3,
+        },
+        ..Colors::default()
+    };
+    session.set_default_colors(light);
+    wait_for(&session, "the report", |terminal| {
+        shows(terminal, "got:E[?997;2n")
+    });
+}
+
+#[test]
+fn a_session_holds_the_theme_s_colors_before_its_program_writes() {
+    // A program that turns the reports of the color scheme on at once,
+    // and reads the first one: told of no change but the user's.
+    let script = r#"stty raw -echo; printf '\033[?2031hwaiting\r\n'; r=$(dd bs=1 count=9 2>/dev/null); stty sane; printf 'got:%s\n' "$r" | tr '\033' E; exec sleep 10"#;
+    let light = Colors {
+        background: lokyr_vt_core::page::Rgb {
+            r: 250,
+            g: 250,
+            b: 250,
+        },
+        ..Colors::default()
+    };
+    let mut options = sh(script);
+    options.colors = Some(light.clone());
+    options.cell_size = Some((9, 18));
+    let session = Session::spawn(&options, || {}).unwrap();
+    // Of them from the start, before any call of the owner's.
+    assert_eq!(
+        session.lock().color_scheme(),
+        lokyr_vt_core::terminal::ColorScheme::Light
+    );
+    wait_for(&session, "the program waits", |terminal| {
+        shows(terminal, "waiting")
+    });
+    let dark = Colors {
+        background: lokyr_vt_core::page::Rgb { r: 0, g: 0, b: 0 },
+        ..light
+    };
+    session.set_default_colors(dark);
+    wait_for(&session, "the report of the dark scheme", |terminal| {
+        shows(terminal, "got:E[?997;1n")
+    });
 }

@@ -13,6 +13,9 @@ pub struct Rule {
     pub name: String,
     /// What the rule guarantees, in one sentence.
     pub description: String,
+    /// The target platform, by its triple, whose dependencies the rule is
+    /// checked against; `None` for those of every platform.
+    pub platform: Option<String>,
     crates: Vec<Selector>,
     check: Check,
 }
@@ -133,12 +136,16 @@ enum RuleSpec {
     Forbid {
         name: String,
         description: String,
+        #[serde(default)]
+        platform: Option<String>,
         crates: Vec<String>,
         forbidden: Vec<String>,
     },
     AllowOnly {
         name: String,
         description: String,
+        #[serde(default)]
+        platform: Option<String>,
         crates: Vec<String>,
         allowed: Vec<String>,
         #[serde(default)]
@@ -147,6 +154,8 @@ enum RuleSpec {
     DependentsOnly {
         name: String,
         description: String,
+        #[serde(default)]
+        platform: Option<String>,
         crates: Vec<String>,
         dependents: Vec<String>,
     },
@@ -162,27 +171,31 @@ enum Scope {
 
 impl RuleSpec {
     fn into_rule(self) -> Rule {
-        let (name, description, crates, check) = match self {
+        let (name, description, platform, crates, check) = match self {
             Self::Forbid {
                 name,
                 description,
+                platform,
                 crates,
                 forbidden,
             } => (
                 name,
                 description,
+                platform,
                 crates,
                 Check::Forbid(selectors(forbidden)),
             ),
             Self::AllowOnly {
                 name,
                 description,
+                platform,
                 crates,
                 allowed,
                 scope,
             } => (
                 name,
                 description,
+                platform,
                 crates,
                 Check::AllowOnly {
                     allowed: selectors(allowed),
@@ -192,11 +205,13 @@ impl RuleSpec {
             Self::DependentsOnly {
                 name,
                 description,
+                platform,
                 crates,
                 dependents,
             } => (
                 name,
                 description,
+                platform,
                 crates,
                 Check::DependentsOnly(selectors(dependents)),
             ),
@@ -204,6 +219,7 @@ impl RuleSpec {
         Rule {
             name,
             description,
+            platform,
             crates: selectors(crates),
             check,
         }
@@ -285,6 +301,7 @@ mod tests {
         ("sleip-index", "sleip/index"),
         ("sleip-resolver", "sleip/resolver"),
         ("lokyr-app", "crates/app"),
+        ("lokyr-app-core", "crates/app-core"),
         ("lokyr-bench", "tools/bench"),
         ("lokyr-core-actions", "plugins/core-actions"),
         ("lokyr-differential", "tools/differential"),
@@ -320,12 +337,15 @@ mod tests {
         ("hyper", "tokio"),
         ("reqwest", "hyper"),
         ("reqwest", "tokio"),
-        ("lokyr-app", "lokyr-core-actions"),
+        ("lokyr-app", "lokyr-app-core"),
         ("lokyr-app", "lokyr-font-coretext"),
         ("lokyr-app", "lokyr-kernel"),
         ("lokyr-app", "lokyr-platform-macos"),
         ("lokyr-app", "lokyr-plugin-host-luau"),
         ("lokyr-app", "lokyr-render-metal"),
+        ("lokyr-app-core", "lokyr-core-actions"),
+        ("lokyr-app-core", "lokyr-kernel"),
+        ("lokyr-app-core", "lokyr-render-core"),
         ("lokyr-core-actions", "lokyr-plugin-sdk"),
         ("lokyr-differential", "alacritty_terminal"),
         ("lokyr-differential", "lokyr-vt-core"),
@@ -432,6 +452,10 @@ mod tests {
             ("app-without-network", ("lokyr-kernel", "tokio")),
             ("portable-without-macos", ("lokyr-session", "objc2")),
             (
+                "backends-only-in-app",
+                ("lokyr-app-core", "lokyr-render-metal"),
+            ),
+            (
                 "alacritty-only-in-the-differential-tests",
                 ("lokyr-vt-core", "alacritty_terminal"),
             ),
@@ -464,8 +488,37 @@ mod tests {
             .collect();
         assert_eq!(
             messages,
-            ["`lokyr-app` depends on `tokio`: lokyr-app → lokyr-kernel → tokio"]
+            [
+                "`lokyr-app` depends on `tokio`: lokyr-app → lokyr-kernel → tokio",
+                "`lokyr-app-core` depends on `tokio`: lokyr-app-core → lokyr-kernel → tokio",
+            ]
         );
+    }
+
+    #[test]
+    fn a_rule_names_the_platform_of_its_dependencies() {
+        let text = r#"
+            [[rule]]
+            name = "linux"
+            kind = "forbid"
+            description = "Checked against Linux's dependencies."
+            platform = "x86_64-unknown-linux-gnu"
+            crates = ["crates/vt-core"]
+            forbidden = ["objc2"]
+
+            [[rule]]
+            name = "every"
+            kind = "forbid"
+            description = "Checked against every platform's."
+            crates = ["crates/vt-core"]
+            forbidden = ["objc2"]
+        "#;
+        let rules = parse(text).expect("the rules parse");
+        assert_eq!(
+            rules[0].platform.as_deref(),
+            Some("x86_64-unknown-linux-gnu")
+        );
+        assert_eq!(rules[1].platform, None);
     }
 
     #[test]

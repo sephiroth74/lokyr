@@ -1,0 +1,36 @@
+# The image of CI's Linux job on the Mac, for Apple's `container`: Ubuntu of
+# the release that CI's `ubuntu-latest` runs, its C and C++ compilers,
+# ncurses' `tic` of the terminfo's tests, git of the checks that list the
+# repository's files, Python 3, as the runner has it, of the tests of the
+# scripts that the app opens, and no zsh, as the runner has none, the
+# cross compilers for x86_64 of `just check-linux`,
+# the toolchain of rust-toolchain.toml and the tools of CI's versions.
+FROM docker.io/library/ubuntu:24.04
+
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends \
+        ca-certificates curl git build-essential pkg-config ncurses-bin python3 \
+        gcc-x86-64-linux-gnu g++-x86-64-linux-gnu libc6-dev-amd64-cross \
+    && rm -rf /var/lib/apt/lists/* \
+    && git config --system --add safe.directory '*'
+
+ENV RUSTUP_HOME=/usr/local/rustup \
+    CARGO_HOME=/usr/local/cargo \
+    PATH=/usr/local/cargo/bin:$PATH \
+    CC_x86_64_unknown_linux_gnu=x86_64-linux-gnu-gcc \
+    CXX_x86_64_unknown_linux_gnu=x86_64-linux-gnu-g++ \
+    AR_x86_64_unknown_linux_gnu=x86_64-linux-gnu-ar \
+    CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=x86_64-linux-gnu-gcc
+
+# The toolchain that rust-toolchain.toml pins, which `just linux-image`
+# passes, with its components and targets, so that rustup, which reads the
+# file in the checkout, has nothing to download as a container starts.
+ARG TOOLCHAIN
+RUN curl --proto '=https' --tlsv1.2 --silent --show-error --fail https://sh.rustup.rs \
+        | sh -s -- -y --profile minimal --default-toolchain "$TOOLCHAIN" \
+    && rustup component add rustfmt clippy \
+    && rustup target add x86_64-unknown-linux-gnu aarch64-apple-darwin
+
+# The versions of CI's install-action.
+RUN cargo install --locked just@1.58.0 cargo-deny@0.20.2 \
+    && rm -rf "$CARGO_HOME/registry"

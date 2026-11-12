@@ -8,7 +8,7 @@ const MIB: usize = 1024 * KIB;
 /// Past its limit, a string ends as [`StringEnd::TooLong`], and the parser
 /// consumes the rest of it without buffering it. The default is 64 KiB for
 /// every string, except OSC 52, which carries clipboard contents and gets
-/// 1 MiB.
+/// 1 MiB, and OSC 1337, which carries images and gets 16 MiB.
 ///
 /// The limit of an OSC string can depend on its number, as `52` opens
 /// `52;c;...`. Until the parser has read that number, the string has the
@@ -41,7 +41,7 @@ impl Default for Limits {
     fn default() -> Self {
         Self {
             osc: 64 * KIB,
-            osc_commands: vec![(52, MIB)],
+            osc_commands: vec![(52, MIB), (1337, 16 * MIB)],
             dcs: 64 * KIB,
             apc: 64 * KIB,
         }
