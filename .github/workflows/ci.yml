@@ -100,12 +100,10 @@ jobs:
     # The oldest macOS that Lokyr supports, pinned so that the job does not
     # move along with macos-latest.
     runs-on: macos-26
-    # A run takes 3 to 4 minutes with its cache; GitHub bills a macOS
-    # runner's minute as ten of the account's, so that a test that hangs
-    # costs no more than this, which leaves a run without its cache, whose
-    # build is longer, the time to end and save one, as a job that times
-    # out saves none.
-    timeout-minutes: 15
+    # A run takes 3 to 4 minutes with its cache; a run without it builds
+    # everything, which takes longer, and must end to save one, as a job
+    # that times out saves none.
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -146,8 +144,9 @@ jobs:
     # differential tests, and the tasks', as terminfo's, with Ubuntu's tic.
     name: linux
     runs-on: ubuntu-latest
-    # About 3 minutes with its cache.
-    timeout-minutes: 20
+    # About 3 minutes with its cache; a run without it builds everything,
+    # and must end to save one.
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
