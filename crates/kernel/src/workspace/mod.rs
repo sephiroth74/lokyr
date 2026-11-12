@@ -208,7 +208,7 @@ pub struct Tab {
 
 /// What a tab bar marks a tab of: what came in it while it did not show,
 /// what its programs tell, and the keyboard's protected input.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Marks {
     /// Output came in it since its window last showed it, while it did not
     /// show.
@@ -233,6 +233,9 @@ pub struct Marks {
     pub secure: bool,
     /// The state of an AI agent that runs in it.
     pub agent: Option<sdk::AgentState>,
+    /// The message of the notification by which an agent of it that waits
+    /// asked for the user, as "Claude needs your permission to use Bash".
+    pub agent_message: Option<String>,
 }
 
 impl Tab {
@@ -285,12 +288,12 @@ impl Tab {
     /// What a read of the tabs tells of it that a `tab-changed` tells the
     /// change of: its label and its color.
     fn look(&self) -> Look {
-        (self.label().to_owned(), self.color(), self.marks)
+        (self.label().to_owned(), self.color(), self.marks.clone())
     }
 
     /// What a tab bar marks it of.
     pub fn marks(&self) -> Marks {
-        self.marks
+        self.marks.clone()
     }
 
     /// The layout of its panes.
@@ -493,10 +496,11 @@ impl Workspace {
         self.events.push(Event::Changed(event));
         if let Some(tab) = progressed {
             let progress = self.tab_progress(tab);
-            let agent = self.tab_agent(tab);
+            let (agent, message) = self.tab_agent(tab);
             self.mark(tab, |marks| {
                 marks.progress = progress;
                 marks.agent = agent;
+                marks.agent_message = message;
             });
         }
     }
@@ -648,11 +652,15 @@ impl Workspace {
             // by a notification or its bell.
             let printed = pane.printing().then(|| pane.printed_at()).flatten();
             let busy = pane.progress_runs();
-            let told = happened
-                .events
-                .iter()
-                .any(|event| matches!(event, terminal::Event::Notification { .. }));
-            let asked = happened.bell || told;
+            // The last notification's message, its text or its title.
+            let told = happened.events.iter().rev().find_map(|event| match event {
+                terminal::Event::Notification { title, body } => {
+                    Some(if body.trim().is_empty() { title } else { body })
+                }
+                _ => None,
+            });
+            let asked = happened.bell || told.is_some();
+            let told = told.map(|message| message.trim().to_owned());
             // The commands' times, from the look that found a command's
             // start to the one that finds its end, without a timer.
             let mut took = Vec::new();
@@ -729,7 +737,7 @@ impl Workspace {
             if retitled {
                 self.look_at_headers(&[id]);
             }
-            self.change_agent(id, told, |agent| {
+            self.change_agent(id, told.is_some(), |agent| {
                 if let Some(at) = printed {
                     agent.worked(at);
                 }
@@ -737,7 +745,7 @@ impl Workspace {
                     agent.worked(now);
                 }
                 if asked {
-                    agent.asked_for_user();
+                    agent.asked_for_user(told.as_deref());
                 }
             });
             // Its tab's marks: its progress, whether its program prints,
@@ -1222,23 +1230,43 @@ impl Workspace {
         for pane in panes {
             self.change_agent(pane, false, Agent::seen);
         }
-        let agent = self.tab_agent(tab);
+        let (agent, message) = self.tab_agent(tab);
         self.mark(tab, |marks| {
             marks.activity = false;
             marks.bell = false;
             marks.agent = agent;
+            marks.agent_message = message;
         });
     }
 
     /// The state that `tab` shows of its panes' agents, the most urgent.
-    fn tab_agent(&self, tab: TabId) -> Option<sdk::AgentState> {
-        let tab = self.tabs.get(&tab)?;
-        agent::most_urgent(tab.layout.panes().into_iter().map(|pane| {
-            self.panes
-                .get(&pane)
-                .and_then(Pane::agent)
-                .and_then(Agent::state)
-        }))
+    /// and the message of the first of its panes' agents that waits of
+    /// one.
+    fn tab_agent(&self, tab: TabId) -> (Option<sdk::AgentState>, Option<String>) {
+        let Some(tab) = self.tabs.get(&tab) else {
+            return (None, None);
+        };
+        let agents: Vec<&Agent> = tab
+            .layout
+            .panes()
+            .into_iter()
+            .filter_map(|pane| self.panes.get(&pane)?.agent())
+            .collect();
+        let state = agent::most_urgent(agents.iter().map(|agent| agent.state()));
+        let message = agents
+            .iter()
+            .find_map(|agent| agent.message())
+            .map(str::to_owned);
+        (state, message)
+    }
+
+    /// Marks `tab` of its panes' agents' state and message.
+    fn mark_agent(&mut self, tab: TabId) {
+        let (agent, message) = self.tab_agent(tab);
+        self.mark(tab, |marks| {
+            marks.agent = agent;
+            marks.agent_message = message;
+        });
     }
 
     /// Changes the agent of `pane`, if it has one, as `change` does: a
@@ -1253,9 +1281,15 @@ impl Workspace {
             return;
         };
         let before = agent.state();
+        let message = agent.message().map(str::to_owned);
         change(agent);
         let now = agent.state();
         if before == now {
+            if agent.message() != message.as_deref()
+                && let Some(tab) = self.tab_of.get(&pane).copied()
+            {
+                self.mark_agent(tab);
+            }
             return;
         }
         let name = agent.name().to_owned();
@@ -1267,8 +1301,7 @@ impl Workspace {
             told: told && now == Some(sdk::AgentState::Waiting),
         });
         if let Some(tab) = self.tab_of.get(&pane).copied() {
-            let agent = self.tab_agent(tab);
-            self.mark(tab, |marks| marks.agent = agent);
+            self.mark_agent(tab);
         }
     }
 
@@ -1300,8 +1333,7 @@ impl Workspace {
             });
         }
         if let Some(tab) = self.tab_of.get(&pane).copied() {
-            let agent = self.tab_agent(tab);
-            self.mark(tab, |marks| marks.agent = agent);
+            self.mark_agent(tab);
         }
         true
     }

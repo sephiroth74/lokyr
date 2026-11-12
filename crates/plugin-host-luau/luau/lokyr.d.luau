@@ -774,6 +774,7 @@ export type TabInfo = {
     alternate: boolean?,
     secure: boolean?,
     agent: AgentState?,
+    agent_message: string?,
 }
 
 export type TabProgress = {

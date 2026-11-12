@@ -25,7 +25,7 @@ tip-font-size = Press { $keys } to make the text bigger, in every window.
 tip-next-agent = Press { $keys } to go to the next AI agent that waits for you, in any window.
 
 # The tips of features that need no keys.
-tip-agents = A tab marks the AI agent in it, as Claude Code: a sparkle while it works, a dot while it waits for you, a tick once it is done.
+tip-agents = A tab marks the AI agent in it, as Claude Code: a sparkle while it works, a dot while it waits for you, its request in the tab's tooltip, a tick once it is done.
 tip-links = Hold ⌘ over a link to underline it, then click to open it.
 tip-tab-drag = Drag a tab out of the bar for a window of its own, or onto a pane to split beside it.
 tip-tab-menu = Right-click a tab to give it a color, or double-click it to rename it.

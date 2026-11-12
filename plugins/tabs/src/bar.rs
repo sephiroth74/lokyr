@@ -346,7 +346,7 @@ pub(crate) fn bar_with(
             },
             keys: None,
         };
-        return Some(title(&shown, texts));
+        return Some(told(title(&shown, texts), shown.tab));
     }
     let shown: Vec<Shown<'_>> = tabs
         .iter()
@@ -428,7 +428,7 @@ fn pills(tabs: &[Shown<'_>], window: Option<&str>, (settings, texts): BarOf<'_>)
     // Of the row's room, which scrolls past its tabs' least widths.
     let track = Node::scroll(
         tabs.iter()
-            .map(|tab| pill(tab, (settings, texts)))
+            .map(|tab| told(pill(tab, (settings, texts)), tab.tab))
             .collect(),
     )
     .key(TRACK_KEY)
@@ -578,7 +578,7 @@ fn cells(tabs: &[Shown<'_>], window: Option<&str>, (settings, texts): BarOf<'_>)
         if at > 0 {
             strip.push(Node::separator());
         }
-        strip.push(cell(tab, top, (settings, texts)));
+        strip.push(told(cell(tab, top, (settings, texts)), tab.tab));
     }
     children.push(
         Node::scroll(strip)
@@ -742,7 +742,10 @@ fn lined(content: Node, top: bool, lined: bool, layout: Layout) -> Node {
 /// `window`, after them.
 fn column(tabs: &[Shown<'_>], window: Option<&str>, (settings, texts): BarOf<'_>) -> Node {
     let seamless = settings.look == Look::Seamless;
-    let mut rows: Vec<Node> = tabs.iter().map(|tab| row(tab, (settings, texts))).collect();
+    let mut rows: Vec<Node> = tabs
+        .iter()
+        .map(|tab| told(row(tab, (settings, texts)), tab.tab))
+        .collect();
     rows.push(
         Node::container(vec![Node::icon("add")])
             .key(NEW_KEY)
@@ -975,6 +978,23 @@ enum ProgressAt {
     Ring,
 }
 
+/// The message by which `tab`'s agent that waits asked for the user, if
+/// it told one.
+fn waiting_message(tab: &TabInfo) -> Option<&str> {
+    tab.agent_message
+        .as_deref()
+        .filter(|_| tab.agent == Some(AgentState::Waiting))
+}
+
+/// `node`, of `tab`, of the message of its agent that waits as its
+/// tooltip, as the tab tells no more than its mark.
+fn told(node: Node, tab: &TabInfo) -> Node {
+    match waiting_message(tab) {
+        Some(message) => node.tooltip(message),
+        None => node,
+    }
+}
+
 /// The marks of `tab` before its title, of `texts` to accessibility: the
 /// protected input's lock, its agent's state, its bell, and its program's
 /// progress in a ring, where it shows `at` a ring; or a spinner of a
@@ -992,7 +1012,11 @@ fn marks(tab: &TabInfo, texts: &MarkTexts, at: ProgressAt) -> Vec<Node> {
             AgentState::Waiting => ("info", "progress.paused", &texts.waiting),
             AgentState::Done => ("check", "text.secondary", &texts.done),
         };
-        marks.push(Node::icon(icon).label(label.as_str()).style(Style {
+        let label = match waiting_message(tab) {
+            Some(message) => format!("{label}: {message}"),
+            None => label.clone(),
+        };
+        marks.push(Node::icon(icon).label(label).style(Style {
             color: Some(Token::from(color)),
             ..Style::default()
         }));

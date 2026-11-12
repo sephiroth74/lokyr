@@ -768,3 +768,58 @@ fn a_tab_runs_the_program_of_a_pane_that_has_not_the_keyboard() {
     assert!(app.workspace.tab(tab).unwrap().marks().running);
     assert!(!app.workspace.pane(b).unwrap().runs_program());
 }
+
+#[test]
+fn a_pane_whose_agent_waits_is_ringed_in_a_tab_of_several() {
+    let config = Config::parse(
+        "[agents]\nprograms = [\"perl\"]\n",
+        std::path::Path::new("config.toml"),
+    )
+    .unwrap();
+    let agent = shell(concat!(
+        "exec perl -e '$| = 1; print \"ready-b\\n\"; select(undef, undef, undef, 0.5); ",
+        "print \"\\e]9;need you\\a\"; sleep 30'",
+    ));
+    let (mut fake, mut app, window, a, b) = two_panes_of(config, echoing("a"), &agent, true);
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while app
+        .workspace
+        .pane(b)
+        .and_then(Pane::agent)
+        .and_then(lokyr_kernel::workspace::Agent::state)
+        != Some(lokyr_kernel::plugins::host::AgentState::Waiting)
+    {
+        assert!(Instant::now() < deadline, "no agent waits");
+        app.collect(&mut fake, &[b]);
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    // Whether a pane's room has a thin side at its top.
+    let ringed = |app: &App, pane: PaneId| {
+        let state = &app.windows[&window];
+        let room = state
+            .views
+            .iter()
+            .find(|view| view.pane == pane)
+            .map(|view| view.rect)
+            .unwrap();
+        state
+            .shown
+            .as_ref()
+            .expect("a frame")
+            .items
+            .iter()
+            .any(|item| {
+                matches!(item, Item::Rect { rect, .. }
+                if (rect.x, rect.y, rect.width) == (room.x, room.y, room.width)
+                    && (1..=8).contains(&rect.height))
+            })
+    };
+    fake.send(&mut app, window, WindowEvent::Frame);
+    assert!(ringed(&app, b));
+    assert!(!ringed(&app, a));
+    // Answered: the ring goes.
+    app.workspace.focus_pane(b);
+    fake.send(&mut app, window, key());
+    fake.send(&mut app, window, WindowEvent::Frame);
+    assert!(!ringed(&app, b));
+}

@@ -80,7 +80,8 @@ impl<B: Backend> App<B> {
     /// is done, tells it in a notification while its window has no focus,
     /// as `[agents]` says, of its tab's title, which a click brings
     /// forward; one that asked for the user by a notification of its own,
-    /// `told`, which shows as a program's, is not told twice.
+    /// `told`, which shows as a program's, is not told twice. A frame
+    /// draws the ring round its pane as it starts or stops waiting.
     pub(super) fn agent_changed(
         &mut self,
         platform: &mut dyn Platform,
@@ -90,6 +91,12 @@ impl<B: Backend> App<B> {
         told: bool,
     ) {
         self.show_badge(platform);
+        // The ring round its pane, in a tab of several.
+        if (before == Some(AgentState::Waiting)) != (now == Some(AgentState::Waiting))
+            && let Some(window) = self.window_of(pane)
+        {
+            platform.request_frame(window);
+        }
         if !self.config.agents.notify {
             return;
         }

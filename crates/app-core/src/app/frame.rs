@@ -573,6 +573,22 @@ impl<B: Backend> App<B> {
         let mut viewports = Vec::new();
         // The half of a pane that a tab's drag lights up.
         let lit = self.lit_half(window);
+        // The rooms of the panes whose agents wait, in a tab of several.
+        let waiting: Vec<Rect> = if views.len() > 1 {
+            views
+                .iter()
+                .filter(|view| {
+                    self.workspace
+                        .pane(view.pane)
+                        .and_then(Pane::agent)
+                        .and_then(workspace::Agent::state)
+                        == Some(lokyr_kernel::plugins::host::AgentState::Waiting)
+                })
+                .map(|view| view.rect)
+                .collect()
+        } else {
+            Vec::new()
+        };
         let Some(state) = self.windows.get_mut(&window) else {
             return;
         };
@@ -1045,6 +1061,17 @@ impl<B: Backend> App<B> {
         let bar_shapes = super::scrollbars::shapes(&state.bars, tokens, size.scale);
         if !bar_shapes.is_empty() {
             items.push(Item::Shapes(bar_shapes));
+        }
+        // A ring round each pane whose agent waits for the user, of its
+        // tab's mark's color.
+        if let Some(color) = tokens.get("progress.paused") {
+            let width = (RING * size.scale).round().max(1.0) as u32;
+            items.extend(
+                waiting
+                    .iter()
+                    .flat_map(|&room| ring(room, width))
+                    .map(|rect| Item::Rect { rect, color }),
+            );
         }
         // The half of a pane that a tab dragged over it lights up.
         if let (Some(half), Some(color)) = (lit, tokens.get("pane.drop")) {
@@ -1610,6 +1637,39 @@ impl Gap {
 /// `cell`, its width or its height, so that its grid fills it, and the
 /// second the rest, past the gap; `zoomed`, while one is, takes the whole
 /// area. In the layout's order.
+/// The width, in points, of the ring round a pane whose agent waits.
+const RING: f64 = 2.0;
+
+/// The four sides of a ring of `width` pixels inside `room`.
+pub(super) fn ring(room: Rect, width: u32) -> [Rect; 4] {
+    let width = width.min(room.width / 2).min(room.height / 2);
+    let side = i32::try_from(width).unwrap_or(0);
+    let middle = room.height.saturating_sub(2 * width);
+    [
+        Rect {
+            height: width,
+            ..room
+        },
+        Rect {
+            y: room.y + i32::try_from(room.height).unwrap_or(i32::MAX) - side,
+            height: width,
+            ..room
+        },
+        Rect {
+            y: room.y + side,
+            width,
+            height: middle,
+            ..room
+        },
+        Rect {
+            x: room.x + i32::try_from(room.width).unwrap_or(i32::MAX) - side,
+            y: room.y + side,
+            width,
+            height: middle,
+        },
+    ]
+}
+
 pub(super) fn pane_rects(
     layout: &Layout,
     zoomed: Option<PaneId>,

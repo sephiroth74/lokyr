@@ -1316,6 +1316,7 @@ fn bar_tabs() -> Vec<TabInfo> {
         alternate: false,
         secure: false,
         agent: None,
+        agent_message: None,
     };
     let mut colored = tab(1, "lokyr — vim", false);
     colored.color = Some(Color::Rgb(0x3a, 0x7b, 0xe6));
@@ -1430,6 +1431,7 @@ impl BarTabs {
                             alternate: false,
                             secure: false,
                             agent: None,
+                            agent_message: None,
                         }
                     })
                     .collect();

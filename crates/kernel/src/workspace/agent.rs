@@ -24,6 +24,9 @@ use lokyr_plugin_sdk::host::AgentState;
 /// is done, unless the config gives another.
 pub const DONE_AFTER: Duration = Duration::from_secs(3);
 
+/// The characters of an agent's message that it keeps, its start.
+pub const MESSAGE: usize = 200;
+
 /// The agents' settings, as the config gives them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct AgentSettings {
@@ -49,6 +52,9 @@ pub struct Agent {
     /// Whether the user typed into its pane since it started, so that it
     /// had something to do.
     asked: bool,
+    /// The message of the notification by which it asked for the user,
+    /// while it waits.
+    message: Option<String>,
 }
 
 impl Agent {
@@ -60,6 +66,7 @@ impl Agent {
             state: None,
             latest: None,
             asked: false,
+            message: None,
         }
     }
 
@@ -74,6 +81,13 @@ impl Agent {
         self.state
     }
 
+    /// The message of the notification by which it asked for the user, as
+    /// "Claude needs your permission to use Bash", while it waits: none of
+    /// its bell alone.
+    pub fn message(&self) -> Option<&str> {
+        self.message.as_deref()
+    }
+
     /// A sign of its work at `at`: output of its own, a progress that
     /// runs, its title's spinner; one no later than the latest tells
     /// nothing new. Waiting holds until the user answers.
@@ -86,15 +100,25 @@ impl Agent {
         self.state = Some(AgentState::Working);
     }
 
-    /// It asked for the user, by a notification or its bell.
-    pub fn asked_for_user(&mut self) {
+    /// It asked for the user, by a notification of `message`, which takes
+    /// the place of an earlier one's, or by its bell, which keeps it.
+    pub fn asked_for_user(&mut self, message: Option<&str>) {
         self.state = Some(AgentState::Waiting);
+        if let Some(message) = message.filter(|message| !message.is_empty()) {
+            let kept: String = message
+                .chars()
+                .filter(|character| !character.is_control())
+                .take(MESSAGE)
+                .collect();
+            self.message = Some(kept);
+        }
     }
 
     /// The user typed into its pane: what it waited for is answered, and
     /// what it did is seen; it works on.
     pub fn typed(&mut self) {
         self.asked = true;
+        self.message = None;
         if matches!(self.state, Some(AgentState::Waiting | AgentState::Done)) {
             self.state = None;
         }
@@ -219,7 +243,7 @@ mod tests {
         let mut agent = Agent::new("codex");
         agent.typed();
         agent.worked(start);
-        agent.asked_for_user();
+        agent.asked_for_user(None);
         assert_eq!(agent.state(), Some(AgentState::Waiting));
         assert_eq!(agent.due(SETTINGS), None);
         // Its prompt's redraw changes nothing, nor its time.
@@ -229,11 +253,38 @@ mod tests {
         // Its tab shown: it still waits.
         agent.seen();
         assert_eq!(agent.state(), Some(AgentState::Waiting));
-        // Answered: it works on.
+        // Answered: it works on, its message gone.
         agent.typed();
-        assert_eq!(agent.state(), None);
+        assert_eq!((agent.state(), agent.message()), (None, None));
         agent.worked(start + Duration::from_secs(61));
         assert_eq!(agent.state(), Some(AgentState::Working));
+    }
+
+    #[test]
+    fn an_agent_that_waits_keeps_its_last_message() {
+        let mut agent = Agent::new("claude");
+        assert_eq!(agent.message(), None);
+        agent.asked_for_user(Some("Claude needs your permission to use Bash"));
+        assert_eq!(
+            agent.message(),
+            Some("Claude needs your permission to use Bash")
+        );
+        // Its bell keeps it; another notification takes its place.
+        agent.asked_for_user(None);
+        assert_eq!(
+            agent.message(),
+            Some("Claude needs your permission to use Bash")
+        );
+        agent.asked_for_user(Some("Claude is waiting\u{7} for your input"));
+        assert_eq!(agent.message(), Some("Claude is waiting for your input"));
+        // Its start alone, of no control character.
+        agent.asked_for_user(Some(&"x".repeat(MESSAGE + 10)));
+        assert_eq!(agent.message().map(str::len), Some(MESSAGE));
+        // Seen as its tab shows, it still waits, of its message.
+        agent.seen();
+        assert!(agent.message().is_some());
+        agent.typed();
+        assert_eq!(agent.message(), None);
     }
 
     #[test]

@@ -244,6 +244,12 @@ pub struct TabInfo {
     /// it tells the program that runs; `None` to the others.
     #[serde(default)]
     pub agent: Option<AgentState>,
+    /// The message of the notification by which an AI agent of its panes
+    /// that waits asked for the user, as "Claude needs your permission to
+    /// use Bash", 200 characters at most, to a plugin of `process-read`;
+    /// `None` to the others, and of an agent that rang its bell alone.
+    #[serde(default)]
+    pub agent_message: Option<String>,
 }
 
 /// The progress of a task that a program tells, as OSC 9;4 does.

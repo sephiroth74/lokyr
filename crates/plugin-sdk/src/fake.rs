@@ -330,7 +330,7 @@ type Look = (String, Option<Color>, TabMarks);
 
 /// What a tab bar marks a tab of, as a read of the tabs tells it, which a
 /// test gives a tab of the fake host.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct TabMarks {
     /// Output came while it did not show.
     pub activity: bool,
@@ -348,6 +348,8 @@ pub struct TabMarks {
     pub secure: bool,
     /// The state of an AI agent that runs in it.
     pub agent: Option<host::AgentState>,
+    /// The message by which an agent of it that waits asked for the user.
+    pub agent_message: Option<String>,
 }
 
 /// What a tab's leaving did to its window, which is told after the tab's
@@ -1649,7 +1651,7 @@ impl FakeHost {
     /// title, its color and its marks.
     fn look(&self, id: TabId) -> Option<Look> {
         let tab = self.tabs.get(&id)?;
-        Some((self.tab_title(tab), tab.color, tab.marks))
+        Some((self.tab_title(tab), tab.color, tab.marks.clone()))
     }
 
     /// Owes `tab-changed` of `id` if its look is another than `before`.
@@ -1664,7 +1666,7 @@ impl FakeHost {
     fn tab_info(&self, id: TabId, reads: bool) -> Option<TabInfo> {
         let tab = self.tabs.get(&id)?;
         let window = self.windows.get(&tab.window)?;
-        let marks = tab.marks;
+        let marks = &tab.marks;
         Some(TabInfo {
             id,
             window: tab.window,
@@ -1682,6 +1684,7 @@ impl FakeHost {
             alternate: marks.alternate && reads,
             secure: marks.secure,
             agent: marks.agent.filter(|_| reads),
+            agent_message: marks.agent_message.clone().filter(|_| reads),
         })
     }
 

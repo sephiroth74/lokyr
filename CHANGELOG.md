@@ -12,6 +12,7 @@ from 1.0.0; before it, a minor version may change what a previous one did.
 
 - AI agents on their tabs: a tab running Claude Code, Codex, Gemini CLI, Aider or another agent that `[agents] programs` lists shows whether the agent is working, waiting for you, or done with what you asked.
 - A notification tells when an agent waits for you or is done while its window has no focus, and the Dock's icon counts the agents that wait, as `[agents] notify` and `dock-badge` say.
+- An agent that waits for you tells what it asked in its tab's tooltip, as "Claude needs your permission to use Bash", and in a tab of several panes a ring goes round the pane that waits.
 - Window › Go to Next Agent, ⌥⌘A, brings forward the next agent that waits for you, or is done, or works, across every window.
 - Quick tips for the agents and for Go to Next Agent.
 

@@ -5976,6 +5976,7 @@ fn tab_info(workspace: &Workspace, tab: &crate::workspace::Tab, reads: bool) -> 
         alternate: marks.alternate && reads,
         secure: marks.secure,
         agent: marks.agent.filter(|_| reads),
+        agent_message: marks.agent_message.filter(|_| reads),
     }
 }
 

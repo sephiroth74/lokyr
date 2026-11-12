@@ -268,6 +268,7 @@ type TabInfo = {
     alternate: boolean, -- of `process-read`: its active pane's program shows the alternate screen, as vim's or htop's
     secure: boolean, -- the keyboard's protected input is on for it, as its window has the focus and shows it
     agent: ("working" | "waiting" | "done")?, -- of `process-read`: the state of an AI agent that runs in one of its panes, the most urgent of theirs: working while it prints, tells a progress or turns its title's spinner; waiting once it asks for the user, by a notification or its bell, until the user types into its pane; done once quiet after a request
+    agent_message: string?, -- of `process-read`: the message of the notification by which an agent of its panes that waits asked for the user, as "Claude needs your permission to use Bash", 200 characters at most; none of a bell alone
 }
 
 -- A tab's layout: a pane, or a split of two layouts, whose ratio is the

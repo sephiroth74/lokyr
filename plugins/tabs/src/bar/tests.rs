@@ -26,6 +26,7 @@ fn tab(id: u64, title: &str, active: bool) -> TabInfo {
         alternate: false,
         secure: false,
         agent: None,
+        agent_message: None,
     }
 }
 
@@ -522,6 +523,47 @@ fn a_tab_marks_what_came_while_it_did_not_show_what_runs_and_its_program_s_progr
             assert_eq!(of(8), ["Running"], "{place}");
         }
     }
+}
+
+#[test]
+fn an_agent_that_waits_tells_its_message_in_its_tab_s_tooltip() {
+    let message = "Claude needs your permission to use Bash";
+    let waiting = TabInfo {
+        agent: Some(AgentState::Waiting),
+        agent_message: Some(message.to_owned()),
+        ..tab(1, "claude", false)
+    };
+    // A message left of a state that no longer waits tells nothing.
+    let working = TabInfo {
+        agent: Some(AgentState::Working),
+        agent_message: Some(message.to_owned()),
+        ..tab(2, "codex", true)
+    };
+    let tabs = [waiting.clone(), working];
+    for style in ["standard", "unified", "seamless"] {
+        for position in ["top", "left"] {
+            let text = |value: &str| Data::Text(value.to_owned());
+            let settings = Settings::of(&config(&[
+                ("style", text(style)),
+                ("position", text(position)),
+                ("close-button", text("never")),
+            ]));
+            let bar = bar(&tabs, &[], None, &settings).expect("a bar");
+            let of = |id: u64| keyed(&bar, &tab_key(id)).expect("the tab");
+            let place = format!("{style} at the {position}");
+            assert_eq!(of(1).tooltip.as_deref(), Some(message), "{place}");
+            assert_eq!(
+                marked(of(1)),
+                [format!("Agent Waiting: {message}")],
+                "{place}"
+            );
+            assert_eq!(of(2).tooltip, None, "{place}");
+            assert_eq!(marked(of(2)), ["Agent Working"], "{place}");
+        }
+    }
+    // A single tab's title too.
+    let title = bar(&[waiting], &[], None, &Settings::default()).expect("a title");
+    assert_eq!(title.tooltip.as_deref(), Some(message));
 }
 
 #[test]

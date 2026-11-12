@@ -1272,7 +1272,7 @@ mod told {
 fn collect_marks(
     workspace: &mut Workspace,
     tab: TabId,
-    done: impl Fn(Marks) -> bool,
+    done: impl Fn(&Marks) -> bool,
 ) -> Vec<Event> {
     let start = Instant::now();
     let mut events = Vec::new();
@@ -1281,7 +1281,7 @@ fn collect_marks(
         workspace.collect(&ids, Instant::now());
         events.extend(workspace.take_events());
         let marks = workspace.tab(tab).unwrap().marks();
-        if done(marks) {
+        if done(&marks) {
             return events;
         }
         assert!(start.elapsed() < Duration::from_secs(10), "{marks:?}");
@@ -1587,11 +1587,17 @@ fn an_agent_works_is_done_and_waits_as_its_program_and_the_user_tell() {
         "{events:?}"
     );
     assert_eq!(workspace.agents_waiting(), 1);
+    // Its tab tells its message.
+    assert_eq!(
+        workspace.tab(tab).unwrap().marks().agent_message.as_deref(),
+        Some("Claude needs your permission")
+    );
     // Waiting holds, past any time, until the user answers.
     workspace.collect(&[], Instant::now() + Duration::from_secs(60));
     assert_eq!(workspace.tab(tab).unwrap().marks().agent, Some(Waiting));
     workspace.typed(id);
-    assert_eq!(workspace.tab(tab).unwrap().marks().agent, None);
+    let marks = workspace.tab(tab).unwrap().marks();
+    assert_eq!((marks.agent, marks.agent_message), (None, None));
     // Its title's spinner tells its work too.
     workspace.pane(id).unwrap().text("yes\n");
     collect_marks(&mut workspace, tab, |marks| marks.agent == Some(Working));
