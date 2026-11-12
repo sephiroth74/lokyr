@@ -239,7 +239,9 @@ pub struct TabInfo {
     /// Keyboard Entry: while its window has the focus and shows it.
     #[serde(default)]
     pub secure: bool,
-    /// The state of an AI agent that runs in it, if one does.
+    /// The state of an AI agent that runs in one of its panes, the most
+    /// urgent of its panes', if one does, to a plugin of `process-read`, as
+    /// it tells the program that runs; `None` to the others.
     #[serde(default)]
     pub agent: Option<AgentState>,
 }

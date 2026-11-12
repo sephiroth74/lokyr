@@ -1681,7 +1681,7 @@ impl FakeHost {
             running: marks.running && reads,
             alternate: marks.alternate && reads,
             secure: marks.secure,
-            agent: marks.agent,
+            agent: marks.agent.filter(|_| reads),
         })
     }
 

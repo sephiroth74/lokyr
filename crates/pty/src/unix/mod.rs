@@ -282,6 +282,188 @@ impl Pty {
     pub fn foreground_directory(&self) -> Option<PathBuf> {
         working_directory(self.foreground_process_group()?)
     }
+
+    /// The names that the programs in the terminal's foreground go by, as
+    /// a program that runs under another's name is told apart: of each
+    /// process of the foreground's group, the group's first first, then by
+    /// their ids, its executable's file name, its first argument's, as a
+    /// link names it, and, of an interpreter, its script's or its module's,
+    /// as `node /opt/homebrew/bin/gemini` runs `gemini` and `python3 -m
+    /// aider` runs `aider`; each once, empty ones left out. It reads each
+    /// process's arguments, which takes some microseconds a process: a
+    /// look as the foreground's group changes, rather than at each output.
+    pub fn foreground_names(&self) -> Vec<String> {
+        let Some(group) = self.foreground_process_group() else {
+            return Vec::new();
+        };
+        let mut processes: Vec<Process> = terminal_processes(&self.tty)
+            .into_iter()
+            .filter(|process| process.group == group || process.id == group)
+            .collect();
+        processes.sort_by_key(|process| (process.id != group, process.id));
+        let mut names: Vec<String> = Vec::new();
+        for process in processes.into_iter().take(MOST_NAMED) {
+            let arguments = arguments(process.id);
+            let script = is_interpreter(&process.name)
+                .then(|| script_of(&arguments))
+                .flatten();
+            let candidates = [
+                Some(process.name.as_str()),
+                arguments.first().map(String::as_str),
+                script,
+            ];
+            for name in candidates.into_iter().flatten().filter_map(file_name) {
+                if !names.contains(&name) {
+                    names.push(name);
+                }
+            }
+        }
+        names
+    }
+}
+
+/// The most processes of the foreground's group whose names
+/// [`Pty::foreground_names`] reads.
+const MOST_NAMED: usize = 16;
+
+/// The most arguments of a process that [`arguments`] reads: the program's
+/// name, and those of an interpreter before its script's.
+const MOST_ARGUMENTS: usize = 8;
+
+/// The file name of `path`, a program's or a script's, as `gemini` of
+/// `/opt/homebrew/bin/gemini`; none of an empty one.
+fn file_name(path: &str) -> Option<String> {
+    let name = Path::new(path).file_name()?.to_string_lossy().into_owned();
+    (!name.is_empty()).then_some(name)
+}
+
+/// Whether the program `name` runs a script that names what runs, as
+/// `node` or `python3.12`.
+fn is_interpreter(name: &str) -> bool {
+    const INTERPRETERS: [&str; 7] = ["node", "nodejs", "bun", "deno", "python", "ruby", "perl"];
+    INTERPRETERS.iter().any(|interpreter| {
+        name.strip_prefix(interpreter).is_some_and(|rest| {
+            rest.chars()
+                .all(|character| character.is_ascii_digit() || character == '.')
+        })
+    })
+}
+
+/// The script, or the module after `-m`, that an interpreter's `arguments`
+/// run, its own name first: the first argument that is not an option, as
+/// `node --no-warnings /opt/homebrew/bin/gemini` runs the last; a runtime
+/// of subcommands, as `deno run` or `bun run`, the argument after them.
+fn script_of(arguments: &[String]) -> Option<&str> {
+    let mut rest = arguments.iter().skip(1).map(String::as_str);
+    while let Some(argument) = rest.next() {
+        match argument {
+            "-m" => return rest.next(),
+            "run" | "x" => continue,
+            option if option.starts_with('-') => continue,
+            script => return Some(script),
+        }
+    }
+    None
+}
+
+/// The first arguments of the process `pid`, its program's name first, as
+/// it was started, [`MOST_ARGUMENTS`] at most: none of another user's, or
+/// one that ended.
+#[cfg(target_os = "macos")]
+fn arguments(pid: u32) -> Vec<String> {
+    use std::sync::OnceLock;
+
+    // The most bytes of a process's arguments and environment, which the
+    // system bounds.
+    static MOST: OnceLock<usize> = OnceLock::new();
+    let most = *MOST.get_or_init(|| {
+        let mut name = [libc::CTL_KERN, libc::KERN_ARGMAX];
+        let mut most: libc::c_int = 0;
+        let mut size = std::mem::size_of::<libc::c_int>();
+        // SAFETY: `sysctl` writes at most `size` bytes into `most`, an
+        // integer of that size.
+        let read = unsafe {
+            libc::sysctl(
+                name.as_mut_ptr(),
+                2,
+                (&raw mut most).cast(),
+                &raw mut size,
+                std::ptr::null_mut(),
+                0,
+            )
+        };
+        usize::try_from(most)
+            .ok()
+            .filter(|&most| read == 0 && most > 0)
+            .unwrap_or(1 << 20)
+    });
+    let Ok(pid) = libc::c_int::try_from(pid) else {
+        return Vec::new();
+    };
+    let mut name = [libc::CTL_KERN, libc::KERN_PROCARGS2, pid];
+    let mut buffer = vec![0u8; most];
+    let mut size = buffer.len();
+    // SAFETY: `sysctl` writes at most `size` bytes into `buffer`, of that
+    // size, and sets `size` to how many it wrote.
+    let read = unsafe {
+        libc::sysctl(
+            name.as_mut_ptr(),
+            3,
+            buffer.as_mut_ptr().cast(),
+            &raw mut size,
+            std::ptr::null_mut(),
+            0,
+        )
+    };
+    if read != 0 {
+        return Vec::new();
+    }
+    buffer.truncate(size);
+    parse_procargs(&buffer)
+}
+
+/// The arguments of `KERN_PROCARGS2`'s `buffer`: their count, a native
+/// integer, then the executable's path, the room after it of zeros, and
+/// the arguments, each ended by a zero; [`MOST_ARGUMENTS`] at most.
+#[cfg(any(target_os = "macos", test))]
+fn parse_procargs(buffer: &[u8]) -> Vec<String> {
+    const COUNT: usize = std::mem::size_of::<libc::c_int>();
+    let Some(count) = buffer
+        .get(..COUNT)
+        .and_then(|count| <[u8; COUNT]>::try_from(count).ok())
+        .map(libc::c_int::from_ne_bytes)
+        .and_then(|count| usize::try_from(count).ok())
+    else {
+        return Vec::new();
+    };
+    let rest = &buffer[COUNT..];
+    // Past the executable's path and its zeros.
+    let Some(path_end) = rest.iter().position(|&byte| byte == 0) else {
+        return Vec::new();
+    };
+    let Some(start) = rest[path_end..].iter().position(|&byte| byte != 0) else {
+        return Vec::new();
+    };
+    rest[path_end + start..]
+        .split(|&byte| byte == 0)
+        .take(count.min(MOST_ARGUMENTS))
+        .map(|argument| String::from_utf8_lossy(argument).into_owned())
+        .collect()
+}
+
+/// The first arguments of the process `pid`, its program's name first, as
+/// it was started, [`MOST_ARGUMENTS`] at most, from `/proc`: none of one
+/// that ended.
+#[cfg(not(target_os = "macos"))]
+fn arguments(pid: u32) -> Vec<String> {
+    let Ok(line) = std::fs::read(format!("/proc/{pid}/cmdline")) else {
+        return Vec::new();
+    };
+    line.split(|&byte| byte == 0)
+        .filter(|argument| !argument.is_empty())
+        .take(MOST_ARGUMENTS)
+        .map(|argument| String::from_utf8_lossy(argument).into_owned())
+        .collect()
 }
 
 /// A process of a terminal: its id, its group's and its name.
@@ -1269,6 +1451,67 @@ pub fn host_name() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_process_s_arguments_are_read_past_its_path_and_its_room() {
+        let mut buffer = 3i32.to_ne_bytes().to_vec();
+        buffer.extend_from_slice(b"/opt/homebrew/bin/node\0\0\0\0node\0/opt/homebrew/bin/gemini\0--yolo\0HOME=/Users/x\0");
+        assert_eq!(
+            parse_procargs(&buffer),
+            ["node", "/opt/homebrew/bin/gemini", "--yolo"]
+        );
+        // Cut short, or of nothing.
+        assert!(parse_procargs(&buffer[..2]).is_empty());
+        assert!(parse_procargs(&3i32.to_ne_bytes()).is_empty());
+    }
+
+    #[test]
+    fn an_interpreter_s_script_or_module_names_what_runs() {
+        for name in [
+            "node",
+            "nodejs",
+            "bun",
+            "deno",
+            "python",
+            "python3",
+            "python3.12",
+            "perl5.34",
+        ] {
+            assert!(is_interpreter(name), "{name}");
+        }
+        for name in ["claude", "nodemon", "pythonista", "zsh"] {
+            assert!(!is_interpreter(name), "{name}");
+        }
+        let arguments = |list: &[&str]| {
+            list.iter()
+                .map(|&argument| argument.to_owned())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            script_of(&arguments(&[
+                "node",
+                "--no-warnings",
+                "/opt/homebrew/bin/gemini",
+                "-p"
+            ])),
+            Some("/opt/homebrew/bin/gemini")
+        );
+        assert_eq!(
+            script_of(&arguments(&["python3", "-m", "aider", "--model"])),
+            Some("aider")
+        );
+        assert_eq!(
+            script_of(&arguments(&["deno", "run", "-A", "agent.ts"])),
+            Some("agent.ts")
+        );
+        assert_eq!(script_of(&arguments(&["node"])), None);
+        assert_eq!(
+            file_name("/opt/homebrew/bin/gemini").as_deref(),
+            Some("gemini")
+        );
+        assert_eq!(file_name("codex").as_deref(), Some("codex"));
+        assert_eq!(file_name(""), None);
+    }
 
     /// An attempt that fails with each of `errors`, then opens `/dev/null`,
     /// and counts its calls.

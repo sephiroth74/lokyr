@@ -1533,6 +1533,112 @@ fn a_tab_is_marked_while_its_program_prints_of_its_own_and_not_of_its_input_s_ec
 }
 
 #[test]
+fn an_agent_works_is_done_and_waits_as_its_program_and_the_user_tell() {
+    use sdk::AgentState::{Done, Waiting, Working};
+    let mut workspace = Workspace::new();
+    // An agent's start, a request's work a while after its echo, then a
+    // notification that asks for the user, and the title's spinner.
+    let window = workspace.open_window(pane(concat!(
+        "read line; sleep 0.8; echo working; read line; ",
+        r"printf '\033]9;Claude needs your permission\007'; read line; ",
+        r"sleep 0.8; printf '\033]2;⠋ Fixing\007'; sleep 0.3; ",
+        r"printf '\033]2;⠙ Fixing\007'; read line",
+    )));
+    let tab = workspace.window(window).unwrap().active_tab();
+    let id = workspace.tab(tab).unwrap().active_pane();
+    // As the app finds `claude` in its foreground: of no state yet.
+    assert!(workspace.set_pane_agent(id, Some("claude")));
+    assert_eq!(
+        workspace.pane(id).unwrap().agent().unwrap().name(),
+        "claude"
+    );
+    assert_eq!(workspace.tab(tab).unwrap().marks().agent, None);
+    // Asked, it works.
+    workspace.typed(id);
+    workspace.pane(id).unwrap().text("fix it\n");
+    let events = collect_marks(&mut workspace, tab, |marks| marks.agent == Some(Working));
+    assert!(
+        events.iter().any(|event| matches!(
+            event,
+            Event::Agent { pane, name, before: None, now: Some(Working) } if *pane == id && name == "claude"
+        )),
+        "{events:?}"
+    );
+    // Done once quiet for a while.
+    std::thread::sleep(Duration::from_millis(300));
+    let later = Instant::now() + AgentSettings::default().done_after;
+    workspace.collect(&[], later);
+    assert_eq!(workspace.tab(tab).unwrap().marks().agent, Some(Done));
+    assert_eq!(workspace.agents_waiting(), 0);
+    // Seen as the user types, then a notification asks for the user.
+    workspace.typed(id);
+    assert_eq!(workspace.tab(tab).unwrap().marks().agent, None);
+    workspace.pane(id).unwrap().text("go on\n");
+    collect_marks(&mut workspace, tab, |marks| marks.agent == Some(Waiting));
+    assert_eq!(workspace.agents_waiting(), 1);
+    // Waiting holds, past any time, until the user answers.
+    workspace.collect(&[], Instant::now() + Duration::from_secs(60));
+    assert_eq!(workspace.tab(tab).unwrap().marks().agent, Some(Waiting));
+    workspace.typed(id);
+    assert_eq!(workspace.tab(tab).unwrap().marks().agent, None);
+    // Its title's spinner tells its work too.
+    workspace.pane(id).unwrap().text("yes\n");
+    collect_marks(&mut workspace, tab, |marks| marks.agent == Some(Working));
+    // Gone from the foreground: no agent.
+    workspace.take_events();
+    assert!(workspace.set_pane_agent(id, None));
+    assert_eq!(workspace.tab(tab).unwrap().marks().agent, None);
+    assert!(workspace.take_events().iter().any(|event| matches!(
+        event,
+        Event::Agent {
+            before: Some(Working),
+            now: None,
+            ..
+        }
+    )));
+}
+
+#[test]
+fn a_tab_shows_its_most_urgent_agent_and_its_done_agents_are_seen_as_it_shows() {
+    use sdk::AgentState::{Done, Waiting};
+    let mut workspace = Workspace::new();
+    let first = pane(r"read line; printf '\a'; read line");
+    let first_id = first.id();
+    let window = workspace.open_window(first);
+    let tab = workspace.window(window).unwrap().active_tab();
+    let second = workspace
+        .split(
+            first_id,
+            Direction::Horizontal,
+            pane("read line; sleep 0.8; echo done; read line"),
+            Side::Second,
+        )
+        .unwrap();
+    for (id, name) in [(first_id, "codex"), (second, "gemini")] {
+        assert!(workspace.set_pane_agent(id, Some(name)));
+        workspace.typed(id);
+        workspace.pane(id).unwrap().text("x\n");
+    }
+    // One waits, of its bell, and one is done: the tab shows the first.
+    collect_marks(&mut workspace, tab, |marks| marks.agent == Some(Waiting));
+    std::thread::sleep(Duration::from_millis(1200));
+    workspace.collect(&workspace.pane_ids(), Instant::now());
+    workspace.collect(&[], Instant::now() + Duration::from_secs(4));
+    let state = |workspace: &Workspace, id| workspace.pane(id).unwrap().agent().unwrap().state();
+    assert_eq!(state(&workspace, second), Some(Done));
+    assert_eq!(workspace.tab(tab).unwrap().marks().agent, Some(Waiting));
+    // Another tab, then this one again: done is seen, waiting is not.
+    let other = workspace.open_tab(window, pane("sleep 10"), 1).unwrap();
+    workspace.activate_tab(other);
+    workspace.activate_tab(tab);
+    assert_eq!(state(&workspace, second), None);
+    assert_eq!(state(&workspace, first_id), Some(Waiting));
+    // Out of the tab, its agent goes with its pane.
+    assert!(workspace.close_pane(first_id));
+    assert_eq!(workspace.tab(tab).unwrap().marks().agent, None);
+}
+
+#[test]
 fn a_tab_is_marked_of_the_printing_of_its_active_pane_alone() {
     let mut workspace = Workspace::new();
     let quiet = pane("read line");

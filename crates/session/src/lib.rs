@@ -364,6 +364,18 @@ impl Session {
         self.pty.programs()
     }
 
+    /// The process group in the terminal's foreground, as
+    /// [`Pty::foreground_process_group`] gives it.
+    pub fn foreground_group(&self) -> Option<u32> {
+        self.pty.foreground_process_group()
+    }
+
+    /// The names that the programs in the terminal's foreground go by, as
+    /// [`Pty::foreground_names`] gives them.
+    pub fn foreground_names(&self) -> Vec<String> {
+        self.pty.foreground_names()
+    }
+
     /// The working directory of the program in the terminal's foreground,
     /// as [`Pty::foreground_directory`] gives it.
     pub fn foreground_directory(&self) -> Option<std::path::PathBuf> {

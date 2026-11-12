@@ -5951,8 +5951,8 @@ impl host::Host for Host<'_, '_> {
 }
 
 /// What a read of a window's tabs tells of `tab` of `workspace`, to a plugin
-/// that `reads` the processes or not: their folders and programs, and what
-/// runs, to one that does alone.
+/// that `reads` the processes or not: their folders and programs, what
+/// runs, and its agent, of the program that runs, to one that does alone.
 fn tab_info(workspace: &Workspace, tab: &crate::workspace::Tab, reads: bool) -> host::TabInfo {
     let active = workspace
         .window(tab.window())
@@ -5975,7 +5975,7 @@ fn tab_info(workspace: &Workspace, tab: &crate::workspace::Tab, reads: bool) -> 
         running: marks.running && reads,
         alternate: marks.alternate && reads,
         secure: marks.secure,
-        agent: marks.agent,
+        agent: marks.agent.filter(|_| reads),
     }
 }
 

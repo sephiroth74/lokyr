@@ -18,6 +18,7 @@
 //! [`Workspace::collect`] gathers them, and wait as [`Event`]s until the
 //! embedder takes them.
 
+pub mod agent;
 mod layout;
 mod pane;
 #[cfg(test)]
@@ -32,6 +33,7 @@ use lokyr_plugin_sdk::host as sdk;
 use lokyr_vt_core::page::Rgb;
 use lokyr_vt_core::terminal::{self, ClipboardTarget};
 
+pub use agent::{Agent, AgentSettings};
 pub use layout::{Direction, Edge, Layout, Ratio, Side};
 pub use pane::{
     ANSWER_WAIT, Environment, Exited, Grid, PRINTING, Pane, RESIZE_PACE, Settings, TITLE_DASH,
@@ -344,6 +346,19 @@ pub enum Event {
     /// A pane's program's output ended: the program has, with the
     /// processes that it left.
     Ended(PaneId),
+    /// The state of the AI agent of a pane changed, as its program's work
+    /// and requests tell it: of the agent's program's name, and its state
+    /// before and now.
+    Agent {
+        /// The pane.
+        pane: PaneId,
+        /// The agent's program's name, as the config lists it.
+        name: String,
+        /// Its state before.
+        before: Option<sdk::AgentState>,
+        /// Its state now.
+        now: Option<sdk::AgentState>,
+    },
     /// A command that a pane's shell marked ended, as its terminal tells
     /// it, of its exit status, if the shell told one, and of its time, from
     /// the look at the pane's output that found its start to the one that
@@ -379,6 +394,8 @@ pub struct Workspace {
     /// The panes whose sessions told something within the pace of their
     /// last look, which wait for the next.
     waiting: BTreeSet<PaneId>,
+    /// The agents' settings.
+    agents: AgentSettings,
 }
 
 impl Workspace {
@@ -472,7 +489,11 @@ impl Workspace {
         self.events.push(Event::Changed(event));
         if let Some(tab) = progressed {
             let progress = self.tab_progress(tab);
-            self.mark(tab, |marks| marks.progress = progress);
+            let agent = self.tab_agent(tab);
+            self.mark(tab, |marks| {
+                marks.progress = progress;
+                marks.agent = agent;
+            });
         }
     }
 
@@ -592,6 +613,11 @@ impl Workspace {
                 continue;
             };
             pane.look_at_printing(now);
+            // A title whose spinner turned, which its agent's work tells.
+            let spun = happened
+                .title
+                .as_ref()
+                .is_some_and(|title| agent::spins(&pane.title, title));
             // The pane keeps its program's title and color, for when it
             // takes its tab's keyboard.
             if let Some(title) = &happened.title {
@@ -613,6 +639,16 @@ impl Workspace {
                     progress => Some(progress),
                 };
             }
+            // What its agent did: printed of its own, told a progress that
+            // runs or turned its title's spinner, and asked for the user,
+            // by a notification or its bell.
+            let printed = pane.printing().then(|| pane.printed_at()).flatten();
+            let busy = pane.progress_runs();
+            let asked = happened.bell
+                || happened
+                    .events
+                    .iter()
+                    .any(|event| matches!(event, terminal::Event::Notification { .. }));
             // The commands' times, from the look that found a command's
             // start to the one that finds its end, without a timer.
             let mut took = Vec::new();
@@ -689,6 +725,17 @@ impl Workspace {
             if retitled {
                 self.look_at_headers(&[id]);
             }
+            self.change_agent(id, |agent| {
+                if let Some(at) = printed {
+                    agent.worked(at);
+                }
+                if spun || busy {
+                    agent.worked(now);
+                }
+                if asked {
+                    agent.asked_for_user();
+                }
+            });
             // Its tab's marks: its progress, whether its program prints,
             // and the output and the bell that came while it did not show.
             if let Some(owner) = self.tab_of.get(&id).copied() {
@@ -730,12 +777,42 @@ impl Workspace {
                 self.mark(owner, |marks| marks.printing = printing);
             }
         }
+        // The agents at work whose time is up, done but if they printed
+        // since, which a pane that is not drawn tells no look of, or tell a
+        // progress that runs.
+        let settings = self.agents;
+        let due: Vec<PaneId> = self
+            .panes
+            .values()
+            .filter(|pane| {
+                pane.agent()
+                    .and_then(|agent| agent.due(settings))
+                    .is_some_and(|due| due <= now)
+            })
+            .map(Pane::id)
+            .collect();
+        for id in due {
+            let Some(pane) = self.panes.get(&id) else {
+                continue;
+            };
+            let (printed, busy) = (pane.printed_at(), pane.progress_runs());
+            self.change_agent(id, |agent| {
+                if let Some(at) = printed {
+                    agent.worked(at);
+                }
+                agent.look(now, settings, busy);
+            });
+        }
         let told = self
             .waiting
             .iter()
             .filter_map(|id| self.panes.get(id)?.told_due());
         let printing = self.panes.values().filter_map(Pane::printing_due);
-        told.chain(printing).min()
+        let agents = self
+            .panes
+            .values()
+            .filter_map(|pane| pane.agent()?.due(settings));
+        told.chain(printing).chain(agents).min()
     }
 
     /// Looks at the titles that the headers of `panes` show, their
@@ -1131,12 +1208,109 @@ impl Workspace {
     }
 
     /// `tab` shows in its window: the output and the bell that came while
-    /// it did not show are seen.
+    /// it did not show are seen, and what its agents did.
     fn tab_shown(&mut self, tab: TabId) {
+        let panes = self
+            .tabs
+            .get(&tab)
+            .map(|shown| shown.layout.panes())
+            .unwrap_or_default();
+        for pane in panes {
+            self.change_agent(pane, Agent::seen);
+        }
+        let agent = self.tab_agent(tab);
         self.mark(tab, |marks| {
             marks.activity = false;
             marks.bell = false;
+            marks.agent = agent;
         });
+    }
+
+    /// The state that `tab` shows of its panes' agents, the most urgent.
+    fn tab_agent(&self, tab: TabId) -> Option<sdk::AgentState> {
+        let tab = self.tabs.get(&tab)?;
+        agent::most_urgent(tab.layout.panes().into_iter().map(|pane| {
+            self.panes
+                .get(&pane)
+                .and_then(Pane::agent)
+                .and_then(Agent::state)
+        }))
+    }
+
+    /// Changes the agent of `pane`, if it has one, as `change` does: a
+    /// change of its state is told, and its tab takes it.
+    fn change_agent(&mut self, pane: PaneId, change: impl FnOnce(&mut Agent)) {
+        let Some(agent) = self
+            .panes
+            .get_mut(&pane)
+            .and_then(|pane| pane.agent.as_mut())
+        else {
+            return;
+        };
+        let before = agent.state();
+        change(agent);
+        let now = agent.state();
+        if before == now {
+            return;
+        }
+        let name = agent.name().to_owned();
+        self.events.push(Event::Agent {
+            pane,
+            name,
+            before,
+            now,
+        });
+        if let Some(tab) = self.tab_of.get(&pane).copied() {
+            let agent = self.tab_agent(tab);
+            self.mark(tab, |marks| marks.agent = agent);
+        }
+    }
+
+    /// Takes the agents' `settings`, as the config gives them.
+    pub fn set_agent_settings(&mut self, settings: AgentSettings) {
+        self.agents = settings;
+    }
+
+    /// Marks `pane` of the AI agent of the program `name` that runs in its
+    /// foreground, as the app finds it, or of none: an agent of another
+    /// name starts anew, of no state; whether the pane is open.
+    pub fn set_pane_agent(&mut self, pane: PaneId, name: Option<&str>) -> bool {
+        let Some(shown) = self.panes.get_mut(&pane) else {
+            return false;
+        };
+        if shown.agent.as_ref().map(Agent::name) == name {
+            return true;
+        }
+        let before = shown.agent.as_ref().and_then(Agent::state);
+        let gone = shown.agent.take();
+        shown.agent = name.map(Agent::new);
+        if let (Some(gone), Some(before)) = (gone, before) {
+            self.events.push(Event::Agent {
+                pane,
+                name: gone.name().to_owned(),
+                before: Some(before),
+                now: None,
+            });
+        }
+        if let Some(tab) = self.tab_of.get(&pane).copied() {
+            let agent = self.tab_agent(tab);
+            self.mark(tab, |marks| marks.agent = agent);
+        }
+        true
+    }
+
+    /// The user typed into `pane`, keys, a text or a paste: what its agent
+    /// waited for is answered, and what it did is seen.
+    pub fn typed(&mut self, pane: PaneId) {
+        self.change_agent(pane, Agent::typed);
+    }
+
+    /// How many agents wait for the user, of every pane.
+    pub fn agents_waiting(&self) -> usize {
+        self.panes
+            .values()
+            .filter(|pane| pane.agent().and_then(Agent::state) == Some(sdk::AgentState::Waiting))
+            .count()
     }
 
     /// Marks `tab`'s active pane of a program other than a shell running

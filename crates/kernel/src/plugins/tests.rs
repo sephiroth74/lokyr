@@ -1524,16 +1524,21 @@ fn a_tab_s_change_that_a_plugin_cannot_read_tells_it_nothing() {
     for (log, before) in logs.iter().zip(before) {
         assert!(log.borrow().len() > before, "{:?}", log.borrow());
     }
-    // A change of the agent's state, of the marks alone.
+    // A change of the agent's state, which tells the program that runs:
+    // the seeing plugin's alone.
     let told = logs.each_ref().map(|log| log.borrow().len());
     assert!(
         app.workspace
             .set_tab_agent(tab, Some(lokyr_plugin_sdk::host::AgentState::Working))
     );
     deliver(&mut app, &mut plugins);
-    for (log, told) in logs.iter().zip(told) {
-        assert_eq!(log.borrow().len(), told + 1, "{:?}", log.borrow());
-    }
+    assert_eq!(logs[0].borrow().len(), told[0], "{:?}", logs[0].borrow());
+    assert_eq!(
+        logs[1].borrow().len(),
+        told[1] + 1,
+        "{:?}",
+        logs[1].borrow()
+    );
 }
 
 #[test]
@@ -3849,7 +3854,7 @@ fn a_tab_s_marks_are_read_and_what_runs_of_process_read_alone() {
     assert_eq!(
         *read.borrow(),
         [
-            ((false, false), true, done, false),
+            ((false, false), true, None, false),
             ((true, true), true, done, false)
         ]
     );

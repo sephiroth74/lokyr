@@ -20,6 +20,7 @@ use lokyr_vt_core::unicode::{Normalization, Tables, Widths};
 use lokyr_plugin_sdk::host::{ShellCommand, Viewport};
 
 use super::PaneId;
+use super::agent::Agent;
 use crate::config::CloseOnExit;
 use crate::l10n::{Arg, Texts};
 
@@ -227,6 +228,9 @@ pub struct Pane {
     /// Whether its shell marked a command's start, as a shell of its
     /// integration does.
     pub(super) commands_told: bool,
+    /// The AI agent that runs in its foreground, as the app finds it, and
+    /// its state.
+    pub(super) agent: Option<Agent>,
 }
 
 impl std::fmt::Debug for Pane {
@@ -367,6 +371,7 @@ impl Pane {
             told_viewport: None,
             command_started: None,
             commands_told: false,
+            agent: None,
         };
         let mut options = Options::new(pty);
         // The wheel scrolls programs of the alternate screen, as `less`, by
@@ -428,6 +433,26 @@ impl Pane {
     /// app last found it.
     pub fn runs_program(&self) -> bool {
         self.program.0
+    }
+
+    /// The AI agent that runs in its foreground, as the app finds it, and
+    /// its state.
+    pub fn agent(&self) -> Option<&Agent> {
+        self.agent.as_ref()
+    }
+
+    /// When its program last printed of its own, as its session tells it.
+    pub(super) fn printed_at(&self) -> Option<Instant> {
+        self.session.as_ref()?.printed_at()
+    }
+
+    /// Whether the progress that its program tells runs: of a value, or
+    /// indeterminate, rather than failed or paused.
+    pub(super) fn progress_runs(&self) -> bool {
+        matches!(
+            self.progress,
+            Some(terminal::Progress::Set(_) | terminal::Progress::Indeterminate)
+        )
     }
 
     /// When its program, found printing, is quiet unless it prints again:
@@ -982,6 +1007,24 @@ impl Pane {
     pub fn foreground_program(&self) -> Option<String> {
         let session = self.session.as_ref().filter(|_| self.ended.is_none())?;
         session.foreground_program()
+    }
+
+    /// The process group in the terminal's foreground, once the program
+    /// runs, and until it ends.
+    pub fn foreground_group(&self) -> Option<u32> {
+        let session = self.session.as_ref().filter(|_| self.ended.is_none())?;
+        session.foreground_group()
+    }
+
+    /// The names that the programs in the terminal's foreground go by, as
+    /// [`lokyr_session::Session::foreground_names`] gives them: none
+    /// before the program runs, nor once it ended.
+    pub fn foreground_names(&self) -> Vec<String> {
+        self.session
+            .as_ref()
+            .filter(|_| self.ended.is_none())
+            .map(Session::foreground_names)
+            .unwrap_or_default()
     }
 
     /// Whether the terminal hides what is typed, as a password's prompt
