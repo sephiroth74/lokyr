@@ -252,7 +252,7 @@ notarize: bundle
 dmg: bundle
     cargo xtask dmg
 
-# Release a candidate, X.Y.Z-rc.N, or a release, X.Y.Z, of the commit checked out, which GitHub has, its build's number above the feed's latest, or `--without-feed` for a feed's first release: the bundle and its DMG, notarized, its dSYM and its SBOM, to a draft of its GitHub release, which you publish, and to the feed of tests. It sends the bundle and the DMG to Apple's notary service.
+# Release a candidate, X.Y.Z-rc.N, or a release, X.Y.Z, of the commit checked out, which GitHub has, its build's number above the feed's latest, or `--without-feed` for a feed's first release: the bundle and its DMG, notarized, its dSYM and its SBOM, to a draft of its GitHub release, which you publish, and to the feed of tests; a release's to the public feed, site/public/appcast.xml, to commit once the release is published. It sends the bundle and the DMG to Apple's notary service.
 release version *args:
     cargo xtask release {{version}} {{args}}
 

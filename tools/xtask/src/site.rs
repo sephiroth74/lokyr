@@ -197,7 +197,7 @@ pub(crate) fn build(root: &Path, out: &Path) -> Result<usize> {
         fs::remove_dir_all(out).with_context(|| format!("emptying {}", out.display()))?;
     }
     fs::create_dir_all(out).with_context(|| format!("making {}", out.display()))?;
-    copy_folder(&root.join("site/public"), out, &|name| name != ".htaccess")?;
+    copy_folder(&root.join("site/public"), out, &|_| true)?;
     for file in ["style.css", "search.js"] {
         fs::copy(root.join("site").join(file), out.join(file))
             .with_context(|| format!("copying {file}"))?;
@@ -648,7 +648,6 @@ mod tests {
         ] {
             assert!(out.join(file).is_file(), "{file}");
         }
-        assert!(!out.join(".htaccess").exists());
         let configuration = fs::read_to_string(out.join("docs/CONFIGURATION.html")).unwrap();
         assert!(configuration.contains(r#"id="font""#));
         // Every link of the pages resolves, the home's too.

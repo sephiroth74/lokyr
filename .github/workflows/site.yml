@@ -1,0 +1,70 @@
+name: Site
+
+# lokyr.dev on GitHub Pages: the home page, the documentation's site of the
+# public Markdown, its search, and the updates' feed, `appcast.xml`, which
+# `just release` writes into `site/public` and a push of main publishes.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One deployment at a time, each going to its end, so that the last push's
+# site is the one served.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+# Actions are pinned by commit SHA; the comment after each one names its tag.
+jobs:
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    # A few minutes with its cache.
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install the toolchain from rust-toolchain.toml
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: site
+      - name: Pagefind, checked against its SHA-256
+        env:
+          URL: https://github.com/Pagefind/pagefind/releases/download/v1.6.0/pagefind-v1.6.0-x86_64-unknown-linux-musl.tar.gz
+          SHA256: 004d40c9a644c995dadc42b8031196c6f17e7a6dacf9a6c15c63286dd6ead5f2
+        run: |
+          mkdir -p "$RUNNER_TEMP/pagefind"
+          curl --fail --silent --show-error --location --retry 3 "$URL" --output "$RUNNER_TEMP/pagefind.tar.gz"
+          echo "$SHA256  $RUNNER_TEMP/pagefind.tar.gz" | sha256sum --check --quiet
+          tar -xzf "$RUNNER_TEMP/pagefind.tar.gz" -C "$RUNNER_TEMP/pagefind" pagefind
+          echo "$RUNNER_TEMP/pagefind" >> "$GITHUB_PATH"
+      - name: The site, its links checked and its search indexed
+        run: cargo xtask site --out "$RUNNER_TEMP/site"
+      - name: The search's index is there
+        run: test -f "$RUNNER_TEMP/site/pagefind/pagefind-entry.json"
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: ${{ runner.temp }}/site
+
+  deploy:
+    name: deploy
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

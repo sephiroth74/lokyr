@@ -18,7 +18,11 @@
 //!    `docs/releases/<X.Y.Z>.md`, and `CHANGELOG.md` its section, of the
 //!    format that `check-changelog` checks;
 //! 6. the DMG in the feed of tests;
-//! 7. a release's Homebrew cask, of the DMG's SHA-256, in
+//! 7. a release's DMG in the public feed, `site/public/appcast.xml`, its
+//!    deltas uploaded to the draft, the appcast to commit and push once the
+//!    release is published, as its DMG is not public before; a candidate
+//!    stays out of it;
+//! 8. a release's Homebrew cask, of the DMG's SHA-256, in
 //!    `target/releases/<version>` and the tap's folder beside the workspace,
 //!    to commit and push once the release is published.
 
@@ -117,7 +121,12 @@ pub fn run(mut args: impl Iterator<Item = String>) -> Result<ExitCode> {
     let number: u64 = plist_string(&info, "CFBundleVersion")
         .and_then(|number| number.parse().ok())
         .context("the bundle's CFBundleVersion")?;
-    let appcast = fs::read_to_string(root.join(APPCAST)).ok();
+    // Above both feeds' latest: the tests' and the public one.
+    let appcasts: Vec<String> = [APPCAST, feed::PUBLIC_APPCAST]
+        .iter()
+        .filter_map(|appcast| fs::read_to_string(root.join(appcast)).ok())
+        .collect();
+    let appcast = (!appcasts.is_empty()).then(|| appcasts.join("\n"));
     above_the_feed(number, appcast.as_deref(), without_feed)?;
 
     let out = root.join("target/releases").join(&version);
@@ -178,15 +187,30 @@ pub fn run(mut args: impl Iterator<Item = String>) -> Result<ExitCode> {
             .current_dir(&root),
         "adding the DMG to the feed of tests",
     )?;
-    // A candidate has no cask: Homebrew takes the releases alone.
-    if !version.contains('-') {
+    // A candidate stays out of the public feed and has no cask: Homebrew
+    // takes the releases alone.
+    if version.contains('-') {
+        println!(
+            "release: {tag}'s draft is on GitHub, of {commit}; publish it, then `git fetch --tags`"
+        );
+    } else {
+        let deltas = feed::publish(&root, &dmg)?;
+        if !deltas.is_empty() {
+            status(
+                Command::new("gh")
+                    .args(["release", "upload", &tag, "--repo", REPOSITORY])
+                    .args(&deltas),
+                "uploading the deltas to the draft",
+            )?;
+        }
         for written in cask::write(&root, &version, None)? {
             println!("release: the cask, {}", written.display());
         }
+        println!(
+            "release: {tag}'s draft is on GitHub, of {commit}; publish it, then commit {} and push it, `git fetch --tags`, and push the tap's cask",
+            feed::PUBLIC_APPCAST
+        );
     }
-    println!(
-        "release: {tag}'s draft is on GitHub, of {commit}; publish it, then `git fetch --tags`, and push the tap's cask"
-    );
     Ok(ExitCode::SUCCESS)
 }
 

@@ -1,8 +1,9 @@
-//! `cargo xtask feed`: the feed of tests of the updates, which the builds
-//! on the maintainer's Mac read until the repository is public, in the
-//! untracked `private/feed`: the DMGs, their release notes, and the
-//! appcast that Sparkle's `generate_appcast` writes over them, each DMG
-//! and the appcast signed with the EdDSA key.
+//! `cargo xtask feed`: the updates' feeds. The feed of tests, which the
+//! builds on the maintainer's Mac read once `feed serve` points them at it,
+//! is in the untracked `private/feed`: the DMGs, their release notes, and
+//! the appcast that Sparkle's `generate_appcast` writes over them, each DMG
+//! and the appcast signed with the EdDSA key. The public feed is the
+//! site's, below.
 //!
 //! - `feed add <dmg> [--notes <file>] [--channel <name>]` puts the DMG and
 //!   its notes, in Markdown, into the feed, writes the appcast again, and
@@ -14,6 +15,17 @@
 //!   bundle's, and serves the feed on `127.0.0.1` until Control-C;
 //!   `defaults delete io.github.sephiroth74.lokyr SUFeedURL` gives the
 //!   builds their own feed back.
+//!
+//! - `feed publish <dmg>` puts a release's DMG into the public feed, the
+//!   site's `site/public/appcast.xml`, which `lokyr.dev/appcast.xml` serves
+//!   and the bundle's `SUFeedURL` names: `generate_appcast` writes it in
+//!   the untracked `private/public-feed`, which keeps the released DMGs,
+//!   of which it makes the deltas, from the site's appcast; each item's
+//!   DMG and deltas at its own GitHub release, `v<X.Y.Z>`, which
+//!   `generate_appcast`'s one prefix cannot tell, and the appcast signed
+//!   again. `just release` publishes each release's, and uploads its
+//!   deltas to its release; the appcast is committed and pushed once the
+//!   release is published, as its DMG is not public before.
 //!
 //! The key is the keychain's, of the account `lokyr` of Sparkle's
 //! `generate_keys`, or the file that `LOKYR_SPARKLE_KEY_FILE` names, in
@@ -30,6 +42,17 @@ use crate::bundle;
 
 /// The feed's directory, relative to the workspace root.
 const DIRECTORY: &str = "private/feed";
+
+/// The public feed's directory, of the released DMGs and their deltas,
+/// relative to the workspace root.
+const PUBLIC_DIRECTORY: &str = "private/public-feed";
+
+/// The public feed's appcast, in the site, relative to the workspace root.
+pub(crate) const PUBLIC_APPCAST: &str = "site/public/appcast.xml";
+
+/// Where the releases' assets are downloaded from, each of its tag,
+/// `v<X.Y.Z>/`.
+const RELEASES: &str = "https://github.com/sephiroth74/lokyr/releases/download/";
 
 /// The release notes, `<X.Y.Z>.md`, relative to the workspace root.
 const NOTES: &str = "docs/releases";
@@ -81,7 +104,21 @@ pub fn run(mut args: impl Iterator<Item = String>) -> Result<ExitCode> {
             }
             serve(&root)?;
         }
-        _ => bail!("feed takes `add <dmg> [--notes <file>] [--channel <name>]` or `serve`"),
+        Some("publish") => {
+            let dmg = PathBuf::from(
+                args.next()
+                    .context("feed publish takes the DMG to publish")?,
+            );
+            if let Some(arg) = args.next() {
+                bail!("feed publish takes the DMG alone, not `{arg}`");
+            }
+            for delta in publish(&root, &dmg)? {
+                println!("feed: {} to upload to its release", delta.display());
+            }
+        }
+        _ => bail!(
+            "feed takes `add <dmg> [--notes <file>] [--channel <name>]`, `serve` or `publish <dmg>`"
+        ),
     }
     Ok(ExitCode::SUCCESS)
 }
@@ -173,6 +210,133 @@ fn serve(root: &Path) -> Result<()> {
             .arg(&directory),
         "serving the feed",
     )
+}
+
+/// Puts the release's `dmg` into the public feed, of the site's appcast and
+/// the released DMGs that `private/public-feed` keeps, writes the site's
+/// appcast again, each item at its own release and signed, and gives the
+/// deltas made for the release, to upload to it.
+pub fn publish(root: &Path, dmg: &Path) -> Result<Vec<PathBuf>> {
+    let name = dmg
+        .file_name()
+        .and_then(|name| name.to_str())
+        .with_context(|| format!("{} has no name", dmg.display()))?;
+    let version = version_of(name).with_context(|| {
+        format!(
+            "{name} is not a DMG of `cargo xtask dmg`, `{}-<version>.dmg`",
+            bundle::NAME
+        )
+    })?;
+    ensure!(
+        !version.contains('-'),
+        "{version} is no release's version: a candidate or a build stays out of the public feed"
+    );
+    let notes = root.join(NOTES).join(format!("{version}.md"));
+    ensure!(notes.is_file(), "{} is not there", notes.display());
+    let directory = root.join(PUBLIC_DIRECTORY);
+    fs::create_dir_all(&directory).with_context(|| format!("making {}", directory.display()))?;
+    copy_unless_same(dmg, &directory.join(name))?;
+    copy_unless_same(
+        &notes,
+        &directory.join(format!("{}.md", name.trim_end_matches(".dmg"))),
+    )?;
+    // The site's appcast is the feed's, whatever the directory kept.
+    let appcast = directory.join("appcast.xml");
+    let site = root.join(PUBLIC_APPCAST);
+    if site.is_file() {
+        fs::copy(&site, &appcast).with_context(|| format!("copying {}", site.display()))?;
+    } else if appcast.exists() {
+        fs::remove_file(&appcast).with_context(|| format!("removing {}", appcast.display()))?;
+    }
+    let tools = crate::sparkle::release(&root.join("target"))?.join("bin");
+    let key = key_arguments(root)?;
+    status(
+        Command::new(tools.join("generate_appcast"))
+            .args(&key)
+            .args(["--embed-release-notes", "--download-url-prefix"])
+            .arg(format!("{RELEASES}v{version}/"))
+            .arg(&directory),
+        "writing the public appcast",
+    )?;
+    let text =
+        fs::read_to_string(&appcast).with_context(|| format!("reading {}", appcast.display()))?;
+    fs::write(&appcast, at_their_releases(&text)?)
+        .with_context(|| format!("writing {}", appcast.display()))?;
+    status(
+        Command::new(tools.join("sign_update"))
+            .args(&key)
+            .arg(&appcast),
+        "signing the public appcast",
+    )?;
+    let text =
+        fs::read_to_string(&appcast).with_context(|| format!("reading {}", appcast.display()))?;
+    ensure!(signed(&text), "{} has no signature", appcast.display());
+    status(
+        Command::new(tools.join("sign_update"))
+            .args(&key)
+            .arg("--verify")
+            .arg(&appcast),
+        "checking the public appcast's signature",
+    )?;
+    fs::copy(&appcast, &site).with_context(|| format!("writing {}", site.display()))?;
+    let deltas = deltas_of(&text, version)
+        .into_iter()
+        .map(|delta| directory.join(delta))
+        .collect::<Vec<_>>();
+    for delta in &deltas {
+        ensure!(delta.is_file(), "{} is not there", delta.display());
+    }
+    println!(
+        "feed: {name} in {}, signed; commit it once the release is published",
+        site.display()
+    );
+    Ok(deltas)
+}
+
+/// The appcast's `text` of each item's DMG and deltas at the item's own
+/// release, `v<X.Y.Z>/` of its `shortVersionString`, which
+/// `generate_appcast` gives the prefix of the release that it writes.
+fn at_their_releases(text: &str) -> Result<String> {
+    let item = regex::Regex::new(r"(?s)<item>.*?</item>")?;
+    let version = regex::Regex::new(
+        r"<sparkle:shortVersionString>([0-9A-Za-z.\-]+)</sparkle:shortVersionString>",
+    )?;
+    let release = regex::Regex::new(&format!(r#"{}v[^/"]+/"#, regex::escape(RELEASES)))?;
+    let mut failed = None;
+    let written = item.replace_all(text, |found: &regex::Captures| {
+        let item = &found[0];
+        match version.captures(item) {
+            Some(of) => release
+                .replace_all(item, format!("{RELEASES}v{}/", &of[1]).as_str())
+                .into_owned(),
+            None => {
+                failed.get_or_insert_with(|| item.chars().take(120).collect::<String>());
+                item.to_owned()
+            }
+        }
+    });
+    if let Some(item) = failed {
+        bail!("an item of the appcast has no shortVersionString: {item}…");
+    }
+    Ok(written.into_owned())
+}
+
+/// The file names of the deltas of the item of `version` in the appcast's
+/// `text`.
+fn deltas_of(text: &str, version: &str) -> Vec<String> {
+    let item = regex::Regex::new(r"(?s)<item>.*?</item>").expect("the item's pattern");
+    let delta = regex::Regex::new(r#"url="[^"]*/([^"/]+\.delta)""#).expect("the delta's pattern");
+    let mark = format!("<sparkle:shortVersionString>{version}</sparkle:shortVersionString>");
+    item.find_iter(text)
+        .map(|found| found.as_str())
+        .filter(|item| item.contains(&mark))
+        .flat_map(|item| {
+            delta
+                .captures_iter(item)
+                .map(|of| of[1].to_owned())
+                .collect::<Vec<_>>()
+        })
+        .collect()
 }
 
 /// The arguments of Sparkle's tools that name the key: the file of
@@ -276,6 +440,86 @@ mod tests {
         copy_unless_same(&dmg, &copy).unwrap();
         assert_eq!(fs::read(&copy).unwrap(), b"an image");
         fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn each_item_downloads_from_its_own_release() {
+        // As generate_appcast writes 1.1.0 of the folder that holds 1.0.0's
+        // DMG too: both of 1.1.0's prefix.
+        let feed = r#"<rss><channel>
+<item><title>1.1.0</title><sparkle:version>202612011200</sparkle:version><sparkle:shortVersionString>1.1.0</sparkle:shortVersionString>
+<enclosure url="https://github.com/sephiroth74/lokyr/releases/download/v1.1.0/Lokyr-1.1.0.dmg" length="1"/>
+<sparkle:deltas><enclosure url="https://github.com/sephiroth74/lokyr/releases/download/v1.1.0/Lokyr202612011200-202611200900.delta" sparkle:deltaFrom="202611200900"/></sparkle:deltas></item>
+<item><title>1.0.0</title><sparkle:version>202611200900</sparkle:version><sparkle:shortVersionString>1.0.0</sparkle:shortVersionString>
+<enclosure url="https://github.com/sephiroth74/lokyr/releases/download/v1.1.0/Lokyr-1.0.0.dmg" length="1"/></item>
+</channel></rss>"#;
+        let written = at_their_releases(feed).unwrap();
+        assert!(written.contains("download/v1.1.0/Lokyr-1.1.0.dmg"));
+        assert!(written.contains("download/v1.1.0/Lokyr202612011200-202611200900.delta"));
+        assert!(written.contains("download/v1.0.0/Lokyr-1.0.0.dmg"));
+        assert!(!written.contains("download/v1.1.0/Lokyr-1.0.0.dmg"));
+        // Written again, as it is.
+        assert_eq!(at_their_releases(&written).unwrap(), written);
+        assert_eq!(
+            deltas_of(&written, "1.1.0"),
+            ["Lokyr202612011200-202611200900.delta"]
+        );
+        assert!(deltas_of(&written, "1.0.0").is_empty());
+        // An item of no version is refused.
+        assert!(at_their_releases("<item><title>?</title></item>").is_err());
+    }
+
+    /// Two releases published, of Sparkle's tools and the EdDSA key, in a
+    /// root of its own: each item downloads from its own release, the
+    /// second's delta from its, and the site's appcast is signed. Of the
+    /// maintainer's Mac, of 0.8.0's and 0.9.0's DMGs in
+    /// `private/releases`: `cargo test -p xtask -- --ignored publishing`.
+    #[test]
+    #[ignore = "Sparkle's tools, the signing key and two released DMGs"]
+    fn publishing_two_releases_downloads_each_from_its_own() {
+        let workspace = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .canonicalize()
+            .unwrap();
+        let root = std::env::temp_dir().join(format!("lokyr-feed-publish-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(root.join("docs/releases")).unwrap();
+        fs::create_dir_all(root.join("site/public")).unwrap();
+        std::os::unix::fs::symlink(workspace.join("target"), root.join("target")).unwrap();
+        // The key's file, where the environment names one, from the root.
+        if let Some(file) = crate::private::variable(KEY_FILE_VARIABLE)
+            .unwrap()
+            .filter(|file| !file.is_empty() && Path::new(file).is_relative())
+        {
+            let linked = root.join(&file);
+            fs::create_dir_all(linked.parent().unwrap()).unwrap();
+            std::os::unix::fs::symlink(workspace.join(&file), linked).unwrap();
+        }
+        for version in ["0.8.0", "0.9.0"] {
+            fs::copy(
+                workspace.join(NOTES).join(format!("{version}.md")),
+                root.join(NOTES).join(format!("{version}.md")),
+            )
+            .unwrap();
+        }
+        let dmg = |version: &str| {
+            workspace
+                .join("private/releases")
+                .join(format!("v{version}"))
+                .join(format!("{}-{version}.dmg", bundle::NAME))
+        };
+        assert!(publish(&root, &dmg("0.8.0")).unwrap().is_empty());
+        let deltas = publish(&root, &dmg("0.9.0")).unwrap();
+        assert_eq!(deltas.len(), 1, "{deltas:?}");
+        let site = fs::read_to_string(root.join(PUBLIC_APPCAST)).unwrap();
+        assert!(site.contains(&format!("{RELEASES}v0.9.0/Lokyr-0.9.0.dmg")));
+        assert!(site.contains(&format!("{RELEASES}v0.8.0/Lokyr-0.8.0.dmg")));
+        let delta = deltas[0].file_name().unwrap().to_str().unwrap();
+        assert!(site.contains(&format!("{RELEASES}v0.9.0/{delta}")));
+        assert!(signed(&site));
+        // A candidate stays out.
+        assert!(publish(&root, Path::new("Lokyr-1.0.0-rc.1.dmg")).is_err());
+        fs::remove_dir_all(&root).unwrap();
     }
 
     #[test]
