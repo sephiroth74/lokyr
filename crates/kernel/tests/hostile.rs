@@ -16,7 +16,7 @@ use lokyr_kernel::plugins::{
 };
 use lokyr_kernel::workspace::{Pane, PaneId, Workspace};
 use lokyr_pkg_model::manifest::Manifest;
-use lokyr_plugin_host_luau::{ENTRY, Execution, LuauPlugin, Package};
+use lokyr_plugin_host_luau::{Deadlines, ENTRY, Execution, LuauPlugin, Package};
 use lokyr_plugin_sdk::command::{Category, Command};
 
 /// The clipboard of the tests, of its text.
@@ -153,6 +153,16 @@ fn plugins(
     source: &str,
     capabilities: &str,
 ) -> (Plugins, Rc<RefCell<usize>>, Vec<Error>) {
+    plugins_of(app, source, capabilities, Deadlines::default())
+}
+
+/// [`plugins`], the hostile plugin's calls of `deadlines`.
+fn plugins_of(
+    app: &mut App,
+    source: &str,
+    capabilities: &str,
+    deadlines: Deadlines,
+) -> (Plugins, Rc<RefCell<usize>>, Vec<Error>) {
     let heard = Rc::new(RefCell::new(0));
     let mut plugins = Plugins::new();
     plugins
@@ -168,7 +178,7 @@ fn plugins(
     ))
     .unwrap();
     let package = Package::new([(ENTRY.to_owned(), source.to_owned())]);
-    let plugin = LuauPlugin::new(HOSTILE, package, Execution::Native);
+    let plugin = LuauPlugin::new(HOSTILE, package, Execution::Native).with_deadlines(deadlines);
     plugins.add_declared(manifest, Box::new(plugin)).unwrap();
     let errors = plugins.activate(&mut app.context());
     assert_eq!(plugins.status("steady"), Some(Status::Active));
@@ -325,7 +335,14 @@ fn a_flood_of_calls_is_bounded_and_runs_to_its_deadline() {
         error("refused " .. refused)
         "#,
     );
-    let (mut plugins, heard, errors) = plugins(&mut app, &source, "clipboard-write = true\n");
+    // Of a command's deadline that the 20 000 calls of a debug build fit
+    // in on a slow machine.
+    let deadlines = Deadlines {
+        command: Duration::from_secs(2),
+        ..Deadlines::default()
+    };
+    let (mut plugins, heard, errors) =
+        plugins_of(&mut app, &source, "clipboard-write = true\n", deadlines);
     assert!(errors.is_empty(), "{errors:?}");
     let error = plugins
         .run("hostile.go", Args::new(), &mut app.context())
@@ -340,7 +357,7 @@ fn a_flood_of_calls_is_bounded_and_runs_to_its_deadline() {
     let error = plugins
         .run("hostile.go", endless, &mut app.context())
         .unwrap_err();
-    faulted(&plugins, &error, "past its deadline of 250 ms");
+    faulted(&plugins, &error, "past its deadline of 2000 ms");
     assert!(
         start.elapsed() < Duration::from_secs(10),
         "{:?}",

@@ -1140,9 +1140,10 @@ fn an_invalid_config_changes_nothing() {
 
 /// Runs the app, as the main thread's loop would, handing it the wakes
 /// of its programs, the timers that come due and the frames that it asks
-/// for, until `done` holds; fails after a while.
+/// for, until `done` holds; fails after half a minute, which a slow
+/// machine's runs of many turns, of sleeps longer than asked, take.
 fn run_until(fake: &mut Fake, app: &mut App, mut done: impl FnMut(&Fake, &App) -> bool) {
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let deadline = Instant::now() + Duration::from_secs(30);
     while !done(fake, app) {
         assert!(Instant::now() < deadline, "not done in time");
         fake.deliver_wake(app);
