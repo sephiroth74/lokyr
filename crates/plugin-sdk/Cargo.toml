@@ -2,7 +2,7 @@
 name = "lokyr-plugin-sdk"
 description = "The Lokyr plugin API and its Rust SDK"
 # The plugin API's own version, apart from the app's.
-version = "0.1.1"
+version = "0.1.2"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true

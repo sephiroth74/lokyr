@@ -6,7 +6,7 @@ This guide makes a plugin from nothing, runs it in Lokyr as you edit it, gives i
 
 ## What you need
 
-- **Lokyr 0.9 or later**, of the plugin API 0.1.1, which `lokyr --api-version` tells.
+- **Lokyr 1.0 or later**, of the plugin API 0.1.2, which `lokyr --api-version` tells.
 - **Sleip on your `PATH`**: Lokyr › Install Command Line Tools… links `lokyr` and `sleip` into `/usr/local/bin`.
 - **An editor.** In VS Code, the [Luau Language Server](https://marketplace.visualstudio.com/items?itemName=JohnnyMorganz.luau-lsp) extension completes and checks the API's types, of the settings that `sleip new` writes.
 - **For publishing**: a GitHub account, a public repository of the plugin, and, best, [GitHub's CLI](https://cli.github.com), `gh`, signed in.
@@ -41,7 +41,7 @@ The manifest:
 name = "acme/hello"
 version = "0.1.0"
 kind = "luau"
-api = "^0.1.1"
+api = "^0.1.2"
 license = "MIT"
 description = "A plugin of Lokyr, made by `sleip new`."
 
@@ -273,7 +273,7 @@ A new version is a new `version` in the manifest, a new tag, and `sleip publish`
 
 **The sandbox.** Luau's `string`, `table`, `math`, `bit32`, `utf8` and `buffer`, and `require` of the plugin's own modules, as `require("./look")` of `src/look.luau`: no files, no network, no processes.
 
-**Versions.** The plugin API is `0.1.1` while Lokyr is 0.x: a patch adds calls and events, and the API is experimental until its 1.0, which keeps the calls' names. The manifest's `api` is the least that the plugin needs: `^0.1.1` takes every Lokyr of the API 0.1.1 or a later 0.1.
+**Versions.** The plugin API is `0.1.2`, of Lokyr 1.0: a patch adds calls and events, and the API is experimental until its own 1.0, which keeps the calls' names. The manifest's `api` is the least that the plugin needs: `^0.1.1` takes every Lokyr of the API 0.1.1 or a later 0.1, and `sleip new` writes the API of its Lokyr, `^0.1.2`.
 
 ## When something goes wrong
 

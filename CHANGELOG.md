@@ -8,6 +8,8 @@ from 1.0.0; before it, a minor version may change what a previous one did.
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-11-13
+
 ### Added
 
 - AI agents on their tabs: a tab running Claude Code, Codex, Gemini CLI, Aider or another agent that `[agents] programs` lists shows whether the agent is working, waiting for you, or done with what you asked.
@@ -17,6 +19,7 @@ from 1.0.0; before it, a minor version may change what a previous one did.
 - Window › Show Agents…, ⇧⌥⌘A, lists the agents of every window in the palette, the most urgent first, each with what it asked or its tab, its state and how long it has been in it; Return brings it forward.
 - Lokyr › Install Claude Code Integration… adds hooks to Claude Code's settings, asking of each of its configurations and keeping a copy of the file, so that Claude Code tells its tab exactly when it works, waits for you, is done, or stops on an error, a red mark of its own.
 - Quick tips for the agents, Go to Next Agent, Show Agents and Claude Code's integration.
+- The plugin API 0.1.2: a plugin lists the agents of every window and opens a file at a line in the editor, of the capabilities `process-read` and `open`.
 
 - ⌘-click on a path's line, as `src/main.rs:42:7` that compilers, tests and AI agents print, opens the file at that line in the editor that `[links] editor` names: VS Code, Cursor, Windsurf, Zed, Sublime Text, TextMate or an address of your own.
 
@@ -199,7 +202,8 @@ from 1.0.0; before it, a minor version may change what a previous one did.
 
 - The first numbered version, not distributed: the macOS app, a window of one pane, of Lokyr's own terminal core and Metal renderer, configured by `~/.config/lokyr/config.toml`.
 
-[Unreleased]: https://github.com/sephiroth74/lokyr/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/sephiroth74/lokyr/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/sephiroth74/lokyr/compare/v0.9.0...v1.0.0
 [0.9.0]: https://github.com/sephiroth74/lokyr/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/sephiroth74/lokyr/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/sephiroth74/lokyr/compare/v0.5.1...v0.7.0
