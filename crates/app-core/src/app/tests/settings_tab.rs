@@ -117,3 +117,133 @@ fn the_settings_tab_of_no_window_opens_one() {
         "a new window's tab, then the settings tab"
     );
 }
+
+/// The app of [`two_tabs`], of two pages, `General` and `Plugins`.
+fn of_pages() -> (Fake, App, WindowId) {
+    let (fake, mut app, window) = two_tabs();
+    app.settings.pages = ["General", "Plugins"]
+        .into_iter()
+        .map(|title| super::super::settings_tab::Page {
+            id: title.to_lowercase(),
+            title: title.to_owned(),
+            icon: "gear".to_owned(),
+        })
+        .collect();
+    (fake, app, window)
+}
+
+/// The title that the settings tab's page shows.
+fn page_shown(app: &App, window: WindowId) -> String {
+    let view = settings_view(app, window).expect("its view");
+    let tree = &view.surface.tree;
+    let page = tree.by_key(&"page".into()).expect("its page");
+    match tree
+        .children(page)
+        .first()
+        .and_then(|&text| tree.kind(text))
+    {
+        Some(lokyr_kernel::plugins::view::Kind::Text(text)) => text.clone(),
+        _ => String::new(),
+    }
+}
+
+#[test]
+fn the_settings_tab_s_sidebar_chooses_its_page_by_the_keys_and_a_click_and_has_the_keyboard() {
+    let (mut fake, mut app, window) = of_pages();
+    fake.send_app(&mut app, AppEvent::Command(SETTINGS_TAB.to_owned()));
+    frames(&mut fake, &mut app, window);
+    assert_eq!(page_shown(&app, window), "General");
+    // The sidebar's list has the keyboard, as the tab shows.
+    let view = settings_view(&app, window).unwrap();
+    let list = view.surface.tree.by_key(&"pages".into()).unwrap();
+    assert_eq!(
+        app.windows[&window].focus.target(),
+        lokyr_ui_core::focus::Target::Node {
+            panel: view.id,
+            node: list
+        }
+    );
+    // The arrow down chooses the next page, the arrow up the first again.
+    fake.send(
+        &mut app,
+        window,
+        key_event(KeyCode::ArrowDown, "", Modifiers::NONE, true),
+    );
+    fake.send(
+        &mut app,
+        window,
+        key_event(KeyCode::ArrowDown, "", Modifiers::NONE, false),
+    );
+    frames(&mut fake, &mut app, window);
+    assert_eq!(app.settings.chosen, 1);
+    assert_eq!(page_shown(&app, window), "Plugins");
+    fake.send(
+        &mut app,
+        window,
+        key_event(KeyCode::ArrowUp, "", Modifiers::NONE, true),
+    );
+    fake.send(
+        &mut app,
+        window,
+        key_event(KeyCode::ArrowUp, "", Modifiers::NONE, false),
+    );
+    frames(&mut fake, &mut app, window);
+    assert_eq!(page_shown(&app, window), "General");
+    // A click on the second row chooses it.
+    let view = settings_view(&app, window).unwrap();
+    let frame = view.frame.unwrap();
+    let at = view.surface.layout.frame(&view.surface.tree, list).unwrap();
+    let scale = fake.window(window).unwrap().size.scale;
+    let second = Point {
+        x: f64::from(frame.x + at.x + 40.0) / scale,
+        y: f64::from(frame.y + at.y) / scale + 28.0 * 1.5,
+    };
+    fake.send(&mut app, window, click(true, second, Modifiers::NONE, 1));
+    fake.send(&mut app, window, click(false, second, Modifiers::NONE, 1));
+    frames(&mut fake, &mut app, window);
+    assert_eq!(page_shown(&app, window), "Plugins");
+    // Another tab shown: the keyboard goes back to its pane; the settings
+    // tab again keeps its page.
+    let first = tabs_of(&app, window)[0];
+    app.workspace.activate_tab(first);
+    frames(&mut fake, &mut app, window);
+    assert!(app.windows[&window].pane_has_focus());
+    fake.send_app(&mut app, AppEvent::Command(SETTINGS_TAB.to_owned()));
+    frames(&mut fake, &mut app, window);
+    assert_eq!(page_shown(&app, window), "Plugins");
+    let view = settings_view(&app, window).unwrap();
+    let selected = view
+        .surface
+        .lists
+        .state(&"pages".into())
+        .and_then(lokyr_ui_core::list::ListState::selected);
+    assert_eq!(selected, Some(1));
+}
+
+#[test]
+fn the_settings_tab_s_tree_goes_to_a_client_of_accessibility() {
+    use accesskit::Role;
+    let (mut fake, mut app, window) = of_pages();
+    fake.send_app(&mut app, AppEvent::Command(SETTINGS_TAB.to_owned()));
+    frames(&mut fake, &mut app, window);
+    fake.ask_accessibility(&mut app, window);
+    let trees = &fake.window(window).unwrap().accessibility;
+    let tree = trees.last().expect("a tree");
+    let roles: Vec<Role> = tree.nodes.iter().map(|(_, node)| node.role()).collect();
+    assert!(roles.contains(&Role::ListBox), "{roles:?}");
+    assert_eq!(
+        roles
+            .iter()
+            .filter(|role| **role == Role::ListBoxOption)
+            .count(),
+        2
+    );
+    assert!(!roles.contains(&Role::Terminal), "{roles:?}");
+    let named = |name: &str| {
+        tree.nodes
+            .iter()
+            .any(|(_, node)| node.label().is_some_and(|label| label.contains(name)))
+    };
+    assert!(named("General") && named("Plugins"));
+    assert!(tree.focus != accesskit::NodeId(0));
+}

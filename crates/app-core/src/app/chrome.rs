@@ -334,11 +334,12 @@ impl<B: Backend> App<B> {
         });
         let notice = if due { self.notice_tree() } else { None };
         // The settings tab's tree, made as its view first shows.
+        let (settings_revision, settings_chosen) = (self.settings.revision, self.settings.chosen);
         let settings_due = self.windows.get(&window).is_some_and(|state| {
             state.chrome.iter().any(|view| {
                 view.plugin == OVERFLOW
                     && view.view == super::settings_tab::settings_view()
-                    && view.shown.is_none()
+                    && view.shown != Some(settings_revision)
             })
         });
         let settings = settings_due.then(|| self.settings_tree());
@@ -381,7 +382,13 @@ impl<B: Backend> App<B> {
             // The app's button of the titlebar's buttons that find no room
             // is of one tree, its first.
             let rendered = if plugin == OVERFLOW {
-                Some(if view == card { revision } else { 0 })
+                Some(if view == card {
+                    revision
+                } else if view == super::settings_tab::settings_view() {
+                    settings_revision
+                } else {
+                    0
+                })
             } else {
                 self.plugins.rendered(&plugin, &view)
             };
@@ -409,6 +416,15 @@ impl<B: Backend> App<B> {
                             eprintln!(
                                 "lokyr: the view {view:?} of `{plugin}` keeps its last tree, as its new one is not one: {error:?}"
                             );
+                        }
+                        // The settings tab's sidebar selects the page shown.
+                        if plugin == OVERFLOW
+                            && view == super::settings_tab::settings_view()
+                            && let Some(node) =
+                                slot.surface.tree.by_key(&super::settings_tab::PAGES.into())
+                        {
+                            let surface = &mut slot.surface;
+                            surface.lists.select(&surface.tree, node, settings_chosen);
                         }
                     }
                     None => slot.surface = Surface::new(scale),

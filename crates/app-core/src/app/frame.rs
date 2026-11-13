@@ -2065,6 +2065,16 @@ impl<B: Backend> App<B> {
         {
             state.chrome_tokens = Some((chrome_look, chrome_tokens(&self.theme, chrome_look)));
         }
+        // The window's accessibility tree goes within its rate as its views
+        // or its focus change, once a client asked.
+        if platform.accessibility_asked(window)
+            && (state.views_changed || state.access_focus.is_some())
+        {
+            state.access_changed = true;
+            if self.access_timer.is_none() {
+                self.access_timer = Some(platform.start_timer(now + access::RATE));
+            }
+        }
         let Some((_, tokens)) = state.chrome_tokens.as_ref() else {
             return;
         };

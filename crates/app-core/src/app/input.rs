@@ -70,25 +70,27 @@ impl<B: Backend> App<B> {
         let Some(state) = self.windows.get_mut(&window) else {
             return;
         };
-        let Some(pane) = self.workspace.focused(state.window) else {
-            return;
-        };
+        // A window of no pane, as of the settings tab, gives its keys to its
+        // views' nodes and to the keymap alone.
+        let pane = self.workspace.focused(state.window);
         let pane_keys = state.pane_has_focus();
-        // A man page's keys scroll it, and close nothing, but in a mode of
-        // the keyboard's, whose keys they are.
-        if pane_keys && pane.is_kept() && state.page.is_some() && !held_back {
-            if pressed && let Some(scroll) = page_scroll(key) {
-                pane.scroll(scroll);
-                platform.request_frame(window);
+        if let Some(pane) = pane {
+            // A man page's keys scroll it, and close nothing, but in a mode
+            // of the keyboard's, whose keys they are.
+            if pane_keys && pane.is_kept() && state.page.is_some() && !held_back {
+                if pressed && let Some(scroll) = page_scroll(key) {
+                    pane.scroll(scroll);
+                    platform.request_frame(window);
+                }
+                return;
             }
-            return;
-        }
-        if pane_keys && pane.is_kept() && !held_back {
-            if pressed && closes(key) {
-                let id = pane.id();
-                self.close_pane(platform, window, id);
+            if pane_keys && pane.is_kept() && !held_back {
+                if pressed && closes(key) {
+                    let id = pane.id();
+                    self.close_pane(platform, window, id);
+                }
+                return;
             }
-            return;
         }
         if pressed {
             state.blink.restart(Instant::now());

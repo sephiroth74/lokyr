@@ -522,6 +522,8 @@ pub struct App<B: Backend> {
     theme_preview: Option<String>,
     /// The card of the notice that shows, in every window.
     notice: notice_card::NoticeCard,
+    /// The settings tab's pages, the chosen one, and its tree's revision.
+    settings: settings_tab::SettingsTab,
     /// The system's monospaced font families, as a picker lists them, when
     /// they were read, and the default family: read again past a while.
     font_list: std::cell::RefCell<Option<pickers::FontList>>,
@@ -898,6 +900,7 @@ impl<B: Backend> App<B> {
             held_theme_list: std::cell::OnceCell::new(),
             theme_preview: None,
             notice: notice_card::NoticeCard::default(),
+            settings: settings_tab::SettingsTab::default(),
             font_list: std::cell::RefCell::new(None),
             font_preview: None,
             program: Program::LoginShell,
@@ -3411,6 +3414,8 @@ impl<B: Backend> App<B> {
             if plugin == chrome::OVERFLOW {
                 if event.view == notice_card::notice_view() {
                     self.notice_event(platform, event);
+                } else if event.view == settings_tab::settings_view() {
+                    self.settings_event(platform, event);
                 } else {
                     self.overflow_event(platform, event);
                 }
