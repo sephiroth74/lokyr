@@ -12,19 +12,19 @@ Measures of different sessions compare within a few percent alone: a session's l
 
 | Measure | 0.8.0 | 0.9.0 | Change | Budget | The best of the others | |
 |---|---|---|---|---|---|---|
-| Startup, its gap to the minimal app's first window | 23.8 ms | 25.4 ms | +1.5 ms, +6 % | ≤ 35 ms, 72 % of it | — | ✅ As before |
-| Latency, a key to its echo, p50 | 20.8 ms | 20.6 ms | −0.2 ms, −1 % | ≤ 33.3 ms, 62 % of it | Alacritty 21.2, Lokyr 22.8 then | ✅ As before |
-| Latency, a key to its echo, p99 | 40.9 ms | 42.0 ms | +1.1 ms, +3 % | ≤ 75 ms, 56 % of it | Alacritty 47.9, Lokyr 50.3 then | ✅ As before |
-| Memory at rest, without the GPU's | 26.9 MB | 28.6 MB | +1.7 MB, +6 % | ≤ 35 MB, 82 % of it | Alacritty 31.3, Lokyr 25 then | ✅ As before |
-| Idle, interrupt wakeups | 0.35/s | 0.38/s | +0.03/s, +9 % | ≤ 0.5/s, 77 % of it | Alacritty 0.37, Lokyr 0.38 then | ✅ As before |
-| Idle, package idle wakeups | 0.00/s | 0.00/s | ±0.00/s | ≤ 0/s | — | ✅ As before |
-| `cat` of 1 GiB of ASCII on screen | 314.8 MiB/s | 311.9 MiB/s | −2.9 MiB/s, −1 % | ≥ 275.4 MiB/s | Ghostty 306, Lokyr 296 then | ✅ As before |
-| `seq 1 10000000` | 215.8 MiB/s | 223.8 MiB/s | +8.0 MiB/s, +4 % | — | — | ✅ As before |
-| Colored text, SGR | 284.7 MiB/s | 288.9 MiB/s | +4.2 MiB/s, +1 % | — | — | ✅ As before |
-| CJK and emoji | 217.2 MiB/s | 216.5 MiB/s | −0.7 MiB/s, −0 % | — | — | ✅ As before |
-| A frame on the CPU, ASCII, p50 | 0.285 ms | 0.288 ms | +0.003 ms, +1 % | — | — | ✅ As before |
-| A frame on the CPU, ASCII, p99 | 0.399 ms | 0.429 ms | +0.030 ms, +8 % | ≤ 2 ms, 21 % of it | — | ✅ As before |
-| A frame on the CPU, CJK and emoji, p50 | 0.73 ms | 0.73 ms | +0.00 ms, +1 % | — | — | ✅ As before |
+| Startup, its gap to the minimal app's first window | 23.8 ms | 25.4 ms | +1.5 ms, +6 % | ≤ 35 ms, 72 % of it | — | ✔ As before |
+| Latency, a key to its echo, p50 | 20.8 ms | 20.6 ms | −0.2 ms, −1 % | ≤ 33.3 ms, 62 % of it | Alacritty 21.2, Lokyr 22.8 then | ✔ As before |
+| Latency, a key to its echo, p99 | 40.9 ms | 42.0 ms | +1.1 ms, +3 % | ≤ 75 ms, 56 % of it | Alacritty 47.9, Lokyr 50.3 then | ✔ As before |
+| Memory at rest, without the GPU's | 26.9 MB | 28.6 MB | +1.7 MB, +6 % | ≤ 35 MB, 82 % of it | Alacritty 31.3, Lokyr 25 then | ✔ As before |
+| Idle, interrupt wakeups | 0.35/s | 0.38/s | +0.03/s, +9 % | ≤ 0.5/s, 77 % of it | Alacritty 0.37, Lokyr 0.38 then | ✔ As before |
+| Idle, package idle wakeups | 0.00/s | 0.00/s | ±0.00/s | ≤ 0/s | — | ✔ As before |
+| `cat` of 1 GiB of ASCII on screen | 314.8 MiB/s | 311.9 MiB/s | −2.9 MiB/s, −1 % | ≥ 275.4 MiB/s | Ghostty 306, Lokyr 296 then | ✔ As before |
+| `seq 1 10000000` | 215.8 MiB/s | 223.8 MiB/s | +8.0 MiB/s, +4 % | — | — | ✔ As before |
+| Colored text, SGR | 284.7 MiB/s | 288.9 MiB/s | +4.2 MiB/s, +1 % | — | — | ✔ As before |
+| CJK and emoji | 217.2 MiB/s | 216.5 MiB/s | −0.7 MiB/s, −0 % | — | — | ✔ As before |
+| A frame on the CPU, ASCII, p50 | 0.285 ms | 0.288 ms | +0.003 ms, +1 % | — | — | ✔ As before |
+| A frame on the CPU, ASCII, p99 | 0.399 ms | 0.429 ms | +0.030 ms, +8 % | ≤ 2 ms, 21 % of it | — | ✔ As before |
+| A frame on the CPU, CJK and emoji, p50 | 0.73 ms | 0.73 ms | +0.00 ms, +1 % | — | — | ✔ As before |
 
 The latency's budgets, 2 refreshes at the p50 and 4.5 at the p99, set of a display at 120 Hz, are of these sessions' 60 Hz here: 33.3 and 75 ms. The throughput's of `cat` is the faster of Ghostty and Alacritty less 10 %, of [the comparison of 31 October 2026](compare-F2-134.md): Ghostty's 306 MiB/s.
 

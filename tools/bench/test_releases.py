@@ -11,14 +11,14 @@ HIGHER = {"better": "higher", "tolerance_pct": 4, "digits": 1, "unit": "MiB/s"}
 
 class Verdict(unittest.TestCase):
     def test_a_change_within_its_tolerance_is_none(self):
-        self.assertEqual(releases.verdict(LOWER, 20, 24), "✅ As before")
-        self.assertEqual(releases.verdict(HIGHER, 330, 318.6), "✅ As before")
+        self.assertEqual(releases.verdict(LOWER, 20, 24), "✔ As before")
+        self.assertEqual(releases.verdict(HIGHER, 330, 318.6), "✔ As before")
 
     def test_a_change_past_its_tolerance_is_better_or_worse_by_the_measure_s_direction(self):
-        self.assertEqual(releases.verdict(LOWER, 20, 13), "✅ Better")
+        self.assertEqual(releases.verdict(LOWER, 20, 13), "✔ Better")
         self.assertEqual(releases.verdict(LOWER, 13, 26), "⚠️ Worse, within its budget")
         self.assertEqual(releases.verdict(HIGHER, 300, 280), "⚠️ Worse")
-        self.assertEqual(releases.verdict(HIGHER, 280, 300), "✅ Better")
+        self.assertEqual(releases.verdict(HIGHER, 280, 300), "✔ Better")
 
     def test_a_value_past_its_budget_is_over_it_whatever_its_change(self):
         self.assertEqual(releases.verdict(LOWER, 36, 36), "❌ Over its budget")

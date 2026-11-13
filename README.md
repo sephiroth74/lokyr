@@ -49,12 +49,12 @@ Lokyr is built in phases, each with exit criteria that are measured, not assumed
 
 | Phase | What it brings | Status |
 |---|---|---|
-| F0 | Foundations: the workspace, CI, the measuring tools, the plugin runtime chosen | ✅ |
-| F1 | The headless terminal core, checked against xterm, `alacritty_terminal` and fuzzers | ✅ |
+| F0 | Foundations: the workspace, CI, the measuring tools, the plugin runtime chosen | ✔ |
+| F1 | The headless terminal core, checked against xterm, `alacritty_terminal` and fuzzers | ✔ |
 | F2 | The macOS app, a window of one pane | 🚧 |
 | F3 | The macOS MVP: tabs, splits, search, themes, the command palette | 🚧 |
 | F3b | MCP and agents | |
-| F4 | Third-party plugins in Luau, Sleip and its registry | ✅ |
+| F4 | Third-party plugins in Luau, Sleip and its registry | ✔ |
 | F5 | Shell integration, iTerm2's power features, images | |
 | F6 | 1.0 | |
 | F7 | Linux | |
@@ -79,22 +79,22 @@ Lokyr against Ghostty, Alacritty, kitty, WezTerm, iTerm2 and Terminal.app, under
   <img src="docs/images/lokyr-htop.png" alt="htop in a Lokyr window of 100 by 30 cells, with the tree of the window's own processes: lokyr, login, bash and htop" width="760">
 </p>
 
-- ✅ Windows drawn with Metal, at the display's refresh rate, their frames only when something changed.
-- ✅ Tabs, in a bar at the top, at the bottom or down a side, in three looks, dragged between windows and onto panes, a program's progress round its tab.
-- ✅ Split panes, their dividers dragged, the panes without the keyboard faded.
-- ✅ A find bar that highlights every match, through 100 000 lines in about 25 ms, and marks them along the panes' scroll bars, which show as macOS's do.
-- ✅ Shell integration for zsh, bash and fish: jumps between prompts, a mark of each command's outcome, the command at the pane's top as its output scrolls, a notification as a long one ends.
-- ✅ Fonts through CoreText: fallback, ligatures, bold and italic faces or their synthesis, emoji, box drawing and powerline symbols drawn to the cell.
-- ✅ xterm's sequences, the kitty keyboard protocol, synchronized output, OSC 8 links, OSC 52 with consent, Unicode 18's grapheme clusters and widths.
-- ✅ Input methods, Secure Keyboard Entry, Option as Meta, chords and leaders in the keys.
-- ✅ Inline images, of iTerm2's protocol and of kitty's graphics protocol, as `imgcat`, `kitten icat`, `chafa`, `timg` and `yazi` send them, within 64 MiB a pane.
-- ✅ AI agents on their tabs, working, waiting for you or done, Claude Code's of its hooks, and ⌘-click on a path's line in your editor.
-- ✅ Selection, copy on select, a copy mode of vi's keys through the scrollback, paste with a check of what it holds, drag and drop of files.
-- ✅ A quick terminal on a global key, from any edge of the screen.
-- ✅ Windows, tabs and splits that open again as Lokyr starts, each pane in its folder; New Lokyr Window Here and New Lokyr Tab Here in the Finder, and a folder dropped on the Dock's icon; Lokyr as the default terminal of scripts, `ssh` and man pages' links.
-- ✅ Notifications, the bell, smooth cursor blinking that the window server draws.
-- ✅ A config in TOML, applied as it is saved, its errors shown in the window.
-- ✅ English and Italian, as the system's language is, or as the config says.
+- ✔ Windows drawn with Metal, at the display's refresh rate, their frames only when something changed.
+- ✔ Tabs, in a bar at the top, at the bottom or down a side, in three looks, dragged between windows and onto panes, a program's progress round its tab.
+- ✔ Split panes, their dividers dragged, the panes without the keyboard faded.
+- ✔ A find bar that highlights every match, through 100 000 lines in about 25 ms, and marks them along the panes' scroll bars, which show as macOS's do.
+- ✔ Shell integration for zsh, bash and fish: jumps between prompts, a mark of each command's outcome, the command at the pane's top as its output scrolls, a notification as a long one ends.
+- ✔ Fonts through CoreText: fallback, ligatures, bold and italic faces or their synthesis, emoji, box drawing and powerline symbols drawn to the cell.
+- ✔ xterm's sequences, the kitty keyboard protocol, synchronized output, OSC 8 links, OSC 52 with consent, Unicode 18's grapheme clusters and widths.
+- ✔ Input methods, Secure Keyboard Entry, Option as Meta, chords and leaders in the keys.
+- ✔ Inline images, of iTerm2's protocol and of kitty's graphics protocol, as `imgcat`, `kitten icat`, `chafa`, `timg` and `yazi` send them, within 64 MiB a pane.
+- ✔ AI agents on their tabs, working, waiting for you or done, Claude Code's of its hooks, and ⌘-click on a path's line in your editor.
+- ✔ Selection, copy on select, a copy mode of vi's keys through the scrollback, paste with a check of what it holds, drag and drop of files.
+- ✔ A quick terminal on a global key, from any edge of the screen.
+- ✔ Windows, tabs and splits that open again as Lokyr starts, each pane in its folder; New Lokyr Window Here and New Lokyr Tab Here in the Finder, and a folder dropped on the Dock's icon; Lokyr as the default terminal of scripts, `ssh` and man pages' links.
+- ✔ Notifications, the bell, smooth cursor blinking that the window server draws.
+- ✔ A config in TOML, applied as it is saved, its errors shown in the window.
+- ✔ English and Italian, as the system's language is, or as the config says.
 
 ## Bundled plugins
 

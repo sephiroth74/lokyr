@@ -44,8 +44,8 @@ def verdict(measure, before, after):
     if worse:
         return "⚠️ Worse, within its budget" if budget is not None else "⚠️ Worse"
     if better:
-        return "✅ Better"
-    return "✅ As before"
+        return "✔ Better"
+    return "✔ As before"
 
 
 def change_text(measure, before, after):
