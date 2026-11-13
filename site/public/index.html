@@ -95,7 +95,11 @@
 
   *, *::before, *::after { box-sizing: border-box; }
 
-  html { background: var(--bg); }
+  html {
+    background: var(--bg);
+    /* #install lands below the sticky top bar. */
+    scroll-padding-top: 88px;
+  }
 
   body {
     margin: 0;
@@ -143,27 +147,64 @@
     margin-inline: auto;
   }
 
-  /* Top bar */
+  /* The top bar, which stays as the page scrolls: the page's ground, a
+     little translucent and blurred, the page passing under it. Where the
+     browser ties an animation to the scroll, the bar starts clear over the
+     glow and takes its ground and its line within the first 80 px; elsewhere
+     it has them from the start. Its height never changes. */
+  .bar {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: rgba(11, 9, 17, 0.8);
+    -webkit-backdrop-filter: blur(14px) saturate(140%);
+            backdrop-filter: blur(14px) saturate(140%);
+    border-bottom: 1px solid var(--line);
+  }
+  @supports (animation-timeline: scroll()) {
+    .bar {
+      animation: bar-ground linear both;
+      animation-timeline: scroll();
+      animation-range: 0 80px;
+    }
+  }
+  @keyframes bar-ground {
+    from {
+      background: rgba(11, 9, 17, 0);
+      border-bottom-color: transparent;
+      -webkit-backdrop-filter: none;
+              backdrop-filter: none;
+    }
+  }
   .top {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 28px 0;
+    gap: 32px;
+    padding: 18px 0;
   }
   .brand {
     display: flex;
+    flex: none;
     align-items: center;
     gap: 10px;
     font-weight: 600;
     letter-spacing: -0.01em;
   }
   .brand img { width: 28px; height: 28px; }
+  /* The links on one line at every width, scrolling sideways where they do
+     not fit. */
   .top-links {
     display: flex;
     align-items: center;
     gap: 22px;
+    min-width: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
     font-size: 14px;
+    white-space: nowrap;
   }
+  .top-links::-webkit-scrollbar { display: none; }
   .top-links a { color: var(--muted); text-decoration: none; }
   .top-links a.pill:hover { color: var(--fg); border-color: var(--violet); }
   .top-links a:hover { color: var(--fg); }
@@ -192,7 +233,7 @@
   /* Hero */
   .hero {
     text-align: center;
-    padding: 48px 0 72px;
+    padding: 58px 0 72px;
   }
   .mark {
     display: block;
@@ -590,6 +631,16 @@
     .road li::before { left: -34px; top: 3px; }
   }
   @media (max-width: 600px) {
+    /* The links beside the brand, scrolling under a fade at the right, each
+       a target of 44 px. */
+    .top { gap: 20px; padding: 6px 0; }
+    .top-links {
+      -webkit-mask-image: linear-gradient(90deg, #000 85%, transparent);
+              mask-image: linear-gradient(90deg, #000 85%, transparent);
+      padding-right: 24px;
+    }
+    .top-links a { padding-block: 12px; }
+    .top-links a.pill { padding-block: 6px; }
     .features { grid-template-columns: 1fr; }
     .terminal pre { font-size: 12.5px; padding: 16px; }
     .hero { padding-top: 24px; }
@@ -603,18 +654,20 @@
 <body>
 <div class="backdrop" aria-hidden="true"></div>
 
-<header class="wrap top">
+<header class="bar">
+<div class="wrap top">
   <a class="brand" href="/" style="color: inherit; text-decoration: none;">
     <img src="icon.svg" alt="" width="28" height="28">
     Lokyr
   </a>
-  <nav class="top-links">
+  <nav class="top-links" aria-label="Sections">
     <a href="#install">Install</a>
     <a href="docs/">Docs</a>
     <a href="docs/plugins/">Plugins</a>
     <a href="search.html">Search</a>
     <a class="pill" href="https://github.com/sephiroth74/lokyr/releases/latest"><span class="dot" aria-hidden="true"></span>1.0.0 is out</a>
   </nav>
+</div>
 </header>
 
 <main>

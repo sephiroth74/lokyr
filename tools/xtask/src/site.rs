@@ -468,6 +468,7 @@ fn page(document: &Path, text: &str, settings: &Settings) -> String {
             description: Some(&shortened(&description)),
             canonical: Some(&canonical(&page_path(document))),
             indexed: true,
+            section: Section::of(document),
         },
         &"../".repeat(depth),
         settings,
@@ -486,6 +487,7 @@ fn search_page(settings: &Settings) -> String {
             description: None,
             canonical: None,
             indexed: false,
+            section: Some(Section::Search),
         },
         "",
         settings,
@@ -507,6 +509,7 @@ fn missing_page(settings: &Settings) -> String {
             description: None,
             canonical: None,
             indexed: false,
+            section: None,
         },
         "/",
         settings,
@@ -530,6 +533,71 @@ struct Head<'a> {
     canonical: Option<&'a str>,
     /// Whether the search engines may list the page.
     indexed: bool,
+    /// The top bar's section that the page belongs to, which the bar marks.
+    section: Option<Section>,
+}
+
+/// The top bar's sections, each of its label and its page from the root.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Section {
+    Docs,
+    Configuration,
+    Plugins,
+    Themes,
+    Changelog,
+    Search,
+}
+
+impl Section {
+    const ALL: [Section; 6] = [
+        Section::Docs,
+        Section::Configuration,
+        Section::Plugins,
+        Section::Themes,
+        Section::Changelog,
+        Section::Search,
+    ];
+
+    fn label(self) -> &'static str {
+        match self {
+            Section::Docs => "Docs",
+            Section::Configuration => "Configuration",
+            Section::Plugins => "Plugins",
+            Section::Themes => "Themes",
+            Section::Changelog => "Changelog",
+            Section::Search => "Search",
+        }
+    }
+
+    fn page(self) -> &'static str {
+        match self {
+            Section::Docs => "docs/",
+            Section::Configuration => "docs/CONFIGURATION.html",
+            Section::Plugins => "docs/plugins/",
+            Section::Themes => "docs/themes/authoring.html",
+            Section::Changelog => "changelog.html",
+            Section::Search => "search.html",
+        }
+    }
+
+    /// The section of `document`: the configuration's, a plugin's or a
+    /// theme's guide, the changelog and the release notes; the other
+    /// documents of `docs/` the documentation's; the root's guides none.
+    fn of(document: &Path) -> Option<Section> {
+        if document == Path::new("docs/CONFIGURATION.md") {
+            Some(Section::Configuration)
+        } else if document.starts_with("docs/plugins") {
+            Some(Section::Plugins)
+        } else if document.starts_with("docs/themes") {
+            Some(Section::Themes)
+        } else if document == Path::new("CHANGELOG.md") || document.starts_with("docs/releases") {
+            Some(Section::Changelog)
+        } else if document.starts_with("docs") {
+            Some(Section::Docs)
+        } else {
+            None
+        }
+    }
 }
 
 /// `text` of `DESCRIPTION` characters at most: cut at the last space within
@@ -615,6 +683,21 @@ fn template(
     }
     // The root as a link: the folder itself where the page is at the root.
     let root = if up.is_empty() { "./" } else { up };
+    // The bar's sections, the page's own marked as the current one.
+    let mut sections = String::new();
+    for section in Section::ALL {
+        let current = if head.section == Some(section) {
+            r#" aria-current="page""#
+        } else {
+            ""
+        };
+        let _ = write!(
+            sections,
+            "\n    <a href=\"{up}{}\"{current}>{}</a>",
+            section.page(),
+            section.label()
+        );
+    }
     format!(
         r##"<!doctype html>
 <html lang="en">
@@ -629,17 +712,13 @@ fn template(
 {more}</head>
 <body>
 <div class="backdrop" aria-hidden="true"></div>
-<header class="wrap top">
+<header class="bar">
+<div class="wrap top">
   <a class="brand" href="{root}"><img src="{up}icon.svg" alt="" width="28" height="28">Lokyr</a>
-  <nav>
-    <a href="{up}docs/">Docs</a>
-    <a href="{up}docs/CONFIGURATION.html">Configuration</a>
-    <a href="{up}docs/plugins/">Plugins</a>
-    <a href="{up}docs/themes/authoring.html">Themes</a>
-    <a href="{up}changelog.html">Changelog</a>
-    <a href="{up}search.html">Search</a>
+  <nav aria-label="Sections">{sections}
     <a href="https://github.com/sephiroth74/lokyr">GitHub</a>{social}
   </nav>
+</div>
 </header>
 {main}
 <footer>
@@ -1054,6 +1133,8 @@ mod tests {
         assert!(shown.contains(r#"<meta property="og:title" content="The bundled plugins">"#));
         assert!(!shown.contains("noindex"));
         assert!(shown.contains(r#"<a href="../../docs/">Docs</a>"#));
+        assert!(shown.contains(r#"<a href="../../docs/plugins/" aria-current="page">Plugins</a>"#));
+        assert_eq!(shown.matches("aria-current").count(), 1);
         assert!(shown.contains(r#"<meta property="og:image" content="https://lokyr.dev/og.png">"#));
         assert!(shown.contains(r#"<meta name="twitter:card" content="summary_large_image">"#));
         // A title of the name keeps it once; a page of no paragraph is
@@ -1071,6 +1152,16 @@ mod tests {
         assert!(search.contains(r#"<meta name="robots" content="noindex, follow">"#));
         assert!(!search.contains("canonical"));
         assert!(search.contains(r#"<a class="brand" href="./">"#));
+        assert!(search.contains(r#"<a href="search.html" aria-current="page">Search</a>"#));
+        assert_eq!(
+            Section::of(Path::new("docs/releases/1.0.0.md")),
+            Some(Section::Changelog)
+        );
+        assert_eq!(
+            Section::of(Path::new("docs/bench/RELEASES.md")),
+            Some(Section::Docs)
+        );
+        assert_eq!(Section::of(Path::new("CONTRIBUTING.md")), None);
         let missing = missing_page(&settings);
         assert!(missing.contains("noindex"));
         assert!(missing.contains(r#"<link rel="stylesheet" href="/style.css">"#));
