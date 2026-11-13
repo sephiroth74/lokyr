@@ -1,0 +1,10 @@
+]\cThese results measure the time it takes the terminal to fully parse all the data sent to it.
+Note that [31mrendering is suppressed[m (if the terminal supports the synchronized output escape code) to better benchmark parser performance. Use the --render flag to enable rendering.
+
+Results:
+  Only ASCII chars                     : 3.25s      @ [32m307.2  [m MB/s
+  Unicode chars                        : 2.87s      @ [32m313.6  [m MB/s
+  Unique multi-codepoint Unicode cells : 7.51s      @ [32m116.5  [m MB/s
+  CSI codes with few chars             : 2.15s      @ [32m233.0  [m MB/s
+  Long escape codes                    : 12.69s     @ [32m309.0  [m MB/s
+  Images                               : 8.63s      @ [32m309.0  [m MB/s

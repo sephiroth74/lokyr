@@ -141,10 +141,10 @@
       "budget": 33.3,
       "budget_label": "2 refreshes, 33.3",
       "reference": {
-        "name": "Alacritty",
-        "value": 21.2,
-        "lokyr": 22.8,
-        "source": "compare-F2-134.md",
+        "name": "Terminal.app",
+        "value": 18.4,
+        "lokyr": 18.5,
+        "source": "compare-F3-268.md",
         "how": "Typometer"
       }
     },
@@ -179,9 +179,9 @@
       "budget_label": "4.5 refreshes, 75",
       "reference": {
         "name": "Alacritty",
-        "value": 47.9,
-        "lokyr": 50.3,
-        "source": "compare-F2-134.md",
+        "value": 46.0,
+        "lokyr": 48.2,
+        "source": "compare-F3-268.md",
         "how": "Typometer"
       }
     },
@@ -215,9 +215,9 @@
       },
       "reference": {
         "name": "Alacritty",
-        "value": 31.3,
-        "lokyr": 25.0,
-        "source": "compare-F2-134.md"
+        "value": 31.1,
+        "lokyr": 27.8,
+        "source": "compare-F3-268.md"
       }
     },
     {
@@ -251,8 +251,8 @@
       "reference": {
         "name": "Alacritty",
         "value": 0.37,
-        "lokyr": 0.38,
-        "source": "compare-F2-134.md"
+        "lokyr": 0.35,
+        "source": "compare-F3-268.md"
       }
     },
     {
@@ -310,13 +310,13 @@
         "0.8.0": 319.0,
         "0.9.0": 314.8
       },
-      "budget": 275.4,
-      "budget_label": "Ghostty's less 10 %, 275",
+      "budget": 294.9,
+      "budget_label": "Ghostty's less 10 %, 295",
       "reference": {
         "name": "Ghostty",
-        "value": 306,
-        "lokyr": 296,
-        "source": "compare-F2-134.md"
+        "value": 328,
+        "lokyr": 318,
+        "source": "compare-F3-268.md"
       }
     },
     {

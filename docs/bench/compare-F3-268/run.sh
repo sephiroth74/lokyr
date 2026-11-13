@@ -3,8 +3,8 @@
 # now, beside Lokyr of main's build, under F2-134's conditions and of its
 # tool, `compare.py`: the startup, idle and memory, the throughput, and the
 # CPU's energy to show `cat` of 1 GiB. `setup` writes iTerm2's and
-# Terminal.app's profiles, the user's settings saved first, which `restore`
-# puts back at the end. With measures as arguments, those alone, as
+# Terminal.app's profiles, the settings of both saved first, which
+# `restore` puts back at the end. With measures as arguments, those alone, as
 # `sh run.sh setup check`.
 set -u
 REPO=$(cd "$(dirname "$0")/../../.." && pwd)

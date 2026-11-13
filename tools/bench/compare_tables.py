@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""The tables of the comparison's report, docs/bench/compare-F2-134.md, of
-its raw results, in Markdown:
+"""The tables of a comparison's report, as docs/bench/compare-F3-268.md, of
+its raw results, in Markdown, those whose results it holds:
 
-    python3 tools/bench/compare_tables.py
+    python3 tools/bench/compare_tables.py [compare-F3-268]
 """
 import csv
 import glob
@@ -11,11 +11,12 @@ import math
 import os
 import re
 import statistics
+import sys
 
 import report_charts
 
-ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "docs", "bench",
-                    "compare-F2-134")
+NAME = sys.argv[1] if len(sys.argv) > 1 else report_charts.COMPARE
+ROOT = os.path.join(report_charts.BENCH, NAME)
 TERMINALS = report_charts.TERMINALS
 KITTEN_TESTS = ["Only ASCII chars", "Unicode chars", "Unique multi-codepoint Unicode cells",
                 "CSI codes with few chars", "Long escape codes", "Images"]
@@ -67,7 +68,7 @@ def idle():
             for process in report["memory"] if process) / 1e6
         footprint = memory("footprint_without_gpu")
         processes = [process["name"] for process in report["memory"] if process]
-        if key == "iterm2":
+        if key == "iterm2" and os.path.exists(os.path.join(ROOT, "idle/iterm2-server.json")):
             footprint += load("idle/iterm2-server.json")["footprint_without_gpu"] / 1e6
             processes.append("its session's server, in its footprint alone")
         print(f"| {name} | {', '.join(processes)} | {rate('package_idle_wakeups'):.2f} "
@@ -87,6 +88,9 @@ def kitten(mode):
         for path in glob.glob(os.path.join(ROOT, f"throughput/{key}/{mode}-[0-9].txt")):
             with open(path) as file:
                 for line in file:
+                    # Its rates' colors, which later versions write whatever
+                    # the output.
+                    line = re.sub(r"\x1b\[[0-9;]*m", "", line)
                     found = re.match(r"\s*(.+?)\s*:\s*([\dm.]+)s\s*@\s*([\d.]+)\s*MB/s", line)
                     if found and found.group(1) in rates:
                         rates[found.group(1)].append(float(found.group(3)))
@@ -143,18 +147,23 @@ def unicode():
 
 
 def latency():
-    cases = report_charts.typometer()
+    cases = report_charts.typometer(NAME)
+    rates = [rate for rate in ("60", "120") if rate in cases]
+    rank = report_charts.nearest_rank
     for flood in ("", "-flood"):
-        print(f"\n| Terminal{', next to a flood' if flood else ''} | 60 Hz, median | p90 | p99 "
-              "| 120 Hz, median | p90 | p99 |\n|---|---|---|---|---|---|---|")
+        print(f"\n| Terminal{', next to a flood' if flood else ''} | "
+              + " | ".join(f"{rate} Hz, median | p90 | p99" for rate in rates)
+              + " |\n|---" + "|---|---|---" * len(rates) + "|")
         for key, name in TERMINALS:
-            if key not in cases["60" + flood]:
-                continue
-            rank = report_charts.nearest_rank
-            cells = [f"{statistics.median(values):.1f} ms | {rank(values, 90):.1f} "
-                     f"| {rank(values, 99):.1f}"
-                     for values in (cases[rate + flood][key] for rate in ("60", "120"))]
-            print(f"| {name} | " + " | ".join(cells) + " |")
+            cells = []
+            for rate in rates:
+                values = cases.get(rate + flood, {}).get(key)
+                # Rounded as the charts round, their halves away from zero.
+                one = lambda value: report_charts.charts.number(value, 1)
+                cells.append(f"{one(statistics.median(values))} ms | {one(rank(values, 90))} "
+                             f"| {one(rank(values, 99))}" if values else "— | — | —")
+            if any(cell != "— | — | —" for cell in cells):
+                print(f"| {name} | " + " | ".join(cells) + " |")
 
 
 def powermetrics():
@@ -232,12 +241,17 @@ def powermetrics():
 
 
 def main():
-    for title, table in [("Startup", startup), ("At rest", idle),
-                         ("kitty's benchmark", lambda: kitten("kitten")),
-                         ("kitty's benchmark, rendering", lambda: kitten("kitten-render")),
-                         ("vtebench", vtebench), ("cat and energy", throughput_and_energy),
-                         ("Unicode", unicode), ("Latency, Typometer", latency),
-                         ("powermetrics", powermetrics)]:
+    for title, table, folder in [("Startup", startup, "startup"), ("At rest", idle, "idle"),
+                                 ("kitty's benchmark", lambda: kitten("kitten"), "throughput"),
+                                 ("kitty's benchmark, rendering", lambda: kitten("kitten-render"),
+                                  "throughput"),
+                                 ("vtebench", vtebench, "throughput"),
+                                 ("cat and energy", throughput_and_energy, "energy"),
+                                 ("Unicode", unicode, "unicode"),
+                                 ("Latency, Typometer", latency, "latency"),
+                                 ("powermetrics", powermetrics, "powermetrics")]:
+        if not os.path.isdir(os.path.join(ROOT, folder)):
+            continue
         print(f"\n## {title}\n")
         table()
 

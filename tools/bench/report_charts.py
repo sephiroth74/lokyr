@@ -67,25 +67,20 @@ def median(values):
     return values[middle] if len(values) % 2 else (values[middle - 1] + values[middle]) / 2
 
 
-# The other terminals are measured once of their versions, in the
-# comparison's first session, of 31 October 2026, `OTHERS`; Lokyr again,
-# of the same tool and conditions, in the latest session of its own, of
-# 8 November 2026, `LOKYR`, whose figures take the place of its first.
-OTHERS = "compare-F2-134"
-LOKYR = "compare-F3-72"
-OTHERS_DATE = "31 October 2026"
-LOKYR_DATE = "8 November 2026"
-# Typometer's keys, of every terminal, the user's part of the first
-# session, the next morning.
-TYPOMETER_DATE = "1 November 2026"
+# The comparison: every terminal of its versions of then, in one session,
+# the latency at 60 Hz by Typometer too; at 120 Hz, the first comparison's,
+# of 1 November 2026, of the versions of then, not measured again yet.
+COMPARE = "compare-F3-268"
+COMPARE_DATE = "13 November 2026"
+FIRST = "compare-F2-134"
+FIRST_TYPOMETER_DATE = "1 November 2026"
 
 
-def compare_figures():
-    """Each terminal's figures in the comparison, from its raw results:
-    Lokyr's of its latest session, the others' of the first."""
+def compare_figures(root=COMPARE):
+    """Each terminal's figures in the comparison of `root`, from its raw
+    results."""
     figures = {}
     for key, _ in TERMINALS:
-        root = LOKYR if key == "lokyr" else OTHERS
         runs = [run["from_start_ms"] for round_ in (1, 2)
                 for run in load(f"{root}/startup/startup-{key}-{round_}.json")["runs"]]
         idle = load(f"{root}/idle/idle-{key}.json")
@@ -93,7 +88,11 @@ def compare_figures():
                       for r in idle["idle"] if r)
         footprint = sum(median([s["footprint_without_gpu"] for s in m["samples"]])
                         for m in idle["memory"] if m) / 1e6
-        if key == "iterm2":
+        # The first comparison measured iTerm2's session server apart, as
+        # its servers live outside its bundle; later ones take it among
+        # iTerm2's processes.
+        server = os.path.join(BENCH, f"{root}/idle/iterm2-server.json")
+        if key == "iterm2" and os.path.exists(server):
             footprint += load(f"{root}/idle/iterm2-server.json")["footprint_without_gpu"] / 1e6
         with open(os.path.join(BENCH, f"{root}/throughput/{key}/cat.jsonl")) as file:
             cat = median([json.loads(line)["mib_s"] for line in file])
@@ -107,18 +106,22 @@ def compare_figures():
     return figures
 
 
-def typometer():
-    """Typometer's keys, of each terminal, in milliseconds: `{case:
-    {terminal: [ms]}}`, the cases `60`, `60-flood`, `120` and
-    `120-flood`."""
+def typometer(root=COMPARE):
+    """Typometer's keys, of each terminal, in milliseconds, of every CSV
+    of `root`'s `latency/`: `{case: {terminal: [ms]}}`, the cases `60`,
+    `60-flood`, `120` and `120-flood`, those that it holds."""
     cases = {}
-    for name in ["60", "60-flood", "120"]:
-        with open(os.path.join(BENCH, f"compare-F2-134/latency/typometer-{name}.csv")) as file:
+    folder = os.path.join(BENCH, root, "latency")
+    for name in sorted(os.listdir(folder)):
+        if not name.endswith(".csv"):
+            continue
+        with open(os.path.join(folder, name)) as file:
             rows = list(csv.reader(file))
         for column, title in enumerate(rows[0]):
             # Typometer's own names of its runs, as `typo-kitty-60-flood`.
             _, terminal, *case = title.lower().split("-")
-            values = [float(row[column]) for row in rows[1:] if row[column].strip()]
+            values = [float(row[column]) for row in rows[1:]
+                      if column < len(row) and row[column].strip()]
             cases.setdefault("-".join(case), {})[terminal] = values
     return cases
 
@@ -131,15 +134,14 @@ def nearest_rank(values, percent):
 
 
 def compare():
-    """Lokyr against the other terminals of macOS: Lokyr of its latest
-    session, the others of the first, which the subtitles tell, as the
-    latency's do of their one session, Typometer's, of every terminal, which
-    Lokyr's latest session did not measure again. The README shows the
-    charts one under another, of one height, the tallest's."""
+    """Lokyr against the other terminals of macOS, every terminal of one
+    session; the latency at 120 Hz of the first comparison's, which its
+    subtitle tells. The README shows the charts one under another, of one
+    height, the tallest's."""
     figures = compare_figures()
     rows = lambda measure: [(name, figures[key][measure], key == "lokyr")
                             for key, name in TERMINALS]
-    of = f"; Lokyr measured on {LOKYR_DATE}, the others on {OTHERS_DATE}"
+    of = f"; measured on {COMPARE_DATE}"
     bars = [
         ("startup", "Startup", "From the process's start to its first window, median of 10 runs; "
          "less is better" + of, rows("startup"), "ms", {}),
@@ -152,15 +154,19 @@ def compare():
         ("energy", "CPU energy", "Joules that the terminal's CPU spends to show cat of 1 GiB; "
          "less is better" + of, rows("energy"), "J", {"digits": 1}),
     ]
-    cases = typometer()
+    latest, first = typometer(), typometer(FIRST)
+    latency_of = lambda cases, rate: [
+        (name, statistics.median(cases[rate][key]), nearest_rank(cases[rate][key], 99),
+         key == "lokyr")
+        for key, name in TERMINALS if key in cases[rate]]
     latency = [
-        (rate, f"Latency at {rate} Hz",
+        ("60", "Latency at 60 Hz",
          "A key to its echo on screen, in ms, of 200 keys of Typometer's, the window alone; "
-         f"less is better; every terminal measured on {TYPOMETER_DATE}",
-         [(name, statistics.median(cases[rate][key]),
-           nearest_rank(cases[rate][key], 99), key == "lokyr")
-          for key, name in TERMINALS if key in cases[rate]])
-        for rate in ("60", "120")
+         f"less is better; measured on {COMPARE_DATE}", latency_of(latest, "60")),
+        ("120", "Latency at 120 Hz",
+         "A key to its echo on screen, in ms, of 200 keys of Typometer's, the window alone; "
+         f"less is better; measured on {FIRST_TYPOMETER_DATE}, of the versions of then",
+         latency_of(first, "120")),
     ]
     height = max(
         [charts.top_of(subtitle) + charts.BAND * len(data) + 34
@@ -168,10 +174,10 @@ def compare():
         + [charts.top_of(subtitle) + 22 + charts.BAND * len(data) + 34
            for _, _, subtitle, data in latency])
     for name, title, subtitle, data, unit, options in bars:
-        save(f"{LOKYR}/charts/{name}.svg",
+        save(f"{COMPARE}/charts/{name}.svg",
              charts.bars(title, subtitle, data, unit, height=height, **options))
     for rate, title, subtitle, data in latency:
-        save(f"{OTHERS}/charts/latency-{rate}hz.svg",
+        save(f"{COMPARE}/charts/latency-{rate}hz.svg",
              charts.ranges(title, subtitle, data, "ms", height=height))
 
 

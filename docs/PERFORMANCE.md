@@ -112,4 +112,4 @@ To compare Lokyr fairly with Ghostty, Alacritty, kitty, WezTerm and iTerm2:
 - multiple runs, reporting median and spread;
 - terminal versions recorded alongside the results.
 
-[The comparison of 31 October 2026](bench/compare-F2-134.md) takes these conditions, and more, with the tools of each measure.
+[The comparison of 31 October 2026](bench/compare-F2-134.md) takes these conditions, and more, with the tools of each measure; [the comparison of 13 November 2026](bench/compare-F3-268.md) takes them again, of every terminal's version of that day.

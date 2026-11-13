@@ -1,0 +1,147 @@
+== 2026-11-13 07:49:54 setup check
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=37683299)	100%; charged; 0:00 remaining present: true
+ 7:49  up 20:27, 20 users, load averages: 5.02 3.29 2.57
+Graphics/Displays:
+    Apple M5 Pro:
+      Displays:
+        DELL P2721Q:
+          Resolution: 5120 x 2880 (5K/UHD+ - Ultra High Definition Plus)
+          Main Display: Yes
+07:49:54 setup, load { 5.02 3.29 2.57 }
+07:50:00 check, load { 4.86 3.29 2.58 }
+07:50:00 check lokyr
+07:50:05 lokyr 40 120 | /tmp/lokyr/compare-zdotdir /tmp/lokyr/compare-xdg xterm-256color | 
+07:50:05 check ghostty
+07:50:10 ghostty 40 120 | /tmp/lokyr/compare-zdotdir /tmp/lokyr/compare-xdg xterm-ghostty | 
+07:50:10 check alacritty
+07:50:15 alacritty 40 120 | /tmp/lokyr/compare-zdotdir /tmp/lokyr/compare-xdg xterm-256color | 
+07:50:15 check kitty
+07:50:21 kitty 40 120 | /tmp/lokyr/compare-zdotdir /tmp/lokyr/compare-xdg xterm-kitty | 
+07:50:21 check wezterm
+07:50:25 wezterm 40 120 | /tmp/lokyr/compare-zdotdir /tmp/lokyr/compare-xdg xterm-256color | 
+07:50:25 check iterm2
+window id 2337
+07:50:33 iterm2 40 120 | /tmp/lokyr/compare-zdotdir /tmp/lokyr/compare-xdg xterm-new | 
+07:50:33 check terminal
+tab 1 of window id 2348
+07:50:41 terminal 40 120 | /tmp/lokyr/compare-zdotdir /tmp/lokyr/compare-xdg xterm-256color | 
+07:50:41 done check
+07:50:41 done, load { 4.56 3.40 2.65 }
+== 2026-11-13 07:50:50 restore
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=37683299)	100%; charged; 0:00 remaining present: true
+ 7:50  up 20:28, 21 users, load averages: 4.08 3.34 2.64
+Graphics/Displays:
+    Apple M5 Pro:
+      Displays:
+        DELL P2721Q:
+          Resolution: 5120 x 2880 (5K/UHD+ - Ultra High Definition Plus)
+          Main Display: Yes
+07:50:50 restore, load { 4.08 3.34 2.64 }
+07:50:50 restored iTerm2's and Terminal.app's settings
+07:50:50 done, load { 4.08 3.34 2.64 }
+== 2026-11-13 07:53:12 setup check startup idle throughput energycat restore
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=37683299)	100%; charged; 0:00 remaining present: true
+ 7:53  up 20:30, 21 users, load averages: 2.70 3.03 2.61
+Graphics/Displays:
+    Apple M5 Pro:
+      Displays:
+        DELL P2721Q:
+          Resolution: 5120 x 2880 (5K/UHD+ - Ultra High Definition Plus)
+          Main Display: Yes
+07:53:12 setup, load { 2.81 3.04 2.62 }
+07:53:17 check, load { 2.66 3.01 2.61 }
+07:53:18 check lokyr
+07:53:22 lokyr 40 120 | /tmp/lokyr/compare-zdotdir /tmp/lokyr/compare-xdg xterm-256color | 
+07:53:22 check ghostty
+07:53:27 ghostty 40 120 | /tmp/lokyr/compare-zdotdir /tmp/lokyr/compare-xdg xterm-ghostty | 
+07:53:27 check alacritty
+07:53:31 alacritty 40 120 | /tmp/lokyr/compare-zdotdir /tmp/lokyr/compare-xdg xterm-256color | 
+07:53:31 check kitty
+07:53:36 kitty 40 120 | /tmp/lokyr/compare-zdotdir /tmp/lokyr/compare-xdg xterm-kitty | 
+07:53:36 check wezterm
+07:53:41 wezterm 40 120 | /tmp/lokyr/compare-zdotdir /tmp/lokyr/compare-xdg xterm-256color | 
+07:53:41 check iterm2
+window id 2405
+07:53:49 iterm2 40 120 | /tmp/lokyr/compare-zdotdir /tmp/lokyr/compare-xdg xterm-new | 
+07:53:49 check terminal
+tab 1 of window id 2415
+07:53:56 terminal 40 120 | /tmp/lokyr/compare-zdotdir /tmp/lokyr/compare-xdg xterm-256color | 
+07:53:56 done check
+07:53:56 startup, load { 2.29 2.88 2.58 }
+07:53:57 startup lokyr 1
+07:54:13 startup ghostty 1
+07:54:21 startup alacritty 1
+07:54:29 startup kitty 1
+07:54:39 startup wezterm 1
+07:54:48 startup iterm2 1
+07:54:59 startup terminal 1
+07:55:07 startup iterm2 2
+07:55:18 startup wezterm 2
+07:55:27 startup kitty 2
+07:55:38 startup alacritty 2
+07:55:46 startup ghostty 2
+07:55:54 startup lokyr 2
+07:56:09 startup terminal 2
+07:56:17 done startup
+07:56:17 idle, load { 5.27 4.00 3.09 }
+07:56:18 idle lokyr
+07:57:35 idle ghostty
+07:58:52 idle alacritty
+08:00:10 idle kitty
+08:01:37 idle wezterm
+08:02:55 idle iterm2
+08:04:22 idle terminal
+08:05:40 done idle
+08:05:40 throughput, load { 1.09 1.54 2.15 }
+08:05:40 throughput lokyr
+08:10:38 throughput ghostty
+08:15:39 throughput alacritty
+08:22:46 throughput kitty
+08:29:47 throughput wezterm
+08:45:34 throughput iterm2
+window id 3400
+08:48:05 throughput terminal
+tab 1 of window id 3411
+09:12:29 done throughput
+09:12:29 energycat, load { 2.34 2.62 2.82 }
+09:12:29 energycat lokyr
+09:12:39 energycat ghostty
+09:12:49 energycat alacritty
+09:13:02 energycat kitty
+09:13:16 energycat wezterm
+09:13:45 energycat iterm2
+window id 3483
+09:14:11 energycat terminal
+tab 1 of window id 3494
+09:14:44 done energycat
+09:14:44 restore, load { 1.90 2.39 2.70 }
+09:14:44 restored iTerm2's and Terminal.app's settings
+09:14:44 done, load { 1.90 2.39 2.70 }
+== 2026-11-13 09:19:31 setup open restore
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=37683299)	100%; charged; 0:00 remaining present: true
+ 9:19  up 21:57, 37 users, load averages: 5.67 2.89 2.74
+Graphics/Displays:
+    Apple M5 Pro:
+      Displays:
+        DELL P2721Q:
+          Resolution: 5120 x 2880 (5K/UHD+ - Ultra High Definition Plus)
+          Main Display: Yes
+09:19:31 setup, load { 5.67 2.89 2.74 }
+09:20:23 open, load { 4.78 3.12 2.84 }
+09:20:23 open lokyr - quit it to open the next
+09:24:53 open ghostty - quit it to open the next
+09:35:39 open alacritty - quit it to open the next
+09:39:06 open kitty - quit it to open the next
+09:43:06 open wezterm - quit it to open the next
+09:49:29 open iterm2 - quit it to open the next
+window id 3818
+09:54:12 open terminal - quit it to open the next
+tab 1 of window id 3922
+10:01:02 done open
+10:01:02 restore, load { 3.55 3.40 3.18 }
+10:01:03 restored iTerm2's and Terminal.app's settings
+10:01:03 done, load { 3.34 3.36 3.17 }
