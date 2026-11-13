@@ -29,7 +29,7 @@
 </p>
 
 > [!IMPORTANT]
-> **Lokyr is not ready for daily use yet.** Its terminal core is done, and its macOS app has tabs, splits, search and themes; the command palette and third-party plugins come next. See the [status](#status).
+> **Lokyr is before its first release.** Its macOS app has tabs, splits, search, themes, the command palette and third-party plugins; 1.0.0, the first release, comes next. See the [status](#status).
 
 <p align="center">
   <img src="docs/images/lokyr-code.png" alt="A Lokyr window of 100 by 30 cells, showing Rust source with syntax highlighting, by bat" width="760">
@@ -51,13 +51,15 @@ Lokyr is built in phases, each with exit criteria that are measured, not assumed
 |---|---|---|
 | F0 | Foundations: the workspace, CI, the measuring tools, the plugin runtime chosen | ✔ |
 | F1 | The headless terminal core, checked against xterm, `alacritty_terminal` and fuzzers | ✔ |
-| F2 | The macOS app, a window of one pane | 🚧 |
-| F3 | The macOS MVP: tabs, splits, search, themes, the command palette | 🚧 |
-| F3b | MCP and agents | |
+| F2 | The macOS app, a window of one pane | ✔ |
+| F3 | The macOS MVP: tabs, splits, search, themes, the command palette, the agents' state on the tabs; then 1.0.0, the first release | 🚧 |
 | F4 | Third-party plugins in Luau, Sleip and its registry | ✔ |
-| F5 | Shell integration, iTerm2's power features, images | |
-| F6 | 1.0 | |
-| F7 | Linux | |
+| F3b | MCP and agents, the settings' panel, themes in the registry | |
+| F5a | Blocks of commands, ssh integration | |
+| F5b | iTerm2's power features: tmux -CC, triggers, profiles, broadcast | |
+| F5c | Graphics and kitty's protocols: kitty graphics, sixel, hints | |
+| F6 | Plugin API 1.0 and hardening | |
+| F7 | After 1.0: Linux, a mux daemon, Windows | |
 
 ## Performance
 
