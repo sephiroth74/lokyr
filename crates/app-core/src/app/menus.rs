@@ -23,12 +23,16 @@ use lokyr_vt_core::terminal::{SelectionShape, SelectionUnit};
 use super::{
     ABOUT, APPEARANCES, App, CHECK_UPDATES, CONTEXT_ONLY, DEFAULT_TERMINAL, FLOAT_ON_TOP,
     INSTALL_CLAUDE_CODE, INSTALL_TOOLS, LOOK_UP, LOOK_UP_TITLE, MAN_KEYWORDS, MAN_PAGE,
-    MAN_PAGE_NAME, MAN_SEARCH, MAN_SECTION, NEXT_AGENT, PERFORMANCE, REPORT_ISSUE, SEARCH_WEB,
-    SECURE_INPUT, SETTINGS, SHOW_TIP, context, show_selection, shown_top,
+    MAN_PAGE_NAME, MAN_SEARCH, MAN_SECTION, NEXT_AGENT, OPEN_THEMES, PERFORMANCE, REPORT_ISSUE,
+    SEARCH_WEB, SECURE_INPUT, SETTINGS, SHOW_TIP, context, show_selection, shown_top,
 };
 use crate::drawing::Backend;
 use crate::mouse;
 use crate::window::{NativeMenu, Selecting};
+
+/// The command palette's theme picker, after which the view's menu holds the
+/// themes' folder.
+const PICK_THEME: &str = "command-palette.theme";
 
 impl<B: Backend> App<B> {
     /// Opens `window`'s context menu at `position`, over the cell there,
@@ -613,6 +617,7 @@ pub(super) fn main_menu(
                     && command.params.iter().all(|param| param.default.is_some())
                     && APPEARANCES.iter().all(|(name, ..)| *name != command.name)
                     && command.name != PERFORMANCE
+                    && command.name != OPEN_THEMES
                     && command.name != FLOAT_ON_TOP
                     && command.name != NEXT_AGENT
                     && command.name != SHOW_AGENTS
@@ -677,6 +682,27 @@ pub(super) fn main_menu(
         })
         .collect();
     let mut view = items(&[Category::View]);
+    // The themes' folder right after the palette's theme picker, where the
+    // palette is there; else after the view's other commands.
+    if let Some(command) = commands.get(OPEN_THEMES) {
+        let item = MenuItem::Command {
+            title: command.title.clone(),
+            command: OPEN_THEMES.to_owned(),
+            shortcut: keymap.shortcut(OPEN_THEMES).and_then(shortcut),
+        };
+        let picker = view.iter().position(
+            |item| matches!(item, MenuItem::Command { command, .. } if command == PICK_THEME),
+        );
+        match picker {
+            Some(at) => view.insert(at + 1, item),
+            None => {
+                if !view.is_empty() {
+                    view.push(MenuItem::Separator);
+                }
+                view.push(item);
+            }
+        }
+    }
     if !view.is_empty() {
         view.push(MenuItem::Separator);
     }

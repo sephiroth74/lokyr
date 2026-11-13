@@ -17,6 +17,7 @@ command-app-make-default-terminal = Make Lokyr the Default Terminal
 command-app-install-command-line-tools = Install Command Line Tools…
 command-app-install-claude-code-integration = Install Claude Code Integration…
 command-app-performance = Show Performance
+command-app-open-themes-folder = Open Themes Folder
 performance-measuring = Measuring…
 performance-frames = { $rate } FPS
 performance-cpu = CPU { $median } ms, at most { $longest }
@@ -164,6 +165,10 @@ ask-text-cancel = Cancel
 # system tells it, under the message.
 settings-failed-message = Lokyr cannot open its config file
 settings-no-home = Without a home directory, there is no config file: the defaults apply.
+
+# The alert of Open Themes Folder that opens nothing: what went wrong, as
+# the system tells it, under the message.
+themes-folder-failed-message = Lokyr cannot open its themes' folder
 quit-running-message = Quit Lokyr?
 quit-running-detail = { $windows ->
     [one] A window is running { $programs }, and quitting ends it.

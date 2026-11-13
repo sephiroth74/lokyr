@@ -34,6 +34,7 @@ tip-editor-line = Set editor under [links] to "vscode", "cursor" or "zed", and �
 tip-tab-drag = Drag a tab out of the bar for a window of its own, or onto a pane to split beside it.
 tip-tab-menu = Right-click a tab to give it a color, or double-click it to rename it.
 tip-themes = View › Choose Theme… previews each theme as you move through the list.
+tip-themes-folder = Put a .toml or .itermcolors theme in the folder that View › Open Themes Folder shows in the Finder, and Choose Theme… lists it.
 tip-long-command = A long command tells you as it ends while Lokyr is in the background: [notifications] long-command in the config sets how long.
 tip-look-up = Right-click a word to look it up, or to search the web or the man pages for it.
 tip-services = In the Finder, right-click a folder and choose Services › New Lokyr Tab Here for a terminal there.

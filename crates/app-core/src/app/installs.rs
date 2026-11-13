@@ -195,6 +195,48 @@ impl<B: Backend> App<B> {
     }
 
     /// Tells, in an alert, why a theme's file cannot be installed: `why`.
+    /// Opens the themes' folder beside the config file in the file manager,
+    /// made first where it is not there, so that a theme's file can go in;
+    /// or tells why it cannot.
+    pub(super) fn open_themes_folder(&mut self, platform: &mut dyn Platform) {
+        let Some(directory) = self
+            .config_file
+            .as_ref()
+            .and_then(|file| themes::directory(&file.path))
+        else {
+            let why = self.texts.text("theme-install-no-folder");
+            return self.tell_themes_folder_failed(platform, why);
+        };
+        let opened = fs::create_dir_all(&directory)
+            .map_err(|error| format!("{}: {error}", directory.display()))
+            .and_then(|()| {
+                platform
+                    .resolve_target(&directory.display().to_string())
+                    .and_then(|target| platform.open(&target))
+                    .map_err(|error| error.to_string())
+            });
+        if let Err(why) = opened {
+            self.tell_themes_folder_failed(platform, why);
+        }
+    }
+
+    /// Tells, in an alert of the window that the commands run in, or of the
+    /// one that has the focus, that the themes' folder does not open, and
+    /// `why`, as the log does.
+    fn tell_themes_folder_failed(&mut self, platform: &mut dyn Platform, why: String) {
+        eprintln!("lokyr: {why}");
+        let alert = Alert {
+            style: AlertStyle::Warning,
+            message: self.texts.text("themes-folder-failed-message"),
+            detail: why,
+            buttons: Vec::new(),
+            suppression: None,
+            input: None,
+        };
+        let window = self.acting.or_else(|| platform.focused_window());
+        platform.show_alert(window, &alert);
+    }
+
     fn tell_install_failed(&mut self, platform: &mut dyn Platform, why: &str) {
         let alert = Alert {
             style: AlertStyle::Warning,

@@ -16,7 +16,7 @@ First look whether Lokyr already has it: it holds 278 themes of that collection,
 ~/.config/lokyr/themes/
 ```
 
-Where `XDG_CONFIG_HOME` is set, the folder is `$XDG_CONFIG_HOME/lokyr/themes/`. From a terminal:
+Where `XDG_CONFIG_HOME` is set, the folder is `$XDG_CONFIG_HOME/lokyr/themes/`. View › Open Themes Folder, which the command palette runs too, opens it in the Finder, making it first if it is not there, so that the file can be dragged in. From a terminal:
 
 ```sh
 mkdir -p ~/.config/lokyr/themes

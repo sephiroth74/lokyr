@@ -368,7 +368,7 @@ The default theme's terminal colors are the built-in palette of F2, with a light
 ### Where themes come from
 
 - **Held by the app**: the collection's schemes of a permissive license, as its `licenses.yml` tells, and those whose license is checked at their source, converted into the native format as the app builds, of a pinned commit, by the same importer, each with its author, license and source; their notices in the bundle's `Contents/Resources/licenses`; and Lokyr's own light and dark themes.
-- **The themes' folder**: the files of `~/.config/lokyr/themes/`, `.toml` and `.itermcolors`, each named by its file; one of a name that the app holds takes its place; a file with an error tells it with its line, the theme in force staying.
+- **The themes' folder**: the files of `~/.config/lokyr/themes/`, `.toml` and `.itermcolors`, each named by its file; one of a name that the app holds takes its place; a file with an error tells it with its line, the theme in force staying. View › Open Themes Folder, `app.open-themes-folder`, opens it in the Finder, made first where it is not there.
 - **From the Finder**: a double click on an `.itermcolors` file, or a file dropped on Lokyr's icon in the Dock, asks to install it into the themes' folder. Lokyr opens `.itermcolors` files of an alternate rank, so that iTerm2 keeps them where it is installed. A file dropped on a pane gives the program its path, as for every file.
 - **The whole collection**, those that the app cannot hold too, with Sleip in F4.
 

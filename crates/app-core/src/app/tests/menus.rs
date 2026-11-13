@@ -133,6 +133,7 @@ fn starting_opens_a_window_under_the_menus_of_the_commands() {
             "-",
             "Command Palette… shift+cmd+p",
             "Choose Theme…",
+            "Open Themes Folder",
             "-",
             "Appearance",
             "-",
@@ -362,6 +363,11 @@ fn the_app_s_commands_register_with_their_categories_and_titles() {
                 "app.make-default-terminal",
                 "Make Lokyr the Default Terminal",
                 Category::App
+            ),
+            (
+                "app.open-themes-folder",
+                "Open Themes Folder",
+                Category::View
             ),
             ("app.performance", "Show Performance", Category::View),
             ("app.quit", "Quit Lokyr", Category::App),

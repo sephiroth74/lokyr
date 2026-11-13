@@ -10,6 +10,7 @@ from 1.0.0; before it, a minor version may change what a previous one did.
 
 ### Added
 
+- View › Open Themes Folder, which the command palette runs too, opens the folder of your own themes in the Finder, making it first if it is not there, so that a theme's file can be dragged in.
 - Plugins read a window's title as its titlebar shows it, `WindowInfo.title`, to draw it in the system's place.
 
 ### Fixed

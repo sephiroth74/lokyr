@@ -94,6 +94,10 @@ const QUIT: &str = "app.quit";
 /// when it is not there.
 const SETTINGS: &str = "app.settings";
 
+/// The command that opens the themes' folder beside the config file in
+/// the file manager, made first when it is not there.
+const OPEN_THEMES: &str = "app.open-themes-folder";
+
 /// The command that opens the About panel: the app's version and build,
 /// its copyright and its credits.
 const ABOUT: &str = "app.about";
@@ -2716,6 +2720,10 @@ impl<B: Backend> App<B> {
                     self.open_settings(platform);
                     Ok(())
                 }
+                OPEN_THEMES => {
+                    self.open_themes_folder(platform);
+                    Ok(())
+                }
                 ABOUT => {
                     self.show_about(platform);
                     Ok(())
@@ -4733,6 +4741,7 @@ fn commands(texts: &Texts, plugins: &Plugins) -> Registry {
             Category::App,
         ),
         (PERFORMANCE, "app-performance", Category::View),
+        (OPEN_THEMES, "app-open-themes-folder", Category::View),
         (NEW_WINDOW, "window-new", Category::Windows),
         (CLOSE_WINDOW, "window-close", Category::Windows),
         (SET_TITLE, "window-set-title", Category::Windows),

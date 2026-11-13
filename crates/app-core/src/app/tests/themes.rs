@@ -604,3 +604,66 @@ fn a_program_of_mode_2031_learns_of_the_appearance_s_scheme_as_it_switches() {
     fake.send_app(&mut app, AppEvent::AppearanceChanged(Appearance::Dark));
     run_until(&mut fake, &mut app, |_, app| shown(app, "got:E[?997;1n"));
 }
+
+#[test]
+fn open_themes_folder_opens_the_folder_made_first_in_the_file_manager() {
+    let (mut fake, mut app, directory) = with_themes("open-folder", "", &[]);
+    let themes = directory.join("themes");
+    std::fs::remove_dir_all(&themes).unwrap();
+    // The view's menu has it right after the palette's theme picker.
+    let view = menu_items(&fake, 3);
+    let picker = view
+        .iter()
+        .position(|item| item == "Choose Theme…")
+        .unwrap();
+    assert_eq!(view[picker + 1], "Open Themes Folder");
+    // A folder that is not there is made, then opens.
+    fake.send_app(&mut app, AppEvent::Command(OPEN_THEMES.to_owned()));
+    assert!(themes.is_dir());
+    let opened = std::fs::canonicalize(&themes).unwrap();
+    assert_eq!(fake.opened(), [opened.display().to_string()]);
+    // One that is there opens as it is, its files kept.
+    write(&directory, "Kept", &theme("#101010"));
+    fake.send_app(&mut app, AppEvent::Command(OPEN_THEMES.to_owned()));
+    assert_eq!(fake.opened().len(), 2);
+    assert!(themes.join("Kept.toml").is_file());
+    assert!(fake.alerts().is_empty());
+    let _ = std::fs::remove_dir_all(&directory);
+}
+
+#[test]
+fn open_themes_folder_tells_why_it_opens_nothing() {
+    let told = |fake: &Fake| {
+        fake.alerts()
+            .iter()
+            .map(|shown| (shown.alert.message.clone(), shown.alert.detail.clone()))
+            .collect::<Vec<_>>()
+    };
+    let message = "Lokyr cannot open its themes' folder".to_owned();
+    // A folder that cannot be made: a link to one that is gone.
+    let (mut fake, mut app, directory) = with_themes("open-folder-failed", "", &[]);
+    let window = fake.windows().next().unwrap();
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    let themes = directory.join("themes");
+    std::fs::remove_dir_all(&themes).unwrap();
+    std::os::unix::fs::symlink(directory.join("gone"), &themes).unwrap();
+    fake.send_app(&mut app, AppEvent::Command(OPEN_THEMES.to_owned()));
+    let shown = told(&fake);
+    assert_eq!(shown.len(), 1);
+    assert_eq!(shown[0].0, message);
+    assert!(
+        shown[0].1.contains(&themes.display().to_string()),
+        "{shown:?}"
+    );
+    assert!(fake.opened().is_empty());
+    // On the window that has the focus.
+    assert_eq!(fake.alerts()[0].window, Some(window));
+    let _ = std::fs::remove_dir_all(&directory);
+    // Without a config file, there is no folder.
+    let (mut fake, mut app) = started();
+    fake.send_app(&mut app, AppEvent::Command(OPEN_THEMES.to_owned()));
+    let shown = told(&fake);
+    assert_eq!(shown.len(), 1);
+    assert_eq!(shown[0].0, message);
+    assert!(fake.opened().is_empty());
+}

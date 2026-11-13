@@ -1282,7 +1282,7 @@ Whether the Dock's icon counts the agents that wait for you, in every window, in
 
 The colors of the terminal and of Lokyr's own interface: a theme for the light appearance and one for the dark one, which follow the system's appearance, or the one that View › Appearance chooses, and switch at once.
 
-A theme is a built-in one, `Lokyr Light` or `Lokyr Dark`, one of the themes that Lokyr holds, or a file of the `themes` folder beside the config file, `~/.config/lokyr/themes/`, named by its file without its extension: `Nightfall` is `themes/Nightfall.toml`, in Lokyr's own format below, or `themes/Nightfall.itermcolors`, the format of the largest collections of terminal themes, which Lokyr reads as it is. A file of the folder of a held or built-in theme's name takes its place, and a `.toml` one an `.itermcolors` one of its name.
+A theme is a built-in one, `Lokyr Light` or `Lokyr Dark`, one of the themes that Lokyr holds, or a file of the `themes` folder beside the config file, `~/.config/lokyr/themes/`, named by its file without its extension: `Nightfall` is `themes/Nightfall.toml`, in Lokyr's own format below, or `themes/Nightfall.itermcolors`, the format of the largest collections of terminal themes, which Lokyr reads as it is. A file of the folder of a held or built-in theme's name takes its place, and a `.toml` one an `.itermcolors` one of its name. View › Open Themes Folder opens the folder in the Finder, making it first if it is not there.
 
 To make a theme, [Making a theme](themes/authoring.md) tells every key and color of the format, of [a full example](themes/example.toml).
 

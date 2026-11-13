@@ -74,6 +74,15 @@
   {
     "capabilities": [],
     "category": "view",
+    "name": "app.open-themes-folder",
+    "params": [],
+    "plugin": null,
+    "title": "Open Themes Folder",
+    "when": null
+  },
+  {
+    "capabilities": [],
+    "category": "view",
     "name": "app.performance",
     "params": [],
     "plugin": null,

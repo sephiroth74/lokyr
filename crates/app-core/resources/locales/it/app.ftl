@@ -16,6 +16,7 @@ command-app-make-default-terminal = Rendi Lokyr il terminale predefinito
 command-app-install-command-line-tools = Installa gli strumenti da riga di comando…
 command-app-install-claude-code-integration = Installa l'integrazione con Claude Code…
 command-app-performance = Mostra prestazioni
+command-app-open-themes-folder = Apri la cartella dei temi
 performance-measuring = Misurazione…
 performance-frames = { $rate } FPS
 performance-cpu = CPU { $median } ms, al più { $longest }
@@ -142,6 +143,7 @@ ask-text-cancel = Annulla
 
 settings-failed-message = Lokyr non riesce ad aprire il file di configurazione
 settings-no-home = Senza una cartella home non c'è un file di configurazione: valgono i valori predefiniti.
+themes-folder-failed-message = Lokyr non riesce ad aprire la cartella dei temi
 quit-running-message = Uscire da Lokyr?
 quit-running-detail = { $windows ->
     [one] In una finestra è in esecuzione { $programs }: uscire lo termina.
