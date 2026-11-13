@@ -431,4 +431,42 @@ fn lokyr_s_plugins_item_opens_the_settings_tab_at_the_plugin_manager_s_page_of_e
     assert!(has("plugin:lokyr/plugin-manager"));
     assert!(!has("toggle:lokyr/plugin-manager"));
     assert!(has("none-installed"));
+    // The wheel scrolls the page down, past the window's height.
+    let width = fake.window(window).unwrap().size.points.width;
+    fake.send(
+        &mut app,
+        window,
+        WindowEvent::Resized(WindowSize::new(
+            Size {
+                width,
+                height: 300.0,
+            },
+            2.0,
+        )),
+    );
+    frames(&mut fake, &mut app, window);
+    let view = page_view(&app, window).unwrap();
+    let frame = view.frame.unwrap();
+    let scroll = view.surface.tree.by_key(&"plugins-scroll".into()).unwrap();
+    assert!(view.surface.layout.scroll_room(&view.surface.tree, scroll) > 0.0);
+    let scale = fake.window(window).unwrap().size.scale;
+    let middle = Point {
+        x: f64::from(frame.x + frame.width / 2.0) / scale,
+        y: f64::from(frame.y + frame.height / 2.0) / scale,
+    };
+    fake.send(
+        &mut app,
+        window,
+        WindowEvent::Scroll {
+            delta: ScrollDelta::Lines { x: 0.0, y: -3.0 },
+            phase: None,
+            momentum: false,
+            position: middle,
+            mods: Modifiers::NONE,
+        },
+    );
+    frames(&mut fake, &mut app, window);
+    let view = page_view(&app, window).unwrap();
+    let scroll = view.surface.tree.by_key(&"plugins-scroll".into()).unwrap();
+    assert!(view.surface.layout.scrolled(scroll) > 0.0);
 }

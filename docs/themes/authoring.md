@@ -124,6 +124,8 @@ Each token, what it colors, and what Lokyr derives it of where a theme gives non
 | `text` | The interface's text | The text |
 | `text.secondary` | Fainter text, as a count or a hint | The text, 38% toward the background, readable on a panel |
 | `text.disabled` | The text of what is dimmed | The text, 62% toward the background |
+| `text.success` | Text that tells that something works or went well, as a plugin's state, active | The palette's green, readable on the background |
+| `text.warning` | Text that tells that something does not work or needs a look, as a plugin's state, disabled | The palette's yellow, readable on the background |
 | `accent` | The accent: what is chosen, focused or running | The accent |
 | `separator` | The lines between groups | The text at 10% |
 | `shadow` | The shadows under panels | Black at 25% / 50% |

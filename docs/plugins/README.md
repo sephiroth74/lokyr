@@ -16,7 +16,7 @@ sleip update                  # takes the new versions
 sleip remove sephiroth74/snap
 ```
 
-Lokyr loads a plugin as it is installed, updated or removed, without restarting. Lokyr › Plugins… lists them all, the bundled ones too, with their capabilities, and turns one off or removes it. The Homebrew cask puts `sleip` on your `PATH`; with the disk image, Lokyr › Install Command Line Tools does. Every command and its options are in [Sleip and the registry](../PACKAGE-MANAGER.md#commands).
+Lokyr loads a plugin as it is installed, updated or removed, without restarting. Lokyr › Plugins… lists them all, the bundled ones too, with their capabilities, and disables one or removes it. The Homebrew cask puts `sleip` on your `PATH`; with the disk image, Lokyr › Install Command Line Tools does. Every command and its options are in [Sleip and the registry](../PACKAGE-MANAGER.md#commands).
 
 Some of the registry's plugins:
 
@@ -46,7 +46,7 @@ The plugins below come with the app. They are built into its binary, run on the 
 | [`command-header`](command-header.md) | The command whose output you are looking at, at the pane's top |
 | [`copy-mode`](copy-mode.md) | The copy mode: a cursor that vi's keys move through the scrollback, to select and copy without the mouse |
 | [`quick-tips`](quick-tips.md) | A tip at the start, once a week at most, in a card at the window's bottom right |
-| [`plugin-manager`](plugin-manager.md) | The settings tab's Plugins page: every plugin, its state and its capabilities, to turn off, on or remove |
+| [`plugin-manager`](plugin-manager.md) | The settings tab's Plugins page: every plugin, its state and its capabilities, to disable, enable or remove |
 
 The order of the table is the order in which they start, which matters for the keys alone: a later plugin's key wins over an earlier one's, and your own `[keys]` win over all of them.
 

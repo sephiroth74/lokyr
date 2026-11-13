@@ -437,6 +437,10 @@ impl<B: Backend> App<B> {
             self.forget_consent(platform, &name);
             self.reloads.loaded.remove(&name);
             self.reloads.dev_loaded.remove(&name);
+            // A plugin that a removal took away, its key `enabled` too.
+            if self.packages.removed.remove(&name) {
+                self.forget_enabled(&name);
+            }
         }
         let mut refused = found.refused;
         for Loaded {

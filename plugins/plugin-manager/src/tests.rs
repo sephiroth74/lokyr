@@ -129,7 +129,7 @@ fn the_page_lists_the_installed_plugins_then_the_built_in_ones_each_of_its_butto
     // alone; the plugin manager neither.
     assert_eq!(
         button(&tree, "toggle:acme/notes").as_deref(),
-        Some("plugin-turn-off")
+        Some("plugin-disable")
     );
     assert_eq!(
         button(&tree, "remove:acme/notes").as_deref(),
@@ -170,9 +170,9 @@ fn a_plugin_turned_off_and_on_by_its_button_shows_as_the_plugins_change() {
     let tree = rendered(&mut host, &mut manager);
     assert_eq!(
         button(&tree, "toggle:acme/notes").as_deref(),
-        Some("plugin-turn-on")
+        Some("plugin-enable")
     );
-    assert!(texts(&tree).contains(&"plugin-state-off".to_owned()));
+    assert!(texts(&tree).contains(&"plugin-state-disabled".to_owned()));
     host.ui_event(&mut manager, &click("toggle:acme/notes"))
         .unwrap();
     assert!(host.take_done().contains(&Request::SetPluginEnabled {
@@ -233,4 +233,52 @@ fn its_command_opens_the_settings_tab_at_its_page() {
     assert!(host.commands().iter().any(|command| command.name == OPEN));
     host.command(&mut manager, OPEN, Args::new()).unwrap();
     assert_eq!(host.page(), Some(PAGE));
+}
+
+#[test]
+fn a_plugin_is_active_in_green_whether_it_runs_or_waits_or_disabled_and_a_fault_tells_why() {
+    let (mut host, mut manager) = host();
+    host.set_plugins(vec![
+        PluginInfo {
+            state: PluginState::Waiting,
+            ..plugin("acme/notes", false)
+        },
+        PluginInfo {
+            state: PluginState::Faulted,
+            fault: Some("it panicked".to_owned()),
+            ..plugin("acme/sync", false)
+        },
+        PluginInfo {
+            state: PluginState::Off,
+            ..plugin("lokyr/tabs", true)
+        },
+    ]);
+    let tree = rendered(&mut host, &mut manager);
+    let state = |name: &str| {
+        let node = find(&tree, &format!("state:{name}")).unwrap();
+        let Kind::Text(text) = &node.kind else {
+            panic!("a text");
+        };
+        (text.clone(), node.style.color.clone().unwrap().0)
+    };
+    assert_eq!(
+        state("acme/notes"),
+        ("plugin-state-active".to_owned(), "text.success".to_owned())
+    );
+    assert_eq!(
+        state("acme/sync"),
+        (
+            "plugin-state-disabled".to_owned(),
+            "text.warning".to_owned()
+        )
+    );
+    assert_eq!(state("lokyr/tabs").0, "plugin-state-disabled");
+    let sync = texts(find(&tree, "plugin:acme/sync").unwrap());
+    assert!(sync.contains(&"plugin-fault".to_owned()), "{sync:?}");
+    assert!(!texts(find(&tree, "plugin:lokyr/tabs").unwrap()).contains(&"plugin-fault".to_owned()));
+    // Its button enables a disabled plugin.
+    assert_eq!(
+        button(&tree, "toggle:lokyr/tabs").as_deref(),
+        Some("plugin-enable")
+    );
 }

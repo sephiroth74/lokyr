@@ -1,8 +1,9 @@
 //! Built-in plugin of the plugin manager: the settings tab's page of the
 //! plugins, Lokyr's own and those that Sleip installed, each of its name,
 //! its version, what it does, its state and, of an installed one, its
-//! capabilities and the decisions on them; a button turns a plugin off or
-//! on, as its section of the config, and an installed one's removes it,
+//! capabilities and the decisions on them, its state active, in green, or
+//! disabled, in yellow, of the theme's colors; a button disables or enables a plugin, as its section of the
+//! config, and an installed one's removes it,
 //! through the packages' service, which tells it as it goes. Lokyr ›
 //! Plugins… and the palette's command open the settings tab at the page.
 //! The page follows the plugins as they change, of no wakeup at rest. Like
@@ -180,6 +181,9 @@ impl Plugin for Manager {
             )])
             .key("plugins-scroll")
             .layout(Layout {
+                // Down a column, of the page's height, past which its
+                // content scrolls.
+                direction: Direction::Column,
                 width: Length::Fraction(1.0),
                 height: Length::Fraction(1.0),
                 ..Layout::default()
@@ -216,25 +220,39 @@ impl Manager {
         if let Some(description) = &plugin.description {
             about.push(Node::text(description.clone()).style(small()));
         }
-        let state = match plugin.state {
-            PluginState::Active => message(cx, "plugin-state-active", &[]),
-            PluginState::Waiting => message(cx, "plugin-state-waiting", &[]),
-            PluginState::Off => message(cx, "plugin-state-off", &[]),
-            PluginState::Faulted => message(
-                cx,
-                "plugin-state-faulted",
-                &[("fault", plugin.fault.clone().unwrap_or_default())],
-            ),
-        };
-        about.push(Node::text(state).style(Style {
-            color: Some(Token::from(match plugin.state {
-                PluginState::Faulted => "progress.error",
-                PluginState::Off => "text.disabled",
-                PluginState::Active | PluginState::Waiting => "text.secondary",
-            })),
-            text_size: Some(TextSize::Small),
-            ..Style::default()
-        }));
+        // Active, whether it runs or waits for what starts it, or disabled,
+        // turned off or stopped; a fault tells why on a line of its own.
+        let active = matches!(plugin.state, PluginState::Active | PluginState::Waiting);
+        let state = message(
+            cx,
+            if active {
+                "plugin-state-active"
+            } else {
+                "plugin-state-disabled"
+            },
+            &[],
+        );
+        about.push(
+            Node::text(state)
+                .key(format!("state:{name}").as_str())
+                .style(Style {
+                    color: Some(Token::from(if active {
+                        "text.success"
+                    } else {
+                        "text.warning"
+                    })),
+                    text_size: Some(TextSize::Small),
+                    ..Style::default()
+                }),
+        );
+        if let (PluginState::Faulted, Some(fault)) = (plugin.state, &plugin.fault) {
+            let fault = message(cx, "plugin-fault", &[("fault", fault.clone())]);
+            about.push(Node::text(fault).style(Style {
+                color: Some(Token::from("progress.error")),
+                text_size: Some(TextSize::Small),
+                ..Style::default()
+            }));
+        }
         // An installed plugin's capabilities, as the user decided them; a
         // built-in one holds them all.
         if !plugin.built_in && !plugin.capabilities.is_empty() {
@@ -286,9 +304,9 @@ impl Manager {
         } else {
             if name != OWN {
                 let id = if plugin.state == PluginState::Off {
-                    "plugin-turn-on"
+                    "plugin-enable"
                 } else {
-                    "plugin-turn-off"
+                    "plugin-disable"
                 };
                 actions.push(
                     Node::button(message(cx, id, &[])).key(format!("{TOGGLE}{name}").as_str()),

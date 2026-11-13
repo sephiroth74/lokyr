@@ -11,7 +11,8 @@ from 1.0.0; before it, a minor version may change what a previous one did.
 ### Added
 
 - A settings tab, "Settings", beside the terminals' tabs, which the command palette's Open Settings Tab opens, or shows where it is open: one at most, moved and closed as a tab; a sidebar of its pages, which the arrows and Tab move through, beside the page chosen.
-- Lokyr › Plugins… opens the settings tab at its Plugins page: every plugin, the installed ones and the bundled ones, with its state and its capabilities, to turn off or on, or, of an installed one, to remove, without editing the config.
+- Themes color two more tokens of the interface, `text.success` and `text.warning`, the palette's green and yellow where a theme gives none.
+- Lokyr › Plugins… opens the settings tab at its Plugins page: every plugin, the installed ones and the bundled ones, with its state, active or disabled, and its capabilities, to disable or enable, or, of an installed one, to remove, without editing the config.
 - View › Open Themes Folder, which the command palette runs too, opens the folder of your own themes in the Finder, making it first if it is not there, so that a theme's file can be dragged in.
 - Plugins read a window's title as its titlebar shows it, `WindowInfo.title`, to draw it in the system's place.
 

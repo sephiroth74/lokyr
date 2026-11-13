@@ -1108,7 +1108,7 @@ installed ──▶ resolved ──▶ consent ──▶ loaded ──▶ active
 | `keymap-macos` | Default macOS shortcuts, as iTerm2's: the keys of the app's commands and of the other plugins', which bind none of their own | F3 |
 | `keymap-linux` | Default Linux shortcuts | F7 |
 | `command-palette` | Command palette and theme picker | F3 |
-| `plugin-manager` | The settings tab's Plugins page, of the packages' service: every plugin of its state and its capabilities' decisions, turned off, on or removed, Lokyr › Plugins…; the registry's search, installs and updates later | F3b |
+| `plugin-manager` | The settings tab's Plugins page, of the packages' service: every plugin of its state, active or disabled, and its capabilities' decisions, disabled, enabled or removed, Lokyr › Plugins…; the registry's search, installs and updates later | F3b |
 | `blocks` | Command + output blocks, over the prompts' marks that the kernel keeps since F3 | F5a |
 | `quick-terminal` | The quick terminal: its command, which shows and hides its quick window, its autohide and its place, of `[plugins.quick-terminal]`, through the quick windows and the global keys of `global-hotkey` | F3 |
 | `progress` | The programs' progress (OSC 9;4), in the `window-strip` slot; the tab shows it with `tabs` | F3 |

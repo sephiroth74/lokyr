@@ -1850,9 +1850,13 @@ pub fn set_string_hiding(
 }
 
 /// Turns the plugin of `namespace` on or off in the config file at `path`,
-/// its section's key `[plugins.<namespace>] enabled`, keeping the rest of
-/// the file, its comments too, as [`set_string`] does: a section that the
-/// file lacks goes at its end, after its last comments.
+/// keeping the rest of the file, its comments too, as [`set_string`] does:
+/// off, its section's key `[plugins.<namespace>] enabled = false`, a
+/// section that the file lacks going at its end, after its last comments;
+/// on, that key taken away, as on is its default, and the section with it
+/// if nothing else is left of it, no key nor comment of its own, so that
+/// no section stays of a plugin removed since; a file of no such section
+/// is left as it is.
 pub fn set_plugin_enabled(path: &Path, namespace: &str, enabled: bool) -> Result<(), Error> {
     let failed = |path: &Path, message: String| Error {
         path: path.to_owned(),
@@ -1875,6 +1879,39 @@ pub fn set_plugin_enabled(path: &Path, namespace: &str, enabled: bool) -> Result
         .get("plugins")
         .and_then(|plugins| plugins.get(namespace))
         .is_some();
+    if enabled {
+        if !held {
+            return Ok(());
+        }
+        let plugins = document
+            .get_mut("plugins")
+            .and_then(toml_edit::Item::as_table_like_mut)
+            .ok_or_else(|| failed(&target, "`plugins` is a section, not a value".to_owned()))?;
+        // The comments before the section's header are its own.
+        let commented = plugins
+            .get(namespace)
+            .and_then(toml_edit::Item::as_table)
+            .and_then(|table| table.decor().prefix())
+            .and_then(toml_edit::RawString::as_str)
+            .is_some_and(|prefix| prefix.contains('#'));
+        let section = plugins
+            .get_mut(namespace)
+            .and_then(toml_edit::Item::as_table_like_mut)
+            .ok_or_else(|| {
+                failed(
+                    &target,
+                    format!("`plugins.{namespace}` is a section, not a value"),
+                )
+            })?;
+        if section.remove("enabled").is_none() {
+            return Ok(());
+        }
+        if section.is_empty() && !commented {
+            plugins.remove(namespace);
+        }
+        return write_whole(&target, &document.to_string())
+            .map_err(|error| failed(&target, format!("it cannot be written: {error}")));
+    }
     // The comments and the blank lines after the last section are the
     // document's, which a new section comes before, as `set_string` puts
     // one.
@@ -3666,14 +3703,33 @@ long-command = 0
         );
         let config = Config::read(&file).unwrap();
         assert_eq!(config.font.size.points(), 14.0);
-        // Again, in place, its comment kept.
-        let text = "[plugins.tabs]\nenabled = false   # for now\n";
-        fs::write(&file, text).unwrap();
-        set_plugin_enabled(&file, "tabs", true).unwrap();
-        assert_eq!(
-            fs::read_to_string(&file).unwrap(),
-            "[plugins.tabs]\nenabled = true   # for now\n"
-        );
+        // On again: the key goes, as on is its default, and its section
+        // with it, of nothing else; of other keys or comments of its own,
+        // the section stays.
+        for (text, written) in [
+            (
+                "[font]\nsize = 14\n\n[plugins.tabs]\nenabled = false   # for now\n",
+                "[font]\nsize = 14\n",
+            ),
+            (
+                "[plugins.tabs]\nstyle = \"unified\"\nenabled = true\n",
+                "[plugins.tabs]\nstyle = \"unified\"\n",
+            ),
+            (
+                "# The bar.\n[plugins.tabs]\nenabled = false\n",
+                "# The bar.\n[plugins.tabs]\n",
+            ),
+            ("[font]\nsize = 14\n", "[font]\nsize = 14\n"),
+            (
+                "[plugins.tabs]\nstyle = \"unified\"\n",
+                "[plugins.tabs]\nstyle = \"unified\"\n",
+            ),
+        ] {
+            fs::write(&file, text).unwrap();
+            set_plugin_enabled(&file, "tabs", true).unwrap();
+            assert_eq!(fs::read_to_string(&file).unwrap(), written, "{text:?}");
+            Config::read(&file).unwrap();
+        }
         // A section that the file lacks goes at its end, after its last
         // comments, beside another plugin's.
         for (text, written) in [
@@ -3689,6 +3745,14 @@ long-command = 0
             assert_eq!(fs::read_to_string(&file).unwrap(), written, "{text:?}");
         }
         // In an inline table too.
+        fs::write(&file, "plugins = { snap = { enabled = true } }\n").unwrap();
+        set_plugin_enabled(&file, "snap", false).unwrap();
+        assert_eq!(
+            fs::read_to_string(&file).unwrap(),
+            "plugins = { snap = { enabled = false } }\n"
+        );
+        set_plugin_enabled(&file, "snap", true).unwrap();
+        assert_eq!(fs::read_to_string(&file).unwrap(), "plugins = {}\n");
         fs::write(&file, "plugins = { snap = { enabled = true } }\n").unwrap();
         set_plugin_enabled(&file, "snap", false).unwrap();
         assert_eq!(

@@ -31,6 +31,12 @@ pub(crate) struct Jobs {
     pub(crate) env: Vec<(String, String)>,
     /// What stops each job that runs, by its plugin and its id.
     running: BTreeMap<(String, u64), Stop>,
+    /// The plugin that each job of a removal takes away, by its plugin and
+    /// its id.
+    removing: BTreeMap<(String, u64), String>,
+    /// The plugins that a removal took away and that the app still runs,
+    /// until it takes them away too.
+    pub(crate) removed: std::collections::BTreeSet<String>,
     /// What the jobs' threads told since the main thread took it.
     told: Arc<Mutex<Vec<Told>>>,
 }
@@ -97,6 +103,11 @@ impl<B: Backend> App<B> {
         self.packages
             .running
             .insert((plugin.clone(), id), job.stopper());
+        if let host::Packages::Remove { plugin: removed } = call {
+            self.packages
+                .removing
+                .insert((plugin.clone(), id), removed.clone());
+        }
         let (told, waker) = (Arc::clone(&self.packages.told), platform.waker());
         let tell = move |what: Told| {
             told.lock()
@@ -154,8 +165,28 @@ impl<B: Backend> App<B> {
         }
     }
 
+    /// Takes the key `enabled` of the plugin `name`, removed and no longer
+    /// run, out of the config, and its section if nothing else is left of
+    /// it, so that no section stays of a plugin no longer there: never
+    /// while the app runs it, which turning on would start again.
+    /// The plugins' sections in force are the file's since, so that the
+    /// next check of them tells nothing of the section gone.
+    pub(super) fn forget_enabled(&mut self, name: &str) {
+        let namespace = name.rsplit('/').next().unwrap_or(name);
+        let Some(file) = &self.config_file else {
+            return;
+        };
+        match config::set_plugin_enabled(&file.path, namespace, true)
+            .and_then(|()| config::Config::read(&file.path))
+        {
+            Ok(read) => self.config.plugins = read.plugins,
+            Err(error) => eprintln!("lokyr: {error}"),
+        }
+    }
+
     /// Gives the plugins what their jobs' threads told since the last
-    /// turn, for their next delivery.
+    /// turn, for their next delivery. A plugin removed takes its key
+    /// `enabled` out of the config once the app no longer runs it.
     pub(super) fn take_packages(&mut self) {
         let told = std::mem::take(
             &mut *self
@@ -169,6 +200,14 @@ impl<B: Backend> App<B> {
                 Told::Line(plugin, id, line) => self.plugins.package_line(&plugin, id, &line),
                 Told::Ended(plugin, id, ok) => {
                     self.packages.running.remove(&(plugin.clone(), id));
+                    let removed = self.packages.removing.remove(&(plugin.clone(), id));
+                    if let (Some(removed), true) = (removed, ok) {
+                        if self.plugins.status(&removed).is_some() {
+                            self.packages.removed.insert(removed);
+                        } else {
+                            self.forget_enabled(&removed);
+                        }
+                    }
                     self.plugins.packages_ended(&plugin, id, ok);
                 }
             }

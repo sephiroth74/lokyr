@@ -1668,6 +1668,7 @@ Whether the plugin runs: `false` turns it off, any plugin, the built-in ones too
 Default: `true`.
 
 - It applies as you save the file: a plugin turned off stops at once, and one turned on again starts anew.
+- Lokyr › Plugins… writes it too: Disable writes `enabled = false`, keeping the rest of the file and its comments; Enable takes the key away, as `true` is its default, and the section with it if nothing else is left of it; a plugin removed there takes its key away the same way, once Lokyr no longer runs it.
 - The plugin's other keys are not checked while it is off.
 - `[plugins.core-actions] enabled = false` takes away the terminal's own actions, as copy, paste, select all and the text's size, with their keys.
 - `[plugins.keymap-macos] enabled = false` takes away the default shortcuts, as [`[keys]`](#keys) says, the menus keeping the system's own keys alone.

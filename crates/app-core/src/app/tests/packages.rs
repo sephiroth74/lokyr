@@ -310,12 +310,12 @@ fn a_plugin_of_lokyr_s_own_turns_another_off_and_on_in_the_config_and_reads_its_
         noted(&read).map(|(_, state, _)| state),
         Some(PluginState::Off)
     );
-    // Turned on again: a new one.
+    // Turned on again: a new one, its key taken away, as on is its
+    // default, and its section with it, of nothing else.
     command(&mut fake, &mut app, "switcher.on");
-    assert!(
-        std::fs::read_to_string(&path)
-            .unwrap()
-            .ends_with("[plugins.noted]\nenabled = true\n")
+    assert_eq!(
+        std::fs::read_to_string(&path).unwrap(),
+        "# mine\n[font]\nsize = 14\n"
     );
     assert!(app.commands.get("noted.go").is_some());
     command(&mut fake, &mut app, "switcher.read");
