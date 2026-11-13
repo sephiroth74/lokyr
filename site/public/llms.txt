@@ -8,6 +8,8 @@ Lokyr installs with Homebrew (`brew install --cask sephiroth74/tap/lokyr`) or fr
 
 - [Overview](https://lokyr.dev/docs/): what Lokyr is, its requirements and its documents
 - [Configuration](https://lokyr.dev/docs/CONFIGURATION.html): every key of the config file, its values and defaults
+- [AI agents](https://lokyr.dev/docs/agents.html): what a tab shows of Claude Code, Codex and other agents, notifications, Go to Next Agent, Claude Code's integration
+- [Screenshots](https://lokyr.dev/docs/screenshots.html): Lokyr as it shows
 - [The bundled plugins](https://lokyr.dev/docs/plugins/): tabs, splits, search, the palette, copy mode, the quick terminal and the others, their commands, keys and settings
 - [Sleip, the package manager](https://lokyr.dev/docs/PACKAGE-MANAGER.html): installing, updating and publishing plugins
 - [Writing a plugin](https://lokyr.dev/docs/plugins/authoring.html): a plugin in Luau, step by step

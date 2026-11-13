@@ -24,6 +24,7 @@ Start with [ARCHITECTURE.md](ARCHITECTURE.md), then read the [ROADMAP.md](ROADMA
 | [UI-AND-FEATURES.md](UI-AND-FEATURES.md) | UI engine, tabs, splits, search, iTerm2 themes, command palette |
 | [SECURITY.md](SECURITY.md) | Threat model, security defaults, IPC, packages, robustness, macOS environment |
 | [PERFORMANCE.md](PERFORMANCE.md) | Budgets, how to measure them, benchmarks and CI |
+| [agents.md](agents.md) | AI agents in the terminal: what a tab shows of Claude Code, Codex and the others, how to find the one that needs you, Claude Code's integration |
 | [screenshots.md](screenshots.md) | Lokyr as it shows: splits and tabs, the command palette, find, progress, themes and inline images |
 | [CONFIGURATION.md](CONFIGURATION.md) | The guide to the config file: where it is, how it reloads, and every key, with its values and its default |
 | [plugins/](plugins/README.md) | Plugins: the third-party ones and how Sleip installs them, then the bundled ones, a page each: their commands, keys, config and what turning one off takes away |
