@@ -181,6 +181,14 @@ impl<P: Copy + Eq> Panels<P> {
         self.stack.push((panel, options, None));
     }
 
+    /// Opens `panel` under the others, of `options`, or lowers it with new
+    /// ones if it is open: a view that fills a room of the window, under
+    /// the panels that open over it.
+    pub fn open_under(&mut self, panel: P, options: Options) {
+        self.stack.retain(|(id, ..)| *id != panel);
+        self.stack.insert(0, (panel, options, None));
+    }
+
     /// Anchors `panel` anew, in its place among the others, as its anchor
     /// moved, a window's corner as it resizes: whether it is open.
     pub fn anchor(&mut self, panel: P, anchor: Anchor) -> bool {
@@ -229,6 +237,14 @@ impl<P: Copy + Eq> Panels<P> {
             width: size.0.min(window.0).max(0.0),
             height: size.1.min(window.1).max(0.0),
         };
+        *placed = Some(frame);
+        Some(frame)
+    }
+
+    /// Places `panel` at `frame`, whatever its anchor, as a view that fills
+    /// a room of the window: its frame, if it is open.
+    pub fn place_at(&mut self, panel: P, frame: Frame) -> Option<Frame> {
+        let (.., placed) = self.stack.iter_mut().find(|(id, ..)| *id == panel)?;
         *placed = Some(frame);
         Some(frame)
     }
@@ -446,6 +462,22 @@ mod tests {
         // Of room neither below nor above, below, and kept within.
         let tall = (200.0, 590.0);
         assert_eq!(place(&Anchor::Below(cell), tall, WINDOW), (100.0, 10.0));
+    }
+
+    #[test]
+    fn a_panel_opened_under_the_others_draws_first_and_takes_its_frame() {
+        let mut panels = Panels::new();
+        panels.open(1, options(Role::Overlay, false, false));
+        panels.open_under(2, options(Role::Overlay, false, false));
+        assert_eq!(panels.order().collect::<Vec<_>>(), [2, 1]);
+        let room = frame(0.0, 40.0, 800.0, 560.0);
+        assert_eq!(panels.place_at(2, room), Some(room));
+        assert_eq!(panels.frame(2), Some(room));
+        // The panel over it takes the pointer where both are.
+        panels.place(1, SIZE, WINDOW);
+        assert_eq!(panels.under((10.0, 10.0)), Some(1));
+        assert_eq!(panels.under((700.0, 500.0)), Some(2));
+        assert_eq!(panels.place_at(3, room), None);
     }
 
     #[test]

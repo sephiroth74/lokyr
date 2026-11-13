@@ -78,6 +78,7 @@ mod panels;
 mod pickers;
 mod restore;
 pub(crate) mod scrollbars;
+mod settings_tab;
 mod spawn;
 mod surfaces;
 mod tab_drag;
@@ -93,6 +94,10 @@ const QUIT: &str = "app.quit";
 /// The command that opens the config file in the text editor, made first
 /// when it is not there.
 const SETTINGS: &str = "app.settings";
+
+/// The command that opens the settings tab, a tab of no pane of the
+/// settings' pages, in the window in front, or shows the one open.
+const SETTINGS_TAB: &str = "app.settings-tab";
 
 /// The command that opens the themes' folder beside the config file in
 /// the file manager, made first when it is not there.
@@ -2724,6 +2729,10 @@ impl<B: Backend> App<B> {
                     self.open_themes_folder(platform);
                     Ok(())
                 }
+                SETTINGS_TAB => {
+                    self.open_settings_tab(platform);
+                    Ok(())
+                }
                 ABOUT => {
                     self.show_about(platform);
                     Ok(())
@@ -3738,6 +3747,15 @@ impl<B: Backend> App<B> {
         {
             return title;
         }
+        // The settings tab's, as it shows.
+        let settings = self.windows.get(&window).is_some_and(|state| {
+            self.workspace
+                .window(state.window)
+                .is_some_and(|shown| self.workspace.is_settings(shown.active_tab()))
+        });
+        if settings {
+            return self.workspace.settings_title().to_owned();
+        }
         let name = self.window_name(window);
         let program = self
             .windows
@@ -4632,10 +4650,13 @@ impl<B: Backend> Handler for App<B> {
 
 /// The context of the keys in a window of `pane`: its pane has the
 /// keyboard, and holds the pane's contexts, the alternate screen and the
-/// selection.
+/// selection; of none, as of a window that shows the settings tab, none.
 fn context(pane: Option<&Pane>) -> Context {
+    let Some(pane) = pane else {
+        return Context::new(Vec::<&str>::new());
+    };
     let mut names = vec!["pane.focused"];
-    names.extend(pane.map(Pane::contexts).unwrap_or_default());
+    names.extend(pane.contexts());
     Context::new(names)
 }
 
@@ -4749,6 +4770,7 @@ fn commands(texts: &Texts, plugins: &Plugins) -> Registry {
         ),
         (PERFORMANCE, "app-performance", Category::View),
         (OPEN_THEMES, "app-open-themes-folder", Category::View),
+        (SETTINGS_TAB, "app-settings-tab", Category::App),
         (NEW_WINDOW, "window-new", Category::Windows),
         (CLOSE_WINDOW, "window-close", Category::Windows),
         (SET_TITLE, "window-set-title", Category::Windows),

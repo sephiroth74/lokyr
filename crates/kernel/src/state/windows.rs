@@ -240,11 +240,20 @@ impl Kept {
             if front == Some(id) {
                 front_index = Some(windows.len());
             }
-            let active = window
+            // Of the tabs kept, the settings tab not among them: the one
+            // that the window shows, or, as it shows the settings tab, the
+            // one before it.
+            let kept = window
                 .tabs()
                 .iter()
-                .position(|&tab| tab == window.active_tab())
-                .unwrap_or(0);
+                .take_while(|&&tab| tab != window.active_tab())
+                .filter(|&&tab| workspace.tab(tab).is_some())
+                .count();
+            let active = if workspace.tab(window.active_tab()).is_some() {
+                kept
+            } else {
+                kept.saturating_sub(1)
+            };
             windows.push(Window {
                 frame,
                 tabs,

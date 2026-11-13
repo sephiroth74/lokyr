@@ -333,6 +333,15 @@ impl<B: Backend> App<B> {
             })
         });
         let notice = if due { self.notice_tree() } else { None };
+        // The settings tab's tree, made as its view first shows.
+        let settings_due = self.windows.get(&window).is_some_and(|state| {
+            state.chrome.iter().any(|view| {
+                view.plugin == OVERFLOW
+                    && view.view == super::settings_tab::settings_view()
+                    && view.shown.is_none()
+            })
+        });
+        let settings = settings_due.then(|| self.settings_tree());
         let Some(state) = self.windows.get_mut(&window) else {
             return;
         };
@@ -383,6 +392,8 @@ impl<B: Backend> App<B> {
                 let composing = slot.surface.fields.composing(&slot.surface.tree).is_some();
                 let tree = if plugin == OVERFLOW && view == card {
                     notice.clone()
+                } else if plugin == OVERFLOW && view == super::settings_tab::settings_view() {
+                    settings.clone()
                 } else if plugin == OVERFLOW {
                     Some(overflow_button(self.texts.text("title-buttons-more")))
                 } else {

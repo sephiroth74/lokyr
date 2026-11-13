@@ -255,6 +255,7 @@ type BarPlace =
 type TabInfo = {
     id: TabId,
     window: WindowId,
+    kind: "terminal" | "settings", -- the settings tab, one at most, holds no pane: its `panes` are none, its `focused` no pane's, its title and color the host's
     title: string, -- its own, as `set_tab_title` gave it, or its active pane's program's, or, of `process-read`, its pane's folder and program, as "src — vim"
     color: Color?, -- its own, as `set_tab_color` gave it, or its active pane's program's, an RGB one
     active: boolean, -- whether its window shows it

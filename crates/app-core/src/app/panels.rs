@@ -264,6 +264,30 @@ impl<B: Backend> App<B> {
                 continue;
             }
             let plugin = state.chrome[at].plugin.clone();
+            // The settings tab's view takes the panes' room whole.
+            if plugin == super::chrome::OVERFLOW
+                && state.chrome[at].view == super::settings_tab::settings_view()
+            {
+                let Some(room) = state.panes_room else {
+                    continue;
+                };
+                let frame = Frame {
+                    x: room.x as f32,
+                    y: room.y as f32,
+                    width: room.width as f32,
+                    height: room.height as f32,
+                };
+                let view = &mut state.chrome[at];
+                let laid = view
+                    .surface
+                    .lay_out((Some(frame.width), Some(frame.height)), font);
+                view.frame = state.panels.place_at(id, frame);
+                events.extend(
+                    laid.into_iter()
+                        .map(|event| (view.plugin.clone(), ui_event(view.view.clone(), event))),
+                );
+                continue;
+            }
             let anchor = anchor_of(&self.workspace, state, (&plugin, &placed), scale);
             let view = &mut state.chrome[at];
             // A panel across a pane's top takes the pane's width.

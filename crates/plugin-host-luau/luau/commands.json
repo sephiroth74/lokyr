@@ -127,6 +127,15 @@
   },
   {
     "capabilities": [],
+    "category": "app",
+    "name": "app.settings-tab",
+    "params": [],
+    "plugin": null,
+    "title": "Open Settings Tab",
+    "when": null
+  },
+  {
+    "capabilities": [],
     "category": "windows",
     "name": "command-palette.agents",
     "params": [],
@@ -364,7 +373,7 @@
     "params": [],
     "plugin": "lokyr/core-actions",
     "title": "Clear",
-    "when": null
+    "when": "pane.focused"
   },
   {
     "capabilities": [
@@ -404,7 +413,7 @@
     ],
     "plugin": "lokyr/core-actions",
     "title": "Copy Command Output",
-    "when": null
+    "when": "pane.focused"
   },
   {
     "capabilities": [],
@@ -443,7 +452,7 @@
     "params": [],
     "plugin": "lokyr/core-actions",
     "title": "Paste",
-    "when": null
+    "when": "pane.focused"
   },
   {
     "capabilities": [],
@@ -452,7 +461,7 @@
     "params": [],
     "plugin": "lokyr/core-actions",
     "title": "Jump to Next Prompt",
-    "when": null
+    "when": "pane.focused"
   },
   {
     "capabilities": [],
@@ -461,7 +470,7 @@
     "params": [],
     "plugin": "lokyr/core-actions",
     "title": "Jump to Previous Prompt",
-    "when": null
+    "when": "pane.focused"
   },
   {
     "capabilities": [],
@@ -470,7 +479,7 @@
     "params": [],
     "plugin": "lokyr/core-actions",
     "title": "Scroll to the Bottom",
-    "when": null
+    "when": "pane.focused"
   },
   {
     "capabilities": [],
@@ -479,7 +488,7 @@
     "params": [],
     "plugin": "lokyr/core-actions",
     "title": "Scroll Down a Line",
-    "when": null
+    "when": "pane.focused"
   },
   {
     "capabilities": [],
@@ -488,7 +497,7 @@
     "params": [],
     "plugin": "lokyr/core-actions",
     "title": "Scroll Up a Line",
-    "when": null
+    "when": "pane.focused"
   },
   {
     "capabilities": [],
@@ -497,7 +506,7 @@
     "params": [],
     "plugin": "lokyr/core-actions",
     "title": "Scroll Down a Page",
-    "when": null
+    "when": "pane.focused"
   },
   {
     "capabilities": [],
@@ -506,7 +515,7 @@
     "params": [],
     "plugin": "lokyr/core-actions",
     "title": "Scroll Up a Page",
-    "when": null
+    "when": "pane.focused"
   },
   {
     "capabilities": [],
@@ -515,7 +524,7 @@
     "params": [],
     "plugin": "lokyr/core-actions",
     "title": "Scroll to the Top",
-    "when": null
+    "when": "pane.focused"
   },
   {
     "capabilities": [],
@@ -533,7 +542,7 @@
     "params": [],
     "plugin": "lokyr/core-actions",
     "title": "Select All",
-    "when": null
+    "when": "pane.focused"
   },
   {
     "capabilities": [
@@ -559,7 +568,7 @@
     ],
     "plugin": "lokyr/core-actions",
     "title": "Select Command Output",
-    "when": null
+    "when": "pane.focused"
   },
   {
     "capabilities": [
@@ -576,7 +585,7 @@
     ],
     "plugin": "lokyr/core-actions",
     "title": "Send Text",
-    "when": null
+    "when": "pane.focused"
   },
   {
     "capabilities": [],

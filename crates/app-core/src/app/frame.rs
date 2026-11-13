@@ -567,6 +567,8 @@ impl<B: Backend> App<B> {
         // platform's own.
         // The notice's card, opened or closed as a notice shows or not.
         self.settle_notice(platform, window);
+        // The settings tab's view, as the window shows the tab or not.
+        self.settle_settings(platform, window);
         let views = self.lay_out_panes(window, size);
         self.keys_from_hidden(platform, window);
         self.show_native(platform, window, size);
@@ -597,6 +599,12 @@ impl<B: Backend> App<B> {
         } else {
             Vec::new()
         };
+        // A window of no pane, as of the settings tab, draws its chrome and
+        // its views alone.
+        if views.is_empty() {
+            self.draw_without_panes(platform, window, size, now);
+            return;
+        }
         let Some(state) = self.windows.get_mut(&window) else {
             return;
         };
@@ -826,13 +834,16 @@ impl<B: Backend> App<B> {
         if let Some(due) = due {
             self.pace_at(platform, due);
         }
-        // The menus' items as the focused pane's frame has it.
-        let context = self
-            .windows
-            .get(&window)
-            .filter(|state| state.focused)
-            .and_then(|_| self.workspace.pane(active))
-            .map(|pane| menu_context(pane.snapshot()));
+        // The menus' items as the focused pane's frame has it, or of no
+        // pane, as of a window that shows the settings tab.
+        let focused = self.windows.get(&window).filter(|state| state.focused);
+        let context = focused.and_then(|state| match self.workspace.focused(state.window) {
+            Some(_) => self
+                .workspace
+                .pane(active)
+                .map(|pane| menu_context(pane.snapshot())),
+            None => Some(lokyr_kernel::keymap::Context::new(Vec::<&str>::new())),
+        });
         if let Some(context) = context {
             self.settle_menu(platform, &context);
         }
@@ -1054,24 +1065,7 @@ impl<B: Backend> App<B> {
             .as_ref()
             .is_none_or(|(kept, _)| *kept != chrome_look)
         {
-            let (dark, background, foreground, opacity) = chrome_look;
-            let mut tokens = self.theme.variant(dark).tokens.clone();
-            tokens.set("terminal.bg", background.with_alpha(opacity));
-            tokens.set("terminal.fg", foreground.with_alpha(1.0));
-            // The chrome's backgrounds, as the window's own is, as
-            // translucent as the config makes the window, the active tab's
-            // too.
-            for name in TRANSLUCENT {
-                if let Some(color) = tokens.get(name) {
-                    tokens.set(name, color.with_alpha(color.alpha * opacity));
-                }
-            }
-            if opacity < 1.0 {
-                for name in TRANSLUCENT.into_iter().chain(["terminal.bg"]) {
-                    tokens.knock_out(name);
-                }
-            }
-            state.chrome_tokens = Some((chrome_look, tokens));
+            state.chrome_tokens = Some((chrome_look, chrome_tokens(&self.theme, chrome_look)));
         }
         let Some((_, tokens)) = state.chrome_tokens.as_ref() else {
             return;
@@ -1984,6 +1978,246 @@ pub(super) fn appearance_over(background: Color, appearance: Appearance) -> Opti
 /// corner in pixels of the content, of `scale`, blinking as `blink` says,
 /// and sliding there as `slide` says, from where it showed, of its size.
 /// `None` hides the layer.
+/// The chrome's tokens of `theme` in the window's look `look`: its
+/// appearance, the terminal's background and foreground, and the window's
+/// opacity, of which the chrome's backgrounds are as translucent, knocked
+/// out to the window's where it is translucent.
+fn chrome_tokens(
+    theme: &lokyr_ui_core::theme::Theme,
+    (dark, background, foreground, opacity): (bool, Color, Color, f32),
+) -> lokyr_ui_core::theme::Tokens {
+    let mut tokens = theme.variant(dark).tokens.clone();
+    tokens.set("terminal.bg", background.with_alpha(opacity));
+    tokens.set("terminal.fg", foreground.with_alpha(1.0));
+    // The chrome's backgrounds, as the window's own is, as translucent as
+    // the config makes the window, the active tab's too.
+    for name in TRANSLUCENT {
+        if let Some(color) = tokens.get(name) {
+            tokens.set(name, color.with_alpha(color.alpha * opacity));
+        }
+    }
+    if opacity < 1.0 {
+        for name in TRANSLUCENT.into_iter().chain(["terminal.bg"]) {
+            tokens.knock_out(name);
+        }
+    }
+    tokens
+}
+
+impl<B: Backend> App<B> {
+    /// Draws `window` of `size` that shows no pane, as of the settings tab:
+    /// the window's background of the theme's terminal's colors, its
+    /// slots' views and its panels, of their pointer's, moves' and
+    /// titlebar's areas; no cursor nor blinking text; the menus of no
+    /// pane's context.
+    fn draw_without_panes(
+        &mut self,
+        platform: &mut dyn Platform,
+        window: WindowId,
+        size: WindowSize,
+        now: Instant,
+    ) {
+        let colors = self.colors(platform.appearance());
+        let (bg, fg) = (colors.background, colors.foreground);
+        let background = Color::from_rgb8(bg.r, bg.g, bg.b);
+        let foreground = Color::from_rgb8(fg.r, fg.g, fg.b);
+        let backdrop = self.backdrop();
+        let Some(state) = self.windows.get_mut(&window) else {
+            return;
+        };
+        if backdrop != state.backdrop {
+            platform.set_translucent(window, backdrop);
+            state.backdrop = backdrop;
+        }
+        let own = appearance_over(background, platform.appearance());
+        if state.own_appearance != Some(own) {
+            platform.set_window_appearance(window, own);
+            state.own_appearance = Some(own);
+        }
+        let focused = state.focused;
+        self.refresh_title(platform, window, false);
+        if focused {
+            self.settle_menu(
+                platform,
+                &lokyr_kernel::keymap::Context::new(Vec::<&str>::new()),
+            );
+        }
+        let dark = platform.appearance() == Appearance::Dark;
+        let chrome_dark = own.map_or(dark, |own| own == Appearance::Dark);
+        let opacity = if backdrop.is_some() {
+            self.config.window.background_opacity.value()
+        } else {
+            1.0
+        };
+        let chrome_look = (chrome_dark, background, foreground, opacity);
+        let reduced = platform.reduce_motion();
+        let (Some(drawing), Some(state)) = (self.drawing.as_mut(), self.windows.get_mut(&window))
+        else {
+            return;
+        };
+        if state.surface.is_none() || state.occluded {
+            return;
+        }
+        if state
+            .chrome_tokens
+            .as_ref()
+            .is_none_or(|(kept, _)| *kept != chrome_look)
+        {
+            state.chrome_tokens = Some((chrome_look, chrome_tokens(&self.theme, chrome_look)));
+        }
+        let Some((_, tokens)) = state.chrome_tokens.as_ref() else {
+            return;
+        };
+        let font = &mut drawing.font;
+        let fills_apart = platform.draws_fills();
+        let room = (size.pixels.width as f32, size.pixels.height as f32);
+        let tooltips: Vec<Rect> = state
+            .chrome
+            .iter()
+            .filter_map(|view| {
+                let frame = view.frame?;
+                view.surface.tooltip_rect(font, ((frame.x, frame.y), room))
+            })
+            .collect();
+        for view in &mut state.chrome {
+            view.surface.animate(now, reduced);
+            view.surface.fills_apart = fills_apart;
+            view.surface.covered = if fills_apart {
+                chrome::covered(view, &state.panels, &tooltips, tokens, now)
+            } else {
+                std::collections::BTreeSet::new()
+            };
+        }
+        let focused_node = match state.focus.target() {
+            Target::Node { panel, node } => Some((panel, node)),
+            Target::Pane => None,
+        };
+        let items = chrome::paint(
+            &state.chrome,
+            font,
+            tokens,
+            room,
+            (chrome_dark, focused_node, now),
+            &self.pictures,
+        );
+        // The slots' views' pointers, moves and titlebar's parts, as the
+        // panes' frame gives them.
+        let mut areas: Vec<PointerArea> = Vec::new();
+        if let Some((_, _, zone)) = chrome::column_edge(&state.chrome, &self.plugins, size.scale) {
+            let rect = chrome::rect_of(zone);
+            areas.push(PointerArea {
+                origin: Point {
+                    x: f64::from(rect.x) / size.scale,
+                    y: f64::from(rect.y) / size.scale,
+                },
+                size: Size {
+                    width: f64::from(rect.width) / size.scale,
+                    height: f64::from(rect.height) / size.scale,
+                },
+                shape: PointerShape::ResizeColumn,
+            });
+        }
+        areas.extend(surfaces::pointer_areas(&state.chrome, size.scale));
+        if areas != state.pointer_areas {
+            platform.set_pointer_areas(window, &areas);
+            state.pointer_areas = areas;
+        }
+        let moving = surfaces::move_areas(&state.chrome, size.scale);
+        if moving != state.move_areas {
+            platform.set_move_areas(window, &moving);
+            state.move_areas = moving;
+        }
+        let mut own =
+            surfaces::titlebar_areas(&state.chrome, size.scale, state.titlebar == Titlebar::Tabs);
+        let band = (size.pixels.width as f32, size.bar_pixels() as f32);
+        own.extend(surfaces::panel_titlebar_areas(state, band, size.scale));
+        if own != state.titlebar_areas {
+            platform.set_titlebar_areas(window, &own);
+            state.titlebar_areas = own;
+        }
+        let sweeps = chrome::sweeps(&state.chrome, tokens, (now, state.sweeps.1), size.scale);
+        if sweeps != state.sweeps.0 {
+            platform.set_sweeps(window, &sweeps);
+            state.sweeps.0 = sweeps;
+        }
+        if fills_apart {
+            let fills = chrome::fills(&state.chrome, tokens, now, size.scale);
+            if fills != state.fills {
+                platform.set_fills(window, &fills);
+                state.fills = fills;
+            }
+        }
+        if chrome::animating(&state.chrome, now) {
+            platform.request_frame(window);
+        }
+        let list = DisplayList {
+            background: background.with_alpha(opacity),
+            items,
+            frame: drawing.font.atlas_frame(),
+        };
+        let updates = drawing.font.texture_updates();
+        let Some(surface) = &state.surface else {
+            return;
+        };
+        surface.resize(size.pixels.width, size.pixels.height, size.scale);
+        let pixels = (size.pixels.width, size.pixels.height);
+        let same = state.shown.as_ref().is_some_and(|shown| {
+            shown.pixels == pixels
+                && shown.scale == size.scale
+                && shown.fonts == drawing.fonts
+                && shown.background == list.background
+                && shown.items == list.items
+        });
+        let drawn = drawing.renderer.update_textures(&updates).and_then(|()| {
+            if same {
+                Ok(false)
+            } else {
+                drawing.renderer.draw(surface, &list)
+            }
+        });
+        match drawn {
+            Ok(true) => {
+                state.drawn_at = Some(Instant::now());
+                state.shown = Some(Shown {
+                    pixels,
+                    scale: size.scale,
+                    fonts: drawing.fonts,
+                    background: list.background,
+                    items: list.items,
+                });
+            }
+            Ok(false) => {}
+            Err(error) => eprintln!("lokyr: {error}"),
+        }
+        // No cursor nor blinking text of a pane.
+        show_layer(
+            platform,
+            drawing,
+            (window, Layer::Cursor),
+            &mut state.cursor_layer,
+            None,
+            size.scale,
+            (None, None),
+        );
+        let was_shown = state.text_layer.place.is_some();
+        show_layer(
+            platform,
+            drawing,
+            (window, Layer::BlinkingText),
+            &mut state.text_layer,
+            None,
+            size.scale,
+            (None, None),
+        );
+        if was_shown && state.text_layer.place.is_none() {
+            state.text_layer.release();
+        }
+        if drawing.font.has_deferred() {
+            platform.request_frame(window);
+        }
+    }
+}
+
 fn show_layer<B: Backend>(
     platform: &mut dyn Platform,
     drawing: &mut Drawing<B>,

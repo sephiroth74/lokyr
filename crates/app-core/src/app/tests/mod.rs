@@ -50,6 +50,7 @@ mod reloads;
 mod restore;
 mod saves;
 mod scrollbars;
+mod settings_tab;
 mod surfaces;
 #[cfg(feature = "plugin-tabs")]
 mod tabs;

@@ -557,6 +557,22 @@ impl<B: Backend> App<B> {
         if self.part_asks.values().any(|(_, asked)| *asked == closing) {
             return;
         }
+        // The settings tab, of no program, closes at once, as a tab of its
+        // window.
+        if let Closing::Tab(tab) = closing
+            && let Some((settings, shown)) = self.workspace.settings_tab()
+            && settings == tab
+        {
+            let window = self
+                .windows
+                .iter()
+                .find(|(_, state)| state.window == shown)
+                .map(|(&window, _)| window);
+            if let Some(window) = window {
+                self.close_part(platform, window, closing);
+            }
+            return;
+        }
         let panes = match closing {
             Closing::Tab(tab) => self
                 .workspace

@@ -378,6 +378,7 @@ fn the_app_s_commands_register_with_their_categories_and_titles() {
                 Category::App
             ),
             ("app.settings", "Settings…", Category::App),
+            ("app.settings-tab", "Open Settings Tab", Category::App),
             ("pane.look-up", "Look Up", Category::Edit),
             ("pane.man-page", "Open man Page", Category::Windows),
             (

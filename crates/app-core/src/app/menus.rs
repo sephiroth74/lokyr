@@ -24,7 +24,7 @@ use super::{
     ABOUT, APPEARANCES, App, CHECK_UPDATES, CONTEXT_ONLY, DEFAULT_TERMINAL, FLOAT_ON_TOP,
     INSTALL_CLAUDE_CODE, INSTALL_TOOLS, LOOK_UP, LOOK_UP_TITLE, MAN_KEYWORDS, MAN_PAGE,
     MAN_PAGE_NAME, MAN_SEARCH, MAN_SECTION, NEXT_AGENT, OPEN_THEMES, PERFORMANCE, REPORT_ISSUE,
-    SEARCH_WEB, SECURE_INPUT, SETTINGS, SHOW_TIP, context, show_selection, shown_top,
+    SEARCH_WEB, SECURE_INPUT, SETTINGS, SETTINGS_TAB, SHOW_TIP, context, show_selection, shown_top,
 };
 use crate::drawing::Backend;
 use crate::mouse;
@@ -618,6 +618,7 @@ pub(super) fn main_menu(
                     && APPEARANCES.iter().all(|(name, ..)| *name != command.name)
                     && command.name != PERFORMANCE
                     && command.name != OPEN_THEMES
+                    && command.name != SETTINGS_TAB
                     && command.name != FLOAT_ON_TOP
                     && command.name != NEXT_AGENT
                     && command.name != SHOW_AGENTS

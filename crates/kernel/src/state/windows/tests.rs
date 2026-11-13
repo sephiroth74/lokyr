@@ -249,6 +249,35 @@ fn a_workspace_kept_opens_again_as_it_was() {
 }
 
 #[test]
+fn the_settings_tab_is_not_kept_and_its_window_keeps_the_tab_before_it() {
+    let kept = sample();
+    let mut workspace = Workspace::new();
+    let mut opened: Vec<(WindowId, Option<Frame>)> = Vec::new();
+    for window in &kept.windows {
+        let id = window.open(&mut workspace, |_| pane()).unwrap();
+        opened.push((id, window.frame));
+    }
+    // The first window shows its second tab; the settings tab after it,
+    // which it shows.
+    let first = opened[0].0;
+    let tabs = workspace.window(first).unwrap().tabs().to_vec();
+    workspace.open_settings(first, "Settings").unwrap();
+    let again = Kept::of(&workspace, &opened, None, |_| None);
+    assert_eq!(again.windows[0].tabs.len(), 2);
+    assert_eq!(again.windows[0].active, 1);
+    // Shown from before the settings tab: the first tab's place.
+    workspace.activate_tab(tabs[0]);
+    let again = Kept::of(&workspace, &opened, None, |_| None);
+    assert_eq!(again.windows[0].active, 0);
+    // Moved first: the tab that the window shows keeps its place.
+    let (settings, _) = workspace.settings_tab().unwrap();
+    assert!(workspace.move_tab(settings, first, 0));
+    workspace.activate_tab(tabs[1]);
+    let again = Kept::of(&workspace, &opened, None, |_| None);
+    assert_eq!(again.windows[0].active, 1);
+}
+
+#[test]
 fn a_window_of_another_workspace_or_of_no_tab_is_left_out() {
     let mut workspace = Workspace::new();
     let shown = workspace.open_window(pane());

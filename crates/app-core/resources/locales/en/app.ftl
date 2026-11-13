@@ -18,6 +18,7 @@ command-app-install-command-line-tools = Install Command Line Tools…
 command-app-install-claude-code-integration = Install Claude Code Integration…
 command-app-performance = Show Performance
 command-app-open-themes-folder = Open Themes Folder
+command-app-settings-tab = Open Settings Tab
 performance-measuring = Measuring…
 performance-frames = { $rate } FPS
 performance-cpu = CPU { $median } ms, at most { $longest }
@@ -169,6 +170,11 @@ settings-no-home = Without a home directory, there is no config file: the defaul
 # The alert of Open Themes Folder that opens nothing: what went wrong, as
 # the system tells it, under the message.
 themes-folder-failed-message = Lokyr cannot open its themes' folder
+
+# The settings tab: its title, as its tab shows it, and the page that tells
+# that no page is there yet.
+settings-tab-title = Settings
+settings-tab-empty = No page yet: Lokyr's plugins add theirs.
 
 # The alert of a plugin that the plugin manager turns on or off, as the
 # config cannot be written: what went wrong, under the message.

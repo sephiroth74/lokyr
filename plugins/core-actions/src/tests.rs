@@ -80,14 +80,21 @@ fn the_commands_register_without_keys() {
             (SELECT_OUTPUT, Category::Edit, names(&["history-read"])),
         ]
     );
-    // Copying takes a selection; the others run in any context.
+    // Copying takes a selection; the text's size runs in any context, and
+    // the others take a pane that has the keyboard.
     let whens: Vec<(&str, Option<&str>)> = host
         .commands()
         .iter()
-        .filter(|command| command.when.is_some())
         .map(|command| (command.name.as_str(), command.when.as_deref()))
         .collect();
-    assert_eq!(whens, [("pane.copy", Some("selection"))]);
+    for (name, when) in whens {
+        let wanted = match name {
+            "pane.copy" => Some("selection"),
+            FONT_BIGGER | FONT_SMALLER | FONT_RESET => None,
+            _ => Some("pane.focused"),
+        };
+        assert_eq!(when, wanted, "{name}");
+    }
     // Sending text takes its text.
     let send = host
         .commands()

@@ -21,6 +21,10 @@ lokyr_plugin_sdk::export_plugin!(CoreActions);
 /// Copies the focused pane's selection to the clipboard.
 const COPY: &str = "pane.copy";
 
+/// The context of a window whose pane has the keyboard, which the panes'
+/// actions take.
+const PANE: &str = "pane.focused";
+
 /// Pastes the clipboard's text into the focused pane.
 const PASTE: &str = "pane.paste";
 
@@ -149,8 +153,14 @@ impl Plugin for CoreActions {
                 category,
                 capabilities: capabilities.to_vec(),
                 params: Vec::new(),
-                // Copying takes a selection.
-                when: (name == COPY).then(|| "selection".to_owned()),
+                // Copying takes a selection, and the rest but the text's
+                // size a pane that has the keyboard, which a window that
+                // shows the settings tab has not.
+                when: match name {
+                    COPY => Some("selection".to_owned()),
+                    FONT_BIGGER | FONT_SMALLER | FONT_RESET => None,
+                    _ => Some(PANE.to_owned()),
+                },
             })?;
         }
         cx.register_command(Command {
@@ -163,7 +173,7 @@ impl Plugin for CoreActions {
                 kind: Kind::String,
                 default: None,
             }],
-            when: None,
+            when: Some(PANE.to_owned()),
         })?;
         // A command's output: its cell's, as the context menu gives it, or
         // of none, the last command's.
@@ -197,7 +207,7 @@ impl Plugin for CoreActions {
                 category,
                 capabilities,
                 params: vec![cell("column"), cell("row")],
-                when: None,
+                when: Some(PANE.to_owned()),
             })?;
         }
         Ok(())
@@ -210,7 +220,11 @@ impl Plugin for CoreActions {
             COPY_OUTPUT | SELECT_OUTPUT => cx
                 .focused_pane()
                 .is_some_and(|pane| output(cx, pane, args).ok().flatten().is_some()),
-            _ => true,
+            // The text's size is every window's.
+            FONT_BIGGER | FONT_SMALLER | FONT_RESET => true,
+            // The others act on the focused pane, of which a window that
+            // shows the settings tab has none.
+            _ => cx.focused_pane().is_some(),
         }
     }
 
