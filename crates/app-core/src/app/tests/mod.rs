@@ -1626,6 +1626,29 @@ fn started_with(program: Program) -> (Fake, App, WindowId) {
     (fake, app, window)
 }
 
+#[test]
+fn a_program_s_title_goes_with_it_as_the_shell_comes_back() {
+    // As `ssh` under an interactive shell: a job of a group of its own in
+    // the terminal's foreground, which titles the tab once it runs and
+    // leaves; the title of before back, the shell's own.
+    let (mut fake, mut app, window) = started_with(shell(
+        r#"set -m; printf '\033]2;local\007'; echo ready; read go; perl -e '$| = 1; print "\e]2;remote\a"; sleep 1'; echo back; read line"#,
+    ));
+    let title = |app: &App| {
+        let shown = app.windows[&window].window;
+        let tab = app.workspace.window(shown).unwrap().active_tab();
+        app.workspace.tab(tab).unwrap().title().to_owned()
+    };
+    run_until(&mut fake, &mut app, |_, app| title(app) == "local");
+    // The program typed at the prompt, after its title.
+    let shown = app.windows[&window].window;
+    app.workspace.focused(shown).unwrap().send_text("\n");
+    run_until(&mut fake, &mut app, |_, app| title(app) == "remote");
+    // The shell's `read`, a builtin, holds the foreground, as a prompt.
+    run_until(&mut fake, &mut app, |_, app| shows(app, window, "back"));
+    run_until(&mut fake, &mut app, |_, app| title(app) == "local");
+}
+
 fn shows(app: &App, window: WindowId, text: &str) -> bool {
     screen(app, window).iter().any(|line| line.contains(text))
 }

@@ -2631,6 +2631,28 @@ fn the_title_stack_pushes_and_pops() {
 }
 
 #[test]
+fn a_title_given_back_is_the_stack_s_and_the_reports_and_tells_no_event() {
+    let mut term = Term::with(
+        10,
+        1,
+        Options {
+            title_reports: true,
+            ..Options::default()
+        },
+    );
+    term.feed("\x1b]2;remote\x07");
+    term.terminal.take_events();
+    term.terminal.restore_title("local");
+    assert_eq!(term.terminal.title(), "local");
+    assert_eq!(term.terminal.take_events(), []);
+    term.feed("\x1b[21t");
+    assert_eq!(replies(&mut term), "\x1b]llocal\x1b\\");
+    // Pushed, as a program that titles and pops back does.
+    term.feed("\x1b[22;0t\x1b]2;vim\x07\x1b[23;0t");
+    assert_eq!(term.terminal.title(), "local");
+}
+
+#[test]
 fn the_title_stack_saves_and_brings_back_the_titles_asked_for() {
     let mut term = Term::new(10, 1);
     let titles = |term: &Term| {

@@ -1140,6 +1140,14 @@ impl Terminal {
         &self.title
     }
 
+    /// Gives the window's title back to `title`, as its host does once the
+    /// program that set another left: the reports and the title stack take
+    /// it, and no event tells it, as the host knows it.
+    pub fn restore_title(&mut self, title: &str) {
+        title.clone_into(&mut self.title);
+        self.titles_changed();
+    }
+
     /// The icon's title.
     pub fn icon_title(&self) -> &str {
         &self.icon_title

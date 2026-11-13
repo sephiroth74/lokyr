@@ -216,6 +216,13 @@ pub struct Pane {
     /// Whether a program other than a shell runs in its foreground, and
     /// whether it shows the alternate screen, as the app last found them.
     pub(super) program: (bool, bool),
+    /// The title in force as a program other than a shell came to the
+    /// foreground, and whether the program set its own since, which goes
+    /// as the program leaves.
+    program_title: Option<(String, bool)>,
+    /// Whether that program left the foreground since the workspace last
+    /// took the pane's output, whose title it then gives back or keeps.
+    program_left: bool,
     /// The title that its header showed as the workspace last looked, of
     /// [`Pane::header_title`], whose change tells `pane-changed`.
     pub(super) header: Option<String>,
@@ -365,6 +372,8 @@ impl Pane {
             told_at: None,
             printing: false,
             program: (false, false),
+            program_title: None,
+            program_left: false,
             header: None,
             selection_touched: AtomicBool::new(false),
             title: String::new(),
@@ -515,6 +524,55 @@ impl Pane {
             ended,
             output,
         })
+    }
+
+    /// A program other than a shell came to the foreground, `running`, or
+    /// left it, as the app found it: the title in force kept as it comes,
+    /// to give back as it leaves.
+    pub(super) fn set_running(&mut self, running: bool) {
+        match (self.program.0, running) {
+            (false, true) => {
+                // A program that came before its predecessor's leave was
+                // taken keeps the title of before both.
+                if !self.program_left || self.program_title.is_none() {
+                    self.program_title = Some((self.title.clone(), false));
+                }
+                self.program_left = false;
+            }
+            (true, false) => self.program_left = self.program_title.is_some(),
+            _ => {}
+        }
+    }
+
+    /// What the program's title becomes as the workspace takes output whose
+    /// title changed, `titled`, or not: a title while a program other than
+    /// a shell runs is its; once it left, the title of before, to give
+    /// back, if it set its own and no title came as the shell came back, as
+    /// a shell's prompt sets.
+    pub(super) fn title_left(&mut self, titled: bool) -> Option<String> {
+        if !self.program_left {
+            if titled
+                && self.program.0
+                && let Some((_, set)) = &mut self.program_title
+            {
+                *set = true;
+            }
+            return None;
+        }
+        self.program_left = false;
+        let (before, set) = self.program_title.take()?;
+        (set && !titled).then_some(before)
+    }
+
+    /// Gives the terminal its title `before` back, unless a title came
+    /// since its program's, `set`, which the workspace takes next.
+    pub(super) fn give_title_back(&self, before: &str, set: &str) {
+        if let Some(session) = &self.session {
+            let mut terminal = session.lock();
+            if terminal.title() == set {
+                terminal.restore_title(before);
+            }
+        }
     }
 
     /// The terminal's grid.

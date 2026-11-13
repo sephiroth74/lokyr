@@ -628,10 +628,17 @@ impl Workspace {
                 .title
                 .as_ref()
                 .is_some_and(|title| agent::spins(&pane.title, title));
+            // A program's title goes with it: the title of before, as the
+            // shell is back, unless the shell titled the tab as it came.
+            let given_back = pane.title_left(happened.title.is_some());
             // The pane keeps its program's title and color, for when it
             // takes its tab's keyboard.
             if let Some(title) = &happened.title {
                 pane.title.clone_from(title);
+            }
+            if let Some(before) = &given_back {
+                pane.give_title_back(before, &pane.title);
+                pane.title.clone_from(before);
             }
             if let Some(color) = happened.events.iter().rev().find_map(|event| match event {
                 terminal::Event::TabColor(color) => Some(*color),
@@ -748,6 +755,13 @@ impl Workspace {
                     event => Event::Terminal { pane: id, event },
                 };
                 self.events.push(event);
+            }
+            if let Some(title) = given_back {
+                if let Some(tab) = tab {
+                    tab.title = title;
+                }
+                retitled = true;
+                self.events.push(Event::TitleChanged(id));
             }
             if let (Some(tab), Some(before)) = (active, before) {
                 self.tab_looked(tab, &before);
@@ -1416,6 +1430,7 @@ impl Workspace {
         let Some(shown) = self.panes.get_mut(&pane) else {
             return false;
         };
+        shown.set_running(running);
         shown.program = (running, alternate);
         if let Some(tab) = self.tab_of.get(&pane).copied() {
             self.look_at_programs(tab);

@@ -619,6 +619,86 @@ fn a_tab_takes_the_title_and_the_color_of_the_pane_that_takes_its_keyboard() {
     assert_eq!(look(&workspace), ("second".to_owned(), None));
 }
 
+/// Collects the sessions' events until `done` holds of the workspace, for
+/// ten seconds at most, and returns the events collected.
+fn collect_while_not(workspace: &mut Workspace, done: impl Fn(&Workspace) -> bool) -> Vec<Event> {
+    let start = Instant::now();
+    let mut events = Vec::new();
+    while !done(workspace) {
+        assert!(start.elapsed() < Duration::from_secs(10), "{events:?}");
+        let ids = workspace.pane_ids();
+        workspace.collect(&ids, Instant::now());
+        events.extend(workspace.take_events());
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    events
+}
+
+/// A window of a shell's `script`, which reads a line before each of its
+/// steps, its pane and its tab's title.
+fn stepped(script: &str) -> (Workspace, PaneId, impl Fn(&Workspace) -> String) {
+    let mut workspace = Workspace::new();
+    let window = workspace.open_window(pane(script));
+    let id = workspace.active_pane(window).unwrap();
+    let tab = workspace.window(window).unwrap().active_tab();
+    let title = move |workspace: &Workspace| workspace.tab(tab).unwrap().title().to_owned();
+    (workspace, id, title)
+}
+
+#[test]
+fn a_program_s_title_goes_as_the_shell_comes_back() {
+    let (mut workspace, id, title) = stepped(
+        "printf '\\033]2;local\\007'; read a; printf '\\033]2;remote\\007'; read b; printf 'back\\n'; sleep 30",
+    );
+    collect_while_not(&mut workspace, |workspace| title(workspace) == "local");
+    // A program, as `ssh`, comes to the foreground and titles the tab.
+    assert!(workspace.set_pane_running(id, true, false));
+    workspace.pane(id).unwrap().send_text("\n");
+    collect_while_not(&mut workspace, |workspace| title(workspace) == "remote");
+    // It leaves: the shell's output, of no title, gives the title back,
+    // told, and the terminal's own too.
+    assert!(workspace.set_pane_running(id, false, false));
+    workspace.pane(id).unwrap().send_text("\n");
+    let events = collect_while_not(&mut workspace, |workspace| title(workspace) == "local");
+    assert!(events.contains(&Event::TitleChanged(id)), "{events:?}");
+    assert_eq!(
+        workspace.pane(id).unwrap().terminal().unwrap().title(),
+        "local"
+    );
+}
+
+#[test]
+fn a_shell_s_own_titles_stay() {
+    // A title while no program other than a shell runs is the shell's.
+    let (mut workspace, id, title) =
+        stepped("printf '\\033]2;local\\007'; read a; printf '\\033]2;mine\\007'; sleep 30");
+    collect_while_not(&mut workspace, |workspace| title(workspace) == "local");
+    workspace.pane(id).unwrap().send_text("\n");
+    collect_while_not(&mut workspace, |workspace| title(workspace) == "mine");
+    // A program that sets none leaves the title as it was.
+    assert!(workspace.set_pane_running(id, true, false));
+    assert!(workspace.set_pane_running(id, false, false));
+    std::thread::sleep(Duration::from_millis(100));
+    let ids = workspace.pane_ids();
+    workspace.collect(&ids, Instant::now());
+    assert_eq!(title(&workspace), "mine");
+    // The title that the shell sets as it comes back, as its prompt does,
+    // stays over the program's.
+    let (mut workspace, id, title) = stepped(
+        "read a; printf '\\033]2;remote\\007'; read b; printf '\\033]2;prompt\\007back'; sleep 30",
+    );
+    assert!(workspace.set_pane_running(id, true, false));
+    workspace.pane(id).unwrap().send_text("\n");
+    collect_while_not(&mut workspace, |workspace| title(workspace) == "remote");
+    assert!(workspace.set_pane_running(id, false, false));
+    workspace.pane(id).unwrap().send_text("\n");
+    collect_while_not(&mut workspace, |workspace| title(workspace) == "prompt");
+    std::thread::sleep(Duration::from_millis(100));
+    let ids = workspace.pane_ids();
+    workspace.collect(&ids, Instant::now());
+    assert_eq!(title(&workspace), "prompt");
+}
+
 #[test]
 fn a_tab_s_label_is_its_title_or_its_place_and_its_changes_are_told() {
     let mut workspace = Workspace::new();

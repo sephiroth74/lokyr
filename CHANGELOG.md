@@ -37,6 +37,7 @@ from 1.0.0; before it, a minor version may change what a previous one did.
 - `sleip info` no longer counts a yanked version when it tells that this Lokyr takes none of a plugin's versions.
 - `sleip dev` checks again a plugin saved while it was linking it.
 - An agent that a shell starts with `exec` no longer misses its first request for you.
+- A tab no longer keeps the title of a program that ended, as the remote shell's after you leave `ssh`: the title from before comes back, unless your shell sets its own at its prompt.
 
 ## [0.9.0] - 2026-11-12
 

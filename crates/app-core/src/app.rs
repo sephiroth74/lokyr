@@ -3316,18 +3316,19 @@ impl<B: Backend> App<B> {
     /// for their turn, and acts on it; a timer brings the turn of those
     /// that wait still.
     fn collect(&mut self, platform: &mut dyn Platform, panes: &[PaneId]) {
-        // Their agents first, so that what their output tells counts, as
-        // an agent's first request: a look at each foreground's group and
-        // its program's path, as a shell's `exec` changes the program of
-        // the same group, some microseconds, which the tab's place takes
-        // again below.
+        // Their programs and agents first, so that what their output tells
+        // counts, as an agent's first request or a program's first title,
+        // which goes as the program leaves: a look at each foreground's
+        // group and its program's path, as a shell's `exec` changes the
+        // program of the same group, some microseconds, which the tab's
+        // place takes again below.
         for &pane in panes {
-            let program = self
-                .workspace
-                .pane(pane)
-                .filter(|shown| !shown.is_kept())
-                .and_then(Pane::foreground_program)
-                .unwrap_or_default();
+            let shown = self.workspace.pane(pane).filter(|shown| !shown.is_kept());
+            let program = shown.and_then(Pane::foreground_program).unwrap_or_default();
+            if let Some(alternate) = shown.map(Pane::is_alternate_screen) {
+                self.workspace
+                    .set_pane_running(pane, runs_other_than_shell(&program), alternate);
+            }
             self.look_at_agent(pane, &program);
         }
         let due = self.workspace.collect(panes, Instant::now());
