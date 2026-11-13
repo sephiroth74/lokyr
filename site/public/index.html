@@ -219,6 +219,21 @@
     background: var(--gradient);
     vertical-align: 2px;
   }
+  /* The install's command under the facts, selected whole at a click. */
+  .brew {
+    display: inline-block;
+    max-width: 100%;
+    margin: 24px 0 0;
+    padding: 10px 18px;
+    font: 14px/1.5 var(--mono);
+    color: #e6e1f7;
+    background: rgba(19, 16, 29, 0.78);
+    border: 1px solid var(--line-strong);
+    border-radius: 10px;
+    -webkit-user-select: all;
+            user-select: all;
+  }
+  .brew::before { content: "$ "; color: var(--violet); }
 
   /* The terminal */
   .terminal {
@@ -576,6 +591,7 @@
       <li>Apple Silicon</li>
       <li>MIT, open source at 1.0</li>
     </ul>
+    <code class="brew">brew install --cask sephiroth74/tap/lokyr</code>
   </div>
 
   <div class="wrap">
