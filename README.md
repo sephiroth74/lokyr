@@ -52,7 +52,7 @@ Lokyr is built in phases, each with exit criteria that are measured, not assumed
 | F0 | Foundations: the workspace, CI, the measuring tools, the plugin runtime chosen | ✔ |
 | F1 | The headless terminal core, checked against xterm, `alacritty_terminal` and fuzzers | ✔ |
 | F2 | The macOS app, a window of one pane | ✔ |
-| F3 | The macOS MVP: tabs, splits, search, themes, the command palette, the agents' state on the tabs; then 1.0.0, the first release | 🚧 |
+| F3 | The macOS MVP: tabs, splits, search, themes, the command palette, the agents' state on the tabs; then 1.0.0, the first release | ✔ |
 | F4 | Third-party plugins in Luau, Sleip and its registry | ✔ |
 | F3b | MCP and agents, the settings' panel, themes in the registry | |
 | F5a | Blocks of commands, ssh integration | |
