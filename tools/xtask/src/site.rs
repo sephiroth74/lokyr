@@ -230,7 +230,7 @@ pub(crate) fn build(root: &Path, out: &Path) -> Result<usize> {
     }
     fs::create_dir_all(out).with_context(|| format!("making {}", out.display()))?;
     copy_folder(&root.join("site/public"), out, &|_| true)?;
-    for file in ["style.css", "search.js"] {
+    for file in ["style.css", "search.js", "site.js"] {
         fs::copy(root.join("site").join(file), out.join(file))
             .with_context(|| format!("copying {file}"))?;
     }
@@ -451,7 +451,12 @@ pub(crate) fn page_path(document: &Path) -> PathBuf {
 /// The page of `document`, of its Markdown `text`, in the site's template:
 /// the search indexes its body.
 fn page(document: &Path, text: &str, settings: &Settings) -> String {
-    let (body, title, description) = html(document, text);
+    let Rendered {
+        body,
+        title,
+        description,
+        headings,
+    } = html(document, text);
     let depth = document.components().count().saturating_sub(1);
     let source = format!(
         r#"<a href="{BLOB}/{}">This page's source</a>"#,
@@ -472,10 +477,91 @@ fn page(document: &Path, text: &str, settings: &Settings) -> String {
         },
         &"../".repeat(depth),
         settings,
-        &format!("<main class=\"wrap doc\" id=\"main\" data-pagefind-body>\n{body}</main>"),
+        &contents(&body, &headings),
         &source,
         "",
     )
+}
+
+/// The least sections of a page that has a table of contents.
+const TOC_LEAST: usize = 4;
+
+/// A document's page's contents: its `main`, of its `body`, and, of
+/// `TOC_LEAST` sections or more, its table of contents of its `headings`:
+/// beside the column on a wide screen, each section a group that opens on
+/// its parts, and a short one of the sections alone, which opens, under
+/// the title on a narrow one. The search indexes the `main` alone.
+fn contents(body: &str, headings: &[Heading]) -> String {
+    let sections = headings.iter().filter(|heading| heading.level == 2).count();
+    if sections < TOC_LEAST {
+        return format!(
+            "<div class=\"wrap page\">\n<main class=\"doc\" id=\"main\" data-pagefind-body>\n{body}</main>\n</div>"
+        );
+    }
+    let mut side = String::from(
+        "<nav class=\"toc\" aria-label=\"On this page\">\n<p class=\"toc-title\">On this page</p>\n<ul>\n",
+    );
+    let mut inline =
+        String::from("<details class=\"toc-inline\">\n<summary>On this page</summary>\n<ul>\n");
+    let mut index = 0;
+    // Parts before the first section have none to belong to: they go alone.
+    while index < headings.len() {
+        let heading = &headings[index];
+        index += 1;
+        let link = format!(
+            "<a href=\"#{}\">{}</a>",
+            escaped(&heading.id),
+            heading_words(&heading.words)
+        );
+        if heading.level == 3 {
+            let _ = writeln!(side, "<li>{link}</li>");
+            continue;
+        }
+        let _ = writeln!(inline, "<li>{link}</li>");
+        let parts: Vec<&Heading> = headings[index..]
+            .iter()
+            .take_while(|part| part.level == 3)
+            .collect();
+        index += parts.len();
+        if parts.is_empty() {
+            let _ = writeln!(side, "<li>{link}</li>");
+            continue;
+        }
+        let _ = write!(side, "<li><details><summary>{link}</summary><ul>");
+        for part in parts {
+            let _ = write!(
+                side,
+                "<li><a href=\"#{}\">{}</a></li>",
+                escaped(&part.id),
+                heading_words(&part.words)
+            );
+        }
+        side.push_str("</ul></details></li>\n");
+    }
+    side.push_str("</ul>\n</nav>");
+    inline.push_str("</ul>\n</details>\n");
+    // The short one right after the page's title, or first where it has none.
+    let body = match body.find("</h1>") {
+        Some(end) => format!("{}\n{inline}{}", &body[..end + 5], &body[end + 5..]),
+        None => format!("{inline}{body}"),
+    };
+    format!(
+        "<div class=\"wrap page has-toc\">\n{side}\n<main class=\"doc\" id=\"main\" data-pagefind-body>\n{body}</main>\n</div>"
+    )
+}
+
+/// A heading's words as HTML, its code as code.
+fn heading_words(words: &[(bool, String)]) -> String {
+    words
+        .iter()
+        .map(|(code, text)| {
+            if *code {
+                format!("<code>{}</code>", escaped(text))
+            } else {
+                escaped(text)
+            }
+        })
+        .collect()
 }
 
 /// The search's page, of Pagefind's interface, which a query of `?q=` fills;
@@ -491,7 +577,7 @@ fn search_page(settings: &Settings) -> String {
         },
         "",
         settings,
-        "<main class=\"wrap doc\" id=\"main\">\n<h1>Search</h1>\n<div id=\"search\"></div>\n</main>",
+        "<div class=\"wrap page\">\n<main class=\"doc\" id=\"main\">\n<h1>Search</h1>\n<div id=\"search\"></div>\n</main>\n</div>",
         "",
         r#"<link rel="stylesheet" href="pagefind/pagefind-ui.css">
 <script src="pagefind/pagefind-ui.js" defer></script>
@@ -513,11 +599,13 @@ fn missing_page(settings: &Settings) -> String {
         },
         "/",
         settings,
-        r#"<main class="wrap doc" id="main">
+        r#"<div class="wrap page">
+<main class="doc" id="main">
 <h1>Page not found</h1>
 <p>There is no page at this address; it may have moved. The <a href="/docs/">documentation</a> lists every guide, and the <a href="/search.html">search</a> finds a word in all of them.</p>
 <p><a href="/">Lokyr's home</a></p>
-</main>"#,
+</main>
+</div>"#,
         "",
         "",
     )
@@ -709,6 +797,7 @@ fn template(
 <meta name="theme-color" content="#0b0911">
 <link rel="icon" href="{up}icon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="{up}style.css">
+<script src="{up}site.js" defer></script>
 {more}</head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
@@ -740,12 +829,36 @@ fn template(
     )
 }
 
-/// The HTML of `document`'s Markdown `text`, its title, its first heading's
-/// text, and its description, its first paragraph outside a list, a quote
-/// or a table of `DESCRIPTION_LEAST` characters or more, as plain text: its
-/// headings of GitHub's anchors, its links to the documents made their
-/// pages', and to the repository's other files made GitHub's.
-fn html(document: &Path, text: &str) -> (String, String, Option<String>) {
+/// A document as the site renders it.
+struct Rendered {
+    /// Its HTML: its headings of GitHub's anchors, its links to the
+    /// documents made their pages', and to the repository's other files
+    /// made GitHub's.
+    body: String,
+    /// Its first heading's text.
+    title: String,
+    /// Its first paragraph outside a list, a quote or a table of
+    /// `DESCRIPTION_LEAST` characters or more, as plain text.
+    description: Option<String>,
+    /// Its sections and their parts, its second and third levels of
+    /// headings, for its table of contents.
+    headings: Vec<Heading>,
+}
+
+/// A heading's words, each run of them told as code or not.
+type Words = Vec<(bool, String)>;
+
+/// A heading of the table of contents: its level, 2 or 3, its anchor, and
+/// its words.
+#[derive(Debug, PartialEq)]
+struct Heading {
+    level: u8,
+    id: String,
+    words: Words,
+}
+
+/// The rendering of `document`'s Markdown `text`.
+fn html(document: &Path, text: &str) -> Rendered {
     let options = Options::ENABLE_TABLES
         | Options::ENABLE_STRIKETHROUGH
         | Options::ENABLE_FOOTNOTES
@@ -756,7 +869,8 @@ fn html(document: &Path, text: &str) -> (String, String, Option<String>) {
     let mut ids = Vec::new();
     let mut seen: HashMap<String, usize> = HashMap::new();
     let mut title = None;
-    let mut heading: Option<(HeadingLevel, String)> = None;
+    let mut heading: Option<(HeadingLevel, String, Words)> = None;
+    let mut headings = Vec::new();
     // The description: the paragraph read, and how deep the events are in
     // lists, quotes, tables and footnotes, whose paragraphs it passes over.
     let mut description = None;
@@ -768,7 +882,9 @@ fn html(document: &Path, text: &str) -> (String, String, Option<String>) {
     let mut first_item: Option<String> = None;
     for event in &events {
         match event {
-            Event::Start(Tag::Heading { level, .. }) => heading = Some((*level, String::new())),
+            Event::Start(Tag::Heading { level, .. }) => {
+                heading = Some((*level, String::new(), Vec::new()));
+            }
             Event::Start(
                 Tag::List(_) | Tag::BlockQuote(_) | Tag::Table(_) | Tag::FootnoteDefinition(_),
             ) => nested += 1,
@@ -803,26 +919,40 @@ fn html(document: &Path, text: &str) -> (String, String, Option<String>) {
                 }
             }
             Event::Text(text) | Event::Code(text) => {
-                if let Some((_, words)) = &mut heading {
+                if let Some((_, words, runs)) = &mut heading {
                     words.push_str(text);
+                    runs.push((matches!(event, Event::Code(_)), text.to_string()));
                 }
                 for words in [&mut paragraph, &mut item].into_iter().flatten() {
                     words.push_str(text);
                 }
             }
             Event::End(TagEnd::Heading(_)) => {
-                if let Some((level, words)) = heading.take() {
+                if let Some((level, words, runs)) = heading.take() {
                     if title.is_none() && level == HeadingLevel::H1 {
                         title = Some(words.clone());
                     }
                     let base = slug(&words);
                     let count = seen.entry(base.clone()).or_insert(0);
-                    ids.push(if *count == 0 {
+                    let id = if *count == 0 {
                         base
                     } else {
                         format!("{base}-{count}")
-                    });
+                    };
                     *count += 1;
+                    let level = match level {
+                        HeadingLevel::H2 => Some(2),
+                        HeadingLevel::H3 => Some(3),
+                        _ => None,
+                    };
+                    if let Some(level) = level {
+                        headings.push(Heading {
+                            level,
+                            id: id.clone(),
+                            words: runs,
+                        });
+                    }
+                    ids.push(id);
                 }
             }
             _ => {}
@@ -868,7 +998,12 @@ fn html(document: &Path, text: &str) -> (String, String, Option<String>) {
         stem
     };
     let description = description.or(first_item.filter(|words| !words.is_empty()));
-    (body, title.unwrap_or(fallback), description)
+    Rendered {
+        body,
+        title: title.unwrap_or(fallback),
+        description,
+        headings,
+    }
 }
 
 /// Where a link of `document` to `target` goes in the site: another
@@ -1041,7 +1176,7 @@ mod tests {
 
     #[test]
     fn a_page_s_description_is_its_first_paragraph_of_some_length() {
-        let (_, _, description) = html(
+        let Rendered { description, .. } = html(
             Path::new("docs/x.md"),
             "# X\n\n<sub>Platforms: macOS</sub>\n\n- a list's item that is long enough to be taken, yet passed over\n\n> A quote that is long enough to be taken, yet passed over too.\n\nThe guide to `x`, of [every key](y.md)\nthat the file holds, and of its values.\n\nA later paragraph that the description does not take.\n",
         );
@@ -1049,13 +1184,19 @@ mod tests {
             description.as_deref(),
             Some("The guide to x, of every key that the file holds, and of its values.")
         );
-        let (_, title, listed) = html(
+        let Rendered {
+            title,
+            description: listed,
+            ..
+        } = html(
             Path::new("docs/releases/9.9.9.md"),
             "## What's new\n\n- **Plugins**: `sleip add`\n  installs one.\n- Another.\n",
         );
         assert_eq!(title, "Lokyr 9.9.9 release notes");
         assert_eq!(listed.as_deref(), Some("Plugins: sleip add installs one."));
-        let (_, _, none) = html(Path::new("docs/x.md"), "# X\n\nShort.\n");
+        let Rendered {
+            description: none, ..
+        } = html(Path::new("docs/x.md"), "# X\n\nShort.\n");
         assert_eq!(none, None);
         assert_eq!(shortened("Short."), "Short.");
         let long = "word ".repeat(60);
@@ -1142,7 +1283,7 @@ mod tests {
         // The skip link first, to the page's main.
         let body = &shown[shown.find("<body>").unwrap()..];
         assert!(body.contains("<body>\n<a class=\"skip\" href=\"#main\">Skip to content</a>"));
-        assert!(body.contains(r#"<main class="wrap doc" id="main" data-pagefind-body>"#));
+        assert!(body.contains(r#"<main class="doc" id="main" data-pagefind-body>"#));
         assert!(shown.contains(r#"<a href="../../docs/plugins/" aria-current="page">Plugins</a>"#));
         assert_eq!(shown.matches("aria-current").count(), 1);
         assert!(shown.contains(r#"<meta property="og:image" content="https://lokyr.dev/og.png">"#));
@@ -1229,8 +1370,37 @@ mod tests {
     }
 
     #[test]
+    fn a_page_of_four_sections_has_a_table_of_contents_of_their_parts() {
+        let text = "# Guide\n\nIntro.\n\n## The file\n\n### A complete example\n\n## `[font]`\n\n### `family`\n\n### `bold-style`, `italic-style`\n\n## `[text]`\n\n## Last\n";
+        let rendered = html(Path::new("docs/x.md"), text);
+        assert_eq!(rendered.headings.len(), 7);
+        assert_eq!(
+            rendered.headings[4],
+            Heading {
+                level: 3,
+                id: "bold-style-italic-style".to_owned(),
+                words: vec![
+                    (true, "bold-style".to_owned()),
+                    (false, ", ".to_owned()),
+                    (true, "italic-style".to_owned())
+                ],
+            }
+        );
+        let shown = contents(&rendered.body, &rendered.headings);
+        assert!(shown.starts_with("<div class=\"wrap page has-toc\">\n<nav class=\"toc\""));
+        assert!(shown.contains(r##"<li><details><summary><a href="#font"><code>[font]</code></a></summary><ul><li><a href="#family"><code>family</code></a></li><li><a href="#bold-style-italic-style"><code>bold-style</code>, <code>italic-style</code></a></li></ul></details></li>"##), "{shown}");
+        assert!(shown.contains(r##"<li><a href="#text"><code>[text]</code></a></li>"##));
+        // The short one, of the sections alone, right after the title.
+        assert!(shown.contains("</h1>\n<details class=\"toc-inline\">\n<summary>On this page</summary>\n<ul>\n<li><a href=\"#the-file\">The file</a></li>"));
+        assert!(!shown[shown.find("toc-inline").unwrap()..].contains("#family\""));
+        // Three sections have none.
+        let short = html(Path::new("docs/y.md"), "# Y\n\n## A\n\n## B\n\n## C\n");
+        assert!(!contents(&short.body, &short.headings).contains("toc"));
+    }
+
+    #[test]
     fn a_page_s_headings_take_github_s_anchors_and_its_first_its_title() {
-        let (body, title, _) = html(
+        let Rendered { body, title, .. } = html(
             Path::new("docs/x.md"),
             "# The `plugin.toml` guide\n\n## Limits\n\n## Limits\n\nSee [the guide](y.md#a).\n",
         );
@@ -1263,6 +1433,7 @@ mod tests {
         for file in [
             "index.html",
             "style.css",
+            "site.js",
             "icon.svg",
             "robots.txt",
             "llms.txt",
