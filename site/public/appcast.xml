@@ -1,0 +1,51 @@
+<?xml version="1.0" standalone="yes"?><!-- sparkle-sign-warning:
+IMPORTANT: This file was signed by Sparkle. Any modifications to this file requires re-signing this file with generate_appcast or sign_update! The signed signature will be embedded at the end of this file.
+--><rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
+    <channel>
+        <title>Lokyr</title>
+        <item>
+            <title>1.0.0</title>
+            <pubDate>Fri, 13 Nov 2026 11:43:03 +0100</pubDate>
+            <sparkle:version>202611131033</sparkle:version>
+            <sparkle:shortVersionString>1.0.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <description sparkle:format="markdown"><![CDATA[The first public release. Lokyr's source is open, under the MIT License, at [github.com/sephiroth74/lokyr](https://github.com/sephiroth74/lokyr), and [lokyr.dev](https://lokyr.dev) documents it. Lokyr installs from this disk image, or with Homebrew, `brew install --cask sephiroth74/tap/lokyr`, and updates itself.
+
+## What's new since 0.9.0
+
+- **AI agents on their tabs**: a tab running Claude Code, Codex, Gemini CLI, Aider or another agent that `[agents] programs` lists shows whether the agent works, waits for you, or is done with what you asked. What it asked shows in the tab's tooltip, as "Claude needs your permission to use Bash", and in a tab of several panes a ring goes round the pane that waits.
+- **Agents that wait for you**: a notification tells when an agent waits or is done while its window has no focus, and the Dock's icon counts the agents that wait. Window › Go to Next Agent, ⌥⌘A, brings the next one forward, across every window; Window › Show Agents…, ⇧⌥⌘A, lists them all in the palette, the most urgent first.
+- **Claude Code's integration**: Lokyr › Install Claude Code Integration… adds hooks to Claude Code's settings, asking of each of its configurations and keeping a copy of the file, so that Claude Code tells its tab exactly when it works, waits for you, is done, or stops on an error.
+- **A path opened at its line**: ⌘-click on a path's line, as `src/main.rs:42:7` that compilers, tests and agents print, opens the file at that line in the editor that `[links] editor` names: VS Code, Cursor, Windsurf, Zed, Sublime Text, TextMate or an address of your own.
+- **A command's output**: Edit › Copy Command Output, ⌥⇧⌘C, and Select Command Output, ⇧⌘A, copy or select the output of the last command, or, from the pane's context menu, of the command under the pointer, without its prompt and its command line.
+- **Inline images**: programs show pictures in the terminal, as `imgcat` sends them, of iTerm2's protocol, and as `kitten icat`, `chafa`, `timg` and file managers' previews send them, of kitty's graphics protocol; the images scroll with their lines and stay within 64 MiB of memory, as `[terminal] image-memory` says.
+- **Homebrew**: `brew install --cask sephiroth74/tap/lokyr` installs Lokyr and links `lokyr` and `sleip`, leaving the updates to Lokyr's own.
+- **Plugins**: the plugin API 0.1.2 lets a plugin list the agents of every window and open a file at a line in the editor.
+- About Lokyr links to lokyr.dev.
+
+## Changed
+
+- The icon's variant that `[app] icon` chooses stays in the Dock after Lokyr quits.
+- A click on a notification, a program's, an agent's or a long command's, brings forward the pane that sent it, with its tab and its window.
+
+## Fixed
+
+- A tab no longer keeps the title of a program that ended, as the remote shell's after you leave `ssh`: the title from before comes back, unless your shell sets its own at its prompt.
+- An agent that a shell starts with `exec` no longer misses its first request for you.
+- `sleip add` tells a plugin kept at the version that `plugins.lock` holds, and that `sleip update` of it takes a newer one, rather than failing of an older Lokyr's version.
+- `sleip info` no longer counts a yanked version when it tells that this Lokyr takes none of a plugin's versions.
+- `sleip dev` checks again a plugin saved while it was linking it.
+
+## Before you update
+
+- Plugins installed for 0.9.0 keep working: the plugin API is 0.1.2, which takes 0.1.1's plugins.
+- From 1.0.0, Lokyr's versions follow semantic versioning.
+]]></description>
+            <enclosure url="https://github.com/sephiroth74/lokyr/releases/download/v1.0.0/Lokyr-1.0.0.dmg" length="17851982" type="application/octet-stream" sparkle:edSignature="zxOMDZb1GzTB3hoatnttO55i2a0e4abPyJms2gJjHWQOzGnqsJTFxG+eIggLY4Dn2E5hglS3X4ACe2qJNX2TAg=="></enclosure>
+        </item>
+    </channel>
+</rss><!-- sparkle-signatures:
+edSignature: k+GgpqtXh6CL8XzsDUf2rpJRx/i/VpDfikQtRW6I+LqYQSs++hp1RMZEFYcnpH45qzuShN7+uyBESJMHdpv1Cg==
+length: 4755
+-->

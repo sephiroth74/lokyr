@@ -112,6 +112,7 @@
     font-size: 14px;
   }
   .top-links a { color: var(--muted); text-decoration: none; }
+  .top-links a.pill:hover { color: var(--fg); border-color: var(--violet); }
   .top-links a:hover { color: var(--fg); }
   .pill {
     display: inline-flex;
@@ -558,7 +559,7 @@
     <a href="#install">Install</a>
     <a href="docs/index.html">Docs</a>
     <a href="search.html">Search</a>
-    <span class="pill"><span class="dot" aria-hidden="true"></span>In development</span>
+    <a class="pill" href="https://github.com/sephiroth74/lokyr/releases/latest"><span class="dot" aria-hidden="true"></span>1.0.0 is out</a>
   </nav>
 </header>
 
@@ -589,7 +590,7 @@
     <ul class="facts">
       <li>macOS 26 or later</li>
       <li>Apple Silicon</li>
-      <li>MIT, open source at 1.0</li>
+      <li>MIT, open source</li>
     </ul>
     <code class="brew">brew install --cask sephiroth74/tap/lokyr</code>
   </div>
@@ -645,7 +646,7 @@
       <li>
         <span class="n">05</span>
         <h3>Ready for agents</h3>
-        <p>Lokyr will be an MCP server: an agent works in its own pane and the panes it opens, and the tabs show what each agent is doing.</p>
+        <p>A tab tells what the AI agent in it is doing: at work, waiting for you, or done, with a notification while you look elsewhere. Next, Lokyr becomes an MCP server.</p>
       </li>
       <li>
         <span class="n">06</span>
@@ -661,26 +662,26 @@
     <dl class="numbers">
       <div>
         <dt>Startup</dt>
-        <dd>248<small>ms</small></dd>
+        <dd>237<small>ms</small></dd>
         <dd>to the first frame</dd>
       </div>
       <div>
         <dt>Memory</dt>
-        <dd>27<small>MB</small></dd>
+        <dd>28<small>MB</small></dd>
         <dd>at rest, without the GPU's</dd>
       </div>
       <div>
         <dt>Wakeups</dt>
-        <dd>0.38<small>/s</small></dd>
+        <dd>0.35<small>/s</small></dd>
         <dd>at rest</dd>
       </div>
       <div>
         <dt>Throughput</dt>
-        <dd>312<small>MiB/s</small></dd>
+        <dd>311<small>MiB/s</small></dd>
         <dd>cat of 1 GiB on screen</dd>
       </div>
     </dl>
-    <p class="footnote">Lokyr 0.9.0 on an M5 Pro, Menlo 13 in 120 × 40 cells, measured on 11 November 2026. Every measure, its method and its limits: <a href="docs/bench/RELEASES.html">the benchmarks</a>.</p>
+    <p class="footnote">Lokyr 1.0.0 on an M5 Pro, Menlo 13 in 120 × 40 cells, measured on 13 November 2026. Every measure, its method and its limits: <a href="docs/bench/RELEASES.html">the benchmarks</a>.</p>
   </section>
 
   <section class="wrap" aria-labelledby="road">
@@ -690,8 +691,8 @@
       <li class="done"><strong>Foundations</strong><span>Workspace, CI, the measuring tools</span><em>done</em></li>
       <li class="done"><strong>Terminal core</strong><span>Checked against xterm and fuzzers</span><em>done</em></li>
       <li class="done"><strong>The macOS app</strong><span>A window of one pane</span><em>in daily use</em></li>
-      <li class="now"><strong>1.0</strong><span>Tabs, splits, search, themes, the palette, updates, plugins in Luau and Sleip</span><em>now</em></li>
-      <li><strong>1.1</strong><span>MCP and agents</span><em>next</em></li>
+      <li class="done"><strong>1.0</strong><span>Tabs, splits, search, themes, the palette, updates, plugins in Luau and Sleip</span><em>released</em></li>
+      <li class="now"><strong>1.1</strong><span>MCP and agents</span><em>next</em></li>
       <li><strong>1.2, 1.3</strong><span>The settings&#8217; and plugins&#8217; panels, themes in the registry</span><em>later</em></li>
     </ol>
   </section>
