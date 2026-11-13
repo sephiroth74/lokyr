@@ -111,7 +111,7 @@ term = "xterm-lokyr"                 # the TERM that programs see
 unicode-widths = "8"                 # current | 8: the width tables
 ambiguous-width = 2                  # 1 | 2: the cells of an ambiguous character
 normalization = "nfc"                # none | nfc | nfd | hfs+
-shell-integration = false            # true | false: the shell tells its prompts and its folder
+shell-integration = true            # true | false: the shell tells its prompts and its folder
 image-memory = 128                   # MiB of a pane's inline images, 0 showing none
 
 [scrollback]
