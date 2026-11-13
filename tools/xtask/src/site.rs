@@ -472,7 +472,7 @@ fn page(document: &Path, text: &str, settings: &Settings) -> String {
         },
         &"../".repeat(depth),
         settings,
-        &format!("<main class=\"wrap doc\" data-pagefind-body>\n{body}</main>"),
+        &format!("<main class=\"wrap doc\" id=\"main\" data-pagefind-body>\n{body}</main>"),
         &source,
         "",
     )
@@ -491,7 +491,7 @@ fn search_page(settings: &Settings) -> String {
         },
         "",
         settings,
-        "<main class=\"wrap doc\">\n<h1>Search</h1>\n<div id=\"search\"></div>\n</main>",
+        "<main class=\"wrap doc\" id=\"main\">\n<h1>Search</h1>\n<div id=\"search\"></div>\n</main>",
         "",
         r#"<link rel="stylesheet" href="pagefind/pagefind-ui.css">
 <script src="pagefind/pagefind-ui.js" defer></script>
@@ -513,7 +513,7 @@ fn missing_page(settings: &Settings) -> String {
         },
         "/",
         settings,
-        r#"<main class="wrap doc">
+        r#"<main class="wrap doc" id="main">
 <h1>Page not found</h1>
 <p>There is no page at this address; it may have moved. The <a href="/docs/">documentation</a> lists every guide, and the <a href="/search.html">search</a> finds a word in all of them.</p>
 <p><a href="/">Lokyr's home</a></p>
@@ -711,6 +711,7 @@ fn template(
 <link rel="stylesheet" href="{up}style.css">
 {more}</head>
 <body>
+<a class="skip" href="#main">Skip to content</a>
 <div class="backdrop" aria-hidden="true"></div>
 <header class="bar">
 <div class="wrap top">
@@ -1133,6 +1134,10 @@ mod tests {
         assert!(shown.contains(r#"<meta property="og:title" content="The bundled plugins">"#));
         assert!(!shown.contains("noindex"));
         assert!(shown.contains(r#"<a href="../../docs/">Docs</a>"#));
+        // The skip link first, to the page's main.
+        let body = &shown[shown.find("<body>").unwrap()..];
+        assert!(body.contains("<body>\n<a class=\"skip\" href=\"#main\">Skip to content</a>"));
+        assert!(body.contains(r#"<main class="wrap doc" id="main" data-pagefind-body>"#));
         assert!(shown.contains(r#"<a href="../../docs/plugins/" aria-current="page">Plugins</a>"#));
         assert_eq!(shown.matches("aria-current").count(), 1);
         assert!(shown.contains(r#"<meta property="og:image" content="https://lokyr.dev/og.png">"#));

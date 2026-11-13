@@ -82,7 +82,7 @@
     --bg-raised: #13101d;
     --fg: #f4f1ff;
     --muted: #a7a1bd;
-    --dim: #6f6987;
+    --dim: #857f9d;
     --line: rgba(244, 241, 255, 0.08);
     --line-strong: rgba(244, 241, 255, 0.14);
     --violet: #a592ff;
@@ -201,6 +201,7 @@
     min-width: 0;
     overflow-x: auto;
     scrollbar-width: none;
+    padding: 8px 6px;
     font-size: 14px;
     white-space: nowrap;
   }
@@ -229,6 +230,29 @@
     box-shadow: 0 0 0 0 rgba(242, 122, 196, 0.6);
     animation: pulse 2.4s ease-out infinite;
   }
+
+  /* The keyboard's place: a ring of the brand's violet round what has the
+     focus, never taken away. In the top bar's scrolling row, which would
+     clip it, the links take a little room of their own round their words
+     for it, given back by their margins. The skip link waits above the page
+     and comes down as it takes the focus. */
+  :focus-visible { outline: 2px solid var(--violet); outline-offset: 3px; }
+  .top-links a:not(.pill) { padding-inline: 6px; margin-inline: -6px; }
+  .top-links a:not(.pill):focus-visible { outline-offset: 2px; border-radius: 6px; }
+  .skip {
+    position: absolute;
+    top: -100px;
+    left: 16px;
+    z-index: 20;
+    padding: 10px 16px;
+    border: 1px solid var(--line-strong);
+    border-radius: 10px;
+    background: var(--bg-raised);
+    color: var(--fg);
+    font-size: 14px;
+    text-decoration: none;
+  }
+  .skip:focus { top: 12px; }
 
   /* Hero */
   .hero {
@@ -639,8 +663,10 @@
               mask-image: linear-gradient(90deg, #000 85%, transparent);
       padding-right: 24px;
     }
+    .top-links { padding-block: 0; }
     .top-links a { padding-block: 12px; }
     .top-links a.pill { padding-block: 6px; }
+    .top-links a:not(.pill):focus-visible { outline-offset: -4px; }
     .features { grid-template-columns: 1fr; }
     .terminal pre { font-size: 12.5px; padding: 16px; }
     .hero { padding-top: 24px; }
@@ -652,6 +678,7 @@
 </style>
 </head>
 <body>
+<a class="skip" href="#main">Skip to content</a>
 <div class="backdrop" aria-hidden="true"></div>
 
 <header class="bar">
@@ -670,7 +697,7 @@
 </div>
 </header>
 
-<main>
+<main id="main">
   <div class="wrap hero">
     <svg class="mark" viewBox="200 200 624 624" aria-hidden="true">
       <defs>
