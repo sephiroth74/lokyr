@@ -801,6 +801,7 @@ export type TabId = number
 export type TabInfo = {
     id: TabId,
     window: WindowId,
+    kind: TabKind?,
     title: string,
     color: Color?,
     active: boolean,
@@ -817,6 +818,10 @@ export type TabInfo = {
     agent: AgentState?,
     agent_message: string?,
 }
+
+export type TabKind =
+    | "terminal"
+    | "settings"
 
 export type TabProgress = {
     state: ProgressState,

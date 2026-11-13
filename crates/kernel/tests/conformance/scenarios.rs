@@ -700,6 +700,7 @@ fn tabs(world: &World) -> Scenario {
     let info = |title: &str, color| TabInfo {
         id: t,
         window: w,
+        kind: lokyr_plugin_sdk::host::TabKind::Terminal,
         title: title.to_owned(),
         color,
         active: true,
@@ -2294,6 +2295,7 @@ fn workspace(world: &World) -> Scenario {
     let info = |id, active, focused, panes: Vec<PaneId>, zoomed| TabInfo {
         id,
         window: w,
+        kind: lokyr_plugin_sdk::host::TabKind::Terminal,
         title: String::new(),
         color: None,
         active,

@@ -284,6 +284,78 @@ fn tabs_open_show_move_and_close_with_their_windows() {
 }
 
 #[test]
+fn the_settings_tab_of_no_pane_opens_once_moves_and_closes_as_a_tab() {
+    let mut workspace = Workspace::new();
+    let first = workspace.open_window(pane("sleep 10"));
+    let one = workspace.window(first).unwrap().active_tab();
+    let two = workspace.open_tab(first, pane("sleep 10"), 99).unwrap();
+    changes(&mut workspace);
+    let tabs = |workspace: &Workspace, window| workspace.window(window).unwrap().tabs().to_vec();
+    // After the tab that the window shows, which it shows, of no pane.
+    let settings = workspace.open_settings(first, "Settings").unwrap();
+    assert_eq!(tabs(&workspace, first), [one, settings, two]);
+    assert_eq!(workspace.window(first).unwrap().active_tab(), settings);
+    assert_eq!(workspace.settings_tab(), Some((settings, first)));
+    assert!(workspace.is_settings(settings) && !workspace.is_settings(one));
+    assert!(workspace.tab(settings).is_none());
+    assert_eq!(workspace.settings_title(), "Settings");
+    assert_eq!(workspace.active_pane(first), None);
+    assert!(workspace.focused(first).is_none());
+    assert_eq!(
+        changes(&mut workspace),
+        [
+            Change::TabCreated {
+                tab: settings.into(),
+                window: first.into(),
+                index: 1
+            },
+            Change::TabActivated {
+                tab: settings.into(),
+                window: first.into()
+            },
+        ]
+    );
+    // Once: opened again, the one there shows.
+    assert!(workspace.activate_tab(two));
+    changes(&mut workspace);
+    assert_eq!(workspace.open_settings(first, "Settings"), Some(settings));
+    assert_eq!(tabs(&workspace, first), [one, settings, two]);
+    assert_eq!(workspace.window(first).unwrap().active_tab(), settings);
+    // Reordered, then to another window, then out to a window of its own.
+    assert!(workspace.move_tab(settings, first, 99));
+    assert_eq!(tabs(&workspace, first), [one, two, settings]);
+    let second = workspace.open_window(pane("sleep 10"));
+    assert!(workspace.move_tab(settings, second, 0));
+    assert_eq!(workspace.settings_tab(), Some((settings, second)));
+    assert_eq!(tabs(&workspace, first), [one, two]);
+    let own = workspace.tab_to_new_window(settings).unwrap();
+    assert_eq!(tabs(&workspace, own), [settings]);
+    assert_eq!(workspace.settings_tab(), Some((settings, own)));
+    changes(&mut workspace);
+    // Closed as a tab: its window, of no tab left, closes.
+    assert!(workspace.close_tab(settings));
+    assert_eq!(workspace.settings_tab(), None);
+    assert!(workspace.window(own).is_none());
+    assert_eq!(
+        changes(&mut workspace),
+        [
+            Change::TabClosed {
+                tab: settings.into(),
+                window: own.into()
+            },
+            Change::WindowClosed { window: own.into() },
+        ]
+    );
+    assert!(!workspace.close_tab(settings));
+    // Of its window too, which then opens a new one.
+    let again = workspace.open_settings(first, "Settings").unwrap();
+    assert_ne!(again, settings);
+    assert!(workspace.close_window(first));
+    assert_eq!(workspace.settings_tab(), None);
+    assert!(workspace.open_settings(first, "Settings").is_none());
+}
+
+#[test]
 fn panes_split_zoom_close_and_move_with_their_tabs() {
     let mut workspace = Workspace::new();
     let a = pane("sleep 10");

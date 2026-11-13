@@ -251,6 +251,7 @@ impl Symbols {
                     .map(|info| TabInfo {
                         id: self.tab(info.id),
                         window: self.window(info.window),
+                        kind: lokyr_plugin_sdk::host::TabKind::Terminal,
                         title: info.title,
                         color: info.color,
                         active: info.active,

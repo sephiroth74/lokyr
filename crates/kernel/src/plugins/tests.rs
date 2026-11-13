@@ -1657,6 +1657,57 @@ fn a_read_of_the_agents_tells_each_pane_s_agent_to_a_plugin_that_reads_the_proce
     assert_eq!(read[1], Err(Code::MissingCapability));
 }
 
+#[test]
+fn the_settings_tab_reads_as_a_tab_of_no_pane_moved_shown_and_closed_as_a_tab() {
+    use lokyr_plugin_sdk::host::TabKind;
+    let mut app = App::default();
+    let shown = window(&mut app, "sleep 10");
+    let settings = app.workspace.open_settings(shown, "Settings").unwrap();
+    let mut plugins = Plugins::new();
+    type Seen = (Vec<(TabKind, String, usize, bool)>, Vec<Result<(), Code>>);
+    let seen: Rc<RefCell<Seen>> = Rc::default();
+    let told = Rc::clone(&seen);
+    plugins
+        .add(
+            "tidy",
+            scripted(
+                |cx| cx.register_command(command("tidy.go")),
+                move |cx, _, _| {
+                    let window = cx.focused_window().unwrap();
+                    let tabs = cx.tabs(window)?;
+                    let mut told = told.borrow_mut();
+                    told.0 = tabs
+                        .iter()
+                        .map(|tab| (tab.kind, tab.title.clone(), tab.panes.len(), tab.active))
+                        .collect();
+                    let settings = tabs[1].id;
+                    let code = |done: Result<(), Error>| done.map_err(|error| error.code);
+                    told.1.push(code(cx.set_tab_title(settings, Some("mine"))));
+                    told.1.push(code(cx.activate_tab(tabs[0].id)));
+                    told.1.push(code(cx.move_tab(settings, window, 0)));
+                    told.1.push(code(cx.close_tab(settings, false)));
+                    Ok(())
+                },
+            ),
+        )
+        .unwrap();
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    plugins
+        .run("tidy.go", Args::new(), &mut app.context())
+        .unwrap();
+    let seen = seen.borrow();
+    assert_eq!(seen.0.len(), 2);
+    assert_eq!(seen.0[0].0, TabKind::Terminal);
+    assert_eq!(
+        seen.0[1],
+        (TabKind::Settings, "Settings".to_owned(), 0, true)
+    );
+    // Its title is the host's; it is shown, moved and closed as a tab.
+    assert_eq!(seen.1, [Err(Code::Failed), Ok(()), Ok(()), Ok(())]);
+    assert_eq!(app.workspace.settings_tab(), None);
+    assert!(!app.workspace.is_settings(settings));
+}
+
 /// A plugin that does nothing, of a thread of its own if the host gives it
 /// one.
 struct Still;
@@ -3221,6 +3272,7 @@ fn a_plugin_opens_a_tab_and_a_split_of_the_ids_that_its_call_gets() {
             host::TabInfo {
                 id: first_tab.into(),
                 window: window.into(),
+                kind: lokyr_plugin_sdk::host::TabKind::Terminal,
                 title: String::new(),
                 color: None,
                 active: true,
@@ -3240,6 +3292,7 @@ fn a_plugin_opens_a_tab_and_a_split_of_the_ids_that_its_call_gets() {
             host::TabInfo {
                 id: tab,
                 window: window.into(),
+                kind: lokyr_plugin_sdk::host::TabKind::Terminal,
                 title: String::new(),
                 color: None,
                 active: false,

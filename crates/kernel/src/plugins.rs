@@ -745,9 +745,8 @@ impl State {
         }
         for window in workspace.windows() {
             for &tab in window.tabs() {
-                if let Some(shown) = workspace.tab(tab) {
-                    self.told_tabs
-                        .insert(tab.into(), tab_info(workspace, shown, false));
+                if let Some(info) = any_tab_info(workspace, tab, false) {
+                    self.told_tabs.insert(tab.into(), info);
                 }
             }
         }
@@ -762,11 +761,8 @@ impl State {
         if self.reads_processes() {
             return true;
         }
-        let seen = |tab: host::TabId| {
-            workspace
-                .tab(crate::workspace::TabId::of(tab.0))
-                .map(|tab| tab_info(workspace, tab, false))
-        };
+        let seen =
+            |tab: host::TabId| any_tab_info(workspace, crate::workspace::TabId::of(tab.0), false);
         match event {
             Event::Workspace(WorkspaceEvent::TabCreated { tab, .. }) => {
                 if let Some(now) = seen(*tab) {
@@ -4687,7 +4683,22 @@ impl Host<'_, '_> {
         if self.opened_tab(tab).is_some() {
             return Ok(());
         }
+        if self.context.workspace.is_settings(TabId::of(tab.0)) {
+            return Err(Error::new(
+                Code::Failed,
+                lokyr_plugin_sdk::message::SETTINGS_TAB,
+            ));
+        }
         self.tab(tab).map(|_| ())
+    }
+
+    /// Whether the tab `tab` is there, as [`Host::known_tab`] tells, or is
+    /// the settings tab, which is moved, shown and closed as a tab is.
+    fn known_tab_or_settings(&self, tab: host::TabId) -> Result<(), Error> {
+        if self.context.workspace.is_settings(TabId::of(tab.0)) {
+            return Ok(());
+        }
+        self.known_tab(tab)
     }
 
     /// Whether the pane `pane` is there, or the call's writes so far open
@@ -4767,11 +4778,6 @@ impl Host<'_, '_> {
                 self.view_window(view)
             }
         }
-    }
-
-    /// What a read of a window's tabs tells of `tab`.
-    fn tab_info(&self, tab: &crate::workspace::Tab) -> host::TabInfo {
-        tab_info(self.context.workspace, tab, self.state.reads_processes())
     }
 
     /// Whether the plugin may make `request`: it has the capability that
@@ -5052,10 +5058,11 @@ impl Host<'_, '_> {
             ),
             Asked::Tabs(window) => {
                 let tabs = self.window(window)?.tabs().to_vec();
+                let reads = self.state.reads_processes();
+                let workspace = &*self.context.workspace;
                 let infos: Vec<host::TabInfo> = tabs
                     .into_iter()
-                    .filter_map(|tab| self.context.workspace.tab(tab))
-                    .map(|tab| self.tab_info(tab))
+                    .filter_map(|tab| any_tab_info(workspace, tab, reads))
                     .collect();
                 // What it learns of each tab, of which a change that it
                 // cannot read tells it nothing.
@@ -5363,10 +5370,11 @@ impl Host<'_, '_> {
                 }
             }
             Asked::CloseTab { tab, .. }
-            | Asked::SetTabTitle { tab, .. }
             | Asked::ActivateTab(tab)
-            | Asked::TabToNewWindow { tab, .. }
-            | Asked::Equalize(tab) => {
+            | Asked::TabToNewWindow { tab, .. } => {
+                self.known_tab_or_settings(*tab)?;
+            }
+            Asked::SetTabTitle { tab, .. } | Asked::Equalize(tab) => {
                 self.known_tab(*tab)?;
             }
             Asked::ClosePane { pane, .. }
@@ -5391,7 +5399,7 @@ impl Host<'_, '_> {
                 }
             }
             Asked::MoveTab { tab, window, .. } => {
-                self.known_tab(*tab)?;
+                self.known_tab_or_settings(*tab)?;
                 self.window(*window)?;
             }
             Asked::PaneToNewTab { pane, window, .. } => {
@@ -6129,6 +6137,7 @@ fn tab_info(workspace: &Workspace, tab: &crate::workspace::Tab, reads: bool) -> 
     host::TabInfo {
         id: tab.id().into(),
         window: tab.window().into(),
+        kind: lokyr_plugin_sdk::host::TabKind::Terminal,
         title: title.to_owned(),
         color: host_color(tab.color()),
         active,
@@ -6145,6 +6154,40 @@ fn tab_info(workspace: &Workspace, tab: &crate::workspace::Tab, reads: bool) -> 
         agent: marks.agent.filter(|_| reads),
         agent_message: marks.agent_message.filter(|_| reads),
     }
+}
+
+/// What a read of a window's tabs tells of `tab` of `workspace`, a tab of
+/// panes, as [`tab_info`] tells, or the settings tab, of no pane; none of
+/// a tab that is not there.
+fn any_tab_info(workspace: &Workspace, tab: TabId, reads: bool) -> Option<host::TabInfo> {
+    if let Some(shown) = workspace.tab(tab) {
+        return Some(tab_info(workspace, shown, reads));
+    }
+    let (settings, window) = workspace.settings_tab().filter(|(id, _)| *id == tab)?;
+    let active = workspace
+        .window(window)
+        .is_some_and(|shown| shown.active_tab() == settings);
+    Some(host::TabInfo {
+        id: settings.into(),
+        window: window.into(),
+        kind: host::TabKind::Settings,
+        title: workspace.settings_title().to_owned(),
+        color: None,
+        active,
+        panes: Vec::new(),
+        // No pane's.
+        focused: host::PaneId(0),
+        zoomed: None,
+        activity: false,
+        bell: false,
+        progress: None,
+        printing: false,
+        running: false,
+        alternate: false,
+        secure: false,
+        agent: None,
+        agent_message: None,
+    })
 }
 
 /// The color of a tab of `color`, as a plugin learns it.

@@ -1719,6 +1719,7 @@ impl FakeHost {
         Some(TabInfo {
             id,
             window: tab.window,
+            kind: crate::host::TabKind::Terminal,
             title: self.tab_title(tab),
             color: tab.color,
             active: window.active == id,

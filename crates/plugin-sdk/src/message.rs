@@ -43,6 +43,11 @@ pub struct Call {
     pub request: Request,
 }
 
+/// The error of a request of a tab's panes, title or color, of the settings
+/// tab, which has none of them.
+pub const SETTINGS_TAB: &str =
+    "the settings tab has no pane, and its title and color are the host's";
+
 /// The message of the error of [`Request::TabIntoPane`] of a pane of the
 /// tab itself, which every host gives alike.
 pub const OWN_PANE: &str = "a tab goes into a pane of another tab, not of its own";

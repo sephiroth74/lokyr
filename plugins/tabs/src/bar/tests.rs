@@ -12,6 +12,7 @@ fn tab(id: u64, title: &str, active: bool) -> TabInfo {
     TabInfo {
         id: TabId(id),
         window: WindowId(1),
+        kind: lokyr_plugin_sdk::host::TabKind::Terminal,
         title: title.to_owned(),
         color: None,
         active,

@@ -411,6 +411,11 @@ pub struct Workspace {
     waiting: BTreeSet<PaneId>,
     /// The agents' settings.
     agents: AgentSettings,
+    /// The settings tab, of no pane, one at most in the workspace: its id,
+    /// and its window.
+    settings: Option<(TabId, WindowId)>,
+    /// The settings tab's title, in the language that the app shows.
+    settings_title: String,
 }
 
 impl Workspace {
@@ -473,6 +478,16 @@ impl Workspace {
     /// Takes `tab` and its panes away, which the window that held it no
     /// longer lists, the panes' closings and the tab's told.
     fn drop_tab(&mut self, tab: TabId) {
+        if let Some((settings, window)) = self.settings
+            && settings == tab
+        {
+            self.settings = None;
+            self.changed(WorkspaceEvent::TabClosed {
+                tab: tab.into(),
+                window: window.into(),
+            });
+            return;
+        }
         let Some(dropped) = self.tabs.remove(&tab) else {
             return;
         };
@@ -535,6 +550,66 @@ impl Workspace {
                 pane: pane.into(),
                 tab: tab.into(),
             });
+        }
+    }
+
+    /// The settings tab, of no pane, if one is open: its id and its
+    /// window.
+    pub fn settings_tab(&self) -> Option<(TabId, WindowId)> {
+        self.settings
+    }
+
+    /// Whether `tab` is the settings tab.
+    pub fn is_settings(&self, tab: TabId) -> bool {
+        self.settings.is_some_and(|(settings, _)| settings == tab)
+    }
+
+    /// The settings tab's title, as the app gave it.
+    pub fn settings_title(&self) -> &str {
+        &self.settings_title
+    }
+
+    /// Opens the settings tab, of no pane, of the title `title`, in
+    /// `window`, right after the tab that it shows, and shows it; or shows
+    /// the one open, in its own window, of which there is one at most. Its
+    /// id, if `window` is open or the tab was.
+    pub fn open_settings(&mut self, window: WindowId, title: &str) -> Option<TabId> {
+        title.clone_into(&mut self.settings_title);
+        if let Some((tab, _)) = self.settings {
+            self.activate_tab(tab);
+            return Some(tab);
+        }
+        let shown = self.windows.get_mut(&window)?;
+        let index = shown
+            .tabs
+            .iter()
+            .position(|&id| id == shown.active)
+            .map_or(shown.tabs.len(), |at| at + 1);
+        let tab = TabId::new();
+        shown.tabs.insert(index, tab);
+        shown.active = tab;
+        self.settings = Some((tab, window));
+        self.changed(WorkspaceEvent::TabCreated {
+            tab: tab.into(),
+            window: window.into(),
+            index,
+        });
+        self.changed(WorkspaceEvent::TabActivated {
+            tab: tab.into(),
+            window: window.into(),
+        });
+        Some(tab)
+    }
+
+    /// The window of `tab`, a tab of panes or the settings tab, if it is
+    /// open.
+    fn window_of_tab(&self, tab: TabId) -> Option<WindowId> {
+        match self.tabs.get(&tab) {
+            Some(shown) => Some(shown.window),
+            None => self
+                .settings
+                .filter(|(settings, _)| *settings == tab)
+                .map(|(_, window)| window),
         }
     }
 
@@ -1025,6 +1100,11 @@ impl Workspace {
         if let Some(moved) = self.tabs.get_mut(&tab) {
             moved.window = window;
         }
+        if let Some((settings, of)) = &mut self.settings
+            && *settings == tab
+        {
+            *of = window;
+        }
         self.windows.insert(
             window,
             Window {
@@ -1050,7 +1130,7 @@ impl Workspace {
     /// shows the tab after it, or before it, if it showed that one, and
     /// closes if it has no tab left. Whether the tab was open.
     pub fn close_tab(&mut self, tab: TabId) -> bool {
-        if !self.tabs.contains_key(&tab) {
+        if !self.tabs.contains_key(&tab) && !self.is_settings(tab) {
             return false;
         }
         let left = self.detach_tab(tab);
@@ -1064,7 +1144,7 @@ impl Workspace {
     /// left; what it did, for the caller to tell after the tab's own
     /// change. The tab itself stays.
     fn detach_tab(&mut self, tab: TabId) -> Left {
-        let Some(window_id) = self.tabs.get(&tab).map(|tab| tab.window) else {
+        let Some(window_id) = self.window_of_tab(tab) else {
             return Left::Kept;
         };
         let Some(window) = self.windows.get_mut(&window_id) else {
@@ -1201,7 +1281,7 @@ impl Workspace {
 
     /// Shows `tab` in its window; whether it is open.
     pub fn activate_tab(&mut self, tab: TabId) -> bool {
-        let Some(window) = self.tabs.get(&tab).map(|tab| tab.window) else {
+        let Some(window) = self.window_of_tab(tab) else {
             return false;
         };
         let Some(shown) = self.windows.get_mut(&window) else {
@@ -1478,10 +1558,12 @@ impl Workspace {
     /// closes if it has none left; the window that takes it shows the tab
     /// that it showed. Whether both are open.
     pub fn move_tab(&mut self, tab: TabId, window: WindowId, index: usize) -> bool {
-        if !self.tabs.contains_key(&tab) || !self.windows.contains_key(&window) {
+        let Some(from) = self.window_of_tab(tab) else {
+            return false;
+        };
+        if !self.windows.contains_key(&window) {
             return false;
         }
-        let from = self.tabs[&tab].window;
         let was = self.windows[&from].tabs.iter().position(|&id| id == tab);
         let left = if from == window {
             if let Some(window) = self.windows.get_mut(&window) {
@@ -1493,6 +1575,11 @@ impl Workspace {
         };
         if let Some(moved) = self.tabs.get_mut(&tab) {
             moved.window = window;
+        }
+        if let Some((settings, of)) = &mut self.settings
+            && *settings == tab
+        {
+            *of = window;
         }
         let mut placed = 0;
         if let Some(window) = self.windows.get_mut(&window) {
@@ -1514,7 +1601,7 @@ impl Workspace {
     /// Moves `tab` to a window of its own, which shows it, and returns that
     /// window; a tab alone in its window stays there.
     pub fn tab_to_new_window(&mut self, tab: TabId) -> Option<WindowId> {
-        let from = self.tabs.get(&tab)?.window;
+        let from = self.window_of_tab(tab)?;
         if self.windows.get(&from)?.tabs.len() == 1 {
             return Some(from);
         }

@@ -193,6 +193,11 @@ pub struct TabInfo {
     pub id: TabId,
     /// Its window.
     pub window: WindowId,
+    /// What it holds: panes, as a terminal's tab, or the settings' pages,
+    /// as the settings tab, of no pane, whose `panes` are none and whose
+    /// `focused` is no pane's.
+    #[serde(default)]
+    pub kind: TabKind,
     /// Its title: its own, as a plugin gave it, or its active pane's
     /// program's, or, to a plugin of `process-read`, its active pane's
     /// folder and program in the foreground, as `src — vim`; empty for
@@ -256,6 +261,17 @@ pub struct TabInfo {
     /// `None` to the others, and of an agent that rang its bell alone.
     #[serde(default)]
     pub agent_message: Option<String>,
+}
+
+/// What a tab holds.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum TabKind {
+    /// Panes, each a terminal.
+    #[default]
+    Terminal,
+    /// The settings' pages, of no pane: one such tab at most in the app.
+    Settings,
 }
 
 /// The progress of a task that a program tells, as OSC 9;4 does.

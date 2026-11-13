@@ -1448,6 +1448,7 @@ fn bar_tabs() -> Vec<TabInfo> {
     let tab = |id: u64, title: &str, active: bool| TabInfo {
         id: TabId(id),
         window: WindowId(1),
+        kind: lokyr_plugin_sdk::host::TabKind::Terminal,
         title: title.to_owned(),
         color: None,
         active,
@@ -1563,6 +1564,7 @@ impl BarTabs {
                         TabInfo {
                             id: TabId(id),
                             window: WindowId(1),
+                            kind: lokyr_plugin_sdk::host::TabKind::Terminal,
                             title: (*title).to_owned(),
                             color: (id == 2).then_some(Color::Rgb(0xd9, 0x4a, 0x38)),
                             active: id == 5,
