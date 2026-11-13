@@ -1,0 +1,7 @@
+# lokyr.dev: every page may be crawled. The search page is not disallowed,
+# so that its own noindex is read; Pagefind's index is the search's data.
+User-agent: *
+Allow: /
+Disallow: /pagefind/
+
+Sitemap: https://lokyr.dev/sitemap.xml

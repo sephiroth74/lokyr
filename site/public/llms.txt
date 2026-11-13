@@ -1,0 +1,30 @@
+# Lokyr
+
+> Lokyr is a fast, open-source terminal emulator for macOS (26 or later, Apple Silicon), written in Rust and drawn with Metal, where every visible feature, from tabs and splits to search and the command palette, is a plugin. Third-party plugins are sandboxed Luau scripts installed by Sleip, its package manager, from the registry at pkg.lokyr.dev. Its tabs show what the AI agent in them is doing. MIT licensed.
+
+Lokyr installs with Homebrew (`brew install --cask sephiroth74/tap/lokyr`) or from the disk image of its latest release on GitHub, and updates itself through Sparkle. Every setting lives in one TOML file, `~/.config/lokyr/config.toml`.
+
+## Documentation
+
+- [Overview](https://lokyr.dev/docs/): what Lokyr is, its requirements and its documents
+- [Configuration](https://lokyr.dev/docs/CONFIGURATION.html): every key of the config file, its values and defaults
+- [The bundled plugins](https://lokyr.dev/docs/plugins/): tabs, splits, search, the palette, copy mode, the quick terminal and the others, their commands, keys and settings
+- [Sleip, the package manager](https://lokyr.dev/docs/PACKAGE-MANAGER.html): installing, updating and publishing plugins
+- [Writing a plugin](https://lokyr.dev/docs/plugins/authoring.html): a plugin in Luau, step by step
+- [Plugin reference](https://lokyr.dev/docs/plugins/reference.html): capabilities, slots, events and requests
+- [Making a theme](https://lokyr.dev/docs/themes/authoring.html): the theme format and its tokens
+- [Security](https://lokyr.dev/docs/SECURITY.html): the plugins' sandbox and what Lokyr protects
+
+## Project
+
+- [Architecture](https://lokyr.dev/docs/ARCHITECTURE.html): the micro-kernel, the VT core, the renderer
+- [Performance](https://lokyr.dev/docs/PERFORMANCE.html): the budgets that every release is measured against
+- [The releases' benchmarks](https://lokyr.dev/docs/bench/RELEASES.html): startup, memory, latency and throughput of each release
+- [Roadmap](https://lokyr.dev/docs/ROADMAP.html): what comes next
+- [Changelog](https://lokyr.dev/changelog.html) and [release notes](https://lokyr.dev/docs/releases/)
+- [Source code](https://github.com/sephiroth74/lokyr) on GitHub
+
+## Optional
+
+- [Plugin registry](https://pkg.lokyr.dev): the plugins that Sleip installs
+- [Contributing](https://lokyr.dev/contributing.html) and [translating](https://lokyr.dev/translating.html)

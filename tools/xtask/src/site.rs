@@ -11,6 +11,11 @@
 //! as the site is built, to a file and an anchor that it holds; and, where
 //! Pagefind is there, on the `PATH` or as `just pagefind` fetches it into
 //! `target/tools`, it indexes the documents' pages for the search's page.
+//! For the search engines, each page names its canonical address, a
+//! folder's `index.html` as its folder, and its description, a document's
+//! of its first paragraph; `sitemap.xml` lists the home and the documents'
+//! pages of their last commits' dates, and `404.html` is the page that
+//! GitHub Pages serves of an address that the site does not hold.
 //! Into `target/site` by default.
 
 use std::collections::HashMap;
@@ -26,6 +31,18 @@ use crate::check_links::slug;
 
 /// The repository, whose files the pages link on GitHub.
 const BLOB: &str = "https://github.com/sephiroth74/lokyr/blob/main";
+
+/// Where the site is served: the pages' canonical addresses and the
+/// sitemap's are of it.
+const ORIGIN: &str = "https://lokyr.dev";
+
+/// The most characters of a page's description, as the search engines show
+/// about as many.
+const DESCRIPTION: usize = 155;
+
+/// The least characters of a paragraph that a page's description takes:
+/// a shorter one, a note or a line of platforms, is passed over.
+const DESCRIPTION_LEAST: usize = 50;
 
 /// The root's documents that the site holds beside `docs/`.
 const ROOT_DOCUMENTS: [&str; 3] = ["CHANGELOG.md", "CONTRIBUTING.md", "TRANSLATING.md"];
@@ -204,6 +221,19 @@ pub(crate) fn build(root: &Path, out: &Path) -> Result<usize> {
     }
     fs::write(out.join("search.html"), search_page(&settings))
         .context("writing the search's page")?;
+    fs::write(out.join("404.html"), missing_page(&settings)).context("writing the 404 page")?;
+    let dates = last_commits(root)?;
+    let mut listed = vec![(
+        canonical(Path::new("index.html")),
+        dates.get(Path::new("site/public/index.html")).cloned(),
+    )];
+    for document in &documents {
+        listed.push((
+            canonical(&page_path(document)),
+            dates.get(document).cloned(),
+        ));
+    }
+    fs::write(out.join("sitemap.xml"), sitemap(&listed)).context("writing the sitemap")?;
     for document in &documents {
         let text = fs::read_to_string(root.join(document))
             .with_context(|| format!("reading {}", document.display()))?;
@@ -242,6 +272,80 @@ fn documents(root: &Path) -> Result<Vec<PathBuf>> {
     ensure!(listed.status.success(), "git ls-files failed");
     let files = String::from_utf8(listed.stdout).context("git's list of files")?;
     Ok(files.lines().map(PathBuf::from).collect())
+}
+
+/// The date, `YYYY-MM-DD`, of the last commit of each of the site's
+/// sources, the documents and the home, relative to the root, of one walk
+/// of the history; a shallow clone gives its one commit's date to every
+/// file.
+fn last_commits(root: &Path) -> Result<HashMap<PathBuf, String>> {
+    let logged = Command::new("git")
+        .args([
+            "log",
+            "--format=%x00%cs",
+            "--name-only",
+            "--no-renames",
+            "--",
+        ])
+        .arg("docs")
+        .args(ROOT_DOCUMENTS)
+        .arg("site/public/index.html")
+        .current_dir(root)
+        .output()
+        .context("reading the files' last commits")?;
+    ensure!(logged.status.success(), "git log failed");
+    let text = String::from_utf8(logged.stdout).context("git's log")?;
+    Ok(dated(&text))
+}
+
+/// Each file of `git log --format=%x00%cs --name-only`'s `text` and the
+/// date of its first, latest, commit.
+fn dated(text: &str) -> HashMap<PathBuf, String> {
+    let mut dates = HashMap::new();
+    let mut date = "";
+    for line in text.lines() {
+        if let Some(stamp) = line.strip_prefix('\0') {
+            date = stamp;
+        } else if !line.is_empty() && !date.is_empty() {
+            dates
+                .entry(PathBuf::from(line))
+                .or_insert_with(|| date.to_owned());
+        }
+    }
+    dates
+}
+
+/// The sitemap of the `pages`' addresses, each of the date of its last
+/// change where it is known.
+fn sitemap(pages: &[(String, Option<String>)]) -> String {
+    let mut xml = String::from(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
+         <urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">\n",
+    );
+    for (address, date) in pages {
+        let _ = write!(xml, "  <url><loc>{}</loc>", escaped(address));
+        if let Some(date) = date {
+            let _ = write!(xml, "<lastmod>{date}</lastmod>");
+        }
+        xml.push_str("</url>\n");
+    }
+    xml.push_str("</urlset>\n");
+    xml
+}
+
+/// The canonical address of the site's `page`, from the root: a folder's
+/// `index.html` as its folder.
+fn canonical(page: &Path) -> String {
+    format!("{ORIGIN}/{}", folder_form(&page.to_string_lossy()))
+}
+
+/// A link to a page as the site prefers it: `index.html` dropped, so that
+/// a folder's page is its folder; `./` of the folder itself.
+fn folder_form(path: &str) -> String {
+    match path.strip_suffix("index.html") {
+        Some(folder) if folder.is_empty() || folder.ends_with('/') => folder.to_owned(),
+        _ => path.to_owned(),
+    }
 }
 
 /// Copies the files of `from` that `taken` takes, by their names, into
@@ -284,14 +388,24 @@ pub(crate) fn page_path(document: &Path) -> PathBuf {
 /// The page of `document`, of its Markdown `text`, in the site's template:
 /// the search indexes its body.
 fn page(document: &Path, text: &str, settings: &Settings) -> String {
-    let (body, title) = html(document, text);
+    let (body, title, description) = html(document, text);
     let depth = document.components().count().saturating_sub(1);
     let source = format!(
         r#"<a href="{BLOB}/{}">This page's source</a>"#,
         document.display()
     );
+    let description = description.unwrap_or_else(|| {
+        format!(
+            "{title}, of the documentation of Lokyr, a fast, open-source terminal emulator for macOS."
+        )
+    });
     template(
-        &title,
+        &Head {
+            title: &title,
+            description: Some(&shortened(&description)),
+            canonical: Some(&canonical(&page_path(document))),
+            indexed: true,
+        },
         &"../".repeat(depth),
         settings,
         &format!("<main class=\"wrap doc\" data-pagefind-body>\n{body}</main>"),
@@ -300,10 +414,16 @@ fn page(document: &Path, text: &str, settings: &Settings) -> String {
     )
 }
 
-/// The search's page, of Pagefind's interface, which a query of `?q=` fills.
+/// The search's page, of Pagefind's interface, which a query of `?q=` fills;
+/// kept out of the search engines' results, as it shows nothing of its own.
 fn search_page(settings: &Settings) -> String {
     template(
-        "Search",
+        &Head {
+            title: "Search",
+            description: None,
+            canonical: None,
+            indexed: false,
+        },
         "",
         settings,
         "<main class=\"wrap doc\">\n<h1>Search</h1>\n<div id=\"search\"></div>\n</main>",
@@ -315,15 +435,62 @@ fn search_page(settings: &Settings) -> String {
     )
 }
 
-/// A page of the site, of its `title`, the way `up` to the site's root, its
-/// `main` and its footer's `extra` link, and `head` in its head.
+/// The page of an address that the site does not hold, which GitHub Pages
+/// serves at whatever depth: its links are from the root.
+fn missing_page(settings: &Settings) -> String {
+    template(
+        &Head {
+            title: "Page not found",
+            description: None,
+            canonical: None,
+            indexed: false,
+        },
+        "/",
+        settings,
+        r#"<main class="wrap doc">
+<h1>Page not found</h1>
+<p>There is no page at this address; it may have moved. The <a href="/docs/">documentation</a> lists every guide, and the <a href="/search.html">search</a> finds a word in all of them.</p>
+<p><a href="/">Lokyr's home</a></p>
+</main>"#,
+        "",
+        "",
+    )
+}
+
+/// What a page's head tells of it.
+struct Head<'a> {
+    /// The page's own title, of no site's name.
+    title: &'a str,
+    /// What the page holds, in a sentence or two.
+    description: Option<&'a str>,
+    /// The page's canonical address.
+    canonical: Option<&'a str>,
+    /// Whether the search engines may list the page.
+    indexed: bool,
+}
+
+/// `text` of `DESCRIPTION` characters at most: cut at the last space within
+/// them, of an ellipsis.
+fn shortened(text: &str) -> String {
+    if text.chars().count() <= DESCRIPTION {
+        return text.to_owned();
+    }
+    let kept: String = text.chars().take(DESCRIPTION - 1).collect();
+    let cut = kept
+        .rfind(' ')
+        .map_or(kept.as_str(), |space| &kept[..space]);
+    format!("{}…", cut.trim_end_matches([',', ';', ':', '.', ' ']))
+}
+
+/// A page of the site, of its `head`, the way `up` to the site's root, its
+/// `main` and its footer's `extra` link, and `more` in its head.
 fn template(
-    title: &str,
+    head: &Head,
     up: &str,
     settings: &Settings,
     main: &str,
     extra: &str,
-    head: &str,
+    more: &str,
 ) -> String {
     let mut social = String::new();
     for (name, address) in [
@@ -334,26 +501,68 @@ fn template(
             let _ = write!(social, r#"<a href="{}">{name}</a>"#, escaped(address));
         }
     }
+    // The site's name after the page's title, unless the title holds it.
+    let title = if head.title.contains("Lokyr") {
+        head.title.to_owned()
+    } else {
+        format!("{} — Lokyr", head.title)
+    };
+    let mut tags = String::new();
+    if let Some(description) = head.description {
+        let _ = writeln!(
+            tags,
+            r#"<meta name="description" content="{}">"#,
+            escaped(description)
+        );
+    }
+    if !head.indexed {
+        tags.push_str("<meta name=\"robots\" content=\"noindex, follow\">\n");
+    }
+    if let Some(address) = head.canonical {
+        let _ = writeln!(
+            tags,
+            r#"<link rel="canonical" href="{}">"#,
+            escaped(address)
+        );
+        let _ = writeln!(
+            tags,
+            "<meta property=\"og:type\" content=\"website\">\n\
+             <meta property=\"og:site_name\" content=\"Lokyr\">\n\
+             <meta property=\"og:url\" content=\"{}\">\n\
+             <meta property=\"og:title\" content=\"{}\">",
+            escaped(address),
+            escaped(head.title)
+        );
+        if let Some(description) = head.description {
+            let _ = writeln!(
+                tags,
+                r#"<meta property="og:description" content="{}">"#,
+                escaped(description)
+            );
+        }
+    }
+    // The root as a link: the folder itself where the page is at the root.
+    let root = if up.is_empty() { "./" } else { up };
     format!(
         r##"<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{title} — Lokyr</title>
-<meta name="color-scheme" content="dark">
+<title>{title}</title>
+{tags}<meta name="color-scheme" content="dark">
 <meta name="theme-color" content="#0b0911">
 <link rel="icon" href="{up}icon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="{up}style.css">
-{head}</head>
+{more}</head>
 <body>
 <div class="backdrop" aria-hidden="true"></div>
 <header class="wrap top">
-  <a class="brand" href="{up}index.html"><img src="{up}icon.svg" alt="" width="28" height="28">Lokyr</a>
+  <a class="brand" href="{root}"><img src="{up}icon.svg" alt="" width="28" height="28">Lokyr</a>
   <nav>
-    <a href="{up}docs/index.html">Docs</a>
+    <a href="{up}docs/">Docs</a>
     <a href="{up}docs/CONFIGURATION.html">Configuration</a>
-    <a href="{up}docs/plugins/index.html">Plugins</a>
+    <a href="{up}docs/plugins/">Plugins</a>
     <a href="{up}docs/themes/authoring.html">Themes</a>
     <a href="{up}changelog.html">Changelog</a>
     <a href="{up}search.html">Search</a>
@@ -370,15 +579,16 @@ fn template(
 </body>
 </html>
 "##,
-        title = escaped(title),
+        title = escaped(&title),
     )
 }
 
-/// The HTML of `document`'s Markdown `text`, and its title, its first
-/// heading's text: its headings of GitHub's anchors, its links to the
-/// documents made their pages', and to the repository's other files made
-/// GitHub's.
-fn html(document: &Path, text: &str) -> (String, String) {
+/// The HTML of `document`'s Markdown `text`, its title, its first heading's
+/// text, and its description, its first paragraph outside a list, a quote
+/// or a table of `DESCRIPTION_LEAST` characters or more, as plain text: its
+/// headings of GitHub's anchors, its links to the documents made their
+/// pages', and to the repository's other files made GitHub's.
+fn html(document: &Path, text: &str) -> (String, String, Option<String>) {
     let options = Options::ENABLE_TABLES
         | Options::ENABLE_STRIKETHROUGH
         | Options::ENABLE_FOOTNOTES
@@ -390,11 +600,56 @@ fn html(document: &Path, text: &str) -> (String, String) {
     let mut seen: HashMap<String, usize> = HashMap::new();
     let mut title = None;
     let mut heading: Option<(HeadingLevel, String)> = None;
+    // The description: the paragraph read, and how deep the events are in
+    // lists, quotes, tables and footnotes, whose paragraphs it passes over.
+    let mut description = None;
+    let mut paragraph: Option<String> = None;
+    let mut nested = 0usize;
+    // The first list item's text, the description of a document of no
+    // paragraph of its own, as the release notes are.
+    let mut item: Option<String> = None;
+    let mut first_item: Option<String> = None;
     for event in &events {
         match event {
             Event::Start(Tag::Heading { level, .. }) => heading = Some((*level, String::new())),
+            Event::Start(
+                Tag::List(_) | Tag::BlockQuote(_) | Tag::Table(_) | Tag::FootnoteDefinition(_),
+            ) => nested += 1,
+            Event::End(
+                TagEnd::List(_)
+                | TagEnd::BlockQuote(_)
+                | TagEnd::Table
+                | TagEnd::FootnoteDefinition,
+            ) => nested = nested.saturating_sub(1),
+            Event::Start(Tag::Paragraph) if nested == 0 && description.is_none() => {
+                paragraph = Some(String::new());
+            }
+            Event::End(TagEnd::Paragraph) => {
+                if let Some(words) = paragraph.take() {
+                    let words = words.split_whitespace().collect::<Vec<_>>().join(" ");
+                    if words.chars().count() >= DESCRIPTION_LEAST {
+                        description = Some(words);
+                    }
+                }
+            }
+            Event::Start(Tag::Item) if item.is_none() && first_item.is_none() => {
+                item = Some(String::new());
+            }
+            Event::End(TagEnd::Item) if nested == 1 => {
+                if let Some(words) = item.take() {
+                    first_item = Some(words.split_whitespace().collect::<Vec<_>>().join(" "));
+                }
+            }
+            Event::SoftBreak | Event::HardBreak => {
+                for words in [&mut paragraph, &mut item].into_iter().flatten() {
+                    words.push(' ');
+                }
+            }
             Event::Text(text) | Event::Code(text) => {
                 if let Some((_, words)) = &mut heading {
+                    words.push_str(text);
+                }
+                for words in [&mut paragraph, &mut item].into_iter().flatten() {
                     words.push_str(text);
                 }
             }
@@ -444,11 +699,19 @@ fn html(document: &Path, text: &str) -> (String, String) {
     });
     let mut body = String::new();
     pulldown_cmark::html::push_html(&mut body, events);
-    let fallback = document
+    // A document of no title of its own: a release's notes named of their
+    // version, another of its file's name.
+    let stem = document
         .file_stem()
         .map(|stem| stem.to_string_lossy().into_owned())
         .unwrap_or_default();
-    (body, title.unwrap_or(fallback))
+    let fallback = if document.parent() == Some(Path::new("docs/releases")) {
+        format!("Lokyr {stem} release notes")
+    } else {
+        stem
+    };
+    let description = description.or(first_item.filter(|words| !words.is_empty()));
+    (body, title.unwrap_or(fallback), description)
 }
 
 /// Where a link of `document` to `target` goes in the site: another
@@ -481,8 +744,13 @@ pub(crate) fn linked(document: &Path, target: &str) -> String {
         .is_some_and(|extension| IMAGES.contains(&extension.to_ascii_lowercase().as_str()))
         && file.starts_with("docs");
     if is_document {
-        let page = page_path(&file);
-        return format!("{}{anchor}", relative(folder, &page));
+        let page = folder_form(&relative(folder, &page_path(&file)));
+        let page = if page.is_empty() {
+            "./".to_owned()
+        } else {
+            page
+        };
+        return format!("{page}{anchor}");
     }
     if is_image {
         return target.to_owned();
@@ -560,7 +828,13 @@ mod tests {
             linked(plugin, "../PACKAGE-MANAGER.md#plugintoml"),
             "../PACKAGE-MANAGER.html#plugintoml"
         );
-        assert_eq!(linked(plugin, "README.md"), "index.html");
+        assert_eq!(linked(plugin, "README.md"), "./");
+        assert_eq!(linked(plugin, "README.md#tabs"), "./#tabs");
+        assert_eq!(linked(plugin, "../README.md"), "../");
+        assert_eq!(
+            linked(Path::new("docs/README.md"), "plugins/README.md"),
+            "plugins/"
+        );
         assert_eq!(
             linked(plugin, "../../TRANSLATING.md"),
             "../../translating.html"
@@ -609,8 +883,96 @@ mod tests {
     }
 
     #[test]
+    fn a_page_s_description_is_its_first_paragraph_of_some_length() {
+        let (_, _, description) = html(
+            Path::new("docs/x.md"),
+            "# X\n\n<sub>Platforms: macOS</sub>\n\n- a list's item that is long enough to be taken, yet passed over\n\n> A quote that is long enough to be taken, yet passed over too.\n\nThe guide to `x`, of [every key](y.md)\nthat the file holds, and of its values.\n\nA later paragraph that the description does not take.\n",
+        );
+        assert_eq!(
+            description.as_deref(),
+            Some("The guide to x, of every key that the file holds, and of its values.")
+        );
+        let (_, title, listed) = html(
+            Path::new("docs/releases/9.9.9.md"),
+            "## What's new\n\n- **Plugins**: `sleip add`\n  installs one.\n- Another.\n",
+        );
+        assert_eq!(title, "Lokyr 9.9.9 release notes");
+        assert_eq!(listed.as_deref(), Some("Plugins: sleip add installs one."));
+        let (_, _, none) = html(Path::new("docs/x.md"), "# X\n\nShort.\n");
+        assert_eq!(none, None);
+        assert_eq!(shortened("Short."), "Short.");
+        let long = "word ".repeat(60);
+        let cut = shortened(long.trim());
+        assert!(cut.chars().count() <= DESCRIPTION, "{cut}");
+        assert!(cut.ends_with("word…"), "{cut}");
+    }
+
+    #[test]
+    fn a_page_s_address_is_canonical_of_its_folder_and_the_sitemap_lists_it() {
+        assert_eq!(canonical(Path::new("index.html")), "https://lokyr.dev/");
+        assert_eq!(
+            canonical(Path::new("docs/plugins/index.html")),
+            "https://lokyr.dev/docs/plugins/"
+        );
+        assert_eq!(
+            canonical(Path::new("docs/CONFIGURATION.html")),
+            "https://lokyr.dev/docs/CONFIGURATION.html"
+        );
+        assert_eq!(folder_form("reindex.html"), "reindex.html");
+        let dates =
+            dated("\x002026-11-13\n\ndocs/a.md\n\n\x002026-11-01\n\ndocs/a.md\ndocs/b.md\n");
+        assert_eq!(dates[Path::new("docs/a.md")], "2026-11-13");
+        assert_eq!(dates[Path::new("docs/b.md")], "2026-11-01");
+        let xml = sitemap(&[
+            (
+                "https://lokyr.dev/".to_owned(),
+                Some("2026-11-13".to_owned()),
+            ),
+            ("https://lokyr.dev/a.html?x&y".to_owned(), None),
+        ]);
+        assert!(
+            xml.contains("<url><loc>https://lokyr.dev/</loc><lastmod>2026-11-13</lastmod></url>")
+        );
+        assert!(xml.contains("<url><loc>https://lokyr.dev/a.html?x&amp;y</loc></url>"));
+    }
+
+    #[test]
+    fn a_page_s_head_tells_its_title_description_and_address() {
+        let settings = Settings::default();
+        let shown = page(
+            Path::new("docs/plugins/README.md"),
+            "# The bundled plugins\n\nEvery feature that you see comes from a plugin, and these come with Lokyr.\n",
+            &settings,
+        );
+        assert!(shown.contains("<title>The bundled plugins — Lokyr</title>"));
+        assert!(shown.contains(r#"<meta name="description" content="Every feature that you see comes from a plugin, and these come with Lokyr.">"#));
+        assert!(shown.contains(r#"<link rel="canonical" href="https://lokyr.dev/docs/plugins/">"#));
+        assert!(shown.contains(r#"<meta property="og:title" content="The bundled plugins">"#));
+        assert!(!shown.contains("noindex"));
+        assert!(shown.contains(r#"<a href="../../docs/">Docs</a>"#));
+        // A title of the name keeps it once; a page of no paragraph is
+        // described by its title.
+        let named = page(
+            Path::new("docs/README.md"),
+            "# Lokyr — the documentation\n",
+            &settings,
+        );
+        assert!(named.contains("<title>Lokyr — the documentation</title>"));
+        assert!(named.contains(r#"<meta name="description" content="Lokyr — the documentation, of the documentation of Lokyr"#));
+        // The search and the missing page are kept out of the results, the
+        // missing page's links from the root.
+        let search = search_page(&settings);
+        assert!(search.contains(r#"<meta name="robots" content="noindex, follow">"#));
+        assert!(!search.contains("canonical"));
+        assert!(search.contains(r#"<a class="brand" href="./">"#));
+        let missing = missing_page(&settings);
+        assert!(missing.contains("noindex"));
+        assert!(missing.contains(r#"<link rel="stylesheet" href="/style.css">"#));
+    }
+
+    #[test]
     fn a_page_s_headings_take_github_s_anchors_and_its_first_its_title() {
-        let (body, title) = html(
+        let (body, title, _) = html(
             Path::new("docs/x.md"),
             "# The `plugin.toml` guide\n\n## Limits\n\n## Limits\n\nSee [the guide](y.md#a).\n",
         );
@@ -644,10 +1006,53 @@ mod tests {
             "index.html",
             "style.css",
             "icon.svg",
+            "robots.txt",
+            "llms.txt",
+            "404.html",
+            "sitemap.xml",
             "docs/images/lokyr-htop.png",
         ] {
             assert!(out.join(file).is_file(), "{file}");
         }
+        // The sitemap lists the home and every document's page, each of its
+        // last commit's date; the robots name it.
+        let sitemap = fs::read_to_string(out.join("sitemap.xml")).unwrap();
+        assert_eq!(
+            sitemap.matches("<url>").count(),
+            documents.len() + 1,
+            "{sitemap}"
+        );
+        assert!(sitemap.contains("<loc>https://lokyr.dev/</loc><lastmod>"));
+        assert!(sitemap.contains("<loc>https://lokyr.dev/docs/</loc><lastmod>"));
+        assert!(!sitemap.contains("lokyr.dev/search.html") && !sitemap.contains("index.html"));
+        let robots = fs::read_to_string(out.join("robots.txt")).unwrap();
+        assert!(robots.contains("Sitemap: https://lokyr.dev/sitemap.xml"));
+        // `llms.txt`'s links to the site are to its pages.
+        let llms = fs::read_to_string(out.join("llms.txt")).unwrap();
+        let ours = regex::Regex::new(r"\(https://lokyr\.dev/([^)#]*)\)").unwrap();
+        let mut linked_pages = 0;
+        for found in ours.captures_iter(&llms) {
+            let mut file = out.join(&found[1]);
+            if file.is_dir() {
+                file = file.join("index.html");
+            }
+            assert!(file.is_file(), "llms.txt: {}", &found[1]);
+            linked_pages += 1;
+        }
+        assert!(linked_pages > 10, "{linked_pages}");
+        // Every page of a canonical address and a description, the home too.
+        for document in &documents {
+            let shown = fs::read_to_string(out.join(page_path(document))).unwrap();
+            assert!(
+                shown.contains(r#"<link rel="canonical" href="https://lokyr.dev/"#)
+                    && shown.contains(r#"<meta name="description" content=""#),
+                "{}",
+                document.display()
+            );
+        }
+        let home = fs::read_to_string(out.join("index.html")).unwrap();
+        assert!(home.contains(r#"<link rel="canonical" href="https://lokyr.dev/">"#));
+        assert!(home.contains(r#"<meta name="description" content=""#));
         let configuration = fs::read_to_string(out.join("docs/CONFIGURATION.html")).unwrap();
         assert!(configuration.contains(r#"id="font""#));
         // Every link of the pages resolves, the home's too.
