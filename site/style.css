@@ -320,6 +320,17 @@ body {
 }
 .doc a:hover { text-decoration-color: var(--violet); }
 .doc a code { color: inherit; }
+/* A section's or a part's link to itself, shown as the pointer comes to it. */
+.doc .anchor {
+  margin-left: 0.35em;
+  color: var(--dim);
+  font-weight: 400;
+  text-decoration: none;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.doc h2:hover .anchor, .doc h3:hover .anchor { opacity: 1; }
+.doc .anchor:hover { color: var(--violet); }
 .doc strong { color: var(--fg); font-weight: 600; }
 .doc ul, .doc ol { padding-left: 1.4em; }
 .doc li + li { margin-top: 4px; }
@@ -377,6 +388,8 @@ body {
   white-space: nowrap;
 }
 .doc td { color: #ddd8ee; }
+/* A name in a cell keeps whole, the cell's column widening for it. */
+.doc td code { white-space: nowrap; }
 
 footer {
   margin-top: 120px;

@@ -959,31 +959,54 @@ fn html(document: &Path, text: &str) -> Rendered {
         }
     }
     let mut ids = ids.into_iter();
-    let events = events.into_iter().map(|event| match event {
-        Event::Start(Tag::Heading {
-            level,
-            id: None,
-            classes,
-            attrs,
-        }) => Event::Start(Tag::Heading {
-            level,
-            id: ids.next().map(CowStr::from),
-            classes,
-            attrs,
-        }),
-        Event::Start(Tag::Link {
-            link_type,
-            dest_url,
-            title,
-            id,
-        }) => Event::Start(Tag::Link {
-            link_type,
-            dest_url: CowStr::from(linked(document, &dest_url)),
-            title,
-            id,
-        }),
-        event => event,
-    });
+    // The headings of their anchors, a section's and a part's of a `#` after
+    // their words that links to them, for the pointer alone (the table of
+    // contents is the keyboard's way), which the search leaves out.
+    let mut rendered = Vec::with_capacity(events.len());
+    let mut anchor = None;
+    for event in events {
+        match event {
+            Event::Start(Tag::Heading {
+                level,
+                id: None,
+                classes,
+                attrs,
+            }) => {
+                let id = ids.next();
+                if matches!(level, HeadingLevel::H2 | HeadingLevel::H3) {
+                    anchor.clone_from(&id);
+                }
+                rendered.push(Event::Start(Tag::Heading {
+                    level,
+                    id: id.map(CowStr::from),
+                    classes,
+                    attrs,
+                }));
+            }
+            Event::End(TagEnd::Heading(level)) => {
+                if let Some(id) = anchor.take() {
+                    rendered.push(Event::InlineHtml(CowStr::from(format!(
+                        r##"<a class="anchor" href="#{}" aria-hidden="true" tabindex="-1" data-pagefind-ignore>#</a>"##,
+                        escaped(&id)
+                    ))));
+                }
+                rendered.push(Event::End(TagEnd::Heading(level)));
+            }
+            Event::Start(Tag::Link {
+                link_type,
+                dest_url,
+                title,
+                id,
+            }) => rendered.push(Event::Start(Tag::Link {
+                link_type,
+                dest_url: CowStr::from(linked(document, &dest_url)),
+                title,
+                id,
+            })),
+            event => rendered.push(event),
+        }
+    }
+    let events = rendered.into_iter();
     let mut body = String::new();
     pulldown_cmark::html::push_html(&mut body, events);
     // A document of no title of its own: a release's notes named of their
@@ -1392,7 +1415,8 @@ mod tests {
         assert!(shown.contains(r##"<li><a href="#text"><code>[text]</code></a></li>"##));
         // The short one, of the sections alone, right after the title.
         assert!(shown.contains("</h1>\n<details class=\"toc-inline\">\n<summary>On this page</summary>\n<ul>\n<li><a href=\"#the-file\">The file</a></li>"));
-        assert!(!shown[shown.find("toc-inline").unwrap()..].contains("#family\""));
+        let inline = &shown[shown.find("toc-inline").unwrap()..];
+        assert!(!inline[..inline.find("</details>").unwrap()].contains("#family\""));
         // Three sections have none.
         let short = html(Path::new("docs/y.md"), "# Y\n\n## A\n\n## B\n\n## C\n");
         assert!(!contents(&short.body, &short.headings).contains("toc"));
@@ -1406,6 +1430,11 @@ mod tests {
         );
         assert_eq!(title, "The plugin.toml guide");
         assert!(body.contains(r#"<h1 id="the-plugintoml-guide">"#), "{body}");
+        assert!(
+            body.contains(r##"<h2 id="limits">Limits<a class="anchor" href="#limits" aria-hidden="true" tabindex="-1" data-pagefind-ignore>#</a></h2>"##),
+            "{body}"
+        );
+        assert!(!body.contains(r##"href="#the-plugintoml-guide""##));
         assert!(
             body.contains(r#"<h2 id="limits">"#) && body.contains(r#"<h2 id="limits-1">"#),
             "{body}"
