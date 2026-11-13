@@ -262,6 +262,13 @@ pub(crate) fn build(root: &Path, out: &Path) -> Result<usize> {
         .zip(&texts)
         .map(|(document, text)| (document.clone(), html(document, text).title))
         .collect();
+    let changelog =
+        fs::read_to_string(root.join("CHANGELOG.md")).context("reading the changelog")?;
+    fs::write(
+        out.join("releases.xml"),
+        release_feed(&documents, &texts, &release_dates(&changelog)),
+    )
+    .context("writing the releases' feed")?;
     for (document, text) in documents.iter().zip(&texts) {
         let page = page(document, text, &settings, &titles);
         let target = out.join(page_path(document));
@@ -405,6 +412,83 @@ fn pages_of(changed: &[PathBuf], documents: &[PathBuf], everything: bool) -> Vec
         );
     }
     pages
+}
+
+/// The date of each release that `changelog` tells, by its version, of its
+/// headings `## [X.Y.Z] - YYYY-MM-DD`.
+fn release_dates(changelog: &str) -> HashMap<String, String> {
+    changelog
+        .lines()
+        .filter_map(|line| {
+            let rest = line.strip_prefix("## [")?;
+            let (version, date) = rest.split_once("] - ")?;
+            Some((version.to_owned(), date.trim().to_owned()))
+        })
+        .collect()
+}
+
+/// The Atom feed of the releases' notes among `documents`, of their
+/// `texts`, each of its release's date in `dates`, the newest first: each
+/// entry its notes whole, their links of the notes' folder.
+fn release_feed(
+    documents: &[PathBuf],
+    texts: &[String],
+    dates: &HashMap<String, String>,
+) -> String {
+    let folder = Path::new("docs/releases");
+    let mut releases: Vec<(Vec<u64>, String, String, Rendered)> = documents
+        .iter()
+        .zip(texts)
+        .filter(|(document, _)| document.parent() == Some(folder))
+        .filter_map(|(document, text)| {
+            let version = document.file_stem()?.to_str()?.to_owned();
+            let date = dates.get(&version)?.clone();
+            let order = version
+                .split('.')
+                .map(|part| part.parse().unwrap_or(0))
+                .collect();
+            Some((order, version, date, html(document, text)))
+        })
+        .collect();
+    releases.sort_by(|a, b| b.0.cmp(&a.0));
+    let updated = releases
+        .first()
+        .map_or("2026-01-01".to_owned(), |release| release.2.clone());
+    let mut feed = format!(
+        "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n\
+         <feed xmlns=\"http://www.w3.org/2005/Atom\">\n\
+         <title>Lokyr releases</title>\n\
+         <subtitle>The notes of each release of Lokyr, a fast, open-source terminal emulator for macOS.</subtitle>\n\
+         <id>{ORIGIN}/releases.xml</id>\n\
+         <link rel=\"self\" type=\"application/atom+xml\" href=\"{ORIGIN}/releases.xml\"/>\n\
+         <link rel=\"alternate\" type=\"text/html\" href=\"{ORIGIN}/docs/releases/\"/>\n\
+         <icon>{ORIGIN}/apple-touch-icon.png</icon>\n\
+         <author><name>Alessandro Crugnola</name></author>\n\
+         <updated>{updated}T00:00:00Z</updated>\n"
+    );
+    for (_, version, date, rendered) in &releases {
+        let address = canonical(&folder.join(format!("{version}.html")));
+        let summary = rendered
+            .description
+            .as_deref()
+            .map(shortened)
+            .unwrap_or_default();
+        let _ = write!(
+            feed,
+            "<entry>\n\
+             <title>Lokyr {version}</title>\n\
+             <id>{address}</id>\n\
+             <link rel=\"alternate\" type=\"text/html\" href=\"{address}\"/>\n\
+             <updated>{date}T00:00:00Z</updated>\n\
+             <summary>{}</summary>\n\
+             <content type=\"html\" xml:base=\"{ORIGIN}/docs/releases/\">{}</content>\n\
+             </entry>\n",
+            escaped(&summary),
+            escaped(&rendered.body)
+        );
+    }
+    feed.push_str("</feed>\n");
+    feed
 }
 
 /// The canonical address of the site's `page`, from the root: a folder's
@@ -886,6 +970,7 @@ fn template(
 <meta name="theme-color" content="#0b0911">
 <link rel="icon" href="{up}icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="{up}apple-touch-icon.png">
+<link rel="alternate" type="application/atom+xml" title="Lokyr releases" href="{up}releases.xml">
 <link rel="stylesheet" href="{up}style.css">
 <script src="{up}site.js" defer></script>
 {more}</head>
@@ -907,6 +992,7 @@ fn template(
       <a href="https://github.com/sephiroth74/lokyr">GitHub</a>
       <a href="https://pkg.lokyr.dev">Plugin registry</a>
       <a href="{up}docs/releases/">Release notes</a>
+      <a href="{up}releases.xml">Releases feed</a>
     </nav>
     <p>© 2026 Alessandro Crugnola · Lokyr and Sleip are under the MIT License.</p>
     <p>{extra}</p>
@@ -1380,6 +1466,43 @@ mod tests {
     }
 
     #[test]
+    fn the_releases_feed_holds_each_release_s_notes_the_newest_first() {
+        let documents = [
+            PathBuf::from("docs/releases/0.9.0.md"),
+            PathBuf::from("docs/releases/1.0.0.md"),
+            PathBuf::from("docs/releases/README.md"),
+            PathBuf::from("docs/releases/2.0.0.md"),
+            PathBuf::from("docs/x.md"),
+        ];
+        let texts = [
+            "## What's new\n\n- **Plugins** from the registry & more.\n".to_owned(),
+            "The first public release, of [the guide](../CONFIGURATION.md).\n".to_owned(),
+            "# Release notes\n".to_owned(),
+            "Not released yet.\n".to_owned(),
+            "# X\n".to_owned(),
+        ];
+        let dates = release_dates(
+            "## [Unreleased]\n\n## [1.0.0] - 2026-11-13\n\n## [0.9.0] - 2026-11-12\n",
+        );
+        let feed = release_feed(&documents, &texts, &dates);
+        assert!(feed.starts_with("<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<feed xmlns=\"http://www.w3.org/2005/Atom\">"));
+        assert!(feed.contains("<updated>2026-11-13T00:00:00Z</updated>\n<entry>"));
+        let first = feed.find("<title>Lokyr 1.0.0</title>").unwrap();
+        let second = feed.find("<title>Lokyr 0.9.0</title>").unwrap();
+        assert!(first < second);
+        // A version of no date in the changelog, and the folder's index, are
+        // no release.
+        assert!(!feed.contains("2.0.0") && !feed.contains("Release notes</title>"));
+        assert!(feed.contains("<id>https://lokyr.dev/docs/releases/1.0.0.html</id>"));
+        assert!(
+            feed.contains("href=&quot;../CONFIGURATION.html&quot;"),
+            "{feed}"
+        );
+        assert!(feed.contains("registry &amp;amp; more"), "{feed}");
+        assert_eq!(feed.matches("<entry>").count(), 2);
+    }
+
+    #[test]
     fn a_page_s_breadcrumbs_lead_from_the_home_through_its_folders_indexes() {
         let titles = HashMap::from([
             (
@@ -1614,6 +1737,7 @@ mod tests {
             "icon.svg",
             "robots.txt",
             "llms.txt",
+            "releases.xml",
             "404.html",
             "sitemap.xml",
             "docs/images/lokyr-htop.png",
