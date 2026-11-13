@@ -1,8 +1,40 @@
 # Making a theme
 
-A theme of Lokyr is a small TOML file of colors: the terminal's background, text and 16 colors, and, if you like, any of the interface's colors, as the tab bar's, the panels' and the find bar's. A theme is for one appearance, light or dark; Lokyr derives every color that it leaves out from its terminal's colors, so that a theme of the terminal's colors alone colors all of Lokyr. Lokyr also reads iTerm2's `.itermcolors` files as they are.
+A theme of Lokyr is a small TOML file of colors: the terminal's background, text and 16 colors, and, if you like, any of the interface's colors, as the tab bar's, the panels' and the find bar's. A theme is for one appearance, light or dark; Lokyr derives every color that it leaves out from its terminal's colors, so that a theme of the terminal's colors alone colors all of Lokyr. Lokyr also reads iTerm2's `.itermcolors` files as they are: [Using an iTerm2 theme](#using-an-iterm2-theme) tells where to put them.
 
 A theme gives colors alone: the tab bar's look and place, the fonts, the padding and the rest stay in your config, as [the config guide](../CONFIGURATION.md#theme) tells.
+
+## Using an iTerm2 theme
+
+Lokyr reads iTerm2's `.itermcolors` files as they are, without converting them: a theme of the iTerm2-Color-Schemes collection, or one that a theme's site offers for iTerm2, works in Lokyr as you download it.
+
+First look whether Lokyr already has it: it holds 278 themes of that collection, as `Dracula`, `Catppuccin Mocha`, `Nord` or `TokyoNight Day`, which View › Choose Theme… lists with the others.
+
+**1. Put the file in Lokyr's themes folder:**
+
+```text
+~/.config/lokyr/themes/
+```
+
+Where `XDG_CONFIG_HOME` is set, the folder is `$XDG_CONFIG_HOME/lokyr/themes/`. From a terminal:
+
+```sh
+mkdir -p ~/.config/lokyr/themes
+cp ~/Downloads/Nightfall.itermcolors ~/.config/lokyr/themes/
+```
+
+Or let Lokyr copy it: double-click the file in the Finder, or drop it on Lokyr's icon in the Dock, and choose **Install**, which copies it into the folder, or **Install and Use**, which also makes it the theme of its appearance. Where another app opens `.itermcolors` files, open it with Lokyr from the Finder's Open With menu.
+
+**2. Choose it.** The theme's name is the file's, without `.itermcolors`: `Nightfall.itermcolors` is `Nightfall`. Choose it in View › Choose Theme…, or name it in your config for the appearance that it is for:
+
+```toml
+[theme]
+dark = "Nightfall"
+```
+
+Lokyr applies it as you save the file, in the windows that are open too. A file of colors for both appearances, of keys ending in ` (Light)` and ` (Dark)`, gives two themes, `Nightfall (Light)` and `Nightfall (Dark)`. A light theme shows while Lokyr is light, and a dark one while it is dark, as macOS is unless View › Appearance chooses: the picker lists the themes of the appearance in force, and Install's question offers to switch Lokyr's appearance where the theme is of the other one.
+
+How Lokyr reads the file's colors is told in [How Lokyr reads `.itermcolors`](#how-lokyr-reads-itermcolors).
 
 ## The smallest theme
 
@@ -150,7 +182,7 @@ background = "#0b0e13"
 
 A theme that extends another takes all of its colors and gives its own over them: the smallest change of a theme that you like is a file of `extends` and the colors that you change. A theme extends eight others at most, one after another, and none of its chain twice.
 
-## iTerm2's `.itermcolors`
+## How Lokyr reads `.itermcolors`
 
 Lokyr reads an `.itermcolors` file of the themes folder as iTerm2 reads it, and never converts it: its name is the file's, without `.itermcolors`. Each color's `Color Space` tells how its components read: `sRGB` as they are, `P3` of Display P3, and `Calibrated`, `Device` or none, as old files have, of calibrated Generic RGB; each converted to sRGB and cut to its gamut, as macOS cuts it. Lokyr takes its `Ansi 0 Color` to `Ansi 15 Color`, `Background Color`, `Foreground Color`, `Cursor Color`, `Cursor Text Color`, `Selection Color`, `Selected Text Color`, `Bold Color`, `Link Color` and `Underline Color`, and derives the interface's colors of them. A file of keys of both appearances, ending in ` (Light)` and ` (Dark)`, is two themes, `<name> (Light)` and `<name> (Dark)`, each named so in the config.
 
