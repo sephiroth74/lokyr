@@ -25,7 +25,7 @@ Start with [ARCHITECTURE.md](ARCHITECTURE.md), then read the [ROADMAP.md](ROADMA
 | [SECURITY.md](SECURITY.md) | Threat model, security defaults, IPC, packages, robustness, macOS environment |
 | [PERFORMANCE.md](PERFORMANCE.md) | Budgets, how to measure them, benchmarks and CI |
 | [CONFIGURATION.md](CONFIGURATION.md) | The guide to the config file: where it is, how it reloads, and every key, with its values and its default |
-| [plugins/](plugins/README.md) | The bundled plugins, a page each: their commands, keys, config and what turning one off takes away |
+| [plugins/](plugins/README.md) | Plugins: the third-party ones and how Sleip installs them, then the bundled ones, a page each: their commands, keys, config and what turning one off takes away |
 | [plugins/authoring.md](plugins/authoring.md) | Writing a plugin: from `sleip new` to its tests, `sleip dev` and its publishing, and the API at a glance, for plugins' authors |
 | [plugins/reference.md](plugins/reference.md) | The plugin reference: the capabilities and their risks, the slots, the events, the limits and the errors, for plugins' authors |
 | [themes/authoring.md](themes/authoring.md) | Making a theme: the format, every key and color token, `extends` and `.itermcolors`, for themes' authors |
