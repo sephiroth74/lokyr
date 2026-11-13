@@ -796,6 +796,7 @@ fn template(
 {tags}<meta name="color-scheme" content="dark">
 <meta name="theme-color" content="#0b0911">
 <link rel="icon" href="{up}icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="{up}apple-touch-icon.png">
 <link rel="stylesheet" href="{up}style.css">
 <script src="{up}site.js" defer></script>
 {more}</head>
