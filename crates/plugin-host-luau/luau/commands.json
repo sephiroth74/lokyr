@@ -588,6 +588,17 @@
     "when": "pane.focused"
   },
   {
+    "capabilities": [
+      "packages"
+    ],
+    "category": "app",
+    "name": "plugin-manager.open",
+    "params": [],
+    "plugin": "lokyr/plugin-manager",
+    "title": "Plugins…",
+    "when": null
+  },
+  {
     "capabilities": [],
     "category": "app",
     "name": "quick-tips.show",

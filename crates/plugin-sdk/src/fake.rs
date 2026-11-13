@@ -789,8 +789,13 @@ impl FakeHost {
         self
     }
 
-    /// Gives the plugins that a read of the plugins gives.
+    /// Gives the plugins that a read of the plugins gives: a plugin that
+    /// subscribes to `plugins-changed` hears that they changed, once it
+    /// activated.
     pub fn set_plugins(&mut self, plugins: Vec<host::PluginInfo>) -> &mut Self {
+        if self.activated && plugins != self.plugins {
+            self.owed.push(Event::PluginsChanged);
+        }
         self.plugins = plugins;
         self
     }
@@ -1427,11 +1432,15 @@ impl FakeHost {
             if let Request::SetPluginEnabled { plugin, enabled } = request
                 && let Some(info) = self.plugins.iter_mut().find(|info| &info.name == plugin)
             {
-                info.state = match (enabled, info.state) {
+                let state = match (enabled, info.state) {
                     (false, _) => host::PluginState::Off,
                     (true, host::PluginState::Off) => host::PluginState::Waiting,
                     (true, state) => state,
                 };
+                if state != info.state {
+                    info.state = state;
+                    self.owed.push(Event::PluginsChanged);
+                }
             }
         }
         // The settings tab shows at the page, as the app shows it once the

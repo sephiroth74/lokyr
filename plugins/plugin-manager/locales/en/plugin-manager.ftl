@@ -1,0 +1,21 @@
+# The plugin manager's page of the settings tab.
+page-plugins = Plugins
+command-plugin-manager-open = Plugins…
+plugins-title = Plugins
+plugins-intro = Lokyr's own plugins, and those that Sleip installed.
+plugins-installed = Installed
+plugins-built-in = Built In
+plugins-none-installed = No plugin is installed: `sleip add <plugin>` installs one of pkg.lokyr.dev.
+plugin-state-active = Active
+plugin-state-waiting = Waiting to start
+plugin-state-off = Turned off
+plugin-state-faulted = Stopped by a fault: { $fault }
+plugin-capabilities = Capabilities: { $capabilities }
+plugin-decision-granted = { $capability }, allowed
+plugin-decision-refused = { $capability }, refused
+plugin-decision-undecided = { $capability }, not asked yet
+plugin-turn-off = Turn Off
+plugin-turn-on = Turn On
+plugin-remove = Remove
+plugin-removing = Removing…
+plugin-remove-failed = Not removed: { $message }

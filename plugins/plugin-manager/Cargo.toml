@@ -1,0 +1,19 @@
+[package]
+name = "lokyr-plugin-manager"
+description = "Built-in plugin of the plugin manager, the settings tab's page of the plugins"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+lokyr-plugin-sdk = { workspace = true, features = ["unstable"] }
+
+[dev-dependencies]
+lokyr-plugin-sdk = { workspace = true, features = ["fake"] }
+
+[lints]
+workspace = true

@@ -1,0 +1,16 @@
+# The manifest of the built-in plugin of the plugin manager.
+[plugin]
+name = "lokyr/plugin-manager"
+kind = "builtin"
+license = "MIT"
+description = "The settings tab's page of the plugins: Lokyr's own and those that Sleip installed, each of its state and its capabilities, to turn off, on or remove"
+
+[activation]
+on = ["page:plugins", "command:plugin-manager.open"]
+
+[capabilities]
+packages = true
+
+[contributes]
+commands = [{ name = "plugin-manager.open", title = "Plugins…", category = "app" }]
+pages = [{ id = "plugins", icon = "extensions" }]

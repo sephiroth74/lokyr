@@ -5219,3 +5219,57 @@ fn a_window_s_point_of_no_number_is_refused() {
     );
     assert!(plugins.take_requests().is_empty());
 }
+
+#[test]
+fn a_plugin_of_packages_hears_the_plugins_change_and_another_cannot_subscribe() {
+    let mut app = App::default();
+    let mut plugins = Plugins::new();
+    let log = Rc::new(RefCell::new(Vec::new()));
+    plugins
+        .add("manager", listening(&["plugins-changed"], &log))
+        .unwrap();
+    plugins
+        .add(
+            "crasher",
+            scripted(
+                |cx| cx.register_command(command("crasher.go")),
+                |_, _, _| panic!("a fault of the test's"),
+            ),
+        )
+        .unwrap();
+    // A plugin of a manifest of no `packages` is refused the subscription.
+    let manifest = Manifest::parse(concat!(
+        "[plugin]\nname = \"acme/nosy\"\nversion = \"1.0.0\"\nkind = \"luau\"\n",
+        "api = \"^0.1\"\nlicense = \"MIT\"\n",
+    ))
+    .unwrap();
+    let refused = Rc::new(RefCell::new(None));
+    let told = Rc::clone(&refused);
+    plugins
+        .add_declared(
+            manifest,
+            scripted(
+                move |cx| {
+                    *told.borrow_mut() = cx
+                        .subscribe(&["plugins-changed"])
+                        .err()
+                        .map(|error| error.code);
+                    Ok(())
+                },
+                |_, _, _| Ok(()),
+            ),
+        )
+        .unwrap();
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    assert_eq!(*refused.borrow(), Some(Code::MissingCapability));
+    // The first list tells nothing; a fault changes it.
+    let _ = plugins.infos();
+    assert!(plugins.deliver(&mut app.context()).is_empty());
+    assert!(log.borrow().is_empty());
+    let _ = plugins.infos();
+    assert!(!plugins.has_events());
+    let _ = plugins.run("crasher.go", Args::new(), &mut app.context());
+    let _ = plugins.infos();
+    assert!(plugins.deliver(&mut app.context()).is_empty());
+    assert_eq!(*log.borrow(), ["plugins-changed"]);
+}

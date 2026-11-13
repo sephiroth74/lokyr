@@ -118,6 +118,10 @@ const REPORT_ISSUE: &str = "app.report-issue";
 /// holds, before Report an Issue.
 const SHOW_TIP: &str = "quick-tips.show";
 
+/// The plugin manager's command that opens the settings tab at its page,
+/// which the app's menu holds right after the config's item.
+const PLUGINS: &str = "plugin-manager.open";
+
 /// The repository, whose issues take the reports of problems.
 const REPOSITORY: &str = "https://github.com/sephiroth74/lokyr";
 

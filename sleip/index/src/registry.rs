@@ -36,6 +36,7 @@ pub const RESERVED_NAMES: &[&str] = &[
     "links",
     "lokyr",
     "pane",
+    "plugin-manager",
     "progress",
     "quick-terminal",
     "quick-tips",

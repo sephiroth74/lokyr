@@ -521,6 +521,9 @@ type Event =
     -- PACKAGE-MANAGER.md writes them down of each command; then the job's end, whether its command succeeded.
     | { kind: "package", id: number, line: { event: string, [string]: any } }
     | { kind: "packages-ended", id: number, ok: boolean }
+    -- The plugins changed, as `plugins` would tell them: one installed, removed, turned off or on, activated, faulted,
+    -- or a capability's decision; to a plugin of `packages` that subscribes to it.
+    | { kind: "plugins-changed" }
     -- A drag of the edge of the plugin's tab bar's column ended, to it alone: its width since, in points,
     -- which the plugin keeps, as for its next start.
     | { kind: "tab-bar-resized", width: number }
@@ -933,7 +936,7 @@ type Cx = {
     -- Ends a job that runs, of no success.
     cancel_packages: (job: number) -> (boolean, Error?),
     -- Requires `packages`: the plugins, built in and installed, in the order of their activation, each of its name,
-    -- its namespace, its version, whether it is built in, its state, "waiting", "active", "off" or "faulted", its
+    -- its namespace, its version, its manifest's description, whether it is built in, its state, "waiting", "active", "off" or "faulted", its
     -- fault, and its manifest's capabilities, each of the user's decision, "granted", "refused" or "undecided".
     plugins: () -> ({ PluginInfo }?, Error?),
     -- Requires `packages`: turns a plugin, by its name, on or off, as its section of the config,
@@ -1105,7 +1108,7 @@ installed ──▶ resolved ──▶ consent ──▶ loaded ──▶ active
 | `keymap-macos` | Default macOS shortcuts, as iTerm2's: the keys of the app's commands and of the other plugins', which bind none of their own | F3 |
 | `keymap-linux` | Default Linux shortcuts | F7 |
 | `command-palette` | Command palette and theme picker | F3 |
-| `plugin-manager` | UI for Sleip, of the packages' service | F3b |
+| `plugin-manager` | The settings tab's Plugins page, of the packages' service: every plugin of its state and its capabilities' decisions, turned off, on or removed, Lokyr › Plugins…; the registry's search, installs and updates later | F3b |
 | `blocks` | Command + output blocks, over the prompts' marks that the kernel keeps since F3 | F5a |
 | `quick-terminal` | The quick terminal: its command, which shows and hides its quick window, its autohide and its place, of `[plugins.quick-terminal]`, through the quick windows and the global keys of `global-hotkey` | F3 |
 | `progress` | The programs' progress (OSC 9;4), in the `window-strip` slot; the tab shows it with `tabs` | F3 |

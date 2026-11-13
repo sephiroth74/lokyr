@@ -879,6 +879,10 @@ impl Request {
                 if names.iter().any(|name| name == POINTER) {
                     needed.push(Capability::PointerRead);
                 }
+                // The plugins, as their read of `packages` tells them.
+                if names.iter().any(|name| name == PLUGINS_CHANGED) {
+                    needed.push(Capability::Packages);
+                }
                 needed
             }
             _ => self.capability().into_iter().collect(),
@@ -1240,6 +1244,9 @@ pub const COMMAND_STARTED: &str = "command-started";
 /// The name of [`Event::CommandEnded`], as a plugin subscribes to it.
 pub const COMMAND_ENDED: &str = "command-ended";
 
+/// The name of [`Event::PluginsChanged`], as a plugin subscribes to it.
+pub const PLUGINS_CHANGED: &str = "plugins-changed";
+
 /// Whether a plugin can subscribe to the events of `name`: one of the
 /// workspace's, the host's own that every plugin hears of, or a plugin's
 /// own, `namespace.event`.
@@ -1252,6 +1259,7 @@ pub fn is_event_name(name: &str) -> bool {
             VIEWPORT_CHANGED,
             COMMAND_STARTED,
             COMMAND_ENDED,
+            PLUGINS_CHANGED,
         ]
         .contains(&name)
         || crate::command::is_name(name)
@@ -1427,6 +1435,10 @@ pub enum Event {
         /// Whether the command succeeded.
         ok: bool,
     },
+    /// The plugins changed, as a read of them would tell: one installed,
+    /// removed, turned off or on, activated, faulted, or a capability's
+    /// decision, to a plugin of `packages` that subscribes to it.
+    PluginsChanged,
     /// The plugin's config changed, as the config file reloaded, to it
     /// alone: its request of [`Request::Config`] reads the new one.
     ConfigChanged,
@@ -1464,6 +1476,7 @@ impl Event {
             Self::Saved { .. } => "saved",
             Self::Package { .. } => "package",
             Self::PackagesEnded { .. } => "packages-ended",
+            Self::PluginsChanged => PLUGINS_CHANGED,
             Self::TabBarResized { .. } => "tab-bar-resized",
             Self::KeysChanged => KEYS_CHANGED,
             Self::WindowFocus { .. } => WINDOW_FOCUS,

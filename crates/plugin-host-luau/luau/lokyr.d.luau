@@ -166,6 +166,7 @@ export type Event =
     | { kind: "saved", id: number, path: string?, error: string? }
     | { kind: "package", id: number, line: Data }
     | { kind: "packages-ended", id: number, ok: boolean }
+    | { kind: "plugins-changed" }
     | { kind: "config-changed" }
     | { kind: "timer", id: number }
     | { kind: "custom", name: string, schema: string, value: Data }
@@ -642,6 +643,7 @@ export type PluginInfo = {
     name: string,
     namespace: string,
     version: string?,
+    description: string?,
     built_in: boolean,
     state: PluginState,
     fault: string?,

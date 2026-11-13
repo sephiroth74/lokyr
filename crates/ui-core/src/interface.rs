@@ -189,6 +189,7 @@ const ICONS: &[(&str, char)] = &[
     ("edit", '\u{ea73}'),
     ("ellipsis", '\u{ea7c}'),
     ("error", '\u{ea87}'),
+    ("extensions", '\u{eae6}'),
     ("eye-closed", '\u{eae7}'),
     ("filter", '\u{eaf1}'),
     ("folder", '\u{ea83}'),

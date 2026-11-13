@@ -23,8 +23,9 @@ use lokyr_vt_core::terminal::{SelectionShape, SelectionUnit};
 use super::{
     ABOUT, APPEARANCES, App, CHECK_UPDATES, CONTEXT_ONLY, DEFAULT_TERMINAL, FLOAT_ON_TOP,
     INSTALL_CLAUDE_CODE, INSTALL_TOOLS, LOOK_UP, LOOK_UP_TITLE, MAN_KEYWORDS, MAN_PAGE,
-    MAN_PAGE_NAME, MAN_SEARCH, MAN_SECTION, NEXT_AGENT, OPEN_THEMES, PERFORMANCE, REPORT_ISSUE,
-    SEARCH_WEB, SECURE_INPUT, SETTINGS, SETTINGS_TAB, SHOW_TIP, context, show_selection, shown_top,
+    MAN_PAGE_NAME, MAN_SEARCH, MAN_SECTION, NEXT_AGENT, OPEN_THEMES, PERFORMANCE, PLUGINS,
+    REPORT_ISSUE, SEARCH_WEB, SECURE_INPUT, SETTINGS, SETTINGS_TAB, SHOW_TIP, context,
+    show_selection, shown_top,
 };
 use crate::drawing::Backend;
 use crate::mouse;
@@ -756,8 +757,9 @@ pub(super) fn main_menu(
         }),
     ));
     // About and Check for Updates… first, where macOS's apps have them,
-    // then Settings, Secure Keyboard Entry, the default terminal and the
-    // command line tools, then the system's items.
+    // then Settings, the plugins, Secure Keyboard Entry, the default
+    // terminal and the command line tools, in that order, then the system's
+    // items.
     let of = |item: &MenuItem, names: &[&str]| matches!(item, MenuItem::Command { command, .. } if names.contains(&command.as_str()));
     let first = |item: &MenuItem| {
         of(
@@ -766,6 +768,7 @@ pub(super) fn main_menu(
                 ABOUT,
                 CHECK_UPDATES,
                 SETTINGS,
+                PLUGINS,
                 SECURE_INPUT,
                 DEFAULT_TERMINAL,
                 INSTALL_TOOLS,
@@ -778,16 +781,22 @@ pub(super) fn main_menu(
         &[ABOUT, CHECK_UPDATES][..],
         &[
             SETTINGS,
+            PLUGINS,
             SECURE_INPUT,
             DEFAULT_TERMINAL,
             INSTALL_TOOLS,
             INSTALL_CLAUDE_CODE,
         ],
     ] {
-        let group: Vec<MenuItem> = items(&[Category::App])
+        let mut group_items: Vec<MenuItem> = items(&[Category::App])
             .into_iter()
             .filter(|item| of(item, group))
             .collect();
+        group_items.sort_by_key(|item| match item {
+            MenuItem::Command { command, .. } => group.iter().position(|name| name == command),
+            _ => None,
+        });
+        let group = group_items;
         if !group.is_empty() {
             application.extend(group);
             application.push(MenuItem::Separator);

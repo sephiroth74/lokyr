@@ -116,6 +116,7 @@ Every feature beyond the terminal itself is a plugin, and these come with the ap
 | [`command-header`](docs/plugins/command-header.md) | The command whose output you are looking at, at the pane's top, which a click scrolls to |
 | [`copy-mode`](docs/plugins/copy-mode.md) | The copy mode: ⇧⌘C, then vi's keys move a cursor through the scrollback, select and copy, without the mouse |
 | [`quick-tips`](docs/plugins/quick-tips.md) | A tip at the start, once a week at most: a shortcut as your keymap binds it, or a feature that shows in no menu |
+| [`plugin-manager`](docs/plugins/plugin-manager.md) | The settings tab's Plugins page: every plugin, its state and its capabilities, to turn off, on or remove |
 
 Each page tells the plugin's commands, their keys, its config and what turning it off takes away; [the plugins' index](docs/plugins/README.md) tells how they fit together.
 

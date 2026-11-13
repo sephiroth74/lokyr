@@ -1028,6 +1028,9 @@ pub struct PluginInfo {
     /// Its version, of its manifest, if it has one.
     #[serde(default)]
     pub version: Option<String>,
+    /// What it does, of its manifest, if it tells.
+    #[serde(default)]
+    pub description: Option<String>,
     /// Whether it is one of Lokyr's own, built in, rather than installed.
     pub built_in: bool,
     /// Where it is in its life.

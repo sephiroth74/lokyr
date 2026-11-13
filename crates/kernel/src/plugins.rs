@@ -2187,7 +2187,8 @@ impl Plugins {
     /// The plugins, built in and installed, in the order of their
     /// activation, as a read of them tells: each one's state and its
     /// capabilities' decisions; the same list until one of them changes,
-    /// which a fingerprint of what it tells finds, of no allocation.
+    /// which a fingerprint of what it tells finds, of no allocation, and
+    /// which the plugins that subscribe to `plugins-changed` hear.
     pub fn infos(&mut self) -> Arc<[host::PluginInfo]> {
         use std::hash::{Hash, Hasher};
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
@@ -2209,6 +2210,10 @@ impl Plugins {
                 .iter()
                 .map(|entry| info(&entry.state))
                 .collect();
+            // Not the first list, which nothing changed before.
+            if self.infos.0 != 0 {
+                self.out.events.push((None, Event::PluginsChanged));
+            }
             self.infos = (fingerprint, Arc::from(infos));
         }
         Arc::clone(&self.infos.1)
@@ -3635,6 +3640,7 @@ fn info(state: &State) -> host::PluginInfo {
         name: state.name.clone(),
         namespace: state.namespace.clone(),
         version: manifest.and_then(|manifest| manifest.version.clone()),
+        description: manifest.and_then(|manifest| manifest.description.clone()),
         built_in: manifest.map_or(state.granted.is_none(), |manifest| {
             manifest.kind == PackageKind::Builtin
         }),

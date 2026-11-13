@@ -16,11 +16,21 @@ fn two_tabs() -> (Fake, App, WindowId) {
     two_tabs_of(false)
 }
 
-/// The app of [`two_tabs`], of the sample plugin of two pages if `pages`.
+/// The app of [`two_tabs`], of the sample plugin of two pages if `pages`,
+/// the plugin manager turned off, whose page would come first.
 fn two_tabs_of(pages: bool) -> (Fake, App, WindowId) {
     let drawing = Drawing::new(FontConfig::default()).unwrap();
     let mut fake = Fake::default();
-    let mut app = App::new(Some(drawing), Config::default(), None).with_program(idle());
+    let config = if pages {
+        Config::parse(
+            "[plugins.plugin-manager]\nenabled = false\n",
+            std::path::Path::new("config.toml"),
+        )
+        .unwrap()
+    } else {
+        Config::default()
+    };
+    let mut app = App::new(Some(drawing), config, None).with_program(idle());
     if pages {
         app.plugins
             .add_builtin(
@@ -391,4 +401,34 @@ fn a_plugin_s_ask_of_its_page_opens_the_settings_tab_there_and_the_page_hidden_i
     frames(&mut fake, &mut app, window);
     assert_eq!(page_shown(&app, window), "terminal");
     assert_eq!(page_text(&app, window, "shown"), "Shown 3 times");
+}
+
+#[test]
+fn lokyr_s_plugins_item_opens_the_settings_tab_at_the_plugin_manager_s_page_of_every_plugin() {
+    let (mut fake, mut app, window) = two_tabs();
+    // The plugin manager waits for its page or its command.
+    assert_eq!(
+        app.plugins.status("lokyr/plugin-manager"),
+        Some(lokyr_kernel::plugins::Status::Inactive)
+    );
+    fake.send_app(
+        &mut app,
+        AppEvent::Command("plugin-manager.open".to_owned()),
+    );
+    frames(&mut fake, &mut app, window);
+    let (settings, _) = app.workspace.settings_tab().expect("the settings tab");
+    assert_eq!(shown(&app, window), settings);
+    assert_eq!(page_shown(&app, window), "plugins");
+    assert_eq!(app.settings.pages[0].title, "Plugins");
+    assert_eq!(app.settings.pages[0].icon, "extensions");
+    // Its built-in plugins, each of a button that turns it off, but its
+    // own, and of no removal.
+    let tree = &page_view(&app, window).unwrap().surface.tree;
+    let has = |key: &str| tree.by_key(&key.into()).is_some();
+    assert!(has("plugin:lokyr/tabs"));
+    assert!(has("toggle:lokyr/tabs"));
+    assert!(!has("remove:lokyr/tabs"));
+    assert!(has("plugin:lokyr/plugin-manager"));
+    assert!(!has("toggle:lokyr/plugin-manager"));
+    assert!(has("none-installed"));
 }

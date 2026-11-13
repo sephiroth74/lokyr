@@ -81,13 +81,14 @@ const STATE_NEVER: &str = "never";
 /// The namespaces of the app's commands and of its own plugins', whose
 /// tips are the curated ones: a command of another is an installed
 /// plugin's.
-const FIRST_PARTY: [&str; 11] = [
+const FIRST_PARTY: [&str; 12] = [
     "app",
     "command-palette",
     "copy-mode",
     "font",
     "links",
     "pane",
+    "plugin-manager",
     "quick-tips",
     "search",
     "splits",
@@ -131,7 +132,7 @@ struct Curated {
 
 /// The curated tips, the most useful first: a new action, feature or
 /// shortcut of the app adds its own, its message in every catalog.
-const CURATED: [Curated; 28] = [
+const CURATED: [Curated; 29] = [
     command("palette", "tip-palette", PALETTE, Arg::None),
     plain("agents", "tip-agents"),
     plain("claude-code", "tip-claude-code"),
@@ -195,6 +196,7 @@ const CURATED: [Curated; 28] = [
     plain("itermcolors", "tip-itermcolors"),
     plain("float", "tip-float"),
     plain("sleip", "tip-sleip"),
+    plain("plugins", "tip-plugins"),
 ];
 
 /// A curated tip of a command's keys.

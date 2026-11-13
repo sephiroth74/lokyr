@@ -48,7 +48,7 @@ pub fn dismantle(node: Node) {
 
 /// The names of the host's icons, in their order, which a node's icon
 /// names: the codicons of Symbols Nerd Font.
-pub const ICONS: [&str; 38] = [
+pub const ICONS: [&str; 39] = [
     "add",
     "arrow-down",
     "arrow-up",
@@ -67,6 +67,7 @@ pub const ICONS: [&str; 38] = [
     "edit",
     "ellipsis",
     "error",
+    "extensions",
     "eye-closed",
     "filter",
     "folder",

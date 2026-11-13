@@ -81,6 +81,7 @@ A plugin subscribes to the events that it hears; those that a capability guards 
 | `panel-closed` | One of the plugin's panels closes | — |
 | `timer` | One of the plugin's timers fires | — |
 | `package`, `packages-ended` | A job of the packages' service tells a line, or ends | `packages` |
+| `plugins-changed` | A plugin is installed, removed, turned off or on, starts or faults, or a capability's decision changes | `packages` |
 | `<namespace>.<name>` | A plugin's own event, which it emits of its namespace alone | — |
 
 The views' events, as `click`, `submit` or `toggle`, come to the plugin's `on_view_event` of the view that it rendered, of no subscription.

@@ -60,6 +60,7 @@ pub fn plugins() -> Vec<PluginInfo> {
         name: "acme/notes".to_owned(),
         namespace: "notes".to_owned(),
         version: Some("1.0.0".to_owned()),
+        description: Some("Notes beside the terminal".to_owned()),
         built_in: false,
         state: PluginState::Active,
         fault: None,

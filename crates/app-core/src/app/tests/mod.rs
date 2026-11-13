@@ -139,9 +139,10 @@ fn settings_opens_the_config_in_the_text_editor_made_first() {
     // The application's menu has it first after About and the updates, of
     // its key.
     assert_eq!(
-        menu_items(&fake, 0)[3..9],
+        menu_items(&fake, 0)[3..10],
         [
             "Settings… cmd+,",
+            "Plugins…",
             "Secure Keyboard Entry",
             "Make Lokyr the Default Terminal",
             "Install Command Line Tools…",
@@ -486,7 +487,7 @@ fn the_app_s_catalogs_match_their_source() {
         .iter()
         .map(|registration| (registration.make)())
         .collect();
-    assert_eq!(builtins.len(), 12);
+    assert_eq!(builtins.len(), 13);
     for plugin in &builtins {
         let catalogs = plugin.catalogs();
         // A plugin of no commands, as the keymap's, has no titles.
@@ -509,14 +510,27 @@ fn the_app_s_catalogs_match_their_source() {
         .commands()
         .map(|command| (command.name.clone(), command.title.clone()))
         .collect();
-    let english: Vec<(String, String)> = app
+    // The commands of the plugins that wait, of their manifests, are
+    // titled of their catalogs too.
+    let (english, waiting): (Vec<_>, Vec<_>) = app
         .plugins
         .commands_in("en")
+        .into_iter()
+        .partition(|(_, _, waits)| !waits);
+    let english: Vec<(String, String)> = english
         .into_iter()
         .map(|(command, _, _)| (command.name, command.title))
         .collect();
     assert_eq!(english, registered);
     assert!(registered.iter().any(|(name, _)| name == "links.open"));
+    let waiting: Vec<(String, String)> = waiting
+        .into_iter()
+        .map(|(command, _, _)| (command.name, command.title))
+        .collect();
+    assert_eq!(
+        waiting,
+        [("plugin-manager.open".to_owned(), "Plugins…".to_owned())]
+    );
 }
 
 #[test]
