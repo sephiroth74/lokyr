@@ -546,6 +546,8 @@ struct Kernel {
     world: World,
     /// The host's time, which the scenarios' steps move on.
     clock: Instant,
+    /// The plugins of the world, as a read of them tells.
+    plugin_infos: Vec<host::PluginInfo>,
 }
 
 impl Kernel {
@@ -612,6 +614,7 @@ impl Kernel {
             clipboard: Board(Some(scenarios::CLIPBOARD.to_owned())),
             images: Blank,
             clock: Instant::now(),
+            plugin_infos: scenarios::plugins(),
             world: World {
                 window: host::WindowId(window.get()),
                 tab: host::TabId(tab.get()),
@@ -644,6 +647,7 @@ impl Kernel {
             enabled: &|_| true,
             themes: &themes,
             fonts: &lokyr_plugin_sdk::fake::fonts,
+            plugins: &self.plugin_infos,
             day: lokyr_plugin_sdk::fake::DAY,
             notice: false,
             saving: &|_| false,
@@ -793,6 +797,7 @@ fn on_fake(scenario: &Scenario, world: &World, front: Front) -> Vec<Entry> {
         host = host.with_capabilities(capabilities.clone());
     }
     host.set_clipboard(Some(scenarios::CLIPBOARD));
+    host.set_plugins(scenarios::plugins());
     host.focus(Some(world.pane));
     let pane = host.pane(world.pane);
     pane.window = world.window;
@@ -1048,11 +1053,13 @@ fn kind(request: &Request) -> usize {
         Request::KeepsState => 108,
         Request::Agents => 109,
         Request::OpenAt { .. } => 110,
+        Request::Plugins => 111,
+        Request::SetPluginEnabled { .. } => 112,
     }
 }
 
 /// How many kinds of requests the plugin API has.
-const KINDS: usize = 111;
+const KINDS: usize = 113;
 
 #[test]
 fn the_scenarios_hold_every_request_of_the_plugin_api() {

@@ -144,6 +144,7 @@ ask-text-cancel = Annulla
 settings-failed-message = Lokyr non riesce ad aprire il file di configurazione
 settings-no-home = Senza una cartella home non c'è un file di configurazione: valgono i valori predefiniti.
 themes-folder-failed-message = Lokyr non riesce ad aprire la cartella dei temi
+plugin-enabled-failed-message = Lokyr non riesce ad attivare o disattivare il plugin
 quit-running-message = Uscire da Lokyr?
 quit-running-detail = { $windows ->
     [one] In una finestra è in esecuzione { $programs }: uscire lo termina.

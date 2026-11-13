@@ -6,9 +6,10 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, PoisonError};
 
+use lokyr_kernel::config;
 use lokyr_kernel::plugins::host;
 use lokyr_pkg_model::service::{self, Job, Stop, Value};
-use lokyr_platform_core::Platform;
+use lokyr_platform_core::{Alert, AlertStyle, Platform};
 
 use super::App;
 use crate::Backend;
@@ -117,6 +118,39 @@ impl<B: Backend> App<B> {
     pub(super) fn cancel_packages(&mut self, plugin: &str, id: u64) {
         if let Some(stop) = self.packages.running.get(&(plugin.to_owned(), id)) {
             stop.stop();
+        }
+    }
+
+    /// Turns the plugin of `namespace` on or off, as a plugin of the
+    /// packages' service asks: its section of the config written, which
+    /// the config read again applies at once, the plugin stopping or
+    /// starting anew; or an alert of why it cannot be.
+    pub(super) fn set_plugin_enabled(
+        &mut self,
+        platform: &mut dyn Platform,
+        namespace: &str,
+        enabled: bool,
+    ) {
+        let written = match &self.config_file {
+            Some(file) => config::set_plugin_enabled(&file.path, namespace, enabled)
+                .map_err(|error| error.to_string()),
+            None => Err(self.texts.text("settings-no-home")),
+        };
+        match written {
+            Ok(()) => self.reload(platform),
+            Err(why) => {
+                eprintln!("lokyr: {why}");
+                let alert = Alert {
+                    style: AlertStyle::Warning,
+                    message: self.texts.text("plugin-enabled-failed-message"),
+                    detail: why,
+                    buttons: Vec::new(),
+                    suppression: None,
+                    input: None,
+                };
+                let window = self.acting.or_else(|| platform.focused_window());
+                platform.show_alert(window, &alert);
+            }
         }
     }
 

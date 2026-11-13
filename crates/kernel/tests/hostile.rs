@@ -91,6 +91,7 @@ impl App {
             enabled: &|_| true,
             themes: &themes,
             fonts: &host::Fonts::default,
+            plugins: &[],
             day: 0,
             notice: false,
             saving: &|_| false,

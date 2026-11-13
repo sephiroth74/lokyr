@@ -35,7 +35,7 @@ A capability lets a plugin reach what belongs to the person who runs Lokyr. The 
 | `decorate` | Drawing over a pane: decorations, the gutter's marks, a search's matches and a held cursor | Medium: a drawing over the text can show what the terminal does not hold |
 | `pointer-read` | The `pointer` event: the cell under the pointer over the panes, and the modifiers held | Low |
 | `keep-awake` | Keeping the system, or the system and the display, from idle sleep | High: a display kept awake keeps the screen from locking |
-| `packages` | The plugins themselves, through Sleip: the installed ones, the registry's search, installs, updates and removals; Lokyr's own plugins' alone | Very high: a plugin that installs another runs code of its choice |
+| `packages` | The plugins themselves, through Sleip: the installed ones, the registry's search, installs, updates and removals; every plugin's state and the decisions of its capabilities, and a plugin turned on or off in the config; Lokyr's own plugins' alone | Very high: a plugin that installs another runs code of its choice |
 | `user-commands` | Running any command as if run by hand, without declaring it, as the palette does; reading the whole registry of commands | Very high: `pane.send-text` types into the shell |
 | `appearance-write` | Previewing a theme and a monospaced font family, and naming the ones chosen in the config's `[theme]` and `[font] family` | Medium: the config changes, visibly and reversibly |
 

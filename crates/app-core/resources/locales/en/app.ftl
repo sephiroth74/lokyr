@@ -169,6 +169,10 @@ settings-no-home = Without a home directory, there is no config file: the defaul
 # The alert of Open Themes Folder that opens nothing: what went wrong, as
 # the system tells it, under the message.
 themes-folder-failed-message = Lokyr cannot open its themes' folder
+
+# The alert of a plugin that the plugin manager turns on or off, as the
+# config cannot be written: what went wrong, under the message.
+plugin-enabled-failed-message = Lokyr cannot turn the plugin on or off
 quit-running-message = Quit Lokyr?
 quit-running-detail = { $windows ->
     [one] A window is running { $programs }, and quitting ends it.

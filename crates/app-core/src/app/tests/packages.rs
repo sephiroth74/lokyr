@@ -194,3 +194,153 @@ fn an_installed_plugin_of_the_packages_capability_runs_without_it_as_a_notice_te
     );
     let _ = std::fs::remove_dir_all(&folder);
 }
+
+/// A plugin of Lokyr's own of the packages' service that turns
+/// `lokyr/noted` off, `switcher.off`, and on, `switcher.on`, and reads the
+/// plugins, `switcher.read`, into `read`.
+struct Switcher {
+    read: Rc<RefCell<Vec<Vec<lokyr_kernel::plugins::host::PluginInfo>>>>,
+}
+
+const SWITCHER: &str = concat!(
+    "[plugin]\nname = \"lokyr/switcher\"\nkind = \"builtin\"\nlicense = \"MIT\"\n",
+    "[capabilities]\npackages = true\n",
+);
+
+impl Plugin for Switcher {
+    fn activate(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
+        for name in ["switcher.off", "switcher.on", "switcher.read"] {
+            cx.register_command(Command {
+                name: name.to_owned(),
+                title: name.to_owned(),
+                category: Category::View,
+                capabilities: Vec::new(),
+                params: Vec::new(),
+                when: None,
+            })?;
+        }
+        Ok(())
+    }
+
+    fn on_command(&mut self, cx: &mut Cx<'_>, name: &str, _: Args) -> Result<(), Error> {
+        match name {
+            "switcher.off" => cx.set_plugin_enabled("lokyr/noted", false),
+            "switcher.on" => cx.set_plugin_enabled("lokyr/noted", true),
+            _ => {
+                let plugins = cx.plugins()?;
+                self.read.borrow_mut().push(plugins);
+                Ok(())
+            }
+        }
+    }
+}
+
+/// A plugin of a command of its own, `noted.go`, which the switcher turns
+/// off and on.
+struct Noted;
+
+impl Plugin for Noted {
+    fn activate(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
+        cx.register_command(Command {
+            name: "noted.go".to_owned(),
+            title: "Go".to_owned(),
+            category: Category::View,
+            capabilities: Vec::new(),
+            params: Vec::new(),
+            when: None,
+        })
+    }
+}
+
+fn make_noted() -> Box<dyn Plugin + Send> {
+    Box::new(Noted)
+}
+
+const NOTED: &str = "[plugin]\nname = \"lokyr/noted\"\nkind = \"builtin\"\nlicense = \"MIT\"\n";
+
+#[test]
+fn a_plugin_of_lokyr_s_own_turns_another_off_and_on_in_the_config_and_reads_its_state() {
+    use lokyr_kernel::plugins::host::PluginState;
+    let directory =
+        std::env::temp_dir().join(format!("lokyr-app-plugin-enabled-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&directory);
+    std::fs::create_dir_all(&directory).unwrap();
+    let path = directory.join("config.toml");
+    std::fs::write(&path, "# mine\n[font]\nsize = 14\n").unwrap();
+    let read = Rc::new(RefCell::new(Vec::new()));
+    let mut fake = Fake::default();
+    let mut app = App::new(None, Config::read(&path).unwrap(), Some(path.clone()))
+        .with_program(quiet())
+        .with_builtin(
+            SWITCHER,
+            Box::new(Switcher {
+                read: Rc::clone(&read),
+            }),
+        )
+        .with_registration(plugins::Registration {
+            manifest: NOTED,
+            make: make_noted,
+        });
+    fake.start(&mut app);
+    let command = |fake: &mut Fake, app: &mut App, name: &str| {
+        fake.send_app(app, AppEvent::Command(name.to_owned()));
+    };
+    let noted = |read: &Rc<RefCell<Vec<Vec<lokyr_kernel::plugins::host::PluginInfo>>>>| {
+        read.borrow()
+            .last()
+            .and_then(|plugins| plugins.iter().find(|info| info.name == "lokyr/noted"))
+            .map(|info| (info.namespace.clone(), info.state, info.built_in))
+    };
+    command(&mut fake, &mut app, "switcher.read");
+    assert_eq!(
+        noted(&read),
+        Some(("noted".to_owned(), PluginState::Active, true))
+    );
+    assert!(app.commands.get("noted.go").is_some());
+    // Turned off: its section written, the rest of the file kept, and it
+    // stops at once.
+    command(&mut fake, &mut app, "switcher.off");
+    assert_eq!(
+        std::fs::read_to_string(&path).unwrap(),
+        "# mine\n[font]\nsize = 14\n\n[plugins.noted]\nenabled = false\n"
+    );
+    assert!(app.commands.get("noted.go").is_none());
+    command(&mut fake, &mut app, "switcher.read");
+    assert_eq!(
+        noted(&read).map(|(_, state, _)| state),
+        Some(PluginState::Off)
+    );
+    // Turned on again: a new one.
+    command(&mut fake, &mut app, "switcher.on");
+    assert!(
+        std::fs::read_to_string(&path)
+            .unwrap()
+            .ends_with("[plugins.noted]\nenabled = true\n")
+    );
+    assert!(app.commands.get("noted.go").is_some());
+    command(&mut fake, &mut app, "switcher.read");
+    assert_eq!(
+        noted(&read).map(|(_, state, _)| state),
+        Some(PluginState::Active)
+    );
+    assert!(fake.alerts().is_empty());
+    let _ = std::fs::remove_dir_all(&directory);
+    // Without a config file, an alert tells why nothing changes.
+    let mut fake = Fake::default();
+    let mut app = App::new(None, unpadded(), None)
+        .with_program(quiet())
+        .with_builtin(SWITCHER, Box::new(Switcher { read }))
+        .with_registration(plugins::Registration {
+            manifest: NOTED,
+            make: make_noted,
+        });
+    fake.start(&mut app);
+    command(&mut fake, &mut app, "switcher.off");
+    let told: Vec<String> = fake
+        .alerts()
+        .iter()
+        .map(|shown| shown.alert.message.clone())
+        .collect();
+    assert_eq!(told, ["Lokyr cannot turn the plugin on or off"]);
+    assert!(app.commands.get("noted.go").is_some());
+}

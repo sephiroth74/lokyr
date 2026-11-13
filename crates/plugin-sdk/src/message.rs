@@ -127,6 +127,21 @@ pub enum Request {
     /// windows', tabs' and panes' order, of `process-read`, as they tell
     /// the programs that run.
     Agents,
+    /// The plugins, built in and installed, in the order of their
+    /// activation: each one's state and its capabilities' decisions. Of
+    /// the capability `packages`, Lokyr's own plugins' alone.
+    Plugins,
+    /// Turns the plugin of a name on or off, as its section of the config,
+    /// `[plugins.<namespace>] enabled`, which the host writes, keeping the
+    /// rest of the file: it stops at once, or starts anew, as the config is
+    /// read again. Of the capability `packages`, Lokyr's own plugins'
+    /// alone.
+    SetPluginEnabled {
+        /// The plugin, as `owner/name`.
+        plugin: String,
+        /// Whether it runs.
+        enabled: bool,
+    },
     /// Shows the monospaced family of a name in every pane in place of the
     /// config's, for a while, as a picker previews it, until the next
     /// preview, the family's choice, or `None`, which shows the config's
@@ -869,7 +884,10 @@ impl Request {
                 Some(Capability::ClipboardWrite)
             }
             Self::KeepAwake(_) => Some(Capability::KeepAwake),
-            Self::Packages(_) | Self::CancelPackages(_) => Some(Capability::Packages),
+            Self::Packages(_)
+            | Self::CancelPackages(_)
+            | Self::Plugins
+            | Self::SetPluginEnabled { .. } => Some(Capability::Packages),
             Self::SelectionText(_)
             | Self::LineText { .. }
             | Self::LinkAt { .. }
@@ -1026,6 +1044,7 @@ impl Request {
             | Self::NoticeShows
             | Self::KeepsState
             | Self::Agents
+            | Self::Plugins
             | Self::RenderImage(_)
             | Self::SelectionCells(_)
             | Self::ScreenCells(_) => Effect::Read,
@@ -1091,6 +1110,7 @@ impl Request {
             | Self::SaveFile { .. }
             | Self::Packages(_)
             | Self::CancelPackages(_)
+            | Self::SetPluginEnabled { .. }
             | Self::PreviewTheme(_)
             | Self::SetTheme { .. }
             | Self::PreviewFont(_)
@@ -1142,6 +1162,8 @@ pub enum Response {
     Day(u64),
     /// The AI agents that run in the panes.
     Agents(Vec<crate::host::AgentInfo>),
+    /// The plugins, built in and installed.
+    Plugins(Vec<crate::host::PluginInfo>),
     /// An image that the host rendered.
     Image(crate::image::Image),
     /// Rows of cells, as an image draws them, or none.
@@ -1516,6 +1538,7 @@ impl Request {
             | Self::SetClipboardImage { .. }
             | Self::KeepAwake { .. }
             | Self::CancelPackages { .. }
+            | Self::SetPluginEnabled { .. }
             | Self::DropImage { .. }
             | Self::EndSearch { .. }
             | Self::SelectCells { .. }
@@ -1571,6 +1594,7 @@ impl Request {
             Self::Fonts { .. } => "fonts",
             Self::Day { .. } => "day",
             Self::Agents { .. } => "agents",
+            Self::Plugins { .. } => "plugins",
             Self::ClipboardText { .. }
             | Self::SelectionText { .. }
             | Self::LinkAt { .. }

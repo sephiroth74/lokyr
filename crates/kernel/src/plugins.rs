@@ -132,6 +132,14 @@ pub enum Request {
     PreviewFont(Option<String>),
     /// Name a monospaced font family in the config's `[font] family`.
     SetFont(String),
+    /// Turn the plugin of a namespace on or off, as its section of the
+    /// config, `[plugins.<namespace>] enabled`.
+    SetPluginEnabled {
+        /// The plugin's namespace.
+        namespace: String,
+        /// Whether it runs.
+        enabled: bool,
+    },
     /// Open a URL, or an absolute path, with the system's handler.
     Open(String),
     /// Open the file `target`, an absolute path or a `file` URL, at its
@@ -369,6 +377,9 @@ pub struct Context<'a> {
     /// The system's monospaced font families, and the family in force, as
     /// the app reads them.
     pub fonts: &'a dyn Fn() -> host::Fonts,
+    /// The plugins, as a read of them tells, of [`Plugins::infos`] as the
+    /// app took it before the calls.
+    pub plugins: &'a [host::PluginInfo],
     /// The day of the system's clock, in days since 1970-01-01, in UTC.
     pub day: u64,
     /// Whether a notice of the app's shows.
@@ -837,6 +848,9 @@ pub struct Plugins {
     /// plugin's manifest asked for, by the plugin's name, which
     /// [`Plugins::take_withheld`] tells.
     withheld: Vec<(String, Capability)>,
+    /// The plugins as a read of them tells, of the fingerprint of what it
+    /// tells, kept until one of them changes.
+    infos: (u64, Arc<[host::PluginInfo]>),
 }
 
 /// What a plugin's section of the config tells the user, of the plugin's
@@ -2141,6 +2155,36 @@ impl Plugins {
             .iter()
             .find(|entry| entry.state.name == name)
             .and_then(|entry| entry.state.manifest.as_ref())
+    }
+
+    /// The plugins, built in and installed, in the order of their
+    /// activation, as a read of them tells: each one's state and its
+    /// capabilities' decisions; the same list until one of them changes,
+    /// which a fingerprint of what it tells finds, of no allocation.
+    pub fn infos(&mut self) -> Arc<[host::PluginInfo]> {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        for entry in &self.entries {
+            let state = &entry.state;
+            (
+                &state.name,
+                state.status as u8,
+                &state.fault,
+                &state.granted,
+                &state.undecided,
+            )
+                .hash(&mut hasher);
+        }
+        let fingerprint = hasher.finish();
+        if fingerprint != self.infos.0 || self.infos.1.len() != self.entries.len() {
+            let infos: Vec<host::PluginInfo> = self
+                .entries
+                .iter()
+                .map(|entry| info(&entry.state))
+                .collect();
+            self.infos = (fingerprint, Arc::from(infos));
+        }
+        Arc::clone(&self.infos.1)
     }
 
     /// The status of the plugin `name`, if it was added.
@@ -3507,6 +3551,47 @@ fn start(
             &error,
         )),
         Err(error) => Err(error),
+    }
+}
+
+/// The plugin of `state`, as a read of the plugins tells it: a first-party
+/// one holds every capability of its manifest; an installed one each that
+/// the user granted, those of the question that its activation asks
+/// undecided, and the rest refused, as the host's withheld ones are.
+fn info(state: &State) -> host::PluginInfo {
+    let decision = |capability: &Capability| match &state.granted {
+        None => host::Decision::Granted,
+        Some(granted) if granted.contains(capability) => host::Decision::Granted,
+        Some(_) if state.undecided.contains(capability) => host::Decision::Undecided,
+        Some(_) => host::Decision::Refused,
+    };
+    let manifest = state.manifest.as_ref();
+    host::PluginInfo {
+        name: state.name.clone(),
+        namespace: state.namespace.clone(),
+        version: manifest.and_then(|manifest| manifest.version.clone()),
+        built_in: manifest.map_or(state.granted.is_none(), |manifest| {
+            manifest.kind == PackageKind::Builtin
+        }),
+        state: match state.status {
+            Status::Inactive => host::PluginState::Waiting,
+            Status::Active => host::PluginState::Active,
+            Status::Disabled => host::PluginState::Faulted,
+            Status::Off => host::PluginState::Off,
+        },
+        fault: state.fault.clone(),
+        capabilities: manifest
+            .map(|manifest| {
+                manifest
+                    .capabilities
+                    .iter()
+                    .map(|capability| host::CapabilityDecision {
+                        capability: capability.to_string(),
+                        decision: decision(capability),
+                    })
+                    .collect()
+            })
+            .unwrap_or_default(),
     }
 }
 
@@ -5007,6 +5092,7 @@ impl Host<'_, '_> {
             Asked::Themes => Response::Themes((self.context.themes)()),
             Asked::Fonts => Response::Fonts((self.context.fonts)()),
             Asked::Day => Response::Day(self.context.day),
+            Asked::Plugins => Response::Plugins(self.context.plugins.to_vec()),
             Asked::Agents => {
                 let workspace = &self.context.workspace;
                 let now = Instant::now();
@@ -5741,6 +5827,22 @@ impl Host<'_, '_> {
                 plugin: self.state.name.clone(),
                 id,
             },
+            // A plugin that the host has, by its namespace, which its
+            // section of the config is of.
+            Asked::SetPluginEnabled { plugin, enabled } => {
+                let info = self
+                    .context
+                    .plugins
+                    .iter()
+                    .find(|info| info.name == plugin)
+                    .ok_or_else(|| {
+                        Error::new(Code::NotFound, format!("there is no plugin `{plugin}`"))
+                    })?;
+                Request::SetPluginEnabled {
+                    namespace: info.namespace.clone(),
+                    enabled,
+                }
+            }
             other => {
                 return Err(Error::new(
                     Code::Fault,

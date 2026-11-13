@@ -33,6 +33,8 @@ export type Cx = {
     notice_shows: () -> (boolean?, string?, number?),
     keeps_state: () -> (boolean?, string?, number?),
     agents: () -> ({ AgentInfo }?, string?, number?),
+    plugins: () -> ({ PluginInfo }?, string?, number?),
+    set_plugin_enabled: (plugin: string, enabled: boolean) -> (true?, string?, number?),
     preview_font: (family: string?) -> (true?, string?, number?),
     set_font: (family: string) -> (true?, string?, number?),
     add_menu_item: (item: MenuItem) -> (true?, string?, number?),
@@ -360,6 +362,11 @@ export type Border = {
     width: number,
 }
 
+export type CapabilityDecision = {
+    capability: string,
+    decision: Decision,
+}
+
 export type Category =
     | "app"
     | "windows"
@@ -411,6 +418,11 @@ export type Current = {
     current: { any }?,
     kept: number,
 }
+
+export type Decision =
+    | "granted"
+    | "refused"
+    | "undecided"
 
 export type DecorationLook = {
     underline: Underline?,
@@ -622,6 +634,22 @@ export type ParamKind =
     | "integer"
     | "number"
     | "boolean"
+
+export type PluginInfo = {
+    name: string,
+    namespace: string,
+    version: string?,
+    built_in: boolean,
+    state: PluginState,
+    fault: string?,
+    capabilities: { CapabilityDecision }?,
+}
+
+export type PluginState =
+    | "waiting"
+    | "active"
+    | "off"
+    | "faulted"
 
 export type PointerShape =
     | "arrow"

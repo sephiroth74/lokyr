@@ -924,6 +924,14 @@ type Cx = {
         | { remove: { plugin: string } }) -> (number?, Error?),
     -- Ends a job that runs, of no success.
     cancel_packages: (job: number) -> (boolean, Error?),
+    -- Requires `packages`: the plugins, built in and installed, in the order of their activation, each of its name,
+    -- its namespace, its version, whether it is built in, its state, "waiting", "active", "off" or "faulted", its
+    -- fault, and its manifest's capabilities, each of the user's decision, "granted", "refused" or "undecided".
+    plugins: () -> ({ PluginInfo }?, Error?),
+    -- Requires `packages`: turns a plugin, by its name, on or off, as its section of the config,
+    -- `[plugins.<namespace>] enabled`, which the host writes as the call returns, keeping the rest of the file; the
+    -- plugin stops at once, or starts anew.
+    set_plugin_enabled: (plugin: string, enabled: boolean) -> (boolean, Error?),
 
     -- The plugin's config, its section's values with its schema's defaults; its state, of plain values,
     -- 1 MiB at most as JSON, kept for the next run, as the call returns.
@@ -1004,7 +1012,7 @@ type Plugin = {
 | `decorate` | Drawing over a pane: decorations, the gutter's marks, a search's matches and a held cursor | Medium: a drawing over the text can show what the terminal does not hold |
 | `pointer-read` | The `pointer` event: the cell under the pointer over the panes, and the modifiers held | Low |
 | `keep-awake` | Keeping the system, or the system and the display, from idle sleep, `keep_awake`, of a power assertion that the host holds for every plugin together, the strongest that one asks, and releases as the last lets go, stops, faults or is turned off | High: a display kept awake keeps the screen from locking, and of a battery's cost |
-| `packages` | The plugins themselves, through the bundle's Sleip: the installed ones, the registry's search and a plugin's versions, installs, updates and removals, `packages`, of their lines as events, and `cancel_packages`; Lokyr's own plugins' alone, refused to another's manifest with a notice and by `sleip check` | Very high: a plugin that installs another runs code of its choice |
+| `packages` | The plugins themselves, through the bundle's Sleip: the installed ones, the registry's search and a plugin's versions, installs, updates and removals, `packages`, of their lines as events, and `cancel_packages`; every plugin's state and capabilities' decisions, `plugins`, and a plugin turned on or off in the config, `set_plugin_enabled`; Lokyr's own plugins' alone, refused to another's manifest with a notice and by `sleip check` | Very high: a plugin that installs another runs code of its choice |
 | `user-commands` | Running any command as if run by hand, without declaring it, as the palette does; reading the whole registry, with each command's plugin, keys and context, and the plugins installed | Very high: `pane.send-text` types into the shell |
 | `appearance-write` | Previewing a theme and a monospaced font family, and naming the ones chosen in the config's `[theme]` and `[font] family`, edited in place, `preview_theme`, `set_theme`, `preview_font` and `set_font`, as the palette's theme picker and a font picker do | Medium: the config changes, visibly and reversibly; no text of a pane, no command, no file but the config's two keys |
 

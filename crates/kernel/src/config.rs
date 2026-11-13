@@ -1849,6 +1849,86 @@ pub fn set_string_hiding(
         .map_err(|error| failed(&target, format!("it cannot be written: {error}")))
 }
 
+/// Turns the plugin of `namespace` on or off in the config file at `path`,
+/// its section's key `[plugins.<namespace>] enabled`, keeping the rest of
+/// the file, its comments too, as [`set_string`] does: a section that the
+/// file lacks goes at its end, after its last comments.
+pub fn set_plugin_enabled(path: &Path, namespace: &str, enabled: bool) -> Result<(), Error> {
+    let failed = |path: &Path, message: String| Error {
+        path: path.to_owned(),
+        position: None,
+        message,
+    };
+    let target = link_target(path);
+    let text = match fs::read_to_string(&target) {
+        Ok(text) => text,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            format!("config_version = {VERSION}\n")
+        }
+        Err(error) => return Err(failed(&target, format!("it cannot be read: {error}"))),
+    };
+    Config::parse(&text, &target)?;
+    let mut document: DocumentMut = text
+        .parse()
+        .map_err(|error: toml_edit::TomlError| failed(&target, error.message().to_owned()))?;
+    let held = document
+        .get("plugins")
+        .and_then(|plugins| plugins.get(namespace))
+        .is_some();
+    // The comments and the blank lines after the last section are the
+    // document's, which a new section comes before, as `set_string` puts
+    // one.
+    let after = (!held)
+        .then(|| document.trailing().as_str().map(str::to_owned))
+        .flatten()
+        .filter(|after| !after.is_empty());
+    let plugins = document
+        .entry("plugins")
+        .or_insert_with(|| {
+            let mut table = toml_edit::Table::new();
+            table.set_implicit(true);
+            toml_edit::Item::Table(table)
+        })
+        .as_table_like_mut()
+        .ok_or_else(|| failed(&target, "`plugins` is a section, not a value".to_owned()))?;
+    if !held {
+        let mut table = toml_edit::Table::new();
+        if let Some(after) = &after {
+            let comments = after.trim_end();
+            table.decor_mut().set_prefix(if comments.is_empty() {
+                "\n".to_owned()
+            } else {
+                format!("{comments}\n\n")
+            });
+        }
+        plugins.insert(namespace, toml_edit::Item::Table(table));
+    }
+    let section = plugins
+        .get_mut(namespace)
+        .and_then(toml_edit::Item::as_table_like_mut)
+        .ok_or_else(|| {
+            failed(
+                &target,
+                format!("`plugins.{namespace}` is a section, not a value"),
+            )
+        })?;
+    match section.get_mut("enabled") {
+        Some(toml_edit::Item::Value(old)) => {
+            let decor = old.decor().clone();
+            *old = toml_edit::Value::from(enabled);
+            *old.decor_mut() = decor;
+        }
+        _ => {
+            section.insert("enabled", toml_edit::value(enabled));
+        }
+    }
+    if after.is_some() {
+        document.set_trailing("");
+    }
+    write_whole(&target, &document.to_string())
+        .map_err(|error| failed(&target, format!("it cannot be written: {error}")))
+}
+
 /// Puts `lines`, comments, right after the section `[section]` of
 /// `document`: before the next section's header, or at the file's end.
 fn hide_after(document: &mut DocumentMut, section: &str, lines: &str) {
@@ -3560,6 +3640,67 @@ long-command = 0
         assert_eq!(
             fs::read_to_string(&file).unwrap(),
             "clipboard = { read = \"ask\", confirm-paste = \"never\" }\n"
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_plugin_turned_off_and_on_in_the_file_keeps_the_rest_of_it() {
+        let root = std::env::temp_dir().join(format!("lokyr-enabled-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        let file = root.join("config.toml");
+        // Into the plugin's section, its comments and its other keys kept.
+        let text = concat!(
+            "# mine\n",
+            "[font]\nsize = 14\n\n",
+            "[plugins.tabs]\n",
+            "# The bar's look.\n",
+            "style = \"unified\"   # mine\n",
+        );
+        fs::write(&file, text).unwrap();
+        set_plugin_enabled(&file, "tabs", false).unwrap();
+        assert_eq!(
+            fs::read_to_string(&file).unwrap(),
+            format!("{text}enabled = false\n")
+        );
+        let config = Config::read(&file).unwrap();
+        assert_eq!(config.font.size.points(), 14.0);
+        // Again, in place, its comment kept.
+        let text = "[plugins.tabs]\nenabled = false   # for now\n";
+        fs::write(&file, text).unwrap();
+        set_plugin_enabled(&file, "tabs", true).unwrap();
+        assert_eq!(
+            fs::read_to_string(&file).unwrap(),
+            "[plugins.tabs]\nenabled = true   # for now\n"
+        );
+        // A section that the file lacks goes at its end, after its last
+        // comments, beside another plugin's.
+        for (text, written) in [
+            ("# mine\n", "# mine\n\n[plugins.snap]\nenabled = false\n"),
+            (
+                "[plugins.tabs]\nstyle = \"unified\"\n\n# [bell]\n# sound = true\n",
+                "[plugins.tabs]\nstyle = \"unified\"\n\n# [bell]\n# sound = true\n\n[plugins.snap]\nenabled = false\n",
+            ),
+            ("", "[plugins.snap]\nenabled = false\n"),
+        ] {
+            fs::write(&file, text).unwrap();
+            set_plugin_enabled(&file, "snap", false).unwrap();
+            assert_eq!(fs::read_to_string(&file).unwrap(), written, "{text:?}");
+        }
+        // In an inline table too.
+        fs::write(&file, "plugins = { snap = { enabled = true } }\n").unwrap();
+        set_plugin_enabled(&file, "snap", false).unwrap();
+        assert_eq!(
+            fs::read_to_string(&file).unwrap(),
+            "plugins = { snap = { enabled = false } }\n"
+        );
+        // A file that does not read is left as it is.
+        fs::write(&file, "[font]\nsize = \"big\"\n").unwrap();
+        assert!(set_plugin_enabled(&file, "snap", false).is_err());
+        assert_eq!(
+            fs::read_to_string(&file).unwrap(),
+            "[font]\nsize = \"big\"\n"
         );
         fs::remove_dir_all(root).unwrap();
     }

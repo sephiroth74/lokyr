@@ -2952,6 +2952,9 @@ impl<B: Backend> App<B> {
             scale: scale as f32,
         };
         let mut clipboard = PlatformClipboard(platform);
+        // The plugins, as a read of them tells, the same list until one of
+        // them changes.
+        let plugin_infos = self.plugins.infos();
         let mut context = plugins::Context {
             registry: &mut self.commands,
             workspace: &mut self.workspace,
@@ -2965,6 +2968,7 @@ impl<B: Backend> App<B> {
             enabled: &enabled,
             themes: &theme_list,
             fonts: &fonts,
+            plugins: &plugin_infos,
             day: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .map_or(0, |since| since.as_secs() / 86_400),
@@ -3054,6 +3058,9 @@ impl<B: Backend> App<B> {
                 Request::FontSize(size) => self.set_font_size(platform, size),
                 Request::PreviewTheme(name) => self.preview_theme(platform, name),
                 Request::SetTheme { variant, name } => self.set_theme(platform, variant, &name),
+                Request::SetPluginEnabled { namespace, enabled } => {
+                    self.set_plugin_enabled(platform, &namespace, enabled);
+                }
                 Request::PreviewFont(family) => self.preview_font(platform, family),
                 Request::SetFont(family) => self.set_font(platform, &family),
                 Request::ConfirmPaste { pane, text } => self.ask_paste(platform, pane, text),

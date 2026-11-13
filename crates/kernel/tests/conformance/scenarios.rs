@@ -23,11 +23,12 @@ use std::collections::BTreeMap;
 use lokyr_plugin_sdk::command::{Args, Capability, Category, Code, Command, Error, Value};
 use lokyr_plugin_sdk::event::WorkspaceEvent;
 use lokyr_plugin_sdk::host::{
-    Awake, BarPlace, Binding, Bytes, Color, CommandInfo, DecorationLook, Direction, Edge,
-    LEAST_DELAY, Layout, Line, LineText, MOST_DELAY, MOST_SEARCHES, MOST_STATE, MOST_TIMERS,
-    MOST_WRITES, MenuItem, MenuPlace, Packages, PaneId, QuickLength, QuickPlace, ScreenPoint,
-    Scroll, SearchMatch, SearchQuery, SelectionKind, ShellCommand, Side, StyleRun, TabId, TabInfo,
-    TextStyle, Underline, Viewport, WindowId, WindowInfo, check_file_name,
+    Awake, BarPlace, Binding, Bytes, CapabilityDecision, Color, CommandInfo, Decision,
+    DecorationLook, Direction, Edge, LEAST_DELAY, Layout, Line, LineText, MOST_DELAY,
+    MOST_SEARCHES, MOST_STATE, MOST_TIMERS, MOST_WRITES, MenuItem, MenuPlace, Packages, PaneId,
+    PluginInfo, PluginState, QuickLength, QuickPlace, ScreenPoint, Scroll, SearchMatch,
+    SearchQuery, SelectionKind, ShellCommand, Side, StyleRun, TabId, TabInfo, TextStyle, Underline,
+    Viewport, WindowId, WindowInfo, check_file_name,
 };
 use lokyr_plugin_sdk::image::{
     CellRow, IMAGES_BOUND, Image, ImageBackground, ImageSpec, MOST_IMAGES,
@@ -51,6 +52,29 @@ pub const COMMAND: &str = concat!(
 
 /// The clipboard's text as the world starts.
 pub const CLIPBOARD: &str = "old";
+
+/// The plugins of the world, as a read of them tells: an installed one,
+/// active, of a capability granted and one refused.
+pub fn plugins() -> Vec<PluginInfo> {
+    vec![PluginInfo {
+        name: "acme/notes".to_owned(),
+        namespace: "notes".to_owned(),
+        version: Some("1.0.0".to_owned()),
+        built_in: false,
+        state: PluginState::Active,
+        fault: None,
+        capabilities: vec![
+            CapabilityDecision {
+                capability: "clipboard-read".to_owned(),
+                decision: Decision::Granted,
+            },
+            CapabilityDecision {
+                capability: "fs-read:~/Notes".to_owned(),
+                decision: Decision::Refused,
+            },
+        ],
+    }]
+}
 
 /// A pane that no host holds.
 const NO_PANE: PaneId = PaneId(999_999);
@@ -302,6 +326,22 @@ fn packages(allowed: bool) -> Scenario {
             ),
         ),
         (Request::CancelPackages(NO_JOB), answer(Response::Done)),
+        // The plugins, and one of them turned off, of no other's name.
+        (Request::Plugins, answer(Response::Plugins(plugins()))),
+        (
+            Request::SetPluginEnabled {
+                plugin: "acme/notes".to_owned(),
+                enabled: false,
+            },
+            answer(Response::Done),
+        ),
+        (
+            Request::SetPluginEnabled {
+                plugin: "acme/none".to_owned(),
+                enabled: true,
+            },
+            refused(Code::NotFound, "there is no plugin `acme/none`"),
+        ),
     ])];
     if allowed {
         steps.push(Step {

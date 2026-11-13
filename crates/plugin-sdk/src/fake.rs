@@ -442,6 +442,9 @@ pub struct FakeHost {
     keeps_state: bool,
     /// The AI agents that a read of the agents gives, as the test gave them.
     agents: Vec<host::AgentInfo>,
+    /// The plugins that a read of the plugins gives, as the test gave them,
+    /// whose states the plugin's turning them off and on changes.
+    plugins: Vec<host::PluginInfo>,
     /// Where the plugin's moves of tabs to windows of their own put those
     /// windows on the screens.
     places: BTreeMap<WindowId, ScreenPoint>,
@@ -542,6 +545,7 @@ impl FakeHost {
             fonts: fonts(),
             day: DAY,
             agents: Vec::new(),
+            plugins: Vec::new(),
             notice: false,
             keeps_state: true,
             themes: host::Themes {
@@ -763,6 +767,18 @@ impl FakeHost {
     pub fn set_agents(&mut self, agents: Vec<host::AgentInfo>) -> &mut Self {
         self.agents = agents;
         self
+    }
+
+    /// Gives the plugins that a read of the plugins gives.
+    pub fn set_plugins(&mut self, plugins: Vec<host::PluginInfo>) -> &mut Self {
+        self.plugins = plugins;
+        self
+    }
+
+    /// The plugins, as a read of them gives them, of the states that the
+    /// plugin's turning them off and on left.
+    pub fn plugins(&self) -> &[host::PluginInfo] {
+        &self.plugins
     }
 
     /// Shows a notice of the app's, or none, which a read tells.
@@ -1349,6 +1365,19 @@ impl FakeHost {
         }
         for (request, opened) in writes {
             self.apply(request, opened);
+        }
+        // The plugins turned off stop, and those turned on wait to start
+        // anew, as the app reads its config again once the call returns.
+        for request in &asked {
+            if let Request::SetPluginEnabled { plugin, enabled } = request
+                && let Some(info) = self.plugins.iter_mut().find(|info| &info.name == plugin)
+            {
+                info.state = match (enabled, info.state) {
+                    (false, _) => host::PluginState::Off,
+                    (true, host::PluginState::Off) => host::PluginState::Waiting,
+                    (true, state) => state,
+                };
+            }
         }
         self.done.extend(asked);
         // The saves' panels show, as the app shows them once the call
@@ -2898,6 +2927,7 @@ impl Calling<'_> {
             Request::Fonts => Response::Fonts(host.fonts.clone()),
             Request::Day => Response::Day(host.day),
             Request::Agents => Response::Agents(host.agents.clone()),
+            Request::Plugins => Response::Plugins(host.plugins.clone()),
             Request::NoticeShows => Response::Boolean(host.notice),
             Request::KeepsState => Response::Boolean(host.keeps_state),
             Request::Commands => {
@@ -3133,6 +3163,16 @@ impl Calling<'_> {
             }
             Request::CancelPackages(id) => {
                 self.cancelled.push(*id);
+                Response::Done
+            }
+            // A plugin that the host has, as the app's checks it.
+            Request::SetPluginEnabled { plugin, .. } => {
+                if !self.host.plugins.iter().any(|info| &info.name == plugin) {
+                    return Err(Error::new(
+                        Code::NotFound,
+                        format!("there is no plugin `{plugin}`"),
+                    ));
+                }
                 Response::Done
             }
             Request::SwapPanes { pane, with } => {

@@ -366,6 +366,27 @@ impl<'a> Cx<'a> {
         self.done(Request::CancelPackages(id))
     }
 
+    /// The plugins, built in and installed, in the order of their
+    /// activation, each of its state and its capabilities' decisions. Of
+    /// the capability `packages`, Lokyr's own plugins' alone.
+    pub fn plugins(&mut self) -> Result<Vec<crate::host::PluginInfo>, Error> {
+        match self.request(Request::Plugins) {
+            Response::Plugins(plugins) => Ok(plugins),
+            other => Err(failed(other)),
+        }
+    }
+
+    /// Turns the plugin `plugin`, as `owner/name`, on or off, as its
+    /// section of the config, which the host writes once this call
+    /// returns: it stops at once, or starts anew. Of the capability
+    /// `packages`, Lokyr's own plugins' alone.
+    pub fn set_plugin_enabled(&mut self, plugin: &str, enabled: bool) -> Result<(), Error> {
+        self.done(Request::SetPluginEnabled {
+            plugin: plugin.to_owned(),
+            enabled,
+        })
+    }
+
     /// The window that has the focus.
     pub fn focused_window(&mut self) -> Option<WindowId> {
         match self.request(Request::FocusedWindow) {

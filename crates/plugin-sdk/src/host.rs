@@ -1000,6 +1000,69 @@ pub enum Awake {
     Display,
 }
 
+/// A plugin, as a read of the plugins tells it, for the user's plugin
+/// manager.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PluginInfo {
+    /// Its name, as `lokyr/tabs` or `sephiroth74/snap`.
+    pub name: String,
+    /// The namespace of its commands, and of its section of the config,
+    /// `[plugins.<namespace>]`.
+    pub namespace: String,
+    /// Its version, of its manifest, if it has one.
+    #[serde(default)]
+    pub version: Option<String>,
+    /// Whether it is one of Lokyr's own, built in, rather than installed.
+    pub built_in: bool,
+    /// Where it is in its life.
+    pub state: PluginState,
+    /// What stopped it, as it faulted.
+    #[serde(default)]
+    pub fault: Option<String>,
+    /// The capabilities that its manifest asks for, each of the user's
+    /// decision, as its manifest writes them.
+    #[serde(default)]
+    pub capabilities: Vec<CapabilityDecision>,
+}
+
+/// Where a plugin is in its life.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum PluginState {
+    /// Not activated yet: it activates as its command first runs, or as
+    /// what it waits for comes, or once the user answers for its
+    /// capabilities.
+    Waiting,
+    /// Activated: its commands run, its keys are bound, its views show.
+    Active,
+    /// Turned off by its section of the config, `enabled = false`.
+    Off,
+    /// Stopped by a fault of its own, or as the user revoked a capability
+    /// that it held.
+    Faulted,
+}
+
+/// A capability of a plugin's manifest, and the user's decision of it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CapabilityDecision {
+    /// The capability, as the manifest writes it, as `fs-read:~/Notes`.
+    pub capability: String,
+    /// What the user decided.
+    pub decision: Decision,
+}
+
+/// What the user decided of a plugin's capability.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Decision {
+    /// Granted, as Lokyr's own plugins hold theirs.
+    Granted,
+    /// Refused: the plugin runs without it.
+    Refused,
+    /// Not decided yet: the plugin's activation asks for it.
+    Undecided,
+}
+
 /// A call of the packages' service, which the host runs as Sleip's
 /// command of `--json`, of the user's plugins: each line that the command
 /// tells comes as an event, then its end.

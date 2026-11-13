@@ -199,6 +199,9 @@ pub(super) struct App {
     /// The host's time, which the test moves on, from the time of its
     /// first look.
     pub(super) clock: Option<Instant>,
+    /// The plugins, as a read of them tells, which the test takes of the
+    /// host's [`Plugins::infos`]; none without.
+    pub(super) plugin_infos: Vec<host::PluginInfo>,
 }
 
 /// The themes of an app of the tests: the built-in ones, dark in force.
@@ -238,6 +241,7 @@ impl App {
             enabled: &|_| true,
             themes: &no_themes,
             fonts: &lokyr_plugin_sdk::fake::fonts,
+            plugins: &self.plugin_infos,
             day: lokyr_plugin_sdk::fake::DAY,
             notice: false,
             saving: match &self.saving {
@@ -1651,6 +1655,141 @@ fn a_read_of_the_agents_tells_each_pane_s_agent_to_a_plugin_that_reads_the_proce
     );
     assert!(agents[0].since < 10_000);
     assert_eq!(read[1], Err(Code::MissingCapability));
+}
+
+/// A plugin that does nothing, of a thread of its own if the host gives it
+/// one.
+struct Still;
+
+impl Plugin for Still {}
+
+#[test]
+fn a_read_of_the_plugins_tells_their_states_and_decisions_and_a_plugin_is_turned_off_by_name() {
+    use lokyr_plugin_sdk::host::{Decision, PluginInfo, PluginState};
+    let mut app = App::default();
+    let mut plugins = Plugins::new();
+    type Read = Result<Vec<PluginInfo>, Code>;
+    let read: Rc<RefCell<Vec<Read>>> = Rc::default();
+    let turned: Rc<RefCell<Vec<Result<(), Code>>>> = Rc::default();
+    let (seen, told) = (Rc::clone(&read), Rc::clone(&turned));
+    // The manager, of every capability, as a first-party plugin of no
+    // manifest.
+    plugins
+        .add(
+            "manager",
+            scripted(
+                |cx| cx.register_command(command("manager.read")),
+                move |cx, _, _| {
+                    seen.borrow_mut()
+                        .push(cx.plugins().map_err(|error| error.code));
+                    let mut told = told.borrow_mut();
+                    told.push(
+                        cx.set_plugin_enabled("acme/notes", false)
+                            .map_err(|error| error.code),
+                    );
+                    told.push(
+                        cx.set_plugin_enabled("acme/none", true)
+                            .map_err(|error| error.code),
+                    );
+                    Ok(())
+                },
+            ),
+        )
+        .unwrap();
+    // An installed plugin of a capability granted, one refused and one
+    // undecided, which waits for its command.
+    let manifest = Manifest::parse(concat!(
+        "[plugin]\nname = \"acme/notes\"\nversion = \"1.2.0\"\nkind = \"luau\"\n",
+        "api = \"^0.1\"\nlicense = \"MIT\"\n",
+        "[activation]\non = [\"command:notes.open\"]\n",
+        "[capabilities]\nclipboard-read = true\nclipboard-write = true\nfs-read = [\"~/Notes\"]\n",
+    ))
+    .unwrap();
+    plugins
+        .add_installed(
+            manifest,
+            Box::new(|| Box::new(Still)),
+            (&[Capability::ClipboardRead], &[Capability::ClipboardWrite]),
+        )
+        .unwrap();
+    // A plugin that faults at its command.
+    plugins
+        .add(
+            "crasher",
+            scripted(
+                |cx| cx.register_command(command("crasher.go")),
+                |_, _, _| panic!("a fault of the test's"),
+            ),
+        )
+        .unwrap();
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    // The same list until one of them changes.
+    let infos = plugins.infos();
+    assert!(Arc::ptr_eq(&infos, &plugins.infos()));
+    app.plugin_infos = infos.to_vec();
+    plugins
+        .run("manager.read", Args::new(), &mut app.context())
+        .unwrap();
+    let read = read.borrow();
+    let listed = read[0].as_ref().expect("the plugins");
+    let names: Vec<(&str, &str, PluginState, bool)> = listed
+        .iter()
+        .map(|info| {
+            (
+                info.name.as_str(),
+                info.namespace.as_str(),
+                info.state,
+                info.built_in,
+            )
+        })
+        .collect();
+    assert_eq!(
+        names,
+        [
+            ("manager", "manager", PluginState::Active, true),
+            ("acme/notes", "notes", PluginState::Waiting, false),
+            ("crasher", "crasher", PluginState::Active, true),
+        ]
+    );
+    let notes = &listed[1];
+    assert_eq!(notes.version.as_deref(), Some("1.2.0"));
+    let decisions: Vec<(&str, Decision)> = notes
+        .capabilities
+        .iter()
+        .map(|decided| (decided.capability.as_str(), decided.decision))
+        .collect();
+    assert_eq!(
+        decisions,
+        [
+            ("clipboard-read", Decision::Granted),
+            ("clipboard-write", Decision::Refused),
+            ("fs-read:~/Notes", Decision::Undecided),
+        ]
+    );
+    // The plugin turned off by its name goes to the app by its namespace;
+    // one of no name is refused.
+    assert_eq!(*turned.borrow(), [Ok(()), Err(Code::NotFound)]);
+    let requests = plugins.take_requests();
+    assert!(
+        requests.iter().any(|request| matches!(
+            request,
+            Request::SetPluginEnabled { namespace, enabled: false } if namespace == "notes"
+        )),
+        "{requests:?}"
+    );
+    // A fault changes the list, of its message.
+    let _ = plugins.run("crasher.go", Args::new(), &mut app.context());
+    let after = plugins.infos();
+    assert!(!Arc::ptr_eq(&infos, &after));
+    assert_eq!(after[2].state, PluginState::Faulted);
+    assert!(
+        after[2]
+            .fault
+            .as_deref()
+            .is_some_and(|fault| fault.contains("a fault of the test's")),
+        "{:?}",
+        after[2].fault
+    );
 }
 
 /// Whether the host refused a plugin's calls of each group of requests
