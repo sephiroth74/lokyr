@@ -3071,6 +3071,7 @@ fn a_plugin_opens_a_tab_and_a_split_of_the_ids_that_its_call_gets() {
             number: Some(1),
             keys: Some("⌥⌘1".to_owned()),
             bell: false,
+            title: String::new(),
             quick: false,
             hidden: false,
         }]

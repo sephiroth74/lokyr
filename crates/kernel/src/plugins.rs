@@ -4959,6 +4959,7 @@ impl Host<'_, '_> {
                         number: window.number(),
                         keys: window.keys().map(str::to_owned),
                         bell: window.bell(),
+                        title: window.title().to_owned(),
                         quick: window.quick(),
                         hidden: window.hidden(),
                     })

@@ -60,6 +60,12 @@ pub struct WindowInfo {
     /// a plugin draws, as a single tab's, to draw.
     #[serde(default)]
     pub bell: bool,
+    /// Its title as the system's titlebar shows it, of none of the app's
+    /// marks: its name, the program in its foreground and, as `[window]
+    /// title-size` says, its grid's size, as `lokyr — zsh — 120×30`; of a
+    /// window whose title a plugin draws, as a single tab's, to draw.
+    #[serde(default)]
+    pub title: String,
     /// Whether it is a quick window, which slides in over every app's
     /// windows, as a global key shows it.
     #[serde(default)]

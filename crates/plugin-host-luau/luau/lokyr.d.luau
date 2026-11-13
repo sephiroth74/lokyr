@@ -876,6 +876,7 @@ export type WindowInfo = {
     number: number?,
     keys: string?,
     bell: boolean?,
+    title: string?,
     quick: boolean?,
     hidden: boolean?,
 }

@@ -225,6 +225,7 @@ type WindowInfo = {
     number: number?, -- from 1, the lowest that no other open window had as it opened; none for the quick terminal's
     keys: string?, -- the keys that bring it forward, as the platform writes them, as "⌥⌘1", for its titlebar to show; nil while the config hides them
     bell: boolean, -- its bell rang while it had not the focus, until it takes it, as `[bell] mark-title` marks its title, for a title that a plugin draws, as a single tab's; its views of the tab bar render again as it changes
+    title: string, -- its title as the system's titlebar shows it, of none of the app's marks: its name, its program and, as `[window] title-size` says, its grid's size, as "lokyr — zsh — 120×30", for a title that a plugin draws, as a single tab's; its view of the tab bar renders again as it changes while it shows the title
     quick: boolean, -- a quick window, which slides in over every app's windows
     hidden: boolean, -- hidden, as a quick window hides
 }

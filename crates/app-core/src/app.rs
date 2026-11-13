@@ -3620,6 +3620,17 @@ impl<B: Backend> App<B> {
     fn show_title(&mut self, platform: &mut dyn Platform, window: WindowId) {
         let title = self.title_of(window);
         let secure = self.secure_on;
+        // The plugins read the title of no mark, which a single tab's title
+        // in the titlebar draws in the system's place: its view renders
+        // again as it changes, a bar elsewhere showing no window's title.
+        if let Some(state) = self.windows.get(&window) {
+            let shown = state.window;
+            let titled = chrome::tab_bar_place(&state.chrome, &self.plugins)
+                == lokyr_kernel::plugins::host::BarPlace::Title;
+            if self.workspace.set_window_title(shown, &title) && titled {
+                self.render_tab_bar(platform, shown);
+            }
+        }
         let Some(state) = self.windows.get_mut(&window) else {
             return;
         };

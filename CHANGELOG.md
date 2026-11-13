@@ -8,9 +8,14 @@ from 1.0.0; before it, a minor version may change what a previous one did.
 
 ## [Unreleased]
 
+### Added
+
+- Plugins read a window's title as its titlebar shows it, `WindowInfo.title`, to draw it in the system's place.
+
 ### Fixed
 
 - With the tab bar out of the titlebar, at the bottom, in a column or below a titled bar, and two tabs or more, the window's title stands centred, as with a single tab, and no longer lies over the plugins' buttons beside the window's buttons.
+- A single tab's title in the titlebar is the window's title, the grid's size too, in the system title's look, bold, and dims as the window loses the focus, alike with one tab and with several.
 
 ## [1.0.0] - 2026-11-13
 

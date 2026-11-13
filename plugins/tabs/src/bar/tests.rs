@@ -615,3 +615,37 @@ fn a_single_tab_s_title_shows_its_program_s_progress_in_a_ring() {
     let marks = marked(keyed(&node, &tab_key(1)).expect("the tab"));
     assert_eq!(marks, ["Close Tab", "Running", "Outline Normal 0.4"]);
 }
+
+#[test]
+fn a_single_tab_s_title_is_the_window_s_of_the_system_s_look() {
+    let settings = Settings::default();
+    let tabs = [tab(1, "zsh", true)];
+    // The window's title, as the system's titlebar would show it, the
+    // grid's size too, in place of the tab's own.
+    let window = WindowOf {
+        keys: None,
+        title: Some("lokyr — zsh — 116×33"),
+        inactive: false,
+    };
+    let title = bar_with(&tabs, &[], window, (&settings, &BarTexts::default())).unwrap();
+    assert_eq!(texts(&title), ["lokyr — zsh — 116×33"]);
+    let text = title.children[1].children.last().unwrap();
+    assert_eq!(text.style.font_weight, Some(FontWeight::Bold));
+    assert_eq!(text.style.color, Some(Token::from("text")));
+    // An inactive window's dims; a window of no title yet shows its tab's.
+    let inactive = WindowOf {
+        inactive: true,
+        ..window
+    };
+    let title = bar_with(&tabs, &[], inactive, (&settings, &BarTexts::default())).unwrap();
+    assert_eq!(
+        title.children[1].children.last().unwrap().style.color,
+        Some(Token::from("text.secondary"))
+    );
+    let untitled = WindowOf {
+        title: Some(""),
+        ..window
+    };
+    let title = bar_with(&tabs, &[], untitled, (&settings, &BarTexts::default())).unwrap();
+    assert_eq!(texts(&title), ["zsh"]);
+}

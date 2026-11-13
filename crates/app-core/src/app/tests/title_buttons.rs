@@ -568,3 +568,14 @@ fn the_platform_keeps_the_room_of_the_buttons_that_show_for_the_system_s_title()
     );
     assert_eq!(fake.window(window).unwrap().title_buttons_room, 84.0);
 }
+
+#[test]
+fn the_plugins_read_the_window_s_title_as_the_system_s_titlebar_shows_it() {
+    // A single tab's title across the titlebar, which its plugin draws of
+    // the window's title, the grid's size too.
+    let (_fake, app, window, _) = app_titled(&["awake"], false, true);
+    let shown = app.windows[&window].window;
+    let title = app.workspace.window(shown).unwrap().title().to_owned();
+    assert_eq!(title, app.title_of(window));
+    assert!(title.contains('×'), "{title}");
+}

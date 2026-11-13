@@ -137,6 +137,7 @@ pub struct Window {
     number: Option<u32>,
     keys: Option<String>,
     bell: bool,
+    title: String,
     quick: bool,
     hidden: bool,
 }
@@ -172,6 +173,12 @@ impl Window {
     /// its title, until it takes it.
     pub fn bell(&self) -> bool {
         self.bell
+    }
+
+    /// Its title as the app gives it to the system's titlebar, of none of
+    /// the app's marks; empty until the app gives one.
+    pub fn title(&self) -> &str {
+        &self.title
     }
 
     /// Whether it is a quick window, which slides in over every app's.
@@ -1027,6 +1034,7 @@ impl Workspace {
                 number: None,
                 keys: None,
                 bell: false,
+                title: String::new(),
                 quick: false,
                 hidden: false,
             },
@@ -1119,6 +1127,20 @@ impl Workspace {
             return false;
         };
         shown.bell = bell;
+        true
+    }
+
+    /// Gives `window` the title that the app shows in its titlebar, of
+    /// none of its marks, for the plugins that draw it in the system's
+    /// place; whether it changed.
+    pub fn set_window_title(&mut self, window: WindowId, title: &str) -> bool {
+        let Some(shown) = self.windows.get_mut(&window) else {
+            return false;
+        };
+        if shown.title == title {
+            return false;
+        }
+        title.clone_into(&mut shown.title);
         true
     }
 

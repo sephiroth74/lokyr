@@ -111,9 +111,22 @@ impl<B: Backend> App<B> {
         state.bell_marked = bell;
         let shown = state.window;
         self.workspace.set_window_bell(shown, bell);
+        self.render_tab_bar(platform, shown);
+    }
+
+    /// Asks the plugins of the window `shown`'s tab bar for its view again,
+    /// as what the window tells them changed: its bell, or its title, which
+    /// a single tab's title in the titlebar draws; a view not rendered yet
+    /// renders of it as its window's frame first shows it, of no frame of
+    /// its own, as a window's start asks for none past its first.
+    pub(super) fn render_tab_bar(
+        &mut self,
+        platform: &mut dyn Platform,
+        shown: lokyr_kernel::workspace::WindowId,
+    ) {
         let bar = ViewId::TabBar(shown.into());
         for (plugin, view) in self.plugins.views() {
-            if view != bar {
+            if view != bar || self.plugins.rendered(&plugin, &view).is_none() {
                 continue;
             }
             let result = self.with_plugins(platform, |plugins, context| {

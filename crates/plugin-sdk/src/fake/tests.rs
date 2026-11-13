@@ -229,6 +229,7 @@ fn the_workspace_s_reads_give_the_panes_windows_and_tabs() {
                 number: Some(1),
                 keys: Some("⌥⌘1".to_owned()),
                 bell: false,
+                title: String::new(),
                 quick: false,
                 hidden: false,
             }]
@@ -318,6 +319,7 @@ fn a_call_s_new_tab_and_split_enter_the_workspace_its_later_writes_find_them_and
                 number: None,
                 keys: None,
                 bell: false,
+                title: String::new(),
                 quick: false,
                 hidden: false,
             }]

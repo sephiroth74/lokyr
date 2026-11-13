@@ -268,6 +268,16 @@ impl<B: Backend> App<B> {
             })
             .collect();
         let mut rendered = false;
+        // The window's title, which a single tab's title in the titlebar
+        // draws, as the system's would show it now, before its bar's first
+        // render, which would otherwise draw an older one and render again
+        // as the title comes, a frame later.
+        if !due.is_empty() {
+            let title = self.title_of(window);
+            if let Some(state) = self.windows.get(&window) {
+                self.workspace.set_window_title(state.window, &title);
+            }
+        }
         for (plugin, view) in &due {
             let written = self.plugins.written();
             let result = self.with_plugins(platform, |plugins, context| {

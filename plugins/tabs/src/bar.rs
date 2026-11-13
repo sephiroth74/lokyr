@@ -39,8 +39,8 @@ use std::collections::BTreeMap;
 use lokyr_plugin_sdk::host::{AgentState, BarPlace, COLUMN_WIDTHS, Color, TabInfo, TabProgress};
 use lokyr_plugin_sdk::message::Data;
 use lokyr_plugin_sdk::view::{
-    Align, Border, Direction, Easing, Edges, Hover, Justify, Kind, Layout, Length, Node,
-    PointerShape, Progress, ProgressShape, ProgressState, Shadow, Style, Token, Transition,
+    Align, Border, Direction, Easing, Edges, FontWeight, Hover, Justify, Kind, Layout, Length,
+    Node, PointerShape, Progress, ProgressShape, ProgressState, Shadow, Style, Token, Transition,
 };
 
 /// Where the bar goes, of the config's `position`.
@@ -311,6 +311,18 @@ impl BarTexts {
 /// The bar's look and its texts, which its parts take.
 type BarOf<'a> = (&'a Settings, &'a BarTexts);
 
+/// What a bar shows of its window: the keys that bring it forward, which a
+/// bar in the titlebar shows after the window's buttons; its title as the
+/// system's titlebar would show it, which a single tab's title in the
+/// titlebar shows in its place; and whether it lost the focus, which dims
+/// that title as the system dims its own.
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct WindowOf<'a> {
+    pub(crate) keys: Option<&'a str>,
+    pub(crate) title: Option<&'a str>,
+    pub(crate) inactive: bool,
+}
+
 /// The bar of `tabs`, as [`bar_with`] gives it, of English's texts.
 #[cfg(test)]
 pub(crate) fn bar(
@@ -319,36 +331,40 @@ pub(crate) fn bar(
     window: Option<&str>,
     settings: &Settings,
 ) -> Option<Node> {
+    let window = WindowOf {
+        keys: window,
+        ..WindowOf::default()
+    };
     bar_with(tabs, keys, window, (settings, &BarTexts::default()))
 }
 
 /// The bar of `tabs`, a window's, each of the keys that select it of
-/// `keys`, and of the keys that bring the window forward, `window`, which a
-/// bar in the titlebar shows after the window's buttons, as `settings` lay
+/// `keys`, and of what it shows of its window, `window`, as `settings` lay
 /// it out, of `texts`; of one tab while the config hides the bar then, its
-/// title, which goes in the titlebar, as [`titled`] tells; `None` of no
-/// tabs.
+/// title, which goes in the titlebar, as [`titled`] tells, the window's
+/// own as the system's would show it; `None` of no tabs.
 pub(crate) fn bar_with(
     tabs: &[TabInfo],
     keys: &[Option<String>],
-    window: Option<&str>,
+    window_of: WindowOf<'_>,
     (settings, texts): BarOf<'_>,
 ) -> Option<Node> {
     if tabs.is_empty() {
         return None;
     }
+    let window = window_of.keys;
     if titled(tabs.len(), settings) {
         let tab = &tabs[0];
         let shown = Shown {
             tab,
-            title: if tab.title.is_empty() {
-                texts.untitled(1)
-            } else {
-                tab.title.clone()
+            title: match window_of.title {
+                Some(title) if !title.is_empty() => title.to_owned(),
+                _ if tab.title.is_empty() => texts.untitled(1),
+                _ => tab.title.clone(),
             },
             keys: None,
         };
-        return Some(told(title(&shown, texts), shown.tab));
+        return Some(told(title(&shown, texts, window_of.inactive), shown.tab));
     }
     let shown: Vec<Shown<'_>> = tabs
         .iter()
@@ -389,10 +405,21 @@ pub(crate) fn titled(count: usize, settings: &Settings) -> bool {
 /// The title of a window of a single tab, across its titlebar in place of
 /// the window's own: the tab's marks and its title in the titlebar's
 /// middle, between the room of the window's buttons on either side, so
-/// that it stands in the window's middle, as the system's title does.
-fn title(tab: &Shown<'_>, texts: &BarTexts) -> Node {
+/// that it stands in the window's middle, as the system's title does, of
+/// its look: bold, of the text's colour, dimmed where the window is
+/// `inactive`.
+fn title(tab: &Shown<'_>, texts: &BarTexts, inactive: bool) -> Node {
     let mut middle = marks(tab.tab, &texts.marks, ProgressAt::Ring);
-    middle.push(Node::text(tab.title.as_str()));
+    // The title of the system title's look, its marks of their own.
+    middle.push(Node::text(tab.title.as_str()).style(Style {
+        color: Some(Token::from(if inactive {
+            "text.secondary"
+        } else {
+            "text"
+        })),
+        font_weight: Some(FontWeight::Bold),
+        ..Style::default()
+    }));
     let middle = Node::container(middle)
         .layout(Layout {
             gap: 6.0,

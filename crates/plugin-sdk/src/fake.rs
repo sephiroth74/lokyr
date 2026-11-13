@@ -421,6 +421,9 @@ pub struct FakeHost {
     /// The windows' numbers and the keys that select them, as the test
     /// gave them.
     numbers: BTreeMap<WindowId, (Option<u32>, Option<String>)>,
+    /// The windows' titles, as the app gives them to the system's
+    /// titlebar.
+    titles: BTreeMap<WindowId, String>,
     /// The quick windows that the plugin opened, each whether it is hidden.
     quick: BTreeMap<WindowId, bool>,
     /// The keys of commands of their arguments, as the test gave them.
@@ -531,6 +534,7 @@ impl FakeHost {
             windows: BTreeMap::new(),
             tabs: BTreeMap::new(),
             numbers: BTreeMap::new(),
+            titles: BTreeMap::new(),
             quick: BTreeMap::new(),
             places: BTreeMap::new(),
             keys: Vec::new(),
@@ -812,6 +816,13 @@ impl FakeHost {
     ) -> &mut Self {
         self.numbers
             .insert(window, (number, keys.map(str::to_owned)));
+        self
+    }
+
+    /// Gives `window` the title of its titlebar, as the app gives the
+    /// system's, which a read of the windows tells.
+    pub fn title_window(&mut self, window: WindowId, title: &str) -> &mut Self {
+        self.titles.insert(window, title.to_owned());
         self
     }
 
@@ -2382,6 +2393,7 @@ impl FakeHost {
                     number,
                     keys,
                     bell: false,
+                    title: self.titles.get(&id).cloned().unwrap_or_default(),
                     quick: self.quick.contains_key(&id),
                     hidden: self.quick.get(&id) == Some(&true),
                 }

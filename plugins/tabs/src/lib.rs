@@ -20,7 +20,7 @@ use lokyr_plugin_sdk::event::WorkspaceEvent;
 use lokyr_plugin_sdk::host::{
     BarPlace, Color, MenuItem, MenuPlace, ScreenPoint, TabId, TabInfo, WindowId,
 };
-use lokyr_plugin_sdk::message::{Data, Event, KEYS_CHANGED};
+use lokyr_plugin_sdk::message::{Data, Event, KEYS_CHANGED, WINDOW_FOCUS};
 use lokyr_plugin_sdk::plugin::{Cx, Plugin};
 use lokyr_plugin_sdk::ui::{Anchor, PanelId, PanelOptions, Role, UiEvent, ViewId};
 use lokyr_plugin_sdk::view::{self, Node, UiEventKind};
@@ -163,6 +163,10 @@ pub fn tab_bar(
     } else {
         settings.place(None)
     };
+    let window = bar::WindowOf {
+        keys: window,
+        ..bar::WindowOf::default()
+    };
     (
         bar::bar_with(tabs, keys, window, (&settings, &bar::BarTexts::default())),
         place,
@@ -186,6 +190,9 @@ pub struct Tabs {
     /// The windows whose bar shows their single tab's title in their
     /// titlebar.
     titled: BTreeSet<WindowId>,
+    /// The windows that lost the focus, whose single tab's title dims, as
+    /// the system's title of an inactive window does.
+    inactive: BTreeSet<WindowId>,
 }
 
 /// The keys of the plugin's state: the column's width of the user's last
@@ -209,6 +216,7 @@ impl Plugin for Tabs {
         self.configure(cx)?;
         let mut names: Vec<&str> = WorkspaceEvent::NAMES.to_vec();
         names.push(KEYS_CHANGED);
+        names.push(WINDOW_FOCUS);
         cx.subscribe(&names)?;
         for (name, title, param) in commands() {
             cx.register_command(Command {
@@ -444,6 +452,16 @@ impl Plugin for Tabs {
                     let closed = ViewId::TabBar(*window);
                     self.views.retain(|(view, _)| *view != closed);
                     self.titled.remove(window);
+                    self.inactive.remove(window);
+                }
+                // A window's focus, which its single tab's title shows.
+                Event::WindowFocus { window, focused } => {
+                    let changed = if *focused {
+                        self.inactive.remove(window)
+                    } else {
+                        self.inactive.insert(*window)
+                    };
+                    again |= changed && self.titled.contains(window);
                 }
                 Event::Workspace(_) | Event::KeysChanged => again = true,
                 _ => {}
@@ -506,7 +524,7 @@ impl Tabs {
                 self.settings.place(None),
                 BarPlace::Titlebar | BarPlace::Sidebar { .. }
             );
-        if shown.is_some_and(|shown| shown.bell)
+        if shown.as_ref().is_some_and(|shown| shown.bell)
             && hides_title
             && let Some(tab) = tabs.iter_mut().find(|tab| tab.active)
         {
@@ -552,7 +570,12 @@ impl Tabs {
                 })
                 .collect(),
         };
-        bar::bar_with(&tabs, &keys, shortcut.as_deref(), (&self.settings, &texts))
+        let window_of = bar::WindowOf {
+            keys: shortcut.as_deref(),
+            title: shown.as_ref().map(|shown| shown.title.as_str()),
+            inactive: self.inactive.contains(window),
+        };
+        bar::bar_with(&tabs, &keys, window_of, (&self.settings, &texts))
     }
 
     /// The context menu of a tab: its rename, its color, its move to a

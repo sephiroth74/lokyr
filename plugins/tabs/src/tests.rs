@@ -558,6 +558,39 @@ fn the_bar_shows_a_window_s_tabs_and_its_clicks_select_close_and_open() {
             .filter(|request| matches!(request, Request::SetWindowTabBarPlace { .. }))
             .collect()
     };
+    // Of the window's title, as the app gives the system's, which dims as
+    // the window loses the focus, and comes back as it takes it again.
+    single.title_window(WINDOW, "lokyr — zsh — 80×24");
+    let title = single.render(&mut plugin, &view).expect("a title");
+    let middle = &title.children[1];
+    assert!(
+        matches!(&middle.children.last().unwrap().kind, view::Kind::Text(text) if text == "lokyr — zsh — 80×24"),
+        "{title:?}"
+    );
+    assert_eq!(
+        middle.children.last().unwrap().style.color,
+        Some(view::Token::from("text"))
+    );
+    single.post(Event::WindowFocus {
+        window: WINDOW,
+        focused: false,
+    });
+    single.deliver(&mut plugin).unwrap();
+    let title = single.render(&mut plugin, &view).expect("a title");
+    assert_eq!(
+        title.children[1].children.last().unwrap().style.color,
+        Some(view::Token::from("text.secondary"))
+    );
+    single.post(Event::WindowFocus {
+        window: WINDOW,
+        focused: true,
+    });
+    single.deliver(&mut plugin).unwrap();
+    let title = single.render(&mut plugin, &view).expect("a title");
+    assert_eq!(
+        title.children[1].children.last().unwrap().style.color,
+        Some(view::Token::from("text"))
+    );
     // Once, not at every render.
     places(&mut single);
     let _ = single.render(&mut plugin, &view);
