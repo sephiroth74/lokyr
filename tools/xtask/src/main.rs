@@ -84,6 +84,7 @@ fn print_help() {
          notarize                    have Apple notarize target/Lokyr.app, and staple the ticket\n  \
          release <version> [--without-feed]  a candidate's or a release's bundle, DMG, dSYM and SBOM, to a draft on GitHub and the feed\n  \
          site [--out <dir>]          build the documentation's site of the public Markdown into target/site\n  \
+         site --changed-since <commit>  print the addresses of the site's pages changed since a commit\n  \
          symbolicate <report.ips>    the crashed thread of a crash report, Lokyr's frames told by the release's dSYM\n  \
          terminfo [--out DIR]        compile the terminfo entry xterm-lokyr, into target/terminfo by default\n  \
          themes [--out DIR]          check the themes' collection and write the themes that the bundle holds, into target/themes by default\n  \

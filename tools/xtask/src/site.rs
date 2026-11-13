@@ -76,16 +76,26 @@ pub(crate) struct Social {
 
 pub fn run(mut args: impl Iterator<Item = String>) -> Result<ExitCode> {
     let mut out = None;
+    let mut since = None;
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--out" => out = Some(PathBuf::from(args.next().context("--out takes a folder")?)),
-            _ => bail!("site takes `--out <folder>`, not `{arg}`"),
+            "--changed-since" => {
+                since = Some(args.next().context("--changed-since takes a commit")?);
+            }
+            _ => bail!("site takes `--out <folder>` or `--changed-since <commit>`, not `{arg}`"),
         }
     }
     let root = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
         .canonicalize()
         .context("the workspace's root")?;
+    if let Some(since) = since {
+        for address in changed_pages(&root, &since)? {
+            println!("{address}");
+        }
+        return Ok(ExitCode::SUCCESS);
+    }
     let out = out.unwrap_or_else(|| root.join("target/site"));
     let pages = build(&root, &out)?;
     let broken = broken_links(&out)?;
@@ -336,6 +346,54 @@ fn sitemap(pages: &[(String, Option<String>)]) -> String {
     }
     xml.push_str("</urlset>\n");
     xml
+}
+
+/// The canonical addresses of the pages that changed since the commit
+/// `since`, for the search engines that take word of them (IndexNow):
+/// those of the documents added, changed or removed, the home's of its
+/// file; every page where the site's template changed, or where `since`
+/// is no commit of this history, as a push's first or a forced one is.
+fn changed_pages(root: &Path, since: &str) -> Result<Vec<String>> {
+    let listed = Command::new("git")
+        .args(["diff", "--name-only", "--no-renames"])
+        .arg(format!("{since}..HEAD"))
+        .current_dir(root)
+        .output()
+        .context("listing the files changed")?;
+    let files = String::from_utf8_lossy(&listed.stdout).into_owned();
+    let changed: Vec<PathBuf> = files.lines().map(PathBuf::from).collect();
+    let everything = !listed.status.success()
+        || changed
+            .iter()
+            .any(|file| file == Path::new("tools/xtask/src/site.rs"));
+    let documents = documents(root)?;
+    Ok(pages_of(&changed, &documents, everything))
+}
+
+/// The canonical addresses of the pages of the `changed` files among the
+/// site's `documents` and its home, or of every page.
+fn pages_of(changed: &[PathBuf], documents: &[PathBuf], everything: bool) -> Vec<String> {
+    let home = Path::new("site/public/index.html");
+    let mut pages = Vec::new();
+    if everything || changed.iter().any(|file| file == home) {
+        pages.push(canonical(Path::new("index.html")));
+    }
+    for file in changed {
+        let is_document = file.extension().is_some_and(|extension| extension == "md")
+            && (file.starts_with("docs")
+                || ROOT_DOCUMENTS.iter().any(|root| file == Path::new(root)));
+        if !everything && is_document {
+            pages.push(canonical(&page_path(file)));
+        }
+    }
+    if everything {
+        pages.extend(
+            documents
+                .iter()
+                .map(|document| canonical(&page_path(document))),
+        );
+    }
+    pages
 }
 
 /// The canonical address of the site's `page`, from the root: a folder's
@@ -948,6 +1006,38 @@ mod tests {
             xml.contains("<url><loc>https://lokyr.dev/</loc><lastmod>2026-11-13</lastmod></url>")
         );
         assert!(xml.contains("<url><loc>https://lokyr.dev/a.html?x&amp;y</loc></url>"));
+    }
+
+    #[test]
+    fn the_pages_changed_are_those_of_their_documents_or_all() {
+        let documents = [
+            PathBuf::from("docs/README.md"),
+            PathBuf::from("CHANGELOG.md"),
+        ];
+        let changed = [
+            PathBuf::from("docs/plugins/tabs.md"),
+            PathBuf::from("CHANGELOG.md"),
+            PathBuf::from("crates/kernel/src/lib.rs"),
+            PathBuf::from("README.md"),
+            PathBuf::from("site/public/index.html"),
+        ];
+        assert_eq!(
+            pages_of(&changed, &documents, false),
+            [
+                "https://lokyr.dev/",
+                "https://lokyr.dev/docs/plugins/tabs.html",
+                "https://lokyr.dev/changelog.html"
+            ]
+        );
+        assert!(pages_of(&[PathBuf::from("Cargo.toml")], &documents, false).is_empty());
+        assert_eq!(
+            pages_of(&[], &documents, true),
+            [
+                "https://lokyr.dev/",
+                "https://lokyr.dev/docs/",
+                "https://lokyr.dev/changelog.html"
+            ]
+        );
     }
 
     #[test]

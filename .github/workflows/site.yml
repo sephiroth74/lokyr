@@ -19,6 +19,9 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
+  # IndexNow's key, which the site serves as site/public/<key>.txt, so that
+  # the search engines told of its changed pages know that the word is ours.
+  INDEXNOW_KEY: e842fea4558d5c03aa9e71052687daea
 
 # Actions are pinned by commit SHA; the comment after each one names its tag.
 jobs:
@@ -27,6 +30,8 @@ jobs:
     runs-on: ubuntu-latest
     # A few minutes with its cache.
     timeout-minutes: 30
+    outputs:
+      pages: ${{ steps.changed.outputs.pages }}
     steps:
       # The whole history, as the sitemap dates each page of its document's
       # last commit, which a shallow clone would make the push's.
@@ -53,6 +58,19 @@ jobs:
         run: cargo xtask site --out "$RUNNER_TEMP/site"
       - name: The search's index is there
         run: test -f "$RUNNER_TEMP/site/pagefind/pagefind-entry.json"
+      - name: IndexNow's key is served
+        run: test -f "$RUNNER_TEMP/site/$INDEXNOW_KEY.txt"
+      # The pages changed since the push's last commit before it; every page
+      # of a first push, a forced one or a run by hand.
+      - name: The pages changed
+        id: changed
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          since="${BEFORE:-0000000000000000000000000000000000000000}"
+          pages=$(cargo xtask site --changed-since "$since" | jq --raw-input . | jq --slurp --compact-output .)
+          echo "pages=$pages" >> "$GITHUB_OUTPUT"
+          echo "$pages" | jq length
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: ${{ runner.temp }}/site
@@ -71,3 +89,22 @@ jobs:
     steps:
       - id: deployment
         uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
+
+  # Bing, Yandex and the other engines of IndexNow told of the changed pages
+  # once they are served; Google takes the sitemap alone.
+  indexnow:
+    name: indexnow
+    needs: [build, deploy]
+    if: needs.build.outputs.pages != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: The changed pages told to IndexNow
+        env:
+          PAGES: ${{ needs.build.outputs.pages }}
+        run: |
+          jq --null-input --argjson urls "$PAGES" --arg key "$INDEXNOW_KEY" \
+            '{host: "lokyr.dev", key: $key, keyLocation: ("https://lokyr.dev/" + $key + ".txt"), urlList: $urls}' > "$RUNNER_TEMP/indexnow.json"
+          curl --fail-with-body --silent --show-error --retry 3 --write-out '%{http_code}\n' \
+            --header 'Content-Type: application/json; charset=utf-8' \
+            --data "@$RUNNER_TEMP/indexnow.json" https://api.indexnow.org/indexnow
