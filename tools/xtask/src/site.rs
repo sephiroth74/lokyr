@@ -249,10 +249,21 @@ pub(crate) fn build(root: &Path, out: &Path) -> Result<usize> {
         ));
     }
     fs::write(out.join("sitemap.xml"), sitemap(&listed)).context("writing the sitemap")?;
+    let mut texts = Vec::with_capacity(documents.len());
     for document in &documents {
         let text = fs::read_to_string(root.join(document))
             .with_context(|| format!("reading {}", document.display()))?;
-        let page = page(document, &text, &settings);
+        texts.push(text);
+    }
+    // Each document's title, which the breadcrumbs of the pages below a
+    // folder's index name it by.
+    let titles: HashMap<PathBuf, String> = documents
+        .iter()
+        .zip(&texts)
+        .map(|(document, text)| (document.clone(), html(document, text).title))
+        .collect();
+    for (document, text) in documents.iter().zip(&texts) {
+        let page = page(document, text, &settings, &titles);
         let target = out.join(page_path(document));
         if let Some(folder) = target.parent() {
             fs::create_dir_all(folder).with_context(|| format!("making {}", folder.display()))?;
@@ -450,7 +461,12 @@ pub(crate) fn page_path(document: &Path) -> PathBuf {
 
 /// The page of `document`, of its Markdown `text`, in the site's template:
 /// the search indexes its body.
-fn page(document: &Path, text: &str, settings: &Settings) -> String {
+fn page(
+    document: &Path,
+    text: &str,
+    settings: &Settings,
+    titles: &HashMap<PathBuf, String>,
+) -> String {
     let Rendered {
         body,
         title,
@@ -474,6 +490,7 @@ fn page(document: &Path, text: &str, settings: &Settings) -> String {
             canonical: Some(&canonical(&page_path(document))),
             indexed: true,
             section: Section::of(document),
+            structured: Some(&breadcrumbs(&crumbs(document, &title, titles))),
         },
         &"../".repeat(depth),
         settings,
@@ -574,6 +591,7 @@ fn search_page(settings: &Settings) -> String {
             canonical: None,
             indexed: false,
             section: Some(Section::Search),
+            structured: None,
         },
         "",
         settings,
@@ -596,6 +614,7 @@ fn missing_page(settings: &Settings) -> String {
             canonical: None,
             indexed: false,
             section: None,
+            structured: None,
         },
         "/",
         settings,
@@ -623,6 +642,70 @@ struct Head<'a> {
     indexed: bool,
     /// The top bar's section that the page belongs to, which the bar marks.
     section: Option<Section>,
+    /// Its structured data for the search engines, as JSON-LD.
+    structured: Option<&'a str>,
+}
+
+/// The trail of `document`'s page, of its `title`, from the site's home:
+/// each folder above it of an index of its own, the documentation's of
+/// its name, the others of their index's title in `titles`, then the page,
+/// each of its name and its canonical address.
+fn crumbs(
+    document: &Path,
+    title: &str,
+    titles: &HashMap<PathBuf, String>,
+) -> Vec<(String, String)> {
+    let mut trail = vec![("Lokyr".to_owned(), canonical(Path::new("index.html")))];
+    let mut folder = PathBuf::new();
+    let folders: Vec<_> = document
+        .parent()
+        .map(|parent| parent.components().collect())
+        .unwrap_or_default();
+    for part in folders {
+        folder.push(part);
+        let index = folder.join("README.md");
+        if index == document {
+            break;
+        }
+        if let Some(name) = titles.get(&index) {
+            let name = if folder == Path::new("docs") {
+                "Documentation".to_owned()
+            } else {
+                name.clone()
+            };
+            trail.push((name, canonical(&page_path(&index))));
+        }
+    }
+    let name = if document == Path::new("docs/README.md") {
+        "Documentation".to_owned()
+    } else {
+        title.to_owned()
+    };
+    trail.push((name, canonical(&page_path(document))));
+    trail
+}
+
+/// The JSON-LD of a `BreadcrumbList` of `trail`.
+fn breadcrumbs(trail: &[(String, String)]) -> String {
+    let items: Vec<serde_json::Value> = trail
+        .iter()
+        .enumerate()
+        .map(|(at, (name, address))| {
+            serde_json::json!({
+                "@type": "ListItem",
+                "position": at + 1,
+                "name": name,
+                "item": address,
+            })
+        })
+        .collect();
+    let list = serde_json::json!({
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": items,
+    });
+    // As a script's text: no `</` that would end it.
+    list.to_string().replace("</", "<\\/")
 }
 
 /// The top bar's sections, each of its label and its page from the root.
@@ -736,6 +819,12 @@ fn template(
     }
     if !head.indexed {
         tags.push_str("<meta name=\"robots\" content=\"noindex, follow\">\n");
+    }
+    if let Some(data) = head.structured {
+        let _ = writeln!(
+            tags,
+            r#"<script type="application/ld+json">{data}</script>"#
+        );
     }
     if let Some(address) = head.canonical {
         let _ = writeln!(
@@ -1291,12 +1380,69 @@ mod tests {
     }
 
     #[test]
+    fn a_page_s_breadcrumbs_lead_from_the_home_through_its_folders_indexes() {
+        let titles = HashMap::from([
+            (
+                PathBuf::from("docs/README.md"),
+                "Lokyr — project documentation".to_owned(),
+            ),
+            (
+                PathBuf::from("docs/plugins/README.md"),
+                "Plugins".to_owned(),
+            ),
+        ]);
+        let trail = |document: &str, title: &str| -> Vec<String> {
+            crumbs(Path::new(document), title, &titles)
+                .into_iter()
+                .map(|(name, address)| format!("{name} {address}"))
+                .collect()
+        };
+        assert_eq!(
+            trail("docs/plugins/tabs.md", "tabs: the tab bar"),
+            [
+                "Lokyr https://lokyr.dev/",
+                "Documentation https://lokyr.dev/docs/",
+                "Plugins https://lokyr.dev/docs/plugins/",
+                "tabs: the tab bar https://lokyr.dev/docs/plugins/tabs.html"
+            ]
+        );
+        assert_eq!(
+            trail("docs/plugins/README.md", "Plugins"),
+            [
+                "Lokyr https://lokyr.dev/",
+                "Documentation https://lokyr.dev/docs/",
+                "Plugins https://lokyr.dev/docs/plugins/"
+            ]
+        );
+        // A folder of no index of its own takes no step.
+        assert_eq!(trail("docs/bench/x.md", "X").len(), 3);
+        assert_eq!(
+            trail("CHANGELOG.md", "Changelog"),
+            [
+                "Lokyr https://lokyr.dev/",
+                "Changelog https://lokyr.dev/changelog.html"
+            ]
+        );
+        let data = breadcrumbs(&crumbs(
+            Path::new("docs/plugins/tabs.md"),
+            "tabs</script>",
+            &titles,
+        ));
+        let value: serde_json::Value = serde_json::from_str(&data).unwrap();
+        assert_eq!(value["@type"], "BreadcrumbList");
+        assert_eq!(value["itemListElement"][3]["position"], 4);
+        assert_eq!(value["itemListElement"][3]["name"], "tabs</script>");
+        assert!(!data.contains("</"));
+    }
+
+    #[test]
     fn a_page_s_head_tells_its_title_description_and_address() {
         let settings = Settings::default();
         let shown = page(
             Path::new("docs/plugins/README.md"),
             "# The bundled plugins\n\nEvery feature that you see comes from a plugin, and these come with Lokyr.\n",
             &settings,
+            &HashMap::new(),
         );
         assert!(shown.contains("<title>The bundled plugins — Lokyr</title>"));
         assert!(shown.contains(r#"<meta name="description" content="Every feature that you see comes from a plugin, and these come with Lokyr.">"#));
@@ -1318,6 +1464,7 @@ mod tests {
             Path::new("docs/README.md"),
             "# Lokyr — the documentation\n",
             &settings,
+            &HashMap::new(),
         );
         assert!(named.contains("<title>Lokyr — the documentation</title>"));
         assert!(named.contains(r#"<meta name="description" content="Lokyr — the documentation, of the documentation of Lokyr"#));
@@ -1551,7 +1698,7 @@ mod tests {
                 x: String::new(),
             },
         };
-        let shown = page(Path::new("docs/x.md"), "# X\n", &settings);
+        let shown = page(Path::new("docs/x.md"), "# X\n", &settings, &HashMap::new());
         assert!(shown.contains(r#"<a href="https://bsky.app/profile/lokyr.dev">Bluesky</a>"#));
         assert!(!shown.contains(">X</a>"));
         let _ = fs::remove_dir_all(out);
