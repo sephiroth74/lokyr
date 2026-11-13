@@ -346,21 +346,63 @@
     background: var(--gradient);
     vertical-align: 2px;
   }
-  /* The install's command under the facts, selected whole at a click. */
+  /* The install's command under the facts, selected whole at a click, and
+     its copy button. */
   .brew {
-    display: inline-block;
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
     max-width: 100%;
     margin: 24px 0 0;
-    padding: 10px 18px;
+    padding: 6px 6px 6px 18px;
     font: var(--t-s)/1.5 var(--mono);
     color: #e6e1f7;
     background: rgba(19, 16, 29, 0.78);
     border: 1px solid var(--line-strong);
     border-radius: 10px;
-    -webkit-user-select: all;
-            user-select: all;
+    text-align: left;
   }
-  .brew::before { content: "$ "; color: var(--violet); }
+  .brew code { font: inherit; -webkit-user-select: all; user-select: all; }
+  .brew code::before { content: "$ "; color: var(--violet); }
+  /* A copy button, which the script shows where the clipboard can be
+     written; a check mark for a moment once it is. */
+  .copy {
+    display: inline-grid;
+    place-items: center;
+    flex: none;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+  }
+  .copy[hidden] { display: none; }
+  .copy:hover { color: var(--fg); border-color: var(--line-strong); }
+  .copy:active { transform: translateY(1px); }
+  .copy svg {
+    grid-area: 1 / 1;
+    width: 16px;
+    height: 16px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.4;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .copy .check, .copy.done svg { visibility: hidden; }
+  .copy.done .check { visibility: visible; color: var(--violet); }
+  /* Text for the screen readers alone. */
+  .hidden-text {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
 
   /* The terminal */
   .terminal {
@@ -471,7 +513,18 @@
     background: var(--bg);
     transition: background 0.3s ease;
   }
-  .features li:hover { background: var(--bg-raised); }
+  /* A card that links lights up under the pointer, its whole surface the
+     link; the install's cards, of no link, stay still. */
+  .features.linked li { padding: 0; }
+  .features.linked li:hover { background: var(--bg-raised); }
+  .features .card {
+    display: block;
+    height: 100%;
+    padding: 28px 26px 30px;
+    color: inherit;
+    text-decoration: none;
+  }
+  .features .card:focus-visible { outline-offset: -4px; border-radius: 12px; }
   .features .n {
     display: block;
     margin-bottom: 18px;
@@ -500,14 +553,22 @@
   /* The cards share the row alike, a long command wrapping at its spaces. */
   .features li { min-width: 0; }
   .features .cmd {
-    display: block;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
     margin-top: 16px;
-    padding: 11px 14px;
+    padding: 4px 4px 4px 14px;
     font: var(--t-s)/1.5 var(--mono);
     color: #e6e1f7;
     background: rgba(244, 241, 255, 0.04);
     border: 1px solid var(--line);
     border-radius: 8px;
+  }
+  .features .cmd code {
+    min-width: 0;
+    padding-block: 7px;
+    line-height: 1.5;
     -webkit-user-select: all;
             user-select: all;
   }
@@ -627,6 +688,15 @@
     gap: 12px 32px;
   }
   footer p { margin: 0; }
+  .footer-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 22px;
+    width: 100%;
+    margin-bottom: 8px;
+  }
+  .footer-links a { color: var(--muted); text-decoration: none; }
+  .footer-links a:hover { color: var(--fg); }
 
   @keyframes spin { to { transform: rotate(360deg); } }
   @keyframes breathe {
@@ -699,7 +769,7 @@
     <a href="docs/">Docs</a>
     <a href="docs/plugins/">Plugins</a>
     <a href="search.html">Search</a>
-    <a class="pill" href="https://github.com/sephiroth74/lokyr/releases/latest"><span class="dot" aria-hidden="true"></span>1.0.0 is out</a>
+    <a class="pill" href="docs/releases/1.0.0.html"><span class="dot" aria-hidden="true"></span>1.0.0 is out</a>
   </nav>
 </div>
 </header>
@@ -733,11 +803,12 @@
       <li>Apple Silicon</li>
       <li>MIT, open source</li>
     </ul>
-    <code class="brew">brew install --cask sephiroth74/tap/lokyr</code>
+    <div class="brew"><code>brew install --cask sephiroth74/tap/lokyr</code><button class="copy" type="button" aria-label="Copy the command" hidden><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5" y="5" width="9" height="9" rx="2"/><path d="M11 5V3.5A1.5 1.5 0 0 0 9.5 2h-6A1.5 1.5 0 0 0 2 3.5v6A1.5 1.5 0 0 0 3.5 11H5"/></svg><svg class="check" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.5l3 3 7-7"/></svg></button></div>
   </div>
 
   <div class="wrap">
-    <div class="terminal" id="terminal" aria-label="A Lokyr window showing its config file">
+    <figure class="terminal" id="terminal">
+      <figcaption class="hidden-text">A Lokyr window showing its config file</figcaption>
       <div class="terminal-bar">
         <div class="lights" aria-hidden="true"><span></span><span></span><span></span></div>
         <div class="terminal-title">lokyr — zsh — 80×24</div>
@@ -757,36 +828,48 @@
 <span class="t-line"><span class="t-section">[keys]</span></span>
 <span class="t-line"><span class="t-str">"global:ctrl+`"</span> <span class="t-op">=</span> <span class="t-str">"window.toggle-quick-terminal"</span></span>
 <span class="t-line"><span class="t-path">~</span> <span class="t-arrow">❯</span> <span class="t-cursor" aria-hidden="true"></span></span></pre>
-    </div>
+    </figure>
   </div>
 
   <section class="wrap" aria-labelledby="why">
     <p class="eyebrow">Why Lokyr</p>
     <h2 id="why">A small core, and plugins for everything you see.</h2>
-    <ul class="features">
+    <ul class="features linked">
       <li>
+        <a class="card" href="docs/plugins/">
         <h3>Plugins all the way</h3>
         <p>Tabs, splits, search, themes and the command palette are plugins, on the same API that everyone else gets. The core keeps the terminal itself.</p>
+        </a>
       </li>
       <li>
+        <a class="card" href="docs/SECURITY.html#plugins">
         <h3>Plugins you can trust</h3>
         <p>A third-party plugin is a Luau script in a sandbox of its own. It reaches only what it declares, and Sleip, Lokyr’s package manager, shows you that before it installs.</p>
+        </a>
       </li>
       <li>
+        <a class="card" href="docs/bench/RELEASES.html">
         <h3>Fast where you feel it</h3>
         <p>Its own VT core, with 8-byte cells, and a Metal renderer: a frame of steady output in about a quarter of a millisecond at 4K.</p>
+        </a>
       </li>
       <li>
+        <a class="card" href="docs/UI-AND-FEATURES.html">
         <h3>Native on macOS</h3>
         <p>An AppKit window, CoreText shaping and font fallback, input methods, Secure Keyboard Entry, and a quick terminal on a global key.</p>
+        </a>
       </li>
       <li>
+        <a class="card" href="docs/CONFIGURATION.html#agents">
         <h3>Ready for agents</h3>
         <p>A tab tells what the AI agent in it is doing: at work, waiting for you, or done, with a notification while you look elsewhere. Next, Lokyr becomes an MCP server.</p>
+        </a>
       </li>
       <li>
+        <a class="card" href="docs/CONFIGURATION.html">
         <h3>One plain file</h3>
         <p>Every setting lives in one TOML file that can sit with your dotfiles, checked before Lokyr applies it.</p>
+        </a>
       </li>
     </ul>
   </section>
@@ -840,7 +923,7 @@
         <span class="n">01</span>
         <h3>With Homebrew</h3>
         <p>The cask installs the app, and links <code>lokyr</code> and <code>sleip</code> into Homebrew&#8217;s <code>bin</code>.</p>
-        <code class="cmd">brew install --cask sephiroth74/tap/lokyr</code>
+        <div class="cmd"><code>brew install --cask sephiroth74/tap/lokyr</code><button class="copy" type="button" aria-label="Copy the command" hidden><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5" y="5" width="9" height="9" rx="2"/><path d="M11 5V3.5A1.5 1.5 0 0 0 9.5 2h-6A1.5 1.5 0 0 0 2 3.5v6A1.5 1.5 0 0 0 3.5 11H5"/></svg><svg class="check" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.5l3 3 7-7"/></svg></button></div>
       </li>
       <li>
         <span class="n">02</span>
@@ -851,7 +934,7 @@
         <span class="n">03</span>
         <h3>Then, plugins</h3>
         <p>Sleip installs plugins from <a href="https://pkg.lokyr.dev">pkg.lokyr.dev</a>, and shows what each one may reach before it does.</p>
-        <code class="cmd">sleip add sephiroth74/snap</code>
+        <div class="cmd"><code>sleip add sephiroth74/snap</code><button class="copy" type="button" aria-label="Copy the command" hidden><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5" y="5" width="9" height="9" rx="2"/><path d="M11 5V3.5A1.5 1.5 0 0 0 9.5 2h-6A1.5 1.5 0 0 0 2 3.5v6A1.5 1.5 0 0 0 3.5 11H5"/></svg><svg class="check" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.5l3 3 7-7"/></svg></button></div>
       </li>
     </ul>
     <p class="footnote">macOS 26 or later, on Apple Silicon. The app and its disk image are signed and notarized by Apple; Lokyr takes its updates by itself, through Sparkle, a check a day at most.</p>
@@ -860,6 +943,13 @@
 
 <footer>
   <div class="wrap">
+    <nav class="footer-links" aria-label="More">
+      <a href="https://github.com/sephiroth74/lokyr">GitHub</a>
+      <a href="docs/">Documentation</a>
+      <a href="https://pkg.lokyr.dev">Plugin registry</a>
+      <a href="changelog.html">Changelog</a>
+      <a href="docs/releases/">Release notes</a>
+    </nav>
     <p>© 2026 Alessandro Crugnola · Lokyr and Sleip are under the MIT License.</p>
     <p>This page sets no cookies and loads nothing from elsewhere.</p>
   </div>
@@ -901,6 +991,29 @@
       }
     }
     setTimeout(type, 900);
+  })();
+
+  // The copy buttons, shown where the clipboard can be written: a click
+  // copies the command beside it, which a screen reader hears.
+  (function () {
+    if (!navigator.clipboard || !window.isSecureContext) return;
+    var told = document.createElement("p");
+    told.className = "hidden-text";
+    told.setAttribute("aria-live", "polite");
+    document.body.appendChild(told);
+    document.querySelectorAll("button.copy").forEach(function (button) {
+      button.hidden = false;
+      button.addEventListener("click", function () {
+        var command = button.previousElementSibling.textContent;
+        navigator.clipboard.writeText(command).then(function () {
+          button.classList.add("done");
+          told.textContent = "Copied: " + command;
+          setTimeout(function () { button.classList.remove("done"); }, 1600);
+        }, function () {
+          told.textContent = "The command could not be copied: select it and copy it.";
+        });
+      });
+    });
   })();
 </script>
 </body>

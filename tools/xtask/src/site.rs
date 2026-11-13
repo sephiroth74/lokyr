@@ -724,6 +724,11 @@ fn template(
 {main}
 <footer>
   <div class="wrap">
+    <nav class="footer-links" aria-label="More">
+      <a href="https://github.com/sephiroth74/lokyr">GitHub</a>
+      <a href="https://pkg.lokyr.dev">Plugin registry</a>
+      <a href="{up}docs/releases/">Release notes</a>
+    </nav>
     <p>© 2026 Alessandro Crugnola · Lokyr and Sleip are under the MIT License.</p>
     <p>{extra}</p>
   </div>
@@ -1216,6 +1221,11 @@ mod tests {
             escaped(SOCIAL_IMAGE_ALT)
         )));
         assert!(root.join("site/public/og.png").is_file());
+        // The top bar's pill of the same release, to its notes.
+        assert!(home.contains(&format!(
+            r#"<a class="pill" href="docs/releases/{version}.html">"#
+        )));
+        assert!(home.contains(&format!("{version} is out</a>")));
     }
 
     #[test]
