@@ -1,7 +1,11 @@
 //! The settings tab: a tab of no pane, one at most, opened after the tab
 //! shown, its view in the panes' room, its window's title its own, the
-//! panes' actions not applying, and closed as a tab, of no question.
+//! panes' actions not applying, and closed as a tab, of no question; its
+//! sidebar of the plugins' pages, the chosen page's view beside it, which
+//! Tab goes through with the sidebar, its plugin told as it shows and
+//! hides, and a plugin's ask of its own page.
 
+use lokyr_kernel::plugins::ui::ViewId;
 use lokyr_text_core::FontConfig;
 
 use super::*;
@@ -9,9 +13,22 @@ use crate::fakes;
 
 /// The app of a window of two tabs, the first shown, drawn.
 fn two_tabs() -> (Fake, App, WindowId) {
+    two_tabs_of(false)
+}
+
+/// The app of [`two_tabs`], of the sample plugin of two pages if `pages`.
+fn two_tabs_of(pages: bool) -> (Fake, App, WindowId) {
     let drawing = Drawing::new(FontConfig::default()).unwrap();
     let mut fake = Fake::default();
     let mut app = App::new(Some(drawing), Config::default(), None).with_program(idle());
+    if pages {
+        app.plugins
+            .add_builtin(
+                crate::sample_pages::MANIFEST,
+                Box::new(crate::sample_pages::SamplePages::default()),
+            )
+            .unwrap();
+    }
     fake.start(&mut app);
     let window = fake.windows().next().unwrap();
     app.windows.get_mut(&window).unwrap().surface = Some(fakes::Surface::default());
@@ -118,33 +135,62 @@ fn the_settings_tab_of_no_window_opens_one() {
     );
 }
 
-/// The app of [`two_tabs`], of two pages, `General` and `Plugins`.
+/// The app of [`two_tabs`], of the sample plugin's two pages, `General`
+/// and `Terminal`.
 fn of_pages() -> (Fake, App, WindowId) {
-    let (fake, mut app, window) = two_tabs();
-    app.settings.pages = ["General", "Plugins"]
-        .into_iter()
-        .map(|title| super::super::settings_tab::Page {
-            id: title.to_lowercase(),
-            title: title.to_owned(),
-            icon: "gear".to_owned(),
-        })
-        .collect();
-    (fake, app, window)
+    two_tabs_of(true)
 }
 
-/// The title that the settings tab's page shows.
+/// The view of the settings tab's page that shows in `window`, if one
+/// does.
+fn page_view(app: &App, window: WindowId) -> Option<&super::super::chrome::SlotView> {
+    app.windows[&window]
+        .chrome
+        .iter()
+        .find(|view| matches!(view.view, ViewId::Page(_)))
+}
+
+/// The id of the page that the settings tab shows, of its plugin's view,
+/// once laid out.
 fn page_shown(app: &App, window: WindowId) -> String {
-    let view = settings_view(app, window).expect("its view");
-    let tree = &view.surface.tree;
-    let page = tree.by_key(&"page".into()).expect("its page");
-    match tree
-        .children(page)
-        .first()
-        .and_then(|&text| tree.kind(text))
-    {
+    let view = page_view(app, window).expect("its page's view");
+    assert!(view.frame.is_some(), "its page laid out");
+    match &view.view {
+        ViewId::Page(page) => page.clone(),
+        _ => unreachable!(),
+    }
+}
+
+/// The text of the node `key` of the page's view in `window`.
+fn page_text(app: &App, window: WindowId, key: &str) -> String {
+    let tree = &page_view(app, window)
+        .expect("its page's view")
+        .surface
+        .tree;
+    match tree.by_key(&key.into()).and_then(|node| tree.kind(node)) {
         Some(lokyr_kernel::plugins::view::Kind::Text(text)) => text.clone(),
         _ => String::new(),
     }
+}
+
+/// The key of the node with the focus in `window`, and whether it is of
+/// the page's view, or `pane` for none.
+fn focused_key(app: &App, window: WindowId) -> (String, bool) {
+    let state = &app.windows[&window];
+    match state.focus.target() {
+        lokyr_ui_core::focus::Target::Node { panel, node } => {
+            let view = state.chrome.iter().find(|view| view.id == panel).unwrap();
+            let key = view.surface.tree.key(node).unwrap().0.clone();
+            (key, matches!(view.view, ViewId::Page(_)))
+        }
+        lokyr_ui_core::focus::Target::Pane => ("pane".to_owned(), false),
+    }
+}
+
+/// Presses and lets go of `key` in `window`, of `mods`.
+fn tap(fake: &mut Fake, app: &mut App, window: WindowId, key: KeyCode, mods: Modifiers) {
+    fake.send(app, window, key_event(key, "", mods, true));
+    fake.send(app, window, key_event(key, "", mods, false));
 }
 
 #[test]
@@ -152,7 +198,17 @@ fn the_settings_tab_s_sidebar_chooses_its_page_by_the_keys_and_a_click_and_has_t
     let (mut fake, mut app, window) = of_pages();
     fake.send_app(&mut app, AppEvent::Command(SETTINGS_TAB.to_owned()));
     frames(&mut fake, &mut app, window);
-    assert_eq!(page_shown(&app, window), "General");
+    assert_eq!(page_shown(&app, window), "general");
+    // The page's view, of its plugin, takes the room beside the sidebar,
+    // its plugin told that it shows.
+    let room = settings_view(&app, window).unwrap().frame.unwrap();
+    let page = page_view(&app, window).unwrap().frame.unwrap();
+    let scale = fake.window(window).unwrap().size.scale as f32;
+    assert!(page.x >= room.x + 220.0 * scale, "{page:?} of {room:?}");
+    assert!((page.x + page.width - (room.x + room.width)).abs() < 1.0);
+    assert!((page.height - room.height).abs() < 1.0);
+    assert_eq!(page_text(&app, window, "title"), "General");
+    assert_eq!(page_text(&app, window, "shown"), "Shown 1 times");
     // The sidebar's list has the keyboard, as the tab shows.
     let view = settings_view(&app, window).unwrap();
     let list = view.surface.tree.by_key(&"pages".into()).unwrap();
@@ -164,31 +220,27 @@ fn the_settings_tab_s_sidebar_chooses_its_page_by_the_keys_and_a_click_and_has_t
         }
     );
     // The arrow down chooses the next page, the arrow up the first again.
-    fake.send(
+    tap(
+        &mut fake,
         &mut app,
         window,
-        key_event(KeyCode::ArrowDown, "", Modifiers::NONE, true),
-    );
-    fake.send(
-        &mut app,
-        window,
-        key_event(KeyCode::ArrowDown, "", Modifiers::NONE, false),
+        KeyCode::ArrowDown,
+        Modifiers::NONE,
     );
     frames(&mut fake, &mut app, window);
     assert_eq!(app.settings.chosen, 1);
-    assert_eq!(page_shown(&app, window), "Plugins");
-    fake.send(
+    assert_eq!(page_shown(&app, window), "terminal");
+    assert_eq!(page_text(&app, window, "title"), "Terminal");
+    tap(
+        &mut fake,
         &mut app,
         window,
-        key_event(KeyCode::ArrowUp, "", Modifiers::NONE, true),
-    );
-    fake.send(
-        &mut app,
-        window,
-        key_event(KeyCode::ArrowUp, "", Modifiers::NONE, false),
+        KeyCode::ArrowUp,
+        Modifiers::NONE,
     );
     frames(&mut fake, &mut app, window);
-    assert_eq!(page_shown(&app, window), "General");
+    assert_eq!(page_shown(&app, window), "general");
+    assert_eq!(page_text(&app, window, "shown"), "Shown 2 times");
     // A click on the second row chooses it.
     let view = settings_view(&app, window).unwrap();
     let frame = view.frame.unwrap();
@@ -201,16 +253,18 @@ fn the_settings_tab_s_sidebar_chooses_its_page_by_the_keys_and_a_click_and_has_t
     fake.send(&mut app, window, click(true, second, Modifiers::NONE, 1));
     fake.send(&mut app, window, click(false, second, Modifiers::NONE, 1));
     frames(&mut fake, &mut app, window);
-    assert_eq!(page_shown(&app, window), "Plugins");
+    assert_eq!(page_shown(&app, window), "terminal");
     // Another tab shown: the keyboard goes back to its pane; the settings
     // tab again keeps its page.
     let first = tabs_of(&app, window)[0];
     app.workspace.activate_tab(first);
     frames(&mut fake, &mut app, window);
     assert!(app.windows[&window].pane_has_focus());
+    assert!(page_view(&app, window).is_none());
     fake.send_app(&mut app, AppEvent::Command(SETTINGS_TAB.to_owned()));
     frames(&mut fake, &mut app, window);
-    assert_eq!(page_shown(&app, window), "Plugins");
+    assert_eq!(page_shown(&app, window), "terminal");
+    assert_eq!(page_text(&app, window, "shown"), "Shown 3 times");
     let view = settings_view(&app, window).unwrap();
     let selected = view
         .surface
@@ -244,6 +298,97 @@ fn the_settings_tab_s_tree_goes_to_a_client_of_accessibility() {
             .iter()
             .any(|(_, node)| node.label().is_some_and(|label| label.contains(name)))
     };
-    assert!(named("General") && named("Plugins"));
+    assert!(named("General") && named("Terminal"));
+    // The page's nodes too, its field among them.
+    assert!(named("Name"), "{roles:?}");
     assert!(tree.focus != accesskit::NodeId(0));
+}
+
+#[test]
+fn tab_goes_from_the_sidebar_to_the_page_s_fields_and_round() {
+    let (mut fake, mut app, window) = of_pages();
+    fake.send_app(&mut app, AppEvent::Command(SETTINGS_TAB.to_owned()));
+    frames(&mut fake, &mut app, window);
+    assert_eq!(focused_key(&app, window), ("pages".to_owned(), false));
+    // The page's field, past the sidebar's list; past the page's last
+    // field, the list again, the toggle and the button not reached.
+    tap(&mut fake, &mut app, window, KeyCode::Tab, Modifiers::NONE);
+    frames(&mut fake, &mut app, window);
+    assert_eq!(focused_key(&app, window), ("name".to_owned(), true));
+    tap(&mut fake, &mut app, window, KeyCode::Tab, Modifiers::NONE);
+    frames(&mut fake, &mut app, window);
+    assert_eq!(focused_key(&app, window), ("pages".to_owned(), false));
+    // Shift-Tab the other way, and Escape back to the list.
+    let shift = Modifiers {
+        shift: true,
+        ..Modifiers::NONE
+    };
+    tap(&mut fake, &mut app, window, KeyCode::Tab, shift);
+    frames(&mut fake, &mut app, window);
+    assert_eq!(focused_key(&app, window), ("name".to_owned(), true));
+    tap(
+        &mut fake,
+        &mut app,
+        window,
+        KeyCode::Escape,
+        Modifiers::NONE,
+    );
+    frames(&mut fake, &mut app, window);
+    assert_eq!(focused_key(&app, window), ("pages".to_owned(), false));
+}
+
+#[test]
+fn a_plugin_s_ask_of_its_page_opens_the_settings_tab_there_and_the_page_hidden_is_told() {
+    let (mut fake, mut app, window) = of_pages();
+    let first = tabs_of(&app, window)[0];
+    // Its command opens the tab at its second page.
+    fake.send_app(
+        &mut app,
+        AppEvent::Command("sample-pages.show-terminal".to_owned()),
+    );
+    frames(&mut fake, &mut app, window);
+    let (settings, _) = app.workspace.settings_tab().expect("the settings tab");
+    assert_eq!(shown(&app, window), settings);
+    assert_eq!(page_shown(&app, window), "terminal");
+    assert_eq!(page_text(&app, window, "shown"), "Shown 1 times");
+    // Another tab shown hides it, as its plugin hears; shown again, it
+    // hears it shown.
+    app.workspace.activate_tab(first);
+    frames(&mut fake, &mut app, window);
+    assert!(page_view(&app, window).is_none());
+    fake.send_app(
+        &mut app,
+        AppEvent::Command("sample-pages.show-terminal".to_owned()),
+    );
+    frames(&mut fake, &mut app, window);
+    assert_eq!(page_text(&app, window, "shown"), "Shown 2 times");
+    // The page's button shows the same page; the first page chosen in the
+    // sidebar shows it, its button then the other.
+    tap(
+        &mut fake,
+        &mut app,
+        window,
+        KeyCode::ArrowUp,
+        Modifiers::NONE,
+    );
+    frames(&mut fake, &mut app, window);
+    assert_eq!(page_shown(&app, window), "general");
+    let view = page_view(&app, window).unwrap();
+    let frame = view.frame.unwrap();
+    let button = view.surface.tree.by_key(&"show-terminal".into()).unwrap();
+    let at = view
+        .surface
+        .layout
+        .frame(&view.surface.tree, button)
+        .unwrap();
+    let scale = fake.window(window).unwrap().size.scale;
+    let middle = Point {
+        x: f64::from(frame.x + at.x + at.width / 2.0) / scale,
+        y: f64::from(frame.y + at.y + at.height / 2.0) / scale,
+    };
+    fake.send(&mut app, window, click(true, middle, Modifiers::NONE, 1));
+    fake.send(&mut app, window, click(false, middle, Modifiers::NONE, 1));
+    frames(&mut fake, &mut app, window);
+    assert_eq!(page_shown(&app, window), "terminal");
+    assert_eq!(page_text(&app, window, "shown"), "Shown 3 times");
 }

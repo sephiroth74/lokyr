@@ -97,6 +97,9 @@ pub enum ViewId {
     TitleButtons(WindowId),
     /// One of its panels.
     Panel(PanelId),
+    /// One of its pages of the settings tab, by its manifest's id, of
+    /// Lokyr's own plugins alone.
+    Page(String),
 }
 
 impl ViewId {
@@ -119,7 +122,7 @@ impl ViewId {
             Self::StatusBar(_) => Some(Slot::StatusBar),
             Self::PaneHeader(_) => Some(Slot::PaneHeader),
             Self::TitleButtons(_) => Some(Slot::TitleButtons),
-            Self::Panel(_) => None,
+            Self::Panel(_) | Self::Page(_) => None,
         }
     }
 }

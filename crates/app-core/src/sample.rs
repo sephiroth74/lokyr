@@ -238,8 +238,9 @@ impl Plugin for SampleSlots {
                 };
                 Some(panel)
             }
-            // The titlebar's buttons are not the sample's.
-            ViewId::TitleButtons(_) => None,
+            // The titlebar's buttons and the settings tab's pages are not
+            // the sample's.
+            ViewId::TitleButtons(_) | ViewId::Page(_) => None,
         }
     }
 }

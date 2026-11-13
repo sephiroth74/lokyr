@@ -748,6 +748,11 @@ fn on_kernel(
                 AppRequest::CloseAsked(Closing::Pane(pane)) => {
                     kernel.workspace.close_pane(pane);
                 }
+                // The settings tab shows at the page, which its plugin
+                // hears, as the app shows it.
+                AppRequest::ShowPage { plugin, page } => {
+                    plugins.page_shown(&plugin, &page, true);
+                }
                 _ => {}
             }
         }
@@ -792,10 +797,15 @@ fn on_kernel(
 /// the kernel's host's.
 fn on_fake(scenario: &Scenario, world: &World, front: Front) -> Vec<Entry> {
     let (mut plugin, trace) = conformer(scenario, world, front);
-    // The plugin fills no slot, as a manifest of none.
-    let mut host = FakeHost::new(name(scenario)).with_slots(Vec::new());
+    // The plugin fills no slot, as a manifest of none, and has the page of
+    // its manifest, of one.
+    let mut host = FakeHost::new(name(scenario))
+        .with_slots(Vec::new())
+        .with_pages(Vec::new());
     if let Some(capabilities) = &scenario.capabilities {
-        host = host.with_capabilities(capabilities.clone());
+        host = host
+            .with_capabilities(capabilities.clone())
+            .with_pages(vec![scenarios::PAGE.to_owned()]);
     }
     host.set_clipboard(Some(scenarios::CLIPBOARD));
     host.set_plugins(scenarios::plugins());
@@ -862,12 +872,17 @@ fn plain(data: &Data) -> serde_json::Value {
     }
 }
 
-/// The manifest of a plugin of `capabilities` alone.
+/// The manifest of a plugin of `capabilities` alone, and of the settings
+/// tab's page of the scenarios.
 fn manifest(capabilities: &[Capability]) -> String {
     let mut text = "[plugin]\nname = \"acme/conformer\"\nkind = \"builtin\"\nlicense = \"MIT\"\n[capabilities]\n".to_owned();
     for capability in capabilities {
         text.push_str(&format!("{capability} = true\n"));
     }
+    text.push_str(&format!(
+        "[contributes]\npages = [{{ id = \"{}\", icon = \"gear\" }}]\n",
+        scenarios::PAGE
+    ));
     text
 }
 
@@ -1056,11 +1071,12 @@ fn kind(request: &Request) -> usize {
         Request::OpenAt { .. } => 110,
         Request::Plugins => 111,
         Request::SetPluginEnabled { .. } => 112,
+        Request::ShowPage(_) => 113,
     }
 }
 
 /// How many kinds of requests the plugin API has.
-const KINDS: usize = 113;
+const KINDS: usize = 114;
 
 #[test]
 fn the_scenarios_hold_every_request_of_the_plugin_api() {

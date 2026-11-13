@@ -1029,8 +1029,9 @@ fn a_host_of_a_manifest_holds_what_it_declares_but_the_network_s_and_the_process
             Some(Code::MissingCapability)
         ]
     );
+    let declared = super::declared(manifest);
     assert_eq!(
-        super::declared(manifest),
+        (declared.capabilities, declared.uses, declared.builtin),
         (
             vec![
                 Capability::PaneView,
@@ -1043,6 +1044,15 @@ fn a_host_of_a_manifest_holds_what_it_declares_but_the_network_s_and_the_process
             false,
         )
     );
+    assert!(declared.pages.is_empty());
+    // A built-in plugin's pages, by their ids.
+    let pages = super::declared(concat!(
+        "[plugin]\nname = \"lokyr/manager\"\nkind = \"builtin\"\n",
+        "[contributes]\npages = [\n  { id = \"plugins\", icon = \"extensions\" },\n",
+        "  { icon = \"cloud\", id = \"registry\" },\n]\n",
+    ));
+    assert!(pages.builtin);
+    assert_eq!(pages.pages, ["plugins", "registry"]);
 }
 
 #[test]
@@ -2029,4 +2039,36 @@ fn a_plugin_keeps_the_mac_awake_of_its_capability_as_its_call_returns() {
     let mut without = FakeHost::new("acme/probe").with_capabilities(Vec::new());
     let refused = without.command(&mut probe, "probe.go", Args::new());
     assert_eq!(refused.unwrap_err().code, Code::MissingCapability);
+}
+
+#[test]
+fn a_built_in_plugin_shows_a_page_of_its_manifest_alone_and_hears_it_shown_and_hidden() {
+    let manifest = concat!(
+        "[plugin]\nname = \"lokyr/probe\"\nkind = \"builtin\"\n",
+        "[contributes]\npages = [{ id = \"general\", icon = \"settings\" }, ",
+        "{ id = \"terminal\", icon = \"terminal\" }]\n",
+    );
+    let mut host = FakeHost::new("lokyr/probe").with_manifest(manifest);
+    let codes = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+    let seen = std::rc::Rc::clone(&codes);
+    let mut probe = Probe::new(move |cx, _| {
+        let code = |done: Result<(), Error>| done.err().map(|error| error.code);
+        let mut seen = seen.borrow_mut();
+        seen.push(code(cx.show_page("general")));
+        seen.push(code(cx.show_page("other")));
+        Ok(())
+    });
+    host.activate(&mut probe).unwrap();
+    assert_eq!(host.page(), None);
+    host.command(&mut probe, "probe.go", Args::new()).unwrap();
+    assert_eq!(*codes.borrow(), [None, Some(Code::NotFound)]);
+    assert_eq!(host.page(), Some("general"));
+    host.deliver(&mut probe).unwrap();
+    assert_eq!(probe.heard.last().unwrap(), &["page-shown"]);
+    // The test shows its other page, as the user chooses it: the first
+    // hidden, then the other shown.
+    host.show_page("terminal");
+    host.deliver(&mut probe).unwrap();
+    assert_eq!(probe.heard.last().unwrap(), &["page-hidden", "page-shown"]);
+    assert_eq!(host.page(), Some("terminal"));
 }

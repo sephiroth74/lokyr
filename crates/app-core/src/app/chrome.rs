@@ -179,9 +179,10 @@ impl<B: Backend> App<B> {
     /// draw: the headers of the panes that its active tab shows, of the
     /// config's plugin or the first that fills them; the strip's and the
     /// status bar's of each plugin that fills them, in their order; the tab
-    /// bar's, of the config's plugin or the first; and the titlebar's
-    /// buttons over it, as a title or a sidebar through the titlebar lies
-    /// under them.
+    /// bar's, of the config's plugin or the first; the titlebar's buttons
+    /// over it, as a title or a sidebar through the titlebar lies under
+    /// them; and the panels over them, the settings tab's chosen page right
+    /// over the tab's view.
     pub(super) fn slot_views(&self, window: WindowId) -> Vec<(String, ViewId)> {
         let Some(state) = self.windows.get(&window) else {
             return Vec::new();
@@ -252,6 +253,12 @@ impl<B: Backend> App<B> {
             .filter(|view| !state.panels.is_open(view.id));
         for view in placed.chain(native) {
             views.push((view.plugin.clone(), view.view.clone()));
+            if view.plugin == OVERFLOW
+                && view.view == super::settings_tab::settings_view()
+                && let Some((plugin, page)) = self.settings.chosen_page()
+            {
+                views.push((plugin.to_owned(), page));
+            }
         }
         views
     }
@@ -479,6 +486,22 @@ impl<B: Backend> App<B> {
         }
         events.extend(super::surfaces::focus_events(state));
         self.ui_events.extend(events);
+        // Tab goes through the settings tab's sidebar and its page as one.
+        let id_of = |found: &dyn Fn(&SlotView) -> bool| {
+            state
+                .chrome
+                .iter()
+                .find(|view| found(view))
+                .map(|view| view.id)
+        };
+        let settings = id_of(&|view| {
+            view.plugin == OVERFLOW && view.view == super::settings_tab::settings_view()
+        });
+        let page = id_of(&|view| matches!(view.view, ViewId::Page(_)));
+        match (settings, page) {
+            (Some(settings), Some(page)) => state.focus.set_chain(&[settings, page]),
+            _ => state.focus.set_chain(&[]),
+        }
     }
 
     /// Lays out `window`'s slots' views in a window of `size`, as `ui-core`'s

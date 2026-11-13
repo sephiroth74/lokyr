@@ -409,6 +409,9 @@ pub struct FakeHost {
     uses: Option<Uses>,
     /// The slots that its manifest fills; `None` for every one.
     slots: Option<Vec<Slot>>,
+    /// The ids of the settings tab's pages that its manifest has; `None`
+    /// for every one.
+    pages: Option<Vec<String>>,
     /// The commands of the app's and of the other plugins', which its own
     /// join.
     others: Vec<Command>,
@@ -445,6 +448,9 @@ pub struct FakeHost {
     /// The plugins that a read of the plugins gives, as the test gave them,
     /// whose states the plugin's turning them off and on changes.
     plugins: Vec<host::PluginInfo>,
+    /// The page of the plugin's that the settings tab shows, as the
+    /// plugin's or the test's showing of it opened the tab.
+    page: Option<String>,
     /// Where the plugin's moves of tabs to windows of their own put those
     /// windows on the screens.
     places: BTreeMap<WindowId, ScreenPoint>,
@@ -531,6 +537,7 @@ impl FakeHost {
             granted: None,
             uses: None,
             slots: None,
+            pages: None,
             others: Vec::new(),
             activated: false,
             panes: BTreeMap::new(),
@@ -546,6 +553,7 @@ impl FakeHost {
             day: DAY,
             agents: Vec::new(),
             plugins: Vec::new(),
+            page: None,
             notice: false,
             keeps_state: true,
             themes: host::Themes {
@@ -634,12 +642,17 @@ impl FakeHost {
     /// reads it, and given of [`FakeHost::with_capabilities`],
     /// [`FakeHost::with_uses`] and [`FakeHost::with_slots`].
     pub fn with_manifest(self, manifest: &str) -> Self {
-        let (mut capabilities, uses, builtin) = declared(manifest);
+        let Declared {
+            mut capabilities,
+            uses,
+            builtin,
+            pages,
+        } = declared(manifest);
         // Lokyr's own plugins' alone, which another's manifest has refused.
         if !builtin {
             capabilities.retain(|capability| !capability.is_first_party_only());
         }
-        let host = self.with_capabilities(capabilities);
+        let host = self.with_capabilities(capabilities).with_pages(pages);
         match uses {
             Some(patterns) => host.with_uses(patterns),
             None => host,
@@ -658,6 +671,13 @@ impl FakeHost {
     /// which its views are of, beside its panels.
     pub fn with_slots(mut self, slots: Vec<Slot>) -> Self {
         self.slots = Some(slots);
+        self
+    }
+
+    /// The host, whose plugin's manifest has the settings tab's pages of
+    /// the ids `pages` alone, which its page views are of.
+    pub fn with_pages(mut self, pages: Vec<String>) -> Self {
+        self.pages = Some(pages);
         self
     }
 
@@ -779,6 +799,39 @@ impl FakeHost {
     /// plugin's turning them off and on left.
     pub fn plugins(&self) -> &[host::PluginInfo] {
         &self.plugins
+    }
+
+    /// Opens the settings tab at the plugin's page `page`, or another of
+    /// its pages there, as the user does, whose view renders from now: the
+    /// plugin hears the page shown, and the one shown before hidden.
+    pub fn show_page(&mut self, page: &str) -> &mut Self {
+        self.open_page(page.to_owned());
+        self
+    }
+
+    /// The plugin's page that the settings tab shows, if it is open at one
+    /// of the plugin's.
+    pub fn page(&self) -> Option<&str> {
+        self.page.as_deref()
+    }
+
+    /// Whether the plugin's manifest has the page `page`.
+    fn has_page(&self, page: &str) -> bool {
+        self.pages
+            .as_ref()
+            .is_none_or(|pages| pages.iter().any(|own| own == page))
+    }
+
+    /// Shows the page `page`, the one before hidden, as the app shows it.
+    fn open_page(&mut self, page: String) {
+        if self.page.as_ref() == Some(&page) {
+            return;
+        }
+        if let Some(before) = self.page.take() {
+            self.owed.push(Event::PageHidden(before));
+        }
+        self.owed.push(Event::PageShown(page.clone()));
+        self.page = Some(page);
     }
 
     /// Shows a notice of the app's, or none, which a read tells.
@@ -1221,6 +1274,8 @@ impl FakeHost {
                 Event::Lines { .. }
                     | Event::Searched { .. }
                     | Event::PanelClosed(_)
+                    | Event::PageShown(_)
+                    | Event::PageHidden(_)
                     | Event::ConfigChanged
                     | Event::Answered { .. }
                     | Event::Saved { .. }
@@ -1377,6 +1432,13 @@ impl FakeHost {
                     (true, host::PluginState::Off) => host::PluginState::Waiting,
                     (true, state) => state,
                 };
+            }
+        }
+        // The settings tab shows at the page, as the app shows it once the
+        // call returns.
+        for request in &asked {
+            if let Request::ShowPage(page) = request {
+                self.open_page(page.clone());
             }
         }
         self.done.extend(asked);
@@ -2290,6 +2352,13 @@ impl FakeHost {
             }
             ViewId::PaneHeader(pane) => self.pane_window(*pane).ok(),
             ViewId::Panel(id) => self.panel_windows.get(id).copied(),
+            // A page of its manifest's, while the settings tab is open, in
+            // the first window.
+            ViewId::Page(page) => self
+                .page
+                .as_ref()
+                .filter(|_| self.has_page(page))
+                .and_then(|_| self.windows.keys().next().copied()),
         };
         window.ok_or_else(not_found)
     }
@@ -3166,6 +3235,16 @@ impl Calling<'_> {
                 self.cancelled.push(*id);
                 Response::Done
             }
+            // A page of the plugin's manifest.
+            Request::ShowPage(page) => {
+                if !self.host.has_page(page) {
+                    return Err(Error::new(
+                        Code::NotFound,
+                        format!("the plugin has no page `{page}`"),
+                    ));
+                }
+                Response::Done
+            }
             // A plugin that the host has, as the app's checks it.
             Request::SetPluginEnabled { plugin, .. } => {
                 if !self.host.plugins.iter().any(|info| &info.name == plugin) {
@@ -3934,10 +4013,11 @@ fn write_node(out: &mut String, node: &Node, depth: usize) {
 }
 
 /// The capabilities that the manifest `text` declares in its
-/// `[capabilities]`, and the commands of its `[uses]`, if it has them, as
-/// [`FakeHost::with_manifest`] reads them.
-fn declared(text: &str) -> (Vec<Capability>, Option<Vec<String>>, bool) {
+/// `[capabilities]`, the commands of its `[uses]`, if it has them, and its
+/// settings tab's pages, as [`FakeHost::with_manifest`] reads them.
+fn declared(text: &str) -> Declared {
     let (mut capabilities, mut uses, mut builtin) = (Vec::new(), None, false);
+    let mut pages = Vec::new();
     let mut section = "";
     let mut lines = text.lines();
     while let Some(line) = lines.next() {
@@ -3953,6 +4033,7 @@ fn declared(text: &str) -> (Vec<Capability>, Option<Vec<String>>, bool) {
                 "plugin" => "plugin",
                 "capabilities" => "capabilities",
                 "uses" => "uses",
+                "contributes" => "contributes",
                 _ => "",
             };
             continue;
@@ -3989,10 +4070,36 @@ fn declared(text: &str) -> (Vec<Capability>, Option<Vec<String>>, bool) {
             })),
             "uses" if key == "commands" => uses = Some(texts()),
             "plugin" if key == "kind" => builtin = value == "\"builtin\"",
+            // Each inline table's `id`.
+            "contributes" if key == "pages" => {
+                pages.extend(value.split('{').skip(1).filter_map(|table| {
+                    table.split([',', '}']).find_map(|pair| {
+                        let (key, value) = pair.split_once('=')?;
+                        (key.trim() == "id").then(|| value.trim().trim_matches('"').to_owned())
+                    })
+                }));
+            }
             _ => {}
         }
     }
-    (capabilities, uses, builtin)
+    Declared {
+        capabilities,
+        uses,
+        builtin,
+        pages,
+    }
+}
+
+/// What a plugin's manifest declares, of [`declared`].
+struct Declared {
+    /// Its capabilities.
+    capabilities: Vec<Capability>,
+    /// The commands that it runs, if it says.
+    uses: Option<Vec<String>>,
+    /// Whether it is one of Lokyr's own.
+    builtin: bool,
+    /// The ids of its settings tab's pages.
+    pages: Vec<String>,
 }
 
 /// The system's day that the fake host gives by default, in days since

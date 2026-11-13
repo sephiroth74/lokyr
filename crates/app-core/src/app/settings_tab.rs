@@ -1,8 +1,14 @@
 //! The settings tab: a tab of no pane, one at most in the app, which shows
 //! the settings' pages in the room that a tab's panes take, as a view of
-//! the app's own under the window's panels; opened in the window in front,
-//! or the one open shown, and closed as a tab closes.
+//! the app's own under the window's panels, its sidebar of the pages that
+//! Lokyr's own plugins' manifests have, and the chosen page beside it, its
+//! plugin's view over the app's; opened in the window in front, or the one
+//! open shown, and closed as a tab closes. The plugin of the page shown
+//! hears it shown, and hidden as another page, another tab or none shows.
 
+use std::sync::Arc;
+
+use lokyr_kernel::plugins::host::PluginInfo;
 use lokyr_kernel::plugins::ui::{
     Anchor as PanelAnchor, Corner as PanelCorner, PanelId, PanelOptions, Role as PanelRole,
     UiEvent, ViewId,
@@ -30,23 +36,40 @@ const ROW: f32 = 28.0;
 /// The key of the sidebar's list of pages.
 pub(super) const PAGES: &str = "pages";
 
-/// A page of the settings tab: its id, its title in the language shown,
-/// and its icon, of the host's.
+/// The key of the room beside the sidebar that the chosen page's view
+/// takes.
+pub(super) const PAGE: &str = "page";
+
+/// A page of the settings tab: its plugin, its id, its title in the
+/// language shown, and its icon, of the host's.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Page {
+    pub(crate) plugin: String,
     pub(crate) id: String,
     pub(crate) title: String,
     pub(crate) icon: String,
 }
 
 /// What the app keeps of the settings tab: its pages, in the sidebar's
-/// order, the chosen one, and the revision of its tree, which a change of
-/// either renews.
+/// order, the chosen one, the revision of its tree, which a change of
+/// either renews, the plugins' list and the language that the pages were
+/// read of, and the page that its plugin was told shows.
 #[derive(Debug, Default)]
 pub(crate) struct SettingsTab {
     pub(crate) pages: Vec<Page>,
     pub(crate) chosen: usize,
     pub(crate) revision: u64,
+    read: Option<(Arc<[PluginInfo]>, String)>,
+    told: Option<(String, String)>,
+}
+
+impl SettingsTab {
+    /// The chosen page's plugin and view, if the tab has a page.
+    pub(super) fn chosen_page(&self) -> Option<(&str, ViewId)> {
+        self.pages
+            .get(self.chosen)
+            .map(|page| (page.plugin.as_str(), ViewId::Page(page.id.clone())))
+    }
 }
 
 /// The settings tab's view, the app's own.
@@ -59,6 +82,7 @@ impl<B: Backend> App<B> {
     /// the one that has the focus, right after the tab that it shows, or a
     /// new window's; or shows the one open, wherever it is.
     pub(super) fn open_settings_tab(&mut self, platform: &mut dyn Platform) {
+        self.refresh_pages();
         let title = self.texts.text("settings-tab-title");
         if let Some((tab, shown)) = self.workspace.settings_tab() {
             self.workspace.activate_tab(tab);
@@ -89,8 +113,101 @@ impl<B: Backend> App<B> {
         }
     }
 
+    /// Shows the settings tab at the page `page` of the plugin `plugin`, in
+    /// the window in front, or where the tab shows, as its plugin asks.
+    pub(super) fn show_page(&mut self, platform: &mut dyn Platform, plugin: &str, page: &str) {
+        self.refresh_pages();
+        let found = self
+            .settings
+            .pages
+            .iter()
+            .position(|shown| shown.plugin == plugin && shown.id == page);
+        if let Some(at) = found
+            && at != self.settings.chosen
+        {
+            self.settings.chosen = at;
+            self.settings.revision += 1;
+        }
+        self.open_settings_tab(platform);
+        self.request_frames(platform);
+    }
+
+    /// Reads the pages of the plugins anew, as the plugins' list or the
+    /// language changed since: the chosen page stays, or the first is.
+    pub(super) fn refresh_pages(&mut self) {
+        let infos = self.plugins.infos();
+        let language = self.texts.language();
+        if self
+            .settings
+            .read
+            .as_ref()
+            .is_some_and(|(read, of)| Arc::ptr_eq(read, &infos) && of == language)
+        {
+            return;
+        }
+        let pages: Vec<Page> = self
+            .plugins
+            .pages(language)
+            .into_iter()
+            .map(|page| Page {
+                plugin: page.plugin,
+                id: page.id,
+                title: page.title,
+                icon: page.icon,
+            })
+            .collect();
+        let chosen = self
+            .settings
+            .pages
+            .get(self.settings.chosen)
+            .and_then(|was| {
+                pages
+                    .iter()
+                    .position(|page| page.plugin == was.plugin && page.id == was.id)
+            })
+            .unwrap_or(0);
+        if pages != self.settings.pages || chosen != self.settings.chosen {
+            self.settings.pages = pages;
+            self.settings.chosen = chosen;
+            self.settings.revision += 1;
+        }
+        self.settings.read = Some((infos, language.to_owned()));
+    }
+
+    /// Tells the plugin of the page that shows now, the settings tab shown
+    /// in its window at it, that it does, and the one of the page that
+    /// showed before that it no longer does.
+    pub(super) fn settle_page(&mut self) {
+        let shows = self.workspace.settings_tab().is_some_and(|(tab, shown)| {
+            self.workspace
+                .window(shown)
+                .is_some_and(|shown| shown.active_tab() == tab)
+        });
+        let page = self
+            .settings
+            .pages
+            .get(self.settings.chosen)
+            .filter(|_| shows);
+        let same = match (&self.settings.told, page) {
+            (Some((plugin, id)), Some(page)) => *plugin == page.plugin && *id == page.id,
+            (None, None) => true,
+            _ => false,
+        };
+        if same {
+            return;
+        }
+        if let Some((plugin, id)) = self.settings.told.take() {
+            self.plugins.page_shown(&plugin, &id, false);
+        }
+        if let Some(page) = page {
+            self.plugins.page_shown(&page.plugin, &page.id, true);
+            self.settings.told = Some((page.plugin.clone(), page.id.clone()));
+        }
+    }
+
     /// Opens `window`'s view of the settings tab, under its panels, as the
-    /// tab shows, or closes it as the tab hides or closes.
+    /// tab shows, its pages read anew if the plugins changed, or closes it
+    /// as the tab hides or closes.
     pub(super) fn settle_settings(&mut self, platform: &mut dyn Platform, window: WindowId) {
         let Some(state) = self.windows.get(&window) else {
             return;
@@ -99,6 +216,12 @@ impl<B: Backend> App<B> {
             .workspace
             .window(state.window)
             .is_some_and(|shown| self.workspace.is_settings(shown.active_tab()));
+        if shows {
+            self.refresh_pages();
+        }
+        let Some(state) = self.windows.get(&window) else {
+            return;
+        };
         let open = state
             .chrome
             .iter()
@@ -164,13 +287,15 @@ impl<B: Backend> App<B> {
         if item < self.settings.pages.len() && item != self.settings.chosen {
             self.settings.chosen = item;
             self.settings.revision += 1;
+            self.settle_page();
             self.request_frames(platform);
         }
     }
 
     /// The settings tab's tree: its sidebar of pages, each a row of its
-    /// icon and its title, the chosen one selected, and the chosen page
-    /// beside it; of no page, a text that tells that none is there yet.
+    /// icon and its title, the chosen one selected, and the room beside it
+    /// that the chosen page's view takes; of no page, a text there that
+    /// tells that none is there yet.
     pub(super) fn settings_tree(&self) -> Node {
         let pages = &self.settings.pages;
         let row = Node::container(vec![
@@ -230,22 +355,19 @@ impl<B: Backend> App<B> {
                 background: Some(Token::from("panel.bg")),
                 ..Style::default()
             });
-        let shown = match pages.get(self.settings.chosen) {
-            Some(page) => Node::text(page.title.clone()).style(Style {
-                text_size: Some(TextSize::Large),
-                ..Style::default()
-            }),
-            None => Node::text(self.texts.text("settings-tab-empty")).style(Style {
+        let empty = pages.is_empty().then(|| {
+            Node::text(self.texts.text("settings-tab-empty")).style(Style {
                 text_size: Some(TextSize::Small),
                 color: Some(Token::from("text.secondary")),
                 ..Style::default()
-            }),
-        };
-        let page = Node::container(vec![shown])
-            .key("page")
+            })
+        });
+        let page = Node::container(empty.into_iter().collect())
+            .key(PAGE)
             .role(NodeRole::Group)
             .layout(Layout {
                 grow: 1.0,
+                height: Length::Fraction(1.0),
                 justify: Justify::Center,
                 align: Align::Center,
                 ..Layout::default()

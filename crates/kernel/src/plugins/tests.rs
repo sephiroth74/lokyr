@@ -26,6 +26,7 @@ mod config;
 mod consent;
 mod images;
 mod lazy;
+mod pages;
 mod timers;
 
 type Activate = Box<dyn FnMut(&mut Cx<'_>) -> Result<(), Error>>;

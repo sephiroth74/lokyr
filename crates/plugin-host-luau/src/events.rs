@@ -2,7 +2,8 @@
 //! table of its fields and its `kind`, its name, as `{ kind =
 //! "tab-created", tab = 3, window = 1, index = 0 }`, the workspace's as the
 //! others, an event of no fields its `kind` alone, as `{ kind =
-//! "keys-changed" }`, and a panel's closing of its panel's `id`. A view's
+//! "keys-changed" }`, a panel's closing of its panel's `id`, and a page's
+//! showing and hiding of its `page`. A view's
 //! event alike: its `view`, its node's `key`, and its `kind` and its
 //! fields, as `{ view = { panel = "find" }, key = "query", kind = "submit",
 //! text = "x", shift = false }`. Their fields are as the SDK's other types
@@ -20,7 +21,11 @@ pub(crate) const WORKSPACE: &str = "workspace";
 
 /// The field of the value of an event's variant of a value that is no
 /// table, by the event's name, as a panel's closing names its panel.
-const VALUES: [(&str, &str); 1] = [("panel-closed", "id")];
+const VALUES: [(&str, &str); 3] = [
+    ("panel-closed", "id"),
+    ("page-shown", "page"),
+    ("page-hidden", "page"),
+];
 
 /// The field of the value of the event `kind`'s variant of a value that is
 /// no table.

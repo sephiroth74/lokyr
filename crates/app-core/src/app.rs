@@ -880,6 +880,14 @@ impl<B: Backend> App<B> {
         ) {
             eprintln!("lokyr: a built-in plugin's manifest does not read: {error}");
         }
+        // Two pages of the settings tab, for a build of tests.
+        #[cfg(feature = "sample-pages")]
+        if let Err(error) = plugins.add_builtin(
+            crate::sample_pages::MANIFEST,
+            Box::new(crate::sample_pages::SamplePages::default()),
+        ) {
+            eprintln!("lokyr: a built-in plugin's manifest does not read: {error}");
+        }
         // A plugin on a thread of its own that renders without pause, for a
         // build of tests.
         #[cfg(feature = "sample-worker")]
@@ -3073,6 +3081,7 @@ impl<B: Backend> App<B> {
                 Request::SetPluginEnabled { namespace, enabled } => {
                     self.set_plugin_enabled(platform, &namespace, enabled);
                 }
+                Request::ShowPage { plugin, page } => self.show_page(platform, &plugin, &page),
                 Request::PreviewFont(family) => self.preview_font(platform, family),
                 Request::SetFont(family) => self.set_font(platform, &family),
                 Request::ConfirmPaste { pane, text } => self.ask_paste(platform, pane, text),
@@ -3385,6 +3394,8 @@ impl<B: Backend> App<B> {
     /// without events costs nothing.
     fn end_turn(&mut self, platform: &mut dyn Platform) {
         self.events(platform);
+        // The settings tab's page that shows now, for its plugin.
+        self.settle_page();
         // The lines and the ends of the packages' jobs, for their plugins.
         self.take_packages();
         // The saves' files written, for their plugins.

@@ -29,6 +29,8 @@ sample-slots = ["lokyr-app-core/sample-slots"]
 # A plugin on a thread of its own that renders the status bar without pause,
 # reading the focused pane, for a build of tests.
 sample-worker = ["lokyr-app-core/sample-worker"]
+# A plugin of two pages of the settings tab, for a build of tests.
+sample-pages = ["lokyr-app-core/sample-pages"]
 
 [dependencies]
 lokyr-app-core.workspace = true

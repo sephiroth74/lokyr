@@ -222,9 +222,32 @@ pub fn all(world: &World) -> Vec<Scenario> {
         awake(false),
         packages(true),
         packages(false),
+        pages(),
         core_actions(world),
     ]
 }
+
+/// The settings tab's pages: the plugin's own shown, which it hears, and
+/// one that its manifest lacks refused.
+fn pages() -> Scenario {
+    let mut step = ask(vec![
+        (Request::ShowPage(PAGE.to_owned()), Response::Done),
+        (
+            Request::ShowPage("other".to_owned()),
+            failed(Code::NotFound, "the plugin has no page `other`"),
+        ),
+    ]);
+    step.heard = vec![Event::PageShown(PAGE.to_owned())];
+    Scenario {
+        name: "the settings tab's pages".to_owned(),
+        capabilities: Some(Vec::new()),
+        subscriptions: Vec::new(),
+        steps: vec![step],
+    }
+}
+
+/// The page of the settings tab that the plugin's manifest has.
+pub const PAGE: &str = "conformer";
 
 /// The Mac kept awake, of `keep-awake`, when `allowed`: the system and the
 /// display, the system alone, and let sleep; refused of a plugin that

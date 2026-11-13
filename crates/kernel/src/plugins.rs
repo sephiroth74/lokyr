@@ -132,6 +132,13 @@ pub enum Request {
     PreviewFont(Option<String>),
     /// Name a monospaced font family in the config's `[font] family`.
     SetFont(String),
+    /// Show the settings tab at the page of a plugin, of its manifest.
+    ShowPage {
+        /// The plugin.
+        plugin: String,
+        /// The page's id.
+        page: String,
+    },
     /// Turn the plugin of a namespace on or off, as its section of the
     /// config, `[plugins.<namespace>] enabled`.
     SetPluginEnabled {
@@ -639,6 +646,8 @@ enum Trigger {
     Event(String),
     /// A render of a view of the slot of the name.
     Slot(String),
+    /// A render of the plugin's page of the settings tab of the id.
+    Page(String),
 }
 
 impl Trigger {
@@ -666,6 +675,7 @@ impl Trigger {
                 )),
                 Some(("event", event)) => Ok(Self::Event(event.to_owned())),
                 Some(("slot", slot)) => Ok(Self::Slot(slot.to_owned())),
+                Some(("page", page)) => Ok(Self::Page(page.to_owned())),
                 Some(("osc", _)) => Err(Error::new(
                     Code::Unavailable,
                     format!(
@@ -815,6 +825,13 @@ impl State {
                 .any(|name| name == slot.name())
         })
     }
+
+    /// Whether its manifest has the settings tab's page `page`.
+    fn has_page(&self, page: &str) -> bool {
+        self.manifest
+            .as_ref()
+            .is_some_and(|manifest| manifest.contributes.pages.iter().any(|own| own.id == page))
+    }
 }
 
 /// The plugins, in the order of their activation, and what their calls
@@ -847,6 +864,20 @@ pub struct Plugins {
     /// The plugins as a read of them tells, of the fingerprint of what it
     /// tells, kept until one of them changes.
     infos: (u64, Arc<[host::PluginInfo]>),
+}
+
+/// A page of the settings tab, of a plugin's manifest, as the sidebar lists
+/// it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PageInfo {
+    /// Its plugin.
+    pub plugin: String,
+    /// Its id.
+    pub id: String,
+    /// Its icon, of the host's.
+    pub icon: String,
+    /// Its title, in the language shown.
+    pub title: String,
 }
 
 /// What a plugin's section of the config tells the user, of the plugin's
@@ -2255,6 +2286,41 @@ impl Plugins {
             .push((Some(plugin.to_owned()), Event::PackagesEnded { id, ok }));
     }
 
+    /// The settings tab's pages of the plugins, built in, of their
+    /// manifests, in the plugins' order, but the plugins turned off: each
+    /// one's plugin, id, icon, and title, its catalogs' `page-<id>` in the
+    /// language `language`, or its id without one.
+    pub fn pages(&self, language: &str) -> Vec<PageInfo> {
+        self.entries
+            .iter()
+            .map(|entry| &entry.state)
+            .filter(|state| state.status != Status::Off)
+            .filter_map(|state| Some((state, state.manifest.as_ref()?)))
+            .flat_map(|(state, manifest)| {
+                let texts = Texts::new(language, &pairs(&state.catalogs));
+                manifest.contributes.pages.iter().map(move |page| PageInfo {
+                    plugin: state.name.clone(),
+                    id: page.id.clone(),
+                    icon: page.icon.clone(),
+                    title: texts
+                        .get(&format!("page-{}", page.id))
+                        .unwrap_or_else(|| page.id.clone()),
+                })
+            })
+            .collect()
+    }
+
+    /// Tells the plugin `plugin` that its page `page` shows, or no longer
+    /// does, for its next delivery.
+    pub fn page_shown(&mut self, plugin: &str, page: &str, shown: bool) {
+        let event = if shown {
+            Event::PageShown(page.to_owned())
+        } else {
+            Event::PageHidden(page.to_owned())
+        };
+        self.out.events.push((Some(plugin.to_owned()), event));
+    }
+
     /// Posts `event`, of the workspace's, for the next delivery.
     pub fn post(&mut self, event: Event) {
         // The views of a window or a pane that closed go with it, and the
@@ -2284,7 +2350,9 @@ impl Plugins {
                         | ViewId::WindowStrip(shown)
                         | ViewId::StatusBar(shown)
                         | ViewId::TitleButtons(shown) => shown != window,
-                        ViewId::PaneHeader(_) | ViewId::Panel(_) => true,
+                        // A page's tree stays for the settings tab opened
+                        // again, which shows it alone while it is open.
+                        ViewId::PaneHeader(_) | ViewId::Panel(_) | ViewId::Page(_) => true,
                     });
                 }
             }
@@ -2360,14 +2428,15 @@ impl Plugins {
         // first shows, of the main thread at once, or of a thread of its
         // own, which renders after its activation.
         let state = &self.entries[at].state;
-        if state.waits()
-            && view_slot(view).is_some_and(|slot| {
+        let triggered = match view {
+            ViewId::Page(page) => state.triggers.contains(&Trigger::Page(page.clone())),
+            _ => view_slot(view).is_some_and(|slot| {
                 state
                     .triggers
                     .contains(&Trigger::Slot(slot.name().to_owned()))
-            })
-            && shows(state, view, context.workspace)
-        {
+            }),
+        };
+        if state.waits() && triggered && shows(state, view, context.workspace) {
             self.waken(at, context)?;
             // Its activation waits for the user's consent: the view renders
             // after it.
@@ -3629,7 +3698,8 @@ fn decide(state: &mut State, granted: &[Capability], refused: &[Capability]) {
     }
 }
 
-/// The slot that `view` is of, if it is one's, as a panel is not.
+/// The slot that `view` is of, if it is one's, as a panel and a page are
+/// not.
 fn view_slot(view: &ViewId) -> Option<Slot> {
     Some(match view {
         ViewId::TabBar(_) => Slot::TabBar,
@@ -3637,7 +3707,7 @@ fn view_slot(view: &ViewId) -> Option<Slot> {
         ViewId::StatusBar(_) => Slot::StatusBar,
         ViewId::PaneHeader(_) => Slot::PaneHeader,
         ViewId::TitleButtons(_) => Slot::TitleButtons,
-        ViewId::Panel(_) => return None,
+        ViewId::Panel(_) | ViewId::Page(_) => return None,
     })
 }
 
@@ -3718,6 +3788,8 @@ fn shows(state: &State, view: &ViewId, workspace: &Workspace) -> bool {
         | ViewId::TitleButtons(window) => workspace.window(WindowId::of(window.0)).is_some(),
         ViewId::PaneHeader(pane) => workspace.pane(PaneId::of(pane.0)).is_some(),
         ViewId::Panel(id) => state.panels.contains_key(id),
+        // A page of the settings tab, while the tab is open.
+        ViewId::Page(page) => state.has_page(page) && workspace.settings_tab().is_some(),
     }
 }
 
@@ -4733,6 +4805,10 @@ impl Host<'_, '_> {
                 .and_then(|tab| workspace.tab(tab))
                 .map(crate::workspace::Tab::window),
             ViewId::Panel(id) => self.state.panels.get(id).copied(),
+            ViewId::Page(page) => workspace
+                .settings_tab()
+                .filter(|_| self.state.has_page(page))
+                .map(|(_, window)| window),
         };
         window.ok_or_else(not_found)
     }
@@ -5835,6 +5911,19 @@ impl Host<'_, '_> {
                 plugin: self.state.name.clone(),
                 id,
             },
+            // A page of the plugin's own manifest.
+            Asked::ShowPage(page) => {
+                if !self.state.has_page(&page) {
+                    return Err(Error::new(
+                        Code::NotFound,
+                        format!("the plugin has no page `{page}`"),
+                    ));
+                }
+                Request::ShowPage {
+                    plugin: self.state.name.clone(),
+                    page,
+                }
+            }
             // A plugin that the host has, by its namespace, which its
             // section of the config is of.
             Asked::SetPluginEnabled { plugin, enabled } => {

@@ -10,7 +10,9 @@
 //! find bar gives it back to the bar. A click on
 //! a control, a button or a toggle, leaves the focus where it was, as
 //! macOS's controls do, and Tab reaches the controls only as the system's
-//! keyboard navigation reaches every control. Its moves
+//! keyboard navigation reaches every control. Panels chained side by side,
+//! as a sidebar and the page beside it, Tab goes through as one, from the
+//! last node of one to the first of the next. Its moves
 //! come as events of a focus and a blur to the nodes. The keymap's
 //! contexts tell where it is:
 //! `pane.focused` while the pane has it, and, of each panel shown, of its
@@ -83,6 +85,8 @@ pub struct Focus<P> {
     /// it again from another, so that two panels never give it back to
     /// each other for good.
     came_from: Vec<(P, Option<(P, NodeKey)>)>,
+    /// The panels that Tab goes through as one, in their order.
+    chain: Vec<P>,
 }
 
 impl<P> Default for Focus<P> {
@@ -96,6 +100,7 @@ impl<P> Default for Focus<P> {
             told: None,
             every_control: false,
             came_from: Vec::new(),
+            chain: Vec::new(),
         }
     }
 }
@@ -152,6 +157,16 @@ impl<P: Copy + Eq> Focus<P> {
     /// the focus alone, as by default.
     pub fn set_every_control(&mut self, every: bool) {
         self.every_control = every;
+    }
+
+    /// Chains `panels`, in their order, which Tab and Shift-Tab then go
+    /// through as one: past the last node of one that Tab reaches, to the
+    /// first of the next that has one, round from the last panel to the
+    /// first. None but one are chained without.
+    pub fn set_chain(&mut self, panels: &[P]) {
+        if self.chain != panels {
+            self.chain = panels.to_vec();
+        }
     }
 
     /// Gives the focus to the first field of `panel` that takes it, or to
@@ -383,7 +398,9 @@ impl<P: Copy + Eq> Focus<P> {
             || mods.meta);
         match key.key {
             Key::Tab if plain => {
-                self.step(panel, node, tree, mods.shift);
+                if !self.step_across(&trees, (panel, node, tree), mods.shift) {
+                    self.step(panel, node, tree, mods.shift);
+                }
                 Routed::Focus
             }
             Key::Escape if plain && !mods.shift => {
@@ -439,6 +456,54 @@ impl<P: Copy + Eq> Focus<P> {
         self.focused = Some((panel, order[next]));
         self.key = tree.key(order[next]).cloned();
         self.place = next;
+    }
+
+    /// Moves the focus from `node` of `panel`, whose tree is `tree`, past
+    /// the last node of the panel that Tab reaches, or before the first if
+    /// `back`, to the first node of the next chained panel that has one,
+    /// or the last of the one before: whether it did, as `panel` is
+    /// chained and its end reached. From the node last clicked, if one of
+    /// `panel` was since the focus moved.
+    fn step_across<'t>(
+        &mut self,
+        trees: &impl Fn(P) -> Option<&'t Tree>,
+        (panel, node, tree): (P, NodeId, &Tree),
+        back: bool,
+    ) -> bool {
+        let count = self.chain.len();
+        let Some(at) = self.chain.iter().position(|&chained| chained == panel) else {
+            return false;
+        };
+        let every = self.every_control;
+        let from = match self.anchor {
+            Some((anchored, anchor)) if anchored == panel => anchor,
+            _ => node,
+        };
+        if count < 2 || !at_end(tree, from, back, &|id| tabs_to(tree, id, every)) {
+            return false;
+        }
+        for step in 1..count {
+            let other = self.chain[if back {
+                (at + count - step) % count
+            } else {
+                (at + step) % count
+            }];
+            let Some(other_tree) = trees(other) else {
+                continue;
+            };
+            let mut reached = order(other_tree)
+                .into_iter()
+                .filter(|&id| tabs_to(other_tree, id, every));
+            let next = if back {
+                reached.next_back()
+            } else {
+                reached.next()
+            };
+            if let Some(next) = next {
+                return self.focus(other, other_tree, next);
+            }
+        }
+        false
     }
 
     /// The keymap's contexts of the focus, among `panels` shown, each of its
@@ -499,6 +564,28 @@ fn beside(
     } else {
         all[at + 1..].iter().chain(&all[..=at]).find(takes).copied()
     }
+}
+
+/// Whether no node of `tree` that Tab reaches, as `tabs_to` tells, comes
+/// after `from`, or before it if `back`, in the tree's order, a node before
+/// its children; of a tree that lacks `from`, whether none is there.
+fn at_end(tree: &Tree, from: NodeId, back: bool, tabs_to: &dyn Fn(NodeId) -> bool) -> bool {
+    fn walk(tree: &Tree, id: NodeId, all: &mut Vec<NodeId>) {
+        all.push(id);
+        for &child in tree.children(id) {
+            walk(tree, child, all);
+        }
+    }
+    let mut all = Vec::new();
+    if let Some(root) = tree.root() {
+        walk(tree, root, &mut all);
+    }
+    let rest = match all.iter().position(|&id| id == from) {
+        Some(at) if back => &all[..at],
+        Some(at) => &all[at + 1..],
+        None => &all[..],
+    };
+    !rest.iter().any(|&id| tabs_to(id))
 }
 
 /// The nodes of `tree` that take the focus, in the tree's order, a node
@@ -1170,5 +1257,57 @@ mod tests {
         focus.pressed(SEARCH, &labelled, &[root, label]);
         focus.key(|_| Some(&labelled), &tab);
         assert_eq!(focused(&focus, &labelled), "replace");
+    }
+
+    #[test]
+    fn tab_goes_through_chained_panels_as_one_and_escape_back_to_the_first() {
+        let sidebar = tree_of(&Node::container(vec![Node::field("pages").key("pages")]));
+        let page = tree_of(&Node::container(vec![
+            Node::text("General"),
+            Node::field("Name").key("name"),
+            Node::button("Apply").key("apply"),
+            Node::field("Shell").key("shell"),
+        ]));
+        let empty = tree_of(&Node::container(vec![Node::text("nothing")]));
+        let trees = |panel: u8| match panel {
+            SEARCH => Some(&sidebar),
+            OTHER => Some(&page),
+            _ => Some(&empty),
+        };
+        let tab = press(Key::Tab, Mods::default());
+        let back = press(Key::Tab, SHIFT);
+        let mut focus = Focus::new();
+        focus.set_chain(&[SEARCH, OTHER]);
+        assert!(focus.first(SEARCH, &sidebar));
+        // Past the sidebar's last node, the page's first; past the page's
+        // last, the sidebar's again, the button not reached.
+        let at = |focus: &Focus<u8>| match focus.target() {
+            Target::Node { panel, node } => {
+                (panel, trees(panel).unwrap().key(node).unwrap().0.clone())
+            }
+            Target::Pane => (0, "pane".to_owned()),
+        };
+        focus.key(trees, &tab);
+        assert_eq!(at(&focus), (OTHER, "name".to_owned()));
+        focus.key(trees, &tab);
+        assert_eq!(at(&focus), (OTHER, "shell".to_owned()));
+        focus.key(trees, &tab);
+        assert_eq!(at(&focus), (SEARCH, "pages".to_owned()));
+        // Shift-Tab, the other way: before the sidebar's first, the page's
+        // last.
+        focus.key(trees, &back);
+        assert_eq!(at(&focus), (OTHER, "shell".to_owned()));
+        // Escape in the page, back to the sidebar's node that it came from.
+        focus.key(trees, &press(Key::Escape, Mods::default()));
+        assert_eq!(at(&focus), (SEARCH, "pages".to_owned()));
+        // A chained panel of no node that Tab reaches is passed over.
+        focus.set_chain(&[SEARCH, 3]);
+        focus.key(trees, &tab);
+        assert_eq!(at(&focus), (SEARCH, "pages".to_owned()));
+        // Unchained, Tab goes round the panel alone.
+        focus.set_chain(&[]);
+        focus.focus(OTHER, &page, page.by_key(&"shell".into()).unwrap());
+        focus.key(trees, &tab);
+        assert_eq!(at(&focus), (OTHER, "name".to_owned()));
     }
 }

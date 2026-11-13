@@ -45,6 +45,7 @@ export type Cx = {
     keep_awake: (awake: Awake) -> (true?, string?, number?),
     save_file: (window: WindowId?, name: string, bytes: string | buffer) -> (number?, string?, number?),
     packages: (call: Packages) -> (number?, string?, number?),
+    show_page: (page: string) -> (true?, string?, number?),
     cancel_packages: (job: number) -> (true?, string?, number?),
     focused_window: () -> (WindowId?, string?, number?),
     focused_pane: () -> (PaneId?, string?, number?),
@@ -153,6 +154,8 @@ export type Event =
     | { kind: "lines", id: number, pane: PaneId, lines: { Line }, complete: boolean }
     | { kind: "searched", id: number, pane: PaneId, matches: { SearchMatch }, count: number, done: boolean }
     | { kind: "panel-closed", id: PanelId }
+    | { kind: "page-shown", page: string }
+    | { kind: "page-hidden", page: string }
     | { kind: "keys-changed" }
     | { kind: "window-focus", window: WindowId, focused: boolean }
     | { kind: "viewport-changed", pane: PaneId, viewport: Viewport }
@@ -890,6 +893,7 @@ export type ViewId =
     | { pane_header: PaneId }
     | { title_buttons: WindowId }
     | { panel: PanelId }
+    | { page: string }
 
 export type Viewport = {
     top: number,

@@ -40,7 +40,7 @@ pub struct Manifest {
     pub thread: Thread,
     /// When it activates: `startup`, `command:<command>` or
     /// `command:<namespace>.*` of its own namespace, `event:<name>`,
-    /// `slot:<name>` or `osc:<number>`.
+    /// `slot:<name>`, `page:<id>` of a page of its own, or `osc:<number>`.
     pub activation: Vec<String>,
     /// The capabilities that it asks for.
     pub capabilities: Vec<Capability>,
@@ -109,7 +109,16 @@ struct RawContributes {
     keybindings: Vec<RawKeybinding>,
     #[serde(default)]
     slots: Vec<toml::Spanned<String>>,
+    #[serde(default)]
+    pages: Vec<toml::Spanned<RawPage>>,
     config_schema: Option<toml::Spanned<String>>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawPage {
+    id: toml::Spanned<String>,
+    icon: toml::Spanned<String>,
 }
 
 #[derive(Deserialize)]
@@ -210,8 +219,23 @@ pub struct Contributes {
     /// The slots of the UI that it fills.
     #[serde(default)]
     pub slots: Vec<String>,
+    /// Its pages of the settings tab, of Lokyr's own plugins alone.
+    #[serde(default)]
+    pub pages: Vec<Page>,
     /// The file of its config's schema, in the package.
     pub config_schema: Option<String>,
+}
+
+/// A page of the settings tab that a plugin of Lokyr's own shows: its id,
+/// of lowercase letters, digits and `-`, from a letter, its title its
+/// catalogs' `page-<id>`, and its icon, of the host's.
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Page {
+    /// Its id.
+    pub id: String,
+    /// Its icon, of the host's, by its name.
+    pub icon: String,
 }
 
 /// A command that a plugin registers.
@@ -339,7 +363,7 @@ impl Manifest {
                 return Err(fail(
                     on.span(),
                     format!(
-                        "`{}` is not an activation: `startup`, `command:<command>` or `command:<namespace>.*` of the plugin's own namespace, `{namespace}`, `event:<name>`, `slot:<name>` of a slot's name, or `osc:<number>`",
+                        "`{}` is not an activation: `startup`, `command:<command>` or `command:<namespace>.*` of the plugin's own namespace, `{namespace}`, `event:<name>`, `slot:<name>` of a slot's name, `page:<id>` of a page of the plugin's, or `osc:<number>`",
                         on.get_ref()
                     ),
                 ));
@@ -363,6 +387,17 @@ impl Manifest {
         }
         let namespace = name.rsplit('/').next().unwrap_or(name).to_owned();
         let contributes = contributed(file.contributes, kind, &namespace, &fail)?;
+        // A page's activation, of a page that the plugin contributes.
+        for on in &file.activation.on {
+            if let Some(page) = on.get_ref().strip_prefix("page:")
+                && !contributes.pages.iter().any(|own| own.id == page)
+            {
+                return Err(fail(
+                    on.span(),
+                    format!("`{}` names no page of the plugin's", on.get_ref()),
+                ));
+            }
+        }
         let mut dependencies = BTreeMap::new();
         for (needed, constraint) in file.dependencies {
             if !is_name(needed.get_ref()) {
@@ -556,6 +591,42 @@ fn contributed(
         }
         contributes.slots.push(slot.into_inner());
     }
+    for page in raw.pages {
+        let span = page.span();
+        let page = page.into_inner();
+        if kind != Kind::Builtin {
+            return Err(fail(
+                span,
+                "the settings tab's pages are Lokyr's own plugins' alone".to_owned(),
+            ));
+        }
+        if !is_part(page.id.get_ref()) {
+            return Err(fail(
+                page.id.span(),
+                format!(
+                    "`{}` is not a page's id, of lowercase letters, digits and `-`, from a letter",
+                    page.id.get_ref()
+                ),
+            ));
+        }
+        if contributes
+            .pages
+            .iter()
+            .any(|other: &Page| &other.id == page.id.get_ref())
+        {
+            return Err(fail(
+                page.id.span(),
+                format!("the page `{}` is there already", page.id.get_ref()),
+            ));
+        }
+        if page.icon.get_ref().trim().is_empty() {
+            return Err(fail(page.icon.span(), "a page's icon is empty".to_owned()));
+        }
+        contributes.pages.push(Page {
+            id: page.id.into_inner(),
+            icon: page.icon.into_inner(),
+        });
+    }
     if let Some(schema) = raw.config_schema {
         use std::path::{Component, Path};
         let path = Path::new(schema.get_ref());
@@ -686,6 +757,7 @@ fn is_activation(on: &str, namespace: &str) -> bool {
         Some(("command", pattern)) => is_of_namespace(pattern, namespace),
         Some(("event", rest)) => !rest.is_empty(),
         Some(("slot", name)) => is_slot(name),
+        Some(("page", id)) => is_part(id),
         Some(("osc", number)) => {
             !number.is_empty() && number.bytes().all(|byte| byte.is_ascii_digit())
         }
@@ -754,6 +826,48 @@ process-read = true
             ]
         );
         assert!(manifest.uses.is_empty());
+    }
+
+    #[test]
+    fn a_built_in_plugin_s_pages_read_of_their_ids_and_icons() {
+        let builtin = "[plugin]\nname = \"lokyr/manager\"\nkind = \"builtin\"\nlicense = \"MIT\"\n";
+        let manifest = Manifest::parse(&format!(
+            "{builtin}[contributes]\npages = [{{ id = \"plugins\", icon = \"extensions\" }}, {{ id = \"registry\", icon = \"cloud\" }}]\n"
+        ))
+        .unwrap();
+        let pages: Vec<(&str, &str)> = manifest
+            .contributes
+            .pages
+            .iter()
+            .map(|page| (page.id.as_str(), page.icon.as_str()))
+            .collect();
+        assert_eq!(pages, [("plugins", "extensions"), ("registry", "cloud")]);
+        let wrong = |pages: &str| {
+            Manifest::parse(&format!("{builtin}[contributes]\npages = [{pages}]\n"))
+                .unwrap_err()
+                .to_string()
+        };
+        assert!(wrong("{ id = \"Plugins\", icon = \"gear\" }").contains("is not a page's id"));
+        assert!(
+            wrong("{ id = \"one\", icon = \"gear\" }, { id = \"one\", icon = \"gear\" }")
+                .contains("the page `one` is there already")
+        );
+        assert!(wrong("{ id = \"one\", icon = \" \" }").contains("a page's icon is empty"));
+        // Activated as a page of its own renders.
+        let activated = Manifest::parse(&format!(
+            "{builtin}[activation]\non = [\"page:plugins\"]\n[contributes]\npages = [{{ id = \"plugins\", icon = \"extensions\" }}]\n"
+        ))
+        .unwrap();
+        assert_eq!(activated.activation, ["page:plugins"]);
+        let error = Manifest::parse(&format!(
+            "{builtin}[activation]\non = [\"page:other\"]\n[contributes]\npages = [{{ id = \"plugins\", icon = \"extensions\" }}]\n"
+        ))
+        .unwrap_err()
+        .to_string();
+        assert!(
+            error.contains("`page:other` names no page of the plugin's"),
+            "{error}"
+        );
     }
 
     #[test]
@@ -1022,6 +1136,13 @@ config-schema = "schema.json"
         assert!(
             wrong(&format!("{luau}[contributes]\nslots = [\"tabbar\"]\n"))
                 .starts_with("8:10: `tabbar` is no slot: `pane-header`")
+        );
+        // The settings tab's pages, of Lokyr's own plugins alone.
+        assert!(
+            wrong(&format!(
+                "{luau}[contributes]\npages = [{{ id = \"notes\", icon = \"gear\" }}]\n"
+            ))
+            .starts_with("8:10: the settings tab's pages are Lokyr's own plugins' alone")
         );
         assert!(
             wrong(&format!(

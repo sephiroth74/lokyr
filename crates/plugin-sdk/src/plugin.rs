@@ -387,6 +387,15 @@ impl<'a> Cx<'a> {
         })
     }
 
+    /// Shows the settings tab at the plugin's own page of the id `page`, of
+    /// its manifest's, in the window in front, or where the tab shows: its
+    /// view, [`ViewId::Page`](crate::ui::ViewId::Page), renders, and the
+    /// plugin hears it shown. Of Lokyr's own plugins alone, as their
+    /// manifests have pages.
+    pub fn show_page(&mut self, page: &str) -> Result<(), Error> {
+        self.done(Request::ShowPage(page.to_owned()))
+    }
+
     /// The window that has the focus.
     pub fn focused_window(&mut self) -> Option<WindowId> {
         match self.request(Request::FocusedWindow) {

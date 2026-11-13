@@ -24,6 +24,8 @@ mod performance;
 mod quick;
 #[cfg(feature = "sample-slots")]
 mod sample;
+#[cfg(any(test, feature = "sample-pages"))]
+mod sample_pages;
 #[cfg(feature = "sample-worker")]
 mod sample_worker;
 mod size_label;

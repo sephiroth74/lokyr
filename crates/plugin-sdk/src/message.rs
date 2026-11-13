@@ -202,6 +202,11 @@ pub enum Request {
     /// alone; Lokyr reloads the plugins that it installs, updates or
     /// removes. Of the capability `packages`, Lokyr's own plugins' alone.
     Packages(crate::host::Packages),
+    /// Shows the settings tab at the plugin's own page of an id, of its
+    /// manifest's, in the window in front, or where the tab shows: its
+    /// view renders, and the plugin hears it shown. Of Lokyr's own plugins
+    /// alone, as their manifests have pages.
+    ShowPage(String),
     /// Ends a job of the packages' service that runs, as the user stops
     /// it: its command ends, and its end comes as an
     /// [`Event::PackagesEnded`] of no success; a job that ended already is
@@ -1005,7 +1010,8 @@ impl Request {
             | Self::SaveFile { .. }
             | Self::AddMenuItem(_)
             | Self::StartTimer { .. }
-            | Self::CancelTimer(_) => None,
+            | Self::CancelTimer(_)
+            | Self::ShowPage(_) => None,
         }
     }
 
@@ -1116,6 +1122,7 @@ impl Request {
             | Self::Packages(_)
             | Self::CancelPackages(_)
             | Self::SetPluginEnabled { .. }
+            | Self::ShowPage(_)
             | Self::PreviewTheme(_)
             | Self::SetTheme { .. }
             | Self::PreviewFont(_)
@@ -1321,6 +1328,12 @@ pub enum Event {
     /// app or the plugin closed it, or a menu shown as the platform's own
     /// closed with a choice or without one, to it alone.
     PanelClosed(PanelId),
+    /// A page of the plugin's of the settings tab shows, as the tab shows
+    /// it, to it alone.
+    PageShown(String),
+    /// A page of the plugin's of the settings tab no longer shows, as
+    /// another page, another tab or none shows, to it alone.
+    PageHidden(String),
     /// The keymap's bindings changed, as the config's `[keys]` or a
     /// plugin's: the keys of [`Request::KeysOf`] may be others.
     KeysChanged,
@@ -1445,6 +1458,8 @@ impl Event {
             Self::Lines { .. } => "lines",
             Self::Searched { .. } => "searched",
             Self::PanelClosed(_) => "panel-closed",
+            Self::PageShown(_) => "page-shown",
+            Self::PageHidden(_) => "page-hidden",
             Self::Answered { .. } => "answered",
             Self::Saved { .. } => "saved",
             Self::Package { .. } => "package",
@@ -1544,6 +1559,7 @@ impl Request {
             | Self::KeepAwake { .. }
             | Self::CancelPackages { .. }
             | Self::SetPluginEnabled { .. }
+            | Self::ShowPage { .. }
             | Self::DropImage { .. }
             | Self::EndSearch { .. }
             | Self::SelectCells { .. }

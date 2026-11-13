@@ -286,6 +286,34 @@ impl<B: Backend> App<B> {
                     laid.into_iter()
                         .map(|event| (view.plugin.clone(), ui_event(view.view.clone(), event))),
                 );
+                // Its chosen page's view, its plugin's, takes the room
+                // beside the sidebar.
+                let surface = &view.surface;
+                let room = view.frame.and_then(|frame| {
+                    let node = surface.tree.by_key(&super::settings_tab::PAGE.into())?;
+                    let at = surface.layout.frame(&surface.tree, node)?;
+                    Some(Frame {
+                        x: frame.x + at.x,
+                        y: frame.y + at.y,
+                        ..at
+                    })
+                });
+                if let Some(page) = state
+                    .chrome
+                    .iter_mut()
+                    .find(|view| matches!(view.view, ViewId::Page(_)))
+                {
+                    page.frame = room.filter(|_| page.shows());
+                    if let Some(frame) = page.frame {
+                        let laid = page
+                            .surface
+                            .lay_out((Some(frame.width), Some(frame.height)), font);
+                        page.settle_reveal();
+                        events.extend(laid.into_iter().map(|event| {
+                            (page.plugin.clone(), ui_event(page.view.clone(), event))
+                        }));
+                    }
+                }
                 continue;
             }
             let anchor = anchor_of(&self.workspace, state, (&plugin, &placed), scale);

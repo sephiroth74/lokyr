@@ -149,6 +149,8 @@ fn every() -> Vec<Event> {
             ),
         },
         Event::PackagesEnded { id: 12, ok: true },
+        Event::PageShown("plugins".to_owned()),
+        Event::PageHidden("plugins".to_owned()),
     ]);
     every
 }
@@ -185,6 +187,9 @@ fn every_event_is_a_flat_table_of_its_kind_and_its_fields_both_ways() {
         assert(pointer.kind == "pointer" and pointer.at[1] == 4 and pointer.at[2] == -2 and pointer.mods.command)
         assert(events[15].at == nil)
         assert(events[18].kind == "panel-closed" and events[18].id == "find")
+        local shown, hidden = events[#events - 1], events[#events]
+        assert(shown.kind == "page-shown" and shown.page == "plugins")
+        assert(hidden.kind == "page-hidden" and hidden.page == "plugins")
         local keys = events[19]
         assert(keys.kind == "keys-changed" and next(keys, next(keys)) == nil)
         assert(events[21].viewport.alternate == true)

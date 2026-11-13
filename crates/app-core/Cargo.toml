@@ -33,6 +33,8 @@ sample-slots = []
 # A plugin on a thread of its own that renders the status bar without pause,
 # reading the focused pane, for a build of tests.
 sample-worker = []
+# A plugin of two pages of the settings tab, for a build of tests.
+sample-pages = []
 
 [dependencies]
 accesskit.workspace = true
