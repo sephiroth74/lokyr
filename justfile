@@ -273,6 +273,16 @@ pagefind:
     rm target/tools/pagefind.tar.gz
     target/tools/pagefind/pagefind --version
 
+# Draw the site's social image, site/public/og.png, 1200 × 630, of site/og/og.html in Google Chrome without a window.
+og-image:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    chrome="${CHROME:-/Applications/Google Chrome.app/Contents/MacOS/Google Chrome}"
+    "$chrome" --headless=new --disable-gpu --hide-scrollbars --force-device-scale-factor=1 \
+        --allow-file-access-from-files --window-size=1200,630 --virtual-time-budget=2000 \
+        --screenshot="$PWD/site/public/og.png" "file://$PWD/site/og/og.html" 2>/dev/null
+    sips -g pixelWidth -g pixelHeight site/public/og.png | tail -2
+
 # Serve target/site on 127.0.0.1:8124, as lokyr.dev would serve it, until Control-C.
 site-serve: site
     python3 -m http.server --bind 127.0.0.1 --directory target/site 8124

@@ -36,6 +36,11 @@ const BLOB: &str = "https://github.com/sephiroth74/lokyr/blob/main";
 /// sitemap's are of it.
 const ORIGIN: &str = "https://lokyr.dev";
 
+/// The site's social image, which a link to any of its pages shows where
+/// it is shared, and what it shows, for those who cannot see it.
+const SOCIAL_IMAGE: &str = "https://lokyr.dev/og.png";
+const SOCIAL_IMAGE_ALT: &str = "Lokyr's icon, a serpent round a prompt, beside its name and the words: a fast terminal for macOS, where every feature is a plugin.";
+
 /// The most characters of a page's description, as the search engines show
 /// about as many.
 const DESCRIPTION: usize = 155;
@@ -540,6 +545,15 @@ fn template(
                 escaped(description)
             );
         }
+        let _ = writeln!(
+            tags,
+            "<meta property=\"og:image\" content=\"{SOCIAL_IMAGE}\">\n\
+             <meta property=\"og:image:width\" content=\"1200\">\n\
+             <meta property=\"og:image:height\" content=\"630\">\n\
+             <meta property=\"og:image:alt\" content=\"{}\">\n\
+             <meta name=\"twitter:card\" content=\"summary_large_image\">",
+            escaped(SOCIAL_IMAGE_ALT)
+        );
     }
     // The root as a link: the folder itself where the page is at the root.
     let root = if up.is_empty() { "./" } else { up };
@@ -950,6 +964,8 @@ mod tests {
         assert!(shown.contains(r#"<meta property="og:title" content="The bundled plugins">"#));
         assert!(!shown.contains("noindex"));
         assert!(shown.contains(r#"<a href="../../docs/">Docs</a>"#));
+        assert!(shown.contains(r#"<meta property="og:image" content="https://lokyr.dev/og.png">"#));
+        assert!(shown.contains(r#"<meta name="twitter:card" content="summary_large_image">"#));
         // A title of the name keeps it once; a page of no paragraph is
         // described by its title.
         let named = page(
@@ -968,6 +984,52 @@ mod tests {
         let missing = missing_page(&settings);
         assert!(missing.contains("noindex"));
         assert!(missing.contains(r#"<link rel="stylesheet" href="/style.css">"#));
+    }
+
+    #[test]
+    fn the_home_s_structured_data_is_of_the_latest_release() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let home = fs::read_to_string(root.join("site/public/index.html")).unwrap();
+        let start = r#"<script type="application/ld+json">"#;
+        let data = &home[home.find(start).expect("the home's JSON-LD") + start.len()..];
+        let data: serde_json::Value =
+            serde_json::from_str(&data[..data.find("</script>").unwrap()]).unwrap();
+        assert_eq!(data["@context"], "https://schema.org");
+        let app = data["@graph"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|node| node["@type"] == "SoftwareApplication")
+            .expect("a SoftwareApplication");
+        // The feed's latest release, which `just release` writes as the
+        // release is published.
+        let feed = fs::read_to_string(root.join("site/public/appcast.xml")).unwrap();
+        let version = regex::Regex::new(r"<sparkle:shortVersionString>([^<]+)<")
+            .unwrap()
+            .captures_iter(&feed)
+            .map(|found| found[1].to_owned())
+            .max_by_key(|version| {
+                version
+                    .split('.')
+                    .map(|part| part.parse::<u64>().unwrap_or(0))
+                    .collect::<Vec<_>>()
+            })
+            .expect("a release in the feed");
+        assert_eq!(
+            app["softwareVersion"], version,
+            "the home's JSON-LD names another version than the feed's latest"
+        );
+        assert_eq!(
+            app["releaseNotes"],
+            format!("{ORIGIN}/docs/releases/{version}.html")
+        );
+        assert!(root.join(format!("docs/releases/{version}.md")).is_file());
+        assert_eq!(app["image"], SOCIAL_IMAGE);
+        assert!(home.contains(&format!(
+            r#"<meta property="og:image:alt" content="{}">"#,
+            escaped(SOCIAL_IMAGE_ALT)
+        )));
+        assert!(root.join("site/public/og.png").is_file());
     }
 
     #[test]

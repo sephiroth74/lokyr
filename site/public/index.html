@@ -13,7 +13,58 @@
 <meta property="og:url" content="https://lokyr.dev/">
 <meta property="og:title" content="Lokyr — a fast terminal for macOS">
 <meta property="og:description" content="A fast, open-source terminal emulator for macOS, written in Rust and drawn with Metal, where every visible feature is a plugin.">
+<meta property="og:image" content="https://lokyr.dev/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Lokyr's icon, a serpent round a prompt, beside its name and the words: a fast terminal for macOS, where every feature is a plugin.">
+<meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
+<!-- What the search engines read of Lokyr. Its version and release notes
+     are the latest release's, as the updates' feed tells them; a test of the
+     site checks them against site/public/appcast.xml. -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "SoftwareApplication",
+      "@id": "https://lokyr.dev/#app",
+      "name": "Lokyr",
+      "description": "A fast, open-source terminal emulator for macOS, written in Rust and drawn with Metal, where every visible feature is a plugin.",
+      "url": "https://lokyr.dev/",
+      "image": "https://lokyr.dev/og.png",
+      "applicationCategory": "DeveloperApplication",
+      "applicationSubCategory": "Terminal emulator",
+      "operatingSystem": "macOS 26 or later",
+      "processorRequirements": "Apple Silicon",
+      "softwareVersion": "1.0.0",
+      "releaseNotes": "https://lokyr.dev/docs/releases/1.0.0.html",
+      "downloadUrl": "https://github.com/sephiroth74/lokyr/releases/latest",
+      "installUrl": "https://lokyr.dev/#install",
+      "license": "https://opensource.org/licenses/MIT",
+      "isAccessibleForFree": true,
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+      "author": { "@id": "https://lokyr.dev/#author" },
+      "sameAs": ["https://github.com/sephiroth74/lokyr"]
+    },
+    {
+      "@type": "WebSite",
+      "@id": "https://lokyr.dev/#site",
+      "name": "Lokyr",
+      "url": "https://lokyr.dev/",
+      "about": { "@id": "https://lokyr.dev/#app" },
+      "publisher": { "@id": "https://lokyr.dev/#author" }
+    },
+    {
+      "@type": "Person",
+      "@id": "https://lokyr.dev/#author",
+      "name": "Alessandro Crugnola",
+      "url": "https://github.com/sephiroth74",
+      "sameAs": ["https://github.com/sephiroth74"]
+    }
+  ]
+}
+</script>
 <link rel="preload" href="lokyr-y.woff2" as="font" type="font/woff2" crossorigin>
 <style>
   /* Playfair Display's y, for the title: the glyph alone, at weight 400, and
