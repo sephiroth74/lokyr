@@ -1,0 +1,44 @@
+## Startup, warm, first frame (ms): median, spread; floor's first window; gap
+round 1 v090: 235.3 ms, p90 239.5, spread 2.0%; floor 208.8; gap 26.5
+round 1 v100: 222.3 ms, p90 237.1, spread 7.9%; floor 208.8; gap 13.5
+round 2 v100: 240.5 ms, p90 253.0, spread 7.5%; floor 207.8; gap 32.7
+round 2 v090: 238.2 ms, p90 253.8, spread 8.0%; floor 207.8; gap 30.3
+round 3 v100: 241.3 ms, p90 252.1, spread 7.0%; floor 209.2; gap 32.1
+round 3 v090: 236.6 ms, p90 241.3, spread 9.3%; floor 209.2; gap 27.3
+round 4 v090: 236.7 ms, p90 253.0, spread 9.1%; floor 205.4; gap 31.2
+round 4 v100: 234.0 ms, p90 241.0, spread 9.2%; floor 205.4; gap 28.6
+## Latency (ms), and its histogram in refreshes
+round 1 place 1 v090: p50 18.49 p90 27.19 p99 56.70 max 60.90; refresh 16.67; {'1': 77, '2': 115, '3': 4, '4': 3}
+round 1 place 2 v100: p50 20.08 p90 30.92 p99 49.88 max 69.83; refresh 16.67; {'1': 65, '2': 120, '3': 13, '5': 1}
+round 2 place 1 v100: p50 19.27 p90 27.65 p99 52.42 max 55.04; refresh 16.67; {'1': 69, '2': 125, '3': 3, '4': 2}
+round 2 place 2 v090: p50 17.71 p90 27.05 p99 40.99 max 44.06; refresh 16.67; {'1': 85, '2': 108, '3': 6}
+round 3 place 1 v100: p50 18.70 p90 25.11 p99 40.16 max 40.63; refresh 16.67; {'1': 66, '2': 131, '3': 2}
+round 3 place 2 v090: p50 21.05 p90 27.33 p99 47.49 max 47.73; refresh 16.67; {'1': 52, '2': 138, '3': 9}
+round 4 place 1 v090: p50 18.83 p90 25.85 p99 53.21 max 53.68; refresh 16.67; {'1': 67, '2': 122, '3': 8, '4': 2}
+round 4 place 2 v100: p50 19.11 p90 26.40 p99 51.00 max 60.01; refresh 16.67; {'1': 65, '2': 128, '3': 4, '4': 2}
+round 5 place 1 v090: p50 18.92 p90 27.24 p99 52.47 max 55.74; refresh 16.67; {'1': 70, '2': 119, '3': 8, '4': 2}
+round 5 place 2 v100: p50 19.84 p90 30.00 p99 46.67 max 52.44; refresh 16.67; {'1': 57, '2': 127, '3': 14, '4': 1}
+round 6 place 1 v100: p50 18.79 p90 27.14 p99 64.55 max 69.35; refresh 16.67; {'1': 69, '2': 122, '3': 5, '4': 2, '5': 1}
+round 6 place 2 v090: p50 19.79 p90 31.83 p99 47.68 max 50.05; refresh 16.67; {'1': 74, '2': 111, '3': 13, '4': 1}
+round 7 place 1 v100: p50 19.41 p90 25.68 p99 41.22 max 62.07; refresh 16.67; {'1': 64, '2': 128, '3': 6, '4': 1}
+round 7 place 2 v090: p50 19.52 p90 29.01 p99 47.56 max 50.43; refresh 16.67; {'1': 63, '2': 129, '3': 6, '4': 1}
+round 8 place 1 v090: p50 19.22 p90 26.22 p99 34.98 max 37.83; refresh 16.67; {'1': 70, '2': 126, '3': 3}
+round 8 place 2 v100: p50 18.54 p90 27.25 p99 43.92 max 50.27; refresh 16.67; {'1': 76, '2': 115, '3': 7, '4': 1}
+v090: p50 mean 19.19 (sd 0.92), p99 mean 47.63 (sd 6.53), of 8 rounds; 9 of 1592 samples in the fourth refresh or later
+v100: p50 mean 19.22 (sd 0.51), p99 mean 48.73 (sd 7.31), of 8 rounds; 11 of 1592 samples in the fourth refresh or later
+place 1: p50 mean 18.95, p99 mean 49.46
+place 2: p50 mean 19.45, p99 mean 46.90
+## Idle (per s) and memory (MB)
+v090-1: package idle 0.000/s, interrupt 0.350/s; footprint w/o GPU 27.0 MB, GPU 30.1 MB; 16 threads
+v100-1: package idle 0.000/s, interrupt 0.350/s; footprint w/o GPU 27.6 MB, GPU 30.1 MB; 16 threads
+v100-2: package idle 0.000/s, interrupt 0.350/s; footprint w/o GPU 27.7 MB, GPU 30.1 MB; 16 threads
+v090-2: package idle 0.000/s, interrupt 0.333/s; footprint w/o GPU 27.3 MB, GPU 30.1 MB; 18 threads
+## Throughput on screen (MiB/s, median of the runs of both rounds) and frames (ms)
+ascii v090: 311.6 MiB/s (runs 310.2, 313.0, 309.6, 314.2); total p50 0.280 p99 0.392, total p50 0.277 p99 0.399
+ascii v100: 310.9 MiB/s (runs 310.2, 309.3, 311.7, 316.5); total p50 0.283 p99 0.383, total p50 0.281 p99 0.422
+seq v090: 210.8 MiB/s (runs 212.0, 209.5, 208.8, 223.7); total p50 0.288 p99 4.867, total p50 0.293 p99 4.544
+seq v100: 220.9 MiB/s (runs 215.6, 225.9, 215.8, 227.5); total p50 0.287 p99 4.709, total p50 0.293 p99 4.734
+sgr v090: 287.2 MiB/s (runs 281.3, 294.2, 280.9, 293.2); total p50 0.533 p99 4.597, total p50 0.517 p99 4.929
+sgr v100: 284.7 MiB/s (runs 279.7, 287.4, 282.0, 290.3); total p50 0.521 p99 4.590, total p50 0.532 p99 4.804
+cjk v090: 213.6 MiB/s (runs 209.1, 212.9, 214.2, 217.4); total p50 0.721 p99 5.000, total p50 0.719 p99 4.739
+cjk v100: 214.9 MiB/s (runs 215.7, 214.0, 214.2, 216.6); total p50 0.732 p99 5.279, total p50 0.720 p99 4.748
