@@ -46,7 +46,7 @@ pub(crate) const MOST_TITLE_BUTTONS: usize = 3;
 const TITLE_BUTTON: f32 = 24.0;
 
 /// The room that each titlebar button takes across, in points.
-const TITLE_BUTTON_ROOM: f32 = 28.0;
+pub(super) const TITLE_BUTTON_ROOM: f32 = 28.0;
 
 /// The plugin's name of the button of the titlebar's buttons that find no
 /// room, the app's own, which no plugin's name is.
@@ -1053,7 +1053,7 @@ pub(super) fn rect_of(frame: Frame) -> Rect {
 /// The ids of the titlebar's buttons of `chrome` that show, in their order:
 /// every plugin's that has a tree, three at most, or of more, the first two
 /// and the app's button of the rest.
-fn title_buttons_shown(chrome: &[SlotView]) -> Vec<u32> {
+pub(super) fn title_buttons_shown(chrome: &[SlotView]) -> Vec<u32> {
     let buttons = || {
         chrome
             .iter()

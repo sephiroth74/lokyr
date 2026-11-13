@@ -9,7 +9,7 @@ use std::rc::Rc;
 
 use lokyr_kernel::plugins::ui::{Anchor, PanelId, PanelOptions, Role, Slot, UiEvent, ViewId};
 use lokyr_kernel::plugins::view::{Layout as NodeLayout, Length, Node, UiEventKind};
-use lokyr_platform_core::{MenuItem, Modifiers, Point};
+use lokyr_platform_core::{MenuItem, Modifiers, Point, Titlebar};
 use lokyr_text_core::FontConfig;
 use lokyr_ui_core::layout::Frame;
 
@@ -545,4 +545,26 @@ fn a_faulted_plugin_s_button_goes_and_comes_back_as_it_starts_again() {
     fake.fire_timers(&mut app, Instant::now() + Duration::from_millis(1100));
     frames(&mut fake, &mut app);
     assert_eq!(buttons(&app, window).len(), 1);
+}
+
+#[test]
+fn the_platform_keeps_the_room_of_the_buttons_that_show_for_the_system_s_title() {
+    // A tab bar at the bottom: the system's titlebar of its title, which
+    // leaves the two buttons' room.
+    let (fake, _app, window, _) = app_placed(
+        &["awake", "snap"],
+        false,
+        Some(plugins::host::BarPlace::Bottom),
+    );
+    let shown = fake.window(window).unwrap();
+    assert_eq!(shown.titlebar, Titlebar::Titled);
+    assert_eq!(shown.title_buttons_room, 56.0);
+    // Of more than three, the room of the three that show, the app's
+    // button of the rest among them.
+    let (fake, _app, window, _) = app_placed(
+        &["a", "b", "c", "d"],
+        false,
+        Some(plugins::host::BarPlace::Bottom),
+    );
+    assert_eq!(fake.window(window).unwrap().title_buttons_room, 84.0);
 }

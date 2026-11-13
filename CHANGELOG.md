@@ -8,6 +8,10 @@ from 1.0.0; before it, a minor version may change what a previous one did.
 
 ## [Unreleased]
 
+### Fixed
+
+- With the tab bar out of the titlebar, at the bottom, in a column or below a titled bar, and two tabs or more, the window's title stands centred, as with a single tab, and no longer lies over the plugins' buttons beside the window's buttons.
+
 ## [1.0.0] - 2026-11-13
 
 ### Added

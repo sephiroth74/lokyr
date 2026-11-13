@@ -107,6 +107,9 @@ pub struct FakeWindow {
     /// Its titlebar, as the app gave it, which changes no size of the fake
     /// one's.
     pub titlebar: Titlebar,
+    /// The room of its titlebar for the content's small buttons, in points,
+    /// as the app gave it.
+    pub title_buttons_room: f64,
     /// The parts of its titlebar that the app gave as its content's.
     pub titlebar_areas: Vec<ContentRect>,
     /// The parts of the content where the pointer's moves come, as the app
@@ -1010,6 +1013,7 @@ impl Platform for Fake {
                 appearance: None,
                 quick: None,
                 titlebar: Titlebar::default(),
+                title_buttons_room: 0.0,
                 titlebar_areas: Vec::new(),
                 move_areas: Vec::new(),
                 accessibility_asked: false,
@@ -1053,6 +1057,7 @@ impl Platform for Fake {
                 appearance: None,
                 quick: Some(None),
                 titlebar: Titlebar::default(),
+                title_buttons_room: 0.0,
                 titlebar_areas: Vec::new(),
                 move_areas: Vec::new(),
                 accessibility_asked: false,
@@ -1408,6 +1413,12 @@ impl Platform for Fake {
     fn set_titlebar(&mut self, window: WindowId, titlebar: Titlebar) {
         if let Some(state) = self.windows.get_mut(&window) {
             state.titlebar = titlebar;
+        }
+    }
+
+    fn set_title_buttons_room(&mut self, window: WindowId, width: f64) {
+        if let Some(state) = self.windows.get_mut(&window) {
+            state.title_buttons_room = width;
         }
     }
 

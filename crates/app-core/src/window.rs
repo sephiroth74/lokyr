@@ -252,6 +252,9 @@ pub(crate) struct Window<B: Backend> {
     /// Its titlebar, as the app gave it: one of a tab bar while a tab
     /// bar's view shows.
     pub(crate) titlebar: Titlebar,
+    /// The room of its titlebar for the small buttons that show, in points,
+    /// as the platform was given it; none before the first.
+    pub(crate) title_buttons_room: Option<f64>,
     /// The keys that bring it forward, as its titlebar shows them at its
     /// right, if it does.
     pub(crate) accessory: Option<String>,
@@ -417,6 +420,7 @@ impl<B: Backend> Window<B> {
             shown: None,
             chrome: Vec::new(),
             titlebar: Titlebar::default(),
+            title_buttons_room: None,
             accessory: None,
             panes_top: 0,
             panes_room: None,

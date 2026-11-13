@@ -821,6 +821,14 @@ pub trait Platform {
     /// or goes; the system's of its title and of none are of one size.
     fn set_titlebar(&mut self, window: WindowId, titlebar: Titlebar);
 
+    /// Keeps `width` points of `window`'s titlebar, right after the
+    /// window's buttons, for the content's own small buttons there, which
+    /// the system's title of [`Titlebar::Titled`] then leaves: on the Mac,
+    /// the title stands centred in the window, starting past the room where
+    /// the window is too narrow for it, cut. None until the app gives some;
+    /// the other titlebars, of no system's title, take nothing of it.
+    fn set_title_buttons_room(&mut self, window: WindowId, width: f64);
+
     /// The parts of `window`'s titlebar that are its content's, as the tabs
     /// of a bar that it draws there, in place of those before: a press
     /// there, its drags and its release come to the app, and the pointer's

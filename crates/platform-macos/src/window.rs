@@ -35,7 +35,7 @@ use objc2_foundation::{
 use objc2_quartz_core::{CALayer, CAMetalLayer};
 
 use crate::access::Access;
-use crate::accessory::TitleAccessory;
+use crate::accessory::{TitleAccessory, TitleRoom};
 use crate::fill::FillsView;
 use crate::frame::Pacer;
 use crate::keys;
@@ -74,6 +74,11 @@ pub(crate) struct Window {
     id: WindowId,
     /// The text at its titlebar's right, while it shows one.
     accessory: RefCell<Option<TitleAccessory>>,
+    /// The room at its titlebar's left for the content's small buttons,
+    /// while its titlebar is the system's of its title, and the room's
+    /// width that the app gave, in points.
+    title_room: RefCell<Option<TitleRoom>>,
+    title_buttons: Cell<f64>,
 }
 
 impl Window {
@@ -196,7 +201,7 @@ impl Window {
             (ns_window.backingScaleFactor(), Rc::clone(&occluded)),
         );
         ns_window.setDelegate(Some(ProtocolObject::from_ref(&*delegate)));
-        Self {
+        let window = Self {
             ns_window,
             view,
             sweeps,
@@ -212,7 +217,12 @@ impl Window {
             shared,
             id,
             accessory: RefCell::new(None),
-        }
+            title_room: RefCell::new(None),
+            title_buttons: Cell::new(0.0),
+        };
+        // The system's title, centred from the start.
+        window.settle_title_room();
+        window
     }
 
     /// The window's content view, by its address, for a renderer: it lives
@@ -583,12 +593,53 @@ impl Window {
                     });
             }
         }
+        self.settle_title_room();
         self.ns_window.invalidateCursorRectsForView(&self.view);
         // The system's titlebar of its title and of none are alike, of no
         // new size.
         if (before == Titlebar::Tabs) != (titlebar == Titlebar::Tabs) {
             self.view
                 .post(WindowEvent::Resized(size_of(&self.ns_window)));
+        }
+    }
+
+    /// Keeps `width` points of the titlebar right after the window's
+    /// buttons for the content's small buttons, which the system's title
+    /// leaves.
+    pub(crate) fn set_title_buttons_room(&self, width: f64) {
+        let width = if width.is_finite() {
+            width.max(0.0)
+        } else {
+            0.0
+        };
+        if self.title_buttons.replace(width) != width {
+            self.settle_title_room();
+        }
+    }
+
+    /// The room at the titlebar's left, of the system's titlebar of its
+    /// title alone: as wide as the content's small buttons and the margin
+    /// after the window's buttons, which the buttons start after, or of no
+    /// width without them, the title centred either way; none of the other
+    /// titlebars, nor of a quick window's, which has none.
+    fn settle_title_room(&self) {
+        let titled = self.quick.is_none() && self.view.ivars().titlebar.get() == Titlebar::Titled;
+        let mut room = self.title_room.borrow_mut();
+        if !titled {
+            if let Some(shown) = room.take() {
+                shown.remove();
+            }
+            return;
+        }
+        let buttons = self.title_buttons.get();
+        let width = if buttons > 0.0 {
+            buttons + buttons_margin(&self.ns_window)
+        } else {
+            0.0
+        };
+        match room.as_ref() {
+            Some(shown) => shown.set_width(width),
+            None => *room = Some(TitleRoom::add(&self.ns_window, width, self.ns_window.mtm())),
         }
     }
 
@@ -765,6 +816,14 @@ fn size_of(window: &NSWindow) -> WindowSize {
         bar,
         buttons: buttons_of(window, &view),
     }
+}
+
+/// The margin before `window`'s buttons, in points, which the room that
+/// they take leaves after them too.
+fn buttons_margin(window: &NSWindow) -> f64 {
+    window
+        .standardWindowButton(NSWindowButton::CloseButton)
+        .map_or(0.0, |close| close.frame().origin.x.max(0.0))
 }
 
 /// The room at the titlebar's left that `window`'s buttons take in its

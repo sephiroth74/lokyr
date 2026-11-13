@@ -525,7 +525,9 @@ impl<B: Backend> App<B> {
     /// Settles `window`'s titlebar: a tab bar's while one shows in it, the
     /// system's of no title while a bar's view shows the title in its
     /// place, the system's otherwise, of a bar below it, at the bottom or
-    /// down a column; a quick window keeps its own.
+    /// down a column; a quick window keeps its own. The platform keeps the
+    /// room of the small buttons that show beside the window's, which the
+    /// system's title leaves.
     fn settle_titlebar(&mut self, platform: &mut dyn Platform, window: WindowId) {
         let Some(state) = self.windows.get_mut(&window) else {
             return;
@@ -539,6 +541,12 @@ impl<B: Backend> App<B> {
         if titlebar != state.titlebar && !self.quick.contains_key(&window) {
             platform.set_titlebar(window, titlebar);
             state.titlebar = titlebar;
+        }
+        let room = chrome::title_buttons_shown(&state.chrome).len() as f64
+            * f64::from(chrome::TITLE_BUTTON_ROOM);
+        if state.title_buttons_room != Some(room) && !self.quick.contains_key(&window) {
+            platform.set_title_buttons_room(window, room);
+            state.title_buttons_room = Some(room);
         }
     }
 

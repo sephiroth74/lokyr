@@ -281,3 +281,7 @@ workspace = true
 [[test]]
 name = "alert_dismiss"
 harness = false
+
+[[test]]
+name = "title_room"
+harness = false
