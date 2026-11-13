@@ -36,6 +36,9 @@ must run from a terminal that it does not measure. The measures:
 - `hud`: the Metal HUD's log of each terminal over 10 s of scrolling.
 - `ucs`: `ucs-detect`'s report of each terminal; without the queries of
   the terminal's features in iTerm2, which leaves one unanswered.
+- `open`: each terminal in turn at its zsh's prompt, for a measure by
+  hand, as Typometer's latency: the next once it quits; Lokyr launched as
+  it starts, not of its benches, so that its new windows are its own.
 """
 import ctypes
 import json
@@ -484,6 +487,26 @@ def in_terminal(name, app, label, body, timeout):
     return ended
 
 
+def open_for_hands(out, chosen):
+    """Each terminal in turn at its zsh's prompt, under the comparison's
+    conditions, for a measure by hand: the next once the terminal quits."""
+    for name, app, _ in chosen:
+        log("open", name, "- quit it to open the next")
+        quit_app(app)
+        if name == "lokyr":
+            env = dict(os.environ, **environment())
+            subprocess.Popen([os.path.join(app, "Contents/MacOS/lokyr")], env=env,
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        else:
+            launch_running(name, app, script_in(f"open-{name}", "exec /bin/zsh -i\n"))
+        start = time.time()
+        while not processes_of(app) and time.time() - start < 30:
+            time.sleep(0.5)
+        while processes_of(app):
+            time.sleep(0.5)
+        time.sleep(2)
+
+
 def check(out, chosen):
     for name, app, _ in chosen:
         log("check", name)
@@ -637,6 +660,7 @@ def main():
         "energycat": energycat,
         "hud": hud,
         "ucs": ucs,
+        "open": open_for_hands,
     }[measure](out, chosen)
     log("done", measure)
 
