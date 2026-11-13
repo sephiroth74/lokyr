@@ -147,7 +147,7 @@ Before 1.0.0, after F3's daily features, as 0.8 and 0.9, so that the first publi
 
 ### F3b — MCP and agents
 
-After 1.0.0, as 1.1 to 1.3: IPC and MCP, then the plugins' panels, then themes in the registry.
+After 1.0.0, as 1.1 to 1.3: the plugins' panels, then IPC and MCP, then themes in the registry.
 
 - **IPC and the remote CLI** (`lokyr cli …`), moved from F5b: the socket and its checks of [SECURITY.md](SECURITY.md#ipc).
 - **The MCP server**: `lokyr +mcp`, over stdio, which the agent starts and which talks to the app through the socket; the app opens no port.
@@ -232,8 +232,8 @@ Releases are `X.Y.Z`, nightly and beta builds `X.Y.Z-YYYYMMDD`, release candidat
 | 0.2–0.7 | F3's blocks, on its branch: 0.2 the architecture, 0.3 the distribution, 0.4 `ui-core`, 0.5 the plugins' plumbing, 0.6 the plugins, 0.7 the daily features; a fix takes the patch |
 | 0.8–0.9 | F4's blocks, before 1.0.0: 0.8 the Luau host and Sleip's own loop, 0.9 the registry, and `snap` and `awake` published |
 | 1.0.0 | macOS MVP (F3) and the plugin ecosystem (F4), the first public release, the repository made public, under the MIT license, with the agents on their tabs, which come after F4, and a path's line in the editor, the last command's output, inline images, a Homebrew cask, and the documentation's site at `lokyr.dev`, on GitHub Pages, with the updates' feed; semantic versioning from here: patch, minor and major |
-| 1.1 | IPC, the remote CLI, the MCP server and the agents' hooks (F3b's first block) |
-| 1.2 | The `plugin-manager`'s panel and the settings' (F3b's second block) |
+| 1.1 | The `plugin-manager`'s panel and the settings' (F3b's first block) |
+| 1.2 | IPC, the remote CLI, the MCP server and the agents' hooks (F3b's second block) |
 | 1.3 | Themes in the registry (F3b's third block) |
 | 1.x | F5a, F5b, F5c, and the plugin API 1.0 (F6): stable plugin API in both front ends, complete docs, no open critical bug for three months; a major only for a change that breaks what people rely on |
 | later | Linux (F7), registry v1 |
