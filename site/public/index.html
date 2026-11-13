@@ -91,6 +91,14 @@
     --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Segoe UI", Roboto, sans-serif;
     --display: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Inter", "Segoe UI", Roboto, sans-serif;
     --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+    /* The type scale, steps of about 1.2 from the body's 16 px, which
+       every size of the page takes: notes and labels, interface and code,
+       body, card titles, the tagline; the headings' clamps above them. */
+    --t-xs: 13px;
+    --t-s: 14px;
+    --t-m: 16px;
+    --t-l: 19px;
+    --t-xl: 23px;
   }
 
   *, *::before, *::after { box-sizing: border-box; }
@@ -105,7 +113,7 @@
     margin: 0;
     min-height: 100vh;
     color: var(--fg);
-    font: 16px/1.6 var(--sans);
+    font: var(--t-m)/1.6 var(--sans);
     -webkit-font-smoothing: antialiased;
     overflow-x: hidden;
     position: relative;
@@ -202,7 +210,7 @@
     overflow-x: auto;
     scrollbar-width: none;
     padding: 8px 6px;
-    font-size: 14px;
+    font-size: var(--t-s);
     white-space: nowrap;
   }
   .top-links::-webkit-scrollbar { display: none; }
@@ -216,7 +224,7 @@
     padding: 6px 12px;
     border: 1px solid var(--line-strong);
     border-radius: 999px;
-    font-size: 13px;
+    font-size: var(--t-xs);
     color: var(--muted);
     background: rgba(19, 16, 29, 0.6);
     -webkit-backdrop-filter: blur(8px);
@@ -249,7 +257,7 @@
     border-radius: 10px;
     background: var(--bg-raised);
     color: var(--fg);
-    font-size: 14px;
+    font-size: var(--t-s);
     text-decoration: none;
   }
   .skip:focus { top: 12px; }
@@ -311,7 +319,7 @@
   .tagline {
     margin: 24px auto 0;
     max-width: 30ch;
-    font-size: clamp(19px, 2.4vw, 23px);
+    font-size: clamp(var(--t-l), 2.4vw, var(--t-xl));
     line-height: 1.45;
     color: var(--muted);
     text-wrap: balance;
@@ -325,7 +333,7 @@
     margin: 32px 0 0;
     padding: 0;
     list-style: none;
-    font: 13px/1.4 var(--mono);
+    font: var(--t-xs)/1.4 var(--mono);
     color: var(--dim);
   }
   .facts li::before {
@@ -344,7 +352,7 @@
     max-width: 100%;
     margin: 24px 0 0;
     padding: 10px 18px;
-    font: 14px/1.5 var(--mono);
+    font: var(--t-s)/1.5 var(--mono);
     color: #e6e1f7;
     background: rgba(19, 16, 29, 0.78);
     border: 1px solid var(--line-strong);
@@ -392,7 +400,7 @@
     inset: 0;
     display: grid;
     place-items: center;
-    font-size: 13px;
+    font-size: var(--t-xs);
     font-weight: 500;
     color: var(--dim);
     pointer-events: none;
@@ -400,7 +408,7 @@
   .terminal pre {
     margin: 0;
     padding: 20px 22px 24px;
-    font: 14px/1.65 var(--mono);
+    font: var(--t-s)/1.65 var(--mono);
     color: #e6e1f7;
     overflow-x: auto;
     white-space: pre;
@@ -430,9 +438,7 @@
   section { padding: 96px 0 0; }
   .eyebrow {
     margin: 0 0 14px;
-    font: 500 12px/1 var(--mono);
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
+    font: 500 var(--t-s)/1 var(--sans);
     background: var(--gradient);
     -webkit-background-clip: text;
             background-clip: text;
@@ -469,25 +475,25 @@
   .features .n {
     display: block;
     margin-bottom: 18px;
-    font: 12px/1 var(--mono);
+    font: var(--t-xs)/1 var(--mono);
     color: var(--dim);
   }
   .features h3 {
     margin: 0 0 8px;
-    font-size: 17px;
+    font-size: var(--t-l);
     font-weight: 600;
     letter-spacing: -0.01em;
   }
   .features p {
     margin: 0;
-    font-size: 15px;
+    font-size: var(--t-m);
     line-height: 1.55;
     color: var(--muted);
   }
 
   /* Install: the features' cards, a command in each that selects whole */
   .features code {
-    font: 13.5px/1 var(--mono);
+    font: var(--t-s)/1 var(--mono);
     color: #e6e1f7;
   }
   .features a { color: var(--fg); text-underline-offset: 2px; }
@@ -497,7 +503,7 @@
     display: block;
     margin-top: 16px;
     padding: 11px 14px;
-    font: 13.5px/1.5 var(--mono);
+    font: var(--t-s)/1.5 var(--mono);
     color: #e6e1f7;
     background: rgba(244, 241, 255, 0.04);
     border: 1px solid var(--line);
@@ -515,13 +521,14 @@
   }
   .numbers div { border-top: 1px solid var(--line-strong); padding-top: 20px; }
   .numbers dt {
-    font-size: 14px;
+    font-size: var(--t-s);
     color: var(--muted);
   }
   .numbers dd {
     margin: 6px 0 0;
     font: 600 clamp(36px, 4.6vw, 52px)/1 var(--display);
     letter-spacing: -0.04em;
+    font-variant-numeric: tabular-nums;
     background: var(--gradient);
     -webkit-background-clip: text;
             background-clip: text;
@@ -535,14 +542,14 @@
   }
   .numbers dd + dd {
     margin-top: 8px;
-    font: 13px/1.4 var(--sans);
+    font: var(--t-xs)/1.4 var(--sans);
     letter-spacing: 0;
     background: none;
     color: var(--dim);
   }
   .footnote {
     margin: 28px 0 0;
-    font-size: 13px;
+    font-size: var(--t-xs);
     color: var(--dim);
   }
   .footnote a { color: var(--muted); text-underline-offset: 2px; }
@@ -587,20 +594,20 @@
   }
   .road strong {
     display: block;
-    font-size: 15px;
+    font-size: var(--t-m);
     font-weight: 600;
   }
   .road span {
     display: block;
     margin-top: 4px;
-    font-size: 13.5px;
+    font-size: var(--t-s);
     line-height: 1.45;
     color: var(--muted);
   }
   .road em {
     display: block;
     margin-top: 6px;
-    font: normal 12px/1 var(--mono);
+    font: normal var(--t-xs)/1 var(--mono);
     color: var(--dim);
   }
   .road .now em { color: var(--pink); }
@@ -610,7 +617,7 @@
     margin-top: 120px;
     padding: 32px 0 48px;
     border-top: 1px solid var(--line);
-    font-size: 13px;
+    font-size: var(--t-xs);
     color: var(--dim);
   }
   footer .wrap {
@@ -668,7 +675,7 @@
     .top-links a.pill { padding-block: 6px; }
     .top-links a:not(.pill):focus-visible { outline-offset: -4px; }
     .features { grid-template-columns: 1fr; }
-    .terminal pre { font-size: 12.5px; padding: 16px; }
+    .terminal pre { font-size: var(--t-xs); padding: 16px; }
     .hero { padding-top: 24px; }
     section { padding-top: 72px; }
   }
@@ -758,32 +765,26 @@
     <h2 id="why">A small core, and plugins for everything you see.</h2>
     <ul class="features">
       <li>
-        <span class="n">01</span>
         <h3>Plugins all the way</h3>
         <p>Tabs, splits, search, themes and the command palette are plugins, on the same API that everyone else gets. The core keeps the terminal itself.</p>
       </li>
       <li>
-        <span class="n">02</span>
         <h3>Plugins you can trust</h3>
-        <p>A third-party plugin is a Luau script in a sandbox of its own. It reaches only what it declares, and Sleip, Lokyr's package manager, shows you that before it installs.</p>
+        <p>A third-party plugin is a Luau script in a sandbox of its own. It reaches only what it declares, and Sleip, Lokyr’s package manager, shows you that before it installs.</p>
       </li>
       <li>
-        <span class="n">03</span>
         <h3>Fast where you feel it</h3>
         <p>Its own VT core, with 8-byte cells, and a Metal renderer: a frame of steady output in about a quarter of a millisecond at 4K.</p>
       </li>
       <li>
-        <span class="n">04</span>
         <h3>Native on macOS</h3>
         <p>An AppKit window, CoreText shaping and font fallback, input methods, Secure Keyboard Entry, and a quick terminal on a global key.</p>
       </li>
       <li>
-        <span class="n">05</span>
         <h3>Ready for agents</h3>
         <p>A tab tells what the AI agent in it is doing: at work, waiting for you, or done, with a notification while you look elsewhere. Next, Lokyr becomes an MCP server.</p>
       </li>
       <li>
-        <span class="n">06</span>
         <h3>One plain file</h3>
         <p>Every setting lives in one TOML file that can sit with your dotfiles, checked before Lokyr applies it.</p>
       </li>
@@ -802,7 +803,7 @@
       <div>
         <dt>Memory</dt>
         <dd>28<small>MB</small></dd>
-        <dd>at rest, without the GPU's</dd>
+        <dd>at rest, without the GPU’s</dd>
       </div>
       <div>
         <dt>Wakeups</dt>
