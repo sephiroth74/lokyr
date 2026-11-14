@@ -27,7 +27,7 @@ const GUIDE: &str = "docs/CONFIGURATION.md";
 const SCHEMA: &str = "crates/kernel/config.schema.json";
 
 /// The guide's template.
-const TEMPLATE: &str = "crates/kernel/config-guide.md";
+pub(crate) const TEMPLATE: &str = "crates/kernel/config-guide.md";
 
 /// The place in the template of the complete example.
 const EXAMPLE: &str = "{{example}}";

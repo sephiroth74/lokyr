@@ -2,7 +2,9 @@
 //! that git tracks which do not resolve: to a file that does not exist, or
 //! to an anchor that no heading of the file makes, as GitHub makes its
 //! anchors. Links outside the repository, to the web or by mail, are left
-//! out, as are those in code blocks and code spans.
+//! out, as are those in code blocks and code spans, and the config guide's
+//! template, whose links resolve in the guide that it makes, which the
+//! check reads.
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -28,11 +30,15 @@ pub fn run(mut args: impl Iterator<Item = String>) -> Result<ExitCode> {
         bail!("git ls-files failed");
     }
     let files = String::from_utf8(listed.stdout).context("git's list of files")?;
+    let files: Vec<&str> = files
+        .lines()
+        .filter(|file| *file != crate::config_guide::TEMPLATE)
+        .collect();
     let link = Regex::new(r"\[[^\]]*\]\(([^)\s]+)(?:\s+[^)]*)?\)|^\s*\[[^\]]+\]:\s*(\S+)")?;
     let mut anchors: HashMap<PathBuf, HashSet<String>> = HashMap::new();
     let mut findings = Vec::new();
     let mut links = 0;
-    for file in files.lines() {
+    for file in files {
         let path = root.join(file);
         let text = std::fs::read_to_string(&path).with_context(|| format!("reading {file}"))?;
         for (line, prose) in prose_lines(&text) {
