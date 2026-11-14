@@ -119,7 +119,10 @@ impl<B: Backend> App<B> {
             while let Some(line) = job.next_line() {
                 tell(Told::Line(plugin.clone(), id, line));
             }
-            let ok = job.finish();
+            let (ok, error) = job.finish();
+            if let Some(error) = error {
+                tell(Told::Line(plugin.clone(), id, error));
+            }
             tell(Told::Ended(plugin, id, ok));
         });
     }
@@ -148,7 +151,22 @@ impl<B: Backend> App<B> {
             None => Err(self.texts.text("settings-no-home")),
         };
         match written {
-            Ok(()) => self.reload(platform),
+            Ok(()) => {
+                self.reload(platform);
+                // A plugin that a fault stopped, which its section turns on
+                // already, starts again.
+                if enabled {
+                    let (restarted, errors) = self.with_plugins(platform, |plugins, context| {
+                        plugins.restart_faulted(namespace, context)
+                    });
+                    for error in errors {
+                        eprintln!("lokyr: {error}");
+                    }
+                    if restarted {
+                        self.after_plugins(platform);
+                    }
+                }
+            }
             Err(why) => {
                 eprintln!("lokyr: {why}");
                 let alert = Alert {

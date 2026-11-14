@@ -22,6 +22,7 @@ plugin-enable = Enable
 plugin-remove = Remove
 plugin-removing = Removing…
 plugin-change-failed = It did not change: { $message }
+plugin-no-reason = Sleip stopped without telling why.
 
 # The registry's plugins.
 registry-title = Registry

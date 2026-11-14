@@ -795,6 +795,20 @@ fn a_plugin_that_faults_starts_again_after_a_while_until_three_faults_in_a_minut
             .is_empty()
     );
     assert_eq!(plugins.status("acme/faulty"), Some(Status::Disabled));
+    // Turned on, it starts again, made anew, its faults counted afresh.
+    let made = FAULTY_MADE.load(Ordering::Relaxed);
+    assert_eq!(
+        plugins.restart_faulted("faulty", &mut app.context()),
+        (true, Vec::new())
+    );
+    assert_eq!(plugins.status("acme/faulty"), Some(Status::Active));
+    assert_eq!(FAULTY_MADE.load(Ordering::Relaxed), made + 1);
+    assert!(app.registry.get("faulty.go").is_some());
+    let told = fault(&mut plugins, &mut app, Duration::from_secs(121));
+    assert!(told.contains("starts again in 1 s"), "{told}");
+    // An active plugin, or none of the name, does not.
+    let restarted = plugins.restart_faulted("other", &mut app.context());
+    assert_eq!(restarted, (false, Vec::new()));
 }
 
 /// A plugin whose renders and looks fail as it tells after them, as a Luau

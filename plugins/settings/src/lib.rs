@@ -38,9 +38,11 @@ const SIDEBAR: f32 = 170.0;
 /// The height of a row of the sidebar, in points, as macOS's sidebars'.
 const ROW: f32 = 28.0;
 
-/// The plugin: the section chosen, by its place in the settings'.
+/// The plugin: whether its page shows, and the section chosen, by its
+/// place in the settings'.
 #[derive(Default)]
 pub struct SettingsPage {
+    shown: bool,
     chosen: usize,
 }
 
@@ -64,14 +66,17 @@ impl Plugin for SettingsPage {
             match event {
                 // The page shows at its first section, as its sidebar does.
                 Event::PageShown(_) => {
+                    self.shown = true;
                     self.chosen = 0;
                     again = true;
                 }
+                Event::PageHidden(_) => self.shown = false,
                 Event::SettingsChanged => again = true,
                 _ => {}
             }
         }
-        if again {
+        // Its view is there while its page shows alone.
+        if again && self.shown {
             cx.request_render(page())?;
         }
         Ok(())

@@ -216,3 +216,18 @@ fn the_page_follows_the_settings_as_they_change_and_shows_at_its_first_section()
     let tree = rendered(&mut host, &mut plugin);
     assert_eq!(text_of(&tree, "value:size").as_deref(), Some("18"));
 }
+
+#[test]
+fn the_page_renders_while_it_shows_alone() {
+    let (mut host, mut plugin) = host();
+    host.hide_page();
+    host.deliver(&mut plugin).unwrap();
+    let _ = host.take_renders();
+    // The settings change while the settings window is closed: no render
+    // asked, no failure.
+    let mut changed = settings();
+    changed.sections[0].keys[1].value = Some(Data::Integer(20));
+    host.set_settings(changed);
+    host.deliver(&mut plugin).unwrap();
+    assert!(host.take_renders().is_empty());
+}

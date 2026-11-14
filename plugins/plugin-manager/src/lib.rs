@@ -10,21 +10,24 @@
 //! Search, or Return, reads again, each to install, of its details, its
 //! versions and what each asks for. Each change runs through the packages'
 //! service, Sleip's, which tells it as it goes, a job under way of a
-//! button that cancels it. Lokyr › Plugins… and the palette's command open
-//! the settings window at the page, which follows the plugins as they
-//! change, of no wakeup at rest; Sleip reads the registry's signed list as
-//! the page first shows, or its registry's part, and again at a search. Like every built-in
-//! plugin, it depends only on the plugin SDK.
+//! button that cancels it, a change done showing as busy until Lokyr takes
+//! it. Only a plugin installed from the registry updates from it, as Sleip's
+//! list of the installed plugins tells where each came from. Lokyr ›
+//! Plugins… and the palette's command open the settings window at the page,
+//! which follows the plugins as they change while it shows, of no wakeup at
+//! rest; Sleip reads the registry's signed list as the page first shows, or
+//! its registry's part, and again at a search. Like every built-in plugin,
+//! it depends only on the plugin SDK.
 
 #![forbid(unsafe_code)]
 
 mod page;
 mod registry;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use lokyr_plugin_sdk::command::{Args, Category, Command, Error};
-use lokyr_plugin_sdk::host::{Packages, PluginState};
+use lokyr_plugin_sdk::host::Packages;
 use lokyr_plugin_sdk::message::{Data, Event, PLUGINS_CHANGED};
 use lokyr_plugin_sdk::plugin::{Cx, Plugin};
 use lokyr_plugin_sdk::ui::{UiEvent, ViewId};
@@ -93,11 +96,21 @@ impl Section {
     const ALL: [Self; 2] = [Self::Installed, Self::Registry];
 }
 
+/// The start of the source of a plugin installed from a registry, as
+/// Sleip's list writes it.
+const FROM_REGISTRY: &str = "registry+";
+
+/// What a change's job told of the lockfile: each plugin that it holds
+/// anew, of its version, or that it lost, of none; and whether it changed.
+type Lockfile = (Vec<(String, Option<String>)>, bool);
+
 /// What a job of the packages' service does.
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum Work {
     /// Reads every plugin of the registry.
     List,
+    /// Reads where each installed plugin came from.
+    Installed,
     /// Reads a plugin's versions.
     Info(String),
     /// Installs a plugin.
@@ -113,28 +126,38 @@ impl Work {
     fn changes(&self) -> Option<&str> {
         match self {
             Self::Install(name) | Self::Update(name) | Self::Remove(name) => Some(name),
-            Self::List | Self::Info(_) => None,
+            Self::List | Self::Installed | Self::Info(_) => None,
         }
     }
 }
 
-/// The plugin: the part of the page shown; the jobs under way, each of its
-/// work, and the error that each told; the last failure of each plugin's
-/// change, which shows until it changes again; the registry's plugins,
-/// once read, those of the reading under way, its failure and its notes;
-/// the words that filter them; and the plugin whose details show.
+/// The plugin: whether its page shows, and the part shown; the jobs under
+/// way, each of its work, the error that each told, what each changed of
+/// the lockfile, and those cancelled; the changes done that Lokyr has not
+/// taken yet, each of its work and of the version that it awaits, none of
+/// a plugin removed; the last failure of each plugin's change, which shows
+/// until it changes again; where each installed plugin came from, as
+/// Sleip's list tells; the registry's plugins, once read, those of the
+/// reading under way, its failure and its notes; the words that filter
+/// them; and the plugin whose details show, and the failure of their read.
 #[derive(Default)]
 pub struct Manager {
+    shown: bool,
     section: Section,
     jobs: BTreeMap<u64, Work>,
     errors: BTreeMap<u64, String>,
+    lockfile: BTreeMap<u64, Lockfile>,
+    cancelled: BTreeSet<u64>,
+    settling: BTreeMap<String, (Work, Option<String>)>,
     failed: BTreeMap<String, String>,
+    sources: BTreeMap<String, String>,
     found: Option<Vec<Found>>,
     finding: Vec<Found>,
     registry_error: Option<String>,
     notes: Vec<String>,
     query: String,
     detail: Option<(String, Option<Info>)>,
+    info_failed: Option<(String, String)>,
 }
 
 /// The page's view.
@@ -167,26 +190,36 @@ impl Plugin for Manager {
         let mut again = false;
         for event in events {
             match event {
-                Event::PluginsChanged => again = true,
+                Event::PluginsChanged => {
+                    self.settle(cx)?;
+                    again = true;
+                }
                 // The page shows at its installed plugins, as its sidebar
-                // does, the registry read as it first shows.
+                // does, the registry read as it first shows, and where each
+                // installed plugin came from read anew.
                 Event::PageShown(_) => {
+                    self.shown = true;
                     self.section = Section::Installed;
                     self.detail = None;
                     if self.found.is_none() {
                         self.read_registry(cx)?;
                     }
+                    self.read_sources(cx)?;
                     again = true;
                 }
+                Event::PageHidden(_) => self.shown = false,
                 Event::Package { id, line } => again |= self.line(*id, line),
                 Event::PackagesEnded { id, ok } => {
-                    self.ended(*id, *ok);
+                    if self.ended(*id, *ok) {
+                        self.read_sources(cx)?;
+                    }
                     again = true;
                 }
                 _ => {}
             }
         }
-        if again {
+        // Its view is there while its page shows alone.
+        if again && self.shown {
             cx.request_render(page())?;
         }
         Ok(())
@@ -244,11 +277,13 @@ impl Manager {
     /// A click on the button of `key`: whether it did something.
     fn clicked(&mut self, cx: &mut Cx<'_>, key: &str) -> Result<bool, Error> {
         if let Some(name) = key.strip_prefix(TOGGLE) {
+            // Active, or waiting for what starts it, turns off; turned off,
+            // or stopped by a fault, turns on, and starts again.
             let on = cx
                 .plugins()?
                 .iter()
                 .find(|plugin| plugin.name == name)
-                .is_some_and(|plugin| plugin.state != PluginState::Off);
+                .is_some_and(|plugin| page::is_active(plugin.state));
             cx.set_plugin_enabled(name, !on)?;
         } else if let Some(name) = key.strip_prefix(REMOVE) {
             self.change(cx, Work::Remove(name.to_owned()))?;
@@ -260,7 +295,7 @@ impl Manager {
             let job = cx.packages(Packages::Info {
                 plugin: name.to_owned(),
             })?;
-            self.failed.remove(name);
+            self.info_failed = None;
             self.jobs.insert(job, Work::Info(name.to_owned()));
             self.detail = Some((name.to_owned(), None));
         } else if let Some(job) = key.strip_prefix(CANCEL) {
@@ -271,6 +306,7 @@ impl Manager {
                 return Ok(false);
             }
             cx.cancel_packages(job)?;
+            self.cancelled.insert(job);
         } else if key == BACK {
             self.detail = None;
         } else if key == SEARCH {
@@ -287,7 +323,7 @@ impl Manager {
         let Some(name) = work.changes().map(str::to_owned) else {
             return Ok(());
         };
-        if self.changing(&name).is_some() {
+        if self.changing(&name).is_some() || self.settling.contains_key(&name) {
             return Ok(());
         }
         let call = match &work {
@@ -322,6 +358,52 @@ impl Manager {
         Ok(())
     }
 
+    /// Reads where each installed plugin came from, unless a reading runs
+    /// already.
+    fn read_sources(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
+        if self.jobs.values().any(|work| *work == Work::Installed) {
+            return Ok(());
+        }
+        let job = cx.packages(Packages::List)?;
+        self.jobs.insert(job, Work::Installed);
+        Ok(())
+    }
+
+    /// Whether the installed plugin `name` came from the registry, which
+    /// updates it, as Sleip's list told; not of a folder, a repository or a
+    /// plugin under development, whose source an update would replace.
+    fn of_registry(&self, name: &str) -> bool {
+        self.sources
+            .get(name)
+            .is_some_and(|source| source.starts_with(FROM_REGISTRY))
+    }
+
+    /// The changes done that Lokyr took, as the plugins' list tells them:
+    /// a plugin there at the version that it awaits, or gone.
+    fn settle(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
+        if self.settling.is_empty() {
+            return Ok(());
+        }
+        let plugins = cx.plugins()?;
+        self.settling.retain(|name, (_, version)| {
+            let now = plugins
+                .iter()
+                .find(|plugin| plugin.name == *name && !plugin.built_in);
+            match (now, version) {
+                (None, None) => false,
+                (Some(plugin), Some(version)) => plugin.version.as_deref() != Some(version),
+                _ => true,
+            }
+        });
+        Ok(())
+    }
+
+    /// The work of the change of the plugin `name` that is done and that
+    /// Lokyr has not taken yet, if one is.
+    fn settling(&self, name: &str) -> Option<&Work> {
+        self.settling.get(name).map(|(work, _)| work)
+    }
+
     /// The job and the work of the change of the plugin `name` under way,
     /// if one is.
     fn changing(&self, name: &str) -> Option<(u64, &Work)> {
@@ -344,6 +426,21 @@ impl Manager {
             return false;
         }
         match self.jobs.get(&id) {
+            Some(Work::Installed) => {
+                if let Some((name, source)) = registry::listed(line) {
+                    self.sources.insert(name, source);
+                }
+                false
+            }
+            Some(Work::Install(_) | Work::Update(_) | Work::Remove(_)) => {
+                let (changes, changed) = self.lockfile.entry(id).or_insert((Vec::new(), true));
+                if let Some(change) = registry::changed(line) {
+                    changes.push(change);
+                } else if let Some(done) = registry::done_changed(line) {
+                    *changed = done;
+                }
+                false
+            }
             Some(Work::List) => {
                 if let Some(found) = registry::found(line) {
                     self.finding.push(found);
@@ -369,24 +466,47 @@ impl Manager {
     }
 
     /// The job `id` ended, `ok` or not: the registry's plugins read, or its
-    /// failure; a change that failed tells why, a cancelled one nothing.
-    fn ended(&mut self, id: u64, ok: bool) {
-        let error = self.errors.remove(&id);
+    /// failure; where the installed plugins came from; a plugin's versions,
+    /// or why not; a change done, busy until Lokyr takes what it changed of
+    /// the lockfile, or one that failed, of why, a cancelled one nothing. A
+    /// failure that tells no error tells so, of an empty text. Whether it
+    /// changed the installed plugins.
+    fn ended(&mut self, id: u64, ok: bool) -> bool {
+        let error = self.errors.remove(&id).unwrap_or_default();
+        let cancelled = self.cancelled.remove(&id);
+        let (changes, changed) = self.lockfile.remove(&id).unwrap_or((Vec::new(), true));
         let Some(work) = self.jobs.remove(&id) else {
-            return;
+            return false;
         };
         match work {
             Work::List if ok => self.found = Some(std::mem::take(&mut self.finding)),
             Work::List => {
                 self.finding.clear();
-                self.registry_error = Some(error.unwrap_or_default());
+                self.registry_error = Some(error);
             }
-            Work::Info(name) | Work::Install(name) | Work::Update(name) | Work::Remove(name) => {
-                if let (false, Some(error)) = (ok, error) {
-                    self.failed.insert(name, error);
+            Work::Installed => {}
+            Work::Info(name) => {
+                if !ok {
+                    self.info_failed = Some((name, error));
+                }
+            }
+            Work::Install(ref name) | Work::Update(ref name) | Work::Remove(ref name) => {
+                if ok {
+                    // Each plugin that the lockfile holds anew, or lost, its
+                    // dependencies too, busy until Lokyr takes it.
+                    if changed {
+                        for (plugin, version) in changes {
+                            self.settling.insert(plugin, (work.clone(), version));
+                        }
+                    }
+                    return true;
+                }
+                if !cancelled {
+                    self.failed.insert(name.clone(), error);
                 }
             }
         }
+        false
     }
 }
 

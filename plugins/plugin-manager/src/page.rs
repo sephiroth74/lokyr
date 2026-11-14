@@ -26,6 +26,21 @@ const SIDEBAR: f32 = 170.0;
 /// The height of a row of the sidebar, in points, as macOS's sidebars'.
 const ROW: f32 = 28.0;
 
+/// Whether a plugin of `state` is active: running, or waiting for what
+/// starts it; not turned off nor stopped by a fault.
+pub fn is_active(state: PluginState) -> bool {
+    matches!(state, PluginState::Active | PluginState::Waiting)
+}
+
+/// The text of why a job failed, `error`, or of a failure that told none.
+fn why(cx: &mut Cx<'_>, error: &str) -> String {
+    if error.is_empty() {
+        message(cx, "plugin-no-reason", &[])
+    } else {
+        error.to_owned()
+    }
+}
+
 /// The page's tree, of the plugins `plugins` as the host tells them.
 pub fn tree(manager: &Manager, cx: &mut Cx<'_>, plugins: &[PluginInfo]) -> Node {
     let part = match (manager.section, &manager.detail) {
@@ -200,8 +215,9 @@ fn registry_part(manager: &Manager, cx: &mut Cx<'_>, plugins: &[PluginInfo]) -> 
         );
     }
     if let Some(error) = &manager.registry_error {
+        let error = why(cx, error);
         part.push(failure(
-            message(cx, "registry-failed", &[("message", error.clone())]),
+            message(cx, "registry-failed", &[("message", error)]),
             "registry-failed",
         ));
     }
@@ -261,13 +277,14 @@ fn details(
             .find(|version| !version.yanked && version.taken != Some(false))
     });
     let Some(info) = info else {
-        if let Some(failure_text) = manager.failed.get(name) {
+        if let Some((_, error)) = manager
+            .info_failed
+            .as_ref()
+            .filter(|(failed, _)| failed == name)
+        {
+            let error = why(cx, error);
             part.push(failure(
-                message(
-                    cx,
-                    "plugin-info-failed",
-                    &[("message", failure_text.clone())],
-                ),
+                message(cx, "plugin-info-failed", &[("message", error)]),
                 "info-failed",
             ));
         } else {
@@ -313,11 +330,14 @@ fn details(
             .map(|version| version.capabilities.clone())
             .unwrap_or_default(),
         taken: newest.and_then(|version| version.taken),
+        // No version that an install takes, of every one yanked.
+        yanked: newest.is_none() && !info.versions.is_empty(),
     };
     part.push(row_of(actions_of_found(manager, cx, plugins, &found), 8.0).key("install-row"));
     if let Some(error) = manager.failed.get(name) {
+        let error = why(cx, error);
         part.push(failure(
-            message(cx, "plugin-change-failed", &[("message", error.clone())]),
+            message(cx, "plugin-change-failed", &[("message", error)]),
             "failed",
         ));
     }
@@ -369,7 +389,7 @@ fn installed_row(manager: &Manager, cx: &mut Cx<'_>, plugin: &PluginInfo) -> Nod
     }
     // Active, whether it runs or waits for what starts it, or disabled,
     // turned off or stopped; a fault tells why on a line of its own.
-    let active = matches!(plugin.state, PluginState::Active | PluginState::Waiting);
+    let active = is_active(plugin.state);
     let state = message(
         cx,
         if active {
@@ -421,14 +441,16 @@ fn installed_row(manager: &Manager, cx: &mut Cx<'_>, plugin: &PluginInfo) -> Nod
         about.push(Node::text(capabilities).style(small()).layout(wrapped()));
     }
     if let Some(error) = manager.failed.get(name) {
+        let error = why(cx, error);
         about.push(failure(
-            message(cx, "plugin-change-failed", &[("message", error.clone())]),
+            message(cx, "plugin-change-failed", &[("message", error)]),
             &format!("failed:{name}"),
         ));
     }
-    let actions = match manager.changing(name) {
-        Some((job, work)) => under_way(cx, job, work),
-        None => {
+    let actions = match (manager.changing(name), manager.settling(name)) {
+        (Some((job, work)), _) => under_way(cx, Some(job), work),
+        (None, Some(work)) => under_way(cx, None, work),
+        (None, None) => {
             let mut actions = Vec::new();
             // A newer version that the registry has and this Lokyr takes.
             if let Some(newer) = newer(manager, plugin) {
@@ -438,10 +460,11 @@ fn installed_row(manager: &Manager, cx: &mut Cx<'_>, plugin: &PluginInfo) -> Nod
                 );
             }
             if name != OWN {
-                let id = if plugin.state == PluginState::Off {
-                    "plugin-enable"
-                } else {
+                // Disabled, turned off or stopped by a fault, it enables.
+                let id = if active {
                     "plugin-disable"
+                } else {
+                    "plugin-enable"
                 };
                 actions.push(
                     Node::button(message(cx, id, &[])).key(format!("{TOGGLE}{name}").as_str()),
@@ -482,8 +505,9 @@ fn found_row(manager: &Manager, cx: &mut Cx<'_>, plugins: &[PluginInfo], found: 
             .layout(wrapped()),
     );
     if let Some(error) = manager.failed.get(name) {
+        let error = why(cx, error);
         about.push(failure(
-            message(cx, "plugin-change-failed", &[("message", error.clone())]),
+            message(cx, "plugin-change-failed", &[("message", error)]),
             &format!("failed:{name}"),
         ));
     }
@@ -494,9 +518,10 @@ fn found_row(manager: &Manager, cx: &mut Cx<'_>, plugins: &[PluginInfo], found: 
     row(about, actions, &format!("found:{name}"), name)
 }
 
-/// The buttons of a plugin of the registry: its change under way; or its
-/// update to the newer version found; or, installed, a text that says so;
-/// or its install.
+/// The buttons of a plugin of the registry: its change under way, or done
+/// and not taken yet; or its update to the newer version found, of one
+/// installed from the registry; or, installed, a text that says so; or its
+/// install, but of a version yanked.
 fn actions_of_found(
     manager: &Manager,
     cx: &mut Cx<'_>,
@@ -505,7 +530,10 @@ fn actions_of_found(
 ) -> Vec<Node> {
     let name = &found.name;
     if let Some((job, work)) = manager.changing(name) {
-        return under_way(cx, job, work);
+        return under_way(cx, Some(job), work);
+    }
+    if let Some(work) = manager.settling(name) {
+        return under_way(cx, None, work);
     }
     let installed = plugins
         .iter()
@@ -515,6 +543,8 @@ fn actions_of_found(
             Some(version)
                 if !found.version.is_empty()
                     && found.taken != Some(false)
+                    && !found.yanked
+                    && manager.of_registry(name)
                     && registry::compare(&found.version, version) == Ordering::Greater =>
             {
                 vec![
@@ -536,6 +566,11 @@ fn actions_of_found(
                     }),
             ],
         },
+        None if found.yanked => vec![
+            Node::text(message(cx, "version-yanked", &[]))
+                .key(format!("yanked:{name}").as_str())
+                .style(warning()),
+        ],
         None => vec![
             Node::button(message(cx, "plugin-install", &[]))
                 .key(format!("{INSTALL}{name}").as_str()),
@@ -544,7 +579,9 @@ fn actions_of_found(
 }
 
 /// The newer version of the installed `plugin` that the registry has and
-/// this Lokyr takes, as its reading found, if it found one.
+/// this Lokyr takes, not yanked, as its reading found, if it found one: of
+/// a plugin installed from the registry alone, as an update would replace
+/// the folder or the repository of another with the registry's.
 fn newer(manager: &Manager, plugin: &PluginInfo) -> Option<String> {
     let version = plugin.version.as_deref()?;
     let found = manager
@@ -553,24 +590,32 @@ fn newer(manager: &Manager, plugin: &PluginInfo) -> Option<String> {
         .iter()
         .find(|found| found.name == plugin.name)?;
     (!plugin.built_in
+        && manager.of_registry(&plugin.name)
         && found.taken != Some(false)
+        && !found.yanked
         && registry::compare(&found.version, version) == Ordering::Greater)
         .then(|| found.version.clone())
 }
 
 /// The buttons of a change under way, of the job `job`: a spinner, what it
-/// does, and its cancel.
-fn under_way(cx: &mut Cx<'_>, job: u64, work: &Work) -> Vec<Node> {
+/// does, and its cancel; of none, a change done that Lokyr has not taken
+/// yet, which no longer cancels.
+fn under_way(cx: &mut Cx<'_>, job: Option<u64>, work: &Work) -> Vec<Node> {
     let doing = match work {
         Work::Install(_) => "plugin-installing",
         Work::Update(_) => "plugin-updating",
         _ => "plugin-removing",
     };
-    vec![
+    let mut nodes = vec![
         spinner(),
         Node::text(message(cx, doing, &[])).style(small()),
-        Node::button(message(cx, "plugin-cancel", &[])).key(format!("{CANCEL}{job}").as_str()),
-    ]
+    ];
+    if let Some(job) = job {
+        nodes.push(
+            Node::button(message(cx, "plugin-cancel", &[])).key(format!("{CANCEL}{job}").as_str()),
+        );
+    }
+    nodes
 }
 
 /// What a version asks for: its capabilities, or none.

@@ -20,6 +20,8 @@ pub struct Found {
     /// Whether this Lokyr takes the version shown; `None` as Sleip found
     /// no Lokyr.
     pub taken: Option<bool>,
+    /// Whether the version shown was yanked, which no install takes.
+    pub yanked: bool,
 }
 
 /// A plugin's versions and what each asks for, as `info` tells them.
@@ -63,7 +65,30 @@ pub fn found(line: &Data) -> Option<Found> {
         description: owned(line, "description"),
         capabilities: texts(line, "capabilities"),
         taken: boolean(line, "taken"),
+        yanked: boolean(line, "yanked").unwrap_or(false),
     })
+}
+
+/// The installed plugin and where it came from, of a `plugin` line of
+/// `list`, as `registry+<address>` or `path+<path>`.
+pub fn listed(line: &Data) -> Option<(String, String)> {
+    (event(line)? == "plugin").then(|| (owned(line, "name"), owned(line, "source")))
+}
+
+/// What a line of a change tells of the lockfile: a plugin installed, of
+/// its version; one removed, of none.
+pub fn changed(line: &Data) -> Option<(String, Option<String>)> {
+    match event(line)? {
+        "installed" => Some((owned(line, "name"), Some(owned(line, "version")))),
+        "removed" => Some((owned(line, "name"), None)),
+        _ => None,
+    }
+}
+
+/// Whether the lockfile changed, of the `done` line of `add` or `update`;
+/// `None` of another line.
+pub fn done_changed(line: &Data) -> Option<bool> {
+    (event(line)? == "done").then(|| boolean(line, "changed").unwrap_or(true))
 }
 
 /// The plugin's versions of an `info` line.
@@ -257,6 +282,7 @@ mod tests {
                 description: "Notes".to_owned(),
                 capabilities: vec!["clipboard-write".to_owned(), "title-text".to_owned()],
                 taken: None,
+                yanked: false,
             })
         );
         assert_eq!(info(&line), None);
@@ -295,5 +321,29 @@ mod tests {
         assert_eq!(message_of(&error, "error").as_deref(), Some("offline"));
         assert_eq!(message_of(&error, "note"), None);
         assert_eq!(found(&Data::Nil), None);
+        // The installed plugins' sources, and what a change did.
+        let plugin = map(&[
+            ("event", text("plugin")),
+            ("name", text("acme/notes")),
+            ("source", text("path+/Users/me/notes")),
+        ]);
+        assert_eq!(
+            listed(&plugin),
+            Some(("acme/notes".to_owned(), "path+/Users/me/notes".to_owned()))
+        );
+        let installed = map(&[
+            ("event", text("installed")),
+            ("name", text("acme/notes")),
+            ("version", text("1.3.0")),
+        ]);
+        assert_eq!(
+            changed(&installed),
+            Some(("acme/notes".to_owned(), Some("1.3.0".to_owned())))
+        );
+        let removed = map(&[("event", text("removed")), ("name", text("acme/notes"))]);
+        assert_eq!(changed(&removed), Some(("acme/notes".to_owned(), None)));
+        let done = map(&[("event", text("done")), ("changed", Data::Boolean(false))]);
+        assert_eq!(done_changed(&done), Some(false));
+        assert_eq!(done_changed(&removed), None);
     }
 }

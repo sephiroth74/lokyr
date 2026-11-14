@@ -5,7 +5,9 @@
 use std::io::{BufRead, BufReader, Read as _};
 use std::path::Path;
 use std::process::{Child, ChildStdout, Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
+use std::thread::JoinHandle;
 
 use lokyr_plugin_sdk::host::Packages;
 pub use serde_json::Value;
@@ -15,22 +17,30 @@ use serde_json::json;
 /// told as an error, as Sleip tells none so long.
 pub const LONGEST_LINE: usize = 1 << 20;
 
+/// The most bytes of Sleip's standard error that a job keeps, its last, to
+/// tell why a command that told no error failed.
+pub const KEPT_ERRORS: usize = 2048;
+
 /// A job of the packages' service: Sleip's command of a call, whose lines
-/// it reads.
+/// it reads, and the last of its standard error, which a thread reads.
 pub struct Job {
     child: Arc<Mutex<Child>>,
     lines: BufReader<ChildStdout>,
+    errors: Option<JoinHandle<Vec<u8>>>,
+    stopped: Arc<AtomicBool>,
+    told_error: bool,
 }
 
 /// What ends a job before its command does, from another thread, as the
 /// user stops it.
 #[derive(Clone)]
-pub struct Stop(Arc<Mutex<Child>>);
+pub struct Stop(Arc<Mutex<Child>>, Arc<AtomicBool>);
 
 impl Stop {
     /// Ends the job's command, if it runs: its lines end, and it ends of no
-    /// success.
+    /// success, of no error.
     pub fn stop(&self) {
+        self.1.store(true, Ordering::Relaxed);
         let mut child = self.0.lock().unwrap_or_else(PoisonError::into_inner);
         let _ = child.kill();
     }
@@ -39,28 +49,47 @@ impl Stop {
 impl Job {
     /// Starts `sleip`'s command of `call`, of `--json`, of the environment
     /// of the app and the variables of `env` beside it, its input of
-    /// nothing and its errors dropped, as it tells them as lines.
+    /// nothing, the last of its standard error kept.
     pub fn start(sleip: &Path, call: &Packages, env: &[(String, String)]) -> std::io::Result<Self> {
         let mut child = Command::new(sleip)
             .args(call.args())
             .envs(env.iter().map(|(name, value)| (name, value)))
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
-            .stderr(Stdio::null())
+            .stderr(Stdio::piped())
             .spawn()?;
         let stdout = child
             .stdout
             .take()
             .ok_or_else(|| std::io::Error::other("Sleip's output cannot be read"))?;
+        let errors = child.stderr.take().map(|mut stderr| {
+            std::thread::spawn(move || {
+                let mut kept = Vec::new();
+                let mut part = [0; 4096];
+                while let Ok(read) = stderr.read(&mut part) {
+                    if read == 0 {
+                        break;
+                    }
+                    kept.extend_from_slice(&part[..read]);
+                    if kept.len() > KEPT_ERRORS {
+                        kept.drain(..kept.len() - KEPT_ERRORS);
+                    }
+                }
+                kept
+            })
+        });
         Ok(Self {
             child: Arc::new(Mutex::new(child)),
             lines: BufReader::new(stdout),
+            errors,
+            stopped: Arc::new(AtomicBool::new(false)),
+            told_error: false,
         })
     }
 
     /// What ends it before its command does.
     pub fn stopper(&self) -> Stop {
-        Stop(Arc::clone(&self.child))
+        Stop(Arc::clone(&self.child), Arc::clone(&self.stopped))
     }
 
     /// The event of the next line that the command tells, an object of its
@@ -90,18 +119,49 @@ impl Job {
                 "Sleip told a line past {LONGEST_LINE} bytes"
             )));
         }
-        match serde_json::from_slice::<Value>(&line) {
-            Ok(event) if event.get("event").is_some_and(Value::is_string) => Some(event),
-            _ => Some(error("Sleip told a line that is no event")),
-        }
+        let event = match serde_json::from_slice::<Value>(&line) {
+            Ok(event) if event.get("event").is_some_and(Value::is_string) => event,
+            _ => error("Sleip told a line that is no event"),
+        };
+        self.told_error |= event["event"] == "error";
+        Some(event)
     }
 
     /// Waits for the command's end, its lines read or not: whether it
-    /// succeeded.
-    pub fn finish(self) -> bool {
+    /// succeeded, and, of a failure that told no error and that no stop
+    /// made, the error that tells it, of the last lines of Sleip's
+    /// standard error or of its exit.
+    pub fn finish(mut self) -> (bool, Option<Value>) {
         drop(self.lines);
-        let mut child = self.child.lock().unwrap_or_else(PoisonError::into_inner);
-        child.wait().is_ok_and(|status| status.success())
+        let status = {
+            let mut child = self.child.lock().unwrap_or_else(PoisonError::into_inner);
+            child.wait()
+        };
+        let errors = self
+            .errors
+            .take()
+            .and_then(|reader| reader.join().ok())
+            .unwrap_or_default();
+        let ok = status.as_ref().is_ok_and(std::process::ExitStatus::success);
+        if ok || self.told_error || self.stopped.load(Ordering::Relaxed) {
+            return (ok, None);
+        }
+        let errors = String::from_utf8_lossy(&errors);
+        let last: Vec<&str> = errors
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+            .collect();
+        let last = last[last.len().saturating_sub(3)..].join(" ");
+        let message = if !last.is_empty() {
+            format!("Sleip failed: {last}")
+        } else {
+            match status.ok().and_then(|status| status.code()) {
+                Some(code) => format!("Sleip ended of the exit code {code}, telling no error"),
+                None => "Sleip ended of a signal, telling no error".to_owned(),
+            }
+        };
+        (false, Some(error(&message)))
     }
 }
 
@@ -156,7 +216,7 @@ exit 0"#,
         }
         assert_eq!(job.next_line().unwrap()["changed"], 1);
         assert_eq!(job.next_line(), None);
-        assert!(job.finish());
+        assert_eq!(job.finish(), (true, None));
     }
 
     #[test]
@@ -168,7 +228,27 @@ exit 0"#,
         let mut job = Job::start(&failing, &Packages::List, &[]).unwrap();
         assert_eq!(job.next_line().unwrap()["message"], "no");
         assert_eq!(job.next_line(), None);
-        assert!(!job.finish());
+        assert_eq!(job.finish(), (false, None));
+        // A failure that told no error is told of its standard error's last
+        // lines, or of its exit.
+        let silent = script(
+            "silent",
+            "echo 'first' >&2; echo 'the store is locked' >&2; exit 3",
+        );
+        let mut job = Job::start(&silent, &Packages::List, &[]).unwrap();
+        assert_eq!(job.next_line(), None);
+        let (ok, told) = job.finish();
+        assert!(!ok);
+        assert_eq!(
+            told.unwrap()["message"],
+            "Sleip failed: first the store is locked"
+        );
+        let mute = script("mute", "exit 4");
+        let job = Job::start(&mute, &Packages::List, &[]).unwrap();
+        assert_eq!(
+            job.finish().1.unwrap()["message"],
+            "Sleip ended of the exit code 4, telling no error"
+        );
         // Stopped as it waits, its lines end.
         // Of `exec`, so that the process stopped is the one that holds the
         // output, as no shell's child is left holding it.
@@ -177,7 +257,8 @@ exit 0"#,
         let stop = job.stopper();
         let stopping = std::thread::spawn(move || stop.stop());
         assert_eq!(job.next_line(), None);
-        assert!(!job.finish());
+        // Stopped, of no error.
+        assert_eq!(job.finish(), (false, None));
         stopping.join().unwrap();
         // A Sleip not there does not start.
         assert!(Job::start(Path::new("/no/sleip"), &Packages::List, &[]).is_err());
@@ -196,6 +277,6 @@ exit 0"#,
         let wrong = job.next_line().unwrap();
         assert_eq!(wrong["event"], "error");
         assert_eq!(job.next_line().unwrap()["event"], "done");
-        assert!(job.finish());
+        assert_eq!(job.finish(), (true, None));
     }
 }

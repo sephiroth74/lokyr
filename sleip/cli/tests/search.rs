@@ -1304,7 +1304,10 @@ fn served(
     while let Some(line) = job.next_line() {
         lines.push(line);
     }
-    (lines, job.finish())
+    // Sleip tells each failure of an error line, of none of the job's own.
+    let (ok, error) = job.finish();
+    assert_eq!(error, None);
+    (lines, ok)
 }
 
 #[test]

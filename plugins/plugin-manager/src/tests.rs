@@ -2,7 +2,7 @@
 //! give; its messages are their ids, as the fake host has no catalogs.
 
 use lokyr_plugin_sdk::fake::{FakeHost, snapshot};
-use lokyr_plugin_sdk::host::{CapabilityDecision, Decision, PaneId, PluginInfo};
+use lokyr_plugin_sdk::host::{CapabilityDecision, Decision, PaneId, PluginInfo, PluginState};
 use lokyr_plugin_sdk::message::Request;
 use lokyr_plugin_sdk::view::{Kind, Role};
 
@@ -161,8 +161,27 @@ fn read() -> (FakeHost, Manager) {
         line("done", &[("found", Data::Integer(3))]),
     ];
     host.answer_packages(*job, lines, true);
+    // The installed plugin, of the registry.
+    answer_sources(
+        &mut host,
+        &[("acme/notes", "registry+https://pkg.lokyr.dev")],
+    );
     host.deliver(&mut manager).unwrap();
     (host, manager)
+}
+
+/// Answers the reading of where each installed plugin came from, which
+/// runs, of `sources`, each a plugin's name and its source.
+fn answer_sources(host: &mut FakeHost, sources: &[(&str, &str)]) {
+    let jobs = jobs_of(host, |call| matches!(call, Packages::List));
+    let [(job, _)] = &jobs[..] else {
+        panic!("{jobs:?}");
+    };
+    let lines = sources
+        .iter()
+        .map(|(name, source)| line("plugin", &[("name", text(name)), ("source", text(source))]))
+        .collect();
+    host.answer_packages(*job, lines, true);
 }
 
 /// The event of the sidebar's choice of the part `item`.
@@ -615,4 +634,141 @@ fn the_registry_is_read_as_its_part_shows_or_at_return_whatever_the_page_heard()
         1
     );
     assert_eq!(manager.query, "notes");
+}
+
+#[test]
+fn a_plugin_of_a_folder_or_a_repository_is_not_updated_from_the_registry() {
+    let (mut host, mut manager) = host();
+    let jobs = jobs_of(&host, |call| matches!(call, Packages::Search { .. }));
+    let lines = vec![found_line("acme/notes", "1.3.0", true, &[])];
+    host.answer_packages(jobs[0].0, lines, true);
+    answer_sources(&mut host, &[("acme/notes", "path+/Users/me/notes")]);
+    host.deliver(&mut manager).unwrap();
+    let tree = rendered(&mut host, &mut manager);
+    assert!(button(&tree, "update:acme/notes").is_none());
+    host.ui_event(&mut manager, &choose(1)).unwrap();
+    let tree = rendered(&mut host, &mut manager);
+    assert!(button(&tree, "update:acme/notes").is_none());
+    assert!(find(&tree, "installed:acme/notes").is_some());
+}
+
+#[test]
+fn a_yanked_version_is_neither_installed_nor_an_update() {
+    let (mut host, mut manager) = host();
+    let jobs = jobs_of(&host, |call| matches!(call, Packages::Search { .. }));
+    let yanked = |name: &str, version: &str| {
+        let Data::Map(mut fields) = found_line(name, version, true, &[]) else {
+            unreachable!();
+        };
+        fields.insert("yanked".to_owned(), Data::Boolean(true));
+        Data::Map(fields)
+    };
+    let lines = vec![yanked("acme/notes", "1.3.0"), yanked("acme/gone", "0.1.0")];
+    host.answer_packages(jobs[0].0, lines, true);
+    answer_sources(
+        &mut host,
+        &[("acme/notes", "registry+https://pkg.lokyr.dev")],
+    );
+    host.deliver(&mut manager).unwrap();
+    host.ui_event(&mut manager, &choose(1)).unwrap();
+    let tree = rendered(&mut host, &mut manager);
+    assert!(button(&tree, "update:acme/notes").is_none());
+    assert!(button(&tree, "install:acme/gone").is_none());
+    assert!(find(&tree, "yanked:acme/gone").is_some());
+}
+
+#[test]
+fn a_failure_that_tells_no_error_says_so_and_the_details_stop_waiting() {
+    let (mut host, mut manager) = read();
+    host.ui_event(&mut manager, &choose(1)).unwrap();
+    host.ui_event(&mut manager, &click("details:acme/sync"))
+        .unwrap();
+    let job = jobs_of(&host, |call| matches!(call, Packages::Info { .. }))[0].0;
+    host.answer_packages(job, Vec::new(), false);
+    host.deliver(&mut manager).unwrap();
+    let tree = rendered(&mut host, &mut manager);
+    let shown = texts(&tree);
+    assert!(
+        shown.contains(&"plugin-info-failed".to_owned()),
+        "{shown:?}"
+    );
+    assert!(find(&tree, "reading").is_none());
+    // Back in the registry, its row tells no change that failed.
+    host.ui_event(&mut manager, &click(BACK)).unwrap();
+    let tree = rendered(&mut host, &mut manager);
+    assert!(
+        !texts(find(&tree, "found:acme/sync").unwrap())
+            .contains(&"plugin-change-failed".to_owned())
+    );
+    // A change that fails of no error tells that it did not change.
+    host.ui_event(&mut manager, &click("install:acme/sync"))
+        .unwrap();
+    let job = jobs_of(&host, |call| matches!(call, Packages::Add { .. }))[0].0;
+    host.answer_packages(job, Vec::new(), false);
+    host.deliver(&mut manager).unwrap();
+    let tree = rendered(&mut host, &mut manager);
+    assert!(
+        texts(find(&tree, "found:acme/sync").unwrap()).contains(&"plugin-change-failed".to_owned())
+    );
+    // The registry's reading too.
+    host.ui_event(&mut manager, &click(SEARCH)).unwrap();
+    let job = jobs_of(&host, |call| matches!(call, Packages::Search { .. }))[0].0;
+    host.answer_packages(job, Vec::new(), false);
+    host.deliver(&mut manager).unwrap();
+    let tree = rendered(&mut host, &mut manager);
+    assert!(find(&tree, "registry-failed").is_some());
+}
+
+#[test]
+fn a_removed_plugin_stays_busy_until_lokyr_takes_it_and_a_faulted_one_enables() {
+    let (mut host, mut manager) = read();
+    host.ui_event(&mut manager, &click("remove:acme/notes"))
+        .unwrap();
+    let job = jobs_of(&host, |call| matches!(call, Packages::Remove { .. }))[0].0;
+    let removed = line("removed", &[("name", text("acme/notes"))]);
+    host.answer_packages(job, vec![removed], true);
+    host.deliver(&mut manager).unwrap();
+    // Done, the plugins' list not changed yet: busy, of no button.
+    let tree = rendered(&mut host, &mut manager);
+    let row = find(&tree, "plugin:acme/notes").unwrap();
+    assert!(texts(row).contains(&"plugin-removing".to_owned()));
+    assert!(button(&tree, "remove:acme/notes").is_none());
+    host.ui_event(&mut manager, &click("remove:acme/notes"))
+        .unwrap();
+    assert!(jobs_of(&host, |call| matches!(call, Packages::Remove { .. })).is_empty());
+    // A faulted plugin is disabled, and enables.
+    host.set_plugins(vec![
+        PluginInfo {
+            state: PluginState::Faulted,
+            fault: Some("it panicked".to_owned()),
+            ..plugin("lokyr/tabs", true)
+        },
+        plugin(NAME, true),
+    ]);
+    host.deliver(&mut manager).unwrap();
+    let tree = rendered(&mut host, &mut manager);
+    assert!(find(&tree, "plugin:acme/notes").is_none());
+    assert_eq!(
+        button(&tree, "toggle:lokyr/tabs").as_deref(),
+        Some("plugin-enable")
+    );
+    host.ui_event(&mut manager, &click("toggle:lokyr/tabs"))
+        .unwrap();
+    assert!(host.take_done().contains(&Request::SetPluginEnabled {
+        plugin: "lokyr/tabs".to_owned(),
+        enabled: true,
+    }));
+}
+
+#[test]
+fn the_page_renders_while_it_shows_alone() {
+    let (mut host, mut manager) = read();
+    host.hide_page();
+    host.deliver(&mut manager).unwrap();
+    let _ = host.take_renders();
+    // The plugins change while the settings window is closed: no render
+    // asked, no failure.
+    host.set_plugins(vec![plugin(NAME, true)]);
+    host.deliver(&mut manager).unwrap();
+    assert!(host.take_renders().is_empty());
 }

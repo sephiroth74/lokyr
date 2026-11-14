@@ -2653,6 +2653,32 @@ impl Plugins {
         }
     }
 
+    /// Starts again the plugin of `namespace` if a fault stopped it, as
+    /// turning it on does, made anew of its registration and activated;
+    /// whether it faulted, and the error of its activation if it failed.
+    pub fn restart_faulted(
+        &mut self,
+        namespace: &str,
+        context: &mut Context<'_>,
+    ) -> (bool, Vec<Error>) {
+        let Some(entry) = self.entries.iter_mut().find(|entry| {
+            entry.state.namespace == namespace && entry.state.status == Status::Disabled
+        }) else {
+            return (false, Vec::new());
+        };
+        entry.state.restarts.at = None;
+        entry.state.restarts.counted = false;
+        entry.state.restarts.faults.clear();
+        stop(
+            entry,
+            context,
+            &mut self.out,
+            &mut self.declarations_changed,
+        );
+        entry.state.status = Status::Off;
+        (true, self.activate(context))
+    }
+
     /// The plugins that a fault disabled, or whose activation failed, since
     /// the last look, in their order, each with its error's message, as the
     /// app tells the user that they stopped.
