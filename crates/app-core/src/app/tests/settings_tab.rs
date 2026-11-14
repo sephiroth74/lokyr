@@ -8,7 +8,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use lokyr_kernel::plugins::ui::ViewId;
+use lokyr_kernel::plugins::ui::{UiEvent, ViewId};
 use lokyr_text_core::FontConfig;
 
 use super::*;
@@ -746,13 +746,23 @@ fn the_settings_page_shows_every_section_of_the_config_and_of_the_plugins_of_its
     assert_eq!(titles.len(), 24, "{titles:?}");
     assert_eq!(&titles[..3], ["Font", "Text", "Cursor"]);
     assert_eq!(titles[18], "Tabs");
-    // The first section's keys, of their values in force.
+    // The first section's keys, of their values in force, in their
+    // fields.
     assert_eq!(page_text(&app, own, "title"), "Font");
-    assert_eq!(page_text(&app, own, "value:size"), "13");
+    assert_eq!(page_field(&app, own, "field:size"), "13");
     assert_eq!(page_text(&app, own, "default:size"), "Default");
-    assert_eq!(page_text(&app, own, "value:family"), "Not set");
+    assert_eq!(page_field(&app, own, "field:family"), "");
+    // The page's first field has the keyboard, as the settings open.
+    assert_eq!(focused_key(&app, own), ("field:family".to_owned(), true));
     // The arrows choose a plugin's section, as the list has the keyboard.
-    assert_eq!(focused_key(&app, own), ("sections".to_owned(), true));
+    let state = app.windows.get_mut(&own).unwrap();
+    let view = state
+        .chrome
+        .iter()
+        .find(|view| matches!(view.view, ViewId::Page(_)))
+        .unwrap();
+    let list = view.surface.tree.by_key(&"sections".into()).unwrap();
+    assert!(state.focus.focus(view.id, &view.surface.tree, list));
     for _ in 0..18 {
         tap(
             &mut fake,
@@ -764,7 +774,149 @@ fn the_settings_page_shows_every_section_of_the_config_and_of_the_plugins_of_its
     }
     frames(&mut fake, &mut app, own);
     assert_eq!(page_text(&app, own, "title"), "Tabs");
-    assert_eq!(page_text(&app, own, "value:style"), "\"unified\"");
+    assert_eq!(page_button(&app, own, "choose:style"), "unified");
+}
+
+/// The text that the field `key` of the page's view in `window` holds.
+fn page_field(app: &App, window: WindowId, key: &str) -> String {
+    let view = page_view(app, window).expect("its page's view");
+    view.surface
+        .fields
+        .state(&key.into())
+        .map_or_else(|| panic!("no field {key}"), |state| state.text().to_owned())
+}
+
+/// The label of the button `key` of the page's view in `window`.
+fn page_button(app: &App, window: WindowId, key: &str) -> String {
+    let tree = &page_view(app, window)
+        .expect("its page's view")
+        .surface
+        .tree;
+    match tree.by_key(&key.into()).and_then(|node| tree.kind(node)) {
+        Some(lokyr_kernel::plugins::view::Kind::Button(button)) => button.label.clone(),
+        other => panic!("{key}: {other:?}"),
+    }
+}
+
+/// Gives the settings' page's plugin `event` of its page, or of its panel
+/// `panel`, as the window's views give their plugins theirs.
+fn settings_event(
+    fake: &mut Fake,
+    app: &mut App,
+    window: WindowId,
+    panel: Option<&str>,
+    key: &str,
+    kind: lokyr_kernel::plugins::view::UiEventKind,
+) {
+    let view = match panel {
+        Some(panel) => ViewId::Panel(lokyr_kernel::plugins::ui::PanelId(panel.to_owned())),
+        None => ViewId::Page("settings".to_owned()),
+    };
+    app.ui_events.push((
+        "lokyr/settings".to_owned(),
+        UiEvent {
+            view,
+            key: key.into(),
+            kind,
+        },
+    ));
+    frames(fake, app, window);
+}
+
+#[test]
+fn each_kind_of_key_is_written_from_the_settings_page_into_the_file_its_comments_kept() {
+    use lokyr_kernel::plugins::view::UiEventKind;
+    let directory = super::installed::shelf("settings-writes");
+    let path = directory.join("config.toml");
+    std::fs::write(
+        &path,
+        "# mine\n[font]\n# The size.\nsize = 14\n\n[window]\nscrollbar = \"never\"   # quiet\n",
+    )
+    .unwrap();
+    let drawing = Drawing::new(FontConfig::default()).unwrap();
+    let mut fake = Fake::default();
+    let mut app = App::new(
+        Some(drawing),
+        Config::read(&path).unwrap(),
+        Some(path.clone()),
+    )
+    .with_program(idle());
+    fake.start(&mut app);
+    let first = fake.windows().next().unwrap();
+    app.windows.get_mut(&first).unwrap().surface = Some(fakes::Surface::default());
+    let own = open(&mut fake, &mut app, SETTINGS_TAB);
+    assert_eq!(page_shown(&app, own), "settings");
+    assert_eq!(page_field(&app, own, "field:size"), "14");
+    let read = || std::fs::read_to_string(&path).unwrap();
+    // A number and a text, of their fields.
+    let submit = |text: &str| UiEventKind::Submit {
+        text: text.to_owned(),
+        shift: false,
+    };
+    settings_event(&mut fake, &mut app, own, None, "field:size", submit("16"));
+    settings_event(
+        &mut fake,
+        &mut app,
+        own,
+        None,
+        "field:family",
+        submit("Menlo"),
+    );
+    // The window's section: a boolean's toggle and a choice's menu.
+    let window = lokyr_kernel::config::schema::sections(&Config::default())
+        .iter()
+        .position(|section| section.name == "window")
+        .unwrap();
+    settings_event(
+        &mut fake,
+        &mut app,
+        own,
+        None,
+        "sections",
+        UiEventKind::Select { item: window },
+    );
+    settings_event(
+        &mut fake,
+        &mut app,
+        own,
+        None,
+        "set:opaque-titlebar",
+        UiEventKind::Toggle { on: true },
+    );
+    settings_event(
+        &mut fake,
+        &mut app,
+        own,
+        Some("choices:scrollbar"),
+        "choice:1",
+        UiEventKind::Toggle { on: true },
+    );
+    assert_eq!(
+        read(),
+        concat!(
+            "# mine\n[font]\n# The size.\nsize = 16\nfamily = \"Menlo\"\n\n",
+            "[window]\nscrollbar = \"always\"   # quiet\nopaque-titlebar = true\n",
+        )
+    );
+    assert_eq!(app.config.font.size.points(), 16.0);
+    assert!(app.config.window.opaque_titlebar);
+    assert!(fake.alerts().is_empty());
+    // A change of the file, which the page follows, its field holding the
+    // new value.
+    settings_event(
+        &mut fake,
+        &mut app,
+        own,
+        None,
+        "sections",
+        UiEventKind::Select { item: 0 },
+    );
+    std::fs::write(&path, read().replace("size = 16", "size = 20")).unwrap();
+    app.reload(&mut fake);
+    frames(&mut fake, &mut app, own);
+    frames(&mut fake, &mut app, own);
+    assert_eq!(page_field(&app, own, "field:size"), "20");
+    let _ = std::fs::remove_dir_all(&directory);
 }
 
 /// A plugin that asks for a text of no window, keeping the windows' focus

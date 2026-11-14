@@ -3,7 +3,7 @@
 name = "lokyr/settings"
 kind = "builtin"
 license = "MIT"
-description = "The settings window's first page: every key of the config and of the plugins' sections, of its text, its platforms and its value in force"
+description = "The settings window's first page: every key of the config and of the plugins' sections, of its text, its platforms and a control of its value, written into the config file"
 
 [activation]
 on = ["page:settings"]

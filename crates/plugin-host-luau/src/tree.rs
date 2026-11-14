@@ -63,7 +63,7 @@ pub(crate) fn own(kind: &str) -> Option<&'static [&'static str]> {
         "container" | "spacer" | "separator" | "scroll" => &[],
         "text" => &["text"],
         "icon" => &["icon"],
-        "field" => &["placeholder"],
+        "field" => &["placeholder", "text"],
         "button" => &["text", "icon", "disabled"],
         "toggle" => &["text", "icon", "on", "disabled"],
         "list" => &["row", "count", "first", "items", "row_height", "menu"],
@@ -271,6 +271,7 @@ fn one(value: Value, budget: &Budget) -> Result<(Node, Vec<Value>, Option<Value>
         "spacer" => Kind::Spacer,
         "field" => Kind::Field(Field {
             placeholder: or_default(take("placeholder"), "placeholder", budget)?,
+            text: field(take("text"), "text", budget)?,
         }),
         "button" => Kind::Button(Button {
             label: or_default(take("text"), "text", budget)?,
@@ -412,8 +413,9 @@ mod giving {
                 Kind::Container | Kind::Spacer | Kind::Separator | Kind::Scroll => {}
                 Kind::Text(text) => table.raw_set("text", text.as_str())?,
                 Kind::Icon(icon) => table.raw_set("icon", icon.as_str())?,
-                Kind::Field(Field { placeholder }) => {
+                Kind::Field(Field { placeholder, text }) => {
                     table.raw_set("placeholder", placeholder.as_str())?;
+                    set(lua, &table, "text", text)?;
                 }
                 Kind::Button(Button {
                     label,

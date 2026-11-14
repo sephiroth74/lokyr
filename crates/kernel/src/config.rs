@@ -1865,10 +1865,36 @@ pub fn set_string_hiding(
 /// no section stays of a plugin removed since; a file of no such section
 /// is left as it is.
 pub fn set_plugin_enabled(path: &Path, namespace: &str, enabled: bool) -> Result<(), Error> {
+    let value = (!enabled).then(|| toml_edit::Value::from(false));
+    set_value(path, &["plugins", namespace], "enabled", value)
+}
+
+/// Sets the key `key` of the section at `section` of the config file at
+/// `path`, `["font"]` of the app's `[font]` or `["plugins", "tabs"]` of
+/// `[plugins.tabs]`, to `value`, keeping the rest of the file, its comments
+/// too, as [`set_string`] does: a value in place of the key's own keeps the
+/// comment after it; a section that the file lacks goes at its end, after
+/// its last comments, or after the last of its siblings where they come
+/// earlier, the comments staying at the end. Of no value, the key goes, its
+/// default in force: the comments above it stay, on the next key or after
+/// the section's header, and the section goes if nothing else is left of
+/// it, no key nor comment of its own; a file of no such key is left as it
+/// is. The file as it would be is read first, and a value that the parser
+/// refuses, past its bound or not one of its key's values, is not written;
+/// nor is anything over a file that does not read.
+pub fn set_value(
+    path: &Path,
+    section: &[&str],
+    key: &str,
+    value: Option<toml_edit::Value>,
+) -> Result<(), Error> {
     let failed = |path: &Path, message: String| Error {
         path: path.to_owned(),
         position: None,
         message,
+    };
+    let (Some((leaf, parents)), Some(first)) = (section.split_last(), section.first()) else {
+        return Err(failed(path, "no section to write into".to_owned()));
     };
     let target = link_target(path);
     let text = match fs::read_to_string(&target) {
@@ -1882,56 +1908,53 @@ pub fn set_plugin_enabled(path: &Path, namespace: &str, enabled: bool) -> Result
     let mut document: DocumentMut = text
         .parse()
         .map_err(|error: toml_edit::TomlError| failed(&target, error.message().to_owned()))?;
-    let held = document
-        .get("plugins")
-        .and_then(|plugins| plugins.get(namespace))
-        .is_some();
-    if enabled {
+    let named = section.join(".");
+    let not_a_section = |name: &str| failed(&target, format!("`{name}` is a section, not a value"));
+    let held = {
+        let mut item = document.get(first);
+        for name in &section[1..] {
+            item = item.and_then(|item| item.get(name));
+        }
+        item.is_some()
+    };
+    let Some(value) = value else {
         if !held {
             return Ok(());
         }
-        let plugins = document
-            .get_mut("plugins")
-            .and_then(toml_edit::Item::as_table_like_mut)
-            .ok_or_else(|| failed(&target, "`plugins` is a section, not a value".to_owned()))?;
+        let parent = table_like_at(&mut document, parents).ok_or_else(|| not_a_section(&named))?;
         // The comments before the section's header are its own.
-        let commented = plugins
-            .get(namespace)
+        let commented = parent
+            .get(leaf)
             .and_then(toml_edit::Item::as_table)
             .and_then(|table| table.decor().prefix())
             .and_then(toml_edit::RawString::as_str)
             .is_some_and(|prefix| prefix.contains('#'));
-        let section = plugins
-            .get_mut(namespace)
+        let table = parent
+            .get_mut(leaf)
             .and_then(toml_edit::Item::as_table_like_mut)
-            .ok_or_else(|| {
-                failed(
-                    &target,
-                    format!("`plugins.{namespace}` is a section, not a value"),
-                )
-            })?;
+            .ok_or_else(|| not_a_section(&named))?;
         // The comments above the key stay, on the next key, or after the
         // section's header, which then stays.
         let next = {
-            let order: Vec<String> = section.iter().map(|(name, _)| name.to_owned()).collect();
+            let order: Vec<String> = table.iter().map(|(name, _)| name.to_owned()).collect();
             order
                 .iter()
-                .position(|name| name == "enabled")
+                .position(|name| name == key)
                 .and_then(|at| order.get(at + 1))
                 .cloned()
         };
-        let above = section
-            .key("enabled")
+        let above = table
+            .key(key)
             .and_then(|key| key.leaf_decor().prefix())
             .and_then(toml_edit::RawString::as_str)
             .filter(|above| above.contains('#'))
             .map(str::to_owned);
-        if section.remove("enabled").is_none() {
+        if table.remove(key).is_none() {
             return Ok(());
         }
         let mut kept_after = None;
         if let Some(above) = above {
-            match next.and_then(|next| section.key_mut(&next)) {
+            match next.and_then(|next| table.key_mut(&next)) {
                 Some(mut next) => {
                     let before = next
                         .leaf_decor()
@@ -1944,81 +1967,94 @@ pub fn set_plugin_enabled(path: &Path, namespace: &str, enabled: bool) -> Result
                 None => kept_after = Some(above),
             }
         }
-        let empty = section.is_empty();
+        let empty = table.is_empty();
         // The section goes of nothing else: no key, no comment above its
         // header, none of the removed key's, and none after it that is its
         // own, before the next section's own comments.
-        let position = plugins
-            .get(namespace)
+        let position = parent
+            .get(leaf)
             .and_then(toml_edit::Item::as_table)
             .and_then(toml_edit::Table::position);
         let followed = position.is_some_and(|at| own_comments_after(&document, at));
-        let plugins = document
-            .get_mut("plugins")
-            .and_then(toml_edit::Item::as_table_like_mut)
-            .ok_or_else(|| failed(&target, "`plugins` is a section, not a value".to_owned()))?;
+        let parent = table_like_at(&mut document, parents).ok_or_else(|| not_a_section(&named))?;
         if empty && !commented && kept_after.is_none() && !followed {
-            plugins.remove(namespace);
+            parent.remove(leaf);
         } else if let (Some(kept), Some(at)) = (kept_after, position) {
             put_after_header(&mut document, at, &kept);
         }
-        return write_whole(&target, &document.to_string())
+        let written = document.to_string();
+        Config::parse(&written, &target)?;
+        return write_whole(&target, &written)
             .map_err(|error| failed(&target, format!("it cannot be written: {error}")));
-    }
+    };
     // The comments and the blank lines after the last section are the
-    // document's, which a new section comes before, as `set_string` puts
-    // one, where it comes last: not where the plugins' sections come
-    // earlier, after the last of which it goes, the comments staying at the
-    // end.
-    let after = (!held && plugins_come_last(&document))
+    // document's, which a new section comes before, where it comes last:
+    // a new section of the app's always does, a plugin's where the plugins'
+    // sections come last, as it goes after the last of them.
+    let last = parents.is_empty() || plugins_come_last(&document);
+    let after = (!held && last)
         .then(|| document.trailing().as_str().map(str::to_owned))
         .flatten()
         .filter(|after| !after.is_empty());
-    let plugins = document
-        .entry("plugins")
-        .or_insert_with(|| {
-            let mut table = toml_edit::Table::new();
-            table.set_implicit(true);
-            toml_edit::Item::Table(table)
-        })
-        .as_table_like_mut()
-        .ok_or_else(|| failed(&target, "`plugins` is a section, not a value".to_owned()))?;
+    // The section's parents, of no header of their own, as `[plugins]`.
+    let mut table: &mut dyn toml_edit::TableLike = document.as_table_mut();
+    for name in parents {
+        table = table
+            .entry(name)
+            .or_insert_with(|| {
+                let mut table = toml_edit::Table::new();
+                table.set_implicit(true);
+                toml_edit::Item::Table(table)
+            })
+            .as_table_like_mut()
+            .ok_or_else(|| not_a_section(name))?;
+    }
     if !held {
-        let mut table = toml_edit::Table::new();
+        let mut new = toml_edit::Table::new();
         if let Some(after) = &after {
             let comments = after.trim_end();
-            table.decor_mut().set_prefix(if comments.is_empty() {
+            new.decor_mut().set_prefix(if comments.is_empty() {
                 "\n".to_owned()
             } else {
                 format!("{comments}\n\n")
             });
         }
-        plugins.insert(namespace, toml_edit::Item::Table(table));
+        table.insert(leaf, toml_edit::Item::Table(new));
     }
-    let section = plugins
-        .get_mut(namespace)
+    let table = table
+        .get_mut(leaf)
         .and_then(toml_edit::Item::as_table_like_mut)
-        .ok_or_else(|| {
-            failed(
-                &target,
-                format!("`plugins.{namespace}` is a section, not a value"),
-            )
-        })?;
-    match section.get_mut("enabled") {
+        .ok_or_else(|| not_a_section(&named))?;
+    match table.get_mut(key) {
         Some(toml_edit::Item::Value(old)) => {
             let decor = old.decor().clone();
-            *old = toml_edit::Value::from(enabled);
+            *old = value;
             *old.decor_mut() = decor;
         }
         _ => {
-            section.insert("enabled", toml_edit::value(enabled));
+            table.insert(key, toml_edit::Item::Value(value));
         }
     }
     if after.is_some() {
         document.set_trailing("");
     }
-    write_whole(&target, &document.to_string())
+    let written = document.to_string();
+    Config::parse(&written, &target)?;
+    write_whole(&target, &written)
         .map_err(|error| failed(&target, format!("it cannot be written: {error}")))
+}
+
+/// The table of `document` at `path`, its root of none, to change, inline
+/// or not.
+fn table_like_at<'d>(
+    document: &'d mut DocumentMut,
+    path: &[&str],
+) -> Option<&'d mut dyn toml_edit::TableLike> {
+    let mut table: &mut dyn toml_edit::TableLike = document.as_table_mut();
+    for name in path {
+        table = table.get_mut(name)?.as_table_like_mut()?;
+    }
+    Some(table)
 }
 
 /// The tables of `document` that its text writes, each of its path and
@@ -4009,6 +4045,88 @@ long-command = 0
             fs::read_to_string(&file).unwrap(),
             "[font]\nsize = \"big\"\n"
         );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_key_of_any_section_is_written_and_taken_away_of_the_file_s_comments_kept() {
+        let root = std::env::temp_dir().join(format!("lokyr-set-value-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        let file = root.join("config.toml");
+        let text = concat!(
+            "# mine\n",
+            "[font]\n",
+            "# The size.\n",
+            "size = 14   # big enough\n",
+            "\n",
+            "[plugins.tabs]\n",
+            "style = \"unified\"\n",
+            "\n",
+            "# the end\n",
+        );
+        fs::write(&file, text).unwrap();
+        // A key of its own, of its comments; a boolean of a section that
+        // the file lacks, at its end, before its last comments.
+        set_value(&file, &["font"], "size", Some(toml_edit::Value::from(16))).unwrap();
+        set_value(
+            &file,
+            &["window"],
+            "opaque-titlebar",
+            Some(toml_edit::Value::from(true)),
+        )
+        .unwrap();
+        // A plugin's key, beside its own; a number of a fraction.
+        set_value(
+            &file,
+            &["plugins", "tabs"],
+            "column-width",
+            Some(toml_edit::Value::from(240)),
+        )
+        .unwrap();
+        set_value(
+            &file,
+            &["font"],
+            "line-height",
+            Some(toml_edit::Value::from(1.2)),
+        )
+        .unwrap();
+        assert_eq!(
+            fs::read_to_string(&file).unwrap(),
+            concat!(
+                "# mine\n",
+                "[font]\n",
+                "# The size.\n",
+                "size = 16   # big enough\n",
+                "line-height = 1.2\n",
+                "\n",
+                "[plugins.tabs]\n",
+                "style = \"unified\"\n",
+                "column-width = 240\n",
+                "\n",
+                "# the end\n",
+                "\n",
+                "[window]\n",
+                "opaque-titlebar = true\n",
+            )
+        );
+        let config = Config::read(&file).unwrap();
+        assert_eq!(config.font.size.points(), 16.0);
+        // Taken away, back to its default: its comments on the next key.
+        set_value(&file, &["font"], "size", None).unwrap();
+        assert!(
+            fs::read_to_string(&file)
+                .unwrap()
+                .contains("[font]\n# The size.\nline-height = 1.2\n"),
+            "{}",
+            fs::read_to_string(&file).unwrap()
+        );
+        // A key not there leaves the file as it is; a value that the parser
+        // refuses is not written.
+        let before = fs::read_to_string(&file).unwrap();
+        set_value(&file, &["font"], "size", None).unwrap();
+        assert!(set_value(&file, &["font"], "size", Some(toml_edit::Value::from(1000))).is_err());
+        assert_eq!(fs::read_to_string(&file).unwrap(), before);
         fs::remove_dir_all(root).unwrap();
     }
 

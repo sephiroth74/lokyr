@@ -344,6 +344,8 @@ type Node = {
     on: boolean?, -- for toggle nodes, the plugin's state
     disabled: boolean?, -- for button and toggle nodes: dimmed, and takes neither a click nor the focus
     placeholder: string?, -- for field nodes, shown while the field is empty
+    -- For field nodes, `text` is the text that it holds, which the host takes as the field first shows and as a
+    -- render gives another, over what was typed; nil keeps what the host holds.
     progress: {
         state: ("normal" | "error" | "paused" | "indeterminate")?,
         value: number?, -- from 0 to 1
@@ -953,10 +955,15 @@ type Cx = {
     show_page: (page: string) -> (boolean, Error?),
     -- Requires `config`, Lokyr's own plugins' alone: the settings, the config's sections of its schema, in its order,
     -- then each plugin's of a config schema, in the plugins' order, each key of its name, its description, its
-    -- platforms, its kind ("boolean", a number of its range, step and whether it is whole, a text of its most
-    -- characters and the values that it suggests, a choice of its values, a list of texts, or another), its control,
-    -- its default and its value in force.
+    -- platforms, its kind ("boolean", a number of its range, step and whether it is whole, a text of its fewest and
+    -- most characters and the values that it suggests, a choice of its values, a list of texts, or another), its
+    -- control, its default and its value in force.
     settings: () -> (Settings?, Error?),
+    -- Requires `config`, Lokyr's own plugins' alone: writes a key of the settings into the config file, of a section
+    -- as the settings name it, an app's of no plugin or a plugin's of its name, keeping the rest of the file and its
+    -- comments, as the call returns, the config applying anew; a value that the key does not take, as the parser or
+    -- the plugin's schema tells it, fails at once, nothing written; of no value, the key goes, back to its default.
+    set_setting: (section: string, plugin: string?, key: string, value: Data?) -> (boolean, Error?),
 
     -- The plugin's config, its section's values with its schema's defaults; its state, of plain values,
     -- 1 MiB at most as JSON, kept for the next run, as the call returns.
@@ -1037,7 +1044,7 @@ type Plugin = {
 | `decorate` | Drawing over a pane: decorations, the gutter's marks, a search's matches and a held cursor | Medium: a drawing over the text can show what the terminal does not hold |
 | `pointer-read` | The `pointer` event: the cell under the pointer over the panes, and the modifiers held | Low |
 | `keep-awake` | Keeping the system, or the system and the display, from idle sleep, `keep_awake`, of a power assertion that the host holds for every plugin together, the strongest that one asks, and releases as the last lets go, stops, faults or is turned off | High: a display kept awake keeps the screen from locking, and of a battery's cost |
-| `config` | The config in force, the app's keys and every plugin's section with their schemas, `settings`, and their changes, `settings-changed`; its keys written, from 1.1; Lokyr's own plugins' alone, refused to another's manifest with a notice and by `sleip check` | Very high: a key written can change the program that a pane runs |
+| `config` | The config in force, the app's keys and every plugin's section with their schemas, `settings`, and their changes, `settings-changed`; its keys written into the file, `set_setting`; Lokyr's own plugins' alone, refused to another's manifest with a notice and by `sleip check` | Very high: a key written can change the program that a pane runs |
 | `packages` | The plugins themselves, through the bundle's Sleip: the installed ones, the registry's search and a plugin's versions, installs, updates and removals, `packages`, of their lines as events, and `cancel_packages`; every plugin's state and capabilities' decisions, `plugins`, and a plugin turned on or off in the config, `set_plugin_enabled`; Lokyr's own plugins' alone, refused to another's manifest with a notice and by `sleip check` | Very high: a plugin that installs another runs code of its choice |
 | `user-commands` | Running any command as if run by hand, without declaring it, as the palette does; reading the whole registry, with each command's plugin, keys and context, and the plugins installed | Very high: `pane.send-text` types into the shell |
 | `appearance-write` | Previewing a theme and a monospaced font family, and naming the ones chosen in the config's `[theme]` and `[font] family`, edited in place, `preview_theme`, `set_theme`, `preview_font` and `set_font`, as the palette's theme picker and a font picker do | Medium: the config changes, visibly and reversibly; no text of a pane, no command, no file but the config's two keys |

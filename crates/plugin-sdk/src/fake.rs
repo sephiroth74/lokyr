@@ -1449,6 +1449,26 @@ impl FakeHost {
         for (request, opened) in writes {
             self.apply(request, opened);
         }
+        // The settings written, as the app reads its config again once the
+        // call returns: a key of no value back to its default.
+        let mut settings = self.settings.clone();
+        for request in &asked {
+            if let Request::SetSetting {
+                section,
+                plugin,
+                key,
+                value,
+            } = request
+                && let Some(found) = settings
+                    .sections
+                    .iter_mut()
+                    .find(|shown| shown.name == *section && shown.plugin == *plugin)
+                    .and_then(|shown| shown.keys.iter_mut().find(|shown| shown.name == *key))
+            {
+                found.value = value.clone().or_else(|| found.default.clone());
+            }
+        }
+        self.set_settings(settings);
         // The plugins turned off stop, and those turned on wait to start
         // anew, as the app reads its config again once the call returns.
         for request in &asked {
@@ -2543,6 +2563,53 @@ impl FakeHost {
     }
 }
 
+/// Whether a key of `kind` takes `value`, as the app's host checks a
+/// plugin's section: a boolean, a number of its range, a whole one of a
+/// key of integers, a text of its lengths, one of its choices; a list and
+/// another value as they are.
+fn setting_takes(kind: &host::SettingKind, value: &Data) -> Result<(), String> {
+    use host::SettingKind;
+    let number = match value {
+        #[allow(clippy::cast_precision_loss)]
+        Data::Integer(value) => Some(*value as f64),
+        Data::Number(value) => Some(*value),
+        _ => None,
+    };
+    let fine = match kind {
+        SettingKind::Boolean => matches!(value, Data::Boolean(_)),
+        SettingKind::Number {
+            minimum,
+            maximum,
+            integer,
+            ..
+        } => number.is_some_and(|number| {
+            number.is_finite()
+                && (!integer || number.fract() == 0.0)
+                && minimum.is_none_or(|least| number >= least)
+                && maximum.is_none_or(|most| number <= most)
+        }),
+        SettingKind::Text {
+            min_length,
+            max_length,
+            ..
+        } => match value {
+            Data::Text(text) => {
+                let count = text.chars().count() as u64;
+                min_length.is_none_or(|least| count >= least)
+                    && max_length.is_none_or(|most| count <= most)
+            }
+            _ => false,
+        },
+        SettingKind::Choice { choices } => choices.contains(value),
+        SettingKind::List { .. } | SettingKind::Other => true,
+    };
+    if fine {
+        Ok(())
+    } else {
+        Err("it does not take the value".to_owned())
+    }
+}
+
 /// The panes of `layout`, in their order, the first leftmost or topmost.
 fn leaves(layout: &Layout) -> Vec<PaneId> {
     match layout {
@@ -3288,6 +3355,40 @@ impl Calling<'_> {
                 }
                 Response::Done
             }
+            // A key of the settings that the test gave, of a value that its
+            // kind takes, as the app's host checks it.
+            Request::SetSetting {
+                section,
+                plugin,
+                key,
+                value,
+            } => {
+                let found = self
+                    .host
+                    .settings
+                    .sections
+                    .iter()
+                    .find(|shown| shown.name == *section && shown.plugin == *plugin)
+                    .and_then(|shown| shown.keys.iter().find(|shown| shown.name == *key));
+                let Some(found) = found else {
+                    let message = match plugin {
+                        None => format!("the settings have no key `{key}` in `[{section}]`"),
+                        Some(plugin) => format!(
+                            "the plugin `{plugin}` has no key `{key}` in its section `{section}`"
+                        ),
+                    };
+                    return Err(Error::new(Code::NotFound, message));
+                };
+                if let Some(value) = value
+                    && let Err(why) = setting_takes(&found.kind, value)
+                {
+                    return Err(Error::new(
+                        Code::InvalidConfig,
+                        format!("`{key}` in `{section}`: {why}"),
+                    ));
+                }
+                Response::Done
+            }
             // A plugin that the host has, as the app's checks it.
             Request::SetPluginEnabled { plugin, .. } => {
                 if !self.host.plugins.iter().any(|info| &info.name == plugin) {
@@ -3968,6 +4069,9 @@ fn write_node(out: &mut String, node: &Node, depth: usize) {
         Kind::Spacer => out.push_str("spacer"),
         Kind::Field(field) => {
             let _ = write!(out, "field {}", quoted(&field.placeholder));
+            if let Some(text) = &field.text {
+                let _ = write!(out, " text={}", quoted(text));
+            }
         }
         Kind::Button(button) => {
             let _ = write!(out, "button {}", quoted(&button.label));

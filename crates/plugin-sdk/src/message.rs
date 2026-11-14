@@ -165,6 +165,25 @@ pub enum Request {
         /// Whether it runs.
         enabled: bool,
     },
+    /// Writes a key of the settings into the config file, keeping the rest
+    /// of it and its comments, which the config read again applies at
+    /// once: a key of an app's section, or of a plugin's section,
+    /// `[plugins.<namespace>]`; a value that the key does not take is
+    /// refused, and nothing is written; of no value, the key goes, back to
+    /// its default. Of the capability `config`, Lokyr's own plugins' alone.
+    SetSetting {
+        /// The section, as the settings name it: an app's, as `font`, or a
+        /// plugin's namespace.
+        section: String,
+        /// The plugin of the section, as `owner/name`; none of an app's.
+        #[serde(default)]
+        plugin: Option<String>,
+        /// The key.
+        key: String,
+        /// Its value; none takes the key away.
+        #[serde(default)]
+        value: Option<Data>,
+    },
     /// Shows the monospaced family of a name in every pane in place of the
     /// config's, for a while, as a picker previews it, until the next
     /// preview, the family's choice, or `None`, which shows the config's
@@ -924,7 +943,7 @@ impl Request {
             | Self::CancelPackages(_)
             | Self::Plugins
             | Self::SetPluginEnabled { .. } => Some(Capability::Packages),
-            Self::Settings => Some(Capability::Config),
+            Self::Settings | Self::SetSetting { .. } => Some(Capability::Config),
             Self::SelectionText(_)
             | Self::LineText { .. }
             | Self::LinkAt { .. }
@@ -1150,6 +1169,7 @@ impl Request {
             | Self::Packages(_)
             | Self::CancelPackages(_)
             | Self::SetPluginEnabled { .. }
+            | Self::SetSetting { .. }
             | Self::ShowPage(_)
             | Self::PreviewTheme(_)
             | Self::SetTheme { .. }
@@ -1607,6 +1627,7 @@ impl Request {
             | Self::KeepAwake { .. }
             | Self::CancelPackages { .. }
             | Self::SetPluginEnabled { .. }
+            | Self::SetSetting { .. }
             | Self::ShowPage { .. }
             | Self::DropImage { .. }
             | Self::EndSearch { .. }

@@ -501,12 +501,17 @@ impl Writer {
                 panic!("the kind {kind} untraced");
             };
             for field in tree::own(kind).unwrap_or_default() {
-                let of = if *field == "text" { "label" } else { field };
+                // A field's text is its own; a button's and a toggle's,
+                // their label.
                 let inside = match payload {
                     Payload::Value(Format::Named(inner)) => match &self.shapes[inner] {
-                        Shape::Struct(inside) => {
-                            inside.iter().find(|inner| rust_name(inner.name) == of)
-                        }
+                        Shape::Struct(inside) => inside
+                            .iter()
+                            .find(|inner| rust_name(inner.name) == *field)
+                            .or_else(|| {
+                                (*field == "text").then_some(())?;
+                                inside.iter().find(|inner| rust_name(inner.name) == "label")
+                            }),
                         Shape::Enum(_) => None,
                     },
                     _ => None,

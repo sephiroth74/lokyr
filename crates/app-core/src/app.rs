@@ -3116,6 +3116,11 @@ impl<B: Backend> App<B> {
                 Request::SetPluginEnabled { namespace, enabled } => {
                     self.set_plugin_enabled(platform, &namespace, enabled);
                 }
+                Request::SetSetting {
+                    section,
+                    key,
+                    value,
+                } => self.set_setting(platform, &section, &key, value.as_ref()),
                 Request::ShowPage { plugin, page } => self.show_page(platform, &plugin, &page),
                 Request::PreviewFont(family) => self.preview_font(platform, family),
                 Request::SetFont(family) => self.set_font(platform, &family),

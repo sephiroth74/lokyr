@@ -414,6 +414,12 @@ pub struct ListItem {
 pub struct Field {
     /// What it shows while it is empty, as `Find`.
     pub placeholder: String,
+    /// The text that it holds, as its plugin gives it: the host takes it as
+    /// the field first shows, and again as a render gives another, over
+    /// what was typed; of none, the host keeps what it holds, as typed or
+    /// set by a request.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
 }
 
 /// A button's own properties.
@@ -1145,7 +1151,18 @@ impl Node {
     pub fn field(placeholder: impl Into<String>) -> Self {
         Self::new(Kind::Field(Field {
             placeholder: placeholder.into(),
+            text: None,
         }))
+    }
+
+    /// The node, a field, holding `text`, as [`Field::text`] has it; any
+    /// other node as it is.
+    #[must_use]
+    pub fn holding(mut self, text: impl Into<String>) -> Self {
+        if let Kind::Field(field) = &mut self.kind {
+            field.text = Some(text.into());
+        }
+        self
     }
 
     /// A button of `label`; its key, which it needs, follows.

@@ -179,6 +179,7 @@ settings-tab-empty = No page yet: Lokyr's plugins add theirs.
 # The alert of a plugin that the plugin manager turns on or off, as the
 # config cannot be written: what went wrong, under the message.
 plugin-enabled-failed-message = Lokyr cannot turn the plugin on or off
+setting-write-failed-message = Lokyr cannot write the setting into the config file
 quit-running-message = Quit Lokyr?
 quit-running-detail = { $windows ->
     [one] A window is running { $programs }, and quitting ends it.

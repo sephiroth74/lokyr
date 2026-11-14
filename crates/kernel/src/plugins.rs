@@ -147,6 +147,17 @@ pub enum Request {
         /// Whether it runs.
         enabled: bool,
     },
+    /// Write a key of the settings into the config file, which the host
+    /// checked: the path of its section, as `["font"]` or `["plugins",
+    /// "tabs"]`, the key, and its value, or none to take it away.
+    SetSetting {
+        /// The section's path.
+        section: Vec<String>,
+        /// The key.
+        key: String,
+        /// Its value; none takes the key away.
+        value: Option<Data>,
+    },
     /// Open a URL, or an absolute path, with the system's handler.
     Open(String),
     /// Open the file `target`, an absolute path or a `file` URL, at its
@@ -6123,6 +6134,63 @@ impl Host<'_, '_> {
             }
             // A plugin that the host has, by its namespace, which its
             // section of the config is of.
+            Asked::SetSetting {
+                section,
+                plugin,
+                key,
+                value,
+            } => {
+                let path = match &plugin {
+                    // A key of an app's section, of a value that the parser
+                    // takes, the rest of the config in force as it is.
+                    None => {
+                        crate::config::schema::check_app_write(
+                            self.context.config,
+                            &section,
+                            &key,
+                            value.as_ref(),
+                        )
+                        .map_err(|(code, message)| Error::new(code, message))?;
+                        vec![section]
+                    }
+                    // A key of a plugin's section, of a value that its kind
+                    // takes, as the plugin's schema tells it.
+                    Some(plugin) => {
+                        let found = self
+                            .context
+                            .plugin_settings
+                            .iter()
+                            .find(|shown| {
+                                shown.name == section && shown.plugin.as_deref() == Some(plugin)
+                            })
+                            .and_then(|shown| shown.keys.iter().find(|shown| shown.name == key))
+                            .ok_or_else(|| {
+                                Error::new(
+                                    Code::NotFound,
+                                    format!(
+                                        "the plugin `{plugin}` has no key `{key}` in its section `{section}`"
+                                    ),
+                                )
+                            })?;
+                        if let Some(value) = &value {
+                            crate::config::schema::check_kind(&found.kind, value).map_err(
+                                |why| {
+                                    Error::new(
+                                        Code::InvalidConfig,
+                                        format!("`{key}` in `[plugins.{section}]`: {why}"),
+                                    )
+                                },
+                            )?;
+                        }
+                        vec!["plugins".to_owned(), section]
+                    }
+                };
+                Request::SetSetting {
+                    section: path,
+                    key,
+                    value,
+                }
+            }
             Asked::SetPluginEnabled { plugin, enabled } => {
                 let info = self
                     .context

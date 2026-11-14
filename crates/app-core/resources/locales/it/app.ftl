@@ -146,6 +146,7 @@ settings-failed-message = Lokyr non riesce ad aprire il file di configurazione
 settings-no-home = Senza una cartella home non c'è un file di configurazione: valgono i valori predefiniti.
 themes-folder-failed-message = Lokyr non riesce ad aprire la cartella dei temi
 plugin-enabled-failed-message = Lokyr non riesce ad attivare o disattivare il plugin
+setting-write-failed-message = Lokyr non riesce a scrivere l'impostazione nel file di configurazione
 settings-tab-title = Impostazioni
 settings-tab-empty = Ancora nessuna pagina: i plugin di Lokyr aggiungono le loro.
 quit-running-message = Uscire da Lokyr?

@@ -36,6 +36,7 @@ export type Cx = {
     plugins: () -> ({ PluginInfo }?, string?, number?),
     settings: () -> (Settings?, string?, number?),
     set_plugin_enabled: (plugin: string, enabled: boolean) -> (true?, string?, number?),
+    set_setting: (section: string, plugin: string?, key: string, value: Data?) -> (true?, string?, number?),
     preview_font: (family: string?) -> (true?, string?, number?),
     set_font: (family: string) -> (true?, string?, number?),
     add_menu_item: (item: MenuItem) -> (true?, string?, number?),

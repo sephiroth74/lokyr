@@ -103,6 +103,7 @@ fn every() -> Node {
         Node::new(Kind::Spacer),
         Node::new(Kind::Field(Field {
             placeholder: "Find".to_owned(),
+            text: Some("needle".to_owned()),
         })),
         button,
         toggle,
@@ -126,7 +127,7 @@ const EVERY: &str = r#"{
         { kind = "text", text = "Hello", role = "heading" },
         { kind = "icon", icon = "lock", label = "Locked" },
         { kind = "spacer" },
-        { kind = "field", placeholder = "Find" },
+        { kind = "field", placeholder = "Find", text = "needle" },
         { kind = "button", key = "go", text = "Go", icon = "play", disabled = true,
           focusable = true, tooltip = "Run it" },
         { kind = "toggle", key = "case", text = "Aa", icon = "case", on = true, disabled = true },

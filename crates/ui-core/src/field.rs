@@ -284,6 +284,8 @@ impl FieldState {
 pub struct Fields {
     states: HashMap<NodeKey, FieldState>,
     pressed: Option<NodeKey>,
+    /// The text that each field's plugin gave it last, of the tree.
+    given: HashMap<NodeKey, String>,
 }
 
 /// Where a move of the caret goes.
@@ -337,12 +339,30 @@ impl Fields {
         true
     }
 
-    /// Forgets the fields whose keys `tree` no longer has as fields.
+    /// Forgets the fields whose keys `tree` no longer has as fields, and
+    /// sets the text of each that its plugin gives a text other than the
+    /// one that it gave last, as [`Fields::set_text`] does.
     pub fn updated(&mut self, tree: &Tree) {
         self.states.retain(|key, _| {
             tree.by_key(key)
                 .is_some_and(|node| matches!(tree.kind(node), Some(Kind::Field(_))))
         });
+        let mut given = HashMap::new();
+        let mut stack: Vec<NodeId> = tree.root().into_iter().collect();
+        while let Some(node) = stack.pop() {
+            stack.extend_from_slice(tree.children(node));
+            if let (Some(Kind::Field(field)), Some(key)) = (tree.kind(node), tree.key(node))
+                && let Some(text) = &field.text
+            {
+                given.insert(key.clone(), text.clone());
+            }
+        }
+        for (key, text) in &given {
+            if self.given.get(key) != Some(text) {
+                self.set_text(key, text);
+            }
+        }
+        self.given = given;
         if self
             .pressed
             .as_ref()
@@ -1863,5 +1883,42 @@ mod tests {
         };
         let (short, long) = (cost(LONGEST / 10), cost(LONGEST));
         assert!(long < short * 40, "{short:?} {long:?}");
+    }
+
+    #[test]
+    fn a_field_takes_the_text_that_its_plugin_gives_as_it_first_shows_and_as_it_gives_another() {
+        let tree_of = |text: Option<&str>| {
+            let mut field = Node::field("Size").key("size");
+            if let Some(text) = text {
+                field = field.holding(text);
+            }
+            let mut tree = Tree::new();
+            tree.update(&Node::container(vec![field])).unwrap();
+            tree
+        };
+        let key: NodeKey = "size".into();
+        let text = |fields: &Fields| fields.state(&key).map(|state| state.text().to_owned());
+        let mut fields = Fields::new();
+        let tree = tree_of(Some("13"));
+        fields.updated(&tree);
+        assert_eq!(text(&fields).as_deref(), Some("13"));
+        // Typed into, the same text given again keeps what was typed.
+        let node = tree.by_key(&key).unwrap();
+        fields.commit(&tree, node, "5");
+        assert_eq!(text(&fields).as_deref(), Some("135"));
+        let tree = tree_of(Some("13"));
+        fields.updated(&tree);
+        assert_eq!(text(&fields).as_deref(), Some("135"));
+        // Another text given takes its place; none given keeps it.
+        let tree = tree_of(Some("18"));
+        fields.updated(&tree);
+        assert_eq!(text(&fields).as_deref(), Some("18"));
+        let tree = tree_of(None);
+        fields.updated(&tree);
+        assert_eq!(text(&fields).as_deref(), Some("18"));
+        // Given again after none, it is taken as anew.
+        let tree = tree_of(Some("18"));
+        fields.updated(&tree);
+        assert_eq!(text(&fields).as_deref(), Some("18"));
     }
 }

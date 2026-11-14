@@ -1043,3 +1043,164 @@ fn the_plugins_list_and_the_settings_are_told_as_a_plugin_comes_goes_updates_or_
     // Nothing changed, nothing told.
     assert!(told(&mut plugins, &mut app).is_empty());
 }
+
+#[test]
+fn a_key_of_the_settings_is_written_of_a_value_that_it_takes_and_refused_otherwise() {
+    use lokyr_plugin_sdk::host::{SettingKey, SettingKind, SettingsSection};
+    // The plugin `acme/greeter`'s section, as a read of the settings tells.
+    let plugin_settings = vec![SettingsSection {
+        name: "greeter".to_owned(),
+        plugin: Some("acme/greeter".to_owned()),
+        description: "Greets".to_owned(),
+        keys: vec![SettingKey {
+            name: "count".to_owned(),
+            description: "How many".to_owned(),
+            platforms: Vec::new(),
+            kind: SettingKind::Number {
+                minimum: Some(1.0),
+                maximum: None,
+                step: None,
+                integer: true,
+            },
+            control: None,
+            default: Some(Data::Integer(3)),
+            value: Some(Data::Integer(3)),
+        }],
+    }];
+    let mut app = App {
+        plugin_settings,
+        ..App::default()
+    };
+    let mut plugins = Plugins::new();
+    type Asked = (
+        &'static str,
+        Option<&'static str>,
+        &'static str,
+        Option<Data>,
+    );
+    let asks: Vec<Asked> = vec![
+        ("font", None, "size", Some(Data::Integer(15))),
+        ("font", None, "size", Some(Data::Integer(1000))),
+        ("font", None, "size", Some(Data::Text("big".to_owned()))),
+        ("font", None, "sise", Some(Data::Integer(15))),
+        ("keys", None, "copy", Some(Data::Text("cmd+c".to_owned()))),
+        ("font", None, "size", None),
+        (
+            "greeter",
+            Some("acme/greeter"),
+            "count",
+            Some(Data::Integer(5)),
+        ),
+        (
+            "greeter",
+            Some("acme/greeter"),
+            "count",
+            Some(Data::Integer(0)),
+        ),
+        (
+            "greeter",
+            Some("acme/greeter"),
+            "count",
+            Some(Data::Number(2.5)),
+        ),
+        (
+            "greeter",
+            Some("acme/other"),
+            "count",
+            Some(Data::Integer(5)),
+        ),
+    ];
+    let codes = Rc::new(RefCell::new(Vec::new()));
+    let seen = Rc::clone(&codes);
+    let calls = asks.clone();
+    plugins
+        .add(
+            "writer",
+            scripted(
+                |cx| cx.register_command(command("writer.go")),
+                move |cx, _, _| {
+                    for (section, plugin, key, value) in &calls {
+                        let done = cx.set_setting(section, *plugin, key, value.clone());
+                        seen.borrow_mut().push(done.map_err(|error| error.code));
+                    }
+                    Ok(())
+                },
+            ),
+        )
+        .unwrap();
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    plugins
+        .run("writer.go", Args::new(), &mut app.context())
+        .unwrap();
+    assert_eq!(
+        *codes.borrow(),
+        [
+            Ok(()),
+            Err(Code::InvalidConfig),
+            Err(Code::InvalidConfig),
+            Err(Code::NotFound),
+            Err(Code::NotFound),
+            Ok(()),
+            Ok(()),
+            Err(Code::InvalidConfig),
+            Err(Code::InvalidConfig),
+            Err(Code::NotFound),
+        ]
+    );
+    // The writes that the app makes, of each section's path.
+    let writes: Vec<(Vec<String>, String, Option<Data>)> = plugins
+        .take_requests()
+        .into_iter()
+        .filter_map(|request| match request {
+            Request::SetSetting {
+                section,
+                key,
+                value,
+            } => Some((section, key, value)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        writes,
+        [
+            (
+                vec!["font".to_owned()],
+                "size".to_owned(),
+                Some(Data::Integer(15))
+            ),
+            (vec!["font".to_owned()], "size".to_owned(), None),
+            (
+                vec!["plugins".to_owned(), "greeter".to_owned()],
+                "count".to_owned(),
+                Some(Data::Integer(5))
+            ),
+        ]
+    );
+    // Of the capability `config` alone.
+    let mut plugins = Plugins::new();
+    let manifest = Manifest::parse(concat!(
+        "[plugin]\nname = \"acme/none\"\nversion = \"1.0.0\"\nkind = \"luau\"\n",
+        "api = \"^0.1\"\nlicense = \"MIT\"\n",
+    ))
+    .unwrap();
+    let refused = Rc::new(RefCell::new(None));
+    let told = Rc::clone(&refused);
+    plugins
+        .add_declared(
+            manifest,
+            scripted(
+                |cx| cx.register_command(command("none.go")),
+                move |cx, _, _| {
+                    let done = cx.set_setting("font", None, "size", Some(Data::Integer(15)));
+                    *told.borrow_mut() = Some(done.map_err(|error| error.code));
+                    Ok(())
+                },
+            ),
+        )
+        .unwrap();
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    plugins
+        .run("none.go", Args::new(), &mut app.context())
+        .unwrap();
+    assert_eq!(*refused.borrow(), Some(Err(Code::MissingCapability)));
+}

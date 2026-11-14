@@ -377,6 +377,27 @@ impl<'a> Cx<'a> {
         }
     }
 
+    /// Writes the key `key` of the section `section` of the settings, of
+    /// the plugin `plugin`, as `owner/name`, or an app's of none, into the
+    /// config file, as `value`, or takes it away of none, back to its
+    /// default, once this call returns: a value that the key does not take
+    /// is refused at once. Of the capability `config`, Lokyr's own plugins'
+    /// alone.
+    pub fn set_setting(
+        &mut self,
+        section: &str,
+        plugin: Option<&str>,
+        key: &str,
+        value: Option<Data>,
+    ) -> Result<(), Error> {
+        self.done(Request::SetSetting {
+            section: section.to_owned(),
+            plugin: plugin.map(str::to_owned),
+            key: key.to_owned(),
+            value,
+        })
+    }
+
     /// The plugins, built in and installed, in the order of their
     /// activation, each of its state and its capabilities' decisions. Of
     /// the capability `packages`, Lokyr's own plugins' alone.

@@ -284,5 +284,147 @@ fn data_of_toml(value: &toml_edit::Value) -> Data {
     }
 }
 
+/// `data` as a TOML value, of none of [`Data::Nil`], which TOML lacks.
+pub fn toml_value_of(data: &Data) -> Option<toml_edit::Value> {
+    Some(match data {
+        Data::Nil => return None,
+        Data::Boolean(value) => toml_edit::Value::from(*value),
+        Data::Integer(value) => toml_edit::Value::from(*value),
+        Data::Number(value) => toml_edit::Value::from(*value),
+        Data::Text(value) => toml_edit::Value::from(value.as_str()),
+        Data::List(items) => {
+            let items: Option<Vec<toml_edit::Value>> = items.iter().map(toml_value_of).collect();
+            toml_edit::Value::Array(items?.into_iter().collect())
+        }
+        Data::Map(map) => {
+            let mut table = toml_edit::InlineTable::new();
+            for (key, value) in map {
+                table.insert(key, toml_value_of(value)?);
+            }
+            toml_edit::Value::InlineTable(table)
+        }
+    })
+}
+
+/// Whether `value` may be written to the app's key `key` of `[section]`:
+/// a key of its section of the schema, and of a value that the parser
+/// takes, the rest of `config` as it is; of none, the key going back to
+/// its default, which the parser takes. The section of the bindings,
+/// `[keys]`, is none of the settings'.
+pub fn check_app_write(
+    config: &super::Config,
+    section: &str,
+    key: &str,
+    value: Option<&Data>,
+) -> Result<(), (lokyr_plugin_sdk::command::Code, String)> {
+    use lokyr_plugin_sdk::command::Code;
+    let known = !OWN.contains(&section)
+        && ordered()
+            .properties()
+            .unwrap_or_default()
+            .iter()
+            .find(|(name, _)| name == section)
+            .and_then(|(_, node)| node.properties())
+            .is_some_and(|keys| keys.iter().any(|(name, _)| name == key));
+    if !known {
+        return Err((
+            Code::NotFound,
+            format!("the settings have no key `{key}` in `[{section}]`"),
+        ));
+    }
+    let Some(value) = value else {
+        return Ok(());
+    };
+    let refused = |message: String| (Code::InvalidConfig, message);
+    let value = toml_value_of(value)
+        .ok_or_else(|| refused(format!("`{key}` in `[{section}]` takes no empty value")))?;
+    let mut written: toml_edit::DocumentMut = config
+        .written(false)
+        .parse()
+        .expect("the config writes as TOML");
+    let table = written
+        .entry(section)
+        .or_insert_with(toml_edit::table)
+        .as_table_like_mut()
+        .ok_or_else(|| refused(format!("`{section}` is a section, not a value")))?;
+    table.insert(key, toml_edit::Item::Value(value));
+    super::Config::parse(&written.to_string(), std::path::Path::new("config.toml"))
+        .map(drop)
+        .map_err(|error| refused(error.message))
+}
+
+/// Whether `value` is one that a key of `kind` takes, as a plugin's
+/// section's schema tells it: a boolean, a number of its range, an
+/// integer of a key of integers, a text of its lengths, one of its
+/// choices; a list's and another value's left to the schema's check as
+/// the config applies.
+pub fn check_kind(kind: &SettingKind, value: &Data) -> Result<(), String> {
+    let number = match value {
+        Data::Integer(value) => Some(*value as f64),
+        Data::Number(value) => Some(*value),
+        _ => None,
+    };
+    match kind {
+        SettingKind::Boolean if matches!(value, Data::Boolean(_)) => Ok(()),
+        SettingKind::Boolean => Err("it takes `true` or `false`".to_owned()),
+        SettingKind::Number {
+            minimum,
+            maximum,
+            integer,
+            ..
+        } => {
+            let Some(number) = number.filter(|number| number.is_finite()) else {
+                return Err("it takes a number".to_owned());
+            };
+            if *integer && number.fract() != 0.0 {
+                return Err("it takes a whole number".to_owned());
+            }
+            if minimum.is_some_and(|least| number < least)
+                || maximum.is_some_and(|most| number > most)
+            {
+                let at =
+                    |bound: &Option<f64>| bound.map_or_else(String::new, |bound| bound.to_string());
+                return Err(format!(
+                    "it takes a number from {} to {}",
+                    at(minimum),
+                    at(maximum)
+                ));
+            }
+            Ok(())
+        }
+        SettingKind::Text {
+            min_length,
+            max_length,
+            ..
+        } => {
+            let Data::Text(text) = value else {
+                return Err("it takes a text".to_owned());
+            };
+            let count = text.chars().count() as u64;
+            if min_length.is_some_and(|least| count < least) {
+                return Err("it takes a text that is not empty".to_owned());
+            }
+            if let Some(most) = max_length.filter(|most| count > *most) {
+                return Err(format!("it takes a text of {most} characters at most"));
+            }
+            Ok(())
+        }
+        SettingKind::Choice { choices } => {
+            let same = |choice: &Data| match (choice, value) {
+                (Data::Integer(a), Data::Number(b)) | (Data::Number(b), Data::Integer(a)) => {
+                    *a as f64 == *b
+                }
+                (a, b) => a == b,
+            };
+            if choices.iter().any(same) {
+                Ok(())
+            } else {
+                Err("it takes one of its values".to_owned())
+            }
+        }
+        SettingKind::List { .. } | SettingKind::Other => Ok(()),
+    }
+}
+
 #[cfg(test)]
 mod tests;

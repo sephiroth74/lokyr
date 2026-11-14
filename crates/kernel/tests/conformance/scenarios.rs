@@ -245,16 +245,36 @@ pub fn settings() -> lokyr_plugin_sdk::host::Settings {
     }
 }
 
-/// The settings read, of `config` when `allowed`; refused of a plugin that
-/// lacks it.
+/// The settings read, and a key written, of `config` when `allowed`, a key
+/// that the settings lack refused; refused of a plugin that lacks it.
 fn settings_read(allowed: bool) -> Scenario {
-    let answer = if allowed {
-        Response::Settings(settings())
-    } else {
+    let lacks = || {
         failed(
             Code::MissingCapability,
             "the plugin `acme/conformer` lacks the capability `config`",
         )
+    };
+    let answer = if allowed {
+        Response::Settings(settings())
+    } else {
+        lacks()
+    };
+    let write = |key: &str, value: Option<Data>| Request::SetSetting {
+        section: "font".to_owned(),
+        plugin: None,
+        key: key.to_owned(),
+        value,
+    };
+    let (written, unknown) = if allowed {
+        (
+            Response::Done,
+            failed(
+                Code::NotFound,
+                "the settings have no key `sise` in `[font]`",
+            ),
+        )
+    } else {
+        (lacks(), lacks())
     };
     Scenario {
         name: format!(
@@ -267,7 +287,12 @@ fn settings_read(allowed: bool) -> Scenario {
             Vec::new()
         }),
         subscriptions: Vec::new(),
-        steps: vec![ask(vec![(Request::Settings, answer)])],
+        steps: vec![ask(vec![
+            (Request::Settings, answer),
+            (write("size", Some(Data::Integer(15))), written.clone()),
+            (write("size", None), written),
+            (write("sise", Some(Data::Integer(15))), unknown),
+        ])],
     }
 }
 

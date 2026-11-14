@@ -184,6 +184,44 @@ impl<B: Backend> App<B> {
         }
     }
 
+    /// Writes the key `key` of the section of the path `section` of the
+    /// config file, as a plugin of the capability `config` asks, which the
+    /// host checked: its value, or of none, the key taken away; the config
+    /// read again applies at once. Or an alert of why it cannot be, as of a
+    /// file that does not read.
+    pub(super) fn set_setting(
+        &mut self,
+        platform: &mut dyn Platform,
+        section: &[String],
+        key: &str,
+        value: Option<&lokyr_kernel::plugins::Data>,
+    ) {
+        let path: Vec<&str> = section.iter().map(String::as_str).collect();
+        let value = value.and_then(config::schema::toml_value_of);
+        let written = match &self.config_file {
+            Some(file) => {
+                config::set_value(&file.path, &path, key, value).map_err(|error| error.to_string())
+            }
+            None => Err(self.texts.text("settings-no-home")),
+        };
+        match written {
+            Ok(()) => self.reload(platform),
+            Err(why) => {
+                eprintln!("lokyr: {why}");
+                let alert = Alert {
+                    style: AlertStyle::Warning,
+                    message: self.texts.text("setting-write-failed-message"),
+                    detail: why,
+                    buttons: Vec::new(),
+                    suppression: None,
+                    input: None,
+                };
+                let window = self.acting.or_else(|| platform.focused_window());
+                platform.show_alert(window, &alert);
+            }
+        }
+    }
+
     /// Takes the key `enabled` of the plugin `name`, removed and no longer
     /// run, out of the config, and its section if nothing else is left of
     /// it, so that no section stays of a plugin no longer there: never
