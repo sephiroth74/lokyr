@@ -2761,6 +2761,15 @@ impl Plugins {
             .collect()
     }
 
+    /// Whether a call of `plugin` asked for a render of its view `view`
+    /// that is still to come.
+    pub fn render_due(&self, plugin: &str, view: &ViewId) -> bool {
+        self.out
+            .renders
+            .iter()
+            .any(|(own, due)| own == plugin && due == view)
+    }
+
     /// Takes the views whose renders the plugins' calls asked for, and those
     /// of the panels that they opened, by their plugins, in their order.
     pub fn take_renders(&mut self) -> Vec<(String, ViewId)> {

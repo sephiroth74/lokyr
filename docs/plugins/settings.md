@@ -8,6 +8,7 @@ The Settings page of the settings window: every key of your config, Lokyr's own 
 
 - **Lokyr › Open Settings Window** opens the settings window at the page, its first; the window's tab Settings shows it too.
 - **Its sidebar** lists the config's sections, as Font, Window or Theme, each of an icon of its own, then the sections of the plugins that have settings, as Tabs or Find; a click or the arrows choose one, and the page opens at the first.
+- **Its search field**, at the sidebar's top, which has the keyboard as the window opens, shows the sections, and in each the keys, that hold every word typed, whatever its case, in a key's name, in what it does or in its section's title; in the Keys part, a binding's keys, as `cmd+k` or ⌘K, or its command's name or title. The section chosen stays while it holds them, else the first that does; the button at the field's end empties it.
 - **Each key** shows its name, the platforms where it applies where it does not apply on every one, what it does, **More info**, which opens its text in [the config guide](../CONFIGURATION.md) in your browser, of your version of Lokyr, and at its right a control of its value in force, as your config gives it or as its default:
   - a boolean, a toggle, On or Off;
   - a key of a few values, a button of its value, whose menu lists the values, the one in force ticked;

@@ -97,6 +97,9 @@ pub(crate) struct SlotView {
     /// nearest scroll area around it scrolls to as the view lays out, once
     /// its tree has it.
     pub(crate) reveal: Option<NodeKey>,
+    /// The item that its plugin selected in a list, by its key, of the tree
+    /// that the same call rendered, which the next tree takes.
+    pub(crate) select: Option<(NodeKey, usize)>,
     /// The faces' generation that its text was measured of.
     pub(crate) faces: u64,
 }
@@ -153,6 +156,7 @@ impl SlotView {
             frame: None,
             placed: Some(placed),
             reveal: None,
+            select: None,
             faces: 0,
         }
     }
@@ -412,6 +416,7 @@ impl<B: Backend> App<B> {
                         frame: None,
                         placed: None,
                         reveal: None,
+                        select: None,
                         faces: 0,
                     }
                 }
@@ -457,8 +462,19 @@ impl<B: Backend> App<B> {
                                 "lokyr: the view {view:?} of `{plugin}` keeps its last tree, as its new one is not one: {error:?}"
                             );
                         }
+                        // The item that the call of this tree selected, of
+                        // its items.
+                        let surface = &mut slot.surface;
+                        if let Some((key, item)) = slot.select.take()
+                            && let Some(node) = surface.tree.by_key(&key)
+                        {
+                            surface.lists.select(&surface.tree, node, item);
+                        }
                     }
-                    None => slot.surface = Surface::new(scale),
+                    None => {
+                        slot.surface = Surface::new(scale);
+                        slot.select = None;
+                    }
                 }
                 state.focus.updated(slot.id, &slot.surface.tree);
                 state.composition_dropped |=

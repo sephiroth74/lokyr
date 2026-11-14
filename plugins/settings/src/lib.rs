@@ -91,6 +91,12 @@ const REMOVE: &str = "remove:";
 /// The prefix of the key of a list's field that adds a value.
 const ADD: &str = "add:";
 
+/// The key of the sidebar's search field.
+const SEARCH: &str = "search";
+
+/// The key of the search field's button that empties it.
+const SEARCH_CLEAR: &str = "search-clear";
+
 /// The platforms that Lokyr runs on, of which a key that applies on every
 /// one names none.
 const PLATFORMS: &[&str] = &["macos"];
@@ -98,8 +104,8 @@ const PLATFORMS: &[&str] = &["macos"];
 /// How long typing pauses before a field's value is written.
 const PAUSE: std::time::Duration = std::time::Duration::from_millis(600);
 
-/// The plugin: whether its page shows, the part chosen, by its place in the
-/// sidebar, why each key's last write was refused, by its name, until it is
+/// The plugin: whether its page shows, the part chosen, by its place among
+/// the parts, the search's words, why each key's last write was refused, by its name, until it is
 /// written or another part shows, the new binding's fields' texts, each of
 /// its revision, the texts typed into the fields and not written yet, each
 /// of its key's section and plugin, by the key's name, and the timer of
@@ -108,6 +114,7 @@ const PAUSE: std::time::Duration = std::time::Duration::from_millis(600);
 pub struct SettingsPage {
     shown: bool,
     chosen: usize,
+    query: String,
     refused: BTreeMap<String, String>,
     new_binding: BTreeMap<String, (String, u64)>,
     typed: BTreeMap<String, Typed>,
@@ -191,15 +198,33 @@ impl Plugin for SettingsPage {
 
     fn on_ui_event(&mut self, cx: &mut Cx<'_>, event: &UiEvent) -> Result<(), Error> {
         let key = event.key.0.as_str();
+        // The search's words, which filter the parts and their keys.
+        match (&event.kind, key) {
+            (UiEventKind::InputChanged { text, .. }, SEARCH) => {
+                return self.search(cx, text);
+            }
+            (UiEventKind::Click, SEARCH_CLEAR) => {
+                cx.set_text(page(), SEARCH, "", u64::MAX)?;
+                return self.search(cx, "");
+            }
+            _ => {}
+        }
         if let (UiEventKind::Select { item } | UiEventKind::Activate { item }, SECTIONS) =
             (&event.kind, key)
         {
-            if *item == self.chosen {
+            // The sidebar's item, of the parts that the search shows.
+            let settings = cx.settings()?;
+            let words = words(&self.query);
+            let shown = shown_parts(cx, &settings, &words);
+            let Some(&item) = shown.get(*item) else {
+                return Ok(());
+            };
+            if item == self.chosen {
                 return Ok(());
             }
             // What the part shown typed is written before another shows.
             self.write_typed(cx, None)?;
-            self.chosen = *item;
+            self.chosen = item;
             self.refused.clear();
             return cx.request_render(page());
         }
@@ -368,11 +393,41 @@ impl Plugin for SettingsPage {
         if *view != page() {
             return None;
         }
-        Some(tree(cx, &settings, self.chosen, &self.refused))
+        Some(tree(
+            cx,
+            &settings,
+            self.chosen,
+            &words(&self.query),
+            &self.refused,
+        ))
     }
 }
 
 impl SettingsPage {
+    /// Takes the search's text `text`: the parts that hold its words show,
+    /// the part chosen the first of them where it holds none, the sidebar's
+    /// selection at it.
+    fn search(&mut self, cx: &mut Cx<'_>, text: &str) -> Result<(), Error> {
+        if text == self.query {
+            return Ok(());
+        }
+        text.clone_into(&mut self.query);
+        let settings = cx.settings()?;
+        let shown = shown_parts(cx, &settings, &words(&self.query));
+        if !shown.contains(&self.chosen)
+            && let Some(&first) = shown.first()
+        {
+            self.write_typed(cx, None)?;
+            self.chosen = first;
+            self.refused.clear();
+        }
+        cx.request_render(page())?;
+        if let Some(at) = shown.iter().position(|&part| part == self.chosen) {
+            cx.select(page(), SECTIONS, at)?;
+        }
+        Ok(())
+    }
+
     /// An event of the part of the bindings of keys: a binding taken away,
     /// or the new one's fields typed in, and written as Return is pressed
     /// in either, both filled.
@@ -571,6 +626,77 @@ impl SettingsPage {
     }
 }
 
+/// The search's words of `query`, in lower case.
+fn words(query: &str) -> Vec<String> {
+    query.split_whitespace().map(str::to_lowercase).collect()
+}
+
+/// Whether every one of `words` is in one of `texts`, their case aside.
+fn holds(words: &[String], texts: &[&str]) -> bool {
+    let texts: Vec<String> = texts.iter().map(|text| text.to_lowercase()).collect();
+    words
+        .iter()
+        .all(|word| texts.iter().any(|text| text.contains(word.as_str())))
+}
+
+/// Whether the key `key` of `section` holds `words`, of its name, what it
+/// does and its section's title.
+fn key_holds(
+    cx: &mut Cx<'_>,
+    section: &SettingsSection,
+    key: &SettingKey,
+    words: &[String],
+) -> bool {
+    let title = title(cx, section);
+    holds(words, &[&key.name, &key.description, &title])
+}
+
+/// Whether the binding `binding` holds `words`, of its keys, as the config
+/// and as macOS write them, its command's name and title, and the part's
+/// title.
+fn binding_holds(cx: &mut Cx<'_>, binding: &SettingBinding, words: &[String]) -> bool {
+    let shown = lokyr_plugin_sdk::keys::macos_text(&binding.keys).unwrap_or_default();
+    let part = message(cx, "section-keys", &[]);
+    holds(
+        words,
+        &[
+            &binding.keys,
+            &shown,
+            binding.command.as_deref().unwrap_or_default(),
+            binding.title.as_deref().unwrap_or_default(),
+            &part,
+        ],
+    )
+}
+
+/// The places among the parts of `settings` of those that the search's
+/// `words` show: every one of no words, else each that holds them, of a
+/// key or a binding of its own or of its title.
+fn shown_parts(cx: &mut Cx<'_>, settings: &Settings, words: &[String]) -> Vec<usize> {
+    parts(settings)
+        .into_iter()
+        .enumerate()
+        .filter(|(_, part)| {
+            words.is_empty()
+                || match part {
+                    Part::Section(section) => section
+                        .keys
+                        .iter()
+                        .any(|key| key_holds(cx, section, key, words)),
+                    Part::Keys => {
+                        let title = message(cx, "section-keys", &[]);
+                        holds(words, &[&title])
+                            || settings
+                                .keys
+                                .iter()
+                                .any(|binding| binding_holds(cx, binding, words))
+                    }
+                }
+        })
+        .map(|(at, _)| at)
+        .collect()
+}
+
 /// The key `name` of `section`, if it has one.
 fn find<'s>(section: &'s SettingsSection, name: &str) -> Option<&'s SettingKey> {
     section.keys.iter().find(|key| key.name == name)
@@ -684,11 +810,30 @@ fn tree(
     cx: &mut Cx<'_>,
     settings: &Settings,
     chosen: usize,
+    words: &[String],
     refused: &BTreeMap<String, String>,
 ) -> Node {
-    let mut part = match parts(settings).get(chosen).copied() {
-        Some(Part::Section(section)) => section_part(cx, section, refused),
-        Some(Part::Keys) => keys_part(cx, &settings.keys, refused),
+    let shown = shown_parts(cx, settings, words);
+    let chosen_part = parts(settings)
+        .get(chosen)
+        .copied()
+        .filter(|_| shown.contains(&chosen));
+    let mut part = match chosen_part {
+        Some(Part::Section(section)) => section_part(cx, section, words, refused),
+        Some(Part::Keys) => {
+            let bindings: Vec<SettingBinding> = settings
+                .keys
+                .iter()
+                .filter(|binding| words.is_empty() || binding_holds(cx, binding, words))
+                .cloned()
+                .collect();
+            keys_part(cx, &bindings, refused)
+        }
+        None if !words.is_empty() => vec![
+            Node::text(message(cx, "settings-no-match", &[]))
+                .key("no-match")
+                .style(secondary()),
+        ],
         None => vec![
             Node::text(message(cx, "settings-none", &[]))
                 .key("none")
@@ -753,21 +898,25 @@ fn tree(
         height: Length::Fraction(1.0),
         ..Layout::default()
     });
-    Node::container(vec![sidebar(cx, settings), Node::separator(), part])
-        .key("settings-page")
-        .layout(Layout {
-            direction: Direction::Row,
-            width: Length::Fraction(1.0),
-            height: Length::Fraction(1.0),
-            ..Layout::default()
-        })
+    Node::container(vec![
+        sidebar(cx, settings, &shown, words),
+        Node::separator(),
+        part,
+    ])
+    .key("settings-page")
+    .layout(Layout {
+        direction: Direction::Row,
+        width: Length::Fraction(1.0),
+        height: Length::Fraction(1.0),
+        ..Layout::default()
+    })
 }
 
 /// The sidebar: a list of the sections, each a row of its icon and its
 /// title, of a menu's look, its first selected as it shows, of no ring of
 /// the keyboard's focus, as macOS's sidebars show none, and of its own
 /// width alone.
-fn sidebar(cx: &mut Cx<'_>, settings: &Settings) -> Node {
+fn sidebar(cx: &mut Cx<'_>, settings: &Settings, shown: &[usize], words: &[String]) -> Node {
     let row = Node::container(vec![
         Node::icon("").style(Style {
             color: Some(Token::from("accent")),
@@ -789,8 +938,9 @@ fn sidebar(cx: &mut Cx<'_>, settings: &Settings) -> Node {
         ..Layout::default()
     });
     let parts = parts(settings);
-    let items: Vec<ListItem> = parts
+    let items: Vec<ListItem> = shown
         .iter()
+        .filter_map(|&at| parts.get(at))
         .map(|part| match part {
             Part::Section(section) => ListItem {
                 texts: vec![icon_of(section).to_owned(), title(cx, section)],
@@ -816,11 +966,39 @@ fn sidebar(cx: &mut Cx<'_>, settings: &Settings) -> Node {
         list.row_height = Some(ROW);
         list.menu = true;
     }
-    Node::container(vec![list])
+    // The search at the sidebar's top, of a button that empties it while it
+    // holds words.
+    let mut search = vec![
+        Node::field(message(cx, "settings-search", &[]))
+            .key(SEARCH)
+            .label(message(cx, "settings-search", &[]))
+            .style(field_text())
+            .layout(Layout {
+                grow: 1.0,
+                min_width: Length::Points(0.0),
+                ..Layout::default()
+            }),
+    ];
+    if !words.is_empty() {
+        search.push(
+            Node::icon_button("close")
+                .key(SEARCH_CLEAR)
+                .tooltip(message(cx, "settings-search-clear", &[])),
+        );
+    }
+    let search = Node::container(search).key("search-row").layout(Layout {
+        direction: Direction::Row,
+        gap: 4.0,
+        align: Align::Center,
+        width: Length::Fraction(1.0),
+        ..Layout::default()
+    });
+    Node::container(vec![search, list])
         .key("sidebar")
         .role(Role::Group)
         .layout(Layout {
             direction: Direction::Column,
+            gap: 8.0,
             width: Length::Points(SIDEBAR),
             min_width: Length::Points(SIDEBAR),
             height: Length::Fraction(1.0),
@@ -885,6 +1063,7 @@ fn title(cx: &mut Cx<'_>, section: &SettingsSection) -> String {
 fn section_part(
     cx: &mut Cx<'_>,
     section: &SettingsSection,
+    words: &[String],
     refused: &BTreeMap<String, String>,
 ) -> Vec<Node> {
     let mut part = vec![
@@ -916,9 +1095,14 @@ fn section_part(
                 .layout(wrapped()),
         );
     }
-    let rows = section
+    // The keys that the search's words show, every one of none.
+    let keys: Vec<&SettingKey> = section
         .keys
         .iter()
+        .filter(|key| words.is_empty() || key_holds(cx, section, key, words))
+        .collect();
+    let rows = keys
+        .into_iter()
         .map(|key| key_row(cx, key, refused.get(&key.name)))
         .collect();
     part.push(group(rows, "keys"));

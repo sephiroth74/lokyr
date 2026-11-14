@@ -754,8 +754,8 @@ fn the_settings_page_shows_every_section_of_the_config_and_of_the_plugins_of_its
     assert_eq!(page_field(&app, own, "field:size"), "13");
     assert_eq!(page_text(&app, own, "default:size"), "");
     assert_eq!(page_button(&app, own, "choose:family"), "Not set");
-    // The page's first field has the keyboard, as the settings open.
-    assert_eq!(focused_key(&app, own), ("field:size".to_owned(), true));
+    // The search has the keyboard, as the settings open.
+    assert_eq!(focused_key(&app, own), ("search".to_owned(), true));
     // The arrows choose a plugin's section, as the list has the keyboard.
     let state = app.windows.get_mut(&own).unwrap();
     let view = state
@@ -1232,7 +1232,12 @@ fn a_number_s_field_steps_of_the_arrow_keys_and_a_field_left_is_written() {
     let first = fake.windows().next().unwrap();
     app.windows.get_mut(&first).unwrap().surface = Some(fakes::Surface::default());
     let own = open(&mut fake, &mut app, SETTINGS_TAB);
-    // The size's field has the keyboard as the settings open; ↑ steps it.
+    // The search has the keyboard as the settings open, Tab gives it to
+    // the sidebar, then to the size's field, whose ↑ steps it.
+    assert_eq!(focused_key(&app, own), ("search".to_owned(), true));
+    tap(&mut fake, &mut app, own, KeyCode::Tab, Modifiers::NONE);
+    assert_eq!(focused_key(&app, own), ("sections".to_owned(), true));
+    tap(&mut fake, &mut app, own, KeyCode::Tab, Modifiers::NONE);
     assert_eq!(focused_key(&app, own), ("field:size".to_owned(), true));
     tap(&mut fake, &mut app, own, KeyCode::ArrowUp, Modifiers::NONE);
     frames(&mut fake, &mut app, own);
@@ -1335,4 +1340,63 @@ fn a_list_s_value_is_added_and_taken_away_in_the_file_and_its_default_given_back
     assert!(!read().contains("programs"), "{}", read());
     assert_eq!(page_text(&app, own, "item:programs:0"), "claude");
     let _ = std::fs::remove_dir_all(&directory);
+}
+
+/// The titles of the settings page's sidebar in `window`, and the place of
+/// the one selected.
+fn page_sidebar(app: &App, window: WindowId) -> (Vec<String>, Option<usize>) {
+    let surface = &page_view(app, window).expect("its page's view").surface;
+    let key = "sections".into();
+    let list = surface.tree.by_key(&key).expect("the sidebar's sections");
+    let Some(lokyr_kernel::plugins::view::Kind::List(sections)) = surface.tree.kind(list) else {
+        panic!("a list");
+    };
+    let titles = sections
+        .items
+        .iter()
+        .map(|item| item.texts[1].clone())
+        .collect();
+    let selected = surface
+        .lists
+        .state(&key)
+        .and_then(lokyr_ui_core::list::ListState::selected);
+    (titles, selected)
+}
+
+#[test]
+fn a_search_of_the_settings_shows_its_sections_and_selects_the_one_chosen_of_their_items() {
+    use lokyr_kernel::plugins::view::UiEventKind;
+    let (mut fake, mut app, _) = two_tabs();
+    let own = open(&mut fake, &mut app, SETTINGS_TAB);
+    let (all, _) = page_sidebar(&app, own);
+    let search = |text: &str| UiEventKind::InputChanged {
+        text: text.to_owned(),
+        revision: 1,
+    };
+    settings_event(
+        &mut fake,
+        &mut app,
+        own,
+        None,
+        "search",
+        search("scrollbar"),
+    );
+    frames(&mut fake, &mut app, own);
+    // The sections of the key alone, the first chosen and selected, as the
+    // font's holds none.
+    let (titles, selected) = page_sidebar(&app, own);
+    assert!(!titles.is_empty() && titles.len() < all.len(), "{titles:?}");
+    assert!(!titles.contains(&"Font".to_owned()), "{titles:?}");
+    assert_eq!(selected, Some(0));
+    assert_eq!(page_text(&app, own, "title"), titles[0]);
+    page_button(&app, own, "choose:scrollbar");
+    // The search emptied, every section back, the chosen one selected of
+    // their items, past the search's last.
+    settings_event(&mut fake, &mut app, own, None, "search", search(""));
+    frames(&mut fake, &mut app, own);
+    let (back, selected) = page_sidebar(&app, own);
+    assert_eq!(back, all);
+    let at = all.iter().position(|title| *title == titles[0]).unwrap();
+    assert!(at >= titles.len(), "{at} of {titles:?}");
+    assert_eq!(selected, Some(at));
 }

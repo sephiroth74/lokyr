@@ -1092,3 +1092,157 @@ fn a_list_s_values_are_taken_away_and_added_and_its_default_given_back() {
         .unwrap();
     assert_eq!(written(&mut host), [app_key("window", "programs", None)]);
 }
+
+/// The texts of the sidebar's items in `tree`, each of its icon and title.
+fn sidebar_of(tree: &Node) -> Vec<String> {
+    let Kind::List(list) = &find_node(tree, SECTIONS).expect("the sidebar's list").kind else {
+        panic!("a list");
+    };
+    list.items
+        .iter()
+        .map(|item| item.texts[1].clone())
+        .collect()
+}
+
+/// The search's text `text`, as it is typed.
+fn search(text: &str) -> UiEvent {
+    on(
+        SEARCH,
+        UiEventKind::InputChanged {
+            text: text.to_owned(),
+            revision: 1,
+        },
+    )
+}
+
+/// The items that the calls selected since the last look in the lists of
+/// the page.
+fn selected(host: &mut FakeHost) -> Vec<usize> {
+    host.take_done()
+        .into_iter()
+        .filter_map(|request| match request {
+            Request::Select { key, item, .. } if key.0 == SECTIONS => Some(item),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn a_search_shows_the_sections_and_the_keys_that_hold_its_words() {
+    let (mut host, mut plugin) = host();
+    let tree = rendered(&mut host, &mut plugin);
+    assert!(find_node(&tree, SEARCH).is_some(), "{}", snapshot(&tree));
+    assert!(find_node(&tree, SEARCH_CLEAR).is_none());
+
+    // A key's name, of its case aside: the font's section alone, of that
+    // key alone, still chosen.
+    host.ui_event(&mut plugin, &search("SIZE")).unwrap();
+    assert!(selected(&mut host).contains(&0));
+    let tree = rendered(&mut host, &mut plugin);
+    assert_eq!(sidebar_of(&tree), ["font"], "{}", snapshot(&tree));
+    assert!(reset_of(&tree, "size").is_some(), "{}", snapshot(&tree));
+    assert!(reset_of(&tree, "family").is_none());
+    assert!(find_node(&tree, SEARCH_CLEAR).is_some());
+
+    // Words in any order, of keys' names and what they do, across
+    // sections: the first of them chosen, as the font's holds none.
+    host.ui_event(&mut plugin, &search("does ro")).unwrap();
+    assert_eq!(selected(&mut host), [0]);
+    let tree = rendered(&mut host, &mut plugin);
+    assert_eq!(sidebar_of(&tree), ["window", "tabs"], "{}", snapshot(&tree));
+    assert!(
+        reset_of(&tree, "scrollbar").is_some(),
+        "{}",
+        snapshot(&tree)
+    );
+    assert!(reset_of(&tree, "programs").is_some());
+    assert!(reset_of(&tree, "opaque-titlebar").is_none());
+}
+
+#[test]
+fn a_search_chooses_its_first_section_where_the_chosen_one_holds_none() {
+    let (mut host, mut plugin) = host();
+    rendered(&mut host, &mut plugin);
+    host.ui_event(&mut plugin, &search("scrollbar")).unwrap();
+    // The window's section, chosen, the sidebar's first item.
+    assert_eq!(selected(&mut host), [0]);
+    let tree = rendered(&mut host, &mut plugin);
+    assert_eq!(sidebar_of(&tree), ["window"], "{}", snapshot(&tree));
+    assert!(
+        reset_of(&tree, "scrollbar").is_some(),
+        "{}",
+        snapshot(&tree)
+    );
+    assert!(reset_of(&tree, "opaque-titlebar").is_none());
+
+    // A section's title shows all of its keys; the sidebar's items are of
+    // the sections shown.
+    host.ui_event(&mut plugin, &search("tabs")).unwrap();
+    host.ui_event(&mut plugin, &choose(0)).unwrap();
+    let tree = rendered(&mut host, &mut plugin);
+    assert_eq!(sidebar_of(&tree), ["tabs"], "{}", snapshot(&tree));
+    assert!(
+        reset_of(&tree, "column-width").is_some(),
+        "{}",
+        snapshot(&tree)
+    );
+    assert!(reset_of(&tree, "background").is_some());
+}
+
+#[test]
+fn a_search_finds_the_bindings_of_their_keys_and_commands() {
+    let (mut host, mut plugin) = host();
+    rendered(&mut host, &mut plugin);
+    host.ui_event(&mut plugin, &search("clear")).unwrap();
+    let tree = rendered(&mut host, &mut plugin);
+    assert_eq!(sidebar_of(&tree), ["section-keys"], "{}", snapshot(&tree));
+    let texts = texts_of(&tree);
+    assert!(texts.iter().any(|text| text == "⌘K"), "{texts:?}");
+    assert!(!texts.iter().any(|text| text == "⌘Q"), "{texts:?}");
+
+    // The keys as macOS writes them, and as the config does.
+    host.ui_event(&mut plugin, &search("⌘Q")).unwrap();
+    let texts = texts_of(&rendered(&mut host, &mut plugin));
+    assert!(texts.iter().any(|text| text == "⌘Q"), "{texts:?}");
+    assert!(!texts.iter().any(|text| text == "⌘K"), "{texts:?}");
+    host.ui_event(&mut plugin, &search("cmd+k")).unwrap();
+    let texts = texts_of(&rendered(&mut host, &mut plugin));
+    assert!(texts.iter().any(|text| text == "⌘K"), "{texts:?}");
+}
+
+#[test]
+fn a_search_of_no_match_says_so_and_its_button_empties_it() {
+    let (mut host, mut plugin) = host();
+    rendered(&mut host, &mut plugin);
+    host.ui_event(&mut plugin, &choose(TABS)).unwrap();
+    host.ui_event(&mut plugin, &search("nowhere")).unwrap();
+    let tree = rendered(&mut host, &mut plugin);
+    assert!(sidebar_of(&tree).is_empty());
+    assert_eq!(
+        text_of(&tree, "no-match").as_deref(),
+        Some("settings-no-match"),
+        "{}",
+        snapshot(&tree)
+    );
+
+    // The button empties the field, every section back, the one chosen
+    // before still chosen.
+    host.take_done();
+    host.ui_event(&mut plugin, &on(SEARCH_CLEAR, UiEventKind::Click))
+        .unwrap();
+    assert!(host.take_done().iter().any(|request| matches!(
+        request,
+        Request::SetText { key, text, .. } if key.0 == SEARCH && text.is_empty()
+    )));
+    let tree = rendered(&mut host, &mut plugin);
+    assert_eq!(
+        sidebar_of(&tree),
+        ["font", "window", "theme", "section-keys", "tabs"]
+    );
+    assert!(
+        reset_of(&tree, "column-width").is_some(),
+        "{}",
+        snapshot(&tree)
+    );
+    assert!(find_node(&tree, SEARCH_CLEAR).is_none());
+}

@@ -759,9 +759,17 @@ impl<B: Backend> App<B> {
         (plugin, view, key): (&str, &ViewId, &NodeKey),
         item: usize,
     ) {
+        // A call that renders the view too selects of its new items, which
+        // its next tree brings.
+        let due = self.plugins.render_due(plugin, view);
         let Some((window, shown)) = self.shown_view(plugin, view) else {
             return;
         };
+        if due {
+            shown.select = Some((key.clone(), item));
+            platform.request_frame(window);
+            return;
+        }
         let surface = &mut shown.surface;
         if let Some(node) = surface.tree.by_key(key) {
             surface.lists.select(&surface.tree, node, item);
