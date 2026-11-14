@@ -1299,6 +1299,7 @@ mod tests {
                 label: "Gear".to_owned(),
                 icon: "settings".to_owned(),
                 disabled: false,
+                link: false,
             }))
             .key("settings"),
             Node::separator(),

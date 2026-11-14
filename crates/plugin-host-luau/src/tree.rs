@@ -63,8 +63,8 @@ pub(crate) fn own(kind: &str) -> Option<&'static [&'static str]> {
         "container" | "spacer" | "separator" | "scroll" => &[],
         "text" => &["text"],
         "icon" => &["icon"],
-        "field" => &["placeholder", "text"],
-        "button" => &["text", "icon", "disabled"],
+        "field" => &["placeholder", "text", "stepped"],
+        "button" => &["text", "icon", "disabled", "link"],
         "toggle" => &["text", "icon", "on", "disabled"],
         "list" => &["row", "count", "first", "items", "row_height", "menu"],
         "progress" => &["progress"],
@@ -272,11 +272,13 @@ fn one(value: Value, budget: &Budget) -> Result<(Node, Vec<Value>, Option<Value>
         "field" => Kind::Field(Field {
             placeholder: or_default(take("placeholder"), "placeholder", budget)?,
             text: field(take("text"), "text", budget)?,
+            stepped: or_default(take("stepped"), "stepped", budget)?,
         }),
         "button" => Kind::Button(Button {
             label: or_default(take("text"), "text", budget)?,
             icon: or_default(take("icon"), "icon", budget)?,
             disabled: or_default(take("disabled"), "disabled", budget)?,
+            link: or_default(take("link"), "link", budget)?,
         }),
         "toggle" => Kind::Toggle(Toggle {
             label: or_default(take("text"), "text", budget)?,
@@ -413,18 +415,25 @@ mod giving {
                 Kind::Container | Kind::Spacer | Kind::Separator | Kind::Scroll => {}
                 Kind::Text(text) => table.raw_set("text", text.as_str())?,
                 Kind::Icon(icon) => table.raw_set("icon", icon.as_str())?,
-                Kind::Field(Field { placeholder, text }) => {
+                Kind::Field(Field {
+                    placeholder,
+                    text,
+                    stepped,
+                }) => {
                     table.raw_set("placeholder", placeholder.as_str())?;
                     set(lua, &table, "text", text)?;
+                    table.raw_set("stepped", *stepped)?;
                 }
                 Kind::Button(Button {
                     label,
                     icon,
                     disabled,
+                    link,
                 }) => {
                     table.raw_set("text", label.as_str())?;
                     table.raw_set("icon", icon.as_str())?;
                     table.raw_set("disabled", *disabled)?;
+                    table.raw_set("link", *link)?;
                 }
                 Kind::Toggle(Toggle {
                     label,

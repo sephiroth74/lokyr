@@ -201,6 +201,7 @@ export type UiEvent =
     | { view: ViewId, key: string, kind: "activate", item: number }
     | { view: ViewId, key: string, kind: "list-range", first: number, count: number }
     | { view: ViewId, key: string, kind: "cut", cut: boolean }
+    | { view: ViewId, key: string, kind: "step", up: boolean }
 
 export type Node = {
     kind: "container" | "text" | "icon" | "spacer" | "field" | "button" | "toggle" | "separator" | "list" | "scroll" | "progress" | "tabs" | "image",
@@ -217,7 +218,9 @@ export type Node = {
     text: string?,
     icon: string?,
     placeholder: string?,
+    stepped: boolean?,
     disabled: boolean?,
+    link: boolean?,
     on: boolean?,
     row: Node?,
     count: number?,

@@ -308,21 +308,25 @@ fn a_section_shows_each_key_s_control_of_its_value_in_force_marked_at_its_defaul
         text_of(&tree, "description").as_deref(),
         Some("The font of the text")
     );
-    // A number set, not its default, in its field between its steps, a
-    // button back to its default; a text unset, of an empty field.
+    // A number set, not its default, in its field of steps, of no
+    // buttons, a link back to its default; a text unset, of an empty field,
+    // its link dimmed.
     assert_eq!(
         held(&tree, "field:size"),
         Some((Some("15".to_owned()), "setting-unset".to_owned()))
     );
-    assert!(labelled(&tree, "less:size").is_some());
-    assert!(labelled(&tree, "more:size").is_some());
+    assert!(matches!(
+        &find_node(&tree, "field:size").unwrap().kind,
+        Kind::Field(field) if field.stepped
+    ));
+    assert!(find_node(&tree, "less:size").is_none() && find_node(&tree, "more:size").is_none());
     assert!(find_node(&tree, "default:size").is_none());
-    assert!(labelled(&tree, "reset:size").is_some());
+    assert_eq!(reset_of(&tree, "size"), Some(false));
     assert_eq!(
         held(&tree, "field:family"),
         Some((Some(String::new()), "setting-unset".to_owned()))
     );
-    assert!(labelled(&tree, "reset:family").is_none());
+    assert_eq!(reset_of(&tree, "family"), Some(true));
     assert_eq!(
         text_of(&tree, "description:size").as_deref(),
         Some("What size does")
@@ -343,6 +347,7 @@ fn a_section_shows_each_key_s_control_of_its_value_in_force_marked_at_its_defaul
         text_of(&tree, "default:scrollbar").as_deref(),
         Some("setting-default")
     );
+    assert_eq!(reset_of(&tree, "scrollbar"), Some(true));
     assert_eq!(
         labelled(&tree, "set:opaque-titlebar"),
         Some(("setting-off".to_owned(), false))
@@ -356,6 +361,15 @@ fn a_section_shows_each_key_s_control_of_its_value_in_force_marked_at_its_defaul
         Some(Some("200".to_owned()))
     );
     assert!(find_node(&tree, "less:column-width").is_none());
+}
+
+/// Whether the link back to the default of the key `name` in `tree` is
+/// dimmed, if it is a link there.
+fn reset_of(tree: &Node, name: &str) -> Option<bool> {
+    match &find_node(tree, &format!("reset:{name}"))?.kind {
+        Kind::Button(button) if button.link => Some(button.disabled),
+        _ => None,
+    }
 }
 
 #[test]
@@ -375,9 +389,12 @@ fn a_number_and_a_text_are_written_from_their_fields_their_steps_and_back_to_the
         held(&tree, "field:size").map(|(text, _)| text),
         Some(Some("18".to_owned()))
     );
-    // A step more, then a fraction.
-    host.ui_event(&mut plugin, &on("more:size", UiEventKind::Click))
-        .unwrap();
+    // A step more, of the arrow up, then a fraction.
+    host.ui_event(
+        &mut plugin,
+        &on("field:size", UiEventKind::Step { up: true }),
+    )
+    .unwrap();
     assert_eq!(
         written(&mut host),
         [app_key("font", "size", Some(Data::Integer(19)))]
@@ -801,4 +818,60 @@ fn a_file_that_does_not_read_shows_its_error_and_the_page_writes_nothing() {
     host.deliver(&mut plugin).unwrap();
     let tree = rendered(&mut host, &mut plugin);
     assert!(find_node(&tree, "file-error").is_none());
+}
+
+#[test]
+fn a_field_is_written_as_typing_pauses_and_as_it_is_left_once_of_a_value() {
+    let (mut host, mut plugin) = host();
+    let _ = written(&mut host);
+    let typed = |text: &str| UiEventKind::InputChanged {
+        text: text.to_owned(),
+        revision: 1,
+    };
+    // Typing: nothing until it pauses.
+    host.ui_event(&mut plugin, &on("field:size", typed("1")))
+        .unwrap();
+    host.advance(std::time::Duration::from_millis(300));
+    host.ui_event(&mut plugin, &on("field:size", typed("17")))
+        .unwrap();
+    host.advance(std::time::Duration::from_millis(400));
+    host.deliver(&mut plugin).unwrap();
+    assert!(written(&mut host).is_empty());
+    host.advance(std::time::Duration::from_millis(300));
+    host.deliver(&mut plugin).unwrap();
+    assert_eq!(
+        written(&mut host),
+        [app_key("font", "size", Some(Data::Integer(17)))]
+    );
+    // Left: written at once, the pause's timer gone.
+    host.ui_event(&mut plugin, &on("field:size", typed("19")))
+        .unwrap();
+    host.ui_event(&mut plugin, &on("field:size", UiEventKind::Blur))
+        .unwrap();
+    assert_eq!(
+        written(&mut host),
+        [app_key("font", "size", Some(Data::Integer(19)))]
+    );
+    host.advance(std::time::Duration::from_secs(1));
+    host.deliver(&mut plugin).unwrap();
+    assert!(written(&mut host).is_empty());
+    // The value in force typed again writes nothing; nor does a field left
+    // of nothing typed.
+    host.ui_event(&mut plugin, &on("field:size", typed("19")))
+        .unwrap();
+    host.ui_event(&mut plugin, &submit("field:size", "19"))
+        .unwrap();
+    host.ui_event(&mut plugin, &on("field:family", UiEventKind::Blur))
+        .unwrap();
+    assert!(written(&mut host).is_empty());
+    // A step down, within the range.
+    host.ui_event(
+        &mut plugin,
+        &on("field:size", UiEventKind::Step { up: false }),
+    )
+    .unwrap();
+    assert_eq!(
+        written(&mut host),
+        [app_key("font", "size", Some(Data::Integer(18)))]
+    );
 }

@@ -640,6 +640,7 @@ fn widgets_tree() -> Node {
             label: label.to_owned(),
             icon: icon.to_owned(),
             disabled,
+            link: false,
         }))
         .key(key)
     };

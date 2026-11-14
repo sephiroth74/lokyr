@@ -1214,3 +1214,53 @@ fn a_style_is_picked_from_the_family_s_and_a_file_of_an_error_is_written_over_by
     assert_eq!(page_field(&app, own, "field:size"), "15");
     let _ = std::fs::remove_dir_all(&directory);
 }
+
+#[test]
+fn a_number_s_field_steps_of_the_arrow_keys_and_a_field_left_is_written() {
+    let directory = super::installed::shelf("settings-steps");
+    let path = directory.join("config.toml");
+    std::fs::write(&path, "# mine\n[font]\nsize = 14\n").unwrap();
+    let drawing = Drawing::new(FontConfig::default()).unwrap();
+    let mut fake = Fake::default();
+    let mut app = App::new(
+        Some(drawing),
+        Config::read(&path).unwrap(),
+        Some(path.clone()),
+    )
+    .with_program(idle());
+    fake.start(&mut app);
+    let first = fake.windows().next().unwrap();
+    app.windows.get_mut(&first).unwrap().surface = Some(fakes::Surface::default());
+    let own = open(&mut fake, &mut app, SETTINGS_TAB);
+    // The size's field has the keyboard as the settings open; ↑ steps it.
+    assert_eq!(focused_key(&app, own), ("field:size".to_owned(), true));
+    tap(&mut fake, &mut app, own, KeyCode::ArrowUp, Modifiers::NONE);
+    frames(&mut fake, &mut app, own);
+    let read = || std::fs::read_to_string(&path).unwrap();
+    assert_eq!(read(), "# mine\n[font]\nsize = 15\n");
+    assert_eq!(page_field(&app, own, "field:size"), "15");
+    // A value typed, then the field left by Tab: written.
+    tap(
+        &mut fake,
+        &mut app,
+        own,
+        KeyCode::Backspace,
+        Modifiers::NONE,
+    );
+    fake.send(
+        &mut app,
+        own,
+        key_event(KeyCode::Digit8, "8", Modifiers::NONE, true),
+    );
+    fake.send(
+        &mut app,
+        own,
+        key_event(KeyCode::Digit8, "8", Modifiers::NONE, false),
+    );
+    frames(&mut fake, &mut app, own);
+    assert_eq!(page_field(&app, own, "field:size"), "18");
+    tap(&mut fake, &mut app, own, KeyCode::Tab, Modifiers::NONE);
+    frames(&mut fake, &mut app, own);
+    assert_eq!(read(), "# mine\n[font]\nsize = 18\n");
+    let _ = std::fs::remove_dir_all(&directory);
+}

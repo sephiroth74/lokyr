@@ -431,14 +431,16 @@ impl<'a, B: FontBackend> Painter<'a, B> {
             Kind::Field(field) => self.field(id, field, (frame, style), color),
             Kind::Button(view::Button { label, icon, .. })
             | Kind::Toggle(view::Toggle { label, icon, .. }) => {
+                let link = matches!(kind, Kind::Button(button) if button.link);
                 let color = match kind {
                     _ if kind.disabled() => self.tokens.get("text.disabled").unwrap_or(color),
                     Kind::Toggle(toggle) if toggle.on => {
                         self.tokens.get("toggle.on.fg").unwrap_or(color)
                     }
+                    _ if link => self.tokens.get("accent").unwrap_or(color),
                     _ => color,
                 };
-                self.widget((label, icon), frame, color);
+                self.widget((label, icon), frame, color, link);
             }
             Kind::List(list) => self.list(id, list, (frame, style), color),
             Kind::Progress(progress) => self.progress(id, progress, frame, given),
@@ -572,7 +574,7 @@ impl<'a, B: FontBackend> Painter<'a, B> {
             } else {
                 color
             };
-            self.widget((&tab.label, &tab.icon), *segment, text);
+            self.widget((&tab.label, &tab.icon), *segment, text, false);
         }
     }
 
@@ -1222,7 +1224,13 @@ impl<'a, B: FontBackend> Painter<'a, B> {
     /// A button's or a toggle's content, of `label` and `icon`, either
     /// empty, side by side in the middle of `frame`, in `color`: its label
     /// clipped across where its frame is too narrow for it.
-    fn widget(&mut self, (label, icon): (&str, &str), frame: Frame, color: Color) {
+    fn widget(
+        &mut self,
+        (label, icon): (&str, &str),
+        frame: Frame,
+        color: Color,
+        underlined: bool,
+    ) {
         let scale = self.layout.scale();
         let side = if icon.is_empty() {
             0.0
@@ -1259,6 +1267,20 @@ impl<'a, B: FontBackend> Painter<'a, B> {
                 ..frame
             };
             self.text(label, at, Some(natural), color);
+            // A link's line under its label, a point below its baseline.
+            if underlined {
+                let face = self.font.interface();
+                let (line, ascent) = (face.line() * scale, face.ascent() * scale);
+                let baseline = (frame.y + (frame.height - line) / 2.0 + ascent).round();
+                let thick = scale.round().max(1.0);
+                let under = rect(Frame {
+                    x: at.x,
+                    y: baseline + thick,
+                    width,
+                    height: thick,
+                });
+                self.push_shape(Shape::filled(under, color));
+            }
         }
     }
 
@@ -1348,6 +1370,13 @@ fn moved_shape(shape: &mut Shape, (dx, dy): (i32, i32), opacity: f32) {
 fn widget_box(kind: &Kind, style: &Style, (hovered, pressed): (bool, bool)) -> Style {
     let disabled = kind.disabled();
     let on = matches!(kind, Kind::Toggle(toggle) if toggle.on);
+    // A link shows no box, whatever the pointer does.
+    if matches!(kind, Kind::Button(button) if button.link) {
+        return Style {
+            background: None,
+            ..style.clone()
+        };
+    }
     let background = match kind {
         _ if pressed && !disabled => Some("button.pressed.bg"),
         _ if on => Some("toggle.on.bg"),

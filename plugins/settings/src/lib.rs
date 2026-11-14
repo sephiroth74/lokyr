@@ -5,8 +5,9 @@
 //! force, marked as its default where it is: a toggle of a boolean, a menu
 //! of a key's values, of the system's font families, of a family's
 //! styles, of the themes or of the theme's colors, a field of a number,
-//! with its steps' buttons, or of a text, and a button that takes the key
-//! back to its default. A part of the bindings of keys lists the config's,
+//! which the arrow keys step, or of a text, written as typing pauses, as
+//! Return is pressed and as it is left, and a link that takes the key back
+//! to its default. A part of the bindings of keys lists the config's,
 //! each of its command's title, to take away, and adds one. A change
 //! writes the key into the config file, the rest of the file and its
 //! comments kept, and a value that the key does not take tells why under
@@ -27,8 +28,8 @@ use lokyr_plugin_sdk::plugin::{Cx, Plugin};
 use lokyr_plugin_sdk::theme::{TOKENS, ThemeVariant};
 use lokyr_plugin_sdk::ui::{Anchor, PanelId, PanelOptions, Role as PanelRole, UiEvent, ViewId};
 use lokyr_plugin_sdk::view::{
-    Align, Border, Direction, Edges, FontFamily, FontWeight, Kind, Layout, Length, ListItem, Node,
-    Role, Style, TextSize, Token, UiEventKind,
+    Align, Border, Direction, Edges, FontFamily, FontWeight, Justify, Kind, Layout, Length,
+    ListItem, Node, Role, Style, TextSize, Token, UiEventKind,
 };
 
 lokyr_plugin_sdk::export_plugin!(SettingsPage);
@@ -65,12 +66,6 @@ const CHOICE: &str = "choice:";
 /// The prefix of the key of a number's or a text's field.
 const FIELD: &str = "field:";
 
-/// The prefix of the key of a number's button of a step less.
-const LESS: &str = "less:";
-
-/// The prefix of the key of a number's button of a step more.
-const MORE: &str = "more:";
-
 /// The prefix of the key of a key's button back to its default.
 const RESET: &str = "reset:";
 
@@ -86,16 +81,32 @@ const NEW_COMMAND: &str = "new-command";
 /// The section of the bindings of keys, as the config names it.
 const KEYS: &str = "keys";
 
+/// How long typing pauses before a field's value is written.
+const PAUSE: std::time::Duration = std::time::Duration::from_millis(600);
+
 /// The plugin: whether its page shows, the part chosen, by its place in the
 /// sidebar, why each key's last write was refused, by its name, until it is
-/// written or another part shows, and the new binding's fields' texts, each
-/// of its revision.
+/// written or another part shows, the new binding's fields' texts, each of
+/// its revision, the texts typed into the fields and not written yet, each
+/// of its key's section and plugin, by the key's name, and the timer of
+/// typing's pause.
 #[derive(Default)]
 pub struct SettingsPage {
     shown: bool,
     chosen: usize,
     refused: BTreeMap<String, String>,
     new_binding: BTreeMap<String, (String, u64)>,
+    typed: BTreeMap<String, Typed>,
+    pause: Option<u64>,
+}
+
+/// A text typed into a key's field and not written yet: the key's section
+/// and plugin, and the text.
+#[derive(Clone, Debug)]
+struct Typed {
+    section: String,
+    plugin: Option<String>,
+    text: String,
 }
 
 /// A part of the page, as its sidebar lists it: a section of the settings,
@@ -144,8 +155,16 @@ impl Plugin for SettingsPage {
                     self.chosen = 0;
                     again = true;
                 }
-                Event::PageHidden(_) => self.shown = false,
+                Event::PageHidden(_) => {
+                    self.shown = false;
+                    self.write_typed(cx, None)?;
+                }
                 Event::SettingsChanged => again = true,
+                // Typing paused: what it typed is written.
+                Event::Timer { id } if self.pause == Some(*id) => {
+                    self.pause = None;
+                    self.write_typed(cx, None)?;
+                }
                 _ => {}
             }
         }
@@ -164,6 +183,8 @@ impl Plugin for SettingsPage {
             if *item == self.chosen {
                 return Ok(());
             }
+            // What the part shown typed is written before another shows.
+            self.write_typed(cx, None)?;
             self.chosen = *item;
             self.refused.clear();
             return cx.request_render(page());
@@ -218,16 +239,39 @@ impl Plugin for SettingsPage {
                     close_typing: false,
                 },
             ),
-            (UiEventKind::Submit { text, .. }, FIELD) => match value_of(cx, &setting.kind, text) {
-                Ok(value) => self.write(cx, section, setting, value),
-                Err(why) => {
-                    self.refused.insert(name.to_owned(), why);
-                    cx.request_render(page())
+            // Typed: written as typing pauses, as Return is pressed, or as
+            // the field is left.
+            (UiEventKind::InputChanged { text, .. }, FIELD) => {
+                self.typed.insert(
+                    name.to_owned(),
+                    Typed {
+                        section: section.name.clone(),
+                        plugin: section.plugin.clone(),
+                        text: text.clone(),
+                    },
+                );
+                if let Some(pause) = self.pause.take() {
+                    cx.cancel_timer(pause)?;
                 }
-            },
-            (UiEventKind::Click, LESS | MORE) => {
-                let toward = if prefix == MORE { 1.0 } else { -1.0 };
-                match stepped(setting, toward) {
+                self.pause = Some(cx.start_timer(PAUSE, false)?);
+                Ok(())
+            }
+            (UiEventKind::Submit { text, .. }, FIELD) => {
+                self.typed.insert(
+                    name.to_owned(),
+                    Typed {
+                        section: section.name.clone(),
+                        plugin: section.plugin.clone(),
+                        text: text.clone(),
+                    },
+                );
+                self.write_typed(cx, Some(name))
+            }
+            (UiEventKind::Blur, FIELD) => self.write_typed(cx, Some(name)),
+            (UiEventKind::Step { up }, FIELD) => {
+                let toward = if *up { 1.0 } else { -1.0 };
+                self.typed.remove(name);
+                match step_of(setting, toward) {
                     Some(value) => self.write(cx, section, setting, Some(value)),
                     None => Ok(()),
                 }
@@ -347,6 +391,60 @@ impl SettingsPage {
 }
 
 impl SettingsPage {
+    /// Writes the texts typed into the fields and not written yet, of the
+    /// key `only` alone where given, each that differs from its key's value
+    /// in force: a value of its key's kind, or why not under it.
+    fn write_typed(&mut self, cx: &mut Cx<'_>, only: Option<&str>) -> Result<(), Error> {
+        let names: Vec<String> = match only {
+            Some(name) => vec![name.to_owned()],
+            None => self.typed.keys().cloned().collect(),
+        };
+        let mut pending = Vec::new();
+        for name in names {
+            if let Some(typed) = self.typed.remove(&name) {
+                pending.push((name, typed));
+            }
+        }
+        if self.typed.is_empty()
+            && let Some(pause) = self.pause.take()
+        {
+            cx.cancel_timer(pause)?;
+        }
+        if pending.is_empty() {
+            return Ok(());
+        }
+        let settings = cx.settings()?;
+        for (name, typed) in pending {
+            let Some(section) = settings
+                .sections
+                .iter()
+                .find(|section| section.name == typed.section && section.plugin == typed.plugin)
+            else {
+                continue;
+            };
+            let Some(setting) = find(section, &name) else {
+                continue;
+            };
+            // Once of a value: none of the value in force.
+            let text = typed.text.trim();
+            let now = setting.value.as_ref().map(plain).unwrap_or_default();
+            if text == now || (text.is_empty() && setting.value == setting.default) {
+                if self.refused.remove(&name).is_some() {
+                    cx.request_render(page())?;
+                }
+                continue;
+            }
+            match value_of(cx, &setting.kind, text) {
+                Ok(value) => self.write(cx, section, setting, value)?,
+                Err(why) => {
+                    self.refused.insert(name, why);
+                    cx.request_render(page())?;
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Writes `value` to the key `setting` of `section`, or takes it away of
     /// none: the page follows as the config applies anew, or tells why the
     /// key does not take it.
@@ -442,17 +540,18 @@ fn value_of(cx: &mut Cx<'_>, kind: &SettingKind, text: &str) -> Result<Option<Da
 
 /// The value of the number `setting` a step toward `toward`, more of a
 /// positive one, within its range: its value in force, or its range's
-/// least, moved by its step; none of a key of no step.
-fn stepped(setting: &SettingKey, toward: f64) -> Option<Data> {
+/// least, moved by its step, 1 of none; none of a key of another kind.
+fn step_of(setting: &SettingKey, toward: f64) -> Option<Data> {
     let SettingKind::Number {
         minimum,
         maximum,
-        step: Some(step),
+        step,
         ..
     } = setting.kind
     else {
         return None;
     };
+    let step = step.unwrap_or(1.0);
     let now = match &setting.value {
         Some(Data::Integer(value)) => *value as f64,
         Some(Data::Number(value)) => *value,
@@ -740,29 +839,44 @@ fn key_row(cx: &mut Cx<'_>, key: &SettingKey, refused: Option<&String>) -> Node 
         ..Layout::default()
     });
     let mut value = vec![control(cx, key)];
+    // At the bottom right: Default where it is, and the link back to it,
+    // dimmed where the key is there already.
     let mut marks = Vec::new();
+    let at_default = key.value.is_none() || key.value == key.default;
     if key.value.is_some() && key.value == key.default {
         marks.push(
             Node::text(message(cx, "setting-default", &[]))
                 .key(format!("default:{name}").as_str())
                 .style(small()),
         );
-    } else if key.value.is_some() && writable(&key.kind) {
-        marks.push(
-            Node::button(message(cx, "setting-reset", &[])).key(format!("{RESET}{name}").as_str()),
-        );
+    }
+    if writable(&key.kind) {
+        let mut reset = Node::button(message(cx, "setting-reset", &[]))
+            .key(format!("{RESET}{name}").as_str())
+            .as_link()
+            .style(Style {
+                text_size: Some(TextSize::Small),
+                ..Style::default()
+            });
+        if let Kind::Button(own) = &mut reset.kind {
+            own.disabled = at_default;
+        }
+        marks.push(reset);
     }
     if !marks.is_empty() {
-        value.push(row_of(marks, 6.0));
+        value.push(row_of(marks, 6.0).key(format!("marks:{name}").as_str()));
     }
     let value = Node::container(value)
         .key(format!("values:{name}").as_str())
         .layout(Layout {
             direction: Direction::Column,
-            gap: 2.0,
+            gap: 6.0,
             align: Align::End,
+            justify: Justify::SpaceBetween,
             ..Layout::default()
         });
+    // The control at the top right, the link back to the default at the
+    // bottom right, of the row's height.
     Node::container(vec![about, value])
         .key(format!("key:{name}").as_str())
         .role(Role::Group)
@@ -770,7 +884,7 @@ fn key_row(cx: &mut Cx<'_>, key: &SettingKey, refused: Option<&String>) -> Node 
         .layout(Layout {
             direction: Direction::Row,
             gap: 12.0,
-            align: Align::Center,
+            align: Align::Stretch,
             width: Length::Fraction(1.0),
             padding: Edges {
                 top: 10.0,
@@ -840,30 +954,18 @@ fn control(cx: &mut Cx<'_>, key: &SettingKey) -> Node {
                 _ => button,
             }
         }
-        SettingKind::Number { step, .. } => {
+        SettingKind::Number { .. } => {
             let text = key.value.as_ref().map(plain).unwrap_or_default();
-            let field = Node::field(message(cx, "setting-unset", &[]))
+            Node::field(message(cx, "setting-unset", &[]))
                 .key(format!("{FIELD}{name}").as_str())
                 .label(name.clone())
                 .holding(text)
-                .style(terminal)
+                .stepped()
+                .style(small_terminal())
                 .layout(Layout {
-                    width: Length::Points(90.0),
+                    width: Length::Points(64.0),
                     ..Layout::default()
-                });
-            if step.is_none() {
-                return field;
-            }
-            row_of(
-                vec![
-                    Node::button(message(cx, "setting-less", &[]))
-                        .key(format!("{LESS}{name}").as_str()),
-                    field,
-                    Node::button(message(cx, "setting-more", &[]))
-                        .key(format!("{MORE}{name}").as_str()),
-                ],
-                4.0,
-            )
+                })
         }
         SettingKind::Text { examples, .. } => {
             let text = key.value.as_ref().map(plain).unwrap_or_default();
@@ -875,9 +977,9 @@ fn control(cx: &mut Cx<'_>, key: &SettingKey) -> Node {
                 .key(format!("{FIELD}{name}").as_str())
                 .label(name.clone())
                 .holding(text)
-                .style(terminal)
+                .style(small_terminal())
                 .layout(Layout {
-                    width: Length::Points(220.0),
+                    width: Length::Points(180.0),
                     ..Layout::default()
                 })
         }
@@ -1175,6 +1277,15 @@ fn wrapped() -> Layout {
 fn secondary() -> Style {
     Style {
         color: Some(Token::from("text.secondary")),
+        ..Style::default()
+    }
+}
+
+/// The style of a field's small text of the terminal's font.
+fn small_terminal() -> Style {
+    Style {
+        font_family: Some(FontFamily::Terminal),
+        text_size: Some(TextSize::Small),
         ..Style::default()
     }
 }

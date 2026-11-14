@@ -346,6 +346,8 @@ type Node = {
     placeholder: string?, -- for field nodes, shown while the field is empty
     -- For field nodes, `text` is the text that it holds, which the host takes as the field first shows and as a
     -- render gives another, over what was typed; nil keeps what the host holds.
+    stepped: boolean?, -- for field nodes: ↑ and ↓ tell a "step" rather than move the caret, as a number's field
+    link: boolean?, -- for button nodes: a link's look, its label underlined in the accent's color, of no box
     progress: {
         state: ("normal" | "error" | "paused" | "indeterminate")?,
         value: number?, -- from 0 to 1
@@ -578,10 +580,12 @@ type UiEvent = {
     kind: "click" | "double-click" | "middle-click" | "hover-enter" | "hover-leave" | "context-menu"
         | "input-changed" | "submit" | "focus" | "blur" | "scroll"
         | "drag-start" | "drag-move" | "drag-end" | "drag-cancel" | "reorder" | "drop-on-bar"
-        | "drop-on-pane" | "drop-outside" | "set-value" | "toggle" | "select" | "activate" | "list-range" | "cut",
+        | "drop-on-pane" | "drop-outside" | "set-value" | "toggle" | "select" | "activate" | "list-range" | "cut"
+        | "step",
     text: string?, -- a field's text, as the host holds it: at each change, "input-changed", and as Return goes to it, "submit"
     revision: number?, -- an "input-changed" text's, one more at each edit, which `set_text` gives back
     shift: boolean?, -- a "submit"'s, whether Shift was held, as Shift-Return goes the other way
+    up: boolean?, -- a "step"'s, of a field of steps' arrow key: ↑ a step up, ↓ a step down
     item: number?, -- a list's item, selected or activated
     first: number?, count: number?, -- the items of a list that the host asks for, which the next render gives
     x: number?, y: number?, -- a drag's, from its start, or a scroll's, in points; a "drop-outside"'s, where the tab's new window puts its content's corner on the screens

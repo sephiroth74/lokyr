@@ -435,6 +435,9 @@ impl Gallery {
             UiEventKind::DropOnBar { .. }
             | UiEventKind::DropOnPane { .. }
             | UiEventKind::DropOutside { .. } => {}
+            UiEventKind::Step { up } => {
+                self.pressed = format!("a step {} of `{key}`", if up { "up" } else { "down" });
+            }
             UiEventKind::Scroll { x, y } => {
                 let (_, across, down) = self.scrolled;
                 self.scrolled = (format!("`{key}` by {x:.0}, {y:.0}"), across + x, down + y);
@@ -1390,6 +1393,7 @@ impl Gallery {
                 label: label.to_owned(),
                 icon: icon.to_owned(),
                 disabled,
+                link: false,
             }))
             .key(key)
         };

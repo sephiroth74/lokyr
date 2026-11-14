@@ -391,6 +391,18 @@ impl Fields {
         let mods = event.mods;
         let (command, control, shift) = (mods.super_key, mods.control, mods.shift);
         let option = mods.left_alt || mods.right_alt;
+        // A field of steps: ↑ and ↓, of no modifier, step its value, which
+        // its plugin learns of, its caret where it is.
+        let stepped = matches!(tree.kind(node), Some(Kind::Field(field)) if field.stepped);
+        if stepped && matches!(event.key, Key::Up | Key::Down) && !command && !control && !option {
+            return Some(vec![NodeEvent {
+                node,
+                key: key.clone(),
+                kind: UiEventKind::Step {
+                    up: event.key == Key::Up,
+                },
+            }]);
+        }
         let moving = |toward| Some((toward, shift));
         // A move, and whether it extends the selection.
         let toward = match event.key {
@@ -1920,5 +1932,36 @@ mod tests {
         let tree = tree_of(Some("18"));
         fields.updated(&tree);
         assert_eq!(text(&fields).as_deref(), Some("18"));
+    }
+
+    #[test]
+    fn a_field_of_steps_tells_its_arrow_keys_as_steps_and_another_moves_its_caret() {
+        let mut typing = Typing::new();
+        typing.kind("12");
+        assert_eq!(typing.press(Key::Up, NONE, ""), Some(Vec::new()));
+        assert_eq!(typing.shown(), "|12");
+        // Of steps: ↑ and ↓ tell a step, the caret where it was.
+        let mut tree = Tree::new();
+        tree.update(&Node::container(vec![
+            Node::field("Size").key("find").stepped(),
+        ]))
+        .unwrap();
+        typing.node = tree.children(tree.root().unwrap())[0];
+        typing.tree = tree;
+        typing.press(Key::Down, NONE, "");
+        assert_eq!(
+            typing.press(Key::Up, NONE, ""),
+            Some(vec!["Step { up: true }".to_owned()])
+        );
+        assert_eq!(
+            typing.press(Key::Down, NONE, ""),
+            Some(vec!["Step { up: false }".to_owned()])
+        );
+        // Of a modifier, the caret moves as in any field.
+        let option = Mods {
+            left_alt: true,
+            ..NONE
+        };
+        assert_eq!(typing.press(Key::Up, option, ""), Some(Vec::new()));
     }
 }

@@ -420,6 +420,10 @@ pub struct Field {
     /// set by a request.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
+    /// Whether the arrow keys step its value, as a number's field: ↑ and ↓
+    /// tell its plugin a `step` rather than move its caret.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub stepped: bool,
 }
 
 /// A button's own properties.
@@ -433,6 +437,10 @@ pub struct Button {
     pub icon: String,
     /// Whether it is dimmed, and takes neither a click nor the focus.
     pub disabled: bool,
+    /// Whether it looks as a link: its label underlined, of the accent's
+    /// color, of no box.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub link: bool,
 }
 
 /// A toggle's own properties.
@@ -894,6 +902,11 @@ pub enum UiEventKind {
         /// Whether it is to be on.
         on: bool,
     },
+    /// A field of steps' arrow key pressed: ↑ a step up, ↓ a step down.
+    Step {
+        /// Whether it is a step up.
+        up: bool,
+    },
     /// A list's selection moved to an item, by a click or the keys; or a
     /// view of tabs' tab chosen, by a click or the arrows, which its next
     /// render gives.
@@ -1152,7 +1165,28 @@ impl Node {
         Self::new(Kind::Field(Field {
             placeholder: placeholder.into(),
             text: None,
+            stepped: false,
         }))
+    }
+
+    /// The node, a field, of steps, as [`Field::stepped`] has it; any other
+    /// node as it is.
+    #[must_use]
+    pub fn stepped(mut self) -> Self {
+        if let Kind::Field(field) = &mut self.kind {
+            field.stepped = true;
+        }
+        self
+    }
+
+    /// The node, a button, of a link's look, as [`Button::link`] has it; any
+    /// other node as it is.
+    #[must_use]
+    pub fn as_link(mut self) -> Self {
+        if let Kind::Button(button) = &mut self.kind {
+            button.link = true;
+        }
+        self
     }
 
     /// The node, a field, holding `text`, as [`Field::text`] has it; any

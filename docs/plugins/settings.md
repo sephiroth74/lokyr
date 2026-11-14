@@ -13,10 +13,10 @@ The Settings page of the settings window: every key of your config, Lokyr's own 
   - a key of a few values, a button of its value, whose menu lists the values, the one in force ticked;
   - a font's family, a menu of the system's families, the monospaced ones of the text's own family, every one of the text past ASCII's and of the interface's; a font's style, a menu of the styles of the section's family, or of the family in force;
   - a theme, a menu of the themes of its appearance, light or dark; a plugin's color, a menu of the theme's colors by their tokens, of a swatch of the color beside it;
-  - a number, a field, and − and + buttons of its step where it has one;
+  - a number, a field, whose value ↑ and ↓ step, of the key's step, within its range;
   - a text, a field, empty where your config leaves out a key of no default;
   - a list or a table, its value as the config writes it, which you change in the file.
-- **A change** writes the key into your config file, keeping the rest of it and its comments, and applies at once, as saving the file would: a toggle or a menu's value as you choose it, a field's value as you press Return. An empty field, or **Reset**, beside a key that is not at its default, takes the key out of the file, its default in force again.
+- **A change** writes the key into your config file, keeping the rest of it and its comments, and applies at once, as saving the file would: a toggle or a menu's value as you choose it, a field's value as your typing pauses, as you press Return and as you leave the field. An empty field, or **Reset**, the link at the row's bottom right, dimmed where the key is at its default, takes the key out of the file, its default in force again.
 - **A value that the key does not take**, past its range, not a number, or a whole number's fraction, is not written, and the page tells why under the key, until a value is written.
 - **Keys**, after the config's sections, lists the bindings of your config's `[keys]`, each of its keys and of the title of the command that it runs, or that it takes the keys away; one of arguments or of a context says so, which the file tells. **Remove** takes a binding out of the file, the default of its keys back; a new binding takes its keys, as `cmd+shift+n`, and its command's name, as `window.new`, and Return writes it, of a command that Lokyr has.
 - **A config file that does not read** shows its error over the page, of its line and its column: the page shows the settings that applied last, and writes nothing until the file reads again.
