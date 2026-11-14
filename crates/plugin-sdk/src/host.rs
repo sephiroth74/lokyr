@@ -737,6 +737,10 @@ pub struct Fonts {
     /// The monospaced families, by their names, in their names' order,
     /// their case aside.
     pub families: Vec<String>,
+    /// Every family, monospaced or not, by its name, in the names' order,
+    /// as a family of the text past ASCII or of the interface takes.
+    #[serde(default)]
+    pub all: Vec<String>,
 }
 
 impl Fonts {
@@ -1049,11 +1053,51 @@ pub struct PluginInfo {
 /// The settings that a read of them tells, of the capability `config`:
 /// the app's sections of its config's schema, in its order, then each
 /// plugin's of a config schema, in the plugins' order, each key of its
-/// value in force.
+/// value in force; the config's bindings of keys; and what is wrong with
+/// the config file, where it does not read.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Settings {
     /// The sections, in their order.
     pub sections: Vec<SettingsSection>,
+    /// The bindings of the config's `[keys]`, in their keys' order.
+    #[serde(default)]
+    pub keys: Vec<SettingBinding>,
+    /// What is wrong with the config file, where it does not read: the
+    /// settings are those that applied last, and none is written until it
+    /// reads.
+    #[serde(default)]
+    pub error: Option<ConfigProblem>,
+}
+
+/// A binding of the config's `[keys]`, as a read of the settings tells it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SettingBinding {
+    /// Its keys, as the config writes them, as `cmd+shift+n`.
+    pub keys: String,
+    /// The command that they run, by its name; none of keys that the
+    /// config takes away, `false`.
+    #[serde(default)]
+    pub command: Option<String>,
+    /// The command's title, as the menus show it, of one that the app has.
+    #[serde(default)]
+    pub title: Option<String>,
+    /// Whether it is more than its command: of its arguments, of a context
+    /// of its own or of several commands, which the file tells.
+    #[serde(default)]
+    pub detailed: bool,
+}
+
+/// What is wrong with the config file: why it does not read, and where.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ConfigProblem {
+    /// Why.
+    pub message: String,
+    /// The line, from 1, if the error has one.
+    #[serde(default)]
+    pub line: Option<u32>,
+    /// The column, from 1, if the error has one.
+    #[serde(default)]
+    pub column: Option<u32>,
 }
 
 /// A section of the settings: the app's, as `[font]`, or a plugin's.

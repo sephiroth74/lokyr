@@ -154,6 +154,11 @@ pub enum Request {
     /// plugin's of a config schema, each key of its kind and its value in
     /// force. Of the capability `config`, Lokyr's own plugins' alone.
     Settings,
+    /// The styles of the font family of a name, by the names that the font
+    /// gives its faces, as `Regular` or `Bold Italic`, from the lightest,
+    /// each upright before its italic; none of a family that the system
+    /// lacks.
+    FontStyles(String),
     /// Turns the plugin of a name on or off, as its section of the config,
     /// `[plugins.<namespace>] enabled`, which the host writes, keeping the
     /// rest of the file: it stops at once, or starts anew, as the config is
@@ -1048,6 +1053,7 @@ impl Request {
             | Self::Commands
             | Self::Themes
             | Self::Fonts
+            | Self::FontStyles(_)
             | Self::Day
             | Self::NoticeShows
             | Self::KeepsState
@@ -1103,6 +1109,7 @@ impl Request {
             | Self::Agents
             | Self::Plugins
             | Self::Settings
+            | Self::FontStyles(_)
             | Self::RenderImage(_)
             | Self::SelectionCells(_)
             | Self::ScreenCells(_) => Effect::Read,
@@ -1218,6 +1225,8 @@ pub enum Response {
     Themes(crate::host::Themes),
     /// The system's monospaced font families.
     Fonts(crate::host::Fonts),
+    /// A font family's styles, from the lightest.
+    FontStyles(Vec<String>),
     /// A day of the system's clock, in days since 1970-01-01.
     Day(u64),
     /// The AI agents that run in the panes.
@@ -1682,6 +1691,7 @@ impl Request {
             Self::Commands { .. } => "commands",
             Self::Themes { .. } => "themes",
             Self::Fonts { .. } => "fonts",
+            Self::FontStyles { .. } => "font-styles",
             Self::Day { .. } => "day",
             Self::Agents { .. } => "agents",
             Self::Plugins { .. } => "plugins",

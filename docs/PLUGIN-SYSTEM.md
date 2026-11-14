@@ -610,9 +610,10 @@ type Themes = {
     themes: { { name: string, variant: "light" | "dark", origin: "folder" | "held" | "built-in" } },
 }
 
--- The system's monospaced font families, as a read of them gives them: the family in force, the config's `[font]
--- family` where the system has it, else the default one, and every monospaced family by name, in their names' order.
-type Fonts = { current: string, families: { string } }
+-- The system's font families, as a read of them gives them: the family in force, the config's `[font] family` where
+-- the system has it, else the default one, every monospaced family by name, in their names' order, and every family,
+-- monospaced or not, as a family of the text past ASCII or of the interface takes.
+type Fonts = { current: string, families: { string }, all: { string } }
 
 -- A command, as a read of the registry gives it; `plugin`, `keys`, `when` and `enabled` to a plugin of `user-commands`
 -- alone: the plugin that registered it, nil of the app's own; its keys of no arguments, as "⌘T"; its context; and whether
@@ -677,6 +678,9 @@ type Cx = {
     set_theme: (variant: "light" | "dark", name: string) -> (boolean, Error?),
     -- The system's monospaced font families, of no capability, read of the system's fonts at most every 30 s.
     fonts: () -> (Fonts?, Error?),
+    -- The styles of a font family, by the names that the font gives its faces, as "Bold Italic", from the lightest,
+    -- each upright before its italic, of no capability; none of a family that the system lacks.
+    font_styles: (family: string) -> ({ string }?, Error?),
     -- Require `appearance-write`: shows a monospaced family, as `fonts` lists it, its case aside, in every pane in place
     -- of the config's, for a while, as a picker previews it, of the config's styles that it has, its own in place of
     -- those that it lacks; nil shows the config's. A family changes the cell's size:
@@ -957,12 +961,17 @@ type Cx = {
     -- then each plugin's of a config schema, in the plugins' order, each key of its name, its description, its
     -- platforms, its kind ("boolean", a number of its range, step and whether it is whole, a text of its fewest and
     -- most characters and the values that it suggests, a choice of its values, a list of texts, or another), its
-    -- control, its default and its value in force.
+    -- control, its default and its value in force; the bindings of the config's `[keys]`, each of its keys, its
+    -- command and the command's title, none of keys taken away, and whether the file tells more of it; and what is
+    -- wrong with the config file where it does not read, its message, line and column, the settings then those that
+    -- applied last.
     settings: () -> (Settings?, Error?),
     -- Requires `config`, Lokyr's own plugins' alone: writes a key of the settings into the config file, of a section
     -- as the settings name it, an app's of no plugin or a plugin's of its name, keeping the rest of the file and its
     -- comments, as the call returns, the config applying anew; a value that the key does not take, as the parser or
     -- the plugin's schema tells it, fails at once, nothing written; of no value, the key goes, back to its default.
+    -- The section `keys` binds keys, any as the parser reads them, to a command that the app has, or `false`. Nothing
+    -- is written over a file that does not read.
     set_setting: (section: string, plugin: string?, key: string, value: Data?) -> (boolean, Error?),
 
     -- The plugin's config, its section's values with its schema's defaults; its state, of plain values,

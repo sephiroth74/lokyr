@@ -242,6 +242,8 @@ pub fn all(world: &World) -> Vec<Scenario> {
 pub fn settings() -> lokyr_plugin_sdk::host::Settings {
     lokyr_plugin_sdk::host::Settings {
         sections: lokyr_kernel::config::schema::sections(&lokyr_kernel::config::Config::default()),
+        keys: Vec::new(),
+        error: None,
     }
 }
 
@@ -292,6 +294,15 @@ fn settings_read(allowed: bool) -> Scenario {
             (write("size", Some(Data::Integer(15))), written.clone()),
             (write("size", None), written),
             (write("sise", Some(Data::Integer(15))), unknown),
+            // A family's styles, of no capability.
+            (
+                Request::FontStyles("Menlo".to_owned()),
+                Response::FontStyles(lokyr_plugin_sdk::fake::font_styles("Menlo")),
+            ),
+            (
+                Request::FontStyles("None Such".to_owned()),
+                Response::FontStyles(Vec::new()),
+            ),
         ])],
     }
 }

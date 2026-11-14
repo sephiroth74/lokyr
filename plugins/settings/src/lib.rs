@@ -3,23 +3,28 @@
 //! of a config schema, and beside it the chosen section's keys, each of
 //! its name, its platforms, what it does and a control of its value in
 //! force, marked as its default where it is: a toggle of a boolean, a menu
-//! of a key's values, a field of a number, with its steps' buttons, or of
-//! a text, and a button that takes the key back to its default. A change
+//! of a key's values, of the system's font families, of a family's
+//! styles, of the themes or of the theme's colors, a field of a number,
+//! with its steps' buttons, or of a text, and a button that takes the key
+//! back to its default. A part of the bindings of keys lists the config's,
+//! each of its command's title, to take away, and adds one. A change
 //! writes the key into the config file, the rest of the file and its
 //! comments kept, and a value that the key does not take tells why under
-//! it. The page reads the settings as it renders, of the capability
-//! `config`, which Lokyr's own plugins alone may hold, and follows the
-//! config as it applies anew, of a change of the file too. Like every
-//! built-in plugin, it depends only on the plugin SDK.
+//! it; a file that does not read shows its error, and the page writes
+//! nothing until it reads. The page reads the settings as it renders, of
+//! the capability `config`, which Lokyr's own plugins alone may hold, and
+//! follows the config as it applies anew, of a change of the file too.
+//! Like every built-in plugin, it depends only on the plugin SDK.
 
 #![forbid(unsafe_code)]
 
 use std::collections::BTreeMap;
 
 use lokyr_plugin_sdk::command::Error;
-use lokyr_plugin_sdk::host::{SettingKey, SettingKind, Settings, SettingsSection};
+use lokyr_plugin_sdk::host::{SettingBinding, SettingKey, SettingKind, Settings, SettingsSection};
 use lokyr_plugin_sdk::message::{Data, Event, SETTINGS_CHANGED};
 use lokyr_plugin_sdk::plugin::{Cx, Plugin};
+use lokyr_plugin_sdk::theme::{TOKENS, ThemeVariant};
 use lokyr_plugin_sdk::ui::{Anchor, PanelId, PanelOptions, Role as PanelRole, UiEvent, ViewId};
 use lokyr_plugin_sdk::view::{
     Align, Border, Direction, Edges, FontFamily, FontWeight, Kind, Layout, Length, ListItem, Node,
@@ -69,14 +74,50 @@ const MORE: &str = "more:";
 /// The prefix of the key of a key's button back to its default.
 const RESET: &str = "reset:";
 
-/// The plugin: whether its page shows, the section chosen, by its place in
-/// the settings', and why each key's last write was refused, by its name,
-/// until it is written or another section shows.
+/// The prefix of the key of a binding's button that takes it away.
+const UNBIND: &str = "unbind:";
+
+/// The key of the field of a new binding's keys.
+const NEW_KEYS: &str = "new-keys";
+
+/// The key of the field of a new binding's command.
+const NEW_COMMAND: &str = "new-command";
+
+/// The section of the bindings of keys, as the config names it.
+const KEYS: &str = "keys";
+
+/// The plugin: whether its page shows, the part chosen, by its place in the
+/// sidebar, why each key's last write was refused, by its name, until it is
+/// written or another part shows, and the new binding's fields' texts, each
+/// of its revision.
 #[derive(Default)]
 pub struct SettingsPage {
     shown: bool,
     chosen: usize,
     refused: BTreeMap<String, String>,
+    new_binding: BTreeMap<String, (String, u64)>,
+}
+
+/// A part of the page, as its sidebar lists it: a section of the settings,
+/// or the bindings of keys, after the app's sections.
+#[derive(Clone, Copy)]
+enum Part<'s> {
+    Section(&'s SettingsSection),
+    Keys,
+}
+
+/// The parts of `settings`, in the sidebar's order: the app's sections, the
+/// bindings of keys, then the plugins' sections.
+fn parts(settings: &Settings) -> Vec<Part<'_>> {
+    let (app, plugins): (Vec<&SettingsSection>, Vec<&SettingsSection>) = settings
+        .sections
+        .iter()
+        .partition(|section| section.plugin.is_none());
+    app.into_iter()
+        .map(Part::Section)
+        .chain(std::iter::once(Part::Keys))
+        .chain(plugins.into_iter().map(Part::Section))
+        .collect()
 }
 
 /// The page's view.
@@ -128,8 +169,10 @@ impl Plugin for SettingsPage {
             return cx.request_render(page());
         }
         let settings = cx.settings()?;
-        let Some(section) = settings.sections.get(self.chosen) else {
-            return Ok(());
+        let section = match parts(&settings).get(self.chosen).copied() {
+            Some(Part::Section(section)) => section,
+            Some(Part::Keys) => return self.binding_event(cx, event),
+            None => return Ok(()),
         };
         // An item of a key's menu of values, its panel of its key's name.
         if let ViewId::Panel(PanelId(panel)) = &event.view {
@@ -140,13 +183,13 @@ impl Plugin for SettingsPage {
             let (Some(setting), Ok(at)) = (find(section, name), at.parse::<usize>()) else {
                 return Ok(());
             };
-            let SettingKind::Choice { choices } = &setting.kind else {
+            let Some(values) = menu_values(cx, section, setting) else {
                 return Ok(());
             };
             if matches!(event.kind, UiEventKind::Click | UiEventKind::Toggle { .. })
-                && let Some(choice) = choices.get(at)
+                && let Some(value) = values.get(at)
             {
-                return self.write(cx, section, setting, Some(choice.clone()));
+                return self.write(cx, section, setting, Some(value.clone()));
             }
             return Ok(());
         }
@@ -199,10 +242,11 @@ impl Plugin for SettingsPage {
         // A key's menu of values, each an item ticked where it is in force.
         if let ViewId::Panel(PanelId(panel)) = view {
             let name = panel.strip_prefix(CHOICES)?;
-            let setting = find(settings.sections.get(self.chosen)?, name)?;
-            let SettingKind::Choice { choices } = &setting.kind else {
+            let Part::Section(section) = *parts(&settings).get(self.chosen)? else {
                 return None;
             };
+            let setting = find(section, name)?;
+            let choices = menu_values(cx, section, setting)?;
             let items = choices
                 .iter()
                 .enumerate()
@@ -225,6 +269,84 @@ impl Plugin for SettingsPage {
 }
 
 impl SettingsPage {
+    /// An event of the part of the bindings of keys: a binding taken away,
+    /// or the new one's fields typed in, and written as Return is pressed
+    /// in either, both filled.
+    fn binding_event(&mut self, cx: &mut Cx<'_>, event: &UiEvent) -> Result<(), Error> {
+        let key = event.key.0.as_str();
+        match &event.kind {
+            UiEventKind::Click => {
+                let Some(keys) = key.strip_prefix(UNBIND) else {
+                    return Ok(());
+                };
+                let written = cx.set_setting(KEYS, None, keys, None);
+                self.told(cx, KEYS, written)
+            }
+            UiEventKind::InputChanged { text, revision }
+                if [NEW_KEYS, NEW_COMMAND].contains(&key) =>
+            {
+                self.new_binding
+                    .insert(key.to_owned(), (text.clone(), *revision));
+                Ok(())
+            }
+            UiEventKind::Submit { text, .. } if [NEW_KEYS, NEW_COMMAND].contains(&key) => {
+                let revision = self
+                    .new_binding
+                    .get(key)
+                    .map_or(0, |(_, revision)| *revision);
+                self.new_binding
+                    .insert(key.to_owned(), (text.clone(), revision));
+                let given = |field: &str| {
+                    self.new_binding
+                        .get(field)
+                        .map(|(text, _)| text.trim().to_owned())
+                        .filter(|text| !text.is_empty())
+                };
+                let (Some(keys), Some(command)) = (given(NEW_KEYS), given(NEW_COMMAND)) else {
+                    return Ok(());
+                };
+                let written = cx.set_setting(KEYS, None, &keys, Some(Data::Text(command)));
+                let fine = written.is_ok();
+                self.told(cx, KEYS, written)?;
+                // Written, its fields empty again, for the next.
+                if fine {
+                    for field in [NEW_KEYS, NEW_COMMAND] {
+                        let revision = self
+                            .new_binding
+                            .remove(field)
+                            .map_or(0, |(_, revision)| revision);
+                        cx.set_text(page(), field, "", revision)?;
+                    }
+                }
+                Ok(())
+            }
+            _ => Ok(()),
+        }
+    }
+
+    /// Takes what a write of the key `name` did, `written`: why it was
+    /// refused, shown until a write of it goes, the page rendered again.
+    fn told(
+        &mut self,
+        cx: &mut Cx<'_>,
+        name: &str,
+        written: Result<(), Error>,
+    ) -> Result<(), Error> {
+        let changed = match written {
+            Ok(()) => self.refused.remove(name).is_some(),
+            Err(error) => {
+                self.refused.insert(name.to_owned(), error.message);
+                true
+            }
+        };
+        if changed {
+            cx.request_render(page())?;
+        }
+        Ok(())
+    }
+}
+
+impl SettingsPage {
     /// Writes `value` to the key `setting` of `section`, or takes it away of
     /// none: the page follows as the config applies anew, or tells why the
     /// key does not take it.
@@ -241,23 +363,53 @@ impl SettingsPage {
             &setting.name,
             value,
         );
-        let changed = match written {
-            Ok(()) => self.refused.remove(&setting.name).is_some(),
-            Err(error) => {
-                self.refused.insert(setting.name.clone(), error.message);
-                true
-            }
-        };
-        if changed {
-            cx.request_render(page())?;
-        }
-        Ok(())
+        self.told(cx, &setting.name, written)
     }
 }
 
 /// The key `name` of `section`, if it has one.
 fn find<'s>(section: &'s SettingsSection, name: &str) -> Option<&'s SettingKey> {
     section.keys.iter().find(|key| key.name == name)
+}
+
+/// The values of the menu of `key` of `section`, if a menu shows them: a
+/// choice's; of its control, the system's monospaced font families or
+/// every one, the styles of the section's family, as it names it or as it
+/// is in force, the themes of the key's appearance, or the theme's colors.
+fn menu_values(cx: &mut Cx<'_>, section: &SettingsSection, key: &SettingKey) -> Option<Vec<Data>> {
+    if let SettingKind::Choice { choices } = &key.kind {
+        return Some(choices.clone());
+    }
+    let texts: Vec<String> = match key.control.as_deref()? {
+        "monospaced-family" => cx.fonts().ok()?.families,
+        "font-family" => cx.fonts().ok()?.all,
+        "font-style" => {
+            let family = match find(section, "family").and_then(|family| family.value.as_ref()) {
+                Some(Data::Text(family)) => family.clone(),
+                _ => cx.fonts().ok()?.current,
+            };
+            cx.font_styles(&family).ok()?
+        }
+        "theme" => {
+            let variant = match key.name.as_str() {
+                "light" => ThemeVariant::Light,
+                _ => ThemeVariant::Dark,
+            };
+            let mut names: Vec<String> = cx
+                .themes()
+                .ok()?
+                .themes
+                .into_iter()
+                .filter(|theme| theme.variant == variant)
+                .map(|theme| theme.name)
+                .collect();
+            names.dedup();
+            names
+        }
+        "token" => TOKENS.iter().map(|token| (*token).to_owned()).collect(),
+        _ => return None,
+    };
+    Some(texts.into_iter().map(Data::Text).collect())
 }
 
 /// The value of a key of `kind` that a field's `text` gives: a number of
@@ -329,14 +481,56 @@ fn tree(
     chosen: usize,
     refused: &BTreeMap<String, String>,
 ) -> Node {
-    let part = match settings.sections.get(chosen) {
-        Some(section) => section_part(cx, section, refused),
+    let mut part = match parts(settings).get(chosen).copied() {
+        Some(Part::Section(section)) => section_part(cx, section, refused),
+        Some(Part::Keys) => keys_part(cx, &settings.keys, refused),
         None => vec![
             Node::text(message(cx, "settings-none", &[]))
                 .key("none")
                 .style(secondary()),
         ],
     };
+    // A file that does not read: its error, over every part.
+    if let Some(problem) = &settings.error {
+        let text = match (problem.line, problem.column) {
+            (Some(line), Some(column)) => message(
+                cx,
+                "settings-file-error-at",
+                &[
+                    ("line", line.to_string()),
+                    ("column", column.to_string()),
+                    ("message", problem.message.clone()),
+                ],
+            ),
+            _ => message(
+                cx,
+                "settings-file-error",
+                &[("message", problem.message.clone())],
+            ),
+        };
+        part.insert(
+            0,
+            Node::text(text)
+                .key("file-error")
+                .role(Role::Group)
+                .style(Style {
+                    color: Some(Token::from("text.warning")),
+                    background: Some(Token::from("panel.bg")),
+                    border: Some(Border {
+                        color: Token::from("text.warning"),
+                        width: 1.0,
+                    }),
+                    radius: 8.0,
+                    ..Style::default()
+                })
+                .layout(Layout {
+                    lines: Some(0),
+                    padding: Edges::all(10.0),
+                    width: Length::Fraction(1.0),
+                    ..Layout::default()
+                }),
+        );
+    }
     let part = Node::scroll(vec![Node::container(part).key("part").layout(Layout {
         direction: Direction::Column,
         gap: 10.0,
@@ -389,21 +583,26 @@ fn sidebar(cx: &mut Cx<'_>, settings: &Settings) -> Node {
         },
         ..Layout::default()
     });
-    let items = settings
-        .sections
+    let parts = parts(settings);
+    let items: Vec<ListItem> = parts
         .iter()
-        .map(|section| {
-            let icon = if section.plugin.is_some() {
-                "extensions"
-            } else {
-                "settings"
-            };
-            ListItem {
-                texts: vec![icon.to_owned(), title(cx, section)],
+        .map(|part| match part {
+            Part::Section(section) => {
+                let icon = if section.plugin.is_some() {
+                    "extensions"
+                } else {
+                    "settings"
+                };
+                ListItem {
+                    texts: vec![icon.to_owned(), title(cx, section)],
+                }
             }
+            Part::Keys => ListItem {
+                texts: vec!["terminal".to_owned(), message(cx, "section-keys", &[])],
+            },
         })
         .collect();
-    let mut list = Node::list(row, settings.sections.len(), (0, items))
+    let mut list = Node::list(row, items.len(), (0, items))
         .key(SECTIONS)
         .label(message(cx, "page-settings", &[]))
         .layout(Layout {
@@ -611,18 +810,35 @@ fn control(cx: &mut Cx<'_>, key: &SettingKey) -> Node {
             }
             toggle
         }
-        SettingKind::Choice { .. } => {
-            let shown = key
-                .value
-                .as_ref()
-                .map_or_else(|| message(cx, "setting-unset", &[]), plain);
-            let mut button = Node::button(shown)
-                .key(format!("{CHOOSE}{name}").as_str())
-                .label(name.clone());
-            if let Kind::Button(own) = &mut button.kind {
-                "chevron-down".clone_into(&mut own.icon);
+        SettingKind::Choice { .. } => menu_button(cx, key),
+        SettingKind::Text { .. } if menu_control(key) => {
+            let button = menu_button(cx, key);
+            // A theme's color, of a swatch of it beside its name.
+            match (key.control.as_deref(), &key.value) {
+                (Some("token"), Some(Data::Text(token))) => row_of(
+                    vec![
+                        Node::container(Vec::new())
+                            .key(format!("swatch:{name}").as_str())
+                            .layout(Layout {
+                                width: Length::Points(14.0),
+                                height: Length::Points(14.0),
+                                ..Layout::default()
+                            })
+                            .style(Style {
+                                background: Some(Token::from(token.as_str())),
+                                border: Some(Border {
+                                    color: Token::from("separator"),
+                                    width: 1.0,
+                                }),
+                                radius: 3.0,
+                                ..Style::default()
+                            }),
+                        button,
+                    ],
+                    6.0,
+                ),
+                _ => button,
             }
-            button
         }
         SettingKind::Number { step, .. } => {
             let text = key.value.as_ref().map(plain).unwrap_or_default();
@@ -673,6 +889,182 @@ fn control(cx: &mut Cx<'_>, key: &SettingKey) -> Node {
                 .key(format!("value:{name}").as_str())
                 .style(secondary()),
         },
+    }
+}
+
+/// Whether `key` of a text shows its values in a menu, as its control
+/// tells: a font's family or style, a theme, or a theme's color.
+fn menu_control(key: &SettingKey) -> bool {
+    matches!(
+        key.control.as_deref(),
+        Some("monospaced-family" | "font-family" | "font-style" | "theme" | "token")
+    )
+}
+
+/// The button of `key`'s menu of values, of its value in force.
+fn menu_button(cx: &mut Cx<'_>, key: &SettingKey) -> Node {
+    let shown = key
+        .value
+        .as_ref()
+        .map_or_else(|| message(cx, "setting-unset", &[]), plain);
+    let mut button = Node::button(shown)
+        .key(format!("{CHOOSE}{}", key.name).as_str())
+        .label(key.name.clone());
+    if let Kind::Button(own) = &mut button.kind {
+        "chevron-down".clone_into(&mut own.icon);
+    }
+    button
+}
+
+/// The part of the bindings of keys: what it holds, each binding of
+/// `bindings` of its keys, its command's title and name, or that it takes
+/// nothing, and its button that takes it away, and the fields of a new
+/// one, of why its last write was refused, `refused`.
+fn keys_part(
+    cx: &mut Cx<'_>,
+    bindings: &[SettingBinding],
+    refused: &BTreeMap<String, String>,
+) -> Vec<Node> {
+    let mut part = vec![
+        Node::text(message(cx, "section-keys", &[]))
+            .key("title")
+            .role(Role::Heading)
+            .style(Style {
+                text_size: Some(TextSize::Large),
+                font_weight: Some(FontWeight::Bold),
+                ..Style::default()
+            }),
+        Node::text(message(cx, "keys-description", &[]))
+            .key("description")
+            .style(secondary())
+            .layout(wrapped()),
+    ];
+    let terminal = Style {
+        font_family: Some(FontFamily::Terminal),
+        ..Style::default()
+    };
+    let rows: Vec<Node> = bindings
+        .iter()
+        .map(|binding| {
+            let keys = &binding.keys;
+            let does = match (&binding.command, &binding.title) {
+                (Some(_), Some(title)) => title.clone(),
+                (Some(command), None) => command.clone(),
+                (None, _) => message(cx, "binding-nothing", &[]),
+            };
+            let mut about = vec![
+                Node::text(keys.clone())
+                    .key(format!("keys:{keys}").as_str())
+                    .style(terminal.clone()),
+                Node::text(does)
+                    .key(format!("command:{keys}").as_str())
+                    .layout(wrapped()),
+            ];
+            if let (Some(command), Some(_)) = (&binding.command, &binding.title) {
+                about.push(Node::text(command.clone()).style(small()));
+            }
+            if binding.detailed {
+                about.push(
+                    Node::text(message(cx, "binding-detailed", &[]))
+                        .style(small())
+                        .layout(wrapped()),
+                );
+            }
+            let about = Node::container(about).layout(Layout {
+                direction: Direction::Column,
+                gap: 3.0,
+                grow: 1.0,
+                min_width: Length::Points(0.0),
+                ..Layout::default()
+            });
+            Node::container(vec![
+                about,
+                Node::button(message(cx, "binding-remove", &[]))
+                    .key(format!("{UNBIND}{keys}").as_str()),
+            ])
+            .key(format!("binding:{keys}").as_str())
+            .role(Role::Group)
+            .label(keys.clone())
+            .layout(row_layout())
+        })
+        .collect();
+    if rows.is_empty() {
+        part.push(
+            Node::text(message(cx, "bindings-none", &[]))
+                .key("no-bindings")
+                .style(secondary())
+                .layout(wrapped()),
+        );
+    } else {
+        part.push(group(rows, "bindings"));
+    }
+    // A new binding: its keys and its command, written as Return is
+    // pressed.
+    part.push(
+        Node::container(vec![
+            Node::field("cmd+shift+n")
+                .key(NEW_KEYS)
+                .label(message(cx, "binding-new-keys", &[]))
+                .style(terminal.clone())
+                .layout(Layout {
+                    width: Length::Points(160.0),
+                    ..Layout::default()
+                }),
+            Node::field("window.new")
+                .key(NEW_COMMAND)
+                .label(message(cx, "binding-new-command", &[]))
+                .style(terminal)
+                .layout(Layout {
+                    grow: 1.0,
+                    min_width: Length::Points(0.0),
+                    ..Layout::default()
+                }),
+        ])
+        .key("new-binding")
+        .layout(Layout {
+            direction: Direction::Row,
+            gap: 8.0,
+            align: Align::Center,
+            width: Length::Fraction(1.0),
+            ..Layout::default()
+        }),
+    );
+    part.push(
+        Node::text(message(cx, "binding-new", &[]))
+            .key("new-binding-help")
+            .style(small())
+            .layout(wrapped()),
+    );
+    if let Some(why) = refused.get(KEYS) {
+        part.push(
+            Node::text(why.clone())
+                .key("refused:keys")
+                .style(Style {
+                    color: Some(Token::from("progress.error")),
+                    text_size: Some(TextSize::Small),
+                    ..Style::default()
+                })
+                .layout(wrapped()),
+        );
+    }
+    part
+}
+
+/// The layout of a row of a group: its texts at its left, growing, and its
+/// controls at its right.
+fn row_layout() -> Layout {
+    Layout {
+        direction: Direction::Row,
+        gap: 12.0,
+        align: Align::Center,
+        width: Length::Fraction(1.0),
+        padding: Edges {
+            top: 10.0,
+            right: 12.0,
+            bottom: 10.0,
+            left: 12.0,
+        },
+        ..Layout::default()
     }
 }
 

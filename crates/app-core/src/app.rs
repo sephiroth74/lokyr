@@ -682,6 +682,10 @@ pub struct App<B: Backend> {
     /// front as the app quits, though the app is not active, or behind the
     /// settings' window of their own, which has no directory.
     front: Option<WindowId>,
+    /// What is wrong with the config file, where it does not read, its
+    /// settings those that applied last, which a read of the settings tells
+    /// and no write of them goes over.
+    config_error: Option<lokyr_kernel::plugins::host::ConfigProblem>,
     /// What went wrong that the user is to learn of: the log, and the
     /// notices that the windows show.
     diagnostics: Diagnostics,
@@ -1021,6 +1025,7 @@ impl<B: Backend> App<B> {
             tab_drag: None,
             quit_ask: None,
             config_fell_back: false,
+            config_error: None,
             update_checks: false,
             system_quit: false,
             environment: {
@@ -1369,6 +1374,13 @@ impl<B: Backend> App<B> {
         // force is the defaults, of a file that did not apply.
         self.config_fell_back = diagnostics.tells(&About::Config);
         self.diagnostics = diagnostics;
+        // What is wrong with it, for the settings.
+        if self.config_fell_back
+            && let Some(file) = &self.config_file
+            && let Err(error) = Config::read(&file.path)
+        {
+            self.config_error = Some(problem_of(&error));
+        }
         self
     }
 
@@ -1443,8 +1455,20 @@ impl<B: Backend> App<B> {
             file.watch(platform);
         }
         match Config::read(&file.path) {
-            Ok(config) => self.apply(platform, config),
+            Ok(config) => {
+                // A file that reads again: the settings are its own.
+                if self.config_error.take().is_some() {
+                    self.plugins.post(plugins::Event::SettingsChanged);
+                }
+                self.apply(platform, config);
+            }
             Err(error) => {
+                // The settings tell what is wrong with it, and write nothing.
+                let problem = problem_of(&error);
+                if self.config_error.as_ref() != Some(&problem) {
+                    self.config_error = Some(problem);
+                    self.plugins.post(plugins::Event::SettingsChanged);
+                }
                 let text =
                     format!("{error}; none of the config applies, and the one in force stays");
                 let diagnostic = Diagnostic::new(Code::InvalidConfig, text, About::Config);
@@ -2981,6 +3005,7 @@ impl<B: Backend> App<B> {
             .as_ref()
             .map(lokyr_text_core::Name::as_str);
         let fonts = || pickers::font_list::<B>(font_list, configured);
+        let font_styles = |family: &str| pickers::font_styles::<B>(family);
         // Whether the menus enable a command, as the last frame of the
         // focused pane settled them.
         let menu_enabled = &self.menu_enabled;
@@ -3021,9 +3046,11 @@ impl<B: Backend> App<B> {
             enabled: &enabled,
             themes: &theme_list,
             fonts: &fonts,
+            font_styles: &font_styles,
             plugins: &plugin_infos,
             config: &self.config,
             plugin_settings: &plugin_settings,
+            config_error: self.config_error.as_ref(),
             day: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .map_or(0, |since| since.as_secs() / 86_400),
@@ -4739,6 +4766,17 @@ impl plugins::Clipboard for PlatformClipboard<'_> {
 
     fn set_image(&mut self, png: &[u8]) {
         self.0.set_clipboard_image(png);
+    }
+}
+
+/// What a read of the settings tells of `error`, of a config file that does
+/// not read: why, and its line and column, from 1, where it has them.
+fn problem_of(error: &lokyr_kernel::config::Error) -> lokyr_kernel::plugins::host::ConfigProblem {
+    let at = |value: usize| u32::try_from(value).ok();
+    lokyr_kernel::plugins::host::ConfigProblem {
+        message: error.message.clone(),
+        line: error.position.and_then(|position| at(position.line)),
+        column: error.position.and_then(|position| at(position.column)),
     }
 }
 

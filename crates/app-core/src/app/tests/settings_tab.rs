@@ -737,23 +737,25 @@ fn the_settings_page_shows_every_section_of_the_config_and_of_the_plugins_of_its
     let Some(lokyr_kernel::plugins::view::Kind::List(sections)) = tree.kind(list) else {
         panic!("a list");
     };
-    // The config's 18 sections, then the 6 of the plugins of a schema.
+    // The config's 18 sections, its keys' bindings, then the 6 of the
+    // plugins of a schema.
     let titles: Vec<&str> = sections
         .items
         .iter()
         .map(|item| item.texts[1].as_str())
         .collect();
-    assert_eq!(titles.len(), 24, "{titles:?}");
+    assert_eq!(titles.len(), 25, "{titles:?}");
     assert_eq!(&titles[..3], ["Font", "Text", "Cursor"]);
-    assert_eq!(titles[18], "Tabs");
+    assert_eq!(titles[18], "Keys");
+    assert_eq!(titles[19], "Tabs");
     // The first section's keys, of their values in force, in their
     // fields.
     assert_eq!(page_text(&app, own, "title"), "Font");
     assert_eq!(page_field(&app, own, "field:size"), "13");
     assert_eq!(page_text(&app, own, "default:size"), "Default");
-    assert_eq!(page_field(&app, own, "field:family"), "");
+    assert_eq!(page_button(&app, own, "choose:family"), "Not set");
     // The page's first field has the keyboard, as the settings open.
-    assert_eq!(focused_key(&app, own), ("field:family".to_owned(), true));
+    assert_eq!(focused_key(&app, own), ("field:size".to_owned(), true));
     // The arrows choose a plugin's section, as the list has the keyboard.
     let state = app.windows.get_mut(&own).unwrap();
     let view = state
@@ -763,7 +765,8 @@ fn the_settings_page_shows_every_section_of_the_config_and_of_the_plugins_of_its
         .unwrap();
     let list = view.surface.tree.by_key(&"sections".into()).unwrap();
     assert!(state.focus.focus(view.id, &view.surface.tree, list));
-    for _ in 0..18 {
+    // The config's sections, then the keys' part.
+    for _ in 0..19 {
         tap(
             &mut fake,
             &mut app,
@@ -1125,4 +1128,89 @@ fn a_page_s_plugin_started_again_after_a_fault_hears_its_page_shown() {
         Some(plugins::Status::Active)
     );
     assert_eq!(page_text(&app, window, "shown"), "Shown 1 times");
+}
+
+#[test]
+fn a_style_is_picked_from_the_family_s_and_a_file_of_an_error_is_written_over_by_nothing() {
+    use lokyr_kernel::plugins::view::{Kind, UiEventKind};
+    let directory = super::installed::shelf("settings-pickers");
+    let path = directory.join("config.toml");
+    std::fs::write(&path, "# mine\n[font]\nsize = 14\n").unwrap();
+    let drawing = Drawing::new(FontConfig::default()).unwrap();
+    let mut fake = Fake::default();
+    let mut app = App::new(
+        Some(drawing),
+        Config::read(&path).unwrap(),
+        Some(path.clone()),
+    )
+    .with_program(idle());
+    fake.start(&mut app);
+    let first = fake.windows().next().unwrap();
+    app.windows.get_mut(&first).unwrap().surface = Some(fakes::Surface::default());
+    let own = open(&mut fake, &mut app, SETTINGS_TAB);
+    // The style's menu, of the styles of the family in force.
+    settings_event(
+        &mut fake,
+        &mut app,
+        own,
+        None,
+        "choose:style",
+        UiEventKind::Click,
+    );
+    let menu = app
+        .plugins
+        .tree(
+            "lokyr/settings",
+            &ViewId::Panel(lokyr_kernel::plugins::ui::PanelId(
+                "choices:style".to_owned(),
+            )),
+        )
+        .cloned()
+        .expect("the styles' menu");
+    let styles: Vec<String> = menu
+        .children
+        .iter()
+        .filter_map(|item| match &item.kind {
+            Kind::Toggle(toggle) => Some(toggle.label.clone()),
+            _ => None,
+        })
+        .collect();
+    let at = styles.len() - 1;
+    settings_event(
+        &mut fake,
+        &mut app,
+        own,
+        Some("choices:style"),
+        &format!("choice:{at}"),
+        UiEventKind::Toggle { on: true },
+    );
+    let read = || std::fs::read_to_string(&path).unwrap();
+    assert_eq!(
+        read(),
+        format!("# mine\n[font]\nsize = 14\nstyle = \"{}\"\n", styles[at])
+    );
+    // A file that does not read: the page tells its error, at its line,
+    // and writes nothing.
+    std::fs::write(&path, "# mine\n[font]\nsise = 14\n").unwrap();
+    app.reload(&mut fake);
+    frames(&mut fake, &mut app, own);
+    frames(&mut fake, &mut app, own);
+    let error = page_text(&app, own, "file-error");
+    assert!(error.contains("line 3"), "{error}");
+    let submit = UiEventKind::Submit {
+        text: "16".to_owned(),
+        shift: false,
+    };
+    settings_event(&mut fake, &mut app, own, None, "field:size", submit);
+    assert_eq!(read(), "# mine\n[font]\nsise = 14\n");
+    assert!(page_text(&app, own, "refused:size").contains("does not read"));
+    assert!(fake.alerts().is_empty());
+    // Read again, its error goes.
+    std::fs::write(&path, "# mine\n[font]\nsize = 15\n").unwrap();
+    app.reload(&mut fake);
+    frames(&mut fake, &mut app, own);
+    frames(&mut fake, &mut app, own);
+    assert_eq!(page_text(&app, own, "file-error"), "");
+    assert_eq!(page_field(&app, own, "field:size"), "15");
+    let _ = std::fs::remove_dir_all(&directory);
 }

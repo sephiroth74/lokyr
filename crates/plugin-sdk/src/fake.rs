@@ -1453,6 +1453,35 @@ impl FakeHost {
         // call returns: a key of no value back to its default.
         let mut settings = self.settings.clone();
         for request in &asked {
+            // A binding written or taken away, after the others.
+            if let Request::SetSetting {
+                section,
+                plugin: None,
+                key,
+                value,
+            } = request
+                && section == "keys"
+            {
+                settings.keys.retain(|binding| binding.keys != *key);
+                if let Some(value) = value {
+                    let command = match value {
+                        Data::Text(command) => Some(command.clone()),
+                        _ => None,
+                    };
+                    let title = command
+                        .as_deref()
+                        .and_then(|command| self.registered(command))
+                        .map(|command| command.title.clone());
+                    settings.keys.push(host::SettingBinding {
+                        keys: key.clone(),
+                        command,
+                        title,
+                        detailed: matches!(value, Data::Map(_)),
+                    });
+                    settings.keys.sort_by(|a, b| a.keys.cmp(&b.keys));
+                }
+                continue;
+            }
             if let Request::SetSetting {
                 section,
                 plugin,
@@ -3104,6 +3133,7 @@ impl Calling<'_> {
             Request::TabBarPlace => Response::TabBarPlace(host.bar_place),
             Request::Themes => Response::Themes(host.themes.clone()),
             Request::Fonts => Response::Fonts(host.fonts.clone()),
+            Request::FontStyles(family) => Response::FontStyles(font_styles(family)),
             Request::Day => Response::Day(host.day),
             Request::Agents => Response::Agents(host.agents.clone()),
             Request::Plugins => Response::Plugins(host.plugins.clone()),
@@ -3363,29 +3393,53 @@ impl Calling<'_> {
                 key,
                 value,
             } => {
-                let found = self
-                    .host
-                    .settings
-                    .sections
-                    .iter()
-                    .find(|shown| shown.name == *section && shown.plugin == *plugin)
-                    .and_then(|shown| shown.keys.iter().find(|shown| shown.name == *key));
-                let Some(found) = found else {
-                    let message = match plugin {
-                        None => format!("the settings have no key `{key}` in `[{section}]`"),
-                        Some(plugin) => format!(
-                            "the plugin `{plugin}` has no key `{key}` in its section `{section}`"
-                        ),
-                    };
-                    return Err(Error::new(Code::NotFound, message));
-                };
-                if let Some(value) = value
-                    && let Err(why) = setting_takes(&found.kind, value)
-                {
+                // Nothing over a file that does not read, as the app's host.
+                if let Some(problem) = &self.host.settings.error {
                     return Err(Error::new(
                         Code::InvalidConfig,
-                        format!("`{key}` in `{section}`: {why}"),
+                        format!(
+                            "the config file does not read, and nothing is written into it until it does: {}",
+                            problem.message
+                        ),
                     ));
+                }
+                // A binding of any keys, of a command registered; another
+                // key of the settings that the test gave, of a value that
+                // its kind takes.
+                if plugin.is_none() && section == "keys" {
+                    if let Some(Data::Text(command)) = value
+                        && self.host.registered(command).is_none()
+                    {
+                        return Err(Error::new(
+                            Code::NotFound,
+                            format!("there is no command `{command}`"),
+                        ));
+                    }
+                } else {
+                    let found = self
+                        .host
+                        .settings
+                        .sections
+                        .iter()
+                        .find(|shown| shown.name == *section && shown.plugin == *plugin)
+                        .and_then(|shown| shown.keys.iter().find(|shown| shown.name == *key));
+                    let Some(found) = found else {
+                        let message = match plugin {
+                            None => format!("the settings have no key `{key}` in `[{section}]`"),
+                            Some(plugin) => format!(
+                                "the plugin `{plugin}` has no key `{key}` in its section `{section}`"
+                            ),
+                        };
+                        return Err(Error::new(Code::NotFound, message));
+                    };
+                    if let Some(value) = value
+                        && let Err(why) = setting_takes(&found.kind, value)
+                    {
+                        return Err(Error::new(
+                            Code::InvalidConfig,
+                            format!("`{key}` in `{section}`: {why}"),
+                        ));
+                    }
                 }
                 Response::Done
             }
@@ -4253,8 +4307,9 @@ struct Declared {
 /// 1970-01-01: 11 November 2026.
 pub const DAY: u64 = 20_768;
 
-/// The system's monospaced families that the fake host gives by default:
-/// Menlo, Monaco and SF Mono, which is in force.
+/// The system's families that the fake host gives by default: Menlo,
+/// Monaco and SF Mono, which is in force, monospaced, and Helvetica and SF
+/// Pro beside them.
 pub fn fonts() -> host::Fonts {
     host::Fonts {
         current: "SF Mono".to_owned(),
@@ -4263,6 +4318,22 @@ pub fn fonts() -> host::Fonts {
             "Monaco".to_owned(),
             "SF Mono".to_owned(),
         ],
+        all: ["Helvetica", "Menlo", "Monaco", "SF Mono", "SF Pro"]
+            .map(str::to_owned)
+            .to_vec(),
+    }
+}
+
+/// The styles of `family` that the fake host gives by default, of one of
+/// [`fonts`]' families: Regular, Italic, Bold and Bold Italic; none of
+/// another.
+pub fn font_styles(family: &str) -> Vec<String> {
+    if fonts().all.iter().any(|known| known == family) {
+        ["Regular", "Italic", "Bold", "Bold Italic"]
+            .map(str::to_owned)
+            .to_vec()
+    } else {
+        Vec::new()
     }
 }
 

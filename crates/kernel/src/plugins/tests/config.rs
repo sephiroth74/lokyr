@@ -1204,3 +1204,113 @@ fn a_key_of_the_settings_is_written_of_a_value_that_it_takes_and_refused_otherwi
         .unwrap();
     assert_eq!(*refused.borrow(), Some(Err(Code::MissingCapability)));
 }
+
+#[test]
+fn the_bindings_are_read_of_their_commands_titles_and_written_and_a_file_of_an_error_takes_none() {
+    let config = Config::parse(
+        concat!(
+            "[keys]\n",
+            "\"cmd+k\" = \"reader.go\"\n",
+            "\"cmd+q\" = false\n",
+            "\"cmd+j\" = { command = \"reader.go\", when = \"pane.focused\" }\n",
+        ),
+        Path::new("config.toml"),
+    )
+    .unwrap();
+    let mut app = App {
+        config,
+        ..App::default()
+    };
+    let mut plugins = Plugins::new();
+    type Told = (Vec<lokyr_plugin_sdk::host::Settings>, Vec<Result<(), Code>>);
+    let told: Rc<RefCell<Told>> = Rc::default();
+    let seen = Rc::clone(&told);
+    plugins
+        .add(
+            "reader",
+            scripted(
+                |cx| cx.register_command(command("reader.go")),
+                move |cx, _, _| {
+                    let mut seen = seen.borrow_mut();
+                    seen.0.push(cx.settings()?);
+                    let writes = [
+                        ("cmd+l", Some(Data::Text("reader.go".to_owned()))),
+                        ("cmd+m", Some(Data::Text("none.such".to_owned()))),
+                        ("cmd+k", None),
+                    ];
+                    for (keys, value) in writes {
+                        let done = cx.set_setting("keys", None, keys, value);
+                        seen.1.push(done.map_err(|error| error.code));
+                    }
+                    Ok(())
+                },
+            ),
+        )
+        .unwrap();
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    plugins
+        .run("reader.go", Args::new(), &mut app.context())
+        .unwrap();
+    let title = app.registry.get("reader.go").unwrap().title.clone();
+    {
+        let told = told.borrow();
+        let keys: Vec<(&str, Option<&str>, Option<&str>, bool)> = told.0[0]
+            .keys
+            .iter()
+            .map(|binding| {
+                (
+                    binding.keys.as_str(),
+                    binding.command.as_deref(),
+                    binding.title.as_deref(),
+                    binding.detailed,
+                )
+            })
+            .collect();
+        assert_eq!(
+            keys,
+            [
+                ("cmd+j", Some("reader.go"), Some(title.as_str()), true),
+                ("cmd+k", Some("reader.go"), Some(title.as_str()), false),
+                ("cmd+q", None, None, false),
+            ]
+        );
+        assert_eq!(told.0[0].error, None);
+        assert_eq!(told.1, [Ok(()), Err(Code::NotFound), Ok(())]);
+    }
+    let writes: Vec<(Vec<String>, String)> = plugins
+        .take_requests()
+        .into_iter()
+        .filter_map(|request| match request {
+            Request::SetSetting { section, key, .. } => Some((section, key)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        writes,
+        [
+            (vec!["keys".to_owned()], "cmd+l".to_owned()),
+            (vec!["keys".to_owned()], "cmd+k".to_owned()),
+        ]
+    );
+    // A file that does not read: its error read, and nothing written.
+    let problem = lokyr_plugin_sdk::host::ConfigProblem {
+        message: "a key `sise` that `[font]` has not".to_owned(),
+        line: Some(2),
+        column: Some(1),
+    };
+    app.config_error = Some(problem.clone());
+    told.borrow_mut().1.clear();
+    plugins
+        .run("reader.go", Args::new(), &mut app.context())
+        .unwrap();
+    let told = told.borrow();
+    assert_eq!(told.0[1].error, Some(problem));
+    assert_eq!(
+        told.1,
+        [
+            Err(Code::InvalidConfig),
+            Err(Code::InvalidConfig),
+            Err(Code::InvalidConfig)
+        ]
+    );
+}

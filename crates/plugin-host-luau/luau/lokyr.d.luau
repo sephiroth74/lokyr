@@ -35,6 +35,7 @@ export type Cx = {
     agents: () -> ({ AgentInfo }?, string?, number?),
     plugins: () -> ({ PluginInfo }?, string?, number?),
     settings: () -> (Settings?, string?, number?),
+    font_styles: (text: string) -> ({ string }?, string?, number?),
     set_plugin_enabled: (plugin: string, enabled: boolean) -> (true?, string?, number?),
     set_setting: (section: string, plugin: string?, key: string, value: Data?) -> (true?, string?, number?),
     preview_font: (family: string?) -> (true?, string?, number?),
@@ -414,6 +415,12 @@ export type CommandInfo = {
     enabled: boolean?,
 }
 
+export type ConfigProblem = {
+    message: string,
+    line: number?,
+    column: number?,
+}
+
 export type Corner =
     | "top-left"
     | "top-right"
@@ -482,6 +489,7 @@ export type FontWeight =
 export type Fonts = {
     current: string,
     families: { string },
+    all: { string }?,
 }
 
 export type Found = {
@@ -750,6 +758,13 @@ export type SelectionKind =
     | "lines"
     | "block"
 
+export type SettingBinding = {
+    keys: string,
+    command: string?,
+    title: string?,
+    detailed: boolean?,
+}
+
 export type SettingKey = {
     name: string,
     description: string?,
@@ -770,6 +785,8 @@ export type SettingKind =
 
 export type Settings = {
     sections: { SettingsSection },
+    keys: { SettingBinding }?,
+    error: ConfigProblem?,
 }
 
 export type SettingsSection = {

@@ -208,6 +208,9 @@ pub(super) struct App {
     /// The plugins' sections of the settings, which the test takes of the
     /// host's [`Plugins::settings_sections`]; none without.
     pub(super) plugin_settings: Vec<host::SettingsSection>,
+    /// What is wrong with the config file, as the test tells it; none of a
+    /// file that reads.
+    pub(super) config_error: Option<host::ConfigProblem>,
 }
 
 /// The themes of an app of the tests: the built-in ones, dark in force.
@@ -247,9 +250,11 @@ impl App {
             enabled: &|_| true,
             themes: &no_themes,
             fonts: &lokyr_plugin_sdk::fake::fonts,
+            font_styles: &lokyr_plugin_sdk::fake::font_styles,
             plugins: &self.plugin_infos,
             config: &self.config,
             plugin_settings: &self.plugin_settings,
+            config_error: self.config_error.as_ref(),
             day: lokyr_plugin_sdk::fake::DAY,
             notice: false,
             saving: match &self.saving {

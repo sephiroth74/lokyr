@@ -26,7 +26,7 @@
           "x-guide": "The font family, by its name, as Font Book shows it on macOS, such as `\"Menlo\"` or `\"CaskaydiaCove NFM\"`.\n\n- **Default**: the system's monospaced font, SF Mono.\n- The case does not matter: `\"menlo\"` is Menlo.\n- `\"SF Mono\"` names the system's monospaced font, which macOS installs under another name.\n- A name that some faces of a family give themselves, as a font and its weight, such as `\"CaskaydiaCove NFM SemiBold\"`, names the whole family, and takes those faces as the regular text's.\n- A family that is not installed gives the default one, and the notice's card tells it, as the log does. The styles that the file names then do not apply, as they are the missing family's.\n- `lokyr +list-fonts` lists the families that are installed, and `--monospace` those that are monospaced.",
           "x-example": "\"CaskaydiaCove NFM\"",
           "x-example-comment": "a family as Font Book shows it; SF Mono by default",
-          "x-control": "font-family"
+          "x-control": "monospaced-family"
         },
         "size": {
           "type": "number",

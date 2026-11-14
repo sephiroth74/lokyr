@@ -318,14 +318,17 @@ pub fn check_app_write(
     value: Option<&Data>,
 ) -> Result<(), (lokyr_plugin_sdk::command::Code, String)> {
     use lokyr_plugin_sdk::command::Code;
-    let known = !OWN.contains(&section)
-        && ordered()
-            .properties()
-            .unwrap_or_default()
-            .iter()
-            .find(|(name, _)| name == section)
-            .and_then(|(_, node)| node.properties())
-            .is_some_and(|keys| keys.iter().any(|(name, _)| name == key));
+    // A binding of any keys, which the parser reads of their grammar.
+    let binding = section == "keys";
+    let known = binding
+        || !OWN.contains(&section)
+            && ordered()
+                .properties()
+                .unwrap_or_default()
+                .iter()
+                .find(|(name, _)| name == section)
+                .and_then(|(_, node)| node.properties())
+                .is_some_and(|keys| keys.iter().any(|(name, _)| name == key));
     if !known {
         return Err((
             Code::NotFound,
@@ -351,6 +354,40 @@ pub fn check_app_write(
     super::Config::parse(&written.to_string(), std::path::Path::new("config.toml"))
         .map(drop)
         .map_err(|error| refused(error.message))
+}
+
+/// The bindings of `config`'s `[keys]`, in their keys' order, each of its
+/// command's title, as `title` gives it of a command's name.
+pub fn bindings(
+    config: &super::Config,
+    title: impl Fn(&str) -> Option<String>,
+) -> Vec<lokyr_plugin_sdk::host::SettingBinding> {
+    use super::KeyValue;
+    config
+        .keys
+        .bindings
+        .iter()
+        .map(|(keys, value)| {
+            let (command, detailed) = match value {
+                KeyValue::Command(command) => (Some(command.clone()), false),
+                KeyValue::Unbound(_) => (None, false),
+                KeyValue::Binding(binding) => (
+                    Some(binding.command.clone()),
+                    binding.when.is_some() || !binding.args.is_empty(),
+                ),
+                KeyValue::Bindings(bindings) => (
+                    bindings.first().map(|binding| binding.command.clone()),
+                    true,
+                ),
+            };
+            lokyr_plugin_sdk::host::SettingBinding {
+                keys: keys.clone(),
+                title: command.as_deref().and_then(&title),
+                command,
+                detailed,
+            }
+        })
+        .collect()
 }
 
 /// Whether `value` is one that a key of `kind` takes, as a plugin's

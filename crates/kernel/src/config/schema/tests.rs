@@ -447,7 +447,7 @@ fn the_settings_sections_are_the_schema_s_in_its_order_of_the_values_in_force() 
     // A key of no default and no value has none; its control told.
     let family = key(font, "family");
     assert_eq!((family.value, family.default), (None, None));
-    assert_eq!(family.control.as_deref(), Some("font-family"));
+    assert_eq!(family.control.as_deref(), Some("monospaced-family"));
     assert!(matches!(
         family.kind,
         SettingKind::Text {

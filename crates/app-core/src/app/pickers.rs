@@ -27,12 +27,13 @@ use crate::drawing::Backend;
 /// system's fonts once in a while, some tens of milliseconds each.
 const FONTS_KEPT: Duration = Duration::from_secs(30);
 
-/// The system's monospaced font families as they were read: when, their
-/// names, and the default family's.
+/// The system's font families as they were read: when, the monospaced
+/// ones' names, every one's, and the default family's.
 #[derive(Debug)]
 pub(super) struct FontList {
     read: Instant,
     families: Vec<String>,
+    all: Vec<String>,
     default: String,
 }
 
@@ -50,12 +51,17 @@ pub(super) fn font_list<B: Backend>(
         .is_some_and(|list| list.read.elapsed() < FONTS_KEPT);
     if !fresh {
         let mut backend = B::fonts();
-        let mut families = backend.monospaced_families();
-        families.sort_by_key(|name| name.to_lowercase());
-        families.dedup_by(|a, b| a.eq_ignore_ascii_case(b));
+        let ordered = |mut names: Vec<String>| {
+            names.sort_by_key(|name| name.to_lowercase());
+            names.dedup_by(|a, b| a.eq_ignore_ascii_case(b));
+            names
+        };
+        let families = ordered(backend.monospaced_families());
+        let all = ordered(backend.families());
         *kept = Some(FontList {
             read: Instant::now(),
             families,
+            all,
             default: backend.default_family(),
         });
     }
@@ -75,7 +81,30 @@ pub(super) fn font_list<B: Backend>(
     Fonts {
         current,
         families: list.families.clone(),
+        all: list.all.clone(),
     }
+}
+
+/// The styles of the font family `family`, by the names that its faces
+/// give them, once each, from the lightest, each upright before its
+/// italic, the narrower first; none of a family that the system lacks.
+pub(super) fn font_styles<B: Backend>(family: &str) -> Vec<String> {
+    let Some(mut faces) = B::fonts().family(family) else {
+        return Vec::new();
+    };
+    faces.sort_by(|a, b| {
+        a.weight
+            .total_cmp(&b.weight)
+            .then(a.italic.cmp(&b.italic))
+            .then(a.width.total_cmp(&b.width))
+    });
+    let mut styles: Vec<String> = Vec::new();
+    for face in faces {
+        if !styles.contains(&face.style) {
+            styles.push(face.style);
+        }
+    }
+    styles
 }
 
 /// The themes of the files of `directory`, each of `origin`, as their

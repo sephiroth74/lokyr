@@ -11,6 +11,7 @@
       "minLength": 1,
       "default": "panel.bg",
       "x-platforms": ["macos"],
+      "x-control": "token",
       "x-group": ["background", "text", "border", "line", "hover"],
       "x-guide": "The theme's tokens of the header's colors, by their names: the pill's background, its text, its border, the line across the pane, and the color over the pill's background under the pointer.\n\n| Values | Default |\n|---|---|\n| a token's name, as `\"accent\"`, `\"panel.bg\"`, `\"field.bg\"` or `\"text.secondary\"` | `\"panel.bg\"`, `\"text\"`, `\"panel.border\"`, `\"panel.border\"`, `\"button.hover.bg\"` |\n\n- The tokens are those of the theme in force, as a theme's `[interface]` names them, and each follows the light and the dark appearance; a name that the theme lacks takes the color of its name without its last part, as `panel` for `panel.foo`, then none.\n- `border = \"accent\"` draws the pill's border in the theme's accent.\n- They apply at once, as you save the file, to a header that shows too.",
       "x-example": "\"panel.bg\"",
@@ -23,6 +24,7 @@
       "minLength": 1,
       "default": "text",
       "x-platforms": ["macos"],
+      "x-control": "token",
       "x-group": ["background", "text", "border", "line", "hover"],
       "x-example": "\"text\"",
       "x-example-comment": "the theme's token of its text"
@@ -34,6 +36,7 @@
       "minLength": 1,
       "default": "panel.border",
       "x-platforms": ["macos"],
+      "x-control": "token",
       "x-group": ["background", "text", "border", "line", "hover"],
       "x-example": "\"panel.border\"",
       "x-example-comment": "the theme's token of its border, as \"accent\""
@@ -45,6 +48,7 @@
       "minLength": 1,
       "default": "panel.border",
       "x-platforms": ["macos"],
+      "x-control": "token",
       "x-group": ["background", "text", "border", "line", "hover"],
       "x-example": "\"panel.border\"",
       "x-example-comment": "the theme's token of the line across the pane"
@@ -56,6 +60,7 @@
       "minLength": 1,
       "default": "button.hover.bg",
       "x-platforms": ["macos"],
+      "x-control": "token",
       "x-group": ["background", "text", "border", "line", "hover"],
       "x-example": "\"button.hover.bg\"",
       "x-example-comment": "the theme's token over its background under the pointer"

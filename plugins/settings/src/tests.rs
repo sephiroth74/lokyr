@@ -11,6 +11,12 @@ use super::*;
 /// The plugin's name, as its calls give it.
 const NAME: &str = "lokyr/settings";
 
+/// The sidebar's place of the theme's section, of the keys' bindings and of
+/// the plugin's section, after the app's three sections.
+const THEME: usize = 2;
+const BINDINGS: usize = 3;
+const TABS: usize = 4;
+
 /// A key of `name`, of its value, its default and its kind.
 fn key(name: &str, value: Option<Data>, default: Option<Data>, kind: SettingKind) -> SettingKey {
     SettingKey {
@@ -24,9 +30,45 @@ fn key(name: &str, value: Option<Data>, default: Option<Data>, kind: SettingKind
     }
 }
 
+/// A key of a text of `name`, unset or of `value`, of the control
+/// `control`.
+fn controlled(name: &str, value: Option<&str>, control: &str) -> SettingKey {
+    let text = SettingKind::Text {
+        min_length: Some(1),
+        max_length: Some(256),
+        examples: Vec::new(),
+    };
+    SettingKey {
+        control: Some(control.to_owned()),
+        ..key(
+            name,
+            value.map(|value| Data::Text(value.to_owned())),
+            None,
+            text,
+        )
+    }
+}
+
+/// A binding of the settings' keys, of a command and its title.
+fn binding(
+    keys: &str,
+    command: Option<&str>,
+    title: Option<&str>,
+) -> lokyr_plugin_sdk::host::SettingBinding {
+    lokyr_plugin_sdk::host::SettingBinding {
+        keys: keys.to_owned(),
+        command: command.map(str::to_owned),
+        title: title.map(str::to_owned),
+        detailed: false,
+    }
+}
+
 /// The settings of the tests: the app's `[font]`, of a size set and a
-/// family unset, and `[window]`, of a choice and a boolean at their
-/// defaults, then the plugin `lokyr/tabs`'s, of an integer at its default.
+/// family unset, a style and a family of the text past ASCII of their
+/// menus, `[window]`, of a choice and a boolean at their defaults, and
+/// `[theme]`, of its two themes' menus, then the bindings of a command and
+/// of keys taken away, and the plugin `lokyr/tabs`'s section, of an integer
+/// at its default and a theme's color.
 fn settings() -> Settings {
     let size = SettingKind::Number {
         minimum: Some(4.0),
@@ -64,6 +106,8 @@ fn settings() -> Settings {
                         Some(Data::Integer(13)),
                         size,
                     ),
+                    controlled("style", None, "font-style"),
+                    controlled("non-ascii-family", None, "font-family"),
                 ],
             },
             SettingsSection {
@@ -86,17 +130,34 @@ fn settings() -> Settings {
                 ],
             },
             SettingsSection {
+                name: "theme".to_owned(),
+                plugin: None,
+                description: "The themes".to_owned(),
+                keys: vec![
+                    controlled("light", Some("Lokyr Light"), "theme"),
+                    controlled("dark", Some("Lokyr Dark"), "theme"),
+                ],
+            },
+            SettingsSection {
                 name: "tabs".to_owned(),
                 plugin: Some("lokyr/tabs".to_owned()),
                 description: "The tab bar".to_owned(),
-                keys: vec![key(
-                    "column-width",
-                    Some(Data::Integer(200)),
-                    Some(Data::Integer(200)),
-                    width,
-                )],
+                keys: vec![
+                    key(
+                        "column-width",
+                        Some(Data::Integer(200)),
+                        Some(Data::Integer(200)),
+                        width,
+                    ),
+                    controlled("background", Some("panel.bg"), "token"),
+                ],
             },
         ],
+        keys: vec![
+            binding("cmd+k", Some("pane.clear"), Some("Clear")),
+            binding("cmd+q", None, None),
+        ],
+        error: None,
     }
 }
 
@@ -224,6 +285,8 @@ fn the_sidebar_lists_the_config_s_sections_then_the_plugins_of_a_schema() {
         [
             ["settings", "font"],
             ["settings", "window"],
+            ["settings", "theme"],
+            ["terminal", "section-keys"],
             ["extensions", "tabs"],
         ]
         .map(|texts| texts.map(str::to_owned).to_vec()),
@@ -285,7 +348,7 @@ fn a_section_shows_each_key_s_control_of_its_value_in_force_marked_at_its_defaul
         Some(("setting-off".to_owned(), false))
     );
     // A plugin's section, of its plugin's name.
-    host.ui_event(&mut plugin, &choose(2)).unwrap();
+    host.ui_event(&mut plugin, &choose(TABS)).unwrap();
     let tree = rendered(&mut host, &mut plugin);
     assert_eq!(text_of(&tree, "plugin").as_deref(), Some("settings-plugin"));
     assert_eq!(
@@ -375,7 +438,7 @@ fn a_value_that_the_key_does_not_take_tells_why_under_it_until_it_is_written() {
     let tree = rendered(&mut host, &mut plugin);
     assert!(find_node(&tree, "refused:size").is_none());
     // A plugin's integer, of no fraction.
-    host.ui_event(&mut plugin, &choose(2)).unwrap();
+    host.ui_event(&mut plugin, &choose(TABS)).unwrap();
     host.ui_event(&mut plugin, &submit("field:column-width", "250.5"))
         .unwrap();
     let tree = rendered(&mut host, &mut plugin);
@@ -506,4 +569,236 @@ fn the_page_renders_while_it_shows_alone() {
     host.set_settings(changed);
     host.deliver(&mut plugin).unwrap();
     assert!(host.take_renders().is_empty());
+}
+
+/// The items of the menu of the key `name` of the part shown, each its
+/// label and whether it is ticked, as its button opens it.
+fn menu_of(host: &mut FakeHost, plugin: &mut SettingsPage, name: &str) -> Vec<(String, bool)> {
+    // The page as it shows, of the menu's button.
+    rendered(host, plugin);
+    host.ui_event(plugin, &on(&format!("choose:{name}"), UiEventKind::Click))
+        .unwrap();
+    let panel = PanelId(format!("choices:{name}"));
+    assert!(host.panels().contains_key(&panel), "{name}'s menu");
+    let menu = host
+        .render(plugin, &ViewId::Panel(panel))
+        .expect("the menu's tree");
+    menu.children
+        .iter()
+        .map(|item| match &item.kind {
+            Kind::Toggle(toggle) => (toggle.label.clone(), toggle.on),
+            other => panic!("{other:?}"),
+        })
+        .collect()
+}
+
+/// The choice of the item `at` of the menu of the key `name`.
+fn pick(host: &mut FakeHost, plugin: &mut SettingsPage, name: &str, at: usize) {
+    host.ui_event(
+        plugin,
+        &UiEvent {
+            view: ViewId::Panel(PanelId(format!("choices:{name}"))),
+            key: format!("choice:{at}").as_str().into(),
+            kind: UiEventKind::Toggle { on: true },
+        },
+    )
+    .unwrap();
+}
+
+/// The labels of `items`.
+fn labels(items: &[(String, bool)]) -> Vec<&str> {
+    items.iter().map(|(label, _)| label.as_str()).collect()
+}
+
+#[test]
+fn a_family_and_a_style_are_picked_from_the_system_s_fonts() {
+    let (mut host, mut plugin) = host();
+    let _ = written(&mut host);
+    let tree = rendered(&mut host, &mut plugin);
+    assert_eq!(
+        labelled(&tree, "choose:non-ascii-family"),
+        Some(("setting-unset".to_owned(), false))
+    );
+    // Every family, monospaced or not, of the text past ASCII.
+    let families = menu_of(&mut host, &mut plugin, "non-ascii-family");
+    assert_eq!(
+        labels(&families),
+        ["Helvetica", "Menlo", "Monaco", "SF Mono", "SF Pro"]
+    );
+    pick(&mut host, &mut plugin, "non-ascii-family", 4);
+    assert_eq!(
+        written(&mut host),
+        [app_key(
+            "font",
+            "non-ascii-family",
+            Some(Data::Text("SF Pro".to_owned()))
+        )]
+    );
+    // The styles of the family in force, as the section names none.
+    let styles = menu_of(&mut host, &mut plugin, "style");
+    assert_eq!(
+        labels(&styles),
+        ["Regular", "Italic", "Bold", "Bold Italic"]
+    );
+    pick(&mut host, &mut plugin, "style", 2);
+    assert_eq!(
+        written(&mut host),
+        [app_key(
+            "font",
+            "style",
+            Some(Data::Text("Bold".to_owned()))
+        )]
+    );
+}
+
+#[test]
+fn a_theme_is_picked_of_its_appearance_and_a_color_of_the_theme_s() {
+    let (mut host, mut plugin) = host();
+    let _ = written(&mut host);
+    host.ui_event(&mut plugin, &choose(THEME)).unwrap();
+    // The light themes alone, the one in force ticked.
+    assert_eq!(
+        menu_of(&mut host, &mut plugin, "light"),
+        [("Lokyr Light".to_owned(), true)]
+    );
+    assert_eq!(
+        menu_of(&mut host, &mut plugin, "dark"),
+        [("Lokyr Dark".to_owned(), true)]
+    );
+    pick(&mut host, &mut plugin, "dark", 0);
+    assert_eq!(
+        written(&mut host),
+        [app_key(
+            "theme",
+            "dark",
+            Some(Data::Text("Lokyr Dark".to_owned()))
+        )]
+    );
+    // A plugin's color, of a swatch of it, from the theme's tokens.
+    host.ui_event(&mut plugin, &choose(TABS)).unwrap();
+    let tree = rendered(&mut host, &mut plugin);
+    let swatch = find_node(&tree, "swatch:background").expect("the swatch");
+    assert_eq!(
+        swatch
+            .style
+            .background
+            .as_ref()
+            .map(|token| token.0.as_str()),
+        Some("panel.bg")
+    );
+    let tokens = menu_of(&mut host, &mut plugin, "background");
+    assert_eq!(tokens.len(), lokyr_plugin_sdk::theme::TOKENS.len());
+    assert!(tokens.contains(&("panel.bg".to_owned(), true)));
+    let at = tokens
+        .iter()
+        .position(|(token, _)| token == "accent")
+        .unwrap();
+    pick(&mut host, &mut plugin, "background", at);
+    assert_eq!(
+        written(&mut host),
+        [(
+            "tabs".to_owned(),
+            Some("lokyr/tabs".to_owned()),
+            "background".to_owned(),
+            Some(Data::Text("accent".to_owned()))
+        )]
+    );
+}
+
+#[test]
+fn the_bindings_are_listed_of_their_commands_titles_taken_away_and_added() {
+    let mut host = FakeHost::new(NAME)
+        .with_manifest(crate::MANIFEST)
+        .with_commands(vec![lokyr_plugin_sdk::command::Command {
+            name: "window.new".to_owned(),
+            title: "New Window".to_owned(),
+            category: lokyr_plugin_sdk::command::Category::App,
+            capabilities: Vec::new(),
+            params: Vec::new(),
+            when: None,
+        }]);
+    host.pane(PaneId(1));
+    host.set_settings(settings());
+    let mut plugin = SettingsPage::default();
+    host.activate(&mut plugin).unwrap();
+    host.show_page(PAGE);
+    host.deliver(&mut plugin).unwrap();
+    host.ui_event(&mut plugin, &choose(BINDINGS)).unwrap();
+    let tree = rendered(&mut host, &mut plugin);
+    assert_eq!(text_of(&tree, "title").as_deref(), Some("section-keys"));
+    // Each of its keys, its command's title, or that it takes nothing.
+    assert_eq!(text_of(&tree, "keys:cmd+k").as_deref(), Some("cmd+k"));
+    assert_eq!(text_of(&tree, "command:cmd+k").as_deref(), Some("Clear"));
+    assert_eq!(
+        text_of(&tree, "command:cmd+q").as_deref(),
+        Some("binding-nothing")
+    );
+    let _ = written(&mut host);
+    // Taken away.
+    host.ui_event(&mut plugin, &on("unbind:cmd+q", UiEventKind::Click))
+        .unwrap();
+    assert_eq!(written(&mut host), [app_key("keys", "cmd+q", None)]);
+    // A new one, its keys then its command, written as Return is pressed,
+    // its fields emptied.
+    let typed = |text: &str| UiEventKind::InputChanged {
+        text: text.to_owned(),
+        revision: 3,
+    };
+    host.ui_event(&mut plugin, &on(NEW_KEYS, typed("cmd+shift+n")))
+        .unwrap();
+    host.ui_event(&mut plugin, &submit(NEW_COMMAND, "window.new"))
+        .unwrap();
+    assert_eq!(
+        written(&mut host),
+        [app_key(
+            "keys",
+            "cmd+shift+n",
+            Some(Data::Text("window.new".to_owned()))
+        )]
+    );
+    host.deliver(&mut plugin).unwrap();
+    let tree = rendered(&mut host, &mut plugin);
+    assert_eq!(
+        text_of(&tree, "command:cmd+shift+n").as_deref(),
+        Some("New Window")
+    );
+    assert!(find_node(&tree, "binding:cmd+q").is_none());
+    // A command that is none is refused, told under the fields.
+    host.ui_event(&mut plugin, &on(NEW_KEYS, typed("cmd+j")))
+        .unwrap();
+    host.ui_event(&mut plugin, &submit(NEW_COMMAND, "none.such"))
+        .unwrap();
+    let tree = rendered(&mut host, &mut plugin);
+    let why = text_of(&tree, "refused:keys").unwrap();
+    assert!(why.contains("none.such"), "{why}");
+}
+
+#[test]
+fn a_file_that_does_not_read_shows_its_error_and_the_page_writes_nothing() {
+    let (mut host, mut plugin) = host();
+    let mut broken = settings();
+    broken.error = Some(lokyr_plugin_sdk::host::ConfigProblem {
+        message: "a key `sise` that `[font]` has not".to_owned(),
+        line: Some(3),
+        column: Some(1),
+    });
+    host.set_settings(broken);
+    host.deliver(&mut plugin).unwrap();
+    let tree = rendered(&mut host, &mut plugin);
+    assert_eq!(
+        text_of(&tree, "file-error").as_deref(),
+        Some("settings-file-error-at")
+    );
+    let _ = written(&mut host);
+    host.ui_event(&mut plugin, &submit("field:size", "18"))
+        .unwrap();
+    assert!(written(&mut host).is_empty());
+    let tree = rendered(&mut host, &mut plugin);
+    let why = text_of(&tree, "refused:size").unwrap();
+    assert!(why.contains("does not read"), "{why}");
+    // The file reads again: its error goes.
+    host.set_settings(settings());
+    host.deliver(&mut plugin).unwrap();
+    let tree = rendered(&mut host, &mut plugin);
+    assert!(find_node(&tree, "file-error").is_none());
 }

@@ -657,6 +657,16 @@ impl<'a> Cx<'a> {
         }
     }
 
+    /// The styles of the font family `family`, by the names that the font
+    /// gives its faces, from the lightest, each upright before its italic;
+    /// none of a family that the system lacks.
+    pub fn font_styles(&mut self, family: &str) -> Result<Vec<String>, Error> {
+        match self.request(Request::FontStyles(family.to_owned())) {
+            Response::FontStyles(styles) => Ok(styles),
+            other => Err(failed(other)),
+        }
+    }
+
     /// The AI agents that run in the panes, of every window, in the
     /// windows', tabs' and panes' order, of `process-read`.
     pub fn agents(&mut self) -> Result<Vec<crate::host::AgentInfo>, Error> {

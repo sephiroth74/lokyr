@@ -652,9 +652,11 @@ impl Kernel {
             enabled: &|_| true,
             themes: &themes,
             fonts: &lokyr_plugin_sdk::fake::fonts,
+            font_styles: &lokyr_plugin_sdk::fake::font_styles,
             plugins: &self.plugin_infos,
             config: &self.config,
             plugin_settings: &[],
+            config_error: None,
             day: lokyr_plugin_sdk::fake::DAY,
             notice: false,
             saving: &|_| false,
@@ -1082,11 +1084,12 @@ fn kind(request: &Request) -> usize {
         Request::ShowPage(_) => 113,
         Request::Settings => 114,
         Request::SetSetting { .. } => 115,
+        Request::FontStyles(_) => 116,
     }
 }
 
 /// How many kinds of requests the plugin API has.
-const KINDS: usize = 116;
+const KINDS: usize = 117;
 
 #[test]
 fn the_scenarios_hold_every_request_of_the_plugin_api() {

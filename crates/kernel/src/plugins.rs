@@ -395,6 +395,8 @@ pub struct Context<'a> {
     /// The system's monospaced font families, and the family in force, as
     /// the app reads them.
     pub fonts: &'a dyn Fn() -> host::Fonts,
+    /// The styles of a font family, by its name, from the lightest.
+    pub font_styles: &'a dyn Fn(&str) -> Vec<String>,
     /// The plugins, as a read of them tells, of [`Plugins::infos`] as the
     /// app took it before the calls.
     pub plugins: &'a [host::PluginInfo],
@@ -404,6 +406,9 @@ pub struct Context<'a> {
     /// The plugins' sections of the settings, as
     /// [`Plugins::settings_sections`] tells them.
     pub plugin_settings: &'a [host::SettingsSection],
+    /// What is wrong with the config file, where it does not read, its
+    /// settings those that applied last: none is written until it reads.
+    pub config_error: Option<&'a host::ConfigProblem>,
     /// The day of the system's clock, in days since 1970-01-01, in UTC.
     pub day: u64,
     /// Whether a notice of the app's shows.
@@ -5371,12 +5376,21 @@ impl Host<'_, '_> {
             }
             Asked::Themes => Response::Themes((self.context.themes)()),
             Asked::Fonts => Response::Fonts((self.context.fonts)()),
+            Asked::FontStyles(family) => Response::FontStyles((self.context.font_styles)(&family)),
             Asked::Day => Response::Day(self.context.day),
             Asked::Plugins => Response::Plugins(self.context.plugins.to_vec()),
             Asked::Settings => {
                 let mut sections = crate::config::schema::sections(self.context.config);
                 sections.extend(self.context.plugin_settings.iter().cloned());
-                Response::Settings(host::Settings { sections })
+                let registry = &*self.context.registry;
+                let keys = crate::config::schema::bindings(self.context.config, |name| {
+                    registry.get(name).map(|command| command.title.clone())
+                });
+                Response::Settings(host::Settings {
+                    sections,
+                    keys,
+                    error: self.context.config_error.cloned(),
+                })
             }
             Asked::Agents => {
                 let workspace = &self.context.workspace;
@@ -6140,6 +6154,28 @@ impl Host<'_, '_> {
                 key,
                 value,
             } => {
+                // Nothing over a file that does not read, whose settings
+                // are those that applied last.
+                if let Some(problem) = self.context.config_error {
+                    return Err(Error::new(
+                        Code::InvalidConfig,
+                        format!(
+                            "the config file does not read, and nothing is written into it until it does: {}",
+                            problem.message
+                        ),
+                    ));
+                }
+                // A binding's command, one that the app has.
+                if plugin.is_none()
+                    && section == "keys"
+                    && let Some(Data::Text(command)) = &value
+                    && self.context.registry.get(command).is_none()
+                {
+                    return Err(Error::new(
+                        Code::NotFound,
+                        format!("there is no command `{command}`"),
+                    ));
+                }
                 let path = match &plugin {
                     // A key of an app's section, of a value that the parser
                     // takes, the rest of the config in force as it is.
