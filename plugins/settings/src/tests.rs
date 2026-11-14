@@ -128,6 +128,14 @@ fn settings() -> Settings {
                         Some(Data::Boolean(false)),
                         SettingKind::Boolean,
                     ),
+                    key(
+                        "programs",
+                        Some(programs(&["claude", "codex"])),
+                        Some(programs(&["claude", "codex"])),
+                        SettingKind::List {
+                            max_length: Some(256),
+                        },
+                    ),
                 ],
             },
             SettingsSection {
@@ -1024,4 +1032,63 @@ fn each_section_has_an_icon_of_its_own_of_the_host_s() {
     assert_eq!(unique.len(), icons.len(), "{icons:?}");
     // Another's plugin, the plugins' icon.
     assert_eq!(icon_of(&section("acme", true)), "extensions");
+}
+
+/// A list of the texts `texts`, as a list's value.
+fn programs(texts: &[&str]) -> Data {
+    Data::List(
+        texts
+            .iter()
+            .map(|text| Data::Text((*text).to_owned()))
+            .collect(),
+    )
+}
+
+#[test]
+fn a_list_s_values_are_taken_away_and_added_and_its_default_given_back() {
+    let (mut host, mut plugin) = host();
+    host.ui_event(&mut plugin, &choose(1)).unwrap();
+    let tree = rendered(&mut host, &mut plugin);
+    // Each value, of a link that takes it away, and a field that adds one;
+    // at its default, its Reset dimmed.
+    assert_eq!(text_of(&tree, "item:programs:0").as_deref(), Some("claude"));
+    assert_eq!(text_of(&tree, "item:programs:1").as_deref(), Some("codex"));
+    assert!(matches!(
+        &find_node(&tree, "remove:programs:1").unwrap().kind,
+        Kind::Button(button) if button.link
+    ));
+    assert!(held(&tree, "add:programs").is_some());
+    assert_eq!(reset_of(&tree, "programs"), Some(true));
+    let _ = written(&mut host);
+    host.ui_event(&mut plugin, &on("remove:programs:1", UiEventKind::Click))
+        .unwrap();
+    assert_eq!(
+        written(&mut host),
+        [app_key("window", "programs", Some(programs(&["claude"])))]
+    );
+    host.deliver(&mut plugin).unwrap();
+    // Added, of its field, which empties; one there already, nothing.
+    host.ui_event(&mut plugin, &submit("add:programs", " aider "))
+        .unwrap();
+    let done = host.take_done();
+    assert!(done.contains(&Request::SetSetting {
+        section: "window".to_owned(),
+        plugin: None,
+        key: "programs".to_owned(),
+        value: Some(programs(&["claude", "aider"])),
+    }));
+    assert!(done.iter().any(|request| matches!(
+        request,
+        Request::SetText { key, text, .. } if key.0 == "add:programs" && text.is_empty()
+    )));
+    host.deliver(&mut plugin).unwrap();
+    host.ui_event(&mut plugin, &submit("add:programs", "claude"))
+        .unwrap();
+    assert!(written(&mut host).is_empty());
+    // Off its default, Reset gives it back.
+    let tree = rendered(&mut host, &mut plugin);
+    assert_eq!(reset_of(&tree, "programs"), Some(false));
+    host.ui_event(&mut plugin, &on("reset:programs", UiEventKind::Click))
+        .unwrap();
+    assert_eq!(written(&mut host), [app_key("window", "programs", None)]);
 }

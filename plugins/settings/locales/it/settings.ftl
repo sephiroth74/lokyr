@@ -49,3 +49,5 @@ binding-new = Una nuova assegnazione: i suoi tasti, come cmd+shift+n, e il coman
 settings-file-error-at = Il tuo file di configurazione non si legge alla riga { $line }, colonna { $column }: { $message }. Le impostazioni sono quelle applicate per ultime, e la pagina non scrive nulla finché il file non si legge.
 settings-file-error = Il tuo file di configurazione non si legge: { $message }. Le impostazioni sono quelle applicate per ultime, e la pagina non scrive nulla finché il file non si legge.
 setting-more-info = Più informazioni
+setting-list-remove = Rimuovi
+setting-list-add = Aggiungi un valore

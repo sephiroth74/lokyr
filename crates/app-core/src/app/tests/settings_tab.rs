@@ -1264,3 +1264,75 @@ fn a_number_s_field_steps_of_the_arrow_keys_and_a_field_left_is_written() {
     assert_eq!(read(), "# mine\n[font]\nsize = 18\n");
     let _ = std::fs::remove_dir_all(&directory);
 }
+
+#[test]
+fn a_list_s_value_is_added_and_taken_away_in_the_file_and_its_default_given_back() {
+    use lokyr_kernel::plugins::view::UiEventKind;
+    let directory = super::installed::shelf("settings-list");
+    let path = directory.join("config.toml");
+    std::fs::write(
+        &path,
+        "# mine\n[agents]\nprograms = [\"claude\", \"codex\"]   # mine too\n",
+    )
+    .unwrap();
+    let drawing = Drawing::new(FontConfig::default()).unwrap();
+    let mut fake = Fake::default();
+    let mut app = App::new(
+        Some(drawing),
+        Config::read(&path).unwrap(),
+        Some(path.clone()),
+    )
+    .with_program(idle());
+    fake.start(&mut app);
+    let first = fake.windows().next().unwrap();
+    app.windows.get_mut(&first).unwrap().surface = Some(fakes::Surface::default());
+    let own = open(&mut fake, &mut app, SETTINGS_TAB);
+    let agents = lokyr_kernel::config::schema::sections(&Config::default())
+        .iter()
+        .position(|section| section.name == "agents")
+        .unwrap();
+    settings_event(
+        &mut fake,
+        &mut app,
+        own,
+        None,
+        "sections",
+        UiEventKind::Select { item: agents },
+    );
+    assert_eq!(page_text(&app, own, "item:programs:1"), "codex");
+    let read = || std::fs::read_to_string(&path).unwrap();
+    let submit = UiEventKind::Submit {
+        text: "aider".to_owned(),
+        shift: false,
+    };
+    settings_event(&mut fake, &mut app, own, None, "add:programs", submit);
+    assert_eq!(
+        read(),
+        "# mine\n[agents]\nprograms = [\"claude\", \"codex\", \"aider\"]   # mine too\n"
+    );
+    settings_event(
+        &mut fake,
+        &mut app,
+        own,
+        None,
+        "remove:programs:0",
+        UiEventKind::Click,
+    );
+    assert_eq!(
+        read(),
+        "# mine\n[agents]\nprograms = [\"codex\", \"aider\"]   # mine too\n"
+    );
+    assert_eq!(page_text(&app, own, "item:programs:0"), "codex");
+    // Back to its default list, the key gone.
+    settings_event(
+        &mut fake,
+        &mut app,
+        own,
+        None,
+        "reset:programs",
+        UiEventKind::Click,
+    );
+    assert!(!read().contains("programs"), "{}", read());
+    assert_eq!(page_text(&app, own, "item:programs:0"), "claude");
+    let _ = std::fs::remove_dir_all(&directory);
+}

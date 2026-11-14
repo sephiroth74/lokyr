@@ -84,6 +84,13 @@ const KEYS: &str = "keys";
 /// The prefix of the key of a key's link to its text in the guide.
 const GUIDE: &str = "guide:";
 
+/// The prefix of the key of a list's value's button that takes it away,
+/// `remove:<key>:<index>`.
+const REMOVE: &str = "remove:";
+
+/// The prefix of the key of a list's field that adds a value.
+const ADD: &str = "add:";
+
 /// The platforms that Lokyr runs on, of which a key that applies on every
 /// one names none.
 const PLATFORMS: &[&str] = &["macos"];
@@ -218,6 +225,48 @@ impl Plugin for SettingsPage {
                 && let Some(value) = values.get(at)
             {
                 return self.write(cx, section, setting, Some(value.clone()));
+            }
+            return Ok(());
+        }
+        // A list's value taken away, or one added.
+        if let (UiEventKind::Click, Some(rest)) = (&event.kind, key.strip_prefix(REMOVE)) {
+            let Some((name, at)) = rest.rsplit_once(':') else {
+                return Ok(());
+            };
+            let (Some(setting), Ok(at)) = (find(section, name), at.parse::<usize>()) else {
+                return Ok(());
+            };
+            let mut texts = list_texts(setting.value.as_ref());
+            if at >= texts.len() {
+                return Ok(());
+            }
+            texts.remove(at);
+            let value = Data::List(texts.into_iter().map(Data::Text).collect());
+            return self.write(cx, section, setting, Some(value));
+        }
+        if let (UiEventKind::Submit { text, .. }, Some(name)) = (&event.kind, key.strip_prefix(ADD))
+        {
+            let Some(setting) = find(section, name) else {
+                return Ok(());
+            };
+            let added = text.trim();
+            let mut texts = list_texts(setting.value.as_ref());
+            if added.is_empty() || texts.iter().any(|text| text == added) {
+                return Ok(());
+            }
+            texts.push(added.to_owned());
+            let value = Data::List(texts.into_iter().map(Data::Text).collect());
+            let written = cx.set_setting(
+                &section.name,
+                section.plugin.as_deref(),
+                &setting.name,
+                Some(value),
+            );
+            let fine = written.is_ok();
+            self.told(cx, &setting.name, written)?;
+            // Added, its field empty again, for the next.
+            if fine {
+                cx.set_text(page(), key, "", u64::MAX)?;
             }
             return Ok(());
         }
@@ -925,6 +974,10 @@ fn key_row(cx: &mut Cx<'_>, key: &SettingKey, refused: Option<&String>) -> Node 
             0.0,
         ));
     }
+    // A list's values, under what it does.
+    if matches!(key.kind, SettingKind::List { .. }) {
+        about.push(list_editor(cx, key));
+    }
     if let Some(why) = refused {
         about.push(
             Node::text(why.clone())
@@ -944,7 +997,7 @@ fn key_row(cx: &mut Cx<'_>, key: &SettingKey, refused: Option<&String>) -> Node 
         min_width: Length::Points(0.0),
         ..Layout::default()
     });
-    let mut value = vec![control(cx, key)];
+    let mut value: Vec<Node> = control(cx, key).into_iter().collect();
     // At the bottom right: the link back to the default, dimmed where the
     // key is there already.
     let mut marks = Vec::new();
@@ -998,17 +1051,88 @@ fn key_row(cx: &mut Cx<'_>, key: &SettingKey, refused: Option<&String>) -> Node 
 /// Whether the page writes a key of `kind`: a boolean, a value of its
 /// choices, a number or a text; a list and another value it shows alone.
 fn writable(kind: &SettingKind) -> bool {
-    !matches!(kind, SettingKind::List { .. } | SettingKind::Other)
+    !matches!(kind, SettingKind::Other)
+}
+
+/// The texts of a list's value, `value`; none of another.
+fn list_texts(value: Option<&Data>) -> Vec<String> {
+    match value {
+        Some(Data::List(items)) => items.iter().map(plain).collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// A list's values: each of its text and a link that takes it away, and a
+/// field that adds one as Return is pressed.
+fn list_editor(cx: &mut Cx<'_>, key: &SettingKey) -> Node {
+    let name = &key.name;
+    let mut rows: Vec<Node> = list_texts(key.value.as_ref())
+        .into_iter()
+        .enumerate()
+        .map(|(at, text)| {
+            row_of(
+                vec![
+                    Node::text(text)
+                        .key(format!("item:{name}:{at}").as_str())
+                        .style(code())
+                        .layout(Layout {
+                            grow: 1.0,
+                            min_width: Length::Points(0.0),
+                            ..Layout::default()
+                        }),
+                    Node::button(message(cx, "setting-list-remove", &[]))
+                        .key(format!("{REMOVE}{name}:{at}").as_str())
+                        .as_link()
+                        .style(Style {
+                            text_size: Some(TextSize::Small),
+                            ..Style::default()
+                        }),
+                ],
+                8.0,
+            )
+            .layout(Layout {
+                direction: Direction::Row,
+                gap: 8.0,
+                align: Align::Center,
+                width: Length::Fraction(1.0),
+                ..Layout::default()
+            })
+        })
+        .collect();
+    rows.push(
+        Node::field(message(cx, "setting-list-add", &[]))
+            .key(format!("{ADD}{name}").as_str())
+            .label(name.clone())
+            .style(field_text())
+            .layout(Layout {
+                width: Length::Points(180.0),
+                ..Layout::default()
+            }),
+    );
+    Node::container(rows)
+        .key(format!("list:{name}").as_str())
+        .layout(Layout {
+            direction: Direction::Column,
+            gap: 4.0,
+            width: Length::Fraction(1.0),
+            padding: Edges {
+                top: 4.0,
+                right: 0.0,
+                bottom: 0.0,
+                left: 0.0,
+            },
+            ..Layout::default()
+        })
 }
 
 /// The control of `key`'s value: a toggle of a boolean, the button of a
-/// menu of its values, a field of a number, between the buttons of its
-/// steps, or of a text; a list's or another value's text, as the config
-/// writes it.
-fn control(cx: &mut Cx<'_>, key: &SettingKey) -> Node {
+/// menu of its values, a field of a number or of a text; another value's
+/// text, as the config writes it; none of a list, whose values show under
+/// what it does.
+fn control(cx: &mut Cx<'_>, key: &SettingKey) -> Option<Node> {
     let name = &key.name;
     let terminal = code();
-    match &key.kind {
+    Some(match &key.kind {
         SettingKind::Boolean => {
             let on = key.value == Some(Data::Boolean(true));
             let label = message(cx, if on { "setting-on" } else { "setting-off" }, &[]);
@@ -1079,7 +1203,9 @@ fn control(cx: &mut Cx<'_>, key: &SettingKey) -> Node {
                     ..Layout::default()
                 })
         }
-        SettingKind::List { .. } | SettingKind::Other => match &key.value {
+        // A list's values show under what it does.
+        SettingKind::List { .. } => return None,
+        SettingKind::Other => match &key.value {
             Some(value) => Node::text(shown(value))
                 .key(format!("value:{name}").as_str())
                 .style(terminal),
@@ -1087,7 +1213,7 @@ fn control(cx: &mut Cx<'_>, key: &SettingKey) -> Node {
                 .key(format!("value:{name}").as_str())
                 .style(secondary()),
         },
-    }
+    })
 }
 
 /// Whether `key` of a text shows its values in a menu, as its control

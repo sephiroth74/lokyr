@@ -49,3 +49,5 @@ binding-new = A new binding: its keys, as cmd+shift+n, and the command that they
 settings-file-error-at = Your config file does not read at line { $line }, column { $column }: { $message }. The settings are those that applied last, and the page writes nothing until the file reads.
 settings-file-error = Your config file does not read: { $message }. The settings are those that applied last, and the page writes nothing until the file reads.
 setting-more-info = More info
+setting-list-remove = Remove
+setting-list-add = Add a value
