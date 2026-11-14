@@ -696,7 +696,13 @@ type Cx = {
     -- of the config's, for a while, as a picker previews it, of the config's styles that it has, its own in place of
     -- those that it lacks; nil shows the config's. A family changes the cell's size:
     -- every pane takes its grid anew and its program the signal of it, so a picker previews once its selection rests.
+    -- nil ends a face's style's preview too.
     preview_font: (family: string?) -> (boolean, Error?),
+    -- Require `appearance-write`: shows a face of the terminal's text, "regular", "bold", "italic" or "bold-italic", in
+    -- every pane of a style of the family in force, as `font_styles` lists it, in place of the config's `[font] style`,
+    -- `bold-style`, `italic-style` or `bold-italic-style`, for a while, as a picker previews it, until `preview_font`
+    -- of nil, or a change of the config's font; a style that the family lacks refused.
+    preview_font_style: (face: FontFace, style: string) -> (boolean, Error?),
     -- Names a monospaced family in the config's `[font] family`, edited in place, which shows at once, a preview
     -- ending: one that `fonts` lists, else refused. The config's styles that it lacks, as `style = "Medium"`, are
     -- commented out where they were, as the config would refuse them, to be taken back by hand.
@@ -1081,7 +1087,7 @@ type Plugin = {
 | `config` | The config in force, the app's keys and every plugin's section with their schemas, `settings`, and their changes, `settings-changed`; its keys written into the file, `set_setting`; Lokyr's own plugins' alone, refused to another's manifest with a notice and by `sleip check` | Very high: a key written can change the program that a pane runs |
 | `packages` | The plugins themselves, through the bundle's Sleip: the installed ones, the registry's search and a plugin's versions, installs, updates and removals, `packages`, of their lines as events, and `cancel_packages`; every plugin's state and capabilities' decisions, `plugins`, and a plugin turned on or off in the config, `set_plugin_enabled`; Lokyr's own plugins' alone, refused to another's manifest with a notice and by `sleip check` | Very high: a plugin that installs another runs code of its choice |
 | `user-commands` | Running any command as if run by hand, without declaring it, as the palette does; reading the whole registry, with each command's plugin, keys and context, and the plugins installed | Very high: `pane.send-text` types into the shell |
-| `appearance-write` | Previewing a theme and a monospaced font family, and naming the ones chosen in the config's `[theme]` and `[font] family`, edited in place, `preview_theme`, `set_theme`, `preview_font` and `set_font`, as the palette's theme picker and a font picker do | Medium: the config changes, visibly and reversibly; no text of a pane, no command, no file but the config's two keys |
+| `appearance-write` | Previewing a theme, a monospaced font family and a face's style, and naming the ones chosen in the config's `[theme]` and `[font] family`, edited in place, `preview_theme`, `set_theme`, `preview_font`, `preview_font_style` and `set_font`, as the palette's theme picker and a font picker do | Medium: the config changes, visibly and reversibly; no text of a pane, no command, no file but the config's two keys |
 
 A request takes every capability that it needs, as a subscription to `pointer` and to `command-started` takes `pointer-read` and `history-read`. The reads of the workspace, the plugin's own views, panels and questions, its declarations, its config and its state take none; neither does a file saved through the save panel, where the place is chosen in the panel and the host writes it, nor an image of the plugin's own cells.
 

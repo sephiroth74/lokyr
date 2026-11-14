@@ -1739,3 +1739,73 @@ fn a_search_of_no_match_says_so_and_its_button_empties_it() {
     );
     assert!(find_node(&tree, SEARCH_CLEAR).is_none());
 }
+
+/// Highlights the item `at` of the menu of `name`, as the arrows or the
+/// pointer go over it.
+fn highlight(host: &mut FakeHost, plugin: &mut SettingsPage, name: &str, at: usize) {
+    host.ui_event(
+        plugin,
+        &UiEvent {
+            view: ViewId::Panel(PanelId(format!("choices:{name}"))),
+            key: format!("choice:{at}").as_str().into(),
+            kind: UiEventKind::HoverEnter,
+        },
+    )
+    .unwrap();
+}
+
+/// The font's previews that the calls asked since the last look.
+fn previews(host: &mut FakeHost) -> Vec<Request> {
+    host.take_done()
+        .into_iter()
+        .filter(|request| {
+            matches!(
+                request,
+                Request::PreviewFont(_) | Request::PreviewFontStyle { .. }
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn a_font_s_family_and_a_face_s_style_show_as_their_items_are_highlighted() {
+    let (mut host, mut plugin) = host();
+    // The family of the monospaced ones' menu.
+    let mut shown = settings();
+    shown.sections[0].keys[0] = controlled("family", None, "monospaced-family");
+    host.set_settings(shown);
+    host.deliver(&mut plugin).unwrap();
+    let _ = host.take_done();
+    let families = menu_of(&mut host, &mut plugin, "family");
+    assert_eq!(labels(&families), ["Menlo", "Monaco", "SF Mono"]);
+    let _ = host.take_done();
+    highlight(&mut host, &mut plugin, "family", 1);
+    assert_eq!(
+        previews(&mut host),
+        [Request::PreviewFont(Some("Monaco".to_owned()))]
+    );
+    // Closed of no choice: the font in force back, nothing written.
+    host.close_panel(&PanelId::from("choices:family"));
+    host.deliver(&mut plugin).unwrap();
+    assert_eq!(previews(&mut host), [Request::PreviewFont(None)]);
+    // A face's style, of the regular face; a menu of no preview, none.
+    menu_of(&mut host, &mut plugin, "style");
+    let _ = host.take_done();
+    highlight(&mut host, &mut plugin, "style", 2);
+    assert_eq!(
+        previews(&mut host),
+        [Request::PreviewFontStyle {
+            face: FontFace::Regular,
+            style: "Bold".to_owned(),
+        }]
+    );
+    pick(&mut host, &mut plugin, "style", 2);
+    host.close_panel(&PanelId::from("choices:style"));
+    host.deliver(&mut plugin).unwrap();
+    let done = host.take_done();
+    assert!(done.contains(&Request::PreviewFont(None)), "{done:?}");
+    menu_of(&mut host, &mut plugin, "non-ascii-family");
+    let _ = host.take_done();
+    highlight(&mut host, &mut plugin, "non-ascii-family", 1);
+    assert!(previews(&mut host).is_empty());
+}

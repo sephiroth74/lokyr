@@ -39,6 +39,7 @@ export type Cx = {
     set_plugin_enabled: (plugin: string, enabled: boolean) -> (true?, string?, number?),
     set_setting: (section: string, plugin: string?, key: string, value: Data?) -> (true?, string?, number?),
     preview_font: (family: string?) -> (true?, string?, number?),
+    preview_font_style: (face: FontFace, style: string) -> (true?, string?, number?),
     set_font: (family: string) -> (true?, string?, number?),
     add_menu_item: (item: MenuItem) -> (true?, string?, number?),
     run_command: (name: string, args: { [string]: Value }?) -> (true?, string?, number?),
@@ -484,6 +485,12 @@ export type Edges = {
     bottom: number?,
     left: number?,
 }
+
+export type FontFace =
+    | "regular"
+    | "bold"
+    | "italic"
+    | "bold-italic"
 
 export type FontFamily =
     | "interface"

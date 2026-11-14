@@ -14,7 +14,7 @@ use std::path::Path;
 use std::time::{Duration, Instant};
 
 use lokyr_kernel::config::{self, ThemeConfig};
-use lokyr_kernel::plugins::host::{Fonts, ThemeInfo, ThemeOrigin, Themes};
+use lokyr_kernel::plugins::host::{FontFace, Fonts, ThemeInfo, ThemeOrigin, Themes};
 use lokyr_kernel::themes::{self, ThemeVariant};
 use lokyr_platform_core::{Appearance, Platform};
 use lokyr_text_core::{FontBackend, FontConfig, Name, styles_within};
@@ -224,6 +224,25 @@ impl<B: Backend> App<B> {
     /// its own, if one does, of the config's styles that it has, its own in
     /// place of those that it lacks.
     pub(super) fn font_in_force(&self) -> FontConfig {
+        let mut font = self.family_in_force();
+        for (face, style) in &self.style_preview {
+            let Ok(style) = Name::try_from(style.clone()) else {
+                continue;
+            };
+            let slot = match face {
+                FontFace::Regular => &mut font.style,
+                FontFace::Bold => &mut font.bold_style,
+                FontFace::Italic => &mut font.italic_style,
+                FontFace::BoldItalic => &mut font.bold_italic_style,
+            };
+            *slot = Some(style);
+        }
+        font
+    }
+
+    /// The font of the config, of the family that a picker previews, if
+    /// one does, of the config's styles that the family has.
+    fn family_in_force(&self) -> FontConfig {
         let Some(preview) = self.font_preview.clone() else {
             return self.config.font.clone();
         };
@@ -246,10 +265,36 @@ impl<B: Backend> App<B> {
     /// its new grid, and its program the signal of it, as a picker
     /// previews a family once its selection rests.
     pub(super) fn preview_font(&mut self, platform: &mut dyn Platform, family: Option<String>) {
-        if self.font_preview == family {
+        let ended = family.is_none() && !self.style_preview.is_empty();
+        if self.font_preview == family && !ended {
             return;
         }
+        // None ends the styles' previews too.
+        if family.is_none() {
+            self.style_preview.clear();
+        }
         self.font_preview = family;
+        self.show_font(platform);
+    }
+
+    /// Shows the face `face` of the terminal's text in every pane of the
+    /// style `style` of the family in force, in place of the config's, as
+    /// a plugin previews it, until a preview of no family ends it.
+    pub(super) fn preview_font_style(
+        &mut self,
+        platform: &mut dyn Platform,
+        face: FontFace,
+        style: String,
+    ) {
+        if self
+            .style_preview
+            .iter()
+            .any(|(own, shown)| *own == face && *shown == style)
+        {
+            return;
+        }
+        self.style_preview.retain(|(own, _)| *own != face);
+        self.style_preview.push((face, style));
         self.show_font(platform);
     }
 
@@ -260,6 +305,7 @@ impl<B: Backend> App<B> {
     /// take back.
     pub(super) fn set_font(&mut self, platform: &mut dyn Platform, family: &str) {
         self.font_preview = None;
+        self.style_preview.clear();
         let lacking = B::fonts()
             .family(family)
             .map(|faces| styles_within(&self.config.font, &faces).1)

@@ -538,6 +538,9 @@ pub struct App<B: Backend> {
     /// The font family that a plugin's picker previews in every pane in
     /// place of the config's, if one does.
     font_preview: Option<String>,
+    /// The styles of the text's faces that a plugin previews in every pane
+    /// in place of the config's, of the family in force.
+    style_preview: Vec<(lokyr_kernel::plugins::host::FontFace, String)>,
     /// The program that a new window runs.
     program: Program,
     /// The program that shows man pages, in place of the login shell's
@@ -931,6 +934,7 @@ impl<B: Backend> App<B> {
             settings: settings_tab::SettingsTab::default(),
             font_list: std::cell::RefCell::new(None),
             font_preview: None,
+            style_preview: Vec::new(),
             program: Program::LoginShell,
             man: None,
             ssh: PathBuf::from("ssh"),
@@ -1641,9 +1645,11 @@ impl<B: Backend> App<B> {
             return;
         }
         let font_changed = config.font != self.config.font;
-        // A family that a picker previews ends as the config's font changes.
+        // A family or a style that a picker previews ends as the config's
+        // font changes.
         if font_changed {
             self.font_preview = None;
+            self.style_preview.clear();
         }
         if font_changed
             && let Some(drawing) = &mut self.drawing
@@ -3159,6 +3165,9 @@ impl<B: Backend> App<B> {
                 } => self.set_setting(platform, &section, &key, value.as_ref()),
                 Request::ShowPage { plugin, page } => self.show_page(platform, &plugin, &page),
                 Request::PreviewFont(family) => self.preview_font(platform, family),
+                Request::PreviewFontStyle { face, style } => {
+                    self.preview_font_style(platform, face, style);
+                }
                 Request::SetFont(family) => self.set_font(platform, &family),
                 Request::ConfirmPaste { pane, text } => self.ask_paste(platform, pane, text),
                 Request::Open(target) => self.open_target(platform, target),
@@ -4709,6 +4718,9 @@ impl<B: Backend> App<B> {
                 if !self.native_chosen(window, &command) {
                     self.context_command(platform, window, &command);
                 }
+            }
+            WindowEvent::ContextHighlighted(command) => {
+                self.native_highlighted(window, command.as_deref());
             }
             WindowEvent::ContextMenuClosed => self.native_closed(platform, window),
             // A window that does not show lets its drawables go, and draws

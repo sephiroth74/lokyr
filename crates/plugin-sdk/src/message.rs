@@ -199,6 +199,17 @@ pub enum Request {
     /// preview, the family's choice, or `None`, which shows the config's
     /// again.
     PreviewFont(Option<String>),
+    /// Shows a face of the terminal's text in every pane of a style of the
+    /// family in force, in place of the config's, for a while, as a picker
+    /// previews it, a family's preview kept, until the next preview of the
+    /// face or [`Request::PreviewFont`] of `None`, which shows the config's
+    /// font again.
+    PreviewFontStyle {
+        /// The face.
+        face: crate::host::FontFace,
+        /// The style, by its name, one of the family's.
+        style: String,
+    },
     /// Names a monospaced family in the config's `[font] family`, which
     /// the app shows at once, a preview ending.
     SetFont(String),
@@ -994,6 +1005,7 @@ impl Request {
             Self::PreviewTheme(_)
             | Self::SetTheme { .. }
             | Self::PreviewFont(_)
+            | Self::PreviewFontStyle { .. }
             | Self::SetFont(_) => Some(Capability::AppearanceWrite),
             // A key taken from every app.
             Self::Bind(binding) if binding.keys.starts_with(crate::keys::GLOBAL) => {
@@ -1207,6 +1219,7 @@ impl Request {
             | Self::PreviewTheme(_)
             | Self::SetTheme { .. }
             | Self::PreviewFont(_)
+            | Self::PreviewFontStyle { .. }
             | Self::SetFont(_) => Effect::App,
             Self::RegisterCommand(_)
             | Self::Bind(_)
@@ -1654,6 +1667,7 @@ impl Request {
             | Self::PreviewTheme { .. }
             | Self::SetTheme { .. }
             | Self::PreviewFont { .. }
+            | Self::PreviewFontStyle { .. }
             | Self::SetFont { .. }
             | Self::AddMenuItem { .. }
             | Self::RunCommand { .. }

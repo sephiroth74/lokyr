@@ -743,6 +743,31 @@ pub struct Fonts {
     pub all: Vec<String>,
 }
 
+/// A face of the terminal's text, of the config's `[font]` styles: the
+/// regular one's `style`, `bold-style`, `italic-style` and
+/// `bold-italic-style`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum FontFace {
+    /// The regular text's.
+    Regular,
+    /// Bold text's.
+    Bold,
+    /// Italic text's.
+    Italic,
+    /// Bold italic text's.
+    BoldItalic,
+}
+
+/// Whether `style` is one of `styles`, the styles of the family in force,
+/// `family`, or the error that tells it is not, which a preview refuses.
+pub fn check_style(family: &str, styles: &[String], style: &str) -> Result<(), String> {
+    if styles.iter().any(|own| own == style) {
+        return Ok(());
+    }
+    Err(format!("the font family `{family}` has no style `{style}`"))
+}
+
 impl Fonts {
     /// Whether `name` is one of the families, its case aside, or the error
     /// that tells it is not, which a preview and a choice refuse.

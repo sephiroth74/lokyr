@@ -304,6 +304,9 @@ pub(crate) struct Window<B: Backend> {
     /// The menus' panels that wait to show as the platform's, in their
     /// order.
     pub(crate) native_due: Vec<u32>,
+    /// The node of the item that the open menu's panel's highlights, as
+    /// the platform tells it, which its plugin hears hovered.
+    pub(crate) native_hovered: Option<NodeKey>,
     /// The window's room below its titlebar and its tab bar, in pixels, as
     /// its last layout placed it, whose corners panels anchor in.
     pub(crate) overlay: Frame,
@@ -438,6 +441,7 @@ impl<B: Backend> Window<B> {
             panels: Panels::new(),
             native: std::collections::VecDeque::new(),
             native_due: Vec::new(),
+            native_hovered: None,
             overlay: Frame::default(),
         }
     }

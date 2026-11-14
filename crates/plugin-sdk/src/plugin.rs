@@ -726,6 +726,21 @@ impl<'a> Cx<'a> {
         self.done(Request::PreviewFont(family.map(str::to_owned)))
     }
 
+    /// Shows the face `face` of the terminal's text in every pane of the
+    /// style `style` of the family in force, in place of the config's, for
+    /// a while, as a picker previews it, until [`Cx::preview_font`] of
+    /// `None`.
+    pub fn preview_font_style(
+        &mut self,
+        face: crate::host::FontFace,
+        style: &str,
+    ) -> Result<(), Error> {
+        self.done(Request::PreviewFontStyle {
+            face,
+            style: style.to_owned(),
+        })
+    }
+
     /// Names the monospaced family `family` in the config's `[font]
     /// family`, which the app shows at once, a preview ending.
     pub fn set_font(&mut self, family: &str) -> Result<(), Error> {

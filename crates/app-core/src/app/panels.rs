@@ -426,10 +426,52 @@ impl<B: Backend> App<B> {
         }
     }
 
+    /// The item of `window`'s open menu, of `command`, that the arrows or
+    /// the pointer highlight, or none: of a menu's panel, its plugin hears
+    /// the node of the item highlighted before hovered no longer, and the
+    /// new one hovered, as a pointer's moves over a view's nodes.
+    pub(super) fn native_highlighted(&mut self, window: WindowId, command: Option<&str>) {
+        let Some(state) = self.windows.get_mut(&window) else {
+            return;
+        };
+        let Some(NativeMenu::Panel(id, choices)) = state.native.front() else {
+            return;
+        };
+        let Some(view) = state.chrome.iter().find(|shown| shown.id == *id) else {
+            return;
+        };
+        let hovered = command
+            .and_then(|command| choices.get(command))
+            .map(|(key, _)| key.clone());
+        if hovered == state.native_hovered {
+            return;
+        }
+        let told = |key: NodeKey, kind| {
+            (
+                view.plugin.clone(),
+                UiEvent {
+                    view: view.view.clone(),
+                    key,
+                    kind,
+                },
+            )
+        };
+        let left = state
+            .native_hovered
+            .take()
+            .map(|key| told(key, UiEventKind::HoverLeave));
+        let entered = hovered
+            .clone()
+            .map(|key| told(key, UiEventKind::HoverEnter));
+        state.native_hovered = hovered;
+        self.ui_events.extend(left.into_iter().chain(entered));
+    }
+
     /// The platform's menu of `window` that was open closed: a menu's panel
     /// that it showed closes, as its plugin hears, after its choice where
-    /// one was made.
+    /// one was made, and its item highlighted last hovered no longer.
     pub(super) fn native_closed(&mut self, platform: &mut dyn Platform, window: WindowId) {
+        self.native_highlighted(window, None);
         self.release_capture(platform, window);
         let shown = self
             .windows

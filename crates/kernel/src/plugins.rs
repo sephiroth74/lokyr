@@ -130,6 +130,14 @@ pub enum Request {
     /// Show the monospaced font family of a name in every pane in place of
     /// the config's, for a while; with `None`, the config's again.
     PreviewFont(Option<String>),
+    /// Show a face of the text of a style of the family in force in every
+    /// pane in place of the config's, for a while.
+    PreviewFontStyle {
+        /// The face.
+        face: host::FontFace,
+        /// The style.
+        style: String,
+    },
     /// Name a monospaced font family in the config's `[font] family`.
     SetFont(String),
     /// Show the settings tab at the page of a plugin, of its manifest.
@@ -5976,6 +5984,13 @@ impl Host<'_, '_> {
                         .map_err(|message| Error::new(Code::NotFound, message))?;
                 }
                 Request::PreviewFont(family)
+            }
+            // A style of the family in force, as the app reads its styles.
+            Asked::PreviewFontStyle { face, style } => {
+                let family = (self.context.fonts)().current;
+                host::check_style(&family, &(self.context.font_styles)(&family), &style)
+                    .map_err(|message| Error::new(Code::NotFound, message))?;
+                Request::PreviewFontStyle { face, style }
             }
             Asked::SetFont(family) => {
                 (self.context.fonts)()

@@ -1672,3 +1672,82 @@ fn the_settings_window_shows_no_notice_which_the_terminals_windows_do() {
     frames(&mut fake, &mut app, first);
     assert!(card(&app, first), "the terminal's window shows it still");
 }
+
+#[test]
+fn a_menu_s_highlighted_family_or_style_shows_in_the_panes_until_it_closes() {
+    use lokyr_kernel::plugins::view::{Kind, UiEventKind};
+    let (mut fake, mut app, _) = two_tabs();
+    let own = open(&mut fake, &mut app, SETTINGS_TAB);
+    let items = |app: &App, name: &str| -> Vec<String> {
+        let menu = app
+            .plugins
+            .tree(
+                "lokyr/settings",
+                &ViewId::Panel(lokyr_kernel::plugins::ui::PanelId(format!(
+                    "choices:{name}"
+                ))),
+            )
+            .cloned()
+            .expect("the menu");
+        menu.children
+            .iter()
+            .filter_map(|item| match &item.kind {
+                Kind::Toggle(toggle) => Some(toggle.label.clone()),
+                _ => None,
+            })
+            .collect()
+    };
+    // The families' menu, the platform's own: its item highlighted shows
+    // in the panes, and goes as the menu closes of no choice.
+    settings_event(
+        &mut fake,
+        &mut app,
+        own,
+        None,
+        "choose:family",
+        UiEventKind::Click,
+    );
+    frames(&mut fake, &mut app, own);
+    assert!(!fake.context_menus().is_empty(), "the platform's menu");
+    let families = items(&app, "family");
+    let at = families.len() - 1;
+    fake.send(
+        &mut app,
+        own,
+        WindowEvent::ContextHighlighted(Some(format!("choice:{at}"))),
+    );
+    frames(&mut fake, &mut app, own);
+    assert_eq!(app.font_preview.as_deref(), Some(families[at].as_str()));
+    fake.send(&mut app, own, WindowEvent::ContextHighlighted(None));
+    fake.send(&mut app, own, WindowEvent::ContextMenuClosed);
+    frames(&mut fake, &mut app, own);
+    assert_eq!(app.font_preview, None, "the font in force back");
+    // A style of the family in force, of the regular face.
+    settings_event(
+        &mut fake,
+        &mut app,
+        own,
+        None,
+        "choose:style",
+        UiEventKind::Click,
+    );
+    frames(&mut fake, &mut app, own);
+    let styles = items(&app, "style");
+    let at = styles.len() - 1;
+    fake.send(
+        &mut app,
+        own,
+        WindowEvent::ContextHighlighted(Some(format!("choice:{at}"))),
+    );
+    frames(&mut fake, &mut app, own);
+    assert_eq!(
+        app.font_in_force()
+            .style
+            .map(|style| style.to_string())
+            .as_deref(),
+        Some(styles[at].as_str())
+    );
+    fake.send(&mut app, own, WindowEvent::ContextMenuClosed);
+    frames(&mut fake, &mut app, own);
+    assert!(app.style_preview.is_empty(), "the style in force back");
+}

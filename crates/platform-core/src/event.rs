@@ -32,6 +32,10 @@ pub enum WindowEvent {
     CloseRequested,
     /// An item of the window's context menu was chosen: its command.
     ContextCommand(String),
+    /// The item of the window's open context menu that the arrows or the
+    /// pointer highlight, by its command; none as none is, or as a
+    /// submenu's item is.
+    ContextHighlighted(Option<String>),
     /// The window's context menu closed, after its item's
     /// [`WindowEvent::ContextCommand`] where one was chosen, or without a
     /// choice.

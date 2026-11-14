@@ -38,7 +38,7 @@ A capability lets a plugin reach what belongs to the person who runs Lokyr. The 
 | `config` | The config in force, every key of the app's and of the plugins' sections, with their schemas; Lokyr's own plugins' alone | Very high: a key written can change the program that a pane runs |
 | `packages` | The plugins themselves, through Sleip: the installed ones, the registry's search, installs, updates and removals; every plugin's state and the decisions of its capabilities, and a plugin turned on or off in the config; Lokyr's own plugins' alone | Very high: a plugin that installs another runs code of its choice |
 | `user-commands` | Running any command as if run by hand, without declaring it, as the palette does; reading the whole registry of commands | Very high: `pane.send-text` types into the shell |
-| `appearance-write` | Previewing a theme and a monospaced font family, and naming the ones chosen in the config's `[theme]` and `[font] family` | Medium: the config changes, visibly and reversibly |
+| `appearance-write` | Previewing a theme, a monospaced font family and a face's style, and naming the ones chosen in the config's `[theme]` and `[font] family` | Medium: the config changes, visibly and reversibly |
 
 A request takes every capability that it needs, as a subscription to `pointer` and to `command-started` takes `pointer-read` and `history-read`. The reads of the workspace, the plugin's own views, panels and questions, its declarations, its config and its state take none; neither does a file saved through the save panel, where the place is chosen in the panel and Lokyr writes it.
 

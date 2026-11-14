@@ -3691,6 +3691,13 @@ impl Calling<'_> {
                     .map_err(|message| Error::new(Code::NotFound, message))?;
                 Response::Done
             }
+            // A style of the family in force.
+            Request::PreviewFontStyle { style, .. } => {
+                let family = &self.host.fonts.current;
+                host::check_style(family, &font_styles(family), style)
+                    .map_err(|message| Error::new(Code::NotFound, message))?;
+                Response::Done
+            }
             // A choice that the config keeps, of a theme that is there.
             Request::SetTheme { variant, name } => {
                 self.host

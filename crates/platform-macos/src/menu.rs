@@ -11,10 +11,11 @@ use lokyr_platform_core::{
     StandardAction, WindowEvent, WindowId,
 };
 use objc2::rc::Retained;
-use objc2::runtime::Sel;
+use objc2::runtime::{ProtocolObject, Sel};
 use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send, sel};
 use objc2_app_kit::{
-    NSControlStateValueOff, NSControlStateValueOn, NSEventModifierFlags, NSMenu, NSMenuItem,
+    NSControlStateValueOff, NSControlStateValueOn, NSEventModifierFlags, NSMenu, NSMenuDelegate,
+    NSMenuItem,
 };
 use objc2_foundation::{NSObject, NSObjectProtocol, NSString};
 
@@ -85,6 +86,32 @@ define_class!(
 
     // SAFETY: `NSObjectProtocol` has no requirement.
     unsafe impl NSObjectProtocol for MenuTarget {}
+
+    // SAFETY: `NSMenuDelegate`'s signatures; a context menu's own menus
+    // have the target as their delegate.
+    unsafe impl NSMenuDelegate for MenuTarget {
+        // The item that the arrows or the pointer highlight, of a context
+        // menu, as its window's event: of a command, or none, as of no item
+        // or of a submenu's.
+        #[unsafe(method(menu:willHighlightItem:))]
+        fn menu_will_highlight_item(&self, _menu: &NSMenu, item: Option<&NSMenuItem>) {
+            let ivars = self.ivars();
+            let Some(window) = ivars.window else {
+                return;
+            };
+            let command = item
+                .filter(|item| !item.hasSubmenu())
+                .and_then(|item| usize::try_from(item.tag()).ok())
+                .and_then(|tag| ivars.commands.get(tag))
+                .cloned();
+            if let Some(shared) = ivars.shared.upgrade() {
+                shared.post(Pending::Window(
+                    window,
+                    WindowEvent::ContextHighlighted(command),
+                ));
+            }
+        }
+    }
 );
 
 /// A menu bar that [`build`] made.
@@ -144,7 +171,19 @@ pub(crate) fn context(
         role: None,
     };
     let ns_menu = submenu(mtm, &menu, &target, &mut 0);
+    delegate(&ns_menu, &target);
     (ns_menu, target)
+}
+
+/// Makes `target` the delegate of `menu` and of its submenus, which tells
+/// the item that each highlights.
+fn delegate(menu: &NSMenu, target: &MenuTarget) {
+    menu.setDelegate(Some(ProtocolObject::from_ref(target)));
+    for at in 0..menu.numberOfItems() {
+        if let Some(submenu) = menu.itemAtIndex(at).and_then(|item| item.submenu()) {
+            delegate(&submenu, target);
+        }
+    }
 }
 
 /// The target of a menu's items, which runs `commands`, by their tags,

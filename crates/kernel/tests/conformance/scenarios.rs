@@ -1993,6 +1993,25 @@ fn app_requests(world: &World) -> Scenario {
                 Response::Done,
             ),
             (Request::PreviewFont(None), Response::Done),
+            // A face's style of the family in force, and one that it lacks.
+            (
+                Request::PreviewFontStyle {
+                    face: lokyr_plugin_sdk::host::FontFace::Bold,
+                    style: "Bold".to_owned(),
+                },
+                Response::Done,
+            ),
+            (
+                Request::PreviewFontStyle {
+                    face: lokyr_plugin_sdk::host::FontFace::Regular,
+                    style: "Hairline".to_owned(),
+                },
+                failed(
+                    Code::NotFound,
+                    "the font family `SF Mono` has no style `Hairline`",
+                ),
+            ),
+            (Request::PreviewFont(None), Response::Done),
             (
                 Request::PreviewFont(Some("Helvetica".to_owned())),
                 failed(

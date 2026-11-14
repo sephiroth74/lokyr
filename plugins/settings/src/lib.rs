@@ -22,7 +22,9 @@
 use std::collections::BTreeMap;
 
 use lokyr_plugin_sdk::command::{Category, Error, Value};
-use lokyr_plugin_sdk::host::{SettingBinding, SettingKey, SettingKind, Settings, SettingsSection};
+use lokyr_plugin_sdk::host::{
+    FontFace, SettingBinding, SettingKey, SettingKind, Settings, SettingsSection,
+};
 use lokyr_plugin_sdk::message::{Data, Event, SETTINGS_CHANGED};
 use lokyr_plugin_sdk::plugin::{Cx, Plugin};
 use lokyr_plugin_sdk::theme::{TOKENS, ThemeVariant};
@@ -162,6 +164,9 @@ pub struct SettingsPage {
     editing: Option<usize>,
     /// The new binding that Add's panel makes, while it shows.
     adding: Option<Adding>,
+    /// Whether a font's family or style shows in the panes as a menu's
+    /// item is highlighted, until the menu closes.
+    previewing: bool,
     typed: BTreeMap<String, Typed>,
     pause: Option<u64>,
 }
@@ -229,6 +234,14 @@ impl Plugin for SettingsPage {
                 Event::PanelClosed(PanelId(panel)) if panel == NEW_BINDING => {
                     self.adding = None;
                     self.refused.remove(NEW_REFUSED);
+                }
+                // A menu of values closed: the font that it showed goes,
+                // the one in force back, or the one chosen.
+                Event::PanelClosed(PanelId(panel))
+                    if panel.starts_with(CHOICES) && self.previewing =>
+                {
+                    self.previewing = false;
+                    cx.preview_font(None)?;
                 }
                 // The bindings' places change with the settings: a change of
                 // keys under way ends.
@@ -310,6 +323,18 @@ impl Plugin for SettingsPage {
                 && let Some(value) = values.get(at)
             {
                 return self.write(cx, section, setting, Some(value.clone()));
+            }
+            // A font's family or a face's style shown in the panes as its
+            // item is highlighted.
+            if event.kind == UiEventKind::HoverEnter
+                && let Some(Data::Text(value)) = values.get(at)
+                && let Some(preview) = font_preview(section, setting)
+            {
+                match preview {
+                    FontPreview::Family => cx.preview_font(Some(value))?,
+                    FontPreview::Style(face) => cx.preview_font_style(face, value)?,
+                }
+                self.previewing = true;
             }
             return Ok(());
         }
@@ -806,6 +831,30 @@ impl SettingsPage {
         );
         self.told(cx, &setting.name, written)
     }
+}
+
+/// What a menu of the terminal's font shows in the panes as its item is
+/// highlighted: the family, or a face's style.
+#[derive(Clone, Copy)]
+enum FontPreview {
+    Family,
+    Style(FontFace),
+}
+
+/// The preview of the app's key `setting` of `section`, of the terminal's
+/// font, as its menu's item is highlighted; `None` of a key of no preview.
+fn font_preview(section: &SettingsSection, setting: &SettingKey) -> Option<FontPreview> {
+    if section.name != "font" || section.plugin.is_some() {
+        return None;
+    }
+    Some(match setting.name.as_str() {
+        "family" => FontPreview::Family,
+        "style" => FontPreview::Style(FontFace::Regular),
+        "bold-style" => FontPreview::Style(FontFace::Bold),
+        "italic-style" => FontPreview::Style(FontFace::Italic),
+        "bold-italic-style" => FontPreview::Style(FontFace::BoldItalic),
+        _ => return None,
+    })
 }
 
 /// The search's words of `query`, in lower case.

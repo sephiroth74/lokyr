@@ -11,6 +11,9 @@ on = ["page:settings"]
 [capabilities]
 config = true
 open = true
+# A font's family or style shown in the panes as its menu's item is
+# highlighted.
+appearance-write = true
 
 [contributes]
 pages = [{ id = "settings", icon = "settings" }]
