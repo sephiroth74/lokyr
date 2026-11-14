@@ -23,6 +23,7 @@ plugin-remove = Remove
 plugin-removing = Removing…
 plugin-change-failed = It did not change: { $message }
 plugin-no-reason = Sleip stopped without telling why.
+plugin-not-taken = Lokyr did not load it, as its notice tells.
 
 # The registry's plugins.
 registry-title = Registry

@@ -190,8 +190,10 @@ impl Plugin for Manager {
         let mut again = false;
         for event in events {
             match event {
+                // Lokyr took the plugins anew: the changes done settle,
+                // whatever it took of them.
                 Event::PluginsChanged => {
-                    self.settle(cx)?;
+                    self.settle(cx, true)?;
                     again = true;
                 }
                 // The page shows at its installed plugins, as its sidebar
@@ -211,6 +213,9 @@ impl Plugin for Manager {
                 Event::Package { id, line } => again |= self.line(*id, line),
                 Event::PackagesEnded { id, ok } => {
                     if self.ended(*id, *ok) {
+                        // Those that Lokyr took already, as its plugins'
+                        // list may have changed before the job's end.
+                        self.settle(cx, false)?;
                         self.read_sources(cx)?;
                     }
                     again = true;
@@ -379,22 +384,34 @@ impl Manager {
     }
 
     /// The changes done that Lokyr took, as the plugins' list tells them:
-    /// a plugin there at the version that it awaits, or gone.
-    fn settle(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
+    /// a plugin there at the version that it awaits, or gone. Where Lokyr
+    /// took the plugins anew, `taken`, the others settle too, as failed:
+    /// a package that Lokyr does not load, of a manifest that does not
+    /// read or of another API, which its notice tells.
+    fn settle(&mut self, cx: &mut Cx<'_>, taken: bool) -> Result<(), Error> {
         if self.settling.is_empty() {
             return Ok(());
         }
         let plugins = cx.plugins()?;
+        let mut untaken = Vec::new();
         self.settling.retain(|name, (_, version)| {
             let now = plugins
                 .iter()
                 .find(|plugin| plugin.name == *name && !plugin.built_in);
-            match (now, version) {
-                (None, None) => false,
-                (Some(plugin), Some(version)) => plugin.version.as_deref() != Some(version),
-                _ => true,
+            let done = match (now, version) {
+                (None, None) => true,
+                (Some(plugin), Some(version)) => plugin.version.as_deref() == Some(version),
+                _ => false,
+            };
+            if !done && taken {
+                untaken.push(name.clone());
             }
+            !done && !taken
         });
+        for name in untaken {
+            let why = page::message(cx, "plugin-not-taken", &[]);
+            self.failed.insert(name, why);
+        }
         Ok(())
     }
 

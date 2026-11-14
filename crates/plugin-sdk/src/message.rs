@@ -1539,7 +1539,9 @@ pub enum Event {
     },
     /// The plugins changed, as a read of them would tell: one installed,
     /// removed, turned off or on, activated, faulted, or a capability's
-    /// decision, to a plugin of `packages` that subscribes to it.
+    /// decision; or the installed plugins were taken anew, as their
+    /// lockfile changed, whatever the read tells, as of a package that the
+    /// host refused; to a plugin of `packages` that subscribes to it.
     PluginsChanged,
     /// The settings changed, as the config applied anew, to a plugin of
     /// `config` that subscribes to it: its read of the settings tells the

@@ -761,6 +761,65 @@ fn a_removed_plugin_stays_busy_until_lokyr_takes_it_and_a_faulted_one_enables() 
 }
 
 #[test]
+fn a_package_that_lokyr_does_not_load_settles_as_failed_and_installs_again() {
+    let (mut host, mut manager) = read();
+    host.ui_event(&mut manager, &choose(1)).unwrap();
+    host.ui_event(&mut manager, &click("install:acme/sync"))
+        .unwrap();
+    let job = jobs_of(&host, |call| matches!(call, Packages::Add { .. }))[0].0;
+    let installed = line(
+        "installed",
+        &[("name", text("acme/sync")), ("version", text("0.1.0"))],
+    );
+    host.answer_packages(job, vec![installed], true);
+    host.deliver(&mut manager).unwrap();
+    let tree = rendered(&mut host, &mut manager);
+    assert!(texts(&tree).contains(&"plugin-installing".to_owned()));
+    // Lokyr takes the plugins anew, of no `acme/sync`, as of another API,
+    // its list as it was: settled, as failed, its install offered again.
+    host.take_installed_anew();
+    host.deliver(&mut manager).unwrap();
+    let tree = rendered(&mut host, &mut manager);
+    assert!(!texts(&tree).contains(&"plugin-installing".to_owned()));
+    assert_eq!(
+        manager.failed.get("acme/sync").map(String::as_str),
+        Some("plugin-not-taken")
+    );
+    host.ui_event(&mut manager, &click("install:acme/sync"))
+        .unwrap();
+    assert_eq!(
+        jobs_of(&host, |call| matches!(call, Packages::Add { .. })).len(),
+        1
+    );
+}
+
+#[test]
+fn a_change_that_lokyr_took_before_its_job_ended_settles_at_its_end() {
+    let (mut host, mut manager) = read();
+    host.ui_event(&mut manager, &choose(1)).unwrap();
+    host.ui_event(&mut manager, &click("install:acme/sync"))
+        .unwrap();
+    let job = jobs_of(&host, |call| matches!(call, Packages::Add { .. }))[0].0;
+    // The plugins' list changes first, then the job ends.
+    let mut taken = plugins();
+    taken.push(PluginInfo {
+        version: Some("0.1.0".to_owned()),
+        ..plugin("acme/sync", false)
+    });
+    host.set_plugins(taken);
+    host.deliver(&mut manager).unwrap();
+    let installed = line(
+        "installed",
+        &[("name", text("acme/sync")), ("version", text("0.1.0"))],
+    );
+    host.answer_packages(job, vec![installed], true);
+    host.deliver(&mut manager).unwrap();
+    let tree = rendered(&mut host, &mut manager);
+    assert!(!texts(&tree).contains(&"plugin-installing".to_owned()));
+    assert!(manager.failed.is_empty());
+}
+
+#[test]
 fn the_page_renders_while_it_shows_alone() {
     let (mut host, mut manager) = read();
     host.hide_page();

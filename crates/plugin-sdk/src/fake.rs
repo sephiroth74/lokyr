@@ -832,6 +832,17 @@ impl FakeHost {
         self
     }
 
+    /// Tells the plugin, once it activated, that the app took the installed
+    /// plugins anew, as their lockfile changed, whatever their list holds:
+    /// `plugins-changed`, as of a package that the app refused, which
+    /// changes nothing of the list.
+    pub fn take_installed_anew(&mut self) -> &mut Self {
+        if self.activated {
+            self.owed.push(Event::PluginsChanged);
+        }
+        self
+    }
+
     /// Gives the settings that a read of them gives: a plugin that
     /// subscribes to `settings-changed` hears that they changed, once it
     /// activated.

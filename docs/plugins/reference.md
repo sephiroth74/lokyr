@@ -83,7 +83,7 @@ A plugin subscribes to the events that it hears; those that a capability guards 
 | `page-shown`, `page-hidden` | One of the plugin's pages of the settings window shows, or hides as another shows or the window closes; Lokyr's own plugins alone have pages | — |
 | `timer` | One of the plugin's timers fires | — |
 | `package`, `packages-ended` | A job of the packages' service tells a line, or ends | `packages` |
-| `plugins-changed` | A plugin is installed, updated, removed, turned off or on, starts or faults, or a capability's decision changes | `packages` |
+| `plugins-changed` | A plugin is installed, updated, removed, turned off or on, starts or faults, or a capability's decision changes; or the installed plugins are taken anew, whatever their list holds, as of a package that Lokyr refused | `packages` |
 | `settings-changed` | The config applies anew, of other values, or a plugin of a config schema is installed, updated or removed | `config` |
 | `themes-changed` | The themes' list read, as Lokyr reads it off its main thread, or a theme added, removed or changed | — |
 | `<namespace>.<name>` | A plugin's own event, which it emits of its namespace alone | — |

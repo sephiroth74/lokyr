@@ -1040,8 +1040,12 @@ fn the_plugins_list_and_the_settings_are_told_as_a_plugin_comes_goes_updates_or_
         told(&mut plugins, &mut app),
         [Event::PluginsChanged, Event::SettingsChanged]
     );
-    // Nothing changed, nothing told.
+    // Nothing changed, nothing told; the installed plugins taken anew, as
+    // of a package refused, told whatever the list holds, once.
     assert!(told(&mut plugins, &mut app).is_empty());
+    plugins.tell_installed_taken();
+    plugins.tell_installed_taken();
+    assert_eq!(told(&mut plugins, &mut app), [Event::PluginsChanged]);
 }
 
 #[test]

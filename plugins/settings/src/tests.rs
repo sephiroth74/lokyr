@@ -1879,6 +1879,32 @@ fn a_search_chooses_its_first_section_where_the_chosen_one_holds_none() {
 }
 
 #[test]
+fn the_page_shown_again_shows_no_search_nor_refusal_as_its_fields_are_empty() {
+    let (mut host, mut plugin) = host();
+    let whole = sidebar_of(&rendered(&mut host, &mut plugin));
+    host.ui_event(&mut plugin, &search("nothing at all"))
+        .unwrap();
+    host.ui_event(&mut plugin, &submit("field:size", "2"))
+        .unwrap();
+    let tree = rendered(&mut host, &mut plugin);
+    assert_ne!(sidebar_of(&tree), whole);
+    // The window closed and opened again: its search field is empty, and
+    // so is the page's search, of no refusal nor text typed.
+    host.hide_page();
+    host.deliver(&mut plugin).unwrap();
+    host.show_page(PAGE);
+    host.deliver(&mut plugin).unwrap();
+    let tree = rendered(&mut host, &mut plugin);
+    assert_eq!(sidebar_of(&tree), whole);
+    assert!(find_node(&tree, "no-match").is_none());
+    assert!(find_node(&tree, "refused:size").is_none());
+    assert_eq!(
+        held(&tree, "field:size").map(|(text, _)| text),
+        Some(Some("15".to_owned()))
+    );
+}
+
+#[test]
 fn a_search_finds_the_bindings_of_their_keys_and_commands() {
     let (mut host, mut plugin) = host();
     rendered(&mut host, &mut plugin);

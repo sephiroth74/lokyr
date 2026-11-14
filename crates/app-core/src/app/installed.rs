@@ -344,6 +344,7 @@ impl<B: Backend> App<B> {
         self.permissions_changed(platform);
         self.watch_installed(platform, &installed);
         self.apply_installed(platform, &installed);
+        self.plugins.tell_installed_taken();
         self.configure_plugins(platform);
         for error in self.with_plugins(platform, Plugins::activate) {
             eprintln!("lokyr: {error}");

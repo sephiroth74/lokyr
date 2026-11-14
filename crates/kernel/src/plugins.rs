@@ -2259,6 +2259,14 @@ impl Plugins {
 
     /// Queues `event` to every plugin that subscribes to it, unless it is
     /// queued already.
+    /// Tells the plugins that subscribe that the installed plugins were
+    /// taken anew, as their lockfile and store changed, whatever their list
+    /// holds now: a package that the app refused changes nothing of it,
+    /// and a change that waits for it ends all the same.
+    pub fn tell_installed_taken(&mut self) {
+        self.tell_once(Event::PluginsChanged);
+    }
+
     fn tell_once(&mut self, event: Event) {
         if !self
             .out

@@ -291,9 +291,16 @@ impl Plugin for SettingsPage {
                     cx.request_render(themes_page())?;
                 }
                 Event::PageHidden(page) if page == THEMES => self.themes_shown = false,
+                // The page shows anew, as its fields do: at its first
+                // section, of no search, change of keys nor refusal.
                 Event::PageShown(_) => {
                     self.shown = true;
                     self.chosen = 0;
+                    self.query.clear();
+                    self.editing = None;
+                    self.confirming = None;
+                    self.typed.clear();
+                    self.refused.clear();
                     again = true;
                 }
                 Event::PageHidden(_) => {
@@ -343,7 +350,7 @@ impl Plugin for SettingsPage {
         }
         // Its view is there while its page shows alone.
         if again && self.shown {
-            cx.request_render(page())?;
+            self.render_page(cx)?;
         }
         // The themes' page marks the themes that `[theme]` names.
         if again && self.themes_shown {
@@ -414,7 +421,7 @@ impl Plugin for SettingsPage {
             self.write_typed(cx, None)?;
             self.chosen = item;
             self.refused.clear();
-            return cx.request_render(page());
+            return self.render_page(cx);
         }
         let settings = page_settings(cx)?;
         let section = match parts(&settings).get(self.chosen).copied() {
@@ -656,7 +663,7 @@ impl SettingsPage {
             self.chosen = first;
             self.refused.clear();
         }
-        cx.request_render(page())?;
+        self.render_page(cx)?;
         if let Some(at) = shown.iter().position(|&part| part == self.chosen) {
             cx.select(page(), SECTIONS, at)?;
         }
@@ -704,7 +711,7 @@ impl SettingsPage {
                         return Ok(());
                     }
                     self.editing = Some(at);
-                    cx.request_render(page())?;
+                    self.render_page(cx)?;
                     return cx.focus_node(page(), format!("{KEYS_FIELD}{at}").as_str());
                 }
                 if let Some((at, binding)) =
@@ -714,7 +721,7 @@ impl SettingsPage {
                     // would take from them too, stay, as told.
                     if let Some(why) = shared_refusal(cx, &settings, at, binding) {
                         self.refused.insert(format!("binding:{at}"), why);
-                        return cx.request_render(page());
+                        return self.render_page(cx);
                     }
                     // A default's keys take nothing; the config's own go.
                     let value = binding.default.then_some(Data::Boolean(false));
@@ -737,7 +744,7 @@ impl SettingsPage {
                 self.confirming = None;
                 self.refused.remove(&format!("binding:{at}"));
                 self.refused.remove(&format!("{TAKEN}{at}"));
-                cx.request_render(page())
+                self.render_page(cx)
             }
             _ => Ok(()),
         }
@@ -823,7 +830,7 @@ impl SettingsPage {
             self.confirming = None;
             self.refused.remove(&refusal);
             self.refused.remove(&warning);
-            return cx.request_render(page());
+            return self.render_page(cx);
         }
         // macOS's own keys, which no binding of the settings' takes.
         if let Ok(combos) = lokyr_plugin_sdk::keys::parse_keys(text)
@@ -831,17 +838,17 @@ impl SettingsPage {
         {
             self.refused
                 .insert(refusal, lokyr_plugin_sdk::keys::system_error(text));
-            return cx.request_render(page());
+            return self.render_page(cx);
         }
         if let Err(why) = lokyr_plugin_sdk::keys::parse_keys(text) {
             self.refused.insert(refusal, why);
-            return cx.request_render(page());
+            return self.render_page(cx);
         }
         // A default's old keys that others share, which `false` would take
         // from them too.
         if let Some(why) = shared_refusal(cx, &settings, at, binding) {
             self.refused.insert(refusal, why);
-            return cx.request_render(page());
+            return self.render_page(cx);
         }
         // Keys that another binding takes: told, a second press of them
         // taking its place, of the config's own entry's spelling where it
@@ -867,7 +874,7 @@ impl SettingsPage {
                 self.confirming = Some((at, keys));
                 self.refused.remove(&refusal);
                 self.refused.insert(warning, why);
-                return cx.request_render(page());
+                return self.render_page(cx);
             }
             if !taken.default {
                 target.clone_from(&taken.keys);
@@ -878,14 +885,14 @@ impl SettingsPage {
         let written = cx.set_setting(KEYS, None, &target, Some(binding_value(binding, command)));
         if let Err(error) = written {
             self.refused.insert(refusal, error.message);
-            return cx.request_render(page());
+            return self.render_page(cx);
         }
         let old = binding.default.then_some(Data::Boolean(false));
         let written = cx.set_setting(KEYS, None, &binding.keys, old);
         self.editing = None;
         self.refused.remove(&refusal);
         self.told(cx, KEYS, written)?;
-        cx.request_render(page())
+        self.render_page(cx)
     }
 
     /// Takes what a write of the key `name` did, `written`: why it was
@@ -904,13 +911,24 @@ impl SettingsPage {
             }
         };
         if changed {
-            cx.request_render(page())?;
+            self.render_page(cx)?;
         }
         Ok(())
     }
 }
 
 impl SettingsPage {
+    /// Renders the page anew while it shows; as it hides, as of a text
+    /// typed written then, no render is asked, which would fail the call
+    /// and drop its writes.
+    fn render_page(&self, cx: &mut Cx<'_>) -> Result<(), Error> {
+        if self.shown {
+            cx.request_render(page())
+        } else {
+            Ok(())
+        }
+    }
+
     /// Writes the texts typed into the fields and not written yet as typing
     /// pauses: each a value whole, as it writes it, that its key takes and
     /// that differs from its value in force; the others, an empty field or
@@ -950,7 +968,7 @@ impl SettingsPage {
             if written.is_ok() {
                 self.typed.remove(&name);
                 if self.refused.remove(&name).is_some() {
-                    cx.request_render(page())?;
+                    self.render_page(cx)?;
                 }
             }
         }
@@ -996,7 +1014,7 @@ impl SettingsPage {
             let now = setting.value.as_ref().map(plain).unwrap_or_default();
             if text == now || (text.is_empty() && setting.value == setting.default) {
                 if self.refused.remove(&name).is_some() {
-                    cx.request_render(page())?;
+                    self.render_page(cx)?;
                 }
                 continue;
             }
@@ -1011,7 +1029,7 @@ impl SettingsPage {
                 Err(why) => {
                     self.refused.insert(name.clone(), why);
                     self.typed.insert(name, typed);
-                    cx.request_render(page())?;
+                    self.render_page(cx)?;
                 }
             }
         }

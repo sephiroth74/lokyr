@@ -532,7 +532,8 @@ type Event =
     | { kind: "package", id: number, line: { event: string, [string]: any } }
     | { kind: "packages-ended", id: number, ok: boolean }
     -- The plugins changed, as `plugins` would tell them: one installed, removed, turned off or on, activated, faulted,
-    -- or a capability's decision; to a plugin of `packages` that subscribes to it.
+    -- or a capability's decision; or the installed plugins were taken anew, as their lockfile changed, whatever `plugins`
+    -- tells, as of a package that Lokyr refused; to a plugin of `packages` that subscribes to it.
     | { kind: "plugins-changed" }
     -- The settings changed, as the config applied anew, which `settings` would tell; to a plugin of `config` that
     -- subscribes to it.
