@@ -231,6 +231,7 @@ fn test_host(lua: &Lua, plugin: &Plugin<'_>) -> Result<Table, String> {
         .cloned()
         .collect();
     let mut host = FakeHost::new(plugin.name)
+        .third_party()
         .with_capabilities(capabilities)
         .with_uses(plugin.uses.to_vec())
         .with_slots(plugin.slots.to_vec());

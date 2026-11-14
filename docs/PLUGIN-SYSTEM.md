@@ -350,7 +350,7 @@ type Node = {
     -- For field nodes, `records`: the field records a shortcut. While it has the keyboard, the keys pressed are its
     -- own, the menus' key equivalents too, of no binding's command run nor text typed: the host shows them as macOS
     -- writes them, as ⇧⌘Y, and tells a "recorded" of them as a config writes keys; Delete takes them away, and Tab and
-    -- Escape do as elsewhere.
+    -- Escape do as elsewhere. Lokyr's own plugins alone: an installed plugin's field that records is a plain field.
     records: boolean?,
     link: boolean?, -- for button nodes: a link's look, its label underlined in the accent's color, of no box, the pointer a hand over it
     progress: {

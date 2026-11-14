@@ -3604,6 +3604,9 @@ impl<B: Backend> App<B> {
         let delivers = self.plugins.has_events();
         let rendered = std::mem::take(&mut self.rendered_slots);
         if ui_events.is_empty() && !delivers && !rendered && !served.any {
+            // The keys recorded while a field that records a shortcut has
+            // the keyboard, as a click or a key moved the focus.
+            self.settle_recording(platform);
             return;
         }
         for (plugin, event) in &ui_events {
@@ -4755,6 +4758,7 @@ impl<B: Backend> App<B> {
                     self.settle_secure_input(platform);
                     self.show_title(platform, window);
                 }
+                self.settle_recording(platform);
                 if focused {
                     self.show_floating(platform, Some(window));
                 }

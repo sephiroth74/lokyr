@@ -3635,6 +3635,46 @@ fn viewers(
     (plugins, log, answers, panics)
 }
 
+/// A plugin whose status bar is a field that records a shortcut.
+struct Recorder;
+
+impl Plugin for Recorder {
+    fn render(&mut self, _cx: &mut Cx<'_>, _view: &ViewId) -> Option<Node> {
+        Some(Node::container(vec![
+            Node::field("Shortcut").key("keys").records(),
+        ]))
+    }
+}
+
+#[test]
+fn a_field_that_records_a_shortcut_is_lokyr_s_own_plugins_alone() {
+    let mut app = App::default();
+    let window = window(&mut app, "sleep 30");
+    let view = ViewId::StatusBar(host::WindowId(window.get()));
+    let mut plugins = Plugins::new();
+    for (name, kind) in [("acme/recorder", "luau"), ("lokyr/keys", "builtin")] {
+        let manifest = Manifest::parse(&format!(
+            "[plugin]\nname = \"{name}\"\nversion = \"1.0.0\"\nkind = \"{kind}\"\napi = \"^0.1\"\nlicense = \"MIT\"\n[contributes]\nslots = [\"status-bar\"]\n"
+        ))
+        .unwrap();
+        plugins.add_declared(manifest, Box::new(Recorder)).unwrap();
+    }
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    let records = |plugins: &Plugins, name: &str| match &plugins.tree(name, &view).unwrap().children
+        [0]
+    .kind
+    {
+        lokyr_plugin_sdk::view::Kind::Field(field) => field.records,
+        kind => panic!("{kind:?}"),
+    };
+    for name in ["acme/recorder", "lokyr/keys"] {
+        plugins.render(name, &view, &mut app.context()).unwrap();
+    }
+    // Another's a plain field, which holds no key of the menus'.
+    assert!(!records(&plugins, "acme/recorder"));
+    assert!(records(&plugins, "lokyr/keys"));
+}
+
 #[test]
 fn a_plugin_renders_each_slot_that_it_fills_and_its_trees_stay_as_it_is_disabled() {
     let mut app = App::default();

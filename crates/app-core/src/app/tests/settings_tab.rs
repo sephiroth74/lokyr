@@ -1554,6 +1554,14 @@ fn add_records_a_shortcut_of_no_command_run_and_writes_the_binding_of_the_comman
     );
     assert_eq!(focused_key(&app, own), ("recorder".to_owned(), false));
     assert!(fake.recording_keys());
+    // A terminal's window in front records nothing, its input method and
+    // the menus' keys its own; the settings' window in front again records.
+    fake.send(&mut app, own, WindowEvent::Focused(false));
+    fake.send(&mut app, first, WindowEvent::Focused(true));
+    assert!(!fake.recording_keys());
+    fake.send(&mut app, first, WindowEvent::Focused(false));
+    fake.send(&mut app, own, WindowEvent::Focused(true));
+    assert!(fake.recording_keys());
     // ⌘N, New Window's, recorded and told as taken, no window opened.
     let windows = |app: &App| app.workspace.windows().count();
     let before = windows(&app);

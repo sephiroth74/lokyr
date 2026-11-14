@@ -1531,6 +1531,31 @@ fn a_titlebar_button_that_is_none_is_refused_as_the_app_s_host_refuses_it() {
     assert_eq!(host.render(&mut worded, &view), Some(good.button.clone()));
 }
 
+#[test]
+fn a_field_that_records_a_shortcut_is_lokyr_s_own_plugins_alone() {
+    let view = ViewId::StatusBar(WindowId(1));
+    let mut recorder = Titled {
+        button: Node::container(vec![Node::field("Shortcut").key("keys").records()]),
+    };
+    let records = |tree: Option<Node>| match &tree.unwrap().children[0].kind {
+        Kind::Field(field) => field.records,
+        kind => panic!("{kind:?}"),
+    };
+    // Lokyr's own, as of no manifest, keeps it.
+    let mut own = FakeHost::new("lokyr/keys");
+    own.activate(&mut recorder).unwrap();
+    assert!(records(own.render(&mut recorder, &view)));
+    // Another's a plain field, of its manifest or as Sleip's tests make it.
+    let manifest = "[plugin]\nname = \"acme/keys\"\nkind = \"luau\"\n";
+    for mut host in [
+        FakeHost::new("acme/keys").with_manifest(manifest),
+        FakeHost::new("acme/keys").third_party(),
+    ] {
+        host.activate(&mut recorder).unwrap();
+        assert!(!records(host.render(&mut recorder, &view)));
+    }
+}
+
 /// A plugin that hears the tabs' events, by their names, and runs the
 /// requests that `asks` makes as its command runs.
 struct TabListener {

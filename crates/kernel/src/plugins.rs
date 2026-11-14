@@ -2610,6 +2610,7 @@ impl Plugins {
                     "render",
                     |plugin, cx| rendered(plugin, cx, view),
                 )?;
+                let tree = kept_tree(state, tree);
                 state.views.insert(view.clone(), (new_id(), tree));
             }
             Runner::Worker(worker) => {
@@ -3277,9 +3278,8 @@ impl Plugins {
                 if let Called::Render(view) = &called
                     && shows(state, view, context.workspace)
                 {
-                    state
-                        .views
-                        .insert(view.clone(), (new_id(), tree.map(|tree| *tree)));
+                    let tree = kept_tree(state, tree.map(|tree| *tree));
+                    state.views.insert(view.clone(), (new_id(), tree));
                 }
                 Ok(())
             }
@@ -3806,6 +3806,29 @@ fn start(
     }
 }
 
+/// Whether the plugin of `state` is one of Lokyr's own, compiled into the
+/// app, of its manifest, or of none and no grants.
+fn is_lokyrs_own(state: &State) -> bool {
+    state
+        .manifest
+        .as_ref()
+        .map_or(state.granted.is_none(), |manifest| {
+            manifest.kind == PackageKind::Builtin
+        })
+}
+
+/// The tree of a render of the plugin of `state`, as the host keeps it: a
+/// field that records a shortcut, of a plugin that is not one of Lokyr's
+/// own, a plain one.
+fn kept_tree(state: &State, mut tree: Option<Node>) -> Option<Node> {
+    if let Some(tree) = tree.as_mut()
+        && !is_lokyrs_own(state)
+    {
+        tree.plain_recorders();
+    }
+    tree
+}
+
 /// The plugin of `state`, as a read of the plugins tells it: a first-party
 /// one holds every capability of its manifest; an installed one each that
 /// the user granted, those of the question that its activation asks
@@ -3823,9 +3846,7 @@ fn info(state: &State) -> host::PluginInfo {
         namespace: state.namespace.clone(),
         version: manifest.and_then(|manifest| manifest.version.clone()),
         description: manifest.and_then(|manifest| manifest.description.clone()),
-        built_in: manifest.map_or(state.granted.is_none(), |manifest| {
-            manifest.kind == PackageKind::Builtin
-        }),
+        built_in: is_lokyrs_own(state),
         state: match state.status {
             Status::Inactive => host::PluginState::Waiting,
             Status::Active => host::PluginState::Active,

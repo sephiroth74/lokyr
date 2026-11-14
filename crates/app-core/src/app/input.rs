@@ -196,11 +196,15 @@ impl<B: Backend> App<B> {
     }
 
     /// Tells the platform whether the keys are recorded: whether a field
-    /// that records a shortcut has a window's keyboard, as the focus is
-    /// now.
+    /// that records a shortcut has the keyboard of the window with the
+    /// focus, as the focus is now; another window's keeps its input method
+    /// and the menus' keys.
     pub(super) fn settle_recording(&mut self, platform: &mut dyn Platform) {
         use lokyr_ui_core::focus::Target;
         let recording = self.windows.values().any(|state| {
+            if !state.focused {
+                return false;
+            }
             let Target::Node { panel, node } = state.focus.target() else {
                 return false;
             };

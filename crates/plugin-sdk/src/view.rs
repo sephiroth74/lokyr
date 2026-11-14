@@ -450,7 +450,8 @@ pub struct Field {
     /// pressed, the menus' key equivalents too, are its own, of no
     /// binding's command run, the host showing them as the platform writes
     /// them, as `⇧⌘Y`, and telling its plugin a `recorded`; Delete takes
-    /// them away, and Tab and Escape do as elsewhere.
+    /// them away, and Tab and Escape do as elsewhere. Of Lokyr's own
+    /// plugins alone: another's is a plain field.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub records: bool,
 }
@@ -1120,6 +1121,22 @@ impl Node {
             }
         }
         true
+    }
+
+    /// Makes every field of the tree that records a shortcut a plain one,
+    /// as the host takes a tree of a plugin that is not one of Lokyr's own:
+    /// a field that holds every key, the menus' too, while it has the
+    /// keyboard, is theirs alone.
+    pub fn plain_recorders(&mut self) {
+        let mut left = vec![self];
+        while let Some(node) = left.pop() {
+            match &mut node.kind {
+                Kind::Field(field) => field.records = false,
+                Kind::List(list) => left.push(&mut list.row),
+                _ => {}
+            }
+            left.extend(node.children.iter_mut());
+        }
     }
 
     /// Whether the tree is a button of the titlebar's, as the host takes

@@ -412,6 +412,9 @@ pub struct FakeHost {
     /// The ids of the settings' window's pages that its manifest has; `None`
     /// for every one.
     pages: Option<Vec<String>>,
+    /// Whether its plugin is another's than Lokyr's, whose fields that
+    /// record a shortcut are plain ones.
+    third_party: bool,
     /// The commands of the app's and of the other plugins', which its own
     /// join.
     others: Vec<Command>,
@@ -547,6 +550,7 @@ impl FakeHost {
             uses: None,
             slots: None,
             pages: None,
+            third_party: false,
             others: Vec::new(),
             activated: false,
             panes: BTreeMap::new(),
@@ -666,11 +670,21 @@ impl FakeHost {
         if !builtin {
             capabilities.retain(|capability| !capability.is_first_party_only());
         }
-        let host = self.with_capabilities(capabilities).with_pages(pages);
+        let mut host = self.with_capabilities(capabilities).with_pages(pages);
+        host.third_party = !builtin;
         match uses {
             Some(patterns) => host.with_uses(patterns),
             None => host,
         }
+    }
+
+    /// The host, whose plugin is another's than Lokyr's, as an installed
+    /// one: a field of its views that records a shortcut is a plain one, as
+    /// the app's host takes it.
+    #[must_use]
+    pub fn third_party(mut self) -> Self {
+        self.third_party = true;
+        self
     }
 
     /// The host, whose plugin's manifest says that it runs the commands of
@@ -1424,7 +1438,9 @@ impl FakeHost {
     /// Has `plugin` render `view`, whose tree the host keeps: one that
     /// nests past [`Node::DEEPEST`] levels, or a titlebar's button that is
     /// none, it refuses, as the host does, and gives the last, as of a
-    /// render that fails, as the plugin tells after it, whose writes go.
+    /// render that fails, as the plugin tells after it, whose writes go; a
+    /// field that records a shortcut, of a [`FakeHost::third_party`]
+    /// plugin, it keeps a plain one.
     pub fn render(&mut self, plugin: &mut dyn Plugin, view: &ViewId) -> Option<Node> {
         self.try_render(plugin, view)
             .unwrap_or_else(|_| self.views.get(view).cloned().flatten())
@@ -1468,6 +1484,11 @@ impl FakeHost {
                 crate::view::dismantle(tree);
             }
             return Err(error);
+        }
+        if self.third_party
+            && let Some(tree) = tree.as_mut()
+        {
+            tree.plain_recorders();
         }
         self.views.insert(view.clone(), tree.clone());
         Ok(tree)
