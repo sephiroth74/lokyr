@@ -16,7 +16,7 @@ sleip update                  # takes the new versions
 sleip remove sephiroth74/snap
 ```
 
-Lokyr loads a plugin as it is installed, updated or removed, without restarting. Lokyr › Plugins… lists them all, the bundled ones too, with their capabilities, and disables one or removes it. The Homebrew cask puts `sleip` on your `PATH`; with the disk image, Lokyr › Install Command Line Tools does. Every command and its options are in [Sleip and the registry](../PACKAGE-MANAGER.md#commands).
+Lokyr loads a plugin as it is installed, updated or removed, without restarting. Lokyr › Plugins… lists them all, the bundled ones too, with their capabilities, disables, updates or removes one, and installs the registry's. The Homebrew cask puts `sleip` on your `PATH`; with the disk image, Lokyr › Install Command Line Tools does. Every command and its options are in [Sleip and the registry](../PACKAGE-MANAGER.md#commands).
 
 Some of the registry's plugins:
 

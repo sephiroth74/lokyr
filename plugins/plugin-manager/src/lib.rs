@@ -1,27 +1,35 @@
-//! Built-in plugin of the plugin manager: the settings tab's page of the
-//! plugins, Lokyr's own and those that Sleip installed, each of its name,
-//! its version, what it does, its state and, of an installed one, its
-//! capabilities and the decisions on them, its state active, in green, or
-//! disabled, in yellow, of the theme's colors; a button disables or enables a plugin, as its section of the
-//! config, and an installed one's removes it,
-//! through the packages' service, which tells it as it goes. Lokyr ›
-//! Plugins… and the palette's command open the settings tab at the page.
-//! The page follows the plugins as they change, of no wakeup at rest. Like
-//! every built-in plugin, it depends only on the plugin SDK.
+//! Built-in plugin of the plugin manager: the settings window's page of the
+//! plugins, of a sidebar of its two parts. Installed: Lokyr's own plugins
+//! and those that Sleip installed, each of its name, its version, what it
+//! does, its state, active, in green, or disabled, in yellow, of the
+//! theme's colors, and, of an installed one, its capabilities and the
+//! decisions on them; a button disables or enables a plugin, as its section
+//! of the config, an installed one's removes it, and one that the registry
+//! has newer updates it. Registry: the plugins of the registry, which a
+//! field filters as it is typed in, each to install, of its details, its
+//! versions and what each asks for. Each change runs through the packages'
+//! service, Sleip's, which tells it as it goes, a job under way of a
+//! button that cancels it. Lokyr › Plugins… and the palette's command open
+//! the settings window at the page, which follows the plugins as they
+//! change, of no wakeup at rest; Sleip reads the registry's signed list as
+//! the page first shows, and again as its button asks. Like every built-in
+//! plugin, it depends only on the plugin SDK.
 
 #![forbid(unsafe_code)]
+
+mod page;
+mod registry;
 
 use std::collections::BTreeMap;
 
 use lokyr_plugin_sdk::command::{Args, Category, Command, Error};
-use lokyr_plugin_sdk::host::{Decision, Packages, PluginInfo, PluginState};
+use lokyr_plugin_sdk::host::{Packages, PluginState};
 use lokyr_plugin_sdk::message::{Data, Event, PLUGINS_CHANGED};
 use lokyr_plugin_sdk::plugin::{Cx, Plugin};
 use lokyr_plugin_sdk::ui::{UiEvent, ViewId};
-use lokyr_plugin_sdk::view::{
-    Align, Border, Direction, Edges, FontWeight, Layout, Length, Node, ProgressShape,
-    ProgressState, Role, Style, TextSize, Token, UiEventKind,
-};
+use lokyr_plugin_sdk::view::{Node, UiEventKind};
+
+use registry::{Found, Info};
 
 lokyr_plugin_sdk::export_plugin!(Manager);
 
@@ -30,14 +38,20 @@ static CATALOGS: [(&str, &str); 2] = [
     ("it", include_str!("../locales/it/plugin-manager.ftl")),
 ];
 
-/// Its page of the settings tab.
+/// Its page of the settings window.
 const PAGE: &str = "plugins";
 
-/// The command that opens the settings tab at the page.
+/// The command that opens the settings window at the page.
 const OPEN: &str = "plugin-manager.open";
 
 /// Its own name, which turns itself off nowhere, as its page would go.
 const OWN: &str = "lokyr/plugin-manager";
+
+/// The key of the sidebar's list of the page's parts.
+const SECTIONS: &str = "sections";
+
+/// The key of the registry's field, which filters its plugins.
+const QUERY: &str = "query";
 
 /// The prefix of the key of a plugin's button that turns it off or on.
 const TOGGLE: &str = "toggle:";
@@ -45,15 +59,81 @@ const TOGGLE: &str = "toggle:";
 /// The prefix of the key of an installed plugin's button that removes it.
 const REMOVE: &str = "remove:";
 
-/// The plugin: the jobs of the removals under way, each of its plugin, and
-/// the last failure of each plugin's removal, which shows until it is
-/// removed again.
+/// The prefix of the key of a plugin's button that installs it.
+const INSTALL: &str = "install:";
+
+/// The prefix of the key of a plugin's button that updates it.
+const UPDATE: &str = "update:";
+
+/// The prefix of the key of a plugin's button that shows its details.
+const DETAILS: &str = "details:";
+
+/// The prefix of the key of a job's button that cancels it.
+const CANCEL: &str = "cancel:";
+
+/// The key of the details' button back to the registry's plugins.
+const BACK: &str = "back";
+
+/// The key of the registry's button that reads it again.
+const REFRESH: &str = "refresh";
+
+/// The page's parts, the sidebar's items in their order.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum Section {
+    /// The installed plugins and Lokyr's own.
+    #[default]
+    Installed,
+    /// The registry's plugins.
+    Registry,
+}
+
+impl Section {
+    /// The parts in the sidebar's order.
+    const ALL: [Self; 2] = [Self::Installed, Self::Registry];
+}
+
+/// What a job of the packages' service does.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum Work {
+    /// Reads every plugin of the registry.
+    List,
+    /// Reads a plugin's versions.
+    Info(String),
+    /// Installs a plugin.
+    Install(String),
+    /// Updates a plugin to the newest version that this Lokyr takes.
+    Update(String),
+    /// Removes a plugin.
+    Remove(String),
+}
+
+impl Work {
+    /// The plugin that it changes, if it changes one.
+    fn changes(&self) -> Option<&str> {
+        match self {
+            Self::Install(name) | Self::Update(name) | Self::Remove(name) => Some(name),
+            Self::List | Self::Info(_) => None,
+        }
+    }
+}
+
+/// The plugin: the part of the page shown; the jobs under way, each of its
+/// work, and the error that each told; the last failure of each plugin's
+/// change, which shows until it changes again; the registry's plugins,
+/// once read, those of the reading under way, its failure and its notes;
+/// the words that filter them; and the plugin whose details show.
 #[derive(Default)]
 pub struct Manager {
-    removing: BTreeMap<u64, String>,
-    failed: BTreeMap<String, String>,
-    /// The last error that each job's Sleip told.
+    section: Section,
+    jobs: BTreeMap<u64, Work>,
     errors: BTreeMap<u64, String>,
+    failed: BTreeMap<String, String>,
+    found: Option<Vec<Found>>,
+    finding: Vec<Found>,
+    registry_error: Option<String>,
+    notes: Vec<String>,
+    query: String,
+    detail: Option<(String, Option<Info>)>,
 }
 
 /// The page's view.
@@ -86,12 +166,18 @@ impl Plugin for Manager {
         let mut again = false;
         for event in events {
             match event {
-                Event::PluginsChanged | Event::PageShown(_) => again = true,
-                Event::Package { id, line } => {
-                    if let Some(message) = error_of(line) {
-                        self.errors.insert(*id, message);
+                Event::PluginsChanged => again = true,
+                // The page shows at its installed plugins, as its sidebar
+                // does, the registry read as it first shows.
+                Event::PageShown(_) => {
+                    self.section = Section::Installed;
+                    self.detail = None;
+                    if self.found.is_none() {
+                        self.read_registry(cx)?;
                     }
+                    again = true;
                 }
+                Event::Package { id, line } => again |= self.line(*id, line),
                 Event::PackagesEnded { id, ok } => {
                     self.ended(*id, *ok);
                     again = true;
@@ -106,27 +192,30 @@ impl Plugin for Manager {
     }
 
     fn on_ui_event(&mut self, cx: &mut Cx<'_>, event: &UiEvent) -> Result<(), Error> {
-        if event.kind != UiEventKind::Click {
-            return Ok(());
-        }
         let key = event.key.0.as_str();
-        if let Some(name) = key.strip_prefix(TOGGLE) {
-            let on = cx
-                .plugins()?
-                .iter()
-                .find(|plugin| plugin.name == name)
-                .is_some_and(|plugin| plugin.state != PluginState::Off);
-            cx.set_plugin_enabled(name, !on)?;
-        } else if let Some(name) = key.strip_prefix(REMOVE)
-            && !self.removing.values().any(|removed| removed == name)
-        {
-            let job = cx.packages(Packages::Remove {
-                plugin: name.to_owned(),
-            })?;
-            self.failed.remove(name);
-            self.removing.insert(job, name.to_owned());
-        } else {
-            return Ok(());
+        match (&event.kind, key) {
+            (UiEventKind::Select { item } | UiEventKind::Activate { item }, SECTIONS) => {
+                let Some(&section) = Section::ALL.get(*item) else {
+                    return Ok(());
+                };
+                if section == self.section {
+                    return Ok(());
+                }
+                self.section = section;
+                self.detail = None;
+            }
+            (UiEventKind::InputChanged { text, .. }, QUERY) => {
+                if *text == self.query {
+                    return Ok(());
+                }
+                text.clone_into(&mut self.query);
+            }
+            (UiEventKind::Click, _) => {
+                if !self.clicked(cx, key)? {
+                    return Ok(());
+                }
+            }
+            _ => return Ok(()),
         }
         cx.request_render(page())
     }
@@ -136,334 +225,157 @@ impl Plugin for Manager {
             return None;
         }
         let plugins = cx.plugins().ok()?;
-        let text = |cx: &mut Cx<'_>, id: &str| cx.message(id, &[]).unwrap_or_default();
-        let (installed, built_in): (Vec<&PluginInfo>, Vec<&PluginInfo>) =
-            plugins.iter().partition(|plugin| !plugin.built_in);
-        let mut children = vec![
-            Node::text(text(cx, "plugins-title"))
-                .key("title")
-                .role(Role::Heading)
-                .style(Style {
-                    text_size: Some(TextSize::Large),
-                    font_weight: Some(FontWeight::Bold),
-                    ..Style::default()
-                }),
-            Node::text(text(cx, "plugins-intro"))
-                .key("intro")
-                .style(secondary()),
-        ];
-        children.push(heading(text(cx, "plugins-installed"), "installed"));
-        if installed.is_empty() {
-            children.push(
-                Node::text(text(cx, "plugins-none-installed"))
-                    .key("none-installed")
-                    .style(secondary()),
-            );
-        } else {
-            let rows = installed
-                .iter()
-                .map(|plugin| self.row(cx, plugin))
-                .collect();
-            children.push(group(rows, "installed-plugins"));
-        }
-        children.push(heading(text(cx, "plugins-built-in"), "built-in"));
-        let rows = built_in.iter().map(|plugin| self.row(cx, plugin)).collect();
-        children.push(group(rows, "built-in-plugins"));
-        Some(
-            Node::scroll(vec![Node::container(children).key("plugins-page").layout(
-                Layout {
-                    direction: Direction::Column,
-                    gap: 10.0,
-                    padding: Edges::all(20.0),
-                    width: Length::Fraction(1.0),
-                    ..Layout::default()
-                },
-            )])
-            .key("plugins-scroll")
-            .layout(Layout {
-                // Down a column, of the page's height, past which its
-                // content scrolls.
-                direction: Direction::Column,
-                width: Length::Fraction(1.0),
-                height: Length::Fraction(1.0),
-                ..Layout::default()
-            }),
-        )
+        Some(page::tree(self, cx, &plugins))
     }
 }
 
 impl Manager {
-    /// The job `id` ended, `ok` or not: its plugin's removal is no longer
-    /// under way, and one that failed tells why.
+    /// A click on the button of `key`: whether it did something.
+    fn clicked(&mut self, cx: &mut Cx<'_>, key: &str) -> Result<bool, Error> {
+        if let Some(name) = key.strip_prefix(TOGGLE) {
+            let on = cx
+                .plugins()?
+                .iter()
+                .find(|plugin| plugin.name == name)
+                .is_some_and(|plugin| plugin.state != PluginState::Off);
+            cx.set_plugin_enabled(name, !on)?;
+        } else if let Some(name) = key.strip_prefix(REMOVE) {
+            self.change(cx, Work::Remove(name.to_owned()))?;
+        } else if let Some(name) = key.strip_prefix(INSTALL) {
+            self.change(cx, Work::Install(name.to_owned()))?;
+        } else if let Some(name) = key.strip_prefix(UPDATE) {
+            self.change(cx, Work::Update(name.to_owned()))?;
+        } else if let Some(name) = key.strip_prefix(DETAILS) {
+            let job = cx.packages(Packages::Info {
+                plugin: name.to_owned(),
+            })?;
+            self.failed.remove(name);
+            self.jobs.insert(job, Work::Info(name.to_owned()));
+            self.detail = Some((name.to_owned(), None));
+        } else if let Some(job) = key.strip_prefix(CANCEL) {
+            let Ok(job) = job.parse::<u64>() else {
+                return Ok(false);
+            };
+            if !self.jobs.contains_key(&job) {
+                return Ok(false);
+            }
+            cx.cancel_packages(job)?;
+        } else if key == BACK {
+            self.detail = None;
+        } else if key == REFRESH {
+            self.read_registry(cx)?;
+        } else {
+            return Ok(false);
+        }
+        Ok(true)
+    }
+
+    /// Starts the job of `work`, a change of a plugin's, unless one of the
+    /// plugin's runs already.
+    fn change(&mut self, cx: &mut Cx<'_>, work: Work) -> Result<(), Error> {
+        let Some(name) = work.changes().map(str::to_owned) else {
+            return Ok(());
+        };
+        if self.changing(&name).is_some() {
+            return Ok(());
+        }
+        let call = match &work {
+            Work::Remove(_) => Packages::Remove {
+                plugin: name.clone(),
+            },
+            // The newest version that this Lokyr takes, as `sleip add` of
+            // no constraint installs it.
+            _ => Packages::Add {
+                plugin: name.clone(),
+                constraint: None,
+            },
+        };
+        let job = cx.packages(call)?;
+        self.failed.remove(&name);
+        self.jobs.insert(job, work);
+        Ok(())
+    }
+
+    /// Reads every plugin of the registry, unless a reading runs already.
+    fn read_registry(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
+        if self.reading() {
+            return Ok(());
+        }
+        let job = cx.packages(Packages::Search {
+            query: String::new(),
+        })?;
+        self.finding.clear();
+        self.notes.clear();
+        self.registry_error = None;
+        self.jobs.insert(job, Work::List);
+        Ok(())
+    }
+
+    /// The job and the work of the change of the plugin `name` under way,
+    /// if one is.
+    fn changing(&self, name: &str) -> Option<(u64, &Work)> {
+        self.jobs
+            .iter()
+            .find(|(_, work)| work.changes() == Some(name))
+            .map(|(&job, work)| (job, work))
+    }
+
+    /// Whether the registry is being read.
+    fn reading(&self) -> bool {
+        self.jobs.values().any(|work| *work == Work::List)
+    }
+
+    /// The job `id`'s line `line`: whether the page shows something new
+    /// of it.
+    fn line(&mut self, id: u64, line: &Data) -> bool {
+        if let Some(message) = registry::message_of(line, "error") {
+            self.errors.insert(id, message);
+            return false;
+        }
+        match self.jobs.get(&id) {
+            Some(Work::List) => {
+                if let Some(found) = registry::found(line) {
+                    self.finding.push(found);
+                } else if let Some(note) = registry::message_of(line, "note") {
+                    self.notes.push(note);
+                }
+                false
+            }
+            Some(Work::Info(name)) => {
+                let Some(info) = registry::info(line) else {
+                    return false;
+                };
+                match &mut self.detail {
+                    Some((shown, read)) if shown == name => {
+                        *read = Some(info);
+                        true
+                    }
+                    _ => false,
+                }
+            }
+            _ => false,
+        }
+    }
+
+    /// The job `id` ended, `ok` or not: the registry's plugins read, or its
+    /// failure; a change that failed tells why, a cancelled one nothing.
     fn ended(&mut self, id: u64, ok: bool) {
         let error = self.errors.remove(&id);
-        if let Some(name) = self.removing.remove(&id)
-            && !ok
-        {
-            self.failed.insert(name, error.unwrap_or_default());
-        }
-    }
-
-    /// The row of `plugin`: its name and version, what it does, its state,
-    /// an installed one's capabilities, and its buttons, or its removal
-    /// under way, or the failure of the last.
-    fn row(&self, cx: &mut Cx<'_>, plugin: &PluginInfo) -> Node {
-        let name = &plugin.name;
-        let mut title = vec![Node::text(name.clone()).style(Style {
-            font_weight: Some(FontWeight::Semibold),
-            ..Style::default()
-        })];
-        if let Some(version) = &plugin.version {
-            title.push(Node::text(version.clone()).style(secondary()));
-        }
-        let mut about = vec![row_of(title, 6.0)];
-        // What it does, of as many lines as the row's room needs.
-        if let Some(description) = &plugin.description {
-            about.push(
-                Node::text(description.clone())
-                    .key(format!("description:{name}").as_str())
-                    .style(small())
-                    .layout(wrapped()),
-            );
-        }
-        // Active, whether it runs or waits for what starts it, or disabled,
-        // turned off or stopped; a fault tells why on a line of its own.
-        let active = matches!(plugin.state, PluginState::Active | PluginState::Waiting);
-        let state = message(
-            cx,
-            if active {
-                "plugin-state-active"
-            } else {
-                "plugin-state-disabled"
-            },
-            &[],
-        );
-        about.push(
-            Node::text(state)
-                .key(format!("state:{name}").as_str())
-                .style(Style {
-                    color: Some(Token::from(if active {
-                        "text.success"
-                    } else {
-                        "text.warning"
-                    })),
-                    text_size: Some(TextSize::Small),
-                    ..Style::default()
-                }),
-        );
-        if let (PluginState::Faulted, Some(fault)) = (plugin.state, &plugin.fault) {
-            let fault = message(cx, "plugin-fault", &[("fault", fault.clone())]);
-            about.push(
-                Node::text(fault)
-                    .style(Style {
-                        color: Some(Token::from("progress.error")),
-                        text_size: Some(TextSize::Small),
-                        ..Style::default()
-                    })
-                    .layout(wrapped()),
-            );
-        }
-        // An installed plugin's capabilities, as the user decided them; a
-        // built-in one holds them all.
-        if !plugin.built_in && !plugin.capabilities.is_empty() {
-            let decided: Vec<String> = plugin
-                .capabilities
-                .iter()
-                .map(|decided| {
-                    let id = match decided.decision {
-                        Decision::Granted => "plugin-decision-granted",
-                        Decision::Refused => "plugin-decision-refused",
-                        Decision::Undecided => "plugin-decision-undecided",
-                    };
-                    message(cx, id, &[("capability", decided.capability.clone())])
-                })
-                .collect();
-            let capabilities = message(
-                cx,
-                "plugin-capabilities",
-                &[("capabilities", decided.join("; "))],
-            );
-            about.push(Node::text(capabilities).style(small()).layout(wrapped()));
-        }
-        if let Some(failure) = self.failed.get(name) {
-            let failure = message(cx, "plugin-remove-failed", &[("message", failure.clone())]);
-            about.push(
-                Node::text(failure)
-                    .style(Style {
-                        color: Some(Token::from("progress.error")),
-                        text_size: Some(TextSize::Small),
-                        ..Style::default()
-                    })
-                    .layout(wrapped()),
-            );
-        }
-        // The room that the buttons leave, however narrow, its texts going
-        // onto more lines.
-        let about = Node::container(about).layout(Layout {
-            direction: Direction::Column,
-            gap: 3.0,
-            grow: 1.0,
-            min_width: Length::Points(0.0),
-            ..Layout::default()
-        });
-        let mut actions = Vec::new();
-        if self.removing.values().any(|removed| removed == name) {
-            actions.push(
-                Node::progress(ProgressShape::Ring, ProgressState::Indeterminate, 0.0).layout(
-                    Layout {
-                        width: Length::Points(14.0),
-                        height: Length::Points(14.0),
-                        ..Layout::default()
-                    },
-                ),
-            );
-            actions.push(Node::text(message(cx, "plugin-removing", &[])).style(small()));
-        } else {
-            if name != OWN {
-                let id = if plugin.state == PluginState::Off {
-                    "plugin-enable"
-                } else {
-                    "plugin-disable"
-                };
-                actions.push(
-                    Node::button(message(cx, id, &[])).key(format!("{TOGGLE}{name}").as_str()),
-                );
+        let Some(work) = self.jobs.remove(&id) else {
+            return;
+        };
+        match work {
+            Work::List if ok => self.found = Some(std::mem::take(&mut self.finding)),
+            Work::List => {
+                self.finding.clear();
+                self.registry_error = Some(error.unwrap_or_default());
             }
-            if !plugin.built_in {
-                actions.push(
-                    Node::button(message(cx, "plugin-remove", &[]))
-                        .key(format!("{REMOVE}{name}").as_str()),
-                );
+            Work::Info(name) | Work::Install(name) | Work::Update(name) | Work::Remove(name) => {
+                if let (false, Some(error)) = (ok, error) {
+                    self.failed.insert(name, error);
+                }
             }
         }
-        // The buttons at the row's right, of their own width, across the
-        // group's whole width.
-        Node::container(vec![
-            about,
-            row_of(actions, 8.0).key(format!("actions:{name}").as_str()),
-        ])
-        .key(format!("plugin:{name}").as_str())
-        .role(Role::Group)
-        .label(name.clone())
-        .layout(Layout {
-            direction: Direction::Row,
-            gap: 12.0,
-            align: Align::Center,
-            width: Length::Fraction(1.0),
-            padding: Edges {
-                top: 10.0,
-                right: 12.0,
-                bottom: 10.0,
-                left: 12.0,
-            },
-            ..Layout::default()
-        })
-    }
-}
-
-/// The message `id` of the plugin's catalogs, of the texts `args`.
-fn message(cx: &mut Cx<'_>, id: &str, args: &[(&str, String)]) -> String {
-    let args: Vec<(&str, Data)> = args
-        .iter()
-        .map(|(name, value)| (*name, Data::Text(value.clone())))
-        .collect();
-    cx.message(id, &args).unwrap_or_else(|_| id.to_owned())
-}
-
-/// The message of an `error` line of Sleip's, if `line` is one.
-fn error_of(line: &Data) -> Option<String> {
-    let Data::Map(line) = line else {
-        return None;
-    };
-    match (line.get("event"), line.get("message")) {
-        (Some(Data::Text(event)), Some(Data::Text(message))) if event == "error" => {
-            Some(message.clone())
-        }
-        _ => None,
-    }
-}
-
-/// A row of `children`, `gap` points apart, in the middle of its height.
-fn row_of(children: Vec<Node>, gap: f32) -> Node {
-    Node::container(children).layout(Layout {
-        direction: Direction::Row,
-        gap,
-        align: Align::Center,
-        ..Layout::default()
-    })
-}
-
-/// A section's heading, `text`, of the key `key`.
-fn heading(text: String, key: &str) -> Node {
-    Node::text(text)
-        .key(key)
-        .role(Role::Heading)
-        .style(Style {
-            font_weight: Some(FontWeight::Semibold),
-            color: Some(Token::from("text.secondary")),
-            text_size: Some(TextSize::Small),
-            ..Style::default()
-        })
-        .layout(Layout {
-            padding: Edges {
-                top: 8.0,
-                right: 0.0,
-                bottom: 0.0,
-                left: 4.0,
-            },
-            ..Layout::default()
-        })
-}
-
-/// A group of `rows`, of the key `key`, in a rounded box, a line between
-/// each two, as macOS's settings group their rows.
-fn group(rows: Vec<Node>, key: &str) -> Node {
-    let mut children = Vec::new();
-    for (at, row) in rows.into_iter().enumerate() {
-        if at > 0 {
-            children.push(Node::separator());
-        }
-        children.push(row);
-    }
-    Node::container(children)
-        .key(key)
-        .role(Role::Group)
-        .layout(Layout {
-            direction: Direction::Column,
-            ..Layout::default()
-        })
-        .style(Style {
-            background: Some(Token::from("panel.bg")),
-            border: Some(Border {
-                color: Token::from("panel.border"),
-                width: 1.0,
-            }),
-            radius: 8.0,
-            ..Style::default()
-        })
-}
-
-/// The layout of a text of as many lines as its width needs.
-fn wrapped() -> Layout {
-    Layout {
-        lines: Some(0),
-        ..Layout::default()
-    }
-}
-
-/// The style of a secondary text.
-fn secondary() -> Style {
-    Style {
-        color: Some(Token::from("text.secondary")),
-        ..Style::default()
-    }
-}
-
-/// The style of a small secondary text.
-fn small() -> Style {
-    Style {
-        text_size: Some(TextSize::Small),
-        ..secondary()
     }
 }
 

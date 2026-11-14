@@ -430,6 +430,7 @@ fn lokyr_s_plugins_item_opens_the_settings_tab_at_the_plugin_manager_s_page_of_e
         app.plugins.status("lokyr/plugin-manager"),
         Some(lokyr_kernel::plugins::Status::Inactive)
     );
+    app.packages.sleip = None;
     let window = open(&mut fake, &mut app, "plugin-manager.open");
     let (settings, _) = app.workspace.settings_tab().expect("the settings");
     assert_eq!(shown(&app, window), settings);
@@ -487,6 +488,30 @@ fn lokyr_s_plugins_item_opens_the_settings_tab_at_the_plugin_manager_s_page_of_e
         description.x + description.width <= actions.x,
         "{description:?}"
     );
+    // The sidebar's list has the keyboard: the arrow down shows the
+    // registry's part, which tells why it is not read, of no Sleip here.
+    assert_eq!(focused_key(&app, window), ("sections".to_owned(), true));
+    tap(
+        &mut fake,
+        &mut app,
+        window,
+        KeyCode::ArrowDown,
+        Modifiers::NONE,
+    );
+    frames(&mut fake, &mut app, window);
+    let view = page_view(&app, window).unwrap();
+    let tree = &view.surface.tree;
+    assert!(tree.by_key(&"query".into()).is_some());
+    assert!(tree.by_key(&"registry-failed".into()).is_some());
+    // Back to the installed part, which the wheel scrolls.
+    tap(
+        &mut fake,
+        &mut app,
+        window,
+        KeyCode::ArrowUp,
+        Modifiers::NONE,
+    );
+    frames(&mut fake, &mut app, window);
     // The wheel scrolls the page down, past the window's height.
     let width = fake.window(window).unwrap().size.points.width;
     fake.send(

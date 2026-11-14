@@ -97,7 +97,7 @@ pub enum ViewId {
     TitleButtons(WindowId),
     /// One of its panels.
     Panel(PanelId),
-    /// One of its pages of the settings tab, by its manifest's id, of
+    /// One of its pages of the settings' window, by its manifest's id, of
     /// Lokyr's own plugins alone.
     Page(String),
 }

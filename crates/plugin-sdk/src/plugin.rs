@@ -387,9 +387,9 @@ impl<'a> Cx<'a> {
         })
     }
 
-    /// Shows the settings tab at the plugin's own page of the id `page`, of
-    /// its manifest's, in the window in front, or where the tab shows: its
-    /// view, [`ViewId::Page`](crate::ui::ViewId::Page), renders, and the
+    /// Shows the settings' window at the plugin's own page of the id
+    /// `page`, of its manifest's, opening the window or bringing it
+    /// forward: its view, [`ViewId::Page`](crate::ui::ViewId::Page), renders, and the
     /// plugin hears it shown. Of Lokyr's own plugins alone, as their
     /// manifests have pages.
     pub fn show_page(&mut self, page: &str) -> Result<(), Error> {

@@ -194,8 +194,8 @@ pub struct TabInfo {
     /// Its window.
     pub window: WindowId,
     /// What it holds: panes, as a terminal's tab, or the settings' pages,
-    /// as the settings tab, of no pane, whose `panes` are none and whose
-    /// `focused` is no pane's.
+    /// as the settings' tab, alone in a window of its own, of no pane, whose
+    /// `panes` are none and whose `focused` is no pane's.
     #[serde(default)]
     pub kind: TabKind,
     /// Its title: its own, as a plugin gave it, or its active pane's
@@ -1091,9 +1091,9 @@ pub enum Packages {
     /// The installed plugins, `sleip list`.
     List,
     /// The registry's plugins whose names, descriptions or keywords hold
-    /// `query`, `sleip search`.
+    /// `query`, `sleip search`; every one of an empty `query`.
     Search {
-        /// What to look for.
+        /// What to look for; empty for every plugin.
         query: String,
     },
     /// A plugin of the registry and its versions, `sleip info`.
@@ -1162,6 +1162,8 @@ impl Packages {
         };
         match self {
             Self::List | Self::Update { plugin: None } => Ok(()),
+            // Of no word, every plugin of the registry.
+            Self::Search { query } if query.is_empty() => Ok(()),
             Self::Search { query } => text("search", query),
             Self::Info { plugin }
             | Self::Remove { plugin }
@@ -1184,6 +1186,7 @@ impl Packages {
         let mut args = vec![self.command().to_owned(), "--json".to_owned()];
         match self {
             Self::List | Self::Update { plugin: None } => {}
+            Self::Search { query } if query.is_empty() => {}
             Self::Search { query } => args.push(query.clone()),
             Self::Info { plugin }
             | Self::Remove { plugin }
@@ -1363,6 +1366,25 @@ pub trait Host {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_empty_search_is_every_plugin_of_the_registry_and_sleip_s_words_none() {
+        let every = Packages::Search {
+            query: String::new(),
+        };
+        assert_eq!(every.check(), Ok(()));
+        assert_eq!(every.args(), ["search", "--json"]);
+        let words = Packages::Search {
+            query: "notes".to_owned(),
+        };
+        assert_eq!(words.args(), ["search", "--json", "notes"]);
+        for wrong in ["-x", "a\u{7}"] {
+            let call = Packages::Search {
+                query: wrong.to_owned(),
+            };
+            assert!(call.check().is_err(), "{wrong:?}");
+        }
+    }
 
     #[test]
     fn bytes_are_bounded_a_png_is_of_its_signature_and_a_file_s_name_is_plain() {

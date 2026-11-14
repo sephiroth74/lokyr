@@ -46,7 +46,7 @@ pub struct Call {
 /// The error of a request of a tab's panes, title or color, of the settings
 /// tab, which has none of them.
 pub const SETTINGS_TAB: &str =
-    "the settings tab has no pane, and its title and color are the host's";
+    "the settings' tab has no pane, and its title and color are the host's";
 
 /// The error of a request that puts a tab into the settings' window of
 /// their own, as a new tab or one moved there, which takes none.
@@ -211,9 +211,9 @@ pub enum Request {
     /// alone; Lokyr reloads the plugins that it installs, updates or
     /// removes. Of the capability `packages`, Lokyr's own plugins' alone.
     Packages(crate::host::Packages),
-    /// Shows the settings tab at the plugin's own page of an id, of its
-    /// manifest's, in the window in front, or where the tab shows: its
-    /// view renders, and the plugin hears it shown. Of Lokyr's own plugins
+    /// Shows the settings' window at the plugin's own page of an id, of its
+    /// manifest's, opening the window or bringing it forward: its view
+    /// renders, and the plugin hears it shown. Of Lokyr's own plugins
     /// alone, as their manifests have pages.
     ShowPage(String),
     /// Ends a job of the packages' service that runs, as the user stops
@@ -1345,11 +1345,11 @@ pub enum Event {
     /// app or the plugin closed it, or a menu shown as the platform's own
     /// closed with a choice or without one, to it alone.
     PanelClosed(PanelId),
-    /// A page of the plugin's of the settings tab shows, as the tab shows
-    /// it, to it alone.
+    /// A page of the plugin's of the settings' window shows, as the window
+    /// shows it, to it alone.
     PageShown(String),
-    /// A page of the plugin's of the settings tab no longer shows, as
-    /// another page, another tab or none shows, to it alone.
+    /// A page of the plugin's of the settings' window no longer shows, as
+    /// another page shows or the window closes, to it alone.
     PageHidden(String),
     /// The keymap's bindings changed, as the config's `[keys]` or a
     /// plugin's: the keys of [`Request::KeysOf`] may be others.

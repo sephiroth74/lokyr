@@ -409,7 +409,7 @@ pub struct FakeHost {
     uses: Option<Uses>,
     /// The slots that its manifest fills; `None` for every one.
     slots: Option<Vec<Slot>>,
-    /// The ids of the settings tab's pages that its manifest has; `None`
+    /// The ids of the settings' window's pages that its manifest has; `None`
     /// for every one.
     pages: Option<Vec<String>>,
     /// The commands of the app's and of the other plugins', which its own
@@ -448,7 +448,7 @@ pub struct FakeHost {
     /// The plugins that a read of the plugins gives, as the test gave them,
     /// whose states the plugin's turning them off and on changes.
     plugins: Vec<host::PluginInfo>,
-    /// The page of the plugin's that the settings tab shows, as the
+    /// The page of the plugin's that the settings' window shows, as the
     /// plugin's or the test's showing of it opened the tab.
     page: Option<String>,
     /// Where the plugin's moves of tabs to windows of their own put those
@@ -674,7 +674,7 @@ impl FakeHost {
         self
     }
 
-    /// The host, whose plugin's manifest has the settings tab's pages of
+    /// The host, whose plugin's manifest has the settings' window's pages of
     /// the ids `pages` alone, which its page views are of.
     pub fn with_pages(mut self, pages: Vec<String>) -> Self {
         self.pages = Some(pages);
@@ -806,7 +806,7 @@ impl FakeHost {
         &self.plugins
     }
 
-    /// Opens the settings tab at the plugin's page `page`, or another of
+    /// Opens the settings' window at the plugin's page `page`, or another of
     /// its pages there, as the user does, whose view renders from now: the
     /// plugin hears the page shown, and the one shown before hidden.
     pub fn show_page(&mut self, page: &str) -> &mut Self {
@@ -814,7 +814,16 @@ impl FakeHost {
         self
     }
 
-    /// The plugin's page that the settings tab shows, if it is open at one
+    /// Hides the plugin's page that shows, as the settings' window closes
+    /// or shows another plugin's page: the plugin hears it hidden.
+    pub fn hide_page(&mut self) -> &mut Self {
+        if let Some(before) = self.page.take() {
+            self.owed.push(Event::PageHidden(before));
+        }
+        self
+    }
+
+    /// The plugin's page that the settings' window shows, if it is open at one
     /// of the plugin's.
     pub fn page(&self) -> Option<&str> {
         self.page.as_deref()
@@ -1443,7 +1452,7 @@ impl FakeHost {
                 }
             }
         }
-        // The settings tab shows at the page, as the app shows it once the
+        // The settings' window shows at the page, as the app shows it once the
         // call returns.
         for request in &asked {
             if let Request::ShowPage(page) = request {
@@ -2361,7 +2370,7 @@ impl FakeHost {
             }
             ViewId::PaneHeader(pane) => self.pane_window(*pane).ok(),
             ViewId::Panel(id) => self.panel_windows.get(id).copied(),
-            // A page of its manifest's, while the settings tab is open, in
+            // A page of its manifest's, while the settings' window is open, in
             // the first window.
             ViewId::Page(page) => self
                 .page
@@ -4023,7 +4032,7 @@ fn write_node(out: &mut String, node: &Node, depth: usize) {
 
 /// The capabilities that the manifest `text` declares in its
 /// `[capabilities]`, the commands of its `[uses]`, if it has them, and its
-/// settings tab's pages, as [`FakeHost::with_manifest`] reads them.
+/// settings' window's pages, as [`FakeHost::with_manifest`] reads them.
 fn declared(text: &str) -> Declared {
     let (mut capabilities, mut uses, mut builtin) = (Vec::new(), None, false);
     let mut pages = Vec::new();
@@ -4107,7 +4116,7 @@ struct Declared {
     uses: Option<Vec<String>>,
     /// Whether it is one of Lokyr's own.
     builtin: bool,
-    /// The ids of its settings tab's pages.
+    /// The ids of its settings' window's pages.
     pages: Vec<String>,
 }
 
