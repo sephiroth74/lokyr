@@ -720,6 +720,8 @@ fn the_themes_list_and_colors_come_off_the_main_thread_a_part_at_a_time() {
     app.held_themes = Some(held);
     // A preview's need starts the read; its list, then every one's colors,
     // come as the main thread takes them, none of them here before.
+    let window = fake.windows().next().unwrap();
+    let asked = fake.window(window).unwrap().frames_asked;
     app.keep_previews(vec!["Held 00".to_owned(), "Held 29".to_owned()]);
     assert!(!app.previews.contains_key("Held 00"));
     let deadline = std::time::Instant::now() + Duration::from_secs(10);
@@ -736,8 +738,22 @@ fn the_themes_list_and_colors_come_off_the_main_thread_a_part_at_a_time() {
     assert_eq!(listed.len(), 30);
     assert!((0..30).all(|at| app.previews.contains_key(&format!("Held {at:02}"))));
     assert_eq!(
-        app.previews["Held 00"].background,
+        app.previews["Held 00"].unwrap().background,
         lokyr_render_core::Color::from_rgb8(0x20, 0x20, 0x20)
     );
+    // The read ends; its colors drew no window, as none shows a preview.
+    while !app.theme_catalog.borrow().finished() && std::time::Instant::now() < deadline {
+        app.take_themes(&mut fake);
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert!(app.theme_catalog.borrow().finished());
+    assert_eq!(fake.window(window).unwrap().frames_asked, asked);
+    // A name that the read colored not is of no theme, and starts no read
+    // again, however often its preview shows, until the list changes.
+    app.keep_previews(vec!["Nothing".to_owned()]);
+    assert_eq!(app.previews.get("Nothing"), Some(&None));
+    assert!(app.theme_catalog.borrow().finished(), "no read again");
+    app.keep_previews(vec!["Nothing".to_owned()]);
+    assert!(app.theme_catalog.borrow().finished());
     let _ = std::fs::remove_dir_all(directory);
 }

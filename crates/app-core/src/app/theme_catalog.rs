@@ -31,6 +31,8 @@ pub(crate) enum Part {
     Listed(Vec<ThemeInfo>),
     /// The terminal colors of some of them, by their names.
     Colors(Vec<(String, TerminalColors)>),
+    /// The read's end, every listed theme that resolves colored.
+    Ended,
 }
 
 /// The themes as the last read listed them, and the read under way.
@@ -71,8 +73,14 @@ impl ThemeCatalog {
         }
     }
 
+    /// Whether a read listed the themes and colored them, and none runs:
+    /// a name that it did not color is no theme's, until the list changes.
+    pub(crate) fn finished(&self) -> bool {
+        self.listed.is_some() && self.reading.is_none()
+    }
+
     /// The parts that the read under way sent since the last look; the
-    /// read ends as its thread does.
+    /// read ends with its last, or as its thread does.
     pub(crate) fn take(&mut self) -> Vec<Part> {
         let Some(reading) = &self.reading else {
             return Vec::new();
@@ -80,6 +88,11 @@ impl ThemeCatalog {
         let mut parts = Vec::new();
         loop {
             match reading.try_recv() {
+                Ok(Part::Ended) => {
+                    parts.push(Part::Ended);
+                    self.reading = None;
+                    break;
+                }
                 Ok(part) => parts.push(part),
                 Err(TryRecvError::Empty) => break,
                 Err(TryRecvError::Disconnected) => {
@@ -125,6 +138,9 @@ fn read((folder, held): (Option<&Path>, Option<&Path>), parts: &mpsc::Sender<Par
         if parts.send(Part::Colors(colors)).is_err() {
             return;
         }
+        waker.wake();
+    }
+    if parts.send(Part::Ended).is_ok() {
         waker.wake();
     }
 }

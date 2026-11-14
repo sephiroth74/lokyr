@@ -888,6 +888,25 @@ pub(super) fn previewed(node: &Node, names: &mut Vec<String>) {
     }
 }
 
+/// The names of the themes that the previews of `views`, as a window
+/// shows them, draw.
+pub(super) fn previews_shown(views: &[SlotView]) -> Vec<String> {
+    let mut names = Vec::new();
+    for view in views {
+        let tree = &view.surface.tree;
+        let mut left: Vec<_> = tree.root().into_iter().collect();
+        while let Some(node) = left.pop() {
+            if let Some(lokyr_kernel::plugins::view::Kind::ThemePreview(name)) = tree.kind(node)
+                && !names.contains(name)
+            {
+                names.push(name.clone());
+            }
+            left.extend(tree.children(node).iter().copied());
+        }
+    }
+    names
+}
+
 /// The progresses of `view` that something drawn over them covers, whose
 /// fills and moving parts its frame draws, under what covers them, rather
 /// than the window server over the frame, of `tokens`, at `now`: those

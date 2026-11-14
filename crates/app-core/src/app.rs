@@ -803,10 +803,9 @@ pub struct App<B: Backend> {
     /// its views' nodes show, by the images' ids.
     pictures: BTreeMap<String, Pictures>,
     /// The colors of the themes that the views' previews show, by their
-    /// names, resolved as a preview first shows, and the names that
+    /// names, resolved as a preview first shows, `None` of the names that
     /// resolve to no theme.
     previews: lokyr_ui_core::paint::Previews,
-    preview_misses: BTreeSet<String>,
     /// The id of the last image that the app kept.
     last_image: u64,
     /// What the app keeps from idle sleep, as the platform last took it,
@@ -1040,7 +1039,6 @@ impl<B: Backend> App<B> {
             written: std::sync::Arc::default(),
             pictures: BTreeMap::new(),
             previews: lokyr_ui_core::paint::Previews::new(),
-            preview_misses: BTreeSet::new(),
             last_image: 0,
             awake: (host::Awake::Off, String::new()),
             packages: packages::Jobs::beside_the_app(),
@@ -1609,81 +1607,104 @@ impl<B: Backend> App<B> {
     /// Keeps the colors of the themes of `names` that the views' previews
     /// show, of the themes' folder beside the config file, held or built
     /// in, as `[theme]`'s themes resolve, once each: a name of no theme
-    /// keeps none, and its preview draws nothing.
+    /// keeps none, and its preview draws nothing, until the themes' list
+    /// changes.
     pub(super) fn keep_previews(&mut self, names: Vec<String>) {
-        let names: Vec<String> = names
+        let (built_in, read): (Vec<String>, Vec<String>) = names
             .into_iter()
-            .filter(|name| !self.previews.contains_key(name) && !self.preview_misses.contains(name))
-            .collect();
-        if names.is_empty() {
-            return;
-        }
+            .filter(|name| !self.previews.contains_key(name))
+            .partition(|name| [themes::LIGHT, themes::DARK].contains(&name.as_str()));
         let directory = self
             .config_file
             .as_ref()
             .and_then(|file| themes::directory(&file.path));
         // The folder's and the held ones of the read off the main thread,
         // which their previews show as placeholders until it gives their
-        // colors; the built-in ones here, of no file.
-        self.theme_catalog.borrow_mut().refresh(
-            (directory.clone(), self.held_themes.clone()),
-            self.waker.as_ref(),
-            Instant::now(),
-        );
-        let names: Vec<String> = names
-            .into_iter()
-            .filter(|name| [themes::LIGHT, themes::DARK].contains(&name.as_str()))
-            .collect();
+        // colors; of no theme where a read that ended colored them not.
+        if !read.is_empty() {
+            let mut catalog = self.theme_catalog.borrow_mut();
+            if catalog.finished() {
+                for name in read {
+                    self.previews.insert(name, None);
+                }
+            } else {
+                catalog.refresh(
+                    (directory.clone(), self.held_themes.clone()),
+                    self.waker.as_ref(),
+                    Instant::now(),
+                );
+            }
+        }
+        // The built-in ones here, of no file.
         let builtins = [ui_theme::light_spec(), ui_theme::dark_spec()];
-        for name in names {
-            match themes::resolve(
+        for name in built_in {
+            let colors = themes::resolve(
                 &name,
                 directory.as_deref(),
                 self.held_themes.as_deref(),
                 &builtins,
-            ) {
-                Ok(theme) => {
-                    let colors = lokyr_ui_core::paint::PreviewColors::of(&theme.theme.terminal);
-                    self.previews.insert(name, colors);
-                }
-                Err(_) => {
-                    self.preview_misses.insert(name);
-                }
-            }
+            )
+            .ok()
+            .map(|theme| lokyr_ui_core::paint::PreviewColors::of(&theme.theme.terminal));
+            self.previews.insert(name, colors);
         }
     }
 
     /// Takes the parts of the themes' read off the main thread: a list that
-    /// changed, which the plugins that subscribe hear, and the colors that
-    /// the previews draw, which the windows draw anew.
+    /// changed, which the plugins that subscribe hear, and which the names
+    /// of no theme wait for anew; the colors that the previews draw; and
+    /// the read's end, the names that it colored not being of no theme.
+    /// The windows whose previews show colors that changed draw anew.
     pub(super) fn take_themes(&mut self, platform: &mut dyn Platform) {
         let parts = self.theme_catalog.borrow_mut().take();
-        let mut colored = false;
+        let mut changed: BTreeSet<String> = BTreeSet::new();
         for part in parts {
             match part {
                 theme_catalog::Part::Listed(list) => {
                     let mut catalog = self.theme_catalog.borrow_mut();
-                    let changed = catalog.listed.as_ref() != Some(&list);
+                    let new = catalog.listed.as_ref() != Some(&list);
                     catalog.listed = Some(list);
                     drop(catalog);
-                    if changed {
+                    if new {
                         self.plugins.post(plugins::Event::ThemesChanged);
+                        self.previews.retain(|_, colors| colors.is_some());
                     }
                 }
                 theme_catalog::Part::Colors(colors) => {
                     for (name, terminal) in colors {
-                        let colors = lokyr_ui_core::paint::PreviewColors::of(&terminal);
-                        self.previews.insert(name, colors);
+                        let colors = Some(lokyr_ui_core::paint::PreviewColors::of(&terminal));
+                        if self.previews.get(&name) != Some(&colors) {
+                            self.previews.insert(name.clone(), colors);
+                            changed.insert(name);
+                        }
                     }
-                    colored = true;
+                }
+                theme_catalog::Part::Ended => {
+                    let shown: BTreeSet<String> = self
+                        .windows
+                        .values()
+                        .flat_map(|state| chrome::previews_shown(&state.chrome))
+                        .collect();
+                    for name in shown {
+                        if !self.previews.contains_key(&name) {
+                            self.previews.insert(name.clone(), None);
+                            changed.insert(name);
+                        }
+                    }
                 }
             }
         }
-        if colored {
-            for state in self.windows.values_mut() {
+        if changed.is_empty() {
+            return;
+        }
+        for (&window, state) in &mut self.windows {
+            if chrome::previews_shown(&state.chrome)
+                .iter()
+                .any(|name| changed.contains(name))
+            {
                 state.views_changed = true;
+                platform.request_frame(window);
             }
-            self.request_frames(platform);
         }
     }
 

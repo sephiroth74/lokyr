@@ -80,8 +80,10 @@ pub struct PreviewColors {
     pub palette: [Color; 16],
 }
 
-/// The colors of themes, by their names, which their previews draw.
-pub type Previews = BTreeMap<String, PreviewColors>;
+/// The colors of themes, by their names, which their previews draw: `None`
+/// of a name of no theme, whose preview draws nothing; a name not there
+/// yet, a placeholder.
+pub type Previews = BTreeMap<String, Option<PreviewColors>>;
 
 /// The colors of a view that shows no theme's preview.
 pub static NO_PREVIEWS: Previews = BTreeMap::new();
@@ -1103,7 +1105,7 @@ impl<'a, B: FontBackend> Painter<'a, B> {
     /// at a small size, and the sixteen colors in two rows at its foot; a
     /// placeholder of the fields' background while the previews lack its
     /// colors, as they come off the main thread; nothing out of the clip,
-    /// as of a card scrolled away.
+    /// as of a card scrolled away, nor of a name of no theme.
     fn theme_preview(&mut self, name: &str, frame: Frame) {
         let shown = self.clip.is_none_or(|clip| {
             let (x, y) = (clip.x as f32, clip.y as f32);
@@ -1116,13 +1118,17 @@ impl<'a, B: FontBackend> Painter<'a, B> {
             return;
         }
         let scale = self.layout.scale();
-        let Some(colors) = self.previews.get(name).copied() else {
-            let fill = self.tokens.get("field.bg").unwrap_or(Color::CLEAR);
-            self.push_shape(Shape {
-                radius: 6.0 * scale,
-                ..Shape::filled(rect(frame), fill)
-            });
-            return;
+        let colors = match self.previews.get(name) {
+            Some(Some(colors)) => *colors,
+            Some(None) => return,
+            None => {
+                let fill = self.tokens.get("field.bg").unwrap_or(Color::CLEAR);
+                self.push_shape(Shape {
+                    radius: 6.0 * scale,
+                    ..Shape::filled(rect(frame), fill)
+                });
+                return;
+            }
         };
         self.push_shape(Shape {
             radius: 6.0 * scale,
@@ -1839,7 +1845,7 @@ mod tests {
             })
         };
         // Night's in a scroll area's room, Night's again below it, as a
-        // card scrolled away, and one unknown.
+        // card scrolled away, one not colored yet and one of no theme.
         let clipped = Node::scroll(vec![sized("Night"), sized("Night")])
             .key("scroll")
             .layout(Box {
@@ -1847,7 +1853,7 @@ mod tests {
                 direction: view::Direction::Column,
                 ..Box::default()
             });
-        let root = Node::container(vec![clipped, sized("Unknown")]);
+        let root = Node::container(vec![clipped, sized("Unknown"), sized("Nothing")]);
         let mut font = Font::new(Blocks, FontConfig::default(), 2.0).unwrap();
         let mut tree = Tree::new();
         let changes = tree.update(&root).unwrap();
@@ -1856,14 +1862,17 @@ mod tests {
         layout.compute(&tree, Some(800.0), None, &mut font);
         let background = Color::from_rgb8(10, 20, 30);
         let palette: [Color; 16] = std::array::from_fn(|at| Color::from_rgb8(100 + at as u8, 0, 0));
-        let previews = Previews::from([(
-            "Night".to_owned(),
-            PreviewColors {
-                background,
-                foreground: Color::from_rgb8(200, 200, 200),
-                palette,
-            },
-        )]);
+        let previews = Previews::from([
+            (
+                "Night".to_owned(),
+                Some(PreviewColors {
+                    background,
+                    foreground: Color::from_rgb8(200, 200, 200),
+                    palette,
+                }),
+            ),
+            ("Nothing".to_owned(), None),
+        ]);
         let items = paint(
             &tree,
             &layout,
@@ -1884,8 +1893,9 @@ mod tests {
             .flatten()
             .collect();
         // One background, of rounded corners, and the sixteen colors: the
-        // preview below the clip draws nothing, and the one of no colors
-        // yet a placeholder of the fields' background.
+        // preview below the clip draws nothing, the one of no colors yet a
+        // placeholder of the fields' background, and the one of no theme
+        // nothing.
         assert_eq!(fills.iter().filter(|&&fill| fill == background).count(), 1);
         let placeholder = token("field.bg");
         assert_eq!(fills.iter().filter(|&&fill| fill == placeholder).count(), 1);
