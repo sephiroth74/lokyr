@@ -11,6 +11,7 @@ use std::time::{Duration, Instant};
 
 use lokyr_kernel::commands::ErrorCategory;
 use lokyr_kernel::diagnostics::{About, Diagnostic, Notice};
+use lokyr_kernel::l10n::Arg;
 use lokyr_kernel::plugins::host::NoticeLevel;
 use lokyr_kernel::plugins::ui::{
     Anchor as PanelAnchor, Corner as PanelCorner, PanelId, PanelOptions, Role as PanelRole,
@@ -253,11 +254,26 @@ impl<B: Backend> App<B> {
     }
 
     /// The title of `notice`'s card: of the catalogs, of what went wrong,
-    /// or the plugin's.
+    /// or a plugin's namespace, beside the title of its own where it gives
+    /// one, so that a card always names its plugin.
     fn notice_title(&self, notice: &Notice) -> String {
         match notice {
             Notice::Diagnostic(diagnostic) => self.texts.text(title_of(diagnostic)),
-            Notice::Plugin { notice, .. } => notice.title.clone(),
+            Notice::Plugin { plugin, notice } => {
+                let namespace = plugin
+                    .split_once('/')
+                    .map_or(plugin.as_str(), |(_, name)| name);
+                if notice.title == namespace {
+                    return notice.title.clone();
+                }
+                self.texts.text_with(
+                    "notice-plugin-titled",
+                    &[
+                        ("title", Arg::Text(&notice.title)),
+                        ("plugin", Arg::Text(namespace)),
+                    ],
+                )
+            }
         }
     }
 

@@ -127,10 +127,11 @@ impl Notice {
 }
 
 /// The sink of the diagnostics, which keeps those that the notices show,
-/// and the plugins' notices.
+/// and the plugins' notices, which show under Lokyr's own.
 #[derive(Clone, Debug, Default)]
 pub struct Diagnostics {
-    /// What the notices show, the latest last.
+    /// What the notices show, the latest last: the plugins' notices first,
+    /// then the diagnostics.
     notices: Vec<Notice>,
 }
 
@@ -151,14 +152,23 @@ impl Diagnostics {
     }
 
     /// Shows `notice` of `plugin`, in place of the plugin's last one, on
-    /// top of the others.
+    /// top of the other plugins' and under Lokyr's own, which no plugin
+    /// hides.
     pub fn tell(&mut self, plugin: &str, notice: lokyr_plugin_sdk::host::Notice) {
         self.notices
             .retain(|shown| !matches!(shown, Notice::Plugin { plugin: own, .. } if own == plugin));
-        self.notices.push(Notice::Plugin {
-            plugin: plugin.to_owned(),
-            notice,
-        });
+        let under = self
+            .notices
+            .iter()
+            .position(|shown| shown.diagnostic().is_some())
+            .unwrap_or(self.notices.len());
+        self.notices.insert(
+            under,
+            Notice::Plugin {
+                plugin: plugin.to_owned(),
+                notice,
+            },
+        );
     }
 
     /// Takes away the notice about `about`, as a fix does. Whether there
@@ -242,7 +252,7 @@ mod tests {
     }
 
     #[test]
-    fn a_plugin_s_notice_takes_the_place_of_its_last_on_top_of_the_others() {
+    fn a_plugin_s_notice_takes_the_place_of_its_last_under_lokyr_s_own() {
         use lokyr_plugin_sdk::host::{Notice as Told, NoticeLevel};
         let told = |text: &str| Told {
             level: NoticeLevel::Success,
@@ -258,14 +268,21 @@ mod tests {
         sink.tell("acme/snap", told("copied"));
         sink.tell("acme/other", told("other"));
         sink.tell("acme/snap", told("saved"));
+        // Under the config's, which no plugin's hides.
         let texts: Vec<&str> = sink.notices.iter().map(Notice::text).collect();
-        assert_eq!(texts, ["line 1", "other", "saved"]);
-        // A fix takes the config's away, whatever shows on top of it.
+        assert_eq!(texts, ["other", "saved", "line 1"]);
+        assert_eq!(sink.shown().map(Notice::text), Some("line 1"));
+        // A later diagnostic over them too.
+        assert!(sink.report(Diagnostic::new(Code::Failed, "failed", About::Other)));
+        sink.tell("acme/other", told("again"));
+        let texts: Vec<&str> = sink.notices.iter().map(Notice::text).collect();
+        assert_eq!(texts, ["saved", "again", "line 1", "failed"]);
+        // A fix takes the config's away; each goes as it is closed, the one
+        // under it showing.
         assert!(sink.resolve(&About::Config));
         assert!(!sink.tells(&About::Config));
-        // Each goes as it is closed, the one under it showing.
         assert!(sink.dismiss());
-        assert_eq!(sink.shown().map(Notice::text), Some("other"));
+        assert_eq!(sink.shown().map(Notice::text), Some("again"));
         assert!(sink.shown().unwrap().diagnostic().is_none());
     }
 }

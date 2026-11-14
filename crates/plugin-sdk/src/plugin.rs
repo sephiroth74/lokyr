@@ -322,9 +322,10 @@ impl<'a> Cx<'a> {
     }
 
     /// Shows `text` in the host's notice card as this call returns, of the
-    /// icon and the color of `level` and of `title`, or of the plugin's
-    /// namespace: it goes by itself after a while, and takes the place of
-    /// the plugin's last notice; one a second at most.
+    /// icon and the color of `level` and of `title` beside the plugin's
+    /// namespace, or of the namespace alone: it goes by itself after a
+    /// while, takes the place of the plugin's last notice and shows under
+    /// the host's own; one a second at most.
     pub fn notify(
         &mut self,
         text: &str,

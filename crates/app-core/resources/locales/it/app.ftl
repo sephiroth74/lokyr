@@ -178,6 +178,7 @@ notice-installed-plugins = I plugin installati non si caricano
 notice-failed = Un comando non è riuscito
 notice-fault = Un plugin si è fermato
 notice-copy = Copia i dettagli
+notice-plugin-titled = { $title } — { $plugin }
 notice-close = Chiudi
 
 # What an accessibility client, as VoiceOver, calls a pane.

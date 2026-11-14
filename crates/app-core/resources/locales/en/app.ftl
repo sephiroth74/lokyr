@@ -214,6 +214,8 @@ notice-installed-plugins = The installed plugins do not load
 notice-failed = A command failed
 notice-fault = A plugin stopped
 notice-copy = Copy the details
+# The title of a plugin's notice of a title of its own, beside the plugin's name.
+notice-plugin-titled = { $title } — { $plugin }
 notice-close = Close
 
 # What an accessibility client, as VoiceOver, calls a pane.

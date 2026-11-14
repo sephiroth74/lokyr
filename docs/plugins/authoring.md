@@ -261,7 +261,7 @@ A new version is a new `version` in the manifest, a new tag, and `sleip publish`
 | The Mac | `keep_awake` |
 | Themes and the font | `themes`, `preview_theme`, `set_theme`, `fonts`, `preview_font`, `set_font`, `font_size`, `set_font_size` |
 
-**Notices.** `cx.notify(text, level?, title?)` tells something in Lokyr's notice card, at the panes' top right, as Lokyr tells a config that does not read: of the icon and the color of its level, `"info"` by default, `"success"`, `"warning"` or `"error"`, and of its title, or the plugin's namespace. It goes by itself after 4 seconds, 8 of a warning or an error, unless the pointer rests on it; a plugin's new notice takes the place of its last, one a second at most. `host.notices()` reads them in a test.
+**Notices.** `cx.notify(text, level?, title?)` tells something in Lokyr's notice card, at the panes' top right, as Lokyr tells a config that does not read: of the icon and the color of its level, `"info"` by default, `"success"`, `"warning"` or `"error"`, and of its title beside the plugin's namespace, or of the namespace alone, so that the card always names the plugin. It goes by itself after 4 seconds, 8 of a warning or an error, unless the pointer rests on it; a plugin's new notice takes the place of its last, one a second at most, and shows under Lokyr's own notices, as a config that does not read, until they are closed. `host.notices()` reads them in a test.
 
 ```luau
 cx.notify(cx.message("snap-copied") or "Snap copied to clipboard", "success")

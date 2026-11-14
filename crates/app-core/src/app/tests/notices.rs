@@ -626,7 +626,7 @@ fn run_and_draw(fake: &mut Fake, app: &mut App, window: WindowId, name: &str) {
 }
 
 #[test]
-fn a_plugin_s_notice_shows_in_the_card_of_its_level_over_the_host_s_and_goes_by_itself() {
+fn a_plugin_s_notice_shows_in_the_card_of_its_level_under_the_host_s_and_goes_by_itself() {
     let (mut fake, mut app, window) = drawn_telling();
     app.report(
         &mut fake,
@@ -635,12 +635,18 @@ fn a_plugin_s_notice_shows_in_the_card_of_its_level_over_the_host_s_and_goes_by_
     for _ in 0..3 {
         fake.send(&mut app, window, WindowEvent::Frame);
     }
-    assert_eq!(
-        card_texts(&app, window)[0],
-        "The config file does not apply"
-    );
-    // A success, of the plugin's namespace, over the config's notice.
+    let config = "The config file does not apply";
+    assert_eq!(card_texts(&app, window)[0], config);
+    // A success, of the plugin's namespace, under the config's notice,
+    // which no plugin hides.
     run_and_draw(&mut fake, &mut app, window, "teller.success");
+    assert_eq!(card_texts(&app, window)[0], config);
+    assert_eq!(app.notice.timer, None, "the config's stays");
+    // The config's closed, the success shows, and goes after 4 seconds.
+    app.diagnostics.dismiss();
+    for _ in 0..3 {
+        fake.send(&mut app, window, WindowEvent::Frame);
+    }
     assert_eq!(
         card_texts(&app, window),
         ["teller", "Snap copied to clipboard"]
@@ -649,7 +655,6 @@ fn a_plugin_s_notice_shows_in_the_card_of_its_level_over_the_host_s_and_goes_by_
         card_icon(&app, window),
         Some(("check".to_owned(), "text.success".to_owned()))
     );
-    // It goes after 4 seconds, the config's back under it.
     let (_, at) = app.notice.timer.expect("its going timed");
     let shows = at.saturating_duration_since(Instant::now());
     assert!(
@@ -660,18 +665,19 @@ fn a_plugin_s_notice_shows_in_the_card_of_its_level_over_the_host_s_and_goes_by_
     for _ in 0..3 {
         fake.send(&mut app, window, WindowEvent::Frame);
     }
-    assert_eq!(
-        card_texts(&app, window)[0],
-        "The config file does not apply"
-    );
-    assert_eq!(app.notice.timer, None, "the config's stays");
+    assert!(card(&app, window, "card").is_none());
 }
 
 #[test]
 fn a_plugin_s_error_shows_of_its_own_title_for_longer() {
     let (mut fake, mut app, window) = drawn_telling();
     run_and_draw(&mut fake, &mut app, window, "teller.error");
-    assert_eq!(card_texts(&app, window), ["Snap", "The snap was not saved"]);
+    // Its title beside its plugin's namespace, which the card always
+    // names, its copy too.
+    assert_eq!(
+        card_texts(&app, window),
+        ["Snap — teller", "The snap was not saved"]
+    );
     assert_eq!(
         card_icon(&app, window),
         Some(("error".to_owned(), "progress.error".to_owned()))
@@ -679,12 +685,12 @@ fn a_plugin_s_error_shows_of_its_own_title_for_longer() {
     let (_, at) = app.notice.timer.expect("its going timed");
     let shows = at.saturating_duration_since(Instant::now());
     assert!(shows > Duration::from_secs(7), "{shows:?}");
-    // Its copy takes its own title.
+    // Its copy takes its title, its plugin's too.
     let (_, copy) = card(&app, window, "copy").unwrap();
     click_rect(&mut fake, &mut app, window, copy);
     assert_eq!(
         fake.clipboard_text().as_deref(),
-        Some("Snap\n\nThe snap was not saved\n")
+        Some("Snap — teller\n\nThe snap was not saved\n")
     );
 }
 

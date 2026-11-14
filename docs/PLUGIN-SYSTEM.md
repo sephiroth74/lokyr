@@ -842,9 +842,10 @@ type Cx = {
     save_file: (window: WindowId?, name: string, bytes: string) -> (number?, Error?),
     -- Shows `text` in Lokyr's notice card, at the panes' top right, as the app's own notices: of the icon and the color
     -- of `level`, "info" by default (the accent's info), "success" (a green check), "warning" (a yellow warning) or
-    -- "error" (a red error), and of `title`, or the plugin's namespace, with the card's buttons that copy its text and
-    -- close it. It goes by itself after 4 seconds, 8 of a warning or an error, unless the pointer rests on it, and
-    -- takes the place of the plugin's last notice, the notices under it showing again as it goes. A text of 1 to 1024
+    -- "error" (a red error), and of `title` beside the plugin's namespace, or the namespace alone, with the card's
+    -- buttons that copy its text and close it. It goes by itself after 4 seconds, 8 of a warning or an error, unless the
+    -- pointer rests on it, and takes the place of the plugin's last notice, the notices under it showing again as it
+    -- goes; Lokyr's own notices, as a config that does not read, show over the plugins'. A text of 1 to 1024
     -- characters and a title of 1 to 100, of no control character nor one that hides the text around it; one notice a
     -- second, a second one within it refused. No capability, as the card names the plugin.
     notify: (text: string, level: ("info" | "success" | "warning" | "error")?, title: string?) -> (boolean, Error?),
