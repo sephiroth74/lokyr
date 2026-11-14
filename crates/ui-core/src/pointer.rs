@@ -126,8 +126,18 @@ fn hit_node(
 pub fn shape(tree: &Tree, path: &[NodeId]) -> PointerShape {
     path.iter()
         .rev()
-        .find_map(|&id| tree.style(id)?.pointer)
+        .find_map(|&id| tree.style(id)?.pointer.or_else(|| link_hand(tree, id)))
         .unwrap_or_default()
+}
+
+/// The pointing hand of `id` of `tree` if it is a link, which takes it of
+/// its own, as macOS's do; none of a link dimmed, nor of another node.
+fn link_hand(tree: &Tree, id: NodeId) -> Option<PointerShape> {
+    matches!(
+        tree.kind(id),
+        Some(Kind::Button(button)) if button.link && !button.disabled
+    )
+    .then_some(PointerShape::PointingHand)
 }
 
 /// The areas of the pointer's shapes over `tree`, the first over those
@@ -175,7 +185,11 @@ fn areas_of(
         ..local
     };
     let pixels = rect(frame);
-    let shape = style.pointer.unwrap_or(inherited);
+    // A link takes the pointing hand of its own; dimmed, its parent's.
+    let shape = style
+        .pointer
+        .or_else(|| link_hand(tree, id))
+        .unwrap_or(inherited);
     let visible = clip.map_or(pixels, |clip| intersection(clip, pixels));
     let covered = behind.is_some_and(|index| {
         let area = areas[index];
@@ -1362,5 +1376,29 @@ mod tests {
             let (tree, layout) = laid(&root, 1.0);
             areas_agree(&tree, &layout, (110, 70));
         }
+    }
+
+    #[test]
+    fn a_link_takes_the_pointing_hand_of_its_own_and_a_dimmed_one_its_parent_s() {
+        let link = |key: &str, disabled: bool| {
+            let mut node = sized(
+                Node::button("Reset").key(key).as_link(),
+                Length::Points(40.0),
+                Length::Points(20.0),
+            );
+            if let Kind::Button(button) = &mut node.kind {
+                button.disabled = disabled;
+            }
+            node
+        };
+        let root = Node::container(vec![link("on", false), link("off", true)]);
+        let (tree, layout) = laid(&root, 1.0);
+        let areas = areas(&tree, &layout);
+        assert_eq!(
+            shape_over(&areas, (10.0, 10.0)),
+            Some(PointerShape::PointingHand)
+        );
+        assert_eq!(shape_over(&areas, (50.0, 10.0)), Some(PointerShape::Arrow));
+        areas_agree(&tree, &layout, (90, 30));
     }
 }

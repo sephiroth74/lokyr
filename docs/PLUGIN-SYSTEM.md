@@ -347,7 +347,7 @@ type Node = {
     -- For field nodes, `text` is the text that it holds, which the host takes as the field first shows and as a
     -- render gives another, over what was typed; nil keeps what the host holds.
     stepped: boolean?, -- for field nodes: ↑ and ↓ tell a "step" rather than move the caret, as a number's field
-    link: boolean?, -- for button nodes: a link's look, its label underlined in the accent's color, of no box
+    link: boolean?, -- for button nodes: a link's look, its label underlined in the accent's color, of no box, the pointer a hand over it
     progress: {
         state: ("normal" | "error" | "paused" | "indeterminate")?,
         value: number?, -- from 0 to 1
