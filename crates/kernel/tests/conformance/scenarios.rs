@@ -224,8 +224,45 @@ pub fn all(world: &World) -> Vec<Scenario> {
         packages(true),
         packages(false),
         pages(),
+        settings_read(true),
+        settings_read(false),
         core_actions(world),
     ]
+}
+
+/// The settings of the world, as a read of them tells: the app's sections
+/// of the default config, and no plugin's, as the kernel's world has no
+/// plugin of a config schema.
+pub fn settings() -> lokyr_plugin_sdk::host::Settings {
+    lokyr_plugin_sdk::host::Settings {
+        sections: lokyr_kernel::config::schema::sections(&lokyr_kernel::config::Config::default()),
+    }
+}
+
+/// The settings read, of `config` when `allowed`; refused of a plugin that
+/// lacks it.
+fn settings_read(allowed: bool) -> Scenario {
+    let answer = if allowed {
+        Response::Settings(settings())
+    } else {
+        failed(
+            Code::MissingCapability,
+            "the plugin `acme/conformer` lacks the capability `config`",
+        )
+    };
+    Scenario {
+        name: format!(
+            "the settings read, {} `config`",
+            if allowed { "of" } else { "without" }
+        ),
+        capabilities: Some(if allowed {
+            vec![Capability::Config]
+        } else {
+            Vec::new()
+        }),
+        subscriptions: Vec::new(),
+        steps: vec![ask(vec![(Request::Settings, answer)])],
+    }
 }
 
 /// The settings tab's pages: the plugin's own shown, which it hears, and

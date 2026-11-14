@@ -387,6 +387,12 @@ pub struct Context<'a> {
     /// The plugins, as a read of them tells, of [`Plugins::infos`] as the
     /// app took it before the calls.
     pub plugins: &'a [host::PluginInfo],
+    /// The config in force, of which a read of the settings tells the app's
+    /// sections.
+    pub config: &'a crate::config::Config,
+    /// The plugins' sections of the settings, as
+    /// [`Plugins::settings_sections`] tells them.
+    pub plugin_settings: &'a [host::SettingsSection],
     /// The day of the system's clock, in days since 1970-01-01, in UTC.
     pub day: u64,
     /// Whether a notice of the app's shows.
@@ -864,6 +870,12 @@ pub struct Plugins {
     /// The plugins as a read of them tells, of the fingerprint of what it
     /// tells, kept until one of them changes.
     infos: (u64, Arc<[host::PluginInfo]>),
+    /// The plugins' sections of the settings, of the generation of the
+    /// plugins and their config that they are of.
+    settings: Option<(u64, Arc<[host::SettingsSection]>)>,
+    /// The generation of the plugins and their config, which an added or a
+    /// removed plugin and a config applied move on.
+    generation: u64,
 }
 
 /// A page of the settings tab, of a plugin's manifest, as the sidebar lists
@@ -1220,6 +1232,7 @@ impl Plugins {
         else {
             return false;
         };
+        self.generation += 1;
         let mut entry = self.entries.remove(at);
         stop(
             &mut entry,
@@ -1386,6 +1399,7 @@ impl Plugins {
         runner: Runner,
         declared: Option<(Vec<Capability>, Uses)>,
     ) -> Result<(), Error> {
+        self.generation += 1;
         if matches!(runner, Runner::Main(_))
             && manifest
                 .as_ref()
@@ -1538,6 +1552,7 @@ impl Plugins {
     /// the schema lacks, or a section of no plugin's or of a plugin of no
     /// keys, which it ignores.
     pub fn configure(&mut self, config: &PluginsConfig) -> Vec<ConfigNotice> {
+        self.generation += 1;
         let mut notices = Vec::new();
         for entry in &mut self.entries {
             let state = &mut entry.state;
@@ -2217,6 +2232,41 @@ impl Plugins {
             self.infos = (fingerprint, Arc::from(infos));
         }
         Arc::clone(&self.infos.1)
+    }
+
+    /// The plugins' sections of the settings: each plugin's of a config
+    /// schema, in their order, of its schema's order and of its keys'
+    /// values in force; the same list until a plugin comes or goes or the
+    /// config applies anew.
+    pub fn settings_sections(&mut self) -> Arc<[host::SettingsSection]> {
+        if let Some((generation, sections)) = &self.settings
+            && *generation == self.generation
+        {
+            return Arc::clone(sections);
+        }
+        let sections: Vec<host::SettingsSection> = self
+            .entries
+            .iter()
+            .map(|entry| &entry.state)
+            .filter_map(|state| {
+                let schema = state.schema.as_ref()?;
+                let node: crate::config::schema::Ordered =
+                    serde_json::from_str(schema.source()).ok()?;
+                let values = match &state.config {
+                    Data::Map(values) => values.clone(),
+                    _ => BTreeMap::new(),
+                };
+                Some(crate::config::schema::section(
+                    &state.namespace,
+                    Some(&state.name),
+                    &node,
+                    |key| values.get(key).cloned(),
+                ))
+            })
+            .collect();
+        let sections: Arc<[host::SettingsSection]> = Arc::from(sections);
+        self.settings = Some((self.generation, Arc::clone(&sections)));
+        sections
     }
 
     /// The status of the plugin `name`, if it was added.
@@ -5210,6 +5260,11 @@ impl Host<'_, '_> {
             Asked::Fonts => Response::Fonts((self.context.fonts)()),
             Asked::Day => Response::Day(self.context.day),
             Asked::Plugins => Response::Plugins(self.context.plugins.to_vec()),
+            Asked::Settings => {
+                let mut sections = crate::config::schema::sections(self.context.config);
+                sections.extend(self.context.plugin_settings.iter().cloned());
+                Response::Settings(host::Settings { sections })
+            }
             Asked::Agents => {
                 let workspace = &self.context.workspace;
                 let now = Instant::now();

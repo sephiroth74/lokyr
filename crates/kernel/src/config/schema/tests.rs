@@ -403,3 +403,71 @@ fn a_text_of_its_bound_reads_and_one_past_it_does_not() {
     }
     assert!(problems.is_empty(), "{problems:#?}");
 }
+
+#[test]
+fn the_settings_sections_are_the_schema_s_in_its_order_of_the_values_in_force() {
+    let config = Config::parse(
+        "[font]\nsize = 15\n\n[window]\nscrollbar = \"never\"\n",
+        Path::new("config.toml"),
+    )
+    .unwrap();
+    let sections = super::sections(&config);
+    let names: Vec<&str> = sections
+        .iter()
+        .map(|section| section.name.as_str())
+        .collect();
+    let parser: Vec<&str> = sections_of_the_parser();
+    assert_eq!(names, parser, "the guide's order, as the parser's");
+    let font = &sections[0];
+    assert!(font.plugin.is_none());
+    assert!(!font.description.is_empty());
+    let key = |section: &lokyr_plugin_sdk::host::SettingsSection, name: &str| {
+        section
+            .keys
+            .iter()
+            .find(|key| key.name == name)
+            .unwrap_or_else(|| panic!("{name}"))
+            .clone()
+    };
+    use lokyr_plugin_sdk::host::SettingKind;
+    use lokyr_plugin_sdk::message::Data;
+    let size = key(font, "size");
+    assert_eq!(size.value, Some(Data::Integer(15)));
+    assert_eq!(size.default, Some(Data::Integer(13)));
+    assert_eq!(size.platforms, ["macos"]);
+    assert!(matches!(
+        size.kind,
+        SettingKind::Number {
+            minimum: Some(4.0),
+            maximum: Some(200.0),
+            step: Some(1.0),
+            integer: false
+        }
+    ));
+    // A key of no default and no value has none; its control told.
+    let family = key(font, "family");
+    assert_eq!((family.value, family.default), (None, None));
+    assert_eq!(family.control.as_deref(), Some("font-family"));
+    assert!(matches!(
+        family.kind,
+        SettingKind::Text {
+            max_length: Some(256),
+            ..
+        }
+    ));
+    let window = sections
+        .iter()
+        .find(|section| section.name == "window")
+        .unwrap();
+    let scrollbar = key(window, "scrollbar");
+    assert_eq!(scrollbar.value, Some(Data::Text("never".to_owned())));
+    assert!(matches!(scrollbar.kind, SettingKind::Choice { .. }));
+    // The first keys in the schema's order, as the guide's.
+    assert_eq!(font.keys[0].name, "family");
+    assert_eq!(font.keys[1].name, "size");
+}
+
+/// The parser's sections' names, in their order.
+fn sections_of_the_parser() -> Vec<&'static str> {
+    sections().iter().map(|(name, _)| *name).collect()
+}

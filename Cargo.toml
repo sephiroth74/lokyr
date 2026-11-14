@@ -146,6 +146,7 @@ lokyr-progress = { path = "plugins/progress" }
 lokyr-quick-terminal = { path = "plugins/quick-terminal" }
 lokyr-quick-tips = { path = "plugins/quick-tips" }
 lokyr-plugin-manager = { path = "plugins/plugin-manager" }
+lokyr-settings = { path = "plugins/settings" }
 lokyr-search-plugin = { path = "plugins/search" }
 lokyr-splits = { path = "plugins/splits" }
 lokyr-tabs = { path = "plugins/tabs" }

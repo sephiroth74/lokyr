@@ -549,6 +549,8 @@ struct Kernel {
     clock: Instant,
     /// The plugins of the world, as a read of them tells.
     plugin_infos: Vec<host::PluginInfo>,
+    /// The config in force, the default.
+    config: lokyr_kernel::config::Config,
 }
 
 impl Kernel {
@@ -616,6 +618,7 @@ impl Kernel {
             images: Blank,
             clock: Instant::now(),
             plugin_infos: scenarios::plugins(),
+            config: lokyr_kernel::config::Config::default(),
             world: World {
                 window: host::WindowId(window.get()),
                 tab: host::TabId(tab.get()),
@@ -649,6 +652,8 @@ impl Kernel {
             themes: &themes,
             fonts: &lokyr_plugin_sdk::fake::fonts,
             plugins: &self.plugin_infos,
+            config: &self.config,
+            plugin_settings: &[],
             day: lokyr_plugin_sdk::fake::DAY,
             notice: false,
             saving: &|_| false,
@@ -809,6 +814,7 @@ fn on_fake(scenario: &Scenario, world: &World, front: Front) -> Vec<Entry> {
     }
     host.set_clipboard(Some(scenarios::CLIPBOARD));
     host.set_plugins(scenarios::plugins());
+    host.set_settings(scenarios::settings());
     host.focus(Some(world.pane));
     let pane = host.pane(world.pane);
     pane.window = world.window;
@@ -1072,11 +1078,12 @@ fn kind(request: &Request) -> usize {
         Request::Plugins => 111,
         Request::SetPluginEnabled { .. } => 112,
         Request::ShowPage(_) => 113,
+        Request::Settings => 114,
     }
 }
 
 /// How many kinds of requests the plugin API has.
-const KINDS: usize = 114;
+const KINDS: usize = 115;
 
 #[test]
 fn the_scenarios_hold_every_request_of_the_plugin_api() {

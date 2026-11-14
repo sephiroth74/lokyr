@@ -34,6 +34,7 @@ export type Cx = {
     keeps_state: () -> (boolean?, string?, number?),
     agents: () -> ({ AgentInfo }?, string?, number?),
     plugins: () -> ({ PluginInfo }?, string?, number?),
+    settings: () -> (Settings?, string?, number?),
     set_plugin_enabled: (plugin: string, enabled: boolean) -> (true?, string?, number?),
     preview_font: (family: string?) -> (true?, string?, number?),
     set_font: (family: string) -> (true?, string?, number?),
@@ -167,6 +168,7 @@ export type Event =
     | { kind: "package", id: number, line: Data }
     | { kind: "packages-ended", id: number, ok: boolean }
     | { kind: "plugins-changed" }
+    | { kind: "settings-changed" }
     | { kind: "config-changed" }
     | { kind: "timer", id: number }
     | { kind: "custom", name: string, schema: string, value: Data }
@@ -746,6 +748,35 @@ export type SelectionKind =
     | "words"
     | "lines"
     | "block"
+
+export type SettingKey = {
+    name: string,
+    description: string?,
+    platforms: { string }?,
+    kind: SettingKind,
+    control: string?,
+    default: Data?,
+    value: Data?,
+}
+
+export type SettingKind =
+    | "boolean"
+    | { number: { minimum: number?, maximum: number?, step: number?, integer: boolean? } }
+    | { text: { max_length: number?, examples: { string }? } }
+    | { choice: { choices: { Data } } }
+    | { list: { max_length: number? } }
+    | "other"
+
+export type Settings = {
+    sections: { SettingsSection },
+}
+
+export type SettingsSection = {
+    name: string,
+    plugin: string?,
+    description: string?,
+    keys: { SettingKey },
+}
 
 export type Shadow = {
     color: Token?,

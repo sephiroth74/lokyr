@@ -64,6 +64,7 @@ struct App {
     panes: NoPanes,
     clipboard: Board,
     images: Blank,
+    config: lokyr_kernel::config::Config,
 }
 
 impl App {
@@ -74,6 +75,7 @@ impl App {
             panes: NoPanes,
             clipboard: Board(Some("before".to_owned())),
             images: Blank(0),
+            config: lokyr_kernel::config::Config::default(),
         }
     }
 
@@ -92,6 +94,8 @@ impl App {
             themes: &themes,
             fonts: &host::Fonts::default,
             plugins: &[],
+            config: &self.config,
+            plugin_settings: &[],
             day: 0,
             notice: false,
             saving: &|_| false,

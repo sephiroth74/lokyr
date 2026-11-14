@@ -36,6 +36,7 @@ tip-services = Nel Finder, fai clic destro su una cartella e scegli Servizi › 
 tip-itermcolors = Fai doppio clic su un file .itermcolors, o trascinalo sull'icona di Lokyr nel Dock, per installarne il tema.
 tip-float = Finestra › Sempre in primo piano tiene la finestra sopra quelle di ogni altra app.
 tip-sleip = I plugin vengono dal registro: `sleip search` li elenca, e `sleip add` ne installa uno.
+tip-settings-window = Lokyr › Apri la finestra delle impostazioni mostra ogni impostazione per sezione, anche quelle dei plugin, con il suo valore attuale e cosa fa.
 tip-plugins = Lokyr › Plugin… elenca ogni plugin, il suo stato e cosa può fare, lo disattiva, lo aggiorna o lo rimuove, e installa quelli del registro.
 
 tip-plugin-keys = Premi { $keys } per «{ $title }», un comando di un plugin installato.

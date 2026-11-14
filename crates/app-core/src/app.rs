@@ -1606,6 +1606,8 @@ impl<B: Backend> App<B> {
             self.settle_update_checks(platform, check);
             return;
         }
+        // The plugins that read the settings hear that they changed.
+        self.plugins.post(plugins::Event::SettingsChanged);
         let font_changed = config.font != self.config.font;
         // A family that a picker previews ends as the config's font changes.
         if font_changed {
@@ -2997,6 +2999,9 @@ impl<B: Backend> App<B> {
         // The plugins, as a read of them tells, the same list until one of
         // them changes.
         let plugin_infos = self.plugins.infos();
+        // The plugins' sections of the settings, the same until a plugin
+        // comes or goes or the config applies anew.
+        let plugin_settings = self.plugins.settings_sections();
         let mut context = plugins::Context {
             registry: &mut self.commands,
             workspace: &mut self.workspace,
@@ -3011,6 +3016,8 @@ impl<B: Backend> App<B> {
             themes: &theme_list,
             fonts: &fonts,
             plugins: &plugin_infos,
+            config: &self.config,
+            plugin_settings: &plugin_settings,
             day: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .map_or(0, |since| since.as_secs() / 86_400),

@@ -33,6 +33,8 @@ pub(crate) fn plugins() -> Vec<Registration> {
         lokyr_copy_mode::registration(),
         #[cfg(feature = "plugin-quick-tips")]
         lokyr_quick_tips::registration(),
+        #[cfg(feature = "plugin-settings")]
+        lokyr_settings::registration(),
         #[cfg(feature = "plugin-plugin-manager")]
         lokyr_plugin_manager::registration(),
     ]

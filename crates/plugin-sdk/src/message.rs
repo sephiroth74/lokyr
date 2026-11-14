@@ -145,6 +145,10 @@ pub enum Request {
     /// activation: each one's state and its capabilities' decisions. Of
     /// the capability `packages`, Lokyr's own plugins' alone.
     Plugins,
+    /// The settings: the app's sections of its config's schema, then each
+    /// plugin's of a config schema, each key of its kind and its value in
+    /// force. Of the capability `config`, Lokyr's own plugins' alone.
+    Settings,
     /// Turns the plugin of a name on or off, as its section of the config,
     /// `[plugins.<namespace>] enabled`, which the host writes, keeping the
     /// rest of the file: it stops at once, or starts anew, as the config is
@@ -892,6 +896,10 @@ impl Request {
                 if names.iter().any(|name| name == PLUGINS_CHANGED) {
                     needed.push(Capability::Packages);
                 }
+                // The settings, as their read of `config` tells them.
+                if names.iter().any(|name| name == SETTINGS_CHANGED) {
+                    needed.push(Capability::Config);
+                }
                 needed
             }
             _ => self.capability().into_iter().collect(),
@@ -911,6 +919,7 @@ impl Request {
             | Self::CancelPackages(_)
             | Self::Plugins
             | Self::SetPluginEnabled { .. } => Some(Capability::Packages),
+            Self::Settings => Some(Capability::Config),
             Self::SelectionText(_)
             | Self::LineText { .. }
             | Self::LinkAt { .. }
@@ -1069,6 +1078,7 @@ impl Request {
             | Self::KeepsState
             | Self::Agents
             | Self::Plugins
+            | Self::Settings
             | Self::RenderImage(_)
             | Self::SelectionCells(_)
             | Self::ScreenCells(_) => Effect::Read,
@@ -1189,6 +1199,8 @@ pub enum Response {
     Agents(Vec<crate::host::AgentInfo>),
     /// The plugins, built in and installed.
     Plugins(Vec<crate::host::PluginInfo>),
+    /// The settings, of their sections and keys.
+    Settings(crate::host::Settings),
     /// An image that the host rendered.
     Image(crate::image::Image),
     /// Rows of cells, as an image draws them, or none.
@@ -1256,6 +1268,9 @@ pub const COMMAND_ENDED: &str = "command-ended";
 /// The name of [`Event::PluginsChanged`], as a plugin subscribes to it.
 pub const PLUGINS_CHANGED: &str = "plugins-changed";
 
+/// The name of [`Event::SettingsChanged`], as a plugin subscribes to it.
+pub const SETTINGS_CHANGED: &str = "settings-changed";
+
 /// Whether a plugin can subscribe to the events of `name`: one of the
 /// workspace's, the host's own that every plugin hears of, or a plugin's
 /// own, `namespace.event`.
@@ -1269,6 +1284,7 @@ pub fn is_event_name(name: &str) -> bool {
             COMMAND_STARTED,
             COMMAND_ENDED,
             PLUGINS_CHANGED,
+            SETTINGS_CHANGED,
         ]
         .contains(&name)
         || crate::command::is_name(name)
@@ -1448,6 +1464,10 @@ pub enum Event {
     /// removed, turned off or on, activated, faulted, or a capability's
     /// decision, to a plugin of `packages` that subscribes to it.
     PluginsChanged,
+    /// The settings changed, as the config applied anew, to a plugin of
+    /// `config` that subscribes to it: its read of the settings tells the
+    /// new values.
+    SettingsChanged,
     /// The plugin's config changed, as the config file reloaded, to it
     /// alone: its request of [`Request::Config`] reads the new one.
     ConfigChanged,
@@ -1486,6 +1506,7 @@ impl Event {
             Self::Package { .. } => "package",
             Self::PackagesEnded { .. } => "packages-ended",
             Self::PluginsChanged => PLUGINS_CHANGED,
+            Self::SettingsChanged => SETTINGS_CHANGED,
             Self::TabBarResized { .. } => "tab-bar-resized",
             Self::KeysChanged => KEYS_CHANGED,
             Self::WindowFocus { .. } => WINDOW_FOCUS,
@@ -1638,6 +1659,7 @@ impl Request {
             Self::Day { .. } => "day",
             Self::Agents { .. } => "agents",
             Self::Plugins { .. } => "plugins",
+            Self::Settings { .. } => "settings",
             Self::ClipboardText { .. }
             | Self::SelectionText { .. }
             | Self::LinkAt { .. }

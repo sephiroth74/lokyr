@@ -189,6 +189,10 @@ pub enum Capability {
     /// registry's search, and installs, updates and removals; Lokyr's own
     /// plugins' alone.
     Packages,
+    /// The config in force, the app's keys and every plugin's section, with
+    /// their schemas, read, and its keys written; Lokyr's own plugins'
+    /// alone.
+    Config,
 }
 
 impl Capability {
@@ -216,6 +220,7 @@ impl Capability {
             "keep-awake" => Self::KeepAwake,
             "appearance-write" => Self::AppearanceWrite,
             "packages" => Self::Packages,
+            "config" => Self::Config,
             _ => return None,
         })
     }
@@ -263,7 +268,7 @@ impl Capability {
     /// it, which a manifest of another plugin has refused, with a notice:
     /// the plugins' install and removal.
     pub fn is_first_party_only(&self) -> bool {
-        matches!(self, Self::Packages)
+        matches!(self, Self::Packages | Self::Config)
     }
 }
 
@@ -332,6 +337,7 @@ impl fmt::Display for Capability {
             Self::KeepAwake => f.write_str("keep-awake"),
             Self::AppearanceWrite => f.write_str("appearance-write"),
             Self::Packages => f.write_str("packages"),
+            Self::Config => f.write_str("config"),
         }
     }
 }
@@ -698,7 +704,8 @@ mod tests {
             | Capability::PointerRead
             | Capability::KeepAwake
             | Capability::AppearanceWrite
-            | Capability::Packages => capability.to_string(),
+            | Capability::Packages
+            | Capability::Config => capability.to_string(),
         };
         let every = [
             Capability::TerminalRead,
@@ -724,6 +731,7 @@ mod tests {
             Capability::KeepAwake,
             Capability::AppearanceWrite,
             Capability::Packages,
+            Capability::Config,
         ];
         for capability in &every {
             let shown = format!("`{}`", name(capability));
@@ -856,6 +864,8 @@ mod tests {
         assert!(Capability::Packages.is_first_party_only());
         assert!(!Capability::Packages.is_withheld());
         assert!(!Capability::KeepAwake.is_first_party_only());
+        assert_eq!(Capability::of_name("config"), Some(Capability::Config));
+        assert!(Capability::Config.is_first_party_only());
     }
 
     #[test]

@@ -1029,6 +1029,7 @@ dependencies = [
  "lokyr-quick-tips",
  "lokyr-render-core",
  "lokyr-search-plugin",
+ "lokyr-settings",
  "lokyr-splits",
  "lokyr-tabs",
  "lokyr-text-core",
@@ -1314,6 +1315,13 @@ dependencies = [
  "lokyr-pty",
  "lokyr-vt-core",
  "thiserror",
+]
+
+[[package]]
+name = "lokyr-settings"
+version = "1.0.0"
+dependencies = [
+ "lokyr-plugin-sdk",
 ]
 
 [[package]]

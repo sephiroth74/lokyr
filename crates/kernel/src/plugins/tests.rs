@@ -203,6 +203,11 @@ pub(super) struct App {
     /// The plugins, as a read of them tells, which the test takes of the
     /// host's [`Plugins::infos`]; none without.
     pub(super) plugin_infos: Vec<host::PluginInfo>,
+    /// The config in force, the default of none.
+    pub(super) config: crate::config::Config,
+    /// The plugins' sections of the settings, which the test takes of the
+    /// host's [`Plugins::settings_sections`]; none without.
+    pub(super) plugin_settings: Vec<host::SettingsSection>,
 }
 
 /// The themes of an app of the tests: the built-in ones, dark in force.
@@ -243,6 +248,8 @@ impl App {
             themes: &no_themes,
             fonts: &lokyr_plugin_sdk::fake::fonts,
             plugins: &self.plugin_infos,
+            config: &self.config,
+            plugin_settings: &self.plugin_settings,
             day: lokyr_plugin_sdk::fake::DAY,
             notice: false,
             saving: match &self.saving {
@@ -1913,7 +1920,7 @@ fn the_packages_capability_is_lokyr_s_own_plugins_alone() {
     let asks = Rc::new(RefCell::new(Vec::new()));
     for (name, kind) in [("acme/asker", "luau"), ("lokyr/manager", "builtin")] {
         let manifest = Manifest::parse(&format!(
-            "[plugin]\nname = \"{name}\"\nversion = \"1.0.0\"\nkind = \"{kind}\"\napi = \"^0.1\"\nlicense = \"MIT\"\n[capabilities]\npackages = true\n"
+            "[plugin]\nname = \"{name}\"\nversion = \"1.0.0\"\nkind = \"{kind}\"\napi = \"^0.1\"\nlicense = \"MIT\"\n[capabilities]\npackages = true\nconfig = true\n"
         ))
         .unwrap();
         let go = format!("{}.go", name.split_once('/').unwrap().1);
@@ -1935,7 +1942,10 @@ fn the_packages_capability_is_lokyr_s_own_plugins_alone() {
     // Refused to another's manifest, as a notice tells.
     assert_eq!(
         plugins.take_withheld(),
-        [("acme/asker".to_owned(), Capability::Packages)]
+        [
+            ("acme/asker".to_owned(), Capability::Config),
+            ("acme/asker".to_owned(), Capability::Packages),
+        ]
     );
     assert!(plugins.activate(&mut app.context()).is_empty());
     plugins

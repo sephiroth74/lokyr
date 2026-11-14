@@ -20,4 +20,5 @@ progress = { path = "../plugins/progress" }
 command-header = { path = "../plugins/command-header" }
 copy-mode = { path = "../plugins/copy-mode" }
 quick-tips = { path = "../plugins/quick-tips" }
+settings = { path = "../plugins/settings" }
 plugin-manager = { path = "../plugins/plugin-manager" }

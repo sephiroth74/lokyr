@@ -448,6 +448,8 @@ pub struct FakeHost {
     /// The plugins that a read of the plugins gives, as the test gave them,
     /// whose states the plugin's turning them off and on changes.
     plugins: Vec<host::PluginInfo>,
+    /// The settings that a read of them gives, as the test gave them.
+    settings: host::Settings,
     /// The page of the plugin's that the settings' window shows, as the
     /// plugin's or the test's showing of it opened the tab.
     page: Option<String>,
@@ -553,6 +555,7 @@ impl FakeHost {
             day: DAY,
             agents: Vec::new(),
             plugins: Vec::new(),
+            settings: host::Settings::default(),
             page: None,
             notice: false,
             keeps_state: true,
@@ -797,6 +800,17 @@ impl FakeHost {
             self.owed.push(Event::PluginsChanged);
         }
         self.plugins = plugins;
+        self
+    }
+
+    /// Gives the settings that a read of them gives: a plugin that
+    /// subscribes to `settings-changed` hears that they changed, once it
+    /// activated.
+    pub fn set_settings(&mut self, settings: host::Settings) -> &mut Self {
+        if self.activated && settings != self.settings {
+            self.owed.push(Event::SettingsChanged);
+        }
+        self.settings = settings;
         self
     }
 
@@ -3016,6 +3030,7 @@ impl Calling<'_> {
             Request::Day => Response::Day(host.day),
             Request::Agents => Response::Agents(host.agents.clone()),
             Request::Plugins => Response::Plugins(host.plugins.clone()),
+            Request::Settings => Response::Settings(host.settings.clone()),
             Request::NoticeShows => Response::Boolean(host.notice),
             Request::KeepsState => Response::Boolean(host.keeps_state),
             Request::Commands => {

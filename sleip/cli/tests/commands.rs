@@ -583,11 +583,12 @@ fn check_tells_each_problem_of_its_file_and_line() {
             "first-party",
             |folder| {
                 edit(folder, "plugin.toml", |text| {
-                    format!("{text}\n[capabilities]\npackages = true\n")
+                    format!("{text}\n[capabilities]\npackages = true\nconfig = true\n")
                 });
             },
             &[
                 "plugin.toml:18:1: Capability: the app refuses `packages`, which Lokyr's own plugins alone hold",
+                "plugin.toml:19:1: Capability: the app refuses `config`, which Lokyr's own plugins alone hold",
             ],
         ),
         (

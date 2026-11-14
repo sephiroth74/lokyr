@@ -14,9 +14,13 @@
 //! control of a key. A schema of any other keyword does not read, by its
 //! name.
 
+mod ordered;
+
 use std::collections::BTreeMap;
 
 use serde_json::{Map, Value};
+
+pub use ordered::Ordered;
 
 /// The annotations, which a value is not checked against.
 const ANNOTATIONS: [&str; 10] = [
@@ -130,6 +134,8 @@ struct Node {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Schema {
     root: Node,
+    /// Its text, as it read, whose keys' order [`Ordered`] keeps.
+    source: String,
 }
 
 /// What is wrong with a value of a section: where, by the keys and the
@@ -164,7 +170,15 @@ impl Schema {
         if root.types.as_deref() != Some(&[Type::Object]) {
             return Err("the schema's `type` is `\"object\"`, of the section's keys".to_owned());
         }
-        Ok(Self { root })
+        Ok(Self {
+            root,
+            source: text.to_owned(),
+        })
+    }
+
+    /// Its text, as it read, whose keys' order a page of settings follows.
+    pub fn source(&self) -> &str {
+        &self.source
     }
 
     /// The names of the section's keys, as `properties` has them.

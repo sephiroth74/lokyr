@@ -42,6 +42,7 @@ pub const RESERVED_NAMES: &[&str] = &[
     "quick-tips",
     "search",
     "selection",
+    "settings",
     "sleip",
     "splits",
     "tabs",

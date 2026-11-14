@@ -366,6 +366,17 @@ impl<'a> Cx<'a> {
         self.done(Request::CancelPackages(id))
     }
 
+    /// The settings: the app's sections of its config's schema, in its
+    /// order, then each plugin's of a config schema, each key of its kind
+    /// and its value in force. Of the capability `config`, Lokyr's own
+    /// plugins' alone.
+    pub fn settings(&mut self) -> Result<crate::host::Settings, Error> {
+        match self.request(Request::Settings) {
+            Response::Settings(settings) => Ok(settings),
+            other => Err(failed(other)),
+        }
+    }
+
     /// The plugins, built in and installed, in the order of their
     /// activation, each of its state and its capabilities' decisions. Of
     /// the capability `packages`, Lokyr's own plugins' alone.

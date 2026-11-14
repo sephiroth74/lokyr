@@ -1,0 +1,15 @@
+# The manifest of the built-in plugin of the settings' page.
+[plugin]
+name = "lokyr/settings"
+kind = "builtin"
+license = "MIT"
+description = "The settings window's first page: every key of the config and of the plugins' sections, of its text, its platforms and its value in force"
+
+[activation]
+on = ["page:settings"]
+
+[capabilities]
+config = true
+
+[contributes]
+pages = [{ id = "settings", icon = "settings" }]

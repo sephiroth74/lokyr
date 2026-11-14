@@ -10,7 +10,7 @@ use serde::de;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::command::{Args, Category, Param};
-use crate::message::{Call, Response};
+use crate::message::{Call, Data, Response};
 
 /// A window, by the host's id, which no other window, tab or pane of the
 /// process has had.
@@ -1042,6 +1042,102 @@ pub struct PluginInfo {
     /// decision, as its manifest writes them.
     #[serde(default)]
     pub capabilities: Vec<CapabilityDecision>,
+}
+
+/// The settings that a read of them tells, of the capability `config`:
+/// the app's sections of its config's schema, in its order, then each
+/// plugin's of a config schema, in the plugins' order, each key of its
+/// value in force.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct Settings {
+    /// The sections, in their order.
+    pub sections: Vec<SettingsSection>,
+}
+
+/// A section of the settings: the app's, as `[font]`, or a plugin's.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct SettingsSection {
+    /// Its name: the config's section, as `font`, or the plugin's
+    /// namespace.
+    pub name: String,
+    /// The plugin whose section it is, by its name; none of the app's.
+    #[serde(default)]
+    pub plugin: Option<String>,
+    /// What it holds, of its schema's description.
+    #[serde(default)]
+    pub description: String,
+    /// Its keys, in their order.
+    pub keys: Vec<SettingKey>,
+}
+
+/// A key of the settings, as its schema has it, of its value in force.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct SettingKey {
+    /// Its name, as the config writes it.
+    pub name: String,
+    /// What it does, of its schema's description.
+    #[serde(default)]
+    pub description: String,
+    /// The platforms where it applies, as `macos`.
+    #[serde(default)]
+    pub platforms: Vec<String>,
+    /// The values that it takes.
+    pub kind: SettingKind,
+    /// Its control where its kind does not tell it, as `font-family`.
+    #[serde(default)]
+    pub control: Option<String>,
+    /// Its default, if it has one.
+    #[serde(default)]
+    pub default: Option<Data>,
+    /// Its value in force, of the file's or its default; none of a key
+    /// that the file leaves out and that has no default.
+    #[serde(default)]
+    pub value: Option<Data>,
+}
+
+/// The values that a key of the settings takes.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum SettingKind {
+    /// `true` or `false`.
+    Boolean,
+    /// A number of its range, of the step of its control.
+    Number {
+        /// Its least value.
+        #[serde(default)]
+        minimum: Option<f64>,
+        /// Its greatest value.
+        #[serde(default)]
+        maximum: Option<f64>,
+        /// The step of its control.
+        #[serde(default)]
+        step: Option<f64>,
+        /// Whether it takes whole numbers alone.
+        #[serde(default)]
+        integer: bool,
+    },
+    /// A text, of its most characters, and of the values that it suggests.
+    Text {
+        /// Its most characters.
+        #[serde(default)]
+        max_length: Option<u64>,
+        /// The values that it suggests, of no others refused.
+        #[serde(default)]
+        examples: Vec<String>,
+    },
+    /// One of its choices.
+    Choice {
+        /// Its choices.
+        choices: Vec<Data>,
+    },
+    /// A list of texts, each of its most characters.
+    List {
+        /// The most characters of each text.
+        #[serde(default)]
+        max_length: Option<u64>,
+    },
+    /// Another value, which the page shows as it is.
+    Other,
 }
 
 /// Where a plugin is in its life.

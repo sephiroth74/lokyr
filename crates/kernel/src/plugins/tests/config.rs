@@ -896,3 +896,45 @@ fn a_render_or_a_look_that_tells_its_failure_after_it_fails_and_a_fault_faults()
     let told = plugins.take_disabled();
     assert!(told[0].1.contains("a look past its deadline"), "{told:?}");
 }
+
+#[test]
+fn a_plugin_s_section_of_the_settings_is_its_schema_s_of_its_values_in_force() {
+    let read = Rc::default();
+    let mut plugins = greeter(&read);
+    plugins
+        .add("keyless", scripted(|_| Ok(()), |_, _, _| Ok(())))
+        .unwrap();
+    assert!(
+        plugins
+            .configure(&config("[plugins.greeter]\ncount = 5\n").plugins)
+            .is_empty()
+    );
+    let sections = plugins.settings_sections();
+    // The plugins of a schema alone, each of its keys in its schema's
+    // order, not the alphabet's.
+    let [section] = &sections[..] else {
+        panic!("{sections:?}");
+    };
+    assert_eq!(
+        (section.name.as_str(), section.plugin.as_deref()),
+        ("greeter", Some("acme/greeter"))
+    );
+    let keys: Vec<(&str, Option<&Data>)> = section
+        .keys
+        .iter()
+        .map(|key| (key.name.as_str(), key.value.as_ref()))
+        .collect();
+    assert_eq!(
+        keys,
+        [
+            ("greeting", Some(&Data::Text("hello".to_owned()))),
+            ("count", Some(&Data::Integer(5))),
+        ]
+    );
+    // The same list until the config applies anew.
+    assert!(Arc::ptr_eq(&sections, &plugins.settings_sections()));
+    assert!(plugins.configure(&config("").plugins).is_empty());
+    let after = plugins.settings_sections();
+    assert!(!Arc::ptr_eq(&sections, &after));
+    assert_eq!(after[0].keys[1].value, Some(Data::Integer(3)));
+}

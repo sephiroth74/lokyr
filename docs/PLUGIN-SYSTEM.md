@@ -524,6 +524,9 @@ type Event =
     -- The plugins changed, as `plugins` would tell them: one installed, removed, turned off or on, activated, faulted,
     -- or a capability's decision; to a plugin of `packages` that subscribes to it.
     | { kind: "plugins-changed" }
+    -- The settings changed, as the config applied anew, which `settings` would tell; to a plugin of `config` that
+    -- subscribes to it.
+    | { kind: "settings-changed" }
     -- A drag of the edge of the plugin's tab bar's column ended, to it alone: its width since, in points,
     -- which the plugin keeps, as for its next start.
     | { kind: "tab-bar-resized", width: number }
@@ -948,6 +951,12 @@ type Cx = {
     -- forward, as the call returns: its view renders, and the plugin hears `page-shown`. Lokyr's own plugins' alone,
     -- as their manifests have pages; another page is not found.
     show_page: (page: string) -> (boolean, Error?),
+    -- Requires `config`, Lokyr's own plugins' alone: the settings, the config's sections of its schema, in its order,
+    -- then each plugin's of a config schema, in the plugins' order, each key of its name, its description, its
+    -- platforms, its kind ("boolean", a number of its range, step and whether it is whole, a text of its most
+    -- characters and the values that it suggests, a choice of its values, a list of texts, or another), its control,
+    -- its default and its value in force.
+    settings: () -> (Settings?, Error?),
 
     -- The plugin's config, its section's values with its schema's defaults; its state, of plain values,
     -- 1 MiB at most as JSON, kept for the next run, as the call returns.
@@ -1028,6 +1037,7 @@ type Plugin = {
 | `decorate` | Drawing over a pane: decorations, the gutter's marks, a search's matches and a held cursor | Medium: a drawing over the text can show what the terminal does not hold |
 | `pointer-read` | The `pointer` event: the cell under the pointer over the panes, and the modifiers held | Low |
 | `keep-awake` | Keeping the system, or the system and the display, from idle sleep, `keep_awake`, of a power assertion that the host holds for every plugin together, the strongest that one asks, and releases as the last lets go, stops, faults or is turned off | High: a display kept awake keeps the screen from locking, and of a battery's cost |
+| `config` | The config in force, the app's keys and every plugin's section with their schemas, `settings`, and their changes, `settings-changed`; its keys written, from 1.1; Lokyr's own plugins' alone, refused to another's manifest with a notice and by `sleip check` | Very high: a key written can change the program that a pane runs |
 | `packages` | The plugins themselves, through the bundle's Sleip: the installed ones, the registry's search and a plugin's versions, installs, updates and removals, `packages`, of their lines as events, and `cancel_packages`; every plugin's state and capabilities' decisions, `plugins`, and a plugin turned on or off in the config, `set_plugin_enabled`; Lokyr's own plugins' alone, refused to another's manifest with a notice and by `sleip check` | Very high: a plugin that installs another runs code of its choice |
 | `user-commands` | Running any command as if run by hand, without declaring it, as the palette does; reading the whole registry, with each command's plugin, keys and context, and the plugins installed | Very high: `pane.send-text` types into the shell |
 | `appearance-write` | Previewing a theme and a monospaced font family, and naming the ones chosen in the config's `[theme]` and `[font] family`, edited in place, `preview_theme`, `set_theme`, `preview_font` and `set_font`, as the palette's theme picker and a font picker do | Medium: the config changes, visibly and reversibly; no text of a pane, no command, no file but the config's two keys |
@@ -1109,6 +1119,7 @@ installed ──▶ resolved ──▶ consent ──▶ loaded ──▶ active
 | `keymap-macos` | Default macOS shortcuts, as iTerm2's: the keys of the app's commands and of the other plugins', which bind none of their own | F3 |
 | `keymap-linux` | Default Linux shortcuts | F7 |
 | `command-palette` | Command palette and theme picker | F3 |
+| `settings` | The settings' window's first page, Settings: every key of the config and of the plugins' sections, of the config's schema and the plugins', by its section, of its value in force | F3b |
 | `plugin-manager` | The settings' window's Plugins page, of the packages' service: every plugin of its state, active or disabled, and its capabilities' decisions, disabled, enabled, updated or removed, and the registry's plugins, filtered, of their versions and capabilities, to install, Lokyr › Plugins… | F3b |
 | `blocks` | Command + output blocks, over the prompts' marks that the kernel keeps since F3 | F5a |
 | `quick-terminal` | The quick terminal: its command, which shows and hides its quick window, its autohide and its place, of `[plugins.quick-terminal]`, through the quick windows and the global keys of `global-hotkey` | F3 |

@@ -28,7 +28,8 @@ fn risk(capability: &Capability) -> &'static str {
         | Capability::ProcessSpawn
         | Capability::InputRead
         | Capability::UserCommands
-        | Capability::Packages => "consent-risk-very-high",
+        | Capability::Packages
+        | Capability::Config => "consent-risk-very-high",
         Capability::TerminalRead
         | Capability::ClipboardRead
         | Capability::Net(_)

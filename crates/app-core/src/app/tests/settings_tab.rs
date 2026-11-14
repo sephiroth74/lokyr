@@ -17,13 +17,14 @@ fn two_tabs() -> (Fake, App, WindowId) {
 }
 
 /// The app of [`two_tabs`], of the sample plugin of two pages if `pages`,
-/// the plugin manager turned off, whose page would come first.
+/// the settings' and the plugin manager's pages turned off, which would
+/// come first.
 fn two_tabs_of(pages: bool) -> (Fake, App, WindowId) {
     let drawing = Drawing::new(FontConfig::default()).unwrap();
     let mut fake = Fake::default();
     let config = if pages {
         Config::parse(
-            "[plugins.plugin-manager]\nenabled = false\n",
+            "[plugins.plugin-manager]\nenabled = false\n\n[plugins.settings]\nenabled = false\n",
             std::path::Path::new("config.toml"),
         )
         .unwrap()
@@ -435,8 +436,20 @@ fn lokyr_s_plugins_item_opens_the_settings_tab_at_the_plugin_manager_s_page_of_e
     let (settings, _) = app.workspace.settings_tab().expect("the settings");
     assert_eq!(shown(&app, window), settings);
     assert_eq!(page_shown(&app, window), "plugins");
-    assert_eq!(app.settings.pages[0].title, "Plugins");
-    assert_eq!(app.settings.pages[0].icon, "extensions");
+    let plugins = app
+        .settings
+        .pages
+        .iter()
+        .find(|page| page.id == "plugins")
+        .expect("the plugins' page");
+    assert_eq!(
+        (plugins.title.as_str(), plugins.icon.as_str()),
+        ("Plugins", "extensions")
+    );
+    assert_eq!(
+        app.settings.pages[0].id, "settings",
+        "the settings' page first"
+    );
     // Its built-in plugins, each of a button that turns it off, but its
     // own, and of no removal.
     let tree = &page_view(&app, window).unwrap().surface.tree;
@@ -661,6 +674,10 @@ fn the_settings_window_opened_of_its_command_reads_the_registry_and_command_w_cl
     // page, activates as the page renders, and hears it shown then, as it
     // reads the registry.
     let own = open(&mut fake, &mut app, SETTINGS_TAB);
+    // Its first page the settings'; the plugins' its second tab.
+    assert_eq!(page_shown(&app, own), "settings");
+    assert!(!app.plugins.activated("lokyr/plugin-manager"));
+    click_tab(&mut fake, &mut app, own, 1);
     assert!(app.plugins.activated("lokyr/plugin-manager"));
     let has = |app: &App, key: &str| {
         page_view(app, own).is_some_and(|view| view.surface.tree.by_key(&key.into()).is_some())
@@ -699,4 +716,48 @@ fn the_settings_window_opened_of_its_command_reads_the_registry_and_command_w_cl
     assert_eq!(fake.windows().collect::<Vec<_>>(), [window]);
     assert_eq!(tabs_of(&app, window).len(), 2);
     let _ = std::fs::remove_dir_all(&folder);
+}
+
+#[test]
+fn the_settings_page_shows_every_section_of_the_config_and_of_the_plugins_of_its_values() {
+    let (mut fake, mut app, _) = two_tabs();
+    let own = open(&mut fake, &mut app, SETTINGS_TAB);
+    assert_eq!(page_shown(&app, own), "settings");
+    assert_eq!(app.settings.pages[0].title, "Settings");
+    let view = page_view(&app, own).unwrap();
+    let tree = &view.surface.tree;
+    let list = tree
+        .by_key(&"sections".into())
+        .expect("the sidebar's sections");
+    let Some(lokyr_kernel::plugins::view::Kind::List(sections)) = tree.kind(list) else {
+        panic!("a list");
+    };
+    // The config's 18 sections, then the 6 of the plugins of a schema.
+    let titles: Vec<&str> = sections
+        .items
+        .iter()
+        .map(|item| item.texts[1].as_str())
+        .collect();
+    assert_eq!(titles.len(), 24, "{titles:?}");
+    assert_eq!(&titles[..3], ["Font", "Text", "Cursor"]);
+    assert_eq!(titles[18], "Tabs");
+    // The first section's keys, of their values in force.
+    assert_eq!(page_text(&app, own, "title"), "Font");
+    assert_eq!(page_text(&app, own, "value:size"), "13");
+    assert_eq!(page_text(&app, own, "default:size"), "Default");
+    assert_eq!(page_text(&app, own, "value:family"), "Not set");
+    // The arrows choose a plugin's section, as the list has the keyboard.
+    assert_eq!(focused_key(&app, own), ("sections".to_owned(), true));
+    for _ in 0..18 {
+        tap(
+            &mut fake,
+            &mut app,
+            own,
+            KeyCode::ArrowDown,
+            Modifiers::NONE,
+        );
+    }
+    frames(&mut fake, &mut app, own);
+    assert_eq!(page_text(&app, own, "title"), "Tabs");
+    assert_eq!(page_text(&app, own, "value:style"), "\"unified\"");
 }

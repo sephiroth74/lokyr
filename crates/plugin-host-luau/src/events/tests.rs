@@ -150,6 +150,7 @@ fn every() -> Vec<Event> {
         },
         Event::PackagesEnded { id: 12, ok: true },
         Event::PluginsChanged,
+        Event::SettingsChanged,
         Event::PageShown("plugins".to_owned()),
         Event::PageHidden("plugins".to_owned()),
     ]);
