@@ -2,7 +2,8 @@
 //! registry's CI checks it before it publishes it: its manifest; the
 //! capabilities that the app takes; the plugin API's version, this
 //! Sleip's; its catalogs, each that parses, and the titles of its commands
-//! in English; its package's layout and sizes; and its sources' types,
+//! in English; its config's schema, as the app reads it; its package's
+//! layout and sizes; and its sources' types,
 //! against the plugin API's definitions that this Sleip holds, of Luau's
 //! type checker. Each problem of its file, line and column; a note of what
 //! is not wrong but worth knowing. A failure of a problem found.
@@ -198,6 +199,7 @@ fn check_folder(folder: &Path, findings: &mut Findings) {
         );
     }
     check_catalogs(folder, &manifest, findings);
+    check_schema(folder, &manifest, findings);
     if let Err(error) = lokyr_pkg_model::archive::pack(folder) {
         findings.problem(".", None, "Package", &error.to_string());
     }
@@ -211,6 +213,35 @@ fn check_folder(folder: &Path, findings: &mut Findings) {
             "lokyr.d.luau",
             "it is not this Sleip's, whose types the check takes: the editor's types may differ",
         );
+    }
+}
+
+/// Checks the config's schema of the plugin of `manifest` in `folder`, if
+/// it has one, as the app reads it: a JSON Schema of the subset that the
+/// app checks, each key once in its object, of no key `enabled`, which is
+/// the app's. One that the package lacks the package's check tells.
+fn check_schema(folder: &Path, manifest: &Manifest, findings: &mut Findings) {
+    let Some(file) = manifest.contributes.config_schema.as_deref() else {
+        return;
+    };
+    let Ok(text) = std::fs::read_to_string(folder.join(file)) else {
+        return;
+    };
+    match lokyr_pkg_model::schema::Schema::parse_at(&text) {
+        Ok(schema) => {
+            if schema.keys().contains(&"enabled") {
+                findings.problem(
+                    file,
+                    line_of_text(&text, "enabled"),
+                    "Schema",
+                    "it has the key `enabled`, which is the app's, as it turns plugins off",
+                );
+            }
+        }
+        Err((message, at)) => {
+            let at = at.map(|(line, column)| (to_u32(line), to_u32(column)));
+            findings.problem(file, at, "Schema", &message);
+        }
     }
 }
 

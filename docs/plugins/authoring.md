@@ -92,7 +92,7 @@ sleip check
 sleip test
 ```
 
-`sleip check` reads the manifest, the catalogs and the package, and checks every source's types against the API in strict mode, as Lokyr would load the plugin: each problem comes as `file:line:column`, as an editor jumps to. `sleip test` runs each function of each file of `tests/`, each on a host of its own, which plays Lokyr's part: it activates the plugin, runs its commands, gives it events, renders its views and moves the time on, and tells what the plugin did.
+`sleip check` reads the manifest, the catalogs, the config's schema and the package, and checks every source's types against the API in strict mode, as Lokyr would load the plugin: each problem comes as `file:line:column`, as an editor jumps to. `sleip test` runs each function of each file of `tests/`, each on a host of its own, which plays Lokyr's part: it activates the plugin, runs its commands, gives it events, renders its views and moves the time on, and tells what the plugin did.
 
 ```lua
 function test.the_command_shows_its_notice_which_goes_by_itself(host: TestHost)

@@ -161,12 +161,45 @@ pub struct Checked {
 
 impl Schema {
     /// The schema of `text`, a JSON Schema of an object, whose defaults
-    /// are of their own schemas; an error of what does not read, or of a
-    /// keyword that the host does not check, by its place.
+    /// are of their own schemas, each key once in its object; an error of
+    /// what does not read, or of a keyword that the host does not check, by
+    /// its place.
     pub fn parse(text: &str) -> Result<Self, String> {
-        let value: Value =
-            serde_json::from_str(text).map_err(|error| format!("it is not JSON: {error}"))?;
-        let root = node(&value, "")?;
+        Self::parse_at(text).map_err(|(message, at)| match at {
+            Some((line, column)) => format!("{message} at line {line} column {column}"),
+            None => message,
+        })
+    }
+
+    /// The schema of `text`, as [`Schema::parse`] reads it; an error of its
+    /// line and column, from 1, where the text tells them.
+    pub fn parse_at(text: &str) -> Result<Self, (String, Option<(usize, usize)>)> {
+        // A key twice in one object, which a map would take one of.
+        if let Err(error) = serde_json::from_str::<Ordered>(text) {
+            let at = (error.line() > 0).then(|| (error.line(), error.column()));
+            let told = error.to_string();
+            let message = match at {
+                Some((line, column)) => told
+                    .strip_suffix(&format!(" at line {line} column {column}"))
+                    .unwrap_or(&told)
+                    .to_owned(),
+                None => told,
+            };
+            let message = if error.is_data() {
+                message
+            } else {
+                format!("it is not JSON: {message}")
+            };
+            return Err((message, at));
+        }
+        let value: Value = serde_json::from_str(text)
+            .map_err(|error| (format!("it is not JSON: {error}"), None))?;
+        Self::of_value(&value, text).map_err(|message| (message, None))
+    }
+
+    /// The schema of `value`, read of `text`.
+    fn of_value(value: &Value, text: &str) -> Result<Self, String> {
+        let root = node(value, "")?;
         if root.types.as_deref() != Some(&[Type::Object]) {
             return Err("the schema's `type` is `\"object\"`, of the section's keys".to_owned());
         }

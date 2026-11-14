@@ -555,7 +555,7 @@ fn check_tells_each_problem_of_its_file_and_line() {
     // Each case: what breaks the plugin, and the problems told, each its
     // place and its kind.
     type Case = (&'static str, fn(&Path), &'static [&'static str]);
-    let cases: [Case; 13] = [
+    let cases: [Case; 15] = [
         (
             "syntax",
             |folder| {
@@ -692,6 +692,38 @@ fn check_tells_each_problem_of_its_file_and_line() {
                     .unwrap();
             },
             &[".: Package: ", "`src/init.luau`"],
+        ),
+        (
+            "schema",
+            |folder| {
+                edit(folder, "plugin.toml", |text| {
+                    text.replacen(
+                        "[contributes]",
+                        "[contributes]\nconfig-schema = \"schema.json\"",
+                        1,
+                    )
+                });
+                edit(folder, "schema.json", |_| {
+                    "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"size\": { \"type\": \"integer\" },\n    \"size\": { \"type\": \"string\" }\n  }\n}\n".to_owned()
+                });
+            },
+            &["schema.json:5:10: Schema: the key `size` is twice in one object"],
+        ),
+        (
+            "schema-enabled",
+            |folder| {
+                edit(folder, "plugin.toml", |text| {
+                    text.replacen(
+                        "[contributes]",
+                        "[contributes]\nconfig-schema = \"schema.json\"",
+                        1,
+                    )
+                });
+                edit(folder, "schema.json", |_| {
+                    "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"enabled\": { \"type\": \"boolean\" }\n  }\n}\n".to_owned()
+                });
+            },
+            &["schema.json:4:5: Schema: it has the key `enabled`"],
         ),
     ];
     for (name, breaks, told) in cases {

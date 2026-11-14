@@ -242,6 +242,21 @@ fn a_schema_of_a_keyword_that_the_host_does_not_check_does_not_read() {
             .unwrap_err()
             .starts_with("it is not JSON")
     );
+    // A key twice in one object, at its place, which a map would take the
+    // last of and the settings' page the first.
+    let twice =
+        "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"a\": {},\n    \"a\": {}\n  }\n}";
+    assert_eq!(
+        Schema::parse_at(twice).unwrap_err(),
+        (
+            "the key `a` is twice in one object".to_owned(),
+            Some((5, 7))
+        )
+    );
+    assert_eq!(
+        Schema::parse(twice).unwrap_err(),
+        "the key `a` is twice in one object at line 5 column 7"
+    );
 }
 
 #[test]

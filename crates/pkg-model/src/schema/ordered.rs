@@ -4,9 +4,11 @@
 
 use std::fmt;
 
-use serde::de::{Deserialize, Deserializer, MapAccess, SeqAccess, Visitor};
+use serde::de::{Deserialize, Deserializer, Error, MapAccess, SeqAccess, Visitor};
 
-/// A JSON value whose objects keep their keys in their file's order.
+/// A JSON value whose objects keep their keys in their file's order, each
+/// key once in its object: a key twice is an error at its place, where
+/// `serde_json`'s maps would take its last value and this its first.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Ordered {
     /// A value of no keys nor items.
@@ -108,8 +110,14 @@ impl<'de> Visitor<'de> for OrderedVisitor {
     }
 
     fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Ordered, A::Error> {
-        let mut entries = Vec::new();
-        while let Some((key, value)) = map.next_entry::<String, Ordered>()? {
+        let mut entries: Vec<(String, Ordered)> = Vec::new();
+        while let Some(key) = map.next_key::<String>()? {
+            if entries.iter().any(|(name, _)| *name == key) {
+                return Err(A::Error::custom(format!(
+                    "the key `{key}` is twice in one object"
+                )));
+            }
+            let value = map.next_value::<Ordered>()?;
             entries.push((key, value));
         }
         Ok(Ordered::Object(entries))
@@ -135,5 +143,20 @@ mod tests {
             panic!("an object");
         };
         assert_eq!(inner[0].0, "z");
+    }
+
+    #[test]
+    fn a_key_twice_in_one_object_is_an_error_at_its_place() {
+        let error = serde_json::from_str::<Ordered>("{\"a\": {\"b\": 1,\n \"b\": 2}}").unwrap_err();
+        assert!(error.is_data());
+        assert_eq!((error.line(), error.column()), (2, 4));
+        assert!(
+            error
+                .to_string()
+                .starts_with("the key `b` is twice in one object"),
+            "{error}"
+        );
+        // The same key in two objects is not twice.
+        assert!(serde_json::from_str::<Ordered>(r#"{"a": {"b": 1}, "c": {"b": 2}}"#).is_ok());
     }
 }

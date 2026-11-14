@@ -259,6 +259,11 @@ fn a_schema_that_its_manifest_does_not_name_or_that_does_not_read_adds_no_plugin
             Some(r#"{ "type": "object", "properties": { "a": { "pattern": "x" } } }"#),
             "does not read: the keyword `pattern` at `/properties/a` is not one that the host checks",
         ),
+        (
+            MANIFEST,
+            Some(r#"{ "type": "object", "properties": { "a": {}, "a": {} } }"#),
+            "does not read: the key `a` is twice in one object at line 1 column 48",
+        ),
     ];
     for (manifest, schema, message) in cases {
         let mut plugins = Plugins::new();
