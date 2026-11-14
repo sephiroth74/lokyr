@@ -561,7 +561,8 @@ type Anchor =
     | { pane_corner: { pane: PaneId, corner: Corner } }
     | { pane_top: PaneId } -- across a pane's top, of its width, at its edge, as a command's header
     | { window_corner: { window: WindowId, corner: Corner } } -- of its room below the tab bar
-type Corner = "top-left" | "top-right" | "bottom-left" | "bottom-right" | "top" -- "top": the top's middle, an eighth of the height down, as a palette's
+    | { view_window: { view: ViewId, corner: Corner } } -- of the room of the window that shows a view of the plugin's, of no window's id, as a page's dialog in the settings' window
+type Corner = "top-left" | "top-right" | "bottom-left" | "bottom-right" | "top" | "center" -- "top": the top's middle, an eighth of the height down, as a palette's; "center": the middle, as a dialog's
 
 type PanelOptions = {
     anchor: Anchor,

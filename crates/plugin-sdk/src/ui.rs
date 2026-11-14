@@ -142,6 +142,8 @@ pub enum Corner {
     /// The middle of the top, an eighth of the height down, as a
     /// palette's.
     Top,
+    /// The middle, as a dialog's.
+    Center,
 }
 
 /// Where a panel goes, and the window that it shows in.
@@ -183,6 +185,15 @@ pub enum Anchor {
     WindowCorner {
         /// The window.
         window: WindowId,
+        /// The corner.
+        corner: Corner,
+    },
+    /// In a corner of the room of the window that shows a view of the
+    /// plugin's, as [`Anchor::WindowCorner`], of no window's id: a page's
+    /// dialog in the middle of the settings' window.
+    ViewWindow {
+        /// The view.
+        view: ViewId,
         /// The corner.
         corner: Corner,
     },

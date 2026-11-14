@@ -1122,10 +1122,24 @@ fn add_opens_a_panel_of_a_recorder_and_a_menu_of_the_commands_which_writes_the_b
     let (mut host, mut plugin) = keyed_host();
     rendered(&mut host, &mut plugin);
     let _ = written(&mut host);
-    // Add opens the panel, a dialog below it.
-    host.ui_event(&mut plugin, &on(ADD_BINDING, UiEventKind::Click))
+    // Add, above the bindings and below them, opens the panel, a dialog
+    // in the middle of the window.
+    let tree = rendered(&mut host, &mut plugin);
+    assert!(labelled(&tree, ADD_BINDING).is_some() && labelled(&tree, ADD_BINDING_BELOW).is_some());
+    host.ui_event(&mut plugin, &on(ADD_BINDING_BELOW, UiEventKind::Click))
         .unwrap();
-    assert!(host.panels().contains_key(&PanelId::from(NEW_BINDING)));
+    let options = host
+        .panels()
+        .get(&PanelId::from(NEW_BINDING))
+        .expect("the panel");
+    assert_eq!(
+        options.anchor,
+        Anchor::ViewWindow {
+            view: page(),
+            corner: lokyr_plugin_sdk::ui::Corner::Center,
+        }
+    );
+    assert_eq!(options.role, PanelRole::Dialog);
     let panel = host.render(&mut plugin, &new_binding()).expect("the panel");
     let recorder = find_node(&panel, RECORDER).expect("its recorder");
     assert!(matches!(&recorder.kind, Kind::Field(field) if field.records));

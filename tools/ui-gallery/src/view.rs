@@ -1160,6 +1160,7 @@ fn point(anchor: &Anchor) -> (f32, f32) {
                     rect.x + rect.width / 2.0,
                     rect.y + (rect.height / 8.0).max(margin),
                 ),
+                Corner::Center => (rect.x + rect.width / 2.0, rect.y + rect.height / 2.0),
             }
         }
     }

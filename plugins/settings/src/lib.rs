@@ -83,8 +83,10 @@ const KEYS_FIELD: &str = "keys-field:";
 /// that the config takes away.
 const RESTORE: &str = "restore:";
 
-/// The key of the button that opens the panel of a new binding.
+/// The keys of the buttons that open the panel of a new binding, above
+/// the bindings and below them.
 const ADD_BINDING: &str = "add-binding";
+const ADD_BINDING_BELOW: &str = "add-binding-below";
 
 /// The panel of a new binding, and its menu of the commands.
 const NEW_BINDING: &str = "new-binding";
@@ -511,15 +513,16 @@ impl SettingsPage {
                 .and_then(|at| at.parse::<usize>().ok())
         };
         match &event.kind {
-            UiEventKind::Click if key == ADD_BINDING => {
+            // A dialog in the middle of the settings' window.
+            UiEventKind::Click if [ADD_BINDING, ADD_BINDING_BELOW].contains(&key) => {
                 self.adding = Some(Adding::default());
                 self.refused.remove(NEW_REFUSED);
                 cx.open_panel(
                     NEW_BINDING,
                     PanelOptions {
-                        anchor: Anchor::Node {
+                        anchor: Anchor::ViewWindow {
                             view: page(),
-                            key: ADD_BINDING.into(),
+                            corner: lokyr_plugin_sdk::ui::Corner::Center,
                         },
                         role: PanelRole::Dialog,
                         close_outside: false,
@@ -1750,6 +1753,7 @@ fn keys_part(
             .key("description")
             .style(secondary())
             .layout(wrapped()),
+        add_row(cx, ADD_BINDING),
     ];
     let terminal = code();
     let shown: Vec<(usize, &SettingBinding)> = bindings
@@ -1803,23 +1807,27 @@ fn keys_part(
                 .layout(wrapped()),
         );
     }
-    // Add, which opens the panel of a new binding.
-    part.push(
-        Node::container(vec![
-            Node::button(message(cx, "binding-add", &[])).key(ADD_BINDING),
-        ])
-        .key("new-binding-row")
+    // Add again below the bindings, as above them.
+    if !shown.is_empty() {
+        part.push(add_row(cx, ADD_BINDING_BELOW));
+    }
+    if let Some(why) = refused.get(KEYS) {
+        part.push(refusal(why, "refused:keys"));
+    }
+    part
+}
+
+/// The row of Add, of `key`, at the part's right, which opens the panel of
+/// a new binding.
+fn add_row(cx: &mut Cx<'_>, key: &str) -> Node {
+    Node::container(vec![Node::button(message(cx, "binding-add", &[])).key(key)])
+        .key(format!("{key}-row").as_str())
         .layout(Layout {
             direction: Direction::Row,
             justify: Justify::End,
             width: Length::Fraction(1.0),
             ..Layout::default()
-        }),
-    );
-    if let Some(why) = refused.get(KEYS) {
-        part.push(refusal(why, "refused:keys"));
-    }
-    part
+        })
 }
 
 /// The row of the binding `binding`, at `at` among the settings' bindings:

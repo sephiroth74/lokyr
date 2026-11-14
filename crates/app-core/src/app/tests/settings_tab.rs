@@ -1531,7 +1531,21 @@ fn add_records_a_shortcut_of_no_command_run_and_writes_the_binding_of_the_comman
         UiEventKind::Click,
     );
     frames(&mut fake, &mut app, own);
-    assert!(panel_view(&app, own, "new-binding").is_some(), "the panel");
+    let panel = panel_view(&app, own, "new-binding").expect("the panel");
+    // In the middle of the window.
+    let frame = panel.frame.expect("its place");
+    let size = fake.window(own).unwrap().size.pixels;
+    let middle = frame.x + frame.width / 2.0;
+    assert!(
+        (middle - size.width as f32 / 2.0).abs() <= 2.0,
+        "{frame:?} of {size:?}"
+    );
+    let height = size.height as f32;
+    let center = frame.y + frame.height / 2.0;
+    assert!(
+        center > height * 0.35 && center < height * 0.65,
+        "{frame:?} of {size:?}"
+    );
     assert_eq!(focused_key(&app, own), ("recorder".to_owned(), false));
     assert!(fake.recording_keys());
     // ⌘N, New Window's, recorded and told as taken, no window opened.
@@ -1582,14 +1596,39 @@ fn add_records_a_shortcut_of_no_command_run_and_writes_the_binding_of_the_comman
     let panel = panel_view(&app, own, "new-binding").unwrap();
     let recorder = panel.surface.fields.state(&"recorder".into()).unwrap();
     assert_eq!(recorder.text(), "⇧⌘Y");
+    // The commands' menu, the platform's own, of a submenu each category,
+    // whose Clear is chosen.
     settings_event(
         &mut fake,
         &mut app,
         own,
-        Some("commands"),
-        "command-item:pane.clear",
+        Some("new-binding"),
+        "choose-command",
         UiEventKind::Click,
     );
+    frames(&mut fake, &mut app, own);
+    let (shown, _, menu) = fake
+        .context_menus()
+        .last()
+        .cloned()
+        .expect("the commands' menu");
+    assert_eq!(shown, own);
+    let titles: Vec<String> = menu
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            lokyr_platform_core::MenuItem::Submenu(menu) => Some(menu.title.clone()),
+            _ => None,
+        })
+        .collect();
+    assert!(titles.contains(&"Windows".to_owned()), "{titles:?}");
+    fake.send(
+        &mut app,
+        own,
+        WindowEvent::ContextCommand("command-item:pane.clear".to_owned()),
+    );
+    fake.send(&mut app, own, WindowEvent::ContextMenuClosed);
+    frames(&mut fake, &mut app, own);
     settings_event(
         &mut fake,
         &mut app,

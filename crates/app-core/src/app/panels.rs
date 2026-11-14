@@ -537,7 +537,7 @@ fn anchor_of<B: Backend>(
             };
             Anchor::Corner(frame, Corner::TopLeft, 0.0)
         }),
-        PanelAnchor::WindowCorner { corner, .. } => {
+        PanelAnchor::WindowCorner { corner, .. } | PanelAnchor::ViewWindow { corner, .. } => {
             Anchor::Corner(state.overlay, corner_of(*corner), margin)
         }
     }
@@ -551,9 +551,10 @@ fn anchor_pane(anchor: &PanelAnchor) -> Option<host::PaneId> {
         | PanelAnchor::Cursor(pane)
         | PanelAnchor::PaneCorner { pane, .. }
         | PanelAnchor::PaneTop(pane) => Some(*pane),
-        PanelAnchor::Pointer(_) | PanelAnchor::Node { .. } | PanelAnchor::WindowCorner { .. } => {
-            None
-        }
+        PanelAnchor::Pointer(_)
+        | PanelAnchor::Node { .. }
+        | PanelAnchor::WindowCorner { .. }
+        | PanelAnchor::ViewWindow { .. } => None,
     }
 }
 
@@ -589,6 +590,7 @@ fn point(anchor: &Anchor) -> (f32, f32) {
                     rect.x + rect.width / 2.0,
                     rect.y + (rect.height / 8.0).max(margin),
                 ),
+                Corner::Center => (rect.x + rect.width / 2.0, rect.y + rect.height / 2.0),
             }
         }
     }
@@ -654,5 +656,6 @@ fn corner_of(corner: PanelCorner) -> Corner {
         PanelCorner::BottomLeft => Corner::BottomLeft,
         PanelCorner::BottomRight => Corner::BottomRight,
         PanelCorner::Top => Corner::Top,
+        PanelCorner::Center => Corner::Center,
     }
 }

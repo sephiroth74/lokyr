@@ -2561,7 +2561,7 @@ impl FakeHost {
     }
 
     /// The window that a panel at `anchor` shows in: its pane's, its
-    /// window, or its node's view's.
+    /// window, or its node's view's, or its view's.
     fn anchor_window(&self, anchor: &Anchor) -> Result<WindowId, Error> {
         match anchor {
             Anchor::Cell { pane, .. }
@@ -2582,6 +2582,7 @@ impl FakeHost {
                 self.node(view, key)?;
                 self.view_window(view)
             }
+            Anchor::ViewWindow { view, .. } => self.view_window(view),
         }
     }
 

@@ -234,11 +234,16 @@ impl<B: Backend> App<B> {
         };
         if settings {
             for view in state.panels.order().filter_map(panel).chain(native()) {
+                // A page's panels, of its nodes or of the window's room,
+                // and their own panels, as a dialog's menu.
                 let of_page = view.placed.as_ref().is_some_and(|placed| {
                     matches!(
                         placed.options.anchor,
                         lokyr_kernel::plugins::ui::Anchor::Node {
-                            view: ViewId::Page(_),
+                            view: ViewId::Page(_) | ViewId::Panel(_),
+                            ..
+                        } | lokyr_kernel::plugins::ui::Anchor::ViewWindow {
+                            view: ViewId::Page(_) | ViewId::Panel(_),
                             ..
                         }
                     )

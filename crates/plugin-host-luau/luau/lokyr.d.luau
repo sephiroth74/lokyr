@@ -352,6 +352,7 @@ export type Anchor =
     | { pane_corner: { pane: PaneId, corner: Corner } }
     | { pane_top: PaneId }
     | { window_corner: { window: WindowId, corner: Corner } }
+    | { view_window: { view: ViewId, corner: Corner } }
 
 export type Awake =
     | "off"
@@ -436,6 +437,7 @@ export type Corner =
     | "bottom-left"
     | "bottom-right"
     | "top"
+    | "center"
 
 export type Current = {
     current: { any }?,

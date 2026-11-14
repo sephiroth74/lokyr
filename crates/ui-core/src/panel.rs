@@ -54,6 +54,8 @@ pub enum Corner {
     /// The middle of the top, an eighth of the height down, as a
     /// palette's.
     Top,
+    /// The middle, as a dialog's of the whole window.
+    Center,
 }
 
 /// What a panel is to the system.
@@ -137,6 +139,10 @@ pub fn place(anchor: &Anchor, size: (f32, f32), window: (f32, f32)) -> (f32, f32
                 Corner::Top => (
                     rect.x + (rect.width - width) / 2.0,
                     rect.y + (rect.height / 8.0).max(margin),
+                ),
+                Corner::Center => (
+                    rect.x + (rect.width - width) / 2.0,
+                    rect.y + (rect.height - height) / 2.0,
                 ),
             }
         }
