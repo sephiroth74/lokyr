@@ -311,9 +311,14 @@ impl Plugin for SettingsPage {
                     }
                 }
                 // The bindings' places change with the settings: a change of
-                // keys under way ends.
+                // keys under way ends; a text that its key refused goes, of
+                // its reason, the field showing the value in force anew,
+                // and one typed and not written yet stays.
                 Event::SettingsChanged => {
                     self.editing = None;
+                    let refused = &self.refused;
+                    self.typed.retain(|name, _| !refused.contains_key(name));
+                    self.refused.clear();
                     again = true;
                 }
                 // Typing paused: what it typed is written, of a value whole.
