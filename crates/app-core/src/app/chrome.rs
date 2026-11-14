@@ -341,7 +341,7 @@ impl<B: Backend> App<B> {
         });
         let notice = if due { self.notice_tree() } else { None };
         // The settings tab's tree, made as its view first shows.
-        let (settings_revision, settings_chosen) = (self.settings.revision, self.settings.chosen);
+        let settings_revision = self.settings.revision;
         let settings_due = self.windows.get(&window).is_some_and(|state| {
             state.chrome.iter().any(|view| {
                 view.plugin == OVERFLOW
@@ -424,15 +424,6 @@ impl<B: Backend> App<B> {
                                 "lokyr: the view {view:?} of `{plugin}` keeps its last tree, as its new one is not one: {error:?}"
                             );
                         }
-                        // The settings tab's sidebar selects the page shown.
-                        if plugin == OVERFLOW
-                            && view == super::settings_tab::settings_view()
-                            && let Some(node) =
-                                slot.surface.tree.by_key(&super::settings_tab::PAGES.into())
-                        {
-                            let surface = &mut slot.surface;
-                            surface.lists.select(&surface.tree, node, settings_chosen);
-                        }
                     }
                     None => slot.surface = Surface::new(scale),
                 }
@@ -450,6 +441,14 @@ impl<B: Backend> App<B> {
                     } else if role.takes_focus() {
                         state.focus.first(slot.id, &slot.surface.tree);
                     }
+                }
+                // A settings' page's first tree, of no node with the focus,
+                // as the settings open: its first field takes it.
+                if first
+                    && matches!(slot.view, ViewId::Page(_))
+                    && state.focus.target() == Target::Pane
+                {
+                    state.focus.first(slot.id, &slot.surface.tree);
                 }
             }
             state.chrome.push(slot);

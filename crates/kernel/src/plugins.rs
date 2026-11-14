@@ -4770,6 +4770,18 @@ impl Host<'_, '_> {
         self.tab(tab).map(|_| ())
     }
 
+    /// Whether the window `window` takes tabs: the settings' window of
+    /// their own takes none.
+    fn takes_tabs(&self, window: host::WindowId) -> Result<(), Error> {
+        if self.context.workspace.settings_window() == Some(WindowId::of(window.0)) {
+            return Err(Error::new(
+                Code::Failed,
+                lokyr_plugin_sdk::message::SETTINGS_WINDOW,
+            ));
+        }
+        Ok(())
+    }
+
     /// Whether the tab `tab` is there, as [`Host::known_tab`] tells, or is
     /// the settings tab, which is moved, shown and closed as a tab is.
     fn known_tab_or_settings(&self, tab: host::TabId) -> Result<(), Error> {
@@ -5388,6 +5400,7 @@ impl Host<'_, '_> {
                 directory,
             } => {
                 self.window(*window)?;
+                self.takes_tabs(*window)?;
                 if let Some(directory) = directory {
                     host::check_directory(directory)
                         .map_err(|message| Error::new(Code::Failed, message))?;
@@ -5483,10 +5496,23 @@ impl Host<'_, '_> {
             Asked::MoveTab { tab, window, .. } => {
                 self.known_tab_or_settings(*tab)?;
                 self.window(*window)?;
+                self.takes_tabs(*window)?;
+                // The settings' tab of a window of their own stays there.
+                let settings = self.context.workspace.settings_window();
+                if settings.is_some()
+                    && self.context.workspace.is_settings(TabId::of(tab.0))
+                    && settings != Some(WindowId::of(window.0))
+                {
+                    return Err(Error::new(
+                        Code::Failed,
+                        lokyr_plugin_sdk::message::SETTINGS_WINDOW,
+                    ));
+                }
             }
             Asked::PaneToNewTab { pane, window, .. } => {
                 self.known_pane(*pane)?;
                 self.window(*window)?;
+                self.takes_tabs(*window)?;
             }
             Asked::TabIntoPane { tab, pane, .. } => {
                 self.known_tab(*tab)?;

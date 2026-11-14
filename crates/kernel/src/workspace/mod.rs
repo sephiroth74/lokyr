@@ -414,6 +414,9 @@ pub struct Workspace {
     /// The settings tab, of no pane, one at most in the workspace: its id,
     /// and its window.
     settings: Option<(TabId, WindowId)>,
+    /// Whether the settings tab is in a window of its own, which no other
+    /// tab goes into, nor it out of.
+    settings_window: bool,
     /// The settings tab's title, in the language that the app shows.
     settings_title: String,
 }
@@ -482,6 +485,7 @@ impl Workspace {
             && settings == tab
         {
             self.settings = None;
+            self.settings_window = false;
             self.changed(WorkspaceEvent::TabClosed {
                 tab: tab.into(),
                 window: window.into(),
@@ -599,6 +603,40 @@ impl Workspace {
             window: window.into(),
         });
         Some(tab)
+    }
+
+    /// Opens the settings in a window of their own, of the settings tab
+    /// alone, titled `title`, which no other tab goes into, nor the tab out
+    /// of, and which closes with it; or the window of the settings tab
+    /// open, which shows it. Its window.
+    pub fn open_settings_window(&mut self, title: &str) -> WindowId {
+        title.clone_into(&mut self.settings_title);
+        if let Some((tab, window)) = self.settings {
+            self.activate_tab(tab);
+            return window;
+        }
+        let tab = TabId::new();
+        let window = WindowId::new();
+        self.settings = Some((tab, window));
+        self.settings_window = true;
+        self.window_of_id(tab, window);
+        self.changed(WorkspaceEvent::TabCreated {
+            tab: tab.into(),
+            window: window.into(),
+            index: 0,
+        });
+        self.changed(WorkspaceEvent::TabActivated {
+            tab: tab.into(),
+            window: window.into(),
+        });
+        window
+    }
+
+    /// The settings' window of their own, if they are open in one.
+    pub fn settings_window(&self) -> Option<WindowId> {
+        self.settings
+            .filter(|_| self.settings_window)
+            .map(|(_, window)| window)
     }
 
     /// The window of `tab`, a tab of panes or the settings tab, if it is
@@ -1004,7 +1042,7 @@ impl Workspace {
         index: usize,
         tab: TabId,
     ) -> Option<TabId> {
-        if !self.windows.contains_key(&window) {
+        if !self.windows.contains_key(&window) || self.settings_window() == Some(window) {
             return None;
         }
         let id = pane.id();
@@ -1561,6 +1599,14 @@ impl Workspace {
         let Some(from) = self.window_of_tab(tab) else {
             return false;
         };
+        // The settings' window of their own takes no other tab, nor gives
+        // its own.
+        if let Some(settings) = self.settings_window()
+            && (settings == window || settings == from)
+            && from != window
+        {
+            return false;
+        }
         if !self.windows.contains_key(&window) {
             return false;
         }
@@ -1858,7 +1904,7 @@ impl Workspace {
         index: usize,
     ) -> Option<TabId> {
         let tab = *self.tab_of.get(&pane)?;
-        if !self.windows.contains_key(&window) {
+        if !self.windows.contains_key(&window) || self.settings_window() == Some(window) {
             return None;
         }
         if self.tabs.get(&tab)?.layout.panes().len() == 1 {

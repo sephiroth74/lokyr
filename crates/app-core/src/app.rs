@@ -95,9 +95,9 @@ const QUIT: &str = "app.quit";
 /// when it is not there.
 const SETTINGS: &str = "app.settings";
 
-/// The command that opens the settings tab, a tab of no pane of the
-/// settings' pages, in the window in front, or shows the one open.
-const SETTINGS_TAB: &str = "app.settings-tab";
+/// The command that opens the settings in a window of their own, of their
+/// pages, or brings the one open forward.
+const SETTINGS_TAB: &str = "app.settings-window";
 
 /// The command that opens the themes' folder beside the config file in
 /// the file manager, made first when it is not there.
@@ -2045,8 +2045,9 @@ impl<B: Backend> App<B> {
         state.page = page;
         state.keyboard = self.workspace.focused(shown).map(Pane::id);
         // The lowest number that no other open window has; the quick
-        // terminal's has none.
-        let quick = self.quick.contains_key(&window);
+        // terminal's has none, nor the settings' of their own.
+        let quick =
+            self.quick.contains_key(&window) || self.workspace.settings_window() == Some(shown);
         let number = (!quick).then(|| self.free_number());
         self.workspace.number_window(shown, number, None);
         self.windows.insert(window, state);
@@ -4790,7 +4791,7 @@ fn commands(texts: &Texts, plugins: &Plugins) -> Registry {
         ),
         (PERFORMANCE, "app-performance", Category::View),
         (OPEN_THEMES, "app-open-themes-folder", Category::View),
-        (SETTINGS_TAB, "app-settings-tab", Category::App),
+        (SETTINGS_TAB, "app-settings-window", Category::App),
         (NEW_WINDOW, "window-new", Category::Windows),
         (CLOSE_WINDOW, "window-close", Category::Windows),
         (SET_TITLE, "window-set-title", Category::Windows),

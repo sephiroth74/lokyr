@@ -1,10 +1,12 @@
-//! The settings tab: a tab of no pane, one at most in the app, which shows
-//! the settings' pages in the room that a tab's panes take, as a view of
-//! the app's own under the window's panels, its sidebar of the pages that
-//! Lokyr's own plugins' manifests have, and the chosen page beside it, its
-//! plugin's view over the app's; opened in the window in front, or the one
-//! open shown, and closed as a tab closes. The plugin of the page shown
-//! hears it shown, and hidden as another page, another tab or none shows.
+//! The settings: a window of their own, one at most in the app, of a tab
+//! of no pane, which shows the settings' pages in the room that a tab's
+//! panes take, as a view of the app's own under the window's panels: the
+//! pages that Lokyr's own plugins' manifests have as tabs across the top,
+//! and the chosen page below them, its plugin's view over the app's, of a
+//! sidebar of its own where it needs one; opened by the commands, or the
+//! window open brought forward, and closed as a window closes. The plugin
+//! of the page shown hears it shown, and hidden as another page shows or
+//! the window closes.
 
 use std::sync::Arc;
 
@@ -14,10 +16,10 @@ use lokyr_kernel::plugins::ui::{
     UiEvent, ViewId,
 };
 use lokyr_kernel::plugins::view::{
-    Align, Direction, Edges, Justify, Kind, Layout, Length, ListItem, Node, Role as NodeRole,
-    Style, TextSize, Token, UiEventKind,
+    Align, Direction, Edges, Justify, Layout, Length, Node, Role as NodeRole, Style, Tab, TextSize,
+    Token, UiEventKind,
 };
-use lokyr_platform_core::{Platform, WindowId};
+use lokyr_platform_core::{Platform, Size, WindowAttributes, WindowId};
 use lokyr_ui_core::panel::{Anchor, Dismiss, Options, Role};
 
 use super::App;
@@ -27,13 +29,17 @@ use crate::drawing::Backend;
 /// The id of the settings tab's view among the app's own views.
 pub(super) const SETTINGS: &str = "settings-tab";
 
-/// The width of the settings tab's sidebar, in points.
-const SIDEBAR: f32 = 220.0;
+/// The size of the settings' window of their own, in points, as macOS's
+/// System Settings opens.
+const WINDOW: Size = Size {
+    width: 780.0,
+    height: 560.0,
+};
 
-/// The height of a row of the sidebar, in points, as macOS's sidebars'.
-const ROW: f32 = 28.0;
+/// The room about the settings' tabs' box, in points.
+const PADDING: f32 = 12.0;
 
-/// The key of the sidebar's list of pages.
+/// The key of the view of tabs of the pages.
 pub(super) const PAGES: &str = "pages";
 
 /// The key of the room beside the sidebar that the chosen page's view
@@ -78,14 +84,14 @@ pub(super) fn settings_view() -> ViewId {
 }
 
 impl<B: Backend> App<B> {
-    /// Opens the settings tab in the window that the commands run in, or
-    /// the one that has the focus, right after the tab that it shows, or a
-    /// new window's; or shows the one open, wherever it is.
+    /// Opens the settings in a window of their own, of the size of macOS's
+    /// System Settings, which neither a number nor the restore takes; or
+    /// brings the one open forward.
     pub(super) fn open_settings_tab(&mut self, platform: &mut dyn Platform) {
         self.refresh_pages();
         let title = self.texts.text("settings-tab-title");
-        if let Some((tab, shown)) = self.workspace.settings_tab() {
-            self.workspace.activate_tab(tab);
+        if let Some((_, shown)) = self.workspace.settings_tab() {
+            self.workspace.open_settings_window(&title);
             let window = self
                 .windows
                 .iter()
@@ -96,20 +102,21 @@ impl<B: Backend> App<B> {
             }
             return;
         }
-        let window = match self.acting.or_else(|| platform.focused_window()) {
-            Some(window) if self.windows.contains_key(&window) => Some(window),
-            _ => {
-                let program = self.program.clone();
-                self.open_window_running(platform, &program, None, None)
+        let attributes = WindowAttributes {
+            title: title.clone(),
+            size: WINDOW,
+            remember: false,
+            restore: false,
+            restore_size: false,
+            frame: None,
+        };
+        match platform.create_window(&attributes) {
+            Ok(window) => {
+                let shown = self.workspace.open_settings_window(&title);
+                self.attach(platform, window, shown, None);
+                platform.focus_window(window);
             }
-        };
-        let Some(shown) = window.and_then(|window| self.windows.get(&window)) else {
-            return;
-        };
-        let shown = shown.window;
-        self.workspace.open_settings(shown, &title);
-        if let Some(window) = window {
-            platform.focus_window(window);
+            Err(error) => eprintln!("lokyr: {error}"),
         }
     }
 
@@ -277,8 +284,8 @@ impl<B: Backend> App<B> {
         ));
     }
 
-    /// An event of the settings tab's nodes: a page chosen in the sidebar,
-    /// by a click or the keys, shows beside it.
+    /// An event of the settings' nodes: a page chosen among their tabs, by
+    /// a click or the keys, shows below them.
     pub(super) fn settings_event(&mut self, platform: &mut dyn Platform, event: &UiEvent) {
         let item = match (&event.kind, event.key.0.as_str()) {
             (UiEventKind::Select { item } | UiEventKind::Activate { item }, PAGES) => *item,
@@ -292,93 +299,59 @@ impl<B: Backend> App<B> {
         }
     }
 
-    /// The settings tab's tree: its sidebar of pages, each a row of its
-    /// icon and its title, the chosen one selected, and the room beside it
-    /// that the chosen page's view takes; of no page, a text there that
-    /// tells that none is there yet.
+    /// The settings' tree: their pages as tabs across the top, of their
+    /// icons and titles, the chosen one's, and below them, in the tabs'
+    /// box, the room that the chosen page's view takes, where its plugin
+    /// gives the page a sidebar of its own if it needs one; of no page, a
+    /// text that tells that none is there yet.
     pub(super) fn settings_tree(&self) -> Node {
         let pages = &self.settings.pages;
-        let row = Node::container(vec![
-            Node::icon("").style(Style {
-                color: Some(Token::from("accent")),
-                ..Style::default()
-            }),
-            Node::text(""),
-        ])
-        .layout(Layout {
-            direction: Direction::Row,
-            gap: 8.0,
-            align: Align::Center,
-            height: Length::Points(ROW),
-            padding: Edges {
-                top: 0.0,
-                right: 8.0,
-                bottom: 0.0,
-                left: 8.0,
-            },
+        let whole = Layout {
+            width: Length::Fraction(1.0),
+            height: Length::Fraction(1.0),
             ..Layout::default()
-        });
-        let items = pages
-            .iter()
-            .map(|page| ListItem {
-                texts: vec![page.icon.clone(), page.title.clone()],
-            })
-            .collect();
-        let mut list = Node::list(row, pages.len(), (0, items))
-            .key(PAGES)
-            .label(self.texts.text("settings-tab-title"))
-            .layout(Layout {
-                width: Length::Fraction(1.0),
-                height: Length::Fraction(1.0),
-                ..Layout::default()
-            });
-        if let Kind::List(list) = &mut list.kind {
-            list.row_height = Some(ROW);
-            list.menu = true;
-        }
-        let sidebar = Node::container(vec![list])
-            .key("sidebar")
-            .role(NodeRole::Group)
-            .layout(Layout {
-                direction: Direction::Column,
-                width: Length::Points(SIDEBAR),
-                height: Length::Fraction(1.0),
-                padding: Edges {
-                    top: 10.0,
-                    right: 10.0,
-                    bottom: 10.0,
-                    left: 10.0,
-                },
-                ..Layout::default()
-            })
-            .style(Style {
-                background: Some(Token::from("panel.bg")),
-                ..Style::default()
-            });
-        let empty = pages.is_empty().then(|| {
-            Node::text(self.texts.text("settings-tab-empty")).style(Style {
+        };
+        if pages.is_empty() {
+            let empty = Node::text(self.texts.text("settings-tab-empty")).style(Style {
                 text_size: Some(TextSize::Small),
                 color: Some(Token::from("text.secondary")),
                 ..Style::default()
+            });
+            return Node::container(vec![empty])
+                .key(PAGE)
+                .role(NodeRole::Group)
+                .layout(Layout {
+                    justify: Justify::Center,
+                    align: Align::Center,
+                    ..whole
+                });
+        }
+        let tabs = pages
+            .iter()
+            .map(|page| Tab {
+                label: page.title.clone(),
+                icon: page.icon.clone(),
+                disabled: false,
             })
-        });
-        let page = Node::container(empty.into_iter().collect())
+            .collect();
+        let page = Node::container(Vec::new())
             .key(PAGE)
             .role(NodeRole::Group)
             .layout(Layout {
                 grow: 1.0,
-                height: Length::Fraction(1.0),
-                justify: Justify::Center,
-                align: Align::Center,
+                width: Length::Fraction(1.0),
                 ..Layout::default()
             });
-        Node::container(vec![sidebar, Node::separator(), page])
+        let control = Node::tabs(tabs, self.settings.chosen, page)
+            .key(PAGES)
+            .label(self.texts.text("settings-tab-title"))
+            .layout(whole);
+        Node::container(vec![control])
             .key("settings")
             .layout(Layout {
-                direction: Direction::Row,
-                width: Length::Fraction(1.0),
-                height: Length::Fraction(1.0),
-                ..Layout::default()
+                direction: Direction::Column,
+                padding: Edges::all(PADDING),
+                ..whole
             })
     }
 }

@@ -45,14 +45,14 @@ impl<B: Backend> App<B> {
     }
 
     /// Opens a tab at `folder` after the tabs of the window in front, or of
-    /// another, the quick terminal's and the man pages' aside, which shows
-    /// it; or a window, without one. The window that it opened in.
+    /// another, the quick terminal's, the man pages' and the settings'
+    /// aside, which shows it; or a window, without one. The window that it
+    /// opened in.
     fn open_tab_at(&mut self, platform: &mut dyn Platform, folder: PathBuf) -> Option<WindowId> {
         let takes = |app: &Self, window: &WindowId| {
-            app.windows
-                .get(window)
-                .is_some_and(|open| open.page.is_none())
-                && !app.quick.contains_key(window)
+            app.windows.get(window).is_some_and(|open| {
+                open.page.is_none() && app.workspace.settings_window() != Some(open.window)
+            }) && !app.quick.contains_key(window)
         };
         let front = self
             .front

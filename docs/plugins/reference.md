@@ -53,7 +53,7 @@ A slot is a place of the window that plugins' views fill; a plugin names the slo
 | `window-strip` | Many | A thin strip across the panes' top, over them, as the programs' progress |
 | `pane-header` | One | A header across each pane's top, above its grid |
 
-Floating panels are no slot: a plugin opens and closes them, anchored to a cell, the cursor, the pointer, a node of its views, or a corner of a pane or of the window. Neither are the settings tab's pages, which Lokyr's own plugins alone have.
+Floating panels are no slot: a plugin opens and closes them, anchored to a cell, the cursor, the pointer, a node of its views, or a corner of a pane or of the window. Neither are the settings window's pages, which Lokyr's own plugins alone have.
 
 ## Events
 

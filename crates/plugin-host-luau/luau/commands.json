@@ -128,10 +128,10 @@
   {
     "capabilities": [],
     "category": "app",
-    "name": "app.settings-tab",
+    "name": "app.settings-window",
     "params": [],
     "plugin": null,
-    "title": "Open Settings Tab",
+    "title": "Open Settings Window",
     "when": null
   },
   {
