@@ -876,6 +876,10 @@ pub struct Plugins {
     /// The generation of the plugins and their config, which an added or a
     /// removed plugin and a config applied move on.
     generation: u64,
+    /// The generation of the plugins alone, which an added or a removed
+    /// plugin moves on, as an update removes one version and adds another
+    /// of the same name, state and capabilities.
+    roster: u64,
 }
 
 /// A page of the settings tab, of a plugin's manifest, as the sidebar lists
@@ -1233,6 +1237,7 @@ impl Plugins {
             return false;
         };
         self.generation += 1;
+        self.roster += 1;
         let mut entry = self.entries.remove(at);
         stop(
             &mut entry,
@@ -1400,6 +1405,7 @@ impl Plugins {
         declared: Option<(Vec<Capability>, Uses)>,
     ) -> Result<(), Error> {
         self.generation += 1;
+        self.roster += 1;
         if matches!(runner, Runner::Main(_))
             && manifest
                 .as_ref()
@@ -2199,14 +2205,38 @@ impl Plugins {
             .and_then(|entry| entry.state.manifest.as_ref())
     }
 
+    /// Queues `plugins-changed` and `settings-changed` where the plugins'
+    /// list or their sections of the settings changed since they were last
+    /// read, as a call's fault or a plugin installed or removed changes
+    /// them, for the plugins to hear in the turn that changed them.
+    pub fn look_at_changes(&mut self) {
+        let _ = self.infos();
+        let _ = self.settings_sections();
+    }
+
+    /// Queues `event` to every plugin that subscribes to it, unless it is
+    /// queued already.
+    fn tell_once(&mut self, event: Event) {
+        if !self
+            .out
+            .events
+            .iter()
+            .any(|(to, queued)| to.is_none() && *queued == event)
+        {
+            self.out.events.push((None, event));
+        }
+    }
+
     /// The plugins, built in and installed, in the order of their
-    /// activation, as a read of them tells: each one's state and its
-    /// capabilities' decisions; the same list until one of them changes,
-    /// which a fingerprint of what it tells finds, of no allocation, and
-    /// which the plugins that subscribe to `plugins-changed` hear.
+    /// activation, as a read of them tells: each one's version, state and
+    /// capabilities' decisions; the same list until one of them changes or
+    /// a plugin comes or goes, which a fingerprint of what it tells finds,
+    /// of no allocation, and which the plugins that subscribe to
+    /// `plugins-changed` hear.
     pub fn infos(&mut self) -> Arc<[host::PluginInfo]> {
         use std::hash::{Hash, Hasher};
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        self.roster.hash(&mut hasher);
         for entry in &self.entries {
             let state = &entry.state;
             (
@@ -2227,7 +2257,7 @@ impl Plugins {
                 .collect();
             // Not the first list, which nothing changed before.
             if self.infos.0 != 0 {
-                self.out.events.push((None, Event::PluginsChanged));
+                self.tell_once(Event::PluginsChanged);
             }
             self.infos = (fingerprint, Arc::from(infos));
         }
@@ -2237,7 +2267,8 @@ impl Plugins {
     /// The plugins' sections of the settings: each plugin's of a config
     /// schema, in their order, of its schema's order and of its keys'
     /// values in force; the same list until a plugin comes or goes or the
-    /// config applies anew.
+    /// config applies anew, a change of which the plugins that subscribe to
+    /// `settings-changed` hear.
     pub fn settings_sections(&mut self) -> Arc<[host::SettingsSection]> {
         if let Some((generation, sections)) = &self.settings
             && *generation == self.generation
@@ -2265,6 +2296,14 @@ impl Plugins {
             })
             .collect();
         let sections: Arc<[host::SettingsSection]> = Arc::from(sections);
+        // Not the first sections, which nothing changed before.
+        if self
+            .settings
+            .as_ref()
+            .is_some_and(|(_, before)| **before != *sections)
+        {
+            self.tell_once(Event::SettingsChanged);
+        }
         self.settings = Some((self.generation, Arc::clone(&sections)));
         sections
     }

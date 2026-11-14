@@ -943,3 +943,89 @@ fn a_plugin_s_section_of_the_settings_is_its_schema_s_of_its_values_in_force() {
     assert!(!Arc::ptr_eq(&sections, &after));
     assert_eq!(after[0].keys[1].value, Some(Data::Integer(3)));
 }
+
+/// A plugin that hears the plugins' list and the settings change, into
+/// its log.
+struct Watcher(Rc<RefCell<Vec<Event>>>);
+
+impl Plugin for Watcher {
+    fn activate(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
+        cx.subscribe(&["plugins-changed", "settings-changed"])
+    }
+
+    fn on_event(&mut self, _: &mut Cx<'_>, events: &[Event]) -> Result<(), Error> {
+        self.0.borrow_mut().extend(events.iter().cloned());
+        Ok(())
+    }
+}
+
+#[test]
+fn the_plugins_list_and_the_settings_are_told_as_a_plugin_comes_goes_updates_or_faults() {
+    let mut app = App::default();
+    let mut plugins = Plugins::new();
+    let heard = Rc::new(RefCell::new(Vec::new()));
+    plugins
+        .add("watcher", Box::new(Watcher(Rc::clone(&heard))))
+        .unwrap();
+    let notes = |version: &str| {
+        Manifest::parse(&format!(
+            "[plugin]\nname = \"acme/notes\"\nversion = \"{version}\"\nkind = \"luau\"\napi = \"^0.1\"\nlicense = \"MIT\"\n[activation]\non = [\"command:notes.open\"]\n"
+        ))
+        .unwrap()
+    };
+    plugins
+        .add(
+            "crasher",
+            scripted(
+                |cx| cx.register_command(command("crasher.go")),
+                |_, _, _| panic!("a fault of the test's"),
+            ),
+        )
+        .unwrap();
+    // The last plugin, as its update adds it again in the same place.
+    plugins
+        .add_installed(notes("1.0.0"), Box::new(|| Box::new(Still)), (&[], &[]))
+        .unwrap();
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    // The first reads, of nothing changed before.
+    assert_eq!(plugins.infos()[2].version.as_deref(), Some("1.0.0"));
+    let _ = plugins.settings_sections();
+    plugins.look_at_changes();
+    assert!(!plugins.has_events());
+    let told = |plugins: &mut Plugins, app: &mut App| {
+        plugins.look_at_changes();
+        assert!(plugins.deliver(&mut app.context()).is_empty());
+        std::mem::take(&mut *heard.borrow_mut())
+    };
+    // An update: the old version removed and the new one added, of the
+    // same name, state and capabilities.
+    assert!(plugins.remove("acme/notes", &mut app.context()));
+    plugins
+        .add_installed(notes("2.0.0"), Box::new(|| Box::new(Still)), (&[], &[]))
+        .unwrap();
+    assert_eq!(told(&mut plugins, &mut app), [Event::PluginsChanged]);
+    let infos = plugins.infos();
+    assert_eq!(infos[2].name, "acme/notes");
+    assert_eq!(infos[2].version.as_deref(), Some("2.0.0"));
+    // A fault in a call, told in the turn of the call.
+    let _ = plugins.run("crasher.go", Args::new(), &mut app.context());
+    assert_eq!(told(&mut plugins, &mut app), [Event::PluginsChanged]);
+    // A plugin of a schema comes and goes: its section of the settings too.
+    let greeter = Greeter {
+        read: Rc::default(),
+        kept: Rc::default(),
+        schema: Some(SCHEMA),
+    };
+    plugins.add_builtin(MANIFEST, Box::new(greeter)).unwrap();
+    assert_eq!(
+        told(&mut plugins, &mut app),
+        [Event::PluginsChanged, Event::SettingsChanged]
+    );
+    assert!(plugins.remove("acme/greeter", &mut app.context()));
+    assert_eq!(
+        told(&mut plugins, &mut app),
+        [Event::PluginsChanged, Event::SettingsChanged]
+    );
+    // Nothing changed, nothing told.
+    assert!(told(&mut plugins, &mut app).is_empty());
+}

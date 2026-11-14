@@ -1607,8 +1607,6 @@ impl<B: Backend> App<B> {
             self.settle_update_checks(platform, check);
             return;
         }
-        // The plugins that read the settings hear that they changed.
-        self.plugins.post(plugins::Event::SettingsChanged);
         let font_changed = config.font != self.config.font;
         // A family that a picker previews ends as the config's font changes.
         if font_changed {
@@ -1623,6 +1621,9 @@ impl<B: Backend> App<B> {
             self.report(platform, diagnostic);
             return;
         }
+        // The plugins that read the settings hear that they changed, of a
+        // config that applies.
+        self.plugins.post(plugins::Event::SettingsChanged);
         self.resolve(platform, &About::Config);
         if font_changed {
             self.tell_font(platform);
@@ -3449,6 +3450,9 @@ impl<B: Backend> App<B> {
             eprintln!("lokyr: {error}");
         }
         let ui_events = std::mem::take(&mut self.ui_events);
+        // A plugin's state that a call changed, or a plugin installed or
+        // removed, which the plugins that follow them hear in this turn.
+        self.plugins.look_at_changes();
         let delivers = self.plugins.has_events();
         let rendered = std::mem::take(&mut self.rendered_slots);
         if ui_events.is_empty() && !delivers && !rendered && !served.any {
@@ -3483,6 +3487,7 @@ impl<B: Backend> App<B> {
         // waits for the next delivery, which a turn of its own brings, as
         // no event of the platform's may come soon.
         self.events(platform);
+        self.plugins.look_at_changes();
         if self.plugins.has_events() && self.deliver_timer.is_none() {
             self.deliver_timer = Some(platform.start_timer(Instant::now()));
         }
