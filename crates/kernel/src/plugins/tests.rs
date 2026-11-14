@@ -1359,6 +1359,8 @@ fn a_tab_s_folder_and_program_are_read_of_process_read_alone() {
         app.workspace
             .set_tab_place(tab, Some("src — vim".to_owned()))
     );
+    // The system's title, of the same folder and program.
+    assert!(app.workspace.set_window_title(shown, "src — vim — 80×24"));
     // A program other than a shell, which prints of its own.
     assert!(app.workspace.set_tab_running(tab, true, false));
     let start = std::time::Instant::now();
@@ -1387,8 +1389,13 @@ fn a_tab_s_folder_and_program_are_read_of_process_read_alone() {
                         let window = cx.focused_window().unwrap();
                         let tabs = cx.tabs(window)?;
                         let tab = &tabs[0];
-                        seen.borrow_mut()
-                            .push((tab.title.clone(), tab.running, tab.printing));
+                        let windows = cx.windows()?;
+                        seen.borrow_mut().push((
+                            tab.title.clone(),
+                            windows[0].title.clone(),
+                            tab.running,
+                            tab.printing,
+                        ));
                         Ok(())
                     },
                 ),
@@ -1404,9 +1411,24 @@ fn a_tab_s_folder_and_program_are_read_of_process_read_alone() {
     assert_eq!(
         *titles.borrow(),
         [
-            (String::new(), false, false),
-            ("src — vim".to_owned(), true, true)
+            (String::new(), String::new(), false, false),
+            (
+                "src — vim".to_owned(),
+                "src — vim — 80×24".to_owned(),
+                true,
+                true
+            )
         ]
+    );
+    // A title of the program's own, which a read of the tabs tells all.
+    assert!(app.workspace.set_tab_title(tab, Some("mine".to_owned())));
+    titles.borrow_mut().clear();
+    plugins
+        .run("blind.read", Args::new(), &mut app.context())
+        .unwrap();
+    assert_eq!(
+        *titles.borrow(),
+        [("mine".to_owned(), "mine".to_owned(), false, false)]
     );
 }
 

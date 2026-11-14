@@ -2511,12 +2511,22 @@ impl FakeHost {
         self.caller.rsplit('/').next().unwrap_or_default()
     }
 
-    /// The windows, each of its tabs and the one that it shows.
+    /// The windows, each of its tabs and the one that it shows, and its
+    /// title: the system's to a plugin that reads the processes, its shown
+    /// tab's to another, as the app tells them.
     fn windows(&self) -> Vec<WindowInfo> {
+        let reads = self.reads_processes();
         self.windows
             .iter()
             .map(|(&id, window)| {
                 let (number, keys) = self.numbers.get(&id).cloned().unwrap_or_default();
+                let title = if reads {
+                    self.titles.get(&id).cloned().unwrap_or_default()
+                } else {
+                    self.tab_info(window.active, false)
+                        .map(|tab| tab.title)
+                        .unwrap_or_default()
+                };
                 WindowInfo {
                     id,
                     tabs: window.tabs.clone(),
@@ -2524,7 +2534,7 @@ impl FakeHost {
                     number,
                     keys,
                     bell: false,
-                    title: self.titles.get(&id).cloned().unwrap_or_default(),
+                    title,
                     quick: self.quick.contains_key(&id),
                     hidden: self.quick.get(&id) == Some(&true),
                 }

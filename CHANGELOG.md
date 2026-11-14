@@ -16,7 +16,7 @@ from 1.0.0; before it, a minor version may change what a previous one did.
 - The settings window's first page, Settings, shows every key of the config and of the bundled plugins' sections, by section in a sidebar, each of what it does, its platforms and its value in force, marked where it is its default.
 - Lokyr › Plugins… opens the settings window at its Plugins page: every plugin, the installed ones and the bundled ones, with its state, active or disabled, and its capabilities, to disable or enable, or, of an installed one, to update or remove, without editing the config; and the registry's plugins, which a field filters as you type, each of its versions and capabilities, to install without restarting.
 - View › Open Themes Folder, which the command palette runs too, opens the folder of your own themes in the Finder, making it first if it is not there, so that a theme's file can be dragged in.
-- Plugins read a window's title as its titlebar shows it, `WindowInfo.title`, to draw it in the system's place.
+- Plugins read a window's title as its titlebar shows it, `WindowInfo.title`, to draw it in the system's place; a plugin without the permission to read the processes reads its tab's title alone, of no folder nor program.
 
 ### Changed
 

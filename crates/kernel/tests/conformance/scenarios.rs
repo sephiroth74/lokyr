@@ -53,6 +53,10 @@ pub const COMMAND: &str = concat!(
 /// The clipboard's text as the world starts.
 pub const CLIPBOARD: &str = "old";
 
+/// The world's window's title, as the app gives the system's titlebar, of
+/// its shown tab's folder and program.
+pub const WINDOW_TITLE: &str = "/ — sh";
+
 /// The plugins of the world, as a read of them tells: an installed one,
 /// active, of a capability granted and one refused.
 pub fn plugins() -> Vec<PluginInfo> {
@@ -214,6 +218,8 @@ pub fn all(world: &World) -> Vec<Scenario> {
         tabs(world),
         tab_changes(world, true),
         tab_changes(world, false),
+        window_titles(world, true),
+        window_titles(world, false),
         pane_changes(world, true),
         pane_changes(world, false),
         bounds(world),
@@ -2530,7 +2536,7 @@ fn workspace(world: &World) -> Scenario {
                             number: None,
                             keys: None,
                             bell: false,
-                            title: String::new(),
+                            title: WINDOW_TITLE.to_owned(),
                             quick: false,
                             hidden: false,
                         }]),
@@ -2630,7 +2636,7 @@ fn workspace(world: &World) -> Scenario {
                                 number: None,
                                 keys: None,
                                 bell: false,
-                                title: String::new(),
+                                title: WINDOW_TITLE.to_owned(),
                                 quick: false,
                                 hidden: false,
                             },
@@ -2825,11 +2831,62 @@ fn workspace(world: &World) -> Scenario {
                     number: None,
                     keys: None,
                     bell: false,
-                    title: String::new(),
+                    title: WINDOW_TITLE.to_owned(),
                     quick: false,
                     hidden: false,
                 }]),
             )]),
+        ],
+    }
+}
+
+/// The windows' titles: the system's, of the shown tab's folder and
+/// program, to a plugin that reads the processes; to another, the shown
+/// tab's title, as a read of the tabs tells it, of neither.
+fn window_titles(world: &World, reads: bool) -> Scenario {
+    let (w, t) = (world.window, world.tab);
+    let windows = |title: &str| {
+        (
+            Request::Windows,
+            Response::Windows(vec![WindowInfo {
+                id: w,
+                tabs: vec![t],
+                active: t,
+                number: None,
+                keys: None,
+                bell: false,
+                title: title.to_owned(),
+                quick: false,
+                hidden: false,
+            }]),
+        )
+    };
+    let title = |title: Option<&str>| {
+        (
+            Request::SetTabTitle {
+                tab: t,
+                title: title.map(str::to_owned),
+            },
+            Response::Done,
+        )
+    };
+    Scenario {
+        name: format!(
+            "the windows' titles, to a plugin that {} the processes",
+            if reads { "reads" } else { "does not read" }
+        ),
+        capabilities: (!reads).then(|| vec![Capability::PaneView]),
+        subscriptions: Vec::new(),
+        steps: vec![
+            ask(vec![
+                windows(if reads { WINDOW_TITLE } else { "" }),
+                title(Some("named")),
+            ]),
+            // Its write done after the call, as every write is.
+            ask(vec![
+                windows(if reads { WINDOW_TITLE } else { "named" }),
+                title(None),
+            ]),
         ],
     }
 }

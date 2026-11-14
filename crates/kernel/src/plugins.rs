@@ -5199,23 +5199,26 @@ impl Host<'_, '_> {
                 )
             }
             Asked::TabBarPlace => Response::TabBarPlace(self.state.bar_place),
-            Asked::Windows => Response::Windows(
-                self.context
-                    .workspace
-                    .windows()
-                    .map(|window| host::WindowInfo {
-                        id: window.id().into(),
-                        tabs: window.tabs().iter().copied().map(Into::into).collect(),
-                        active: window.active_tab().into(),
-                        number: window.number(),
-                        keys: window.keys().map(str::to_owned),
-                        bell: window.bell(),
-                        title: window.title().to_owned(),
-                        quick: window.quick(),
-                        hidden: window.hidden(),
-                    })
-                    .collect(),
-            ),
+            Asked::Windows => {
+                let reads = self.state.reads_processes();
+                let workspace = &*self.context.workspace;
+                Response::Windows(
+                    workspace
+                        .windows()
+                        .map(|window| host::WindowInfo {
+                            id: window.id().into(),
+                            tabs: window.tabs().iter().copied().map(Into::into).collect(),
+                            active: window.active_tab().into(),
+                            number: window.number(),
+                            keys: window.keys().map(str::to_owned),
+                            bell: window.bell(),
+                            title: window_title(workspace, window, reads),
+                            quick: window.quick(),
+                            hidden: window.hidden(),
+                        })
+                        .collect(),
+                )
+            }
             Asked::Tabs(window) => {
                 let tabs = self.window(window)?.tabs().to_vec();
                 let reads = self.state.reads_processes();
@@ -6346,6 +6349,19 @@ fn tab_info(workspace: &Workspace, tab: &crate::workspace::Tab, reads: bool) -> 
         agent: marks.agent.filter(|_| reads),
         agent_message: marks.agent_message.filter(|_| reads),
     }
+}
+
+/// The title of `window` of `workspace` that a read of the windows tells:
+/// the system's, of its shown tab's folder and program, to a plugin that
+/// reads the processes, `reads`; else its shown tab's title, as a read of
+/// its tabs tells it, of neither.
+fn window_title(workspace: &Workspace, window: &crate::workspace::Window, reads: bool) -> String {
+    if reads {
+        return window.title().to_owned();
+    }
+    any_tab_info(workspace, window.active_tab(), false)
+        .map(|tab| tab.title)
+        .unwrap_or_default()
 }
 
 /// What a read of a window's tabs tells of `tab` of `workspace`, a tab of

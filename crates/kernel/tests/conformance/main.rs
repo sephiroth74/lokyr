@@ -577,6 +577,7 @@ impl Kernel {
         let id = pane.id();
         let mut workspace = Workspace::new();
         let window = workspace.open_window(pane);
+        workspace.set_window_title(window, scenarios::WINDOW_TITLE);
         let tab = workspace.tab_of(id).expect("the window's tab");
         // The program's line, and its directory, as the pane reads them.
         let start = Instant::now();
@@ -842,6 +843,7 @@ fn on_fake(scenario: &Scenario, world: &World, front: Front) -> Vec<Entry> {
         pane.styles.insert(row, cells.runs.clone());
     }
     host.set_keys("tabs.goto", goto_first(), Some("⌘1"));
+    host.title_window(world.window, scenarios::WINDOW_TITLE);
     host.activate(plugin.as_mut()).unwrap();
     for step in &scenario.steps {
         if !step.asks.is_empty() {
