@@ -116,6 +116,7 @@ fn measure(count: usize) -> (Duration, Duration, Duration) {
                 motion: None,
                 fills: Fills::All,
                 pictures: &lokyr_ui_core::paint::NO_PICTURES,
+                previews: &lokyr_ui_core::paint::NO_PREVIEWS,
             },
         );
         assert!(!items.is_empty());

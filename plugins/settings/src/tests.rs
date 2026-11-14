@@ -237,6 +237,17 @@ fn settings() -> Settings {
                 keys: vec![
                     controlled("light", Some("Lokyr Light"), "theme"),
                     controlled("dark", Some("Lokyr Dark"), "theme"),
+                    key(
+                        "minimum-contrast",
+                        Some(Data::Number(1.0)),
+                        Some(Data::Number(1.0)),
+                        SettingKind::Number {
+                            minimum: Some(1.0),
+                            maximum: Some(21.0),
+                            step: Some(0.5),
+                            integer: false,
+                        },
+                    ),
                 ],
             },
             SettingsSection {
@@ -771,28 +782,20 @@ fn a_family_and_a_style_are_picked_from_the_system_s_fonts() {
 }
 
 #[test]
-fn a_theme_is_picked_of_its_appearance_and_a_color_of_the_theme_s() {
+fn the_themes_leave_the_settings_page_for_their_own_and_a_plugin_s_color_is_a_theme_s() {
     let (mut host, mut plugin) = host();
     let _ = written(&mut host);
     host.ui_event(&mut plugin, &choose(THEME)).unwrap();
-    // The light themes alone, the one in force ticked.
-    assert_eq!(
-        menu_of(&mut host, &mut plugin, "light"),
-        [("Lokyr Light".to_owned(), true)]
+    // The theme's section of the contrast alone, `[theme]`'s themes on
+    // the themes' page.
+    let tree = rendered(&mut host, &mut plugin);
+    assert!(
+        find_node(&tree, "choose:light").is_none(),
+        "{}",
+        snapshot(&tree)
     );
-    assert_eq!(
-        menu_of(&mut host, &mut plugin, "dark"),
-        [("Lokyr Dark".to_owned(), true)]
-    );
-    pick(&mut host, &mut plugin, "dark", 0);
-    assert_eq!(
-        written(&mut host),
-        [app_key(
-            "theme",
-            "dark",
-            Some(Data::Text("Lokyr Dark".to_owned()))
-        )]
-    );
+    assert!(find_node(&tree, "choose:dark").is_none());
+    assert!(find_node(&tree, "field:minimum-contrast").is_some());
     // A plugin's color, of a swatch of it, from the theme's tokens.
     host.ui_event(&mut plugin, &choose(TABS)).unwrap();
     let tree = rendered(&mut host, &mut plugin);
@@ -1829,4 +1832,101 @@ fn a_font_s_family_and_a_face_s_style_show_as_their_items_are_highlighted() {
     host.advance(std::time::Duration::from_millis(150));
     host.deliver(&mut plugin).unwrap();
     assert!(previews(&mut host).is_empty());
+}
+
+/// The themes of the tests' themes' page: two light ones and four dark
+/// ones, the appearance in force dark.
+fn many_themes() -> lokyr_plugin_sdk::host::Themes {
+    use lokyr_plugin_sdk::host::{ThemeInfo, ThemeOrigin};
+    let theme = |name: &str, variant| ThemeInfo {
+        name: name.to_owned(),
+        variant,
+        origin: ThemeOrigin::BuiltIn,
+    };
+    lokyr_plugin_sdk::host::Themes {
+        appearance: ThemeVariant::Dark,
+        current: "Lokyr Dark".to_owned(),
+        themes: vec![
+            theme("Lokyr Light", ThemeVariant::Light),
+            theme("Paper", ThemeVariant::Light),
+            theme("Lokyr Dark", ThemeVariant::Dark),
+            theme("Dracula", ThemeVariant::Dark),
+            theme("Nord", ThemeVariant::Dark),
+            theme("Night", ThemeVariant::Dark),
+        ],
+    }
+}
+
+#[test]
+fn the_themes_page_shows_a_card_of_each_theme_of_the_appearance_in_force_first() {
+    let (mut host, mut plugin) = host();
+    host.set_themes(many_themes());
+    host.show_page(THEMES);
+    host.deliver(&mut plugin).unwrap();
+    let tree = host.render(&mut plugin, &themes_page()).expect("the page");
+    // The dark ones first, as the appearance in force is dark, in rows of
+    // three, the last of the room of the cards that it lacks.
+    let headings: Vec<String> = texts_of(&tree)
+        .into_iter()
+        .filter(|text| text.starts_with("themes-"))
+        .collect();
+    assert_eq!(
+        headings,
+        ["themes-description", "themes-dark", "themes-light"],
+        "{}",
+        snapshot(&tree)
+    );
+    let dark = find_node(&tree, "themes-row:dark:0").unwrap();
+    assert_eq!(dark.children.len(), CARDS_ACROSS);
+    let last = find_node(&tree, "themes-row:dark:1").unwrap();
+    assert_eq!(last.children.len(), CARDS_ACROSS);
+    // Each card of a preview of its theme and of its name; the one that
+    // `[theme]` names of the accent's border.
+    let card = find_node(&tree, "theme:dark:Dracula").expect("Dracula's card");
+    assert!(matches!(&card.children[0].kind, Kind::ThemePreview(name) if name == "Dracula"));
+    let border = |key: &str| {
+        find_node(&tree, key)
+            .and_then(|node| node.style.border.as_ref())
+            .map(|border| border.color.0.clone())
+    };
+    assert_eq!(border("theme:dark:Lokyr Dark").as_deref(), Some("accent"));
+    assert_eq!(border("theme:dark:Dracula").as_deref(), Some("separator"));
+    assert_eq!(border("theme:light:Lokyr Light").as_deref(), Some("accent"));
+}
+
+#[test]
+fn a_theme_s_card_names_it_in_the_config_for_its_appearance() {
+    let (mut host, mut plugin) = host();
+    host.set_themes(many_themes());
+    host.show_page(THEMES);
+    host.deliver(&mut plugin).unwrap();
+    host.render(&mut plugin, &themes_page());
+    let _ = host.take_done();
+    let click = |key: &str| UiEvent {
+        view: themes_page(),
+        key: key.into(),
+        kind: UiEventKind::Click,
+    };
+    host.ui_event(&mut plugin, &click("theme:dark:Nord"))
+        .unwrap();
+    host.ui_event(&mut plugin, &click("theme:light:Paper"))
+        .unwrap();
+    let chosen: Vec<Request> = host
+        .take_done()
+        .into_iter()
+        .filter(|request| matches!(request, Request::SetTheme { .. }))
+        .collect();
+    assert_eq!(
+        chosen,
+        [
+            Request::SetTheme {
+                variant: ThemeVariant::Dark,
+                name: "Nord".to_owned(),
+            },
+            Request::SetTheme {
+                variant: ThemeVariant::Light,
+                name: "Paper".to_owned(),
+            },
+        ]
+    );
 }

@@ -26,7 +26,7 @@ use lokyr_ui_core::chrome::{self, Heights, Regions, TabBarPlace};
 use lokyr_ui_core::focus::Target;
 use lokyr_ui_core::font::Font;
 use lokyr_ui_core::layout::{Frame, Room};
-use lokyr_ui_core::paint::{NO_PICTURES, Pictures};
+use lokyr_ui_core::paint::{NO_PICTURES, Pictures, Previews};
 use lokyr_ui_core::panel::{self, Panels};
 use lokyr_ui_core::pointer::NodeEvent;
 use lokyr_ui_core::progress::{self, FillArea, SweepArea};
@@ -400,6 +400,8 @@ impl<B: Backend> App<B> {
             return;
         };
         let before = state.focus.target();
+        // The themes that the new trees' previews show.
+        let mut previewed = Vec::new();
         let kept = std::mem::take(&mut state.chrome);
         let mut kept: Vec<Option<SlotView>> = kept.into_iter().map(Some).collect();
         for (plugin, view) in views {
@@ -467,6 +469,7 @@ impl<B: Backend> App<B> {
                 };
                 match tree {
                     Some(tree) => {
+                        self::previewed(&tree, &mut previewed);
                         if let Err(error) = slot.surface.update(&tree) {
                             eprintln!(
                                 "lokyr: the view {view:?} of `{plugin}` keeps its last tree, as its new one is not one: {error:?}"
@@ -573,6 +576,7 @@ impl<B: Backend> App<B> {
             (Some(settings), Some(page)) => state.focus.set_chain(&[settings, page]),
             _ => state.focus.set_chain(&[]),
         }
+        self.keep_previews(previewed);
     }
 
     /// Lays out `window`'s slots' views in a window of `size`, as `ui-core`'s
@@ -852,7 +856,7 @@ pub(super) fn paint<F: FontBackend>(
     tokens: &Tokens,
     room: (f32, f32),
     (dark, focused, now): (bool, Option<(u32, NodeId)>, Instant),
-    pictures: &BTreeMap<String, Pictures>,
+    (pictures, previews): (&BTreeMap<String, Pictures>, &Previews),
 ) -> Vec<Item> {
     chrome
         .iter()
@@ -864,10 +868,24 @@ pub(super) fn paint<F: FontBackend>(
                 tokens,
                 ((frame.x, frame.y), room),
                 (dark, focused, now),
-                pictures.get(&view.plugin).unwrap_or(&NO_PICTURES),
+                (pictures.get(&view.plugin).unwrap_or(&NO_PICTURES), previews),
             )
         })
         .collect()
+}
+
+/// The names of the themes that the previews of `node` and of its
+/// subtree show, into `names`.
+pub(super) fn previewed(node: &Node, names: &mut Vec<String>) {
+    let mut left = vec![node];
+    while let Some(node) = left.pop() {
+        if let lokyr_kernel::plugins::view::Kind::ThemePreview(name) = &node.kind
+            && !names.contains(name)
+        {
+            names.push(name.clone());
+        }
+        left.extend(&node.children);
+    }
 }
 
 /// The progresses of `view` that something drawn over them covers, whose

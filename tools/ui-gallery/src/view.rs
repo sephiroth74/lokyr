@@ -943,7 +943,10 @@ impl View {
                 tokens,
                 (at, room),
                 (dark, focus_of(id), now),
-                &lokyr_ui_core::paint::NO_PICTURES,
+                (
+                    &lokyr_ui_core::paint::NO_PICTURES,
+                    &lokyr_ui_core::paint::NO_PREVIEWS,
+                ),
             ));
         }
         for panel in self.panels.order() {
@@ -957,7 +960,10 @@ impl View {
                 tokens,
                 (at, room),
                 (dark, focus_of(panel), now),
-                &lokyr_ui_core::paint::NO_PICTURES,
+                (
+                    &lokyr_ui_core::paint::NO_PICTURES,
+                    &lokyr_ui_core::paint::NO_PREVIEWS,
+                ),
             ));
         }
         items

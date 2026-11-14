@@ -799,6 +799,11 @@ pub struct App<B: Backend> {
     /// The pictures of the images that the app keeps of each plugin's, which
     /// its views' nodes show, by the images' ids.
     pictures: BTreeMap<String, Pictures>,
+    /// The colors of the themes that the views' previews show, by their
+    /// names, resolved as a preview first shows, and the names that
+    /// resolve to no theme.
+    previews: lokyr_ui_core::paint::Previews,
+    preview_misses: BTreeSet<String>,
     /// The id of the last image that the app kept.
     last_image: u64,
     /// What the app keeps from idle sleep, as the platform last took it,
@@ -1030,6 +1035,8 @@ impl<B: Backend> App<B> {
             saves: BTreeMap::new(),
             written: std::sync::Arc::default(),
             pictures: BTreeMap::new(),
+            previews: lokyr_ui_core::paint::Previews::new(),
+            preview_misses: BTreeSet::new(),
             last_image: 0,
             awake: (host::Awake::Off, String::new()),
             packages: packages::Jobs::beside_the_app(),
@@ -1592,6 +1599,41 @@ impl<B: Backend> App<B> {
             self.theme = theme;
             let appearance = platform.appearance();
             self.appearance_changed(platform, appearance);
+        }
+    }
+
+    /// Keeps the colors of the themes of `names` that the views' previews
+    /// show, of the themes' folder beside the config file, held or built
+    /// in, as `[theme]`'s themes resolve, once each: a name of no theme
+    /// keeps none, and its preview draws nothing.
+    pub(super) fn keep_previews(&mut self, names: Vec<String>) {
+        let names: Vec<String> = names
+            .into_iter()
+            .filter(|name| !self.previews.contains_key(name) && !self.preview_misses.contains(name))
+            .collect();
+        if names.is_empty() {
+            return;
+        }
+        let directory = self
+            .config_file
+            .as_ref()
+            .and_then(|file| themes::directory(&file.path));
+        let builtins = [ui_theme::light_spec(), ui_theme::dark_spec()];
+        for name in names {
+            match themes::resolve(
+                &name,
+                directory.as_deref(),
+                self.held_themes.as_deref(),
+                &builtins,
+            ) {
+                Ok(theme) => {
+                    let colors = lokyr_ui_core::paint::PreviewColors::of(&theme.theme.terminal);
+                    self.previews.insert(name, colors);
+                }
+                Err(_) => {
+                    self.preview_misses.insert(name);
+                }
+            }
         }
     }
 

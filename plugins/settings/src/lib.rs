@@ -44,6 +44,19 @@ static CATALOGS: [(&str, &str); 2] = [
 /// Its page of the settings window.
 const PAGE: &str = "settings";
 
+/// The id of its page of the themes.
+const THEMES: &str = "themes";
+
+/// The prefix of the key of a theme's card on the themes' page, of its
+/// appearance and its name, as `theme:dark:Lokyr Dark`.
+const THEME_CARD: &str = "theme:";
+
+/// How many themes' cards a row of the themes' page holds.
+const CARDS_ACROSS: usize = 3;
+
+/// The height of a theme's card's preview, in points.
+const PREVIEW_HEIGHT: f32 = 92.0;
+
 /// The key of the sidebar's list of the sections.
 const SECTIONS: &str = "sections";
 
@@ -172,6 +185,8 @@ pub struct SettingsPage {
     /// Whether a font's family or style shows in the panes as a menu's
     /// item is highlighted, until the menu closes.
     previewing: bool,
+    /// Whether its page of the themes shows.
+    themes_shown: bool,
     /// The font of the item highlighted last, which shows once the timer
     /// of its rest fires.
     pending_preview: Option<(FontPreview, String)>,
@@ -216,6 +231,25 @@ fn page() -> ViewId {
     ViewId::Page(PAGE.to_owned())
 }
 
+/// The view of its page of the themes.
+fn themes_page() -> ViewId {
+    ViewId::Page(THEMES.to_owned())
+}
+
+/// The settings, as the page shows them: the themes of `[theme]` left to
+/// the themes' page, their key of the contrast kept.
+fn page_settings(cx: &mut Cx<'_>) -> Result<Settings, Error> {
+    let mut settings = cx.settings()?;
+    for section in &mut settings.sections {
+        if section.name == "theme" && section.plugin.is_none() {
+            section
+                .keys
+                .retain(|key| !["light", "dark"].contains(&key.name.as_str()));
+        }
+    }
+    Ok(settings)
+}
+
 impl Plugin for SettingsPage {
     fn activate(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
         cx.subscribe(&[SETTINGS_CHANGED])
@@ -230,6 +264,11 @@ impl Plugin for SettingsPage {
         for event in events {
             match event {
                 // The page shows at its first section, as its sidebar does.
+                Event::PageShown(page) if page == THEMES => {
+                    self.themes_shown = true;
+                    cx.request_render(themes_page())?;
+                }
+                Event::PageHidden(page) if page == THEMES => self.themes_shown = false,
                 Event::PageShown(_) => {
                     self.shown = true;
                     self.chosen = 0;
@@ -278,11 +317,30 @@ impl Plugin for SettingsPage {
         if again && self.shown {
             cx.request_render(page())?;
         }
+        // The themes' page marks the themes that `[theme]` names.
+        if again && self.themes_shown {
+            cx.request_render(themes_page())?;
+        }
         Ok(())
     }
 
     fn on_ui_event(&mut self, cx: &mut Cx<'_>, event: &UiEvent) -> Result<(), Error> {
         let key = event.key.0.as_str();
+        // A theme's card: the theme named in `[theme]` for its appearance.
+        if event.view == themes_page() {
+            if event.kind == UiEventKind::Click
+                && let Some((variant, name)) = key
+                    .strip_prefix(THEME_CARD)
+                    .and_then(|rest| rest.split_once(':'))
+            {
+                let variant = match variant {
+                    "light" => ThemeVariant::Light,
+                    _ => ThemeVariant::Dark,
+                };
+                cx.set_theme(variant, name)?;
+            }
+            return Ok(());
+        }
         if let ViewId::Panel(PanelId(panel)) = &event.view
             && [NEW_BINDING, COMMANDS].contains(&panel.as_str())
         {
@@ -303,7 +361,7 @@ impl Plugin for SettingsPage {
             (&event.kind, key)
         {
             // The sidebar's item, of the parts that the search shows.
-            let settings = cx.settings()?;
+            let settings = page_settings(cx)?;
             let words = words(&self.query);
             let shown = shown_parts(cx, &settings, &words);
             let Some(&item) = shown.get(*item) else {
@@ -318,7 +376,7 @@ impl Plugin for SettingsPage {
             self.refused.clear();
             return cx.request_render(page());
         }
-        let settings = cx.settings()?;
+        let settings = page_settings(cx)?;
         let section = match parts(&settings).get(self.chosen).copied() {
             Some(Part::Section(section)) => section,
             Some(Part::Keys) => return self.binding_event(cx, event),
@@ -475,7 +533,10 @@ impl Plugin for SettingsPage {
     }
 
     fn render(&mut self, cx: &mut Cx<'_>, view: &ViewId) -> Option<Node> {
-        let settings = cx.settings().ok()?;
+        if *view == themes_page() {
+            return Some(themes_tree(cx));
+        }
+        let settings = page_settings(cx).ok()?;
         match view {
             ViewId::Panel(PanelId(panel)) if panel == NEW_BINDING => {
                 let adding = self.adding.clone()?;
@@ -543,7 +604,7 @@ impl SettingsPage {
             return Ok(());
         }
         text.clone_into(&mut self.query);
-        let settings = cx.settings()?;
+        let settings = page_settings(cx)?;
         let shown = shown_parts(cx, &settings, &words(&self.query));
         if !shown.contains(&self.chosen)
             && let Some(&first) = shown.first()
@@ -599,7 +660,7 @@ impl SettingsPage {
                     cx.request_render(page())?;
                     return cx.focus_node(page(), format!("{KEYS_FIELD}{at}").as_str());
                 }
-                let settings = cx.settings()?;
+                let settings = page_settings(cx)?;
                 if let Some(binding) = at(UNBIND).and_then(|at| settings.keys.get(at)) {
                     // A default's keys take nothing; the config's own go.
                     let value = binding.default.then_some(Data::Boolean(false));
@@ -686,7 +747,7 @@ impl SettingsPage {
     /// away from them; the same keys, or none, change nothing, and keys
     /// that do not read are told under the row, their field staying.
     fn change_keys(&mut self, cx: &mut Cx<'_>, at: usize, text: &str) -> Result<(), Error> {
-        let settings = cx.settings()?;
+        let settings = page_settings(cx)?;
         let refusal = format!("binding:{at}");
         let (Some(binding), text) = (settings.keys.get(at), text.trim()) else {
             return Ok(());
@@ -755,7 +816,7 @@ impl SettingsPage {
     /// one half typed, as `13.` on the way to `13.5`, wait for Return or the
     /// field's leaving, of no reason told meanwhile.
     fn write_paused(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
-        let settings = cx.settings()?;
+        let settings = page_settings(cx)?;
         let names: Vec<String> = self.typed.keys().cloned().collect();
         for name in names {
             let Some(typed) = self.typed.get(&name).cloned() else {
@@ -817,7 +878,7 @@ impl SettingsPage {
         if pending.is_empty() {
             return Ok(());
         }
-        let settings = cx.settings()?;
+        let settings = page_settings(cx)?;
         for (name, typed) in pending {
             let Some(section) = settings
                 .sections
@@ -2206,6 +2267,165 @@ fn commands_menu(cx: &mut Cx<'_>) -> Node {
         groups.push(Node::container(group));
     }
     Node::container(groups).key("commands-menu")
+}
+
+/// The page of the themes: of the appearance in force first, then of the
+/// other, each a card of a preview of its colors and its name, the one
+/// that `[theme]` names for its appearance marked, in rows of
+/// [`CARDS_ACROSS`], which a click names in `[theme]`.
+fn themes_tree(cx: &mut Cx<'_>) -> Node {
+    let themes = cx.themes().ok();
+    let settings = cx.settings().ok();
+    let named = |variant: &str| {
+        settings
+            .as_ref()
+            .and_then(|settings| {
+                settings
+                    .sections
+                    .iter()
+                    .find(|section| section.name == "theme" && section.plugin.is_none())
+            })
+            .and_then(|section| section.keys.iter().find(|key| key.name == variant))
+            .and_then(|key| match &key.value {
+                Some(Data::Text(name)) => Some(name.clone()),
+                _ => None,
+            })
+    };
+    let in_force = themes
+        .as_ref()
+        .map_or(ThemeVariant::Dark, |themes| themes.appearance);
+    let variants = match in_force {
+        ThemeVariant::Light => [ThemeVariant::Light, ThemeVariant::Dark],
+        ThemeVariant::Dark => [ThemeVariant::Dark, ThemeVariant::Light],
+    };
+    let mut children = vec![
+        Node::text(message(cx, "page-themes", &[]))
+            .key("title")
+            .role(Role::Heading)
+            .style(Style {
+                text_size: Some(TextSize::Large),
+                font_weight: Some(FontWeight::Bold),
+                ..Style::default()
+            }),
+        Node::text(message(cx, "themes-description", &[]))
+            .key("description")
+            .style(secondary())
+            .layout(wrapped()),
+    ];
+    for variant in variants {
+        let (word, heading) = match variant {
+            ThemeVariant::Light => ("light", "themes-light"),
+            ThemeVariant::Dark => ("dark", "themes-dark"),
+        };
+        let chosen = named(word);
+        let names: Vec<String> = themes
+            .iter()
+            .flat_map(|themes| &themes.themes)
+            .filter(|theme| theme.variant == variant)
+            .map(|theme| theme.name.clone())
+            .collect();
+        if names.is_empty() {
+            continue;
+        }
+        children.push(
+            Node::text(message(cx, heading, &[]))
+                .key(heading)
+                .role(Role::Heading)
+                .style(Style {
+                    font_weight: Some(FontWeight::Semibold),
+                    ..Style::default()
+                }),
+        );
+        for (row, chunk) in names.chunks(CARDS_ACROSS).enumerate() {
+            let mut cards: Vec<Node> = chunk
+                .iter()
+                .map(|name| theme_card(word, name, chosen.as_deref() == Some(name.as_str())))
+                .collect();
+            // The last row's room of the cards that it lacks, so that its
+            // cards keep the others' width.
+            cards.extend((chunk.len()..CARDS_ACROSS).map(|_| {
+                Node::container(Vec::new()).layout(Layout {
+                    grow: 1.0,
+                    width: Length::Points(0.0),
+                    ..Layout::default()
+                })
+            }));
+            children.push(
+                Node::container(cards)
+                    .key(format!("themes-row:{word}:{row}").as_str())
+                    .layout(Layout {
+                        direction: Direction::Row,
+                        gap: 12.0,
+                        width: Length::Fraction(1.0),
+                        ..Layout::default()
+                    }),
+            );
+        }
+    }
+    let column = Node::container(children).layout(Layout {
+        direction: Direction::Column,
+        gap: 12.0,
+        width: Length::Fraction(1.0),
+        padding: Edges::all(20.0),
+        ..Layout::default()
+    });
+    Node::scroll(vec![column])
+        .key("themes-page")
+        .layout(Layout {
+            direction: Direction::Column,
+            width: Length::Fraction(1.0),
+            height: Length::Fraction(1.0),
+            ..Layout::default()
+        })
+}
+
+/// The card of the theme `name` of the appearance `variant`, `light` or
+/// `dark`: its preview and its name, of the accent's border where it is
+/// `chosen`, as `[theme]` names it.
+fn theme_card(variant: &str, name: &str, chosen: bool) -> Node {
+    let border = if chosen {
+        Border {
+            color: Token::from("accent"),
+            width: 2.0,
+        }
+    } else {
+        Border {
+            color: Token::from("separator"),
+            width: 1.0,
+        }
+    };
+    Node::container(vec![
+        Node::theme_preview(name).layout(Layout {
+            width: Length::Fraction(1.0),
+            height: Length::Points(PREVIEW_HEIGHT),
+            ..Layout::default()
+        }),
+        Node::text(name).style(small()).layout(Layout {
+            lines: Some(1),
+            ..Layout::default()
+        }),
+    ])
+    .key(format!("{THEME_CARD}{variant}:{name}").as_str())
+    .label(name)
+    .layout(Layout {
+        direction: Direction::Column,
+        gap: 6.0,
+        grow: 1.0,
+        width: Length::Points(0.0),
+        min_width: Length::Points(0.0),
+        padding: Edges::all(6.0),
+        ..Layout::default()
+    })
+    .style(Style {
+        border: Some(border),
+        radius: 8.0,
+        pointer: Some(PointerShape::PointingHand),
+        hover: Some(Hover {
+            background: Some(Token::from("button.hover.bg")),
+            ..Hover::default()
+        }),
+        ..Style::default()
+    })
 }
 
 /// The text of `why`, a write refused, under its control, of `key`.

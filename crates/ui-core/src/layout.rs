@@ -787,7 +787,8 @@ fn leaf(kind: &Kind, layout: &view::Layout, typeset: Typeset) -> Option<Leaf> {
         | Kind::List(_)
         | Kind::Scroll
         | Kind::Tabs(_)
-        | Kind::Image(_) => {
+        | Kind::Image(_)
+        | Kind::ThemePreview(_) => {
             return None;
         }
     };

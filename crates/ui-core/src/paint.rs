@@ -63,7 +63,38 @@ pub struct Shown<'a> {
     pub fills: Fills<'a>,
     /// The pictures of its plugin's images, which its images' nodes draw.
     pub pictures: &'a Pictures,
+    /// The colors of the themes that its themes' previews draw, by the
+    /// themes' names.
+    pub previews: &'a Previews,
 }
+
+/// The terminal's colors of a theme that a node's preview draws: its
+/// background, its text's and its sixteen colors.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PreviewColors {
+    /// The background.
+    pub background: Color,
+    /// The text's color.
+    pub foreground: Color,
+    /// The sixteen colors, black to bright white.
+    pub palette: [Color; 16],
+}
+
+/// The colors of themes, by their names, which their previews draw.
+pub type Previews = BTreeMap<String, PreviewColors>;
+
+/// The colors of a view that shows no theme's preview.
+pub static NO_PREVIEWS: Previews = BTreeMap::new();
+
+/// The size of a theme's preview's text, in points.
+const PREVIEW_TEXT: f32 = 10.0;
+
+/// The room inside a theme's preview's edges, in points.
+const PREVIEW_PADDING: f32 = 8.0;
+
+/// The height of each row of a theme's preview's sixteen colors, in
+/// points.
+const PREVIEW_SWATCH: f32 = 6.0;
 
 /// A picture that the renderer holds of an image that a view's node shows:
 /// its id, and its size in pixels.
@@ -138,6 +169,7 @@ fn paint_of<B: FontBackend>(
         motion: shown.motion,
         fills: shown.fills,
         pictures: shown.pictures,
+        previews: shown.previews,
         group: 0.0,
         clip: None,
         ring: None,
@@ -275,6 +307,7 @@ struct Painter<'a, B> {
     motion: Option<(&'a Animations, Instant)>,
     fills: Fills<'a>,
     pictures: &'a Pictures,
+    previews: &'a Previews,
     /// How far the hover of the nearest node of a key around the node
     /// painted shows, from 0 to 1, which its parent's hover takes.
     group: f32,
@@ -446,6 +479,7 @@ impl<'a, B: FontBackend> Painter<'a, B> {
             Kind::Progress(progress) => self.progress(id, progress, frame, given),
             Kind::Tabs(view) => self.tabs(id, view, frame, color),
             Kind::Image(image) => self.image(*image, frame),
+            Kind::ThemePreview(name) => self.theme_preview(name, frame),
             Kind::Container | Kind::Spacer | Kind::Separator | Kind::Scroll => {}
         }
         let children = tree.children(id);
@@ -677,6 +711,7 @@ impl<'a, B: FontBackend> Painter<'a, B> {
                     motion: None,
                     fills: self.fills,
                     pictures: self.pictures,
+                    previews: self.previews,
                 },
             );
             // On the accent's selection, every text of the row in its
@@ -1060,6 +1095,82 @@ impl<'a, B: FontBackend> Painter<'a, B> {
             },
             picture: picture.id,
         });
+    }
+
+    /// The sample terminal of the theme `name` within `frame`, of its
+    /// colors of the previews: its background, of rounded corners, a
+    /// prompt, an `ls` and a line of colored words in the terminal's family
+    /// at a small size, and the sixteen colors in two rows at its foot;
+    /// nothing out of the clip, as of a card scrolled away, or of a theme
+    /// that the previews lack.
+    fn theme_preview(&mut self, name: &str, frame: Frame) {
+        let shown = self.clip.is_none_or(|clip| {
+            let (x, y) = (clip.x as f32, clip.y as f32);
+            frame.x < x + clip.width as f32
+                && x < frame.x + frame.width
+                && frame.y < y + clip.height as f32
+                && y < frame.y + frame.height
+        });
+        let Some(colors) = self.previews.get(name).copied().filter(|_| shown) else {
+            return;
+        };
+        let scale = self.layout.scale();
+        self.push_shape(Shape {
+            radius: 6.0 * scale,
+            ..Shape::filled(rect(frame), colors.background)
+        });
+        let padding = (PREVIEW_PADDING * scale).round();
+        self.font.set_typeset(Typeset {
+            size: view::TextSize::Small,
+            points: Some(PREVIEW_TEXT),
+            weight: view::FontWeight::Regular,
+            family: view::FontFamily::Terminal,
+        });
+        let face = self.font.interface();
+        let (line, ascent) = (face.line() * scale, face.ascent() * scale);
+        let (text, palette) = (colors.foreground, colors.palette);
+        let lines: [&[(&str, Color)]; 3] = [
+            &[("~/lokyr", palette[4]), (" $", palette[5]), (" ls", text)],
+            &[
+                ("src", palette[12]),
+                ("  docs", palette[12]),
+                ("  build.sh", palette[10]),
+                ("  README.md", text),
+            ],
+            &[
+                ("ok", palette[2]),
+                ("  warn", palette[3]),
+                ("  fail", palette[1]),
+            ],
+        ];
+        // The text within the preview, as a narrow one cuts its lines.
+        self.items.push(Item::PushClip(rect(frame)));
+        let mut top = frame.y + padding;
+        for runs in lines {
+            let baseline = (top + ascent).round();
+            let mut x = frame.x + padding;
+            for &(words, color) in runs {
+                let (glyphs, end) = self.font.interface_text(words, (x, baseline), color, true);
+                self.glyphs(glyphs);
+                x = end;
+            }
+            top += line;
+        }
+        self.items.push(Item::PopClip);
+        // The sixteen colors, in two rows at its foot.
+        let side = ((frame.width - 2.0 * padding) / 8.0).floor().max(1.0);
+        let height = (PREVIEW_SWATCH * scale).round().max(1.0);
+        let bottom = frame.y + frame.height - padding;
+        for (at, &color) in palette.iter().enumerate() {
+            let (row, column) = ((at / 8) as f32, (at % 8) as f32);
+            let swatch = Frame {
+                x: frame.x + padding + column * side,
+                y: bottom - (2.0 - row) * height,
+                width: side,
+                height,
+            };
+            self.push_shape(Shape::filled(rect(swatch), color));
+        }
     }
 
     /// Adds `shape` to the shapes of the item before, if they are shapes.
@@ -1547,6 +1658,7 @@ mod tests {
             motion: None,
             fills: Fills::All,
             pictures: &crate::paint::NO_PICTURES,
+            previews: &crate::paint::NO_PREVIEWS,
         }
     }
 
@@ -1681,6 +1793,7 @@ mod tests {
             (10.0, 0.0),
             Shown {
                 pictures: &pictures,
+                previews: &crate::paint::NO_PREVIEWS,
                 ..shown(true, None)
             },
         );
@@ -1704,6 +1817,71 @@ mod tests {
                 PictureId(9)
             )]
         );
+    }
+
+    #[test]
+    fn a_theme_s_preview_draws_its_colors_within_the_clip_and_none_of_a_theme_unknown() {
+        use lokyr_plugin_sdk::view::{Layout as Box, Length};
+        let sized = |name: &str| {
+            Node::theme_preview(name).layout(Box {
+                width: Length::Points(160.0),
+                height: Length::Points(90.0),
+                ..Box::default()
+            })
+        };
+        // Night's in a scroll area's room, Night's again below it, as a
+        // card scrolled away, and one unknown.
+        let clipped = Node::scroll(vec![sized("Night"), sized("Night")])
+            .key("scroll")
+            .layout(Box {
+                height: Length::Points(90.0),
+                direction: view::Direction::Column,
+                ..Box::default()
+            });
+        let root = Node::container(vec![clipped, sized("Unknown")]);
+        let mut font = Font::new(Blocks, FontConfig::default(), 2.0).unwrap();
+        let mut tree = Tree::new();
+        let changes = tree.update(&root).unwrap();
+        let mut layout = Layout::new(2.0);
+        layout.update(&tree, &changes);
+        layout.compute(&tree, Some(800.0), None, &mut font);
+        let background = Color::from_rgb8(10, 20, 30);
+        let palette: [Color; 16] = std::array::from_fn(|at| Color::from_rgb8(100 + at as u8, 0, 0));
+        let previews = Previews::from([(
+            "Night".to_owned(),
+            PreviewColors {
+                background,
+                foreground: Color::from_rgb8(200, 200, 200),
+                palette,
+            },
+        )]);
+        let items = paint(
+            &tree,
+            &layout,
+            &mut font,
+            &Theme::builtin().dark.tokens,
+            (0.0, 0.0),
+            Shown {
+                previews: &previews,
+                ..shown(true, None)
+            },
+        );
+        let fills: Vec<Color> = items
+            .iter()
+            .filter_map(|item| match item {
+                Item::Shapes(shapes) => Some(shapes.iter().map(|shape| shape.fill)),
+                _ => None,
+            })
+            .flatten()
+            .collect();
+        // One background, of rounded corners, and the sixteen colors: the
+        // preview below the clip and the unknown one draw nothing.
+        assert_eq!(fills.iter().filter(|&&fill| fill == background).count(), 1);
+        for color in palette {
+            assert_eq!(fills.iter().filter(|&&fill| fill == color).count(), 1);
+        }
+        // Its text, of the theme's colors, within it.
+        assert!(items.iter().any(|item| matches!(item, Item::Glyphs(_))));
     }
 
     /// `root` laid out at `scale` in `width` points, and painted from
@@ -2521,6 +2699,7 @@ mod tests {
                     motion: None,
                     fills: Fills::All,
                     pictures: &crate::paint::NO_PICTURES,
+                    previews: &crate::paint::NO_PREVIEWS,
                 },
             )
         };
@@ -2688,6 +2867,7 @@ mod tests {
                     motion: None,
                     fills: Fills::All,
                     pictures: &crate::paint::NO_PICTURES,
+                    previews: &crate::paint::NO_PREVIEWS,
                 },
             )
         };
@@ -2767,6 +2947,7 @@ mod tests {
                     motion: None,
                     fills: Fills::All,
                     pictures: &crate::paint::NO_PICTURES,
+                    previews: &crate::paint::NO_PREVIEWS,
                 },
             )
         };
@@ -2869,6 +3050,7 @@ mod tests {
                     motion: None,
                     fills: Fills::All,
                     pictures: &crate::paint::NO_PICTURES,
+                    previews: &crate::paint::NO_PREVIEWS,
                 },
             );
             let mut fills = Vec::new();
@@ -2996,6 +3178,7 @@ mod tests {
                 motion: None,
                 fills: Fills::All,
                 pictures: &crate::paint::NO_PICTURES,
+                previews: &crate::paint::NO_PREVIEWS,
             },
         );
         (tree, layout, items)
@@ -3110,6 +3293,7 @@ mod tests {
                     motion: None,
                     fills: Fills::All,
                     pictures: &crate::paint::NO_PICTURES,
+                    previews: &crate::paint::NO_PREVIEWS,
                 },
             )
         };
@@ -3248,6 +3432,7 @@ mod tests {
                 motion: None,
                 fills: Fills::All,
                 pictures: &crate::paint::NO_PICTURES,
+                previews: &crate::paint::NO_PREVIEWS,
             },
         );
         let shapes: Vec<Shape> = items
@@ -3331,6 +3516,7 @@ mod tests {
                     motion: None,
                     fills: Fills::All,
                     pictures: &crate::paint::NO_PICTURES,
+                    previews: &crate::paint::NO_PREVIEWS,
                 },
             )
             .into_iter()
@@ -3774,6 +3960,7 @@ mod tests {
                 motion: Some((&animations, now)),
                 fills: Fills::All,
                 pictures: &crate::paint::NO_PICTURES,
+                previews: &crate::paint::NO_PREVIEWS,
             },
         );
         let xs: Vec<i32> = items
@@ -3855,6 +4042,7 @@ mod tests {
                     motion: Some((&animations, now)),
                     fills: Fills::All,
                     pictures: &crate::paint::NO_PICTURES,
+                    previews: &crate::paint::NO_PREVIEWS,
                 },
             )
         };
@@ -3958,6 +4146,7 @@ mod tests {
                     motion: Some((animations, start + Duration::from_millis(ms))),
                     fills: Fills::All,
                     pictures: &crate::paint::NO_PICTURES,
+                    previews: &crate::paint::NO_PREVIEWS,
                 },
             );
             items
@@ -4113,6 +4302,7 @@ mod tests {
                     motion: Some((animations, start + Duration::from_millis(ms))),
                     fills: Fills::All,
                     pictures: &crate::paint::NO_PICTURES,
+                    previews: &crate::paint::NO_PREVIEWS,
                 },
             );
             let mut shapes = Vec::new();
@@ -4220,6 +4410,7 @@ mod tests {
                 motion: None,
                 fills: Fills::All,
                 pictures: &crate::paint::NO_PICTURES,
+                previews: &crate::paint::NO_PREVIEWS,
             },
         );
         let glyphs: usize = items

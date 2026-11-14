@@ -252,6 +252,11 @@ pub enum Kind {
     /// layout gives it, in the middle, of its own proportions; nothing of an
     /// id that the host does not keep.
     Image(u64),
+    /// A sample terminal in the colors of a theme, by its name, which the
+    /// host draws within the room that its layout gives it: its
+    /// background, a prompt, an `ls` of colors and the sixteen colors;
+    /// nothing of a name that names no theme.
+    ThemePreview(String),
 }
 
 /// A view of tabs' own properties.
@@ -493,7 +498,8 @@ impl Kind {
             | Self::Spacer
             | Self::Separator
             | Self::Progress(_)
-            | Self::Image(_) => false,
+            | Self::Image(_)
+            | Self::ThemePreview(_) => false,
             Self::Field(_)
             | Self::Button(_)
             | Self::Toggle(_)
@@ -1290,6 +1296,12 @@ impl Node {
     /// layout gives it.
     pub fn image(id: u64) -> Self {
         Self::new(Kind::Image(id))
+    }
+
+    /// A sample terminal in the colors of the theme `name`, within the room
+    /// that its layout gives it.
+    pub fn theme_preview(name: impl Into<String>) -> Self {
+        Self::new(Kind::ThemePreview(name.into()))
     }
 
     /// A list of `count` items, of rows of `row`'s template, which gives

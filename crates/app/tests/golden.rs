@@ -872,6 +872,7 @@ fn check_tree(
             motion: None,
             fills: Fills::All,
             pictures: &lokyr_ui_core::paint::NO_PICTURES,
+            previews: &lokyr_ui_core::paint::NO_PREVIEWS,
         },
     );
     // The tooltip, as the pointer rested at the middle of the node under
@@ -1924,6 +1925,7 @@ fn check_tab_bar((name, style, position, (width, height), shown): Bar, (dark, sc
             motion: Some((&animations, now)),
             fills: Fills::All,
             pictures: &lokyr_ui_core::paint::NO_PICTURES,
+            previews: &lokyr_ui_core::paint::NO_PREVIEWS,
         },
     );
     let list = DisplayList {

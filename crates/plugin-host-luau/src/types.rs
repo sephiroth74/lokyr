@@ -521,7 +521,13 @@ impl Writer {
                         Format::Option(format) => self.ty(format),
                         format => self.ty(format),
                     },
-                    (None, Payload::Value(format)) if *field == kind => self.ty(format),
+                    // A kind of a value alone, of its one field, as
+                    // `image`'s or `theme-preview`'s `theme`.
+                    (None, Payload::Value(format))
+                        if *field == kind || tree::own(kind).is_some_and(|own| own.len() == 1) =>
+                    {
+                        self.ty(format)
+                    }
                     (None, other) => panic!("the kind {kind}'s field {field} of {other:?}"),
                 };
                 match own.get(field) {

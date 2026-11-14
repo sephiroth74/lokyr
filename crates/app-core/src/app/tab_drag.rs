@@ -326,9 +326,12 @@ impl<B: Backend> App<B> {
                     tokens,
                     (origin, room),
                     (dark, None, now),
-                    self.pictures
-                        .get(&view.plugin)
-                        .unwrap_or(&lokyr_ui_core::paint::NO_PICTURES),
+                    (
+                        self.pictures
+                            .get(&view.plugin)
+                            .unwrap_or(&lokyr_ui_core::paint::NO_PICTURES),
+                        &self.previews,
+                    ),
                 ),
             );
             items.push(Item::PopClip);

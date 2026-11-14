@@ -565,6 +565,17 @@ pub fn with_contrast(text: Color, background: Color, ratio: f32) -> Color {
     mix(text, extreme, high).with_alpha(text.alpha)
 }
 
+impl crate::paint::PreviewColors {
+    /// The colors that a preview draws of a theme's terminal colors.
+    pub fn of(terminal: &TerminalColors) -> Self {
+        Self {
+            background: color_of(terminal.background),
+            foreground: color_of(terminal.foreground),
+            palette: terminal.palette.map(color_of),
+        }
+    }
+}
+
 /// The color of a theme's `color`.
 fn color_of(color: ThemeColor) -> Color {
     Color::from_rgb8(color.red, color.green, color.blue).with_alpha(f32::from(color.alpha) / 255.0)

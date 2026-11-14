@@ -4324,6 +4324,9 @@ fn write_node(out: &mut String, node: &Node, depth: usize) {
         Kind::Image(id) => {
             let _ = write!(out, "image {id}");
         }
+        Kind::ThemePreview(name) => {
+            let _ = write!(out, "theme-preview {}", quoted(name));
+        }
     }
     if let Some(key) = &node.key {
         let _ = write!(out, " key={}", key.0);

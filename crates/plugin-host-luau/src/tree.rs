@@ -40,7 +40,7 @@ pub(crate) const NODE: [&str; 11] = [
 ];
 
 /// The kinds of node, by their names in Luau.
-pub(crate) const KINDS: [&str; 13] = [
+pub(crate) const KINDS: [&str; 14] = [
     "container",
     "text",
     "icon",
@@ -54,6 +54,7 @@ pub(crate) const KINDS: [&str; 13] = [
     "progress",
     "tabs",
     "image",
+    "theme-preview",
 ];
 
 /// The fields of a node of `kind`'s own, by their names in Luau, if it is
@@ -70,6 +71,7 @@ pub(crate) fn own(kind: &str) -> Option<&'static [&'static str]> {
         "progress" => &["progress"],
         "tabs" => &["tabs", "chosen", "distribution"],
         "image" => &["image"],
+        "theme-preview" => &["theme"],
         _ => return None,
     })
 }
@@ -314,6 +316,7 @@ fn one(value: Value, budget: &Budget) -> Result<(Node, Vec<Value>, Option<Value>
             distribution: or_default(take("distribution"), "distribution", budget)?,
         }),
         "image" => Kind::Image(field(take("image"), "image", budget)?),
+        "theme-preview" => Kind::ThemePreview(field(take("theme"), "theme", budget)?),
         // A container, the kind left, as `own` took it.
         _ => Kind::Container,
     };
@@ -375,6 +378,7 @@ mod giving {
             Kind::Progress(_) => "progress",
             Kind::Tabs(_) => "tabs",
             Kind::Image(_) => "image",
+            Kind::ThemePreview(_) => "theme-preview",
         }
     }
 
@@ -468,6 +472,7 @@ mod giving {
                 }
                 Kind::Progress(progress) => set(lua, &table, "progress", progress)?,
                 Kind::Image(id) => table.raw_set("image", *id)?,
+                Kind::ThemePreview(name) => table.raw_set("theme", name.as_str())?,
                 Kind::Tabs(Tabs {
                     tabs,
                     chosen,

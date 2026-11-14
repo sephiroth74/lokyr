@@ -679,10 +679,16 @@ fn the_settings_window_opened_of_its_command_reads_the_registry_and_command_w_cl
     // page, activates as the page renders, and hears it shown then, as it
     // reads the registry.
     let own = open(&mut fake, &mut app, SETTINGS_TAB);
-    // Its first page the settings'; the plugins' its second tab.
+    // Its first page the settings'; the plugins' a tab after the themes'.
     assert_eq!(page_shown(&app, own), "settings");
     assert!(!app.plugins.activated("lokyr/plugin-manager"));
-    click_tab(&mut fake, &mut app, own, 1);
+    let plugins = app
+        .settings
+        .pages
+        .iter()
+        .position(|page| page.id == "plugins")
+        .expect("the plugins' page");
+    click_tab(&mut fake, &mut app, own, plugins);
     assert!(app.plugins.activated("lokyr/plugin-manager"));
     let has = |app: &App, key: &str| {
         page_view(app, own).is_some_and(|view| view.surface.tree.by_key(&key.into()).is_some())
@@ -1828,5 +1834,56 @@ fn a_family_chosen_in_the_settings_comments_out_the_styles_that_it_lacks_and_sho
     fake.send(&mut app, own, WindowEvent::ContextMenuClosed);
     frames(&mut fake, &mut app, own);
     assert_eq!(page_button(&app, own, "choose:family"), "Mono");
+    let _ = std::fs::remove_dir_all(&directory);
+}
+
+#[test]
+fn the_themes_page_previews_each_theme_of_its_colors_and_a_card_names_it_in_the_config() {
+    let directory = super::installed::shelf("settings-themes");
+    let path = directory.join("config.toml");
+    std::fs::write(&path, "# mine\n").unwrap();
+    let drawing = Drawing::new(FontConfig::default()).unwrap();
+    let mut fake = Fake::default();
+    let mut app = App::new(
+        Some(drawing),
+        Config::read(&path).unwrap(),
+        Some(path.clone()),
+    )
+    .with_program(idle());
+    fake.start(&mut app);
+    let first = fake.windows().next().unwrap();
+    app.windows.get_mut(&first).unwrap().surface = Some(fakes::Surface::default());
+    let own = open(&mut fake, &mut app, SETTINGS_TAB);
+    // The Themes page, the settings' plugin's second, by its tab.
+    let at = app
+        .settings
+        .pages
+        .iter()
+        .position(|page| page.id == "themes")
+        .expect("the themes' page");
+    assert_eq!(app.settings.pages[at].title, "Themes");
+    click_tab(&mut fake, &mut app, own, at);
+    frames(&mut fake, &mut app, own);
+    assert_eq!(page_shown(&app, own), "themes");
+    // The built-in themes' cards, whose previews' colors the app keeps.
+    let tree = &page_view(&app, own).unwrap().surface.tree;
+    assert!(tree.by_key(&"theme:dark:Lokyr Dark".into()).is_some());
+    assert!(tree.by_key(&"theme:light:Lokyr Light".into()).is_some());
+    assert!(app.previews.contains_key("Lokyr Dark"));
+    assert!(app.previews.contains_key("Lokyr Light"));
+    // A card's click names its theme in `[theme]` for its appearance.
+    app.ui_events.push((
+        "lokyr/settings".to_owned(),
+        UiEvent {
+            view: ViewId::Page("themes".to_owned()),
+            key: "theme:dark:Lokyr Dark".into(),
+            kind: lokyr_kernel::plugins::view::UiEventKind::Click,
+        },
+    ));
+    frames(&mut fake, &mut app, own);
+    assert_eq!(
+        std::fs::read_to_string(&path).unwrap(),
+        "# mine\n\n[theme]\ndark = \"Lokyr Dark\"\n"
+    );
     let _ = std::fs::remove_dir_all(&directory);
 }

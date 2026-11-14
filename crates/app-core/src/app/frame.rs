@@ -1152,7 +1152,7 @@ impl<B: Backend> App<B> {
             tokens,
             room,
             (chrome_dark, focused_node, now),
-            &self.pictures,
+            (&self.pictures, &self.previews),
         );
         // Under an opaque titlebar, the chrome in its band goes over it, of
         // its colors' own opacity, rather than knocking it out to the
@@ -2133,7 +2133,7 @@ impl<B: Backend> App<B> {
             tokens,
             room,
             (chrome_dark, focused_node, now),
-            &self.pictures,
+            (&self.pictures, &self.previews),
         );
         // The slots' views' pointers, moves and titlebar's parts, as the
         // panes' frame gives them.

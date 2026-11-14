@@ -6,7 +6,7 @@ license = "MIT"
 description = "The settings window's first page: every key of the config and of the plugins' sections, of its text, its platforms and a control of its value, written into the config file"
 
 [activation]
-on = ["page:settings"]
+on = ["page:settings", "page:themes"]
 
 [capabilities]
 config = true
@@ -16,4 +16,4 @@ open = true
 appearance-write = true
 
 [contributes]
-pages = [{ id = "settings", icon = "settings" }]
+pages = [{ id = "settings", icon = "settings" }, { id = "themes", icon = "symbol-color" }]

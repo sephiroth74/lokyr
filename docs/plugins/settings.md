@@ -2,7 +2,7 @@
 
 <sub>`lokyr/settings` · bundled · [source](../../plugins/settings)</sub>
 
-The Settings page of the settings window: every key of your config, Lokyr's own and the bundled plugins', by its section, of what it does, the platforms where it applies and its value in force, which you change there, Lokyr writing it into your config file.
+The Settings and Themes pages of the settings window: every key of your config, Lokyr's own and the bundled plugins', by its section, of what it does, the platforms where it applies and its value in force, which you change there, Lokyr writing it into your config file; and every theme, of a preview of its colors.
 
 ## The page
 
@@ -13,7 +13,7 @@ The Settings page of the settings window: every key of your config, Lokyr's own 
   - a boolean, a toggle, On or Off;
   - a key of a few values, a button of its value, whose menu lists the values, the one in force ticked;
   - a font's family, a menu of the system's families, the monospaced ones of the text's own family, every one of the text past ASCII's and of the interface's; a font's style, a menu of the styles of the section's family, or of the family in force; the terminal's family and its faces' styles show in the panes as their menus' items rest highlighted, by the arrows or the pointer, the font in force back as the menu closes of no choice; a family chosen comments out the config's styles that it lacks, as the font would not apply of them, for you to take back;
-  - a theme, a menu of the themes of its appearance, light or dark; a plugin's color, a menu of the theme's colors by their tokens, of a swatch of the color beside it;
+  - a plugin's color, a menu of the theme's colors by their tokens, of a swatch of the color beside it;
   - a number, a field, whose value ↑ and ↓ step, of the key's step, within its range;
   - a text, a field, empty where your config leaves out a key of no default;
   - a list, as `[agents] programs`, its values under what it does, each of a **Remove** link, and a field that adds one as you press Return;
@@ -24,6 +24,12 @@ The Settings page of the settings window: every key of your config, Lokyr's own 
 - **A config file that does not read** shows its error over the page, of its line and its column: the page shows the settings that applied last, and writes nothing until the file reads again.
 - **The page follows your config**: saving the file shows the new values at once, the fields too.
 - The keys, their texts and their values are those of [the config guide](../CONFIGURATION.md), which the same schema of the config makes. Lokyr › Settings… (⌘,) opens the file itself, for the keys that the page does not change.
+
+## The Themes page
+
+- **The window's tab Themes** shows every theme that Lokyr has, the built-in ones, the collection's and yours of the themes' folder beside your config, those of the appearance in force first, then the others, light or dark.
+- **Each theme** is a card of a preview of its colors, a sample terminal that Lokyr draws: its background, a prompt, an `ls` of colors and its sixteen colors, and its name; the theme that your config's `[theme]` names for its appearance has the accent's border.
+- **A click on a card** names its theme in `[theme]`, `light` or `dark` as the theme is, which shows at once where its appearance is in force. The Settings page keeps `[theme]`'s `minimum-contrast` alone.
 
 ## Commands
 
