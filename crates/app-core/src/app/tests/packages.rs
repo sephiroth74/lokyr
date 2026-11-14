@@ -344,3 +344,70 @@ fn a_plugin_of_lokyr_s_own_turns_another_off_and_on_in_the_config_and_reads_its_
     assert_eq!(told, ["Lokyr cannot turn the plugin on or off"]);
     assert!(app.commands.get("noted.go").is_some());
 }
+
+/// A plugin of Lokyr's own that removes `acme/notes` through Sleip.
+struct Remover;
+
+impl Plugin for Remover {
+    fn activate(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
+        cx.register_command(Command {
+            name: "remover.go".to_owned(),
+            title: "remover.go".to_owned(),
+            category: Category::View,
+            capabilities: Vec::new(),
+            params: Vec::new(),
+            when: None,
+        })
+    }
+
+    fn on_command(&mut self, cx: &mut Cx<'_>, _: &str, _: Args) -> Result<(), Error> {
+        cx.packages(Packages::Remove {
+            plugin: "acme/notes".to_owned(),
+        })
+        .map(drop)
+    }
+}
+
+const REMOVER: &str = concat!(
+    "[plugin]\nname = \"lokyr/remover\"\nkind = \"builtin\"\nlicense = \"MIT\"\n",
+    "[capabilities]\npackages = true\n",
+);
+
+#[test]
+fn a_removed_plugin_and_the_dependency_that_went_with_it_leave_no_section_in_the_config() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let directory = shelf("removed-dependency");
+    let path = directory.join("config.toml");
+    let text = concat!(
+        "# mine\n[font]\nsize = 14\n\n",
+        "[plugins.notes]\nenabled = false\n\n",
+        "[plugins.base]\nenabled = false\n",
+    );
+    std::fs::write(&path, text).unwrap();
+    // Sleip's removal of the plugin and of its dependency, which no plugin
+    // needs now.
+    let sleip = directory.join("sleip");
+    std::fs::write(
+        &sleip,
+        concat!(
+            "#!/bin/sh\n",
+            "echo '{\"event\":\"removed\",\"name\":\"acme/notes\"}'\n",
+            "echo '{\"event\":\"removed\",\"name\":\"acme/base\",\"needed\":false}'\n",
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&sleip, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let mut fake = Fake::default();
+    let mut app = App::new(None, Config::read(&path).unwrap(), Some(path.clone()))
+        .with_program(quiet())
+        .with_sleip(Some(sleip))
+        .with_builtin(REMOVER, Box::new(Remover));
+    fake.start(&mut app);
+    fake.send_app(&mut app, AppEvent::Command("remover.go".to_owned()));
+    run_until(&mut fake, &mut app, |_, _| {
+        std::fs::read_to_string(&path).unwrap() == "# mine\n[font]\nsize = 14\n"
+    });
+    // The config in force is the file's, of no section of either.
+    assert!(app.config.plugins.get("notes").is_none());
+    assert!(app.config.plugins.get("base").is_none());
+}

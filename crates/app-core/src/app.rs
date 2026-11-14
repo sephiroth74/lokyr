@@ -3432,7 +3432,7 @@ impl<B: Backend> App<B> {
         // The settings tab's page that shows now, for its plugin.
         self.settle_page();
         // The lines and the ends of the packages' jobs, for their plugins.
-        self.take_packages();
+        self.take_packages(platform);
         // The saves' files written, for their plugins.
         self.take_written(platform);
         let served = if self.plugins.waiting() {

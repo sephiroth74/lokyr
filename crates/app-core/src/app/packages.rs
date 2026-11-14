@@ -31,9 +31,10 @@ pub(crate) struct Jobs {
     pub(crate) env: Vec<(String, String)>,
     /// What stops each job that runs, by its plugin and its id.
     running: BTreeMap<(String, u64), Stop>,
-    /// The plugin that each job of a removal takes away, by its plugin and
-    /// its id.
-    removing: BTreeMap<(String, u64), String>,
+    /// The plugins that each job of a removal takes away, by its plugin and
+    /// its id: the one that it names, then each that its lines tell
+    /// removed, as a dependency that no plugin needs now.
+    removing: BTreeMap<(String, u64), Vec<String>>,
     /// The plugins that a removal took away and that the app still runs,
     /// until it takes them away too.
     pub(crate) removed: std::collections::BTreeSet<String>,
@@ -106,7 +107,7 @@ impl<B: Backend> App<B> {
         if let host::Packages::Remove { plugin: removed } = call {
             self.packages
                 .removing
-                .insert((plugin.clone(), id), removed.clone());
+                .insert((plugin.clone(), id), vec![removed.clone()]);
         }
         let (told, waker) = (Arc::clone(&self.packages.told), platform.waker());
         let tell = move |what: Told| {
@@ -187,25 +188,25 @@ impl<B: Backend> App<B> {
     /// run, out of the config, and its section if nothing else is left of
     /// it, so that no section stays of a plugin no longer there: never
     /// while the app runs it, which turning on would start again.
-    /// The plugins' sections in force are the file's since, so that the
-    /// next check of them tells nothing of the section gone.
-    pub(super) fn forget_enabled(&mut self, name: &str) {
+    /// The config applies anew of the file, as its change would, so that
+    /// the next check of the plugins' sections tells nothing of the
+    /// section gone.
+    pub(super) fn forget_enabled(&mut self, platform: &mut dyn Platform, name: &str) {
         let namespace = name.rsplit('/').next().unwrap_or(name);
         let Some(file) = &self.config_file else {
             return;
         };
-        match config::set_plugin_enabled(&file.path, namespace, true)
-            .and_then(|()| config::Config::read(&file.path))
-        {
-            Ok(read) => self.config.plugins = read.plugins,
+        match config::set_plugin_enabled(&file.path, namespace, true) {
+            Ok(()) => self.reload(platform),
             Err(error) => eprintln!("lokyr: {error}"),
         }
     }
 
     /// Gives the plugins what their jobs' threads told since the last
-    /// turn, for their next delivery. A plugin removed takes its key
-    /// `enabled` out of the config once the app no longer runs it.
-    pub(super) fn take_packages(&mut self) {
+    /// turn, for their next delivery. A plugin removed, and each dependency
+    /// that went with it, takes its key `enabled` out of the config once
+    /// the app no longer runs it.
+    pub(super) fn take_packages(&mut self, platform: &mut dyn Platform) {
         let told = std::mem::take(
             &mut *self
                 .packages
@@ -215,15 +216,24 @@ impl<B: Backend> App<B> {
         );
         for what in told {
             match what {
-                Told::Line(plugin, id, line) => self.plugins.package_line(&plugin, id, &line),
+                Told::Line(plugin, id, line) => {
+                    if let Some(removing) = self.packages.removing.get_mut(&(plugin.clone(), id))
+                        && line.get("event").and_then(service::Value::as_str) == Some("removed")
+                        && let Some(name) = line.get("name").and_then(service::Value::as_str)
+                        && !removing.iter().any(|known| known == name)
+                    {
+                        removing.push(name.to_owned());
+                    }
+                    self.plugins.package_line(&plugin, id, &line);
+                }
                 Told::Ended(plugin, id, ok) => {
                     self.packages.running.remove(&(plugin.clone(), id));
                     let removed = self.packages.removing.remove(&(plugin.clone(), id));
-                    if let (Some(removed), true) = (removed, ok) {
+                    for removed in removed.filter(|_| ok).unwrap_or_default() {
                         if self.plugins.status(&removed).is_some() {
                             self.packages.removed.insert(removed);
                         } else {
-                            self.forget_enabled(&removed);
+                            self.forget_enabled(platform, &removed);
                         }
                     }
                     self.plugins.packages_ended(&plugin, id, ok);

@@ -1906,19 +1906,67 @@ pub fn set_plugin_enabled(path: &Path, namespace: &str, enabled: bool) -> Result
                     format!("`plugins.{namespace}` is a section, not a value"),
                 )
             })?;
+        // The comments above the key stay, on the next key, or after the
+        // section's header, which then stays.
+        let next = {
+            let order: Vec<String> = section.iter().map(|(name, _)| name.to_owned()).collect();
+            order
+                .iter()
+                .position(|name| name == "enabled")
+                .and_then(|at| order.get(at + 1))
+                .cloned()
+        };
+        let above = section
+            .key("enabled")
+            .and_then(|key| key.leaf_decor().prefix())
+            .and_then(toml_edit::RawString::as_str)
+            .filter(|above| above.contains('#'))
+            .map(str::to_owned);
         if section.remove("enabled").is_none() {
             return Ok(());
         }
-        if section.is_empty() && !commented {
+        let mut kept_after = None;
+        if let Some(above) = above {
+            match next.and_then(|next| section.key_mut(&next)) {
+                Some(mut next) => {
+                    let before = next
+                        .leaf_decor()
+                        .prefix()
+                        .and_then(toml_edit::RawString::as_str)
+                        .unwrap_or("")
+                        .to_owned();
+                    next.leaf_decor_mut().set_prefix(format!("{above}{before}"));
+                }
+                None => kept_after = Some(above),
+            }
+        }
+        let empty = section.is_empty();
+        // The section goes of nothing else: no key, no comment above its
+        // header, none of the removed key's, and none after it that is its
+        // own, before the next section's own comments.
+        let position = plugins
+            .get(namespace)
+            .and_then(toml_edit::Item::as_table)
+            .and_then(toml_edit::Table::position);
+        let followed = position.is_some_and(|at| own_comments_after(&document, at));
+        let plugins = document
+            .get_mut("plugins")
+            .and_then(toml_edit::Item::as_table_like_mut)
+            .ok_or_else(|| failed(&target, "`plugins` is a section, not a value".to_owned()))?;
+        if empty && !commented && kept_after.is_none() && !followed {
             plugins.remove(namespace);
+        } else if let (Some(kept), Some(at)) = (kept_after, position) {
+            put_after_header(&mut document, at, &kept);
         }
         return write_whole(&target, &document.to_string())
             .map_err(|error| failed(&target, format!("it cannot be written: {error}")));
     }
     // The comments and the blank lines after the last section are the
     // document's, which a new section comes before, as `set_string` puts
-    // one.
-    let after = (!held)
+    // one, where it comes last: not where the plugins' sections come
+    // earlier, after the last of which it goes, the comments staying at the
+    // end.
+    let after = (!held && plugins_come_last(&document))
         .then(|| document.trailing().as_str().map(str::to_owned))
         .flatten()
         .filter(|after| !after.is_empty());
@@ -1967,6 +2015,131 @@ pub fn set_plugin_enabled(path: &Path, namespace: &str, enabled: bool) -> Result
     }
     write_whole(&target, &document.to_string())
         .map_err(|error| failed(&target, format!("it cannot be written: {error}")))
+}
+
+/// The tables of `document` that its text writes, each of its path and
+/// its place, in their order, as `toml_edit` writes them.
+fn tables_of(document: &DocumentMut) -> Vec<(Vec<String>, Option<isize>)> {
+    fn visit(
+        table: &toml_edit::Table,
+        path: &mut Vec<String>,
+        found: &mut Vec<(Vec<String>, Option<isize>)>,
+    ) {
+        if !table.is_dotted() && !path.is_empty() {
+            found.push((path.clone(), table.position()));
+        }
+        for (key, item) in table {
+            if let toml_edit::Item::Table(inner) = item {
+                path.push(key.to_owned());
+                visit(inner, path, found);
+                path.pop();
+            }
+        }
+    }
+    let mut found = Vec::new();
+    visit(document.as_table(), &mut Vec::new(), &mut found);
+    found
+}
+
+/// Whether a new section of `[plugins]` comes last in `document`'s text:
+/// no plugins' section there, or none after the last of them.
+fn plugins_come_last(document: &DocumentMut) -> bool {
+    let tables = tables_of(document);
+    let last = tables.iter().filter_map(|(_, at)| *at).max();
+    let plugins = tables
+        .iter()
+        .filter(|(path, _)| path.first().is_some_and(|first| first == "plugins"))
+        .filter_map(|(_, at)| *at)
+        .max();
+    plugins.is_none_or(|plugins| Some(plugins) == last)
+}
+
+/// The table of `document` at `path`, to change.
+fn table_at<'d>(
+    document: &'d mut DocumentMut,
+    path: &[String],
+) -> Option<&'d mut toml_edit::Table> {
+    let mut table = document.as_table_mut();
+    for key in path {
+        table = table.get_mut(key)?.as_table_mut()?;
+    }
+    Some(table)
+}
+
+/// The path of the section that comes right after the one at `at` in
+/// `document`'s text, if one does.
+fn next_section(document: &DocumentMut, at: isize) -> Option<Vec<String>> {
+    tables_of(document)
+        .into_iter()
+        .filter_map(|(path, position)| Some((position?, path)))
+        .filter(|(position, _)| *position > at)
+        .min()
+        .map(|(_, path)| path)
+}
+
+/// The part of `text`, the comments and blank lines after a section's
+/// last line, that the section owns: the lines right after it, up to the
+/// first blank line; of none, the whole text at the file's end, `last`,
+/// but none before the next section's header, whose own they are.
+fn owned_after(text: &str, last: bool) -> &str {
+    if text.starts_with('\n') {
+        return "";
+    }
+    match text.find("\n\n") {
+        Some(end) => &text[..end],
+        None if last => text,
+        None => "",
+    }
+}
+
+/// Whether comments follow the section at `at` of `document` that are its
+/// own, before the next section's own or at the file's end.
+fn own_comments_after(document: &DocumentMut, at: isize) -> bool {
+    let after = match next_section(document, at) {
+        Some(path) => {
+            let mut table = document.as_table();
+            for key in &path {
+                match table.get(key).and_then(toml_edit::Item::as_table) {
+                    Some(inner) => table = inner,
+                    None => return false,
+                }
+            }
+            owned_after(
+                table
+                    .decor()
+                    .prefix()
+                    .and_then(toml_edit::RawString::as_str)
+                    .unwrap_or(""),
+                false,
+            )
+            .to_owned()
+        }
+        None => owned_after(document.trailing().as_str().unwrap_or(""), true).to_owned(),
+    };
+    after.contains('#')
+}
+
+/// Puts `comments` right after the header of the section at `at` of
+/// `document`, which has no key: before the next section's text, or at the
+/// file's end.
+fn put_after_header(document: &mut DocumentMut, at: isize, comments: &str) {
+    match next_section(document, at) {
+        Some(path) => {
+            if let Some(next) = table_at(document, &path) {
+                let before = next
+                    .decor()
+                    .prefix()
+                    .and_then(toml_edit::RawString::as_str)
+                    .unwrap_or("")
+                    .to_owned();
+                next.decor_mut().set_prefix(format!("{comments}{before}"));
+            }
+        }
+        None => {
+            let before = document.trailing().as_str().unwrap_or("").to_owned();
+            document.set_trailing(format!("{comments}{before}"));
+        }
+    }
 }
 
 /// Puts `lines`, comments, right after the section `[section]` of
@@ -3746,6 +3919,57 @@ long-command = 0
             fs::write(&file, text).unwrap();
             set_plugin_enabled(&file, "snap", false).unwrap();
             assert_eq!(fs::read_to_string(&file).unwrap(), written, "{text:?}");
+        }
+        // Where the plugins' sections come earlier, a new one goes after
+        // the last of them, the file's last comments staying at its end.
+        fs::write(
+            &file,
+            "[plugins.tabs]\nstyle = \"unified\"\n\n[window]\npadding-x = 4\n\n# the end\n",
+        )
+        .unwrap();
+        set_plugin_enabled(&file, "snap", false).unwrap();
+        assert_eq!(
+            fs::read_to_string(&file).unwrap(),
+            "[plugins.tabs]\nstyle = \"unified\"\n\n[plugins.snap]\nenabled = false\n\n[window]\npadding-x = 4\n\n# the end\n"
+        );
+        // On again, the key's comments stay: on its next key, or after the
+        // header, which stays; and so does a section of a commented key
+        // after it, but not the next section's own comments nor the file's
+        // last ones, a blank line apart.
+        for (text, written) in [
+            (
+                "[plugins.tabs]\n# off for now\nenabled = false\nstyle = \"unified\"\n",
+                "[plugins.tabs]\n# off for now\nstyle = \"unified\"\n",
+            ),
+            (
+                "[plugins.tabs]\n# off for now\nenabled = false\n\n[window]\npadding-x = 4\n",
+                "[plugins.tabs]\n# off for now\n\n[window]\npadding-x = 4\n",
+            ),
+            (
+                "[plugins.tabs]\n# off for now\nenabled = false\n",
+                "[plugins.tabs]\n# off for now\n",
+            ),
+            (
+                "[plugins.tabs]\nenabled = false\n# style = \"unified\"\n\n[window]\npadding-x = 4\n",
+                "[plugins.tabs]\n# style = \"unified\"\n\n[window]\npadding-x = 4\n",
+            ),
+            (
+                "[plugins.tabs]\nenabled = false\n# style = \"unified\"\n",
+                "[plugins.tabs]\n# style = \"unified\"\n",
+            ),
+            (
+                "[font]\nsize = 14\n\n[plugins.tabs]\nenabled = false\n\n# The window.\n[window]\npadding-x = 4\n",
+                "[font]\nsize = 14\n\n# The window.\n[window]\npadding-x = 4\n",
+            ),
+            (
+                "[font]\nsize = 14\n\n[plugins.tabs]\nenabled = false\n\n# the end\n",
+                "[font]\nsize = 14\n\n# the end\n",
+            ),
+        ] {
+            fs::write(&file, text).unwrap();
+            set_plugin_enabled(&file, "tabs", true).unwrap();
+            assert_eq!(fs::read_to_string(&file).unwrap(), written, "{text:?}");
+            Config::read(&file).unwrap();
         }
         // In an inline table too.
         fs::write(&file, "plugins = { snap = { enabled = true } }\n").unwrap();
