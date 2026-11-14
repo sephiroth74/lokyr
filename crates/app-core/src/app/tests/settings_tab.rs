@@ -858,3 +858,56 @@ fn the_settings_window_in_front_takes_no_plugin_s_question_nor_focus_and_leaves_
     assert_eq!(state::last_directory(&state), Some(folder.clone()));
     let _ = std::fs::remove_dir_all(base);
 }
+
+#[test]
+fn the_focus_stays_in_the_page_after_a_page_s_change_or_an_escape_and_the_input_method_follows_it()
+{
+    use lokyr_platform_core::Ime;
+    let (mut fake, mut app, _) = of_pages();
+    let window = open(&mut fake, &mut app, SETTINGS_TAB);
+    assert_eq!(focused_key(&app, window), ("name".to_owned(), true));
+    // The input method's candidates at the field.
+    fake.send(&mut app, window, WindowEvent::Frame);
+    let (origin, _) = fake
+        .window(window)
+        .unwrap()
+        .text_area
+        .expect("the field's area");
+    let page = page_view(&app, window).unwrap().frame.unwrap();
+    let scale = fake.window(window).unwrap().size.scale;
+    assert!(origin.y >= f64::from(page.y) / scale, "{origin:?} {page:?}");
+    // A composition under way, of a field that the next page's view takes
+    // away: it ends.
+    let composing = Ime::Preedit {
+        text: "に".to_owned(),
+        selection: 3..3,
+    };
+    fake.send(&mut app, window, WindowEvent::Ime(composing));
+    let ended = fake.window(window).unwrap().compositions_ended;
+    // The other page, of a click on its tab: its first field takes the
+    // focus, and Tab moves it.
+    click_tab(&mut fake, &mut app, window, 1);
+    assert_eq!(page_shown(&app, window), "terminal");
+    assert!(fake.window(window).unwrap().compositions_ended > ended);
+    assert_eq!(focused_key(&app, window), ("shell".to_owned(), true));
+    tap(&mut fake, &mut app, window, KeyCode::Tab, Modifiers::NONE);
+    frames(&mut fake, &mut app, window);
+    assert_eq!(focused_key(&app, window), ("term".to_owned(), true));
+    // Escape leaves the field, the focus staying in the page, where Tab
+    // still moves it.
+    tap(
+        &mut fake,
+        &mut app,
+        window,
+        KeyCode::Escape,
+        Modifiers::NONE,
+    );
+    frames(&mut fake, &mut app, window);
+    let (key, in_page) = focused_key(&app, window);
+    assert!(in_page, "{key}");
+    let before = key;
+    tap(&mut fake, &mut app, window, KeyCode::Tab, Modifiers::NONE);
+    frames(&mut fake, &mut app, window);
+    let (key, in_page) = focused_key(&app, window);
+    assert!(in_page && key != before, "{key}");
+}

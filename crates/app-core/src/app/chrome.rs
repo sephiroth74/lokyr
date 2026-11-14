@@ -382,6 +382,7 @@ impl<B: Backend> App<B> {
             })
         });
         let settings = settings_due.then(|| self.settings_tree());
+        let paneless = self.shows_settings(window);
         let Some(state) = self.windows.get_mut(&window) else {
             return;
         };
@@ -474,14 +475,6 @@ impl<B: Backend> App<B> {
                         state.focus.first(slot.id, &slot.surface.tree);
                     }
                 }
-                // A settings' page's first tree, of no node with the focus,
-                // as the settings open: its first field takes it.
-                if first
-                    && matches!(slot.view, ViewId::Page(_))
-                    && state.focus.target() == Target::Pane
-                {
-                    state.focus.first(slot.id, &slot.surface.tree);
-                }
             }
             state.chrome.push(slot);
         }
@@ -504,6 +497,12 @@ impl<B: Backend> App<B> {
             if state.over == Some(gone.id) {
                 state.over = None;
             }
+        }
+        // The settings' window has no pane: the focus on none, as the
+        // settings open, or gone back as a page's view went, goes to the
+        // page's first field.
+        if paneless {
+            focus_page(state);
         }
         // A move of the focus that a render made, as back to the pane of a
         // field gone, or to a panel's field as the panel shows, the pane's
@@ -1319,5 +1318,21 @@ impl<B: Backend> App<B> {
             kind: UiEventKind::Click,
         };
         self.ui_events.push((view.plugin.clone(), event));
+    }
+}
+
+/// Gives the focus of the settings' window, `state`'s, which has no pane, to
+/// its page's first field, or its first node that takes the keyboard, where
+/// it is on no node, as on the pane that the window lacks.
+pub(super) fn focus_page<B: crate::drawing::Backend>(state: &mut crate::window::Window<B>) {
+    if state.focus.target() != Target::Pane {
+        return;
+    }
+    if let Some(page) = state
+        .chrome
+        .iter()
+        .find(|view| matches!(view.view, ViewId::Page(_)))
+    {
+        state.focus.first(page.id, &page.surface.tree);
     }
 }

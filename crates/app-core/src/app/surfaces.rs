@@ -458,6 +458,13 @@ impl<B: Backend> App<B> {
                         self.end_tab_drag(platform, false);
                     }
                     self.hold_pointer_while_dragging(platform, window);
+                    // Escape out of a field of the settings' window, which
+                    // has no pane, leaves the focus in its page.
+                    if self.shows_settings(window)
+                        && let Some(state) = self.windows.get_mut(&window)
+                    {
+                        super::chrome::focus_page(state);
+                    }
                     self.focus_moved(platform, window, before);
                     // Escape in a panel that asks so closes it, its focus
                     // gone back to where it took it from.

@@ -2102,6 +2102,31 @@ impl<B: Backend> App<B> {
             Target::Node { panel, node } => Some((panel, node)),
             Target::Pane => None,
         };
+        // A render took a field's composition away, or set its text: the
+        // input method forgets it. Its candidates go at the field with the
+        // keyboard's focus.
+        if std::mem::take(&mut state.composition_dropped) {
+            platform.end_composition(window);
+        }
+        let field_area = focused_node.and_then(|(panel, node)| {
+            let view = state.chrome.iter().find(|view| view.id == panel)?;
+            let frame = view.frame?;
+            let area = view.surface.text_area(node, font)?;
+            Some((area.x + frame.x, area.y + frame.y, area.width, area.height))
+        });
+        if let Some((x, y, width, height)) = field_area {
+            platform.set_text_area(
+                window,
+                Point {
+                    x: f64::from(x) / size.scale,
+                    y: f64::from(y) / size.scale,
+                },
+                Size {
+                    width: f64::from(width) / size.scale,
+                    height: f64::from(height) / size.scale,
+                },
+            );
+        }
         let items = chrome::paint(
             &state.chrome,
             font,
