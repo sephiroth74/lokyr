@@ -655,6 +655,7 @@ impl Kernel {
             font_styles: &lokyr_plugin_sdk::fake::font_styles,
             plugins: &self.plugin_infos,
             config: &self.config,
+            default_bindings: &[],
             plugin_settings: &[],
             config_error: None,
             day: lokyr_plugin_sdk::fake::DAY,

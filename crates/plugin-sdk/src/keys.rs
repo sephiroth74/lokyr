@@ -229,6 +229,15 @@ impl fmt::Display for Combo {
     }
 }
 
+/// The text of `keys`, as a config writes them and [`parse_keys`] reads
+/// them: each combination as `cmd+shift+n`, a sequence's parted by `>`.
+pub fn keys_text(keys: &[Combo]) -> String {
+    keys.iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join(">")
+}
+
 /// The keys of a binding: a combination, or a sequence of them, each
 /// pressed after the one before; a step of the wheel and a click only
 /// alone.
@@ -448,6 +457,34 @@ pub fn is_panel_context(name: &str) -> bool {
 /// which recurse, never take more stack than that.
 const DEEPEST: usize = 32;
 
+/// The expression as a config writes it, which [`When::parse`] reads
+/// back: `&&` and `||` spaced, and parentheses where an operand binds
+/// looser than its operator.
+impl fmt::Display for When {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Name(name) => f.write_str(name),
+            Self::Not(when) => match **when {
+                Self::Name(_) | Self::Not(_) => write!(f, "!{when}"),
+                _ => write!(f, "!({when})"),
+            },
+            Self::And(a, b) => {
+                for (at, side) in [a, b].into_iter().enumerate() {
+                    if at > 0 {
+                        f.write_str(" && ")?;
+                    }
+                    match **side {
+                        Self::Or(..) => write!(f, "({side})")?,
+                        _ => write!(f, "{side}")?,
+                    }
+                }
+                Ok(())
+            }
+            Self::Or(a, b) => write!(f, "{a} || {b}"),
+        }
+    }
+}
+
 impl When {
     /// The expression of `text`: names, `!`, `&&`, `||` and parentheses,
     /// `&&` binding tighter than `||`, nested 32 levels deep at most.
@@ -572,6 +609,44 @@ fn not(tokens: &[String], at: &mut usize, depth: usize) -> Result<When, String> 
 #[cfg(test)]
 mod macos_tests {
     use super::*;
+
+    #[test]
+    fn a_context_and_keys_are_written_as_they_read_back() {
+        for (text, written) in [
+            ("selection", "selection"),
+            ("!selection", "!selection"),
+            (
+                "selection&&pane.focused||search.open",
+                "selection && pane.focused || search.open",
+            ),
+            (
+                "selection && (pane.focused || search.open)",
+                "selection && (pane.focused || search.open)",
+            ),
+            (
+                "!(selection && pane.focused)",
+                "!(selection && pane.focused)",
+            ),
+            ("!!selection", "!!selection"),
+            (
+                "(selection || alternate-screen) && !search.focused",
+                "(selection || alternate-screen) && !search.focused",
+            ),
+        ] {
+            let when = When::parse(text).unwrap();
+            assert_eq!(when.to_string(), written, "{text}");
+            assert_eq!(When::parse(&when.to_string()).unwrap(), when, "{text}");
+        }
+        for (keys, written) in [
+            ("cmd+shift+n", "cmd+shift+n"),
+            ("shift+cmd+N", "cmd+shift+n"),
+            ("ctrl+a>c", "ctrl+a>c"),
+        ] {
+            let combos = parse_keys(keys).unwrap();
+            assert_eq!(keys_text(&combos), written, "{keys}");
+            assert_eq!(parse_keys(&keys_text(&combos)).unwrap(), combos);
+        }
+    }
 
     #[test]
     fn keys_are_written_as_macos_menus_write_them() {

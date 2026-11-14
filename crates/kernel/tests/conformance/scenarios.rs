@@ -2385,7 +2385,6 @@ fn views(world: &World) -> Scenario {
                         &format!("the view {menu:?} has no node `none`"),
                     ),
                 ),
-                (Request::RequestRender(menu.clone()), Response::Done),
                 // The keyboard's focus given to a node, of none not there.
                 (
                     Request::FocusNode {
@@ -2404,6 +2403,18 @@ fn views(world: &World) -> Scenario {
                         &format!("the view {menu:?} has no node `none`"),
                     ),
                 ),
+                // Of a view that the call renders, a node and a list of the
+                // tree to come, which the app takes the focus and the
+                // selection to as it shows it.
+                (Request::RequestRender(menu.clone()), Response::Done),
+                (
+                    Request::FocusNode {
+                        view: menu.clone(),
+                        key: "to-come".into(),
+                    },
+                    Response::Done,
+                ),
+                (select("to-come"), Response::Done),
                 // A node shown, of a render that the view may have yet to
                 // show, and none of a view that it has not rendered.
                 (

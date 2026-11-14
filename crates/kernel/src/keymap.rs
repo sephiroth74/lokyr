@@ -224,11 +224,9 @@ impl Keymap {
     }
 }
 
-/// The binding of `keys` that the config's `binding` writes.
-fn from_config(keys: &[Combo], binding: &KeyBinding) -> Binding {
-    let args = binding
-        .args
-        .iter()
+/// The arguments of a command that the config's binding writes, `args`.
+pub fn args_of(args: &std::collections::BTreeMap<String, ArgValue>) -> Args {
+    args.iter()
         .map(|(name, value)| {
             let value = match value {
                 ArgValue::Boolean(value) => Value::Boolean(*value),
@@ -238,7 +236,12 @@ fn from_config(keys: &[Combo], binding: &KeyBinding) -> Binding {
             };
             (name.clone(), value)
         })
-        .collect();
+        .collect()
+}
+
+/// The binding of `keys` that the config's `binding` writes.
+fn from_config(keys: &[Combo], binding: &KeyBinding) -> Binding {
+    let args = args_of(&binding.args);
     Binding {
         keys: keys.to_vec(),
         invocation: Invocation {

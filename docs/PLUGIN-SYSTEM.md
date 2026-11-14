@@ -777,13 +777,15 @@ type Cx = {
     -- Sets the text of a field of the view, by its key, cut to the field's 10 000 characters: its caret at its end, and no
     -- "input-changed"; of the revision of the "input-changed" that it answers, so that it is not set over the keys typed since.
     set_text: (view: ViewId, key: string, text: string, revision: number) -> (boolean, Error?),
-    -- Moves the selection of a list of the view, by its key, to an item, which the list scrolls to.
+    -- Moves the selection of a list of the view, by its key, to an item, which the list scrolls to; of a view that the
+    -- same call renders, of the list of its new tree, as the host shows it.
     select: (view: ViewId, key: string, item: number) -> (boolean, Error?),
     -- Scrolls the nearest scroll area around a node of the view, by its key, as little as shows it, once the view shows
     -- it, as a tab bar shows its active tab: the node of a render yet to show too.
     reveal: (view: ViewId, key: string) -> (boolean, Error?),
     -- Gives the keyboard's focus to a node of the view, by its key, which tells it "focus": a field selects all of its
-    -- text, as macOS's does as it becomes the first responder, so that typing replaces it.
+    -- text, as macOS's does as it becomes the first responder, so that typing replaces it; of a view that the same
+    -- call renders, a node of its new tree, as the host shows it.
     focus_node: (view: ViewId, key: string) -> (boolean, Error?),
     -- Opens a panel, by an id of the plugin's, which the host then renders; a "panel-closed" event tells as it closes.
     -- A dialog or a menu takes the keyboard as it opens, at its first field, or at its first node that takes it.
@@ -973,9 +975,11 @@ type Cx = {
     -- then each plugin's of a config schema, in the plugins' order, each key of its name, its description, its
     -- platforms, its kind ("boolean", a number of its range, step and whether it is whole, a text of its fewest and
     -- most characters and the values that it suggests, a choice of its values, a list of texts, or another), its
-    -- control, its default, its value in force and the address of its text in the config guide; the bindings of the
-    -- config's `[keys]`, each of its keys, its
-    -- command and the command's title, none of keys taken away, and whether the file tells more of it; and what is
+    -- control, its default, its value in force and the address of its text in the config guide; the bindings of keys
+    -- in force, the defaults of the keymap that the config leaves and then the config's `[keys]`, each of its keys as
+    -- the config writes them, its command, the command's title and category, its arguments and context, whether it is
+    -- a default, and whether the file tells more of it, keys that the config takes away of no command and of the
+    -- default's title and category; and what is
     -- wrong with the config file where it does not read, its message, line and column, the settings then those that
     -- applied last.
     settings: () -> (Settings?, Error?),

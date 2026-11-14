@@ -495,6 +495,9 @@ pub struct FakeHost {
     /// its last, of the host's clock.
     notices: Vec<host::Notice>,
     noticed_at: Option<u64>,
+    /// The default bindings of the settings that the test gave, which the
+    /// config's own hide as they name their keys.
+    default_bindings: Vec<host::SettingBinding>,
     font_size: f32,
     missing: Vec<String>,
     config: Data,
@@ -596,6 +599,7 @@ impl FakeHost {
             awake: host::Awake::Off,
             notices: Vec::new(),
             noticed_at: None,
+            default_bindings: Vec::new(),
             font_size: 13.0,
             missing: Vec::new(),
             config: Data::Map(BTreeMap::new()),
@@ -816,8 +820,78 @@ impl FakeHost {
         if self.activated && settings != self.settings {
             self.owed.push(Event::SettingsChanged);
         }
+        self.default_bindings = settings
+            .keys
+            .iter()
+            .filter(|binding| binding.default)
+            .cloned()
+            .collect();
         self.settings = settings;
         self
+    }
+
+    /// The settings, as a read of them gives them, of the writes that the
+    /// plugin made.
+    pub fn settings(&self) -> &host::Settings {
+        &self.settings
+    }
+
+    /// The config's binding of `keys` of `value`, as a read of the settings
+    /// tells it: a command's, of its title and its category, a table's of
+    /// its arguments and its context too, or `false`'s, of the title and the
+    /// category of the default of the same keys.
+    fn configured(&self, keys: &str, value: &Data) -> host::SettingBinding {
+        let field = |name: &str| match value {
+            Data::Map(map) => map.get(name),
+            _ => None,
+        };
+        let command = match (value, field("command")) {
+            (Data::Text(command), _) | (_, Some(Data::Text(command))) => Some(command.clone()),
+            _ => None,
+        };
+        let args: crate::command::Args = match field("args") {
+            Some(Data::Map(args)) => args
+                .iter()
+                .filter_map(|(name, value)| {
+                    let value = match value {
+                        Data::Text(text) => crate::command::Value::String(text.clone()),
+                        Data::Integer(number) => crate::command::Value::Integer(*number),
+                        Data::Number(number) => crate::command::Value::Number(*number),
+                        Data::Boolean(on) => crate::command::Value::Boolean(*on),
+                        _ => return None,
+                    };
+                    Some((name.clone(), value))
+                })
+                .collect(),
+            _ => crate::command::Args::new(),
+        };
+        let when = match field("when") {
+            Some(Data::Text(when)) => Some(when.clone()),
+            _ => None,
+        };
+        let (title, category) = match &command {
+            Some(command) => self
+                .registered(command)
+                .map(|command| (command.title.clone(), command.category))
+                .unzip(),
+            None => self
+                .default_bindings
+                .iter()
+                .find(|binding| binding.keys == keys)
+                .map_or((None, None), |binding| {
+                    (binding.title.clone(), binding.category)
+                }),
+        };
+        host::SettingBinding {
+            keys: keys.to_owned(),
+            detailed: !args.is_empty() || when.is_some(),
+            command,
+            title,
+            category,
+            args,
+            when,
+            default: false,
+        }
     }
 
     /// The plugins, as a read of them gives them, of the states that the
@@ -1475,24 +1549,25 @@ impl FakeHost {
             } = request
                 && section == "keys"
             {
-                settings.keys.retain(|binding| binding.keys != *key);
+                // The config's own of these keys replaced, the defaults that
+                // they name hidden, as the app's keymap has them.
+                let mut own: Vec<host::SettingBinding> = settings
+                    .keys
+                    .iter()
+                    .filter(|binding| !binding.default && binding.keys != *key)
+                    .cloned()
+                    .collect();
                 if let Some(value) = value {
-                    let command = match value {
-                        Data::Text(command) => Some(command.clone()),
-                        _ => None,
-                    };
-                    let title = command
-                        .as_deref()
-                        .and_then(|command| self.registered(command))
-                        .map(|command| command.title.clone());
-                    settings.keys.push(host::SettingBinding {
-                        keys: key.clone(),
-                        command,
-                        title,
-                        detailed: matches!(value, Data::Map(_)),
-                    });
-                    settings.keys.sort_by(|a, b| a.keys.cmp(&b.keys));
+                    own.push(self.configured(key, value));
                 }
+                let mut keys: Vec<host::SettingBinding> = self
+                    .default_bindings
+                    .iter()
+                    .filter(|binding| !own.iter().any(|mine| mine.keys == binding.keys))
+                    .cloned()
+                    .collect();
+                keys.extend(own);
+                settings.keys = keys;
                 continue;
             }
             if let Request::SetSetting {
@@ -2877,6 +2952,14 @@ struct Calling<'h> {
 }
 
 impl Calling<'_> {
+    /// Whether the call asked for a render of `view` so far, whose tree the
+    /// focus and the selections that it asks after take.
+    fn renders(&self, view: &ViewId) -> bool {
+        self.writes
+            .iter()
+            .any(|(request, _)| matches!(request, Request::RequestRender(asked) if asked == view))
+    }
+
     /// Whether the call's writes so far open the pane `pane`.
     fn opens_pane(&self, pane: PaneId) -> bool {
         self.writes.iter().any(|(_, opened)| match opened {
@@ -3445,7 +3528,15 @@ impl Calling<'_> {
                 // key of the settings that the test gave, of a value that
                 // its kind takes.
                 if plugin.is_none() && section == "keys" {
-                    if let Some(Data::Text(command)) = value
+                    let command = match value {
+                        Some(Data::Text(command)) => Some(command),
+                        Some(Data::Map(table)) => match table.get("command") {
+                            Some(Data::Text(command)) => Some(command),
+                            _ => None,
+                        },
+                        _ => None,
+                    };
+                    if let Some(command) = command
                         && self.host.registered(command).is_none()
                     {
                         return Err(Error::new(
@@ -3641,6 +3732,7 @@ impl Calling<'_> {
                 }
                 Response::Done
             }
+            Request::Select { view, .. } if self.renders(view) => Response::Done,
             Request::Select { view, key, .. } => {
                 if !matches!(self.host.node(view, key)?.kind, Kind::List(_)) {
                     return Err(Error::new(
@@ -3650,8 +3742,12 @@ impl Calling<'_> {
                 }
                 Response::Done
             }
+            // A node of the tree that the call renders, as the app gives the
+            // focus to as it takes the tree, or of the one shown.
             Request::FocusNode { view, key } => {
-                self.host.node(view, key)?;
+                if !self.renders(view) {
+                    self.host.node(view, key)?;
+                }
                 Response::Done
             }
             Request::Reveal { view, .. } => {

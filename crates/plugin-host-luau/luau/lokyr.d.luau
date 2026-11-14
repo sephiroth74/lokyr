@@ -775,7 +775,11 @@ export type SettingBinding = {
     keys: string,
     command: string?,
     title: string?,
+    category: Category?,
+    args: { [string]: Value }?,
+    when: string?,
     detailed: boolean?,
+    default: boolean?,
 }
 
 export type SettingKey = {

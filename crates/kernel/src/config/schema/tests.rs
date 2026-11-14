@@ -644,3 +644,92 @@ fn every_key_has_its_address_in_the_guide_at_its_heading_s_anchor() {
     }
     assert!(missing.is_empty(), "{missing:?}");
 }
+
+#[test]
+fn the_bindings_in_force_are_the_defaults_that_the_config_leaves_then_its_own() {
+    use crate::keymap::{Binding, Invocation};
+    use lokyr_plugin_sdk::command::{Args, Category, Value as Arg};
+    use lokyr_plugin_sdk::keys::{When, parse_keys};
+    let default = |keys: &str, command: &str, args: Args, when: Option<&str>| Binding {
+        keys: parse_keys(keys).unwrap(),
+        invocation: Invocation {
+            command: command.to_owned(),
+            args,
+        },
+        when: when.map(|when| When::parse(when).unwrap()),
+    };
+    let defaults = [
+        default("cmd+k", "pane.clear", Args::new(), None),
+        default("cmd+q", "app.quit", Args::new(), None),
+        default(
+            "cmd+1",
+            "window.goto",
+            Args::from([("index".to_owned(), Arg::Integer(1))]),
+            None,
+        ),
+        default(
+            "j",
+            "copy-mode.down",
+            Args::new(),
+            Some("copy-mode.open && (pane.focused || !selection)"),
+        ),
+        default("cmd+t", "tab.new", Args::new(), None),
+    ];
+    let config = Config::parse(
+        "[keys]\n\"cmd+q\" = false\n\"cmd+t\" = \"window.new\"\n\"ctrl+x\" = { command = \"pane.clear\", when = \"selection\" }\n",
+        Path::new("config.toml"),
+    )
+    .unwrap();
+    let info = |command: &str| {
+        Some(match command {
+            "pane.clear" => ("Clear".to_owned(), Category::Edit),
+            "app.quit" => ("Quit".to_owned(), Category::App),
+            "window.goto" => ("Go to Window".to_owned(), Category::Windows),
+            "window.new" => ("New Window".to_owned(), Category::Windows),
+            "copy-mode.down" => ("Down".to_owned(), Category::Edit),
+            _ => return None,
+        })
+    };
+    let bindings = super::bindings(&config, &defaults, info);
+    let shown: Vec<(&str, Option<&str>, bool)> = bindings
+        .iter()
+        .map(|binding| {
+            (
+                binding.keys.as_str(),
+                binding.command.as_deref(),
+                binding.default,
+            )
+        })
+        .collect();
+    // The defaults whose keys the config names go: `false`'s and its own.
+    assert_eq!(
+        shown,
+        [
+            ("cmd+k", Some("pane.clear"), true),
+            ("cmd+1", Some("window.goto"), true),
+            ("j", Some("copy-mode.down"), true),
+            ("cmd+q", None, false),
+            ("cmd+t", Some("window.new"), false),
+            ("ctrl+x", Some("pane.clear"), false),
+        ]
+    );
+    // Each of its title, category, arguments and context, as the config
+    // writes it; `false` of the default that it takes away.
+    assert_eq!(bindings[1].args.get("index"), Some(&Arg::Integer(1)));
+    assert!(bindings[1].detailed);
+    assert_eq!(
+        bindings[2].when.as_deref(),
+        Some("copy-mode.open && (pane.focused || !selection)")
+    );
+    assert_eq!(bindings[3].title.as_deref(), Some("Quit"));
+    assert_eq!(bindings[3].category, Some(Category::App));
+    assert_eq!(bindings[4].title.as_deref(), Some("New Window"));
+    assert_eq!(bindings[5].when.as_deref(), Some("selection"));
+    assert!(bindings[5].detailed && !bindings[0].detailed);
+    // A context's text reads back as the same context.
+    for binding in &defaults {
+        if let Some(when) = &binding.when {
+            assert_eq!(&When::parse(&when.to_string()).unwrap(), when);
+        }
+    }
+}

@@ -816,9 +816,19 @@ impl<B: Backend> App<B> {
         let Some((window, id)) = found else {
             return;
         };
+        // A call that renders the view too gives the focus to a node of its
+        // new tree, which its next tree brings.
+        let due = self.plugins.render_due(plugin, view);
         let Some(state) = self.windows.get_mut(&window) else {
             return;
         };
+        if due {
+            if let Some(shown) = state.chrome.iter_mut().find(|shown| shown.id == id) {
+                shown.focus = Some(key.clone());
+            }
+            platform.request_frame(window);
+            return;
+        }
         let before = state.focus.target();
         let Some(shown) = state.chrome.iter().find(|shown| shown.id == id) else {
             return;

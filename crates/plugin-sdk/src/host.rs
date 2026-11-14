@@ -1133,8 +1133,9 @@ pub struct Settings {
     pub error: Option<ConfigProblem>,
 }
 
-/// A binding of the config's `[keys]`, as a read of the settings tells it.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+/// A binding of keys in force, a default or the config's, or keys that the
+/// config takes away, as a read of the settings tells it.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SettingBinding {
     /// Its keys, as the config writes them, as `cmd+shift+n`.
     pub keys: String,
@@ -1142,13 +1143,30 @@ pub struct SettingBinding {
     /// config takes away, `false`.
     #[serde(default)]
     pub command: Option<String>,
-    /// The command's title, as the menus show it, of one that the app has.
+    /// The command's title, as the menus show it, of one that the app has;
+    /// of keys that the config takes away, the title of the default's
+    /// command that it took them from.
     #[serde(default)]
     pub title: Option<String>,
+    /// The command's category, as the menus and the palette group it; of
+    /// keys that the config takes away, the default's.
+    #[serde(default)]
+    pub category: Option<Category>,
+    /// The command's arguments.
+    #[serde(default)]
+    pub args: Args,
+    /// The context in which it holds, as the config writes it, as
+    /// `pane.focused && !selection`; none in every context.
+    #[serde(default)]
+    pub when: Option<String>,
     /// Whether it is more than its command: of its arguments, of a context
     /// of its own or of several commands, which the file tells.
     #[serde(default)]
     pub detailed: bool,
+    /// Whether it is a default, a plugin's, which the config leaves as it
+    /// is; else the config's own, of its `[keys]`.
+    #[serde(default)]
+    pub default: bool,
 }
 
 /// What is wrong with the config file: why it does not read, and where.

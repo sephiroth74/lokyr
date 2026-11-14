@@ -12,7 +12,7 @@ use lokyr_kernel::plugins::Plugins;
 use lokyr_kernel::plugins::host::{self, BarPlace};
 use lokyr_kernel::plugins::ui::{PanelId, PanelOptions, Role, Slot, UiEvent, ViewId};
 use lokyr_kernel::plugins::view::{
-    Align, Hover, Justify, Key as NodeKey, Layout as NodeLayout, Length, Node, Style, Token,
+    Align, Hover, Justify, Key as NodeKey, Kind, Layout as NodeLayout, Length, Node, Style, Token,
     Transition, UiEventKind,
 };
 use lokyr_kernel::workspace::PaneId;
@@ -100,6 +100,9 @@ pub(crate) struct SlotView {
     /// The item that its plugin selected in a list, by its key, of the tree
     /// that the same call rendered, which the next tree takes.
     pub(crate) select: Option<(NodeKey, usize)>,
+    /// The node that its plugin gave the keyboard's focus to, by its key, of
+    /// the tree that the same call rendered, which the next tree takes.
+    pub(crate) focus: Option<NodeKey>,
     /// The faces' generation that its text was measured of.
     pub(crate) faces: u64,
 }
@@ -157,6 +160,7 @@ impl SlotView {
             placed: Some(placed),
             reveal: None,
             select: None,
+            focus: None,
             faces: 0,
         }
     }
@@ -417,6 +421,7 @@ impl<B: Backend> App<B> {
                         placed: None,
                         reveal: None,
                         select: None,
+                        focus: None,
                         faces: 0,
                     }
                 }
@@ -474,6 +479,7 @@ impl<B: Backend> App<B> {
                     None => {
                         slot.surface = Surface::new(scale);
                         slot.select = None;
+                        slot.focus = None;
                     }
                 }
                 state.focus.updated(slot.id, &slot.surface.tree);
@@ -489,6 +495,20 @@ impl<B: Backend> App<B> {
                         state.native_due.push(slot.id);
                     } else if role.takes_focus() {
                         state.focus.first(slot.id, &slot.surface.tree);
+                    }
+                }
+                // The node that the call of this tree gave the keyboard to,
+                // of its nodes: a field selects all of its text, as a focus
+                // asked of a tree shown does.
+                let surface = &mut slot.surface;
+                if let Some(key) = slot.focus.take()
+                    && let Some(node) = surface.tree.by_key(&key)
+                {
+                    state.focus.focus(slot.id, &surface.tree, node);
+                    if matches!(surface.tree.kind(node), Some(Kind::Field(_)))
+                        && surface.fields.composing(&surface.tree) != Some(node)
+                    {
+                        surface.fields.select_all(&surface.tree, node);
                     }
                 }
             }

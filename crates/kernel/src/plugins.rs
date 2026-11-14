@@ -410,6 +410,10 @@ pub struct Context<'a> {
     /// The config in force, of which a read of the settings tells the app's
     /// sections.
     pub config: &'a crate::config::Config,
+    /// The default bindings of keys, the active plugins' of commands that
+    /// the registry has, in their order, which the config's `[keys]` goes
+    /// over in the keymap.
+    pub default_bindings: &'a [Binding],
     /// The plugins' sections of the settings, as
     /// [`Plugins::settings_sections`] tells them.
     pub plugin_settings: &'a [host::SettingsSection],
@@ -5016,6 +5020,14 @@ impl Host<'_, '_> {
         window.ok_or_else(not_found)
     }
 
+    /// Whether the call asked for a render of `view` so far, whose tree the
+    /// focus and the selections that it asks after take.
+    fn renders(&self, view: &ViewId) -> bool {
+        self.writes
+            .iter()
+            .any(|write| matches!(write, Write::Render(asked) if asked == view))
+    }
+
     /// The node of `key` in the last tree of `view`, one of the plugin's;
     /// `not-found` without one.
     fn node(&self, view: &ViewId, key: &Key) -> Result<&Node, Error> {
@@ -5403,9 +5415,15 @@ impl Host<'_, '_> {
                 let mut sections = crate::config::schema::sections(self.context.config);
                 sections.extend(self.context.plugin_settings.iter().cloned());
                 let registry = &*self.context.registry;
-                let keys = crate::config::schema::bindings(self.context.config, |name| {
-                    registry.get(name).map(|command| command.title.clone())
-                });
+                let keys = crate::config::schema::bindings(
+                    self.context.config,
+                    self.context.default_bindings,
+                    |name| {
+                        registry
+                            .get(name)
+                            .map(|command| (command.title.clone(), command.category))
+                    },
+                );
                 Response::Settings(host::Settings {
                     sections,
                     keys,
@@ -6060,8 +6078,10 @@ impl Host<'_, '_> {
                     revision,
                 }
             }
+            // A list of the tree that the call renders, which the app selects
+            // in as it takes the tree, or of the one shown.
             Asked::Select { view, key, item } => {
-                if !matches!(self.node(&view, &key)?.kind, Kind::List(_)) {
+                if !self.renders(&view) && !matches!(self.node(&view, &key)?.kind, Kind::List(_)) {
                     return Err(Error::new(
                         Code::NotFound,
                         format!("`{}` is not a list", key.0),
@@ -6074,8 +6094,12 @@ impl Host<'_, '_> {
                     item,
                 }
             }
+            // A node of the tree that the call renders, which the app gives
+            // the focus to as it takes the tree, or of the one shown.
             Asked::FocusNode { view, key } => {
-                self.node(&view, &key)?;
+                if !self.renders(&view) {
+                    self.node(&view, &key)?;
+                }
                 Request::FocusNode {
                     plugin: self.state.name.clone(),
                     view,
@@ -6208,10 +6232,19 @@ impl Host<'_, '_> {
                         ),
                     ));
                 }
-                // A binding's command, one that the app has.
+                // A binding's command, one that the app has, alone or of a
+                // table of its arguments and its context.
+                let command = match &value {
+                    Some(Data::Text(command)) => Some(command),
+                    Some(Data::Map(table)) => match table.get("command") {
+                        Some(Data::Text(command)) => Some(command),
+                        _ => None,
+                    },
+                    _ => None,
+                };
                 if plugin.is_none()
                     && section == "keys"
-                    && let Some(Data::Text(command)) = &value
+                    && let Some(command) = command
                     && self.context.registry.get(command).is_none()
                 {
                     return Err(Error::new(

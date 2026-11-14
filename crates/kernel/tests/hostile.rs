@@ -96,6 +96,7 @@ impl App {
             font_styles: &|_| Vec::new(),
             plugins: &[],
             config: &self.config,
+            default_bindings: &[],
             plugin_settings: &[],
             config_error: None,
             day: 0,

@@ -1346,7 +1346,8 @@ impl<'a> Cx<'a> {
     }
 
     /// Moves the selection of the list `key` of `view` to `item`, as this
-    /// call returns.
+    /// call returns: of a view that the call renders, of the list of its
+    /// new tree, as the host shows it.
     pub fn select(&mut self, view: ViewId, key: impl Into<Key>, item: usize) -> Result<(), Error> {
         self.done(Request::Select {
             view,
@@ -1357,7 +1358,8 @@ impl<'a> Cx<'a> {
 
     /// Gives the keyboard's focus to the node `key` of `view`, as this call
     /// returns: a field selects all of its text, so that typing replaces
-    /// it.
+    /// it; of a view that the call renders, a node of its new tree, as the
+    /// host shows it.
     pub fn focus_node(&mut self, view: ViewId, key: impl Into<Key>) -> Result<(), Error> {
         self.done(Request::FocusNode {
             view,

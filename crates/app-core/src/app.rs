@@ -561,6 +561,9 @@ pub struct App<B: Backend> {
     /// The bindings of keys to commands: the app's, the plugins', and the
     /// config's.
     keymap: Keymap,
+    /// The keymap's defaults, the active plugins' bindings of commands that
+    /// the registry has, which a read of the settings lists.
+    default_bindings: Vec<Binding>,
     /// The size of the text that a plugin gave, in points, in place of the
     /// config's.
     font_size: Option<f32>,
@@ -911,7 +914,8 @@ impl<B: Backend> App<B> {
             eprintln!("lokyr: a built-in plugin's manifest does not read: {error}");
         }
         let commands = commands(&Texts::new(l10n::SOURCE, &CATALOGS), &plugins);
-        let keymap = Keymap::with_config(bindings(&plugins, &commands), &config.keys);
+        let default_bindings = bindings(&plugins, &commands);
+        let keymap = Keymap::with_config(default_bindings.clone(), &config.keys);
         let budget = Arc::new(Budget::new(config.scrollback.budget.bytes()));
         Self {
             drawing,
@@ -939,6 +943,7 @@ impl<B: Backend> App<B> {
             preferred: Vec::new(),
             plugins,
             keymap,
+            default_bindings,
             font_size: None,
             workspace,
             windows: BTreeMap::new(),
@@ -1673,8 +1678,7 @@ impl<B: Backend> App<B> {
             || config.theme.dark != self.config.theme.dark;
         self.settle_update_checks(platform, config.updates.check);
         if keys_changed {
-            self.keymap =
-                Keymap::with_config(bindings(&self.plugins, &self.commands), &config.keys);
+            self.keymap = Keymap::with_config(self.default_bindings.clone(), &config.keys);
         }
         let plugins_changed =
             config.plugins != self.config.plugins || config.moved != self.config.moved;
@@ -3049,6 +3053,7 @@ impl<B: Backend> App<B> {
             font_styles: &font_styles,
             plugins: &plugin_infos,
             config: &self.config,
+            default_bindings: &self.default_bindings,
             plugin_settings: &plugin_settings,
             config_error: self.config_error.as_ref(),
             day: std::time::SystemTime::now()
@@ -3071,8 +3076,8 @@ impl<B: Backend> App<B> {
     fn after_plugins(&mut self, platform: &mut dyn Platform) {
         if self.plugins.take_declarations_changed() {
             self.commands = commands(&self.texts, &self.plugins);
-            self.keymap =
-                Keymap::with_config(bindings(&self.plugins, &self.commands), &self.config.keys);
+            self.default_bindings = bindings(&self.plugins, &self.commands);
+            self.keymap = Keymap::with_config(self.default_bindings.clone(), &self.config.keys);
             self.set_menu(platform);
             // The plugins' global keys, which the benches leave to the
             // user's Lokyr.

@@ -253,6 +253,7 @@ impl App {
             font_styles: &lokyr_plugin_sdk::fake::font_styles,
             plugins: &self.plugin_infos,
             config: &self.config,
+            default_bindings: &[],
             plugin_settings: &self.plugin_settings,
             config_error: self.config_error.as_ref(),
             day: lokyr_plugin_sdk::fake::DAY,
@@ -3725,11 +3726,11 @@ fn a_plugin_takes_its_nodes_events_and_its_requests_of_its_views_are_checked() {
         vec![
             cx.set_text(view.clone(), "find", "x", 3),
             cx.select(view.clone(), "rows", 2),
-            cx.request_render(view.clone()),
             // Of nodes that are not a field, a list, or there.
             cx.set_text(view.clone(), "go", "x", 3),
             cx.select(view.clone(), "find", 0),
             cx.set_text(view.clone(), "nowhere", "x", 0),
+            cx.request_render(view.clone()),
             // Of views that are not the plugin's, or not rendered.
             cx.request_render(ViewId::PaneHeader(pane)),
             cx.set_text(ViewId::TabBar(window), "find", "x", 0),
@@ -3761,10 +3762,10 @@ fn a_plugin_takes_its_nodes_events_and_its_requests_of_its_views_are_checked() {
         [
             None,
             None,
+            Some(101),
+            Some(101),
+            Some(101),
             None,
-            Some(101),
-            Some(101),
-            Some(101),
             Some(101),
             Some(101)
         ]

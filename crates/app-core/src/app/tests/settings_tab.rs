@@ -1400,3 +1400,77 @@ fn a_search_of_the_settings_shows_its_sections_and_selects_the_one_chosen_of_the
     assert!(at >= titles.len(), "{at} of {titles:?}");
     assert_eq!(selected, Some(at));
 }
+
+#[test]
+fn the_keys_part_lists_the_defaults_and_a_default_changed_moves_its_shortcut() {
+    use lokyr_kernel::plugins::view::UiEventKind;
+    let directory = super::installed::shelf("settings-bindings");
+    let path = directory.join("config.toml");
+    std::fs::write(&path, "# mine\n").unwrap();
+    let drawing = Drawing::new(FontConfig::default()).unwrap();
+    let mut fake = Fake::default();
+    let mut app = App::new(
+        Some(drawing),
+        Config::read(&path).unwrap(),
+        Some(path.clone()),
+    )
+    .with_program(idle());
+    fake.start(&mut app);
+    let first = fake.windows().next().unwrap();
+    app.windows.get_mut(&first).unwrap().surface = Some(fakes::Surface::default());
+    let own = open(&mut fake, &mut app, SETTINGS_TAB);
+    let keys = lokyr_kernel::config::schema::sections(&Config::default()).len();
+    settings_event(
+        &mut fake,
+        &mut app,
+        own,
+        None,
+        "sections",
+        UiEventKind::Select { item: keys },
+    );
+    assert_eq!(page_text(&app, own, "title"), "Keys");
+    // The defaults, as the keymap has them: New Tab's ⌘T among them.
+    let at = app
+        .default_bindings
+        .iter()
+        .position(|binding| binding.invocation.command == "tabs.new")
+        .expect("New Tab's default");
+    assert_eq!(page_button(&app, own, &format!("keys:{at}")), "⌘T");
+    assert_eq!(page_text(&app, own, &format!("command:{at}")), "New Tab");
+    // Changed: its new keys and `false` for the old, in the file, and the
+    // keymap's shortcut moved.
+    settings_event(
+        &mut fake,
+        &mut app,
+        own,
+        None,
+        &format!("keys:{at}"),
+        UiEventKind::Click,
+    );
+    assert_eq!(
+        focused_key(&app, own),
+        (format!("keys-field:{at}"), true),
+        "the field has the keyboard"
+    );
+    settings_event(
+        &mut fake,
+        &mut app,
+        own,
+        None,
+        &format!("keys-field:{at}"),
+        UiEventKind::Submit {
+            text: "cmd+alt+t".to_owned(),
+            shift: false,
+        },
+    );
+    assert_eq!(
+        std::fs::read_to_string(&path).unwrap(),
+        "# mine\n\n[keys]\n\"cmd+alt+t\" = \"tabs.new\"\n\"cmd+t\" = false\n"
+    );
+    let shortcut = app
+        .keymap
+        .shortcut("tabs.new")
+        .map(|combo| combo.to_string());
+    assert_eq!(shortcut.as_deref(), Some("cmd+alt+t"));
+    let _ = std::fs::remove_dir_all(&directory);
+}

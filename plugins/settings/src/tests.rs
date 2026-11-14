@@ -2,6 +2,7 @@
 //! give; its messages are their ids, as the fake host has no catalogs, a
 //! section's title its name.
 
+use lokyr_plugin_sdk::command::Category;
 use lokyr_plugin_sdk::fake::{FakeHost, snapshot};
 use lokyr_plugin_sdk::host::{PaneId, SettingKind};
 use lokyr_plugin_sdk::message::Request;
@@ -50,18 +51,97 @@ fn controlled(name: &str, value: Option<&str>, control: &str) -> SettingKey {
     }
 }
 
-/// A binding of the settings' keys, of a command and its title.
+/// A binding of the settings' keys, of a command, its title and its
+/// category, a default's or the config's own.
 fn binding(
     keys: &str,
     command: Option<&str>,
-    title: Option<&str>,
+    (title, category): (Option<&str>, Option<Category>),
+    default: bool,
 ) -> lokyr_plugin_sdk::host::SettingBinding {
     lokyr_plugin_sdk::host::SettingBinding {
         keys: keys.to_owned(),
         command: command.map(str::to_owned),
         title: title.map(str::to_owned),
+        category,
+        args: lokyr_plugin_sdk::command::Args::new(),
+        when: None,
         detailed: false,
+        default,
     }
+}
+
+/// The places of the bindings of [`settings`].
+const CLEAR: usize = 0;
+const GOTO: usize = 2;
+const DOWN: usize = 3;
+const QUIT: usize = 4;
+const REOPEN: usize = 5;
+
+/// The bindings of [`settings`]: the defaults of `pane.clear`, of
+/// `window.new`, of `window.goto` of an argument and of `copy-mode.down` in
+/// a context; then the config's `false` that takes Quit's keys away, and
+/// its own binding of a command that the app lacks.
+fn bindings() -> Vec<lokyr_plugin_sdk::host::SettingBinding> {
+    let mut goto = binding(
+        "cmd+1",
+        Some("window.goto"),
+        (Some("Go to Window"), Some(Category::Windows)),
+        true,
+    );
+    goto.args.insert(
+        "index".to_owned(),
+        lokyr_plugin_sdk::command::Value::Integer(1),
+    );
+    goto.detailed = true;
+    let mut down = binding(
+        "j",
+        Some("copy-mode.down"),
+        (Some("Down"), Some(Category::Edit)),
+        true,
+    );
+    down.when = Some("copy-mode.open && pane.focused".to_owned());
+    down.detailed = true;
+    vec![
+        binding(
+            "cmd+k",
+            Some("pane.clear"),
+            (Some("Clear"), Some(Category::Edit)),
+            true,
+        ),
+        binding(
+            "cmd+n",
+            Some("window.new"),
+            (Some("New Window"), Some(Category::Windows)),
+            true,
+        ),
+        goto,
+        down,
+        binding("cmd+q", None, (Some("Quit"), Some(Category::App)), false),
+        binding("cmd+shift+t", Some("acme.reopen"), (None, None), false),
+    ]
+}
+
+/// The commands of the bindings of [`bindings`] that the app has.
+fn bound_commands() -> Vec<lokyr_plugin_sdk::command::Command> {
+    [
+        ("pane.clear", "Clear", Category::Edit),
+        ("window.new", "New Window", Category::Windows),
+        ("window.goto", "Go to Window", Category::Windows),
+        ("copy-mode.down", "Down", Category::Edit),
+        ("app.quit", "Quit", Category::App),
+    ]
+    .map(
+        |(name, title, category)| lokyr_plugin_sdk::command::Command {
+            name: name.to_owned(),
+            title: title.to_owned(),
+            category,
+            capabilities: Vec::new(),
+            params: Vec::new(),
+            when: None,
+        },
+    )
+    .to_vec()
 }
 
 /// The settings of the tests: the app's `[font]`, of a size set and a
@@ -162,10 +242,7 @@ fn settings() -> Settings {
                 ],
             },
         ],
-        keys: vec![
-            binding("cmd+k", Some("pane.clear"), Some("Clear")),
-            binding("cmd+q", None, None),
-        ],
+        keys: bindings(),
         error: None,
     }
 }
@@ -735,41 +812,257 @@ fn a_theme_is_picked_of_its_appearance_and_a_color_of_the_theme_s() {
     );
 }
 
-#[test]
-fn the_bindings_are_listed_of_their_commands_titles_taken_away_and_added() {
+/// A host of the settings of [`settings`], of the commands of
+/// [`bound_commands`], and the plugin, activated, its page shown at its
+/// bindings.
+fn keyed_host() -> (FakeHost, SettingsPage) {
     let mut host = FakeHost::new(NAME)
         .with_manifest(crate::MANIFEST)
-        .with_commands(vec![lokyr_plugin_sdk::command::Command {
-            name: "window.new".to_owned(),
-            title: "New Window".to_owned(),
-            category: lokyr_plugin_sdk::command::Category::App,
-            capabilities: Vec::new(),
-            params: Vec::new(),
-            when: None,
-        }]);
+        .with_commands(bound_commands());
     host.pane(PaneId(1));
     host.set_settings(settings());
     let mut plugin = SettingsPage::default();
     host.activate(&mut plugin).unwrap();
     host.show_page(PAGE);
     host.deliver(&mut plugin).unwrap();
+    rendered(&mut host, &mut plugin);
     host.ui_event(&mut plugin, &choose(BINDINGS)).unwrap();
+    (host, plugin)
+}
+
+/// The place of the binding of `keys` among the settings' bindings, as
+/// the writes left them.
+fn place(host: &FakeHost, keys: &str) -> usize {
+    host.settings()
+        .keys
+        .iter()
+        .position(|binding| binding.keys == keys)
+        .unwrap_or_else(|| panic!("no binding of {keys}"))
+}
+
+/// The text of the keys of the binding at `at`: a button's label, or a
+/// text's.
+fn keys_of(tree: &Node, at: usize) -> Option<String> {
+    match &find_node(tree, &format!("keys:{at}"))?.kind {
+        Kind::Button(button) => Some(button.label.clone()),
+        Kind::Text(text) => Some(text.clone()),
+        _ => None,
+    }
+}
+
+/// The headings of the Keys part's categories, in their order.
+fn categories_of(tree: &Node) -> Vec<String> {
+    let mut found = Vec::new();
+    let mut left = vec![tree];
+    while let Some(node) = left.pop() {
+        if let Some(key) = &node.key
+            && key.0.starts_with("category-")
+        {
+            found.push(key.0.clone());
+        }
+        left.extend(node.children.iter().rev());
+    }
+    found
+}
+
+#[test]
+fn the_bindings_in_force_are_listed_by_category_of_their_keys_titles_and_contexts() {
+    let (mut host, mut plugin) = keyed_host();
     let tree = rendered(&mut host, &mut plugin);
     assert_eq!(text_of(&tree, "title").as_deref(), Some("section-keys"));
-    // Each of its keys, its command's title, or that it takes nothing.
-    assert_eq!(text_of(&tree, "keys:cmd+k").as_deref(), Some("⌘K"));
-    assert_eq!(text_of(&tree, "command:cmd+k").as_deref(), Some("Clear"));
+    // By the commands' categories, the bindings of none last.
     assert_eq!(
-        text_of(&tree, "command:cmd+q").as_deref(),
-        Some("binding-nothing")
+        categories_of(&tree),
+        [
+            "category-app",
+            "category-windows",
+            "category-edit",
+            "category-other"
+        ],
+        "{}",
+        snapshot(&tree)
     );
-    let _ = written(&mut host);
-    // Taken away.
-    host.ui_event(&mut plugin, &on("unbind:cmd+q", UiEventKind::Click))
+    // Each of its keys as macOS writes them, its title, its command, its
+    // arguments, its context, and whether it is the config's.
+    assert_eq!(keys_of(&tree, CLEAR).as_deref(), Some("⌘K"));
+    assert_eq!(text_of(&tree, "command:0").as_deref(), Some("Clear"));
+    assert_eq!(text_of(&tree, "details:0").as_deref(), Some("pane.clear"));
+    assert_eq!(
+        text_of(&tree, &format!("details:{GOTO}")).as_deref(),
+        Some("window.goto (index = 1)")
+    );
+    assert_eq!(
+        text_of(&tree, &format!("details:{DOWN}")).as_deref(),
+        Some("copy-mode.down · binding-when")
+    );
+    // Keys taken away, of the default's title, which Restore gives back.
+    assert_eq!(
+        text_of(&tree, &format!("command:{QUIT}")).as_deref(),
+        Some("binding-removed")
+    );
+    assert_eq!(
+        text_of(&tree, &format!("details:{QUIT}")).as_deref(),
+        Some("binding-yours")
+    );
+    assert!(labelled(&tree, &format!("restore:{QUIT}")).is_some());
+    assert!(labelled(&tree, &format!("unbind:{QUIT}")).is_none());
+    // The config's own, of a command that the app lacks, of its name.
+    assert_eq!(
+        text_of(&tree, &format!("command:{REOPEN}")).as_deref(),
+        Some("acme.reopen")
+    );
+    // A search of a context's name, or of a category's title.
+    host.ui_event(&mut plugin, &search("copy-mode.open"))
         .unwrap();
+    let tree = rendered(&mut host, &mut plugin);
+    assert!(find_node(&tree, &format!("binding:{DOWN}")).is_some());
+    assert!(find_node(&tree, &format!("binding:{CLEAR}")).is_none());
+    host.ui_event(&mut plugin, &search("category-windows"))
+        .unwrap();
+    let tree = rendered(&mut host, &mut plugin);
+    assert_eq!(categories_of(&tree), ["category-windows"]);
+}
+
+#[test]
+fn a_default_s_keys_changed_write_the_new_keys_and_false_for_the_old() {
+    let (mut host, mut plugin) = keyed_host();
+    rendered(&mut host, &mut plugin);
+    let _ = written(&mut host);
+    // A click on the keys shows their field, of their text, focused.
+    host.ui_event(&mut plugin, &on("keys:0", UiEventKind::Click))
+        .unwrap();
+    let tree = rendered(&mut host, &mut plugin);
+    assert_eq!(
+        held(&tree, "keys-field:0").map(|(text, _)| text),
+        Some(Some("cmd+k".to_owned()))
+    );
+    assert!(host.take_done().iter().any(|request| matches!(
+        request,
+        Request::FocusNode { key, .. } if key.0 == "keys-field:0"
+    )));
+    // Return writes the command at its new keys, and `false` at the old.
+    host.ui_event(&mut plugin, &submit("keys-field:0", "cmd+shift+k"))
+        .unwrap();
+    assert_eq!(
+        written(&mut host),
+        [
+            app_key(
+                "keys",
+                "cmd+shift+k",
+                Some(Data::Text("pane.clear".to_owned()))
+            ),
+            app_key("keys", "cmd+k", Some(Data::Boolean(false))),
+        ]
+    );
+    host.deliver(&mut plugin).unwrap();
+    let tree = rendered(&mut host, &mut plugin);
+    assert!(find_node(&tree, "keys-field:0").is_none(), "the field goes");
+    // A default of arguments, as a table of them.
+    let goto = place(&host, "cmd+1");
+    host.ui_event(
+        &mut plugin,
+        &on(&format!("keys:{goto}"), UiEventKind::Click),
+    )
+    .unwrap();
+    rendered(&mut host, &mut plugin);
+    host.ui_event(
+        &mut plugin,
+        &submit(&format!("keys-field:{goto}"), "ctrl+1"),
+    )
+    .unwrap();
+    let mut table = BTreeMap::new();
+    table.insert("command".to_owned(), Data::Text("window.goto".to_owned()));
+    table.insert(
+        "args".to_owned(),
+        Data::Map(BTreeMap::from([("index".to_owned(), Data::Integer(1))])),
+    );
+    let done = written(&mut host);
+    assert_eq!(done[0], app_key("keys", "ctrl+1", Some(Data::Map(table))));
+    assert_eq!(
+        done[1],
+        app_key("keys", "cmd+1", Some(Data::Boolean(false)))
+    );
+}
+
+#[test]
+fn keys_that_do_not_read_or_do_not_change_write_nothing_and_a_field_left_writes() {
+    let (mut host, mut plugin) = keyed_host();
+    rendered(&mut host, &mut plugin);
+    let _ = written(&mut host);
+    host.ui_event(&mut plugin, &on("keys:0", UiEventKind::Click))
+        .unwrap();
+    rendered(&mut host, &mut plugin);
+    // Keys that do not read, told under the row, the field staying.
+    host.ui_event(&mut plugin, &submit("keys-field:0", "cmd+nope"))
+        .unwrap();
+    assert!(written(&mut host).is_empty());
+    let tree = rendered(&mut host, &mut plugin);
+    assert!(
+        text_of(&tree, "refused:binding:0").is_some(),
+        "{}",
+        snapshot(&tree)
+    );
+    assert!(find_node(&tree, "keys-field:0").is_some());
+    // The same keys, of spaces round them: nothing, the field gone.
+    host.ui_event(&mut plugin, &submit("keys-field:0", " cmd+k "))
+        .unwrap();
+    assert!(written(&mut host).is_empty());
+    let tree = rendered(&mut host, &mut plugin);
+    assert!(find_node(&tree, "keys-field:0").is_none());
+    assert!(text_of(&tree, "refused:binding:0").is_none());
+    // Typed, then left: written.
+    host.ui_event(&mut plugin, &on("keys:1", UiEventKind::Click))
+        .unwrap();
+    rendered(&mut host, &mut plugin);
+    let typed = UiEventKind::InputChanged {
+        text: "cmd+alt+n".to_owned(),
+        revision: 2,
+    };
+    host.ui_event(&mut plugin, &on("keys-field:1", typed))
+        .unwrap();
+    host.ui_event(&mut plugin, &on("keys-field:1", UiEventKind::Blur))
+        .unwrap();
+    assert_eq!(written(&mut host).len(), 2);
+}
+
+#[test]
+fn a_default_removed_writes_false_the_config_s_own_goes_and_one_taken_away_comes_back() {
+    let (mut host, mut plugin) = keyed_host();
+    rendered(&mut host, &mut plugin);
+    let _ = written(&mut host);
+    host.ui_event(&mut plugin, &on("unbind:1", UiEventKind::Click))
+        .unwrap();
+    assert_eq!(
+        written(&mut host),
+        [app_key("keys", "cmd+n", Some(Data::Boolean(false)))]
+    );
+    host.deliver(&mut plugin).unwrap();
+    rendered(&mut host, &mut plugin);
+    // The config's own, whatever its place now.
+    let reopen = place(&host, "cmd+shift+t");
+    host.ui_event(
+        &mut plugin,
+        &on(&format!("unbind:{reopen}"), UiEventKind::Click),
+    )
+    .unwrap();
+    assert_eq!(written(&mut host), [app_key("keys", "cmd+shift+t", None)]);
+    host.deliver(&mut plugin).unwrap();
+    rendered(&mut host, &mut plugin);
+    // Keys taken away, given back.
+    let quit = place(&host, "cmd+q");
+    host.ui_event(
+        &mut plugin,
+        &on(&format!("restore:{quit}"), UiEventKind::Click),
+    )
+    .unwrap();
     assert_eq!(written(&mut host), [app_key("keys", "cmd+q", None)]);
-    // A new one, its keys then its command, written as Return is pressed,
-    // its fields emptied.
+}
+
+#[test]
+fn a_new_binding_is_written_of_its_keys_and_command_as_return_is_pressed() {
+    let (mut host, mut plugin) = keyed_host();
+    rendered(&mut host, &mut plugin);
+    let _ = written(&mut host);
     let typed = |text: &str| UiEventKind::InputChanged {
         text: text.to_owned(),
         revision: 3,
@@ -786,13 +1079,6 @@ fn the_bindings_are_listed_of_their_commands_titles_taken_away_and_added() {
             Some(Data::Text("window.new".to_owned()))
         )]
     );
-    host.deliver(&mut plugin).unwrap();
-    let tree = rendered(&mut host, &mut plugin);
-    assert_eq!(
-        text_of(&tree, "command:cmd+shift+n").as_deref(),
-        Some("New Window")
-    );
-    assert!(find_node(&tree, "binding:cmd+q").is_none());
     // A command that is none is refused, told under the fields.
     host.ui_event(&mut plugin, &on(NEW_KEYS, typed("cmd+j")))
         .unwrap();
@@ -1202,18 +1488,17 @@ fn a_search_finds_the_bindings_of_their_keys_and_commands() {
     host.ui_event(&mut plugin, &search("clear")).unwrap();
     let tree = rendered(&mut host, &mut plugin);
     assert_eq!(sidebar_of(&tree), ["section-keys"], "{}", snapshot(&tree));
-    let texts = texts_of(&tree);
-    assert!(texts.iter().any(|text| text == "⌘K"), "{texts:?}");
-    assert!(!texts.iter().any(|text| text == "⌘Q"), "{texts:?}");
+    assert_eq!(keys_of(&tree, CLEAR).as_deref(), Some("⌘K"));
+    assert_eq!(keys_of(&tree, QUIT), None);
 
     // The keys as macOS writes them, and as the config does.
     host.ui_event(&mut plugin, &search("⌘Q")).unwrap();
-    let texts = texts_of(&rendered(&mut host, &mut plugin));
-    assert!(texts.iter().any(|text| text == "⌘Q"), "{texts:?}");
-    assert!(!texts.iter().any(|text| text == "⌘K"), "{texts:?}");
+    let tree = rendered(&mut host, &mut plugin);
+    assert_eq!(keys_of(&tree, QUIT).as_deref(), Some("⌘Q"));
+    assert_eq!(keys_of(&tree, CLEAR), None);
     host.ui_event(&mut plugin, &search("cmd+k")).unwrap();
-    let texts = texts_of(&rendered(&mut host, &mut plugin));
-    assert!(texts.iter().any(|text| text == "⌘K"), "{texts:?}");
+    let tree = rendered(&mut host, &mut plugin);
+    assert_eq!(keys_of(&tree, CLEAR).as_deref(), Some("⌘K"));
 }
 
 #[test]

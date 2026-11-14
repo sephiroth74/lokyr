@@ -451,38 +451,86 @@ pub fn check_app_write(
         .map_err(|error| refused(error.message))
 }
 
-/// The bindings of `config`'s `[keys]`, in their keys' order, each of its
-/// command's title, as `title` gives it of a command's name.
+/// The bindings of keys in force, as a read of the settings tells them:
+/// the defaults, `defaults`, whose keys no entry of `config`'s `[keys]`
+/// names, each of its command's title and category that `info` tells, its
+/// arguments and its context; then the entries of `[keys]`, in their keys'
+/// order, of their commands, or of none for `false`, whose title and
+/// category are those of the default of the same keys.
 pub fn bindings(
     config: &super::Config,
-    title: impl Fn(&str) -> Option<String>,
+    defaults: &[crate::keymap::Binding],
+    info: impl Fn(&str) -> Option<(String, lokyr_plugin_sdk::command::Category)>,
 ) -> Vec<lokyr_plugin_sdk::host::SettingBinding> {
     use super::KeyValue;
-    config
+    use lokyr_plugin_sdk::command::Args;
+    use lokyr_plugin_sdk::host::SettingBinding;
+    use lokyr_plugin_sdk::keys::{keys_text, parse_keys};
+    let named: Vec<Vec<crate::keymap::Combo>> = config
         .keys
         .bindings
+        .keys()
+        .filter_map(|keys| parse_keys(keys).ok())
+        .collect();
+    let mut bindings: Vec<SettingBinding> = defaults
         .iter()
-        .map(|(keys, value)| {
-            let (command, detailed) = match value {
-                KeyValue::Command(command) => (Some(command.clone()), false),
-                KeyValue::Unbound(_) => (None, false),
-                KeyValue::Binding(binding) => (
-                    Some(binding.command.clone()),
-                    binding.when.is_some() || !binding.args.is_empty(),
-                ),
-                KeyValue::Bindings(bindings) => (
-                    bindings.first().map(|binding| binding.command.clone()),
-                    true,
-                ),
-            };
-            lokyr_plugin_sdk::host::SettingBinding {
-                keys: keys.clone(),
-                title: command.as_deref().and_then(&title),
-                command,
-                detailed,
+        .filter(|binding| !named.contains(&binding.keys))
+        .map(|binding| {
+            let (title, category) = info(&binding.invocation.command).unzip();
+            SettingBinding {
+                keys: keys_text(&binding.keys),
+                command: Some(binding.invocation.command.clone()),
+                title,
+                category,
+                args: binding.invocation.args.clone(),
+                when: binding.when.as_ref().map(ToString::to_string),
+                detailed: binding.when.is_some() || !binding.invocation.args.is_empty(),
+                default: true,
             }
         })
-        .collect()
+        .collect();
+    for (keys, value) in &config.keys.bindings {
+        let (command, args, when, detailed) = match value {
+            KeyValue::Command(command) => (Some(command.clone()), Args::new(), None, false),
+            KeyValue::Unbound(_) => (None, Args::new(), None, false),
+            KeyValue::Binding(binding) => {
+                let args = crate::keymap::args_of(&binding.args);
+                let detailed = binding.when.is_some() || !args.is_empty();
+                (
+                    Some(binding.command.clone()),
+                    args,
+                    binding.when.clone(),
+                    detailed,
+                )
+            }
+            KeyValue::Bindings(bindings) => (
+                bindings.first().map(|binding| binding.command.clone()),
+                Args::new(),
+                None,
+                true,
+            ),
+        };
+        // Of `false`, the default whose keys it takes away.
+        let (title, category) = match &command {
+            Some(command) => info(command).unzip(),
+            None => parse_keys(keys)
+                .ok()
+                .and_then(|combos| defaults.iter().find(|binding| binding.keys == combos))
+                .and_then(|binding| info(&binding.invocation.command))
+                .unzip(),
+        };
+        bindings.push(SettingBinding {
+            keys: keys.clone(),
+            command,
+            title,
+            category,
+            args,
+            when,
+            detailed,
+            default: false,
+        });
+    }
+    bindings
 }
 
 /// Whether `value` is one that a key of `kind` takes, as a plugin's
