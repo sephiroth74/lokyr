@@ -29,7 +29,7 @@
 </p>
 
 > [!NOTE]
-> **Lokyr 1.0.0 is out**, its first public release: [the disk image](https://github.com/sephiroth74/lokyr/releases/latest), or `brew install --cask sephiroth74/tap/lokyr`, as [Install](#install) tells. See the [status](#status) for what comes next.
+> **Lokyr 1.1.0 is out**, of its settings in a window of their own: [the disk image](https://github.com/sephiroth74/lokyr/releases/latest), or `brew install --cask sephiroth74/tap/lokyr`, as [Install](#install) tells, and Lokyr updates itself. See the [status](#status) for what comes next.
 
 <p align="center">
   <img src="docs/images/lokyr-code.png" alt="A Lokyr window of 100 by 30 cells, showing Rust source with syntax highlighting, by bat" width="760">
