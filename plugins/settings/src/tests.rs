@@ -1381,6 +1381,54 @@ fn a_field_is_written_as_typing_pauses_and_as_it_is_left_once_of_a_value() {
 }
 
 #[test]
+fn a_step_writes_the_decimals_of_the_step_and_a_text_typed_shows_until_it_is_written() {
+    let mut host = FakeHost::new(NAME).with_manifest(crate::MANIFEST);
+    host.pane(PaneId(1));
+    let mut given = settings();
+    given.sections[0].keys[1].value = Some(Data::Number(0.95));
+    given.sections[0].keys[1].kind = SettingKind::Number {
+        minimum: None,
+        maximum: None,
+        step: Some(0.05),
+        integer: false,
+    };
+    host.set_settings(given);
+    let mut plugin = SettingsPage::default();
+    host.activate(&mut plugin).unwrap();
+    host.show_page(PAGE);
+    host.deliver(&mut plugin).unwrap();
+    let _ = written(&mut host);
+    // 0.95 less 0.05 is 0.9, not 0.8999999999999999.
+    host.ui_event(
+        &mut plugin,
+        &on("field:size", UiEventKind::Step { up: false }),
+    )
+    .unwrap();
+    assert_eq!(
+        written(&mut host),
+        [app_key("font", "size", Some(Data::Number(0.9)))]
+    );
+    // A text typed and not written yet is what the field holds, whatever
+    // renders meanwhile, so that the host keeps its caret and what follows.
+    host.ui_event(
+        &mut plugin,
+        &on(
+            "field:size",
+            UiEventKind::InputChanged {
+                text: "0.97".to_owned(),
+                revision: 1,
+            },
+        ),
+    )
+    .unwrap();
+    let tree = rendered(&mut host, &mut plugin);
+    assert_eq!(
+        held(&tree, "field:size").map(|(text, _)| text),
+        Some(Some("0.97".to_owned()))
+    );
+}
+
+#[test]
 fn a_pause_writes_a_whole_value_alone_an_empty_or_half_typed_field_waiting() {
     let (mut host, mut plugin) = host();
     let _ = written(&mut host);
@@ -1416,13 +1464,27 @@ fn a_pause_writes_a_whole_value_alone_an_empty_or_half_typed_field_waiting() {
         written(&mut host),
         [app_key("font", "size", Some(Data::Number(13.5)))]
     );
-    // Left half typed: as it reads, its reason told.
+    // Left half typed: as it reads, its reason told, its text kept in
+    // its field to be mended.
     host.ui_event(&mut plugin, &on("field:size", typed("2")))
         .unwrap();
     host.ui_event(&mut plugin, &on("field:size", UiEventKind::Blur))
         .unwrap();
     let tree = rendered(&mut host, &mut plugin);
     assert!(text_of(&tree, "refused:size").is_some());
+    assert_eq!(
+        held(&tree, "field:size").map(|(text, _)| text),
+        Some(Some("2".to_owned()))
+    );
+    // Reset takes it away with the key's value.
+    host.ui_event(&mut plugin, &on("reset:size", UiEventKind::Click))
+        .unwrap();
+    host.deliver(&mut plugin).unwrap();
+    let tree = rendered(&mut host, &mut plugin);
+    assert_eq!(
+        held(&tree, "field:size").map(|(text, _)| text),
+        Some(Some("13".to_owned()))
+    );
 }
 
 #[test]

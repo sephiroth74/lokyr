@@ -546,7 +546,10 @@ impl Plugin for SettingsPage {
                     None => Ok(()),
                 }
             }
-            (UiEventKind::Click, RESET) => self.write(cx, section, setting, None),
+            (UiEventKind::Click, RESET) => {
+                self.typed.remove(name);
+                self.write(cx, section, setting, None)
+            }
             (UiEventKind::Click, GUIDE) => match &setting.guide {
                 Some(address) => cx.open(address),
                 None => Ok(()),
@@ -600,7 +603,7 @@ impl Plugin for SettingsPage {
             &settings,
             (self.chosen, self.editing),
             &words(&self.query),
-            &self.refused,
+            (&self.refused, &self.typed),
         ))
     }
 }
@@ -922,10 +925,17 @@ impl SettingsPage {
                 }
                 continue;
             }
+            // A text refused stays in its field, beside why, to be mended.
             match value_of(cx, &setting.kind, text) {
-                Ok(value) => self.write(cx, section, setting, value)?,
+                Ok(value) => {
+                    self.write(cx, section, setting, value)?;
+                    if self.refused.contains_key(&name) {
+                        self.typed.insert(name, typed);
+                    }
+                }
                 Err(why) => {
-                    self.refused.insert(name, why);
+                    self.refused.insert(name.clone(), why);
+                    self.typed.insert(name, typed);
                     cx.request_render(page())?;
                 }
             }
@@ -1198,6 +1208,21 @@ fn value_of(cx: &mut Cx<'_>, kind: &SettingKind, text: &str) -> Result<Option<Da
     }
 }
 
+/// The most decimals that a number's step keeps.
+const MOST_DECIMALS: i32 = 6;
+
+/// The decimals that `number` writes, as its shortest text has them, the
+/// most of one in an exponent's form.
+fn decimals(number: f64) -> i32 {
+    let text = number.to_string();
+    if text.contains(['e', 'E']) {
+        return MOST_DECIMALS;
+    }
+    text.split_once('.').map_or(0, |(_, fraction)| {
+        i32::try_from(fraction.len()).unwrap_or(MOST_DECIMALS)
+    })
+}
+
 /// The value of the number `setting` a step toward `toward`, more of a
 /// positive one, within its range: its value in force, or its range's
 /// least, moved by its step, 1 of none; none of a key of another kind.
@@ -1218,6 +1243,11 @@ fn step_of(setting: &SettingKey, toward: f64) -> Option<Data> {
         _ => minimum.unwrap_or(0.0),
     };
     let mut next = now + step * toward;
+    // Of the decimals of the step and of the value, as 0.95 less 0.05 is
+    // 0.9, not 0.8999999999999999.
+    let decimals = decimals(step).max(decimals(now)).min(MOST_DECIMALS);
+    let scale = 10f64.powi(decimals);
+    next = (next * scale).round() / scale;
     if let Some(least) = minimum {
         next = next.max(least);
     }
@@ -1239,7 +1269,7 @@ fn tree(
     settings: &Settings,
     (chosen, editing): (usize, Option<usize>),
     words: &[String],
-    refused: &BTreeMap<String, String>,
+    (refused, typed): (&BTreeMap<String, String>, &BTreeMap<String, Typed>),
 ) -> Node {
     let shown = shown_parts(cx, settings, words);
     let chosen_part = parts(settings)
@@ -1247,7 +1277,7 @@ fn tree(
         .copied()
         .filter(|_| shown.contains(&chosen));
     let mut part = match chosen_part {
-        Some(Part::Section(section)) => section_part(cx, section, words, refused),
+        Some(Part::Section(section)) => section_part(cx, section, words, (refused, typed)),
         Some(Part::Keys) => keys_part(cx, &settings.keys, words, editing, refused),
         None if !words.is_empty() => vec![
             Node::text(message(cx, "settings-no-match", &[]))
@@ -1535,7 +1565,7 @@ fn section_part(
     cx: &mut Cx<'_>,
     section: &SettingsSection,
     words: &[String],
-    refused: &BTreeMap<String, String>,
+    (refused, typed): (&BTreeMap<String, String>, &BTreeMap<String, Typed>),
 ) -> Vec<Node> {
     let mut part = vec![
         Node::text(title(cx, section))
@@ -1574,7 +1604,10 @@ fn section_part(
         .collect();
     let rows = keys
         .into_iter()
-        .map(|key| key_row(cx, key, refused.get(&key.name)))
+        .map(|key| {
+            let typed = typed.get(&key.name).map(|typed| typed.text.as_str());
+            key_row(cx, key, (refused.get(&key.name), typed))
+        })
         .collect();
     part.push(group(rows, "keys"));
     part
@@ -1582,9 +1615,14 @@ fn section_part(
 
 /// The row of `key`: its name, its platforms and what it does, why its last
 /// write was refused, `refused`, and at its right the control of its value
-/// in force, marked as its default where it is, or that it is not set, and
+/// in force, or of the text typed into its field and not written yet,
+/// `typed`, marked as its default where it is, or that it is not set, and
 /// the button that takes it back to its default where it is another.
-fn key_row(cx: &mut Cx<'_>, key: &SettingKey, refused: Option<&String>) -> Node {
+fn key_row(
+    cx: &mut Cx<'_>,
+    key: &SettingKey,
+    (refused, typed): (Option<&String>, Option<&str>),
+) -> Node {
     let name = &key.name;
     let mut title = vec![Node::text(name.clone()).style(Style {
         font_weight: Some(FontWeight::Semibold),
@@ -1652,7 +1690,7 @@ fn key_row(cx: &mut Cx<'_>, key: &SettingKey, refused: Option<&String>) -> Node 
         min_width: Length::Points(0.0),
         ..Layout::default()
     });
-    let mut value: Vec<Node> = control(cx, key).into_iter().collect();
+    let mut value: Vec<Node> = control(cx, key, typed).into_iter().collect();
     // At the bottom right: the link back to the default, dimmed where the
     // key is there already.
     let mut marks = Vec::new();
@@ -1784,7 +1822,7 @@ fn list_editor(cx: &mut Cx<'_>, key: &SettingKey) -> Node {
 /// menu of its values, a field of a number or of a text; another value's
 /// text, as the config writes it; none of a list, whose values show under
 /// what it does.
-fn control(cx: &mut Cx<'_>, key: &SettingKey) -> Option<Node> {
+fn control(cx: &mut Cx<'_>, key: &SettingKey, typed: Option<&str>) -> Option<Node> {
     let name = &key.name;
     let terminal = code();
     Some(match &key.kind {
@@ -1830,7 +1868,10 @@ fn control(cx: &mut Cx<'_>, key: &SettingKey) -> Option<Node> {
             }
         }
         SettingKind::Number { .. } => {
-            let text = key.value.as_ref().map(plain).unwrap_or_default();
+            let text = typed.map_or_else(
+                || key.value.as_ref().map(plain).unwrap_or_default(),
+                str::to_owned,
+            );
             Node::field(message(cx, "setting-unset", &[]))
                 .key(format!("{FIELD}{name}").as_str())
                 .label(name.clone())
@@ -1843,7 +1884,10 @@ fn control(cx: &mut Cx<'_>, key: &SettingKey) -> Option<Node> {
                 })
         }
         SettingKind::Text { examples, .. } => {
-            let text = key.value.as_ref().map(plain).unwrap_or_default();
+            let text = typed.map_or_else(
+                || key.value.as_ref().map(plain).unwrap_or_default(),
+                str::to_owned,
+            );
             let placeholder = examples
                 .first()
                 .cloned()

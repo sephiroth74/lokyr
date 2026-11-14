@@ -341,7 +341,9 @@ impl Fields {
 
     /// Forgets the fields whose keys `tree` no longer has as fields, and
     /// sets the text of each that its plugin gives a text other than the
-    /// one that it gave last, as [`Fields::set_text`] does.
+    /// one that it gave last, as [`Fields::set_text`] does, but where the
+    /// field holds that text already, whose caret, selection, undo and
+    /// composition stay.
     pub fn updated(&mut self, tree: &Tree) {
         self.states.retain(|key, _| {
             tree.by_key(key)
@@ -358,7 +360,11 @@ impl Fields {
             }
         }
         for (key, text) in &given {
-            if self.given.get(key) != Some(text) {
+            let holds = self
+                .states
+                .get(key)
+                .is_some_and(|state| state.text == cut(&single_line(text), LONGEST));
+            if self.given.get(key) != Some(text) && !holds {
                 self.set_text(key, text);
             }
         }
@@ -1714,6 +1720,33 @@ mod tests {
         field.tree.update(&Node::container(vec![])).unwrap();
         field.fields.updated(&field.tree);
         assert!(field.fields.state(&key).is_none());
+    }
+
+    #[test]
+    fn a_text_given_that_the_field_holds_keeps_its_caret_and_its_undo() {
+        let mut field = Typing::new();
+        field.kind("0.95");
+        assert_eq!(
+            field.press(Key::Left, NONE, ""),
+            Some(Vec::new()),
+            "the caret one back"
+        );
+        assert_eq!(field.shown(), "0.9|5");
+        // Its plugin gives the text that it holds, as a key's value written
+        // as typing paused: the caret stays, and ⌘Z undoes the typing.
+        field
+            .tree
+            .update(&Node::container(vec![
+                Node::field("Find").key("find").holding("0.95"),
+            ]))
+            .unwrap();
+        field.fields.updated(&field.tree);
+        assert_eq!(field.shown(), "0.9|5");
+        field.kind("9");
+        assert_eq!(field.shown(), "0.99|5");
+        let undone = field.press(Key::Char('z'), mods(false, false, false, true), "");
+        assert!(undone.is_some_and(|events| !events.is_empty()));
+        assert_eq!(field.shown(), "0.9|5");
     }
 
     #[test]
