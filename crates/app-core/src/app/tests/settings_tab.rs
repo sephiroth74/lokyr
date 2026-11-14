@@ -1717,6 +1717,10 @@ fn a_menu_s_highlighted_family_or_style_shows_in_the_panes_until_it_closes() {
         WindowEvent::ContextHighlighted(Some(format!("choice:{at}"))),
     );
     frames(&mut fake, &mut app, own);
+    assert_eq!(app.font_preview, None, "not before the item rests");
+    let rested = || Instant::now() + Duration::from_millis(200);
+    fake.fire_timers(&mut app, rested());
+    frames(&mut fake, &mut app, own);
     assert_eq!(app.font_preview.as_deref(), Some(families[at].as_str()));
     fake.send(&mut app, own, WindowEvent::ContextHighlighted(None));
     fake.send(&mut app, own, WindowEvent::ContextMenuClosed);
@@ -1739,6 +1743,7 @@ fn a_menu_s_highlighted_family_or_style_shows_in_the_panes_until_it_closes() {
         own,
         WindowEvent::ContextHighlighted(Some(format!("choice:{at}"))),
     );
+    fake.fire_timers(&mut app, rested());
     frames(&mut fake, &mut app, own);
     assert_eq!(
         app.font_in_force()
@@ -1750,4 +1755,78 @@ fn a_menu_s_highlighted_family_or_style_shows_in_the_panes_until_it_closes() {
     fake.send(&mut app, own, WindowEvent::ContextMenuClosed);
     frames(&mut fake, &mut app, own);
     assert!(app.style_preview.is_empty(), "the style in force back");
+}
+
+#[test]
+fn a_family_chosen_in_the_settings_comments_out_the_styles_that_it_lacks_and_shows() {
+    use lokyr_kernel::plugins::view::{Kind, UiEventKind};
+    // Menlo, of a bold face, and the tests' Mono, of a regular one alone.
+    let directory = super::installed::shelf("settings-family-styles");
+    let path = directory.join("config.toml");
+    std::fs::write(
+        &path,
+        "# mine\n[font]\nfamily = \"Menlo\"\nbold-style = \"Bold\"\n",
+    )
+    .unwrap();
+    let drawing = Drawing::new(FontConfig::default()).unwrap();
+    let mut fake = Fake::default();
+    let mut app = App::new(
+        Some(drawing),
+        Config::read(&path).unwrap(),
+        Some(path.clone()),
+    )
+    .with_program(idle());
+    fake.start(&mut app);
+    let first = fake.windows().next().unwrap();
+    app.windows.get_mut(&first).unwrap().surface = Some(fakes::Surface::default());
+    let own = open(&mut fake, &mut app, SETTINGS_TAB);
+    settings_event(
+        &mut fake,
+        &mut app,
+        own,
+        None,
+        "choose:family",
+        UiEventKind::Click,
+    );
+    let menu = app
+        .plugins
+        .tree(
+            "lokyr/settings",
+            &ViewId::Panel(lokyr_kernel::plugins::ui::PanelId(
+                "choices:family".to_owned(),
+            )),
+        )
+        .cloned()
+        .expect("the families' menu");
+    let at = menu
+        .children
+        .iter()
+        .position(|item| matches!(&item.kind, Kind::Toggle(toggle) if toggle.label == "Mono"))
+        .expect("the tests' Mono");
+    // Chosen: its styles that Mono lacks commented out, the font in force
+    // Mono's, the page's button too.
+    settings_event(
+        &mut fake,
+        &mut app,
+        own,
+        Some("choices:family"),
+        &format!("choice:{at}"),
+        UiEventKind::Toggle { on: true },
+    );
+    let written = std::fs::read_to_string(&path).unwrap();
+    assert!(written.contains("family = \"Mono\""), "{written}");
+    assert!(written.contains("# bold-style = \"Bold\""), "{written}");
+    assert_eq!(
+        app.config
+            .font
+            .family
+            .as_ref()
+            .map(ToString::to_string)
+            .as_deref(),
+        Some("Mono")
+    );
+    fake.send(&mut app, own, WindowEvent::ContextMenuClosed);
+    frames(&mut fake, &mut app, own);
+    assert_eq!(page_button(&app, own, "choose:family"), "Mono");
+    let _ = std::fs::remove_dir_all(&directory);
 }

@@ -139,6 +139,11 @@ const PLATFORMS: &[&str] = &["macos"];
 /// How long typing pauses before a field's value is written.
 const PAUSE: std::time::Duration = std::time::Duration::from_millis(600);
 
+/// How long a menu's highlighted item rests before its font shows in the
+/// panes, so that the arrows held, or a pointer that passes, show none of
+/// the items that they go through.
+const PREVIEW_PAUSE: std::time::Duration = std::time::Duration::from_millis(150);
+
 /// A new binding as its panel makes it: its keys, as the recorder took
 /// them and as a config writes them, and its command, by its name.
 #[derive(Clone, Debug, Default)]
@@ -167,6 +172,10 @@ pub struct SettingsPage {
     /// Whether a font's family or style shows in the panes as a menu's
     /// item is highlighted, until the menu closes.
     previewing: bool,
+    /// The font of the item highlighted last, which shows once the timer
+    /// of its rest fires.
+    pending_preview: Option<(FontPreview, String)>,
+    preview_timer: Option<u64>,
     typed: BTreeMap<String, Typed>,
     pause: Option<u64>,
 }
@@ -237,11 +246,19 @@ impl Plugin for SettingsPage {
                 }
                 // A menu of values closed: the font that it showed goes,
                 // the one in force back, or the one chosen.
-                Event::PanelClosed(PanelId(panel))
-                    if panel.starts_with(CHOICES) && self.previewing =>
-                {
-                    self.previewing = false;
-                    cx.preview_font(None)?;
+                Event::PanelClosed(PanelId(panel)) if panel.starts_with(CHOICES) => {
+                    self.end_preview(cx)?;
+                }
+                // A highlighted item rested: its font shows.
+                Event::Timer { id } if self.preview_timer == Some(*id) => {
+                    self.preview_timer = None;
+                    if let Some((preview, value)) = self.pending_preview.take() {
+                        match preview {
+                            FontPreview::Family => cx.preview_font(Some(&value))?,
+                            FontPreview::Style(face) => cx.preview_font_style(face, &value)?,
+                        }
+                        self.previewing = true;
+                    }
                 }
                 // The bindings' places change with the settings: a change of
                 // keys under way ends.
@@ -322,19 +339,25 @@ impl Plugin for SettingsPage {
             if matches!(event.kind, UiEventKind::Click | UiEventKind::Toggle { .. })
                 && let Some(value) = values.get(at)
             {
+                // The choice shows as the config takes it: no preview comes
+                // after it.
+                self.pending_preview = None;
+                if let Some(timer) = self.preview_timer.take() {
+                    cx.cancel_timer(timer)?;
+                }
                 return self.write(cx, section, setting, Some(value.clone()));
             }
-            // A font's family or a face's style shown in the panes as its
-            // item is highlighted.
+            // A font's family or a face's style shown in the panes once its
+            // highlighted item rests.
             if event.kind == UiEventKind::HoverEnter
                 && let Some(Data::Text(value)) = values.get(at)
                 && let Some(preview) = font_preview(section, setting)
             {
-                match preview {
-                    FontPreview::Family => cx.preview_font(Some(value))?,
-                    FontPreview::Style(face) => cx.preview_font_style(face, value)?,
+                self.pending_preview = Some((preview, value.clone()));
+                if let Some(timer) = self.preview_timer.take() {
+                    cx.cancel_timer(timer)?;
                 }
-                self.previewing = true;
+                self.preview_timer = Some(cx.start_timer(PREVIEW_PAUSE, false)?);
             }
             return Ok(());
         }
@@ -499,6 +522,19 @@ impl Plugin for SettingsPage {
 }
 
 impl SettingsPage {
+    /// Ends the font's preview of a menu that closed: the item that waits
+    /// to rest shows not, and the font in force shows again.
+    fn end_preview(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
+        self.pending_preview = None;
+        if let Some(timer) = self.preview_timer.take() {
+            cx.cancel_timer(timer)?;
+        }
+        if std::mem::take(&mut self.previewing) {
+            cx.preview_font(None)?;
+        }
+        Ok(())
+    }
+
     /// Takes the search's text `text`: the parts that hold its words show,
     /// the part chosen the first of them where it holds none, the sidebar's
     /// selection at it.

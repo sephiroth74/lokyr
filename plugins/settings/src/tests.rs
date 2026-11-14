@@ -1779,7 +1779,16 @@ fn a_font_s_family_and_a_face_s_style_show_as_their_items_are_highlighted() {
     let families = menu_of(&mut host, &mut plugin, "family");
     assert_eq!(labels(&families), ["Menlo", "Monaco", "SF Mono"]);
     let _ = host.take_done();
+    // Items gone through, none shown, the last once it rests.
+    highlight(&mut host, &mut plugin, "family", 0);
+    host.advance(std::time::Duration::from_millis(100));
+    host.deliver(&mut plugin).unwrap();
     highlight(&mut host, &mut plugin, "family", 1);
+    host.advance(std::time::Duration::from_millis(149));
+    host.deliver(&mut plugin).unwrap();
+    assert!(previews(&mut host).is_empty(), "none while the items pass");
+    host.advance(std::time::Duration::from_millis(1));
+    host.deliver(&mut plugin).unwrap();
     assert_eq!(
         previews(&mut host),
         [Request::PreviewFont(Some("Monaco".to_owned()))]
@@ -1792,6 +1801,8 @@ fn a_font_s_family_and_a_face_s_style_show_as_their_items_are_highlighted() {
     menu_of(&mut host, &mut plugin, "style");
     let _ = host.take_done();
     highlight(&mut host, &mut plugin, "style", 2);
+    host.advance(std::time::Duration::from_millis(150));
+    host.deliver(&mut plugin).unwrap();
     assert_eq!(
         previews(&mut host),
         [Request::PreviewFontStyle {
@@ -1799,7 +1810,15 @@ fn a_font_s_family_and_a_face_s_style_show_as_their_items_are_highlighted() {
             style: "Bold".to_owned(),
         }]
     );
+    // An item chosen before it rests shows no preview after the choice.
+    highlight(&mut host, &mut plugin, "style", 1);
     pick(&mut host, &mut plugin, "style", 2);
+    host.advance(std::time::Duration::from_millis(150));
+    host.deliver(&mut plugin).unwrap();
+    assert!(
+        previews(&mut host).is_empty(),
+        "no preview after the choice"
+    );
     host.close_panel(&PanelId::from("choices:style"));
     host.deliver(&mut plugin).unwrap();
     let done = host.take_done();
@@ -1807,5 +1826,7 @@ fn a_font_s_family_and_a_face_s_style_show_as_their_items_are_highlighted() {
     menu_of(&mut host, &mut plugin, "non-ascii-family");
     let _ = host.take_done();
     highlight(&mut host, &mut plugin, "non-ascii-family", 1);
+    host.advance(std::time::Duration::from_millis(150));
+    host.deliver(&mut plugin).unwrap();
     assert!(previews(&mut host).is_empty());
 }
