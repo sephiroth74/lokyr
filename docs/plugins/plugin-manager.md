@@ -21,11 +21,12 @@ The Plugins page of the settings window: every plugin that Lokyr runs, the ones 
 ### Registry
 
 - **The plugins of [pkg.lokyr.dev](https://pkg.lokyr.dev)**, each of its newest version, what it does and the capabilities that it asks for; one that needs another version of Lokyr says so.
-- **The field** filters them as you type, of their names and what they do.
+- **A loader** shows while Sleip reads them.
+- **The field** filters them as you type, of their names and what they do; **Search**, or Return in the field, reads the registry again, for the plugins published since.
 - **Install** runs `sleip add` of the plugin, which checks its archive against the registry's signed index; Lokyr loads it without restarting, and asks you for its capabilities the first time that it starts. A plugin installed already shows as such, or of its update.
 - **Details** shows a plugin's versions, newest first, each of what it asks for, a yanked one or one that this Lokyr does not take marked, and the commands of other plugins that it runs.
 - **A change under way**, an install, an update or a removal, shows as it goes, of a **Cancel** button; one that fails tells Sleip's reason.
-- **Sleip reads the registry's signed list** as the page first shows in a run of Lokyr, one request to pkg.lokyr.dev, which answers of no content where the list has not changed since Sleip's copy; **Refresh** reads it again. Lokyr itself never goes on the network: Sleip does, at these times alone, and nothing at rest.
+- **Sleip reads the registry's signed list** as the page first shows in a run of Lokyr, one request to pkg.lokyr.dev, which answers of no content where the list has not changed since Sleip's copy, and again at each search. Lokyr itself never goes on the network: Sleip does, at these times alone, and nothing at rest.
 
 ## Commands
 

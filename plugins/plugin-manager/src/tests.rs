@@ -567,11 +567,52 @@ fn a_registry_that_cannot_be_read_tells_why_and_is_read_again() {
         snapshot(&tree)
     );
     assert!(find(&tree, "found-plugins").is_none());
-    host.ui_event(&mut manager, &click(REFRESH)).unwrap();
+    host.ui_event(&mut manager, &click(SEARCH)).unwrap();
     assert_eq!(
         jobs_of(&host, |call| matches!(call, Packages::Search { .. })).len(),
         1
     );
     let tree = rendered(&mut host, &mut manager);
     assert!(find(&tree, "registry-failed").is_none());
+}
+
+#[test]
+fn the_registry_is_read_as_its_part_shows_or_at_return_whatever_the_page_heard() {
+    // A page whose showing it did not hear, as of its activation by it.
+    let mut host = FakeHost::new(NAME).with_manifest(crate::MANIFEST);
+    host.pane(PaneId(1));
+    host.set_plugins(plugins());
+    let mut manager = Manager::default();
+    host.activate(&mut manager).unwrap();
+    // Shown, its showing not delivered yet.
+    host.show_page(PAGE);
+    assert!(jobs_of(&host, |call| matches!(call, Packages::Search { .. })).is_empty());
+    host.ui_event(&mut manager, &choose(1)).unwrap();
+    let jobs = jobs_of(&host, |call| matches!(call, Packages::Search { .. }));
+    assert_eq!(jobs.len(), 1);
+    // A loader in the list's place, of a status for VoiceOver.
+    let tree = rendered(&mut host, &mut manager);
+    let loader = find(&tree, "reading").expect("a loader");
+    assert_eq!(loader.role, Some(Role::Status));
+    assert_eq!(button(&tree, SEARCH).as_deref(), Some("registry-search"));
+    // Return in the field reads it again, once the reading ended.
+    host.answer_packages(jobs[0].0, Vec::new(), true);
+    host.deliver(&mut manager).unwrap();
+    host.ui_event(
+        &mut manager,
+        &UiEvent {
+            view: page(),
+            key: QUERY.into(),
+            kind: UiEventKind::Submit {
+                text: "notes".to_owned(),
+                shift: false,
+            },
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        jobs_of(&host, |call| matches!(call, Packages::Search { .. })).len(),
+        1
+    );
+    assert_eq!(manager.query, "notes");
 }

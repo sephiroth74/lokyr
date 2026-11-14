@@ -26,8 +26,8 @@ plugin-change-failed = Non è cambiato: { $message }
 # I plugin del registro.
 registry-title = Registro
 registry-intro = I plugin di pkg.lokyr.dev, ognuno verificato sull'indice firmato del registro mentre Sleip lo installa. Lokyr ti chiede le capability di un plugin la prima volta che si avvia.
+registry-filter = Nome o descrizione
 registry-search = Cerca
-registry-refresh = Aggiorna
 registry-reading = Lettura del registro…
 registry-failed = Non è stato possibile leggere il registro: { $message }
 registry-none = Nessun plugin corrisponde.

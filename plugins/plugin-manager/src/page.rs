@@ -16,8 +16,8 @@ use lokyr_plugin_sdk::view::{
 
 use super::registry::{self, Found, Info};
 use super::{
-    BACK, CANCEL, DETAILS, INSTALL, Manager, OWN, QUERY, REFRESH, REMOVE, SECTIONS, Section,
-    TOGGLE, UPDATE, Work,
+    BACK, CANCEL, DETAILS, INSTALL, Manager, OWN, QUERY, REMOVE, SEARCH, SECTIONS, Section, TOGGLE,
+    UPDATE, Work,
 };
 
 /// The sidebar's width, in points.
@@ -167,23 +167,27 @@ fn registry_part(manager: &Manager, cx: &mut Cx<'_>, plugins: &[PluginInfo]) -> 
             .style(small())
             .layout(wrapped()),
     ];
-    let field = Node::field(message(cx, "registry-search", &[]))
+    let field = Node::field(message(cx, "registry-filter", &[]))
         .key(QUERY)
-        .label(message(cx, "registry-search", &[]))
+        .label(message(cx, "registry-filter", &[]))
         .layout(Layout {
             grow: 1.0,
             min_width: Length::Points(0.0),
             ..Layout::default()
         });
-    let refresh = Node::button(message(cx, "registry-refresh", &[])).key(REFRESH);
-    part.push(row_of(vec![field, refresh], 8.0).layout(Layout {
+    let search = Node::button(message(cx, "registry-search", &[])).key(SEARCH);
+    part.push(row_of(vec![field, search], 8.0).layout(Layout {
         direction: Direction::Row,
         gap: 8.0,
         align: Align::Center,
         width: Length::Fraction(1.0),
         ..Layout::default()
     }));
-    if manager.reading() {
+    // A loader in the list's place as the registry is first read, a line
+    // above the list as it is read again.
+    if manager.reading() && manager.found.is_none() {
+        part.push(loader(message(cx, "registry-reading", &[])));
+    } else if manager.reading() {
         part.push(
             row_of(
                 vec![
@@ -642,6 +646,33 @@ fn spinner() -> Node {
         height: Length::Points(14.0),
         ..Layout::default()
     })
+}
+
+/// A loader of `text`: a spinner, larger, above it, in the middle of the
+/// part's width, a room above them.
+fn loader(text: String) -> Node {
+    let spinner =
+        Node::progress(ProgressShape::Ring, ProgressState::Indeterminate, 0.0).layout(Layout {
+            width: Length::Points(24.0),
+            height: Length::Points(24.0),
+            ..Layout::default()
+        });
+    Node::container(vec![spinner, Node::text(text).style(secondary())])
+        .key("reading")
+        .role(Role::Status)
+        .layout(Layout {
+            direction: Direction::Column,
+            gap: 10.0,
+            align: Align::Center,
+            width: Length::Fraction(1.0),
+            padding: Edges {
+                top: 40.0,
+                right: 0.0,
+                bottom: 40.0,
+                left: 0.0,
+            },
+            ..Layout::default()
+        })
 }
 
 /// A failure's text, of the key `key`.

@@ -21,10 +21,10 @@ use lokyr_vt_core::terminal as vt;
 use lokyr_vt_core::terminal::{SelectionShape, SelectionUnit};
 
 use super::{
-    ABOUT, APPEARANCES, App, CHECK_UPDATES, CONTEXT_ONLY, DEFAULT_TERMINAL, FLOAT_ON_TOP,
-    INSTALL_CLAUDE_CODE, INSTALL_TOOLS, LOOK_UP, LOOK_UP_TITLE, MAN_KEYWORDS, MAN_PAGE,
-    MAN_PAGE_NAME, MAN_SEARCH, MAN_SECTION, NEXT_AGENT, OPEN_THEMES, PERFORMANCE, PLUGINS,
-    REPORT_ISSUE, SEARCH_WEB, SECURE_INPUT, SETTINGS, SETTINGS_TAB, SHOW_TIP, context,
+    ABOUT, APPEARANCES, App, CHECK_UPDATES, CLOSE_TAB, CONTEXT_ONLY, DEFAULT_TERMINAL,
+    FLOAT_ON_TOP, INSTALL_CLAUDE_CODE, INSTALL_TOOLS, LOOK_UP, LOOK_UP_TITLE, MAN_KEYWORDS,
+    MAN_PAGE, MAN_PAGE_NAME, MAN_SEARCH, MAN_SECTION, NEXT_AGENT, OPEN_THEMES, PERFORMANCE,
+    PLUGINS, REPORT_ISSUE, SEARCH_WEB, SECURE_INPUT, SETTINGS, SETTINGS_TAB, SHOW_TIP, context,
     show_selection, shown_top,
 };
 use crate::drawing::Backend;
@@ -244,6 +244,8 @@ impl<B: Backend> App<B> {
             MAN_SEARCH => {
                 return looked_up().is_some_and(|(text, _)| man_keywords(&text).is_some());
             }
+            // The tabs' close closes the settings' window in front.
+            CLOSE_TAB if self.settings_in_front(platform) => return true,
             _ => {}
         }
         if !self.plugins.owns(&command.name) {
@@ -261,6 +263,15 @@ impl<B: Backend> App<B> {
             eprintln!("lokyr: {error}");
             false
         })
+    }
+
+    /// Whether the settings' window of their own is the one in front, or the
+    /// one that the commands run in.
+    pub(super) fn settings_in_front(&self, platform: &dyn Platform) -> bool {
+        self.acting
+            .or_else(|| platform.focused_window())
+            .and_then(|window| self.windows.get(&window))
+            .is_some_and(|state| self.workspace.settings_window() == Some(state.window))
     }
 
     /// What Look Up looks up in `window`: the selection's text, of one line,

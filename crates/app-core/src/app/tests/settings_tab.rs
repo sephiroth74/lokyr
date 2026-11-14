@@ -554,9 +554,9 @@ fn lokyr_s_plugins_item_opens_the_settings_tab_at_the_plugin_manager_s_page_of_e
     assert!(view.surface.layout.scrolled(scroll) > 0.0);
 }
 
-/// A Sleip of a shell's script in `folder`: `search` finds `acme/notes`,
-/// of a long description, and `info` tells its versions once the file
-/// `go` is in `folder`.
+/// A Sleip of a shell's script in `folder`: `search` leaves the file
+/// `searched` there and finds `acme/notes`, of a long description, and
+/// `info` tells its versions once the file `go` is in `folder`.
 fn registry_sleip(folder: &std::path::Path) -> std::path::PathBuf {
     use std::os::unix::fs::PermissionsExt as _;
     let long = "Notes beside the terminal, of every pane's folder, kept in the \
@@ -569,7 +569,8 @@ fn registry_sleip(folder: &std::path::Path) -> std::path::PathBuf {
             concat!(
                 "#!/bin/sh\n",
                 "case \"$1\" in\n",
-                "search) echo '{{\"event\":\"found\",\"name\":\"acme/notes\",\"version\":\"1.0.0\",",
+                "search) touch '{folder}/searched'\n",
+                "  echo '{{\"event\":\"found\",\"name\":\"acme/notes\",\"version\":\"1.0.0\",",
                 "\"description\":\"{long}\",\"capabilities\":[\"clipboard-write\"],",
                 "\"yanked\":false,\"api\":\"^0.1\",\"taken\":true}}'\n",
                 "  echo '{{\"event\":\"done\",\"found\":1}}' ;;\n",
@@ -648,5 +649,54 @@ fn the_plugins_page_s_sidebar_keeps_its_width_whatever_its_part_shows() {
     run_until(&mut fake, &mut app, |_, app| has(app, "versions-list"));
     frames(&mut fake, &mut app, window);
     assert_eq!(width(&app), installed);
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
+#[test]
+fn the_settings_window_opened_of_its_command_reads_the_registry_and_command_w_closes_it() {
+    let folder = super::installed::shelf("settings-lazy");
+    let (mut fake, mut app, window) = two_tabs();
+    app.packages.sleip = Some(registry_sleip(&folder));
+    // Opened of no page's command: the plugin manager, which waits for its
+    // page, activates as the page renders, and hears it shown then, as it
+    // reads the registry.
+    let own = open(&mut fake, &mut app, SETTINGS_TAB);
+    assert!(app.plugins.activated("lokyr/plugin-manager"));
+    let has = |app: &App, key: &str| {
+        page_view(app, own).is_some_and(|view| view.surface.tree.by_key(&key.into()).is_some())
+    };
+    // Its registry's part shows the plugins read, of no click.
+    let state = app.windows.get_mut(&own).unwrap();
+    let view = state
+        .chrome
+        .iter()
+        .find(|view| matches!(view.view, ViewId::Page(_)))
+        .unwrap();
+    let list = view.surface.tree.by_key(&"sections".into()).unwrap();
+    assert!(state.focus.focus(view.id, &view.surface.tree, list));
+    run_until(&mut fake, &mut app, |_, app| {
+        app.plugins
+            .tree("lokyr/plugin-manager", &ViewId::Page("plugins".to_owned()))
+            .is_some()
+    });
+    // The registry read before its part shows, which then shows its
+    // plugins.
+    let searched = folder.join("searched");
+    run_until(&mut fake, &mut app, |_, _| searched.exists());
+    tap(
+        &mut fake,
+        &mut app,
+        own,
+        KeyCode::ArrowDown,
+        Modifiers::NONE,
+    );
+    run_until(&mut fake, &mut app, |_, app| has(app, "found:acme/notes"));
+    // ⌘W closes the settings' window, of no question, the terminals' as
+    // they were.
+    fake.send(&mut app, own, command_key(KeyCode::KeyW, "w"));
+    assert!(fake.alerts().is_empty());
+    assert_eq!(app.workspace.settings_tab(), None);
+    assert_eq!(fake.windows().collect::<Vec<_>>(), [window]);
+    assert_eq!(tabs_of(&app, window).len(), 2);
     let _ = std::fs::remove_dir_all(&folder);
 }

@@ -182,8 +182,8 @@ impl<B: Backend> App<B> {
     }
 
     /// Tells the plugin of the page that shows now, the settings tab shown
-    /// in its window at it, that it does, and the one of the page that
-    /// showed before that it no longer does.
+    /// in its window at it, that it does, once the plugin is active, and
+    /// the one of the page that showed before that it no longer does.
     pub(super) fn settle_page(&mut self) {
         let shows = self.workspace.settings_tab().is_some_and(|(tab, shown)| {
             self.workspace
@@ -206,7 +206,12 @@ impl<B: Backend> App<B> {
         if let Some((plugin, id)) = self.settings.told.take() {
             self.plugins.page_shown(&plugin, &id, false);
         }
-        if let Some(page) = page {
+        // A plugin that its page's first render activates hears it shown
+        // once it is active, at a later turn, as it would hear nothing
+        // before.
+        if let Some(page) = page
+            && self.plugins.activated(&page.plugin)
+        {
             self.plugins.page_shown(&page.plugin, &page.id, true);
             self.settings.told = Some((page.plugin.clone(), page.id.clone()));
         }

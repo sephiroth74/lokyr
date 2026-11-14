@@ -118,6 +118,10 @@ const REPORT_ISSUE: &str = "app.report-issue";
 /// holds, before Report an Issue.
 const SHOW_TIP: &str = "quick-tips.show";
 
+/// The tabs' command that closes the tab shown, ⌘W, which closes the
+/// settings' window of their own, of their one tab.
+const CLOSE_TAB: &str = "tabs.close";
+
 /// The plugin manager's command that opens the settings tab at its page,
 /// which the app's menu holds right after the config's item.
 const PLUGINS: &str = "plugin-manager.open";
@@ -2660,6 +2664,15 @@ impl<B: Backend> App<B> {
         // Copy, paste and select all, of the Edit menu or of their keys, are
         // the field's that has the keyboard's focus.
         if self.field_command(platform, name) {
+            return;
+        }
+        // The tabs' close, ⌘W, of the settings' window in front closes it,
+        // as its one tab, which the plugins see no window of.
+        if name == CLOSE_TAB
+            && self.settings_in_front(platform)
+            && let Some(window) = self.acting.or_else(|| platform.focused_window())
+        {
+            self.ask_close(platform, window);
             return;
         }
         self.run_deep(platform, name, args, plugins::new_chain());

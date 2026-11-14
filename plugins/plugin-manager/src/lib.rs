@@ -5,14 +5,15 @@
 //! theme's colors, and, of an installed one, its capabilities and the
 //! decisions on them; a button disables or enables a plugin, as its section
 //! of the config, an installed one's removes it, and one that the registry
-//! has newer updates it. Registry: the plugins of the registry, which a
-//! field filters as it is typed in, each to install, of its details, its
+//! has newer updates it. Registry: the plugins of the registry, a loader
+//! while they are read, which a field filters as it is typed in, and whose
+//! Search, or Return, reads again, each to install, of its details, its
 //! versions and what each asks for. Each change runs through the packages'
 //! service, Sleip's, which tells it as it goes, a job under way of a
 //! button that cancels it. Lokyr › Plugins… and the palette's command open
 //! the settings window at the page, which follows the plugins as they
 //! change, of no wakeup at rest; Sleip reads the registry's signed list as
-//! the page first shows, and again as its button asks. Like every built-in
+//! the page first shows, or its registry's part, and again at a search. Like every built-in
 //! plugin, it depends only on the plugin SDK.
 
 #![forbid(unsafe_code)]
@@ -74,8 +75,8 @@ const CANCEL: &str = "cancel:";
 /// The key of the details' button back to the registry's plugins.
 const BACK: &str = "back";
 
-/// The key of the registry's button that reads it again.
-const REFRESH: &str = "refresh";
+/// The key of the registry's button that searches it, reading it again.
+const SEARCH: &str = "search";
 
 /// The page's parts, the sidebar's items in their order.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -203,12 +204,22 @@ impl Plugin for Manager {
                 }
                 self.section = section;
                 self.detail = None;
+                // The registry not read yet, as of no showing heard, read
+                // as its part shows.
+                if section == Section::Registry && self.found.is_none() {
+                    self.read_registry(cx)?;
+                }
             }
             (UiEventKind::InputChanged { text, .. }, QUERY) => {
                 if *text == self.query {
                     return Ok(());
                 }
                 text.clone_into(&mut self.query);
+            }
+            // Return in the field searches, as its button does.
+            (UiEventKind::Submit { text, .. }, QUERY) => {
+                text.clone_into(&mut self.query);
+                self.read_registry(cx)?;
             }
             (UiEventKind::Click, _) => {
                 if !self.clicked(cx, key)? {
@@ -262,7 +273,7 @@ impl Manager {
             cx.cancel_packages(job)?;
         } else if key == BACK {
             self.detail = None;
-        } else if key == REFRESH {
+        } else if key == SEARCH {
             self.read_registry(cx)?;
         } else {
             return Ok(false);
