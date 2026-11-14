@@ -1,0 +1,137 @@
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=37683299)	100%; charged; 0:00 remaining present: true
+21:19  up 2 days,  9:57, 107 users, load averages: 4.37 5.12 5.60
+Graphics/Displays:
+    Apple M5 Pro:
+      Displays:
+        Color LCD:
+          Display Type: Built-in Liquid Retina XDR Display
+          Resolution: 3456 x 2234 Retina
+          Main Display: Yes
+21:19:32 first start v100
+21:19:48 first start v110
+21:20:05 startup v100 1
+21:20:22 startup v110 1
+21:20:39 startup floor 1
+21:20:54 load { 10.30 6.61 6.11 }
+21:20:56 startup v110 2
+21:21:14 startup v100 2
+21:21:31 startup floor 2
+21:21:46 load { 7.09 6.26 6.01 }
+21:21:48 startup v110 3
+21:22:05 startup v100 3
+21:22:22 startup floor 3
+21:22:37 load { 6.09 6.15 5.98 }
+21:22:39 startup v100 4
+21:22:56 startup v110 4
+21:23:13 startup floor 4
+21:23:28 load { 4.16 5.58 5.77 }
+21:23:28 latency warm-up v100
+21:23:31 latency warm-up v110
+21:23:36 latency v100 1 place 1
+21:23:50 latency v110 1 place 2
+21:24:03 load { 2.85 5.10 5.59 }
+21:24:05 latency v110 2 place 1
+21:24:19 latency v100 2 place 2
+21:24:31 load { 3.23 4.99 5.53 }
+21:24:33 latency v110 3 place 1
+21:24:48 latency v100 3 place 2
+21:25:00 load { 2.95 4.75 5.43 }
+21:25:02 latency v100 4 place 1
+21:25:16 latency v110 4 place 2
+21:25:29 load { 2.81 4.57 5.34 }
+21:25:31 latency v100 5 place 1
+21:25:45 latency v110 5 place 2
+21:25:57 load { 2.75 4.39 5.25 }
+21:25:59 latency v110 6 place 1
+21:26:14 latency v100 6 place 2
+21:26:26 load { 2.83 4.26 5.17 }
+21:26:28 latency v110 7 place 1
+21:26:42 latency v100 7 place 2
+21:26:55 load { 3.46 4.28 5.14 }
+21:26:57 latency v100 8 place 1
+21:27:11 latency v110 8 place 2
+21:27:23 load { 3.16 4.15 5.08 }
+21:27:23 idle v100-1
+21:28:49 idle v110-1
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=37683299)	100%; charged; 0:00 remaining present: true
+21:32  up 2 days, 10:10, 109 users, load averages: 6.92 4.62 4.90
+Graphics/Displays:
+    Apple M5 Pro:
+      Displays:
+        Color LCD:
+          Display Type: Built-in Liquid Retina XDR Display
+          Resolution: 3456 x 2234 Retina
+          Main Display: Yes
+21:32:56 first start v100
+21:33:11 first start v110
+21:33:28 startup v100 1
+21:33:45 startup v110 1
+21:34:02 startup floor 1
+21:34:17 load { 7.23 5.31 5.14 }
+21:34:19 startup v110 2
+21:34:37 startup v100 2
+21:34:54 startup floor 2
+21:35:08 load { 8.45 6.01 5.41 }
+21:35:10 startup v110 3
+21:35:27 startup v100 3
+21:35:45 startup floor 3
+21:35:59 load { 8.91 6.55 5.65 }
+21:36:01 startup v100 4
+21:36:19 startup v110 4
+21:36:36 startup floor 4
+21:36:50 load { 6.98 6.42 5.66 }
+21:36:50 latency warm-up v100
+21:36:53 latency warm-up v110
+21:36:58 latency v100 1 place 1
+21:37:12 latency v110 1 place 2
+21:37:25 load { 5.03 6.01 5.54 }
+21:37:27 latency v110 2 place 1
+21:37:41 latency v100 2 place 2
+21:37:53 load { 4.33 5.76 5.46 }
+21:37:55 latency v110 3 place 1
+21:38:10 latency v100 3 place 2
+21:38:22 load { 3.72 5.48 5.37 }
+21:38:24 latency v100 4 place 1
+21:38:38 latency v110 4 place 2
+21:38:51 load { 3.69 5.29 5.30 }
+21:38:53 latency v100 5 place 1
+21:39:07 latency v110 5 place 2
+21:39:19 load { 3.49 5.11 5.24 }
+21:39:22 latency v110 6 place 1
+21:39:36 latency v100 6 place 2
+21:39:48 load { 3.12 4.86 5.14 }
+21:39:50 latency v110 7 place 1
+21:40:05 latency v100 7 place 2
+21:40:17 load { 2.85 4.63 5.05 }
+21:40:19 latency v100 8 place 1
+21:40:33 latency v110 8 place 2
+21:40:46 load { 2.32 4.33 4.92 }
+21:40:46 idle v100-1
+21:42:23 idle v110-1
+21:44:01 load { 2.83 3.68 4.52 }
+21:44:01 idle v110-2
+21:45:38 idle v100-2
+21:47:16 load { 3.73 3.45 4.23 }
+21:47:16 throughput ascii v100 1
+21:47:24 throughput ascii v110 1
+21:47:32 throughput ascii v110 2
+21:47:40 throughput ascii v100 2
+21:47:48 load { 3.98 3.53 4.23 }
+21:47:48 throughput seq v100 1
+21:47:49 throughput seq v110 1
+21:47:50 throughput seq v110 2
+21:47:52 throughput seq v100 2
+21:47:53 load { 4.14 3.57 4.24 }
+21:47:53 throughput sgr v100 1
+21:47:54 throughput sgr v110 1
+21:47:56 throughput sgr v110 2
+21:47:57 throughput sgr v100 2
+21:47:59 load { 4.13 3.58 4.24 }
+21:47:59 throughput cjk v100 1
+21:48:01 throughput cjk v110 1
+21:48:03 throughput cjk v110 2
+21:48:04 throughput cjk v100 2
+21:48:06 load { 4.12 3.60 4.24 }
+21:48:06 done
