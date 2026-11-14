@@ -474,8 +474,10 @@ fn lokyr_s_plugins_item_opens_the_settings_tab_at_the_plugin_manager_s_page_of_e
         actions.x + actions.width <= row.x + row.width + 0.5,
         "{actions:?} past {row:?}"
     );
+    // At the row's right, past its padding of 12 points.
+    let padding = 12.0 * fake.window(window).unwrap().size.scale as f32;
     assert!(
-        actions.x > row.x + row.width / 2.0,
+        (actions.x + actions.width - (row.x + row.width - padding)).abs() < 1.0,
         "{actions:?} of {row:?}"
     );
     let description = frame("description:lokyr/tabs");
@@ -550,4 +552,101 @@ fn lokyr_s_plugins_item_opens_the_settings_tab_at_the_plugin_manager_s_page_of_e
     let view = page_view(&app, window).unwrap();
     let scroll = view.surface.tree.by_key(&"plugins-scroll".into()).unwrap();
     assert!(view.surface.layout.scrolled(scroll) > 0.0);
+}
+
+/// A Sleip of a shell's script in `folder`: `search` finds `acme/notes`,
+/// of a long description, and `info` tells its versions once the file
+/// `go` is in `folder`.
+fn registry_sleip(folder: &std::path::Path) -> std::path::PathBuf {
+    use std::os::unix::fs::PermissionsExt as _;
+    let long = "Notes beside the terminal, of every pane's folder, kept in the \
+                plugin's state and shown in a panel that a key opens, which a \
+                description this long tells at length so that it wraps";
+    let path = folder.join("sleip");
+    std::fs::write(
+        &path,
+        format!(
+            concat!(
+                "#!/bin/sh\n",
+                "case \"$1\" in\n",
+                "search) echo '{{\"event\":\"found\",\"name\":\"acme/notes\",\"version\":\"1.0.0\",",
+                "\"description\":\"{long}\",\"capabilities\":[\"clipboard-write\"],",
+                "\"yanked\":false,\"api\":\"^0.1\",\"taken\":true}}'\n",
+                "  echo '{{\"event\":\"done\",\"found\":1}}' ;;\n",
+                "info) while [ ! -f '{folder}/go' ]; do sleep 0.02; done\n",
+                "  echo '{{\"event\":\"info\",\"name\":\"acme/notes\",\"version\":\"1.0.0\",",
+                "\"description\":\"{long}\",\"kind\":\"luau\",\"api\":\"^0.1\",",
+                "\"capabilities\":[\"clipboard-write\"],\"uses\":[],\"dependencies\":[],",
+                "\"versions\":[{{\"version\":\"1.0.0\",\"yanked\":false,",
+                "\"capabilities\":[\"clipboard-write\",\"title-text\",\"process-read\",\"terminal-read\"],",
+                "\"cksum\":\"sha256:00\",\"api\":\"^0.1\",\"taken\":true}}]}}' ;;\n",
+                "esac\n",
+            ),
+            long = long,
+            folder = folder.display(),
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    path
+}
+
+/// Clicks the middle of the node of `key` of the page's view in `window`.
+fn click_page_node(fake: &mut Fake, app: &mut App, window: WindowId, key: &str) {
+    let view = page_view(app, window).unwrap();
+    let frame = view.frame.unwrap();
+    let node = view
+        .surface
+        .tree
+        .by_key(&key.into())
+        .unwrap_or_else(|| panic!("{key}"));
+    let at = view.surface.layout.frame(&view.surface.tree, node).unwrap();
+    let scale = fake.window(window).unwrap().size.scale;
+    let middle = Point {
+        x: f64::from(frame.x + at.x + at.width / 2.0) / scale,
+        y: f64::from(frame.y + at.y + at.height / 2.0) / scale,
+    };
+    fake.send(app, window, click(true, middle, Modifiers::NONE, 1));
+    fake.send(app, window, click(false, middle, Modifiers::NONE, 1));
+    frames(fake, app, window);
+}
+
+#[test]
+fn the_plugins_page_s_sidebar_keeps_its_width_whatever_its_part_shows() {
+    let folder = super::installed::shelf("settings-sidebar");
+    let (mut fake, mut app, _) = two_tabs();
+    app.packages.sleip = Some(registry_sleip(&folder));
+    let window = open(&mut fake, &mut app, "plugin-manager.open");
+    let width = |app: &App| {
+        let view = page_view(app, window).unwrap();
+        let tree = &view.surface.tree;
+        let node = tree.by_key(&"sidebar".into()).unwrap();
+        view.surface.layout.frame(tree, node).unwrap().width
+    };
+    let has = |app: &App, key: &str| {
+        page_view(app, window).is_some_and(|view| view.surface.tree.by_key(&key.into()).is_some())
+    };
+    let installed = width(&app);
+    let scale = fake.window(window).unwrap().size.scale as f32;
+    assert_eq!(installed, 170.0 * scale, "the sidebar's own width");
+    // The registry's part, of a long description.
+    tap(
+        &mut fake,
+        &mut app,
+        window,
+        KeyCode::ArrowDown,
+        Modifiers::NONE,
+    );
+    run_until(&mut fake, &mut app, |_, app| has(app, "found:acme/notes"));
+    frames(&mut fake, &mut app, window);
+    assert_eq!(width(&app), installed);
+    // A plugin's details, while they are read, then read.
+    click_page_node(&mut fake, &mut app, window, "details:acme/notes");
+    assert!(has(&app, "reading"));
+    assert_eq!(width(&app), installed);
+    std::fs::write(folder.join("go"), "").unwrap();
+    run_until(&mut fake, &mut app, |_, app| has(app, "versions-list"));
+    frames(&mut fake, &mut app, window);
+    assert_eq!(width(&app), installed);
+    let _ = std::fs::remove_dir_all(&folder);
 }

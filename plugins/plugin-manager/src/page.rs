@@ -97,6 +97,8 @@ fn sidebar(cx: &mut Cx<'_>) -> Node {
             }
         })
         .collect();
+    // Its selection tells where the keyboard is, of no ring, as macOS's
+    // sidebars show none.
     let mut list = Node::list(row, Section::ALL.len(), (0, items))
         .key(SECTIONS)
         .label(message(cx, "page-plugins", &[]))
@@ -104,17 +106,23 @@ fn sidebar(cx: &mut Cx<'_>) -> Node {
             width: Length::Fraction(1.0),
             height: Length::Fraction(1.0),
             ..Layout::default()
+        })
+        .style(Style {
+            hides_ring: true,
+            ..Style::default()
         });
     if let Kind::List(list) = &mut list.kind {
         list.row_height = Some(ROW);
         list.menu = true;
     }
+    // Of its own width alone, whatever the part beside it holds.
     Node::container(vec![list])
         .key("sidebar")
         .role(Role::Group)
         .layout(Layout {
             direction: Direction::Column,
             width: Length::Points(SIDEBAR),
+            min_width: Length::Points(SIDEBAR),
             height: Length::Fraction(1.0),
             padding: Edges::all(10.0),
             ..Layout::default()

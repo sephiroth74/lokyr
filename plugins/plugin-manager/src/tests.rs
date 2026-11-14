@@ -219,6 +219,12 @@ fn the_page_lists_the_installed_plugins_then_the_built_in_ones_each_of_its_butto
     assert!(button(&tree, "toggle:lokyr/tabs").is_some());
     assert!(button(&tree, "remove:lokyr/tabs").is_none());
     assert!(button(&tree, &format!("toggle:{NAME}")).is_none());
+    // The sidebar's list shows no ring of the keyboard's focus, of a
+    // sidebar's own width.
+    let sections = find(&tree, SECTIONS).expect("the sidebar's list");
+    assert!(sections.style.hides_ring);
+    let sidebar = find(&tree, "sidebar").unwrap();
+    assert_eq!(sidebar.layout.min_width, sidebar.layout.width);
     // Each plugin a group of its name, for VoiceOver.
     let row = find(&tree, "plugin:acme/notes").unwrap();
     assert_eq!(row.role, Some(Role::Group));
