@@ -8,6 +8,8 @@ from 1.0.0; before it, a minor version may change what a previous one did.
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-11-14
+
 ### Added
 
 - A settings window, "Settings", of its own, which Lokyr › Open Settings Window opens, as does the command palette, or brings forward where it is open: its pages as tabs across the top, the page chosen below them; ⌘W, or Shell › Close Tab, closes it, no terminal's tab goes into it, and it shows none of the bars, buttons, tips, notices and panels of the terminals' windows, and stays opaque whatever `[window] background-opacity` says.
@@ -227,7 +229,8 @@ from 1.0.0; before it, a minor version may change what a previous one did.
 
 - The first numbered version, not distributed: the macOS app, a window of one pane, of Lokyr's own terminal core and Metal renderer, configured by `~/.config/lokyr/config.toml`.
 
-[Unreleased]: https://github.com/sephiroth74/lokyr/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/sephiroth74/lokyr/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/sephiroth74/lokyr/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/sephiroth74/lokyr/compare/v0.9.0...v1.0.0
 [0.9.0]: https://github.com/sephiroth74/lokyr/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/sephiroth74/lokyr/compare/v0.7.0...v0.8.0
