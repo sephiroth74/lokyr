@@ -868,10 +868,12 @@ fn place(host: &FakeHost, keys: &str) -> usize {
         .unwrap_or_else(|| panic!("no binding of {keys}"))
 }
 
-/// The text of the keys of the binding at `at`: a button's label, or a
-/// text's.
+/// The text of the keys of the binding at `at`: a button's label, or the
+/// text of keys that do not change.
 fn keys_of(tree: &Node, at: usize) -> Option<String> {
-    match &find_node(tree, &format!("keys:{at}"))?.kind {
+    let node = find_node(tree, &format!("keys:{at}"))
+        .or_else(|| find_node(tree, &format!("keys-text:{at}")))?;
+    match &node.kind {
         Kind::Button(button) => Some(button.label.clone()),
         Kind::Text(text) => Some(text.clone()),
         _ => None,
@@ -941,7 +943,7 @@ fn the_bindings_in_force_are_listed_by_category_of_their_keys_titles_and_context
     );
     // macOS's own: its keys a text, of no change nor removal.
     assert!(matches!(
-        find_node(&tree, &format!("keys:{SETTINGS}")).map(|node| &node.kind),
+        find_node(&tree, &format!("keys-text:{SETTINGS}")).map(|node| &node.kind),
         Some(Kind::Text(text)) if text == "⌘,"
     ));
     assert!(labelled(&tree, &format!("unbind:{SETTINGS}")).is_none());
@@ -1103,6 +1105,134 @@ fn a_default_removed_writes_false_the_config_s_own_goes_and_one_taken_away_comes
     )
     .unwrap();
     assert_eq!(written(&mut host), [app_key("keys", "cmd+q", None)]);
+}
+
+#[test]
+fn keys_that_do_not_change_take_no_click_and_a_default_shared_stays_as_told() {
+    let (mut host, mut plugin) = keyed_host();
+    let mut given = settings();
+    // A default of copy mode's `j` for the palette too, in its context.
+    let mut palette = binding(
+        "j",
+        Some("palette.next"),
+        (Some("Next"), Some(Category::Edit)),
+        true,
+    );
+    palette.when = Some("palette.open".to_owned());
+    given.keys.push(palette);
+    host.set_settings(given);
+    host.deliver(&mut plugin).unwrap();
+    rendered(&mut host, &mut plugin);
+    let _ = written(&mut host);
+    // macOS's own: its keys' click, by their text's key or a button's,
+    // records nothing.
+    for key in [format!("keys-text:{SETTINGS}"), format!("keys:{SETTINGS}")] {
+        host.ui_event(&mut plugin, &on(&key, UiEventKind::Click))
+            .unwrap();
+        let tree = rendered(&mut host, &mut plugin);
+        assert!(find_node(&tree, &format!("keys-field:{SETTINGS}")).is_none());
+    }
+    // A default of keys that another default shares: neither removed nor
+    // moved, the other named.
+    host.ui_event(
+        &mut plugin,
+        &on(&format!("unbind:{DOWN}"), UiEventKind::Click),
+    )
+    .unwrap();
+    assert!(written(&mut host).is_empty());
+    let tree = rendered(&mut host, &mut plugin);
+    let why = text_of(&tree, &format!("refused:binding:{DOWN}")).expect("why");
+    assert!(why.contains("binding-shared"), "{why}");
+    host.ui_event(
+        &mut plugin,
+        &on(&format!("keys:{DOWN}"), UiEventKind::Click),
+    )
+    .unwrap();
+    host.ui_event(
+        &mut plugin,
+        &recorded(&format!("keys-field:{DOWN}"), Some("k")),
+    )
+    .unwrap();
+    assert!(written(&mut host).is_empty());
+}
+
+#[test]
+fn keys_that_another_binding_takes_are_told_and_a_second_press_takes_their_place() {
+    let (mut host, mut plugin) = keyed_host();
+    let mut given = settings();
+    // The config's own, of its own spelling of ⇧⌘Y, and a global one.
+    given.keys.push(binding(
+        "shift+cmd+y",
+        Some("window.new"),
+        (Some("New Window"), Some(Category::Windows)),
+        false,
+    ));
+    given.keys.push(binding(
+        "global:ctrl+`",
+        Some("window.new"),
+        (Some("New Window"), Some(Category::Windows)),
+        false,
+    ));
+    host.set_settings(given);
+    host.deliver(&mut plugin).unwrap();
+    rendered(&mut host, &mut plugin);
+    let _ = written(&mut host);
+    // ⌘K's Clear to ⇧⌘Y, which the config's own takes: told, nothing
+    // written, the recorder staying.
+    host.ui_event(
+        &mut plugin,
+        &on(&format!("keys:{CLEAR}"), UiEventKind::Click),
+    )
+    .unwrap();
+    host.ui_event(
+        &mut plugin,
+        &recorded(&format!("keys-field:{CLEAR}"), Some("cmd+shift+y")),
+    )
+    .unwrap();
+    assert!(written(&mut host).is_empty());
+    let tree = rendered(&mut host, &mut plugin);
+    let told = text_of(&tree, &format!("taken:binding:{CLEAR}")).expect("told");
+    assert!(told.contains("binding-taken-again"), "{told}");
+    assert!(find_node(&tree, &format!("keys-field:{CLEAR}")).is_some());
+    // Pressed again: written at the config's own spelling, in its place.
+    host.ui_event(
+        &mut plugin,
+        &recorded(&format!("keys-field:{CLEAR}"), Some("cmd+shift+y")),
+    )
+    .unwrap();
+    assert_eq!(
+        written(&mut host),
+        [
+            app_key(
+                "keys",
+                "shift+cmd+y",
+                Some(Data::Text("pane.clear".to_owned()))
+            ),
+            app_key("keys", "cmd+k", Some(Data::Boolean(false))),
+        ]
+    );
+    host.deliver(&mut plugin).unwrap();
+    rendered(&mut host, &mut plugin);
+    // A global key stays one.
+    let global = place(&host, "global:ctrl+`");
+    host.ui_event(
+        &mut plugin,
+        &on(&format!("keys:{global}"), UiEventKind::Click),
+    )
+    .unwrap();
+    host.ui_event(
+        &mut plugin,
+        &recorded(&format!("keys-field:{global}"), Some("ctrl+shift+space")),
+    )
+    .unwrap();
+    assert_eq!(
+        written(&mut host)[0],
+        app_key(
+            "keys",
+            "global:ctrl+shift+space",
+            Some(Data::Text("window.new".to_owned()))
+        )
+    );
 }
 
 /// The panel of the new binding, and its menu of the commands.

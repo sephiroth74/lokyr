@@ -98,9 +98,17 @@ const BINDING_KEYS: &str = "keys:";
 /// The prefix of the key of the field of a binding's keys, as they change.
 const KEYS_FIELD: &str = "keys-field:";
 
+/// The prefix of the key of a binding's keys that do not change, a text.
+const KEYS_TEXT: &str = "keys-text:";
+
 /// The prefix of the key of the link that gives a default back, of keys
 /// that the config takes away.
 const RESTORE: &str = "restore:";
+
+/// The prefix of the key of the warning of keys recorded that another
+/// binding takes, by the binding's place, and of its place among the
+/// page's refusals.
+const TAKEN: &str = "taken:binding:";
 
 /// The keys of the buttons that open the panel of a new binding, above
 /// the bindings and below them.
@@ -184,6 +192,9 @@ pub struct SettingsPage {
     /// The binding whose keys change, by its place among the settings'
     /// bindings, whose field records them.
     editing: Option<usize>,
+    /// The keys recorded for the binding at its place that another binding
+    /// takes, told, which a second press of them writes.
+    confirming: Option<(usize, String)>,
     /// The new binding that Add's panel makes, while it shows.
     adding: Option<Adding>,
     /// Whether a font's family or style shows in the panes as a menu's
@@ -316,6 +327,7 @@ impl Plugin for SettingsPage {
                 // and one typed and not written yet stays.
                 Event::SettingsChanged => {
                     self.editing = None;
+                    self.confirming = None;
                     let refused = &self.refused;
                     self.typed.retain(|name, _| !refused.contains_key(name));
                     self.refused.clear();
@@ -686,13 +698,24 @@ impl SettingsPage {
                 )
             }
             UiEventKind::Click => {
+                let settings = page_settings(cx)?;
                 if let Some(at) = at(BINDING_KEYS) {
+                    if !settings.keys.get(at).is_some_and(changes) {
+                        return Ok(());
+                    }
                     self.editing = Some(at);
                     cx.request_render(page())?;
                     return cx.focus_node(page(), format!("{KEYS_FIELD}{at}").as_str());
                 }
-                let settings = page_settings(cx)?;
-                if let Some(binding) = at(UNBIND).and_then(|at| settings.keys.get(at)) {
+                if let Some((at, binding)) =
+                    at(UNBIND).and_then(|at| settings.keys.get(at).map(|binding| (at, binding)))
+                {
+                    // A default's keys that others share, which `false`
+                    // would take from them too, stay, as told.
+                    if let Some(why) = shared_refusal(cx, &settings, at, binding) {
+                        self.refused.insert(format!("binding:{at}"), why);
+                        return cx.request_render(page());
+                    }
                     // A default's keys take nothing; the config's own go.
                     let value = binding.default.then_some(Data::Boolean(false));
                     let written = cx.set_setting(KEYS, None, &binding.keys, value);
@@ -709,9 +732,11 @@ impl SettingsPage {
                 _ => Ok(()),
             },
             UiEventKind::Blur if at(KEYS_FIELD).is_some() && self.editing == at(KEYS_FIELD) => {
+                let at = at(KEYS_FIELD).unwrap_or_default();
                 self.editing = None;
-                self.refused
-                    .remove(&format!("binding:{}", at(KEYS_FIELD).unwrap_or_default()));
+                self.confirming = None;
+                self.refused.remove(&format!("binding:{at}"));
+                self.refused.remove(&format!("{TAKEN}{at}"));
                 cx.request_render(page())
             }
             _ => Ok(()),
@@ -780,17 +805,24 @@ impl SettingsPage {
     fn change_keys(&mut self, cx: &mut Cx<'_>, at: usize, text: &str) -> Result<(), Error> {
         let settings = page_settings(cx)?;
         let refusal = format!("binding:{at}");
+        let warning = format!("{TAKEN}{at}");
         let (Some(binding), text) = (settings.keys.get(at), text.trim()) else {
             return Ok(());
         };
-        let Some(command) = &binding.command else {
+        let Some(command) = binding.command.as_ref().filter(|_| changes(binding)) else {
             return Ok(());
         };
-        let same = lokyr_plugin_sdk::keys::parse_keys(text).ok()
-            == lokyr_plugin_sdk::keys::parse_keys(&binding.keys).ok();
-        if text.is_empty() || same {
+        // A global key stays one.
+        let keys = if binding.keys.starts_with(lokyr_plugin_sdk::keys::GLOBAL) {
+            format!("{}{text}", lokyr_plugin_sdk::keys::GLOBAL)
+        } else {
+            text.to_owned()
+        };
+        if text.is_empty() || same_keys(&keys, &binding.keys) {
             self.editing = None;
+            self.confirming = None;
             self.refused.remove(&refusal);
+            self.refused.remove(&warning);
             return cx.request_render(page());
         }
         // macOS's own keys, which no binding of the settings' takes.
@@ -805,7 +837,45 @@ impl SettingsPage {
             self.refused.insert(refusal, why);
             return cx.request_render(page());
         }
-        let written = cx.set_setting(KEYS, None, text, Some(binding_value(binding, command)));
+        // A default's old keys that others share, which `false` would take
+        // from them too.
+        if let Some(why) = shared_refusal(cx, &settings, at, binding) {
+            self.refused.insert(refusal, why);
+            return cx.request_render(page());
+        }
+        // Keys that another binding takes: told, a second press of them
+        // taking its place, of the config's own entry's spelling where it
+        // is the config's, so that no second entry of the same keys stays.
+        let taken = settings
+            .keys
+            .iter()
+            .enumerate()
+            .find(|(other, taken)| {
+                *other != at && taken.command.is_some() && same_keys(&taken.keys, &keys)
+            })
+            .map(|(_, taken)| taken);
+        let mut target = keys.clone();
+        if let Some(taken) = taken {
+            if self.confirming.as_ref() != Some(&(at, keys.clone())) {
+                let shown =
+                    lokyr_plugin_sdk::keys::macos_text(&keys).unwrap_or_else(|| keys.clone());
+                let why = message(
+                    cx,
+                    "binding-taken-again",
+                    &[("keys", shown), ("title", title_of(taken))],
+                );
+                self.confirming = Some((at, keys));
+                self.refused.remove(&refusal);
+                self.refused.insert(warning, why);
+                return cx.request_render(page());
+            }
+            if !taken.default {
+                target.clone_from(&taken.keys);
+            }
+        }
+        self.confirming = None;
+        self.refused.remove(&warning);
+        let written = cx.set_setting(KEYS, None, &target, Some(binding_value(binding, command)));
         if let Err(error) = written {
             self.refused.insert(refusal, error.message);
             return cx.request_render(page());
@@ -2048,6 +2118,71 @@ fn add_row(cx: &mut Cx<'_>, key: &str) -> Node {
         })
 }
 
+/// Whether the keys of `binding` change in the Keys part: a command's,
+/// alone or of its arguments and context; neither macOS's own, of its app
+/// menu, nor `false`, nor the config's commands of several contexts, as
+/// the file tells them.
+fn changes(binding: &SettingBinding) -> bool {
+    binding.command.is_some() && !binding.system && (binding.default || !binding.detailed)
+}
+
+/// Whether `a` and `b` are the same keys, as they parse, whatever their
+/// spelling, both global or neither.
+fn same_keys(a: &str, b: &str) -> bool {
+    let parsed = |keys: &str| match keys.strip_prefix(lokyr_plugin_sdk::keys::GLOBAL) {
+        Some(keys) => (lokyr_plugin_sdk::keys::parse_keys(keys).ok(), true),
+        None => (lokyr_plugin_sdk::keys::parse_keys(keys).ok(), false),
+    };
+    let (a, b) = (parsed(a), parsed(b));
+    a.0.is_some() && a == b
+}
+
+/// What `binding` does, as its row tells it: its command's title, or its
+/// command.
+fn title_of(binding: &SettingBinding) -> String {
+    binding
+        .title
+        .clone()
+        .or_else(|| binding.command.clone())
+        .unwrap_or_default()
+}
+
+/// Why the keys of the default `binding`, at `at` among the bindings of
+/// `settings`, cannot be taken away: the other defaults of the same keys,
+/// in their contexts, which the `false` at them would take away too.
+fn shared_refusal(
+    cx: &mut Cx<'_>,
+    settings: &Settings,
+    at: usize,
+    binding: &SettingBinding,
+) -> Option<String> {
+    if !binding.default {
+        return None;
+    }
+    let others: Vec<String> = settings
+        .keys
+        .iter()
+        .enumerate()
+        .filter(|(other, shared)| {
+            *other != at
+                && shared.default
+                && shared.command.is_some()
+                && same_keys(&shared.keys, &binding.keys)
+        })
+        .map(|(_, shared)| title_of(shared))
+        .collect();
+    if others.is_empty() {
+        return None;
+    }
+    let shown =
+        lokyr_plugin_sdk::keys::macos_text(&binding.keys).unwrap_or_else(|| binding.keys.clone());
+    Some(message(
+        cx,
+        "binding-shared",
+        &[("keys", shown), ("titles", others.join(", "))],
+    ))
+}
+
 /// The row of the binding `binding`, at `at` among the settings' bindings:
 /// its command's title, or what it takes away, its name, arguments and
 /// context, and whether it is the config's; at its right its keys, a
@@ -2099,6 +2234,18 @@ fn binding_row(
     if let Some(why) = refused.get(&format!("binding:{at}")) {
         about.push(refusal(why, &format!("refused:binding:{at}")));
     }
+    if let Some(why) = refused.get(&format!("{TAKEN}{at}")) {
+        about.push(
+            Node::text(why.clone())
+                .key(format!("{TAKEN}{at}").as_str())
+                .style(Style {
+                    color: Some(Token::from("text.warning")),
+                    text_size: Some(TextSize::Small),
+                    ..Style::default()
+                })
+                .layout(wrapped()),
+        );
+    }
     let about = Node::container(about).layout(Layout {
         direction: Direction::Column,
         gap: 3.0,
@@ -2107,11 +2254,6 @@ fn binding_row(
         ..Layout::default()
     });
     let shown = lokyr_plugin_sdk::keys::macos_text(keys).unwrap_or_else(|| keys.clone());
-    // The keys of a command, alone or of its arguments and context, which
-    // change; neither macOS's own, of its app menu, nor `false`, nor the
-    // config's commands of several contexts, as the file tells them.
-    let changes =
-        binding.command.is_some() && !binding.system && (binding.default || !binding.detailed);
     let keys_node = if editing {
         Node::field(message(cx, "binding-press", &[]))
             .key(format!("{KEYS_FIELD}{at}").as_str())
@@ -2123,7 +2265,7 @@ fn binding_row(
                 width: Length::Points(150.0),
                 ..Layout::default()
             })
-    } else if changes {
+    } else if changes(binding) {
         Node::button(shown.as_str())
             .key(format!("{BINDING_KEYS}{at}").as_str())
             .label(message(cx, "binding-change", &[("keys", shown.clone())]))
@@ -2131,7 +2273,7 @@ fn binding_row(
             .style(terminal.clone())
     } else {
         Node::text(shown.as_str())
-            .key(format!("{BINDING_KEYS}{at}").as_str())
+            .key(format!("{KEYS_TEXT}{at}").as_str())
             .style(terminal.clone())
     };
     let mut row = vec![about, keys_node];

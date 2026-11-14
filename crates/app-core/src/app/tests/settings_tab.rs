@@ -1449,7 +1449,7 @@ fn the_keys_part_lists_the_defaults_and_a_default_changed_moves_its_shortcut() {
         .iter()
         .position(|binding| binding.invocation.command == "app.quit")
         .expect("Quit's default");
-    assert_eq!(page_text(&app, own, &format!("keys:{quit}")), "⌘Q");
+    assert_eq!(page_text(&app, own, &format!("keys-text:{quit}")), "⌘Q");
     // Changed: its new keys and `false` for the old, in the file, and the
     // keymap's shortcut moved.
     settings_event(
