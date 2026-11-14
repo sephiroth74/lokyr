@@ -28,6 +28,7 @@ from 1.0.0; before it, a minor version may change what a previous one did.
 
 ### Fixed
 
+- Choosing in a font picker the family that the config names already, after previewing another, shows it again, where the family previewed stayed in the panes.
 - A file of the themes' folder that is no regular file, as a pipe, or of more than 1 MiB, or an `.itermcolors` file whose property list nests or repeats its values past what a color preset holds, is refused as a theme that does not read, where it could hold Lokyr or make it quit.
 - With the tab bar out of the titlebar, at the bottom, in a column or below a titled bar, and two tabs or more, the window's title stands centred, as with a single tab, and no longer lies over the plugins' buttons beside the window's buttons.
 - A single tab's title in the titlebar is the window's title, the grid's size too, in the system title's look, bold, and dims as the window loses the focus, alike with one tab and with several.

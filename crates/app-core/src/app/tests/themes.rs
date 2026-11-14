@@ -571,6 +571,65 @@ fn a_picker_lists_the_themes_previews_one_and_names_the_chosen_one() {
 }
 
 #[test]
+fn a_family_chosen_after_a_preview_shows_and_its_reset_hides_the_styles_that_the_default_lacks() {
+    use lokyr_kernel::plugins::host::FontFace;
+    let directory =
+        std::env::temp_dir().join(format!("lokyr-app-family-written-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&directory);
+    std::fs::create_dir_all(&directory).unwrap();
+    let path = directory.join("config.toml");
+    std::fs::write(&path, "[font]\nfamily = \"Menlo\"\n").unwrap();
+    let config = Config::read(&path).unwrap();
+    let drawing = Drawing::new(config.font.clone()).unwrap();
+    let mut fake = Fake::default();
+    let mut app = App::new(Some(drawing), config, Some(path.clone())).with_program(quiet());
+    fake.start(&mut app);
+    let shown = |app: &App| app.drawing.as_ref().unwrap().font.family().to_owned();
+    assert_eq!(shown(&app), "Menlo");
+    // Mono previewed, then Menlo, the config's own, chosen: Menlo shows,
+    // though the config changes not.
+    app.preview_font(&mut fake, Some("Mono".to_owned()));
+    assert_eq!(shown(&app), "Mono");
+    app.set_font(&mut fake, "Menlo");
+    assert_eq!(app.font_preview, None);
+    assert_eq!(shown(&app), "Menlo");
+    // A style previewed of the family shown, the previewed one: one that
+    // it lacks is not taken, one that it has is.
+    app.preview_font(&mut fake, Some("Mono".to_owned()));
+    app.preview_font_style(&mut fake, FontFace::Bold, "Heavy".to_owned());
+    assert_eq!(app.font_in_force().bold_style, None);
+    app.preview_font_style(&mut fake, FontFace::Regular, "Regular".to_owned());
+    assert_eq!(
+        app.font_in_force()
+            .style
+            .as_ref()
+            .map(ToString::to_string)
+            .as_deref(),
+        Some("Regular")
+    );
+    app.preview_font(&mut fake, None);
+    // Reset: the default family, the config's styles that it lacks
+    // commented out where they were.
+    std::fs::write(&path, "[font]\nfamily = \"Menlo\"\nbold-style = \"Bold\"\n").unwrap();
+    app.reload(&mut fake);
+    assert_eq!(
+        app.config
+            .font
+            .bold_style
+            .as_ref()
+            .map(ToString::to_string)
+            .as_deref(),
+        Some("Bold")
+    );
+    app.set_setting(&mut fake, &["font".to_owned()], "family", None);
+    let written = std::fs::read_to_string(&path).unwrap();
+    assert!(!written.contains("family"), "{written}");
+    assert!(written.contains("# bold-style = \"Bold\""), "{written}");
+    assert_eq!(app.config.font.bold_style, None);
+    let _ = std::fs::remove_dir_all(directory);
+}
+
+#[test]
 fn a_picker_lists_the_monospaced_families_previews_one_and_names_the_chosen_one() {
     let (mut fake, mut app, directory) = with_themes("fonts", "[font]\nsize = 13\n", &[]);
     let list = |app: &App, configured: Option<&str>| {

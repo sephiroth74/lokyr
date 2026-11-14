@@ -151,17 +151,23 @@ impl FontBackend for Fonts {
     }
 
     fn family(&mut self, name: &str) -> Option<Vec<FaceInfo>> {
+        let face = |style: &str, weight: f32| FaceInfo {
+            id: FaceId(0),
+            style: style.to_owned(),
+            weight,
+            italic: false,
+            oblique: false,
+            width: 0.0,
+            in_group: false,
+            preferred: false,
+        };
+        // Menlo of a bold face too, the default family of a regular one.
         FAMILIES.contains(&name).then(|| {
-            vec![FaceInfo {
-                id: FaceId(0),
-                style: "Regular".to_owned(),
-                weight: 400.0,
-                italic: false,
-                oblique: false,
-                width: 0.0,
-                in_group: false,
-                preferred: false,
-            }]
+            let mut faces = vec![face("Regular", 400.0)];
+            if name == "Menlo" {
+                faces.push(face("Bold", 700.0));
+            }
+            faces
         })
     }
 

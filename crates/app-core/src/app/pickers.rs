@@ -239,10 +239,29 @@ impl<B: Backend> App<B> {
     /// place of those that it lacks.
     pub(super) fn font_in_force(&self) -> FontConfig {
         let mut font = self.family_in_force();
+        if self.style_preview.is_empty() {
+            return font;
+        }
+        // A style that the family shown has, the previewed one or the
+        // config's.
+        let mut fonts = B::fonts();
+        let family = font
+            .family
+            .as_ref()
+            .map_or_else(|| fonts.default_family(), ToString::to_string);
+        let faces = fonts.family(&family);
         for (face, style) in &self.style_preview {
+            let held = faces.as_ref().is_none_or(|faces| {
+                faces
+                    .iter()
+                    .any(|own| own.style.eq_ignore_ascii_case(style))
+            });
             let Ok(style) = Name::try_from(style.clone()) else {
                 continue;
             };
+            if !held {
+                continue;
+            }
             let slot = match face {
                 FontFace::Regular => &mut font.style,
                 FontFace::Bold => &mut font.bold_style,
@@ -318,8 +337,6 @@ impl<B: Backend> App<B> {
     /// where they were, as the config would refuse them, for the user to
     /// take back.
     pub(super) fn set_font(&mut self, platform: &mut dyn Platform, family: &str) {
-        self.font_preview = None;
-        self.style_preview.clear();
         let lacking = B::fonts()
             .family(family)
             .map(|faces| styles_within(&self.config.font, &faces).1)
@@ -327,18 +344,52 @@ impl<B: Backend> App<B> {
         let written = match &self.config_file {
             Some(file) => {
                 config::set_string_hiding(&file.path, "font", ("family", family), &lacking)
-                    .map(|()| file.path.clone())
                     .map_err(|error| error.to_string())
             }
             None => Err("there is no config file".to_owned()),
         };
-        match written {
-            // The config read again, which takes the family that it names.
-            Ok(_) => self.reload(platform),
-            Err(error) => {
-                eprintln!("lokyr: the font family cannot be named in the config: {error}");
-                self.show_font(platform);
-            }
+        if let Err(error) = &written {
+            eprintln!("lokyr: the font family cannot be named in the config: {error}");
+        }
+        self.font_written(platform, written.is_ok());
+    }
+
+    /// Takes the config's `[font] family` back to the default one, as the
+    /// settings' Reset does, a preview ending: the config's styles that the
+    /// default family lacks commented out where they were, as `set_font`
+    /// does of a family chosen.
+    pub(super) fn unset_font(&mut self, platform: &mut dyn Platform) {
+        let mut fonts = B::fonts();
+        let default = fonts.default_family();
+        let lacking = fonts
+            .family(&default)
+            .map(|faces| styles_within(&self.config.font, &faces).1)
+            .unwrap_or_default();
+        let written = match &self.config_file {
+            Some(file) => config::unset_hiding(&file.path, "font", "family", &lacking)
+                .map_err(|error| error.to_string()),
+            None => Err("there is no config file".to_owned()),
+        };
+        if let Err(error) = &written {
+            eprintln!("lokyr: the font family cannot be taken back in the config: {error}");
+        }
+        self.font_written(platform, written.is_ok());
+    }
+
+    /// Ends the font's previews as a family is written, `written` where the
+    /// file took it: the config read again, which takes the family that it
+    /// names; the font in force shown where that changed nothing of the
+    /// config's, as a family chosen that the config names already, after
+    /// another's preview.
+    fn font_written(&mut self, platform: &mut dyn Platform, written: bool) {
+        let previewed = self.font_preview.take().is_some() | !self.style_preview.is_empty();
+        self.style_preview.clear();
+        let before = self.config.font.clone();
+        if written {
+            self.reload(platform);
+        }
+        if previewed && self.config.font == before {
+            self.show_font(platform);
         }
     }
 

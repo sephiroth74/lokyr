@@ -200,12 +200,18 @@ impl<B: Backend> App<B> {
         // A family of the text, as a picker names it: the config's styles
         // that it lacks commented out, as the font would not apply of
         // them.
-        if path == ["font"]
-            && key == "family"
-            && let Some(lokyr_kernel::plugins::Data::Text(family)) = value
-        {
-            self.set_font(platform, family);
-            return;
+        if path == ["font"] && key == "family" {
+            match value {
+                Some(lokyr_kernel::plugins::Data::Text(family)) => {
+                    self.set_font(platform, family);
+                    return;
+                }
+                None => {
+                    self.unset_font(platform);
+                    return;
+                }
+                Some(_) => {}
+            }
         }
         let value = value.and_then(config::schema::toml_value_of);
         let written = match &self.config_file {

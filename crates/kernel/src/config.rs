@@ -1757,6 +1757,26 @@ pub fn set_string_hiding(
     (key, value): (&str, &str),
     hidden: &[&str],
 ) -> Result<(), Error> {
+    write_hiding(path, section, (key, Some(value)), hidden)
+}
+
+/// Takes the key `key` of the section `[section]` of the config file at
+/// `path` away, back to its default, and comments out the section's keys
+/// `hidden`, as [`set_string_hiding`] does: a font family taken back to the
+/// default one leaves the styles that it lacks so.
+pub fn unset_hiding(path: &Path, section: &str, key: &str, hidden: &[&str]) -> Result<(), Error> {
+    write_hiding(path, section, (key, None), hidden)
+}
+
+/// Sets the key of the section `[section]` of the config file at `path` to
+/// its string, or takes it away of none, and comments out the section's
+/// keys `hidden`, as [`set_string_hiding`] tells.
+fn write_hiding(
+    path: &Path,
+    section: &str,
+    (key, value): (&str, Option<&str>),
+    hidden: &[&str],
+) -> Result<(), Error> {
     let failed = |path: &Path, message: String| Error {
         path: path.to_owned(),
         position: None,
@@ -1835,14 +1855,17 @@ pub fn set_string_hiding(
     // A key that the file has keeps its comments, those above its line,
     // which are the key's, and the one after its value, which is the
     // value's.
-    match table.get_mut(key) {
-        Some(toml_edit::Item::Value(old)) => {
+    match (table.get_mut(key), value) {
+        (Some(toml_edit::Item::Value(old)), Some(value)) => {
             let decor = old.decor().clone();
             *old = toml_edit::Value::from(value);
             *old.decor_mut() = decor;
         }
-        _ => {
+        (_, Some(value)) => {
             table.insert(key, toml_edit::value(value));
+        }
+        (_, None) => {
+            table.remove(key);
         }
     }
     if !after_section.is_empty() {
