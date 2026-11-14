@@ -2,6 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "lokyr/splits",
   "type": "object",
+  "description": "The panes of a tab: the inactive ones' fade, their titles, and the focus following the mouse.",
   "properties": {
     "dim-inactive": {
       "description": "How much the panes that have not the keyboard fade into their background, from 0, not at all, to 1.",

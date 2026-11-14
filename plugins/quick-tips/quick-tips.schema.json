@@ -2,6 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "lokyr/quick-tips",
   "type": "object",
+  "description": "The quick tips, a card of a feature that shows now and then as Lokyr starts.",
   "properties": {
     "every": {
       "description": "The days between two tips as Lokyr starts; 0 for a tip at every start.",

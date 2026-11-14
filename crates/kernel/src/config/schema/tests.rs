@@ -471,3 +471,135 @@ fn the_settings_sections_are_the_schema_s_in_its_order_of_the_values_in_force() 
 fn sections_of_the_parser() -> Vec<&'static str> {
     sections().iter().map(|(name, _)| *name).collect()
 }
+
+#[test]
+fn a_text_that_the_parser_refuses_empty_is_of_one_character_at_least() {
+    let schema = schema();
+    let mut wrong = Vec::new();
+    for (section, keys) in parser_sections(&schema) {
+        for (key, node) in &keys {
+            if node["type"] != "string" || node.get("enum").is_some() {
+                continue;
+            }
+            let refused = !parses(&format!("[{section}]\n{key} = \"\"\n"));
+            let shortest = node.get("minLength").and_then(Value::as_u64).unwrap_or(0);
+            if refused != (shortest >= 1) {
+                wrong.push(format!(
+                    "{section}.{key}: refused {refused}, minLength {shortest}"
+                ));
+            }
+        }
+    }
+    assert!(wrong.is_empty(), "{wrong:#?}");
+}
+
+#[test]
+fn every_section_and_key_tells_what_it_does_in_words_of_no_markup() {
+    let words = |text: &str| !text.trim().is_empty() && !text.contains('<') && !text.ends_with(':');
+    let config = Config::default();
+    let mut wrong = Vec::new();
+    let mut sections = super::sections(&config);
+    for (namespace, plugin) in PLUGINS {
+        let node: super::Ordered = serde_json::from_str(plugin).unwrap();
+        sections.push(super::section(
+            namespace,
+            Some("lokyr/plugin"),
+            &node,
+            |_| None,
+        ));
+    }
+    for section in &sections {
+        if !words(&section.description) {
+            wrong.push(format!("[{}]: {:?}", section.name, section.description));
+        }
+        for key in &section.keys {
+            if !words(&key.description) {
+                wrong.push(format!(
+                    "{}.{}: {:?}",
+                    section.name, key.name, key.description
+                ));
+            }
+            if key.platforms.is_empty() {
+                wrong.push(format!("{}.{}: no platforms", section.name, key.name));
+            }
+        }
+    }
+    // The schema's plugins' section too, which the guide tells.
+    let schema = schema();
+    let plugins = schema["properties"]["plugins"]["description"]
+        .as_str()
+        .unwrap();
+    if !words(plugins) {
+        wrong.push(format!("[plugins]: {plugins:?}"));
+    }
+    assert!(wrong.is_empty(), "{wrong:#?}");
+}
+
+#[test]
+fn the_plugins_sections_are_those_of_the_guide_and_a_group_s_keys_go_together() {
+    let schema = schema();
+    let listed: Vec<&str> = schema["x-plugin-sections"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|name| name.as_str().unwrap())
+        .collect();
+    let held: Vec<&str> = PLUGINS.iter().map(|(namespace, _)| *namespace).collect();
+    assert_eq!(listed, held);
+    // Each key of a group is in it, and each of its keys names the same
+    // group, the first of which holds its guide's text.
+    for (section, keys) in parser_sections(&schema) {
+        for (key, node) in &keys {
+            let Some(group) = node.get("x-group").and_then(Value::as_array) else {
+                continue;
+            };
+            let group: Vec<&str> = group.iter().map(|key| key.as_str().unwrap()).collect();
+            assert!(group.contains(&key.as_str()), "{section}.{key}: {group:?}");
+            for member in &group {
+                let member_node = keys
+                    .get(*member)
+                    .unwrap_or_else(|| panic!("{section}.{member} of {key}'s group"));
+                assert_eq!(
+                    member_node["x-group"], node["x-group"],
+                    "{section}.{member} of {key}'s group"
+                );
+            }
+            let first = &keys[group[0]];
+            assert!(
+                first["x-guide"]
+                    .as_str()
+                    .is_some_and(|guide| !guide.is_empty()),
+                "{section}.{}: the group's text",
+                group[0]
+            );
+        }
+    }
+}
+
+#[test]
+fn a_number_is_its_default_of_the_same_value_whole_or_not() {
+    use lokyr_plugin_sdk::host::SettingKind;
+    use lokyr_plugin_sdk::message::Data;
+    let tabs: super::Ordered = serde_json::from_str(PLUGINS[0].1).unwrap();
+    let section = super::section("tabs", Some("lokyr/tabs"), &tabs, |key| {
+        (key == "column-width").then_some(Data::Number(200.0))
+    });
+    let key = section
+        .keys
+        .iter()
+        .find(|key| key.name == "column-width")
+        .unwrap();
+    assert!(matches!(key.kind, SettingKind::Number { .. }));
+    assert_eq!(key.value, key.default);
+    assert_eq!(key.value, Some(Data::Integer(200)));
+    // A fraction stays one, as the font's size of `15.5`.
+    let config = Config::parse("[font]\nsize = 15.5\n", Path::new("config.toml")).unwrap();
+    let sections = super::sections(&config);
+    let size = sections[0]
+        .keys
+        .iter()
+        .find(|key| key.name == "size")
+        .unwrap();
+    assert_eq!(size.value, Some(Data::Number(15.5)));
+    assert_eq!(size.default, Some(Data::Integer(13)));
+}

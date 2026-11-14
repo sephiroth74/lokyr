@@ -2,6 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "lokyr/command-header",
   "type": "object",
+  "description": "The command's header across the top of a pane, of the command that runs or ran last.",
   "properties": {
     "background": {
       "description": "The theme's token of the pill's background, by its name, as \"panel.bg\" or \"accent\".",
@@ -65,6 +66,7 @@
       "minimum": 0,
       "maximum": 200,
       "x-step": 1,
+      "default": 0,
       "x-platforms": ["macos"],
       "x-guide": "The size of the header's text, which takes the terminal's font, as [`[font]`](#font) names it.\n\n| Values | Default |\n|---|---|\n| points, from `0` to `200`; `0` for the terminal's own size | `0` |\n\n- Of the terminal's own size, the pill is about a row of the terminal high, its padding past it; a smaller size keeps it within the row.\n- It applies at once, as you save the file, to a header that shows too.",
       "x-example": "0",

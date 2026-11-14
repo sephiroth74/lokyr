@@ -38,7 +38,7 @@ Under each key's name, a small line tells the platforms where the key applies: m
 
 ### A complete example
 
-Every key that Lokyr reads, with the values that it takes in the comment. Most show a value other than their default; `cell-width`, `antialias` and `padding-y` show theirs:
+Every key that Lokyr reads, with the values that it takes in the comment. Most show a value other than their default; a few show theirs, such as `cell-width`, `antialias` and `padding-y`:
 
 ```toml
 config_version = 1
@@ -113,7 +113,7 @@ term = "xterm-lokyr"                 # the TERM that programs see
 unicode-widths = "8"                 # current | 8: the width tables
 ambiguous-width = 2                  # 1 | 2: the cells of an ambiguous character
 normalization = "nfc"                # none | nfc | nfd | hfs+
-shell-integration = true             # true | false: the shell tells its prompts and its folder
+shell-integration = false            # true | false: the shell tells its prompts and its folder
 image-memory = 128                   # MiB of a pane's inline images, 0 showing none
 
 [scrollback]

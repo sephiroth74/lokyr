@@ -762,7 +762,7 @@ export type SettingKey = {
 export type SettingKind =
     | "boolean"
     | { number: { minimum: number?, maximum: number?, step: number?, integer: boolean? } }
-    | { text: { max_length: number?, examples: { string }? } }
+    | { text: { min_length: number?, max_length: number?, examples: { string }? } }
     | { choice: { choices: { Data } } }
     | { list: { max_length: number? } }
     | "other"

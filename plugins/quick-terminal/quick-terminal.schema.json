@@ -2,6 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "lokyr/quick-terminal",
   "type": "object",
+  "description": "The quick terminal, a window that a global key slides in over every app's.",
   "properties": {
     "position": {
       "description": "The edge of the screen that the quick terminal comes from, or its centre, where it fades in and out.",

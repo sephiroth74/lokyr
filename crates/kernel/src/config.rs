@@ -1848,7 +1848,11 @@ pub fn set_string_hiding(
     if !after_section.is_empty() {
         hide_after(&mut document, section, &after_section);
     }
-    write_whole(&target, &document.to_string())
+    // The file as it would be, which the parser takes or refuses whole, as
+    // of a value past its bound: a refused one is not written.
+    let written = document.to_string();
+    Config::parse(&written, &target)?;
+    write_whole(&target, &written)
         .map_err(|error| failed(&target, format!("it cannot be written: {error}")))
 }
 
@@ -3810,6 +3814,18 @@ long-command = 0
         let error = set_string(&file, "clipboard", "confirm-paste", "never").unwrap_err();
         assert_eq!(error.position, Some(Position { line: 2, column: 1 }));
         assert_eq!(fs::read_to_string(&file).unwrap(), "[font]\nsise = 14\n");
+        // So is a value that the parser refuses, past its bound or not one
+        // of its key's values.
+        fs::write(&file, "[font]\nsize = 14\n").unwrap();
+        let long = "M".repeat(257);
+        let error = set_string(&file, "font", "family", &long).unwrap_err();
+        assert!(
+            error.message.contains("256 characters at most"),
+            "{error:?}"
+        );
+        assert!(set_string(&file, "clipboard", "confirm-paste", "sometimes").is_err());
+        assert!(set_string(&file, "font", "family", "").is_err());
+        assert_eq!(fs::read_to_string(&file).unwrap(), "[font]\nsize = 14\n");
         // And no file of its own is left beside it.
         let left: Vec<_> = fs::read_dir(&root)
             .unwrap()

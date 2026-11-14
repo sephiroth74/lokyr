@@ -19,6 +19,7 @@
       "properties": {
         "family": {
           "type": "string",
+          "minLength": 1,
           "maxLength": 256,
           "description": "The font family, by its name, as Font Book shows it on macOS, such as `\"Menlo\"` or `\"CaskaydiaCove NFM\"`.",
           "x-platforms": ["macos"],
@@ -41,6 +42,7 @@
         },
         "style": {
           "type": "string",
+          "minLength": 1,
           "maxLength": 256,
           "description": "The face of the text that has no style, by the name that the font gives it, such as `\"SemiBold\"` or `\"Light\"`.",
           "x-platforms": ["macos"],
@@ -51,8 +53,9 @@
         },
         "bold-style": {
           "type": "string",
+          "minLength": 1,
           "maxLength": 256,
-          "description": "The faces of bold, italic and bold italic text, named as `style` names its face.",
+          "description": "The face of bold text, named as `style` names its face.",
           "x-platforms": ["macos"],
           "x-group": ["bold-style", "italic-style", "bold-italic-style"],
           "x-guide": "The faces of bold, italic and bold italic text, named as `style` names its face.\n\n- **Default of `bold-style`**: the family's upright face heavier than the regular one, nearest to Bold's weight, or one step past the regular one's: Regular takes Bold, SemiBold takes Bold, and Bold takes ExtraBold. A family without one draws its regular face heavier.\n- **Default of `italic-style`**: the family's italic face nearest to the regular one's weight. A family without italics slants its regular face.\n- **Default of `bold-italic-style`**: the family's italic face nearest to the bold one's weight. A family without one slants its bold face, or draws its italic one heavier.\n- The three take faces of the regular one's width. An italic is a true italic rather than an oblique when the family has both. A family of italics alone takes its heavier italic as bold. Of two faces as near to a weight, the heavier is taken for Bold's and the lighter for the regular one's, whatever order macOS lists them in.",
@@ -62,6 +65,8 @@
         },
         "italic-style": {
           "type": "string",
+          "description": "The face of italic text, named as `style` names its face.",
+          "minLength": 1,
           "maxLength": 256,
           "x-platforms": ["macos"],
           "x-group": ["bold-style", "italic-style", "bold-italic-style"],
@@ -70,6 +75,8 @@
         },
         "bold-italic-style": {
           "type": "string",
+          "description": "The face of bold italic text, named as `style` names its face.",
+          "minLength": 1,
           "maxLength": 256,
           "x-platforms": ["macos"],
           "x-group": ["bold-style", "italic-style", "bold-italic-style"],
@@ -78,6 +85,7 @@
         },
         "non-ascii-family": {
           "type": "string",
+          "minLength": 1,
           "maxLength": 256,
           "description": "The family of every character past ASCII, such as `\"Hiragino Sans\"` for Japanese text.",
           "x-platforms": ["macos"],
@@ -92,7 +100,7 @@
           "minimum": 0.5,
           "maximum": 3,
           "x-step": 0.05,
-          "description": "The height and the width of the grid's cells, as factors of the face's line height and of its characters' advance.",
+          "description": "The height of the grid's cells, as a factor of the face's line height.",
           "x-platforms": ["macos"],
           "x-group": ["line-height", "cell-width"],
           "x-guide": "The height and the width of the grid's cells, as factors of the face's line height and of its characters' advance.\n\n| Values | Default |\n|---|---|\n| from `0.5` to `3` | `1` |\n\nA factor below one makes a closer grid, and can make a cell smaller than the glyphs of the face, which then overlap their neighbours' cells, or are cut where the window ends; a factor above one leaves room around them.",
@@ -101,6 +109,7 @@
         },
         "cell-width": {
           "type": "number",
+          "description": "The width of the grid's cells, as a factor of the face's characters' advance.",
           "default": 1,
           "x-platforms": ["macos"],
           "x-group": ["line-height", "cell-width"],
@@ -121,7 +130,7 @@
         "builtin-box-drawing": {
           "type": "boolean",
           "default": true,
-          "description": "Whether Lokyr draws these characters itself, at the cell's size and to the pixel, rather than taking them from the font:",
+          "description": "Whether Lokyr draws the box drawing characters, the block elements and braille itself, at the cell's size and to the pixel, rather than taking them from the font.",
           "x-platforms": ["macos"],
           "x-group": ["builtin-box-drawing", "builtin-powerline"],
           "x-guide": "Whether Lokyr draws these characters itself, at the cell's size and to the pixel, rather than taking them from the font:\n\n- `builtin-box-drawing`: the box drawing characters, such as `─ │ ┌ ╋ ║ ╭`, the block elements, such as `▀ ▄ █ ░`, and braille, such as `⣿`;\n- `builtin-powerline`: the powerline symbols, U+E0B0 to U+E0BF, the arrows, half circles and triangles between the segments of a prompt.\n\n| Values | Default |\n|---|---|\n| `true`, `false` | `true` |\n\n- Drawn by Lokyr, lines meet across cells without a gap, blocks tile, and the powerline symbols fill the cell's height, whatever the font and `line-height`.\n- `false` takes the font's glyphs, and, for the powerline symbols that the font lacks, Lokyr's own, so that they fill the cell still; box drawing that the font lacks comes from another font of the system's. Some fonts draw their own as a look of their own.\n- The other icons of Nerd Fonts come from the font, or from Symbols Nerd Font Mono where the font lacks them.",
@@ -130,6 +139,7 @@
         },
         "builtin-powerline": {
           "type": "boolean",
+          "description": "Whether Lokyr draws Powerline's separators itself, at the cell's size and to the pixel, rather than taking them from the font.",
           "default": true,
           "x-platforms": ["macos"],
           "x-group": ["builtin-box-drawing", "builtin-powerline"],
@@ -174,7 +184,7 @@
         "bold": {
           "type": "boolean",
           "default": true,
-          "description": "Whether bold text takes the font's bold face, and italic text its italic face.",
+          "description": "Whether bold text takes the font's bold face.",
           "x-platforms": ["macos"],
           "x-group": ["bold", "italic"],
           "x-guide": "Whether bold text takes the font's bold face, and italic text its italic face.\n\n| Values | Default |\n|---|---|\n| `true`, `false` | `true` |\n\n- `bold = false` draws bold text in the regular face: a program's bold then shows only by its color.\n- `italic = false` draws italic text upright.",
@@ -183,6 +193,7 @@
         },
         "italic": {
           "type": "boolean",
+          "description": "Whether italic text takes the font's italic face.",
           "default": true,
           "x-platforms": ["macos"],
           "x-group": ["bold", "italic"],
@@ -304,7 +315,7 @@
           "minimum": 0,
           "maximum": 10000,
           "x-step": 50,
-          "description": "With `smooth-blink = \"custom\"`, how long the cursor fades in, and out, in milliseconds.",
+          "description": "With `smooth-blink = \"custom\"`, how long the cursor fades in, in milliseconds.",
           "x-platforms": ["macos"],
           "x-group": ["fade-in", "fade-out"],
           "x-guide": "With `smooth-blink = \"custom\"`, how long the cursor fades in, and out, in milliseconds.\n\n| Values | Default |\n|---|---|\n| from `0` to `10000` | `900` |\n\nA fade of `0` switches. A cycle of fades and holds shorter than 50 ms does not blink.",
@@ -313,6 +324,7 @@
         },
         "fade-out": {
           "type": "integer",
+          "description": "With `smooth-blink = \"custom\"`, how long the cursor fades out, in milliseconds.",
           "default": 900,
           "x-platforms": ["macos"],
           "x-group": ["fade-in", "fade-out"],
@@ -324,7 +336,7 @@
         "fade-in-curve": {
           "default": "ease-in-out",
           "enum": ["linear", "ease-in", "ease-out", "ease-in-out"],
-          "description": "With `smooth-blink = \"custom\"`, how each fade goes: at a constant rate, slow at its start, slow at its end, or both.",
+          "description": "With `smooth-blink = \"custom\"`, how the cursor's fade in goes: at a constant rate, slow at its start, slow at its end, or both.",
           "x-platforms": ["macos"],
           "x-group": ["fade-in-curve", "fade-out-curve"],
           "x-guide": "With `smooth-blink = \"custom\"`, how each fade goes: at a constant rate, slow at its start, slow at its end, or both.\n\n| Values | Default |\n|---|---|\n| `\"linear\"`, `\"ease-in\"`, `\"ease-out\"`, `\"ease-in-out\"` | `\"ease-in-out\"` |",
@@ -332,6 +344,7 @@
           "x-example-comment": "linear | ease-in | ease-out | ease-in-out"
         },
         "fade-out-curve": {
+          "description": "With `smooth-blink = \"custom\"`, how the cursor's fade out goes: at a constant rate, slow at its start, slow at its end, or both.",
           "default": "ease-in-out",
           "x-platforms": ["macos"],
           "x-group": ["fade-in-curve", "fade-out-curve"],
@@ -344,7 +357,7 @@
           "minimum": 0,
           "maximum": 10000,
           "x-step": 50,
-          "description": "With `smooth-blink = \"custom\"`, how long the cursor holds visible, after it fades in, and hidden, after it fades out, in milliseconds.",
+          "description": "With `smooth-blink = \"custom\"`, how long the cursor holds visible after it fades in, in milliseconds.",
           "x-platforms": ["macos"],
           "x-group": ["visible", "hidden"],
           "x-guide": "With `smooth-blink = \"custom\"`, how long the cursor holds visible, after it fades in, and hidden, after it fades out, in milliseconds.\n\n| Values | Default |\n|---|---|\n| from `0` to `10000` | `500` |",
@@ -353,6 +366,7 @@
         },
         "hidden": {
           "type": "integer",
+          "description": "With `smooth-blink = \"custom\"`, how long the cursor holds hidden after it fades out, in milliseconds.",
           "default": 500,
           "x-platforms": ["macos"],
           "x-group": ["visible", "hidden"],
@@ -376,7 +390,7 @@
     },
     "window": {
       "type": "object",
-      "description": "",
+      "description": "The windows: their size and folder, their padding, their background, their title and their scroll bar.",
       "x-guide": "",
       "properties": {
         "columns": {
@@ -385,7 +399,7 @@
           "minimum": 1,
           "maximum": 1000,
           "x-step": 1,
-          "description": "The size of a new window, in columns and rows of the font's cells.",
+          "description": "The width of a new window, in columns of the font's cells.",
           "x-platforms": ["macos"],
           "x-group": ["columns", "rows"],
           "x-guide": "The size of a new window, in columns and rows of the font's cells.\n\n| Values | Default |\n|---|---|\n| whole numbers, from `1` to `1000` | `100` columns, `30` rows |\n\n- The window is of that many cells, with the padding around them, below the titlebar; the display that it opens on, which can be smaller, can make it smaller.\n- While [`remember-frame`](#remember-frame) is on, the first window, as Lokyr starts, takes the place and the size of the last window that you moved or resized instead, and the windows that you open after it take that size, at a place of their own: these keys apply until a window keeps one.\n- It applies to the windows that open after you save the file; those that are open keep their size.",
@@ -394,6 +408,7 @@
         },
         "rows": {
           "type": "integer",
+          "description": "The height of a new window, in rows of the font's cells.",
           "default": 30,
           "x-platforms": ["macos"],
           "x-group": ["columns", "rows"],
@@ -422,6 +437,7 @@
         },
         "start-directory": {
           "type": "string",
+          "minLength": 1,
           "maxLength": 1024,
           "default": "home",
           "description": "The folder that the first window's shell starts in, as Lokyr starts.",
@@ -432,6 +448,7 @@
         },
         "new-directory": {
           "type": "string",
+          "minLength": 1,
           "maxLength": 1024,
           "default": "inherit",
           "description": "The folder that a new window's shell starts in, as ⌘N opens one, and a new tab's or a split's.",
@@ -446,7 +463,7 @@
           "minimum": 0,
           "maximum": 100,
           "x-step": 1,
-          "description": "The room between the grid and the window's edges, in points: `padding-x` at the left and the right, `padding-y` at the top and the bottom.",
+          "description": "The room between the grid and the window's left and right edges, in points.",
           "x-platforms": ["macos"],
           "x-group": ["padding-x", "padding-y"],
           "x-guide": "The room between the grid and the window's edges, in points: `padding-x` at the left and the right, `padding-y` at the top and the bottom.\n\n| Values | Default |\n|---|---|\n| from `0` to `100`, whole or not | `4` |\n\n- In points, so that it keeps its look on a Retina display.\n- A window is seldom a whole number of cells: the room that the cells leave over goes to the right and the bottom, past the padding, so that the text stays where it is as the window's size changes.\n- The padding takes the background of the cells without a color of their own: a background that a program colors, such as a status line's, stops at the grid.\n- With splits, each pane keeps its padding on every side: a divider stands between the padding of the panes on either side of it, and runs to the panes' room's edges.\n- The gutter takes the padding at the cells' left: with [`gutter`](#gutter) on, a padding narrower than 4 points widens to 4, at the left and the right.",
@@ -455,6 +472,7 @@
         },
         "padding-y": {
           "type": "number",
+          "description": "The room between the grid and the window's top and bottom edges, in points.",
           "default": 4,
           "x-platforms": ["macos"],
           "x-group": ["padding-x", "padding-y"],
@@ -542,6 +560,7 @@
       "properties": {
         "font-family": {
           "type": "string",
+          "minLength": 1,
           "maxLength": 256,
           "description": "The family of the interface's text, by its name, as Font Book shows it on macOS, such as `\"Helvetica Neue\"`.",
           "x-platforms": ["macos"],
@@ -600,6 +619,7 @@
       "properties": {
         "term": {
           "type": "string",
+          "minLength": 1,
           "maxLength": 64,
           "default": "xterm-256color",
           "description": "The `TERM` that programs see, which tells them what the terminal can do: letters, digits, `.`, `_`, `+` and `-`, 64 at most.",
@@ -641,7 +661,7 @@
           "description": "Whether your shell loads Lokyr's integration, which has it tell the terminal where each prompt starts, where your command starts and ends, of its exit status, and the folder that it works in.",
           "x-platforms": ["macos"],
           "x-guide": "Whether your shell loads Lokyr's integration, which has it tell the terminal where each prompt starts, where your command starts and ends, of its exit status, and the folder that it works in.\n\n| Values | Default |\n|---|---|\n| `true`, `false` | `true` |\n\n- It applies to zsh, bash and fish, your login shell or one of theirs that a new pane starts, without touching your files: zsh's through `ZDOTDIR`, which the integration puts back to yours as it starts, so that your `.zshenv`, `.zprofile`, `.zshrc` and `.zlogin` load as they would; bash's through `ENV`, of a bash started in POSIX mode, which leaves POSIX mode, and what it turned on, then reads your `.bash_profile` or your `.bashrc` itself; fish's through `XDG_DATA_DIRS`, of a folder that leaves it as fish starts, the variable going if you had none.\n- bash 4.4 and later mark a command's output from `PS0`, which the integration ends with its mark, and set no trap, so that your own DEBUG trap, as starship's, atuin's or bash-preexec's, `$_` and the commands that your keys run through `bind -x`, as fzf's, stay as they are; an older bash marks it from a DEBUG trap, unless you have one, when its commands get no marks.\n- fish 4 and later tell the prompts and the folder themselves: the integration adds nothing to them.\n- macOS's own bash, `/bin/bash`, of version 3.2, reads your files and not `ENV` in POSIX mode, and gets no integration: a later bash, as Homebrew's, does. To have it in `/bin/bash`, add to your `.bashrc` `[ -n \"$LOKYR_RESOURCES_DIR\" ] && source \"$LOKYR_RESOURCES_DIR/shell-integration/bash/lokyr.bash\"`.\n- The marks are OSC 133's, the folder OSC 7's; a new pane starts in the folder that its shell told last, as [`new-directory`](#new-directory) says.\n- A command's start mark has Lokyr look for its program in the pane, as its tab's title and marks tell it, a few times within four seconds until the program shows, however late your shell starts it, as of a slow `preexec`, whichever pane has the keyboard meanwhile. Without the marks, Lokyr looks a quarter of a second, a second and four seconds after a window's last output, and at every pane of a tab as the keyboard moves between them. A tab runs a program while any of its panes does.\n- It applies to the shells that start after the change; the open ones keep what they started with.",
-          "x-example": "true",
+          "x-example": "false",
           "x-example-comment": "true | false: the shell tells its prompts and its folder"
         },
         "image-memory": {
@@ -702,7 +722,7 @@
     },
     "keyboard": {
       "type": "object",
-      "description": "",
+      "description": "The keyboard: the Option keys as Meta.",
       "x-guide": "",
       "properties": {
         "option-as-meta": {
@@ -777,6 +797,7 @@
         },
         "search-engine": {
           "type": "string",
+          "minLength": 1,
           "maxLength": 1024,
           "default": "google",
           "description": "The engine of Search the Web, which the pane's context menu has for the selection of one line.",
@@ -787,6 +808,7 @@
         },
         "editor": {
           "type": "string",
+          "minLength": 1,
           "maxLength": 1024,
           "default": "system",
           "description": "The editor that a path's line opens in, as compilers, tests and AI agents print it, `src/main.rs:42`, `src/main.rs:42:7`, `src/app.ts(42,7)` or `src/main.rs#L42`, with [`cmd+click`](#bindings).",
@@ -864,7 +886,7 @@
     },
     "agents": {
       "type": "object",
-      "description": "The AI agents that run in your panes, as Claude Code, Codex, Gemini CLI or Aider. Lokyr knows an agent by its program in the pane's foreground, and tells its state on its tab, of what the agent does, with no setup of its own:",
+      "description": "The AI agents that run in your panes, as Claude Code, Codex, Gemini CLI or Aider. Lokyr knows an agent by its program in the pane's foreground, and tells its state on its tab, of what the agent does, with no setup of its own.",
       "x-guide": "The AI agents that run in your panes, as Claude Code, Codex, Gemini CLI or Aider. Lokyr knows an agent by its program in the pane's foreground, and tells its state on its tab, of what the agent does, with no setup of its own:\n\n- **At work**, a sparkle: while it prints of its own, apart from the echo of your keys, while it tells a progress, as OSC 9;4, or while its title's spinner turns.\n- **Waiting for you**, a dot of its own: once it asks for you, by a notification of its own, OSC 9 or OSC 777, or its bell, as an agent asks for a permission; until you type into its pane, whatever it draws meanwhile. The tab's tooltip tells what its notification asked, as \"Claude needs your permission to use Bash\", and in a tab of several panes a ring of the dot's color goes round the pane that waits.\n- **Done**, a tick: once it showed no work for a while, [`done-after`](#done-after), after you asked it something, once for each time you asked; until it works again, you type into its pane, or you switch to its tab, as seen. Its first output, as it starts, asks for nothing, and shows nothing.\n\nA tab of several agents shows the one that waits before one at work, and one at work before one done. Window › Go to Next Agent, `alt+cmd+a`, goes to the next tab whose agent waits for you, or, of none, is done, in every window; Window › Show Agents…, `shift+alt+cmd+a`, lists them all in the palette, the most urgent first. An agent that tells nothing of its own, of no notification nor bell, waits without a dot: some agents tell their requests to the terminals that they know alone, and an option of theirs turns their notifications or their bell on, as Claude Code's `preferredNotifChannel`.\n\n**Claude Code's exact state**: Lokyr › Install Claude Code Integration… adds hooks to Claude Code's settings, `settings.json` of `~/.claude` and of each `~/.claude-*` folder of Claude Code's beside it, as a `CLAUDE_CONFIG_DIR` makes, asking of each in turn and keeping a copy of the file as it was before Lokyr's hooks as `settings.json.lokyr-backup`, of the file's permissions. Claude Code then tells Lokyr when you submit a request, when it asks for a permission, when it ends its answer, and when an error ends it, a red mark of its own: its state no longer guesses from its output and its quiet, its bell and its other notifications no longer tell that it waits, and `done-after` no longer applies to it; but a key while it works or asks, as Escape that interrupts it or refuses a permission, which Claude Code tells no hook of, lets its output and its quiet tell its state again until its next hook. The hooks write nothing in another terminal. To take them away, remove the groups whose commands hold `lokyr-agent:` from the file's `hooks`.",
       "properties": {
         "programs": {
@@ -970,7 +992,7 @@
     },
     "app": {
       "type": "object",
-      "description": "",
+      "description": "The app: its icon, its language, its appearance, and what it does as its last window closes and as it starts again.",
       "x-guide": "",
       "properties": {
         "icon": {
@@ -1086,7 +1108,7 @@
     },
     "plugins": {
       "type": "object",
-      "description": "<sub>Platforms: macOS</sub>",
+      "description": "A plugin's own keys, in a section of its namespace, as `[plugins.tabs]` of `lokyr/tabs`.",
       "x-guide": "<sub>Platforms: macOS</sub>\n\nA plugin's own keys, in a section of its namespace: the plugin's name after its owner, as `[plugins.tabs]` of `lokyr/tabs`. Each plugin tells its keys, as the tab bar's do in [`[plugins.tabs]`](#pluginstabs).\n\n```toml\n[plugins.tabs]\nposition = \"top\"\n```\n\n- **Its keys** are those of the plugin's schema, the JSON Schema file that its manifest names, with their values and their defaults: a key left out takes its default, and a section left out gives all of them.\n- **A wrong value**, of another type or none of its choices, or a number that is not finite, as `nan` or `inf`, refuses that plugin's section alone: the plugin keeps the keys in force, its defaults at the start, and the rest of the file applies. The notice's card tells the error at its line, until you save a section that the plugin takes:\n\n  ```text\n  lokyr: error 109 (usage): /Users/you/.config/lokyr/config.toml:12:1: `position` is one of \"top\", \"bottom\", not \"middle\" in `[plugins.tabs]`; the plugin `lokyr/tabs` keeps its config in force\n  ```\n\n- **What another version would know** is ignored, as the bar tells: the section of a plugin that is not installed, and a key that the plugin's schema lacks, as one of a newer version, so that one file serves two Macs; but where the schema says what its other keys take, its `additionalProperties`, they are checked against it, and refused of `false`.\n- **Reloading**: as you save the file, each plugin takes its section anew, and hears of a change.\n- `lokyr +validate-config` checks the file's own keys and the sections' form, each a table of keys, and `lokyr +show-config` prints the sections as the file has them; their keys apply as the plugins take them, once Lokyr runs.",
       "x-example-lines": [
         "# A plugin's own keys, in a section of its namespace, as its schema has them;",

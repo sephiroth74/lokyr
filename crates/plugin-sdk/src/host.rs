@@ -1120,6 +1120,9 @@ pub enum SettingKind {
     },
     /// A text, of its most characters, and of the values that it suggests.
     Text {
+        /// Its fewest characters, as an empty one may be refused.
+        #[serde(default)]
+        min_length: Option<u64>,
         /// Its most characters.
         #[serde(default)]
         max_length: Option<u64>,

@@ -33,6 +33,7 @@ fn settings() -> Settings {
         integer: false,
     };
     let text = SettingKind::Text {
+        min_length: None,
         max_length: Some(256),
         examples: Vec::new(),
     };

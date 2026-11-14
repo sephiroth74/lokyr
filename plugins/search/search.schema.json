@@ -2,6 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "lokyr/search",
   "type": "object",
+  "description": "The find bar, its options and its recent searches.",
   "properties": {
     "case": {
       "description": "Whether case counts while the find bar's case toggle is off: smart, of a text of a capital letter alone; or insensitive, never.",

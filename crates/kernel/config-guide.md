@@ -38,7 +38,7 @@ Under each key's name, a small line tells the platforms where the key applies: m
 
 ### A complete example
 
-Every key that Lokyr reads, with the values that it takes in the comment. Most show a value other than their default; `cell-width`, `antialias` and `padding-y` show theirs:
+Every key that Lokyr reads, with the values that it takes in the comment. Most show a value other than their default; a few show theirs, such as `cell-width`, `antialias` and `padding-y`:
 
 ```toml
 {{example}}

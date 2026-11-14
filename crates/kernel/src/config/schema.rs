@@ -147,7 +147,17 @@ pub fn section(
         .unwrap_or_default()
         .iter()
         .map(|(key, node)| {
-            let default = node.get("default").map(data_of);
+            let kind = kind_of(node);
+            // A whole number as an integer, as `200.0` and `200` are the
+            // same value, which a plugin of Luau, of one kind of number,
+            // takes alike.
+            let as_kind = |data: Data| match data {
+                Data::Number(number) if number.fract() == 0.0 && number.abs() < 9.0e15 => {
+                    Data::Integer(number as i64)
+                }
+                data => data,
+            };
+            let default = node.get("default").map(data_of).map(as_kind);
             SettingKey {
                 name: key.clone(),
                 description: node
@@ -156,13 +166,13 @@ pub fn section(
                     .unwrap_or_default()
                     .to_owned(),
                 platforms: texts(node.get("x-platforms")),
-                kind: kind_of(node),
                 control: node
                     .get("x-control")
                     .and_then(Ordered::text)
                     .map(str::to_owned),
-                value: value(key).or_else(|| default.clone()),
+                value: value(key).map(as_kind).or_else(|| default.clone()),
                 default,
+                kind,
             }
         })
         .collect();
@@ -203,6 +213,7 @@ fn kind_of(node: &Ordered) -> SettingKind {
             integer: kind == "integer",
         },
         Some("string") => SettingKind::Text {
+            min_length: count(node, "minLength"),
             max_length: count(node, "maxLength"),
             examples: texts(node.get("examples")),
         },
@@ -225,12 +236,14 @@ fn texts(node: Option<&Ordered>) -> Vec<String> {
         .collect()
 }
 
-/// The first paragraph of `text`, its lines joined.
+/// The first paragraph of `text` of words, its lines joined: not one of
+/// markup, as a guide's `<sub>` line of the platforms.
 fn first_paragraph(text: &str) -> String {
-    text.lines()
-        .take_while(|line| !line.is_empty())
-        .collect::<Vec<_>>()
-        .join(" ")
+    text.split("\n\n")
+        .map(str::trim)
+        .find(|paragraph| !paragraph.is_empty() && !paragraph.starts_with('<'))
+        .map(|paragraph| paragraph.lines().collect::<Vec<_>>().join(" "))
+        .unwrap_or_default()
 }
 
 /// `value` as plain data.
