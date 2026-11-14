@@ -86,18 +86,22 @@ impl<B: Backend> App<B> {
             .variant(platform.appearance() == Appearance::Dark)
     }
 
-    /// The backdrop of a window, as the config's opacity and blur make it:
+    /// The backdrop of `window`, as the config's opacity and blur make it:
     /// clear, of the blur of what is behind it, as the frame draws the
     /// window's background of its opacity, under the chrome that takes its
-    /// place; `None` for an opaque one.
-    fn backdrop(&self) -> Option<Backdrop> {
-        let window = &self.config.window;
-        window
+    /// place; `None` for an opaque one, as the settings' window always is,
+    /// which is no terminal's.
+    fn backdrop(&self, window: WindowId) -> Option<Backdrop> {
+        if self.shows_settings(window) {
+            return None;
+        }
+        let config = &self.config.window;
+        config
             .background_opacity
             .is_translucent()
             .then(|| Backdrop {
                 color: [0.0; 4],
-                blur: f64::from(window.background_blur.points()),
+                blur: f64::from(config.background_blur.points()),
             })
     }
 
@@ -808,7 +812,7 @@ impl<B: Backend> App<B> {
         let background = cells::background(pane.snapshot());
         let foreground = cells::foreground(pane.snapshot());
         let sent = state.backdrop;
-        let backdrop = self.backdrop();
+        let backdrop = self.backdrop(window);
         if backdrop != sent {
             platform.set_translucent(window, backdrop);
             if let Some(state) = self.windows.get_mut(&window) {
@@ -2021,7 +2025,7 @@ impl<B: Backend> App<B> {
         let (bg, fg) = (colors.background, colors.foreground);
         let background = Color::from_rgb8(bg.r, bg.g, bg.b);
         let foreground = Color::from_rgb8(fg.r, fg.g, fg.b);
-        let backdrop = self.backdrop();
+        let backdrop = self.backdrop(window);
         let Some(state) = self.windows.get_mut(&window) else {
             return;
         };

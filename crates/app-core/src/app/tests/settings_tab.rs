@@ -1846,6 +1846,44 @@ fn a_family_chosen_in_the_settings_comments_out_the_styles_that_it_lacks_and_sho
 }
 
 #[test]
+fn the_settings_window_is_opaque_whatever_the_config_s_opacity() {
+    let directory = super::installed::shelf("settings-opaque");
+    let path = directory.join("config.toml");
+    std::fs::write(
+        &path,
+        "[window]\nbackground-opacity = 0.8\nbackground-blur = 20\n",
+    )
+    .unwrap();
+    let drawing = Drawing::new(FontConfig::default()).unwrap();
+    let mut fake = Fake::default();
+    let mut app = App::new(
+        Some(drawing),
+        Config::read(&path).unwrap(),
+        Some(path.clone()),
+    )
+    .with_program(idle());
+    fake.start(&mut app);
+    let first = fake.windows().next().unwrap();
+    app.windows.get_mut(&first).unwrap().surface = Some(fakes::Surface::default());
+    fake.send(&mut app, first, WindowEvent::Frame);
+    assert!(
+        fake.window(first).unwrap().translucent.is_some(),
+        "a terminal's"
+    );
+    // The settings' window: of no backdrop, its background whole.
+    let own = open(&mut fake, &mut app, SETTINGS_TAB);
+    frames(&mut fake, &mut app, own);
+    assert_eq!(fake.window(own).unwrap().translucent, None);
+    let background = app.windows[&own]
+        .shown
+        .as_ref()
+        .map(|shown| shown.background)
+        .expect("drawn");
+    assert_eq!(background.alpha, 1.0);
+    let _ = std::fs::remove_dir_all(&directory);
+}
+
+#[test]
 fn the_themes_page_previews_each_theme_of_its_colors_and_a_card_names_it_in_the_config() {
     let directory = super::installed::shelf("settings-themes");
     let path = directory.join("config.toml");

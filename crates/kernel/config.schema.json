@@ -507,7 +507,7 @@
           "x-step": 0.05,
           "description": "The opacity of the window's background, from 0, clear, to 1, opaque: below 1, what is behind the window shows through it.",
           "x-platforms": ["macos"],
-          "x-guide": "The opacity of the window's background, from 0, clear, to 1, opaque: below 1, what is behind the window shows through it.\n\n| Values | Default |\n|---|---|\n| from `0` to `1` | `1` |\n\n- Only the default background lets it show, with the padding and the title bar, which take it, and the tab bar's background and the active tab's, as a pane's header, each of the same opacity as the panes, rather than theirs over the window's: a background that a program colors, such as a status line's, stays opaque, as do the selection, the cursor and the text.\n- At `1` the window is opaque, as it is by default.",
+          "x-guide": "The opacity of the window's background, from 0, clear, to 1, opaque: below 1, what is behind the window shows through it.\n\n| Values | Default |\n|---|---|\n| from `0` to `1` | `1` |\n\n- Only the default background lets it show, with the padding and the title bar, which take it, and the tab bar's background and the active tab's, as a pane's header, each of the same opacity as the panes, rather than theirs over the window's: a background that a program colors, such as a status line's, stays opaque, as do the selection, the cursor and the text.\n- The settings window, which is no terminal's, stays opaque.\n- At `1` the window is opaque, as it is by default.",
           "x-example": "0.9",
           "x-example-comment": "from 0 to 1"
         },
