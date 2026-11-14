@@ -642,7 +642,8 @@ impl<B: Backend> App<B> {
     /// of a window whose bar hides, over its titlebar, the tab goes there;
     /// on a pane of another tab, beside it, in its half that lit up;
     /// out of every window, to a window of its own, under the pointer; over
-    /// a window elsewhere, back. `None` of no tab out of its bar.
+    /// a window elsewhere, or the settings' window, back. `None` of no tab
+    /// out of its bar.
     pub(super) fn tab_drop(
         &mut self,
         platform: &mut dyn Platform,
@@ -677,6 +678,10 @@ impl<B: Backend> App<B> {
             return Some(Dropping::Event(there, Some(lit.window)));
         }
         if dest == window {
+            return Some(Dropping::Back);
+        }
+        // The settings' window of their own takes no tab.
+        if self.shows_settings(dest) {
             return Some(Dropping::Back);
         }
         let now = Instant::now();

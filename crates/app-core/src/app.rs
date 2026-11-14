@@ -678,8 +678,9 @@ pub struct App<B: Backend> {
     /// last window that closed, and the windows open as the app quits;
     /// `None` keeps nothing, as in the tests.
     state: Option<PathBuf>,
-    /// The window that took the focus last, which is the one in front as
-    /// the app quits, though the app is not active.
+    /// The terminals' window that took the focus last, which is the one in
+    /// front as the app quits, though the app is not active, or behind the
+    /// settings' window of their own, which has no directory.
     front: Option<WindowId>,
     /// What went wrong that the user is to learn of: the log, and the
     /// notices that the windows show.
@@ -2355,6 +2356,7 @@ impl<B: Backend> App<B> {
                 NewDirectory::Inherit => self
                     .acting
                     .or_else(|| platform.focused_window())
+                    .filter(|&window| !self.shows_settings(window))
                     .or(self.front)
                     .and_then(|window| self.directory_of(window)),
                 NewDirectory::Path(path) => config::expanded(path, home.as_deref()),
@@ -2412,7 +2414,10 @@ impl<B: Backend> App<B> {
     /// Quits, as the directory of the window in front is kept as the last
     /// window's, and the windows for the next start, as the config says.
     fn quit(&mut self, platform: &mut dyn Platform) {
-        if let Some(front) = self.front.or_else(|| platform.focused_window()) {
+        let focused = platform
+            .focused_window()
+            .filter(|&window| !self.shows_settings(window));
+        if let Some(front) = self.front.or(focused) {
             self.keep_directory(front);
         }
         self.keep_windows(platform);
@@ -4565,6 +4570,7 @@ impl<B: Backend> App<B> {
                     self.tell_pointer(platform, window, None, lokyr_platform_core::Modifiers::NONE);
                     self.surface_cancel(platform, window);
                 }
+                let settings = self.shows_settings(window);
                 if let Some(state) = self.windows.get_mut(&window) {
                     // A program that asked learns of it, while its pane has
                     // the window's keyboard rather than a slot's view.
@@ -4574,8 +4580,10 @@ impl<B: Backend> App<B> {
                         pane.focus(focused);
                     }
                     state.focused = focused;
-                    if focused {
+                    if focused && !settings {
                         self.front = Some(window);
+                    }
+                    if focused {
                         state.blink.restart(Instant::now());
                     } else {
                         state.taken.clear();
@@ -4593,9 +4601,11 @@ impl<B: Backend> App<B> {
                     self.show_floating(platform, Some(window));
                 }
                 // The plugins hear it, but of a question on the window, which
-                // takes the focus as a part of it.
+                // takes the focus as a part of it, and of the settings' window
+                // of their own, which is none to them.
                 if let Some(state) = self.windows.get(&window)
                     && (focused || !self.asks_on(window))
+                    && !settings
                 {
                     let shown = state.window;
                     self.plugins

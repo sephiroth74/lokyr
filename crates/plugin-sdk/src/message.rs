@@ -52,6 +52,11 @@ pub const SETTINGS_TAB: &str =
 /// their own, as a new tab or one moved there, which takes none.
 pub const SETTINGS_WINDOW: &str = "the settings' window takes no other tab";
 
+/// The error of a request that closes, moves or shows the settings'
+/// window of their own or its tab, or asks a question on it, which are
+/// none of a plugin's: their window closes by its own button and ⌘W.
+pub const SETTINGS_OWN: &str = "the settings' window is not a plugin's to close, move or ask on";
+
 /// The error of a request that opens a panel in the settings' window of
 /// their own, which shows none but those of its pages' nodes.
 pub const SETTINGS_PANELS: &str =

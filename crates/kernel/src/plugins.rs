@@ -4832,13 +4832,28 @@ impl Host<'_, '_> {
         Ok(())
     }
 
-    /// Whether the tab `tab` is there, as [`Host::known_tab`] tells, or is
-    /// the settings tab, which is moved, shown and closed as a tab is.
-    fn known_tab_or_settings(&self, tab: host::TabId) -> Result<(), Error> {
+    /// Whether the tab `tab` is there, as [`Host::known_tab`] tells, and is
+    /// not the settings tab, which no plugin closes, moves nor shows.
+    fn known_tab_not_settings(&self, tab: host::TabId) -> Result<(), Error> {
         if self.context.workspace.is_settings(TabId::of(tab.0)) {
-            return Ok(());
+            return Err(Error::new(
+                Code::Failed,
+                lokyr_plugin_sdk::message::SETTINGS_OWN,
+            ));
         }
         self.known_tab(tab)
+    }
+
+    /// Whether the window `window` is not the settings' window of their
+    /// own, which no plugin closes nor asks a question on.
+    fn not_settings_window(&self, window: WindowId) -> Result<(), Error> {
+        if self.context.workspace.settings_window() == Some(window) {
+            return Err(Error::new(
+                Code::Failed,
+                lokyr_plugin_sdk::message::SETTINGS_OWN,
+            ));
+        }
+        Ok(())
     }
 
     /// Whether the pane `pane` is there, or the call's writes so far open
@@ -5541,7 +5556,7 @@ impl Host<'_, '_> {
             Asked::CloseTab { tab, .. }
             | Asked::ActivateTab(tab)
             | Asked::TabToNewWindow { tab, .. } => {
-                self.known_tab_or_settings(*tab)?;
+                self.known_tab_not_settings(*tab)?;
             }
             Asked::SetTabTitle { tab, .. } | Asked::Equalize(tab) => {
                 self.known_tab(*tab)?;
@@ -5568,20 +5583,9 @@ impl Host<'_, '_> {
                 }
             }
             Asked::MoveTab { tab, window, .. } => {
-                self.known_tab_or_settings(*tab)?;
+                self.known_tab_not_settings(*tab)?;
                 self.window(*window)?;
                 self.takes_tabs(*window)?;
-                // The settings' tab of a window of their own stays there.
-                let settings = self.context.workspace.settings_window();
-                if settings.is_some()
-                    && self.context.workspace.is_settings(TabId::of(tab.0))
-                    && settings != Some(WindowId::of(window.0))
-                {
-                    return Err(Error::new(
-                        Code::Failed,
-                        lokyr_plugin_sdk::message::SETTINGS_WINDOW,
-                    ));
-                }
             }
             Asked::PaneToNewTab { pane, window, .. } => {
                 self.known_pane(*pane)?;
@@ -5843,6 +5847,7 @@ impl Host<'_, '_> {
                                 format!("there is no window {}", window.get()),
                             ));
                         }
+                        self.not_settings_window(window)?;
                         window
                     }
                     None => self.context.focused.ok_or_else(|| {
@@ -5874,13 +5879,14 @@ impl Host<'_, '_> {
                 text,
             } => {
                 let window = window.map(|window| WindowId::of(window.0));
-                if let Some(window) = window
-                    && self.context.workspace.window(window).is_none()
-                {
-                    return Err(Error::new(
-                        Code::NotFound,
-                        format!("there is no window {}", window.get()),
-                    ));
+                if let Some(window) = window {
+                    if self.context.workspace.window(window).is_none() {
+                        return Err(Error::new(
+                            Code::NotFound,
+                            format!("there is no window {}", window.get()),
+                        ));
+                    }
+                    self.not_settings_window(window)?;
                 }
                 let id = new_id();
                 self.out.requests.push(Request::AskText {
@@ -5901,6 +5907,7 @@ impl Host<'_, '_> {
                         format!("there is no window {}", window.0),
                     ));
                 }
+                self.not_settings_window(id)?;
                 Request::CloseWindow(id)
             }
             Asked::Quit => Request::Quit,

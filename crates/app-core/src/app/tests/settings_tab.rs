@@ -5,6 +5,9 @@
 //! Tab goes through with the sidebar, its plugin told as it shows and
 //! hides, and a plugin's ask of its own page.
 
+use std::cell::RefCell;
+use std::rc::Rc;
+
 use lokyr_kernel::plugins::ui::ViewId;
 use lokyr_text_core::FontConfig;
 
@@ -760,4 +763,98 @@ fn the_settings_page_shows_every_section_of_the_config_and_of_the_plugins_of_its
     frames(&mut fake, &mut app, own);
     assert_eq!(page_text(&app, own, "title"), "Tabs");
     assert_eq!(page_text(&app, own, "value:style"), "\"unified\"");
+}
+
+/// A plugin that asks for a text of no window, keeping the windows' focus
+/// that it hears.
+struct Asker(Rc<RefCell<Vec<plugins::Event>>>);
+
+impl plugins::Plugin for Asker {
+    fn activate(&mut self, cx: &mut plugins::Cx<'_>) -> Result<(), Error> {
+        cx.subscribe(&["window-focus"])?;
+        cx.register_command(Command {
+            name: "asker.ask".to_owned(),
+            title: "Ask".to_owned(),
+            category: Category::Tabs,
+            capabilities: Vec::new(),
+            params: Vec::new(),
+            when: None,
+        })
+    }
+
+    fn on_command(&mut self, cx: &mut plugins::Cx<'_>, _: &str, _: Args) -> Result<(), Error> {
+        cx.ask_text(None, "Name", "", "").map(drop)
+    }
+
+    fn on_event(
+        &mut self,
+        _: &mut plugins::Cx<'_>,
+        events: &[plugins::Event],
+    ) -> Result<(), Error> {
+        let focus = events
+            .iter()
+            .filter(|event| matches!(event, plugins::Event::WindowFocus { .. }));
+        self.0.borrow_mut().extend(focus.cloned());
+        Ok(())
+    }
+}
+
+#[test]
+fn the_settings_window_in_front_takes_no_plugin_s_question_nor_focus_and_leaves_the_folders_to_the_terminals()
+ {
+    let base = real_directory("settings-folders");
+    let (folder, state) = (base.join("work"), base.join("state"));
+    std::fs::create_dir(&folder).unwrap();
+    let script = format!(
+        "pwd; [ \"$PWD\" = {:?} ] || cd {:?}; exec sleep 10",
+        folder.display(),
+        folder.display()
+    );
+    let heard = Rc::new(RefCell::new(Vec::new()));
+    let mut fake = Fake::default();
+    let mut app = app(Config::default(), shell(&script))
+        .with_state(Some(state.clone()))
+        .with_plugin("asker", Box::new(Asker(Rc::clone(&heard))));
+    fake.start(&mut app);
+    let first = fake.windows().next().unwrap();
+    fake.send(&mut app, first, WindowEvent::Focused(true));
+    run_until(&mut fake, &mut app, |_, app| {
+        app.pane(first).working_directory().as_deref() == Some(folder.as_path())
+    });
+    // The settings in front: the plugins hear the terminals' window lose
+    // the focus, and nothing of the settings' window.
+    heard.borrow_mut().clear();
+    fake.send(&mut app, first, WindowEvent::Focused(false));
+    let own = open(&mut fake, &mut app, SETTINGS_TAB);
+    let terminal = app.windows[&first].window;
+    assert_eq!(
+        *heard.borrow(),
+        [plugins::Event::WindowFocus {
+            window: terminal.into(),
+            focused: false,
+        }]
+    );
+    // A plugin's question of no window, on the terminals' window behind.
+    fake.send_app(&mut app, AppEvent::Command("asker.ask".to_owned()));
+    let alerts: Vec<_> = fake.alerts().iter().map(|alert| alert.window).collect();
+    assert_eq!(alerts, [Some(first)]);
+    // ⌘N inherits the terminals' window's folder.
+    let before: Vec<WindowId> = fake.windows().collect();
+    fake.send_app(&mut app, AppEvent::Command(NEW_WINDOW.to_owned()));
+    let opened = fake
+        .windows()
+        .find(|window| !before.contains(window))
+        .unwrap();
+    assert_eq!(
+        started_in(&mut fake, &mut app, opened),
+        folder.display().to_string()
+    );
+    // Quitting with the settings in front keeps the folder of the
+    // terminals' window that had the focus last.
+    app.close(&mut fake, opened);
+    std::fs::remove_dir_all(&state).unwrap();
+    fake.send(&mut app, own, WindowEvent::Focused(true));
+    app.quit(&mut fake);
+    assert_eq!(state::last_directory(&state), Some(folder.clone()));
+    let _ = std::fs::remove_dir_all(base);
 }

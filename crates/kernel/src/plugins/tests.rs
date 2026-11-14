@@ -1688,11 +1688,12 @@ fn a_read_of_the_agents_tells_each_pane_s_agent_to_a_plugin_that_reads_the_proce
 }
 
 #[test]
-fn the_settings_tab_reads_as_a_tab_of_no_pane_moved_shown_and_closed_as_a_tab() {
+fn the_settings_window_reads_as_a_tab_of_no_pane_which_no_plugin_closes_moves_or_asks_on() {
     use lokyr_plugin_sdk::host::TabKind;
     let mut app = App::default();
     let shown = window(&mut app, "sleep 10");
-    let settings = app.workspace.open_settings(shown, "Settings").unwrap();
+    let settings_window = app.workspace.open_settings_window("Settings");
+    let (settings, _) = app.workspace.settings_tab().unwrap();
     let mut plugins = Plugins::new();
     type Seen = (Vec<(TabKind, String, usize, bool)>, Vec<Result<(), Code>>);
     let seen: Rc<RefCell<Seen>> = Rc::default();
@@ -1703,19 +1704,31 @@ fn the_settings_tab_reads_as_a_tab_of_no_pane_moved_shown_and_closed_as_a_tab() 
             scripted(
                 |cx| cx.register_command(command("tidy.go")),
                 move |cx, _, _| {
-                    let window = cx.focused_window().unwrap();
-                    let tabs = cx.tabs(window)?;
+                    let windows = cx.windows()?;
+                    let terminal = windows[0].id;
+                    let own = windows[1].id;
+                    let tabs = cx.tabs(own)?;
                     let mut told = told.borrow_mut();
                     told.0 = tabs
                         .iter()
                         .map(|tab| (tab.kind, tab.title.clone(), tab.panes.len(), tab.active))
                         .collect();
-                    let settings = tabs[1].id;
+                    let settings = tabs[0].id;
+                    let terminal_tab = cx.tabs(terminal)?[0].id;
                     let code = |done: Result<(), Error>| done.map_err(|error| error.code);
-                    told.1.push(code(cx.set_tab_title(settings, Some("mine"))));
-                    told.1.push(code(cx.activate_tab(tabs[0].id)));
-                    told.1.push(code(cx.move_tab(settings, window, 0)));
-                    told.1.push(code(cx.close_tab(settings, false)));
+                    let asked = |done: Result<u64, Error>| code(done.map(|_| ()));
+                    told.1.extend([
+                        code(cx.set_tab_title(settings, Some("mine"))),
+                        code(cx.activate_tab(settings)),
+                        code(cx.move_tab(settings, terminal, 0)),
+                        code(cx.tab_to_new_window(settings)),
+                        code(cx.close_tab(settings, false)),
+                        code(cx.close_window(own)),
+                        asked(cx.ask_text(Some(own), "message", "detail", "")),
+                        asked(cx.save_file(Some(own), "out.txt", b"x".to_vec())),
+                        code(cx.move_tab(terminal_tab, own, 0)),
+                        code(cx.new_tab(own, None).map(|_| ())),
+                    ]);
                     Ok(())
                 },
             ),
@@ -1726,16 +1739,16 @@ fn the_settings_tab_reads_as_a_tab_of_no_pane_moved_shown_and_closed_as_a_tab() 
         .run("tidy.go", Args::new(), &mut app.context())
         .unwrap();
     let seen = seen.borrow();
-    assert_eq!(seen.0.len(), 2);
-    assert_eq!(seen.0[0].0, TabKind::Terminal);
     assert_eq!(
-        seen.0[1],
-        (TabKind::Settings, "Settings".to_owned(), 0, true)
+        seen.0,
+        [(TabKind::Settings, "Settings".to_owned(), 0, true)]
     );
-    // Its title is the host's; it is shown, moved and closed as a tab.
-    assert_eq!(seen.1, [Err(Code::Failed), Ok(()), Ok(()), Ok(())]);
-    assert_eq!(app.workspace.settings_tab(), None);
-    assert!(!app.workspace.is_settings(settings));
+    // Its title is the host's; neither it nor its tab is a plugin's, and it
+    // takes no other tab.
+    assert_eq!(seen.1, [Err(Code::Failed); 10]);
+    assert_eq!(app.workspace.settings_window(), Some(settings_window));
+    assert!(app.workspace.is_settings(settings));
+    assert_eq!(app.workspace.window(shown).unwrap().tabs().len(), 1);
 }
 
 /// A plugin that does nothing, of a thread of its own if the host gives it

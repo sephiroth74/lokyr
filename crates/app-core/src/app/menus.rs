@@ -270,7 +270,13 @@ impl<B: Backend> App<B> {
     pub(super) fn settings_in_front(&self, platform: &dyn Platform) -> bool {
         self.acting
             .or_else(|| platform.focused_window())
-            .and_then(|window| self.windows.get(&window))
+            .is_some_and(|window| self.shows_settings(window))
+    }
+
+    /// Whether the platform's `window` is the settings' window of their own.
+    pub(super) fn shows_settings(&self, window: WindowId) -> bool {
+        self.windows
+            .get(&window)
             .is_some_and(|state| self.workspace.settings_window() == Some(state.window))
     }
 

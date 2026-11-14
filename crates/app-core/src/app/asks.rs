@@ -690,7 +690,9 @@ impl<B: Backend> App<B> {
 
     /// Asks the user for a text, of `alert`, for `plugin`'s question `id`,
     /// on the platform's window that shows `window`, or on the focused
-    /// one: without a window, the answer is none.
+    /// one, or, of the settings' window in front, which shows no plugin's
+    /// question, on the terminals' window that had the focus last: without
+    /// a window, the answer is none.
     pub(super) fn ask_text(
         &mut self,
         platform: &mut dyn Platform,
@@ -706,9 +708,11 @@ impl<B: Backend> App<B> {
                 .map(|(&shown, _)| shown),
             None => platform
                 .focused_window()
-                .filter(|focused| self.windows.contains_key(focused)),
+                .filter(|focused| self.windows.contains_key(focused))
+                .filter(|&focused| !self.shows_settings(focused))
+                .or(self.front),
         };
-        let Some(shown) = shown else {
+        let Some(shown) = shown.filter(|&shown| !self.shows_settings(shown)) else {
             self.plugins.answer(&plugin, id, None);
             return;
         };
@@ -731,7 +735,8 @@ impl<B: Backend> App<B> {
             .windows
             .iter()
             .find(|(_, state)| state.window == window)
-            .map(|(&shown, _)| shown);
+            .map(|(&shown, _)| shown)
+            .filter(|&shown| !self.shows_settings(shown));
         let Some(shown) = shown else {
             self.plugins.saved(&plugin, id, None, None);
             return;

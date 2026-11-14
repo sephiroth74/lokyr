@@ -589,6 +589,46 @@ fn a_tab_dropped_on_another_window_s_bar_goes_there_at_the_room_that_it_opened()
 }
 
 #[test]
+fn a_tab_dropped_on_the_settings_window_s_titlebar_goes_back() {
+    let none = Modifiers::NONE;
+    let (mut fake, mut app, window) = three_tabs("unified", "top");
+    let ids = order(&app, window);
+    // The settings' window, of a titlebar, below and to the right, in
+    // front.
+    fake.set_bar(28.0);
+    fake.send_app(&mut app, AppEvent::Command(SETTINGS_TAB.to_owned()));
+    let own = fake.windows().find(|&open| open != window).unwrap();
+    app.windows.get_mut(&own).unwrap().surface = Some(fakes::Surface::default());
+    fake.set_window_origin(
+        own,
+        ScreenPoint {
+            x: 1000.0,
+            y: 400.0,
+        },
+    );
+    fake.raise(own);
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    let requests = fake.focus_requests().len();
+    // The first tab, over the settings' window's titlebar.
+    let first = middle_of(&fake, &app, window, &tab_key(ids[0]));
+    let target = on_screen(&fake, own, Point { x: 300.0, y: 10.0 });
+    let corner = fake.window_frame(window).unwrap();
+    let over = Point {
+        x: target.x - corner.x,
+        y: target.y - corner.y,
+    };
+    fake.send(&mut app, window, click(true, first, none, 1));
+    fake.send(&mut app, window, moved(Point { y: 300.0, ..first }, none));
+    fake.send(&mut app, window, moved(over, none));
+    assert_eq!(fake.window_at(target), Some(own));
+    fake.send(&mut app, window, click(false, over, none, 1));
+    settle(&mut fake, &mut app);
+    // Back in its bar, the settings' window not brought forward.
+    assert_eq!(order(&app, window), ids);
+    assert!(!fake.focus_requests()[requests..].contains(&own));
+}
+
+#[test]
 fn a_window_of_a_tab_alone_dropped_out_of_every_window_moves_there() {
     let none = Modifiers::NONE;
     let config = Config::parse(
