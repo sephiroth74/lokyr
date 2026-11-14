@@ -104,6 +104,7 @@ use serde::{Deserialize, Serialize};
 use toml_edit::{Document, DocumentMut, Item, TableLike};
 
 mod plugins;
+pub mod schema;
 mod written;
 
 pub use plugins::{PluginSection, PluginsConfig};
@@ -1695,6 +1696,8 @@ impl Config {
         let document = Document::parse(text).map_err(|e| error(e.span(), e.message()))?;
         check_keys(document.as_table()).map_err(|(span, message)| error(span, &message))?;
         check_bindings(document.as_table()).map_err(|(span, message)| error(span, &message))?;
+        schema::check_lengths(document.as_table())
+            .map_err(|(span, message)| error(span, &message))?;
         let plugins = PluginsConfig::read(document.as_table(), text, path)
             .map_err(|(span, message)| error(span, &message))?;
         let moved: Vec<(String, Error)> = MOVED

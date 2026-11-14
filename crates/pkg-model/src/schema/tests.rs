@@ -355,3 +355,28 @@ fn the_subset_reads_as_json_schema_does() {
         "`none` takes no value"
     );
 }
+
+#[test]
+fn the_x_keywords_are_annotations_that_no_value_is_checked_against() {
+    let schema = Schema::parse(
+        r#"{
+            "type": "object",
+            "x-guide": "The plugin's own text.",
+            "properties": {
+                "size": {
+                    "type": "number",
+                    "minimum": 1,
+                    "default": 4,
+                    "x-platforms": ["macos"],
+                    "x-control": "points",
+                    "x-guide": "In points."
+                }
+            }
+        }"#,
+    )
+    .unwrap();
+    assert_eq!(schema.keys(), ["size"]);
+    assert_eq!(schema.defaults().get("size"), Some(&serde_json::json!(4)));
+    // A keyword of no `x-` stays refused.
+    assert!(Schema::parse(r#"{"type": "object", "y-guide": "no"}"#).is_err());
+}

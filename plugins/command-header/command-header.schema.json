@@ -6,64 +6,115 @@
     "background": {
       "description": "The theme's token of the pill's background, by its name, as \"panel.bg\" or \"accent\".",
       "type": "string",
+      "maxLength": 256,
       "minLength": 1,
-      "default": "panel.bg"
+      "default": "panel.bg",
+      "x-platforms": ["macos"],
+      "x-group": ["background", "text", "border", "line", "hover"],
+      "x-guide": "The theme's tokens of the header's colors, by their names: the pill's background, its text, its border, the line across the pane, and the color over the pill's background under the pointer.\n\n| Values | Default |\n|---|---|\n| a token's name, as `\"accent\"`, `\"panel.bg\"`, `\"field.bg\"` or `\"text.secondary\"` | `\"panel.bg\"`, `\"text\"`, `\"panel.border\"`, `\"panel.border\"`, `\"button.hover.bg\"` |\n\n- The tokens are those of the theme in force, as a theme's `[interface]` names them, and each follows the light and the dark appearance; a name that the theme lacks takes the color of its name without its last part, as `panel` for `panel.foo`, then none.\n- `border = \"accent\"` draws the pill's border in the theme's accent.\n- They apply at once, as you save the file, to a header that shows too.",
+      "x-example": "\"panel.bg\"",
+      "x-example-comment": "the theme's token of the pill's background, by its name"
     },
     "text": {
       "description": "The theme's token of the pill's text, by its name.",
       "type": "string",
+      "maxLength": 256,
       "minLength": 1,
-      "default": "text"
+      "default": "text",
+      "x-platforms": ["macos"],
+      "x-group": ["background", "text", "border", "line", "hover"],
+      "x-example": "\"text\"",
+      "x-example-comment": "the theme's token of its text"
     },
     "border": {
       "description": "The theme's token of the pill's border, by its name.",
       "type": "string",
+      "maxLength": 256,
       "minLength": 1,
-      "default": "panel.border"
+      "default": "panel.border",
+      "x-platforms": ["macos"],
+      "x-group": ["background", "text", "border", "line", "hover"],
+      "x-example": "\"panel.border\"",
+      "x-example-comment": "the theme's token of its border, as \"accent\""
     },
     "line": {
       "description": "The theme's token of the hairline across the pane, by its name.",
       "type": "string",
+      "maxLength": 256,
       "minLength": 1,
-      "default": "panel.border"
+      "default": "panel.border",
+      "x-platforms": ["macos"],
+      "x-group": ["background", "text", "border", "line", "hover"],
+      "x-example": "\"panel.border\"",
+      "x-example-comment": "the theme's token of the line across the pane"
     },
     "hover": {
       "description": "The theme's token of the pill's background under the pointer, over its own, by its name.",
       "type": "string",
+      "maxLength": 256,
       "minLength": 1,
-      "default": "button.hover.bg"
+      "default": "button.hover.bg",
+      "x-platforms": ["macos"],
+      "x-group": ["background", "text", "border", "line", "hover"],
+      "x-example": "\"button.hover.bg\"",
+      "x-example-comment": "the theme's token over its background under the pointer"
     },
     "font-size": {
       "description": "The size of the header's text, in the terminal's font, in points; 0, or none, for the terminal's own size.",
       "type": "number",
       "minimum": 0,
-      "maximum": 200
+      "maximum": 200,
+      "x-step": 1,
+      "x-platforms": ["macos"],
+      "x-guide": "The size of the header's text, which takes the terminal's font, as [`[font]`](#font) names it.\n\n| Values | Default |\n|---|---|\n| points, from `0` to `200`; `0` for the terminal's own size | `0` |\n\n- Of the terminal's own size, the pill is about a row of the terminal high, its padding past it; a smaller size keeps it within the row.\n- It applies at once, as you save the file, to a header that shows too.",
+      "x-example": "0",
+      "x-example-comment": "points, 0 to 200, of the terminal's font; 0 for its own size"
     },
     "font-weight": {
       "description": "The weight of the header's text, of the terminal's font's faces, the nearest that it has; regular is the terminal's own face.",
       "type": "string",
       "enum": ["light", "regular", "medium", "semibold", "bold", "heavy"],
-      "default": "regular"
+      "default": "regular",
+      "x-platforms": ["macos"],
+      "x-guide": "The weight of the header's text, of the terminal's font's faces, the nearest that it has.\n\n| Values | Default |\n|---|---|\n| `light`, `regular`, `medium`, `semibold`, `bold`, `heavy` | `regular` |\n\n- `regular` is the terminal's own face, as [`style`](#style) names it; the others the family's faces nearest to their weights, which a family of a single weight does not have.\n- It applies at once, as you save the file, to a header that shows too.",
+      "x-example": "\"regular\"",
+      "x-example-comment": "light | regular | medium | semibold | bold | heavy"
     },
     "padding-x": {
       "description": "The room left and right of the text in the pill, in points.",
       "type": "number",
       "minimum": 0,
       "maximum": 40,
-      "default": 8
+      "x-step": 1,
+      "default": 8,
+      "x-platforms": ["macos"],
+      "x-group": ["padding-x", "padding-y"],
+      "x-guide": "The room in the pill around its text, in points: left and right, and above and below.\n\n| Values | Default |\n|---|---|\n| `padding-x` from `0` to `40`; `padding-y` from `0` to `20` | `8`, `1` |\n\n- The pill's ends stay round, of half its height.\n- They apply at once, as you save the file, to a header that shows too.",
+      "x-example": "8",
+      "x-example-comment": "points, 0 to 40, left and right of the text"
     },
     "padding-y": {
       "description": "The room above and below the text in the pill, in points.",
       "type": "number",
       "minimum": 0,
       "maximum": 20,
-      "default": 1
+      "x-step": 1,
+      "default": 1,
+      "x-platforms": ["macos"],
+      "x-group": ["padding-x", "padding-y"],
+      "x-example": "1",
+      "x-example-comment": "points, 0 to 20, above and below it"
     },
     "align": {
       "description": "Where the header's pill sits along the hairline across the pane: a little in from its left, in its middle, or a little in from its right.",
       "type": "string",
       "enum": ["left", "center", "right"],
-      "default": "left"
+      "default": "left",
+      "x-platforms": ["macos"],
+      "x-guide": "Where the header's pill sits along the line across the pane.\n\n| Values | Default |\n|---|---|\n| `left`, `center`, `right` | `left` |\n\n- `left` and `right` keep it a little in from the pane's edge; `center` in the pane's middle.\n- It applies at once, as you save the file, to a header that shows too.",
+      "x-example": "\"left\"",
+      "x-example-comment": "left | center | right: where its pill sits along the line"
     }
-  }
+  },
+  "x-guide": "<sub>Platforms: macOS</sub>\n\nThe command's header of the built-in plugin `lokyr/command-header`: while a pane's first row shows a command's output and the command's line is above the view, a pill of the command as you typed it, in the terminal's font, sits on a thin line across the pane's top, over its first row, which a click scrolls to the command's prompt. Its colors are the theme's, of the tokens that its keys name, so that they follow the light and the dark appearance."
 }

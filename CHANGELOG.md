@@ -11,10 +11,15 @@ from 1.0.0; before it, a minor version may change what a previous one did.
 ### Added
 
 - A settings window, "Settings", of its own, which Lokyr › Open Settings Window opens, as does the command palette, or brings forward where it is open: its pages as tabs across the top, the page chosen below them; ⌘W, or Shell › Close Tab, closes it, no terminal's tab goes into it, and it shows none of the bars, buttons, tips and panels of the terminals' windows.
+- A plugin's config schema may hold annotations of `x-`, as the text of a guide, which Lokyr checks no value against.
 - Themes color two more tokens of the interface, `text.success` and `text.warning`, the palette's green and yellow where a theme gives none.
 - Lokyr › Plugins… opens the settings window at its Plugins page: every plugin, the installed ones and the bundled ones, with its state, active or disabled, and its capabilities, to disable or enable, or, of an installed one, to update or remove, without editing the config; and the registry's plugins, which a field filters as you type, each of its versions and capabilities, to install without restarting.
 - View › Open Themes Folder, which the command palette runs too, opens the folder of your own themes in the Finder, making it first if it is not there, so that a theme's file can be dragged in.
 - Plugins read a window's title as its titlebar shows it, `WindowInfo.title`, to draw it in the system's place.
+
+### Changed
+
+- The config's texts have bounds: a name, as a font's family or a theme's, 256 characters at most, a path or an address 1024; a longer one is an error at its line, where it took any length before.
 
 ### Fixed
 

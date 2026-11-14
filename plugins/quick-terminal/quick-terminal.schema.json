@@ -6,36 +6,62 @@
     "position": {
       "description": "The edge of the screen that the quick terminal comes from, or its centre, where it fades in and out.",
       "enum": ["top", "bottom", "left", "right", "center"],
-      "default": "top"
+      "default": "top",
+      "x-platforms": ["macos"],
+      "x-guide": "The edge of the screen that the quick terminal comes from, or its centre, where it fades in and out; it fades in and out in its place too where another display lies past its edge, rather than slide across that display.\n\n| Values | Default |\n|---|---|\n| `\"top\"`, `\"bottom\"`, `\"left\"`, `\"right\"`, `\"center\"` | `\"top\"` |\n\nIt applies as it shows next.",
+      "x-example": "\"bottom\"",
+      "x-example-comment": "top | bottom | left | right | center"
     },
     "size": {
       "description": "How far it reaches into the screen from its edge, a percentage from 1% to 100% or points, as 300px; then, after a comma, its length along the edge.",
       "type": "string",
-      "minLength": 2,
       "maxLength": 40,
-      "default": "50%"
+      "minLength": 2,
+      "default": "50%",
+      "x-platforms": ["macos"],
+      "x-guide": "The quick terminal's size: first, how far it reaches into the screen from its edge, its height at the top or the bottom, its width at the left or the right, and its width at the centre; then, after a comma, its length along the edge, its width at the top or the bottom, and its height at the left, the right or the centre.\n\n| Values | Default |\n|---|---|\n| a percentage of the screen's, from `\"1%\"` to `\"100%\"`, or points, as `\"300px\"`; a second one after a comma | `\"50%\"` |\n\n- A size that does not read takes `\"50%\"`, as the log tells.\n- The screen's part is of its area below the menu bar and beside the Dock, where the quick terminal shows, centred along its edge.\n- Without the second, it takes the screen's whole width at the top or the bottom, its whole height at the left or the right, and, at the centre, the first's share of the height, or its points.\n- Points are those that macOS lays windows out in, two pixels each on a Retina display; a size past the screen's takes the screen's.\n- It applies as it shows next.",
+      "x-example": "\"40%,80%\"",
+      "x-example-comment": "into the screen, then along the edge: 1% to 100%, or points as \"300px\""
     },
     "screen": {
       "description": "The screen that it shows on: the main one, the pointer's, or the menu bar's.",
       "enum": ["main", "mouse", "menu-bar"],
-      "default": "main"
+      "default": "main",
+      "x-platforms": ["macos"],
+      "x-guide": "The screen that the quick terminal shows on.\n\n| Values | Default |\n|---|---|\n| `\"main\"`, `\"mouse\"`, `\"menu-bar\"` | `\"main\"` |\n\n`\"main\"` is the system's main screen, the one of the window in front; `\"mouse\"` the screen that the pointer is on; `\"menu-bar\"` the one that has the menu bar. It applies as it shows next.",
+      "x-example": "\"mouse\"",
+      "x-example-comment": "main | mouse | menu-bar"
     },
     "animation": {
       "description": "How long it slides in and out, in milliseconds; 0 shows and hides it at once.",
       "type": "integer",
       "minimum": 0,
       "maximum": 2000,
-      "default": 200
+      "x-step": 50,
+      "default": 200,
+      "x-platforms": ["macos"],
+      "x-guide": "How long the quick terminal slides in and out, in milliseconds.\n\n| Values | Default |\n|---|---|\n| from `0` to `2000`; `0` shows and hides it at once | `200` |\n\nWith the system's Reduce motion, it shows and hides at once. It applies at once.",
+      "x-example": "150",
+      "x-example-comment": "ms, from 0 to 2000"
     },
     "autohide": {
       "description": "Whether it hides as it loses the focus.",
       "type": "boolean",
-      "default": true
+      "default": true,
+      "x-platforms": ["macos"],
+      "x-guide": "Whether the quick terminal hides as it loses the focus, as you click another app or another of Lokyr's windows.\n\n| Values | Default |\n|---|---|\n| `true`, `false` | `true` |\n\nIt applies at once.",
+      "x-example": "false",
+      "x-example-comment": "true | false: hides as it loses the focus"
     },
     "spaces": {
       "description": "Whether it follows to the Space in front, or stays on the one that it showed on.",
       "enum": ["move", "remain"],
-      "default": "move"
+      "default": "move",
+      "x-platforms": ["macos"],
+      "x-guide": "Whether the quick terminal follows you to the Space in front, as you switch Spaces, or stays on the one that it showed on.\n\n| Values | Default |\n|---|---|\n| `\"move\"`, `\"remain\"` | `\"move\"` |\n\nIt applies as it shows next.",
+      "x-example": "\"remain\"",
+      "x-example-comment": "move | remain"
     }
-  }
+  },
+  "x-guide": "<sub>Platforms: macOS</sub>\n\nThe quick terminal of the built-in plugin `lokyr/quick-terminal`: a window that a global key slides in from an edge of the screen, over every app, the ones in full screen too, and out again: a terminal at hand from anywhere. Bind its command, `window.toggle-quick-terminal`, to a key of `[keys]` that works in every app, with `global:`, which macOS gives Lokyr without the Accessibility permission, as [Bindings](#bindings) says, as ``\"global:ctrl+`\" = \"window.toggle-quick-terminal\"`` does; Shell › Quick Terminal runs it too.\n\n```toml\n[keys]\n\"global:ctrl+`\" = \"window.toggle-quick-terminal\"\n```\n\nPick a key that no other app takes: VS Code, as an example, takes Control-` for its own terminal while it is in front. The key shows the quick terminal and gives it the keys; again, it hides it, and the app that had the focus takes it back; shown without the focus, it takes the focus. Its shell runs while it is hidden, so that it shows at once, where [`new-directory`](#new-directory) says; closed, as its shell exits, the next key opens a new one.\n\nHidden, it keeps its shell, its screen and its scrollback, as a window does, and its last frame, so that it shows at once: some ten megabytes of memory at half the screen of a Retina laptop, more on a larger screen. It draws nothing while hidden.\n\nThese keys were the section `[quick-terminal]` before; a file that still has it reads, a notice at its line telling you to move its keys here, which it ignores until then. With `enabled = false`, the quick terminal goes, its window and its shell with it, and Shell › Quick Terminal too."
 }

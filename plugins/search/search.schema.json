@@ -7,17 +7,30 @@
       "description": "Whether case counts while the find bar's case toggle is off: smart, of a text of a capital letter alone; or insensitive, never.",
       "type": "string",
       "enum": ["smart", "insensitive"],
-      "default": "smart"
+      "default": "smart",
+      "x-platforms": ["macos"],
+      "x-guide": "Whether case counts while the find bar's case toggle is off; on, it always counts.\n\n| Values | Default |\n|---|---|\n| `smart`, `insensitive` | `smart` |\n\n- `smart` counts case of a text of a capital letter, and not otherwise: `error` finds `Error`, and `Error` does not find `error`; `insensitive` never counts it.\n- The toggles, of case, whole words and regular expressions, of the syntax of Rust's `regex`, keep their states from one search to the next, as Lokyr keeps them; a text that is no valid regular expression tells so in the bar, and finds nothing.\n- It applies at the next search, as you save the file.",
+      "x-example": "\"smart\"",
+      "x-example-comment": "smart | insensitive: whether case counts while the bar's case toggle is off"
     },
     "highlight-all": {
       "description": "Whether every match that shows is highlighted, besides the current one.",
       "type": "boolean",
-      "default": true
+      "default": true,
+      "x-platforms": ["macos"],
+      "x-guide": "Whether every match that shows is highlighted, besides the current one.\n\n| Values | Default |\n|---|---|\n| `true`, `false` | `true` |\n\n- The current match is highlighted either way, in its own color, and selected as the bar closes.\n- It applies at once, as you save the file, to an open find bar too.",
+      "x-example": "true",
+      "x-example-comment": "true | false: every match that shows highlighted"
     },
     "wrap-around": {
       "description": "Whether a step past the last match goes on from the first, and past the first from the last.",
       "type": "boolean",
-      "default": true
+      "default": true,
+      "x-platforms": ["macos"],
+      "x-guide": "Whether a step past the last match goes on from the first, and past the first from the last.\n\n| Values | Default |\n|---|---|\n| `true`, `false` | `true` |\n\n- Without it, a step past either end stays there.\n- It applies at once, as you save the file.",
+      "x-example": "true",
+      "x-example-comment": "true | false: a step past the last match goes on from the first"
     }
-  }
+  },
+  "x-guide": "<sub>Platforms: macOS</sub>\n\nThe find bar of the built-in plugin `lokyr/search`. `cmd+f` opens it at the top right of the pane that has the keyboard, of your last search's text, selected, so that typing replaces it, and its options, which it searches again; as you type, it searches the pane's screen and scrollback, the rows that show first, and counts the matches, as `3 of 12`, in a room of its own, which keeps the bar's width, numbers past 9999 short, as `12K`. It searches from the bottom up, as the newest output is at the bottom: `enter`, `cmd+g` and the bar's up arrow select the next match, the one above; `shift+enter`, `cmd+shift+g` and its down arrow the previous one, the one below. Every match that shows is highlighted, the current one in a color of its own, and the current one comes into the view, which stays there while the program prints on. `escape`, or its close button, closes it: the highlights go, and the current match is your selection, ready for `cmd+c`. The toggles at its field's end count case, match whole words alone, and take the text as a regex, which the next search keeps; the magnifying glass at its start lists your recent searches, which Lokyr keeps."
 }

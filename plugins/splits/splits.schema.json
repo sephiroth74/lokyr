@@ -8,17 +8,31 @@
       "type": "number",
       "minimum": 0,
       "maximum": 1,
-      "default": 0.15
+      "x-step": 0.05,
+      "default": 0.15,
+      "x-platforms": ["macos"],
+      "x-guide": "How much the panes that have not the keyboard fade into their background, in a tab of more than one.\n\n| Values | Default |\n|---|---|\n| from `0` to `1`, whole or not | `0.15` |\n\n- `0` leaves them as they are; `1` hides their text in their background.\n- The fade brings each pane's text, its lines, its cursor and the backgrounds that its program colors toward its own background, so that a translucent window's background stays as it is; a picture of colors of its own, as an emoji, fades as its opacity, over its faded cell.\n- It applies at once, as you save the file.",
+      "x-example": "0.15",
+      "x-example-comment": "0 to 1: how much the panes without the keyboard fade"
     },
     "pane-titles": {
       "description": "Whether each pane of a tab of more than one shows its title across its top.",
       "type": "boolean",
-      "default": false
+      "default": false,
+      "x-platforms": ["macos"],
+      "x-guide": "Whether each pane of a tab of more than one shows its title across its top.\n\n| Values | Default |\n|---|---|\n| `true`, `false` | `false` |\n\n- The title is its program's, or its folder and the program in its foreground, as `src — vim`, of the text's color in the pane that has the keyboard and of a fainter one in the others.\n- The header takes its row of the pane's room, which its grid gives up; none while a pane is zoomed, or in a tab of one pane.\n- It applies at once, as you save the file.",
+      "x-example": "false",
+      "x-example-comment": "true | false: each pane's title across its top"
     },
     "focus-follows-mouse": {
       "description": "Whether the keyboard goes to the pane that the pointer comes over.",
       "type": "boolean",
-      "default": false
+      "default": false,
+      "x-platforms": ["macos"],
+      "x-guide": "Whether the keyboard goes to the pane that the pointer comes over, without a click.\n\n| Values | Default |\n|---|---|\n| `true`, `false` | `false` |\n\n- The pointer's moves wake the app over the panes that have not the keyboard alone, so that it costs nothing while the pointer stays over the one that has it; none moves it while a button is down, as in a selection's drag.\n- It applies at once, as you save the file.",
+      "x-example": "false",
+      "x-example-comment": "true | false: the keyboard goes to the pane under the pointer"
     }
-  }
+  },
+  "x-guide": "<sub>Platforms: macOS</sub>\n\nThe panes of the built-in plugin `lokyr/splits`: how the panes of a tab of more than one show, and where the keyboard goes. Its commands split a pane, move between panes, resize, zoom and swap them, as [the keys of the defaults](#keys) tell."
 }

@@ -6,34 +6,60 @@
     "position": {
       "description": "Where the tab bar goes: at the window's top, bottom, left or right.",
       "enum": ["top", "bottom", "left", "right"],
-      "default": "top"
+      "default": "top",
+      "x-platforms": ["macos"],
+      "x-guide": "Where the bar goes.\n\n| Values | Default |\n|---|---|\n| `\"top\"`, `\"bottom\"`, `\"left\"`, `\"right\"` | `\"top\"` |\n\n- At the top, as [`style`](#style-1) puts it; at the bottom, across the window's bottom, below the status bar, under a titlebar of the window's title; on the left or the right, a column from below the titlebar to the window's bottom, its tabs one below another, as wide as [`column-width`](#column-width) says, or as you drag its edge.\n- On the left, in the `\"unified\"` and `\"seamless\"` looks, the column runs up through the titlebar, as macOS's sidebars do: the window's buttons stand over its top, the keys that bring the window forward after them, and the panes beside it start below the titlebar, with no title. You drag the window by the column's top, beside the window's buttons, and by the titlebar over the panes.\n- It applies at once, as you save the file.",
+      "x-example": "\"top\"",
+      "x-example-comment": "top | bottom | left | right: where the tab bar goes"
     },
     "style": {
       "description": "The bar's look: standard, below a titlebar of the window's title; unified and seamless, in the titlebar at the top, seamless of the window's background.",
       "enum": ["standard", "unified", "seamless"],
-      "default": "unified"
+      "default": "unified",
+      "x-platforms": ["macos"],
+      "x-guide": "The bar's look.\n\n| Values | Default |\n|---|---|\n| `\"standard\"`, `\"unified\"`, `\"seamless\"` | `\"unified\"` |\n\n- `\"standard\"` puts the bar in a strip below a titlebar of the window's title: the tabs side by side in a rounded track, of equal widths, each its title and its keys in its middle, the one shown raised over the track, of a border and a shadow; the button of a new tab a circle after the track.\n- `\"unified\"` puts the same tabs in the titlebar, past the window's buttons and the keys that bring the window forward, as [`title-shortcut`](#title-shortcut) shows them; the one shown is of its background alone, without a border or a shadow, the one border round a tab being its program's progress.\n- `\"seamless\"` puts the tabs in the titlebar too, past the window's keys, which keep the titlebar's background, as cells of the titlebar's height, a line between two. The one shown has the window's own background, translucent and blurred as [`background-opacity`](#background-opacity) and [`background-blur`](#background-blur) make it, and opens onto the terminal below it; the others are a little darker, over a line. Each has its title in its middle, its color and its keys at its end, and the button of a new tab is a cell of its own.\n- At the bottom, each look keeps its tabs, under a titlebar of the window's title; down a column, the tabs are rows, the one shown raised, with rounded corners and a border in `\"standard\"` and round ends of its background alone in `\"unified\"`, or of the window's background in `\"seamless\"`, with the rest of the column a little darker; the button of a new tab is a row of its own, its sign in its middle.\n- A title too long for its tab ends in an ellipsis. A tab's background lightens under the pointer and darkens as you press it, fading in and out, at once where the system reduces motion; its close button shows at its start.\n- It applies at once, as you save the file.",
+      "x-example": "\"unified\"",
+      "x-example-comment": "standard | unified | seamless: the bar's look"
     },
     "hide-when-single": {
       "description": "Whether the bar hides while the window has one tab.",
       "type": "boolean",
-      "default": true
+      "default": true,
+      "x-platforms": ["macos"],
+      "x-guide": "Whether the bar hides while the window has a single tab.\n\n| Values | Default |\n|---|---|\n| `true`, `false` | `true` |\n\n- Hidden, the bar takes no room, and the window shows its tab's title in its titlebar, in its middle, with the tab's marks beside it: the lock of the protected input, the bell, and the dots of a program that runs; none in full screen, where the window has no titlebar.\n- It applies at once, as you save the file.",
+      "x-example": "true",
+      "x-example-comment": "true | false: no bar for a single tab"
     },
     "show-index": {
       "description": "Whether each of the first nine tabs shows the keys that select it.",
       "type": "boolean",
-      "default": true
+      "default": true,
+      "x-platforms": ["macos"],
+      "x-guide": "Whether each of the first nine tabs shows the keys that select it, as `⌘1`.\n\n| Values | Default |\n|---|---|\n| `true`, `false` | `true` |\n\n- The keys are those that your [`[keys]`](#keys) bind to `tabs.goto` of the tab's number, `cmd+1` to `cmd+9` by default; a tab of no binding shows none.\n- It applies at once, as you save the file, and as your `[keys]` change.",
+      "x-example": "true",
+      "x-example-comment": "true | false: ⌘1 to ⌘9 on the first nine tabs"
     },
     "close-button": {
       "description": "When a tab shows its close button: always, under the pointer, or never.",
       "enum": ["always", "hover", "never"],
-      "default": "hover"
+      "default": "hover",
+      "x-platforms": ["macos"],
+      "x-guide": "When a tab shows its close button.\n\n| Values | Default |\n|---|---|\n| `\"always\"`, `\"hover\"`, `\"never\"` | `\"hover\"` |\n\n- `\"hover\"` shows it while the pointer is over its tab, fading in and out.\n- It applies at once, as you save the file.",
+      "x-example": "\"hover\"",
+      "x-example-comment": "always | hover | never: a tab's close button"
     },
     "column-width": {
       "description": "The width of the bar's column on the left or the right, in points.",
       "type": "number",
       "minimum": 60,
       "maximum": 600,
-      "default": 200
+      "x-step": 10,
+      "default": 200,
+      "x-platforms": ["macos"],
+      "x-guide": "The width of the bar's column, on the left or the right, in points.\n\n| Values | Default |\n|---|---|\n| from `60` to `600` | `200` |\n\n- A drag of the column's edge changes its width, which Lokyr keeps for its next start; a new value in the file takes the drag's place, at once or at the next start, as the file changes while Lokyr is closed too.\n- It applies at once, as you save the file.",
+      "x-example": "200",
+      "x-example-comment": "points, 60 to 600: the bar's column on the left or the right"
     }
-  }
+  },
+  "x-guide": "<sub>Platforms: macOS</sub>\n\nThe tab bar of the built-in plugin `lokyr/tabs`: each window's tabs, each of its title, its color, the keys that select it and its close button, and a button of a new tab. A click on a tab shows it, on its close button closes it, asking you first while a program other than a shell runs there. A tab's title is the one that you give it with Shell › Rename Tab…, or its program's, or its folder and the program in its foreground, as `src — vim`."
 }

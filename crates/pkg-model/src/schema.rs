@@ -9,8 +9,10 @@
 //! `additionalProperties`, `items`, `minItems` and `maxItems`, with the
 //! annotations `$schema`, `$id`, `$comment`, `title`, `description`,
 //! `default`, `examples`, `deprecated`, `readOnly` and `writeOnly`, and
-//! the schemas `true` and `false`. A schema of any other keyword does not
-//! read, by its name.
+//! the schemas `true` and `false`; and the annotations of Lokyr's own,
+//! every keyword of `x-`, as the guide's text and the settings' page's
+//! control of a key. A schema of any other keyword does not read, by its
+//! name.
 
 use std::collections::BTreeMap;
 
@@ -328,7 +330,7 @@ fn node(value: &Value, at: &str) -> Result<Node, String> {
             }
             "const" | "minimum" | "maximum" | "exclusiveMinimum" | "exclusiveMaximum"
             | "minLength" | "maxLength" | "minItems" | "maxItems" => {}
-            key if ANNOTATIONS.contains(&key) => {}
+            key if ANNOTATIONS.contains(&key) || key.starts_with("x-") => {}
             key => {
                 return Err(format!(
                     "the keyword `{key}` at `{place}` is not one that the host checks"
