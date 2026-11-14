@@ -141,6 +141,35 @@ fn the_settings_open_in_a_window_of_their_own_once_and_close_as_a_window() {
     // The panes' actions do not apply; the text's size does.
     assert!(!fake.command_enabled("pane.select-all"));
     assert!(fake.command_enabled("font.bigger"));
+    // None of the plugins' views of the terminals' windows: no slot's, as
+    // the tab bar, the progress' strip or the titlebar's buttons, and no
+    // panel of a plugin's, as the palette or a tip, but the pages'.
+    let foreign = |app: &App| {
+        app.windows[&own]
+            .chrome
+            .iter()
+            .filter(|view| {
+                view.plugin != super::super::chrome::OVERFLOW
+                    && !matches!(view.view, ViewId::Page(_))
+            })
+            .map(|view| format!("{} {:?}", view.plugin, view.view))
+            .collect::<Vec<_>>()
+    };
+    assert!(foreign(&app).is_empty(), "{:?}", foreign(&app));
+    assert!(
+        app.windows[&window]
+            .chrome
+            .iter()
+            .any(|view| view.view.slot().is_some()),
+        "the terminals' window has its slots"
+    );
+    for command in ["command-palette.open", "quick-tips.show"] {
+        fake.send_app(&mut app, AppEvent::Command(command.to_owned()));
+        frames(&mut fake, &mut app, own);
+        assert!(foreign(&app).is_empty(), "{command}: {:?}", foreign(&app));
+    }
+    assert!(fake.alerts().is_empty());
+    assert!(app.diagnostics.shown().is_none());
     // A new tab, as ⌘T asks there, opens nowhere: the settings' window
     // takes none.
     fake.send_app(&mut app, AppEvent::Command("tabs.new".to_owned()));

@@ -254,3 +254,84 @@ fn a_plugin_that_waits_for_its_page_activates_as_the_page_renders() {
         ["activate".to_owned(), format!("render {view:?}")]
     );
 }
+
+/// A plugin of the page `plugins`, of a button `menu`, whose command
+/// `manager.menus` opens a panel at the window's corner of `window` and one
+/// below its page's button, and tells their answers in `told`.
+struct Menus {
+    window: host::WindowId,
+    told: Rc<RefCell<Vec<Option<Code>>>>,
+}
+
+impl Plugin for Menus {
+    fn activate(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
+        cx.register_command(command("manager.menus"))
+    }
+
+    fn on_command(&mut self, cx: &mut Cx<'_>, _: &str, _: Args) -> Result<(), Error> {
+        use lokyr_plugin_sdk::ui::{Anchor, Corner, PanelOptions, Role};
+        let options = |anchor| PanelOptions {
+            anchor,
+            role: Role::Menu,
+            close_outside: true,
+            close_escape: true,
+            takes_keys: false,
+            close_typing: false,
+        };
+        let corner = cx.open_panel(
+            "corner",
+            options(Anchor::WindowCorner {
+                window: self.window,
+                corner: Corner::TopLeft,
+            }),
+        );
+        let below = cx.open_panel(
+            "below",
+            options(Anchor::Node {
+                view: ViewId::Page("plugins".to_owned()),
+                key: "menu".into(),
+            }),
+        );
+        let mut told = self.told.borrow_mut();
+        told.push(corner.err().map(|error| error.code));
+        told.push(below.err().map(|error| error.code));
+        Ok(())
+    }
+
+    fn render(&mut self, _: &mut Cx<'_>, view: &ViewId) -> Option<Node> {
+        match view {
+            ViewId::Page(_) => Some(Node::container(vec![Node::button("More").key("menu")])),
+            _ => Some(Node::text("menu")),
+        }
+    }
+}
+
+#[test]
+fn the_settings_window_shows_no_panel_of_a_plugin_but_those_of_its_pages_nodes() {
+    let mut app = App::default();
+    window(&mut app, "sleep 30");
+    let own = app.workspace.open_settings_window("Settings");
+    let told = Rc::new(RefCell::new(Vec::new()));
+    let mut plugins = Plugins::new();
+    plugins
+        .add_declared(
+            manifest("lokyr/manager", &[("plugins", "extensions")], &[]),
+            Box::new(Menus {
+                window: own.into(),
+                told: Rc::clone(&told),
+            }),
+        )
+        .unwrap();
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    plugins
+        .render(
+            "lokyr/manager",
+            &ViewId::Page("plugins".to_owned()),
+            &mut app.context(),
+        )
+        .unwrap();
+    plugins
+        .run("manager.menus", Args::new(), &mut app.context())
+        .unwrap();
+    assert_eq!(*told.borrow(), [Some(Code::Failed), None]);
+}

@@ -4859,19 +4859,35 @@ impl Host<'_, '_> {
                 .map(crate::workspace::Tab::window)
                 .ok_or_else(|| Error::new(Code::NotFound, format!("there is no pane {}", pane.0)))
         };
-        match anchor {
+        let window = match anchor {
             Anchor::Cell { pane, .. }
             | Anchor::Cursor(pane)
             | Anchor::PaneCorner { pane, .. }
-            | Anchor::PaneTop(pane) => pane_window(*pane),
+            | Anchor::PaneTop(pane) => pane_window(*pane)?,
             Anchor::Pointer(window) | Anchor::WindowCorner { window, .. } => {
-                Ok(self.window(*window)?.id())
+                self.window(*window)?.id()
             }
             Anchor::Node { view, key } => {
                 self.node(view, key)?;
-                self.view_window(view)
+                self.view_window(view)?
             }
+        };
+        // The settings' window shows its pages' own panels alone, as a
+        // menu below a node of a page.
+        let of_page = matches!(
+            anchor,
+            Anchor::Node {
+                view: ViewId::Page(_),
+                ..
+            }
+        );
+        if self.context.workspace.settings_window() == Some(window) && !of_page {
+            return Err(Error::new(
+                Code::Failed,
+                lokyr_plugin_sdk::message::SETTINGS_PANELS,
+            ));
         }
+        Ok(window)
     }
 
     /// Whether the plugin may make `request`: it has the capability that

@@ -619,7 +619,6 @@ pub(super) fn main_menu(
                     && APPEARANCES.iter().all(|(name, ..)| *name != command.name)
                     && command.name != PERFORMANCE
                     && command.name != OPEN_THEMES
-                    && command.name != SETTINGS_TAB
                     && command.name != FLOAT_ON_TOP
                     && command.name != NEXT_AGENT
                     && command.name != SHOW_AGENTS
@@ -757,9 +756,9 @@ pub(super) fn main_menu(
         }),
     ));
     // About and Check for Updates… first, where macOS's apps have them,
-    // then Settings, the plugins, Secure Keyboard Entry, the default
-    // terminal and the command line tools, in that order, then the system's
-    // items.
+    // then Settings, the settings' window, the plugins, Secure Keyboard
+    // Entry, the default terminal and the command line tools, in that
+    // order, then the system's items.
     let of = |item: &MenuItem, names: &[&str]| matches!(item, MenuItem::Command { command, .. } if names.contains(&command.as_str()));
     let first = |item: &MenuItem| {
         of(
@@ -768,6 +767,7 @@ pub(super) fn main_menu(
                 ABOUT,
                 CHECK_UPDATES,
                 SETTINGS,
+                SETTINGS_TAB,
                 PLUGINS,
                 SECURE_INPUT,
                 DEFAULT_TERMINAL,
@@ -781,6 +781,7 @@ pub(super) fn main_menu(
         &[ABOUT, CHECK_UPDATES][..],
         &[
             SETTINGS,
+            SETTINGS_TAB,
             PLUGINS,
             SECURE_INPUT,
             DEFAULT_TERMINAL,

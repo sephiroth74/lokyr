@@ -2889,7 +2889,11 @@ impl<B: Backend> App<B> {
             .acting
             .or_else(|| platform.focused_window())
             .and_then(|window| self.windows.get(&window));
-        let focused = shown.map(|state| state.window);
+        // The settings' window of their own is none to the plugins, which
+        // show nothing of the terminals' there.
+        let focused = shown
+            .map(|state| state.window)
+            .filter(|&window| self.workspace.settings_window() != Some(window));
         // The images of cells at the scale of the focused window's last
         // frame, or else of the largest of the others', or of a Mac's own
         // display, of no question to the platform.

@@ -197,6 +197,10 @@ impl<B: Backend> App<B> {
                 None => tab.layout().panes(),
             })
             .unwrap_or_default();
+        // The settings' window of their own shows none of the plugins'
+        // views of the terminals' windows: no slot's, and no panel but the
+        // app's own and its pages'.
+        let settings = self.workspace.settings_window() == Some(state.window);
         let slots = &self.config.slots;
         let one = |slot, chosen: &Option<String>| {
             self.plugins
@@ -204,6 +208,34 @@ impl<B: Backend> App<B> {
                 .map(str::to_owned)
         };
         let mut views = Vec::new();
+        if settings {
+            for view in state
+                .panels
+                .order()
+                .filter_map(|id| state.chrome.iter().find(|view| view.id == id))
+            {
+                let of_page = view.placed.as_ref().is_some_and(|placed| {
+                    matches!(
+                        placed.options.anchor,
+                        lokyr_kernel::plugins::ui::Anchor::Node {
+                            view: ViewId::Page(_),
+                            ..
+                        }
+                    )
+                });
+                if view.plugin != OVERFLOW && !of_page {
+                    continue;
+                }
+                views.push((view.plugin.clone(), view.view.clone()));
+                if view.plugin == OVERFLOW
+                    && view.view == super::settings_tab::settings_view()
+                    && let Some((plugin, page)) = self.settings.chosen_page()
+                {
+                    views.push((plugin.to_owned(), page));
+                }
+            }
+            return views;
+        }
         if let Some(plugin) = one(Slot::PaneHeader, &slots.pane_header) {
             for pane in panes {
                 views.push((plugin.clone(), ViewId::PaneHeader(pane.into())));

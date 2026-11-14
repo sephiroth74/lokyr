@@ -40,6 +40,7 @@ fn starting_opens_a_window_under_the_menus_of_the_commands() {
             "Check for Updates…",
             "-",
             "Settings… cmd+,",
+            "Open Settings Window",
             "Plugins…",
             "Secure Keyboard Entry",
             "Make Lokyr the Default Terminal",
