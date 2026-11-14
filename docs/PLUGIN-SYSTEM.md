@@ -818,6 +818,14 @@ type Cx = {
     -- ends of no path as its window closes. A name of 1 to 255 bytes, of no `/`, `:`, control character, character
     -- that hides or moves the text around it nor mark of direction; 256 MiB at most.
     save_file: (window: WindowId?, name: string, bytes: string) -> (number?, Error?),
+    -- Shows `text` in Lokyr's notice card, at the panes' top right, as the app's own notices: of the icon and the color
+    -- of `level`, "info" by default (the accent's info), "success" (a green check), "warning" (a yellow warning) or
+    -- "error" (a red error), and of `title`, or the plugin's namespace, with the card's buttons that copy its text and
+    -- close it. It goes by itself after 4 seconds, 8 of a warning or an error, unless the pointer rests on it, and
+    -- takes the place of the plugin's last notice, the notices under it showing again as it goes. A text of 1 to 1024
+    -- characters and a title of 1 to 100, of no control character nor one that hides the text around it; one notice a
+    -- second, a second one within it refused. No capability, as the card names the plugin.
+    notify: (text: string, level: ("info" | "success" | "warning" | "error")?, title: string?) -> (boolean, Error?),
     -- The text of a message of the plugin's catalogs, of its arguments, a text or a number each, in the language
     -- shown, or English's where that one lacks it, as a view's texts, labels and tooltips take them: the id itself
     -- where the catalogs lack it. A change of the language rebuilds the menus, which `keys-changed` tells.

@@ -2106,6 +2106,7 @@ fn a_call_is_its_own_plugin_s() {
             lingering: Vec::new(),
             replaced: Vec::new(),
             timers: BTreeMap::new(),
+            noticed_at: None,
             triggers: vec![Trigger::Startup],
             undecided: Vec::new(),
             asking: false,

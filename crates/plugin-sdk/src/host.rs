@@ -1022,6 +1022,70 @@ pub enum Awake {
     Display,
 }
 
+/// How much a plugin's notice matters, which its icon and its color tell,
+/// and how long it shows before it goes by itself.
+#[derive(
+    Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
+)]
+#[serde(rename_all = "kebab-case")]
+pub enum NoticeLevel {
+    /// Something to know, of the icon `info` in the accent's color.
+    #[default]
+    Info,
+    /// Something done, of the icon `check` in the theme's green.
+    Success,
+    /// Something to look at, of the icon `warning` in the theme's yellow.
+    Warning,
+    /// Something that failed, of the icon `error` in the theme's red.
+    Error,
+}
+
+/// A plugin's notice as the host shows it: its level, its title, the
+/// plugin's namespace where it gave none, and its text.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Notice {
+    /// How much it matters.
+    pub level: NoticeLevel,
+    /// Its title.
+    pub title: String,
+    /// What it tells.
+    pub text: String,
+}
+
+/// The most characters of a plugin's notice's text.
+pub const LONGEST_NOTICE: usize = 1024;
+
+/// The most characters of a plugin's notice's title.
+pub const LONGEST_NOTICE_TITLE: usize = 100;
+
+/// The least time between two notices of a plugin, in milliseconds of the
+/// host's time: a second one within it is refused.
+pub const NOTICE_PAUSE: u64 = 1000;
+
+/// Whether `text` and `title` make a plugin's notice: a text of 1 to
+/// [`LONGEST_NOTICE`] characters, a title of 1 to
+/// [`LONGEST_NOTICE_TITLE`], neither of a control character nor one that
+/// hides the text around it; the error that tells it is not.
+pub fn check_notice(text: &str, title: Option<&str>) -> Result<(), crate::command::Error> {
+    let shows = |text: &str, most: usize| {
+        let count = text.chars().count();
+        (1..=most).contains(&count)
+            && !text
+                .chars()
+                .any(|c| c.is_control() || crate::text::is_hidden(c))
+    };
+    if shows(text, LONGEST_NOTICE) && title.is_none_or(|title| shows(title, LONGEST_NOTICE_TITLE)) {
+        return Ok(());
+    }
+    Err(crate::command::Error::new(
+        crate::command::Code::Failed,
+        format!(
+            "a notice's text has 1 to {LONGEST_NOTICE} characters and its title 1 to \
+             {LONGEST_NOTICE_TITLE}, of no control character nor one that hides the text around it"
+        ),
+    ))
+}
+
 /// A plugin, as a read of the plugins tells it, for the user's plugin
 /// manager.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

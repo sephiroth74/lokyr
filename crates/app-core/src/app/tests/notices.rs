@@ -22,12 +22,16 @@ fn notifier() -> Program {
 fn an_invalid_config_shows_its_notice_until_one_that_reads() {
     let (mut fake, mut app, path) = with_file("notice", "[font]\nsize = 14\n");
     let window = fake.windows().next().unwrap();
-    assert_eq!(app.diagnostics.shown(), None);
+    assert_eq!(app.diagnostics.shown_diagnostic(), None);
     // The error, of its line, and nothing of the file applies.
     std::fs::write(&path, "[font]\nsize = 15\nbogus = 1\n").unwrap();
     fake.send(&mut app, window, WindowEvent::Frame);
     change(&mut fake, &mut app);
-    let shown = app.diagnostics.shown().cloned().expect("a notice");
+    let shown = app
+        .diagnostics
+        .shown_diagnostic()
+        .cloned()
+        .expect("a notice");
     assert_eq!(
         (shown.code, &shown.about),
         (Code::InvalidConfig, &About::Config)
@@ -39,18 +43,22 @@ fn an_invalid_config_shows_its_notice_until_one_that_reads() {
     // Another error takes its place; a config that reads takes it away.
     std::fs::write(&path, "[font]\nsize = 1000\n").unwrap();
     change(&mut fake, &mut app);
-    let again = app.diagnostics.shown().cloned().expect("a notice");
+    let again = app
+        .diagnostics
+        .shown_diagnostic()
+        .cloned()
+        .expect("a notice");
     assert_ne!(again.text, shown.text);
     std::fs::write(&path, "[font]\nsize = 16\n").unwrap();
     change(&mut fake, &mut app);
-    assert_eq!(app.diagnostics.shown(), None);
+    assert_eq!(app.diagnostics.shown_diagnostic(), None);
     assert_eq!(app.config.font.size.points(), 16.0);
     // Back to the config in force, as after an error, takes it away too.
     std::fs::write(&path, "bogus = 1\n").unwrap();
     change(&mut fake, &mut app);
     std::fs::write(&path, "[font]\nsize = 16\n").unwrap();
     change(&mut fake, &mut app);
-    assert_eq!(app.diagnostics.shown(), None);
+    assert_eq!(app.diagnostics.shown_diagnostic(), None);
     let _ = std::fs::remove_dir_all(path.parent().unwrap());
 }
 
@@ -68,7 +76,11 @@ fn a_term_that_no_terminfo_entry_describes_shows_its_notice_until_one_that_is() 
     app.terminfo_dirs = vec![root.clone()];
     app.environment.terminfo = None;
     fake.start(&mut app);
-    let shown = app.diagnostics.shown().cloned().expect("a notice");
+    let shown = app
+        .diagnostics
+        .shown_diagnostic()
+        .cloned()
+        .expect("a notice");
     assert_eq!(
         (shown.code, &shown.about),
         (Code::Unavailable, &About::Term)
@@ -85,7 +97,9 @@ fn a_term_that_no_terminfo_entry_describes_shows_its_notice_until_one_that_is() 
         let mut config = app.config.clone();
         config.terminal.term = term(name);
         app.apply(&mut fake, config);
-        app.diagnostics.shown().map(|shown| shown.about.clone())
+        app.diagnostics
+            .shown_diagnostic()
+            .map(|shown| shown.about.clone())
     };
     assert_eq!(retermed(&mut app, "xterm-256color"), None);
     // The terminal's own entry, where the app has it, as its programs find
@@ -106,7 +120,11 @@ fn a_font_that_is_not_installed_shows_its_notice_until_one_that_is() {
     let mut fake = Fake::default();
     let mut app = App::new(Some(drawing), config, None).with_program(quiet());
     fake.start(&mut app);
-    let shown = app.diagnostics.shown().cloned().expect("a notice");
+    let shown = app
+        .diagnostics
+        .shown_diagnostic()
+        .cloned()
+        .expect("a notice");
     assert_eq!(
         (shown.code, &shown.about),
         (Code::Unavailable, &About::Font)
@@ -120,7 +138,7 @@ fn a_font_that_is_not_installed_shows_its_notice_until_one_that_is() {
     let mut config = app.config.clone();
     config.font.family = family("Menlo");
     app.apply(&mut fake, config);
-    assert_eq!(app.diagnostics.shown(), None);
+    assert_eq!(app.diagnostics.shown_diagnostic(), None);
 }
 
 #[test]
@@ -128,10 +146,14 @@ fn a_failure_shows_its_notice() {
     let (mut fake, mut app, _, _) = with_tester();
     // A command that the caller named wrongly goes to the log alone.
     app.run(&mut fake, "test.nothing", Args::new());
-    assert_eq!(app.diagnostics.shown(), None);
+    assert_eq!(app.diagnostics.shown_diagnostic(), None);
     // A plugin that panics: a fault, which disables it.
     app.run(&mut fake, "test.boom", Args::new());
-    let shown = app.diagnostics.shown().cloned().expect("a notice");
+    let shown = app
+        .diagnostics
+        .shown_diagnostic()
+        .cloned()
+        .expect("a notice");
     assert_eq!(shown.code, Code::Fault);
     assert!(
         shown.text.contains("panicked: on purpose"),
@@ -261,7 +283,7 @@ fn a_notice_shows_as_a_card_at_the_panes_top_right_which_its_buttons_copy_and_cl
     assert_eq!(app.notice.timer, None);
     let (_, close) = card(&app, window, "close").unwrap();
     click_rect(&mut fake, &mut app, window, close);
-    assert_eq!(app.diagnostics.shown(), None);
+    assert_eq!(app.diagnostics.shown_diagnostic(), None);
     fake.send(&mut app, window, WindowEvent::Frame);
     assert!(card(&app, window, "card").is_none());
     assert!(
@@ -292,7 +314,7 @@ fn a_failure_s_card_goes_by_itself_unless_the_pointer_rests_on_it() {
     );
     assert_eq!(app.notice.timer, None);
     fake.fire_timers(&mut app, at + Duration::from_secs(1));
-    assert!(app.diagnostics.shown().is_some());
+    assert!(app.diagnostics.shown_diagnostic().is_some());
     // It leaves: the time starts again, and the card goes.
     app.notice_event(
         &mut fake,
@@ -301,7 +323,7 @@ fn a_failure_s_card_goes_by_itself_unless_the_pointer_rests_on_it() {
     let (_, again) = app.notice.timer.expect("timed again");
     assert!(again >= at, "from the leave");
     fake.fire_timers(&mut app, again + Duration::from_millis(10));
-    assert_eq!(app.diagnostics.shown(), None);
+    assert_eq!(app.diagnostics.shown_diagnostic(), None);
 }
 
 #[test]
@@ -516,4 +538,194 @@ fn a_stream_of_bells_wakes_the_main_thread_at_the_frame_s_pace() {
     fake.send(&mut app, window, WindowEvent::Occluded(true));
     let (wakes, _) = run(&mut fake, &mut app, false);
     assert!(wakes <= 35, "{wakes} wakes hidden");
+}
+
+/// A plugin whose `teller.success` tells that it copied, and whose
+/// `teller.error` that it did not save, of a title of its own.
+struct Teller;
+
+const TELLER: &str = "[plugin]\nname = \"lokyr/teller\"\nkind = \"builtin\"\nlicense = \"MIT\"\n";
+
+impl lokyr_kernel::plugins::Plugin for Teller {
+    fn activate(&mut self, cx: &mut lokyr_kernel::plugins::Cx<'_>) -> Result<(), Error> {
+        for name in ["teller.success", "teller.error"] {
+            cx.register_command(lokyr_kernel::commands::Command {
+                name: name.to_owned(),
+                title: name.to_owned(),
+                category: lokyr_kernel::commands::Category::View,
+                capabilities: Vec::new(),
+                params: Vec::new(),
+                when: None,
+            })?;
+        }
+        Ok(())
+    }
+
+    fn on_command(
+        &mut self,
+        cx: &mut lokyr_kernel::plugins::Cx<'_>,
+        name: &str,
+        _: Args,
+    ) -> Result<(), Error> {
+        use lokyr_kernel::plugins::host::NoticeLevel;
+        if name == "teller.success" {
+            cx.notify("Snap copied to clipboard", NoticeLevel::Success, None)
+        } else {
+            cx.notify("The snap was not saved", NoticeLevel::Error, Some("Snap"))
+        }
+    }
+}
+
+/// An app that draws, of [`Teller`], of a window of 28 points of
+/// titlebar, drawn.
+fn drawn_telling() -> (Fake, App, WindowId) {
+    let drawing = Drawing::new(lokyr_text_core::FontConfig::default()).unwrap();
+    let mut fake = Fake::default();
+    fake.set_bar(28.0);
+    let mut app = App::new(Some(drawing), unpadded(), None)
+        .with_program(quiet())
+        .with_builtin(TELLER, Box::new(Teller));
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    app.windows.get_mut(&window).unwrap().surface = Some(crate::fakes::Surface::default());
+    for _ in 0..2 {
+        fake.send(&mut app, window, WindowEvent::Frame);
+    }
+    (fake, app, window)
+}
+
+/// The icon of the card of `window`'s notice, if it shows, and its color.
+fn card_icon(app: &App, window: WindowId) -> Option<(String, String)> {
+    let view = app.windows[&window]
+        .chrome
+        .iter()
+        .find(|view| view.view == super::super::notice_card::notice_view())?;
+    let tree = &view.surface.tree;
+    let mut left: Vec<_> = tree.root().into_iter().collect();
+    while let Some(node) = left.pop() {
+        if let Some(lokyr_kernel::plugins::view::Kind::Icon(icon)) = tree.kind(node) {
+            let color = tree
+                .style(node)
+                .and_then(|style| style.color.clone())
+                .map(|token| token.0)
+                .unwrap_or_default();
+            return Some((icon.clone(), color));
+        }
+        left.extend(tree.children(node).iter().rev().copied());
+    }
+    None
+}
+
+/// Runs the command `name`, then three frames of `window`, as the card
+/// comes down.
+fn run_and_draw(fake: &mut Fake, app: &mut App, window: WindowId, name: &str) {
+    fake.send_app(app, AppEvent::Command(name.to_owned()));
+    for _ in 0..3 {
+        fake.send(app, window, WindowEvent::Frame);
+    }
+}
+
+#[test]
+fn a_plugin_s_notice_shows_in_the_card_of_its_level_over_the_host_s_and_goes_by_itself() {
+    let (mut fake, mut app, window) = drawn_telling();
+    app.report(
+        &mut fake,
+        Diagnostic::new(Code::InvalidConfig, "line 1", About::Config),
+    );
+    for _ in 0..3 {
+        fake.send(&mut app, window, WindowEvent::Frame);
+    }
+    assert_eq!(
+        card_texts(&app, window)[0],
+        "The config file does not apply"
+    );
+    // A success, of the plugin's namespace, over the config's notice.
+    run_and_draw(&mut fake, &mut app, window, "teller.success");
+    assert_eq!(
+        card_texts(&app, window),
+        ["teller", "Snap copied to clipboard"]
+    );
+    assert_eq!(
+        card_icon(&app, window),
+        Some(("check".to_owned(), "text.success".to_owned()))
+    );
+    // It goes after 4 seconds, the config's back under it.
+    let (_, at) = app.notice.timer.expect("its going timed");
+    let shows = at.saturating_duration_since(Instant::now());
+    assert!(
+        shows <= Duration::from_secs(4) && shows > Duration::from_secs(3),
+        "{shows:?}"
+    );
+    fake.fire_timers(&mut app, at + Duration::from_millis(10));
+    for _ in 0..3 {
+        fake.send(&mut app, window, WindowEvent::Frame);
+    }
+    assert_eq!(
+        card_texts(&app, window)[0],
+        "The config file does not apply"
+    );
+    assert_eq!(app.notice.timer, None, "the config's stays");
+}
+
+#[test]
+fn a_plugin_s_error_shows_of_its_own_title_for_longer() {
+    let (mut fake, mut app, window) = drawn_telling();
+    run_and_draw(&mut fake, &mut app, window, "teller.error");
+    assert_eq!(card_texts(&app, window), ["Snap", "The snap was not saved"]);
+    assert_eq!(
+        card_icon(&app, window),
+        Some(("error".to_owned(), "progress.error".to_owned()))
+    );
+    let (_, at) = app.notice.timer.expect("its going timed");
+    let shows = at.saturating_duration_since(Instant::now());
+    assert!(shows > Duration::from_secs(7), "{shows:?}");
+    // Its copy takes its own title.
+    let (_, copy) = card(&app, window, "copy").unwrap();
+    click_rect(&mut fake, &mut app, window, copy);
+    assert_eq!(
+        fake.clipboard_text().as_deref(),
+        Some("Snap\n\nThe snap was not saved\n")
+    );
+}
+
+#[test]
+fn each_level_of_a_plugin_s_notice_has_its_icon_its_color_and_its_time() {
+    use super::super::notice_card::{SHOWS, SHOWS_BRIEFLY, look_of, shows_for};
+    use lokyr_kernel::diagnostics::Notice;
+    use lokyr_kernel::plugins::host::{Notice as Told, NoticeLevel};
+    let of = |level| Notice::Plugin {
+        plugin: "acme/x".to_owned(),
+        notice: Told {
+            level,
+            title: "x".to_owned(),
+            text: "x".to_owned(),
+        },
+    };
+    let levels = [
+        (NoticeLevel::Info, ("info", "accent"), SHOWS_BRIEFLY),
+        (
+            NoticeLevel::Success,
+            ("check", "text.success"),
+            SHOWS_BRIEFLY,
+        ),
+        (NoticeLevel::Warning, ("warning", "progress.paused"), SHOWS),
+        (NoticeLevel::Error, ("error", "progress.error"), SHOWS),
+    ];
+    for (level, look, shows) in levels {
+        assert_eq!(look_of(&of(level)), look, "{level:?}");
+        assert_eq!(shows_for(&of(level)), Some(shows), "{level:?}");
+    }
+    // The host's: a fault's red, a failure's and a config's yellow, the
+    // config's staying.
+    let host = |code, about| Notice::Diagnostic(Diagnostic::new(code, "x", about));
+    assert_eq!(
+        look_of(&host(Code::Fault, About::Other)),
+        ("error", "progress.error")
+    );
+    assert_eq!(
+        look_of(&host(Code::Failed, About::Other)),
+        ("warning", "progress.paused")
+    );
+    assert_eq!(shows_for(&host(Code::Failed, About::Other)), Some(SHOWS));
+    assert_eq!(shows_for(&host(Code::InvalidConfig, About::Config)), None);
 }

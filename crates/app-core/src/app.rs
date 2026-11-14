@@ -3179,6 +3179,10 @@ impl<B: Backend> App<B> {
                     name,
                     bytes,
                 } => self.ask_save(platform, (plugin, id), window, &name, bytes),
+                Request::Notify { plugin, notice } => {
+                    self.diagnostics.tell(&plugin, notice);
+                    self.request_frames(platform);
+                }
                 Request::Packages { plugin, id, call } => {
                     self.start_packages(platform, (plugin, id), &call);
                 }

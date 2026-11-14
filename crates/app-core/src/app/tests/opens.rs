@@ -181,7 +181,7 @@ fn a_script_not_executable_runs_of_its_interpreter_never_asked_for_as_a_theme() 
     fake.send_app(&mut app, AppEvent::OpenFiles(vec![bang.clone()]));
     assert!(opened(&fake, &before).is_empty());
     assert_eq!(fake.alerts().len(), asked);
-    let shown = app.diagnostics.shown().expect("a notice");
+    let shown = app.diagnostics.shown_diagnostic().expect("a notice");
     assert!(shown.text.contains("Install!.command"), "{shown:?}");
     let _ = std::fs::remove_dir_all(base);
 }

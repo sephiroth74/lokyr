@@ -227,6 +227,7 @@ pub fn all(world: &World) -> Vec<Scenario> {
         cells_and_saves(world),
         awake(true),
         awake(false),
+        notices(),
         packages(true),
         packages(false),
         pages(),
@@ -359,6 +360,58 @@ fn awake(allowed: bool) -> Scenario {
             (Request::KeepAwake(Awake::System), answer()),
             (Request::KeepAwake(Awake::Off), answer()),
         ])],
+    }
+}
+
+/// A plugin's notices, of no capability: one of its level, a text or a
+/// title past its bounds or of a control character refused, and a second
+/// one within a second of the last, whether in the same call or later.
+fn notices() -> Scenario {
+    use lokyr_plugin_sdk::host::{
+        LONGEST_NOTICE, LONGEST_NOTICE_TITLE, NOTICE_PAUSE, NoticeLevel, check_notice,
+    };
+    use lokyr_plugin_sdk::message::NOTICE_PAUSED;
+    let notify = |text: &str, level: NoticeLevel, title: Option<&str>| Request::Notify {
+        text: text.to_owned(),
+        level,
+        title: title.map(str::to_owned),
+    };
+    let bounds = check_notice("", None).unwrap_err().message;
+    let wrong = || failed(Code::Failed, &bounds);
+    let paused = || failed(Code::Unavailable, NOTICE_PAUSED);
+    let wait = |wait: u64| Step {
+        wait,
+        asks: Vec::new(),
+        posts: Vec::new(),
+        heard: Vec::new(),
+    };
+    let long = "x".repeat(LONGEST_NOTICE + 1);
+    let long_title = "x".repeat(LONGEST_NOTICE_TITLE + 1);
+    Scenario {
+        name: "notices".to_owned(),
+        capabilities: Some(Vec::new()),
+        subscriptions: Vec::new(),
+        steps: vec![
+            ask(vec![
+                (notify("", NoticeLevel::Info, None), wrong()),
+                (notify(&long, NoticeLevel::Info, None), wrong()),
+                (notify("a\nb", NoticeLevel::Info, None), wrong()),
+                (notify("x", NoticeLevel::Info, Some("")), wrong()),
+                (notify("x", NoticeLevel::Info, Some(&long_title)), wrong()),
+                (notify("Copied", NoticeLevel::Success, None), Response::Done),
+                (notify("Again", NoticeLevel::Info, None), paused()),
+            ]),
+            wait(NOTICE_PAUSE - 1),
+            ask(vec![(
+                notify("Again", NoticeLevel::Warning, None),
+                paused(),
+            )]),
+            wait(1),
+            ask(vec![(
+                notify("Not saved", NoticeLevel::Error, Some("Snap")),
+                Response::Done,
+            )]),
+        ],
     }
 }
 

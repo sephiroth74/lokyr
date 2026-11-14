@@ -66,7 +66,7 @@ fn a_plugin_s_section_applies_as_the_file_reloads_and_a_wrong_one_tells_its_line
         );
     fake.start(&mut app);
     assert_eq!(*heard.borrow(), [count(2)]);
-    assert_eq!(app.diagnostics.shown(), None);
+    assert_eq!(app.diagnostics.shown_diagnostic(), None);
     // A wrong value refuses its section alone, as the notice tells at its
     // line; the rest of the file applies.
     std::fs::write(
@@ -76,7 +76,11 @@ fn a_plugin_s_section_applies_as_the_file_reloads_and_a_wrong_one_tells_its_line
     .unwrap();
     change(&mut fake, &mut app);
     assert_eq!(app.config.cursor.shape, cursor::Shape::Bar);
-    let shown = app.diagnostics.shown().cloned().expect("a notice");
+    let shown = app
+        .diagnostics
+        .shown_diagnostic()
+        .cloned()
+        .expect("a notice");
     assert_eq!(shown.about, About::PluginConfig("keyed".to_owned()));
     assert!(
         shown
@@ -95,7 +99,7 @@ fn a_plugin_s_section_applies_as_the_file_reloads_and_a_wrong_one_tells_its_line
     )
     .unwrap();
     change(&mut fake, &mut app);
-    assert_eq!(app.diagnostics.shown(), None);
+    assert_eq!(app.diagnostics.shown_diagnostic(), None);
     assert_eq!(*heard.borrow(), [count(2), count(5)]);
     // A key of another version, and a plugin that is not there, are
     // ignored, as the notices tell.
@@ -106,7 +110,11 @@ fn a_plugin_s_section_applies_as_the_file_reloads_and_a_wrong_one_tells_its_line
     .unwrap();
     change(&mut fake, &mut app);
     assert_eq!(app.config.cursor.shape, cursor::Shape::Block);
-    let shown = app.diagnostics.shown().cloned().expect("a notice");
+    let shown = app
+        .diagnostics
+        .shown_diagnostic()
+        .cloned()
+        .expect("a notice");
     assert_eq!(shown.about, About::PluginConfig("absent".to_owned()));
     assert!(
         app.diagnostics
@@ -135,7 +143,11 @@ fn a_refused_section_s_notice_follows_its_line_and_a_whole_number_is_an_integer(
             }),
         );
     fake.start(&mut app);
-    let text = |app: &App| app.diagnostics.shown().map(|shown| shown.text.clone());
+    let text = |app: &App| {
+        app.diagnostics
+            .shown_diagnostic()
+            .map(|shown| shown.text.clone())
+    };
     assert!(text(&app).is_some_and(|text| text.contains("config.toml:2:1:")));
     // Lines above it, of the same values, move its notice with it.
     std::fs::write(&path, "# mine\n\n[plugins.keyed]\ncount = 0\n").unwrap();
@@ -178,7 +190,11 @@ fn the_command_header_s_section_is_checked_against_its_schema() {
     let mut app =
         App::new(None, Config::read(&path).unwrap(), Some(path.clone())).with_program(quiet());
     fake.start(&mut app);
-    let shown = app.diagnostics.shown().cloned().expect("a notice");
+    let shown = app
+        .diagnostics
+        .shown_diagnostic()
+        .cloned()
+        .expect("a notice");
     assert_eq!(
         shown.about,
         About::PluginConfig("command-header".to_owned())
@@ -191,7 +207,7 @@ fn the_command_header_s_section_is_checked_against_its_schema() {
     )
     .unwrap();
     change(&mut fake, &mut app);
-    assert_eq!(app.diagnostics.shown(), None);
+    assert_eq!(app.diagnostics.shown_diagnostic(), None);
     let _ = std::fs::remove_dir_all(&directory);
 }
 
@@ -299,7 +315,7 @@ fn a_plugin_turned_off_by_its_section_leaves_the_windows_and_comes_back_anew() {
     frames(&mut fake, &mut app);
     assert!(!status_bar(&app));
     assert!(app.commands.get("barred.go").is_none());
-    assert_eq!(app.diagnostics.shown(), None);
+    assert_eq!(app.diagnostics.shown_diagnostic(), None);
     // Turned on again: a new one, its bar back.
     std::fs::write(&path, "[plugins.barred]\nenabled = true\n").unwrap();
     reload(&mut fake, &mut app);
@@ -391,7 +407,7 @@ fn a_capability_that_no_plugin_has_yet_is_refused_with_a_notice() {
     .unwrap();
     app.plugins.add_declared(manifest, Box::new(Idle)).unwrap();
     fake.start(&mut app);
-    let shown = app.diagnostics.shown().expect("a notice");
+    let shown = app.diagnostics.shown_diagnostic().expect("a notice");
     assert!(shown.text.contains("acme/fetch"), "{shown:?}");
     assert!(shown.text.contains("net:api.github.com"), "{shown:?}");
 }
@@ -446,7 +462,11 @@ fn a_plugin_that_faults_starts_again_as_the_notice_tells() {
     fake.start(&mut app);
     let made = FAULTING_MADE.load(std::sync::atomic::Ordering::Relaxed);
     fake.send_app(&mut app, AppEvent::Command("faulting.go".to_owned()));
-    let shown = app.diagnostics.shown().cloned().expect("a notice");
+    let shown = app
+        .diagnostics
+        .shown_diagnostic()
+        .cloned()
+        .expect("a notice");
     assert!(shown.text.contains("starts again in 1 s"), "{shown:?}");
     assert!(app.commands.get("faulting.go").is_none());
     // A second later, it is back, made anew.

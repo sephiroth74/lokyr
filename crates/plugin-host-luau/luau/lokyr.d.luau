@@ -47,6 +47,7 @@ export type Cx = {
     set_clipboard_image: (png: string | buffer) -> (true?, string?, number?),
     keep_awake: (awake: Awake) -> (true?, string?, number?),
     save_file: (window: WindowId?, name: string, bytes: string | buffer) -> (number?, string?, number?),
+    notify: (text: string, level: NoticeLevel?, title: string?) -> (true?, string?, number?),
     packages: (call: Packages) -> (number?, string?, number?),
     show_page: (page: string) -> (true?, string?, number?),
     cancel_packages: (job: number) -> (true?, string?, number?),
@@ -303,6 +304,9 @@ export type TestHost = {
     kept_images: () -> { number },
     -- What the plugin keeps from idle sleep.
     awake: () -> Awake,
+    -- The notices that the plugin showed, in their order, the last the one
+    -- that shows, each of its title or the plugin's namespace.
+    notices: () -> { { level: NoticeLevel, title: string, text: string } },
     -- The focused window, and the tab that it shows.
     window: () -> WindowId,
     tab: () -> TabId,
@@ -613,6 +617,12 @@ export type NodeRole =
     | "alert"
     | "heading"
     | "image"
+
+export type NoticeLevel =
+    | "info"
+    | "success"
+    | "warning"
+    | "error"
 
 export type Packages =
     | "list"

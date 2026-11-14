@@ -173,7 +173,7 @@ fn the_settings_open_in_a_window_of_their_own_once_and_close_as_a_window() {
         assert!(foreign(&app).is_empty(), "{command}: {:?}", foreign(&app));
     }
     assert!(fake.alerts().is_empty());
-    assert!(app.diagnostics.shown().is_none());
+    assert!(app.diagnostics.shown_diagnostic().is_none());
     // A new tab, as ⌘T asks there, opens nowhere: the settings' window
     // takes none.
     fake.send_app(&mut app, AppEvent::Command("tabs.new".to_owned()));

@@ -265,6 +265,13 @@ pub enum Request {
         /// The capabilities, in their order.
         capabilities: Vec<Capability>,
     },
+    /// Show a plugin's notice in the notice card, in place of its last.
+    Notify {
+        /// The plugin.
+        plugin: String,
+        /// The notice, of its title.
+        notice: host::Notice,
+    },
     /// Ask the user where to save `bytes` as a file, in the save panel,
     /// whose end [`Plugins::saved`] tells the plugin: the app writes the
     /// file where the user chose.
@@ -564,6 +571,9 @@ struct State {
     replaced: Vec<search::Search>,
     /// Its timers, by their ids, [`host::MOST_TIMERS`] at most.
     timers: BTreeMap<u64, Timer>,
+    /// The host's time of its last notice, which the next waits a second
+    /// after.
+    noticed_at: Option<Instant>,
     /// What activates it, of its manifest's `activation.on`: the app's
     /// start, as of none.
     triggers: Vec<Trigger>,
@@ -1532,6 +1542,7 @@ impl Plugins {
                 lingering: Vec::new(),
                 replaced: Vec::new(),
                 timers: BTreeMap::new(),
+                noticed_at: None,
                 triggers,
                 undecided: Vec::new(),
                 asking: false,
@@ -6142,6 +6153,29 @@ impl Host<'_, '_> {
                 plugin: self.state.name.clone(),
                 id,
             },
+            // A notice of its bounds, a second at least after the plugin's
+            // last, of the host's time, titled of its namespace without a
+            // title of its own.
+            Asked::Notify { text, level, title } => {
+                host::check_notice(&text, title.as_deref())?;
+                let now = self.context.now;
+                let pause = Duration::from_millis(host::NOTICE_PAUSE);
+                if self.state.noticed_at.is_some_and(|at| now < at + pause) {
+                    return Err(Error::new(
+                        Code::Unavailable,
+                        lokyr_plugin_sdk::message::NOTICE_PAUSED,
+                    ));
+                }
+                self.state.noticed_at = Some(now);
+                Request::Notify {
+                    plugin: self.state.name.clone(),
+                    notice: host::Notice {
+                        level,
+                        title: title.unwrap_or_else(|| self.state.namespace.clone()),
+                        text,
+                    },
+                }
+            }
             // A page of the plugin's own manifest.
             Asked::ShowPage(page) => {
                 if !self.state.has_page(&page) {

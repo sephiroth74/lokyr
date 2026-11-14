@@ -321,6 +321,23 @@ impl<'a> Cx<'a> {
         self.done(Request::KeepAwake(awake))
     }
 
+    /// Shows `text` in the host's notice card as this call returns, of the
+    /// icon and the color of `level` and of `title`, or of the plugin's
+    /// namespace: it goes by itself after a while, and takes the place of
+    /// the plugin's last notice; one a second at most.
+    pub fn notify(
+        &mut self,
+        text: &str,
+        level: crate::host::NoticeLevel,
+        title: Option<&str>,
+    ) -> Result<(), Error> {
+        self.done(Request::Notify {
+            text: text.to_owned(),
+            level,
+            title: title.map(str::to_owned),
+        })
+    }
+
     /// Puts the image of `png`, a PNG, on the clipboard, in place of what
     /// it held, as this call returns.
     pub fn set_clipboard_image(&mut self, png: Vec<u8>) -> Result<(), Error> {

@@ -122,12 +122,12 @@ fn a_worker_s_status_bar_shows_once_its_render_comes_and_its_failure_tells_the_u
     assert_eq!(renders.load(Ordering::Relaxed), 1);
     // A command that fails on its thread tells it, as one of the main
     // thread's does.
-    assert_eq!(app.diagnostics.shown(), None);
+    assert_eq!(app.diagnostics.shown_diagnostic(), None);
     fake.send_app(&mut app, AppEvent::Command("threaded.fail".to_owned()));
     run_until(&mut fake, &mut app, |_, app| {
-        app.diagnostics.shown().is_some()
+        app.diagnostics.shown_diagnostic().is_some()
     });
-    let shown = app.diagnostics.shown().unwrap();
+    let shown = app.diagnostics.shown_diagnostic().unwrap();
     assert!(shown.text.contains("nothing to do"), "{shown:?}");
 }
 

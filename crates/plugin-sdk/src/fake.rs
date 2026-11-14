@@ -491,6 +491,10 @@ pub struct FakeHost {
     images: (crate::image::Budget, Option<u64>),
     /// What the plugin keeps from idle sleep.
     awake: host::Awake,
+    /// The notices that the plugin showed, in their order, and the time of
+    /// its last, of the host's clock.
+    notices: Vec<host::Notice>,
+    noticed_at: Option<u64>,
     font_size: f32,
     missing: Vec<String>,
     config: Data,
@@ -590,6 +594,8 @@ impl FakeHost {
             kept: Vec::new(),
             images: (crate::image::Budget::default(), None),
             awake: host::Awake::Off,
+            notices: Vec::new(),
+            noticed_at: None,
             font_size: 13.0,
             missing: Vec::new(),
             config: Data::Map(BTreeMap::new()),
@@ -1044,6 +1050,13 @@ impl FakeHost {
     /// What the plugin keeps from idle sleep, as the host would hold it.
     pub fn awake(&self) -> host::Awake {
         self.awake
+    }
+
+    /// The notices that the plugin showed, in their order, the last the
+    /// one that the card shows, each of its title or the plugin's
+    /// namespace.
+    pub fn notices(&self) -> &[host::Notice] {
+        &self.notices
     }
 
     /// Gives the text `size`, in points, as its reads tell it.
@@ -1520,6 +1533,17 @@ impl FakeHost {
         for request in &asked {
             if let Request::ShowPage(page) = request {
                 self.open_page(page.clone());
+            }
+        }
+        // The notices show, as the app shows them once the call returns.
+        for request in &asked {
+            if let Request::Notify { text, level, title } = request {
+                let title = title.clone().unwrap_or_else(|| self.namespace().to_owned());
+                self.notices.push(host::Notice {
+                    level: *level,
+                    title,
+                    text: text.clone(),
+                });
             }
         }
         self.done.extend(asked);
@@ -3364,6 +3388,20 @@ impl Calling<'_> {
                 self.saving
                     .push((id, window, name.clone(), bytes.0.clone()));
                 Response::Asking(id)
+            }
+            // A notice of its bounds, a second at least after the last.
+            Request::Notify { text, title, .. } => {
+                host::check_notice(text, title.as_deref())?;
+                let clock = self.host.clock;
+                let paused = self
+                    .host
+                    .noticed_at
+                    .is_some_and(|at| clock < at.saturating_add(host::NOTICE_PAUSE));
+                if paused {
+                    return Err(Error::new(Code::Unavailable, crate::message::NOTICE_PAUSED));
+                }
+                self.host.noticed_at = Some(clock);
+                Response::Done
             }
             Request::Packages(call) => {
                 call.check()?;

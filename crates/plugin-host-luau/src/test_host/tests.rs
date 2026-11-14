@@ -431,6 +431,63 @@ fn a_test_gives_the_pane_s_cells_and_reads_the_clipboard_s_image_the_saves_and_t
 }
 
 #[test]
+fn a_test_reads_the_plugin_s_notices_of_their_levels_and_titles() {
+    // A plugin that tells what its command did, then that it failed, of a
+    // title of its own, a second later; a second notice within it refused.
+    const ENTRY: &str = r#"
+    return {
+        activate = function(cx)
+            assert(cx.register_command({ name = "teller.go", title = "Go", category = "view" }))
+            assert(cx.register_command({ name = "teller.fail", title = "Fail", category = "view" }))
+        end,
+        on_command = function(cx, name, args)
+            if name == "teller.fail" then
+                assert(cx.notify("It failed", "error", "Teller"))
+            else
+                assert(cx.notify("Done"))
+                local ok, message = cx.notify("Again")
+                assert(ok == nil and message == "a plugin shows a notice a second at most")
+            end
+        end,
+    }
+    "#;
+    const TEST: &str = r#"
+    return {
+        tells_then_fails = function(host)
+            host.activate()
+            host.command("teller.go")
+            local notices = host.notices()
+            assert(#notices == 1, "one notice")
+            assert(notices[1].level == "info" and notices[1].title == "teller")
+            assert(notices[1].text == "Done")
+            host.advance(1000)
+            host.command("teller.fail")
+            local last = host.notices()[2]
+            assert(last.level == "error" and last.title == "Teller" and last.text == "It failed")
+        end,
+    }
+    "#;
+    let package = Package::new([
+        ("src/init.luau".to_owned(), ENTRY.to_owned()),
+        ("tests/teller.luau".to_owned(), TEST.to_owned()),
+    ]);
+    let ran = run_within(
+        &Plugin {
+            name: "acme/teller",
+            capabilities: &[],
+            uses: &[],
+            slots: &[],
+            package: &package,
+            messages: &[],
+            execution: Execution::Native,
+        },
+        DEADLINE,
+    );
+    assert_eq!(ran.len(), 1, "{ran:?}");
+    assert_eq!(ran[0].failure, None, "{ran:?}");
+}
+
+#[test]
 fn a_test_opens_tabs_marks_them_and_reads_the_menu_items() {
     // A plugin that ticks its item as a tab runs a program, of the tabs'
     // marks that it reads at each of their changes.

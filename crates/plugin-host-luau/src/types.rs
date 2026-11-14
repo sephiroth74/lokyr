@@ -743,6 +743,9 @@ export type TestHost = {
     kept_images: () -> { number },
     -- What the plugin keeps from idle sleep.
     awake: () -> Awake,
+    -- The notices that the plugin showed, in their order, the last the one
+    -- that shows, each of its title or the plugin's namespace.
+    notices: () -> { { level: NoticeLevel, title: string, text: string } },
     -- The focused window, and the tab that it shows.
     window: () -> WindowId,
     tab: () -> TabId,

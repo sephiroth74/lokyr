@@ -1,7 +1,7 @@
 //! The diagnostics: what goes wrong that the user is to learn of, each of a
 //! code, whose hundreds tell its category, and of a text. The log takes
-//! them all, and the windows' notice those that the user can act on; later,
-//! the audit log and MCP take them too.
+//! them all, and the windows' notice those that the user can act on, beside
+//! the plugins' own notices; later, the audit log and MCP take them too.
 
 use crate::commands::{Code, ErrorCategory};
 
@@ -87,11 +87,51 @@ impl Diagnostic {
     }
 }
 
-/// The sink of the diagnostics, which keeps those that the notices show.
+/// What a notice shows: something that went wrong, or a plugin's own.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Notice {
+    /// Something that went wrong.
+    Diagnostic(Diagnostic),
+    /// A plugin's notice, by the plugin's name, which its next takes the
+    /// place of.
+    Plugin {
+        /// The plugin.
+        plugin: String,
+        /// The notice.
+        notice: lokyr_plugin_sdk::host::Notice,
+    },
+}
+
+impl Notice {
+    /// The diagnostic that it shows, if it shows one.
+    pub fn diagnostic(&self) -> Option<&Diagnostic> {
+        match self {
+            Self::Diagnostic(diagnostic) => Some(diagnostic),
+            Self::Plugin { .. } => None,
+        }
+    }
+
+    /// Whether it shows a diagnostic about `about`.
+    fn about(&self, about: &About) -> bool {
+        self.diagnostic()
+            .is_some_and(|diagnostic| diagnostic.about == *about)
+    }
+
+    /// What it tells.
+    pub fn text(&self) -> &str {
+        match self {
+            Self::Diagnostic(diagnostic) => &diagnostic.text,
+            Self::Plugin { notice, .. } => &notice.text,
+        }
+    }
+}
+
+/// The sink of the diagnostics, which keeps those that the notices show,
+/// and the plugins' notices.
 #[derive(Clone, Debug, Default)]
 pub struct Diagnostics {
-    /// The diagnostics that the notices show, the latest last.
-    notices: Vec<Diagnostic>,
+    /// What the notices show, the latest last.
+    notices: Vec<Notice>,
 }
 
 impl Diagnostics {
@@ -104,17 +144,28 @@ impl Diagnostics {
             return false;
         }
         if diagnostic.about != About::Other {
-            self.notices.retain(|shown| shown.about != diagnostic.about);
+            self.notices.retain(|shown| !shown.about(&diagnostic.about));
         }
-        self.notices.push(diagnostic);
+        self.notices.push(Notice::Diagnostic(diagnostic));
         true
+    }
+
+    /// Shows `notice` of `plugin`, in place of the plugin's last one, on
+    /// top of the others.
+    pub fn tell(&mut self, plugin: &str, notice: lokyr_plugin_sdk::host::Notice) {
+        self.notices
+            .retain(|shown| !matches!(shown, Notice::Plugin { plugin: own, .. } if own == plugin));
+        self.notices.push(Notice::Plugin {
+            plugin: plugin.to_owned(),
+            notice,
+        });
     }
 
     /// Takes away the notice about `about`, as a fix does. Whether there
     /// was one.
     pub fn resolve(&mut self, about: &About) -> bool {
         let before = self.notices.len();
-        self.notices.retain(|shown| shown.about != *about);
+        self.notices.retain(|shown| !shown.about(about));
         self.notices.len() != before
     }
 
@@ -123,18 +174,28 @@ impl Diagnostics {
     /// any.
     pub fn resolve_all(&mut self, of: impl Fn(&About) -> bool) -> bool {
         let before = self.notices.len();
-        self.notices.retain(|shown| !of(&shown.about));
+        self.notices.retain(|shown| {
+            !shown
+                .diagnostic()
+                .is_some_and(|diagnostic| of(&diagnostic.about))
+        });
         self.notices.len() != before
     }
 
     /// Whether a notice tells about `about`.
     pub fn tells(&self, about: &About) -> bool {
-        self.notices.iter().any(|shown| shown.about == *about)
+        self.notices.iter().any(|shown| shown.about(about))
     }
 
     /// The notice that shows: the latest.
-    pub fn shown(&self) -> Option<&Diagnostic> {
+    pub fn shown(&self) -> Option<&Notice> {
         self.notices.last()
+    }
+
+    /// The diagnostic that the notice that shows tells, if it tells one,
+    /// not a plugin's.
+    pub fn shown_diagnostic(&self) -> Option<&Diagnostic> {
+        self.shown().and_then(Notice::diagnostic)
     }
 
     /// Closes the notice that shows, as a click does, so that the one
@@ -164,10 +225,7 @@ mod tests {
         assert!(sink.report(config("line 1")));
         assert!(sink.report(Diagnostic::new(Code::Unavailable, "no Menlo", About::Font)));
         assert!(sink.report(config("line 2")));
-        assert_eq!(
-            sink.shown().map(|shown| shown.text.as_str()),
-            Some("line 2")
-        );
+        assert_eq!(sink.shown().map(Notice::text), Some("line 2"));
         // A failure and a fault each show, of their own.
         let failed = Diagnostic::new(Code::Failed, "it failed", About::Other);
         assert!(sink.report(failed.clone()));
@@ -175,15 +233,39 @@ mod tests {
         assert_eq!(sink.notices.len(), 4);
         // A click closes the one that shows; a fix, the config's.
         assert!(sink.dismiss());
-        assert_eq!(sink.shown(), Some(&failed));
+        assert_eq!(sink.shown(), Some(&Notice::Diagnostic(failed)));
         assert!(sink.resolve(&About::Config));
         assert!(!sink.resolve(&About::Config));
-        let texts: Vec<&str> = sink
-            .notices
-            .iter()
-            .map(|shown| shown.text.as_str())
-            .collect();
+        let texts: Vec<&str> = sink.notices.iter().map(Notice::text).collect();
         assert_eq!(texts, ["no Menlo", "it failed"]);
         assert_eq!(config("x").log_line(), "lokyr: error 109 (usage): x");
+    }
+
+    #[test]
+    fn a_plugin_s_notice_takes_the_place_of_its_last_on_top_of_the_others() {
+        use lokyr_plugin_sdk::host::{Notice as Told, NoticeLevel};
+        let told = |text: &str| Told {
+            level: NoticeLevel::Success,
+            title: "snap".to_owned(),
+            text: text.to_owned(),
+        };
+        let mut sink = Diagnostics::default();
+        assert!(sink.report(Diagnostic::new(
+            Code::InvalidConfig,
+            "line 1",
+            About::Config
+        )));
+        sink.tell("acme/snap", told("copied"));
+        sink.tell("acme/other", told("other"));
+        sink.tell("acme/snap", told("saved"));
+        let texts: Vec<&str> = sink.notices.iter().map(Notice::text).collect();
+        assert_eq!(texts, ["line 1", "other", "saved"]);
+        // A fix takes the config's away, whatever shows on top of it.
+        assert!(sink.resolve(&About::Config));
+        assert!(!sink.tells(&About::Config));
+        // Each goes as it is closed, the one under it showing.
+        assert!(sink.dismiss());
+        assert_eq!(sink.shown().map(Notice::text), Some("other"));
+        assert!(sink.shown().unwrap().diagnostic().is_none());
     }
 }

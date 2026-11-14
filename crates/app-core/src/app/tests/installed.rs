@@ -96,7 +96,7 @@ pub(super) fn grant_open(folder: &Path, names: &[&str]) {
 /// Every notice that `app` shows, the latest first, which it dismisses.
 pub(super) fn notices(app: &mut App) -> Vec<String> {
     let mut texts = Vec::new();
-    while let Some(shown) = app.diagnostics.shown() {
+    while let Some(shown) = app.diagnostics.shown_diagnostic() {
         texts.push(shown.text.clone());
         app.diagnostics.dismiss();
     }

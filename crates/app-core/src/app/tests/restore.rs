@@ -331,7 +331,7 @@ fn a_newer_or_unreadable_file_is_left_aside_with_a_notice() {
         fake.start(&mut app);
         // A new window, as without the file, and a notice of why.
         assert_eq!(fake.windows().count(), 1, "{text}");
-        let notice = app.diagnostics.shown().expect("a notice");
+        let notice = app.diagnostics.shown_diagnostic().expect("a notice");
         assert!(notice.text.contains("left aside"), "{}", notice.text);
         // Of its own heading, not a command's.
         assert_eq!(notice.about, About::KeptWindows);

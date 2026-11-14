@@ -157,7 +157,7 @@ fn a_save_shows_its_panel_on_the_window_and_writes_the_file_where_the_user_chose
         [Event::Saved { path: None, error: Some(error), .. }] if error.contains("cannot be written")
     ));
     // The user hears it too, as the plugin may tell nothing.
-    let shown = app.diagnostics.shown().expect("a notice");
+    let shown = app.diagnostics.shown_diagnostic().expect("a notice");
     assert_eq!(shown.code, Code::Failed);
     assert!(shown.text.contains("under-a-file.png"), "{}", shown.text);
     std::fs::remove_dir_all(&folder).unwrap();

@@ -75,7 +75,7 @@ fn a_theme_of_the_folder_colors_the_panes_and_its_saved_file_applies_at_once() {
     assert_eq!(app.theme.dark.colors.background, rgb(0x101012));
     assert_eq!(app.theme.light.colors.background, rgb(0x101012));
     assert_eq!(pane_background(&app, window), rgb(0x101012));
-    assert_eq!(app.diagnostics.shown(), None);
+    assert_eq!(app.diagnostics.shown_diagnostic(), None);
     // Saved anew, of another background: the pane takes it.
     write(&directory, "Nightfall", &theme("#202024"));
     changed(&mut fake, &mut app);
@@ -91,7 +91,11 @@ fn a_theme_s_error_tells_its_line_and_the_themes_in_force_stay_until_its_fix() {
     let config = "[theme]\ndark = \"Broken\"\nlight = \"Broken\"\n";
     let wrong = "[terminal]\nbackground = \"#10101\"\n";
     let (mut fake, mut app, directory) = with_themes("broken", config, &[("Broken", wrong)]);
-    let shown = app.diagnostics.shown().cloned().expect("a notice");
+    let shown = app
+        .diagnostics
+        .shown_diagnostic()
+        .cloned()
+        .expect("a notice");
     assert_eq!(shown.about, About::Theme);
     assert!(shown.text.contains("Broken.toml:2:14:"), "{}", shown.text);
     assert!(
@@ -103,7 +107,7 @@ fn a_theme_s_error_tells_its_line_and_the_themes_in_force_stay_until_its_fix() {
     // Fixed, it applies, and its notice goes.
     write(&directory, "Broken", &theme("#303030"));
     changed(&mut fake, &mut app);
-    assert_eq!(app.diagnostics.shown(), None);
+    assert_eq!(app.diagnostics.shown_diagnostic(), None);
     assert_eq!(app.theme.dark.colors.background, rgb(0x303030));
     let _ = std::fs::remove_dir_all(directory);
 }
@@ -112,7 +116,11 @@ fn a_theme_s_error_tells_its_line_and_the_themes_in_force_stay_until_its_fix() {
 fn a_name_of_no_theme_tells_itself_and_its_file_applies_as_it_comes() {
     let config = "[theme]\ndark = \"Later\"\n";
     let (mut fake, mut app, directory) = with_themes("later", config, &[]);
-    let shown = app.diagnostics.shown().cloned().expect("a notice");
+    let shown = app
+        .diagnostics
+        .shown_diagnostic()
+        .cloned()
+        .expect("a notice");
     assert!(
         shown.text.contains("there is no theme `Later`"),
         "{}",
@@ -127,7 +135,7 @@ fn a_name_of_no_theme_tells_itself_and_its_file_applies_as_it_comes() {
     );
     write(&directory, "Later", &theme("#404040"));
     changed(&mut fake, &mut app);
-    assert_eq!(app.diagnostics.shown(), None);
+    assert_eq!(app.diagnostics.shown_diagnostic(), None);
     assert_eq!(app.theme.dark.colors.background, rgb(0x404040));
     // The light one stays the built-in one.
     assert_eq!(app.theme.light, Theme::builtin().light);
@@ -138,13 +146,16 @@ fn a_name_of_no_theme_tells_itself_and_its_file_applies_as_it_comes() {
 fn a_theme_that_the_app_holds_applies_by_its_name_after_the_folder_s() {
     let config = "[theme]\ndark = \"Held Night\"\n";
     let (mut fake, mut app, directory) = with_themes("held", config, &[]);
-    assert!(app.diagnostics.shown().is_some(), "none held yet");
+    assert!(
+        app.diagnostics.shown_diagnostic().is_some(),
+        "none held yet"
+    );
     let held = directory.join("held");
     std::fs::create_dir_all(&held).unwrap();
     std::fs::write(held.join("Held Night.toml"), theme("#123456")).unwrap();
     app.held_themes = Some(held.clone());
     changed(&mut fake, &mut app);
-    assert_eq!(app.diagnostics.shown(), None);
+    assert_eq!(app.diagnostics.shown_diagnostic(), None);
     assert_eq!(app.theme.dark.colors.background, rgb(0x123456));
     // The held folder is not watched; the themes' folder's file of its
     // name is, which takes its place.
@@ -204,12 +215,15 @@ fn grays() -> String {
 fn an_itermcolors_file_of_the_folder_applies_as_it_is() {
     let config = "[theme]\ndark = \"Grays\"\nlight = \"Grays\"\n";
     let (mut fake, mut app, directory) = with_themes("itermcolors", config, &[]);
-    assert!(app.diagnostics.shown().is_some(), "no theme `Grays` yet");
+    assert!(
+        app.diagnostics.shown_diagnostic().is_some(),
+        "no theme `Grays` yet"
+    );
     let file = directory.join("themes").join("Grays.itermcolors");
     assert!(app.theme_files.paths.contains(&file));
     std::fs::write(&file, grays()).unwrap();
     changed(&mut fake, &mut app);
-    assert_eq!(app.diagnostics.shown(), None);
+    assert_eq!(app.diagnostics.shown_diagnostic(), None);
     assert_eq!(app.theme.dark.colors.background, rgb(0x333333));
     // Never converted: the folder holds the file as it was.
     let names: Vec<_> = std::fs::read_dir(directory.join("themes"))
@@ -286,7 +300,7 @@ fn a_theme_s_file_opened_installs_on_its_answer_and_install_and_use_names_it() {
     assert!(config.contains("[theme]\ndark = \"Grays\""), "{config}");
     assert_eq!(app.config.theme.dark, "Grays");
     assert_eq!(app.theme.dark.colors.background, rgb(0x333333));
-    assert_eq!(app.diagnostics.shown(), None);
+    assert_eq!(app.diagnostics.shown_diagnostic(), None);
     assert!(app.theme_asks.is_empty());
     let _ = std::fs::remove_dir_all(directory);
 }
@@ -449,7 +463,10 @@ fn a_themes_folder_made_after_the_start_is_watched_for_its_files() {
     let mut fake = Fake::default();
     let mut app = App::new(None, config, Some(path)).with_program(quiet());
     fake.start(&mut app);
-    assert!(app.diagnostics.shown().is_some(), "no theme `Later` yet");
+    assert!(
+        app.diagnostics.shown_diagnostic().is_some(),
+        "no theme `Later` yet"
+    );
     // The folder comes, then the theme's file in it.
     std::fs::create_dir(directory.join("themes")).unwrap();
     watched(&app);
@@ -457,7 +474,7 @@ fn a_themes_folder_made_after_the_start_is_watched_for_its_files() {
     write(&directory, "Later", &theme("#404040"));
     watched(&app);
     changed(&mut fake, &mut app);
-    assert_eq!(app.diagnostics.shown(), None);
+    assert_eq!(app.diagnostics.shown_diagnostic(), None);
     assert_eq!(app.theme.dark.colors.background, rgb(0x404040));
     let _ = std::fs::remove_dir_all(directory);
 }
@@ -466,7 +483,7 @@ fn a_themes_folder_made_after_the_start_is_watched_for_its_files() {
 fn a_name_of_no_file_of_the_folder_is_watched_nowhere() {
     let config = "[theme]\ndark = \"/etc/x\"\nlight = \"../y\"\n";
     let (_fake, app, directory) = with_themes("names", config, &[]);
-    assert!(app.diagnostics.shown().is_some());
+    assert!(app.diagnostics.shown_diagnostic().is_some());
     let themes = directory.join("themes");
     assert!(
         app.theme_files
@@ -584,7 +601,11 @@ fn a_family_that_lacks_the_config_s_style_is_previewed_and_chosen_of_its_own() {
     );
     assert_eq!(app.config.font.family.as_ref().unwrap().as_str(), "Menlo");
     assert_eq!(app.config.font.style, None);
-    assert_eq!(app.diagnostics.shown(), None, "no notice of a style");
+    assert_eq!(
+        app.diagnostics.shown_diagnostic(),
+        None,
+        "no notice of a style"
+    );
     let _ = std::fs::remove_dir_all(directory);
 }
 

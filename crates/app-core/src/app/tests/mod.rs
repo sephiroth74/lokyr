@@ -3045,7 +3045,7 @@ fn the_quick_terminal_s_old_section_tells_its_new_place_and_its_plugin_s_applies
     let mut fake = Fake::default();
     let mut app = app(config, quiet());
     fake.start(&mut app);
-    let shown = app.diagnostics.shown().unwrap();
+    let shown = app.diagnostics.shown_diagnostic().unwrap();
     assert_eq!(
         shown.about,
         About::PluginConfig("quick-terminal".to_owned())
@@ -3068,7 +3068,7 @@ fn the_quick_terminal_s_old_section_tells_its_new_place_and_its_plugin_s_applies
         &mut fake,
         Config::parse(text, std::path::Path::new("config.toml")).unwrap(),
     );
-    assert!(app.diagnostics.shown().is_none());
+    assert!(app.diagnostics.shown_diagnostic().is_none());
 }
 
 #[test]
@@ -3122,7 +3122,7 @@ fn a_global_key_runs_its_command_from_every_app_and_keeps_the_app_open() {
     assert_eq!(fake.global_keys(), [key, f24]);
     // The one that the system refused, of a key that the Mac lacks, is
     // told.
-    let shown = app.diagnostics.shown().unwrap();
+    let shown = app.diagnostics.shown_diagnostic().unwrap();
     assert_eq!(shown.about, About::GlobalKeys);
     assert!(shown.text.contains("`global:ctrl+f24`"), "{}", shown.text);
     fake.send_app(&mut app, AppEvent::GlobalKey(0));
@@ -3147,14 +3147,14 @@ fn a_global_key_runs_its_command_from_every_app_and_keeps_the_app_open() {
         )
         .unwrap(),
     );
-    let shown = app.diagnostics.shown().unwrap();
+    let shown = app.diagnostics.shown_diagnostic().unwrap();
     assert!(
         shown.text.contains("`global:ctrl+`` cannot"),
         "{}",
         shown.text
     );
     app.apply(&mut fake, Config::default());
-    assert!(app.diagnostics.shown().is_none());
+    assert!(app.diagnostics.shown_diagnostic().is_none());
     assert!(fake.global_keys().is_empty());
     // The config's quit with the last window quits, though the system
     // gave the key.

@@ -86,6 +86,10 @@ pub use crate::image::IMAGES_BOUND;
 /// gives alike.
 pub const SAVING: &str = "a window shows one save panel at a time";
 
+/// The message of the error of [`Request::Notify`] within a second of the
+/// plugin's last notice.
+pub const NOTICE_PAUSED: &str = "a plugin shows a notice a second at most";
+
 /// The message of the error of [`Request::SaveFile`] of no window given
 /// and none focused, which every host gives alike.
 pub const NO_WINDOW: &str = "a save panel shows on a window, and none has the focus";
@@ -236,6 +240,25 @@ pub enum Request {
         name: String,
         /// Its bytes, [`MOST_BYTES`](crate::host::MOST_BYTES) at most.
         bytes: Bytes,
+    },
+    /// Shows `text` in the host's notice card, at the panes' top right, of
+    /// the icon and the color of its level and of its title, the plugin's
+    /// namespace without one: it goes by itself after a while, 4 seconds
+    /// of an info's or a success's, 8 of a warning's or an error's, unless
+    /// the pointer rests on it, and takes the place of the plugin's last
+    /// notice. Its text and title as
+    /// [`check_notice`](crate::host::check_notice) bounds them, one notice
+    /// each [`NOTICE_PAUSE`](crate::host::NOTICE_PAUSE) at most; no
+    /// capability, as the card names the plugin.
+    Notify {
+        /// What it tells.
+        text: String,
+        /// How much it matters: an info's by default.
+        #[serde(default)]
+        level: crate::host::NoticeLevel,
+        /// Its title, or the plugin's namespace.
+        #[serde(default)]
+        title: Option<String>,
     },
     /// Runs a call of the packages' service, Sleip's command of `--json`,
     /// as the call returns: the host answers with the job's id, and tells
@@ -1060,6 +1083,7 @@ impl Request {
             | Self::RenderImage(_)
             | Self::DropImage(_)
             | Self::SaveFile { .. }
+            | Self::Notify { .. }
             | Self::AddMenuItem(_)
             | Self::StartTimer { .. }
             | Self::CancelTimer(_)
@@ -1173,6 +1197,7 @@ impl Request {
             | Self::ClosePanel(_)
             | Self::AskText { .. }
             | Self::SaveFile { .. }
+            | Self::Notify { .. }
             | Self::Packages(_)
             | Self::CancelPackages(_)
             | Self::SetPluginEnabled { .. }
@@ -1637,6 +1662,7 @@ impl Request {
             | Self::CancelPackages { .. }
             | Self::SetPluginEnabled { .. }
             | Self::SetSetting { .. }
+            | Self::Notify { .. }
             | Self::ShowPage { .. }
             | Self::DropImage { .. }
             | Self::EndSearch { .. }

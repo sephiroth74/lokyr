@@ -1,16 +1,17 @@
-//! The notice of what went wrong, as a card that comes down at the panes'
-//! top right, over them, not as wide as the window: an icon of its kind, its
-//! title, its text in two lines at most, and two buttons, one that copies
-//! its whole text and one that closes it. A failure of an action, a
-//! plugin's or a command's, goes by itself after a while unless the pointer
-//! rests on it; one that a fix takes away, as a config's, stays until the
-//! fix or a click.
+//! The notice of what went wrong, or of a plugin's, as a card that comes
+//! down at the panes' top right, over them, not as wide as the window: an
+//! icon of its kind, its title, its text in two lines at most, and two
+//! buttons, one that copies its whole text and one that closes it. A
+//! failure of an action, a plugin's or a command's, and a plugin's notice
+//! go by themselves after a while unless the pointer rests on them; one
+//! that a fix takes away, as a config's, stays until the fix or a click.
 
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
-use lokyr_kernel::commands::{Code, ErrorCategory};
-use lokyr_kernel::diagnostics::{About, Diagnostic};
+use lokyr_kernel::commands::ErrorCategory;
+use lokyr_kernel::diagnostics::{About, Diagnostic, Notice};
+use lokyr_kernel::plugins::host::NoticeLevel;
 use lokyr_kernel::plugins::ui::{
     Anchor as PanelAnchor, Corner as PanelCorner, PanelId, PanelOptions, Role as PanelRole,
     UiEvent, ViewId,
@@ -52,8 +53,13 @@ const LINES: usize = 2;
 const DOWN: f32 = 8.0;
 
 /// How long a failure's card shows before it goes by itself, from its
-/// showing or from the pointer leaving it.
+/// showing or from the pointer leaving it, and a plugin's warning's or
+/// error's.
 pub(super) const SHOWS: Duration = Duration::from_secs(8);
+
+/// How long a plugin's info's or success's card shows before it goes by
+/// itself.
+pub(super) const SHOWS_BRIEFLY: Duration = Duration::from_secs(4);
 
 /// The notice that the card shows, as it was last settled: what tells it
 /// apart from another, its card's revision, whether its card shows its first
@@ -61,7 +67,7 @@ pub(super) const SHOWS: Duration = Duration::from_secs(8);
 /// the pointer rests on it.
 #[derive(Debug, Default)]
 pub(super) struct NoticeCard {
-    shown: Option<(About, Code, String)>,
+    shown: Option<Notice>,
     pub(super) revision: u64,
     entering: bool,
     pub(super) timer: Option<(lokyr_platform_core::TimerId, Instant)>,
@@ -73,10 +79,34 @@ pub(super) fn notice_view() -> ViewId {
     ViewId::Panel(PanelId::from(NOTICE))
 }
 
-/// Whether `diagnostic` goes by itself after a while: a failure of an
-/// action, which no fix takes away.
-fn goes_by_itself(diagnostic: &Diagnostic) -> bool {
-    diagnostic.about == About::Other
+/// How long `notice` shows before it goes by itself: a failure of an
+/// action, which no fix takes away, and a plugin's, by its level; `None`
+/// of one that a fix takes away.
+pub(super) fn shows_for(notice: &Notice) -> Option<Duration> {
+    match notice {
+        Notice::Diagnostic(diagnostic) => (diagnostic.about == About::Other).then_some(SHOWS),
+        Notice::Plugin { notice, .. } => Some(match notice.level {
+            NoticeLevel::Info | NoticeLevel::Success => SHOWS_BRIEFLY,
+            NoticeLevel::Warning | NoticeLevel::Error => SHOWS,
+        }),
+    }
+}
+
+/// The icon of `notice`'s card, and its color: a fault's, a failure's or a
+/// warning's, or a plugin's notice's of its level.
+pub(super) fn look_of(notice: &Notice) -> (&'static str, &'static str) {
+    match notice {
+        Notice::Diagnostic(diagnostic) if diagnostic.category() == ErrorCategory::Fault => {
+            ("error", "progress.error")
+        }
+        Notice::Diagnostic(_) => ("warning", "progress.paused"),
+        Notice::Plugin { notice, .. } => match notice.level {
+            NoticeLevel::Info => ("info", "accent"),
+            NoticeLevel::Success => ("check", "text.success"),
+            NoticeLevel::Warning => ("warning", "progress.paused"),
+            NoticeLevel::Error => ("error", "progress.error"),
+        },
+    }
 }
 
 /// The message of the catalogs of the title of `diagnostic`'s card.
@@ -96,19 +126,15 @@ fn title_of(diagnostic: &Diagnostic) -> &'static str {
     }
 }
 
-/// The card of `title` and the lines of its text, `lines`, of a fault's look
-/// where `fault`, as it comes down where `entering`, faded and at its top,
-/// before it slides into place; `copy` and `close` its buttons' tooltips.
+/// The card of `title` and the lines of its text, `lines`, of the icon and
+/// the color of `look`, as it comes down where `entering`, faded and at its
+/// top, before it slides into place; `copy` and `close` its buttons'
+/// tooltips.
 fn card(
-    (title, lines, fault): (&str, &[String], bool),
+    (title, lines, (icon, tint)): (&str, &[String], (&str, &str)),
     (copy, close): (&str, &str),
     entering: bool,
 ) -> Node {
-    let (icon, tint) = if fault {
-        ("error", "progress.error")
-    } else {
-        ("warning", "progress.paused")
-    };
     let mut texts = vec![Node::text(title).style(Style {
         font_weight: Some(FontWeight::Semibold),
         ..Style::default()
@@ -205,26 +231,34 @@ impl<B: Backend> App<B> {
     /// its text in lines of the interface's small text; `None` of none.
     pub(super) fn notice_tree(&mut self) -> Option<Node> {
         let shown = self.diagnostics.shown()?.clone();
-        let title = self.texts.text(title_of(&shown));
+        let title = self.notice_title(&shown);
         let lines = match &mut self.drawing {
             Some(drawing) => {
                 drawing.font.set_text_size(TextSize::Small);
-                let lines = drawing.font.interface_lines(&shown.text, TEXT, LINES);
+                let lines = drawing.font.interface_lines(shown.text(), TEXT, LINES);
                 drawing.font.set_text_size(TextSize::Regular);
                 lines
             }
-            None => Rc::from([shown.text.clone()]),
+            None => Rc::from([shown.text().to_owned()]),
         };
-        let fault = shown.category() == ErrorCategory::Fault;
         let (copy, close) = (
             self.texts.text("notice-copy"),
             self.texts.text("notice-close"),
         );
         Some(card(
-            (&title, &lines, fault),
+            (&title, &lines, look_of(&shown)),
             (&copy, &close),
             self.notice.entering,
         ))
+    }
+
+    /// The title of `notice`'s card: of the catalogs, of what went wrong,
+    /// or the plugin's.
+    fn notice_title(&self, notice: &Notice) -> String {
+        match notice {
+            Notice::Diagnostic(diagnostic) => self.texts.text(title_of(diagnostic)),
+            Notice::Plugin { notice, .. } => notice.title.clone(),
+        }
     }
 
     /// Settles the card of `window` to the notice that shows, before the
@@ -232,10 +266,7 @@ impl<B: Backend> App<B> {
     /// down from its first frame, its going timed of a failure's; the
     /// window's card opens as one shows and closes as none does.
     pub(super) fn settle_notice(&mut self, platform: &mut dyn Platform, window: WindowId) {
-        let shown = self
-            .diagnostics
-            .shown()
-            .map(|shown| (shown.about.clone(), shown.code, shown.text.clone()));
+        let shown = self.diagnostics.shown().cloned();
         if shown != self.notice.shown {
             self.notice.shown = shown;
             self.notice.revision += 1;
@@ -307,14 +338,17 @@ impl<B: Backend> App<B> {
         ));
     }
 
-    /// Starts the timer of the shown notice's going, of a failure's, in
-    /// [`SHOWS`]; stops it otherwise.
+    /// Starts the timer of the shown notice's going, of a failure's or a
+    /// plugin's, as long as it shows; stops it otherwise.
     fn time_notice(&mut self, platform: &mut dyn Platform) {
         if let Some((timer, _)) = self.notice.timer.take() {
             platform.cancel_timer(timer);
         }
-        if self.diagnostics.shown().is_some_and(goes_by_itself) && !self.notice.hovered {
-            let at = Instant::now() + SHOWS;
+        let shows = self.diagnostics.shown().and_then(shows_for);
+        if let Some(shows) = shows
+            && !self.notice.hovered
+        {
+            let at = Instant::now() + shows;
             self.notice.timer = Some((platform.start_timer(at), at));
         }
     }
@@ -323,7 +357,7 @@ impl<B: Backend> App<B> {
     /// pointer rests on it.
     pub(super) fn notice_timer_fired(&mut self, platform: &mut dyn Platform) {
         self.notice.timer = None;
-        if self.notice.hovered || !self.diagnostics.shown().is_some_and(goes_by_itself) {
+        if self.notice.hovered || self.diagnostics.shown().and_then(shows_for).is_none() {
             return;
         }
         self.diagnostics.dismiss();
@@ -342,8 +376,8 @@ impl<B: Backend> App<B> {
             }
             (UiEventKind::Click, "copy") => {
                 if let Some(shown) = self.diagnostics.shown() {
-                    let title = self.texts.text(title_of(shown));
-                    let whole = format!("{title}\n\n{}\n", shown.text);
+                    let title = self.notice_title(shown);
+                    let whole = format!("{title}\n\n{}\n", shown.text());
                     platform.set_clipboard_text(&whole);
                 }
             }

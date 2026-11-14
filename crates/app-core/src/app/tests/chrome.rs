@@ -212,7 +212,7 @@ fn a_plugin_s_views_fill_their_slots_which_the_panes_give_their_room() {
     );
     let pane = state.views[0].rect;
     assert_eq!(pane.y + pane.height as i32, height as i32);
-    assert!(app.diagnostics.shown().is_none());
+    assert!(app.diagnostics.shown_diagnostic().is_none());
     // A plugin that stops keeps its views as they were, and a notice tells
     // it.
     panics.set(true);
@@ -227,7 +227,7 @@ fn a_plugin_s_views_fill_their_slots_which_the_panes_give_their_room() {
             .any(|view| view.view.slot() == Some(Slot::TabBar) && view.frame.is_some())
     );
     assert_eq!(fake.window(window).unwrap().titlebar, Titlebar::Tabs);
-    let shown = app.diagnostics.shown().expect("a notice");
+    let shown = app.diagnostics.shown_diagnostic().expect("a notice");
     assert!(
         shown.text.contains("lokyr/bars") && shown.text.contains("panicked"),
         "{}",

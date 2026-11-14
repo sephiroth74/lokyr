@@ -572,6 +572,14 @@ fn functions(lua: &Lua, hosted: &Arc<Mutex<Hosted>>) -> mlua::Result<Table> {
     )?;
     let hosted = of();
     table.raw_set(
+        "notices",
+        lua.create_function(move |lua, ()| {
+            let notices = with(&hosted, |Hosted { host, .. }| host.notices().to_vec());
+            shape::to_lua(lua, &notices).map_err(mlua::Error::runtime)
+        })?,
+    )?;
+    let hosted = of();
+    table.raw_set(
         "window",
         lua.create_function(move |_, ()| {
             Ok(with(&hosted, |Hosted { host, .. }| {

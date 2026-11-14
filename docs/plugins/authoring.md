@@ -253,13 +253,19 @@ A new version is a new `version` in the manifest, a new tag, and `sleip publish`
 | Drawing over a pane | `decorate`, `undecorate`, `mark_gutter`, `unmark_gutter` |
 | Windows, tabs and panes | `windows`, `tabs`, `agents`, `layout`, `pane_grid`, `pane_title`, `open_window`, `close_window`, `new_tab`, `close_tab`, `split`, `close_pane`, `activate_tab`, `focus_pane`, `move_tab`, `swap_panes`, `zoom`, `resize_pane`, `set_ratio`, `equalize`, `set_tab_title`, `set_tab_color`, and the rest of their family |
 | Views and panels | `open_panel`, `close_panel`, `request_render`, `set_text`, `select`, `reveal`, `focus_node` |
-| Questions, opening and texts | `ask_text`, `save_file`, `open`, `open_at`, `opens`, `message`, `keys_of`, `notice_shows` |
+| Questions, opening and texts | `notify`, `ask_text`, `save_file`, `open`, `open_at`, `opens`, `message`, `keys_of`, `notice_shows` |
 | The clipboard | `clipboard_text`, `set_clipboard_text`, `set_clipboard_image` |
 | Images | `render_image`, `drop_image` |
 | Settings and state | `config`, `state`, `set_state`, `keeps_state` |
 | Time | `start_timer`, `cancel_timer`, `day` |
 | The Mac | `keep_awake` |
 | Themes and the font | `themes`, `preview_theme`, `set_theme`, `fonts`, `preview_font`, `set_font`, `font_size`, `set_font_size` |
+
+**Notices.** `cx.notify(text, level?, title?)` tells something in Lokyr's notice card, at the panes' top right, as Lokyr tells a config that does not read: of the icon and the color of its level, `"info"` by default, `"success"`, `"warning"` or `"error"`, and of its title, or the plugin's namespace. It goes by itself after 4 seconds, 8 of a warning or an error, unless the pointer rests on it; a plugin's new notice takes the place of its last, one a second at most. `host.notices()` reads them in a test.
+
+```luau
+cx.notify(cx.message("snap-copied") or "Snap copied to clipboard", "success")
+```
 
 **Reads, writes and requests.** A read answers at once, of things as they are; a write applies as the callback returns, so that a later read of the same callback reads them as they were; a request of the app's, as a window to open or a command to run, comes after the writes. A callback that fails, or returns an error, drops its writes and its requests.
 

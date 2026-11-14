@@ -99,6 +99,7 @@ Each plugin runs in a VM of its own, so a failing plugin never affects the termi
 - **A call's writes** and requests of the app's, which apply as it returns: 10 000 at most together.
 - **Reads of rows**: four under way at most; **searches**: 16 a call; **images**: four a call, 16 million pixels each.
 - **Timers**: 64 at most, from 10 ms to a day.
+- **Notices**: one a second a plugin, a text of 1 to 1024 characters and a title of 100 at most.
 - **Declarations**: a plugin's commands, keys and menu items, 4096 at most together.
 - **Chains** of commands that run commands: 16 deep and 256 runs at most.
 - **Data**: a view nests 64 levels at most, and a value of data 64 too; texts of 16 MiB at most a call; numbers finite.
