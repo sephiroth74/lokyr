@@ -603,3 +603,44 @@ fn a_number_is_its_default_of_the_same_value_whole_or_not() {
     assert_eq!(size.value, Some(Data::Number(15.5)));
     assert_eq!(size.default, Some(Data::Integer(13)));
 }
+
+#[test]
+fn every_key_has_its_address_in_the_guide_at_its_heading_s_anchor() {
+    let base = super::GUIDE_ADDRESS;
+    assert!(base.contains(&format!("/blob/v{}/", env!("CARGO_PKG_VERSION"))));
+    let at = |section: &str, plugin: bool, key: &str| {
+        super::guide_of(section, plugin, key)
+            .and_then(|address| address.strip_prefix(&format!("{base}#")).map(str::to_owned))
+    };
+    // A key of its own heading; one of a group, the group's; one of a name
+    // that came before, of `-1`; a plugin's, under its section's.
+    assert_eq!(at("font", false, "size").as_deref(), Some("size"));
+    assert_eq!(
+        at("font", false, "italic-style").as_deref(),
+        Some("bold-style-italic-style-bold-italic-style")
+    );
+    assert_eq!(at("text", false, "blink").as_deref(), Some("blink"));
+    assert_eq!(at("cursor", false, "blink").as_deref(), Some("blink-1"));
+    assert!(at("tabs", true, "position").is_some());
+    assert_eq!(at("font", false, "sise"), None);
+    assert_eq!(at("acme", true, "count"), None);
+    // Every key of the app's sections and of Lokyr's plugins'.
+    let mut missing = Vec::new();
+    for section in super::sections(&Config::default()) {
+        for key in &section.keys {
+            if key.guide.is_none() {
+                missing.push(format!("{}.{}", section.name, key.name));
+            }
+        }
+    }
+    for (namespace, plugin) in PLUGINS {
+        let node: super::Ordered = serde_json::from_str(plugin).unwrap();
+        let section = super::section(namespace, Some("lokyr/plugin"), &node, |_| None);
+        for key in &section.keys {
+            if key.guide.is_none() {
+                missing.push(format!("plugins.{namespace}.{}", key.name));
+            }
+        }
+    }
+    assert!(missing.is_empty(), "{missing:?}");
+}

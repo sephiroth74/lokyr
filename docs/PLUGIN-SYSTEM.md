@@ -965,7 +965,8 @@ type Cx = {
     -- then each plugin's of a config schema, in the plugins' order, each key of its name, its description, its
     -- platforms, its kind ("boolean", a number of its range, step and whether it is whole, a text of its fewest and
     -- most characters and the values that it suggests, a choice of its values, a list of texts, or another), its
-    -- control, its default and its value in force; the bindings of the config's `[keys]`, each of its keys, its
+    -- control, its default, its value in force and the address of its text in the config guide; the bindings of the
+    -- config's `[keys]`, each of its keys, its
     -- command and the command's title, none of keys taken away, and whether the file tells more of it; and what is
     -- wrong with the config file where it does not read, its message, line and column, the settings then those that
     -- applied last.

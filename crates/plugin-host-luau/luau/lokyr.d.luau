@@ -776,6 +776,7 @@ export type SettingKey = {
     control: string?,
     default: Data?,
     value: Data?,
+    guide: string?,
 }
 
 export type SettingKind =

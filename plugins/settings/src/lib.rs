@@ -81,6 +81,13 @@ const NEW_COMMAND: &str = "new-command";
 /// The section of the bindings of keys, as the config names it.
 const KEYS: &str = "keys";
 
+/// The prefix of the key of a key's link to its text in the guide.
+const GUIDE: &str = "guide:";
+
+/// The platforms that Lokyr runs on, of which a key that applies on every
+/// one names none.
+const PLATFORMS: &[&str] = &["macos"];
+
 /// How long typing pauses before a field's value is written.
 const PAUSE: std::time::Duration = std::time::Duration::from_millis(600);
 
@@ -277,6 +284,10 @@ impl Plugin for SettingsPage {
                 }
             }
             (UiEventKind::Click, RESET) => self.write(cx, section, setting, None),
+            (UiEventKind::Click, GUIDE) => match &setting.guide {
+                Some(address) => cx.open(address),
+                None => Ok(()),
+            },
             _ => Ok(()),
         }
     }
@@ -732,18 +743,11 @@ fn sidebar(cx: &mut Cx<'_>, settings: &Settings) -> Node {
     let items: Vec<ListItem> = parts
         .iter()
         .map(|part| match part {
-            Part::Section(section) => {
-                let icon = if section.plugin.is_some() {
-                    "extensions"
-                } else {
-                    "settings"
-                };
-                ListItem {
-                    texts: vec![icon.to_owned(), title(cx, section)],
-                }
-            }
+            Part::Section(section) => ListItem {
+                texts: vec![icon_of(section).to_owned(), title(cx, section)],
+            },
             Part::Keys => ListItem {
-                texts: vec!["terminal".to_owned(), message(cx, "section-keys", &[])],
+                texts: vec!["keyboard".to_owned(), message(cx, "section-keys", &[])],
             },
         })
         .collect();
@@ -774,6 +778,43 @@ fn sidebar(cx: &mut Cx<'_>, settings: &Settings) -> Node {
             padding: Edges::all(10.0),
             ..Layout::default()
         })
+}
+
+/// The icon of `section` in the sidebar: one of its own, of the app's
+/// sections and Lokyr's plugins', and the plugins' of others.
+fn icon_of(section: &SettingsSection) -> &'static str {
+    if section.plugin.is_some() {
+        return match section.name.as_str() {
+            "tabs" => "browser",
+            "splits" => "split-horizontal",
+            "quick-terminal" => "zap",
+            "search" => "search",
+            "command-header" => "pinned",
+            "quick-tips" => "lightbulb",
+            _ => "extensions",
+        };
+    }
+    match section.name.as_str() {
+        "font" => "text-size",
+        "text" => "bold",
+        "cursor" => "edit",
+        "window" => "window",
+        "interface" => "layout",
+        "slots" => "layout-panel",
+        "terminal" => "terminal",
+        "scrollback" => "history",
+        "keyboard" => "case-sensitive",
+        "clipboard" => "clippy",
+        "links" => "link",
+        "bell" => "bell",
+        "notifications" => "megaphone",
+        "agents" => "hubot",
+        "theme" => "symbol-color",
+        "app" => "rocket",
+        "updates" => "cloud-download",
+        "debug" => "debug",
+        _ => "settings",
+    }
 }
 
 /// A section's title: its catalogs' message, or its name.
@@ -845,7 +886,11 @@ fn key_row(cx: &mut Cx<'_>, key: &SettingKey, refused: Option<&String>) -> Node 
         font_weight: Some(FontWeight::Semibold),
         ..Style::default()
     })];
-    if !key.platforms.is_empty() {
+    // Its platforms where it does not apply on every one that Lokyr runs on.
+    let everywhere = PLATFORMS
+        .iter()
+        .all(|platform| key.platforms.iter().any(|own| own == platform));
+    if !key.platforms.is_empty() && !everywhere {
         let platforms: Vec<&str> = key.platforms.iter().map(|name| platform(name)).collect();
         title.push(
             Node::text(message(
@@ -864,6 +909,21 @@ fn key_row(cx: &mut Cx<'_>, key: &SettingKey, refused: Option<&String>) -> Node 
                 .style(small())
                 .layout(wrapped()),
         );
+    }
+    // Its text in the guide, which a browser opens.
+    if key.guide.is_some() {
+        about.push(row_of(
+            vec![
+                Node::button(message(cx, "setting-more-info", &[]))
+                    .key(format!("{GUIDE}{name}").as_str())
+                    .as_link()
+                    .style(Style {
+                        text_size: Some(TextSize::Small),
+                        ..Style::default()
+                    }),
+            ],
+            0.0,
+        ));
     }
     if let Some(why) = refused {
         about.push(
@@ -1088,9 +1148,10 @@ fn keys_part(
                 (None, _) => message(cx, "binding-nothing", &[]),
             };
             let mut about = vec![
-                Node::text(keys.clone())
-                    .key(format!("keys:{keys}").as_str())
-                    .style(terminal.clone()),
+                Node::text(
+                    lokyr_plugin_sdk::keys::macos_text(keys).unwrap_or_else(|| keys.clone()),
+                )
+                .key(format!("keys:{keys}").as_str()),
                 Node::text(does)
                     .key(format!("command:{keys}").as_str())
                     .layout(wrapped()),

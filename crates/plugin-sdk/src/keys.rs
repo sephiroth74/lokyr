@@ -263,6 +263,73 @@ pub fn parse_keys(text: &str) -> Result<Vec<Combo>, String> {
     Ok(combos)
 }
 
+/// The keys of a binding, `text`, as macOS writes them in its menus: each
+/// combination of its modifiers' symbols, Control, Option, Shift then
+/// Command, and its key's, as `⇧⌘N`, a sequence's apart, as `⌃A N`; a
+/// global binding's of its keys alone. `None` of keys that do not read.
+pub fn macos_text(text: &str) -> Option<String> {
+    let combos = match text.strip_prefix(GLOBAL) {
+        Some(global) => vec![parse_global(global).ok()?],
+        None => parse_keys(text).ok()?,
+    };
+    let written: Vec<String> = combos.iter().map(macos_combo).collect();
+    Some(written.join(" "))
+}
+
+/// `combo` as macOS writes it in its menus.
+fn macos_combo(combo: &Combo) -> String {
+    let mods = combo.mods;
+    let mut written = String::new();
+    for (on, symbol) in [
+        (mods.ctrl, '⌃'),
+        (mods.alt, '⌥'),
+        (mods.shift, '⇧'),
+        (mods.cmd, '⌘'),
+    ] {
+        if on {
+            written.push(symbol);
+        }
+    }
+    let key = match combo.press {
+        Press::Char(character) => character.to_uppercase().collect(),
+        Press::Named(Named::F(number)) => format!("F{number}"),
+        Press::Named(named) => match named {
+            Named::Enter => "↩",
+            Named::Tab => "⇥",
+            Named::Backspace => "⌫",
+            Named::Escape => "⎋",
+            Named::Space => "Space",
+            Named::Delete => "⌦",
+            Named::Insert => "Help",
+            Named::Home => "↖",
+            Named::End => "↘",
+            Named::PageUp => "⇞",
+            Named::PageDown => "⇟",
+            Named::Up => "↑",
+            Named::Down => "↓",
+            Named::Left => "←",
+            Named::Right => "→",
+            Named::F(_) => "",
+        }
+        .to_owned(),
+        Press::Wheel(direction) => match direction {
+            Direction::Up => "Scroll ↑",
+            Direction::Down => "Scroll ↓",
+            Direction::Left => "Scroll ←",
+            Direction::Right => "Scroll →",
+        }
+        .to_owned(),
+        Press::Click => "Click".to_owned(),
+    };
+    // A word after the modifiers, apart from them; a symbol or a key next
+    // to them, as macOS writes it.
+    if !written.is_empty() && key.chars().count() > 1 && !key.starts_with('F') {
+        written.push(' ');
+    }
+    written.push_str(&key);
+    written
+}
+
 /// The prefix of the keys of a binding that takes its key from every app.
 pub const GLOBAL: &str = "global:";
 
@@ -499,5 +566,30 @@ fn not(tokens: &[String], at: &mut usize, depth: usize) -> Result<When, String> 
         }
         Some(token) => Err(format!("`{token}` is out of place")),
         None => Err("the expression ends early".to_owned()),
+    }
+}
+
+#[cfg(test)]
+mod macos_tests {
+    use super::*;
+
+    #[test]
+    fn keys_are_written_as_macos_menus_write_them() {
+        for (keys, written) in [
+            ("cmd+shift+n", "⇧⌘N"),
+            ("ctrl+alt+shift+cmd+k", "⌃⌥⇧⌘K"),
+            ("cmd+]", "⌘]"),
+            ("cmd+enter", "⌘↩"),
+            ("cmd+up", "⌘↑"),
+            ("shift+f5", "⇧F5"),
+            ("ctrl+a>n", "⌃A N"),
+            ("alt+space", "⌥ Space"),
+            ("cmd+click", "⌘ Click"),
+            ("wheel-up", "Scroll ↑"),
+            ("global:ctrl+`", "⌃`"),
+        ] {
+            assert_eq!(macos_text(keys).as_deref(), Some(written), "{keys}");
+        }
+        assert_eq!(macos_text("cmd+nothing"), None);
     }
 }

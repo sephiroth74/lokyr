@@ -1065,6 +1065,7 @@ fn a_key_of_the_settings_is_written_of_a_value_that_it_takes_and_refused_otherwi
             control: None,
             default: Some(Data::Integer(3)),
             value: Some(Data::Integer(3)),
+            guide: None,
         }],
     }];
     let mut app = App {

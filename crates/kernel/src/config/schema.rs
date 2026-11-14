@@ -5,6 +5,7 @@
 //! guide's text and the example's value, of which the configuration's
 //! guide and the settings' page are made. Its tests hold it to the parser.
 
+use std::collections::BTreeMap;
 use std::sync::OnceLock;
 
 use toml_edit::TableLike;
@@ -173,6 +174,7 @@ pub fn section(
                 value: value(key).map(as_kind).or_else(|| default.clone()),
                 default,
                 kind,
+                guide: guide_of(name, plugin.is_some(), key),
             }
         })
         .collect();
@@ -282,6 +284,99 @@ fn data_of_toml(value: &toml_edit::Value) -> Data {
                 .collect(),
         ),
     }
+}
+
+/// The config guide, as the schemas make it, whose headings name its keys'
+/// places.
+const GUIDE: &str = include_str!("../../../../docs/CONFIGURATION.md");
+
+/// The address of the config guide of this version, on its repository at
+/// the version's tag.
+const GUIDE_ADDRESS: &str = concat!(
+    "https://github.com/sephiroth74/lokyr/blob/v",
+    env!("CARGO_PKG_VERSION"),
+    "/docs/CONFIGURATION.md"
+);
+
+/// The address of the text of the key `key` of the section `section`, a
+/// plugin's of its namespace where `plugin`, in the config guide: of the
+/// anchor that GitHub makes of the key's heading under its section's;
+/// none of a key that the guide lacks.
+pub fn guide_of(section: &str, plugin: bool, key: &str) -> Option<String> {
+    static ANCHORS: OnceLock<BTreeMap<(String, String), String>> = OnceLock::new();
+    let anchors = ANCHORS.get_or_init(|| anchors(GUIDE));
+    let section = if plugin {
+        format!("plugins.{section}")
+    } else {
+        section.to_owned()
+    };
+    anchors
+        .get(&(section, key.to_owned()))
+        .map(|anchor| format!("{GUIDE_ADDRESS}#{anchor}"))
+}
+
+/// The anchors of the keys of `guide`, by their sections' names and their
+/// own: each heading of keys, `### \`size\``, under its section's, `##
+/// \`[font]\``, the anchor that GitHub makes of it, of its words in lower
+/// case, of no punctuation but `-` and `_`, its spaces `-`, one made twice
+/// of `-1`, `-2` after; the headings of code blocks none.
+fn anchors(guide: &str) -> BTreeMap<(String, String), String> {
+    let mut found = BTreeMap::new();
+    let mut made: BTreeMap<String, usize> = BTreeMap::new();
+    let mut section = String::new();
+    let mut code = false;
+    for line in guide.lines() {
+        if line.trim_start().starts_with("```") {
+            code = !code;
+            continue;
+        }
+        if code {
+            continue;
+        }
+        let level = line.chars().take_while(|c| *c == '#').count();
+        let Some(heading) = line
+            .get(level..)
+            .and_then(|rest| rest.strip_prefix(' '))
+            .filter(|_| level > 0)
+        else {
+            continue;
+        };
+        let slug: String = heading
+            .to_lowercase()
+            .chars()
+            .filter_map(|c| match c {
+                ' ' => Some('-'),
+                c if c.is_alphanumeric() || c == '-' || c == '_' => Some(c),
+                _ => None,
+            })
+            .collect();
+        let times = made.entry(slug.clone()).or_insert(0);
+        let anchor = if *times == 0 {
+            slug.clone()
+        } else {
+            format!("{slug}-{times}")
+        };
+        *times += 1;
+        // The names in backticks: a section's, `[font]`, or its keys'.
+        let names: Vec<&str> = heading.split('`').skip(1).step_by(2).collect();
+        match level {
+            2 => {
+                section = names
+                    .first()
+                    .and_then(|name| name.strip_prefix('['))
+                    .and_then(|name| name.strip_suffix(']'))
+                    .unwrap_or_default()
+                    .to_owned();
+            }
+            3 if !section.is_empty() => {
+                for name in names {
+                    found.insert((section.clone(), name.to_owned()), anchor.clone());
+                }
+            }
+            _ => {}
+        }
+    }
+    found
 }
 
 /// `data` as a TOML value, of none of [`Data::Nil`], which TOML lacks.

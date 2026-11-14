@@ -1139,6 +1139,11 @@ pub struct SettingKey {
     /// that the file leaves out and that has no default.
     #[serde(default)]
     pub value: Option<Data>,
+    /// The address of its text in the config guide, of the version
+    /// installed, which a browser opens; none of a key that the guide
+    /// lacks, as a plugin's that is not Lokyr's own.
+    #[serde(default)]
+    pub guide: Option<String>,
 }
 
 /// The values that a key of the settings takes.

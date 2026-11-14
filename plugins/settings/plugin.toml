@@ -10,6 +10,7 @@ on = ["page:settings"]
 
 [capabilities]
 config = true
+open = true
 
 [contributes]
 pages = [{ id = "settings", icon = "settings" }]

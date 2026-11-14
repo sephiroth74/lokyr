@@ -48,3 +48,4 @@ binding-new-command = The new binding's command
 binding-new = A new binding: its keys, as cmd+shift+n, and the command that they run, by its name, as window.new; Return writes it.
 settings-file-error-at = Your config file does not read at line { $line }, column { $column }: { $message }. The settings are those that applied last, and the page writes nothing until the file reads.
 settings-file-error = Your config file does not read: { $message }. The settings are those that applied last, and the page writes nothing until the file reads.
+setting-more-info = More info

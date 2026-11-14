@@ -27,6 +27,7 @@ fn key(name: &str, value: Option<Data>, default: Option<Data>, kind: SettingKind
         control: None,
         default,
         value,
+        guide: Some(format!("https://lokyr.dev/guide#{name}")),
     }
 }
 
@@ -283,11 +284,11 @@ fn the_sidebar_lists_the_config_s_sections_then_the_plugins_of_a_schema() {
     assert_eq!(
         items,
         [
-            ["settings", "font"],
-            ["settings", "window"],
-            ["settings", "theme"],
-            ["terminal", "section-keys"],
-            ["extensions", "tabs"],
+            ["text-size", "font"],
+            ["window", "window"],
+            ["symbol-color", "theme"],
+            ["keyboard", "section-keys"],
+            ["browser", "tabs"],
         ]
         .map(|texts| texts.map(str::to_owned).to_vec()),
         "{}",
@@ -748,7 +749,7 @@ fn the_bindings_are_listed_of_their_commands_titles_taken_away_and_added() {
     let tree = rendered(&mut host, &mut plugin);
     assert_eq!(text_of(&tree, "title").as_deref(), Some("section-keys"));
     // Each of its keys, its command's title, or that it takes nothing.
-    assert_eq!(text_of(&tree, "keys:cmd+k").as_deref(), Some("cmd+k"));
+    assert_eq!(text_of(&tree, "keys:cmd+k").as_deref(), Some("⌘K"));
     assert_eq!(text_of(&tree, "command:cmd+k").as_deref(), Some("Clear"));
     assert_eq!(
         text_of(&tree, "command:cmd+q").as_deref(),
@@ -923,4 +924,104 @@ fn a_pause_writes_a_whole_value_alone_an_empty_or_half_typed_field_waiting() {
         .unwrap();
     let tree = rendered(&mut host, &mut plugin);
     assert!(text_of(&tree, "refused:size").is_some());
+}
+
+#[test]
+fn a_key_names_its_platforms_where_they_differ_and_links_its_text_in_the_guide() {
+    let mut host = FakeHost::new(NAME).with_manifest(crate::MANIFEST);
+    host.pane(PaneId(1));
+    let mut given = settings();
+    // A key of Linux alone, and one of no text in the guide.
+    given.sections[0].keys[0].platforms = vec!["linux".to_owned()];
+    given.sections[0].keys[1].guide = None;
+    host.set_settings(given);
+    let mut plugin = SettingsPage::default();
+    host.activate(&mut plugin).unwrap();
+    host.show_page(PAGE);
+    host.deliver(&mut plugin).unwrap();
+    let tree = rendered(&mut host, &mut plugin);
+    let row = |key: &str| texts_of(find_node(&tree, &format!("key:{key}")).unwrap());
+    assert!(row("family").contains(&"setting-platforms".to_owned()));
+    assert!(!row("style").contains(&"setting-platforms".to_owned()));
+    // More info, a link, of a key that the guide has.
+    assert!(matches!(
+        &find_node(&tree, "guide:style").unwrap().kind,
+        Kind::Button(button) if button.link
+    ));
+    assert!(find_node(&tree, "guide:size").is_none());
+    host.ui_event(&mut plugin, &on("guide:style", UiEventKind::Click))
+        .unwrap();
+    assert!(
+        host.take_done()
+            .contains(&Request::Open("https://lokyr.dev/guide#style".to_owned()))
+    );
+}
+
+/// The texts of `tree`, in its order.
+fn texts_of(tree: &Node) -> Vec<String> {
+    let mut found = Vec::new();
+    if let Kind::Text(text) = &tree.kind {
+        found.push(text.clone());
+    }
+    for child in &tree.children {
+        found.extend(texts_of(child));
+    }
+    found
+}
+
+#[test]
+fn each_section_has_an_icon_of_its_own_of_the_host_s() {
+    let section = |name: &str, plugin: bool| SettingsSection {
+        name: name.to_owned(),
+        plugin: plugin.then(|| format!("lokyr/{name}")),
+        description: String::new(),
+        keys: Vec::new(),
+    };
+    let app = [
+        "font",
+        "text",
+        "cursor",
+        "window",
+        "interface",
+        "slots",
+        "terminal",
+        "scrollback",
+        "keyboard",
+        "clipboard",
+        "links",
+        "bell",
+        "notifications",
+        "agents",
+        "theme",
+        "app",
+        "updates",
+        "debug",
+    ];
+    let plugins = [
+        "tabs",
+        "splits",
+        "quick-terminal",
+        "search",
+        "command-header",
+        "quick-tips",
+    ];
+    let mut icons: Vec<&str> = app
+        .iter()
+        .map(|name| icon_of(&section(name, false)))
+        .chain(plugins.iter().map(|name| icon_of(&section(name, true))))
+        .collect();
+    // The keys' part's, too.
+    icons.push("keyboard");
+    assert!(
+        icons
+            .iter()
+            .all(|icon| lokyr_plugin_sdk::view::is_icon(icon)),
+        "{icons:?}"
+    );
+    let mut unique = icons.clone();
+    unique.sort_unstable();
+    unique.dedup();
+    assert_eq!(unique.len(), icons.len(), "{icons:?}");
+    // Another's plugin, the plugins' icon.
+    assert_eq!(icon_of(&section("acme", true)), "extensions");
 }
