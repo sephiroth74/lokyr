@@ -160,10 +160,10 @@ impl Plugin for SettingsPage {
                     self.write_typed(cx, None)?;
                 }
                 Event::SettingsChanged => again = true,
-                // Typing paused: what it typed is written.
+                // Typing paused: what it typed is written, of a value whole.
                 Event::Timer { id } if self.pause == Some(*id) => {
                     self.pause = None;
-                    self.write_typed(cx, None)?;
+                    self.write_paused(cx)?;
                 }
                 _ => {}
             }
@@ -391,6 +391,52 @@ impl SettingsPage {
 }
 
 impl SettingsPage {
+    /// Writes the texts typed into the fields and not written yet as typing
+    /// pauses: each a value whole, as it writes it, that its key takes and
+    /// that differs from its value in force; the others, an empty field or
+    /// one half typed, as `13.` on the way to `13.5`, wait for Return or the
+    /// field's leaving, of no reason told meanwhile.
+    fn write_paused(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
+        let settings = cx.settings()?;
+        let names: Vec<String> = self.typed.keys().cloned().collect();
+        for name in names {
+            let Some(typed) = self.typed.get(&name).cloned() else {
+                continue;
+            };
+            let Some(section) = settings
+                .sections
+                .iter()
+                .find(|section| section.name == typed.section && section.plugin == typed.plugin)
+            else {
+                continue;
+            };
+            let Some(setting) = find(section, &name) else {
+                continue;
+            };
+            let text = typed.text.as_str();
+            let now = setting.value.as_ref().map(plain).unwrap_or_default();
+            let Ok(Some(value)) = value_of(cx, &setting.kind, text) else {
+                continue;
+            };
+            if plain(&value) != text || text == now {
+                continue;
+            }
+            let written = cx.set_setting(
+                &section.name,
+                section.plugin.as_deref(),
+                &setting.name,
+                Some(value),
+            );
+            if written.is_ok() {
+                self.typed.remove(&name);
+                if self.refused.remove(&name).is_some() {
+                    cx.request_render(page())?;
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Writes the texts typed into the fields and not written yet, of the
     /// key `only` alone where given, each that differs from its key's value
     /// in force: a value of its key's kind, or why not under it.
@@ -839,17 +885,10 @@ fn key_row(cx: &mut Cx<'_>, key: &SettingKey, refused: Option<&String>) -> Node 
         ..Layout::default()
     });
     let mut value = vec![control(cx, key)];
-    // At the bottom right: Default where it is, and the link back to it,
-    // dimmed where the key is there already.
+    // At the bottom right: the link back to the default, dimmed where the
+    // key is there already.
     let mut marks = Vec::new();
     let at_default = key.value.is_none() || key.value == key.default;
-    if key.value.is_some() && key.value == key.default {
-        marks.push(
-            Node::text(message(cx, "setting-default", &[]))
-                .key(format!("default:{name}").as_str())
-                .style(small()),
-        );
-    }
     if writable(&key.kind) {
         let mut reset = Node::button(message(cx, "setting-reset", &[]))
             .key(format!("{RESET}{name}").as_str())
@@ -908,10 +947,7 @@ fn writable(kind: &SettingKind) -> bool {
 /// writes it.
 fn control(cx: &mut Cx<'_>, key: &SettingKey) -> Node {
     let name = &key.name;
-    let terminal = Style {
-        font_family: Some(FontFamily::Terminal),
-        ..Style::default()
-    };
+    let terminal = code();
     match &key.kind {
         SettingKind::Boolean => {
             let on = key.value == Some(Data::Boolean(true));
@@ -961,7 +997,7 @@ fn control(cx: &mut Cx<'_>, key: &SettingKey) -> Node {
                 .label(name.clone())
                 .holding(text)
                 .stepped()
-                .style(small_terminal())
+                .style(field_text())
                 .layout(Layout {
                     width: Length::Points(64.0),
                     ..Layout::default()
@@ -977,7 +1013,7 @@ fn control(cx: &mut Cx<'_>, key: &SettingKey) -> Node {
                 .key(format!("{FIELD}{name}").as_str())
                 .label(name.clone())
                 .holding(text)
-                .style(small_terminal())
+                .style(field_text())
                 .layout(Layout {
                     width: Length::Points(180.0),
                     ..Layout::default()
@@ -1041,10 +1077,7 @@ fn keys_part(
             .style(secondary())
             .layout(wrapped()),
     ];
-    let terminal = Style {
-        font_family: Some(FontFamily::Terminal),
-        ..Style::default()
-    };
+    let terminal = code();
     let rows: Vec<Node> = bindings
         .iter()
         .map(|binding| {
@@ -1281,11 +1314,21 @@ fn secondary() -> Style {
     }
 }
 
-/// The style of a field's small text of the terminal's font.
-fn small_terminal() -> Style {
+/// The style of a field's text: the interface's, small, whatever the
+/// terminal's font's size.
+fn field_text() -> Style {
+    Style {
+        text_size: Some(TextSize::Small),
+        ..Style::default()
+    }
+}
+
+/// The style of a value written as the config writes it: the terminal's
+/// family, at a size of its own, whatever the terminal's.
+fn code() -> Style {
     Style {
         font_family: Some(FontFamily::Terminal),
-        text_size: Some(TextSize::Small),
+        font_size: Some(12.0),
         ..Style::default()
     }
 }

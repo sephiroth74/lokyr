@@ -319,6 +319,12 @@ fn a_section_shows_each_key_s_control_of_its_value_in_force_marked_at_its_defaul
         &find_node(&tree, "field:size").unwrap().kind,
         Kind::Field(field) if field.stepped
     ));
+    // Of the interface's small text, whatever the terminal's font's size.
+    let style = &find_node(&tree, "field:size").unwrap().style;
+    assert_eq!(
+        (style.font_family, style.text_size),
+        (None, Some(TextSize::Small))
+    );
     assert!(find_node(&tree, "less:size").is_none() && find_node(&tree, "more:size").is_none());
     assert!(find_node(&tree, "default:size").is_none());
     assert_eq!(reset_of(&tree, "size"), Some(false));
@@ -343,10 +349,8 @@ fn a_section_shows_each_key_s_control_of_its_value_in_force_marked_at_its_defaul
         labelled(&tree, "choose:scrollbar"),
         Some(("system".to_owned(), false))
     );
-    assert_eq!(
-        text_of(&tree, "default:scrollbar").as_deref(),
-        Some("setting-default")
-    );
+    // At its default, of no text that says so, its link dimmed.
+    assert!(find_node(&tree, "default:scrollbar").is_none());
     assert_eq!(reset_of(&tree, "scrollbar"), Some(true));
     assert_eq!(
         labelled(&tree, "set:opaque-titlebar"),
@@ -415,7 +419,7 @@ fn a_number_and_a_text_are_written_from_their_fields_their_steps_and_back_to_the
         held(&tree, "field:size").map(|(text, _)| text),
         Some(Some("13".to_owned()))
     );
-    assert!(find_node(&tree, "default:size").is_some());
+    assert_eq!(reset_of(&tree, "size"), Some(true));
     // A text, and an empty field back to the key's default.
     host.ui_event(&mut plugin, &submit("field:family", "Menlo"))
         .unwrap();
@@ -874,4 +878,49 @@ fn a_field_is_written_as_typing_pauses_and_as_it_is_left_once_of_a_value() {
         written(&mut host),
         [app_key("font", "size", Some(Data::Integer(18)))]
     );
+}
+
+#[test]
+fn a_pause_writes_a_whole_value_alone_an_empty_or_half_typed_field_waiting() {
+    let (mut host, mut plugin) = host();
+    let _ = written(&mut host);
+    let typed = |text: &str| UiEventKind::InputChanged {
+        text: text.to_owned(),
+        revision: 1,
+    };
+    let pause = |host: &mut FakeHost, plugin: &mut SettingsPage| {
+        host.advance(std::time::Duration::from_secs(1));
+        host.deliver(plugin).unwrap();
+    };
+    // Emptied, as a new value is to be typed: not back to the default.
+    host.ui_event(&mut plugin, &on("field:size", typed("")))
+        .unwrap();
+    pause(&mut host, &mut plugin);
+    assert!(written(&mut host).is_empty());
+    // Half typed, not as the value writes it: nothing, nor its reason.
+    host.ui_event(&mut plugin, &on("field:size", typed("13.")))
+        .unwrap();
+    pause(&mut host, &mut plugin);
+    assert!(written(&mut host).is_empty());
+    host.ui_event(&mut plugin, &on("field:size", typed("2")))
+        .unwrap();
+    pause(&mut host, &mut plugin);
+    assert!(written(&mut host).is_empty());
+    let tree = rendered(&mut host, &mut plugin);
+    assert!(find_node(&tree, "refused:size").is_none());
+    // Whole: written.
+    host.ui_event(&mut plugin, &on("field:size", typed("13.5")))
+        .unwrap();
+    pause(&mut host, &mut plugin);
+    assert_eq!(
+        written(&mut host),
+        [app_key("font", "size", Some(Data::Number(13.5)))]
+    );
+    // Left half typed: as it reads, its reason told.
+    host.ui_event(&mut plugin, &on("field:size", typed("2")))
+        .unwrap();
+    host.ui_event(&mut plugin, &on("field:size", UiEventKind::Blur))
+        .unwrap();
+    let tree = rendered(&mut host, &mut plugin);
+    assert!(text_of(&tree, "refused:size").is_some());
 }

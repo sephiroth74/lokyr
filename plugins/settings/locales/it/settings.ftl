@@ -29,7 +29,6 @@ section-plugin-quick-tips = Suggerimenti rapidi
 
 # Una chiave.
 settings-plugin = Del plugin { $plugin }
-setting-default = Predefinito
 setting-unset = Non impostato
 setting-platforms = { $platforms }
 settings-none = Nessuna impostazione da mostrare.

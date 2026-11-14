@@ -29,7 +29,6 @@ section-plugin-quick-tips = Quick Tips
 
 # A key.
 settings-plugin = Of the plugin { $plugin }
-setting-default = Default
 setting-unset = Not set
 setting-platforms = { $platforms }
 settings-none = No setting to show.

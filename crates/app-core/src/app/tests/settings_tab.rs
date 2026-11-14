@@ -752,7 +752,7 @@ fn the_settings_page_shows_every_section_of_the_config_and_of_the_plugins_of_its
     // fields.
     assert_eq!(page_text(&app, own, "title"), "Font");
     assert_eq!(page_field(&app, own, "field:size"), "13");
-    assert_eq!(page_text(&app, own, "default:size"), "Default");
+    assert_eq!(page_text(&app, own, "default:size"), "");
     assert_eq!(page_button(&app, own, "choose:family"), "Not set");
     // The page's first field has the keyboard, as the settings open.
     assert_eq!(focused_key(&app, own), ("field:size".to_owned(), true));
