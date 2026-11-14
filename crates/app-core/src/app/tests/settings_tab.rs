@@ -446,6 +446,47 @@ fn lokyr_s_plugins_item_opens_the_settings_tab_at_the_plugin_manager_s_page_of_e
     assert!(has("plugin:lokyr/plugin-manager"));
     assert!(!has("toggle:lokyr/plugin-manager"));
     assert!(has("none-installed"));
+    // Narrow, each plugin's buttons stay in its row, at its right, and its
+    // description takes more lines.
+    let height = fake.window(window).unwrap().size.points.height;
+    fake.send(
+        &mut app,
+        window,
+        WindowEvent::Resized(WindowSize::new(
+            Size {
+                width: 420.0,
+                height,
+            },
+            2.0,
+        )),
+    );
+    frames(&mut fake, &mut app, window);
+    let view = page_view(&app, window).unwrap();
+    let (tree, layout) = (&view.surface.tree, &view.surface.layout);
+    let frame = |key: &str| {
+        let node = tree.by_key(&key.into()).unwrap_or_else(|| panic!("{key}"));
+        layout.frame(tree, node).unwrap()
+    };
+    let row = frame("plugin:lokyr/tabs");
+    let actions = frame("actions:lokyr/tabs");
+    assert!(
+        actions.x + actions.width <= row.x + row.width + 0.5,
+        "{actions:?} past {row:?}"
+    );
+    assert!(
+        actions.x > row.x + row.width / 2.0,
+        "{actions:?} of {row:?}"
+    );
+    let description = frame("description:lokyr/tabs");
+    let line = frame("state:lokyr/tabs").height;
+    assert!(
+        description.height > line * 1.5,
+        "{description:?}, a line {line}"
+    );
+    assert!(
+        description.x + description.width <= actions.x,
+        "{description:?}"
+    );
     // The wheel scrolls the page down, past the window's height.
     let width = fake.window(window).unwrap().size.points.width;
     fake.send(

@@ -217,8 +217,14 @@ impl Manager {
             title.push(Node::text(version.clone()).style(secondary()));
         }
         let mut about = vec![row_of(title, 6.0)];
+        // What it does, of as many lines as the row's room needs.
         if let Some(description) = &plugin.description {
-            about.push(Node::text(description.clone()).style(small()));
+            about.push(
+                Node::text(description.clone())
+                    .key(format!("description:{name}").as_str())
+                    .style(small())
+                    .layout(wrapped()),
+            );
         }
         // Active, whether it runs or waits for what starts it, or disabled,
         // turned off or stopped; a fault tells why on a line of its own.
@@ -247,11 +253,15 @@ impl Manager {
         );
         if let (PluginState::Faulted, Some(fault)) = (plugin.state, &plugin.fault) {
             let fault = message(cx, "plugin-fault", &[("fault", fault.clone())]);
-            about.push(Node::text(fault).style(Style {
-                color: Some(Token::from("progress.error")),
-                text_size: Some(TextSize::Small),
-                ..Style::default()
-            }));
+            about.push(
+                Node::text(fault)
+                    .style(Style {
+                        color: Some(Token::from("progress.error")),
+                        text_size: Some(TextSize::Small),
+                        ..Style::default()
+                    })
+                    .layout(wrapped()),
+            );
         }
         // An installed plugin's capabilities, as the user decided them; a
         // built-in one holds them all.
@@ -273,20 +283,27 @@ impl Manager {
                 "plugin-capabilities",
                 &[("capabilities", decided.join("; "))],
             );
-            about.push(Node::text(capabilities).style(small()));
+            about.push(Node::text(capabilities).style(small()).layout(wrapped()));
         }
         if let Some(failure) = self.failed.get(name) {
             let failure = message(cx, "plugin-remove-failed", &[("message", failure.clone())]);
-            about.push(Node::text(failure).style(Style {
-                color: Some(Token::from("progress.error")),
-                text_size: Some(TextSize::Small),
-                ..Style::default()
-            }));
+            about.push(
+                Node::text(failure)
+                    .style(Style {
+                        color: Some(Token::from("progress.error")),
+                        text_size: Some(TextSize::Small),
+                        ..Style::default()
+                    })
+                    .layout(wrapped()),
+            );
         }
+        // The room that the buttons leave, however narrow, its texts going
+        // onto more lines.
         let about = Node::container(about).layout(Layout {
             direction: Direction::Column,
             gap: 3.0,
             grow: 1.0,
+            min_width: Length::Points(0.0),
             ..Layout::default()
         });
         let mut actions = Vec::new();
@@ -319,22 +336,28 @@ impl Manager {
                 );
             }
         }
-        Node::container(vec![about, row_of(actions, 8.0)])
-            .key(format!("plugin:{name}").as_str())
-            .role(Role::Group)
-            .label(name.clone())
-            .layout(Layout {
-                direction: Direction::Row,
-                gap: 12.0,
-                align: Align::Center,
-                padding: Edges {
-                    top: 10.0,
-                    right: 12.0,
-                    bottom: 10.0,
-                    left: 12.0,
-                },
-                ..Layout::default()
-            })
+        // The buttons at the row's right, of their own width, across the
+        // group's whole width.
+        Node::container(vec![
+            about,
+            row_of(actions, 8.0).key(format!("actions:{name}").as_str()),
+        ])
+        .key(format!("plugin:{name}").as_str())
+        .role(Role::Group)
+        .label(name.clone())
+        .layout(Layout {
+            direction: Direction::Row,
+            gap: 12.0,
+            align: Align::Center,
+            width: Length::Fraction(1.0),
+            padding: Edges {
+                top: 10.0,
+                right: 12.0,
+                bottom: 10.0,
+                left: 12.0,
+            },
+            ..Layout::default()
+        })
     }
 }
 
@@ -418,6 +441,14 @@ fn group(rows: Vec<Node>, key: &str) -> Node {
             radius: 8.0,
             ..Style::default()
         })
+}
+
+/// The layout of a text of as many lines as its width needs.
+fn wrapped() -> Layout {
+    Layout {
+        lines: Some(0),
+        ..Layout::default()
+    }
 }
 
 /// The style of a secondary text.
