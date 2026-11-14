@@ -707,6 +707,11 @@ pub struct Themes {
     pub current: String,
     /// The themes.
     pub themes: Vec<ThemeInfo>,
+    /// Whether the app still reads the themes' list, off its main thread,
+    /// which a `themes-changed` tells the end of: the built-in themes
+    /// alone meanwhile.
+    #[serde(default)]
+    pub loading: bool,
 }
 
 impl Themes {

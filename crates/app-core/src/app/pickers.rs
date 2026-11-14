@@ -7,7 +7,7 @@
 //! And the system's monospaced font families that a picker lists, a family
 //! previewed in every pane, and the one chosen, named in `[font] family`.
 
-use std::cell::{OnceCell, RefCell};
+use std::cell::RefCell;
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;
@@ -110,7 +110,7 @@ pub(super) fn font_styles<B: Backend>(family: &str) -> Vec<String> {
 /// The themes of the files of `directory`, each of `origin`, as their
 /// files name them; none of a folder that is not there, nor of a file that
 /// is no theme's.
-fn themes_in(directory: &Path, origin: ThemeOrigin) -> Vec<ThemeInfo> {
+pub(super) fn themes_in(directory: &Path, origin: ThemeOrigin) -> Vec<ThemeInfo> {
     let Ok(entries) = fs::read_dir(directory) else {
         return Vec::new();
     };
@@ -137,19 +137,34 @@ fn themes_in(directory: &Path, origin: ThemeOrigin) -> Vec<ThemeInfo> {
 
 /// The themes that a picker lists, with the appearance in force, as
 /// `appearance` is, and its theme of `config`: those of the themes' folder
-/// `folder`, those of `held`, the folder of the themes that the app holds,
-/// read once into `held_list`, and the built-in ones, by name, the first of
-/// a name alone, in the order of their names.
+/// `folder` and of `held`, the folder of the themes that the app holds, as
+/// the last read of `catalog` off the main thread listed them, a read woken
+/// of `waker` starting where none did lately, and the built-in ones, by
+/// name, the first of a name alone, in the order of their names; the
+/// built-in ones alone, as loading, while the first read runs.
 pub(super) fn theme_list(
-    (folder, held): (Option<&Path>, Option<&Path>),
-    held_list: &OnceCell<Vec<ThemeInfo>>,
+    catalog: &RefCell<super::theme_catalog::ThemeCatalog>,
+    (folder, held, waker): (
+        Option<&Path>,
+        Option<&Path>,
+        Option<&lokyr_platform_core::Waker>,
+    ),
     appearance: Appearance,
     config: &ThemeConfig,
 ) -> Themes {
-    let held = held_list.get_or_init(|| {
-        held.map(|held| themes_in(held, ThemeOrigin::Held))
-            .unwrap_or_default()
-    });
+    // The folder's and the held ones as the last read off the main thread
+    // listed them, a read starting where none did lately; none while the
+    // first runs.
+    let listed = {
+        let mut catalog = catalog.borrow_mut();
+        catalog.refresh(
+            (folder.map(Path::to_path_buf), held.map(Path::to_path_buf)),
+            waker,
+            Instant::now(),
+        );
+        catalog.listed.clone()
+    };
+    let loading = listed.is_none();
     let built_in = [
         (themes::LIGHT, ThemeVariant::Light),
         (themes::DARK, ThemeVariant::Dark),
@@ -160,11 +175,9 @@ pub(super) fn theme_list(
         origin: ThemeOrigin::BuiltIn,
     });
     let mut seen = BTreeSet::new();
-    let mut list: Vec<ThemeInfo> = folder
-        .map(|folder| themes_in(folder, ThemeOrigin::Folder))
+    let mut list: Vec<ThemeInfo> = listed
         .unwrap_or_default()
         .into_iter()
-        .chain(held.iter().cloned())
         .chain(built_in)
         .filter(|theme| seen.insert(theme.name.clone()))
         .collect();
@@ -177,6 +190,7 @@ pub(super) fn theme_list(
         appearance,
         current,
         themes: list,
+        loading,
     }
 }
 

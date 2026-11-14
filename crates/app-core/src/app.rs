@@ -84,6 +84,7 @@ mod surfaces;
 mod tab_drag;
 #[cfg(test)]
 mod tests;
+mod theme_catalog;
 mod tools;
 
 use input::{show_selection, shown_top};
@@ -524,7 +525,9 @@ pub struct App<B: Backend> {
     /// `Resources/themes`, when it runs from its bundle.
     held_themes: Option<PathBuf>,
     /// The themes that it holds, as a picker lists them, read once.
-    held_theme_list: std::cell::OnceCell<Vec<lokyr_kernel::plugins::host::ThemeInfo>>,
+    theme_catalog: std::cell::RefCell<theme_catalog::ThemeCatalog>,
+    /// What wakes the main thread, for the reads of the themes off it.
+    waker: Option<lokyr_platform_core::Waker>,
     /// The theme that a plugin's picker previews in place of the
     /// appearance in force's, if one does.
     theme_preview: Option<String>,
@@ -933,7 +936,8 @@ impl<B: Backend> App<B> {
             theme: Theme::builtin(),
             theme_files: ThemeFiles::default(),
             held_themes: environment::resources().map(|resources| resources.join(HELD_THEMES)),
-            held_theme_list: std::cell::OnceCell::new(),
+            theme_catalog: std::cell::RefCell::default(),
+            waker: None,
             theme_preview: None,
             notice: notice_card::NoticeCard::default(),
             settings: settings_tab::SettingsTab::default(),
@@ -1618,6 +1622,18 @@ impl<B: Backend> App<B> {
             .config_file
             .as_ref()
             .and_then(|file| themes::directory(&file.path));
+        // The folder's and the held ones of the read off the main thread,
+        // which their previews show as placeholders until it gives their
+        // colors; the built-in ones here, of no file.
+        self.theme_catalog.borrow_mut().refresh(
+            (directory.clone(), self.held_themes.clone()),
+            self.waker.as_ref(),
+            Instant::now(),
+        );
+        let names: Vec<String> = names
+            .into_iter()
+            .filter(|name| [themes::LIGHT, themes::DARK].contains(&name.as_str()))
+            .collect();
         let builtins = [ui_theme::light_spec(), ui_theme::dark_spec()];
         for name in names {
             match themes::resolve(
@@ -1634,6 +1650,40 @@ impl<B: Backend> App<B> {
                     self.preview_misses.insert(name);
                 }
             }
+        }
+    }
+
+    /// Takes the parts of the themes' read off the main thread: a list that
+    /// changed, which the plugins that subscribe hear, and the colors that
+    /// the previews draw, which the windows draw anew.
+    pub(super) fn take_themes(&mut self, platform: &mut dyn Platform) {
+        let parts = self.theme_catalog.borrow_mut().take();
+        let mut colored = false;
+        for part in parts {
+            match part {
+                theme_catalog::Part::Listed(list) => {
+                    let mut catalog = self.theme_catalog.borrow_mut();
+                    let changed = catalog.listed.as_ref() != Some(&list);
+                    catalog.listed = Some(list);
+                    drop(catalog);
+                    if changed {
+                        self.plugins.post(plugins::Event::ThemesChanged);
+                    }
+                }
+                theme_catalog::Part::Colors(colors) => {
+                    for (name, terminal) in colors {
+                        let colors = lokyr_ui_core::paint::PreviewColors::of(&terminal);
+                        self.previews.insert(name, colors);
+                    }
+                    colored = true;
+                }
+            }
+        }
+        if colored {
+            for state in self.windows.values_mut() {
+                state.views_changed = true;
+            }
+            self.request_frames(platform);
         }
     }
 
@@ -2962,6 +3012,7 @@ impl<B: Backend> App<B> {
         // The plugins on threads of their own wake the main thread as they
         // send it messages, which the turns take.
         let waker = platform.waker();
+        self.waker = Some(waker.clone());
         self.plugins.set_wake(move || waker.wake());
         // Their states and their sections of the config, which their
         // activation reads, the installed plugins' too. A bench's plugins
@@ -3041,12 +3092,13 @@ impl<B: Backend> App<B> {
             .config_file
             .as_ref()
             .and_then(|file| themes::directory(&file.path));
-        let (held_themes, held_list) = (self.held_themes.as_deref(), &self.held_theme_list);
+        let (held_themes, catalog) = (self.held_themes.as_deref(), &self.theme_catalog);
         let (appearance, theme_config) = (platform.appearance(), &self.config.theme);
+        let waker = self.waker.as_ref();
         let theme_list = || {
             pickers::theme_list(
-                (theme_folder.as_deref(), held_themes),
-                held_list,
+                catalog,
+                (theme_folder.as_deref(), held_themes, waker),
                 appearance,
                 theme_config,
             )
@@ -4361,6 +4413,8 @@ impl<B: Backend> App<B> {
                     }
                     file.reading = Some(platform.start_timer(Instant::now() + SETTLE));
                 }
+                // The parts of the themes' read off the main thread.
+                self.take_themes(platform);
                 let themes = &mut self.theme_files;
                 if themes.changed.swap(false, Ordering::AcqRel) {
                     if let Some(timer) = themes.reading.take() {

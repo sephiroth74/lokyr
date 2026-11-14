@@ -1268,6 +1268,15 @@ fn the_palette_s_theme_picker_previews_a_theme_and_names_the_chosen_one() {
     frames(&mut fake, &mut app, window);
     command(&mut fake, &mut app, window, "command-palette.theme");
     assert!(panel_frame(&app, window, "command-palette").is_some());
+    // The themes' list read off the main thread, which the open picker
+    // takes as it comes.
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    while app.theme_catalog.borrow().listed.is_none() && std::time::Instant::now() < deadline {
+        fake.send_app(&mut app, AppEvent::Wake);
+        frames(&mut fake, &mut app, window);
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    frames(&mut fake, &mut app, window);
     // Lokyr Light, in force, then Paper, which ↓ previews.
     fake.send(
         &mut app,

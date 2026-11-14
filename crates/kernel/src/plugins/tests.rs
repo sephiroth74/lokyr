@@ -219,6 +219,7 @@ fn no_themes() -> host::Themes {
         appearance: crate::themes::ThemeVariant::Dark,
         current: crate::themes::DARK.to_owned(),
         themes: Vec::new(),
+        loading: false,
     }
 }
 

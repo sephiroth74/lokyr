@@ -1344,6 +1344,9 @@ pub const PLUGINS_CHANGED: &str = "plugins-changed";
 /// The name of [`Event::SettingsChanged`], as a plugin subscribes to it.
 pub const SETTINGS_CHANGED: &str = "settings-changed";
 
+/// The name of [`Event::ThemesChanged`], as a plugin subscribes to it.
+pub const THEMES_CHANGED: &str = "themes-changed";
+
 /// Whether a plugin can subscribe to the events of `name`: one of the
 /// workspace's, the host's own that every plugin hears of, or a plugin's
 /// own, `namespace.event`.
@@ -1358,6 +1361,7 @@ pub fn is_event_name(name: &str) -> bool {
             COMMAND_ENDED,
             PLUGINS_CHANGED,
             SETTINGS_CHANGED,
+            THEMES_CHANGED,
         ]
         .contains(&name)
         || crate::command::is_name(name)
@@ -1541,6 +1545,10 @@ pub enum Event {
     /// `config` that subscribes to it: its read of the settings tells the
     /// new values.
     SettingsChanged,
+    /// The themes that the app can show changed, as a read of them tells:
+    /// their list read, as the app reads it off its main thread, a theme
+    /// added, removed or changed, to a plugin that subscribes to it.
+    ThemesChanged,
     /// The plugin's config changed, as the config file reloaded, to it
     /// alone: its request of [`Request::Config`] reads the new one.
     ConfigChanged,
@@ -1580,6 +1588,7 @@ impl Event {
             Self::PackagesEnded { .. } => "packages-ended",
             Self::PluginsChanged => PLUGINS_CHANGED,
             Self::SettingsChanged => SETTINGS_CHANGED,
+            Self::ThemesChanged => THEMES_CHANGED,
             Self::TabBarResized { .. } => "tab-bar-resized",
             Self::KeysChanged => KEYS_CHANGED,
             Self::WindowFocus { .. } => WINDOW_FOCUS,

@@ -537,6 +537,9 @@ type Event =
     -- The settings changed, as the config applied anew, which `settings` would tell; to a plugin of `config` that
     -- subscribes to it.
     | { kind: "settings-changed" }
+    -- The themes that the app can show changed, as `themes` tells: their list read, as the app reads it off its main
+    -- thread, or a theme added, removed or changed; of no capability.
+    | { kind: "themes-changed" }
     -- A drag of the edge of the plugin's tab bar's column ended, to it alone: its width since, in points,
     -- which the plugin keeps, as for its next start.
     | { kind: "tab-bar-resized", width: number }
@@ -681,6 +684,9 @@ type Cx = {
     run_command: (name: string, args: Args?) -> (boolean, Error?),
     -- The registered commands, in the order of their registrations, as the menus list them.
     commands: () -> ({ CommandInfo }?, Error?),
+    -- The themes that the app can show, the appearance in force and its theme: the themes' folder's, the held ones and
+    -- the built-in ones, which the app reads off its main thread, a read starting where none did lately; the built-in
+    -- ones alone, of `loading`, while its first read runs, whose end `themes-changed` tells.
     themes: () -> (Themes?, Error?),
     -- Require `appearance-write`: shows a theme in place of the appearance in force's, for a while, as a picker
     -- previews it; nil shows the config's.

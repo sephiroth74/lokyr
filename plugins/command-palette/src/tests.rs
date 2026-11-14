@@ -390,6 +390,7 @@ fn themed() -> (FakeHost, Palette) {
             theme("Paper", ThemeVariant::Light, ThemeOrigin::Folder),
             theme("Rose Pine Dawn", ThemeVariant::Light, ThemeOrigin::Held),
         ],
+        loading: false,
     });
     (host, plugin)
 }

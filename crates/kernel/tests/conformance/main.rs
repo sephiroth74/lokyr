@@ -693,6 +693,7 @@ fn themes() -> lokyr_plugin_sdk::host::Themes {
                 origin: ThemeOrigin::BuiltIn,
             },
         ],
+        loading: false,
     }
 }
 

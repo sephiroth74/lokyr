@@ -113,6 +113,7 @@ fn themes() -> host::Themes {
         appearance: lokyr_plugin_sdk::theme::ThemeVariant::Dark,
         current: "Lokyr Dark".to_owned(),
         themes: Vec::new(),
+        loading: false,
     }
 }
 

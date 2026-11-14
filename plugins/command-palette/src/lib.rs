@@ -22,7 +22,7 @@ mod rank;
 
 use lokyr_plugin_sdk::command::{Args, Category, Command, Error, Kind, Param, Value};
 use lokyr_plugin_sdk::host::{AgentInfo, AgentState, CommandInfo};
-use lokyr_plugin_sdk::message::{Data, Event};
+use lokyr_plugin_sdk::message::{Data, Event, THEMES_CHANGED};
 use lokyr_plugin_sdk::plugin::{Cx, Plugin};
 use lokyr_plugin_sdk::theme::ThemeVariant;
 use lokyr_plugin_sdk::ui::{Anchor, Corner, PanelId, PanelOptions, Role, UiEvent, ViewId};
@@ -110,6 +110,29 @@ fn message(cx: &mut Cx<'_>, id: &str) -> String {
 }
 
 /// The palette's view.
+/// The theme picker's appearance, the one in force, and its entries, of
+/// its themes, the one in force first, selected as the picker opens.
+fn theme_entries(cx: &mut Cx<'_>) -> Result<(ThemeVariant, Vec<Entry>), Error> {
+    let themes = cx.themes()?;
+    let current = message(cx, "palette-current");
+    let mut entries: Vec<Entry> = themes
+        .themes
+        .into_iter()
+        .filter(|theme| theme.variant == themes.appearance)
+        .map(|theme| Entry {
+            keys: (theme.name == themes.current).then(|| current.clone()),
+            title: theme.name.clone(),
+            name: theme.name,
+            plugin: None,
+        })
+        .collect();
+    if let Some(at) = entries.iter().position(|entry| entry.keys.is_some()) {
+        let first = entries.remove(at);
+        entries.insert(0, first);
+    }
+    Ok((themes.appearance, entries))
+}
+
 fn panel() -> ViewId {
     ViewId::Panel(PanelId::from(PANEL))
 }
@@ -192,6 +215,9 @@ impl Plugin for Palette {
                 .take(MOST_RECENT)
                 .collect();
         }
+        // The themes' list, which the app reads off its main thread, the
+        // picker's own as it comes.
+        cx.subscribe(&[THEMES_CHANGED])?;
         cx.register_command(Command {
             name: OPEN.to_owned(),
             title: "Command Palette…".to_owned(),
@@ -321,6 +347,19 @@ impl Plugin for Palette {
     /// The palette's closing, as Escape or a click outside it closes it.
     fn on_event(&mut self, cx: &mut Cx<'_>, events: &[Event]) -> Result<(), Error> {
         for event in events {
+            // The themes' list read, or anew: the picker that shows takes
+            // it, of its text as typed.
+            if *event == Event::ThemesChanged
+                && let Some(open) = &mut self.open
+                && matches!(open.mode, Mode::Themes(_))
+            {
+                let (_, entries) = theme_entries(cx)?;
+                open.commands = entries;
+                open.ranked = rank::rank(&open.commands, &open.query, &[]);
+                open.selected = open.selected.min(open.ranked.len().saturating_sub(1));
+                cx.request_render(panel())?;
+                continue;
+            }
             if let Event::PanelClosed(id) = event
                 && *id == PanelId::from(PANEL)
             {
@@ -371,25 +410,8 @@ impl Palette {
         if self.open.is_some() {
             return cx.focus_node(panel(), FIELD);
         }
-        let themes = cx.themes()?;
-        let current = message(cx, "palette-current");
-        let mut entries: Vec<Entry> = themes
-            .themes
-            .into_iter()
-            .filter(|theme| theme.variant == themes.appearance)
-            .map(|theme| Entry {
-                keys: (theme.name == themes.current).then(|| current.clone()),
-                title: theme.name.clone(),
-                name: theme.name,
-                plugin: None,
-            })
-            .collect();
-        // The theme in force first, selected as the picker opens.
-        if let Some(at) = entries.iter().position(|entry| entry.keys.is_some()) {
-            let first = entries.remove(at);
-            entries.insert(0, first);
-        }
-        self.show(cx, Mode::Themes(themes.appearance), entries)
+        let (appearance, entries) = theme_entries(cx)?;
+        self.show(cx, Mode::Themes(appearance), entries)
     }
 
     /// Opens the palette's list of the AI agents of every window, the most

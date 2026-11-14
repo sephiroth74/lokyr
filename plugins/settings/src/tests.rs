@@ -1854,44 +1854,97 @@ fn many_themes() -> lokyr_plugin_sdk::host::Themes {
             theme("Nord", ThemeVariant::Dark),
             theme("Night", ThemeVariant::Dark),
         ],
+        loading: false,
     }
 }
 
 #[test]
-fn the_themes_page_shows_a_card_of_each_theme_of_the_appearance_in_force_first() {
+fn the_themes_page_shows_the_themes_of_an_appearance_of_its_sidebar_the_one_in_force_first() {
     let (mut host, mut plugin) = host();
     host.set_themes(many_themes());
     host.show_page(THEMES);
     host.deliver(&mut plugin).unwrap();
     let tree = host.render(&mut plugin, &themes_page()).expect("the page");
-    // The dark ones first, as the appearance in force is dark, in rows of
-    // three, the last of the room of the cards that it lacks.
-    let headings: Vec<String> = texts_of(&tree)
-        .into_iter()
-        .filter(|text| text.starts_with("themes-"))
-        .collect();
+    // The sidebar of the appearances, the dark one first, as in force.
+    let Kind::List(list) = &find_node(&tree, VARIANTS).expect("the sidebar").kind else {
+        panic!("a list");
+    };
+    let items: Vec<Vec<String>> = list.items.iter().map(|item| item.texts.clone()).collect();
     assert_eq!(
-        headings,
-        ["themes-description", "themes-dark", "themes-light"],
-        "{}",
-        snapshot(&tree)
+        items,
+        [["circle-filled", "themes-dark"], ["circle", "themes-light"]]
+            .map(|texts| texts.map(str::to_owned).to_vec())
     );
+    // The dark themes alone, in rows of three, the last of the room of the
+    // cards that it lacks.
+    assert_eq!(text_of(&tree, "title").as_deref(), Some("themes-dark"));
     let dark = find_node(&tree, "themes-row:dark:0").unwrap();
     assert_eq!(dark.children.len(), CARDS_ACROSS);
     let last = find_node(&tree, "themes-row:dark:1").unwrap();
     assert_eq!(last.children.len(), CARDS_ACROSS);
+    assert!(find_node(&tree, "theme:light:Paper").is_none());
     // Each card of a preview of its theme and of its name; the one that
     // `[theme]` names of the accent's border.
     let card = find_node(&tree, "theme:dark:Dracula").expect("Dracula's card");
     assert!(matches!(&card.children[0].kind, Kind::ThemePreview(name) if name == "Dracula"));
-    let border = |key: &str| {
-        find_node(&tree, key)
+    let border = |tree: &Node, key: &str| {
+        find_node(tree, key)
             .and_then(|node| node.style.border.as_ref())
             .map(|border| border.color.0.clone())
     };
-    assert_eq!(border("theme:dark:Lokyr Dark").as_deref(), Some("accent"));
-    assert_eq!(border("theme:dark:Dracula").as_deref(), Some("separator"));
-    assert_eq!(border("theme:light:Lokyr Light").as_deref(), Some("accent"));
+    assert_eq!(
+        border(&tree, "theme:dark:Lokyr Dark").as_deref(),
+        Some("accent")
+    );
+    assert_eq!(
+        border(&tree, "theme:dark:Dracula").as_deref(),
+        Some("separator")
+    );
+    // The light ones, of the sidebar's second item.
+    host.ui_event(
+        &mut plugin,
+        &UiEvent {
+            view: themes_page(),
+            key: VARIANTS.into(),
+            kind: UiEventKind::Select { item: 1 },
+        },
+    )
+    .unwrap();
+    let tree = host.render(&mut plugin, &themes_page()).unwrap();
+    assert_eq!(text_of(&tree, "title").as_deref(), Some("themes-light"));
+    assert!(find_node(&tree, "theme:dark:Dracula").is_none());
+    assert_eq!(
+        border(&tree, "theme:light:Lokyr Light").as_deref(),
+        Some("accent")
+    );
+}
+
+#[test]
+fn the_themes_page_shows_a_progress_while_their_list_is_read() {
+    let (mut host, mut plugin) = host();
+    let mut reading = many_themes();
+    reading.loading = true;
+    host.set_themes(reading);
+    host.show_page(THEMES);
+    host.deliver(&mut plugin).unwrap();
+    let tree = host.render(&mut plugin, &themes_page()).unwrap();
+    assert!(
+        find_node(&tree, "themes-loading").is_some(),
+        "{}",
+        snapshot(&tree)
+    );
+    assert!(find_node(&tree, "themes-row:dark:0").is_none());
+    // The list read: the plugin hears it and shows the cards.
+    let _ = host.take_done();
+    host.set_themes(many_themes());
+    host.deliver(&mut plugin).unwrap();
+    assert!(host.take_done().iter().any(|request| matches!(
+        request,
+        Request::RequestRender(view) if *view == themes_page()
+    )));
+    let tree = host.render(&mut plugin, &themes_page()).unwrap();
+    assert!(find_node(&tree, "themes-loading").is_none());
+    assert!(find_node(&tree, "theme:dark:Dracula").is_some());
 }
 
 #[test]

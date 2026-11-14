@@ -25,13 +25,14 @@ use lokyr_plugin_sdk::command::{Category, Error, Value};
 use lokyr_plugin_sdk::host::{
     FontFace, SettingBinding, SettingKey, SettingKind, Settings, SettingsSection,
 };
-use lokyr_plugin_sdk::message::{Data, Event, SETTINGS_CHANGED};
+use lokyr_plugin_sdk::message::{Data, Event, SETTINGS_CHANGED, THEMES_CHANGED};
 use lokyr_plugin_sdk::plugin::{Cx, Plugin};
 use lokyr_plugin_sdk::theme::{TOKENS, ThemeVariant};
 use lokyr_plugin_sdk::ui::{Anchor, PanelId, PanelOptions, Role as PanelRole, UiEvent, ViewId};
 use lokyr_plugin_sdk::view::{
     Align, Border, Direction, Edges, FontFamily, FontWeight, Hover, Justify, Kind, Layout, Length,
-    ListItem, Node, PointerShape, Role, Style, TextSize, Token, UiEventKind,
+    ListItem, Node, PointerShape, ProgressShape, ProgressState, Role, Style, TextSize, Token,
+    UiEventKind,
 };
 
 lokyr_plugin_sdk::export_plugin!(SettingsPage);
@@ -53,6 +54,9 @@ const THEME_CARD: &str = "theme:";
 
 /// How many themes' cards a row of the themes' page holds.
 const CARDS_ACROSS: usize = 3;
+
+/// The key of the themes' page's sidebar's list of the appearances.
+const VARIANTS: &str = "variants";
 
 /// The height of a theme's card's preview, in points.
 const PREVIEW_HEIGHT: f32 = 92.0;
@@ -185,8 +189,10 @@ pub struct SettingsPage {
     /// Whether a font's family or style shows in the panes as a menu's
     /// item is highlighted, until the menu closes.
     previewing: bool,
-    /// Whether its page of the themes shows.
+    /// Whether its page of the themes shows, and the appearance whose
+    /// themes it shows, the one in force's until its sidebar chooses one.
     themes_shown: bool,
+    themes_variant: Option<ThemeVariant>,
     /// The font of the item highlighted last, which shows once the timer
     /// of its rest fires.
     pending_preview: Option<(FontPreview, String)>,
@@ -252,7 +258,7 @@ fn page_settings(cx: &mut Cx<'_>) -> Result<Settings, Error> {
 
 impl Plugin for SettingsPage {
     fn activate(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
-        cx.subscribe(&[SETTINGS_CHANGED])
+        cx.subscribe(&[SETTINGS_CHANGED, THEMES_CHANGED])
     }
 
     fn catalogs(&self) -> lokyr_plugin_sdk::plugin::Catalogs {
@@ -266,6 +272,11 @@ impl Plugin for SettingsPage {
                 // The page shows at its first section, as its sidebar does.
                 Event::PageShown(page) if page == THEMES => {
                     self.themes_shown = true;
+                    self.themes_variant = None;
+                    cx.request_render(themes_page())?;
+                }
+                // The themes' list read, or anew: their cards.
+                Event::ThemesChanged if self.themes_shown => {
                     cx.request_render(themes_page())?;
                 }
                 Event::PageHidden(page) if page == THEMES => self.themes_shown = false,
@@ -326,8 +337,20 @@ impl Plugin for SettingsPage {
 
     fn on_ui_event(&mut self, cx: &mut Cx<'_>, event: &UiEvent) -> Result<(), Error> {
         let key = event.key.0.as_str();
-        // A theme's card: the theme named in `[theme]` for its appearance.
+        // A theme's card: the theme named in `[theme]` for its appearance;
+        // an appearance of the sidebar, whose themes show.
         if event.view == themes_page() {
+            if let (UiEventKind::Select { item } | UiEventKind::Activate { item }, VARIANTS) =
+                (&event.kind, key)
+            {
+                let themes = cx.themes()?;
+                let variant = variants_of(themes.appearance).get(*item).copied();
+                if variant.is_some() && variant != self.themes_variant {
+                    self.themes_variant = variant;
+                    cx.request_render(themes_page())?;
+                }
+                return Ok(());
+            }
             if event.kind == UiEventKind::Click
                 && let Some((variant, name)) = key
                     .strip_prefix(THEME_CARD)
@@ -534,7 +557,7 @@ impl Plugin for SettingsPage {
 
     fn render(&mut self, cx: &mut Cx<'_>, view: &ViewId) -> Option<Node> {
         if *view == themes_page() {
-            return Some(themes_tree(cx));
+            return Some(themes_tree(cx, self.themes_variant));
         }
         let settings = page_settings(cx).ok()?;
         match view {
@@ -2269,37 +2292,92 @@ fn commands_menu(cx: &mut Cx<'_>) -> Node {
     Node::container(groups).key("commands-menu")
 }
 
-/// The page of the themes: of the appearance in force first, then of the
-/// other, each a card of a preview of its colors and its name, the one
-/// that `[theme]` names for its appearance marked, in rows of
-/// [`CARDS_ACROSS`], which a click names in `[theme]`.
-fn themes_tree(cx: &mut Cx<'_>) -> Node {
+/// The appearances, of `in_force` first, as the themes' page's sidebar
+/// lists them.
+fn variants_of(in_force: ThemeVariant) -> [ThemeVariant; 2] {
+    match in_force {
+        ThemeVariant::Light => [ThemeVariant::Light, ThemeVariant::Dark],
+        ThemeVariant::Dark => [ThemeVariant::Dark, ThemeVariant::Light],
+    }
+}
+
+/// The page of the themes: a sidebar of the appearances, of the one in
+/// force first, and the themes of `chosen`, or of the one in force, each a
+/// card of a preview of its colors and its name, the one that `[theme]`
+/// names marked, in rows of [`CARDS_ACROSS`], which a click names in
+/// `[theme]`; a progress while the app reads their list.
+fn themes_tree(cx: &mut Cx<'_>, chosen: Option<ThemeVariant>) -> Node {
     let themes = cx.themes().ok();
     let settings = cx.settings().ok();
-    let named = |variant: &str| {
-        settings
-            .as_ref()
-            .and_then(|settings| {
-                settings
-                    .sections
-                    .iter()
-                    .find(|section| section.name == "theme" && section.plugin.is_none())
-            })
-            .and_then(|section| section.keys.iter().find(|key| key.name == variant))
-            .and_then(|key| match &key.value {
-                Some(Data::Text(name)) => Some(name.clone()),
-                _ => None,
-            })
-    };
     let in_force = themes
         .as_ref()
         .map_or(ThemeVariant::Dark, |themes| themes.appearance);
-    let variants = match in_force {
-        ThemeVariant::Light => [ThemeVariant::Light, ThemeVariant::Dark],
-        ThemeVariant::Dark => [ThemeVariant::Dark, ThemeVariant::Light],
+    let variant = chosen.unwrap_or(in_force);
+    let words = |variant: ThemeVariant| match variant {
+        ThemeVariant::Light => ("light", "themes-light", "circle"),
+        ThemeVariant::Dark => ("dark", "themes-dark", "circle-filled"),
     };
+    // The sidebar of the appearances, of a menu's look, the first selected
+    // as it shows.
+    let row = Node::container(vec![
+        Node::icon("").style(Style {
+            color: Some(Token::from("accent")),
+            ..Style::default()
+        }),
+        Node::text(""),
+    ])
+    .layout(Layout {
+        direction: Direction::Row,
+        gap: 8.0,
+        align: Align::Center,
+        height: Length::Points(ROW),
+        padding: Edges {
+            top: 0.0,
+            right: 8.0,
+            bottom: 0.0,
+            left: 8.0,
+        },
+        ..Layout::default()
+    });
+    let items: Vec<ListItem> = variants_of(in_force)
+        .into_iter()
+        .map(|variant| {
+            let (_, title, icon) = words(variant);
+            ListItem {
+                texts: vec![icon.to_owned(), message(cx, title, &[])],
+            }
+        })
+        .collect();
+    let mut list = Node::list(row, items.len(), (0, items))
+        .key(VARIANTS)
+        .label(message(cx, "page-themes", &[]))
+        .layout(Layout {
+            width: Length::Fraction(1.0),
+            height: Length::Fraction(1.0),
+            ..Layout::default()
+        })
+        .style(Style {
+            hides_ring: true,
+            ..Style::default()
+        });
+    if let Kind::List(list) = &mut list.kind {
+        list.row_height = Some(ROW);
+        list.menu = true;
+    }
+    let sidebar = Node::container(vec![list])
+        .key("themes-sidebar")
+        .role(Role::Group)
+        .layout(Layout {
+            direction: Direction::Column,
+            width: Length::Points(SIDEBAR),
+            min_width: Length::Points(SIDEBAR),
+            height: Length::Fraction(1.0),
+            padding: Edges::all(10.0),
+            ..Layout::default()
+        });
+    let (word, heading, _) = words(variant);
     let mut children = vec![
-        Node::text(message(cx, "page-themes", &[]))
+        Node::text(message(cx, heading, &[]))
             .key("title")
             .role(Role::Heading)
             .style(Style {
@@ -2312,34 +2390,51 @@ fn themes_tree(cx: &mut Cx<'_>) -> Node {
             .style(secondary())
             .layout(wrapped()),
     ];
-    for variant in variants {
-        let (word, heading) = match variant {
-            ThemeVariant::Light => ("light", "themes-light"),
-            ThemeVariant::Dark => ("dark", "themes-dark"),
-        };
-        let chosen = named(word);
+    if themes.as_ref().is_none_or(|themes| themes.loading) {
+        // A progress while the app reads the themes' list.
+        children.push(
+            Node::container(vec![
+                Node::progress(ProgressShape::Ring, ProgressState::Indeterminate, 0.0).layout(
+                    Layout {
+                        width: Length::Points(16.0),
+                        height: Length::Points(16.0),
+                        ..Layout::default()
+                    },
+                ),
+                Node::text(message(cx, "themes-loading", &[])).style(secondary()),
+            ])
+            .key("themes-loading")
+            .layout(Layout {
+                direction: Direction::Row,
+                gap: 8.0,
+                align: Align::Center,
+                ..Layout::default()
+            }),
+        );
+    } else {
+        let named = settings
+            .as_ref()
+            .and_then(|settings| {
+                settings
+                    .sections
+                    .iter()
+                    .find(|section| section.name == "theme" && section.plugin.is_none())
+            })
+            .and_then(|section| section.keys.iter().find(|key| key.name == word))
+            .and_then(|key| match &key.value {
+                Some(Data::Text(name)) => Some(name.clone()),
+                _ => None,
+            });
         let names: Vec<String> = themes
             .iter()
             .flat_map(|themes| &themes.themes)
             .filter(|theme| theme.variant == variant)
             .map(|theme| theme.name.clone())
             .collect();
-        if names.is_empty() {
-            continue;
-        }
-        children.push(
-            Node::text(message(cx, heading, &[]))
-                .key(heading)
-                .role(Role::Heading)
-                .style(Style {
-                    font_weight: Some(FontWeight::Semibold),
-                    ..Style::default()
-                }),
-        );
         for (row, chunk) in names.chunks(CARDS_ACROSS).enumerate() {
             let mut cards: Vec<Node> = chunk
                 .iter()
-                .map(|name| theme_card(word, name, chosen.as_deref() == Some(name.as_str())))
+                .map(|name| theme_card(word, name, named.as_deref() == Some(name.as_str())))
                 .collect();
             // The last row's room of the cards that it lacks, so that its
             // cards keep the others' width.
@@ -2369,10 +2464,20 @@ fn themes_tree(cx: &mut Cx<'_>) -> Node {
         padding: Edges::all(20.0),
         ..Layout::default()
     });
-    Node::scroll(vec![column])
-        .key("themes-page")
+    let content = Node::scroll(vec![column])
+        .key("themes-content")
         .layout(Layout {
             direction: Direction::Column,
+            grow: 1.0,
+            width: Length::Points(0.0),
+            min_width: Length::Points(0.0),
+            height: Length::Fraction(1.0),
+            ..Layout::default()
+        });
+    Node::container(vec![sidebar, Node::separator(), content])
+        .key("themes-page")
+        .layout(Layout {
+            direction: Direction::Row,
             width: Length::Fraction(1.0),
             height: Length::Fraction(1.0),
             ..Layout::default()

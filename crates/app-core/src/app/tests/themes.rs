@@ -513,12 +513,31 @@ fn a_picker_lists_the_themes_previews_one_and_names_the_chosen_one() {
     // A file of the folder of a held theme's name, the folder's.
     std::fs::write(held.join("Paper.toml"), theme("#eeeeee")).unwrap();
     app.held_themes = Some(held);
-    let list = pickers::theme_list(
-        (Some(&directory.join("themes")), app.held_themes.as_deref()),
-        &app.held_theme_list,
-        fake.appearance(),
-        &app.config.theme,
-    );
+    let folder = directory.join("themes");
+    let listed = |app: &App, fake: &Fake| {
+        pickers::theme_list(
+            &app.theme_catalog,
+            (
+                Some(&folder),
+                app.held_themes.as_deref(),
+                app.waker.as_ref(),
+            ),
+            fake.appearance(),
+            &app.config.theme,
+        )
+    };
+    // The built-in ones alone, as loading, while the read runs off the
+    // main thread; then every one, as it took the read's list.
+    let first = listed(&app, &fake);
+    assert!(first.loading);
+    assert_eq!(first.themes.len(), 2);
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    while app.theme_catalog.borrow().listed.is_none() && std::time::Instant::now() < deadline {
+        app.take_themes(&mut fake);
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    let list = listed(&app, &fake);
+    assert!(!list.loading);
     assert_eq!(list.appearance, ThemeVariant::Light);
     assert_eq!(list.current, "Lokyr Light");
     let names: Vec<(&str, ThemeVariant, ThemeOrigin)> = list
@@ -687,4 +706,38 @@ fn open_themes_folder_tells_why_it_opens_nothing() {
     assert_eq!(shown.len(), 1);
     assert_eq!(shown[0].0, message);
     assert!(fake.opened().is_empty());
+}
+
+#[test]
+fn the_themes_list_and_colors_come_off_the_main_thread_a_part_at_a_time() {
+    let (mut fake, mut app, directory) = with_themes("catalog", "", &[]);
+    // Thirty held themes, past a part of colors.
+    let held = directory.join("held");
+    std::fs::create_dir_all(&held).unwrap();
+    for at in 0..30 {
+        std::fs::write(held.join(format!("Held {at:02}.toml")), theme("#202020")).unwrap();
+    }
+    app.held_themes = Some(held);
+    // A preview's need starts the read; its list, then every one's colors,
+    // come as the main thread takes them, none of them here before.
+    app.keep_previews(vec!["Held 00".to_owned(), "Held 29".to_owned()]);
+    assert!(!app.previews.contains_key("Held 00"));
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    while !app.previews.contains_key("Held 29") && std::time::Instant::now() < deadline {
+        app.take_themes(&mut fake);
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    let listed = app
+        .theme_catalog
+        .borrow()
+        .listed
+        .clone()
+        .unwrap_or_default();
+    assert_eq!(listed.len(), 30);
+    assert!((0..30).all(|at| app.previews.contains_key(&format!("Held {at:02}"))));
+    assert_eq!(
+        app.previews["Held 00"].background,
+        lokyr_render_core::Color::from_rgb8(0x20, 0x20, 0x20)
+    );
+    let _ = std::fs::remove_dir_all(directory);
 }

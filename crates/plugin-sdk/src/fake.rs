@@ -581,6 +581,7 @@ impl FakeHost {
                         origin: host::ThemeOrigin::BuiltIn,
                     },
                 ],
+                loading: false,
             },
             messages: Vec::new(),
             bar_place: BarPlace::default(),
@@ -775,8 +776,12 @@ impl FakeHost {
     }
 
     /// Gives the app the themes that it can show, `themes`, which a read of
-    /// them gives; the built-in ones, dark in force, at first.
+    /// them gives, the plugin hearing `themes-changed` as they change; the
+    /// built-in ones, dark in force, at first.
     pub fn set_themes(&mut self, themes: host::Themes) -> &mut Self {
+        if self.activated && themes != self.themes {
+            self.owed.push(Event::ThemesChanged);
+        }
         self.themes = themes;
         self
     }

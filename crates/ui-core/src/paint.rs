@@ -1100,9 +1100,10 @@ impl<'a, B: FontBackend> Painter<'a, B> {
     /// The sample terminal of the theme `name` within `frame`, of its
     /// colors of the previews: its background, of rounded corners, a
     /// prompt, an `ls` and a line of colored words in the terminal's family
-    /// at a small size, and the sixteen colors in two rows at its foot;
-    /// nothing out of the clip, as of a card scrolled away, or of a theme
-    /// that the previews lack.
+    /// at a small size, and the sixteen colors in two rows at its foot; a
+    /// placeholder of the fields' background while the previews lack its
+    /// colors, as they come off the main thread; nothing out of the clip,
+    /// as of a card scrolled away.
     fn theme_preview(&mut self, name: &str, frame: Frame) {
         let shown = self.clip.is_none_or(|clip| {
             let (x, y) = (clip.x as f32, clip.y as f32);
@@ -1111,10 +1112,18 @@ impl<'a, B: FontBackend> Painter<'a, B> {
                 && frame.y < y + clip.height as f32
                 && y < frame.y + frame.height
         });
-        let Some(colors) = self.previews.get(name).copied().filter(|_| shown) else {
+        if !shown {
+            return;
+        }
+        let scale = self.layout.scale();
+        let Some(colors) = self.previews.get(name).copied() else {
+            let fill = self.tokens.get("field.bg").unwrap_or(Color::CLEAR);
+            self.push_shape(Shape {
+                radius: 6.0 * scale,
+                ..Shape::filled(rect(frame), fill)
+            });
             return;
         };
-        let scale = self.layout.scale();
         self.push_shape(Shape {
             radius: 6.0 * scale,
             ..Shape::filled(rect(frame), colors.background)
@@ -1820,7 +1829,7 @@ mod tests {
     }
 
     #[test]
-    fn a_theme_s_preview_draws_its_colors_within_the_clip_and_none_of_a_theme_unknown() {
+    fn a_theme_s_preview_draws_its_colors_within_the_clip_and_a_placeholder_of_none_yet() {
         use lokyr_plugin_sdk::view::{Layout as Box, Length};
         let sized = |name: &str| {
             Node::theme_preview(name).layout(Box {
@@ -1875,8 +1884,11 @@ mod tests {
             .flatten()
             .collect();
         // One background, of rounded corners, and the sixteen colors: the
-        // preview below the clip and the unknown one draw nothing.
+        // preview below the clip draws nothing, and the one of no colors
+        // yet a placeholder of the fields' background.
         assert_eq!(fills.iter().filter(|&&fill| fill == background).count(), 1);
+        let placeholder = token("field.bg");
+        assert_eq!(fills.iter().filter(|&&fill| fill == placeholder).count(), 1);
         for color in palette {
             assert_eq!(fills.iter().filter(|&&fill| fill == color).count(), 1);
         }

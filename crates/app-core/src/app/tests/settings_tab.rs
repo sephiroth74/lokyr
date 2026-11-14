@@ -1865,11 +1865,25 @@ fn the_themes_page_previews_each_theme_of_its_colors_and_a_card_names_it_in_the_
     click_tab(&mut fake, &mut app, own, at);
     frames(&mut fake, &mut app, own);
     assert_eq!(page_shown(&app, own), "themes");
-    // The built-in themes' cards, whose previews' colors the app keeps.
-    let tree = &page_view(&app, own).unwrap().surface.tree;
-    assert!(tree.by_key(&"theme:dark:Lokyr Dark".into()).is_some());
-    assert!(tree.by_key(&"theme:light:Lokyr Light".into()).is_some());
-    assert!(app.previews.contains_key("Lokyr Dark"));
+    // A progress while the list is read off the main thread, then the
+    // cards of the appearance in force, whose previews' colors the app
+    // keeps.
+    let has = |app: &App, key: &str| {
+        page_view(app, own).is_some_and(|view| view.surface.tree.by_key(&key.into()).is_some())
+    };
+    assert!(has(&app, "themes-loading"), "the progress");
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !has(&app, "theme:light:Lokyr Light") && Instant::now() < deadline {
+        fake.send_app(&mut app, AppEvent::Wake);
+        frames(&mut fake, &mut app, own);
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    // The light ones, as the tests' appearance is light.
+    assert!(
+        has(&app, "theme:light:Lokyr Light"),
+        "the light themes' cards"
+    );
+    assert!(!has(&app, "themes-loading"));
     assert!(app.previews.contains_key("Lokyr Light"));
     // A card's click names its theme in `[theme]` for its appearance.
     app.ui_events.push((

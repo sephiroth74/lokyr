@@ -173,6 +173,7 @@ export type Event =
     | { kind: "packages-ended", id: number, ok: boolean }
     | { kind: "plugins-changed" }
     | { kind: "settings-changed" }
+    | { kind: "themes-changed" }
     | { kind: "config-changed" }
     | { kind: "timer", id: number }
     | { kind: "custom", name: string, schema: string, value: Data }
@@ -952,6 +953,7 @@ export type Themes = {
     appearance: ThemeVariant,
     current: string,
     themes: { ThemeInfo },
+    loading: boolean?,
 }
 
 export type Token = string
