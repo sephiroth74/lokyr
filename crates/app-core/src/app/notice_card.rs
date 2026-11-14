@@ -264,7 +264,8 @@ impl<B: Backend> App<B> {
     /// Settles the card of `window` to the notice that shows, before the
     /// frame takes its trees: a new notice's card, of a new revision, comes
     /// down from its first frame, its going timed of a failure's; the
-    /// window's card opens as one shows and closes as none does.
+    /// window's card opens as one shows and closes as none does, but in the
+    /// settings' window, which shows none.
     pub(super) fn settle_notice(&mut self, platform: &mut dyn Platform, window: WindowId) {
         let shown = self.diagnostics.shown().cloned();
         if shown != self.notice.shown {
@@ -288,7 +289,10 @@ impl<B: Backend> App<B> {
                 .find(|view| view.plugin == OVERFLOW && view.view == notice_view())
                 .map(|view| view.id)
         });
-        match (self.notice.shown.is_some(), open) {
+        // The settings' window shows no notice: the terminals' windows
+        // do.
+        let shows = self.notice.shown.is_some() && !self.shows_settings(window);
+        match (shows, open) {
             (true, None) => self.open_notice(platform, window),
             (false, Some(view)) => self.close_panel(platform, window, view, false),
             _ => {}

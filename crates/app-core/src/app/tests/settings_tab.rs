@@ -1607,3 +1607,29 @@ fn add_records_a_shortcut_of_no_command_run_and_writes_the_binding_of_the_comman
     assert!(!fake.recording_keys(), "the keys no longer recorded");
     let _ = std::fs::remove_dir_all(&directory);
 }
+
+#[test]
+fn the_settings_window_shows_no_notice_which_the_terminals_windows_do() {
+    let (mut fake, mut app, first) = two_tabs();
+    app.report(
+        &mut fake,
+        Diagnostic::new(
+            lokyr_kernel::commands::Code::InvalidConfig,
+            "line 1",
+            lokyr_kernel::diagnostics::About::Config,
+        ),
+    );
+    frames(&mut fake, &mut app, first);
+    let card = |app: &App, window: WindowId| {
+        app.windows[&window]
+            .chrome
+            .iter()
+            .any(|view| view.view == super::super::notice_card::notice_view())
+    };
+    assert!(card(&app, first), "the terminal's window shows it");
+    let own = open(&mut fake, &mut app, SETTINGS_TAB);
+    frames(&mut fake, &mut app, own);
+    assert!(!card(&app, own), "the settings' window shows none");
+    frames(&mut fake, &mut app, first);
+    assert!(card(&app, first), "the terminal's window shows it still");
+}

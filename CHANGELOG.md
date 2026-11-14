@@ -10,7 +10,7 @@ from 1.0.0; before it, a minor version may change what a previous one did.
 
 ### Added
 
-- A settings window, "Settings", of its own, which Lokyr › Open Settings Window opens, as does the command palette, or brings forward where it is open: its pages as tabs across the top, the page chosen below them; ⌘W, or Shell › Close Tab, closes it, no terminal's tab goes into it, and it shows none of the bars, buttons, tips and panels of the terminals' windows.
+- A settings window, "Settings", of its own, which Lokyr › Open Settings Window opens, as does the command palette, or brings forward where it is open: its pages as tabs across the top, the page chosen below them; ⌘W, or Shell › Close Tab, closes it, no terminal's tab goes into it, and it shows none of the bars, buttons, tips, notices and panels of the terminals' windows.
 - A plugin's config schema may hold annotations of `x-`, as the text of a guide, which Lokyr checks no value against.
 - `sleip check` checks a plugin's config schema as Lokyr reads it, at its line: a key twice in one object, which Lokyr now refuses, or the key `enabled`, which is Lokyr's.
 - Themes color two more tokens of the interface, `text.success` and `text.warning`, the palette's green and yellow where a theme gives none.
