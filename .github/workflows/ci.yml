@@ -161,6 +161,7 @@ jobs:
       - run: just check-deps
       - run: just check-comments
       - run: just check-links
+      - run: just check-config-guide
       - run: just check-dist
       - run: just deny
       - run: just test-portable

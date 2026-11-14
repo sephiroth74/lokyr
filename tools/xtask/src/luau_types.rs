@@ -38,7 +38,7 @@ pub fn run(args: impl Iterator<Item = String>) -> Result<ExitCode> {
 }
 
 /// The workspace's root, two levels above xtask's manifest.
-fn workspace_root() -> PathBuf {
+pub(crate) fn workspace_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .ancestors()
         .nth(2)

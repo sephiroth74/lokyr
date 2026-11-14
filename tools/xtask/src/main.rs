@@ -6,6 +6,7 @@ mod changelog;
 mod check_comments;
 mod check_deps;
 mod check_links;
+mod config_guide;
 mod dmg;
 mod feed;
 mod gen_dist;
@@ -39,6 +40,7 @@ fn main() -> ExitCode {
         Some("check-deps") => check_deps::run(args),
         Some("check-language") => languages::run_check(args),
         Some("check-links") => check_links::run(args),
+        Some("config-guide") => config_guide::run(args),
         Some("dmg") => dmg::run(args),
         Some("feed") => feed::run(args),
         Some("gen-dist") => gen_dist::run(args),
@@ -74,6 +76,7 @@ fn print_help() {
          check-deps [--print-graph]  check the dependency rules of the workspace\n  \
          check-language <code>       check a language's catalogs against English's: missing, extra and untranslated messages\n  \
          check-links                 find the internal links of the Markdown files that do not resolve\n  \
+         config-guide [--check]      write docs/CONFIGURATION.md of the config's schema and the plugins', or check it\n  \
          dmg [--no-notarize]         build target/Lokyr-<version>.dmg of the bundle, notarized first, signed, notarized and stapled\n  \
          dmg layout                  have the Finder lay out the image's window, and keep its .DS_Store\n  \
          feed add <dmg> [--notes <file>] [--channel <name>]  add a DMG and its notes to the feed of tests, its appcast signed\n  \

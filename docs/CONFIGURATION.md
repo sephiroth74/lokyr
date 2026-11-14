@@ -75,10 +75,10 @@ blink-interval = 600                 # ms on, then off, from 100 to 5000
 blink-timeout = 30                   # seconds after a key or output; 0 never stops
 smooth-blink = "custom"              # off | breathing | linear | fast | slow | subtle | custom
 fade-in = 300                        # with "custom": ms, from 0 to 10000
-fade-in-curve = "ease-out"           # linear | ease-in | ease-out | ease-in-out
-visible = 700                        # ms held visible, from 0 to 10000
 fade-out = 400
+fade-in-curve = "ease-out"           # linear | ease-in | ease-out | ease-in-out
 fade-out-curve = "ease-in"
+visible = 700                        # ms held visible, from 0 to 10000
 hidden = 200                         # ms held hidden
 movement = "snappy"                  # instant | snappy: how it moves to a new cell
 
@@ -112,7 +112,7 @@ term = "xterm-lokyr"                 # the TERM that programs see
 unicode-widths = "8"                 # current | 8: the width tables
 ambiguous-width = 2                  # 1 | 2: the cells of an ambiguous character
 normalization = "nfc"                # none | nfc | nfd | hfs+
-shell-integration = true            # true | false: the shell tells its prompts and its folder
+shell-integration = true             # true | false: the shell tells its prompts and its folder
 image-memory = 128                   # MiB of a pane's inline images, 0 showing none
 
 [scrollback]

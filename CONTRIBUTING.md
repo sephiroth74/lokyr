@@ -79,7 +79,7 @@ The [conventions](docs/ARCHITECTURE.md#conventions) are the full list. The ones 
 ## The documents
 
 - **A changed decision** changes the documents that tell it, and its row of the requirements' table in [docs/README.md](docs/README.md), if it has one.
-- **A key of the config** that a change adds, changes or removes is in [docs/CONFIGURATION.md](docs/CONFIGURATION.md), the guide to the config: the platforms where it applies, in a small line under its name, `<sub>Platforms: macOS</sub>`; its values, its default, what it does, and whether it applies yet. The guide's complete example holds every key, which a test of the kernel checks. The guide names no other terminal emulator; it can name the tools that help, such as vim, Font Book on macOS or GNU Stow.
+- **A key of the config** that a change adds, changes or removes is in the config's schema, [`crates/kernel/config.schema.json`](crates/kernel/config.schema.json): its type, its values, its range, its default and its description, and its annotations of `x-`, the platforms where it applies, its text in the guide, its value and comment in the complete example, a number's step and a text's bound; a plugin's keys are in its own schema. The kernel's tests hold the schema to the parser. [docs/CONFIGURATION.md](docs/CONFIGURATION.md), the guide to the config, is made of the schemas and of its template, [`crates/kernel/config-guide.md`](crates/kernel/config-guide.md), by `cargo xtask config-guide`, never edited by hand; CI checks that it is the schemas'. The guide names no other terminal emulator; it can name the tools that help, such as vim, Font Book on macOS or GNU Stow.
 - **A changed behavior** changes the documents that describe it.
 - **Links resolve**, which `just check-links` checks.
 
