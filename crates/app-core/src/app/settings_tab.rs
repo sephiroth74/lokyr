@@ -59,14 +59,15 @@ pub(crate) struct Page {
 /// What the app keeps of the settings tab: its pages, in the sidebar's
 /// order, the chosen one, the revision of its tree, which a change of
 /// either renews, the plugins' list and the language that the pages were
-/// read of, and the page that its plugin was told shows.
+/// read of, and the page that its plugin was told shows, of the run of
+/// the plugin told.
 #[derive(Debug, Default)]
 pub(crate) struct SettingsTab {
     pub(crate) pages: Vec<Page>,
     pub(crate) chosen: usize,
     pub(crate) revision: u64,
     read: Option<(Arc<[PluginInfo]>, String)>,
-    told: Option<(String, String)>,
+    told: Option<(String, String, u64)>,
 }
 
 impl SettingsTab {
@@ -195,25 +196,31 @@ impl<B: Backend> App<B> {
             .pages
             .get(self.settings.chosen)
             .filter(|_| shows);
+        // Told to the run of the plugin that is active: one started again
+        // after a fault hears it anew.
         let same = match (&self.settings.told, page) {
-            (Some((plugin, id)), Some(page)) => *plugin == page.plugin && *id == page.id,
+            (Some((plugin, id, run)), Some(page)) => {
+                *plugin == page.plugin
+                    && *id == page.id
+                    && self.plugins.activated_run(plugin) == Some(*run)
+            }
             (None, None) => true,
             _ => false,
         };
         if same {
             return;
         }
-        if let Some((plugin, id)) = self.settings.told.take() {
+        if let Some((plugin, id, _)) = self.settings.told.take() {
             self.plugins.page_shown(&plugin, &id, false);
         }
         // A plugin that its page's first render activates hears it shown
         // once it is active, at a later turn, as it would hear nothing
         // before.
         if let Some(page) = page
-            && self.plugins.activated(&page.plugin)
+            && let Some(run) = self.plugins.activated_run(&page.plugin)
         {
             self.plugins.page_shown(&page.plugin, &page.id, true);
-            self.settings.told = Some((page.plugin.clone(), page.id.clone()));
+            self.settings.told = Some((page.plugin.clone(), page.id.clone(), run));
         }
     }
 

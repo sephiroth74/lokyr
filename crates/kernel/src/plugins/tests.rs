@@ -2088,6 +2088,7 @@ fn a_call_is_its_own_plugin_s() {
             stored: Stored::default(),
             wanted: true,
             ran: true,
+            starts: 1,
             bar_place: host::BarPlace::default(),
             window_places: BTreeMap::new(),
             dim: 0.0,

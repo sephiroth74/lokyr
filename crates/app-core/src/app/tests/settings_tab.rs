@@ -376,6 +376,8 @@ fn tab_goes_through_the_page_s_fields_and_the_tabs_as_the_system_s_keyboard_navi
     for wanted in [
         ("tips", true),
         ("show-terminal", true),
+        ("choose", true),
+        ("fault", true),
         ("pages", false),
         ("name", true),
     ] {
@@ -910,4 +912,65 @@ fn the_focus_stays_in_the_page_after_a_page_s_change_or_an_escape_and_the_input_
     frames(&mut fake, &mut app, window);
     let (key, in_page) = focused_key(&app, window);
     assert!(in_page && key != before, "{key}");
+}
+
+#[test]
+fn a_page_s_menu_is_the_platform_s_own_whose_choice_and_closing_its_plugin_hears() {
+    let (mut fake, mut app, _) = of_pages();
+    let window = open(&mut fake, &mut app, SETTINGS_TAB);
+    click_page_node(&mut fake, &mut app, window, "choose");
+    let (shown, _, menu) = fake.context_menus().last().cloned().expect("a menu");
+    assert_eq!(shown, window);
+    assert_eq!(menu.items.len(), 2);
+    // Its choice, then its closing, which its plugin hears.
+    fake.send(
+        &mut app,
+        window,
+        WindowEvent::ContextCommand("second".to_owned()),
+    );
+    fake.send(&mut app, window, WindowEvent::ContextMenuClosed);
+    frames(&mut fake, &mut app, window);
+    assert_eq!(page_text(&app, window, "chosen"), "Chosen second, closed 1");
+    assert!(app.windows[&window].native.is_empty());
+}
+
+#[test]
+fn a_page_s_plugin_started_again_after_a_fault_hears_its_page_shown() {
+    let drawing = Drawing::new(FontConfig::default()).unwrap();
+    let mut fake = Fake::default();
+    let config = Config::parse(
+        "[plugins.plugin-manager]\nenabled = false\n\n[plugins.settings]\nenabled = false\n",
+        std::path::Path::new("config.toml"),
+    )
+    .unwrap();
+    let mut app = App::new(Some(drawing), config, None)
+        .with_program(idle())
+        .with_registration(plugins::Registration {
+            manifest: crate::sample_pages::MANIFEST,
+            make: || Box::new(crate::sample_pages::SamplePages::default()),
+        });
+    fake.start(&mut app);
+    let first = fake.windows().next().unwrap();
+    app.windows.get_mut(&first).unwrap().surface = Some(fakes::Surface::default());
+    let window = open(&mut fake, &mut app, SETTINGS_TAB);
+    assert_eq!(page_text(&app, window, "shown"), "Shown 1 times");
+    // A fault, then its start again: the new one hears its page shown.
+    click_page_node(&mut fake, &mut app, window, "fault");
+    assert_eq!(
+        app.plugins.status("lokyr/sample-pages"),
+        Some(plugins::Status::Disabled)
+    );
+    let later = Instant::now() + std::time::Duration::from_secs(3);
+    let errors = app.with_plugins(&mut fake, |plugins, context| {
+        plugins.restart_due(later, context)
+    });
+    assert!(errors.is_empty(), "{errors:?}");
+    app.after_plugins(&mut fake);
+    frames(&mut fake, &mut app, window);
+    frames(&mut fake, &mut app, window);
+    assert_eq!(
+        app.plugins.status("lokyr/sample-pages"),
+        Some(plugins::Status::Active)
+    );
+    assert_eq!(page_text(&app, window, "shown"), "Shown 1 times");
 }

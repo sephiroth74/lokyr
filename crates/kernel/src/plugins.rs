@@ -508,6 +508,9 @@ struct State {
     wanted: bool,
     /// Whether it was activated, as a plugin turned on again is made anew.
     ran: bool,
+    /// How many times it started, each of a plugin made anew or the same
+    /// one again, which tells one run of it from the next.
+    starts: u64,
     /// Where its tab bar goes in the windows that show it.
     bar_place: host::BarPlace,
     /// The fade of the panes that have not the keyboard that it asked for,
@@ -1500,6 +1503,7 @@ impl Plugins {
                 stored: Stored { file, held: None },
                 wanted: true,
                 ran: false,
+                starts: 0,
                 bar_place: host::BarPlace::default(),
                 window_places: BTreeMap::new(),
                 dim: 0.0,
@@ -2314,6 +2318,20 @@ impl Plugins {
             .iter()
             .find(|entry| entry.state.name == name)
             .map(|entry| entry.state.status)
+    }
+
+    /// The run of the plugin `name` that is active and whose activation
+    /// ended, as [`Plugins::activated`] tells, of how many times it started:
+    /// a plugin started again after a fault is another run.
+    pub fn activated_run(&self, name: &str) -> Option<u64> {
+        self.entries
+            .iter()
+            .find(|entry| {
+                entry.state.name == name
+                    && entry.state.status == Status::Active
+                    && !activating(&entry.runner)
+            })
+            .map(|entry| entry.state.starts)
     }
 
     /// Whether the plugin `name` is active and its activation ended, of a
@@ -3690,6 +3708,7 @@ fn start(
     }
     entry.state.status = Status::Active;
     entry.state.ran = true;
+    entry.state.starts += 1;
     entry.state.learn_tabs(context.workspace);
     let Entry { runner, state, .. } = entry;
     let plugin = match runner {

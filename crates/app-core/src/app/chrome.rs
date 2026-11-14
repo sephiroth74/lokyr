@@ -208,12 +208,24 @@ impl<B: Backend> App<B> {
                 .map(str::to_owned)
         };
         let mut views = Vec::new();
+        // The panels, from the lowest, a native menu's last, which the
+        // platform shows as its own, its view kept for its choice and its
+        // close.
+        let panel = |id: u32| state.chrome.iter().find(|view| view.id == id);
+        let native = || {
+            state
+                .native
+                .iter()
+                .filter_map(|menu| match menu {
+                    NativeMenu::Panel(id, _) => Some(*id),
+                    NativeMenu::Window | NativeMenu::Closed | NativeMenu::Overflow(_) => None,
+                })
+                .chain(state.native_due.iter().copied())
+                .filter_map(panel)
+                .filter(|view| !state.panels.is_open(view.id))
+        };
         if settings {
-            for view in state
-                .panels
-                .order()
-                .filter_map(|id| state.chrome.iter().find(|view| view.id == id))
-            {
+            for view in state.panels.order().filter_map(panel).chain(native()) {
                 let of_page = view.placed.as_ref().is_some_and(|placed| {
                     matches!(
                         placed.options.anchor,
@@ -270,20 +282,8 @@ impl<B: Backend> App<B> {
         if more {
             views.push((OVERFLOW.to_owned(), ViewId::TitleButtons(shown)));
         }
-        // The panels over them, from the lowest, a native menu's last.
-        let panel = |id: u32| state.chrome.iter().find(|view| view.id == id);
-        let placed = state.panels.order().filter_map(panel);
-        let native = state
-            .native
-            .iter()
-            .filter_map(|menu| match menu {
-                NativeMenu::Panel(id, _) => Some(*id),
-                NativeMenu::Window | NativeMenu::Closed | NativeMenu::Overflow(_) => None,
-            })
-            .chain(state.native_due.iter().copied())
-            .filter_map(panel)
-            .filter(|view| !state.panels.is_open(view.id));
-        for view in placed.chain(native) {
+        // The panels over them.
+        for view in state.panels.order().filter_map(panel).chain(native()) {
             views.push((view.plugin.clone(), view.view.clone()));
             if view.plugin == OVERFLOW
                 && view.view == super::settings_tab::settings_view()
