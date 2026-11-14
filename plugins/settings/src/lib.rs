@@ -28,8 +28,8 @@ use lokyr_plugin_sdk::plugin::{Cx, Plugin};
 use lokyr_plugin_sdk::theme::{TOKENS, ThemeVariant};
 use lokyr_plugin_sdk::ui::{Anchor, PanelId, PanelOptions, Role as PanelRole, UiEvent, ViewId};
 use lokyr_plugin_sdk::view::{
-    Align, Border, Direction, Edges, FontFamily, FontWeight, Justify, Kind, Layout, Length,
-    ListItem, Node, Role, Style, TextSize, Token, UiEventKind,
+    Align, Border, Direction, Edges, FontFamily, FontWeight, Hover, Justify, Kind, Layout, Length,
+    ListItem, Node, PointerShape, Role, Style, TextSize, Token, UiEventKind,
 };
 
 lokyr_plugin_sdk::export_plugin!(SettingsPage);
@@ -96,6 +96,10 @@ const SEARCH: &str = "search";
 
 /// The key of the search field's button that empties it.
 const SEARCH_CLEAR: &str = "search-clear";
+
+/// The side of the search field's magnifying glass and of its button, in
+/// points.
+const IN_SEARCH: f32 = 18.0;
 
 /// The platforms that Lokyr runs on, of which a key that applies on every
 /// one names none.
@@ -966,33 +970,84 @@ fn sidebar(cx: &mut Cx<'_>, settings: &Settings, shown: &[usize], words: &[Strin
         list.row_height = Some(ROW);
         list.menu = true;
     }
-    // The search at the sidebar's top, of a button that empties it while it
-    // holds words.
+    // The search at the sidebar's top, as macOS's search field: a box of
+    // its magnifying glass, its text, of no box of its own, and, while it
+    // holds words, a button at its end that empties it, the ring of its
+    // text's focus round the whole box.
+    let side = || Layout {
+        width: Length::Points(IN_SEARCH),
+        min_width: Length::Points(IN_SEARCH),
+        height: Length::Points(IN_SEARCH),
+        justify: Justify::Center,
+        align: Align::Center,
+        ..Layout::default()
+    };
     let mut search = vec![
+        Node::icon("search").layout(side()).style(Style {
+            color: Some(Token::from("text.secondary")),
+            ..Style::default()
+        }),
         Node::field(message(cx, "settings-search", &[]))
             .key(SEARCH)
             .label(message(cx, "settings-search", &[]))
-            .style(field_text())
+            .style(Style {
+                background: Some(Token::from("transparent")),
+                ..field_text()
+            })
             .layout(Layout {
                 grow: 1.0,
+                width: Length::Points(0.0),
                 min_width: Length::Points(0.0),
                 ..Layout::default()
             }),
     ];
     if !words.is_empty() {
+        let clear = message(cx, "settings-search-clear", &[]);
         search.push(
             Node::icon_button("close")
                 .key(SEARCH_CLEAR)
-                .tooltip(message(cx, "settings-search-clear", &[])),
+                .label(clear.as_str())
+                .tooltip(clear)
+                .layout(side())
+                .style(Style {
+                    background: Some(Token::from("transparent")),
+                    color: Some(Token::from("text.secondary")),
+                    radius: 4.0,
+                    // The arrow, over the field's I-beam around it.
+                    pointer: Some(PointerShape::Arrow),
+                    hover: Some(Hover {
+                        background: Some(Token::from("button.hover.bg")),
+                        ..Hover::default()
+                    }),
+                    pressed: Some(Hover {
+                        background: Some(Token::from("button.pressed.bg")),
+                        ..Hover::default()
+                    }),
+                    ..Style::default()
+                }),
         );
     }
-    let search = Node::container(search).key("search-row").layout(Layout {
-        direction: Direction::Row,
-        gap: 4.0,
-        align: Align::Center,
-        width: Length::Fraction(1.0),
-        ..Layout::default()
-    });
+    let search = Node::container(search)
+        .key("search-row")
+        .layout(Layout {
+            direction: Direction::Row,
+            gap: 2.0,
+            padding: Edges::all(2.0),
+            align: Align::Center,
+            width: Length::Fraction(1.0),
+            ..Layout::default()
+        })
+        .style(Style {
+            background: Some(Token::from("field.bg")),
+            border: Some(Border {
+                color: Token::from("field.border"),
+                width: 1.0,
+            }),
+            radius: 6.0,
+            holds_ring: true,
+            pointer: Some(PointerShape::Text),
+            ..Style::default()
+        });
     Node::container(vec![search, list])
         .key("sidebar")
         .role(Role::Group)

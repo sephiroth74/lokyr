@@ -1133,6 +1133,9 @@ fn a_search_shows_the_sections_and_the_keys_that_hold_its_words() {
     let tree = rendered(&mut host, &mut plugin);
     assert!(find_node(&tree, SEARCH).is_some(), "{}", snapshot(&tree));
     assert!(find_node(&tree, SEARCH_CLEAR).is_none());
+    // The field's box, of the ring of its text's focus.
+    let field = find_node(&tree, "search-row").unwrap();
+    assert!(field.style.holds_ring && field.style.border.is_some());
 
     // A key's name, of its case aside: the font's section alone, of that
     // key alone, still chosen.
@@ -1142,7 +1145,10 @@ fn a_search_shows_the_sections_and_the_keys_that_hold_its_words() {
     assert_eq!(sidebar_of(&tree), ["font"], "{}", snapshot(&tree));
     assert!(reset_of(&tree, "size").is_some(), "{}", snapshot(&tree));
     assert!(reset_of(&tree, "family").is_none());
-    assert!(find_node(&tree, SEARCH_CLEAR).is_some());
+    // The button that empties it, inside the field's box, at its end.
+    let field = find_node(&tree, "search-row").unwrap();
+    let last = field.children.last().and_then(|node| node.key.as_ref());
+    assert_eq!(last.map(|key| key.0.as_str()), Some(SEARCH_CLEAR));
 
     // Words in any order, of keys' names and what they do, across
     // sections: the first of them chosen, as the font's holds none.
