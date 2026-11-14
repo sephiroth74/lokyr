@@ -549,6 +549,10 @@ impl<B: Backend> App<B> {
         let Some(view) = view_mut(&mut state.chrome, panel) else {
             return true;
         };
+        // A field that records a shortcut takes keys alone, no text.
+        if matches!(view.surface.tree.kind(node), Some(Kind::Field(field)) if field.records) {
+            return true;
+        }
         let events = match ime {
             Ime::Preedit { text, selection } => view.surface.compose(node, text, selection.clone()),
             Ime::Commit(text) => view.surface.commit(node, text),

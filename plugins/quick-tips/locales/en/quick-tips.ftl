@@ -42,7 +42,7 @@ tip-itermcolors = Double-click an .itermcolors file, or drop it on Lokyr's Dock 
 tip-float = Window › Float on Top keeps the window above every other app's.
 tip-sleip = Plugins come from the registry: `sleip search` lists them, and `sleip add` installs one.
 tip-settings-window = Lokyr › Open Settings Window shows every setting by its section, the plugins' too, with what it does, and changes it in your config file, its comments kept.
-tip-settings-keys = In the settings window's Keys part, click a shortcut's keys to change them: every default is there, and Restore gives one back.
+tip-settings-keys = In the settings window's Keys part, click a shortcut's keys and press the new ones, or Add a shortcut of your own: every default is there, and Restore gives one back.
 tip-settings-search = In the settings window, type in the search field at the sidebar's top to find a setting by its name, what it does, or a shortcut's keys.
 tip-plugins = Lokyr › Plugins… lists every plugin, its state and what it may do, disables, updates or removes one, and installs those of the registry.
 

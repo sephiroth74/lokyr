@@ -232,7 +232,7 @@ fn an_event_of_another_shape_is_refused() {
 }
 
 /// The number of `UiEventKind`'s kinds.
-const UI_KINDS: usize = 26;
+const UI_KINDS: usize = 27;
 
 /// The place of `kind`'s among `UiEventKind`'s kinds, from 0.
 fn ui_index(kind: &UiEventKind) -> usize {
@@ -263,6 +263,7 @@ fn ui_index(kind: &UiEventKind) -> usize {
         UiEventKind::ListRange { .. } => 23,
         UiEventKind::Cut { .. } => 24,
         UiEventKind::Step { .. } => 25,
+        UiEventKind::Recorded { .. } => 26,
     }
 }
 
@@ -312,6 +313,9 @@ fn a_view_s_event_is_a_flat_table_of_its_view_its_key_its_kind_and_its_fields() 
         },
         UiEventKind::Cut { cut: true },
         UiEventKind::Step { up: true },
+        UiEventKind::Recorded {
+            keys: Some("cmd+shift+y".to_owned()),
+        },
     ];
     let mut seen = [false; UI_KINDS];
     for kind in kinds {

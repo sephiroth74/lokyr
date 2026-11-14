@@ -595,7 +595,7 @@ fn variant_of(request: &Request) -> String {
 }
 
 /// The number of the views' events' kinds.
-const UI_KINDS: usize = 26;
+const UI_KINDS: usize = 27;
 
 /// A value of each kind of the views' events, which serde serializes
 /// tagged inside, as no deserializer traces.
@@ -641,6 +641,7 @@ fn ui_kinds() -> Vec<UiEventKind> {
         UiEventKind::ListRange { first: 0, count: 0 },
         UiEventKind::Cut { cut: false },
         UiEventKind::Step { up: false },
+        UiEventKind::Recorded { keys: None },
     ];
     let mut seen = [false; UI_KINDS];
     for kind in &kinds {
@@ -680,6 +681,7 @@ fn ui_index(kind: &UiEventKind) -> usize {
         UiEventKind::ListRange { .. } => 23,
         UiEventKind::Cut { .. } => 24,
         UiEventKind::Step { .. } => 25,
+        UiEventKind::Recorded { .. } => 26,
     }
 }
 

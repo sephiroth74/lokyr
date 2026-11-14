@@ -932,6 +932,12 @@ impl Platform for Backend {
         self.option_as_meta.set((left, right));
     }
 
+    fn set_recording_keys(&mut self, on: bool) {
+        if let Some(shared) = self.shared.upgrade() {
+            shared.set_recording_keys(on);
+        }
+    }
+
     fn track_mouse_moves(&mut self, window: WindowId, track: bool) {
         if let Some(window) = self.windows.get(&window) {
             window.track_mouse_moves(track);

@@ -96,6 +96,10 @@ impl<B: Backend> App<B> {
             state.blink.restart(Instant::now());
             platform.request_frame(window);
         }
+        // A field that records a shortcut takes it before the keymap.
+        if self.record_key(platform, window, key) {
+            return;
+        }
         match self.resolve_key(window, key) {
             Taken::Run(invocation) => {
                 self.run(platform, &invocation.command, invocation.args);
@@ -121,6 +125,96 @@ impl<B: Backend> App<B> {
                 };
                 give(pane, &keys, options);
             }
+        }
+    }
+
+    /// A key of a field that records a shortcut, which has `window`'s
+    /// keyboard: whether it took the key. A press, but Tab's and Escape's
+    /// of no modifier, which go as elsewhere, records its keys as the
+    /// keymap reads them, shown in the field as the platform writes them,
+    /// and tells its plugin, of no binding's command run; Delete takes them
+    /// away; a modifier alone, and a release, take nothing.
+    fn record_key(
+        &mut self,
+        platform: &mut dyn Platform,
+        window: WindowId,
+        key: &KeyEvent,
+    ) -> bool {
+        use lokyr_ui_core::focus::Target;
+        let Some(state) = self.windows.get_mut(&window) else {
+            return false;
+        };
+        let Target::Node { panel, node } = state.focus.target() else {
+            return false;
+        };
+        let Some(view) = state.chrome.iter_mut().find(|view| view.id == panel) else {
+            return false;
+        };
+        let tree = &view.surface.tree;
+        let records = matches!(
+            tree.kind(node),
+            Some(plugins::view::Kind::Field(field)) if field.records
+        );
+        let Some(field) = tree.key(node).cloned().filter(|_| records) else {
+            return false;
+        };
+        if key.state == KeyState::Released {
+            return true;
+        }
+        let Some(event) = keys::terminal_key(key) else {
+            return true;
+        };
+        let mods = key.mods;
+        let plain =
+            !(mods.shift || mods.control || mods.left_alt || mods.right_alt || mods.super_key);
+        let recorded = match event.key {
+            Key::Tab | Key::Escape if plain => return false,
+            Key::Backspace | Key::Delete if plain => None,
+            _ => match Pressed::key(event.key, binding_mods(mods), key.code.base_layout()) {
+                Some(pressed) => Some(keymap::Combo {
+                    mods: pressed.mods,
+                    press: pressed.press,
+                }),
+                // A modifier alone waits for its key.
+                None => return true,
+            },
+        };
+        let keys = recorded.map(|combo| combo.to_string());
+        let shown = keys
+            .as_deref()
+            .map(|keys| lokyr_kernel::keymap::macos_text(keys).unwrap_or_else(|| keys.to_owned()))
+            .unwrap_or_default();
+        view.surface.fields.set_text(&field, &shown);
+        let told = plugins::ui::UiEvent {
+            view: view.view.clone(),
+            key: field,
+            kind: plugins::view::UiEventKind::Recorded { keys },
+        };
+        self.ui_events.push((view.plugin.clone(), told));
+        platform.request_frame(window);
+        true
+    }
+
+    /// Tells the platform whether the keys are recorded: whether a field
+    /// that records a shortcut has a window's keyboard, as the focus is
+    /// now.
+    pub(super) fn settle_recording(&mut self, platform: &mut dyn Platform) {
+        use lokyr_ui_core::focus::Target;
+        let recording = self.windows.values().any(|state| {
+            let Target::Node { panel, node } = state.focus.target() else {
+                return false;
+            };
+            state.chrome.iter().any(|view| {
+                view.id == panel
+                    && matches!(
+                        view.surface.tree.kind(node),
+                        Some(plugins::view::Kind::Field(field)) if field.records
+                    )
+            })
+        });
+        if recording != self.recording_keys {
+            self.recording_keys = recording;
+            platform.set_recording_keys(recording);
         }
     }
 

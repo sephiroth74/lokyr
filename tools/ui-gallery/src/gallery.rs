@@ -438,6 +438,9 @@ impl Gallery {
             UiEventKind::Step { up } => {
                 self.pressed = format!("a step {} of `{key}`", if up { "up" } else { "down" });
             }
+            UiEventKind::Recorded { keys } => {
+                self.pressed = format!("`{key}` recorded {}", keys.as_deref().unwrap_or("nothing"));
+            }
             UiEventKind::Scroll { x, y } => {
                 let (_, across, down) = self.scrolled;
                 self.scrolled = (format!("`{key}` by {x:.0}, {y:.0}"), across + x, down + y);

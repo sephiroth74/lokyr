@@ -1457,19 +1457,17 @@ fn the_keys_part_lists_the_defaults_and_a_default_changed_moves_its_shortcut() {
     assert_eq!(
         focused_key(&app, own),
         (format!("keys-field:{at}"), true),
-        "the field has the keyboard"
+        "the recorder has the keyboard"
     );
-    settings_event(
-        &mut fake,
-        &mut app,
-        own,
-        None,
-        &format!("keys-field:{at}"),
-        UiEventKind::Submit {
-            text: "cmd+alt+t".to_owned(),
-            shift: false,
-        },
-    );
+    assert!(fake.recording_keys());
+    // ⌥⌘T pressed, recorded and written.
+    let alt_cmd = Modifiers {
+        left_alt: true,
+        ..super::CMD
+    };
+    fake.send(&mut app, own, key_event(KeyCode::KeyT, "t", alt_cmd, true));
+    fake.send(&mut app, own, key_event(KeyCode::KeyT, "t", alt_cmd, false));
+    frames(&mut fake, &mut app, own);
     assert_eq!(
         std::fs::read_to_string(&path).unwrap(),
         "# mine\n\n[keys]\n\"cmd+alt+t\" = \"tabs.new\"\n\"cmd+t\" = false\n"
@@ -1479,5 +1477,133 @@ fn the_keys_part_lists_the_defaults_and_a_default_changed_moves_its_shortcut() {
         .shortcut("tabs.new")
         .map(|combo| combo.to_string());
     assert_eq!(shortcut.as_deref(), Some("cmd+alt+t"));
+    let _ = std::fs::remove_dir_all(&directory);
+}
+
+/// The view of the settings' plugin's panel `id` in `window`.
+fn panel_view<'a>(
+    app: &'a App,
+    window: WindowId,
+    id: &str,
+) -> Option<&'a super::super::chrome::SlotView> {
+    app.windows[&window].chrome.iter().find(|view| {
+        view.plugin == "lokyr/settings"
+            && view.view == ViewId::Panel(lokyr_kernel::plugins::ui::PanelId(id.to_owned()))
+    })
+}
+
+#[test]
+fn add_records_a_shortcut_of_no_command_run_and_writes_the_binding_of_the_command_chosen() {
+    use lokyr_kernel::plugins::view::UiEventKind;
+    let directory = super::installed::shelf("settings-recorder");
+    let path = directory.join("config.toml");
+    std::fs::write(&path, "# mine\n").unwrap();
+    let drawing = Drawing::new(FontConfig::default()).unwrap();
+    let mut fake = Fake::default();
+    let mut app = App::new(
+        Some(drawing),
+        Config::read(&path).unwrap(),
+        Some(path.clone()),
+    )
+    .with_program(idle());
+    fake.start(&mut app);
+    let first = fake.windows().next().unwrap();
+    app.windows.get_mut(&first).unwrap().surface = Some(fakes::Surface::default());
+    let own = open(&mut fake, &mut app, SETTINGS_TAB);
+    let keys = lokyr_kernel::config::schema::sections(&Config::default()).len();
+    settings_event(
+        &mut fake,
+        &mut app,
+        own,
+        None,
+        "sections",
+        UiEventKind::Select { item: keys },
+    );
+    assert!(!fake.recording_keys());
+    // Add opens the panel, whose recorder has the keyboard, the platform
+    // recording the keys.
+    settings_event(
+        &mut fake,
+        &mut app,
+        own,
+        None,
+        "add-binding",
+        UiEventKind::Click,
+    );
+    frames(&mut fake, &mut app, own);
+    assert!(panel_view(&app, own, "new-binding").is_some(), "the panel");
+    assert_eq!(focused_key(&app, own), ("recorder".to_owned(), false));
+    assert!(fake.recording_keys());
+    // ⌘N, New Window's, recorded and told as taken, no window opened.
+    let windows = |app: &App| app.workspace.windows().count();
+    let before = windows(&app);
+    fake.send(
+        &mut app,
+        own,
+        key_event(KeyCode::KeyN, "n", super::CMD, true),
+    );
+    fake.send(
+        &mut app,
+        own,
+        key_event(KeyCode::KeyN, "n", super::CMD, false),
+    );
+    frames(&mut fake, &mut app, own);
+    assert_eq!(windows(&app), before, "no window opened");
+    let panel = panel_view(&app, own, "new-binding").unwrap();
+    let recorder = panel.surface.fields.state(&"recorder".into()).unwrap();
+    assert_eq!(recorder.text(), "⌘N");
+    let tree = &panel.surface.tree;
+    let taken = tree
+        .by_key(&"taken".into())
+        .and_then(|node| tree.kind(node))
+        .map(|kind| format!("{kind:?}"));
+    assert!(
+        taken
+            .as_deref()
+            .is_some_and(|taken| taken.contains("New Window")),
+        "{taken:?}"
+    );
+    // ⇧⌘Y, of no binding, and a command chosen: Add writes it.
+    let shift_cmd = Modifiers {
+        shift: true,
+        ..super::CMD
+    };
+    fake.send(
+        &mut app,
+        own,
+        key_event(KeyCode::KeyY, "Y", shift_cmd, true),
+    );
+    fake.send(
+        &mut app,
+        own,
+        key_event(KeyCode::KeyY, "Y", shift_cmd, false),
+    );
+    frames(&mut fake, &mut app, own);
+    let panel = panel_view(&app, own, "new-binding").unwrap();
+    let recorder = panel.surface.fields.state(&"recorder".into()).unwrap();
+    assert_eq!(recorder.text(), "⇧⌘Y");
+    settings_event(
+        &mut fake,
+        &mut app,
+        own,
+        Some("commands"),
+        "command-item:pane.clear",
+        UiEventKind::Click,
+    );
+    settings_event(
+        &mut fake,
+        &mut app,
+        own,
+        Some("new-binding"),
+        "confirm",
+        UiEventKind::Click,
+    );
+    assert_eq!(
+        std::fs::read_to_string(&path).unwrap(),
+        "# mine\n\n[keys]\n\"cmd+shift+y\" = \"pane.clear\"\n"
+    );
+    frames(&mut fake, &mut app, own);
+    assert!(panel_view(&app, own, "new-binding").is_none(), "closed");
+    assert!(!fake.recording_keys(), "the keys no longer recorded");
     let _ = std::fs::remove_dir_all(&directory);
 }

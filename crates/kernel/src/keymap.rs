@@ -22,8 +22,8 @@ use std::collections::BTreeSet;
 use lokyr_vt_core::input::{Key, Wheel};
 
 pub use lokyr_plugin_sdk::keys::{
-    CONTEXTS, Combo, Direction, GLOBAL, Mods, Named, Press, When, is_panel_context, parse_global,
-    parse_keys,
+    CONTEXTS, Combo, Direction, GLOBAL, Mods, Named, Press, When, is_panel_context, macos_text,
+    parse_global, parse_keys,
 };
 
 use crate::commands::{Args, Value};

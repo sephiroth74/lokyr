@@ -828,9 +828,22 @@ fn a_theme_is_picked_of_its_appearance_and_a_color_of_the_theme_s() {
 /// [`bound_commands`], and the plugin, activated, its page shown at its
 /// bindings.
 fn keyed_host() -> (FakeHost, SettingsPage) {
-    let mut host = FakeHost::new(NAME)
-        .with_manifest(crate::MANIFEST)
-        .with_commands(bound_commands());
+    let mut host = FakeHost::new(NAME).with_manifest(crate::MANIFEST);
+    host.set_registry(
+        bound_commands()
+            .into_iter()
+            .map(|command| lokyr_plugin_sdk::host::CommandInfo {
+                name: command.name,
+                title: command.title,
+                category: command.category,
+                params: command.params,
+                plugin: None,
+                keys: None,
+                when: None,
+                enabled: None,
+            })
+            .collect(),
+    );
     host.pane(PaneId(1));
     host.set_settings(settings());
     let mut plugin = SettingsPage::default();
@@ -945,25 +958,38 @@ fn the_bindings_in_force_are_listed_by_category_of_their_keys_titles_and_context
     assert_eq!(categories_of(&tree), ["category-windows"]);
 }
 
+/// The recorder of `key`'s keys, recorded as `keys`.
+fn recorded(key: &str, keys: Option<&str>) -> UiEvent {
+    on(
+        key,
+        UiEventKind::Recorded {
+            keys: keys.map(str::to_owned),
+        },
+    )
+}
+
 #[test]
-fn a_default_s_keys_changed_write_the_new_keys_and_false_for_the_old() {
+fn a_default_s_keys_recorded_write_the_new_keys_and_false_for_the_old() {
     let (mut host, mut plugin) = keyed_host();
     rendered(&mut host, &mut plugin);
     let _ = written(&mut host);
-    // A click on the keys shows their field, of their text, focused.
+    // A click on the keys shows their recorder, of their keys as macOS
+    // writes them, focused.
     host.ui_event(&mut plugin, &on("keys:0", UiEventKind::Click))
         .unwrap();
     let tree = rendered(&mut host, &mut plugin);
+    let field = find_node(&tree, "keys-field:0").expect("the recorder");
+    assert!(matches!(&field.kind, Kind::Field(field) if field.records));
     assert_eq!(
         held(&tree, "keys-field:0").map(|(text, _)| text),
-        Some(Some("cmd+k".to_owned()))
+        Some(Some("⌘K".to_owned()))
     );
     assert!(host.take_done().iter().any(|request| matches!(
         request,
         Request::FocusNode { key, .. } if key.0 == "keys-field:0"
     )));
-    // Return writes the command at its new keys, and `false` at the old.
-    host.ui_event(&mut plugin, &submit("keys-field:0", "cmd+shift+k"))
+    // Keys recorded: the command at its new keys, and `false` at the old.
+    host.ui_event(&mut plugin, &recorded("keys-field:0", Some("cmd+shift+k")))
         .unwrap();
     assert_eq!(
         written(&mut host),
@@ -978,7 +1004,10 @@ fn a_default_s_keys_changed_write_the_new_keys_and_false_for_the_old() {
     );
     host.deliver(&mut plugin).unwrap();
     let tree = rendered(&mut host, &mut plugin);
-    assert!(find_node(&tree, "keys-field:0").is_none(), "the field goes");
+    assert!(
+        find_node(&tree, "keys-field:0").is_none(),
+        "the recorder goes"
+    );
     // A default of arguments, as a table of them.
     let goto = place(&host, "cmd+1");
     host.ui_event(
@@ -989,7 +1018,7 @@ fn a_default_s_keys_changed_write_the_new_keys_and_false_for_the_old() {
     rendered(&mut host, &mut plugin);
     host.ui_event(
         &mut plugin,
-        &submit(&format!("keys-field:{goto}"), "ctrl+1"),
+        &recorded(&format!("keys-field:{goto}"), Some("ctrl+1")),
     )
     .unwrap();
     let mut table = BTreeMap::new();
@@ -1007,44 +1036,37 @@ fn a_default_s_keys_changed_write_the_new_keys_and_false_for_the_old() {
 }
 
 #[test]
-fn keys_that_do_not_read_or_do_not_change_write_nothing_and_a_field_left_writes() {
+fn a_recorder_of_the_same_keys_or_macos_s_writes_nothing_and_its_leaving_puts_it_away() {
     let (mut host, mut plugin) = keyed_host();
     rendered(&mut host, &mut plugin);
     let _ = written(&mut host);
     host.ui_event(&mut plugin, &on("keys:0", UiEventKind::Click))
         .unwrap();
     rendered(&mut host, &mut plugin);
-    // Keys that do not read, told under the row, the field staying.
-    host.ui_event(&mut plugin, &submit("keys-field:0", "cmd+nope"))
+    // macOS's own keys, told under the row, the recorder staying.
+    host.ui_event(&mut plugin, &recorded("keys-field:0", Some("cmd+q")))
         .unwrap();
     assert!(written(&mut host).is_empty());
     let tree = rendered(&mut host, &mut plugin);
-    assert!(
-        text_of(&tree, "refused:binding:0").is_some(),
-        "{}",
-        snapshot(&tree)
-    );
+    let why = text_of(&tree, "refused:binding:0").expect("why");
+    assert!(why.contains("macOS's own"), "{why}");
     assert!(find_node(&tree, "keys-field:0").is_some());
-    // The same keys, of spaces round them: nothing, the field gone.
-    host.ui_event(&mut plugin, &submit("keys-field:0", " cmd+k "))
+    // The same keys: nothing, the recorder gone.
+    host.ui_event(&mut plugin, &recorded("keys-field:0", Some("cmd+k")))
         .unwrap();
     assert!(written(&mut host).is_empty());
     let tree = rendered(&mut host, &mut plugin);
     assert!(find_node(&tree, "keys-field:0").is_none());
     assert!(text_of(&tree, "refused:binding:0").is_none());
-    // Typed, then left: written.
+    // Left of no keys recorded: put away, nothing written.
     host.ui_event(&mut plugin, &on("keys:1", UiEventKind::Click))
         .unwrap();
     rendered(&mut host, &mut plugin);
-    let typed = UiEventKind::InputChanged {
-        text: "cmd+alt+n".to_owned(),
-        revision: 2,
-    };
-    host.ui_event(&mut plugin, &on("keys-field:1", typed))
-        .unwrap();
     host.ui_event(&mut plugin, &on("keys-field:1", UiEventKind::Blur))
         .unwrap();
-    assert_eq!(written(&mut host).len(), 2);
+    assert!(written(&mut host).is_empty());
+    let tree = rendered(&mut host, &mut plugin);
+    assert!(find_node(&tree, "keys-field:1").is_none());
 }
 
 #[test]
@@ -1080,43 +1102,179 @@ fn a_default_removed_writes_false_the_config_s_own_goes_and_one_taken_away_comes
     assert_eq!(written(&mut host), [app_key("keys", "cmd+q", None)]);
 }
 
+/// The panel of the new binding, and its menu of the commands.
+fn new_binding() -> ViewId {
+    ViewId::Panel(PanelId::from(NEW_BINDING))
+}
+
+/// The event `kind` of the node of `key` of the new binding's panel, or
+/// of its menu of the commands.
+fn in_panel(panel: &str, key: &str, kind: UiEventKind) -> UiEvent {
+    UiEvent {
+        view: ViewId::Panel(PanelId::from(panel)),
+        key: key.into(),
+        kind,
+    }
+}
+
 #[test]
-fn a_new_binding_is_written_of_its_keys_and_command_as_return_is_pressed() {
+fn add_opens_a_panel_of_a_recorder_and_a_menu_of_the_commands_which_writes_the_binding() {
     let (mut host, mut plugin) = keyed_host();
     rendered(&mut host, &mut plugin);
     let _ = written(&mut host);
-    let typed = |text: &str| UiEventKind::InputChanged {
-        text: text.to_owned(),
-        revision: 3,
-    };
-    host.ui_event(&mut plugin, &on(NEW_KEYS, typed("cmd+shift+n")))
+    // Add opens the panel, a dialog below it.
+    host.ui_event(&mut plugin, &on(ADD_BINDING, UiEventKind::Click))
         .unwrap();
-    host.ui_event(&mut plugin, &submit(NEW_COMMAND, "window.new"))
+    assert!(host.panels().contains_key(&PanelId::from(NEW_BINDING)));
+    let panel = host.render(&mut plugin, &new_binding()).expect("the panel");
+    let recorder = find_node(&panel, RECORDER).expect("its recorder");
+    assert!(matches!(&recorder.kind, Kind::Field(field) if field.records));
+    // Add waits for the keys and a command.
+    assert!(matches!(
+        &find_node(&panel, CONFIRM).unwrap().kind,
+        Kind::Button(button) if button.disabled
+    ));
+    // Keys that a binding takes: told, of its command's title.
+    host.ui_event(
+        &mut plugin,
+        &in_panel(
+            NEW_BINDING,
+            RECORDER,
+            UiEventKind::Recorded {
+                keys: Some("cmd+k".to_owned()),
+            },
+        ),
+    )
+    .unwrap();
+    let panel = host.render(&mut plugin, &new_binding()).unwrap();
+    assert_eq!(
+        held(&panel, RECORDER).map(|(text, _)| text),
+        Some(Some("⌘K".to_owned()))
+    );
+    assert_eq!(text_of(&panel, "taken").as_deref(), Some("binding-taken"));
+    // macOS's own: none to take, Add off.
+    host.ui_event(
+        &mut plugin,
+        &in_panel(
+            NEW_BINDING,
+            RECORDER,
+            UiEventKind::Recorded {
+                keys: Some("cmd+q".to_owned()),
+            },
+        ),
+    )
+    .unwrap();
+    host.ui_event(
+        &mut plugin,
+        &in_panel(COMMANDS, "command-item:window.new", UiEventKind::Click),
+    )
+    .unwrap();
+    let panel = host.render(&mut plugin, &new_binding()).unwrap();
+    assert_eq!(
+        text_of(&panel, "taken").as_deref(),
+        Some("binding-taken-system")
+    );
+    assert!(matches!(
+        &find_node(&panel, CONFIRM).unwrap().kind,
+        Kind::Button(button) if button.disabled
+    ));
+    // The commands' menu, of the categories' submenus, opened below its
+    // button.
+    host.ui_event(
+        &mut plugin,
+        &in_panel(NEW_BINDING, CHOOSE_COMMAND, UiEventKind::Click),
+    )
+    .unwrap();
+    assert!(host.panels().contains_key(&PanelId::from(COMMANDS)));
+    let menu = host
+        .render(&mut plugin, &ViewId::Panel(PanelId::from(COMMANDS)))
         .unwrap();
+    let windows = menu
+        .children
+        .iter()
+        .find(|group| {
+            matches!(&group.children.first().map(|node| &node.kind),
+                Some(Kind::Text(title)) if title == "category-windows")
+        })
+        .unwrap_or_else(|| panic!("the windows' submenu: {}", snapshot(&menu)));
+    assert!(find_node(windows, "command-item:window.new").is_some());
+    // Free keys and a command: Add writes the binding and closes.
+    host.ui_event(
+        &mut plugin,
+        &in_panel(
+            NEW_BINDING,
+            RECORDER,
+            UiEventKind::Recorded {
+                keys: Some("cmd+shift+y".to_owned()),
+            },
+        ),
+    )
+    .unwrap();
+    let panel = host.render(&mut plugin, &new_binding()).unwrap();
+    assert!(text_of(&panel, "taken").is_none());
+    assert_eq!(
+        labelled(&panel, CHOOSE_COMMAND)
+            .map(|(label, _)| label)
+            .as_deref(),
+        Some("New Window")
+    );
+    host.ui_event(
+        &mut plugin,
+        &in_panel(NEW_BINDING, CONFIRM, UiEventKind::Click),
+    )
+    .unwrap();
     assert_eq!(
         written(&mut host),
         [app_key(
             "keys",
-            "cmd+shift+n",
+            "cmd+shift+y",
             Some(Data::Text("window.new".to_owned()))
         )]
     );
-    // A command that is none is refused, told under the fields.
-    host.ui_event(&mut plugin, &on(NEW_KEYS, typed("cmd+j")))
+    assert!(!host.panels().contains_key(&PanelId::from(NEW_BINDING)));
+}
+
+#[test]
+fn cancel_closes_the_new_binding_s_panel_and_a_refusal_is_told_in_it() {
+    let (mut host, mut plugin) = keyed_host();
+    rendered(&mut host, &mut plugin);
+    host.ui_event(&mut plugin, &on(ADD_BINDING, UiEventKind::Click))
         .unwrap();
-    host.ui_event(&mut plugin, &submit(NEW_COMMAND, "none.such"))
-        .unwrap();
-    let tree = rendered(&mut host, &mut plugin);
-    let why = text_of(&tree, "refused:keys").unwrap();
+    host.render(&mut plugin, &new_binding());
+    // A command that the app lacks, refused, told in the panel.
+    host.ui_event(
+        &mut plugin,
+        &in_panel(
+            NEW_BINDING,
+            RECORDER,
+            UiEventKind::Recorded {
+                keys: Some("cmd+shift+y".to_owned()),
+            },
+        ),
+    )
+    .unwrap();
+    host.ui_event(
+        &mut plugin,
+        &in_panel(COMMANDS, "command-item:none.such", UiEventKind::Click),
+    )
+    .unwrap();
+    host.ui_event(
+        &mut plugin,
+        &in_panel(NEW_BINDING, CONFIRM, UiEventKind::Click),
+    )
+    .unwrap();
+    let panel = host.render(&mut plugin, &new_binding()).unwrap();
+    let why = text_of(&panel, "refused:new").expect("why");
     assert!(why.contains("none.such"), "{why}");
-    // macOS's own keys refused, of any command.
-    host.ui_event(&mut plugin, &on(NEW_KEYS, typed("cmd+q")))
-        .unwrap();
-    host.ui_event(&mut plugin, &submit(NEW_COMMAND, "window.new"))
-        .unwrap();
-    let tree = rendered(&mut host, &mut plugin);
-    let why = text_of(&tree, "refused:keys").unwrap();
-    assert!(why.contains("macOS's own"), "{why}");
+    // Cancel closes it.
+    host.ui_event(
+        &mut plugin,
+        &in_panel(NEW_BINDING, CANCEL, UiEventKind::Click),
+    )
+    .unwrap();
+    assert!(host.panels().is_empty());
+    host.deliver(&mut plugin).unwrap();
+    assert!(host.render(&mut plugin, &new_binding()).is_none());
 }
 
 #[test]

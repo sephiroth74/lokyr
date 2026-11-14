@@ -58,9 +58,10 @@ pub const SETTINGS_WINDOW: &str = "the settings' window takes no other tab";
 pub const SETTINGS_OWN: &str = "the settings' window is not a plugin's to close, move or ask on";
 
 /// The error of a request that opens a panel in the settings' window of
-/// their own, which shows none but those of its pages' nodes.
+/// their own, which shows none but those of its pages' nodes and of their
+/// panels' nodes.
 pub const SETTINGS_PANELS: &str =
-    "the settings' window shows no panel but those of its pages' nodes";
+    "the settings' window shows no panel but those of its pages' nodes and of their panels'";
 
 /// The message of the error of [`Request::TabIntoPane`] of a pane of the
 /// tab itself, which every host gives alike.

@@ -665,6 +665,9 @@ pub struct App<B: Backend> {
     /// Whether Command is held, as the last key told, while which the
     /// pointer's moves go to the plugins that subscribed to them.
     command_held: bool,
+    /// Whether the platform records the keys, as a field that records a
+    /// shortcut has a window's keyboard.
+    recording_keys: bool,
     /// What the plugins were told last of the pointer, and the modifiers
     /// held then.
     pointer_told: Option<PointerTold>,
@@ -980,6 +983,7 @@ impl<B: Backend> App<B> {
             scroll_timer: None,
             bar_timer: None,
             command_held: false,
+            recording_keys: false,
             pointer_told: None,
             pointer_mods: lokyr_platform_core::Modifiers::NONE,
             pointer_text_changed: false,
@@ -3532,6 +3536,9 @@ impl<B: Backend> App<B> {
         if self.plugins.has_events() && self.deliver_timer.is_none() {
             self.deliver_timer = Some(platform.start_timer(Instant::now()));
         }
+        // The keys recorded while a field that records a shortcut has the
+        // keyboard, as the focus moved in the turn.
+        self.settle_recording(platform);
     }
 
     /// Takes the workspace's events, whose changes the plugins take. A

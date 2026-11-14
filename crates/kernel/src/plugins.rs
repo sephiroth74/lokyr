@@ -5070,11 +5070,12 @@ impl Host<'_, '_> {
             }
         };
         // The settings' window shows its pages' own panels alone, as a
-        // menu below a node of a page.
+        // menu below a node of a page, or of one of those panels, the
+        // plugin's own there, as a dialog's menu.
         let of_page = matches!(
             anchor,
             Anchor::Node {
-                view: ViewId::Page(_),
+                view: ViewId::Page(_) | ViewId::Panel(_),
                 ..
             }
         );

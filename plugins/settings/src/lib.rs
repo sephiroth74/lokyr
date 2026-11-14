@@ -83,11 +83,27 @@ const KEYS_FIELD: &str = "keys-field:";
 /// that the config takes away.
 const RESTORE: &str = "restore:";
 
-/// The key of the field of a new binding's keys.
-const NEW_KEYS: &str = "new-keys";
+/// The key of the button that opens the panel of a new binding.
+const ADD_BINDING: &str = "add-binding";
 
-/// The key of the field of a new binding's command.
-const NEW_COMMAND: &str = "new-command";
+/// The panel of a new binding, and its menu of the commands.
+const NEW_BINDING: &str = "new-binding";
+const COMMANDS: &str = "commands";
+
+/// The keys of the new binding's panel's nodes: its recorder of keys, its
+/// button of the commands' menu, Cancel and Add.
+const RECORDER: &str = "recorder";
+const CHOOSE_COMMAND: &str = "choose-command";
+const CANCEL: &str = "cancel";
+const CONFIRM: &str = "confirm";
+
+/// The prefix of the key of an item of the commands' menu, of its
+/// command's name.
+const COMMAND_ITEM: &str = "command-item:";
+
+/// The key of the new binding's panel's refusal, which the page's
+/// refusals keep.
+const NEW_REFUSED: &str = "new";
 
 /// The section of the bindings of keys, as the config names it.
 const KEYS: &str = "keys";
@@ -119,22 +135,31 @@ const PLATFORMS: &[&str] = &["macos"];
 /// How long typing pauses before a field's value is written.
 const PAUSE: std::time::Duration = std::time::Duration::from_millis(600);
 
+/// A new binding as its panel makes it: its keys, as the recorder took
+/// them and as a config writes them, and its command, by its name.
+#[derive(Clone, Debug, Default)]
+struct Adding {
+    keys: Option<String>,
+    command: Option<String>,
+}
+
 /// The plugin: whether its page shows, the part chosen, by its place among
-/// the parts, the search's words, why each key's last write was refused, by its name, until it is
-/// written or another part shows, the new binding's fields' texts, each of
-/// its revision, the texts typed into the fields and not written yet, each
-/// of its key's section and plugin, by the key's name, and the timer of
-/// typing's pause.
+/// the parts, the search's words, why each key's last write was refused, by
+/// its name, until it is written or another part shows, the binding whose
+/// keys change, the new binding that Add's panel makes, the texts typed
+/// into the fields and not written yet, each of its key's section and
+/// plugin, by the key's name, and the timer of typing's pause.
 #[derive(Default)]
 pub struct SettingsPage {
     shown: bool,
     chosen: usize,
     query: String,
     refused: BTreeMap<String, String>,
-    new_binding: BTreeMap<String, (String, u64)>,
     /// The binding whose keys change, by its place among the settings'
-    /// bindings, and the text typed into their field.
-    editing: Option<(usize, Option<String>)>,
+    /// bindings, whose field records them.
+    editing: Option<usize>,
+    /// The new binding that Add's panel makes, while it shows.
+    adding: Option<Adding>,
     typed: BTreeMap<String, Typed>,
     pause: Option<u64>,
 }
@@ -198,6 +223,11 @@ impl Plugin for SettingsPage {
                     self.shown = false;
                     self.write_typed(cx, None)?;
                 }
+                // The new binding's panel closed, by Escape, Cancel or Add.
+                Event::PanelClosed(PanelId(panel)) if panel == NEW_BINDING => {
+                    self.adding = None;
+                    self.refused.remove(NEW_REFUSED);
+                }
                 // The bindings' places change with the settings: a change of
                 // keys under way ends.
                 Event::SettingsChanged => {
@@ -221,6 +251,11 @@ impl Plugin for SettingsPage {
 
     fn on_ui_event(&mut self, cx: &mut Cx<'_>, event: &UiEvent) -> Result<(), Error> {
         let key = event.key.0.as_str();
+        if let ViewId::Panel(PanelId(panel)) = &event.view
+            && [NEW_BINDING, COMMANDS].contains(&panel.as_str())
+        {
+            return self.adding_event(cx, event);
+        }
         // The search's words, which filter the parts and their keys.
         match (&event.kind, key) {
             (UiEventKind::InputChanged { text, .. }, SEARCH) => {
@@ -391,6 +426,16 @@ impl Plugin for SettingsPage {
 
     fn render(&mut self, cx: &mut Cx<'_>, view: &ViewId) -> Option<Node> {
         let settings = cx.settings().ok()?;
+        match view {
+            ViewId::Panel(PanelId(panel)) if panel == NEW_BINDING => {
+                let adding = self.adding.clone()?;
+                return Some(adding_tree(cx, &settings, &adding, &self.refused));
+            }
+            ViewId::Panel(PanelId(panel)) if panel == COMMANDS => {
+                return Some(commands_menu(cx));
+            }
+            _ => {}
+        }
         // A key's menu of values, each an item ticked where it is in force.
         if let ViewId::Panel(PanelId(panel)) = view {
             let name = panel.strip_prefix(CHOICES)?;
@@ -419,7 +464,7 @@ impl Plugin for SettingsPage {
         Some(tree(
             cx,
             &settings,
-            (self.chosen, self.editing.as_ref().map(|(at, _)| *at)),
+            (self.chosen, self.editing),
             &words(&self.query),
             &self.refused,
         ))
@@ -452,12 +497,13 @@ impl SettingsPage {
     }
 
     /// An event of the part of the bindings of keys: a binding's keys
-    /// clicked, their field shown and focused; their field's text written
-    /// as Return is pressed or as it is left, the new keys of the command
-    /// and `false` for a default's old ones, or a binding of the config's
-    /// moved; a default taken away, `false`, a binding of the config's taken
-    /// away, and keys that the config takes away given back; and the
-    /// fields of a new binding, written as Return is pressed in either.
+    /// clicked, their field shown and focused, which records the keys
+    /// pressed, written as it records them, the new keys of the command and
+    /// `false` for a default's old ones, or a binding of the config's
+    /// moved, and which its leaving puts away; a default taken away,
+    /// `false`, a binding of the config's taken away, and keys that the
+    /// config takes away given back; and Add, which opens the panel of a
+    /// new binding.
     fn binding_event(&mut self, cx: &mut Cx<'_>, event: &UiEvent) -> Result<(), Error> {
         let key = event.key.0.as_str();
         let at = |prefix: &str| {
@@ -465,9 +511,27 @@ impl SettingsPage {
                 .and_then(|at| at.parse::<usize>().ok())
         };
         match &event.kind {
+            UiEventKind::Click if key == ADD_BINDING => {
+                self.adding = Some(Adding::default());
+                self.refused.remove(NEW_REFUSED);
+                cx.open_panel(
+                    NEW_BINDING,
+                    PanelOptions {
+                        anchor: Anchor::Node {
+                            view: page(),
+                            key: ADD_BINDING.into(),
+                        },
+                        role: PanelRole::Dialog,
+                        close_outside: false,
+                        close_escape: true,
+                        takes_keys: false,
+                        close_typing: false,
+                    },
+                )
+            }
             UiEventKind::Click => {
                 if let Some(at) = at(BINDING_KEYS) {
-                    self.editing = Some((at, None));
+                    self.editing = Some(at);
                     cx.request_render(page())?;
                     return cx.focus_node(page(), format!("{KEYS_FIELD}{at}").as_str());
                 }
@@ -484,68 +548,69 @@ impl SettingsPage {
                 }
                 Ok(())
             }
-            UiEventKind::InputChanged { text, .. } => {
-                if let (Some(at), Some((editing, typed))) = (at(KEYS_FIELD), &mut self.editing)
-                    && at == *editing
-                {
-                    *typed = Some(text.clone());
+            UiEventKind::Recorded { keys: Some(keys) } => match at(KEYS_FIELD) {
+                Some(at) if self.editing == Some(at) => self.change_keys(cx, at, keys),
+                _ => Ok(()),
+            },
+            UiEventKind::Blur if at(KEYS_FIELD).is_some() && self.editing == at(KEYS_FIELD) => {
+                self.editing = None;
+                self.refused
+                    .remove(&format!("binding:{}", at(KEYS_FIELD).unwrap_or_default()));
+                cx.request_render(page())
+            }
+            _ => Ok(()),
+        }
+    }
+
+    /// An event of the panel of a new binding, or of its menu of the
+    /// commands: the keys recorded, or taken away; the commands' menu
+    /// opened, and a command chosen; Cancel, which closes the panel; and
+    /// Add, which writes the binding of the keys and the command, and
+    /// closes the panel, or tells why it was refused.
+    fn adding_event(&mut self, cx: &mut Cx<'_>, event: &UiEvent) -> Result<(), Error> {
+        let key = event.key.0.as_str();
+        let Some(adding) = &mut self.adding else {
+            return Ok(());
+        };
+        let panel = || ViewId::Panel(PanelId::from(NEW_BINDING));
+        match &event.kind {
+            UiEventKind::Recorded { keys } if key == RECORDER => {
+                adding.keys.clone_from(keys);
+                self.refused.remove(NEW_REFUSED);
+                cx.request_render(panel())
+            }
+            UiEventKind::Click if key == CHOOSE_COMMAND => cx.open_panel(
+                COMMANDS,
+                PanelOptions {
+                    anchor: Anchor::Node {
+                        view: panel(),
+                        key: CHOOSE_COMMAND.into(),
+                    },
+                    role: PanelRole::Menu,
+                    close_outside: true,
+                    close_escape: true,
+                    takes_keys: false,
+                    close_typing: false,
+                },
+            ),
+            UiEventKind::Click | UiEventKind::Toggle { .. } if key.starts_with(COMMAND_ITEM) => {
+                adding.command = key.strip_prefix(COMMAND_ITEM).map(str::to_owned);
+                self.refused.remove(NEW_REFUSED);
+                cx.request_render(panel())
+            }
+            UiEventKind::Click if key == CANCEL => cx.close_panel(NEW_BINDING),
+            UiEventKind::Click if key == CONFIRM => {
+                let (Some(keys), Some(command)) = (adding.keys.clone(), adding.command.clone())
+                else {
                     return Ok(());
-                }
-                if [NEW_KEYS, NEW_COMMAND].contains(&key)
-                    && let UiEventKind::InputChanged { text, revision } = &event.kind
-                {
-                    self.new_binding
-                        .insert(key.to_owned(), (text.clone(), *revision));
-                }
-                Ok(())
-            }
-            UiEventKind::Submit { text, .. } if at(KEYS_FIELD).is_some() => {
-                let at = at(KEYS_FIELD).unwrap_or_default();
-                self.change_keys(cx, at, text)
-            }
-            UiEventKind::Blur if at(KEYS_FIELD).is_some() => {
-                let at = at(KEYS_FIELD).unwrap_or_default();
-                match self.editing.clone() {
-                    Some((editing, Some(typed))) if editing == at => {
-                        self.change_keys(cx, at, &typed)
-                    }
-                    Some((editing, None)) if editing == at => {
-                        self.editing = None;
-                        cx.request_render(page())
-                    }
-                    _ => Ok(()),
-                }
-            }
-            UiEventKind::Submit { text, .. } if [NEW_KEYS, NEW_COMMAND].contains(&key) => {
-                let revision = self
-                    .new_binding
-                    .get(key)
-                    .map_or(0, |(_, revision)| *revision);
-                self.new_binding
-                    .insert(key.to_owned(), (text.clone(), revision));
-                let given = |field: &str| {
-                    self.new_binding
-                        .get(field)
-                        .map(|(text, _)| text.trim().to_owned())
-                        .filter(|text| !text.is_empty())
                 };
-                let (Some(keys), Some(command)) = (given(NEW_KEYS), given(NEW_COMMAND)) else {
-                    return Ok(());
-                };
-                let written = cx.set_setting(KEYS, None, &keys, Some(Data::Text(command)));
-                let fine = written.is_ok();
-                self.told(cx, KEYS, written)?;
-                // Written, its fields empty again, for the next.
-                if fine {
-                    for field in [NEW_KEYS, NEW_COMMAND] {
-                        let revision = self
-                            .new_binding
-                            .remove(field)
-                            .map_or(0, |(_, revision)| revision);
-                        cx.set_text(page(), field, "", revision)?;
+                match cx.set_setting(KEYS, None, &keys, Some(Data::Text(command))) {
+                    Ok(()) => cx.close_panel(NEW_BINDING),
+                    Err(error) => {
+                        self.refused.insert(NEW_REFUSED.to_owned(), error.message);
+                        cx.request_render(panel())
                     }
                 }
-                Ok(())
             }
             _ => Ok(()),
         }
@@ -570,6 +635,14 @@ impl SettingsPage {
         if text.is_empty() || same {
             self.editing = None;
             self.refused.remove(&refusal);
+            return cx.request_render(page());
+        }
+        // macOS's own keys, which no binding of the settings' takes.
+        if let Ok(combos) = lokyr_plugin_sdk::keys::parse_keys(text)
+            && lokyr_plugin_sdk::keys::is_system(&combos, None)
+        {
+            self.refused
+                .insert(refusal, lokyr_plugin_sdk::keys::system_error(text));
             return cx.request_render(page());
         }
         if let Err(why) = lokyr_plugin_sdk::keys::parse_keys(text) {
@@ -1730,42 +1803,18 @@ fn keys_part(
                 .layout(wrapped()),
         );
     }
-    // A new binding: its keys and its command, written as Return is
-    // pressed.
+    // Add, which opens the panel of a new binding.
     part.push(
         Node::container(vec![
-            Node::field("cmd+shift+n")
-                .key(NEW_KEYS)
-                .label(message(cx, "binding-new-keys", &[]))
-                .style(terminal.clone())
-                .layout(Layout {
-                    width: Length::Points(160.0),
-                    ..Layout::default()
-                }),
-            Node::field("window.new")
-                .key(NEW_COMMAND)
-                .label(message(cx, "binding-new-command", &[]))
-                .style(terminal)
-                .layout(Layout {
-                    grow: 1.0,
-                    min_width: Length::Points(0.0),
-                    ..Layout::default()
-                }),
+            Node::button(message(cx, "binding-add", &[])).key(ADD_BINDING),
         ])
-        .key("new-binding")
+        .key("new-binding-row")
         .layout(Layout {
             direction: Direction::Row,
-            gap: 8.0,
-            align: Align::Center,
+            justify: Justify::End,
             width: Length::Fraction(1.0),
             ..Layout::default()
         }),
-    );
-    part.push(
-        Node::text(message(cx, "binding-new", &[]))
-            .key("new-binding-help")
-            .style(small())
-            .layout(wrapped()),
     );
     if let Some(why) = refused.get(KEYS) {
         part.push(refusal(why, "refused:keys"));
@@ -1838,10 +1887,11 @@ fn binding_row(
     let changes =
         binding.command.is_some() && !binding.system && (binding.default || !binding.detailed);
     let keys_node = if editing {
-        Node::field("cmd+shift+n")
+        Node::field(message(cx, "binding-press", &[]))
             .key(format!("{KEYS_FIELD}{at}").as_str())
             .label(message(cx, "binding-keys", &[]))
-            .holding(keys.as_str())
+            .records()
+            .holding(shown.as_str())
             .style(terminal.clone())
             .layout(Layout {
                 width: Length::Points(150.0),
@@ -1877,6 +1927,192 @@ fn binding_row(
         .role(Role::Group)
         .label(keys.clone())
         .layout(row_layout())
+}
+
+/// The panel of a new binding, of `adding`: its title, the recorder of its
+/// keys, shown as macOS writes them, the button of the commands' menu, of
+/// the command chosen, what a binding of `settings` of the same keys
+/// does, which the new one takes the place of, or that macOS's own are
+/// none to take, why a write was refused, of `refused`, and Cancel and
+/// Add, which waits for both the keys and a command.
+fn adding_tree(
+    cx: &mut Cx<'_>,
+    settings: &Settings,
+    adding: &Adding,
+    refused: &BTreeMap<String, String>,
+) -> Node {
+    let label = |cx: &mut Cx<'_>, id: &str| {
+        Node::text(message(cx, id, &[])).layout(Layout {
+            width: Length::Points(90.0),
+            min_width: Length::Points(90.0),
+            ..Layout::default()
+        })
+    };
+    let line = |nodes: Vec<Node>| {
+        Node::container(nodes).layout(Layout {
+            direction: Direction::Row,
+            gap: 8.0,
+            align: Align::Center,
+            width: Length::Fraction(1.0),
+            ..Layout::default()
+        })
+    };
+    let shown = adding
+        .keys
+        .as_deref()
+        .map(|keys| lokyr_plugin_sdk::keys::macos_text(keys).unwrap_or_else(|| keys.to_owned()))
+        .unwrap_or_default();
+    let recorder = Node::field(message(cx, "binding-press", &[]))
+        .key(RECORDER)
+        .label(message(cx, "binding-keys", &[]))
+        .records()
+        .holding(shown.as_str())
+        .style(code())
+        .layout(Layout {
+            grow: 1.0,
+            min_width: Length::Points(0.0),
+            ..Layout::default()
+        });
+    let title = adding.command.as_deref().map(|name| {
+        cx.commands()
+            .ok()
+            .and_then(|commands| commands.into_iter().find(|command| command.name == name))
+            .map_or_else(|| name.to_owned(), |command| command.title)
+    });
+    let choose = Node::button(title.unwrap_or_else(|| message(cx, "binding-choose", &[])))
+        .key(CHOOSE_COMMAND)
+        .label(message(cx, "binding-command", &[]))
+        .layout(Layout {
+            grow: 1.0,
+            min_width: Length::Points(0.0),
+            ..Layout::default()
+        });
+    let mut children = vec![
+        Node::text(message(cx, "binding-new-title", &[]))
+            .key("new-binding-title")
+            .role(Role::Heading)
+            .style(Style {
+                font_weight: Some(FontWeight::Bold),
+                ..Style::default()
+            }),
+        line(vec![label(cx, "binding-shortcut"), recorder]),
+        line(vec![label(cx, "binding-command"), choose]),
+    ];
+    // The binding of the same keys, which the new one takes the place of,
+    // or macOS's own, which none takes.
+    let combos = adding
+        .keys
+        .as_deref()
+        .and_then(|keys| lokyr_plugin_sdk::keys::parse_keys(keys).ok());
+    let system = combos
+        .as_ref()
+        .is_some_and(|combos| lokyr_plugin_sdk::keys::is_system(combos, None));
+    let taken = combos.as_ref().and_then(|combos| {
+        settings.keys.iter().find(|binding| {
+            binding.command.is_some()
+                && lokyr_plugin_sdk::keys::parse_keys(&binding.keys)
+                    .ok()
+                    .as_ref()
+                    == Some(combos)
+        })
+    });
+    if system {
+        children.push(refusal(
+            &message(cx, "binding-taken-system", &[("keys", shown.clone())]),
+            "taken",
+        ));
+    } else if let Some(binding) = taken {
+        let does = binding
+            .title
+            .clone()
+            .or_else(|| binding.command.clone())
+            .unwrap_or_default();
+        children.push(
+            Node::text(message(
+                cx,
+                "binding-taken",
+                &[("keys", shown.clone()), ("title", does)],
+            ))
+            .key("taken")
+            .style(Style {
+                color: Some(Token::from("text.warning")),
+                text_size: Some(TextSize::Small),
+                ..Style::default()
+            })
+            .layout(wrapped()),
+        );
+    }
+    if let Some(why) = refused.get(NEW_REFUSED) {
+        children.push(refusal(why, "refused:new"));
+    }
+    let ready = adding.keys.is_some() && adding.command.is_some() && !system;
+    let mut add = Node::button(message(cx, "binding-confirm", &[])).key(CONFIRM);
+    if let Kind::Button(button) = &mut add.kind {
+        button.disabled = !ready;
+    }
+    children.push(
+        Node::container(vec![
+            Node::button(message(cx, "binding-cancel", &[])).key(CANCEL),
+            add,
+        ])
+        .layout(Layout {
+            direction: Direction::Row,
+            gap: 8.0,
+            justify: Justify::End,
+            width: Length::Fraction(1.0),
+            ..Layout::default()
+        }),
+    );
+    Node::container(children)
+        .key("new-binding-panel")
+        .label(message(cx, "binding-new-title", &[]))
+        .layout(Layout {
+            direction: Direction::Column,
+            gap: 12.0,
+            width: Length::Points(400.0),
+            padding: Edges::all(16.0),
+            ..Layout::default()
+        })
+        .style(Style {
+            background: Some(Token::from("panel.bg")),
+            border: Some(Border {
+                color: Token::from("panel.border"),
+                width: 1.0,
+            }),
+            radius: 10.0,
+            shadow: Some(lokyr_plugin_sdk::view::Shadow::default()),
+            ..Style::default()
+        })
+}
+
+/// The menu of the commands that a binding can run of no arguments, by
+/// their categories, each a submenu of their titles.
+fn commands_menu(cx: &mut Cx<'_>) -> Node {
+    let mut commands = cx.commands().unwrap_or_default();
+    commands.retain(|command| command.params.iter().all(|param| param.default.is_some()));
+    commands.sort_by_key(|command| command.title.to_lowercase());
+    let mut groups = Vec::new();
+    for category in CATEGORIES.into_iter().flatten() {
+        let items: Vec<Node> = commands
+            .iter()
+            .filter(|command| command.category == category)
+            .map(|command| {
+                Node::button(command.title.as_str())
+                    .key(format!("{COMMAND_ITEM}{}", command.name).as_str())
+            })
+            .collect();
+        if items.is_empty() {
+            continue;
+        }
+        let mut group = vec![Node::text(message(
+            cx,
+            category_message(Some(category)),
+            &[],
+        ))];
+        group.extend(items);
+        groups.push(Node::container(group));
+    }
+    Node::container(groups).key("commands-menu")
 }
 
 /// The text of `why`, a write refused, under its control, of `key`.

@@ -68,6 +68,9 @@ pub(crate) struct Shared {
     /// Whether a context menu's loop runs, which opens the next menu once
     /// it returns.
     menu_open: Cell<bool>,
+    /// Whether the keys are recorded, as a field that records a shortcut
+    /// has the keyboard: the views take the menus' key equivalents.
+    recording_keys: Cell<bool>,
     /// Whether the system asked the application to quit and waits for its
     /// answer, as AppKit's `NSTerminateLater` has it.
     terminating: Cell<bool>,
@@ -94,9 +97,21 @@ impl Shared {
             terminating: Cell::new(false),
             modal_aborted: Cell::new(false),
             menu_open: Cell::new(false),
+            recording_keys: Cell::new(false),
             later: RefCell::new(Vec::new()),
             early: RefCell::new(Vec::new()),
         })
+    }
+
+    /// Whether the keys are recorded, every one going to the window with
+    /// the focus as it is.
+    pub(crate) fn recording_keys(&self) -> bool {
+        self.recording_keys.get()
+    }
+
+    /// Records the keys, or stops.
+    pub(crate) fn set_recording_keys(&self, on: bool) {
+        self.recording_keys.set(on);
     }
 
     /// Hands the window `id` `event` on the run loop's next turn, as the

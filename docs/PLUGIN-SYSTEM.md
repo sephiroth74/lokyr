@@ -40,7 +40,7 @@ Everything you see in Lokyr is a plugin: the tab bar, splits, the find bar, the 
 | `pane-header` | One | Pane titles in splits | Across its pane's top, of its view's height, above the grid |
 | `sidebar` | Many (F5+) | Side panels | |
 
-The settings' pages are no slots: Lokyr's settings open in a window of their own, one at most, titled Settings, of System Settings' size, which holds no terminal and takes no other tab, closed by ⌘W, the tabs' close, nor any plugin's view of the terminals' windows, no slot's and no panel but those of its pages' nodes, the plugins seeing no window in front while it is, nor its focus, and closing, moving or asking a question on neither it nor its tab, a question of no window going to the terminals' window that had the focus last; its pages as tabs across the top and the chosen page below them, a view of its plugin's, `{ page = "<id>" }`, which draws a sidebar of its own parts at its left where it needs one. Lokyr's own plugins alone have pages, which their manifests declare in `contributes.pages`, each of an id and one of the host's icons, its title the catalogs' `page-<id>`; another's manifest is refused. Each page's view takes the room below the tabs whole, its first field the keyboard's as the window opens; its plugin hears `page-shown` and `page-hidden`, to it alone, as the page shows and hides, and shows one of its own pages with `show_page`, which opens the window there.
+The settings' pages are no slots: Lokyr's settings open in a window of their own, one at most, titled Settings, of System Settings' size, which holds no terminal and takes no other tab, closed by ⌘W, the tabs' close, nor any plugin's view of the terminals' windows, no slot's and no panel but those of its pages' nodes and of their panels' nodes, as a dialog's menu, the plugins seeing no window in front while it is, nor its focus, and closing, moving or asking a question on neither it nor its tab, a question of no window going to the terminals' window that had the focus last; its pages as tabs across the top and the chosen page below them, a view of its plugin's, `{ page = "<id>" }`, which draws a sidebar of its own parts at its left where it needs one. Lokyr's own plugins alone have pages, which their manifests declare in `contributes.pages`, each of an id and one of the host's icons, its title the catalogs' `page-<id>`; another's manifest is refused. Each page's view takes the room below the tabs whole, its first field the keyboard's as the window opens; its plugin hears `page-shown` and `page-hidden`, to it alone, as the page shows and hides, and shows one of its own pages with `show_page`, which opens the window there.
 
 The overlays and the popups are no slots: a plugin's floating panels, which it opens and closes, anchored to a cell, the cursor, the pointer, a node of its views, or a corner of a pane or of the window's room below the tab bar, as the find bar, the hints, the command's sticky header, the palette and the menus are.
 
@@ -347,6 +347,11 @@ type Node = {
     -- For field nodes, `text` is the text that it holds, which the host takes as the field first shows and as a
     -- render gives another, over what was typed; nil keeps what the host holds.
     stepped: boolean?, -- for field nodes: ↑ and ↓ tell a "step" rather than move the caret, as a number's field
+    -- For field nodes, `records`: the field records a shortcut. While it has the keyboard, the keys pressed are its
+    -- own, the menus' key equivalents too, of no binding's command run nor text typed: the host shows them as macOS
+    -- writes them, as ⇧⌘Y, and tells a "recorded" of them as a config writes keys; Delete takes them away, and Tab and
+    -- Escape do as elsewhere.
+    records: boolean?,
     link: boolean?, -- for button nodes: a link's look, its label underlined in the accent's color, of no box, the pointer a hand over it
     progress: {
         state: ("normal" | "error" | "paused" | "indeterminate")?,
@@ -581,11 +586,12 @@ type UiEvent = {
         | "input-changed" | "submit" | "focus" | "blur" | "scroll"
         | "drag-start" | "drag-move" | "drag-end" | "drag-cancel" | "reorder" | "drop-on-bar"
         | "drop-on-pane" | "drop-outside" | "set-value" | "toggle" | "select" | "activate" | "list-range" | "cut"
-        | "step",
+        | "step" | "recorded",
     text: string?, -- a field's text, as the host holds it: at each change, "input-changed", and as Return goes to it, "submit"
     revision: number?, -- an "input-changed" text's, one more at each edit, which `set_text` gives back
     shift: boolean?, -- a "submit"'s, whether Shift was held, as Shift-Return goes the other way
     up: boolean?, -- a "step"'s, of a field of steps' arrow key: ↑ a step up, ↓ a step down
+    keys: string?, -- a "recorded"'s, the keys that a field that records a shortcut took, as `cmd+shift+y`; nil as Delete took them away
     item: number?, -- a list's item, selected or activated
     first: number?, count: number?, -- the items of a list that the host asks for, which the next render gives
     x: number?, y: number?, -- a drag's, from its start, or a scroll's, in points; a "drop-outside"'s, where the tab's new window puts its content's corner on the screens

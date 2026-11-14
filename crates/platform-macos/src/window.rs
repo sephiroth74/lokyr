@@ -923,10 +923,31 @@ define_class!(
         }
 
         // SAFETY: AppKit's signature. The keys that the menus' shortcuts
-        // take never come here.
+        // take never come here; recorded, the key goes as it is, never
+        // through the input method.
         #[unsafe(method(keyDown:))]
         fn key_down(&self, event: &NSEvent) {
+            if self.records_keys() {
+                self.post_key(event);
+                return;
+            }
             self.key_down_through_input_method(event);
+        }
+
+        // SAFETY: AppKit's signature. A key equivalent comes to the views
+        // before the menus: while the keys are recorded, the view takes it
+        // as a key, so that no menu item runs; else the menus do.
+        #[unsafe(method(performKeyEquivalent:))]
+        fn perform_key_equivalent(&self, event: &NSEvent) -> Bool {
+            let key_down = event.r#type() == NSEventType::KeyDown;
+            let key_window = self.window().is_some_and(|window| window.isKeyWindow());
+            if key_down && key_window && self.records_keys() {
+                self.post_key(event);
+                return Bool::YES;
+            }
+            // SAFETY: the superclass's `performKeyEquivalent:`, of the same
+            // event.
+            unsafe { msg_send![super(self), performKeyEquivalent: event] }
         }
 
         // SAFETY: AppKit's signature.
@@ -1327,6 +1348,15 @@ impl ContentView {
     /// Runs `with` of the view's accessibility, once the view has one.
     pub(crate) fn access<T>(&self, with: impl FnOnce(&Access) -> T) -> Option<T> {
         self.ivars().access.borrow().as_ref().map(with)
+    }
+
+    /// Whether the keys are recorded, as a field that records a shortcut
+    /// has the keyboard.
+    fn records_keys(&self) -> bool {
+        self.ivars()
+            .shared
+            .upgrade()
+            .is_some_and(|shared| shared.recording_keys())
     }
 
     fn post_key(&self, event: &NSEvent) {

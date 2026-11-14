@@ -245,6 +245,8 @@ pub struct Fake {
     timers: BTreeMap<TimerId, Instant>,
     /// Which Option keys act as Meta.
     option_as_meta: (bool, bool),
+    /// Whether the keys are recorded, as the app last told.
+    recording_keys: bool,
     /// The icons that the app showed, from the first.
     app_icons: Vec<Option<PathBuf>>,
     /// The user's languages and regions, none unless a test sets them.
@@ -342,6 +344,7 @@ impl Fake {
             alerts: Vec::new(),
             timers: BTreeMap::new(),
             option_as_meta: (false, false),
+            recording_keys: false,
             app_icons: Vec::new(),
             locales: Vec::new(),
             attention_requests: 0,
@@ -735,6 +738,11 @@ impl Fake {
     /// the right one.
     pub fn option_as_meta(&self) -> (bool, bool) {
         self.option_as_meta
+    }
+
+    /// Whether the keys are recorded, as the app last told.
+    pub fn recording_keys(&self) -> bool {
+        self.recording_keys
     }
 
     /// Gives the user the languages and regions of `locales`, as
@@ -1390,6 +1398,10 @@ impl Platform for Fake {
 
     fn set_option_as_meta(&mut self, left: bool, right: bool) {
         self.option_as_meta = (left, right);
+    }
+
+    fn set_recording_keys(&mut self, on: bool) {
+        self.recording_keys = on;
     }
 
     fn track_mouse_moves(&mut self, window: WindowId, track: bool) {

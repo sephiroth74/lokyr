@@ -441,6 +441,13 @@ pub struct Field {
     /// tell its plugin a `step` rather than move its caret.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub stepped: bool,
+    /// Whether it records a shortcut: while it has the keyboard, the keys
+    /// pressed, the menus' key equivalents too, are its own, of no
+    /// binding's command run, the host showing them as the platform writes
+    /// them, as `⇧⌘Y`, and telling its plugin a `recorded`; Delete takes
+    /// them away, and Tab and Escape do as elsewhere.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub records: bool,
 }
 
 /// A button's own properties.
@@ -924,6 +931,13 @@ pub enum UiEventKind {
         /// Whether it is a step up.
         up: bool,
     },
+    /// A field that records a shortcut recorded one, as a config writes
+    /// keys, as `cmd+shift+y`, or none as Delete took it away.
+    Recorded {
+        /// The keys, or none.
+        #[serde(default)]
+        keys: Option<String>,
+    },
     /// A list's selection moved to an item, by a click or the keys; or a
     /// view of tabs' tab chosen, by a click or the arrows, which its next
     /// render gives.
@@ -1183,7 +1197,18 @@ impl Node {
             placeholder: placeholder.into(),
             text: None,
             stepped: false,
+            records: false,
         }))
+    }
+
+    /// The node, a field, that records a shortcut, as [`Field::records`]
+    /// has it; any other node as it is.
+    #[must_use]
+    pub fn records(mut self) -> Self {
+        if let Kind::Field(field) = &mut self.kind {
+            field.records = true;
+        }
+        self
     }
 
     /// The node, a field, of steps, as [`Field::stepped`] has it; any other

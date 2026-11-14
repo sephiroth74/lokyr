@@ -802,6 +802,14 @@ pub trait Platform {
     /// turns it on, and off again as the app ends.
     fn set_secure_input(&mut self, on: bool);
 
+    /// Whether the keys are recorded, as a field that records a shortcut
+    /// has the keyboard: every key comes as it is, of the window with the
+    /// focus, never through the input method, those of the menus' key
+    /// equivalents too, whose items do not run meanwhile; but those that
+    /// the system takes for itself, as Command-Tab. Off until the app turns
+    /// it on.
+    fn set_recording_keys(&mut self, on: bool);
+
     /// Gives the pointer over each of `areas` of `window`'s content its own
     /// shape, the first area over those after it, and all over the shape
     /// of the rest, in place of the areas before; none until the app asks.
