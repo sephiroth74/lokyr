@@ -486,6 +486,10 @@ pub fn bindings(
                 when: binding.when.as_ref().map(ToString::to_string),
                 detailed: binding.when.is_some() || !binding.invocation.args.is_empty(),
                 default: true,
+                system: lokyr_plugin_sdk::keys::is_system(
+                    &binding.keys,
+                    Some(&binding.invocation.command),
+                ),
             }
         })
         .collect();
@@ -528,6 +532,7 @@ pub fn bindings(
             when,
             detailed,
             default: false,
+            system: false,
         });
     }
     bindings

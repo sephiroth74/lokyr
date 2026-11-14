@@ -268,16 +268,27 @@ fn settings_read(allowed: bool) -> Scenario {
         key: key.to_owned(),
         value,
     };
-    let (written, unknown) = if allowed {
+    let (written, unknown, system) = if allowed {
         (
             Response::Done,
             failed(
                 Code::NotFound,
                 "the settings have no key `sise` in `[font]`",
             ),
+            failed(
+                Code::InvalidConfig,
+                &lokyr_plugin_sdk::keys::system_error("cmd+q"),
+            ),
         )
     } else {
-        (lacks(), lacks())
+        (lacks(), lacks(), lacks())
+    };
+    // macOS's own keys, refused of anything but their default given back.
+    let key = |value: Option<Data>| Request::SetSetting {
+        section: "keys".to_owned(),
+        plugin: None,
+        key: "cmd+q".to_owned(),
+        value,
     };
     Scenario {
         name: format!(
@@ -293,8 +304,10 @@ fn settings_read(allowed: bool) -> Scenario {
         steps: vec![ask(vec![
             (Request::Settings, answer),
             (write("size", Some(Data::Integer(15))), written.clone()),
-            (write("size", None), written),
+            (write("size", None), written.clone()),
             (write("sise", Some(Data::Integer(15))), unknown),
+            (key(Some(Data::Boolean(false))), system),
+            (key(None), written.clone()),
             // A family's styles, of no capability.
             (
                 Request::FontStyles("Menlo".to_owned()),

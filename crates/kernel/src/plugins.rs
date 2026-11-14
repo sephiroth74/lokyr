@@ -6242,6 +6242,19 @@ impl Host<'_, '_> {
                     },
                     _ => None,
                 };
+                // macOS's own keys, of its app menu, written of nothing but
+                // their default given back.
+                if plugin.is_none()
+                    && section == "keys"
+                    && value.is_some()
+                    && lokyr_plugin_sdk::keys::parse_keys(&key)
+                        .is_ok_and(|keys| lokyr_plugin_sdk::keys::is_system(&keys, None))
+                {
+                    return Err(Error::new(
+                        Code::InvalidConfig,
+                        lokyr_plugin_sdk::keys::system_error(&key),
+                    ));
+                }
                 if plugin.is_none()
                     && section == "keys"
                     && let Some(command) = command

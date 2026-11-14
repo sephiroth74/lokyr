@@ -891,6 +891,7 @@ impl FakeHost {
             args,
             when,
             default: false,
+            system: false,
         }
     }
 
@@ -3527,6 +3528,17 @@ impl Calling<'_> {
                 // A binding of any keys, of a command registered; another
                 // key of the settings that the test gave, of a value that
                 // its kind takes.
+                if plugin.is_none()
+                    && section == "keys"
+                    && value.is_some()
+                    && crate::keys::parse_keys(key)
+                        .is_ok_and(|keys| crate::keys::is_system(&keys, None))
+                {
+                    return Err(Error::new(
+                        Code::InvalidConfig,
+                        crate::keys::system_error(key),
+                    ));
+                }
                 if plugin.is_none() && section == "keys" {
                     let command = match value {
                         Some(Data::Text(command)) => Some(command),

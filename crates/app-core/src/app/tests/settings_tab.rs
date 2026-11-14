@@ -1437,6 +1437,13 @@ fn the_keys_part_lists_the_defaults_and_a_default_changed_moves_its_shortcut() {
         .expect("New Tab's default");
     assert_eq!(page_button(&app, own, &format!("keys:{at}")), "⌘T");
     assert_eq!(page_text(&app, own, &format!("command:{at}")), "New Tab");
+    // macOS's own, as Quit's, a text of no change.
+    let quit = app
+        .default_bindings
+        .iter()
+        .position(|binding| binding.invocation.command == "app.quit")
+        .expect("Quit's default");
+    assert_eq!(page_text(&app, own, &format!("keys:{quit}")), "⌘Q");
     // Changed: its new keys and `false` for the old, in the file, and the
     // keymap's shortcut moved.
     settings_event(

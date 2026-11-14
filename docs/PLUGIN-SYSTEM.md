@@ -978,7 +978,8 @@ type Cx = {
     -- control, its default, its value in force and the address of its text in the config guide; the bindings of keys
     -- in force, the defaults of the keymap that the config leaves and then the config's `[keys]`, each of its keys as
     -- the config writes them, its command, the command's title and category, its arguments and context, whether it is
-    -- a default, and whether the file tells more of it, keys that the config takes away of no command and of the
+    -- a default, whether it is macOS's own, of its app menu (Quit's `cmd+q`, Settings' `cmd+,`), whose keys a write
+    -- refuses but their default given back, and whether the file tells more of it, keys that the config takes away of no command and of the
     -- default's title and category; and what is
     -- wrong with the config file where it does not read, its message, line and column, the settings then those that
     -- applied last.

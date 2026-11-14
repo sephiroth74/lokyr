@@ -229,6 +229,28 @@ impl fmt::Display for Combo {
     }
 }
 
+/// The bindings that macOS's own app menu has, its Quit's and its
+/// Settings', by their keys and their commands, which the settings neither
+/// change nor take away.
+pub const SYSTEM: [(&str, &str); 2] = [("cmd+q", "app.quit"), ("cmd+,", "app.settings")];
+
+/// Whether `keys` are those of one of [`SYSTEM`]'s bindings: of its
+/// command where `command` is given, else of any.
+pub fn is_system(keys: &[Combo], command: Option<&str>) -> bool {
+    SYSTEM.iter().any(|(own, name)| {
+        parse_keys(own).is_ok_and(|own| own == keys)
+            && command.is_none_or(|command| command == *name)
+    })
+}
+
+/// The error of a write of the settings at `keys`, [`SYSTEM`]'s, whose
+/// binding is macOS's own.
+pub fn system_error(keys: &str) -> String {
+    format!(
+        "`{keys}` are macOS's own keys, of its app menu, which the settings neither change nor take away"
+    )
+}
+
 /// The text of `keys`, as a config writes them and [`parse_keys`] reads
 /// them: each combination as `cmd+shift+n`, a sequence's parted by `>`.
 pub fn keys_text(keys: &[Combo]) -> String {

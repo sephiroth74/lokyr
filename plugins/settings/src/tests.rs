@@ -68,6 +68,7 @@ fn binding(
         when: None,
         detailed: false,
         default,
+        system: false,
     }
 }
 
@@ -77,11 +78,13 @@ const GOTO: usize = 2;
 const DOWN: usize = 3;
 const QUIT: usize = 4;
 const REOPEN: usize = 5;
+const SETTINGS: usize = 6;
 
 /// The bindings of [`settings`]: the defaults of `pane.clear`, of
 /// `window.new`, of `window.goto` of an argument and of `copy-mode.down` in
 /// a context; then the config's `false` that takes Quit's keys away, and
-/// its own binding of a command that the app lacks.
+/// its own binding of a command that the app lacks; and macOS's own
+/// default of Settings.
 fn bindings() -> Vec<lokyr_plugin_sdk::host::SettingBinding> {
     let mut goto = binding(
         "cmd+1",
@@ -119,6 +122,15 @@ fn bindings() -> Vec<lokyr_plugin_sdk::host::SettingBinding> {
         down,
         binding("cmd+q", None, (Some("Quit"), Some(Category::App)), false),
         binding("cmd+shift+t", Some("acme.reopen"), (None, None), false),
+        lokyr_plugin_sdk::host::SettingBinding {
+            system: true,
+            ..binding(
+                "cmd+,",
+                Some("app.settings"),
+                (Some("Settings…"), Some(Category::App)),
+                true,
+            )
+        },
     ]
 }
 
@@ -911,6 +923,16 @@ fn the_bindings_in_force_are_listed_by_category_of_their_keys_titles_and_context
         text_of(&tree, &format!("command:{REOPEN}")).as_deref(),
         Some("acme.reopen")
     );
+    // macOS's own: its keys a text, of no change nor removal.
+    assert!(matches!(
+        find_node(&tree, &format!("keys:{SETTINGS}")).map(|node| &node.kind),
+        Some(Kind::Text(text)) if text == "⌘,"
+    ));
+    assert!(labelled(&tree, &format!("unbind:{SETTINGS}")).is_none());
+    assert_eq!(
+        text_of(&tree, &format!("details:{SETTINGS}")).as_deref(),
+        Some("app.settings · binding-system")
+    );
     // A search of a context's name, or of a category's title.
     host.ui_event(&mut plugin, &search("copy-mode.open"))
         .unwrap();
@@ -1087,6 +1109,14 @@ fn a_new_binding_is_written_of_its_keys_and_command_as_return_is_pressed() {
     let tree = rendered(&mut host, &mut plugin);
     let why = text_of(&tree, "refused:keys").unwrap();
     assert!(why.contains("none.such"), "{why}");
+    // macOS's own keys refused, of any command.
+    host.ui_event(&mut plugin, &on(NEW_KEYS, typed("cmd+q")))
+        .unwrap();
+    host.ui_event(&mut plugin, &submit(NEW_COMMAND, "window.new"))
+        .unwrap();
+    let tree = rendered(&mut host, &mut plugin);
+    let why = text_of(&tree, "refused:keys").unwrap();
+    assert!(why.contains("macOS's own"), "{why}");
 }
 
 #[test]

@@ -780,6 +780,7 @@ export type SettingBinding = {
     when: string?,
     detailed: boolean?,
     default: boolean?,
+    system: boolean?,
 }
 
 export type SettingKey = {

@@ -674,6 +674,7 @@ fn the_bindings_in_force_are_the_defaults_that_the_config_leaves_then_its_own() 
             Some("copy-mode.open && (pane.focused || !selection)"),
         ),
         default("cmd+t", "tab.new", Args::new(), None),
+        default("cmd+,", "app.settings", Args::new(), None),
     ];
     let config = Config::parse(
         "[keys]\n\"cmd+q\" = false\n\"cmd+t\" = \"window.new\"\n\"ctrl+x\" = { command = \"pane.clear\", when = \"selection\" }\n",
@@ -708,6 +709,7 @@ fn the_bindings_in_force_are_the_defaults_that_the_config_leaves_then_its_own() 
             ("cmd+k", Some("pane.clear"), true),
             ("cmd+1", Some("window.goto"), true),
             ("j", Some("copy-mode.down"), true),
+            ("cmd+,", Some("app.settings"), true),
             ("cmd+q", None, false),
             ("cmd+t", Some("window.new"), false),
             ("ctrl+x", Some("pane.clear"), false),
@@ -721,11 +723,14 @@ fn the_bindings_in_force_are_the_defaults_that_the_config_leaves_then_its_own() 
         bindings[2].when.as_deref(),
         Some("copy-mode.open && (pane.focused || !selection)")
     );
-    assert_eq!(bindings[3].title.as_deref(), Some("Quit"));
-    assert_eq!(bindings[3].category, Some(Category::App));
-    assert_eq!(bindings[4].title.as_deref(), Some("New Window"));
-    assert_eq!(bindings[5].when.as_deref(), Some("selection"));
-    assert!(bindings[5].detailed && !bindings[0].detailed);
+    // macOS's own, of its app menu.
+    assert!(bindings[3].system);
+    assert!(bindings.iter().filter(|binding| binding.system).count() == 1);
+    assert_eq!(bindings[4].title.as_deref(), Some("Quit"));
+    assert_eq!(bindings[4].category, Some(Category::App));
+    assert_eq!(bindings[5].title.as_deref(), Some("New Window"));
+    assert_eq!(bindings[6].when.as_deref(), Some("selection"));
+    assert!(bindings[6].detailed && !bindings[0].detailed);
     // A context's text reads back as the same context.
     for binding in &defaults {
         if let Some(when) = &binding.when {

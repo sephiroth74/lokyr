@@ -1167,6 +1167,10 @@ pub struct SettingBinding {
     /// is; else the config's own, of its `[keys]`.
     #[serde(default)]
     pub default: bool,
+    /// Whether it is macOS's own, a default of its app menu, as Quit's
+    /// `cmd+q`, which the settings neither change nor take away.
+    #[serde(default)]
+    pub system: bool,
 }
 
 /// What is wrong with the config file: why it does not read, and where.

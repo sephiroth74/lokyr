@@ -1803,7 +1803,9 @@ fn binding_row(
     if let Some(when) = &binding.when {
         details.push(message(cx, "binding-when", &[("when", when.clone())]));
     }
-    if !binding.default {
+    if binding.system {
+        details.push(message(cx, "binding-system", &[]));
+    } else if !binding.default {
         details.push(message(cx, "binding-yours", &[]));
     }
     let mut about = vec![
@@ -1831,9 +1833,10 @@ fn binding_row(
     });
     let shown = lokyr_plugin_sdk::keys::macos_text(keys).unwrap_or_else(|| keys.clone());
     // The keys of a command, alone or of its arguments and context, which
-    // change; of `false`, or of the config's commands of several contexts,
-    // as the file tells them.
-    let changes = binding.command.is_some() && (binding.default || !binding.detailed);
+    // change; neither macOS's own, of its app menu, nor `false`, nor the
+    // config's commands of several contexts, as the file tells them.
+    let changes =
+        binding.command.is_some() && !binding.system && (binding.default || !binding.detailed);
     let keys_node = if editing {
         Node::field("cmd+shift+n")
             .key(format!("{KEYS_FIELD}{at}").as_str())
@@ -1855,16 +1858,21 @@ fn binding_row(
             .key(format!("{BINDING_KEYS}{at}").as_str())
             .style(terminal.clone())
     };
-    let link = if binding.command.is_some() {
-        Node::button(message(cx, "binding-remove", &[]))
-            .key(format!("{UNBIND}{at}").as_str())
-            .as_link()
-    } else {
-        Node::button(message(cx, "binding-restore", &[]))
-            .key(format!("{RESTORE}{at}").as_str())
-            .as_link()
-    };
-    Node::container(vec![about, keys_node, link])
+    let mut row = vec![about, keys_node];
+    if binding.command.is_none() {
+        row.push(
+            Node::button(message(cx, "binding-restore", &[]))
+                .key(format!("{RESTORE}{at}").as_str())
+                .as_link(),
+        );
+    } else if !binding.system {
+        row.push(
+            Node::button(message(cx, "binding-remove", &[]))
+                .key(format!("{UNBIND}{at}").as_str())
+                .as_link(),
+        );
+    }
+    Node::container(row)
         .key(format!("binding:{at}").as_str())
         .role(Role::Group)
         .label(keys.clone())
