@@ -11,6 +11,7 @@ use std::io::Cursor;
 use std::path::Path;
 
 use lokyr_plugin_sdk::theme::{TerminalColors, Theme, ThemeColor, ThemeVariant};
+use plist::stream::{Event, Reader};
 use plist::{Dictionary, Value};
 
 use crate::config::Error;
@@ -19,6 +20,53 @@ use crate::config::Error;
 /// and the themes' that they make.
 const LIGHT: &str = " (Light)";
 const DARK: &str = " (Dark)";
+
+/// The most levels that a preset's property list nests: its dictionary
+/// of colors, each a dictionary of components, takes two.
+const DEEPEST: usize = 8;
+
+/// The most values of a preset's property list, each of its references
+/// counted, as a binary list may name one many times: some 600 of a preset
+/// of both appearances.
+const MOST_VALUES: usize = 20_000;
+
+/// The most bytes of a preset's texts and data, together, each of its
+/// references counted.
+const MOST_HELD: usize = 1024 * 1024;
+
+/// Whether the property list of `bytes` stays within [`DEEPEST`] levels,
+/// [`MOST_VALUES`] values and [`MOST_HELD`] bytes, as a preset of colors
+/// does, read as a stream of no value built, which stops at the first
+/// bound past; the reason where it does not.
+fn within_bounds(bytes: &[u8]) -> Result<(), String> {
+    let (mut depth, mut values, mut held) = (0usize, 0usize, 0usize);
+    for event in Reader::new(Cursor::new(bytes)) {
+        let event = event.map_err(|e| e.to_string())?;
+        values += 1;
+        if values > MOST_VALUES {
+            return Err(format!("it holds more than {MOST_VALUES} values"));
+        }
+        match event {
+            Event::StartArray(_) | Event::StartDictionary(_) => {
+                depth += 1;
+                if depth > DEEPEST {
+                    return Err(format!("it nests more than {DEEPEST} levels"));
+                }
+            }
+            Event::EndCollection => depth = depth.saturating_sub(1),
+            Event::Data(data) => held += data.len(),
+            Event::String(text) => held += text.len(),
+            _ => {}
+        }
+        if held > MOST_HELD {
+            return Err(format!(
+                "its texts and data are more than {} KiB",
+                MOST_HELD / 1024
+            ));
+        }
+    }
+    Ok(())
+}
 
 /// The themes of the `.itermcolors` file of `bytes`, named `name`, as
 /// `path`'s errors tell: one, or two of a file of the light and the dark
@@ -29,6 +77,8 @@ pub fn read(bytes: &[u8], name: &str, path: &Path) -> Result<Vec<Theme>, Error> 
         position: None,
         message,
     };
+    within_bounds(bytes)
+        .map_err(|reason| error(format!("it is no property list of colors: {reason}")))?;
     let value = Value::from_reader(Cursor::new(bytes))
         .map_err(|e| error(format!("it is no property list of colors: {e}")))?;
     let dictionary = value

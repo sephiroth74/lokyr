@@ -159,6 +159,56 @@ fn load(
         .ok_or_else(|| not_found(path.as_deref()))
 }
 
+/// The most bytes of a theme's file, which a longer one is refused past.
+pub const MOST_THEME_BYTES: u64 = 1024 * 1024;
+
+/// The most files of a folder of themes that a list of its themes reads.
+pub const MOST_THEME_FILES: usize = 4096;
+
+/// The bytes of the theme's file at `path`: a regular file, through its
+/// links, of [`MOST_THEME_BYTES`] at most, read no further; a pipe, a
+/// device or a folder refused as it opens, of no wait for a writer.
+pub fn read_file(path: &Path) -> io::Result<Vec<u8>> {
+    use std::io::Read;
+    let mut options = fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(libc::O_NONBLOCK);
+    }
+    let file = options.open(path)?;
+    let metadata = file.metadata()?;
+    if !metadata.is_file() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "it is no regular file",
+        ));
+    }
+    let too_large = || {
+        io::Error::new(
+            io::ErrorKind::FileTooLarge,
+            format!("a theme's file is {} KiB at most", MOST_THEME_BYTES / 1024),
+        )
+    };
+    if metadata.len() > MOST_THEME_BYTES {
+        return Err(too_large());
+    }
+    let mut bytes = Vec::new();
+    file.take(MOST_THEME_BYTES + 1).read_to_end(&mut bytes)?;
+    if bytes.len() as u64 > MOST_THEME_BYTES {
+        return Err(too_large());
+    }
+    Ok(bytes)
+}
+
+/// The text of the theme's file at `path`, as [`read_file`] reads it, of
+/// UTF-8.
+fn read_text(path: &Path) -> io::Result<String> {
+    String::from_utf8(read_file(path)?)
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "it is no UTF-8 text"))
+}
+
 /// The partial theme of the native file at `path` and those that it
 /// extends, as [`load`] finds them; `None` of no file there.
 fn load_native(
@@ -167,7 +217,7 @@ fn load_native(
     files: &mut Vec<PathBuf>,
     chain: &mut Vec<String>,
 ) -> Result<Option<Partial>, Error> {
-    let text = match fs::read_to_string(path) {
+    let text = match read_text(path) {
         Ok(text) => text,
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
         Err(error) => {
@@ -220,7 +270,7 @@ fn load_itermcolors(
     for stem in std::iter::once(name).chain(base) {
         let path = directory.join(format!("{stem}.itermcolors"));
         files.push(path.clone());
-        let bytes = match fs::read(&path) {
+        let bytes = match read_file(&path) {
             Ok(bytes) => bytes,
             Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
             Err(error) => {
@@ -383,14 +433,14 @@ pub fn themes_of(path: &Path) -> Result<Vec<(String, ThemeVariant)>, Error> {
     let read_error = |e: io::Error| error(format!("it cannot be read: {e}"));
     match extension {
         Some("itermcolors") => {
-            let bytes = fs::read(path).map_err(read_error)?;
+            let bytes = read_file(path).map_err(read_error)?;
             Ok(itermcolors::read(&bytes, stem, path)?
                 .into_iter()
                 .map(|theme| (theme.name, theme.variant))
                 .collect())
         }
         Some("toml") => {
-            let text = fs::read_to_string(path).map_err(read_error)?;
+            let text = read_text(path).map_err(read_error)?;
             let file = parse(&text, path)?;
             let partial = file.partial;
             let variant =

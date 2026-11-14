@@ -1119,6 +1119,7 @@ version = "1.0.0"
 dependencies = [
  "fluent-bundle",
  "fluent-syntax",
+ "libc",
  "lokyr-pkg-model",
  "lokyr-plugin-host-luau",
  "lokyr-plugin-sdk",

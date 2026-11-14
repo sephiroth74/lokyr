@@ -19,6 +19,10 @@ const AGAIN: Duration = Duration::from_secs(2);
 /// How many themes' colors a part of a read holds.
 const PART: usize = 24;
 
+/// The stack of the reading thread, as the main thread's: a theme's file
+/// parses within its bounds, of any nesting that they let through.
+const STACK: usize = 8 * 1024 * 1024;
+
 /// A part of a read of the themes.
 #[derive(Debug)]
 pub(crate) enum Part {
@@ -59,6 +63,7 @@ impl ThemeCatalog {
         let waker = waker.clone();
         let started = std::thread::Builder::new()
             .name("lokyr-themes".to_owned())
+            .stack_size(STACK)
             .spawn(move || read((folder.as_deref(), held.as_deref()), &parts, &waker));
         if started.is_ok() {
             self.reading = Some(received);

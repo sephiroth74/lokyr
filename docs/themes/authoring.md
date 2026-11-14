@@ -71,7 +71,7 @@ Lokyr applies it as you save either file, in the windows that are open too. A fi
 
 ## The file
 
-A theme's file is TOML of sections. Colors are `#rrggbb`, or `#rrggbbaa` of an opacity, in sRGB.
+A theme's file is TOML of sections, of 1 MiB at most, as an `.itermcolors` file is. Colors are `#rrggbb`, or `#rrggbbaa` of an opacity, in sRGB.
 
 ### `[theme]`
 

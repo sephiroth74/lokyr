@@ -375,6 +375,64 @@ fn a_file_to_install_tells_its_themes_and_their_variants() {
     );
 }
 
+#[cfg(unix)]
+#[test]
+fn a_theme_s_file_is_a_regular_file_within_its_bound() {
+    let directory = folder(
+        "bounds",
+        &[("Plain", "[theme]\nextends = \"Lokyr Dark\"\n")],
+    );
+    // A pipe of a theme's name refused at once, of no writer.
+    let pipe = directory.join("Pipe.toml");
+    let made = std::process::Command::new("mkfifo")
+        .arg(&pipe)
+        .status()
+        .unwrap();
+    assert!(made.success());
+    let started = std::time::Instant::now();
+    let error = themes_of(&pipe).unwrap_err();
+    assert!(
+        error.message.contains("no regular file"),
+        "{}",
+        error.message
+    );
+    assert!(started.elapsed() < std::time::Duration::from_secs(1));
+    // A link to a device, and a folder.
+    std::os::unix::fs::symlink("/dev/zero", directory.join("Zero.toml")).unwrap();
+    let error = themes_of(&directory.join("Zero.toml")).unwrap_err();
+    assert!(
+        error.message.contains("no regular file"),
+        "{}",
+        error.message
+    );
+    fs::create_dir(directory.join("Folder.itermcolors")).unwrap();
+    assert!(themes_of(&directory.join("Folder.itermcolors")).is_err());
+    // Past 1 MiB, refused; the rest read.
+    let large = format!(
+        "[theme]\nextends = \"Lokyr Dark\"\n# {}\n",
+        "x".repeat(usize::try_from(MOST_THEME_BYTES).unwrap())
+    );
+    fs::write(directory.join("Large.toml"), large).unwrap();
+    let error = themes_of(&directory.join("Large.toml")).unwrap_err();
+    assert!(
+        error.message.contains("1024 KiB at most"),
+        "{}",
+        error.message
+    );
+    assert_eq!(
+        themes_of(&directory.join("Plain.toml")).unwrap(),
+        [("Plain".to_owned(), ThemeVariant::Dark)]
+    );
+    // A theme of a pipe's name resolves to none, as it does not wait.
+    let error = resolve("Pipe", Some(&directory), None, &[]).unwrap_err();
+    assert!(
+        error.message.contains("no regular file"),
+        "{}",
+        error.message
+    );
+    let _ = fs::remove_dir_all(&directory);
+}
+
 #[test]
 fn a_theme_written_in_the_native_format_reads_back_the_same() {
     let mut theme = builtin();

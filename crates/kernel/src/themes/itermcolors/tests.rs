@@ -167,3 +167,55 @@ fn a_file_that_is_no_list_of_colors_or_lacks_one_is_refused() {
     );
     assert_eq!(error.path, path);
 }
+
+/// A binary property list of arrays, `levels` of them, each of `across`
+/// references to the next, the last of a text: few bytes, as each array
+/// names the next many times, of `across` to the power of `levels` values.
+fn shared(levels: u8, across: u8) -> Vec<u8> {
+    let mut bytes = b"bplist00".to_vec();
+    let mut offsets = Vec::new();
+    for level in 0..levels {
+        offsets.push(u8::try_from(bytes.len()).unwrap());
+        bytes.push(0xA0 | across);
+        bytes.extend(std::iter::repeat_n(level + 1, usize::from(across)));
+    }
+    offsets.push(u8::try_from(bytes.len()).unwrap());
+    bytes.extend_from_slice(&[0x51, b'x']);
+    let table = bytes.len() as u64;
+    bytes.extend_from_slice(&offsets);
+    // The trailer: the offsets' and the references' sizes, the objects'
+    // count, the root and the offsets' table.
+    bytes.extend_from_slice(&[0; 6]);
+    bytes.extend_from_slice(&[1, 1]);
+    bytes.extend_from_slice(&(offsets.len() as u64).to_be_bytes());
+    bytes.extend_from_slice(&0u64.to_be_bytes());
+    bytes.extend_from_slice(&table.to_be_bytes());
+    bytes
+}
+
+#[test]
+fn a_list_of_shared_references_or_too_deep_is_refused_before_its_values_are_built() {
+    let path = Path::new("Wrong.itermcolors");
+    // Some hundred bytes, of 14 to the 6th, 7.5 million, values.
+    let bytes = shared(6, 14);
+    assert!(bytes.len() < 200, "{}", bytes.len());
+    let started = std::time::Instant::now();
+    let error = read(&bytes, "Wrong", path).unwrap_err();
+    assert!(error.message.contains("values"), "{}", error.message);
+    assert!(started.elapsed() < std::time::Duration::from_secs(1));
+    // A few references read as a list.
+    let error = read(&shared(2, 3), "Wrong", path).unwrap_err();
+    assert!(
+        error.message.contains("no dictionary of colors"),
+        "{}",
+        error.message
+    );
+    // Arrays in arrays, past the bound, never built.
+    let deep = format!(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?><plist version=\"1.0\">{}{}</plist>",
+        "<array>".repeat(100),
+        "</array>".repeat(100)
+    );
+    let error = read(deep.as_bytes(), "Wrong", path).unwrap_err();
+    assert!(error.message.contains("levels"), "{}", error.message);
+}

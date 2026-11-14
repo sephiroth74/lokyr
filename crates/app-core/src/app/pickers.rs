@@ -108,14 +108,14 @@ pub(super) fn font_styles<B: Backend>(family: &str) -> Vec<String> {
 }
 
 /// The themes of the files of `directory`, each of `origin`, as their
-/// files name them; none of a folder that is not there, nor of a file that
-/// is no theme's.
+/// files name them, of its first [`themes::MOST_THEME_FILES`] entries;
+/// none of a folder that is not there, nor of a file that is no theme's.
 pub(super) fn themes_in(directory: &Path, origin: ThemeOrigin) -> Vec<ThemeInfo> {
     let Ok(entries) = fs::read_dir(directory) else {
         return Vec::new();
     };
     let mut found = Vec::new();
-    for entry in entries.flatten() {
+    for entry in entries.take(themes::MOST_THEME_FILES).flatten() {
         let path = entry.path();
         let theme_file = path
             .extension()
