@@ -3686,7 +3686,9 @@ long-command = 0
                 "fade-out-curve",
                 "hidden",
                 "movement",
-                "guide"
+                "guide",
+                "hdr",
+                "hdr-brightness"
             ]
         );
         let font = keys::<FontConfig>();

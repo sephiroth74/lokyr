@@ -1096,6 +1096,58 @@ fn a_move_of_the_cursor_s_own_slides_its_layer_as_the_config_says() {
 }
 
 #[test]
+fn an_hdr_cursor_s_layer_takes_colors_past_white_where_its_screen_has_the_headroom() {
+    let mut config = unpadded();
+    config.cursor.hdr = true;
+    config.cursor.hdr_brightness = 4.0.try_into().unwrap();
+    let (mut fake, mut app, window) = sliding(config);
+    let extended = |app: &App| {
+        let layer = &app.windows[&window].cursor_layer;
+        let surface = layer.surface.as_ref().unwrap();
+        (layer.extended, surface.extended.load(Ordering::Relaxed))
+    };
+    let color = |app: &App| {
+        let drawn = app.windows[&window].cursor_layer.drawn.as_ref();
+        drawn.and_then(|(cells, ..)| cells.cursor.map(|cursor| cursor.color))
+    };
+    // A screen of no headroom: as it is.
+    assert_eq!(extended(&app), (false, false));
+    let plain = color(&app).expect("the cursor drawn");
+    assert!(plain.red <= 1.0);
+    // Of headroom, its layer of extended range, its color past white.
+    fake.set_screen_headroom(16.0);
+    fake.send(&mut app, window, WindowEvent::Frame);
+    assert_eq!(extended(&app), (true, true));
+    let bright = color(&app).unwrap();
+    let factor = 4.0_f32.powf(1.0 / 2.2);
+    assert!((bright.red - plain.red * factor).abs() < 1e-5, "{bright:?}");
+    assert_eq!(bright.alpha, plain.alpha);
+    // Off in the config, as it was.
+    app.config.cursor.hdr = false;
+    fake.send(&mut app, window, WindowEvent::Frame);
+    assert_eq!(extended(&app), (false, false));
+    assert_eq!(color(&app), Some(plain));
+    // Of a brightness of white's, the same cells: drawn again all the
+    // same, into the surface's new range.
+    let frames = |app: &App| {
+        let layer = &app.windows[&window].cursor_layer;
+        layer
+            .surface
+            .as_ref()
+            .unwrap()
+            .frames
+            .load(Ordering::Relaxed)
+    };
+    app.config.cursor.hdr = true;
+    app.config.cursor.hdr_brightness = 1.0.try_into().unwrap();
+    let before = frames(&app);
+    fake.send(&mut app, window, WindowEvent::Frame);
+    assert_eq!(extended(&app), (true, true));
+    assert_eq!(color(&app), Some(plain));
+    assert!(frames(&app) > before);
+}
+
+#[test]
 fn a_cursor_that_the_view_or_the_screen_moves_goes_at_once() {
     let mut config = unpadded();
     config.cursor.movement = cursor::Movement::Snappy;

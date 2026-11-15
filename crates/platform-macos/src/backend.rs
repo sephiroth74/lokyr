@@ -580,6 +580,12 @@ impl Platform for Backend {
         self.windows.get(&window).map(Window::refresh_interval)
     }
 
+    fn screen_headroom(&self, window: WindowId) -> f32 {
+        self.windows
+            .get(&window)
+            .map_or(1.0, Window::screen_headroom)
+    }
+
     fn window_handle(&self, window: WindowId) -> Option<WindowHandle<'_>> {
         let view = self.windows.get(&window)?.view_address();
         let raw = RawWindowHandle::AppKit(AppKitWindowHandle::new(view));

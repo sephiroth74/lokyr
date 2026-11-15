@@ -119,14 +119,14 @@ type MetalTexture = Retained<ProtocolObject<dyn MTLTexture>>;
 pub struct MetalRenderer {
     device: Retained<ProtocolObject<dyn MTLDevice>>,
     queue: Retained<ProtocolObject<dyn MTLCommandQueue>>,
-    solid: Pipeline,
-    background: Pipeline,
-    lines: Pipeline,
-    glyphs: Pipeline,
-    shapes: Pipeline,
-    /// The shapes' fills that take the place of what is under them.
-    knockouts: Pipeline,
-    pictures: Pipeline,
+    /// The shaders' library, of the pipelines made as they are first
+    /// needed.
+    library: Retained<ProtocolObject<dyn MTLLibrary>>,
+    /// The pipelines of the targets of 8 bits a component.
+    pipelines: Pipelines,
+    /// The pipelines of the targets of half floats, of extended dynamic
+    /// range, as a layer of an HDR cursor, made as one is first drawn.
+    wide: Option<Pipelines>,
     coverage: MetalTexture,
     color: MetalTexture,
     /// The pictures that it holds, by their ids, and the last id that it
@@ -180,22 +180,11 @@ impl MetalRenderer {
         let library = device
             .newLibraryWithData_error(&data)
             .map_err(|error| Error::Shaders(error.to_string()))?;
-        let pipeline = |vertex: &str, fragment: &str| {
-            make_pipeline(&device, &library, (vertex, fragment), Blend::Over)
-        };
+        let pipelines = Pipelines::new(&device, &library, MTLPixelFormat::BGRA8Unorm)?;
         Ok(Self {
-            solid: pipeline("rect_vertex", "solid_fragment")?,
-            background: pipeline("background_vertex", "solid_fragment")?,
-            lines: pipeline("line_vertex", "line_fragment")?,
-            glyphs: pipeline("glyph_vertex", "glyph_fragment")?,
-            shapes: pipeline("shape_vertex", "shape_fragment")?,
-            knockouts: make_pipeline(
-                &device,
-                &library,
-                ("shape_vertex", "shape_knockout_fragment"),
-                Blend::Knockout,
-            )?,
-            pictures: pipeline("picture_vertex", "picture_fragment")?,
+            library,
+            pipelines,
+            wide: None,
             coverage: make_texture(&device, Texture::Coverage, coverage)?,
             color: make_texture(&device, Texture::Color, color)?,
             held: HashMap::new(),
@@ -664,8 +653,23 @@ impl MetalRenderer {
         let encoder = buffer
             .renderCommandEncoderWithDescriptor(&pass)
             .ok_or(Error::Device("render command encoder"))?;
+        // The pipelines of the target's format, the wide ones made as a
+        // target of half floats first comes.
+        let wide = output.pixelFormat() == MTLPixelFormat::RGBA16Float;
+        if wide && self.wide.is_none() {
+            self.wide = Some(Pipelines::new(
+                &self.device,
+                &self.library,
+                MTLPixelFormat::RGBA16Float,
+            )?);
+        }
+        let pipelines = match (&self.wide, wide) {
+            (Some(pipelines), true) => pipelines,
+            _ => &self.pipelines,
+        };
         let mut frame = Frame {
             renderer: self,
+            pipelines,
             encoder: &encoder,
             viewport,
             clips: Vec::new(),
@@ -866,6 +870,8 @@ impl Arena {
 /// A frame being encoded.
 struct Frame<'a> {
     renderer: &'a MetalRenderer,
+    /// The pipelines of the target's format.
+    pipelines: &'a Pipelines,
     encoder: &'a ProtocolObject<dyn MTLRenderCommandEncoder>,
     viewport: [f32; 2],
     /// The clips in force, each within those before it; `None` for one that
@@ -942,7 +948,7 @@ impl Frame<'_> {
         let Some((buffer, offset)) = self.arena.borrow_mut().put(rects) else {
             return;
         };
-        self.encoder.setRenderPipelineState(&self.renderer.solid);
+        self.encoder.setRenderPipelineState(&self.pipelines.solid);
         // SAFETY: the buffers and bytes that the rectangles' shaders take, at
         // their indices.
         unsafe {
@@ -969,7 +975,8 @@ impl Frame<'_> {
             position: [rect.x as f32, rect.y as f32],
             size: [rect.width as f32, rect.height as f32],
         };
-        self.encoder.setRenderPipelineState(&self.renderer.pictures);
+        self.encoder
+            .setRenderPipelineState(&self.pipelines.pictures);
         // SAFETY: the bytes and the texture that the picture's shaders take,
         // at their indices.
         unsafe {
@@ -993,8 +1000,8 @@ impl Frame<'_> {
             return;
         };
         let pipeline = match blend {
-            Blend::Over => &self.renderer.shapes,
-            Blend::Knockout => &self.renderer.knockouts,
+            Blend::Over => &self.pipelines.shapes,
+            Blend::Knockout => &self.pipelines.knockouts,
         };
         self.encoder.setRenderPipelineState(pipeline);
         // SAFETY: the buffers and bytes that the shapes' shaders take, at
@@ -1017,7 +1024,7 @@ impl Frame<'_> {
         let Some((buffer, offset)) = self.arena.borrow_mut().put(lines) else {
             return;
         };
-        self.encoder.setRenderPipelineState(&self.renderer.lines);
+        self.encoder.setRenderPipelineState(&self.pipelines.lines);
         // SAFETY: the buffers and bytes that the lines' shaders take, at
         // their indices.
         unsafe {
@@ -1044,7 +1051,7 @@ impl Frame<'_> {
                 _padding: 0,
             };
             self.encoder
-                .setRenderPipelineState(&self.renderer.background);
+                .setRenderPipelineState(&self.pipelines.background);
             // SAFETY: the buffers and bytes that the backgrounds' shaders
             // take, at their indices.
             unsafe {
@@ -1139,7 +1146,7 @@ impl Frame<'_> {
         let Some((buffer, offset)) = self.arena.borrow_mut().put(glyphs) else {
             return;
         };
-        self.encoder.setRenderPipelineState(&self.renderer.glyphs);
+        self.encoder.setRenderPipelineState(&self.pipelines.glyphs);
         // SAFETY: the buffers, bytes and textures that the glyphs' shaders
         // take, at their indices.
         unsafe {
@@ -1329,11 +1336,47 @@ enum Blend {
     Knockout,
 }
 
+/// The pipelines of the shaders, of a target's pixel format.
+#[derive(Debug)]
+struct Pipelines {
+    solid: Pipeline,
+    background: Pipeline,
+    lines: Pipeline,
+    glyphs: Pipeline,
+    shapes: Pipeline,
+    /// The shapes' fills that take the place of what is under them.
+    knockouts: Pipeline,
+    pictures: Pipeline,
+}
+
+impl Pipelines {
+    /// The pipelines of `library`'s shaders on `device`, of targets of
+    /// `format`.
+    fn new(
+        device: &ProtocolObject<dyn MTLDevice>,
+        library: &ProtocolObject<dyn MTLLibrary>,
+        format: MTLPixelFormat,
+    ) -> Result<Self, Error> {
+        let pipeline = |vertex: &str, fragment: &str, blend: Blend| {
+            make_pipeline(device, library, (vertex, fragment), (blend, format))
+        };
+        Ok(Self {
+            solid: pipeline("rect_vertex", "solid_fragment", Blend::Over)?,
+            background: pipeline("background_vertex", "solid_fragment", Blend::Over)?,
+            lines: pipeline("line_vertex", "line_fragment", Blend::Over)?,
+            glyphs: pipeline("glyph_vertex", "glyph_fragment", Blend::Over)?,
+            shapes: pipeline("shape_vertex", "shape_fragment", Blend::Over)?,
+            knockouts: pipeline("shape_vertex", "shape_knockout_fragment", Blend::Knockout)?,
+            pictures: pipeline("picture_vertex", "picture_fragment", Blend::Over)?,
+        })
+    }
+}
+
 fn make_pipeline(
     device: &ProtocolObject<dyn MTLDevice>,
     library: &ProtocolObject<dyn MTLLibrary>,
     (vertex, fragment): (&str, &str),
-    blend: Blend,
+    (blend, format): (Blend, MTLPixelFormat),
 ) -> Result<Pipeline, Error> {
     let function = |name: &str| {
         library
@@ -1346,7 +1389,7 @@ fn make_pipeline(
     descriptor.setFragmentFunction(Some(&fragment));
     // SAFETY: a pipeline has a first color attachment.
     let attachment = unsafe { descriptor.colorAttachments().objectAtIndexedSubscript(0) };
-    attachment.setPixelFormat(MTLPixelFormat::BGRA8Unorm);
+    attachment.setPixelFormat(format);
     // Every fragment is premultiplied, and goes over what is under it: a
     // clear one leaves it as it is.
     attachment.setBlendingEnabled(true);
@@ -1396,6 +1439,7 @@ fn make_texture(
 mod tests {
     use lokyr_render_core::Surface as _;
     use lokyr_render_core::{Arc, CellCursor, CellGlyph, CellLine, LineStyle, PlacedGlyph, Shadow};
+    use objc2_core_graphics::{CGColorSpace, kCGColorSpaceExtendedSRGB};
     use objc2_quartz_core::CAMetalLayer;
 
     use super::*;
@@ -1851,6 +1895,34 @@ mod tests {
         );
         surface.set_presents_with_transaction(false);
         assert!(renderer.draw(&surface, &list()).unwrap());
+    }
+
+    #[test]
+    fn a_surface_of_extended_range_draws_of_its_own_pipelines_and_back() {
+        let Some((gpu, mut renderer)) = renderer() else {
+            return;
+        };
+        let layer = CAMetalLayer::new();
+        let surface = Surface::with_layer(&gpu, layer.clone());
+        surface.resize(64, 32, 1.0);
+        surface.set_extended(true);
+        assert_eq!(layer.pixelFormat(), MTLPixelFormat::RGBA16Float);
+        assert!(layer.wantsExtendedDynamicRangeContent());
+        let name = CGColorSpace::name(layer.colorspace().as_deref());
+        // SAFETY: the name is Core Graphics' constant.
+        assert_eq!(name.as_deref(), Some(unsafe { kCGColorSpaceExtendedSRGB }));
+        assert!(renderer.wide.is_none());
+        assert!(renderer.draw_untimed(&surface, &list()).unwrap());
+        assert!(renderer.wide.is_some());
+        // And back, of 8 bits in sRGB, of the first pipelines.
+        surface.set_extended(false);
+        assert_eq!(layer.pixelFormat(), MTLPixelFormat::BGRA8Unorm);
+        assert!(!layer.wantsExtendedDynamicRangeContent());
+        assert!(renderer.draw_untimed(&surface, &list()).unwrap());
+        for drawing in &renderer.drawing {
+            drawing.commands.waitUntilCompleted();
+            assert!(drawing.commands.error().is_none());
+        }
     }
 
     #[test]

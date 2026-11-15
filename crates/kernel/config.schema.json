@@ -405,6 +405,27 @@
           "x-guide": "Whether a band across the cursor's row shows where the cursor is, the cursor guide, under the text.\n\n| Values | Default |\n|---|---|\n| `true`, `false` | `false` |\n\n- Its color is the theme's `cursor.guide`, as [the authors' guide](themes/authoring.md) tells, of an `.itermcolors` file's Cursor Guide Color too, else the text's color at 10%.\n- View › Show Cursor Guide turns it on and off in every window until the config's value changes, as its command, `window.toggle-cursor-guide`, bound to ⌥⌘; by default.\n- It shows in the pane that has the keyboard, while the cursor shows; a program that hides its cursor, as a full-screen one may, hides the band too.\n- It applies at once, as you save the file.",
           "x-example": "true",
           "x-example-comment": "true | false: a band across the cursor's row"
+        },
+        "hdr": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether the cursor shows brighter than white, on a display of extended dynamic range, as the MacBook Pro's.",
+          "x-platforms": ["macos"],
+          "x-guide": "Whether the cursor shows brighter than white, on a display of extended dynamic range, as the MacBook Pro's.\n\n| Values | Default |\n|---|---|\n| `true`, `false` | `false` |\n\n- Its brightness is [`hdr-brightness`](#hdr-brightness)'s, its color the cursor's own.\n- On a display of no extended dynamic range, as most external ones, the cursor stays as it is.\n- A display that shows brighter than white raises its backlight, and dims the rest of the screen to match, for as long as the cursor shows: it takes more power, as an HDR video does, which a laptop's battery feels. That is why it is off by default.\n- It applies at once, as you save the file.",
+          "x-example": "true",
+          "x-example-comment": "true | false: a cursor brighter than white, on an XDR display"
+        },
+        "hdr-brightness": {
+          "type": "number",
+          "default": 2,
+          "minimum": 1,
+          "maximum": 4,
+          "x-step": 0.25,
+          "description": "How much brighter than white the cursor shows with hdr, as a multiple of white's light.",
+          "x-platforms": ["macos"],
+          "x-guide": "How much brighter than white the cursor shows with [`hdr`](#hdr), as a multiple of white's light.\n\n| Values | Default |\n|---|---|\n| from `1` to `4`, whole or not | `2` |\n\n- `1` is white's light; `4`, four times it, as far as the display's headroom goes, which the system narrows in bright light and on battery.\n- It applies at once, as you save the file.",
+          "x-example": "3.0",
+          "x-example-comment": "1 to 4: how much brighter than white, with hdr"
         }
       },
       "additionalProperties": false

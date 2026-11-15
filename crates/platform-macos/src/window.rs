@@ -273,6 +273,17 @@ impl Window {
         std::time::Duration::from_secs(1) / u32::try_from(rate.max(1)).unwrap_or(60)
     }
 
+    /// How far past white its screen can show colors, at its most: the
+    /// screen's potential headroom of extended dynamic range, 1 of none.
+    pub(crate) fn screen_headroom(&self) -> f32 {
+        self.ns_window
+            .screen()
+            .or_else(|| NSScreen::mainScreen(self.ns_window.mtm()))
+            .map_or(1.0, |screen| {
+                screen.maximumPotentialExtendedDynamicRangeColorComponentValue() as f32
+            })
+    }
+
     /// Places the window down and to the right of a window of the frame
     /// `after`, as the system cascades windows, within the screen; or in the
     /// screen's centre.

@@ -436,6 +436,14 @@ pub trait Platform {
     /// How the system shows its scroll bars, as its settings say now.
     fn scrollers(&self) -> Scrollers;
 
+    /// How far past white the screen of `window` can show colors, as a
+    /// multiple of white: 1 of a display of no extended dynamic range, more
+    /// of one that has it, as macOS's XDR displays.
+    fn screen_headroom(&self, window: WindowId) -> f32 {
+        let _ = window;
+        1.0
+    }
+
     /// Whether the system started the app of its own, as from its icon, a
     /// command, a shell or a service: not to open files, folders or links,
     /// whose events come before the start, which the platform hands the

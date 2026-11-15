@@ -881,6 +881,7 @@ impl<B: Backend> App<B> {
         let opacity = self.config.window.background_opacity.value();
         let chrome_look = (chrome_dark, background, foreground, opacity);
         let reduced = platform.reduce_motion();
+        let headroom = platform.screen_headroom(window);
         // The padding at the cells' left that the gutter takes, if it shows.
         let gutter = self
             .config
@@ -1468,6 +1469,16 @@ impl<B: Backend> App<B> {
         // over the grid's cell, and blinks.
         let (left, top) = (f64::from(x), f64::from(y));
         let (width, height) = (f64::from(cell.width), f64::from(cell.height));
+        // An HDR cursor, past white, where the window's screen has the
+        // headroom: its layer of extended range, its color brighter.
+        let hdr = (config.hdr && headroom > 1.0).then(|| config.hdr_brightness.encoded());
+        state.cursor_layer.extend(hdr.is_some());
+        let cursor_cells = cursor_cells.map(|(column, row, mut cells)| {
+            if let (Some(factor), Some(cursor)) = (hdr, cells.cursor.as_mut()) {
+                cursor.color = brighter(cursor.color, factor);
+            }
+            (column, row, cells)
+        });
         let cursor_shown = cursor_cells.map(|(column, row, cells)| {
             let at = (
                 left + f64::from(column) * width,
@@ -2319,6 +2330,18 @@ fn show_layer<B: Backend>(
         };
         platform.place_layer(window, layer, sent.as_ref());
         state.place = place;
+    }
+}
+
+/// `color` of its components, encoded as sRGB's are, times `factor`, past
+/// white beyond 1, as a surface of extended range shows them; its opacity
+/// as it is.
+fn brighter(color: Color, factor: f32) -> Color {
+    Color {
+        red: color.red * factor,
+        green: color.green * factor,
+        blue: color.blue * factor,
+        alpha: color.alpha,
     }
 }
 

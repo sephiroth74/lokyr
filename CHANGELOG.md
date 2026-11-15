@@ -10,6 +10,7 @@ from 1.0.0; before it, a minor version may change what a previous one did.
 
 ### Added
 
+- An HDR cursor, brighter than white on a display of extended dynamic range, as the MacBook Pro's: `[cursor] hdr` and `hdr-brightness`, from 1 to 4 times white; off by default, as the display then takes more power while the cursor shows.
 - The cursor guide, a band across the cursor's row under the text, as iTerm2's: View › Show Cursor Guide, ⌥⌘;, or `[cursor] guide`; its color the theme's `cursor.guide`, or an `.itermcolors` file's Cursor Guide Color.
 - `[text] faint-opacity`, from 0.1 to 1, 0.5 by default, the opacity of the dim text that programs write over its background, its underlines too.
 - A theme's color can be an expression of other colors, as `accent / 40%`, `mix(background, foreground, 8%)` or `contrasting(list.selection.bg)`, which follows them as they change, as the authors' guide tells.

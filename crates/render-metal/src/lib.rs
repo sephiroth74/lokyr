@@ -15,7 +15,7 @@ use objc2::msg_send;
 use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, ProtocolObject};
 use objc2_core_foundation::CGSize;
-use objc2_core_graphics::{CGColorSpace, kCGColorSpaceSRGB};
+use objc2_core_graphics::{CGColorSpace, kCGColorSpaceExtendedSRGB, kCGColorSpaceSRGB};
 use objc2_metal::{
     MTLCommandBuffer, MTLCommandEncoder, MTLCommandQueue, MTLCreateSystemDefaultDevice, MTLDevice,
     MTLLoadAction, MTLPixelFormat, MTLRenderPassDescriptor, MTLStoreAction,
@@ -116,6 +116,27 @@ impl lokyr_render_core::Surface for Surface {
     /// drawable is in use for a second.
     fn clear(&self, color: Color) -> Result<bool, Error> {
         Ok(self.encode_clear(color)?.is_some())
+    }
+
+    /// Has the drawables to come be of half floats in extended sRGB, of
+    /// extended dynamic range, whose components past 1 show brighter than
+    /// white as far as the display's headroom goes, or BGRA of 8 bits in
+    /// sRGB again. The colors stay encoded as sRGB's, as the shaders give
+    /// them.
+    fn set_extended(&self, extended: bool) {
+        let (format, name) = if extended {
+            // SAFETY: the name is Core Graphics' constant.
+            (MTLPixelFormat::RGBA16Float, unsafe {
+                kCGColorSpaceExtendedSRGB
+            })
+        } else {
+            // SAFETY: the name is Core Graphics' constant.
+            (MTLPixelFormat::BGRA8Unorm, unsafe { kCGColorSpaceSRGB })
+        };
+        self.layer.setPixelFormat(format);
+        self.layer
+            .setColorspace(CGColorSpace::with_name(Some(name)).as_deref());
+        self.layer.setWantsExtendedDynamicRangeContent(extended);
     }
 }
 

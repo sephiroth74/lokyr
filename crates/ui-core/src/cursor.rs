@@ -74,6 +74,59 @@ pub struct CursorConfig {
     /// Whether a band across its row shows where it is, the cursor guide,
     /// of the theme's token `cursor.guide`.
     pub guide: bool,
+    /// Whether it shows brighter than white, of extended dynamic range,
+    /// where its window's screen has the headroom.
+    pub hdr: bool,
+    /// How much brighter than white, as a multiple of it in light, with
+    /// `hdr`.
+    pub hdr_brightness: Brightness,
+}
+
+/// How much brighter than white an HDR cursor shows, as a multiple of white
+/// in light, from 1 to 4.
+#[derive(Clone, Copy, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(try_from = "f64", into = "f64")]
+pub struct Brightness(f32);
+
+impl From<Brightness> for f64 {
+    fn from(brightness: Brightness) -> Self {
+        lokyr_text_core::as_written(brightness.0)
+    }
+}
+
+impl Brightness {
+    /// The multiple of white in light, from 1 to 4.
+    pub fn value(self) -> f32 {
+        self.0
+    }
+
+    /// The factor of a color's components, encoded as sRGB's are, that
+    /// makes it this multiple of its light: past white beyond 1, as a
+    /// display of extended dynamic range shows them.
+    pub fn encoded(self) -> f32 {
+        self.0.powf(1.0 / 2.2)
+    }
+}
+
+impl Default for Brightness {
+    fn default() -> Self {
+        Self(2.0)
+    }
+}
+
+impl TryFrom<f64> for Brightness {
+    type Error = String;
+
+    fn try_from(brightness: f64) -> Result<Self, Self::Error> {
+        if (1.0..=4.0).contains(&brightness) {
+            // Within the range, the value fits an `f32`.
+            Ok(Self(brightness as f32))
+        } else {
+            Err(format!(
+                "an HDR cursor's brightness is from 1 to 4 times white, not {brightness}"
+            ))
+        }
+    }
 }
 
 impl Default for CursorConfig {
@@ -95,6 +148,8 @@ impl Default for CursorConfig {
             hidden: Span(breathing.hidden),
             movement: Movement::Instant,
             guide: false,
+            hdr: false,
+            hdr_brightness: Brightness::default(),
         }
     }
 }

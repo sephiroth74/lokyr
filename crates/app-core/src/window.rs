@@ -95,6 +95,9 @@ pub(crate) struct WindowLayer<B: Backend> {
     /// The cells that it shows, at what scale, and of which of the
     /// drawing's fonts, which a frame draws again only as they change.
     pub(crate) drawn: Option<(CellBatch, f64, u64)>,
+    /// Whether its surface takes colors past white, of extended dynamic
+    /// range.
+    pub(crate) extended: bool,
 }
 
 impl<B: Backend> WindowLayer<B> {
@@ -103,7 +106,21 @@ impl<B: Backend> WindowLayer<B> {
             surface,
             place: None,
             drawn: None,
+            extended: false,
         }
+    }
+
+    /// Has its surface take colors past white, or not, as `extended` says,
+    /// drawing its cells again as it changes.
+    pub(crate) fn extend(&mut self, extended: bool) {
+        if self.extended == extended {
+            return;
+        }
+        if let Some(surface) = &self.surface {
+            surface.set_extended(extended);
+        }
+        self.extended = extended;
+        self.drawn = None;
     }
 
     /// Lets the layer's drawables go, all of them, as a frame of a pixel

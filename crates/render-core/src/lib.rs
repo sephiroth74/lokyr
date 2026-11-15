@@ -612,6 +612,13 @@ pub trait Surface {
 
     /// Draws a frame of one color, and presents it. Returns whether it did.
     fn clear(&self, color: Color) -> Result<bool, Self::Error>;
+
+    /// Has the frames to come take colors past white, as far as the
+    /// display's headroom goes, of half floats in extended sRGB, or of 8
+    /// bits in sRGB again; nothing, for a surface that has no such range.
+    fn set_extended(&self, extended: bool) {
+        let _ = extended;
+    }
 }
 
 #[cfg(test)]

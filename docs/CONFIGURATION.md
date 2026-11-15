@@ -84,6 +84,8 @@ visible = 700                        # ms held visible, from 0 to 10000
 hidden = 200                         # ms held hidden
 movement = "snappy"                  # instant | snappy: how it moves to a new cell
 guide = true                         # true | false: a band across the cursor's row
+hdr = true                           # true | false: a cursor brighter than white, on an XDR display
+hdr-brightness = 3.0                 # 1 to 4: how much brighter than white, with hdr
 
 [window]
 columns = 120                        # a new window's size, in cells, from 1 to 1000
@@ -642,6 +644,34 @@ Whether a band across the cursor's row shows where the cursor is, the cursor gui
 - Its color is the theme's `cursor.guide`, as [the authors' guide](themes/authoring.md) tells, of an `.itermcolors` file's Cursor Guide Color too, else the text's color at 10%.
 - View › Show Cursor Guide turns it on and off in every window until the config's value changes, as its command, `window.toggle-cursor-guide`, bound to ⌥⌘; by default.
 - It shows in the pane that has the keyboard, while the cursor shows; a program that hides its cursor, as a full-screen one may, hides the band too.
+- It applies at once, as you save the file.
+
+### `hdr`
+
+<sub>Platforms: macOS</sub>
+
+Whether the cursor shows brighter than white, on a display of extended dynamic range, as the MacBook Pro's.
+
+| Values | Default |
+|---|---|
+| `true`, `false` | `false` |
+
+- Its brightness is [`hdr-brightness`](#hdr-brightness)'s, its color the cursor's own.
+- On a display of no extended dynamic range, as most external ones, the cursor stays as it is.
+- A display that shows brighter than white raises its backlight, and dims the rest of the screen to match, for as long as the cursor shows: it takes more power, as an HDR video does, which a laptop's battery feels. That is why it is off by default.
+- It applies at once, as you save the file.
+
+### `hdr-brightness`
+
+<sub>Platforms: macOS</sub>
+
+How much brighter than white the cursor shows with [`hdr`](#hdr), as a multiple of white's light.
+
+| Values | Default |
+|---|---|
+| from `1` to `4`, whole or not | `2` |
+
+- `1` is white's light; `4`, four times it, as far as the display's headroom goes, which the system narrows in bright light and on battery.
 - It applies at once, as you save the file.
 
 ## `[window]`

@@ -188,6 +188,9 @@ pub struct Fake {
     keyboard_navigation: bool,
     /// Whether the system reduces motion.
     reduce_motion: bool,
+    /// The screens' headroom past white, as [`Fake::set_screen_headroom`]
+    /// sets it.
+    screen_headroom: f32,
     scrollers: Scrollers,
     /// Whether the system's settings have an app's windows open again.
     keeps_windows: bool,
@@ -320,6 +323,7 @@ impl Fake {
             own_appearance: None,
             keyboard_navigation: false,
             reduce_motion: false,
+            screen_headroom: 1.0,
             scrollers: Scrollers::default(),
             keeps_windows: false,
             default_launch: true,
@@ -385,6 +389,12 @@ impl Fake {
     /// Turns the system's keyboard navigation, of every control, on or off.
     pub fn set_keyboard_navigation(&mut self, on: bool) {
         self.keyboard_navigation = on;
+    }
+
+    /// Has every window's screen show colors as far as `headroom` times
+    /// white.
+    pub fn set_screen_headroom(&mut self, headroom: f32) {
+        self.screen_headroom = headroom;
     }
 
     /// Turns the system's reduced motion on or off.
@@ -930,6 +940,10 @@ impl Platform for Fake {
 
     fn reduce_motion(&self) -> bool {
         self.reduce_motion
+    }
+
+    fn screen_headroom(&self, _window: WindowId) -> f32 {
+        self.screen_headroom
     }
 
     fn scrollers(&self) -> Scrollers {

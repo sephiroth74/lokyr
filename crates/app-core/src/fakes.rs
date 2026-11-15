@@ -112,10 +112,12 @@ impl lokyr_render_core::Renderer for Renderer {
     }
 }
 
-/// A surface that shows nothing, and counts the frames drawn into it.
+/// A surface that shows nothing, and counts the frames drawn into it, and
+/// whether it takes colors past white.
 #[derive(Debug, Default)]
 pub(crate) struct Surface {
     pub(crate) frames: AtomicUsize,
+    pub(crate) extended: std::sync::atomic::AtomicBool,
 }
 
 impl lokyr_render_core::Surface for Surface {
@@ -129,6 +131,10 @@ impl lokyr_render_core::Surface for Surface {
 
     fn clear(&self, _color: Color) -> Result<bool, String> {
         Ok(true)
+    }
+
+    fn set_extended(&self, extended: bool) {
+        self.extended.store(extended, Ordering::Relaxed);
     }
 }
 
