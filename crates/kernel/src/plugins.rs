@@ -19,9 +19,11 @@
 //! [`Plugins::serve`], never waiting for them.
 
 use std::any::Any;
+use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::panic::{self, AssertUnwindSafe};
 use std::path::PathBuf;
+use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc;
@@ -509,6 +511,9 @@ struct State {
     menu_items: Vec<host::MenuItem>,
     /// Its catalogs, of its commands' titles and its messages.
     catalogs: lokyr_plugin_sdk::plugin::Catalogs,
+    /// Its catalogs' texts in the last language that they were asked in,
+    /// parsed once of it, as each title and message asks them.
+    texts: RefCell<Option<(String, Rc<Texts>)>>,
     /// The last tree of each of its views that it rendered, `None` for a
     /// view that shows nothing, which stays as it is disabled, with the
     /// render's number, which no other render took.
@@ -1526,6 +1531,7 @@ impl Plugins {
                 global_bindings: Vec::new(),
                 menu_items: Vec::new(),
                 catalogs,
+                texts: RefCell::new(None),
                 views: BTreeMap::new(),
                 panels: BTreeMap::new(),
                 decorations: BTreeMap::new(),
@@ -2043,7 +2049,7 @@ impl Plugins {
     pub fn commands_in(&self, language: &str) -> Vec<(Command, String, bool)> {
         let mut commands = Vec::new();
         for state in self.active() {
-            let texts = Texts::new(language, &pairs(&state.catalogs));
+            let texts = texts_of(state, language);
             commands.extend(state.commands.iter().map(|command| {
                 let titled = Command {
                     title: texts
@@ -2060,7 +2066,7 @@ impl Plugins {
             let Some(manifest) = state.manifest.as_ref().filter(|_| state.waits()) else {
                 continue;
             };
-            let texts = Texts::new(language, &pairs(&state.catalogs));
+            let texts = texts_of(state, language);
             let capabilities: Vec<Capability> = manifest
                 .capabilities
                 .iter()
@@ -2091,7 +2097,7 @@ impl Plugins {
     pub fn menu_items_in(&self, language: &str) -> Vec<MenuEntry> {
         let mut items = Vec::new();
         for state in self.active() {
-            let texts = Texts::new(language, &pairs(&state.catalogs));
+            let texts = texts_of(state, language);
             items.extend(state.menu_items.iter().map(|item| {
                 MenuEntry {
                     plugin: state.name.clone(),
@@ -2224,7 +2230,7 @@ impl Plugins {
         self.entries
             .iter()
             .find(|entry| entry.state.name == plugin)
-            .and_then(|entry| Texts::new(language, &pairs(&entry.state.catalogs)).get(text))
+            .and_then(|entry| texts_of(&entry.state, language).get(text))
             .unwrap_or_else(|| text.to_owned())
     }
 
@@ -2456,7 +2462,7 @@ impl Plugins {
             .filter(|state| state.status != Status::Off)
             .filter_map(|state| Some((state, state.manifest.as_ref()?)))
             .flat_map(|(state, manifest)| {
-                let texts = Texts::new(language, &pairs(&state.catalogs));
+                let texts = texts_of(state, language);
                 manifest.contributes.pages.iter().map(move |page| PageInfo {
                     plugin: state.name.clone(),
                     id: page.id.clone(),
@@ -4560,6 +4566,21 @@ fn text_style(style: &Style) -> host::TextStyle {
 
 /// The pairs of `catalogs`, each its language and its source, as the texts
 /// read them.
+/// The texts of the catalogs of the plugin of `state` in `language`, parsed
+/// once a language and kept, a language other than the last one's parsed
+/// anew.
+fn texts_of(state: &State, language: &str) -> Rc<Texts> {
+    let mut kept = state.texts.borrow_mut();
+    if let Some((of, texts)) = kept.as_ref()
+        && of == language
+    {
+        return Rc::clone(texts);
+    }
+    let texts = Rc::new(Texts::new(language, &pairs(&state.catalogs)));
+    *kept = Some((language.to_owned(), Rc::clone(&texts)));
+    texts
+}
+
 fn pairs(catalogs: &lokyr_plugin_sdk::plugin::Catalogs) -> Vec<(&str, &str)> {
     catalogs
         .iter()
@@ -5382,10 +5403,7 @@ impl Host<'_, '_> {
                         Some((name.as_str(), arg))
                     })
                     .collect();
-                Response::Text(
-                    Texts::new(self.context.language, &pairs(&self.state.catalogs))
-                        .get_with(&id, &args),
-                )
+                Response::Text(texts_of(self.state, self.context.language).get_with(&id, &args))
             }
             Asked::TabBarPlace => Response::TabBarPlace(self.state.bar_place),
             Asked::Windows => {

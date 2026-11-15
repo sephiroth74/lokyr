@@ -8,6 +8,10 @@ from 1.0.0; before it, a minor version may change what a previous one did.
 
 ## [Unreleased]
 
+### Changed
+
+- The settings window's pages draw anew faster, the Keys part above all, as the plugins' texts are read once a language rather than at each title and message; Lokyr starts a little sooner too.
+
 ## [1.1.0] - 2026-11-14
 
 ### Added

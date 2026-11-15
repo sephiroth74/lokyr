@@ -758,6 +758,48 @@ fn a_plugin_s_messages_are_of_its_catalogs_in_the_language_shown() {
 }
 
 #[test]
+fn a_plugin_s_catalogs_are_parsed_once_a_language_for_its_titles_and_messages() {
+    let heard = std::rc::Rc::default();
+    let mut app = App {
+        language: Some("it"),
+        ..App::default()
+    };
+    let mut plugins = Plugins::new();
+    plugins
+        .add("speaker", Box::new(Speaker(std::rc::Rc::clone(&heard))))
+        .unwrap();
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    let kept = |plugins: &Plugins| {
+        let state = &plugins.entries[0].state;
+        state
+            .texts
+            .borrow()
+            .as_ref()
+            .map(|(language, texts)| (language.clone(), Rc::clone(texts)))
+    };
+    // The commands' titles, a message and a question's text, of the texts
+    // that the first parsed, kept.
+    let _ = plugins.commands_in("it");
+    let (language, first) = kept(&plugins).expect("kept");
+    assert_eq!(language, "it");
+    plugins
+        .run("speaker.say", Args::new(), &mut app.context())
+        .unwrap();
+    assert_eq!(heard.take(), ["Nuovo tab", "Tab 2", "tab-missing"]);
+    assert_eq!(plugins.text_of("speaker", "it", "tab-new"), "Nuovo tab");
+    let _ = plugins.menu_items_in("it");
+    assert!(
+        Rc::ptr_eq(&kept(&plugins).unwrap().1, &first),
+        "parsed once"
+    );
+    // Another language, parsed anew, of its own texts.
+    assert_eq!(plugins.text_of("speaker", "en", "tab-new"), "New Tab");
+    let (language, other) = kept(&plugins).unwrap();
+    assert_eq!(language, "en");
+    assert!(!Rc::ptr_eq(&other, &first));
+}
+
+#[test]
 fn a_plugin_whose_activation_fails_or_panics_is_disabled() {
     let mut app = App::default();
     let mut plugins = Plugins::new();
@@ -2080,6 +2122,7 @@ fn a_call_is_its_own_plugin_s() {
             global_bindings: Vec::new(),
             menu_items: Vec::new(),
             catalogs: Vec::new(),
+            texts: RefCell::new(None),
             views: BTreeMap::new(),
             panels: BTreeMap::new(),
             decorations: BTreeMap::new(),
