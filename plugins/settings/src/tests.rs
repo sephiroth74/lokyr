@@ -1904,6 +1904,71 @@ fn the_page_shown_again_shows_no_search_nor_refusal_as_its_fields_are_empty() {
     );
 }
 
+/// A text typed into the Keys part's filter.
+fn filter(text: &str) -> UiEvent {
+    on(
+        "keys-filter",
+        UiEventKind::InputChanged {
+            text: text.to_owned(),
+            revision: 1,
+        },
+    )
+}
+
+#[test]
+fn the_keys_part_s_filter_shows_the_bindings_of_its_words_and_keeps_them_as_the_part_shows_again() {
+    let (mut host, mut plugin) = keyed_host();
+    let tree = rendered(&mut host, &mut plugin);
+    // Beside Add, of no button that empties it while it is empty.
+    assert!(find_node(&tree, "keys-filter").is_some());
+    assert!(find_node(&tree, "add-binding").is_some());
+    assert!(find_node(&tree, "keys-filter-clear").is_none());
+    // A command's title, keys as macOS writes them and as the config does,
+    // and a context.
+    for (words, shown) in [
+        ("clear", CLEAR),
+        ("⌘K", CLEAR),
+        ("cmd+k", CLEAR),
+        ("copy-mode.open", DOWN),
+    ] {
+        host.ui_event(&mut plugin, &filter(words)).unwrap();
+        let tree = rendered(&mut host, &mut plugin);
+        assert!(keys_of(&tree, shown).is_some(), "{words}");
+        let others: Vec<usize> = [CLEAR, DOWN, QUIT, REOPEN]
+            .into_iter()
+            .filter(|&at| at != shown && keys_of(&tree, at).is_some())
+            .collect();
+        assert!(others.is_empty(), "{words}: {others:?}");
+        assert!(find_node(&tree, "keys-filter-clear").is_some());
+    }
+    // Words of no binding: said so.
+    host.ui_event(&mut plugin, &filter("nothing at all"))
+        .unwrap();
+    let tree = rendered(&mut host, &mut plugin);
+    assert!(text_of(&tree, "keys-no-match").is_some());
+    // Another part and back: the filter stays.
+    host.ui_event(&mut plugin, &filter("clear")).unwrap();
+    host.ui_event(&mut plugin, &choose(0)).unwrap();
+    host.ui_event(&mut plugin, &choose(BINDINGS)).unwrap();
+    let tree = rendered(&mut host, &mut plugin);
+    assert!(keys_of(&tree, CLEAR).is_some());
+    assert!(keys_of(&tree, QUIT).is_none());
+    // Its button empties it, every binding back.
+    host.ui_event(&mut plugin, &on("keys-filter-clear", UiEventKind::Click))
+        .unwrap();
+    let tree = rendered(&mut host, &mut plugin);
+    assert!(keys_of(&tree, QUIT).is_some() && keys_of(&tree, CLEAR).is_some());
+    // The page shown anew, of an empty field, filters nothing.
+    host.ui_event(&mut plugin, &filter("clear")).unwrap();
+    host.hide_page();
+    host.deliver(&mut plugin).unwrap();
+    host.show_page(PAGE);
+    host.deliver(&mut plugin).unwrap();
+    host.ui_event(&mut plugin, &choose(BINDINGS)).unwrap();
+    let tree = rendered(&mut host, &mut plugin);
+    assert!(keys_of(&tree, QUIT).is_some());
+}
+
 #[test]
 fn a_search_finds_the_bindings_of_their_keys_and_commands() {
     let (mut host, mut plugin) = host();

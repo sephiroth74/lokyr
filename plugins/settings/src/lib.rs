@@ -153,6 +153,12 @@ const SEARCH: &str = "search";
 /// The key of the search field's button that empties it.
 const SEARCH_CLEAR: &str = "search-clear";
 
+/// The key of the Keys part's field that filters its bindings.
+const KEYS_FILTER: &str = "keys-filter";
+
+/// The key of the Keys part's filter's button that empties it.
+const KEYS_FILTER_CLEAR: &str = "keys-filter-clear";
+
 /// The side of the search field's magnifying glass and of its button, in
 /// points.
 const IN_SEARCH: f32 = 18.0;
@@ -188,6 +194,9 @@ pub struct SettingsPage {
     shown: bool,
     chosen: usize,
     query: String,
+    /// The words of the Keys part's filter, which it keeps as it shows
+    /// again, and the page as it shows anew does not.
+    keys_filter: String,
     refused: BTreeMap<String, String>,
     /// The binding whose keys change, by its place among the settings'
     /// bindings, whose field records them.
@@ -297,6 +306,7 @@ impl Plugin for SettingsPage {
                     self.shown = true;
                     self.chosen = 0;
                     self.query.clear();
+                    self.keys_filter.clear();
                     self.editing = None;
                     self.confirming = None;
                     self.typed.clear();
@@ -401,6 +411,19 @@ impl Plugin for SettingsPage {
             (UiEventKind::Click, SEARCH_CLEAR) => {
                 cx.set_text(page(), SEARCH, "", u64::MAX)?;
                 return self.search(cx, "");
+            }
+            // The Keys part's filter, of its bindings alone.
+            (UiEventKind::InputChanged { text, .. }, KEYS_FILTER) => {
+                if *text != self.keys_filter {
+                    text.clone_into(&mut self.keys_filter);
+                    return self.render_page(cx);
+                }
+                return Ok(());
+            }
+            (UiEventKind::Click, KEYS_FILTER_CLEAR) => {
+                cx.set_text(page(), KEYS_FILTER, "", u64::MAX)?;
+                self.keys_filter.clear();
+                return self.render_page(cx);
             }
             _ => {}
         }
@@ -626,7 +649,7 @@ impl Plugin for SettingsPage {
             cx,
             &settings,
             (self.chosen, self.editing),
-            &words(&self.query),
+            (&words(&self.query), &words(&self.keys_filter)),
             (&self.refused, &self.typed),
         ))
     }
@@ -1361,7 +1384,7 @@ fn tree(
     cx: &mut Cx<'_>,
     settings: &Settings,
     (chosen, editing): (usize, Option<usize>),
-    words: &[String],
+    (words, filter): (&[String], &[String]),
     (refused, typed): (&BTreeMap<String, String>, &BTreeMap<String, Typed>),
 ) -> Node {
     let shown = shown_parts(cx, settings, words);
@@ -1371,7 +1394,7 @@ fn tree(
         .filter(|_| shown.contains(&chosen));
     let mut part = match chosen_part {
         Some(Part::Section(section)) => section_part(cx, section, words, (refused, typed)),
-        Some(Part::Keys) => keys_part(cx, &settings.keys, words, editing, refused),
+        Some(Part::Keys) => keys_part(cx, &settings.keys, (words, filter), editing, refused),
         None if !words.is_empty() => vec![
             Node::text(message(cx, "settings-no-match", &[]))
                 .key("no-match")
@@ -1509,84 +1532,21 @@ fn sidebar(cx: &mut Cx<'_>, settings: &Settings, shown: &[usize], words: &[Strin
         list.row_height = Some(ROW);
         list.menu = true;
     }
-    // The search at the sidebar's top, as macOS's search field: a box of
-    // its magnifying glass, its text, of no box of its own, and, while it
-    // holds words, a button at its end that empties it, the ring of its
-    // text's focus round the whole box.
-    let side = || Layout {
-        width: Length::Points(IN_SEARCH),
-        min_width: Length::Points(IN_SEARCH),
-        height: Length::Points(IN_SEARCH),
-        justify: Justify::Center,
+    // The search at the sidebar's top, as macOS's search field.
+    let search = search_box(
+        cx,
+        (SEARCH, SEARCH_CLEAR, "search-row"),
+        ("settings-search", "settings-search-clear"),
+        !words.is_empty(),
+    )
+    .layout(Layout {
+        direction: Direction::Row,
+        gap: 2.0,
+        padding: Edges::all(2.0),
         align: Align::Center,
+        width: Length::Fraction(1.0),
         ..Layout::default()
-    };
-    let mut search = vec![
-        Node::icon("search").layout(side()).style(Style {
-            color: Some(Token::from("text.secondary")),
-            ..Style::default()
-        }),
-        Node::field(message(cx, "settings-search", &[]))
-            .key(SEARCH)
-            .label(message(cx, "settings-search", &[]))
-            .style(Style {
-                background: Some(Token::from("transparent")),
-                ..field_text()
-            })
-            .layout(Layout {
-                grow: 1.0,
-                width: Length::Points(0.0),
-                min_width: Length::Points(0.0),
-                ..Layout::default()
-            }),
-    ];
-    if !words.is_empty() {
-        let clear = message(cx, "settings-search-clear", &[]);
-        search.push(
-            Node::icon_button("close")
-                .key(SEARCH_CLEAR)
-                .label(clear.as_str())
-                .tooltip(clear)
-                .layout(side())
-                .style(Style {
-                    background: Some(Token::from("transparent")),
-                    color: Some(Token::from("text.secondary")),
-                    radius: 4.0,
-                    // The arrow, over the field's I-beam around it.
-                    pointer: Some(PointerShape::Arrow),
-                    hover: Some(Hover {
-                        background: Some(Token::from("button.hover.bg")),
-                        ..Hover::default()
-                    }),
-                    pressed: Some(Hover {
-                        background: Some(Token::from("button.pressed.bg")),
-                        ..Hover::default()
-                    }),
-                    ..Style::default()
-                }),
-        );
-    }
-    let search = Node::container(search)
-        .key("search-row")
-        .layout(Layout {
-            direction: Direction::Row,
-            gap: 2.0,
-            padding: Edges::all(2.0),
-            align: Align::Center,
-            width: Length::Fraction(1.0),
-            ..Layout::default()
-        })
-        .style(Style {
-            background: Some(Token::from("field.bg")),
-            border: Some(Border {
-                color: Token::from("field.border"),
-                width: 1.0,
-            }),
-            radius: 6.0,
-            holds_ring: true,
-            pointer: Some(PointerShape::Text),
-            ..Style::default()
-        });
+    });
     Node::container(vec![search, list])
         .key("sidebar")
         .role(Role::Group)
@@ -2032,6 +1992,83 @@ fn menu_button(cx: &mut Cx<'_>, key: &SettingKey) -> Node {
     button
 }
 
+/// A search field as macOS's: a box of its magnifying glass, its text, of
+/// no box of its own, and, while it holds words, `filled`, a button at its
+/// end that empties it, the ring of its text's focus round the whole box;
+/// of the keys `field`, `clear` and `row`, and the messages of its
+/// placeholder and of its button, `placeholder` and `clear_label`.
+fn search_box(
+    cx: &mut Cx<'_>,
+    (field, clear, row): (&str, &str, &str),
+    (placeholder, clear_label): (&str, &str),
+    filled: bool,
+) -> Node {
+    let side = || Layout {
+        width: Length::Points(IN_SEARCH),
+        min_width: Length::Points(IN_SEARCH),
+        height: Length::Points(IN_SEARCH),
+        justify: Justify::Center,
+        align: Align::Center,
+        ..Layout::default()
+    };
+    let mut search = vec![
+        Node::icon("search").layout(side()).style(Style {
+            color: Some(Token::from("text.secondary")),
+            ..Style::default()
+        }),
+        Node::field(message(cx, placeholder, &[]))
+            .key(field)
+            .label(message(cx, placeholder, &[]))
+            .style(Style {
+                background: Some(Token::from("transparent")),
+                ..field_text()
+            })
+            .layout(Layout {
+                grow: 1.0,
+                width: Length::Points(0.0),
+                min_width: Length::Points(0.0),
+                ..Layout::default()
+            }),
+    ];
+    if filled {
+        let label = message(cx, clear_label, &[]);
+        search.push(
+            Node::icon_button("close")
+                .key(clear)
+                .label(label.as_str())
+                .tooltip(label)
+                .layout(side())
+                .style(Style {
+                    background: Some(Token::from("transparent")),
+                    color: Some(Token::from("text.secondary")),
+                    radius: 4.0,
+                    // The arrow, over the field's I-beam around it.
+                    pointer: Some(PointerShape::Arrow),
+                    hover: Some(Hover {
+                        background: Some(Token::from("button.hover.bg")),
+                        ..Hover::default()
+                    }),
+                    pressed: Some(Hover {
+                        background: Some(Token::from("button.pressed.bg")),
+                        ..Hover::default()
+                    }),
+                    ..Style::default()
+                }),
+        );
+    }
+    Node::container(search).key(row).style(Style {
+        background: Some(Token::from("field.bg")),
+        border: Some(Border {
+            color: Token::from("field.border"),
+            width: 1.0,
+        }),
+        radius: 6.0,
+        holds_ring: true,
+        pointer: Some(PointerShape::Text),
+        ..Style::default()
+    })
+}
+
 /// The part of the bindings of keys: every one in force, the defaults and
 /// the config's own, and the keys that the config takes away, of those
 /// that the search's `words` show, by their commands' categories, each of
@@ -2042,7 +2079,7 @@ fn menu_button(cx: &mut Cx<'_>, key: &SettingKey) -> Node {
 fn keys_part(
     cx: &mut Cx<'_>,
     bindings: &[SettingBinding],
-    words: &[String],
+    (words, filter): (&[String], &[String]),
     editing: Option<usize>,
     refused: &BTreeMap<String, String>,
 ) -> Vec<Node> {
@@ -2059,14 +2096,51 @@ fn keys_part(
             .key("description")
             .style(secondary())
             .layout(wrapped()),
-        add_row(cx, ADD_BINDING),
+        // The filter of the bindings, as the sidebar's search, beside Add.
+        Node::container(vec![
+            search_box(
+                cx,
+                (KEYS_FILTER, KEYS_FILTER_CLEAR, "keys-filter-row"),
+                ("keys-filter", "keys-filter-clear"),
+                !filter.is_empty(),
+            )
+            .layout(Layout {
+                direction: Direction::Row,
+                gap: 2.0,
+                padding: Edges::all(2.0),
+                align: Align::Center,
+                width: Length::Points(280.0),
+                min_width: Length::Points(0.0),
+                ..Layout::default()
+            }),
+            Node::button(message(cx, "binding-add", &[])).key(ADD_BINDING),
+        ])
+        .key(format!("{ADD_BINDING}-row").as_str())
+        .layout(Layout {
+            direction: Direction::Row,
+            justify: Justify::SpaceBetween,
+            align: Align::Center,
+            gap: 12.0,
+            width: Length::Fraction(1.0),
+            ..Layout::default()
+        }),
     ];
     let terminal = code();
     let shown: Vec<(usize, &SettingBinding)> = bindings
         .iter()
         .enumerate()
-        .filter(|(_, binding)| words.is_empty() || binding_holds(cx, binding, words))
+        .filter(|(_, binding)| {
+            (words.is_empty() || binding_holds(cx, binding, words))
+                && (filter.is_empty() || binding_holds(cx, binding, filter))
+        })
         .collect();
+    if shown.is_empty() && !filter.is_empty() {
+        part.push(
+            Node::text(message(cx, "keys-filter-none", &[]))
+                .key("keys-no-match")
+                .style(secondary()),
+        );
+    }
     for category in CATEGORIES {
         let mut of: Vec<(usize, &SettingBinding)> = shown
             .iter()
