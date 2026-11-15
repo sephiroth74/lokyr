@@ -48,7 +48,7 @@ const ACT: &str = "editor-act:";
 const ROW: &str = "editor-token:";
 
 /// The field of a color's value as its row is chosen, and its link that
-/// takes the value away, by the color's name.
+/// puts its value back, by the color's name.
 const VALUE: &str = "editor-value:";
 const RESET: &str = "editor-reset:";
 
@@ -116,6 +116,11 @@ pub(crate) struct Editor {
     /// Why a value written was refused, by the colors' names, under their
     /// fields.
     refused: BTreeMap<String, String>,
+    /// The values of each theme's colors as its file gave them as the
+    /// Editor first showed it, by the themes' names and the colors' names,
+    /// which Reset puts back: none of a color that the file left to its
+    /// rule or its default.
+    originals: BTreeMap<String, BTreeMap<String, Option<String>>>,
     /// The color that the color panel edits, of the theme shown.
     coloring: Option<String>,
     /// The timer of the color panel's rest, which writes its color.
@@ -150,6 +155,7 @@ impl Editor {
         self.picked = None;
         self.offered = None;
         self.tokens = cx.theme_tokens(None)?;
+        self.remember();
         if let Some(name) = theme {
             self.show_theme(cx, name)?;
         }
@@ -160,6 +166,7 @@ impl Editor {
     /// theme that it previews goes, the one in force back.
     pub(crate) fn hide(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
         self.stop_coloring(cx)?;
+        self.originals.clear();
         self.shown = false;
         if self.previewed.take().is_some() {
             cx.preview_theme(None)?;
@@ -251,8 +258,10 @@ impl Editor {
             // its new file.
             Event::Answered { id, text } if self.converting == Some(*id) => {
                 self.converting = None;
-                if text.is_some() && self.shown {
+                if let (Some(name), true) = (text, self.shown) {
+                    self.originals.remove(name);
                     self.tokens = cx.theme_tokens(self.previewed.as_deref())?;
+                    self.remember();
                     cx.request_render(themes_page())?;
                 }
                 Ok(true)
@@ -487,14 +496,51 @@ impl Editor {
         cx.request_render(themes_page())
     }
 
-    /// Takes the color `name` away of the theme shown's file, which then
-    /// takes its rule's, its default's or the theme's that it extends.
+    /// Keeps the values of the theme shown's colors as its file gives them,
+    /// unless it kept them already as the Editor showed it.
+    fn remember(&mut self) {
+        let Some(tokens) = self.tokens.as_ref() else {
+            return;
+        };
+        if self.originals.contains_key(&tokens.theme) {
+            return;
+        }
+        let values = tokens
+            .terminal
+            .iter()
+            .chain(&tokens.tokens)
+            .map(|token| (token.name.clone(), own_value(token, &tokens.theme)))
+            .collect();
+        self.originals.insert(tokens.theme.clone(), values);
+    }
+
+    /// The value of the color `name` of the theme shown as its file gave
+    /// it as the Editor first showed the theme: none of one left to its
+    /// rule or its default, of no theme kept.
+    fn original(&self, name: &str) -> Option<Option<&str>> {
+        let tokens = self.tokens.as_ref()?;
+        self.originals
+            .get(&tokens.theme)?
+            .get(name)
+            .map(Option::as_deref)
+    }
+
+    /// Puts the color `name` of the theme shown back as its file gave it as
+    /// the Editor first showed the theme, written into its file, or taken
+    /// away of a color that the file left to its rule then.
     fn reset(&mut self, cx: &mut Cx<'_>, name: &str) -> Result<(), Error> {
-        let Some(theme) = self.shown_theme().map(str::to_owned) else {
+        let (Some(theme), Some(original)) = (
+            self.shown_theme().map(str::to_owned),
+            self.original(name).map(|value| value.map(str::to_owned)),
+        ) else {
             return Ok(());
         };
+        let now = self.token(name).and_then(|token| own_value(token, &theme));
         self.typed.remove(name);
-        match cx.set_theme_value(&theme, name, None) {
+        if now == original {
+            return cx.request_render(themes_page());
+        }
+        match cx.set_theme_value(&theme, name, original.as_deref()) {
             Ok(()) => {
                 self.refused.remove(name);
             }
@@ -574,6 +620,7 @@ impl Editor {
         self.previewed = chosen;
         self.lit.clear();
         self.tokens = cx.theme_tokens(self.previewed.as_deref())?;
+        self.remember();
         cx.request_render(themes_page())
     }
 
@@ -677,6 +724,7 @@ impl Editor {
                 theme: &tokens.theme,
                 typed: self.typed.get(name).map(String::as_str),
                 refused: self.refused.get(name).map(String::as_str),
+                original: self.original(name),
             }),
             _ => None,
         };
@@ -972,14 +1020,25 @@ fn token_rows(
 }
 
 /// The color chosen of a theme that the Editor edits: its name, the
-/// theme's, the text typed into its field and not written yet, and why
-/// the last value written was refused.
+/// theme's, the text typed into its field and not written yet, why the
+/// last value written was refused, and its value as the theme's file gave
+/// it as the Editor first showed the theme, if it kept it.
 #[derive(Clone, Copy, Debug)]
 struct Editing<'a> {
     name: &'a str,
     theme: &'a str,
     typed: Option<&'a str>,
     refused: Option<&'a str>,
+    original: Option<Option<&'a str>>,
+}
+
+/// The value of `token` as the file of the theme `theme` gives it: none of
+/// one that the file leaves to its rule, its default or another theme.
+fn own_value(token: &ThemeToken, theme: &str) -> Option<String> {
+    match &token.origin {
+        TokenOrigin::File { theme: own, .. } if own == theme => token.value.clone(),
+        _ => None,
+    }
 }
 
 /// Whether `text` reads as a value of the color `name`: a color, or for a
@@ -995,9 +1054,8 @@ fn reads(name: &str, text: &str) -> bool {
 /// The field of the value of `token`, of the theme that `editing` edits,
 /// under its row: the value as the theme gives it, or the text typed, of
 /// its rule or its default as its placeholder; Reset, an underlined link,
-/// where the theme's own file gives it, but a palette's color, which the
-/// palette holds whole, and the background and the text, which a theme
-/// gives; and why the last value written was refused.
+/// which puts its value back as the Editor first showed the theme, dimmed
+/// while it has it; and why the last value written was refused.
 fn value_editor(cx: &mut Cx<'_>, token: &ThemeToken, editing: Editing<'_>) -> Node {
     let placeholder = match &token.origin {
         TokenOrigin::Rule { text } => text.clone(),
@@ -1019,14 +1077,15 @@ fn value_editor(cx: &mut Cx<'_>, token: &ThemeToken, editing: Editing<'_>) -> No
             ..Layout::default()
         });
     let mut line = vec![field];
-    let own = matches!(&token.origin, TokenOrigin::File { theme, .. } if theme == editing.theme);
-    // The background and the text a theme gives, the palette whole.
-    let needed = ["background", "foreground"].contains(&token.name.as_str());
-    if own && !in_palette(&token.name) && !needed {
+    // Reset, of the value as the Editor first showed the theme, dimmed
+    // while the color has it.
+    if let Some(original) = editing.original {
+        let changed = own_value(token, editing.theme).as_deref() != original;
         let mut reset = Node::button(message(cx, "editor-reset", &[]).as_str())
             .key(format!("{RESET}{}", token.name).as_str());
         if let Kind::Button(button) = &mut reset.kind {
             button.link = true;
+            button.disabled = !changed;
         }
         line.push(reset);
     }
@@ -1082,7 +1141,7 @@ fn origin_text(cx: &mut Cx<'_>, origin: &TokenOrigin) -> String {
 }
 
 /// The row of `token`: its color over the terminal's background, of its
-/// value as a tooltip, its name and its origin, and its button, which
+/// origin as a tooltip, its name and its value, and its button, which
 /// opens its file or copies its line; of `shade`'s background, as a change
 /// lit it or a pick marks it.
 fn token_row(
@@ -1122,24 +1181,29 @@ fn token_row(
         radius: 4.0,
         ..Style::default()
     })
-    // Its value as the pointer rests on it.
+    // Where it comes from as the pointer rests on it.
     .key(format!("{SWATCH}{}", token.name).as_str())
-    .tooltip(value.to_owned());
+    .tooltip(origin.to_owned());
     let file = matches!(token.origin, TokenOrigin::File { .. });
     let (icon, tip) = if file {
         ("edit", message(cx, "editor-open", &[]))
     } else {
         ("copy", message(cx, "editor-copy", &[]))
     };
+    // Its value under its name, of the terminal's family, smaller.
     let small = Style {
-        text_size: Some(TextSize::Small),
-        ..secondary()
+        font_size: Some(11.0),
+        ..code()
+    };
+    let small = Style {
+        color: secondary().color,
+        ..small
     };
     Node::container(vec![
         swatch,
         Node::container(vec![
             Node::text(token.name.as_str()).style(code()),
-            Node::text(origin).style(small),
+            Node::text(value).style(small),
         ])
         .layout(Layout {
             direction: Direction::Column,

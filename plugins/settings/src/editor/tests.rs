@@ -102,20 +102,23 @@ fn the_page_lists_every_token_by_groups_of_its_color_value_and_origin() {
             "{group}"
         );
     }
+    // Each one's value under its name.
     let all = texts(&tree);
-    for text in [
-        "Lokyr Dark",
-        "editor-rule",
-        "Lokyr Dark.toml:3",
-        "Lokyr Dark.toml:8",
-    ] {
+    for text in ["#1e1e20", "#e6e6e6", "#86bcff", "#4c9bff", "#2a2a2d"] {
         assert!(all.iter().any(|shown| shown == text), "{text}: {all:?}");
     }
-    // The values in the swatches' tooltips alone, not written beside.
-    assert!(!all.iter().any(|shown| shown.starts_with('#')), "{all:?}");
-    // The swatch of each, of its color, of its value as its tooltip.
+    // The swatch of each, of its color, of where it comes from as its
+    // tooltip: its theme, its file's line or its rule.
+    for (name, origin) in [
+        ("background", "Lokyr Dark"),
+        ("bright-blue", "Lokyr Dark.toml:8"),
+        ("focus.ring", "editor-rule"),
+        ("command-header.pill", "Lokyr Dark.toml:3"),
+    ] {
+        let swatch = find(&tree, &format!("editor-swatch:{name}")).unwrap();
+        assert_eq!(swatch.tooltip.as_deref(), Some(origin), "{name}");
+    }
     let swatch = find(&tree, "editor-swatch:command-header.pill").unwrap();
-    assert_eq!(swatch.tooltip.as_deref(), Some("#2a2a2d"));
     assert_eq!(
         swatch.children[0].style.background,
         Some(Token::from("#2a2a2d"))
@@ -197,8 +200,8 @@ fn a_change_of_the_theme_lights_the_tokens_that_it_changed_for_a_while() {
             .is_some()
     };
     assert!(lit(&tree, "accent") && !lit(&tree, "focus.ring"));
-    let swatch = find(&tree, "editor-swatch:accent").unwrap();
-    assert_eq!(swatch.tooltip.as_deref(), Some("#c678dd"));
+    let row = find(&tree, "editor-token:accent").unwrap();
+    assert!(texts(row).iter().any(|text| text == "#c678dd"));
     // Its light goes as its timer fires.
     host.advance(LIT);
     host.deliver(&mut plugin).unwrap();
@@ -656,13 +659,21 @@ fn set_paper(name: &str, value: Option<&str>) -> Request {
 fn a_chosen_row_of_a_theme_of_the_folder_holds_its_value_s_field_and_reset() {
     let (mut host, mut plugin) = editing("accent");
     let tree = page(&mut host, &mut plugin);
-    // Its value as the file writes it, and Reset, of its own file's.
+    // Reset of each color, dimmed while it has its value as the Editor
+    // showed the theme.
+    let dimmed = |tree: &Node, name: &str| match find(tree, &format!("{RESET}{name}"))
+        .map(|node| &node.kind)
+    {
+        Some(Kind::Button(button)) => button.disabled,
+        other => panic!("{name}: {other:?}"),
+    };
+    // Its value as the file writes it.
     match find(&tree, &format!("{VALUE}accent")).map(|node| &node.kind) {
         Some(Kind::Field(field)) => assert_eq!(field.text.as_deref(), Some("#4c9bff")),
         other => panic!("{other:?}"),
     }
-    assert!(find(&tree, &format!("{RESET}accent")).is_some());
-    // A token of its rule: an empty field of the rule's text, no Reset.
+    assert!(dimmed(&tree, "accent"));
+    // A token of its rule: an empty field of the rule's text.
     host.ui_event(&mut plugin, &click(&format!("{ROW}focus.ring")))
         .unwrap();
     let tree = page(&mut host, &mut plugin);
@@ -674,19 +685,15 @@ fn a_chosen_row_of_a_theme_of_the_folder_holds_its_value_s_field_and_reset() {
         }
         other => panic!("{other:?}"),
     }
-    assert!(find(&tree, &format!("{RESET}focus.ring")).is_none());
-    // The background, which a theme gives: no Reset.
-    host.ui_event(&mut plugin, &click(&format!("{ROW}background")))
-        .unwrap();
-    let tree = page(&mut host, &mut plugin);
-    assert!(find(&tree, &format!("{VALUE}background")).is_some());
-    assert!(find(&tree, &format!("{RESET}background")).is_none());
-    // A palette's color: no Reset, as the palette holds the 16 whole.
-    host.ui_event(&mut plugin, &click(&format!("{ROW}bright-blue")))
-        .unwrap();
-    let tree = page(&mut host, &mut plugin);
-    assert!(find(&tree, &format!("{VALUE}bright-blue")).is_some());
-    assert!(find(&tree, &format!("{RESET}bright-blue")).is_none());
+    assert!(dimmed(&tree, "focus.ring"));
+    // The background and a palette's color too.
+    for name in ["background", "bright-blue"] {
+        host.ui_event(&mut plugin, &click(&format!("{ROW}{name}")))
+            .unwrap();
+        let tree = page(&mut host, &mut plugin);
+        assert!(find(&tree, &format!("{VALUE}{name}")).is_some());
+        assert!(dimmed(&tree, name), "{name}");
+    }
     // A read-only theme's row: no field.
     choose(&mut host, &mut plugin, "Lokyr Dark");
     let tree = page(&mut host, &mut plugin);
@@ -771,10 +778,44 @@ fn a_value_typed_is_written_as_typing_pauses_on_return_and_as_its_field_is_left(
         .unwrap();
         assert!(written(&mut host).is_empty(), "{text:?}");
     }
-    // Reset: taken away of the file.
+    // Reset of a value as the Editor showed the theme: nothing written.
     host.ui_event(&mut plugin, &click(&format!("{RESET}accent")))
         .unwrap();
-    assert_eq!(written(&mut host), [set_paper("accent", None)]);
+    assert!(written(&mut host).is_empty());
+    // Written since, as the file tells: Reset of it, written back; of a
+    // token that its rule colored then, taken away.
+    let mut tokens = paper_tokens();
+    for token in &mut tokens[1].tokens {
+        match token.name.as_str() {
+            "accent" => token.value = Some("bright-blue / 80%".to_owned()),
+            "focus.ring" => {
+                token.origin = TokenOrigin::File {
+                    path: "/themes/Paper.toml".to_owned(),
+                    line: 9,
+                    theme: "Paper".to_owned(),
+                };
+                token.value = Some("accent / 30%".to_owned());
+            }
+            _ => {}
+        }
+    }
+    host.set_theme_tokens(tokens);
+    host.post(Event::ThemeChanged);
+    host.deliver(&mut plugin).unwrap();
+    let tree = page(&mut host, &mut plugin);
+    match find(&tree, &format!("{RESET}accent")).map(|node| &node.kind) {
+        Some(Kind::Button(button)) => assert!(!button.disabled),
+        other => panic!("{other:?}"),
+    }
+    host.ui_event(&mut plugin, &click(&format!("{RESET}accent")))
+        .unwrap();
+    assert_eq!(written(&mut host), [set_paper("accent", Some("#4c9bff"))]);
+    host.ui_event(&mut plugin, &click(&format!("{ROW}focus.ring")))
+        .unwrap();
+    page(&mut host, &mut plugin);
+    host.ui_event(&mut plugin, &click(&format!("{RESET}focus.ring")))
+        .unwrap();
+    assert_eq!(written(&mut host), [set_paper("focus.ring", None)]);
 }
 
 #[test]
