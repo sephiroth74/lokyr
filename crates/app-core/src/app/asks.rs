@@ -37,14 +37,18 @@ pub(super) enum Purpose {
 /// A target's resolution: its number, and what the platform told of it.
 type Told = (u64, Result<Target, lokyr_platform_core::Error>);
 
+/// A target that resolves off the main thread: its text, its purpose, and
+/// the window that asked for it, whose question it shows on.
+type Pending = (String, Purpose, Option<WindowId>);
+
 /// The targets that resolve off the main thread, as a path's file system
-/// may not answer, each of its number with its target and its purpose, and
-/// the channel that their threads tell them on.
+/// may not answer, each of its number with its target, its purpose and the
+/// window that asked, and the channel that their threads tell them on.
 #[derive(Debug)]
 pub(super) struct Resolutions {
     sender: std::sync::mpsc::Sender<Told>,
     receiver: std::sync::mpsc::Receiver<Told>,
-    pub(super) pending: std::collections::BTreeMap<u64, (String, Purpose)>,
+    pub(super) pending: std::collections::BTreeMap<u64, Pending>,
     next: u64,
 }
 
@@ -363,16 +367,21 @@ impl<B: Backend> App<B> {
     /// Resolves `target`, then goes on with `purpose`: a path or a `file`
     /// URL on a thread of its own, whose answer comes as the main thread
     /// wakes, so that a file system that does not answer, as a network's
-    /// volume, holds no main thread; any other URL here, of its text.
+    /// volume, holds no main thread; any other URL here, of its text. The
+    /// window that the commands run in now, or the focused one, is the
+    /// question's, as neither may be by the time the answer comes.
     fn resolve_then(&mut self, platform: &mut dyn Platform, target: String, purpose: Purpose) {
+        let window = self.acting.or_else(|| platform.focused_window());
         if !reaches_files(&target) {
             let resolved = platform.resolve_target(&target);
-            return self.target_resolved(platform, target, purpose, resolved);
+            return self.target_resolved(platform, (target, purpose, window), resolved);
         }
         let resolutions = &mut self.resolutions;
         let id = resolutions.next;
         resolutions.next += 1;
-        resolutions.pending.insert(id, (target.clone(), purpose));
+        resolutions
+            .pending
+            .insert(id, (target.clone(), purpose, window));
         let (resolve, waker) = (platform.target_resolver(), platform.waker());
         let sender = resolutions.sender.clone();
         let spawned = std::thread::Builder::new()
@@ -385,10 +394,10 @@ impl<B: Backend> App<B> {
             });
         // Of no thread, here, as before.
         if spawned.is_err()
-            && let Some((target, purpose)) = self.resolutions.pending.remove(&id)
+            && let Some(pending) = self.resolutions.pending.remove(&id)
         {
-            let resolved = platform.resolve_target(&target);
-            self.target_resolved(platform, target, purpose, resolved);
+            let resolved = platform.resolve_target(&pending.0);
+            self.target_resolved(platform, pending, resolved);
         }
     }
 
@@ -396,19 +405,19 @@ impl<B: Backend> App<B> {
     /// with its purpose.
     pub(super) fn take_resolved(&mut self, platform: &mut dyn Platform) {
         while let Ok((id, resolved)) = self.resolutions.receiver.try_recv() {
-            if let Some((target, purpose)) = self.resolutions.pending.remove(&id) {
-                self.target_resolved(platform, target, purpose, resolved);
+            if let Some(pending) = self.resolutions.pending.remove(&id) {
+                self.target_resolved(platform, pending, resolved);
             }
         }
     }
 
     /// Goes on with `purpose` of `target`, as it resolved, `resolved`: an
-    /// opening, as [`opening`] decides, or the answer to its question.
+    /// opening, as [`opening`] decides, its question on `window`, or the
+    /// answer to its question.
     fn target_resolved(
         &mut self,
         platform: &mut dyn Platform,
-        target: String,
-        purpose: Purpose,
+        (target, purpose, window): Pending,
         resolved: Result<Target, lokyr_platform_core::Error>,
     ) {
         let resolved = match resolved {
@@ -444,7 +453,7 @@ impl<B: Backend> App<B> {
         };
         let done = match opening(kind, self.links()) {
             Opening::Ask => {
-                self.ask_open(platform, target, kind, place);
+                self.ask_open(platform, (target, kind, place), window);
                 return;
             }
             Opening::Reveal => platform.reveal(&resolved),
@@ -466,14 +475,13 @@ impl<B: Backend> App<B> {
     }
 
     /// Asks the user whether to open `target`, a URL or a file, of `kind`,
-    /// on the window that the commands run in, or the one that has the
-    /// focus: a file can show in the file manager instead.
+    /// on `window`, the one that asked for it, or, as it closed, the one
+    /// that has the focus: a file can show in the file manager instead.
     fn ask_open(
         &mut self,
         platform: &mut dyn Platform,
-        target: String,
-        kind: TargetKind,
-        place: Option<Place>,
+        (target, kind, place): Asked,
+        window: Option<WindowId>,
     ) {
         let file = kind == TargetKind::File;
         let (message, dont_ask) = if file {
@@ -494,7 +502,9 @@ impl<B: Backend> App<B> {
             suppression: Some(self.texts.text(dont_ask)),
             input: None,
         };
-        let window = self.acting.or_else(|| platform.focused_window());
+        let window = window
+            .filter(|window| self.windows.contains_key(window))
+            .or_else(|| platform.focused_window());
         let alert = platform.show_alert(window, &alert);
         self.open_asks
             .insert(alert, (window, (target, kind, place)));

@@ -3304,8 +3304,6 @@ fn pasting(test: &str, text: &str, program: Program) -> (Fake, App, WindowId, Pa
     (fake, app, window, path)
 }
 
-/// Opens with Command-click what `window` shows at `col` of its first
-/// row.
 /// Lets the targets that resolve off the main thread tell their answers,
 /// as their threads wake the app.
 fn resolved(fake: &mut Fake, app: &mut App) {
@@ -3317,6 +3315,8 @@ fn resolved(fake: &mut Fake, app: &mut App) {
     }
 }
 
+/// Opens with Command-click what `window` shows at `col` of its first
+/// row.
 fn cmd_click(fake: &mut Fake, app: &mut App, window: WindowId, col: u16) {
     fake.send(app, window, click(true, cell(col, 0), CMD, 1));
     fake.send(app, window, click(false, cell(col, 0), CMD, 1));

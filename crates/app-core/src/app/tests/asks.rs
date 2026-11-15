@@ -411,6 +411,31 @@ fn a_window_that_closes_drops_its_link_s_question() {
 }
 
 #[test]
+fn a_link_s_question_shows_on_the_window_whose_context_menu_opened_it_not_the_key_one() {
+    let (mut fake, mut app, first, _) = pasting("link-window", "", links());
+    app.run(&mut fake, NEW_WINDOW, Args::new());
+    let second = fake
+        .windows()
+        .find(|&window| window != first)
+        .expect("a second window");
+    run_until(&mut fake, &mut app, |_, app| shows(app, second, "ready"));
+    fake.send(&mut app, second, WindowEvent::Focused(false));
+    fake.send(&mut app, first, WindowEvent::Focused(true));
+    // The file's link of the second, opened from its context menu while
+    // the first has the keys.
+    right_click(&mut fake, &mut app, second, cell(20, 0), Modifiers::NONE);
+    fake.send(
+        &mut app,
+        second,
+        WindowEvent::ContextCommand("links.open".to_owned()),
+    );
+    resolved(&mut fake, &mut app);
+    let asked = fake.alerts().last().expect("a question");
+    assert_eq!(asked.alert.message, "Open this file?");
+    assert_eq!(asked.window, Some(second));
+}
+
+#[test]
 fn a_link_s_question_shows_its_invisible_characters_escaped() {
     assert_eq!(
         shown("https://lokyr.dev/\u{202E}gpj.exe\u{200B}x\u{7}é"),
