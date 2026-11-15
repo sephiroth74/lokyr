@@ -64,6 +64,11 @@ const THEME_DUPLICATE: &str = "theme-duplicate";
 /// The app's command that makes a new theme of an existing one.
 const NEW_THEME: &str = "app.new-theme";
 
+/// The themes' page's button of the themes imported, and the app's command
+/// that imports them.
+const THEMES_IMPORT: &str = "themes-import";
+const IMPORT_THEMES: &str = "app.import-themes";
+
 /// How many themes' cards a row of the themes' page holds.
 const CARDS_ACROSS: usize = 3;
 
@@ -430,6 +435,9 @@ impl Plugin for SettingsPage {
                     cx.request_render(themes_page())?;
                 }
                 return Ok(());
+            }
+            if (&event.kind, key) == (&UiEventKind::Click, THEMES_IMPORT) {
+                return cx.run_command(IMPORT_THEMES, Args::new());
             }
             let Some((variant, name)) = key
                 .strip_prefix(THEME_CARD)
@@ -2777,7 +2785,8 @@ fn themes_tree(cx: &mut Cx<'_>, chosen: Option<ThemeVariant>) -> Node {
             ..Layout::default()
         });
     let (word, heading, _) = words(variant);
-    let mut children = vec![
+    // The title, and Import… at the row's end.
+    let header = Node::container(vec![
         Node::text(message(cx, heading, &[]))
             .key("title")
             .role(Role::Heading)
@@ -2786,6 +2795,18 @@ fn themes_tree(cx: &mut Cx<'_>, chosen: Option<ThemeVariant>) -> Node {
                 font_weight: Some(FontWeight::Bold),
                 ..Style::default()
             }),
+        Node::spacer(),
+        Node::button(message(cx, "themes-import", &[]).as_str()).key(THEMES_IMPORT),
+    ])
+    .layout(Layout {
+        direction: Direction::Row,
+        align: Align::Center,
+        gap: 8.0,
+        width: Length::Fraction(1.0),
+        ..Layout::default()
+    });
+    let mut children = vec![
+        header,
         Node::text(message(cx, "themes-description", &[]))
             .key("description")
             .style(secondary())

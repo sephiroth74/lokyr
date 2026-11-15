@@ -2,10 +2,11 @@
 page-settings = Settings
 page-keys = Keys
 page-themes = Themes
-themes-description = Every theme, of a preview of its colors: a click uses it for its appearance, in your config's [theme]. Your own themes are those of the themes' folder beside your config, which View › Open Themes Folder opens.
+themes-description = Every theme, of a preview of its colors: a click uses it for its appearance, in your config's [theme]. Your own themes are those of the themes' folder beside your config, which View › Open Themes Folder opens, and into which Import… copies .itermcolors and .toml themes.
 themes-light = Light
 themes-dark = Dark
 themes-loading = Reading the themes…
+themes-import = Import…
 # A theme's card's context menu.
 theme-use = Use
 theme-duplicate = Duplicate…

@@ -27,6 +27,7 @@ mod layer;
 mod menu;
 mod notify;
 mod open;
+mod open_panel;
 mod quick;
 mod save;
 mod screens;

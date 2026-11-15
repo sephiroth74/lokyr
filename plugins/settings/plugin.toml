@@ -15,9 +15,10 @@ open = true
 # highlighted.
 appearance-write = true
 
-# A theme's card's Duplicate…, a new theme that the app makes.
+# A theme's card's Duplicate…, a new theme that the app makes, and the
+# themes page's Import…, the themes that the app imports.
 [uses]
-commands = ["app.new-theme"]
+commands = ["app.new-theme", "app.import-themes"]
 
 [contributes]
 pages = [

@@ -237,7 +237,7 @@ impl<B: Backend> App<B> {
         platform.show_alert(window, &alert);
     }
 
-    fn tell_install_failed(&mut self, platform: &mut dyn Platform, why: &str) {
+    pub(super) fn tell_install_failed(&mut self, platform: &mut dyn Platform, why: &str) {
         let alert = Alert {
             style: AlertStyle::Warning,
             message: self.texts.text("theme-install-failed"),
@@ -253,7 +253,7 @@ impl<B: Backend> App<B> {
 /// Whether `one` and `other` are the same file, as the file system tells,
 /// whatever their paths, as of a folder that a link reaches: of their real
 /// paths, or of the same device and inode, as of a hard link.
-fn same_file(one: &Path, other: &Path) -> bool {
+pub(super) fn same_file(one: &Path, other: &Path) -> bool {
     if let (Ok(one), Ok(other)) = (fs::canonicalize(one), fs::canonicalize(other))
         && one == other
     {

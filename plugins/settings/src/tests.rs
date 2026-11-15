@@ -2270,7 +2270,7 @@ fn the_themes_page_shows_a_progress_while_their_list_is_read() {
 }
 
 #[test]
-fn a_theme_s_card_s_context_menu_uses_it_or_makes_a_new_theme_of_it() {
+fn a_theme_s_card_s_context_menu_uses_it_or_makes_a_new_theme_of_it_and_import_imports() {
     use lokyr_plugin_sdk::command::{Command, Kind as ParamKind, Param};
     // The app's command of a new theme, which the plugin's manifest says
     // it runs.
@@ -2286,9 +2286,17 @@ fn a_theme_s_card_s_context_menu_uses_it_or_makes_a_new_theme_of_it() {
         }],
         when: None,
     };
+    let import_themes = Command {
+        name: IMPORT_THEMES.to_owned(),
+        title: "Import Themes…".to_owned(),
+        category: Category::View,
+        capabilities: Vec::new(),
+        params: Vec::new(),
+        when: None,
+    };
     let mut host = FakeHost::new(NAME)
         .with_manifest(crate::MANIFEST)
-        .with_commands(vec![new_theme]);
+        .with_commands(vec![new_theme, import_themes]);
     host.pane(PaneId(1));
     host.set_settings(settings());
     let mut plugin = SettingsPage::default();
@@ -2355,6 +2363,19 @@ fn a_theme_s_card_s_context_menu_uses_it_or_makes_a_new_theme_of_it() {
         == Request::SetTheme {
             variant: ThemeVariant::Dark,
             name: "Dracula".to_owned(),
+        }));
+    // Import… at the title's row: the app's themes imported.
+    let tree = host.render(&mut plugin, &themes_page()).unwrap();
+    assert!(find_node(&tree, THEMES_IMPORT).is_some());
+    host.ui_event(
+        &mut plugin,
+        &event(&themes_page(), THEMES_IMPORT, UiEventKind::Click),
+    )
+    .unwrap();
+    assert!(host.take_done().iter().any(|request| *request
+        == Request::RunCommand {
+            name: IMPORT_THEMES.to_owned(),
+            args: Args::new(),
         }));
 }
 

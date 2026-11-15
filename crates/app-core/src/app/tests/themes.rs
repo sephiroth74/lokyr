@@ -710,7 +710,7 @@ fn open_themes_folder_opens_the_folder_made_first_in_the_file_manager() {
         .iter()
         .position(|item| item == "Choose Theme…")
         .unwrap();
-    assert_eq!(view[picker + 2], "Open Themes Folder");
+    assert_eq!(view[picker + 3], "Open Themes Folder");
     // A folder that is not there is made, then opens.
     fake.send_app(&mut app, AppEvent::Command(OPEN_THEMES.to_owned()));
     assert!(themes.is_dir());
@@ -749,8 +749,12 @@ fn a_new_theme_of_an_existing_one_is_written_whole_named_for_its_variant_and_ope
         .position(|item| item == "Choose Theme…")
         .unwrap();
     assert_eq!(
-        view[picker + 1..picker + 3],
-        ["New Theme from Current…", "Open Themes Folder"]
+        view[picker + 1..picker + 4],
+        [
+            "New Theme from Current…",
+            "Import Themes…",
+            "Open Themes Folder"
+        ]
     );
     let answered = |fake: &mut Fake, app: &mut App, text: &str| {
         let asked = fake.alerts().last().cloned().expect("a question");
@@ -826,6 +830,81 @@ fn a_new_theme_of_an_existing_one_is_written_whole_named_for_its_variant_and_ope
         told.alert
     );
     assert_eq!(told.alert.input, None);
+    let _ = std::fs::remove_dir_all(&directory);
+}
+
+#[test]
+fn themes_imported_of_the_open_panel_are_copied_one_question_for_those_there() {
+    let paper_text = theme("#ffffff");
+    let (mut fake, mut app, directory) = with_themes("import", "", &[("Paper", &paper_text)]);
+    let window = fake.windows().next().unwrap();
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    // The open panel, on the window in front, of both formats.
+    fake.send_app(&mut app, AppEvent::Command(IMPORT_THEMES.to_owned()));
+    let (shown, extensions, message) = fake.open_panels().last().cloned().expect("the panel");
+    assert_eq!(shown, window);
+    assert_eq!(extensions, ["toml", "itermcolors"]);
+    assert!(message.contains(".itermcolors"), "{message}");
+    // One panel at a time.
+    fake.send_app(&mut app, AppEvent::Command(IMPORT_THEMES.to_owned()));
+    assert_eq!(fake.open_panels().len(), 1);
+    // A new theme, one of a name there, and a file of no theme.
+    let gray = downloaded(&directory, "Grays.itermcolors", &grays());
+    let paper = downloaded(&directory, "Paper.toml", &theme("#eeeeee"));
+    let notes = downloaded(&directory, "Notes.toml", "[terminal]\nbackground = 12\n");
+    let alerts = fake.alerts().len();
+    fake.choose(&mut app, vec![gray, paper.clone(), notes]);
+    // Asked once of the one there, nothing copied yet.
+    let asked = fake.alerts().last().cloned().expect("a question");
+    assert_eq!(fake.alerts().len(), alerts + 1);
+    assert_eq!(
+        asked.alert.message,
+        "Replace the theme that is there already?"
+    );
+    assert!(
+        asked.alert.detail.contains("“Paper.toml”"),
+        "{:?}",
+        asked.alert
+    );
+    assert_eq!(asked.alert.buttons, ["Replace", "Skip"]);
+    assert!(!directory.join("themes/Grays.itermcolors").exists());
+    // Replace: both copied as they are, the file of no theme told.
+    answer(&mut fake, &mut app, asked.id, 0);
+    let themes = directory.join("themes");
+    assert_eq!(
+        std::fs::read_to_string(themes.join("Grays.itermcolors")).unwrap(),
+        grays()
+    );
+    assert_eq!(
+        std::fs::read_to_string(themes.join("Paper.toml")).unwrap(),
+        theme("#eeeeee")
+    );
+    assert!(!themes.join("Notes.toml").exists());
+    let told = fake.alerts().last().cloned().unwrap();
+    assert_eq!(told.alert.message, "A file is not imported.");
+    assert!(
+        told.alert.detail.starts_with("Notes.toml: "),
+        "{:?}",
+        told.alert
+    );
+    // Skip: the one there kept, the new ones copied.
+    fake.send_app(&mut app, AppEvent::Command(IMPORT_THEMES.to_owned()));
+    std::fs::write(&paper, theme("#dddddd")).unwrap();
+    let night = downloaded(&directory, "Night.toml", &theme("#101010"));
+    fake.choose(&mut app, vec![paper, night]);
+    let asked = fake.alerts().last().cloned().unwrap();
+    answer(&mut fake, &mut app, asked.id, 1);
+    assert_eq!(
+        std::fs::read_to_string(themes.join("Paper.toml")).unwrap(),
+        theme("#eeeeee")
+    );
+    assert!(themes.join("Night.toml").is_file());
+    // A panel cancelled imports nothing, and asks nothing.
+    fake.send_app(&mut app, AppEvent::Command(IMPORT_THEMES.to_owned()));
+    let alerts = fake.alerts().len();
+    fake.choose(&mut app, Vec::new());
+    assert_eq!(fake.alerts().len(), alerts);
+    assert_eq!(fake.open_panels().len(), 3);
     let _ = std::fs::remove_dir_all(&directory);
 }
 

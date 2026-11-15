@@ -732,6 +732,12 @@ pub trait Platform {
     /// [`AppEvent::SavePanelClosed`] comes of it, and nothing is written.
     fn dismiss_save_panel(&mut self, panel: SavePanelId);
 
+    /// Opens the open panel, a sheet on `window`, of the files of the
+    /// extensions `extensions`, several chosen at once, of `message` over
+    /// it, and returns at once: [`AppEvent::FilesChosen`] tells the files
+    /// chosen, or none as the user cancelled or the window closed.
+    fn choose_files(&mut self, window: WindowId, extensions: &[&str], message: &str);
+
     /// Keeps the system, or the system and the display, from idle sleep,
     /// of one power assertion named `reason`, which takes the place of the
     /// one before, or lets it sleep, of [`Awake::Off`]; the system releases

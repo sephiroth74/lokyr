@@ -99,6 +99,9 @@ pub enum AppEvent {
     Wake,
     /// An item of the main menu was chosen: its command.
     Command(String),
+    /// An open panel closed: the files that the user chose, absolute, none
+    /// as the user cancelled or its window closed.
+    FilesChosen(Vec<std::path::PathBuf>),
     /// A save panel closed: the path that the user chose, or none as the
     /// user cancelled or its window closed.
     SavePanelClosed {

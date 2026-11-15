@@ -240,6 +240,9 @@ pub struct Fake {
     save_panels: Vec<(SavePanelId, WindowId, String, String)>,
     /// The save panels whose windows closed, whose ends are to tell.
     ended_saves: Vec<SavePanelId>,
+    /// The open panels shown, each its window, its extensions and its
+    /// message, from the first.
+    open_panels: Vec<(WindowId, Vec<String>, String)>,
     alerts: Vec<FakeAlert>,
     /// The timers that have not fired, with the time of each.
     timers: BTreeMap<TimerId, Instant>,
@@ -340,6 +343,7 @@ impl Fake {
             clipboard_image: None,
             save_panels: Vec::new(),
             ended_saves: Vec::new(),
+            open_panels: Vec::new(),
             awake: (Awake::Off, String::new()),
             alerts: Vec::new(),
             timers: BTreeMap::new(),
@@ -562,6 +566,18 @@ impl Fake {
     /// its id, its window, its file's name and its message.
     pub fn save_panels(&self) -> &[(SavePanelId, WindowId, String, String)] {
         &self.save_panels
+    }
+
+    /// The open panels that the app showed, each its window, its
+    /// extensions and its message, from the first.
+    pub fn open_panels(&self) -> &[(WindowId, Vec<String>, String)] {
+        &self.open_panels
+    }
+
+    /// Closes the open panel as the user chose the files `paths`, none as
+    /// they cancelled, and tells `handler`.
+    pub fn choose(&mut self, handler: &mut dyn Handler, paths: Vec<PathBuf>) -> bool {
+        self.send_app(handler, AppEvent::FilesChosen(paths))
     }
 
     /// Closes the save panel `panel` as the user chose `path`, or
@@ -1358,6 +1374,15 @@ impl Platform for Fake {
     fn dismiss_save_panel(&mut self, panel: SavePanelId) {
         self.save_panels.retain(|open| open.0 != panel);
         self.ended_saves.retain(|&ended| ended != panel);
+    }
+
+    fn choose_files(&mut self, window: WindowId, extensions: &[&str], message: &str) {
+        let extensions = extensions
+            .iter()
+            .map(|&extension| extension.to_owned())
+            .collect();
+        self.open_panels
+            .push((window, extensions, message.to_owned()));
     }
 
     fn show_alert(&mut self, window: Option<WindowId>, alert: &Alert) -> AlertId {

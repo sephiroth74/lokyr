@@ -21,6 +21,7 @@ command-app-install-claude-code-integration = Install Claude Code Integration…
 command-app-performance = Show Performance
 command-app-open-themes-folder = Open Themes Folder
 command-app-new-theme = New Theme from Current…
+command-app-import-themes = Import Themes…
 command-app-settings-window = Open Settings Window
 performance-measuring = Measuring…
 performance-frames = { $rate } FPS
@@ -256,6 +257,22 @@ new-theme-cancel = Cancel
 new-theme-not-a-name = “{ $name }” cannot name a theme: a name is not empty, holds no / nor \, and does not start with a dot.
 new-theme-taken = A theme named “{ $name }” is there already: choose another name.
 new-theme-failed = The new theme cannot be made.
+
+# Themes imported: the open panel's message, the question of the files of a
+# name in the themes' folder already, its buttons, and the files that are
+# not imported, each of why.
+import-themes-panel = Choose the themes to import, .itermcolors or .toml: Lokyr copies them into its themes' folder as they are.
+import-themes-taken-message = { $count ->
+    [one] Replace the theme that is there already?
+   *[other] Replace the { $count } themes that are there already?
+}
+import-themes-taken-detail = The themes' folder, { $folder }, holds files of these names: { $names }.
+import-themes-replace = Replace
+import-themes-skip = Skip
+import-themes-failed = { $count ->
+    [one] A file is not imported.
+   *[other] { $count } files are not imported.
+}
 
 # The notification of a long command's end, under the command as its title:
 # whether it succeeded, or its exit status, or neither as the shell told

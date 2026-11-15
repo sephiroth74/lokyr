@@ -20,6 +20,7 @@ command-app-install-claude-code-integration = Installa l'integrazione con Claude
 command-app-performance = Mostra prestazioni
 command-app-open-themes-folder = Apri la cartella dei temi
 command-app-new-theme = Nuovo tema dall'attuale…
+command-app-import-themes = Importa temi…
 command-app-settings-window = Apri la finestra delle impostazioni
 performance-measuring = Misurazione…
 performance-frames = { $rate } FPS
@@ -214,6 +215,19 @@ new-theme-cancel = Annulla
 new-theme-not-a-name = «{ $name }» non può essere il nome di un tema: un nome non è vuoto, non contiene / né \ e non inizia con un punto.
 new-theme-taken = Un tema di nome «{ $name }» c'è già: scegline un altro.
 new-theme-failed = Il nuovo tema non si può creare.
+
+import-themes-panel = Scegli i temi da importare, .itermcolors o .toml: Lokyr li copia così come sono nella sua cartella dei temi.
+import-themes-taken-message = { $count ->
+    [one] Sostituire il tema che c'è già?
+   *[other] Sostituire i { $count } temi che ci sono già?
+}
+import-themes-taken-detail = La cartella dei temi, { $folder }, contiene file con questi nomi: { $names }.
+import-themes-replace = Sostituisci
+import-themes-skip = Salta
+import-themes-failed = { $count ->
+    [one] Un file non è stato importato.
+   *[other] { $count } file non sono stati importati.
+}
 
 command-succeeded = Riuscito dopo { $took }
 command-failed = Fallito con stato { $status } dopo { $took }

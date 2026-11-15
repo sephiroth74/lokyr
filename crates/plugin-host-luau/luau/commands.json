@@ -46,6 +46,15 @@
   },
   {
     "capabilities": [],
+    "category": "view",
+    "name": "app.import-themes",
+    "params": [],
+    "plugin": null,
+    "title": "Import Themes…",
+    "when": null
+  },
+  {
+    "capabilities": [],
     "category": "app",
     "name": "app.install-claude-code-integration",
     "params": [],

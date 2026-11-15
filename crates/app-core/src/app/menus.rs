@@ -22,10 +22,10 @@ use lokyr_vt_core::terminal::{SelectionShape, SelectionUnit};
 
 use super::{
     ABOUT, APPEARANCES, App, CHECK_UPDATES, CLOSE_TAB, CONTEXT_ONLY, DEFAULT_TERMINAL,
-    FLOAT_ON_TOP, INSTALL_CLAUDE_CODE, INSTALL_TOOLS, LOOK_UP, LOOK_UP_TITLE, MAN_KEYWORDS,
-    MAN_PAGE, MAN_PAGE_NAME, MAN_SEARCH, MAN_SECTION, NEW_THEME, NEXT_AGENT, NEXT_WINDOW,
-    OPEN_THEMES, PERFORMANCE, PLUGINS, PREVIOUS_WINDOW, REPORT_ISSUE, SEARCH_WEB, SECURE_INPUT,
-    SETTINGS, SETTINGS_TAB, SHOW_TIP, context, show_selection, shown_top,
+    FLOAT_ON_TOP, IMPORT_THEMES, INSTALL_CLAUDE_CODE, INSTALL_TOOLS, LOOK_UP, LOOK_UP_TITLE,
+    MAN_KEYWORDS, MAN_PAGE, MAN_PAGE_NAME, MAN_SEARCH, MAN_SECTION, NEW_THEME, NEXT_AGENT,
+    NEXT_WINDOW, OPEN_THEMES, PERFORMANCE, PLUGINS, PREVIOUS_WINDOW, REPORT_ISSUE, SEARCH_WEB,
+    SECURE_INPUT, SETTINGS, SETTINGS_TAB, SHOW_TIP, context, show_selection, shown_top,
 };
 use crate::drawing::Backend;
 use crate::mouse;
@@ -637,6 +637,7 @@ pub(super) fn main_menu(
                     && command.name != PERFORMANCE
                     && command.name != OPEN_THEMES
                     && command.name != NEW_THEME
+                    && command.name != IMPORT_THEMES
                     && command.name != FLOAT_ON_TOP
                     && command.name != NEXT_AGENT
                     && command.name != SHOW_AGENTS
@@ -703,10 +704,10 @@ pub(super) fn main_menu(
         })
         .collect();
     let mut view = items(&[Category::View]);
-    // A new theme of the one in force and the themes' folder right after
-    // the palette's theme picker, where the palette is there; else after
-    // the view's other commands.
-    let themes: Vec<MenuItem> = [NEW_THEME, OPEN_THEMES]
+    // A new theme of the one in force, themes imported and the themes'
+    // folder right after the palette's theme picker, where the palette is
+    // there; else after the view's other commands.
+    let themes: Vec<MenuItem> = [NEW_THEME, IMPORT_THEMES, OPEN_THEMES]
         .into_iter()
         .filter_map(|name| {
             commands.get(name).map(|command| MenuItem::Command {

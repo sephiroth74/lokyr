@@ -2,10 +2,11 @@
 page-settings = Impostazioni
 page-keys = Tasti
 page-themes = Temi
-themes-description = Ogni tema, con un'anteprima dei suoi colori: un clic lo usa per il suo aspetto, nel [theme] della tua config. I tuoi temi sono quelli della cartella dei temi accanto alla config, che Vista › Apri la cartella dei temi apre.
+themes-description = Ogni tema, con un'anteprima dei suoi colori: un clic lo usa per il suo aspetto, nel [theme] della tua config. I tuoi temi sono quelli della cartella dei temi accanto alla config, che Vista › Apri la cartella dei temi apre, e in cui Importa… copia i temi .itermcolors e .toml.
 themes-light = Chiari
 themes-dark = Scuri
 themes-loading = Lettura dei temi…
+themes-import = Importa…
 theme-use = Usa
 theme-duplicate = Duplica…
 

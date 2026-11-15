@@ -32,6 +32,7 @@ tip-tab-menu = Fai clic destro su un tab per dargli un colore, o doppio clic per
 tip-themes = Vista › Scegli tema… mostra in anteprima ogni tema mentre scorri l'elenco.
 tip-themes-folder = Metti un tema .toml o .itermcolors nella cartella che Vista › Apri la cartella dei temi mostra nel Finder, e Scegli tema… lo elenca.
 tip-new-theme = Vista › Nuovo tema dall'attuale… crea un tema con tutti i colori di quello in uso, lo usa e lo apre nel tuo editor; il menu contestuale di una scheda nella pagina Temi duplica qualsiasi tema.
+tip-import-themes = Vista › Importa temi…, o Importa… nella pagina Temi, copia i temi .itermcolors e .toml nella tua cartella dei temi, anche più di uno alla volta.
 tip-long-command = Un comando lungo ti avvisa quando finisce mentre Lokyr è in secondo piano: [notifications] long-command nel config dice quanto lungo.
 tip-look-up = Fai clic destro su una parola per cercarla nel dizionario, sul web o nelle pagine di man.
 tip-services = Nel Finder, fai clic destro su una cartella e scegli Servizi › Nuovo tab Lokyr qui per un terminale lì.

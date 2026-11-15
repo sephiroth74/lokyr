@@ -86,6 +86,7 @@ mod tab_drag;
 mod tests;
 mod theme_catalog;
 mod theme_copies;
+mod theme_imports;
 mod tools;
 
 use input::{show_selection, shown_top};
@@ -107,6 +108,8 @@ const OPEN_THEMES: &str = "app.open-themes-folder";
 /// A new theme of a whole copy of an existing one, the one in force or the
 /// one that its argument `theme` names.
 const NEW_THEME: &str = "app.new-theme";
+/// Themes imported, of the files that the open panel chooses.
+const IMPORT_THEMES: &str = "app.import-themes";
 
 /// The command that opens the About panel: the app's version and build,
 /// its copyright and its credits.
@@ -760,6 +763,10 @@ pub struct App<B: Backend> {
     /// The questions of a new theme's name, each of the theme that it
     /// copies.
     new_theme_asks: BTreeMap<AlertId, theme_copies::NewTheme>,
+    /// Whether the open panel of the themes to import shows, and the
+    /// questions of the files of a name in the themes' folder already.
+    importing: bool,
+    import_asks: BTreeMap<AlertId, theme_imports::ThemeImport>,
     /// The contexts in which the menus' commands that tell one can run, and
     /// whether the platform has each one's items enabled, as the focused
     /// pane's last frame had it.
@@ -1035,6 +1042,8 @@ impl<B: Backend> App<B> {
             open_asks: BTreeMap::new(),
             theme_asks: BTreeMap::new(),
             new_theme_asks: BTreeMap::new(),
+            importing: false,
+            import_asks: BTreeMap::new(),
             links_chosen: (None, None),
             appearance_chosen: None,
             performance: None,
@@ -2963,6 +2972,10 @@ impl<B: Backend> App<B> {
                     self.open_themes_folder(platform);
                     Ok(())
                 }
+                IMPORT_THEMES => {
+                    self.ask_import_themes(platform);
+                    Ok(())
+                }
                 NEW_THEME => {
                     let from = match args.get("theme") {
                         Some(Value::String(theme)) if !theme.is_empty() => Some(theme.clone()),
@@ -4728,6 +4741,7 @@ impl<B: Backend> App<B> {
                 suppressed,
                 text,
             } => self.alert_closed(platform, alert, (button, suppressed), text.as_deref()),
+            AppEvent::FilesChosen(paths) => self.themes_chosen(platform, paths),
             AppEvent::SavePanelClosed { panel, path } => {
                 self.save_panel_closed(platform, panel, path);
             }
@@ -5085,6 +5099,7 @@ fn commands(texts: &Texts, plugins: &Plugins) -> Registry {
         (PERFORMANCE, "app-performance", Category::View),
         (OPEN_THEMES, "app-open-themes-folder", Category::View),
         (NEW_THEME, "app-new-theme", Category::View),
+        (IMPORT_THEMES, "app-import-themes", Category::View),
         (SETTINGS_TAB, "app-settings-window", Category::App),
         (NEW_WINDOW, "window-new", Category::Windows),
         (CLOSE_WINDOW, "window-close", Category::Windows),

@@ -136,6 +136,7 @@ fn starting_opens_a_window_under_the_menus_of_the_commands() {
             "Command Palette… shift+cmd+p",
             "Choose Theme…",
             "New Theme from Current…",
+            "Import Themes…",
             "Open Themes Folder",
             "-",
             "Appearance",
@@ -353,6 +354,7 @@ fn the_app_s_commands_register_with_their_categories_and_titles() {
                 Category::View
             ),
             ("app.check-for-updates", "Check for Updates…", Category::App),
+            ("app.import-themes", "Import Themes…", Category::View),
             (
                 "app.install-claude-code-integration",
                 "Install Claude Code Integration…",

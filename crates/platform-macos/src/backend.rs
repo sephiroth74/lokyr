@@ -834,6 +834,23 @@ impl Platform for Backend {
         id
     }
 
+    fn choose_files(&mut self, window: WindowId, extensions: &[&str], message: &str) {
+        match self.windows.get(&window) {
+            Some(shown) => crate::open_panel::begin(
+                self.mtm,
+                shown.ns_window(),
+                (extensions, message),
+                self.shared.clone(),
+            ),
+            // Of a window not there, a panel that the user never saw.
+            None => {
+                if let Some(shared) = self.shared.upgrade() {
+                    shared.enqueue(Pending::App(AppEvent::FilesChosen(Vec::new())));
+                }
+            }
+        }
+    }
+
     fn dismiss_save_panel(&mut self, panel: SavePanelId) {
         // Forgotten first, so that its sheet's end tells nothing.
         let Some(Some((panel, window))) = self.save_panels.remove(&panel) else {

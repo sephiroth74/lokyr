@@ -37,6 +37,7 @@ tip-tab-menu = Right-click a tab to give it a color, or double-click it to renam
 tip-themes = View › Choose Theme… previews each theme as you move through the list.
 tip-themes-folder = Put a .toml or .itermcolors theme in the folder that View › Open Themes Folder shows in the Finder, and Choose Theme… lists it.
 tip-new-theme = View › New Theme from Current… makes a theme of every color of the one in force, uses it and opens it in your editor; a card's context menu on the Themes page duplicates any theme.
+tip-import-themes = View › Import Themes…, or Import… on the Themes page, copies .itermcolors and .toml themes into your themes folder, several at once.
 tip-long-command = A long command tells you as it ends while Lokyr is in the background: [notifications] long-command in the config sets how long.
 tip-look-up = Right-click a word to look it up, or to search the web or the man pages for it.
 tip-services = In the Finder, right-click a folder and choose Services › New Lokyr Tab Here for a terminal there.
