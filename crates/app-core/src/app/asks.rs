@@ -160,6 +160,10 @@ impl<B: Backend> App<B> {
         if let Some(asked) = self.consent_asks.remove(&alert) {
             self.consent_answered(platform, asked, button == 1);
         }
+        // The button chosen, to the plugin that asked.
+        if let Some((_, plugin, id)) = self.choice_asks.remove(&alert) {
+            self.plugins.chosen(&plugin, id, u32::try_from(button).ok());
+        }
         // The text given, to the plugin that asked, or none.
         if let Some((_, plugin, id)) = self.text_asks.remove(&alert) {
             let text = (button == 0).then(|| text.unwrap_or_default().to_owned());
@@ -215,6 +219,10 @@ impl<B: Backend> App<B> {
             || self.title_asks.values().any(|&asked| asked == window)
             || self.part_asks.values().any(|(asked, _)| *asked == window)
             || self.text_asks.values().any(|(asked, ..)| *asked == window)
+            || self
+                .choice_asks
+                .values()
+                .any(|(asked, ..)| *asked == window)
             || self
                 .open_asks
                 .values()
@@ -830,6 +838,37 @@ impl<B: Backend> App<B> {
         };
         let asked = platform.show_alert(Some(shown), alert);
         self.text_asks.insert(asked, (shown, plugin, id));
+    }
+
+    /// Shows `plugin`'s question of buttons `id`, `alert`, on the platform's
+    /// window that shows `window`, or on the focused one, the settings
+    /// window too where `settings` lets it, or the front one: without one,
+    /// the question has no answer.
+    pub(super) fn ask_choice(
+        &mut self,
+        platform: &mut dyn Platform,
+        (plugin, id): (String, u64),
+        (window, settings): (Option<workspace::WindowId>, bool),
+        alert: &Alert,
+    ) {
+        let shown = match window {
+            Some(window) => self
+                .windows
+                .iter()
+                .find(|(_, state)| state.window == window)
+                .map(|(&shown, _)| shown),
+            None => platform
+                .focused_window()
+                .filter(|focused| self.windows.contains_key(focused))
+                .filter(|&focused| settings || !self.shows_settings(focused))
+                .or(self.front),
+        };
+        let Some(shown) = shown.filter(|&shown| settings || !self.shows_settings(shown)) else {
+            self.plugins.chosen(&plugin, id, None);
+            return;
+        };
+        let asked = platform.show_alert(Some(shown), alert);
+        self.choice_asks.insert(asked, (shown, plugin, id));
     }
 
     /// Shows the save panel of `plugin`'s save `id` on the platform's window

@@ -1326,6 +1326,26 @@ impl<'a> Cx<'a> {
         }
     }
 
+    /// Asks the user a question of `buttons`, the first the default, in an
+    /// alert of `message` and `detail` on `window`, or on the focused
+    /// window: the question's id, whose answer comes as [`Event::Chosen`].
+    pub fn ask_choice(
+        &mut self,
+        window: Option<WindowId>,
+        (message, detail): (&str, &str),
+        buttons: &[&str],
+    ) -> Result<u64, Error> {
+        match self.request(Request::AskChoice {
+            window,
+            message: message.to_owned(),
+            detail: detail.to_owned(),
+            buttons: buttons.iter().map(|&button| button.to_owned()).collect(),
+        }) {
+            Response::Asking(id) => Ok(id),
+            other => Err(failed(other)),
+        }
+    }
+
     /// Has `tab`'s window show it, as this call returns.
     pub fn activate_tab(&mut self, tab: TabId) -> Result<(), Error> {
         self.done(Request::ActivateTab(tab))

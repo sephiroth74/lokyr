@@ -385,6 +385,25 @@ pub enum Request {
         /// Its value; none takes it away.
         value: Option<String>,
     },
+    /// Ask the user a question of buttons, whose answer
+    /// [`Plugins::chosen`] gives the plugin.
+    AskChoice {
+        /// The plugin.
+        plugin: String,
+        /// The question's id.
+        id: u64,
+        /// The window that the alert shows on, or the focused one.
+        window: Option<WindowId>,
+        /// Whether the settings window may show it, of a plugin of
+        /// `config`.
+        settings: bool,
+        /// What the alert asks.
+        message: String,
+        /// What it explains.
+        detail: String,
+        /// The buttons' titles, the first the default.
+        buttons: Vec<String>,
+    },
     /// Ask the user for a text, whose answer [`Plugins::answer`] gives the
     /// plugin.
     AskText {
@@ -2491,6 +2510,14 @@ impl Plugins {
             .filter(|entry| entry.state.status != Status::Active)
             .flat_map(|entry| std::mem::take(&mut entry.state.quick_windows))
             .collect()
+    }
+
+    /// Gives `plugin` the user's answer to its question of buttons `id`,
+    /// the button chosen or none, for the next delivery, to it alone.
+    pub fn chosen(&mut self, plugin: &str, id: u64, button: Option<u32>) {
+        self.out
+            .events
+            .push((Some(plugin.to_owned()), Event::Chosen { id, button }));
     }
 
     /// Gives `plugin` the color `color` that the user chose in the color
@@ -6127,7 +6154,7 @@ impl Host<'_, '_> {
             Asked::SetTheme { variant, name } => {
                 theme_name(&name)?;
                 (self.context.themes)()
-                    .check(&name, variant)
+                    .check(&name)
                     .map_err(|message| Error::new(Code::NotFound, message))?;
                 Request::SetTheme { variant, name }
             }
@@ -6244,6 +6271,44 @@ impl Host<'_, '_> {
                     plugin: self.state.name.clone(),
                     id,
                     name,
+                });
+                return Ok(Response::Asking(id));
+            }
+            // A question of buttons, on the settings window of a plugin of
+            // `config` alone.
+            Asked::AskChoice {
+                window,
+                message,
+                detail,
+                buttons,
+            } => {
+                host::check_buttons(&buttons)?;
+                let settings = self
+                    .state
+                    .granted
+                    .as_ref()
+                    .is_none_or(|granted| granted.contains(&Capability::Config));
+                let window = window.map(|window| WindowId::of(window.0));
+                if let Some(window) = window {
+                    if self.context.workspace.window(window).is_none() {
+                        return Err(Error::new(
+                            Code::NotFound,
+                            format!("there is no window {}", window.get()),
+                        ));
+                    }
+                    if !settings {
+                        self.not_settings_window(window)?;
+                    }
+                }
+                let id = new_id();
+                self.out.requests.push(Request::AskChoice {
+                    plugin: self.state.name.clone(),
+                    id,
+                    window,
+                    settings,
+                    message,
+                    detail,
+                    buttons,
                 });
                 return Ok(Response::Asking(id));
             }

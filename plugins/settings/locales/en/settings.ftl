@@ -58,6 +58,18 @@ themes-new = New…
 theme-use = Use
 theme-edit = Edit
 theme-duplicate = Duplicate…
+theme-both-message = Use “{ $name }” for the { $variant ->
+    [light] light
+   *[dark] dark
+} appearance alone, or for both?
+theme-both-detail = The { $variant ->
+    [light] dark
+   *[dark] light
+} appearance is in force, which keeps its own theme unless “{ $name }” is used for both.
+theme-light-only = Light Only
+theme-dark-only = Dark Only
+theme-both = Light and Dark
+theme-both-cancel = Cancel
 
 # The sidebar's sections, the config's, then the plugins'.
 section-font = Font

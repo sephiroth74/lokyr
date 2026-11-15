@@ -1441,6 +1441,7 @@ impl FakeHost {
                     | Event::PageHidden(_)
                     | Event::ConfigChanged
                     | Event::Answered { .. }
+                    | Event::Chosen { .. }
                     | Event::ColorPicked { .. }
                     | Event::ColorPanelClosed
                     | Event::Saved { .. }
@@ -3528,6 +3529,15 @@ impl Calling<'_> {
                 }
                 Response::Asking(self.host.next_id())
             }
+            Request::AskChoice {
+                window, buttons, ..
+            } => {
+                host::check_buttons(buttons)?;
+                if let Some(window) = window {
+                    self.known_window(*window)?;
+                }
+                Response::Asking(self.host.next_id())
+            }
             Request::SaveFile {
                 window,
                 name,
@@ -3781,10 +3791,10 @@ impl Calling<'_> {
                 Response::Done
             }
             // A choice that the config keeps, of a theme that is there.
-            Request::SetTheme { variant, name } => {
+            Request::SetTheme { name, .. } => {
                 self.host
                     .themes
-                    .check(name, *variant)
+                    .check(name)
                     .map_err(|message| Error::new(Code::NotFound, message))?;
                 Response::Done
             }

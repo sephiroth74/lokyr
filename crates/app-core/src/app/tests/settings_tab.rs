@@ -1946,19 +1946,45 @@ fn the_themes_page_previews_each_theme_of_its_colors_and_a_card_names_it_in_the_
     );
     assert!(!has(&app, "themes-loading"));
     assert!(app.previews.contains_key("Lokyr Light"));
-    // A card's click names its theme in `[theme]` for its appearance.
-    app.ui_events.push((
-        "lokyr/settings".to_owned(),
-        UiEvent {
-            view: ViewId::Page("themes".to_owned()),
-            key: "theme:dark:Lokyr Dark".into(),
-            kind: lokyr_kernel::plugins::view::UiEventKind::Click,
-        },
-    ));
+    // A card's click names its theme in `[theme]` for its appearance: at
+    // once of the appearance in force, the light one.
+    let click = |app: &mut App, card: &str| {
+        app.ui_events.push((
+            "lokyr/settings".to_owned(),
+            UiEvent {
+                view: ViewId::Page("themes".to_owned()),
+                key: card.into(),
+                kind: lokyr_kernel::plugins::view::UiEventKind::Click,
+            },
+        ));
+    };
+    click(&mut app, "theme:light:Lokyr Light");
     frames(&mut fake, &mut app, own);
     assert_eq!(
         std::fs::read_to_string(&path).unwrap(),
-        "# mine\n\n[theme]\ndark = \"Lokyr Dark\"\n"
+        "# mine\n\n[theme]\nlight = \"Lokyr Light\"\n"
+    );
+    // Of the other: a question on the settings window, of it alone or
+    // both; for it alone, named for the dark appearance.
+    let alerts = fake.alerts().len();
+    click(&mut app, "theme:dark:Lokyr Dark");
+    frames(&mut fake, &mut app, own);
+    let asked = fake.alerts().last().cloned().expect("a question");
+    assert_eq!(fake.alerts().len(), alerts + 1);
+    assert_eq!(asked.window, Some(own));
+    assert_eq!(
+        asked.alert.message,
+        "Use “Lokyr Dark” for the dark appearance alone, or for both?"
+    );
+    assert_eq!(
+        asked.alert.buttons,
+        ["Dark Only", "Light and Dark", "Cancel"]
+    );
+    fake.answer_alert(&mut app, asked.id, 0);
+    frames(&mut fake, &mut app, own);
+    assert_eq!(
+        std::fs::read_to_string(&path).unwrap(),
+        "# mine\n\n[theme]\nlight = \"Lokyr Light\"\ndark = \"Lokyr Dark\"\n"
     );
     // A card's context menu, the platform's own, at the pointer, of Use,
     // Edit, dimmed of a built-in theme, and Duplicate….

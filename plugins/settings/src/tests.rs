@@ -2631,26 +2631,82 @@ fn a_theme_s_card_names_it_in_the_config_for_its_appearance() {
         key: key.into(),
         kind: UiEventKind::Click,
     };
+    let named = |host: &mut FakeHost| -> Vec<Request> {
+        host.take_done()
+            .into_iter()
+            .filter(|request| matches!(request, Request::SetTheme { .. }))
+            .collect()
+    };
+    let set = |variant, name: &str| Request::SetTheme {
+        variant,
+        name: name.to_owned(),
+    };
+    // Of the appearance in force, the dark one: named at once.
     host.ui_event(&mut plugin, &click("theme:dark:Nord"))
         .unwrap();
-    host.ui_event(&mut plugin, &click("theme:light:Paper"))
-        .unwrap();
-    let chosen: Vec<Request> = host
-        .take_done()
-        .into_iter()
-        .filter(|request| matches!(request, Request::SetTheme { .. }))
-        .collect();
+    assert_eq!(named(&mut host), [set(ThemeVariant::Dark, "Nord")]);
+    // Of the other: a question of it alone, the default, both, or none.
+    let answer = |host: &mut FakeHost, plugin: &mut SettingsPage, button: Option<u32>| {
+        host.ui_event(plugin, &click("theme:light:Paper")).unwrap();
+        let done = host.take_done();
+        let asked = done.iter().find_map(|request| match request {
+            Request::AskChoice {
+                window: None,
+                message,
+                buttons,
+                ..
+            } => Some((message.clone(), buttons.clone())),
+            _ => None,
+        });
+        let (message, buttons) = asked.expect("a question");
+        assert_eq!(message, "theme-both-message");
+        assert_eq!(
+            buttons,
+            ["theme-light-only", "theme-both", "theme-both-cancel"]
+        );
+        let id = plugin.using.as_ref().expect("asked").0;
+        host.post(Event::Chosen { id, button });
+        host.deliver(plugin).unwrap();
+        named(host)
+    };
     assert_eq!(
-        chosen,
+        answer(&mut host, &mut plugin, Some(0)),
+        [set(ThemeVariant::Light, "Paper")]
+    );
+    assert_eq!(
+        answer(&mut host, &mut plugin, Some(1)),
         [
-            Request::SetTheme {
-                variant: ThemeVariant::Dark,
-                name: "Nord".to_owned(),
-            },
-            Request::SetTheme {
-                variant: ThemeVariant::Light,
-                name: "Paper".to_owned(),
-            },
+            set(ThemeVariant::Light, "Paper"),
+            set(ThemeVariant::Dark, "Paper")
         ]
+    );
+    for button in [Some(2), None] {
+        assert!(answer(&mut host, &mut plugin, button).is_empty());
+    }
+    // Its menu's Use asks as its click does.
+    host.ui_event(
+        &mut plugin,
+        &UiEvent {
+            view: themes_page(),
+            key: "theme:light:Paper".into(),
+            kind: UiEventKind::ContextMenu,
+        },
+    )
+    .unwrap();
+    host.render(&mut plugin, &ViewId::Panel(PanelId::from(THEME_MENU)))
+        .unwrap();
+    host.ui_event(
+        &mut plugin,
+        &UiEvent {
+            view: ViewId::Panel(PanelId::from(THEME_MENU)),
+            key: THEME_USE.into(),
+            kind: UiEventKind::Click,
+        },
+    )
+    .unwrap();
+    assert!(
+        host.take_done()
+            .iter()
+            .any(|request| matches!(request, Request::AskChoice { .. }))
     );
 }

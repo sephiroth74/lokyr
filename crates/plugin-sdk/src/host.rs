@@ -800,22 +800,49 @@ pub struct Themes {
 }
 
 impl Themes {
-    /// Whether `name` is a theme of `variant` among them, or the error that
-    /// tells it is not, which a choice that the config would keep refuses.
-    pub fn check(&self, name: &str, variant: crate::theme::ThemeVariant) -> Result<(), String> {
-        if self
-            .themes
-            .iter()
-            .any(|theme| theme.name == name && theme.variant == variant)
-        {
+    /// Whether `name` is a theme among them, of either appearance, as
+    /// `[theme]` names one for an appearance, a light one for the dark one
+    /// too; or the error that tells it is not, which a choice that the
+    /// config would keep refuses.
+    pub fn check(&self, name: &str) -> Result<(), String> {
+        if self.themes.iter().any(|theme| theme.name == name) {
             return Ok(());
         }
-        let variant = match variant {
-            crate::theme::ThemeVariant::Light => "light",
-            crate::theme::ThemeVariant::Dark => "dark",
-        };
-        Err(format!("there is no {variant} theme `{name}`"))
+        Err(format!("there is no theme `{name}`"))
     }
+}
+
+/// How many characters a question's button's title has at most.
+pub const MOST_BUTTON_CHARS: usize = 64;
+
+/// Whether `buttons` can be a question's: from one to
+/// [`MOST_BUTTONS`](crate::message::MOST_BUTTONS), each of a text of
+/// [`MOST_BUTTON_CHARS`] characters at most; or the error that tells why
+/// not.
+pub fn check_buttons(buttons: &[String]) -> Result<(), crate::command::Error> {
+    use crate::command::{Code, Error};
+    let most = crate::message::MOST_BUTTONS;
+    if buttons.is_empty() || buttons.len() > most {
+        return Err(Error::new(
+            Code::Failed,
+            format!(
+                "a question has from 1 to {most} buttons, not {}",
+                buttons.len()
+            ),
+        ));
+    }
+    if let Some(button) = buttons
+        .iter()
+        .find(|button| button.trim().is_empty() || button.chars().count() > MOST_BUTTON_CHARS)
+    {
+        return Err(Error::new(
+            Code::Failed,
+            format!(
+                "a button's title is a text of 1 to {MOST_BUTTON_CHARS} characters, not `{button}`"
+            ),
+        ));
+    }
+    Ok(())
 }
 
 /// Whether a copy can be made of the theme `name` of `themes`: one that is

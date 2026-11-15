@@ -296,6 +296,7 @@ impl Symbols {
                 done,
             },
             Event::Answered { text, .. } => Event::Answered { id: 0, text },
+            Event::Chosen { button, .. } => Event::Chosen { id: 0, button },
             Event::Saved { path, error, .. } => Event::Saved { id: 0, path, error },
             Event::Package { line, .. } => Event::Package { id: 0, line },
             Event::PackagesEnded { ok, .. } => Event::PackagesEnded { id: 0, ok },
@@ -788,6 +789,7 @@ fn on_kernel(
             // An answer goes to its plugin alone.
             match event {
                 Event::Answered { id, text } => plugins.answer(name(scenario), *id, text.clone()),
+                Event::Chosen { id, button } => plugins.chosen(name(scenario), *id, *button),
                 Event::Saved { id, path, error } => {
                     plugins.saved(name(scenario), *id, path.clone(), error.clone());
                 }
@@ -1103,11 +1105,12 @@ fn kind(request: &Request) -> usize {
         Request::PreviewThemeValue { .. } => 124,
         Request::ShowColorPanel { .. } => 125,
         Request::CloseColorPanel => 126,
+        Request::AskChoice { .. } => 127,
     }
 }
 
 /// How many kinds of requests the plugin API has.
-const KINDS: usize = 127;
+const KINDS: usize = 128;
 
 #[test]
 fn the_scenarios_hold_every_request_of_the_plugin_api() {

@@ -121,6 +121,7 @@ export type Cx = {
     keys_of: (command: string, args: { [string]: Value }?) -> (string?, string?, number?),
     message: (id: string, args: { [string]: Data }?) -> (string?, string?, number?),
     ask_text: (window: WindowId?, message: string, detail: string, text: string) -> (number?, string?, number?),
+    ask_choice: (window: WindowId?, message: string, detail: string, buttons: { string }) -> (number?, string?, number?),
     activate_tab: (tab: TabId) -> (true?, string?, number?),
     focus_pane: (pane: PaneId) -> (true?, string?, number?),
     move_tab: (tab: TabId, window: WindowId, index: number) -> (true?, string?, number?),
@@ -176,6 +177,7 @@ export type Event =
     | { kind: "command-ended", pane: PaneId, command: number, status: number? }
     | { kind: "tab-bar-resized", width: number }
     | { kind: "answered", id: number, text: string? }
+    | { kind: "chosen", id: number, button: number? }
     | { kind: "color-picked", color: string }
     | { kind: "color-panel-closed" }
     | { kind: "saved", id: number, path: string?, error: string? }

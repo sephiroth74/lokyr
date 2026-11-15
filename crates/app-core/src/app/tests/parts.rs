@@ -25,6 +25,7 @@ impl plugins::Plugin for Parts {
             "parts.close-pane",
             "parts.name",
             "parts.ask",
+            "parts.choose",
             "parts.read",
         ] {
             cx.register_command(Command {
@@ -62,6 +63,15 @@ impl plugins::Plugin for Parts {
                 read.push(keys);
                 Ok(())
             }
+            "parts.choose" => {
+                let id = cx.ask_choice(
+                    None,
+                    ("Close the tab?", "It runs a program."),
+                    &["Close", "Keep", "Cancel"],
+                )?;
+                self.1.borrow_mut().push(id);
+                Ok(())
+            }
             _ => {
                 let id = cx.ask_text(None, "The tab's title", "", "old")?;
                 self.1.borrow_mut().push(id);
@@ -79,6 +89,10 @@ impl plugins::Plugin for Parts {
             match event {
                 plugins::Event::Answered { id, text } => {
                     self.0.borrow_mut().push((*id, text.clone()));
+                }
+                plugins::Event::Chosen { id, button } => {
+                    let button = button.map(|button| format!("button {button}"));
+                    self.0.borrow_mut().push((*id, button));
                 }
                 plugins::Event::KeysChanged => self.2.borrow_mut().push("keys-changed".to_owned()),
                 _ => {}
@@ -251,6 +265,32 @@ fn a_text_that_a_plugin_asks_for_comes_to_it_or_none() {
     app.close(&mut fake, window);
     run_until(&mut fake, &mut app, |_, _| answers.borrow().len() == 3);
     assert_eq!(answers.borrow()[2], (asked.borrow()[2], None));
+}
+
+#[test]
+fn a_question_of_buttons_that_a_plugin_asks_tells_it_the_button_or_none() {
+    let (mut fake, mut app, window, answers, asked) = with_parts(idle());
+    run(&mut fake, &mut app, "parts.choose");
+    let [question] = fake.alerts() else {
+        panic!("one question: {:?}", fake.alerts());
+    };
+    assert_eq!(question.alert.message, "Close the tab?");
+    assert_eq!(question.alert.detail, "It runs a program.");
+    assert_eq!(question.alert.buttons, ["Close", "Keep", "Cancel"]);
+    assert_eq!(question.alert.input, None);
+    assert_eq!(question.window, Some(window));
+    let id = question.id;
+    fake.answer_alert(&mut app, id, 1);
+    run_until(&mut fake, &mut app, |_, _| !answers.borrow().is_empty());
+    assert_eq!(
+        answers.borrow()[0],
+        (asked.borrow()[0], Some("button 1".to_owned()))
+    );
+    // A question whose window closes has no answer.
+    run(&mut fake, &mut app, "parts.choose");
+    app.close(&mut fake, window);
+    run_until(&mut fake, &mut app, |_, _| answers.borrow().len() == 2);
+    assert_eq!(answers.borrow()[1], (asked.borrow()[1], None));
 }
 
 #[test]

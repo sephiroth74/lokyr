@@ -57,6 +57,18 @@ themes-new = Nuovo…
 theme-use = Usa
 theme-edit = Modifica
 theme-duplicate = Duplica…
+theme-both-message = Usare «{ $name }» solo per l'aspetto { $variant ->
+    [light] chiaro
+   *[dark] scuro
+}, o per entrambi?
+theme-both-detail = È in uso l'aspetto { $variant ->
+    [light] scuro
+   *[dark] chiaro
+}, che tiene il proprio tema a meno di usare «{ $name }» per entrambi.
+theme-light-only = Solo chiaro
+theme-dark-only = Solo scuro
+theme-both = Chiaro e scuro
+theme-both-cancel = Annulla
 
 # Le sezioni della barra laterale, della config, poi dei plugin.
 section-font = Font

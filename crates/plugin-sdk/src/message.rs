@@ -131,7 +131,8 @@ pub enum Request {
     /// theme's choice, or `None`, which shows the config's again.
     PreviewTheme(Option<String>),
     /// Names a theme in the config's `[theme]`, for the appearance of
-    /// `variant`, which the app shows at once, a preview ending.
+    /// `variant`, which the app shows at once, a preview ending: a theme
+    /// that is there, of either appearance.
     SetTheme {
         /// The appearance whose theme it names.
         variant: crate::theme::ThemeVariant,
@@ -805,6 +806,26 @@ pub enum Request {
         /// The field's text as it opens.
         text: String,
     },
+    /// Asks the user a question of `buttons`, in an alert of `message` and
+    /// `detail` on `window`, or on the focused window without one, the
+    /// first button the default: the host answers with the question's id,
+    /// and the button chosen comes as [`Event::Chosen`] to the plugin alone,
+    /// or none as the question's window closes. The message, the detail and
+    /// the buttons are messages of the plugin's catalogs, or the texts
+    /// themselves where the catalogs lack them; from one to
+    /// [`MOST_BUTTONS`] buttons, each of a text. The settings window takes
+    /// the questions of Lokyr's own plugins alone, of `config`.
+    AskChoice {
+        /// The window.
+        window: Option<WindowId>,
+        /// What the alert asks, in a line, or its message's id.
+        message: String,
+        /// What it explains under the message, or its message's id.
+        detail: String,
+        /// The buttons' titles, or their messages' ids, the first the
+        /// default.
+        buttons: Vec<String>,
+    },
     /// Has a tab's window show it.
     ActivateTab(TabId),
     /// Gives a pane its tab's keyboard.
@@ -1154,6 +1175,7 @@ impl Request {
             | Self::PaneTitle(_)
             | Self::Viewport(_)
             | Self::AskText { .. }
+            | Self::AskChoice { .. }
             | Self::TabBarPlace
             | Self::KeysOf { .. }
             | Self::Message { .. }
@@ -1294,6 +1316,7 @@ impl Request {
             | Self::OpenPanel { .. }
             | Self::ClosePanel(_)
             | Self::AskText { .. }
+            | Self::AskChoice { .. }
             | Self::CopyTheme(_)
             | Self::NewTheme(_)
             | Self::ConvertTheme(_)
@@ -1440,6 +1463,9 @@ pub const SETTINGS_CHANGED: &str = "settings-changed";
 
 /// The name of [`Event::ThemesChanged`], as a plugin subscribes to it.
 pub const THEMES_CHANGED: &str = "themes-changed";
+
+/// How many buttons a question of [`Request::AskChoice`] has at most.
+pub const MOST_BUTTONS: usize = 4;
 
 /// The name of [`Event::ThemeChanged`], as a plugin subscribes to it.
 pub const THEME_CHANGED: &str = "theme-changed";
@@ -1605,6 +1631,15 @@ pub enum Event {
         /// The text.
         text: Option<String>,
     },
+    /// The user's answer to a question of buttons that the plugin asked,
+    /// to it alone: the button chosen, from the first, or none as the
+    /// question's window closed.
+    Chosen {
+        /// The question's id.
+        id: u64,
+        /// The button, from the first.
+        button: Option<u32>,
+    },
     /// A color that the user chose in the color panel that the plugin
     /// showed, as it moves, to it alone.
     ColorPicked {
@@ -1695,6 +1730,7 @@ impl Event {
             Self::PageShown(_) => "page-shown",
             Self::PageHidden(_) => "page-hidden",
             Self::Answered { .. } => "answered",
+            Self::Chosen { .. } => "chosen",
             Self::ColorPicked { .. } => "color-picked",
             Self::ColorPanelClosed => "color-panel-closed",
             Self::Saved { .. } => "saved",
@@ -1896,6 +1932,7 @@ impl Request {
             Self::NewTab { .. } => "tab",
             Self::TabBarPlace { .. } => "tab-bar-place",
             Self::AskText { .. }
+            | Self::AskChoice { .. }
             | Self::CopyTheme { .. }
             | Self::NewTheme { .. }
             | Self::ConvertTheme { .. }

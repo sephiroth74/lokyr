@@ -831,6 +831,9 @@ pub struct App<B: Backend> {
     /// The texts that plugins ask the user for, on their windows, with the
     /// plugin and the question's id, by their alerts.
     text_asks: BTreeMap<AlertId, (WindowId, String, u64)>,
+    /// The plugins' questions of buttons, each of its window, its plugin
+    /// and its id, whose button chosen goes to the plugin.
+    choice_asks: BTreeMap<AlertId, (WindowId, String, u64)>,
     /// The saves that plugins asked, whose panels show, by their panels.
     saves: BTreeMap<SavePanelId, asks::Save>,
     /// The saves whose files their threads wrote, or failed to, for their
@@ -1080,6 +1083,7 @@ impl<B: Backend> App<B> {
             title_asks: BTreeMap::new(),
             part_asks: BTreeMap::new(),
             text_asks: BTreeMap::new(),
+            choice_asks: BTreeMap::new(),
             saves: BTreeMap::new(),
             written: std::sync::Arc::default(),
             pictures: BTreeMap::new(),
@@ -2737,6 +2741,17 @@ impl<B: Backend> App<B> {
                     self.plugins.answer(&plugin, id, None);
                 }
             }
+            let unchosen: Vec<AlertId> = self
+                .choice_asks
+                .iter()
+                .filter(|(_, (asked, ..))| *asked == window)
+                .map(|(&alert, _)| alert)
+                .collect();
+            for alert in unchosen {
+                if let Some((_, plugin, id)) = self.choice_asks.remove(&alert) {
+                    self.plugins.chosen(&plugin, id, None);
+                }
+            }
             self.forget_theme_asks(window);
             self.workspace.close_window(state.window);
         }
@@ -3557,6 +3572,30 @@ impl<B: Backend> App<B> {
                         self.color_panel = None;
                         platform.close_color_panel();
                     }
+                }
+                Request::AskChoice {
+                    plugin,
+                    id,
+                    window,
+                    settings,
+                    message,
+                    detail,
+                    buttons,
+                } => {
+                    // Of the plugin's catalogs, in the language shown.
+                    let language = self.texts.language().to_owned();
+                    let alert = Alert {
+                        style: AlertStyle::Informational,
+                        message: self.plugins.text_of(&plugin, &language, &message),
+                        detail: self.plugins.text_of(&plugin, &language, &detail),
+                        buttons: buttons
+                            .iter()
+                            .map(|button| self.plugins.text_of(&plugin, &language, button))
+                            .collect(),
+                        suppression: None,
+                        input: None,
+                    };
+                    self.ask_choice(platform, (plugin, id), (window, settings), &alert);
                 }
                 Request::AskText {
                     plugin,

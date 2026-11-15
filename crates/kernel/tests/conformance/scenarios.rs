@@ -892,6 +892,10 @@ fn tabs(world: &World) -> Scenario {
         id: 0,
         text: Some("work".to_owned()),
     };
+    let chosen = Event::Chosen {
+        id: 0,
+        button: Some(1),
+    };
     Scenario {
         name: "a tab's own title and color, and a question".to_owned(),
         capabilities: None,
@@ -949,9 +953,28 @@ fn tabs(world: &World) -> Scenario {
                         },
                         failed(Code::NotFound, "there is no window 999999"),
                     ),
+                    // A question of buttons, and one of none.
+                    (
+                        Request::AskChoice {
+                            window: None,
+                            message: "Close it?".to_owned(),
+                            detail: String::new(),
+                            buttons: vec!["Close".to_owned(), "Cancel".to_owned()],
+                        },
+                        Response::Asking(0),
+                    ),
+                    (
+                        Request::AskChoice {
+                            window: None,
+                            message: "Close it?".to_owned(),
+                            detail: String::new(),
+                            buttons: Vec::new(),
+                        },
+                        failed(Code::Failed, "a question has from 1 to 4 buttons, not 0"),
+                    ),
                 ],
-                posts: vec![answer.clone()],
-                heard: vec![answer],
+                posts: vec![answer.clone(), chosen.clone()],
+                heard: vec![answer, chosen],
             },
             ask(vec![
                 (
@@ -2156,21 +2179,21 @@ fn app_requests(world: &World) -> Scenario {
                 },
                 Response::Done,
             ),
-            // A theme that is not there, or of the other appearance, which
-            // the config would keep.
+            // A theme that is not there refused, which the config would
+            // keep; one of the other appearance named for this one too.
             (
                 Request::SetTheme {
                     variant: lokyr_plugin_sdk::theme::ThemeVariant::Dark,
                     name: "Dracula".to_owned(),
                 },
-                failed(Code::NotFound, "there is no dark theme `Dracula`"),
+                failed(Code::NotFound, "there is no theme `Dracula`"),
             ),
             (
                 Request::SetTheme {
                     variant: lokyr_plugin_sdk::theme::ThemeVariant::Dark,
                     name: "Lokyr Light".to_owned(),
                 },
-                failed(Code::NotFound, "there is no dark theme `Lokyr Light`"),
+                Response::Done,
             ),
             (
                 Request::RunCommand {

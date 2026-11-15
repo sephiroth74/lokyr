@@ -252,6 +252,9 @@ pub struct SettingsPage {
     /// The question of a new theme of New…, whose answer, its name, the
     /// Editor shows.
     creating: Option<u64>,
+    /// The question of a theme of the appearance not in force, for it
+    /// alone or both, of the theme's appearance and name.
+    using: Option<(u64, ThemeVariant, String)>,
     /// The font of the item highlighted last, which shows once the timer
     /// of its rest fires.
     pending_preview: Option<(FontPreview, String)>,
@@ -331,6 +334,22 @@ impl Plugin for SettingsPage {
                     self.themes_variant = None;
                     self.in_editor = false;
                     cx.request_render(themes_page())?;
+                }
+                // A theme of the appearance not in force: named for it
+                // alone, for both, or not.
+                Event::Chosen { id, button }
+                    if self.using.as_ref().is_some_and(|using| using.0 == *id) =>
+                {
+                    if let Some((_, variant, name)) = self.using.take() {
+                        match button {
+                            Some(0) => cx.set_theme(variant, &name)?,
+                            Some(1) => {
+                                cx.set_theme(ThemeVariant::Light, &name)?;
+                                cx.set_theme(ThemeVariant::Dark, &name)?;
+                            }
+                            _ => {}
+                        }
+                    }
                 }
                 // A new theme of New… made: shown in the Editor.
                 Event::Answered { id, text } if self.creating == Some(*id) => {
@@ -452,7 +471,7 @@ impl Plugin for SettingsPage {
             };
             let _ = cx.close_panel(THEME_MENU);
             return match key {
-                THEME_USE => cx.set_theme(variant, &name),
+                THEME_USE => self.use_theme(cx, variant, &name),
                 THEME_EDIT => self.edit_theme(cx, &name),
                 // A copy, its name asked, used for its appearance, its card
                 // chosen, of no editor opened: Edit shows it in the Editor.
@@ -511,7 +530,7 @@ impl Plugin for SettingsPage {
                 _ => ThemeVariant::Dark,
             };
             match event.kind {
-                UiEventKind::Click => cx.set_theme(variant, name)?,
+                UiEventKind::Click => self.use_theme(cx, variant, name)?,
                 UiEventKind::ContextMenu => {
                     self.theme_menu = Some((variant, name.to_owned()));
                     // Another card's menu, open still, gives way.
@@ -828,6 +847,37 @@ impl Plugin for SettingsPage {
 }
 
 impl SettingsPage {
+    /// Names the theme `name` in `[theme]` for its appearance `variant`:
+    /// at once, of the appearance in force; else of a question, of the
+    /// theme for its appearance alone, the default, or for both, as its
+    /// appearance's theme would not show until the appearance changes.
+    fn use_theme(
+        &mut self,
+        cx: &mut Cx<'_>,
+        variant: ThemeVariant,
+        name: &str,
+    ) -> Result<(), Error> {
+        if cx.themes()?.appearance == variant {
+            return cx.set_theme(variant, name);
+        }
+        let (word, only) = match variant {
+            ThemeVariant::Light => ("light", "theme-light-only"),
+            ThemeVariant::Dark => ("dark", "theme-dark-only"),
+        };
+        let args = [("name", name.to_owned()), ("variant", word.to_owned())];
+        let asked = message(cx, "theme-both-message", &args);
+        let detail = message(cx, "theme-both-detail", &args);
+        let buttons = [
+            message(cx, only, &[]),
+            message(cx, "theme-both", &[]),
+            message(cx, "theme-both-cancel", &[]),
+        ];
+        let buttons: Vec<&str> = buttons.iter().map(String::as_str).collect();
+        let id = cx.ask_choice(None, (&asked, &detail), &buttons)?;
+        self.using = Some((id, variant, name.to_owned()));
+        Ok(())
+    }
+
     /// Shows the theme `name` in the Editor, the themes page's part that
     /// shows it then.
     fn edit_theme(&mut self, cx: &mut Cx<'_>, name: &str) -> Result<(), Error> {

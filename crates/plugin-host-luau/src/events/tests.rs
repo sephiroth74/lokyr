@@ -136,6 +136,10 @@ fn every() -> Vec<Event> {
             color: lokyr_plugin_sdk::theme::ThemeColor::hex(0x4c9bff).with_alpha(128),
         },
         Event::ColorPanelClosed,
+        Event::Chosen {
+            id: 13,
+            button: Some(1),
+        },
         Event::Package {
             id: 12,
             line: lokyr_plugin_sdk::message::Data::Map(
@@ -211,6 +215,8 @@ fn every_event_is_a_flat_table_of_its_kind_and_its_fields_both_ways() {
         local picked, closed = events[33], events[34]
         assert(picked.kind == "color-picked" and string.sub(picked.color, 2) == "4c9bff80")
         assert(closed.kind == "color-panel-closed" and next(closed, next(closed)) == nil)
+        local chosen = events[35]
+        assert(chosen.kind == "chosen" and chosen.id == 13 and chosen.button == 1)
         "#,
     )
     .exec()

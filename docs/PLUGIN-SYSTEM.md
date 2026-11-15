@@ -531,6 +531,8 @@ type Event =
     -- The end of a save of `save_file`, to it alone: the path of the file that the host wrote at the place chosen; none
     -- as the panel was cancelled or its window closed; or the error of a write that failed.
     | { kind: "saved", id: number, path: string?, error: string? }
+    -- The answer to a question of `ask_choice`, to it alone: the button chosen, from 0, or nil as its window closed.
+    | { kind: "chosen", id: number, button: number? }
     -- A color that the user chose in the color panel that the plugin showed, `show_color_panel`, as it moves, and the
     -- panel closed by the user, to it alone.
     | { kind: "color-picked", color: string }
@@ -714,8 +716,8 @@ type Cx = {
     -- Require `appearance-write`: shows a theme in place of the appearance in force's, for a while, as a picker
     -- previews it; nil shows the config's.
     preview_theme: (name: string?) -> (boolean, Error?),
-    -- Names a theme in the config's `[theme]` for an appearance, which shows at once, a preview ending: one of the
-    -- appearance's themes, as `themes` lists them, else refused.
+    -- Names a theme in the config's `[theme]` for an appearance, which shows at once, a preview ending: a theme that
+    -- `themes` lists, of either appearance, else refused.
     set_theme: (variant: "light" | "dark", name: string) -> (boolean, Error?),
     -- Require `config`: asks the name of a copy of a theme, as Duplicate… does, writes it into the themes folder of
     -- every color of the theme's and names it in `[theme]` for its appearance; the question's id, whose answer,
@@ -876,6 +878,10 @@ type Cx = {
     -- returns the question's id, and the answer comes as an "answered" event. The message and the detail are
     -- messages of the plugin's catalogs, shown in the language shown, or the texts themselves where they lack them.
     ask_text: (window: WindowId?, message: string, detail: string, text: string) -> (number?, Error?),
+    -- Asks a question of 1 to 4 buttons, the first the default, in an alert on `window`, or on the focused one: returns
+    -- the question's id, and the button chosen, from 0, comes as a "chosen" event, nil as its window closes. Its texts
+    -- are messages of the plugin's catalogs, or the texts themselves; the settings window takes Lokyr's own plugins'.
+    ask_choice: (window: WindowId?, message: string, detail: string, buttons: { string }) -> (number?, Error?),
     -- Asks where to save `bytes`, a string, as a file, in the platform's save panel, a sheet on `window` or on
     -- the focused one, of `name` suggested and of its extension's type: returns the question's id, the host writes
     -- the file at the place chosen, the panel having asked before it replaces one, and its path comes as a "saved"
