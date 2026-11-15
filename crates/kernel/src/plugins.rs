@@ -327,6 +327,18 @@ pub enum Request {
         /// The theme's name.
         name: String,
     },
+    /// Ask the name of a new theme of Lokyr's own values of the appearance
+    /// `variant`, write it into the user's themes folder and name it in
+    /// `[theme]`, its name, or none, the answer that [`Plugins::answer`]
+    /// gives the plugin.
+    NewTheme {
+        /// The plugin.
+        plugin: String,
+        /// The question's id.
+        id: u64,
+        /// The appearance whose values it takes.
+        variant: lokyr_plugin_sdk::theme::ThemeVariant,
+    },
     /// Ask whether to convert the `.itermcolors` theme `name` of the user's
     /// folder to Lokyr's format, and convert it, its name, or none, the
     /// answer that [`Plugins::answer`] gives the plugin.
@@ -6160,6 +6172,15 @@ impl Host<'_, '_> {
                 (self.context.theme_value)(&theme, &name, value.as_deref())
                     .map_err(|message| Error::new(Code::Failed, message))?;
                 Request::SetThemeValue { theme, name, value }
+            }
+            Asked::NewTheme(variant) => {
+                let id = new_id();
+                self.out.requests.push(Request::NewTheme {
+                    plugin: self.state.name.clone(),
+                    id,
+                    variant,
+                });
+                return Ok(Response::Asking(id));
             }
             Asked::ConvertTheme(name) => {
                 host::converted_theme(&(self.context.themes)(), &name)?;

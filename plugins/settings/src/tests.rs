@@ -2438,23 +2438,8 @@ fn the_themes_page_shows_a_progress_while_their_list_is_read() {
 
 #[test]
 fn a_theme_s_card_s_context_menu_uses_it_or_makes_a_new_theme_of_it_and_import_imports() {
-    use lokyr_plugin_sdk::command::{Command, Kind as ParamKind, Param};
-    // The app's command of a new theme, which the plugin's manifest says
-    // it runs.
-    let new_theme = Command {
-        name: NEW_THEME.to_owned(),
-        title: "New Theme from Current…".to_owned(),
-        category: Category::View,
-        capabilities: Vec::new(),
-        params: ["theme", "variant"]
-            .map(|name| Param {
-                name: name.to_owned(),
-                kind: ParamKind::String,
-                default: Some(Value::String(String::new())),
-            })
-            .to_vec(),
-        when: None,
-    };
+    use lokyr_plugin_sdk::command::Command;
+    // The app's commands, which the plugin's manifest says it runs.
     let import_themes = Command {
         name: IMPORT_THEMES.to_owned(),
         title: "Import Themes…".to_owned(),
@@ -2473,7 +2458,7 @@ fn a_theme_s_card_s_context_menu_uses_it_or_makes_a_new_theme_of_it_and_import_i
     };
     let mut host = FakeHost::new(NAME)
         .with_manifest(crate::MANIFEST)
-        .with_commands(vec![new_theme, import_themes, open_themes]);
+        .with_commands(vec![import_themes, open_themes]);
     host.pane(PaneId(1));
     host.set_settings(settings());
     let mut plugin = SettingsPage::default();
@@ -2579,21 +2564,31 @@ fn a_theme_s_card_s_context_menu_uses_it_or_makes_a_new_theme_of_it_and_import_i
             args: Args::new(),
         }));
     // New…: a new theme of Lokyr's own values of the appearance shown,
-    // the dark one, then the light one of the sidebar's.
-    let new_of = |variant: &str| Request::RunCommand {
-        name: NEW_THEME.to_owned(),
-        args: Args::from([
-            ("theme".to_owned(), Value::String(String::new())),
-            ("variant".to_owned(), Value::String(variant.to_owned())),
-        ]),
-    };
+    // the dark one, then the light one of the sidebar's, its name asked by
+    // the app.
     assert!(find_node(&tree, THEMES_NEW).is_some());
     host.ui_event(
         &mut plugin,
         &event(&themes_page(), THEMES_NEW, UiEventKind::Click),
     )
     .unwrap();
-    assert!(host.take_done().contains(&new_of("dark")));
+    assert!(
+        host.take_done()
+            .contains(&Request::NewTheme(ThemeVariant::Dark))
+    );
+    // Made: shown in the Editor, of no editor opened.
+    let id = plugin.creating.expect("a question");
+    host.post(Event::Answered {
+        id,
+        text: Some("Paper".to_owned()),
+    });
+    host.deliver(&mut plugin).unwrap();
+    assert!(
+        host.take_done()
+            .contains(&Request::PreviewTheme(Some("Paper".to_owned())))
+    );
+    let shown = host.render(&mut plugin, &themes_page()).unwrap();
+    assert!(find_node(&shown, "editor-page").is_some());
     host.ui_event(
         &mut plugin,
         &event(&themes_page(), "themes-side:light", UiEventKind::Click),
@@ -2605,7 +2600,10 @@ fn a_theme_s_card_s_context_menu_uses_it_or_makes_a_new_theme_of_it_and_import_i
         &event(&themes_page(), THEMES_NEW, UiEventKind::Click),
     )
     .unwrap();
-    assert!(host.take_done().contains(&new_of("light")));
+    assert!(
+        host.take_done()
+            .contains(&Request::NewTheme(ThemeVariant::Light))
+    );
     // Show in Finder beside it: the themes' folder.
     assert!(find_node(&tree, THEMES_FOLDER).is_some());
     host.ui_event(

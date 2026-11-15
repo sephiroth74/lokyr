@@ -690,6 +690,17 @@ impl<'a> Cx<'a> {
         }
     }
 
+    /// Asks the name of a new theme of Lokyr's own values of the appearance
+    /// `variant`, as the Themes page's New… does, and writes it into the
+    /// user's themes folder: the question's id, whose answer, the theme's
+    /// name once written, comes as [`Event::Answered`].
+    pub fn new_theme(&mut self, variant: crate::theme::ThemeVariant) -> Result<u64, Error> {
+        match self.request(Request::NewTheme(variant)) {
+            Response::Asking(id) => Ok(id),
+            other => Err(failed(other)),
+        }
+    }
+
     /// Asks whether to convert the `.itermcolors` theme `name` to Lokyr's
     /// format, and converts it, of its name: the question's id, whose
     /// answer, the theme's name once converted, comes as

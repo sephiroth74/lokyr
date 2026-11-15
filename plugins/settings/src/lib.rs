@@ -62,10 +62,6 @@ const THEME_USE: &str = "theme-use";
 const THEME_EDIT: &str = "theme-edit";
 const THEME_DUPLICATE: &str = "theme-duplicate";
 
-/// The app's command that makes a new theme of Lokyr's own values of an
-/// appearance, as New… asks.
-const NEW_THEME: &str = "app.new-theme";
-
 /// The themes' page's button of the themes imported, and the app's command
 /// that imports them.
 const THEMES_IMPORT: &str = "themes-import";
@@ -253,6 +249,9 @@ pub struct SettingsPage {
     in_editor: bool,
     /// The theme of the card whose context menu shows, of its appearance.
     theme_menu: Option<(ThemeVariant, String)>,
+    /// The question of a new theme of New…, whose answer, its name, the
+    /// Editor shows.
+    creating: Option<u64>,
     /// The font of the item highlighted last, which shows once the timer
     /// of its rest fires.
     pending_preview: Option<(FontPreview, String)>,
@@ -332,6 +331,13 @@ impl Plugin for SettingsPage {
                     self.themes_variant = None;
                     self.in_editor = false;
                     cx.request_render(themes_page())?;
+                }
+                // A new theme of New… made: shown in the Editor.
+                Event::Answered { id, text } if self.creating == Some(*id) => {
+                    self.creating = None;
+                    if let (Some(name), true) = (text, self.themes_shown) {
+                        self.edit_theme(cx, name)?;
+                    }
                 }
                 // The themes' list read, or anew: their cards.
                 Event::ThemesChanged if self.themes_shown => {
@@ -481,21 +487,15 @@ impl Plugin for SettingsPage {
                 match key {
                     THEMES_IMPORT => return cx.run_command(IMPORT_THEMES, Args::new()),
                     THEMES_FOLDER => return cx.run_command(OPEN_THEMES, Args::new()),
-                    // A new theme of the appearance that the page shows.
+                    // A new theme of the appearance that the page shows, its
+                    // name asked, shown in the Editor once made.
                     THEMES_NEW => {
                         let variant = match self.themes_variant {
                             Some(variant) => variant,
                             None => cx.themes()?.appearance,
                         };
-                        let word = match variant {
-                            ThemeVariant::Light => "light",
-                            ThemeVariant::Dark => "dark",
-                        };
-                        let args = Args::from([
-                            ("theme".to_owned(), Value::String(String::new())),
-                            ("variant".to_owned(), Value::String(word.to_owned())),
-                        ]);
-                        return cx.run_command(NEW_THEME, args);
+                        self.creating = Some(cx.new_theme(variant)?);
+                        return Ok(());
                     }
                     _ => {}
                 }

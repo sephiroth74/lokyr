@@ -17,11 +17,10 @@ clipboard-write = true
 # highlighted.
 appearance-write = true
 
-# The themes page's New…, a new theme that the app makes, Import…, the
-# themes that the app imports, and Show in Finder, the themes' folder that
-# it shows.
+# The themes page's Import…, the themes that the app imports, and Show in
+# Finder, the themes' folder that it shows.
 [uses]
-commands = ["app.new-theme", "app.import-themes", "app.open-themes-folder"]
+commands = ["app.import-themes", "app.open-themes-folder"]
 
 [contributes]
 pages = [

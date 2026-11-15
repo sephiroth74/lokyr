@@ -146,6 +146,15 @@ pub enum Request {
     /// none as the user cancels or the copy fails, which the host tells.
     /// Of the capability `config`, Lokyr's own plugins' alone.
     CopyTheme(String),
+    /// Asks the name of a new theme of Lokyr's own values of the appearance
+    /// of a variant, as the Themes page's New… does, and writes it into the
+    /// user's themes folder, every key written, its optional ones as
+    /// comments, named in `[theme]` for its appearance: the host answers
+    /// with the question's id, and the theme's name comes as
+    /// [`Event::Answered`] to the plugin alone once it is written, or none
+    /// as the user cancels or the write fails, which the host tells. Of the
+    /// capability `config`, Lokyr's own plugins' alone.
+    NewTheme(crate::theme::ThemeVariant),
     /// Asks whether to convert the `.itermcolors` theme of a name of the
     /// user's themes folder to Lokyr's format, to edit it, and converts it:
     /// a file of Lokyr's format of its colors and of its name, its
@@ -1024,6 +1033,7 @@ impl Request {
             Self::Settings
             | Self::SetSetting { .. }
             | Self::CopyTheme(_)
+            | Self::NewTheme(_)
             | Self::ConvertTheme(_)
             | Self::SetThemeValue { .. } => Some(Capability::Config),
             Self::SelectionText(_)
@@ -1254,6 +1264,7 @@ impl Request {
             | Self::ClosePanel(_)
             | Self::AskText { .. }
             | Self::CopyTheme(_)
+            | Self::NewTheme(_)
             | Self::ConvertTheme(_)
             | Self::SetThemeValue { .. }
             | Self::SaveFile { .. }
@@ -1839,6 +1850,7 @@ impl Request {
             Self::TabBarPlace { .. } => "tab-bar-place",
             Self::AskText { .. }
             | Self::CopyTheme { .. }
+            | Self::NewTheme { .. }
             | Self::ConvertTheme { .. }
             | Self::SaveFile { .. }
             | Self::Packages { .. } => "asking",

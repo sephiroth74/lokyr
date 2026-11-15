@@ -3490,6 +3490,13 @@ impl<B: Backend> App<B> {
                 Request::CopyTheme { plugin, id, name } => {
                     self.ask_new_theme(platform, (Some(name), None), Some((plugin, id)));
                 }
+                Request::NewTheme {
+                    plugin,
+                    id,
+                    variant,
+                } => {
+                    self.ask_new_theme(platform, (None, Some(variant)), Some((plugin, id)));
+                }
                 Request::ConvertTheme { plugin, id, name } => {
                     self.ask_convert_theme(platform, (plugin, id), name);
                 }

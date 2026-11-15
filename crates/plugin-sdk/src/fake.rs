@@ -3792,6 +3792,7 @@ impl Calling<'_> {
                 host::copied_theme(&self.host.themes, name)?;
                 Response::Asking(self.host.next_id())
             }
+            Request::NewTheme(_) => Response::Asking(self.host.next_id()),
             Request::ConvertTheme(name) => {
                 host::converted_theme(&self.host.themes, name)?;
                 Response::Asking(self.host.next_id())

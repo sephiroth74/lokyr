@@ -1097,11 +1097,12 @@ fn kind(request: &Request) -> usize {
         Request::CopyTheme(_) => 120,
         Request::ConvertTheme(_) => 121,
         Request::SetThemeValue { .. } => 122,
+        Request::NewTheme(_) => 123,
     }
 }
 
 /// How many kinds of requests the plugin API has.
-const KINDS: usize = 123;
+const KINDS: usize = 124;
 
 #[test]
 fn the_scenarios_hold_every_request_of_the_plugin_api() {

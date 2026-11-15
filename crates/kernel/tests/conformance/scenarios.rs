@@ -2003,6 +2003,11 @@ fn app_requests(world: &World) -> Scenario {
                 Request::CopyTheme("Nothing".to_owned()),
                 failed(Code::NotFound, "there is no theme `Nothing`"),
             ),
+            // A new theme of Lokyr's own values, its name the answer.
+            (
+                Request::NewTheme(lokyr_plugin_sdk::theme::ThemeVariant::Dark),
+                Response::Asking(0),
+            ),
             (
                 Request::ConvertTheme("Lokyr Dark".to_owned()),
                 failed(

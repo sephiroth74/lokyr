@@ -1324,7 +1324,12 @@ struct Editing(EditorAnswers);
 
 impl plugins::Plugin for Editing {
     fn activate(&mut self, cx: &mut plugins::Cx<'_>) -> Result<(), Error> {
-        for name in ["editing.copy", "editing.convert", "editing.convert-pair"] {
+        for name in [
+            "editing.copy",
+            "editing.convert",
+            "editing.convert-pair",
+            "editing.new",
+        ] {
             cx.register_command(Command {
                 name: name.to_owned(),
                 title: name.to_owned(),
@@ -1341,6 +1346,7 @@ impl plugins::Plugin for Editing {
         let id = match name {
             "editing.copy" => cx.copy_theme("Held Dawn")?,
             "editing.convert-pair" => cx.convert_theme("Pair (Dark)")?,
+            "editing.new" => cx.new_theme(lokyr_kernel::themes::ThemeVariant::Dark)?,
             _ => cx.convert_theme("Grays")?,
         };
         self.0.borrow_mut().1.push(id);
@@ -1512,6 +1518,22 @@ fn the_theme_editor_s_copy_and_conversion_answer_its_plugin_of_no_editor_opened(
     let dark = std::fs::read_to_string(themes.join("Pair (Dark).toml")).unwrap();
     assert!(dark.contains("background = \"#333333\""), "{dark}");
     assert!(!themes.join("Pair.itermcolors").exists());
+    // A new theme of Lokyr's own dark values: its name asked, written of
+    // every key, named for the dark appearance, its name answered, no
+    // editor opened.
+    fake.send_app(&mut app, AppEvent::Command("editing.new".to_owned()));
+    let asked = fake.alerts().last().cloned().expect("a question");
+    assert_eq!(asked.alert.input.as_deref(), Some("New Dark Theme"));
+    fake.answer_alert_typed(&mut app, asked.id, (0, false), Some("New Dark Theme"));
+    assert_eq!(
+        heard(&mut fake, &mut app, 7).1,
+        Some("New Dark Theme".to_owned())
+    );
+    let text = std::fs::read_to_string(themes.join("New Dark Theme.toml")).unwrap();
+    assert!(text.contains("variant = \"dark\""), "{text}");
+    let written = std::fs::read_to_string(&path).unwrap();
+    assert!(written.contains("dark = \"New Dark Theme\""), "{written}");
+    assert!(fake.opened().is_empty(), "{:?}", fake.opened());
     // A question whose window closes has no answer.
     let window = fake.windows().next().unwrap();
     fake.send(&mut app, window, WindowEvent::Focused(true));
@@ -1521,7 +1543,7 @@ fn the_theme_editor_s_copy_and_conversion_answer_its_plugin_of_no_editor_opened(
         Some(Some(window))
     );
     app.close(&mut fake, window);
-    assert_eq!(heard(&mut fake, &mut app, 7).1, None);
+    assert_eq!(heard(&mut fake, &mut app, 8).1, None);
     let _ = std::fs::remove_dir_all(&directory);
 }
 
