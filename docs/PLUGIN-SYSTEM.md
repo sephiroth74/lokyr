@@ -621,11 +621,10 @@ type Command = {
 }
 
 -- The themes that the app can show, as a read of them gives them: the appearance in force, its theme as `[theme]` names
--- it, and every theme by name, a file of the themes folder before one of its name that the app holds or builds in, and
--- these before an installed package's, whose `package` names it.
+-- it, and every theme by name, a file of the themes folder before one of its name that the app holds or builds in.
 type Themes = {
     appearance: "light" | "dark", current: string,
-    themes: { { name: string, variant: "light" | "dark", origin: "folder" | "held" | "built-in" | "installed", package: string? } },
+    themes: { { name: string, variant: "light" | "dark", origin: "folder" | "held" | "built-in" } },
 }
 
 -- The system's font families, as a read of them gives them: the family in force, the config's `[font] family` where

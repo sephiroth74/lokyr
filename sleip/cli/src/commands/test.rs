@@ -44,15 +44,6 @@ pub(super) fn failures_of(
     let manifest = std::fs::read_to_string(folder.join("plugin.toml"))
         .map_err(|error| format!("plugin.toml cannot be read, as no plugin is in this folder or the file is not there: {error}"))?;
     let parsed = Manifest::parse(&manifest).map_err(|error| format!("plugin.toml:{error}"))?;
-    // A package of themes holds no code, and so no test.
-    if parsed.kind == Kind::Themes {
-        out.tell(
-            "tested",
-            json!({ "passed": 0, "failed": 0 }),
-            "No test runs: a package of themes holds no code.",
-        );
-        return Ok(Vec::new());
-    }
     if parsed.kind != Kind::Luau {
         return Err(format!(
             "`{}` is not a plugin of Luau, whose tests `sleip test` runs",

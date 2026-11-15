@@ -323,13 +323,23 @@ fn a_new_plugin_of_its_owner_passes_for_the_maintainer_s_review_its_archive_pack
 }
 
 #[test]
-fn a_package_of_themes_passes_of_themes_that_read_and_is_refused_of_one_that_does_not() {
+fn a_package_of_themes_is_refused_as_sleip_holds_none() {
     let lab = Lab::new("themes");
-    let work = lab.root.join("plugins");
-    std::fs::create_dir_all(&work).unwrap();
-    let made = lab.sleip(&["new", "--themes", "acme/harbor"], &work);
-    assert!(made.status.success(), "{made:?}");
-    let folder = work.join("harbor");
+    let folder = lab.root.join("plugins/harbor");
+    std::fs::create_dir_all(&folder).unwrap();
+    written(
+        &folder,
+        &[
+            (
+                "plugin.toml",
+                "[plugin]\nname = \"acme/harbor\"\nversion = \"0.1.0\"\nkind = \"themes\"\nlicense = \"MIT\"\n",
+            ),
+            (
+                "themes/Harbor.toml",
+                "[terminal]\nbackground = \"#14181f\"\n",
+            ),
+        ],
+    );
     git(&folder, &["init", "--quiet"]);
     git(&folder, &["add", "."]);
     git(&folder, &["commit", "--quiet", "-m", "first"]);
@@ -339,33 +349,10 @@ fn a_package_of_themes_passes_of_themes_that_read_and_is_refused_of_one_that_doe
     let file = entry(&url, &[("0.1.0", "v0.1.0", &commit, false)]);
     let base = lab.registry("base", &[]);
     let head = lab.head(&base, &[("plugins/acme/harbor.toml", &file)]);
-    // Its themes read: a new package for the maintainer's review, its
-    // archive built.
-    let (output, verdict) = lab.verify(&head, &base, "acme", "");
-    assert!(output.status.success(), "{output:?}");
-    assert_eq!(verdict["verdict"], "review", "{verdict}");
-    assert!(
-        events(&output)
-            .iter()
-            .any(|event| event["event"] == "built" && event["release"] == "acme.harbor.0.1.0")
-    );
-    // A theme of a color that does not read: refused, of its file and line.
-    edit(&folder, "themes/Harbor.toml", |text| {
-        text.replace("background = \"#14181f\"", "background = \"teal\"")
-    });
-    let wrong = release(&folder, "0.1.1");
-    let file = entry(
-        &url,
-        &[
-            ("0.1.0", "v0.1.0", &commit, false),
-            ("0.1.1", "v0.1.1", &wrong, false),
-        ],
-    );
-    let head = lab.head(&base, &[("plugins/acme/harbor.toml", &file)]);
     let (_, verdict) = lab.verify(&head, &base, "acme", "");
     assert_eq!(verdict["verdict"], "refused", "{verdict}");
     let why = reasons(&verdict, "refused");
-    assert!(why.contains("themes/Harbor.toml:10:"), "{why}");
+    assert!(why.contains("Sleip holds no package of themes"), "{why}");
 }
 
 #[test]

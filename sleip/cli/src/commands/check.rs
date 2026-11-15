@@ -167,7 +167,7 @@ fn check_folder(folder: &Path, findings: &mut Findings) {
             "plugin.toml",
             line_of_key(&text, "kind"),
             "Kind",
-            "the app refuses an installed plugin of `builtin`, which Lokyr's own plugins alone are: a package is of `luau` or `themes`",
+            "the app refuses an installed plugin of `builtin`, which Lokyr's own plugins alone are: a package is of `luau`",
         );
     }
     // An activation of OSC sequences, which the app's handlers of them
@@ -198,25 +198,13 @@ fn check_folder(folder: &Path, findings: &mut Findings) {
             ),
         );
     }
-    if manifest.kind == Kind::Themes {
-        if folder.join("locales").exists() {
-            findings.note(
-                "locales",
-                "a package of themes shows no text of its own, and the app reads none of its catalogs",
-            );
-        }
-    } else {
-        check_catalogs(folder, &manifest, findings);
-    }
+    check_catalogs(folder, &manifest, findings);
     check_schema(folder, &manifest, findings);
     if let Err(error) = lokyr_pkg_model::archive::pack(folder) {
         findings.problem(".", None, "Package", &error.to_string());
     }
     if manifest.kind == Kind::Luau {
         check_sources(folder, findings);
-    }
-    if manifest.kind == Kind::Themes {
-        check_themes(folder, findings);
     }
     if let Ok(copy) = std::fs::read_to_string(folder.join("lokyr.d.luau"))
         && copy != DEFINITIONS
@@ -225,57 +213,6 @@ fn check_folder(folder: &Path, findings: &mut Findings) {
             "lokyr.d.luau",
             "it is not this Sleip's, whose types the check takes: the editor's types may differ",
         );
-    }
-}
-
-/// Checks the themes of the package of themes in `folder`, each file of
-/// `themes/` read as the app reads it, of Lokyr's format or iTerm2's, each
-/// problem at its line; and that no two of them are of one name, of which
-/// the app would take one alone.
-fn check_themes(folder: &Path, findings: &mut Findings) {
-    let Ok(entries) = std::fs::read_dir(folder.join("themes")) else {
-        return;
-    };
-    let mut files: Vec<_> = entries
-        .flatten()
-        .map(|entry| entry.path())
-        .filter(|path| {
-            path.extension()
-                .and_then(|extension| extension.to_str())
-                .is_some_and(|extension| lokyr_themes::EXTENSIONS.contains(&extension))
-        })
-        .collect();
-    files.sort();
-    let mut names: Vec<(String, String)> = Vec::new();
-    for path in files {
-        let file = format!(
-            "themes/{}",
-            path.file_name()
-                .map(|name| name.to_string_lossy())
-                .unwrap_or_default()
-        );
-        match lokyr_themes::themes_of(&path) {
-            Ok(themes) => {
-                for (name, _) in themes {
-                    if let Some((_, other)) = names.iter().find(|(known, _)| *known == name) {
-                        findings.problem(
-                            &file,
-                            None,
-                            "Theme",
-                            &format!("its theme `{name}` is `{other}`'s too, of which the app takes one alone"),
-                        );
-                    } else {
-                        names.push((name, file.clone()));
-                    }
-                }
-            }
-            Err(error) => {
-                let at = error
-                    .position
-                    .map(|at| (to_u32(at.line), to_u32(at.column)));
-                findings.problem(&file, at, "Theme", &error.message);
-            }
-        }
     }
 }
 

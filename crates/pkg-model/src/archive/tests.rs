@@ -148,30 +148,7 @@ fn a_package_packs_alike_and_unpacks_into_the_store_of_its_digest() {
     assert_eq!(again.unpacked, unpacked);
     assert_eq!(store.digests().unwrap(), [unpacked.digest]);
     assert_eq!(std::fs::read_dir(&root).unwrap().count(), 1);
-    // A package of themes.
-    let themes = folder("themes");
-    write(
-        &themes,
-        &[
-            (
-                "plugin.toml",
-                b"[plugin]\nname = \"acme/nord\"\nversion = \"1.0.0\"\nkind = \"themes\"\nlicense = \"MIT\"\n",
-            ),
-            ("themes/nord.toml", b"[theme]\n"),
-            ("themes/nord-light.itermcolors", b"<plist/>"),
-        ],
-    );
-    let unpacked = store
-        .add(pack(&themes).unwrap().as_slice())
-        .unwrap()
-        .unpacked;
-    assert!(
-        store
-            .folder(&unpacked.digest)
-            .join("themes/nord.toml")
-            .is_file()
-    );
-    for name in ["package", "store", "themes"] {
+    for name in ["package", "store"] {
         let _ = std::fs::remove_dir_all(folder(name));
     }
 }
@@ -299,7 +276,6 @@ fn an_archive_past_its_sizes_or_of_a_bomb_is_refused() {
 fn a_package_out_of_its_layout_is_refused() {
     use tar::EntryType::Regular;
     let bounds = Bounds::default();
-    let themes = b"[plugin]\nname = \"acme/nord\"\nversion = \"1.0.0\"\nkind = \"themes\"\nlicense = \"MIT\"\n";
     let builtin = b"[plugin]\nname = \"lokyr/x\"\nkind = \"builtin\"\nlicense = \"MIT\"\n";
     let schema = manifest(Some("schema.json"));
     for (entries, told) in [
@@ -326,17 +302,6 @@ fn a_package_out_of_its_layout_is_refused() {
         (
             plugin(&[("themes/nord.toml", Regular, b"x")]),
             "`themes/nord.toml` has no place",
-        ),
-        (
-            vec![
-                ("plugin.toml", Regular, themes.as_slice()),
-                ("src/init.luau", Regular, b"return {}".as_slice()),
-            ],
-            "`src/init.luau` has no place in a package of the kind `themes`",
-        ),
-        (
-            vec![("plugin.toml", Regular, themes.as_slice())],
-            "a package of themes holds its themes",
         ),
         (
             vec![

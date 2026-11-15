@@ -1014,91 +1014,39 @@ fn deadline(pid: u32, done: std::sync::Arc<std::sync::atomic::AtomicBool>) {
 }
 
 #[test]
-fn new_themes_from_a_theme_copies_it_whole_wherever_lokyr_finds_it_or_refuses_one_of_none() {
-    let sandbox = Sandbox::new("new-from");
-    let palette = r##"palette = ["#000000", "#110000", "#001100", "#111100", "#000011", "#110011", "#001111", "#111111",
-           "#222222", "#330000", "#003300", "#333300", "#000033", "#330033", "#003333", "#ffffff"]"##;
-    // Lokyr's own themes, beside the app's `api-version`, as in its
-    // bundle's resources.
-    let held = sandbox.home.join("themes");
-    std::fs::create_dir_all(&held).unwrap();
+fn a_package_of_themes_is_none_of_sleip_s() {
+    let sandbox = Sandbox::new("themes-refused");
+    let folder = sandbox.home.join("harbor");
+    std::fs::create_dir_all(folder.join("themes")).unwrap();
     std::fs::write(
-        held.join("Held Night.toml"),
-        format!(
-            "[theme]\nauthor = \"Ada\"\nlicense = \"Apache-2.0\"\n[terminal]\nbackground = \"#102030\"\nforeground = \"#e0e0e0\"\n{palette}\n"
-        ),
+        folder.join("plugin.toml"),
+        "[plugin]\nname = \"acme/harbor\"\nversion = \"0.1.0\"\nkind = \"themes\"\nlicense = \"MIT\"\n",
     )
     .unwrap();
-    // A theme of the themes folder, which extends it.
-    let folder_themes = sandbox.config().join("themes");
-    std::fs::create_dir_all(&folder_themes).unwrap();
-    std::fs::write(
-        folder_themes.join("Mine.toml"),
-        "[theme]\nextends = \"Held Night\"\n[terminal]\nforeground = \"#fefefe\"\n",
-    )
-    .unwrap();
-    let new = |name: &str, from: &str| {
-        sandbox
-            .command(&["new", "--themes", name, "--from", from])
-            .current_dir(&sandbox.home)
-            .output()
-            .unwrap()
-    };
-    let read = |path: &str| std::fs::read_to_string(sandbox.home.join(path)).unwrap();
-    // Of a held theme: whole, of its credits and its license, which
-    // `sleip check` takes.
-    let made = new("acme/night-copy", "Held Night");
-    assert!(made.status.success(), "{made:?}");
-    assert!(stdout(&made).contains("a copy of `Held Night`"), "{made:?}");
-    let theme = read("night-copy/themes/Night Copy.toml");
-    for line in [
-        "name = \"Night Copy\"",
-        "author = \"Ada\"",
-        "background = \"#102030\"",
-        "variant = \"dark\"",
-    ] {
-        assert!(theme.contains(line), "{line} in {theme}");
-    }
-    let manifest = read("night-copy/plugin.toml");
-    assert!(manifest.contains("license = \"Apache-2.0\""), "{manifest}");
-    assert!(manifest.contains("made of Held Night"), "{manifest}");
-    let check = checked(&sandbox, &sandbox.home.join("night-copy"), &[]);
-    assert_eq!(stdout(&check), "No problem found.\n", "{check:?}");
-    // Of the folder's, the theme that it extends in it.
-    assert!(new("acme/mine-copy", "Mine").status.success());
-    let theme = read("mine-copy/themes/Mine Copy.toml");
-    assert!(theme.contains("foreground = \"#fefefe\""), "{theme}");
-    assert!(theme.contains("background = \"#102030\""), "{theme}");
-    assert!(!theme.contains("extends"), "{theme}");
-    // Of a built-in one, of the template's license.
-    assert!(new("acme/dark-copy", "Lokyr Dark").status.success());
-    assert!(read("dark-copy/themes/Dark Copy.toml").contains("background = \"#1e1e20\""));
-    assert!(read("dark-copy/plugin.toml").contains("license = \"MIT\""));
-    // Of an installed package's.
+    std::fs::write(folder.join("themes/Harbor.toml"), "[theme]\n").unwrap();
+    // Checked: refused, of where a theme's file goes.
+    let check = checked(&sandbox, &folder, &[]);
+    assert_eq!(check.status.code(), Some(1));
+    assert!(
+        stdout(&check).contains("Sleip holds no package of themes"),
+        "{}",
+        stdout(&check)
+    );
+    // Installed: refused, nothing written.
     let added = sandbox
         .command(&["add", "--path", "."])
-        .current_dir(sandbox.home.join("night-copy"))
+        .current_dir(&folder)
         .output()
         .unwrap();
-    assert!(added.status.success(), "{added:?}");
-    assert!(new("acme/again", "Night Copy").status.success());
-    assert!(read("again/themes/Again.toml").contains("background = \"#102030\""));
-    // Of a name of no theme: refused, nothing made.
-    let refused = new("acme/none", "Nowhere");
-    assert!(!refused.status.success());
+    assert!(!added.status.success(), "{added:?}");
     assert!(
-        String::from_utf8_lossy(&refused.stderr).contains("there is no theme `Nowhere`"),
-        "{refused:?}"
+        String::from_utf8_lossy(&added.stderr).contains("Sleip holds no package of themes"),
+        "{added:?}"
     );
-    assert!(!sandbox.home.join("none").exists());
-    // `--from` of `--themes` alone.
-    let wrong = sandbox.sleip(&["new", "--from", "Mine", "acme/plain"]);
-    assert!(!wrong.status.success());
-    assert!(
-        String::from_utf8_lossy(&wrong.stderr)
-            .contains("`--from` is an option of `sleip new --themes` alone"),
-        "{wrong:?}"
-    );
+    assert!(!sandbox.config().join("plugins.lock").exists());
+    // `--themes` is no option of `sleip new`.
+    let made = sandbox.sleip(&["new", "--themes", "acme/tides"]);
+    assert!(!made.status.success());
 }
 
 #[test]
@@ -1198,59 +1146,6 @@ fn dev_takes_away_the_lockfile_that_it_made_as_it_ends() {
     assert!(dev.wait().unwrap().success());
     done.store(true, std::sync::atomic::Ordering::Relaxed);
     assert!(!lock.exists());
-}
-
-#[test]
-fn dev_links_a_package_of_themes_and_checks_its_themes_at_each_save() {
-    use std::io::BufRead;
-
-    let sandbox = Sandbox::new("dev-themes");
-    let made = sandbox
-        .command(&["new", "--themes", "acme/tides"])
-        .current_dir(&sandbox.home)
-        .output()
-        .unwrap();
-    assert!(made.status.success(), "{made:?}");
-    let folder = sandbox.home.join("tides");
-    let mut dev = sandbox
-        .command(&["--json", "dev"])
-        .current_dir(&folder)
-        .stdout(Stdio::piped())
-        .spawn()
-        .unwrap();
-    let done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-    deadline(dev.id(), std::sync::Arc::clone(&done));
-    let mut lines = std::io::BufReader::new(dev.stdout.take().unwrap()).lines();
-    let mut next = |wanted: &str| loop {
-        let line = lines.next().expect("its output ended").unwrap();
-        let event: Value = serde_json::from_str(&line).unwrap();
-        if event["event"] == wanted {
-            return event;
-        }
-    };
-    assert_eq!(next("checked")["problems"], 0);
-    assert_eq!(next("linked")["name"], "acme/tides");
-    // Of its kind in the lockfile, which the app reads its themes of.
-    let entry = sandbox.locked().packages["acme/tides"].clone();
-    assert_eq!(entry.kind, lokyr_pkg_model::manifest::Kind::Themes);
-    assert!(matches!(entry.source, Source::Dev(_)));
-    // A theme saved of a fault: checked again, the fault told.
-    edit(&folder, "themes/Tides.toml", |text| {
-        text.replace("background = \"#14181f\"", "background = \"teal\"")
-    });
-    loop {
-        if next("checked")["problems"] != 0 {
-            break;
-        }
-    }
-    let killed = Command::new("kill")
-        .args(["-INT", &dev.id().to_string()])
-        .status()
-        .unwrap();
-    assert!(killed.success());
-    assert_eq!(next("unlinked")["name"], "acme/tides");
-    assert!(dev.wait().unwrap().success());
-    done.store(true, std::sync::atomic::Ordering::Relaxed);
 }
 
 /// Runs git of `args` in `folder`, of an author of the tests.
@@ -1373,133 +1268,6 @@ fn add_installs_a_plugin_of_a_folder_and_update_takes_its_changes() {
     let wrong = sandbox.sleip(&["add", "acme/other", "--path", &folder.display().to_string()]);
     assert_eq!(wrong.status.code(), Some(1));
     assert!(String::from_utf8_lossy(&wrong.stderr).contains("not `acme/other`"));
-}
-
-#[test]
-fn a_package_of_themes_is_made_checked_installed_and_removed_of_a_folder() {
-    let sandbox = Sandbox::new("themes");
-    let work = sandbox.home.join("work");
-    std::fs::create_dir_all(&work).unwrap();
-    // Made: its manifest, its theme of its title and its README.
-    let made = sandbox
-        .command(&["--json", "new", "--themes", "acme/harbor-night"])
-        .current_dir(&work)
-        .output()
-        .unwrap();
-    assert!(made.status.success(), "{made:?}");
-    let json = events(&made);
-    assert_eq!(json[0]["event"], "created");
-    let folder = work.join("harbor-night");
-    let manifest = lokyr_pkg_model::manifest::Manifest::parse(
-        &std::fs::read_to_string(folder.join("plugin.toml")).unwrap(),
-    )
-    .unwrap();
-    assert_eq!(manifest.name, "acme/harbor-night");
-    assert_eq!(manifest.kind, lokyr_pkg_model::manifest::Kind::Themes);
-    let theme = std::fs::read_to_string(folder.join("themes/Harbor Night.toml")).unwrap();
-    assert!(theme.contains("name = \"Harbor Night\""), "{theme}");
-    let readme = std::fs::read_to_string(folder.join("README.md")).unwrap();
-    assert!(readme.contains("sleip add acme/harbor-night"), "{readme}");
-    assert!(!readme.contains("acme/harbor\n"), "{readme}");
-    // Checked, of no problem nor note; tested, of no test, as it holds no
-    // code.
-    let check = checked(&sandbox, &folder, &[]);
-    assert!(check.status.success(), "{check:?}");
-    assert_eq!(stdout(&check), "No problem found.\n");
-    // Catalogs, which the app reads none of, a note.
-    std::fs::create_dir_all(folder.join("locales/en")).unwrap();
-    let noted = checked(&sandbox, &folder, &[]);
-    assert!(noted.status.success(), "{noted:?}");
-    assert!(
-        stdout(&noted).starts_with("locales: note: a package of themes shows no text"),
-        "{}",
-        stdout(&noted)
-    );
-    std::fs::remove_dir_all(folder.join("locales")).unwrap();
-    let tested = sandbox
-        .command(&["test"])
-        .current_dir(&folder)
-        .output()
-        .unwrap();
-    assert!(tested.status.success(), "{tested:?}");
-    assert!(stdout(&tested).contains("a package of themes holds no code"));
-    // `--themes` of `new` alone.
-    let wrong = sandbox.sleip(&["check", "--themes"]);
-    assert!(!wrong.status.success());
-    assert!(
-        String::from_utf8_lossy(&wrong.stderr)
-            .contains("`--themes` is an option of `sleip new` alone")
-    );
-    // Code in it, refused at its kind's line.
-    edit(&folder, "plugin.toml", |text| {
-        text + "[capabilities]\nterminal-read = true\n"
-    });
-    let refused = checked(&sandbox, &folder, &[]);
-    assert_eq!(refused.status.code(), Some(1));
-    assert!(
-        stdout(&refused).contains("a package of themes holds no code"),
-        "{}",
-        stdout(&refused)
-    );
-    edit(&folder, "plugin.toml", |text| {
-        text.replace("[capabilities]\nterminal-read = true\n", "")
-    });
-    // A theme that does not read, at its line; two of one name.
-    let theme = folder.join("themes/Harbor Night.toml");
-    let good = std::fs::read_to_string(&theme).unwrap();
-    std::fs::write(
-        &theme,
-        good.replace("background = \"#14181f\"", "background = \"teal\""),
-    )
-    .unwrap();
-    let refused = checked(&sandbox, &folder, &[]);
-    assert_eq!(refused.status.code(), Some(1));
-    let told = stdout(&refused);
-    assert!(told.contains("themes/Harbor Night.toml:10:"), "{told}");
-    std::fs::write(&theme, &good).unwrap();
-    std::fs::copy(&theme, folder.join("themes/Harbor Day.toml")).unwrap();
-    // An iTerm2 preset of the same name as the native file.
-    let color = "<dict><key>Red Component</key><real>0.5</real><key>Green Component</key><real>0.5</real><key>Blue Component</key><real>0.5</real></dict>";
-    let keys: String = (0..16)
-        .map(|at| format!("Ansi {at} Color"))
-        .chain(["Background Color".to_owned(), "Foreground Color".to_owned()])
-        .map(|key| format!("<key>{key}</key>{color}"))
-        .collect();
-    std::fs::write(
-        folder.join("themes/Harbor Night.itermcolors"),
-        format!("<?xml version=\"1.0\"?><plist version=\"1.0\"><dict>{keys}</dict></plist>"),
-    )
-    .unwrap();
-    let refused = checked(&sandbox, &folder, &[]);
-    assert_eq!(refused.status.code(), Some(1));
-    let told = stdout(&refused);
-    assert!(
-        told.contains("themes/Harbor Night.toml")
-            && told.contains("of which the app takes one alone"),
-        "{told}"
-    );
-    std::fs::remove_file(folder.join("themes/Harbor Night.itermcolors")).unwrap();
-    std::fs::remove_file(folder.join("themes/Harbor Day.toml")).unwrap();
-    assert!(checked(&sandbox, &folder, &[]).status.success());
-    // Installed of its folder, of the kind `themes`, then updated and
-    // removed.
-    let added = sandbox.sleip(&["--json", "add", "--path", &folder.display().to_string()]);
-    assert!(added.status.success(), "{added:?}");
-    let entry = sandbox.locked().packages["acme/harbor-night"].clone();
-    assert_eq!(entry.kind, lokyr_pkg_model::manifest::Kind::Themes);
-    let digest = entry.checksum.unwrap();
-    let stored = sandbox.store().folder(&digest);
-    assert!(stored.join("themes/Harbor Night.toml").is_file());
-    versioned(&folder, "0.2.0");
-    let updated = sandbox.sleip(&["update", "acme/harbor-night"]);
-    assert!(updated.status.success(), "{updated:?}");
-    assert_eq!(
-        sandbox.locked().packages["acme/harbor-night"].version,
-        "0.2.0"
-    );
-    let removed = sandbox.sleip(&["--json", "remove", "acme/harbor-night"]);
-    assert!(removed.status.success(), "{removed:?}");
-    assert!(!sandbox.locked().packages.contains_key("acme/harbor-night"));
 }
 
 #[test]

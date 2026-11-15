@@ -129,7 +129,6 @@ pub(super) fn themes_in(directory: &Path, origin: ThemeOrigin) -> Vec<ThemeInfo>
                 name,
                 variant,
                 origin,
-                package: None,
             });
         }
     }
@@ -138,7 +137,7 @@ pub(super) fn themes_in(directory: &Path, origin: ThemeOrigin) -> Vec<ThemeInfo>
 
 /// The themes that a picker lists, with the appearance in force, as
 /// `appearance` is, and its theme of `config`: those of `places`, the
-/// themes' folder, the held ones and the installed packages', as the last
+/// themes' folder and the held ones, as the last
 /// read of `catalog` off the main thread listed them, a read woken of
 /// `waker` starting where none did lately, and the built-in ones, by name,
 /// the first of a name alone, in the order of their names; the built-in
@@ -168,7 +167,6 @@ pub(super) fn theme_list(
         name: name.to_owned(),
         variant,
         origin: ThemeOrigin::BuiltIn,
-        package: None,
     });
     let mut seen = BTreeSet::new();
     let mut list: Vec<ThemeInfo> = listed

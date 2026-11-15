@@ -31,7 +31,7 @@ The Settings, Keys and Themes pages of the settings window: every key of your co
 
 ## The Themes page
 
-- **The window's tab Themes** shows every theme that Lokyr has, the built-in ones, the collection's, yours of the themes' folder beside your config and the installed packages', an installed theme's card naming its package in its tooltip, of a sidebar of the appearances, Dark and Light, of the one in force first, which a click or the arrows choose.
+- **The window's tab Themes** shows every theme that Lokyr has, the built-in ones, the collection's, and yours of the themes' folder beside your config, of a sidebar of the appearances, Dark and Light, of the one in force first, which a click or the arrows choose.
 - **The themes are read** off Lokyr's main thread, a progress showing as their list is read, then the cards, each preview a placeholder until its theme's colors come.
 - **Each theme** is a card of a preview of its colors, a sample terminal that Lokyr draws: its background, a prompt, an `ls` of colors and its sixteen colors, and its name; the theme that your config's `[theme]` names for its appearance has the accent's border.
 - **A click on a card** names its theme in `[theme]`, `light` or `dark` as the theme is, which shows at once where its appearance is in force. The Settings page keeps `[theme]`'s `minimum-contrast` alone.

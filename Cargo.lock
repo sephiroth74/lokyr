@@ -2468,7 +2468,6 @@ dependencies = [
  "lokyr-pkg-model",
  "lokyr-plugin-host-luau",
  "lokyr-plugin-sdk",
- "lokyr-themes",
  "pulldown-cmark",
  "semver",
  "serde_json",

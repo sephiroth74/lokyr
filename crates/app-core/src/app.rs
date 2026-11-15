@@ -535,9 +535,6 @@ pub struct App<B: Backend> {
     /// The folder of the themes that the app holds, its bundle's
     /// `Resources/themes`, when it runs from its bundle.
     held_themes: Option<PathBuf>,
-    /// The folders of themes of the installed packages of themes, each of
-    /// its package's name, in the order of their names.
-    installed_themes: Vec<(String, PathBuf)>,
     /// The themes that it holds, as a picker lists them, read once.
     theme_catalog: std::cell::RefCell<theme_catalog::ThemeCatalog>,
     /// What wakes the main thread, for the reads of the themes off it.
@@ -956,7 +953,6 @@ impl<B: Backend> App<B> {
             theme: Theme::builtin(),
             theme_files: ThemeFiles::default(),
             held_themes: environment::resources().map(|resources| resources.join(HELD_THEMES)),
-            installed_themes: Vec::new(),
             theme_catalog: std::cell::RefCell::default(),
             waker: None,
             theme_preview: None,
@@ -1562,8 +1558,7 @@ impl<B: Backend> App<B> {
     }
 
     /// Where the app finds themes: the themes' folder beside the config
-    /// file, the folder of those that it holds, and the installed packages'
-    /// folders of themes.
+    /// file, and the folder of those that it holds.
     pub(super) fn theme_places(&self) -> theme_catalog::Places {
         theme_catalog::Places {
             folder: self
@@ -1571,13 +1566,12 @@ impl<B: Backend> App<B> {
                 .as_ref()
                 .and_then(|file| themes::directory(&file.path)),
             held: self.held_themes.clone(),
-            installed: self.installed_themes.clone(),
         }
     }
 
     /// Loads the themes that `[theme]` names, of the themes' folder beside
-    /// the config file, held, built in or of an installed package: they
-    /// take the place of those in force,
+    /// the config file, held or built in: they take the place of those in
+    /// force,
     /// whose notice goes, the panes and the views taking their colors; an
     /// error tells itself, with its line, and the themes in force stay. The
     /// files looked for are watched, those of an error too, so that the
@@ -1638,9 +1632,8 @@ impl<B: Backend> App<B> {
     }
 
     /// Keeps the colors of the themes of `names` that the views' previews
-    /// show, of the themes' folder beside the config file, held, built in
-    /// or installed, as `[theme]`'s themes resolve, once each: a name of no
-    /// theme
+    /// show, of the themes' folder beside the config file, held or built
+    /// in, as `[theme]`'s themes resolve, once each: a name of no theme
     /// keeps none, and its preview draws nothing, until the themes' list
     /// changes.
     pub(super) fn keep_previews(&mut self, names: Vec<String>) {
@@ -3186,7 +3179,7 @@ impl<B: Backend> App<B> {
         // The themes that a picker lists, read as a plugin asks, of the
         // places of themes then.
         let (config_file, held_themes) = (&self.config_file, &self.held_themes);
-        let (installed_themes, catalog) = (&self.installed_themes, &self.theme_catalog);
+        let catalog = &self.theme_catalog;
         let (appearance, theme_config) = (platform.appearance(), &self.config.theme);
         let waker = self.waker.as_ref();
         let theme_list = || {
@@ -3195,7 +3188,6 @@ impl<B: Backend> App<B> {
                     .as_ref()
                     .and_then(|file| themes::directory(&file.path)),
                 held: held_themes.clone(),
-                installed: installed_themes.clone(),
             };
             pickers::theme_list(catalog, (&places, waker), appearance, theme_config)
         };

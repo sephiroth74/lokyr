@@ -373,33 +373,22 @@ fn a_palette_runs_its_choice_of_user_commands_alone() {
 /// A host of the light appearance in force, of `Paper` its theme, and of
 /// themes of both appearances.
 fn themed() -> (FakeHost, Palette) {
-    themed_of("Paper")
-}
-
-/// A host of the light appearance in force, of `current` its theme, and of
-/// themes of both appearances, one of them installed.
-fn themed_of(current: &str) -> (FakeHost, Palette) {
     use lokyr_plugin_sdk::host::{ThemeInfo, ThemeOrigin, Themes};
     let (mut host, plugin) = host();
     let theme = |name: &str, variant, origin| ThemeInfo {
         name: name.to_owned(),
         variant,
         origin,
-        package: None,
     };
     host.set_themes(Themes {
         appearance: ThemeVariant::Light,
-        current: current.to_owned(),
+        current: "Paper".to_owned(),
         themes: vec![
             theme("Dracula", ThemeVariant::Dark, ThemeOrigin::Held),
             theme("Lokyr Dark", ThemeVariant::Dark, ThemeOrigin::BuiltIn),
             theme("Lokyr Light", ThemeVariant::Light, ThemeOrigin::BuiltIn),
             theme("Paper", ThemeVariant::Light, ThemeOrigin::Folder),
             theme("Rose Pine Dawn", ThemeVariant::Light, ThemeOrigin::Held),
-            ThemeInfo {
-                package: Some("acme/tides".to_owned()),
-                ..theme("Tides Dawn", ThemeVariant::Light, ThemeOrigin::Installed)
-            },
         ],
         loading: false,
     });
@@ -424,36 +413,18 @@ fn the_theme_picker_lists_the_appearance_in_force_s_themes_its_own_first() {
     assert!(previewed(&opened).is_empty());
     assert_eq!(
         shown(&mut host, &mut plugin),
-        ["Paper", "Lokyr Light", "Rose Pine Dawn", "Tides Dawn"]
+        ["Paper", "Lokyr Light", "Rose Pine Dawn"]
     );
-    let ends = |host: &mut FakeHost, plugin: &mut Palette| {
-        let tree = host.render(plugin, &panel()).expect("the picker");
-        let mut left = vec![&tree];
-        let mut ends = Vec::new();
-        while let Some(node) = left.pop() {
-            if let lokyr_plugin_sdk::view::Kind::List(list) = &node.kind {
-                ends = list
-                    .items
-                    .iter()
-                    .map(|item| item.texts[1].clone())
-                    .collect();
-            }
-            left.extend(&node.children);
+    let tree = host.render(&mut plugin, &panel()).expect("the picker");
+    let mut left = vec![&tree];
+    let mut keys = None;
+    while let Some(node) = left.pop() {
+        if let lokyr_plugin_sdk::view::Kind::List(list) = &node.kind {
+            keys = Some(list.items[0].texts[1].clone());
         }
-        ends
-    };
-    // The one in force told, an installed one of its package's name.
-    assert_eq!(
-        ends(&mut host, &mut plugin),
-        ["Current", "", "", "acme/tides"]
-    );
-    // Found of its package's name.
-    typed(&mut host, &mut plugin, "acme");
-    assert_eq!(shown(&mut host, &mut plugin), ["Tides Dawn"]);
-    // In force, both told.
-    let (mut host, mut plugin) = themed_of("Tides Dawn");
-    run(&mut host, &mut plugin, THEME, Args::new());
-    assert_eq!(ends(&mut host, &mut plugin)[0], "Current · acme/tides");
+        left.extend(&node.children);
+    }
+    assert_eq!(keys.as_deref(), Some("Current"));
 }
 
 #[test]

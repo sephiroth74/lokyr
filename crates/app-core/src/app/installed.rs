@@ -2,12 +2,10 @@
 //! of `plugins.lock`, each of its package in the store, whose digest it
 //! checks, or of the folder that `sleip dev` links, which it reads in
 //! place; a plugin of Luau of its sources, on a thread of its own, which
-//! activates at its manifest's trigger; a package of themes of its folder of
-//! themes, whose themes the app lists and resolves after its own. A package
-//! changed since it was stored, a manifest that does not read or that names
-//! another plugin, a plugin of another plugin API than the app's or of an
-//! activation that the app does not take yet, is refused, as a notice
-//! tells.
+//! activates at its manifest's trigger. A package changed since it was
+//! stored, a manifest that does not read or that names another plugin, a
+//! plugin of another plugin API than the app's or of an activation that the
+//! app does not take yet, is refused, as a notice tells.
 //!
 //! The app watches the lockfile, the store and the folders that `sleip dev`
 //! links, and, once a burst of changes settles, takes the lockfile again:
@@ -62,22 +60,18 @@ pub(super) struct Loaded {
 pub(super) enum Refusal {
     /// Its plugin API is not the app's: the constraint of its manifest.
     Api(String),
-    /// A package of themes, as its English text tells.
-    Themes(String),
     /// Something else, as its English text tells.
     Other(String),
 }
 
 /// The plugins of the lockfile: those that loaded, those refused, each by
-/// its name, the folders that `sleip dev` links, each of its plugin's
-/// name, and the folders of themes of its packages of themes, each of its
-/// package's name, in the order of their names.
+/// its name, and the folders that `sleip dev` links, each of its plugin's
+/// name.
 #[derive(Default)]
 pub(super) struct Found {
     pub(super) loaded: Vec<Loaded>,
     pub(super) refused: Vec<(String, Refusal)>,
     pub(super) dev: Vec<(String, PathBuf)>,
-    pub(super) themes: Vec<(String, PathBuf)>,
 }
 
 /// The plugins of `installed`; the error of a lockfile that does not read,
@@ -93,16 +87,12 @@ pub(super) fn load(installed: &Installed) -> Result<Found, String> {
         loaded,
         refused,
         dev,
-        themes,
     } = &mut found;
     for (name, locked) in &lock.packages {
-        if !matches!(locked.kind, Kind::Luau | Kind::Themes) {
+        // A package of themes holds no plugin.
+        if locked.kind != Kind::Luau {
             continue;
         }
-        let refusal = |why: String| match locked.kind {
-            Kind::Themes => Refusal::Themes(why),
-            _ => Refusal::Other(why),
-        };
         let folder = match (&locked.source, &locked.checksum) {
             (Source::Dev(folder), _) => {
                 dev.push((name.clone(), PathBuf::from(folder)));
@@ -110,7 +100,7 @@ pub(super) fn load(installed: &Installed) -> Result<Found, String> {
             }
             (_, Some(digest)) => {
                 if let Err(error) = installed.store.check(digest) {
-                    refused.push((name.clone(), refusal(error.to_string())));
+                    refused.push((name.clone(), Refusal::Other(error.to_string())));
                     continue;
                 }
                 installed.store.folder(digest)
@@ -118,18 +108,11 @@ pub(super) fn load(installed: &Installed) -> Result<Found, String> {
             (_, None) => {
                 refused.push((
                     name.clone(),
-                    refusal("its package has no checksum".to_owned()),
+                    Refusal::Other("its package has no checksum".to_owned()),
                 ));
                 continue;
             }
         };
-        if locked.kind == Kind::Themes {
-            match themes_of(name, &folder) {
-                Ok(folder) => themes.push((name.clone(), folder)),
-                Err(why) => refused.push((name.clone(), refusal(why))),
-            }
-            continue;
-        }
         match plugin(name, &folder) {
             Ok((manifest, package)) => loaded.push(Loaded {
                 manifest,
@@ -140,24 +123,6 @@ pub(super) fn load(installed: &Installed) -> Result<Found, String> {
         }
     }
     Ok(found)
-}
-
-/// The folder of themes of the package of themes `name` in `folder`, of its
-/// manifest, which names it, of the kind `themes`; or why not.
-fn themes_of(name: &str, folder: &Path) -> Result<PathBuf, String> {
-    let text = std::fs::read_to_string(folder.join("plugin.toml"))
-        .map_err(|error| format!("its plugin.toml cannot be read: {error}"))?;
-    let manifest = Manifest::parse(&text)
-        .map_err(|error| format!("its plugin.toml does not read: {error}"))?;
-    if manifest.name != name {
-        return Err(format!("its package holds `{}`", manifest.name));
-    }
-    if manifest.kind != Kind::Themes {
-        return Err(
-            "its lockfile's entry is of `themes`, and its plugin.toml says otherwise".to_owned(),
-        );
-    }
-    Ok(folder.join("themes"))
 }
 
 /// The plugin `name` of the package in `folder`: its manifest, which names
@@ -378,18 +343,7 @@ impl<B: Backend> App<B> {
         self.watch_permissions(platform);
         self.permissions_changed(platform);
         self.watch_installed(platform, &installed);
-        let themes_changed = self.apply_installed(platform, &installed);
-        // The theme in force and the themes' list of the packages of themes
-        // as they are now.
-        if themes_changed {
-            self.load_themes(platform);
-            let places = self.theme_places();
-            self.theme_catalog.borrow_mut().renew(
-                places,
-                self.waker.as_ref(),
-                std::time::Instant::now(),
-            );
-        }
+        self.apply_installed(platform, &installed);
         self.plugins.tell_installed_taken();
         self.configure_plugins(platform);
         for error in self.with_plugins(platform, Plugins::activate) {
@@ -438,10 +392,8 @@ impl<B: Backend> App<B> {
     /// finds them: the plugins gone or changed, of their entries or of
     /// their folders' changes, taken away; the new and the changed added;
     /// each refused told, once while it stays so; the folders that
-    /// `sleip dev` links watched; the packages of themes' folders kept.
-    /// Whether the themes of the packages may have changed: their folders,
-    /// or one that `sleip dev` links, whose files a reload may follow.
-    fn apply_installed(&mut self, platform: &mut dyn Platform, installed: &Installed) -> bool {
+    /// `sleip dev` links watched.
+    fn apply_installed(&mut self, platform: &mut dyn Platform, installed: &Installed) {
         let found = match load(installed) {
             Ok(found) => found,
             Err(error) => {
@@ -451,15 +403,9 @@ impl<B: Backend> App<B> {
                 // One notice of it, which the next one replaces, however
                 // many reloads tell it, told again as its error changes.
                 self.report_unread(platform, About::InstalledPlugins, text);
-                return false;
+                return;
             }
         };
-        let linked = found
-            .themes
-            .iter()
-            .any(|(name, _)| found.dev.iter().any(|(dev, _)| dev == name));
-        let themes_changed = linked || found.themes != self.installed_themes;
-        self.installed_themes = found.themes;
         self.resolve_unread(platform, &About::InstalledPlugins);
         // A plugin of the lockfile's same entry stays; one of a folder
         // that `sleip dev` links, of the same manifest and sources too.
@@ -551,10 +497,6 @@ impl<B: Backend> App<B> {
                         ("version", Arg::Text(API_VERSION)),
                     ],
                 ),
-                Refusal::Themes(why) => self.texts.text_with(
-                    "themes-not-loaded",
-                    &[("name", Arg::Text(name)), ("why", Arg::Text(why))],
-                ),
                 Refusal::Other(why) => self.texts.text_with(
                     "plugin-not-loaded",
                     &[("name", Arg::Text(name)), ("why", Arg::Text(why))],
@@ -567,7 +509,6 @@ impl<B: Backend> App<B> {
         }
         self.reloads.refused = now;
         self.watch_folders(platform, found.dev);
-        themes_changed
     }
 
     /// Watches the folders of `dev`, each of its plugin, that `sleip dev`

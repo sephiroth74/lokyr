@@ -1,9 +1,8 @@
 //! The themes that the app can show, read off the main thread: the list of
-//! the themes' folder's, of the held ones and of the installed packages',
-//! then their terminal colors, which the views' previews draw, a part at a
+//! the themes' folder's and of the held ones, then their terminal colors, which the views' previews draw, a part at a
 //! time, the main thread woken as each part comes.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::time::{Duration, Instant};
 
@@ -25,14 +24,11 @@ const PART: usize = 24;
 const STACK: usize = 8 * 1024 * 1024;
 
 /// Where the app finds themes: the themes' folder beside the config file,
-/// the folder of the themes that it holds, and the folders of themes of the
-/// installed packages of themes, each of its package's name, in the order
-/// of their names.
+/// and the folder of the themes that it holds.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct Places {
     pub(crate) folder: Option<PathBuf>,
     pub(crate) held: Option<PathBuf>,
-    pub(crate) installed: Vec<(String, PathBuf)>,
 }
 
 impl Places {
@@ -43,26 +39,15 @@ impl Places {
         name: &str,
         builtins: &[Theme],
     ) -> Result<themes::Resolved, config::Error> {
-        let installed: Vec<PathBuf> = self
-            .installed
-            .iter()
-            .map(|(_, folder)| folder.clone())
-            .collect();
-        themes::resolve(
-            name,
-            self.folder.as_deref(),
-            self.held.as_deref(),
-            builtins,
-            &installed,
-        )
+        themes::resolve(name, self.folder.as_deref(), self.held.as_deref(), builtins)
     }
 }
 
 /// A part of a read of the themes.
 #[derive(Debug)]
 pub(crate) enum Part {
-    /// The list of the folder's themes, of the held ones and of the
-    /// installed packages', the first of a name alone, as a name resolves.
+    /// The list of the folder's themes and of the held ones, the folder's
+    /// first of a name of both.
     Listed(Vec<ThemeInfo>),
     /// The terminal colors of some of them, by their names.
     Colors(Vec<(String, TerminalColors)>),
@@ -73,8 +58,8 @@ pub(crate) enum Part {
 /// The themes as the last read listed them, and the read under way.
 #[derive(Debug, Default)]
 pub(crate) struct ThemeCatalog {
-    /// The folder's, the held and the installed themes, as the last read
-    /// listed them; none before a read did.
+    /// The folder's and the held themes, as the last read listed them;
+    /// none before a read did.
     pub(crate) listed: Option<Vec<ThemeInfo>>,
     /// The parts of the read under way.
     reading: Option<Receiver<Part>>,
@@ -160,29 +145,16 @@ impl ThemeCatalog {
 /// thread woken of `waker`; it ends as the app no longer takes them.
 fn read(places: &Places, parts: &mpsc::Sender<Part>, waker: &Waker) {
     let mut listed: Vec<ThemeInfo> = Vec::new();
-    let mut sources: Vec<(Option<&Path>, ThemeOrigin, Option<&str>)> = vec![
-        (places.folder.as_deref(), ThemeOrigin::Folder, None),
-        (places.held.as_deref(), ThemeOrigin::Held, None),
+    let sources = [
+        (places.folder.as_deref(), ThemeOrigin::Folder),
+        (places.held.as_deref(), ThemeOrigin::Held),
     ];
-    sources.extend(places.installed.iter().map(|(package, folder)| {
-        (
-            Some(folder.as_path()),
-            ThemeOrigin::Installed,
-            Some(package.as_str()),
-        )
-    }));
-    // A name of a built-in theme is the built-in one's, before any
-    // package's, as it resolves.
-    let built_in = |name: &str| [themes::LIGHT, themes::DARK].contains(&name);
-    for (directory, origin, package) in sources {
-        for mut theme in directory
+    for (directory, origin) in sources {
+        for theme in directory
             .map(|directory| super::pickers::themes_in(directory, origin))
             .unwrap_or_default()
         {
-            let taken = listed.iter().any(|known| known.name == theme.name)
-                || (origin == ThemeOrigin::Installed && built_in(&theme.name));
-            if !taken {
-                theme.package = package.map(str::to_owned);
+            if !listed.iter().any(|known| known.name == theme.name) {
                 listed.push(theme);
             }
         }

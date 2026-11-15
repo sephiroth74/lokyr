@@ -63,15 +63,14 @@ Lokyr applies it as you save either file, in the windows that are open too. A fi
 
 [`example.toml`](example.toml) is a theme of every key and every color that this guide tells, of the values of Lokyr's own dark theme: copy it and change what you like.
 
-To start from a theme that you like, View › New Theme from Current… makes a new theme of every color of the one in force, and **Duplicate…** in the context menu of a theme's card on the settings window's Themes page of that theme: Lokyr asks its name, writes it whole into the themes folder, `themes/<name>.toml`, of the original's author, license and source, uses it for its appearance and opens it in your editor, where each save shows at once. A name that a theme has already, of the folder, of Lokyr's own, built in or installed, is refused. For a package of themes to publish, `sleip new --themes owner/name --from "<theme>"` makes the package's theme a whole copy of that theme, of its license in the manifest.
+To start from a theme that you like, View › New Theme from Current… makes a new theme of every color of the one in force, and **Duplicate…** in the context menu of a theme's card on the settings window's Themes page of that theme: Lokyr asks its name, writes it whole into the themes folder, `themes/<name>.toml`, of the original's author, license and source, uses it for its appearance and opens it in your editor, where each save shows at once. A name that a theme has already, of the folder, of Lokyr's own or built in, is refused.
 
 ## Installing and choosing a theme
 
 - **Install** a theme by putting its file in the themes folder; or drop the file on Lokyr's icon in the Dock, or open an `.itermcolors` file with Lokyr, and Lokyr asks whether to install it: **Install** copies it into the folder, **Install and Use** names it in your config for its appearance too, and a checkbox switches Lokyr to that appearance where the theme is of the other one.
 - **Import** themes with View › Import Themes…, or Import… on the settings window's Themes page: the open panel takes several `.itermcolors` and `.toml` files at once, which Lokyr copies into the themes folder as they are, asking once whether to replace those of a name there already.
-- **A package of themes** installs with Sleip, `sleip add owner/name` or `sleip add --path <folder>`, and goes with `sleip remove`: Lokyr lists its themes at once, of the package's name, beside the folder's and its own. `sleip dev`, in a package's folder, links it as it is, and Lokyr shows each theme anew as you save its file.
 - **Choose** a theme with View › Choose Theme…, which lists the themes of the appearance in force and shows each as you move to it: Return keeps it, in your config, and Escape goes back.
-- **The config** names a theme for each appearance, `[theme] light` and `dark`, by its name: a file's of the themes folder, a theme of the collection that Lokyr holds, a built-in one, `Lokyr Light` and `Lokyr Dark`, or an installed package's. A file of the folder takes the place of a theme of the same name, and a package's theme takes no other's name, so that installing a package changes no theme in force. `[theme] minimum-contrast`, from 1 to 21, makes the terminal's text of at least that contrast with its background, whatever a theme gives.
+- **The config** names a theme for each appearance, `[theme] light` and `dark`, by its name: a file's of the themes folder, a theme of the collection that Lokyr holds, or a built-in one, `Lokyr Light` and `Lokyr Dark`. A file of the folder takes the place of a theme of the same name. `[theme] minimum-contrast`, from 1 to 21, makes the terminal's text of at least that contrast with its background, whatever a theme gives.
 
 ## The file
 
@@ -194,4 +193,4 @@ Lokyr reads an `.itermcolors` file of the themes folder as iTerm2 reads it, and 
 
 ## Sharing a theme
 
-Share a theme's file as it is: anyone installs it as above. Lokyr's registry, [pkg.lokyr.dev](https://pkg.lokyr.dev), will publish themes too, each of a page of its colors, in a later version.
+Share a theme's file as it is: anyone installs it as above.

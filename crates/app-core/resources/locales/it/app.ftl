@@ -43,7 +43,6 @@ plugin-stopped = Il plugin { $name } si è fermato, e le sue viste restano com'e
 plugin-capability-withheld = Il plugin { $name } chiede { $capability }, che nessun plugin ha ancora: funziona senza.
 plugin-capability-first-party = Il plugin { $name } chiede { $capability }, che hanno solo i plugin di Lokyr: funziona senza.
 plugin-not-loaded = Il plugin { $name } non si carica: { $why }
-themes-not-loaded = I temi di { $name } non si caricano: { $why }
 plugin-other-api = Il plugin { $name } usa l'API dei plugin { $api }, e questo Lokyr ha la { $version }: non si carica finché non si aggiorna il plugin o Lokyr.
 plugins-lock-unread = I plugin installati non si caricano, perché plugins.lock non si legge: { $error }
 

@@ -15,7 +15,7 @@ Each phase is broken into tasks of one day or less. A phase's breakdown is writt
 | F2 macOS, single pane | macOS platform, CoreText fonts, Metal rendering, minimal kernel, `core-actions` | Used as the main terminal for a week | 8–12 weeks |
 | F3 **macOS MVP** | Full kernel, native SDK, `ui-core` with the plugins' widgets and floating panels, `tabs`, `splits`, `search` plugins, iTerm2 themes, palette, the agents' state on the tabs; copy mode, the scrollbar, shell integration with prompt jumping and notifications, the command's sticky header, the programs' progress, windows restored with their directories, the Finder's service; a DMG, updates through Sparkle; after F4, the first public release, 1.0.0 | Every must-have requirement in place | 12–16 weeks |
 | F4 Plugin ecosystem | Before 1.0.0: Luau host, Luau API, Sleip, registry v0, `snap` and `awake` published | Publishing and installing work end to end; `snap` and `awake` in the registry; then 1.0.0 | 8–10 weeks |
-| F3b Settings and themes | After 1.0.0: a settings window, of the `plugin-manager`'s page and the config's; themes in the registry | The settings window edits the config; a theme published and installed with Sleip | 3–4 weeks |
+| F3b Settings and themes | After 1.0.0: a settings window, of the `plugin-manager`'s page and the config's; themes made, duplicated and imported in the app | The settings window edits the config and the keys' bindings; a theme made and imported in the app | 3–4 weeks |
 | F5a Shell integration and blocks | Warp-style blocks, the last command's output, ssh integration | Verified in zsh, bash and fish, including over ssh | 3–5 weeks |
 | F5b iTerm2 power features | tmux -CC, triggers, profiles, broadcast, the scrollback restored | tmux -CC workflows on par with iTerm2 | 8–11 weeks |
 | F5c Graphics and kitty protocols | kitty graphics, sixel, iTerm2 images, hints and URLs | `kitten icat`, `imgcat` and `chafa` work | 6–8 weeks |
@@ -138,7 +138,7 @@ Before 1.0.0, after F3's daily features, as 0.8 and 0.9, so that the first publi
 - **`awake`**, a reference third-party plugin, in Luau, in [its own repository](https://github.com/sephiroth74/sleip-awake): the Mac kept awake, always or while programs run, from a button beside the window's buttons; the host's request of a power assertion, its capability `keep-awake`, and a slot of the titlebar's buttons.
 - **Registry v0** (static), ed25519 signatures, templates, a guide for plugin authors, of a minimal practical example, a plugin that works, step by step: a repository of the index, publishing by pull request, the archives in its releases, the index and the site on GitHub Pages at `pkg.lokyr.dev`, and the keys that Sleip trusts.
 
-**Not in F4**: the plugins' network and processes, refused until F6; a canvas of drawing primitives; packages of themes, as the app holds the collection, which come in F3b; the guide for theme authors is F4's.
+**Not in F4**: the plugins' network and processes, refused until F6; a canvas of drawing primitives; packages of themes, as the app holds the collection and reads the web's themes as they are; the guide for theme authors is F4's.
 
 **Exit**:
 - the `sleip new → check → dev` loop works;
@@ -147,16 +147,17 @@ Before 1.0.0, after F3's daily features, as 0.8 and 0.9, so that the first publi
 
 ### F3b — Settings and themes
 
-After 1.0.0, as 1.1 and 1.2: the settings window and its pages, then themes in the registry. IPC, the remote CLI, the MCP server and the agents' hooks, planned here before, are [put off](#put-off-ipc-mcp-and-the-agents-hooks).
+After 1.0.0, as 1.1 and 1.2: the settings window and its pages, then themes made, duplicated and imported in the app, and the settings' Keys page. IPC, the remote CLI, the MCP server and the agents' hooks, planned here before, are [put off](#put-off-ipc-mcp-and-the-agents-hooks).
 
 - **The settings window**: a window of its own, "Settings", of System Settings' size, one at most, of no terminal, the pages of Lokyr's own plugins as tabs across the top and the chosen page below them, each page's own parts in a sidebar of its own where it needs one, opened by each page's command; ⌘, stays the config file in the text editor.
 - **The config's page**, `settings`, a first-party plugin, generated from the config's keys and the guide's text, with the fonts, the colors, the keys' bindings and a file with an error, moved from F3 on 7 November 2026.
 - **The `plugin-manager`'s page**, a first-party plugin of the packages' service: the installed plugins, their capabilities and updates, and the registry's search, to install, update, turn off or remove, moved from F4 on 11 November 2026.
-- **Themes in the registry**: packages of kind `themes` of `sephiroth74/sleip-registry`, of the same signed index and site at `pkg.lokyr.dev`; Sleip adds, updates, removes and publishes them as plugins; the registry's checks parse each theme with the app's own parser; the app reads the installed packages' themes beside the themes' folder and those that it holds, which the palette's picker lists; each theme's page shows a preview that the site's build draws of the theme's colors, of each variant. The packages' examples of `PACKAGE-MANAGER.md`, which name a stale `lokyr/themes` dependency, made anew.
+- **Themes made in the app**: the Themes page's New… of Lokyr Light's or Lokyr Dark's values, every key written, Duplicate… and View › New Theme from Current… of an existing theme, each used and opened in the editor; Import… of `.itermcolors` and `.toml` files, several at once, and Show in Finder. Themes stay out of Sleip and the registry, as the web gives many, which Lokyr reads as they are.
+- **The keys' bindings**, a page of their own, Keys, beside Settings and Themes.
 
 **Exit**:
 - the settings window edits every key of the config, the keys' bindings, the themes and the plugins;
-- a theme published by pull request, its page showing its preview, installed with `sleip add`, and chosen in the palette's picker;
+- a theme made of Lokyr's defaults, one duplicated and themes imported, chosen on the Themes page;
 - budgets green.
 
 #### Put off: IPC, MCP and the agents' hooks
@@ -237,7 +238,7 @@ Releases are `X.Y.Z`, nightly and beta builds `X.Y.Z-YYYYMMDD`, release candidat
 | 0.8–0.9 | F4's blocks, before 1.0.0: 0.8 the Luau host and Sleip's own loop, 0.9 the registry, and `snap` and `awake` published |
 | 1.0.0 | macOS MVP (F3) and the plugin ecosystem (F4), the first public release, the repository made public, under the MIT license, with the agents on their tabs, which come after F4, and a path's line in the editor, the last command's output, inline images, a Homebrew cask, and the documentation's site at `lokyr.dev`, on GitHub Pages, with the updates' feed; semantic versioning from here: patch, minor and major |
 | 1.1 | The settings window, of the `plugin-manager`'s page and the config's (F3b's first block) |
-| 1.2 | Themes in the registry (F3b's second block) |
+| 1.2 | Themes made, duplicated and imported in the app, and the settings' Keys page (F3b's second block) |
 | 1.x | F5a, F5b, F5c, and the plugin API 1.0 (F6): stable plugin API in both front ends, complete docs, no open critical bug for three months; a major only for a change that breaks what people rely on |
 | later | Linux (F7), registry v1 |
 

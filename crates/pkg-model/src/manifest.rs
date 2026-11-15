@@ -56,15 +56,31 @@ pub struct Manifest {
 }
 
 /// What a package holds.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "kebab-case")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind {
     /// Luau's sources and their assets.
     Luau,
-    /// Themes alone, which hold no code.
-    Themes,
     /// A first-party plugin of the repository, linked in the app.
     Builtin,
+}
+
+impl<'de> Deserialize<'de> for Kind {
+    /// A kind of its name, `luau` or `builtin`; `themes`, which Sleip
+    /// holds no package of, told as such.
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let name = String::deserialize(deserializer)?;
+        match name.as_str() {
+            "luau" => Ok(Self::Luau),
+            "builtin" => Ok(Self::Builtin),
+            "themes" => Err(serde::de::Error::custom(
+                "Sleip holds no package of themes: a theme's file goes into Lokyr's themes folder, or View › Import Themes… copies it there",
+            )),
+            other => Err(serde::de::Error::unknown_variant(
+                other,
+                &["luau", "builtin"],
+            )),
+        }
+    }
 }
 
 /// The thread that a plugin's calls run on.
@@ -426,31 +442,6 @@ impl Manifest {
             .into_iter()
             .map(toml::Spanned::into_inner)
             .collect();
-        // A package of themes holds no code: nothing that runs, asks, or
-        // contributes but its themes.
-        if kind == Kind::Themes {
-            let coded = [
-                (!activation.is_empty(), "`[activation]`"),
-                (!capabilities.is_empty(), "`[capabilities]`"),
-                (!file.uses.commands.is_empty(), "`[uses]`"),
-                (!dependencies.is_empty(), "`[dependencies]`"),
-                (
-                    !contributes.commands.is_empty()
-                        || !contributes.keybindings.is_empty()
-                        || !contributes.slots.is_empty()
-                        || !contributes.pages.is_empty()
-                        || contributes.config_schema.is_some(),
-                    "`[contributes]`",
-                ),
-                (plugin.thread != Thread::default(), "`thread`"),
-            ];
-            if let Some((_, what)) = coded.iter().find(|(has, _)| *has) {
-                return Err(fail(
-                    plugin.kind.span(),
-                    format!("a package of themes holds no code, and so no {what}"),
-                ));
-            }
-        }
         Ok(Self {
             name: plugin.name.into_inner(),
             kind,
@@ -1032,10 +1023,11 @@ config-schema = "schema.json"
             wrong(&format!("{plugin}[uses]\ncommands = [\"copy\"]\n"))
                 .starts_with("6:13: `copy` is not a command's name")
         );
-        // What a kind needs.
+        // What a kind needs; a package of themes none of Sleip's.
+        let themes = wrong(&plugin.replace("builtin", "themes"));
         assert!(
-            wrong(&plugin.replace("builtin", "themes"))
-                .starts_with("3:8: a plugin that is not built in needs its `version`")
+            themes.starts_with("3:8: Sleip holds no package of themes"),
+            "{themes}"
         );
         assert!(
             wrong(&plugin.replace("builtin\"", "luau\"\nversion = \"1.0.0\""))
@@ -1208,34 +1200,5 @@ config-schema = "schema.json"
         // A built-in plugin contributes the app's commands.
         let builtin = "[plugin]\nname = \"lokyr/quick\"\nkind = \"builtin\"\nlicense = \"MIT\"\n[contributes]\ncommands = [{ name = \"window.toggle-quick\", title = \"Quick\" }]\n";
         assert!(Manifest::parse(builtin).is_ok());
-    }
-
-    #[test]
-    fn a_package_of_themes_holds_no_code() {
-        let themes = "[plugin]\nname = \"acme/nightfall\"\nversion = \"1.0.0\"\nkind = \"themes\"\nlicense = \"MIT\"\ndescription = \"Dark themes\"\n";
-        let manifest = Manifest::parse(themes).unwrap();
-        assert_eq!(manifest.kind, Kind::Themes);
-        assert!(manifest.api.is_none() && manifest.takes_api("0.1.3"));
-        let wrong = |extra: &str| {
-            Manifest::parse(&format!("{themes}{extra}"))
-                .unwrap_err()
-                .to_string()
-        };
-        for (extra, what) in [
-            ("[capabilities]\nterminal-read = true\n", "`[capabilities]`"),
-            ("[activation]\non = [\"startup\"]\n", "`[activation]`"),
-            ("[uses]\ncommands = [\"tabs.*\"]\n", "`[uses]`"),
-            ("[dependencies]\n\"acme/x\" = \"^1\"\n", "`[dependencies]`"),
-            (
-                "[contributes]\ncommands = [{ name = \"nightfall.go\", title = \"Go\" }]\n",
-                "`[contributes]`",
-            ),
-        ] {
-            let error = wrong(extra);
-            assert!(
-                error.starts_with("4:8: a package of themes holds no code") && error.contains(what),
-                "{error}"
-            );
-        }
     }
 }

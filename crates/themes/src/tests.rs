@@ -74,7 +74,7 @@ fg = "#ffffff"
 "##
     );
     let directory = folder("whole", &[("Nightfall", &text)]);
-    let resolved = resolve("Nightfall", Some(&directory), None, &[builtin()], &[]).unwrap();
+    let resolved = resolve("Nightfall", Some(&directory), None, &[builtin()]).unwrap();
     let theme = resolved.theme;
     assert_eq!(theme.name, "Nightfall");
     assert_eq!(theme.variant, ThemeVariant::Dark);
@@ -117,7 +117,7 @@ fn a_theme_extends_another_whose_values_its_own_override() {
             ),
         ],
     );
-    let resolved = resolve("Dimmer", Some(&directory), None, &[builtin()], &[]).unwrap();
+    let resolved = resolve("Dimmer", Some(&directory), None, &[builtin()]).unwrap();
     let theme = resolved.theme;
     // Its name its own, its background Dim's, the rest the built-in one's.
     assert_eq!(theme.name, "Dimmer");
@@ -143,14 +143,14 @@ fn a_file_of_a_built_in_theme_s_name_takes_its_place_and_a_variant_of_none_follo
     let text =
         format!("[terminal]\nbackground = \"#fafafa\"\nforeground = \"#1e1e20\"\n{PALETTE}\n");
     let directory = folder("own", &[(DARK, &text)]);
-    let theme = resolve(DARK, Some(&directory), None, &[builtin()], &[])
+    let theme = resolve(DARK, Some(&directory), None, &[builtin()])
         .unwrap()
         .theme;
     assert_eq!(theme.terminal.background, ThemeColor::hex(0xfafafa));
     assert_eq!(theme.variant, ThemeVariant::Light);
     assert!(theme.tokens.is_empty(), "the built-in one's tokens gone");
     // Without the folder, the built-in one.
-    let theme = resolve(DARK, None, None, &[builtin()], &[]).unwrap().theme;
+    let theme = resolve(DARK, None, None, &[builtin()]).unwrap().theme;
     assert_eq!(theme, builtin());
 }
 
@@ -158,7 +158,7 @@ fn a_file_of_a_built_in_theme_s_name_takes_its_place_and_a_variant_of_none_follo
 fn a_file_s_errors_tell_their_places() {
     let wrong = |text: &str| {
         let directory = folder("wrong", &[("Wrong", text)]);
-        resolve("Wrong", Some(&directory), None, &[builtin()], &[]).unwrap_err()
+        resolve("Wrong", Some(&directory), None, &[builtin()]).unwrap_err()
     };
     let error = wrong("[terminal]\nbackground = \"#10101\"\n");
     assert_eq!(
@@ -209,7 +209,7 @@ fn a_chain_that_loops_or_goes_too_deep_and_a_name_of_nothing_are_errors() {
             ("B", "[theme]\nextends = \"A\"\n"),
         ],
     );
-    let error = resolve("A", Some(&directory), None, &[builtin()], &[]).unwrap_err();
+    let error = resolve("A", Some(&directory), None, &[builtin()]).unwrap_err();
     assert!(
         error.message.contains("which extends it"),
         "{}",
@@ -229,17 +229,17 @@ fn a_chain_that_loops_or_goes_too_deep_and_a_name_of_nothing_are_errors() {
         .map(|(n, t)| (n.as_str(), t.as_str()))
         .collect();
     let directory = folder("deep", &files);
-    let error = resolve("T0", Some(&directory), None, &[builtin()], &[]).unwrap_err();
+    let error = resolve("T0", Some(&directory), None, &[builtin()]).unwrap_err();
     assert!(
         error.message.contains("8 others at most"),
         "{}",
         error.message
     );
-    let error = resolve("Nowhere", Some(&directory), None, &[builtin()], &[]).unwrap_err();
+    let error = resolve("Nowhere", Some(&directory), None, &[builtin()]).unwrap_err();
     assert!(error.message.contains("there is no theme `Nowhere`"));
     for name in ["", "../config", ".hidden", "a/b"] {
         assert!(
-            resolve(name, Some(&directory), None, &[builtin()], &[]).is_err(),
+            resolve(name, Some(&directory), None, &[builtin()]).is_err(),
             "{name}"
         );
     }
@@ -288,7 +288,7 @@ fn an_itermcolors_file_of_the_folder_is_a_theme_as_it_is_and_a_native_one_extend
     );
     fs::write(directory.join("Grays.itermcolors"), itermcolors(0.0, false)).unwrap();
     fs::write(directory.join("Pair.itermcolors"), itermcolors(0.0, true)).unwrap();
-    let grays = resolve("Grays", Some(&directory), None, &[builtin()], &[]).unwrap();
+    let grays = resolve("Grays", Some(&directory), None, &[builtin()]).unwrap();
     assert_eq!(grays.theme.terminal.background, ThemeColor::rgb(0, 0, 0));
     assert_eq!(
         grays.files,
@@ -297,22 +297,22 @@ fn an_itermcolors_file_of_the_folder_is_a_theme_as_it_is_and_a_native_one_extend
             directory.join("Grays.itermcolors")
         ]
     );
-    let mine = resolve("Mine", Some(&directory), None, &[builtin()], &[])
+    let mine = resolve("Mine", Some(&directory), None, &[builtin()])
         .unwrap()
         .theme;
     assert_eq!(mine.terminal.palette[15], ThemeColor::rgb(255, 255, 255));
     assert_eq!(mine.tokens["panel.bg"], ThemeColor::hex(0x010203));
     // A file of both appearances is a theme of each, named.
-    let light = resolve("Pair (Light)", Some(&directory), None, &[builtin()], &[])
+    let light = resolve("Pair (Light)", Some(&directory), None, &[builtin()])
         .unwrap()
         .theme;
     assert_eq!(light.terminal.background, ThemeColor::rgb(255, 255, 255));
     assert_eq!(light.variant, ThemeVariant::Light);
-    let dark = resolve("Pair (Dark)", Some(&directory), None, &[builtin()], &[])
+    let dark = resolve("Pair (Dark)", Some(&directory), None, &[builtin()])
         .unwrap()
         .theme;
     assert_eq!(dark.terminal.background, ThemeColor::rgb(0, 0, 0));
-    let error = resolve("Pair", Some(&directory), None, &[builtin()], &[]).unwrap_err();
+    let error = resolve("Pair", Some(&directory), None, &[builtin()]).unwrap_err();
     assert!(
         error.message.contains("`Pair (Light)` and `Pair (Dark)`"),
         "{}",
@@ -322,7 +322,7 @@ fn an_itermcolors_file_of_the_folder_is_a_theme_as_it_is_and_a_native_one_extend
     let text =
         format!("[terminal]\nbackground = \"#123456\"\nforeground = \"#e0e0e0\"\n{PALETTE}\n");
     fs::write(directory.join("Grays.toml"), text).unwrap();
-    let native = resolve("Grays", Some(&directory), None, &[builtin()], &[])
+    let native = resolve("Grays", Some(&directory), None, &[builtin()])
         .unwrap()
         .theme;
     assert_eq!(native.terminal.background, ThemeColor::hex(0x123456));
@@ -424,7 +424,7 @@ fn a_theme_s_file_is_a_regular_file_within_its_bound() {
         [("Plain".to_owned(), ThemeVariant::Dark)]
     );
     // A theme of a pipe's name resolves to none, as it does not wait.
-    let error = resolve("Pipe", Some(&directory), None, &[], &[]).unwrap_err();
+    let error = resolve("Pipe", Some(&directory), None, &[]).unwrap_err();
     assert!(
         error.message.contains("no regular file"),
         "{}",
@@ -464,9 +464,7 @@ fn a_theme_written_in_the_native_format_reads_back_the_same() {
         "{text}"
     );
     let directory = folder("native", &[("Round", &text)]);
-    let read = resolve("Round", Some(&directory), None, &[], &[])
-        .unwrap()
-        .theme;
+    let read = resolve("Round", Some(&directory), None, &[]).unwrap().theme;
     assert_eq!(
         read,
         Theme {
@@ -493,9 +491,9 @@ fn a_held_theme_comes_after_the_folder_s_and_before_the_built_in_ones() {
     );
     let directory = folder("held-folder", &[]);
     // Of the held folder, before the built-in theme of its name.
-    let paper = resolve("Paper", Some(&directory), Some(&held), &[builtin()], &[]).unwrap();
+    let paper = resolve("Paper", Some(&directory), Some(&held), &[builtin()]).unwrap();
     assert_eq!(paper.theme.terminal.background, ThemeColor::hex(0xfafafa));
-    let dark = resolve(DARK, Some(&directory), Some(&held), &[builtin()], &[]).unwrap();
+    let dark = resolve(DARK, Some(&directory), Some(&held), &[builtin()]).unwrap();
     assert_eq!(dark.theme.terminal.background, ThemeColor::hex(0x202020));
     // Its files are not watched, as they never change.
     assert!(
@@ -510,7 +508,7 @@ fn a_held_theme_comes_after_the_folder_s_and_before_the_built_in_ones() {
         "[theme]\nextends = \"Paper\"\n[terminal]\nforeground = \"#111111\"\n",
     )
     .unwrap();
-    let error = resolve("Paper", Some(&directory), Some(&held), &[builtin()], &[]).unwrap_err();
+    let error = resolve("Paper", Some(&directory), Some(&held), &[builtin()]).unwrap_err();
     assert!(error.message.contains("extends this theme"), "{error}");
     fs::remove_file(directory.join("Paper.toml")).unwrap();
     fs::write(
@@ -518,74 +516,10 @@ fn a_held_theme_comes_after_the_folder_s_and_before_the_built_in_ones() {
         "[theme]\nextends = \"Paper\"\n",
     )
     .unwrap();
-    let mine = resolve("Mine", Some(&directory), Some(&held), &[builtin()], &[]).unwrap();
+    let mine = resolve("Mine", Some(&directory), Some(&held), &[builtin()]).unwrap();
     assert_eq!(mine.theme.terminal.background, ThemeColor::hex(0xfafafa));
     let _ = fs::remove_dir_all(held);
     let _ = fs::remove_dir_all(directory);
-}
-
-#[test]
-fn an_installed_package_s_theme_comes_last_and_takes_no_other_s_name() {
-    let held = folder("installed-held", &[("Paper", &theme_file("#fafafa"))]);
-    let directory = folder("installed-folder", &[]);
-    let first = folder(
-        "installed-first",
-        &[
-            ("Harbor", &theme_file("#101820")),
-            ("Paper", &theme_file("#010101")),
-            (DARK, &theme_file("#020202")),
-        ],
-    );
-    let second = folder(
-        "installed-second",
-        &[
-            ("Harbor", &theme_file("#999999")),
-            (
-                "Harbor Bright",
-                "[theme]\nextends = \"Harbor\"\n[terminal]\nforeground = \"#ffffff\"\n",
-            ),
-        ],
-    );
-    fs::write(second.join("Grays.itermcolors"), itermcolors(0.0, false)).unwrap();
-    let installed = [first.clone(), second.clone()];
-    let resolved = |name: &str| {
-        resolve(
-            name,
-            Some(&directory),
-            Some(&held),
-            &[builtin()],
-            &installed,
-        )
-    };
-    // Of the first package that has it, of no watch of its files.
-    let harbor = resolved("Harbor").unwrap();
-    assert_eq!(harbor.theme.terminal.background, ThemeColor::hex(0x101820));
-    assert!(
-        harbor.files.iter().all(|file| file.starts_with(&directory)),
-        "{:?}",
-        harbor.files
-    );
-    // Of either format, a package's theme extending another's.
-    let grays = resolved("Grays").unwrap().theme;
-    assert_eq!(grays.terminal.background, ThemeColor::hex(0x000000));
-    let bright = resolved("Harbor Bright").unwrap().theme;
-    assert_eq!(bright.terminal.background, ThemeColor::hex(0x101820));
-    assert_eq!(bright.terminal.foreground, ThemeColor::hex(0xffffff));
-    // A held, a built-in and a folder's theme before a package's of its
-    // name, so that an install changes no theme in force.
-    let paper = resolved("Paper").unwrap().theme;
-    assert_eq!(paper.terminal.background, ThemeColor::hex(0xfafafa));
-    let dark = resolved(DARK).unwrap().theme;
-    assert_eq!(dark.terminal.background, ThemeColor::hex(0x1e1e20));
-    fs::write(directory.join("Harbor.toml"), theme_file("#333333")).unwrap();
-    let mine = resolved("Harbor").unwrap().theme;
-    assert_eq!(mine.terminal.background, ThemeColor::hex(0x333333));
-    // A name of no package's, told.
-    let error = resolved("Nowhere").unwrap_err();
-    assert!(error.message.contains("of an installed package"), "{error}");
-    for folder in [held, directory, first, second] {
-        let _ = fs::remove_dir_all(folder);
-    }
 }
 
 #[test]
@@ -607,8 +541,7 @@ fn a_theme_s_credits_come_of_its_file_or_of_those_that_it_extends_and_its_copy_i
             "[theme]\nextends = \"Harbor\"\nauthor = \"Grace\"\n[terminal]\nforeground = \"#fefefe\"\n",
         )],
     );
-    let resolved =
-        |name: &str| resolve(name, Some(&directory), Some(&held), &[builtin()], &[]).unwrap();
+    let resolved = |name: &str| resolve(name, Some(&directory), Some(&held), &[builtin()]).unwrap();
     let harbor = resolved("Harbor");
     assert_eq!(harbor.credits.author.as_deref(), Some("Ada"));
     assert_eq!(harbor.credits.license.as_deref(), Some("MIT"));
@@ -626,7 +559,7 @@ fn a_theme_s_credits_come_of_its_file_or_of_those_that_it_extends_and_its_copy_i
     // theme to extend, its credits kept.
     let text = copy_of(&mine, "Mine Copy");
     let other = folder("credits-copy", &[("Mine Copy", &text)]);
-    let copy = resolve("Mine Copy", Some(&other), None, &[], &[]).unwrap();
+    let copy = resolve("Mine Copy", Some(&other), None, &[]).unwrap();
     assert_eq!(copy.theme.name, "Mine Copy");
     assert_eq!(copy.theme.terminal, mine.theme.terminal);
     assert_eq!(copy.theme.tokens, mine.theme.tokens);
@@ -677,7 +610,6 @@ fn the_guide_s_example_theme_holds_every_key_and_token() {
         Some(&folder("example", &[("Example", text)])),
         None,
         &[builtin()],
-        &[],
     );
     assert!(resolved.is_ok(), "{resolved:?}");
 }
@@ -706,11 +638,11 @@ fn the_guide_s_smallest_theme_and_its_extension_resolve() {
             ("Harbor Bright", named("Harbor Bright")),
         ],
     );
-    let harbor = resolve("Harbor", Some(&directory), None, &[], &[])
+    let harbor = resolve("Harbor", Some(&directory), None, &[])
         .unwrap()
         .theme;
     assert_eq!(harbor.variant, ThemeVariant::Dark);
-    let bright = resolve("Harbor Bright", Some(&directory), None, &[], &[])
+    let bright = resolve("Harbor Bright", Some(&directory), None, &[])
         .unwrap()
         .theme;
     assert_eq!(bright.terminal.background, ThemeColor::hex(0x0b0e13));

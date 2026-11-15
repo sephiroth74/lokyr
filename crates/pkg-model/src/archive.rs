@@ -9,7 +9,7 @@
 //!
 //! The layout: `plugin.toml`, the manifest; `src/`, Luau's sources of a
 //! plugin of Luau, of its entry `src/init.luau`, never bytecode;
-//! `themes/`, the themes of a package of themes; `schema.json`, or the
+//! `schema.json`, or the
 //! file that the manifest's `config-schema` names; `locales/<language>/`,
 //! the catalogs of Project Fluent, `.ftl`; `assets/`, the registry's
 //! icons and screenshots; and a `README`, a `LICENSE` and a `CHANGELOG`.
@@ -551,10 +551,6 @@ fn place(path: &str, manifest: &Manifest) -> Result<(), String> {
             true
         }
         ("src", false) => manifest.kind == Kind::Luau && rest.ends_with(".luau"),
-        ("themes", false) => {
-            manifest.kind == Kind::Themes
-                && (rest.ends_with(".toml") || rest.ends_with(".itermcolors"))
-        }
         ("assets", false) => true,
         ("locales", false) => rest.split_once('/').is_some_and(|(language, file)| {
             !language.is_empty()
@@ -571,7 +567,7 @@ fn place(path: &str, manifest: &Manifest) -> Result<(), String> {
         Ok(())
     } else {
         Err(format!(
-            "`{path}` has no place in a package of the kind `{}`: `plugin.toml`, `src/` of `.luau` of a plugin of Luau, `themes/` of a package of themes, `schema.json`, `locales/<language>/*.ftl`, `assets/`, a `README`, a `LICENSE` or a `CHANGELOG`",
+            "`{path}` has no place in a package of the kind `{}`: `plugin.toml`, `src/` of `.luau` of a plugin of Luau, `schema.json`, `locales/<language>/*.ftl`, `assets/`, a `README`, a `LICENSE` or a `CHANGELOG`",
             kind_name(manifest.kind)
         ))
     }
@@ -581,14 +577,13 @@ fn place(path: &str, manifest: &Manifest) -> Result<(), String> {
 fn kind_name(kind: Kind) -> &'static str {
     match kind {
         Kind::Luau => "luau",
-        Kind::Themes => "themes",
         Kind::Builtin => "builtin",
     }
 }
 
 /// Checks that `files`, a package's, are of its layout: each of its place,
-/// a plugin of Luau of its entry, a package of themes of a theme, and the
-/// config's schema that the manifest names among them.
+/// a plugin of Luau of its entry, and the config's schema that the
+/// manifest names among them.
 fn laid_out(files: &[String], manifest: &Manifest) -> Result<(), ArchiveError> {
     for file in files {
         place(file, manifest).map_err(refused)?;
@@ -599,11 +594,6 @@ fn laid_out(files: &[String], manifest: &Manifest) -> Result<(), ArchiveError> {
             return Err(refused(format!(
                 "a plugin of Luau holds its entry, `{ENTRY}`"
             )));
-        }
-        Kind::Themes if !files.iter().any(|file| file.starts_with("themes/")) => {
-            return Err(refused(
-                "a package of themes holds its themes, in `themes/`",
-            ));
         }
         _ => {}
     }

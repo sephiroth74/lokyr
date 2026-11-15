@@ -29,7 +29,6 @@ pub fn list(paths: &Paths, out: Out) -> Result<(), String> {
         };
         let kind = match locked.kind {
             Kind::Luau => "luau",
-            Kind::Themes => "themes",
             Kind::Builtin => "builtin",
         };
         let asks = if capabilities.is_empty() {

@@ -1,7 +1,0 @@
-[plugin]
-name = "acme/harbor"
-version = "0.1.0"
-kind = "themes"
-license = "MIT"
-description = "Themes of Lokyr, made by `sleip new --themes`."
-keywords = ["theme"]

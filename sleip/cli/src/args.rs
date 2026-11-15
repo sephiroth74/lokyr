@@ -16,9 +16,8 @@ pub struct Options {
 /// A command and its arguments.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Command {
-    /// A plugin made, by its name, or a package of themes of `true`, its
-    /// theme a copy of the theme that `--from` names, if it names one.
-    New(String, bool, Option<String>),
+    /// A plugin made, by its name.
+    New(String),
     /// The plugin of the current folder checked.
     Check,
     /// The tests of the plugin of the current folder run.
@@ -233,7 +232,7 @@ The registry's tools, which its CI runs.
 fn command_help(name: &str) -> Option<&'static str> {
     Some(match name {
         "new" => {
-            "Usage: sleip new [options] [--themes [--from <theme>]] <plugin>\n\nMakes a plugin of Luau that works, as owner/name, in a folder of its name\nafter the owner in the current folder: its manifest, src/init.luau of a\ncommand that shows a notice, its texts in English, a test, the plugin API's\ntypes and luau-lsp's settings. With --themes, a package of themes: its\nmanifest, a theme of Lokyr's format in themes/, and a README; with\n--from, its theme a whole copy of the theme of that name, as Lokyr finds\nit, of your themes folder, an installed package, Lokyr's own or the built-in\nones, of its author, license and source.\n"
+            "Usage: sleip new [options] <plugin>\n\nMakes a plugin of Luau that works, as owner/name, in a folder of its name\nafter the owner in the current folder: its manifest, src/init.luau of a\ncommand that shows a notice, its texts in English, a test, the plugin API's\ntypes and luau-lsp's settings.\n"
         }
         "check" => {
             "Usage: sleip check [options]\n\nChecks the plugin of the current folder: its manifest, the capabilities that\nthe app takes, the plugin API's version, its texts' catalogs, its package's\nlayout and sizes, and its sources' types against the plugin API's, as\nluau-lsp checks them, each problem of its file, line and column.\n"
@@ -281,7 +280,6 @@ fn command_help(name: &str) -> Option<&'static str> {
 pub fn parse(args: &[String]) -> Result<Parsed, String> {
     let mut options = Options::default();
     let (mut words, mut help, mut version, mut link) = (Vec::new(), false, false, false);
-    let mut themes = false;
     // The options of a value, by their names.
     let mut valued: Vec<(&str, &str)> = Vec::new();
     let mut args = args.iter();
@@ -291,10 +289,9 @@ pub fn parse(args: &[String]) -> Result<Parsed, String> {
             "--offline" => options.offline = true,
             "--locked" => options.locked = true,
             "--link" => link = true,
-            "--themes" => themes = true,
             "-h" | "--help" => help = true,
             "-V" | "--version" => version = true,
-            name @ ("--path" | "--git" | "--tag" | "--rev" | "--registry" | "--from") => {
+            name @ ("--path" | "--git" | "--tag" | "--rev" | "--registry") => {
                 let value = args
                     .next()
                     .ok_or_else(|| format!("`{name}` takes a value\n\n{HELP}"))?;
@@ -325,13 +322,11 @@ pub fn parse(args: &[String]) -> Result<Parsed, String> {
     let taken: &[&str] = match command {
         "add" => &["--path", "--git", "--tag", "--rev"],
         "publish" => &["--tag", "--registry"],
-        "new" => &["--from"],
         _ => &[],
     };
     if let Some((name, _)) = valued.iter().find(|(name, _)| !taken.contains(name)) {
         let of = match *name {
             "--registry" => "publish",
-            "--from" => "new --themes",
             _ => "add",
         };
         return Err(format!(
@@ -341,16 +336,6 @@ pub fn parse(args: &[String]) -> Result<Parsed, String> {
     if link && command != "publish" {
         return Err(format!(
             "`--link` is an option of `sleip publish` alone\n\n{HELP}"
-        ));
-    }
-    if themes && command != "new" {
-        return Err(format!(
-            "`--themes` is an option of `sleip new` alone\n\n{HELP}"
-        ));
-    }
-    if value("--from").is_some() && !themes {
-        return Err(format!(
-            "`--from` is an option of `sleip new --themes` alone\n\n{HELP}"
         ));
     }
     if version && words.is_empty() {
@@ -373,10 +358,7 @@ pub fn parse(args: &[String]) -> Result<Parsed, String> {
         ["help"] => help_of(None),
         ["help", name] => help_of(Some(name)),
         [name, ..] if help => help_of(Some(name)),
-        ["new", plugin] => Ok(Parsed::Run(
-            options,
-            Command::New((*plugin).to_owned(), themes, value("--from")),
-        )),
+        ["new", plugin] => Ok(Parsed::Run(options, Command::New((*plugin).to_owned()))),
         ["check"] => Ok(Parsed::Run(options, Command::Check)),
         ["test"] => Ok(Parsed::Run(options, Command::Test)),
         ["dev"] => Ok(Parsed::Run(options, Command::Dev)),

@@ -23,10 +23,10 @@ The split is the same as cargo and rustc: the app runs plugins, and Sleip provid
 
 | Command | What it does |
 |---|---|
-| `sleip new <name>` | Scaffolds a plugin of Luau that works, as `owner/name`, in a folder of its name after the owner: its manifest, `src/init.luau` of a command that shows a notice, its texts in English, a test, the API's type definitions and luau-lsp's settings; with `--themes`, a package of themes: its manifest, a theme of Lokyr's format in `themes/`, named after the package, as `Harbor Night` of `acme/harbor-night`, and a README; `--from <theme>` makes its theme a whole copy of the theme of that name, as Lokyr finds it, of the themes folder, an installed package, Lokyr's own or the built-in ones, of its author, license and source, the manifest of its license, a name of no theme refused before anything is made |
+| `sleip new <name>` | Scaffolds a plugin of Luau that works, as `owner/name`, in a folder of its name after the owner: its manifest, `src/init.luau` of a command that shows a notice, its texts in English, a test, the API's type definitions and luau-lsp's settings |
 | `sleip check` | Checks the plugin of the current folder as the registry's CI checks it: its manifest, of its capabilities, of the ones that the app refuses before 1.0.0, of its activations, an `osc:` one refused as the app refuses it until the handlers of OSC sequences come, and its `[uses]`; the plugin API's version against Sleip's; its catalogs, each that parses, and its commands' titles in English; its config's schema, as the app reads it, each key once in its object and of no key `enabled`; its package's layout and sizes; and its sources' types, `src/**/*.luau` in strict mode, against the API's definitions that Sleip holds, of Luau's own type checker, of the solver that luau-lsp takes by default, without the globals that the app takes away, as `print` and `loadstring`; each problem of its file, line and column, and a failure of any |
 | `sleip test` | Runs the plugin's tests, each function of the table that each file `tests/*.luau` returns, of a `TestHost` of its own, the plugin made anew on the SDK's fake host as the app sets it up: of its manifest's capabilities, `[uses]` and slots, as the app reads them, of its package's `src/` alone, beside the app's commands and its first-party plugins' (`luau/commands.json`, which `just luau-commands` writes of the app's registry and its tests check); its commands run as the registry runs them, their arguments checked and their defaults given, and the events reach it of its subscriptions, as the app delivers them, a tab's or a pane's change that a plugin without `process-read` cannot read not, and a timer's event of `advance` alone, a posted one failing; a failure tells its file and line, and fails the command, as a file of no test does |
-| `sleip dev` | Checks the plugin, or the package of themes, and links its folder into the app's plugins, a dev entry of `plugins.lock` that names the folder, of no hash, which the app watches and reloads at each change, and checks it again at each change, telling its problems; Ctrl-C ends it, the entry taken back, the entry of an installed plugin of its name, whose place it took meanwhile, given back, and a lockfile that it made, of no plugin left, taken away |
+| `sleip dev` | Checks the plugin and links its folder into the app's plugins, a dev entry of `plugins.lock` that names the folder, of no hash, which the app watches and reloads at each change, and checks it again at each change, telling its problems; Ctrl-C ends it, the entry taken back, the entry of an installed plugin of its name, whose place it took meanwhile, given back, and a lockfile that it made, of no plugin left, taken away |
 | `sleip add <plugin>[@<constraint>]` | Adds a plugin of the registry to `plugins.toml`, as owner/name, of the constraint given, as `acme/hello@^0.2`, or of the newest version that the app's plugin API takes, written as `^<version>`: its versions of the registry's signed index, yanked ones left out but one that the lockfile holds, resolved with the rest; the archive of each version picked downloaded, or of Sleip's cache, its SHA-256 checked against the index before the store takes it; the lockfile's source `registry+<address>`; the capabilities that it asks for told. A plugin that this Lokyr takes no version of is refused before anything is downloaded, in plain words, of its newest version's plugin API and this Lokyr's: a newer Lokyr to update to, as Lokyr › Check for Updates… does, or a version of the plugin to come for an older one. The plugins that it depends on keep the versions that the lockfile holds, a preference of the resolver, so that a conflict moves its plugins alone, to the newest of theirs that holds; a folder that `sleip dev` links stays as it is, the plugins that need it of its version; the registry's plugins that a folder's or a repository's plugin needs are gathered; an entry of `plugins.toml` edited by hand, of a constraint that the locked version no longer meets, another source, folder or repository, or a `rev` that the locked commit does not begin, is resolved afresh; a version that the store holds as the lockfile does is not downloaded again; `plugins.toml` is written before the lockfile, and put back if the lockfile cannot be |
 | `sleip add [<plugin>] --path <folder>` / `--git <url> (--tag <tag> \| --rev <commit>)` | Adds a plugin to `plugins.toml`, edited in place, of a folder or a git repository's tag or commit, its name its manifest's; fetches the list's plugins that the lockfile lacks, resolves them all against the app's plugin API, stores each package and writes the lockfile whole, which the app reloads; a failure changes nothing, the packages new to the store taken away and those that it held already kept. The registry's plugins come with registry v0 |
 | `sleip remove <plugin>` / `sleip update [<plugin>]` | Removes or updates, always through the lockfile, `update` taking the registry's plugins of the list and the ones that they depend on, or the one given alone, its dependencies kept as locked unless it needs others, to the newest versions that their constraints and the app's plugin API take, and fetching the folders and the repositories again; `update --locked` installs the lockfile as it is, as of a `plugins.lock` copied to another machine: each package of the registry that the store lacks fetched again at its version, its archive checked against the index and its package against the lockfile's digest, a `restored` event each, and refused if the lockfile would change; every install fetches so the registry's packages that the lockfile holds and the store lacks; a plugin removed takes out the plugins that it needed and that no other plugin of `plugins.toml`, nor of a `sleip dev` folder, needs |
@@ -53,7 +53,7 @@ Each line is an object of its `event` and of the fields below; a field of no val
 
 | Command | Event | Fields |
 |---|---|---|
-| `list` | `plugin`, of each installed plugin | `name`, `version`, `kind` (`luau`, `themes`), `source` (`registry+<address>`, `path+<path>`, `git+<address>#<commit>`, `dev+<path>`), `capabilities`, a list of their manifest's texts |
+| `list` | `plugin`, of each installed plugin | `name`, `version`, `kind` (`luau`), `source` (`registry+<address>`, `path+<path>`, `git+<address>#<commit>`, `dev+<path>`), `capabilities`, a list of their manifest's texts |
 | `search` | `found`, of each plugin found | `name`, `version`, the one shown, `description`, `capabilities`, `yanked`, `api`, the plugin API's constraint, and `taken`, whether this Lokyr takes it, `null` of no Lokyr found |
 | | `note`, of what is worth knowing, as an expired cache offline | `message` |
 | | `done` | `found`, how many |
@@ -96,8 +96,9 @@ Each line is an object of its `event` and of the fields below; a field of no val
 | `kind` | Contents | Capabilities |
 |---|---|---|
 | `luau` | Luau sources plus assets | As declared |
-| `themes` | Theme files only (`.itermcolors`, `.toml`), in `themes/` | None: contains no code, and so no `[activation]`, `[capabilities]`, `[uses]`, `[contributes]`, `[dependencies]` nor `thread`; `sleip check` and the registry's checks read each theme as the app reads it, its errors at their lines, and refuse two themes of one name; `sleip test` runs nothing of it |
 | `builtin` | Manifests of the first-party plugins in the repo | Not distributed |
+
+Sleip holds no package of themes: a theme's file goes into Lokyr's themes folder, or View › Import Themes… copies it there; a manifest of the kind `themes` is refused.
 
 ## File formats
 
@@ -134,24 +135,11 @@ config-schema = "schema.json"
 "sephiroth74/search-core" = "^0.2"
 ```
 
-A package of themes is of its manifest and its themes alone, which Lokyr lists as it is installed, after the themes folder's, its own and the built-in ones, a theme of another's name left to that one:
-
-```toml
-[plugin]
-name = "acme/nord-themes"
-version = "1.0.0"
-kind = "themes"
-license = "MIT"
-description = "Nord's themes, light and dark"
-repository = "https://github.com/acme/nord-themes"
-keywords = ["theme", "nord"]
-```
-
 | Field | Required | Meaning |
 |---|---|---|
 | `plugin.name` | yes | `owner/name`: lowercase letters, digits and `-` |
 | `plugin.version` | yes, but for `builtin` | Semver; a `builtin` plugin's is the app's |
-| `plugin.kind` | yes | `luau`, `themes` or `builtin` |
+| `plugin.kind` | yes | `luau` or `builtin` |
 | `plugin.api` | for `luau` | Constraint on the host API version |
 | `plugin.license` | yes | SPDX expression |
 | `plugin.description`, `repository`, `homepage`, `keywords`, `authors` | no | Metadata for the registry: texts of a line, of no control character, C0 or C1, nor hidden one: a format character of Unicode, the changes of direction and the characters of no width among them, but the joiners (U+200C, U+200D) and the marks of direction (U+200E, U+200F, U+061C), which scripts take, nor a separator of lines or paragraphs; the description of 300 characters at most, the license of 100, an address of 2048, a keyword of 50, an author of 200; 20 keywords and 20 authors at most |
@@ -160,7 +148,7 @@ keywords = ["theme", "nord"]
 | `activation.on` | for `luau` | Activation events: `startup`, `command:<command>` or `command:<namespace>.*` of the plugin's own namespace, `event:<name>`, `slot:<name>`, `page:<id>` of one of its pages, `osc:<number>`; a `builtin` plugin's is `startup` by default |
 | `capabilities.*` | no | Requested capabilities, each `true` or `false`, but `net`, `fs-read`, `fs-write` and `env-read`, which list their hosts, paths and variables, as `net = ["api.github.com"]`: a path absolute or from `~`, of no `..`; a variable's name of letters, digits, `_` and `*`; a host's name of letters, digits, `.`, `-` and `*`; none of a control or hidden character, each bounded |
 | `uses.commands` | no | The commands that the plugin runs, by name or namespace (`tabs.*`), which Sleip shows at install, by category, with the capabilities they need |
-| `contributes.*` | no | Static contributions (commands, keybindings, slots, themes, config schema, pages), used by the palette, the registry and validation; a command's `name`, `title` and `category`, `view` if none, which the menus and the palette show before a plugin of a `command:` activation activates; `config-schema` names the JSON Schema file of the plugin's section of the config, `[plugins.<namespace>]`, of the keywords that the app checks; `pages`, Lokyr's own plugins' alone, the settings window's pages, each of its `id` and one of the host's icons, `icon` |
+| `contributes.*` | no | Static contributions (commands, keybindings, slots, config schema, pages), used by the palette, the registry and validation; a command's `name`, `title` and `category`, `view` if none, which the menus and the palette show before a plugin of a `command:` activation activates; `config-schema` names the JSON Schema file of the plugin's section of the config, `[plugins.<namespace>]`, of the keywords that the app checks; `pages`, Lokyr's own plugins' alone, the settings window's pages, each of its `id` and one of the host's icons, `icon` |
 | `dependencies` | no | Other plugins required at runtime; plugins talk through kernel commands, events and services |
 
 `pkg-model`'s `manifest::Manifest::parse` reads the manifest; one that does not read, as a capability misspelt or a field that the format lacks, tells its line and column. The first-party plugins' manifests, `plugins/*/plugin.toml`, of the kind `builtin`, sit beside their crates, which embed them; `app-core`'s build checks them, and fails with the file, the line and the column of one that does not read.
@@ -173,7 +161,6 @@ The plugins that you have declared, like the dependencies in `Cargo.toml` or `pu
 # ~/.config/lokyr/plugins.toml
 [plugins]
 "sephiroth74/search-plus" = "^0.1"
-"acme/nord-themes" = "1"
 "me/my-plugin" = { path = "~/dev/my-plugin" }
 "acme/git-status" = { git = "https://github.com/acme/git-status", tag = "v0.2.0" }
 
@@ -222,7 +209,6 @@ dependencies = []
 ```
 plugin.toml
 src/                     # kind = "luau" only: the sources, `.luau`, entry point src/init.luau; never bytecode
-themes/                  # kind = "themes" only: `.toml` and `.itermcolors`
 schema.json              # config schema, if any, or the file that `config-schema` names
 locales/<language>/      # the catalogs, Project Fluent's `.ftl`, as `locales/it/hello.ftl`
 README.md · LICENSE · CHANGELOG.md
@@ -232,7 +218,7 @@ assets/                  # icons and screenshots for the registry
 Archive rules:
 - regular files only, no symlinks or hard links;
 - no absolute paths, no `..` and no empty part; no two paths that differ by their case alone, nor a file within a file, as the Mac's file system takes them for one;
-- each file of the layout of its kind: a package of Luau holds `src/init.luau`, one of themes holds `themes/`, and the config's schema that the manifest names is there;
+- each file of the layout of its kind: a package of Luau holds `src/init.luau`, and the config's schema that the manifest names is there;
 - normalized permissions: the store's, whatever the archive says;
 - at most 20 MB compressed and 100 MB extracted, 10 000 files, and, past 1 MB extracted, 100 times its compressed size at most, against zstd bombs; frames of zstd's windows of 8 MiB at most.
 

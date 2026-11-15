@@ -1,12 +1,10 @@
 //! Themes of the native format: TOML files in the themes' folder beside the
 //! config, `themes/<name>.toml`, each a variant of the light appearance or
 //! the dark one; iTerm2's `.itermcolors` files there, read as they are; the
-//! themes that the app holds, native files of a folder of its own; the
-//! built-in themes; and the themes of the installed packages of themes, of
-//! either format, each of its package's folder. A file of the themes'
-//! folder takes the place of a held or built-in theme of its name, a native
-//! one before an `.itermcolors` one; an installed package's theme takes no
-//! other's name, so that a package installed changes no theme in force. A file's `[theme]` names it and the theme that it extends;
+//! themes that the app holds, native files of a folder of its own; and the
+//! built-in themes. A file of the themes' folder takes the place of a held
+//! or built-in theme of its name, a native one before an `.itermcolors`
+//! one. A file's `[theme]` names it and the theme that it extends;
 //! `[terminal]` gives the terminal's colors; `[search]` the search's
 //! highlights; `[interface]` the interface's tokens by their names; and
 //! each other section the tokens of its name, as `[tabs]` the tab bar's,
@@ -153,22 +151,19 @@ impl ThemeCredits {
 /// The theme of `name`: its file of the themes' folder `directory`, if
 /// there is one, or else the native file of that name of `held`, the
 /// folder of the themes that the app holds, or else the built-in one of
-/// that name among `builtins`, or else its file of the first of the
-/// folders of themes of the installed packages, `installed`, that has
-/// one; of the theme that it extends, whose values its own override, as
-/// deep as it goes. The error of a file tells its place in it.
+/// that name among `builtins`; of the theme that it extends, whose values
+/// its own override, as deep as it goes. The error of a file tells its
+/// place in it.
 pub fn resolve(
     name: &str,
     directory: Option<&Path>,
     held: Option<&Path>,
     builtins: &[Theme],
-    installed: &[PathBuf],
 ) -> Result<Resolved, Error> {
     let sources = Sources {
         directory,
         held,
         builtins,
-        installed,
     };
     let mut files = Vec::new();
     let mut chain = Vec::new();
@@ -190,13 +185,11 @@ pub fn is_name(name: &str) -> bool {
 
 /// Where a theme's name is looked for: the themes' folder, whose files a
 /// watch follows, the folder of the themes that the app holds, which never
-/// change, the built-in themes, and the installed packages' folders of
-/// themes, whose changes the app learns of its packages' watch.
+/// change, and the built-in themes.
 struct Sources<'a> {
     directory: Option<&'a Path>,
     held: Option<&'a Path>,
     builtins: &'a [Theme],
-    installed: &'a [PathBuf],
 }
 
 /// The partial theme of `name` and those that it extends, the files of the
@@ -212,7 +205,7 @@ fn load(
         path: path.map_or_else(|| PathBuf::from(name), Path::to_path_buf),
         position: None,
         message: format!(
-            "there is no theme `{name}`, of a file of the themes' folder, of Lokyr's own, built in or of an installed package"
+            "there is no theme `{name}`, of a file of the themes' folder, of Lokyr's own or built in"
         ),
     };
     if !is_name(name) {
@@ -245,20 +238,12 @@ fn load(
     {
         return Ok(partial);
     }
-    if let Some(theme) = sources.builtins.iter().find(|theme| theme.name == name) {
-        return Ok(Partial::of(theme));
-    }
-    // The installed packages' files, of no watch of their own.
-    for folder in sources.installed {
-        let native = folder.join(format!("{name}.toml"));
-        if let Some(partial) = load_native(&native, sources, files, chain)? {
-            return Ok(partial);
-        }
-        if let Some(theme) = load_itermcolors(name, folder, &mut Vec::new())? {
-            return Ok(Partial::of(&theme));
-        }
-    }
-    Err(not_found(path.as_deref()))
+    sources
+        .builtins
+        .iter()
+        .find(|theme| theme.name == name)
+        .map(Partial::of)
+        .ok_or_else(|| not_found(path.as_deref()))
 }
 
 /// The most bytes of a theme's file, which a longer one is refused past.

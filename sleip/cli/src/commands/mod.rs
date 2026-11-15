@@ -33,9 +33,7 @@ pub fn run(options: Options, command: &Command) -> ExitCode {
         }
     };
     let ran = match command {
-        Command::New(plugin, themes, from) => {
-            new::new(&paths, out, plugin, *themes, from.as_deref())
-        }
+        Command::New(plugin) => new::new(out, plugin),
         Command::Check => check::check(out),
         Command::Test => test::test(out),
         Command::Dev => dev::dev(&paths, out),

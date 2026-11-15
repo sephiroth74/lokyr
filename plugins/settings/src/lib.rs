@@ -2856,18 +2856,16 @@ fn themes_tree(cx: &mut Cx<'_>, chosen: Option<ThemeVariant>) -> Node {
                 Some(Data::Text(name)) => Some(name.clone()),
                 _ => None,
             });
-        let shown: Vec<(&str, Option<&str>)> = themes
+        let names: Vec<&str> = themes
             .iter()
             .flat_map(|themes| &themes.themes)
             .filter(|theme| theme.variant == variant)
-            .map(|theme| (theme.name.as_str(), theme.package.as_deref()))
+            .map(|theme| theme.name.as_str())
             .collect();
-        for (row, chunk) in shown.chunks(CARDS_ACROSS).enumerate() {
+        for (row, chunk) in names.chunks(CARDS_ACROSS).enumerate() {
             let mut cards: Vec<Node> = chunk
                 .iter()
-                .map(|&(name, package)| {
-                    theme_card(word, (name, package), named.as_deref() == Some(name))
-                })
+                .map(|&name| theme_card(word, name, named.as_deref() == Some(name)))
                 .collect();
             // The last row's room of the cards that it lacks, so that its
             // cards keep the others' width.
@@ -2919,9 +2917,8 @@ fn themes_tree(cx: &mut Cx<'_>, chosen: Option<ThemeVariant>) -> Node {
 
 /// The card of the theme `name` of the appearance `variant`, `light` or
 /// `dark`: its preview and its name, of the accent's border where it is
-/// `chosen`, as `[theme]` names it, and of the installed package that holds
-/// it, `package`, in its tooltip.
-fn theme_card(variant: &str, (name, package): (&str, Option<&str>), chosen: bool) -> Node {
+/// `chosen`, as `[theme]` names it.
+fn theme_card(variant: &str, name: &str, chosen: bool) -> Node {
     let border = if chosen {
         Border {
             color: Token::from("accent"),
@@ -2933,7 +2930,7 @@ fn theme_card(variant: &str, (name, package): (&str, Option<&str>), chosen: bool
             width: 1.0,
         }
     };
-    let card = Node::container(vec![
+    Node::container(vec![
         Node::theme_preview(name).layout(Layout {
             width: Length::Fraction(1.0),
             height: Length::Points(PREVIEW_HEIGHT),
@@ -2964,11 +2961,7 @@ fn theme_card(variant: &str, (name, package): (&str, Option<&str>), chosen: bool
             ..Hover::default()
         }),
         ..Style::default()
-    });
-    match package {
-        Some(package) => card.tooltip(package),
-        None => card,
-    }
+    })
 }
 
 /// The text of `why`, a write refused, under its control, of `key`.

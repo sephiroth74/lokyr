@@ -25,7 +25,7 @@ dependencies = ["lokyr/themes 0.3.1"]
 [[package]]
 name = "lokyr/themes"
 version = "0.3.1"
-kind = "themes"
+kind = "luau"
 source = "registry+https://pkg.lokyr.dev"
 checksum = "{}"
 
@@ -148,8 +148,8 @@ fn a_wrong_lockfile_is_refused_at_its_place() {
             "7:11: `0.1` is not a version",
         ),
         (
-            "kind = \"themes\"",
-            "kind = \"builtin\"",
+            "name = \"lokyr/themes\"\nversion = \"0.3.1\"\nkind = \"luau\"",
+            "name = \"lokyr/themes\"\nversion = \"0.3.1\"\nkind = \"builtin\"",
             "17:8: a built-in plugin is linked in the app",
         ),
         (

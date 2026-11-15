@@ -40,7 +40,7 @@ pub struct Lock {
 pub struct Locked {
     /// Its version.
     pub version: String,
-    /// What its package holds: Luau's sources, or themes alone.
+    /// What its package holds: Luau's sources.
     pub kind: Kind,
     /// Where it came from.
     pub source: Source,
@@ -214,7 +214,6 @@ impl Lock {
         for (name, locked) in &self.packages {
             let kind = match locked.kind {
                 Kind::Luau => "luau",
-                Kind::Themes => "themes",
                 Kind::Builtin => "builtin",
             };
             text.push_str(&format!(
