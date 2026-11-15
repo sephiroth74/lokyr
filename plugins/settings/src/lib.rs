@@ -69,6 +69,10 @@ const NEW_THEME: &str = "app.new-theme";
 const THEMES_IMPORT: &str = "themes-import";
 const IMPORT_THEMES: &str = "app.import-themes";
 
+/// The themes' page's button of a new theme, of Lokyr's own values of the
+/// appearance that it shows.
+const THEMES_NEW: &str = "themes-new";
+
 /// The themes' page's button of the themes' folder, which the app shows
 /// in the file manager.
 const THEMES_FOLDER: &str = "themes-folder";
@@ -445,6 +449,22 @@ impl Plugin for SettingsPage {
                 match key {
                     THEMES_IMPORT => return cx.run_command(IMPORT_THEMES, Args::new()),
                     THEMES_FOLDER => return cx.run_command(OPEN_THEMES, Args::new()),
+                    // A new theme of the appearance that the page shows.
+                    THEMES_NEW => {
+                        let variant = match self.themes_variant {
+                            Some(variant) => variant,
+                            None => cx.themes()?.appearance,
+                        };
+                        let word = match variant {
+                            ThemeVariant::Light => "light",
+                            ThemeVariant::Dark => "dark",
+                        };
+                        let args = Args::from([
+                            ("theme".to_owned(), Value::String(String::new())),
+                            ("variant".to_owned(), Value::String(word.to_owned())),
+                        ]);
+                        return cx.run_command(NEW_THEME, args);
+                    }
                     _ => {}
                 }
             }
@@ -2793,7 +2813,7 @@ fn themes_tree(cx: &mut Cx<'_>, chosen: Option<ThemeVariant>) -> Node {
             ..Layout::default()
         });
     let (word, heading, _) = words(variant);
-    // The title, and Show in Finder and Import… at the row's end.
+    // The title, and Show in Finder, Import… and New… at the row's end.
     let header = Node::container(vec![
         Node::text(message(cx, heading, &[]))
             .key("title")
@@ -2806,6 +2826,7 @@ fn themes_tree(cx: &mut Cx<'_>, chosen: Option<ThemeVariant>) -> Node {
         Node::spacer(),
         Node::button(message(cx, "themes-folder", &[]).as_str()).key(THEMES_FOLDER),
         Node::button(message(cx, "themes-import", &[]).as_str()).key(THEMES_IMPORT),
+        Node::button(message(cx, "themes-new", &[]).as_str()).key(THEMES_NEW),
     ])
     .layout(Layout {
         direction: Direction::Row,

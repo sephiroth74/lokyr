@@ -489,6 +489,67 @@ pub fn copy_of(resolved: &Resolved, name: &str) -> String {
     native(&theme, resolved.credits.credits())
 }
 
+/// The text of a file of the native format of a new theme of `theme`'s
+/// values, named `name`: every key that it gives, written as [`native`]
+/// writes them, and each optional key of `[terminal]` that it leaves out as
+/// a comment of the value that it takes then, so that the file shows every
+/// key and, left as it is, colors as `theme` does.
+pub fn new_theme_of(theme: &Theme, name: &str) -> String {
+    let mut fresh = theme.clone();
+    fresh.name = name.to_owned();
+    let text = native(&fresh, Credits::default());
+    let terminal = &theme.terminal;
+    let (text_color, background) = (terminal.foreground, terminal.background);
+    let left_out: Vec<String> = [
+        (
+            "cursor",
+            terminal.cursor,
+            text_color,
+            "the cursor: the text's color when left out",
+        ),
+        (
+            "cursor-text",
+            terminal.cursor_text,
+            background,
+            "the text under a block cursor: read, not applied yet",
+        ),
+        (
+            "selection-text",
+            terminal.selection_text,
+            text_color,
+            "the selected text: its own color when left out",
+        ),
+        (
+            "bold",
+            terminal.bold,
+            text_color,
+            "bold text of the default color: its own when left out",
+        ),
+        (
+            "link",
+            terminal.link,
+            terminal.palette[4],
+            "a link's color: read, not applied yet",
+        ),
+        (
+            "underline",
+            terminal.underline,
+            text_color,
+            "an underline's color: the text's when left out",
+        ),
+    ]
+    .into_iter()
+    .filter(|(_, given, _, _)| given.is_none())
+    .map(|(key, _, value, what)| format!("# {key} = \"{value}\"  # {what}\n"))
+    .collect();
+    // The comments at `[terminal]`'s end, before the next section.
+    let end = text
+        .find("\n[terminal]\n")
+        .and_then(|start| text[start + 1..].find("\n\n[").map(|at| start + 1 + at + 1))
+        .unwrap_or(text.len());
+    format!("{}{}{}", &text[..end], left_out.concat(), &text[end..])
+}
+
 /// `text` as a basic string of TOML, of its escapes.
 fn quoted(text: &str) -> String {
     let mut quoted = String::from("\"");

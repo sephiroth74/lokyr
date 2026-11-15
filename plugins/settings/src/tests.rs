@@ -2270,11 +2270,13 @@ fn a_theme_s_card_s_context_menu_uses_it_or_makes_a_new_theme_of_it_and_import_i
         title: "New Theme from Current…".to_owned(),
         category: Category::View,
         capabilities: Vec::new(),
-        params: vec![Param {
-            name: "theme".to_owned(),
-            kind: ParamKind::String,
-            default: Some(Value::String(String::new())),
-        }],
+        params: ["theme", "variant"]
+            .map(|name| Param {
+                name: name.to_owned(),
+                kind: ParamKind::String,
+                default: Some(Value::String(String::new())),
+            })
+            .to_vec(),
         when: None,
     };
     let import_themes = Command {
@@ -2375,6 +2377,34 @@ fn a_theme_s_card_s_context_menu_uses_it_or_makes_a_new_theme_of_it_and_import_i
             name: IMPORT_THEMES.to_owned(),
             args: Args::new(),
         }));
+    // New…: a new theme of Lokyr's own values of the appearance shown,
+    // the dark one, then the light one of the sidebar's.
+    let new_of = |variant: &str| Request::RunCommand {
+        name: NEW_THEME.to_owned(),
+        args: Args::from([
+            ("theme".to_owned(), Value::String(String::new())),
+            ("variant".to_owned(), Value::String(variant.to_owned())),
+        ]),
+    };
+    assert!(find_node(&tree, THEMES_NEW).is_some());
+    host.ui_event(
+        &mut plugin,
+        &event(&themes_page(), THEMES_NEW, UiEventKind::Click),
+    )
+    .unwrap();
+    assert!(host.take_done().contains(&new_of("dark")));
+    host.ui_event(
+        &mut plugin,
+        &event(&themes_page(), VARIANTS, UiEventKind::Select { item: 1 }),
+    )
+    .unwrap();
+    host.render(&mut plugin, &themes_page()).unwrap();
+    host.ui_event(
+        &mut plugin,
+        &event(&themes_page(), THEMES_NEW, UiEventKind::Click),
+    )
+    .unwrap();
+    assert!(host.take_done().contains(&new_of("light")));
     // Show in Finder beside it: the themes' folder.
     assert!(find_node(&tree, THEMES_FOLDER).is_some());
     host.ui_event(

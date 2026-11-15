@@ -10,6 +10,7 @@ from 1.0.0; before it, a minor version may change what a previous one did.
 
 ### Added
 
+- New… on the Themes page makes a new theme of Lokyr's own light or dark values, as the page shows, every key written and the terminal's optional ones as comments of their defaults: Lokyr asks its name, "New Dark Theme" first, writes it into the themes folder, uses it and opens it in your editor.
 - View › Import Themes…, and Import… on the Themes page, beside Show in Finder, which opens the themes folder, imports `.itermcolors` and `.toml` themes, several chosen at once in the system's open panel: each is copied into the themes folder as it is, one question asking whether to replace those of a name there already; then one alert tells the themes imported, by their names, and the files that were not, as one that holds no theme.
 - View › New Theme from Current… makes a new theme of every color of the theme in force: Lokyr asks its name, writes it into the themes folder, uses it and opens it in your editor; a theme's card on the Themes page has Use and Duplicate… in its context menu.
 - The settings window's Keys page has a field at its top that filters its shortcuts as you type, by their commands' titles or names, their keys, as ⌘K or `cmd+k`, or their contexts.

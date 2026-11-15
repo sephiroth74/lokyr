@@ -816,6 +816,50 @@ fn a_new_theme_of_an_existing_one_is_written_whole_named_for_its_variant_and_ope
     let written = std::fs::read_to_string(directory.join("config.toml")).unwrap();
     assert!(written.contains("light = \"Dawn Mine\""), "{written}");
     assert!(directory.join("themes/Dawn Mine.toml").is_file());
+    // A new one of Lokyr's own dark values, of every key, its optional
+    // ones as comments, used for the dark appearance; a second one of the
+    // first name that no theme has.
+    let fresh = Args::from([("variant".to_owned(), Value::String("dark".to_owned()))]);
+    app.run(&mut fake, NEW_THEME, fresh.clone());
+    let asked = fake.alerts().last().cloned().expect("a question");
+    assert_eq!(asked.alert.message, "New dark theme");
+    assert_eq!(asked.alert.input.as_deref(), Some("New Dark Theme"));
+    answered(&mut fake, &mut app, "New Dark Theme");
+    let text = std::fs::read_to_string(directory.join("themes/New Dark Theme.toml")).unwrap();
+    for line in [
+        "name = \"New Dark Theme\"",
+        "variant = \"dark\"",
+        "background = \"#1e1e20\"",
+        "# cursor = \"#e6e6e6\"",
+        "# underline = ",
+        "\"panel.bg\" = ",
+        "[search]",
+    ] {
+        assert!(text.contains(line), "{line} in {text}");
+    }
+    let written = std::fs::read_to_string(directory.join("config.toml")).unwrap();
+    assert!(written.contains("dark = \"New Dark Theme\""), "{written}");
+    app.run(&mut fake, NEW_THEME, fresh);
+    let asked = fake.alerts().last().cloned().expect("a question");
+    assert_eq!(asked.alert.input.as_deref(), Some("New Dark Theme 2"));
+    answered(&mut fake, &mut app, "New Dark Theme 2");
+    let light = Args::from([("variant".to_owned(), Value::String("light".to_owned()))]);
+    app.run(&mut fake, NEW_THEME, light);
+    let asked = fake.alerts().last().cloned().expect("a question");
+    assert_eq!(asked.alert.message, "New light theme");
+    assert_eq!(asked.alert.input.as_deref(), Some("New Light Theme"));
+    answered(&mut fake, &mut app, "New Light Theme");
+    let written = std::fs::read_to_string(directory.join("config.toml")).unwrap();
+    assert!(written.contains("light = \"New Light Theme\""), "{written}");
+    // A copy of a name taken, of a number after it.
+    write(&directory, "Held Dawn Copy", &theme("#fafafa"));
+    app.run(
+        &mut fake,
+        NEW_THEME,
+        Args::from([("theme".to_owned(), Value::String("Held Dawn".to_owned()))]),
+    );
+    let asked = fake.alerts().last().cloned().expect("a question");
+    assert_eq!(asked.alert.input.as_deref(), Some("Held Dawn Copy 2"));
     // Of a name of no theme: told, nothing asked.
     app.run(
         &mut fake,

@@ -573,6 +573,49 @@ fn a_theme_s_credits_come_of_its_file_or_of_those_that_it_extends_and_its_copy_i
 }
 
 #[test]
+fn a_new_theme_of_a_built_in_one_writes_every_key_its_optional_ones_as_comments() {
+    let mut base = builtin();
+    base.tokens
+        .insert("search.match".to_owned(), ThemeColor::hex(0xffd60a));
+    let text = new_theme_of(&base, "New Dark Theme");
+    // The optional keys that it leaves out, commented, of their values
+    // then, in `[terminal]`, before the next section.
+    for line in [
+        "# cursor = \"#e6e6e6\"",
+        "# cursor-text = \"#1e1e20\"",
+        "# selection-text = \"#e6e6e6\"",
+        "# bold = \"#e6e6e6\"",
+        "# link = \"#45454b\"",
+        "# underline = \"#e6e6e6\"",
+    ] {
+        assert!(text.contains(line), "{line} in {text}");
+    }
+    let terminal = text.find("[terminal]").unwrap();
+    let search = text.find("[search]").unwrap();
+    let cursor = text.find("# cursor = ").unwrap();
+    assert!(terminal < cursor && cursor < search, "{text}");
+    assert!(text.contains("selection = \"#34445f\"\n"), "{text}");
+    assert!(!text.contains("# selection = "), "{text}");
+    // It reads back as the same theme, of its new name, whole.
+    let folder = folder("new-theme", &[("New Dark Theme", &text)]);
+    let read = resolve("New Dark Theme", Some(&folder), None, &[])
+        .unwrap()
+        .theme;
+    assert_eq!(read.name, "New Dark Theme");
+    assert_eq!(read.terminal, base.terminal);
+    assert_eq!(read.tokens, base.tokens);
+    // Of no section after `[terminal]`, the comments at the file's end.
+    let mut bare = builtin();
+    bare.tokens.clear();
+    assert!(
+        new_theme_of(&bare, "Bare")
+            .trim_end()
+            .ends_with("the text's when left out")
+    );
+    let _ = fs::remove_dir_all(folder);
+}
+
+#[test]
 fn the_guide_s_example_theme_holds_every_key_and_token() {
     let text = include_str!("../../../docs/themes/example.toml");
     let file = parse(text, Path::new("docs/themes/example.toml")).unwrap();

@@ -91,6 +91,13 @@
         },
         "kind": "string",
         "name": "theme"
+      },
+      {
+        "default": {
+          "string": ""
+        },
+        "kind": "string",
+        "name": "variant"
       }
     ],
     "plugin": null,

@@ -1,8 +1,9 @@
 //! A new theme made of an existing one, as View › New Theme from Current…
-//! and the Themes page's Duplicate… ask: its name asked, the theme as it
-//! resolves written whole into the themes' folder, of Lokyr's format, then
-//! named in `[theme]` for its variant and opened in the editor, so that
-//! each save shows at once.
+//! and the Themes page's Duplicate… ask, or of Lokyr's own values of an
+//! appearance, as its New… asks: its name asked, the theme written whole
+//! into the themes' folder, of Lokyr's format, a new one of its optional
+//! keys as comments too, then named in `[theme]` for its variant and
+//! opened in the editor, so that each save shows at once.
 
 use std::fs;
 use std::io::Write;
@@ -10,7 +11,7 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use lokyr_kernel::l10n::Arg;
-use lokyr_kernel::themes;
+use lokyr_kernel::themes::{self, ThemeVariant};
 use lokyr_platform_core::{Alert, AlertStyle, Appearance, Platform};
 use lokyr_ui_core::theme as ui_theme;
 
@@ -19,25 +20,43 @@ use super::installs::shown_path;
 use crate::drawing::Backend;
 
 /// A new theme whose name the user is asked: the theme that it copies, by
-/// its name, and the themes' folder that it goes into.
+/// its name, the themes' folder that it goes into, and whether it is a new
+/// one of Lokyr's own values, of every key, rather than a copy.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct NewTheme {
     from: String,
     folder: PathBuf,
+    fresh: bool,
 }
+
+/// How many names a first name of a new theme tries, of a number after it,
+/// before it gives up the search of one free.
+const MOST_TRIED: usize = 1000;
 
 /// The question's button that makes the theme, the first.
 const CREATE: usize = 0;
 
 impl<B: Backend> App<B> {
-    /// Asks the name of a new theme made of the theme `from`, or of the one
-    /// in force for the appearance in force for none; or tells why none
-    /// can be made: no folder of themes, or a theme that does not resolve.
-    pub(super) fn ask_new_theme(&mut self, platform: &mut dyn Platform, from: Option<String>) {
-        let from = from.unwrap_or_else(|| match platform.appearance() {
-            Appearance::Light => self.config.theme.light.clone(),
-            Appearance::Dark => self.config.theme.dark.clone(),
-        });
+    /// Asks the name of a new theme of Lokyr's own values of the appearance
+    /// `variant`, or else made of the theme `from`, or of the one in force
+    /// for the appearance in force for none, of a first name that no theme
+    /// has; or tells why none can be made: no folder of themes, or a theme
+    /// that does not resolve.
+    pub(super) fn ask_new_theme(
+        &mut self,
+        platform: &mut dyn Platform,
+        from: Option<String>,
+        variant: Option<ThemeVariant>,
+    ) {
+        let from = match (variant, from) {
+            (Some(ThemeVariant::Light), _) => themes::LIGHT.to_owned(),
+            (Some(ThemeVariant::Dark), _) => themes::DARK.to_owned(),
+            (None, Some(from)) => from,
+            (None, None) => match platform.appearance() {
+                Appearance::Light => self.config.theme.light.clone(),
+                Appearance::Dark => self.config.theme.dark.clone(),
+            },
+        };
         let places = self.theme_places();
         let Some(folder) = places.folder.clone() else {
             let why = self.texts.text("theme-install-no-folder");
@@ -47,10 +66,26 @@ impl<B: Backend> App<B> {
         if let Err(error) = places.resolve(&from, &builtins) {
             return self.tell_new_theme_failed(platform, error.to_string());
         }
-        let name = self
-            .texts
-            .text_with("new-theme-name", &[("name", Arg::Text(&from))]);
-        self.show_new_theme_ask(platform, NewTheme { from, folder }, &name, None);
+        let first = match variant {
+            Some(variant) => self
+                .texts
+                .text_with("new-theme-fresh-name", &[("variant", variant_arg(variant))]),
+            None => self
+                .texts
+                .text_with("new-theme-name", &[("name", Arg::Text(&from))]),
+        };
+        // The first of it and of a number after it that no theme has.
+        let free = |name: &str| !taken(&folder, name) && places.resolve(name, &builtins).is_err();
+        let name = std::iter::once(first.clone())
+            .chain((2..MOST_TRIED).map(|number| format!("{first} {number}")))
+            .find(|name| free(name))
+            .unwrap_or(first);
+        let ask = NewTheme {
+            from,
+            folder,
+            fresh: variant.is_some(),
+        };
+        self.show_new_theme_ask(platform, ask, &name, None);
     }
 
     /// Asks the name of the new theme of `ask`, of a field that holds
@@ -69,11 +104,23 @@ impl<B: Backend> App<B> {
         if let Some(why) = why {
             detail = format!("{why}\n\n{detail}");
         }
+        let message = if ask.fresh {
+            let variant = if ask.from == themes::LIGHT {
+                ThemeVariant::Light
+            } else {
+                ThemeVariant::Dark
+            };
+            self.texts.text_with(
+                "new-theme-fresh-message",
+                &[("variant", variant_arg(variant))],
+            )
+        } else {
+            self.texts
+                .text_with("new-theme-message", &[("name", Arg::Text(&ask.from))])
+        };
         let alert = Alert {
             style: AlertStyle::Informational,
-            message: self
-                .texts
-                .text_with("new-theme-message", &[("name", Arg::Text(&ask.from))]),
+            message,
             detail,
             buttons: vec![
                 self.texts.text("new-theme-create"),
@@ -122,13 +169,20 @@ impl<B: Backend> App<B> {
             Err(error) => return self.tell_new_theme_failed(platform, error.to_string()),
         };
         let path = ask.folder.join(format!("{name}.toml"));
+        // A new one of every key, its optional ones as comments; a copy of
+        // what its original gives, of its credits.
+        let text = if ask.fresh {
+            themes::new_theme_of(&resolved.theme, &name)
+        } else {
+            themes::copy_of(&resolved, &name)
+        };
         // A file made new alone, never one written over.
         let written = fs::create_dir_all(&ask.folder).and_then(|()| {
             fs::OpenOptions::new()
                 .write(true)
                 .create_new(true)
                 .open(&path)?
-                .write_all(themes::copy_of(&resolved, &name).as_bytes())
+                .write_all(text.as_bytes())
         });
         if let Err(error) = written {
             let why = format!("{}: {error}", shown_path(&path));
@@ -163,6 +217,15 @@ impl<B: Backend> App<B> {
         let window = self.acting.or_else(|| platform.focused_window());
         platform.show_alert(window, &alert);
     }
+}
+
+/// The argument of the appearance `variant` of a message, `light` or
+/// `dark`, which its text selects of.
+fn variant_arg(variant: ThemeVariant) -> Arg<'static> {
+    Arg::Text(match variant {
+        ThemeVariant::Light => "light",
+        ThemeVariant::Dark => "dark",
+    })
 }
 
 /// Whether a file of the folder `folder` names a theme `name`, a link that

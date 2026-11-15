@@ -8,7 +8,7 @@ use std::path::Path;
 pub use lokyr_themes::{
     Credits, DARK, DIRECTORY, EXTENSIONS, LIGHT, MOST_THEME_BYTES, MOST_THEME_FILES, Resolved,
     TerminalColors, Theme, ThemeColor, ThemeCredits, ThemeVariant, copy_of, directory, is_name,
-    native, read_file,
+    native, new_theme_of, read_file,
 };
 
 use crate::config::Error;

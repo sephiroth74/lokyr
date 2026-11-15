@@ -106,7 +106,8 @@ const SETTINGS_TAB: &str = "app.settings-window";
 /// the file manager, made first when it is not there.
 const OPEN_THEMES: &str = "app.open-themes-folder";
 /// A new theme of a whole copy of an existing one, the one in force or the
-/// one that its argument `theme` names.
+/// one that its argument `theme` names; or, of its argument `variant`,
+/// `light` or `dark`, a new theme of Lokyr's own values of that appearance.
 const NEW_THEME: &str = "app.new-theme";
 /// Themes imported, of the files that the open panel chooses.
 const IMPORT_THEMES: &str = "app.import-themes";
@@ -2974,7 +2975,16 @@ impl<B: Backend> App<B> {
                         Some(Value::String(theme)) if !theme.is_empty() => Some(theme.clone()),
                         _ => None,
                     };
-                    self.ask_new_theme(platform, from);
+                    let variant = match args.get("variant") {
+                        Some(Value::String(variant)) if variant == "light" => {
+                            Some(themes::ThemeVariant::Light)
+                        }
+                        Some(Value::String(variant)) if variant == "dark" => {
+                            Some(themes::ThemeVariant::Dark)
+                        }
+                        _ => None,
+                    };
+                    self.ask_new_theme(platform, from, variant);
                     Ok(())
                 }
                 SETTINGS_TAB => {
@@ -5127,11 +5137,13 @@ fn commands(texts: &Texts, plugins: &Plugins) -> Registry {
                 default: None,
             }]
         } else if name == NEW_THEME {
-            vec![Param {
-                name: "theme".to_owned(),
-                kind: Kind::String,
-                default: Some(Value::String(String::new())),
-            }]
+            ["theme", "variant"]
+                .map(|name| Param {
+                    name: name.to_owned(),
+                    kind: Kind::String,
+                    default: Some(Value::String(String::new())),
+                })
+                .to_vec()
         } else {
             Vec::new()
         };
