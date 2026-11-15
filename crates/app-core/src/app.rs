@@ -1590,14 +1590,14 @@ impl<B: Backend> App<B> {
         let mut errors = Vec::new();
         let mut notices = Vec::new();
         // A picker's preview in place of the appearance in force's.
-        let mut names = [&config.light, &config.dark];
+        let mut names = [config.light.clone(), config.dark.clone()];
         if let Some(preview) = &self.theme_preview {
             match platform.appearance() {
-                Appearance::Light => names[0] = preview,
-                Appearance::Dark => names[1] = preview,
+                Appearance::Light => names[0] = preview.clone(),
+                Appearance::Dark => names[1] = preview.clone(),
             }
         }
-        for name in names {
+        for name in &names {
             match places.resolve(name, &builtins) {
                 Ok(theme) => {
                     paths.extend(theme.files);
@@ -1650,6 +1650,17 @@ impl<B: Backend> App<B> {
             }
             None => self.resolve(platform, &About::Theme),
         }
+        // The previews of the themes loaded, of their files as they are
+        // now, as a saved file changes them.
+        let mut changed = BTreeSet::new();
+        for (name, spec) in names.iter().zip(&resolved) {
+            let colors = Some(lokyr_ui_core::paint::PreviewColors::of(&spec.terminal));
+            if self.previews.contains_key(name) && self.previews.get(name) != Some(&colors) {
+                self.previews.insert(name.clone(), colors);
+                changed.insert(name.clone());
+            }
+        }
+        self.previews_changed(platform, &changed);
         let theme = Theme::of(&resolved[0], &resolved[1]);
         if theme != self.theme {
             self.theme = theme;
@@ -1737,6 +1748,11 @@ impl<B: Backend> App<B> {
                 }
             }
         }
+        self.previews_changed(platform, &changed);
+    }
+
+    /// Draws anew the windows whose previews show a theme of `changed`.
+    fn previews_changed(&mut self, platform: &mut dyn Platform, changed: &BTreeSet<String>) {
         if changed.is_empty() {
             return;
         }

@@ -76,10 +76,23 @@ fn a_theme_of_the_folder_colors_the_panes_and_its_saved_file_applies_at_once() {
     assert_eq!(app.theme.light.colors.background, rgb(0x101012));
     assert_eq!(pane_background(&app, window), rgb(0x101012));
     assert_eq!(app.diagnostics.shown_diagnostic(), None);
-    // Saved anew, of another background: the pane takes it.
+    // A preview of it shown, as the Themes page's.
+    app.previews.insert(
+        "Nightfall".to_owned(),
+        Some(lokyr_ui_core::paint::PreviewColors::of(
+            &ui_theme::dark_spec().terminal,
+        )),
+    );
+    // Saved anew, of another background: the pane takes it, and its
+    // preview.
     write(&directory, "Nightfall", &theme("#202024"));
     changed(&mut fake, &mut app);
     assert_eq!(pane_background(&app, window), rgb(0x202024));
+    let preview = app.previews["Nightfall"].as_ref().unwrap();
+    assert_eq!(
+        preview.background,
+        lokyr_render_core::Color::from_rgb8(0x20, 0x20, 0x24)
+    );
     // The built-in themes again, as `[theme]` names them.
     app.apply(&mut fake, Config::default());
     assert_eq!(app.theme, Theme::builtin());
