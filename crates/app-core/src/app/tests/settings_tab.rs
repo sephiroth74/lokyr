@@ -115,7 +115,7 @@ fn the_settings_open_in_a_window_of_their_own_once_and_close_as_a_window() {
     let [first, second] = tabs_of(&app, window)[..] else {
         panic!("two tabs");
     };
-    // A window of their own, of their title and of System Settings' size,
+    // A window of their own, of their title and of the Inspector's room,
     // of no number, the terminal's window as it was.
     let own = open(&mut fake, &mut app, SETTINGS_TAB);
     assert_ne!(own, window);
@@ -124,7 +124,7 @@ fn the_settings_open_in_a_window_of_their_own_once_and_close_as_a_window() {
     assert_eq!(tabs_of(&app, window), [first, second]);
     assert_eq!(fake.window(own).unwrap().title, "Settings");
     let points = fake.window(own).unwrap().size.points;
-    assert_eq!((points.width, points.height), (780.0, 560.0));
+    assert_eq!((points.width, points.height), (1040.0, 700.0));
     let shown = app.windows[&own].window;
     assert_eq!(app.workspace.window(shown).unwrap().number(), None);
     // Their view takes the window's room whole.

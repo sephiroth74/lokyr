@@ -29,11 +29,12 @@ use crate::drawing::Backend;
 /// The id of the settings tab's view among the app's own views.
 pub(super) const SETTINGS: &str = "settings-tab";
 
-/// The size of the settings' window of their own, in points, as macOS's
-/// System Settings opens.
+/// The size of the settings' window of their own, in points: wider than
+/// macOS's System Settings opens, as the Themes page's Inspector shows its
+/// tokens' column beside a terminal's specimen of 52 columns.
 const WINDOW: Size = Size {
-    width: 780.0,
-    height: 560.0,
+    width: 1040.0,
+    height: 700.0,
 };
 
 /// The room about the settings' tabs' box, in points.
