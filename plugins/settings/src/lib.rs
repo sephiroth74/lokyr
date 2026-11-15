@@ -1051,10 +1051,26 @@ impl SettingsPage {
                 else {
                     return Ok(());
                 };
-                if page_settings(cx).is_ok_and(|settings| runs_already(&settings, adding)) {
+                let settings = page_settings(cx).ok();
+                if settings
+                    .as_ref()
+                    .is_some_and(|settings| runs_already(settings, adding))
+                {
                     return Ok(());
                 }
-                match cx.set_setting(KEYS, None, &keys, Some(Data::Text(command))) {
+                // Of the config's own entry's spelling where the config has
+                // one of the same keys, so that no second entry stays.
+                let target = settings
+                    .as_ref()
+                    .and_then(|settings| {
+                        settings
+                            .keys
+                            .iter()
+                            .rev()
+                            .find(|taken| !taken.default && same_keys(&taken.keys, &keys))
+                    })
+                    .map_or_else(|| keys.clone(), |taken| taken.keys.clone());
+                match cx.set_setting(KEYS, None, &target, Some(Data::Text(command))) {
                     Ok(()) => cx.close_panel(NEW_BINDING),
                     Err(error) => {
                         self.refused.insert(NEW_REFUSED.to_owned(), error.message);

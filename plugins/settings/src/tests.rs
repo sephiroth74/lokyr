@@ -1562,6 +1562,32 @@ fn the_new_binding_s_panel_tells_the_binding_that_runs_its_keys_and_adds_none_th
     let tree = keys_rendered(&mut host, &mut plugin);
     let told = text_of(&tree, &format!("taken:binding:{CLEAR}")).expect("told");
     assert_eq!(told, "⌘E again: Clear");
+    // Keys of the config's own entry written another way, added for
+    // another command: written at the entry's spelling, of no second entry.
+    host.ui_event(&mut plugin, &on_keys(ADD_BINDING, UiEventKind::Click))
+        .unwrap();
+    host.render(&mut plugin, &new_binding()).unwrap();
+    record(&mut host, &mut plugin, "cmd+shift+]");
+    host.ui_event(
+        &mut plugin,
+        &in_panel(COMMANDS, "command-item:pane.clear", UiEventKind::Click),
+    )
+    .unwrap();
+    let _ = written(&mut host);
+    host.ui_event(
+        &mut plugin,
+        &in_panel(NEW_BINDING, CONFIRM, UiEventKind::Click),
+    )
+    .unwrap();
+    assert_eq!(
+        written(&mut host),
+        [(
+            KEYS.to_owned(),
+            None,
+            "cmd+}".to_owned(),
+            Some(Data::Text("pane.clear".to_owned()))
+        )]
+    );
 }
 
 #[test]
