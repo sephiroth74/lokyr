@@ -1260,9 +1260,21 @@ fn a_package_of_themes_is_made_checked_installed_and_removed_of_a_folder() {
     let readme = std::fs::read_to_string(folder.join("README.md")).unwrap();
     assert!(readme.contains("sleip add acme/harbor-night"), "{readme}");
     assert!(!readme.contains("acme/harbor\n"), "{readme}");
-    // Checked, of no problem; tested, of no test, as it holds no code.
+    // Checked, of no problem nor note; tested, of no test, as it holds no
+    // code.
     let check = checked(&sandbox, &folder, &[]);
     assert!(check.status.success(), "{check:?}");
+    assert_eq!(stdout(&check), "No problem found.\n");
+    // Catalogs, which the app reads none of, a note.
+    std::fs::create_dir_all(folder.join("locales/en")).unwrap();
+    let noted = checked(&sandbox, &folder, &[]);
+    assert!(noted.status.success(), "{noted:?}");
+    assert!(
+        stdout(&noted).starts_with("locales: note: a package of themes shows no text"),
+        "{}",
+        stdout(&noted)
+    );
+    std::fs::remove_dir_all(folder.join("locales")).unwrap();
     let tested = sandbox
         .command(&["test"])
         .current_dir(&folder)

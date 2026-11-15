@@ -198,7 +198,16 @@ fn check_folder(folder: &Path, findings: &mut Findings) {
             ),
         );
     }
-    check_catalogs(folder, &manifest, findings);
+    if manifest.kind == Kind::Themes {
+        if folder.join("locales").exists() {
+            findings.note(
+                "locales",
+                "a package of themes shows no text of its own, and the app reads none of its catalogs",
+            );
+        }
+    } else {
+        check_catalogs(folder, &manifest, findings);
+    }
     check_schema(folder, &manifest, findings);
     if let Err(error) = lokyr_pkg_model::archive::pack(folder) {
         findings.problem(".", None, "Package", &error.to_string());
