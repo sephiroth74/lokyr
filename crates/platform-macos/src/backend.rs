@@ -95,6 +95,8 @@ pub(crate) struct Backend {
     updates: Updates,
     /// The drag's image, while it shows.
     drag_image: Option<DragImage>,
+    /// The target of the color panel's choices, once it shows.
+    color_target: Option<Retained<crate::color_panel::ColorTarget>>,
 }
 
 impl Backend {
@@ -122,6 +124,7 @@ impl Backend {
             global_keys: GlobalKeys::new(shared),
             updates: Updates::default(),
             drag_image: None,
+            color_target: None,
         }
     }
 
@@ -1098,6 +1101,19 @@ impl Platform for Backend {
 
     fn trash(&mut self, path: &Path) -> Result<(), Error> {
         open::trash(path)
+    }
+
+    fn show_color_panel(&mut self, color: lokyr_platform_core::PanelColor, alpha: bool) {
+        let (mtm, shared) = (self.mtm, self.shared.clone());
+        self.color_target
+            .get_or_insert_with(|| crate::color_panel::ColorTarget::new(mtm, shared))
+            .show(color, alpha);
+    }
+
+    fn close_color_panel(&mut self) {
+        if let Some(target) = &self.color_target {
+            target.close();
+        }
     }
 
     fn notify(&mut self, window: WindowId, id: u64, title: &str, body: &str) {

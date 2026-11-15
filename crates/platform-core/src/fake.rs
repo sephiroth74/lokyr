@@ -284,6 +284,9 @@ pub struct Fake {
     trashed: Vec<PathBuf>,
     /// Why a move to the Trash fails, as the next one does.
     trash_fails: Option<String>,
+    /// The color panel that shows, of its color and whether it shows its
+    /// opacity's slider.
+    color_panel: Option<(crate::PanelColor, bool)>,
     /// Whether the secure entry of the keyboard is on, and how many times
     /// it changed.
     secure_input: (bool, usize),
@@ -375,6 +378,7 @@ impl Fake {
             editor_fails: None,
             trashed: Vec::new(),
             trash_fails: None,
+            color_panel: None,
             secure_input: (false, 0),
             can_update: false,
             update_checks: None,
@@ -861,6 +865,12 @@ impl Fake {
     /// The files that the app moved to the Trash, in order.
     pub fn trashed(&self) -> &[PathBuf] {
         &self.trashed
+    }
+
+    /// The color panel that shows, of its color as the app gave it and
+    /// whether it shows its opacity's slider; none where it does not.
+    pub fn color_panel(&self) -> Option<(crate::PanelColor, bool)> {
+        self.color_panel
     }
 
     /// Has the next moves to the Trash fail, telling `why`, or succeed
@@ -1705,6 +1715,14 @@ impl Platform for Fake {
         }
         self.edited.push(path.to_owned());
         Ok(())
+    }
+
+    fn show_color_panel(&mut self, color: crate::PanelColor, alpha: bool) {
+        self.color_panel = Some((color, alpha));
+    }
+
+    fn close_color_panel(&mut self) {
+        self.color_panel = None;
     }
 
     fn trash(&mut self, path: &Path) -> Result<(), Error> {

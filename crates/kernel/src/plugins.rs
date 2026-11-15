@@ -350,6 +350,31 @@ pub enum Request {
         /// The theme's name.
         name: String,
     },
+    /// Show the color `name` of the theme `theme` of `value` in place of
+    /// its file's, or its file's again of none.
+    PreviewThemeValue {
+        /// The theme's name.
+        theme: String,
+        /// The color's name.
+        name: String,
+        /// Its value shown; none shows its file's.
+        value: Option<String>,
+    },
+    /// Show the system's color panel of `color`, of its opacity's slider
+    /// where `alpha`, its choices and its closing told to `plugin`.
+    ShowColorPanel {
+        /// The plugin.
+        plugin: String,
+        /// The color that it shows.
+        color: lokyr_plugin_sdk::theme::ThemeColor,
+        /// Whether it shows its opacity's slider.
+        alpha: bool,
+    },
+    /// Close the color panel, if `plugin` showed it last.
+    CloseColorPanel {
+        /// The plugin.
+        plugin: String,
+    },
     /// Set the color `name` of the theme `theme` to `value`, or take it
     /// away of none, in the theme's file.
     SetThemeValue {
@@ -2466,6 +2491,22 @@ impl Plugins {
             .filter(|entry| entry.state.status != Status::Active)
             .flat_map(|entry| std::mem::take(&mut entry.state.quick_windows))
             .collect()
+    }
+
+    /// Gives `plugin` the color `color` that the user chose in the color
+    /// panel that it showed, for the next delivery, to it alone.
+    pub fn color_picked(&mut self, plugin: &str, color: lokyr_plugin_sdk::theme::ThemeColor) {
+        self.out
+            .events
+            .push((Some(plugin.to_owned()), Event::ColorPicked { color }));
+    }
+
+    /// Tells `plugin` that the user closed the color panel that it showed,
+    /// for the next delivery, to it alone.
+    pub fn color_panel_closed(&mut self, plugin: &str) {
+        self.out
+            .events
+            .push((Some(plugin.to_owned()), Event::ColorPanelClosed));
     }
 
     /// Gives `plugin` the user's answer to its question `id`, the text
@@ -6166,13 +6207,27 @@ impl Host<'_, '_> {
                 return Ok(Response::Asking(id));
             }
             // A color of a theme of the user's folder, of a value that
-            // reads and whose names resolve.
+            // reads and whose names resolve, written or shown.
             Asked::SetThemeValue { theme, name, value } => {
                 host::check_theme_value(&(self.context.themes)(), &theme, &name, value.as_deref())?;
                 (self.context.theme_value)(&theme, &name, value.as_deref())
                     .map_err(|message| Error::new(Code::Failed, message))?;
                 Request::SetThemeValue { theme, name, value }
             }
+            Asked::PreviewThemeValue { theme, name, value } => {
+                host::check_theme_value(&(self.context.themes)(), &theme, &name, value.as_deref())?;
+                (self.context.theme_value)(&theme, &name, value.as_deref())
+                    .map_err(|message| Error::new(Code::Failed, message))?;
+                Request::PreviewThemeValue { theme, name, value }
+            }
+            Asked::ShowColorPanel { color, alpha } => Request::ShowColorPanel {
+                plugin: self.state.name.clone(),
+                color,
+                alpha,
+            },
+            Asked::CloseColorPanel => Request::CloseColorPanel {
+                plugin: self.state.name.clone(),
+            },
             Asked::NewTheme(variant) => {
                 let id = new_id();
                 self.out.requests.push(Request::NewTheme {

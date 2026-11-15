@@ -531,6 +531,10 @@ type Event =
     -- The end of a save of `save_file`, to it alone: the path of the file that the host wrote at the place chosen; none
     -- as the panel was cancelled or its window closed; or the error of a write that failed.
     | { kind: "saved", id: number, path: string?, error: string? }
+    -- A color that the user chose in the color panel that the plugin showed, `show_color_panel`, as it moves, and the
+    -- panel closed by the user, to it alone.
+    | { kind: "color-picked", color: string }
+    | { kind: "color-panel-closed" }
     -- A line of a job of `packages`, to it alone: Sleip's event, an object of its `event` and its fields, as
     -- PACKAGE-MANAGER.md writes them down of each command; then the job's end, whether its command succeeded.
     | { kind: "package", id: number, line: { event: string, [string]: any } }
@@ -730,6 +734,14 @@ type Cx = {
     -- theme's file, its comments and order kept, which shows at once; refused of a value that does not read or whose
     -- names do not resolve, a read-only theme, or a palette's color taken away alone.
     set_theme_value: (theme: string, name: string, value: string?) -> (boolean, Error?),
+    -- Require `config`: shows a color of a theme of the themes folder of a value in place of its file's, wherever the
+    -- theme shows, as a color panel moves, until it is written, its file read anew, or nil shows its file's again.
+    preview_theme_value: (theme: string, name: string, value: string?) -> (boolean, Error?),
+    -- The system's color panel of a color, of its opacity's slider where asked, of no capability: the colors that the
+    -- user chooses come as `color-picked`, its closing as `color-panel-closed`, to the plugin that showed it last.
+    show_color_panel: (color: string, alpha: boolean) -> (boolean, Error?),
+    -- Closes the color panel, if the plugin showed it last.
+    close_color_panel: () -> (boolean, Error?),
     -- The system's monospaced font families, of no capability, read of the system's fonts at most every 30 s.
     fonts: () -> (Fonts?, Error?),
     -- The styles of a font family, by the names that the font gives its faces, as "Bold Italic", from the lightest,
@@ -1128,7 +1140,7 @@ type Plugin = {
 | `decorate` | Drawing over a pane: decorations, the gutter's marks, a search's matches and a held cursor | Medium: a drawing over the text can show what the terminal does not hold |
 | `pointer-read` | The `pointer` event: the cell under the pointer over the panes, and the modifiers held | Low |
 | `keep-awake` | Keeping the system, or the system and the display, from idle sleep, `keep_awake`, of a power assertion that the host holds for every plugin together, the strongest that one asks, and releases as the last lets go, stops, faults or is turned off | High: a display kept awake keeps the screen from locking, and of a battery's cost |
-| `config` | The config in force, the app's keys and every plugin's section with their schemas, `settings`, and their changes, `settings-changed`; its keys written into the file, `set_setting`; a theme copied into the themes folder, `copy_theme`, a new one there, `new_theme`, or an `.itermcolors` one there converted, `convert_theme`, of the user's answer, and a theme's colors there written, `set_theme_value`; Lokyr's own plugins' alone, refused to another's manifest with a notice and by `sleip check` | Very high: a key written can change the program that a pane runs |
+| `config` | The config in force, the app's keys and every plugin's section with their schemas, `settings`, and their changes, `settings-changed`; its keys written into the file, `set_setting`; a theme copied into the themes folder, `copy_theme`, a new one there, `new_theme`, or an `.itermcolors` one there converted, `convert_theme`, of the user's answer, and a theme's colors there written, `set_theme_value`, or shown before they are, `preview_theme_value`; Lokyr's own plugins' alone, refused to another's manifest with a notice and by `sleip check` | Very high: a key written can change the program that a pane runs |
 | `packages` | The plugins themselves, through the bundle's Sleip: the installed ones, the registry's search and a plugin's versions, installs, updates and removals, `packages`, of their lines as events, and `cancel_packages`; every plugin's state and capabilities' decisions, `plugins`, and a plugin turned on or off in the config, `set_plugin_enabled`; Lokyr's own plugins' alone, refused to another's manifest with a notice and by `sleip check` | Very high: a plugin that installs another runs code of its choice |
 | `user-commands` | Running any command as if run by hand, without declaring it, as the palette does; reading the whole registry, with each command's plugin, keys and context, and the plugins installed | Very high: `pane.send-text` types into the shell |
 | `appearance-write` | Previewing a theme, a monospaced font family and a face's style, and naming the ones chosen in the config's `[theme]` and `[font] family`, edited in place, `preview_theme`, `set_theme`, `preview_font`, `preview_font_style` and `set_font`, as the palette's theme picker and a font picker do | Medium: the config changes, visibly and reversibly; no text of a pane, no command, no file but the config's two keys |

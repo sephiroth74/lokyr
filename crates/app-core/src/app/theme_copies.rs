@@ -409,6 +409,13 @@ impl<B: Backend> App<B> {
         if let Err(why) = written {
             return self.tell_theme_failed(platform, "theme-value-failed", why);
         }
+        // Written: its file's value shows, no longer one before it.
+        if let Some(values) = self.theme_values.get_mut(theme) {
+            values.remove(name);
+            if values.is_empty() {
+                self.theme_values.remove(theme);
+            }
+        }
         self.load_themes(platform);
         self.theme_catalog.borrow_mut().renew(
             self.theme_places(),

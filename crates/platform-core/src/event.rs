@@ -166,6 +166,12 @@ pub enum AppEvent {
     /// The links of [`Platform::link_tools`](crate::Platform::link_tools)
     /// were made, or not, as it tells.
     ToolsLinked(crate::LinkOutcome),
+    /// The user chose a color in the color panel that
+    /// [`Platform::show_color_panel`](crate::Platform::show_color_panel)
+    /// showed, as it moves.
+    ColorPicked(crate::PanelColor),
+    /// The user closed the color panel.
+    ColorPanelClosed,
     /// The user asked for a window, or a tab, at each of `folders`, as
     /// from the file manager's services on folders that it selected.
     OpenFolders {

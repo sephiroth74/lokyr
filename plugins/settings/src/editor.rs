@@ -63,6 +63,14 @@ const GUIDE_ADDRESS: &str = concat!(
     "/docs/themes/authoring.md"
 );
 
+/// A color's swatch, whose click opens the color panel of its color, by
+/// the color's name.
+const SWATCH: &str = "editor-swatch:";
+
+/// How long the color panel rests before its color is written, as it
+/// shows meanwhile.
+const COLOR_PAUSE: Duration = Duration::from_millis(300);
+
 /// How long typing pauses before a value typed is written, as the
 /// settings' fields wait.
 const PAUSE: Duration = Duration::from_millis(600);
@@ -108,6 +116,10 @@ pub(crate) struct Editor {
     /// Why a value written was refused, by the colors' names, under their
     /// fields.
     refused: BTreeMap<String, String>,
+    /// The color that the color panel edits, of the theme shown.
+    coloring: Option<String>,
+    /// The timer of the color panel's rest, which writes its color.
+    color_pause: Option<u64>,
 }
 
 /// Why the theme shown cannot be edited as it is.
@@ -147,6 +159,7 @@ impl Editor {
     /// Hides it, as the page shows an appearance's themes or hides: a
     /// theme that it previews goes, the one in force back.
     pub(crate) fn hide(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
+        self.stop_coloring(cx)?;
         self.shown = false;
         if self.previewed.take().is_some() {
             cx.preview_theme(None)?;
@@ -171,6 +184,41 @@ impl Editor {
                     self.lit_timer = Some(cx.start_timer(LIT, false)?);
                 }
                 cx.request_render(themes_page())?;
+                Ok(true)
+            }
+            // A color chosen in the panel: shown at once, written once the
+            // panel rests.
+            Event::ColorPicked { color } => {
+                let (Some(name), Some(theme)) =
+                    (self.coloring.clone(), self.shown_theme().map(str::to_owned))
+                else {
+                    return Ok(true);
+                };
+                let text = color.to_string();
+                self.typed.insert(name.clone(), text.clone());
+                self.refused.remove(&name);
+                // Shown wherever the theme shows, of the tokens read anew.
+                if cx.preview_theme_value(&theme, &name, Some(&text)).is_err() {
+                    return Ok(true);
+                }
+                if let Some(pause) = self.color_pause.take() {
+                    cx.cancel_timer(pause)?;
+                }
+                self.color_pause = Some(cx.start_timer(COLOR_PAUSE, false)?);
+                cx.request_render(themes_page())?;
+                Ok(true)
+            }
+            Event::Timer { id } if self.color_pause == Some(*id) => {
+                self.color_pause = None;
+                if let Some(name) = self.coloring.clone() {
+                    self.commit(cx, &name)?;
+                }
+                Ok(true)
+            }
+            // The panel closed: its last color written.
+            Event::ColorPanelClosed => {
+                self.flush_coloring(cx)?;
+                self.coloring = None;
                 Ok(true)
             }
             // Typing paused: the values whole written, of no reason told.
@@ -289,6 +337,19 @@ impl Editor {
                     None => Pick::Token(key[ROW.len()..].to_owned()),
                 };
                 self.picked = (self.picked.as_ref() != Some(&pick)).then_some(pick);
+                self.follow_pick(cx)?;
+                cx.request_render(themes_page())?;
+            }
+            // A swatch: its row chosen, the color panel of its color, of a
+            // theme that it edits.
+            (UiEventKind::Click, _) if key.starts_with(SWATCH) => {
+                let name = key[SWATCH.len()..].to_owned();
+                self.picked = Some(Pick::Token(name.clone()));
+                if self.locked(cx).is_none() {
+                    self.color(cx, &name)?;
+                } else {
+                    self.follow_pick(cx)?;
+                }
                 cx.request_render(themes_page())?;
             }
             _ => return Ok(false),
@@ -296,8 +357,12 @@ impl Editor {
         Ok(true)
     }
 
-    /// Shows the theme `name`, an `.itermcolors` one's conversion asked.
+    /// Shows the theme `name`, an `.itermcolors` one's conversion asked,
+    /// the color panel of another theme closed.
     pub(crate) fn choose(&mut self, cx: &mut Cx<'_>, name: &str) -> Result<(), Error> {
+        if self.shown_theme() != Some(name) {
+            self.stop_coloring(cx)?;
+        }
         self.show_theme(cx, name)?;
         self.offer_conversion(cx)
     }
@@ -345,6 +410,79 @@ impl Editor {
                 self.refused.insert(name.to_owned(), error.message);
             }
             Err(_) => return Ok(()),
+        }
+        cx.request_render(themes_page())
+    }
+
+    /// Opens the color panel of the color `name` of the theme shown, or
+    /// gives it that color where it shows, of its opacity's slider for a
+    /// token, the last color of the panel written first.
+    fn color(&mut self, cx: &mut Cx<'_>, name: &str) -> Result<(), Error> {
+        let Some(token) = self.token(name).cloned() else {
+            return Ok(());
+        };
+        if self.coloring.as_deref() != Some(name) {
+            self.flush_coloring(cx)?;
+        }
+        let alpha = !lokyr_plugin_sdk::theme::is_terminal_color(name);
+        cx.show_color_panel(token.color, alpha)?;
+        self.coloring = Some(name.to_owned());
+        Ok(())
+    }
+
+    /// The color panel following the row chosen: of its color, of a theme
+    /// that it edits, where it shows; closed of no token chosen.
+    fn follow_pick(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
+        let Some(coloring) = self.coloring.clone() else {
+            return Ok(());
+        };
+        match self.picked.clone() {
+            Some(Pick::Token(name)) if name == coloring => Ok(()),
+            Some(Pick::Token(name)) if self.locked(cx).is_none() => self.color(cx, &name),
+            _ => self.stop_coloring(cx),
+        }
+    }
+
+    /// Writes the color panel's last color, if it waits for the panel's
+    /// rest.
+    fn flush_coloring(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
+        let Some(pause) = self.color_pause.take() else {
+            return Ok(());
+        };
+        cx.cancel_timer(pause)?;
+        match self.coloring.clone() {
+            Some(name) => self.commit(cx, &name),
+            None => Ok(()),
+        }
+    }
+
+    /// Closes the color panel, its last color written first.
+    fn stop_coloring(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
+        if self.coloring.is_none() {
+            return Ok(());
+        }
+        self.flush_coloring(cx)?;
+        self.coloring = None;
+        cx.close_color_panel()
+    }
+
+    /// Writes the color panel's color of `name`, as it shows already, into
+    /// the theme shown's file, why the host refuses it told.
+    fn commit(&mut self, cx: &mut Cx<'_>, name: &str) -> Result<(), Error> {
+        let (Some(theme), Some(text)) = (
+            self.shown_theme().map(str::to_owned),
+            self.typed.get(name).cloned(),
+        ) else {
+            return Ok(());
+        };
+        match cx.set_theme_value(&theme, name, Some(&text)) {
+            Ok(()) => {
+                self.typed.remove(name);
+                self.refused.remove(name);
+            }
+            Err(error) => {
+                self.refused.insert(name.to_owned(), error.message);
+            }
         }
         cx.request_render(themes_page())
     }
@@ -982,7 +1120,7 @@ fn token_row(
         ..Style::default()
     })
     // Its value as the pointer rests on it.
-    .key(format!("editor-swatch:{}", token.name).as_str())
+    .key(format!("{SWATCH}{}", token.name).as_str())
     .tooltip(value.to_owned());
     let file = matches!(token.origin, TokenOrigin::File { .. });
     let (icon, tip) = if file {

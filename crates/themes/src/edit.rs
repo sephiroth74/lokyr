@@ -203,3 +203,38 @@ fn set_palette(terminal: &mut Table, at: usize, value: &str, colors: &[ThemeColo
     array.replace(at, value);
     terminal.insert("palette", toml_edit::value(array));
 }
+
+/// `theme` of the color `name` of `value` in place of its own, as a value
+/// shown before it is written: a key of `[terminal]` or a color of its
+/// palette, a color, or a token, a color or an expression; why not of a
+/// value that does not read.
+pub fn with_value(theme: &mut Theme, name: &str, value: &str) -> Result<(), String> {
+    if !lokyr_plugin_sdk::theme::is_terminal_color(name) {
+        let value = value
+            .parse::<TokenValue>()
+            .map_err(|e| format!("`{name}` is left out, as {e}"))?;
+        theme.tokens.insert(name.to_owned(), value);
+        return Ok(());
+    }
+    let color = value
+        .parse::<ThemeColor>()
+        .map_err(|e| format!("`{name}` is a color: {e}"))?;
+    let terminal = &mut theme.terminal;
+    match name {
+        "background" => terminal.background = color,
+        "foreground" => terminal.foreground = color,
+        "cursor" => terminal.cursor = Some(color),
+        "cursor-text" => terminal.cursor_text = Some(color),
+        "selection" => terminal.selection = Some(color),
+        "selection-text" => terminal.selection_text = Some(color),
+        "bold" => terminal.bold = Some(color),
+        "link" => terminal.link = Some(color),
+        "underline" => terminal.underline = Some(color),
+        _ => {
+            if let Some(at) = rules::PALETTE.iter().position(|each| *each == name) {
+                terminal.palette[at] = color;
+            }
+        }
+    }
+    Ok(())
+}

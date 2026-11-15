@@ -773,6 +773,12 @@ pub struct App<B: Backend> {
     /// The questions of an `.itermcolors` theme's conversion, as the Theme
     /// Editor asks them.
     convert_asks: BTreeMap<AlertId, theme_copies::ConvertTheme>,
+    /// The themes' colors shown before they are written, as the color
+    /// panel moves, by the themes' names and the colors' names.
+    theme_values: BTreeMap<String, BTreeMap<String, String>>,
+    /// The plugin that showed the color panel last, which hears its colors
+    /// and its closing.
+    color_panel: Option<String>,
     /// Whether the open panel of the themes to import shows, and the
     /// questions of the files of a name in the themes' folder already.
     importing: bool,
@@ -1053,6 +1059,8 @@ impl<B: Backend> App<B> {
             theme_asks: BTreeMap::new(),
             new_theme_asks: BTreeMap::new(),
             convert_asks: BTreeMap::new(),
+            theme_values: BTreeMap::new(),
+            color_panel: None,
             resolutions: asks::Resolutions::default(),
             importing: false,
             import_asks: BTreeMap::new(),
@@ -1611,7 +1619,13 @@ impl<B: Backend> App<B> {
         }
         for name in &names {
             match places.resolve(name, &builtins) {
-                Ok(theme) => {
+                Ok(mut theme) => {
+                    // The colors shown before they are written.
+                    for (color, value) in self.theme_values.get(name).into_iter().flatten() {
+                        if let Err(why) = themes::with_value(&mut theme.theme, color, value) {
+                            eprintln!("lokyr: {why}");
+                        }
+                    }
                     paths.extend(theme.files);
                     // Once each, of a theme of both appearances.
                     for notice in theme.notices {
@@ -3266,7 +3280,9 @@ impl<B: Backend> App<B> {
             };
             pickers::theme_list(catalog, (&places, waker), appearance, theme_config)
         };
-        // A theme's tokens, read as a plugin asks, of the same places.
+        // A theme's tokens, read as a plugin asks, of the same places, of
+        // the colors shown before they are written.
+        let theme_values = &self.theme_values;
         let theme_tokens = |name: Option<&str>| {
             let places = theme_catalog::Places {
                 folder: config_file
@@ -3274,7 +3290,7 @@ impl<B: Backend> App<B> {
                     .and_then(|file| themes::directory(&file.path)),
                 held: held_themes.clone(),
             };
-            theme_catalog::theme_tokens(&places, name, (appearance, theme_config))
+            theme_catalog::theme_tokens(&places, name, (appearance, theme_config), theme_values)
         };
         // Whether a theme's color can take a value, as its names resolve.
         let theme_value = |theme: &str, name: &str, value: Option<&str>| {
@@ -3502,6 +3518,45 @@ impl<B: Backend> App<B> {
                 }
                 Request::SetThemeValue { theme, name, value } => {
                     self.set_theme_value(platform, &theme, &name, value.as_deref());
+                }
+                // A theme's color shown before it is written, as the color
+                // panel moves, or its file's again.
+                Request::PreviewThemeValue { theme, name, value } => {
+                    let values = self.theme_values.entry(theme.clone()).or_default();
+                    match value {
+                        Some(value) => {
+                            values.insert(name, value);
+                        }
+                        None => {
+                            values.remove(&name);
+                        }
+                    }
+                    if values.is_empty() {
+                        self.theme_values.remove(&theme);
+                    }
+                    self.load_themes(platform);
+                }
+                // The color panel, its colors and its closing told to the
+                // plugin that showed it last.
+                Request::ShowColorPanel {
+                    plugin,
+                    color,
+                    alpha,
+                } => {
+                    let color = lokyr_platform_core::PanelColor {
+                        red: color.red,
+                        green: color.green,
+                        blue: color.blue,
+                        alpha: color.alpha,
+                    };
+                    platform.show_color_panel(color, alpha);
+                    self.color_panel = Some(plugin);
+                }
+                Request::CloseColorPanel { plugin } => {
+                    if self.color_panel.as_deref() == Some(plugin.as_str()) {
+                        self.color_panel = None;
+                        platform.close_color_panel();
+                    }
                 }
                 Request::AskText {
                     plugin,
@@ -4874,6 +4929,22 @@ impl<B: Backend> App<B> {
             }
             AppEvent::DefaultTerminalKnown => self.show_default_terminal(platform),
             AppEvent::ToolsLinked(outcome) => self.tools_linked(platform, &outcome),
+            AppEvent::ColorPicked(color) => {
+                if let Some(plugin) = &self.color_panel {
+                    let color = themes::ThemeColor {
+                        red: color.red,
+                        green: color.green,
+                        blue: color.blue,
+                        alpha: color.alpha,
+                    };
+                    self.plugins.color_picked(plugin, color);
+                }
+            }
+            AppEvent::ColorPanelClosed => {
+                if let Some(plugin) = self.color_panel.take() {
+                    self.plugins.color_panel_closed(&plugin);
+                }
+            }
             _ => {}
         }
     }

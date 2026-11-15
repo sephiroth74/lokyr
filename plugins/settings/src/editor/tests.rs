@@ -784,3 +784,101 @@ fn the_guide_for_theme_authors_opens_of_its_link_at_the_version_s_tag() {
             .contains(&Request::Open(GUIDE_ADDRESS.to_owned()))
     );
 }
+
+#[test]
+fn a_swatch_opens_the_color_panel_whose_colors_show_at_once_and_are_written_at_rest() {
+    let (mut host, mut plugin) = editing("accent");
+    page(&mut host, &mut plugin);
+    let accent = ThemeColor::hex(0x4c9bff);
+    // A token's swatch: the panel of its color, of its opacity's slider.
+    host.ui_event(&mut plugin, &click(&format!("{SWATCH}accent")))
+        .unwrap();
+    assert!(host.take_done().contains(&Request::ShowColorPanel {
+        color: accent,
+        alpha: true,
+    }));
+    // A color chosen: shown at once, in its field too; written once the
+    // panel rests.
+    let red = ThemeColor::hex(0xff0000).with_alpha(128);
+    host.post(Event::ColorPicked { color: red });
+    host.deliver(&mut plugin).unwrap();
+    let done = host.take_done();
+    assert!(
+        done.contains(&Request::PreviewThemeValue {
+            theme: "Paper".to_owned(),
+            name: "accent".to_owned(),
+            value: Some("#ff000080".to_owned()),
+        }),
+        "{done:?}"
+    );
+    assert!(
+        !done
+            .iter()
+            .any(|request| matches!(request, Request::SetThemeValue { .. }))
+    );
+    match find(&page(&mut host, &mut plugin), &format!("{VALUE}accent")).map(|node| &node.kind) {
+        Some(Kind::Field(field)) => assert_eq!(field.text.as_deref(), Some("#ff000080")),
+        other => panic!("{other:?}"),
+    }
+    host.advance(COLOR_PAUSE);
+    host.deliver(&mut plugin).unwrap();
+    assert_eq!(written(&mut host), [set_paper("accent", Some("#ff000080"))]);
+    // A terminal's color: no opacity's slider; another row chosen, the
+    // panel of its color, the last color written first.
+    host.post(Event::ColorPicked {
+        color: ThemeColor::hex(0x00ff00),
+    });
+    host.deliver(&mut plugin).unwrap();
+    let _ = host.take_done();
+    host.ui_event(&mut plugin, &click(&format!("{ROW}background")))
+        .unwrap();
+    let done = host.take_done();
+    assert!(
+        done.contains(&set_paper("accent", Some("#00ff00"))),
+        "{done:?}"
+    );
+    assert!(
+        done.iter()
+            .any(|request| matches!(request, Request::ShowColorPanel { alpha: false, .. })),
+        "{done:?}"
+    );
+    // Closed by the user: its last color written at once.
+    host.post(Event::ColorPicked {
+        color: ThemeColor::hex(0x101010),
+    });
+    host.post(Event::ColorPanelClosed);
+    host.deliver(&mut plugin).unwrap();
+    assert_eq!(
+        written(&mut host),
+        [set_paper("background", Some("#101010"))]
+    );
+    // A color chosen of no panel of the plugin's: nothing.
+    host.post(Event::ColorPicked {
+        color: ThemeColor::hex(0x202020),
+    });
+    host.deliver(&mut plugin).unwrap();
+    assert!(written(&mut host).is_empty());
+    // Of another theme shown, or the Editor hidden, the panel closed.
+    host.ui_event(&mut plugin, &click(&format!("{SWATCH}accent")))
+        .unwrap();
+    choose(&mut host, &mut plugin, "Lokyr Dark");
+    assert!(host.take_done().contains(&Request::CloseColorPanel));
+    // A read-only theme's swatch: no panel.
+    page(&mut host, &mut plugin);
+    host.ui_event(&mut plugin, &click(&format!("{SWATCH}accent")))
+        .unwrap();
+    assert!(
+        !host
+            .take_done()
+            .iter()
+            .any(|request| matches!(request, Request::ShowColorPanel { .. }))
+    );
+    choose(&mut host, &mut plugin, "Paper");
+    page(&mut host, &mut plugin);
+    host.ui_event(&mut plugin, &click(&format!("{SWATCH}accent")))
+        .unwrap();
+    let _ = host.take_done();
+    host.ui_event(&mut plugin, &click("themes-side:dark"))
+        .unwrap();
+    assert!(host.take_done().contains(&Request::CloseColorPanel));
+}

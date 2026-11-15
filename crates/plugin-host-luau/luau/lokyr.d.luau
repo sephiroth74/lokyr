@@ -32,6 +32,9 @@ export type Cx = {
     copy_theme: (text: string) -> (number?, string?, number?),
     new_theme: (value: ThemeVariant) -> (number?, string?, number?),
     convert_theme: (text: string) -> (number?, string?, number?),
+    preview_theme_value: (theme: string, name: string, value: string?) -> (true?, string?, number?),
+    show_color_panel: (color: string, alpha: boolean) -> (true?, string?, number?),
+    close_color_panel: () -> (true?, string?, number?),
     set_theme_value: (theme: string, name: string, value: string?) -> (true?, string?, number?),
     fonts: () -> (Fonts?, string?, number?),
     day: () -> (number?, string?, number?),
@@ -173,6 +176,8 @@ export type Event =
     | { kind: "command-ended", pane: PaneId, command: number, status: number? }
     | { kind: "tab-bar-resized", width: number }
     | { kind: "answered", id: number, text: string? }
+    | { kind: "color-picked", color: string }
+    | { kind: "color-panel-closed" }
     | { kind: "saved", id: number, path: string?, error: string? }
     | { kind: "package", id: number, line: Data }
     | { kind: "packages-ended", id: number, ok: boolean }

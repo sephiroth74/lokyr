@@ -796,6 +796,8 @@ fn on_kernel(
                 }
                 Event::PackagesEnded { id, ok } => plugins.packages_ended(name(scenario), *id, *ok),
                 Event::TabBarResized { width } => plugins.tab_bar_resized(name(scenario), *width),
+                Event::ColorPicked { color } => plugins.color_picked(name(scenario), *color),
+                Event::ColorPanelClosed => plugins.color_panel_closed(name(scenario)),
                 event => plugins.post(event.clone()),
             }
         }
@@ -1098,11 +1100,14 @@ fn kind(request: &Request) -> usize {
         Request::ConvertTheme(_) => 121,
         Request::SetThemeValue { .. } => 122,
         Request::NewTheme(_) => 123,
+        Request::PreviewThemeValue { .. } => 124,
+        Request::ShowColorPanel { .. } => 125,
+        Request::CloseColorPanel => 126,
     }
 }
 
 /// How many kinds of requests the plugin API has.
-const KINDS: usize = 124;
+const KINDS: usize = 127;
 
 #[test]
 fn the_scenarios_hold_every_request_of_the_plugin_api() {

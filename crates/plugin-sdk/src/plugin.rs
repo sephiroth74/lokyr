@@ -729,6 +729,38 @@ impl<'a> Cx<'a> {
         })
     }
 
+    /// Shows the color `name` of the theme `theme` of `value` in place of its
+    /// file's, as a color panel moves, until it is written or a preview of
+    /// none ends it.
+    pub fn preview_theme_value(
+        &mut self,
+        theme: &str,
+        name: &str,
+        value: Option<&str>,
+    ) -> Result<(), Error> {
+        self.done(Request::PreviewThemeValue {
+            theme: theme.to_owned(),
+            name: name.to_owned(),
+            value: value.map(str::to_owned),
+        })
+    }
+
+    /// Shows the system's color panel of `color`, of its opacity's slider
+    /// where `alpha`: its colors chosen come as [`Event::ColorPicked`], its
+    /// closing as [`Event::ColorPanelClosed`].
+    pub fn show_color_panel(
+        &mut self,
+        color: crate::theme::ThemeColor,
+        alpha: bool,
+    ) -> Result<(), Error> {
+        self.done(Request::ShowColorPanel { color, alpha })
+    }
+
+    /// Closes the color panel that the plugin showed.
+    pub fn close_color_panel(&mut self) -> Result<(), Error> {
+        self.done(Request::CloseColorPanel)
+    }
+
     /// The system's monospaced font families, and the family in force.
     pub fn fonts(&mut self) -> Result<crate::host::Fonts, Error> {
         match self.request(Request::Fonts) {

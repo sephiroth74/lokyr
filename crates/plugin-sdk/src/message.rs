@@ -165,6 +165,34 @@ pub enum Request {
     /// which the host tells. Of the capability `config`, Lokyr's own
     /// plugins' alone.
     ConvertTheme(String),
+    /// Shows the color `name` of the theme `theme`, a theme of Lokyr's
+    /// format of the user's themes folder, of `value` in place of its
+    /// file's, for a while, as a color panel moves, wherever the theme
+    /// shows, until the value is written, its file read anew, or a preview
+    /// of none ends it; checked as [`Request::SetThemeValue`] is. Of the
+    /// capability `config`, Lokyr's own plugins' alone.
+    PreviewThemeValue {
+        /// The theme's name.
+        theme: String,
+        /// The color's name.
+        name: String,
+        /// Its value shown; none shows its file's again.
+        value: Option<String>,
+    },
+    /// Shows the system's color panel of `color`, of its opacity's slider
+    /// where `alpha`, or gives it `color` where it shows: each color that
+    /// the user chooses in it comes as [`Event::ColorPicked`] to the
+    /// plugin alone, and its closing as [`Event::ColorPanelClosed`]; the
+    /// plugin that shows it last hears it. Of no capability: the plugin
+    /// learns the colors chosen alone.
+    ShowColorPanel {
+        /// The color that it shows.
+        color: crate::theme::ThemeColor,
+        /// Whether it shows its opacity's slider.
+        alpha: bool,
+    },
+    /// Closes the color panel, if the plugin showed it last.
+    CloseColorPanel,
     /// Sets the color `name` of the theme `theme`, a theme of Lokyr's
     /// format of the user's themes folder, to `value`, or takes it away of
     /// none, in the theme's file, which the host writes, its comments and
@@ -1035,7 +1063,8 @@ impl Request {
             | Self::CopyTheme(_)
             | Self::NewTheme(_)
             | Self::ConvertTheme(_)
-            | Self::SetThemeValue { .. } => Some(Capability::Config),
+            | Self::SetThemeValue { .. }
+            | Self::PreviewThemeValue { .. } => Some(Capability::Config),
             Self::SelectionText(_)
             | Self::LineText { .. }
             | Self::LinkAt { .. }
@@ -1148,6 +1177,8 @@ impl Request {
             | Self::KeepsState
             | Self::RenderImage(_)
             | Self::DropImage(_)
+            | Self::ShowColorPanel { .. }
+            | Self::CloseColorPanel
             | Self::SaveFile { .. }
             | Self::Notify { .. }
             | Self::AddMenuItem(_)
@@ -1267,6 +1298,9 @@ impl Request {
             | Self::NewTheme(_)
             | Self::ConvertTheme(_)
             | Self::SetThemeValue { .. }
+            | Self::PreviewThemeValue { .. }
+            | Self::ShowColorPanel { .. }
+            | Self::CloseColorPanel
             | Self::SaveFile { .. }
             | Self::Notify { .. }
             | Self::Packages(_)
@@ -1571,6 +1605,14 @@ pub enum Event {
         /// The text.
         text: Option<String>,
     },
+    /// A color that the user chose in the color panel that the plugin
+    /// showed, as it moves, to it alone.
+    ColorPicked {
+        /// The color, `#rrggbb` or `#rrggbbaa`.
+        color: crate::theme::ThemeColor,
+    },
+    /// The user closed the color panel that the plugin showed, to it alone.
+    ColorPanelClosed,
     /// The end of a save that the plugin asked, to it alone: the path of
     /// the file that the host wrote where the user chose; none as the user
     /// cancelled, or the panel's window closed; or the error of a write
@@ -1653,6 +1695,8 @@ impl Event {
             Self::PageShown(_) => "page-shown",
             Self::PageHidden(_) => "page-hidden",
             Self::Answered { .. } => "answered",
+            Self::ColorPicked { .. } => "color-picked",
+            Self::ColorPanelClosed => "color-panel-closed",
             Self::Saved { .. } => "saved",
             Self::Package { .. } => "package",
             Self::PackagesEnded { .. } => "packages-ended",
@@ -1747,6 +1791,9 @@ impl Request {
             | Self::PreviewTheme { .. }
             | Self::SetTheme { .. }
             | Self::SetThemeValue { .. }
+            | Self::PreviewThemeValue { .. }
+            | Self::ShowColorPanel { .. }
+            | Self::CloseColorPanel
             | Self::PreviewFont { .. }
             | Self::PreviewFontStyle { .. }
             | Self::SetFont { .. }

@@ -48,11 +48,13 @@ impl Places {
 /// `config` names for `appearance` of none, of `places` and the built-in
 /// themes, as it resolves: each of its color and its origin, its file's
 /// line, a theme of no file's, or its rule's; Lokyr's in their rules'
-/// order, then a plugin's; none of a name of no theme.
+/// order, then a plugin's; of the colors of `shown`, by the themes' names,
+/// shown before they are written; none of a name of no theme.
 pub(crate) fn theme_tokens(
     places: &Places,
     name: Option<&str>,
     (appearance, config): (lokyr_platform_core::Appearance, &config::ThemeConfig),
+    shown: &std::collections::BTreeMap<String, std::collections::BTreeMap<String, String>>,
 ) -> Option<lokyr_kernel::plugins::host::ThemeTokens> {
     use lokyr_kernel::plugins::host::{ThemeToken, ThemeTokens, TokenOrigin};
     use lokyr_kernel::themes::rules;
@@ -61,7 +63,11 @@ pub(crate) fn theme_tokens(
         lokyr_platform_core::Appearance::Dark => config.dark.as_str(),
     });
     let builtins = [ui_theme::light_spec(), ui_theme::dark_spec()];
-    let resolved = places.resolve(name, &builtins).ok()?;
+    let mut resolved = places.resolve(name, &builtins).ok()?;
+    // The colors shown before they are written.
+    for (color, value) in shown.get(name).into_iter().flatten() {
+        let _ = themes::with_value(&mut resolved.theme, color, value);
+    }
     let theme = &resolved.theme;
     let colors = rules::resolve(&theme.terminal, &theme.tokens);
     let dark = rules::is_dark(&theme.terminal);

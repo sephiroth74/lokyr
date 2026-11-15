@@ -210,6 +210,7 @@ pub fn all(world: &World) -> Vec<Scenario> {
         declarations(),
         timers(),
         app_requests(world),
+        color_panel(),
         state_and_rows(world),
         views(world),
         commands_and_viewport(world),
@@ -1966,6 +1967,49 @@ fn declarations() -> Scenario {
                 ),
             ),
         ])],
+    }
+}
+
+/// The color panel shown and closed, its colors and its closing heard by
+/// the plugin that showed it alone, and a theme's color previewed, of a
+/// theme of the user's folder alone, which the built-in ones are not.
+fn color_panel() -> Scenario {
+    use lokyr_plugin_sdk::theme::ThemeColor;
+    let picked = Event::ColorPicked {
+        color: ThemeColor::hex(0x4c9bff).with_alpha(128),
+    };
+    Scenario {
+        name: "the color panel".to_owned(),
+        capabilities: None,
+        subscriptions: Vec::new(),
+        steps: vec![
+            Step {
+                wait: 0,
+                asks: vec![
+                    (
+                        Request::ShowColorPanel {
+                            color: ThemeColor::hex(0x4c9bff),
+                            alpha: true,
+                        },
+                        Response::Done,
+                    ),
+                    (
+                        Request::PreviewThemeValue {
+                            theme: "Lokyr Dark".to_owned(),
+                            name: "accent".to_owned(),
+                            value: Some("#ff0000".to_owned()),
+                        },
+                        failed(
+                            Code::Failed,
+                            "`Lokyr Dark` is read-only: a copy of it is edited",
+                        ),
+                    ),
+                ],
+                posts: vec![picked.clone(), Event::ColorPanelClosed],
+                heard: vec![picked, Event::ColorPanelClosed],
+            },
+            ask(vec![(Request::CloseColorPanel, Response::Done)]),
+        ],
     }
 }
 

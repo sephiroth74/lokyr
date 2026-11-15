@@ -980,3 +980,21 @@ fn a_value_set_or_taken_away_keeps_the_file_s_comments_order_and_other_keys() {
         assert_eq!(error.path, path, "{name}");
     }
 }
+
+#[test]
+fn a_value_shown_takes_the_place_of_the_theme_s_own() {
+    let mut theme = builtin();
+    with_value(&mut theme, "background", "#123456").unwrap();
+    with_value(&mut theme, "cursor", "#abcdef").unwrap();
+    with_value(&mut theme, "bright-red", "#ff0000").unwrap();
+    with_value(&mut theme, "accent", "red / 50%").unwrap();
+    assert_eq!(theme.terminal.background, ThemeColor::hex(0x123456));
+    assert_eq!(theme.terminal.cursor, Some(ThemeColor::hex(0xabcdef)));
+    assert_eq!(theme.terminal.palette[9], ThemeColor::hex(0xff0000));
+    assert_eq!(
+        theme.tokens["accent"],
+        TokenValue::Expr("red / 50%".to_owned())
+    );
+    assert!(with_value(&mut theme, "background", "accent").is_err());
+    assert!(with_value(&mut theme, "accent", "mix(").is_err());
+}

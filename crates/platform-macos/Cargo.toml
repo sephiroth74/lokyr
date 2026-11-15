@@ -37,6 +37,8 @@ objc2-app-kit = { workspace = true, features = [
     "NSButton",
     "NSCell",
     "NSColor",
+    "NSColorPanel",
+    "NSColorSpace",
     "NSControl",
     "NSCursor",
     "NSDockTile",

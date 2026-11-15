@@ -982,6 +982,29 @@ pub trait Platform {
     /// Moves the file `path` to the system's Trash, from which the user can
     /// put it back.
     fn trash(&mut self, path: &Path) -> Result<(), Error>;
+
+    /// Shows the system's color panel of `color`, of its opacity's slider
+    /// where `alpha`, or gives it `color` where it shows: each color that
+    /// the user chooses in it comes as [`AppEvent::ColorPicked`], and its
+    /// closing as [`AppEvent::ColorPanelClosed`]. On the Mac, `NSColorPanel`.
+    fn show_color_panel(&mut self, color: PanelColor, alpha: bool);
+
+    /// Closes the color panel, if it shows, of no
+    /// [`AppEvent::ColorPanelClosed`].
+    fn close_color_panel(&mut self);
+}
+
+/// A color of the color panel, in sRGB, of 8 bits a component.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct PanelColor {
+    /// Its red.
+    pub red: u8,
+    /// Its green.
+    pub green: u8,
+    /// Its blue.
+    pub blue: u8,
+    /// Its opacity.
+    pub alpha: u8,
 }
 
 /// What the platform calls on the app, on the main thread.

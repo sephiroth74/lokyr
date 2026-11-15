@@ -1441,6 +1441,8 @@ impl FakeHost {
                     | Event::PageHidden(_)
                     | Event::ConfigChanged
                     | Event::Answered { .. }
+                    | Event::ColorPicked { .. }
+                    | Event::ColorPanelClosed
                     | Event::Saved { .. }
                     | Event::Package { .. }
                     | Event::PackagesEnded { .. }
@@ -3797,10 +3799,12 @@ impl Calling<'_> {
                 host::converted_theme(&self.host.themes, name)?;
                 Response::Asking(self.host.next_id())
             }
-            Request::SetThemeValue { theme, name, value } => {
+            Request::SetThemeValue { theme, name, value }
+            | Request::PreviewThemeValue { theme, name, value } => {
                 host::check_theme_value(&self.host.themes, theme, name, value.as_deref())?;
                 Response::Done
             }
+            Request::ShowColorPanel { .. } | Request::CloseColorPanel => Response::Done,
             Request::SetFontSize(Some(size)) => {
                 // The text's sizes, in points, as the app takes them.
                 let (smallest, largest) = (4.0_f32, 200.0_f32);

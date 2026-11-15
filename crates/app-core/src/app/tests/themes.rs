@@ -1219,8 +1219,13 @@ fn a_theme_s_tokens_tell_their_colors_and_origins_of_its_file_its_base_and_rules
     let config = "[theme]\ndark = \"Mine\"\nlight = \"Mine\"\n";
     let (fake, app, directory) = with_themes("tokens", config, &[("Mine", &mine)]);
     let places = app.theme_places();
-    let tokens = theme_catalog::theme_tokens(&places, None, (fake.appearance(), &app.config.theme))
-        .expect("the theme in force's tokens");
+    let tokens = theme_catalog::theme_tokens(
+        &places,
+        None,
+        (fake.appearance(), &app.config.theme),
+        &BTreeMap::new(),
+    )
+    .expect("the theme in force's tokens");
     assert_eq!(tokens.theme, "Mine");
     let token = |name: &str| {
         tokens
@@ -1299,7 +1304,8 @@ fn a_theme_s_tokens_tell_their_colors_and_origins_of_its_file_its_base_and_rules
         theme_catalog::theme_tokens(
             &places,
             Some("Nothing"),
-            (fake.appearance(), &app.config.theme)
+            (fake.appearance(), &app.config.theme),
+            &BTreeMap::new(),
         )
         .is_none()
     );
@@ -1307,6 +1313,7 @@ fn a_theme_s_tokens_tell_their_colors_and_origins_of_its_file_its_base_and_rules
         &places,
         Some("Lokyr Light"),
         (fake.appearance(), &app.config.theme),
+        &BTreeMap::new(),
     )
     .unwrap();
     assert_eq!(light.variant, lokyr_kernel::themes::ThemeVariant::Light);
@@ -1646,5 +1653,120 @@ fn a_theme_s_color_set_of_a_plugin_is_written_into_its_file_and_shows_at_once() 
     assert_eq!(run(&mut fake, &mut app, "values.reset"), None);
     let text = std::fs::read_to_string(&file).unwrap();
     assert!(!text.contains("\"accent\""), "{text}");
+    let _ = std::fs::remove_dir_all(&directory);
+}
+
+/// What a plugin of the color panel heard: its colors, then `closed`.
+type Heard = std::rc::Rc<std::cell::RefCell<Vec<String>>>;
+
+/// A plugin that shows the color panel, closes it, and shows Mine's
+/// background before it writes it, keeping what it hears of the panel.
+struct Panel(Heard);
+
+impl plugins::Plugin for Panel {
+    fn activate(&mut self, cx: &mut plugins::Cx<'_>) -> Result<(), Error> {
+        for name in ["panel.show", "panel.close", "panel.preview", "panel.write"] {
+            cx.register_command(Command {
+                name: name.to_owned(),
+                title: name.to_owned(),
+                category: Category::View,
+                capabilities: Vec::new(),
+                params: Vec::new(),
+                when: None,
+            })?;
+        }
+        Ok(())
+    }
+
+    fn on_command(&mut self, cx: &mut plugins::Cx<'_>, name: &str, _: Args) -> Result<(), Error> {
+        let gray = lokyr_kernel::themes::ThemeColor::rgb(16, 16, 16);
+        match name {
+            "panel.show" => cx.show_color_panel(gray, true),
+            "panel.close" => cx.close_color_panel(),
+            "panel.preview" => cx.preview_theme_value("Mine", "background", Some("#303030")),
+            _ => cx.set_theme_value("Mine", "background", Some("#404040")),
+        }
+    }
+
+    fn on_event(
+        &mut self,
+        _: &mut plugins::Cx<'_>,
+        events: &[plugins::Event],
+    ) -> Result<(), Error> {
+        for event in events {
+            match event {
+                plugins::Event::ColorPicked { color } => {
+                    self.0.borrow_mut().push(color.to_string());
+                }
+                plugins::Event::ColorPanelClosed => self.0.borrow_mut().push("closed".to_owned()),
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+}
+
+#[test]
+fn the_color_panel_tells_its_plugin_and_a_color_shows_before_it_is_written() {
+    let mine = format!(
+        "[theme]\nname = \"Mine\"\n\n[terminal]\nbackground = \"#101010\"\nforeground = \"#e0e0e0\"\n{PALETTE}\n"
+    );
+    let directory =
+        std::env::temp_dir().join(format!("lokyr-app-themes-panel-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&directory);
+    std::fs::create_dir_all(directory.join("themes")).unwrap();
+    let file = directory.join("themes/Mine.toml");
+    std::fs::write(&file, &mine).unwrap();
+    let path = directory.join("config.toml");
+    std::fs::write(&path, "[theme]\nlight = \"Mine\"\n").unwrap();
+    let heard = Heard::default();
+    let mut app = App::new(None, Config::read(&path).unwrap(), Some(path.clone()))
+        .with_program(quiet())
+        .with_plugin("panel", Box::new(Panel(std::rc::Rc::clone(&heard))));
+    let mut fake = Fake::default();
+    fake.start(&mut app);
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    while app.theme_catalog.borrow().listed.is_none() && std::time::Instant::now() < deadline {
+        pickers::theme_list(
+            &app.theme_catalog,
+            (&app.theme_places(), app.waker.as_ref()),
+            fake.appearance(),
+            &app.config.theme,
+        );
+        app.take_themes(&mut fake);
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    let run = |fake: &mut Fake, app: &mut App, command: &str| {
+        fake.send_app(app, AppEvent::Command(command.to_owned()));
+    };
+    let color = |red, green, blue, alpha| lokyr_platform_core::PanelColor {
+        red,
+        green,
+        blue,
+        alpha,
+    };
+    // Shown of its color and its opacity's slider; its colors and its
+    // closing to the plugin.
+    run(&mut fake, &mut app, "panel.show");
+    assert_eq!(fake.color_panel(), Some((color(16, 16, 16, 255), true)));
+    fake.send_app(&mut app, AppEvent::ColorPicked(color(255, 0, 0, 128)));
+    fake.send_app(&mut app, AppEvent::ColorPanelClosed);
+    run_until(&mut fake, &mut app, |_, _| heard.borrow().len() == 2);
+    assert_eq!(*heard.borrow(), ["#ff000080", "closed"]);
+    // Closed by the plugin: none told, a color of no panel to none.
+    run(&mut fake, &mut app, "panel.show");
+    run(&mut fake, &mut app, "panel.close");
+    assert_eq!(fake.color_panel(), None);
+    fake.send_app(&mut app, AppEvent::ColorPicked(color(0, 0, 0, 255)));
+    assert_eq!(heard.borrow().len(), 2);
+    // A color shown before it is written: in force, its file as it was.
+    run(&mut fake, &mut app, "panel.preview");
+    assert_eq!(app.theme.light.colors.background, rgb(0x303030));
+    assert!(std::fs::read_to_string(&file).unwrap().contains("#101010"));
+    // Written: the file's, no longer one before it.
+    run(&mut fake, &mut app, "panel.write");
+    assert!(std::fs::read_to_string(&file).unwrap().contains("#404040"));
+    assert_eq!(app.theme.light.colors.background, rgb(0x404040));
+    assert!(app.theme_values.is_empty());
     let _ = std::fs::remove_dir_all(&directory);
 }

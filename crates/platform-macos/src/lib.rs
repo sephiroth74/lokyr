@@ -16,6 +16,7 @@ mod app;
 mod appearance;
 mod awake;
 mod backend;
+mod color_panel;
 mod default_terminal;
 mod definition;
 mod drag_image;
