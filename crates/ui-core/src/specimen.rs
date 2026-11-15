@@ -21,6 +21,19 @@ pub const COLUMNS: u16 = 52;
 /// The specimen's rows.
 pub const ROWS: u16 = 12;
 
+/// The room inside a specimen's edges, in points, where the gutter's bars
+/// show at its left.
+pub const PADDING: f32 = 12.0;
+
+/// The natural size of a specimen, in points, of a terminal's cell of
+/// `cell` points: its grid's whole within its padding.
+pub fn natural((width, height): (f32, f32)) -> (f32, f32) {
+    (
+        f32::from(COLUMNS) * width + 2.0 * PADDING,
+        f32::from(ROWS) * height + 2.0 * PADDING,
+    )
+}
+
 /// The row of the selected text, and its columns.
 const SELECTED: (u16, std::ops::Range<u16>) = (7, 0..13);
 

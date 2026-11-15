@@ -1865,6 +1865,12 @@ impl<B: FontBackend> Measure for Font<B> {
         let line = self.interface().line();
         (line, line)
     }
+
+    fn cell_size(&mut self) -> (f32, f32) {
+        let cell = *self.cell();
+        let scale = self.scale.max(f32::MIN_POSITIVE);
+        (cell.width as f32 / scale, cell.height as f32 / scale)
+    }
 }
 
 impl<B: FontBackend> Carets for Font<B> {

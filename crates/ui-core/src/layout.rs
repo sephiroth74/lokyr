@@ -94,6 +94,12 @@ pub trait Measure {
     fn separator(&mut self) -> (f32, f32) {
         (1.0, 1.0)
     }
+
+    /// The size of the terminal's cell, in points, which a terminal's
+    /// specimen takes.
+    fn cell_size(&mut self) -> (f32, f32) {
+        (8.0, 16.0)
+    }
 }
 
 /// A node's place and size, in pixels, from the root's top left corner.
@@ -140,6 +146,8 @@ enum Content {
     Progress(ProgressShape),
     /// A view of tabs' control, of each tab's label and icon.
     Segments(Vec<(String, String)>),
+    /// A terminal's specimen, of its grid's cells.
+    Specimen,
 }
 
 /// The room of a window's titlebar that its buttons take, in pixels, which
@@ -782,14 +790,14 @@ fn leaf(kind: &Kind, layout: &view::Layout, typeset: Typeset) -> Option<Leaf> {
         },
         Kind::Separator => Content::Separator,
         Kind::Progress(progress) => Content::Progress(progress.shape),
+        Kind::TerminalSpecimen => Content::Specimen,
         Kind::Container
         | Kind::Spacer
         | Kind::List(_)
         | Kind::Scroll
         | Kind::Tabs(_)
         | Kind::Image(_)
-        | Kind::ThemePreview(_)
-        | Kind::TerminalSpecimen => {
+        | Kind::ThemePreview(_) => {
             return None;
         }
     };
@@ -842,6 +850,7 @@ fn measured(content: &Content, measure: &mut impl Measure) -> ((f32, f32), Vec<f
         Content::Button { label, icon } => measure.button(label, icon),
         Content::Separator => measure.separator(),
         Content::Progress(shape) => progress::natural(*shape),
+        Content::Specimen => crate::specimen::natural(measure.cell_size()),
         Content::Segments(tabs) => {
             let sizes: Vec<(f32, f32)> = tabs
                 .iter()
@@ -1287,6 +1296,27 @@ mod tests {
         assert_eq!(layout.scroll_room(&tree, strip), 0.0);
         let first = tree.by_key(&"tab-0".into()).unwrap();
         assert_eq!(layout.frame(&tree, first).unwrap().width, 40.0);
+    }
+
+    #[test]
+    fn a_terminal_s_specimen_takes_the_size_of_its_grid_of_the_terminal_s_cells() {
+        let root =
+            Node::container(vec![Node::terminal_specimen().key("specimen")]).layout(view::Layout {
+                direction: Direction::Column,
+                align: Align::Start,
+                ..view::Layout::default()
+            });
+        for scale in [1.0, 2.0] {
+            let (tree, layout, _) = laid(&root, scale, 900.0 * scale);
+            let specimen = tree.children(tree.root().unwrap())[0];
+            let frame = layout.frame(&tree, specimen).unwrap();
+            let (width, height) = crate::specimen::natural((8.0, 16.0));
+            assert_eq!(
+                (frame.width / scale, frame.height / scale),
+                (width, height),
+                "{scale}"
+            );
+        }
     }
 
     #[test]

@@ -109,3 +109,14 @@ fn the_cells_show_the_selection_matches_backgrounds_cursor_guide_and_bars() {
     );
     assert!(bars.iter().all(|bar| bar.rect.x < 12));
 }
+
+#[test]
+fn a_specimen_s_natural_size_is_its_grid_s_within_its_padding() {
+    assert_eq!(
+        natural((8.0, 16.0)),
+        (
+            f32::from(COLUMNS) * 8.0 + 2.0 * PADDING,
+            f32::from(ROWS) * 16.0 + 2.0 * PADDING
+        )
+    );
+}

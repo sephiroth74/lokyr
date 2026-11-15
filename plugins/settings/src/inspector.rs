@@ -42,10 +42,6 @@ const ROW: &str = "inspector-token:";
 /// How long the tokens that a change of the theme changed stay lit.
 const LIT: Duration = Duration::from_secs(3);
 
-/// The height of the terminal's specimen, of its 12 rows at the sizes of
-/// most fonts.
-const SPECIMEN_HEIGHT: f32 = 240.0;
-
 /// The width of the tokens' column.
 const COLUMN: f32 = 300.0;
 
@@ -343,14 +339,10 @@ impl Inspector {
         };
         let mut right = vec![
             heading(cx, "inspector-terminal"),
+            // Of its own size, of the terminal's cells.
             Node::terminal_specimen()
                 .key("inspector-terminal")
-                .label(message(cx, "inspector-terminal", &[]))
-                .layout(Layout {
-                    width: Length::Fraction(1.0),
-                    height: Length::Points(SPECIMEN_HEIGHT),
-                    ..Layout::default()
-                }),
+                .label(message(cx, "inspector-terminal", &[])),
             heading(cx, "inspector-interface"),
         ];
         right.extend(parts::cards(&chosen, &word));

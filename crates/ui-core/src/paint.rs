@@ -119,10 +119,6 @@ impl std::ops::DerefMut for Previews {
 /// The colors of a view that shows no theme's preview.
 pub static NO_PREVIEWS: Previews = Previews::new();
 
-/// The room inside a terminal's specimen's edges, in points, where the
-/// gutter's bars show at its left.
-const SPECIMEN_PADDING: f32 = 12.0;
-
 /// The size of a theme's preview's text, in points.
 const PREVIEW_TEXT: f32 = 10.0;
 
@@ -1160,7 +1156,7 @@ impl<'a, B: FontBackend> Painter<'a, B> {
             radius: 8.0 * scale,
             ..Shape::filled(rect(frame), background)
         });
-        let padding = (SPECIMEN_PADDING * scale).round();
+        let padding = (crate::specimen::PADDING * scale).round();
         let origin = (
             (frame.x + padding).round() as i32,
             (frame.y + padding).round() as i32,
