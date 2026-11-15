@@ -316,6 +316,28 @@ pub enum Request {
         /// The job's id.
         id: u64,
     },
+    /// Ask the name of a copy of the theme `name`, write it into the user's
+    /// themes folder and name it in `[theme]`, the copy's name, or none,
+    /// the answer that [`Plugins::answer`] gives the plugin.
+    CopyTheme {
+        /// The plugin.
+        plugin: String,
+        /// The question's id.
+        id: u64,
+        /// The theme's name.
+        name: String,
+    },
+    /// Ask whether to convert the `.itermcolors` theme `name` of the user's
+    /// folder to Lokyr's format, and convert it, its name, or none, the
+    /// answer that [`Plugins::answer`] gives the plugin.
+    ConvertTheme {
+        /// The plugin.
+        plugin: String,
+        /// The question's id.
+        id: u64,
+        /// The theme's name.
+        name: String,
+    },
     /// Ask the user for a text, whose answer [`Plugins::answer`] gives the
     /// plugin.
     AskText {
@@ -6098,6 +6120,28 @@ impl Host<'_, '_> {
                     window,
                     name,
                     bytes: bytes.0,
+                });
+                return Ok(Response::Asking(id));
+            }
+            // A theme that is there copied, or one of the user's folder's
+            // `.itermcolors` converted, of the user's answer.
+            Asked::CopyTheme(name) => {
+                host::copied_theme(&(self.context.themes)(), &name)?;
+                let id = new_id();
+                self.out.requests.push(Request::CopyTheme {
+                    plugin: self.state.name.clone(),
+                    id,
+                    name,
+                });
+                return Ok(Response::Asking(id));
+            }
+            Asked::ConvertTheme(name) => {
+                host::converted_theme(&(self.context.themes)(), &name)?;
+                let id = new_id();
+                self.out.requests.push(Request::ConvertTheme {
+                    plugin: self.state.name.clone(),
+                    id,
+                    name,
                 });
                 return Ok(Response::Asking(id));
             }

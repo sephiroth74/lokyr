@@ -680,6 +680,27 @@ impl<'a> Cx<'a> {
         })
     }
 
+    /// Asks the name of a copy of the theme `name`, as Duplicate… does, and
+    /// writes it into the user's themes folder: the question's id, whose
+    /// answer, the copy's name once written, comes as [`Event::Answered`].
+    pub fn copy_theme(&mut self, name: &str) -> Result<u64, Error> {
+        match self.request(Request::CopyTheme(name.to_owned())) {
+            Response::Asking(id) => Ok(id),
+            other => Err(failed(other)),
+        }
+    }
+
+    /// Asks whether to convert the `.itermcolors` theme `name` to Lokyr's
+    /// format, and converts it, of its name: the question's id, whose
+    /// answer, the theme's name once converted, comes as
+    /// [`Event::Answered`].
+    pub fn convert_theme(&mut self, name: &str) -> Result<u64, Error> {
+        match self.request(Request::ConvertTheme(name.to_owned())) {
+            Response::Asking(id) => Ok(id),
+            other => Err(failed(other)),
+        }
+    }
+
     /// The system's monospaced font families, and the family in force.
     pub fn fonts(&mut self) -> Result<crate::host::Fonts, Error> {
         match self.request(Request::Fonts) {

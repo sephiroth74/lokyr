@@ -1992,6 +1992,28 @@ fn app_requests(world: &World) -> Scenario {
                 Request::ThemeTokens(Some("Nothing".to_owned())),
                 Response::ThemeTokens(None),
             ),
+            // A copy of a theme that is there, its name the answer, and of
+            // one that is not; a conversion of an `.itermcolors` theme
+            // alone, which the built-in ones are not.
+            (
+                Request::CopyTheme("Lokyr Dark".to_owned()),
+                Response::Asking(0),
+            ),
+            (
+                Request::CopyTheme("Nothing".to_owned()),
+                failed(Code::NotFound, "there is no theme `Nothing`"),
+            ),
+            (
+                Request::ConvertTheme("Lokyr Dark".to_owned()),
+                failed(
+                    Code::Failed,
+                    "`Lokyr Dark` is no `.itermcolors` theme of the themes folder",
+                ),
+            ),
+            (
+                Request::ConvertTheme("Nothing".to_owned()),
+                failed(Code::NotFound, "there is no theme `Nothing`"),
+            ),
             // The system's monospaced families, a preview and its end, the
             // choice, and a family that is not there or not monospaced.
             (

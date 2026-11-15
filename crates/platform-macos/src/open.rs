@@ -203,6 +203,16 @@ pub(crate) fn reveal(target: &Target) -> Result<(), Error> {
     Ok(())
 }
 
+/// Moves the file `path` to the Trash, of `NSFileManager`, which the
+/// Finder's Put Back returns it from.
+pub(crate) fn trash(path: &Path) -> Result<(), Error> {
+    let failed = |why: String| Error::Trash(path.display().to_string(), why);
+    let file = file_url(path).ok_or_else(|| failed("it has no path".to_owned()))?;
+    objc2_foundation::NSFileManager::defaultManager()
+        .trashItemAtURL_resultingItemURL_error(&file, None)
+        .map_err(|error| failed(error.localizedDescription().to_string()))
+}
+
 /// Opens the file `path` in the application that opens plain text, as
 /// TextEdit or the editor that the user chose for it, whatever the file's
 /// own type opens in, as a `.toml` that no application may claim. What

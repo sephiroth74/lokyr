@@ -120,6 +120,9 @@ impl<B: Backend> App<B> {
         if let Some(ask) = self.new_theme_asks.remove(&alert) {
             self.new_theme_answered(platform, ask, button, text);
         }
+        if let Some(ask) = self.convert_asks.remove(&alert) {
+            self.convert_theme_answered(platform, ask, button);
+        }
         if let Some(import) = self.import_asks.remove(&alert) {
             self.import_answered(platform, &import, button);
         }

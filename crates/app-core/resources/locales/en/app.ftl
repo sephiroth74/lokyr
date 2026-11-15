@@ -251,6 +251,7 @@ theme-install-not-copied = It cannot be copied into { $folder }: { $error }
 # field's first name, the buttons, and why a name given cannot be one.
 new-theme-message = New theme of “{ $name }”
 new-theme-detail = Its name, which the config's [theme] names it by. Lokyr writes every color of the theme into { $folder }, uses it and opens it in your editor.
+new-theme-detail-editor = Its name, which the config's [theme] names it by. Lokyr writes every color of the theme into { $folder }, uses it and shows it in the Theme Editor.
 new-theme-name = { $name } Copy
 # A new theme of Lokyr's own values of an appearance, light or dark: the
 # question's title and the field's first name.
@@ -267,6 +268,11 @@ new-theme-cancel = Cancel
 new-theme-not-a-name = “{ $name }” cannot name a theme: a name is not empty, holds no / nor \, and does not start with a dot.
 new-theme-taken = A theme named “{ $name }” is there already: choose another name.
 new-theme-failed = The new theme cannot be made.
+convert-theme-message = Convert “{ $name }” to Lokyr's format?
+convert-theme-detail = To edit it, Lokyr writes its colors as a theme of its own format, of the same name, into { $folder }, and moves its .itermcolors file to the Trash, from which you can put it back.
+convert-theme-convert = Convert
+convert-theme-cancel = Cancel
+convert-theme-failed = The theme cannot be converted.
 
 # Themes imported: the open panel's message, the question of the files of a
 # name in the themes' folder already, its buttons, and the files that are

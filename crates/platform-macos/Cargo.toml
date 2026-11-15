@@ -108,6 +108,7 @@ objc2-foundation = { workspace = true, features = [
     "NSDate",
     "NSDictionary",
     "NSDistributedNotificationCenter",
+    "NSFileManager",
     "NSGeometry",
     "NSKeyValueObserving",
     "NSLocale",

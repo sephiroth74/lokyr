@@ -468,7 +468,7 @@ impl Plugin for SettingsPage {
                 if row == SIDE_EDITOR {
                     if !self.in_editor {
                         self.in_editor = true;
-                        self.editor.show(cx)?;
+                        self.editor.show(cx, None)?;
                     }
                 } else if variant.is_some() {
                     if std::mem::take(&mut self.in_editor) {
@@ -832,11 +832,12 @@ impl SettingsPage {
     /// Shows the theme `name` in the Editor, the themes page's part that
     /// shows it then.
     fn edit_theme(&mut self, cx: &mut Cx<'_>, name: &str) -> Result<(), Error> {
-        if !self.in_editor {
+        if self.in_editor {
+            self.editor.choose(cx, name)?;
+        } else {
             self.in_editor = true;
-            self.editor.show(cx)?;
+            self.editor.show(cx, Some(name))?;
         }
-        self.editor.choose(cx, name)?;
         cx.request_render(themes_page())
     }
 

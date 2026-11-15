@@ -138,6 +138,24 @@ pub enum Request {
         /// The theme's name.
         name: String,
     },
+    /// Asks the name of a copy of the theme of a name, as Duplicate… does,
+    /// and writes it into the user's themes folder, of Lokyr's format, of
+    /// every color of the theme's, named in `[theme]` for its appearance:
+    /// the host answers with the question's id, and the copy's name comes
+    /// as [`Event::Answered`] to the plugin alone once it is written, or
+    /// none as the user cancels or the copy fails, which the host tells.
+    /// Of the capability `config`, Lokyr's own plugins' alone.
+    CopyTheme(String),
+    /// Asks whether to convert the `.itermcolors` theme of a name of the
+    /// user's themes folder to Lokyr's format, to edit it, and converts it:
+    /// a file of Lokyr's format of its colors and of its name, its
+    /// `.itermcolors` file moved to the Trash, so that `[theme]` names it
+    /// still. The host answers with the question's id, and the theme's
+    /// name comes as [`Event::Answered`] to the plugin alone once it is
+    /// converted, or none as the user cancels or the conversion fails,
+    /// which the host tells. Of the capability `config`, Lokyr's own
+    /// plugins' alone.
+    ConvertTheme(String),
     /// The system's monospaced font families, and the family in force.
     Fonts,
     /// The day of the system's clock, in days since 1970-01-01, in UTC, as
@@ -986,7 +1004,11 @@ impl Request {
             | Self::CancelPackages(_)
             | Self::Plugins
             | Self::SetPluginEnabled { .. } => Some(Capability::Packages),
-            Self::Settings | Self::SetSetting { .. } => Some(Capability::Config),
+            // The config's keys, and the themes' files of the user's folder.
+            Self::Settings
+            | Self::SetSetting { .. }
+            | Self::CopyTheme(_)
+            | Self::ConvertTheme(_) => Some(Capability::Config),
             Self::SelectionText(_)
             | Self::LineText { .. }
             | Self::LinkAt { .. }
@@ -1214,6 +1236,8 @@ impl Request {
             | Self::OpenPanel { .. }
             | Self::ClosePanel(_)
             | Self::AskText { .. }
+            | Self::CopyTheme(_)
+            | Self::ConvertTheme(_)
             | Self::SaveFile { .. }
             | Self::Notify { .. }
             | Self::Packages(_)
@@ -1794,7 +1818,11 @@ impl Request {
             Self::Layout { .. } => "layout",
             Self::NewTab { .. } => "tab",
             Self::TabBarPlace { .. } => "tab-bar-place",
-            Self::AskText { .. } | Self::SaveFile { .. } | Self::Packages { .. } => "asking",
+            Self::AskText { .. }
+            | Self::CopyTheme { .. }
+            | Self::ConvertTheme { .. }
+            | Self::SaveFile { .. }
+            | Self::Packages { .. } => "asking",
             Self::StartTimer { .. } => "timer",
             Self::PaneGrid { .. } => "grid",
             Self::Config { .. } | Self::State { .. } => "data",

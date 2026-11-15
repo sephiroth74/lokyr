@@ -1093,11 +1093,13 @@ fn kind(request: &Request) -> usize {
         Request::Notify { .. } => 117,
         Request::PreviewFontStyle { .. } => 118,
         Request::ThemeTokens(_) => 119,
+        Request::CopyTheme(_) => 120,
+        Request::ConvertTheme(_) => 121,
     }
 }
 
 /// How many kinds of requests the plugin API has.
-const KINDS: usize = 120;
+const KINDS: usize = 122;
 
 #[test]
 fn the_scenarios_hold_every_request_of_the_plugin_api() {

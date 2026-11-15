@@ -3786,6 +3786,16 @@ impl Calling<'_> {
                     .map_err(|message| Error::new(Code::NotFound, message))?;
                 Response::Done
             }
+            // A copy of a theme that is there, an `.itermcolors` one of the
+            // user's folder converted, whose answers the test posts.
+            Request::CopyTheme(name) => {
+                host::copied_theme(&self.host.themes, name)?;
+                Response::Asking(self.host.next_id())
+            }
+            Request::ConvertTheme(name) => {
+                host::converted_theme(&self.host.themes, name)?;
+                Response::Asking(self.host.next_id())
+            }
             Request::SetFontSize(Some(size)) => {
                 // The text's sizes, in points, as the app takes them.
                 let (smallest, largest) = (4.0_f32, 200.0_f32);

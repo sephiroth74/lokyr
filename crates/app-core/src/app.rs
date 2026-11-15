@@ -770,6 +770,9 @@ pub struct App<B: Backend> {
     /// The questions of a new theme's name, each of the theme that it
     /// copies.
     new_theme_asks: BTreeMap<AlertId, theme_copies::NewTheme>,
+    /// The questions of an `.itermcolors` theme's conversion, as the Theme
+    /// Editor asks them.
+    convert_asks: BTreeMap<AlertId, theme_copies::ConvertTheme>,
     /// Whether the open panel of the themes to import shows, and the
     /// questions of the files of a name in the themes' folder already.
     importing: bool,
@@ -1049,6 +1052,7 @@ impl<B: Backend> App<B> {
             open_asks: BTreeMap::new(),
             theme_asks: BTreeMap::new(),
             new_theme_asks: BTreeMap::new(),
+            convert_asks: BTreeMap::new(),
             resolutions: asks::Resolutions::default(),
             importing: false,
             import_asks: BTreeMap::new(),
@@ -2719,6 +2723,7 @@ impl<B: Backend> App<B> {
                     self.plugins.answer(&plugin, id, None);
                 }
             }
+            self.forget_theme_asks(window);
             self.workspace.close_window(state.window);
         }
         self.quick.remove(&window);
@@ -3038,7 +3043,7 @@ impl<B: Backend> App<B> {
                         }
                         _ => None,
                     };
-                    self.ask_new_theme(platform, from, variant);
+                    self.ask_new_theme(platform, (from, variant), None);
                     Ok(())
                 }
                 SETTINGS_TAB => {
@@ -3469,6 +3474,14 @@ impl<B: Backend> App<B> {
                     self.start_packages(platform, (plugin, id), &call);
                 }
                 Request::CancelPackages { plugin, id } => self.cancel_packages(&plugin, id),
+                // A theme copied, or one of the folder's `.itermcolors`
+                // converted, as the Theme Editor asks, of the user's answer.
+                Request::CopyTheme { plugin, id, name } => {
+                    self.ask_new_theme(platform, (Some(name), None), Some((plugin, id)));
+                }
+                Request::ConvertTheme { plugin, id, name } => {
+                    self.ask_convert_theme(platform, (plugin, id), name);
+                }
                 Request::AskText {
                     plugin,
                     id,

@@ -279,6 +279,11 @@ pub struct Fake {
     edited: Vec<PathBuf>,
     /// Why the text editor opens nothing, as the next open fails.
     editor_fails: Option<String>,
+    /// The files moved to the Trash, from the first, which the fake
+    /// removes.
+    trashed: Vec<PathBuf>,
+    /// Why a move to the Trash fails, as the next one does.
+    trash_fails: Option<String>,
     /// Whether the secure entry of the keyboard is on, and how many times
     /// it changed.
     secure_input: (bool, usize),
@@ -368,6 +373,8 @@ impl Fake {
             unhandled: Vec::new(),
             edited: Vec::new(),
             editor_fails: None,
+            trashed: Vec::new(),
+            trash_fails: None,
             secure_input: (false, 0),
             can_update: false,
             update_checks: None,
@@ -849,6 +856,17 @@ impl Fake {
     /// The files that the app opened in the text editor, in order.
     pub fn edited(&self) -> &[PathBuf] {
         &self.edited
+    }
+
+    /// The files that the app moved to the Trash, in order.
+    pub fn trashed(&self) -> &[PathBuf] {
+        &self.trashed
+    }
+
+    /// Has the next moves to the Trash fail, telling `why`, or succeed
+    /// again of none.
+    pub fn fail_trash(&mut self, why: Option<&str>) {
+        self.trash_fails = why.map(str::to_owned);
     }
 
     /// Whether the secure entry of the keyboard is on, as the app last set
@@ -1686,6 +1704,16 @@ impl Platform for Fake {
             return Err(Error::Open(path.display().to_string(), why.clone()));
         }
         self.edited.push(path.to_owned());
+        Ok(())
+    }
+
+    fn trash(&mut self, path: &Path) -> Result<(), Error> {
+        let failed = |why: String| Error::Trash(path.display().to_string(), why);
+        if let Some(why) = &self.trash_fails {
+            return Err(failed(why.clone()));
+        }
+        std::fs::remove_file(path).map_err(|error| failed(error.to_string()))?;
+        self.trashed.push(path.to_owned());
         Ok(())
     }
 }

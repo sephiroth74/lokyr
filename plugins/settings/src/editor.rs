@@ -9,7 +9,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
 
 use lokyr_plugin_sdk::command::Error;
-use lokyr_plugin_sdk::host::{NoticeLevel, ThemeInfo, ThemeToken, ThemeTokens, TokenOrigin};
+use lokyr_plugin_sdk::host::{
+    NoticeLevel, ThemeFormat, ThemeInfo, ThemeToken, ThemeTokens, TokenOrigin,
+};
 use lokyr_plugin_sdk::message::Event;
 use lokyr_plugin_sdk::plugin::Cx;
 use lokyr_plugin_sdk::theme::ThemeVariant;
@@ -33,6 +35,11 @@ const THEMES_MENU: &str = "editor-themes";
 
 /// The menu's item of each theme, by its name.
 const THEME_ITEM: &str = "editor-theme:";
+
+/// The button beside the menu of a theme that cannot be edited as it is:
+/// a held or built-in one, which it duplicates, or an `.itermcolors` one,
+/// which it converts.
+const LOCK: &str = "editor-lock";
 
 /// A token's button, which opens its file or copies its line, by its name.
 const ACT: &str = "editor-act:";
@@ -65,6 +72,23 @@ pub(crate) struct Editor {
     /// The part of the interface or the token chosen of a click, which
     /// marks the tokens of the part, or the parts of the token.
     picked: Option<Pick>,
+    /// The question of a copy of a read-only theme, whose answer, the
+    /// copy's name, it shows.
+    copying: Option<u64>,
+    /// The question of an `.itermcolors` theme's conversion.
+    converting: Option<u64>,
+    /// The `.itermcolors` theme whose conversion it asked last as it
+    /// showed it, asked again of the lock alone until another shows.
+    offered: Option<String>,
+}
+
+/// Why the theme shown cannot be edited as it is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Locked {
+    /// It is held or built in: a copy edits it.
+    ReadOnly,
+    /// It is an `.itermcolors` file's: converted, it edits.
+    Itermcolors,
 }
 
 /// What a click chose: a part of the interface's specimen, or a token of
@@ -76,14 +100,20 @@ enum Pick {
 }
 
 impl Editor {
-    /// Shows it, in the themes page, of the theme in force, of no filter.
-    pub(crate) fn show(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
+    /// Shows it, in the themes page, of no filter: of the theme `theme`, or
+    /// of the one in force of none; an `.itermcolors` one's conversion
+    /// asked.
+    pub(crate) fn show(&mut self, cx: &mut Cx<'_>, theme: Option<&str>) -> Result<(), Error> {
         self.shown = true;
         self.filter.clear();
         self.lit.clear();
         self.picked = None;
+        self.offered = None;
         self.tokens = cx.theme_tokens(None)?;
-        Ok(())
+        if let Some(name) = theme {
+            self.show_theme(cx, name)?;
+        }
+        self.offer_conversion(cx)
     }
 
     /// Hides it, as the page shows an appearance's themes or hides: a
@@ -124,6 +154,24 @@ impl Editor {
                 Ok(true)
             }
             Event::PanelClosed(PanelId(panel)) if panel == THEMES_MENU => Ok(true),
+            // The copy of a read-only theme made, shown in its place.
+            Event::Answered { id, text } if self.copying == Some(*id) => {
+                self.copying = None;
+                if let (Some(name), true) = (text, self.shown) {
+                    self.choose(cx, name)?;
+                }
+                Ok(true)
+            }
+            // An `.itermcolors` theme converted: its tokens read anew, of
+            // its new file.
+            Event::Answered { id, text } if self.converting == Some(*id) => {
+                self.converting = None;
+                if text.is_some() && self.shown {
+                    self.tokens = cx.theme_tokens(self.previewed.as_deref())?;
+                    cx.request_render(themes_page())?;
+                }
+                Ok(true)
+            }
             _ => Ok(false),
         }
     }
@@ -156,6 +204,7 @@ impl Editor {
                 self.filter.clear();
                 cx.request_render(themes_page())?;
             }
+            (UiEventKind::Click, LOCK) => self.unlock(cx)?,
             (UiEventKind::Click, THEME) => cx.open_panel(
                 THEMES_MENU,
                 PanelOptions {
@@ -188,12 +237,66 @@ impl Editor {
         Ok(true)
     }
 
+    /// Shows the theme `name`, an `.itermcolors` one's conversion asked.
+    pub(crate) fn choose(&mut self, cx: &mut Cx<'_>, name: &str) -> Result<(), Error> {
+        self.show_theme(cx, name)?;
+        self.offer_conversion(cx)
+    }
+
     /// Shows the theme `name`: the one in force as it is, any other
     /// previewed in its place.
-    pub(crate) fn choose(&mut self, cx: &mut Cx<'_>, name: &str) -> Result<(), Error> {
+    fn show_theme(&mut self, cx: &mut Cx<'_>, name: &str) -> Result<(), Error> {
         let in_force = cx.themes()?.current;
         let chosen = (name != in_force).then(|| name.to_owned());
         self.preview(cx, chosen)
+    }
+
+    /// Why the theme shown cannot be edited as it is, if it cannot, of the
+    /// themes' list: none of a theme that the list lacks yet.
+    fn locked(&self, cx: &mut Cx<'_>) -> Option<Locked> {
+        let name = self.shown_theme()?;
+        let themes = cx.themes().ok()?;
+        let theme = themes.themes.iter().find(|theme| theme.name == name)?;
+        if theme.is_read_only() {
+            Some(Locked::ReadOnly)
+        } else if theme.format == ThemeFormat::Itermcolors {
+            Some(Locked::Itermcolors)
+        } else {
+            None
+        }
+    }
+
+    /// Asks the conversion of the theme shown, if it is an `.itermcolors`
+    /// one that it did not ask of as it showed, and no question waits.
+    fn offer_conversion(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
+        let name = self.shown_theme().map(str::to_owned);
+        if self.locked(cx) != Some(Locked::Itermcolors) {
+            self.offered = None;
+            return Ok(());
+        }
+        if self.offered == name || self.converting.is_some() {
+            return Ok(());
+        }
+        self.offered = name;
+        self.unlock(cx)
+    }
+
+    /// Makes the theme shown one that it edits: a copy of a read-only one,
+    /// its name asked, or an `.itermcolors` one converted, the user
+    /// agreeing; of one question at a time.
+    fn unlock(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
+        if self.copying.is_some() || self.converting.is_some() {
+            return Ok(());
+        }
+        let Some(name) = self.shown_theme().map(str::to_owned) else {
+            return Ok(());
+        };
+        match self.locked(cx) {
+            Some(Locked::ReadOnly) => self.copying = Some(cx.copy_theme(&name)?),
+            Some(Locked::Itermcolors) => self.converting = Some(cx.convert_theme(&name)?),
+            None => {}
+        }
+        Ok(())
     }
 
     /// Previews the theme `chosen`, or the one in force again of none, and
@@ -251,11 +354,26 @@ impl Editor {
         if let Kind::Button(own) = &mut button.kind {
             "chevron-down".clone_into(&mut own.icon);
         }
-        let chooser = Node::container(vec![
+        let mut chooser = vec![
             Node::text(message(cx, "editor-theme", &[])).style(secondary()),
             button,
-        ])
-        .layout(Layout {
+        ];
+        // A theme that cannot be edited as it is: the lock that unlocks it.
+        let why = match self.locked(cx) {
+            Some(Locked::ReadOnly) => Some("editor-read-only"),
+            Some(Locked::Itermcolors) => Some("editor-itermcolors"),
+            None => None,
+        };
+        if let Some(why) = why {
+            let why = message(cx, why, &[]);
+            chooser.push(
+                Node::icon_button("lock")
+                    .key(LOCK)
+                    .label(why.clone())
+                    .tooltip(why),
+            );
+        }
+        let chooser = Node::container(chooser).layout(Layout {
             direction: Direction::Row,
             gap: 8.0,
             align: Align::Center,

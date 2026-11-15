@@ -209,6 +209,7 @@ theme-install-not-copied = Non si può copiare in { $folder }: { $error }
 
 new-theme-message = Nuovo tema da «{ $name }»
 new-theme-detail = Il suo nome, con cui la sezione [theme] della configurazione lo nomina. Lokyr scrive tutti i colori del tema in { $folder }, lo usa e lo apre nel tuo editor.
+new-theme-detail-editor = Il suo nome, con cui la sezione [theme] della configurazione lo nomina. Lokyr scrive tutti i colori del tema in { $folder }, lo usa e lo mostra nell'Editor dei temi.
 new-theme-name = { $name } copia
 new-theme-fresh-message = { $variant ->
     [light] Nuovo tema chiaro
@@ -223,6 +224,11 @@ new-theme-cancel = Annulla
 new-theme-not-a-name = «{ $name }» non può essere il nome di un tema: un nome non è vuoto, non contiene / né \ e non inizia con un punto.
 new-theme-taken = Un tema di nome «{ $name }» c'è già: scegline un altro.
 new-theme-failed = Il nuovo tema non si può creare.
+convert-theme-message = Convertire «{ $name }» nel formato di Lokyr?
+convert-theme-detail = Per modificarlo, Lokyr scrive i suoi colori come un tema del proprio formato, con lo stesso nome, in { $folder }, e sposta il suo file .itermcolors nel Cestino, da cui puoi ripristinarlo.
+convert-theme-convert = Converti
+convert-theme-cancel = Annulla
+convert-theme-failed = Il tema non si può convertire.
 
 import-themes-panel = Scegli i temi da importare, .itermcolors o .toml: Lokyr li copia così come sono nella sua cartella dei temi.
 import-themes-taken-message = { $count ->

@@ -978,6 +978,10 @@ pub trait Platform {
     /// fails once the system took the open on, as an editor that does not
     /// start, comes as [`AppEvent::OpenFailed`].
     fn open_in_text_editor(&mut self, path: &Path) -> Result<(), Error>;
+
+    /// Moves the file `path` to the system's Trash, from which the user can
+    /// put it back.
+    fn trash(&mut self, path: &Path) -> Result<(), Error>;
 }
 
 /// What the platform calls on the app, on the main thread.
@@ -1013,4 +1017,7 @@ pub enum Error {
     /// A URL or a path could not be opened.
     #[error("{0} could not be opened: {1}")]
     Open(String, String),
+    /// A file could not be moved to the Trash.
+    #[error("{0} could not be moved to the Trash: {1}")]
+    Trash(String, String),
 }

@@ -1096,6 +1096,10 @@ impl Platform for Backend {
         open::in_text_editor(path, self.waker.clone())
     }
 
+    fn trash(&mut self, path: &Path) -> Result<(), Error> {
+        open::trash(path)
+    }
+
     fn notify(&mut self, window: WindowId, id: u64, title: &str, body: &str) {
         let waker = self.waker.clone();
         if let Some(notifier) = self.notifier.get_or_insert_with(|| Notifier::new(waker)) {

@@ -813,6 +813,37 @@ impl Themes {
     }
 }
 
+/// Whether a copy can be made of the theme `name` of `themes`: one that is
+/// there, or the error that tells it is not.
+pub fn copied_theme(themes: &Themes, name: &str) -> Result<(), crate::command::Error> {
+    if themes.themes.iter().any(|theme| theme.name == name) {
+        return Ok(());
+    }
+    Err(crate::command::Error::new(
+        crate::command::Code::NotFound,
+        format!("there is no theme `{name}`"),
+    ))
+}
+
+/// Whether the theme `name` of `themes` can be converted to Lokyr's
+/// format: an `.itermcolors` one of the user's folder, or the error that
+/// tells it is not.
+pub fn converted_theme(themes: &Themes, name: &str) -> Result<(), crate::command::Error> {
+    let Some(theme) = themes.themes.iter().find(|theme| theme.name == name) else {
+        return Err(crate::command::Error::new(
+            crate::command::Code::NotFound,
+            format!("there is no theme `{name}`"),
+        ));
+    };
+    if theme.origin != ThemeOrigin::Folder || theme.format != ThemeFormat::Itermcolors {
+        return Err(crate::command::Error::new(
+            crate::command::Code::Failed,
+            format!("`{name}` is no `.itermcolors` theme of the themes folder"),
+        ));
+    }
+    Ok(())
+}
+
 /// The system's monospaced font families, as a picker lists them, and the
 /// family in force, the config's or the default one.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]

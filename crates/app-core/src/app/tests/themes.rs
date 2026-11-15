@@ -1312,3 +1312,176 @@ fn a_theme_s_tokens_tell_their_colors_and_origins_of_its_file_its_base_and_rules
     assert_eq!(light.variant, lokyr_kernel::themes::ThemeVariant::Light);
     let _ = std::fs::remove_dir_all(directory);
 }
+
+/// The answers that the theme editor's plugin heard, of its questions'
+/// ids, and its questions' ids.
+type EditorAnswers = std::rc::Rc<std::cell::RefCell<(Vec<(u64, Option<String>)>, Vec<u64>)>>;
+
+/// A plugin that copies the held theme Held Dawn and converts the folder's
+/// `.itermcolors` Grays, as the Theme Editor asks, keeping the answers that
+/// it hears.
+struct Editing(EditorAnswers);
+
+impl plugins::Plugin for Editing {
+    fn activate(&mut self, cx: &mut plugins::Cx<'_>) -> Result<(), Error> {
+        for name in ["editing.copy", "editing.convert"] {
+            cx.register_command(Command {
+                name: name.to_owned(),
+                title: name.to_owned(),
+                category: Category::View,
+                capabilities: Vec::new(),
+                params: Vec::new(),
+                when: None,
+            })?;
+        }
+        Ok(())
+    }
+
+    fn on_command(&mut self, cx: &mut plugins::Cx<'_>, name: &str, _: Args) -> Result<(), Error> {
+        let id = match name {
+            "editing.copy" => cx.copy_theme("Held Dawn")?,
+            _ => cx.convert_theme("Grays")?,
+        };
+        self.0.borrow_mut().1.push(id);
+        Ok(())
+    }
+
+    fn on_event(
+        &mut self,
+        _: &mut plugins::Cx<'_>,
+        events: &[plugins::Event],
+    ) -> Result<(), Error> {
+        for event in events {
+            if let plugins::Event::Answered { id, text } = event {
+                self.0.borrow_mut().0.push((*id, text.clone()));
+            }
+        }
+        Ok(())
+    }
+}
+
+#[test]
+fn the_theme_editor_s_copy_and_conversion_answer_its_plugin_of_no_editor_opened() {
+    let directory =
+        std::env::temp_dir().join(format!("lokyr-app-themes-editing-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&directory);
+    let themes = directory.join("themes");
+    std::fs::create_dir_all(&themes).unwrap();
+    std::fs::write(themes.join("Grays.itermcolors"), grays()).unwrap();
+    let held = directory.join("held");
+    std::fs::create_dir_all(&held).unwrap();
+    std::fs::write(held.join("Held Dawn.toml"), theme("#fafafa")).unwrap();
+    let path = directory.join("config.toml");
+    // The light appearance in force, of the dark Grays.
+    std::fs::write(&path, "[theme]\nlight = \"Grays\"\n").unwrap();
+    let config = Config::read(&path).unwrap();
+    let answers = EditorAnswers::default();
+    let mut app = App::new(None, config, Some(path.clone()))
+        .with_program(quiet())
+        .with_plugin("editing", Box::new(Editing(std::rc::Rc::clone(&answers))));
+    app.held_themes = Some(held);
+    let mut fake = Fake::default();
+    fake.start(&mut app);
+    // The themes' list read, which the requests are checked against.
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    loop {
+        pickers::theme_list(
+            &app.theme_catalog,
+            (&app.theme_places(), app.waker.as_ref()),
+            fake.appearance(),
+            &app.config.theme,
+        );
+        app.take_themes(&mut fake);
+        if app.theme_catalog.borrow().listed.is_some() || std::time::Instant::now() > deadline {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    let heard = |fake: &mut Fake, app: &mut App, count: usize| {
+        run_until(fake, app, |_, _| answers.borrow().0.len() == count);
+        answers.borrow().0[count - 1].clone()
+    };
+    // A copy: its name asked, of the Theme Editor's words; written, named
+    // for its variant, its name answered, no editor opened.
+    fake.send_app(&mut app, AppEvent::Command("editing.copy".to_owned()));
+    let asked = fake.alerts().last().cloned().expect("a question");
+    assert_eq!(asked.alert.input.as_deref(), Some("Held Dawn Copy"));
+    assert!(
+        asked.alert.detail.contains("Theme Editor"),
+        "{:?}",
+        asked.alert
+    );
+    fake.answer_alert_typed(&mut app, asked.id, (0, false), Some("Dawn Mine"));
+    let id = answers.borrow().1[0];
+    assert_eq!(
+        heard(&mut fake, &mut app, 1),
+        (id, Some("Dawn Mine".to_owned()))
+    );
+    assert!(themes.join("Dawn Mine.toml").is_file());
+    let written = std::fs::read_to_string(&path).unwrap();
+    assert!(written.contains("light = \"Dawn Mine\""), "{written}");
+    assert!(fake.opened().is_empty(), "{:?}", fake.opened());
+    // Cancelled: none.
+    fake.send_app(&mut app, AppEvent::Command("editing.copy".to_owned()));
+    let asked = fake.alerts().last().cloned().expect("a question");
+    fake.answer_alert(&mut app, asked.id, 1);
+    assert_eq!(heard(&mut fake, &mut app, 2).1, None);
+    // A conversion cancelled: none, the folder as it was.
+    fake.send_app(&mut app, AppEvent::Command("editing.convert".to_owned()));
+    let asked = fake.alerts().last().cloned().expect("a question");
+    assert_eq!(asked.alert.message, "Convert “Grays” to Lokyr's format?");
+    assert!(asked.alert.detail.contains("Trash"), "{:?}", asked.alert);
+    assert_eq!(asked.alert.input, None);
+    fake.answer_alert(&mut app, asked.id, 1);
+    assert_eq!(heard(&mut fake, &mut app, 3).1, None);
+    assert!(themes.join("Grays.itermcolors").is_file());
+    assert!(!themes.join("Grays.toml").exists());
+    // The Trash failing: told, none answered, its new file taken away.
+    fake.fail_trash(Some("the disk is locked"));
+    fake.send_app(&mut app, AppEvent::Command("editing.convert".to_owned()));
+    let asked = fake.alerts().last().cloned().expect("a question");
+    fake.answer_alert(&mut app, asked.id, 0);
+    assert_eq!(heard(&mut fake, &mut app, 4).1, None);
+    let told = fake.alerts().last().cloned().expect("an alert");
+    assert_eq!(told.alert.message, "The theme cannot be converted.");
+    assert!(
+        told.alert.detail.contains("the disk is locked"),
+        "{:?}",
+        told.alert
+    );
+    assert!(themes.join("Grays.itermcolors").is_file());
+    assert!(!themes.join("Grays.toml").exists());
+    // Converted: of Lokyr's format, of its name and colors, its file in
+    // the Trash, the theme in force of its new file, as its old one is
+    // gone, its name answered.
+    app.set_theme(
+        &mut fake,
+        lokyr_kernel::themes::ThemeVariant::Light,
+        "Grays",
+    );
+    assert_eq!(app.theme.light.colors.background, rgb(0x333333));
+    fake.fail_trash(None);
+    fake.send_app(&mut app, AppEvent::Command("editing.convert".to_owned()));
+    let asked = fake.alerts().last().cloned().expect("a question");
+    fake.answer_alert(&mut app, asked.id, 0);
+    assert_eq!(heard(&mut fake, &mut app, 5).1, Some("Grays".to_owned()));
+    let text = std::fs::read_to_string(themes.join("Grays.toml")).unwrap();
+    assert!(text.contains("name = \"Grays\""), "{text}");
+    assert!(text.contains("background = \"#333333\""), "{text}");
+    assert_eq!(fake.trashed(), [themes.join("Grays.itermcolors")]);
+    assert!(!themes.join("Grays.itermcolors").exists());
+    assert_eq!(app.theme.light.colors.background, rgb(0x333333));
+    let written = std::fs::read_to_string(&path).unwrap();
+    assert!(written.contains("light = \"Grays\""), "{written}");
+    // A question whose window closes has no answer.
+    let window = fake.windows().next().unwrap();
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    fake.send_app(&mut app, AppEvent::Command("editing.copy".to_owned()));
+    assert_eq!(
+        fake.alerts().last().map(|asked| asked.window),
+        Some(Some(window))
+    );
+    app.close(&mut fake, window);
+    assert_eq!(heard(&mut fake, &mut app, 6).1, None);
+    let _ = std::fs::remove_dir_all(&directory);
+}

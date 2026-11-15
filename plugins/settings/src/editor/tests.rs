@@ -1,6 +1,6 @@
 use lokyr_plugin_sdk::fake::{FakeHost, theme_tokens};
 use lokyr_plugin_sdk::host::{ThemeTokens, TokenOrigin};
-use lokyr_plugin_sdk::message::Request;
+use lokyr_plugin_sdk::message::{Event, Request};
 use lokyr_plugin_sdk::theme::ThemeColor;
 use lokyr_plugin_sdk::view::Kind;
 
@@ -205,37 +205,34 @@ fn a_change_of_the_theme_lights_the_tokens_that_it_changed_for_a_while() {
     assert!(!lit(&page(&mut host, &mut plugin), "accent"));
 }
 
-#[test]
-fn the_theme_s_button_is_a_menu_of_the_user_s_themes_then_of_each_appearance_s() {
+/// The themes of each kind, of `current` in force for the dark
+/// appearance: Dracula held, Lokyr's built in, Night an `.itermcolors` file
+/// of the user's folder and Paper one of Lokyr's format.
+fn kinds(current: &str) -> lokyr_plugin_sdk::host::Themes {
     use lokyr_plugin_sdk::host::{ThemeFormat, ThemeInfo, ThemeOrigin, Themes};
-    let (mut host, mut plugin) = shown();
     let theme = |name: &str, variant, origin, format| ThemeInfo {
         name: name.to_owned(),
         variant,
         origin,
         format,
     };
-    host.set_themes(Themes {
+    let lokyr = ThemeFormat::Lokyr;
+    Themes {
         appearance: ThemeVariant::Dark,
-        current: "Lokyr Dark".to_owned(),
+        current: current.to_owned(),
         themes: vec![
-            theme(
-                "Dracula",
-                ThemeVariant::Dark,
-                ThemeOrigin::Held,
-                ThemeFormat::Lokyr,
-            ),
+            theme("Dracula", ThemeVariant::Dark, ThemeOrigin::Held, lokyr),
             theme(
                 "Lokyr Dark",
                 ThemeVariant::Dark,
                 ThemeOrigin::BuiltIn,
-                ThemeFormat::Lokyr,
+                lokyr,
             ),
             theme(
                 "Lokyr Light",
                 ThemeVariant::Light,
                 ThemeOrigin::BuiltIn,
-                ThemeFormat::Lokyr,
+                lokyr,
             ),
             theme(
                 "Night",
@@ -243,15 +240,181 @@ fn the_theme_s_button_is_a_menu_of_the_user_s_themes_then_of_each_appearance_s()
                 ThemeOrigin::Folder,
                 ThemeFormat::Itermcolors,
             ),
-            theme(
-                "Paper",
-                ThemeVariant::Light,
-                ThemeOrigin::Folder,
-                ThemeFormat::Lokyr,
-            ),
+            theme("Paper", ThemeVariant::Light, ThemeOrigin::Folder, lokyr),
         ],
         loading: false,
+    }
+}
+
+/// Chooses the theme `name` of the Editor's menu.
+fn choose(host: &mut FakeHost, plugin: &mut SettingsPage, name: &str) {
+    page(host, plugin);
+    host.ui_event(plugin, &click(THEME)).unwrap();
+    host.render(plugin, &ViewId::Panel(PanelId::from(THEMES_MENU)))
+        .unwrap();
+    let item = UiEvent {
+        view: ViewId::Panel(PanelId::from(THEMES_MENU)),
+        key: format!("{THEME_ITEM}{name}").as_str().into(),
+        kind: UiEventKind::Toggle { on: true },
+    };
+    host.ui_event(plugin, &item).unwrap();
+}
+
+/// The tooltip of the lock beside the menu, if it shows.
+fn lock(tree: &Node) -> Option<String> {
+    find(tree, LOCK).map(|node| node.tooltip.clone().unwrap_or_default())
+}
+
+/// Answers the question `id` of `text`, as the user does.
+fn answer(host: &mut FakeHost, plugin: &mut SettingsPage, id: u64, text: Option<&str>) {
+    let _ = host.take_done();
+    host.post(Event::Answered {
+        id,
+        text: text.map(str::to_owned),
     });
+    host.deliver(plugin).unwrap();
+}
+
+#[test]
+fn a_read_only_theme_shows_a_lock_that_duplicates_it_and_shows_its_copy() {
+    let (mut host, mut plugin) = shown();
+    host.set_themes(kinds("Lokyr Dark"));
+    host.deliver(&mut plugin).unwrap();
+    // The theme in force, built in: read-only.
+    let tree = page(&mut host, &mut plugin);
+    assert_eq!(lock(&tree).as_deref(), Some("editor-read-only"));
+    // Of the folder, of Lokyr's format: no lock.
+    choose(&mut host, &mut plugin, "Paper");
+    assert_eq!(lock(&page(&mut host, &mut plugin)), None);
+    // Held: the lock asks a copy's name.
+    choose(&mut host, &mut plugin, "Dracula");
+    assert_eq!(
+        lock(&page(&mut host, &mut plugin)).as_deref(),
+        Some("editor-read-only")
+    );
+    let _ = host.take_done();
+    host.ui_event(&mut plugin, &click(LOCK)).unwrap();
+    assert!(
+        host.take_done()
+            .contains(&Request::CopyTheme("Dracula".to_owned()))
+    );
+    // One question at a time.
+    host.ui_event(&mut plugin, &click(LOCK)).unwrap();
+    assert!(host.take_done().is_empty());
+    // Cancelled, the theme stays; made, its copy shows.
+    let id = plugin.editor.copying.unwrap();
+    answer(&mut host, &mut plugin, id, None);
+    assert!(host.take_done().is_empty());
+    host.ui_event(&mut plugin, &click(LOCK)).unwrap();
+    let id = plugin.editor.copying.unwrap();
+    answer(&mut host, &mut plugin, id, Some("Dracula Copy"));
+    assert!(
+        host.take_done()
+            .contains(&Request::PreviewTheme(Some("Dracula Copy".to_owned())))
+    );
+    assert_eq!(plugin.editor.shown_theme(), Some("Dracula Copy"));
+    // A copy that the config names for the appearance in force shows as
+    // it is, of no preview.
+    choose(&mut host, &mut plugin, "Dracula");
+    host.ui_event(&mut plugin, &click(LOCK)).unwrap();
+    let id = plugin.editor.copying.unwrap();
+    let mut named = kinds("Mine");
+    named.themes.push(lokyr_plugin_sdk::host::ThemeInfo {
+        name: "Mine".to_owned(),
+        variant: ThemeVariant::Dark,
+        origin: lokyr_plugin_sdk::host::ThemeOrigin::Folder,
+        format: lokyr_plugin_sdk::host::ThemeFormat::Lokyr,
+    });
+    host.set_themes(named);
+    // The tokens of the theme in force, the copy's, as the config names it.
+    let mut tokens = theme_tokens();
+    tokens[0].theme = "Mine".to_owned();
+    host.set_theme_tokens(tokens);
+    answer(&mut host, &mut plugin, id, Some("Mine"));
+    assert!(host.take_done().contains(&Request::PreviewTheme(None)));
+    assert_eq!(lock(&page(&mut host, &mut plugin)), None);
+}
+
+#[test]
+fn an_itermcolors_theme_asks_for_its_conversion_as_it_shows_and_of_its_lock() {
+    let (mut host, mut plugin) = shown();
+    host.set_themes(kinds("Lokyr Dark"));
+    host.deliver(&mut plugin).unwrap();
+    let _ = host.take_done();
+    // Shown of the menu: its conversion asked at once, once.
+    choose(&mut host, &mut plugin, "Night");
+    let convert = Request::ConvertTheme("Night".to_owned());
+    assert!(host.take_done().contains(&convert));
+    assert_eq!(
+        lock(&page(&mut host, &mut plugin)).as_deref(),
+        Some("editor-itermcolors")
+    );
+    // Cancelled: not asked again as it shows on, but of its lock.
+    let id = plugin.editor.converting.unwrap();
+    answer(&mut host, &mut plugin, id, None);
+    choose(&mut host, &mut plugin, "Night");
+    assert!(!host.take_done().contains(&convert));
+    host.ui_event(&mut plugin, &click(LOCK)).unwrap();
+    assert!(host.take_done().contains(&convert));
+    // Converted: its tokens read anew, of none before, as the host's
+    // fixture had none; the lock gone as the list tells its new format.
+    assert_eq!(plugin.editor.tokens, None);
+    let mut tokens = theme_tokens();
+    let mut night = tokens[0].clone();
+    night.theme = "Night".to_owned();
+    tokens.push(night);
+    host.set_theme_tokens(tokens);
+    let id = plugin.editor.converting.unwrap();
+    answer(&mut host, &mut plugin, id, Some("Night"));
+    assert_eq!(
+        plugin
+            .editor
+            .tokens
+            .as_ref()
+            .map(|tokens| tokens.theme.as_str()),
+        Some("Night")
+    );
+    let mut converted = kinds("Lokyr Dark");
+    converted.themes[3].format = lokyr_plugin_sdk::host::ThemeFormat::Lokyr;
+    host.set_themes(converted);
+    host.deliver(&mut plugin).unwrap();
+    assert_eq!(lock(&page(&mut host, &mut plugin)), None);
+    // Another one shown, then it again: asked again.
+    choose(&mut host, &mut plugin, "Paper");
+    host.set_themes(kinds("Lokyr Dark"));
+    host.deliver(&mut plugin).unwrap();
+    let _ = host.take_done();
+    choose(&mut host, &mut plugin, "Night");
+    assert!(host.take_done().contains(&convert));
+}
+
+#[test]
+fn the_editor_entered_of_an_itermcolors_theme_in_force_asks_for_its_conversion() {
+    let mut host = FakeHost::new("lokyr/settings").with_manifest(crate::MANIFEST);
+    host.pane(lokyr_plugin_sdk::host::PaneId(1));
+    host.set_themes(kinds("Night"));
+    // The tokens of the theme in force, Night's.
+    let mut tokens = theme_tokens();
+    tokens[0].theme = "Night".to_owned();
+    host.set_theme_tokens(tokens);
+    let mut plugin = SettingsPage::default();
+    host.activate(&mut plugin).unwrap();
+    host.show_page(crate::THEMES);
+    host.deliver(&mut plugin).unwrap();
+    host.render(&mut plugin, &themes_page()).unwrap();
+    let _ = host.take_done();
+    host.ui_event(&mut plugin, &click("themes-side:editor"))
+        .unwrap();
+    assert!(
+        host.take_done()
+            .contains(&Request::ConvertTheme("Night".to_owned()))
+    );
+}
+
+#[test]
+fn the_theme_s_button_is_a_menu_of_the_user_s_themes_then_of_each_appearance_s() {
+    let (mut host, mut plugin) = shown();
+    host.set_themes(kinds("Lokyr Dark"));
     host.deliver(&mut plugin).unwrap();
     // The button: the theme shown, the one in force, of a menu's chevron.
     let tree = page(&mut host, &mut plugin);
