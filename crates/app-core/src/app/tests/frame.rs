@@ -649,8 +649,12 @@ fn a_pane_s_output_asks_for_its_own_window_s_frame_alone() {
     // Both windows settle, their frames drawn, until neither has asked
     // for one for 200 ms, as a title of the first's that the system
     // tells late would ask for one.
-    let mut quiet = Instant::now();
+    let (mut quiet, settling) = (Instant::now(), Instant::now());
     while quiet.elapsed() < Duration::from_millis(200) {
+        assert!(
+            settling.elapsed() < Duration::from_secs(20),
+            "the windows settle"
+        );
         fake.deliver_wake(&mut app);
         for window in [first, second] {
             if fake.window(window).unwrap().frame_requested {

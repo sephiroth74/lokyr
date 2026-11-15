@@ -1753,7 +1753,9 @@ impl Workspace {
         true
     }
 
-    /// Gives `pane` its tab's keyboard; whether it is open.
+    /// Gives `pane` its tab's keyboard; whether it is open. A zoom of
+    /// another pane of its tab ends, so that the keyboard is on a pane that
+    /// shows.
     pub fn focus_pane(&mut self, pane: PaneId) -> bool {
         let Some(&tab_id) = self.tab_of.get(&pane) else {
             return false;
@@ -1761,6 +1763,10 @@ impl Workspace {
         let Some(tab) = self.tabs.get_mut(&tab_id) else {
             return false;
         };
+        let unzoomed = tab.zoomed.is_some_and(|zoomed| zoomed != pane);
+        if unzoomed {
+            tab.zoomed = None;
+        }
         if tab.active != pane {
             tab.active = pane;
             self.take_active_look(tab_id);
@@ -1768,6 +1774,9 @@ impl Workspace {
                 pane: pane.into(),
                 tab: tab_id.into(),
             });
+        }
+        if unzoomed {
+            self.changed(WorkspaceEvent::LayoutChanged { tab: tab_id.into() });
         }
         true
     }
@@ -1822,8 +1831,8 @@ impl Workspace {
         done
     }
 
-    /// Zooms `pane`, which takes its tab's whole room, or, with `None`,
-    /// ends `tab`'s zoom; whether `pane` is one of `tab`'s.
+    /// Zooms `pane`, which takes its tab's whole room and its keyboard, or,
+    /// with `None`, ends `tab`'s zoom; whether `pane` is one of `tab`'s.
     pub fn zoom(&mut self, tab: TabId, pane: Option<PaneId>) -> bool {
         let Some(shown) = self.tabs.get_mut(&tab) else {
             return false;
@@ -1834,6 +1843,10 @@ impl Workspace {
         if shown.zoomed != pane {
             shown.zoomed = pane;
             self.changed(WorkspaceEvent::LayoutChanged { tab: tab.into() });
+        }
+        // The keyboard on the pane that shows.
+        if let Some(pane) = pane {
+            self.focus_pane(pane);
         }
         true
     }

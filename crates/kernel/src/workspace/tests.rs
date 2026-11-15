@@ -406,6 +406,44 @@ fn the_settings_open_in_a_window_of_their_own_which_takes_no_tab_and_closes_with
 }
 
 #[test]
+fn the_keyboard_and_a_zoom_stay_on_one_pane() {
+    let mut workspace = Workspace::new();
+    let a = pane("sleep 10");
+    let a_id = a.id();
+    let window = workspace.open_window(a);
+    let tab = workspace.window(window).unwrap().active_tab();
+    let b = workspace
+        .split(a_id, Direction::Horizontal, pane("sleep 10"), Side::Second)
+        .unwrap();
+    // Zoomed of the pane of the keyboard, which another takes: the zoom
+    // ends, its tab laid out anew.
+    assert!(workspace.focus_pane(b));
+    assert!(workspace.zoom(tab, Some(b)));
+    changes(&mut workspace);
+    assert!(workspace.focus_pane(a_id));
+    assert_eq!(workspace.tab(tab).unwrap().zoomed(), None);
+    assert_eq!(
+        changes(&mut workspace),
+        [
+            Change::PaneFocused {
+                pane: a_id.into(),
+                tab: tab.into()
+            },
+            Change::LayoutChanged { tab: tab.into() },
+        ]
+    );
+    // The zoomed pane's own keyboard keeps its zoom.
+    assert!(workspace.zoom(tab, Some(a_id)));
+    changes(&mut workspace);
+    assert!(workspace.focus_pane(a_id));
+    assert_eq!(workspace.tab(tab).unwrap().zoomed(), Some(a_id));
+    assert!(changes(&mut workspace).is_empty());
+    // A zoom of another pane takes the keyboard with it.
+    assert!(workspace.zoom(tab, Some(b)));
+    assert_eq!(workspace.active_pane(window), Some(b));
+}
+
+#[test]
 fn panes_split_zoom_close_and_move_with_their_tabs() {
     let mut workspace = Workspace::new();
     let a = pane("sleep 10");
@@ -430,12 +468,23 @@ fn panes_split_zoom_close_and_move_with_their_tabs() {
     let layout = |workspace: &Workspace, tab| workspace.tab(tab).unwrap().layout().clone();
     assert_eq!(layout(&workspace, tab).panes(), [a_id, b]);
     assert_eq!(workspace.tab_of(b), Some(tab));
-    // The keyboard stays where it was; a zoom ends with a split.
+    // The keyboard stays where it was; a zoom takes it, and ends with a
+    // split.
     assert_eq!(workspace.active_pane(window), Some(a_id));
     assert!(workspace.zoom(tab, Some(b)));
     assert!(workspace.zoom(tab, Some(b)));
-    assert_eq!(changes(&mut workspace), std::slice::from_ref(&laid_out));
+    assert_eq!(
+        changes(&mut workspace),
+        [
+            laid_out.clone(),
+            Change::PaneFocused {
+                pane: b.into(),
+                tab: tab.into()
+            },
+        ]
+    );
     assert_eq!(workspace.tab(tab).unwrap().zoomed(), Some(b));
+    assert_eq!(workspace.active_pane(window), Some(b));
     let c = workspace
         .split(b, Direction::Vertical, pane("sleep 10"), Side::Second)
         .unwrap();

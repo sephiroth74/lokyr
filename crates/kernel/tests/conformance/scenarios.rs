@@ -2654,6 +2654,11 @@ fn workspace(world: &World) -> Scenario {
                         tab: tab(0),
                     }),
                     ws(WorkspaceEvent::LayoutChanged { tab: tab(0) }),
+                    // The zoomed pane takes the keyboard.
+                    ws(WorkspaceEvent::PaneFocused {
+                        pane: pane(0),
+                        tab: tab(0),
+                    }),
                 ],
             },
             Step {
@@ -2677,11 +2682,11 @@ fn workspace(world: &World) -> Scenario {
                         Request::Tabs(w),
                         Response::Tabs(vec![
                             info(t, false, p, vec![p], None),
-                            info(tab(0), true, pane(1), vec![pane(0), pane(1)], Some(pane(0))),
+                            info(tab(0), true, pane(0), vec![pane(0), pane(1)], Some(pane(0))),
                         ]),
                     ),
                     (Request::Layout(tab(0)), Response::Layout(split(None))),
-                    (Request::FocusedPane, Response::Pane(Some(pane(1)))),
+                    (Request::FocusedPane, Response::Pane(Some(pane(0)))),
                     (
                         Request::SetRatio {
                             tab: tab(0),
@@ -2800,10 +2805,6 @@ fn workspace(world: &World) -> Scenario {
                 posts: Vec::new(),
                 heard: vec![
                     ws(WorkspaceEvent::LayoutChanged { tab: tab(0) }),
-                    ws(WorkspaceEvent::PaneFocused {
-                        pane: pane(0),
-                        tab: tab(0),
-                    }),
                     ws(WorkspaceEvent::WindowOpened { window: window(1) }),
                     ws(WorkspaceEvent::TabCreated {
                         tab: tab(1),

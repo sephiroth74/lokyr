@@ -2331,6 +2331,14 @@ impl FakeHost {
         let Some(id) = self.panes.get(&pane).map(|pane| pane.tab) else {
             return;
         };
+        // A zoom of another pane ends, as the app's.
+        let unzoomed = self.tabs.get_mut(&id).is_some_and(|tab| {
+            let other = tab.zoomed.is_some_and(|zoomed| zoomed != pane);
+            if other {
+                tab.zoomed = None;
+            }
+            other
+        });
         if self.tabs.get(&id).is_some_and(|tab| tab.active != pane) {
             let before = self.look(id);
             if let Some(tab) = self.tabs.get_mut(&id) {
@@ -2339,6 +2347,9 @@ impl FakeHost {
             // It takes its new active pane's title, as the app's.
             self.looked(id, &before);
             self.changed(WorkspaceEvent::PaneFocused { pane, tab: id });
+        }
+        if unzoomed {
+            self.changed(WorkspaceEvent::LayoutChanged { tab: id });
         }
     }
 
@@ -2507,7 +2518,8 @@ impl FakeHost {
         self.new_tab_of(pane, tab, None);
     }
 
-    /// Has `pane` take `tab`'s whole room, or ends its zoom with `None`.
+    /// Has `pane` take `tab`'s whole room and its keyboard, or ends its
+    /// zoom with `None`.
     fn zoom(&mut self, id: TabId, pane: Option<PaneId>) {
         let Some(tab) = self.tabs.get_mut(&id) else {
             return;
@@ -2518,6 +2530,10 @@ impl FakeHost {
         if tab.zoomed != pane {
             tab.zoomed = pane;
             self.changed(WorkspaceEvent::LayoutChanged { tab: id });
+        }
+        // The keyboard on the pane that shows, as the app's.
+        if let Some(pane) = pane {
+            self.focus_pane(pane);
         }
     }
 
