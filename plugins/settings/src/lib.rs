@@ -358,9 +358,11 @@ impl Plugin for SettingsPage {
                         self.edit_theme(cx, name)?;
                     }
                 }
-                // The themes' list read, or anew: their cards.
+                // The themes' list read, or anew: their cards, of a page
+                // that its window's closing in the same batch may have
+                // taken, which fails no write of the call.
                 Event::ThemesChanged if self.themes_shown => {
-                    cx.request_render(themes_page())?;
+                    let _ = cx.request_render(themes_page());
                 }
                 Event::PageHidden(page) if page == THEMES => {
                     self.themes_shown = false;

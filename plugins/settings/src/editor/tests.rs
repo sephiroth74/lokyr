@@ -977,3 +977,75 @@ fn the_lock_of_the_theme_in_force_shows_its_copy_of_its_own_values() {
     assert_eq!(lock(&page(&mut host, &mut plugin)), None);
     assert_eq!(plugin.editor.original("accent"), Some(Some("#4c9bff")));
 }
+
+#[test]
+fn values_typed_are_written_as_the_editor_hides_and_left_behind_as_another_theme_shows() {
+    let changed = |text: &str| UiEventKind::InputChanged {
+        text: text.to_owned(),
+        revision: 1,
+    };
+    // Typed, then the page hidden within the pause: written once.
+    let (mut host, mut plugin) = editing("accent");
+    page(&mut host, &mut plugin);
+    host.ui_event(&mut plugin, &typed("accent", changed("#00ff00")))
+        .unwrap();
+    host.hide_page();
+    host.deliver(&mut plugin).unwrap();
+    assert_eq!(written(&mut host), [set_paper("accent", Some("#00ff00"))]);
+    host.advance(PAUSE);
+    host.deliver(&mut plugin).unwrap();
+    assert!(written(&mut host).is_empty());
+    // A color picked, then the page hidden: written, the panel closed.
+    let (mut host, mut plugin) = editing("accent");
+    page(&mut host, &mut plugin);
+    host.ui_event(&mut plugin, &click(&format!("{SWATCH}accent")))
+        .unwrap();
+    host.post(Event::ColorPicked {
+        color: ThemeColor::hex(0x123456),
+    });
+    host.deliver(&mut plugin).unwrap();
+    let _ = host.take_done();
+    host.hide_page();
+    host.deliver(&mut plugin).unwrap();
+    let done = host.take_done();
+    assert!(
+        done.contains(&set_paper("accent", Some("#123456"))),
+        "{done:?}"
+    );
+    assert!(done.contains(&Request::CloseColorPanel), "{done:?}");
+    // A whole value typed, then another theme shown: written to its own
+    // theme at once; a refused one forgotten, of neither theme.
+    let (mut host, mut plugin) = editing("accent");
+    page(&mut host, &mut plugin);
+    host.ui_event(&mut plugin, &typed("accent", changed("#abcdef")))
+        .unwrap();
+    choose(&mut host, &mut plugin, "Dracula");
+    assert_eq!(written(&mut host), [set_paper("accent", Some("#abcdef"))]);
+    host.advance(PAUSE);
+    host.deliver(&mut plugin).unwrap();
+    assert!(written(&mut host).is_empty());
+    // The row chosen still, of the theme shown again.
+    choose(&mut host, &mut plugin, "Paper");
+    host.ui_event(
+        &mut plugin,
+        &typed(
+            "accent",
+            UiEventKind::Submit {
+                text: "mix(".to_owned(),
+                shift: false,
+            },
+        ),
+    )
+    .unwrap();
+    assert!(plugin.editor.refused.contains_key("accent"));
+    choose(&mut host, &mut plugin, "Dracula");
+    assert!(plugin.editor.typed.is_empty() && plugin.editor.refused.is_empty());
+    choose(&mut host, &mut plugin, "Paper");
+    let tree = page(&mut host, &mut plugin);
+    match find(&tree, &format!("{VALUE}accent")).map(|node| &node.kind) {
+        Some(Kind::Field(field)) => assert_eq!(field.text.as_deref(), Some("#4c9bff")),
+        other => panic!("{other:?}"),
+    }
+    assert!(find(&tree, "editor-refused:accent").is_none());
+    assert!(written(&mut host).is_empty());
+}

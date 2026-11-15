@@ -165,9 +165,10 @@ impl Editor {
     /// Hides it, as the page shows an appearance's themes or hides: a
     /// theme that it previews goes, the one in force back.
     pub(crate) fn hide(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
-        self.stop_coloring(cx)?;
-        self.originals.clear();
+        // Of no render more, as its page may be gone; what waits written.
         self.shown = false;
+        self.leave_theme(cx)?;
+        self.originals.clear();
         if self.previewed.take().is_some() {
             cx.preview_theme(None)?;
         }
@@ -186,7 +187,7 @@ impl Editor {
                 let other = tokens.as_ref().map(|tokens| &tokens.theme)
                     != self.tokens.as_ref().map(|tokens| &tokens.theme);
                 if other {
-                    self.stop_coloring(cx)?;
+                    self.leave_theme(cx)?;
                 }
                 let changed = changed(self.tokens.as_ref(), tokens.as_ref());
                 self.tokens = tokens;
@@ -200,7 +201,7 @@ impl Editor {
                     }
                     self.lit_timer = Some(cx.start_timer(LIT, false)?);
                 }
-                cx.request_render(themes_page())?;
+                self.ask_render(cx)?;
                 Ok(true)
             }
             // A color chosen in the panel: shown at once, written once the
@@ -222,7 +223,7 @@ impl Editor {
                     cx.cancel_timer(pause)?;
                 }
                 self.color_pause = Some(cx.start_timer(COLOR_PAUSE, false)?);
-                cx.request_render(themes_page())?;
+                self.ask_render(cx)?;
                 Ok(true)
             }
             Event::Timer { id } if self.color_pause == Some(*id) => {
@@ -251,7 +252,7 @@ impl Editor {
                 self.lit_timer = None;
                 self.lit.clear();
                 if self.shown {
-                    cx.request_render(themes_page())?;
+                    self.ask_render(cx)?;
                 }
                 Ok(true)
             }
@@ -272,7 +273,7 @@ impl Editor {
                     self.originals.remove(name);
                     self.tokens = cx.theme_tokens(self.previewed.as_deref())?;
                     self.remember();
-                    cx.request_render(themes_page())?;
+                    self.ask_render(cx)?;
                 }
                 Ok(true)
             }
@@ -300,13 +301,13 @@ impl Editor {
             (UiEventKind::InputChanged { text, .. }, FILTER) => {
                 if *text != self.filter {
                     text.clone_into(&mut self.filter);
-                    cx.request_render(themes_page())?;
+                    self.ask_render(cx)?;
                 }
             }
             (UiEventKind::Click, FILTER_CLEAR) => {
                 cx.set_text(themes_page(), FILTER, "", u64::MAX)?;
                 self.filter.clear();
-                cx.request_render(themes_page())?;
+                self.ask_render(cx)?;
             }
             (UiEventKind::Click, LOCK) => self.unlock(cx)?,
             (UiEventKind::Click, GUIDE) => cx.open(GUIDE_ADDRESS)?,
@@ -357,7 +358,7 @@ impl Editor {
                 };
                 self.picked = (self.picked.as_ref() != Some(&pick)).then_some(pick);
                 self.follow_pick(cx)?;
-                cx.request_render(themes_page())?;
+                self.ask_render(cx)?;
             }
             // A swatch: its row chosen, the color panel of its color, of a
             // theme that it edits.
@@ -369,7 +370,7 @@ impl Editor {
                 } else {
                     self.follow_pick(cx)?;
                 }
-                cx.request_render(themes_page())?;
+                self.ask_render(cx)?;
             }
             _ => return Ok(false),
         }
@@ -380,7 +381,7 @@ impl Editor {
     /// the color panel of another theme closed.
     pub(crate) fn choose(&mut self, cx: &mut Cx<'_>, name: &str) -> Result<(), Error> {
         if self.shown_theme() != Some(name) {
-            self.stop_coloring(cx)?;
+            self.leave_theme(cx)?;
         }
         self.show_theme(cx, name)?;
         self.offer_conversion(cx)
@@ -413,7 +414,7 @@ impl Editor {
         if text.is_empty() || text == now {
             self.typed.remove(name);
             if self.refused.remove(name).is_some() {
-                cx.request_render(themes_page())?;
+                self.ask_render(cx)?;
             }
             return Ok(());
         }
@@ -430,7 +431,36 @@ impl Editor {
             }
             Err(_) => return Ok(()),
         }
-        cx.request_render(themes_page())
+        self.ask_render(cx)
+    }
+
+    /// Asks its page's render while it shows alone: a page gone, as the
+    /// settings window closed, refuses it, which would fail the call and
+    /// drop its writes.
+    fn ask_render(&self, cx: &mut Cx<'_>) -> Result<(), Error> {
+        if self.shown {
+            cx.request_render(themes_page())
+        } else {
+            Ok(())
+        }
+    }
+
+    /// Leaves the theme shown, as another shows or the Editor hides: the
+    /// values typed for it and whole written into its file, as the field's
+    /// leaving does, and the color panel's last color; then its typed
+    /// values, their refusals and the typing's pause gone, and the panel
+    /// closed.
+    fn leave_theme(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
+        let names: Vec<String> = self.typed.keys().cloned().collect();
+        for name in names {
+            self.write(cx, &name, false)?;
+        }
+        if let Some(pause) = self.pause.take() {
+            cx.cancel_timer(pause)?;
+        }
+        self.typed.clear();
+        self.refused.clear();
+        self.stop_coloring(cx)
     }
 
     /// Opens the color panel of the color `name` of the theme shown, or
@@ -503,7 +533,7 @@ impl Editor {
                 self.refused.insert(name.to_owned(), error.message);
             }
         }
-        cx.request_render(themes_page())
+        self.ask_render(cx)
     }
 
     /// Keeps the values of the theme shown's colors as its file gives them,
@@ -548,7 +578,7 @@ impl Editor {
         let now = self.token(name).and_then(|token| own_value(token, &theme));
         self.typed.remove(name);
         if now == original {
-            return cx.request_render(themes_page());
+            return self.ask_render(cx);
         }
         match cx.set_theme_value(&theme, name, original.as_deref()) {
             Ok(()) => {
@@ -558,7 +588,7 @@ impl Editor {
                 self.refused.insert(name.to_owned(), error.message);
             }
         }
-        cx.request_render(themes_page())
+        self.ask_render(cx)
     }
 
     /// The color `name` of the theme shown, its terminal's or a token, as
@@ -635,7 +665,7 @@ impl Editor {
         self.lit.clear();
         self.tokens = cx.theme_tokens(self.previewed.as_deref())?;
         self.remember();
-        cx.request_render(themes_page())
+        self.ask_render(cx)
     }
 
     /// Opens the file of the color `name` at its line, or copies its line
