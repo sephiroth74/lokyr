@@ -58,7 +58,7 @@ Details in [PACKAGE-MANAGER.md](PACKAGE-MANAGER.md).
 
 ## IPC
 
-IPC comes in F3b ([ROADMAP](ROADMAP.md#f3b--mcp-and-agents)).
+IPC is put off, of no phase yet ([ROADMAP](ROADMAP.md#put-off-ipc-mcp-and-the-agents-hooks)); its design stays here, as does the MCP server's below.
 
 - **Socket location**: a Unix socket in a directory with 0700 permissions (`$XDG_RUNTIME_DIR/lokyr/` on Linux, `$TMPDIR/lokyr-<uid>/` on macOS).
 - **Who can connect**: every connection is checked against the peer's credentials (`getpeereid`). Only the same account is accepted.

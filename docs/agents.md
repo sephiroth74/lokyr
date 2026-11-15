@@ -41,6 +41,6 @@ notify = true                                        # the notifications while i
 dock-badge = true                                    # the Dock's count of the agents that wait
 ```
 
-## Next: Lokyr as an MCP server
+## Later, perhaps: Lokyr as an MCP server
 
-In version 1.2, Lokyr becomes a server of the Model Context Protocol: an agent starts `lokyr +mcp` and can open a pane of its own, run a command in it, and read its output and its exit code, within its own panes, any other after you confirm. The [roadmap](ROADMAP.md#f3b--mcp-and-agents) tells what comes.
+Lokyr could become a server of the Model Context Protocol: an agent would start `lokyr +mcp` and open a pane of its own, run a command in it, and read its output and its exit code, within its own panes, any other after you confirm. It is put off: whether it is worth it, as agents run commands of their own shell, is decided later, as the [roadmap](ROADMAP.md#put-off-ipc-mcp-and-the-agents-hooks) tells.
