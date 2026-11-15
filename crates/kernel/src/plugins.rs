@@ -4844,10 +4844,15 @@ fn opening(target: &str) -> Result<String, String> {
 
 /// Whether opening `target` would open something: a URL of one of
 /// [`SCHEMES`], or a path, absolute or from `~`, that is there, as a link
-/// that leads somewhere.
+/// that leads somewhere. A path on a volume whose file system may not
+/// answer, as a network's, is left alone, of no look that would hold the
+/// plugin's thread, the main one's for most: not known to be there, as a
+/// click still opens it.
 fn opens(target: &str) -> bool {
-    opening(target)
-        .is_ok_and(|target| !target.starts_with('/') || std::path::Path::new(&target).exists())
+    opening(target).is_ok_and(|target| {
+        let path = std::path::Path::new(&target);
+        !target.starts_with('/') || (!lokyr_pty::may_wait(path) && path.exists())
+    })
 }
 
 /// The host of one plugin's call.

@@ -10,6 +10,9 @@ use std::path::PathBuf;
 
 #[cfg(unix)]
 mod unix;
+mod volumes;
+
+pub use volumes::may_wait;
 
 #[cfg(unix)]
 pub use unix::{Batch, Next, Pty, PtyReader, PtyWriter, ReadAhead, host_name, spawn};
