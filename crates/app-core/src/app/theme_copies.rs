@@ -219,13 +219,7 @@ impl<B: Backend> App<B> {
             themes::copy_of(&resolved, &name)
         };
         // A file made new alone, never one written over.
-        let written = fs::create_dir_all(&ask.folder).and_then(|()| {
-            fs::OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(&path)?
-                .write_all(text.as_bytes())
-        });
+        let written = fs::create_dir_all(&ask.folder).and_then(|()| write_new(&path, &text));
         if let Err(error) = written {
             self.unanswered(ask.answer);
             let why = format!("{}: {error}", shown_path(&path));
@@ -337,16 +331,17 @@ impl<B: Backend> App<B> {
         let mut converted = Ok(());
         for name in &ask.names {
             let path = ask.folder.join(format!("{name}.toml"));
+            // Of Lokyr's format already, as a file of both appearances
+            // beside one of its themes: that file stays the theme's.
+            if fs::symlink_metadata(&path).is_ok() {
+                continue;
+            }
             let wrote = places
                 .resolve(name, &builtins)
                 .map_err(|error| error.to_string())
                 .and_then(|resolved| {
                     let text = themes::copy_of(&resolved, name);
-                    fs::OpenOptions::new()
-                        .write(true)
-                        .create_new(true)
-                        .open(&path)
-                        .and_then(|mut file| file.write_all(text.as_bytes()))
+                    write_new(&path, &text)
                         .map_err(|error| format!("{}: {error}", shown_path(&path)))
                 });
             match wrote {
@@ -491,6 +486,22 @@ fn variant_arg(variant: ThemeVariant) -> Arg<'static> {
         ThemeVariant::Light => "light",
         ThemeVariant::Dark => "dark",
     })
+}
+
+/// Writes `text` into a new file at `path`, never over one there; a file
+/// made whose write fails taken away, so that no part of a theme shadows
+/// another of its name.
+fn write_new(path: &Path, text: &str) -> std::io::Result<()> {
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)?;
+    let written = file.write_all(text.as_bytes()).and_then(|()| file.flush());
+    if written.is_err() {
+        drop(file);
+        let _ = fs::remove_file(path);
+    }
+    written
 }
 
 /// Whether a file of the folder `folder` names a theme `name`, a link that

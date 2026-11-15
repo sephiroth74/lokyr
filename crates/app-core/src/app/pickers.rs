@@ -108,8 +108,8 @@ pub(super) fn font_styles<B: Backend>(family: &str) -> Vec<String> {
 }
 
 /// The themes of the files of `directory`, each of `origin` and of its
-/// file's format, as their files name them, of its first
-/// [`themes::MOST_THEME_FILES`] entries;
+/// file's format, as their files name them, those of Lokyr's format first,
+/// of its first [`themes::MOST_THEME_FILES`] entries;
 /// none of a folder that is not there, nor of a file that is no theme's.
 pub(super) fn themes_in(directory: &Path, origin: ThemeOrigin) -> Vec<ThemeInfo> {
     let Ok(entries) = fs::read_dir(directory) else {
@@ -137,6 +137,9 @@ pub(super) fn themes_in(directory: &Path, origin: ThemeOrigin) -> Vec<ThemeInfo>
             });
         }
     }
+    // A name of both formats, Lokyr's first, as the theme resolves of its
+    // file of Lokyr's format, whatever the folder's order.
+    found.sort_by_key(|theme| theme.format != ThemeFormat::Lokyr);
     found
 }
 

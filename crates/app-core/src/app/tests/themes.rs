@@ -1335,6 +1335,7 @@ impl plugins::Plugin for Editing {
             "editing.copy",
             "editing.convert",
             "editing.convert-pair",
+            "editing.convert-light",
             "editing.new",
         ] {
             cx.register_command(Command {
@@ -1353,6 +1354,7 @@ impl plugins::Plugin for Editing {
         let id = match name {
             "editing.copy" => cx.copy_theme("Held Dawn")?,
             "editing.convert-pair" => cx.convert_theme("Pair (Dark)")?,
+            "editing.convert-light" => cx.convert_theme("Pair (Light)")?,
             "editing.new" => cx.new_theme(lokyr_kernel::themes::ThemeVariant::Dark)?,
             _ => cx.convert_theme("Grays")?,
         };
@@ -1803,5 +1805,79 @@ fn the_color_panel_tells_its_plugin_and_a_color_shows_before_it_is_written() {
     run_until(&mut fake, &mut app, |_, _| {
         heard.borrow().contains(&"theme".to_owned())
     });
+    let _ = std::fs::remove_dir_all(&directory);
+}
+
+#[test]
+fn a_name_of_both_formats_is_listed_of_lokyr_s_and_its_pair_converts_around_it() {
+    let directory =
+        std::env::temp_dir().join(format!("lokyr-app-themes-both-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&directory);
+    let themes = directory.join("themes");
+    std::fs::create_dir_all(&themes).unwrap();
+    // A name of both formats, and a file of both appearances beside a
+    // file of Lokyr's format of one of them.
+    std::fs::write(themes.join("Both.toml"), theme("#123456")).unwrap();
+    std::fs::write(themes.join("Both.itermcolors"), grays()).unwrap();
+    let pair = grays().replace(
+        "</dict></plist>",
+        "<key>Background Color (Light)</key><dict><key>Red Component</key><real>1</real>\
+         <key>Green Component</key><real>1</real><key>Blue Component</key><real>1</real>\
+         <key>Color Space</key><string>sRGB</string></dict>\
+         <key>Foreground Color (Light)</key><dict><key>Red Component</key><real>0</real>\
+         <key>Green Component</key><real>0</real><key>Blue Component</key><real>0</real>\
+         <key>Color Space</key><string>sRGB</string></dict></dict></plist>",
+    );
+    std::fs::write(themes.join("Pair.itermcolors"), pair).unwrap();
+    let mine = theme("#0a0b0c");
+    std::fs::write(themes.join("Pair (Dark).toml"), &mine).unwrap();
+    // Listed of Lokyr's format, whatever the folder's order.
+    let listed = pickers::themes_in(&themes, lokyr_kernel::plugins::host::ThemeOrigin::Folder);
+    let format = |name: &str| {
+        listed
+            .iter()
+            .find(|theme| theme.name == name)
+            .map(|theme| theme.format)
+    };
+    use lokyr_kernel::plugins::host::ThemeFormat;
+    assert_eq!(format("Both"), Some(ThemeFormat::Lokyr));
+    assert_eq!(format("Pair (Dark)"), Some(ThemeFormat::Lokyr));
+    assert_eq!(format("Pair (Light)"), Some(ThemeFormat::Itermcolors));
+    // The pair's light theme converted: its file written, the dark one's
+    // of Lokyr's format kept as it was, the `.itermcolors` file gone.
+    let path = directory.join("config.toml");
+    std::fs::write(&path, "").unwrap();
+    let answers = EditorAnswers::default();
+    let mut app = App::new(None, Config::read(&path).unwrap(), Some(path.clone()))
+        .with_program(quiet())
+        .with_plugin("editing", Box::new(Editing(std::rc::Rc::clone(&answers))));
+    let mut fake = Fake::default();
+    fake.start(&mut app);
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    while app.theme_catalog.borrow().listed.is_none() && std::time::Instant::now() < deadline {
+        pickers::theme_list(
+            &app.theme_catalog,
+            (&app.theme_places(), app.waker.as_ref()),
+            fake.appearance(),
+            &app.config.theme,
+        );
+        app.take_themes(&mut fake);
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    fake.send_app(
+        &mut app,
+        AppEvent::Command("editing.convert-light".to_owned()),
+    );
+    let asked = fake.alerts().last().cloned().expect("a question");
+    fake.answer_alert(&mut app, asked.id, 0);
+    run_until(&mut fake, &mut app, |_, _| !answers.borrow().0.is_empty());
+    assert_eq!(answers.borrow().0[0].1, Some("Pair (Light)".to_owned()));
+    let light = std::fs::read_to_string(themes.join("Pair (Light).toml")).unwrap();
+    assert!(light.contains("background = \"#ffffff\""), "{light}");
+    assert_eq!(
+        std::fs::read_to_string(themes.join("Pair (Dark).toml")).unwrap(),
+        mine
+    );
+    assert!(!themes.join("Pair.itermcolors").exists());
     let _ = std::fs::remove_dir_all(&directory);
 }
