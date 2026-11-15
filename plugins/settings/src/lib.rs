@@ -25,7 +25,7 @@ use lokyr_plugin_sdk::command::{Args, Category, Error, Value};
 use lokyr_plugin_sdk::host::{
     FontFace, SettingBinding, SettingKey, SettingKind, Settings, SettingsSection,
 };
-use lokyr_plugin_sdk::message::{Data, Event, SETTINGS_CHANGED, THEMES_CHANGED};
+use lokyr_plugin_sdk::message::{Data, Event, SETTINGS_CHANGED, THEME_CHANGED, THEMES_CHANGED};
 use lokyr_plugin_sdk::plugin::{Cx, Plugin};
 use lokyr_plugin_sdk::theme::{TOKENS, ThemeVariant};
 use lokyr_plugin_sdk::ui::{Anchor, PanelId, PanelOptions, Role as PanelRole, UiEvent, ViewId};
@@ -240,6 +240,8 @@ pub struct SettingsPage {
     /// themes it shows, the one in force's until its sidebar chooses one.
     themes_shown: bool,
     themes_variant: Option<ThemeVariant>,
+    /// The Theme Inspector's page.
+    inspector: inspector::Inspector,
     /// The theme of the card whose context menu shows, of its appearance.
     theme_menu: Option<(ThemeVariant, String)>,
     /// The font of the item highlighted last, which shows once the timer
@@ -300,7 +302,7 @@ fn page_settings(cx: &mut Cx<'_>) -> Result<Settings, Error> {
 
 impl Plugin for SettingsPage {
     fn activate(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
-        cx.subscribe(&[SETTINGS_CHANGED, THEMES_CHANGED])
+        cx.subscribe(&[SETTINGS_CHANGED, THEMES_CHANGED, THEME_CHANGED])
     }
 
     fn catalogs(&self) -> lokyr_plugin_sdk::plugin::Catalogs {
@@ -310,6 +312,10 @@ impl Plugin for SettingsPage {
     fn on_event(&mut self, cx: &mut Cx<'_>, events: &[Event]) -> Result<(), Error> {
         let mut again = false;
         for event in events {
+            // The Theme Inspector's page's.
+            if self.inspector.on_event(cx, event)? {
+                continue;
+            }
             match event {
                 // The page shows at its first section, as its sidebar does.
                 Event::PageShown(page) if page == THEMES => {
@@ -410,6 +416,9 @@ impl Plugin for SettingsPage {
     }
 
     fn on_ui_event(&mut self, cx: &mut Cx<'_>, event: &UiEvent) -> Result<(), Error> {
+        if self.inspector.on_ui_event(cx, event)? {
+            return Ok(());
+        }
         let key = event.key.0.as_str();
         // An item of a theme's card's context menu: the theme used, or a
         // new theme made of it, as the app asks its name.
@@ -714,6 +723,9 @@ impl Plugin for SettingsPage {
     }
 
     fn render(&mut self, cx: &mut Cx<'_>, view: &ViewId) -> Option<Node> {
+        if let Some(tree) = self.inspector.render(cx, view) {
+            return tree;
+        }
         if *view == themes_page() {
             return Some(themes_tree(cx, self.themes_variant));
         }
@@ -3180,6 +3192,8 @@ fn small() -> Style {
         ..secondary()
     }
 }
+
+mod inspector;
 
 #[cfg(test)]
 mod tests;

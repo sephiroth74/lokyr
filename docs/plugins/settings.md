@@ -2,7 +2,7 @@
 
 <sub>`lokyr/settings` · bundled · [source](../../plugins/settings)</sub>
 
-The Settings, Keys and Themes pages of the settings window: every key of your config, Lokyr's own and the bundled plugins', by its section, of what it does, the platforms where it applies and its value in force, which you change there, Lokyr writing it into your config file; every binding of keys; and every theme, of a preview of its colors.
+The Settings, Keys, Themes and Theme Inspector pages of the settings window: every key of your config, Lokyr's own and the bundled plugins', by its section, of what it does, the platforms where it applies and its value in force, which you change there, Lokyr writing it into your config file; every binding of keys; every theme, of a preview of its colors; and every color of the theme in force, of where it comes from.
 
 ## The page
 
@@ -40,6 +40,15 @@ The Settings, Keys and Themes pages of the settings window: every key of your co
 - **Import…**, beside it, shows the system's open panel, of `.itermcolors` and `.toml` files, several chosen at once, as View › Import Themes… does: each that holds themes is copied into the themes' folder as it is, one question asking whether to replace the files of a name there already or to skip them; the themes show at once, and an alert tells how many were imported, by their names, and the files that were not, as one that holds no theme.
 - **A card's context menu**, of a secondary click, at the pointer, has **Use**, as a click, and **Duplicate…**, a new theme of every color of the card's, as View › New Theme from Current… makes it: Lokyr asks its name, writes it into the themes' folder, uses it and opens it in your editor.
 
+## The Theme Inspector page
+
+- **The window's tab Theme Inspector**, after Themes, shows every color of the theme in force, its tokens, at its left: by groups, as `text`, `accent`, `tabs` or a plugin's, each of a swatch of its color over the terminal's background, its name, its value, as `#4c9bff99`, and where it comes from: a theme's file and its line, of the theme itself or of one that it extends, a theme of no file, as Lokyr Dark, or its rule, as `accent / 60%`, as [the authors' guide](../themes/authoring.md) tells.
+- **The field at its top** filters the tokens as you type, of their names, values and origins.
+- **Saved, a theme's file shows at once**: the tokens that changed are lit for three seconds.
+- **The button at a token's right** opens its theme's file at its line in your editor, or, for a token of no file of yours, copies its line, as `"focus.ring" = "accent / 60%"`, to paste into a theme.
+- **The theme's button** shows a menu of every theme: the one chosen shows in every window while the page shows, as the palette's picker previews it, and its colors in the page; the theme in force comes back as the page hides.
+- At its right, the specimens of the terminal and of the interface of the theme are to come.
+
 ## Commands
 
 It has no command: Lokyr › Open Settings Window opens its page.
@@ -59,4 +68,4 @@ The Settings page goes; the settings window shows its other pages.
 
 ## Permissions
 
-It asks for the config's settings, `config`, which Lokyr's own plugins alone may hold: it reads every key of the config and of the plugins' sections, with their schemas, and writes the keys that you change into the config file.
+It asks to write the clipboard, `clipboard-write`, for a token's line that the Theme Inspector copies; to show a theme or a font in place of the one in force, `appearance-write`; and for the config's settings, `config`, which Lokyr's own plugins alone may hold: it reads every key of the config and of the plugins' sections, with their schemas, and writes the keys that you change into the config file.
