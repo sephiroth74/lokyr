@@ -582,11 +582,13 @@ impl FakeHost {
                         name: "Lokyr Light".to_owned(),
                         variant: crate::theme::ThemeVariant::Light,
                         origin: host::ThemeOrigin::BuiltIn,
+                        format: host::ThemeFormat::Lokyr,
                     },
                     host::ThemeInfo {
                         name: "Lokyr Dark".to_owned(),
                         variant: crate::theme::ThemeVariant::Dark,
                         origin: host::ThemeOrigin::BuiltIn,
+                        format: host::ThemeFormat::Lokyr,
                     },
                 ],
                 loading: false,

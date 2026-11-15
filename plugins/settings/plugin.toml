@@ -3,7 +3,7 @@
 name = "lokyr/settings"
 kind = "builtin"
 license = "MIT"
-description = "The settings window's first pages: every key of the config and of the plugins' sections, of its text, its platforms and a control of its value, written into the config file; the bindings of keys; the themes, and the Theme Inspector of every token"
+description = "The settings window's first pages: every key of the config and of the plugins' sections, of its text, its platforms and a control of its value, written into the config file; the bindings of keys; the themes, and the Theme Editor of every token"
 
 [activation]
 on = ["page:settings", "page:keys", "page:themes"]
@@ -11,7 +11,7 @@ on = ["page:settings", "page:keys", "page:themes"]
 [capabilities]
 config = true
 open = true
-# The Theme Inspector's line of a token, copied to paste.
+# The Theme Editor's line of a token, copied to paste.
 clipboard-write = true
 # A font's family or style shown in the panes as its menu's item is
 # highlighted.

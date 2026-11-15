@@ -2,19 +2,17 @@
 page-settings = Settings
 page-keys = Keys
 page-themes = Themes
-themes-inspector = Inspector
-inspector-theme = Theme
-inspector-in-force = { $theme } (in force)
-inspector-no-theme = No theme
-inspector-theme-in-force = The theme in force
-inspector-filter = Filter the tokens
-inspector-filter-clear = Empty the filter
-inspector-rule = rule: { $rule }
-inspector-open = Open its line in the editor
-inspector-copy = Copy its line, to paste into a theme
-inspector-copied = Copied: { $line }
-inspector-terminal = Terminal
-inspector-interface = Interface
+themes-editor = Editor
+editor-theme = Theme
+editor-no-theme = No theme
+editor-filter = Filter the tokens
+editor-filter-clear = Empty the filter
+editor-rule = rule: { $rule }
+editor-open = Open its line in the editor
+editor-copy = Copy its line, to paste into a theme
+editor-copied = Copied: { $line }
+editor-terminal = Terminal
+editor-interface = Interface
 part-texts = Texts
 part-panel = Panel
 part-buttons = Buttons
@@ -54,6 +52,7 @@ themes-folder = Show in Finder
 themes-new = New…
 # A theme's card's context menu.
 theme-use = Use
+theme-edit = Edit
 theme-duplicate = Duplicate…
 
 # The sidebar's sections, the config's, then the plugins'.

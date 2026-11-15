@@ -683,8 +683,19 @@ pub enum ThemeOrigin {
     BuiltIn,
 }
 
+/// The format of a theme's file.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ThemeFormat {
+    /// Lokyr's own, of TOML, as the held and the built-in themes are.
+    #[default]
+    Lokyr,
+    /// iTerm2's `.itermcolors`, read as iTerm2 reads it.
+    Itermcolors,
+}
+
 /// A theme that the app can show: its name, as `[theme]` names it, its
-/// variant, and where it comes from.
+/// variant, where it comes from, and the format of its file.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ThemeInfo {
     /// Its name.
@@ -693,6 +704,17 @@ pub struct ThemeInfo {
     pub variant: crate::theme::ThemeVariant,
     /// Where it comes from.
     pub origin: ThemeOrigin,
+    /// The format of its file, Lokyr's of one of no file.
+    #[serde(default)]
+    pub format: ThemeFormat,
+}
+
+impl ThemeInfo {
+    /// Whether it is read-only: a theme that the app holds or builds in,
+    /// which a copy of the user's folder edits, never one of that folder.
+    pub fn is_read_only(&self) -> bool {
+        self.origin != ThemeOrigin::Folder
+    }
 }
 
 /// Where a theme's token comes from, as a read of its tokens tells.

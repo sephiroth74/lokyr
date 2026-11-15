@@ -1,4 +1,4 @@
-//! The Inspector's specimen of the interface: Lokyr's parts drawn of the
+//! The Editor's specimen of the interface: Lokyr's parts drawn of the
 //! theme in force, each a card of its title and its sample, of the tokens
 //! that it takes, as the widgets themselves show them, and as their states
 //! that no pointer makes show, a hovered or pressed button's, a focused
@@ -10,7 +10,7 @@ use lokyr_plugin_sdk::view::{
 };
 
 /// A part's card's key, of its id.
-pub(super) const PART: &str = "inspector-part:";
+pub(super) const PART: &str = "editor-part:";
 
 /// The parts, each of its id, its title's message and the tokens that it
 /// takes, in the cards' order.
@@ -270,7 +270,7 @@ fn sample(id: &str, words: &dyn Fn(&str) -> String) -> Node {
         }),
         "buttons" => row(
             vec![
-                Node::button(words("part-button").as_str()).key("inspector-sample-button"),
+                Node::button(words("part-button").as_str()).key("editor-sample-button"),
                 boxed(
                     vec![small(&words("part-hovered"), "text")],
                     "button.hover.bg",
@@ -289,7 +289,7 @@ fn sample(id: &str, words: &dyn Fn(&str) -> String) -> Node {
         "field" => column(
             vec![
                 Node::field(words("part-field-text"))
-                    .key("inspector-sample-field")
+                    .key("editor-sample-field")
                     .layout(Layout {
                         width: Length::Fraction(1.0),
                         ..Layout::default()
@@ -332,8 +332,8 @@ fn sample(id: &str, words: &dyn Fn(&str) -> String) -> Node {
         ),
         "toggles" => row(
             vec![
-                Node::toggle("pin", true).key("inspector-sample-on"),
-                Node::toggle("pin", false).key("inspector-sample-off"),
+                Node::toggle("pin", true).key("editor-sample-on"),
+                Node::toggle("pin", false).key("editor-sample-off"),
             ],
             6.0,
         ),
@@ -368,7 +368,7 @@ fn sample(id: &str, words: &dyn Fn(&str) -> String) -> Node {
             0,
             Node::container(Vec::new()),
         )
-        .key("inspector-sample-segments"),
+        .key("editor-sample-segments"),
         "tabs" => boxed(
             vec![
                 boxed(
@@ -435,7 +435,7 @@ fn sample(id: &str, words: &dyn Fn(&str) -> String) -> Node {
             .enumerate()
             .map(|(at, state)| {
                 Node::progress(ProgressShape::Bar, state, 0.6)
-                    .key(format!("inspector-sample-progress:{at}").as_str())
+                    .key(format!("editor-sample-progress:{at}").as_str())
                     .layout(Layout {
                         width: Length::Fraction(1.0),
                         height: Length::Points(4.0),
@@ -539,7 +539,7 @@ pub(super) fn cards(chosen: &dyn Fn(&str) -> bool, words: &dyn Fn(&str) -> Strin
         let chunk: Vec<Node> = cards.by_ref().take(ACROSS).collect();
         rows.push(
             Node::container(chunk)
-                .key(format!("inspector-parts:{at}").as_str())
+                .key(format!("editor-parts:{at}").as_str())
                 .layout(Layout {
                     direction: Direction::Row,
                     gap: 10.0,

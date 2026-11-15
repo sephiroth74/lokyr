@@ -14,7 +14,7 @@ use std::path::Path;
 use std::time::{Duration, Instant};
 
 use lokyr_kernel::config::{self, ThemeConfig};
-use lokyr_kernel::plugins::host::{FontFace, Fonts, ThemeInfo, ThemeOrigin, Themes};
+use lokyr_kernel::plugins::host::{FontFace, Fonts, ThemeFormat, ThemeInfo, ThemeOrigin, Themes};
 use lokyr_kernel::themes::{self, ThemeVariant};
 use lokyr_platform_core::{Appearance, Platform};
 use lokyr_text_core::{FontBackend, FontConfig, Name, styles_within};
@@ -107,8 +107,9 @@ pub(super) fn font_styles<B: Backend>(family: &str) -> Vec<String> {
     styles
 }
 
-/// The themes of the files of `directory`, each of `origin`, as their
-/// files name them, of its first [`themes::MOST_THEME_FILES`] entries;
+/// The themes of the files of `directory`, each of `origin` and of its
+/// file's format, as their files name them, of its first
+/// [`themes::MOST_THEME_FILES`] entries;
 /// none of a folder that is not there, nor of a file that is no theme's.
 pub(super) fn themes_in(directory: &Path, origin: ThemeOrigin) -> Vec<ThemeInfo> {
     let Ok(entries) = fs::read_dir(directory) else {
@@ -117,18 +118,22 @@ pub(super) fn themes_in(directory: &Path, origin: ThemeOrigin) -> Vec<ThemeInfo>
     let mut found = Vec::new();
     for entry in entries.take(themes::MOST_THEME_FILES).flatten() {
         let path = entry.path();
-        let theme_file = path
-            .extension()
-            .and_then(|extension| extension.to_str())
-            .is_some_and(|extension| themes::EXTENSIONS.contains(&extension));
-        if !theme_file {
+        let extension = path.extension().and_then(|extension| extension.to_str());
+        let Some(extension) = extension.filter(|extension| themes::EXTENSIONS.contains(extension))
+        else {
             continue;
-        }
+        };
+        let format = if extension == "itermcolors" {
+            ThemeFormat::Itermcolors
+        } else {
+            ThemeFormat::Lokyr
+        };
         for (name, variant) in themes::themes_of(&path).unwrap_or_default() {
             found.push(ThemeInfo {
                 name,
                 variant,
                 origin,
+                format,
             });
         }
     }
@@ -167,6 +172,7 @@ pub(super) fn theme_list(
         name: name.to_owned(),
         variant,
         origin: ThemeOrigin::BuiltIn,
+        format: ThemeFormat::Lokyr,
     });
     let mut seen = BTreeSet::new();
     let mut list: Vec<ThemeInfo> = listed

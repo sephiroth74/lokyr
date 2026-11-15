@@ -937,10 +937,15 @@ export type TextStyle = {
     overline: boolean,
 }
 
+export type ThemeFormat =
+    | "lokyr"
+    | "itermcolors"
+
 export type ThemeInfo = {
     name: string,
     variant: ThemeVariant,
     origin: ThemeOrigin,
+    format: ThemeFormat?,
 }
 
 export type ThemeOrigin =

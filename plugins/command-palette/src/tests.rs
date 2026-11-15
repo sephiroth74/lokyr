@@ -379,6 +379,7 @@ fn themed() -> (FakeHost, Palette) {
         name: name.to_owned(),
         variant,
         origin,
+        format: lokyr_plugin_sdk::host::ThemeFormat::Lokyr,
     };
     host.set_themes(Themes {
         appearance: ThemeVariant::Light,

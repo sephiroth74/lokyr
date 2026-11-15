@@ -56,9 +56,10 @@ const KEYS_PAGE: &str = "keys";
 const THEME_CARD: &str = "theme:";
 
 /// The panel of a theme's card's context menu, of its items' keys: the
-/// theme used, or a new theme made of it.
+/// theme used, shown in the Editor, or a new theme made of it.
 const THEME_MENU: &str = "theme-menu";
 const THEME_USE: &str = "theme-use";
+const THEME_EDIT: &str = "theme-edit";
 const THEME_DUPLICATE: &str = "theme-duplicate";
 
 /// The app's command that makes a new theme of an existing one.
@@ -83,11 +84,11 @@ const CARDS_ACROSS: usize = 3;
 
 /// The key of the themes' page's sidebar's list of the appearances.
 /// A row of the themes page's sidebar, of an appearance's word or of the
-/// Inspector.
+/// Editor.
 const SIDE: &str = "themes-side:";
 
-/// The sidebar's row of the Theme Inspector.
-const SIDE_INSPECTOR: &str = "inspector";
+/// The sidebar's row of the Theme Editor.
+const SIDE_EDITOR: &str = "editor";
 
 /// The height of a theme's card's preview, in points.
 const PREVIEW_HEIGHT: f32 = 92.0;
@@ -245,10 +246,10 @@ pub struct SettingsPage {
     /// themes it shows, the one in force's until its sidebar chooses one.
     themes_shown: bool,
     themes_variant: Option<ThemeVariant>,
-    /// The Theme Inspector, of the themes page's sidebar, and whether it
+    /// The Theme Editor, of the themes page's sidebar, and whether it
     /// shows there in place of an appearance's themes.
-    inspector: inspector::Inspector,
-    inspecting: bool,
+    editor: editor::Editor,
+    in_editor: bool,
     /// The theme of the card whose context menu shows, of its appearance.
     theme_menu: Option<(ThemeVariant, String)>,
     /// The font of the item highlighted last, which shows once the timer
@@ -319,8 +320,8 @@ impl Plugin for SettingsPage {
     fn on_event(&mut self, cx: &mut Cx<'_>, events: &[Event]) -> Result<(), Error> {
         let mut again = false;
         for event in events {
-            // The Theme Inspector's.
-            if self.inspector.on_event(cx, event)? {
+            // The Theme Editor's.
+            if self.editor.on_event(cx, event)? {
                 continue;
             }
             match event {
@@ -328,7 +329,7 @@ impl Plugin for SettingsPage {
                 Event::PageShown(page) if page == THEMES => {
                     self.themes_shown = true;
                     self.themes_variant = None;
-                    self.inspecting = false;
+                    self.in_editor = false;
                     cx.request_render(themes_page())?;
                 }
                 // The themes' list read, or anew: their cards.
@@ -337,8 +338,8 @@ impl Plugin for SettingsPage {
                 }
                 Event::PageHidden(page) if page == THEMES => {
                     self.themes_shown = false;
-                    if std::mem::take(&mut self.inspecting) {
-                        self.inspector.hide(cx)?;
+                    if std::mem::take(&mut self.in_editor) {
+                        self.editor.hide(cx)?;
                     }
                 }
                 // The page of the keys shows anew: of no filter, change of
@@ -429,12 +430,13 @@ impl Plugin for SettingsPage {
     }
 
     fn on_ui_event(&mut self, cx: &mut Cx<'_>, event: &UiEvent) -> Result<(), Error> {
-        if self.inspector.on_ui_event(cx, event)? {
+        if self.editor.on_ui_event(cx, event)? {
             return Ok(());
         }
         let key = event.key.0.as_str();
-        // An item of a theme's card's context menu: the theme used, or a
-        // new theme made of it, as the app asks its name.
+        // An item of a theme's card's context menu: the theme used, shown
+        // in the Editor, or a new theme made of it, as the app asks its
+        // name.
         if event.view == ViewId::Panel(PanelId::from(THEME_MENU)) {
             if event.kind != UiEventKind::Click {
                 return Ok(());
@@ -445,6 +447,7 @@ impl Plugin for SettingsPage {
             let _ = cx.close_panel(THEME_MENU);
             return match key {
                 THEME_USE => cx.set_theme(variant, &name),
+                THEME_EDIT => self.edit_theme(cx, &name),
                 THEME_DUPLICATE => cx.run_command(
                     NEW_THEME,
                     Args::from([("theme".to_owned(), Value::String(name))]),
@@ -462,14 +465,14 @@ impl Plugin for SettingsPage {
                     "dark" => Some(ThemeVariant::Dark),
                     _ => None,
                 };
-                if row == SIDE_INSPECTOR {
-                    if !self.inspecting {
-                        self.inspecting = true;
-                        self.inspector.show(cx)?;
+                if row == SIDE_EDITOR {
+                    if !self.in_editor {
+                        self.in_editor = true;
+                        self.editor.show(cx)?;
                     }
                 } else if variant.is_some() {
-                    if std::mem::take(&mut self.inspecting) {
-                        self.inspector.hide(cx)?;
+                    if std::mem::take(&mut self.in_editor) {
+                        self.editor.hide(cx)?;
                     }
                     self.themes_variant = variant;
                 }
@@ -744,12 +747,12 @@ impl Plugin for SettingsPage {
     }
 
     fn render(&mut self, cx: &mut Cx<'_>, view: &ViewId) -> Option<Node> {
-        if let Some(tree) = self.inspector.render(cx, view) {
+        if let Some(tree) = self.editor.render(cx, view) {
             return tree;
         }
         if *view == themes_page() {
-            let inspector = self.inspecting.then_some(&self.inspector);
-            return Some(themes_tree(cx, self.themes_variant, inspector));
+            let editor = self.in_editor.then_some(&self.editor);
+            return Some(themes_tree(cx, self.themes_variant, editor));
         }
         if *view == keys_page() {
             let settings = page_settings(cx).ok()?;
@@ -763,9 +766,21 @@ impl Plugin for SettingsPage {
             ));
         }
         if *view == ViewId::Panel(PanelId::from(THEME_MENU)) {
-            self.theme_menu.as_ref()?;
+            let (variant, name) = self.theme_menu.as_ref()?;
+            // Edit dimmed of a theme that the app holds or builds in, which
+            // a copy edits.
+            let read_only = cx.themes().ok().is_none_or(|themes| {
+                !themes.themes.iter().any(|theme| {
+                    theme.name == *name && theme.variant == *variant && !theme.is_read_only()
+                })
+            });
+            let mut edit = Node::button(message(cx, "theme-edit", &[]).as_str()).key(THEME_EDIT);
+            if let Kind::Button(button) = &mut edit.kind {
+                button.disabled = read_only;
+            }
             return Some(Node::container(vec![
                 Node::button(message(cx, "theme-use", &[]).as_str()).key(THEME_USE),
+                edit,
                 Node::button(message(cx, "theme-duplicate", &[]).as_str()).key(THEME_DUPLICATE),
             ]));
         }
@@ -814,6 +829,17 @@ impl Plugin for SettingsPage {
 }
 
 impl SettingsPage {
+    /// Shows the theme `name` in the Editor, the themes page's part that
+    /// shows it then.
+    fn edit_theme(&mut self, cx: &mut Cx<'_>, name: &str) -> Result<(), Error> {
+        if !self.in_editor {
+            self.in_editor = true;
+            self.editor.show(cx)?;
+        }
+        self.editor.choose(cx, name)?;
+        cx.request_render(themes_page())
+    }
+
     /// Ends the font's preview of a menu that closed: the item that waits
     /// to rest shows not, and the font in force shows again.
     fn end_preview(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
@@ -2808,7 +2834,7 @@ fn variants_of(in_force: ThemeVariant) -> [ThemeVariant; 2] {
 fn themes_tree(
     cx: &mut Cx<'_>,
     chosen: Option<ThemeVariant>,
-    inspector: Option<&inspector::Inspector>,
+    editor: Option<&editor::Editor>,
 ) -> Node {
     let themes = cx.themes().ok();
     let settings = cx.settings().ok();
@@ -2821,12 +2847,12 @@ fn themes_tree(
         ThemeVariant::Dark => ("dark", "themes-dark", "circle-filled"),
     };
     // The sidebar: the appearances, the one in force first, a line, and
-    // the Inspector, each a row of a menu's look, the one shown selected.
+    // the Editor, each a row of a menu's look, the one shown selected.
     let mut rows: Vec<Node> = variants_of(in_force)
         .into_iter()
         .map(|each| {
             let (word, title, icon) = words(each);
-            let selected = inspector.is_none() && each == variant;
+            let selected = editor.is_none() && each == variant;
             side_row(cx, (word, title, icon), selected)
         })
         .collect();
@@ -2843,8 +2869,8 @@ fn themes_tree(
     }));
     rows.push(side_row(
         cx,
-        (SIDE_INSPECTOR, "themes-inspector", "layout"),
-        inspector.is_some(),
+        (SIDE_EDITOR, "themes-editor", "layout"),
+        editor.is_some(),
     ));
     let sidebar = Node::container(rows)
         .key("themes-sidebar")
@@ -2859,8 +2885,8 @@ fn themes_tree(
             padding: Edges::all(6.0),
             ..Layout::default()
         });
-    if let Some(inspector) = inspector {
-        let content = inspector.tree(cx);
+    if let Some(editor) = editor {
+        let content = editor.tree(cx);
         return Node::container(vec![sidebar, Node::separator(), content])
             .key("themes-page")
             .layout(Layout {
@@ -3266,7 +3292,7 @@ fn small() -> Style {
     }
 }
 
-mod inspector;
+mod editor;
 
 #[cfg(test)]
 mod tests;

@@ -115,7 +115,7 @@ fn the_settings_open_in_a_window_of_their_own_once_and_close_as_a_window() {
     let [first, second] = tabs_of(&app, window)[..] else {
         panic!("two tabs");
     };
-    // A window of their own, of their title and of the Inspector's room,
+    // A window of their own, of their title and of the Editor's room,
     // of no number, the terminal's window as it was.
     let own = open(&mut fake, &mut app, SETTINGS_TAB);
     assert_ne!(own, window);
@@ -1960,8 +1960,8 @@ fn the_themes_page_previews_each_theme_of_its_colors_and_a_card_names_it_in_the_
         std::fs::read_to_string(&path).unwrap(),
         "# mine\n\n[theme]\ndark = \"Lokyr Dark\"\n"
     );
-    // A card's context menu, the platform's own, at the pointer, of Use
-    // and Duplicate….
+    // A card's context menu, the platform's own, at the pointer, of Use,
+    // Edit, dimmed of a built-in theme, and Duplicate….
     let at = lokyr_platform_core::Point { x: 333.0, y: 222.0 };
     fake.set_pointer(own, at);
     app.ui_events.push((
@@ -1983,6 +1983,7 @@ fn the_themes_page_previews_each_theme_of_its_colors_and_a_card_names_it_in_the_
             _ => None,
         })
         .collect();
-    assert_eq!(titles, ["Use", "Duplicate…"]);
+    assert_eq!(titles, ["Use", "Edit", "Duplicate…"]);
+    assert_eq!(menu.dimmed, ["theme-edit"]);
     let _ = std::fs::remove_dir_all(&directory);
 }

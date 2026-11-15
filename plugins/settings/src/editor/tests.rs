@@ -7,7 +7,7 @@ use lokyr_plugin_sdk::view::Kind;
 use super::*;
 use crate::SettingsPage;
 
-/// A host of the settings' plugin, its themes page showing its Inspector.
+/// A host of the settings' plugin, its themes page showing its Editor.
 fn shown() -> (FakeHost, SettingsPage) {
     let mut host = FakeHost::new("lokyr/settings").with_manifest(crate::MANIFEST);
     // A window, which the settings' window opens beside.
@@ -17,7 +17,7 @@ fn shown() -> (FakeHost, SettingsPage) {
     host.show_page(crate::THEMES);
     host.deliver(&mut plugin).unwrap();
     host.render(&mut plugin, &themes_page()).unwrap();
-    host.ui_event(&mut plugin, &click("themes-side:inspector"))
+    host.ui_event(&mut plugin, &click("themes-side:editor"))
         .unwrap();
     (host, plugin)
 }
@@ -55,7 +55,7 @@ fn rows(tree: &Node) -> Vec<String> {
         if let Some(name) = node
             .key
             .as_ref()
-            .and_then(|key| key.0.strip_prefix("inspector-token:"))
+            .and_then(|key| key.0.strip_prefix("editor-token:"))
         {
             out.push(name.to_owned());
         }
@@ -98,14 +98,14 @@ fn the_page_lists_every_token_by_groups_of_its_color_value_and_origin() {
         "command-header",
     ] {
         assert!(
-            find(&tree, &format!("inspector-group:{group}")).is_some(),
+            find(&tree, &format!("editor-group:{group}")).is_some(),
             "{group}"
         );
     }
     let all = texts(&tree);
     for text in [
         "Lokyr Dark",
-        "inspector-rule",
+        "editor-rule",
         "Lokyr Dark.toml:3",
         "Lokyr Dark.toml:8",
     ] {
@@ -114,7 +114,7 @@ fn the_page_lists_every_token_by_groups_of_its_color_value_and_origin() {
     // The values in the swatches' tooltips alone, not written beside.
     assert!(!all.iter().any(|shown| shown.starts_with('#')), "{all:?}");
     // The swatch of each, of its color, of its value as its tooltip.
-    let swatch = find(&tree, "inspector-swatch:command-header.pill").unwrap();
+    let swatch = find(&tree, "editor-swatch:command-header.pill").unwrap();
     assert_eq!(swatch.tooltip.as_deref(), Some("#2a2a2d"));
     assert_eq!(
         swatch.children[0].style.background,
@@ -153,21 +153,21 @@ fn the_filter_keeps_the_tokens_of_its_words_and_empties() {
 fn a_token_of_a_file_opens_at_its_line_and_another_copies_its_line() {
     let (mut host, mut plugin) = shown();
     let _ = host.take_done();
-    host.ui_event(&mut plugin, &click("inspector-act:command-header.pill"))
+    host.ui_event(&mut plugin, &click("editor-act:command-header.pill"))
         .unwrap();
     assert!(host.take_done().iter().any(|request| matches!(
         request,
         Request::OpenAt { target, line: 3, .. } if target == "/themes/Lokyr Dark.toml"
     )));
-    host.ui_event(&mut plugin, &click("inspector-act:focus.ring"))
+    host.ui_event(&mut plugin, &click("editor-act:focus.ring"))
         .unwrap();
     assert_eq!(host.clipboard(), Some("\"focus.ring\" = \"accent / 60%\""));
     // A key of `[terminal]` of a theme of no file, its bare key.
-    host.ui_event(&mut plugin, &click("inspector-act:background"))
+    host.ui_event(&mut plugin, &click("editor-act:background"))
         .unwrap();
     assert_eq!(host.clipboard(), Some("background = \"#1e1e20\""));
     // A palette's color of a file, at its line.
-    host.ui_event(&mut plugin, &click("inspector-act:bright-blue"))
+    host.ui_event(&mut plugin, &click("editor-act:bright-blue"))
         .unwrap();
     assert!(
         host.take_done()
@@ -175,7 +175,7 @@ fn a_token_of_a_file_opens_at_its_line_and_another_copies_its_line() {
             .any(|request| matches!(request, Request::OpenAt { line: 8, .. }))
     );
     // Within a second of the last notice: copied, of no notice more.
-    host.ui_event(&mut plugin, &click("inspector-act:accent"))
+    host.ui_event(&mut plugin, &click("editor-act:accent"))
         .unwrap();
     assert_eq!(host.clipboard(), Some("\"accent\" = \"#4c9bff\""));
     assert_eq!(host.notices().len(), 1);
@@ -190,19 +190,113 @@ fn a_change_of_the_theme_lights_the_tokens_that_it_changed_for_a_while() {
     host.deliver(&mut plugin).unwrap();
     let tree = page(&mut host, &mut plugin);
     let lit = |tree: &Node, name: &str| {
-        find(tree, &format!("inspector-token:{name}"))
+        find(tree, &format!("editor-token:{name}"))
             .unwrap()
             .style
             .background
             .is_some()
     };
     assert!(lit(&tree, "accent") && !lit(&tree, "focus.ring"));
-    let swatch = find(&tree, "inspector-swatch:accent").unwrap();
+    let swatch = find(&tree, "editor-swatch:accent").unwrap();
     assert_eq!(swatch.tooltip.as_deref(), Some("#c678dd"));
     // Its light goes as its timer fires.
     host.advance(LIT);
     host.deliver(&mut plugin).unwrap();
     assert!(!lit(&page(&mut host, &mut plugin), "accent"));
+}
+
+#[test]
+fn the_theme_s_button_is_a_menu_of_the_user_s_themes_then_of_each_appearance_s() {
+    use lokyr_plugin_sdk::host::{ThemeFormat, ThemeInfo, ThemeOrigin, Themes};
+    let (mut host, mut plugin) = shown();
+    let theme = |name: &str, variant, origin, format| ThemeInfo {
+        name: name.to_owned(),
+        variant,
+        origin,
+        format,
+    };
+    host.set_themes(Themes {
+        appearance: ThemeVariant::Dark,
+        current: "Lokyr Dark".to_owned(),
+        themes: vec![
+            theme(
+                "Dracula",
+                ThemeVariant::Dark,
+                ThemeOrigin::Held,
+                ThemeFormat::Lokyr,
+            ),
+            theme(
+                "Lokyr Dark",
+                ThemeVariant::Dark,
+                ThemeOrigin::BuiltIn,
+                ThemeFormat::Lokyr,
+            ),
+            theme(
+                "Lokyr Light",
+                ThemeVariant::Light,
+                ThemeOrigin::BuiltIn,
+                ThemeFormat::Lokyr,
+            ),
+            theme(
+                "Night",
+                ThemeVariant::Dark,
+                ThemeOrigin::Folder,
+                ThemeFormat::Itermcolors,
+            ),
+            theme(
+                "Paper",
+                ThemeVariant::Light,
+                ThemeOrigin::Folder,
+                ThemeFormat::Lokyr,
+            ),
+        ],
+        loading: false,
+    });
+    host.deliver(&mut plugin).unwrap();
+    // The button: the theme shown, the one in force, of a menu's chevron.
+    let tree = page(&mut host, &mut plugin);
+    match find(&tree, THEME).map(|node| &node.kind) {
+        Some(Kind::Button(button)) => {
+            assert_eq!(button.label, "Lokyr Dark");
+            assert_eq!(button.icon, "chevron-down");
+        }
+        other => panic!("{other:?}"),
+    }
+    host.ui_event(&mut plugin, &click(THEME)).unwrap();
+    let menu = host
+        .render(&mut plugin, &ViewId::Panel(PanelId::from(THEMES_MENU)))
+        .unwrap();
+    // Each item a toggle of its theme's name, the one shown ticked.
+    let item = |node: &Node| match &node.kind {
+        Kind::Toggle(toggle) => format!("{}{}", toggle.label, if toggle.on { " ✓" } else { "" }),
+        Kind::Separator => "—".to_owned(),
+        Kind::Container => {
+            let mut words = texts(node);
+            words.truncate(1);
+            for child in &node.children[1..] {
+                if let Kind::Toggle(toggle) = &child.kind {
+                    words.push(format!(
+                        "{}{}",
+                        toggle.label,
+                        if toggle.on { " ✓" } else { "" }
+                    ));
+                }
+            }
+            format!("[{}]", words.join(", "))
+        }
+        other => format!("{other:?}"),
+    };
+    let items: Vec<String> = menu.children.iter().map(item).collect();
+    assert_eq!(
+        items,
+        [
+            "Night",
+            "Paper",
+            "—",
+            "[themes-light, Lokyr Light]",
+            "[themes-dark, Dracula, Lokyr Dark ✓]",
+        ]
+    );
 }
 
 #[test]
@@ -214,13 +308,23 @@ fn the_menu_previews_a_theme_and_the_page_hidden_ends_it() {
     let menu = host
         .render(&mut plugin, &ViewId::Panel(PanelId::from(THEMES_MENU)))
         .unwrap();
-    assert!(find(&menu, IN_FORCE).is_some());
     let _ = host.take_done();
-    let item = UiEvent {
+    let item_of = |name: &str| UiEvent {
         view: ViewId::Panel(PanelId::from(THEMES_MENU)),
-        key: format!("{THEME_ITEM}0").as_str().into(),
-        kind: UiEventKind::Click,
+        key: format!("{THEME_ITEM}{name}").as_str().into(),
+        kind: UiEventKind::Toggle { on: true },
     };
+    // The theme in force chosen: shown as it is, of no preview.
+    assert!(find(&menu, &format!("{THEME_ITEM}Lokyr Dark")).is_some());
+    host.ui_event(&mut plugin, &item_of("Lokyr Dark")).unwrap();
+    let done = host.take_done();
+    assert!(
+        !done
+            .iter()
+            .any(|request| matches!(request, Request::PreviewTheme(_))),
+        "{done:?}"
+    );
+    let item = item_of("Lokyr Light");
     host.ui_event(&mut plugin, &item).unwrap();
     let done = host.take_done();
     assert!(
@@ -235,7 +339,7 @@ fn the_menu_previews_a_theme_and_the_page_hidden_ends_it() {
     host.ui_event(&mut plugin, &click("themes-side:dark"))
         .unwrap();
     assert!(host.take_done().contains(&Request::PreviewTheme(None)));
-    host.ui_event(&mut plugin, &click("themes-side:inspector"))
+    host.ui_event(&mut plugin, &click("themes-side:editor"))
         .unwrap();
     host.render(&mut plugin, &themes_page()).unwrap();
     host.ui_event(&mut plugin, &click(THEME)).unwrap();
@@ -259,11 +363,11 @@ fn the_interface_s_parts_show_and_a_pick_marks_a_part_s_tokens_or_a_token_s_part
         );
     }
     assert!(matches!(
-        find(&tree, "inspector-terminal").map(|node| &node.kind),
+        find(&tree, "editor-terminal").map(|node| &node.kind),
         Some(Kind::TerminalSpecimen)
     ));
     let shaded = |tree: &Node, name: &str| {
-        find(tree, &format!("inspector-token:{name}")).and_then(|row| row.style.background.clone())
+        find(tree, &format!("editor-token:{name}")).and_then(|row| row.style.background.clone())
     };
     let bordered = |tree: &Node, id: &str| {
         find(tree, &format!("{}{id}", parts::PART))
@@ -285,7 +389,7 @@ fn the_interface_s_parts_show_and_a_pick_marks_a_part_s_tokens_or_a_token_s_part
     // The new token's light gone first, which a mark yields to.
     host.advance(LIT);
     host.deliver(&mut plugin).unwrap();
-    host.ui_event(&mut plugin, &click("inspector-part:tooltip"))
+    host.ui_event(&mut plugin, &click("editor-part:tooltip"))
         .unwrap();
     let tree = page(&mut host, &mut plugin);
     assert_eq!(
@@ -296,7 +400,7 @@ fn the_interface_s_parts_show_and_a_pick_marks_a_part_s_tokens_or_a_token_s_part
     assert_eq!(bordered(&tree, "tooltip").as_deref(), Some("accent"));
     assert_eq!(bordered(&tree, "panel").as_deref(), Some("separator"));
     // A token picked: the parts that take it of the accent's border.
-    host.ui_event(&mut plugin, &click("inspector-token:accent"))
+    host.ui_event(&mut plugin, &click("editor-token:accent"))
         .unwrap();
     let tree = page(&mut host, &mut plugin);
     assert_eq!(bordered(&tree, "panes").as_deref(), Some("accent"));
@@ -306,7 +410,7 @@ fn the_interface_s_parts_show_and_a_pick_marks_a_part_s_tokens_or_a_token_s_part
         Some(Token::from("list.selection.inactive.bg"))
     );
     // Picked again, none.
-    host.ui_event(&mut plugin, &click("inspector-token:accent"))
+    host.ui_event(&mut plugin, &click("editor-token:accent"))
         .unwrap();
     let tree = page(&mut host, &mut plugin);
     assert_eq!(bordered(&tree, "panes").as_deref(), Some("separator"));

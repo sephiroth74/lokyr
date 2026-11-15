@@ -215,7 +215,7 @@ const CURATED: [Curated; 38] = [
     plain("settings-search", "tip-settings-search"),
     plain("settings-keys", "tip-settings-keys"),
     plain("settings-themes", "tip-settings-themes"),
-    plain("theme-inspector", "tip-theme-inspector"),
+    plain("theme-editor", "tip-theme-editor"),
 ];
 
 /// A curated tip of a command's keys.

@@ -1,5 +1,6 @@
-//! The themes page's Theme Inspector: every token of the theme in force,
-//! or of one that it previews, by groups, each of its color
+//! The themes page's Theme Editor: every token of the theme in force,
+//! or of one that it previews, chosen of its menu of the themes or of a
+//! card's Edit, by groups, each of its color
 //! over a backdrop, its name, its value and where it comes from, filtered as
 //! its field says, the tokens that a saved file changed lit for a while; a
 //! token of a file opens at its line, any other copies its line to paste.
@@ -8,12 +9,13 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
 
 use lokyr_plugin_sdk::command::Error;
-use lokyr_plugin_sdk::host::{NoticeLevel, ThemeToken, ThemeTokens, TokenOrigin};
+use lokyr_plugin_sdk::host::{NoticeLevel, ThemeInfo, ThemeToken, ThemeTokens, TokenOrigin};
 use lokyr_plugin_sdk::message::Event;
 use lokyr_plugin_sdk::plugin::Cx;
+use lokyr_plugin_sdk::theme::ThemeVariant;
 use lokyr_plugin_sdk::ui::{Anchor, PanelId, PanelOptions, Role as PanelRole, UiEvent, ViewId};
 use lokyr_plugin_sdk::view::{
-    Align, Border, Direction, Edges, FontWeight, Layout, Length, Node, Role, Style, TextSize,
+    Align, Border, Direction, Edges, FontWeight, Kind, Layout, Length, Node, Role, Style, TextSize,
     Token, UiEventKind,
 };
 
@@ -22,22 +24,21 @@ use super::{code, message, search_box, secondary, themes_page, words};
 mod parts;
 
 /// The filter's field, and its button that empties it.
-const FILTER: &str = "inspector-filter";
-const FILTER_CLEAR: &str = "inspector-filter-clear";
+const FILTER: &str = "editor-filter";
+const FILTER_CLEAR: &str = "editor-filter-clear";
 
 /// The button of the theme shown, and its menu of the themes.
-const THEME: &str = "inspector-theme";
-const THEMES_MENU: &str = "inspector-themes";
+const THEME: &str = "editor-theme";
+const THEMES_MENU: &str = "editor-themes";
 
-/// The menu's item of the theme in force, and of each theme, by its place.
-const IN_FORCE: &str = "inspector-in-force";
-const THEME_ITEM: &str = "inspector-theme:";
+/// The menu's item of each theme, by its name.
+const THEME_ITEM: &str = "editor-theme:";
 
 /// A token's button, which opens its file or copies its line, by its name.
-const ACT: &str = "inspector-act:";
+const ACT: &str = "editor-act:";
 
 /// A token's row, by its name.
-const ROW: &str = "inspector-token:";
+const ROW: &str = "editor-token:";
 
 /// How long the tokens that a change of the theme changed stay lit.
 const LIT: Duration = Duration::from_secs(3);
@@ -45,9 +46,9 @@ const LIT: Duration = Duration::from_secs(3);
 /// The width of the tokens' column.
 const COLUMN: f32 = 300.0;
 
-/// The state of the Inspector.
+/// The state of the Editor.
 #[derive(Debug, Default)]
-pub(crate) struct Inspector {
+pub(crate) struct Editor {
     /// Whether it shows, in the themes page.
     shown: bool,
     /// The theme that it previews, of the menu, in place of the one in
@@ -74,7 +75,7 @@ enum Pick {
     Token(String),
 }
 
-impl Inspector {
+impl Editor {
     /// Shows it, in the themes page, of the theme in force, of no filter.
     pub(crate) fn show(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
         self.shown = true;
@@ -135,18 +136,9 @@ impl Inspector {
                 return Ok(true);
             }
             let _ = cx.close_panel(THEMES_MENU);
-            let chosen = if key == IN_FORCE {
-                None
-            } else {
-                let Some(at) = key
-                    .strip_prefix(THEME_ITEM)
-                    .and_then(|at| at.parse::<usize>().ok())
-                else {
-                    return Ok(true);
-                };
-                cx.themes()?.themes.get(at).map(|theme| theme.name.clone())
-            };
-            self.preview(cx, chosen)?;
+            if let Some(name) = key.strip_prefix(THEME_ITEM) {
+                self.choose(cx, name)?;
+            }
             return Ok(true);
         }
         if event.view != themes_page() || !self.shown {
@@ -196,6 +188,14 @@ impl Inspector {
         Ok(true)
     }
 
+    /// Shows the theme `name`: the one in force as it is, any other
+    /// previewed in its place.
+    pub(crate) fn choose(&mut self, cx: &mut Cx<'_>, name: &str) -> Result<(), Error> {
+        let in_force = cx.themes()?.current;
+        let chosen = (name != in_force).then(|| name.to_owned());
+        self.preview(cx, chosen)
+    }
+
     /// Previews the theme `chosen`, or the one in force again of none, and
     /// reads its tokens.
     fn preview(&mut self, cx: &mut Cx<'_>, chosen: Option<String>) -> Result<(), Error> {
@@ -241,18 +241,19 @@ impl Inspector {
     /// specimens of the terminal and of the interface at its right.
     pub(crate) fn tree(&self, cx: &mut Cx<'_>) -> Node {
         let tokens = self.tokens.as_ref();
-        let title = match (&self.previewed, tokens) {
-            (Some(name), _) => name.clone(),
-            (None, Some(tokens)) => {
-                message(cx, "inspector-in-force", &[("theme", tokens.theme.clone())])
-            }
-            (None, None) => message(cx, "inspector-no-theme", &[]),
-        };
-        let chooser = Node::container(vec![
-            Node::text(message(cx, "inspector-theme", &[])).style(secondary()),
+        let title = self
+            .shown_theme()
+            .map_or_else(|| message(cx, "editor-no-theme", &[]), str::to_owned);
+        let mut button =
             Node::button(title.as_str())
                 .key(THEME)
-                .label(message(cx, "inspector-theme", &[])),
+                .label(message(cx, "editor-theme", &[]));
+        if let Kind::Button(own) = &mut button.kind {
+            "chevron-down".clone_into(&mut own.icon);
+        }
+        let chooser = Node::container(vec![
+            Node::text(message(cx, "editor-theme", &[])).style(secondary()),
+            button,
         ])
         .layout(Layout {
             direction: Direction::Row,
@@ -262,8 +263,8 @@ impl Inspector {
         });
         let filter = search_box(
             cx,
-            (FILTER, FILTER_CLEAR, "inspector-filter-row"),
-            ("inspector-filter", "inspector-filter-clear"),
+            (FILTER, FILTER_CLEAR, "editor-filter-row"),
+            ("editor-filter", "editor-filter-clear"),
             !self.filter.is_empty(),
         )
         .layout(Layout {
@@ -290,7 +291,7 @@ impl Inspector {
             rows.extend(token_rows(cx, (&tokens.tokens, false), &wanted, marks));
             rows
         });
-        let list = Node::scroll(vec![Node::container(rows).key("inspector-tokens").layout(
+        let list = Node::scroll(vec![Node::container(rows).key("editor-tokens").layout(
             Layout {
                 direction: Direction::Column,
                 gap: 2.0,
@@ -298,7 +299,7 @@ impl Inspector {
                 ..Layout::default()
             },
         )])
-        .key("inspector-list")
+        .key("editor-list")
         .layout(Layout {
             direction: Direction::Column,
             grow: 1.0,
@@ -307,7 +308,7 @@ impl Inspector {
             ..Layout::default()
         });
         let column = Node::container(vec![chooser, filter, list])
-            .key("inspector-column")
+            .key("editor-column")
             .role(Role::Group)
             .layout(Layout {
                 direction: Direction::Column,
@@ -338,12 +339,12 @@ impl Inspector {
             None => false,
         };
         let mut right = vec![
-            heading(cx, "inspector-terminal"),
+            heading(cx, "editor-terminal"),
             // Of its own size, of the terminal's cells.
             Node::terminal_specimen()
-                .key("inspector-terminal")
-                .label(message(cx, "inspector-terminal", &[])),
-            heading(cx, "inspector-interface"),
+                .key("editor-terminal")
+                .label(message(cx, "editor-terminal", &[])),
+            heading(cx, "editor-interface"),
         ];
         right.extend(parts::cards(&chosen, &word));
         let specimens = Node::scroll(vec![Node::container(right).layout(Layout {
@@ -353,7 +354,7 @@ impl Inspector {
             padding: Edges::all(10.0),
             ..Layout::default()
         })])
-        .key("inspector-specimens")
+        .key("editor-specimens")
         .layout(Layout {
             direction: Direction::Column,
             grow: 1.0,
@@ -363,7 +364,7 @@ impl Inspector {
             ..Layout::default()
         });
         Node::container(vec![column, specimens])
-            .key("inspector-page")
+            .key("editor-page")
             .layout(Layout {
                 direction: Direction::Row,
                 grow: 1.0,
@@ -381,29 +382,54 @@ impl Inspector {
         None
     }
 
-    /// The menu of the themes: the one in force, then each theme of the
-    /// list, ticked where it shows.
+    /// The name of the theme that it shows: the one that it previews, or
+    /// the one in force.
+    fn shown_theme(&self) -> Option<&str> {
+        self.previewed
+            .as_deref()
+            .or_else(|| self.tokens.as_ref().map(|tokens| tokens.theme.as_str()))
+    }
+
+    /// The native menu of the themes, the one shown ticked: the user's own,
+    /// of their folder, then a line and a submenu of each appearance of
+    /// the themes that the app holds or builds in, the light one first.
     fn menu(&self, cx: &mut Cx<'_>) -> Option<Node> {
         let themes = cx.themes().ok()?;
-        let mut items = vec![
-            Node::toggle(
-                message(cx, "inspector-theme-in-force", &[]).as_str(),
-                self.previewed.is_none(),
-            )
-            .key(IN_FORCE),
-        ];
-        items.extend(themes.themes.iter().enumerate().map(|(at, theme)| {
-            Node::toggle(
-                theme.name.as_str(),
-                self.previewed.as_deref() == Some(theme.name.as_str()),
-            )
-            .key(format!("{THEME_ITEM}{at}").as_str())
-        }));
-        Some(Node::scroll(items).layout(Layout {
-            direction: Direction::Column,
-            height: Length::Points(360.0),
-            ..Layout::default()
-        }))
+        let shown = self.shown_theme();
+        let item = |theme: &ThemeInfo| {
+            let mut item = Node::toggle("", shown == Some(theme.name.as_str()))
+                .key(format!("{THEME_ITEM}{}", theme.name).as_str());
+            if let Kind::Toggle(toggle) = &mut item.kind {
+                toggle.label.clone_from(&theme.name);
+            }
+            item
+        };
+        let mut items: Vec<Node> = themes
+            .themes
+            .iter()
+            .filter(|theme| !theme.is_read_only())
+            .map(item)
+            .collect();
+        if !items.is_empty() {
+            items.push(Node::separator());
+        }
+        for (variant, title) in [
+            (ThemeVariant::Light, "themes-light"),
+            (ThemeVariant::Dark, "themes-dark"),
+        ] {
+            let mut group = vec![Node::text(message(cx, title, &[]))];
+            group.extend(
+                themes
+                    .themes
+                    .iter()
+                    .filter(|theme| theme.is_read_only() && theme.variant == variant)
+                    .map(item),
+            );
+            if group.len() > 1 {
+                items.push(Node::container(group));
+            }
+        }
+        Some(Node::container(items).key("editor-themes-menu"))
     }
 }
 
@@ -411,7 +437,7 @@ impl Inspector {
 fn copy(cx: &mut Cx<'_>, line: &str) -> Result<(), Error> {
     let line = line.to_owned();
     cx.set_clipboard_text(&line)?;
-    let told = message(cx, "inspector-copied", &[("line", line)]);
+    let told = message(cx, "editor-copied", &[("line", line)]);
     // Copied all the same where notices come too fast to tell each.
     let _ = cx.notify(&told, NoticeLevel::Info, None);
     Ok(())
@@ -503,7 +529,7 @@ fn token_rows(
             last = Some(heading);
             rows.push(
                 Node::text(heading)
-                    .key(format!("inspector-group:{heading}").as_str())
+                    .key(format!("editor-group:{heading}").as_str())
                     .role(Role::Heading)
                     .style(Style {
                         font_weight: Some(FontWeight::Bold),
@@ -544,7 +570,7 @@ fn origin_text(cx: &mut Cx<'_>, origin: &TokenOrigin) -> String {
             format!("{file}:{line}")
         }
         TokenOrigin::Theme { theme } => theme.clone(),
-        TokenOrigin::Rule { text } => message(cx, "inspector-rule", &[("rule", text.clone())]),
+        TokenOrigin::Rule { text } => message(cx, "editor-rule", &[("rule", text.clone())]),
     }
 }
 
@@ -590,13 +616,13 @@ fn token_row(
         ..Style::default()
     })
     // Its value as the pointer rests on it.
-    .key(format!("inspector-swatch:{}", token.name).as_str())
+    .key(format!("editor-swatch:{}", token.name).as_str())
     .tooltip(value.to_owned());
     let file = matches!(token.origin, TokenOrigin::File { .. });
     let (icon, tip) = if file {
-        ("edit", message(cx, "inspector-open", &[]))
+        ("edit", message(cx, "editor-open", &[]))
     } else {
-        ("copy", message(cx, "inspector-copy", &[]))
+        ("copy", message(cx, "editor-copy", &[]))
     };
     let small = Style {
         text_size: Some(TextSize::Small),
@@ -620,7 +646,7 @@ fn token_row(
             .label(tip.as_str())
             .tooltip(tip),
     ])
-    .key(format!("inspector-token:{}", token.name).as_str())
+    .key(format!("editor-token:{}", token.name).as_str())
     .role(Role::Group)
     .label(format!("{} {value} {origin}", token.name))
     .layout(Layout {

@@ -2290,24 +2290,43 @@ fn a_font_s_family_and_a_face_s_style_show_as_their_items_are_highlighted() {
 }
 
 /// The themes of the tests' themes' page: two light ones and four dark
-/// ones, the appearance in force dark.
+/// ones, the appearance in force dark: Lokyr's built-in ones, two held,
+/// and two of the user's folder, Paper of Lokyr's format and Night of
+/// iTerm2's.
 fn many_themes() -> lokyr_plugin_sdk::host::Themes {
-    use lokyr_plugin_sdk::host::{ThemeInfo, ThemeOrigin};
-    let theme = |name: &str, variant| ThemeInfo {
+    use lokyr_plugin_sdk::host::{ThemeFormat, ThemeInfo, ThemeOrigin};
+    let theme = |name: &str, variant, origin, format| ThemeInfo {
         name: name.to_owned(),
         variant,
-        origin: ThemeOrigin::BuiltIn,
+        origin,
+        format,
     };
+    let lokyr = ThemeFormat::Lokyr;
     lokyr_plugin_sdk::host::Themes {
         appearance: ThemeVariant::Dark,
         current: "Lokyr Dark".to_owned(),
         themes: vec![
-            theme("Lokyr Light", ThemeVariant::Light),
-            theme("Paper", ThemeVariant::Light),
-            theme("Lokyr Dark", ThemeVariant::Dark),
-            theme("Dracula", ThemeVariant::Dark),
-            theme("Nord", ThemeVariant::Dark),
-            theme("Night", ThemeVariant::Dark),
+            theme(
+                "Lokyr Light",
+                ThemeVariant::Light,
+                ThemeOrigin::BuiltIn,
+                lokyr,
+            ),
+            theme("Paper", ThemeVariant::Light, ThemeOrigin::Folder, lokyr),
+            theme(
+                "Lokyr Dark",
+                ThemeVariant::Dark,
+                ThemeOrigin::BuiltIn,
+                lokyr,
+            ),
+            theme("Dracula", ThemeVariant::Dark, ThemeOrigin::Held, lokyr),
+            theme("Nord", ThemeVariant::Dark, ThemeOrigin::Held, lokyr),
+            theme(
+                "Night",
+                ThemeVariant::Dark,
+                ThemeOrigin::Folder,
+                ThemeFormat::Itermcolors,
+            ),
         ],
         loading: false,
     }
@@ -2321,7 +2340,7 @@ fn the_themes_page_shows_the_themes_of_an_appearance_of_its_sidebar_the_one_in_f
     host.deliver(&mut plugin).unwrap();
     let tree = host.render(&mut plugin, &themes_page()).expect("the page");
     // The sidebar of the appearances, the dark one first, as in force,
-    // selected, a line, and the Inspector.
+    // selected, a line, and the Editor.
     let sidebar = find_node(&tree, "themes-sidebar").expect("the sidebar");
     let rows: Vec<String> = sidebar
         .children
@@ -2333,7 +2352,7 @@ fn the_themes_page_shows_the_themes_of_an_appearance_of_its_sidebar_the_one_in_f
         [
             "themes-side:dark",
             "themes-side:light",
-            "themes-side:inspector"
+            "themes-side:editor"
         ]
     );
     assert!(matches!(
@@ -2494,9 +2513,15 @@ fn a_theme_s_card_s_context_menu_uses_it_or_makes_a_new_theme_of_it_and_import_i
             .unwrap();
         assert!(find_node(&tree, THEME_USE).is_some());
         assert!(find_node(&tree, THEME_DUPLICATE).is_some());
+        // Edit, dimmed of a theme that the app holds or builds in.
+        match find_node(&tree, THEME_EDIT).map(|node| &node.kind) {
+            Some(Kind::Button(button)) => button.disabled,
+            other => panic!("{other:?}"),
+        }
     };
-    // Duplicate…: the app's new theme of the card's theme.
-    opened(&mut host, &mut plugin, "theme:dark:Nord");
+    // Duplicate…: the app's new theme of the card's theme, held, whose
+    // Edit is dimmed.
+    assert!(opened(&mut host, &mut plugin, "theme:dark:Nord"));
     host.ui_event(
         &mut plugin,
         &event(&menu, THEME_DUPLICATE, UiEventKind::Click),
@@ -2513,7 +2538,7 @@ fn a_theme_s_card_s_context_menu_uses_it_or_makes_a_new_theme_of_it_and_import_i
     );
     assert!(host.panels().get(&PanelId::from(THEME_MENU)).is_none());
     // Use: named for its appearance, as a click does.
-    opened(&mut host, &mut plugin, "theme:dark:Dracula");
+    assert!(opened(&mut host, &mut plugin, "theme:dark:Dracula"));
     host.ui_event(&mut plugin, &event(&menu, THEME_USE, UiEventKind::Click))
         .unwrap();
     assert!(host.take_done().iter().any(|request| *request
@@ -2521,6 +2546,29 @@ fn a_theme_s_card_s_context_menu_uses_it_or_makes_a_new_theme_of_it_and_import_i
             variant: ThemeVariant::Dark,
             name: "Dracula".to_owned(),
         }));
+    // Edit of a theme of the folder, of either format: the Editor shows,
+    // the theme previewed in it; the appearance's cards again of the
+    // sidebar.
+    for (card, name) in [
+        ("theme:light:Paper", "Paper"),
+        ("theme:dark:Night", "Night"),
+    ] {
+        assert!(!opened(&mut host, &mut plugin, card));
+        host.ui_event(&mut plugin, &event(&menu, THEME_EDIT, UiEventKind::Click))
+            .unwrap();
+        assert!(
+            host.take_done()
+                .contains(&Request::PreviewTheme(Some(name.to_owned())))
+        );
+        let tree = host.render(&mut plugin, &themes_page()).unwrap();
+        assert!(find_node(&tree, "editor-page").is_some());
+        host.ui_event(
+            &mut plugin,
+            &event(&themes_page(), "themes-side:dark", UiEventKind::Click),
+        )
+        .unwrap();
+        assert!(host.take_done().contains(&Request::PreviewTheme(None)));
+    }
     // Import… at the title's row: the app's themes imported.
     let tree = host.render(&mut plugin, &themes_page()).unwrap();
     assert!(find_node(&tree, THEMES_IMPORT).is_some());

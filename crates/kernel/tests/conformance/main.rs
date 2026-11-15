@@ -677,7 +677,7 @@ fn keys(command: &str, args: &Args) -> Option<String> {
 /// The themes of the world, as the fake host's are at first: the built-in
 /// ones, dark in force.
 fn themes() -> lokyr_plugin_sdk::host::Themes {
-    use lokyr_plugin_sdk::host::{ThemeInfo, ThemeOrigin, Themes};
+    use lokyr_plugin_sdk::host::{ThemeFormat, ThemeInfo, ThemeOrigin, Themes};
     use lokyr_plugin_sdk::theme::ThemeVariant;
     Themes {
         appearance: ThemeVariant::Dark,
@@ -687,11 +687,13 @@ fn themes() -> lokyr_plugin_sdk::host::Themes {
                 name: "Lokyr Light".to_owned(),
                 variant: ThemeVariant::Light,
                 origin: ThemeOrigin::BuiltIn,
+                format: ThemeFormat::Lokyr,
             },
             ThemeInfo {
                 name: "Lokyr Dark".to_owned(),
                 variant: ThemeVariant::Dark,
                 origin: ThemeOrigin::BuiltIn,
+                format: ThemeFormat::Lokyr,
             },
         ],
         loading: false,

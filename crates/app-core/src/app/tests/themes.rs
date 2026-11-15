@@ -578,7 +578,7 @@ fn a_name_of_no_file_of_the_folder_is_watched_nowhere() {
 
 #[test]
 fn a_picker_lists_the_themes_previews_one_and_names_the_chosen_one() {
-    use lokyr_kernel::plugins::host::ThemeOrigin;
+    use lokyr_kernel::plugins::host::{ThemeFormat, ThemeOrigin};
     use lokyr_kernel::themes::ThemeVariant;
     let config = "[theme]\nlight = \"Lokyr Light\"\n";
     let files = [("Paper", theme("#ffffff")), ("Night", theme("#101010"))];
@@ -592,6 +592,8 @@ fn a_picker_lists_the_themes_previews_one_and_names_the_chosen_one() {
     std::fs::write(held.join("Held Dawn.toml"), theme("#fafafa")).unwrap();
     // A file of the folder of a held theme's name, the folder's.
     std::fs::write(held.join("Paper.toml"), theme("#eeeeee")).unwrap();
+    // An `.itermcolors` file of the folder, of its format.
+    std::fs::write(directory.join("themes/Grays.itermcolors"), grays()).unwrap();
     app.held_themes = Some(held);
     let listed = |app: &App, fake: &Fake| {
         pickers::theme_list(
@@ -615,19 +617,43 @@ fn a_picker_lists_the_themes_previews_one_and_names_the_chosen_one() {
     assert!(!list.loading);
     assert_eq!(list.appearance, ThemeVariant::Light);
     assert_eq!(list.current, "Lokyr Light");
-    let names: Vec<(&str, ThemeVariant, ThemeOrigin)> = list
+    let names: Vec<(&str, ThemeVariant, ThemeOrigin, ThemeFormat)> = list
         .themes
         .iter()
-        .map(|theme| (theme.name.as_str(), theme.variant, theme.origin))
+        .map(|theme| {
+            (
+                theme.name.as_str(),
+                theme.variant,
+                theme.origin,
+                theme.format,
+            )
+        })
         .collect();
+    let lokyr = ThemeFormat::Lokyr;
     assert_eq!(
         names,
         [
-            ("Held Dawn", ThemeVariant::Light, ThemeOrigin::Held),
-            ("Lokyr Dark", ThemeVariant::Dark, ThemeOrigin::BuiltIn),
-            ("Lokyr Light", ThemeVariant::Light, ThemeOrigin::BuiltIn),
-            ("Night", ThemeVariant::Dark, ThemeOrigin::Folder),
-            ("Paper", ThemeVariant::Light, ThemeOrigin::Folder),
+            (
+                "Grays",
+                ThemeVariant::Dark,
+                ThemeOrigin::Folder,
+                ThemeFormat::Itermcolors
+            ),
+            ("Held Dawn", ThemeVariant::Light, ThemeOrigin::Held, lokyr),
+            (
+                "Lokyr Dark",
+                ThemeVariant::Dark,
+                ThemeOrigin::BuiltIn,
+                lokyr
+            ),
+            (
+                "Lokyr Light",
+                ThemeVariant::Light,
+                ThemeOrigin::BuiltIn,
+                lokyr
+            ),
+            ("Night", ThemeVariant::Dark, ThemeOrigin::Folder, lokyr),
+            ("Paper", ThemeVariant::Light, ThemeOrigin::Folder, lokyr),
         ]
     );
     // Previewed in place of the light appearance's, then the config's.

@@ -30,7 +30,7 @@ use crate::drawing::Backend;
 pub(super) const SETTINGS: &str = "settings-tab";
 
 /// The size of the settings' window of their own, in points: wider than
-/// macOS's System Settings opens, as the Themes page's Inspector shows its
+/// macOS's System Settings opens, as the Themes page's Editor shows its
 /// tokens' column beside a terminal's specimen of 52 columns.
 const WINDOW: Size = Size {
     width: 1040.0,
