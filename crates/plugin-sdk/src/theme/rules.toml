@@ -19,64 +19,127 @@
 # - `contrasting(X)`: white or black, whichever reads better on X;
 # - `first(X, Y, …, on: Z, at: R)`: the first of a contrast of R at least
 #   on Z, else the last.
+#
+# The comment right above a rule tells what its token colors, which the
+# authors' guide shows beside the rule.
 
+# The interface's text.
 "text" = "foreground"
+# Fainter text, as a count or a hint.
 "text.secondary" = "readable(mix(text, background, 38%), on: panel.bg)"
+# The text of what is dimmed.
 "text.disabled" = "mix(text, background, 62%)"
+# Text that tells that something works or went well, as a plugin's state, active.
 "text.success" = "readable(green, on: background)"
+# Text that tells that something does not work or needs a look, as a plugin's state, disabled.
 "text.warning" = "readable(yellow, on: background)"
+# The accent: what is chosen, focused or running.
 "accent" = "first(blue, bright-blue, foreground, on: background, at: 3)"
+# The lines between groups.
 "separator" = "text / 10%"
+# The lines between split panes.
 "pane.divider" = "text / 16%"
+# The half of a pane that a dragged tab lights.
 "pane.drop" = { light = "accent / 25%", dark = "accent / 30%" }
+# The shadows under panels.
 "shadow" = { light = "#000000 / 25%", dark = "#000000 / 50%" }
+# The panels' background: the find bar, the palette, the menus.
 "panel.bg" = { light = "mix(background, foreground, 4%)", dark = "mix(background, foreground, 6%)" }
+# The panels' border.
 "panel.border" = { light = "text / 14%", dark = "text / 12%" }
+# The text fields' background.
 "field.bg" = "background"
+# The text fields' border.
 "field.border" = { light = "text / 18%", dark = "text / 16%" }
+# A text field's border as it has the keyboard.
 "field.focus" = { light = "accent / 50%", dark = "accent / 60%" }
+# A text field's selected text, and the terminal's selection where the theme gives none.
 "field.selection" = { light = "mix(background, accent, 30%)", dark = "mix(background, accent, 40%)" }
+# The ring of the keyboard's focus.
 "focus.ring" = { light = "accent / 50%", dark = "accent / 60%" }
+# A button at rest.
 "button.bg" = { light = "text / 6%", dark = "text / 8%" }
+# A button under the pointer.
 "button.hover.bg" = { light = "text / 10%", dark = "text / 12%" }
+# A button pressed.
 "button.pressed.bg" = { light = "text / 16%", dark = "text / 18%" }
+# A toggle that is on.
 "toggle.on.bg" = { light = "accent / 12%", dark = "accent / 20%" }
+# The mark of a toggle that is on.
 "toggle.on.fg" = "accent"
+# The tooltips' background.
 "tooltip.bg" = { light = "mix(background, foreground, 3%)", dark = "mix(background, foreground, 10%)" }
+# The tooltips' text.
 "tooltip.fg" = "text"
+# The tooltips' border.
 "tooltip.border" = "text / 15%"
+# A list's selected row, as the palette's.
 "list.selection.bg" = "accent"
+# The text of a list's selected row.
 "list.selection.fg" = "contrasting(list.selection.bg)"
+# A selected row of a list that has not the keyboard.
 "list.selection.inactive.bg" = { light = "text / 10%", dark = "text / 12%" }
+# The scroll bar.
 "scrollbar" = { light = "text / 30%", dark = "text / 35%" }
+# The scroll bar under the pointer.
 "scrollbar.hover" = { light = "text / 50%", dark = "text / 55%" }
+# The scroll bar's track.
 "scrollbar.track" = { light = "text / 5%", dark = "text / 7%" }
+# The find's marks beside the scroll bar.
 "scrollbar.mark" = "yellow"
+# The current match's mark beside the scroll bar.
 "scrollbar.mark.current" = "mix(yellow, red, 50%)"
+# The track of a program's progress.
 "progress.track" = { light = "text / 10%", dark = "text / 14%" }
+# A program's progress as it runs.
 "progress.normal" = "accent"
+# A program's progress that failed.
 "progress.error" = "red"
+# A program's progress paused.
 "progress.paused" = "yellow"
+# The tab bar.
 "tabs.bar.bg" = "mix(background, foreground, 6%)"
+# The track of the tab bar's pills.
 "tabs.track.bg" = { light = "text / 7%", dark = "text / 10%" }
+# The tab that shows.
 "tabs.active.bg" = "background"
+# The title of the tab that shows.
 "tabs.active.fg" = "text"
+# The border of the tab that shows.
 "tabs.active.border" = { light = "text / 10%", dark = "text / 12%" }
+# The shadow of the tab that shows.
 "tabs.active.shadow" = { light = "#000000 / 12%", dark = "#000000 / 40%" }
+# The other tabs.
 "tabs.inactive.bg" = "transparent"
+# The other tabs' titles.
 "tabs.inactive.fg" = "readable(mix(text, background, 40%), on: tabs.bar.bg)"
+# A tab under the pointer.
 "tabs.hover.bg" = { light = "text / 5%", dark = "text / 6%" }
+# The seamless tab bar's line.
 "tabs.seamless.line" = "text / 12%"
+# The veil over the seamless tab bar's other tabs.
 "tabs.seamless.veil" = { light = "#000000 / 6%", dark = "#000000 / 27%" }
+# A segmented control.
 "segments.bg" = { light = "text / 6%", dark = "text / 8%" }
+# A segmented control's chosen segment.
 "segments.chosen.bg" = "accent"
+# The text of a segmented control's chosen segment.
 "segments.chosen.fg" = "contrasting(segments.chosen.bg)"
+# The box under a segmented control's tabs.
 "segments.box.bg" = "text / 3%"
+# The border of the box under a segmented control's tabs.
 "segments.box.border" = "text / 10%"
+# The find bar's matches.
 "search.match" = { light = "yellow / 50%", dark = "yellow / 30%" }
+# The find bar's current match.
 "search.match.current" = { light = "mix(yellow, red, 50%) / 60%", dark = "mix(yellow, red, 50%) / 50%" }
+# The bar beside the prompt of a command that runs.
 "gutter.running" = "accent"
+# The bar beside the prompt of a command that succeeded.
 "gutter.succeeded" = { light = "text / 22%", dark = "text / 25%" }
+# The bar beside the prompt of a command that failed.
 "gutter.failed" = "red"
+# A bar of the terminal's own background.
 "terminal.bg" = "background"
+# A bar of the terminal's own text.
 "terminal.fg" = "foreground"

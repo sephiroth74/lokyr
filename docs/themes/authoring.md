@@ -1,6 +1,6 @@
 # Making a theme
 
-A theme of Lokyr is a small TOML file of colors: the terminal's background, text and 16 colors, and, if you like, any of the interface's colors, as the tab bar's, the panels' and the find bar's. A theme is for one appearance, light or dark; Lokyr derives every color that it leaves out from its terminal's colors, so that a theme of the terminal's colors alone colors all of Lokyr. Lokyr also reads iTerm2's `.itermcolors` files as they are: [Using an iTerm2 theme](#using-an-iterm2-theme) tells where to put them.
+A theme of Lokyr is a small TOML file of colors: the terminal's background, text and 16 colors, and, if you like, any of the interface's colors, as the tab bar's, the panels' and the find bar's. A theme is for one appearance, light or dark; Lokyr colors every interface color that it leaves out of a rule of its terminal's colors and of the other interface colors, so that a theme of the terminal's colors alone colors all of Lokyr, and a theme's accent colors whatever is of the accent. Lokyr also reads iTerm2's `.itermcolors` files as they are: [Using an iTerm2 theme](#using-an-iterm2-theme) tells where to put them.
 
 A theme gives colors alone: the tab bar's look and place, the fonts, the padding and the rest stay in your config, as [the config guide](../CONFIGURATION.md#theme) tells.
 
@@ -63,7 +63,7 @@ Lokyr applies it as you save either file, in the windows that are open too. A fi
 
 [`example.toml`](example.toml) is a theme of every key and every color that this guide tells, of the values of Lokyr's own dark theme: copy it and change what you like.
 
-To start from Lokyr's own values, **New…** on the settings window's Themes page makes a theme of every key of Lokyr Light or Lokyr Dark, as the page shows, the terminal's optional keys as comments of their defaults. To start from a theme that you like, View › New Theme from Current… makes a new theme of every color of the one in force, and **Duplicate…** in the context menu of a theme's card on the settings window's Themes page of that theme: Lokyr asks its name, writes it whole into the themes folder, `themes/<name>.toml`, of the original's author, license and source, uses it for its appearance and opens it in your editor, where each save shows at once. A name that a theme has already, of the folder, of Lokyr's own or built in, is refused.
+To start from Lokyr's own values, **New…** on the settings window's Themes page makes a theme of every key of Lokyr Light or Lokyr Dark, as the page shows, the terminal's optional keys as comments of their defaults, and the interface colors that it leaves to their rules as comments of the rules, which a line uncommented gives. To start from a theme that you like, View › New Theme from Current… makes a new theme of every color of the one in force, and **Duplicate…** in the context menu of a theme's card on the settings window's Themes page of that theme: Lokyr asks its name, writes it whole into the themes folder, `themes/<name>.toml`, the interface colors that it leaves out as comments of their rules, of the original's author, license and source, uses it for its appearance and opens it in your editor, where each save shows at once. A name that a theme has already, of the folder, of Lokyr's own or built in, is refused.
 
 ## Installing and choosing a theme
 
@@ -115,8 +115,8 @@ active = { fg = "#ffffff" }    # tabs.active.fg, as TOML's tables have it
 
 - `[search]` is the find bar's: `match`, every match, and `current`, the one that the find bar is at, the tokens `search.match` and `search.match.current`.
 - A token and a longer one of its name in the same section need the longer one's key quoted, as `scrollbar.mark` and `scrollbar.mark.current` in `[scrollbar]`: `mark = "…"` and `"mark.current" = "…"`.
-- A token that a theme does not give, nor the theme that it extends, takes Lokyr's derived color, below; a name that Lokyr does not know takes the color of its name without its last part, as `tabs.active` for `tabs.active.foo`, then of `tabs`.
-- A derived color of another token follows the color that the theme gives that token: a theme's `accent` colors `focus.ring`, `list.selection.bg` and the others derived of the accent, and its `text` the tokens derived of the text, unless the theme gives them too.
+- A token that a theme does not give, nor the theme that it extends, takes the color of its rule, below; a name that Lokyr does not know takes the color of its name without its last part, as `tabs.active` for `tabs.active.foo`, then of `tabs`.
+- A rule that names another token follows the color that the theme gives that token: a theme's `accent` colors `focus.ring`, `list.selection.bg` and the others whose rules name the accent, and its `text` those that name the text, unless the theme gives them too.
 - `transparent` is clear in every theme, as a configuration that names a token may name it.
 - A name of the sections of Lokyr's tokens, or of `[interface]`, that Lokyr does not know, as `tabs.actve.bg`, is told in a card at the windows' top right, of its line, and colors nothing that Lokyr draws.
 
@@ -134,54 +134,85 @@ A token's value is a color, or an expression of other colors, which follows them
 
 - **A color**: `#rrggbb` or `#rrggbbaa`, and `transparent`.
 - **The terminal's colors**: `background`, `foreground`, `cursor`, `selection`, and the 16 colors by their names, `black`, `red`, `green`, `yellow`, `blue`, `magenta`, `cyan`, `white`, then `bright-black` to `bright-white`.
-- **A token**, by its name, as `accent` or `panel.bg`, of the theme's color or of Lokyr's derived one.
+- **A token**, by its name, as `accent` or `panel.bg`, of the theme's color or of its rule's.
 - `X / N%`: X at an opacity of N%, whatever its own.
 - `mix(X, Y, N%)`: X mixed toward Y by N%, opaque.
 - `readable(X, on: Y)`: X, moved toward white or black as little as it takes to read on Y, of three quarters of the contrast of the theme's text on its background, 4.5 at most.
 - `contrasting(X)`: white or black, whichever reads better on X.
 - `first(X, Y, …, on: Z, at: R)`: the first of the colors of a contrast of R at least on Z, from 1 to 21, else the last.
 
-An expression that does not read, a name of no color, and tokens that name each other, as `button.bg` of `button.hover.bg` and `button.hover.bg` of `button.bg`, are told in the card, of their line, the token taking Lokyr's derived color; the rest of the theme is in force.
+An expression that does not read, a name of no color, and tokens that name each other, as `button.bg` of `button.hover.bg` and `button.hover.bg` of `button.bg`, are told in the card, of their line, the token taking its rule's color; the rest of the theme is in force.
 
 #### The tokens
 
-Each token, what it colors, and what Lokyr derives it of where a theme gives none. "The text" and "the background" are the terminal's `foreground` and `background`; "the accent" is the palette's blue, or its bright blue, whichever reads on the background, or else the text; "light / dark" values are those of a light and of a dark theme.
+Each token, what it colors, and its rule, the color that it takes where a theme gives none, of the terms that [Colors of other colors](#colors-of-other-colors) tells. A token of two rules has one of a light theme and one of a dark one, a theme dark where its background is darker than its text.
 
-| Token | What it colors | Derived |
+<!-- The tokens' table, of the rules: `cargo xtask theme-guide` writes it. -->
+
+| Token | What it colors | Its rule |
 |---|---|---|
-| `text` | The interface's text | The text |
-| `text.secondary` | Fainter text, as a count or a hint | The text, 38% toward the background, readable on a panel |
-| `text.disabled` | The text of what is dimmed | The text, 62% toward the background |
-| `text.success` | Text that tells that something works or went well, as a plugin's state, active | The palette's green, readable on the background |
-| `text.warning` | Text that tells that something does not work or needs a look, as a plugin's state, disabled | The palette's yellow, readable on the background |
-| `accent` | The accent: what is chosen, focused or running | The accent |
-| `separator` | The lines between groups | The text at 10% |
-| `shadow` | The shadows under panels | Black at 25% / 50% |
-| `terminal.bg`, `terminal.fg` | A bar of the terminal's own colors | The background and the text |
-| `panel.bg`, `panel.border` | The panels: the find bar, the palette, the menus | The background 4% / 6% toward the text; the text at 14% / 12% |
-| `field.bg`, `field.border` | The text fields | The background; the text at 18% / 16% |
-| `field.focus` | A field's border as it has the keyboard | The accent at 50% / 60% |
-| `field.selection` | A field's selected text | The background 30% / 40% toward the accent |
-| `focus.ring` | The ring of the keyboard's focus | The accent at 50% / 60% |
-| `button.bg`, `button.hover.bg`, `button.pressed.bg` | The buttons, at rest, under the pointer and pressed | The text at 6% / 8%, 10% / 12% and 16% / 18% |
-| `toggle.on.bg`, `toggle.on.fg` | A toggle that is on | The accent at 12% / 20%; the accent |
-| `tooltip.bg`, `tooltip.fg`, `tooltip.border` | The tooltips | The background 3% / 10% toward the text; the text; the text at 15% |
-| `list.selection.bg`, `list.selection.fg` | A list's selected row, as the palette's | The accent; white or black, whichever reads on it |
-| `list.selection.inactive.bg` | A selected row of a list that has not the keyboard | The text at 10% / 12% |
-| `scrollbar`, `scrollbar.hover`, `scrollbar.track` | The scroll bar, under the pointer, and its track | The text at 30% / 35%, 50% / 55% and 5% / 7% |
-| `scrollbar.mark`, `scrollbar.mark.current` | The search's marks beside the scroll bar, and the current one | The palette's yellow; orange, of its yellow and red |
-| `pane.divider` | The lines between split panes | The text at 16% |
-| `pane.drop` | The half of a pane that a dragged tab lights | The accent at 25% / 30% |
-| `progress.track`, `progress.normal`, `progress.error`, `progress.paused` | A program's progress, its track and its states | The text at 10% / 14%; the accent; red; yellow |
-| `tabs.bar.bg`, `tabs.track.bg` | The tab bar, and the track of its pills | The background 6% toward the text; the text at 7% / 10% |
-| `tabs.active.bg`, `tabs.active.fg`, `tabs.active.border`, `tabs.active.shadow` | The tab that shows | The background; the text; the text at 10% / 12%; black at 12% / 40% |
-| `tabs.inactive.bg`, `tabs.inactive.fg` | The other tabs | Clear; the text 40% toward the bar, readable on it |
-| `tabs.hover.bg` | A tab under the pointer | The text at 5% / 6% |
-| `tabs.seamless.line`, `tabs.seamless.veil` | The seamless tab bar's line and the veil over its other tabs | The text at 12%; black at 6% / 27% |
-| `segments.bg`, `segments.chosen.bg`, `segments.chosen.fg` | The segmented controls, and their chosen segment | The text at 6% / 8%; the accent; white or black, whichever reads on it |
-| `segments.box.bg`, `segments.box.border` | The box under a segmented control's tabs | The text at 3%; the text at 10% |
-| `search.match`, `search.match.current` | The find bar's matches, and the current one | Yellow at 50% / 30%; orange at 60% / 50% |
-| `gutter.running`, `gutter.succeeded`, `gutter.failed` | The bar beside the prompt of a command that runs, that succeeded and that failed | The accent; the text at 22% / 25%; red |
+| `text` | The interface's text | `foreground` |
+| `text.secondary` | Fainter text, as a count or a hint | `readable(mix(text, background, 38%), on: panel.bg)` |
+| `text.disabled` | The text of what is dimmed | `mix(text, background, 62%)` |
+| `text.success` | Text that tells that something works or went well, as a plugin's state, active | `readable(green, on: background)` |
+| `text.warning` | Text that tells that something does not work or needs a look, as a plugin's state, disabled | `readable(yellow, on: background)` |
+| `accent` | The accent: what is chosen, focused or running | `first(blue, bright-blue, foreground, on: background, at: 3)` |
+| `separator` | The lines between groups | `text / 10%` |
+| `pane.divider` | The lines between split panes | `text / 16%` |
+| `pane.drop` | The half of a pane that a dragged tab lights | light `accent / 25%`, dark `accent / 30%` |
+| `shadow` | The shadows under panels | light `#000000 / 25%`, dark `#000000 / 50%` |
+| `panel.bg` | The panels' background: the find bar, the palette, the menus | light `mix(background, foreground, 4%)`, dark `mix(background, foreground, 6%)` |
+| `panel.border` | The panels' border | light `text / 14%`, dark `text / 12%` |
+| `field.bg` | The text fields' background | `background` |
+| `field.border` | The text fields' border | light `text / 18%`, dark `text / 16%` |
+| `field.focus` | A text field's border as it has the keyboard | light `accent / 50%`, dark `accent / 60%` |
+| `field.selection` | A text field's selected text, and the terminal's selection where the theme gives none | light `mix(background, accent, 30%)`, dark `mix(background, accent, 40%)` |
+| `focus.ring` | The ring of the keyboard's focus | light `accent / 50%`, dark `accent / 60%` |
+| `button.bg` | A button at rest | light `text / 6%`, dark `text / 8%` |
+| `button.hover.bg` | A button under the pointer | light `text / 10%`, dark `text / 12%` |
+| `button.pressed.bg` | A button pressed | light `text / 16%`, dark `text / 18%` |
+| `toggle.on.bg` | A toggle that is on | light `accent / 12%`, dark `accent / 20%` |
+| `toggle.on.fg` | The mark of a toggle that is on | `accent` |
+| `tooltip.bg` | The tooltips' background | light `mix(background, foreground, 3%)`, dark `mix(background, foreground, 10%)` |
+| `tooltip.fg` | The tooltips' text | `text` |
+| `tooltip.border` | The tooltips' border | `text / 15%` |
+| `list.selection.bg` | A list's selected row, as the palette's | `accent` |
+| `list.selection.fg` | The text of a list's selected row | `contrasting(list.selection.bg)` |
+| `list.selection.inactive.bg` | A selected row of a list that has not the keyboard | light `text / 10%`, dark `text / 12%` |
+| `scrollbar` | The scroll bar | light `text / 30%`, dark `text / 35%` |
+| `scrollbar.hover` | The scroll bar under the pointer | light `text / 50%`, dark `text / 55%` |
+| `scrollbar.track` | The scroll bar's track | light `text / 5%`, dark `text / 7%` |
+| `scrollbar.mark` | The find's marks beside the scroll bar | `yellow` |
+| `scrollbar.mark.current` | The current match's mark beside the scroll bar | `mix(yellow, red, 50%)` |
+| `progress.track` | The track of a program's progress | light `text / 10%`, dark `text / 14%` |
+| `progress.normal` | A program's progress as it runs | `accent` |
+| `progress.error` | A program's progress that failed | `red` |
+| `progress.paused` | A program's progress paused | `yellow` |
+| `tabs.bar.bg` | The tab bar | `mix(background, foreground, 6%)` |
+| `tabs.track.bg` | The track of the tab bar's pills | light `text / 7%`, dark `text / 10%` |
+| `tabs.active.bg` | The tab that shows | `background` |
+| `tabs.active.fg` | The title of the tab that shows | `text` |
+| `tabs.active.border` | The border of the tab that shows | light `text / 10%`, dark `text / 12%` |
+| `tabs.active.shadow` | The shadow of the tab that shows | light `#000000 / 12%`, dark `#000000 / 40%` |
+| `tabs.inactive.bg` | The other tabs | `transparent` |
+| `tabs.inactive.fg` | The other tabs' titles | `readable(mix(text, background, 40%), on: tabs.bar.bg)` |
+| `tabs.hover.bg` | A tab under the pointer | light `text / 5%`, dark `text / 6%` |
+| `tabs.seamless.line` | The seamless tab bar's line | `text / 12%` |
+| `tabs.seamless.veil` | The veil over the seamless tab bar's other tabs | light `#000000 / 6%`, dark `#000000 / 27%` |
+| `segments.bg` | A segmented control | light `text / 6%`, dark `text / 8%` |
+| `segments.chosen.bg` | A segmented control's chosen segment | `accent` |
+| `segments.chosen.fg` | The text of a segmented control's chosen segment | `contrasting(segments.chosen.bg)` |
+| `segments.box.bg` | The box under a segmented control's tabs | `text / 3%` |
+| `segments.box.border` | The border of the box under a segmented control's tabs | `text / 10%` |
+| `search.match` | The find bar's matches | light `yellow / 50%`, dark `yellow / 30%` |
+| `search.match.current` | The find bar's current match | light `mix(yellow, red, 50%) / 60%`, dark `mix(yellow, red, 50%) / 50%` |
+| `gutter.running` | The bar beside the prompt of a command that runs | `accent` |
+| `gutter.succeeded` | The bar beside the prompt of a command that succeeded | light `text / 22%`, dark `text / 25%` |
+| `gutter.failed` | The bar beside the prompt of a command that failed | `red` |
+| `terminal.bg` | A bar of the terminal's own background | `background` |
+| `terminal.fg` | A bar of the terminal's own text | `foreground` |
+
+<!-- The tokens' table's end. -->
 
 #### A plugin's tokens
 
@@ -214,7 +245,7 @@ A theme that extends another takes all of its colors and gives its own over them
 
 ## How Lokyr reads `.itermcolors`
 
-Lokyr reads an `.itermcolors` file of the themes folder as iTerm2 reads it, and never converts it: its name is the file's, without `.itermcolors`. Each color's `Color Space` tells how its components read: `sRGB` as they are, `P3` of Display P3, and `Calibrated`, `Device` or none, as old files have, of calibrated Generic RGB; each converted to sRGB and cut to its gamut, as macOS cuts it. Lokyr takes its `Ansi 0 Color` to `Ansi 15 Color`, `Background Color`, `Foreground Color`, `Cursor Color`, `Cursor Text Color`, `Selection Color`, `Selected Text Color`, `Bold Color`, `Link Color` and `Underline Color`, and derives the interface's colors of them. A file of keys of both appearances, ending in ` (Light)` and ` (Dark)`, is two themes, `<name> (Light)` and `<name> (Dark)`, each named so in the config.
+Lokyr reads an `.itermcolors` file of the themes folder as iTerm2 reads it, and never converts it: its name is the file's, without `.itermcolors`. Each color's `Color Space` tells how its components read: `sRGB` as they are, `P3` of Display P3, and `Calibrated`, `Device` or none, as old files have, of calibrated Generic RGB; each converted to sRGB and cut to its gamut, as macOS cuts it. Lokyr takes its `Ansi 0 Color` to `Ansi 15 Color`, `Background Color`, `Foreground Color`, `Cursor Color`, `Cursor Text Color`, `Selection Color`, `Selected Text Color`, `Bold Color`, `Link Color` and `Underline Color`, and colors the interface of them by the tokens' rules. A file of keys of both appearances, ending in ` (Light)` and ` (Dark)`, is two themes, `<name> (Light)` and `<name> (Dark)`, each named so in the config.
 
 ## Sharing a theme
 

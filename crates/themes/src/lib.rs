@@ -492,19 +492,48 @@ pub fn native(theme: &Theme, credits: Credits<'_>) -> String {
 
 /// The text of a file of the native format of a whole copy of `resolved`,
 /// as a new theme of `name` made of it: every terminal color and the tokens
-/// that it gives, those that it leaves out derived as its own are, and its
-/// credits.
+/// that it gives, those that it leaves out as comments of their rules, as
+/// [`with_rules`] writes them, and its credits.
 pub fn copy_of(resolved: &Resolved, name: &str) -> String {
     let mut theme = resolved.theme.clone();
     theme.name = name.to_owned();
-    native(&theme, resolved.credits.credits())
+    with_rules(native(&theme, resolved.credits.credits()), &theme)
+}
+
+/// `text`, a file of the native format of `theme`, as [`native`] writes
+/// it, of each token that `theme` leaves to its rule as a comment of the
+/// rule of its variant, in `[interface]`, its last section, so that the
+/// file shows every token, which a line uncommented gives, as it is.
+pub fn with_rules(mut text: String, theme: &Theme) -> String {
+    let dark = rules::is_dark(&theme.terminal);
+    let lines: Vec<String> = rules::tokens()
+        .filter(|token| !theme.tokens.contains_key(*token))
+        .filter_map(|token| {
+            let rule = rules::rule(token)?;
+            Some(format!(
+                "# {} = {}\n",
+                quoted(token),
+                quoted(rule.text(dark))
+            ))
+        })
+        .collect();
+    if lines.is_empty() {
+        return text;
+    }
+    if !text.contains("\n[interface]\n") {
+        text.push_str("\n[interface]\n");
+    }
+    text.push_str("# Every other token, of Lokyr's rule: a line uncommented gives it.\n");
+    text.push_str(&lines.concat());
+    text
 }
 
 /// The text of a file of the native format of a new theme of `theme`'s
 /// values, named `name`: every key that it gives, written as [`native`]
-/// writes them, and each optional key of `[terminal]` that it leaves out as
-/// a comment of the value that it takes then, so that the file shows every
-/// key and, left as it is, colors as `theme` does.
+/// writes them, each optional key of `[terminal]` that it leaves out as a
+/// comment of the value that it takes then, and each token that it leaves
+/// out as a comment of its rule, as [`with_rules`] writes them, so that the
+/// file shows every key and, left as it is, colors as `theme` does.
 pub fn new_theme_of(theme: &Theme, name: &str) -> String {
     let mut fresh = theme.clone();
     fresh.name = name.to_owned();
@@ -558,7 +587,8 @@ pub fn new_theme_of(theme: &Theme, name: &str) -> String {
         .find("\n[terminal]\n")
         .and_then(|start| text[start + 1..].find("\n\n[").map(|at| start + 1 + at + 1))
         .unwrap_or(text.len());
-    format!("{}{}{}", &text[..end], left_out.concat(), &text[end..])
+    let text = format!("{}{}{}", &text[..end], left_out.concat(), &text[end..]);
+    with_rules(text, &fresh)
 }
 
 /// `text` as a basic string of TOML, of its escapes.

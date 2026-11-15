@@ -21,6 +21,7 @@ mod site;
 mod sparkle;
 mod symbolicate;
 mod terminfo;
+mod theme_guide;
 mod themes;
 mod ucd;
 
@@ -51,6 +52,7 @@ fn main() -> ExitCode {
         Some("site") => site::run(args),
         Some("symbolicate") => symbolicate::run(args),
         Some("terminfo") => terminfo::run(args),
+        Some("theme-guide") => theme_guide::run(args),
         Some("themes") => themes::run(args),
         Some("ucd") => ucd::run(args),
         Some(task) => {
@@ -90,6 +92,8 @@ fn print_help() {
          site --changed-since <commit>  print the addresses of the site's pages changed since a commit\n  \
          symbolicate <report.ips>    the crashed thread of a crash report, Lokyr's frames told by the release's dSYM\n  \
          terminfo [--out DIR]        compile the terminfo entry xterm-lokyr, into target/terminfo by default\n  \
+         theme-guide [--check]       write the table of the themes' tokens in docs/themes/authoring.md of their rules, or check it
+  \
          themes [--out DIR]          check the themes' collection and write the themes that the bundle holds, into target/themes by default\n  \
          ucd [--check]               generate the Unicode tables of vt-core, or check them"
     );

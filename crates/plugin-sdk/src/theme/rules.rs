@@ -502,9 +502,13 @@ impl Expr {
     }
 }
 
-/// A token's rule: its text and its expression of each variant.
+/// A token's rule: what its token colors, its text and its expression of
+/// each variant.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Rule {
+    /// What its token colors, of the comment right above it, without its
+    /// `# `; empty of none.
+    pub description: String,
     /// The light variant's text.
     pub light: &'static str,
     /// The dark variant's text.
@@ -540,11 +544,19 @@ fn rules() -> &'static [(&'static str, Rule)] {
 /// The rules of `text`, a rule a line, or why a line does not read.
 fn read_rules(text: &'static str) -> Result<Vec<(&'static str, Rule)>, String> {
     let mut out: Vec<(&'static str, Rule)> = Vec::new();
+    // The comment's lines right above the line under way.
+    let mut comment: Vec<&str> = Vec::new();
     for (number, line) in text.lines().enumerate() {
         let line = line.trim();
-        if line.is_empty() || line.starts_with('#') {
+        if line.is_empty() {
+            comment.clear();
             continue;
         }
+        if let Some(text) = line.strip_prefix('#') {
+            comment.push(text.trim());
+            continue;
+        }
+        let description = std::mem::take(&mut comment).join(" ");
         let wrong = |why: &str| format!("rules.toml:{}: {why}", number + 1);
         let quoted = |text: &'static str| -> Option<(&'static str, &'static str)> {
             let text = text.strip_prefix('"')?;
@@ -597,6 +609,7 @@ fn read_rules(text: &'static str) -> Result<Vec<(&'static str, Rule)>, String> {
         out.push((
             name,
             Rule {
+                description,
                 light,
                 dark,
                 light_expr: parse(light)?,

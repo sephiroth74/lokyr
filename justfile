@@ -159,7 +159,7 @@ linux +recipes:
         {{ linux_image }} just {{ recipes }}
 
 # CI's Linux job, in the container of Linux's checks, of no minute of CI's.
-test-linux: (linux "fmt-check" "check-deps" "check-comments" "check-changelog" "check-links" "check-config-guide" "check-dist" "deny" "test-portable")
+test-linux: (linux "fmt-check" "check-deps" "check-comments" "check-changelog" "check-links" "check-config-guide" "check-theme-guide" "check-dist" "deny" "test-portable")
 
 # Test the platform-independent crates on the host (used by the Linux CI job), every suite even after one fails.
 test-portable:
@@ -233,6 +233,10 @@ check-changelog:
 check-config-guide:
     cargo xtask config-guide --check
 
+# Check that the table of the themes' tokens in docs/themes/authoring.md is the one that their rules make; `cargo xtask theme-guide` writes it.
+check-theme-guide:
+    cargo xtask theme-guide --check
+
 # Test the measuring tools of tools/bench, which compare the terminals and read powermetrics' recordings (macOS).
 test-bench-tools:
     python3 -m unittest discover -s tools/bench
@@ -242,7 +246,7 @@ ui-gallery *args:
     cargo run --locked -p lokyr-ui-gallery -- {{args}}
 
 # Run the CI checks locally. Linux is covered by `test-linux`, CI's Linux job in the container of Linux's checks, and `check-linux`, the x86_64 check.
-ci: lint build test test-linux check-linux deny check-deps check-comments check-changelog check-links check-config-guide check-dist check-luau-types build-minimal bundle
+ci: lint build test test-linux check-linux deny check-deps check-comments check-changelog check-links check-config-guide check-theme-guide check-dist check-luau-types build-minimal bundle
 
 # Build target/Lokyr.app from the release binary, signed with the identity that $LOKYR_SIGN_IDENTITY names, or ad hoc, with Sparkle's release and the themes' collection (downloads them the first time); `--features three-drawables` builds it of three drawables a window, and `--no-default-features --features dist-minimal` of the minimal distribution.
 bundle *args:

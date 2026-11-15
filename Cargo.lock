@@ -3055,6 +3055,7 @@ dependencies = [
  "libc",
  "lokyr-kernel",
  "lokyr-plugin-host-luau",
+ "lokyr-plugin-sdk",
  "plist",
  "pulldown-cmark",
  "regex",

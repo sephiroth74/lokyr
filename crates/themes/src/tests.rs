@@ -674,6 +674,15 @@ fn a_theme_s_credits_come_of_its_file_or_of_those_that_it_extends_and_its_copy_i
     assert_eq!(copy.credits, mine.credits);
     assert!(text.contains("name = \"Mine Copy\""), "{text}");
     assert!(!text.contains("extends"), "{text}");
+    // The tokens that it leaves out, comments of their rules.
+    for token in lokyr_plugin_sdk::theme::TOKENS {
+        let given = mine.theme.tokens.contains_key(token);
+        assert_eq!(
+            text.contains(&format!("# \"{token}\" = ")),
+            !given,
+            "{token}"
+        );
+    }
     for folder in [held, directory, other] {
         let _ = fs::remove_dir_all(folder);
     }
@@ -711,15 +720,37 @@ fn a_new_theme_of_a_built_in_one_writes_every_key_its_optional_ones_as_comments(
     assert_eq!(read.name, "New Dark Theme");
     assert_eq!(read.terminal, base.terminal);
     assert_eq!(read.tokens, base.tokens);
-    // Of no section after `[terminal]`, the comments at the file's end.
+    // Every token that it leaves out, a comment of its rule in
+    // `[interface]`, after those that it gives.
+    for token in lokyr_plugin_sdk::theme::TOKENS {
+        let given = base.tokens.contains_key(token);
+        let commented = text.contains(&format!("# \"{token}\" = \""));
+        assert!(given != commented, "{token}: {text}");
+    }
+    let interface = text.find("[interface]").unwrap();
+    assert!(text.find("# \"text\" = \"foreground\"").unwrap() > interface);
+    // Uncommented, the rules color as the comments did.
+    let uncommented = text.replace("# \"", "\"");
+    let open = super::tests::folder("new-theme-open", &[("Open", &uncommented)]);
+    let opened = resolve("Open", Some(&open), None, &[]).unwrap();
+    assert!(opened.notices.is_empty(), "{:?}", opened.notices);
+    assert_eq!(
+        rules::resolve(&opened.theme.terminal, &opened.theme.tokens),
+        rules::resolve(&base.terminal, &base.tokens)
+    );
+    // Of no token, every token commented in an `[interface]` of its own,
+    // after the terminal's optional keys.
     let mut bare = builtin();
     bare.tokens.clear();
+    let text = new_theme_of(&bare, "Bare");
+    assert!(text.find("the text's when left out").unwrap() < text.find("\n[interface]\n").unwrap());
     assert!(
-        new_theme_of(&bare, "Bare")
-            .trim_end()
-            .ends_with("the text's when left out")
+        text.trim_end()
+            .ends_with("\"terminal.fg\" = \"foreground\""),
+        "{text}"
     );
     let _ = fs::remove_dir_all(folder);
+    let _ = fs::remove_dir_all(open);
 }
 
 #[test]
@@ -754,14 +785,22 @@ fn the_guide_s_example_theme_holds_every_key_and_token() {
     }
     // A plugin's, of a section of its own name.
     assert!(partial.tokens.contains_key("command-header.pill"));
-    // And it resolves whole, of the theme that it extends.
+    // And it resolves whole, of the theme that it extends, of nothing
+    // told, as Lokyr Dark colors, its colors of other colors too.
+    let dark = lokyr_plugin_sdk::theme::builtin::dark();
     let resolved = resolve(
         "Example",
         Some(&folder("example", &[("Example", text)])),
         None,
-        &[builtin()],
-    );
-    assert!(resolved.is_ok(), "{resolved:?}");
+        std::slice::from_ref(&dark),
+    )
+    .unwrap();
+    assert!(resolved.notices.is_empty(), "{:?}", resolved.notices);
+    let example = rules::resolve(&resolved.theme.terminal, &resolved.theme.tokens);
+    let built_in = rules::resolve(&dark.terminal, &dark.tokens);
+    for (token, color) in &built_in {
+        assert_eq!(example.get(token), Some(color), "{token}");
+    }
 }
 
 #[test]

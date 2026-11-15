@@ -14,12 +14,19 @@ fn light_terminal() -> TerminalColors {
 }
 
 #[test]
-fn the_rules_read_and_are_those_of_every_token_once() {
+fn the_rules_read_and_are_those_of_every_token_once_each_of_what_it_colors() {
     let names: Vec<&str> = tokens().collect();
     let unique: BTreeSet<&str> = names.iter().copied().collect();
     assert_eq!(unique.len(), names.len());
     let sdk: BTreeSet<&str> = crate::theme::TOKENS.into_iter().collect();
     assert_eq!(unique, sdk);
+    for (name, rule) in rules() {
+        assert!(
+            rule.description.ends_with('.'),
+            "{name}: {}",
+            rule.description
+        );
+    }
 }
 
 #[test]
@@ -245,11 +252,18 @@ fn a_rules_file_that_does_not_read_tells_its_line() {
         let told = read_rules(text).unwrap_err();
         assert!(told.contains(why), "{text}: {told}");
     }
-    let read = read_rules("\"a\" = { light = \"x\", dark = \"y / 5%\" }").unwrap();
+    let read = read_rules(
+        "# The header.\n\n# What a\n# colors.\n\"a\" = { light = \"x\", dark = \"y / 5%\" }\n\"b\" = \"x\"\n",
+    )
+    .unwrap();
     assert_eq!(
         (read[0].1.text(false), read[0].1.text(true)),
         ("x", "y / 5%")
     );
+    // The comment right above a rule, its description; none of a header
+    // past a blank line, nor of the rule before.
+    assert_eq!(read[0].1.description, "What a colors.");
+    assert_eq!(read[1].1.description, "");
 }
 
 #[test]
