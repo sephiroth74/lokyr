@@ -69,6 +69,11 @@ const NEW_THEME: &str = "app.new-theme";
 const THEMES_IMPORT: &str = "themes-import";
 const IMPORT_THEMES: &str = "app.import-themes";
 
+/// The themes' page's button of the themes' folder, which the app shows
+/// in the file manager.
+const THEMES_FOLDER: &str = "themes-folder";
+const OPEN_THEMES: &str = "app.open-themes-folder";
+
 /// How many themes' cards a row of the themes' page holds.
 const CARDS_ACROSS: usize = 3;
 
@@ -436,8 +441,12 @@ impl Plugin for SettingsPage {
                 }
                 return Ok(());
             }
-            if (&event.kind, key) == (&UiEventKind::Click, THEMES_IMPORT) {
-                return cx.run_command(IMPORT_THEMES, Args::new());
+            if event.kind == UiEventKind::Click {
+                match key {
+                    THEMES_IMPORT => return cx.run_command(IMPORT_THEMES, Args::new()),
+                    THEMES_FOLDER => return cx.run_command(OPEN_THEMES, Args::new()),
+                    _ => {}
+                }
             }
             let Some((variant, name)) = key
                 .strip_prefix(THEME_CARD)
@@ -458,9 +467,8 @@ impl Plugin for SettingsPage {
                     cx.open_panel(
                         THEME_MENU,
                         PanelOptions {
-                            anchor: Anchor::Node {
+                            anchor: Anchor::ViewPointer {
                                 view: themes_page(),
-                                key: event.key.clone(),
                             },
                             role: PanelRole::Menu,
                             close_outside: true,
@@ -2785,7 +2793,7 @@ fn themes_tree(cx: &mut Cx<'_>, chosen: Option<ThemeVariant>) -> Node {
             ..Layout::default()
         });
     let (word, heading, _) = words(variant);
-    // The title, and Import… at the row's end.
+    // The title, and Show in Finder and Import… at the row's end.
     let header = Node::container(vec![
         Node::text(message(cx, heading, &[]))
             .key("title")
@@ -2796,6 +2804,7 @@ fn themes_tree(cx: &mut Cx<'_>, chosen: Option<ThemeVariant>) -> Node {
                 ..Style::default()
             }),
         Node::spacer(),
+        Node::button(message(cx, "themes-folder", &[]).as_str()).key(THEMES_FOLDER),
         Node::button(message(cx, "themes-import", &[]).as_str()).key(THEMES_IMPORT),
     ])
     .layout(Layout {

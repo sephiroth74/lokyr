@@ -197,6 +197,13 @@ pub enum Anchor {
         /// The corner.
         corner: Corner,
     },
+    /// At the pointer, where it is in the window that shows a view of the
+    /// plugin's, as [`Anchor::Pointer`], of no window's id: a page's
+    /// context menu in the settings' window.
+    ViewPointer {
+        /// The view.
+        view: ViewId,
+    },
 }
 
 /// What a panel is to the system.

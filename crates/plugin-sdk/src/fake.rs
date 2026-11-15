@@ -2621,7 +2621,9 @@ impl FakeHost {
                 self.node(view, key)?;
                 self.view_window(view)
             }
-            Anchor::ViewWindow { view, .. } => self.view_window(view),
+            Anchor::ViewWindow { view, .. } | Anchor::ViewPointer { view } => {
+                self.view_window(view)
+            }
         }
     }
 

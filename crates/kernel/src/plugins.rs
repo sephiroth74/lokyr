@@ -5126,7 +5126,9 @@ impl Host<'_, '_> {
                 self.node(view, key)?;
                 self.view_window(view)?
             }
-            Anchor::ViewWindow { view, .. } => self.view_window(view)?,
+            Anchor::ViewWindow { view, .. } | Anchor::ViewPointer { view } => {
+                self.view_window(view)?
+            }
         };
         // The settings' window shows its pages' own panels alone, as a
         // menu below a node of a page, or of one of those panels, the
@@ -5139,6 +5141,8 @@ impl Host<'_, '_> {
             } | Anchor::ViewWindow {
                 view: ViewId::Page(_) | ViewId::Panel(_),
                 ..
+            } | Anchor::ViewPointer {
+                view: ViewId::Page(_) | ViewId::Panel(_),
             }
         );
         if self.context.workspace.settings_window() == Some(window) && !of_page {

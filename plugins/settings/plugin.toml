@@ -16,9 +16,10 @@ open = true
 appearance-write = true
 
 # A theme's card's Duplicate…, a new theme that the app makes, and the
-# themes page's Import…, the themes that the app imports.
+# themes page's Import…, the themes that the app imports, and Show in
+# Finder, the themes' folder that it shows.
 [uses]
-commands = ["app.new-theme", "app.import-themes"]
+commands = ["app.new-theme", "app.import-themes", "app.open-themes-folder"]
 
 [contributes]
 pages = [

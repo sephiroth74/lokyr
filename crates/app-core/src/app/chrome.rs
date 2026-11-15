@@ -245,6 +245,8 @@ impl<B: Backend> App<B> {
                         } | lokyr_kernel::plugins::ui::Anchor::ViewWindow {
                             view: ViewId::Page(_) | ViewId::Panel(_),
                             ..
+                        } | lokyr_kernel::plugins::ui::Anchor::ViewPointer {
+                            view: ViewId::Page(_) | ViewId::Panel(_),
                         }
                     )
                 });

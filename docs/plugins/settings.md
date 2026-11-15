@@ -35,8 +35,9 @@ The Settings, Keys and Themes pages of the settings window: every key of your co
 - **The themes are read** off Lokyr's main thread, a progress showing as their list is read, then the cards, each preview a placeholder until its theme's colors come.
 - **Each theme** is a card of a preview of its colors, a sample terminal that Lokyr draws: its background, a prompt, an `ls` of colors and its sixteen colors, and its name; the theme that your config's `[theme]` names for its appearance has the accent's border.
 - **A click on a card** names its theme in `[theme]`, `light` or `dark` as the theme is, which shows at once where its appearance is in force. The Settings page keeps `[theme]`'s `minimum-contrast` alone.
-- **Import…**, at the title's row, shows the system's open panel, of `.itermcolors` and `.toml` files, several chosen at once, as View › Import Themes… does: each that holds themes is copied into the themes' folder as it is, one question asking whether to replace the files of a name there already or to skip them; the themes show at once, and an alert tells how many were imported, by their names, and the files that were not, as one that holds no theme.
-- **A card's context menu**, of a secondary click, has **Use**, as a click, and **Duplicate…**, a new theme of every color of the card's, as View › New Theme from Current… makes it: Lokyr asks its name, writes it into the themes' folder, uses it and opens it in your editor.
+- **Show in Finder**, at the title's row, shows the themes' folder in the Finder, as View › Open Themes Folder does, making it first if it is not there.
+- **Import…**, beside it, shows the system's open panel, of `.itermcolors` and `.toml` files, several chosen at once, as View › Import Themes… does: each that holds themes is copied into the themes' folder as it is, one question asking whether to replace the files of a name there already or to skip them; the themes show at once, and an alert tells how many were imported, by their names, and the files that were not, as one that holds no theme.
+- **A card's context menu**, of a secondary click, at the pointer, has **Use**, as a click, and **Duplicate…**, a new theme of every color of the card's, as View › New Theme from Current… makes it: Lokyr asks its name, writes it into the themes' folder, uses it and opens it in your editor.
 
 ## Commands
 

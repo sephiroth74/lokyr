@@ -2294,9 +2294,17 @@ fn a_theme_s_card_s_context_menu_uses_it_or_makes_a_new_theme_of_it_and_import_i
         params: Vec::new(),
         when: None,
     };
+    let open_themes = Command {
+        name: OPEN_THEMES.to_owned(),
+        title: "Open Themes Folder".to_owned(),
+        category: Category::View,
+        capabilities: Vec::new(),
+        params: Vec::new(),
+        when: None,
+    };
     let mut host = FakeHost::new(NAME)
         .with_manifest(crate::MANIFEST)
-        .with_commands(vec![new_theme, import_themes]);
+        .with_commands(vec![new_theme, import_themes, open_themes]);
     host.pane(PaneId(1));
     host.set_settings(settings());
     let mut plugin = SettingsPage::default();
@@ -2320,15 +2328,14 @@ fn a_theme_s_card_s_context_menu_uses_it_or_makes_a_new_theme_of_it_and_import_i
             &event(&themes_page(), card, UiEventKind::ContextMenu),
         )
         .unwrap();
-        // A menu at the card, of its two items.
+        // A menu at the pointer, of its two items.
         let options = host.panels().get(&PanelId::from(THEME_MENU)).cloned();
         assert_eq!(
             options.map(|options| (options.role, options.anchor)),
             Some((
                 PanelRole::Menu,
-                Anchor::Node {
+                Anchor::ViewPointer {
                     view: themes_page(),
-                    key: card.into(),
                 }
             ))
         );
@@ -2375,6 +2382,18 @@ fn a_theme_s_card_s_context_menu_uses_it_or_makes_a_new_theme_of_it_and_import_i
     assert!(host.take_done().iter().any(|request| *request
         == Request::RunCommand {
             name: IMPORT_THEMES.to_owned(),
+            args: Args::new(),
+        }));
+    // Show in Finder beside it: the themes' folder.
+    assert!(find_node(&tree, THEMES_FOLDER).is_some());
+    host.ui_event(
+        &mut plugin,
+        &event(&themes_page(), THEMES_FOLDER, UiEventKind::Click),
+    )
+    .unwrap();
+    assert!(host.take_done().iter().any(|request| *request
+        == Request::RunCommand {
+            name: OPEN_THEMES.to_owned(),
             args: Args::new(),
         }));
 }

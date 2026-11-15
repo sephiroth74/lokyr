@@ -529,7 +529,7 @@ fn anchor_of<B: Backend>(
                 Some(Anchor::Below(cell(view, at.x, i64::from(at.y))))
             })
             .unwrap_or(pointer),
-        PanelAnchor::Pointer(_) => pointer,
+        PanelAnchor::Pointer(_) | PanelAnchor::ViewPointer { .. } => pointer,
         PanelAnchor::Node { view, key } => {
             let of = |plugin: &str| {
                 state
@@ -596,7 +596,8 @@ fn anchor_pane(anchor: &PanelAnchor) -> Option<host::PaneId> {
         PanelAnchor::Pointer(_)
         | PanelAnchor::Node { .. }
         | PanelAnchor::WindowCorner { .. }
-        | PanelAnchor::ViewWindow { .. } => None,
+        | PanelAnchor::ViewWindow { .. }
+        | PanelAnchor::ViewPointer { .. } => None,
     }
 }
 

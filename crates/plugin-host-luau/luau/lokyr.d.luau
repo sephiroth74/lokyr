@@ -356,6 +356,7 @@ export type Anchor =
     | { pane_top: PaneId }
     | { window_corner: { window: WindowId, corner: Corner } }
     | { view_window: { view: ViewId, corner: Corner } }
+    | { view_pointer: { view: ViewId } }
 
 export type Awake =
     | "off"

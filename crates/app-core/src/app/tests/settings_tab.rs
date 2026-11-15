@@ -1953,5 +1953,29 @@ fn the_themes_page_previews_each_theme_of_its_colors_and_a_card_names_it_in_the_
         std::fs::read_to_string(&path).unwrap(),
         "# mine\n\n[theme]\ndark = \"Lokyr Dark\"\n"
     );
+    // A card's context menu, the platform's own, at the pointer, of Use
+    // and Duplicate….
+    let at = lokyr_platform_core::Point { x: 333.0, y: 222.0 };
+    fake.set_pointer(own, at);
+    app.ui_events.push((
+        "lokyr/settings".to_owned(),
+        UiEvent {
+            view: ViewId::Page("themes".to_owned()),
+            key: "theme:light:Lokyr Light".into(),
+            kind: lokyr_kernel::plugins::view::UiEventKind::ContextMenu,
+        },
+    ));
+    frames(&mut fake, &mut app, own);
+    let (shown, point, menu) = fake.context_menus().last().cloned().expect("the menu");
+    assert_eq!((shown, point), (own, at));
+    let titles: Vec<&str> = menu
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            lokyr_platform_core::MenuItem::Command { title, .. } => Some(title.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(titles, ["Use", "Duplicate…"]);
     let _ = std::fs::remove_dir_all(&directory);
 }
