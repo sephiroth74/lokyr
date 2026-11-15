@@ -116,6 +116,7 @@ active = { fg = "#ffffff" }    # tabs.active.fg, as TOML's tables have it
 - `[search]` is the find bar's: `match`, every match, and `current`, the one that the find bar is at, the tokens `search.match` and `search.match.current`.
 - A token and a longer one of its name in the same section need the longer one's key quoted, as `scrollbar.mark` and `scrollbar.mark.current` in `[scrollbar]`: `mark = "…"` and `"mark.current" = "…"`.
 - A token that a theme does not give, nor the theme that it extends, takes Lokyr's derived color, below; a name that Lokyr does not know takes the color of its name without its last part, as `tabs.active` for `tabs.active.foo`, then of `tabs`.
+- A derived color of another token follows the color that the theme gives that token: a theme's `accent` colors `focus.ring`, `list.selection.bg` and the others derived of the accent, and its `text` the tokens derived of the text, unless the theme gives them too.
 - `transparent` is clear in every theme, as a configuration that names a token may name it.
 
 #### The tokens

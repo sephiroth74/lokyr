@@ -6,6 +6,7 @@ use std::collections::{HashMap, HashSet};
 
 use lokyr_plugin_sdk::theme::builtin::{self, LIGHT, LIGHT_TOKENS};
 pub use lokyr_plugin_sdk::theme::builtin::{DARK_NAME, LIGHT_NAME};
+use lokyr_plugin_sdk::theme::rules::{self, Rgba};
 use lokyr_plugin_sdk::theme::{TerminalColors, Theme as Spec, ThemeColor, ThemeVariant};
 use lokyr_render_core::Color;
 use lokyr_vt_core::page::Rgb;
@@ -172,9 +173,10 @@ pub fn dark_spec() -> Spec {
 
 impl Variant {
     /// The variant of `theme`: its terminal's colors, the selection's, and
-    /// the interface's tokens, those that it gives over those that its
-    /// terminal's colors derive, so that a theme of the terminal's colors
-    /// alone colors the whole interface.
+    /// the interface's tokens, those that it gives, the others of their
+    /// rules, of its terminal's colors and of the tokens that they name, so
+    /// that a theme of the terminal's colors alone colors the whole
+    /// interface, and a token that it gives reaches those that name it.
     pub fn of(theme: &Spec) -> Self {
         let terminal = &theme.terminal;
         let mut colors = Colors::default();
@@ -191,10 +193,13 @@ impl Variant {
         if let Some(underline) = terminal.underline {
             colors.special[1] = rgb_of(underline);
         }
-        let mut tokens = derived(terminal);
-        for (name, &value) in &theme.tokens {
-            tokens.set(name, color_of(value));
-        }
+        let tokens = Tokens(
+            rules::resolve(terminal, &theme.tokens)
+                .into_iter()
+                .map(|(name, color)| (name, of_rgba(color)))
+                .collect(),
+            HashSet::new(),
+        );
         let selection = SelectionColors {
             background: terminal.selection.map_or_else(
                 || tokens.get("field.selection").unwrap_or(Color::CLEAR),
@@ -210,166 +215,46 @@ impl Variant {
     }
 }
 
-/// The interface's tokens that the terminal's colors of `terminal` derive,
-/// as iTerm2 derives a tab bar of its colors: the panels, the fields and
-/// the bars a little toward the text from the background, the text its own
-/// and fainter, the accent the palette's blue, the search's highlights its
-/// yellow and orange, each of the opacities of the built-in theme of its
-/// appearance, dark as the background is darker than the text.
-pub fn derived(terminal: &TerminalColors) -> Tokens {
-    let (bg, fg) = (color_of(terminal.background), color_of(terminal.foreground));
-    let dark = luminance(bg) < luminance(fg);
-    let palette = terminal.palette.map(color_of);
-    let pick = |light: f32, dark_alpha: f32| if dark { dark_alpha } else { light };
-    // The palette's blue where it reads on the background, else its bright
-    // one, else the text's color.
-    let accent = [palette[4], palette[12]]
-        .into_iter()
-        .find(|&blue| contrast(blue, bg) >= 3.0)
-        .unwrap_or(fg);
-    // The text on the accent, white or black, whichever reads better.
-    let on_accent = if contrast(Color::WHITE, accent) >= contrast(Color::BLACK, accent) {
-        Color::WHITE
-    } else {
-        Color::BLACK
-    };
-    let shadow = Color::BLACK;
-    let toward = |share: f32| mix(bg, fg, share);
-    let veil = |alpha: f32| fg.with_alpha(alpha);
-    let orange = mix(palette[3], palette[1], 0.5);
-    let (panel, bar) = (toward(pick(0.04, 0.06)), toward(0.06));
-    // A fainter text, mixed toward the background by `share`, but of three
-    // quarters of the theme's own contrast at least, 4.5 at most, over
-    // `under`, so that a theme of a low contrast keeps it readable.
-    let floor = (contrast(fg, bg) * 0.75).min(4.5);
-    let fainter = |share: f32, under: Color| with_contrast(mix(fg, bg, share), under, floor);
-    let entries: Vec<(&str, Color)> = vec![
-        ("text", fg),
-        ("text.secondary", fainter(0.38, panel)),
-        ("text.disabled", mix(fg, bg, 0.62)),
-        ("text.success", with_contrast(palette[2], bg, floor)),
-        ("text.warning", with_contrast(palette[3], bg, floor)),
-        ("accent", accent),
-        ("separator", veil(0.1)),
-        ("pane.divider", veil(0.16)),
-        ("pane.drop", accent.with_alpha(pick(0.25, 0.3))),
-        ("shadow", shadow.with_alpha(pick(0.25, 0.5))),
-        ("panel.bg", panel),
-        ("panel.border", veil(pick(0.14, 0.12))),
-        ("field.bg", bg),
-        ("field.border", veil(pick(0.18, 0.16))),
-        ("field.focus", accent.with_alpha(pick(0.5, 0.6))),
-        ("field.selection", mix(bg, accent, pick(0.3, 0.4))),
-        ("focus.ring", accent.with_alpha(pick(0.5, 0.6))),
-        ("button.bg", veil(pick(0.06, 0.08))),
-        ("button.hover.bg", veil(pick(0.1, 0.12))),
-        ("button.pressed.bg", veil(pick(0.16, 0.18))),
-        ("toggle.on.bg", accent.with_alpha(pick(0.12, 0.2))),
-        ("toggle.on.fg", accent),
-        ("tooltip.bg", toward(pick(0.03, 0.1))),
-        ("tooltip.fg", fg),
-        ("tooltip.border", veil(0.15)),
-        ("list.selection.bg", accent),
-        ("list.selection.fg", on_accent),
-        ("list.selection.inactive.bg", veil(pick(0.1, 0.12))),
-        ("scrollbar", veil(pick(0.3, 0.35))),
-        ("scrollbar.hover", veil(pick(0.5, 0.55))),
-        ("scrollbar.track", veil(pick(0.05, 0.07))),
-        ("scrollbar.mark", palette[3]),
-        ("scrollbar.mark.current", orange),
-        ("progress.track", veil(pick(0.1, 0.14))),
-        ("progress.normal", accent),
-        ("progress.error", palette[1]),
-        ("progress.paused", palette[3]),
-        ("tabs.bar.bg", bar),
-        ("tabs.track.bg", veil(pick(0.07, 0.1))),
-        ("tabs.active.bg", bg),
-        ("tabs.active.fg", fg),
-        ("tabs.active.border", veil(pick(0.1, 0.12))),
-        ("tabs.active.shadow", shadow.with_alpha(pick(0.12, 0.4))),
-        ("tabs.inactive.bg", Color::CLEAR),
-        ("tabs.inactive.fg", fainter(0.4, bar)),
-        ("tabs.hover.bg", veil(pick(0.05, 0.06))),
-        ("tabs.seamless.line", veil(0.12)),
-        ("tabs.seamless.veil", shadow.with_alpha(pick(0.06, 0.27))),
-        ("segments.bg", veil(pick(0.06, 0.08))),
-        ("segments.chosen.bg", accent),
-        ("segments.chosen.fg", on_accent),
-        ("segments.box.bg", veil(0.03)),
-        ("segments.box.border", veil(0.1)),
-        ("search.match", palette[3].with_alpha(pick(0.5, 0.3))),
-        ("search.match.current", orange.with_alpha(pick(0.6, 0.5))),
-        ("gutter.running", accent),
-        ("gutter.succeeded", veil(pick(0.22, 0.25))),
-        ("gutter.failed", palette[1]),
-        // The terminal's own, as a bar of its colors takes them.
-        ("terminal.bg", bg),
-        ("terminal.fg", fg),
-    ];
-    Tokens(
-        entries
-            .into_iter()
-            .map(|(name, color)| (name.to_owned(), color))
-            .collect(),
-        HashSet::new(),
-    )
-}
-
-/// `from` mixed toward `to` by `share`, from 0, `from`, to 1, `to`, of
-/// their encoded components, opaque.
-fn mix(from: Color, to: Color, share: f32) -> Color {
-    let lerp = |a: f32, b: f32| a + (b - a) * share;
-    Color {
-        red: lerp(from.red, to.red),
-        green: lerp(from.green, to.green),
-        blue: lerp(from.blue, to.blue),
-        alpha: 1.0,
-    }
-}
-
 /// The relative luminance of `color`, as WCAG 2 defines it, of its
 /// encoded sRGB components.
 pub fn luminance(color: Color) -> f32 {
-    let linear = |value: f32| {
-        if value <= 0.040_45 {
-            value / 12.92
-        } else {
-            ((value + 0.055) / 1.055).powf(2.4)
-        }
-    };
-    0.2126 * linear(color.red) + 0.7152 * linear(color.green) + 0.0722 * linear(color.blue)
+    rules::luminance(rgba_of(color))
 }
 
 /// The contrast ratio of `a` and `b`, as WCAG 2 defines it, from 1 to 21.
 pub fn contrast(a: Color, b: Color) -> f32 {
-    let (a, b) = (luminance(a), luminance(b));
-    (a.max(b) + 0.05) / (a.min(b) + 0.05)
+    rules::contrast(rgba_of(a), rgba_of(b))
 }
 
 /// `text`, of a contrast with `background` of `ratio` at least: as it is
 /// where it has it, or moved toward white or black, whichever reads
 /// better on the background, as little as gives it, its opacity kept.
 pub fn with_contrast(text: Color, background: Color, ratio: f32) -> Color {
-    if ratio <= 1.0 || contrast(text, background) >= ratio {
-        return text;
+    of_rgba(rules::with_contrast(
+        rgba_of(text),
+        rgba_of(background),
+        ratio,
+    ))
+}
+
+/// The rules' color of `color`.
+fn rgba_of(color: Color) -> Rgba {
+    Rgba {
+        red: color.red,
+        green: color.green,
+        blue: color.blue,
+        alpha: color.alpha,
     }
-    let extreme = if contrast(Color::WHITE, background) >= contrast(Color::BLACK, background) {
-        Color::WHITE
-    } else {
-        Color::BLACK
-    };
-    // The least share toward the extreme that gives the ratio, or the
-    // extreme itself where none does, of a binary search.
-    let (mut low, mut high) = (0.0_f32, 1.0_f32);
-    for _ in 0..12 {
-        let middle = (low + high) / 2.0;
-        if contrast(mix(text, extreme, middle), background) >= ratio {
-            high = middle;
-        } else {
-            low = middle;
-        }
+}
+
+/// The color of the rules' `color`.
+fn of_rgba(color: Rgba) -> Color {
+    Color {
+        red: color.red,
+        green: color.green,
+        blue: color.blue,
+        alpha: color.alpha,
     }
-    mix(text, extreme, high).with_alpha(text.alpha)
 }
 
 impl crate::paint::PreviewColors {
@@ -655,6 +540,222 @@ mod tests {
             let selection = variant.selection.background;
             assert_ne!(selection.alpha, 0.0, "{}", theme.name);
         }
+    }
+
+    /// The interface's tokens that the terminal's colors of `terminal` derived
+    /// before the rules, the reference that they resolve a theme of the
+    /// terminal's colors alone as:
+    /// as iTerm2 derives a tab bar of its colors: the panels, the fields and
+    /// the bars a little toward the text from the background, the text its own
+    /// and fainter, the accent the palette's blue, the search's highlights its
+    /// yellow and orange, each of the opacities of the built-in theme of its
+    /// appearance, dark as the background is darker than the text.
+    fn derived(terminal: &TerminalColors) -> Tokens {
+        let (bg, fg) = (color_of(terminal.background), color_of(terminal.foreground));
+        let dark = super::luminance(bg) < super::luminance(fg);
+        let palette = terminal.palette.map(color_of);
+        let pick = |light: f32, dark_alpha: f32| if dark { dark_alpha } else { light };
+        // The palette's blue where it reads on the background, else its bright
+        // one, else the text's color.
+        let accent = [palette[4], palette[12]]
+            .into_iter()
+            .find(|&blue| super::contrast(blue, bg) >= 3.0)
+            .unwrap_or(fg);
+        // The text on the accent, white or black, whichever reads better.
+        let on_accent =
+            if super::contrast(Color::WHITE, accent) >= super::contrast(Color::BLACK, accent) {
+                Color::WHITE
+            } else {
+                Color::BLACK
+            };
+        let shadow = Color::BLACK;
+        let toward = |share: f32| mix(bg, fg, share);
+        let veil = |alpha: f32| fg.with_alpha(alpha);
+        let orange = mix(palette[3], palette[1], 0.5);
+        let (panel, bar) = (toward(pick(0.04, 0.06)), toward(0.06));
+        // A fainter text, mixed toward the background by `share`, but of three
+        // quarters of the theme's own contrast at least, 4.5 at most, over
+        // `under`, so that a theme of a low contrast keeps it readable.
+        let floor = (super::contrast(fg, bg) * 0.75).min(4.5);
+        let fainter =
+            |share: f32, under: Color| super::with_contrast(mix(fg, bg, share), under, floor);
+        let entries: Vec<(&str, Color)> = vec![
+            ("text", fg),
+            ("text.secondary", fainter(0.38, panel)),
+            ("text.disabled", mix(fg, bg, 0.62)),
+            ("text.success", super::with_contrast(palette[2], bg, floor)),
+            ("text.warning", super::with_contrast(palette[3], bg, floor)),
+            ("accent", accent),
+            ("separator", veil(0.1)),
+            ("pane.divider", veil(0.16)),
+            ("pane.drop", accent.with_alpha(pick(0.25, 0.3))),
+            ("shadow", shadow.with_alpha(pick(0.25, 0.5))),
+            ("panel.bg", panel),
+            ("panel.border", veil(pick(0.14, 0.12))),
+            ("field.bg", bg),
+            ("field.border", veil(pick(0.18, 0.16))),
+            ("field.focus", accent.with_alpha(pick(0.5, 0.6))),
+            ("field.selection", mix(bg, accent, pick(0.3, 0.4))),
+            ("focus.ring", accent.with_alpha(pick(0.5, 0.6))),
+            ("button.bg", veil(pick(0.06, 0.08))),
+            ("button.hover.bg", veil(pick(0.1, 0.12))),
+            ("button.pressed.bg", veil(pick(0.16, 0.18))),
+            ("toggle.on.bg", accent.with_alpha(pick(0.12, 0.2))),
+            ("toggle.on.fg", accent),
+            ("tooltip.bg", toward(pick(0.03, 0.1))),
+            ("tooltip.fg", fg),
+            ("tooltip.border", veil(0.15)),
+            ("list.selection.bg", accent),
+            ("list.selection.fg", on_accent),
+            ("list.selection.inactive.bg", veil(pick(0.1, 0.12))),
+            ("scrollbar", veil(pick(0.3, 0.35))),
+            ("scrollbar.hover", veil(pick(0.5, 0.55))),
+            ("scrollbar.track", veil(pick(0.05, 0.07))),
+            ("scrollbar.mark", palette[3]),
+            ("scrollbar.mark.current", orange),
+            ("progress.track", veil(pick(0.1, 0.14))),
+            ("progress.normal", accent),
+            ("progress.error", palette[1]),
+            ("progress.paused", palette[3]),
+            ("tabs.bar.bg", bar),
+            ("tabs.track.bg", veil(pick(0.07, 0.1))),
+            ("tabs.active.bg", bg),
+            ("tabs.active.fg", fg),
+            ("tabs.active.border", veil(pick(0.1, 0.12))),
+            ("tabs.active.shadow", shadow.with_alpha(pick(0.12, 0.4))),
+            ("tabs.inactive.bg", Color::CLEAR),
+            ("tabs.inactive.fg", fainter(0.4, bar)),
+            ("tabs.hover.bg", veil(pick(0.05, 0.06))),
+            ("tabs.seamless.line", veil(0.12)),
+            ("tabs.seamless.veil", shadow.with_alpha(pick(0.06, 0.27))),
+            ("segments.bg", veil(pick(0.06, 0.08))),
+            ("segments.chosen.bg", accent),
+            ("segments.chosen.fg", on_accent),
+            ("segments.box.bg", veil(0.03)),
+            ("segments.box.border", veil(0.1)),
+            ("search.match", palette[3].with_alpha(pick(0.5, 0.3))),
+            ("search.match.current", orange.with_alpha(pick(0.6, 0.5))),
+            ("gutter.running", accent),
+            ("gutter.succeeded", veil(pick(0.22, 0.25))),
+            ("gutter.failed", palette[1]),
+            // The terminal's own, as a bar of its colors takes them.
+            ("terminal.bg", bg),
+            ("terminal.fg", fg),
+        ];
+        Tokens(
+            entries
+                .into_iter()
+                .map(|(name, color)| (name.to_owned(), color))
+                .collect(),
+            HashSet::new(),
+        )
+    }
+
+    /// `from` mixed toward `to` by `share`, from 0, `from`, to 1, `to`, of
+    /// their encoded components, opaque.
+    fn mix(from: Color, to: Color, share: f32) -> Color {
+        let lerp = |a: f32, b: f32| a + (b - a) * share;
+        Color {
+            red: lerp(from.red, to.red),
+            green: lerp(from.green, to.green),
+            blue: lerp(from.blue, to.blue),
+            alpha: 1.0,
+        }
+    }
+
+    /// The terminal's colors of a seeded generator: a background, a text
+    /// and 16 colors, light or dark, of any contrast.
+    fn random_terminal(seed: &mut u64) -> TerminalColors {
+        let mut next = || {
+            // xorshift64
+            *seed ^= *seed << 13;
+            *seed ^= *seed >> 7;
+            *seed ^= *seed << 17;
+            *seed
+        };
+        let mut color = || ThemeColor::hex((next() & 0xff_ffff) as u32);
+        let background = color();
+        let foreground = color();
+        let palette = [(); 16].map(|()| color());
+        TerminalColors {
+            background,
+            foreground,
+            palette,
+            cursor: None,
+            cursor_text: None,
+            selection: None,
+            selection_text: None,
+            bold: None,
+            link: None,
+            underline: None,
+        }
+    }
+
+    /// Asserts that `theme` resolves to the derivation of before the
+    /// rules, its own tokens over it, token by token, of its name: of the
+    /// terminal's colors alone, or of tokens that no rule names.
+    fn resolves_as_derived(theme: &Spec) {
+        let resolved = Variant::of(theme).tokens;
+        let mut derived = derived(&theme.terminal);
+        for (name, &color) in &theme.tokens {
+            derived.set(name, color_of(color));
+        }
+        for name in lokyr_plugin_sdk::theme::TOKENS {
+            assert_eq!(
+                resolved.0.get(name),
+                derived.0.get(name),
+                "{}: {name}",
+                theme.name
+            );
+        }
+        assert_eq!(resolved.0.len(), derived.0.len(), "{}", theme.name);
+    }
+
+    #[test]
+    fn a_theme_of_the_terminal_s_colors_alone_resolves_as_it_derived() {
+        for theme in terminal_themes() {
+            resolves_as_derived(&theme);
+        }
+        // Thousands of terminals of any colors, light and dark, of a blue
+        // that reads and of none, of a low contrast and of a high one.
+        let mut seed = 0x9e37_79b9_7f4a_7c15;
+        for at in 0..5000 {
+            let terminal = random_terminal(&mut seed);
+            let theme = Spec::of_terminal(&format!("random {at}"), ThemeVariant::Dark, terminal);
+            resolves_as_derived(&theme);
+        }
+    }
+
+    /// The held themes' folder, a bundle's `Contents/Resources/themes`,
+    /// of `LOKYR_HELD_THEMES`: each theme resolves as it derived.
+    #[test]
+    #[ignore = "of the held themes' folder of a bundle, LOKYR_HELD_THEMES"]
+    fn the_held_themes_resolve_as_they_derived() {
+        let folder = std::path::PathBuf::from(
+            std::env::var("LOKYR_HELD_THEMES").expect("LOKYR_HELD_THEMES"),
+        );
+        let mut count = 0;
+        for entry in std::fs::read_dir(&folder).unwrap() {
+            let path = entry.unwrap().path();
+            if path.extension().is_none_or(|extension| extension != "toml") {
+                continue;
+            }
+            let name = path.file_stem().unwrap().to_str().unwrap().to_owned();
+            let resolved = lokyr_themes::resolve(&name, None, Some(&folder), &[]).unwrap();
+            // Of the find's match alone, of an `.itermcolors`, which no
+            // rule names.
+            assert!(
+                resolved
+                    .theme
+                    .tokens
+                    .keys()
+                    .all(|token| token == "search.match"),
+                "{name}"
+            );
+            resolves_as_derived(&resolved.theme);
+            count += 1;
+        }
+        assert!(count >= 278, "{count}");
     }
 
     #[test]

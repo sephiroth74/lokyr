@@ -1,0 +1,244 @@
+use std::collections::{BTreeMap, BTreeSet};
+
+use super::*;
+use crate::theme::builtin;
+
+/// The terminal's colors of a dark theme of a blue that reads.
+fn dark_terminal() -> TerminalColors {
+    builtin::dark().terminal
+}
+
+/// The terminal's colors of a light theme.
+fn light_terminal() -> TerminalColors {
+    builtin::light().terminal
+}
+
+#[test]
+fn the_rules_read_and_are_those_of_every_token_once() {
+    let names: Vec<&str> = tokens().collect();
+    let unique: BTreeSet<&str> = names.iter().copied().collect();
+    assert_eq!(unique.len(), names.len());
+    let sdk: BTreeSet<&str> = crate::theme::TOKENS.into_iter().collect();
+    assert_eq!(unique, sdk);
+}
+
+#[test]
+fn every_rule_resolves_of_the_tokens_that_it_names_in_both_variants() {
+    for terminal in [dark_terminal(), light_terminal()] {
+        let given = BTreeMap::new();
+        let mut resolver = Resolver::new(rules(), &terminal, &given);
+        for name in tokens() {
+            assert!(resolver.token(name).is_ok(), "{name}");
+        }
+    }
+    // And each token that a rule names has a rule.
+    for (name, rule) in rules() {
+        for dark in [false, true] {
+            for token in rule.expr(dark).tokens() {
+                assert!(super::rule(token).is_some(), "{name}: {token}");
+            }
+        }
+    }
+    assert!(is_dark(&dark_terminal()) && !is_dark(&light_terminal()));
+}
+
+#[test]
+fn expressions_read_of_their_terms_and_functions() {
+    let parsed = |text: &str| text.parse::<Expr>().unwrap();
+    let token = |name: &str| Box::new(Expr::Token(name.to_owned()));
+    assert_eq!(
+        parsed("#ff000080"),
+        Expr::Color(Rgba::of(ThemeColor {
+            red: 255,
+            green: 0,
+            blue: 0,
+            alpha: 128
+        }))
+    );
+    assert_eq!(parsed("transparent"), Expr::Color(Rgba::CLEAR));
+    assert_eq!(parsed("background"), Expr::Terminal(Terminal::Background));
+    assert_eq!(parsed("selection"), Expr::Terminal(Terminal::Selection));
+    assert_eq!(parsed("bright-blue"), Expr::Terminal(Terminal::Palette(12)));
+    assert_eq!(parsed("panel.bg"), *token("panel.bg"));
+    assert_eq!(
+        parsed("accent / 60% / 50%"),
+        Expr::Opacity(Box::new(Expr::Opacity(token("accent"), 0.6)), 0.5)
+    );
+    assert_eq!(
+        parsed("mix( text , background,38%)"),
+        Expr::Mix(
+            token("text"),
+            Box::new(Expr::Terminal(Terminal::Background)),
+            0.38
+        )
+    );
+    assert_eq!(
+        parsed("readable(green, on: panel.bg)"),
+        Expr::Readable(
+            Box::new(Expr::Terminal(Terminal::Palette(2))),
+            token("panel.bg")
+        )
+    );
+    assert_eq!(
+        parsed("contrasting(accent)"),
+        Expr::Contrasting(token("accent"))
+    );
+    assert_eq!(
+        parsed("first(blue, foreground, on: background, at: 4.5)"),
+        Expr::First(
+            vec![
+                Expr::Terminal(Terminal::Palette(4)),
+                Expr::Terminal(Terminal::Foreground)
+            ],
+            Box::new(Expr::Terminal(Terminal::Background)),
+            4.5
+        )
+    );
+    // A share of a percent as its literal's.
+    assert_eq!(parsed("text / 38%"), Expr::Opacity(token("text"), 0.38));
+}
+
+#[test]
+fn an_expression_that_does_not_read_says_why() {
+    let wrong = |text: &str| text.parse::<Expr>().unwrap_err().to_string();
+    for (text, why) in [
+        ("", "missing"),
+        ("accent /", "opacity"),
+        ("accent / 50", "opacity"),
+        ("accent / 150%", "from 0% to 100%"),
+        ("#12345", "#rrggbb"),
+        ("#", "#rrggbb"),
+        ("50%", "no color"),
+        ("blend(a, b)", "no function"),
+        ("mix(a, b)", "mix(X, Y, N%)"),
+        ("mix(a, b, 50)", "mix(X, Y, N%)"),
+        ("readable(a)", "readable(X, on: Y)"),
+        ("contrasting(a, b)", "contrasting(X)"),
+        ("first(a, on: b)", "first("),
+        ("first(a, on: b, at: 30)", "first("),
+        ("first(on: b, at: 3)", "first("),
+        ("mix(a, b, 5%", "`,` or `)`"),
+        ("accent accent", "goes on"),
+        ("Accent", "no place"),
+        ("accent?", "no place"),
+        ("1.2.3", "no number"),
+    ] {
+        let told = wrong(text);
+        assert!(told.contains(why), "{text}: {told}");
+    }
+}
+
+#[test]
+fn a_token_given_reaches_the_tokens_whose_rules_name_it_and_one_given_stays_its_own() {
+    let terminal = dark_terminal();
+    let pink = ThemeColor::hex(0xc678dd);
+    let given = BTreeMap::from([("accent".to_owned(), pink)]);
+    let resolved = resolve(&terminal, &given);
+    let accent = Rgba::of(pink);
+    assert_eq!(resolved["accent"], accent);
+    assert_eq!(resolved["focus.ring"], accent.with_alpha(0.6));
+    assert_eq!(resolved["list.selection.bg"], accent);
+    assert_eq!(resolved["list.selection.fg"], contrasting(accent));
+    assert_eq!(resolved["gutter.running"], accent);
+    // Given too, it stays the theme's.
+    let green = ThemeColor::hex(0x00ff00);
+    let given = BTreeMap::from([
+        ("accent".to_owned(), pink),
+        ("focus.ring".to_owned(), green),
+    ]);
+    let resolved = resolve(&terminal, &given);
+    assert_eq!(resolved["focus.ring"], Rgba::of(green));
+    assert_eq!(resolved["field.focus"], accent.with_alpha(0.6));
+    // An opacity is the color's at that opacity, whatever its own.
+    let given = BTreeMap::from([("accent".to_owned(), pink.with_alpha(0x80))]);
+    let resolved = resolve(&terminal, &given);
+    assert_eq!(resolved["focus.ring"], accent.with_alpha(0.6));
+    // A plugin's token, of no rule, kept; every token resolved.
+    let given = BTreeMap::from([("command-header.pill".to_owned(), green)]);
+    let resolved = resolve(&terminal, &given);
+    assert_eq!(resolved["command-header.pill"], Rgba::of(green));
+    assert_eq!(resolved.len(), crate::theme::TOKENS.len() + 1);
+}
+
+#[test]
+fn the_terminal_s_names_take_its_colors_and_their_defaults() {
+    let mut terminal = dark_terminal();
+    terminal.cursor = None;
+    terminal.selection = None;
+    let given = BTreeMap::new();
+    let mut resolver = Resolver::new(rules(), &terminal, &given);
+    let mut eval = |text: &str| resolver.eval(&text.parse().unwrap()).unwrap();
+    assert_eq!(eval("cursor"), Rgba::of(terminal.foreground));
+    assert_eq!(eval("selection"), eval("field.selection"));
+    assert_eq!(eval("bright-white"), Rgba::of(terminal.palette[15]));
+    terminal.cursor = Some(ThemeColor::hex(0xff0000));
+    terminal.selection = Some(ThemeColor::hex(0x00ff00));
+    let mut resolver = Resolver::new(rules(), &terminal, &given);
+    let mut eval = |text: &str| resolver.eval(&text.parse().unwrap()).unwrap();
+    assert_eq!(eval("cursor"), Rgba::of(ThemeColor::hex(0xff0000)));
+    assert_eq!(eval("selection"), Rgba::of(ThemeColor::hex(0x00ff00)));
+}
+
+#[test]
+fn first_takes_the_first_that_reads_else_the_last() {
+    let terminal = dark_terminal();
+    let given = BTreeMap::new();
+    let mut resolver = Resolver::new(rules(), &terminal, &given);
+    let mut eval = |text: &str| resolver.eval(&text.parse().unwrap()).unwrap();
+    let black = Rgba::of(ThemeColor::hex(0x000000));
+    let white = Rgba::of(ThemeColor::hex(0xffffff));
+    assert_eq!(eval("first(#000000, #ffffff, on: #000000, at: 3)"), white);
+    assert_eq!(eval("first(#ffffff, #000000, on: #000000, at: 3)"), white);
+    assert_eq!(eval("first(#101010, #000000, on: #000000, at: 3)"), black);
+}
+
+#[test]
+fn a_name_of_no_color_and_a_cycle_do_not_resolve() {
+    let rules = read_rules("\"a\" = \"b / 50%\"\n\"b\" = { light = \"a\", dark = \"mix(a, c, 10%)\" }\n\"c\" = \"nothing\"\n").unwrap();
+    let terminal = dark_terminal();
+    let given = BTreeMap::new();
+    let mut resolver = Resolver::new(&rules, &terminal, &given);
+    assert_eq!(resolver.token("a"), Err(Unresolved::Cycle("a".to_owned())));
+    assert_eq!(
+        resolver.token("c"),
+        Err(Unresolved::Unknown("nothing".to_owned()))
+    );
+    assert_eq!(
+        resolver.token("zz"),
+        Err(Unresolved::Unknown("zz".to_owned()))
+    );
+    // A given color breaks the cycle.
+    let given = BTreeMap::from([("b".to_owned(), ThemeColor::hex(0x336699))]);
+    let mut resolver = Resolver::new(&rules, &terminal, &given);
+    assert_eq!(
+        resolver.token("a"),
+        Ok(Rgba::of(ThemeColor::hex(0x336699)).with_alpha(0.5))
+    );
+}
+
+#[test]
+fn a_rules_file_that_does_not_read_tells_its_line() {
+    for (text, why) in [
+        ("a = \"x\"", ":1: a rule is"),
+        ("# c\n\"a\" \"x\"", ":2: `=` is missing"),
+        ("\"a\" = x", "quoted expression"),
+        ("\"a\" = \"x\" \"y\"", "one expression"),
+        ("\"a\" = { dark = \"x\", light = \"y\" }", "comes first"),
+        ("\"a\" = { light = \"x\" dark = \"y\" }", "`,` is missing"),
+        ("\"a\" = { light = \"x\", dark = \"y\"", "`}` is missing"),
+        (
+            "\"a\" = { light = \"x\", dark = \"y\", z = \"w\" }",
+            "alone",
+        ),
+        ("\"a\" = \"x\"\n\"a\" = \"y\"", "has a rule already"),
+        ("\"a\" = \"mix(\"", ":1:"),
+    ] {
+        let told = read_rules(text).unwrap_err();
+        assert!(told.contains(why), "{text}: {told}");
+    }
+    let read = read_rules("\"a\" = { light = \"x\", dark = \"y / 5%\" }").unwrap();
+    assert_eq!(
+        (read[0].1.text(false), read[0].1.text(true)),
+        ("x", "y / 5%")
+    );
+}

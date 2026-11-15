@@ -1,0 +1,82 @@
+# The rules of Lokyr's interface colors, its tokens: each token's color
+# where a theme gives none, of the theme's terminal colors and of the
+# other tokens, which resolve the same way, so that a token that a theme
+# gives reaches every token whose rule names it.
+#
+# A rule is one expression, or a table of the light variant's and the dark
+# variant's, a variant dark where the background is darker than the text:
+#
+# - a color, `#rrggbb` or `#rrggbbaa`, and `transparent`;
+# - the terminal's colors: `background`, `foreground`, `cursor`,
+#   `selection`, and the 16 colors, `black` to `white`, then
+#   `bright-black` to `bright-white`;
+# - a token's name, as `accent` or `panel.bg`;
+# - `X / N%`: X at an opacity of N%;
+# - `mix(X, Y, N%)`: X mixed toward Y by N%, opaque;
+# - `readable(X, on: Y)`: X of the theme's least contrast on Y, three
+#   quarters of its text's own on its background, 4.5 at most, moved toward
+#   white or black as little as gives it;
+# - `contrasting(X)`: white or black, whichever reads better on X;
+# - `first(X, Y, …, on: Z, at: R)`: the first of a contrast of R at least
+#   on Z, else the last.
+
+"text" = "foreground"
+"text.secondary" = "readable(mix(text, background, 38%), on: panel.bg)"
+"text.disabled" = "mix(text, background, 62%)"
+"text.success" = "readable(green, on: background)"
+"text.warning" = "readable(yellow, on: background)"
+"accent" = "first(blue, bright-blue, foreground, on: background, at: 3)"
+"separator" = "text / 10%"
+"pane.divider" = "text / 16%"
+"pane.drop" = { light = "accent / 25%", dark = "accent / 30%" }
+"shadow" = { light = "#000000 / 25%", dark = "#000000 / 50%" }
+"panel.bg" = { light = "mix(background, foreground, 4%)", dark = "mix(background, foreground, 6%)" }
+"panel.border" = { light = "text / 14%", dark = "text / 12%" }
+"field.bg" = "background"
+"field.border" = { light = "text / 18%", dark = "text / 16%" }
+"field.focus" = { light = "accent / 50%", dark = "accent / 60%" }
+"field.selection" = { light = "mix(background, accent, 30%)", dark = "mix(background, accent, 40%)" }
+"focus.ring" = { light = "accent / 50%", dark = "accent / 60%" }
+"button.bg" = { light = "text / 6%", dark = "text / 8%" }
+"button.hover.bg" = { light = "text / 10%", dark = "text / 12%" }
+"button.pressed.bg" = { light = "text / 16%", dark = "text / 18%" }
+"toggle.on.bg" = { light = "accent / 12%", dark = "accent / 20%" }
+"toggle.on.fg" = "accent"
+"tooltip.bg" = { light = "mix(background, foreground, 3%)", dark = "mix(background, foreground, 10%)" }
+"tooltip.fg" = "text"
+"tooltip.border" = "text / 15%"
+"list.selection.bg" = "accent"
+"list.selection.fg" = "contrasting(list.selection.bg)"
+"list.selection.inactive.bg" = { light = "text / 10%", dark = "text / 12%" }
+"scrollbar" = { light = "text / 30%", dark = "text / 35%" }
+"scrollbar.hover" = { light = "text / 50%", dark = "text / 55%" }
+"scrollbar.track" = { light = "text / 5%", dark = "text / 7%" }
+"scrollbar.mark" = "yellow"
+"scrollbar.mark.current" = "mix(yellow, red, 50%)"
+"progress.track" = { light = "text / 10%", dark = "text / 14%" }
+"progress.normal" = "accent"
+"progress.error" = "red"
+"progress.paused" = "yellow"
+"tabs.bar.bg" = "mix(background, foreground, 6%)"
+"tabs.track.bg" = { light = "text / 7%", dark = "text / 10%" }
+"tabs.active.bg" = "background"
+"tabs.active.fg" = "text"
+"tabs.active.border" = { light = "text / 10%", dark = "text / 12%" }
+"tabs.active.shadow" = { light = "#000000 / 12%", dark = "#000000 / 40%" }
+"tabs.inactive.bg" = "transparent"
+"tabs.inactive.fg" = "readable(mix(text, background, 40%), on: tabs.bar.bg)"
+"tabs.hover.bg" = { light = "text / 5%", dark = "text / 6%" }
+"tabs.seamless.line" = "text / 12%"
+"tabs.seamless.veil" = { light = "#000000 / 6%", dark = "#000000 / 27%" }
+"segments.bg" = { light = "text / 6%", dark = "text / 8%" }
+"segments.chosen.bg" = "accent"
+"segments.chosen.fg" = "contrasting(segments.chosen.bg)"
+"segments.box.bg" = "text / 3%"
+"segments.box.border" = "text / 10%"
+"search.match" = { light = "yellow / 50%", dark = "yellow / 30%" }
+"search.match.current" = { light = "mix(yellow, red, 50%) / 60%", dark = "mix(yellow, red, 50%) / 50%" }
+"gutter.running" = "accent"
+"gutter.succeeded" = { light = "text / 22%", dark = "text / 25%" }
+"gutter.failed" = "red"
+"terminal.bg" = "background"
+"terminal.fg" = "foreground"

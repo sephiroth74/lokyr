@@ -11,6 +11,7 @@ use std::str::FromStr;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 pub mod builtin;
+pub mod rules;
 
 /// The interface's tokens of the host's, by their names, which a theme can
 /// give, and which the host derives of its terminal's colors where it does

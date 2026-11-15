@@ -18,6 +18,7 @@ from 1.0.0; before it, a minor version may change what a previous one did.
 
 ### Changed
 
+- A theme's interface colors follow the colors that it gives: a theme's `accent` colors the focus ring, a field's focus, the selected rows, the toggles, the chosen segments, the progress and the gutter of running commands too, and its text the fainter texts and the lines made of it, unless it gives them too; a theme of the terminal's colors alone looks as it did.
 - The settings window's Keys are a page of their own, a tab between Settings and Themes, no longer a part of the Settings page's sidebar, whose search no longer lists the shortcuts.
 - The settings window's pages draw anew faster, the Keys page above all, as the plugins' texts are read once a language rather than at each title and message; Lokyr starts a little sooner too.
 

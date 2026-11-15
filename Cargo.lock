@@ -1367,6 +1367,7 @@ dependencies = [
  "lokyr-plugin-sdk",
  "lokyr-render-core",
  "lokyr-text-core",
+ "lokyr-themes",
  "lokyr-vt-core",
  "serde",
  "taffy",
