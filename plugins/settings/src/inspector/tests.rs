@@ -1,5 +1,5 @@
 use lokyr_plugin_sdk::fake::{FakeHost, theme_tokens};
-use lokyr_plugin_sdk::host::ThemeTokens;
+use lokyr_plugin_sdk::host::{ThemeTokens, TokenOrigin};
 use lokyr_plugin_sdk::message::Request;
 use lokyr_plugin_sdk::theme::ThemeColor;
 use lokyr_plugin_sdk::view::Kind;
@@ -244,4 +244,86 @@ fn the_menu_previews_a_theme_and_the_page_hidden_ends_it() {
     host.hide_page();
     host.deliver(&mut plugin).unwrap();
     assert!(host.take_done().contains(&Request::PreviewTheme(None)));
+}
+
+#[test]
+fn the_interface_s_parts_show_and_a_pick_marks_a_part_s_tokens_or_a_token_s_parts() {
+    let (mut host, mut plugin) = shown();
+    let tree = page(&mut host, &mut plugin);
+    // Every part, a card of its title and its sample, beside the
+    // terminal's specimen.
+    for (id, ..) in parts::PARTS {
+        assert!(
+            find(&tree, &format!("{}{id}", parts::PART)).is_some(),
+            "{id}"
+        );
+    }
+    assert!(matches!(
+        find(&tree, "inspector-terminal").map(|node| &node.kind),
+        Some(Kind::TerminalSpecimen)
+    ));
+    let shaded = |tree: &Node, name: &str| {
+        find(tree, &format!("inspector-token:{name}")).and_then(|row| row.style.background.clone())
+    };
+    let bordered = |tree: &Node, id: &str| {
+        find(tree, &format!("{}{id}", parts::PART))
+            .and_then(|card| card.style.border.as_ref())
+            .map(|border| border.color.0.clone())
+    };
+    // A part picked: its tokens' rows marked, it of the accent's border.
+    let fake = theme_tokens();
+    let mut fake = fake[0].clone();
+    fake.tokens.push(lokyr_plugin_sdk::host::ThemeToken {
+        name: "tooltip.bg".to_owned(),
+        color: ThemeColor::hex(0x323235),
+        origin: TokenOrigin::Rule {
+            text: "mix(background, foreground, 10%)".to_owned(),
+        },
+    });
+    host.set_theme_tokens(vec![fake]);
+    host.deliver(&mut plugin).unwrap();
+    // The new token's light gone first, which a mark yields to.
+    host.advance(LIT);
+    host.deliver(&mut plugin).unwrap();
+    host.ui_event(&mut plugin, &click("inspector-part:tooltip"))
+        .unwrap();
+    let tree = page(&mut host, &mut plugin);
+    assert_eq!(
+        shaded(&tree, "tooltip.bg"),
+        Some(Token::from("list.selection.inactive.bg"))
+    );
+    assert_eq!(shaded(&tree, "accent"), None);
+    assert_eq!(bordered(&tree, "tooltip").as_deref(), Some("accent"));
+    assert_eq!(bordered(&tree, "panel").as_deref(), Some("separator"));
+    // A token picked: the parts that take it of the accent's border.
+    host.ui_event(&mut plugin, &click("inspector-token:accent"))
+        .unwrap();
+    let tree = page(&mut host, &mut plugin);
+    assert_eq!(bordered(&tree, "panes").as_deref(), Some("accent"));
+    assert_eq!(bordered(&tree, "tooltip").as_deref(), Some("separator"));
+    assert_eq!(
+        shaded(&tree, "accent"),
+        Some(Token::from("list.selection.inactive.bg"))
+    );
+    // Picked again, none.
+    host.ui_event(&mut plugin, &click("inspector-token:accent"))
+        .unwrap();
+    let tree = page(&mut host, &mut plugin);
+    assert_eq!(bordered(&tree, "panes").as_deref(), Some("separator"));
+    assert_eq!(shaded(&tree, "accent"), None);
+}
+
+#[test]
+fn every_part_s_tokens_are_tokens_of_lokyr_s() {
+    for (id, _, tokens) in parts::PARTS {
+        for token in tokens {
+            assert!(
+                lokyr_plugin_sdk::theme::TOKENS.contains(token),
+                "{id}: {token}"
+            );
+        }
+    }
+    for (_, title, _) in parts::PARTS {
+        assert!(parts::WORDS.contains(&title), "{title}");
+    }
 }

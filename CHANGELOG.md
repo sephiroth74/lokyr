@@ -10,7 +10,7 @@ from 1.0.0; before it, a minor version may change what a previous one did.
 
 ### Added
 
-- The Themes page's Inspector, in the settings window, shows every color of the theme in force, by groups, of its value and where it comes from, its file's line, a theme of no file or its rule, lit as a saved file changes it: a button opens its line in your editor or copies it, and a menu previews any theme; beside them, a terminal of the theme of every combination that it colors, drawn as the panes draw.
+- The Themes page's Inspector, in the settings window, shows every color of the theme in force, by groups, of its value and where it comes from, its file's line, a theme of no file or its rule, lit as a saved file changes it: a button opens its line in your editor or copies it, and a menu previews any theme; beside them, a terminal of the theme of every combination that it colors, drawn as the panes draw, and the interface's parts, each of the tokens that it takes, which a click marks in the list.
 - The plugin API reads every token of a theme as it resolves, each of its color and its origin, `cx.theme_tokens`, and tells a change of the theme in force, `theme-changed`.
 - An HDR cursor, brighter than white on a display of extended dynamic range, as the MacBook Pro's: `[cursor] hdr` and `hdr-brightness`, from 1 to 4 times white; off by default, as the display then takes more power while the cursor shows.
 - The cursor guide, a band across the cursor's row under the text, as iTerm2's: View › Show Cursor Guide, ⌥⌘;, or `[cursor] guide`; its color the theme's `cursor.guide`, or an `.itermcolors` file's Cursor Guide Color.

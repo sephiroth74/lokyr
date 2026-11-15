@@ -19,6 +19,8 @@ use lokyr_plugin_sdk::view::{
 
 use super::{code, message, search_box, secondary, themes_page, words};
 
+mod parts;
+
 /// The filter's field, and its button that empties it.
 const FILTER: &str = "inspector-filter";
 const FILTER_CLEAR: &str = "inspector-filter-clear";
@@ -33,6 +35,9 @@ const THEME_ITEM: &str = "inspector-theme:";
 
 /// A token's button, which opens its file or copies its line, by its name.
 const ACT: &str = "inspector-act:";
+
+/// A token's row, by its name.
+const ROW: &str = "inspector-token:";
 
 /// How long the tokens that a change of the theme changed stay lit.
 const LIT: Duration = Duration::from_secs(3);
@@ -60,6 +65,17 @@ pub(crate) struct Inspector {
     lit: BTreeSet<String>,
     /// The timer that ends their light.
     lit_timer: Option<u64>,
+    /// The part of the interface or the token chosen of a click, which
+    /// marks the tokens of the part, or the parts of the token.
+    picked: Option<Pick>,
+}
+
+/// What a click chose: a part of the interface's specimen, or a token of
+/// the list.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum Pick {
+    Part(String),
+    Token(String),
 }
 
 impl Inspector {
@@ -68,6 +84,7 @@ impl Inspector {
         self.shown = true;
         self.filter.clear();
         self.lit.clear();
+        self.picked = None;
         self.tokens = cx.theme_tokens(None)?;
         Ok(())
     }
@@ -168,6 +185,16 @@ impl Inspector {
             (UiEventKind::Click, _) if key.starts_with(ACT) => {
                 self.act(cx, &key[ACT.len()..])?;
             }
+            // A part, or a token's row: chosen, or not again of a second
+            // click.
+            (UiEventKind::Click, _) if key.starts_with(parts::PART) || key.starts_with(ROW) => {
+                let pick = match key.strip_prefix(parts::PART) {
+                    Some(id) => Pick::Part(id.to_owned()),
+                    None => Pick::Token(key[ROW.len()..].to_owned()),
+                };
+                self.picked = (self.picked.as_ref() != Some(&pick)).then_some(pick);
+                cx.request_render(themes_page())?;
+            }
             _ => return Ok(false),
         }
         Ok(true)
@@ -252,9 +279,19 @@ impl Inspector {
             ..Layout::default()
         });
         let wanted = words(&self.filter);
+        // The tokens that a pick marks: its own, or the part's.
+        let marked: BTreeSet<String> = match &self.picked {
+            Some(Pick::Token(name)) => BTreeSet::from([name.clone()]),
+            Some(Pick::Part(id)) => parts::tokens_of(id)
+                .iter()
+                .map(|&name| name.to_owned())
+                .collect(),
+            None => BTreeSet::new(),
+        };
+        let marks = (&self.lit, &marked);
         let rows = tokens.map_or_else(Vec::new, |tokens| {
-            let mut rows = token_rows(cx, (&tokens.terminal, true), &wanted, &self.lit);
-            rows.extend(token_rows(cx, (&tokens.tokens, false), &wanted, &self.lit));
+            let mut rows = token_rows(cx, (&tokens.terminal, true), &wanted, marks);
+            rows.extend(token_rows(cx, (&tokens.tokens, false), &wanted, marks));
             rows
         });
         let list = Node::scroll(vec![Node::container(rows).key("inspector-tokens").layout(
@@ -293,7 +330,18 @@ impl Inspector {
                     ..Style::default()
                 })
         };
-        let specimens = Node::container(vec![
+        let words: BTreeMap<&str, String> = parts::WORDS
+            .iter()
+            .map(|&id| (id, message(cx, id, &[])))
+            .collect();
+        let word = |id: &str| words.get(id).cloned().unwrap_or_else(|| id.to_owned());
+        // The parts that a pick marks: its own, or the token's.
+        let chosen = |id: &str| match &self.picked {
+            Some(Pick::Part(part)) => part == id,
+            Some(Pick::Token(name)) => parts::tokens_of(id).contains(&name.as_str()),
+            None => false,
+        };
+        let mut right = vec![
             heading(cx, "inspector-terminal"),
             Node::terminal_specimen()
                 .key("inspector-terminal")
@@ -304,15 +352,22 @@ impl Inspector {
                     ..Layout::default()
                 }),
             heading(cx, "inspector-interface"),
-            Node::text(message(cx, "inspector-specimens", &[])).style(secondary()),
-        ])
+        ];
+        right.extend(parts::cards(&chosen, &word));
+        let specimens = Node::scroll(vec![Node::container(right).layout(Layout {
+            direction: Direction::Column,
+            gap: 12.0,
+            width: Length::Fraction(1.0),
+            padding: Edges::all(16.0),
+            ..Layout::default()
+        })])
         .key("inspector-specimens")
         .layout(Layout {
             direction: Direction::Column,
-            gap: 12.0,
             grow: 1.0,
+            width: Length::Points(0.0),
+            min_width: Length::Points(0.0),
             height: Length::Fraction(1.0),
-            padding: Edges::all(16.0),
             ..Layout::default()
         });
         Node::container(vec![column, specimens])
@@ -427,7 +482,8 @@ fn group(name: &str) -> &str {
 }
 
 /// The rows of `tokens` that the filter's `words` keep, all of them, in
-/// their order, each group under its heading, those of `lit` lit: of the
+/// their order, each group under its heading, those of `lit` lit and those
+/// of `marked` marked, as a pick marks them: of the
 /// terminal's colors where `terminal` says so, its keys under `[terminal]`
 /// and its palette's under `[terminal] palette`, as a theme's file writes
 /// them.
@@ -435,7 +491,7 @@ fn token_rows(
     cx: &mut Cx<'_>,
     (tokens, terminal): (&[ThemeToken], bool),
     words: &[String],
-    lit: &BTreeSet<String>,
+    (lit, marked): (&BTreeSet<String>, &BTreeSet<String>),
 ) -> Vec<Node> {
     let mut rows = Vec::new();
     let mut last: Option<&str> = None;
@@ -472,12 +528,14 @@ fn token_rows(
                     }),
             );
         }
-        rows.push(token_row(
-            cx,
-            token,
-            (&value, &origin),
-            lit.contains(&token.name),
-        ));
+        let shade = if lit.contains(&token.name) {
+            Some("pane.drop")
+        } else if marked.contains(&token.name) {
+            Some("list.selection.inactive.bg")
+        } else {
+            None
+        };
+        rows.push(token_row(cx, token, (&value, &origin), shade));
     }
     rows
 }
@@ -499,13 +557,14 @@ fn origin_text(cx: &mut Cx<'_>, origin: &TokenOrigin) -> String {
 }
 
 /// The row of `token`: its color over the terminal's background, of its
-/// value as a tooltip, its name and its origin, and its button, which opens its file or copies
-/// its line; lit as a change made it.
+/// value as a tooltip, its name and its origin, and its button, which
+/// opens its file or copies its line; of `shade`'s background, as a change
+/// lit it or a pick marks it.
 fn token_row(
     cx: &mut Cx<'_>,
     token: &ThemeToken,
     (value, origin): (&str, &str),
-    lit: bool,
+    shade: Option<&str>,
 ) -> Node {
     let swatch = Node::container(vec![
         Node::container(Vec::new())
@@ -581,7 +640,7 @@ fn token_row(
         ..Layout::default()
     })
     .style(Style {
-        background: lit.then(|| Token::from("pane.drop")),
+        background: shade.map(Token::from),
         radius: 6.0,
         ..Style::default()
     })
