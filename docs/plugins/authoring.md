@@ -144,6 +144,8 @@ Let whoever uses the plugin choose the greeting, in Lokyr's config, and have it 
 }
 ```
 
+A schema is 64 KiB at most, of the keywords that `sleip check` tells, and its defaults fill 10 000 values at most, an array's default filling each of its items of their own defaults: past that, the schema is refused.
+
 **The capability.** Putting text on the clipboard needs `clipboard-write`. The manifest declares it, and names the schema:
 
 ```toml

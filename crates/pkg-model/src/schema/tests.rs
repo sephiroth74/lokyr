@@ -430,3 +430,61 @@ fn a_chain_of_nested_defaults_holds_each_once_and_fills_as_it_is_taken() {
     let checked = schema.check(&Map::new()).values.unwrap();
     assert_eq!(Value::Object(checked)["root"], defaults["root"]);
 }
+
+/// A schema whose defaults fill arrays of objects whose defaults are
+/// arrays again, `levels` deep, each of `width` items: the values that it
+/// fills grow `width`-fold a level.
+fn growing(levels: usize, width: usize) -> String {
+    let mut schema = json!({ "type": "string", "default": "x" });
+    for _ in 0..levels {
+        let items: Vec<Value> = (0..width).map(|_| json!({})).collect();
+        schema = json!({
+            "type": "array",
+            "default": items,
+            "items": { "type": "object", "properties": { "a": schema } },
+        });
+    }
+    json!({ "type": "object", "properties": { "root": schema } }).to_string()
+}
+
+#[test]
+fn a_schema_whose_defaults_grow_a_level_is_refused_of_its_budget() {
+    // The review's: 6 levels of 10, refused at once, of its place.
+    let text = growing(6, 10);
+    let started = std::time::Instant::now();
+    let error = Schema::parse(&text).unwrap_err();
+    assert!(
+        started.elapsed() < std::time::Duration::from_millis(500),
+        "{:?}",
+        started.elapsed()
+    );
+    assert!(error.contains("fill more than 10000 values"), "{error}");
+    // Of few levels, within the budget: read, its defaults whole.
+    let schema = Schema::parse(&growing(2, 10)).unwrap();
+    let defaults = schema.defaults();
+    let root = defaults["root"].as_array().unwrap();
+    assert_eq!(root.len(), 10);
+    assert_eq!(root[0]["a"].as_array().unwrap().len(), 10);
+    // A section that fills past it: refused, of no default taken.
+    let section = Map::from_iter([(
+        "root".to_owned(),
+        Value::Array((0..20_000).map(|_| json!({})).collect()),
+    )]);
+    let checked = schema.check(&section);
+    let problem = checked.values.unwrap_err();
+    assert!(
+        problem.message.contains("fills more than"),
+        "{}",
+        problem.message
+    );
+}
+
+#[test]
+fn the_app_s_own_schema_reads_well_within_the_budget() {
+    let text = include_str!("../../../kernel/config.schema.json");
+    let value: Value = serde_json::from_str(text).unwrap();
+    let mut budget = Budget::new();
+    node(&value, "", &mut budget).unwrap();
+    let spent = MOST_FILLED - budget.left;
+    assert!(spent < MOST_FILLED / 4, "{spent}");
+}

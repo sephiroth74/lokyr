@@ -199,7 +199,7 @@ impl Schema {
 
     /// The schema of `value`, read of `text`.
     fn of_value(value: &Value, text: &str) -> Result<Self, String> {
-        let root = node(value, "")?;
+        let root = node(value, "", &mut Budget::new())?;
         if root.types.as_deref() != Some(&[Type::Object]) {
             return Err("the schema's `type` is `\"object\"`, of the section's keys".to_owned());
         }
@@ -234,11 +234,16 @@ impl Schema {
                 ignored.push(key.clone());
             }
         }
-        let values =
-            check(&self.root, &Value::Object(known), &mut Vec::new()).map(|value| match value {
-                Value::Object(values) => values,
-                _ => Map::new(),
-            });
+        let values = check(
+            &self.root,
+            &Value::Object(known),
+            &mut Vec::new(),
+            &mut Budget::new(),
+        )
+        .map(|value| match value {
+            Value::Object(values) => values,
+            _ => Map::new(),
+        });
         Checked { values, ignored }
     }
 
@@ -247,12 +252,13 @@ impl Schema {
     /// integer's schema the integer; those that it needs, of no default,
     /// left out.
     pub fn defaults(&self) -> Map<String, Value> {
+        let mut budget = Budget::new();
         self.root
             .properties
             .iter()
             .filter_map(|(key, property)| {
                 let default = property.default.as_ref()?;
-                let filled = check(property, default, &mut Vec::new()).ok()?;
+                let filled = check(property, default, &mut Vec::new(), &mut budget).ok()?;
                 Some((key.clone(), filled))
             })
             .collect()
@@ -260,13 +266,13 @@ impl Schema {
 }
 
 /// The schema of `value`, at the place `at` of the schema, as `/properties/x`.
-fn node(value: &Value, at: &str) -> Result<Node, String> {
+fn node(value: &Value, at: &str, budget: &mut Budget) -> Result<Node, String> {
     let place = if at.is_empty() { "/" } else { at };
     // The schema `true` takes any value, and `false` none.
     let empty = Map::new();
     let object = match value {
         Value::Bool(holds) => {
-            return node(&Value::Object(empty), at).map(|node| Node {
+            return node(&Value::Object(empty), at, budget).map(|node| Node {
                 never: !holds,
                 ..node
             });
@@ -353,7 +359,8 @@ fn node(value: &Value, at: &str) -> Result<Node, String> {
                     .as_object()
                     .ok_or_else(|| format!("`properties` at `{place}` is not an object"))?;
                 for (name, property) in properties {
-                    let property = self::node(property, &format!("{at}/properties/{name}"))?;
+                    let property =
+                        self::node(property, &format!("{at}/properties/{name}"), budget)?;
                     node.properties.insert(name.clone(), property);
                 }
             }
@@ -375,11 +382,12 @@ fn node(value: &Value, at: &str) -> Result<Node, String> {
                     schema => Additional::Of(Box::new(self::node(
                         schema,
                         &format!("{at}/additionalProperties"),
+                        budget,
                     )?)),
                 };
             }
             "items" => {
-                node.items = Some(Box::new(self::node(value, &format!("{at}/items"))?));
+                node.items = Some(Box::new(self::node(value, &format!("{at}/items"), budget)?));
             }
             "const" | "minimum" | "maximum" | "exclusiveMinimum" | "exclusiveMaximum"
             | "minLength" | "maxLength" | "minItems" | "maxItems" => {}
@@ -395,14 +403,51 @@ fn node(value: &Value, at: &str) -> Result<Node, String> {
     // of its subtree fill it as it is taken, so that a chain of objects of
     // defaults holds each once, not once a level.
     if let Some(default) = &node.default
-        && let Err(problem) = check(&node, default, &mut Vec::new())
+        && let Err(problem) = check(&node, default, &mut Vec::new(), budget)
     {
+        if budget.spent() {
+            return Err(format!(
+                "the defaults at `{place}` fill more than {MOST_FILLED} values, of a schema \
+                 whose defaults fill the items of arrays of objects of defaults"
+            ));
+        }
         return Err(format!(
             "the default at `{place}` is not of its schema: {}",
             problem.message.replacen("the section", "it", 1)
         ));
     }
     Ok(node)
+}
+
+/// The most values that a schema's defaults fill, and a check of a value
+/// takes, in one read of the schema, of its defaults or of a section, past
+/// which the read is refused: a schema of arrays of objects whose defaults
+/// fill their items grows tenfold a level of a few bytes, which a plugin's
+/// keys need not.
+pub const MOST_FILLED: usize = 10_000;
+
+/// The values that a read may still fill, of [`MOST_FILLED`].
+struct Budget {
+    left: usize,
+}
+
+impl Budget {
+    fn new() -> Self {
+        Self { left: MOST_FILLED }
+    }
+
+    /// Takes a value, or tells that none is left.
+    fn take(&mut self) -> bool {
+        if self.left == 0 {
+            return false;
+        }
+        self.left -= 1;
+        true
+    }
+
+    fn spent(&self) -> bool {
+        self.left == 0
+    }
 }
 
 /// The most bytes of a plugin's config's schema, which the app, `sleip
@@ -442,11 +487,22 @@ fn shown(value: &Value) -> String {
 
 /// Checks `value`, at `path`, against `node`: the value, with the defaults
 /// of the keys of its objects left out, or the first problem.
-fn check(node: &Node, value: &Value, path: &mut Vec<String>) -> Result<Value, Problem> {
+fn check(
+    node: &Node,
+    value: &Value,
+    path: &mut Vec<String>,
+    budget: &mut Budget,
+) -> Result<Value, Problem> {
     let fail = |path: &[String], message: String| Problem {
         path: path.to_vec(),
         message,
     };
+    if !budget.take() {
+        return Err(fail(
+            path,
+            format!("it fills more than {MOST_FILLED} values"),
+        ));
+    }
     let what = match path.last() {
         Some(key) => format!("`{key}`"),
         None => "the section".to_owned(),
@@ -549,7 +605,7 @@ fn check(node: &Node, value: &Value, path: &mut Vec<String>) -> Result<Value, Pr
             for (index, item) in items.iter().enumerate() {
                 path.push(index.to_string());
                 let item = match &node.items {
-                    Some(items) => check(items, item, path),
+                    Some(items) => check(items, item, path, budget),
                     None => Ok(item.clone()),
                 };
                 path.pop();
@@ -563,9 +619,9 @@ fn check(node: &Node, value: &Value, path: &mut Vec<String>) -> Result<Value, Pr
             for (key, item) in object {
                 path.push(key.clone());
                 let item = match (node.properties.get(key), &node.additional) {
-                    (Some(property), _) => check(property, item, path),
+                    (Some(property), _) => check(property, item, path, budget),
                     (None, Additional::Any | Additional::Unsaid) => Ok(item.clone()),
-                    (None, Additional::Of(schema)) => check(schema, item, path),
+                    (None, Additional::Of(schema)) => check(schema, item, path, budget),
                     (None, Additional::None) => {
                         let known: Vec<String> = node
                             .properties
@@ -599,8 +655,12 @@ fn check(node: &Node, value: &Value, path: &mut Vec<String>) -> Result<Value, Pr
                     && let Some(default) = &property.default
                 {
                     path.push(key.clone());
-                    let filled = check(property, default, path);
+                    let filled = check(property, default, path, budget);
                     path.pop();
+                    // Past the budget, the read ends of it, not of the default.
+                    if budget.spent() {
+                        return filled;
+                    }
                     checked.insert(key.clone(), filled.unwrap_or_else(|_| default.clone()));
                 }
             }
