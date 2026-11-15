@@ -549,6 +549,13 @@ fn cells_of(
     let at = cursor_cell(snapshot).map(|(column, row, _)| (column, row));
     // The cursor guide's row and color, while the cursor shows.
     let guide = text.cursor_guide.zip(at.map(|(_, row)| row));
+    // A background drawn of the cursor guide's band over it, on the
+    // cursor's row, but of a selected cell: the band shows alone, the
+    // text's colors taken of the cell's own background.
+    let banded = |background: Color, row: u16, selected: bool| match guide {
+        Some((band, at)) if at == row && !selected => paint::over(band, background),
+        _ => background,
+    };
     let mut run = RunBuilder::default();
     let mut decorations = Decorations::default();
     for row in 0..rows {
@@ -593,23 +600,24 @@ fn cells_of(
             let character = match cell_of.content() {
                 Content::Char(character) | Content::Grapheme(character) => character,
                 Content::BgPalette(_) | Content::BgRgb(_) if !text.config.ansi_colors => {
-                    let erased = defaults.1.with_alpha(0.0);
+                    let erased = banded(defaults.1.with_alpha(0.0), row, false);
                     batch
                         .backgrounds
                         .push(chosen.map_or(erased, |chosen| chosen.background));
                     continue;
                 }
                 Content::BgPalette(index) => {
-                    let erased = color(colors.palette[usize::from(index)]);
+                    let erased = banded(color(colors.palette[usize::from(index)]), row, false);
                     batch
                         .backgrounds
                         .push(chosen.map_or(erased, |chosen| chosen.background));
                     continue;
                 }
                 Content::BgRgb(rgb) => {
+                    let erased = banded(color(rgb), row, false);
                     batch
                         .backgrounds
-                        .push(chosen.map_or(color(rgb), |chosen| chosen.background));
+                        .push(chosen.map_or(erased, |chosen| chosen.background));
                     continue;
                 }
             };
@@ -631,12 +639,11 @@ fn cells_of(
                     }
                 };
             }
-            // The cursor guide over the background, under the text, but
-            // of a selected cell.
-            if let Some((band, _)) = guide.filter(|&(_, at)| at == row && chosen.is_none()) {
-                background = paint::over(band, background);
-            }
-            batch.backgrounds.push(background);
+            // The cursor guide over the background drawn, under the text,
+            // but of a selected cell; the text's colors of the cell's own.
+            batch
+                .backgrounds
+                .push(banded(background, row, chosen.is_some()));
             // Text that blinks shows half of the time.
             let blinking = style.blink && text.config.blink;
             let hidden = style.invisible
@@ -703,9 +710,10 @@ fn cells_of(
         // default background past its end.
         for column in u16::try_from(line.cells().len()).unwrap_or(u16::MAX)..columns {
             let chosen = selected(column, row);
+            let past = banded(defaults.1.with_alpha(0.0), row, false);
             batch
                 .backgrounds
-                .push(chosen.map_or(defaults.1.with_alpha(0.0), |chosen| chosen.background));
+                .push(chosen.map_or(past, |chosen| chosen.background));
         }
     }
     settle_cursor(&mut batch, snapshot);
@@ -1747,6 +1755,59 @@ mod tests {
         // None asked, none.
         let batch = looked("ab", TextConfig::default(), true);
         assert!(batch.backgrounds.iter().all(|bg| bg.alpha == 0.0));
+    }
+
+    #[test]
+    fn the_cursor_guide_s_row_keeps_faint_text_its_strokes_and_bands_erased_cells() {
+        // The rule's band, of the text's own color at 10%.
+        let colors = Colors::default();
+        let band = color(colors.foreground).with_alpha(0.1);
+        let drawn = |text: &str, columns: u16| {
+            let snapshot = snapshot(columns, 2, text);
+            let mut darks = Vec::new();
+            let look = TextLook {
+                cursor_guide: Some(band),
+                ..TextLook::default()
+            };
+            let batch = cells_with(
+                &snapshot,
+                &cell(),
+                (0, 0),
+                None,
+                None,
+                look,
+                &mut |shown: &CellText<'_>| {
+                    darks.push((shown.text.to_owned(), shown.dark));
+                    Some(AtlasGlyph {
+                        region: AtlasRegion {
+                            texture: Texture::Coverage,
+                            x: 0,
+                            y: 0,
+                            width: 6,
+                            height: 10,
+                        },
+                        left: 1,
+                        top: 10,
+                        smoothed: true,
+                    })
+                },
+            );
+            (batch, darks)
+        };
+        // Faint text alike off the cursor's row and on it, of the same
+        // strokes.
+        let (batch, darks) = drawn("\x1b[2ma\x1b[0m\r\n\x1b[2mc\x1b[0md", 3);
+        let off = batch.glyphs.iter().find(|glyph| glyph.row == 0).unwrap();
+        let on = batch.glyphs.iter().find(|glyph| glyph.row == 1).unwrap();
+        assert_eq!(off.color, on.color);
+        assert!(on.color != color(colors.foreground));
+        let dark = |text: &str| darks.iter().find(|(own, _)| own == text).unwrap().1;
+        assert_eq!(dark("a"), dark("c"));
+        // A row erased of a program's background, and a line shorter than
+        // the screen: banded across, under the band of the cursor's row.
+        let (batch, _) = drawn("ab\r\n\x1b[44m\x1b[K\x1b[0m", 4);
+        let blue = color(colors.palette[4]);
+        assert_eq!(&batch.backgrounds[4..8], [paint::over(band, blue); 4]);
     }
 
     #[test]
