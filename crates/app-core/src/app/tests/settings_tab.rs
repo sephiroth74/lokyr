@@ -743,17 +743,25 @@ fn the_settings_page_shows_every_section_of_the_config_and_of_the_plugins_of_its
     let Some(lokyr_kernel::plugins::view::Kind::List(sections)) = tree.kind(list) else {
         panic!("a list");
     };
-    // The config's 18 sections, its keys' bindings, then the 6 of the
-    // plugins of a schema.
+    // The config's 18 sections, then the 6 of the plugins of a schema,
+    // the bindings of keys a page of their own.
     let titles: Vec<&str> = sections
         .items
         .iter()
         .map(|item| item.texts[1].as_str())
         .collect();
-    assert_eq!(titles.len(), 25, "{titles:?}");
+    assert_eq!(titles.len(), 24, "{titles:?}");
     assert_eq!(&titles[..3], ["Font", "Text", "Cursor"]);
-    assert_eq!(titles[18], "Keys");
-    assert_eq!(titles[19], "Tabs");
+    assert_eq!(titles[18], "Tabs");
+    assert!(!titles.contains(&"Keys"), "{titles:?}");
+    assert_eq!(
+        app.settings
+            .pages
+            .iter()
+            .map(|page| page.title.as_str())
+            .collect::<Vec<_>>()[..3],
+        ["Settings", "Keys", "Themes"]
+    );
     // The first section's keys, of their values in force, in their
     // fields.
     assert_eq!(page_text(&app, own, "title"), "Font");
@@ -771,8 +779,8 @@ fn the_settings_page_shows_every_section_of_the_config_and_of_the_plugins_of_its
         .unwrap();
     let list = view.surface.tree.by_key(&"sections".into()).unwrap();
     assert!(state.focus.focus(view.id, &view.surface.tree, list));
-    // The config's sections, then the keys' part.
-    for _ in 0..19 {
+    // The config's sections, then the plugins'.
+    for _ in 0..18 {
         tap(
             &mut fake,
             &mut app,
@@ -825,6 +833,26 @@ fn settings_event(
         "lokyr/settings".to_owned(),
         UiEvent {
             view,
+            key: key.into(),
+            kind,
+        },
+    ));
+    frames(fake, app, window);
+}
+
+/// The event `kind` of the node of `key` of the page of the keys, which
+/// `window` shows.
+fn keys_event(
+    fake: &mut Fake,
+    app: &mut App,
+    window: WindowId,
+    key: &str,
+    kind: lokyr_kernel::plugins::view::UiEventKind,
+) {
+    app.ui_events.push((
+        "lokyr/settings".to_owned(),
+        UiEvent {
+            view: ViewId::Page("keys".to_owned()),
             key: key.into(),
             kind,
         },
@@ -1408,7 +1436,7 @@ fn a_search_of_the_settings_shows_its_sections_and_selects_the_one_chosen_of_the
 }
 
 #[test]
-fn the_keys_part_lists_the_defaults_and_a_default_changed_moves_its_shortcut() {
+fn the_keys_page_lists_the_defaults_and_a_default_changed_moves_its_shortcut() {
     use lokyr_kernel::plugins::view::UiEventKind;
     let directory = super::installed::shelf("settings-bindings");
     let path = directory.join("config.toml");
@@ -1425,15 +1453,9 @@ fn the_keys_part_lists_the_defaults_and_a_default_changed_moves_its_shortcut() {
     let first = fake.windows().next().unwrap();
     app.windows.get_mut(&first).unwrap().surface = Some(fakes::Surface::default());
     let own = open(&mut fake, &mut app, SETTINGS_TAB);
-    let keys = lokyr_kernel::config::schema::sections(&Config::default()).len();
-    settings_event(
-        &mut fake,
-        &mut app,
-        own,
-        None,
-        "sections",
-        UiEventKind::Select { item: keys },
-    );
+    // The page of the keys, of its tab.
+    click_tab(&mut fake, &mut app, own, 1);
+    assert_eq!(page_shown(&app, own), "keys");
     assert_eq!(page_text(&app, own, "title"), "Keys");
     // The defaults, as the keymap has them: New Tab's ⌘T among them.
     let at = app
@@ -1452,11 +1474,10 @@ fn the_keys_part_lists_the_defaults_and_a_default_changed_moves_its_shortcut() {
     assert_eq!(page_text(&app, own, &format!("keys-text:{quit}")), "⌘Q");
     // Changed: its new keys and `false` for the old, in the file, and the
     // keymap's shortcut moved.
-    settings_event(
+    keys_event(
         &mut fake,
         &mut app,
         own,
-        None,
         &format!("keys:{at}"),
         UiEventKind::Click,
     );
@@ -1516,26 +1537,13 @@ fn add_records_a_shortcut_of_no_command_run_and_writes_the_binding_of_the_comman
     let first = fake.windows().next().unwrap();
     app.windows.get_mut(&first).unwrap().surface = Some(fakes::Surface::default());
     let own = open(&mut fake, &mut app, SETTINGS_TAB);
-    let keys = lokyr_kernel::config::schema::sections(&Config::default()).len();
-    settings_event(
-        &mut fake,
-        &mut app,
-        own,
-        None,
-        "sections",
-        UiEventKind::Select { item: keys },
-    );
+    // The page of the keys, of its tab.
+    click_tab(&mut fake, &mut app, own, 1);
+    assert_eq!(page_shown(&app, own), "keys");
     assert!(!fake.recording_keys());
     // Add opens the panel, whose recorder has the keyboard, the platform
     // recording the keys.
-    settings_event(
-        &mut fake,
-        &mut app,
-        own,
-        None,
-        "add-binding",
-        UiEventKind::Click,
-    );
+    keys_event(&mut fake, &mut app, own, "add-binding", UiEventKind::Click);
     frames(&mut fake, &mut app, own);
     let panel = panel_view(&app, own, "new-binding").expect("the panel");
     // In the middle of the window.

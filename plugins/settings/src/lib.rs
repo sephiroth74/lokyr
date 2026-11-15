@@ -48,6 +48,9 @@ const PAGE: &str = "settings";
 /// The id of its page of the themes.
 const THEMES: &str = "themes";
 
+/// The id of its page of the bindings of keys.
+const KEYS_PAGE: &str = "keys";
+
 /// The prefix of the key of a theme's card on the themes' page, of its
 /// appearance and its name, as `theme:dark:Lokyr Dark`.
 const THEME_CARD: &str = "theme:";
@@ -203,8 +206,9 @@ pub struct SettingsPage {
     shown: bool,
     chosen: usize,
     query: String,
-    /// The words of the Keys part's filter, which it keeps as it shows
-    /// again, and the page as it shows anew does not.
+    /// Whether its page of the bindings of keys shows, and the words of its
+    /// filter, which the page as it shows anew empties.
+    keys_shown: bool,
     keys_filter: String,
     refused: BTreeMap<String, String>,
     /// The binding whose keys change, by its place among the settings'
@@ -241,26 +245,14 @@ struct Typed {
     text: String,
 }
 
-/// A part of the page, as its sidebar lists it: a section of the settings,
-/// or the bindings of keys, after the app's sections.
-#[derive(Clone, Copy)]
-enum Part<'s> {
-    Section(&'s SettingsSection),
-    Keys,
-}
-
-/// The parts of `settings`, in the sidebar's order: the app's sections, the
-/// bindings of keys, then the plugins' sections.
-fn parts(settings: &Settings) -> Vec<Part<'_>> {
+/// The parts of the page, as its sidebar lists them, the sections of
+/// `settings`: the app's, then the plugins'.
+fn parts(settings: &Settings) -> Vec<&SettingsSection> {
     let (app, plugins): (Vec<&SettingsSection>, Vec<&SettingsSection>) = settings
         .sections
         .iter()
         .partition(|section| section.plugin.is_none());
-    app.into_iter()
-        .map(Part::Section)
-        .chain(std::iter::once(Part::Keys))
-        .chain(plugins.into_iter().map(Part::Section))
-        .collect()
+    app.into_iter().chain(plugins).collect()
 }
 
 /// The page's view.
@@ -271,6 +263,11 @@ fn page() -> ViewId {
 /// The view of its page of the themes.
 fn themes_page() -> ViewId {
     ViewId::Page(THEMES.to_owned())
+}
+
+/// The view of its page of the bindings of keys.
+fn keys_page() -> ViewId {
+    ViewId::Page(KEYS_PAGE.to_owned())
 }
 
 /// The settings, as the page shows them: the themes of `[theme]` left to
@@ -311,20 +308,32 @@ impl Plugin for SettingsPage {
                     cx.request_render(themes_page())?;
                 }
                 Event::PageHidden(page) if page == THEMES => self.themes_shown = false,
-                // The page shows anew, as its fields do: at its first
-                // section, of no search, change of keys nor refusal.
-                Event::PageShown(_) => {
-                    self.shown = true;
-                    self.chosen = 0;
-                    self.query.clear();
+                // The page of the keys shows anew: of no filter, change of
+                // keys nor refusal.
+                Event::PageShown(page) if page == KEYS_PAGE => {
+                    self.keys_shown = true;
                     self.keys_filter.clear();
                     self.editing = None;
                     self.confirming = None;
+                    self.refused.clear();
+                    again = true;
+                }
+                Event::PageHidden(page) if page == KEYS_PAGE => {
+                    self.keys_shown = false;
+                    self.editing = None;
+                    self.confirming = None;
+                }
+                // The page shows anew, as its fields do: at its first
+                // section, of no search nor refusal.
+                Event::PageShown(page) if page == PAGE => {
+                    self.shown = true;
+                    self.chosen = 0;
+                    self.query.clear();
                     self.typed.clear();
                     self.refused.clear();
                     again = true;
                 }
-                Event::PageHidden(_) => {
+                Event::PageHidden(page) if page == PAGE => {
                     self.shown = false;
                     self.write_typed(cx, None)?;
                 }
@@ -372,9 +381,12 @@ impl Plugin for SettingsPage {
                 _ => {}
             }
         }
-        // Its view is there while its page shows alone.
+        // Its views are there while their pages show alone.
         if again && self.shown {
             self.render_page(cx)?;
+        }
+        if again && self.keys_shown {
+            self.render_keys(cx)?;
         }
         // The themes' page marks the themes that `[theme]` names.
         if again && self.themes_shown {
@@ -459,6 +471,25 @@ impl Plugin for SettingsPage {
         {
             return self.adding_event(cx, event);
         }
+        // The page of the keys: its filter, of its bindings, and the
+        // bindings.
+        if event.view == keys_page() {
+            return match (&event.kind, key) {
+                (UiEventKind::InputChanged { text, .. }, KEYS_FILTER) => {
+                    if *text == self.keys_filter {
+                        return Ok(());
+                    }
+                    text.clone_into(&mut self.keys_filter);
+                    self.render_keys(cx)
+                }
+                (UiEventKind::Click, KEYS_FILTER_CLEAR) => {
+                    cx.set_text(keys_page(), KEYS_FILTER, "", u64::MAX)?;
+                    self.keys_filter.clear();
+                    self.render_keys(cx)
+                }
+                _ => self.binding_event(cx, event),
+            };
+        }
         // The search's words, which filter the parts and their keys.
         match (&event.kind, key) {
             (UiEventKind::InputChanged { text, .. }, SEARCH) => {
@@ -467,19 +498,6 @@ impl Plugin for SettingsPage {
             (UiEventKind::Click, SEARCH_CLEAR) => {
                 cx.set_text(page(), SEARCH, "", u64::MAX)?;
                 return self.search(cx, "");
-            }
-            // The Keys part's filter, of its bindings alone.
-            (UiEventKind::InputChanged { text, .. }, KEYS_FILTER) => {
-                if *text != self.keys_filter {
-                    text.clone_into(&mut self.keys_filter);
-                    return self.render_page(cx);
-                }
-                return Ok(());
-            }
-            (UiEventKind::Click, KEYS_FILTER_CLEAR) => {
-                cx.set_text(page(), KEYS_FILTER, "", u64::MAX)?;
-                self.keys_filter.clear();
-                return self.render_page(cx);
             }
             _ => {}
         }
@@ -503,10 +521,8 @@ impl Plugin for SettingsPage {
             return self.render_page(cx);
         }
         let settings = page_settings(cx)?;
-        let section = match parts(&settings).get(self.chosen).copied() {
-            Some(Part::Section(section)) => section,
-            Some(Part::Keys) => return self.binding_event(cx, event),
-            None => return Ok(()),
+        let Some(section) = parts(&settings).get(self.chosen).copied() else {
+            return Ok(());
         };
         // An item of a key's menu of values, its panel of its key's name.
         if let ViewId::Panel(PanelId(panel)) = &event.view {
@@ -665,6 +681,17 @@ impl Plugin for SettingsPage {
         if *view == themes_page() {
             return Some(themes_tree(cx, self.themes_variant));
         }
+        if *view == keys_page() {
+            let settings = page_settings(cx).ok()?;
+            let filter = words(&self.keys_filter);
+            return Some(keys_tree(
+                cx,
+                &settings,
+                &filter,
+                self.editing,
+                &self.refused,
+            ));
+        }
         if *view == ViewId::Panel(PanelId::from(THEME_MENU)) {
             self.theme_menu.as_ref()?;
             return Some(Node::container(vec![
@@ -686,9 +713,7 @@ impl Plugin for SettingsPage {
         // A key's menu of values, each an item ticked where it is in force.
         if let ViewId::Panel(PanelId(panel)) = view {
             let name = panel.strip_prefix(CHOICES)?;
-            let Part::Section(section) = *parts(&settings).get(self.chosen)? else {
-                return None;
-            };
+            let section = *parts(&settings).get(self.chosen)?;
             let setting = find(section, name)?;
             let choices = menu_values(cx, section, setting)?;
             let items = choices
@@ -711,8 +736,8 @@ impl Plugin for SettingsPage {
         Some(tree(
             cx,
             &settings,
-            (self.chosen, self.editing),
-            (&words(&self.query), &words(&self.keys_filter)),
+            self.chosen,
+            &words(&self.query),
             (&self.refused, &self.typed),
         ))
     }
@@ -779,7 +804,7 @@ impl SettingsPage {
                     NEW_BINDING,
                     PanelOptions {
                         anchor: Anchor::ViewWindow {
-                            view: page(),
+                            view: keys_page(),
                             corner: lokyr_plugin_sdk::ui::Corner::Center,
                         },
                         role: PanelRole::Dialog,
@@ -797,8 +822,8 @@ impl SettingsPage {
                         return Ok(());
                     }
                     self.editing = Some(at);
-                    self.render_page(cx)?;
-                    return cx.focus_node(page(), format!("{KEYS_FIELD}{at}").as_str());
+                    self.render_keys(cx)?;
+                    return cx.focus_node(keys_page(), format!("{KEYS_FIELD}{at}").as_str());
                 }
                 if let Some((at, binding)) =
                     at(UNBIND).and_then(|at| settings.keys.get(at).map(|binding| (at, binding)))
@@ -807,7 +832,7 @@ impl SettingsPage {
                     // would take from them too, stay, as told.
                     if let Some(why) = shared_refusal(cx, &settings, at, binding) {
                         self.refused.insert(format!("binding:{at}"), why);
-                        return self.render_page(cx);
+                        return self.render_keys(cx);
                     }
                     // A default's keys take nothing; the config's own go.
                     let value = binding.default.then_some(Data::Boolean(false));
@@ -830,7 +855,7 @@ impl SettingsPage {
                 self.confirming = None;
                 self.refused.remove(&format!("binding:{at}"));
                 self.refused.remove(&format!("{TAKEN}{at}"));
-                self.render_page(cx)
+                self.render_keys(cx)
             }
             _ => Ok(()),
         }
@@ -916,7 +941,7 @@ impl SettingsPage {
             self.confirming = None;
             self.refused.remove(&refusal);
             self.refused.remove(&warning);
-            return self.render_page(cx);
+            return self.render_keys(cx);
         }
         // macOS's own keys, which no binding of the settings' takes.
         if let Ok(combos) = lokyr_plugin_sdk::keys::parse_keys(text)
@@ -924,17 +949,17 @@ impl SettingsPage {
         {
             self.refused
                 .insert(refusal, lokyr_plugin_sdk::keys::system_error(text));
-            return self.render_page(cx);
+            return self.render_keys(cx);
         }
         if let Err(why) = lokyr_plugin_sdk::keys::parse_keys(text) {
             self.refused.insert(refusal, why);
-            return self.render_page(cx);
+            return self.render_keys(cx);
         }
         // A default's old keys that others share, which `false` would take
         // from them too.
         if let Some(why) = shared_refusal(cx, &settings, at, binding) {
             self.refused.insert(refusal, why);
-            return self.render_page(cx);
+            return self.render_keys(cx);
         }
         // Keys that another binding takes: told, a second press of them
         // taking its place, of the config's own entry's spelling where it
@@ -960,7 +985,7 @@ impl SettingsPage {
                 self.confirming = Some((at, keys));
                 self.refused.remove(&refusal);
                 self.refused.insert(warning, why);
-                return self.render_page(cx);
+                return self.render_keys(cx);
             }
             if !taken.default {
                 target.clone_from(&taken.keys);
@@ -971,14 +996,14 @@ impl SettingsPage {
         let written = cx.set_setting(KEYS, None, &target, Some(binding_value(binding, command)));
         if let Err(error) = written {
             self.refused.insert(refusal, error.message);
-            return self.render_page(cx);
+            return self.render_keys(cx);
         }
         let old = binding.default.then_some(Data::Boolean(false));
         let written = cx.set_setting(KEYS, None, &binding.keys, old);
         self.editing = None;
         self.refused.remove(&refusal);
         self.told(cx, KEYS, written)?;
-        self.render_page(cx)
+        self.render_keys(cx)
     }
 
     /// Takes what a write of the key `name` did, `written`: why it was
@@ -996,8 +1021,10 @@ impl SettingsPage {
                 true
             }
         };
+        // The page that wrote it, of the keys' or of the bindings'.
         if changed {
             self.render_page(cx)?;
+            self.render_keys(cx)?;
         }
         Ok(())
     }
@@ -1010,6 +1037,16 @@ impl SettingsPage {
     fn render_page(&self, cx: &mut Cx<'_>) -> Result<(), Error> {
         if self.shown {
             cx.request_render(page())
+        } else {
+            Ok(())
+        }
+    }
+
+    /// Renders the page of the keys anew while it shows, as
+    /// [`render_page`](Self::render_page) does the page's.
+    fn render_keys(&self, cx: &mut Cx<'_>) -> Result<(), Error> {
+        if self.keys_shown {
+            cx.request_render(keys_page())
         } else {
             Ok(())
         }
@@ -1288,27 +1325,17 @@ fn binding_value(binding: &SettingBinding, command: &str) -> Data {
 
 /// The places among the parts of `settings` of those that the search's
 /// `words` show: every one of no words, else each that holds them, of a
-/// key or a binding of its own or of its title.
+/// key of its own.
 fn shown_parts(cx: &mut Cx<'_>, settings: &Settings, words: &[String]) -> Vec<usize> {
     parts(settings)
         .into_iter()
         .enumerate()
-        .filter(|(_, part)| {
+        .filter(|(_, section)| {
             words.is_empty()
-                || match part {
-                    Part::Section(section) => section
-                        .keys
-                        .iter()
-                        .any(|key| key_holds(cx, section, key, words)),
-                    Part::Keys => {
-                        let title = message(cx, "section-keys", &[]);
-                        holds(words, &[&title])
-                            || settings
-                                .keys
-                                .iter()
-                                .any(|binding| binding_holds(cx, binding, words))
-                    }
-                }
+                || section
+                    .keys
+                    .iter()
+                    .any(|key| key_holds(cx, section, key, words))
         })
         .map(|(at, _)| at)
         .collect()
@@ -1446,8 +1473,8 @@ fn step_of(setting: &SettingKey, toward: f64) -> Option<Data> {
 fn tree(
     cx: &mut Cx<'_>,
     settings: &Settings,
-    (chosen, editing): (usize, Option<usize>),
-    (words, filter): (&[String], &[String]),
+    chosen: usize,
+    words: &[String],
     (refused, typed): (&BTreeMap<String, String>, &BTreeMap<String, Typed>),
 ) -> Node {
     let shown = shown_parts(cx, settings, words);
@@ -1456,8 +1483,7 @@ fn tree(
         .copied()
         .filter(|_| shown.contains(&chosen));
     let mut part = match chosen_part {
-        Some(Part::Section(section)) => section_part(cx, section, words, (refused, typed)),
-        Some(Part::Keys) => keys_part(cx, &settings.keys, (words, filter), editing, refused),
+        Some(section) => section_part(cx, section, words, (refused, typed)),
         None if !words.is_empty() => vec![
             Node::text(message(cx, "settings-no-match", &[]))
                 .key("no-match")
@@ -1470,45 +1496,8 @@ fn tree(
         ],
     };
     // A file that does not read: its error, over every part.
-    if let Some(problem) = &settings.error {
-        let text = match (problem.line, problem.column) {
-            (Some(line), Some(column)) => message(
-                cx,
-                "settings-file-error-at",
-                &[
-                    ("line", line.to_string()),
-                    ("column", column.to_string()),
-                    ("message", problem.message.clone()),
-                ],
-            ),
-            _ => message(
-                cx,
-                "settings-file-error",
-                &[("message", problem.message.clone())],
-            ),
-        };
-        part.insert(
-            0,
-            Node::text(text)
-                .key("file-error")
-                .role(Role::Group)
-                .style(Style {
-                    color: Some(Token::from("text.warning")),
-                    background: Some(Token::from("panel.bg")),
-                    border: Some(Border {
-                        color: Token::from("text.warning"),
-                        width: 1.0,
-                    }),
-                    radius: 8.0,
-                    ..Style::default()
-                })
-                .layout(Layout {
-                    lines: Some(0),
-                    padding: Edges::all(10.0),
-                    width: Length::Fraction(1.0),
-                    ..Layout::default()
-                }),
-        );
+    if let Some(error) = file_error(cx, settings) {
+        part.insert(0, error);
     }
     let part = Node::scroll(vec![Node::container(part).key("part").layout(Layout {
         direction: Direction::Column,
@@ -1535,6 +1524,80 @@ fn tree(
     .key("settings-page")
     .layout(Layout {
         direction: Direction::Row,
+        width: Length::Fraction(1.0),
+        height: Length::Fraction(1.0),
+        ..Layout::default()
+    })
+}
+
+/// The error of a config file that does not read, which every page shows
+/// over its parts, of its line and column where it tells them.
+fn file_error(cx: &mut Cx<'_>, settings: &Settings) -> Option<Node> {
+    let problem = settings.error.as_ref()?;
+    let text = match (problem.line, problem.column) {
+        (Some(line), Some(column)) => message(
+            cx,
+            "settings-file-error-at",
+            &[
+                ("line", line.to_string()),
+                ("column", column.to_string()),
+                ("message", problem.message.clone()),
+            ],
+        ),
+        _ => message(
+            cx,
+            "settings-file-error",
+            &[("message", problem.message.clone())],
+        ),
+    };
+    Some(
+        Node::text(text)
+            .key("file-error")
+            .role(Role::Group)
+            .style(Style {
+                color: Some(Token::from("text.warning")),
+                background: Some(Token::from("panel.bg")),
+                border: Some(Border {
+                    color: Token::from("text.warning"),
+                    width: 1.0,
+                }),
+                radius: 8.0,
+                ..Style::default()
+            })
+            .layout(Layout {
+                lines: Some(0),
+                padding: Edges::all(10.0),
+                width: Length::Fraction(1.0),
+                ..Layout::default()
+            }),
+    )
+}
+
+/// The page of the bindings of keys, of `settings`: their part, of the
+/// filter's `words`, the binding of `editing` recording, each write refused
+/// of why, `refused`, down a column that scrolls, the error of a file that
+/// does not read over it.
+fn keys_tree(
+    cx: &mut Cx<'_>,
+    settings: &Settings,
+    words: &[String],
+    editing: Option<usize>,
+    refused: &BTreeMap<String, String>,
+) -> Node {
+    let mut part = keys_part(cx, &settings.keys, words, editing, refused);
+    if let Some(error) = file_error(cx, settings) {
+        part.insert(0, error);
+    }
+    Node::scroll(vec![Node::container(part).key("part").layout(Layout {
+        direction: Direction::Column,
+        gap: 10.0,
+        padding: Edges::all(20.0),
+        width: Length::Fraction(1.0),
+        ..Layout::default()
+    })])
+    .key("keys-page")
+    .layout(Layout {
+        direction: Direction::Column,
         width: Length::Fraction(1.0),
         height: Length::Fraction(1.0),
         ..Layout::default()
@@ -1570,13 +1633,8 @@ fn sidebar(cx: &mut Cx<'_>, settings: &Settings, shown: &[usize], words: &[Strin
     let items: Vec<ListItem> = shown
         .iter()
         .filter_map(|&at| parts.get(at))
-        .map(|part| match part {
-            Part::Section(section) => ListItem {
-                texts: vec![icon_of(section).to_owned(), title(cx, section)],
-            },
-            Part::Keys => ListItem {
-                texts: vec!["keyboard".to_owned(), message(cx, "section-keys", &[])],
-            },
+        .map(|section| ListItem {
+            texts: vec![icon_of(section).to_owned(), title(cx, section)],
         })
         .collect();
     let mut list = Node::list(row, items.len(), (0, items))
@@ -2134,7 +2192,7 @@ fn search_box(
 
 /// The part of the bindings of keys: every one in force, the defaults and
 /// the config's own, and the keys that the config takes away, of those
-/// that the search's `words` show, by their commands' categories, each of
+/// that the filter's words, `filter`, show, by their commands' categories, each of
 /// its keys as macOS writes them, which a click lets change in a field,
 /// the one of `editing`, its command's title, its name, arguments and
 /// context, and a link that takes it away or gives a default back; then
@@ -2142,7 +2200,7 @@ fn search_box(
 fn keys_part(
     cx: &mut Cx<'_>,
     bindings: &[SettingBinding],
-    (words, filter): (&[String], &[String]),
+    filter: &[String],
     editing: Option<usize>,
     refused: &BTreeMap<String, String>,
 ) -> Vec<Node> {
@@ -2192,10 +2250,7 @@ fn keys_part(
     let shown: Vec<(usize, &SettingBinding)> = bindings
         .iter()
         .enumerate()
-        .filter(|(_, binding)| {
-            (words.is_empty() || binding_holds(cx, binding, words))
-                && (filter.is_empty() || binding_holds(cx, binding, filter))
-        })
+        .filter(|(_, binding)| filter.is_empty() || binding_holds(cx, binding, filter))
         .collect();
     if shown.is_empty() && !filter.is_empty() {
         part.push(

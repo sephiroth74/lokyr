@@ -1,5 +1,6 @@
 # The settings window's page of the config's keys.
 page-settings = Settings
+page-keys = Keys
 page-themes = Themes
 themes-description = Every theme, of a preview of its colors: a click uses it for its appearance, in your config's [theme]. Your own themes are those of the themes' folder beside your config, which View › Open Themes Folder opens.
 themes-light = Light

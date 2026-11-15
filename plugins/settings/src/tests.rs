@@ -12,11 +12,10 @@ use super::*;
 /// The plugin's name, as its calls give it.
 const NAME: &str = "lokyr/settings";
 
-/// The sidebar's place of the theme's section, of the keys' bindings and of
-/// the plugin's section, after the app's three sections.
+/// The sidebar's place of the theme's section and of the plugin's section,
+/// after the app's three sections.
 const THEME: usize = 2;
-const BINDINGS: usize = 3;
-const TABS: usize = 4;
+const TABS: usize = 3;
 
 /// A key of `name`, of its value, its default and its kind.
 fn key(name: &str, value: Option<Data>, default: Option<Data>, kind: SettingKind) -> SettingKey {
@@ -288,6 +287,12 @@ fn rendered(host: &mut FakeHost, plugin: &mut SettingsPage) -> Node {
     host.render(plugin, &page()).expect("the page")
 }
 
+/// The tree of the page of the keys, rendered anew.
+fn keys_rendered(host: &mut FakeHost, plugin: &mut SettingsPage) -> Node {
+    host.render(plugin, &keys_page())
+        .expect("the page of the keys")
+}
+
 /// The node of `key` in `tree`, if it has one.
 fn find_node<'t>(tree: &'t Node, key: &str) -> Option<&'t Node> {
     if tree.key.as_ref().is_some_and(|own| own.0 == key) {
@@ -335,6 +340,15 @@ fn choose(item: usize) -> UiEvent {
 fn on(key: &str, kind: UiEventKind) -> UiEvent {
     UiEvent {
         view: page(),
+        key: key.into(),
+        kind,
+    }
+}
+
+/// The event `kind` of the node of `key` of the page of the keys.
+fn on_keys(key: &str, kind: UiEventKind) -> UiEvent {
+    UiEvent {
+        view: keys_page(),
         key: key.into(),
         kind,
     }
@@ -395,7 +409,6 @@ fn the_sidebar_lists_the_config_s_sections_then_the_plugins_of_a_schema() {
             ["text-size", "font"],
             ["window", "window"],
             ["symbol-color", "theme"],
-            ["keyboard", "section-keys"],
             ["browser", "tabs"],
         ]
         .map(|texts| texts.map(str::to_owned).to_vec()),
@@ -701,6 +714,35 @@ fn the_page_renders_while_it_shows_alone() {
     assert!(host.take_renders().is_empty());
 }
 
+#[test]
+fn the_keys_page_shows_the_bindings_alone_and_renders_while_it_shows() {
+    let (mut host, mut plugin) = keyed_host();
+    let tree = keys_rendered(&mut host, &mut plugin);
+    // Its title, its filter and Add, the bindings, of no sidebar.
+    assert_eq!(text_of(&tree, "title").as_deref(), Some("section-keys"));
+    assert!(find_node(&tree, "keys-filter").is_some());
+    assert!(find_node(&tree, "add-binding").is_some());
+    assert!(keys_of(&tree, CLEAR).is_some());
+    assert!(find_node(&tree, SECTIONS).is_none());
+    // A change of keys under way ends as it hides; the settings changing
+    // then ask no render, of no failure.
+    host.ui_event(
+        &mut plugin,
+        &on_keys(&format!("keys:{CLEAR}"), UiEventKind::Click),
+    )
+    .unwrap();
+    assert_eq!(plugin.editing, Some(CLEAR));
+    host.hide_page();
+    host.deliver(&mut plugin).unwrap();
+    assert_eq!(plugin.editing, None);
+    let _ = host.take_renders();
+    let mut changed = settings();
+    changed.sections[0].keys[1].value = Some(Data::Integer(20));
+    host.set_settings(changed);
+    host.deliver(&mut plugin).unwrap();
+    assert!(host.take_renders().is_empty());
+}
+
 /// The items of the menu of the key `name` of the part shown, each its
 /// label and whether it is ticked, as its button opens it.
 fn menu_of(host: &mut FakeHost, plugin: &mut SettingsPage, name: &str) -> Vec<(String, bool)> {
@@ -828,8 +870,8 @@ fn the_themes_leave_the_settings_page_for_their_own_and_a_plugin_s_color_is_a_th
 }
 
 /// A host of the settings of [`settings`], of the commands of
-/// [`bound_commands`], and the plugin, activated, its page shown at its
-/// bindings.
+/// [`bound_commands`], and the plugin, activated, its page of the keys
+/// shown.
 fn keyed_host() -> (FakeHost, SettingsPage) {
     let mut host = FakeHost::new(NAME).with_manifest(crate::MANIFEST);
     host.set_registry(
@@ -851,10 +893,9 @@ fn keyed_host() -> (FakeHost, SettingsPage) {
     host.set_settings(settings());
     let mut plugin = SettingsPage::default();
     host.activate(&mut plugin).unwrap();
-    host.show_page(PAGE);
+    host.show_page(KEYS_PAGE);
     host.deliver(&mut plugin).unwrap();
-    rendered(&mut host, &mut plugin);
-    host.ui_event(&mut plugin, &choose(BINDINGS)).unwrap();
+    keys_rendered(&mut host, &mut plugin);
     (host, plugin)
 }
 
@@ -898,7 +939,7 @@ fn categories_of(tree: &Node) -> Vec<String> {
 #[test]
 fn the_bindings_in_force_are_listed_by_category_of_their_keys_titles_and_contexts() {
     let (mut host, mut plugin) = keyed_host();
-    let tree = rendered(&mut host, &mut plugin);
+    let tree = keys_rendered(&mut host, &mut plugin);
     assert_eq!(text_of(&tree, "title").as_deref(), Some("section-keys"));
     // By the commands' categories, the bindings of none last.
     assert_eq!(
@@ -951,21 +992,21 @@ fn the_bindings_in_force_are_listed_by_category_of_their_keys_titles_and_context
         text_of(&tree, &format!("details:{SETTINGS}")).as_deref(),
         Some("app.settings · binding-system")
     );
-    // A search of a context's name, or of a category's title.
-    host.ui_event(&mut plugin, &search("copy-mode.open"))
+    // The filter of a context's name, or of a category's title.
+    host.ui_event(&mut plugin, &filter("copy-mode.open"))
         .unwrap();
-    let tree = rendered(&mut host, &mut plugin);
+    let tree = keys_rendered(&mut host, &mut plugin);
     assert!(find_node(&tree, &format!("binding:{DOWN}")).is_some());
     assert!(find_node(&tree, &format!("binding:{CLEAR}")).is_none());
-    host.ui_event(&mut plugin, &search("category-windows"))
+    host.ui_event(&mut plugin, &filter("category-windows"))
         .unwrap();
-    let tree = rendered(&mut host, &mut plugin);
+    let tree = keys_rendered(&mut host, &mut plugin);
     assert_eq!(categories_of(&tree), ["category-windows"]);
 }
 
 /// The recorder of `key`'s keys, recorded as `keys`.
 fn recorded(key: &str, keys: Option<&str>) -> UiEvent {
-    on(
+    on_keys(
         key,
         UiEventKind::Recorded {
             keys: keys.map(str::to_owned),
@@ -976,13 +1017,13 @@ fn recorded(key: &str, keys: Option<&str>) -> UiEvent {
 #[test]
 fn a_default_s_keys_recorded_write_the_new_keys_and_false_for_the_old() {
     let (mut host, mut plugin) = keyed_host();
-    rendered(&mut host, &mut plugin);
+    keys_rendered(&mut host, &mut plugin);
     let _ = written(&mut host);
     // A click on the keys shows their recorder, of their keys as macOS
     // writes them, focused.
-    host.ui_event(&mut plugin, &on("keys:0", UiEventKind::Click))
+    host.ui_event(&mut plugin, &on_keys("keys:0", UiEventKind::Click))
         .unwrap();
-    let tree = rendered(&mut host, &mut plugin);
+    let tree = keys_rendered(&mut host, &mut plugin);
     let field = find_node(&tree, "keys-field:0").expect("the recorder");
     assert!(matches!(&field.kind, Kind::Field(field) if field.records));
     assert_eq!(
@@ -1008,7 +1049,7 @@ fn a_default_s_keys_recorded_write_the_new_keys_and_false_for_the_old() {
         ]
     );
     host.deliver(&mut plugin).unwrap();
-    let tree = rendered(&mut host, &mut plugin);
+    let tree = keys_rendered(&mut host, &mut plugin);
     assert!(
         find_node(&tree, "keys-field:0").is_none(),
         "the recorder goes"
@@ -1017,10 +1058,10 @@ fn a_default_s_keys_recorded_write_the_new_keys_and_false_for_the_old() {
     let goto = place(&host, "cmd+1");
     host.ui_event(
         &mut plugin,
-        &on(&format!("keys:{goto}"), UiEventKind::Click),
+        &on_keys(&format!("keys:{goto}"), UiEventKind::Click),
     )
     .unwrap();
-    rendered(&mut host, &mut plugin);
+    keys_rendered(&mut host, &mut plugin);
     host.ui_event(
         &mut plugin,
         &recorded(&format!("keys-field:{goto}"), Some("ctrl+1")),
@@ -1043,16 +1084,16 @@ fn a_default_s_keys_recorded_write_the_new_keys_and_false_for_the_old() {
 #[test]
 fn a_recorder_of_the_same_keys_or_macos_s_writes_nothing_and_its_leaving_puts_it_away() {
     let (mut host, mut plugin) = keyed_host();
-    rendered(&mut host, &mut plugin);
+    keys_rendered(&mut host, &mut plugin);
     let _ = written(&mut host);
-    host.ui_event(&mut plugin, &on("keys:0", UiEventKind::Click))
+    host.ui_event(&mut plugin, &on_keys("keys:0", UiEventKind::Click))
         .unwrap();
-    rendered(&mut host, &mut plugin);
+    keys_rendered(&mut host, &mut plugin);
     // macOS's own keys, told under the row, the recorder staying.
     host.ui_event(&mut plugin, &recorded("keys-field:0", Some("cmd+q")))
         .unwrap();
     assert!(written(&mut host).is_empty());
-    let tree = rendered(&mut host, &mut plugin);
+    let tree = keys_rendered(&mut host, &mut plugin);
     let why = text_of(&tree, "refused:binding:0").expect("why");
     assert!(why.contains("macOS's own"), "{why}");
     assert!(find_node(&tree, "keys-field:0").is_some());
@@ -1060,48 +1101,48 @@ fn a_recorder_of_the_same_keys_or_macos_s_writes_nothing_and_its_leaving_puts_it
     host.ui_event(&mut plugin, &recorded("keys-field:0", Some("cmd+k")))
         .unwrap();
     assert!(written(&mut host).is_empty());
-    let tree = rendered(&mut host, &mut plugin);
+    let tree = keys_rendered(&mut host, &mut plugin);
     assert!(find_node(&tree, "keys-field:0").is_none());
     assert!(text_of(&tree, "refused:binding:0").is_none());
     // Left of no keys recorded: put away, nothing written.
-    host.ui_event(&mut plugin, &on("keys:1", UiEventKind::Click))
+    host.ui_event(&mut plugin, &on_keys("keys:1", UiEventKind::Click))
         .unwrap();
-    rendered(&mut host, &mut plugin);
-    host.ui_event(&mut plugin, &on("keys-field:1", UiEventKind::Blur))
+    keys_rendered(&mut host, &mut plugin);
+    host.ui_event(&mut plugin, &on_keys("keys-field:1", UiEventKind::Blur))
         .unwrap();
     assert!(written(&mut host).is_empty());
-    let tree = rendered(&mut host, &mut plugin);
+    let tree = keys_rendered(&mut host, &mut plugin);
     assert!(find_node(&tree, "keys-field:1").is_none());
 }
 
 #[test]
 fn a_default_removed_writes_false_the_config_s_own_goes_and_one_taken_away_comes_back() {
     let (mut host, mut plugin) = keyed_host();
-    rendered(&mut host, &mut plugin);
+    keys_rendered(&mut host, &mut plugin);
     let _ = written(&mut host);
-    host.ui_event(&mut plugin, &on("unbind:1", UiEventKind::Click))
+    host.ui_event(&mut plugin, &on_keys("unbind:1", UiEventKind::Click))
         .unwrap();
     assert_eq!(
         written(&mut host),
         [app_key("keys", "cmd+n", Some(Data::Boolean(false)))]
     );
     host.deliver(&mut plugin).unwrap();
-    rendered(&mut host, &mut plugin);
+    keys_rendered(&mut host, &mut plugin);
     // The config's own, whatever its place now.
     let reopen = place(&host, "cmd+shift+t");
     host.ui_event(
         &mut plugin,
-        &on(&format!("unbind:{reopen}"), UiEventKind::Click),
+        &on_keys(&format!("unbind:{reopen}"), UiEventKind::Click),
     )
     .unwrap();
     assert_eq!(written(&mut host), [app_key("keys", "cmd+shift+t", None)]);
     host.deliver(&mut plugin).unwrap();
-    rendered(&mut host, &mut plugin);
+    keys_rendered(&mut host, &mut plugin);
     // Keys taken away, given back.
     let quit = place(&host, "cmd+q");
     host.ui_event(
         &mut plugin,
-        &on(&format!("restore:{quit}"), UiEventKind::Click),
+        &on_keys(&format!("restore:{quit}"), UiEventKind::Click),
     )
     .unwrap();
     assert_eq!(written(&mut host), [app_key("keys", "cmd+q", None)]);
@@ -1122,30 +1163,30 @@ fn keys_that_do_not_change_take_no_click_and_a_default_shared_stays_as_told() {
     given.keys.push(palette);
     host.set_settings(given);
     host.deliver(&mut plugin).unwrap();
-    rendered(&mut host, &mut plugin);
+    keys_rendered(&mut host, &mut plugin);
     let _ = written(&mut host);
     // macOS's own: its keys' click, by their text's key or a button's,
     // records nothing.
     for key in [format!("keys-text:{SETTINGS}"), format!("keys:{SETTINGS}")] {
-        host.ui_event(&mut plugin, &on(&key, UiEventKind::Click))
+        host.ui_event(&mut plugin, &on_keys(&key, UiEventKind::Click))
             .unwrap();
-        let tree = rendered(&mut host, &mut plugin);
+        let tree = keys_rendered(&mut host, &mut plugin);
         assert!(find_node(&tree, &format!("keys-field:{SETTINGS}")).is_none());
     }
     // A default of keys that another default shares: neither removed nor
     // moved, the other named.
     host.ui_event(
         &mut plugin,
-        &on(&format!("unbind:{DOWN}"), UiEventKind::Click),
+        &on_keys(&format!("unbind:{DOWN}"), UiEventKind::Click),
     )
     .unwrap();
     assert!(written(&mut host).is_empty());
-    let tree = rendered(&mut host, &mut plugin);
+    let tree = keys_rendered(&mut host, &mut plugin);
     let why = text_of(&tree, &format!("refused:binding:{DOWN}")).expect("why");
     assert!(why.contains("binding-shared"), "{why}");
     host.ui_event(
         &mut plugin,
-        &on(&format!("keys:{DOWN}"), UiEventKind::Click),
+        &on_keys(&format!("keys:{DOWN}"), UiEventKind::Click),
     )
     .unwrap();
     host.ui_event(
@@ -1175,13 +1216,13 @@ fn keys_that_another_binding_takes_are_told_and_a_second_press_takes_their_place
     ));
     host.set_settings(given);
     host.deliver(&mut plugin).unwrap();
-    rendered(&mut host, &mut plugin);
+    keys_rendered(&mut host, &mut plugin);
     let _ = written(&mut host);
     // ⌘K's Clear to ⇧⌘Y, which the config's own takes: told, nothing
     // written, the recorder staying.
     host.ui_event(
         &mut plugin,
-        &on(&format!("keys:{CLEAR}"), UiEventKind::Click),
+        &on_keys(&format!("keys:{CLEAR}"), UiEventKind::Click),
     )
     .unwrap();
     host.ui_event(
@@ -1190,7 +1231,7 @@ fn keys_that_another_binding_takes_are_told_and_a_second_press_takes_their_place
     )
     .unwrap();
     assert!(written(&mut host).is_empty());
-    let tree = rendered(&mut host, &mut plugin);
+    let tree = keys_rendered(&mut host, &mut plugin);
     let told = text_of(&tree, &format!("taken:binding:{CLEAR}")).expect("told");
     assert!(told.contains("binding-taken-again"), "{told}");
     assert!(find_node(&tree, &format!("keys-field:{CLEAR}")).is_some());
@@ -1212,12 +1253,12 @@ fn keys_that_another_binding_takes_are_told_and_a_second_press_takes_their_place
         ]
     );
     host.deliver(&mut plugin).unwrap();
-    rendered(&mut host, &mut plugin);
+    keys_rendered(&mut host, &mut plugin);
     // A global key stays one.
     let global = place(&host, "global:ctrl+`");
     host.ui_event(
         &mut plugin,
-        &on(&format!("keys:{global}"), UiEventKind::Click),
+        &on_keys(&format!("keys:{global}"), UiEventKind::Click),
     )
     .unwrap();
     host.ui_event(
@@ -1253,13 +1294,13 @@ fn in_panel(panel: &str, key: &str, kind: UiEventKind) -> UiEvent {
 #[test]
 fn add_opens_a_panel_of_a_recorder_and_a_menu_of_the_commands_which_writes_the_binding() {
     let (mut host, mut plugin) = keyed_host();
-    rendered(&mut host, &mut plugin);
+    keys_rendered(&mut host, &mut plugin);
     let _ = written(&mut host);
     // Add, above the bindings and below them, opens the panel, a dialog
     // in the middle of the window.
-    let tree = rendered(&mut host, &mut plugin);
+    let tree = keys_rendered(&mut host, &mut plugin);
     assert!(labelled(&tree, ADD_BINDING).is_some() && labelled(&tree, ADD_BINDING_BELOW).is_some());
-    host.ui_event(&mut plugin, &on(ADD_BINDING_BELOW, UiEventKind::Click))
+    host.ui_event(&mut plugin, &on_keys(ADD_BINDING_BELOW, UiEventKind::Click))
         .unwrap();
     let options = host
         .panels()
@@ -1268,7 +1309,7 @@ fn add_opens_a_panel_of_a_recorder_and_a_menu_of_the_commands_which_writes_the_b
     assert_eq!(
         options.anchor,
         Anchor::ViewWindow {
-            view: page(),
+            view: keys_page(),
             corner: lokyr_plugin_sdk::ui::Corner::Center,
         }
     );
@@ -1384,8 +1425,8 @@ fn add_opens_a_panel_of_a_recorder_and_a_menu_of_the_commands_which_writes_the_b
 #[test]
 fn cancel_closes_the_new_binding_s_panel_and_a_refusal_is_told_in_it() {
     let (mut host, mut plugin) = keyed_host();
-    rendered(&mut host, &mut plugin);
-    host.ui_event(&mut plugin, &on(ADD_BINDING, UiEventKind::Click))
+    keys_rendered(&mut host, &mut plugin);
+    host.ui_event(&mut plugin, &on_keys(ADD_BINDING, UiEventKind::Click))
         .unwrap();
     host.render(&mut plugin, &new_binding());
     // A command that the app lacks, refused, told in the panel.
@@ -1906,7 +1947,7 @@ fn the_page_shown_again_shows_no_search_nor_refusal_as_its_fields_are_empty() {
 
 /// A text typed into the Keys part's filter.
 fn filter(text: &str) -> UiEvent {
-    on(
+    on_keys(
         "keys-filter",
         UiEventKind::InputChanged {
             text: text.to_owned(),
@@ -1916,9 +1957,9 @@ fn filter(text: &str) -> UiEvent {
 }
 
 #[test]
-fn the_keys_part_s_filter_shows_the_bindings_of_its_words_and_keeps_them_as_the_part_shows_again() {
+fn the_keys_page_s_filter_shows_the_bindings_of_its_words_and_empties_as_the_page_shows_anew() {
     let (mut host, mut plugin) = keyed_host();
-    let tree = rendered(&mut host, &mut plugin);
+    let tree = keys_rendered(&mut host, &mut plugin);
     // Beside Add, of no button that empties it while it is empty.
     assert!(find_node(&tree, "keys-filter").is_some());
     assert!(find_node(&tree, "add-binding").is_some());
@@ -1932,7 +1973,7 @@ fn the_keys_part_s_filter_shows_the_bindings_of_its_words_and_keeps_them_as_the_
         ("copy-mode.open", DOWN),
     ] {
         host.ui_event(&mut plugin, &filter(words)).unwrap();
-        let tree = rendered(&mut host, &mut plugin);
+        let tree = keys_rendered(&mut host, &mut plugin);
         assert!(keys_of(&tree, shown).is_some(), "{words}");
         let others: Vec<usize> = [CLEAR, DOWN, QUIT, REOPEN]
             .into_iter()
@@ -1944,49 +1985,41 @@ fn the_keys_part_s_filter_shows_the_bindings_of_its_words_and_keeps_them_as_the_
     // Words of no binding: said so.
     host.ui_event(&mut plugin, &filter("nothing at all"))
         .unwrap();
-    let tree = rendered(&mut host, &mut plugin);
+    let tree = keys_rendered(&mut host, &mut plugin);
     assert!(text_of(&tree, "keys-no-match").is_some());
-    // Another part and back: the filter stays.
-    host.ui_event(&mut plugin, &filter("clear")).unwrap();
-    host.ui_event(&mut plugin, &choose(0)).unwrap();
-    host.ui_event(&mut plugin, &choose(BINDINGS)).unwrap();
-    let tree = rendered(&mut host, &mut plugin);
-    assert!(keys_of(&tree, CLEAR).is_some());
-    assert!(keys_of(&tree, QUIT).is_none());
     // Its button empties it, every binding back.
-    host.ui_event(&mut plugin, &on("keys-filter-clear", UiEventKind::Click))
-        .unwrap();
-    let tree = rendered(&mut host, &mut plugin);
+    host.ui_event(
+        &mut plugin,
+        &on_keys("keys-filter-clear", UiEventKind::Click),
+    )
+    .unwrap();
+    let tree = keys_rendered(&mut host, &mut plugin);
     assert!(keys_of(&tree, QUIT).is_some() && keys_of(&tree, CLEAR).is_some());
     // The page shown anew, of an empty field, filters nothing.
     host.ui_event(&mut plugin, &filter("clear")).unwrap();
     host.hide_page();
     host.deliver(&mut plugin).unwrap();
-    host.show_page(PAGE);
+    host.show_page(KEYS_PAGE);
     host.deliver(&mut plugin).unwrap();
-    host.ui_event(&mut plugin, &choose(BINDINGS)).unwrap();
-    let tree = rendered(&mut host, &mut plugin);
+    let tree = keys_rendered(&mut host, &mut plugin);
     assert!(keys_of(&tree, QUIT).is_some());
 }
 
 #[test]
-fn a_search_finds_the_bindings_of_their_keys_and_commands() {
+fn the_settings_search_finds_no_binding_which_their_own_page_lists() {
     let (mut host, mut plugin) = host();
     rendered(&mut host, &mut plugin);
-    host.ui_event(&mut plugin, &search("clear")).unwrap();
-    let tree = rendered(&mut host, &mut plugin);
-    assert_eq!(sidebar_of(&tree), ["section-keys"], "{}", snapshot(&tree));
-    assert_eq!(keys_of(&tree, CLEAR).as_deref(), Some("⌘K"));
-    assert_eq!(keys_of(&tree, QUIT), None);
-
-    // The keys as macOS writes them, and as the config does.
-    host.ui_event(&mut plugin, &search("⌘Q")).unwrap();
-    let tree = rendered(&mut host, &mut plugin);
-    assert_eq!(keys_of(&tree, QUIT).as_deref(), Some("⌘Q"));
-    assert_eq!(keys_of(&tree, CLEAR), None);
-    host.ui_event(&mut plugin, &search("cmd+k")).unwrap();
-    let tree = rendered(&mut host, &mut plugin);
-    assert_eq!(keys_of(&tree, CLEAR).as_deref(), Some("⌘K"));
+    for words in ["clear", "⌘Q", "cmd+k", "section-keys"] {
+        host.ui_event(&mut plugin, &search(words)).unwrap();
+        let tree = rendered(&mut host, &mut plugin);
+        assert!(
+            !sidebar_of(&tree).contains(&"section-keys".to_owned()),
+            "{words}: {}",
+            snapshot(&tree)
+        );
+        assert_eq!(keys_of(&tree, CLEAR), None, "{words}");
+        assert_eq!(keys_of(&tree, QUIT), None, "{words}");
+    }
 }
 
 #[test]
@@ -2014,10 +2047,7 @@ fn a_search_of_no_match_says_so_and_its_button_empties_it() {
         Request::SetText { key, text, .. } if key.0 == SEARCH && text.is_empty()
     )));
     let tree = rendered(&mut host, &mut plugin);
-    assert_eq!(
-        sidebar_of(&tree),
-        ["font", "window", "theme", "section-keys", "tabs"]
-    );
+    assert_eq!(sidebar_of(&tree), ["font", "window", "theme", "tabs"]);
     assert!(
         reset_of(&tree, "column-width").is_some(),
         "{}",

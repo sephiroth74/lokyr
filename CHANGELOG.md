@@ -15,12 +15,13 @@ from 1.0.0; before it, a minor version may change what a previous one did.
 - Themes of the packages that Sleip installs, as `sleip add owner/name`: the theme picker and the Themes page list them, of their package's name, and `[theme]` names them; a package's theme takes no name of another, so that installing one changes no theme in force.
 - `sleip dev` links a package of themes too, whose themes Lokyr shows anew as each file is saved.
 - `sleip new --themes owner/name` makes a package of themes, its manifest, a theme of Lokyr's format and a README, which `sleip check` checks, each theme read as Lokyr reads it, its errors at their lines, `sleip test` runs nothing of, and `sleip add --path`, `update` and `remove` install, update and remove; a package of themes holds no code, its manifest of no capability, activation, command nor dependency.
-- The settings window's Keys part has a field at its top that filters its shortcuts as you type, by their commands' titles or names, their keys, as ⌘K or `cmd+k`, or their contexts.
+- The settings window's Keys page has a field at its top that filters its shortcuts as you type, by their commands' titles or names, their keys, as ⌘K or `cmd+k`, or their contexts.
 - Window › Cycle Through Windows, ⌘`, brings forward your next window, the settings window too, and ⇧⌘` the previous one, of the key left of 1 by its place, as macOS's: ⌘\ on the Italian layout.
 
 ### Changed
 
-- The settings window's pages draw anew faster, the Keys part above all, as the plugins' texts are read once a language rather than at each title and message; Lokyr starts a little sooner too.
+- The settings window's Keys are a page of their own, a tab between Settings and Themes, no longer a part of the Settings page's sidebar, whose search no longer lists the shortcuts.
+- The settings window's pages draw anew faster, the Keys page above all, as the plugins' texts are read once a language rather than at each title and message; Lokyr starts a little sooner too.
 
 ## [1.1.0] - 2026-11-14
 

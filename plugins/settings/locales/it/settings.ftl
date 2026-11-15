@@ -1,5 +1,6 @@
 # La pagina delle chiavi della config della finestra delle impostazioni.
 page-settings = Impostazioni
+page-keys = Tasti
 page-themes = Temi
 themes-description = Ogni tema, con un'anteprima dei suoi colori: un clic lo usa per il suo aspetto, nel [theme] della tua config. I tuoi temi sono quelli della cartella dei temi accanto alla config, che Vista › Apri la cartella dei temi apre.
 themes-light = Chiari
