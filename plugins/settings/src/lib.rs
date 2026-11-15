@@ -939,6 +939,9 @@ impl SettingsPage {
                 else {
                     return Ok(());
                 };
+                if page_settings(cx).is_ok_and(|settings| runs_already(&settings, adding)) {
+                    return Ok(());
+                }
                 match cx.set_setting(KEYS, None, &keys, Some(Data::Text(command))) {
                     Ok(()) => cx.close_panel(NEW_BINDING),
                     Err(error) => {
@@ -1004,6 +1007,7 @@ impl SettingsPage {
             .keys
             .iter()
             .enumerate()
+            .rev()
             .find(|(other, taken)| {
                 *other != at && taken.command.is_some() && same_keys(&taken.keys, &keys)
             })
@@ -2373,14 +2377,40 @@ fn changes(binding: &SettingBinding) -> bool {
 }
 
 /// Whether `a` and `b` are the same keys, as they parse, whatever their
-/// spelling, both global or neither.
+/// spelling, as `cmd+}` and `cmd+shift+]`, both global or neither.
 fn same_keys(a: &str, b: &str) -> bool {
     let parsed = |keys: &str| match keys.strip_prefix(lokyr_plugin_sdk::keys::GLOBAL) {
         Some(keys) => (lokyr_plugin_sdk::keys::parse_keys(keys).ok(), true),
         None => (lokyr_plugin_sdk::keys::parse_keys(keys).ok(), false),
     };
-    let (a, b) = (parsed(a), parsed(b));
-    a.0.is_some() && a == b
+    match (parsed(a), parsed(b)) {
+        ((Some(a), one), (Some(b), two)) => one == two && lokyr_plugin_sdk::keys::same_keys(&a, &b),
+        _ => false,
+    }
+}
+
+/// The binding of `settings` that runs `keys` now: of those of a command,
+/// the last, as the last wins.
+fn running<'a>(settings: &'a Settings, keys: &str) -> Option<&'a SettingBinding> {
+    settings
+        .keys
+        .iter()
+        .rev()
+        .find(|binding| binding.command.is_some() && same_keys(&binding.keys, keys))
+}
+
+/// Whether the new binding of `adding` is the one that runs its keys now,
+/// of the same command, of no arguments nor context: Add would write
+/// nothing new.
+fn runs_already(settings: &Settings, adding: &Adding) -> bool {
+    let (Some(keys), Some(command)) = (adding.keys.as_deref(), adding.command.as_deref()) else {
+        return false;
+    };
+    running(settings, keys).is_some_and(|binding| {
+        binding.command.as_deref() == Some(command)
+            && binding.args.is_empty()
+            && binding.when.is_none()
+    })
 }
 
 /// What `binding` does, as its row tells it: its command's title, or its
@@ -2545,10 +2575,11 @@ fn binding_row(
 
 /// The panel of a new binding, of `adding`: its title, the recorder of its
 /// keys, shown as macOS writes them, the button of the commands' menu, of
-/// the command chosen, what a binding of `settings` of the same keys
-/// does, which the new one takes the place of, or that macOS's own are
-/// none to take, why a write was refused, of `refused`, and Cancel and
-/// Add, which waits for both the keys and a command.
+/// the command chosen, what the binding of `settings` that runs the same
+/// keys now does, which the new one takes the place of, or that it does
+/// what the new one would, or that macOS's own are none to take, why a
+/// write was refused, of `refused`, and Cancel and Add, which waits for
+/// both the keys and a command.
 fn adding_tree(
     cx: &mut Cx<'_>,
     settings: &Settings,
@@ -2612,8 +2643,8 @@ fn adding_tree(
         line(vec![label(cx, "binding-shortcut"), recorder]),
         line(vec![label(cx, "binding-command"), choose]),
     ];
-    // The binding of the same keys, which the new one takes the place of,
-    // or macOS's own, which none takes.
+    // The binding that runs the same keys now, which the new one takes the
+    // place of, or macOS's own, which none takes.
     let combos = adding
         .keys
         .as_deref()
@@ -2621,15 +2652,11 @@ fn adding_tree(
     let system = combos
         .as_ref()
         .is_some_and(|combos| lokyr_plugin_sdk::keys::is_system(combos, None));
-    let taken = combos.as_ref().and_then(|combos| {
-        settings.keys.iter().find(|binding| {
-            binding.command.is_some()
-                && lokyr_plugin_sdk::keys::parse_keys(&binding.keys)
-                    .ok()
-                    .as_ref()
-                    == Some(combos)
-        })
-    });
+    let taken = adding
+        .keys
+        .as_deref()
+        .and_then(|keys| running(settings, keys));
+    let already = runs_already(settings, adding);
     if system {
         children.push(refusal(
             &message(cx, "binding-taken-system", &[("keys", shown.clone())]),
@@ -2641,25 +2668,26 @@ fn adding_tree(
             .clone()
             .or_else(|| binding.command.clone())
             .unwrap_or_default();
+        let id = if already {
+            "binding-already"
+        } else {
+            "binding-taken"
+        };
         children.push(
-            Node::text(message(
-                cx,
-                "binding-taken",
-                &[("keys", shown.clone()), ("title", does)],
-            ))
-            .key("taken")
-            .style(Style {
-                color: Some(Token::from("text.warning")),
-                text_size: Some(TextSize::Small),
-                ..Style::default()
-            })
-            .layout(wrapped()),
+            Node::text(message(cx, id, &[("keys", shown.clone()), ("title", does)]))
+                .key("taken")
+                .style(Style {
+                    color: Some(Token::from("text.warning")),
+                    text_size: Some(TextSize::Small),
+                    ..Style::default()
+                })
+                .layout(wrapped()),
         );
     }
     if let Some(why) = refused.get(NEW_REFUSED) {
         children.push(refusal(why, "refused:new"));
     }
-    let ready = adding.keys.is_some() && adding.command.is_some() && !system;
+    let ready = adding.keys.is_some() && adding.command.is_some() && !system && !already;
     let mut add = Node::button(message(cx, "binding-confirm", &[])).key(CONFIRM);
     if let Kind::Button(button) = &mut add.kind {
         button.disabled = !ready;

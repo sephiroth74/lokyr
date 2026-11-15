@@ -675,9 +675,22 @@ fn the_bindings_in_force_are_the_defaults_that_the_config_leaves_then_its_own() 
         ),
         default("cmd+t", "tab.new", Args::new(), None),
         default("cmd+,", "app.settings", Args::new(), None),
+        // ⌘W's of the window, which the tab's after it hides; ⌘D's of a
+        // context, which hides none; ⌘E's, of a context, under the same.
+        default("cmd+w", "window.close", Args::new(), None),
+        default("cmd+w", "tabs.close", Args::new(), None),
+        default("cmd+d", "splits.split", Args::new(), None),
+        default("cmd+d", "pane.clear", Args::new(), Some("selection")),
+        default("cmd+e", "window.close", Args::new(), Some("selection")),
+        default("cmd+e", "tabs.close", Args::new(), Some("selection")),
+        // `cmd+shift+]`, which the config's `cmd+}` names; ⌘G's, which its
+        // `false` takes away, of the last's title.
+        default("cmd+shift+]", "tabs.next", Args::new(), None),
+        default("cmd+g", "window.close", Args::new(), Some("selection")),
+        default("cmd+g", "tabs.close", Args::new(), Some("!selection")),
     ];
     let config = Config::parse(
-        "[keys]\n\"cmd+q\" = false\n\"cmd+t\" = \"window.new\"\n\"ctrl+x\" = { command = \"pane.clear\", when = \"selection\" }\n",
+        "[keys]\n\"cmd+q\" = false\n\"cmd+t\" = \"window.new\"\n\"ctrl+x\" = { command = \"pane.clear\", when = \"selection\" }\n\"cmd+}\" = \"window.new\"\n\"cmd+g\" = false\n",
         Path::new("config.toml"),
     )
     .unwrap();
@@ -688,6 +701,8 @@ fn the_bindings_in_force_are_the_defaults_that_the_config_leaves_then_its_own() 
             "window.goto" => ("Go to Window".to_owned(), Category::Windows),
             "window.new" => ("New Window".to_owned(), Category::Windows),
             "copy-mode.down" => ("Down".to_owned(), Category::Edit),
+            "window.close" => ("Close Window".to_owned(), Category::Windows),
+            "tabs.close" => ("Close Tab".to_owned(), Category::Tabs),
             _ => return None,
         })
     };
@@ -702,7 +717,9 @@ fn the_bindings_in_force_are_the_defaults_that_the_config_leaves_then_its_own() 
             )
         })
         .collect();
-    // The defaults whose keys the config names go: `false`'s and its own.
+    // The defaults whose keys the config names go, however it writes
+    // them: `false`'s and its own; and those that a later default of the
+    // same keys hides wherever they hold.
     assert_eq!(
         shown,
         [
@@ -710,11 +727,19 @@ fn the_bindings_in_force_are_the_defaults_that_the_config_leaves_then_its_own() 
             ("cmd+1", Some("window.goto"), true),
             ("j", Some("copy-mode.down"), true),
             ("cmd+,", Some("app.settings"), true),
+            ("cmd+w", Some("tabs.close"), true),
+            ("cmd+d", Some("splits.split"), true),
+            ("cmd+d", Some("pane.clear"), true),
+            ("cmd+e", Some("tabs.close"), true),
+            ("cmd+g", None, false),
             ("cmd+q", None, false),
             ("cmd+t", Some("window.new"), false),
+            ("cmd+}", Some("window.new"), false),
             ("ctrl+x", Some("pane.clear"), false),
         ]
     );
+    // `false` of the default that ran, the last of its keys.
+    assert_eq!(bindings[8].title.as_deref(), Some("Close Tab"));
     // Each of its title, category, arguments and context, as the config
     // writes it; `false` of the default that it takes away.
     assert_eq!(bindings[1].args.get("index"), Some(&Arg::Integer(1)));
@@ -726,11 +751,11 @@ fn the_bindings_in_force_are_the_defaults_that_the_config_leaves_then_its_own() 
     // macOS's own, of its app menu.
     assert!(bindings[3].system);
     assert!(bindings.iter().filter(|binding| binding.system).count() == 1);
-    assert_eq!(bindings[4].title.as_deref(), Some("Quit"));
-    assert_eq!(bindings[4].category, Some(Category::App));
-    assert_eq!(bindings[5].title.as_deref(), Some("New Window"));
-    assert_eq!(bindings[6].when.as_deref(), Some("selection"));
-    assert!(bindings[6].detailed && !bindings[0].detailed);
+    assert_eq!(bindings[9].title.as_deref(), Some("Quit"));
+    assert_eq!(bindings[9].category, Some(Category::App));
+    assert_eq!(bindings[10].title.as_deref(), Some("New Window"));
+    assert_eq!(bindings[12].when.as_deref(), Some("selection"));
+    assert!(bindings[12].detailed && !bindings[0].detailed);
     // A context's text reads back as the same context.
     for binding in &defaults {
         if let Some(when) = &binding.when {

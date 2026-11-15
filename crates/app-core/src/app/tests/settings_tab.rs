@@ -1457,20 +1457,27 @@ fn the_keys_page_lists_the_defaults_and_a_default_changed_moves_its_shortcut() {
     click_tab(&mut fake, &mut app, own, 1);
     assert_eq!(page_shown(&app, own), "keys");
     assert_eq!(page_text(&app, own, "title"), "Keys");
-    // The defaults, as the keymap has them: New Tab's ⌘T among them.
-    let at = app
-        .default_bindings
-        .iter()
-        .position(|binding| binding.invocation.command == "tabs.new")
-        .expect("New Tab's default");
+    // The defaults, as the keymap has them, but those that a later one of
+    // the same keys hides: New Tab's ⌘T among them.
+    let rows = lokyr_kernel::config::schema::bindings(&app.config, &app.default_bindings, |_| None);
+    let row = |command: &str, keys: &str| {
+        rows.iter()
+            .position(|binding| binding.command.as_deref() == Some(command) && binding.keys == keys)
+    };
+    let at = row("tabs.new", "cmd+t").expect("New Tab's default");
     assert_eq!(page_button(&app, own, &format!("keys:{at}")), "⌘T");
     assert_eq!(page_text(&app, own, &format!("command:{at}")), "New Tab");
+    // ⌘W's, the tab's, the window's under it not listed.
+    let close = row("tabs.close", "cmd+w").expect("Close Tab's default");
+    assert_eq!(page_button(&app, own, &format!("keys:{close}")), "⌘W");
+    assert_eq!(
+        page_text(&app, own, &format!("command:{close}")),
+        "Close Tab"
+    );
+    assert_eq!(row("window.close", "cmd+w"), None);
+    assert!(row("window.close", "cmd+shift+w").is_some());
     // macOS's own, as Quit's, a text of no change.
-    let quit = app
-        .default_bindings
-        .iter()
-        .position(|binding| binding.invocation.command == "app.quit")
-        .expect("Quit's default");
+    let quit = row("app.quit", "cmd+q").expect("Quit's default");
     assert_eq!(page_text(&app, own, &format!("keys-text:{quit}")), "⌘Q");
     // Changed: its new keys and `false` for the old, in the file, and the
     // keymap's shortcut moved.

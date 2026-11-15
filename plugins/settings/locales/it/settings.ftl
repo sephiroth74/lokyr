@@ -72,6 +72,7 @@ binding-shortcut = Scorciatoia
 binding-command = Comando
 binding-choose = Scegli un comando
 binding-taken = { $keys } esegue già { $title }: Aggiungi lo assegna a questo comando.
+binding-already = { $keys } esegue già { $title }: non c'è nulla da aggiungere.
 binding-taken-system = { $keys } è una scorciatoia di macOS, che nessuna assegnazione prende.
 binding-cancel = Annulla
 binding-confirm = Aggiungi

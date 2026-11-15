@@ -73,6 +73,7 @@ binding-shortcut = Shortcut
 binding-command = Command
 binding-choose = Choose a command
 binding-taken = { $keys } runs { $title } now: Add takes it for this command.
+binding-already = { $keys } runs { $title } already: there is nothing to add.
 binding-taken-system = { $keys } is a shortcut of macOS's own, which no binding takes.
 binding-cancel = Cancel
 binding-confirm = Add

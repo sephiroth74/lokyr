@@ -23,6 +23,7 @@ from 1.0.0; before it, a minor version may change what a previous one did.
 
 ### Fixed
 
+- The settings' Keys page no longer lists ⌘W's Close Window, which Close Tab hides while the tabs run, nor a default that your config's binding of the same keys replaces, written another way, as `cmd+}` for ⇧⌘]; a new binding's shortcut tells the binding that runs it now, the last of its keys, and a binding that would do what its shortcut already does is none to add.
 - `sleip check`, and the registry's checks, refuse a plugin's config schema larger than 64 KiB, the most that Lokyr reads of one; a schema of objects of nested defaults holds each default once.
 - A part of a plugin's view no longer slides on its own as a part around it starts or stops sliding, as a dragged tab's close button did.
 - A resize no longer clears a running command's output of a shell whose prompt marks its start alone: its prompt clears as the shell draws it again only where the shell tells its input or its commands too.

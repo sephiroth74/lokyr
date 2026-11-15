@@ -1423,6 +1423,148 @@ fn add_opens_a_panel_of_a_recorder_and_a_menu_of_the_commands_which_writes_the_b
 }
 
 #[test]
+fn the_new_binding_s_panel_tells_the_binding_that_runs_its_keys_and_adds_none_that_runs_already() {
+    let (mut host, mut plugin) = keyed_host();
+    // Two defaults of ⌘E, the later of a context, which wins where it
+    // holds; and the config's `cmd+}`, of the keys of `cmd+shift+]`.
+    let mut settings = settings();
+    let mut clear = binding(
+        "cmd+e",
+        Some("pane.clear"),
+        (Some("Clear"), Some(Category::Edit)),
+        true,
+    );
+    clear.when = Some("selection".to_owned());
+    clear.detailed = true;
+    settings.keys.extend([
+        binding(
+            "cmd+e",
+            Some("window.new"),
+            (Some("New Window"), Some(Category::Windows)),
+            true,
+        ),
+        clear,
+        binding(
+            "cmd+}",
+            Some("window.new"),
+            (Some("New Window"), Some(Category::Windows)),
+            false,
+        ),
+    ]);
+    host.set_settings(settings);
+    host.deliver(&mut plugin).unwrap();
+    let told = |keys: &str, title: &str| {
+        [
+            ("keys", Data::Text(keys.to_owned())),
+            ("title", Data::Text(title.to_owned())),
+        ]
+    };
+    host.set_message("binding-taken", &told("⌘E", "Clear"), Some("⌘E: Clear"));
+    host.set_message(
+        "binding-already",
+        &told("⌘K", "Clear"),
+        Some("⌘K: Clear already"),
+    );
+    host.set_message(
+        "binding-taken-again",
+        &told("⌘E", "Clear"),
+        Some("⌘E again: Clear"),
+    );
+    keys_rendered(&mut host, &mut plugin);
+    let _ = written(&mut host);
+    host.ui_event(&mut plugin, &on_keys(ADD_BINDING, UiEventKind::Click))
+        .unwrap();
+    let record = |host: &mut FakeHost, plugin: &mut SettingsPage, keys: &str| {
+        host.ui_event(
+            plugin,
+            &in_panel(
+                NEW_BINDING,
+                RECORDER,
+                UiEventKind::Recorded {
+                    keys: Some(keys.to_owned()),
+                },
+            ),
+        )
+        .unwrap();
+        host.render(plugin, &new_binding()).unwrap()
+    };
+    // The binding that runs the keys, the last of them.
+    let panel = record(&mut host, &mut plugin, "cmd+e");
+    assert_eq!(text_of(&panel, "taken").as_deref(), Some("⌘E: Clear"));
+    // Keys of another spelling than the binding's.
+    let panel = record(&mut host, &mut plugin, "cmd+shift+]");
+    assert_eq!(text_of(&panel, "taken").as_deref(), Some("binding-taken"));
+    // The keys and the command of the binding that runs them: nothing to
+    // add, Add off, and a click of it writing nothing.
+    record(&mut host, &mut plugin, "cmd+k");
+    host.ui_event(
+        &mut plugin,
+        &in_panel(COMMANDS, "command-item:pane.clear", UiEventKind::Click),
+    )
+    .unwrap();
+    let panel = host.render(&mut plugin, &new_binding()).unwrap();
+    assert_eq!(
+        text_of(&panel, "taken").as_deref(),
+        Some("⌘K: Clear already")
+    );
+    assert!(matches!(
+        &find_node(&panel, CONFIRM).unwrap().kind,
+        Kind::Button(button) if button.disabled
+    ));
+    host.ui_event(
+        &mut plugin,
+        &in_panel(NEW_BINDING, CONFIRM, UiEventKind::Click),
+    )
+    .unwrap();
+    assert!(written(&mut host).is_empty());
+    assert!(host.panels().contains_key(&PanelId::from(NEW_BINDING)));
+    // Another command: the keys taken for it.
+    host.ui_event(
+        &mut plugin,
+        &in_panel(COMMANDS, "command-item:window.new", UiEventKind::Click),
+    )
+    .unwrap();
+    let panel = host.render(&mut plugin, &new_binding()).unwrap();
+    assert_eq!(text_of(&panel, "taken").as_deref(), Some("binding-taken"));
+    assert!(matches!(
+        &find_node(&panel, CONFIRM).unwrap().kind,
+        Kind::Button(button) if !button.disabled
+    ));
+    // The command of the binding that runs the keys in a context alone:
+    // the keys taken for it everywhere.
+    host.ui_event(
+        &mut plugin,
+        &in_panel(COMMANDS, "command-item:pane.clear", UiEventKind::Click),
+    )
+    .unwrap();
+    let panel = record(&mut host, &mut plugin, "cmd+e");
+    assert_eq!(text_of(&panel, "taken").as_deref(), Some("⌘E: Clear"));
+    assert!(matches!(
+        &find_node(&panel, CONFIRM).unwrap().kind,
+        Kind::Button(button) if !button.disabled
+    ));
+    // A row's keys changed to ⌘E: told of the binding that runs them.
+    host.ui_event(
+        &mut plugin,
+        &in_panel(NEW_BINDING, CANCEL, UiEventKind::Click),
+    )
+    .unwrap();
+    host.ui_event(
+        &mut plugin,
+        &on_keys(&format!("keys:{CLEAR}"), UiEventKind::Click),
+    )
+    .unwrap();
+    host.ui_event(
+        &mut plugin,
+        &recorded(&format!("keys-field:{CLEAR}"), Some("cmd+e")),
+    )
+    .unwrap();
+    let tree = keys_rendered(&mut host, &mut plugin);
+    let told = text_of(&tree, &format!("taken:binding:{CLEAR}")).expect("told");
+    assert_eq!(told, "⌘E again: Clear");
+}
+
+#[test]
 fn cancel_closes_the_new_binding_s_panel_and_a_refusal_is_told_in_it() {
     let (mut host, mut plugin) = keyed_host();
     keys_rendered(&mut host, &mut plugin);

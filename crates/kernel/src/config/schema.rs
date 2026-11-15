@@ -453,10 +453,12 @@ pub fn check_app_write(
 
 /// The bindings of keys in force, as a read of the settings tells them:
 /// the defaults, `defaults`, whose keys no entry of `config`'s `[keys]`
-/// names, each of its command's title and category that `info` tells, its
-/// arguments and its context; then the entries of `[keys]`, in their keys'
-/// order, of their commands, or of none for `false`, whose title and
-/// category are those of the default of the same keys.
+/// names, however it writes them, and that no later default of the same
+/// keys hides, as one of no context, or of the same, does, each of its
+/// command's title and category that `info` tells, its arguments and its
+/// context; then the entries of `[keys]`, in their keys' order, of their
+/// commands, or of none for `false`, whose title and category are those of
+/// the default of the same keys that ran, the last.
 pub fn bindings(
     config: &super::Config,
     defaults: &[crate::keymap::Binding],
@@ -465,17 +467,28 @@ pub fn bindings(
     use super::KeyValue;
     use lokyr_plugin_sdk::command::Args;
     use lokyr_plugin_sdk::host::SettingBinding;
-    use lokyr_plugin_sdk::keys::{keys_text, parse_keys};
+    use lokyr_plugin_sdk::keys::{keys_text, parse_keys, same_keys};
     let named: Vec<Vec<crate::keymap::Combo>> = config
         .keys
         .bindings
         .keys()
         .filter_map(|keys| parse_keys(keys).ok())
         .collect();
+    // A default that a later one of the same keys hides wherever it holds,
+    // which never runs: ⌘W's of the window, under the tab's.
+    let hidden = |at: usize, binding: &crate::keymap::Binding| {
+        defaults[at + 1..].iter().any(|later| {
+            same_keys(&later.keys, &binding.keys)
+                && (later.when.is_none() || later.when == binding.when)
+        })
+    };
     let mut bindings: Vec<SettingBinding> = defaults
         .iter()
-        .filter(|binding| !named.contains(&binding.keys))
-        .map(|binding| {
+        .enumerate()
+        .filter(|&(at, binding)| {
+            !named.iter().any(|named| same_keys(named, &binding.keys)) && !hidden(at, binding)
+        })
+        .map(|(_, binding)| {
             let (title, category) = info(&binding.invocation.command).unzip();
             SettingBinding {
                 keys: keys_text(&binding.keys),
@@ -519,7 +532,12 @@ pub fn bindings(
             Some(command) => info(command).unzip(),
             None => parse_keys(keys)
                 .ok()
-                .and_then(|combos| defaults.iter().find(|binding| binding.keys == combos))
+                .and_then(|combos| {
+                    defaults
+                        .iter()
+                        .rev()
+                        .find(|binding| same_keys(&binding.keys, &combos))
+                })
                 .and_then(|binding| info(&binding.invocation.command))
                 .unzip(),
         };
