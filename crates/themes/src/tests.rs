@@ -1005,3 +1005,59 @@ fn a_value_shown_takes_the_place_of_the_theme_s_own() {
     assert!(with_value(&mut theme, "background", "accent").is_err());
     assert!(with_value(&mut theme, "accent", "mix(").is_err());
 }
+
+#[test]
+fn a_theme_file_of_hostile_tokens_reads_of_no_overflow_and_told() {
+    let base = format!(
+        "[terminal]\nbackground = \"#101010\"\nforeground = \"#e0e0e0\"\n{PALETTE}\n\n[interface]\n"
+    );
+    // An expression nested 40 000 deep: left out, told.
+    let deep = format!(
+        "{base}\"p.deep\" = \"{}accent{}\"\n",
+        "contrasting(".repeat(40_000),
+        ")".repeat(40_000)
+    );
+    // A chain of 40 000 tokens each naming the next, and 20 000 tokens of a
+    // name of no color: the first 512 of each read, the rest told once.
+    let mut chain = base.clone();
+    for at in 0..40_000 {
+        chain.push_str(&format!("\"p.{at:05}\" = \"p.{:05}\"\n", at + 1));
+    }
+    let mut unknown = base.clone();
+    for at in 0..20_000 {
+        unknown.push_str(&format!("\"p.{at:05}\" = \"zz\"\n"));
+    }
+    let directory = folder(
+        "hostile",
+        &[("Deep", &deep), ("Chain", &chain), ("Unknown", &unknown)],
+    );
+    for (name, told) in [
+        ("Deep", "bytes at most"),
+        (
+            "Chain",
+            "512 tokens at most: `p.00512` and 39487 more left out",
+        ),
+        (
+            "Unknown",
+            "512 tokens at most: `p.00512` and 19487 more left out",
+        ),
+    ] {
+        let started = std::time::Instant::now();
+        let resolved = resolve(name, Some(&directory), None, &[builtin()]).unwrap();
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(10),
+            "{name}: {:?}",
+            started.elapsed()
+        );
+        assert!(resolved.theme.tokens.len() <= MOST_TOKENS, "{name}");
+        assert!(
+            resolved
+                .notices
+                .iter()
+                .any(|notice| notice.message.contains(told)),
+            "{name}: {:?}",
+            resolved.notices.first()
+        );
+    }
+    let _ = fs::remove_dir_all(&directory);
+}

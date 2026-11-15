@@ -354,3 +354,69 @@ fn a_token_s_value_reads_as_a_color_or_else_an_expression() {
         "#336699"
     );
 }
+
+#[test]
+fn an_expression_and_a_chain_of_tokens_are_bounded_of_no_overflow() {
+    // Nested past the bound, or long past it: refused as they read.
+    let nested = |depth: usize| {
+        format!(
+            "{}accent{}",
+            "contrasting(".repeat(depth),
+            ")".repeat(depth)
+        )
+    };
+    assert!(nested(MOST_EXPR_DEPTH).parse::<Expr>().is_ok());
+    let deep = nested(MOST_EXPR_DEPTH + 1).parse::<Expr>().unwrap_err();
+    assert!(deep.0.contains("nest"), "{deep}");
+    let long = nested(100_000).parse::<Expr>().unwrap_err();
+    assert!(long.0.contains("bytes at most"), "{long}");
+    // A chain of tokens each naming the next: within the bound, resolved;
+    // past it, told, of no overflow, the rest of the theme resolved.
+    let terminal = dark_terminal();
+    let chain = |length: usize| -> BTreeMap<String, TokenValue> {
+        (0..length)
+            .map(|at| {
+                let next = if at + 1 == length {
+                    "accent".to_owned()
+                } else {
+                    format!("p.{:05}", at + 1)
+                };
+                (format!("p.{at:05}"), TokenValue::Expr(next))
+            })
+            .collect()
+    };
+    let short = chain(MOST_CHAIN - 8);
+    assert!(problems(&terminal, &short).is_empty());
+    assert_eq!(
+        resolve(&terminal, &short)["p.00000"],
+        resolve(&terminal, &BTreeMap::new())["accent"]
+    );
+    let long = chain(4_096);
+    let started = std::time::Instant::now();
+    let told = problems(&terminal, &long);
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(10),
+        "{:?}",
+        started.elapsed()
+    );
+    assert!(
+        told.iter()
+            .any(|(_, why)| matches!(why, Unresolved::Deep(_))),
+        "{told:?}"
+    );
+    assert_eq!(
+        resolve(&terminal, &long)["accent"],
+        resolve(&terminal, &BTreeMap::new())["accent"]
+    );
+    // Many tokens of a name of no color: each told, in a few passes.
+    let unknown: BTreeMap<String, TokenValue> = (0..4_096)
+        .map(|at| (format!("p.{at:05}"), TokenValue::Expr("zz".to_owned())))
+        .collect();
+    let started = std::time::Instant::now();
+    assert_eq!(problems(&terminal, &unknown).len(), 4_096);
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(10),
+        "{:?}",
+        started.elapsed()
+    );
+}

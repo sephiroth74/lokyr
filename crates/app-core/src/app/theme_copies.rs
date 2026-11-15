@@ -399,7 +399,10 @@ impl<B: Backend> App<B> {
                 let resolved = places
                     .resolve(theme, &builtins)
                     .map_err(|error| error.to_string())?;
-                let text = fs::read_to_string(&path)
+                // Read within the themes' bounds, of a regular file alone.
+                let text = themes::read_file(&path)
+                    .map_err(|error| error.to_string())
+                    .and_then(|bytes| String::from_utf8(bytes).map_err(|error| error.to_string()))
                     .map_err(|error| format!("{}: {error}", shown_path(&path)))?;
                 let text = themes::set_value(&text, &path, name, value, &resolved.theme)
                     .map_err(|error| error.to_string())?;

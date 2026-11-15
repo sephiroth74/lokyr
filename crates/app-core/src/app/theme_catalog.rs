@@ -215,7 +215,10 @@ pub(crate) fn theme_value(
     };
     // Taken away: of a color that another takes the place of.
     let Some(value) = value else {
-        let text = std::fs::read_to_string(&file).map_err(|error| error.to_string())?;
+        // Read within the themes' bounds, of a regular file alone.
+        let text = themes::read_file(&file)
+            .map_err(|error| error.to_string())
+            .and_then(|bytes| String::from_utf8(bytes).map_err(|error| error.to_string()))?;
         return themes::removable(&text, &file, name).map_err(|error| error.message);
     };
     if lokyr_kernel::themes::is_terminal_color(name) {

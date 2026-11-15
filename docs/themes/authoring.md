@@ -143,6 +143,8 @@ A token's value is a color, or an expression of other colors, which follows them
 
 An expression that does not read, a name of no color, and tokens that name each other, as `button.bg` of `button.hover.bg` and `button.hover.bg` of `button.bg`, are told in the card, of their line, the token taking its rule's color; the rest of the theme is in force.
 
+An expression is 1024 bytes at most, its functions nested 32 deep at most; tokens that name each other go 64 deep at most; and a file gives 512 tokens at most, those past it told and left out.
+
 #### The tokens
 
 Each token, what it colors, and its rule, the color that it takes where a theme gives none, of the terms that [Colors of other colors](#colors-of-other-colors) tells. A token of two rules has one of a light theme and one of a dark one, a theme dark where its background is darker than its text.

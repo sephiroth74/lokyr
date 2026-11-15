@@ -268,6 +268,16 @@ fn lexemes(text: &str) -> Result<Vec<Lexeme>, ExprError> {
     Ok(out)
 }
 
+/// How many bytes an expression's text has at most.
+pub const MOST_EXPR_BYTES: usize = 1024;
+
+/// How deep an expression's functions and opacities nest at most.
+pub const MOST_EXPR_DEPTH: usize = 32;
+
+/// How deep tokens that name each other go at most, as a token's color
+/// takes another's that takes another's.
+pub const MOST_CHAIN: usize = 64;
+
 /// An argument of a function, before its function takes it.
 enum Arg {
     Expr(Expr),
@@ -275,10 +285,12 @@ enum Arg {
     Named(String, Box<Arg>),
 }
 
-/// The reader of an expression's parts.
+/// The reader of an expression's parts, and how deep its functions nest
+/// where it reads.
 struct Reader {
     lexemes: Vec<Lexeme>,
     at: usize,
+    depth: usize,
 }
 
 impl Reader {
@@ -366,9 +378,18 @@ impl Reader {
         }
     }
 
-    /// The call of the function `name`, after its `(`.
+    /// The call of the function `name`, after its `(`, of its arguments
+    /// one level deeper, [`MOST_EXPR_DEPTH`] at most.
     fn call(&mut self, name: &str) -> Result<Expr, ExprError> {
-        let args = self.args()?;
+        if self.depth >= MOST_EXPR_DEPTH {
+            return Err(ExprError(format!(
+                "an expression's functions nest {MOST_EXPR_DEPTH} deep at most"
+            )));
+        }
+        self.depth += 1;
+        let args = self.args();
+        self.depth -= 1;
+        let args = args?;
         let wrong = |usage: &str| Err(ExprError(format!("`{name}` is written `{usage}`")));
         let mut positional = Vec::new();
         let mut named = BTreeMap::new();
@@ -381,32 +402,33 @@ impl Reader {
             }
         }
         let take = |named: &mut BTreeMap<String, Arg>, key: &str| named.remove(key);
+        // The arguments taken whole, of no copy of their expressions.
         match name {
-            "mix" => match (positional.as_slice(), named.is_empty()) {
-                ([Arg::Expr(from), Arg::Expr(to), Arg::Number(value, true)], true) => Ok(
-                    Expr::Mix(Box::new(from.clone()), Box::new(to.clone()), share(*value)?),
-                ),
+            "mix" => match (<[Arg; 3]>::try_from(positional), named.is_empty()) {
+                (Ok([Arg::Expr(from), Arg::Expr(to), Arg::Number(value, true)]), true) => {
+                    Ok(Expr::Mix(Box::new(from), Box::new(to), share(value)?))
+                }
                 _ => wrong("mix(X, Y, N%)"),
             },
             "readable" => {
                 let on = take(&mut named, "on");
-                match (positional.as_slice(), on, named.is_empty()) {
-                    ([Arg::Expr(color)], Some(Arg::Expr(on)), true) => {
-                        Ok(Expr::Readable(Box::new(color.clone()), Box::new(on)))
+                match (<[Arg; 1]>::try_from(positional), on, named.is_empty()) {
+                    (Ok([Arg::Expr(color)]), Some(Arg::Expr(on)), true) => {
+                        Ok(Expr::Readable(Box::new(color), Box::new(on)))
                     }
                     _ => wrong("readable(X, on: Y)"),
                 }
             }
-            "contrasting" => match (positional.as_slice(), named.is_empty()) {
-                ([Arg::Expr(color)], true) => Ok(Expr::Contrasting(Box::new(color.clone()))),
+            "contrasting" => match (<[Arg; 1]>::try_from(positional), named.is_empty()) {
+                (Ok([Arg::Expr(color)]), true) => Ok(Expr::Contrasting(Box::new(color))),
                 _ => wrong("contrasting(X)"),
             },
             "first" => {
                 let (on, at) = (take(&mut named, "on"), take(&mut named, "at"));
                 let colors: Option<Vec<Expr>> = positional
-                    .iter()
+                    .into_iter()
                     .map(|arg| match arg {
-                        Arg::Expr(expr) => Some(expr.clone()),
+                        Arg::Expr(expr) => Some(expr),
                         _ => None,
                     })
                     .collect();
@@ -454,11 +476,19 @@ fn named(name: &str) -> Expr {
 impl std::str::FromStr for Expr {
     type Err = ExprError;
 
-    /// The expression that `text` writes, whole.
+    /// The expression that `text` writes, whole, of
+    /// [`MOST_EXPR_BYTES`] at most.
     fn from_str(text: &str) -> Result<Self, Self::Err> {
+        if text.len() > MOST_EXPR_BYTES {
+            return Err(ExprError(format!(
+                "an expression is {MOST_EXPR_BYTES} bytes at most, not {}",
+                text.len()
+            )));
+        }
         let mut reader = Reader {
             lexemes: lexemes(text)?,
             at: 0,
+            depth: 0,
         };
         let expr = reader.expr()?;
         match reader.peek() {
@@ -648,6 +678,9 @@ pub enum Unresolved {
     Cycle(String),
     /// An expression that does not read, of why.
     Unreadable(String),
+    /// Tokens that name each other deeper than [`MOST_CHAIN`], of the
+    /// token where they went past it.
+    Deep(String),
 }
 
 impl fmt::Display for Unresolved {
@@ -659,6 +692,10 @@ impl fmt::Display for Unresolved {
             ),
             Self::Cycle(chain) => write!(f, "tokens name each other: {chain}"),
             Self::Unreadable(why) => f.write_str(why),
+            Self::Deep(name) => write!(
+                f,
+                "tokens name each other past {MOST_CHAIN} deep, at `{name}`"
+            ),
         }
     }
 }
@@ -683,6 +720,9 @@ struct Resolver<'a> {
     /// The innermost given token whose expression did not resolve, of the
     /// last failure.
     blamed: Option<String>,
+    /// The tokens that failed of a given token to blame, each of why and
+    /// of that token, which fail again at once.
+    failed: BTreeMap<String, (Unresolved, Option<String>)>,
 }
 
 impl Resolver<'_> {
@@ -690,6 +730,13 @@ impl Resolver<'_> {
     fn token(&mut self, name: &str) -> Result<Rgba, Unresolved> {
         if let Some(&color) = self.done.get(name) {
             return Ok(color);
+        }
+        // Failed already: again, of the same token to blame.
+        if let Some((why, blamed)) = self.failed.get(name) {
+            if self.blamed.is_none() {
+                self.blamed.clone_from(blamed);
+            }
+            return Err(why.clone());
         }
         let given = self.given.get(name);
         if let Some(Given::Color(color)) = given {
@@ -714,15 +761,32 @@ impl Resolver<'_> {
                 .collect();
             return Err(Unresolved::Cycle(chain.join(" → ")));
         }
+        // Of no deeper chain, whose stack the evaluation's recursion holds.
+        if self.busy.len() >= MOST_CHAIN {
+            return Err(Unresolved::Deep(name.to_owned()));
+        }
         self.busy.push(name.to_owned());
         let color = self.eval(expr);
         self.busy.pop();
         if color.is_err() && given.is_some() && self.blamed.is_none() {
             self.blamed = Some(name.to_owned());
         }
-        let color = color?;
-        self.done.insert(name.to_owned(), color);
-        Ok(color)
+        match color {
+            Ok(color) => {
+                self.done.insert(name.to_owned(), color);
+                Ok(color)
+            }
+            Err(why) => {
+                // Kept of a given token to blame alone: a rule's of a cycle
+                // through it resolves once the given token that closes the
+                // cycle goes.
+                if self.blamed.is_some() {
+                    self.failed
+                        .insert(name.to_owned(), (why.clone(), self.blamed.clone()));
+                }
+                Err(why)
+            }
+        }
     }
 
     /// The color of `expr`.
@@ -786,8 +850,8 @@ pub fn problems(
 }
 
 /// The resolution of a theme of `terminal` and `given` by `rules`, and the
-/// given tokens left out, each of why: one at a time, the innermost of a
-/// failure, until every token resolves.
+/// given tokens left out, each of why: in passes, each leaving out the
+/// innermost given token of every failure, until every token resolves.
 fn resolution(
     rules: &[(&'static str, Rule)],
     terminal: &TerminalColors,
@@ -812,25 +876,37 @@ fn resolution(
         let mut resolver = Resolver::new(rules, terminal, &kept);
         let mut names: Vec<String> = kept.keys().cloned().collect();
         names.extend(rules.iter().map(|(name, _)| (*name).to_owned()));
-        let failed = names
-            .iter()
-            .find_map(|name| resolver.token(name).err().map(|why| (name.clone(), why)));
-        let inner = resolver.blamed.take();
+        // Every failure of the pass, of its given token to blame, the
+        // innermost, or the one that failed; once each.
+        let mut failures: Vec<(String, Unresolved)> = Vec::new();
+        let mut stray = false;
+        for name in &names {
+            if let Err(why) = resolver.token(name) {
+                let blamed = resolver.blamed.take().unwrap_or_else(|| name.clone());
+                if !kept.contains_key(&blamed) {
+                    // A rule's failure of no given token below it: of a
+                    // cycle that a given token closes, or a rule's own.
+                    stray = true;
+                } else if !failures.iter().any(|(each, _)| *each == blamed) {
+                    failures.push((blamed, why));
+                }
+            }
+        }
         let mut done = resolver.done;
-        let Some((name, why)) = failed else {
-            return (done, problems);
-        };
-        // The given token to blame, the innermost, or the one that failed.
-        let blamed = inner.unwrap_or(name);
-        if kept.remove(&blamed).is_none() {
-            // A rule that fails of no token given, which the tests hold
-            // the rules of none: clear, as the rest.
-            for name in names {
-                done.entry(name).or_insert(Rgba::CLEAR);
+        if failures.is_empty() {
+            if stray {
+                // A rule that fails of no token given, which the tests
+                // hold the rules of none: clear, as the rest.
+                for name in names {
+                    done.entry(name).or_insert(Rgba::CLEAR);
+                }
             }
             return (done, problems);
         }
-        problems.push((blamed, why));
+        for (blamed, why) in failures {
+            kept.remove(&blamed);
+            problems.push((blamed, why));
+        }
     }
 }
 
@@ -854,6 +930,7 @@ impl<'a> Resolver<'a> {
             done: BTreeMap::new(),
             busy: Vec::new(),
             blamed: None,
+            failed: BTreeMap::new(),
         }
     }
 }

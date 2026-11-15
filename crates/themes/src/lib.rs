@@ -88,6 +88,41 @@ impl Position {
     }
 }
 
+/// The starts of a text's lines, which tell a byte's place by a search
+/// rather than a scan of the text from its start.
+struct Lines {
+    starts: Vec<usize>,
+}
+
+impl Lines {
+    /// The lines of `text`.
+    fn of(text: &str) -> Self {
+        let starts = std::iter::once(0)
+            .chain(text.match_indices('\n').map(|(at, _)| at + 1))
+            .collect();
+        Self { starts }
+    }
+
+    /// The place of the byte at `offset` in `text`, as [`Position::at`]
+    /// tells it.
+    fn position(&self, text: &str, offset: usize) -> Position {
+        let mut offset = offset.min(text.len());
+        while !text.is_char_boundary(offset) {
+            offset -= 1;
+        }
+        let line = self.starts.partition_point(|&start| start <= offset);
+        let start = self.starts[line - 1];
+        Position {
+            line,
+            column: text[start..offset].chars().count() + 1,
+        }
+    }
+}
+
+/// How many tokens a theme's file gives at most; those past it are left
+/// out, of one notice.
+pub const MOST_TOKENS: usize = 512;
+
 /// The built-in theme of the light appearance's name.
 pub const LIGHT: &str = "Lokyr Light";
 
@@ -749,6 +784,10 @@ struct Partial {
     /// What the files tell that colors nothing, as [`Resolved::notices`].
     notices: Vec<Error>,
     credits: ThemeCredits,
+    /// The first token left out past [`MOST_TOKENS`], of its place, and
+    /// how many were.
+    left_out: Option<(String, Option<Range<usize>>)>,
+    left_out_count: usize,
 }
 
 impl Partial {
@@ -780,6 +819,8 @@ impl Partial {
                 .collect(),
             notices: Vec::new(),
             credits: ThemeCredits::default(),
+            left_out: None,
+            left_out_count: 0,
         }
     }
 
@@ -815,6 +856,8 @@ impl Partial {
             terminal_sources,
             notices,
             credits: self.credits.over(base.credits),
+            left_out: None,
+            left_out_count: 0,
         }
     }
 
@@ -916,9 +959,10 @@ const TERMINAL_COLORS: [&str; 9] = lokyr_plugin_sdk::theme::TERMINAL_KEYS;
 
 /// Reads the text of a theme's file, which `path` names in its errors.
 fn parse(text: &str, path: &Path) -> Result<File, Error> {
+    let lines = Lines::of(text);
     let error = |span: Option<Range<usize>>, message: String| Error {
         path: path.to_owned(),
-        position: span.map(|span| Position::at(text, span.start)),
+        position: span.map(|span| lines.position(text, span.start)),
         message,
     };
     let document = Document::parse(text).map_err(|e| error(e.span(), e.message().to_owned()))?;
@@ -1047,6 +1091,17 @@ fn parse(text: &str, path: &Path) -> Result<File, Error> {
             }
         }
     }
+    // The tokens past the bound, of one notice at the first of them.
+    if let Some((name, span)) = partial.left_out.take() {
+        let more = match partial.left_out_count - 1 {
+            0 => String::new(),
+            count => format!(" and {count} more"),
+        };
+        partial.notices.push(error(
+            span,
+            format!("a theme gives {MOST_TOKENS} tokens at most: `{name}`{more} left out"),
+        ));
+    }
     Ok(File { partial, extends })
 }
 
@@ -1079,6 +1134,14 @@ fn give(
     error: &dyn Fn(Option<Range<usize>>, String) -> Error,
 ) -> Result<(), Error> {
     let span = item.span();
+    // Past the bound, counted, of one notice at the parse's end.
+    if partial.tokens.len() >= MOST_TOKENS && !partial.tokens.contains_key(&name) {
+        partial.left_out_count += 1;
+        if partial.left_out.is_none() {
+            partial.left_out = Some((name, span));
+        }
+        return Ok(());
+    }
     let text = item.as_str().ok_or_else(|| {
         error(
             span.clone(),
