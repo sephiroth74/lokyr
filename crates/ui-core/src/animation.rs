@@ -4,7 +4,9 @@
 //! from the opacity that it showed to its new one, over the transition's
 //! time and along its curve; a change during a transition goes on from
 //! where it was. A node's place is its place in points from the nearest
-//! node around it of a transition, which slides it with its own; and a
+//! node around it of a transition, which slides it with its own; a node
+//! around it that gains or loses a transition changes no place that shows,
+//! and slides it not; and a
 //! layout of no new render, as a resize's or another display's scale,
 //! moves nodes without a slide. The host
 //! draws a frame at each refresh of the display while one runs, and none
@@ -84,6 +86,9 @@ struct Animated {
     /// Its place, in points from the nearest node around it of a
     /// transition, as its last layout put it.
     place: (f32, f32),
+    /// The key of that node around it, which its place is measured from;
+    /// none of the root's.
+    around: Option<Key>,
     /// Its opacity, as its last render gave it.
     opacity: f32,
     /// Its move, from where it showed, in points, as it slides to its
@@ -185,12 +190,14 @@ impl Animations {
             };
             let base = around.and_then(points).unwrap_or((0.0, 0.0));
             let place = (place.0 - base.0, place.1 - base.1);
+            let around = around.and_then(|around| tree.key(around).cloned());
             let opacity = style.opacity.unwrap_or(1.0);
             let Some(mut animated) = self.nodes.remove(key) else {
                 kept.insert(
                     key.clone(),
                     Animated {
                         place,
+                        around,
                         opacity,
                         moving: None,
                         fading: None,
@@ -206,7 +213,11 @@ impl Animations {
                 easing: transition.easing,
             };
             let (dx, dy) = (animated.place.0 - place.0, animated.place.1 - place.1);
-            if rendered && (dx, dy) != (0.0, 0.0) {
+            // A place of another node around it, which gained or lost a
+            // transition, is measured anew, of no slide: its own move is
+            // not told by the change of what it is measured from.
+            let measured_alike = animated.around == around;
+            if rendered && measured_alike && (dx, dy) != (0.0, 0.0) {
                 let (x, y) = animated.offset(now);
                 animated.moving = (!reduced).then(|| run((x + dx, y + dy)));
             }
@@ -215,6 +226,7 @@ impl Animations {
                 animated.fading = (!reduced).then(|| run((from, opacity)));
             }
             animated.place = place;
+            animated.around = around;
             animated.opacity = opacity;
             kept.insert(key.clone(), animated);
         }
@@ -563,6 +575,53 @@ mod tests {
         let half = start + Duration::from_millis(100);
         assert_eq!(animations.offset(&Key::from("parent"), half), (-20.0, 0.0));
         assert_eq!(animations.offset(&Key::from("child"), half), (0.0, 0.0));
+    }
+
+    #[test]
+    fn a_node_still_as_a_node_around_it_gains_or_loses_a_transition() {
+        // A child of a transition inside a box past a room of 30 points,
+        // the box of a transition or of none.
+        let boxed = |sliding: bool| {
+            let child = Node::container(vec![])
+                .key("child")
+                .layout(view::Layout {
+                    width: Length::Points(10.0),
+                    height: Length::Points(10.0),
+                    ..view::Layout::default()
+                })
+                .style(Style {
+                    transition: Some(LINEAR),
+                    ..Style::default()
+                });
+            let parent = Node::container(vec![child]).key("parent").style(Style {
+                transition: sliding.then_some(LINEAR),
+                ..Style::default()
+            });
+            Node::container(vec![
+                Node::container(vec![]).layout(view::Layout {
+                    width: Length::Points(30.0),
+                    ..view::Layout::default()
+                }),
+                parent,
+            ])
+            .layout(view::Layout {
+                direction: Direction::Row,
+                ..view::Layout::default()
+            })
+        };
+        let mut tree = Tree::new();
+        let mut layout = Layout::new(1.0);
+        let mut animations = Animations::new();
+        let start = Instant::now();
+        let child = Key::from("child");
+        // Gaining, then losing, a transition around it: the child stays
+        // where it shows, sliding not.
+        for sliding in [false, true, false] {
+            laid(&mut tree, &mut layout, &boxed(sliding));
+            animations.laid_out(&tree, &layout, start, false);
+            assert_eq!(animations.offset(&child, start), (0.0, 0.0), "{sliding}");
+            assert!(!animations.running(start), "{sliding}");
+        }
     }
 
     #[test]
