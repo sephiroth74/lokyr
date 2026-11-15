@@ -145,13 +145,15 @@ Before 1.0.0, after F3's daily features, as 0.8 and 0.9, so that the first publi
 
 ### F3b — Settings and themes
 
-After 1.0.0, as 1.1 and 1.2: the settings window and its pages, then themes made, duplicated and imported in the app, and the settings' Keys page. IPC, the remote CLI, the MCP server and the agents' hooks, planned here before, are [put off](#put-off-ipc-mcp-and-the-agents-hooks).
+After 1.0.0, as 1.1 and 1.2: the settings window and its pages, then themes made, duplicated and imported in the app, their interface's colors of rules that name each other, faint text, the cursor guide, and the settings' Keys page. IPC, the remote CLI, the MCP server and the agents' hooks, planned here before, are [put off](#put-off-ipc-mcp-and-the-agents-hooks).
 
 - **The settings window**: a window of its own, "Settings", of System Settings' size, one at most, of no terminal, the pages of Lokyr's own plugins as tabs across the top and the chosen page below them, each page's own parts in a sidebar of its own where it needs one, opened by each page's command; ⌘, stays the config file in the text editor.
 - **The config's page**, `settings`, a first-party plugin, generated from the config's keys and the guide's text, with the fonts, the colors, the keys' bindings and a file with an error, moved from F3 on 7 November 2026.
 - **The `plugin-manager`'s page**, a first-party plugin of the packages' service: the installed plugins, their capabilities and updates, and the registry's search, to install, update, turn off or remove, moved from F4 on 11 November 2026.
 - **Themes made in the app**: the Themes page's New… of Lokyr Light's or Lokyr Dark's values, every key written, Duplicate… and View › New Theme from Current… of an existing theme, each used and opened in the editor; Import… of `.itermcolors` and `.toml` files, several at once, and Show in Finder. Themes stay out of Sleip and the registry, as the web gives many, which Lokyr reads as they are.
 - **The keys' bindings**, a page of their own, Keys, beside Settings and Themes.
+- **The themes' rules**: each interface color of a rule that names the terminal's colors and other tokens, as data, which the authors' guide shows; a theme's token, a color or an expression, reaching every token whose rule names it; a theme of the terminal's colors alone colored as before; New… and Duplicate… writing every other token as a comment of its rule; a name that Lokyr does not know told.
+- **iTerm2's faint text and cursor guide**: dim text drawn at its opacity, and a band across the cursor's row, of the theme's color; an HDR cursor, brighter than white on a display of extended dynamic range, studied first.
 
 **Exit**:
 - the settings window edits every key of the config, the keys' bindings, the themes and the plugins;
@@ -236,7 +238,7 @@ Releases are `X.Y.Z`, nightly and beta builds `X.Y.Z-YYYYMMDD`, release candidat
 | 0.8–0.9 | F4's blocks, before 1.0.0: 0.8 the Luau host and Sleip's own loop, 0.9 the registry, and `snap` and `awake` published |
 | 1.0.0 | macOS MVP (F3) and the plugin ecosystem (F4), the first public release, the repository made public, under the MIT license, with the agents on their tabs, which come after F4, and a path's line in the editor, the last command's output, inline images, a Homebrew cask, and the documentation's site at `lokyr.dev`, on GitHub Pages, with the updates' feed; semantic versioning from here: patch, minor and major |
 | 1.1 | The settings window, of the `plugin-manager`'s page and the config's (F3b's first block) |
-| 1.2 | Themes made, duplicated and imported in the app, and the settings' Keys page (F3b's second block) |
+| 1.2 | Themes made, duplicated and imported in the app, their colors of rules that name each other, faint text, the cursor guide, and the settings' Keys page (F3b's second block) |
 | 1.x | F5a, F5b, F5c, and the plugin API 1.0 (F6): stable plugin API in both front ends, complete docs, no open critical bug for three months; a major only for a change that breaks what people rely on |
 | later | Linux (F7), registry v1 |
 
