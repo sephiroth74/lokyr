@@ -173,6 +173,58 @@ impl<'de> Deserialize<'de> for ThemeColor {
     }
 }
 
+/// A token's value in a theme: a color, or an expression of the rules'
+/// terms, as `accent / 40%`, which [`rules`] tells.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum TokenValue {
+    /// A color, `#rrggbb` or `#rrggbbaa`.
+    Color(ThemeColor),
+    /// An expression's text, which reads as one.
+    Expr(String),
+}
+
+impl fmt::Display for TokenValue {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Color(color) => color.fmt(f),
+            Self::Expr(text) => f.write_str(text),
+        }
+    }
+}
+
+impl From<ThemeColor> for TokenValue {
+    fn from(color: ThemeColor) -> Self {
+        Self::Color(color)
+    }
+}
+
+impl FromStr for TokenValue {
+    type Err = rules::ExprError;
+
+    /// The value that `text` writes: a color, or else an expression that
+    /// reads, whole.
+    fn from_str(text: &str) -> Result<Self, Self::Err> {
+        if let Ok(color) = text.parse::<ThemeColor>() {
+            return Ok(Self::Color(color));
+        }
+        text.parse::<rules::Expr>()?;
+        Ok(Self::Expr(text.trim().to_owned()))
+    }
+}
+
+impl Serialize for TokenValue {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(self)
+    }
+}
+
+impl<'de> Deserialize<'de> for TokenValue {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let text = String::deserialize(deserializer)?;
+        text.parse().map_err(serde::de::Error::custom)
+    }
+}
+
 /// The appearance that a theme is a variant of.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -233,9 +285,9 @@ pub struct Theme {
     /// Its terminal's colors.
     pub terminal: TerminalColors,
     /// The tokens that it gives, `search.match` and `search.match.current`
-    /// among them; the host derives the others.
+    /// among them, colors or expressions; the others take their rules.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub tokens: BTreeMap<String, ThemeColor>,
+    pub tokens: BTreeMap<String, TokenValue>,
 }
 
 impl Theme {

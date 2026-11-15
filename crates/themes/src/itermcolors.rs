@@ -10,7 +10,7 @@
 use std::io::Cursor;
 use std::path::Path;
 
-use lokyr_plugin_sdk::theme::{TerminalColors, Theme, ThemeColor, ThemeVariant};
+use lokyr_plugin_sdk::theme::{TerminalColors, Theme, ThemeColor, ThemeVariant, TokenValue};
 use plist::stream::{Event, Reader};
 use plist::{Dictionary, Value};
 
@@ -163,7 +163,9 @@ fn theme(
         },
     );
     if let Some(matched) = color("Match Background Color")? {
-        theme.tokens.insert("search.match".to_owned(), matched);
+        theme
+            .tokens
+            .insert("search.match".to_owned(), TokenValue::Color(matched));
     }
     Ok(theme)
 }

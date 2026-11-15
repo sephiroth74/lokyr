@@ -1588,6 +1588,7 @@ impl<B: Backend> App<B> {
         let mut paths = Vec::new();
         let mut resolved = Vec::new();
         let mut errors = Vec::new();
+        let mut notices = Vec::new();
         // A picker's preview in place of the appearance in force's.
         let mut names = [&config.light, &config.dark];
         if let Some(preview) = &self.theme_preview {
@@ -1600,6 +1601,12 @@ impl<B: Backend> App<B> {
             match places.resolve(name, &builtins) {
                 Ok(theme) => {
                     paths.extend(theme.files);
+                    // Once each, of a theme of both appearances.
+                    for notice in theme.notices {
+                        if !notices.contains(&notice) {
+                            notices.push(notice);
+                        }
+                    }
                     resolved.push(theme.theme);
                 }
                 Err(error) => {
@@ -1626,7 +1633,23 @@ impl<B: Backend> App<B> {
             self.report(platform, diagnostic);
             return;
         }
-        self.resolve(platform, &About::Theme);
+        // What colors nothing, told, the first in the notice and every one
+        // in the log; the rest of the themes in force.
+        match notices.split_first() {
+            Some((first, rest)) => {
+                for notice in rest {
+                    eprintln!("lokyr: {notice}");
+                }
+                let more = match rest.len() {
+                    0 => String::new(),
+                    count => format!(", and {count} more in the log"),
+                };
+                let text = format!("{first}{more}; the rest of the theme is in force");
+                let diagnostic = Diagnostic::new(Code::InvalidConfig, text, About::Theme);
+                self.report(platform, diagnostic);
+            }
+            None => self.resolve(platform, &About::Theme),
+        }
         let theme = Theme::of(&resolved[0], &resolved[1]);
         if theme != self.theme {
             self.theme = theme;

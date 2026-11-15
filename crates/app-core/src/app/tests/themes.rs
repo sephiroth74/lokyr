@@ -113,6 +113,48 @@ fn a_theme_s_error_tells_its_line_and_the_themes_in_force_stay_until_its_fix() {
 }
 
 #[test]
+fn what_a_theme_colors_nothing_with_tells_its_line_and_the_rest_applies() {
+    let config = "[theme]\ndark = \"Told\"\nlight = \"Told\"\n";
+    let told = format!(
+        "{}\n[interface]\n\"accent\" = \"#c678dd\"\n\"focus.ring\" = \"nothing\"\n\"separator\" = \"mix(text\"\n",
+        theme("#101012")
+    );
+    let (mut fake, mut app, directory) = with_themes("told", config, &[("Told", &told)]);
+    let shown = app
+        .diagnostics
+        .shown_diagnostic()
+        .cloned()
+        .expect("a notice");
+    assert_eq!(shown.about, About::Theme);
+    assert!(shown.text.contains("Told.toml:"), "{}", shown.text);
+    assert!(
+        shown.text.contains("and 1 more in the log"),
+        "{}",
+        shown.text
+    );
+    assert!(
+        shown.text.ends_with("the rest of the theme is in force"),
+        "{}",
+        shown.text
+    );
+    // The theme applies, its accent too, which the focus ring takes of
+    // its rule.
+    assert_eq!(app.theme.dark.colors.background, rgb(0x101012));
+    let tokens = &app.theme.dark.tokens;
+    let accent = tokens.get("accent").unwrap();
+    assert_eq!(
+        accent,
+        lokyr_render_core::Color::from_rgb8(0xc6, 0x78, 0xdd)
+    );
+    assert_eq!(tokens.get("focus.ring"), Some(accent.with_alpha(0.6)));
+    // Fixed, its notice goes.
+    write(&directory, "Told", &theme("#101012"));
+    changed(&mut fake, &mut app);
+    assert_eq!(app.diagnostics.shown_diagnostic(), None);
+    let _ = std::fs::remove_dir_all(directory);
+}
+
+#[test]
 fn a_name_of_no_theme_tells_itself_and_its_file_applies_as_it_comes() {
     let config = "[theme]\ndark = \"Later\"\n";
     let (mut fake, mut app, directory) = with_themes("later", config, &[]);

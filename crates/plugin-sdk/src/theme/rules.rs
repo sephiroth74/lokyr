@@ -7,7 +7,7 @@
 //! expressions; the arithmetic is of the colors' encoded sRGB components,
 //! as the interface draws them.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::fmt;
 use std::sync::OnceLock;
 
@@ -626,13 +626,35 @@ pub fn is_dark(terminal: &TerminalColors) -> bool {
     luminance(Rgba::of(terminal.background)) < luminance(Rgba::of(terminal.foreground))
 }
 
-/// Why a token does not resolve.
+/// Why a token that a theme gives does not resolve, which keeps its rule.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Unresolved {
-    /// A name of no color, of no rule and not given.
+    /// A name of no color: of no rule, not given, nor of the terminal's.
     Unknown(String),
-    /// A token that names itself, through the tokens of its chain.
+    /// Tokens that name each other, of their chain, as `a → b → a`.
     Cycle(String),
+    /// An expression that does not read, of why.
+    Unreadable(String),
+}
+
+impl fmt::Display for Unresolved {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Unknown(name) => write!(
+                f,
+                "`{name}` names no color: no token, nor one of the terminal's"
+            ),
+            Self::Cycle(chain) => write!(f, "tokens name each other: {chain}"),
+            Self::Unreadable(why) => f.write_str(why),
+        }
+    }
+}
+
+/// A token's value that a theme gives, read.
+#[derive(Clone, Debug)]
+enum Given {
+    Color(Rgba),
+    Expr(Expr),
 }
 
 /// The resolution of the tokens of a theme, each resolved once.
@@ -641,9 +663,13 @@ struct Resolver<'a> {
     terminal: &'a TerminalColors,
     dark: bool,
     floor: f32,
-    given: &'a BTreeMap<String, ThemeColor>,
+    given: &'a BTreeMap<String, Given>,
     done: BTreeMap<String, Rgba>,
-    busy: BTreeSet<String>,
+    /// The tokens under way, in their chain's order.
+    busy: Vec<String>,
+    /// The innermost given token whose expression did not resolve, of the
+    /// last failure.
+    blamed: Option<String>,
 }
 
 impl Resolver<'_> {
@@ -652,22 +678,35 @@ impl Resolver<'_> {
         if let Some(&color) = self.done.get(name) {
             return Ok(color);
         }
-        if let Some(&color) = self.given.get(name) {
-            let color = Rgba::of(color);
-            self.done.insert(name.to_owned(), color);
-            return Ok(color);
+        let given = self.given.get(name);
+        if let Some(Given::Color(color)) = given {
+            self.done.insert(name.to_owned(), *color);
+            return Ok(*color);
         }
-        let rule = self
-            .rules
-            .iter()
-            .find(|(token, _)| *token == name)
-            .map(|(_, rule)| rule)
-            .ok_or_else(|| Unresolved::Unknown(name.to_owned()))?;
-        if !self.busy.insert(name.to_owned()) {
-            return Err(Unresolved::Cycle(name.to_owned()));
+        let expr = match given {
+            Some(Given::Expr(expr)) => expr,
+            _ => self
+                .rules
+                .iter()
+                .find(|(token, _)| *token == name)
+                .map(|(_, rule)| rule.expr(self.dark))
+                .ok_or_else(|| Unresolved::Unknown(name.to_owned()))?,
+        };
+        if let Some(at) = self.busy.iter().position(|busy| busy == name) {
+            let chain: Vec<String> = self.busy[at..]
+                .iter()
+                .map(String::as_str)
+                .chain([name])
+                .map(|name| format!("`{name}`"))
+                .collect();
+            return Err(Unresolved::Cycle(chain.join(" → ")));
         }
-        let color = self.eval(rule.expr(self.dark));
-        self.busy.remove(name);
+        self.busy.push(name.to_owned());
+        let color = self.eval(expr);
+        self.busy.pop();
+        if color.is_err() && given.is_some() && self.blamed.is_none() {
+            self.blamed = Some(name.to_owned());
+        }
         let color = color?;
         self.done.insert(name.to_owned(), color);
         Ok(color)
@@ -712,25 +751,74 @@ impl Resolver<'_> {
 
 /// The colors of every token of a theme of the terminal's colors
 /// `terminal` and of the tokens that it gives, `given`: each given its
-/// color, the others of their rules, of the variant that `terminal` makes;
-/// the given tokens that Lokyr has no rule of, as a plugin's, kept.
+/// color, or its expression's, the others of their rules, of the variant
+/// that `terminal` makes; the given tokens that Lokyr has no rule of, as a
+/// plugin's, kept. A given token that does not resolve, as
+/// [`problems`] tells, takes its rule, or none of no rule.
 pub fn resolve(
     terminal: &TerminalColors,
-    given: &BTreeMap<String, ThemeColor>,
+    given: &BTreeMap<String, super::TokenValue>,
 ) -> BTreeMap<String, Rgba> {
-    let mut resolver = Resolver::new(rules(), terminal, given);
-    let mut names: Vec<&str> = given.keys().map(String::as_str).collect();
-    for name in tokens() {
-        names.push(name);
-    }
-    for name in names {
-        // The rules name no color that is not there, nor a cycle, which
-        // the tests hold.
-        if resolver.token(name).is_err() {
-            resolver.done.insert(name.to_owned(), Rgba::CLEAR);
+    resolution(rules(), terminal, given).0
+}
+
+/// The given tokens of a theme of `terminal` and `given` that do not
+/// resolve, each of why, which [`resolve`] gives their rules: an
+/// expression that does not read, a name of no color, a cycle.
+pub fn problems(
+    terminal: &TerminalColors,
+    given: &BTreeMap<String, super::TokenValue>,
+) -> Vec<(String, Unresolved)> {
+    resolution(rules(), terminal, given).1
+}
+
+/// The resolution of a theme of `terminal` and `given` by `rules`, and the
+/// given tokens left out, each of why: one at a time, the innermost of a
+/// failure, until every token resolves.
+fn resolution(
+    rules: &[(&'static str, Rule)],
+    terminal: &TerminalColors,
+    given: &BTreeMap<String, super::TokenValue>,
+) -> (BTreeMap<String, Rgba>, Vec<(String, Unresolved)>) {
+    let mut problems = Vec::new();
+    let mut kept = BTreeMap::new();
+    for (name, value) in given {
+        match value {
+            super::TokenValue::Color(color) => {
+                kept.insert(name.clone(), Given::Color(Rgba::of(*color)));
+            }
+            super::TokenValue::Expr(text) => match text.parse::<Expr>() {
+                Ok(expr) => {
+                    kept.insert(name.clone(), Given::Expr(expr));
+                }
+                Err(error) => problems.push((name.clone(), Unresolved::Unreadable(error.0))),
+            },
         }
     }
-    resolver.done
+    loop {
+        let mut resolver = Resolver::new(rules, terminal, &kept);
+        let mut names: Vec<String> = kept.keys().cloned().collect();
+        names.extend(rules.iter().map(|(name, _)| (*name).to_owned()));
+        let failed = names
+            .iter()
+            .find_map(|name| resolver.token(name).err().map(|why| (name.clone(), why)));
+        let inner = resolver.blamed.take();
+        let mut done = resolver.done;
+        let Some((name, why)) = failed else {
+            return (done, problems);
+        };
+        // The given token to blame, the innermost, or the one that failed.
+        let blamed = inner.unwrap_or(name);
+        if kept.remove(&blamed).is_none() {
+            // A rule that fails of no token given, which the tests hold
+            // the rules of none: clear, as the rest.
+            for name in names {
+                done.entry(name).or_insert(Rgba::CLEAR);
+            }
+            return (done, problems);
+        }
+        problems.push((blamed, why));
+    }
 }
 
 impl<'a> Resolver<'a> {
@@ -738,7 +826,7 @@ impl<'a> Resolver<'a> {
     fn new(
         rules: &'a [(&'static str, Rule)],
         terminal: &'a TerminalColors,
-        given: &'a BTreeMap<String, ThemeColor>,
+        given: &'a BTreeMap<String, Given>,
     ) -> Self {
         let (background, foreground) =
             (Rgba::of(terminal.background), Rgba::of(terminal.foreground));
@@ -751,7 +839,8 @@ impl<'a> Resolver<'a> {
             floor: (contrast(foreground, background) * 0.75).min(4.5),
             given,
             done: BTreeMap::new(),
-            busy: BTreeSet::new(),
+            busy: Vec::new(),
+            blamed: None,
         }
     }
 }

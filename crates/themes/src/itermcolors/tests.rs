@@ -126,7 +126,10 @@ fn a_file_s_keys_give_the_terminal_s_colors_and_the_search_s_match() {
     assert_eq!(theme.terminal.cursor, Some(ThemeColor::rgb(255, 128, 0)));
     assert_eq!(theme.terminal.link, Some(ThemeColor::rgb(0, 0, 255)));
     assert_eq!(theme.terminal.bold, None);
-    assert_eq!(theme.tokens["search.match"], ThemeColor::rgb(255, 255, 0));
+    assert_eq!(
+        theme.tokens["search.match"],
+        TokenValue::Color(ThemeColor::rgb(255, 255, 0))
+    );
 }
 
 #[test]

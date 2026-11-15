@@ -10,6 +10,7 @@ from 1.0.0; before it, a minor version may change what a previous one did.
 
 ### Added
 
+- A theme's color can be an expression of other colors, as `accent / 40%`, `mix(background, foreground, 8%)` or `contrasting(list.selection.bg)`, which follows them as they change, as the authors' guide tells.
 - New… on the Themes page makes a new theme of Lokyr's own light or dark values, as the page shows, every key written and the terminal's optional ones as comments of their defaults: Lokyr asks its name, "New Dark Theme" first, writes it into the themes folder, uses it and opens it in your editor.
 - View › Import Themes…, and Import… on the Themes page, beside Show in Finder, which opens the themes folder, imports `.itermcolors` and `.toml` themes, several chosen at once in the system's open panel: each is copied into the themes folder as it is, one question asking whether to replace those of a name there already; then one alert tells the themes imported, by their names, and the files that were not, as one that holds no theme.
 - View › New Theme from Current… makes a new theme of every color of the theme in force: Lokyr asks its name, writes it into the themes folder, uses it and opens it in your editor; a theme's card on the Themes page has Use and Duplicate… in its context menu.
@@ -18,6 +19,7 @@ from 1.0.0; before it, a minor version may change what a previous one did.
 
 ### Changed
 
+- What a theme colors nothing with no longer refuses it: a token's value that does not read, a name of no color, tokens that name each other and a token's name that Lokyr does not know are told in the card, of their line, the rest of the theme in force.
 - A theme's interface colors follow the colors that it gives: a theme's `accent` colors the focus ring, a field's focus, the selected rows, the toggles, the chosen segments, the progress and the gutter of running commands too, and its text the fainter texts and the lines made of it, unless it gives them too; a theme of the terminal's colors alone looks as it did.
 - The settings window's Keys are a page of their own, a tab between Settings and Themes, no longer a part of the Settings page's sidebar, whose search no longer lists the shortcuts.
 - The settings window's pages draw anew faster, the Keys page above all, as the plugins' texts are read once a language rather than at each title and message; Lokyr starts a little sooner too.

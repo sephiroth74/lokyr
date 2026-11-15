@@ -30,7 +30,8 @@ use std::io;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 
-pub use lokyr_plugin_sdk::theme::{TerminalColors, Theme, ThemeColor, ThemeVariant};
+use lokyr_plugin_sdk::theme::rules;
+pub use lokyr_plugin_sdk::theme::{TerminalColors, Theme, ThemeColor, ThemeVariant, TokenValue};
 use toml_edit::{Document, Item, TableLike, Value};
 
 pub mod itermcolors;
@@ -114,6 +115,11 @@ pub struct Resolved {
     pub credits: ThemeCredits,
     /// The files looked for.
     pub files: Vec<PathBuf>,
+    /// What its files tell that colors nothing, each at its place: a
+    /// token's name that Lokyr does not know, and a token's value of an
+    /// expression that does not read, names no color or comes back to
+    /// itself, which keeps its rule; the rest of the theme in force.
+    pub notices: Vec<Error>,
 }
 
 /// What a theme tells people of itself, as its file's `[theme]` writes it,
@@ -169,11 +175,12 @@ pub fn resolve(
     let mut chain = Vec::new();
     let partial = load(name, &sources, &mut files, &mut chain)?;
     let credits = partial.credits.clone();
-    let theme = partial.finish(name, files.first().map(PathBuf::as_path))?;
+    let (theme, notices) = partial.finish(name, files.first().map(PathBuf::as_path))?;
     Ok(Resolved {
         theme,
         credits,
         files,
+        notices,
     })
 }
 
@@ -452,28 +459,32 @@ pub fn native(theme: &Theme, credits: Credits<'_>) -> String {
             text.push_str(&format!("{key} = \"{color}\"\n"));
         }
     }
-    let search: Vec<(&str, ThemeColor)> = [
+    let search: Vec<(&str, &TokenValue)> = [
         ("match", "search.match"),
         ("current", "search.match.current"),
     ]
     .into_iter()
-    .filter_map(|(key, token)| theme.tokens.get(token).map(|color| (key, *color)))
+    .filter_map(|(key, token)| theme.tokens.get(token).map(|value| (key, value)))
     .collect();
     if !search.is_empty() {
         text.push_str("\n[search]\n");
-        for (key, color) in search {
-            text.push_str(&format!("{key} = \"{color}\"\n"));
+        for (key, value) in search {
+            text.push_str(&format!("{key} = {}\n", quoted(&value.to_string())));
         }
     }
-    let others: Vec<(&String, &ThemeColor)> = theme
+    let others: Vec<(&String, &TokenValue)> = theme
         .tokens
         .iter()
         .filter(|(token, _)| !matches!(token.as_str(), "search.match" | "search.match.current"))
         .collect();
     if !others.is_empty() {
         text.push_str("\n[interface]\n");
-        for (token, color) in others {
-            text.push_str(&format!("{} = \"{color}\"\n", quoted(token)));
+        for (token, value) in others {
+            text.push_str(&format!(
+                "{} = {}\n",
+                quoted(token),
+                quoted(&value.to_string())
+            ));
         }
     }
     text
@@ -646,7 +657,12 @@ struct Partial {
     bold: Option<ThemeColor>,
     link: Option<ThemeColor>,
     underline: Option<ThemeColor>,
-    tokens: BTreeMap<String, ThemeColor>,
+    tokens: BTreeMap<String, TokenValue>,
+    /// The place of each token that a file gives, which a notice of it
+    /// tells.
+    places: BTreeMap<String, (PathBuf, Option<Position>)>,
+    /// What the files tell that colors nothing, as [`Resolved::notices`].
+    notices: Vec<Error>,
     credits: ThemeCredits,
 }
 
@@ -668,6 +684,8 @@ impl Partial {
             link: terminal.link,
             underline: terminal.underline,
             tokens: theme.tokens.clone(),
+            places: BTreeMap::new(),
+            notices: Vec::new(),
             credits: ThemeCredits::default(),
         }
     }
@@ -680,6 +698,10 @@ impl Partial {
         };
         let mut tokens = base.tokens;
         tokens.extend(self.tokens);
+        let mut places = base.places;
+        places.extend(self.places);
+        let mut notices = base.notices;
+        notices.extend(self.notices);
         Self {
             name: self.name.or(base.name),
             variant: self.variant.or(base.variant),
@@ -694,14 +716,18 @@ impl Partial {
             link: self.link.or(base.link),
             underline: self.underline.or(base.underline),
             tokens,
+            places,
+            notices,
             credits: self.credits.over(base.credits),
         }
     }
 
     /// The whole theme of `name`, as `path`'s file names it, if it has its
     /// terminal's background, foreground and palette; of the light variant
-    /// where it says none and its background is the lighter.
-    fn finish(self, name: &str, path: Option<&Path>) -> Result<Theme, Error> {
+    /// where it says none and its background is the lighter; and its
+    /// notices, those of its tokens that do not resolve among them, which
+    /// it leaves out, their rules in force.
+    fn finish(self, name: &str, path: Option<&Path>) -> Result<(Theme, Vec<Error>), Error> {
         let missing = |what: &str| Error {
             path: path.map_or_else(|| PathBuf::from(name), Path::to_path_buf),
             position: None,
@@ -719,7 +745,7 @@ impl Partial {
             } else {
                 ThemeVariant::Dark
             });
-        Ok(Theme {
+        let mut theme = Theme {
             name: name.to_owned(),
             variant,
             terminal: TerminalColors {
@@ -735,7 +761,23 @@ impl Partial {
                 underline: self.underline,
             },
             tokens: self.tokens,
-        })
+        };
+        let mut notices = self.notices;
+        for (token, why) in rules::problems(&theme.terminal, &theme.tokens) {
+            theme.tokens.remove(&token);
+            let (path, position) = self.places.get(&token).cloned().unwrap_or_else(|| {
+                (
+                    path.map_or_else(|| PathBuf::from(name), Path::to_path_buf),
+                    None,
+                )
+            });
+            notices.push(Error {
+                path,
+                position,
+                message: format!("`{token}` is left out, as {why}"),
+            });
+        }
+        Ok((theme, notices))
     }
 }
 
@@ -866,8 +908,7 @@ fn parse(text: &str, path: &Path) -> Result<File, Error> {
                             ));
                         }
                     };
-                    let color = color(value, value.span(), &error)?;
-                    partial.tokens.insert(token.to_owned(), color);
+                    give(&mut partial, token.to_owned(), value, &error)?;
                 }
             }
             // The interface's tokens by their names; each other section the
@@ -878,7 +919,7 @@ fn parse(text: &str, path: &Path) -> Result<File, Error> {
                 } else {
                     format!("{section}.")
                 };
-                flatten(table, &prefix, &mut partial.tokens, &error)?;
+                flatten(table, &prefix, &mut partial, &error)?;
             }
         }
     }
@@ -886,21 +927,62 @@ fn parse(text: &str, path: &Path) -> Result<File, Error> {
 }
 
 /// The tokens of `table`, each by its key's path after `prefix`, as
-/// `active.bg` of `[tabs]` `tabs.active.bg`, into `tokens`.
+/// `active.bg` of `[tabs]` `tabs.active.bg`, given to `partial`.
 fn flatten(
     table: &dyn TableLike,
     prefix: &str,
-    tokens: &mut BTreeMap<String, ThemeColor>,
+    partial: &mut Partial,
     error: &dyn Fn(Option<Range<usize>>, String) -> Error,
 ) -> Result<(), Error> {
     for (key, item) in table.iter() {
         let name = format!("{prefix}{key}");
         match item.as_table_like() {
-            Some(inner) => flatten(inner, &format!("{name}."), tokens, error)?,
-            None => {
-                tokens.insert(name, color(item, item.span(), error)?);
-            }
+            Some(inner) => flatten(inner, &format!("{name}."), partial, error)?,
+            None => give(partial, name, item, error)?,
         }
+    }
+    Ok(())
+}
+
+/// Gives `partial` the token `name` of `item`'s value, a color or an
+/// expression, at its place: a value that does not read, or a name of
+/// Lokyr's own sections that Lokyr does not know, told among its notices;
+/// anything else than a string refused.
+fn give(
+    partial: &mut Partial,
+    name: String,
+    item: &Item,
+    error: &dyn Fn(Option<Range<usize>>, String) -> Error,
+) -> Result<(), Error> {
+    let span = item.span();
+    let text = item.as_str().ok_or_else(|| {
+        error(
+            span.clone(),
+            "a token's value is a string: a color, as \"#1e1e20\", or an expression, as \"accent / 40%\""
+                .to_owned(),
+        )
+    })?;
+    let first = name.split('.').next().unwrap_or_default();
+    let ours = lokyr_plugin_sdk::theme::TOKENS
+        .iter()
+        .any(|token| token.split('.').next() == Some(first));
+    if ours && !lokyr_plugin_sdk::theme::TOKENS.contains(&name.as_str()) {
+        partial.notices.push(error(
+            span.clone(),
+            format!("`{name}` is no token of Lokyr's, and colors nothing that Lokyr draws"),
+        ));
+    }
+    match text.parse::<TokenValue>() {
+        Ok(value) => {
+            let place = error(span, String::new());
+            partial
+                .places
+                .insert(name.clone(), (place.path, place.position));
+            partial.tokens.insert(name, value);
+        }
+        Err(why) => partial
+            .notices
+            .push(error(span, format!("`{name}` is left out, as {why}"))),
     }
     Ok(())
 }

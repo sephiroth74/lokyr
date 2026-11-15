@@ -118,6 +118,30 @@ active = { fg = "#ffffff" }    # tabs.active.fg, as TOML's tables have it
 - A token that a theme does not give, nor the theme that it extends, takes Lokyr's derived color, below; a name that Lokyr does not know takes the color of its name without its last part, as `tabs.active` for `tabs.active.foo`, then of `tabs`.
 - A derived color of another token follows the color that the theme gives that token: a theme's `accent` colors `focus.ring`, `list.selection.bg` and the others derived of the accent, and its `text` the tokens derived of the text, unless the theme gives them too.
 - `transparent` is clear in every theme, as a configuration that names a token may name it.
+- A name of the sections of Lokyr's tokens, or of `[interface]`, that Lokyr does not know, as `tabs.actve.bg`, is told in a card at the windows' top right, of its line, and colors nothing that Lokyr draws.
+
+#### Colors of other colors
+
+A token's value is a color, or an expression of other colors, which follows them as they change:
+
+```toml
+[interface]
+"accent" = "#c678dd"
+"focus.ring" = "accent / 40%"                      # the accent at 40%
+"tooltip.bg" = "mix(background, foreground, 8%)"   # the background, 8% toward the text
+"list.selection.fg" = "contrasting(list.selection.bg)"
+```
+
+- **A color**: `#rrggbb` or `#rrggbbaa`, and `transparent`.
+- **The terminal's colors**: `background`, `foreground`, `cursor`, `selection`, and the 16 colors by their names, `black`, `red`, `green`, `yellow`, `blue`, `magenta`, `cyan`, `white`, then `bright-black` to `bright-white`.
+- **A token**, by its name, as `accent` or `panel.bg`, of the theme's color or of Lokyr's derived one.
+- `X / N%`: X at an opacity of N%, whatever its own.
+- `mix(X, Y, N%)`: X mixed toward Y by N%, opaque.
+- `readable(X, on: Y)`: X, moved toward white or black as little as it takes to read on Y, of three quarters of the contrast of the theme's text on its background, 4.5 at most.
+- `contrasting(X)`: white or black, whichever reads better on X.
+- `first(X, Y, …, on: Z, at: R)`: the first of the colors of a contrast of R at least on Z, from 1 to 21, else the last.
+
+An expression that does not read, a name of no color, and tokens that name each other, as `button.bg` of `button.hover.bg` and `button.hover.bg` of `button.bg`, are told in the card, of their line, the token taking Lokyr's derived color; the rest of the theme is in force.
 
 #### The tokens
 

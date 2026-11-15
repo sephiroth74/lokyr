@@ -697,8 +697,11 @@ mod tests {
     fn resolves_as_derived(theme: &Spec) {
         let resolved = Variant::of(theme).tokens;
         let mut derived = derived(&theme.terminal);
-        for (name, &color) in &theme.tokens {
-            derived.set(name, color_of(color));
+        for (name, value) in &theme.tokens {
+            let lokyr_plugin_sdk::theme::TokenValue::Color(color) = value else {
+                panic!("{}: {name} of an expression", theme.name);
+            };
+            derived.set(name, color_of(*color));
         }
         for name in lokyr_plugin_sdk::theme::TOKENS {
             assert_eq!(

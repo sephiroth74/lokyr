@@ -2,7 +2,7 @@
 //! own, whose colors read on their variant's background, its text,
 //! background and selection, and every token of the interface their own.
 
-use super::{TerminalColors, Theme, ThemeColor, ThemeVariant};
+use super::{TerminalColors, Theme, ThemeColor, ThemeVariant, TokenValue};
 
 /// The name of the built-in theme of the light appearance.
 pub const LIGHT_NAME: &str = "Lokyr Light";
@@ -165,14 +165,73 @@ pub const DARK: (Sixteen, u32, u32, u32) = (
     0x34445f,
 );
 
-/// The built-in theme of the light appearance, every token its own.
+/// The tokens of [`LIGHT_TOKENS`] that the light theme leaves to their
+/// rules, which give their colors within a step of 1/255: the accent's of
+/// its opacities, the text's, and the texts on the accent.
+pub const LIGHT_RULED: &[&str] = &[
+    "text",
+    "pane.drop",
+    "shadow",
+    "field.focus",
+    "focus.ring",
+    "toggle.on.bg",
+    "tooltip.fg",
+    "list.selection.bg",
+    "list.selection.fg",
+    "progress.normal",
+    "tabs.active.fg",
+    "tabs.active.shadow",
+    "tabs.inactive.bg",
+    "tabs.seamless.veil",
+    "segments.chosen.bg",
+    "segments.chosen.fg",
+    "gutter.running",
+];
+
+/// The tokens of [`DARK_TOKENS`] that the dark theme leaves to their
+/// rules, as [`LIGHT_RULED`].
+pub const DARK_RULED: &[&str] = &[
+    "text",
+    "pane.drop",
+    "shadow",
+    "field.bg",
+    "field.focus",
+    "focus.ring",
+    "toggle.on.bg",
+    "tooltip.fg",
+    "list.selection.fg",
+    "progress.normal",
+    "tabs.active.shadow",
+    "tabs.inactive.bg",
+    "tabs.seamless.veil",
+    "segments.chosen.fg",
+    "gutter.running",
+];
+
+/// The built-in theme of the light appearance: its own tokens, the others
+/// of their rules, so that a theme made of it whose accent changes takes it
+/// where the rules name it.
 pub fn light() -> Theme {
-    of(LIGHT_NAME, ThemeVariant::Light, LIGHT, LIGHT_TOKENS)
+    ruled(
+        of(LIGHT_NAME, ThemeVariant::Light, LIGHT, LIGHT_TOKENS),
+        LIGHT_RULED,
+    )
 }
 
-/// The built-in theme of the dark appearance, every token its own.
+/// The built-in theme of the dark appearance, as [`light`].
 pub fn dark() -> Theme {
-    of(DARK_NAME, ThemeVariant::Dark, DARK, DARK_TOKENS)
+    ruled(
+        of(DARK_NAME, ThemeVariant::Dark, DARK, DARK_TOKENS),
+        DARK_RULED,
+    )
+}
+
+/// `theme` without its tokens of `names`, which their rules give.
+fn ruled(mut theme: Theme, names: &[&str]) -> Theme {
+    theme
+        .tokens
+        .retain(|name, _| !names.contains(&name.as_str()));
+    theme
 }
 
 /// The theme of `name` of the colors of `sixteen`, `foreground`,
@@ -203,7 +262,10 @@ pub fn of(
         .iter()
         .map(|&(name, value, alpha)| {
             let alpha = (alpha * 255.0).round() as u8;
-            (name.to_owned(), ThemeColor::hex(value).with_alpha(alpha))
+            (
+                name.to_owned(),
+                TokenValue::Color(ThemeColor::hex(value).with_alpha(alpha)),
+            )
         })
         .collect();
     theme

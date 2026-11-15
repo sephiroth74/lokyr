@@ -33,7 +33,7 @@ fn builtin() -> Theme {
     );
     theme
         .tokens
-        .insert("panel.bg".to_owned(), ThemeColor::hex(0x2a2a2d));
+        .insert("panel.bg".to_owned(), ThemeColor::hex(0x2a2a2d).into());
     theme
 }
 
@@ -85,7 +85,10 @@ fg = "#ffffff"
         theme.terminal.selection,
         Some(ThemeColor::hex(0x334455).with_alpha(0xcc))
     );
-    let token = |name: &str| theme.tokens.get(name).copied();
+    let token = |name: &str| match theme.tokens.get(name) {
+        Some(TokenValue::Color(color)) => Some(*color),
+        _ => None,
+    };
     assert_eq!(
         token("search.match"),
         Some(ThemeColor::hex(0xffd60a).with_alpha(0x4d))
@@ -124,7 +127,10 @@ fn a_theme_extends_another_whose_values_its_own_override() {
     assert_eq!(theme.terminal.background, ThemeColor::hex(0x000000));
     assert_eq!(theme.terminal.foreground, ThemeColor::hex(0xe6e6e6));
     assert_eq!(theme.terminal.selection, Some(ThemeColor::hex(0x34445f)));
-    assert_eq!(theme.tokens["panel.bg"], ThemeColor::hex(0x050505));
+    assert_eq!(
+        theme.tokens["panel.bg"],
+        TokenValue::Color(ThemeColor::hex(0x050505))
+    );
     assert_eq!(theme.variant, ThemeVariant::Dark);
     // Every file looked for, the built-in one's of no file too.
     assert_eq!(
@@ -301,7 +307,10 @@ fn an_itermcolors_file_of_the_folder_is_a_theme_as_it_is_and_a_native_one_extend
         .unwrap()
         .theme;
     assert_eq!(mine.terminal.palette[15], ThemeColor::rgb(255, 255, 255));
-    assert_eq!(mine.tokens["panel.bg"], ThemeColor::hex(0x010203));
+    assert_eq!(
+        mine.tokens["panel.bg"],
+        TokenValue::Color(ThemeColor::hex(0x010203))
+    );
     // A file of both appearances is a theme of each, named.
     let light = resolve("Pair (Light)", Some(&directory), None, &[builtin()])
         .unwrap()
@@ -434,6 +443,99 @@ fn a_theme_s_file_is_a_regular_file_within_its_bound() {
 }
 
 #[test]
+fn a_theme_s_tokens_of_expressions_read_and_what_colors_nothing_is_told_at_its_line() {
+    let text = format!(
+        r##"[theme]
+name = "Told"
+
+[terminal]
+background = "#101012"
+foreground = "#e0e0e0"
+{PALETTE}
+
+[interface]
+"accent" = "#c678dd"
+"focus.ring" = "accent / 40%"
+"separator" = "nothing / 10%"
+
+[tabs]
+active.bg = "mix(background, foreground, 8%)"
+actve.bg = "#ff0000"
+hover.bg = "mix(text"
+
+[button]
+bg = "button.hover.bg"
+hover.bg = "button.bg"
+
+[command-header]
+pill = "panel.bg"
+"##
+    );
+    let directory = folder("told", &[("Told", &text)]);
+    let resolved = resolve("Told", Some(&directory), None, &[]).unwrap();
+    let theme = &resolved.theme;
+    let expr = |text: &str| TokenValue::Expr(text.to_owned());
+    assert_eq!(theme.tokens["focus.ring"], expr("accent / 40%"));
+    assert_eq!(
+        theme.tokens["tabs.active.bg"],
+        expr("mix(background, foreground, 8%)")
+    );
+    // A plugin's section, of its own names, as it is.
+    assert_eq!(theme.tokens["command-header.pill"], expr("panel.bg"));
+    // What colors nothing, each told at its line, and left out but a name
+    // that Lokyr does not know; the rest in force.
+    let told: Vec<(usize, &str)> = resolved
+        .notices
+        .iter()
+        .map(|notice| (notice.position.unwrap().line, notice.message.as_str()))
+        .collect();
+    let line = |line: usize, part: &str| {
+        assert!(
+            told.iter()
+                .any(|(at, message)| *at == line && message.contains(part)),
+            "{line} {part}: {told:?}"
+        );
+    };
+    line(13, "`nothing` names no color");
+    line(17, "`tabs.actve.bg` is no token of Lokyr's");
+    line(18, "`tabs.hover.bg` is left out");
+    line(22, "tokens name each other");
+    assert_eq!(told.len(), 4, "{told:?}");
+    assert!(
+        resolved
+            .notices
+            .iter()
+            .all(|notice| notice.path == directory.join("Told.toml"))
+    );
+    assert!(!theme.tokens.contains_key("separator"));
+    assert!(!theme.tokens.contains_key("tabs.hover.bg"));
+    assert!(!theme.tokens.contains_key("button.hover.bg"));
+    assert_eq!(theme.tokens["button.bg"], expr("button.hover.bg"));
+    assert!(theme.tokens.contains_key("tabs.actve.bg"));
+    // A theme that extends it tells its notices too, of its file.
+    let child = "[theme]\nextends = \"Told\"\n\n[interface]\n\"pane.divider\" = \"zz\"\n\"pane.zz\" = \"#000000\"\n";
+    fs::write(directory.join("Child.toml"), child).unwrap();
+    let resolved = resolve("Child", Some(&directory), None, &[]).unwrap();
+    assert_eq!(resolved.notices.len(), 6, "{:?}", resolved.notices);
+    assert!(
+        resolved
+            .notices
+            .iter()
+            .any(|notice| notice.message.contains("`pane.zz` is no token")),
+        "{:?}",
+        resolved.notices
+    );
+    let last = resolved
+        .notices
+        .iter()
+        .find(|notice| notice.message.contains("`zz`"))
+        .unwrap();
+    assert_eq!(last.path, directory.join("Child.toml"));
+    assert_eq!(last.position.map(|at| at.line), Some(5));
+    let _ = fs::remove_dir_all(directory);
+}
+
+#[test]
 fn a_theme_written_in_the_native_format_reads_back_the_same() {
     let mut theme = builtin();
     theme.name = "Ada's \"Night\" \\ Day".to_owned();
@@ -445,13 +547,18 @@ fn a_theme_written_in_the_native_format_reads_back_the_same() {
     });
     theme
         .tokens
-        .insert("search.match".to_owned(), ThemeColor::hex(0xffff00));
+        .insert("search.match".to_owned(), ThemeColor::hex(0xffff00).into());
+    theme.tokens.insert(
+        "search.match.current".to_owned(),
+        ThemeColor::hex(0xff9900).into(),
+    );
     theme
         .tokens
-        .insert("search.match.current".to_owned(), ThemeColor::hex(0xff9900));
-    theme
-        .tokens
-        .insert("tabs.bar.bg".to_owned(), ThemeColor::hex(0x101010));
+        .insert("tabs.bar.bg".to_owned(), ThemeColor::hex(0x101010).into());
+    theme.tokens.insert(
+        "focus.ring".to_owned(),
+        TokenValue::Expr("accent / 40%".to_owned()),
+    );
     let credits = Credits {
         author: Some("Ada"),
         license: Some("MIT OR Apache-2.0"),
@@ -576,7 +683,7 @@ fn a_theme_s_credits_come_of_its_file_or_of_those_that_it_extends_and_its_copy_i
 fn a_new_theme_of_a_built_in_one_writes_every_key_its_optional_ones_as_comments() {
     let mut base = builtin();
     base.tokens
-        .insert("search.match".to_owned(), ThemeColor::hex(0xffd60a));
+        .insert("search.match".to_owned(), ThemeColor::hex(0xffd60a).into());
     let text = new_theme_of(&base, "New Dark Theme");
     // The optional keys that it leaves out, commented, of their values
     // then, in `[terminal]`, before the next section.
