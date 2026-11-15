@@ -417,6 +417,11 @@ impl<B: Backend> App<B> {
             }
         }
         self.load_themes(platform);
+        // The theme's colors read anew, as its file and its values changed,
+        // whatever its colors drawn: a color that nothing draws yet, or one
+        // that a preview showed already.
+        self.plugins
+            .post(lokyr_kernel::plugins::Event::ThemeChanged);
         self.theme_catalog.borrow_mut().renew(
             self.theme_places(),
             self.waker.as_ref(),

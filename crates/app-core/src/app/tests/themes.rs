@@ -1671,7 +1671,14 @@ struct Panel(Heard);
 
 impl plugins::Plugin for Panel {
     fn activate(&mut self, cx: &mut plugins::Cx<'_>) -> Result<(), Error> {
-        for name in ["panel.show", "panel.close", "panel.preview", "panel.write"] {
+        cx.subscribe(&["theme-changed"])?;
+        for name in [
+            "panel.show",
+            "panel.close",
+            "panel.preview",
+            "panel.write",
+            "panel.link",
+        ] {
             cx.register_command(Command {
                 name: name.to_owned(),
                 title: name.to_owned(),
@@ -1690,6 +1697,7 @@ impl plugins::Plugin for Panel {
             "panel.show" => cx.show_color_panel(gray, true),
             "panel.close" => cx.close_color_panel(),
             "panel.preview" => cx.preview_theme_value("Mine", "background", Some("#303030")),
+            "panel.link" => cx.set_theme_value("Mine", "link", Some("#00ff00")),
             _ => cx.set_theme_value("Mine", "background", Some("#404040")),
         }
     }
@@ -1705,6 +1713,7 @@ impl plugins::Plugin for Panel {
                     self.0.borrow_mut().push(color.to_string());
                 }
                 plugins::Event::ColorPanelClosed => self.0.borrow_mut().push("closed".to_owned()),
+                plugins::Event::ThemeChanged => self.0.borrow_mut().push("theme".to_owned()),
                 _ => {}
             }
         }
@@ -1757,14 +1766,22 @@ fn the_color_panel_tells_its_plugin_and_a_color_shows_before_it_is_written() {
     assert_eq!(fake.color_panel(), Some((color(16, 16, 16, 255), true)));
     fake.send_app(&mut app, AppEvent::ColorPicked(color(255, 0, 0, 128)));
     fake.send_app(&mut app, AppEvent::ColorPanelClosed);
-    run_until(&mut fake, &mut app, |_, _| heard.borrow().len() == 2);
-    assert_eq!(*heard.borrow(), ["#ff000080", "closed"]);
+    let panel = |heard: &Heard| -> Vec<String> {
+        heard
+            .borrow()
+            .iter()
+            .filter(|word| *word != "theme")
+            .cloned()
+            .collect()
+    };
+    run_until(&mut fake, &mut app, |_, _| panel(&heard).len() == 2);
+    assert_eq!(panel(&heard), ["#ff000080", "closed"]);
     // Closed by the plugin: none told, a color of no panel to none.
     run(&mut fake, &mut app, "panel.show");
     run(&mut fake, &mut app, "panel.close");
     assert_eq!(fake.color_panel(), None);
     fake.send_app(&mut app, AppEvent::ColorPicked(color(0, 0, 0, 255)));
-    assert_eq!(heard.borrow().len(), 2);
+    assert_eq!(panel(&heard).len(), 2);
     // A color shown before it is written: in force, its file as it was.
     run(&mut fake, &mut app, "panel.preview");
     assert_eq!(app.theme.light.colors.background, rgb(0x303030));
@@ -1774,5 +1791,17 @@ fn the_color_panel_tells_its_plugin_and_a_color_shows_before_it_is_written() {
     assert!(std::fs::read_to_string(&file).unwrap().contains("#404040"));
     assert_eq!(app.theme.light.colors.background, rgb(0x404040));
     assert!(app.theme_values.is_empty());
+    // A color that nothing draws yet written: the theme's colors to read
+    // anew all the same.
+    heard.borrow_mut().clear();
+    run(&mut fake, &mut app, "panel.link");
+    assert!(
+        std::fs::read_to_string(&file)
+            .unwrap()
+            .contains("link = \"#00ff00\"")
+    );
+    run_until(&mut fake, &mut app, |_, _| {
+        heard.borrow().contains(&"theme".to_owned())
+    });
     let _ = std::fs::remove_dir_all(&directory);
 }
