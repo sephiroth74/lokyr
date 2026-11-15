@@ -21,6 +21,9 @@ pub enum About {
     Term,
     /// The themes of `[theme]`, which themes that resolve fix.
     Theme,
+    /// The config's `[keys]`, of two entries of the same keys written two
+    /// ways, which a config of none fixes.
+    Keys,
     /// A plugin's section of the config, `[plugins.<namespace>]`, by the
     /// namespace, which a section that its plugin takes fixes.
     PluginConfig(String),

@@ -3803,3 +3803,28 @@ fn command_up_and_down_jump_to_the_prompts_that_the_shell_marks() {
     let statuses: Vec<Option<i32>> = commands.iter().map(|command| command.status).collect();
     assert_eq!(statuses, [Some(0), Some(0), Some(0)]);
 }
+
+#[test]
+fn two_spellings_of_the_same_keys_read_of_a_notice_that_a_fixed_file_takes_away() {
+    let (mut fake, mut app, path) = with_file(
+        "keys-twice",
+        "[keys]\n\"cmd+shift+=\" = false\n\"cmd++\" = false\n",
+    );
+    // Read, the later holding, its notice in the card.
+    assert!(app.diagnostics.tells(&About::Keys));
+    let shown = app
+        .diagnostics
+        .shown_diagnostic()
+        .map(|diagnostic| diagnostic.text.clone())
+        .unwrap_or_default();
+    assert!(
+        shown.contains("`cmd+shift+=` and `cmd++` are the same keys"),
+        "{shown}"
+    );
+    assert!(!app.diagnostics.tells(&About::Config));
+    // One spelling: the notice gone.
+    std::fs::write(&path, "[keys]\n\"cmd++\" = false\n").unwrap();
+    app.reload(&mut fake);
+    assert!(!app.diagnostics.tells(&About::Keys));
+    let _ = std::fs::remove_dir_all(path.parent().unwrap());
+}

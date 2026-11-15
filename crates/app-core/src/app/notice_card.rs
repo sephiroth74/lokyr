@@ -118,6 +118,7 @@ fn title_of(diagnostic: &Diagnostic) -> &'static str {
         (About::GlobalKeys, _) => "notice-global-keys",
         (About::Term, _) => "notice-term",
         (About::Theme, _) => "notice-theme",
+        (About::Keys, _) => "notice-keys",
         (About::PluginConfig(_), _) => "notice-plugin-config",
         (About::KeptWindows, _) => "notice-kept-windows",
         (About::Permissions, _) => "notice-permissions",

@@ -212,6 +212,7 @@ notice-font = A font is missing
 notice-global-keys = A global key does not work
 notice-term = The terminal type is unknown
 notice-theme = A theme does not apply
+notice-keys = Keys written twice
 notice-plugin-config = A plugin's section of the config does not apply
 notice-kept-windows = The windows of the last run do not open again
 notice-permissions = The plugins' permissions do not read

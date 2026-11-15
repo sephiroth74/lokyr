@@ -18,7 +18,7 @@ lokyr_plugin_sdk::export_plugin!(KeymapMacos);
 /// The bindings, each of its keys and of the command that they run, in
 /// their order: a menu's item shows the first of its command's keys that no
 /// later binding takes.
-pub const BINDINGS: [(&str, &str); 47] = [
+pub const BINDINGS: [(&str, &str); 46] = [
     // The application's.
     ("cmd+,", "app.settings"),
     ("cmd+q", "app.quit"),
@@ -41,10 +41,9 @@ pub const BINDINGS: [(&str, &str); 47] = [
     ("cmd+v", "pane.paste"),
     ("cmd+a", "pane.select-all"),
     ("cmd+k", "pane.clear"),
-    // The text's size: ⌘+ on a layout of its own `+` key, as the Italian,
-    // and with Shift on the US layout's `=`.
+    // The text's size: ⌘+, of a layout's own `+` key, as the Italian, or
+    // with Shift on the US layout's `=`, as `cmd+shift+=` reads too.
     ("cmd+=", "font.bigger"),
-    ("cmd+shift+=", "font.bigger"),
     ("cmd++", "font.bigger"),
     ("cmd+-", "font.smaller"),
     ("cmd+0", "font.reset"),

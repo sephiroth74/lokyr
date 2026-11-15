@@ -178,6 +178,11 @@ pub struct Config {
     /// its place: their keys are ignored.
     #[serde(skip)]
     pub moved: Vec<(String, Error)>,
+    /// What the file's `[keys]` tells as it reads, at its places: two
+    /// entries of the same keys written two ways, of which the later
+    /// holds.
+    #[serde(skip)]
+    pub told: Vec<Error>,
 }
 
 /// A section that the file's reading ignores, whatever it holds.
@@ -1695,7 +1700,8 @@ impl Config {
         };
         let document = Document::parse(text).map_err(|e| error(e.span(), e.message()))?;
         check_keys(document.as_table()).map_err(|(span, message)| error(span, &message))?;
-        check_bindings(document.as_table()).map_err(|(span, message)| error(span, &message))?;
+        let twice =
+            check_bindings(document.as_table()).map_err(|(span, message)| error(span, &message))?;
         schema::check_lengths(document.as_table())
             .map_err(|(span, message)| error(span, &message))?;
         let plugins = PluginsConfig::read(document.as_table(), text, path)
@@ -1714,6 +1720,11 @@ impl Config {
             .map_err(|e| error(e.span(), e.message()))?;
         config.plugins = plugins;
         config.moved = moved;
+        // Of two entries of the same keys, the later of the file holds.
+        for (span, message, earlier) in twice {
+            config.keys.bindings.remove(&earlier);
+            config.told.push(error(span, &message));
+        }
         Ok(config)
     }
 }
@@ -2341,16 +2352,24 @@ fn sections() -> [(&'static str, &'static [&'static str]); 18] {
 /// A span of the config's text, which tells an error's line.
 type Span = Option<std::ops::Range<usize>>;
 
+/// The entries of `[keys]` of the same keys as an earlier one's: each at its
+/// place, of its notice and of the earlier's keys, which it takes the place
+/// of.
+type Twice = Vec<(Span, String, String)>;
+
 /// Fails at the first binding of `[keys]` that is not one, at its own line:
-/// keys that are not a combination or a sequence, or that another entry
-/// names otherwise, as `opt+x` and `alt+x`; a command's name that is not
-/// one, `true`, a binding without its command or with another field,
+/// keys that are not a combination or a sequence; a command's name that is
+/// not one, `true`, a binding without its command or with another field,
 /// arguments that are not plain values, and a `when` that is not an
 /// expression of the contexts; and a global key that is not one, or that
-/// takes a `when`, `false` or several bindings.
-fn check_bindings(root: &dyn TableLike) -> Result<(), (Span, String)> {
+/// takes a `when`, `false` or several bindings. Two entries of the same keys
+/// written two ways, as `opt+x` and `alt+x`, read: each pair's notice at the
+/// later's place, of the earlier's keys, which the later's take the place
+/// of.
+fn check_bindings(root: &dyn TableLike) -> Result<Twice, (Span, String)> {
+    let mut twice = Vec::new();
     let Some(item) = root.get("keys") else {
-        return Ok(());
+        return Ok(twice);
     };
     let Some(table) = item.as_table_like() else {
         return Err((item.span(), "`keys` is a section, not a value".to_owned()));
@@ -2364,13 +2383,20 @@ fn check_bindings(root: &dyn TableLike) -> Result<(), (Span, String)> {
             None => crate::keymap::parse_keys(keys),
         }
         .map_err(|message| (span.clone(), message))?;
-        if let Some((.., other)) = named.iter().find(|(of_all, named, _)| {
+        // The same keys of another spelling: told, the later holding, as
+        // a config of 1.1 named `cmd+shift+=` and `cmd++` apart.
+        if let Some(at) = named.iter().position(|(of_all, named, _)| {
             *of_all == global.is_some() && crate::keymap::same_keys(named, &combos)
         }) {
-            return Err((
-                span,
-                format!("`{keys}` and `{other}` are the same keys, which one entry binds"),
+            let other = named[at].2;
+            twice.push((
+                span.clone(),
+                format!(
+                    "`{other}` and `{keys}` are the same keys, of which the later, `{keys}`, holds"
+                ),
+                other.to_owned(),
             ));
+            named.remove(at);
         }
         named.push((global.is_some(), combos, keys));
         let at = value.span().or(span.clone());
@@ -2420,7 +2446,7 @@ fn check_bindings(root: &dyn TableLike) -> Result<(), (Span, String)> {
             )));
         }
     }
-    Ok(())
+    Ok(twice)
 }
 
 /// Fails for a command's name that is not one.
@@ -3119,22 +3145,6 @@ long-command = 0
                 3,
                 "needs its `command`",
             ),
-            // The same keys in two spellings.
-            (
-                "[keys]\n\"alt+x\" = \"tabs.new\"\n\"opt+x\" = \"tabs.next\"\n",
-                3,
-                "the same keys",
-            ),
-            (
-                "[keys]\n\"cmd+shift+n\" = \"tabs.new\"\n\"shift+cmd+n\" = false\n",
-                3,
-                "the same keys",
-            ),
-            (
-                "[keys]\n\"cmd+shift+]\" = \"tabs.new\"\n\"cmd+}\" = false\n",
-                3,
-                "the same keys",
-            ),
             // A global key of one key with a modifier, of a command alone.
             (
                 "[keys]\n\"global:a\" = \"window.toggle-quick-terminal\"\n",
@@ -3160,11 +3170,6 @@ long-command = 0
                 "[keys]\n\"global:ctrl+`\" = { command = \"window.new\", when = \"selection\" }\n",
                 2,
                 "without a `when`",
-            ),
-            (
-                "[keys]\n\"global:alt+x\" = \"tabs.new\"\n\"global:opt+x\" = \"tabs.next\"\n",
-                3,
-                "the same keys",
             ),
         ];
         for (text, line, message) in cases {
@@ -4311,5 +4316,48 @@ long-command = 0
             "; did you mean `family`?"
         );
         assert_eq!(nearest("colour", &["family", "size"], "", ""), "");
+    }
+
+    #[test]
+    fn two_spellings_of_the_same_keys_read_the_later_holding_and_told() {
+        // As 1.1 needed to take both defaults of a key away; a global key's
+        // two spellings alike.
+        let global =
+            parse("[keys]\n\"global:alt+x\" = \"tabs.new\"\n\"global:opt+x\" = \"tabs.next\"\n")
+                .unwrap();
+        assert_eq!(global.told.len(), 1);
+        assert!(global.keys.bindings.contains_key("global:opt+x"));
+        let config = parse("[keys]\n\"cmd+shift+=\" = false\n\"cmd++\" = false\n").unwrap();
+        assert_eq!(config.keys.bindings.keys().collect::<Vec<_>>(), ["cmd++"]);
+        let [told] = &config.told[..] else {
+            panic!("{:?}", config.told);
+        };
+        assert_eq!(told.position.map(|at| at.line), Some(3));
+        assert!(told.message.contains("`cmd+shift+=` and `cmd++`"), "{told}");
+        // Two values: the later of the file, whatever their keys' order;
+        // three spellings, two notices, the last holding.
+        let config = parse(
+            "[keys]\n\"shift+cmd+n\" = \"tabs.new\"\n\"cmd+shift+n\" = \"window.new\"\n\"opt+x\" = \"tabs.next\"\n\"alt+x\" = false\n\"option+x\" = \"tabs.prev\"\n",
+        )
+        .unwrap();
+        let bindings = &config.keys.bindings;
+        assert_eq!(
+            bindings.get("cmd+shift+n"),
+            Some(&KeyValue::Command("window.new".to_owned()))
+        );
+        assert!(!bindings.contains_key("shift+cmd+n"));
+        assert_eq!(
+            bindings.get("option+x"),
+            Some(&KeyValue::Command("tabs.prev".to_owned()))
+        );
+        assert!(!bindings.contains_key("opt+x") && !bindings.contains_key("alt+x"));
+        assert_eq!(config.told.len(), 3);
+        // None of a config of one spelling each.
+        assert!(
+            parse("[keys]\n\"cmd+=\" = false\n")
+                .unwrap()
+                .told
+                .is_empty()
+        );
     }
 }

@@ -1551,6 +1551,27 @@ impl<B: Backend> App<B> {
     /// Checks the plugins' sections of the config against their schemas,
     /// which tell what they refused and ignored in notices of their own,
     /// in place of those of the config before.
+    /// Tells the config's `[keys]` entries of the same keys written two
+    /// ways, the first in the notice and every one in the log, or takes
+    /// their notice away where the config has none.
+    fn tell_keys(&mut self, platform: &mut dyn Platform) {
+        let Some((first, rest)) = self.config.told.split_first() else {
+            return self.resolve(platform, &About::Keys);
+        };
+        for told in rest {
+            eprintln!("lokyr: {told}");
+        }
+        let more = match rest.len() {
+            0 => String::new(),
+            count => format!(", and {count} more in the log"),
+        };
+        let text = format!("{first}{more}");
+        self.report(
+            platform,
+            Diagnostic::new(Code::InvalidConfig, text, About::Keys),
+        );
+    }
+
     fn configure_plugins(&mut self, platform: &mut dyn Platform) {
         let notices = self.plugins.configure(&self.config.plugins);
         if self
@@ -1907,7 +1928,11 @@ impl<B: Backend> App<B> {
             self.cursor_guide = config.cursor.guide;
             platform.set_command_checked(CURSOR_GUIDE, self.cursor_guide);
         }
+        let told = config.told != self.config.told;
         let agents = std::mem::replace(&mut self.config, config).agents;
+        if told {
+            self.tell_keys(platform);
+        }
         if self.config.agents != agents {
             self.apply_agents(platform, &agents);
         }
@@ -3215,6 +3240,7 @@ impl<B: Backend> App<B> {
             .set_state_directory(self.state.clone().filter(|_| !self.benched));
         self.add_installed(platform);
         self.configure_plugins(platform);
+        self.tell_keys(platform);
         // A plugin whose activation failed is disabled, which the notice of
         // the plugins that stopped tells.
         let _failed = self.with_plugins(platform, Plugins::activate);
