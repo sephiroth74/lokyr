@@ -52,6 +52,17 @@ const ROW: &str = "editor-token:";
 const VALUE: &str = "editor-value:";
 const RESET: &str = "editor-reset:";
 
+/// The link to the guide for theme authors.
+const GUIDE: &str = "editor-guide";
+
+/// The address of the guide for theme authors of this version, on its
+/// repository at the version's tag, as the settings' guide of the config.
+const GUIDE_ADDRESS: &str = concat!(
+    "https://github.com/sephiroth74/lokyr/blob/v",
+    env!("CARGO_PKG_VERSION"),
+    "/docs/themes/authoring.md"
+);
+
 /// How long typing pauses before a value typed is written, as the
 /// settings' fields wait.
 const PAUSE: Duration = Duration::from_millis(600);
@@ -231,6 +242,7 @@ impl Editor {
                 cx.request_render(themes_page())?;
             }
             (UiEventKind::Click, LOCK) => self.unlock(cx)?,
+            (UiEventKind::Click, GUIDE) => cx.open(GUIDE_ADDRESS)?,
             // A color's value typed: written as typing pauses, on Return,
             // and as its field is left.
             (UiEventKind::InputChanged { text, .. }, _) if key.starts_with(VALUE) => {
@@ -557,7 +569,16 @@ impl Editor {
             height: Length::Points(0.0),
             ..Layout::default()
         });
-        let column = Node::container(vec![chooser, filter, list])
+        // The guide for theme authors, which a browser opens.
+        let guide = Node::button(message(cx, "editor-guide", &[]).as_str())
+            .key(GUIDE)
+            .as_link()
+            .tooltip(GUIDE_ADDRESS)
+            .style(Style {
+                text_size: Some(TextSize::Small),
+                ..Style::default()
+            });
+        let column = Node::container(vec![chooser, filter, list, guide])
             .key("editor-column")
             .role(Role::Group)
             .layout(Layout {

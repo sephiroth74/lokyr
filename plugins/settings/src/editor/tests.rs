@@ -770,3 +770,17 @@ fn a_value_typed_is_written_as_typing_pauses_on_return_and_as_its_field_is_left(
         .unwrap();
     assert_eq!(written(&mut host), [set_paper("accent", None)]);
 }
+
+#[test]
+fn the_guide_for_theme_authors_opens_of_its_link_at_the_version_s_tag() {
+    let (mut host, mut plugin) = shown();
+    let tree = page(&mut host, &mut plugin);
+    assert!(find(&tree, GUIDE).is_some());
+    assert!(GUIDE_ADDRESS.contains(&format!("/blob/v{}/", env!("CARGO_PKG_VERSION"))));
+    let _ = host.take_done();
+    host.ui_event(&mut plugin, &click(GUIDE)).unwrap();
+    assert!(
+        host.take_done()
+            .contains(&Request::Open(GUIDE_ADDRESS.to_owned()))
+    );
+}
