@@ -23,7 +23,7 @@ The split is the same as cargo and rustc: the app runs plugins, and Sleip provid
 
 | Command | What it does |
 |---|---|
-| `sleip new <name>` | Scaffolds a plugin of Luau that works, as `owner/name`, in a folder of its name after the owner: its manifest, `src/init.luau` of a command that shows a notice, its texts in English, a test, the API's type definitions and luau-lsp's settings |
+| `sleip new <name>` | Scaffolds a plugin of Luau that works, as `owner/name`, in a folder of its name after the owner: its manifest, `src/init.luau` of a command that shows a notice, its texts in English, a test, the API's type definitions and luau-lsp's settings; with `--themes`, a package of themes: its manifest, a theme of Lokyr's format in `themes/`, named after the package, as `Harbor Night` of `acme/harbor-night`, and a README |
 | `sleip check` | Checks the plugin of the current folder as the registry's CI checks it: its manifest, of its capabilities, of the ones that the app refuses before 1.0.0, of its activations, an `osc:` one refused as the app refuses it until the handlers of OSC sequences come, and its `[uses]`; the plugin API's version against Sleip's; its catalogs, each that parses, and its commands' titles in English; its config's schema, as the app reads it, each key once in its object and of no key `enabled`; its package's layout and sizes; and its sources' types, `src/**/*.luau` in strict mode, against the API's definitions that Sleip holds, of Luau's own type checker, of the solver that luau-lsp takes by default, without the globals that the app takes away, as `print` and `loadstring`; each problem of its file, line and column, and a failure of any |
 | `sleip test` | Runs the plugin's tests, each function of the table that each file `tests/*.luau` returns, of a `TestHost` of its own, the plugin made anew on the SDK's fake host as the app sets it up: of its manifest's capabilities, `[uses]` and slots, as the app reads them, of its package's `src/` alone, beside the app's commands and its first-party plugins' (`luau/commands.json`, which `just luau-commands` writes of the app's registry and its tests check); its commands run as the registry runs them, their arguments checked and their defaults given, and the events reach it of its subscriptions, as the app delivers them, a tab's or a pane's change that a plugin without `process-read` cannot read not, and a timer's event of `advance` alone, a posted one failing; a failure tells its file and line, and fails the command, as a file of no test does |
 | `sleip dev` | Checks the plugin and links its folder into the app's plugins, a dev entry of `plugins.lock` that names the folder, of no hash, which the app watches and reloads at each change, and checks it again at each change, telling its problems; Ctrl-C ends it, the entry taken back, the entry of an installed plugin of its name, whose place it took meanwhile, given back, and a lockfile that it made, of no plugin left, taken away |
@@ -96,7 +96,7 @@ Each line is an object of its `event` and of the fields below; a field of no val
 | `kind` | Contents | Capabilities |
 |---|---|---|
 | `luau` | Luau sources plus assets | As declared |
-| `themes` | Theme files only (`.itermcolors`, `.toml`) | None: contains no code |
+| `themes` | Theme files only (`.itermcolors`, `.toml`), in `themes/` | None: contains no code, and so no `[activation]`, `[capabilities]`, `[uses]`, `[contributes]`, `[dependencies]` nor `thread`; `sleip test` runs nothing of it |
 | `builtin` | Manifests of the first-party plugins in the repo | Not distributed |
 
 ## File formats
@@ -131,7 +131,20 @@ slots = ["status-bar"]
 config-schema = "schema.json"
 
 [dependencies]              # other plugins required at runtime
-"lokyr/themes" = "^0.3"
+"sephiroth74/search-core" = "^0.2"
+```
+
+A package of themes is of its manifest and its themes alone:
+
+```toml
+[plugin]
+name = "acme/nord-themes"
+version = "1.0.0"
+kind = "themes"
+license = "MIT"
+description = "Nord's themes, light and dark"
+repository = "https://github.com/acme/nord-themes"
+keywords = ["theme", "nord"]
 ```
 
 | Field | Required | Meaning |
@@ -186,7 +199,7 @@ kind = "luau"
 source = "registry+https://pkg.lokyr.dev"
 checksum = "sha256:9f2c…"
 capabilities = ["terminal-read", "clipboard-write"]
-dependencies = ["lokyr/themes 0.3.1"]
+dependencies = ["sephiroth74/search-core 0.2.4"]
 
 [[package]]
 name = "me/my-plugin"
@@ -268,7 +281,7 @@ Registry v1 adds its API's address, `api`, beside `dl`.
 `GET /index/{owner}/{name}` returns NDJSON, one line per version, then a last line, the file's signature, of the lines before it and of its time, by one of the index keys. The lines of the versions are never taken away, each in its versions' order, a version published after a later one, as a fix of an older line, among them; the only field that changes is `yanked`. `sleip registry index --deployed <address>` holds it so: it reads the index deployed, each file checked against the registry's own `keys.json`, whatever its time, keeps each of its lines as it was signed, in their versions' order, of its yank the registry's, never dropping one, and reads the new versions alone of their archives, those at hand or downloaded of their releases, public, so that an asset replaced in its release changes no line that was signed, and a run of no new version downloads no archive for the index; a version whose archive cannot be had or does not hold it is told as `failed` and left to a later run, the others written; a plugin's file that does not read keeps its lines; a deployed file that does not read or check, as of a key taken off or a host's fault, is made anew of the releases' assets, which stay as they were made, told as failed; an index deployed that is not there, every plugin made anew so. `index` refuses a `keys.json` of the registry's that the Sleips would refuse, expired, older than `KEYS_NOT_BEFORE` or of a time to come, and tells one within 30 days of its year's end; `sign-keys` refuses a clock behind `KEYS_NOT_BEFORE` or behind the file's own time. The site reads the archive of each plugin's version shown, for its README and license, checked against the index's checksum: one that does not check is told as `failed`, its page of the index alone. A plugin's file that does not read is told so too, its page of the index alone; the README's list comes after the site's upload, and a README of its marks gone wrong is told, the index and the site deployed all the same. The registry's files are read of `plugins/` alone.
 
 ```json
-{"v":1,"name":"sephiroth74/search-plus","vers":"0.1.2","kind":"luau","api":"^0.1","deps":[{"name":"lokyr/themes","req":"^0.3"}],"caps":["terminal-read","clipboard-write"],"uses":["pane.copy","tabs.*"],"cksum":"sha256:9f2c…","yanked":false}
+{"v":1,"name":"sephiroth74/search-plus","vers":"0.1.2","kind":"luau","api":"^0.1","deps":[{"name":"sephiroth74/search-core","req":"^0.2"}],"caps":["terminal-read","clipboard-write"],"uses":["pane.copy","tabs.*"],"cksum":"sha256:9f2c…","yanked":false}
 {"generated":"2026-11-04T10:00:00Z","key":"ed25519:…","sig":"ed25519:…"}
 ```
 

@@ -426,6 +426,31 @@ impl Manifest {
             .into_iter()
             .map(toml::Spanned::into_inner)
             .collect();
+        // A package of themes holds no code: nothing that runs, asks, or
+        // contributes but its themes.
+        if kind == Kind::Themes {
+            let coded = [
+                (!activation.is_empty(), "`[activation]`"),
+                (!capabilities.is_empty(), "`[capabilities]`"),
+                (!file.uses.commands.is_empty(), "`[uses]`"),
+                (!dependencies.is_empty(), "`[dependencies]`"),
+                (
+                    !contributes.commands.is_empty()
+                        || !contributes.keybindings.is_empty()
+                        || !contributes.slots.is_empty()
+                        || !contributes.pages.is_empty()
+                        || contributes.config_schema.is_some(),
+                    "`[contributes]`",
+                ),
+                (plugin.thread != Thread::default(), "`thread`"),
+            ];
+            if let Some((_, what)) = coded.iter().find(|(has, _)| *has) {
+                return Err(fail(
+                    plugin.kind.span(),
+                    format!("a package of themes holds no code, and so no {what}"),
+                ));
+            }
+        }
         Ok(Self {
             name: plugin.name.into_inner(),
             kind,
@@ -1183,5 +1208,34 @@ config-schema = "schema.json"
         // A built-in plugin contributes the app's commands.
         let builtin = "[plugin]\nname = \"lokyr/quick\"\nkind = \"builtin\"\nlicense = \"MIT\"\n[contributes]\ncommands = [{ name = \"window.toggle-quick\", title = \"Quick\" }]\n";
         assert!(Manifest::parse(builtin).is_ok());
+    }
+
+    #[test]
+    fn a_package_of_themes_holds_no_code() {
+        let themes = "[plugin]\nname = \"acme/nightfall\"\nversion = \"1.0.0\"\nkind = \"themes\"\nlicense = \"MIT\"\ndescription = \"Dark themes\"\n";
+        let manifest = Manifest::parse(themes).unwrap();
+        assert_eq!(manifest.kind, Kind::Themes);
+        assert!(manifest.api.is_none() && manifest.takes_api("0.1.3"));
+        let wrong = |extra: &str| {
+            Manifest::parse(&format!("{themes}{extra}"))
+                .unwrap_err()
+                .to_string()
+        };
+        for (extra, what) in [
+            ("[capabilities]\nterminal-read = true\n", "`[capabilities]`"),
+            ("[activation]\non = [\"startup\"]\n", "`[activation]`"),
+            ("[uses]\ncommands = [\"tabs.*\"]\n", "`[uses]`"),
+            ("[dependencies]\n\"acme/x\" = \"^1\"\n", "`[dependencies]`"),
+            (
+                "[contributes]\ncommands = [{ name = \"nightfall.go\", title = \"Go\" }]\n",
+                "`[contributes]`",
+            ),
+        ] {
+            let error = wrong(extra);
+            assert!(
+                error.starts_with("4:8: a package of themes holds no code") && error.contains(what),
+                "{error}"
+            );
+        }
     }
 }

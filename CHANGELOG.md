@@ -10,6 +10,7 @@ from 1.0.0; before it, a minor version may change what a previous one did.
 
 ### Added
 
+- `sleip new --themes owner/name` makes a package of themes, its manifest, a theme of Lokyr's format and a README, which `sleip check` checks, `sleip test` runs nothing of, and `sleip add --path`, `update` and `remove` install, update and remove; a package of themes holds no code, its manifest of no capability, activation, command nor dependency.
 - The settings window's Keys part has a field at its top that filters its shortcuts as you type, by their commands' titles or names, their keys, as ⌘K or `cmd+k`, or their contexts.
 - Window › Cycle Through Windows, ⌘`, brings forward your next window, the settings window too, and ⇧⌘` the previous one, of the key left of 1 by its place, as macOS's: ⌘\ on the Italian layout.
 

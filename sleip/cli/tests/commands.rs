@@ -1235,6 +1235,84 @@ fn add_installs_a_plugin_of_a_folder_and_update_takes_its_changes() {
 }
 
 #[test]
+fn a_package_of_themes_is_made_checked_installed_and_removed_of_a_folder() {
+    let sandbox = Sandbox::new("themes");
+    let work = sandbox.home.join("work");
+    std::fs::create_dir_all(&work).unwrap();
+    // Made: its manifest, its theme of its title and its README.
+    let made = sandbox
+        .command(&["--json", "new", "--themes", "acme/harbor-night"])
+        .current_dir(&work)
+        .output()
+        .unwrap();
+    assert!(made.status.success(), "{made:?}");
+    let json = events(&made);
+    assert_eq!(json[0]["event"], "created");
+    let folder = work.join("harbor-night");
+    let manifest = lokyr_pkg_model::manifest::Manifest::parse(
+        &std::fs::read_to_string(folder.join("plugin.toml")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(manifest.name, "acme/harbor-night");
+    assert_eq!(manifest.kind, lokyr_pkg_model::manifest::Kind::Themes);
+    let theme = std::fs::read_to_string(folder.join("themes/Harbor Night.toml")).unwrap();
+    assert!(theme.contains("name = \"Harbor Night\""), "{theme}");
+    let readme = std::fs::read_to_string(folder.join("README.md")).unwrap();
+    assert!(readme.contains("sleip add acme/harbor-night"), "{readme}");
+    assert!(!readme.contains("acme/harbor\n"), "{readme}");
+    // Checked, of no problem; tested, of no test, as it holds no code.
+    let check = checked(&sandbox, &folder, &[]);
+    assert!(check.status.success(), "{check:?}");
+    let tested = sandbox
+        .command(&["test"])
+        .current_dir(&folder)
+        .output()
+        .unwrap();
+    assert!(tested.status.success(), "{tested:?}");
+    assert!(stdout(&tested).contains("a package of themes holds no code"));
+    // `--themes` of `new` alone.
+    let wrong = sandbox.sleip(&["check", "--themes"]);
+    assert!(!wrong.status.success());
+    assert!(
+        String::from_utf8_lossy(&wrong.stderr)
+            .contains("`--themes` is an option of `sleip new` alone")
+    );
+    // Code in it, refused at its kind's line.
+    edit(&folder, "plugin.toml", |text| {
+        text + "[capabilities]\nterminal-read = true\n"
+    });
+    let refused = checked(&sandbox, &folder, &[]);
+    assert_eq!(refused.status.code(), Some(1));
+    assert!(
+        stdout(&refused).contains("a package of themes holds no code"),
+        "{}",
+        stdout(&refused)
+    );
+    edit(&folder, "plugin.toml", |text| {
+        text.replace("[capabilities]\nterminal-read = true\n", "")
+    });
+    // Installed of its folder, of the kind `themes`, then updated and
+    // removed.
+    let added = sandbox.sleip(&["--json", "add", "--path", &folder.display().to_string()]);
+    assert!(added.status.success(), "{added:?}");
+    let entry = sandbox.locked().packages["acme/harbor-night"].clone();
+    assert_eq!(entry.kind, lokyr_pkg_model::manifest::Kind::Themes);
+    let digest = entry.checksum.unwrap();
+    let stored = sandbox.store().folder(&digest);
+    assert!(stored.join("themes/Harbor Night.toml").is_file());
+    versioned(&folder, "0.2.0");
+    let updated = sandbox.sleip(&["update", "acme/harbor-night"]);
+    assert!(updated.status.success(), "{updated:?}");
+    assert_eq!(
+        sandbox.locked().packages["acme/harbor-night"].version,
+        "0.2.0"
+    );
+    let removed = sandbox.sleip(&["--json", "remove", "acme/harbor-night"]);
+    assert!(removed.status.success(), "{removed:?}");
+    assert!(!sandbox.locked().packages.contains_key("acme/harbor-night"));
+}
+
+#[test]
 fn add_installs_a_plugin_of_a_git_repository_at_a_tag_or_a_commit() {
     let sandbox = Sandbox::new("add-git");
     let folder = made(&sandbox, "remote");

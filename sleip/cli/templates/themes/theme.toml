@@ -1,0 +1,15 @@
+# A theme of Lokyr, its name its file's: of a terminal's background, its
+# text and its 16 colors, of which Lokyr derives the rest. The guide for
+# theme authors tells every key: https://lokyr.dev/docs/themes/authoring.html
+
+[theme]
+name = "Harbor"
+variant = "dark"
+
+[terminal]
+background = "#14181f"
+foreground = "#d8dee9"
+palette = [
+    "#3b4252", "#e06c75", "#98c379", "#e5c07b", "#61afef", "#c678dd", "#56b6c2", "#d8dee9",
+    "#4c566a", "#ef8a91", "#b5e09a", "#f3d28a", "#86c3ff", "#d79bea", "#7fd0db", "#eceff4",
+]

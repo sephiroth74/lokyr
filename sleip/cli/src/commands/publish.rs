@@ -53,8 +53,10 @@ pub fn publish(
         format!("plugin.toml cannot be read, as no plugin is in this folder: {error}")
     })?;
     let manifest = Manifest::parse(&text).map_err(|error| format!("plugin.toml:{error}"))?;
-    if manifest.kind != Kind::Luau {
-        return Err("the registry publishes plugins of Luau alone".to_owned());
+    if manifest.kind == Kind::Builtin {
+        return Err(
+            "the registry publishes plugins of Luau and packages of themes alone".to_owned(),
+        );
     }
     let version = manifest
         .version

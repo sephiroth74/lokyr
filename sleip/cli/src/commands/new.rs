@@ -4,7 +4,9 @@
 //! shows a notice, its texts in English, a test, the plugin API's types,
 //! `lokyr.d.luau`, and luau-lsp's settings. The template's plugin is
 //! `acme/hello`, of the namespace `hello`, which the plugin's name takes
-//! the place of.
+//! the place of. `sleip new --themes <package>` makes a package of themes
+//! instead: its manifest, a theme of Lokyr's format, named of the package,
+//! and a README, of the template `acme/harbor`.
 
 use std::path::{Path, PathBuf};
 
@@ -64,9 +66,32 @@ const TEMPLATE_NAMESPACE: &str = "hello";
 /// API that this Sleip knows.
 const TEMPLATE_API: &str = "api = \"^0.1\"";
 
-/// Makes the plugin `plugin`, `owner/name`, in the current folder, as `out`
-/// tells.
-pub fn new(out: Out, plugin: &str) -> Result<(), String> {
+/// The template of a package of themes: its manifest, its theme, which
+/// takes the package's title, and its README.
+const THEMES_TEMPLATE: [(&str, &str); 3] = [
+    (
+        "plugin.toml",
+        include_str!("../../templates/themes/plugin.toml"),
+    ),
+    (
+        "themes/Harbor.toml",
+        include_str!("../../templates/themes/theme.toml"),
+    ),
+    (
+        "README.md",
+        include_str!("../../templates/themes/README.md"),
+    ),
+];
+
+/// The template's package of themes' name.
+const THEMES_NAME: &str = "acme/harbor";
+
+/// The template's theme's name, its file's.
+const THEME_NAME: &str = "Harbor";
+
+/// Makes the plugin `plugin`, `owner/name`, in the current folder, or a
+/// package of themes of `themes`, as `out` tells.
+pub fn new(out: Out, plugin: &str, themes: bool) -> Result<(), String> {
     if !is_plugin_name(plugin) {
         return Err(format!(
             "`{plugin}` is not a plugin's name, `owner/name`, of lowercase letters, digits and `-`, each from a letter"
@@ -85,6 +110,40 @@ pub fn new(out: Out, plugin: &str) -> Result<(), String> {
             "{} is there already, and not empty",
             folder.display()
         ));
+    }
+    if themes {
+        // The theme of the package's namespace, each word capitalized, as
+        // `harbor-night` makes `Harbor Night`.
+        let title: Vec<String> = namespace
+            .split('-')
+            .filter(|word| !word.is_empty())
+            .map(|word| {
+                let mut chars = word.chars();
+                chars
+                    .next()
+                    .map(|first| first.to_uppercase().chain(chars).collect())
+                    .unwrap_or_default()
+            })
+            .collect();
+        let title = title.join(" ");
+        let mut files = Vec::new();
+        for (path, text) in THEMES_TEMPLATE {
+            let path = path.replace(THEME_NAME, &title);
+            let text = text
+                .replace(THEMES_NAME, plugin)
+                .replace(THEME_NAME, &title);
+            write(&folder, &path, &text)?;
+            files.push(path);
+        }
+        out.tell(
+            "created",
+            json!({ "name": plugin, "folder": folder.display().to_string(), "files": files }),
+            &format!(
+                "Made the package of themes {plugin} in {}: its theme, `{title}`.",
+                folder.display()
+            ),
+        );
+        return Ok(());
     }
     let mut files = Vec::new();
     for (path, text, named) in TEMPLATE {

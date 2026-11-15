@@ -167,7 +167,7 @@ fn check_folder(folder: &Path, findings: &mut Findings) {
             "plugin.toml",
             line_of_key(&text, "kind"),
             "Kind",
-            "the app refuses an installed plugin of `builtin`, which Lokyr's own plugins alone are: a package is of `luau`",
+            "the app refuses an installed plugin of `builtin`, which Lokyr's own plugins alone are: a package is of `luau` or `themes`",
         );
     }
     // An activation of OSC sequences, which the app's handlers of them
