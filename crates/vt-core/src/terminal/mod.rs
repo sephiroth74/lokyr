@@ -443,6 +443,11 @@ pub struct Terminal {
     zone: Semantic,
     /// What the shell draws again of its prompt on a resize (OSC 133).
     redraw: Redraw,
+    /// Whether the shell tells more of its prompts than their starts (OSC
+    /// 133's `B` of its input, `C` of its commands, or how it draws its
+    /// prompt again, `redraw`), so that a resize clears its prompt: one of
+    /// `A` alone runs its commands of their output in its prompt's zone.
+    prompts_told: bool,
     /// The status of the last command that ended, as OSC 133's `D` tells
     /// it.
     command_status: Option<i32>,
@@ -597,6 +602,7 @@ impl Terminal {
             link: osc::Link::default(),
             zone: Semantic::Output,
             redraw: Redraw::Whole,
+            prompts_told: false,
             command_status: None,
             commands: marks::Commands::default(),
             default_colors: Colors::default(),
@@ -788,7 +794,9 @@ impl Terminal {
     /// the screen's first row when the line starts above it, and one that
     /// draws nothing keeps its prompt, which reflows. Only the primary
     /// screen's prompt clears, and of a whole prompt only one that starts on
-    /// the screen.
+    /// the screen; and only of a shell that tells more of its prompts than
+    /// their starts, as one of OSC 133's `A` alone runs its commands in its
+    /// prompt's zone, whose output would clear.
     ///
     /// The cleared rows take the default background, whatever the pen's;
     /// the row above no longer goes on into them, as output without a final
@@ -797,7 +805,7 @@ impl Terminal {
     /// erase; and the cursor comes within the `cols` columns that the screen
     /// takes, so that the reflow does not wrap its empty row down.
     fn clear_prompt(&mut self, cols: u16) {
-        if self.alternate_active || self.zone == Semantic::Output {
+        if self.alternate_active || self.zone == Semantic::Output || !self.prompts_told {
             return;
         }
         let start = {

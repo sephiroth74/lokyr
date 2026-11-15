@@ -268,14 +268,22 @@ impl Terminal {
                         Some(b"0") => Redraw::Nothing,
                         _ => continue,
                     };
+                    self.prompts_told = true;
                 }
                 let y = self.cursor().y;
                 let (page, row) = self.screen_mut().rows.screen_row_mut(y);
                 page.row_mut(row).set(RowFlag::PromptStart, true);
                 Semantic::Prompt
             }
-            b"B" => Semantic::Input,
-            b"C" | b"D" => Semantic::Output,
+            b"B" => {
+                self.prompts_told = true;
+                Semantic::Input
+            }
+            b"C" => {
+                self.prompts_told = true;
+                Semantic::Output
+            }
+            b"D" => Semantic::Output,
             _ => return,
         };
     }

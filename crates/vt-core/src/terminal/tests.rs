@@ -4187,6 +4187,23 @@ fn output_without_a_final_newline_stays_through_a_wider_screen() {
 }
 
 #[test]
+fn a_shell_of_a_alone_keeps_a_running_command_s_output_through_a_resize() {
+    // A prompt of `A` alone, which tells neither its input nor a command's
+    // start, and a command that runs and prints: the resize clears nothing,
+    // its rows reflowing.
+    let mut term = Term::new(10, 6);
+    term.feed("out\r\n\x1b]133;A\x07$ ls\r\nrunning-output\r\nmore");
+    term.terminal.resize(5, 6);
+    let shown = term.screen().concat();
+    assert!(shown.contains("more") && shown.contains("runni"), "{shown}");
+    // Once the shell tells its input's start, its prompt clears.
+    let mut term = Term::new(10, 6);
+    term.feed("out\r\n\x1b]133;A\x07$ \x1b]133;B\x07ls");
+    term.terminal.resize(5, 6);
+    assert_eq!(term.screen(), ["out", "", "", "", "", ""]);
+}
+
+#[test]
 fn the_redraw_option_tells_what_a_resize_clears() {
     // Nothing, for a shell that draws nothing again.
     let mut term = prompted("A;redraw=0");

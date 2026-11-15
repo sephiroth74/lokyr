@@ -23,6 +23,7 @@ from 1.0.0; before it, a minor version may change what a previous one did.
 
 ### Fixed
 
+- A resize no longer clears a running command's output of a shell whose prompt marks its start alone: its prompt clears as the shell draws it again only where the shell tells its input or its commands too.
 - The keyboard and a zoom stay on one pane: a pane that takes the keyboard, as Go to Next Agent or a notification's click brings it forward, ends its tab's zoom of another, and a pane zoomed takes the keyboard.
 - A right click on a word, or ⌘ over it, no longer waits on a volume that does not answer, as a network's: a path there shows no link's underline, and a ⌘-click still opens it.
 - A ⌘-click on a path of a volume that does not answer, as a network's, no longer holds Lokyr: the path resolves on a thread of its own, and opens as it answers.
