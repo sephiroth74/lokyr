@@ -2,25 +2,23 @@
 
 **Version 1.0 targets macOS only**. Linux comes after 1.0, in F7. To keep that door open, CI builds and tests the platform-independent crates on Linux from F0 onward.
 
-Estimates are rough and assume one full-time developer experienced in Rust. The macOS MVP (F0–F3) takes about 6–9 months.
-
 Each phase is broken into tasks of one day or less. A phase's breakdown is written near the end of the previous phase.
 
 ## Overview
 
-| Phase | Contents | Exit criteria | Duration |
-|---|---|---|---|
-| F0 Foundations | Workspace, CI, dependency rules, ADRs, budget harness, notarized plugin-runtime spikes | CI green; ADRs approved; plugin runtime decided | 2–3 weeks |
-| F1 Headless VT core | `vt-core`, `pty`, `session`, `search` engine, `lokyr-replay`, fuzzing and differential tests | Compatibility and throughput measured (see below) | 8–12 weeks |
-| F2 macOS, single pane | macOS platform, CoreText fonts, Metal rendering, minimal kernel, `core-actions` | Used as the main terminal for a week | 8–12 weeks |
-| F3 **macOS MVP** | Full kernel, native SDK, `ui-core` with the plugins' widgets and floating panels, `tabs`, `splits`, `search` plugins, iTerm2 themes, palette, the agents' state on the tabs; copy mode, the scrollbar, shell integration with prompt jumping and notifications, the command's sticky header, the programs' progress, windows restored with their directories, the Finder's service; a DMG, updates through Sparkle; after F4, the first public release, 1.0.0 | Every must-have requirement in place | 12–16 weeks |
-| F4 Plugin ecosystem | Before 1.0.0: Luau host, Luau API, Sleip, registry v0, `snap` and `awake` published | Publishing and installing work end to end; `snap` and `awake` in the registry; then 1.0.0 | 8–10 weeks |
-| F3b Settings and themes | After 1.0.0: a settings window, of the `plugin-manager`'s page and the config's; themes made, duplicated and imported in the app | The settings window edits the config and the keys' bindings; a theme made and imported in the app | 3–4 weeks |
-| F5a Shell integration and blocks | Warp-style blocks, the last command's output, ssh integration | Verified in zsh, bash and fish, including over ssh | 3–5 weeks |
-| F5b iTerm2 power features | tmux -CC, triggers, profiles, broadcast, the scrollback restored | tmux -CC workflows on par with iTerm2 | 8–11 weeks |
-| F5c Graphics and kitty protocols | kitty graphics, sixel, iTerm2 images, hints and URLs | `kitten icat`, `imgcat` and `chafa` work | 6–8 weeks |
-| F6 Plugin API 1.0 and hardening | Hardening, docs, stable plugin API 1.0 | The plugin API 1.0's criteria (see [Versions](#versions)) | — |
-| F7 After 1.0 | Linux, registry v1, Windows, mux daemon, lz4, custom shaders, an AI assistant | — | — |
+| Phase | Contents | Exit criteria |
+|---|---|---|
+| F0 Foundations | Workspace, CI, dependency rules, ADRs, budget harness, notarized plugin-runtime spikes | CI green; ADRs approved; plugin runtime decided |
+| F1 Headless VT core | `vt-core`, `pty`, `session`, `search` engine, `lokyr-replay`, fuzzing and differential tests | Compatibility and throughput measured (see below) |
+| F2 macOS, single pane | macOS platform, CoreText fonts, Metal rendering, minimal kernel, `core-actions` | Used as the main terminal for a week |
+| F3 **macOS MVP** | Full kernel, native SDK, `ui-core` with the plugins' widgets and floating panels, `tabs`, `splits`, `search` plugins, iTerm2 themes, palette, the agents' state on the tabs; copy mode, the scrollbar, shell integration with prompt jumping and notifications, the command's sticky header, the programs' progress, windows restored with their directories, the Finder's service; a DMG, updates through Sparkle; after F4, the first public release, 1.0.0 | Every must-have requirement in place |
+| F4 Plugin ecosystem | Before 1.0.0: Luau host, Luau API, Sleip, registry v0, `snap` and `awake` published | Publishing and installing work end to end; `snap` and `awake` in the registry; then 1.0.0 |
+| F3b Settings and themes | After 1.0.0: a settings window, of the `plugin-manager`'s page and the config's; themes made, duplicated and imported in the app | The settings window edits the config and the keys' bindings; a theme made and imported in the app |
+| F5a Shell integration and blocks | Warp-style blocks, the last command's output, ssh integration | Verified in zsh, bash and fish, including over ssh |
+| F5b iTerm2 power features | tmux -CC, triggers, profiles, broadcast, the scrollback restored | tmux -CC workflows on par with iTerm2 |
+| F5c Graphics and kitty protocols | kitty graphics, sixel, iTerm2 images, hints and URLs | `kitten icat`, `imgcat` and `chafa` work |
+| F6 Plugin API 1.0 and hardening | Hardening, docs, stable plugin API 1.0 | The plugin API 1.0's criteria (see [Versions](#versions)) |
+| F7 After 1.0 | Linux, registry v1, Windows, mux daemon, lz4, custom shaders, an AI assistant | — |
 
 ## Phases in detail
 
@@ -181,7 +179,7 @@ Of no phase nor version: whether Lokyr becomes an MCP server at all is decided l
 ### F5b — iTerm2 power features
 
 - **tmux -CC**: tmux windows and panes become native tabs and splits.
-- **Windows and sessions**: input broadcast; the scrollback restored with the windows, which F3 restores, after 1.0.0: each pane's rows, their styles, wrapping and the commands' marks, saved at the quit beside `windows.json` in files readable by their owner alone, a bound of rows a pane, the rows of the protected input left out, `[app] restore-scrollback` on by default, shown above the new shell's prompt under a line of the session's date; the processes themselves new, as their survival is F7's mux daemon (about three days). The quick terminal came in F2.
+- **Windows and sessions**: input broadcast; the scrollback restored with the windows, which F3 restores, after 1.0.0: each pane's rows, their styles, wrapping and the commands' marks, saved at the quit beside `windows.json` in files readable by their owner alone, a bound of rows a pane, the rows of the protected input left out, `[app] restore-scrollback` on by default, shown above the new shell's prompt under a line of the session's date; the processes themselves new, as their survival is F7's mux daemon. The quick terminal came in F2.
 - **Automation**: triggers; profiles with automatic switching (by host or directory).
 - **Search**: filter mode.
 - **The context menu**: broadcast, locked panes, annotations, triggers and snippets ([UI-AND-FEATURES](UI-AND-FEATURES.md#the-panes-context-menu)).
@@ -207,7 +205,7 @@ Of no phase nor version: whether Lokyr becomes an MCP server at all is decided l
 
 ### F7 — After 1.0
 
-**Linux** (about 11–16 weeks):
+**Linux**:
 - **A spike first**: a single-pane Wayland + GL window, used to extend the thin traits for Linux.
 - **`platform-wayland`** with full CSD:
   - resize edges, cursors, window menu;
