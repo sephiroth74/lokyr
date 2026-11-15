@@ -307,6 +307,7 @@ fn a_call_s_new_tab_and_split_enter_the_workspace_its_later_writes_find_them_and
             "pane-focused",
             "tab-activated",
             "layout-changed",
+            "pane-focused",
         ]
     );
     let mut probe = Probe::new(move |cx, _| {
@@ -324,11 +325,12 @@ fn a_call_s_new_tab_and_split_enter_the_workspace_its_later_writes_find_them_and
                 hidden: false,
             }]
         );
-        // The window shows the new tab, whose keyboard the split has.
-        assert_eq!(cx.focused_pane(), Some(split));
+        // The window shows the new tab, whose keyboard the zoomed pane
+        // took from the split.
+        assert_eq!(cx.focused_pane(), Some(pane));
         let tabs = cx.tabs(WindowId(1))?;
         assert_eq!(tabs[1].panes, [pane, split]);
-        assert_eq!((tabs[1].focused, tabs[1].zoomed), (split, Some(pane)));
+        assert_eq!((tabs[1].focused, tabs[1].zoomed), (pane, Some(pane)));
         assert_eq!(
             cx.layout(tab)?,
             Layout::Split {
