@@ -2276,6 +2276,19 @@ impl fmt::Display for Error {
 
 impl std::error::Error for Error {}
 
+impl From<lokyr_themes::Error> for Error {
+    fn from(error: lokyr_themes::Error) -> Self {
+        Self {
+            path: error.path,
+            position: error.position.map(|at| Position {
+                line: at.line,
+                column: at.column,
+            }),
+            message: error.message,
+        }
+    }
+}
+
 /// A place in a file: its line and its column, in characters, both from 1.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Position {

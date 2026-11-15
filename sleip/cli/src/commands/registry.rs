@@ -1112,8 +1112,11 @@ fn problems_of_manifest(manifest: &Manifest, plugin: &str, release: &Release) ->
             manifest.version.as_deref().unwrap_or("none")
         ));
     }
-    if manifest.kind != Kind::Luau {
-        problems.push("it is no plugin of Luau, which the registry publishes alone".to_owned());
+    if manifest.kind == Kind::Builtin {
+        problems.push(
+            "it is a plugin built into the app, which the registry publishes not: a package is of `luau` or `themes`"
+                .to_owned(),
+        );
     }
     problems
 }

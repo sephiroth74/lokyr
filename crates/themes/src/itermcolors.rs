@@ -14,7 +14,7 @@ use lokyr_plugin_sdk::theme::{TerminalColors, Theme, ThemeColor, ThemeVariant};
 use plist::stream::{Event, Reader};
 use plist::{Dictionary, Value};
 
-use crate::config::Error;
+use crate::Error;
 
 /// The suffixes of a key of the light appearance's and of the dark one's,
 /// and the themes' that they make.

@@ -96,7 +96,7 @@ Each line is an object of its `event` and of the fields below; a field of no val
 | `kind` | Contents | Capabilities |
 |---|---|---|
 | `luau` | Luau sources plus assets | As declared |
-| `themes` | Theme files only (`.itermcolors`, `.toml`), in `themes/` | None: contains no code, and so no `[activation]`, `[capabilities]`, `[uses]`, `[contributes]`, `[dependencies]` nor `thread`; `sleip test` runs nothing of it |
+| `themes` | Theme files only (`.itermcolors`, `.toml`), in `themes/` | None: contains no code, and so no `[activation]`, `[capabilities]`, `[uses]`, `[contributes]`, `[dependencies]` nor `thread`; `sleip check` and the registry's checks read each theme as the app reads it, its errors at their lines, and refuse two themes of one name; `sleip test` runs nothing of it |
 | `builtin` | Manifests of the first-party plugins in the repo | Not distributed |
 
 ## File formats

@@ -42,7 +42,7 @@ This document describes Lokyr as a whole. Each subsystem has its own document wi
 | UI engine | `ui-core`, `text-core`, `render-core` | View tree, layout, widgets, text, display list. Platform-independent |
 | Per-OS backends | `platform-*`, `render-*`, `font-*` | Windows and events, GPU, fonts. One crate per OS and engine, behind the traits of the `*-core` crates |
 | Plugins | `plugin-sdk`, `plugin-host-luau`, `plugins/*` | API and Rust SDK, Luau host, first-party plugins |
-| Packages | `pkg-model`, `sleip/*`, `registry/*` | Shared formats, package manager, registry |
+| Packages | `pkg-model`, `themes`, `sleip/*`, `registry/*` | Shared formats, themes' format, package manager, registry |
 
 ## Kernel data model
 
@@ -133,6 +133,7 @@ lokyr/
 │   ├── plugin-sdk/        the plugin API (the HostApi's messages and their types, the view tree's data) and its Rust front end; no internal dependencies
 │   ├── plugin-host-luau/  Luau host (mlua): one VM per plugin, the Luau front end, capabilities, limits (behind a feature); `luau/`: the API's types, `lokyr.d.luau`, and the template of `sleip new`
 │   ├── pkg-model/         plugin.toml, plugins.toml/.lock, the store, the archive, index format, dist (shared by app, sleip, registry)
+│   ├── themes/            the themes' native format, its parser and writer, iTerm2's .itermcolors, a theme's resolution (shared by the kernel and sleip)
 │   └── app/               the `lokyr` binary: `main`, the backends for the target, their wiring + distribution
 ├── plugins/               first-party: depend ONLY on plugin-sdk
 │   ├── core-actions/ links/ tabs/ splits/ search/ quick-terminal/
@@ -158,14 +159,15 @@ app ─┬─▶ app-core ─▶ kernel
      │           │             ├─▶ render-core
      │           │             └─▶ plugin-sdk          (the view tree's types, which it keeps)
      │           ├─▶ plugin-sdk                      (the kernel serves the HostApi's messages)
-     │           └─▶ pkg-model
+     │           ├─▶ pkg-model
+     │           └─▶ themes ──▶ plugin-sdk          (the themes' format, which sleip reads too)
      ├─▶ platform-{macos|wayland|x11} ─▶ platform-core
      ├─▶ render-{metal|gl} ─▶ render-core
      ├─▶ font-{coretext|freetype} ─▶ text-core
      ├─▶ plugin-host-luau ─▶ plugin-sdk              (feature `luau-plugins`)
      └─▶ plugins/* ─▶ plugin-sdk                     (selected by dist/*.toml)
 
-sleip/* ─▶ pkg-model           registry/* ─▶ pkg-model
+sleip/* ─▶ pkg-model, themes   registry/* ─▶ pkg-model
 ```
 
 ### Dependency rules

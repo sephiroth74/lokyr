@@ -1119,7 +1119,6 @@ version = "1.1.0"
 dependencies = [
  "fluent-bundle",
  "fluent-syntax",
- "libc",
  "lokyr-pkg-model",
  "lokyr-plugin-host-luau",
  "lokyr-plugin-sdk",
@@ -1127,9 +1126,9 @@ dependencies = [
  "lokyr-search",
  "lokyr-session",
  "lokyr-text-core",
+ "lokyr-themes",
  "lokyr-ui-core",
  "lokyr-vt-core",
- "plist",
  "proptest",
  "serde",
  "serde_json",
@@ -1346,6 +1345,16 @@ dependencies = [
  "serde",
  "thiserror",
  "toml",
+]
+
+[[package]]
+name = "lokyr-themes"
+version = "1.1.0"
+dependencies = [
+ "libc",
+ "lokyr-plugin-sdk",
+ "plist",
+ "toml_edit",
 ]
 
 [[package]]
@@ -2459,6 +2468,7 @@ dependencies = [
  "lokyr-pkg-model",
  "lokyr-plugin-host-luau",
  "lokyr-plugin-sdk",
+ "lokyr-themes",
  "pulldown-cmark",
  "semver",
  "serde_json",

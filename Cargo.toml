@@ -151,6 +151,7 @@ lokyr-search-plugin = { path = "plugins/search" }
 lokyr-splits = { path = "plugins/splits" }
 lokyr-tabs = { path = "plugins/tabs" }
 lokyr-text-core = { path = "crates/text-core" }
+lokyr-themes = { path = "crates/themes" }
 lokyr-ui-core = { path = "crates/ui-core" }
 lokyr-vt-core = { path = "crates/vt-core" }
 

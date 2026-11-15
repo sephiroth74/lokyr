@@ -524,7 +524,7 @@ fn a_held_theme_comes_after_the_folder_s_and_before_the_built_in_ones() {
 
 #[test]
 fn the_guide_s_example_theme_holds_every_key_and_token() {
-    let text = include_str!("../../../../docs/themes/example.toml");
+    let text = include_str!("../../../docs/themes/example.toml");
     let file = parse(text, Path::new("docs/themes/example.toml")).unwrap();
     let partial = &file.partial;
     // Every key of `[theme]`, those that tell people too, which the
@@ -566,7 +566,7 @@ fn the_guide_s_example_theme_holds_every_key_and_token() {
 
 #[test]
 fn the_guide_s_smallest_theme_and_its_extension_resolve() {
-    let guide = include_str!("../../../../docs/themes/authoring.md");
+    let guide = include_str!("../../../docs/themes/authoring.md");
     // The guide's blocks of TOML that make a theme, by their names.
     let blocks: Vec<&str> = guide
         .split("```toml\n")

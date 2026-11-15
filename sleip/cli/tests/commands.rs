@@ -1291,6 +1291,43 @@ fn a_package_of_themes_is_made_checked_installed_and_removed_of_a_folder() {
     edit(&folder, "plugin.toml", |text| {
         text.replace("[capabilities]\nterminal-read = true\n", "")
     });
+    // A theme that does not read, at its line; two of one name.
+    let theme = folder.join("themes/Harbor Night.toml");
+    let good = std::fs::read_to_string(&theme).unwrap();
+    std::fs::write(
+        &theme,
+        good.replace("background = \"#14181f\"", "background = \"teal\""),
+    )
+    .unwrap();
+    let refused = checked(&sandbox, &folder, &[]);
+    assert_eq!(refused.status.code(), Some(1));
+    let told = stdout(&refused);
+    assert!(told.contains("themes/Harbor Night.toml:10:"), "{told}");
+    std::fs::write(&theme, &good).unwrap();
+    std::fs::copy(&theme, folder.join("themes/Harbor Day.toml")).unwrap();
+    // An iTerm2 preset of the same name as the native file.
+    let color = "<dict><key>Red Component</key><real>0.5</real><key>Green Component</key><real>0.5</real><key>Blue Component</key><real>0.5</real></dict>";
+    let keys: String = (0..16)
+        .map(|at| format!("Ansi {at} Color"))
+        .chain(["Background Color".to_owned(), "Foreground Color".to_owned()])
+        .map(|key| format!("<key>{key}</key>{color}"))
+        .collect();
+    std::fs::write(
+        folder.join("themes/Harbor Night.itermcolors"),
+        format!("<?xml version=\"1.0\"?><plist version=\"1.0\"><dict>{keys}</dict></plist>"),
+    )
+    .unwrap();
+    let refused = checked(&sandbox, &folder, &[]);
+    assert_eq!(refused.status.code(), Some(1));
+    let told = stdout(&refused);
+    assert!(
+        told.contains("themes/Harbor Night.toml")
+            && told.contains("of which the app takes one alone"),
+        "{told}"
+    );
+    std::fs::remove_file(folder.join("themes/Harbor Night.itermcolors")).unwrap();
+    std::fs::remove_file(folder.join("themes/Harbor Day.toml")).unwrap();
+    assert!(checked(&sandbox, &folder, &[]).status.success());
     // Installed of its folder, of the kind `themes`, then updated and
     // removed.
     let added = sandbox.sleip(&["--json", "add", "--path", &folder.display().to_string()]);

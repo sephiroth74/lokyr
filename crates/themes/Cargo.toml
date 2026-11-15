@@ -1,0 +1,23 @@
+[package]
+name = "lokyr-themes"
+description = "Lokyr's themes: the native format's parser and writer, iTerm2's .itermcolors, and their resolution"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+lokyr-plugin-sdk = { workspace = true, features = ["unstable"] }
+toml_edit = { workspace = true, features = ["display"] }
+# The stream of events, which bounds a preset's nesting and references
+# before its values are built.
+plist = { workspace = true, features = ["enable_unstable_features_that_may_break_with_minor_version_bumps"] }
+
+[target.'cfg(unix)'.dependencies]
+libc.workspace = true
+
+[lints]
+workspace = true
