@@ -96,7 +96,7 @@ const PREVIEW_HEIGHT: f32 = 92.0;
 const SECTIONS: &str = "sections";
 
 /// The sidebar's width, in points.
-const SIDEBAR: f32 = 170.0;
+const SIDEBAR: f32 = 140.0;
 
 /// The height of a row of the sidebar, in points, as macOS's sidebars'.
 const ROW: f32 = 28.0;
@@ -1751,7 +1751,7 @@ fn sidebar(cx: &mut Cx<'_>, settings: &Settings, shown: &[usize], words: &[Strin
             width: Length::Points(SIDEBAR),
             min_width: Length::Points(SIDEBAR),
             height: Length::Fraction(1.0),
-            padding: Edges::all(10.0),
+            padding: Edges::all(6.0),
             ..Layout::default()
         })
 }
@@ -2856,7 +2856,7 @@ fn themes_tree(
             width: Length::Points(SIDEBAR),
             min_width: Length::Points(SIDEBAR),
             height: Length::Fraction(1.0),
-            padding: Edges::all(10.0),
+            padding: Edges::all(6.0),
             ..Layout::default()
         });
     if let Some(inspector) = inspector {

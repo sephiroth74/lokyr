@@ -152,7 +152,7 @@ pub(super) const WORDS: [&str; 30] = [
 ];
 
 /// The parts across a row of cards.
-const ACROSS: usize = 3;
+const ACROSS: usize = 2;
 
 /// The tokens of the part `id`, none of no part.
 pub(super) fn tokens_of(id: &str) -> &'static [&'static str] {

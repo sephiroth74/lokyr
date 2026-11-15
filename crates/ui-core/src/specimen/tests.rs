@@ -120,3 +120,15 @@ fn a_specimen_s_natural_size_is_its_grid_s_within_its_padding() {
         )
     );
 }
+
+#[test]
+fn the_cursor_keeps_its_own_color_over_the_cursor_guide_s_band() {
+    let tokens = Theme::builtin().dark.tokens.clone();
+    // A band of the text's color, faint, as the guide's rule makes it.
+    let spec = specimen(Some(Color::from_rgb8(230, 230, 230).with_alpha(0.1)));
+    let mut none = |_: &CellText<'_>| None;
+    let (batch, _) = cells(&spec, &cell(), (12, 12), (12, 2.0), &tokens, &mut none);
+    let cursor = batch.cursor.expect("its cursor");
+    let own = spec.colors.cursor;
+    assert_eq!(cursor.color, Color::from_rgb8(own.r, own.g, own.b));
+}

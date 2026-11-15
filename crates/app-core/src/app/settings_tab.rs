@@ -38,7 +38,7 @@ const WINDOW: Size = Size {
 };
 
 /// The room about the settings' tabs' box, in points.
-const PADDING: f32 = 12.0;
+const PADDING: f32 = 6.0;
 
 /// The key of the view of tabs of the pages.
 pub(super) const PAGES: &str = "pages";

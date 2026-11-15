@@ -315,7 +315,7 @@ impl Inspector {
                 width: Length::Points(COLUMN),
                 min_width: Length::Points(COLUMN),
                 height: Length::Fraction(1.0),
-                padding: Edges::all(16.0),
+                padding: Edges::all(10.0),
                 ..Layout::default()
             });
         let heading = |cx: &mut Cx<'_>, id: &str| {
@@ -350,7 +350,7 @@ impl Inspector {
             direction: Direction::Column,
             gap: 12.0,
             width: Length::Fraction(1.0),
-            padding: Edges::all(16.0),
+            padding: Edges::all(10.0),
             ..Layout::default()
         })])
         .key("inspector-specimens")

@@ -31,6 +31,7 @@ from 1.0.0; before it, a minor version may change what a previous one did.
 
 ### Fixed
 
+- A block cursor on the cursor guide's row keeps its own color, rather than turning black as the band's color, of no opacity, read as too near it.
 - A saved theme that changes the interface's colors alone, as its accent, colors the tab bar, the panels and the settings window at once, not once another theme was chosen and this one again; and the Themes page's preview of a theme in force follows its file as you save it.
 - The settings' Keys page no longer lists ⌘W's Close Window, which Close Tab hides while the tabs run, nor a default that your config's binding of the same keys replaces, written another way, as `cmd+}` for ⇧⌘]; a new binding's shortcut tells the binding that runs it now, the last of its keys, and a binding that would do what its shortcut already does is none to add.
 - `sleip check`, and the registry's checks, refuse a plugin's config schema larger than 64 KiB, the most that Lokyr reads of one; a schema of objects of nested defaults holds each default once.

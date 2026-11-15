@@ -863,17 +863,22 @@ const CURSOR_CONTRAST: f64 = 1.5;
 /// xterm keeps the cursor's color apart from the background's: the
 /// cursor's own color, or, when that is too near, as on inverse text or in
 /// reverse video, the color of the cell's text, or else black or white,
-/// whichever stands farther; a block's text, and the lines that cross it,
-/// take the cell's background.
+/// whichever stands farther, of the cell's background as it shows, over
+/// the terminal's own; a block's text, and the lines that cross it, take
+/// that background.
 fn settle_cursor(batch: &mut CellBatch, snapshot: &Snapshot) {
     let Some(cursor) = &mut batch.cursor else {
         return;
     };
     let (column, row) = (cursor.column, cursor.row);
     let index = usize::from(row) * usize::from(batch.columns) + usize::from(column);
-    let Some(&background) = batch.backgrounds.get(index) else {
+    let Some(&cell) = batch.backgrounds.get(index) else {
         return;
     };
+    // The background that shows under the cursor: the cell's over the
+    // terminal's own, as a translucent one, as the cursor guide's band,
+    // shows over it.
+    let background = paint::over(cell, defaults(snapshot).1.with_alpha(1.0));
     // The cell's glyphs, a base and its marks, come together, as its run
     // laid them out; the cursor is most often low on the screen, near the
     // end of the glyphs.
