@@ -404,15 +404,13 @@ impl<B: Backend> App<B> {
                 lokyr_pkg_model::write_whole(&path, &text)
                     .map_err(|error| format!("{}: {error}", shown_path(&path)))
             });
+        // Written or not, its file's value shows, no longer one before it.
+        let previewed = self.theme_values.end(theme, name);
         if let Err(why) = written {
-            return self.tell_theme_failed(platform, "theme-value-failed", why);
-        }
-        // Written: its file's value shows, no longer one before it.
-        if let Some(values) = self.theme_values.get_mut(theme) {
-            values.remove(name);
-            if values.is_empty() {
-                self.theme_values.remove(theme);
+            if previewed {
+                self.load_themes(platform);
             }
+            return self.tell_theme_failed(platform, "theme-value-failed", why);
         }
         self.load_themes(platform);
         // The theme's colors read anew, as its file and its values changed,

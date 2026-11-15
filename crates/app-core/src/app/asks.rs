@@ -6,7 +6,7 @@ use lokyr_kernel::commands::Code;
 use lokyr_kernel::config::{ConfirmPaste, OpenFile, OpenUrl};
 use lokyr_kernel::diagnostics::{About, Diagnostic};
 use lokyr_kernel::l10n::Arg;
-use lokyr_kernel::plugins::Closing;
+use lokyr_kernel::plugins::{Closing, host};
 use lokyr_kernel::workspace::{self, Pane, PaneId};
 use lokyr_kernel::{config, paste};
 use lokyr_platform_core::{
@@ -806,6 +806,41 @@ impl<B: Backend> App<B> {
                 platform.request_frame(window);
             }
         }
+    }
+
+    /// The message and the detail of `plugin`'s question, of its catalogs
+    /// in the language shown, of no character that hides the text around
+    /// it and bounded as a notice's, the detail naming the plugin unless it
+    /// holds `config`, as Lokyr's own plugins do, of `settings`: an alert of
+    /// a plugin's reads as the plugin's, not the app's.
+    pub(super) fn question_texts(
+        &self,
+        plugin: &str,
+        settings: bool,
+        (message, detail): (&str, &str),
+    ) -> (String, String) {
+        use lokyr_kernel::plugins::text::cleaned;
+        let language = self.texts.language();
+        let message = cleaned(
+            &self.plugins.text_of(plugin, language, message),
+            host::LONGEST_QUESTION,
+            false,
+        );
+        let mut detail = cleaned(
+            &self.plugins.text_of(plugin, language, detail),
+            host::LONGEST_NOTICE,
+            true,
+        );
+        if !settings {
+            let asked = self
+                .texts
+                .text_with("ask-plugin", &[("plugin", Arg::Text(plugin))]);
+            if !detail.trim().is_empty() {
+                detail.push_str("\n\n");
+            }
+            detail.push_str(&asked);
+        }
+        (message, detail)
     }
 
     /// Asks the user for a text, of `alert`, for `plugin`'s question `id`,

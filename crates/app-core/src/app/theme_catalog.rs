@@ -44,6 +44,74 @@ impl Places {
     }
 }
 
+/// The themes' colors shown before they are written, as the color panel
+/// moves: by the themes' names and the colors' names, each of its value
+/// and the plugin that showed it, whose stop ends it.
+#[derive(Debug, Default)]
+pub(crate) struct Previews(
+    std::collections::BTreeMap<String, std::collections::BTreeMap<String, (String, String)>>,
+);
+
+impl Previews {
+    /// Shows the color `name` of the theme `theme` of `value`, as `plugin`
+    /// asks, or its file's again of none.
+    pub(crate) fn set(&mut self, plugin: &str, (theme, name): (&str, &str), value: Option<String>) {
+        match value {
+            Some(value) => {
+                self.0
+                    .entry(theme.to_owned())
+                    .or_default()
+                    .insert(name.to_owned(), (plugin.to_owned(), value));
+            }
+            None => {
+                self.end(theme, name);
+            }
+        }
+    }
+
+    /// Shows the color `name` of the theme `theme` of its file's again:
+    /// whether a value showed in its place.
+    pub(crate) fn end(&mut self, theme: &str, name: &str) -> bool {
+        let Some(values) = self.0.get_mut(theme) else {
+            return false;
+        };
+        let ended = values.remove(name).is_some();
+        if values.is_empty() {
+            self.0.remove(theme);
+        }
+        ended
+    }
+
+    /// Ends the values that `plugin` showed: whether one showed.
+    pub(crate) fn end_of(&mut self, plugin: &str) -> bool {
+        let mut ended = false;
+        self.0.retain(|_, values| {
+            values.retain(|_, (shown, _)| {
+                let theirs = shown == plugin;
+                ended |= theirs;
+                !theirs
+            });
+            !values.is_empty()
+        });
+        ended
+    }
+
+    /// The values shown of the theme `theme`, each of its color's name.
+    pub(crate) fn of<'a>(&'a self, theme: &str) -> impl Iterator<Item = (&'a str, &'a str)> {
+        self.0
+            .get(theme)
+            .into_iter()
+            .flatten()
+            .map(|(name, (_, value))| (name.as_str(), value.as_str()))
+    }
+
+    /// Whether no value shows before it is written.
+    #[cfg(test)]
+    pub(crate) fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
 /// Every token of the theme of `name`, or of the one that `[theme]` of
 /// `config` names for `appearance` of none, of `places` and the built-in
 /// themes, as it resolves: each of its color and its origin, its file's
@@ -54,7 +122,7 @@ pub(crate) fn theme_tokens(
     places: &Places,
     name: Option<&str>,
     (appearance, config): (lokyr_platform_core::Appearance, &config::ThemeConfig),
-    shown: &std::collections::BTreeMap<String, std::collections::BTreeMap<String, String>>,
+    shown: &Previews,
 ) -> Option<lokyr_kernel::plugins::host::ThemeTokens> {
     use lokyr_kernel::plugins::host::{ThemeToken, ThemeTokens, TokenOrigin};
     use lokyr_kernel::themes::rules;
@@ -65,7 +133,7 @@ pub(crate) fn theme_tokens(
     let builtins = [ui_theme::light_spec(), ui_theme::dark_spec()];
     let mut resolved = places.resolve(name, &builtins).ok()?;
     // The colors shown before they are written.
-    for (color, value) in shown.get(name).into_iter().flatten() {
+    for (color, value) in shown.of(name) {
         let _ = themes::with_value(&mut resolved.theme, color, value);
     }
     let theme = &resolved.theme;

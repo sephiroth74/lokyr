@@ -641,7 +641,8 @@ impl<'a> Cx<'a> {
 
     /// Every token of the theme `theme`, or of the appearance in force's
     /// of none, as it resolves, each of its color and its origin; `None`
-    /// of a name of no theme.
+    /// of a name of no theme. A file's origin tells its path to a plugin of
+    /// `config` alone, its file's name to the others.
     pub fn theme_tokens(
         &mut self,
         theme: Option<&str>,
@@ -730,8 +731,9 @@ impl<'a> Cx<'a> {
     }
 
     /// Shows the color `name` of the theme `theme` of `value` in place of its
-    /// file's, as a color panel moves, until it is written or a preview of
-    /// none ends it.
+    /// file's, as a color panel moves, until it is written, its write
+    /// fails, the plugin stops or a preview of none ends it, whatever the
+    /// color.
     pub fn preview_theme_value(
         &mut self,
         theme: &str,
@@ -747,7 +749,9 @@ impl<'a> Cx<'a> {
 
     /// Shows the system's color panel of `color`, of its opacity's slider
     /// where `alpha`: its colors chosen come as [`Event::ColorPicked`], its
-    /// closing as [`Event::ColorPanelClosed`].
+    /// closing as [`Event::ColorPanelClosed`], which another plugin's panel
+    /// shown after brings too. While one of Lokyr's own plugins shows it, a
+    /// plugin that does not hold `config` hears it closed at once.
     pub fn show_color_panel(
         &mut self,
         color: crate::theme::ThemeColor,
@@ -1307,7 +1311,11 @@ impl<'a> Cx<'a> {
 
     /// Asks the user for a text, in an alert of `message` and `detail` on
     /// `window`, or on the focused window, of a field that holds `text`:
-    /// the question's id, whose answer comes as [`Event::Answered`].
+    /// the question's id, whose answer comes as [`Event::Answered`]. The
+    /// texts are bounded as [`check_question`](crate::host::check_question)
+    /// tells, the alert names a plugin that does not hold `config`, and a
+    /// plugin asks one question at a time, its next once the last's answer
+    /// came.
     pub fn ask_text(
         &mut self,
         window: Option<WindowId>,
@@ -1329,6 +1337,7 @@ impl<'a> Cx<'a> {
     /// Asks the user a question of `buttons`, the first the default, in an
     /// alert of `message` and `detail` on `window`, or on the focused
     /// window: the question's id, whose answer comes as [`Event::Chosen`].
+    /// Its texts and its alert are as [`Cx::ask_text`] tells.
     pub fn ask_choice(
         &mut self,
         window: Option<WindowId>,

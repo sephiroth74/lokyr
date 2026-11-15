@@ -166,6 +166,7 @@ set-title-set = Set
 set-title-cancel = Cancel
 ask-text-ok = OK
 ask-text-cancel = Cancel
+ask-plugin = Asked by the plugin { $plugin }.
 
 # The alert of Settings… that opens nothing: what went wrong, as the
 # system tells it, under the message.

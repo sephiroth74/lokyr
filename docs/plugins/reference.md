@@ -105,6 +105,7 @@ Each plugin runs in a VM of its own, so a failing plugin never affects the termi
 - **Reads of rows**: four under way at most; **searches**: 16 a call; **images**: four a call, 16 million pixels each.
 - **Timers**: 64 at most, from 10 ms to a day.
 - **Notices**: one a second a plugin, a text of 1 to 1024 characters and a title of 100 at most.
+- **Questions**, `ask_text` and `ask_choice`: one at a time a plugin, until its answer comes; a message of 1 to 256 characters, a detail of 1024 and a button's title of 64 at most, of no control character but the detail's line breaks nor one that hides the text around it. The alert of a plugin other than Lokyr's own names it.
 - **Declarations**: a plugin's commands, keys and menu items, 4096 at most together.
 - **Chains** of commands that run commands: 16 deep and 256 runs at most.
 - **Data**: a view nests 64 levels at most, and a value of data 64 too; texts of 16 MiB at most a call; numbers finite.

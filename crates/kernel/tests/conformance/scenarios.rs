@@ -211,6 +211,7 @@ pub fn all(world: &World) -> Vec<Scenario> {
         timers(),
         app_requests(world),
         color_panel(),
+        questions(),
         state_and_rows(world),
         views(world),
         commands_and_viewport(world),
@@ -947,13 +948,15 @@ fn tabs(world: &World) -> Scenario {
                     (
                         Request::AskText {
                             window: Some(NO_WINDOW),
-                            message: String::new(),
+                            message: "The tab's title".to_owned(),
                             detail: String::new(),
                             text: String::new(),
                         },
                         failed(Code::NotFound, "there is no window 999999"),
                     ),
-                    // A question of buttons, and one of none.
+                    // A question of buttons, while the text's waits for its
+                    // answer, as a plugin asks one at a time, and one of
+                    // none.
                     (
                         Request::AskChoice {
                             window: None,
@@ -961,7 +964,7 @@ fn tabs(world: &World) -> Scenario {
                             detail: String::new(),
                             buttons: vec!["Close".to_owned(), "Cancel".to_owned()],
                         },
-                        Response::Asking(0),
+                        failed(Code::Unavailable, lokyr_plugin_sdk::host::QUESTION_OPEN),
                     ),
                     (
                         Request::AskChoice {
@@ -1993,6 +1996,85 @@ fn declarations() -> Scenario {
     }
 }
 
+/// A plugin of another's than Lokyr's: a theme's tokens of each file's
+/// name alone, of no folder; its questions' texts bounded and of no
+/// character that hides the text around them; one question at a time, the
+/// next refused while the first waits for its answer.
+fn questions() -> Scenario {
+    let chosen = Event::Chosen {
+        id: 0,
+        button: Some(0),
+    };
+    let bounds = "a question's message has 1 to 256 characters and its detail 1024 at most, of \
+                  no control character but the detail's line breaks nor one that hides the text \
+                  around it";
+    let choice = |message: &str, detail: &str| Request::AskChoice {
+        window: None,
+        message: message.to_owned(),
+        detail: detail.to_owned(),
+        buttons: vec!["Use".to_owned(), "Cancel".to_owned()],
+    };
+    Scenario {
+        name: "a plugin's questions and a theme's files".to_owned(),
+        capabilities: Some(Vec::new()),
+        subscriptions: Vec::new(),
+        steps: vec![Step {
+            wait: 0,
+            asks: vec![
+                (
+                    Request::ThemeTokens(None),
+                    Response::ThemeTokens(
+                        lokyr_plugin_sdk::fake::theme_tokens_of(None)
+                            .map(lokyr_plugin_sdk::host::ThemeTokens::without_folders),
+                    ),
+                ),
+                (choice(&"x".repeat(257), ""), failed(Code::Failed, bounds)),
+                (
+                    choice("Use it?", "txt.\u{202E}exe"),
+                    failed(Code::Failed, bounds),
+                ),
+                (
+                    Request::AskText {
+                        window: None,
+                        message: "Its\u{7}name".to_owned(),
+                        detail: String::new(),
+                        text: String::new(),
+                    },
+                    failed(Code::Failed, bounds),
+                ),
+                (
+                    Request::AskChoice {
+                        window: None,
+                        message: "Use it?".to_owned(),
+                        detail: String::new(),
+                        buttons: vec!["Use\u{202E}".to_owned()],
+                    },
+                    failed(
+                        Code::Failed,
+                        "a button's title is a text of 1 to 64 characters, of no control \
+                         character nor one that hides the text around it, not `Use\\u{202e}`",
+                    ),
+                ),
+                (
+                    choice("Use it?", "Its first line.\nIts second."),
+                    Response::Asking(0),
+                ),
+                (
+                    Request::AskText {
+                        window: None,
+                        message: "Its name".to_owned(),
+                        detail: String::new(),
+                        text: String::new(),
+                    },
+                    failed(Code::Unavailable, lokyr_plugin_sdk::host::QUESTION_OPEN),
+                ),
+            ],
+            posts: vec![chosen.clone()],
+            heard: vec![chosen],
+        }],
+    }
+}
+
 /// The color panel shown and closed, its colors and its closing heard by
 /// the plugin that showed it alone, and a theme's color previewed, of a
 /// theme of the user's folder alone, which the built-in ones are not.
@@ -2026,6 +2108,15 @@ fn color_panel() -> Scenario {
                             Code::Failed,
                             "`Lokyr Dark` is read-only: a copy of it is edited",
                         ),
+                    ),
+                    // A preview of none ends one, whatever the color.
+                    (
+                        Request::PreviewThemeValue {
+                            theme: "Lokyr Dark".to_owned(),
+                            name: "red".to_owned(),
+                            value: None,
+                        },
+                        Response::Done,
                     ),
                 ],
                 posts: vec![picked.clone(), Event::ColorPanelClosed],

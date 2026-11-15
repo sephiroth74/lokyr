@@ -1223,7 +1223,7 @@ fn a_theme_s_tokens_tell_their_colors_and_origins_of_its_file_its_base_and_rules
         &places,
         None,
         (fake.appearance(), &app.config.theme),
-        &BTreeMap::new(),
+        &theme_catalog::Previews::default(),
     )
     .expect("the theme in force's tokens");
     assert_eq!(tokens.theme, "Mine");
@@ -1305,7 +1305,7 @@ fn a_theme_s_tokens_tell_their_colors_and_origins_of_its_file_its_base_and_rules
             &places,
             Some("Nothing"),
             (fake.appearance(), &app.config.theme),
-            &BTreeMap::new(),
+            &theme_catalog::Previews::default(),
         )
         .is_none()
     );
@@ -1313,7 +1313,7 @@ fn a_theme_s_tokens_tell_their_colors_and_origins_of_its_file_its_base_and_rules
         &places,
         Some("Lokyr Light"),
         (fake.appearance(), &app.config.theme),
-        &BTreeMap::new(),
+        &theme_catalog::Previews::default(),
     )
     .unwrap();
     assert_eq!(light.variant, lokyr_kernel::themes::ThemeVariant::Light);
@@ -1668,7 +1668,8 @@ fn a_theme_s_color_set_of_a_plugin_is_written_into_its_file_and_shows_at_once() 
 type Heard = std::rc::Rc<std::cell::RefCell<Vec<String>>>;
 
 /// A plugin that shows the color panel, closes it, and shows Mine's
-/// background before it writes it, keeping what it hears of the panel.
+/// background before it writes it, or ends that, asks a question and
+/// faults, keeping what it hears of the panel.
 struct Panel(Heard);
 
 impl plugins::Plugin for Panel {
@@ -1680,6 +1681,9 @@ impl plugins::Plugin for Panel {
             "panel.preview",
             "panel.write",
             "panel.link",
+            "panel.unpreview",
+            "panel.ask",
+            "panel.fault",
         ] {
             cx.register_command(Command {
                 name: name.to_owned(),
@@ -1699,7 +1703,12 @@ impl plugins::Plugin for Panel {
             "panel.show" => cx.show_color_panel(gray, true),
             "panel.close" => cx.close_color_panel(),
             "panel.preview" => cx.preview_theme_value("Mine", "background", Some("#303030")),
+            "panel.unpreview" => cx.preview_theme_value("Mine", "background", None),
             "panel.link" => cx.set_theme_value("Mine", "link", Some("#00ff00")),
+            "panel.ask" => cx
+                .ask_choice(None, ("Use it?", "Its detail."), &["Use", "Cancel"])
+                .map(|_| ()),
+            "panel.fault" => Err(Error::new(Code::Fault, "on purpose")),
             _ => cx.set_theme_value("Mine", "background", Some("#404040")),
         }
     }
@@ -1805,6 +1814,218 @@ fn the_color_panel_tells_its_plugin_and_a_color_shows_before_it_is_written() {
     run_until(&mut fake, &mut app, |_, _| {
         heard.borrow().contains(&"theme".to_owned())
     });
+    let _ = std::fs::remove_dir_all(&directory);
+}
+
+/// A plugin of another's than Lokyr's, of no capability, that shows the
+/// color panel, asks a question and faults, keeping what it hears of the
+/// panel.
+struct Grab(Heard);
+
+impl plugins::Plugin for Grab {
+    fn activate(&mut self, cx: &mut plugins::Cx<'_>) -> Result<(), Error> {
+        for name in ["grab.show", "grab.ask", "grab.fault"] {
+            cx.register_command(Command {
+                name: name.to_owned(),
+                title: name.to_owned(),
+                category: Category::View,
+                capabilities: Vec::new(),
+                params: Vec::new(),
+                when: None,
+            })?;
+        }
+        Ok(())
+    }
+
+    fn on_command(&mut self, cx: &mut plugins::Cx<'_>, name: &str, _: Args) -> Result<(), Error> {
+        match name {
+            "grab.show" => {
+                cx.show_color_panel(lokyr_kernel::themes::ThemeColor::rgb(1, 2, 3), false)
+            }
+            "grab.ask" => cx
+                .ask_choice(None, ("Use it?", "Its detail."), &["Use", "Cancel"])
+                .map(|_| ()),
+            _ => Err(Error::new(Code::Fault, "on purpose")),
+        }
+    }
+
+    fn on_event(
+        &mut self,
+        _: &mut plugins::Cx<'_>,
+        events: &[plugins::Event],
+    ) -> Result<(), Error> {
+        for event in events {
+            match event {
+                plugins::Event::ColorPicked { color } => {
+                    self.0.borrow_mut().push(color.to_string());
+                }
+                plugins::Event::ColorPanelClosed => self.0.borrow_mut().push("closed".to_owned()),
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+}
+
+/// An app of the theme Mine of its folder, in force, of the plugins
+/// [`Panel`], Lokyr's own, and [`Grab`], another's, of what each hears of
+/// the color panel, its themes' list read; and its folder, Mine's file in
+/// it.
+fn panel_and_grab(test: &str) -> (Fake, App, (Heard, Heard), PathBuf) {
+    let mine = format!(
+        "[theme]\nname = \"Mine\"\n\n[terminal]\nbackground = \"#101010\"\nforeground = \"#e0e0e0\"\n{PALETTE}\n"
+    );
+    let directory =
+        std::env::temp_dir().join(format!("lokyr-app-themes-{test}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&directory);
+    std::fs::create_dir_all(directory.join("themes")).unwrap();
+    std::fs::write(directory.join("themes/Mine.toml"), &mine).unwrap();
+    let path = directory.join("config.toml");
+    std::fs::write(&path, "[theme]\nlight = \"Mine\"\n").unwrap();
+    let (panel, grab) = (Heard::default(), Heard::default());
+    let mut app = App::new(None, Config::read(&path).unwrap(), Some(path.clone()))
+        .with_program(quiet())
+        .with_plugin("panel", Box::new(Panel(std::rc::Rc::clone(&panel))));
+    let manifest = lokyr_pkg_model::manifest::Manifest::parse(concat!(
+        "[plugin]\nname = \"acme/grab\"\nversion = \"1.0.0\"\nkind = \"luau\"\n",
+        "api = \"^0.1\"\nlicense = \"MIT\"\n",
+    ))
+    .unwrap();
+    app.plugins
+        .add_declared(manifest, Box::new(Grab(std::rc::Rc::clone(&grab))))
+        .unwrap();
+    let mut fake = Fake::default();
+    fake.start(&mut app);
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    while app.theme_catalog.borrow().listed.is_none() && std::time::Instant::now() < deadline {
+        pickers::theme_list(
+            &app.theme_catalog,
+            (&app.theme_places(), app.waker.as_ref()),
+            fake.appearance(),
+            &app.config.theme,
+        );
+        app.take_themes(&mut fake);
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    (fake, app, (panel, grab), directory)
+}
+
+/// What `heard` holds of the color panel: its colors and `closed`.
+fn of_panel(heard: &Heard) -> Vec<String> {
+    heard
+        .borrow()
+        .iter()
+        .filter(|word| *word != "theme")
+        .cloned()
+        .collect()
+}
+
+#[test]
+fn lokyr_s_color_panel_is_no_other_plugin_s_and_its_last_plugin_hears_it_taken_or_stopped() {
+    let (mut fake, mut app, (panel, grab), directory) = panel_and_grab("taken");
+    let run = |fake: &mut Fake, app: &mut App, command: &str| {
+        fake.send_app(app, AppEvent::Command(command.to_owned()));
+    };
+    let gray = lokyr_platform_core::PanelColor {
+        red: 16,
+        green: 16,
+        blue: 16,
+        alpha: 255,
+    };
+    // Lokyr's own shows it: another's hears it closed at once, and the
+    // colors chosen go to Lokyr's alone.
+    run(&mut fake, &mut app, "panel.show");
+    run(&mut fake, &mut app, "grab.show");
+    assert_eq!(fake.color_panel(), Some((gray, true)));
+    fake.send_app(
+        &mut app,
+        AppEvent::ColorPicked(lokyr_platform_core::PanelColor {
+            red: 255,
+            green: 0,
+            blue: 0,
+            alpha: 255,
+        }),
+    );
+    run_until(&mut fake, &mut app, |_, _| {
+        !of_panel(&panel).is_empty() && !of_panel(&grab).is_empty()
+    });
+    assert_eq!(of_panel(&panel), ["#ff0000"]);
+    assert_eq!(of_panel(&grab), ["closed"]);
+    // Another's shows it once Lokyr's closed it; Lokyr's takes it back,
+    // the other hearing it closed.
+    run(&mut fake, &mut app, "panel.close");
+    run(&mut fake, &mut app, "grab.show");
+    assert!(fake.color_panel().is_some_and(|(_, alpha)| !alpha));
+    run(&mut fake, &mut app, "panel.show");
+    assert_eq!(fake.color_panel(), Some((gray, true)));
+    run_until(&mut fake, &mut app, |_, _| of_panel(&grab).len() == 2);
+    assert_eq!(of_panel(&grab), ["closed", "closed"]);
+    // Shown by a plugin that stops: it closes.
+    run(&mut fake, &mut app, "panel.close");
+    run(&mut fake, &mut app, "grab.show");
+    assert!(fake.color_panel().is_some());
+    run(&mut fake, &mut app, "grab.fault");
+    assert_eq!(fake.color_panel(), None);
+    let _ = std::fs::remove_dir_all(&directory);
+}
+
+#[test]
+fn a_color_shown_before_it_is_written_goes_of_none_of_a_failed_write_and_of_its_plugin_s_stop() {
+    use std::os::unix::fs::PermissionsExt;
+    let (mut fake, mut app, _, directory) = panel_and_grab("previews");
+    let run = |fake: &mut Fake, app: &mut App, command: &str| {
+        fake.send_app(app, AppEvent::Command(command.to_owned()));
+    };
+    // Ended by a preview of none, of a color that no write takes away.
+    run(&mut fake, &mut app, "panel.preview");
+    assert_eq!(app.theme.light.colors.background, rgb(0x303030));
+    run(&mut fake, &mut app, "panel.unpreview");
+    assert_eq!(app.theme.light.colors.background, rgb(0x101010));
+    assert!(app.theme_values.is_empty());
+    // Of a write that fails, its file's again, why told.
+    run(&mut fake, &mut app, "panel.preview");
+    let themes = directory.join("themes");
+    std::fs::set_permissions(&themes, std::fs::Permissions::from_mode(0o555)).unwrap();
+    run(&mut fake, &mut app, "panel.write");
+    std::fs::set_permissions(&themes, std::fs::Permissions::from_mode(0o755)).unwrap();
+    assert!(
+        std::fs::read_to_string(themes.join("Mine.toml"))
+            .unwrap()
+            .contains("#101010")
+    );
+    assert_eq!(app.theme.light.colors.background, rgb(0x101010));
+    assert!(app.theme_values.is_empty());
+    // Of its plugin's stop.
+    run(&mut fake, &mut app, "panel.preview");
+    assert_eq!(app.theme.light.colors.background, rgb(0x303030));
+    run(&mut fake, &mut app, "panel.fault");
+    assert_eq!(app.theme.light.colors.background, rgb(0x101010));
+    assert!(app.theme_values.is_empty());
+    let _ = std::fs::remove_dir_all(&directory);
+}
+
+#[test]
+fn another_s_plugin_s_question_names_it_and_lokyr_s_own_does_not() {
+    let (mut fake, mut app, _, directory) = panel_and_grab("named");
+    let run = |fake: &mut Fake, app: &mut App, command: &str| {
+        fake.send_app(app, AppEvent::Command(command.to_owned()));
+    };
+    let window = fake.windows().next().expect("a window");
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    run(&mut fake, &mut app, "panel.ask");
+    run(&mut fake, &mut app, "grab.ask");
+    let details: Vec<String> = fake
+        .alerts()
+        .iter()
+        .map(|shown| shown.alert.detail.clone())
+        .collect();
+    assert_eq!(
+        details,
+        [
+            "Its detail.".to_owned(),
+            "Its detail.\n\nAsked by the plugin acme/grab.".to_owned()
+        ]
+    );
     let _ = std::fs::remove_dir_all(&directory);
 }
 

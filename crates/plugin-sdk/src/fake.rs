@@ -442,6 +442,9 @@ pub struct FakeHost {
     /// The tokens of the themes, as the test gave them, the theme in
     /// force's first.
     theme_tokens: Vec<host::ThemeTokens>,
+    /// The id of the plugin's question that waits for its answer, which
+    /// the test posts, before which it asks no other.
+    question: Option<u64>,
     /// The system's monospaced families that it gives.
     fonts: host::Fonts,
     /// The system's day, whether a notice of the app's shows, and whether
@@ -550,6 +553,7 @@ impl FakeHost {
         Self {
             caller: caller.to_owned(),
             granted: None,
+            question: None,
             uses: None,
             slots: None,
             pages: None,
@@ -1230,8 +1234,29 @@ impl FakeHost {
             !matches!(event, Event::Timer { .. }),
             "a timer's event is the host's, as a timer fires: `advance` fires them"
         );
+        // An answer closes its question, after which the plugin may ask
+        // another.
+        if let Event::Answered { id, .. } | Event::Chosen { id, .. } = &event
+            && self.question == Some(*id)
+        {
+            self.question = None;
+        }
         self.owed.push(event);
         self
+    }
+
+    /// The id of the plugin's question of a text or of buttons that waits
+    /// for its answer, which the test posts, as [`Event::Answered`] or
+    /// [`Event::Chosen`] of its id.
+    pub fn question(&self) -> Option<u64> {
+        self.question
+    }
+
+    /// Whether the plugin holds `config`, as Lokyr's own plugins do.
+    fn holds_config(&self) -> bool {
+        self.granted
+            .as_ref()
+            .is_none_or(|granted| granted.contains(&Capability::Config))
     }
 
     /// The commands that the plugin registered.
@@ -1545,6 +1570,7 @@ impl FakeHost {
             (self.panels.clone(), self.panel_windows.clone()),
             (self.owed.len(), self.renders.len()),
             (self.last_id, self.timers.clone(), self.searches.clone()),
+            self.question,
         );
         let mut calling = Calling {
             host: self,
@@ -1571,7 +1597,9 @@ impl FakeHost {
                 (panels, windows),
                 (owed, renders),
                 (last_id, timers, searches),
+                question,
             ) = kept;
+            self.question = question;
             self.decorations = decorations;
             self.gutter_marks = marks;
             self.panels = panels;
@@ -3029,6 +3057,17 @@ struct Calling<'h> {
 }
 
 impl Calling<'_> {
+    /// A question asked, its id the answer, unless the plugin's last one
+    /// waits for its answer.
+    fn ask(&mut self) -> Result<Response, Error> {
+        if self.host.question.is_some() {
+            return Err(Error::new(Code::Unavailable, host::QUESTION_OPEN));
+        }
+        let id = self.host.next_id();
+        self.host.question = Some(id);
+        Ok(Response::Asking(id))
+    }
+
     /// Whether the call asked for a render of `view` so far, whose tree the
     /// focus and the selections that it asks after take.
     fn renders(&self, view: &ViewId) -> bool {
@@ -3316,14 +3355,22 @@ impl Calling<'_> {
             Request::FontSize => Response::FontSize(host.font_size),
             Request::TabBarPlace => Response::TabBarPlace(host.bar_place),
             Request::Themes => Response::Themes(host.themes.clone()),
-            Request::ThemeTokens(name) => Response::ThemeTokens(match name {
-                Some(name) => host
-                    .theme_tokens
-                    .iter()
-                    .find(|tokens| tokens.theme == *name)
-                    .cloned(),
-                None => host.theme_tokens.first().cloned(),
-            }),
+            // A file's path to a plugin of `config` alone.
+            Request::ThemeTokens(name) => {
+                let tokens = match name {
+                    Some(name) => host
+                        .theme_tokens
+                        .iter()
+                        .find(|tokens| tokens.theme == *name)
+                        .cloned(),
+                    None => host.theme_tokens.first().cloned(),
+                };
+                Response::ThemeTokens(if host.holds_config() {
+                    tokens
+                } else {
+                    tokens.map(host::ThemeTokens::without_folders)
+                })
+            }
             Request::Fonts => Response::Fonts(host.fonts.clone()),
             Request::FontStyles(family) => Response::FontStyles(font_styles(family)),
             Request::Day => Response::Day(host.day),
@@ -3523,20 +3570,31 @@ impl Calling<'_> {
                 }
                 Response::Done
             }
-            Request::AskText { window, .. } => {
+            // One question at a time, of its texts bounded.
+            Request::AskText {
+                window,
+                message,
+                detail,
+                ..
+            } => {
+                host::check_question(message, detail)?;
                 if let Some(window) = window {
                     self.known_window(*window)?;
                 }
-                Response::Asking(self.host.next_id())
+                self.ask()?
             }
             Request::AskChoice {
-                window, buttons, ..
+                window,
+                message,
+                detail,
+                buttons,
             } => {
                 host::check_buttons(buttons)?;
+                host::check_question(message, detail)?;
                 if let Some(window) = window {
                     self.known_window(*window)?;
                 }
-                Response::Asking(self.host.next_id())
+                self.ask()?
             }
             Request::SaveFile {
                 window,
@@ -3809,9 +3867,15 @@ impl Calling<'_> {
                 host::converted_theme(&self.host.themes, name)?;
                 Response::Asking(self.host.next_id())
             }
-            Request::SetThemeValue { theme, name, value }
-            | Request::PreviewThemeValue { theme, name, value } => {
+            Request::SetThemeValue { theme, name, value } => {
                 host::check_theme_value(&self.host.themes, theme, name, value.as_deref())?;
+                Response::Done
+            }
+            // A preview of none ends one, whatever the color.
+            Request::PreviewThemeValue { theme, name, value } => {
+                if let Some(value) = value {
+                    host::check_theme_value(&self.host.themes, theme, name, Some(value))?;
+                }
                 Response::Done
             }
             Request::ShowColorPanel { .. } | Request::CloseColorPanel => Response::Done,

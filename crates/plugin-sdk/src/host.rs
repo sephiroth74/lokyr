@@ -780,6 +780,23 @@ pub struct ThemeTokens {
     pub tokens: Vec<ThemeToken>,
 }
 
+impl ThemeTokens {
+    /// The tokens of each file's name alone, of no folder, as a plugin that
+    /// does not hold `config` reads them, which the paths of the user's
+    /// files are not to tell.
+    #[must_use]
+    pub fn without_folders(mut self) -> Self {
+        for token in self.terminal.iter_mut().chain(&mut self.tokens) {
+            if let TokenOrigin::File { path, .. } = &mut token.origin
+                && let Some(name) = std::path::Path::new(path.as_str()).file_name()
+            {
+                *path = name.to_string_lossy().into_owned();
+            }
+        }
+        self
+    }
+}
+
 /// The themes that the app can show, as a read of them gives them: the
 /// appearance in force, the theme in force for it as `[theme]` names it,
 /// and every theme, by name, a file of the user's folder before one of its
@@ -831,19 +848,58 @@ pub fn check_buttons(buttons: &[String]) -> Result<(), crate::command::Error> {
             ),
         ));
     }
-    if let Some(button) = buttons
-        .iter()
-        .find(|button| button.trim().is_empty() || button.chars().count() > MOST_BUTTON_CHARS)
-    {
+    if let Some(button) = buttons.iter().find(|button| {
+        button.trim().is_empty()
+            || button.chars().count() > MOST_BUTTON_CHARS
+            || button
+                .chars()
+                .any(|c| c.is_control() || crate::text::is_hidden(c))
+    }) {
         return Err(Error::new(
             Code::Failed,
             format!(
-                "a button's title is a text of 1 to {MOST_BUTTON_CHARS} characters, not `{button}`"
+                "a button's title is a text of 1 to {MOST_BUTTON_CHARS} characters, of no control \
+                 character nor one that hides the text around it, not `{}`",
+                button.escape_debug()
             ),
         ));
     }
     Ok(())
 }
+
+/// How many characters a question's message has at most.
+pub const LONGEST_QUESTION: usize = 256;
+
+/// Whether `message` and `detail` can be a question's, which its alert
+/// shows: a message of 1 to [`LONGEST_QUESTION`] characters and a detail of
+/// [`LONGEST_NOTICE`] at most, as a notice's text, of no control character
+/// but the detail's line breaks nor one that hides the text around it; or
+/// the error that tells why not.
+pub fn check_question(message: &str, detail: &str) -> Result<(), crate::command::Error> {
+    let shows = |text: &str, (least, most): (usize, usize), lines: bool| {
+        let count = text.chars().count();
+        (least..=most).contains(&count)
+            && !text
+                .chars()
+                .any(|c| (c.is_control() && !(lines && c == '\n')) || crate::text::is_hidden(c))
+    };
+    if shows(message, (1, LONGEST_QUESTION), false) && shows(detail, (0, LONGEST_NOTICE), true) {
+        return Ok(());
+    }
+    Err(crate::command::Error::new(
+        crate::command::Code::Failed,
+        format!(
+            "a question's message has 1 to {LONGEST_QUESTION} characters and its detail \
+             {LONGEST_NOTICE} at most, of no control character but the detail's line breaks nor \
+             one that hides the text around it"
+        ),
+    ))
+}
+
+/// The error of a question asked while the plugin's last one waits for its
+/// answer: a plugin asks one at a time.
+pub const QUESTION_OPEN: &str =
+    "the plugin's last question waits for its answer: a plugin asks one at a time";
 
 /// Whether a copy can be made of the theme `name` of `themes`: one that is
 /// there, or the error that tells it is not.

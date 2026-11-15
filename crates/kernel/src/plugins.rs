@@ -45,7 +45,7 @@ use lokyr_plugin_sdk::message::{Call, Effect, Request as Asked, Response, within
 pub use lokyr_plugin_sdk::plugin::{Catalogs, Cx, Plugin, Registration, built_in};
 use lokyr_plugin_sdk::ui::{Anchor, PanelId, PanelOptions, Slot, UiEvent, ViewId};
 use lokyr_plugin_sdk::view::{Key, Kind, Node};
-pub use lokyr_plugin_sdk::{ui, view};
+pub use lokyr_plugin_sdk::{text, ui, view};
 use lokyr_session::Reader;
 use lokyr_text_core::Size;
 use lokyr_vt_core::page::{self, Rgb, Style};
@@ -351,8 +351,10 @@ pub enum Request {
         name: String,
     },
     /// Show the color `name` of the theme `theme` of `value` in place of
-    /// its file's, or its file's again of none.
+    /// its file's, or its file's again of none, as `plugin` asks.
     PreviewThemeValue {
+        /// The plugin.
+        plugin: String,
         /// The theme's name.
         theme: String,
         /// The color's name.
@@ -361,10 +363,13 @@ pub enum Request {
         value: Option<String>,
     },
     /// Show the system's color panel of `color`, of its opacity's slider
-    /// where `alpha`, its choices and its closing told to `plugin`.
+    /// where `alpha`, its choices and its closing told to `plugin`, unless
+    /// one of Lokyr's own plugins shows it and `plugin` is not one.
     ShowColorPanel {
         /// The plugin.
         plugin: String,
+        /// Whether the plugin holds `config`, as Lokyr's own plugins do.
+        settings: bool,
         /// The color that it shows.
         color: lokyr_plugin_sdk::theme::ThemeColor,
         /// Whether it shows its opacity's slider.
@@ -372,6 +377,12 @@ pub enum Request {
     },
     /// Close the color panel, if `plugin` showed it last.
     CloseColorPanel {
+        /// The plugin.
+        plugin: String,
+    },
+    /// Show the colors of themes that `plugin`, which stopped, showed
+    /// before they were written, of their files again.
+    EndPreviews {
         /// The plugin.
         plugin: String,
     },
@@ -394,8 +405,9 @@ pub enum Request {
         id: u64,
         /// The window that the alert shows on, or the focused one.
         window: Option<WindowId>,
-        /// Whether the settings window may show it, of a plugin of
-        /// `config`.
+        /// Whether the plugin holds `config`, as Lokyr's own plugins do:
+        /// the settings window may show its question, whose alert names no
+        /// plugin.
         settings: bool,
         /// What the alert asks.
         message: String,
@@ -413,6 +425,9 @@ pub enum Request {
         id: u64,
         /// The window that the alert shows on, or the focused one.
         window: Option<WindowId>,
+        /// Whether the plugin holds `config`, as Lokyr's own plugins do,
+        /// whose alert names no plugin.
+        settings: bool,
         /// What the alert asks.
         message: String,
         /// What it explains.
@@ -698,6 +713,14 @@ struct State {
     undecided: Vec<Capability>,
     /// Whether the user is asked for them, its activation waiting.
     asking: bool,
+    /// The id of its question of a text or of buttons that waits for the
+    /// user's answer, before which it asks no other.
+    question: Option<u64>,
+    /// Whether it showed the color panel, which it did not close since, and
+    /// whether it showed themes' colors before they were written, which go
+    /// as it stops.
+    color_panel: bool,
+    previewed: bool,
     /// What its trigger brought as the user was asked, which comes once it
     /// activates.
     deferred: Deferred,
@@ -1663,6 +1686,9 @@ impl Plugins {
                 triggers,
                 undecided: Vec::new(),
                 asking: false,
+                question: None,
+                color_panel: false,
+                previewed: false,
                 deferred: Deferred::default(),
                 woken: Vec::new(),
             },
@@ -2512,9 +2538,23 @@ impl Plugins {
             .collect()
     }
 
+    /// Closes `plugin`'s question `id`, which the user answered, after
+    /// which it may ask another.
+    fn answered(&mut self, plugin: &str, id: u64) {
+        if let Some(entry) = self
+            .entries
+            .iter_mut()
+            .find(|entry| entry.state.name == plugin)
+            && entry.state.question == Some(id)
+        {
+            entry.state.question = None;
+        }
+    }
+
     /// Gives `plugin` the user's answer to its question of buttons `id`,
     /// the button chosen or none, for the next delivery, to it alone.
     pub fn chosen(&mut self, plugin: &str, id: u64, button: Option<u32>) {
+        self.answered(plugin, id);
         self.out
             .events
             .push((Some(plugin.to_owned()), Event::Chosen { id, button }));
@@ -2528,9 +2568,18 @@ impl Plugins {
             .push((Some(plugin.to_owned()), Event::ColorPicked { color }));
     }
 
-    /// Tells `plugin` that the user closed the color panel that it showed,
-    /// for the next delivery, to it alone.
+    /// Tells `plugin` that the color panel that it showed closed, as the
+    /// user closed it or another plugin took it, or that it was not shown,
+    /// as one of Lokyr's own plugins kept it, for the next delivery, to it
+    /// alone.
     pub fn color_panel_closed(&mut self, plugin: &str) {
+        if let Some(entry) = self
+            .entries
+            .iter_mut()
+            .find(|entry| entry.state.name == plugin)
+        {
+            entry.state.color_panel = false;
+        }
         self.out
             .events
             .push((Some(plugin.to_owned()), Event::ColorPanelClosed));
@@ -2539,6 +2588,7 @@ impl Plugins {
     /// Gives `plugin` the user's answer to its question `id`, the text
     /// given or none, for the next delivery, to it alone.
     pub fn answer(&mut self, plugin: &str, id: u64, text: Option<String>) {
+        self.answered(plugin, id);
         self.out
             .events
             .push((Some(plugin.to_owned()), Event::Answered { id, text }));
@@ -3738,6 +3788,7 @@ struct Kept {
     held_cursors: BTreeSet<host::PaneId>,
     quick_windows: Vec<WindowId>,
     timers: BTreeMap<u64, Timer>,
+    question: Option<u64>,
 }
 
 impl Kept {
@@ -3750,6 +3801,7 @@ impl Kept {
             held_cursors: state.held_cursors.clone(),
             quick_windows: state.quick_windows.clone(),
             timers: state.timers.clone(),
+            question: state.question,
         }
     }
 
@@ -3760,6 +3812,7 @@ impl Kept {
         state.gutter_marks = self.gutter_marks;
         state.held_cursors = self.held_cursors;
         state.quick_windows = self.quick_windows;
+        state.question = self.question;
         // The timers that the call started go, and those that it cancelled
         // come back; the others stay as they are, of the firings that came
         // meanwhile, as a call of a plugin's thread runs beside the main
@@ -4088,7 +4141,9 @@ fn stop(
 /// Takes away what the plugin of `state`, which stops or a fault disabled,
 /// left in the panes and the app: its decorations and its gutters' marks
 /// leave their panes, the cursors that it held go back to the terminals,
-/// its panels close, as the app hears through `out`, its searches end,
+/// its panels and its color panel close and its themes' colors shown
+/// before they were written go, as the app hears through `out`, its
+/// searches end,
 /// their matches gone, its reads of rows stop at their next parts, and its
 /// timers end. Its views stay as they were, of a disabled plugin's, which
 /// take no event.
@@ -4109,6 +4164,18 @@ fn clear_leftovers(state: &mut State, context: &mut Context<'_>, out: &mut Outbo
         out.requests.push(Request::ClosePanel {
             plugin: state.name.clone(),
             id,
+        });
+    }
+    // The color panel that it showed closes, and the themes' colors that
+    // it showed before they were written are their files' again.
+    if std::mem::take(&mut state.color_panel) {
+        out.requests.push(Request::CloseColorPanel {
+            plugin: state.name.clone(),
+        });
+    }
+    if std::mem::take(&mut state.previewed) {
+        out.requests.push(Request::EndPreviews {
+            plugin: state.name.clone(),
         });
     }
     out.reads.retain(|read| read.plugin != state.name);
@@ -5156,6 +5223,14 @@ impl Host<'_, '_> {
 
     /// Whether the window `window` is not the settings' window of their
     /// own, which no plugin closes nor asks a question on.
+    /// Whether the plugin holds `config`, as Lokyr's own plugins do.
+    fn holds_config(&self) -> bool {
+        self.state
+            .granted
+            .as_ref()
+            .is_none_or(|granted| granted.contains(&Capability::Config))
+    }
+
     fn not_settings_window(&self, window: WindowId) -> Result<(), Error> {
         if self.context.workspace.settings_window() == Some(window) {
             return Err(Error::new(
@@ -5599,8 +5674,15 @@ impl Host<'_, '_> {
                 }
             }
             Asked::Themes => Response::Themes((self.context.themes)()),
+            // A file's path to a plugin of `config` alone, as the other
+            // plugins are not to learn where the user's files are.
             Asked::ThemeTokens(name) => {
-                Response::ThemeTokens((self.context.theme_tokens)(name.as_deref()))
+                let tokens = (self.context.theme_tokens)(name.as_deref());
+                Response::ThemeTokens(if self.holds_config() {
+                    tokens
+                } else {
+                    tokens.map(host::ThemeTokens::without_folders)
+                })
             }
             Asked::Fonts => Response::Fonts((self.context.fonts)()),
             Asked::FontStyles(family) => Response::FontStyles((self.context.font_styles)(&family)),
@@ -6241,20 +6323,36 @@ impl Host<'_, '_> {
                     .map_err(|message| Error::new(Code::Failed, message))?;
                 Request::SetThemeValue { theme, name, value }
             }
+            // A preview of none ends one, whatever the color.
             Asked::PreviewThemeValue { theme, name, value } => {
-                host::check_theme_value(&(self.context.themes)(), &theme, &name, value.as_deref())?;
-                (self.context.theme_value)(&theme, &name, value.as_deref())
-                    .map_err(|message| Error::new(Code::Failed, message))?;
-                Request::PreviewThemeValue { theme, name, value }
+                if let Some(value) = value.as_deref() {
+                    host::check_theme_value(&(self.context.themes)(), &theme, &name, Some(value))?;
+                    (self.context.theme_value)(&theme, &name, Some(value))
+                        .map_err(|message| Error::new(Code::Failed, message))?;
+                    self.state.previewed = true;
+                }
+                Request::PreviewThemeValue {
+                    plugin: self.state.name.clone(),
+                    theme,
+                    name,
+                    value,
+                }
             }
-            Asked::ShowColorPanel { color, alpha } => Request::ShowColorPanel {
-                plugin: self.state.name.clone(),
-                color,
-                alpha,
-            },
-            Asked::CloseColorPanel => Request::CloseColorPanel {
-                plugin: self.state.name.clone(),
-            },
+            Asked::ShowColorPanel { color, alpha } => {
+                self.state.color_panel = true;
+                Request::ShowColorPanel {
+                    plugin: self.state.name.clone(),
+                    settings: self.holds_config(),
+                    color,
+                    alpha,
+                }
+            }
+            Asked::CloseColorPanel => {
+                self.state.color_panel = false;
+                Request::CloseColorPanel {
+                    plugin: self.state.name.clone(),
+                }
+            }
             Asked::NewTheme(variant) => {
                 let id = new_id();
                 self.out.requests.push(Request::NewTheme {
@@ -6283,11 +6381,8 @@ impl Host<'_, '_> {
                 buttons,
             } => {
                 host::check_buttons(&buttons)?;
-                let settings = self
-                    .state
-                    .granted
-                    .as_ref()
-                    .is_none_or(|granted| granted.contains(&Capability::Config));
+                host::check_question(&message, &detail)?;
+                let settings = self.holds_config();
                 let window = window.map(|window| WindowId::of(window.0));
                 if let Some(window) = window {
                     if self.context.workspace.window(window).is_none() {
@@ -6300,7 +6395,11 @@ impl Host<'_, '_> {
                         self.not_settings_window(window)?;
                     }
                 }
+                if self.state.question.is_some() {
+                    return Err(Error::new(Code::Unavailable, host::QUESTION_OPEN));
+                }
                 let id = new_id();
+                self.state.question = Some(id);
                 self.out.requests.push(Request::AskChoice {
                     plugin: self.state.name.clone(),
                     id,
@@ -6318,6 +6417,7 @@ impl Host<'_, '_> {
                 detail,
                 text,
             } => {
+                host::check_question(&message, &detail)?;
                 let window = window.map(|window| WindowId::of(window.0));
                 if let Some(window) = window {
                     if self.context.workspace.window(window).is_none() {
@@ -6328,11 +6428,16 @@ impl Host<'_, '_> {
                     }
                     self.not_settings_window(window)?;
                 }
+                if self.state.question.is_some() {
+                    return Err(Error::new(Code::Unavailable, host::QUESTION_OPEN));
+                }
                 let id = new_id();
+                self.state.question = Some(id);
                 self.out.requests.push(Request::AskText {
                     plugin: self.state.name.clone(),
                     id,
                     window,
+                    settings: self.holds_config(),
                     message,
                     detail,
                     text,

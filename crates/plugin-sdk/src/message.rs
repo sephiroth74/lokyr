@@ -124,7 +124,8 @@ pub enum Request {
     /// theme.
     Themes,
     /// Every token of the theme of a name, or of the appearance in force's
-    /// of none, as it resolves: its color and where it comes from.
+    /// of none, as it resolves: its color and where it comes from, a file's
+    /// path to a plugin of `config` alone, its name to the others.
     ThemeTokens(Option<String>),
     /// Shows the theme of a name in place of the appearance in force's,
     /// for a while, as a picker previews it, until the next preview, the
@@ -169,9 +170,10 @@ pub enum Request {
     /// Shows the color `name` of the theme `theme`, a theme of Lokyr's
     /// format of the user's themes folder, of `value` in place of its
     /// file's, for a while, as a color panel moves, wherever the theme
-    /// shows, until the value is written, its file read anew, or a preview
-    /// of none ends it; checked as [`Request::SetThemeValue`] is. Of the
-    /// capability `config`, Lokyr's own plugins' alone.
+    /// shows, until the value is written, its write fails, its plugin
+    /// stops, or a preview of none ends it, whatever the color; a value
+    /// checked as [`Request::SetThemeValue`]'s is. Of the capability
+    /// `config`, Lokyr's own plugins' alone.
     PreviewThemeValue {
         /// The theme's name.
         theme: String,
@@ -184,8 +186,10 @@ pub enum Request {
     /// where `alpha`, or gives it `color` where it shows: each color that
     /// the user chooses in it comes as [`Event::ColorPicked`] to the
     /// plugin alone, and its closing as [`Event::ColorPanelClosed`]; the
-    /// plugin that shows it last hears it. Of no capability: the plugin
-    /// learns the colors chosen alone.
+    /// plugin that shows it last hears it, the one before hearing it
+    /// closed. Of no capability: the plugin learns the colors chosen alone;
+    /// while one of Lokyr's own plugins, of `config`, shows it, another
+    /// plugin's hears it closed at once, and it closes as its plugin stops.
     ShowColorPanel {
         /// The color that it shows.
         color: crate::theme::ThemeColor,
@@ -795,7 +799,10 @@ pub enum Request {
     /// alone, the text given, or none as the user cancels. The message and
     /// the detail are messages of the plugin's catalogs, which the host
     /// shows in the language shown, or the texts themselves where the
-    /// catalogs lack them.
+    /// catalogs lack them, bounded and cleaned of the characters that hide
+    /// the text around them: [`check_question`](crate::host::check_question).
+    /// The alert names a plugin that does not hold `config`; a plugin asks
+    /// one question at a time.
     AskText {
         /// The window.
         window: Option<WindowId>,
@@ -814,7 +821,8 @@ pub enum Request {
     /// the buttons are messages of the plugin's catalogs, or the texts
     /// themselves where the catalogs lack them; from one to
     /// [`MOST_BUTTONS`] buttons, each of a text. The settings window takes
-    /// the questions of Lokyr's own plugins alone, of `config`.
+    /// the questions of Lokyr's own plugins alone, of `config`. Its texts,
+    /// its alert and its one at a time are as [`Request::AskText`]'s.
     AskChoice {
         /// The window.
         window: Option<WindowId>,

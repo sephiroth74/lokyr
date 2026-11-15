@@ -2099,3 +2099,73 @@ fn a_built_in_plugin_shows_a_page_of_its_manifest_alone_and_hears_it_shown_and_h
     assert_eq!(probe.heard.last().unwrap(), &["page-hidden", "page-shown"]);
     assert_eq!(host.page(), Some("terminal"));
 }
+
+#[test]
+fn a_question_waits_for_its_answer_of_its_texts_bounded_and_another_s_plugin_reads_files_by_name() {
+    let file = |tokens: &host::ThemeTokens| -> Vec<String> {
+        tokens
+            .terminal
+            .iter()
+            .chain(&tokens.tokens)
+            .filter_map(|token| match &token.origin {
+                host::TokenOrigin::File { path, .. } => Some(path.clone()),
+                _ => None,
+            })
+            .collect()
+    };
+    // Lokyr's own: a file's path, and a preview of none, whatever the
+    // color, which ends one.
+    let mut host = FakeHost::new("lokyr/probe");
+    let mut probe = Probe::new(move |cx, _| {
+        let tokens = cx.theme_tokens(None)?.expect("the theme in force");
+        assert!(
+            file(&tokens)
+                .iter()
+                .all(|path| path == "/themes/Lokyr Dark.toml")
+        );
+        cx.preview_theme_value("Lokyr Dark", "red", None)
+    });
+    host.command(&mut probe, "probe.go", Args::new()).unwrap();
+    // Another's: the file's name alone; the texts bounded; one question at
+    // a time.
+    let mut host = FakeHost::new("acme/probe").with_capabilities(Vec::new());
+    let asked: Rc<RefCell<Vec<Result<u64, Code>>>> = Rc::default();
+    let seen = Rc::clone(&asked);
+    let mut probe = Probe::new(move |cx, _| {
+        let tokens = cx.theme_tokens(None)?.expect("the theme in force");
+        assert!(file(&tokens).iter().all(|path| path == "Lokyr Dark.toml"));
+        let code = |error: Error| error.code;
+        let mut seen = seen.borrow_mut();
+        seen.push(
+            cx.ask_choice(None, ("Use it?", "txt.\u{202E}exe"), &["Use"])
+                .map_err(code),
+        );
+        seen.push(cx.ask_choice(None, ("Use it?", ""), &["Use"]).map_err(code));
+        seen.push(cx.ask_text(None, "Its name", "", "").map_err(code));
+        Ok(())
+    });
+    host.command(&mut probe, "probe.go", Args::new()).unwrap();
+    let id = match asked.borrow().as_slice() {
+        [Err(Code::Failed), Ok(id), Err(Code::Unavailable)] => *id,
+        other => panic!("{other:?}"),
+    };
+    assert_eq!(host.question(), Some(id));
+    // Another question's answer leaves it waiting; its own closes it.
+    host.post(Event::Chosen {
+        id: id + 1,
+        button: None,
+    });
+    assert_eq!(host.question(), Some(id));
+    host.post(Event::Chosen {
+        id,
+        button: Some(0),
+    });
+    assert_eq!(host.question(), None);
+    // A call that fails takes its question back.
+    let mut failing = Probe::new(|cx, _| {
+        cx.ask_text(None, "Its name", "", "")?;
+        Err(Error::new(Code::Failed, "on purpose"))
+    });
+    assert!(host.command(&mut failing, "probe.go", Args::new()).is_err());
+    assert_eq!(host.question(), None);
+}

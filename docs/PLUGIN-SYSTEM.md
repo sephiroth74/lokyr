@@ -711,7 +711,8 @@ type Cx = {
     themes: () -> (Themes?, Error?),
     -- Every color of the theme of a name, or of the appearance in force's of nil, as it resolves, its terminal's and
     -- its tokens: its color and its origin, its file's path and line, a theme of no file's, or its rule's text, and its
-    -- value as the theme gives it, a color or an expression, nil of a rule's; nil of a name of no theme.
+    -- value as the theme gives it, a color or an expression, nil of a rule's; nil of a name of no theme. A file's path
+    -- is given whole to a plugin of `config` alone, its file's name to the others.
     theme_tokens: (theme: string?) -> (ThemeTokens?, Error?),
     -- Require `appearance-write`: shows a theme in place of the appearance in force's, for a while, as a picker
     -- previews it; nil shows the config's.
@@ -737,10 +738,13 @@ type Cx = {
     -- names do not resolve, a read-only theme, or a palette's color taken away alone.
     set_theme_value: (theme: string, name: string, value: string?) -> (boolean, Error?),
     -- Require `config`: shows a color of a theme of the themes folder of a value in place of its file's, wherever the
-    -- theme shows, as a color panel moves, until it is written, its file read anew, or nil shows its file's again.
+    -- theme shows, as a color panel moves, until it is written, its write fails, the plugin stops, its file is read
+    -- anew, or nil shows its file's again, whatever the color.
     preview_theme_value: (theme: string, name: string, value: string?) -> (boolean, Error?),
     -- The system's color panel of a color, of its opacity's slider where asked, of no capability: the colors that the
-    -- user chooses come as `color-picked`, its closing as `color-panel-closed`, to the plugin that showed it last.
+    -- user chooses come as `color-picked`, its closing as `color-panel-closed`, to the plugin that showed it last, the
+    -- one before hearing it closed. While one of Lokyr's own plugins shows it, another plugin's hears it closed at
+    -- once; it closes as the plugin that showed it stops.
     show_color_panel: (color: string, alpha: boolean) -> (boolean, Error?),
     -- Closes the color panel, if the plugin showed it last.
     close_color_panel: () -> (boolean, Error?),
@@ -876,11 +880,17 @@ type Cx = {
     keys_of: (command: string, args: { [string]: any }) -> (string?, Error?),
     -- Asks for a text, in an alert on `window`, or on the focused one, of a field that holds `text`:
     -- returns the question's id, and the answer comes as an "answered" event. The message and the detail are
-    -- messages of the plugin's catalogs, shown in the language shown, or the texts themselves where they lack them.
+    -- messages of the plugin's catalogs, shown in the language shown, or the texts themselves where they lack them:
+    -- a message of 1 to 256 characters and a detail of 1024 at most, of no control character but the detail's line
+    -- breaks nor one that hides the text around it, as a change of direction. The alert of a plugin other than
+    -- Lokyr's own names it. A plugin asks one question at a time: another, of a text or of buttons, fails as
+    -- `unavailable` until the last one's answer comes.
     ask_text: (window: WindowId?, message: string, detail: string, text: string) -> (number?, Error?),
     -- Asks a question of 1 to 4 buttons, the first the default, in an alert on `window`, or on the focused one: returns
     -- the question's id, and the button chosen, from 0, comes as a "chosen" event, nil as its window closes. Its texts
-    -- are messages of the plugin's catalogs, or the texts themselves; the settings window takes Lokyr's own plugins'.
+    -- are messages of the plugin's catalogs, or the texts themselves, bounded as `ask_text`'s, a button's of 64
+    -- characters; its alert, and its one at a time, are as `ask_text`'s; the settings window takes Lokyr's own
+    -- plugins'.
     ask_choice: (window: WindowId?, message: string, detail: string, buttons: { string }) -> (number?, Error?),
     -- Asks where to save `bytes`, a string, as a file, in the platform's save panel, a sheet on `window` or on
     -- the focused one, of `name` suggested and of its extension's type: returns the question's id, the host writes

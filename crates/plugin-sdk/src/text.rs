@@ -63,9 +63,31 @@ pub fn check_label(text: &str, what: &str) -> Result<(), crate::command::Error> 
     ))
 }
 
+/// `text` as a person may read it of a plugin, as a question's: of no
+/// control character but its line breaks where `lines` keeps them, nor one
+/// that hides or moves the text around it, and of `most` characters at
+/// most, its end cut.
+pub fn cleaned(text: &str, most: usize, lines: bool) -> String {
+    text.chars()
+        .filter(|&c| !(c.is_control() && !(lines && c == '\n')) && !is_hidden(c))
+        .take(most)
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_cleaned_text_keeps_what_it_shows_its_lines_where_asked_within_its_bound() {
+        let text = "Use\u{202E}txt.exe\u{0007} it?\nYes";
+        assert_eq!(cleaned(text, 100, true), "Usetxt.exe it?\nYes");
+        assert_eq!(cleaned(text, 100, false), "Usetxt.exe it?Yes");
+        assert_eq!(cleaned(text, 3, true), "Use");
+        // The joiners of an emoji, and the marks of an Arabic text, stay.
+        let kept = "👩\u{200D}💻 مرحبا\u{200F}";
+        assert_eq!(cleaned(kept, 100, false), kept);
+    }
 
     #[test]
     fn a_label_is_short_and_shows_what_it_says() {

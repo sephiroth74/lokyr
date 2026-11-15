@@ -146,6 +146,7 @@ set-title-set = Imposta
 set-title-cancel = Annulla
 ask-text-ok = OK
 ask-text-cancel = Annulla
+ask-plugin = Lo chiede il plugin { $plugin }.
 
 settings-failed-message = Lokyr non riesce ad aprire il file di configurazione
 settings-no-home = Senza una cartella home non c'è un file di configurazione: valgono i valori predefiniti.

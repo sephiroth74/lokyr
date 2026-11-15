@@ -27,6 +27,7 @@ mod consent;
 mod images;
 mod lazy;
 mod pages;
+mod questions;
 mod timers;
 
 type Activate = Box<dyn FnMut(&mut Cx<'_>) -> Result<(), Error>>;
@@ -194,6 +195,9 @@ pub(super) struct App {
     /// Whether a window shows a save panel, as the test says; none does
     /// without.
     pub(super) saving: Option<Box<dyn Fn(WindowId) -> bool>>,
+    /// The themes that the app can show, as the test gives them; the
+    /// built-in ones, dark in force, of none.
+    pub(super) themes: Option<Box<dyn Fn() -> host::Themes>>,
     pub(super) focused: Option<WindowId>,
     /// The language shown, English's of none.
     pub(super) language: Option<&'static str>,
@@ -249,7 +253,10 @@ impl App {
             confirm_paste: crate::config::ConfirmPaste::Auto,
             keys: &|_, _| None,
             enabled: &|_| true,
-            themes: &no_themes,
+            themes: match &self.themes {
+                Some(themes) => &**themes,
+                None => &no_themes,
+            },
             theme_tokens: &lokyr_plugin_sdk::fake::theme_tokens_of,
             theme_value: &|_, _, _| Ok(()),
             fonts: &lokyr_plugin_sdk::fake::fonts,
@@ -2157,6 +2164,9 @@ fn a_call_is_its_own_plugin_s() {
             triggers: vec![Trigger::Startup],
             undecided: Vec::new(),
             asking: false,
+            question: None,
+            color_panel: false,
+            previewed: false,
             deferred: Deferred::default(),
             woken: Vec::new(),
         },

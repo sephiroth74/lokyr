@@ -774,11 +774,12 @@ pub struct App<B: Backend> {
     /// Editor asks them.
     convert_asks: BTreeMap<AlertId, theme_copies::ConvertTheme>,
     /// The themes' colors shown before they are written, as the color
-    /// panel moves, by the themes' names and the colors' names.
-    theme_values: BTreeMap<String, BTreeMap<String, String>>,
+    /// panel moves.
+    theme_values: theme_catalog::Previews,
     /// The plugin that showed the color panel last, which hears its colors
-    /// and its closing.
-    color_panel: Option<String>,
+    /// and its closing, and whether it holds `config`, as Lokyr's own
+    /// plugins do, which another plugin does not take it from.
+    color_panel: Option<(String, bool)>,
     /// Whether the open panel of the themes to import shows, and the
     /// questions of the files of a name in the themes' folder already.
     importing: bool,
@@ -1062,7 +1063,7 @@ impl<B: Backend> App<B> {
             theme_asks: BTreeMap::new(),
             new_theme_asks: BTreeMap::new(),
             convert_asks: BTreeMap::new(),
-            theme_values: BTreeMap::new(),
+            theme_values: theme_catalog::Previews::default(),
             color_panel: None,
             resolutions: asks::Resolutions::default(),
             importing: false,
@@ -1646,7 +1647,7 @@ impl<B: Backend> App<B> {
             match places.resolve(name, &builtins) {
                 Ok(mut theme) => {
                     // The colors shown before they are written.
-                    for (color, value) in self.theme_values.get(name).into_iter().flatten() {
+                    for (color, value) in self.theme_values.of(name) {
                         if let Err(why) = themes::with_value(&mut theme.theme, color, value) {
                             eprintln!("lokyr: {why}");
                         }
@@ -3562,28 +3563,42 @@ impl<B: Backend> App<B> {
                 }
                 // A theme's color shown before it is written, as the color
                 // panel moves, or its file's again.
-                Request::PreviewThemeValue { theme, name, value } => {
-                    let values = self.theme_values.entry(theme.clone()).or_default();
-                    match value {
-                        Some(value) => {
-                            values.insert(name, value);
-                        }
-                        None => {
-                            values.remove(&name);
-                        }
-                    }
-                    if values.is_empty() {
-                        self.theme_values.remove(&theme);
-                    }
+                Request::PreviewThemeValue {
+                    plugin,
+                    theme,
+                    name,
+                    value,
+                } => {
+                    self.theme_values.set(&plugin, (&theme, &name), value);
                     self.load_themes(platform);
                 }
+                // A stopped plugin's colors shown before they were written.
+                Request::EndPreviews { plugin } => {
+                    if self.theme_values.end_of(&plugin) {
+                        self.load_themes(platform);
+                    }
+                }
                 // The color panel, its colors and its closing told to the
-                // plugin that showed it last.
+                // plugin that showed it last, the one before hearing it
+                // closed; one of Lokyr's own plugins keeps it from the
+                // others, which hear it closed at once.
                 Request::ShowColorPanel {
                     plugin,
+                    settings,
                     color,
                     alpha,
                 } => {
+                    match &self.color_panel {
+                        Some((owner, true)) if *owner != plugin && !settings => {
+                            self.plugins.color_panel_closed(&plugin);
+                            continue;
+                        }
+                        Some((owner, _)) if *owner != plugin => {
+                            let owner = owner.clone();
+                            self.plugins.color_panel_closed(&owner);
+                        }
+                        _ => {}
+                    }
                     let color = lokyr_platform_core::PanelColor {
                         red: color.red,
                         green: color.green,
@@ -3591,10 +3606,14 @@ impl<B: Backend> App<B> {
                         alpha: color.alpha,
                     };
                     platform.show_color_panel(color, alpha);
-                    self.color_panel = Some(plugin);
+                    self.color_panel = Some((plugin, settings));
                 }
                 Request::CloseColorPanel { plugin } => {
-                    if self.color_panel.as_deref() == Some(plugin.as_str()) {
+                    if self
+                        .color_panel
+                        .as_ref()
+                        .is_some_and(|(owner, _)| *owner == plugin)
+                    {
                         self.color_panel = None;
                         platform.close_color_panel();
                     }
@@ -3608,15 +3627,22 @@ impl<B: Backend> App<B> {
                     detail,
                     buttons,
                 } => {
-                    // Of the plugin's catalogs, in the language shown.
+                    let (message, detail) =
+                        self.question_texts(&plugin, settings, (&message, &detail));
                     let language = self.texts.language().to_owned();
                     let alert = Alert {
                         style: AlertStyle::Informational,
-                        message: self.plugins.text_of(&plugin, &language, &message),
-                        detail: self.plugins.text_of(&plugin, &language, &detail),
+                        message,
+                        detail,
                         buttons: buttons
                             .iter()
-                            .map(|button| self.plugins.text_of(&plugin, &language, button))
+                            .map(|button| {
+                                plugins::text::cleaned(
+                                    &self.plugins.text_of(&plugin, &language, button),
+                                    host::MOST_BUTTON_CHARS,
+                                    false,
+                                )
+                            })
                             .collect(),
                         suppression: None,
                         input: None,
@@ -3627,16 +3653,17 @@ impl<B: Backend> App<B> {
                     plugin,
                     id,
                     window,
+                    settings,
                     message,
                     detail,
                     text,
                 } => {
-                    // Of the plugin's catalogs, in the language shown.
-                    let language = self.texts.language().to_owned();
+                    let (message, detail) =
+                        self.question_texts(&plugin, settings, (&message, &detail));
                     let alert = Alert {
                         style: AlertStyle::Informational,
-                        message: self.plugins.text_of(&plugin, &language, &message),
-                        detail: self.plugins.text_of(&plugin, &language, &detail),
+                        message,
+                        detail,
                         buttons: vec![
                             self.texts.text("ask-text-ok"),
                             self.texts.text("ask-text-cancel"),
@@ -4995,7 +5022,7 @@ impl<B: Backend> App<B> {
             AppEvent::DefaultTerminalKnown => self.show_default_terminal(platform),
             AppEvent::ToolsLinked(outcome) => self.tools_linked(platform, &outcome),
             AppEvent::ColorPicked(color) => {
-                if let Some(plugin) = &self.color_panel {
+                if let Some((plugin, _)) = &self.color_panel {
                     let color = themes::ThemeColor {
                         red: color.red,
                         green: color.green,
@@ -5006,7 +5033,7 @@ impl<B: Backend> App<B> {
                 }
             }
             AppEvent::ColorPanelClosed => {
-                if let Some(plugin) = self.color_panel.take() {
+                if let Some((plugin, _)) = self.color_panel.take() {
                     self.plugins.color_panel_closed(&plugin);
                 }
             }
