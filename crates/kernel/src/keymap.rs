@@ -10,7 +10,9 @@
 //! left button's click, `click`, alone.
 //! A key matches a binding of its layout's character, or else of the US
 //! layout's character at its place, so that the bindings reach the keys of
-//! any layout.
+//! any layout; with Shift, a binding of the character that the US layout
+//! types with Shift at its place too, of no Shift, so that `cmd+}` is
+//! ⇧⌘], as `cmd+shift+]`.
 //!
 //! A binding whose keys start with `global:`, as `global:ctrl+\``, takes
 //! its key from every app, as the system gives it, by its place on the
@@ -23,7 +25,7 @@ use lokyr_vt_core::input::{Key, Wheel};
 
 pub use lokyr_plugin_sdk::keys::{
     CONTEXTS, Combo, Direction, GLOBAL, Mods, Named, Press, When, is_panel_context, macos_text,
-    parse_global, parse_keys,
+    parse_global, parse_keys, us_shifted,
 };
 
 use crate::commands::{Args, Value};
@@ -337,13 +339,28 @@ impl Pressed {
         }
     }
 
-    /// The combinations that it makes, its layout's first.
+    /// The combinations that it makes, its layout's first, then the US
+    /// layout's at its place; and, with Shift, the character that the US
+    /// layout types with Shift at its place, of no Shift, so that a binding
+    /// `cmd+}` runs as ⇧⌘] does, as `cmd+shift+]` does.
     fn combos(self) -> impl Iterator<Item = Combo> {
         let combo = |press| Combo {
             mods: self.mods,
             press,
         };
-        std::iter::once(combo(self.press)).chain(self.us.map(combo))
+        let shifted = match self.us.unwrap_or(self.press) {
+            Press::Char(key) if self.mods.shift => us_shifted(key).map(|shifted| Combo {
+                mods: Mods {
+                    shift: false,
+                    ..self.mods
+                },
+                press: Press::Char(shifted),
+            }),
+            _ => None,
+        };
+        std::iter::once(combo(self.press))
+            .chain(self.us.map(combo))
+            .chain(shifted)
     }
 }
 

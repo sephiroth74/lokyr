@@ -268,6 +268,44 @@ fn a_sequence_waits_for_its_next_key_or_gives_its_keys_to_the_program() {
 }
 
 #[test]
+fn a_binding_of_a_shifted_character_runs_as_its_key_with_shift_does() {
+    let shift_cmd = Mods { shift: true, ..CMD };
+    let mut resolver = Resolver::new();
+    let context = Context::default();
+    // ⇧⌘] of the US layout runs `cmd+}`, as `cmd+shift+]`.
+    let braced = Keymap::new(vec![binding("cmd+}", "tabs.next", None)]);
+    let spelled = Keymap::new(vec![binding("cmd+shift+]", "tabs.next", None)]);
+    let us = key(']', shift_cmd);
+    assert_eq!(resolver.press(&braced, us, &context), run("tabs.next"));
+    assert_eq!(resolver.press(&spelled, us, &context), run("tabs.next"));
+    // Of the Italian layout's `+`, at the US layout's `]`, too.
+    let italian = Pressed::key(Key::Char('+'), shift_cmd, Some(']')).unwrap();
+    assert_eq!(resolver.press(&braced, italian, &context), run("tabs.next"));
+    assert_eq!(
+        resolver.press(&spelled, italian, &context),
+        run("tabs.next")
+    );
+    // A binding of the layout's own character first: `cmd++` of the
+    // Italian `+`, which takes no Shift.
+    let plus = Keymap::new(vec![
+        binding("cmd++", "font.increase", None),
+        binding("cmd+}", "tabs.next", None),
+    ]);
+    let own = Pressed::key(Key::Char('+'), CMD, Some(']')).unwrap();
+    assert_eq!(resolver.press(&plus, own, &context), run("font.increase"));
+    // Of no Shift, `]` runs no `cmd+}`; a letter's Shift is its case's.
+    assert_ne!(
+        resolver.press(&braced, key(']', CMD), &context),
+        run("tabs.next")
+    );
+    let letter = Keymap::new(vec![binding("cmd+K", "pane.clear", None)]);
+    assert_ne!(
+        resolver.press(&letter, key('k', shift_cmd), &context),
+        run("pane.clear")
+    );
+}
+
+#[test]
 fn a_key_takes_the_us_layout_s_binding_when_its_own_has_none() {
     // The Italian layout's `è`, at the US layout's `[`, and its `+`, at `]`.
     let keymap = Keymap::new(vec![

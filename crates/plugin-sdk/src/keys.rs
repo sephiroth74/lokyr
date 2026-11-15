@@ -394,6 +394,16 @@ const US_SHIFTED: [(char, char); 21] = [
     ('?', '/'),
 ];
 
+/// The character that the US layout types with Shift at the key that
+/// types `key` without it, as `}` of `]`; none of a key of no such
+/// character, as a letter's, whose Shift its case tells.
+pub fn us_shifted(key: char) -> Option<char> {
+    US_SHIFTED
+        .iter()
+        .find(|&&(_, unshifted)| unshifted == key)
+        .map(|&(shifted, _)| shifted)
+}
+
 /// The combination of the keys of a global binding, `text` after
 /// [`GLOBAL`]: one key, which no sequence follows, with Command, Control
 /// or Alt, or a function key, alone or not; neither the wheel nor a

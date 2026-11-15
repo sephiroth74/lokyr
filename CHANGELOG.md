@@ -21,6 +21,10 @@ from 1.0.0; before it, a minor version may change what a previous one did.
 - The settings window's Keys are a page of their own, a tab between Settings and Themes, no longer a part of the Settings page's sidebar, whose search no longer lists the shortcuts.
 - The settings window's pages draw anew faster, the Keys page above all, as the plugins' texts are read once a language rather than at each title and message; Lokyr starts a little sooner too.
 
+### Fixed
+
+- A binding of a character that the US layout types with Shift, as `cmd+}`, runs as its key with Shift does, ⇧⌘], as `cmd+shift+]`.
+
 ## [1.1.0] - 2026-11-14
 
 ### Added
