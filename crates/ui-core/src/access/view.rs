@@ -232,7 +232,7 @@ impl WindowTree {
             (Kind::List(_), _) => Role::ListBox,
             (Kind::Progress(_), _) => Role::ProgressIndicator,
             (Kind::Tabs(_), _) => Role::TabList,
-            (Kind::Image(_) | Kind::ThemePreview(_), _) => Role::Image,
+            (Kind::Image(_) | Kind::ThemePreview(_) | Kind::TerminalSpecimen, _) => Role::Image,
         };
         let ax = node_id(access.number, id);
         let mut node = Node::new(role);

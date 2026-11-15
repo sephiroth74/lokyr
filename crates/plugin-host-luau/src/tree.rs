@@ -40,7 +40,7 @@ pub(crate) const NODE: [&str; 11] = [
 ];
 
 /// The kinds of node, by their names in Luau.
-pub(crate) const KINDS: [&str; 14] = [
+pub(crate) const KINDS: [&str; 15] = [
     "container",
     "text",
     "icon",
@@ -55,13 +55,14 @@ pub(crate) const KINDS: [&str; 14] = [
     "tabs",
     "image",
     "theme-preview",
+    "terminal-specimen",
 ];
 
 /// The fields of a node of `kind`'s own, by their names in Luau, if it is
 /// a kind of node.
 pub(crate) fn own(kind: &str) -> Option<&'static [&'static str]> {
     Some(match kind {
-        "container" | "spacer" | "separator" | "scroll" => &[],
+        "container" | "spacer" | "separator" | "scroll" | "terminal-specimen" => &[],
         "text" => &["text"],
         "icon" => &["icon"],
         "field" => &["placeholder", "text", "stepped", "records"],
@@ -317,6 +318,7 @@ fn one(value: Value, budget: &Budget) -> Result<(Node, Vec<Value>, Option<Value>
         }),
         "image" => Kind::Image(field(take("image"), "image", budget)?),
         "theme-preview" => Kind::ThemePreview(field(take("theme"), "theme", budget)?),
+        "terminal-specimen" => Kind::TerminalSpecimen,
         // A container, the kind left, as `own` took it.
         _ => Kind::Container,
     };
@@ -379,6 +381,7 @@ mod giving {
             Kind::Tabs(_) => "tabs",
             Kind::Image(_) => "image",
             Kind::ThemePreview(_) => "theme-preview",
+            Kind::TerminalSpecimen => "terminal-specimen",
         }
     }
 
@@ -417,7 +420,11 @@ mod giving {
             set(lua, &table, "key", key)?;
             table.raw_set("kind", kind_name(kind))?;
             match kind {
-                Kind::Container | Kind::Spacer | Kind::Separator | Kind::Scroll => {}
+                Kind::Container
+                | Kind::Spacer
+                | Kind::Separator
+                | Kind::Scroll
+                | Kind::TerminalSpecimen => {}
                 Kind::Text(text) => table.raw_set("text", text.as_str())?,
                 Kind::Icon(icon) => table.raw_set("icon", icon.as_str())?,
                 Kind::Field(Field {

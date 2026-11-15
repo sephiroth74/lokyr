@@ -4353,6 +4353,7 @@ fn write_node(out: &mut String, node: &Node, depth: usize) {
             let _ = write!(out, "icon {}", quoted(name));
         }
         Kind::Spacer => out.push_str("spacer"),
+        Kind::TerminalSpecimen => out.push_str("terminal-specimen"),
         Kind::Field(field) => {
             let _ = write!(out, "field {}", quoted(&field.placeholder));
             if let Some(text) = &field.text {

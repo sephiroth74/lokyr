@@ -2,7 +2,8 @@
 //! its terminal.
 
 use lokyr_render_core::{
-    AtlasRegion, CellBatch, CellCursor, CellGlyph, CellLine, Color, CursorShape, LineStyle, Texture,
+    AtlasRegion, CellBatch, CellCursor, CellGlyph, CellLine, Color, CursorShape, LineStyle, Rect,
+    Shape, Texture,
 };
 use lokyr_text_core::CellMetrics;
 use lokyr_vt_core::page::{self, Content, Rgb, Style, Width};
@@ -633,7 +634,7 @@ fn cells_of(
             // The cursor guide over the background, under the text, but
             // of a selected cell.
             if let Some((band, _)) = guide.filter(|&(_, at)| at == row && chosen.is_none()) {
-                background = over(band, background);
+                background = paint::over(band, background);
             }
             batch.backgrounds.push(background);
             // Text that blinks shows half of the time.
@@ -1389,19 +1390,52 @@ pub fn fade(batch: &mut CellBatch, toward: Color, share: f32) {
     }
 }
 
-/// `top` over `under`, each of its opacity, as their blending shows them.
-fn over(top: Color, under: Color) -> Color {
-    let alpha = top.alpha + under.alpha * (1.0 - top.alpha);
-    if alpha <= 0.0 {
-        return Color::CLEAR;
-    }
-    let mix = |a: f32, b: f32| (a * top.alpha + b * under.alpha * (1.0 - top.alpha)) / alpha;
-    Color {
-        red: mix(top.red, under.red),
-        green: mix(top.green, under.green),
-        blue: mix(top.blue, under.blue),
-        alpha,
-    }
+/// The width of a gutter's bar, in points.
+const GUTTER_MARK: f64 = 2.0;
+
+/// The marks of `snapshot`'s gutter, of a pane whose grid's top left
+/// corner is at `origin`, in pixels, each a bar along its row, a point
+/// shorter at either end, in the middle of the padding at the cells' left,
+/// of `room`'s width, of `room`'s height of a row, on a display of
+/// `scale`: a prompt's of the theme's token of its command's state, a laid
+/// one of its color.
+pub fn gutter_marks<'a>(
+    snapshot: &'a Snapshot,
+    origin: (i32, i32),
+    (padding, row_height): (u32, u32),
+    scale: f64,
+    tokens: &'a theme::Tokens,
+) -> impl Iterator<Item = Shape> + 'a {
+    // Casts from floats saturate.
+    let width = ((GUTTER_MARK * scale).round() as u32).clamp(1, padding.max(1));
+    let inset = (scale.round() as u32).min(row_height / 4);
+    let x = origin.0 - i32::try_from(padding.div_ceil(2) + width / 2).unwrap_or(0);
+    snapshot.gutter().iter().filter_map(move |mark| {
+        let fill = match mark.kind {
+            lokyr_vt_core::terminal::GutterKind::Laid(rgb) => Color::from_rgb8(rgb.r, rgb.g, rgb.b),
+            lokyr_vt_core::terminal::GutterKind::Running => tokens.get("gutter.running")?,
+            lokyr_vt_core::terminal::GutterKind::Succeeded => tokens.get("gutter.succeeded")?,
+            lokyr_vt_core::terminal::GutterKind::Failed => tokens.get("gutter.failed")?,
+        };
+        let top = u32::from(mark.row) * row_height + inset;
+        Some(Shape {
+            rect: Rect {
+                x,
+                y: origin
+                    .1
+                    .saturating_add(i32::try_from(top).unwrap_or(i32::MAX)),
+                width,
+                height: row_height.saturating_sub(2 * inset),
+            },
+            radius: width as f32 / 2.0,
+            fill,
+            border: 0.0,
+            border_color: Color::CLEAR,
+            shadow: None,
+            arc: None,
+            knockout: false,
+        })
+    })
 }
 
 /// Faint text's color `text` at `opacity` over `under`, in the encoded
@@ -1694,10 +1728,10 @@ mod tests {
         // row's not; a cell's own background under the band.
         let batch = banded("ab\r\nc\x1b[44md\x1b[0m");
         assert_eq!(&batch.backgrounds[..3], [clear_bg; 3]);
-        assert_eq!(batch.backgrounds[3], over(band, clear_bg));
+        assert_eq!(batch.backgrounds[3], paint::over(band, clear_bg));
         assert_eq!(batch.backgrounds[3].alpha, 0.25);
         let blue = color(colors.palette[4]);
-        assert_eq!(batch.backgrounds[4], over(band, blue));
+        assert_eq!(batch.backgrounds[4], paint::over(band, blue));
         assert_eq!(batch.backgrounds[4].alpha, 1.0);
         assert!(batch.backgrounds[4].red > blue.red);
         // The text over the band keeps its color.

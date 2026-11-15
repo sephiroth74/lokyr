@@ -82,11 +82,46 @@ pub struct PreviewColors {
 
 /// The colors of themes, by their names, which their previews draw: `None`
 /// of a name of no theme, whose preview draws nothing; a name not there
-/// yet, a placeholder.
-pub type Previews = BTreeMap<String, Option<PreviewColors>>;
+/// yet, a placeholder; and the theme in force's specimen, which a
+/// terminal's specimen draws, none drawing nothing.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Previews {
+    /// The themes' colors, by their names.
+    pub themes: BTreeMap<String, Option<PreviewColors>>,
+    /// The theme in force's specimen.
+    pub specimen: Option<crate::specimen::Specimen>,
+}
+
+impl Previews {
+    /// No theme's colors, and no specimen.
+    pub const fn new() -> Self {
+        Self {
+            themes: BTreeMap::new(),
+            specimen: None,
+        }
+    }
+}
+
+impl std::ops::Deref for Previews {
+    type Target = BTreeMap<String, Option<PreviewColors>>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.themes
+    }
+}
+
+impl std::ops::DerefMut for Previews {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.themes
+    }
+}
 
 /// The colors of a view that shows no theme's preview.
-pub static NO_PREVIEWS: Previews = BTreeMap::new();
+pub static NO_PREVIEWS: Previews = Previews::new();
+
+/// The room inside a terminal's specimen's edges, in points, where the
+/// gutter's bars show at its left.
+const SPECIMEN_PADDING: f32 = 12.0;
 
 /// The size of a theme's preview's text, in points.
 const PREVIEW_TEXT: f32 = 10.0;
@@ -482,6 +517,7 @@ impl<'a, B: FontBackend> Painter<'a, B> {
             Kind::Tabs(view) => self.tabs(id, view, frame, color),
             Kind::Image(image) => self.image(*image, frame),
             Kind::ThemePreview(name) => self.theme_preview(name, frame),
+            Kind::TerminalSpecimen => self.terminal_specimen(frame),
             Kind::Container | Kind::Spacer | Kind::Separator | Kind::Scroll => {}
         }
         let children = tree.children(id);
@@ -1106,6 +1142,46 @@ impl<'a, B: FontBackend> Painter<'a, B> {
     /// placeholder of the fields' background while the previews lack its
     /// colors, as they come off the main thread; nothing out of the clip,
     /// as of a card scrolled away, nor of a name of no theme.
+    /// Paints a terminal's specimen of the theme in force within `frame`:
+    /// its background, of rounded corners, and its cells from its top left
+    /// corner, past its padding, as the panes draw theirs, the gutter's
+    /// bars in the padding, clipped to the frame; nothing of no specimen.
+    fn terminal_specimen(&mut self, frame: Frame) {
+        let Some(specimen) = self.previews.specimen.as_ref() else {
+            return;
+        };
+        let scale = self.layout.scale();
+        let background = Color::from_rgb8(
+            specimen.colors.background.r,
+            specimen.colors.background.g,
+            specimen.colors.background.b,
+        );
+        self.push_shape(Shape {
+            radius: 8.0 * scale,
+            ..Shape::filled(rect(frame), background)
+        });
+        let padding = (SPECIMEN_PADDING * scale).round();
+        let origin = (
+            (frame.x + padding).round() as i32,
+            (frame.y + padding).round() as i32,
+        );
+        let cell = *self.font.cell();
+        let (cells, bars) = crate::specimen::cells(
+            specimen,
+            &cell,
+            origin,
+            (padding as u32, f64::from(scale)),
+            self.tokens,
+            self.font,
+        );
+        self.items.push(Item::PushClip(rect(frame)));
+        self.items.push(Item::Cells(cells));
+        if !bars.is_empty() {
+            self.items.push(Item::Shapes(bars));
+        }
+        self.items.push(Item::PopClip);
+    }
+
     fn theme_preview(&mut self, name: &str, frame: Frame) {
         let shown = self.clip.is_none_or(|clip| {
             let (x, y) = (clip.x as f32, clip.y as f32);
@@ -1835,6 +1911,72 @@ mod tests {
     }
 
     #[test]
+    fn a_terminal_s_specimen_draws_its_cells_and_bars_in_its_clip_and_nothing_of_none() {
+        use lokyr_plugin_sdk::view::{Layout as Box, Length};
+        let root = Node::container(vec![Node::terminal_specimen().layout(Box {
+            width: Length::Points(500.0),
+            height: Length::Points(240.0),
+            ..Box::default()
+        })]);
+        let mut font = Font::new(Blocks, FontConfig::default(), 2.0).unwrap();
+        let mut tree = Tree::new();
+        let changes = tree.update(&root).unwrap();
+        let mut layout = Layout::new(2.0);
+        layout.update(&tree, &changes);
+        layout.compute(&tree, Some(800.0), None, &mut font);
+        let theme = Theme::builtin();
+        let variant = &theme.dark;
+        let painted = |previews: &Previews, font: &mut Font<Blocks>| {
+            paint(
+                &tree,
+                &layout,
+                font,
+                &variant.tokens,
+                (0.0, 0.0),
+                Shown {
+                    previews,
+                    ..shown(true, None)
+                },
+            )
+        };
+        // Of none, nothing.
+        let items = painted(&NO_PREVIEWS, &mut font);
+        assert!(!items.iter().any(|item| matches!(item, Item::Cells(_))));
+        let previews = Previews {
+            themes: BTreeMap::new(),
+            specimen: Some(crate::specimen::Specimen {
+                colors: variant.colors.clone(),
+                selection: variant.selection,
+                matches: variant.match_colors(),
+                text: crate::pane::TextLook::default(),
+                cursor: crate::pane::CursorLook {
+                    shape: lokyr_render_core::CursorShape::Block,
+                    thickness: 2,
+                    length: 1.0,
+                },
+            }),
+        };
+        let items = painted(&previews, &mut font);
+        let at = items
+            .iter()
+            .position(|item| matches!(item, Item::Cells(_)))
+            .expect("its cells");
+        // Within its clip, past its padding, of its rows and columns, its
+        // gutter's bars after them.
+        assert!(matches!(items[at - 1], Item::PushClip(_)));
+        let Item::Cells(cells) = &items[at] else {
+            unreachable!()
+        };
+        assert_eq!((cells.x, cells.y), (24, 24));
+        assert_eq!(
+            (cells.columns, cells.rows),
+            (crate::specimen::COLUMNS, crate::specimen::ROWS)
+        );
+        assert!(matches!(&items[at + 1], Item::Shapes(bars) if bars.len() == 4));
+        assert!(matches!(items[at + 2], Item::PopClip));
+    }
+
+    #[test]
     fn a_theme_s_preview_draws_its_colors_within_the_clip_and_a_placeholder_of_none_yet() {
         use lokyr_plugin_sdk::view::{Layout as Box, Length};
         let sized = |name: &str| {
@@ -1862,17 +2004,20 @@ mod tests {
         layout.compute(&tree, Some(800.0), None, &mut font);
         let background = Color::from_rgb8(10, 20, 30);
         let palette: [Color; 16] = std::array::from_fn(|at| Color::from_rgb8(100 + at as u8, 0, 0));
-        let previews = Previews::from([
-            (
-                "Night".to_owned(),
-                Some(PreviewColors {
-                    background,
-                    foreground: Color::from_rgb8(200, 200, 200),
-                    palette,
-                }),
-            ),
-            ("Nothing".to_owned(), None),
-        ]);
+        let previews = Previews {
+            themes: BTreeMap::from([
+                (
+                    "Night".to_owned(),
+                    Some(PreviewColors {
+                        background,
+                        foreground: Color::from_rgb8(200, 200, 200),
+                        palette,
+                    }),
+                ),
+                ("Nothing".to_owned(), None),
+            ]),
+            specimen: None,
+        };
         let items = paint(
             &tree,
             &layout,

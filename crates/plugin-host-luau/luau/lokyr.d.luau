@@ -210,7 +210,7 @@ export type UiEvent =
     | { view: ViewId, key: string, kind: "recorded", keys: any? }
 
 export type Node = {
-    kind: "container" | "text" | "icon" | "spacer" | "field" | "button" | "toggle" | "separator" | "list" | "scroll" | "progress" | "tabs" | "image" | "theme-preview",
+    kind: "container" | "text" | "icon" | "spacer" | "field" | "button" | "toggle" | "separator" | "list" | "scroll" | "progress" | "tabs" | "image" | "theme-preview" | "terminal-specimen",
     key: Key?,
     layout: NodeLayout?,
     style: Style?,

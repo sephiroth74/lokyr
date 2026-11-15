@@ -47,7 +47,7 @@ The Settings, Keys and Themes pages of the settings window: every key of your co
 - **Saved, a theme's file shows at once**: the tokens that changed are lit for three seconds.
 - **The button at a token's right** opens its theme's file at its line in your editor, or, for a color of no file of yours, copies its line to paste into a theme: a token's, as `"focus.ring" = "accent / 60%"`, a key of `[terminal]`'s, as `cursor = "#e6e6e6"`, or a palette's color.
 - **The theme's button** shows a menu of every theme: the one chosen shows in every window while the Inspector shows, as the palette's picker previews it, and its colors in the page; the theme in force comes back as an appearance's themes show or the page hides.
-- At its right, the specimens of the terminal and of the interface of the theme are to come.
+- **At its right, a terminal of the theme**, drawn as the panes draw theirs: prompts of a command that succeeded, one that failed and one that runs, of the gutter's bars; an `ls` of colors and a link; the 16 colors as text and as backgrounds; bold, faint, italic, underlined, curly, struck and inverse text; a selection and the find's matches; an error and a warning; and a block cursor over a character, on the cursor guide's row. It follows the theme as you save its file. The interface's parts of the theme are to come below it.
 
 ## Commands
 

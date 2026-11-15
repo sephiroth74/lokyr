@@ -26,7 +26,7 @@ use lokyr_ui_core::pane::{CursorLook, TextLook};
 use lokyr_ui_core::theme::Variant;
 use lokyr_ui_core::theme::{MatchColors, SelectionColors};
 use lokyr_ui_core::{cursor, pane as cells};
-use lokyr_vt_core::terminal::{GutterKind, MouseTracking};
+use lokyr_vt_core::terminal::MouseTracking;
 
 use super::access;
 use super::chrome;
@@ -41,9 +41,6 @@ use crate::{performance, size_label};
 /// The room between the two parts of a split, in points, which their
 /// divider takes.
 const DIVIDER: f64 = 1.0;
-
-/// The width of a mark of a pane's gutter, in points.
-const GUTTER_MARK: f64 = 2.0;
 
 /// The least room at the left of a pane's cells that its gutter takes, in
 /// points: its mark, and a point on either side.
@@ -1091,12 +1088,11 @@ impl<B: Backend> App<B> {
                 .chain(others.iter().map(|(pane, at)| (pane.snapshot(), *at, dim)));
             let shapes: Vec<Shape> = shown
                 .flat_map(|(snapshot, at, dim)| {
-                    gutter_marks(snapshot, at, (padding, cell.height), size.scale, tokens).map(
-                        move |mut shape| {
+                    cells::gutter_marks(snapshot, at, (padding, cell.height), size.scale, tokens)
+                        .map(move |mut shape| {
                             shape.fill = shape.fill.with_alpha(shape.fill.alpha * (1.0 - dim));
                             shape
-                        },
-                    )
+                        })
                 })
                 .collect();
             if !shapes.is_empty() {
@@ -1550,51 +1546,6 @@ impl<B: Backend> App<B> {
         // The scroll bar that shows a while fades at its time.
         self.bar_timer_at(platform, bars.due);
     }
-}
-
-/// The marks of `snapshot`'s gutter, of a pane whose grid's top left
-/// corner is at `origin`, in pixels, each a bar along its row, a point
-/// shorter at either end, in the middle of the padding at the cells' left,
-/// of `room`'s width, of `room`'s height of a row, on a display of
-/// `scale`: a prompt's of the theme's token of its command's state, a laid
-/// one of its color.
-fn gutter_marks<'a>(
-    snapshot: &'a lokyr_vt_core::terminal::Snapshot,
-    origin: (i32, i32),
-    (padding, row_height): (u32, u32),
-    scale: f64,
-    tokens: &'a lokyr_ui_core::theme::Tokens,
-) -> impl Iterator<Item = Shape> + 'a {
-    // Casts from floats saturate.
-    let width = ((GUTTER_MARK * scale).round() as u32).clamp(1, padding.max(1));
-    let inset = (scale.round() as u32).min(row_height / 4);
-    let x = origin.0 - i32::try_from(padding.div_ceil(2) + width / 2).unwrap_or(0);
-    snapshot.gutter().iter().filter_map(move |mark| {
-        let fill = match mark.kind {
-            GutterKind::Laid(rgb) => Color::from_rgb8(rgb.r, rgb.g, rgb.b),
-            GutterKind::Running => tokens.get("gutter.running")?,
-            GutterKind::Succeeded => tokens.get("gutter.succeeded")?,
-            GutterKind::Failed => tokens.get("gutter.failed")?,
-        };
-        let top = u32::from(mark.row) * row_height + inset;
-        Some(Shape {
-            rect: Rect {
-                x,
-                y: origin
-                    .1
-                    .saturating_add(i32::try_from(top).unwrap_or(i32::MAX)),
-                width,
-                height: row_height.saturating_sub(2 * inset),
-            },
-            radius: width as f32 / 2.0,
-            fill,
-            border: 0.0,
-            border_color: Color::CLEAR,
-            shadow: None,
-            arc: None,
-            knockout: false,
-        })
-    })
 }
 
 /// The cells of `panes`, the panes of a window but the one with the
@@ -2075,6 +2026,26 @@ impl<B: Backend> App<B> {
         };
         let chrome_look = (chrome_dark, background, foreground, opacity);
         let reduced = platform.reduce_motion();
+        // The theme in force's specimen, which a view's terminal specimen
+        // draws, as the panes would: a window of no panes, as the settings
+        // window, alone takes it.
+        let variant = self.theme.variant(dark);
+        self.previews.specimen = Some(lokyr_ui_core::specimen::Specimen {
+            colors: variant.colors.clone(),
+            selection: variant.selection,
+            matches: variant.match_colors(),
+            text: TextLook {
+                config: self.config.text,
+                blink_shown: true,
+                minimum_contrast: self.config.theme.minimum_contrast.value(),
+                cursor_guide: variant.tokens.get("cursor.guide"),
+            },
+            cursor: CursorLook {
+                shape: CursorShape::Block,
+                thickness: 2,
+                length: 1.0,
+            },
+        });
         let (Some(drawing), Some(state)) = (self.drawing.as_mut(), self.windows.get_mut(&window))
         else {
             return;

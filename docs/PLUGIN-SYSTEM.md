@@ -338,7 +338,7 @@ type Hover = { background: Color?, color: Color?, border: { color: Color, width:
 type Node = {
     key: string?,
     kind: "container" | "text" | "icon" | "field" | "button" | "toggle" | "separator" | "list" | "scroll"
-        | "progress" | "spacer" | "tabs" | "image" | "theme-preview",
+        | "progress" | "spacer" | "tabs" | "image" | "theme-preview" | "terminal-specimen",
     text: string?, -- for text nodes; a button's and a toggle's label
     icon: string?, -- for icon nodes, by its name; a button's and a toggle's icon, before its label
     on: boolean?, -- for toggle nodes, the plugin's state
@@ -372,6 +372,9 @@ type Node = {
     chosen: number?, -- for tabs nodes, the tab chosen, whose page is its child; a click or the arrows choose another, as "select" tells
     distribution: ("fit" | "fill" | "fill-equally" | "fill-proportionally")?, -- for tabs nodes, as macOS's segmented controls: each tab of its content's width, the control in the middle, by default; or the control of the view's width, each tab of its content's and an equal share of the room left, of equal widths, or of its content's share
     theme: string?, -- for theme-preview nodes, a theme's name, of which the host draws a sample terminal in its colors within the room that the node's layout gives it: its background, a prompt, an `ls` of colors and the sixteen colors; nothing of a name that names no theme, nor out of its view's room, as of a card scrolled away; the node has no size of its own
+    -- A terminal-specimen node: a terminal of the theme in force, drawn as the panes draw theirs from its top left
+    -- corner within the room that its layout gives it, of every combination that a theme colors; it has no size of
+    -- its own, and is drawn in the settings window alone.
     image: number?, -- for image nodes, the id of an image that the host keeps, as `render_image` of `keep` answers it: drawn whole within the room that the node's layout gives it, in the middle, of its own proportions, and nothing of an id let go; the node has no size of its own
     layout: NodeLayout?,
     style: Style?,

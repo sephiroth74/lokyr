@@ -257,6 +257,13 @@ pub enum Kind {
     /// background, a prompt, an `ls` of colors and the sixteen colors;
     /// nothing of a name that names no theme.
     ThemePreview(String),
+    /// A terminal's specimen of the theme in force, which the host draws
+    /// as the panes draw theirs, from its top left corner within the room
+    /// that its layout gives it: prompts and commands of the gutter's
+    /// states, the 16 colors as text and as backgrounds, every style, a
+    /// selection, the find's matches, and a cursor on the cursor guide's
+    /// row.
+    TerminalSpecimen,
 }
 
 /// A view of tabs' own properties.
@@ -500,7 +507,8 @@ impl Kind {
             | Self::Separator
             | Self::Progress(_)
             | Self::Image(_)
-            | Self::ThemePreview(_) => false,
+            | Self::ThemePreview(_)
+            | Self::TerminalSpecimen => false,
             Self::Field(_)
             | Self::Button(_)
             | Self::Toggle(_)
@@ -1319,6 +1327,12 @@ impl Node {
     /// that its layout gives it.
     pub fn theme_preview(name: impl Into<String>) -> Self {
         Self::new(Kind::ThemePreview(name.into()))
+    }
+
+    /// A terminal's specimen of the theme in force, within the room that
+    /// its layout gives it.
+    pub fn terminal_specimen() -> Self {
+        Self::new(Kind::TerminalSpecimen)
     }
 
     /// A list of `count` items, of rows of `row`'s template, which gives

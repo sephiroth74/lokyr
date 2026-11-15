@@ -37,6 +37,10 @@ const ACT: &str = "inspector-act:";
 /// How long the tokens that a change of the theme changed stay lit.
 const LIT: Duration = Duration::from_secs(3);
 
+/// The height of the terminal's specimen, of its 12 rows at the sizes of
+/// most fonts.
+const SPECIMEN_HEIGHT: f32 = 240.0;
+
 /// The width of the tokens' column.
 const COLUMN: f32 = 300.0;
 
@@ -281,7 +285,25 @@ impl Inspector {
                 padding: Edges::all(16.0),
                 ..Layout::default()
             });
+        let heading = |cx: &mut Cx<'_>, id: &str| {
+            Node::text(message(cx, id, &[]))
+                .role(Role::Heading)
+                .style(Style {
+                    font_weight: Some(FontWeight::Bold),
+                    ..Style::default()
+                })
+        };
         let specimens = Node::container(vec![
+            heading(cx, "inspector-terminal"),
+            Node::terminal_specimen()
+                .key("inspector-terminal")
+                .label(message(cx, "inspector-terminal", &[]))
+                .layout(Layout {
+                    width: Length::Fraction(1.0),
+                    height: Length::Points(SPECIMEN_HEIGHT),
+                    ..Layout::default()
+                }),
+            heading(cx, "inspector-interface"),
             Node::text(message(cx, "inspector-specimens", &[])).style(secondary()),
         ])
         .key("inspector-specimens")

@@ -35,6 +35,7 @@ pub mod pointer;
 pub mod progress;
 pub mod reorder;
 pub mod scrollbar;
+pub mod specimen;
 pub mod surface;
 pub mod tabs;
 pub mod text;
