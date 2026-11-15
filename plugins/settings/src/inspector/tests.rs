@@ -7,21 +7,24 @@ use lokyr_plugin_sdk::view::Kind;
 use super::*;
 use crate::SettingsPage;
 
-/// A host of the settings' plugin, its Theme Inspector's page shown.
+/// A host of the settings' plugin, its themes page showing its Inspector.
 fn shown() -> (FakeHost, SettingsPage) {
     let mut host = FakeHost::new("lokyr/settings").with_manifest(crate::MANIFEST);
     // A window, which the settings' window opens beside.
     host.pane(lokyr_plugin_sdk::host::PaneId(1));
     let mut plugin = SettingsPage::default();
     host.activate(&mut plugin).unwrap();
-    host.show_page(INSPECTOR);
+    host.show_page(crate::THEMES);
     host.deliver(&mut plugin).unwrap();
+    host.render(&mut plugin, &themes_page()).unwrap();
+    host.ui_event(&mut plugin, &click("themes-side:inspector"))
+        .unwrap();
     (host, plugin)
 }
 
 /// The page's tree, rendered anew.
 fn page(host: &mut FakeHost, plugin: &mut SettingsPage) -> Node {
-    host.render(plugin, &inspector_page()).expect("the page")
+    host.render(plugin, &themes_page()).expect("the page")
 }
 
 /// The node of `key` in `tree`.
@@ -61,9 +64,10 @@ fn rows(tree: &Node) -> Vec<String> {
     out
 }
 
+/// A click on the node of `key` of the themes page.
 fn click(key: &str) -> UiEvent {
     UiEvent {
-        view: inspector_page(),
+        view: themes_page(),
         key: key.into(),
         kind: UiEventKind::Click,
     }
@@ -103,7 +107,7 @@ fn the_page_lists_every_token_by_groups_of_its_color_value_and_origin() {
 fn the_filter_keeps_the_tokens_of_its_words_and_empties() {
     let (mut host, mut plugin) = shown();
     let typed = |text: &str| UiEvent {
-        view: inspector_page(),
+        view: themes_page(),
         key: FILTER.into(),
         kind: UiEventKind::InputChanged {
             text: text.to_owned(),
@@ -189,7 +193,17 @@ fn the_menu_previews_a_theme_and_the_page_hidden_ends_it() {
         )),
         "{done:?}"
     );
-    // The page hidden, the preview ends.
+    // An appearance's themes shown, the preview ends; so it does of the
+    // page hidden.
+    host.ui_event(&mut plugin, &click("themes-side:dark"))
+        .unwrap();
+    assert!(host.take_done().contains(&Request::PreviewTheme(None)));
+    host.ui_event(&mut plugin, &click("themes-side:inspector"))
+        .unwrap();
+    host.render(&mut plugin, &themes_page()).unwrap();
+    host.ui_event(&mut plugin, &click(THEME)).unwrap();
+    host.ui_event(&mut plugin, &item).unwrap();
+    let _ = host.take_done();
     host.hide_page();
     host.deliver(&mut plugin).unwrap();
     assert!(host.take_done().contains(&Request::PreviewTheme(None)));

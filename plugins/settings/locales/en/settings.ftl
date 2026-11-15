@@ -2,7 +2,7 @@
 page-settings = Settings
 page-keys = Keys
 page-themes = Themes
-page-inspector = Theme Inspector
+themes-inspector = Inspector
 inspector-theme = Theme
 inspector-in-force = { $theme } (in force)
 inspector-no-theme = No theme

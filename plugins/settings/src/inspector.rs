@@ -1,5 +1,5 @@
-//! The settings window's page of the Theme Inspector: every token of the
-//! theme in force, or of one that it previews, by groups, each of its color
+//! The themes page's Theme Inspector: every token of the theme in force,
+//! or of one that it previews, by groups, each of its color
 //! over a backdrop, its name, its value and where it comes from, filtered as
 //! its field says, the tokens that a saved file changed lit for a while; a
 //! token of a file opens at its line, any other copies its line to paste.
@@ -17,10 +17,7 @@ use lokyr_plugin_sdk::view::{
     Token, UiEventKind,
 };
 
-use super::{code, message, search_box, secondary, words};
-
-/// The page's id.
-pub(crate) const INSPECTOR: &str = "inspector";
+use super::{code, message, search_box, secondary, themes_page, words};
 
 /// The filter's field, and its button that empties it.
 const FILTER: &str = "inspector-filter";
@@ -43,15 +40,10 @@ const LIT: Duration = Duration::from_secs(3);
 /// The width of the tokens' column.
 const COLUMN: f32 = 460.0;
 
-/// The page's view.
-pub(crate) fn inspector_page() -> ViewId {
-    ViewId::Page(INSPECTOR.to_owned())
-}
-
-/// The state of the page.
+/// The state of the Inspector.
 #[derive(Debug, Default)]
 pub(crate) struct Inspector {
-    /// Whether it shows.
+    /// Whether it shows, in the themes page.
     shown: bool,
     /// The theme that it previews, of the menu, in place of the one in
     /// force.
@@ -67,24 +59,28 @@ pub(crate) struct Inspector {
 }
 
 impl Inspector {
+    /// Shows it, in the themes page, of the theme in force, of no filter.
+    pub(crate) fn show(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
+        self.shown = true;
+        self.filter.clear();
+        self.lit.clear();
+        self.tokens = cx.theme_tokens(None)?;
+        Ok(())
+    }
+
+    /// Hides it, as the page shows an appearance's themes or hides: a
+    /// theme that it previews goes, the one in force back.
+    pub(crate) fn hide(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
+        self.shown = false;
+        if self.previewed.take().is_some() {
+            cx.preview_theme(None)?;
+        }
+        Ok(())
+    }
+
     /// Takes `event`; returns whether it took it.
     pub(crate) fn on_event(&mut self, cx: &mut Cx<'_>, event: &Event) -> Result<bool, Error> {
         match event {
-            Event::PageShown(page) if page == INSPECTOR => {
-                self.shown = true;
-                self.filter.clear();
-                self.lit.clear();
-                self.tokens = cx.theme_tokens(None)?;
-                cx.request_render(inspector_page())?;
-                Ok(true)
-            }
-            Event::PageHidden(page) if page == INSPECTOR => {
-                self.shown = false;
-                if self.previewed.take().is_some() {
-                    cx.preview_theme(None)?;
-                }
-                Ok(true)
-            }
             // The theme resolved anew: its tokens read again, those that
             // changed lit.
             Event::ThemeChanged if self.shown => {
@@ -98,14 +94,14 @@ impl Inspector {
                     }
                     self.lit_timer = Some(cx.start_timer(LIT, false)?);
                 }
-                cx.request_render(inspector_page())?;
+                cx.request_render(themes_page())?;
                 Ok(true)
             }
             Event::Timer { id } if self.lit_timer == Some(*id) => {
                 self.lit_timer = None;
                 self.lit.clear();
                 if self.shown {
-                    cx.request_render(inspector_page())?;
+                    cx.request_render(themes_page())?;
                 }
                 Ok(true)
             }
@@ -136,26 +132,26 @@ impl Inspector {
             self.preview(cx, chosen)?;
             return Ok(true);
         }
-        if event.view != inspector_page() {
+        if event.view != themes_page() || !self.shown {
             return Ok(false);
         }
         match (&event.kind, key) {
             (UiEventKind::InputChanged { text, .. }, FILTER) => {
                 if *text != self.filter {
                     text.clone_into(&mut self.filter);
-                    cx.request_render(inspector_page())?;
+                    cx.request_render(themes_page())?;
                 }
             }
             (UiEventKind::Click, FILTER_CLEAR) => {
-                cx.set_text(inspector_page(), FILTER, "", u64::MAX)?;
+                cx.set_text(themes_page(), FILTER, "", u64::MAX)?;
                 self.filter.clear();
-                cx.request_render(inspector_page())?;
+                cx.request_render(themes_page())?;
             }
             (UiEventKind::Click, THEME) => cx.open_panel(
                 THEMES_MENU,
                 PanelOptions {
                     anchor: Anchor::Node {
-                        view: inspector_page(),
+                        view: themes_page(),
                         key: THEME.into(),
                     },
                     role: PanelRole::Menu,
@@ -165,12 +161,10 @@ impl Inspector {
                     close_typing: false,
                 },
             )?,
-            (UiEventKind::Click, _) => {
-                if let Some(name) = key.strip_prefix(ACT) {
-                    self.act(cx, name)?;
-                }
+            (UiEventKind::Click, _) if key.starts_with(ACT) => {
+                self.act(cx, &key[ACT.len()..])?;
             }
-            _ => {}
+            _ => return Ok(false),
         }
         Ok(true)
     }
@@ -185,7 +179,7 @@ impl Inspector {
         self.previewed = chosen;
         self.lit.clear();
         self.tokens = cx.theme_tokens(self.previewed.as_deref())?;
-        cx.request_render(inspector_page())
+        cx.request_render(themes_page())
     }
 
     /// Opens the file of the token `name` at its line, or copies its line,
@@ -206,12 +200,9 @@ impl Inspector {
         }
     }
 
-    /// The page, where it shows: the tokens' column at its left; the
+    /// Its part of the themes page: the tokens' column at its left; the
     /// specimens of the terminal and of the interface at its right.
-    fn tree(&self, cx: &mut Cx<'_>) -> Option<Node> {
-        if !self.shown {
-            return None;
-        }
+    pub(crate) fn tree(&self, cx: &mut Cx<'_>) -> Node {
         let tokens = self.tokens.as_ref();
         let title = match (&self.previewed, tokens) {
             (Some(name), _) => name.clone(),
@@ -290,23 +281,19 @@ impl Inspector {
             padding: Edges::all(16.0),
             ..Layout::default()
         });
-        Some(
-            Node::container(vec![column, specimens])
-                .key("inspector-page")
-                .layout(Layout {
-                    direction: Direction::Row,
-                    width: Length::Fraction(1.0),
-                    height: Length::Fraction(1.0),
-                    ..Layout::default()
-                }),
-        )
+        Node::container(vec![column, specimens])
+            .key("inspector-page")
+            .layout(Layout {
+                direction: Direction::Row,
+                grow: 1.0,
+                width: Length::Points(0.0),
+                height: Length::Fraction(1.0),
+                ..Layout::default()
+            })
     }
 
-    /// The tree of `view`, where it is the page's or its menu's.
+    /// The tree of `view`, where it is its menu's.
     pub(crate) fn render(&self, cx: &mut Cx<'_>, view: &ViewId) -> Option<Option<Node>> {
-        if *view == inspector_page() {
-            return Some(self.tree(cx));
-        }
         if *view == ViewId::Panel(PanelId::from(THEMES_MENU)) {
             return Some(self.menu(cx));
         }

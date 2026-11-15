@@ -3,10 +3,10 @@
 name = "lokyr/settings"
 kind = "builtin"
 license = "MIT"
-description = "The settings window's first pages: every key of the config and of the plugins' sections, of its text, its platforms and a control of its value, written into the config file; the bindings of keys; the themes; the Theme Inspector of every token"
+description = "The settings window's first pages: every key of the config and of the plugins' sections, of its text, its platforms and a control of its value, written into the config file; the bindings of keys; the themes, and the Theme Inspector of every token"
 
 [activation]
-on = ["page:settings", "page:keys", "page:themes", "page:inspector"]
+on = ["page:settings", "page:keys", "page:themes"]
 
 [capabilities]
 config = true
@@ -28,5 +28,4 @@ pages = [
     { id = "settings", icon = "settings" },
     { id = "keys", icon = "keyboard" },
     { id = "themes", icon = "symbol-color" },
-    { id = "inspector", icon = "layout" },
 ]

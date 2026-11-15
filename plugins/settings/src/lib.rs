@@ -82,7 +82,12 @@ const OPEN_THEMES: &str = "app.open-themes-folder";
 const CARDS_ACROSS: usize = 3;
 
 /// The key of the themes' page's sidebar's list of the appearances.
-const VARIANTS: &str = "variants";
+/// A row of the themes page's sidebar, of an appearance's word or of the
+/// Inspector.
+const SIDE: &str = "themes-side:";
+
+/// The sidebar's row of the Theme Inspector.
+const SIDE_INSPECTOR: &str = "inspector";
 
 /// The height of a theme's card's preview, in points.
 const PREVIEW_HEIGHT: f32 = 92.0;
@@ -240,8 +245,10 @@ pub struct SettingsPage {
     /// themes it shows, the one in force's until its sidebar chooses one.
     themes_shown: bool,
     themes_variant: Option<ThemeVariant>,
-    /// The Theme Inspector's page.
+    /// The Theme Inspector, of the themes page's sidebar, and whether it
+    /// shows there in place of an appearance's themes.
     inspector: inspector::Inspector,
+    inspecting: bool,
     /// The theme of the card whose context menu shows, of its appearance.
     theme_menu: Option<(ThemeVariant, String)>,
     /// The font of the item highlighted last, which shows once the timer
@@ -312,7 +319,7 @@ impl Plugin for SettingsPage {
     fn on_event(&mut self, cx: &mut Cx<'_>, events: &[Event]) -> Result<(), Error> {
         let mut again = false;
         for event in events {
-            // The Theme Inspector's page's.
+            // The Theme Inspector's.
             if self.inspector.on_event(cx, event)? {
                 continue;
             }
@@ -321,13 +328,19 @@ impl Plugin for SettingsPage {
                 Event::PageShown(page) if page == THEMES => {
                     self.themes_shown = true;
                     self.themes_variant = None;
+                    self.inspecting = false;
                     cx.request_render(themes_page())?;
                 }
                 // The themes' list read, or anew: their cards.
                 Event::ThemesChanged if self.themes_shown => {
                     cx.request_render(themes_page())?;
                 }
-                Event::PageHidden(page) if page == THEMES => self.themes_shown = false,
+                Event::PageHidden(page) if page == THEMES => {
+                    self.themes_shown = false;
+                    if std::mem::take(&mut self.inspecting) {
+                        self.inspector.hide(cx)?;
+                    }
+                }
                 // The page of the keys shows anew: of no filter, change of
                 // keys nor refusal.
                 Event::PageShown(page) if page == KEYS_PAGE => {
@@ -443,16 +456,24 @@ impl Plugin for SettingsPage {
         // or its context menu; an appearance of the sidebar, whose themes
         // show.
         if event.view == themes_page() {
-            if let (UiEventKind::Select { item } | UiEventKind::Activate { item }, VARIANTS) =
-                (&event.kind, key)
-            {
-                let themes = cx.themes()?;
-                let variant = variants_of(themes.appearance).get(*item).copied();
-                if variant.is_some() && variant != self.themes_variant {
+            if let (UiEventKind::Click, Some(row)) = (&event.kind, key.strip_prefix(SIDE)) {
+                let variant = match row {
+                    "light" => Some(ThemeVariant::Light),
+                    "dark" => Some(ThemeVariant::Dark),
+                    _ => None,
+                };
+                if row == SIDE_INSPECTOR {
+                    if !self.inspecting {
+                        self.inspecting = true;
+                        self.inspector.show(cx)?;
+                    }
+                } else if variant.is_some() {
+                    if std::mem::take(&mut self.inspecting) {
+                        self.inspector.hide(cx)?;
+                    }
                     self.themes_variant = variant;
-                    cx.request_render(themes_page())?;
                 }
-                return Ok(());
+                return cx.request_render(themes_page());
             }
             if event.kind == UiEventKind::Click {
                 match key {
@@ -727,7 +748,8 @@ impl Plugin for SettingsPage {
             return tree;
         }
         if *view == themes_page() {
-            return Some(themes_tree(cx, self.themes_variant));
+            let inspector = self.inspecting.then_some(&self.inspector);
+            return Some(themes_tree(cx, self.themes_variant, inspector));
         }
         if *view == keys_page() {
             let settings = page_settings(cx).ok()?;
@@ -2783,7 +2805,11 @@ fn variants_of(in_force: ThemeVariant) -> [ThemeVariant; 2] {
 /// card of a preview of its colors and its name, the one that `[theme]`
 /// names marked, in rows of [`CARDS_ACROSS`], which a click names in
 /// `[theme]`; a progress while the app reads their list.
-fn themes_tree(cx: &mut Cx<'_>, chosen: Option<ThemeVariant>) -> Node {
+fn themes_tree(
+    cx: &mut Cx<'_>,
+    chosen: Option<ThemeVariant>,
+    inspector: Option<&inspector::Inspector>,
+) -> Node {
     let themes = cx.themes().ok();
     let settings = cx.settings().ok();
     let in_force = themes
@@ -2794,64 +2820,56 @@ fn themes_tree(cx: &mut Cx<'_>, chosen: Option<ThemeVariant>) -> Node {
         ThemeVariant::Light => ("light", "themes-light", "circle"),
         ThemeVariant::Dark => ("dark", "themes-dark", "circle-filled"),
     };
-    // The sidebar of the appearances, of a menu's look, the first selected
-    // as it shows.
-    let row = Node::container(vec![
-        Node::icon("").style(Style {
-            color: Some(Token::from("accent")),
-            ..Style::default()
-        }),
-        Node::text(""),
-    ])
-    .layout(Layout {
-        direction: Direction::Row,
-        gap: 8.0,
-        align: Align::Center,
-        height: Length::Points(ROW),
-        padding: Edges {
-            top: 0.0,
-            right: 8.0,
-            bottom: 0.0,
-            left: 8.0,
-        },
-        ..Layout::default()
-    });
-    let items: Vec<ListItem> = variants_of(in_force)
+    // The sidebar: the appearances, the one in force first, a line, and
+    // the Inspector, each a row of a menu's look, the one shown selected.
+    let mut rows: Vec<Node> = variants_of(in_force)
         .into_iter()
-        .map(|variant| {
-            let (_, title, icon) = words(variant);
-            ListItem {
-                texts: vec![icon.to_owned(), message(cx, title, &[])],
-            }
+        .map(|each| {
+            let (word, title, icon) = words(each);
+            let selected = inspector.is_none() && each == variant;
+            side_row(cx, (word, title, icon), selected)
         })
         .collect();
-    let mut list = Node::list(row, items.len(), (0, items))
-        .key(VARIANTS)
-        .label(message(cx, "page-themes", &[]))
-        .layout(Layout {
-            width: Length::Fraction(1.0),
-            height: Length::Fraction(1.0),
-            ..Layout::default()
-        })
-        .style(Style {
-            hides_ring: true,
-            ..Style::default()
-        });
-    if let Kind::List(list) = &mut list.kind {
-        list.row_height = Some(ROW);
-        list.menu = true;
-    }
-    let sidebar = Node::container(vec![list])
+    rows.push(Node::container(vec![Node::separator()]).layout(Layout {
+        direction: Direction::Column,
+        width: Length::Fraction(1.0),
+        padding: Edges {
+            top: 6.0,
+            right: 0.0,
+            bottom: 6.0,
+            left: 0.0,
+        },
+        ..Layout::default()
+    }));
+    rows.push(side_row(
+        cx,
+        (SIDE_INSPECTOR, "themes-inspector", "layout"),
+        inspector.is_some(),
+    ));
+    let sidebar = Node::container(rows)
         .key("themes-sidebar")
         .role(Role::Group)
+        .label(message(cx, "page-themes", &[]))
         .layout(Layout {
             direction: Direction::Column,
+            gap: 2.0,
             width: Length::Points(SIDEBAR),
             min_width: Length::Points(SIDEBAR),
             height: Length::Fraction(1.0),
             padding: Edges::all(10.0),
             ..Layout::default()
         });
+    if let Some(inspector) = inspector {
+        let content = inspector.tree(cx);
+        return Node::container(vec![sidebar, Node::separator(), content])
+            .key("themes-page")
+            .layout(Layout {
+                direction: Direction::Row,
+                width: Length::Fraction(1.0),
+                height: Length::Fraction(1.0),
+                ..Layout::default()
+            });
+    }
     let (word, heading, _) = words(variant);
     // The title, and Show in Finder, Import… and New… at the row's end.
     let header = Node::container(vec![
@@ -2974,6 +2992,61 @@ fn themes_tree(cx: &mut Cx<'_>, chosen: Option<ThemeVariant>) -> Node {
             height: Length::Fraction(1.0),
             ..Layout::default()
         })
+}
+
+/// A row of the themes page's sidebar, of its `word`, its title's message
+/// and its icon, of a menu's look: of the accent's band where `selected`,
+/// hovered otherwise.
+fn side_row(cx: &mut Cx<'_>, (word, title, icon): (&str, &str, &str), selected: bool) -> Node {
+    let (fg, background) = if selected {
+        (
+            Token::from("list.selection.fg"),
+            Some(Token::from("list.selection.bg")),
+        )
+    } else {
+        (Token::from("text"), None)
+    };
+    let title = message(cx, title, &[]);
+    Node::container(vec![
+        Node::icon(icon).style(Style {
+            color: Some(if selected {
+                fg.clone()
+            } else {
+                Token::from("accent")
+            }),
+            ..Style::default()
+        }),
+        Node::text(title.as_str()).style(Style {
+            color: Some(fg),
+            ..Style::default()
+        }),
+    ])
+    .key(format!("{SIDE}{word}").as_str())
+    .role(Role::Group)
+    .label(title)
+    .layout(Layout {
+        direction: Direction::Row,
+        gap: 8.0,
+        align: Align::Center,
+        height: Length::Points(ROW),
+        width: Length::Fraction(1.0),
+        padding: Edges {
+            top: 0.0,
+            right: 8.0,
+            bottom: 0.0,
+            left: 8.0,
+        },
+        ..Layout::default()
+    })
+    .style(Style {
+        background,
+        radius: 6.0,
+        hover: (!selected).then(|| Hover {
+            background: Some(Token::from("button.hover.bg")),
+            ..Hover::default()
+        }),
+        ..Style::default()
+    })
 }
 
 /// The card of the theme `name` of the appearance `variant`, `light` or

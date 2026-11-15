@@ -48,7 +48,7 @@ tip-sleip = Plugins come from the registry: `sleip search` lists them, and `slei
 tip-settings-window = Lokyr › Open Settings Window shows every setting by its section, the plugins' too, with what it does, and changes it in your config file, its comments kept.
 tip-settings-keys = On the settings window's Keys page, type in its filter to find a shortcut, click its keys and press the new ones, or Add a shortcut of your own: every default is there, and Restore gives one back.
 tip-settings-themes = The settings window's Themes page shows every theme of a preview of its colors: a click uses it.
-tip-theme-inspector = The settings window's Theme Inspector shows every color of the theme in force and where it comes from, at once as you save its file.
+tip-theme-inspector = Inspector, on the settings window's Themes page, shows every color of the theme in force and where it comes from, at once as you save its file.
 tip-settings-search = In the settings window, type in the search field at the sidebar's top to find a setting by its name, what it does, or a shortcut's keys.
 tip-plugins = Lokyr › Plugins… lists every plugin, its state and what it may do, disables, updates or removes one, and installs those of the registry.
 

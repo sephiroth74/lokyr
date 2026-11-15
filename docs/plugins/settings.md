@@ -2,7 +2,7 @@
 
 <sub>`lokyr/settings` · bundled · [source](../../plugins/settings)</sub>
 
-The Settings, Keys, Themes and Theme Inspector pages of the settings window: every key of your config, Lokyr's own and the bundled plugins', by its section, of what it does, the platforms where it applies and its value in force, which you change there, Lokyr writing it into your config file; every binding of keys; every theme, of a preview of its colors; and every color of the theme in force, of where it comes from.
+The Settings, Keys and Themes pages of the settings window: every key of your config, Lokyr's own and the bundled plugins', by its section, of what it does, the platforms where it applies and its value in force, which you change there, Lokyr writing it into your config file; every binding of keys; every theme, of a preview of its colors; and every color of the theme in force, of where it comes from.
 
 ## The page
 
@@ -31,7 +31,7 @@ The Settings, Keys, Themes and Theme Inspector pages of the settings window: eve
 
 ## The Themes page
 
-- **The window's tab Themes** shows every theme that Lokyr has, the built-in ones, the collection's, and yours of the themes' folder beside your config, of a sidebar of the appearances, Dark and Light, of the one in force first, which a click or the arrows choose.
+- **The window's tab Themes** shows every theme that Lokyr has, the built-in ones, the collection's, and yours of the themes' folder beside your config, of a sidebar of the appearances, Dark and Light, of the one in force first, which a click chooses, then, after a line, the Inspector.
 - **The themes are read** off Lokyr's main thread, a progress showing as their list is read, then the cards, each preview a placeholder until its theme's colors come.
 - **Each theme** is a card of a preview of its colors, a sample terminal that Lokyr draws: its background, a prompt, an `ls` of colors and its sixteen colors, and its name; the theme that your config's `[theme]` names for its appearance has the accent's border.
 - **A click on a card** names its theme in `[theme]`, `light` or `dark` as the theme is, which shows at once where its appearance is in force. The Settings page keeps `[theme]`'s `minimum-contrast` alone.
@@ -40,13 +40,13 @@ The Settings, Keys, Themes and Theme Inspector pages of the settings window: eve
 - **Import…**, beside it, shows the system's open panel, of `.itermcolors` and `.toml` files, several chosen at once, as View › Import Themes… does: each that holds themes is copied into the themes' folder as it is, one question asking whether to replace the files of a name there already or to skip them; the themes show at once, and an alert tells how many were imported, by their names, and the files that were not, as one that holds no theme.
 - **A card's context menu**, of a secondary click, at the pointer, has **Use**, as a click, and **Duplicate…**, a new theme of every color of the card's, as View › New Theme from Current… makes it: Lokyr asks its name, writes it into the themes' folder, uses it and opens it in your editor.
 
-## The Theme Inspector page
+## The Theme Inspector
 
-- **The window's tab Theme Inspector**, after Themes, shows every color of the theme in force, its tokens, at its left: by groups, as `text`, `accent`, `tabs` or a plugin's, each of a swatch of its color over the terminal's background, its name, its value, as `#4c9bff99`, and where it comes from: a theme's file and its line, of the theme itself or of one that it extends, a theme of no file, as Lokyr Dark, or its rule, as `accent / 60%`, as [the authors' guide](../themes/authoring.md) tells.
+- **Inspector**, at the Themes page's sidebar after the appearances and a line, shows every color of the theme in force, its tokens, at its left: by groups, as `text`, `accent`, `tabs` or a plugin's, each of a swatch of its color over the terminal's background, its name, its value, as `#4c9bff99`, and where it comes from: a theme's file and its line, of the theme itself or of one that it extends, a theme of no file, as Lokyr Dark, or its rule, as `accent / 60%`, as [the authors' guide](../themes/authoring.md) tells.
 - **The field at its top** filters the tokens as you type, of their names, values and origins.
 - **Saved, a theme's file shows at once**: the tokens that changed are lit for three seconds.
 - **The button at a token's right** opens its theme's file at its line in your editor, or, for a token of no file of yours, copies its line, as `"focus.ring" = "accent / 60%"`, to paste into a theme.
-- **The theme's button** shows a menu of every theme: the one chosen shows in every window while the page shows, as the palette's picker previews it, and its colors in the page; the theme in force comes back as the page hides.
+- **The theme's button** shows a menu of every theme: the one chosen shows in every window while the Inspector shows, as the palette's picker previews it, and its colors in the page; the theme in force comes back as an appearance's themes show or the page hides.
 - At its right, the specimens of the terminal and of the interface of the theme are to come.
 
 ## Commands

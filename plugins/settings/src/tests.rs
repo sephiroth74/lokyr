@@ -2320,16 +2320,30 @@ fn the_themes_page_shows_the_themes_of_an_appearance_of_its_sidebar_the_one_in_f
     host.show_page(THEMES);
     host.deliver(&mut plugin).unwrap();
     let tree = host.render(&mut plugin, &themes_page()).expect("the page");
-    // The sidebar of the appearances, the dark one first, as in force.
-    let Kind::List(list) = &find_node(&tree, VARIANTS).expect("the sidebar").kind else {
-        panic!("a list");
-    };
-    let items: Vec<Vec<String>> = list.items.iter().map(|item| item.texts.clone()).collect();
+    // The sidebar of the appearances, the dark one first, as in force,
+    // selected, a line, and the Inspector.
+    let sidebar = find_node(&tree, "themes-sidebar").expect("the sidebar");
+    let rows: Vec<String> = sidebar
+        .children
+        .iter()
+        .filter_map(|row| row.key.as_ref().map(|key| key.0.clone()))
+        .collect();
     assert_eq!(
-        items,
-        [["circle-filled", "themes-dark"], ["circle", "themes-light"]]
-            .map(|texts| texts.map(str::to_owned).to_vec())
+        rows,
+        [
+            "themes-side:dark",
+            "themes-side:light",
+            "themes-side:inspector"
+        ]
     );
+    assert!(matches!(
+        sidebar.children[2].children[0].kind,
+        Kind::Separator
+    ));
+    let selected = |tree: &Node, key: &str| {
+        find_node(tree, key).unwrap().style.background == Some(Token::from("list.selection.bg"))
+    };
+    assert!(selected(&tree, "themes-side:dark") && !selected(&tree, "themes-side:light"));
     // The dark themes alone, in rows of three, the last of the room of the
     // cards that it lacks.
     assert_eq!(text_of(&tree, "title").as_deref(), Some("themes-dark"));
@@ -2355,18 +2369,19 @@ fn the_themes_page_shows_the_themes_of_an_appearance_of_its_sidebar_the_one_in_f
         border(&tree, "theme:dark:Dracula").as_deref(),
         Some("separator")
     );
-    // The light ones, of the sidebar's second item.
+    // The light ones, of the sidebar's second row.
     host.ui_event(
         &mut plugin,
         &UiEvent {
             view: themes_page(),
-            key: VARIANTS.into(),
-            kind: UiEventKind::Select { item: 1 },
+            key: "themes-side:light".into(),
+            kind: UiEventKind::Click,
         },
     )
     .unwrap();
     let tree = host.render(&mut plugin, &themes_page()).unwrap();
     assert_eq!(text_of(&tree, "title").as_deref(), Some("themes-light"));
+    assert!(selected(&tree, "themes-side:light") && !selected(&tree, "themes-side:dark"));
     assert!(find_node(&tree, "theme:dark:Dracula").is_none());
     assert_eq!(
         border(&tree, "theme:light:Lokyr Light").as_deref(),
@@ -2537,7 +2552,7 @@ fn a_theme_s_card_s_context_menu_uses_it_or_makes_a_new_theme_of_it_and_import_i
     assert!(host.take_done().contains(&new_of("dark")));
     host.ui_event(
         &mut plugin,
-        &event(&themes_page(), VARIANTS, UiEventKind::Select { item: 1 }),
+        &event(&themes_page(), "themes-side:light", UiEventKind::Click),
     )
     .unwrap();
     host.render(&mut plugin, &themes_page()).unwrap();
